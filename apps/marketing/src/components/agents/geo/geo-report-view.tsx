@@ -699,6 +699,10 @@ export function GeoReportView({
   const totalsRows = totalsRowsOf(coverage.totals);
   const overview = overviewCounts(coverage);
   const availability = availabilityOf(coverage);
+  const websiteProfileReference =
+    capture?.context.contextHash === run.contextHash
+      ? capture.context.websiteProfileReference
+      : undefined;
 
   const identity = [
     ["collector", provenance.collector],
@@ -715,6 +719,19 @@ export function GeoReportView({
 
   return (
     <section className="grid gap-5">
+      {websiteProfileReference === undefined ? null : (
+        <p
+          data-geo-report-website-profile-reference
+          data-snapshot-revision={websiteProfileReference.snapshotRevision}
+          data-profile-hash={websiteProfileReference.profileHash}
+          className="rounded-row border border-brand-border bg-brand-panel px-3 py-2 font-mono text-[10.5px] text-text-dark-secondary"
+        >
+          {t("results.websiteProfileReference", {
+            revision: websiteProfileReference.snapshotRevision,
+            hash: websiteProfileReference.profileHash.slice(0, 10),
+          })}
+        </p>
+      )}
       {degraded && (
         <p
           role="alert"

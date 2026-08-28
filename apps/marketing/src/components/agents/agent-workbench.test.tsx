@@ -15,6 +15,15 @@ import {
   type AgentProfileRefreshFieldPath,
 } from "../../lib/agents/profile-refresh-contract";
 import {
+  MARKETING_WEBSITE_PROFILE_VERSION,
+  WEBSITE_PROFILE_REFERENCE_VERSION,
+  emptyMarketingWebsiteProfile,
+  profileSha256,
+  type MarketingWebsiteProfileV1,
+  type WebsiteDetails,
+  type WebsiteSummary,
+} from "../../lib/account-websites/contracts.ts";
+import {
   pendingAgentIntentKey,
   readPendingAgentIntent,
   storeAgentProfileRefreshIntent,
@@ -48,6 +57,17 @@ vi.mock("../auth/sign-in-dialog", () => ({
       />
     </div>
   ),
+}));
+
+vi.mock("../ui/button.tsx", () => ({
+  Button: ({
+    variant: _variant,
+    size: _size,
+    ...props
+  }: React.ComponentProps<"button"> & {
+    variant?: string;
+    size?: string;
+  }) => <button {...props} />,
 }));
 
 vi.mock("./agent-results", () => ({
@@ -279,6 +299,74 @@ function profileSearchEnvelope(
   } as const;
 }
 
+async function savedWebsiteDetails(): Promise<WebsiteDetails> {
+  const savedProfile: MarketingWebsiteProfileV1 = {
+    ...emptyMarketingWebsiteProfile(),
+    productName: "Saved Example Product",
+    oneLinePositioning: "Saved positioning",
+    valueProposition: "Saved evidence-backed value",
+    primaryIcp: "Saved growth teams",
+    primaryCta: "Start now",
+    country: "US",
+    locale: "en-US",
+    fieldProvenance: [
+      "productName",
+      "primaryCta",
+      "primaryIcp",
+      "country",
+      "locale",
+    ].map((field) => ({
+      path: ("/" + field) as
+        | "/productName"
+        | "/primaryCta"
+        | "/primaryIcp"
+        | "/country"
+        | "/locale",
+      derivation: "declared" as const,
+      confidence: "high" as const,
+      source: "user_edit" as const,
+      limitation: null,
+      observedAt: null,
+      evidenceUrls: [],
+    })),
+  };
+  const hash = await profileSha256(savedProfile);
+  const website: WebsiteSummary = {
+    websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6",
+    origin: "https://example.com",
+    host: "example.com",
+    canonicalSiteKey: "example.com",
+    displayName: "Saved Example",
+    isPrimary: true,
+    profileState: "confirmed",
+    confirmedSnapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987",
+    confirmedSnapshotRevision: 3,
+    confirmedAt: "2026-08-28T00:00:00.000Z",
+    createdAt: "2026-08-28T00:00:00.000Z",
+    updatedAt: "2026-08-28T00:00:00.000Z",
+  };
+  return {
+    ...website,
+    submittedUrl: "https://example.com/",
+    draft: {
+      draftVersion: 4,
+      updatedAt: "2026-08-28T00:00:00.000Z",
+      profileHash: hash,
+      profile: savedProfile,
+    },
+    currentConfirmedSnapshot: {
+      schemaVersion: WEBSITE_PROFILE_REFERENCE_VERSION,
+      websiteId: website.websiteId,
+      snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987",
+      snapshotRevision: 3,
+      profileSchemaVersion: MARKETING_WEBSITE_PROFILE_VERSION,
+      profileHash: hash,
+      confirmedAt: "2026-08-28T00:00:00.000Z",
+      profile: savedProfile,
+    },
+  };
+}
+
 let root: Root | null = null;
 
 async function flushAsyncWork(): Promise<void> {
@@ -484,7 +572,8 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
   });
 
   it("keeps a completed profile diagnosis usable when automatic search discovery fails", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, _init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/auth/session") {
         return Response.json({ signedIn: true });
@@ -1859,6 +1948,234 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     });
   });
 
+  it("omits the field entirely when the checker handed over no query", () => {
+    // A URL-only check writes a draft with an empty list. `[]` is not the same
+    // request as no `targetQueries`: the endpoint normalises it to
+    // `empty_after_normalization` and rejects the whole call, so the report's
+    // own "open the Agent" button landed on invalid_request.
+    storePageFocusedAgentIntent(sessionStorage, "astrologywiki.com/chart");
+    storeOnPageDraft(sessionStorage, {
+      url: "astrologywiki.com/chart",
+      targetQueries: [],
+      country: "GB",
+      locale: "en-GB",
+      pageType: "guide",
+    });
+    const bodies: string[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        bodies.push(String(init?.body));
+        return Response.json(
+          successEnvelope("seo", "astrologywiki.com/chart"),
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    return (async () => {
+      renderStrict("seo");
+      await flushAsyncWork();
+      setRunContext();
+      confirmProfile();
+      await flushAsyncWork();
+
+      expect(bodies).toHaveLength(1);
+      const body = JSON.parse(String(bodies[0])) as Record<string, unknown>;
+      expect("targetQueries" in body).toBe(false);
+      expect(body.url).toBe("astrologywiki.com/chart");
+    })();
+  });
+
+  it.each(["seo", "tech"] as const)(
+    "references one exact saved website profile in the %s workbench and saves back explicitly",
+    async (agent) => {
+      const website = await savedWebsiteDetails();
+      const fetchMock = vi.fn(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          const path = String(input);
+          if (path === "/api/auth/session") {
+            return Response.json({ signedIn: true });
+          }
+          if (path === "/api/account/websites") {
+            const { draft: _draft, currentConfirmedSnapshot: _snapshot, ...summary } =
+              website;
+            return Response.json({ data: { websites: [summary] } });
+          }
+          if (path === "/api/account/websites/" + website.websiteId) {
+            if (init?.method === "PATCH") {
+              return Response.json({ data: { website } });
+            }
+            return Response.json({ data: { website } });
+          }
+          if (path === "/api/agents/" + agent + "/audit") {
+            return Response.json(successEnvelope(agent, "example.com"));
+          }
+          throw new Error("Unexpected request: " + path);
+        },
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      renderStrict(agent);
+      setProfileUrl(agent, "https://www.example.com/pricing");
+      expect(fetchMock).not.toHaveBeenCalled();
+      const openPicker = [...document.querySelectorAll("button")].find(
+        (button) => button.textContent === "open",
+      );
+      act(() => openPicker?.click());
+      await flushAsyncWork();
+
+      const reference = [...document.querySelectorAll("button")].find(
+        (button) => button.textContent === "reference",
+      );
+      act(() => reference?.click());
+      await flushAsyncWork();
+
+      expect(
+        document.querySelector(
+          '[data-website-profile-context="reference"]',
+        )?.textContent,
+      ).toContain("Saved Example");
+      expect(
+        document.querySelector('[data-profile-card="product"]')?.textContent,
+      ).toContain("Saved Example Product");
+      act(() => {
+        (
+          document.querySelector(
+            '[data-profile-action="review"]',
+          ) as HTMLButtonElement
+        ).click();
+      });
+      setInputValue(
+        document.querySelector(
+          'input[aria-label="fields.productName"]',
+        ) as HTMLInputElement,
+        "Agent local edit",
+      );
+      expect(
+        fetchMock.mock.calls.filter(
+          ([, request]) => request?.method === "PATCH",
+        ),
+      ).toHaveLength(0);
+
+      act(() => {
+        (
+          document.querySelector(
+            'button[data-profile-action="save-back"]',
+          ) as HTMLButtonElement
+        ).click();
+      });
+      await flushAsyncWork();
+
+      const patchCall = fetchMock.mock.calls.find(
+        ([, request]) => request?.method === "PATCH",
+      );
+      expect(String(patchCall?.[0])).toBe(
+        "/api/account/websites/" + website.websiteId,
+      );
+      expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({
+        intent: "save_profile",
+        baseVersion: 4,
+        profile: { productName: "Agent local edit" },
+        expectedReference: {
+          schemaVersion: "website-profile-reference.v1",
+          websiteId: website.websiteId,
+          snapshotId: website.currentConfirmedSnapshot?.snapshotId,
+          snapshotRevision: 3,
+          profileSchemaVersion: "marketing-website-profile.v1",
+          profileHash: website.currentConfirmedSnapshot?.profileHash,
+        },
+      });
+
+      confirmProfile();
+      await flushAsyncWork();
+      const runReference = document.querySelector(
+        "[data-run-website-reference]",
+      );
+      expect(runReference?.getAttribute("data-snapshot-revision")).toBe("3");
+      expect(runReference?.getAttribute("data-profile-hash")).toBe(
+        website.currentConfirmedSnapshot?.profileHash,
+      );
+    },
+  );
+
+  it("imports a saved website profile as a detached local Agent draft", async () => {
+    const website = await savedWebsiteDetails();
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, _init?: RequestInit) => {
+        const path = String(input);
+        if (path === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        if (path === "/api/account/websites") {
+          const {
+            draft: _draft,
+            currentConfirmedSnapshot: _snapshot,
+            ...summary
+          } = website;
+          return Response.json({ data: { websites: [summary] } });
+        }
+        if (path === "/api/account/websites/" + website.websiteId) {
+          return Response.json({ data: { website } });
+        }
+        throw new Error("Unexpected request: " + path);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "example.com");
+    act(() => {
+      [...document.querySelectorAll("button")]
+        .find((button) => button.textContent === "open")
+        ?.click();
+    });
+    await flushAsyncWork();
+    act(() => {
+      [...document.querySelectorAll("button")]
+        .find((button) => button.textContent === "import")
+        ?.click();
+    });
+    await flushAsyncWork();
+
+    expect(
+      document.querySelector(
+        '[data-website-profile-context="import"]',
+      )?.textContent,
+    ).toContain("Saved Example");
+    expect(
+      document.querySelector('[data-profile-card="product"]')?.textContent,
+    ).toContain("Saved Example Product");
+    expect(document.querySelector("[data-run-website-reference]")).toBeNull();
+    expect(
+      fetchMock.mock.calls.some(([, request]) => request?.method === "PATCH"),
+    ).toBe(false);
+  });
+
+  it("checks session but reads no private website data when signed out", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/auth/session") {
+        return Response.json({ signedIn: false });
+      }
+      throw new Error("Unexpected private request: " + path);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "example.com");
+    const openPicker = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "open",
+    );
+    act(() => openPicker?.click());
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("/api/auth/session");
+  });
+
   /**
    * The rest of what the checker handed over, each of which could be reverted
    * without any existing assertion noticing: the page-only scope, the first query
@@ -2047,7 +2364,19 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         locale: "en-US",
       }),
     );
-    storeConfirmedAgentRunIntent(sessionStorage, profile);
+    const websiteProfileReference = {
+      schemaVersion: "website-profile-reference.v1" as const,
+      websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6",
+      snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987",
+      snapshotRevision: 3,
+      profileSchemaVersion: "marketing-website-profile.v1" as const,
+      profileHash: "a".repeat(64),
+    };
+    storeConfirmedAgentRunIntent(
+      sessionStorage,
+      profile,
+      websiteProfileReference,
+    );
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         if (String(input) === "/api/auth/session") {
@@ -2065,6 +2394,11 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     expect(postCalls(fetchMock)).toHaveLength(1);
     expect(sessionStorage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
     expect(document.querySelector('[data-testid="agent-results"]')).not.toBeNull();
+    expect(
+      document
+        .querySelector("[data-run-website-reference]")
+        ?.getAttribute("data-snapshot-revision"),
+    ).toBe("3");
   });
 
   it("never probes, prefills, or consumes the other Agent's intent", async () => {

@@ -9,11 +9,21 @@ import { useTranslations } from "next-intl";
 import { Loader2, Radar } from "lucide-react";
 
 import { SignInDialog } from "../../auth/sign-in-dialog";
+import { WebsiteProfilePicker } from "../../account/website-profile-picker";
+import {
+  normalizeAccountWebsiteUrl,
+  type WebsiteDetails,
+} from "../../../lib/account-websites/contracts";
+import {
+  referenceWebsiteProfileForGeo,
+  type GeoWebsiteProfileProjection,
+} from "../../../lib/account-websites/geo-context-bridge";
 import {
   buildGeoContextSourceSummary,
   confirmGeoContext,
   proposeGeoAliasCandidates,
   type GeoAliasCandidateV1,
+  type GeoContextSourceEntryV1,
   type GeoContextSnapshotV1,
 } from "../../../lib/agents/geo-context";
 import {
@@ -41,6 +51,73 @@ import { GeoReportView } from "./geo-report-view";
 
 type Stage = "context" | "review" | "queries" | "running" | "report";
 type SessionStatus = "signed_in" | "signed_out" | "unavailable";
+type GeoReferencedProfileState = Pick<
+  GeoWebsiteProfileProjection,
+  | "user"
+  | "useCases"
+  | "outcomes"
+  | "barriers"
+  | "indirectAlternatives"
+  | "sourceProfileVersion"
+  | "websiteProfileReference"
+>;
+
+type GeoHiddenProfileField =
+  | "user"
+  | "use_cases"
+  | "outcomes"
+  | "barriers"
+  | "indirect_alternatives";
+
+interface GeoDisplayedHiddenProfileField {
+  readonly field: GeoHiddenProfileField;
+  readonly values: readonly string[];
+}
+
+function displayedHiddenProfileFields(
+  profile: GeoReferencedProfileState | null,
+): readonly GeoDisplayedHiddenProfileField[] {
+  if (profile === null) return [];
+  const candidates: readonly GeoDisplayedHiddenProfileField[] = [
+    { field: "user", values: profile.user === "" ? [] : [profile.user] },
+    { field: "use_cases", values: profile.useCases },
+    { field: "outcomes", values: profile.outcomes },
+    { field: "barriers", values: profile.barriers },
+    {
+      field: "indirect_alternatives",
+      values: profile.indirectAlternatives,
+    },
+  ];
+  return candidates.filter((entry) => entry.values.length > 0);
+}
+
+function hiddenProfileContext(
+  profile: GeoReferencedProfileState | null,
+): Pick<
+  GeoWebsiteProfileProjection,
+  "user" | "useCases" | "outcomes" | "barriers" | "indirectAlternatives"
+> {
+  const fields = displayedHiddenProfileFields(profile);
+  const values = (field: GeoHiddenProfileField): readonly string[] =>
+    fields.find((entry) => entry.field === field)?.values ?? [];
+  return {
+    user: values("user")[0] ?? "",
+    useCases: values("use_cases"),
+    outcomes: values("outcomes"),
+    barriers: values("barriers"),
+    indirectAlternatives: values("indirect_alternatives"),
+  };
+}
+
+function hiddenProfileSourceSummary(
+  profile: GeoReferencedProfileState | null,
+): readonly GeoContextSourceEntryV1[] {
+  return displayedHiddenProfileFields(profile).map((entry) => ({
+    field: entry.field,
+    source: "saved_website_profile",
+    limitationCode: "pinned_snapshot",
+  }));
+}
 
 async function getSessionStatus(signal?: AbortSignal): Promise<SessionStatus> {
   const response = await fetch("/api/auth/session", {
@@ -120,6 +197,8 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
   const [jtbd, setJtbd] = useState("");
   const [rivals, setRivals] = useState("");
   const [marketCode, setMarketCode] = useState("");
+  const [referencedProfile, setReferencedProfile] =
+    useState<GeoReferencedProfileState | null>(null);
 
   const [aliases, setAliases] = useState<readonly GeoAliasCandidateV1[]>([]);
   const [categoryConfirmed, setCategoryConfirmed] = useState(false);
@@ -136,6 +215,7 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
   const mounted = useRef(true);
   const busy = useRef(false);
   const abort = useRef<AbortController | null>(null);
+  const websiteReferenceRequest = useRef(0);
   /**
    * The current query set, readable from a callback that was created earlier.
    *
@@ -220,6 +300,19 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
       snapshot.brandAliases.map((alias) => ({ ...alias, confirmed: true })),
     );
     setCategoryConfirmed(true);
+    setReferencedProfile(
+      snapshot.websiteProfileReference === undefined
+        ? null
+        : {
+            user: snapshot.user,
+            useCases: snapshot.useCases,
+            outcomes: snapshot.outcomes,
+            barriers: snapshot.barriers,
+            indirectAlternatives: snapshot.indirectAlternatives,
+            sourceProfileVersion: snapshot.sourceProfileVersion,
+            websiteProfileReference: snapshot.websiteProfileReference,
+          },
+    );
   }, []);
 
   const errorMessage = useCallback(
@@ -239,11 +332,76 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
         "geo_budget_exhausted",
         "geo_budget_unavailable",
         "geo_provider_unavailable",
+        "geo_website_profile_reference_invalid",
+        "geo_website_profile_unavailable",
         "geo_report_invalid",
       ];
       return t(`errors.${known.includes(code) ? code : "unknown"}`);
     },
     [t],
+  );
+
+  const handleTargetUrlChange = useCallback(
+    (nextUrl: string): void => {
+      websiteReferenceRequest.current += 1;
+      if (referencedProfile !== null) {
+        const currentHost = normalizeAccountWebsiteUrl(url)?.canonicalSiteKey;
+        const nextHost = normalizeAccountWebsiteUrl(nextUrl)?.canonicalSiteKey;
+        if (currentHost !== nextHost) {
+          setReferencedProfile(null);
+          setContext(null);
+          setQuerySet(null);
+          querySetRef.current = null;
+          setReport(null);
+        }
+      }
+      setUrl(nextUrl);
+    },
+    [referencedProfile, url],
+  );
+
+  const handleWebsiteProfileReference = useCallback(
+    async (website: WebsiteDetails): Promise<void> => {
+      const request = ++websiteReferenceRequest.current;
+      setErrorCode(null);
+      setRejections([]);
+      try {
+        const projected = await referenceWebsiteProfileForGeo({
+          targetUrl: url.trim() === "" ? website.origin : url,
+          website,
+        });
+        if (!mounted.current || request !== websiteReferenceRequest.current) {
+          return;
+        }
+        setUrl(projected.targetUrl);
+        setProductName(projected.productName);
+        setCategory(projected.category);
+        setBuyer(projected.buyer);
+        setJtbd(projected.jtbd);
+        setRivals(projected.directCompetitors.join(", "));
+        setMarketCode(projected.marketCode);
+        setAliases(projected.brandAliases);
+        setCategoryConfirmed(false);
+        setReferencedProfile({
+          user: projected.user,
+          useCases: projected.useCases,
+          outcomes: projected.outcomes,
+          barriers: projected.barriers,
+          indirectAlternatives: projected.indirectAlternatives,
+          sourceProfileVersion: projected.sourceProfileVersion,
+          websiteProfileReference: projected.websiteProfileReference,
+        });
+        setContext(null);
+        setQuerySet(null);
+        querySetRef.current = null;
+        setReport(null);
+      } catch {
+        if (mounted.current && request === websiteReferenceRequest.current) {
+          setErrorCode("geo_website_profile_reference_invalid");
+        }
+      }
+    },
+    [url],
   );
 
   /**
@@ -275,6 +433,17 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
     setErrorCode(null);
     setRejections([]);
     const competitors = splitList(rivals);
+    const hiddenContext = hiddenProfileContext(referencedProfile);
+    const sourceSummary = [
+      ...buildGeoContextSourceSummary({
+        hasCompetitors: competitors.length > 0,
+        hasJtbd: jtbd.trim().length > 0,
+        aliasSources: aliases
+          .filter((candidate) => candidate.confirmed)
+          .map((candidate) => candidate.source),
+      }),
+      ...hiddenProfileSourceSummary(referencedProfile),
+    ];
     const confirmed = await confirmGeoContext(
       {
         targetUrl: url.trim(),
@@ -283,23 +452,24 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
         category: category.trim(),
         categoryConfirmed,
         buyer: buyer.trim(),
-        user: "",
+        user: hiddenContext.user,
         jtbd: jtbd.trim(),
-        useCases: [],
-        outcomes: [],
-        barriers: [],
+        useCases: hiddenContext.useCases,
+        outcomes: hiddenContext.outcomes,
+        barriers: hiddenContext.barriers,
         directCompetitors: competitors,
-        indirectAlternatives: [],
+        indirectAlternatives: hiddenContext.indirectAlternatives,
         marketCode,
         targetQueryLanguage: "en",
-        sourceProfileVersion: "geo-context.local.v1",
-        sourceSummary: buildGeoContextSourceSummary({
-          hasCompetitors: competitors.length > 0,
-          hasJtbd: jtbd.trim().length > 0,
-          aliasSources: aliases
-            .filter((candidate) => candidate.confirmed)
-            .map((candidate) => candidate.source),
-        }),
+        sourceProfileVersion:
+          referencedProfile?.sourceProfileVersion ?? "geo-context.local.v1",
+        sourceSummary,
+        ...(referencedProfile === null
+          ? {}
+          : {
+              websiteProfileReference:
+                referencedProfile.websiteProfileReference,
+            }),
       },
       () => new Date(),
     );
@@ -329,6 +499,7 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
     jtbd,
     marketCode,
     productName,
+    referencedProfile,
     rivals,
     url,
   ]);
@@ -464,6 +635,35 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
   const confirmReady =
     categoryConfirmed && aliases.some((candidate) => candidate.confirmed);
   const message = errorMessage(errorCode);
+  const activeWebsiteReference =
+    context?.websiteProfileReference ??
+    referencedProfile?.websiteProfileReference ??
+    null;
+  const websiteReferenceBanner =
+    activeWebsiteReference === null ? null : (
+      <p
+        data-geo-website-profile-reference
+        data-snapshot-revision={activeWebsiteReference.snapshotRevision}
+        data-profile-hash={activeWebsiteReference.profileHash}
+        className="rounded-row border border-brand-border bg-brand-panel px-3 py-2 font-mono text-[10.5px] text-text-dark-secondary"
+      >
+        {t("workbench.websiteProfileReference", {
+          revision: activeWebsiteReference.snapshotRevision,
+          hash: activeWebsiteReference.profileHash.slice(0, 10),
+        })}
+      </p>
+    );
+  const hiddenReviewFields = displayedHiddenProfileFields(referencedProfile);
+  const reviewSourceSummary = [
+    ...buildGeoContextSourceSummary({
+      hasCompetitors: splitList(rivals).length > 0,
+      hasJtbd: jtbd.trim().length > 0,
+      aliasSources: aliases
+        .filter((candidate) => candidate.confirmed)
+        .map((candidate) => candidate.source),
+    }),
+    ...hiddenProfileSourceSummary(referencedProfile),
+  ];
 
   return (
     <div id="geo-agent-workbench" className="scroll-mt-24">
@@ -501,6 +701,16 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
           </h2>
           <p className={HINT_CLASS}>{t("workbench.contextHint")}</p>
 
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <WebsiteProfilePicker
+              targetUrl={url}
+              onReference={(website) => {
+                void handleWebsiteProfileReference(website);
+              }}
+            />
+            {websiteReferenceBanner}
+          </div>
+
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <div>
               <label className={LABEL_CLASS} htmlFor="geo-url">
@@ -510,7 +720,7 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
                 id="geo-url"
                 className={`${FIELD_CLASS} mt-1.5`}
                 value={url}
-                onChange={(event) => setUrl(event.target.value)}
+                onChange={(event) => handleTargetUrlChange(event.target.value)}
                 placeholder={t("workbench.urlPlaceholder")}
                 autoComplete="url"
                 inputMode="url"
@@ -625,6 +835,9 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
             {t("review.title")}
           </h2>
           <p className={HINT_CLASS}>{t("review.hint")}</p>
+          {websiteReferenceBanner === null ? null : (
+            <div className="mt-3">{websiteReferenceBanner}</div>
+          )}
 
           <h3 className="mt-5 text-[12.5px] font-semibold text-text-dark-primary">
             {t("review.aliasesTitle")}
@@ -677,17 +890,52 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
             </label>
           </div>
 
+          {hiddenReviewFields.length === 0 ? null : (
+            <section
+              aria-labelledby="geo-saved-profile-context-title"
+              className="mt-5 rounded-row border border-brand-border bg-brand-panel p-4"
+            >
+              <h3
+                id="geo-saved-profile-context-title"
+                className="text-[12.5px] font-semibold text-text-dark-primary"
+              >
+                {t("review.savedProfileContextTitle")}
+              </h3>
+              <p className={HINT_CLASS}>
+                {t("review.savedProfileContextHint")}
+              </p>
+              <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+                {hiddenReviewFields.map((entry) => (
+                  <div
+                    key={entry.field}
+                    data-geo-hidden-profile-field={entry.field}
+                    className="min-w-0"
+                  >
+                    <dt className="font-mono text-[10.5px] text-text-dark-tertiary">
+                      {t(`review.field.${entry.field}`)}
+                    </dt>
+                    <dd className="mt-1 text-[11.5px] leading-[1.55] text-text-dark-primary">
+                      {entry.field === "user" ? (
+                        entry.values[0]
+                      ) : (
+                        <ul className="grid gap-1">
+                          {entry.values.map((value) => (
+                            <li key={value}>{value}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          )}
+
           <h3 className="mt-5 text-[12.5px] font-semibold text-text-dark-primary">
             {t("review.provenanceTitle")}
           </h3>
           <ul className="mt-2 grid gap-1">
-            {buildGeoContextSourceSummary({
-              hasCompetitors: splitList(rivals).length > 0,
-              hasJtbd: jtbd.trim().length > 0,
-              aliasSources: aliases
-                .filter((candidate) => candidate.confirmed)
-                .map((candidate) => candidate.source),
-            }).map((entry) => (
+            {reviewSourceSummary.map((entry) => (
               <li
                 key={entry.field}
                 className="text-[11.5px] leading-[1.55] text-text-dark-secondary"
@@ -732,6 +980,7 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
         context !== null &&
         querySet !== null && (
           <section className="grid gap-4 rounded-card border border-brand-border-card bg-brand-panel-sunken p-5 md:p-6">
+            {websiteReferenceBanner}
             <GeoQueryReview
               querySet={querySet}
               context={context}

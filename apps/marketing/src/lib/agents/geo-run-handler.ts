@@ -4,9 +4,16 @@
 
 import { normalizeSeoAuditUrl } from "@sf/public-tools";
 import {
-  getServerAuthenticationStatus,
-  type ServerAuthenticationStatus,
-} from "../auth/server-auth-status.ts";
+  getServerAuthenticatedUser,
+  type ServerAuthenticatedUser,
+} from "../auth/server-auth-user.ts";
+import {
+  resolveAccountWebsiteProfileReference,
+  type ResolvedWebsiteProfile,
+  type WebsiteStoreResult,
+} from "../account-websites/store.ts";
+import type { WebsiteProfileReferenceV1 } from "../account-websites/contracts.ts";
+import { projectWebsiteProfileHiddenContext } from "../account-websites/geo-context-bridge.ts";
 import { hasLoneSurrogate, normalizeGeoText } from "./geo-canonical.ts";
 import {
   consumeGeoDailyBudget,
@@ -14,6 +21,7 @@ import {
   type GeoBudgetOutcome,
 } from "./geo-cost-guard.ts";
 import {
+  buildGeoContextSourceSummary,
   deriveGeoBrandStance,
   geoAliasMatcherScope,
   geoContextHash,
@@ -82,7 +90,11 @@ const GEO_BUDGET_CLAIM_ALLOWANCE_MS = 5_000;
 
 export interface GeoRunHandlerDependencies {
   /** Proves a real Supabase user before any part of the request body is read. */
-  readonly authenticate: () => Promise<ServerAuthenticationStatus>;
+  readonly authenticate: () => Promise<ServerAuthenticatedUser>;
+  readonly resolveWebsiteProfileReference: (
+    userId: string,
+    reference: WebsiteProfileReferenceV1,
+  ) => Promise<WebsiteStoreResult<ResolvedWebsiteProfile>>;
   readonly claimDailyBudget: () => Promise<GeoBudgetOutcome>;
   readonly createProvider: () => GeoProviderClient;
   readonly now: () => number;
@@ -90,7 +102,8 @@ export interface GeoRunHandlerDependencies {
 }
 
 export const DEFAULT_DEPENDENCIES: GeoRunHandlerDependencies = {
-  authenticate: getServerAuthenticationStatus,
+  authenticate: getServerAuthenticatedUser,
+  resolveWebsiteProfileReference: resolveAccountWebsiteProfileReference,
   claimDailyBudget: () => consumeGeoDailyBudget(),
   createProvider: () => createGeoProviderClient(),
   now: Date.now,
@@ -106,6 +119,34 @@ function errorResponse(code: string, status: number): Response {
 
 function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function sameStrings(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+function sameSourceSummary(
+  left: GeoContextSnapshotV1["sourceSummary"],
+  right: GeoContextSnapshotV1["sourceSummary"],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((entry, index) => {
+      const expected = right[index];
+      return (
+        expected !== undefined &&
+        entry.field === expected.field &&
+        entry.source === expected.source &&
+        entry.limitationCode === expected.limitationCode
+      );
+    })
+  );
 }
 
 async function readBoundedBody(request: Request): Promise<unknown | null> {
@@ -345,16 +386,16 @@ export async function handleGeoRunRequest(
   const deadlineAt = dependencies.now() + GEO_RUN_BUDGET_MS;
   const remainingMs = (): number => deadlineAt - dependencies.now();
 
-  let authentication: ServerAuthenticationStatus = "unavailable";
+  let authentication: ServerAuthenticatedUser = { status: "unavailable" };
   try {
     authentication = await dependencies.authenticate();
   } catch {
-    authentication = "unavailable";
+    authentication = { status: "unavailable" };
   }
-  if (authentication === "unavailable") {
+  if (authentication.status === "unavailable") {
     return errorResponse("auth_unavailable", 503);
   }
-  if (authentication === "unauthenticated") {
+  if (authentication.status === "unauthenticated") {
     return errorResponse("auth_required", 401);
   }
 
@@ -375,6 +416,50 @@ export async function handleGeoRunRequest(
   const validated = await validateGeoRunInput(body);
   if (!validated.ok) return errorResponse(validated.code, 400);
   const { context, querySet, paidQueries } = validated.input;
+
+  if (context.websiteProfileReference !== undefined) {
+    let resolved: WebsiteStoreResult<ResolvedWebsiteProfile>;
+    try {
+      resolved = await dependencies.resolveWebsiteProfileReference(
+        authentication.userId,
+        context.websiteProfileReference,
+      );
+    } catch {
+      return errorResponse("geo_website_profile_unavailable", 503);
+    }
+    if (resolved.kind === "unavailable") {
+      return errorResponse("geo_website_profile_unavailable", 503);
+    }
+    if (
+      resolved.kind !== "ok" ||
+      resolved.value.website.canonicalSiteKey !== context.targetHost
+    ) {
+      return errorResponse("geo_website_profile_reference_invalid", 400);
+    }
+    const hidden = projectWebsiteProfileHiddenContext(resolved.value.profile);
+    const expectedSourceSummary = [
+      ...buildGeoContextSourceSummary({
+        hasCompetitors: context.directCompetitors.length > 0,
+        hasJtbd: context.jtbd !== "",
+        aliasSources: context.brandAliases.map((alias) => alias.source),
+      }),
+      ...hidden.sourceSummary,
+    ];
+    if (
+      context.user !== hidden.user ||
+      !sameStrings(context.useCases, hidden.useCases) ||
+      !sameStrings(context.outcomes, hidden.outcomes) ||
+      !sameStrings(context.barriers, hidden.barriers) ||
+      !sameStrings(
+        context.indirectAlternatives,
+        hidden.indirectAlternatives,
+      ) ||
+      context.sourceProfileVersion !== hidden.sourceProfileVersion ||
+      !sameSourceSummary(context.sourceSummary, expectedSourceSummary)
+    ) {
+      return errorResponse("geo_website_profile_reference_invalid", 400);
+    }
+  }
 
   // Built before the budget claim, not after. The daily bucket is account-wide
   // and never refunded, so an unconfigured deployment would otherwise let a

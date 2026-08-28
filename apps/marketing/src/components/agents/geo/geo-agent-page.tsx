@@ -1,4 +1,4 @@
-// @input  -- locale and agents.geo messages
+// @input  -- locale plus GEO, shared workbench, and auth messages
 // @output -- breadcrumb, hero, boundaries, sampling workbench, and method
 // @pos    -- server-rendered frame for the independent /agents/geo route
 
@@ -101,7 +101,12 @@ export async function GeoAgentPage({ locale }: { readonly locale: string }) {
           <section className="pt-8">
             <NextIntlClientProvider
               messages={{
-                agents: { geo: messages.agents.geo },
+                agents: {
+                  geo: messages.agents.geo,
+                  workbench: {
+                    websiteProfile: messages.agents.workbench.websiteProfile,
+                  },
+                },
                 auth: messages.auth,
               }}
             >
