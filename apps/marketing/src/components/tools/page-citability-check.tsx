@@ -70,9 +70,17 @@ function formatTime(value: string, locale: string): string {
   if (Number.isNaN(parsed.getTime())) return value;
   // Named, because an unlabelled UTC clock reads as the visitor's own and a
   // check run at 22:03 local looks eight hours stale.
+  //
+  // Spelled out field by field rather than with `dateStyle`/`timeStyle`:
+  // ECMA-402 forbids combining either of those with `timeZoneName`, and V8
+  // throws `Invalid option : option` for the pair. Thrown from render, it took
+  // down the whole report the moment one came back.
   return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
     timeZone: "UTC",
     timeZoneName: "short",
   }).format(parsed);
@@ -89,15 +97,44 @@ function isCitabilityReport(value: unknown): value is CitabilityReport {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
   const summary = record["summary"];
+  const question = record["targetQuestion"];
   return (
     Array.isArray(record["checks"]) &&
     Array.isArray(record["limits"]) &&
+    Array.isArray(record["questionTerms"]) &&
     typeof record["fetchedAt"] === "string" &&
     typeof record["finalUrl"] === "string" &&
+    // Every field this component actually reads, not only the ones it maps
+    // over. `url` decides whether the redirect line appears and `textChars` is
+    // printed as a number; a shape missing either is the same rolling-deploy
+    // drift, and a guard that waves them through renders "undefined" as a
+    // measurement.
+    typeof record["url"] === "string" &&
+    typeof record["textChars"] === "number" &&
+    (question === null || typeof question === "string") &&
     typeof summary === "object" &&
     summary !== null &&
     typeof (summary as Record<string, unknown>)["counted"] === "number"
   );
+}
+
+/**
+ * The two lines that state what was asked, or nothing when nothing was.
+ *
+ * Shared by the page and by the copied report so the pasted text cannot say
+ * something different from the screen it was copied from.
+ */
+function questionLines(
+  t: (key: string, values?: Readonly<Record<string, string | number>>) => string,
+  report: CitabilityReport,
+): readonly string[] {
+  if (report.targetQuestion === null) return [];
+  return [
+    t("summary.question", { question: report.targetQuestion }),
+    report.questionTerms.length > 0
+      ? t("summary.questionTerms", { terms: report.questionTerms.join(", ") })
+      : t("summary.questionNoTerms"),
+  ];
 }
 
 function CheckRow({ check }: { readonly check: CitabilityCheck }) {
@@ -222,6 +259,9 @@ export function PageCitabilityCheck({
     const lines = [
       `${t("title")} — ${report.finalUrl}`,
       t("summary.fetchedAt", { time: formatTime(report.fetchedAt, locale) }),
+      // The question travels with the pasted report. Without it a model is
+      // handed a lead-answer row about a question it cannot see.
+      ...questionLines(t, report),
       t("summary.counted", {
         passed: report.summary.passed,
         counted: report.summary.counted,
@@ -421,6 +461,15 @@ export function PageCitabilityCheck({
                 </li>
               ) : null}
               <li>{t("summary.textChars", { chars: report.textChars })}</li>
+              {/*
+                The question the run was actually given, and the words taken
+                out of it. Both are in the payload; printing neither is how a
+                visitor who typed "which is best?" reads a row that says no
+                question was given and has nothing to check it against.
+              */}
+              {questionLines(t, report).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
             </ul>
             <button
               className="mt-5 rounded-lg border border-brand-border-card px-3 py-1.5 text-[13px] text-text-dark-primary"

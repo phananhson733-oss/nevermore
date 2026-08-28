@@ -198,3 +198,55 @@ describe("Unicode composition and astral offsets", () => {
     expect(snippet).toContain("Acme");
   });
 });
+
+describe("scripts written without spaces", () => {
+  // Every one of these was reported as "never mentioned" before the boundary
+  // rule became per-edge. The run was paid for, the answer names the brand,
+  // and the number on the page was zero.
+  it("finds a Chinese brand inside continuous text", () => {
+    expect(containsGeoAlias("我们推荐小米手机。", ["小米"])).toBe(true);
+  });
+
+  it("finds the same brand when the sentence around it is English", () => {
+    expect(containsGeoAlias("小米 is recommended for teams.", ["小米"])).toBe(true);
+  });
+
+  it("finds a Japanese brand between kana", () => {
+    expect(containsGeoAlias("日本のサイボウズは有名です。", ["サイボウズ"])).toBe(
+      true,
+    );
+  });
+
+  it("finds a Thai brand with no separators around it", () => {
+    expect(containsGeoAlias("ผมใช้ไลน์แมนทุกวัน", ["ไลน์แมน"])).toBe(true);
+  });
+
+  it("still refuses a Latin name buried inside a longer Latin word", () => {
+    // The per-edge rule must not have relaxed the case it exists for.
+    expect(containsGeoAlias("AcmeCorp is unrelated.", ["Acme"])).toBe(false);
+  });
+
+  it("accepts a two-character name in a dense script and not in Latin", () => {
+    expect(containsGeoAlias("我们推荐小米。", ["小米"])).toBe(true);
+    expect(containsGeoAlias("Go is recommended.", ["Go"])).toBe(false);
+  });
+});
+
+describe("case shape", () => {
+  it("does not read an ordinary noun as the brand that shares its spelling", () => {
+    expect(containsGeoAlias("This is a useful notion.", ["Notion"])).toBe(false);
+    expect(containsGeoAlias("Notion is recommended.", ["Notion"])).toBe(true);
+    expect(containsGeoAlias("We use NOTION daily.", ["Notion"])).toBe(true);
+  });
+
+  it("does not read a question word as an all-caps acronym brand", () => {
+    expect(containsGeoAlias("Who should use it?", ["WHO"])).toBe(false);
+    expect(containsGeoAlias("The WHO published it.", ["WHO"])).toBe(true);
+  });
+
+  it("matches any case when the confirmed alias carries no capital", () => {
+    // Nothing to compare against, so recall wins: the user wrote it lowercase.
+    expect(containsGeoAlias("acme is great", ["acme"])).toBe(true);
+    expect(containsGeoAlias("ACME is great", ["acme"])).toBe(true);
+  });
+});

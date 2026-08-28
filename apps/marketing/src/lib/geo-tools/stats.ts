@@ -339,6 +339,47 @@ export function changeVerdict(
  * The zero claim therefore runs on this projection, where the unit is the
  * question, and the sample-level rate is shown as a rate without one.
  */
+/**
+ * Two-sided exact McNemar p value for a paired binary comparison.
+ *
+ * `b` and `c` are the discordant pairs: units that changed one way, and units
+ * that changed the other. Concordant pairs carry no information about change
+ * and are deliberately absent from the arithmetic - that is what makes this a
+ * paired test rather than a comparison of two rates.
+ *
+ * Exact rather than the chi-square approximation because the counts here are
+ * small by construction: a question set has tens of questions, and a handful of
+ * them move between runs. The approximation is unreliable exactly there, and it
+ * is generous in the direction that publishes a change.
+ *
+ * Returns 1 when nothing moved, which the caller reads as "no evidence" rather
+ * than as a tested hypothesis - see the note where these are fed to
+ * {@link benjaminiHochberg}.
+ */
+export function mcnemarExactP(b: number, c: number): number {
+  if (
+    !Number.isSafeInteger(b) ||
+    !Number.isSafeInteger(c) ||
+    b < 0 ||
+    c < 0
+  ) {
+    throw new RangeError(`discordant counts must be non-negative integers`);
+  }
+  const n = b + c;
+  if (n === 0) return 1;
+
+  const smaller = Math.min(b, c);
+  // P(X <= smaller) for X ~ Binomial(n, 0.5), built term by term so no
+  // factorial is ever formed: C(n, k+1) = C(n, k) * (n - k) / (k + 1).
+  let term = Math.pow(0.5, n);
+  let tail = term;
+  for (let k = 0; k < smaller; k += 1) {
+    term = (term * (n - k)) / (k + 1);
+    tail += term;
+  }
+  return Math.min(1, 2 * tail);
+}
+
 export function collapseGroupsToBernoulli(
   groups: readonly { readonly successes: number; readonly trials: number }[],
 ): { readonly successes: number; readonly trials: number } {

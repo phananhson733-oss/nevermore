@@ -4583,7 +4583,10 @@
         "fetchedAt": "Checked at {time}",
         "finalUrl": "Read from {url}",
         "redirected": "The URL you submitted redirected here; every row below is about the page that was actually served.",
-        "textChars": "{chars} characters of visible text in the HTML, before any JavaScript runs"
+        "textChars": "{chars} characters of visible text in the HTML, before any JavaScript runs",
+        "question": "Target question: {question}",
+        "questionTerms": "Words compared against the opening: {terms}",
+        "questionNoTerms": "Every word in that question is a common word, so no term could be taken out of it to compare against the opening. That row is marked not applicable."
       },
       "sections": {
         "readable": "Can a crawler read it",
@@ -4650,6 +4653,7 @@
         },
         "leadAnswer": {
           "notAsked": "No target question was given, so there is nothing to check the opening against.",
+          "noComparableTerms": "Every word in “{question}” is a common word, so there is no specific term to look for in the opening. Ask with the words a reader would search for — a product, a category, a place.",
           "ok": "The first {window} characters name {matched} and state a conclusion.",
           "noTerms": "The first {window} characters do not mention {terms}.",
           "noMarker": "The first {window} characters mention the subject but state no conclusion.",
@@ -4794,7 +4798,8 @@
         "importBody": "Copies the product name, categories, competitors and buyer from the confirmed profile of this site. It is a copy, not a link: editing either one afterwards leaves the other alone.",
         "importAction": "Prefill from profile",
         "importedFrom": "Prefilled from profile revision {revision}. Edited here since.",
-        "importUnavailable": "No confirmed website profile for this site yet, so there is nothing to prefill from."
+        "importUnavailable": "No confirmed website profile for this site yet, so there is nothing to prefill from.",
+        "loaded": "Loaded {host}, stored under {origin}. One knowledge base covers the whole site, so www and the bare domain share this one — if you expected a separate record, that is why."
       },
       "brand": {
         "title": "Brand",
@@ -4833,7 +4838,11 @@
         "brandLabel": "Name a model would use",
         "confirmLabel": "Confirmed",
         "unconfirmed": "Not confirmed. Shown, never counted.",
-        "empty": "No competitors yet. Comparison questions need at least one confirmed name."
+        "empty": "No competitors yet. Comparison questions need at least one confirmed name.",
+        "issues": {
+          "duplicate": "This competitor is already in the list above. Remove one of the two rows.",
+          "confirmNeedsName": "Confirmed, but the name is empty. Type the name a model would use, or clear the confirmation."
+        }
       },
       "facts": {
         "title": "Verified facts",
@@ -4844,6 +4853,8 @@
         "keyPlaceholder": "starting price",
         "valueLabel": "Value",
         "reasonLabel": "Why it is empty",
+        "reasonPlaceholder": "Choose a reason (required)",
+        "reasonHelp": "Required while the value is empty. This is what the brief generator prints instead of a number, so it cannot be left unsaid.",
         "sourceLabel": "Source URL",
         "observedLabel": "Checked on",
         "reasons": {
@@ -4852,7 +4863,13 @@
           "lowConfidence": "Found, but not confident",
           "conflicting": "Sources disagree"
         },
-        "empty": "No facts yet. This is optional; it only matters once you generate a brief."
+        "empty": "No facts yet. This is optional; it only matters once you generate a brief.",
+        "issues": {
+          "duplicate": "Another fact already uses this name. Rename one of the two rows.",
+          "keyMissing": "Name the fact, or remove the row.",
+          "reasonMissing": "The value is empty, so say why. An empty fact with no reason is the one thing this tool will not store.",
+          "sourceMissing": "Give the source URL this value came from. A value with no source is not a verified fact."
+        }
       },
       "draft": {
         "save": "Save draft",
@@ -4873,7 +4890,8 @@
           "aliases_missing": "Add at least one other name, even if it is just the short form.",
           "category_terms_missing": "Add at least one category word.",
           "role_missing": "Add at least one role.",
-          "no_confirmed_competitor": "Confirm at least one competitor's name."
+          "no_confirmed_competitor": "Confirm at least one competitor's name.",
+          "alias_too_short": "That name is too short for the matcher to look for: at least three letters, or two characters in a script written without spaces. Write it out in full, or add a longer alias — a name this short would make every answer that mentions you read as one that did not."
         },
         "current": "Current version: {revision}, frozen at {time}",
         "questions": "{count} questions, {retrieval} of them with measured search wording",
@@ -4910,12 +4928,33 @@
         "unsupported_media_type": "That request was not JSON.",
         "invalid_url": "That is not a site URL this tool can use.",
         "invalid_payload": "Something in the form is not usable: {reason}",
-        "conflict": "This knowledge base changed while you were editing.",
+        "conflict": "This knowledge base changed while you were editing, and nothing was written. Your edits are still in the form: press Save draft again to write them over the newer version.",
+        "conflict_unknown": "This knowledge base changed while you were editing and the server did not say which version is current, so nothing was written. Copy anything you cannot lose, then use Switch site to load it again.",
+        "not_ready": "Nothing was frozen: the knowledge base is still missing the items below. Fill them in, save the draft, and freeze again.",
+        "form_invalid": "Nothing was sent, so nothing else you changed was lost. The rows marked below have to be finished or removed first.",
+        "bad_response": "The reply could not be read as JSON, which usually means a gateway answered instead of the tool. It is not certain whether anything was written — reload this site before editing further.",
+        "schema_mismatch": "This page and the server disagree about the shape of that reply, which usually means a new version has just been deployed. Reload the page.",
+        "unknown": "Something went wrong that this page has no message for. Nothing on your screen was lost; reload before editing further.",
         "hash_mismatch": "The saved copy did not match what was sent, so nothing was written.",
         "not_found": "That knowledge base does not exist on this account.",
         "no_draft": "There is nothing to freeze yet.",
         "store_unavailable": "The store is not answering, so nothing was written. Try again shortly.",
-        "network": "The request did not reach the tool. Check your connection and try again."
+        "network": "The request did not reach the tool. Check your connection and try again.",
+        "reasons": {
+          "not_an_object": "the form could not be read at all",
+          "schema_version": "this page is running an older version of the form",
+          "target_url": "the site URL",
+          "official_name": "the name a model would use, which is still empty",
+          "aliases": "the list of other names",
+          "category_terms": "the category words, of which at least one is needed",
+          "market": "the market or the question language",
+          "roles": "one of the roles",
+          "competitors": "one of the competitor rows",
+          "facts": "one of the fact rows",
+          "imported_from": "the record of which profile the prefill came from",
+          "too_large": "the knowledge base as a whole, which is too large to store",
+          "control_characters": "text containing characters that cannot be stored"
+        }
       },
       "limitsTitle": "What this does not do",
       "limits": {
@@ -4938,6 +4977,378 @@
           {
             "q": "Why must a competitor's name be confirmed separately from its domain?",
             "a": "A model writes \"Linear\", not \"linear.app\". Counting a mention needs the name; knowing where a citation points needs the domain. An unconfirmed competitor stays in the list and out of the share figures, and the report names it as excluded."
+          }
+        ]
+      }
+    },
+    "geoBrief": {
+      "eyebrow": "GEO tools",
+      "title": "GEO Brief Builder",
+      "intro": "Take one question buyers ask an AI, read how a real answer to it was organised, and pair that with the facts you have verified yourself. What comes out is a brief a writer can work from, with a source on every line.",
+      "running": "Building the brief",
+      "limitsTitle": "What this does not do",
+      "form": {
+        "load": "Load my frozen versions",
+        "loading": "Reading your knowledge bases",
+        "noFrozen": "Nothing is frozen yet. Build a GEO knowledge base and freeze a version first — a brief is written against a version, so that the facts it cites cannot change underneath it.",
+        "version": "Frozen version",
+        "versionOption": "{host} — revision {revision}",
+        "question": "Question",
+        "typeYourOwn": "Type a different question",
+        "typedQuestion": "Your question",
+        "typedNote": "A typed question carries no observed counts. The brief says so rather than leaving the numbers looking merely absent.",
+        "estimate": "One sampling call and one assembly call. {runs} briefs per day per account — a stop on runaway loops, not a price.",
+        "submit": "Build the brief",
+        "submitting": "Building"
+      },
+      "leadAnswer": {
+        "title": "The opening answer",
+        "entities": "The opening must name"
+      },
+      "mustAnswer": {
+        "title": "What the page has to answer"
+      },
+      "outline": {
+        "title": "A shape for it"
+      },
+      "facts": {
+        "title": "Facts you may use",
+        "note": "Only these. Anything specific in the copy — a number, a price, a capability — has to come from this table.",
+        "notVerified": "Not verified ({reason}) — do not put a value on this",
+        "reasons": {
+          "notPublished": "not published anywhere",
+          "fetchFailed": "the page could not be read",
+          "lowConfidence": "what was found was not clear enough",
+          "conflicting": "two sources disagreed"
+        }
+      },
+      "wontSay": {
+        "title": "Do not put a number on",
+        "note": "These dimensions have no verified value. Write around them or leave them out; do not estimate."
+      },
+      "citedDomains": {
+        "title": "Who currently answers this",
+        "note": "The pages the model reached for when it answered. Not a ranking, and not a link target list.",
+        "own": "yours",
+        "competitor": "a confirmed rival"
+      },
+      "sources": {
+        "kb": "from your knowledge base",
+        "crawl": "crawled from your site",
+        "ai_sample": "seen in one answer",
+        "model": "written by this tool"
+      },
+      "limits": {
+        "singleSample": "The subtopics were read from one answer, asked once, on one surface. The same question asked again returns something different — measuring that is the AI visibility check, not this.",
+        "oneSurface": "One surface: ChatGPT through the DataForSEO API. What another engine would answer is not observed here.",
+        "factsAreYours": "Every fact in the table is yours, verified by you. Nothing in this brief was taken as fact from a model's answer.",
+        "notADraft": "This is a brief, not a draft. It says what the page has to do; it does not write it.",
+        "sampleUnavailable": "The sampling call did not return a usable answer, so nothing here was observed from one. The requirements and the fact table are unaffected.",
+        "modelUnavailable": "The assembly call did not return a usable reply, so there is no outline and the must-answer list is the raw observed subtopics.",
+        "manualQuestion": "You typed this question rather than picking one from the frozen set, so no observed counts travel with it."
+      },
+      "actions": {
+        "copy": "Copy the brief for an AI",
+        "copied": "Copied",
+        "copyFailed": "Could not copy — select the text instead",
+        "downloadMarkdown": "Download .md",
+        "downloadJson": "Download .json"
+      },
+      "export": {
+        "question": "Question:",
+        "notVerified": "not verified",
+        "generatedAt": "Generated"
+      },
+      "errors": {
+        "auth_required": "Sign in to build a brief. It reads your own frozen knowledge base.",
+        "auth_unavailable": "Sign-in could not be checked just now. Nothing was charged.",
+        "cross_origin": "That request did not come from this page.",
+        "invalid_request": "That request was not something this tool could read. Nothing was charged.",
+        "payload_too_large": "That was too much text to send. Nothing was charged.",
+        "unsupported_media_type": "That request was not JSON.",
+        "not_found": "That frozen version, or that question, is not one of yours.",
+        "daily_limit": "You have built {limit} briefs today. The counter resets 24 hours after the first one.",
+        "provider_unconfigured": "This deployment has no sampling credentials or no assembly model configured, so a brief would come out missing half of itself. Nothing was charged.",
+        "store_unavailable": "Your knowledge bases could not be read just now. Nothing was charged.",
+        "brief_unavailable": "The brief came back in a shape this page could not read. Nothing further was charged.",
+        "internal_error": "Something went wrong here, not on your side.",
+        "network": "That request did not reach the tool.",
+        "unknown": "That did not work, and the reason was not one this page recognises."
+      },
+      "faq": {
+        "title": "Questions about this",
+        "items": [
+          {
+            "q": "Where do the subtopics come from?",
+            "a": "From one real answer to your question, read once on ChatGPT. The tool takes the headings and list lead-ins that answer used — not a model's summary of it — and marks each one as observed. If the answer was unstructured prose, you get nothing there and the brief says so, because splitting a paragraph into subtopics would be inventing the evidence."
+          },
+          {
+            "q": "Can it write the numbers for me?",
+            "a": "No, and that is deliberate. Anything specific comes from the fact table you verified in your knowledge base. A dimension you have not verified is printed as not verified, with the reason. The model that assembles the brief is told it may never state a fact that is not in that table."
+          },
+          {
+            "q": "Why is a sampled answer not a source of facts?",
+            "a": "Because it is another company's model, answering once, and it can be wrong. It is good evidence about what a page has to cover — that is what it is used for — and no evidence at all about what is true of your product."
+          },
+          {
+            "q": "Does it write the page?",
+            "a": "No. It produces a brief: what the opening has to answer, what the page has to cover, a shape, the facts you may use, and what not to put a number on. Writing is yours, or your writer's."
+          }
+        ]
+      },
+      "related": {
+        "title": "The rest of the chain",
+        "intro": "A brief is worth writing when you know which questions you are missing, and worth publishing when the page it becomes can actually be read.",
+        "items": [
+          {
+            "href": "/tools/ai-visibility-check",
+            "name": "AI Visibility Check",
+            "blurb": "Which questions mention you, which cite you, and who the answers were built from."
+          },
+          {
+            "href": "/tools/page-citability-check",
+            "name": "Page Citability Check",
+            "blurb": "Whether an AI crawler can read the page you write, and whether an answer can be extracted from it."
+          },
+          {
+            "href": "/tools/geo-knowledge-base",
+            "name": "GEO Knowledge Base",
+            "blurb": "The frozen version a brief is written against: names, rivals, roles, verified facts."
+          }
+        ]
+      }
+    },
+    "aiVisibility": {
+      "eyebrow": "GEO tools",
+      "title": "AI Visibility Check",
+      "intro": "Ask a frozen question set on one AI surface, several times each. It reports where you were mentioned, where you were cited, and which domains the answers were built from. It does not tell you why.",
+      "loading": "Loading your frozen versions…",
+      "retryLoad": "Try again",
+      "signIn": {
+        "title": "Sign in to run a visibility check",
+        "body": "A run costs real provider calls and points at a frozen knowledge base, both of which belong to an account.",
+        "unavailable": "Sign-in is not answering right now. Try again shortly."
+      },
+      "noFrozen": {
+        "title": "Freeze a knowledge base first",
+        "body": "A run asks the questions a frozen version produces. Without one there is nothing to ask, and inventing questions here would spend money on wording nobody confirmed.",
+        "action": "Open the GEO Knowledge Base"
+      },
+      "form": {
+        "title": "Run a check",
+        "intro": "One frozen version, one market, one surface. The numbers below come from the set itself, not from an average.",
+        "versionLabel": "Frozen version",
+        "versionOption": "{host} · revision {revision} · frozen {time}",
+        "versionQuestions": "{count} questions, {retrieval} with measured search wording",
+        "samplesLabel": "Samples per question",
+        "samplesOption": "{count} times",
+        "samplesHelp": "The same question asked several times. One answer is not a measurement: the same question can cite four sources one minute and none the next.",
+        "estimate": "{calls} provider calls, about {cost, number, ::currency/USD} and roughly {minutes} minutes.",
+        "estimateNote": "The cost is the observed price per call multiplied by this set's own size. It is an estimate, not a quote.",
+        "start": "Start the run",
+        "starting": "Starting…",
+        "dailyLimit": "{runs} runs per day per account. This is a guard against a loop, not a budget.",
+        "cooldown": "Try again in {seconds} seconds."
+      },
+      "running": {
+        "title": "Running",
+        "body": "This takes about {minutes} minutes. The run continues on the server.",
+        "tabNote": "You can leave this page. Come back to the tool and it will still be here while the run lasts.",
+        "elapsed": "{minutes}m {seconds}s elapsed",
+        "noCount": "Progress is not reported per call; the run reports when it finishes."
+      },
+      "results": {
+        "title": "Result",
+        "status": {
+          "ok": "Complete",
+          "partial": "Partial: some samples did not come back",
+          "insufficient": "Too few samples came back to draw conclusions from"
+        },
+        "coverage": "{answered} of {calls} calls answered",
+        "minSuccess": "Below {percent}% answered, this run does not draw conclusions and does not become a baseline.",
+        "questions": "{count} questions, {samples} samples each",
+        "revision": "Frozen version {revision}",
+        "model": "{model}, market {market}",
+        "finished": "Finished {time}",
+        "cost": "Provider cost {cost, number, ::currency/USD}",
+        "costUnavailable": "The provider returned no price for this run.",
+        "withheldTitle": "No conclusions from this run",
+        "withheldBody": "Fewer than {percent}% of the calls came back, so the rates, the stage table and the comparison against your last run are not shown: an interval built on the samples that survived would describe the ones that failed as if they had answered. Every question and every answer that did come back is below, with what the run cost.",
+        "surface": "Reached through {surface}"
+      },
+      "overview": {
+        "title": "Overview",
+        "promptedMention": {
+          "label": "Mentioned when asked about",
+          "help": "Answers to the branded questions that named you. A low number here means the model does not recognise the name."
+        },
+        "questionsMentioned": {
+          "label": "Questions you appeared in",
+          "help": "Counted per question, because five samples of one question are not five independent observations. The denominator is the questions that came back."
+        },
+        "answeredQuestions": "{answered} of {asked} questions produced an answer. The rates below are over the questions that answered, not over the questions asked.",
+        "acrossSamples": "Across every sample:",
+        "questionsCited": {
+          "label": "Questions you were cited in",
+          "help": "Per question again, and only over questions whose wording was measured to make the model search. A question answered from memory has no citation to give."
+        }
+      },
+      "proportion": {
+        "unavailable": "Not available",
+        "unobserved": "Not observed in {trials} samples (upper bound {hi}%)",
+        "zero": "0.0% ({trials} samples, upper bound {hi}%)",
+        "observed": "{percent}% ({trials} samples, {lo}–{hi}%)",
+        "zeroThreshold": "A zero is only written as 0.0% once the interval's upper bound is at or below {percent}%, which takes {minTrials} samples. Below that it says not observed."
+      },
+      "layers": {
+        "title": "By stage",
+        "intro": "The same numbers split by where in a buyer's search the question sits.",
+        "column": {
+          "layer": "Stage",
+          "mention": "Mentioned",
+          "citation": "Cited"
+        },
+        "names": {
+          "problem": "Problem",
+          "discovery": "Discovery",
+          "comparison": "Comparison",
+          "evaluation": "Evaluation",
+          "branded": "Branded"
+        },
+        "brandedNote": "The branded row is kept out of the headline mention rate. It answers a different question: whether the model knows the name at all."
+      },
+      "domains": {
+        "title": "Where the answers came from",
+        "intro": "Domains the answers cited, counted by answers rather than by links. This is the shelf you are competing for.",
+        "column": {
+          "domain": "Domain",
+          "answers": "Answers",
+          "role": "Role"
+        },
+        "role": {
+          "own": "Yours",
+          "competitor": "Confirmed competitor",
+          "other": "Someone else"
+        },
+        "samples": "Examples:",
+        "empty": "No answer in this run cited anything. On this surface that usually means the questions were answered from memory."
+      },
+      "questions": {
+        "title": "Question by question",
+        "intro": "Every question, what came back, and the sentence a mention was found in.",
+        "modes": {
+          "retrieval": "Measured to search",
+          "demand": "Asked as a buyer would"
+        },
+        "uncalibrated": "Wording assembled here, not from the measured library",
+        "mentionCount": "Mentioned in {mentioned} of {answered} answers",
+        "citationCount": "Cited in {cited} of {evaluable} answers that searched",
+        "citationNotEvaluable": "No answer to this question searched, so there is no citation rate to report.",
+        "demandCitationNote": "{cited} answers cited you. This question's wording was not measured to search, so the number is reported without a denominator.",
+        "citedDomains": "Cited: {domains}",
+        "competitors": "Named alongside: {names}",
+        "showSamples": "Show the answers",
+        "hideSamples": "Hide the answers",
+        "sampleLabel": "Answer {index}",
+        "sampleSearched": "searched the web",
+        "sampleNoSearch": "answered from memory",
+        "sampleSearchUnknown": "search status unknown",
+        "sampleStatus": {
+          "ok": "answered",
+          "timeout": "timed out",
+          "blocked": "refused by the provider",
+          "error": "failed"
+        },
+        "noExcerpt": "No mention in this answer.",
+        "noAnswers": "No answer to this question came back, so there is nothing to count. This is not a zero.",
+        "sampleNoAnswer": "No answer came back, so there is nothing to read here.",
+        "promptedTag": "names you in the question",
+        "citationUnknown": "{count} answers came back with a citation list this run could not read. They are neither cited nor uncited, and they are outside the rate above."
+      },
+      "comparison": {
+        "title": "Against your last run",
+        "intro": "Compared with the run finished {time}. Only runs of the same frozen question set are compared; a re-frozen knowledge base asks different questions.",
+        "column": {
+          "metric": "Measure",
+          "base": "Then",
+          "current": "Now",
+          "change": "Change"
+        },
+        "metrics": {
+          "questionsMentioned": "Questions you appeared in",
+          "questionsCited": "Questions you were cited in"
+        },
+        "changed": "{gained} improved, {lost} got worse, of {pairs} comparable questions. One-sided: {lo}–{hi}% of the questions that moved improved.",
+        "unchanged": "The questions that moved do not point one way",
+        "notTestable": "Too few questions comparable on both sides to test",
+        "questionsTitle": "Questions that moved",
+        "questionRow": "{base} → {current} of {of} answers",
+        "direction": {
+          "gained": "Gained",
+          "lost": "Lost"
+        },
+        "empty": "Nothing moved between the two runs.",
+        "changedNoInterval": "{gained} improved, {lost} got worse, of {pairs} comparable questions. This run carries no interval for the direction."
+      },
+      "limitsTitle": "What this run does not tell you",
+      "limits": {
+        "oneSurface": "One surface: ChatGPT answers collected through the DataForSEO API. Not a consumer session, and not Google, Perplexity, Claude or Gemini.",
+        "notAttribution": "It observes; it does not explain. Deciding why a question missed you needs your own pages read as well, which this run does not do. The page checker is where that starts.",
+        "sampledNotCensus": "It is a sample. The same question can cite four sources one minute and none the next, which is why each is asked several times and why every number carries its interval.",
+        "demandQuestions": "Questions written the way a buyer would ask usually get answered from memory. Their mentions are worth counting; their citations are reported without a denominator.",
+        "englishOnly": "The questions are in English, because that is the language the wording was measured in. A market other than the calibrated one is reported as such.",
+        "notStored": "This run was not saved. The report is complete, but it could not be written to the store, so it will not be the baseline your next run is compared against.",
+        "denseScriptMatching": "In a script written without spaces — Chinese, Japanese, Thai — the matcher has no word boundary to hold it to. It finds the brand name inside a longer word as readily as on its own, so a longer word that contains the name counts as a mention here and the count may be higher than the answers warrant."
+      },
+      "errors": {
+        "auth_required": "Sign in to run a visibility check.",
+        "auth_unavailable": "Sign-in is not answering right now. Try again shortly.",
+        "cross_origin": "That request did not come from this page.",
+        "invalid_request": "That request could not be read.",
+        "payload_too_large": "That request was too large.",
+        "unsupported_media_type": "That request was not JSON.",
+        "no_frozen_version": "That knowledge base has no frozen version to run against.",
+        "not_found": "That frozen version does not exist on this account.",
+        "daily_limit": "This account has used its runs for today.",
+        "provider_unconfigured": "The provider credentials are not configured, so nothing was started and nothing was charged.",
+        "run_unavailable": "That run could not be read. Nothing further was charged.",
+        "store_unavailable": "The store is not answering right now. Try again shortly.",
+        "internal_error": "Something went wrong inside the tool. The run may have completed; reload before starting another.",
+        "network": "The request did not reach the tool. Check your connection and try again.",
+        "unknown": "The tool answered in a way this page could not read. Nothing further was charged.",
+        "schema_mismatch": "This page is older than the answer it received. Reload before starting another run.",
+        "polling_stopped": "This page stopped checking after 30 minutes. The run may still be finishing on the server; reload the page to look again."
+      },
+      "faq": {
+        "title": "Questions about this check",
+        "items": [
+          {
+            "q": "Why ask the same question several times?",
+            "a": "Because one answer is not a measurement. Asked four times, the same question produced four completely different citation lists and zero overlap. A run that asked once would report a coin toss as a finding, which is why every number here carries the sample count it came from."
+          },
+          {
+            "q": "Why do some questions have no citation rate?",
+            "a": "The model decides whether to search. Wording measured to make it search carries a citation rate; wording a buyer would actually type usually gets answered from memory, and a citation rate over answers that never looked anything up would be a number about nothing."
+          },
+          {
+            "q": "It says I was not mentioned. What do I fix?",
+            "a": "This run does not know. It sees what the model said, not what your site contains, so it cannot tell a missing page from an unreadable one. The page citability check answers the second half for a page you name."
+          }
+        ]
+      },
+      "related": {
+        "title": "Where to go next",
+        "intro": "This run observes. The other two tools are where something changes.",
+        "items": [
+          {
+            "href": "/tools/page-citability-check",
+            "name": "Page Citability Check",
+            "blurb": "Take a page you expected to be cited and see whether a crawler can read it at all."
+          },
+          {
+            "href": "/tools/geo-knowledge-base",
+            "name": "GEO Knowledge Base",
+            "blurb": "Change the names, the category or the competitors, and freeze a new version to ask a different set."
           }
         ]
       }

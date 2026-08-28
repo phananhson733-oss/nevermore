@@ -46,7 +46,17 @@ export type SealedCookiePurpose =
   /** Encrypted access token and property snapshot passed only to Workflow. */
   | "gg_kw_workflow_grant"
   /** Browser-facing Workflow run pointer, bound to the signed-in subject. */
-  | "gg_kw_workflow_run";
+  | "gg_kw_workflow_run"
+  /**
+   * The AI visibility run's inputs, passed only to Workflow.
+   *
+   * Its own purpose for the same reason the keyword ones have theirs: the
+   * purpose is both the HKDF info and the GCM additional data, so sharing one
+   * would let a run pointer be presented as run input.
+   */
+  | "gg_geo_visibility_input"
+  /** Browser-facing visibility run pointer, bound to the signed-in subject. */
+  | "gg_geo_visibility_run";
 
 export class SealedCookieError extends Error {
   constructor(message: string) {

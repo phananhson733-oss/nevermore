@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   benjaminiHochberg,
+  BH_FDR_Q,
   changeVerdict,
   collapseGroupsToBernoulli,
   describeProportion,
+  mcnemarExactP,
   minTrialsForZeroClaim,
   MIN_TRIALS_FOR_TEST,
   newcombeDiff,
@@ -231,5 +233,44 @@ describe("difference intervals", () => {
         }
       }
     }
+  });
+});
+
+describe("mcnemarExactP", () => {
+  it("says nothing happened when nothing moved", () => {
+    expect(mcnemarExactP(0, 0)).toBe(1);
+  });
+
+  it("matches the exact binomial by hand", () => {
+    // b=5, c=0: 2 * P(X <= 0) with X ~ Bin(5, 0.5) = 2 * 1/32.
+    expect(mcnemarExactP(5, 0)).toBeCloseTo(0.0625, 12);
+    // b=4, c=1: 2 * (1/32 + 5/32) = 0.375.
+    expect(mcnemarExactP(4, 1)).toBeCloseTo(0.375, 12);
+    // An even split is the least surprising outcome there is.
+    expect(mcnemarExactP(3, 3)).toBe(1);
+  });
+
+  it("is symmetric in the two directions", () => {
+    expect(mcnemarExactP(9, 2)).toBeCloseTo(mcnemarExactP(2, 9), 15);
+  });
+
+  it("cannot reject below six discordant pairs", () => {
+    // The smallest attainable p at five is 0.0625, above the q it would be
+    // compared against. This is why the paired test needs a handful of
+    // questions to have moved before it can say anything at all.
+    for (let moved = 1; moved <= 5; moved += 1) {
+      expect(mcnemarExactP(moved, 0)).toBeGreaterThan(BH_FDR_Q / 2);
+    }
+    expect(mcnemarExactP(6, 0)).toBeLessThan(BH_FDR_Q / 2);
+  });
+
+  it("never exceeds one, however lopsided", () => {
+    expect(mcnemarExactP(1, 1)).toBeLessThanOrEqual(1);
+    expect(mcnemarExactP(40, 40)).toBeLessThanOrEqual(1);
+  });
+
+  it("refuses counts that are not counts", () => {
+    expect(() => mcnemarExactP(-1, 0)).toThrow(RangeError);
+    expect(() => mcnemarExactP(1.5, 0)).toThrow(RangeError);
   });
 });
