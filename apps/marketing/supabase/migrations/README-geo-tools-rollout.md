@@ -289,7 +289,10 @@ select count(*) from pg_policies where tablename = 'marketing_geo_visibility_run
 -- 2. 三个角色都不能写；service_role 只能读
 select grantee, privilege_type from information_schema.role_table_grants
  where table_name = 'marketing_geo_visibility_runs' order by grantee, privilege_type;
--- 期望：只有 service_role / SELECT 一行。任何 INSERT、UPDATE、DELETE 都是缺陷。
+-- 期望：`service_role` 只有 SELECT（外加 REFERENCES / TRIGGER，那两个不是写）。
+-- `postgres` 会带着全套权限出现，它是表的属主，这一行是正常的——2026-08-29
+-- 实际执行时确认过。`anon` 与 `authenticated` 一行都不该有。
+-- 任何 service_role 的 INSERT、UPDATE、DELETE 都是缺陷。
 
 -- 3. append-only 的两个触发器都在（行级挡改删，语句级挡 truncate）
 select tgname from pg_trigger
@@ -307,6 +310,12 @@ select has_function_privilege('service_role',
 ```
 
 第 3 项值得单独盯：这张表是「这轮体检花了多少钱、看到了什么」的唯一记录，也是下一轮做对比的基线。基线能被改写，对比就能说任何话。
+
+## 已执行
+
+2026-08-29 对生产库执行完毕（连接串取自 Railway `signalframe` 项目 worker 服务的
+`DATABASE_URL`，去掉 query string）。四项冒烟全部符合预期：RLS 开、零策略、
+两个不可变触发器在位、写入函数只有 service_role 可执行。
 
 ## 回滚
 
