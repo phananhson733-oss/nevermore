@@ -40,6 +40,7 @@ export async function GET(): Promise<Response> {
     {
       data: {
         email: authentication.email,
+        displayName: authentication.displayName ?? null,
         avatarUrl: authentication.avatarUrl,
       },
     },

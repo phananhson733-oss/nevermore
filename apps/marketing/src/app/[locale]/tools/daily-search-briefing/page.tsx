@@ -1,9 +1,15 @@
+// @input  -- locale param, the visitor's Search Console grant, and confirmed brand terms
+// @output -- the Daily Search Briefing on the shared connected-tool shell, with its explainer
+// @pos    -- acquisition page for the briefing; every claim in the article is provable from the engine
+// 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { brandTermCandidates } from "@sf/public-tools";
 import { getConnectedToolContent } from "@/components/tools/connected-tool-content";
 import { ConnectedToolPage } from "@/components/tools/connected-tool-page";
 import { DailyBriefingTool } from "@/components/tools/daily-briefing-tool";
+import { getDailyBriefingArticle } from "@/components/tools/daily-briefing-article-content";
+import { ToolArticleSections } from "@/components/tools/tool-article";
 import {
   BreadcrumbJsonLd,
   FaqPageJsonLd,
@@ -73,6 +79,12 @@ export default async function DailySearchBriefingPage({
         locale={locale}
         content={content}
         connected={session.properties !== null}
+        article={
+          <ToolArticleSections
+            locale={locale}
+            article={getDailyBriefingArticle(locale)}
+          />
+        }
       >
         <NextIntlClientProvider messages={{ tools: { dailyBriefing: messages.tools.dailyBriefing } }}>
           <DailyBriefingTool

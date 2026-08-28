@@ -8,6 +8,17 @@ import { LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
+import {
+  agentDraftToWebsiteProfile,
+  importWebsiteProfile,
+  referenceWebsiteProfile,
+  type AgentWebsiteProfileRunContext,
+} from "../../lib/account-websites/agent-profile-bridge.ts";
+import {
+  parseWebsiteDetails,
+  type WebsiteDetails,
+  type WebsiteProfileReferenceV1,
+} from "../../lib/account-websites/contracts.ts";
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import { isAgentAuditSuccessEnvelope } from "../../lib/agents/audit-contract";
 import {
@@ -20,6 +31,7 @@ import {
   type AgentProfileRefreshMode,
 } from "../../lib/agents/profile-refresh-contract";
 import { SignInDialog } from "../auth/sign-in-dialog";
+import { WebsiteProfilePicker } from "../account/website-profile-picker.tsx";
 import { supportsAgentDisplayVocabulary } from "./agent-display-contract";
 import { AgentProfilePanel } from "./agent-profile-panel";
 import {
@@ -141,6 +153,37 @@ type AgentWorkbenchProps = {
   readonly locale: string;
 };
 
+type WebsiteProfileContextState = {
+  readonly kind: "import" | "reference";
+  readonly details: WebsiteDetails;
+  readonly reference: WebsiteProfileReferenceV1 | null;
+  readonly saveStatus: "idle" | "saving" | "saved" | "conflict" | "error";
+};
+
+async function websiteDetailsFromResponse(
+  body: unknown,
+  location: "data" | "conflict",
+): Promise<WebsiteDetails | null> {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    return null;
+  }
+  const envelope = body as {
+    readonly data?: { readonly website?: unknown };
+    readonly error?: {
+      readonly details?: { readonly website?: unknown };
+    };
+  };
+  const website =
+    location === "data"
+      ? envelope.data?.website
+      : envelope.error?.details?.website;
+  try {
+    return await parseWebsiteDetails(website);
+  } catch {
+    return null;
+  }
+}
+
 export function AgentWorkbench(props: AgentWorkbenchProps) {
   return <AgentWorkbenchInstance key={props.agent} {...props} />;
 }
@@ -173,6 +216,10 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
    * relabel a captured report with a market or query it never used.
    */
   const [runProfile, setRunProfile] = useState<AgentProfileDraft | null>(null);
+  const [websiteProfileContext, setWebsiteProfileContext] =
+    useState<WebsiteProfileContextState | null>(null);
+  const [runWebsiteReference, setRunWebsiteReference] =
+    useState<WebsiteProfileReferenceV1 | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
   const [signInPurpose, setSignInPurpose] =
     useState<SignInPurpose | null>(null);
@@ -206,6 +253,8 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const profileRefreshIntent = useRef<PendingAgentIntent | null>(null);
   const profileRef = useRef(profile);
   profileRef.current = profile;
+  const websiteProfileContextRef = useRef(websiteProfileContext);
+  websiteProfileContextRef.current = websiteProfileContext;
   /**
    * The same value, reachable from `runAudit`.
    *
@@ -266,7 +315,11 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             const stored = storage
               ? pendingIntent
                 ? restorePendingAgentIntent(storage, agent, pendingIntent)
-                : storeConfirmedAgentRunIntent(storage, confirmedProfile)
+                : storeConfirmedAgentRunIntent(
+                    storage,
+                    confirmedProfile,
+                    websiteProfileContextRef.current?.reference ?? null,
+                  )
               : null;
             if (!stored) {
               setErrorCode("intent_unavailable");
@@ -378,7 +431,11 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             ? existing && isRunnablePendingAgentIntent(existing)
               ? existing
               : null
-            : storeConfirmedAgentRunIntent(storage, confirmedProfile);
+            : storeConfirmedAgentRunIntent(
+                storage,
+                confirmedProfile,
+                websiteProfileContextRef.current?.reference ?? null,
+              );
           if (!stored) {
             setSignInOpen(false);
             setSignInPurpose(null);
@@ -416,6 +473,11 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     ) => {
       if (busy.current && !replaceInterruptedResume) return null;
       activeOperationController.current?.abort();
+      setRunWebsiteReference(
+        pendingIntent?.websiteProfileReference ??
+          websiteProfileContextRef.current?.reference ??
+          null,
+      );
       const controller = new AbortController();
       activeOperationController.current = controller;
       const completion = gateAndRun(
@@ -981,7 +1043,158 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     startOperation,
   ]);
 
+  function websiteRunContext(
+    current: AgentProfileDraft,
+  ): AgentWebsiteProfileRunContext {
+    return {
+      agent,
+      targetUrl: current.targetUrl,
+      presentationLocale: locale,
+      device: current.device,
+      pageType: current.pageType,
+      targetQuery: current.targetQuery,
+      auditScope: current.auditScope,
+    };
+  }
+
+  function websiteLabel(details: WebsiteDetails): string {
+    return details.displayName ?? details.host;
+  }
+
+  function handleWebsiteProfileImport(details: WebsiteDetails): void {
+    const source = details.currentConfirmedSnapshot?.profile ?? null;
+    if (source === null) return;
+    const imported = importWebsiteProfile(
+      source,
+      websiteRunContext(profileRef.current),
+    );
+    handleProfileChange(imported.draft);
+    setWebsiteProfileContext({
+      kind: "import",
+      details,
+      reference: null,
+      saveStatus: "idle",
+    });
+  }
+
+  async function handleWebsiteProfileReference(
+    details: WebsiteDetails,
+  ): Promise<void> {
+    const snapshot = details.currentConfirmedSnapshot;
+    if (snapshot === null) return;
+    const requestedProfile = profileRef.current;
+    const reference: WebsiteProfileReferenceV1 = {
+      schemaVersion: snapshot.schemaVersion,
+      websiteId: snapshot.websiteId,
+      snapshotId: snapshot.snapshotId,
+      snapshotRevision: snapshot.snapshotRevision,
+      profileSchemaVersion: snapshot.profileSchemaVersion,
+      profileHash: snapshot.profileHash,
+    };
+    try {
+      const linked = await referenceWebsiteProfile(
+        snapshot.profile,
+        reference,
+        websiteRunContext(requestedProfile),
+      );
+      const currentProfile = profileRef.current;
+      if (
+        !mounted.current ||
+        currentProfile.agent !== requestedProfile.agent ||
+        currentProfile.targetUrl !== requestedProfile.targetUrl ||
+        currentProfile.host !== requestedProfile.host
+      ) {
+        return;
+      }
+      handleProfileChange(linked.draft);
+      setWebsiteProfileContext({
+        kind: "reference",
+        details,
+        reference: linked.reference,
+        saveStatus: "idle",
+      });
+    } catch {
+      setWebsiteProfileContext(null);
+    }
+  }
+
+  async function handleWebsiteProfileSaveBack(): Promise<void> {
+    const context = websiteProfileContextRef.current;
+    if (context === null || context.saveStatus === "saving") return;
+    const capturedProfile = profileRef.current;
+    setWebsiteProfileContext({ ...context, saveStatus: "saving" });
+    try {
+      const mapped = agentDraftToWebsiteProfile(profileRef.current);
+      const response = await fetch(
+        "/api/account/websites/" + context.details.websiteId,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            intent: "save_profile",
+            baseVersion: context.details.draft?.draftVersion ?? 0,
+            profile: mapped,
+            ...(context.reference === null
+              ? {}
+              : { expectedReference: context.reference }),
+          }),
+        },
+      );
+      const body = (await response.json().catch(() => null)) as unknown;
+      const details = await websiteDetailsFromResponse(
+        body,
+        response.status === 409 ? "conflict" : "data",
+      );
+      if (
+        !mounted.current ||
+        details === null ||
+        details.websiteId !== context.details.websiteId
+      ) {
+        throw new Error("invalid website save response");
+      }
+      const liveContext = websiteProfileContextRef.current;
+      if (
+        liveContext === null ||
+        liveContext.kind !== context.kind ||
+        liveContext.details.websiteId !== context.details.websiteId ||
+        liveContext.reference?.snapshotId !== context.reference?.snapshotId
+      ) {
+        return;
+      }
+      if (response.status === 409) {
+        setWebsiteProfileContext({
+          ...liveContext,
+          details,
+          saveStatus: "conflict",
+        });
+        return;
+      }
+      if (response.status !== 200) throw new Error("website save failed");
+      setWebsiteProfileContext({
+        ...liveContext,
+        details,
+        saveStatus:
+          profileRef.current === capturedProfile ? "saved" : "idle",
+      });
+    } catch {
+      const liveContext = websiteProfileContextRef.current;
+      if (
+        mounted.current &&
+        liveContext !== null &&
+        liveContext.kind === context.kind &&
+        liveContext.details.websiteId === context.details.websiteId &&
+        liveContext.reference?.snapshotId === context.reference?.snapshotId
+      ) {
+        setWebsiteProfileContext({ ...liveContext, saveStatus: "error" });
+      }
+    }
+  }
+
   function handleProfileChange(next: AgentProfileDraft): void {
+    const websiteIdentityChanged =
+      next.agent !== profile.agent ||
+      next.targetUrl !== profile.targetUrl ||
+      next.host !== profile.host;
     const refreshIdentityChanged =
       next.agent !== profile.agent ||
       next.targetUrl !== profile.targetUrl ||
@@ -1017,6 +1230,10 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       setErrorCode(null);
       setData(null);
       setRunProfile(null);
+      setRunWebsiteReference(null);
+    }
+    if (websiteIdentityChanged) {
+      setWebsiteProfileContext(null);
     }
     if (searchIdentityChanged) {
       profileSearchController.current?.abort();
@@ -1113,6 +1330,15 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       className="scroll-mt-24"
       aria-busy={loading}
     >
+      <div className="mb-4">
+        <WebsiteProfilePicker
+          targetUrl={profile.targetUrl}
+          onImport={handleWebsiteProfileImport}
+          onReference={(details) => {
+            void handleWebsiteProfileReference(details);
+          }}
+        />
+      </div>
       <AgentProfilePanel
         agent={agent}
         locale={locale}
@@ -1138,6 +1364,19 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         onRefresh={(mode) => {
           void handleProfileRefresh(mode, profile);
         }}
+        websiteProfile={
+          websiteProfileContext === null
+            ? undefined
+            : {
+                kind: websiteProfileContext.kind,
+                websiteLabel: websiteLabel(websiteProfileContext.details),
+                reference: websiteProfileContext.reference,
+                saveStatus: websiteProfileContext.saveStatus,
+                onSaveBack: () => {
+                  void handleWebsiteProfileSaveBack();
+                },
+              }
+        }
       />
 
       {loading ? (
@@ -1183,13 +1422,28 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       ) : null}
 
       {data ? (
-        <AgentResults
-          key={`${agent}:${data.result.targetUrl}:${data.run.source.completedAt}`}
-          agent={agent}
-          locale={locale}
-          data={data}
-          profile={runProfile ?? profile}
-        />
+        <>
+          {runWebsiteReference === null ? null : (
+            <p
+              data-run-website-reference
+              data-snapshot-revision={runWebsiteReference.snapshotRevision}
+              data-profile-hash={runWebsiteReference.profileHash}
+              className="mt-5 font-mono text-[10.5px] text-text-dark-faint"
+            >
+              {t("websiteProfile.runReference", {
+                revision: runWebsiteReference.snapshotRevision,
+                hash: runWebsiteReference.profileHash.slice(0, 10),
+              })}
+            </p>
+          )}
+          <AgentResults
+            key={`${agent}:${data.result.targetUrl}:${data.run.source.completedAt}`}
+            agent={agent}
+            locale={locale}
+            data={data}
+            profile={runProfile ?? profile}
+          />
+        </>
       ) : null}
 
       <SignInDialog open={signInOpen} onOpenChange={handleDialogChange} />

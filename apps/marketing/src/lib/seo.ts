@@ -74,7 +74,7 @@ export function generatePageMetadata({
     },
     twitter: {
       card: "summary_large_image",
-      site: "@gengrowth",
+      site: "@GenGrowthAI",
       title: socialTitle,
       description,
       images: [ogImage],

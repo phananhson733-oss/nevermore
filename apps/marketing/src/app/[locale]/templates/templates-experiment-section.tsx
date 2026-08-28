@@ -43,7 +43,7 @@ export function TemplatesExperimentSection() {
         >
           {tExp("desc")}
         </motion.p>
-        {/* 一屏一个主 CTA：博客入口走渐变，两个社交入口退到描边。 */}
+        {/* 一屏一个主 CTA：博客入口走渐变，社交入口退到描边。 */}
         <div className="flex flex-wrap justify-center gap-3.5">
           <Link href={localePath(locale, "/blog")}>
             <Button
@@ -64,19 +64,6 @@ export function TemplatesExperimentSection() {
               className="border-brand-border-strong bg-brand-panel/60 text-text-dark-primary hover:border-brand-accent/50 hover:bg-brand-panel hover:text-text-dark-primary h-12 rounded-[10px] px-6 text-[14.5px] font-medium shadow-none transition-colors"
             >
               {tExp("xCta")}
-            </Button>
-          </a>
-          <a
-            href={siteConfig.social.linkedin}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Button
-              variant="outline"
-              size="lg"
-              className="border-brand-border-strong bg-brand-panel/60 text-text-dark-primary hover:border-brand-accent/50 hover:bg-brand-panel hover:text-text-dark-primary h-12 rounded-[10px] px-6 text-[14.5px] font-medium shadow-none transition-colors"
-            >
-              {tExp("linkedinCta")}
             </Button>
           </a>
         </div>

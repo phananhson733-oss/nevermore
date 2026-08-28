@@ -34,6 +34,7 @@ export type AgentProfileFieldSource =
 export type AgentProfileSourceId =
   | "product_information_supplied"
   | "marketing_strategy_supplied"
+  | "saved_website_profile"
   | "hostname_inference"
   | "public_page_refresh"
   | "confirmation_required"
@@ -211,6 +212,7 @@ const AUDIT_SCOPE_VALUES = new Set<AgentAuditScope>([
 const SOURCE_VALUES = new Set<AgentProfileSourceId>([
   "product_information_supplied",
   "marketing_strategy_supplied",
+  "saved_website_profile",
   "hostname_inference",
   "public_page_refresh",
   "confirmation_required",

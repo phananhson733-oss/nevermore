@@ -4,6 +4,10 @@
 
 import type { AgentKind } from "./agent-types";
 import {
+  parseWebsiteProfileReference,
+  type WebsiteProfileReferenceV1,
+} from "../../lib/account-websites/contracts.ts";
+import {
   isAgentProfileDraft,
   isConfirmedAgentProfile,
   type AgentProfileDraft,
@@ -74,6 +78,8 @@ export interface PendingAgentIntent {
   readonly expiresAt: number;
   /** Present only for a confirmed run interrupted by authentication. */
   readonly confirmedProfile?: AgentProfileDraft;
+  /** Exact confirmed website snapshot pinned to an auth-interrupted run. */
+  readonly websiteProfileReference?: WebsiteProfileReferenceV1;
   /** Present only for a profile refresh request that must never auto-run audit. */
   readonly refreshProfile?: AgentProfileDraft;
   readonly refreshMode?: AgentProfileRefreshMode;
@@ -124,6 +130,11 @@ function isPendingIntent(
     candidate.confirmedProfile === undefined ||
     (candidate.purpose === "run_confirmed_profile" &&
       isConfirmedAgentProfile(candidate.confirmedProfile, agent, candidate.url));
+  const websiteReferenceIsValid =
+    candidate.purpose === "run_confirmed_profile"
+      ? candidate.websiteProfileReference === undefined ||
+        isWebsiteProfileReference(candidate.websiteProfileReference)
+      : candidate.websiteProfileReference === undefined;
   const searchProfileIsValid =
     candidate.purpose !== "search_profile"
       ? candidate.searchProfile === undefined
@@ -149,8 +160,20 @@ function isPendingIntent(
     candidate.expiresAt > candidate.createdAt &&
     candidate.expiresAt - candidate.createdAt <= AGENT_INTENT_TTL_MS &&
     confirmedProfileIsValid &&
+    websiteReferenceIsValid &&
     refreshProfileIsValid
   );
+}
+
+function isWebsiteProfileReference(
+  value: unknown,
+): value is WebsiteProfileReferenceV1 {
+  try {
+    parseWebsiteProfileReference(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isRefreshMode(value: unknown): value is AgentProfileRefreshMode {
@@ -252,10 +275,21 @@ export function storePageFocusedAgentIntent(
 export function storeConfirmedAgentRunIntent(
   storage: IntentStorage,
   profile: AgentProfileDraft,
-  now = Date.now(),
+  referenceOrNow: WebsiteProfileReferenceV1 | number | null = null,
+  explicitNow = Date.now(),
 ): PendingAgentIntent | null {
   if (!isConfirmedAgentProfile(profile, profile.agent, profile.targetUrl)) {
     return null;
+  }
+  const now =
+    typeof referenceOrNow === "number" ? referenceOrNow : explicitNow;
+  let websiteProfileReference: WebsiteProfileReferenceV1 | undefined;
+  if (referenceOrNow !== null && typeof referenceOrNow !== "number") {
+    try {
+      websiteProfileReference = parseWebsiteProfileReference(referenceOrNow);
+    } catch {
+      return null;
+    }
   }
   const intent: PendingAgentIntent = {
     agent: profile.agent,
@@ -264,6 +298,9 @@ export function storeConfirmedAgentRunIntent(
     createdAt: now,
     expiresAt: now + AGENT_INTENT_TTL_MS,
     confirmedProfile: profile,
+    ...(websiteProfileReference === undefined
+      ? {}
+      : { websiteProfileReference }),
   };
   if (!Number.isFinite(now) || !isPendingIntent(intent, profile.agent)) return null;
   try {

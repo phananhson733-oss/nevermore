@@ -6,7 +6,7 @@
 
 import { useTranslations } from "next-intl";
 import { Moon, Sun } from "lucide-react";
-import { THEME_ATTRIBUTE, THEME_STORAGE_KEY } from "@/lib/theme";
+import { THEME_ATTRIBUTE, THEME_STORAGE_KEY } from "../../lib/theme.ts";
 
 /**
  * 主题开关。
@@ -20,7 +20,13 @@ import { THEME_ATTRIBUTE, THEME_STORAGE_KEY } from "@/lib/theme";
  * 于是图标的显隐交给 CSS 的 light: 变体去匹配同一个属性，点击只做两件事：
  * 改属性、记住选择。样式在同一帧内重算，没有中间态。
  */
-export function ThemeToggle() {
+export function ThemeToggle({
+  menuItem = false,
+  onAction,
+}: {
+  readonly menuItem?: boolean;
+  readonly onAction?: () => void;
+} = {}) {
   const t = useTranslations("common");
 
   const toggle = () => {
@@ -34,6 +40,7 @@ export function ThemeToggle() {
       // Safari 无痕模式下写 localStorage 直接抛异常。切换本身已经生效了，
       // 只是记不住——这比让整个点击事件炸掉要好。
     }
+    onAction?.();
   };
 
   return (
@@ -42,7 +49,9 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={toggle}
-      className="inline-flex min-h-9 min-w-9 items-center justify-center text-text-dark-secondary transition-colors hover:text-brand-accent-text"
+      role={menuItem ? "menuitem" : undefined}
+      tabIndex={menuItem ? -1 : undefined}
+      className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-[8px] text-text-dark-secondary transition-colors outline-none hover:text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
     >
       {/*
         无障碍名称也按主题分流。两段都在 DOM 里，靠 display 切换——display:none

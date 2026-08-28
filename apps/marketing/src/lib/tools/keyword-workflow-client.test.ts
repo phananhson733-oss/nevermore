@@ -15,6 +15,14 @@ import {
 
 const NOW = Date.parse("2026-08-28T00:00:00.000Z");
 const REQUEST_ID = "2f7b5985-75b9-44c0-9b53-2b54b7901f2f";
+const WEBSITE_PROFILE_REFERENCE = {
+  schemaVersion: "website-profile-reference.v1",
+  websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6",
+  snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987",
+  snapshotRevision: 4,
+  profileSchemaVersion: "marketing-website-profile.v1",
+  profileHash: "a".repeat(64),
+} as const;
 
 function pointer(
   overrides: Partial<KeywordWorkflowPointerV1> = {},
@@ -137,6 +145,36 @@ describe("keyword Workflow tab pointer", () => {
         { properties: ["sc-domain:example.com"], markets: ["US"] },
         () => NOW + 1_000,
       )?.context.stopReason,
+    ).toBeNull();
+  });
+
+  it("preserves an accepted exact website profile reference across recovery", () => {
+    const current = pointer({
+      context: {
+        ...pointer().context,
+        websiteProfileReference: WEBSITE_PROFILE_REFERENCE,
+      },
+    });
+    const target = storage(JSON.stringify(current));
+
+    expect(
+      readKeywordWorkflowPointer(
+        target,
+        { properties: [current.property], markets: [current.marketCode] },
+        () => NOW + 1_000,
+      )?.context.websiteProfileReference,
+    ).toEqual(WEBSITE_PROFILE_REFERENCE);
+
+    const malformed = JSON.parse(JSON.stringify(current)) as {
+      context: { websiteProfileReference: { profileHash: string } };
+    };
+    malformed.context.websiteProfileReference.profileHash = "not-a-hash";
+    expect(
+      readKeywordWorkflowPointer(
+        storage(JSON.stringify(malformed)),
+        { properties: [current.property], markets: [current.marketCode] },
+        () => NOW + 1_000,
+      ),
     ).toBeNull();
   });
 

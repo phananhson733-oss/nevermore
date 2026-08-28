@@ -115,8 +115,8 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
         body: "A daily read when the last full week has enough impressions to support it, and a weekly cadence when it does not.",
       },
       {
-        label: "Three classes of actionable change",
-        body: "Click opportunities, stable-position click declines, and first-observed query-page pairs — only when the evidence floor for that class is met.",
+        label: "Six query paths, three page paths, one standing check",
+        body: "Click opportunities, click declines at a held position, moves into and slides out of the actionable band, first-observed query-page pairs and the same pairs seen at six or better, three page-dimension paths, and pages drawing impressions with no clicks — each only when its own evidence floor is met.",
       },
       {
         label: "Private handoff to the next tool",
@@ -608,8 +608,8 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
         body: "最近完整七天样本足够时给日级解读，不足时自动降级为周级节奏。",
       },
       {
-        label: "三类值得继续跟进的变化",
-        body: "点击机会、排名稳定但点击下滑、以及首次在本次比较中观察到的 query-page 组合；只有满足证据门槛时才会出现。",
+        label: "六条查询词路径、三条页面路径、一项常驻检查",
+        body: "点击机会、排名稳定但点击下滑、移入与滑出可行动区间、首次观察到的 query-page 组合以及其中均位六或更好的那些、三条页面维度路径，再加上有曝光却零点击的页面——每一条都只在自己的证据门槛被满足时出现。",
       },
       {
         label: "私有跳转到下一步工具",

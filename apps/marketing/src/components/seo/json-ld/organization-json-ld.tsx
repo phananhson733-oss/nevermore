@@ -18,7 +18,7 @@ export function OrganizationJsonLd() {
       email: siteConfig.contactEmail,
       contactType: "customer service",
     },
-    sameAs: [siteConfig.social.x, siteConfig.social.linkedin],
+    sameAs: [siteConfig.social.x],
   };
 
   const websiteLd = {

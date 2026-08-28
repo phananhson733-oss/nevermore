@@ -5,6 +5,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  MARKETING_WEBSITE_PROFILE_VERSION,
+  WEBSITE_PROFILE_REFERENCE_VERSION,
+  emptyMarketingWebsiteProfile,
+  type WebsiteProfileReferenceV1,
+} from "../account-websites/contracts.ts";
+import type { ResolvedWebsiteProfile } from "../account-websites/store.ts";
+import {
+  buildGeoContextSourceSummary,
   confirmGeoContext,
   type GeoContextInputV1,
   type GeoContextSnapshotV1,
@@ -33,6 +41,71 @@ import {
 } from "./geo-run-handler.ts";
 
 const CLOCK = (): Date => new Date("2026-08-18T09:00:00.000Z");
+const USER_ID = "72f487cf-2ca9-4d27-9b79-b20ac250db91";
+
+const WEBSITE_PROFILE_REFERENCE: WebsiteProfileReferenceV1 = {
+  schemaVersion: WEBSITE_PROFILE_REFERENCE_VERSION,
+  websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6",
+  snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987",
+  snapshotRevision: 3,
+  profileSchemaVersion: MARKETING_WEBSITE_PROFILE_VERSION,
+  profileHash: "a".repeat(64),
+};
+const RESOLVED_HIDDEN_PROFILE = {
+  user: "Growth and content leads",
+  useCases: ["Track assistant citations", "Compare against rivals"],
+  outcomes: ["Appear in assistant answers"],
+  barriers: ["No visibility into assistant answers"],
+  indirectAlternatives: ["Manual spot checks"],
+} as const;
+
+const REFERENCE_VISIBLE_SOURCE_SUMMARY = buildGeoContextSourceSummary({
+  hasCompetitors: true,
+  hasJtbd: false,
+  aliasSources: ["profile_product_name"],
+});
+const REFERENCE_HIDDEN_SOURCE_SUMMARY = [
+  {
+    field: "user",
+    source: "saved_website_profile",
+    limitationCode: "pinned_snapshot",
+  },
+  {
+    field: "use_cases",
+    source: "saved_website_profile",
+    limitationCode: "pinned_snapshot",
+  },
+  {
+    field: "outcomes",
+    source: "saved_website_profile",
+    limitationCode: "pinned_snapshot",
+  },
+  {
+    field: "barriers",
+    source: "saved_website_profile",
+    limitationCode: "pinned_snapshot",
+  },
+  {
+    field: "indirect_alternatives",
+    source: "saved_website_profile",
+    limitationCode: "pinned_snapshot",
+  },
+] as const;
+
+function referencedContextInput(
+  overrides: Partial<GeoContextInputV1> = {},
+): Partial<GeoContextInputV1> {
+  return {
+    ...RESOLVED_HIDDEN_PROFILE,
+    sourceProfileVersion: MARKETING_WEBSITE_PROFILE_VERSION,
+    sourceSummary: [
+      ...REFERENCE_VISIBLE_SOURCE_SUMMARY,
+      ...REFERENCE_HIDDEN_SOURCE_SUMMARY,
+    ],
+    websiteProfileReference: WEBSITE_PROFILE_REFERENCE,
+    ...overrides,
+  };
+}
 
 const CONTEXT_INPUT: GeoContextInputV1 = {
   targetUrl: "https://acme.test/",
@@ -125,13 +198,49 @@ function dependencies(
     observe: vi.fn(async () => Promise.resolve(observation())),
   };
   return {
-    authenticate: async () => Promise.resolve("authenticated"),
+    authenticate: async () =>
+      Promise.resolve({
+        status: "authenticated",
+        userId: USER_ID,
+        email: null,
+        avatarUrl: null,
+      } as const),
+    resolveWebsiteProfileReference: async () =>
+      Promise.resolve({ kind: "ok", value: resolvedWebsiteProfile() }),
     claimDailyBudget: async () =>
       Promise.resolve({ kind: "allowed", runsToday: 1 } as const),
     createProvider: () => provider,
     now: () => Date.parse("2026-08-18T09:05:00.000Z"),
     runId: () => "run-01",
     ...overrides,
+  };
+}
+
+function resolvedWebsiteProfile(
+  canonicalSiteKey = "acme.test",
+): ResolvedWebsiteProfile {
+  const savedProfile = {
+    ...emptyMarketingWebsiteProfile(),
+    productName: "PROFILE TEXT MUST NOT ENTER LOGS",
+    ...RESOLVED_HIDDEN_PROFILE,
+  };
+  return {
+    website: {
+      websiteId: WEBSITE_PROFILE_REFERENCE.websiteId,
+      origin: `https://${canonicalSiteKey}`,
+      host: canonicalSiteKey,
+      canonicalSiteKey,
+      displayName: "Acme",
+      isPrimary: true,
+      profileState: "confirmed",
+      confirmedSnapshotId: WEBSITE_PROFILE_REFERENCE.snapshotId,
+      confirmedSnapshotRevision: WEBSITE_PROFILE_REFERENCE.snapshotRevision,
+      confirmedAt: "2026-08-28T00:00:00.000Z",
+      createdAt: "2026-08-27T00:00:00.000Z",
+      updatedAt: "2026-08-28T00:00:00.000Z",
+    },
+    reference: WEBSITE_PROFILE_REFERENCE,
+    profile: savedProfile,
   };
 }
 
@@ -304,10 +413,265 @@ describe("handleGeoRunRequest", () => {
   it("requires a signed-in visitor before reading the body", async () => {
     const response = await handleGeoRunRequest(
       post(await body()),
-      dependencies({ authenticate: async () => Promise.resolve("unauthenticated") }),
+      dependencies({
+        authenticate: async () => Promise.resolve({ status: "unauthenticated" }),
+      }),
     );
 
     expect(response.status).toBe(401);
+  });
+
+  it("does no website-store lookup when the context has no reference", async () => {
+    const resolveWebsiteProfileReference = vi.fn();
+    const response = await handleGeoRunRequest(
+      post(await body()),
+      dependencies({ resolveWebsiteProfileReference }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(resolveWebsiteProfileReference).not.toHaveBeenCalled();
+  });
+
+  it("resolves the exact reference for the authenticated user before provider or budget", async () => {
+    const resolveWebsiteProfileReference = vi.fn(async () => ({
+      kind: "ok" as const,
+      value: resolvedWebsiteProfile(),
+    }));
+    const createProvider = vi.fn(() => ({
+      observe: vi.fn(async () => Promise.resolve(observation())),
+    }));
+    const claimDailyBudget = vi.fn(async () => ({
+      kind: "allowed" as const,
+      runsToday: 1,
+    }));
+    const response = await handleGeoRunRequest(
+      post(
+        await body({
+          context: referencedContextInput(),
+        }),
+      ),
+      dependencies({
+        resolveWebsiteProfileReference,
+        createProvider,
+        claimDailyBudget,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(resolveWebsiteProfileReference).toHaveBeenCalledWith(
+      USER_ID,
+      WEBSITE_PROFILE_REFERENCE,
+    );
+    expect(resolveWebsiteProfileReference.mock.invocationCallOrder[0]).toBeLessThan(
+      createProvider.mock.invocationCallOrder[0]!,
+    );
+    expect(resolveWebsiteProfileReference.mock.invocationCallOrder[0]).toBeLessThan(
+      claimDailyBudget.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it.each([
+    ["user", { user: "Tampered user" }],
+    ["use cases", { useCases: ["Tampered use case"] }],
+    ["outcomes", { outcomes: ["Tampered outcome"] }],
+    ["barriers", { barriers: ["Tampered barrier"] }],
+    [
+      "indirect alternatives",
+      { indirectAlternatives: ["Tampered alternative"] },
+    ],
+    ["source profile version", { sourceProfileVersion: "agent-profile.v3" }],
+  ] as const)(
+    "rejects a referenced context whose pinned %s differ before provider or budget",
+    async (_label, tampered) => {
+      const resolveWebsiteProfileReference = vi.fn(async () => ({
+        kind: "ok" as const,
+        value: resolvedWebsiteProfile(),
+      }));
+      const createProvider = vi.fn();
+      const claimDailyBudget = vi.fn();
+      const response = await handleGeoRunRequest(
+        post(
+          await body({
+            context: referencedContextInput(tampered),
+          }),
+        ),
+        dependencies({
+          resolveWebsiteProfileReference,
+          createProvider,
+          claimDailyBudget,
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        error: { code: "geo_website_profile_reference_invalid" },
+      });
+      expect(resolveWebsiteProfileReference).toHaveBeenCalledWith(
+        USER_ID,
+        WEBSITE_PROFILE_REFERENCE,
+      );
+      expect(createProvider).not.toHaveBeenCalled();
+      expect(claimDailyBudget).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects pinned hidden provenance for a field absent from the exact projection", async () => {
+    const resolved = resolvedWebsiteProfile();
+    const createProvider = vi.fn();
+    const claimDailyBudget = vi.fn();
+    const response = await handleGeoRunRequest(
+      post(
+        await body({
+          context: referencedContextInput({ user: "" }),
+        }),
+      ),
+      dependencies({
+        resolveWebsiteProfileReference: async () =>
+          Promise.resolve({
+            kind: "ok",
+            value: {
+              ...resolved,
+              profile: { ...resolved.profile, user: "" },
+            },
+          }),
+        createProvider,
+        claimDailyBudget,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "geo_website_profile_reference_invalid" },
+    });
+    expect(createProvider).not.toHaveBeenCalled();
+    expect(claimDailyBudget).not.toHaveBeenCalled();
+  });
+
+  it("rejects saved-profile provenance on a visible run-local overlay field", async () => {
+    const sourceSummary = referencedContextInput().sourceSummary!.map((entry) =>
+      entry.field === "product_name"
+        ? {
+            ...entry,
+            source: "saved_website_profile",
+            limitationCode: "pinned_snapshot",
+          }
+        : entry,
+    );
+    const createProvider = vi.fn();
+    const claimDailyBudget = vi.fn();
+    const response = await handleGeoRunRequest(
+      post(
+        await body({
+          context: referencedContextInput({ sourceSummary }),
+        }),
+      ),
+      dependencies({ createProvider, claimDailyBudget }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "geo_website_profile_reference_invalid" },
+    });
+    expect(createProvider).not.toHaveBeenCalled();
+    expect(claimDailyBudget).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing", { kind: "missing" as const }],
+    ["invalid", { kind: "invalid" as const, code: "invalid_reference" }],
+  ])("rejects a %s exact reference before provider creation or billing", async (_label, outcome) => {
+    const createProvider = vi.fn();
+    const claimDailyBudget = vi.fn();
+    const response = await handleGeoRunRequest(
+      post(
+        await body({
+          context: referencedContextInput(),
+        }),
+      ),
+      dependencies({
+        resolveWebsiteProfileReference: async () => Promise.resolve(outcome),
+        createProvider,
+        claimDailyBudget,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "geo_website_profile_reference_invalid" },
+    });
+    expect(createProvider).not.toHaveBeenCalled();
+    expect(claimDailyBudget).not.toHaveBeenCalled();
+  });
+
+  it("rejects a resolved website whose canonical key differs from the GEO target", async () => {
+    const createProvider = vi.fn();
+    const claimDailyBudget = vi.fn();
+    const response = await handleGeoRunRequest(
+      post(
+        await body({
+          context: referencedContextInput(),
+        }),
+      ),
+      dependencies({
+        resolveWebsiteProfileReference: async () =>
+          Promise.resolve({
+            kind: "ok",
+            value: resolvedWebsiteProfile("other.test"),
+          }),
+        createProvider,
+        claimDailyBudget,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "geo_website_profile_reference_invalid" },
+    });
+    expect(createProvider).not.toHaveBeenCalled();
+    expect(claimDailyBudget).not.toHaveBeenCalled();
+  });
+
+  it("returns profile-store unavailability distinctly before provider creation or billing", async () => {
+    const createProvider = vi.fn();
+    const claimDailyBudget = vi.fn();
+    const response = await handleGeoRunRequest(
+      post(
+        await body({
+          context: referencedContextInput(),
+        }),
+      ),
+      dependencies({
+        resolveWebsiteProfileReference: async () =>
+          Promise.resolve({ kind: "unavailable", reason: "store_unavailable" }),
+        createProvider,
+        claimDailyBudget,
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "geo_website_profile_unavailable" },
+    });
+    expect(createProvider).not.toHaveBeenCalled();
+    expect(claimDailyBudget).not.toHaveBeenCalled();
+  });
+
+  it("never writes resolved website profile text to the run log", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const response = await handleGeoRunRequest(
+      post(
+        await body({
+          context: referencedContextInput(),
+        }),
+      ),
+      dependencies(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(JSON.stringify(info.mock.calls)).not.toContain(
+      "PROFILE TEXT MUST NOT ENTER LOGS",
+    );
+    info.mockRestore();
   });
 
   it("issues exactly the planned number of provider calls", async () => {

@@ -8,6 +8,10 @@ import type {
   KeywordOpportunityProposition,
   KeywordOpportunityResult,
 } from "@sf/public-tools/keyword-opportunity";
+import {
+  parseWebsiteProfileReference,
+  type WebsiteProfileReferenceV1,
+} from "../account-websites/contracts.ts";
 
 export const KEYWORD_WORKFLOW_POINTER_VERSION =
   "keyword_workflow_pointer.v1" as const;
@@ -30,6 +34,7 @@ export interface KeywordWorkflowContextState {
   readonly selection?: KeywordOpportunityContextSelection;
   readonly contextSufficient: boolean;
   readonly stopReason: string | null;
+  readonly websiteProfileReference?: WebsiteProfileReferenceV1;
 }
 
 export interface KeywordWorkflowPointerV1 {
@@ -111,6 +116,16 @@ function contextState(value: unknown): KeywordWorkflowContextState | null {
   const token = input["token"];
   const propositions = input["propositions"];
   const parsedSelection = selection(input["selection"]);
+  let websiteProfileReference: WebsiteProfileReferenceV1 | undefined;
+  if (input["websiteProfileReference"] !== undefined) {
+    try {
+      websiteProfileReference = parseWebsiteProfileReference(
+        input["websiteProfileReference"],
+      );
+    } catch {
+      return null;
+    }
+  }
   if (
     typeof token !== "string" ||
     token === "" ||
@@ -144,6 +159,9 @@ function contextState(value: unknown): KeywordWorkflowContextState | null {
     contextSufficient: input["contextSufficient"],
     stopReason:
       typeof input["stopReason"] === "string" ? input["stopReason"] : null,
+    ...(websiteProfileReference === undefined
+      ? {}
+      : { websiteProfileReference }),
   };
 }
 

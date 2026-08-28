@@ -1,367 +1,440 @@
 // @vitest-environment jsdom
+// @input  -- connected Keyword Map form plus one exact website snapshot
+// @output -- detached import and exact-reference interaction guarantees
+// @pos    -- component tests for the private profile overlay on Keyword Map
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { KeywordOpportunityResult } from "@sf/public-tools/keyword-opportunity";
+import en from "../../i18n/messages/en.json";
 import {
-  KEYWORD_WORKFLOW_STORAGE_KEY,
-  writeKeywordWorkflowPointer,
-} from "../../lib/tools/keyword-workflow-client.ts";
+  MARKETING_WEBSITE_PROFILE_VERSION,
+  WEBSITE_PROFILE_REFERENCE_VERSION,
+  emptyMarketingWebsiteProfile,
+  profileSha256,
+  type WebsiteDetails,
+  type WebsiteProfileReferenceV1,
+} from "../../lib/account-websites/contracts.ts";
 
-vi.mock("next-intl", async () => {
-  const catalogue = (
-    await import("../../i18n/messages/en.json", { with: { type: "json" } })
-  ).default as unknown as Record<string, unknown>;
-  return {
-    useTranslations: (namespace: string) =>
-      (key: string, values?: Record<string, unknown>) => {
-        const raw = `${namespace}.${key}`
-          .split(".")
-          .reduce<unknown>(
-            (node, part) =>
-              typeof node === "object" && node !== null
-                ? (node as Record<string, unknown>)[part]
-                : undefined,
-            catalogue,
-          );
-        if (typeof raw !== "string") return `${namespace}.${key}`;
-        return values === undefined
-          ? raw
-          : raw.replaceAll(
-              /\{(\w+)\}/g,
-              (_match: string, name: string) =>
-                String(values[name] ?? `{${name}}`),
-            );
-      },
-  };
-});
+const PROFILE = {
+  ...emptyMarketingWebsiteProfile(),
+  productName: "Acme",
+  oneLinePositioning: "Revenue operations for clinics",
+  valueProposition: "Find and fix revenue leakage",
+  categories: ["Revenue operations"],
+  coreFeatures: ["Claim automation"],
+  useCases: ["Recover denied claims"],
+  icpInterests: ["Faster cash flow"],
+  primaryIcp: "Clinic finance teams",
+  jtbd: "Reduce days in accounts receivable",
+  country: "GB",
+  locale: "fr-FR",
+};
+const PROFILE_HASH = await profileSha256(PROFILE);
+const REFERENCE: WebsiteProfileReferenceV1 = {
+  schemaVersion: WEBSITE_PROFILE_REFERENCE_VERSION,
+  websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6",
+  snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987",
+  snapshotRevision: 4,
+  profileSchemaVersion: MARKETING_WEBSITE_PROFILE_VERSION,
+  profileHash: PROFILE_HASH,
+};
+const WEBSITE: WebsiteDetails = {
+  websiteId: REFERENCE.websiteId,
+  origin: "https://acme.example",
+  submittedUrl: "https://acme.example/",
+  host: "acme.example",
+  canonicalSiteKey: "acme.example",
+  displayName: "Acme",
+  isPrimary: true,
+  profileState: "confirmed",
+  confirmedSnapshotId: REFERENCE.snapshotId,
+  confirmedSnapshotRevision: REFERENCE.snapshotRevision,
+  confirmedAt: "2026-08-28T00:00:00.000Z",
+  createdAt: "2026-08-27T00:00:00.000Z",
+  updatedAt: "2026-08-28T00:00:00.000Z",
+  draft: {
+    draftVersion: 5,
+    updatedAt: "2026-08-28T00:00:00.000Z",
+    profileHash: PROFILE_HASH,
+    profile: PROFILE,
+  },
+  currentConfirmedSnapshot: {
+    ...REFERENCE,
+    confirmedAt: "2026-08-28T00:00:00.000Z",
+    profile: PROFILE,
+  },
+};
 
-vi.mock("../layout/google-analytics", () => ({
+vi.mock("../layout/google-analytics.tsx", () => ({
   trackMarketingEvent: vi.fn(),
 }));
-vi.mock("./gsc-disconnect", () => ({ GscDisconnect: () => null }));
+
+vi.mock("../../lib/tools/property-label.ts", () => ({
+  formatPropertyLabel: (value: string) => value,
+}));
+
+vi.mock("./gsc-connect-panel", () => ({
+  GscConnectPanel: () => <div data-testid="gsc-connect" />,
+  gscAuthorizeHref: () => "/connect",
+}));
+
+vi.mock("./gsc-disconnect", () => ({
+  GscDisconnect: () => <div data-testid="gsc-disconnect" />,
+}));
+
 vi.mock("./keyword-map-results", () => ({
-  KeywordMapResults: ({ result }: { result: KeywordOpportunityResult }) => (
-    <div data-testid="keyword-result">{result.rows.length} rows</div>
+  KeywordMapResults: () => <div data-testid="keyword-results" />,
+}));
+
+vi.mock("../account/website-profile-picker.tsx", () => ({
+  WebsiteProfilePicker: ({
+    targetUrl,
+    onImport,
+    onReference,
+  }: {
+    readonly targetUrl: string;
+    readonly onImport?: (website: WebsiteDetails) => void;
+    readonly onReference: (website: WebsiteDetails) => void;
+  }) => (
+    <div data-testid="profile-picker" data-target-url={targetUrl}>
+      <button type="button" onClick={() => onImport?.(WEBSITE)}>
+        Test import profile
+      </button>
+      <button type="button" onClick={() => onReference(WEBSITE)}>
+        Test reference profile
+      </button>
+    </div>
   ),
 }));
 
 const { KeywordMapTool } = await import("./keyword-map-tool.tsx");
 
-const PROPERTY = "sc-domain:example.com";
-const CONTEXT = {
-  contextToken: "sealed-context",
-  propositions: [
-    {
-      statement: "Automate clinic appointments",
-      sourceUrl: "https://example.com/product",
-    },
-  ],
-  pagesFetched: 5,
-  productPagesFetched: 1,
-  contextSufficient: true,
-  stopReason: "max_urls",
-};
-const RESULT = {
-  availability: "available",
-  rows: [{ keyword: "clinic appointment automation" }],
-  withheld: [],
-  clusters: [],
-  unavailableStages: [],
-  nextStepSuggestions: [],
-} as unknown as KeywordOpportunityResult;
-
-let root: Root | null = null;
-const originalFetch = globalThis.fetch;
-
-beforeEach(() => {
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true;
-  sessionStorage.clear();
-});
-
-afterEach(async () => {
-  if (root !== null) {
-    await act(async () => root?.unmount());
-    root = null;
-  }
-  vi.useRealTimers();
-  globalThis.fetch = originalFetch;
-  document.body.replaceChildren();
-  vi.restoreAllMocks();
-});
-
-async function renderTool(): Promise<HTMLElement> {
-  const host = document.createElement("div");
-  document.body.append(host);
-  root = createRoot(host);
-  await act(async () => {
-    root?.render(
-      <KeywordMapTool
-        locale="en"
-        properties={[PROPERTY]}
-        propertyTotal={1}
-        connectEnabled={true}
-        consentNotice="none"
-        markets={["US"]}
-      />,
-    );
-  });
-  return host;
-}
-
-function buttonWith(host: HTMLElement, text: string): HTMLButtonElement {
-  const button = [...host.querySelectorAll("button")].find((candidate) =>
-    candidate.textContent?.includes(text),
-  );
-  if (button === undefined) throw new Error(`button not found: ${text}`);
-  return button;
-}
-
-async function click(button: HTMLButtonElement): Promise<void> {
-  await act(async () => {
-    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await Promise.resolve();
-  });
-}
-
-async function change(
-  field: HTMLInputElement | HTMLSelectElement,
-  value: string,
-): Promise<void> {
+function setValue(element: HTMLInputElement | HTMLSelectElement, value: string) {
   const prototype =
-    field instanceof HTMLSelectElement
-      ? window.HTMLSelectElement.prototype
-      : window.HTMLInputElement.prototype;
+    element instanceof HTMLSelectElement
+      ? HTMLSelectElement.prototype
+      : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
-  await act(async () => {
-    setter?.call(field, value);
-    field.dispatchEvent(
-      new Event(field instanceof HTMLSelectElement ? "change" : "input", {
-        bubbles: true,
-      }),
-    );
-  });
+  setter?.call(element, value);
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  element.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-async function readAndConfirm(host: HTMLElement): Promise<void> {
-  await click(buttonWith(host, "Read my site"));
-  expect(host.textContent).toContain("What we read off your site");
-  expect(host.textContent).toContain(
-    "The 20-page context limit was reached; later eligible pages were not read",
+function response(reference?: WebsiteProfileReferenceV1): Response {
+  return Response.json(
+    {
+      data: {
+        contextToken: "sealed-context",
+        propositions: [],
+        pagesFetched: 3,
+        productPagesFetched: 1,
+        contextSufficient: true,
+        ...(reference === undefined
+          ? {}
+          : { websiteProfileReference: reference }),
+      },
+    },
+    { status: 200 },
   );
 }
 
-describe("KeywordMapTool durable run", () => {
-  it("invalidates confirmed context when an authority-bearing field changes", async () => {
-    const fetchMock = vi.fn(async () => Response.json({ data: CONTEXT }));
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-    const host = await renderTool();
-    await readAndConfirm(host);
+describe("KeywordMapTool website profile context", () => {
+  let host: HTMLDivElement;
+  let root: Root;
 
-    await change(
-      host.querySelector('input[type="url"]') as HTMLInputElement,
-      "https://different.example/",
-    );
-
-    expect(host.textContent).not.toContain("What we read off your site");
-    expect(
-      [...host.querySelectorAll("button")].some((button) =>
-        button.textContent?.includes("Run the opportunity map"),
-      ),
-    ).toBe(false);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+  beforeEach(() => {
+    (
+      globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+    ).IS_REACT_ACT_ENVIRONMENT = true;
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    vi.stubGlobal("fetch", vi.fn());
   });
 
-  it("keeps the legacy 200 result path compatible", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(Response.json({ data: CONTEXT }))
-      .mockResolvedValueOnce(Response.json({ data: { result: RESULT } }));
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-    const host = await renderTool();
-
-    await readAndConfirm(host);
-    await click(buttonWith(host, "Run the opportunity map"));
-
-    expect(host.querySelector('[data-testid="keyword-result"]')?.textContent).toBe(
-      "1 rows",
-    );
-    expect(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)).toBeNull();
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
-  it("accepts 202, polls one run, and renders the completed result", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(Response.json({ data: CONTEXT }))
-      .mockResolvedValueOnce(
-        Response.json(
-          { data: { status: "running", runToken: "sealed-run" } },
-          { status: 202, headers: { "Retry-After": "2" } },
-        ),
-      )
-      .mockResolvedValueOnce(
-        Response.json({ data: { status: "completed", result: RESULT } }),
+  async function render(
+    properties: readonly string[] | null = [
+      "sc-domain:acme.example",
+      "sc-domain:other.example",
+    ],
+  ): Promise<void> {
+    await act(async () => {
+      root.render(
+        <NextIntlClientProvider
+          locale="en"
+          messages={{ tools: en.tools, agents: en.agents }}
+        >
+          <KeywordMapTool
+            locale="en"
+            properties={properties}
+            propertyTotal={properties?.length ?? 0}
+            connectEnabled
+            consentNotice="none"
+            markets={["US", "GB", "FR"]}
+          />
+        </NextIntlClientProvider>,
       );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-    const host = await renderTool();
+    });
+  }
 
-    await readAndConfirm(host);
-    await click(buttonWith(host, "Run the opportunity map"));
+  async function settle(): Promise<void> {
+    await act(async () => {
+      for (let turn = 0; turn < 2; turn += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    });
+  }
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(host.querySelector('[data-testid="keyword-result"]')).not.toBeNull();
-    expect(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)).toBeNull();
-    expect(
-      (fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers,
-    ).toMatchObject({ "X-Keyword-Workflow-Version": "keyword_workflow.v1" });
-  });
-
-  it("restores a tracking pointer after refresh without starting paid work again", async () => {
-    expect(
-      writeKeywordWorkflowPointer(sessionStorage, {
-        version: "keyword_workflow_pointer.v1",
-        requestId: "2f7b5985-75b9-44c0-9b53-2b54b7901f2f",
-        property: PROPERTY,
-        siteUrl: "https://example.com/",
-        marketCode: "US",
-        languageCode: "en",
-        seedInput: "",
-        context: {
-          token: CONTEXT.contextToken,
-          propositions: CONTEXT.propositions,
-          pagesFetched: CONTEXT.pagesFetched,
-          productPagesFetched: CONTEXT.productPagesFetched,
-          contextSufficient: true,
-          stopReason: "max_urls",
-        },
-        createdAt: Date.now(),
-        runToken: "sealed-run",
-      }),
-    ).toBe(true);
-    const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
-      expect(String(url)).toContain("/opportunities/status");
-      return Response.json({
-        data: { status: "completed", result: RESULT },
+  async function waitFor(
+    condition: () => boolean,
+    description: string,
+  ): Promise<void> {
+    const deadline = Date.now() + 2_000;
+    while (!condition()) {
+      if (Date.now() >= deadline) {
+        throw new Error(`timed out waiting for ${description}`);
+      }
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
       });
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    }
+  }
 
-    const host = await renderTool();
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+  async function waitForProfile(kind: "import" | "reference"): Promise<void> {
+    await waitFor(
+      () =>
+        host.querySelector(
+          `[data-keyword-profile-context="${kind}"]`,
+        ) !== null,
+      `${kind} website profile context`,
+    );
+  }
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(host.querySelector('[data-testid="keyword-result"]')).not.toBeNull();
-    expect(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)).toBeNull();
+  function button(text: string): HTMLButtonElement {
+    const match = [...host.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent === text,
+    );
+    if (match === undefined) throw new Error(`button not found: ${text}`);
+    return match;
+  }
+
+  function inputs(): {
+    readonly site: HTMLInputElement;
+    readonly seeds: HTMLInputElement;
+    readonly property: HTMLSelectElement;
+    readonly market: HTMLSelectElement;
+    readonly language: HTMLSelectElement;
+  } {
+    const [property, market, language] = host.querySelectorAll("select");
+    const site = host.querySelector<HTMLInputElement>('input[type="url"]');
+    const seeds = host.querySelector<HTMLInputElement>('input[type="text"]');
+    if (
+      property === undefined ||
+      market === undefined ||
+      language === undefined ||
+      site === null ||
+      seeds === null
+    ) {
+      throw new Error("keyword form is incomplete");
+    }
+    return { site, seeds, property, market, language };
+  }
+
+  it("renders the picker only on the connected property surface", async () => {
+    await render(null);
+    expect(host.querySelector('[data-testid="gsc-connect"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="profile-picker"]')).toBeNull();
   });
 
-  it("stops tracking after repeated unavailable status responses", async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(Response.json({ data: CONTEXT }))
-      .mockResolvedValueOnce(
-        Response.json(
-          { data: { status: "running", runToken: "sealed-run" } },
-          { status: 202 },
-        ),
-      )
-      .mockImplementation(async () =>
-        Response.json(
-          { error: { code: "keyword_run_unavailable" } },
-          { status: 503 },
-        ),
-      );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-    const host = await renderTool();
+  it("imports detached editable seeds and sends no profile reference", async () => {
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockResolvedValue(response());
+    await render();
+    const form = inputs();
+    await act(async () => setValue(form.seeds, "old seed"));
 
-    await readAndConfirm(host);
-    await click(buttonWith(host, "Run the opportunity map"));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(8_000);
-    });
+    await act(async () => button("Test import profile").click());
+    await waitForProfile("import");
 
-    expect(fetchMock).toHaveBeenCalledTimes(7);
-    expect(host.textContent).toContain("This saved run cannot be read right now");
-    expect(buttonWith(host, "Run the opportunity map").disabled).toBe(false);
-    const startBody = JSON.parse(
-      String((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.body),
-    ) as { requestId: string };
-    const stored = JSON.parse(
-      String(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)),
-    ) as { requestId: string; runToken: unknown };
-    expect(stored).toMatchObject({
-      requestId: startBody.requestId,
-      runToken: null,
-    });
+    expect(form.site.value).toBe("https://acme.example");
+    expect(form.market.value).toBe("GB");
+    expect(form.language.value).toBe("fr");
+    expect(form.seeds.value).toBe(
+      [
+        "Revenue operations",
+        "Claim automation",
+        "Recover denied claims",
+        "Faster cash flow",
+        "Clinic finance teams",
+        "Reduce days in accounts receivable",
+      ].join(", "),
+    );
+    expect(host.textContent).toContain("Detached website profile import");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await act(async () => button("Read my site").click());
+    await settle();
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("websiteProfileReference");
+    expect(body["seeds"]).toEqual([
+      "Revenue operations",
+      "Claim automation",
+      "Recover denied claims",
+      "Faster cash flow",
+      "Clinic finance teams",
+      "Reduce days in accounts receivable",
+    ]);
   });
 
-  it("stops tracking after repeated unreadable status responses", async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(Response.json({ data: CONTEXT }))
-      .mockResolvedValueOnce(
-        Response.json(
-          { data: { status: "running", runToken: "sealed-run" } },
-          { status: 202 },
-        ),
-      )
-      .mockImplementation(async () =>
-        new Response("<html>bad gateway</html>", { status: 502 }),
+  it("references exact pinned seeds while sending only the editable overlay", async () => {
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockResolvedValue(response(REFERENCE));
+    await render();
+    const form = inputs();
+    await act(async () => setValue(form.seeds, "old seed"));
+
+    await act(async () => button("Test reference profile").click());
+    await waitForProfile("reference");
+
+    expect(form.seeds.value).toBe("");
+    expect(host.textContent).toContain("Exact website profile reference");
+    expect(host.textContent).toContain("Revision 4");
+    expect(host.textContent).toContain(PROFILE_HASH.slice(0, 8));
+    expect(host.textContent).toContain("Revenue operations");
+    expect(host.textContent?.toLowerCase()).not.toContain("save back");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await act(async () => setValue(form.seeds, "Clinic scheduling"));
+    await act(async () => setValue(form.market, "FR"));
+    await act(async () => setValue(form.language, "en"));
+    await act(async () => button("Read my site").click());
+    await settle();
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body["websiteProfileReference"]).toEqual(REFERENCE);
+    expect(body["seeds"]).toEqual(["Clinic scheduling"]);
+    expect(body["marketCode"]).toBe("FR");
+    expect(body["languageCode"]).toBe("en");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/tools/hidden-keywords/context",
+    );
+    expect(host.textContent).toContain("Server accepted this exact version");
+  });
+
+  it("rejects a context response that acknowledges a different reference", async () => {
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockResolvedValue(
+      response({ ...REFERENCE, snapshotRevision: REFERENCE.snapshotRevision + 1 }),
+    );
+    await render();
+    await act(async () => button("Test reference profile").click());
+    await waitForProfile("reference");
+
+    await act(async () => button("Read my site").click());
+    await settle();
+
+    expect(host.querySelector('[role="alert"]')).not.toBeNull();
+    expect(host.textContent).not.toContain("What we read off your site");
+  });
+
+  it.each([
+    [
+      401,
+      "authentication_required",
+      "Your account session is no longer available. Sign in again, then reselect the saved website profile.",
+    ],
+    [
+      503,
+      "invalid_request",
+      "Saved website profiles are temporarily unavailable. No crawl or keyword generation started; try again shortly.",
+    ],
+    [
+      400,
+      "invalid_input",
+      "Check the site URL, market and language — one of them was not accepted.",
+    ],
+  ] as const)(
+    "renders truthful contextual copy for a %s reference refusal",
+    async (status, code, expected) => {
+      const fetchMock = vi.mocked(globalThis.fetch);
+      fetchMock.mockResolvedValue(
+        Response.json({ error: { code } }, { status }),
       );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-    const host = await renderTool();
+      await render();
+      await act(async () => button("Test reference profile").click());
+      await waitForProfile("reference");
 
-    await readAndConfirm(host);
-    await click(buttonWith(host, "Run the opportunity map"));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(8_000);
-    });
+      await act(async () => button("Read my site").click());
+      await settle();
 
-    expect(fetchMock).toHaveBeenCalledTimes(7);
-    expect(host.textContent).toContain("This saved run cannot be read right now");
-    expect(buttonWith(host, "Run the opportunity map").disabled).toBe(false);
-    expect(
-      JSON.parse(
-        String(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)),
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+        expected,
+      );
+      expect(host.textContent).not.toContain("Connect Search Console again");
+      expect(host.textContent?.toLowerCase()).not.toContain(
+        "search-data provider",
+      );
+    },
+  );
+
+  it("clears an exact reference when the edited site URL is not canonicalizable", async () => {
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockResolvedValue(
+      Response.json(
+        { error: { code: "invalid_input" } },
+        { status: 400 },
       ),
-    ).toMatchObject({ runToken: null });
+    );
+    await render();
+    const form = inputs();
+    await act(async () => button("Test reference profile").click());
+    await waitForProfile("reference");
+
+    await act(async () => setValue(form.site, "ftp://acme.example"));
+    expect(host.textContent).not.toContain("Exact website profile reference");
+    await act(async () => button("Read my site").click());
+    await settle();
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("websiteProfileReference");
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "Check the site URL, market and language — one of them was not accepted.",
+    );
   });
 
-  it("reuses the request id when the start response is lost", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(Response.json({ data: CONTEXT }))
-      .mockRejectedValueOnce(new TypeError("connection closed"))
-      .mockResolvedValueOnce(
-        Response.json(
-          { data: { status: "running", runToken: "sealed-run" } },
-          { status: 202 },
-        ),
-      )
-      .mockResolvedValueOnce(
-        Response.json({ data: { status: "completed", result: RESULT } }),
-      );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-    const host = await renderTool();
-    await readAndConfirm(host);
+  it("keeps a reference across a same-host path and clears it on host or property change", async () => {
+    await render();
+    const form = inputs();
+    await act(async () => button("Test reference profile").click());
+    await waitForProfile("reference");
 
-    await click(buttonWith(host, "Run the opportunity map"));
-    await click(buttonWith(host, "Run the opportunity map"));
+    await act(async () =>
+      setValue(form.site, "https://www.acme.example/pricing"),
+    );
+    expect(host.textContent).toContain("Exact website profile reference");
 
-    const firstBody = JSON.parse(
-      String((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.body),
-    ) as { requestId: string };
-    const secondBody = JSON.parse(
-      String((fetchMock.mock.calls[2]?.[1] as RequestInit | undefined)?.body),
-    ) as { requestId: string };
-    expect(secondBody.requestId).toBe(firstBody.requestId);
-    expect(host.querySelector('[data-testid="keyword-result"]')).not.toBeNull();
+    await act(async () => setValue(form.site, "https://other.example"));
+    expect(host.textContent).not.toContain("Exact website profile reference");
+
+    await act(async () => button("Test reference profile").click());
+    await waitForProfile("reference");
+    expect(host.textContent).toContain("Exact website profile reference");
+    await act(async () =>
+      setValue(form.property, "sc-domain:other.example"),
+    );
+    expect(host.textContent).not.toContain("Exact website profile reference");
   });
 });

@@ -22,6 +22,21 @@ const BALANCE_BODY = {
     referral: { code: "ab3kd9xz", rewardedCount: 0, cap: 20 },
   },
 };
+const PRIMARY_WEBSITE = {
+  websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6",
+  origin: "https://example.com",
+  host: "example.com",
+  canonicalSiteKey: "example.com",
+  displayName: "Example",
+  isPrimary: true,
+  profileState: "confirmed",
+  confirmedSnapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987",
+  confirmedSnapshotRevision: 1,
+  confirmedAt: "2026-08-28T00:00:00.000Z",
+  createdAt: "2026-08-28T00:00:00.000Z",
+  updatedAt: "2026-08-28T00:00:00.000Z",
+};
+const EMPTY_WEBSITES = { data: { websites: [] } };
 
 interface Answer {
   readonly status: number;
@@ -32,7 +47,11 @@ function answer(status: number, body: unknown): Answer {
   return { status, body };
 }
 
-function stubFetch(profile: Answer | null, balance: Answer): void {
+function stubFetch(
+  profile: Answer | null,
+  balance: Answer,
+  websites: Answer = answer(200, EMPTY_WEBSITES),
+): void {
   vi.spyOn(globalThis, "fetch").mockImplementation((async (
     input: RequestInfo | URL,
   ) => {
@@ -43,6 +62,13 @@ function stubFetch(profile: Answer | null, balance: Answer): void {
         status: profile.status,
         ok: profile.status >= 200 && profile.status < 300,
         json: async () => profile.body,
+      } as Response;
+    }
+    if (url.startsWith("/api/account/websites")) {
+      return {
+        status: websites.status,
+        ok: websites.status >= 200 && websites.status < 300,
+        json: async () => websites.body,
       } as Response;
     }
     return {
@@ -95,8 +121,10 @@ describe("useAccount", () => {
     expect(seen).toEqual({
       status: "signed-in",
       email: "ada@example.test",
+      displayName: null,
       avatarUrl: null,
       balance: { total: 140, welfareRemaining: 560 },
+      websites: { status: "ready", primary: null },
     });
   });
 
@@ -114,8 +142,10 @@ describe("useAccount", () => {
     expect(seen).toEqual({
       status: "signed-in",
       email: "ada@example.test",
+      displayName: null,
       avatarUrl: null,
       balance: null,
+      websites: { status: "ready", primary: null },
     });
   });
 
@@ -152,8 +182,78 @@ describe("useAccount", () => {
     expect(seen).toMatchObject({ status: "signed-in", email: null });
   });
 
-  /** Two endpoints, deliberately: identity must not depend on the flag. */
-  it("asks identity before, and separately from, the balance", async () => {
+  it("keeps a bounded display name separate from the email", async () => {
+    stubFetch(
+      answer(200, {
+        data: {
+          email: "ada@example.test",
+          displayName: "Ada Lovelace",
+        },
+      }),
+      answer(200, BALANCE_BODY),
+    );
+    await mount();
+
+    expect(seen).toMatchObject({
+      status: "signed-in",
+      displayName: "Ada Lovelace",
+      email: "ada@example.test",
+    });
+  });
+
+  it("strictly exposes the one primary website", async () => {
+    stubFetch(
+      answer(200, { data: { email: "ada@example.test" } }),
+      answer(200, BALANCE_BODY),
+      answer(200, { data: { websites: [PRIMARY_WEBSITE] } }),
+    );
+    await mount();
+
+    expect(seen).toMatchObject({
+      status: "signed-in",
+      websites: {
+        status: "ready",
+        primary: { websiteId: PRIMARY_WEBSITE.websiteId, host: "example.com" },
+      },
+    });
+  });
+
+  it.each([
+    [
+      "unavailable",
+      answer(503, { error: { code: "account_websites_unavailable" } }),
+    ],
+    [
+      "malformed",
+      answer(200, {
+        data: {
+          websites: [{ ...PRIMARY_WEBSITE, isPrimary: "yes" }],
+        },
+      }),
+    ],
+  ])("keeps identity and sign-out usable when Websites is %s", async (
+    _label,
+    websites,
+  ) => {
+    stubFetch(
+      answer(200, { data: { email: "ada@example.test" } }),
+      answer(503, { error: { code: "credits_unavailable" } }),
+      websites,
+    );
+    await mount();
+
+    expect(seen).toEqual({
+      status: "signed-in",
+      email: "ada@example.test",
+      displayName: null,
+      avatarUrl: null,
+      balance: null,
+      websites: { status: "unavailable" },
+    });
+  });
+
+  /** Three endpoints, deliberately: identity cannot depend on either module. */
+  it("asks identity first, then Credits and Websites independently", async () => {
     stubFetch(
       answer(200, { data: { email: "ada@example.test" } }),
       answer(200, BALANCE_BODY),
@@ -163,6 +263,9 @@ describe("useAccount", () => {
     const calls = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock
       .calls;
     expect(String(calls[0]?.[0])).toBe("/api/auth/profile");
-    expect(String(calls[1]?.[0])).toBe("/api/credits/balance");
+    expect(calls.slice(1).map((call) => String(call[0])).sort()).toEqual([
+      "/api/account/websites",
+      "/api/credits/balance",
+    ]);
   });
 });

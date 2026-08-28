@@ -55,6 +55,9 @@ function renderPanel(
     typeof AgentProfilePanel
   >["profileRefresh"],
   onRefresh = vi.fn(),
+  websiteProfile?: React.ComponentProps<
+    typeof AgentProfilePanel
+  >["websiteProfile"],
 ) {
   const host = document.createElement("div");
   document.body.append(host);
@@ -69,6 +72,7 @@ function renderPanel(
         profileSearch={profileSearch}
         profileRefresh={profileRefresh}
         onRefresh={onRefresh}
+        websiteProfile={websiteProfile}
       />,
     );
   });
@@ -1863,5 +1867,49 @@ describe("AgentProfilePanel", () => {
       (document.querySelector('[aria-label="fields.icpPain"]') as HTMLInputElement)
         .value,
     ).toBe("Needs clearer guidance");
+  });
+
+  it("shows a pinned website reference and saves back only on explicit action", () => {
+    const onSaveBack = vi.fn();
+    const profile = createAgentProfileDraft("seo", "example.com");
+    renderPanel(
+      profile,
+      vi.fn(),
+      vi.fn(),
+      undefined,
+      undefined,
+      vi.fn(),
+      {
+        kind: "reference",
+        websiteLabel: "Example",
+        reference: {
+          schemaVersion: "website-profile-reference.v1",
+          websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6",
+          snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987",
+          snapshotRevision: 3,
+          profileSchemaVersion: "marketing-website-profile.v1",
+          profileHash: "a".repeat(64),
+        },
+        saveStatus: "idle",
+        onSaveBack,
+      },
+    );
+
+    expect(
+      document.querySelector(
+        '[data-website-profile-context="reference"]',
+      )?.textContent,
+    ).toContain("Example");
+    expect(document.body.textContent).toContain("3");
+    expect(onSaveBack).not.toHaveBeenCalled();
+
+    act(() => {
+      (
+        document.querySelector(
+          'button[data-profile-action="save-back"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+    expect(onSaveBack).toHaveBeenCalledOnce();
   });
 });

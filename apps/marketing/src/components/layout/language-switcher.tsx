@@ -6,9 +6,15 @@
 
 import { useLocale } from "next-intl";
 import { useRouter, usePathname } from "next/navigation";
-import { localePath, stripLocalePrefix } from "@/lib/locale-path";
+import { localePath, stripLocalePrefix } from "../../lib/locale-path.ts";
 
-export function LanguageSwitcher() {
+export function LanguageSwitcher({
+  menuItem = false,
+  onAction,
+}: {
+  readonly menuItem?: boolean;
+  readonly onAction?: () => void;
+} = {}) {
   const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
@@ -18,6 +24,7 @@ export function LanguageSwitcher() {
     // The default locale has no prefix to swap, so rebuild the path from its
     // locale-agnostic form rather than substituting one prefix for another.
     router.push(localePath(newLocale, stripLocalePrefix(pathname)));
+    onAction?.();
   };
 
   return (
@@ -27,7 +34,9 @@ export function LanguageSwitcher() {
     // 换字体看不出来。min-h-9/min-w-9 是触摸目标：原来的裸字形只有 13x18px。
     <button
       onClick={switchLocale}
-      className="inline-flex min-h-9 min-w-9 items-center justify-center text-[12px] tracking-[0.08em] text-text-dark-secondary transition-colors [font-family:system-ui,sans-serif] hover:text-brand-accent-text"
+      role={menuItem ? "menuitem" : undefined}
+      tabIndex={menuItem ? -1 : undefined}
+      className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-[8px] text-[12px] tracking-[0.08em] text-text-dark-strong transition-colors outline-none [font-family:system-ui,sans-serif] hover:text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
       aria-label={locale === "en" ? "切换到中文" : "Switch to English"}
     >
       {locale === "en" ? "中文" : "EN"}

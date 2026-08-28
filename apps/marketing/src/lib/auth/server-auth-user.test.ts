@@ -29,7 +29,9 @@ describe("getServerAuthenticatedUser", () => {
       status: "authenticated",
       userId: "11111111-1111-4111-8111-111111111111",
       email: null,
+      googleSubject: null,
       avatarUrl: null,
+      displayName: null,
     });
   });
 
@@ -48,9 +50,216 @@ describe("getServerAuthenticatedUser", () => {
       status: "authenticated",
       userId: "11111111-1111-4111-8111-111111111111",
       email: "ada@example.test",
+      googleSubject: null,
       avatarUrl: null,
+      displayName: null,
     });
   });
+
+  it("returns the Google subject only from one consistent verified identity", async () => {
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "11111111-1111-4111-8111-111111111111",
+          identities: [
+            {
+              provider: "google",
+              id: "108124453711223344556",
+              identity_data: { sub: "108124453711223344556" },
+            },
+          ],
+          // Mutable metadata must never be the source of this binding.
+          user_metadata: { sub: "attacker-controlled" },
+        },
+      },
+      error: null,
+    });
+
+    await expect(getServerAuthenticatedUser()).resolves.toMatchObject({
+      googleSubject: "108124453711223344556",
+    });
+  });
+
+  it.each([
+    ["absent identities", undefined],
+    ["an empty identity list", []],
+    [
+      "a non-Google identity",
+      [
+        {
+          provider: "email",
+          id: "email-subject",
+          identity_data: { sub: "email-subject" },
+        },
+      ],
+    ],
+  ])("returns no Google subject for %s", async (_label, identities) => {
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "11111111-1111-4111-8111-111111111111",
+          identities,
+          user_metadata: { sub: "must-not-be-used" },
+        },
+      },
+      error: null,
+    });
+
+    await expect(getServerAuthenticatedUser()).resolves.toMatchObject({
+      googleSubject: null,
+    });
+  });
+
+  it("fails closed when Google identity id and identity_data.sub conflict", async () => {
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "11111111-1111-4111-8111-111111111111",
+          identities: [
+            {
+              provider: "google",
+              id: "google-a",
+              identity_data: { sub: "google-b" },
+            },
+          ],
+        },
+      },
+      error: null,
+    });
+
+    await expect(getServerAuthenticatedUser()).resolves.toMatchObject({
+      googleSubject: null,
+    });
+  });
+
+  it("fails closed for duplicate differing Google identities", async () => {
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "11111111-1111-4111-8111-111111111111",
+          identities: [
+            {
+              provider: "google",
+              id: "google-a",
+              identity_data: { sub: "google-a" },
+            },
+            {
+              provider: "google",
+              id: "google-b",
+              identity_data: { sub: "google-b" },
+            },
+          ],
+        },
+      },
+      error: null,
+    });
+
+    await expect(getServerAuthenticatedUser()).resolves.toMatchObject({
+      googleSubject: null,
+    });
+  });
+
+  it.each([null, { provider: 42 }])(
+    "fails closed when the identity set contains malformed entry %j",
+    async (malformed) => {
+      mocks.getUser.mockResolvedValue({
+        data: {
+          user: {
+            id: "11111111-1111-4111-8111-111111111111",
+            identities: [
+              {
+                provider: "google",
+                id: "google-a",
+                identity_data: { sub: "google-a" },
+              },
+              malformed,
+            ],
+          },
+        },
+        error: null,
+      });
+
+      await expect(getServerAuthenticatedUser()).resolves.toMatchObject({
+        googleSubject: null,
+      });
+    },
+  );
+
+  it.each([
+    [
+      "a missing provider id",
+      { provider: "google", identity_data: { sub: "google-a" } },
+    ],
+    [
+      "a missing identity_data subject",
+      { provider: "google", id: "google-a", identity_data: {} },
+    ],
+    [
+      "a non-string subject",
+      { provider: "google", id: "google-a", identity_data: { sub: 42 } },
+    ],
+    [
+      "a blank subject",
+      { provider: "google", id: " ", identity_data: { sub: " " } },
+    ],
+    [
+      "an overlong subject",
+      {
+        provider: "google",
+        id: "g".repeat(256),
+        identity_data: { sub: "g".repeat(256) },
+      },
+    ],
+  ])("fails closed for %s", async (_label, identity) => {
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "11111111-1111-4111-8111-111111111111",
+          identities: [identity],
+        },
+      },
+      error: null,
+    });
+
+    await expect(getServerAuthenticatedUser()).resolves.toMatchObject({
+      googleSubject: null,
+    });
+  });
+
+  it("returns a bounded Google display name when available", async () => {
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "11111111-1111-4111-8111-111111111111",
+          user_metadata: { full_name: "  Ada Lovelace  " },
+        },
+      },
+      error: null,
+    });
+
+    await expect(getServerAuthenticatedUser()).resolves.toMatchObject({
+      displayName: "Ada Lovelace",
+    });
+  });
+
+  it.each(["", " ".repeat(4), "a".repeat(161), 42])(
+    "refuses an unusable display name",
+    async (full_name) => {
+      mocks.getUser.mockResolvedValue({
+        data: {
+          user: {
+            id: "11111111-1111-4111-8111-111111111111",
+            user_metadata: { full_name },
+          },
+        },
+        error: null,
+      });
+
+      await expect(getServerAuthenticatedUser()).resolves.toMatchObject({
+        displayName: null,
+      });
+    },
+  );
 
   /**
    * The URL arrives in an OAuth claim but is stored in a mutable metadata
