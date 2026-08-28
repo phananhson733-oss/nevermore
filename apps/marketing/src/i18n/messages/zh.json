@@ -4027,7 +4027,7 @@
         "generateDraft": "生成 draft →",
         "generateDraftHelp": "在新标签页打开 Content Draft Writer 并带上这份 brief。不进 URL；brief 只在这个浏览器内传递。",
         "generateDraftFailed": {
-          "too_large": "这份 brief 超过了交接接受的 {maxKb} KB，没有打开 draft 工具。请导出 JSON 后到那边上传。",
+          "too_large": "这份 brief 超过了 {maxKb} KB 上限，Content Draft Writer 本身也无法接受它，所以没有打开。",
           "storage": "brief 没能写进这个浏览器，没有打开 draft 工具。请导出 JSON 后到那边上传。"
         }
       },
@@ -4351,28 +4351,34 @@
         },
         "sections": {
           "label": "要生成的段落",
-          "help": "每个勾选的段落一次独立模型调用，单段超时 {timeout} 秒，总预算 {budget} 秒。取消勾选的段记为跳过，它对应的问题按未覆盖计。",
+          "help": "每个勾选的段落由各自的模型调用生成，每节最多 {attempts} 次尝试，每次超时 {timeout} 秒，总预算 {budget} 秒。取消勾选的段记为跳过，它对应的问题按未覆盖计。",
           "answers": "满足 {ids}",
           "gapAngleHere": "缺口角度挂在这一节"
-        }
+        },
+        "changed": "设置在这份初稿生成后改过。单段重跑沿用初稿自己的设置；要让新设置生效，请重新完整生成。"
       },
       "validation": {
         "sectionsRequired": "至少勾选一个段落再生成。"
       },
       "errors": {
         "invalid_request": "draft 请求无法读取。",
-        "payload_too_large": "brief 与设置超过了请求体大小上限。",
+        "payload_too_large": "请求体超过上限（{kb} KB）。",
         "unsupported_media_type": "请以 JSON 发送请求。",
         "auth_required": "登录后才能生成 draft。",
         "auth_unavailable": "登录状态暂时不可用，请稍后再试。",
-        "rate_limited": "本工具的小时额度已用完，draft 没有开始。等窗口重置后再试。",
+        "rate_limited": "本工具的小时额度已用完，请求没有开始。等窗口重置后再试。",
         "quota_unavailable": "我们这边的用量限制服务暂时联系不上，为了不跑一次不计量的运行，draft 没有开始。这与你的使用量无关，请稍后再试。",
+        "run_in_progress": "这个账号已有一次生成在进行中。等它结束后再试。",
         "brief_schema_mismatch": "这不是 Content Brief v1 文档，没有载入。",
         "brief_fingerprint_mismatch": "brief 的指纹与内容不一致：导出后被改过。请在 Content Brief Builder 里重新导出。",
         "brief_reference_invalid": "brief 的交叉引用不成立（某节引用了不存在的问题、同一问题被两节引用，或某条不变量被破坏），没有载入。",
         "section_not_writable": "请求的段落在本 brief 里不可写，draft 没有开始。",
         "draft_unavailable": "这次没能生成可核实的初稿。这不是你的 brief 的问题，请稍后重试。",
         "unknown": "draft 没有完成。"
+      },
+      "errorsWithRetry": {
+        "run_in_progress": "这个账号已有一次生成在进行中，{seconds} 秒后再试。",
+        "rate_limited": "本工具的小时额度已用完，请求没有开始，{seconds} 秒后再试。"
       },
       "running": {
         "elapsed": "正在生成 draft… 已用 {seconds} 秒，预算 {budget} 秒",
@@ -4384,9 +4390,10 @@
         "running": "生成中…",
         "rerun": "重跑这一段",
         "rerunning": "重跑中…",
+        "generateSection": "生成这一段",
         "copyMarkdown": "复制 Markdown",
         "copied": "Markdown 已复制",
-        "copyFailed": "剪贴板拒绝了复制。请选中正文手动复制。",
+        "copyFailed": "浏览器拒绝了剪贴板访问，请检查权限后重试。",
         "exportJson": "导出 JSON",
         "openOnPage": "打开 On-Page SEO Checker →",
         "expand": "展开",
@@ -4471,6 +4478,12 @@
         "no_claim": "连接、组织性句子；不画线",
         "stance": "出自缺口角度的立场句，引用档案事实"
       },
+      "claimMark": {
+        "boundThird": "[有据 · 竞品片段]",
+        "boundFirst": "[有据 · 档案事实]",
+        "gap": "[缺口]",
+        "stance": "[立场]"
+      },
       "toolbar": {
         "showClaims": "显示主张标注",
         "legend": "图例",
@@ -4481,7 +4494,7 @@
         "timeout": "这一段的模型调用耗尽了时间预算。",
         "provider_error": "模型服务方对这一段返回了错误。",
         "not_configured": "模型未配置：本部署没有 draft 模型的凭据。",
-        "validation_failed": "模型标注的证据引用没有通过校验（有据句没有引用、引用了不存在的证据，或立场句引用了竞品页）。这一段不显示，也不改写。"
+        "validation_failed": "模型输出未通过结构或证据引用校验（不是 JSON、形状不对、句数或句长超限、有据句没有引用、引用了不存在的证据，或立场句引用了竞品页）。这一段不显示，也不改写。"
       },
       "doc": {
         "title": "初稿",
@@ -4491,7 +4504,7 @@
         "skipped": "跳过",
         "skippedBody": "你没有勾选这一段，没有调用模型。",
         "rerunsUsed": "已重跑 {used}/{max} 次",
-        "rerunLimit": "本页面每份 draft 最多重跑 {max} 段；服务端只认自己的配额。",
+        "rerunLimit": "本页面每份 draft 最多执行 {max} 次单段重跑；服务端只认自己的配额。",
         "attempts": "尝试 {count} 次"
       },
       "verify": {

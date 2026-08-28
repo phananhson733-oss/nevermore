@@ -16,10 +16,12 @@ import {
   SECTION_MAX_SENTENCES,
   SENTENCE_MAX_CHARS,
 } from "./constants.ts";
-import type { DraftResult, DraftSection } from "./contract.ts";
-import { draftBrief, draftResultFixture } from "./draft-fixtures.ts";
+import type { DraftResult, DraftSection, LlmReadMeta } from "./contract.ts";
+import { aggregateSectionLlm } from "./draft-assemble.ts";
+import type { SectionCallMeta } from "./draft-assemble.ts";
+import { draftBrief, draftResultFixture, fixtureCallOf } from "./draft-fixtures.ts";
 import { parseDraftResult, parseDraftResultShape, parseDraftSections, parseDraftSettings } from "./parse-draft.ts";
-import type { ParseDraftFailure } from "./parse-draft.ts";
+import type { ParseDraftFailure, RerunProvenance } from "./parse-draft.ts";
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                             */
@@ -62,6 +64,10 @@ function fakeFingerprint(result: DraftResult): Promise<string> {
   return Promise.resolve(`fake-${(hash >>> 0).toString(16)}`);
 }
 
+async function fakeStamped(result: DraftResult): Promise<DraftResult> {
+  return { ...result, run: { ...result.run, fingerprint: await fakeFingerprint(result) } };
+}
+
 const sentenceAt = (section: number, paragraph: number, index: number) =>
   `sections[${section}].body.paragraphs[${paragraph}].sentences[${index}]`;
 
@@ -70,8 +76,11 @@ const base = await draftResultFixture(brief);
 const failed = await draftResultFixture(brief, { failSection: "O2" });
 const skipped = await draftResultFixture(brief, { skipSection: "O3" });
 const noCoverage = await draftResultFixture(brief, { coverage: "unavailable" });
+const throughout = await draftResultFixture(brief, { productMention: "throughout" });
+const nothingOk = await draftResultFixture(brief, { failSection: ["O1", "O2"], skipSection: "O3" });
 const plainBrief = await draftBrief({});
 const plain = await draftResultFixture(plainBrief);
+const SETTINGS = base.settings;
 
 /** Binding failures: shape passes, the brief disagrees. */
 async function expectBound(input: unknown, path: string, against = brief): Promise<void> {
@@ -82,6 +91,11 @@ function okSection(result: DraftResult, index: number): Extract<DraftSection, { 
   const section = result.sections[index];
   if (section === undefined || section.status !== "ok") throw new Error(`fixture: section ${index} is not ok`);
   return section;
+}
+
+/** The first-run aggregate the fixture would have produced for these sections. */
+function aggregateOf(sections: readonly DraftSection[]) {
+  return aggregateSectionLlm(sections.flatMap((section) => fixtureCallOf(section) ?? []), 0.4);
 }
 
 /* ------------------------------------------------------------------ */
@@ -98,29 +112,45 @@ describe("parseDraftResultShape accepts", () => {
   });
 
   it("every fixture variant assembled through draft-assemble", () => {
-    for (const result of [failed, skipped, noCoverage, plain]) expectAccepted(result);
+    for (const result of [failed, skipped, noCoverage, throughout, nothingOk, plain]) expectAccepted(result);
     expect(failed.run).toMatchObject({ mode: "degraded", reads: { sections: { requested: 3, ok: 2, failed: 1, skipped: 0 }, llm_sections: { status: "partial", failed_reasons: ["timeout"] } } });
     expect(skipped.run).toMatchObject({ mode: "partial", reads: { sections: { requested: 2, ok: 2, failed: 0, skipped: 1 }, llm_sections: { status: "complete" } } });
     expect(noCoverage.run.mode).toBe("degraded");
     expect(noCoverage.coverage).toEqual({ status: "unavailable", reason: "timeout", attempted: 1 });
+    expect(nothingOk.run).toMatchObject({ mode: "unavailable", reads: { sections: { requested: 2, ok: 0, failed: 2, skipped: 1 }, llm_sections: { status: "unavailable", reason: "timeout", attempted: 2, calls: 4 } } });
+    expect(nothingOk.run.reads.llm_coverage).toMatchObject({ status: "unavailable", reason: "insufficient_evidence", attempted: 0, calls: 0 });
+    expect(nothingOk.coverage).toMatchObject({ status: "available", total: 4, none: 4 });
   });
 
   it("the fixture facts the negatives below rely on", () => {
     expect(base.sections.map((section) => [section.id, section.status, section.answers])).toEqual([["O1", "ok", ["Q1"]], ["O2", "ok", ["Q2"]], ["O3", "ok", ["Q3", "Q4"]]]);
+    // gap_only: only the gap angle's home section (O3) was given a fact, so only it carries profile-only and stance sentences.
     expect(okSection(base, 0).body.paragraphs.map((paragraph) => paragraph.sentences.map((sentence) => [sentence.claim, sentence.support_count]))).toEqual([
-      [["bound", 2], ["bound", 1], ["bound", 0]],
+      [["bound", 2], ["bound", 1]],
       [["gap", 0], ["no_claim", 0]],
     ]);
-    expect(okSection(base, 2).body.paragraphs[1]?.sentences.at(-1)).toMatchObject({ claim: "stance", evidence_refs: ["P2"] });
+    expect(okSection(base, 2).body.paragraphs.map((paragraph) => paragraph.sentences.map((sentence) => [sentence.claim, sentence.evidence_refs]))).toEqual([
+      [["bound", ["C5", "C1"]], ["bound", ["C3"]], ["bound", ["P1"]]],
+      [["gap", []], ["no_claim", []], ["stance", ["P1"]]],
+    ]);
+    expect(okSection(base, 0).body.paragraphs[0]?.sentences.map((sentence) => sentence.evidence_refs)).toEqual([["C1", "C2"], ["C4"]]);
     expect(base.verify_before_publish.map((item) => item.kind)).toEqual([
+      "single_source", "gap",
+      "single_source", "gap",
+      "single_source", "profile_only", "gap", "stance",
+    ]);
+    expect(throughout.verify_before_publish.map((item) => item.kind)).toEqual([
       "single_source", "profile_only", "gap",
       "single_source", "profile_only", "gap",
       "single_source", "profile_only", "gap", "stance",
     ]);
+    expect(okSection(throughout, 2).body.paragraphs[1]?.sentences.at(-1)).toMatchObject({ claim: "stance", evidence_refs: ["P2"] });
     expect(base.coverage).toMatchObject({ status: "available", total: 4, covered: 2, partial: 1, none: 1 });
     expect(base.coverage.status === "available" && base.coverage.items.map((item) => [item.question_id, item.status, item.method])).toEqual([["Q1", "covered", "model"], ["Q2", "partial", "model"], ["Q3", "none", "model"], ["Q4", "covered", "model"]]);
     expect(failed.coverage.status === "available" && failed.coverage.items[1]).toEqual({ question_id: "Q2", status: "none", covered_in: null, gap: null, method: "heuristic", cause: "section_failed" });
-    expect(base.run).toMatchObject({ mode: "complete", reran_from: null, budget_ms: DRAFT_TOTAL_BUDGET_MS, reads: { llm_sections: { status: "complete", calls: 3 } } });
+    expect(base.run).toMatchObject({ mode: "complete", reran_from: null, budget_ms: DRAFT_TOTAL_BUDGET_MS, reads: { llm_sections: { status: "complete", calls: 3, input_tokens: 12_300 } } });
+    // A failed section with unreported usage makes the aggregate's usage unknown (draft-assemble sumTokens).
+    expect(failed.run.reads.llm_sections).toMatchObject({ calls: 4, input_tokens: null, output_tokens: null });
     expect(plain.verify_before_publish.map((item) => item.kind)).toEqual(["single_source", "gap", "single_source", "gap", "single_source", "gap"]);
   });
 
@@ -264,6 +294,23 @@ describe("recompute: section bodies", () => {
     expectReference(mutated(base, (draft) => { draft.sections[1].id = "O1"; }), "sections[1].id");
   });
 
+  it("ties a failed section's attempts and usage to its reason", () => {
+    const withReason = (fail_reason: string, attempts: number, input_tokens: number | null = null) =>
+      mutated(failed, (draft) => {
+        draft.sections[1].fail_reason = fail_reason;
+        draft.sections[1].llm = { attempts, input_tokens, output_tokens: null };
+        draft.run.reads.llm_sections = aggregateOf(draft.sections);
+      });
+    expectAccepted(withReason("not_configured", 0));
+    expectAccepted(withReason("timeout", 0));
+    expectAccepted(withReason("timeout", 1, 900));
+    expectReference(withReason("not_configured", 1), "sections[1].llm.attempts");
+    expectReference(withReason("validation_failed", 0), "sections[1].llm.attempts");
+    expectReference(withReason("provider_error", 0), "sections[1].llm.attempts");
+    expectReference(withReason("timeout", 0, 5), "sections[1].llm.input_tokens");
+    expectReference(mutated(failed, (draft) => { draft.sections[1].llm = { attempts: 0, input_tokens: null, output_tokens: 3 }; }), "sections[1].llm.output_tokens");
+  });
+
   it("accepts a same-length text edit here and leaves it to the fingerprint", async () => {
     const edited = mutated(base, (draft) => { draft.sections[0].body.paragraphs[0].sentences[0].text = draft.sections[0].body.paragraphs[0].sentences[0].text.replace("Most", "Some"); });
     expectAccepted(edited);
@@ -297,6 +344,7 @@ describe("recompute: verify list, totals, reads and mode", () => {
     expectReference(mutated(skipped, (draft) => { draft.run.mode = "complete"; }), "run.mode");
     expectReference(mutated(failed, (draft) => { draft.run.mode = "partial"; }), "run.mode");
     expectReference(mutated(noCoverage, (draft) => { draft.run.mode = "complete"; }), "run.mode");
+    expectReference(mutated(nothingOk, (draft) => { draft.run.mode = "degraded"; }), "run.mode");
   });
 });
 
@@ -314,6 +362,13 @@ describe("recompute: llm_sections", () => {
     expectReference(mutated(failed, (draft) => {
       draft.run.reads.llm_sections = { status: "unavailable", reason: "timeout", attempted: 3, calls: 4, model_id: null, input_tokens: 8_200, output_tokens: 1_220, failed_reasons: ["timeout"] };
     }), "run.reads.llm_sections.status");
+  });
+
+  it("keeps the aggregate's usage unknown when a real attempt has no usage", () => {
+    // Summing the two ok sections over the failed one's missing usage is the lie sumTokens now refuses.
+    expectReference(mutated(failed, (draft) => { draft.run.reads.llm_sections.input_tokens = 8_200; }), "run.reads.llm_sections.input_tokens");
+    expectReference(mutated(failed, (draft) => { draft.run.reads.llm_sections.output_tokens = 1_220; }), "run.reads.llm_sections.output_tokens");
+    expectReference(mutated(nothingOk, (draft) => { draft.run.reads.llm_sections.input_tokens = 0; }), "run.reads.llm_sections.input_tokens");
   });
 
   it("pins the rerun budget and the rerun's single call", () => {
@@ -361,9 +416,14 @@ describe("recompute: coverage against the sections", () => {
       draft.coverage.items[1] = { question_id: "Q2", status: "covered", covered_in: "O1", gap: null, method: "model", cause: null };
     }), "coverage.items[1].method");
     expectReference(mutated(failed, (draft) => { draft.coverage.items[0].covered_in = "O2"; }), "coverage.items[0].covered_in");
+  });
+
+  it("only accepts a model verdict from one completed call at temperature 0", () => {
     expectReference(mutated(base, (draft) => {
       draft.run.reads.llm_coverage = { status: "unavailable", reason: "timeout", attempted: 1, calls: 1, model_id: null, input_tokens: null, output_tokens: null };
     }), "run.reads.llm_coverage.status");
+    expectReference(mutated(base, (draft) => { draft.run.reads.llm_coverage.calls = 2; }), "run.reads.llm_coverage.calls");
+    expectReference(mutated(base, (draft) => { draft.run.reads.llm_coverage.temperature_requested = 0.4; }), "run.reads.llm_coverage.temperature_requested");
   });
 });
 
@@ -389,24 +449,43 @@ describe("parseDraftResult binds to the brief", () => {
     await expectBound(mutated(base, (draft) => { draft.sections[2].answers = ["Q3"]; }), "sections[2].answers");
   });
 
-  it("only accepts references the brief can actually back", async () => {
+  it("only accepts references the brief can actually back, within the section's own scope", async () => {
     const single = `${sentenceAt(0, 0, 1)}.evidence_refs[0]`;
-    const profile = `${sentenceAt(0, 0, 2)}.evidence_refs[0]`;
+    const profile = `${sentenceAt(2, 0, 2)}.evidence_refs[0]`;
     // The verify list copies each listed sentence's refs, so a swapped ref is applied to both places.
-    const reref = (sentence: number, verify: number, refs: string[]) =>
+    const reref = (section: number, sentence: number, verify: number, refs: string[]) =>
       mutated(base, (draft) => {
-        draft.sections[0].body.paragraphs[0].sentences[sentence].evidence_refs = refs;
+        draft.sections[section].body.paragraphs[0].sentences[sentence].evidence_refs = refs;
         draft.verify_before_publish[verify].evidence_refs = refs;
       });
-    const unknownPage = reref(1, 0, ["C9"]);
-    const noExcerpt = reref(1, 0, ["C6"]);
-    const unknownFact = reref(2, 1, ["P9"]);
-    const inferred = reref(2, 1, ["P2"]);
-    for (const result of [unknownPage, noExcerpt, unknownFact, inferred]) expectAccepted(result);
+    const unknownPage = reref(0, 1, 0, ["C9"]);
+    const noExcerpt = reref(0, 1, 0, ["C6"]);
+    // C3 has an excerpt but belongs to Q2 / Q3 / Q4's clusters, not to O1's question.
+    const otherCluster = reref(0, 1, 0, ["C3"]);
+    const unknownFact = reref(2, 2, 5, ["P9"]);
+    // P2 is inferred and, under gap_only, not among the gap angle's refs: unknown to every section.
+    const inferred = reref(2, 2, 5, ["P2"]);
+    for (const result of [unknownPage, noExcerpt, otherCluster, unknownFact, inferred]) expectAccepted(result);
     await expectBound(unknownPage, single);
     await expectBound(noExcerpt, single);
+    await expectBound(otherCluster, single);
     await expectBound(unknownFact, profile);
     await expectBound(inferred, profile);
+  });
+
+  it("scopes profile facts by product_mention", async () => {
+    // A bound sentence citing P2 (inferred) is refused even where P2 is in scope.
+    const inferredBound = mutated(throughout, (draft) => {
+      draft.sections[0].body.paragraphs[0].sentences[2].evidence_refs = ["P2"];
+      draft.verify_before_publish[1].evidence_refs = ["P2"];
+    });
+    await expectBound(inferredBound, `${sentenceAt(0, 0, 2)}.evidence_refs[0]`);
+    // none: no section was given a fact, so O3's profile-only sentence has nothing to cite.
+    await expectBound(mutated(base, (draft) => { draft.settings.product_mention = "none"; }), `${sentenceAt(2, 0, 2)}.evidence_refs[0]`);
+    // gap_only: only the gap angle's home section was given facts; O1's profile-only sentence is out of scope.
+    await expectBound(mutated(throughout, (draft) => { draft.settings.product_mention = "gap_only"; }), `${sentenceAt(0, 0, 2)}.evidence_refs[0]`);
+    await expectBound(mutated(throughout, (draft) => { draft.settings.product_mention = "none"; }), `${sentenceAt(0, 0, 2)}.evidence_refs[0]`);
+    expect(await parseDraftResult(throughout, brief)).toEqual({ ok: true, value: throughout });
   });
 
   it("re-derives coverage: heuristic set, askable set, order and the unavailable gate", async () => {
@@ -420,6 +499,93 @@ describe("parseDraftResult binds to the brief", () => {
     await expectBound(mutated(noCoverage, (draft) => { draft.coverage.attempted = 2; }), "coverage.attempted");
     await expectBound(mutated(noCoverage, (draft) => { draft.run.reads.llm_coverage = structuredClone(base.run.reads.llm_coverage); }), "coverage.reason");
   });
+
+  it("keeps the coverage ledger honest about what there was to ask", async () => {
+    const withReason = (reason: string, attempted: number | null) =>
+      mutated(noCoverage, (draft) => {
+        draft.coverage = { status: "unavailable", reason, attempted };
+        draft.run.reads.llm_coverage = { ...draft.run.reads.llm_coverage, reason, attempted };
+      });
+    // Four questions were askable: the call cannot claim it was not needed.
+    for (const reason of ["not_requested", "quota_exhausted", "unsupported_language", "insufficient_evidence"]) {
+      await expectBound(withReason(reason, 1), "coverage.reason");
+    }
+    expect(await parseDraftResult(withReason("provider_error", 1), brief, { fingerprint: fakeFingerprint })).toEqual(failure("brief_fingerprint_mismatch", "run.fingerprint"));
+    // Nothing askable: the call never went out.
+    await expectBound(mutated(nothingOk, (draft) => { draft.run.reads.llm_coverage = structuredClone(base.run.reads.llm_coverage); }), "run.reads.llm_coverage.status");
+    await expectBound(mutated(nothingOk, (draft) => { draft.run.reads.llm_coverage.calls = 1; }), "run.reads.llm_coverage.calls");
+    await expectBound(mutated(nothingOk, (draft) => {
+      draft.run.reads.llm_coverage.reason = "timeout";
+      draft.run.reads.llm_coverage.attempted = 1;
+    }), "run.reads.llm_coverage.reason");
+    expect(await parseDraftResult(nothingOk, brief)).toEqual({ ok: true, value: nothingOk });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* what the server knows first-hand                                    */
+/* ------------------------------------------------------------------ */
+
+describe("parseDraftResult with trusted rerun provenance", () => {
+  const failedCall: SectionCallMeta = {
+    status: "failed",
+    attempts: 2,
+    fail_reason: "timeout",
+    model_id: "gpt-4.1-draft",
+    temperature_requested: 0.4,
+    temperature_effective: null,
+    input_tokens: null,
+    output_tokens: null,
+  };
+  const okCall: SectionCallMeta = { ...failedCall, status: "ok", attempts: 1, fail_reason: null, temperature_effective: 0.4, input_tokens: 4_000, output_tokens: 600 };
+  const rerunOf = (result: DraftResult, call: SectionCallMeta) =>
+    mutated(result, (draft) => {
+      draft.run.reran_from = "draft_prev";
+      draft.run.budget_ms = SECTION_ENDPOINT_BUDGET_MS;
+      draft.run.reads.llm_sections = aggregateSectionLlm([call], call.temperature_requested);
+    });
+  const failedRerun = rerunOf(failed, failedCall);
+  const okRerun = rerunOf(base, okCall);
+  const provenance = (sectionId: string, call: SectionCallMeta): RerunProvenance => ({ previousRunId: "draft_prev", sectionId, call });
+
+  async function expectTrusted(input: DraftResult, rerun: RerunProvenance, path: string): Promise<void> {
+    expect(await parseDraftResult(await fakeStamped(input), brief, { fingerprint: fakeFingerprint, rerun })).toEqual(failure("brief_reference_invalid", path));
+  }
+
+  it("accepts a rerun whose section and aggregate match the call the server made", async () => {
+    expect(await parseDraftResult(await fakeStamped(failedRerun), brief, { fingerprint: fakeFingerprint, rerun: provenance("O2", failedCall) })).toMatchObject({ ok: true });
+    expect(await parseDraftResult(await fakeStamped(okRerun), brief, { fingerprint: fakeFingerprint, rerun: provenance("O1", okCall) })).toMatchObject({ ok: true });
+  });
+
+  it("pins reran_from and the rewritten section to the call record", async () => {
+    await expectTrusted(failedRerun, { ...provenance("O2", failedCall), previousRunId: "draft_other" }, "run.reran_from");
+    await expectTrusted(failedRerun, provenance("O9", failedCall), "sections");
+    await expectTrusted(failedRerun, provenance("O1", failedCall), "sections[0].status");
+    await expectTrusted(failedRerun, provenance("O2", { ...failedCall, attempts: 1 }), "sections[1].llm.attempts");
+    await expectTrusted(failedRerun, provenance("O2", { ...failedCall, fail_reason: "provider_error" }), "sections[1].fail_reason");
+    await expectTrusted(okRerun, provenance("O1", { ...okCall, input_tokens: 1 }), "sections[0].llm.input_tokens");
+    await expectTrusted(mutated(okRerun, (draft) => { draft.sections[0].llm.output_tokens = 2; }), provenance("O1", okCall), "sections[0].llm.output_tokens");
+  });
+
+  it("pins the whole llm_sections aggregate to the one call", async () => {
+    // Usage forged into the aggregate while the rewritten section still reports none.
+    await expectTrusted(mutated(failedRerun, (draft) => {
+      draft.run.reads.llm_sections.input_tokens = 1;
+      draft.run.reads.llm_sections.output_tokens = 2;
+    }), provenance("O2", failedCall), "run.reads.llm_sections.input_tokens");
+    await expectTrusted(mutated(okRerun, (draft) => { draft.run.reads.llm_sections.calls = 2; }), provenance("O1", okCall), "run.reads.llm_sections.calls");
+    await expectTrusted(mutated(okRerun, (draft) => { draft.run.reads.llm_sections.model_id = "other"; }), provenance("O1", okCall), "run.reads.llm_sections.model_id");
+    await expectTrusted(mutated(okRerun, (draft) => { draft.run.reads.llm_sections.temperature_effective = null; }), provenance("O1", okCall), "run.reads.llm_sections.temperature_effective");
+    // Without provenance the same forgery only has to be consistent with some section, so it passes the weak pin.
+    expectAccepted(mutated(okRerun, (draft) => { draft.run.reads.llm_sections.model_id = "other"; }));
+  });
+
+  it("pins run.reads.llm_coverage to the read the server made", async () => {
+    const llm: LlmReadMeta = base.run.reads.llm_coverage;
+    expect(await parseDraftResult(base, brief, { coverageLlm: llm })).toEqual({ ok: true, value: base });
+    expect(await parseDraftResult(base, brief, { coverageLlm: { ...llm, input_tokens: 1 } })).toEqual(failure("brief_reference_invalid", "run.reads.llm_coverage.input_tokens"));
+    expect(await parseDraftResult(noCoverage, brief, { coverageLlm: llm })).toEqual(failure("brief_reference_invalid", "run.reads.llm_coverage.status"));
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -428,7 +594,7 @@ describe("parseDraftResult binds to the brief", () => {
 
 describe("parseDraftResult", () => {
   it("accepts every fixture variant with the real draftFingerprint and returns a fresh copy", async () => {
-    for (const result of [base, failed, skipped, noCoverage]) {
+    for (const result of [base, failed, skipped, noCoverage, throughout, nothingOk]) {
       const parsed = await parseDraftResult(result, brief);
       expect(parsed).toEqual({ ok: true, value: result });
       if (parsed.ok) expect(parsed.value).not.toBe(result);
@@ -445,7 +611,7 @@ describe("parseDraftResult", () => {
   });
 
   it("hands the injected hasher the parsed copy, and never calls it on a rejected draft", async () => {
-    const stamped = { ...base, run: { ...base.run, fingerprint: await fakeFingerprint(base) } };
+    const stamped = await fakeStamped(base);
     const seen: DraftResult[] = [];
     const spy = vi.fn(async (result: DraftResult) => {
       seen.push(result);
@@ -473,37 +639,47 @@ describe("parseDraftResult", () => {
 
 describe("parseDraftSections", () => {
   it("accepts the sections of every variant and returns a fresh array", () => {
-    for (const result of [base, failed, skipped, noCoverage]) {
-      const parsed = parseDraftSections(result.sections, brief);
+    for (const result of [base, failed, skipped, noCoverage, nothingOk]) {
+      const parsed = parseDraftSections(result.sections, brief, SETTINGS);
       expect(parsed).toEqual({ ok: true, value: result.sections });
       if (parsed.ok) {
         expect(parsed.value).not.toBe(result.sections);
         expect(parsed.value[0]).not.toBe(result.sections[0]);
       }
     }
-    expect(parseDraftSections(plain.sections, plainBrief)).toEqual({ ok: true, value: plain.sections });
+    expect(parseDraftSections(throughout.sections, brief, throughout.settings)).toEqual({ ok: true, value: throughout.sections });
+    expect(parseDraftSections(plain.sections, plainBrief, SETTINGS)).toEqual({ ok: true, value: plain.sections });
   });
 
   it("rejects the wrong shape under the sections path", () => {
-    expect(parseDraftSections("nope", brief)).toEqual(failure("invalid_request", "sections"));
-    expect(parseDraftSections([...base.sections, ...base.sections, ...base.sections], brief)).toEqual(failure("invalid_request", "sections"));
-    expect(parseDraftSections(mutated(base.sections, (draft) => { draft[0].status = "done"; }), brief)).toEqual(failure("invalid_request", "sections[0].status"));
+    expect(parseDraftSections("nope", brief, SETTINGS)).toEqual(failure("invalid_request", "sections"));
+    expect(parseDraftSections([...base.sections, ...base.sections, ...base.sections], brief, SETTINGS)).toEqual(failure("invalid_request", "sections"));
+    expect(parseDraftSections(mutated(base.sections, (draft) => { draft[0].status = "done"; }), brief, SETTINGS)).toEqual(failure("invalid_request", "sections[0].status"));
     const oversized = mutated(base.sections, (draft) => {
       const long = { text: "a".repeat(SENTENCE_MAX_CHARS), claim: "no_claim", evidence_refs: [], support_count: 0 };
       draft[0].body.paragraphs = [{ sentences: Array.from({ length: Math.ceil(SECTION_BODY_MAX_BYTES / SENTENCE_MAX_CHARS) + 1 }, () => ({ ...long })) }];
     });
-    expect(parseDraftSections(oversized, brief)).toEqual(failure("invalid_request", "sections[0]"));
+    expect(parseDraftSections(oversized, brief, SETTINGS)).toEqual(failure("invalid_request", "sections[0]"));
+    expect(parseDraftSections(mutated(failed.sections, (draft) => { draft[1].llm = { attempts: 0, input_tokens: 5, output_tokens: null }; }), brief, SETTINGS)).toEqual(
+      failure("brief_reference_invalid", "sections[1].llm.input_tokens"),
+    );
   });
 
-  it("binds every section to the brief", () => {
-    expect(parseDraftSections(base.sections.slice(0, 2), brief)).toEqual(failure("brief_reference_invalid", "sections"));
-    expect(parseDraftSections(mutated(base.sections, (draft) => { draft[0].h2 = "Other"; }), brief)).toEqual(failure("brief_reference_invalid", "sections[0].h2"));
-    expect(parseDraftSections(mutated(base.sections, (draft) => { draft[1].id = "O1"; }), brief)).toEqual(failure("brief_reference_invalid", "sections[1].id"));
-    expect(parseDraftSections(mutated(base.sections, (draft) => { draft[0].body.paragraphs[0].sentences[1].evidence_refs = ["C9"]; }), brief)).toEqual(
+  it("binds every section to the brief under the request's settings", () => {
+    expect(parseDraftSections(base.sections.slice(0, 2), brief, SETTINGS)).toEqual(failure("brief_reference_invalid", "sections"));
+    expect(parseDraftSections(mutated(base.sections, (draft) => { draft[0].h2 = "Other"; }), brief, SETTINGS)).toEqual(failure("brief_reference_invalid", "sections[0].h2"));
+    expect(parseDraftSections(mutated(base.sections, (draft) => { draft[1].id = "O1"; }), brief, SETTINGS)).toEqual(failure("brief_reference_invalid", "sections[1].id"));
+    expect(parseDraftSections(mutated(base.sections, (draft) => { draft[0].body.paragraphs[0].sentences[1].evidence_refs = ["C9"]; }), brief, SETTINGS)).toEqual(
       failure("brief_reference_invalid", `${sentenceAt(0, 0, 1)}.evidence_refs[0]`),
     );
-    expect(parseDraftSections(mutated(base.sections, (draft) => { draft[0].body.word_count += 1; }), brief)).toEqual(failure("brief_reference_invalid", "sections[0].body.word_count"));
-    expect(parseDraftSections(base.sections, plainBrief)).toEqual(failure("brief_reference_invalid", `${sentenceAt(0, 0, 2)}.evidence_refs[0]`));
+    expect(parseDraftSections(mutated(base.sections, (draft) => { draft[0].body.paragraphs[0].sentences[1].evidence_refs = ["C3"]; }), brief, SETTINGS)).toEqual(
+      failure("brief_reference_invalid", `${sentenceAt(0, 0, 1)}.evidence_refs[0]`),
+    );
+    expect(parseDraftSections(mutated(base.sections, (draft) => { draft[0].body.word_count += 1; }), brief, SETTINGS)).toEqual(failure("brief_reference_invalid", "sections[0].body.word_count"));
+    // The same sections under settings that gave no section a fact.
+    expect(parseDraftSections(base.sections, brief, { ...SETTINGS, product_mention: "none" })).toEqual(failure("brief_reference_invalid", `${sentenceAt(2, 0, 2)}.evidence_refs[0]`));
+    expect(parseDraftSections(throughout.sections, brief, SETTINGS)).toEqual(failure("brief_reference_invalid", `${sentenceAt(0, 0, 2)}.evidence_refs[0]`));
+    expect(parseDraftSections(base.sections, plainBrief, SETTINGS)).toEqual(failure("brief_reference_invalid", `${sentenceAt(2, 0, 2)}.evidence_refs[0]`));
   });
 
   it("caps the list at the outline cap", () => {

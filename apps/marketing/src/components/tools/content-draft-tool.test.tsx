@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 // @input  -- session status, the three brief entrances, the settings form, and the draft endpoints
-// @output -- proof of handoff §8 items 19-21: the empty state refuses bare keywords, a bad brief
-//            never reaches the form, a writable-less brief disables generation, an unchecked
-//            section stays out of section_ids, and a signed-out visitor never triggers a POST
+// @output -- proof of handoff §8 items 19-21 plus the review rulings: the empty state refuses bare
+//            keywords, a bad brief never reaches the form, a writable-less brief disables generation,
+//            an unchecked section stays out of section_ids, a signed-out visitor never triggers a
+//            POST (and gets the handoff back for the reload), reruns send the draft's own settings and
+//            previous_run_id and are counted per POST, a failed second run keeps the last good result,
+//            and a slow upload cannot overwrite a later paste
 // @pos    -- interaction contract for the Marketing Content Draft Writer form
 
 import { act } from "react";
@@ -12,7 +15,10 @@ import {
   CONTENT_BRIEF_HANDOFF_KEY,
   CONTENT_BRIEF_HANDOFF_TTL_MS,
   type ContentBrief,
+  type DraftResult,
 } from "@sf/public-tools/content-brief/contract";
+import { SECTION_RERUN_SOFT_MAX } from "@sf/public-tools/content-brief/constants";
+import { draftFingerprint } from "@sf/public-tools/content-brief/canonical";
 import {
   contentBriefFixture,
   withFingerprint,
@@ -31,7 +37,8 @@ const { signInDialogMock, trackMarketingEventMock } = vi.hoisted(() => ({
 
 vi.mock("next-intl", () => ({
   useTranslations: () => {
-    const translate = (key: string) => key;
+    const translate = (key: string, values?: Readonly<Record<string, unknown>>) =>
+      values === undefined ? key : `${key} ${JSON.stringify(values)}`;
     translate.has = () => true;
     return translate;
   },
@@ -46,10 +53,21 @@ vi.mock("../layout/google-analytics", () => ({
 }));
 
 // The result surface is covered by i18n/content-draft-messages.test.tsx with
-// the real catalog; here it would only render key paths.
+// the real catalog; here it only exposes the run id and the rerun controls.
 vi.mock("./content-draft-results", () => ({
-  ContentDraftResults: ({ result }: { readonly result: { readonly run: { readonly run_id: string } } }) => (
-    <div data-testid="draft-results">{result.run.run_id}</div>
+  ContentDraftResults: ({
+    result,
+    rerun,
+  }: {
+    readonly result: { readonly run: { readonly run_id: string }; readonly sections: readonly { readonly id: string }[] };
+    readonly rerun: { readonly used: number; readonly onRerun: (id: string) => void };
+  }) => (
+    <div data-testid="draft-results" data-run-id={result.run.run_id}>
+      <span data-testid="reruns-used">{rerun.used}</span>
+      {result.sections.map((section) => (
+        <button key={section.id} type="button" data-testid={`rerun-${section.id}`} onClick={() => rerun.onRerun(section.id)} />
+      ))}
+    </div>
   ),
 }));
 
@@ -58,10 +76,19 @@ const { ContentDraftTool } = await import("./content-draft-tool.tsx");
 const originalFetch = globalThis.fetch;
 let root: Root | null = null;
 
-function fetchCalls(): readonly string[] {
-  return (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map((call) =>
-    String(call[0]),
-  );
+type FetchCall = { readonly url: string; readonly body: Record<string, unknown> | null };
+
+function fetchCalls(): readonly FetchCall[] {
+  return (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map((call) => ({
+    url: String(call[0]),
+    body: typeof (call[1] as RequestInit | undefined)?.body === "string"
+      ? (JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>)
+      : null,
+  }));
+}
+
+function callsTo(url: string): readonly FetchCall[] {
+  return fetchCalls().filter((call) => call.url === url);
 }
 
 beforeEach(() => {
@@ -121,6 +148,14 @@ async function type(field: Element | null, value: string): Promise<void> {
   });
 }
 
+async function select(field: Element | null, value: string): Promise<void> {
+  if (!(field instanceof HTMLSelectElement)) throw new Error("expected a select");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(field, value);
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
 async function click(element: Element | null): Promise<void> {
   if (!(element instanceof HTMLElement)) throw new Error("expected an element");
   await act(async () => {
@@ -134,18 +169,39 @@ async function pasteBrief(host: HTMLElement, brief: ContentBrief): Promise<void>
   await click(host.querySelector("[data-load-brief]"));
 }
 
-function signedInFetch(
-  onRun: (body: Record<string, unknown>) => Response | Promise<Response>,
-): typeof fetch {
+type Responder = (body: Record<string, unknown>) => Response | Promise<Response>;
+
+function signedInFetch(onRun: Responder, onSection: Responder = onRun): typeof fetch {
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === "/api/auth/session") return Promise.resolve(Response.json({ signedIn: true }));
+    const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
     if (url === "/api/tools/content-draft/run") {
       expect(init?.method).toBe("POST");
-      return Promise.resolve(onRun(JSON.parse(String(init?.body)) as Record<string, unknown>));
+      return Promise.resolve(onRun(body));
+    }
+    if (url === "/api/tools/content-draft/section") {
+      expect(init?.method).toBe("POST");
+      return Promise.resolve(onSection(body));
     }
     return Promise.resolve(Response.json({ error: { code: "invalid_request" } }, { status: 400 }));
   }) as unknown as typeof fetch;
+}
+
+/** A rerun's reply: a new run id pointing at the run it replaces, re-fingerprinted. */
+async function rerunOf(base: DraftResult, previous: string, runId: string): Promise<DraftResult> {
+  const next: DraftResult = { ...base, run: { ...base.run, run_id: runId, reran_from: previous, fingerprint: "" } };
+  return { ...next, run: { ...next.run, fingerprint: await draftFingerprint(next) } };
+}
+
+function runId(host: HTMLElement): string | null {
+  return host.querySelector('[data-testid="draft-results"]')?.getAttribute("data-run-id") ?? null;
+}
+
+async function loadAndRun(host: HTMLElement, brief: ContentBrief): Promise<void> {
+  await pasteBrief(host, brief);
+  await click(host.querySelector("[data-run-draft]"));
+  await settle();
 }
 
 describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
@@ -241,6 +297,38 @@ describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
       "handoff_expired",
     );
   });
+
+  it("lets a later paste win over a slower upload (intake generations)", async () => {
+    const uploaded = await draftBrief();
+    const pasted = await withFingerprint(contentBriefFixture());
+    expect(uploaded.run.fingerprint).not.toBe(pasted.run.fingerprint);
+    let resolveText: ((text: string) => void) | null = null;
+    const slowFile = {
+      text: () =>
+        new Promise<string>((resolve) => {
+          resolveText = resolve;
+        }),
+    };
+    const host = await renderTool();
+    const input = host.querySelector("[data-upload-brief]");
+    if (!(input instanceof HTMLInputElement)) throw new Error("no upload input");
+    Object.defineProperty(input, "files", { configurable: true, value: [slowFile] });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(host.querySelector('[data-intake-phase="parsing"]')).not.toBeNull();
+
+    await pasteBrief(host, pasted);
+    expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(pasted.run.fingerprint);
+
+    // The slow read finally lands, for a generation that is no longer current.
+    await act(async () => {
+      resolveText?.(JSON.stringify(uploaded));
+    });
+    await settle();
+    expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(pasted.run.fingerprint);
+    expect(host.querySelector('[data-brief-source="paste"]')).not.toBeNull();
+  });
 });
 
 describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
@@ -250,18 +338,27 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     await pasteBrief(host, brief);
     await click(host.querySelector("[data-run-draft]"));
     expect(host.querySelector('[data-testid="sign-in-dialog"]')).not.toBeNull();
-    expect(fetchCalls()).not.toContain("/api/tools/content-draft/run");
+    expect(callsTo("/api/tools/content-draft/run")).toHaveLength(0);
     expect(trackMarketingEventMock).not.toHaveBeenCalled();
+  });
+
+  it("puts a consumed handoff back verbatim before opening sign-in, so the reload consumes it again", async () => {
+    const brief = await draftBrief();
+    const now = Date.now();
+    const raw = JSON.stringify({ version: 1, created_at: now, expires_at: now + CONTENT_BRIEF_HANDOFF_TTL_MS, brief });
+    window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, raw);
+    const host = await renderTool();
+    await settle();
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+    await click(host.querySelector("[data-run-draft]"));
+    expect(host.querySelector('[data-testid="sign-in-dialog"]')).not.toBeNull();
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(raw);
   });
 
   it("leaves an unchecked section out of section_ids and renders the returned draft", async () => {
     const brief = await draftBrief();
     const result = await draftResultFixture(brief, { skipSection: "O2" });
-    let requestBody: Record<string, unknown> | null = null;
-    globalThis.fetch = signedInFetch((body) => {
-      requestBody = body;
-      return Response.json(result);
-    });
+    globalThis.fetch = signedInFetch(() => Response.json(result));
 
     const host = await renderTool();
     await pasteBrief(host, brief);
@@ -271,16 +368,13 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     await click(host.querySelector("[data-run-draft]"));
     await settle();
 
-    expect(requestBody).not.toBeNull();
-    const body = requestBody as unknown as {
-      section_ids: string[];
-      settings: Record<string, string>;
-      brief: { run: { fingerprint: string } };
-    };
-    expect(body.section_ids).toEqual(writable.filter((id) => id !== "O2"));
-    expect(body.settings).toEqual({ tone: "explanatory", person: "second", product_mention: "gap_only" });
-    expect(body.brief.run.fingerprint).toBe(brief.run.fingerprint);
-    expect(host.querySelector('[data-testid="draft-results"]')?.textContent).toBe(result.run.run_id);
+    const [request] = callsTo("/api/tools/content-draft/run");
+    expect(request?.body).not.toBeNull();
+    expect(Object.keys(request?.body ?? {}).sort()).toEqual(["brief", "section_ids", "settings"]);
+    expect(request?.body?.["section_ids"]).toEqual(writable.filter((id) => id !== "O2"));
+    expect(request?.body?.["settings"]).toEqual({ tone: "explanatory", person: "second", product_mention: "gap_only" });
+    expect((request?.body?.["brief"] as ContentBrief).run.fingerprint).toBe(brief.run.fingerprint);
+    expect(runId(host)).toBe(result.run.run_id);
     expect(trackMarketingEventMock).toHaveBeenCalledWith("tool_complete", { tool_name: "content_draft" });
   });
 
@@ -299,15 +393,153 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
 
   it("renders the server's error code and opens sign-in on auth_required", async () => {
     const brief = await draftBrief();
-    globalThis.fetch = signedInFetch(() =>
-      Response.json({ error: { code: "auth_required" } }, { status: 401 }),
-    );
+    globalThis.fetch = signedInFetch(() => Response.json({ error: { code: "auth_required" } }, { status: 401 }));
     const host = await renderTool();
-    await pasteBrief(host, brief);
-    await click(host.querySelector("[data-run-draft]"));
-    await settle();
+    await loadAndRun(host, brief);
     expect(host.querySelector("[data-error-code]")?.getAttribute("data-error-code")).toBe("auth_required");
     expect(host.querySelector('[data-testid="sign-in-dialog"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="draft-results"]')).toBeNull();
+  });
+
+  it("prints the Retry-After seconds for run_in_progress, and the plain line without the header", async () => {
+    const brief = await draftBrief();
+    globalThis.fetch = signedInFetch(() =>
+      new Response(JSON.stringify({ error: { code: "run_in_progress" } }), {
+        status: 409,
+        headers: { "Content-Type": "application/json", "Retry-After": "7" },
+      }),
+    );
+    const host = await renderTool();
+    await loadAndRun(host, brief);
+    const error = host.querySelector("[data-error-code]");
+    expect(error?.getAttribute("data-error-code")).toBe("run_in_progress");
+    expect(error?.textContent).toContain("errorsWithRetry.run_in_progress");
+    expect(error?.textContent).toContain('"seconds":7');
+
+    globalThis.fetch = signedInFetch(() => Response.json({ error: { code: "run_in_progress" } }, { status: 409 }));
+    await click(host.querySelector("[data-run-draft]"));
+    await settle();
+    expect(host.querySelector("[data-error-code]")?.textContent).toContain("errors.run_in_progress");
+  });
+
+  it("refuses a result written against another brief", async () => {
+    const brief = await draftBrief();
+    const other = await withFingerprint(contentBriefFixture());
+    const foreign = await draftResultFixture(other);
+    expect(foreign.brief_ref.fingerprint).not.toBe(brief.run.fingerprint);
+    globalThis.fetch = signedInFetch(() => Response.json(foreign));
+    const host = await renderTool();
+    await loadAndRun(host, brief);
+    expect(host.querySelector('[data-testid="draft-results"]')).toBeNull();
+    expect(host.querySelector("[data-error-code]")?.getAttribute("data-error-code")).toBe("unknown");
+  });
+});
+
+describe("ContentDraftTool reruns and result replacement", () => {
+  it("reruns with the draft's own settings and previous_run_id, and flags changed form settings", async () => {
+    const brief = await draftBrief();
+    const first = await draftResultFixture(brief, { failSection: "O2" });
+    const second = await rerunOf(await draftResultFixture(brief), first.run.run_id, "draft_01J6RERUN0000000000000002");
+    globalThis.fetch = signedInFetch(() => Response.json(first), () => Response.json(second));
+    const host = await renderTool();
+    await loadAndRun(host, brief);
+    expect(runId(host)).toBe(first.run.run_id);
+
+    await select(host.querySelector("#content-draft-tone"), "technical");
+    expect(host.querySelector("[data-settings-changed]")).not.toBeNull();
+
+    await click(host.querySelector('[data-testid="rerun-O2"]'));
+    await settle();
+    const [request] = callsTo("/api/tools/content-draft/section");
+    expect(Object.keys(request?.body ?? {}).sort()).toEqual([
+      "brief",
+      "previous_run_id",
+      "section_id",
+      "sections",
+      "settings",
+    ]);
+    expect(request?.body?.["section_id"]).toBe("O2");
+    expect(request?.body?.["previous_run_id"]).toBe(first.run.run_id);
+    // The draft's settings, not the form's: the form now says "technical".
+    expect(request?.body?.["settings"]).toEqual(first.settings);
+    expect(request?.body?.["sections"]).toEqual(first.sections);
+    expect(runId(host)).toBe(second.run.run_id);
+    expect(host.querySelector('[data-testid="reruns-used"]')?.textContent).toBe("1");
+    // Still flagged: the new result carries the old settings too.
+    expect(host.querySelector("[data-settings-changed]")).not.toBeNull();
+  });
+
+  it("counts every section POST against the soft cap, failures included, and stops sending at the cap", async () => {
+    const brief = await draftBrief();
+    const first = await draftResultFixture(brief);
+    globalThis.fetch = signedInFetch(
+      () => Response.json(first),
+      () => Response.json({ error: { code: "quota_unavailable" } }, { status: 503 }),
+    );
+    const host = await renderTool();
+    await loadAndRun(host, brief);
+    for (let i = 0; i < SECTION_RERUN_SOFT_MAX; i += 1) {
+      await click(host.querySelector('[data-testid="rerun-O1"]'));
+      await settle();
+    }
+    expect(callsTo("/api/tools/content-draft/section")).toHaveLength(SECTION_RERUN_SOFT_MAX);
+    expect(host.querySelector('[data-testid="reruns-used"]')?.textContent).toBe(String(SECTION_RERUN_SOFT_MAX));
+    expect(host.querySelector("[data-error-code]")?.getAttribute("data-error-code")).toBe("quota_unavailable");
+    // The last good result is still on screen after every failed rerun.
+    expect(runId(host)).toBe(first.run.run_id);
+
+    await click(host.querySelector('[data-testid="rerun-O1"]'));
+    await settle();
+    expect(callsTo("/api/tools/content-draft/section")).toHaveLength(SECTION_RERUN_SOFT_MAX);
+  });
+
+  it("keeps the last good result through a failed second run and replaces it atomically on success", async () => {
+    const brief = await draftBrief();
+    const first = await draftResultFixture(brief);
+    const rerun = await rerunOf(first, first.run.run_id, "draft_01J6RERUN0000000000000002");
+    const third = await rerunOf(first, null as unknown as string, "draft_01J6THIRD0000000000000003");
+    const replies: Response[] = [
+      Response.json(first),
+      Response.json({ error: { code: "rate_limited" } }, { status: 429 }),
+      Response.json({ ...third, run: { ...third.run, reran_from: null } }),
+    ];
+    globalThis.fetch = signedInFetch(() => replies.shift() ?? Response.json({ error: { code: "invalid_request" } }, { status: 400 }), () => Response.json(rerun));
+    const host = await renderTool();
+    await loadAndRun(host, brief);
+    await click(host.querySelector('[data-testid="rerun-O1"]'));
+    await settle();
+    expect(runId(host)).toBe(rerun.run.run_id);
+    expect(host.querySelector('[data-testid="reruns-used"]')?.textContent).toBe("1");
+
+    // A refused second run: the rerun result stays, the counter stays, the error shows.
+    await click(host.querySelector("[data-run-draft]"));
+    await settle();
+    expect(runId(host)).toBe(rerun.run.run_id);
+    expect(host.querySelector('[data-testid="reruns-used"]')?.textContent).toBe("1");
+    expect(host.querySelector("[data-error-code]")?.getAttribute("data-error-code")).toBe("rate_limited");
+
+    // A successful one replaces the result and resets the rerun budget.
+    await click(host.querySelector("[data-run-draft]"));
+    await settle();
+    expect(runId(host)).toBe(third.run.run_id);
+    expect(host.querySelector('[data-testid="reruns-used"]')?.textContent).toBe("0");
+    expect(host.querySelector("[data-error-code]")).toBeNull();
+  });
+
+  it("replacing the brief drops the result, resets the phase, and aborts nothing that matters later", async () => {
+    const brief = await draftBrief();
+    const result = await draftResultFixture(brief);
+    globalThis.fetch = signedInFetch(() => Response.json(result));
+    const host = await renderTool();
+    await loadAndRun(host, brief);
+    expect(host.querySelector('[data-testid="draft-results"]')).not.toBeNull();
+    await click(host.querySelector("[data-replace-brief]"));
+    expect(host.querySelector('[data-intake-phase="empty"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="draft-results"]')).toBeNull();
+    expect(host.querySelector('[role="status"]')).toBeNull();
+    await pasteBrief(host, brief);
+    const run = host.querySelector("[data-run-draft]");
+    expect(run instanceof HTMLButtonElement && !run.disabled).toBe(true);
+    expect(run?.textContent).toBe("actions.run");
   });
 });

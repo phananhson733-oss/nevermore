@@ -1,6 +1,7 @@
 // @input  -- a fake storage, a fixed clock, and the package's contract-valid brief fixture
 // @output -- proof the brief → draft handoff is versioned, TTL-pinned, size-bounded,
-//            consumed once, and parseable by the draft page's exact parser
+//            consumed once, restorable verbatim, cleared from an opener only on exact match,
+//            and parseable by the draft page's exact parser
 // @pos    -- the write half of handoff §5.1's main path; the read half is parseContentBriefHandoff
 
 import { describe, expect, it } from "vitest";
@@ -16,6 +17,8 @@ import {
 import { parseContentBriefHandoff } from "@sf/public-tools/content-brief/parse-brief";
 
 import {
+  clearMatchingContentBriefHandoff,
+  restoreContentBriefHandoff,
   takeContentBriefHandoff,
   writeContentBriefHandoff,
 } from "./content-brief-handoff.ts";
@@ -67,8 +70,9 @@ describe("writeContentBriefHandoff", () => {
     if (parsed.ok) expect(parsed.value.brief.run.fingerprint).toBe(brief.run.fingerprint);
   });
 
-  it("refuses a brief over the byte cap without touching storage", async () => {
+  it("refuses a brief over the byte cap and clears any older handoff", async () => {
     const storage = fakeStorage();
+    storage.setItem(CONTENT_BRIEF_HANDOFF_KEY, "stale");
     const brief = await withFingerprint(contentBriefFixture());
     const padding = "x".repeat(CONTENT_BRIEF_HANDOFF_MAX_BYTES);
     const oversized = { ...brief, keyword: { ...brief.keyword, primary: padding } };
@@ -104,5 +108,43 @@ describe("takeContentBriefHandoff", () => {
       removeItem: () => undefined,
     };
     expect(takeContentBriefHandoff(broken)).toBeNull();
+  });
+});
+
+describe("restoreContentBriefHandoff", () => {
+  it("puts the consumed envelope back verbatim so a reload consumes it once more", async () => {
+    const storage = fakeStorage();
+    writeContentBriefHandoff(storage, NOW, await withFingerprint(contentBriefFixture()));
+    const raw = takeContentBriefHandoff(storage);
+    expect(raw).not.toBeNull();
+    expect(restoreContentBriefHandoff(storage, raw ?? "")).toBe(true);
+    expect(takeContentBriefHandoff(storage)).toBe(raw);
+    expect(takeContentBriefHandoff(storage)).toBeNull();
+  });
+
+  it("reports a store that refuses the write", () => {
+    expect(restoreContentBriefHandoff(fakeStorage({ throwOnSet: true }), "{}")).toBe(false);
+  });
+});
+
+describe("clearMatchingContentBriefHandoff", () => {
+  it("removes the opener's copy only when it is exactly the consumed envelope", () => {
+    const opener = fakeStorage();
+    opener.setItem(CONTENT_BRIEF_HANDOFF_KEY, "{\"a\":1}");
+    expect(clearMatchingContentBriefHandoff(opener, "{\"a\":2}")).toBe(false);
+    expect(opener.map.get(CONTENT_BRIEF_HANDOFF_KEY)).toBe("{\"a\":1}");
+    expect(clearMatchingContentBriefHandoff(opener, "{\"a\":1}")).toBe(true);
+    expect(opener.map.has(CONTENT_BRIEF_HANDOFF_KEY)).toBe(false);
+  });
+
+  it("returns false when the opener's storage cannot be read", () => {
+    const broken = {
+      getItem: () => {
+        throw new Error("SecurityError");
+      },
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    };
+    expect(clearMatchingContentBriefHandoff(broken, "{}")).toBe(false);
   });
 });

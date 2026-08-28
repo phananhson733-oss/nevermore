@@ -14,8 +14,10 @@ import {
   type DraftResult,
 } from "@sf/public-tools/content-brief/contract";
 import {
+  DRAFT_REQUEST_MAX_BYTES,
   DRAFT_TOTAL_BUDGET_MS,
   SECTION_ENDPOINT_BUDGET_MS,
+  SECTION_REQUEST_MAX_BYTES,
   SECTION_RERUN_SOFT_MAX,
 } from "@sf/public-tools/content-brief/constants";
 import {
@@ -23,10 +25,17 @@ import {
   parseContentBriefHandoff,
 } from "@sf/public-tools/content-brief/parse-brief";
 
-import { takeContentBriefHandoff } from "../../lib/tools/content-brief-handoff";
+import {
+  clearMatchingContentBriefHandoff,
+  restoreContentBriefHandoff,
+  takeContentBriefHandoff,
+} from "../../lib/tools/content-brief-handoff";
 import { SignInDialog } from "../auth/sign-in-dialog";
 import { trackMarketingEvent } from "../layout/google-analytics";
-import { isContentDraftErrorCode } from "./content-draft-codes";
+import {
+  RETRY_AFTER_ERROR_CODES,
+  isContentDraftErrorCode,
+} from "./content-draft-codes";
 import {
   ContentDraftIntake,
   type BriefSource,
@@ -64,44 +73,24 @@ function responseErrorCode(body: unknown): string | null {
 function responseDraft(body: unknown): DraftResult | null {
   if (!isRecord(body) || body.schema !== DRAFT_RESULT_SCHEMA) return null;
   if (!isRecord(body.run) || !isRecord(body.run.reads)) return null;
-  if (
-    typeof body.run.mode !== "string" ||
-    typeof body.run.fingerprint !== "string"
-  )
-    return null;
-  if (
-    !isRecord(body.brief_ref) ||
-    !isRecord(body.settings) ||
-    !isRecord(body.coverage)
-  )
-    return null;
-  if (
-    !Array.isArray(body.sections) ||
-    !Array.isArray(body.verify_before_publish)
-  )
-    return null;
+  if (typeof body.run.mode !== "string" || typeof body.run.fingerprint !== "string") return null;
+  if (!isRecord(body.brief_ref) || !isRecord(body.settings) || !isRecord(body.coverage)) return null;
+  if (!Array.isArray(body.sections) || !Array.isArray(body.verify_before_publish)) return null;
   if (!isRecord(body.totals)) return null;
   return body as unknown as DraftResult;
 }
 
 /** The parser's failure, or the two states only the intake knows about. */
-async function parseIntake(
-  raw: string,
-  source: BriefSource,
-): Promise<IntakeState> {
+async function parseIntake(raw: string, source: BriefSource): Promise<IntakeState> {
   let json: unknown;
   try {
     json = JSON.parse(raw);
   } catch {
-    return {
-      phase: "rejected",
-      rejection: { code: "invalid_json", path: null },
-    };
+    return { phase: "rejected", rejection: { code: "invalid_json", path: null } };
   }
   if (source === "handoff") {
     const parsed = await parseContentBriefHandoff(json);
-    if (parsed.ok)
-      return { phase: "loaded", brief: parsed.value.brief, source };
+    if (parsed.ok) return { phase: "loaded", brief: parsed.value.brief, source };
     // The envelope's window is the one failure a visitor can do nothing about
     // except export the brief again, so it gets its own sentence.
     const expired =
@@ -117,26 +106,54 @@ async function parseIntake(
   const parsed = await parseContentBrief(json);
   return parsed.ok
     ? { phase: "loaded", brief: parsed.value, source }
-    : {
-        phase: "rejected",
-        rejection: { code: parsed.code, path: parsed.path },
-      };
+    : { phase: "rejected", rejection: { code: parsed.code, path: parsed.path } };
 }
 
 function allWritable(brief: ContentBrief): Set<string> {
   return new Set(writableSections(brief).map((section) => section.id));
 }
 
+function sameSettings(a: DraftSettings, b: DraftSettings): boolean {
+  return a.tone === b.tone && a.person === b.person && a.product_mention === b.product_mention;
+}
+
 type SessionCheck = "signed_in" | "signed_out" | "unavailable";
 
+/** What the error line needs besides the code: the Retry-After the server sent, and the cap the route enforces. */
+interface ErrorDetail {
+  readonly retryAfterSeconds: number | null;
+  readonly limitKb: number;
+}
+
+const RUN_LIMIT_KB = Math.round(DRAFT_REQUEST_MAX_BYTES / 1024);
+const SECTION_LIMIT_KB = Math.round(SECTION_REQUEST_MAX_BYTES / 1024);
+
+function retryAfterSeconds(response: Response): number | null {
+  const header = response.headers.get("Retry-After");
+  if (header === null) return null;
+  const seconds = Number.parseInt(header, 10);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
+function hasRetryCopy(code: string): boolean {
+  return (RETRY_AFTER_ERROR_CODES as readonly string[]).includes(code);
+}
+
 async function readSession(signal: AbortSignal): Promise<SessionCheck> {
-  const response = await fetch("/api/auth/session", {
-    cache: "no-store",
-    signal,
-  });
+  const response = await fetch("/api/auth/session", { cache: "no-store", signal });
   const body = (await response.json()) as { readonly signedIn?: unknown };
   if (!response.ok || typeof body.signedIn !== "boolean") return "unavailable";
   return body.signedIn ? "signed_in" : "signed_out";
+}
+
+/** The opener's copy of a consumed handoff, if this tab still has an opener and it is ours. */
+function openerStorage(): Storage | null {
+  try {
+    return window.opener?.sessionStorage ?? null;
+  } catch {
+    // A cross-origin opener throws on access; nothing of ours is there.
+    return null;
+  }
 }
 
 export interface ContentDraftToolProps {
@@ -146,14 +163,16 @@ export interface ContentDraftToolProps {
 export function ContentDraftTool({ locale }: ContentDraftToolProps) {
   const t = useTranslations("tools.contentDraft");
   const [intake, setIntake] = useState<IntakeState>({ phase: "empty" });
-  const [settings, setSettings] = useState<DraftSettings>(
-    DEFAULT_DRAFT_SETTINGS,
-  );
+  const [settings, setSettings] = useState<DraftSettings>(DEFAULT_DRAFT_SETTINGS);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [phase, setPhase] = useState<Phase>("idle");
   const [signInOpen, setSignInOpen] = useState(false);
   const [validationKey, setValidationKey] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<ErrorDetail>({
+    retryAfterSeconds: null,
+    limitKb: RUN_LIMIT_KB,
+  });
   const [result, setResult] = useState<DraftResult | null>(null);
   const [rerunsUsed, setRerunsUsed] = useState(0);
   const [runningSection, setRunningSection] = useState<string | null>(null);
@@ -163,6 +182,19 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
   const submissionLocked = useRef(false);
   const activeRequest = useRef<AbortController | null>(null);
   const resultsRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * Every brief entrance bumps this and lands its outcome only while it is
+   * still current: a slow `file.text()` or parse from an earlier choice must
+   * not overwrite the brief the visitor loaded after it.
+   */
+  const generation = useRef(0);
+  /**
+   * The raw handoff envelope this tab consumed, kept so that a signed-out
+   * visitor's brief can be put back for the reload sign-in causes; cleared
+   * the moment another brief replaces it.
+   */
+  const handoffRaw = useRef<string | null>(null);
+  const rerunsSpent = useRef(0);
 
   useEffect(() => {
     mounted.current = true;
@@ -179,9 +211,18 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
   useEffect(() => {
     const raw = takeContentBriefHandoff(window.sessionStorage);
     if (raw === null) return;
+    const gen = nextGeneration();
     setIntake({ phase: "parsing" });
     void parseIntake(raw, "handoff").then((next) => {
-      if (mounted.current) loadIntake(next);
+      if (!mounted.current || gen !== generation.current) return;
+      if (next.phase === "loaded") {
+        handoffRaw.current = raw;
+        // This tab holds the brief now; the opener's copy is deleted only
+        // when it is still exactly the envelope this tab consumed.
+        const opener = openerStorage();
+        if (opener !== null) clearMatchingContentBriefHandoff(opener, raw);
+      }
+      loadIntake(next);
     });
   }, []);
 
@@ -190,9 +231,7 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
     startedAt.current = Date.now();
     setElapsedSeconds(0);
     const timer = window.setInterval(() => {
-      setElapsedSeconds(
-        Math.max(0, Math.floor((Date.now() - startedAt.current) / 1000)),
-      );
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt.current) / 1000)));
     }, 1000);
     return () => window.clearInterval(timer);
   }, [phase]);
@@ -202,25 +241,58 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
     resultsRef.current?.scrollIntoView({ block: "start" });
   }, [result, phase]);
 
+  function nextGeneration(): number {
+    generation.current += 1;
+    activeRequest.current?.abort();
+    activeRequest.current = null;
+    submissionLocked.current = false;
+    return generation.current;
+  }
+
   function loadIntake(next: IntakeState): void {
+    if (next.phase !== "loaded" || next.source !== "handoff") handoffRaw.current = null;
     setIntake(next);
     setResult(null);
     setRerunsUsed(0);
+    rerunsSpent.current = 0;
     setErrorCode(null);
     setValidationKey(null);
+    setPhase("idle");
+    setRunningSection(null);
+    setElapsedSeconds(0);
     setSelected(next.phase === "loaded" ? allWritable(next.brief) : new Set());
   }
 
-  function submitBrief(raw: string, source: BriefSource): void {
+  function parseAt(gen: number, raw: string, source: BriefSource): void {
     setIntake({ phase: "parsing" });
     void parseIntake(raw, source).then((next) => {
-      if (mounted.current) loadIntake(next);
+      if (mounted.current && gen === generation.current) loadIntake(next);
     });
   }
 
-  function isCurrent(controller: AbortController): boolean {
+  function submitBrief(raw: string, source: BriefSource): void {
+    parseAt(nextGeneration(), raw, source);
+  }
+
+  function uploadBrief(file: File): void {
+    const gen = nextGeneration();
+    setIntake({ phase: "parsing" });
+    void file.text().then(
+      (text) => {
+        if (gen === generation.current) parseAt(gen, text, "upload");
+      },
+      () => {
+        if (mounted.current && gen === generation.current) {
+          loadIntake({ phase: "rejected", rejection: { code: "invalid_json", path: null } });
+        }
+      },
+    );
+  }
+
+  function isCurrent(controller: AbortController, gen: number): boolean {
     return (
       mounted.current &&
+      gen === generation.current &&
       activeRequest.current === controller &&
       !controller.signal.aborted
     );
@@ -252,20 +324,30 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
     }
   }
 
+  /**
+   * Sign-in reloads the page, and the reload would find the handoff already
+   * consumed. The exact envelope this tab took is put back first (same TTL),
+   * so the page after sign-in consumes it once more; a plain refresh still
+   * starts empty because nothing is put back on that path.
+   */
+  function openSignIn(): void {
+    if (handoffRaw.current !== null) {
+      restoreContentBriefHandoff(window.sessionStorage, handoffRaw.current);
+    }
+    setSignInOpen(true);
+  }
+
   /** Session first, always: a signed-out visitor gets the dialog and no paid POST is sent. */
-  async function signedIn(
-    controller: AbortController,
-    fallback: Phase,
-  ): Promise<boolean> {
+  async function signedIn(controller: AbortController, gen: number, fallback: Phase): Promise<boolean> {
     let session: SessionCheck;
     try {
       session = await readSession(controller.signal);
     } catch {
       session = "unavailable";
     }
-    if (!isCurrent(controller)) return false;
+    if (!isCurrent(controller, gen)) return false;
     if (session === "signed_in") return true;
-    if (session === "signed_out") setSignInOpen(true);
+    if (session === "signed_out") openSignIn();
     else setErrorCode("auth_unavailable");
     setPhase(fallback);
     return false;
@@ -273,12 +355,16 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
 
   async function post(
     controller: AbortController,
+    gen: number,
+    brief: ContentBrief,
     path: string,
+    limitKb: number,
     body: unknown,
     fallback: Phase,
   ): Promise<DraftResult | null> {
     let payload: unknown;
     let ok = false;
+    let detail: ErrorDetail = { retryAfterSeconds: null, limitKb };
     try {
       const response = await fetch(path, {
         method: "POST",
@@ -287,21 +373,23 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
         body: JSON.stringify(body),
       });
       ok = response.ok;
+      detail = { retryAfterSeconds: retryAfterSeconds(response), limitKb };
       payload = await response.json();
     } catch {
-      if (!isCurrent(controller)) return null;
+      if (!isCurrent(controller, gen)) return null;
       setErrorCode("unknown");
       setPhase(fallback);
       return null;
     }
-    if (!isCurrent(controller)) return null;
+    if (!isCurrent(controller, gen)) return null;
     const next = responseDraft(payload);
-    if (!ok || next === null) {
+    // A result written against another brief is refused before it renders,
+    // whatever route it came from.
+    if (!ok || next === null || next.brief_ref.fingerprint !== brief.run.fingerprint) {
       const code = responseErrorCode(payload);
-      setErrorCode(
-        code !== null && isContentDraftErrorCode(code) ? code : "unknown",
-      );
-      if (code === "auth_required") setSignInOpen(true);
+      setErrorDetail(detail);
+      setErrorCode(code !== null && isContentDraftErrorCode(code) ? code : "unknown");
+      if (code === "auth_required") openSignIn();
       setPhase(fallback);
       return null;
     }
@@ -310,7 +398,8 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
 
   async function run(): Promise<void> {
     if (submissionLocked.current || intake.phase !== "loaded") return;
-    const sectionIds = writableSections(intake.brief)
+    const brief = intake.brief;
+    const sectionIds = writableSections(brief)
       .map((section) => section.id)
       .filter((id) => selected.has(id));
     if (sectionIds.length === 0) {
@@ -318,20 +407,27 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
       return;
     }
     setValidationKey(null);
-    setResult(null);
-    setRerunsUsed(0);
+    // The last good result stays on screen until a new one has passed the
+    // shape check; a refused or failed run leaves it exactly as it was.
+    const fallback: Phase = result === null ? "idle" : "done";
+    const gen = generation.current;
     const controller = beginRequest("running");
     try {
-      if (!(await signedIn(controller, "idle"))) return;
+      if (!(await signedIn(controller, gen, fallback))) return;
       trackMarketingEvent("tool_start", { tool_name: "content_draft" });
       const next = await post(
         controller,
+        gen,
+        brief,
         "/api/tools/content-draft/run",
-        { brief: intake.brief, settings, section_ids: sectionIds },
-        "idle",
+        RUN_LIMIT_KB,
+        { brief, settings, section_ids: sectionIds },
+        fallback,
       );
       if (next === null) return;
       setResult(next);
+      setRerunsUsed(0);
+      rerunsSpent.current = 0;
       setPhase("done");
       trackMarketingEvent("tool_complete", { tool_name: "content_draft" });
     } finally {
@@ -340,33 +436,39 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
   }
 
   async function rerun(sectionId: string): Promise<void> {
-    if (
-      submissionLocked.current ||
-      intake.phase !== "loaded" ||
-      result === null
-    )
-      return;
-    if (rerunsUsed >= SECTION_RERUN_SOFT_MAX) return;
+    if (submissionLocked.current || intake.phase !== "loaded" || result === null) return;
+    if (rerunsSpent.current >= SECTION_RERUN_SOFT_MAX) return;
+    const brief = intake.brief;
+    const gen = generation.current;
     const controller = beginRequest("rerunning");
     setRunningSection(sectionId);
     try {
-      if (!(await signedIn(controller, "done"))) return;
+      if (!(await signedIn(controller, gen, "done"))) return;
+      // Counted the moment the POST goes out, whatever comes back: the soft
+      // cap bounds attempts, and a refused attempt still spent one.
+      rerunsSpent.current += 1;
+      setRerunsUsed(rerunsSpent.current);
       // The server replaces the section and re-derives everything else; the
-      // page swaps the whole result rather than patching one section in.
+      // page swaps the whole result rather than patching one section in. The
+      // settings sent are the draft's own: a rerun never mixes new settings
+      // into sections written under the old ones.
       const next = await post(
         controller,
+        gen,
+        brief,
         "/api/tools/content-draft/section",
+        SECTION_LIMIT_KB,
         {
-          brief: intake.brief,
-          settings,
+          brief,
+          settings: result.settings,
           section_id: sectionId,
           sections: result.sections,
+          previous_run_id: result.run.run_id,
         },
         "done",
       );
       if (next === null) return;
       setResult(next);
-      setRerunsUsed((used) => used + 1);
       setPhase("done");
     } finally {
       if (mounted.current) setRunningSection(null);
@@ -377,18 +479,24 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
   const busy = phase === "running" || phase === "rerunning";
   const brief = intake.phase === "loaded" ? intake.brief : null;
   const canGenerate = brief !== null && writableSections(brief).length > 0;
+  const settingsChanged = result !== null && !sameSettings(result.settings, settings);
+  // Belt and braces with the check in `post`: nothing renders against a brief
+  // it was not written for.
+  const shownResult =
+    result !== null && brief !== null && result.brief_ref.fingerprint === brief.run.fingerprint
+      ? result
+      : null;
 
   return (
-    <section
-      id="content-draft-tool"
-      data-locale={locale}
-      aria-busy={busy}
-      className="min-w-0 space-y-4"
-    >
+    <section id="content-draft-tool" data-locale={locale} aria-busy={busy} className="min-w-0 space-y-4">
       <ContentDraftIntake
         intake={intake}
         onSubmit={submitBrief}
-        onReplace={() => loadIntake({ phase: "empty" })}
+        onUpload={uploadBrief}
+        onReplace={() => {
+          nextGeneration();
+          loadIntake({ phase: "empty" });
+        }}
         disabled={busy}
         t={t}
       />
@@ -414,12 +522,14 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
             t={t}
           />
 
+          {settingsChanged ? (
+            <p data-settings-changed role="status" className="mt-4 text-[12.5px] text-brand-warning">
+              {t("settings.changed")}
+            </p>
+          ) : null}
+
           {validationKey !== null ? (
-            <p
-              id="content-draft-validation"
-              role="alert"
-              className="mt-4 text-[12.5px] text-brand-error"
-            >
+            <p id="content-draft-validation" role="alert" className="mt-4 text-[12.5px] text-brand-error">
               {t(validationKey as Parameters<typeof t>[0])}
             </p>
           ) : null}
@@ -431,36 +541,31 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
               className="mt-4 rounded-[10px] border border-brand-error/25 bg-brand-error/[0.08] px-4 py-3 text-[12.5px] text-brand-error"
             >
               {t(
-                `errors.${isContentDraftErrorCode(errorCode) ? errorCode : "unknown"}` as Parameters<
-                  typeof t
-                >[0],
+                `${
+                  errorDetail.retryAfterSeconds !== null && hasRetryCopy(errorCode)
+                    ? "errorsWithRetry"
+                    : "errors"
+                }.${isContentDraftErrorCode(errorCode) ? errorCode : "unknown"}` as Parameters<typeof t>[0],
+                { seconds: errorDetail.retryAfterSeconds ?? 0, kb: errorDetail.limitKb },
               )}
             </div>
           ) : null}
 
           {phase === "running" ? (
-            <p
-              role="status"
-              aria-live="polite"
-              className="mt-4 text-[12.5px] text-text-dark-secondary"
-            >
+            <p role="status" aria-live="polite" className="mt-4 text-[12.5px] text-text-dark-secondary">
               {t("running.elapsed", {
                 seconds: elapsedSeconds,
                 budget: Math.round(DRAFT_TOTAL_BUDGET_MS / 1000),
               })}
             </p>
           ) : phase === "rerunning" ? (
-            <p
-              role="status"
-              aria-live="polite"
-              className="mt-4 text-[12.5px] text-text-dark-secondary"
-            >
+            <p role="status" aria-live="polite" className="mt-4 text-[12.5px] text-text-dark-secondary">
               {t("running.rerunElapsed", {
                 seconds: elapsedSeconds,
                 budget: Math.round(SECTION_ENDPOINT_BUDGET_MS / 1000),
               })}
             </p>
-          ) : phase === "done" ? (
+          ) : phase === "done" && shownResult !== null ? (
             <p role="status" aria-live="polite" className="sr-only">
               {t("running.complete")}
             </p>
@@ -477,18 +582,15 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
         </form>
       ) : null}
 
-      {result !== null && brief !== null ? (
-        <div
-          ref={resultsRef}
-          data-content-draft-result
-          className="min-w-0 scroll-mt-24"
-        >
+      {shownResult !== null && brief !== null ? (
+        <div ref={resultsRef} data-content-draft-result className="min-w-0 scroll-mt-24">
           <ContentDraftResults
-            result={result}
+            result={shownResult}
             brief={brief}
             rerun={{
               used: rerunsUsed,
               running: runningSection,
+              writable: new Set(brief.draft_readiness.writable),
               onRerun: (id) => void rerun(id),
             }}
             locale={locale}

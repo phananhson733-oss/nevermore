@@ -84,15 +84,21 @@ export function ReadinessBar({
    * when it could not be written: the draft page would otherwise open on its
    * empty state and look like it lost the brief. No query-string fallback --
    * a brief does not fit a URL and must not leak into one (handoff §5.1).
+   *
+   * Written on every gesture that can open the link, not only `click`: a new
+   * tab receives a COPY of session storage at the moment it is created, and a
+   * middle click or "open in new tab" creates it without ever firing click.
+   * The same synchronous stage runs on mousedown (left / middle), contextmenu
+   * and click (keyboard); writing twice for one gesture is harmless.
    */
-  function prepare(event: React.MouseEvent<HTMLAnchorElement>): void {
+  function stage(): boolean {
     const written = storeHandoff(brief);
-    if (!written.ok) {
-      event.preventDefault();
-      setHandoffFailure(written.reason);
-      return;
-    }
-    setHandoffFailure(null);
+    setHandoffFailure(written.ok ? null : written.reason);
+    return written.ok;
+  }
+
+  function prepare(event: React.MouseEvent<HTMLAnchorElement>): void {
+    if (!stage()) event.preventDefault();
   }
 
   return (
@@ -147,6 +153,12 @@ export function ReadinessBar({
               data-generate-draft
               href={localePath(locale, "/tools/content-draft")}
               {...TOOL_HANDOFF_LINK_PROPS}
+              onMouseDown={(event) => {
+                if (event.button === 0 || event.button === 1) stage();
+              }}
+              onContextMenu={() => {
+                stage();
+              }}
               onClick={prepare}
               className={PRIMARY_ACTION_BUTTON}
             >

@@ -28,6 +28,16 @@ function utf8Bytes(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 
+/** A failed write must not leave an older brief behind for the next tab to pick up. */
+function clearStale(storage: ToolHandoffStorage): void {
+  try {
+    storage.removeItem(CONTENT_BRIEF_HANDOFF_KEY);
+  } catch {
+    // Best effort: a store that refuses removal is the same store that just
+    // refused the write, and the caller already reports that.
+  }
+}
+
 /**
  * The size check is on the brief alone, because that is the bound the draft
  * parser enforces (handoff §5.1: "brief 本身 ≤ CONTENT_BRIEF_HANDOFF_MAX_BYTES").
@@ -40,6 +50,7 @@ export function writeContentBriefHandoff(
 ): ContentBriefHandoffWrite {
   const bytes = utf8Bytes(JSON.stringify(brief));
   if (!Number.isFinite(now) || bytes > CONTENT_BRIEF_HANDOFF_MAX_BYTES) {
+    clearStale(storage);
     return { ok: false, reason: "too_large", bytes };
   }
   const handoff: ContentBriefHandoff = {
@@ -52,6 +63,7 @@ export function writeContentBriefHandoff(
     storage.setItem(CONTENT_BRIEF_HANDOFF_KEY, JSON.stringify(handoff));
     return { ok: true, bytes };
   } catch {
+    clearStale(storage);
     return { ok: false, reason: "storage", bytes };
   }
 }
@@ -70,5 +82,37 @@ export function takeContentBriefHandoff(storage: ToolHandoffStorage): string | n
     return raw;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Puts a consumed envelope back exactly as it was read, TTL and all.
+ *
+ * For one path only: a signed-out visitor whose sign-in will reload the page.
+ * The reload would otherwise find the handoff already taken and open on the
+ * empty state, looking like it lost the brief. The envelope is not rebuilt,
+ * so the parser's window and fingerprint checks see the original.
+ */
+export function restoreContentBriefHandoff(storage: ToolHandoffStorage, raw: string): boolean {
+  try {
+    storage.setItem(CONTENT_BRIEF_HANDOFF_KEY, raw);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Deletes the opener's copy of a handoff this tab consumed, but only while it
+ * is still character for character the envelope that was consumed. A newer
+ * brief the opener wrote for another tab is left alone.
+ */
+export function clearMatchingContentBriefHandoff(storage: ToolHandoffStorage, raw: string): boolean {
+  try {
+    if (storage.getItem(CONTENT_BRIEF_HANDOFF_KEY) !== raw) return false;
+    storage.removeItem(CONTENT_BRIEF_HANDOFF_KEY);
+    return true;
+  } catch {
+    return false;
   }
 }

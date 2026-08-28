@@ -27,7 +27,15 @@
  * defaulting to "all covered" (handoff §5.4).
  *
  * Every failure is a value, never a throw, except a non-`KeywordLlmError`
- * from the client, which is our own bug and is rethrown as in the brief.
+ * from the client, which is our own bug and is rethrown as in the brief, and
+ * a language code outside `LANGUAGE_NAMES`, which is a caller bug the
+ * handler's request validation is meant to stop earlier (`RangeError`).
+ *
+ * CALL LEDGER. `calls` / `attempts` count requests that left this process.
+ * A request the provider never answered — timeout, 429, 5xx, network — is
+ * still a call: the deadline was spent and the provider may well have
+ * billed it. Only "never sent" (nothing to ask, not configured, budget gone
+ * before the first attempt) is zero.
  * Configuration comes only from the `CONTENT_DRAFT_*` set resolved in
  * `content-brief-llm.ts`; there is no fallback to another tool's key.
  */
@@ -67,6 +75,7 @@ import {
   buildDraftSectionUserPrompt,
   CLAIM_STATES,
   COVERAGE_STATUSES,
+  languageName,
   MODEL_COVERAGE_OUTPUT_KEYS,
   MODEL_SECTION_OUTPUT_KEYS,
 } from "./content-draft-prompts.ts";
@@ -189,7 +198,9 @@ export interface DraftCoverageSection {
  * `questions` is the askable set (`decideCoverage().askable`) and `sections`
  * the ok sections, in the handler's own words: the model may only name what
  * is quoted here, and the handler validates the reply against the same two
- * sets.
+ * sets. `primary` and each section's `h2` are accepted so the handler's
+ * input shape stays whole, but the prompt never renders them (§5.4: the
+ * judge sees section text and questions only).
  */
 export interface DraftCoverageInput {
   readonly primary: string;
@@ -252,6 +263,15 @@ const FAILURE_REASONS: Readonly<
   invalid_response: "provider_error",
   schema_invalid: "validation_failed",
 };
+
+/**
+ * Usage for a request that was sent but not answered. The client only
+ * reports `requestCount` when the provider replied; a timed-out or refused
+ * request is still one call on the ledger.
+ */
+function sentButUnanswered(usage: KeywordLlmUsage): KeywordLlmUsage {
+  return { ...usage, requestCount: Math.max(usage.requestCount, 1) };
+}
 
 function resolveConfig(
   deps: ContentDraftLlmDependencies,
@@ -457,6 +477,7 @@ export async function generateDraftSection(
   input: DraftSectionInput,
   deps: ContentDraftLlmDependencies = {},
 ): Promise<DraftSectionResult> {
+  languageName(input.language); // throws RangeError on a code outside the table
   const config = resolveConfig(deps);
   if (config === null) {
     return sectionFailure("not_configured", 0, EMPTY_KEYWORD_LLM_USAGE, null, null);
@@ -490,7 +511,7 @@ export async function generateDraftSection(
       return sectionFailure(
         FAILURE_REASONS[error.reason],
         attempt,
-        mergeKeywordLlmUsage(usage, error.usage),
+        mergeKeywordLlmUsage(usage, sentButUnanswered(error.usage)),
         modelId,
         config,
       );
@@ -630,6 +651,7 @@ export async function runDraftCoverage(
   input: DraftCoverageInput,
   deps: ContentDraftLlmDependencies = {},
 ): Promise<DraftCoverageResult> {
+  languageName(input.language); // throws RangeError on a code outside the table
   if (input.questions.length === 0) {
     return {
       items: [],
@@ -660,7 +682,12 @@ export async function runDraftCoverage(
     if (!(error instanceof KeywordLlmError)) throw error;
     return {
       items: null,
-      reads: unavailable(FAILURE_REASONS[error.reason], 1, error.usage, null),
+      reads: unavailable(
+        FAILURE_REASONS[error.reason],
+        1,
+        sentButUnanswered(error.usage),
+        null,
+      ),
     };
   }
 

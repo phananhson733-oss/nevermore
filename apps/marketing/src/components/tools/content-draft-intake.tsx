@@ -123,21 +123,18 @@ function LoadedBrief({
 
 function Entrances({
   onSubmit,
+  onUpload,
   disabled,
   t,
 }: {
   readonly onSubmit: (raw: string, source: BriefSource) => void;
+  readonly onUpload: (file: File) => void;
   readonly disabled: boolean;
   readonly t: DraftTranslate;
 }) {
   const [pasted, setPasted] = useState("");
   const pasteId = useId();
   const uploadId = useId();
-
-  function upload(file: File | undefined): void {
-    if (file === undefined) return;
-    void file.text().then((text) => onSubmit(text, "upload"));
-  }
 
   return (
     <div className="mt-5 grid gap-4">
@@ -173,7 +170,10 @@ function Entrances({
             accept=".json,application/json"
             disabled={disabled}
             onChange={(event) => {
-              upload(event.target.files?.[0]);
+              // The file is read by the tool, which stamps the read with the
+              // intake generation so a slow read cannot outrun a later paste.
+              const file = event.target.files?.[0];
+              if (file !== undefined) onUpload(file);
               event.target.value = "";
             }}
             className="text-[12px] text-text-dark-secondary"
@@ -190,12 +190,14 @@ function Entrances({
 export function ContentDraftIntake({
   intake,
   onSubmit,
+  onUpload,
   onReplace,
   disabled,
   t,
 }: {
   readonly intake: IntakeState;
   readonly onSubmit: (raw: string, source: BriefSource) => void;
+  readonly onUpload: (file: File) => void;
   readonly onReplace: () => void;
   readonly disabled: boolean;
   readonly t: DraftTranslate;
@@ -237,7 +239,9 @@ export function ContentDraftIntake({
           ) : null}
         </div>
       ) : null}
-      <Entrances onSubmit={onSubmit} disabled={disabled || intake.phase === "parsing"} t={t} />
+      {/* Not disabled while parsing: a later paste or file supersedes an
+          earlier, slower one through the tool's intake generations. */}
+      <Entrances onSubmit={onSubmit} onUpload={onUpload} disabled={disabled} t={t} />
     </section>
   );
 }

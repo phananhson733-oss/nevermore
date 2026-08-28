@@ -66,32 +66,56 @@ export function ClaimSwatch({
   );
 }
 
+/** The screen-reader name of an annotation; colour alone is not information. */
+function claimMarkKey(claim: Sentence["claim"], tone: Exclude<ClaimTone, null>): string {
+  if (claim === "bound") return tone === "third" ? "claimMark.boundThird" : "claimMark.boundFirst";
+  if (claim === "stance") return "claimMark.stance";
+  return "claimMark.gap";
+}
+
+/**
+ * The mark sits OUTSIDE the `data-sentence` span: that span's text is what
+ * the Markdown projection is held to, character for character, so nothing
+ * may be added inside it. With annotations off neither the mark nor the
+ * underline is rendered.
+ */
 function SentenceSpan({
   sentence,
   annotate,
+  t,
 }: {
   readonly sentence: Sentence;
   readonly annotate: boolean;
+  readonly t: DraftTranslate;
 }) {
   const tone = annotate ? claimTone(sentence) : null;
   return (
-    <span
-      data-sentence
-      data-claim={sentence.claim}
-      data-claim-underline={tone ?? undefined}
-      style={underlineStyle(tone)}
-    >
-      {sentence.text}
-    </span>
+    <>
+      {tone !== null ? (
+        <span data-claim-mark={tone} className="sr-only">
+          {translated(t, claimMarkKey(sentence.claim, tone))}{" "}
+        </span>
+      ) : null}
+      <span
+        data-sentence
+        data-claim={sentence.claim}
+        data-claim-underline={tone ?? undefined}
+        style={underlineStyle(tone)}
+      >
+        {sentence.text}
+      </span>
+    </>
   );
 }
 
 function SectionBody({
   section,
   annotate,
+  t,
 }: {
   readonly section: Extract<DraftSection, { status: "ok" }>;
   readonly annotate: boolean;
+  readonly t: DraftTranslate;
 }) {
   return (
     <div data-section-body className="mt-3 space-y-3 font-serif text-[15.5px] leading-[1.7] text-text-dark-primary">
@@ -100,7 +124,7 @@ function SectionBody({
           {paragraph.sentences.map((sentence, sentenceIndex) => (
             <span key={sentenceIndex}>
               {sentenceIndex > 0 ? " " : null}
-              <SentenceSpan sentence={sentence} annotate={annotate} />
+              <SentenceSpan sentence={sentence} annotate={annotate} t={t} />
             </span>
           ))}
         </p>
@@ -141,11 +165,19 @@ function SectionMeta({
 }
 
 export interface RerunState {
-  /** Reruns already spent on this draft; the button disables at SECTION_RERUN_SOFT_MAX. */
+  /** Section POSTs already sent for this draft; the button disables at SECTION_RERUN_SOFT_MAX. */
   readonly used: number;
   /** The section currently being rerun, if any. */
   readonly running: string | null;
+  /** The brief's writable ids: a skipped section still in it can be generated on its own. */
+  readonly writable: ReadonlySet<string>;
   readonly onRerun: (sectionId: string) => void;
+}
+
+/** What the per-section button says: a skipped section is generated, the others rerun. */
+function rerunLabel(section: DraftSection, running: string | null, t: DraftTranslate): string {
+  if (running === section.id) return t("actions.rerunning");
+  return section.status === "skipped" ? t("actions.generateSection") : t("actions.rerun");
 }
 
 function SectionCard({
@@ -199,7 +231,7 @@ function SectionCard({
       {open ? (
         <>
           {section.status === "ok" ? (
-            <SectionBody section={section} annotate={annotate} />
+            <SectionBody section={section} annotate={annotate} t={t} />
           ) : section.status === "failed" ? (
             <p data-section-failed className={`mt-3 ${BODY_TEXT}`}>
               {translated(t, `sectionFail.${section.fail_reason}`)}
@@ -209,16 +241,17 @@ function SectionCard({
               {t("doc.skippedBody")}
             </p>
           )}
-          {section.status !== "skipped" ? (
+          {section.status !== "skipped" || rerun.writable.has(section.id) ? (
             <div className="mt-3">
               <button
                 type="button"
                 data-rerun-section={section.id}
+                data-rerun-kind={section.status === "skipped" ? "generate" : "rerun"}
                 disabled={exhausted || busy}
                 onClick={() => rerun.onRerun(section.id)}
                 className={`${ACTION_BUTTON} disabled:cursor-not-allowed disabled:opacity-50`}
               >
-                {rerun.running === section.id ? t("actions.rerunning") : t("actions.rerun")}
+                {rerunLabel(section, rerun.running, t)}
               </button>
             </div>
           ) : null}

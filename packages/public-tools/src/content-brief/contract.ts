@@ -750,6 +750,7 @@ export type ContentDraftErrorCode =
   | "auth_required"
   | "auth_unavailable"
   | "rate_limited"
+  | "run_in_progress" // 同一账号已有一次运行在途（409 + Retry-After 秒数），不是小时额度用完
   | "quota_unavailable"
   | "brief_schema_mismatch"
   | "brief_fingerprint_mismatch"

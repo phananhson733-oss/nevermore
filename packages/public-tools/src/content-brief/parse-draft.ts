@@ -1,6 +1,6 @@
-// @input  -- an untrusted value that claims to be a DraftResult (export, paste, a result the server just assembled), or the `sections` / `settings` of a section-rerun request, plus the parsed ContentBrief it must bind to
+// @input  -- an untrusted value that claims to be a DraftResult (export, paste, a result the server just assembled), or the `sections` / `settings` of a section-rerun request, plus the parsed ContentBrief it must bind to and, server-side, the call records the handler trusts
 // @output -- a freshly built DraftResult / DraftSection[] / settings (never the input reference), or one closed failure code with the offending path
-// @pos    -- the only exact parser of the draft side: shape and caps (parse-brief-shape.ts decoders), every derived field re-derived through draft-assemble.ts and validate-section.ts and compared, the brief binding, then the recomputed fingerprint
+// @pos    -- the only exact parser of the draft side: shape and caps (parse-brief-shape.ts decoders), every derived field re-derived through draft-assemble.ts and validate-section.ts and compared, the per-section evidence scope, the brief binding, then the recomputed fingerprint
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { draftFingerprint } from "./canonical.ts";
@@ -25,10 +25,12 @@ import type {
   DraftRunMeta,
   DraftSection,
   LlmAggregateMeta,
+  LlmReadMeta,
   ModelSectionOutput,
   ProfileFact,
   RunMode,
   SectionFailReason,
+  UnavailableReason,
   VerifyItem,
 } from "./contract.ts";
 import {
@@ -40,6 +42,7 @@ import {
   deriveTotals,
   deriveVerifyList,
   planSections,
+  sectionEvidenceScope,
 } from "./draft-assemble.ts";
 import type { SectionCallMeta } from "./draft-assemble.ts";
 import { recomputed, sameSet } from "./parse-brief.ts";
@@ -86,11 +89,23 @@ export type ParseDraftResult = Ok<DraftResult> | ParseDraftFailure;
 export type ParseDraftSectionsResult = Ok<DraftSection[]> | ParseDraftFailure;
 export type ParseDraftSettingsResult = Ok<DraftResult["settings"]> | ParseDraftFailure;
 
+/** What the section endpoint knows first-hand about the one call it made this run. */
+export interface RerunProvenance {
+  readonly previousRunId: string;
+  readonly sectionId: string;
+  readonly call: SectionCallMeta;
+}
+
 export interface ParseDraftDeps {
   /** Defaults to `draftFingerprint` from canonical.ts; tests inject a stand-in. */
   readonly fingerprint?: (result: DraftResult) => Promise<string>;
+  /** Server-side only: pins reran_from, the rewritten section's call record and the whole llm_sections aggregate. */
+  readonly rerun?: RerunProvenance;
+  /** Server-side only: pins run.reads.llm_coverage to the read the handler actually made. */
+  readonly coverageLlm?: LlmReadMeta;
 }
 
+type Trusted = Pick<ParseDraftDeps, "rerun" | "coverageLlm">;
 type Violation = ParseBriefFailure | null;
 
 /* ------------------------------------------------------------------ */
@@ -105,6 +120,14 @@ const TONES = keysOf<DraftResult["settings"]["tone"]>({ explanatory: null, conve
 const PERSONS = keysOf<DraftResult["settings"]["person"]>({ second: null, third: null });
 const PRODUCT_MENTIONS = keysOf<DraftResult["settings"]["product_mention"]>({ none: null, gap_only: null, throughout: null });
 const AVAILABLE_STATUSES = ["complete", "partial"] as const;
+
+/** Reasons a coverage call that had questions to ask can never report. */
+const NOT_A_COVERAGE_FAILURE: ReadonlySet<UnavailableReason> = new Set<UnavailableReason>([
+  "not_requested",
+  "quota_exhausted",
+  "unsupported_language",
+  "insufficient_evidence",
+]);
 
 /* ------------------------------------------------------------------ */
 /* reads                                                                */
@@ -183,6 +206,24 @@ function sentenceCount(section: DraftSection): number {
   return section.body.paragraphs.reduce((sum, paragraph) => sum + paragraph.sentences.length, 0);
 }
 
+/**
+ * A failed section's attempts follow from why it failed: nothing was sent
+ * when the model is not configured, at least one call came back to be
+ * rejected or to error, and a call that never went out has no usage.
+ */
+function checkSectionLlm(section: DraftSection, path: string): Violation {
+  if (section.status === "skipped") return null;
+  const { attempts: made, input_tokens, output_tokens } = section.llm;
+  if (section.status === "failed") {
+    const reason = section.fail_reason;
+    if (reason === "not_configured" && made !== 0) return reference(at(path, "llm.attempts"));
+    if ((reason === "validation_failed" || reason === "provider_error") && made === 0) return reference(at(path, "llm.attempts"));
+  }
+  if (made === 0 && input_tokens !== null) return reference(at(path, "llm.input_tokens"));
+  if (made === 0 && output_tokens !== null) return reference(at(path, "llm.output_tokens"));
+  return null;
+}
+
 /** handoff §6: each section's JSON <= SECTION_BODY_MAX_BYTES and its sentences <= SECTION_MAX_SENTENCES. */
 const draftSection: Decoder<DraftSection> = (input, path) => {
   const decoded = draftSectionShape(input, path);
@@ -190,7 +231,7 @@ const draftSection: Decoder<DraftSection> = (input, path) => {
   const bytes = byteLength(decoded.value);
   if (bytes === null || bytes > SECTION_BODY_MAX_BYTES) return invalid(path);
   if (sentenceCount(decoded.value) > SECTION_MAX_SENTENCES) return invalid(at(path, "body.paragraphs"));
-  return decoded;
+  return checkSectionLlm(decoded.value, path) ?? decoded;
 };
 
 const sections = array(draftSection, { max: OUTLINE_CAP });
@@ -329,21 +370,34 @@ type FailedSection = Extract<DraftSection, { status: "failed" }>;
 /* ------------------------------------------------------------------ */
 /* section bodies: validate-section.ts is the one implementation of     */
 /* the claim rules; the body is turned back into the model's output    */
-/* and everything the validator derives is compared exactly            */
+/* and everything the validator derives is compared exactly against    */
+/* the evidence that section was actually given                        */
 /* ------------------------------------------------------------------ */
 
-/** The same ledger the handler hands validate-section.ts: pages with at least one excerpt, every profile fact. */
-function evidenceOf(brief: ContentBrief): SectionEvidence {
+interface Ledger {
+  readonly brief: ContentBrief;
+  readonly settings: DraftResult["settings"];
+}
+
+/**
+ * The evidence one section may cite: what the handler put in its prompt
+ * (sectionEvidenceScope), as validate-section.ts consumes it. A page from
+ * another section's cluster or a fact outside product_mention is unknown
+ * here even though the brief carries it.
+ */
+export function sectionEvidenceFor(brief: ContentBrief, sectionId: string, settings: DraftResult["settings"]): SectionEvidence {
+  const scope = sectionEvidenceScope(brief, sectionId, settings);
+  const facts = (brief.evidence.profile?.facts ?? []).filter((fact) => scope.profileFactIds.has(fact.id));
   return {
-    citableCrawlIds: new Set(brief.evidence.crawl.observed.filter((page) => page.excerpts.length > 0).map((page) => page.id)),
-    profileFacts: new Map((brief.evidence.profile?.facts ?? []).map((fact) => [fact.id, fact] as const)),
+    citableCrawlIds: scope.citableCrawlIds,
+    profileFacts: new Map(facts.map((fact) => [fact.id, fact] as const)),
   };
 }
 
 /**
  * Without the brief every reference is taken on trust as a citable page or
  * a first-hand fact, so only the claim rules and the derived counts are
- * checked; existence and derivation wait for the brief.
+ * checked; existence, scope and derivation wait for the brief.
  */
 function permissiveEvidenceOf(section: OkSection): SectionEvidence {
   const refs = section.body.paragraphs.flatMap((paragraph) => paragraph.sentences.flatMap((item) => item.evidence_refs));
@@ -370,15 +424,15 @@ function checkSectionBody(section: OkSection, evidence: SectionEvidence, path: s
   return recomputed({ word_count: validated.word_count, paragraphs: validated.paragraphs }, section.body, at(path, "body"));
 }
 
-function checkSections(list: readonly DraftSection[], brief: ContentBrief | null, path: string): Violation {
-  const evidence = brief === null ? null : evidenceOf(brief);
+function checkSections(list: readonly DraftSection[], ledger: Ledger | null, path: string): Violation {
   const seen = new Set<string>();
   for (const [index, section] of list.entries()) {
     const sectionPath = at(path, index);
     if (seen.has(section.id)) return reference(at(sectionPath, "id"));
     seen.add(section.id);
     if (section.status !== "ok") continue;
-    const violation = checkSectionBody(section, evidence ?? permissiveEvidenceOf(section), sectionPath);
+    const evidence = ledger === null ? permissiveEvidenceOf(section) : sectionEvidenceFor(ledger.brief, section.id, ledger.settings);
+    const violation = checkSectionBody(section, evidence, sectionPath);
     if (violation !== null) return violation;
   }
   return null;
@@ -476,10 +530,10 @@ function checkFirstRunLlm(list: readonly DraftSection[], actual: LlmAggregateMet
 }
 
 /**
- * Rerun (handoff §5.2): the aggregate reflects only the one section this run
- * wrote, whose identity the result does not record. What still holds: one
- * call is never partial, and its outcome must match a section carrying the
- * same attempts and, when it failed, the same reason.
+ * Rerun seen from a client (handoff §5.2): the aggregate reflects only the
+ * one section this run wrote, whose identity the result does not record.
+ * What still holds: one call is never partial, and its outcome must match a
+ * section carrying the same attempts and, when it failed, the same reason.
  */
 function checkRerunLlm(list: readonly DraftSection[], actual: LlmAggregateMeta): Violation {
   if (actual.status !== "unavailable") {
@@ -499,7 +553,36 @@ function checkRerunLlm(list: readonly DraftSection[], actual: LlmAggregateMeta):
   return failed.some((section) => section.llm.attempts === actual.calls) ? null : reference(`${LLM_SECTIONS}.calls`);
 }
 
-function checkLlmSections(result: DraftResult): Violation {
+/** What a section must look like after the call the handler recorded for it. */
+function sectionFromCall(call: SectionCallMeta): Record<string, unknown> {
+  const llm = { attempts: call.attempts, input_tokens: call.input_tokens, output_tokens: call.output_tokens };
+  return call.status === "ok" ? { status: "ok", llm } : { status: "failed", fail_reason: call.fail_reason ?? "provider_error", llm };
+}
+
+function sectionCallView(section: DraftSection): Record<string, unknown> {
+  if (section.status === "skipped") return { status: "skipped" };
+  return section.status === "ok"
+    ? { status: "ok", llm: section.llm }
+    : { status: "failed", fail_reason: section.fail_reason, llm: section.llm };
+}
+
+/**
+ * Rerun seen from the server: the handler knows which section it rewrote and
+ * what the call cost, so the section and the whole aggregate are exact.
+ */
+function checkTrustedRerun(result: DraftResult, rerun: RerunProvenance): Violation {
+  if (result.run.reran_from !== rerun.previousRunId) return reference("run.reran_from");
+  const index = result.sections.findIndex((section) => section.id === rerun.sectionId);
+  const section = result.sections[index];
+  if (section === undefined) return reference("sections");
+  return (
+    recomputed(sectionFromCall(rerun.call), sectionCallView(section), `sections[${index}]`) ??
+    recomputed(aggregateSectionLlm([rerun.call], rerun.call.temperature_requested), result.run.reads.llm_sections, LLM_SECTIONS)
+  );
+}
+
+function checkLlmSections(result: DraftResult, trusted: Trusted): Violation {
+  if (trusted.rerun !== undefined) return checkTrustedRerun(result, trusted.rerun);
   const actual = result.run.reads.llm_sections;
   return result.run.reran_from === null ? checkFirstRunLlm(result.sections, actual) : checkRerunLlm(result.sections, actual);
 }
@@ -507,6 +590,8 @@ function checkLlmSections(result: DraftResult): Violation {
 /* ------------------------------------------------------------------ */
 /* coverage                                                             */
 /* ------------------------------------------------------------------ */
+
+const LLM_COVERAGE = "run.reads.llm_coverage";
 
 function ownerMap(list: readonly DraftSection[]): Map<string, DraftSection> {
   const owner = new Map<string, DraftSection>();
@@ -527,7 +612,14 @@ function checkCoverageItem(item: CoverageItem, owner: DraftSection | undefined, 
   return null;
 }
 
-/** What the sections alone decide: who owns each question, which sections can be named, and the four counts. */
+/** A model verdict exists only because one coverage call, at temperature 0, came back. */
+function checkCoverageCall(llm: LlmReadMeta): Violation {
+  if (llm.status !== "complete") return reference(`${LLM_COVERAGE}.status`);
+  if (llm.calls !== 1) return reference(`${LLM_COVERAGE}.calls`);
+  return llm.temperature_requested === 0 ? null : reference(`${LLM_COVERAGE}.temperature_requested`);
+}
+
+/** What the sections alone decide: who owns each question, which sections can be named, the call, and the four counts. */
 function checkCoverageLocal(result: DraftResult): Violation {
   const { coverage: field } = result;
   if (field.status === "unavailable") return null;
@@ -541,9 +633,9 @@ function checkCoverageLocal(result: DraftResult): Violation {
     const violation = checkCoverageItem(item, owner.get(item.question_id), okIds, path);
     if (violation !== null) return violation;
   }
-  // A model verdict exists only because the coverage call came back.
-  if (field.items.some((item) => item.method === "model") && result.run.reads.llm_coverage.status !== "complete") {
-    return reference("run.reads.llm_coverage.status");
+  if (field.items.some((item) => item.method === "model")) {
+    const call = checkCoverageCall(result.run.reads.llm_coverage);
+    if (call !== null) return call;
   }
   const counts = {
     total: field.items.length,
@@ -554,39 +646,66 @@ function checkCoverageLocal(result: DraftResult): Violation {
   return recomputed(counts, { total: field.total, covered: field.covered, partial: field.partial, none: field.none }, "coverage");
 }
 
-/** With the brief the whole field is rebuilt: heuristic set, askable set, must_answer order, total, and the unavailable gate. */
+/**
+ * The coverage ledger against what there was to ask: with nothing askable
+ * the call never went out; with questions to ask, a missing verdict can only
+ * be the call's own failure, never a reason that says it was not needed.
+ */
+function checkCoverageLedger(result: DraftResult, askable: readonly string[]): Violation {
+  const llm = result.run.reads.llm_coverage;
+  if (askable.length === 0) {
+    const expected = { status: "unavailable", reason: "insufficient_evidence", attempted: 0, calls: 0 };
+    const actual =
+      llm.status === "unavailable"
+        ? { status: llm.status, reason: llm.reason, attempted: llm.attempted, calls: llm.calls }
+        : { status: llm.status, calls: llm.calls };
+    return recomputed(expected, actual, LLM_COVERAGE);
+  }
+  const { coverage: field } = result;
+  if (field.status === "unavailable" && NOT_A_COVERAGE_FAILURE.has(field.reason)) return reference("coverage.reason");
+  return null;
+}
+
+/** With the brief the whole field is rebuilt: heuristic set, askable set, must_answer order, total, the unavailable gate, then the ledger. */
 function checkCoverageBound(result: DraftResult, brief: ContentBrief): Violation {
   const decided = decideCoverage(brief, result.sections);
   const llm = result.run.reads.llm_coverage;
   const { coverage: field } = result;
-  if (field.status === "unavailable") return recomputed(buildCoverage(brief, decided.heuristic, null, llm), field, "coverage");
-  const modelItems = field.items.filter((item) => item.method === "model");
-  if (!sameSet(modelItems.map((item) => item.question_id), decided.askable)) return reference("coverage.items");
-  return recomputed(buildCoverage(brief, decided.heuristic, modelItems, llm), field, "coverage");
+  const rebuilt =
+    field.status === "unavailable"
+      ? recomputed(buildCoverage(brief, decided.heuristic, null, llm), field, "coverage")
+      : (() => {
+          const modelItems = field.items.filter((item) => item.method === "model");
+          if (!sameSet(modelItems.map((item) => item.question_id), decided.askable)) return reference("coverage.items");
+          return recomputed(buildCoverage(brief, decided.heuristic, modelItems, llm), field, "coverage");
+        })();
+  return rebuilt ?? checkCoverageLedger(result, decided.askable);
 }
 
 /* ------------------------------------------------------------------ */
 /* entry points                                                         */
 /* ------------------------------------------------------------------ */
 
-function firstViolation(result: DraftResult, brief: ContentBrief | null): Violation {
+function firstViolation(result: DraftResult, brief: ContentBrief | null, trusted: Trusted): Violation {
+  const ledger: Ledger | null = brief === null ? null : { brief, settings: result.settings };
   return (
-    // A draft written against another brief is refused before its sentences are judged by the wrong ledger.
-    (brief === null ? null : checkBriefRef(result, brief)) ??
-    checkSections(result.sections, brief, "sections") ??
-    (brief === null ? null : checkPlan(result.sections, brief, "sections")) ??
+    // A draft written against another brief, or a section outside its outline, is refused
+    // before any sentence is judged against a scope it was never given.
+    (brief === null ? null : (checkBriefRef(result, brief) ?? checkPlan(result.sections, brief, "sections"))) ??
+    checkSections(result.sections, ledger, "sections") ??
     checkRun(result.run) ??
     checkDerived(result) ??
-    checkLlmSections(result) ??
+    checkLlmSections(result, trusted) ??
+    (trusted.coverageLlm === undefined ? null : recomputed(trusted.coverageLlm, result.run.reads.llm_coverage, LLM_COVERAGE)) ??
     checkCoverageLocal(result) ??
     (brief === null ? null : checkCoverageBound(result, brief))
   );
 }
 
-function decodeDraft(input: unknown, brief: ContentBrief | null): ParseDraftResult {
+function decodeDraft(input: unknown, brief: ContentBrief | null, trusted: Trusted): ParseDraftResult {
   const shaped = decodeDraftShape(input, "");
   if (!shaped.ok) return shaped;
-  return firstViolation(shaped.value, brief) ?? shaped;
+  return firstViolation(shaped.value, brief, trusted) ?? shaped;
 }
 
 /**
@@ -595,12 +714,16 @@ function decodeDraft(input: unknown, brief: ContentBrief | null): ParseDraftResu
  * result it has just assembled; every client entrance uses `parseDraftResult`.
  */
 export function parseDraftResultShape(input: unknown): ParseDraftResult {
-  return decodeDraft(input, null);
+  return decodeDraft(input, null, {});
 }
 
-/** The exact parser: shape, invariants, the binding to `brief`, then the recomputed fingerprint. */
+/**
+ * The exact parser: shape, invariants, the binding to `brief` (each section
+ * judged against the evidence it was given), what the server knows
+ * first-hand (`deps.rerun`, `deps.coverageLlm`), then the recomputed fingerprint.
+ */
 export async function parseDraftResult(input: unknown, brief: ContentBrief, deps: ParseDraftDeps = {}): Promise<ParseDraftResult> {
-  const decoded = decodeDraft(input, brief);
+  const decoded = decodeDraft(input, brief, deps);
   if (!decoded.ok) return decoded;
   const expected = await (deps.fingerprint ?? draftFingerprint)(decoded.value);
   return expected === decoded.value.run.fingerprint
@@ -608,11 +731,11 @@ export async function parseDraftResult(input: unknown, brief: ContentBrief, deps
     : { ok: false, code: "brief_fingerprint_mismatch", path: "run.fingerprint" };
 }
 
-/** The `sections` of a section-rerun request: shape and caps, then bound to `brief` like a result's sections. */
-export function parseDraftSections(input: unknown, brief: ContentBrief): ParseDraftSectionsResult {
+/** The `sections` of a section-rerun request: shape and caps, then bound to `brief` under `settings` like a result's sections. */
+export function parseDraftSections(input: unknown, brief: ContentBrief, settings: DraftResult["settings"]): ParseDraftSectionsResult {
   const decoded = sections(input, "sections");
   if (!decoded.ok) return decoded;
-  return checkSections(decoded.value, brief, "sections") ?? checkPlan(decoded.value, brief, "sections") ?? decoded;
+  return checkPlan(decoded.value, brief, "sections") ?? checkSections(decoded.value, { brief, settings }, "sections") ?? decoded;
 }
 
 /** The `settings` of a draft or section-rerun request: three closed enumerations, exact key set. */

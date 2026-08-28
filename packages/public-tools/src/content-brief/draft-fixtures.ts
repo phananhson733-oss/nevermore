@@ -25,20 +25,22 @@ import {
 import type { CoverageValidation, PlannedSection, SectionCallMeta } from "./draft-assemble.ts";
 import { contentBriefFixture, withFingerprint } from "./fixtures.ts";
 import type { FixtureOptions } from "./fixtures.ts";
+import { sectionEvidenceFor } from "./parse-draft.ts";
 import { validateSectionOutput } from "./validate-section.ts";
-import type { SectionEvidence } from "./validate-section.ts";
 
 /* ------------------------------------------------------------------ */
 /* knobs                                                                */
 /* ------------------------------------------------------------------ */
 
 export interface DraftFixtureOptions {
-  /** This writable section comes back `failed` (timeout after two attempts); its questions are decided heuristically. */
-  readonly failSection?: string;
-  /** This writable section is left unchecked: `skipped`, no model call. */
-  readonly skipSection?: string;
+  /** These writable sections come back `failed` (timeout after two attempts); their questions are decided heuristically. */
+  readonly failSection?: string | readonly string[];
+  /** These writable sections are left unchecked: `skipped`, no model call. */
+  readonly skipSection?: string | readonly string[];
   /** The coverage call timed out: `coverage` is the unavailable branch, run mode degraded. */
   readonly coverage?: "unavailable";
+  /** Which profile facts each section may cite (sectionEvidenceScope); `gap_only` by default. */
+  readonly productMention?: DraftResult["settings"]["product_mention"];
 }
 
 export const DRAFT_FIXTURE_RUN_ID = "draft_01J6FIXTURE000000000000001";
@@ -66,18 +68,19 @@ const LLM_COVERAGE_TIMEOUT: LlmReadMeta = {
   output_tokens: null,
 };
 
-/* ------------------------------------------------------------------ */
-/* evidence                                                             */
-/* ------------------------------------------------------------------ */
+/** No ok section, so no question to ask: the coverage call never goes out. */
+const LLM_COVERAGE_NOT_ASKED: LlmReadMeta = {
+  status: "unavailable",
+  reason: "insufficient_evidence",
+  attempted: 0,
+  calls: 0,
+  model_id: null,
+  input_tokens: null,
+  output_tokens: null,
+};
 
-/** The same ledger the handler hands validate-section.ts: pages with at least one excerpt, every profile fact. */
-export function sectionEvidenceOf(brief: ContentBrief): SectionEvidence {
-  return {
-    citableCrawlIds: new Set(
-      brief.evidence.crawl.observed.filter((page) => page.excerpts.length > 0).map((page) => page.id),
-    ),
-    profileFacts: new Map((brief.evidence.profile?.facts ?? []).map((fact) => [fact.id, fact] as const)),
-  };
+function toList(value: string | readonly string[] | undefined): readonly string[] {
+  return value === undefined ? [] : typeof value === "string" ? [value] : value;
 }
 
 /* ------------------------------------------------------------------ */
@@ -91,13 +94,15 @@ function rotate<T>(items: readonly T[], by: number): T[] {
 }
 
 /**
- * One section's model output, written against the brief's own ledger so the
- * verify list has every kind: a two-source bound sentence (not listed), a
- * single-source one, a profile-only one, a gap, a connector, and — in the
- * section the gap angle lives in — a stance citing the inferred fact.
+ * One section's model output, written only against the evidence that
+ * section was given (sectionEvidenceScope), so the verify list has every
+ * kind: a two-source bound sentence (not listed), a single-source one, a
+ * profile-only one where a fact is in scope, a gap, a connector, and — in
+ * the gap angle's home section — a stance (citing the inferred fact when
+ * it is in scope, else the first-hand one).
  */
-function sectionOutput(brief: ContentBrief, section: PlannedSection, index: number, gapHome: boolean): ModelSectionOutput {
-  const evidence = sectionEvidenceOf(brief);
+function sectionOutput(brief: ContentBrief, section: PlannedSection, index: number, settings: DraftResult["settings"]): ModelSectionOutput {
+  const evidence = sectionEvidenceFor(brief, section.id, settings);
   const citable = rotate([...evidence.citableCrawlIds], index);
   const facts = [...evidence.profileFacts.values()];
   const firstHand = facts.find((fact) => fact.derivation !== "inferred")?.id ?? null;
@@ -118,14 +123,14 @@ function sectionOutput(brief: ContentBrief, section: PlannedSection, index: numb
     { text: "That leaves the practical question open.", claim: "no_claim", evidence_refs: [] },
   ];
   const stanceRef = inferred ?? firstHand;
-  if (gapHome && stanceRef !== null) {
+  if (section.id === gapAngleSectionId(brief) && stanceRef !== null) {
     closing.push({ text: "Pooled warmup is the better default for a new domain.", claim: "stance", evidence_refs: [stanceRef] });
   }
   return { paragraphs: opening.length > 0 ? [{ sentences: opening }, { sentences: closing }] : [{ sentences: closing }] };
 }
 
-function okSection(brief: ContentBrief, section: PlannedSection, index: number, gapHome: boolean): DraftSection {
-  const validated = validateSectionOutput(sectionOutput(brief, section, index, gapHome), sectionEvidenceOf(brief));
+function okSection(brief: ContentBrief, section: PlannedSection, index: number, settings: DraftResult["settings"]): DraftSection {
+  const validated = validateSectionOutput(sectionOutput(brief, section, index, settings), sectionEvidenceFor(brief, section.id, settings));
   if (!validated.ok) throw new Error(`draft fixture: section ${section.id} failed validation at ${validated.path} (${validated.rule})`);
   return {
     id: section.id,
@@ -137,16 +142,23 @@ function okSection(brief: ContentBrief, section: PlannedSection, index: number, 
   };
 }
 
-function sectionFor(brief: ContentBrief, section: PlannedSection, index: number, options: DraftFixtureOptions): DraftSection {
+function sectionFor(
+  brief: ContentBrief,
+  section: PlannedSection,
+  index: number,
+  options: DraftFixtureOptions,
+  settings: DraftResult["settings"],
+): DraftSection {
   const base = { id: section.id, h2: section.h2, answers: [...section.answers] as [string, ...string[]] };
-  if (section.id === options.skipSection) return { ...base, status: "skipped" };
-  if (section.id === options.failSection) {
+  if (toList(options.skipSection).includes(section.id)) return { ...base, status: "skipped" };
+  if (toList(options.failSection).includes(section.id)) {
     return { ...base, status: "failed", fail_reason: "timeout", llm: { attempts: 2, input_tokens: null, output_tokens: null } };
   }
-  return okSection(brief, section, index, section.id === gapAngleSectionId(brief));
+  return okSection(brief, section, index, settings);
 }
 
-function callOf(section: DraftSection): SectionCallMeta | null {
+/** The call record the handler keeps for a section it wrote this run. */
+export function fixtureCallOf(section: DraftSection): SectionCallMeta | null {
   if (section.status === "skipped") return null;
   return {
     status: section.status,
@@ -196,24 +208,27 @@ function coverageOutput(askable: readonly string[], sections: readonly DraftSect
  * draft endpoint (section_not_writable).
  */
 export async function draftResultFixture(brief: ContentBrief, options: DraftFixtureOptions = {}): Promise<DraftResult> {
+  const settings: DraftResult["settings"] = { tone: "explanatory", person: "second", product_mention: options.productMention ?? "gap_only" };
   const plan = planSections(brief, brief.draft_readiness.writable);
   if ("ok" in plan) throw new Error("draft fixture: the brief has no writable section");
-  const sections = plan.requested.map((section, index) => sectionFor(brief, section, index, options));
+  const sections = plan.requested.map((section, index) => sectionFor(brief, section, index, options, settings));
   const decided = decideCoverage(brief, sections);
   const okIds = new Set(sections.filter((section) => section.status === "ok").map((section) => section.id));
-  const llmCoverage = options.coverage === "unavailable" ? LLM_COVERAGE_TIMEOUT : LLM_COVERAGE_OK;
+  const llmCoverage = decided.askable.length === 0 ? LLM_COVERAGE_NOT_ASKED : options.coverage === "unavailable" ? LLM_COVERAGE_TIMEOUT : LLM_COVERAGE_OK;
   const verdict: CoverageValidation | null =
-    options.coverage === "unavailable" ? null : validateCoverageOutput(coverageOutput(decided.askable, sections), decided.askable, okIds);
+    llmCoverage.status === "complete" ? validateCoverageOutput(coverageOutput(decided.askable, sections), decided.askable, okIds) : null;
   if (verdict !== null && !verdict.ok) throw new Error(`draft fixture: coverage output rejected at ${verdict.path}`);
-  const coverage = buildCoverage(brief, decided.heuristic, verdict === null ? null : verdict.items, llmCoverage);
+  // Nothing askable: the coverage call never went out, and every item is the server's own verdict.
+  const modelItems = verdict === null ? (decided.askable.length === 0 ? [] : null) : verdict.items;
+  const coverage = buildCoverage(brief, decided.heuristic, modelItems, llmCoverage);
   const calls = sections.flatMap((section) => {
-    const call = callOf(section);
+    const call = fixtureCallOf(section);
     return call === null ? [] : [call];
   });
   return assembleDraftResult({
     run: { run_id: DRAFT_FIXTURE_RUN_ID, reran_from: null, collected_at: COLLECTED_AT, elapsed_ms: 31_200, budget_ms: DRAFT_TOTAL_BUDGET_MS },
     brief,
-    settings: { tone: "explanatory", person: "second", product_mention: "gap_only" },
+    settings,
     sections,
     coverage,
     llmSections: aggregateSectionLlm(calls, SECTION_TEMPERATURE),

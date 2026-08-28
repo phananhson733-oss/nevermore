@@ -88,6 +88,42 @@ export function gapAngleSectionId(brief: ContentBrief): string | null {
   return last === undefined || brief.gap_angle.status !== "available" ? null : last.id;
 }
 
+/**
+ * The evidence one section was actually allowed to cite: the observed pages
+ * behind its own questions (with excerpts), and the profile facts the
+ * visitor's `product_mention` setting released to it. The handler builds the
+ * prompt from this and the parser validates against it, so a reference the
+ * model could not have seen is refused instead of being displayed as bound.
+ */
+export interface SectionEvidenceScope {
+  readonly citableCrawlIds: ReadonlySet<string>;
+  readonly profileFactIds: ReadonlySet<string>;
+}
+
+export function sectionEvidenceScope(
+  brief: ContentBrief,
+  sectionId: string,
+  settings: DraftResult["settings"],
+): SectionEvidenceScope {
+  const section = outlineItems(brief).find((item) => item.id === sectionId);
+  const answers = new Set(section?.answers ?? []);
+  const questions = brief.must_answer.status === "available" ? brief.must_answer.items.filter((item) => answers.has(item.id)) : [];
+  const memberIds = new Set(questions.flatMap((item) => item.cluster.members.map((member) => member.observation_id)));
+  const citableCrawlIds = new Set(
+    brief.evidence.crawl.observed.filter((page) => memberIds.has(page.id) && page.excerpts.length > 0).map((page) => page.id),
+  );
+  const allFacts = brief.evidence.profile?.facts ?? [];
+  const profileFactIds =
+    settings.product_mention === "none"
+      ? new Set<string>()
+      : settings.product_mention === "throughout"
+        ? new Set(allFacts.map((fact) => fact.id))
+        : gapAngleSectionId(brief) === sectionId && brief.gap_angle.status === "available"
+          ? new Set(brief.gap_angle.profile_fact_refs.filter((id) => allFacts.some((fact) => fact.id === id)))
+          : new Set<string>();
+  return { citableCrawlIds, profileFactIds };
+}
+
 /* ------------------------------------------------------------------ */
 /* derived fields                                                       */
 /* ------------------------------------------------------------------ */
@@ -147,8 +183,8 @@ export interface SectionCallMeta {
 }
 
 function sumTokens(values: readonly (number | null)[]): number | null {
-  const known = values.filter((value): value is number => value !== null);
-  return known.length === 0 ? null : known.reduce((sum, value) => sum + value, 0);
+  if (values.length === 0 || values.some((value) => value === null)) return null;
+  return values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
 }
 
 /** handoff §5.7: complete = all ok; partial = some ok some failed; unavailable = none ok. */
@@ -158,8 +194,11 @@ export function aggregateSectionLlm(calls: readonly SectionCallMeta[], temperatu
   const totalCalls = calls.reduce((sum, call) => sum + call.attempts, 0);
   const modelId = calls.find((call) => call.model_id !== null)?.model_id ?? null;
   const failedReasons = failed.map((call) => call.fail_reason ?? "provider_error");
-  const inputTokens = sumTokens(calls.map((call) => call.input_tokens));
-  const outputTokens = sumTokens(calls.map((call) => call.output_tokens));
+  // A real attempt whose usage the provider did not report makes the total
+  // unknown; only a call that never went out contributes a known zero.
+  const attempted = calls.filter((call) => call.attempts > 0);
+  const inputTokens = sumTokens(attempted.map((call) => call.input_tokens));
+  const outputTokens = sumTokens(attempted.map((call) => call.output_tokens));
   if (ok.length === 0) {
     const first = failedReasons[0] ?? "insufficient_evidence";
     return {
@@ -258,6 +297,9 @@ export function validateCoverageOutput(
     seen.add(item.question_id);
     if (item.status === "covered") {
       if (item.covered_in === null || !okSectionIds.has(item.covered_in)) return { ok: false, path: `${path}.covered_in` };
+      // A covered verdict that still names a gap is a contradiction; the server
+      // never edits a model verdict into shape, it refuses the whole check.
+      if (item.gap !== null) return { ok: false, path: `${path}.gap` };
       items.push({ question_id: item.question_id, status: "covered", covered_in: item.covered_in, gap: null, method: "model", cause: null });
     } else if (item.status === "partial") {
       if (item.covered_in === null || !okSectionIds.has(item.covered_in)) return { ok: false, path: `${path}.covered_in` };
@@ -265,6 +307,7 @@ export function validateCoverageOutput(
       if (partialGap === null || !partialGap.ok) return { ok: false, path: `${path}.gap` };
       items.push({ question_id: item.question_id, status: "partial", covered_in: item.covered_in, gap: partialGap.value, method: "model", cause: "content" });
     } else if (item.status === "none") {
+      if (item.covered_in !== null) return { ok: false, path: `${path}.covered_in` };
       const noneGap = item.gap === null ? null : boundedModelText(item.gap, MODEL_TEXT_MAX_CHARS);
       if (noneGap === null || !noneGap.ok) return { ok: false, path: `${path}.gap` };
       items.push({ question_id: item.question_id, status: "none", covered_in: null, gap: noneGap.value, method: "model", cause: "content" });

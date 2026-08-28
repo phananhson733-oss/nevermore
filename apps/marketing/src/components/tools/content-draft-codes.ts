@@ -34,6 +34,7 @@ export const CONTENT_DRAFT_ERROR_CODES = [
   "auth_unavailable",
   "rate_limited",
   "quota_unavailable",
+  "run_in_progress",
   "brief_schema_mismatch",
   "brief_fingerprint_mismatch",
   "brief_reference_invalid",
@@ -45,6 +46,12 @@ const ERROR_CODES_COMPLETE: Complete<
   (typeof CONTENT_DRAFT_ERROR_CODES)[number]
 > = true;
 void ERROR_CODES_COMPLETE;
+
+/** The refusals that carry a Retry-After header the page can print. */
+export const RETRY_AFTER_ERROR_CODES = [
+  "run_in_progress",
+  "rate_limited",
+] as const satisfies readonly ContentDraftErrorCode[];
 
 export function isContentDraftErrorCode(
   code: string,

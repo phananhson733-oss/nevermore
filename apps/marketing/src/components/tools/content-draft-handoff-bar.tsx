@@ -4,7 +4,7 @@
 // @pos    -- the exit of the draft page (handoff §5.6); every artifact it hands out is a
 //            projection of the same DraftResult the screen shows
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type {
   ContentBrief,
   DraftResult,
@@ -109,8 +109,19 @@ export function HandoffBar({
   readonly t: DraftTranslate;
 }) {
   const [urlInput, setUrlInput] = useState("");
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  /**
+   * Bound to the run it reported on. A rerun replaces the result under this
+   * bar (the bar itself is kept, so the URL field survives), and "copied"
+   * must not carry over to a document nobody has copied yet; a copy started
+   * on the old run that resolves after the swap is recorded for the old run
+   * only and never shown.
+   */
+  const [copy, setCopy] = useState<{ readonly runId: string; readonly state: "copied" | "failed" } | null>(null);
   const [handoffFailed, setHandoffFailed] = useState(false);
+  const copyState = copy !== null && copy.runId === result.run.run_id ? copy.state : "idle";
+  // The run on screen right now, readable from a promise that started earlier.
+  const currentRunId = useRef(result.run.run_id);
+  currentRunId.current = result.run.run_id;
   const page = publishedUrl(urlInput);
   const urlInvalid = urlInput.trim() !== "" && page === null;
 
@@ -149,9 +160,12 @@ export function HandoffBar({
           type="button"
           data-copy-markdown
           onClick={() => {
-            void copyText(draftMarkdown(result, markdownNotes(t))).then((ok) =>
-              setCopyState(ok ? "copied" : "failed"),
-            );
+            const runId = result.run.run_id;
+            void copyText(draftMarkdown(result, markdownNotes(t))).then((ok) => {
+              // A copy that started on a run since replaced reports nothing.
+              if (currentRunId.current !== runId) return;
+              setCopy({ runId, state: ok ? "copied" : "failed" });
+            });
           }}
           className={ACTION_BUTTON}
         >

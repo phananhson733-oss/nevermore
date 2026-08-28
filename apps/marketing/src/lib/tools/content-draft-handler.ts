@@ -12,6 +12,7 @@ import {
   DRAFT_REQUEST_MAX_BYTES,
   DRAFT_TOTAL_BUDGET_MS,
   ENVELOPE_MS,
+  OUTLINE_CAP,
   QUOTA_WINDOW_SECONDS,
   SECTION_ACCOUNT_MAX_PER_HOUR,
   SECTION_ENDPOINT_BUDGET_MS,
@@ -26,7 +27,6 @@ import {
   type DraftResult,
   type DraftSection,
   type LlmReadMeta,
-  type ProfileFact,
 } from "@sf/public-tools/content-brief/contract";
 import {
   aggregateSectionLlm,
@@ -35,6 +35,7 @@ import {
   decideCoverage,
   gapAngleSectionId,
   planSections,
+  sectionEvidenceScope,
   validateCoverageOutput,
   type PlannedSection,
   type SectionCallMeta,
@@ -62,6 +63,7 @@ import {
   readPublicToolJson,
   type PublicToolSlot,
 } from "./public-tool-request.ts";
+import { SERP_LANGUAGES, SERP_MARKET_OPTIONS } from "./serp-markets.ts";
 import {
   consumePublicToolQuota,
   type PublicToolQuotaOutcome,
@@ -71,16 +73,23 @@ import {
  * Why the draft never trusts what it is handed.
  *
  * The brief arrives from the browser — pasted, uploaded or carried over in
- * sessionStorage — so the first thing either endpoint does is run the same
- * exact parser the brief tool ran before it answered. Nothing downstream
- * reads a field the parser did not re-derive. Sections are generated in
- * parallel under one entry deadline; a section that fails does not touch the
- * others; the coverage check is a separate call with a fresh context. A
- * rerun returns a whole new DraftResult so the client never assembles one.
+ * sessionStorage — so before anything expensive runs it must pass the same
+ * exact parser the brief tool ran before it answered. Admission comes first
+ * though: login, the per-account slot and the hourly buckets are all settled
+ * before the parser's hashing and invariant work, so a bad brief cannot be
+ * used to burn CPU outside the slot. Sections are generated in parallel under
+ * one entry deadline and every started call is drained before the slot is
+ * released; a section that fails does not touch the others; the coverage
+ * check is a separate call with a fresh context. A rerun returns a whole new
+ * DraftResult so the client never assembles one, and the parser is handed the
+ * call metadata this request actually observed so the result cannot claim a
+ * different lineage.
  */
 
 const TOOL = "content-draft";
 const ADMISSION_STEP_MS = 5_000;
+const SLOT_RETRY_AFTER_SECONDS = 5;
+const RUN_ID_MAX_CHARS = 128;
 
 export interface ContentDraftHandlerDependencies {
   readonly getServerAuthenticatedUser: () => Promise<ServerAuthenticatedUser>;
@@ -163,6 +172,7 @@ interface Admitted {
   readonly clock: Clock;
 }
 
+/** Login and a bounded body read; nothing here inspects the brief. */
 async function admit(
   request: Request,
   dependencies: ContentDraftHandlerDependencies,
@@ -205,6 +215,15 @@ function briefWithinCap(value: unknown): boolean {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength <= CONTENT_BRIEF_HANDOFF_MAX_BYTES;
 }
 
+/**
+ * The brief's market and language become prompt input, so they are pinned to
+ * the same closed lists the brief tool accepts; a brief that names anything
+ * else cannot have come from it.
+ */
+function marketAndLanguageKnown(brief: ContentBrief): boolean {
+  return SERP_LANGUAGES.has(brief.keyword.language) && SERP_MARKET_OPTIONS.some((option) => option.code === brief.keyword.market);
+}
+
 async function parseBriefOrRefuse(value: unknown): Promise<ContentBrief | Response> {
   if (!briefWithinCap(value)) return refuse("payload_too_large", 413);
   const parsed = await parseContentBrief(value);
@@ -212,7 +231,21 @@ async function parseBriefOrRefuse(value: unknown): Promise<ContentBrief | Respon
     const status = parsed.code === "brief_fingerprint_mismatch" || parsed.code === "brief_reference_invalid" || parsed.code === "brief_schema_mismatch" ? 422 : 400;
     return refuse(parsed.code, status);
   }
+  if (!marketAndLanguageKnown(parsed.value)) return refuse("brief_reference_invalid", 422);
   return parsed.value;
+}
+
+function readSectionIds(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > OUTLINE_CAP) return null;
+  if (value.some((id) => typeof id !== "string" || id === "")) return null;
+  const ids = value as string[];
+  // Duplicates are refused rather than merged: `requested` is defined as the
+  // length of this list, so a merged list would make the result lie about it.
+  return new Set(ids).size === ids.length ? ids : null;
+}
+
+function readId(value: unknown): string | null {
+  return typeof value === "string" && value !== "" && value.length <= RUN_ID_MAX_CHARS ? value : null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -221,31 +254,26 @@ async function parseBriefOrRefuse(value: unknown): Promise<ContentBrief | Respon
 
 interface SectionOutcome {
   readonly section: DraftSection;
-  readonly call: SectionCallMeta | null;
+  readonly call: SectionCallMeta;
 }
 
-function sectionInput(
-  brief: ContentBrief,
-  planned: PlannedSection,
-  settings: DraftResult["settings"],
-  clock: Clock,
-): DraftSectionInput {
+function answersOf(planned: PlannedSection): [string, ...string[]] {
+  const [first, ...rest] = planned.answers;
+  return [first, ...rest];
+}
+
+function sectionInput(brief: ContentBrief, planned: PlannedSection, settings: DraftResult["settings"], clock: Clock): DraftSectionInput {
+  const scope = sectionEvidenceScope(brief, planned.id, settings);
   const questions = brief.must_answer.status === "available" ? brief.must_answer.items.filter((item) => planned.answers.includes(item.id)) : [];
-  const pageIds = new Set(questions.flatMap((item) => item.cluster.members.map((member) => member.observation_id)));
+  const memberIds = new Set(questions.flatMap((item) => item.cluster.members.map((member) => member.observation_id)));
   const pages = brief.evidence.crawl.observed
-    .filter((page) => pageIds.has(page.id))
+    .filter((page) => memberIds.has(page.id))
     .map((page) => ({ id: page.id, url: page.final_url, excerpts: page.excerpts.map((excerpt) => ({ heading: excerpt.heading, text: excerpt.text })) }));
-  const allFacts: readonly ProfileFact[] = brief.evidence.profile?.facts ?? [];
-  const gapHome = gapAngleSectionId(brief);
-  const gapAngle = brief.gap_angle.status === "available" && gapHome === planned.id ? { value: brief.gap_angle.value, rationale: brief.gap_angle.rationale } : null;
-  const facts =
-    settings.product_mention === "none"
-      ? []
-      : settings.product_mention === "gap_only"
-        ? gapAngle !== null && brief.gap_angle.status === "available"
-          ? allFacts.filter((fact) => brief.gap_angle.status === "available" && brief.gap_angle.profile_fact_refs.includes(fact.id))
-          : []
-        : [...allFacts];
+  const facts = (brief.evidence.profile?.facts ?? []).filter((fact) => scope.profileFactIds.has(fact.id));
+  const gapAngle =
+    brief.gap_angle.status === "available" && gapAngleSectionId(brief) === planned.id
+      ? { value: brief.gap_angle.value, rationale: brief.gap_angle.rationale }
+      : null;
   return {
     section: { id: planned.id, h2: planned.h2, h3: planned.h3, answers: planned.answers },
     questions: questions.map((item) => ({ id: item.id, q: item.q, members: item.cluster.members.map((member) => ({ observation_id: member.observation_id, heading: member.heading })) })),
@@ -277,39 +305,41 @@ async function generateOne(
     input_tokens: result.input_tokens,
     output_tokens: result.output_tokens,
   };
-  if (result.status === "ok") {
-    return {
-      section: {
-        id: planned.id,
-        h2: planned.h2,
-        answers: answersOf(planned),
-        status: "ok",
-        body: { word_count: result.word_count, paragraphs: result.paragraphs },
-        llm: { attempts: result.attempts, input_tokens: result.input_tokens, output_tokens: result.output_tokens },
-      },
-      call,
-    };
-  }
-  return {
-    section: {
-      id: planned.id,
-      h2: planned.h2,
-      answers: answersOf(planned),
-      status: "failed",
-      fail_reason: result.fail_reason ?? "provider_error",
-      llm: { attempts: result.attempts, input_tokens: result.input_tokens, output_tokens: result.output_tokens },
-    },
-    call,
-  };
+  const base = { id: planned.id, h2: planned.h2, answers: answersOf(planned) };
+  const llm = { attempts: result.attempts, input_tokens: result.input_tokens, output_tokens: result.output_tokens };
+  const section: DraftSection =
+    result.status === "ok"
+      ? { ...base, status: "ok", body: { word_count: result.word_count, paragraphs: result.paragraphs }, llm }
+      : { ...base, status: "failed", fail_reason: result.fail_reason ?? "provider_error", llm };
+  return { section, call };
 }
 
 function skippedSection(planned: PlannedSection): DraftSection {
   return { id: planned.id, h2: planned.h2, answers: answersOf(planned), status: "skipped" };
 }
 
-function answersOf(planned: PlannedSection): [string, ...string[]] {
-  const [first, ...rest] = planned.answers;
-  return [first, ...rest];
+/**
+ * Every started section call is awaited, success or not: rejecting early on
+ * the first unexpected error would release the account slot while the other
+ * paid calls were still running. The first rejection is rethrown afterwards.
+ */
+async function generateAll(
+  brief: ContentBrief,
+  planned: readonly PlannedSection[],
+  settings: DraftResult["settings"],
+  dependencies: ContentDraftHandlerDependencies,
+  clock: Clock,
+): Promise<SectionOutcome[]> {
+  const settled = await Promise.allSettled(planned.map((item) => generateOne(brief, item, settings, dependencies, clock)));
+  const rejected = settled.find((entry): entry is PromiseRejectedResult => entry.status === "rejected");
+  if (rejected !== undefined) throw rejected.reason;
+  return settled.flatMap((entry) => (entry.status === "fulfilled" ? [entry.value] : []));
+}
+
+/** Sections are always in outline order, whatever order they were requested or generated in. */
+function inOutlineOrder(brief: ContentBrief, sections: readonly DraftSection[]): DraftSection[] {
+  const order = new Map((brief.outline.status === "available" ? brief.outline.items : []).map((item, index) => [item.id, index] as const));
+  return [...sections].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
 }
 
 /* ------------------------------------------------------------------ */
@@ -355,25 +385,27 @@ async function checkCoverage(
   return { coverage: buildCoverage(brief, decision.heuristic, modelItems, llm), llm };
 }
 
-interface AssembledRun {
-  readonly result: DraftResult | null;
-  readonly selfCheck: "ok" | "failed";
+interface Rerun {
+  readonly previousRunId: string;
+  readonly sectionId: string;
+  readonly call: SectionCallMeta;
 }
 
-async function assembleAndCheck(
-  brief: ContentBrief,
-  settings: DraftResult["settings"],
-  sections: readonly DraftSection[],
-  calls: readonly SectionCallMeta[],
-  dependencies: ContentDraftHandlerDependencies,
-  clock: Clock,
-  reranFrom: string | null,
-  budgetMs: number,
-): Promise<AssembledRun> {
+async function assembleAndRespond(input: {
+  readonly brief: ContentBrief;
+  readonly settings: DraftResult["settings"];
+  readonly sections: readonly DraftSection[];
+  readonly calls: readonly SectionCallMeta[];
+  readonly dependencies: ContentDraftHandlerDependencies;
+  readonly clock: Clock;
+  readonly budgetMs: number;
+  readonly rerun: Rerun | null;
+}): Promise<Response> {
+  const { brief, settings, sections, calls, dependencies, clock, budgetMs, rerun } = input;
   const coverage = await checkCoverage(brief, sections, dependencies, clock);
   const runId = dependencies.runId();
   const result = await assembleDraftResult({
-    run: { run_id: runId, reran_from: reranFrom, collected_at: new Date(clock.start).toISOString(), elapsed_ms: Math.max(0, clock.now() - clock.start), budget_ms: budgetMs },
+    run: { run_id: runId, reran_from: rerun?.previousRunId ?? null, collected_at: new Date(clock.start).toISOString(), elapsed_ms: Math.max(0, clock.now() - clock.start), budget_ms: budgetMs },
     brief,
     settings,
     sections,
@@ -381,16 +413,18 @@ async function assembleAndCheck(
     llmSections: aggregateSectionLlm(calls, CONTENT_DRAFT_LLM_TEMPERATURE),
     llmCoverage: coverage.llm,
   });
-  const check = await parseDraftResult(result, brief);
+  // The parser is told what this request actually observed, so a result that
+  // claims a different rerun lineage or coverage call cannot leave the server.
+  const check = await parseDraftResult(result, brief, { ...(rerun === null ? {} : { rerun }), coverageLlm: coverage.llm });
   if (!check.ok) {
     dependencies.emit(JSON.stringify({ tool: TOOL, run_id: runId, self_check_failed: check.path, code: check.code }));
-    return { result: null, selfCheck: "failed" };
+    return refuse("draft_unavailable", 503);
   }
   dependencies.emit(
     JSON.stringify({
       tool: TOOL,
       run_id: runId,
-      reran_from: reranFrom,
+      reran_from: result.run.reran_from,
       mode: result.run.mode,
       elapsed_ms: result.run.elapsed_ms,
       sections: result.run.reads.sections,
@@ -399,118 +433,132 @@ async function assembleAndCheck(
       self_check: "ok",
     }),
   );
-  return { result, selfCheck: "ok" };
+  return json(result, 200);
 }
 
 /* ------------------------------------------------------------------ */
-/* POST /api/tools/content-draft/run                                    */
+/* the two endpoints                                                    */
 /* ------------------------------------------------------------------ */
+
+interface EndpointShape {
+  readonly budgetMs: number;
+  readonly maxBytes: number;
+  readonly bucketPrefix: string;
+  readonly accountMax: number;
+  readonly ipMax: number;
+}
+
+const RUN_ENDPOINT: EndpointShape = {
+  budgetMs: DRAFT_TOTAL_BUDGET_MS,
+  maxBytes: DRAFT_REQUEST_MAX_BYTES,
+  bucketPrefix: `public-${TOOL}`,
+  accountMax: DRAFT_ACCOUNT_MAX_PER_HOUR,
+  ipMax: DRAFT_IP_MAX_PER_HOUR,
+};
+
+const SECTION_ENDPOINT: EndpointShape = {
+  budgetMs: SECTION_ENDPOINT_BUDGET_MS,
+  maxBytes: SECTION_REQUEST_MAX_BYTES,
+  bucketPrefix: `public-${TOOL}-section`,
+  accountMax: SECTION_ACCOUNT_MAX_PER_HOUR,
+  ipMax: SECTION_IP_MAX_PER_HOUR,
+};
+
+/**
+ * Admission in the mandated order — login, the per-account slot, the hourly
+ * buckets — and only then the brief's parser and the paid work, all inside one
+ * try/finally so every exit releases the slot and every unexpected error
+ * becomes the closed `draft_unavailable` envelope.
+ */
+async function handle(
+  request: Request,
+  dependencies: ContentDraftHandlerDependencies,
+  shape: EndpointShape,
+  work: (admitted: Admitted) => Promise<Response>,
+): Promise<Response> {
+  let slot: PublicToolSlot | null = null;
+  try {
+    const admitted = await admit(request, dependencies, shape.budgetMs, shape.maxBytes);
+    if (admitted instanceof Response) return admitted;
+    slot = dependencies.acquireSlot(`${TOOL}:account:${admitted.userId}`);
+    if (!slot.acquired) return refuse("run_in_progress", 409, { "Retry-After": String(SLOT_RETRY_AFTER_SECONDS) });
+    const refusal = await consumeBuckets(dependencies, admitted.clock, [
+      [`${shape.bucketPrefix}:account:${admitted.userId}`, shape.accountMax],
+      [`${shape.bucketPrefix}:ip:${admitted.clientIp}`, shape.ipMax],
+    ]);
+    if (refusal !== null) return refusal;
+    return await work(admitted);
+  } catch (error: unknown) {
+    dependencies.emit(JSON.stringify({ tool: TOOL, unhandled: error instanceof Error ? error.name : typeof error }));
+    return refuse("draft_unavailable", 503);
+  } finally {
+    if (slot?.acquired === true) slot.release();
+  }
+}
 
 export async function handleContentDraftRunRequest(
   request: Request,
   dependencies: ContentDraftHandlerDependencies = CONTENT_DRAFT_HANDLER_DEPENDENCIES,
 ): Promise<Response> {
-  const admitted = await admit(request, dependencies, DRAFT_TOTAL_BUDGET_MS, DRAFT_REQUEST_MAX_BYTES);
-  if (admitted instanceof Response) return admitted;
-  const { userId, clientIp, body, clock } = admitted;
+  return handle(request, dependencies, RUN_ENDPOINT, async ({ body, clock }) => {
+    const settings = parseDraftSettings(body["settings"]);
+    if (!settings.ok) return refuse("invalid_request", 400);
+    const sectionIds = readSectionIds(body["section_ids"]);
+    if (sectionIds === null) return refuse("invalid_request", 400);
+    const brief = await parseBriefOrRefuse(body["brief"]);
+    if (brief instanceof Response) return brief;
+    const plan = planSections(brief, sectionIds);
+    if ("ok" in plan) return refuse(plan.code, 422);
 
-  const settings = parseDraftSettings(body["settings"]);
-  if (!settings.ok) return refuse("invalid_request", 400);
-  const sectionIdsRaw = body["section_ids"];
-  if (!Array.isArray(sectionIdsRaw) || sectionIdsRaw.some((id) => typeof id !== "string") || sectionIdsRaw.length === 0) {
-    return refuse("invalid_request", 400);
-  }
-  const brief = await parseBriefOrRefuse(body["brief"]);
-  if (brief instanceof Response) return brief;
-  const plan = planSections(brief, sectionIdsRaw as string[]);
-  if ("ok" in plan) return refuse(plan.code, 422);
-
-  const slot = dependencies.acquireSlot(`${TOOL}:account:${userId}`);
-  if (!slot.acquired) return refuse("rate_limited", 409, { "Retry-After": "5" });
-  try {
-    const refusal = await consumeBuckets(dependencies, clock, [
-      [`public-${TOOL}:account:${userId}`, DRAFT_ACCOUNT_MAX_PER_HOUR],
-      [`public-${TOOL}:ip:${clientIp}`, DRAFT_IP_MAX_PER_HOUR],
-    ]);
-    if (refusal !== null) return refusal;
-
-    const outcomes = await Promise.all(plan.requested.map((planned) => generateOne(brief, planned, settings.value, dependencies, clock)));
-    const byId = new Map(outcomes.map((outcome) => [outcome.section.id, outcome] as const));
-    const sections: DraftSection[] = [];
-    const calls: SectionCallMeta[] = [];
-    for (const planned of [...plan.requested, ...plan.skipped].sort((a, b) => a.id.localeCompare(b.id, "en"))) {
-      const outcome = byId.get(planned.id);
-      if (outcome === undefined) {
-        sections.push(skippedSection(planned));
-      } else {
-        sections.push(outcome.section);
-        if (outcome.call !== null) calls.push(outcome.call);
-      }
-    }
-    orderByOutline(brief, sections);
-    const assembled = await assembleAndCheck(brief, settings.value, sections, calls, dependencies, clock, null, DRAFT_TOTAL_BUDGET_MS);
-    return assembled.result === null ? refuse("draft_unavailable", 503) : json(assembled.result, 200);
-  } catch (error: unknown) {
-    dependencies.emit(JSON.stringify({ tool: TOOL, unhandled: error instanceof Error ? error.name : typeof error }));
-    return refuse("draft_unavailable", 503);
-  } finally {
-    slot.release();
-  }
+    const outcomes = await generateAll(brief, plan.requested, settings.value, dependencies, clock);
+    const sections = inOutlineOrder(brief, [...outcomes.map((outcome) => outcome.section), ...plan.skipped.map(skippedSection)]);
+    return assembleAndRespond({
+      brief,
+      settings: settings.value,
+      sections,
+      calls: outcomes.map((outcome) => outcome.call),
+      dependencies,
+      clock,
+      budgetMs: DRAFT_TOTAL_BUDGET_MS,
+      rerun: null,
+    });
+  });
 }
-
-/** Sections are always in outline order, whatever order they were requested or generated in. */
-function orderByOutline(brief: ContentBrief, sections: DraftSection[]): void {
-  const order = new Map((brief.outline.status === "available" ? brief.outline.items : []).map((item, index) => [item.id, index] as const));
-  sections.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
-}
-
-/* ------------------------------------------------------------------ */
-/* POST /api/tools/content-draft/section                                */
-/* ------------------------------------------------------------------ */
 
 export async function handleContentDraftSectionRequest(
   request: Request,
   dependencies: ContentDraftHandlerDependencies = CONTENT_DRAFT_HANDLER_DEPENDENCIES,
 ): Promise<Response> {
-  const admitted = await admit(request, dependencies, SECTION_ENDPOINT_BUDGET_MS, SECTION_REQUEST_MAX_BYTES);
-  if (admitted instanceof Response) return admitted;
-  const { userId, clientIp, body, clock } = admitted;
-
-  const settings = parseDraftSettings(body["settings"]);
-  if (!settings.ok) return refuse("invalid_request", 400);
-  const sectionId = body["section_id"];
-  if (typeof sectionId !== "string" || sectionId === "") return refuse("invalid_request", 400);
-  const brief = await parseBriefOrRefuse(body["brief"]);
-  if (brief instanceof Response) return brief;
-  const existing = parseDraftSections(body["sections"], brief);
-  if (!existing.ok) return refuse(existing.code, existing.code === "invalid_request" ? 400 : 422);
-  if (!brief.draft_readiness.writable.includes(sectionId)) return refuse("section_not_writable", 422);
-  const target = existing.value.find((section) => section.id === sectionId);
-  if (target === undefined || target.status === "skipped") return refuse("section_not_writable", 422);
-  const previousRunId = typeof body["previous_run_id"] === "string" ? (body["previous_run_id"] as string) : null;
-
-  const slot = dependencies.acquireSlot(`${TOOL}:account:${userId}`);
-  if (!slot.acquired) return refuse("rate_limited", 409, { "Retry-After": "5" });
-  try {
-    const refusal = await consumeBuckets(dependencies, clock, [
-      [`public-${TOOL}-section:account:${userId}`, SECTION_ACCOUNT_MAX_PER_HOUR],
-      [`public-${TOOL}-section:ip:${clientIp}`, SECTION_IP_MAX_PER_HOUR],
-    ]);
-    if (refusal !== null) return refusal;
-
+  return handle(request, dependencies, SECTION_ENDPOINT, async ({ body, clock }) => {
+    const settings = parseDraftSettings(body["settings"]);
+    if (!settings.ok) return refuse("invalid_request", 400);
+    const sectionId = readId(body["section_id"]);
+    const previousRunId = readId(body["previous_run_id"]);
+    if (sectionId === null || previousRunId === null) return refuse("invalid_request", 400);
+    const brief = await parseBriefOrRefuse(body["brief"]);
+    if (brief instanceof Response) return brief;
+    const existing = parseDraftSections(body["sections"], brief, settings.value);
+    if (!existing.ok) return refuse(existing.code, existing.code === "invalid_request" ? 400 : 422);
+    // A skipped section is still writable: the visitor unchecked it on the first
+    // run and may ask for it now; this endpoint is how it gets written.
     const outline = brief.outline.status === "available" ? brief.outline.items.find((item) => item.id === sectionId) : undefined;
-    if (outline === undefined) return refuse("section_not_writable", 422);
+    if (outline === undefined || !brief.draft_readiness.writable.includes(sectionId) || !existing.value.some((section) => section.id === sectionId)) {
+      return refuse("section_not_writable", 422);
+    }
+
     const planned: PlannedSection = { id: outline.id, h2: outline.h2, h3: outline.h3, answers: outline.answers };
     const outcome = await generateOne(brief, planned, settings.value, dependencies, clock);
     const sections = existing.value.map((section) => (section.id === sectionId ? outcome.section : section));
     // Only this request's call is known here; the earlier sections' calls are not re-reported.
-    const calls: SectionCallMeta[] = outcome.call === null ? [] : [outcome.call];
-    const assembled = await assembleAndCheck(brief, settings.value, sections, calls, dependencies, clock, previousRunId, SECTION_ENDPOINT_BUDGET_MS);
-    return assembled.result === null ? refuse("draft_unavailable", 503) : json(assembled.result, 200);
-  } catch (error: unknown) {
-    dependencies.emit(JSON.stringify({ tool: TOOL, unhandled: error instanceof Error ? error.name : typeof error }));
-    return refuse("draft_unavailable", 503);
-  } finally {
-    slot.release();
-  }
+    return assembleAndRespond({
+      brief,
+      settings: settings.value,
+      sections,
+      calls: [outcome.call],
+      dependencies,
+      clock,
+      budgetMs: SECTION_ENDPOINT_BUDGET_MS,
+      rerun: { previousRunId, sectionId, call: outcome.call },
+    });
+  });
 }

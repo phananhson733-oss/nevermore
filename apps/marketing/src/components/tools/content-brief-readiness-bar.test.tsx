@@ -46,14 +46,22 @@ async function render(brief: Parameters<typeof ReadinessBar>[0]["brief"]): Promi
   return host;
 }
 
-async function clickLink(host: HTMLElement): Promise<boolean> {
-  const link = host.querySelector("[data-generate-draft]");
-  if (!(link instanceof HTMLAnchorElement)) throw new Error("no draft link");
-  const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+function link(host: HTMLElement): HTMLAnchorElement {
+  const anchor = host.querySelector("[data-generate-draft]");
+  if (!(anchor instanceof HTMLAnchorElement)) throw new Error("no draft link");
+  return anchor;
+}
+
+async function fire(host: HTMLElement, type: string, init: MouseEventInit = {}): Promise<boolean> {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
   await act(async () => {
-    link.dispatchEvent(event);
+    link(host).dispatchEvent(event);
   });
   return !event.defaultPrevented;
+}
+
+async function clickLink(host: HTMLElement): Promise<boolean> {
+  return fire(host, "click");
 }
 
 describe("ReadinessBar draft handoff", () => {
@@ -91,6 +99,40 @@ describe("ReadinessBar draft handoff", () => {
       "storage",
     );
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+  });
+
+  it.each([
+    ["a left mousedown", "mousedown", { button: 0 }],
+    ["a middle mousedown", "mousedown", { button: 1 }],
+    ["a context menu", "contextmenu", {}],
+  ])("writes the handoff on %s, before any new tab can be created", async (_name, type, init) => {
+    const brief = await withFingerprint(validContentBrief());
+    const host = await render(brief);
+    await fire(host, type, init);
+    const raw = window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY);
+    expect(raw).not.toBeNull();
+    expect((await parseContentBriefHandoff(JSON.parse(raw ?? "null"))).ok).toBe(true);
+  });
+
+  it("does not write on a right mousedown; the context menu handler covers that path", async () => {
+    const host = await render(await withFingerprint(validContentBrief()));
+    await fire(host, "mousedown", { button: 2 });
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+  });
+
+  it("clears a stale handoff when the new one cannot be written", async () => {
+    window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, "stale");
+    const host = await render(await withFingerprint(validContentBrief()));
+    const setItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key: string, value: string) {
+      if (key === CONTENT_BRIEF_HANDOFF_KEY) throw new Error("QuotaExceededError");
+      setItem.call(this, key, value);
+    });
+    expect(await fire(host, "mousedown", { button: 0 })).toBe(true);
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+    expect(host.querySelector("[data-generate-draft-failed]")?.getAttribute("data-generate-draft-failed")).toBe(
+      "storage",
+    );
   });
 
   it("offers no draft link when the brief has nothing writable", async () => {

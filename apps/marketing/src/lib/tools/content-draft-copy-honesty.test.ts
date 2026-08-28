@@ -68,11 +68,23 @@ const THRESHOLD_COPY: readonly {
   },
   {
     path: "settings.sections.help",
-    values: { timeout: SECTION_TIMEOUT_MS / 1_000, budget: DRAFT_TOTAL_BUDGET_MS / 1_000 },
+    values: {
+      timeout: SECTION_TIMEOUT_MS / 1_000,
+      budget: DRAFT_TOTAL_BUDGET_MS / 1_000,
+      attempts: SECTION_MAX_ATTEMPTS,
+    },
     pinned: [
       ["timeout", SECTION_TIMEOUT_MS / 1_000],
       ["budget", DRAFT_TOTAL_BUDGET_MS / 1_000],
+      ["attempts", SECTION_MAX_ATTEMPTS],
     ],
+  },
+  {
+    // The run endpoint's cap; the section endpoint's is larger and the page
+    // formats whichever route refused the body.
+    path: "errors.payload_too_large",
+    values: { kb: DRAFT_REQUEST_MAX_BYTES / 1024 },
+    pinned: [["kb", DRAFT_REQUEST_MAX_BYTES / 1024]],
   },
   {
     path: "running.elapsed",

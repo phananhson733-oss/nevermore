@@ -657,9 +657,9 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
   "content-draft": {
     path: "/tools/content-draft",
     eyebrow: "Content drafting",
-    title: "Write a draft whose every sentence says where it came from",
+    title: "Write a draft in which every sentence carries its claim state",
     description:
-      "Sign in, bring a content brief from the Content Brief Builder, and get a section-by-section draft: each sentence is marked bound, gap, stance or no-claim, a separate model call checks which must-answer questions the draft covers, and a verify list names what a human must still confirm before publishing.",
+      "Sign in, bring a content brief from the Content Brief Builder, and get a section-by-section draft: each sentence is marked bound, gap, stance or no-claim, with its evidence references listed where a bound or stance sentence cites them; a separate model call checks which must-answer questions the draft covers, and a verify list names what a human must still confirm before publishing.",
     sourceLabel: "A GenGrowth sign-in and a content brief are required",
     sourceDetail:
       "The draft takes a Content Brief as its only input — handed over from the brief tool, pasted, or uploaded as JSON — and re-checks its fingerprint before using it. The competitor excerpts and profile facts the brief carries are the only evidence a sentence may cite.",
@@ -677,23 +677,23 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
         text: "Each writable outline section is a checkbox. Profile facts reach the model only where you allow them: not at all, in the gap-angle section only, or throughout.",
       },
       {
-        name: "One model call per section, annotated as it is written",
-        text: "Sections are generated in parallel with their own timeouts. The model marks every sentence with its claim state and cites the competitor excerpts or profile facts behind it; the server validates those references and fails the section, with one retry, rather than rewriting a claim.",
+        name: "Each section written by its own model call, annotated as it is written",
+        text: "Sections are generated in parallel with their own timeouts and a bounded number of attempts each. The model marks every sentence with its claim state and, for bound and stance sentences, cites the competitor excerpts or profile facts behind it; the server validates those references and reports the section as failed rather than rewriting a claim.",
       },
       {
-        name: "A separate call checks coverage",
-        text: "With a fresh context, a second model call reads only the generated sections and the brief's must-answer questions and judges each one covered, partial or not covered. If that call does not complete, coverage is shown as unavailable.",
+        name: "Another, separate call checks coverage",
+        text: "With a fresh context, a separate model call reads only the generated sections and the brief's must-answer questions and judges each one covered, partial or not covered. If that call does not complete, coverage is shown as unavailable.",
       },
     ],
     outputTitle: "What one run gives you",
     outputs: [
       {
         label: "A draft in sections, with claim annotations",
-        body: "Every sentence carries a claim state. Bound sentences are underlined in the colour of their evidence layer, gaps in the error colour; the annotations can be switched off without changing the verify list.",
+        body: "Every sentence carries a claim state, and bound or stance sentences list their references where they cite any. Bound sentences are underlined in the colour of their evidence layer, gaps in the error colour; the annotations can be switched off without changing the verify list.",
       },
       {
         label: "Coverage as three raw counts",
-        body: "Covered, partial and not covered over the brief's question total, each question with the section that answers it and the gap the model named. No score.",
+        body: "Covered, partial and not covered over the brief's question total. Where they apply, a question shows the section that answers it and the gap the model named; otherwise it shows why its section failed or was skipped. No score.",
       },
       {
         label: "A verify-before-publishing list",
@@ -1320,9 +1320,9 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
   "content-draft": {
     path: "/tools/content-draft",
     eyebrow: "内容初稿",
-    title: "生成一份每句话都写明出处的初稿",
+    title: "生成一份每句话都带主张状态的初稿",
     description:
-      "登录后带上 Content Brief Builder 的一份简报，得到逐节生成的初稿：每句话标为有据、缺口、立场或无主张，一次独立模型调用校验初稿覆盖了哪些必答问题，核实清单列出发布前仍需人工确认的句子。",
+      "登录后带上 Content Brief Builder 的一份简报，得到逐节生成的初稿：每句话标为有据、缺口、立场或无主张，有据句和立场句在有引用时列出证据引用；一次独立模型调用校验初稿覆盖了哪些必答问题，核实清单列出发布前仍需人工确认的句子。",
     sourceLabel: "需要登录 GenGrowth 账号并提供一份内容简报",
     sourceDetail:
       "初稿只接受 Content Brief 作为输入——从简报工具交接、粘贴或上传 JSON——使用前会重新核对指纹。简报里带的竞品片段与档案事实是句子唯一可引用的证据。",
@@ -1340,23 +1340,23 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
         text: "大纲里每个可写的节都是一个复选框。档案事实只在你允许的地方交给模型：完全不给、只在缺口角度那一节给，或全文都给。",
       },
       {
-        name: "每节一次模型调用，边写边标注",
-        text: "各节并行生成，各有自己的超时。模型给每句话标主张状态，并引用背后的竞品片段或档案事实；服务端校验这些引用，不通过就让该节失败并重试一次，绝不改写主张。",
+        name: "每节由各自的模型调用生成，边写边标注",
+        text: "各节并行生成，各有自己的超时和有上限的尝试次数。模型给每句话标主张状态，有据句和立场句还要引用背后的竞品片段或档案事实；服务端校验这些引用，不通过就把该节记为失败，绝不改写主张。",
       },
       {
-        name: "独立一次调用校验覆盖度",
-        text: "第二次模型调用用全新上下文，只读生成成功的段落和简报的必答问题，逐条判为已覆盖、部分或未覆盖。这次调用没完成时，覆盖度显示为不可得。",
+        name: "另一次独立调用校验覆盖度",
+        text: "另一次独立的模型调用用全新上下文，只读生成成功的段落和简报的必答问题，逐条判为已覆盖、部分或未覆盖。这次调用没完成时，覆盖度显示为不可得。",
       },
     ],
     outputTitle: "一次运行你会拿到什么",
     outputs: [
       {
         label: "分节初稿，带主张标注",
-        body: "每句话带主张状态。有据句按证据层的颜色画下划线，缺口用错误色；标注可以关掉，核实清单不受影响。",
+        body: "每句话带主张状态，有据句和立场句在有引用时列出引用。有据句按证据层的颜色画下划线，缺口用错误色；标注可以关掉，核实清单不受影响。",
       },
       {
         label: "覆盖度只有三个原始计数",
-        body: "已覆盖、部分、未覆盖，分母是简报的问题总数；每条问题写明回答它的节和模型指出的缺口。不给分。",
+        body: "已覆盖、部分、未覆盖，分母是简报的问题总数。适用时每条问题显示回答它的节和模型指出的缺口，否则显示所在段失败或跳过的原因。不给分。",
       },
       {
         label: "发布前必须人工核实的清单",
