@@ -25,6 +25,8 @@ const OLDER_SNAPSHOT_ID = "d8746f5d-493c-4b04-a9ac-df07a59b3ca8";
 const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
 const OTHER_WEBSITE_ID = "b4f53f12-8090-4c5f-8ddb-7d9587758d7a";
 const NOW = "2026-08-27T08:00:00.000Z";
+const POSTGREST_TIMESTAMP = "2026-08-28T07:30:41.615548+00:00";
+const CANONICAL_POSTGREST_TIMESTAMP = "2026-08-28T07:30:41.615Z";
 
 interface TestBundle {
   readonly websites: Array<{
@@ -201,6 +203,96 @@ describe("account website store reads", () => {
       },
     });
     expect(deps.readDetails).toHaveBeenCalledWith(USER_ID, WEBSITE_ID);
+  });
+
+  it("normalizes PostgREST timestamps before parsing website details", async () => {
+    const data = await bundle();
+    data.websites[0] = {
+      ...data.websites[0],
+      created_at: POSTGREST_TIMESTAMP,
+      updated_at: POSTGREST_TIMESTAMP,
+    };
+    data.drafts[0] = {
+      ...data.drafts[0],
+      updated_at: POSTGREST_TIMESTAMP,
+    };
+    data.snapshots[0] = {
+      ...data.snapshots[0],
+      confirmed_at: POSTGREST_TIMESTAMP,
+    };
+
+    const result = await readAccountWebsite(
+      USER_ID,
+      WEBSITE_ID,
+      dependencies({
+        readDetails: vi.fn(async () => ({ kind: "ok" as const, data })),
+      }),
+    );
+
+    expect(result).toMatchObject({
+      kind: "ok",
+      value: {
+        createdAt: CANONICAL_POSTGREST_TIMESTAMP,
+        updatedAt: CANONICAL_POSTGREST_TIMESTAMP,
+        confirmedAt: CANONICAL_POSTGREST_TIMESTAMP,
+        draft: { updatedAt: CANONICAL_POSTGREST_TIMESTAMP },
+        currentConfirmedSnapshot: {
+          confirmedAt: CANONICAL_POSTGREST_TIMESTAMP,
+        },
+      },
+    });
+  });
+
+  it("fails closed on an invalid database timestamp without logging its value", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const data = await bundle();
+    const privateTimestamp = "PRIVATE INVALID DATABASE TIMESTAMP";
+    data.websites[0] = {
+      ...data.websites[0],
+      updated_at: privateTimestamp,
+    };
+
+    const result = await readAccountWebsite(
+      USER_ID,
+      WEBSITE_ID,
+      dependencies({
+        readDetails: vi.fn(async () => ({ kind: "ok" as const, data })),
+      }),
+    );
+
+    expect(result).toEqual({
+      kind: "unavailable",
+      reason: "malformed_store_response",
+    });
+    expect(JSON.stringify(result)).not.toContain(privateTimestamp);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateTimestamp);
+    errorSpy.mockRestore();
+  });
+
+  it("rejects a parseable non-PostgREST timestamp without logging its value", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const data = await bundle();
+    const privateTimestamp = "Fri, 28 Aug 2026 07:30:41 GMT";
+    data.websites[0] = {
+      ...data.websites[0],
+      updated_at: privateTimestamp,
+    };
+
+    const result = await readAccountWebsite(
+      USER_ID,
+      WEBSITE_ID,
+      dependencies({
+        readDetails: vi.fn(async () => ({ kind: "ok" as const, data })),
+      }),
+    );
+
+    expect(result).toEqual({
+      kind: "unavailable",
+      reason: "malformed_store_response",
+    });
+    expect(JSON.stringify(result)).not.toContain(privateTimestamp);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateTimestamp);
+    errorSpy.mockRestore();
   });
 
   it("fails closed instead of smoothing a malformed private row", async () => {
@@ -427,6 +519,32 @@ describe("account website store reads", () => {
     expect(readDetails.mock.invocationCallOrder[0]).toBeLessThan(
       readSnapshot.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
+  });
+
+  it("accepts a PostgREST timestamp on an exact historical snapshot", async () => {
+    const historical = {
+      ...(await olderSnapshotRow()),
+      confirmed_at: POSTGREST_TIMESTAMP,
+    };
+
+    const result = await resolveAccountWebsiteProfileReference(
+      USER_ID,
+      await profileReference(),
+      dependencies({
+        readSnapshot: vi.fn(async () => ({
+          kind: "ok" as const,
+          data: historical,
+        })),
+      }),
+    );
+
+    expect(result).toMatchObject({
+      kind: "ok",
+      value: {
+        reference: { snapshotId: OLDER_SNAPSHOT_ID },
+        profile: { productName: "Original Example" },
+      },
+    });
   });
 
   it("rejects a malformed reference before any private read", async () => {

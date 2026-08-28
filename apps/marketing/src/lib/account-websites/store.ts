@@ -329,6 +329,23 @@ function requiredInteger(row: Record<string, unknown>, key: string): number {
   return value as number;
 }
 
+function requiredDbTimestamp(
+  row: Record<string, unknown>,
+  key: string,
+): string {
+  const value = requiredString(row, key);
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/u.test(
+      value,
+    )
+  ) {
+    throw new Error(`${key} is malformed`);
+  }
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) throw new Error(`${key} is malformed`);
+  return new Date(parsed).toISOString();
+}
+
 function assertOwnedBundle(bundle: WebsiteReadBundle, userId: string): void {
   const websites = records(bundle.websites) as readonly Record<string, unknown>[];
   const drafts = records(bundle.drafts) as readonly Record<string, unknown>[];
@@ -422,9 +439,11 @@ function mapSummaryRows(
       confirmedSnapshotRevision:
         snapshot === undefined ? null : requiredInteger(snapshot, "revision"),
       confirmedAt:
-        snapshot === undefined ? null : requiredString(snapshot, "confirmed_at"),
-      createdAt: requiredString(row, "created_at"),
-      updatedAt: requiredString(row, "updated_at"),
+        snapshot === undefined
+          ? null
+          : requiredDbTimestamp(snapshot, "confirmed_at"),
+      createdAt: requiredDbTimestamp(row, "created_at"),
+      updatedAt: requiredDbTimestamp(row, "updated_at"),
     });
   });
 }
@@ -468,7 +487,7 @@ async function mapDetails(
         ? null
         : {
             draftVersion: requiredInteger(draft, "draft_version"),
-            updatedAt: requiredString(draft, "updated_at"),
+            updatedAt: requiredDbTimestamp(draft, "updated_at"),
             profileHash: requiredString(draft, "content_hash"),
             profile: parseMarketingWebsiteProfile(draft.profile),
           },
@@ -482,7 +501,7 @@ async function mapDetails(
             snapshotRevision: requiredInteger(snapshot, "revision"),
             profileSchemaVersion: requiredString(snapshot, "schema_version"),
             profileHash: requiredString(snapshot, "content_hash"),
-            confirmedAt: requiredString(snapshot, "confirmed_at"),
+            confirmedAt: requiredDbTimestamp(snapshot, "confirmed_at"),
             profile: parseMarketingWebsiteProfile(snapshot.profile),
           },
   });
@@ -619,8 +638,7 @@ export async function resolveAccountWebsiteProfileReference(
       profileHash: requiredString(row, "content_hash"),
     });
     const sourceDraftVersion = requiredInteger(row, "source_draft_version");
-    const confirmedAt = requiredString(row, "confirmed_at");
-    const parsedConfirmedAt = Date.parse(confirmedAt);
+    requiredDbTimestamp(row, "confirmed_at");
     const profile = parseMarketingWebsiteProfile(row.profile);
     const computedHash = await profileSha256(profile);
 
@@ -632,8 +650,6 @@ export async function resolveAccountWebsiteProfileReference(
       rowReference.profileSchemaVersion !== reference.profileSchemaVersion ||
       rowReference.profileHash !== reference.profileHash ||
       sourceDraftVersion <= 0 ||
-      !Number.isFinite(parsedConfirmedAt) ||
-      new Date(parsedConfirmedAt).toISOString() !== confirmedAt ||
       computedHash !== reference.profileHash
     ) {
       throw new Error("referenced snapshot identity is malformed");
