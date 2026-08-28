@@ -9,6 +9,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import en from "../../i18n/messages/en.json";
+import zh from "../../i18n/messages/zh.json";
 import type { AccountState } from "../../lib/auth/use-account.ts";
 import { AccountMenu, AccountSummaryMobile } from "./account-menu.tsx";
 
@@ -185,7 +186,8 @@ describe("AccountMenu", () => {
     expect(text).toContain("ada@example.test");
     expect(text).toContain("Ada Lovelace");
     expect(text).toContain("140");
-    expect(text).toContain("560 left to earn while testing");
+    expect(text).not.toContain("560 left to earn while testing");
+    expect(text).toContain(en.account.menu.upgrade);
     expect(text).toContain(en.account.menu.credits);
     expect(text).toContain("Example");
     expect(text).toContain(en.account.menu.settings);
@@ -207,6 +209,7 @@ describe("AccountMenu", () => {
     expect(text).toContain("ada@example.test");
     expect(text).toContain(en.common.signOut);
     expect(text).not.toContain("140");
+    expect(text).toContain(en.account.menu.upgrade);
     expect(text).toContain(en.account.menu.credits);
   });
 
@@ -218,7 +221,6 @@ describe("AccountMenu", () => {
     const ordered = [
       "Ada Lovelace",
       "ada@example.test",
-      en.account.menu.credits,
       "Example",
       en.account.menu.settings,
       en.account.menu.agents,
@@ -231,7 +233,7 @@ describe("AccountMenu", () => {
         text.indexOf(ordered[index] ?? ""),
       );
     }
-    expect(text).not.toMatch(/Integrations|Docs|Team|Upgrade/u);
+    expect(text).not.toMatch(/Integrations|Docs|Team/u);
     expect(
       host.querySelector(
         'a[href="/account/websites/' +
@@ -239,6 +241,39 @@ describe("AccountMenu", () => {
           '"]',
       ),
     ).not.toBeNull();
+  });
+
+  it("routes Upgrade to pricing before Credits and closes after activation", async () => {
+    await mount(SIGNED_IN);
+    await open();
+
+    const menuItems = [
+      ...host.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ];
+    const upgrade = host.querySelector<HTMLAnchorElement>('a[href="/pricing"]');
+    const credits = host.querySelector<HTMLAnchorElement>(
+      'a[href="/account/credits"]',
+    );
+    const balancePill = upgrade?.previousElementSibling;
+
+    expect(upgrade?.textContent).toContain(en.account.menu.upgrade);
+    expect(upgrade?.getAttribute("role")).toBe("menuitem");
+    expect(upgrade?.getAttribute("tabindex")).toBe("-1");
+    expect(balancePill?.textContent).toContain("140");
+    expect(balancePill?.classList.contains("rounded-full")).toBe(true);
+    expect(credits?.textContent).toContain(en.account.menu.credits);
+    expect(menuItems.indexOf(upgrade as HTMLElement)).toBeGreaterThanOrEqual(0);
+    expect(menuItems.indexOf(credits as HTMLElement)).toBeGreaterThanOrEqual(0);
+    expect(menuItems.indexOf(upgrade as HTMLElement)).toBeLessThan(
+      menuItems.indexOf(credits as HTMLElement),
+    );
+
+    upgrade?.addEventListener("click", (event) => event.preventDefault(), {
+      once: true,
+    });
+    await act(async () => upgrade?.click());
+    expect(avatar().getAttribute("aria-expanded")).toBe("false");
+    expect(host.textContent).not.toContain("ada@example.test");
   });
 
   it("offers Add website only after an empty website list is known", async () => {
@@ -453,10 +488,14 @@ describe("AccountSummaryMobile", () => {
   async function mount(
     account: AccountState,
     onNavigate: () => void = () => {},
+    locale: "en" | "zh" = "en",
   ): Promise<void> {
     await act(async () => {
       root.render(
-        <NextIntlClientProvider locale="en" messages={en}>
+        <NextIntlClientProvider
+          locale={locale}
+          messages={locale === "zh" ? zh : en}
+        >
           <AccountSummaryMobile account={account} onNavigate={onNavigate} />
         </NextIntlClientProvider>,
       );
@@ -474,6 +513,7 @@ describe("AccountSummaryMobile", () => {
     const text = host.textContent ?? "";
     expect(text).toContain("ada@example.test");
     expect(text).toContain("140");
+    expect(text).toContain(en.account.menu.upgrade);
     expect(text).toContain("Example");
     expect(text).toContain(en.account.menu.settings);
     expect(text).toContain(en.account.menu.agents);
@@ -506,6 +546,7 @@ describe("AccountSummaryMobile", () => {
 
     const links = [...host.querySelectorAll("a")];
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "/pricing",
       "/account/credits",
       "/account/websites/" + PRIMARY_WEBSITE_ID,
       "/account/websites",
@@ -516,7 +557,6 @@ describe("AccountSummaryMobile", () => {
     const ordered = [
       "Ada Lovelace",
       "ada@example.test",
-      en.account.menu.credits,
       "Example",
       en.account.menu.settings,
       en.account.menu.agents,
@@ -530,11 +570,21 @@ describe("AccountSummaryMobile", () => {
       );
     }
 
-    links[2]?.addEventListener("click", (event) => event.preventDefault(), {
+    links[0]?.addEventListener("click", (event) => event.preventDefault(), {
       once: true,
     });
-    await act(async () => links[2]?.click());
+    await act(async () => links[0]?.click());
     expect(onNavigate).toHaveBeenCalledOnce();
+  });
+
+  it("routes the Chinese Upgrade action to localized pricing", async () => {
+    await mount(SIGNED_IN, () => {}, "zh");
+
+    const upgrade = host.querySelector<HTMLAnchorElement>(
+      'a[href="/zh/pricing"]',
+    );
+    expect(zh.account.menu.upgrade).toBe("Upgrade");
+    expect(upgrade?.textContent).toContain("Upgrade");
   });
 
   it("ends the session when sign-out is chosen", async () => {

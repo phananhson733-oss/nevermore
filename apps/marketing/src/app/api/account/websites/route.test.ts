@@ -254,6 +254,20 @@ describe("POST /api/account/websites", () => {
     });
   });
 
+  it("maps a malformed created website read-back to a stable unavailable error", async () => {
+    mocks.addAccountWebsite.mockResolvedValue({
+      kind: "unavailable",
+      reason: "malformed_store_response",
+    });
+
+    const response = await POST(request({ url: "example.com" }));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "account_websites_unavailable" },
+    });
+  });
+
   it("creates the website and returns its owned details", async () => {
     const response = await POST(request({ url: "example.com" }));
 
