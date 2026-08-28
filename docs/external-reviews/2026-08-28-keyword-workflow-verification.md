@@ -80,6 +80,7 @@ other paid production call was made.
 | Profile plus Workflow component/client suite | PASS: 3 files, 24 tests |
 | Workflow Vitest integration | PASS: 1 file, 2 tests; typed failure and active-hook redirect execute through the real local Workflow harness |
 | Browser interaction suite | PASS: 10 tests; 3 website-profile scenarios plus 7 durable/legacy/evidence scenarios |
+| Full repository mock E2E | 221 passed; 4 existing Product/Growth Map scenarios failed in files and runtime surfaces untouched by this branch |
 | Marketing TypeScript | PASS |
 | Full workspace TypeScript | PASS: root E2E plus every workspace with a typecheck script, including Marketing, public-tools, sources, Product, and Worker |
 | Changed-file ESLint | PASS on every changed TypeScript, TSX, and MJS file |
@@ -114,6 +115,14 @@ These failures were not edited or weakened to make the branch appear green:
    `nanoid@5.1.16`. The remaining High finding is the pre-existing
    `postcss -> nanoid@3.3.17` chain also present on upstream; it is not broadened
    into a Product-wide override in this Marketing-only release.
+6. Full repository mock E2E: 221 tests passed and four Product Growth Map tests
+   failed in `complete-four-module-workbench.mock.spec.ts`,
+   `growth-map-topic-map.mock.spec.ts`, and `growth-map.mock.spec.ts`. The first
+   failure exposes an upstream fixture missing the required `pendingSuggestion`;
+   the others fail while reading the same Keyword detail surface. This branch
+   changes none of those root E2E specs, `apps/web`, Product contracts, or the
+   Growth Map read model. The dedicated Marketing keyword/profile browser suite
+   remains 10/10 green.
 
 ## Honest limitations
 
