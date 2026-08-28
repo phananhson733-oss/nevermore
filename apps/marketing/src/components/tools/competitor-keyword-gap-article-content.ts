@@ -35,7 +35,7 @@ const EN: ToolArticle = {
     },
     {
       heading: "Provider estimates, kept as estimates",
-      body: "Monthly search volume, cost-per-click, difficulty and intent arrive from a third-party keyword source in three distinct states: a measured value, an explicit zero, or no data at all. The third stays blank in the table and in the export. A zero nobody measured is a lie with decimals.",
+      body: "Monthly search volume, cost-per-click and difficulty arrive from a third-party keyword source in three distinct states: a measured value, an explicit zero, or no data at all. The third stays blank in the table and in the export — a zero nobody measured is a lie with decimals. Intent is not one of the three: it is a label the provider either returns or does not, and a missing one reads as unknown rather than being guessed.",
     },
     {
       heading: "Your own status, from your own data",
@@ -47,14 +47,14 @@ const EN: ToolArticle = {
     },
     {
       heading: "One recommended action, decided only by your Search Console evidence",
-      body: "Optimize the page already ranking, review the page carrying the query, treat the term as a content gap, or verify your own coverage first. The pre-screen band never changes this. A term you already rank for is not a gap, no matter how attractive the provider's estimates look.",
+      body: "Optimize the page Search Console attributes to a query you already draw impressions on, review the page carrying it, open the competitor's page and treat the term as a content gap, or locate your own property first. The pre-screen band never changes this. A term you already rank for is not a gap, no matter how attractive the provider's estimates look.",
     },
   ],
   sections: [
     {
       heading: "How the sample is drawn, and what that leaves out",
       paragraphs: [
-        "Each competitor is compared against your site in one market and one language, in the same organic-ranking scope. The comparison is bounded on purpose and the bound is printed on the result: the competitor must rank at position 20 or better, rows come back ordered by the estimated traffic of the competitor's own ranking page, highest first, and at most 300 rows are taken per competitor. Billing is per returned row, so the ranking filter is what keeps a five-competitor run affordable enough to be free of a credit meter.",
+        "Each competitor is compared against your site in one market and one language, in the same organic-ranking scope. The comparison is bounded on purpose and the bound is printed on the result: the competitor must rank at position 20 or better, rows come back ordered by the estimated traffic of the competitor's own ranking page, highest first, and at most 300 rows are taken per competitor. The provider bills per returned row, so the ranking filter is what keeps a five-competitor comparison bounded rather than open-ended.",
         "Your site is excluded at the source rather than filtered afterwards: the provider is asked for terms the competitor ranks for and yours does not appear on, which is why every row is labelled “your site was not observed in the provider ranking sample”. That phrasing is exact. It reports what the bounded sample contained, not what your site does or does not rank for in the world.",
         "Up to five competitors, entered as one comma-separated list. Domains are normalized and deduplicated before anything is spent, your own domain cannot also be submitted as a competitor, and the five-domain ceiling is enforced by the API as well as by the form. Eight markets are offered, and the language options for each are read from the provider's own catalogue rather than typed by hand — an earlier hard-coded list was both too long and too short for the same market.",
       ],
@@ -100,7 +100,7 @@ const EN: ToolArticle = {
             "2 of 3 · best #6",
             "Not in sample",
             "Check SERP first · AI Overview, source snapshot 2026-08-04",
-            "Review as a content gap",
+            "Open smallbrew.example's page",
           ],
           [
             "espresso ratio calculator",
@@ -108,15 +108,15 @@ const EN: ToolArticle = {
             "3 of 3 · best #3",
             "Has impressions · avg position 24.6 · 64 impressions",
             "Check SERP first · competitor page est. 900/mo",
-            "Review /guides/ratio",
+            "Optimize existing page /guides/ratio",
           ],
           [
             "manual espresso maker cleaning",
             "320 · —",
             "1 of 3 · best #14",
-            "Already ranking · avg position 6.2",
+            "Already ranking · avg position 6.2 · 240 impressions",
             "Not banded · provider reported no KD or volume",
-            "Optimize /guides/cleaning",
+            "Open Opportunity Finder",
           ],
           [
             "beanpress pro",
@@ -124,7 +124,7 @@ const EN: ToolArticle = {
             "1 of 3 · best #2",
             "GSC not read",
             "Brand or navigational, defer · tool rule",
-            "Verify your own coverage",
+            "Locate GSC property",
           ],
         ],
       },
@@ -147,7 +147,7 @@ const EN: ToolArticle = {
         },
         {
           heading: "An empty result is not a verdict",
-          body: "If no competitor returned a usable sample, the run says nothing was read and nothing was ruled out. One failed domain makes the whole run partial and is reported as unavailable with its reason code — never as a competitor that has no keywords.",
+          body: "If no competitor returns a usable sample the run is refused as a keyword-source failure rather than handed over as an empty gap list — nothing was read, so nothing was ruled out. One failed domain among several makes the run partial and is reported as unavailable with its reason code, never as a competitor that has no keywords.",
         },
         {
           heading: "Feature marks are dated snapshots",
@@ -203,22 +203,25 @@ const EN: ToolArticle = {
         "Check what an existing page's public HTML supports before rewriting it for a new term.",
     },
   ],
+  /* Per-locale on purpose; see the note in daily-briefing-article-content.ts. */
   relatedReadingHeading: "Further reading",
   relatedReading: [
+    {
+      label: "How to find low-hanging fruit keywords",
+      href: "/blog/how-to-find-low-hanging-fruit-keywords",
+      description:
+        "The selection method this list feeds, including the part a difficulty score cannot do.",
+    },
+    {
+      label: "Are zero-search-volume keywords worth writing for?",
+      href: "/blog/zero-search-volume-keywords",
+      description:
+        "What to make of a gap row whose provider volume came back empty.",
+    },
     {
       label: "Programmatic SEO at scale",
       href: "/blog/programmatic-seo-at-scale",
       description: "When a keyword set justifies a template, and when it does not.",
-    },
-    {
-      label: "What a bounded internal link crawl proves",
-      href: "/blog/bounded-internal-link-crawl",
-      description: "Reading a bounded sample without overstating its coverage.",
-    },
-    {
-      label: "What a public SEO audit can and cannot see",
-      href: "/blog/public-seo-audit-boundaries",
-      description: "Where third-party estimates stop and first-party data begins.",
     },
   ],
 };
@@ -232,7 +235,7 @@ const ZH: ToolArticle = {
     },
     {
       heading: "数据源估算，就当估算用",
-      body: "月搜索量、单次点击成本、难度与意图来自第三方关键词数据源，且只有三种状态：有实测值、明确为零、完全没有数据。第三种在表格里和导出文件里都保持空白。一个没人测过的零，是带小数点的谎言。",
+      body: "月搜索量、单次点击成本与难度来自第三方关键词数据源，且只有三种状态：有实测值、明确为零、完全没有数据。第三种在表格里和导出文件里都保持空白——一个没人测过的零，是带小数点的谎言。意图不属于这三态：它是数据源给或不给的一个标签，缺失时显示为「意图未知」，而不是被猜出来。",
     },
     {
       heading: "你自己的状态，来自你自己的数据",
@@ -240,18 +243,18 @@ const ZH: ToolArticle = {
     },
     {
       heading: "一个预筛档位，走它自己的轴",
-      body: "第二条正交标签：先查 SERP、难度更高或在第二页、未分档、头部词延后、品牌或导航词延后。每个档位都会写明是哪一项检查决定的，以及那项检查是数据源估算还是本工具自己的文本规则。",
+      body: "第二条正交标签：优先核 SERP、难度较高或第二页、未分带、难度 > 60 暂缓、品牌/导航词暂缓。每个档位都会写明是哪一项检查决定的，以及那项检查是数据源估算还是本工具自己的文本规则。",
     },
     {
       heading: "一条推荐动作，只由你的 Search Console 证据决定",
-      body: "优化已经在排的页面、查看承接该查询词的页面、把这个词当内容缺口处理，或先核实自己的覆盖情况。预筛档位永远不会改变这一栏。一个你已经在排的词不是缺口，无论数据源的估算看起来多诱人。",
+      body: "优化 Search Console 归因到「你已经有曝光的查询词」的那个页面、核对承接它的页面、打开竞品页面并把这个词当内容缺口处理，或先定位到你自己的资源。预筛档位永远不会改变这一栏。一个你已经在排的词不是缺口，无论数据源的估算看起来多诱人。",
     },
   ],
   sections: [
     {
       heading: "样本是怎么取的，以及它取不到什么",
       paragraphs: [
-        "每个竞品都在同一个市场、同一种语言、同一自然排名范围内与你的站点比较。这次比较是刻意有边界的，边界也印在结果上：竞品必须排在第 20 位或更好；返回的行按该竞品自己排名页面的预估流量从高到低排序；每个竞品最多取 300 行。计费按返回行数计算，所以正是这道排名过滤，让一次五竞品的运行便宜到不需要挂一个积分表。",
+        "每个竞品都在同一个市场、同一种语言、同一自然排名范围内与你的站点比较。这次比较是刻意有边界的，边界也印在结果上：竞品必须排在第 20 位或更好；返回的行按该竞品自己排名页面的预估流量从高到低排序；每个竞品最多取 300 行。数据源按返回行数计费，所以正是这道排名过滤，让一次五竞品的比较保持有边界，而不是敞开口子。",
         "你的站点是在数据源那一层被排除的，而不是事后过滤：请求本身问的就是「竞品在排、而你没有出现」的词，所以每一行都标注「本站未出现在数据源排名样本中」。这个措辞是精确的。它陈述的是这份有边界的样本里有什么，而不是你的站点在真实世界里排不排某个词。",
         "最多五个竞品，用一个逗号分隔的清单一次填完。域名在任何花费发生之前就完成归一化和去重；你自己的域名不能同时作为竞品提交；五个的上限在表单和 API 两侧共同执行。提供 8 个市场，每个市场的语言选项从数据源自己的目录读取，而不是手写——早先那份写死的清单对同一个市场既列多了也列少了。",
       ],
@@ -267,7 +270,7 @@ const ZH: ToolArticle = {
         },
         {
           heading: "预筛是估算，逐行展示",
-          body: "难度 ≤30 且有竞品在第一页，读作「先查 SERP」；不同时满足这两条的读作「难度更高或在第二页」；高于 60 是要延后的头部词。每个档位都带着产生它的那一项检查，并且每个档位都被标注为预筛，而不是关于你能不能赢下这个结果的断言。",
+          body: "难度 ≤ 30 且有竞品在首页，读作「优先核 SERP」；不同时满足这两条的读作「难度较高或第二页」；高于 60 是要暂缓的头部词。每个档位都带着产生它的那一项检查，并且每个档位都被标注为预筛，而不是关于你能不能赢下这个结果的断言。",
         },
         {
           heading: "本工具自己的文本规则会标成自己的",
@@ -295,32 +298,32 @@ const ZH: ToolArticle = {
             "1,300 · KD 12",
             "3 个中 2 个 · 最好 #6",
             "样本未观测到",
-            "先查 SERP · AI Overview，来源快照 2026-08-04",
-            "作为内容缺口处理",
+            "优先核 SERP · AI Overview，来源快照 2026-08-04",
+            "打开 smallbrew.example 的页面",
           ],
           [
             "espresso ratio calculator",
             "590 · KD 8",
             "3 个中 3 个 · 最好 #3",
             "有曝光 · 均位 24.6 · 曝光 64",
-            "先查 SERP · 竞品页面预估 900/月",
-            "查看 /guides/ratio",
+            "优先核 SERP · 竞品页面预估 900/月",
+            "优化现有页 /guides/ratio",
           ],
           [
             "manual espresso maker cleaning",
             "320 · —",
             "3 个中 1 个 · 最好 #14",
-            "已在排 · 均位 6.2",
-            "未分档 · 数据源未返回 KD 或搜索量",
-            "优化 /guides/cleaning",
+            "已在排 · 均位 6.2 · 曝光 240",
+            "未分带 · 数据源未返回难度或搜索量",
+            "打开机会发现器",
           ],
           [
             "beanpress pro",
             "210 · KD 41",
             "3 个中 1 个 · 最好 #2",
             "GSC 未读取",
-            "品牌或导航词，延后 · 工具规则",
-            "先核实自己的覆盖",
+            "品牌/导航词，暂缓 · 本工具判定",
+            "定位 GSC 资源",
           ],
         ],
       },
@@ -343,7 +346,7 @@ const ZH: ToolArticle = {
         },
         {
           heading: "空结果不是结论",
-          body: "如果没有任何竞品返回可用样本，本次运行会说什么都没读到、也什么都没排除。一个域名失败就会让整次运行成为「部分」，并带着原因码报告为不可用——绝不会写成这个竞品没有关键词。",
+          body: "如果没有任何竞品返回可用样本，本次运行会作为数据源读取失败被拒绝，而不是交付一份空的差距清单——什么都没读到，所以什么都没排除。多个竞品里有一个失败会让整次运行成为「部分」，并带着原因码报告为不可用，绝不会写成这个竞品没有关键词。",
         },
         {
           heading: "特性标记是带日期的快照",
@@ -377,7 +380,7 @@ const ZH: ToolArticle = {
     {
       label: "每日搜索简报",
       href: "/tools/daily-search-briefing",
-      description: "用同一份 Search Console 授权，看你自己站点从昨天到今天变了什么。",
+      description: "用同一份 Search Console 授权，比较最新完整的两段窗口，看你自己站点变了什么。",
     },
     {
       label: "低竞争关键词发现",

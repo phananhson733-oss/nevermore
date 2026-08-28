@@ -201,13 +201,13 @@ function RelatedLinks({ locale }: { readonly locale: string }) {
       </h2>
       <p className={P}>
         {zh
-          ? "这张地图找的是「还没写的页面」。下面的文章讲选词方法本身；两个姊妹工具则从你已有的数据里找机会——三者读的是同一套证据纪律。"
+          ? "这张地图找的是「还没写的页面」。下面几篇讲的是同一套证据纪律在别处怎么用；两个姊妹工具则从你已有的数据里找机会。"
           : "This map hunts for pages you have not written yet. The articles below cover the selection method itself; the two sibling tools work the data you already have. All of them follow the same evidence discipline."}
       </p>
       <div className="mt-8 grid gap-10 md:grid-cols-2">
         <div>
           <p className={TABLE_LABEL}>
-            {zh ? "方法文章" : "The method, in writing"}
+            {zh ? "相关方法阅读" : "The method, in writing"}
           </p>
           <div className="mt-4 space-y-3">
             {blog.map((item) => (

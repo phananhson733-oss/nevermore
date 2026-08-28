@@ -18,6 +18,9 @@ import {
   BRIEFING_POSITION_DECLINE_MIN_DELTA,
   BRIEFING_STABLE_POSITION_DELTA,
   BRIEFING_TOP_BAND_MIN_IMPROVEMENT,
+  DAILY_BRIEFING_PAGE_DESTINATIONS,
+  FIRST_OBSERVED_MAX_POSITION,
+  FIRST_OBSERVED_MIN_POSITION,
   COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS,
   COMPETITOR_KEYWORD_GAP_KD_HEAD_MIN,
   COMPETITOR_KEYWORD_GAP_KD_LOW_MAX,
@@ -36,6 +39,71 @@ import { RELATED_READING } from "./keyword-map-article.tsx";
 import type { ToolArticle } from "./tool-article-shape.ts";
 
 const LOCALES = ["en", "zh"] as const;
+
+/**
+ * Thousands separator, the way the copy writes it.
+ *
+ * Both locales use the English grouping here because the numbers are quoted
+ * from an English-language product surface in both.
+ */
+function grouped(value: number): string {
+  return value.toLocaleString("en-US");
+}
+
+const EN_NUMERALS: Readonly<Record<number, string>> = {
+  1: "one",
+  2: "two",
+  3: "three",
+  5: "five",
+};
+const ZH_NUMERALS: Readonly<Record<number, string>> = {
+  1: "一",
+  2: "两",
+  3: "三",
+  5: "五",
+};
+
+/**
+ * Assert the copy states a threshold, in the sentence that carries it.
+ *
+ * NOT a bare substring of the digits. `expect(prose).toContain("30")` is
+ * satisfied by "300+", "top 30" and "30% or more", all of which appear in this
+ * same prose — a mutation run against the real page-collapse floor changed it
+ * from thirty to eighty and the whole suite stayed green. The needle is built
+ * from the constant and embedded in the phrase, so the assertion fails when
+ * either half moves.
+ */
+function statesThreshold(
+  prose: string,
+  phrase: string,
+  label: string,
+): void {
+  expect(prose.includes(phrase), `${label}: expected the copy to state "${phrase}"`).toBe(
+    true,
+  );
+}
+
+/**
+ * Every place the copy uses one phrase shape must state the same number.
+ *
+ * `statesThreshold` alone is satisfied by a single surviving occurrence: the
+ * row floor appears in four table rows, and editing one of them to a different
+ * number left the assertion green because the other three still matched. This
+ * reads the value out of every occurrence and requires them all to be the
+ * constant, so a drifted row fails on its own.
+ */
+function everyStatedValue(
+  prose: string,
+  pattern: RegExp,
+  expected: number,
+  label: string,
+): void {
+  const found = [...prose.matchAll(pattern)].map((match) => Number(match[1]));
+  expect(found.length, `${label}: ${String(pattern)} matched nothing`).toBeGreaterThan(0);
+  expect(new Set(found), `${label}: ${String(pattern)}`).toEqual(
+    new Set([expected]),
+  );
+}
 
 /** apps/marketing, from this file. */
 const APP_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
@@ -108,20 +176,20 @@ describe.each(ARTICLES)("$tool long-form article", ({ tool, get }) => {
       // Both engines are barred from emitting copy that promises a result.
       // The page selling them forms the reader's expectation first, so it is
       // held to the same line.
-      const prose = allProse(tool, get, locale).toLowerCase();
+      // Shapes rather than a spot list of literals: an outcome promise that
+      // happened to use a verb nobody thought of passed the literal version.
+      const prose = allProse(tool, get, locale);
       for (const forbidden of [
-        "will increase",
-        "guaranteed",
-        "guarantee ",
-        "rank higher",
-        "will rank",
-        "will outrank",
-        "提升排名",
-        "保证",
-        "一定能",
-        "轻松拿下",
+        /\b(?:will|you'll|you will)\s+\w+(?:\s+\w+)?\s+(?:rank|rankings?|traffic|clicks|positions?)\b/i,
+        /\b(?:improve|boost|increase|grow|lift|raise)s?\s+(?:your\s+)?(?:rankings?|traffic|clicks|positions?)\b/i,
+        /\brank\s+higher\b/i,
+        /\bguarantee\w*/i,
+        /提升(?:排名|流量|点击)/,
+        /带来更多(?:流量|点击|排名)/,
+        /(?:保证|一定能|必然)(?:排|上|提升|带来)/,
+        /轻松(?:拿下|排上)/,
       ]) {
-        expect(prose, forbidden).not.toContain(forbidden);
+        expect(prose, String(forbidden)).not.toMatch(forbidden);
       }
     });
 
@@ -194,6 +262,26 @@ describe.each(ARTICLES)("$tool long-form article", ({ tool, get }) => {
     }
   });
 
+  it("declares invention for the tables this article is supposed to have", () => {
+    // The self-consistency check below cannot demand a disclosure: an author
+    // who sets `invented: false` and writes no disclaimer satisfies it. This
+    // one pins what each article actually carries, so an illustrative table
+    // that quietly declares itself factual fails here.
+    const expected: Readonly<Record<string, readonly boolean[]>> = {
+      // One table, and it is the engine's own thresholds.
+      "daily-search-briefing": [false],
+      // One table, and its rows are made up.
+      "competitor-keyword-gap": [true],
+    };
+    for (const locale of LOCALES) {
+      const declared = get(locale)
+        .sections.flatMap((section) =>
+          section.table === undefined ? [] : [section.table.invented],
+        );
+      expect(declared, locale).toEqual(expected[tool]);
+    }
+  });
+
   it("says so on the face of any table whose rows are invented", () => {
     // An illustrative table exists to show the shape of a result. A reader who
     // takes it for a live run has been misled by the page rather than by the
@@ -239,23 +327,121 @@ describe("Daily Search Briefing article thresholds", () => {
 
     for (const locale of LOCALES) {
       const prose = articleProse(getDailyBriefingArticle(locale));
-      // Digits only: the two languages decorate them differently ("100+" vs
-      // "≥100"), and asserting the decoration tests the prose style rather
-      // than the number the engine runs on.
-      for (const quoted of [
-        "1,000",
-        "100",
-        "15%",
-        "0.5",
-        "1.5",
-        "300",
-        "2,000",
-        "30",
-        "80%",
-        "8–21",
-      ]) {
-        expect(prose, `${locale} ${quoted}`).toContain(quoted);
-      }
+      const phrases =
+        locale === "en"
+          ? [
+              `${grouped(DAILY_CADENCE_MIN_IMPRESSIONS)} impressions in the complete week`,
+              `${String(BRIEFING_MIN_ROW_IMPRESSIONS)}+ impressions in each window`,
+              `by both ${String(BRIEFING_MATERIAL_CHANGE_RATIO * 100)}% and ${String(BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE)}`,
+              `no more than ${String(BRIEFING_STABLE_POSITION_DELTA)}`,
+              `at least ${String(BRIEFING_TOP_BAND_MIN_IMPROVEMENT)} places better`,
+              `falls by ${String(BRIEFING_POSITION_DECLINE_MIN_DELTA)} or more`,
+              `with ${String(BRIEFING_CTR_ANOMALY_MIN_IMPRESSIONS)}+ impressions this window`,
+              `holding ${grouped(BRIEFING_CTR_ANOMALY_MIN_BAND_IMPRESSIONS)}+ impressions`,
+              `${String(BRIEFING_PAGE_COLLAPSE_MIN_PREVIOUS_IMPRESSIONS)}+ impressions on that page`,
+              `by ${String(BRIEFING_PAGE_COLLAPSE_RATIO * 100)}% or more`,
+              `from ${String(FIRST_OBSERVED_MIN_POSITION)} up to but not including ${String(FIRST_OBSERVED_MAX_POSITION)}`,
+              `At most ${EN_NUMERALS[DAILY_BRIEFING_ACTION_LIMIT] ?? ""} query records`,
+              `at most ${EN_NUMERALS[DAILY_BRIEFING_PAGE_LIMIT] ?? ""} page records`,
+            ]
+          : [
+              `完整一周 ${grouped(DAILY_CADENCE_MIN_IMPRESSIONS)} 次曝光`,
+              `≥${String(BRIEFING_MIN_ROW_IMPRESSIONS)} 次曝光`,
+              `下降 ${String(BRIEFING_MATERIAL_CHANGE_RATIO * 100)}% 和 ${String(BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE)} 次`,
+              `不超过 ${String(BRIEFING_STABLE_POSITION_DELTA)}`,
+              `至少好了 ${String(BRIEFING_TOP_BAND_MIN_IMPROVEMENT)} 位`,
+              `下降 ≥${String(BRIEFING_POSITION_DECLINE_MIN_DELTA)} 位`,
+              `本窗口 ≥${String(BRIEFING_CTR_ANOMALY_MIN_IMPRESSIONS)} 次曝光`,
+              `仍持有 ≥${grouped(BRIEFING_CTR_ANOMALY_MIN_BAND_IMPRESSIONS)} 次曝光`,
+              `上一窗口 ≥${String(BRIEFING_PAGE_COLLAPSE_MIN_PREVIOUS_IMPRESSIONS)} 次曝光`,
+              `曝光下降 ≥${String(BRIEFING_PAGE_COLLAPSE_RATIO * 100)}%`,
+              `从 ${String(FIRST_OBSERVED_MIN_POSITION)} 起、不含 ${String(FIRST_OBSERVED_MAX_POSITION)}`,
+              `最多${ZH_NUMERALS[DAILY_BRIEFING_ACTION_LIMIT] ?? ""}条查询词记录`,
+              `最多${ZH_NUMERALS[DAILY_BRIEFING_PAGE_LIMIT] ?? ""}条页面记录`,
+            ];
+      for (const phrase of phrases) statesThreshold(prose, phrase, locale);
+
+      // Phrase families that recur across table rows: one drifted row must
+      // fail even while its siblings still state the right number.
+      everyStatedValue(
+        prose,
+        locale === "en"
+          ? /(\d+)\+ impressions in each window/g
+          : /两个窗口各 ≥(\d+) 次曝光/g,
+        BRIEFING_MIN_ROW_IMPRESSIONS,
+        locale,
+      );
+      everyStatedValue(
+        prose,
+        locale === "en"
+          ? /up to but not including (\d+)/g
+          : /不含 (\d+)/g,
+        FIRST_OBSERVED_MAX_POSITION,
+        locale,
+      );
+      everyStatedValue(
+        prose,
+        locale === "en" ? /from (\d+) up to but not/g : /从 (\d+) 起、不含/g,
+        FIRST_OBSERVED_MIN_POSITION,
+        locale,
+      );
+    }
+  });
+
+  it("names the destination each page lane actually carries", () => {
+    // The first draft of this copy sent all three page lanes to the On-Page
+    // Checker. Two of them go to Traffic Drop Diagnosis, because the checker
+    // needs a target query and an anonymized page lane has none to give it.
+    expect(DAILY_BRIEFING_PAGE_DESTINATIONS).toEqual({
+      page_impression_collapse: "traffic-drop-diagnosis",
+      page_click_decline: "traffic-drop-diagnosis",
+      page_first_observed: "on-page-seo-check",
+    });
+
+    for (const locale of LOCALES) {
+      const prose = articleProse(getDailyBriefingArticle(locale));
+      expect(prose, locale).toMatch(
+        locale === "en"
+          ? /both declining page lanes|page whose impressions collapsed/
+          : /两条下降型页面路径|曝光几乎消失/,
+      );
+      expect(prose, locale).toMatch(
+        locale === "en"
+          ? /only the first-appearance one lands here/
+          : /只有「首次出现」落在这里/,
+      );
+    }
+  });
+
+  it("names both paths that need a confirmed brand list, not just one", () => {
+    for (const locale of LOCALES) {
+      const prose = articleProse(getDailyBriefingArticle(locale));
+      expect(prose, locale).toMatch(
+        locale === "en"
+          ? /two of them need a confirmed brand list/
+          : /有两条路径需要已确认的品牌词清单/,
+      );
+      expect(prose, locale).not.toMatch(
+        locale === "en"
+          ? /the only one that needs a confirmed brand list/
+          : /唯一需要已确认品牌词清单的路径/,
+      );
+    }
+  });
+
+  it("does not claim the trend read stops where the comparison does", () => {
+    // `dailyBriefingTrendWindow` ends on the CURRENT Pacific date, three days
+    // ahead of the comparison windows. "Nothing newer is read" was false of it.
+    for (const locale of LOCALES) {
+      const prose = articleProse(getDailyBriefingArticle(locale));
+      expect(prose, locale).toMatch(
+        locale === "en"
+          ? /ending on the current Pacific date/
+          : /截止到当前太平洋日期/,
+      );
+      expect(prose, locale).not.toMatch(
+        locale === "en" ? /Nothing newer is read/ : /更新的数据不读/,
+      );
     }
   });
 
@@ -296,9 +482,25 @@ describe("Competitor Keyword Gap article boundaries", () => {
 
     for (const locale of LOCALES) {
       const prose = articleProse(getCompetitorKeywordGapArticle(locale));
-      for (const quoted of ["20", "300", "150", "30", "60"]) {
-        expect(prose, `${locale} ${quoted}`).toContain(quoted);
-      }
+      const phrases =
+        locale === "en"
+          ? [
+              `position ${String(COMPETITOR_KEYWORD_GAP_MAX_COMPETITOR_RANK)} or better`,
+              `at most ${String(COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT)} rows are taken per competitor`,
+              `up to ${String(COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS)} rows`,
+              `at or below ${String(COMPETITOR_KEYWORD_GAP_KD_LOW_MAX)}`,
+              `above ${String(COMPETITOR_KEYWORD_GAP_KD_HEAD_MIN - 1)} is a head term`,
+              `Up to ${EN_NUMERALS[COMPETITOR_KEYWORD_GAP_MAX_COMPETITORS] ?? ""} competitors`,
+            ]
+          : [
+              `排在第 ${String(COMPETITOR_KEYWORD_GAP_MAX_COMPETITOR_RANK)} 位或更好`,
+              `最多取 ${String(COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT)} 行`,
+              `最多 ${String(COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS)} 行`,
+              `难度 ≤ ${String(COMPETITOR_KEYWORD_GAP_KD_LOW_MAX)}`,
+              `高于 ${String(COMPETITOR_KEYWORD_GAP_KD_HEAD_MIN - 1)} 是要暂缓的头部词`,
+              `最多${ZH_NUMERALS[COMPETITOR_KEYWORD_GAP_MAX_COMPETITORS] ?? ""}个竞品`,
+            ];
+      for (const phrase of phrases) statesThreshold(prose, phrase, locale);
     }
   });
 
@@ -337,8 +539,56 @@ describe("Competitor Keyword Gap article boundaries", () => {
   it("makes no credit claim", () => {
     for (const locale of LOCALES) {
       const prose = articleProse(getCompetitorKeywordGapArticle(locale));
+      // The disclaimer being present proves nothing about the rest of the
+      // page: the first draft carried "free of a credit meter" a hundred lines
+      // above this very sentence, and the presence check passed.
       expect(prose, locale).toMatch(
         /does not display or promise a fixed credit|不展示、也不承诺固定的积分/,
+      );
+      for (const forbidden of [
+        /free of a credit/i,
+        /\bno credit charge\b/i,
+        /\bcosts? nothing\b/i,
+        /\bfree to run\b/i,
+        /不需要挂?一?个?积分/,
+        /不扣(?:积分|费)/,
+        /免费(?:运行|使用|跑)/,
+      ]) {
+        expect(prose, `${locale} ${String(forbidden)}`).not.toMatch(forbidden);
+      }
+    }
+  });
+
+  it("demonstrates only status-to-action pairs the engine can produce", () => {
+    // `observed_strong` is hard-wired to `review_existing_query`; the optimize
+    // lane requires `observed_weak`. An example table pairing "Already
+    // ranking" with "Optimize" teaches the mapping backwards, inside the one
+    // section whose whole subject is that mapping.
+    for (const locale of LOCALES) {
+      const strong = locale === "en" ? "Already ranking" : "已在排";
+      const optimize = locale === "en" ? "Optimize existing page" : "优化现有页";
+      for (const section of getCompetitorKeywordGapArticle(locale).sections) {
+        for (const row of section.table?.rows ?? []) {
+          const line = row.join(" | ");
+          expect(
+            line.includes(strong) && line.includes(optimize),
+            `${locale} ${line}`,
+          ).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("describes the all-competitors-failed case as the refusal it is", () => {
+    // The handler returns `keyword_source_unavailable` when
+    // `completedCompetitors === 0`, so the "nothing was read" result screen is
+    // never delivered as a report.
+    for (const locale of LOCALES) {
+      const prose = articleProse(getCompetitorKeywordGapArticle(locale));
+      expect(prose, locale).toMatch(
+        locale === "en"
+          ? /refused as a keyword-source failure/
+          : /作为数据源读取失败被拒绝/,
       );
     }
   });

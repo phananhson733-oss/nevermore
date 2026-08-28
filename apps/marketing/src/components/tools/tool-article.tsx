@@ -23,8 +23,21 @@ function ExampleTable({ table }: { readonly table: ToolArticleTable }) {
       <p className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
         {table.label}
       </p>
-      <div className="rounded-card border-brand-border-card mt-3 overflow-x-auto border">
+      {/*
+       * The scroller is focusable on purpose. A six-column table overflows on a
+       * phone, and an `overflow-x` container with no tabindex can be reached by
+       * pointer and by nothing else.
+       */}
+      <div
+        className="rounded-card border-brand-border-card mt-3 overflow-x-auto border"
+        role="region"
+        aria-label={table.label}
+        tabIndex={0}
+      >
         <table className="w-full min-w-[640px] border-collapse text-left">
+          {/* The visible label is the disclosure; the caption is the same
+              sentence for a reader who never sees it sitting above. */}
+          <caption className="sr-only">{table.label}</caption>
           <thead>
             <tr className="border-b border-brand-border-card bg-brand-panel">
               {table.columns.map((column) => (
@@ -39,14 +52,14 @@ function ExampleTable({ table }: { readonly table: ToolArticleTable }) {
             </tr>
           </thead>
           <tbody>
-            {table.rows.map((cells) => (
+            {table.rows.map((cells, rowIndex) => (
               <tr
-                key={cells[0]}
+                key={`row-${String(rowIndex)}`}
                 className="border-b border-brand-border-card/60 last:border-b-0"
               >
                 {cells.map((cell, index) => (
                   <td
-                    key={`${cells[0] ?? ""}-${String(index)}`}
+                    key={`cell-${String(rowIndex)}-${String(index)}`}
                     className={`px-4 py-3 align-top text-[12.5px] leading-[1.55] ${
                       index === 0
                         ? "text-text-dark-primary"
@@ -79,11 +92,19 @@ export function ToolArticleSections({
         {/*
          * 1px gap over the divider colour — the example reads as a record.
          * 奇数条目进两列会余一格；底色即分隔线颜色，空格子会显示成一块更亮的实心
-         * 矩形，所以末格跨满剩余列宽。
+         * 矩形，所以末格跨满剩余列宽。偶数条目没有余格，跨列会凭空拉宽最后一张。
          */}
-        <dl className="rounded-card border-brand-border-card bg-brand-border-card mt-8 grid gap-px overflow-hidden border md:grid-cols-2 md:[&>*:last-child]:col-span-2">
-          {article.example.map((item) => (
-            <div key={item.heading} className="bg-brand-panel-sunken p-[22px]">
+        <dl className="rounded-card border-brand-border-card bg-brand-border-card mt-8 grid gap-px overflow-hidden border md:grid-cols-2">
+          {article.example.map((item, index) => (
+            <div
+              key={item.heading}
+              className={`bg-brand-panel-sunken p-[22px] ${
+                article.example.length % 2 === 1 &&
+                index === article.example.length - 1
+                  ? "md:col-span-2"
+                  : ""
+              }`}
+            >
               <dt className={LABEL}>{item.heading}</dt>
               <dd className="mt-3 text-[13.5px] leading-[1.65] text-text-dark-secondary">
                 {item.body}
@@ -107,9 +128,9 @@ export function ToolArticleSections({
 
           {section.paragraphs ? (
             <div className="mt-6 max-w-2xl space-y-4">
-              {section.paragraphs.map((paragraph) => (
+              {section.paragraphs.map((paragraph, index) => (
                 <p
-                  key={paragraph.slice(0, 32)}
+                  key={`${section.heading}-${String(index)}`}
                   className="text-[15.5px] leading-[1.65] text-text-dark-strong"
                 >
                   {paragraph}

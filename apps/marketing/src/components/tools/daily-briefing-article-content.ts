@@ -32,7 +32,7 @@ const EN: ToolArticle = {
   example: [
     {
       heading: "The window it read",
-      body: "Search Console's Pacific calendar, stopping at the latest complete day — three days behind today's PT date. The briefing compares that day against a comparable earlier day, and the latest complete seven days against the seven before them. Nothing newer is read, and nothing is projected forward to fill the gap.",
+      body: "Search Console's Pacific calendar, stopping at the latest complete day — three days behind today's PT date. The briefing compares that day against a comparable earlier day, and the latest complete seven days against the seven before them. Nothing newer enters either comparison, and nothing is projected forward to fill the gap.",
     },
     {
       heading: "A change it will name",
@@ -40,7 +40,7 @@ const EN: ToolArticle = {
     },
     {
       heading: "A move it refuses to promote",
-      body: "The same shape of movement, but the prior window carries 50–99 impressions. It appears as a provisional position move, counted in its own list, and it cannot become one of the day's actions. A base that small moves this much on its own.",
+      body: "A query whose average position crosses into the 1–10 band while its prior window carries only 50–99 impressions. It is listed as a provisional position move — the two provisional kinds are both position moves, never clicks — counted in its own list, and it cannot become one of the day's actions. A base that small moves this much on its own.",
     },
     {
       heading: "What it says when it finds nothing",
@@ -55,9 +55,9 @@ const EN: ToolArticle = {
     {
       heading: "The windows, and why yesterday is not one of them",
       paragraphs: [
-        "Search Console finalizes its data on a Pacific-time calendar and lags the present. The briefing takes the latest complete day it can prove is finished — three days behind the current PT date — and refuses to read past it. A run started at nine in the morning and a run started at nine at night therefore read the same window and produce the same result, which is what makes a daily habit worth having at all.",
+        "Search Console finalizes its data on a Pacific-time calendar and lags the present. The briefing takes the latest complete day it can prove is finished — three days behind the current PT date — and no comparison reads past it. A run started at nine in the morning and a run started at nine at night therefore read the same window and produce the same result, which is what makes a daily habit worth having at all.",
         "Two comparisons are built from that: the latest complete day against a comparable earlier day, and the latest complete seven days against the seven immediately before them. The seven-day pair is where every change path is evaluated. The single day exists for context, and when the required date series cannot be read the briefing says the daily reading is unavailable rather than filling the hole with the weekly number.",
-        "One 90-day daily series is fetched at the same time, so the trend chart switches between 24 hours, 7 days, 28 days and 3 months without another read. The 24-hour view is the only one drawn from hourly data, and it carries its own warning while Google is still updating it. Buckets Search Console returned nothing for stay gaps; none of them is substituted with a zero.",
+        "The trend chart is the one part that deliberately runs closer to now: a single 90-day daily series ending on the current Pacific date is fetched alongside, so the chart switches between 24 hours, 7 days, 28 days and 3 months without another read, and its newest points are marked provisional because Google is still updating them. The 24-hour view is the only one drawn from hourly data, and it carries its own warning while Google is still updating it. Buckets Search Console returned nothing for stay gaps; none of them is substituted with a zero.",
       ],
     },
     {
@@ -71,7 +71,7 @@ const EN: ToolArticle = {
         },
         {
           heading: "A click path also has to have settled rows",
-          body: "Cadence asks the two click-driven paths whether they actually judged any rows, not whether the report as a whole looks healthy. A property where only position paths could run is a weekly property, because an impression-weighted average position is not a click signal.",
+          body: "Cadence asks the three click-driven paths — the two query lanes and the page click decline — whether they actually settled any rows, not whether the report as a whole looks healthy. A property where only position paths could run is a weekly property, because an impression-weighted average position is not a click signal.",
         },
         {
           heading: "The mode is named, not implied",
@@ -119,7 +119,7 @@ const EN: ToolArticle = {
           ],
           [
             "First-observed query and page pair",
-            "Page attribution readable in both windows; 100+ impressions now at an average position of 8–21",
+            "Page attribution readable in both windows; 100+ impressions now at an average position from 8 up to but not including 21",
             "The pair is absent from the prior window's visible rows",
           ],
           [
@@ -144,13 +144,13 @@ const EN: ToolArticle = {
           ],
           [
             "Pages drawing impressions and no clicks",
-            "Your site's own non-brand rate predicts at least 3 clicks for this page's impressions",
+            "A measured average position of 10 or better, and your site's own non-brand rate predicting at least 3 clicks for this page's impressions",
             "The page drew none. This is a standing state, not a change, and is listed as a check",
           ],
         ],
       },
       paragraphs: [
-        "Two consequences of that table are worth stating rather than discovering. The first-appearance paths cover 8–21 and 6-or-better, so a pair first seen at an average position of exactly seven is evaluated and reported as no signal; the gap is in the specification these thresholds came from and closing it is one constant. And the click-opportunity path is the only one that needs a confirmed brand list — without it there is no trustworthy brand/non-brand split, so that path reports itself as not evaluated instead of quietly measuring your own name.",
+        "Two consequences of that table are worth stating rather than discovering. The first-appearance paths cover 8 up to but not including 21, and 6-or-better, so a pair first seen at an average position of exactly seven is evaluated and reported as no signal; the gap is in the specification these thresholds came from and closing it is one constant. And two of them need a confirmed brand list: the click-opportunity path and the zero-click page check both rest on your site's own non-brand rate. Without that list there is no trustworthy brand/non-brand split, so both report themselves as not evaluated instead of quietly measuring your own name.",
         "Every path also prints why it could not run. “The evidence this path stands on could not be read this run” is a different statement from “this path found nothing”, and the briefing never renders the first as the second.",
       ],
     },
@@ -215,11 +215,11 @@ const EN: ToolArticle = {
         },
         {
           heading: "Declines go to Traffic Drop Diagnosis",
-          body: "Click and position declines open the property-level diagnosis. The card states that the next tool diagnoses the property rather than the row, so nobody expects a per-query answer it was never built to give.",
+          body: "Query click and position declines open the property-level diagnosis, and so do both declining page lanes — a page whose impressions collapsed and a page whose clicks fell. The card states that the next tool diagnoses the property rather than the row, so nobody expects a per-query answer it was never built to give.",
         },
         {
-          heading: "Pages and first appearances go to the On-Page Checker",
-          body: "The page URL, and the target query where one exists, arrive prefilled so you can see what the public HTML actually supports. The briefing has judged the search result, not the page.",
+          heading: "First appearances and zero-click pages go to the On-Page Checker",
+          body: "Of the three page lanes only the first-appearance one lands here, alongside the query-level first appearances and the pages drawing no clicks. The page URL, and the target query where one exists, arrive prefilled so you can see what the public HTML actually supports. The briefing has judged the search result, not the page.",
         },
         {
           heading: "Your property never travels in a URL",
@@ -254,22 +254,33 @@ const EN: ToolArticle = {
         "Where the briefing runs out of first-party evidence: terms competitors rank for and you were not observed on.",
     },
   ],
+  /*
+   * English and Chinese name different articles on purpose.
+   *
+   * The blog is not translated post for post — 83 English articles against 8
+   * published Chinese ones — so one shared slug list would either 404 in
+   * Chinese or spend both pages' internal links on whatever the two languages
+   * happen to have in common. Each locale links what is on topic and published
+   * in that locale, and the guard checks exactly that.
+   */
   relatedReadingHeading: "Further reading",
   relatedReading: [
     {
-      label: "Evidence-first growth experiments",
-      href: "/blog/evidence-first-growth-experiments",
-      description: "Why a measurement you cannot repeat is not a baseline.",
+      label: "Striking-distance keywords",
+      href: "/blog/striking-distance-keywords",
+      description:
+        "What to do with the rankings you already have, which is what most of these lanes surface.",
+    },
+    {
+      label: "When several pages rank for the same keyword",
+      href: "/blog/multiple-pages-ranking-for-same-keyword",
+      description:
+        "Why a query's average position can fall while no single result moved.",
     },
     {
       label: "What a public SEO audit can and cannot see",
       href: "/blog/public-seo-audit-boundaries",
       description: "Where first-party Search Console data stops being optional.",
-    },
-    {
-      label: "The growth experiment playbook",
-      href: "/blog/growth-experiment-playbook",
-      description: "Turning a weekly reading habit into decisions you can defend.",
     },
   ],
 };
@@ -279,7 +290,7 @@ const ZH: ToolArticle = {
   example: [
     {
       heading: "它读取的窗口",
-      body: "Search Console 的太平洋时区日历，止于可以证明已经结算完成的那一天——落后当前 PT 日期三天。简报用那一天对比一段可比的更早日期，再用最新完整七天对比紧邻的前七天。更新的数据不读，缺口也不会用外推填上。",
+      body: "Search Console 的太平洋时区日历，止于可以证明已经结算完成的那一天——落后当前 PT 日期三天。简报用那一天对比一段可比的更早日期，再用最新完整七天对比紧邻的前七天。更新的数据不进入这两组对比，缺口也不会用外推填上。",
     },
     {
       heading: "它会指名的一种变化",
@@ -287,7 +298,7 @@ const ZH: ToolArticle = {
     },
     {
       heading: "它拒绝升格的一种移动",
-      body: "同样形状的移动，但上一窗口只有 50–99 次曝光。它会作为「暂定位置移动」出现在自己的列表里，不能成为当天的任何一条动作。这么小的基数，本来就会自己晃这么多。",
+      body: "某个查询词的平均排名移进 1–10 段，而它的上一窗口只有 50–99 次曝光。它会作为「暂定位置移动」出现在自己的列表里——两种暂定类型都是位置移动，从来不是点击——不能成为当天的任何一条动作。这么小的基数，本来就会自己晃这么多。",
     },
     {
       heading: "什么都没找到时它怎么说",
@@ -302,9 +313,9 @@ const ZH: ToolArticle = {
     {
       heading: "它读的那两个窗口，以及为什么昨天不在里面",
       paragraphs: [
-        "Search Console 按太平洋时区日历结算数据，并且滞后于当下。简报只取它能证明已经完整的最新一天——落后当前 PT 日期三天——并拒绝越过这条线。所以早上九点跑和晚上九点跑读的是同一个窗口、给出同一个结果；一个每天可以重复的习惯，正是建立在这一点上。",
+        "Search Console 按太平洋时区日历结算数据，并且滞后于当下。简报只取它能证明已经完整的最新一天——落后当前 PT 日期三天——任何一组对比都不会越过这条线。所以早上九点跑和晚上九点跑读的是同一个窗口、给出同一个结果；一个每天可以重复的习惯，正是建立在这一点上。",
         "由此构建两组对比：最新完整日对比一段可比的更早日期，以及最新完整七天对比紧邻的前七天。所有变化路径都在七天这一对上评估；单日只提供上下文。当必需的日期序列读不到时，简报会说日级解读不可得，而不是拿周级数字把这个洞填上。",
-        "同一次请求还会取回一段 90 天的日级序列，所以趋势图在 24 小时、7 天、28 天、3 个月之间切换不需要再读一次。24 小时视图是唯一使用小时级数据的视图，在 Google 仍在更新它时会带自己的提示。Search Console 没有返回数据的时间桶保持为缺口，任何一个都不会被替换成零。",
+        "趋势图是刻意读得更近的那一部分：同一次请求会取回一段截止到当前太平洋日期的 90 天日级序列，所以图在 24 小时、7 天、28 天、3 个月之间切换不需要再读一次，而最新的几个点会被标为暂定，因为 Google 还在更新它们。24 小时视图是唯一使用小时级数据的视图，在 Google 仍在更新它时会带自己的提示。Search Console 没有返回数据的时间桶保持为缺口，任何一个都不会被替换成零。",
       ],
     },
     {
@@ -318,7 +329,7 @@ const ZH: ToolArticle = {
         },
         {
           heading: "还必须有一条点击路径真的判定过行",
-          body: "节奏判定问的是两条点击驱动路径有没有真正判定过任何行，而不是整份报告看起来是否健康。只有位置类路径能跑的站点就是周级站点，因为按曝光加权的平均排名不是点击信号。",
+          body: "节奏判定问的是三条点击驱动路径——两条查询词路径加上页面点击下降——有没有真正判定过任何行，而不是整份报告看起来是否健康。只有位置类路径能跑的站点就是周级站点，因为按曝光加权的平均排名不是点击信号。",
         },
         {
           heading: "运行模式是被说出来的，不是被暗示的",
@@ -361,7 +372,7 @@ const ZH: ToolArticle = {
           ],
           [
             "首次观察到的查询词与页面组合",
-            "两个窗口的页面归属都可读；当前 ≥100 次曝光且均位在 8–21 之间",
+            "两个窗口的页面归属都可读；当前 ≥100 次曝光且均位从 8 起、不含 21",
             "该组合不在上一窗口的可见行里",
           ],
           [
@@ -386,13 +397,13 @@ const ZH: ToolArticle = {
           ],
           [
             "有曝光却完全没有点击的页面",
-            "按本站自己的非品牌点击率，这个页面的曝光量预期应有 ≥3 次点击",
+            "实测均位为 10 或更好，且按本站自己的非品牌点击率，这个页面的曝光量预期应有 ≥3 次点击",
             "它一次点击都没有。这是一种状态而非变化，因此列在「检查」里",
           ],
         ],
       },
       paragraphs: [
-        "这张表有两个后果值得直接说出来，而不是留给你自己撞上。两条首次出现路径覆盖的是 8–21 和 6 或更好，所以一个首次出现在均位正好为 7 的组合会被评估并报告为无信号；这个缺口来自这批门槛所依据的规格本身，合上它只需要改一个常量。另外，点击机会是唯一需要已确认品牌词清单的路径——没有它就没有可信的品牌／非品牌切分，于是这条路径会自报「未评估」，而不是悄悄把你自己的品牌名当成机会量出来。",
+        "这张表有两个后果值得直接说出来，而不是留给你自己撞上。两条首次出现路径覆盖的是「8 起、不含 21」和「6 或更好」，所以一个首次出现在均位正好为 7 的组合会被评估并报告为无信号；这个缺口来自这批门槛所依据的规格本身，合上它只需要改一个常量。另外，有两条路径需要已确认的品牌词清单：点击机会和「有曝光却完全没有点击的页面」都建立在本站自己的非品牌点击率上。没有这份清单就没有可信的品牌／非品牌切分，于是两条都会自报「未评估」，而不是悄悄把你自己的品牌名当成机会量出来。",
         "每条路径也会说明自己为什么跑不了。「本次运行读不到这条路径所依赖的证据」和「这条路径什么也没找到」是两句不同的话，简报绝不把前者渲染成后者。",
       ],
     },
@@ -438,7 +449,7 @@ const ZH: ToolArticle = {
         },
         {
           heading: "不会保留报告",
-          body: "没有定时任务、没有保存的历史、没有服务端副本。报告和两个人工检查标记都只活在这个页面的状态里——刷新、重跑、换资源或关闭标签页都会清空它们。Search Console 保留着历史，即使这个工具不保留。",
+          body: "没有定时任务、没有保存的历史，也不在任何地方留副本。报告和两个人工检查标记都只活在这个页面的状态里——刷新、重跑、换资源或关闭标签页都会清空它们。Search Console 保留着历史，即使这个工具不保留。",
         },
         {
           heading: "不会假装预算无限",
@@ -457,11 +468,11 @@ const ZH: ToolArticle = {
         },
         {
           heading: "下降类交给流量下跌诊断",
-          body: "点击下降与位置下降会打开站点级诊断。卡片写明下一个工具诊断的是站点而不是这一行，这样没有人会期待一个它本来就不提供的逐词答案。",
+          body: "查询词的点击下降与位置下降会打开站点级诊断，两条下降型页面路径——曝光几乎消失和点击下降——同样交给它。卡片写明下一个工具诊断的是站点而不是这一行，这样没有人会期待一个它本来就不提供的逐词答案。",
         },
         {
-          heading: "页面与首次出现交给 On-Page 检查器",
-          body: "页面 URL——以及存在目标查询词时的那个词——会被预填过去，让你看清公开 HTML 到底支持了什么。简报判定的是搜索结果，不是页面本身。",
+          heading: "首次出现与零点击页面交给 On-Page 检查器",
+          body: "三条页面路径里只有「首次出现」落在这里，和查询词级的首次出现、以及有曝光却零点击的页面一起。页面 URL——以及存在目标查询词时的那个词——会被预填过去，让你看清公开 HTML 到底支持了什么。简报判定的是搜索结果，不是页面本身。",
         },
         {
           heading: "你的资源永远不会出现在 URL 里",
