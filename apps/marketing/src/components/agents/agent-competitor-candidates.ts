@@ -417,42 +417,50 @@ function withoutDomain(
   );
 }
 
+/** Move one normalized visitor choice into exactly one relationship group. */
+export function classifyCompetitorRelationships(
+  classifications: AgentCompetitorClassifications,
+  domain: string,
+  classification: AgentCompetitorClassification,
+): AgentCompetitorClassifications {
+  const normalized = normalizeAgentProfileSearchDomain(domain);
+  if (normalized === null) {
+    throw new TypeError("Competitor domain must be a normalized public hostname.");
+  }
+
+  const direct = withoutDomain(classifications.direct, normalized);
+  const indirect = withoutDomain(classifications.indirect, normalized);
+  const excluded = withoutDomain(classifications.excluded, normalized);
+
+  return {
+    direct:
+      classification === "direct" ? [...direct, normalized] : direct,
+    indirect:
+      classification === "indirect" ? [...indirect, normalized] : indirect,
+    excluded:
+      classification === "excluded" ? [...excluded, normalized] : excluded,
+  };
+}
+
 /** Record a visitor decision locally; this does not persist an app Product Profile. */
 export function classifyAgentCompetitorProfile(
   profile: AgentProfileDraft,
   domain: string,
   classification: AgentCompetitorClassification,
 ): AgentProfileDraft {
-  const normalized = normalizeAgentProfileSearchDomain(domain);
-  if (normalized === null) {
-    throw new TypeError("Competitor domain must be a normalized public hostname.");
-  }
-
-  const directCompetitors = withoutDomain(
-    profile.directCompetitors,
-    normalized,
-  );
-  const indirectAlternatives = withoutDomain(
-    profile.indirectAlternatives,
-    normalized,
-  );
-  const excludedAlternatives = withoutDomain(
-    profile.excludedAlternatives,
-    normalized,
+  const classified = classifyCompetitorRelationships(
+    {
+      direct: profile.directCompetitors,
+      indirect: profile.indirectAlternatives,
+      excluded: profile.excludedAlternatives,
+    },
+    domain,
+    classification,
   );
 
   return updateAgentProfile(profile, {
-    directCompetitors:
-      classification === "direct"
-        ? [...directCompetitors, normalized]
-        : directCompetitors,
-    indirectAlternatives:
-      classification === "indirect"
-        ? [...indirectAlternatives, normalized]
-        : indirectAlternatives,
-    excludedAlternatives:
-      classification === "excluded"
-        ? [...excludedAlternatives, normalized]
-        : excludedAlternatives,
+    directCompetitors: classified.direct,
+    indirectAlternatives: classified.indirect,
+    excludedAlternatives: classified.excluded,
   });
 }

@@ -7,6 +7,7 @@ import {
   type AgentProfileFieldSource,
 } from "./agent-profile";
 import {
+  deriveProfileSearchSeeds,
   deriveProductProfileSearchSeeds,
   productProfileSearchSeedsIdentity,
 } from "./agent-profile-search-seeds";
@@ -43,6 +44,27 @@ function profileWithSearchFields(
 }
 
 describe("deriveProductProfileSearchSeeds", () => {
+  it("derives approved seeds from a website-shaped profile", () => {
+    const websiteProfile = {
+      productName: "Astrology Wiki",
+      categories: ["Astrology reference"],
+      oneLinePositioning: "Evidence-led astrology explanations",
+      coreFeatures: ["Natal chart guides"],
+      fieldProvenance: [
+        { path: "/productName", source: "public_page" },
+        { path: "/categories", source: "user_edit" },
+        { path: "/oneLinePositioning", source: "public_page" },
+        { path: "/coreFeatures", source: "not_available" },
+      ],
+    };
+
+    expect(deriveProfileSearchSeeds(websiteProfile)).toEqual([
+      "Astrology Wiki",
+      "Astrology reference",
+      "Evidence-led astrology explanations",
+    ]);
+  });
+
   it("returns no hostname or placeholder seed for an unrefreshed generic profile", () => {
     expect(
       deriveProductProfileSearchSeeds(
@@ -117,6 +139,27 @@ describe("deriveProductProfileSearchSeeds", () => {
       "SEO platform",
       "Technical SEO",
     ]);
+  });
+
+  it("keeps the Agent compatibility export identical to the generic projection", () => {
+    const profile = profileWithSearchFields(
+      {
+        productName: "GenGrowth",
+        categories: ["SEO platform"],
+        oneLinePositioning: "Evidence-led growth workspace",
+        coreFeatures: ["Technical SEO"],
+      },
+      {
+        productName: "public_page",
+        categories: "supplied_product_information",
+        oneLinePositioning: "user_edit",
+        coreFeatures: "public_page",
+      },
+    );
+
+    expect(deriveProfileSearchSeeds(profile)).toEqual(
+      deriveProductProfileSearchSeeds(profile),
+    );
   });
 });
 

@@ -2,18 +2,24 @@
 // @output -- bounded canonical search seeds and a cosmetic-change-stable identity
 // @pos    -- browser-safe seam between live Product Profile refresh and competitor discovery
 
-import type {
-  AgentProfileDraft,
-  AgentProfileEditableField,
-  AgentProfileFieldSource,
-} from "./agent-profile";
+export interface ProfileSearchSeedInput {
+  readonly productName: string;
+  readonly categories: readonly string[];
+  readonly oneLinePositioning: string;
+  readonly coreFeatures: readonly string[];
+  readonly fieldProvenance: readonly {
+    readonly path: string;
+    readonly source: string;
+  }[];
+}
 
-type SearchSeedField = Extract<
-  AgentProfileEditableField,
-  "productName" | "categories" | "oneLinePositioning" | "coreFeatures"
->;
+type SearchSeedField =
+  | "productName"
+  | "categories"
+  | "oneLinePositioning"
+  | "coreFeatures";
 
-const APPROVED_SEARCH_SEED_SOURCES = new Set<AgentProfileFieldSource>([
+const APPROVED_SEARCH_SEED_SOURCES = new Set<string>([
   "public_page",
   "supplied_product_information",
   "user_edit",
@@ -42,7 +48,7 @@ function canonicalSearchSeed(value: string): string | null {
 }
 
 function fieldHasApprovedSource(
-  profile: AgentProfileDraft,
+  profile: ProfileSearchSeedInput,
   field: SearchSeedField,
 ): boolean {
   const provenance = profile.fieldProvenance.find(
@@ -54,8 +60,8 @@ function fieldHasApprovedSource(
   );
 }
 
-export function deriveProductProfileSearchSeeds(
-  profile: AgentProfileDraft,
+export function deriveProfileSearchSeeds(
+  profile: ProfileSearchSeedInput,
 ): readonly string[] {
   const candidates: string[] = [];
   if (fieldHasApprovedSource(profile, "productName")) {
@@ -83,6 +89,12 @@ export function deriveProductProfileSearchSeeds(
     if (seeds.length === MAX_SEARCH_SEEDS) break;
   }
   return seeds;
+}
+
+export function deriveProductProfileSearchSeeds(
+  profile: ProfileSearchSeedInput,
+): readonly string[] {
+  return deriveProfileSearchSeeds(profile);
 }
 
 export function productProfileSearchSeedsIdentity(
