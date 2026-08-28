@@ -10,8 +10,9 @@ export const siteConfig = {
     ga4MeasurementId:
       process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID ?? "G-71TET2Y97Q",
   },
+  // LinkedIn 主页尚未开通，入口与 sameAs 声明一并移除：sameAs 指向不存在的
+  // 主页等于给搜索引擎一条错误的实体声明。开通后再把 linkedin 加回来。
   social: {
-    x: "https://x.com/gengrowth",
-    linkedin: "https://linkedin.com/company/gengrowth",
+    x: "https://x.com/GenGrowthAI",
   },
 } as const;

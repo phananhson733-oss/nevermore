@@ -586,8 +586,7 @@
       "title": "Follow Live Experiment Logs",
       "desc": "Weekly logs are published on Blog and social channels with evidence-first format.",
       "blogCta": "Open Blog Logs →",
-      "xCta": "Follow on X →",
-      "linkedinCta": "Follow on LinkedIn →"
+      "xCta": "Follow on X →"
     }
   },
   "blog": {
