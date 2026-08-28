@@ -39,8 +39,11 @@ export function ConnectedToolPage({
    * Long-form sections for a page that has more to say than the shared shell.
    *
    * Rendered between "what you get" and the FAQ, which is where a reader who
-   * has understood the output starts asking how it was arrived at. Optional:
-   * the other connected tools have nothing to put here yet.
+   * has understood the output starts asking how it was arrived at. It follows
+   * the same visibility rule as the rest of the reference shell: a
+   * `compactConnected` tool that has admitted the visitor is a working report,
+   * and pushing a long explainer under it argues against the product shape the
+   * flag exists to protect. Anonymous visits — which is every crawl — keep it.
    */
   readonly article?: React.ReactNode;
   /**
@@ -245,7 +248,7 @@ export function ConnectedToolPage({
           </section>
         ) : null}
 
-        {article}
+        {showReferenceSections ? article : null}
 
         {showReferenceSections ? (
           <section
