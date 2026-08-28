@@ -1559,9 +1559,19 @@ describe("On-Page checker local state", () => {
 
     const host = await render();
 
-    expect(field(host, "onpage-url").value).toBe("acme.test/plans");
-    expect(field(host, "onpage-country").value).toBe("GB");
-    expect(sessionStorage.getItem("gengrowth:onpage-draft:v1")).toBeNull();
+    // The draft is restored by a mount effect; under a fully parallel run its
+    // commit can land after render() returns, so poll the outcome.
+    await vi.waitFor(
+      async () => {
+        await act(async () => {
+          await Promise.resolve();
+        });
+        expect(field(host, "onpage-url").value).toBe("acme.test/plans");
+        expect(field(host, "onpage-country").value).toBe("GB");
+        expect(sessionStorage.getItem("gengrowth:onpage-draft:v1")).toBeNull();
+      },
+      { timeout: 5_000, interval: 5 },
+    );
   });
 
   it("shows a retry time only when the server gave a usable one", async () => {

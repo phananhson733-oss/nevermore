@@ -126,11 +126,19 @@ async function click(element: Element | null): Promise<void> {
   await act(async () => {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
   });
-  // The copy button settles through a clipboard promise: let the microtask
-  // chain and the state update it ends in run to completion.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
+}
+
+/** Polls an assertion, flushing React between attempts; for state that settles through a promise. */
+async function eventually(check: () => void): Promise<void> {
+  await vi.waitFor(
+    async () => {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      check();
+    },
+    { timeout: 5_000, interval: 5 },
+  );
 }
 
 async function expandAll(host: HTMLElement): Promise<void> {
@@ -402,7 +410,7 @@ describe.each([
     async function checkProjections(result: DraftResult, copyIndex: number): Promise<void> {
       await click(host.querySelector("[data-copy-markdown]"));
       expect(written.length, `clipboard writes; failed=${host.querySelector("[data-copy-failed]")?.textContent ?? "none"}`).toBe(copyIndex + 1);
-      expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copiedLabel);
+      await eventually(() => expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copiedLabel));
       const markdown = written[copyIndex];
       expect(markdown).toBeDefined();
       // Exactly the sentences, paragraph by paragraph; nothing the screen
@@ -464,16 +472,16 @@ describe.each([
     // The second click settles first and succeeds...
     await act(async () => {
       pending[1]?.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copiedLabel);
+    await eventually(() => expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copiedLabel));
     // ...then the first, superseded one fails, and must not overwrite it.
     await act(async () => {
       pending[0]?.reject();
-      await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copiedLabel);
-    expect(host.querySelector("[data-copy-failed]")).toBeNull();
+    await eventually(() => {
+      expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copiedLabel);
+      expect(host.querySelector("[data-copy-failed]")).toBeNull();
+    });
   });
 
   it("reports a failed latest copy in words, and clears it when the next copy succeeds", async () => {
@@ -499,10 +507,9 @@ describe.each([
     expect(pending).toHaveLength(1);
     await act(async () => {
       pending[0].reject();
-      await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect((catalog(locale)["actions"] as Record<string, string>)["copyFailed"]).toBe(APPROVED_COPY_FAILED[locale]);
-    expect(host.querySelector("[data-copy-failed]")?.textContent).toBe(APPROVED_COPY_FAILED[locale]);
+    await eventually(() => expect(host.querySelector("[data-copy-failed]")?.textContent).toBe(APPROVED_COPY_FAILED[locale]));
     expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copyLabel);
     await click(host.querySelector("[data-copy-markdown]"));
     // The second click really wrote the clipboard, with this result's exact Markdown.
@@ -510,10 +517,11 @@ describe.each([
     expect(pending[1].text).toBe(expectedMarkdown(result, notes));
     await act(async () => {
       pending[1].resolve();
-      await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(host.querySelector("[data-copy-failed]")).toBeNull();
-    expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copiedLabel);
+    await eventually(() => {
+      expect(host.querySelector("[data-copy-failed]")).toBeNull();
+      expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copiedLabel);
+    });
   });
 
   it("disables every rerun control while a full generation is in flight", async () => {

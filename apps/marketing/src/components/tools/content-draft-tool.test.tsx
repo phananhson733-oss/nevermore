@@ -204,13 +204,27 @@ function storeHandoff(brief: ContentBrief): string {
   return raw;
 }
 
-async function settle(): Promise<void> {
-  // The parser's fingerprint is a WebCrypto digest: several microtask turns.
-  for (let i = 0; i < 8; i += 1) {
-    await act(async () => {
-      await Promise.resolve();
-    });
-  }
+async function flush(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+/**
+ * Polls until the tool is observably idle: no parse in flight (the parser's
+ * fingerprint is a WebCrypto digest that completes off the microtask queue)
+ * and no request in flight. Polling on state, not a fixed number of ticks,
+ * is what keeps this stable under a fully parallel run.
+ */
+async function idle(host: HTMLElement): Promise<void> {
+  await vi.waitFor(
+    async () => {
+      await flush();
+      expect(host.querySelector('[data-intake-phase="parsing"]')).toBeNull();
+      expect(host.querySelector("#content-draft-tool")?.getAttribute("aria-busy")).toBe("false");
+    },
+    { timeout: 5_000, interval: 5 },
+  );
 }
 
 async function type(field: Element | null, value: string): Promise<void> {
@@ -234,17 +248,18 @@ async function select(field: Element | null, value: string): Promise<void> {
   });
 }
 
+/** Dispatches inside act; synchronous state changes are committed on return, async ones need `idle`. */
 async function click(element: Element | null): Promise<void> {
   if (!(element instanceof HTMLElement)) throw new Error("expected an element");
   await act(async () => {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
   });
-  await settle();
 }
 
 async function pasteBrief(host: HTMLElement, brief: ContentBrief): Promise<void> {
   await type(host.querySelector("[data-paste-brief]"), JSON.stringify(brief));
   await click(host.querySelector("[data-load-brief]"));
+  await idle(host);
 }
 
 type Responder = (body: Record<string, unknown>) => Response | Promise<Response>;
@@ -279,7 +294,7 @@ function runId(host: HTMLElement): string | null {
 async function loadAndRun(host: HTMLElement, brief: ContentBrief): Promise<void> {
   await pasteBrief(host, brief);
   await click(host.querySelector("[data-run-draft]"));
-  await settle();
+  await idle(host);
 }
 
 describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
@@ -330,6 +345,7 @@ describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
     const host = await renderTool();
     await type(host.querySelector("[data-paste-brief]"), "{ not json");
     await click(host.querySelector("[data-load-brief]"));
+    await idle(host);
     expect(host.querySelector("[data-intake-rejected]")?.getAttribute("data-intake-rejected")).toBe(
       "invalid_json",
     );
@@ -355,7 +371,7 @@ describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
       JSON.stringify({ version: 1, created_at: now, expires_at: now + CONTENT_BRIEF_HANDOFF_TTL_MS, brief }),
     );
     const host = await renderTool();
-    await settle();
+    await idle(host);
     expect(host.querySelector('[data-brief-source="handoff"]')).not.toBeNull();
     expect(host.querySelector("[data-brief-keyword]")?.textContent).toBe(brief.keyword.primary);
     // One-time: the key is gone the moment it is read (handoff §8 item 32).
@@ -366,7 +382,7 @@ describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
     const brief = await draftBrief();
     const raw = storeHandoff(brief);
     const host = await renderTool(false);
-    await settle();
+    await idle(host);
     // The hero sign-in CTA will reload the page; the page after that reload consumes it.
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(raw);
     expect(host.querySelector("[data-handoff-pending]")).not.toBeNull();
@@ -405,7 +421,7 @@ describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
       JSON.stringify({ version: 1, created_at: created, expires_at: created + CONTENT_BRIEF_HANDOFF_TTL_MS, brief }),
     );
     const host = await renderTool();
-    await settle();
+    await idle(host);
     expect(host.querySelector("[data-intake-rejected]")?.getAttribute("data-intake-rejected")).toBe(
       "handoff_expired",
     );
@@ -438,7 +454,7 @@ describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
     await act(async () => {
       resolveText?.(JSON.stringify(uploaded));
     });
-    await settle();
+    await idle(host);
     expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(pasted.run.fingerprint);
     expect(host.querySelector('[data-brief-source="paste"]')).not.toBeNull();
   });
@@ -459,7 +475,7 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     const brief = await draftBrief();
     storeHandoff(brief);
     const host = await renderTool();
-    await settle();
+    await idle(host);
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
     await click(host.querySelector("[data-run-draft]"));
     expect(host.querySelector('[data-testid="sign-in-dialog"]')).not.toBeNull();
@@ -482,7 +498,7 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     const brief = await draftBrief();
     storeHandoff(brief);
     const host = await renderTool();
-    await settle();
+    await idle(host);
     await click(host.querySelector('[data-testid="sign-in-succeed"]'));
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).not.toBeNull();
     await click(host.querySelector("[data-replace-brief]"));
@@ -501,7 +517,7 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     const brief = await draftBrief();
     storeHandoff(brief);
     const host = await renderTool();
-    await settle();
+    await idle(host);
     signedInResult.current = undefined;
     const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("QuotaExceededError");
@@ -531,7 +547,7 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     root = null;
     document.body.replaceChildren();
     const host = await renderTool(authenticated);
-    await settle();
+    await idle(host);
     return host;
   }
 
@@ -540,7 +556,7 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     const pasted = await withFingerprint(contentBriefFixture());
     const rawA = storeHandoff(waiting);
     const host = await renderTool(false);
-    await settle();
+    await idle(host);
     const handler = signedInHandler.current;
     if (handler === undefined) throw new Error("onSignedIn was not passed to the dialog");
 
@@ -555,14 +571,25 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
 
     // The parser resolves, and the credential lands BEFORE React commits B:
     // the listener still saves B, because the ref was written on transition.
+    // The gate is armed only once the real parser (a WebCrypto digest that
+    // completes off the microtask queue) has finished; poll for that first.
+    await vi.waitFor(() => expect(parserGate.release).not.toBeNull(), { timeout: 5_000, interval: 5 });
     parserGate.release?.();
-    for (let i = 0; i < 4; i += 1) await Promise.resolve();
-    expect(host.querySelector("[data-brief-fingerprint]")).toBeNull();
-    expect(handler()).toBe(true);
+    // Microtasks only, deliberately no act(): React cannot commit here, so
+    // every iteration observes the window between the transition and the
+    // commit. The loop is bounded by outcome, not by a tick count.
+    let verdict: boolean | void = undefined;
+    for (let i = 0; i < 1_000; i += 1) {
+      await Promise.resolve();
+      expect(host.querySelector("[data-brief-fingerprint]")).toBeNull();
+      verdict = handler();
+      if (verdict === true) break;
+    }
+    expect(verdict).toBe(true);
     const raw = window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY);
     const parsed = await parseContentBriefHandoff(JSON.parse(raw ?? "null"));
     expect(parsed.ok && parsed.value.brief.run.fingerprint).toBe(pasted.run.fingerprint);
-    await settle();
+    await idle(host);
     expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(pasted.run.fingerprint);
   });
 
@@ -575,7 +602,7 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
       },
     });
     const host = await renderTool();
-    await settle();
+    await idle(host);
     await pasteBrief(host, brief);
     expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(brief.run.fingerprint);
     signedInResult.current = undefined;
@@ -590,7 +617,7 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     const brief = await draftBrief();
     storeHandoff(brief);
     const host = await renderTool();
-    await settle();
+    await idle(host);
     await click(host.querySelector("[data-run-draft]"));
     expect(host.querySelector('[data-testid="sign-in-dialog"]')).not.toBeNull();
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
@@ -608,7 +635,7 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     expect(pasted.run.fingerprint).not.toBe(waiting.run.fingerprint);
     storeHandoff(waiting);
     const host = await renderTool(false);
-    await settle();
+    await idle(host);
     expect(host.querySelector("[data-handoff-pending]")).not.toBeNull();
     await pasteBrief(host, pasted);
     expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(pasted.run.fingerprint);
@@ -626,7 +653,7 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     const pasted = await withFingerprint(contentBriefFixture());
     storeHandoff(waiting);
     const host = await renderTool(false);
-    await settle();
+    await idle(host);
     await pasteBrief(host, pasted);
     signedInResult.current = undefined;
     await click(host.querySelector('[data-testid="sign-in-succeed"]'));
@@ -644,9 +671,10 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
   it("leaves the waiting handoff alone when the brief loaded before sign-in is rejected", async () => {
     const rawA = storeHandoff(await draftBrief());
     const host = await renderTool(false);
-    await settle();
+    await idle(host);
     await type(host.querySelector("[data-paste-brief]"), "{ not json");
     await click(host.querySelector("[data-load-brief]"));
+    await idle(host);
     expect(host.querySelector("[data-intake-rejected]")).not.toBeNull();
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(rawA);
   });
@@ -662,7 +690,7 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     expect(writable.length).toBeGreaterThanOrEqual(3);
     await click(host.querySelector('[data-section-checkbox="O2"]'));
     await click(host.querySelector("[data-run-draft]"));
-    await settle();
+    await idle(host);
 
     const [request] = callsTo("/api/tools/content-draft/run");
     expect(request?.body).not.toBeNull();
@@ -714,7 +742,7 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
 
     globalThis.fetch = signedInFetch(() => Response.json({ error: { code: "run_in_progress" } }, { status: 409 }));
     await click(host.querySelector("[data-run-draft]"));
-    await settle();
+    await idle(host);
     expect(host.querySelector("[data-error-code]")?.textContent).toContain("errors.run_in_progress");
   });
 
@@ -732,10 +760,10 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     expect(host.querySelector("[data-error-code]")?.getAttribute("data-error-code")).toBe("payload_too_large");
     expect(host.querySelector("[data-error-code]")?.textContent).toContain(`"kb":${runKb}`);
     await click(host.querySelector("[data-run-draft]"));
-    await settle();
+    await idle(host);
     expect(runId(host)).toBe(first.run.run_id);
     await click(host.querySelector('[data-testid="rerun-O1"]'));
-    await settle();
+    await idle(host);
     expect(host.querySelector("[data-error-code]")?.getAttribute("data-error-code")).toBe("payload_too_large");
     expect(host.querySelector("[data-error-code]")?.textContent).toContain(`"kb":${sectionKb}`);
     expect(host.querySelector("[data-error-code]")?.textContent).not.toContain(`"kb":${runKb}`);
@@ -768,7 +796,7 @@ describe("ContentDraftTool reruns and result replacement", () => {
     expect(host.querySelector("[data-settings-changed]")).not.toBeNull();
 
     await click(host.querySelector('[data-testid="rerun-O2"]'));
-    await settle();
+    await idle(host);
     const [request] = callsTo("/api/tools/content-draft/section");
     expect(Object.keys(request?.body ?? {}).sort()).toEqual(["brief", "previous", "section_id"]);
     expect(request?.body?.["section_id"]).toBe("O2");
@@ -793,7 +821,7 @@ describe("ContentDraftTool reruns and result replacement", () => {
     const host = await renderTool();
     await loadAndRun(host, brief);
     await click(host.querySelector('[data-testid="rerun-O1"]'));
-    await settle();
+    await idle(host);
     expect(host.querySelector("[data-error-code]")?.getAttribute("data-error-code")).toBe("previous_draft_invalid");
     expect(host.querySelector("[data-error-code]")?.textContent).toContain("errors.previous_draft_invalid");
     expect(runId(host)).toBe(first.run.run_id);
@@ -810,7 +838,7 @@ describe("ContentDraftTool reruns and result replacement", () => {
     await loadAndRun(host, brief);
     for (let i = 0; i < SECTION_RERUN_SOFT_MAX; i += 1) {
       await click(host.querySelector('[data-testid="rerun-O1"]'));
-      await settle();
+      await idle(host);
     }
     expect(callsTo("/api/tools/content-draft/section")).toHaveLength(SECTION_RERUN_SOFT_MAX);
     expect(host.querySelector('[data-testid="reruns-used"]')?.textContent).toBe(String(SECTION_RERUN_SOFT_MAX));
@@ -819,7 +847,7 @@ describe("ContentDraftTool reruns and result replacement", () => {
     expect(runId(host)).toBe(first.run.run_id);
 
     await click(host.querySelector('[data-testid="rerun-O1"]'));
-    await settle();
+    await idle(host);
     expect(callsTo("/api/tools/content-draft/section")).toHaveLength(SECTION_RERUN_SOFT_MAX);
   });
 
@@ -837,20 +865,20 @@ describe("ContentDraftTool reruns and result replacement", () => {
     const host = await renderTool();
     await loadAndRun(host, brief);
     await click(host.querySelector('[data-testid="rerun-O1"]'));
-    await settle();
+    await idle(host);
     expect(runId(host)).toBe(rerun.run.run_id);
     expect(host.querySelector('[data-testid="reruns-used"]')?.textContent).toBe("1");
 
     // A refused second run: the rerun result stays, the counter stays, the error shows.
     await click(host.querySelector("[data-run-draft]"));
-    await settle();
+    await idle(host);
     expect(runId(host)).toBe(rerun.run.run_id);
     expect(host.querySelector('[data-testid="reruns-used"]')?.textContent).toBe("1");
     expect(host.querySelector("[data-error-code]")?.getAttribute("data-error-code")).toBe("rate_limited");
 
     // A successful one replaces the result and resets the rerun budget.
     await click(host.querySelector("[data-run-draft]"));
-    await settle();
+    await idle(host);
     expect(runId(host)).toBe(third.run.run_id);
     expect(host.querySelector('[data-testid="reruns-used"]')?.textContent).toBe("0");
     expect(host.querySelector("[data-error-code]")).toBeNull();
@@ -879,7 +907,7 @@ describe("ContentDraftTool reruns and result replacement", () => {
     await act(async () => {
       release?.(Response.json({ error: { code: "rate_limited" } }, { status: 429 }));
     });
-    await settle();
+    await idle(host);
     expect(host.querySelector('[data-testid="draft-results"]')?.getAttribute("data-rerun-disabled")).toBe("false");
     // A failed run returns to idle: no completion announcement replays.
     expect(host.querySelector('[role="status"]')?.textContent ?? "").not.toContain("running.complete");
