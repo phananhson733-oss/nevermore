@@ -22,6 +22,7 @@ const CATEGORY_LABELS: Record<string, Record<string, string>> = {
   seo: { en: "SEO", zh: "SEO" },
   diagnosis: { en: "Website diagnosis", zh: "网站诊断" },
   planning: { en: "Planning", zh: "规划" },
+  geo: { en: "AI visibility", zh: "AI 可见性" },
 };
 
 export function ToolCard({

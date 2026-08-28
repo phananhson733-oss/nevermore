@@ -792,6 +792,9 @@
     "planEyebrow": "我需要规划和衡量",
     "planTitle": "让下一次实验更容易判断",
     "planBody": "当你需要更快判断测试可信度和一项实验所需样本量时，可使用这个确定性计算器。",
+    "geoEyebrow": "回答引擎",
+    "geoTitle": "被读到，以及被引用",
+    "geoBody": "搜索问的是排名，这里问的更窄：AI 回答背后的抓取器能不能读到这一页，以及能不能从中抽出一个答案。",
     "productCtaEyebrow": "从一个答案到完整路径",
     "productCtaTitle": "你的 SEO 工作不该在每个工具处重新开始。",
     "productCtaBody": "如果你想在更完整的连贯工作流开放时收到邮件通知，就加入候补名单。在此之前，先使用本站已公开的 Agents 和辅助工具。",
@@ -3945,6 +3948,397 @@
             "href": "/tools/traffic-drop-diagnosis",
             "name": "流量下降诊断",
             "blurb": "先比较两个时间段，再判断自然流量为何变化。"
+          }
+        ]
+      }
+    },
+    "pageCitability": {
+      "eyebrow": "GEO 工具",
+      "title": "页面可引用性检查",
+      "intro": "贴一个网址。这里检查两件事：回答问题的那些抓取器能不能读到这一页，以及读到之后能不能把结论抽出来。本工具不执行 JavaScript，凡是因此受影响的行都会写明。",
+      "fields": {
+        "urlLabel": "页面网址",
+        "urlPlaceholder": "https://example.com/pricing",
+        "urlHelp": "一个页面，不是整站。该页需要返回 200 且是 HTML。",
+        "questionLabel": "目标提问（选填）",
+        "questionPlaceholder": "五人代理公司适合用哪个项目管理工具",
+        "questionHelp": "填了这项，开头直答那一行才会对着它检查；不填时那一行显示「不适用」，不会算成未通过。"
+      },
+      "actions": {
+        "run": "检查这一页",
+        "running": "检查中…",
+        "again": "再检查一次",
+        "copy": "复制报告",
+        "copied": "已复制",
+        "copyFailed": "复制失败"
+      },
+      "summary": {
+        "title": "结果",
+        "passed": "通过",
+        "failed": "未通过",
+        "fetchError": "读不到",
+        "notApplicable": "不适用",
+        "counted": "{counted} 项计入结论，其中 {passed} 项通过",
+        "rows": "共检查 {total} 行。其中 {weighted} 行计权；本次有 {notApplicable} 行不适用、{fetchError} 行读不到，因此分母是 {denominator}。",
+        "advisoryNote": "仅展示行不计入结论：训练类抓取器的放行与 /llms.txt 都不决定这一页能否被回答引用。",
+        "fetchedAt": "检查时间 {time}",
+        "finalUrl": "实际读取自 {url}",
+        "redirected": "你提交的网址跳转到了这里，下面每一行说的都是实际返回的那一页。",
+        "textChars": "不执行 JavaScript 时，HTML 里可见正文 {chars} 字"
+      },
+      "sections": {
+        "readable": "抓取器能不能读到",
+        "readableIntro": "访问与交付。这一段不通过，写得再好也无法被引用。",
+        "extractable": "能不能把答案抽出来",
+        "extractableIntro": "内容的形态。这几行说明模型要从这一页取走一条具体结论有多容易。"
+      },
+      "states": {
+        "pass": "通过",
+        "fail": "未通过",
+        "fetchError": "读不到",
+        "notApplicable": "不适用"
+      },
+      "weights": {
+        "counted": "计入",
+        "advisory": "仅展示"
+      },
+      "kinds": {
+        "heuristic": "模式规则",
+        "heuristicNote": "这一行按模式匹配，不理解语义。把它当成「去看一眼」的提示，不是判决。"
+      },
+      "fixLabel": "怎么修",
+      "rules": {
+        "robots": {
+          "oai-searchbot": "robots.txt 放行 OAI-SearchBot",
+          "chatgpt-user": "robots.txt 放行 ChatGPT-User",
+          "perplexitybot": "robots.txt 放行 PerplexityBot",
+          "claudebot": "robots.txt 放行 ClaudeBot",
+          "gptbot": "robots.txt 放行 GPTBot（训练用途）",
+          "google-extended": "robots.txt 放行 Google-Extended（训练用途）"
+        },
+        "ssr": "HTML 里带正文",
+        "canonical": "canonical 指向本页",
+        "llmsTxt": "已发布 /llms.txt",
+        "leadAnswer": "开头就回答了提问",
+        "extractableStructure": "存在表格或真正的列表",
+        "qualifiers": "限定条件有量化",
+        "citedData": "数字带来源",
+        "faqSchema": "FAQ 结构化数据有效"
+      },
+      "details": {
+        "robots": {
+          "absent": "该站没有 robots.txt，因此 {bot} 默认在任何路径都被允许。",
+          "unreachable": "robots.txt 返回 {status}，所以该站对 {bot} 的规则未知。这和「被禁止」不是一回事。",
+          "allowedByRule": "对 {bot} 放行；最接近的匹配规则是 {pattern}。",
+          "allowedNoRule": "对 {bot} 放行；robots.txt 里没有规则命中这个路径。",
+          "disallowed": "被 {pattern} 拦住，对 {bot} 不放行，命中的是 {path}。"
+        },
+        "ssr": {
+          "sufficient": "HTML 本身就有 {chars} 字正文，高于 {floor} 字的门槛。",
+          "clientRendered": "HTML 里只有 {chars} 字正文，脚本却有 {scriptKb} KB。不执行 JavaScript 的读者看到的就是那 {chars} 字。",
+          "thin": "HTML 里只有 {chars} 字正文，低于 {floor} 字的门槛。"
+        },
+        "canonical": {
+          "self": "canonical 指向本页。",
+          "missing": "页面上没有 canonical link 元素。",
+          "other": "canonical 指向 {href}。本工具没有抓取那个网址，因此不对它是否可用下判断。",
+          "unparsable": "canonical 无法解析成网址：{value}"
+        },
+        "llms": {
+          "present": "/llms.txt 存在，返回 {bytes} 字节。本工具不解析它的内容。",
+          "absent": "/llms.txt 返回 {status}。",
+          "unreachable": "/llms.txt 返回 {status}，因此它是否存在未知。"
+        },
+        "leadAnswer": {
+          "notAsked": "没有填目标提问，因此没有可对照开头的东西。",
+          "ok": "前 {window} 字里出现了 {matched}，并给出了结论。",
+          "noTerms": "前 {window} 字里没有出现 {terms}。",
+          "noMarker": "前 {window} 字提到了主题，但没有给出结论。",
+          "neither": "前 {window} 字既没有出现 {terms}，也没有给出结论。"
+        },
+        "structure": {
+          "ok": "{tables} 个带单元格的表格、{lists} 个不是导航的列表。",
+          "none": "没有带单元格的表格，也没有至少 {minItems} 项非链接条目的列表。"
+        },
+        "qualifiers": {
+          "ok": "至少有一处量化的限定条件，例如规模或区间。",
+          "none": "没有找到量化的限定条件；只有年份区间不算。"
+        },
+        "citedData": {
+          "noNumbers": "这一页没有任何数字断言，因此没有需要标来源的东西。",
+          "allSourced": "{total} 处数字断言全部在同一句里带链接或写明来源。",
+          "unsourced": "{total} 处数字断言里有 {unsourced} 处同句内没有来源，第一处是：{sample}"
+        },
+        "faq": {
+          "none": "这一页没有声明 FAQ 结构化数据。",
+          "noneWithBroken": "这一页没有声明 FAQ 结构化数据。另有 {broken} 个 JSON-LD 块无法解析。",
+          "valid": "{count} 组问答，每组都有问题名称与答案正文。",
+          "incomplete": "{total} 组问答里有 {incomplete} 组缺少问题名称或答案正文。",
+          "emptyMainEntity": "声明了 FAQPage，但 mainEntity 是空的。"
+        },
+        "truncated": "这一页只读到了前 {chars} 个字符，因此无法判断它在不在。"
+      },
+      "fixes": {
+        "robots": {
+          "disallowed": "在 robots.txt 里为 {bot} 放行该路径，或去掉命中的 {pattern} 规则。"
+        },
+        "ssr": {
+          "clientRendered": "改成服务端渲染或预渲染。读者需要的内容必须在 JavaScript 执行之前就出现在 HTML 里。",
+          "thin": "把答案写进页面。模型只能引用 HTML 里真实存在的内容。"
+        },
+        "canonical": {
+          "missing": "加一个指向本页的 canonical link 元素。",
+          "other": "如果希望被引用的是这一页，就把 canonical 指向自己；如果另一个网址才是，那就去检查那一页。",
+          "unparsable": "把 canonical 的 href 改成可解析的网址。"
+        },
+        "llms": {
+          "absent": "可选：发布 /llms.txt，把抓取器指向你希望被读到的页面。它不影响这一页能否被抓取。"
+        },
+        "leadAnswer": "把结论提到最前面。前 {window} 字里应当点出主题并直接回答提问。",
+        "structure": {
+          "none": "加一张对比表，或一个至少 {minItems} 项、且不是链接堆的列表。"
+        },
+        "qualifiers": {
+          "none": "把「更适合小团队」换成条件本身，例如「适合 5–20 人的团队」。"
+        },
+        "citedData": {
+          "unsourced": "让每个数字在同一句里带上来源：一个链接，或写明来源与日期。"
+        },
+        "faq": {
+          "incomplete": "给每个 Question 补上 name，给每个 acceptedAnswer 补上 text。",
+          "emptyMainEntity": "把问答放进 mainEntity，或者干脆去掉 FAQPage 声明。"
+        }
+      },
+      "limitsTitle": "这项检查不做什么",
+      "limits": {
+        "noJavaScript": "不执行 JavaScript。正文只在 hydration 之后才出现的页面，会被报成「HTML 里没有正文」——因为不渲染的抓取器看到的就是这样。",
+        "onePage": "只读一个页面，外加该站的 robots.txt 与 llms.txt。不爬全站，也不去抓 canonical 指向的那一页。",
+        "noRanking": "不涉及排名、流量，也不代表任何模型真的引用过这一页。它描述的是页面，不是市场。",
+        "advisoryRows": "训练类抓取器与 /llms.txt 只展示、不计入，因为两者都不决定这一页能否被回答引用。",
+        "heuristicRows": "有两行是模式匹配而不是理解语义：开头直答与限定条件量化。它们带标记，值得去看一眼，但不必照办。",
+        "truncation": "它只读页面的前一段。文档超出这个范围时，凡是要报「不存在」的检查都改说「读不到」。"
+      },
+      "errors": {
+        "invalid_request": "这个请求读不出来。请提交一个网址，可以再附一个目标提问。",
+        "payload_too_large": "请求体过大。",
+        "unsupported_media_type": "请求不是 JSON。",
+        "invalid_url": "这不是本工具可以抓取的公开页面网址。",
+        "rate_limited": "你在过去一小时里已经用了 {limit} 次。请 {minutes} 分钟后再试。",
+        "target_busy": "过去一小时里，所有使用者对这个站点合计已检查 {limit} 次。稍后再试。",
+        "gate_unavailable": "配额存储没有响应，因此工具选择关闭而不是不计量地跑。稍后再试。",
+        "fetch_blocked": "这个网址无法被安全抓取。",
+        "fetch_timeout": "页面在 {seconds} 秒内没有响应。",
+        "fetch_failed": "页面抓取失败。",
+        "not_html": "这个网址返回的不是 HTML 文档。",
+        "page_not_ok": "这个网址没有返回 200，暂时没有可检查的页面。",
+        "internal_error": "工具内部出错了。什么都没写下，可以直接重跑。",
+        "network": "请求没有到达工具。检查网络后重试。",
+        "already_running": "你上一次检查还在跑。等它结束，或刷新本页。",
+        "rate_limited_anonymous": "你在过去一小时里已经用了 {limit} 次。请 {minutes} 分钟后再试，或登录后每小时 {signedInMax} 次。",
+        "not_utf8": "这一页声明的字符集本工具不解码；硬读会得到一堆乱码而不是报告。"
+      },
+      "faq": {
+        "title": "关于这项检查",
+        "items": [
+          {
+            "q": "全部通过就代表模型会引用这一页吗？",
+            "a": "不代表。这些行说的是访问与形态：抓取器是否被放行、正文是否在 HTML 里、一条结论能否被抽出来。模型是否真的用你的页面回答，取决于被问的问题以及网上还有什么，本工具从不声称能替你判断这件事。"
+          },
+          {
+            "q": "为什么 GPTBot 只展示不计分？",
+            "a": "GPTBot 与 Google-Extended 管的是训练语料采集。真正为了回答而去抓取页面的是 OAI-SearchBot、ChatGPT-User、PerplexityBot 与 ClaudeBot，计入结论的就是这四行。禁掉 GPTBot 不会让你无法被引用。"
+          },
+          {
+            "q": "为什么没有 robots.txt 反而算通过？",
+            "a": "RFC 9309 规定：robots.txt 不可得（404）等于完全放行，所以没有这个文件的站点并没有拦谁。robots.txt 读不到（例如 500）是另一回事——该站的规则未知，那一行会如实写「读不到」，而不是猜。"
+          },
+          {
+            "q": "页面在我浏览器里正常，为什么 HTML 那行没通过？",
+            "a": "你的浏览器会执行 JavaScript，本检查不会，多数抓取器第一次取页面时也不会。如果正文只在 hydration 之后才存在，这一行告诉你的正是「不渲染的读者会收到什么」。"
+          }
+        ]
+      },
+      "related": {
+        "title": "接下来去哪",
+        "intro": "这项检查只回答关于一个页面的一个问题，其余的在别处。",
+        "items": [
+          {
+            "href": "/tools/on-page-seo-check",
+            "name": "On-Page SEO 检查器",
+            "blurb": "同一个页面，换成搜索视角：你的关键词出现在标题、小标题和开头正文的哪些位置。"
+          },
+          {
+            "href": "/tools/internal-link-audit",
+            "name": "内链审计",
+            "blurb": "页面周围的站点：点击深度、孤岛页候选，以及指向它的那些链接。"
+          }
+        ]
+      }
+    },
+    "geoKnowledgeBase": {
+      "eyebrow": "GEO 工具",
+      "title": "GEO 知识库",
+      "intro": "模型要认出你，需要知道的那些事：你被叫什么、你在哪个品类里、你卖给谁、以及哪些事实你能指出来源。冻结之后，可见性体检要问的问题就由它确定性地推导出来，每次都一样。",
+      "signIn": {
+        "title": "登录后才能建立知识库",
+        "body": "这一件会存进你的账号，因为之后的运行要指向某个冻结版本。",
+        "action": "登录"
+      },
+      "site": {
+        "title": "站点",
+        "urlLabel": "站点网址",
+        "urlPlaceholder": "https://example.com",
+        "urlHelp": "一个知识库对应一个站点。它同时也是「被提及」要链到哪个域名才算「被引用」的那个域名。",
+        "start": "建立知识库",
+        "switch": "切换站点",
+        "importTitle": "从网站档案预填",
+        "importBody": "把该站点已确认档案里的产品名、品类、竞品与买家复制过来。是复制不是联动：之后各改各的，互不影响。",
+        "importAction": "从档案预填",
+        "importedFrom": "预填自档案第 {revision} 版，此后在这里改过。",
+        "importUnavailable": "这个站点还没有已确认的网站档案，暂时没有可预填的内容。"
+      },
+      "brand": {
+        "title": "品牌",
+        "officialNameLabel": "模型会用的名字",
+        "officialNamePlaceholder": "Acme Analytics",
+        "officialNameHelp": "不是域名。回答里出现这个字符串，我们才算它提及了你。",
+        "aliasesLabel": "你还被叫做",
+        "aliasesHelp": "拼写变体、简称、旧名。按整词匹配，所以短于三个字符的名字用不了。",
+        "categoryLabel": "品类词",
+        "categoryHelp": "买家会怎么称呼你这类东西，而不是你怎么介绍自己。第一个会用来造问题，请把最清楚的放前面。",
+        "categoryWarning": "只填一个通用名词（「工具」「软件」）会造出没有主语的问句，而实测表明这类问句从不触发联网检索。要点名：「项目管理」「开票」。",
+        "countryLabel": "市场",
+        "languageLabel": "提问语言",
+        "languageNote": "目前只有英文。已标定的问句措辞是在英文下测出来的；换语言等于用同样的钱去问没人测过的措辞。"
+      },
+      "roles": {
+        "title": "你卖给谁",
+        "intro": "每个角色会展开成自己的问题。把一个角色写准，胜过编三个出来。",
+        "add": "加一个角色",
+        "remove": "删除",
+        "labelLabel": "角色",
+        "labelPlaceholder": "代理公司老板",
+        "segmentLabel": "细分",
+        "segmentPlaceholder": "5–20 人的代理公司",
+        "painLabel": "他们哪里出问题",
+        "criteriaLabel": "他们按什么判断",
+        "vocabularyLabel": "他们会用的词",
+        "empty": "还没有角色。关于问题和关于选型的两类提问都需要角色，缺了它问题集会更小。"
+      },
+      "competitors": {
+        "title": "竞品",
+        "intro": "域名不是名字。在「模型会用的那个名字」被确认之前，竞品会被保留但不进入份额计算，报告里会写明是哪几个。",
+        "add": "加一个竞品",
+        "remove": "删除",
+        "domainLabel": "域名",
+        "brandLabel": "模型会用的名字",
+        "confirmLabel": "已确认",
+        "unconfirmed": "未确认。展示，但不计入。",
+        "empty": "还没有竞品。对比类问题至少需要一个已确认的名字。"
+      },
+      "facts": {
+        "title": "已核实事实",
+        "intro": "只放你能指出网址的事实。指不出来源的，就留空并写明原因；Brief 生成器会写「未公开」，而不是编一个数。",
+        "add": "加一条事实",
+        "remove": "删除",
+        "keyLabel": "事实",
+        "keyPlaceholder": "起步价",
+        "valueLabel": "取值",
+        "reasonLabel": "为什么是空的",
+        "sourceLabel": "来源网址",
+        "observedLabel": "核对日期",
+        "reasons": {
+          "notPublished": "哪里都没公开",
+          "fetchFailed": "页面读不到",
+          "lowConfidence": "找到了，但不确定",
+          "conflicting": "不同来源对不上"
+        },
+        "empty": "还没有事实。这一节是选填的，只有在生成 Brief 时才会用到。"
+      },
+      "draft": {
+        "save": "保存草稿",
+        "saving": "保存中…",
+        "saved": "已于 {time} 保存",
+        "unsaved": "有未保存的修改",
+        "conflict": "你编辑期间，别处保存过这个知识库。重新载入可以看到那一版；你输入的内容仍在表单里。",
+        "reload": "重新载入"
+      },
+      "freeze": {
+        "title": "冻结一个版本",
+        "intro": "冻结版本不可修改。可见性体检对着某一个版本跑，报告因此永远能说清它问了什么、为什么问。",
+        "action": "冻结当前内容",
+        "freezing": "冻结中…",
+        "blocked": "还不能冻结：",
+        "blockers": {
+          "official_name_missing": "填上模型会用的那个名字。",
+          "aliases_missing": "至少再填一个名字，哪怕只是简称。",
+          "category_terms_missing": "至少填一个品类词。",
+          "role_missing": "至少加一个角色。",
+          "no_confirmed_competitor": "至少确认一个竞品的名字。"
+        },
+        "current": "当前版本：第 {revision} 版，冻结于 {time}",
+        "questions": "共 {count} 条问题，其中 {retrieval} 条用的是已标定的检索措辞",
+        "reused": "自上次冻结以来没有变化，所以仍是第 {revision} 版。",
+        "none": "还没有冻结过任何版本。",
+        "preview": "预览这些问题",
+        "hidePreview": "收起问题",
+        "cost": "这套问题每题采样 {samples} 次，一轮是 {calls} 次调用，约 {cost}。"
+      },
+      "questions": {
+        "title": "这个知识库会产生的问题",
+        "layer": "阶段",
+        "mode": "模式",
+        "modes": {
+          "retrieval": "已标定会检索",
+          "demand": "买家会这么问"
+        },
+        "modeNote": "只有已标定的措辞带引用率。其余问题问的是「有没有被提到」，它们的引用数只报数、不做分母。",
+        "layers": {
+          "problem": "问题",
+          "discovery": "发现",
+          "comparison": "对比",
+          "evaluation": "选型",
+          "branded": "品牌词"
+        },
+        "uncalibrated": "这句是在这里拼出来的，不来自已测量的模板库。"
+      },
+      "errors": {
+        "auth_required": "登录后才能建立知识库。",
+        "auth_unavailable": "登录服务暂时没有响应，稍后再试。",
+        "cross_origin": "这个请求不是从本页发出的。",
+        "invalid_request": "这个请求读不出来。",
+        "payload_too_large": "这个知识库太大，存不下。",
+        "unsupported_media_type": "请求不是 JSON。",
+        "invalid_url": "这不是本工具可以使用的站点网址。",
+        "invalid_payload": "表单里有内容不可用：{reason}",
+        "conflict": "你编辑期间这个知识库变过了。",
+        "hash_mismatch": "存下来的内容与发出的对不上，因此什么都没写。",
+        "not_found": "这个账号下没有这个知识库。",
+        "no_draft": "还没有可冻结的内容。",
+        "store_unavailable": "存储没有响应，因此什么都没写。稍后再试。",
+        "network": "请求没有到达工具。检查网络后重试。"
+      },
+      "limitsTitle": "这件工具不做什么",
+      "limits": {
+        "notSynced": "它不与网站档案保持同步。预填是一次性的复制。",
+        "noGuess": "它不替你补事实。留空并写明原因才是诚实状态，Brief 生成器依赖这一点。",
+        "noGsc": "它不读 Search Console。角色要你自己写，因为一堆查询词不等于一个人。",
+        "englishOnly": "它产出英文问题。能触达联网检索的措辞是在英文下测出来的，翻译等于把这份测量丢掉。"
+      },
+      "faq": {
+        "title": "关于知识库",
+        "items": [
+          {
+            "q": "冻结为什么重要？",
+            "a": "可见性运行指向某个冻结版本。如果知识库能在它脚下变化，两次运行就不可比，报告也说不清自己是按哪些名字匹配的。冻结让「同一套问题再问一次」成为一句真话。"
+          },
+          {
+            "q": "问题集为什么是推导出来的，不是手写的？",
+            "a": "能触达联网检索的措辞是花钱测出来的：有的问法会搜索，有的只凭记忆回答，改几个字就翻转。从已标定模板推导，引用数才有意义。两条品牌词问题是例外，会被标成未测量。"
+          },
+          {
+            "q": "竞品的名字为什么要和域名分开确认？",
+            "a": "模型写的是「Linear」，不是「linear.app」。算提及要用名字，判断引用指向谁要用域名。未确认的竞品会留在列表里、不进份额计算，报告会点名说它被排除了。"
           }
         ]
       }
