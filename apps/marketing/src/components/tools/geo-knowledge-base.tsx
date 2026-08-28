@@ -4,18 +4,35 @@
 // @output -- an editor, a freeze control that states what still blocks it, and the questions a frozen version produces
 // @pos    -- the only client surface of /tools/geo-knowledge-base; it edits and renders, it never decides
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 
 import {
   GEO_KB_LIMITS,
   GEO_KB_SCHEMA_VERSION,
+  geoKbBlockers,
   type GeoKbBlocker,
   type GeoKbCompetitor,
   type GeoKbFact,
   type GeoKbPayload,
+  type GeoKbRejection,
   type GeoKbRole,
 } from "../../lib/geo-tools/kb-contract.ts";
+import {
+  geoKbRowIssues,
+  geoKbSubmission,
+  hasGeoKbRowIssues,
+  type GeoKbRowIssues,
+} from "./geo-kb-editor-payload.ts";
+import {
+  isGeoKbBlockers,
+  isGeoKbFreezeResponse,
+  isGeoKbImportResponse,
+  isGeoKbSaveResponse,
+  isGeoKbView,
+  type GeoKbQuestionPreview,
+  type GeoKbView,
+} from "./geo-kb-wire.ts";
 
 const ENDPOINTS = {
   load: "/api/tools/geo-knowledge-base/load",
@@ -34,39 +51,98 @@ const FACT_REASONS = [
 /** Two of the markets the sampling provider is calibrated for. */
 const COUNTRIES = ["US", "GB"] as const;
 
-interface FrozenSummary {
-  readonly snapshotId: string;
-  readonly revision: number;
-  readonly frozenAt: string;
-  readonly contentHash: string;
-  readonly questionCount: number;
-  readonly retrievalCount: number;
-}
-
-interface QuestionPreview {
-  readonly id: string;
-  readonly text: string;
-  readonly layer: string;
-  readonly mode: "retrieval" | "demand";
-  readonly calibrated: boolean;
-}
-
-interface KbView {
-  readonly kbId: string;
-  readonly origin: string;
-  readonly host: string;
-  readonly draftVersion: number;
-  readonly payload: GeoKbPayload;
-  readonly frozen: FrozenSummary | null;
-  readonly importAvailable: boolean;
-}
-
 type Status =
   | { readonly kind: "idle" }
   | { readonly kind: "busy" }
-  | { readonly kind: "error"; readonly code: string; readonly reason?: string }
+  | {
+      readonly kind: "error";
+      readonly code: string;
+      readonly reason?: string;
+      /** The server's own list, when it refused a freeze with one. */
+      readonly blockers?: readonly GeoKbBlocker[];
+    }
   | { readonly kind: "saved"; readonly at: string }
   | { readonly kind: "frozen"; readonly revision: number; readonly reused: boolean };
+
+/**
+ * Every code this page has a sentence for.
+ *
+ * `t()` renders an unknown key as its own path, so a code from outside this set
+ * would print `errors.something` where the explanation belongs. That is how
+ * `not_ready` reached production: it was unreachable by accident, and the
+ * accident ended.
+ */
+const ERROR_CODES: ReadonlySet<string> = new Set([
+  "auth_required",
+  "auth_unavailable",
+  "cross_origin",
+  "invalid_request",
+  "payload_too_large",
+  "unsupported_media_type",
+  "invalid_url",
+  "invalid_payload",
+  "conflict",
+  "conflict_unknown",
+  "hash_mismatch",
+  "not_found",
+  "no_draft",
+  "not_ready",
+  "store_unavailable",
+  "network",
+  "bad_response",
+  "schema_mismatch",
+  "form_invalid",
+]);
+
+/** The write contract's rejection codes, each with a sentence of its own. */
+const REJECTION_REASONS: ReadonlySet<string> = new Set<GeoKbRejection>([
+  "not_an_object",
+  "schema_version",
+  "target_url",
+  "official_name",
+  "aliases",
+  "category_terms",
+  "market",
+  "roles",
+  "competitors",
+  "facts",
+  "imported_from",
+  "too_large",
+  "control_characters",
+]);
+
+const NO_ROW_ISSUES: GeoKbRowIssues = {
+  competitors: new Map(),
+  facts: new Map(),
+};
+
+type Translate = (
+  key: string,
+  values?: Readonly<Record<string, string | number>>,
+) => string;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * One error, in words, or the one sentence that admits we have none.
+ *
+ * `reason` used to be printed raw, so a refused save put the identifier
+ * `competitors` on the page - the name of a field in a language the visitor
+ * never chose.
+ */
+function errorMessage(t: Translate, status: Extract<Status, { kind: "error" }>) {
+  if (status.code === "invalid_payload") {
+    const reason = status.reason ?? "";
+    return REJECTION_REASONS.has(reason)
+      ? t("errors.invalid_payload", { reason: t(`errors.reasons.${reason}`) })
+      : t("errors.unknown");
+  }
+  return ERROR_CODES.has(status.code)
+    ? t(`errors.${status.code}`)
+    : t("errors.unknown");
+}
 
 function ChipsField({
   label,
@@ -173,15 +249,49 @@ export function GeoKnowledgeBase({
 }) {
   const t = useTranslations("tools.geoKnowledgeBase");
   const [siteUrl, setSiteUrl] = useState("");
-  const [view, setView] = useState<KbView | null>(null);
+  const [view, setView] = useState<GeoKbView | null>(null);
   const [payload, setPayload] = useState<GeoKbPayload | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
-  const [blockers, setBlockers] = useState<readonly GeoKbBlocker[]>([]);
-  const [questions, setQuestions] = useState<readonly QuestionPreview[] | null>(
-    null,
-  );
+  const [questions, setQuestions] = useState<
+    readonly GeoKbQuestionPreview[] | null
+  >(null);
   const [showQuestions, setShowQuestions] = useState(false);
   const [dirty, setDirty] = useState(false);
+  /**
+   * Whether a save has been attempted since this knowledge base was loaded.
+   *
+   * Row problems appear after the visitor asks to save, not while they are
+   * still typing the row: a half-written fact is not a mistake yet.
+   */
+  const [showRowIssues, setShowRowIssues] = useState(false);
+
+  /**
+   * What actually goes on the wire, and what the freeze gate is computed from.
+   *
+   * Trimmed and with untouched rows dropped. Both are derived rather than
+   * stored, so neither can be left over from the previous site.
+   */
+  const submission = useMemo(
+    () => (payload === null ? null : geoKbSubmission(payload)),
+    [payload],
+  );
+  const rowIssues = useMemo(
+    () => (payload === null ? NO_ROW_ISSUES : geoKbRowIssues(payload)),
+    [payload],
+  );
+  /**
+   * One judgement of what still blocks a freeze, computed by the function the
+   * server freezes with.
+   *
+   * This page used to keep its own copy of the list. The two agreed by
+   * coincidence and stopped agreeing the moment a sixth blocker was added
+   * server-side: the button stayed live, the freeze came back 422, and the code
+   * had no sentence on this side.
+   */
+  const blockers = useMemo(
+    () => (submission === null ? [] : geoKbBlockers(submission)),
+    [submission],
+  );
 
   const post = useCallback(
     async (
@@ -189,32 +299,86 @@ export function GeoKnowledgeBase({
       body: unknown,
     ): Promise<
       | { readonly ok: true; readonly data: unknown }
-      | { readonly ok: false; readonly code: string; readonly reason?: string; readonly blockers?: readonly GeoKbBlocker[] }
+      | {
+          readonly ok: false;
+          readonly code: string;
+          readonly reason?: string;
+          readonly blockers?: readonly GeoKbBlocker[];
+          /** The version the server says is current, when it named one. */
+          readonly draftVersion?: number;
+        }
     > => {
+      let response: Response;
       try {
-        const response = await fetch(url, {
+        response = await fetch(url, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
         });
-        const parsed = (await response.json()) as {
-          readonly data?: unknown;
-          readonly error?: { readonly code?: string };
-          readonly reason?: string;
-          readonly blockers?: readonly GeoKbBlocker[];
-        };
-        if (response.ok && parsed.data !== undefined) {
-          return { ok: true, data: parsed.data };
-        }
-        return {
-          ok: false,
-          code: parsed.error?.code ?? "network",
-          ...(parsed.reason === undefined ? {} : { reason: parsed.reason }),
-          ...(parsed.blockers === undefined ? {} : { blockers: parsed.blockers }),
-        };
       } catch {
         return { ok: false, code: "network" };
       }
+      let parsed: unknown;
+      try {
+        parsed = await response.json();
+      } catch {
+        // A gateway timeout answers in HTML. Folded into `network` it reads as
+        // "the request did not reach the tool", which sends the visitor to
+        // check a connection that is working - and hides that a 502 may have
+        // arrived after the write, not before it.
+        return { ok: false, code: "bad_response" };
+      }
+      const record = isRecord(parsed) ? parsed : {};
+      if (response.ok) {
+        return record["data"] === undefined
+          ? { ok: false, code: "schema_mismatch" }
+          : { ok: true, data: record["data"] };
+      }
+      const error = record["error"];
+      const code =
+        isRecord(error) && typeof error["code"] === "string"
+          ? error["code"]
+          : "schema_mismatch";
+      const reason =
+        typeof record["reason"] === "string" ? record["reason"] : undefined;
+      const blockers = isGeoKbBlockers(record["blockers"])
+        ? record["blockers"]
+        : undefined;
+      const draftVersion =
+        typeof record["draftVersion"] === "number" &&
+        Number.isSafeInteger(record["draftVersion"])
+          ? record["draftVersion"]
+          : undefined;
+      return {
+        ok: false,
+        code,
+        ...(reason === undefined ? {} : { reason }),
+        ...(blockers === undefined ? {} : { blockers }),
+        ...(draftVersion === undefined ? {} : { draftVersion }),
+      };
+    },
+    [],
+  );
+
+  /**
+   * Take the version the server says is current, so the next attempt can win.
+   *
+   * Without this one line a single 409 is permanent: the page keeps sending the
+   * version it loaded with, the server keeps refusing it, and the only control
+   * that refreshes the number is "switch site", which throws away every unsaved
+   * edit. The edits stay exactly where they are; only the version moves.
+   *
+   * A negative marker is not a version. The store sends one when its RPC did
+   * not report a current draft, and sending it back is a 400, so that case gets
+   * its own sentence rather than a second identical failure.
+   */
+  const adoptConflictVersion = useCallback(
+    (draftVersion: number | undefined): "adopted" | "unknown" => {
+      if (draftVersion === undefined || draftVersion < 0) return "unknown";
+      setView((current) =>
+        current === null ? current : { ...current, draftVersion },
+      );
+      return "adopted";
     },
     [],
   );
@@ -228,24 +392,49 @@ export function GeoKnowledgeBase({
       setStatus({ kind: "error", code: result.code });
       return;
     }
-    const next = result.data as KbView;
+    if (!isGeoKbView(result.data)) {
+      setStatus({ kind: "error", code: "schema_mismatch" });
+      return;
+    }
+    const next = result.data;
+    // Everything reset here belongs to a site rather than to the page. A value
+    // carried across meant the previous site's blockers stayed on screen with
+    // the freeze button live beside them; the list is derived now, and the rest
+    // of the set is reset together because that is how it goes wrong.
     setView(next);
     setPayload(next.payload);
     setQuestions(null);
     setShowQuestions(false);
+    setShowRowIssues(false);
     setDirty(false);
     setStatus({ kind: "idle" });
   }, [post, siteUrl]);
 
   const save = useCallback(async () => {
-    if (view === null || payload === null) return;
+    if (view === null || submission === null) return;
+    if (hasGeoKbRowIssues(rowIssues)) {
+      // Nothing is sent, so nothing else in this save is lost. The rows the
+      // write contract would refuse are marked where they are, instead of the
+      // whole payload coming back 400 with one field name on it.
+      setShowRowIssues(true);
+      setStatus({ kind: "error", code: "form_invalid" });
+      return;
+    }
     setStatus({ kind: "busy" });
     const result = await post(ENDPOINTS.draft, {
       kbId: view.kbId,
-      payload,
+      payload: submission,
       baseVersion: view.draftVersion,
     });
     if (!result.ok) {
+      if (result.code === "conflict") {
+        const outcome = adoptConflictVersion(result.draftVersion);
+        setStatus({
+          kind: "error",
+          code: outcome === "adopted" ? "conflict" : "conflict_unknown",
+        });
+        return;
+      }
       setStatus({
         kind: "error",
         code: result.code,
@@ -253,16 +442,17 @@ export function GeoKnowledgeBase({
       });
       return;
     }
-    const data = result.data as {
-      readonly draftVersion: number;
-      readonly updatedAt: string;
-      readonly blockers: readonly GeoKbBlocker[];
-    };
-    setView({ ...view, draftVersion: data.draftVersion, payload });
-    setBlockers(data.blockers);
+    if (!isGeoKbSaveResponse(result.data)) {
+      setStatus({ kind: "error", code: "schema_mismatch" });
+      return;
+    }
+    const data = result.data;
+    // The saved copy is what was sent, not what is in the boxes: an untouched
+    // row is still on screen and is deliberately not in the draft.
+    setView({ ...view, draftVersion: data.draftVersion, payload: submission });
     setDirty(false);
     setStatus({ kind: "saved", at: data.updatedAt });
-  }, [payload, post, view]);
+  }, [adoptConflictVersion, post, rowIssues, submission, view]);
 
   const freeze = useCallback(async () => {
     if (view === null) return;
@@ -272,18 +462,31 @@ export function GeoKnowledgeBase({
       baseVersion: view.draftVersion,
     });
     if (!result.ok) {
-      if (result.blockers !== undefined) setBlockers(result.blockers);
+      if (result.code === "conflict") {
+        const outcome = adoptConflictVersion(result.draftVersion);
+        // Someone else's draft is now the stored one, so freezing next would
+        // freeze their text under this page's heading. Marking the editor
+        // unsaved forces the save that makes the two the same thing again.
+        setDirty(true);
+        setStatus({
+          kind: "error",
+          code: outcome === "adopted" ? "conflict" : "conflict_unknown",
+        });
+        return;
+      }
       setStatus({
         kind: "error",
         code: result.code,
         ...(result.reason === undefined ? {} : { reason: result.reason }),
+        ...(result.blockers === undefined ? {} : { blockers: result.blockers }),
       });
       return;
     }
-    const data = result.data as FrozenSummary & {
-      readonly reusedExisting: boolean;
-      readonly questions: readonly QuestionPreview[];
-    };
+    if (!isGeoKbFreezeResponse(result.data)) {
+      setStatus({ kind: "error", code: "schema_mismatch" });
+      return;
+    }
+    const data = result.data;
     setView({
       ...view,
       frozen: {
@@ -301,7 +504,7 @@ export function GeoKnowledgeBase({
       revision: data.revision,
       reused: data.reusedExisting,
     });
-  }, [post, view]);
+  }, [adoptConflictVersion, post, view]);
 
   const prefill = useCallback(async () => {
     if (view === null) return;
@@ -311,8 +514,11 @@ export function GeoKnowledgeBase({
       setStatus({ kind: "error", code: result.code });
       return;
     }
-    const data = result.data as { readonly payload: GeoKbPayload };
-    setPayload(data.payload);
+    if (!isGeoKbImportResponse(result.data)) {
+      setStatus({ kind: "error", code: "schema_mismatch" });
+      return;
+    }
+    setPayload(result.data.payload);
     setDirty(true);
     setStatus({ kind: "idle" });
   }, [post, view]);
@@ -324,29 +530,40 @@ export function GeoKnowledgeBase({
     setDirty(true);
   }, []);
 
-  useEffect(() => {
-    if (payload === null) return;
-    // Blockers are recomputed locally so the freeze control explains itself
-    // before the request rather than after it.
-    const next: GeoKbBlocker[] = [];
-    if (payload.officialName.trim().length === 0) {
-      next.push("official_name_missing");
-    }
-    if (payload.aliases.length === 0) next.push("aliases_missing");
-    if (payload.categoryTerms.length === 0) next.push("category_terms_missing");
-    if (payload.roles.length === 0) next.push("role_missing");
-    if (!payload.competitors.some((entry) => entry.confirmed)) {
-      next.push("no_confirmed_competitor");
-    }
-    setBlockers(next);
-  }, [payload]);
-
   const genericCategory = useMemo(() => {
     const first = payload?.categoryTerms[0]?.toLowerCase().trim() ?? "";
     return ["tool", "tools", "software", "platform", "platforms", "app", "apps"].includes(
       first,
     );
   }, [payload]);
+
+  /**
+   * One error line, and the list that belongs to it.
+   *
+   * The blockers arrive with a refused freeze rather than being read off this
+   * page's own state, so a 422 states which items the server was looking at
+   * even if this page would have computed a different list.
+   */
+  const errorLine =
+    status.kind !== "error" ? null : (
+      <div className="mt-4 grid gap-2" role="alert">
+        <p className="text-[13.5px] text-brand-error">
+          {errorMessage(t, status)}
+        </p>
+        {status.blockers === undefined || status.blockers.length === 0 ? null : (
+          <ul className="grid gap-1.5">
+            {status.blockers.map((blocker) => (
+              <li
+                className="text-[13px] text-text-dark-secondary"
+                key={blocker}
+              >
+                {t(`freeze.blockers.${blocker}`)}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
 
   if (!signedIn) {
     return (
@@ -397,17 +614,21 @@ export function GeoKnowledgeBase({
             {view === null ? t("site.start") : t("site.switch")}
           </button>
         </div>
-        {status.kind === "error" ? (
-          <p className="mt-4 text-[13.5px] text-brand-error" role="alert">
-            {status.reason === undefined
-              ? t(`errors.${status.code}`)
-              : t("errors.invalid_payload", { reason: status.reason })}
+        {view === null ? null : (
+          <p className="mt-4 text-[13px] leading-[1.7] text-text-dark-secondary">
+            {t("site.loaded", { host: view.host, origin: view.origin })}
           </p>
-        ) : null}
+        )}
+        {errorLine}
       </section>
 
       {view !== null && payload !== null ? (
-        <>
+        // Keyed on the knowledge base, so switching sites remounts the editor.
+        // The state that belongs to a site is not all held here: `ChipsField`
+        // keeps the half-typed chip in the box, and without this the alias
+        // someone was in the middle of writing for one site reappears under
+        // the next one.
+        <Fragment key={view.kbId}>
           <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
             <h2 className="text-[19px] text-text-dark-primary">
               {t("site.importTitle")}
@@ -650,10 +871,20 @@ export function GeoKnowledgeBase({
                       position === index ? { ...entry, ...next } : entry,
                     ),
                   });
+                const issue = showRowIssues
+                  ? rowIssues.competitors.get(index)
+                  : undefined;
                 return (
                   <div
-                    className="grid gap-3 rounded-lg border border-brand-border-card p-4 md:grid-cols-[1fr_1fr_auto_auto] md:items-end"
-                    key={`${competitor.domain}-${competitor.brandName}-${String(index)}`}
+                    className={`grid gap-3 rounded-lg border p-4 md:grid-cols-[1fr_1fr_auto_auto] md:items-end ${
+                      issue === undefined
+                        ? "border-brand-border-card"
+                        : "border-brand-error"
+                    }`}
+                    // The position, not the contents. Keyed on the text being
+                    // typed, every keystroke unmounted the row and took the
+                    // cursor out of the box with it.
+                    key={`competitor-${String(index)}`}
                   >
                     <TextField
                       label={t("competitors.domainLabel")}
@@ -662,7 +893,17 @@ export function GeoKnowledgeBase({
                     />
                     <TextField
                       label={t("competitors.brandLabel")}
-                      onChange={(value) => patch({ brandName: value })}
+                      onChange={(value) =>
+                        patch(
+                          value.trim().length === 0
+                            ? // The confirmation is about the name. Clearing
+                              // the name has to clear it, or the row travels as
+                              // "confirmed, unnamed" and the contract refuses
+                              // the whole payload over it.
+                              { brandName: value, confirmed: false }
+                            : { brandName: value },
+                        )
+                      }
                       value={competitor.brandName}
                     />
                     <label className="flex items-center gap-2 text-[13px] text-text-dark-secondary">
@@ -692,6 +933,14 @@ export function GeoKnowledgeBase({
                     {competitor.confirmed ? null : (
                       <p className="text-[12.5px] text-text-dark-secondary md:col-span-4">
                         {t("competitors.unconfirmed")}
+                      </p>
+                    )}
+                    {issue === undefined ? null : (
+                      <p
+                        className="text-[12.5px] text-brand-error md:col-span-4"
+                        role="alert"
+                      >
+                        {t(`competitors.issues.${issue}`)}
                       </p>
                     )}
                   </div>
@@ -735,10 +984,19 @@ export function GeoKnowledgeBase({
                       position === index ? { ...entry, ...next } : entry,
                     ),
                   });
+                const issue = showRowIssues
+                  ? rowIssues.facts.get(index)
+                  : undefined;
                 return (
                   <div
-                    className="grid gap-3 rounded-lg border border-brand-border-card p-4 md:grid-cols-2"
-                    key={`${fact.key}-${String(index)}`}
+                    className={`grid gap-3 rounded-lg border p-4 md:grid-cols-2 ${
+                      issue === undefined
+                        ? "border-brand-border-card"
+                        : "border-brand-error"
+                    }`}
+                    // The position, not the fact's name: keyed on the name, the
+                    // row was replaced on every keystroke.
+                    key={`fact-${String(index)}`}
                   >
                     <TextField
                       label={t("facts.keyLabel")}
@@ -770,6 +1028,7 @@ export function GeoKnowledgeBase({
                           {t("facts.reasonLabel")}
                         </label>
                         <select
+                          aria-invalid={issue === "reasonMissing"}
                           className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
                           id={`kb-fact-reason-${String(index)}`}
                           onChange={(event) =>
@@ -779,15 +1038,33 @@ export function GeoKnowledgeBase({
                           }
                           value={fact.reason}
                         >
-                          <option value="">-</option>
+                          {/*
+                            Named rather than "-": the empty option is the
+                            state the write contract refuses, and a dash does
+                            not say that choosing one is required.
+                          */}
+                          <option value="">
+                            {t("facts.reasonPlaceholder")}
+                          </option>
                           {FACT_REASONS.map((reason) => (
                             <option key={reason} value={reason}>
                               {t(`facts.reasons.${reason}`)}
                             </option>
                           ))}
                         </select>
+                        <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
+                          {t("facts.reasonHelp")}
+                        </p>
                       </div>
                     ) : null}
+                    {issue === undefined ? null : (
+                      <p
+                        className="text-[12.5px] text-brand-error md:col-span-2"
+                        role="alert"
+                      >
+                        {t(`facts.issues.${issue}`)}
+                      </p>
+                    )}
                     <button
                       className="justify-self-start text-[13px] text-text-dark-secondary underline"
                       onClick={() =>
@@ -894,13 +1171,7 @@ export function GeoKnowledgeBase({
               </div>
             ) : null}
 
-            {status.kind === "error" ? (
-              <p className="mt-4 text-[13.5px] text-brand-error" role="alert">
-                {status.reason === undefined
-                  ? t(`errors.${status.code}`)
-                  : t("errors.invalid_payload", { reason: status.reason })}
-              </p>
-            ) : null}
+            {errorLine}
 
             <div className="mt-5 grid gap-2 text-[13px] text-text-dark-secondary">
               {view.frozen === null ? (
@@ -967,7 +1238,7 @@ export function GeoKnowledgeBase({
               </div>
             ) : null}
           </section>
-        </>
+        </Fragment>
       ) : null}
 
       <p className="sr-only">{GEO_KB_SCHEMA_VERSION}</p>

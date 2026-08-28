@@ -4327,7 +4327,10 @@
         "fetchedAt": "检查时间 {time}",
         "finalUrl": "实际读取自 {url}",
         "redirected": "你提交的网址跳转到了这里，下面每一行说的都是实际返回的那一页。",
-        "textChars": "不执行 JavaScript 时，HTML 里可见正文 {chars} 字"
+        "textChars": "不执行 JavaScript 时，HTML 里可见正文 {chars} 字",
+        "question": "目标提问：{question}",
+        "questionTerms": "用来对照开头的词：{terms}",
+        "questionNoTerms": "这个提问里全是常用词，取不出可以对照开头的实词，因此那一行标为不适用。"
       },
       "sections": {
         "readable": "抓取器能不能读到",
@@ -4394,6 +4397,7 @@
         },
         "leadAnswer": {
           "notAsked": "没有填目标提问，因此没有可对照开头的东西。",
+          "noComparableTerms": "「{question}」里全是常用词，没有可以拿去对照开头的实词。换成读者真会搜的词来问——产品名、品类、地点。",
           "ok": "前 {window} 字里出现了 {matched}，并给出了结论。",
           "noTerms": "前 {window} 字里没有出现 {terms}。",
           "noMarker": "前 {window} 字提到了主题，但没有给出结论。",
@@ -4538,7 +4542,8 @@
         "importBody": "把该站点已确认档案里的产品名、品类、竞品与买家复制过来。是复制不是联动：之后各改各的，互不影响。",
         "importAction": "从档案预填",
         "importedFrom": "预填自档案第 {revision} 版，此后在这里改过。",
-        "importUnavailable": "这个站点还没有已确认的网站档案，暂时没有可预填的内容。"
+        "importUnavailable": "这个站点还没有已确认的网站档案，暂时没有可预填的内容。",
+        "loaded": "已载入 {host}，存放在 {origin} 名下。一个站点只有一份知识库，www 和裸域名共用这一份——如果你以为会是另一条记录，原因在这里。"
       },
       "brand": {
         "title": "品牌",
@@ -4577,7 +4582,11 @@
         "brandLabel": "模型会用的名字",
         "confirmLabel": "已确认",
         "unconfirmed": "未确认。展示，但不计入。",
-        "empty": "还没有竞品。对比类问题至少需要一个已确认的名字。"
+        "empty": "还没有竞品。对比类问题至少需要一个已确认的名字。",
+        "issues": {
+          "duplicate": "这个竞品在上面已经有一行了。删掉其中一行。",
+          "confirmNeedsName": "勾了「已确认」，名字却是空的。填上模型会用的那个名字，或者取消勾选。"
+        }
       },
       "facts": {
         "title": "已核实事实",
@@ -4588,6 +4597,8 @@
         "keyPlaceholder": "起步价",
         "valueLabel": "取值",
         "reasonLabel": "为什么是空的",
+        "reasonPlaceholder": "选一个原因（必填）",
+        "reasonHelp": "取值为空时必填。Brief 生成器会拿它来代替那个数字，所以不能不说。",
         "sourceLabel": "来源网址",
         "observedLabel": "核对日期",
         "reasons": {
@@ -4596,7 +4607,13 @@
           "lowConfidence": "找到了，但不确定",
           "conflicting": "不同来源对不上"
         },
-        "empty": "还没有事实。这一节是选填的，只有在生成 Brief 时才会用到。"
+        "empty": "还没有事实。这一节是选填的，只有在生成 Brief 时才会用到。",
+        "issues": {
+          "duplicate": "已经有另一条事实用了这个名字。改掉其中一行。",
+          "keyMissing": "给这条事实起个名字，或者把这一行删掉。",
+          "reasonMissing": "取值是空的，就要说明为什么。空取值又不给原因，是这个工具唯一不会存的东西。",
+          "sourceMissing": "填上这个取值的来源网址。没有来源的取值不算已核实的事实。"
+        }
       },
       "draft": {
         "save": "保存草稿",
@@ -4655,12 +4672,33 @@
         "unsupported_media_type": "请求不是 JSON。",
         "invalid_url": "这不是本工具可以使用的站点网址。",
         "invalid_payload": "表单里有内容不可用：{reason}",
-        "conflict": "你编辑期间这个知识库变过了。",
+        "conflict": "你编辑期间这个知识库变过了，这次什么都没写。你的修改还在表单里：再按一次「保存草稿」，就会覆盖到那个更新的版本上。",
+        "conflict_unknown": "你编辑期间这个知识库变过了，而且服务端没有说清当前是哪一版，这次什么都没写。先把不能丢的内容复制出来，再用「切换站点」重新载入。",
+        "not_ready": "没有冻结成功：下面这几项还缺。补齐之后先保存草稿，再冻结一次。",
+        "form_invalid": "什么都没发出去，所以你改的其它内容一样没丢。先把下面标出来的行补完或删掉。",
+        "bad_response": "返回的内容不是 JSON，通常是网关替工具应答了。这一次是否写入并不确定——先重新载入这个站点，再继续编辑。",
+        "schema_mismatch": "这个页面和服务端对返回结构的理解对不上，通常意味着刚发布了新版本。刷新页面。",
+        "unknown": "出了这个页面没有对应文案的问题。屏幕上的内容没有丢；继续编辑前先刷新一次。",
         "hash_mismatch": "存下来的内容与发出的对不上，因此什么都没写。",
         "not_found": "这个账号下没有这个知识库。",
         "no_draft": "还没有可冻结的内容。",
         "store_unavailable": "存储没有响应，因此什么都没写。稍后再试。",
-        "network": "请求没有到达工具。检查网络后重试。"
+        "network": "请求没有到达工具。检查网络后重试。",
+        "reasons": {
+          "not_an_object": "整个表单都读不出来",
+          "schema_version": "这个页面用的是旧版表单",
+          "target_url": "站点网址",
+          "official_name": "模型会用的那个名字还是空的",
+          "aliases": "其它名字那一栏",
+          "category_terms": "品类词，至少要有一个",
+          "market": "市场或提问语言",
+          "roles": "其中一个角色",
+          "competitors": "其中一行竞品",
+          "facts": "其中一行事实",
+          "imported_from": "预填来自哪份档案的记录",
+          "too_large": "整个知识库太大，存不下",
+          "control_characters": "有文本里含有存不下的控制字符"
+        }
       },
       "limitsTitle": "这件工具不做什么",
       "limits": {
@@ -4683,6 +4721,143 @@
           {
             "q": "竞品的名字为什么要和域名分开确认？",
             "a": "模型写的是「Linear」，不是「linear.app」。算提及要用名字，判断引用指向谁要用域名。未确认的竞品会留在列表里、不进份额计算，报告会点名说它被排除了。"
+          }
+        ]
+      }
+    },
+    "geoBrief": {
+      "eyebrow": "GEO 工具",
+      "title": "GEO Brief 生成器",
+      "intro": "拿一道买家会去问 AI 的题，看一次真实回答是怎么分段的，再配上你自己核实过的事实。产出的是一份写手可以直接开工的 Brief，每一行都带着出处。",
+      "running": "正在生成 Brief",
+      "limitsTitle": "这份 Brief 做不到什么",
+      "form": {
+        "load": "读取我冻结的版本",
+        "loading": "正在读你的知识库",
+        "noFrozen": "还没有冻结过版本。先去建一个 GEO 知识库并冻结一版——Brief 是对着某个版本写的，这样它引用的事实不会在脚下变。",
+        "version": "冻结版本",
+        "versionOption": "{host} — 第 {revision} 版",
+        "question": "提问",
+        "typeYourOwn": "自己写一道题",
+        "typedQuestion": "你的提问",
+        "typedNote": "自己写的题没有观测计数。Brief 会写明这一点，而不是让那些数字看起来只是碰巧缺了。",
+        "estimate": "一次采样调用加一次组装调用。每个账号每天 {runs} 份——这是防跑飞的闸门，不是定价。",
+        "submit": "生成 Brief",
+        "submitting": "生成中"
+      },
+      "leadAnswer": {
+        "title": "开头段要回答什么",
+        "entities": "开头必须点名"
+      },
+      "mustAnswer": {
+        "title": "这一页必须回答的"
+      },
+      "outline": {
+        "title": "一个结构"
+      },
+      "facts": {
+        "title": "可以用的事实",
+        "note": "只有这些。正文里任何具体的东西——数字、价格、能力——都必须来自这张表。",
+        "notVerified": "未核实（{reason}）——不要给它写一个值",
+        "reasons": {
+          "notPublished": "哪里都没公开过",
+          "fetchFailed": "那个页面读不到",
+          "lowConfidence": "找到的东西不够确切",
+          "conflicting": "两个来源对不上"
+        }
+      },
+      "wontSay": {
+        "title": "不要写数字的维度",
+        "note": "这些维度没有核实过的值。绕开它们或者不写，不要估。"
+      },
+      "citedDomains": {
+        "title": "现在在回答这道题的",
+        "note": "模型回答时去取的那些页面。不是排名，也不是外链目标清单。",
+        "own": "你自己的",
+        "competitor": "已确认的竞品"
+      },
+      "sources": {
+        "kb": "来自你的知识库",
+        "crawl": "从你站上抓的",
+        "ai_sample": "一次回答里出现过",
+        "model": "本工具写的"
+      },
+      "limits": {
+        "singleSample": "这些子话题是从一次回答里读来的：问了一次，只在一个面上。同一道题再问一次会得到不一样的东西——量那个的是 AI 可见性体检，不是这里。",
+        "oneSurface": "只有一个面：通过 DataForSEO 接口的 ChatGPT。别的引擎会怎么答，这里没有观测。",
+        "factsAreYours": "表里每一条事实都是你自己核实的。这份 Brief 没有把模型回答里的任何东西当成事实。",
+        "notADraft": "这是 Brief，不是初稿。它说这一页要做到什么，不替你写。",
+        "sampleUnavailable": "采样调用没有拿回可用的回答，所以这里没有任何东西是从一次回答里观测到的。要求和事实表不受影响。",
+        "modelUnavailable": "组装调用没有拿回可用的结果，所以没有大纲，必答清单就是原始的观测子话题。",
+        "manualQuestion": "这道题是你自己写的，不是从冻结问题集里选的，所以没有观测计数随它一起过来。"
+      },
+      "actions": {
+        "copy": "复制 Brief 给 AI",
+        "copied": "已复制",
+        "copyFailed": "复制失败——请手动选中文本",
+        "downloadMarkdown": "下载 .md",
+        "downloadJson": "下载 .json"
+      },
+      "export": {
+        "question": "提问：",
+        "notVerified": "未核实",
+        "generatedAt": "生成于"
+      },
+      "errors": {
+        "auth_required": "生成 Brief 需要登录。它读的是你自己冻结的知识库。",
+        "auth_unavailable": "刚才没法确认登录状态。没有产生花费。",
+        "cross_origin": "那个请求不是从这一页发出来的。",
+        "invalid_request": "那个请求这个工具读不了。没有产生花费。",
+        "payload_too_large": "发过来的内容太长了。没有产生花费。",
+        "unsupported_media_type": "那个请求不是 JSON。",
+        "not_found": "那个冻结版本、或者那道题，不是你的。",
+        "daily_limit": "今天已经生成了 {limit} 份。从第一份算起 24 小时后重置。",
+        "provider_unconfigured": "这个部署没有配采样凭据或者没有配组装模型，跑出来的 Brief 会缺一半。没有产生花费。",
+        "store_unavailable": "刚才读不到你的知识库。没有产生花费。",
+        "brief_unavailable": "Brief 回来的形状这一页读不了。没有产生新的花费。",
+        "internal_error": "这边出了问题，不是你的问题。",
+        "network": "那个请求没有到达工具。",
+        "unknown": "没跑成，而且原因不是这一页认识的那几种。"
+      },
+      "faq": {
+        "title": "关于它的几个问题",
+        "items": [
+          {
+            "q": "子话题是从哪来的？",
+            "a": "从一次对你这道题的真实回答里来——在 ChatGPT 上问一次。工具取的是那次回答自己用的标题和列表引导词，不是让另一个模型去总结它，然后把每一条标成「观测到的」。如果那次回答是没有结构的散文，这一块就是空的，Brief 会写明——把一段话切成子话题，就是在伪造证据。"
+          },
+          {
+            "q": "它能替我把数字写出来吗？",
+            "a": "不能，这是刻意的。任何具体的东西都来自你在知识库里核实过的事实表。你没核实的维度会被印成「未核实」并写明原因。组装 Brief 的那个模型被明确要求：不得陈述事实表里没有的事实。"
+          },
+          {
+            "q": "为什么采样到的回答不算事实来源？",
+            "a": "因为那是别人家的模型答的一次，而且它可能是错的。它是关于「这一页要覆盖什么」的好证据——这也正是它的用途——但对于「你的产品是怎样的」，它一点证据都不是。"
+          },
+          {
+            "q": "它会把页面写出来吗？",
+            "a": "不会。它产出的是 Brief：开头要回答什么、这一页要覆盖什么、一个结构、可以用哪些事实、哪些维度不要写数字。写作是你或者你的写手的事。"
+          }
+        ]
+      },
+      "related": {
+        "title": "这条链的其余部分",
+        "intro": "知道自己缺哪些题的时候，Brief 才值得写；它变成的那一页确实读得到的时候，才值得发。",
+        "items": [
+          {
+            "href": "/tools/ai-visibility-check",
+            "name": "AI 可见性体检",
+            "blurb": "哪些题提到了你、哪些引用了你，以及这些回答是用谁的内容拼出来的。"
+          },
+          {
+            "href": "/tools/page-citability-check",
+            "name": "页面可引用性检查",
+            "blurb": "你写出来的那一页，AI 抓取器读不读得到，读到了能不能抽出答案。"
+          },
+          {
+            "href": "/tools/geo-knowledge-base",
+            "name": "GEO 知识库",
+            "blurb": "Brief 对着写的那个冻结版本：名字、竞品、角色、已核实的事实。"
           }
         ]
       }

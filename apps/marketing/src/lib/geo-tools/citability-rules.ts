@@ -400,7 +400,7 @@ function leadAnswerCheck(
   context: CitabilityContext,
 ): CitabilityCheck {
   const id = "leadAnswer";
-  if (!input.targetQuestion || context.questionTerms.length === 0) {
+  if (!input.targetQuestion) {
     // Nothing was asked, so there is nothing to be right or wrong about. This
     // is not a fetch failure and it does not belong in the denominator.
     return citabilityCheck(
@@ -410,6 +410,23 @@ function leadAnswerCheck(
       "counted",
       "notApplicable",
       { key: "leadAnswer.notAsked" },
+    );
+  }
+  if (context.questionTerms.length === 0) {
+    // A question WAS asked; nothing comparable could be taken out of it.
+    // "which is best?" is stop words end to end, and telling that visitor they
+    // gave no target question is a sentence their own screen contradicts. Same
+    // state and same denominator as above, a different sentence.
+    return citabilityCheck(
+      id,
+      "extractable",
+      "heuristic",
+      "counted",
+      "notApplicable",
+      {
+        key: "leadAnswer.noComparableTerms",
+        values: { question: input.targetQuestion },
+      },
     );
   }
   const head = context.text.slice(0, CITABILITY_LEAD_ANSWER_CHARS);

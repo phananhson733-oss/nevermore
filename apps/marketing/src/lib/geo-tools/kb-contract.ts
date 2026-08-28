@@ -422,15 +422,14 @@ export function geoKbBlockers(
   // visitor gets a bill and a zero, and nothing on the page says why. The floor
   // is the matcher's own, and it is lower for scripts written without spaces,
   // where two characters is a whole name.
-  if (
-    payload.officialName.length > 0 &&
-    !isMatchableGeoName(payload.officialName)
-  ) {
-    blockers.push("alias_too_short");
-  } else if (
-    payload.aliases.length > 0 &&
-    !payload.aliases.some((alias) => isMatchableGeoName(alias))
-  ) {
+  // The test is on the whole set, not on each name. Mention detection searches
+  // for the official name and every alias together, so one matchable spelling
+  // is enough - blocking because a short alias sits beside a usable official
+  // name would refuse a knowledge base that works.
+  const names = [payload.officialName, ...payload.aliases].filter(
+    (name) => name.length > 0,
+  );
+  if (names.length > 0 && !names.some((name) => isMatchableGeoName(name))) {
     blockers.push("alias_too_short");
   }
   if (payload.categoryTerms.length === 0) blockers.push("category_terms_missing");

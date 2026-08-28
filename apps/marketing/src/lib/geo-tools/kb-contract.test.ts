@@ -238,6 +238,29 @@ describe("blockers", () => {
     ).toEqual(["no_confirmed_competitor"]);
   });
 
+  it("refuses a brand name the mention matcher will never look for", () => {
+    // Freezing it costs a full round of paid calls and then reports every
+    // answer that names the brand as not mentioning it - the visitor gets a
+    // bill and a zero, with nothing on the page to explain either.
+    expect(
+      geoKbBlockers({ ...VALID, officialName: "Go", aliases: ["Go"] }),
+    ).toContain("alias_too_short");
+  });
+
+  it("accepts a short alias sitting beside a usable official name", () => {
+    // Detection searches the whole set at once, so one matchable spelling is
+    // enough; blocking here would refuse a knowledge base that works.
+    expect(
+      geoKbBlockers({ ...VALID, officialName: "Acme", aliases: ["AC"] }),
+    ).not.toContain("alias_too_short");
+  });
+
+  it("accepts a two-character name written in a script without spaces", () => {
+    expect(
+      geoKbBlockers({ ...VALID, officialName: "小米", aliases: ["小米"] }),
+    ).not.toContain("alias_too_short");
+  });
+
   it("does not treat an unfrozen empty payload as invalid", () => {
     // The editor saves as you type, so the empty shape has to survive a save.
     expect(parseGeoKbPayload(emptyGeoKbPayload("https://acme-kb.test/")).ok).toBe(

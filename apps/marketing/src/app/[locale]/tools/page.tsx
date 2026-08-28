@@ -157,6 +157,19 @@ const GEO_TOOLS = [
     cta: { en: "Run a visibility check", zh: "跑一次可见性体检" },
     category: "geo",
   },
+  {
+    slug: "geo-brief",
+    title: { en: "GEO Brief Builder", zh: "GEO Brief 生成器" },
+    // Same two preconditions as the visibility check, said here rather than
+    // found on the page: it is written against a frozen version, and it spends
+    // a provider call.
+    description: {
+      en: "Sign in, pick a frozen GEO Knowledge Base version and one question, and get a brief: what the opening has to answer, what the page must cover, and which of your facts may be used. Nothing unverified gets a number.",
+      zh: "登录后选一个冻结的 GEO 知识库版本和一道题，产出一份 Brief：开头段要回答什么、这一页要覆盖什么、可以用你哪些事实。没核实过的维度不会被填上数字。",
+    },
+    cta: { en: "Build a brief", zh: "生成一份 Brief" },
+    category: "geo",
+  },
 ] as const;
 
 export async function generateMetadata({
