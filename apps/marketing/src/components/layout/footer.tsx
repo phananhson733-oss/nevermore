@@ -114,15 +114,6 @@ export function Footer({
               >
                 X
               </a>
-              <a
-                href={siteConfig.social.linkedin}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={FOOTER_LINK}
-                aria-label="LinkedIn"
-              >
-                LinkedIn
-              </a>
             </div>
             <p className="text-[13px] text-text-dark-secondary">
               {siteConfig.contactEmail}

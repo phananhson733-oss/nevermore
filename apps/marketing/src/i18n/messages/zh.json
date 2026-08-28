@@ -586,8 +586,7 @@
       "title": "查看公开实验日志",
       "desc": "每周在博客与社媒发布证据优先的实验日志。",
       "blogCta": "打开博客日志 →",
-      "xCta": "在 X 关注 →",
-      "linkedinCta": "在 LinkedIn 关注 →"
+      "xCta": "在 X 关注 →"
     }
   },
   "blog": {
