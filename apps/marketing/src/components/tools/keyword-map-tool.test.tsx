@@ -260,6 +260,80 @@ describe("KeywordMapTool durable run", () => {
     expect(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)).toBeNull();
   });
 
+  it("stops tracking after repeated unavailable status responses", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ data: CONTEXT }))
+      .mockResolvedValueOnce(
+        Response.json(
+          { data: { status: "running", runToken: "sealed-run" } },
+          { status: 202 },
+        ),
+      )
+      .mockImplementation(async () =>
+        Response.json(
+          { error: { code: "keyword_run_unavailable" } },
+          { status: 503 },
+        ),
+      );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const host = await renderTool();
+
+    await readAndConfirm(host);
+    await click(buttonWith(host, "Run the opportunity map"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(host.textContent).toContain("This saved run cannot be read right now");
+    expect(buttonWith(host, "Run the opportunity map").disabled).toBe(false);
+    const startBody = JSON.parse(
+      String((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.body),
+    ) as { requestId: string };
+    const stored = JSON.parse(
+      String(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)),
+    ) as { requestId: string; runToken: unknown };
+    expect(stored).toMatchObject({
+      requestId: startBody.requestId,
+      runToken: null,
+    });
+  });
+
+  it("stops tracking after repeated unreadable status responses", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ data: CONTEXT }))
+      .mockResolvedValueOnce(
+        Response.json(
+          { data: { status: "running", runToken: "sealed-run" } },
+          { status: 202 },
+        ),
+      )
+      .mockImplementation(async () =>
+        new Response("<html>bad gateway</html>", { status: 502 }),
+      );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const host = await renderTool();
+
+    await readAndConfirm(host);
+    await click(buttonWith(host, "Run the opportunity map"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(host.textContent).toContain("This saved run cannot be read right now");
+    expect(buttonWith(host, "Run the opportunity map").disabled).toBe(false);
+    expect(
+      JSON.parse(
+        String(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)),
+      ),
+    ).toMatchObject({ runToken: null });
+  });
+
   it("reuses the request id when the start response is lost", async () => {
     const fetchMock = vi
       .fn()

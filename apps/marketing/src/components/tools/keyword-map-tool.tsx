@@ -55,6 +55,7 @@ const SECONDARY_BUTTON =
 /** Seeds the visitor may add, matching what the API accepts. */
 const MAX_SEEDS = 10;
 const MAX_SEED_LENGTH = 80;
+const MAX_CONSECUTIVE_WORKFLOW_STATUS_FAILURES = 5;
 
 /**
  * Languages offered, and the market each one defaults from.
@@ -275,8 +276,28 @@ export function KeywordMapTool({
     const controller = new AbortController();
     workflowAbort.current = controller;
     let pointer = initial;
+    let consecutiveStatusFailures = 0;
     setPhase("tracking");
     setErrorCode(null);
+
+    async function retryStatusOrPause(delayMs: number): Promise<boolean> {
+      consecutiveStatusFailures += 1;
+      if (consecutiveStatusFailures < MAX_CONSECUTIVE_WORKFLOW_STATUS_FAILURES) {
+        await waitForPoll(delayMs, controller.signal);
+        return false;
+      }
+
+      // The run may still be healthy even though its status cannot be read.
+      // Keep the original request id, but remove the unreadable token so a
+      // manual retry asks the active-hook dedupe path for the owner instead of
+      // starting a second paid attempt.
+      pointer = { ...pointer, runToken: null };
+      rememberWorkflow(pointer);
+      setErrorCode("keyword_run_unavailable");
+      setTrackingRestored(false);
+      setPhase("confirm");
+      return true;
+    }
 
     while (!controller.signal.aborted) {
       try {
@@ -299,11 +320,13 @@ export function KeywordMapTool({
           return;
         }
         if (outcome.kind === "redirect") {
+          consecutiveStatusFailures = 0;
           pointer = { ...pointer, runToken: outcome.runToken };
           rememberWorkflow(pointer);
           continue;
         }
         if (outcome.kind === "tracking") {
+          consecutiveStatusFailures = 0;
           if (outcome.runToken !== pointer.runToken) {
             pointer = { ...pointer, runToken: outcome.runToken };
             rememberWorkflow(pointer);
@@ -319,12 +342,15 @@ export function KeywordMapTool({
             outcome.code === "keyword_run_unavailable" &&
             response.status === 503
           ) {
-            await waitForPoll(
-              keywordWorkflowPollDelayMs(
-                response.headers.get("Retry-After"),
-              ),
-              controller.signal,
-            );
+            if (
+              await retryStatusOrPause(
+                keywordWorkflowPollDelayMs(
+                  response.headers.get("Retry-After"),
+                ),
+              )
+            ) {
+              return;
+            }
             continue;
           }
           forgetWorkflow();
@@ -345,9 +371,10 @@ export function KeywordMapTool({
         return;
       } catch {
         if (controller.signal.aborted) return;
-        // A polling transport error says nothing about the run. Keep the
-        // pointer and retry sequentially; never start a second paid request.
-        await waitForPoll(2_000, controller.signal);
+        // A polling transport error says nothing about the run. Retry a small,
+        // bounded number of times, then hand control back to the visitor while
+        // retaining the request id for active-run dedupe.
+        if (await retryStatusOrPause(2_000)) return;
       }
     }
   }
