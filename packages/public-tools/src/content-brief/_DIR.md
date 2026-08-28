@@ -1,0 +1,21 @@
+# content-brief
+
+GenGrowth 内容链（Content Brief Builder / Content Draft Writer）的纯领域模块。只依赖本目录与 `@sf/public-tools` 内部；不 import apps/*，不含时钟、随机与网络。营销站只通过 `package.json` 的 `./content-brief/*` 子路径 import。
+
+| 文件 | 职责 |
+|---|---|
+| `contract.ts` | 内容链数据契约 v1：ContentBrief / DraftResult 类型、封闭枚举、handoff 常量与 API 错误码（只读，改动 = 合同变更） |
+| `constants.ts` | 引擎全部阈值、预算、配额与语言表（STOPWORDS / PRESERVED_QUESTION_PREFIXES）；UI 与测试只从这里读数字 |
+| `canonical.ts` | `canonicalize`（键按 UTF-16 码元排序、跳过 undefined 的稳定序列化）、`sha256Hex`（WebCrypto 优先、node:crypto 动态回退）、`briefFingerprint` / `draftFingerprint`（去掉 run.fingerprint 与 run.elapsed_ms 后哈希，不改入参） |
+| `canonical.test.ts` | 键序 / undefined / 嵌套 / 数字与字符串转义 / 两条哈希路径对照向量 / 指纹对易变字段不敏感、对其它字段敏感 / 不可变 |
+| `cluster.ts` | handoff §4.5 步骤 2–5：`normalizeHeading`（序号、品牌 token、停用词、问句前缀保留、截断）、`clusterHeadings`（(rank, 原文顺序) 遍历的单链接词法聚类，Jaccard 或 token 边界子串并簇）、`selectMustAnswer`（门槛、排序、CAP、候选 / 隐藏计数） |
+| `cluster.test.ts` | 归一化各规则、同义并簇 / 不并簇、同页只计一次 covered_by、代表串、first_rank、确定性、空表语言、门槛与截断、不可变 |
+| `classify.ts` | handoff §4.6 有序规则表：四个域名集合、`FORMAT_RULES` / `classifySerpFormat`（域名 → 路径 → 标题，首条命中即 value，全部命中进 rules_hit）、`INTENT_RULES` / `classifyIntent`（navigational 优先，多数决，平局取 rank 最靠前的领先意图并标 tie） |
+| `classify.test.ts` | 每条规则一个用例、顺序优先级、unknown、www./子域后缀匹配、平局与非平局、无命中返回 null、规则表顺序钉死 |
+| `assemble.ts` | 由各路 reads 与证据派生 ContentBrief 全部字段并盖指纹（并行任务产出，职责以其文件头为准） |
+| `assemble.test.ts` | assemble 的契约真值表测试（并行任务产出） |
+| `parse-brief-shape.ts` | parser 的 decoder 组合子（`object` 精确键集 / `tagged` 判别联合 / `array` 上限与唯一 / `identifier` / `httpUrl`…，既校验又重建）与全部逐字段形状钉：字节上限、schema 字面量、枚举、长度（模型文本读 `MODEL_TEXT_MAX_CHARS` / `QUESTION_MAX_CHARS`）、URL、id 模式、`SerpReadMeta.unresolved`、`GscReadMeta.rows`、每页 h2/h3 ≤ `CRAWL_HEADINGS_PER_PAGE_MAX`、模型自由文本走 text.ts `isBoundedModelText`（码点计长、非空、无控制符/尖括号）；导出 `decodeBriefShape` / `handoffEnvelope` / `ParseBriefFailure` |
+| `parse-brief.ts` | handoff §5.1 的唯一 exact parser：形状（parse-brief-shape.ts）之后**用 assemble.ts 同一套函数重算再逐键比对**——`buildSerpObservations`（逐行重分类，value 与有序 rules_hit）、`buildCrawlReadMeta`、`buildIntentField` / `buildFormatField` / `buildLengthField`、`buildMustAnswerDraft`（簇骨架 + candidates/shown/hidden，只放行模型可改的 q / q_provenance）、`modelDerivedFrom`（每个 method:"model" 的 derived_from）、`applyModelOutput` 的四道 unavailable 闸门（含 llm 失败原因透传）、`buildDraftReadiness`、`deriveBriefRunMode`、`deriveVerdictFromLedger`（整份 verdict 走 verdict.ts 同一张决策表，`MIN_DIMENSION_COVERAGE` 取自 gsc-analytics/page-reader）、`planCrawlTargets(serp, hostKey)`（skipped 列表顺序与内容）；另钉 `gsc_query_page` 每行 normalizeQuery === 主词且 (query,page) 唯一、`reads.gsc.rows` 为账本分母、outline 覆盖全部 Q 恰一次且 id 为 O1..On、gap_angle 在 observed 为 0 时 insufficient_evidence(0)、handoff `created_at <= now < expires_at`（`deps.now` 可注入）；Unavailable 分支同样 exact compare；不等 → `brief_reference_invalid` + 首个不同键的路径。crawl 只在 SERP 不可得（builder started=false）或预算前置耗尽（`timeout/0`）时允许 Unavailable，全 skipped 走 available/complete。`parseContentBriefShape`（同步，不算指纹）/ `parseContentBrief`（再重算 `briefFingerprint`，可注入）/ `parseContentBriefHandoff`（envelope + TTL 钉，嵌套路径带 `brief.`） |
+| `parse-brief.test.ts` | 形状拒绝 + 每条重算的「改了自报值 / 改了账本不重算」反例（改 title 不改 format、伪造/重排 rules_hit、改 intent value/matched/confidence、删合格簇、挪簇成员、改页标题、伪造 derived_from、Unavailable 的 reason/attempted 错一位…）+ 九个经 builder 组装的正例变体（SERP 不可得 / 全 skipped / 预算前置超时 / LLM 校验失败 / zh / 篇幅可得 / 主词未观测 / 接通 / 接通且 LLM 失败）+ 深拷贝 + 注入指纹与真 `briefFingerprint`（含「重算指纹后仍被抓」）+ handoff |
+| `fixtures.ts` | `contentBriefFixture(options)` 经 assemble.ts 同一套 builder 组装（knob：serp / crawlTimeout / allSkipped / llm / language / completeC5 / connected / notObserved）；接通变体的判定与 `gsc_query_page` / `matched_queries` / `primary_coverage` 由 `computeVerdict` 从原始 GSC 行算出；`validContentBrief(overrides?)`、`validConnectedContentBrief()`、`withFingerprint()`；页标题刻意跨页重复以让词法聚类产出 4 个合格簇；DeepPartial 合并对数组整体替换 |
+- `verdict.ts` — `computeVerdict({ primary, queryRows, queryPageRows, queryPagingTruncated, queryUnreadableRows, coverageOf, minDimensionCoverage })`: the self-competition rule on the primary keyword only. Normalises the reader's position-0 sentinel to null, merges spelling variants per page (impression-weighted position), and returns the three-state verdict plus the G/query×page ledger rows and `primary_coverage`; `verdict.test.ts` covers every branch.

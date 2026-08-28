@@ -1,5 +1,5 @@
 // @input  -- active Tools hub source
-// @output -- regression guard for ten tool entries and their public/Agent execution boundaries
+// @output -- regression guard for eleven tool entries and their public/Agent execution boundaries
 // @pos    -- keeps the supporting-tools hub complete and the Internal Link Audit public
 
 import { readFileSync } from "node:fs";
@@ -12,7 +12,7 @@ const TOOL_CARD = fileURLToPath(
 );
 
 describe("Tools hub execution boundaries", () => {
-  it("keeps all ten tool entries in their established order", () => {
+  it("keeps all eleven tool entries in their established order", () => {
     const source = readFileSync(HUB_PAGE, "utf8");
     const slugs = [...source.matchAll(/slug: "([^"]+)"/g)].map(
       (match) => match[1],
@@ -27,6 +27,7 @@ describe("Tools hub execution boundaries", () => {
       "seo-audit",
       "low-competition-keywords",
       "competitor-keyword-gap",
+      "content-brief",
       "page-citability-check",
       "geo-knowledge-base",
     ]);

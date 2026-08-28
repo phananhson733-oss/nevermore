@@ -44,6 +44,13 @@ export interface QueryRowsRead {
   readonly rows: readonly GscQueryRow[];
   readonly paging: GscReadPaging;
   readonly responseAggregationType: string | null;
+  /**
+   * Rows the response carried without a query key. Counted, never dropped
+   * silently: a caller deciding "the primary keyword is not in the sample"
+   * must be able to tell that apart from "the sample had rows it could not
+   * read" (the page-dimension reader carries the same field).
+   */
+  readonly unreadableRows: number;
 }
 
 /**
@@ -71,6 +78,7 @@ export async function readQueryRows(
 ): Promise<QueryRowsRead> {
   const rows: GscQueryRow[] = [];
   let pagesFetched = 0;
+  let unreadableRows = 0;
   let truncated = false;
   let responseAggregationType: string | null = null;
   const pageCap = Math.max(1, Math.min(GSC_MAX_PAGES, Math.trunc(maxPages)));
@@ -108,7 +116,10 @@ export async function readQueryRows(
       // A row without its dimension key cannot be attributed to anything.
       // Keying it on undefined would create a phantom query that collides
       // with every other malformed row.
-      if (query === undefined) continue;
+      if (query === undefined || query.trim() === "") {
+        unreadableRows += 1;
+        continue;
+      }
       rows.push({
         query,
         clicks: raw.clicks,
@@ -126,6 +137,7 @@ export async function readQueryRows(
     rows,
     paging: { pagesFetched, truncated },
     responseAggregationType,
+    unreadableRows,
   };
 }
 

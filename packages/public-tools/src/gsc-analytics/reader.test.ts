@@ -228,3 +228,19 @@ describe("readPropertyTotals", () => {
     expect(calls[0]?.aggregationType).toBe("byPage");
   });
 });
+
+describe("readQueryRows unreadable rows", () => {
+  it("counts rows without a usable query key instead of dropping them silently", async () => {
+    const { client } = clientReturning([
+      [
+        rawRow("brew coffee"),
+        { keys: [], impressions: 10, clicks: 1, position: 3 },
+        { keys: [""], impressions: 10, clicks: 1, position: 3 },
+        { keys: ["   "], impressions: 10, clicks: 1, position: 3 },
+      ],
+    ]);
+    const read = await readQueryRows(client, WINDOW);
+    expect(read.rows.map((row) => row.query)).toEqual(["brew coffee"]);
+    expect(read.unreadableRows).toBe(3);
+  });
+});

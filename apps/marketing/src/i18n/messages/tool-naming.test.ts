@@ -18,4 +18,11 @@ describe("tool formal names", () => {
     expect(en.tools.quickWins.title).toBe("GSC Opportunity Finder");
     expect(zh.tools.quickWins.title).toBe("GSC Opportunity Finder");
   });
+
+  // Handoff 2026-08-28 §1: the content chain's first tool carries the same
+  // English formal name in both locales, like the P0-1 card above.
+  it("keeps the formal name Content Brief Builder in both locales", () => {
+    expect(en.tools.contentBrief.title).toBe("Content Brief Builder");
+    expect(zh.tools.contentBrief.title).toBe("Content Brief Builder");
+  });
 });

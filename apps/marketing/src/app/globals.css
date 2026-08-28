@@ -115,6 +115,14 @@
   --color-brand-error: var(--sc-error);
   --color-brand-info: var(--sc-info);
   /*
+   * 内容链的来源三色（信息架构，不是装饰）。一手 = GSC / 产品档案 / 用户输入，
+   * 三方 = DataForSEO SERP / 竞品抓取，模型 = 无来源的模型生成。允许引用它们的
+   * 组件有白名单（app/source-tokens.test.ts）；判定卡走状态色，不走这三色。
+   */
+  --color-source-first: var(--sc-source-first);
+  --color-source-third: var(--sc-source-third);
+  --color-source-model: var(--sc-source-model);
+  /*
    * Chart series pair. 主序列走 accent-green、次序列走 accent-cyan，但两者在
    * 图表里必须再靠线型区分（实线 vs 虚线）——绿与青在 deuteranopia 下差异不足以
    * 单独承担辨识，颜色只是第二重编码。
@@ -188,6 +196,10 @@
   --sc-info: #8ed6fb;
   --sc-series-1: #3ddc97;
   --sc-series-2: #4cc3fa;
+  /* 来源三色：一手对齐 success 家族，三方对齐 warning 家族，模型是新色相 */
+  --sc-source-first: #4fd1b0;
+  --sc-source-third: #e0b25a;
+  --sc-source-model: #b8a3f4;
 
   --sc-text-primary: #e8edf2; /* 16.3:1 */
   --sc-text-strong: #b8c2ce; /* 10.7:1 */
@@ -317,6 +329,10 @@
   --sc-info: #0e7490;
   --sc-series-1: #097550;
   --sc-series-2: #0369a1;
+  /* 来源三色的浅色对位；模型色 #5b47b4 在 #ffffff 上过 AA */
+  --sc-source-first: #0e7a6b;
+  --sc-source-third: #96610a;
+  --sc-source-model: #5b47b4;
 
   --sc-text-primary: #0d141c; /* 18.5:1 */
   --sc-text-strong: #33404f; /* 10.6:1 */
