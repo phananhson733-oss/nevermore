@@ -78,16 +78,24 @@ function loadGsi(): Promise<void> {
   });
 }
 
-const signedInListeners = new Set<() => void>();
+/**
+ * `false` vetoes the reload: the session is established either way, but the
+ * page stays as it is so state the listener could not preserve (the draft
+ * tool's brief) is not lost, and the visitor sees why. Anything else, a throw
+ * included, lets the reload proceed.
+ */
+export type SignedInListener = () => boolean | void;
+
+const signedInListeners = new Set<SignedInListener>();
 
 /**
  * Runs `listener` synchronously after a credential became a session and
  * immediately before the page reloads. For state that must survive that
- * reload (the draft tool's handed-over brief); the listener must not throw
- * and must not assume the dialog that registered it is still open — a
- * credential posted before the dialog closed still completes.
+ * reload (the draft tool's handed-over brief); the listener must not assume
+ * the dialog that registered it is still open — a credential posted before
+ * the dialog closed still completes.
  */
-export function onGoogleSignedIn(listener: () => void): () => void {
+export function onGoogleSignedIn(listener: SignedInListener): () => void {
   signedInListeners.add(listener);
   return () => {
     signedInListeners.delete(listener);
@@ -103,14 +111,18 @@ async function submitCredential(credential: string): Promise<void> {
   });
   if (!result.ok) return;
 
+  let vetoed = false;
   for (const listener of [...signedInListeners]) {
     try {
-      listener();
+      if (listener() === false) vetoed = true;
     } catch {
       // A listener's failure must not keep a signed-in visitor on a page
       // that still says "Sign in".
     }
   }
+  // Every listener has run; a veto keeps the page (and whatever the listener
+  // could not carry across the reload) exactly as it is.
+  if (vetoed) return;
 
   // A full reload, not router.refresh(). The session lives in cookies the
   // server just wrote, but the header's sign-in control is a client component

@@ -17,7 +17,11 @@ import {
   type ContentBrief,
   type DraftResult,
 } from "@sf/public-tools/content-brief/contract";
-import { SECTION_RERUN_SOFT_MAX } from "@sf/public-tools/content-brief/constants";
+import {
+  DRAFT_REQUEST_MAX_BYTES,
+  SECTION_REQUEST_MAX_BYTES,
+  SECTION_RERUN_SOFT_MAX,
+} from "@sf/public-tools/content-brief/constants";
 import { draftFingerprint } from "@sf/public-tools/content-brief/canonical";
 import {
   contentBriefFixture,
@@ -29,7 +33,9 @@ import {
   draftResultFixture,
 } from "@sf/public-tools/content-brief/draft-fixtures";
 
-const { signInDialogMock, trackMarketingEventMock } = vi.hoisted(() => ({
+const { signInDialogMock, trackMarketingEventMock, signedInResult } = vi.hoisted(() => ({
+  /** What the tool's onSignedIn last returned: `false` vetoes the reload. */
+  signedInResult: { current: undefined as boolean | void },
   // The succeed control is rendered whether the dialog is open or not: a
   // credential posted before the dialog closed still completes, and the
   // real dialog keeps its onSignedIn registered for as long as it is mounted.
@@ -41,7 +47,7 @@ const { signInDialogMock, trackMarketingEventMock } = vi.hoisted(() => ({
     }: {
       readonly open: boolean;
       readonly onOpenChange: (open: boolean) => void;
-      readonly onSignedIn?: () => void;
+      readonly onSignedIn?: () => boolean | void;
     }) => (
       <>
         {open ? (
@@ -50,7 +56,13 @@ const { signInDialogMock, trackMarketingEventMock } = vi.hoisted(() => ({
             <button type="button" data-testid="sign-in-cancel" onClick={() => onOpenChange(false)} />
           </div>
         ) : null}
-        <button type="button" data-testid="sign-in-succeed" onClick={() => onSignedIn?.()} />
+        <button
+          type="button"
+          data-testid="sign-in-succeed"
+          onClick={() => {
+            signedInResult.current = onSignedIn?.();
+          }}
+        />
       </>
     ),
   ),
@@ -448,16 +460,21 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe("newer");
   });
 
-  it("says so when the brief cannot be kept for the reload, and clears that notice on the next run or Replace", async () => {
+  it("vetoes the reload and shows the notice when the brief cannot be kept, and clears that notice on the next run or Replace", async () => {
     const brief = await draftBrief();
     storeHandoff(brief);
     const host = await renderTool();
     await settle();
+    signedInResult.current = undefined;
     const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("QuotaExceededError");
     });
     await click(host.querySelector('[data-testid="sign-in-succeed"]'));
+    // Returned false: gsi-client keeps the page, so the alert is actually seen
+    // and the brief is still loaded.
+    expect(signedInResult.current).toBe(false);
     expect(host.querySelector("[data-handoff-keep-failed]")).not.toBeNull();
+    expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(brief.run.fingerprint);
     setItem.mockRestore();
     await click(host.querySelector("[data-run-draft]"));
     expect(host.querySelector("[data-handoff-keep-failed]")).toBeNull();
@@ -472,29 +489,49 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     expect(host.querySelector("[data-handoff-keep-failed]")).toBeNull();
   });
 
-  it("lets a brief loaded before sign-in replace the waiting handoff, so the reload loads the visitor's choice", async () => {
+  async function remount(authenticated: boolean): Promise<HTMLElement> {
+    await act(async () => root?.unmount());
+    root = null;
+    document.body.replaceChildren();
+    const host = await renderTool(authenticated);
+    await settle();
+    return host;
+  }
+
+  it("clears the waiting handoff when a brief is loaded before sign-in, but writes nothing until a credential became a session", async () => {
     const waiting = await draftBrief();
     const pasted = await withFingerprint(contentBriefFixture());
     expect(pasted.run.fingerprint).not.toBe(waiting.run.fingerprint);
-    const rawA = storeHandoff(waiting);
+    storeHandoff(waiting);
     const host = await renderTool(false);
     await settle();
     expect(host.querySelector("[data-handoff-pending]")).not.toBeNull();
     await pasteBrief(host, pasted);
     expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(pasted.run.fingerprint);
     expect(host.querySelector("[data-handoff-pending]")).toBeNull();
+    // A is gone and B was NOT written: a plain refresh (or a cancelled
+    // sign-in) starts empty rather than resurrecting either brief.
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+    const reloaded = await remount(true);
+    expect(reloaded.querySelector('[data-intake-phase="empty"]')).not.toBeNull();
+    expect(reloaded.querySelector("[data-brief-fingerprint]")).toBeNull();
+  });
+
+  it("writes only the brief loaded before sign-in once a credential became a session, so the reload loads the visitor's choice", async () => {
+    const waiting = await draftBrief();
+    const pasted = await withFingerprint(contentBriefFixture());
+    storeHandoff(waiting);
+    const host = await renderTool(false);
+    await settle();
+    await pasteBrief(host, pasted);
+    signedInResult.current = undefined;
+    await click(host.querySelector('[data-testid="sign-in-succeed"]'));
+    expect(signedInResult.current).toBe(true);
     const rawB = window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY);
-    expect(rawB).not.toBeNull();
-    expect(rawB).not.toBe(rawA);
     const parsed = await parseContentBriefHandoff(JSON.parse(rawB ?? "null"));
     expect(parsed.ok && parsed.value.brief.run.fingerprint).toBe(pasted.run.fingerprint);
 
-    // Sign-in reloads: the page after it is authenticated and consumes B.
-    await act(async () => root?.unmount());
-    root = null;
-    document.body.replaceChildren();
-    const reloaded = await renderTool(true);
-    await settle();
+    const reloaded = await remount(true);
     expect(reloaded.querySelector('[data-brief-source="handoff"]')).not.toBeNull();
     expect(reloaded.querySelector("[data-brief-fingerprint]")?.textContent).toBe(pasted.run.fingerprint);
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
@@ -575,6 +612,29 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     await click(host.querySelector("[data-run-draft]"));
     await settle();
     expect(host.querySelector("[data-error-code]")?.textContent).toContain("errors.run_in_progress");
+  });
+
+  it("prints the refusing route's own byte cap on payload_too_large", async () => {
+    const brief = await draftBrief();
+    const first = await draftResultFixture(brief);
+    const runKb = Math.round(DRAFT_REQUEST_MAX_BYTES / 1024);
+    const sectionKb = Math.round(SECTION_REQUEST_MAX_BYTES / 1024);
+    expect(runKb).not.toBe(sectionKb);
+    const tooLarge = () => Response.json({ error: { code: "payload_too_large" } }, { status: 413 });
+    const replies = [tooLarge, () => Response.json(first)];
+    globalThis.fetch = signedInFetch(() => replies.shift()?.() ?? tooLarge(), tooLarge);
+    const host = await renderTool();
+    await loadAndRun(host, brief);
+    expect(host.querySelector("[data-error-code]")?.getAttribute("data-error-code")).toBe("payload_too_large");
+    expect(host.querySelector("[data-error-code]")?.textContent).toContain(`"kb":${runKb}`);
+    await click(host.querySelector("[data-run-draft]"));
+    await settle();
+    expect(runId(host)).toBe(first.run.run_id);
+    await click(host.querySelector('[data-testid="rerun-O1"]'));
+    await settle();
+    expect(host.querySelector("[data-error-code]")?.getAttribute("data-error-code")).toBe("payload_too_large");
+    expect(host.querySelector("[data-error-code]")?.textContent).toContain(`"kb":${sectionKb}`);
+    expect(host.querySelector("[data-error-code]")?.textContent).not.toContain(`"kb":${runKb}`);
   });
 
   it("refuses a result written against another brief", async () => {

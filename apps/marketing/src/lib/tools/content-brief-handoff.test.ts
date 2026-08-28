@@ -89,6 +89,22 @@ describe("writeContentBriefHandoff", () => {
       reason: "storage",
     });
   });
+
+  it("keeps the caller's own still-valid envelope when a refreshing write fails", async () => {
+    const brief = await withFingerprint(contentBriefFixture());
+    const storage = fakeStorage();
+    const first = writeContentBriefHandoff(storage, NOW, brief);
+    if (!first.ok) throw new Error("first write failed");
+    // The store now refuses writes; the refresh must not delete what it holds.
+    const refusing = { ...storage, setItem: () => { throw new Error("QuotaExceededError"); } };
+    const refresh = writeContentBriefHandoff(refusing, NOW + 1_000, brief, { preserve: first.raw });
+    expect(refresh).toMatchObject({ ok: false, reason: "storage" });
+    expect(storage.map.get(CONTENT_BRIEF_HANDOFF_KEY)).toBe(first.raw);
+    // A foreign envelope is still cleared on failure.
+    storage.setItem(CONTENT_BRIEF_HANDOFF_KEY, "foreign");
+    writeContentBriefHandoff(refusing, NOW + 2_000, brief, { preserve: first.raw });
+    expect(storage.map.has(CONTENT_BRIEF_HANDOFF_KEY)).toBe(false);
+  });
 });
 
 describe("takeContentBriefHandoff", () => {

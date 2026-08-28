@@ -81,6 +81,33 @@ function catalog(locale: "en" | "zh"): Record<string, unknown> {
   return (locale === "en" ? enMessages : zhMessages).tools.contentDraft as unknown as Record<string, unknown>;
 }
 
+/**
+ * Approved copy, written down here rather than read from the catalog, so a
+ * catalog edit fails this test instead of silently re-approving itself. The
+ * DOM and the catalog leaf are each compared against these literals.
+ */
+const APPROVED_CLAIM_MARKS = {
+  en: {
+    none: "[no claim]",
+    first: "[bound · profile fact]",
+    third: "[bound · competitor excerpt]",
+    gap: "[gap]",
+    stance: "[stance]",
+  },
+  zh: {
+    none: "[无主张]",
+    first: "[有据 · 档案事实]",
+    third: "[有据 · 竞品片段]",
+    gap: "[缺口]",
+    stance: "[立场]",
+  },
+} as const;
+
+const APPROVED_COPY_FAILED = {
+  en: "The browser refused clipboard access. Check the permission and try again.",
+  zh: "浏览器拒绝了剪贴板访问，请检查权限后重试。",
+} as const;
+
 function texts(host: HTMLElement, selector: string): string[] {
   return [...host.querySelectorAll(selector)].map((node) => node.textContent ?? "");
 }
@@ -181,7 +208,17 @@ describe.each([
     // span -- a connective sentence too, so silence never means "unmarked".
     const sentences = host.querySelectorAll("[data-sentence]");
     expect(host.querySelectorAll("[data-claim-mark]").length).toBe(sentences.length);
+    const approved = APPROVED_CLAIM_MARKS[locale];
+    // The catalog itself carries the approved literals...
     const claimMark = catalog(locale)["claimMark"] as Record<string, string>;
+    expect(claimMark).toEqual({
+      boundThird: approved.third,
+      boundFirst: approved.first,
+      gap: approved.gap,
+      stance: approved.stance,
+      noClaim: approved.none,
+    });
+    // ...and so does every mark in the DOM, chosen by the sentence's own state.
     const seen = new Set<string>();
     for (const mark of host.querySelectorAll("[data-claim-mark]")) {
       expect(mark.className).toContain("sr-only");
@@ -191,11 +228,11 @@ describe.each([
       const claim = sentence?.getAttribute("data-claim");
       const tone = mark.getAttribute("data-claim-mark");
       const expected =
-        claim === "no_claim" ? claimMark["noClaim"]
-        : claim === "gap" ? claimMark["gap"]
-        : claim === "stance" ? claimMark["stance"]
-        : tone === "third" ? claimMark["boundThird"]
-        : claimMark["boundFirst"];
+        claim === "no_claim" ? approved.none
+        : claim === "gap" ? approved.gap
+        : claim === "stance" ? approved.stance
+        : tone === "third" ? approved.third
+        : approved.first;
       expect(mark.textContent?.trim(), `${claim}/${tone}`).toBe(expected);
       seen.add(`${claim}/${tone}`);
     }
@@ -457,9 +494,8 @@ describe.each([
       pending[0]?.reject();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(host.querySelector("[data-copy-failed]")?.textContent).toBe(
-      (catalog(locale)["actions"] as Record<string, string>)["copyFailed"],
-    );
+    expect((catalog(locale)["actions"] as Record<string, string>)["copyFailed"]).toBe(APPROVED_COPY_FAILED[locale]);
+    expect(host.querySelector("[data-copy-failed]")?.textContent).toBe(APPROVED_COPY_FAILED[locale]);
     expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copyLabel);
     await click(host.querySelector("[data-copy-markdown]"));
     await act(async () => {

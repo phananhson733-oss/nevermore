@@ -6,14 +6,14 @@
 
 import { useEffect } from "react";
 
-import { onGoogleSignedIn } from "../../lib/auth/gsi-client";
+import { onGoogleSignedIn, type SignedInListener } from "../../lib/auth/gsi-client";
 
 /**
  * Registered while mounted, open or closed: a credential posted before the
  * dialog closed still completes, and the caller's state must still survive
  * the reload that follows. Callers that pass nothing register nothing.
  */
-export function useSignedInListener(onSignedIn: (() => void) | undefined): void {
+export function useSignedInListener(onSignedIn: SignedInListener | undefined): void {
   useEffect(() => {
     if (onSignedIn === undefined) return;
     return onGoogleSignedIn(onSignedIn);

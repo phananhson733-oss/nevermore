@@ -149,6 +149,19 @@ describe("content-draft message coverage", () => {
       );
     });
 
+
+    it(`tells a previous_draft_invalid visitor to regenerate, never to re-export (${locale})`, () => {
+      // Independent oracle: the meaning is pinned here, not read back from the catalog.
+      const copy = String(group(bundle, "errors")["previous_draft_invalid"]);
+      if (locale === "en") {
+        expect(copy).toMatch(/existing draft/);
+        expect(copy).toMatch(/Generate .*again in full/);
+      } else {
+        expect(copy).toContain("现有初稿");
+        expect(copy).toContain("重新完整生成");
+      }
+      expect(copy).not.toMatch(/export|导出/i);
+    });
   }
 
   it("keeps the two locales structurally identical", () => {

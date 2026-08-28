@@ -84,8 +84,12 @@ async function settle(status: number): Promise<void> {
 describe("onGoogleSignedIn", () => {
   it("runs a listener after the credential became a session and before the reload", async () => {
     const order: string[] = [];
-    reload.mockImplementation(() => order.push("reload"));
-    onGoogleSignedIn(() => order.push("listener"));
+    reload.mockImplementation(() => {
+      order.push("reload");
+    });
+    onGoogleSignedIn(() => {
+      order.push("listener");
+    });
     await signInWithCredential();
     expect(order).toEqual([]);
     await settle(200);
@@ -119,6 +123,18 @@ describe("onGoogleSignedIn", () => {
     await settle(200);
     expect(listener).not.toHaveBeenCalled();
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not reload when a listener returns false, after every listener has run", async () => {
+    // The session exists either way; the page keeps the state the listener
+    // could not carry across the reload, and the notice it raised.
+    const after = vi.fn();
+    onGoogleSignedIn(() => false);
+    onGoogleSignedIn(after);
+    await signInWithCredential();
+    await settle(200);
+    expect(after).toHaveBeenCalledTimes(1);
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it("still reloads when a listener throws", async () => {

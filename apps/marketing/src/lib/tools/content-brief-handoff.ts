@@ -28,9 +28,20 @@ function utf8Bytes(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 
-/** A failed write must not leave an older brief behind for the next tab to pick up. */
-function clearStale(storage: ToolHandoffStorage): void {
+export interface WriteContentBriefHandoffOptions {
+  /**
+   * An envelope the caller wrote earlier and still wants if this write fails.
+   * A failed write clears whatever is stored UNLESS it is character for
+   * character this value: a fresh write that fails must not delete the
+   * still-valid envelope it was only refreshing.
+   */
+  readonly preserve?: string | null;
+}
+
+/** A failed write must not leave an older, foreign brief behind for the next tab to pick up. */
+function clearStale(storage: ToolHandoffStorage, preserve: string | null | undefined): void {
   try {
+    if (preserve != null && storage.getItem(CONTENT_BRIEF_HANDOFF_KEY) === preserve) return;
     storage.removeItem(CONTENT_BRIEF_HANDOFF_KEY);
   } catch {
     // Best effort: a store that refuses removal is the same store that just
@@ -47,10 +58,11 @@ export function writeContentBriefHandoff(
   storage: ToolHandoffStorage,
   now: number,
   brief: ContentBrief,
+  options: WriteContentBriefHandoffOptions = {},
 ): ContentBriefHandoffWrite {
   const bytes = utf8Bytes(JSON.stringify(brief));
   if (!Number.isFinite(now) || bytes > CONTENT_BRIEF_HANDOFF_MAX_BYTES) {
-    clearStale(storage);
+    clearStale(storage, options.preserve);
     return { ok: false, reason: "too_large", bytes };
   }
   const handoff: ContentBriefHandoff = {
@@ -64,7 +76,7 @@ export function writeContentBriefHandoff(
     storage.setItem(CONTENT_BRIEF_HANDOFF_KEY, raw);
     return { ok: true, bytes, raw };
   } catch {
-    clearStale(storage);
+    clearStale(storage, options.preserve);
     return { ok: false, reason: "storage", bytes };
   }
 }

@@ -271,17 +271,20 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
   /**
    * Writes the loaded brief as a fresh envelope so it survives the reload a
    * sign-in causes. Idempotent: a later write for the same brief replaces
-   * the earlier one with a fresh TTL.
+   * the earlier one with a fresh TTL; a failed refresh leaves the earlier,
+   * still-valid envelope in place. Returns whether the brief is now kept.
    */
-  function keepForReload(brief: ContentBrief): void {
-    const written = writeContentBriefHandoff(window.sessionStorage, Date.now(), brief);
+  function keepForReload(brief: ContentBrief): boolean {
+    const written = writeContentBriefHandoff(window.sessionStorage, Date.now(), brief, {
+      preserve: writtenRaw.current,
+    });
     if (written.ok) {
       writtenRaw.current = written.raw;
       setKeepFailed(false);
-    } else {
-      writtenRaw.current = null;
-      setKeepFailed(true);
+      return true;
     }
+    setKeepFailed(true);
+    return false;
   }
 
   function nextGeneration(): number {
@@ -295,17 +298,15 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
   }
 
   function loadIntake(next: IntakeState): void {
-    if (next.phase === "loaded" && next.source !== "handoff" && !authenticated) {
+    if (next.phase === "loaded" && next.source !== "handoff" && pendingRaw.current !== null) {
       // A brief loaded before sign-in takes the waiting handoff's place: the
       // waiting one is cleared (only while it is still exactly what was
-      // peeked) and the new one is written for the sign-in reload, so the
-      // page after that reload consumes what the visitor chose last.
-      if (pendingRaw.current !== null) {
-        clearMatchingContentBriefHandoff(window.sessionStorage, pendingRaw.current);
-        pendingRaw.current = null;
-        setHandoffPending(false);
-      }
-      keepForReload(next.brief);
+      // peeked). Nothing is written yet -- a plain refresh must start empty
+      // and a cancelled sign-in must leave nothing behind; the brief is
+      // written only by onSignedIn, once a credential became a session.
+      clearMatchingContentBriefHandoff(window.sessionStorage, pendingRaw.current);
+      pendingRaw.current = null;
+      setHandoffPending(false);
     }
     setIntake(next);
     setResult(null);
@@ -394,9 +395,12 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
    */
   const latestIntake = useRef(intake);
   latestIntake.current = intake;
-  const onSignedIn = useCallback((): void => {
+  const onSignedIn = useCallback((): boolean | void => {
     const current = latestIntake.current;
-    if (current.phase === "loaded") keepForReload(current.brief);
+    if (current.phase !== "loaded") return;
+    // A brief that could not be kept vetoes the reload: the session exists,
+    // the page stays with the brief and the notice, and the visitor can run.
+    return keepForReload(current.brief);
   }, []);
 
   /** Session first, always: a signed-out visitor gets the dialog and no paid POST is sent. */

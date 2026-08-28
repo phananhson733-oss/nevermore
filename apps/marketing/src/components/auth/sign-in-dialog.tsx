@@ -6,6 +6,7 @@
 
 import { useTranslations } from "next-intl";
 
+import type { SignedInListener } from "../../lib/auth/gsi-client";
 import { useSignedInListener } from "./use-signed-in-listener";
 
 import {
@@ -44,8 +45,9 @@ export function SignInDialog({
    * before the reload that follows. Registered for as long as this dialog is
    * mounted, open or not: a credential posted before the dialog closed still
    * completes, and the caller's state must still survive the reload.
+   * Returning `false` keeps the page instead of reloading it.
    */
-  readonly onSignedIn?: () => void;
+  readonly onSignedIn?: SignedInListener;
 }) {
   const t = useTranslations();
   useSignedInListener(onSignedIn);
