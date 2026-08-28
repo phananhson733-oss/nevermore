@@ -1,113 +1,213 @@
-// @input  -- the header's shared account state and the account.menu.* copy
-// @output -- the header avatar, and the panel naming the account and its balance
-// @pos    -- the signed-in half of the header's right-hand slot
-// 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
+// @input  -- independently degradable identity, Credits, and Websites account state
+// @output -- accessible desktop avatar menu plus click-only mobile parity
+// @pos    -- signed-in account navigation in the global header
 "use client";
 
 import Link from "next/link";
+import {
+  Bot,
+  CreditCard,
+  Gift,
+  Globe2,
+  LogOut,
+  Settings,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 
-import { localePath } from "../../lib/locale-path";
 import type { AccountState } from "../../lib/auth/use-account.ts";
+import { localePath } from "../../lib/locale-path.ts";
+import { LanguageSwitcher } from "../layout/language-switcher.tsx";
+import { ThemeToggle } from "../layout/theme-toggle.tsx";
 import { signOut } from "./sign-out-action.ts";
 
-/** The avatar is 36px (`size-9`); ask for it at 2x, cropped, in WebP. */
 const AVATAR_SIZE_SUFFIX = "=s72-c-rw";
+const MENU_ITEM_CLASS =
+  "flex min-h-10 w-full items-center gap-3 rounded-[8px] px-3 py-2 text-left text-[13px] text-text-dark-secondary outline-none transition-colors hover:bg-brand-panel-raised hover:text-text-dark-primary focus:bg-brand-panel-raised focus:text-text-dark-primary";
 
-/**
- * Ask Google for the size we actually draw, instead of its default.
- *
- * The options go after the FIRST `=`, replacing whatever is already there.
- * Google ships these URLs ending in `=s96-c`, and appending rather than
- * replacing produces `=s96-c=s72-c-rw`, which is a hard 400 — a broken image
- * for every signed-in visitor rather than a merely oversized one.
- */
 function sizedAvatar(url: string): string {
   const options = url.indexOf("=");
   return options === -1
-    ? `${url}${AVATAR_SIZE_SUFFIX}`
-    : `${url.slice(0, options)}${AVATAR_SIZE_SUFFIX}`;
+    ? url + AVATAR_SIZE_SUFFIX
+    : url.slice(0, options) + AVATAR_SIZE_SUFFIX;
 }
 
-/** The one glyph on the avatar. Falls back to a dot rather than an empty circle. */
 function initial(email: string | null): string {
   const first = email?.trim().charAt(0) ?? "";
   return first === "" ? "•" : first.toUpperCase();
 }
 
-/**
- * The header's account menu.
- *
- * Renders nothing at all until we know a session exists, and nothing ever for
- * anyone signed out — the anonymous majority of this site's readers see the
- * slot exactly as it was. Sign-in stays with SignInControl; this component owns
- * only what a signed-in visitor needs, which is knowing which account they are
- * in, what it is worth, and how to leave.
- *
- * The balance is a separate question from the identity and is allowed to be
- * absent: /api/credits/balance answers 404 while the credits switch is off, and
- * the menu must still name the account and offer sign-out in that state. Two
- * requests rather than one for the same reason — the menu cannot be hostage to
- * a feature flag.
- *
- * Opening is hover OR click OR keyboard focus. Hover alone would make this
- * unreachable on a touchscreen and to anyone tabbing, and a click-only menu in
- * a place competitors open on hover reads as broken.
- */
+function Avatar({
+  email,
+  avatarUrl,
+  photoFailed,
+  onPhotoError,
+  size = "small",
+}: {
+  readonly email: string | null;
+  readonly avatarUrl: string | null;
+  readonly photoFailed: boolean;
+  readonly onPhotoError: () => void;
+  readonly size?: "small" | "large";
+}) {
+  const photo = avatarUrl !== null && !photoFailed ? avatarUrl : null;
+  const dimensions = size === "small" ? 36 : 48;
+  const className =
+    size === "small"
+      ? "size-9 text-[13px]"
+      : "size-12 text-[17px]";
+  return (
+    <span
+      className={
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-brand-border-card bg-brand-panel-raised font-semibold text-text-dark-primary " +
+        className
+      }
+    >
+      {photo === null ? (
+        initial(email)
+      ) : (
+        <img
+          src={sizedAvatar(photo)}
+          alt=""
+          width={dimensions}
+          height={dimensions}
+          referrerPolicy="no-referrer"
+          onError={onPhotoError}
+          className="size-full object-cover"
+        />
+      )}
+    </span>
+  );
+}
+
 export function AccountMenu({ account }: { readonly account: AccountState }) {
   const t = useTranslations("account.menu");
-  // Sign-out is worded once, in common, because the mobile sheet says it too.
   const tCommon = useTranslations("common");
   const locale = useLocale();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  // A hotlinked Google photo can 400 for reasons we cannot see from here.
   const [photoFailed, setPhotoFailed] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // A pointer crossing the gap between the avatar and the panel would otherwise
-  // close it out from under the reader.
   const cancelClose = useCallback(() => {
     if (closeTimer.current !== null) clearTimeout(closeTimer.current);
     closeTimer.current = null;
   }, []);
+
+  const closeMenu = useCallback(
+    (restoreFocus: boolean) => {
+      cancelClose();
+      if (restoreFocus) trigger.current?.focus();
+      setOpen(false);
+    },
+    [cancelClose],
+  );
 
   const scheduleClose = useCallback(() => {
     cancelClose();
     closeTimer.current = setTimeout(() => setOpen(false), 160);
   }, [cancelClose]);
 
+  const items = useCallback(
+    () =>
+      Array.from(
+        menu.current?.querySelectorAll<HTMLElement>(
+          '[role="menuitem"]:not([disabled])',
+        ) ?? [],
+      ),
+    [],
+  );
+
+  const focusItem = useCallback(
+    (position: "first" | "last" | number) => {
+      queueMicrotask(() => {
+        const available = items();
+        if (available.length === 0) return;
+        const index =
+          position === "first"
+            ? 0
+            : position === "last"
+              ? available.length - 1
+              : (position + available.length) % available.length;
+        available[index]?.focus();
+      });
+    },
+    [items],
+  );
+
   useEffect(() => cancelClose, [cancelClose]);
 
   useEffect(() => {
     if (!open) return;
-    function onKey(event: KeyboardEvent): void {
-      if (event.key === "Escape") setOpen(false);
-    }
-    function onPointer(event: MouseEvent): void {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMenu(true);
+      }
+    };
+    const onPointer = (event: MouseEvent) => {
       const node = wrapper.current;
-      if (node !== null && !node.contains(event.target as Node)) setOpen(false);
-    }
+      if (node !== null && !node.contains(event.target as Node)) {
+        closeMenu(false);
+      }
+    };
     document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onPointer);
     return () => {
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onPointer);
     };
-  }, [open]);
-
-  const handleSignOut = useCallback(() => {
-    setSigningOut(true);
-    void signOut().catch(() => setSigningOut(false));
-  }, []);
+  }, [closeMenu, open]);
 
   if (account.status !== "signed-in") return null;
-  const { email, balance, avatarUrl } = account;
-  // One production account signed in without Google and has no photo at all,
-  // so the monogram is the normal path, not just the error path.
-  const photo = avatarUrl !== null && !photoFailed ? avatarUrl : null;
+  const { email, displayName, balance, avatarUrl, websites } = account;
+  const primary = websites.status === "ready" ? websites.primary : null;
+
+  const openFromKeyboard = (position: "first" | "last") => {
+    cancelClose();
+    setOpen(true);
+    focusItem(position);
+  };
+
+  const handleMenuKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const available = items();
+    const target = (event.target as HTMLElement).closest<HTMLElement>(
+      '[role="menuitem"]',
+    );
+    const index = target === null ? -1 : available.indexOf(target);
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusItem(index < 0 ? "first" : index + 1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      focusItem(index < 0 ? "last" : index - 1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      focusItem("first");
+    } else if (event.key === "End") {
+      event.preventDefault();
+      focusItem("last");
+    } else if (
+      (event.key === "Enter" || event.key === " ") &&
+      target !== null
+    ) {
+      event.preventDefault();
+      target.click();
+    }
+  };
+
+  const handleSignOut = () => {
+    setSigningOut(true);
+    void signOut().catch(() => setSigningOut(false));
+  };
+
+  const handleTriggerClick = () => {
+    cancelClose();
+    setOpen(true);
+  };
 
   return (
     <div
@@ -118,10 +218,6 @@ export function AccountMenu({ account }: { readonly account: AccountState }) {
         setOpen(true);
       }}
       onMouseLeave={scheduleClose}
-      onFocus={() => {
-        cancelClose();
-        setOpen(true);
-      }}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node)) {
           setOpen(false);
@@ -129,85 +225,197 @@ export function AccountMenu({ account }: { readonly account: AccountState }) {
       }}
     >
       <button
+        ref={trigger}
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        onClick={handleTriggerClick}
+        onFocus={() => {
+          cancelClose();
+          setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (
+            event.key === "ArrowDown" ||
+            event.key === "Enter" ||
+            event.key === " "
+          ) {
+            event.preventDefault();
+            openFromKeyboard("first");
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            openFromKeyboard("last");
+          }
+        }}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={email ?? t("label")}
-        className="flex size-9 items-center justify-center overflow-hidden rounded-full border border-brand-border-card bg-brand-panel-raised text-[13px] font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/50"
+        aria-controls={open ? "account-avatar-menu" : undefined}
+        aria-label={displayName ?? email ?? t("label")}
+        className="rounded-full outline-none transition-colors hover:ring-1 hover:ring-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
       >
-        {photo === null ? (
-          initial(email)
-        ) : (
-          /* Plain <img>, not next/image: this matches how the rest of the site
-             loads remote pictures, needs no remotePatterns entry, and keeps the
-             fetch on the visitor's own connection rather than routing every
-             avatar through one datacentre IP.
-
-             The alt is empty because the button already carries the account as
-             its accessible name; naming the image too would say it twice. */
-          <img
-            src={sizedAvatar(photo)}
-            alt=""
-            width={36}
-            height={36}
-            referrerPolicy="no-referrer"
-            onError={() => setPhotoFailed(true)}
-            className="size-full object-cover"
-          />
-        )}
+        <Avatar
+          email={email}
+          avatarUrl={avatarUrl}
+          photoFailed={photoFailed}
+          onPhotoError={() => setPhotoFailed(true)}
+        />
       </button>
 
       {open ? (
         <div
+          ref={menu}
+          id="account-avatar-menu"
           role="menu"
           aria-label={t("label")}
-          className="absolute top-[calc(100%+10px)] right-0 z-50 w-64 rounded-card border border-brand-border-card bg-brand-panel p-4 shadow-panel"
+          onKeyDown={handleMenuKey}
+          className="absolute top-[calc(100%+10px)] right-0 z-50 w-[320px] rounded-card border border-brand-border-card bg-brand-panel p-3 shadow-panel"
         >
-          {email === null ? null : (
-            <p className="mb-3 truncate text-[13px] text-text-dark-primary">
-              {email}
-            </p>
-          )}
-
-          {balance === null ? null : (
-            <div className="mb-3">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-[13px] text-text-dark-secondary">
-                  {t("balance")}
-                </span>
-                <span className="font-mono text-[17px] text-text-dark-primary tabular-nums">
-                  {balance.total}
-                </span>
-              </div>
-              {balance.welfareRemaining === null ? null : (
-                <p className="mt-1 font-mono text-[11px] text-text-dark-faint">
-                  {t("welfareRemaining", {
-                    remaining: balance.welfareRemaining,
-                  })}
+          <div className="relative flex items-center gap-3 px-2 py-2">
+            <Avatar
+              email={email}
+              avatarUrl={avatarUrl}
+              photoFailed={photoFailed}
+              onPhotoError={() => setPhotoFailed(true)}
+              size="large"
+            />
+            <div className="min-w-0 pr-10">
+              {displayName === null ? null : (
+                <p className="truncate text-[14px] font-semibold text-text-dark-primary">
+                  {displayName}
                 </p>
               )}
+              {email === null ? null : (
+                <p className="truncate text-[12px] text-text-dark-secondary">
+                  {email}
+                </p>
+              )}
+              {balance === null ? null : (
+                <>
+                  <p className="mt-1 font-mono text-[11px] text-text-dark-faint">
+                    {balance.total} {t("credits")}
+                  </p>
+                  {balance.welfareRemaining === null ? null : (
+                    <p className="mt-0.5 font-mono text-[10px] text-text-dark-faint">
+                      {t("welfareRemaining", {
+                        remaining: balance.welfareRemaining,
+                      })}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
-          )}
+            <div className="absolute top-1 right-1">
+              <ThemeToggle menuItem onAction={() => closeMenu(true)} />
+            </div>
+          </div>
 
-          <div className="-mx-4 border-t border-brand-border-card" />
+          <div className="my-2 border-t border-brand-border-card" />
 
           <Link
             role="menuitem"
+            tabIndex={-1}
             href={localePath(locale, "/account/credits")}
-            onClick={() => setOpen(false)}
-            className="mt-3 block text-[13px] text-text-dark-secondary transition-colors hover:text-text-dark-primary"
+            onClick={() => closeMenu(false)}
+            className={MENU_ITEM_CLASS}
           >
-            {t("ledger")}
+            <CreditCard aria-hidden="true" className="size-4" />
+            <span>{t("credits")}</span>
+            {balance === null ? null : (
+              <span className="ml-auto rounded-full border border-brand-border-card px-2 py-0.5 font-mono text-[11px] text-text-dark-primary">
+                {balance.total}
+              </span>
+            )}
           </Link>
+
+          {websites.status !== "ready" ? null : primary === null ? (
+            <Link
+              role="menuitem"
+              tabIndex={-1}
+              href={localePath(locale, "/account/websites")}
+              onClick={() => closeMenu(false)}
+              className={MENU_ITEM_CLASS}
+            >
+              <Globe2 aria-hidden="true" className="size-4" />
+              <span>{t("addWebsite")}</span>
+            </Link>
+          ) : (
+            <Link
+              role="menuitem"
+              tabIndex={-1}
+              href={localePath(
+                locale,
+                "/account/websites/" + primary.websiteId,
+              )}
+              onClick={() => closeMenu(false)}
+              className={MENU_ITEM_CLASS}
+            >
+              <Globe2 aria-hidden="true" className="size-4" />
+              <span className="min-w-0">
+                <span className="block truncate">
+                  {primary.displayName ?? primary.host}
+                </span>
+                <span className="block truncate text-[10px] text-text-dark-faint">
+                  {primary.host}
+                </span>
+              </span>
+            </Link>
+          )}
+
+          <Link
+            role="menuitem"
+            tabIndex={-1}
+            href={localePath(locale, "/account/websites")}
+            onClick={() => closeMenu(false)}
+            className={MENU_ITEM_CLASS}
+          >
+            <Settings aria-hidden="true" className="size-4" />
+            <span>{t("settings")}</span>
+          </Link>
+          <Link
+            role="menuitem"
+            tabIndex={-1}
+            href={localePath(locale, "/agents")}
+            onClick={() => closeMenu(false)}
+            className={MENU_ITEM_CLASS}
+          >
+            <Bot aria-hidden="true" className="size-4" />
+            <span>{t("agents")}</span>
+          </Link>
+
+          <div className="my-2 border-t border-brand-border-card" />
+
+          <div className="flex items-center gap-3 rounded-[8px] px-3">
+            <span className="text-[13px] text-text-dark-secondary">
+              {t("language")}
+            </span>
+            <div className="ml-auto">
+              <LanguageSwitcher
+                menuItem
+                onAction={() => closeMenu(true)}
+              />
+            </div>
+          </div>
+          <Link
+            role="menuitem"
+            tabIndex={-1}
+            href={localePath(locale, "/account/credits") + "#referral"}
+            onClick={() => closeMenu(false)}
+            className={MENU_ITEM_CLASS}
+          >
+            <Gift aria-hidden="true" className="size-4" />
+            <span>{t("referral")}</span>
+          </Link>
+
+          <div className="my-2 border-t border-brand-border-card" />
+
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             onClick={handleSignOut}
             disabled={signingOut}
-            className="mt-2.5 block text-[13px] text-text-dark-secondary transition-colors hover:text-text-dark-primary disabled:opacity-60"
+            className={MENU_ITEM_CLASS + " text-brand-error"}
           >
-            {tCommon("signOut")}
+            <LogOut aria-hidden="true" className="size-4" />
+            <span>{tCommon("signOut")}</span>
           </button>
         </div>
       ) : null}
@@ -215,18 +423,6 @@ export function AccountMenu({ account }: { readonly account: AccountState }) {
   );
 }
 
-/**
- * The same account facts, and the same way out, inside the mobile sheet.
- *
- * A panel that opens on hover has no meaning on a touchscreen, and the header
- * badge that used to carry the balance on every screen is gone, so without this
- * a phone would have no way to see it at all.
- *
- * Sign-out belongs here rather than with the sign-in control, for the same
- * reason it belongs in the desktop panel: it acts on the account, so it reads
- * after the account has been named. The other way round, the sheet offered to
- * sign you out before it said whose session it was.
- */
 export function AccountSummaryMobile({
   account,
   onNavigate,
@@ -240,27 +436,87 @@ export function AccountSummaryMobile({
   const [signingOut, setSigningOut] = useState(false);
 
   if (account.status !== "signed-in") return null;
-  const { email, balance } = account;
+  const { email, displayName, balance, websites } = account;
+  const primary = websites.status === "ready" ? websites.primary : null;
+  const mobileLink =
+    "flex min-h-11 items-center justify-between gap-3 text-[15px] text-text-dark-secondary transition-colors hover:text-text-dark-primary";
 
   return (
     <div className="mt-2 border-t border-brand-border-card pt-4">
-      {email === null ? null : (
-        <p className="truncate text-[13px] text-text-dark-secondary">{email}</p>
+      {displayName === null ? null : (
+        <p className="truncate text-[15px] font-semibold text-text-dark-primary">
+          {displayName}
+        </p>
       )}
-      {balance === null ? null : (
+      {email === null ? null : (
+        <p className="mt-0.5 truncate text-[12px] text-text-dark-secondary">
+          {email}
+        </p>
+      )}
+      <div className="mt-3 space-y-1">
         <Link
           href={localePath(locale, "/account/credits")}
           onClick={onNavigate}
-          className="mt-2 flex items-baseline justify-between gap-3"
+          className={mobileLink}
         >
-          <span className="text-[15px] text-text-dark-secondary">
-            {t("balance")}
-          </span>
-          <span className="font-mono text-[17px] text-text-dark-primary tabular-nums">
-            {balance.total}
-          </span>
+          <span>{t("credits")}</span>
+          {balance === null ? null : (
+            <span className="font-mono text-[15px] text-text-dark-primary">
+              {balance.total}
+            </span>
+          )}
         </Link>
-      )}
+        {websites.status !== "ready" ? null : (
+          <Link
+            href={
+              primary === null
+                ? localePath(locale, "/account/websites")
+                : localePath(
+                    locale,
+                    "/account/websites/" + primary.websiteId,
+                  )
+            }
+            onClick={onNavigate}
+            className={mobileLink}
+          >
+            <span>
+              {primary === null
+                ? t("addWebsite")
+                : primary.displayName ?? primary.host}
+            </span>
+          </Link>
+        )}
+        <Link
+          href={localePath(locale, "/account/websites")}
+          onClick={onNavigate}
+          className={mobileLink}
+        >
+          <span>{t("settings")}</span>
+        </Link>
+        <Link
+          href={localePath(locale, "/agents")}
+          onClick={onNavigate}
+          className={mobileLink}
+        >
+          <span>{t("agents")}</span>
+        </Link>
+        <div className="flex min-h-11 items-center justify-between">
+          <span className="text-[15px] text-text-dark-secondary">
+            {t("language")}
+          </span>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <LanguageSwitcher />
+          </div>
+        </div>
+        <Link
+          href={localePath(locale, "/account/credits") + "#referral"}
+          onClick={onNavigate}
+          className={mobileLink}
+        >
+          <span>{t("referral")}</span>
+        </Link>
+      </div>
       <button
         type="button"
         onClick={() => {
@@ -268,8 +524,9 @@ export function AccountSummaryMobile({
           void signOut().catch(() => setSigningOut(false));
         }}
         disabled={signingOut}
-        className="mt-4 block text-[15px] text-text-dark-secondary transition-colors hover:text-text-dark-primary disabled:opacity-60"
+        className="mt-4 flex min-h-11 items-center gap-2 text-[15px] text-brand-error transition-opacity disabled:opacity-60"
       >
+        <LogOut aria-hidden="true" className="size-4" />
         {tCommon("signOut")}
       </button>
     </div>

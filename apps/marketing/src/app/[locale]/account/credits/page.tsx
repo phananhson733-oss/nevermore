@@ -1,6 +1,6 @@
 // @input  -- locale route param, the credits.account copy, CreditsAccountClient
 // @output -- the signed-in visitor's credits page, kept out of search results
-// @pos    -- the only account-scoped route on the marketing site
+// @pos    -- Credits module inside the shared account settings layout
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, getTranslations } from "next-intl/server";
 
@@ -42,15 +42,12 @@ export default async function CreditsAccountPage({
   ]);
 
   return (
-    <section className="min-h-screen bg-brand-bg px-6 pt-9 pb-24 md:px-8">
-      <div className="mx-auto max-w-3xl">
-        <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
-          GenGrowth
-        </p>
-        <h1 className="text-page-title mt-4 text-text-dark-primary">
+    <div className="max-w-3xl">
+      <div>
+        <h2 className="text-[24px] leading-tight font-semibold text-text-dark-primary">
           {t("title")}
-        </h1>
-        <p className="mt-4 text-[15.5px] leading-[1.65] text-text-dark-secondary">
+        </h2>
+        <p className="mt-2 text-[14px] leading-[1.65] text-text-dark-secondary">
           {t("subtitle")}
         </p>
         <div className="mt-8">
@@ -62,6 +59,6 @@ export default async function CreditsAccountPage({
           </NextIntlClientProvider>
         </div>
       </div>
-    </section>
+    </div>
   );
 }

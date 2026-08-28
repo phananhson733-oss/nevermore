@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import en from "../../i18n/messages/en.json" with { type: "json" };
 
 const PAGE_SHELL = fileURLToPath(new URL("./page-shell.tsx", import.meta.url));
+const HEADER = fileURLToPath(new URL("./header.tsx", import.meta.url));
 
 describe("PageShell waitlist closure", () => {
   it("routes access intent to the in-site waitlist instead of the app", () => {
@@ -29,5 +30,16 @@ describe("PageShell waitlist closure", () => {
     expect(source).toContain("openTrial: openAccessWaitlist");
     expect(en.waitlist.submit).toBe("Email me when access opens");
     expect(en.waitlist.successDesc).not.toMatch(/free trial|237/iu);
+  });
+});
+
+describe("Header account controls", () => {
+  it("keeps standalone theme/language only outside the signed-in menu", () => {
+    const source = readFileSync(HEADER, "utf8");
+
+    expect(source).toContain('account.status === "signed-in" ? null');
+    expect(source).toContain("<ThemeToggle />");
+    expect(source).toContain("<LanguageSwitcher />");
+    expect(source).toContain("<AccountMenu account={account} />");
   });
 });

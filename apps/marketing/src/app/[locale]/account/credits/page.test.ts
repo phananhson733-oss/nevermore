@@ -36,6 +36,11 @@ describe("/account/credits page contract", () => {
     expect(PAGE).not.toContain("messages={messages}");
   });
 
+  it("lets the shared account layout own the page frame", () => {
+    expect(PAGE).not.toContain("min-h-screen");
+    expect(PAGE).not.toContain(">GenGrowth<");
+  });
+
   /**
    * The heading comes from the catalog rather than a locale ternary, so a
    * missing key would render the literal path `credits.account.title` on the

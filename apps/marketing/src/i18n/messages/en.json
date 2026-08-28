@@ -2260,7 +2260,7 @@
         },
         "page_first_observed": {
           "title": "Check the page this comparison saw first",
-          "body": "Carries the page URL and checks the page itself. That tool also needs a target query of your own before it will run; this signal spans every query and this briefing will not invent one."
+          "body": "Carries the page URL and checks the page itself; it makes no claim about where any single query ranks. Naming a target query there adds the keyword category and an overall score."
         }
       },
       "checks": {
@@ -2273,7 +2273,7 @@
         "evidence": "Page · where it stands this window",
         "body": "{impressions} impressions this window at average position {position}. At this property's own non-brand rate of {ctr}, {expected} clicks were expected; none arrived.",
         "examined": "{rows} usable page records were read this run. The rest already formed a page-signal candidate (including ones the row budget never showed), drew clicks, averaged outside the 1-10 band or carried no readable position, or were expected fewer than 3 clicks at this property's own non-brand rate for this window.",
-        "handoff": "The page URL is carried over; that tool still needs a target query of your own before it will run."
+        "handoff": "The page URL is carried over. That tool runs without a target query — it just does not test keyword placement or publish an overall score."
       }
     },
     "trafficDrop": {
@@ -2937,6 +2937,17 @@
       "seedsLabel": "Seed terms (optional)",
       "seedsPlaceholder": "dental billing, clinic scheduling",
       "seedsHint": "Up to ten, comma separated. They are handed to the candidate generator alongside what the crawl found — useful when your site does not spell out a term your buyers use.",
+      "websiteProfileIntro": "Optionally import editable seed terms or pin one exact confirmed website profile to this run.",
+      "profileImportTitle": "Detached website profile import",
+      "profileImportBody": "These seed terms are an editable copy. Changes here do not update the saved website profile.",
+      "profileReferenceTitle": "Exact website profile reference",
+      "profileReferenceMeta": "Revision {revision} · {hash}",
+      "profilePinnedSeedsTitle": "Pinned seeds from the confirmed profile",
+      "profileReferenceAccepted": "Server accepted this exact version",
+      "profileOverlaySeedsLabel": "Additional seed terms (optional)",
+      "profileOverlaySeedsHint": "Add distinct run-only terms. The pinned terms above stay read-only, are re-derived by the server, and the combined plan stays within ten.",
+      "profileAuthenticationRequired": "Your account session is no longer available. Sign in again, then reselect the saved website profile.",
+      "profileUnavailable": "Saved website profiles are temporarily unavailable. No crawl or keyword generation started; try again shortly.",
       "readSite": "Read my site",
       "rereadSite": "Read my site again",
       "reading": "Reading your site…",
@@ -2960,6 +2971,12 @@
       "commonChecksIntro": "Remaining decisions for every row:",
       "retryWithSeeds": "Use these as seeds and run again",
       "runContext": "Read {site} for {market} / {language}. {pages} pages fetched, {productPages} of them product pages.",
+      "summary": {
+        "included": "Included",
+        "incomplete": "Detection incomplete",
+        "withheld": "Excluded",
+        "screeningProcess": "Screening process"
+      },
       "contextBoundary": "Candidate generation used a bounded context of up to 20 pages. It is not a whole-site crawl.",
       "contextSelection": "L2 selection found {eligible} eligible candidates, {excluded} excluded before page requests, {attempted} attempted, and {truncated} left unattempted after the 20-page limit.",
       "contextStopped": "Context boundary: {reason}",
@@ -2981,7 +2998,7 @@
         "winnableEvidence": "Weak site on page one",
         "shown": "Shown"
       },
-      "weakestHint": "Weakest rank is one raw page-one fact, not the decision rule by itself. The opportunity decision uses three separately reported signals: a young domain, a low-organic-traffic domain, or a community result. Any unavailable required signal keeps the candidate incomplete.",
+      "weakestHint": "Weakest rank is one raw page-one fact, not the decision rule by itself. The opportunity decision uses three separately reported signals: a young domain, a low-organic-traffic domain, or a community result. A positive signal still qualifies the row; only a row with no positive signal falls back to incomplete-on-unavailable evidence.",
       "geoHint": "These are question-form candidates judged by the same three page-one signals. A supporting page is shown only when one was observed; no demand is claimed when the provider returned none.",
       "eligibleTitle": "Eligible opportunities",
       "eligibleIntro": "At least one required opportunity signal was observed. AI Overview answer completeness can lower ordering; it never excludes a candidate.",
@@ -3004,17 +3021,80 @@
       "stagesMissing": "Missing: {stages}",
       "columns": {
         "keyword": "Keyword",
+        "keywordIntent": "Keyword and intent",
+        "questionIntent": "Question and intent",
         "providerIntent": "Provider intent",
         "serpIntent": "SERP interpreted intent",
         "volume": "Volume",
         "difficulty": "KD",
         "weakest": "Weakest rank",
+        "competition": "Competition context",
         "signals": "Three-signal evidence",
         "aiOverview": "AI Overview",
-        "supportingPage": "Page that answers it",
+        "supportingPage": "Supporting page",
         "coverage": "Your coverage",
+        "coverageReview": "Coverage and review",
         "nextChecks": "Check before acting",
         "remainingDecisions": "Remaining decisions"
+      },
+      "values": {
+        "notReturned": "Not returned",
+        "yes": "Yes",
+        "no": "No"
+      },
+      "supportingPage": {
+        "not_observed": "No supporting page observed",
+        "unavailable": "Supporting page unavailable"
+      },
+      "supportingPageSources": {
+        "gsc_observed_query_page": "Observed query page",
+        "lexical_page_match": "Crawled page match",
+        "llm_proposition_source": "Proposition source page",
+        "inventory_url_match": "Sitemap URL match",
+        "not_observed": "No supporting page observed"
+      },
+      "evidence": {
+        "show": "View evidence",
+        "hide": "Hide evidence",
+        "title": "Complete evidence",
+        "intentTitle": "Intent provenance",
+        "signalsTitle": "Signal provenance",
+        "reviewTitle": "Coverage and review",
+        "source": "Source",
+        "observedAt": "Observed at",
+        "modelId": "Model",
+        "promptVersion": "Prompt version",
+        "registrationDate": "Registration timestamp",
+        "marketLanguage": "Market {market} · language {language}",
+        "supportingPageUrl": "Full supporting page URL",
+        "supportingPageSource": "Supporting page basis",
+        "reason": "Reason",
+        "loadedAsync": "Loaded asynchronously"
+      },
+      "process": {
+        "title": "Run ledger",
+        "serpSummary": "Page-one sampling planned {planned}, completed {completed}, and left {failed} unavailable.",
+        "serpFailures": "Unavailable page-one reads: {reasons}.",
+        "failureReasons": {
+          "provider_unavailable": "Results-page provider unavailable",
+          "provider_no_data": "Provider returned no page-one data",
+          "transport_outcome_unknown": "Sampling outcome unreported",
+          "budget_exhausted": "Run budget exhausted before dispatch"
+        },
+        "supportingPages": "Supporting-page evidence across all candidates: {breakdown}.",
+        "decisions": "Decision totals: {eligible} eligible, {withheld} excluded, {incomplete} incomplete.",
+        "withheldReasons": "Excluded reasons: {reasons}.",
+        "incompleteReasons": "Incomplete reasons: {reasons}.",
+        "positiveWithUnavailable": "{count, plural, one {# candidate kept a positive signal while a sibling signal stayed unavailable.} other {# candidates kept a positive signal while a sibling signal stayed unavailable.}}",
+        "threshold": "Low-traffic threshold used for this site: rank {rank}, threshold {threshold}.",
+        "thresholdUnavailable": "The site's own rank tier could not be resolved, so the low-traffic threshold stayed unavailable.",
+        "durations": "Stage time: total {total}ms. Breakdown: {breakdown}.",
+        "durationStages": {
+          "coverage": "Search Console coverage",
+          "serpSampling": "page-one sampling",
+          "serpInterpretation": "SERP interpretation",
+          "domainEnrichment": "domain enrichment"
+        }
       },
       "aio": {
         "shown": "Observed on page one",
@@ -3029,6 +3109,9 @@
         "commercial": "Commercial",
         "transactional": "Transactional",
         "mixed": "Mixed"
+      },
+      "serpIntentSources": {
+        "serp_top_ten_interpretation": "Top-ten organic results interpretation"
       },
       "signalNames": {
         "young_domain": "Young domain",
@@ -3049,6 +3132,11 @@
         "lowTrafficObserved": "{domain} · ETV {etv} · threshold {threshold}",
         "communityObserved": "{source} · {domain} · #{position}",
         "titleUnavailable": "Result title not returned"
+      },
+      "signalCompact": {
+        "youngObserved": "{domain} · {months} months old",
+        "lowTrafficObserved": "{domain} · ETV {etv}",
+        "communityObserved": "{domain} · #{position}"
       },
       "aioAvailability": {
         "observed": "Observed on page one",
@@ -3209,7 +3297,7 @@
         "evidence": {
           "eyebrow": "STAGE 02",
           "title": "What the page shows",
-          "empty": "Nothing yet. Add a page and at least one query."
+          "empty": "Nothing yet. Add a page URL to run; a target query is optional."
         }
       },
       "fields": {
@@ -3219,7 +3307,9 @@
         "language": "Language",
         "pageRole": "Page role",
         "marketScope": "Market and language are used for one thing: reading the results page in the section below. The crawl and every check built on it are the same in every market. They also travel with you into the SEO Agent.",
-        "queriesPlaceholder": "e.g. astrology, birth chart, natal chart"
+        "queriesPlaceholder": "e.g. astrology, birth chart, natal chart",
+        "queriesOptional": "Target queries (optional, up to {max}, comma-separated)",
+        "queriesOptionalHint": "Leave it empty and the check still runs: status, robots, canonical, redirects, titles and links need no query. Only keyword placement does — so without one there is no overall score. That category is the largest part of the grade, and a total recomputed over the rest reads better than the page is."
       },
       "pageRoles": {
         "homepage": "Homepage",
@@ -3300,12 +3390,12 @@
       },
       "errors": {
         "urlRequired": "Add the page URL you want checked.",
-        "queryRequired": "Add at least one target query.",
         "queryDuplicate": "Folded {folded} repeat(s) so the same question is asked once.",
         "queryLimit": "Up to {max} queries; the {dropped} past that were not submitted.",
         "queryTooLong": "Up to {max} characters per query; {dropped} were too long and were not submitted.",
         "auth_required": "Sign in to run a check. What you typed is kept, and nothing runs until you say so.",
-        "retryAfter": "Retry in {seconds} seconds."
+        "retryAfter": "Retry in {seconds} seconds.",
+        "queriesAllRejected": "None of those queries could be submitted — see the note below and adjust them, or clear the field to run without a query."
       },
       "faq": {
         "title": "What this does and does not tell you",
@@ -3374,7 +3464,6 @@
       },
       "provenance": {
         "page": "Page read: {url}",
-        "landed": "Redirected to {url} — that is the page this report read, not the URL submitted.",
         "hit": "Read out of a crawl of this site collected at {time}, which was already held — this check started no new crawl.",
         "miss": "Read out of a crawl this check started, collected at {time}.",
         "unknown": "Collected at {time}. Whether the crawl was new or already held was not reported.",
@@ -3517,7 +3606,8 @@
           "brand": {
             "_label": "Brand term",
             "matched": "“{query}” matches the site's own domain, so it looks like a brand term. Brand terms sit at lower densities than topic terms by nature; this is noted, not scored."
-          }
+          },
+          "notRequested": "No target query was submitted, so nothing was compared against the page's title, description, H1, sub-headings and opening text."
         },
         "internalLinks": {
           "_label": "Internal links",
@@ -3711,7 +3801,10 @@
           "not_reachable": "Held at {ceiling}: this page returned an error status. Right now it does not exist.",
           "body_bytes": "Held at {ceiling}: too little visible text by byte count (this page's language cannot be counted in words, so bytes stand in).",
           "keyword_unmeasured": "Held at {ceiling}: keyword placement could not be measured this run, and it is the largest part of this sheet. The rest still grades, but it grades a page whose subject was never established."
-        }
+        },
+        "unscored": "Not scored",
+        "unscoredNote": "No target query was submitted, so keyword placement was not tested. Every other scorable check was graded and the category subtotals below are complete; an overall score needs a target query.",
+        "unscoredReport": "No overall score this run: no target query was submitted, so keyword placement was not tested."
       },
       "vitals": {
         "status": "status",
@@ -4342,7 +4435,8 @@
         "run": "Run {calls} provider calls",
         "running": "Asking the assistant…",
         "runningHint": "This takes about two minutes. The calls run concurrently and the plan does not change once it has started.",
-        "signInRequired": "Sign in to run"
+        "signInRequired": "Sign in to run",
+        "websiteProfileReference": "Website profile source pinned to v{revision} · {hash}"
       },
       "review": {
         "title": "Confirm the facts this run will use",
@@ -4357,15 +4451,22 @@
         },
         "categoryTitle": "Category",
         "categoryConfirm": "Yes, buyers would call this a {category} product.",
+        "savedProfileContextTitle": "Reusable context from the exact website snapshot",
+        "savedProfileContextHint": "These non-editable values will enter this GEO context exactly as shown. Empty website-profile fields are omitted.",
         "provenanceTitle": "Where each fact came from",
         "field": {
           "target_url": "Site URL",
           "product_name": "Product name",
           "category": "Category",
           "buyer": "Buyer",
+          "user": "User",
           "brand_aliases": "Brand names",
           "direct_competitors": "Competitors",
+          "indirect_alternatives": "Indirect alternatives",
           "jtbd": "Job to be done",
+          "use_cases": "Use cases",
+          "outcomes": "Outcomes",
+          "barriers": "Adoption barriers",
           "market_code": "Market",
           "target_query_language": "Query language"
         },
@@ -4374,6 +4475,8 @@
           "visitor_declared": "you declared it",
           "visitor_confirmed": "you confirmed it",
           "visitor_confirmed_with_inference": "you confirmed it, one name inferred",
+          "saved_website_profile": "from the pinned website profile",
+          "saved_website_profile_candidate": "proposed from the pinned website profile",
           "not_supplied": "not supplied",
           "product_constraint": "fixed by this version"
         },
@@ -4381,6 +4484,8 @@
           "not_independently_checked": "not checked against the page",
           "no_profile_source_exists": "no automatic source for this exists",
           "hostname_label_inferred": "the hostname label is a guess you accepted",
+          "pinned_snapshot": "fixed to the referenced snapshot",
+          "requires_current_confirmation": "requires your confirmation for this GEO run",
           "not_supplied": "the run proceeds without it",
           "calibrated_for_us_only": "wording was calibrated with US settings",
           "english_only_in_p0": "English only in this version"
@@ -4405,6 +4510,7 @@
         "list_value_invalid": "One of the list values is too long.",
         "source_summary_invalid": "The provenance record is not valid.",
         "profile_version_invalid": "The context version is missing.",
+        "website_profile_reference_invalid": "The saved website-profile reference is not valid.",
         "unknown_query": "That question is no longer part of the set.",
         "template_unavailable": "No calibrated wording is available for one of the slots.",
         "placeholder_rejected": "One of your values does not fit the calibrated wording. Shorten it to a plain noun phrase.",
@@ -4461,6 +4567,7 @@
       "results": {
         "title": "What this run observed",
         "sampledAt": "Sampled {date}",
+        "websiteProfileReference": "Captured website profile source v{revision} · {hash}",
         "identityTitle": "Run identity",
         "coverageNote": "Each block below is counted against its own denominator, and only the first states anything about the run as a whole. Retrieval and natural demand never share a number, prompted and unprompted mentions never share a number, and a sample that observed nothing is excluded rather than counted as a zero.",
         "notStored": "Report contents, provider answers and evidence are not stored server-side. Minimal billing, quota and abuse-prevention metadata is retained by the existing credits system. There is no paired recheck in this version.",
@@ -4612,6 +4719,8 @@
         "geo_budget_exhausted": "The GEO Agent has reached today's run budget. Try again tomorrow.",
         "geo_budget_unavailable": "The run budget cannot be checked right now. Try again shortly.",
         "geo_provider_unavailable": "The answer provider is unavailable. Nothing was billed.",
+        "geo_website_profile_reference_invalid": "The pinned website profile no longer matches this site or exact version. Re-open the saved profile before running — nothing was billed.",
+        "geo_website_profile_unavailable": "The saved website profile is temporarily unavailable. Try again later — nothing was billed.",
         "geo_report_invalid": "The report did not pass its own consistency check, so it was not shown.",
         "unknown": "The run could not be completed. Nothing was saved."
       },
@@ -4844,6 +4953,20 @@
     },
     "workbench": {
       "stage1": "Stage 01 · Target",
+      "websiteProfile": {
+        "title": "Saved website profile",
+        "open": "Use saved website profile",
+        "loading": "Loading saved websites…",
+        "unavailable": "Saved websites are temporarily unavailable.",
+        "placeholder": "Choose a website",
+        "suggested": "Exact URL match",
+        "primary": "Primary",
+        "import": "Import",
+        "reference": "Reference exact version",
+        "draftOnly": "Confirm this website profile before importing or referencing it.",
+        "noProfile": "This website has no saved profile yet.",
+        "runReference": "Run pinned to website profile v{revision} · {hash}"
+      },
       "profile": {
         "stage": "Stage 01 · Product Profile",
         "seo": {
@@ -4857,6 +4980,17 @@
         "states": {
           "needs_confirmation": "Review required",
           "confirmed": "Confirmed for this run"
+        },
+        "websiteProfile": {
+          "import": "Detached website profile import",
+          "reference": "Exact website snapshot v{revision} · {hash}",
+          "saveBack": "Save back to website draft",
+          "saveStatus": {
+            "saving": "Saving back…",
+            "saved": "Saved to website draft",
+            "conflict": "Website draft changed. Reopen it before saving back.",
+            "error": "Could not save back to the website draft."
+          }
         },
         "fields": {
           "targetUrl": "Target URL",
@@ -5651,6 +5785,7 @@
         "unknown": "The Agent run could not be completed."
       },
       "capturedReport": "Stage 02 · Captured report",
+      "capturedLanded": "Redirected to {url} — that is the page this report read.",
       "finalOrigin": "Final public origin",
       "capturedAt": "Captured at",
       "availability": {
@@ -5806,11 +5941,153 @@
     }
   },
   "account": {
+    "settings": {
+      "eyebrow": "Account",
+      "title": "Settings",
+      "back": "Back to GenGrowth",
+      "navigation": "Settings navigation",
+      "websites": "Websites",
+      "credits": "Credits",
+      "agents": "Agents"
+    },
+    "websites": {
+      "title": "Websites",
+      "subtitle": "Save the product and audience context your Agents can reuse.",
+      "loading": "Loading your websites…",
+      "signedOut": "Sign in to manage websites.",
+      "unavailable": "Websites are temporarily unavailable.",
+      "retry": "Try again",
+      "emptyTitle": "Add your first website",
+      "emptyBody": "We will keep its profile here so future Agents can import or reference the version you confirm.",
+      "add": "Add website",
+      "edit": "Edit",
+      "editWebsite": "Edit {name}",
+      "primary": "Primary",
+      "setPrimary": "Make primary",
+      "setPrimaryWebsite": "Make {name} primary",
+      "settingPrimary": "Updating…",
+      "version": "Confirmed v{revision}",
+      "confirmedAt": "Confirmed {date}",
+      "status": {
+        "not_generated": "Not generated",
+        "draft": "Draft",
+        "confirmed": "Confirmed",
+        "unconfirmed_changes": "Unconfirmed changes"
+      },
+      "dialog": {
+        "title": "Add website",
+        "description": "Save a public website now, then optionally generate its Product and ICP profile.",
+        "url": "Website URL",
+        "urlPlaceholder": "e.g. example.com…",
+        "displayName": "Display name (optional)",
+        "displayNamePlaceholder": "e.g. Example…",
+        "addOnly": "Add only",
+        "addAndGenerate": "Add and generate profile",
+        "adding": "Adding…",
+        "invalidUrl": "Enter a public http or https website.",
+        "failed": "The website could not be added. Try again."
+      },
+      "fields": {
+        "productName": "Product name",
+        "oneLinePositioning": "One-line positioning",
+        "valueProposition": "Value proposition",
+        "coreFeatures": "Core features",
+        "categories": "Categories",
+        "businessModel": "Business model",
+        "primaryCta": "Primary CTA",
+        "trustSignals": "Trust signals",
+        "primaryIcp": "Primary ICP",
+        "buyer": "Buyer",
+        "user": "User",
+        "triggerPain": "Trigger pain",
+        "icpInterests": "ICP interests",
+        "icpPain": "ICP pain",
+        "icpBehavior": "ICP behavior",
+        "icpPositioning": "ICP positioning",
+        "jtbd": "Job to be done",
+        "useCases": "Use cases",
+        "outcomes": "Desired outcomes",
+        "barriers": "Barriers",
+        "qualificationSignals": "Qualification signals",
+        "disqualifiers": "Disqualifiers",
+        "directCompetitors": "Direct competitors",
+        "indirectAlternatives": "Indirect alternatives",
+        "excludedAlternatives": "Excluded alternatives",
+        "firstOutcome": "First outcome",
+        "country": "Primary market",
+        "locale": "Primary language"
+      },
+      "refresh": {
+        "title": "Review refresh",
+        "available": "A complete refresh is ready.",
+        "partial": "A partial refresh is ready. Missing fields stay explicit.",
+        "no_data": "No reusable fields were found.",
+        "current": "Current",
+        "proposed": "Proposed",
+        "evidence": "Sources",
+        "applyAll": "Apply all proposals",
+        "applyField": "Apply",
+        "dismiss": "Dismiss",
+        "noChanges": "No field changes were proposed."
+      },
+      "editor": {
+        "loading": "Loading profile…",
+        "signedOut": "Sign in to edit this profile.",
+        "unavailable": "This profile is temporarily unavailable.",
+        "notFound": "Website not found.",
+        "productSection": "Product",
+        "icpSection": "ICP",
+        "marketSection": "Market and alternatives",
+        "sourcesSection": "Sources and versions",
+        "listAdd": "Add item",
+        "listRemove": "Remove",
+        "saveDraft": "Save draft",
+        "retrySave": "Retry save",
+        "listIncomplete": "Finish or remove empty list items before saving.",
+        "rescan": "Re-scan website",
+        "generating": "Scanning…",
+        "generationFailed": "The website refresh failed. Your current draft was not changed.",
+        "saveState": {
+          "unsaved": "Unsaved",
+          "saving": "Saving…",
+          "saved": "Saved",
+          "failed": "Save failed",
+          "conflicted": "Conflict"
+        },
+        "conflict": {
+          "title": "Resolve conflict",
+          "body": "Choose local or server values, then save against the latest version.",
+          "local": "Local",
+          "server": "Server",
+          "keepLocal": "Keep local",
+          "useServer": "Use server",
+          "save": "Save merged draft"
+        },
+        "confirm": {
+          "title": "Confirm profile",
+          "missing": "Complete required fields before confirming.",
+          "changes": "{count} changes from the current confirmed version",
+          "action": "Confirm profile",
+          "confirming": "Confirming…",
+          "version": "Confirmed v{revision}",
+          "failed": "The profile could not be confirmed. Review the fields and try again."
+        },
+        "draftVersion": "Draft v{version}",
+        "noSources": "No source URLs yet."
+      }
+    },
     "menu": {
       "label": "Account",
       "balance": "Credits",
       "welfareRemaining": "{remaining} left to earn while testing",
-      "ledger": "Credit history"
+      "ledger": "Credit history",
+      "credits": "Credits",
+      "website": "Website",
+      "addWebsite": "Add website",
+      "settings": "Settings",
+      "agents": "Agents",
+      "language": "Language",
+      "referral": "Invite friends, earn rewards"
     }
   }
 }

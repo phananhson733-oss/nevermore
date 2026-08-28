@@ -95,8 +95,12 @@ export function Header() {
 
         {/* Right */}
         <div className="flex items-center gap-4">
-          <ThemeToggle />
-          <LanguageSwitcher />
+          {account.status === "signed-in" ? null : (
+            <>
+              <ThemeToggle />
+              <LanguageSwitcher />
+            </>
+          )}
           <SignInControl
             account={account}
             onSignIn={() => setSignInOpen(true)}
@@ -117,7 +121,7 @@ export function Header() {
             </SheetTrigger>
             <SheetContent
               side="right"
-              className="border-brand-border bg-brand-bg"
+              className="overflow-y-auto border-brand-border bg-brand-bg"
             >
               <SheetTitle className="sr-only">Navigation</SheetTitle>
               <nav
