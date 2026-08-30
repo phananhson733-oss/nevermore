@@ -205,6 +205,7 @@ test.describe("Content Brief Builder", () => {
       const card = page.locator('a[href$="/tools/content-brief"]').first();
       await expect(card).toBeVisible();
       await expect(card).toContainText("Content Brief Builder");
+      await expect(card).toHaveAccessibleName("Content Brief Builder");
     }
     await page.goto("/zh/tools/content-brief");
     await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
