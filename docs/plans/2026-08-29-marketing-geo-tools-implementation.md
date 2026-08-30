@@ -190,10 +190,8 @@
 没有 Azure Brief 组装 resolver。其他旧工具或 worker 里的 Azure/OpenAI 变量可以
 作为配置形态参考，但不是 GEO Brief 可以读取的配置，也不能作为 silent fallback。
 
-PR #251 分支上的代码收口由两个原子提交组成：`119c6419` 增加
-GEO Brief 专用 pinned temperature，`863be2ad` 把显式非法配置改成 fail
-closed。PR #251 合并时 squash 为 main 上的 `0c7b07cf`；前两个 SHA 是 PR 分支的
-审查与溯源证据，不是 main 上的两个独立提交。最终合同是：
+代码收口由两个原子提交组成：`119c6419` 增加 GEO Brief 专用 pinned temperature，
+`863be2ad` 把显式非法配置改成 fail closed。最终合同是：
 
 - `resolveGeoBriefLlmConfig()` 继续只读 `GEO_BRIEF_*`，不回退到
   `CONTENT_BRIEF_*`、`CONTENT_DRAFT_*`、`KEYWORD_MAP_*`、`OPENAI_*` 或
