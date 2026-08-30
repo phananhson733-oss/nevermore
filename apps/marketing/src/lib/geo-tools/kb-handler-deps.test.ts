@@ -147,7 +147,7 @@ describe("default GEO knowledge-base load", () => {
     ).resolves.toEqual({ kind: "unavailable", reason: "store_unavailable" });
   });
 
-  it("maps a missing frozen set to not-found instead of using the total", async () => {
+  it("treats a missing exact frozen set as store inconsistency", async () => {
     mocks.readFrozenGeoKb.mockResolvedValue({ kind: "missing" });
 
     await expect(
@@ -155,7 +155,10 @@ describe("default GEO knowledge-base load", () => {
         userId: USER_ID,
         url: "https://example.com/",
       }),
-    ).resolves.toEqual({ kind: "not_found" });
+    ).resolves.toEqual({
+      kind: "unavailable",
+      reason: "frozen snapshot unavailable",
+    });
   });
 
   it("does not read a snapshot when the knowledge base has none frozen", async () => {

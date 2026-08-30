@@ -166,7 +166,15 @@ export const DEFAULT_GEO_KB_HANDLER_DEPENDENCIES: GeoKbHandlerDependencies = {
         kbId: details.value.kbId,
         revision: details.value.frozen.revision,
       });
-      if (frozen.kind !== "ok") return toOutcome(frozen, () => null as never);
+      if (frozen.kind !== "ok") {
+        return {
+          kind: "unavailable",
+          reason:
+            frozen.kind === "unavailable"
+              ? frozen.reason
+              : "frozen snapshot unavailable",
+        };
+      }
       retrievalCount = retrievalCountOf(frozen.value.questionSet);
     }
     const profile = await profileFor(userId, url);
