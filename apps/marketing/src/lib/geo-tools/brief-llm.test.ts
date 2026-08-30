@@ -9,7 +9,10 @@ import {
   GEO_BRIEF_TEMPERATURE,
   type GeoBriefLlmInput,
 } from "./brief-llm.ts";
-import type { GeoBriefFact } from "./brief-contract.ts";
+import {
+  GEO_BRIEF_LIMITS_MAX,
+  type GeoBriefFact,
+} from "./brief-contract.ts";
 import {
   createKeywordLlmClient,
   KeywordLlmError,
@@ -246,6 +249,20 @@ describe("the prompt", () => {
     expect(GEO_BRIEF_SYSTEM_PROMPT).toContain(
       "Never put prose, entity names, or headings in outline.answers",
     );
+  });
+
+  it("states every parser bound in both prompt halves", () => {
+    const fragments = [
+      `leadAnswerRequirement: 1..${String(GEO_BRIEF_LIMITS_MAX.requirementChars)} characters`,
+      `mustAnswer: 1..${String(GEO_BRIEF_LIMITS_MAX.mustAnswer)} items`,
+      `mustAnswer.text: 1..${String(GEO_BRIEF_LIMITS_MAX.mustAnswerChars)} characters`,
+      `outline: 1..${String(GEO_BRIEF_LIMITS_MAX.outline)} sections`,
+      `outline.heading: 1..${String(GEO_BRIEF_LIMITS_MAX.headingChars)} characters`,
+      `outline.answers: 1..${String(GEO_BRIEF_LIMITS_MAX.answersPerSection)} ids`,
+    ];
+    for (const prompt of [GEO_BRIEF_SYSTEM_PROMPT, geoBriefUserPrompt(input())]) {
+      for (const fragment of fragments) expect(prompt).toContain(fragment);
+    }
   });
 });
 

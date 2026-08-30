@@ -153,6 +153,15 @@ export function resolveGeoBriefLlmConfig(
   };
 }
 
+const GEO_BRIEF_PARSER_BOUND_LINES = [
+  `- leadAnswerRequirement: 1..${String(GEO_BRIEF_LIMITS_MAX.requirementChars)} characters`,
+  `- mustAnswer: 1..${String(GEO_BRIEF_LIMITS_MAX.mustAnswer)} items`,
+  `- mustAnswer.text: 1..${String(GEO_BRIEF_LIMITS_MAX.mustAnswerChars)} characters`,
+  `- outline: 1..${String(GEO_BRIEF_LIMITS_MAX.outline)} sections`,
+  `- outline.heading: 1..${String(GEO_BRIEF_LIMITS_MAX.headingChars)} characters`,
+  `- outline.answers: 1..${String(GEO_BRIEF_LIMITS_MAX.answersPerSection)} ids`,
+] as const;
+
 /**
  * The one instruction that matters.
  *
@@ -184,6 +193,9 @@ export const GEO_BRIEF_SYSTEM_PROMPT = [
   "  mustAnswer array you return in this reply.",
   "- Never put prose, entity names, or headings in outline.answers.",
   "- Write in the language named in the input.",
+  "",
+  "Hard output bounds:",
+  ...GEO_BRIEF_PARSER_BOUND_LINES,
   "",
   "Return only JSON, with this exact shape:",
   '{"leadAnswerRequirement": string,',
@@ -223,8 +235,8 @@ export function geoBriefUserPrompt(input: GeoBriefLlmInput): string {
     "Verified facts (the only source of specifics):",
     factLines(input.facts),
     "",
-    `Return at most ${String(GEO_BRIEF_LIMITS_MAX.mustAnswer)} must-answer items`,
-    `and at most ${String(GEO_BRIEF_LIMITS_MAX.outline)} outline sections.`,
+    "Hard output bounds:",
+    ...GEO_BRIEF_PARSER_BOUND_LINES,
   ].join("\n");
 }
 
