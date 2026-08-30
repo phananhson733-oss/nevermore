@@ -10,6 +10,15 @@ import {
   ENVELOPE_MS,
   HEADING_MAX_CHARS,
 } from "@sf/public-tools/content-brief/constants";
+import {
+  assembleContentBrief,
+  buildMustAnswerDraft,
+} from "@sf/public-tools/content-brief/assemble";
+import { contentBriefFixture } from "@sf/public-tools/content-brief/fixtures";
+import {
+  parseContentBrief,
+  parseContentBriefShape,
+} from "@sf/public-tools/content-brief/parse-brief";
 import type {
   fetchPublicResource,
   PublicResourceFetchOptions,
@@ -84,6 +93,44 @@ function fetchReturning(
 
 function fixedClock(at = START): () => number {
   return () => at;
+}
+
+function inspectUtf16(value: string): {
+  readonly wellFormed: boolean;
+  readonly loneHighSurrogates: number[];
+  readonly loneLowSurrogates: number[];
+} {
+  const loneHighSurrogates: number[] = [];
+  const loneLowSurrogates: number[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        index += 1;
+      } else {
+        loneHighSurrogates.push(index);
+      }
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      loneLowSurrogates.push(index);
+    }
+  }
+  return {
+    wellFormed: loneHighSurrogates.length === 0 && loneLowSurrogates.length === 0,
+    loneHighSurrogates,
+    loneLowSurrogates,
+  };
+}
+
+function expectBoundedAstralString(value: string | undefined, codePoints: number): void {
+  expect(value).toBe("😀".repeat(codePoints));
+  if (value === undefined) throw new Error("expected a bounded crawl string");
+  expect([...value]).toHaveLength(codePoints);
+  expect(inspectUtf16(value)).toEqual({
+    wellFormed: true,
+    loneHighSurrogates: [],
+    loneLowSurrogates: [],
+  });
 }
 
 describe("crawlContentBriefTargets", () => {
@@ -485,6 +532,67 @@ describe("crawlContentBriefTargets", () => {
       "Section 1",
       "Section 2",
     ]);
+  });
+
+  it("bounds well-formed astral crawl strings and round-trips every emitted field through the parser", async () => {
+    const heading = "😀".repeat(HEADING_MAX_CHARS + 1);
+    const prose = "😀".repeat(CRAWL_EXCERPT_MAX_CHARS + 1);
+    const fixture = contentBriefFixture({ llm: "validation_failed" });
+    const firstSerp = fixture.evidence.serp[0];
+    const firstUrl = firstSerp?.url;
+    if (firstUrl === null || firstUrl === undefined) {
+      throw new Error("expected fixture S1 to have a URL");
+    }
+    const { fetchResource } = fetchReturning(() =>
+      page({
+        requestedUrl: firstUrl,
+        finalUrl: firstUrl,
+        body: `<html><body><h2>${heading}</h2><p>${prose}</p><h3>${heading}</h3><p>${prose}</p></body></html>`,
+      }),
+    );
+
+    const result = await crawlContentBriefTargets(
+      {
+        targets: [{ serp_id: firstSerp.id, url: firstUrl }],
+        deadlineAt: GENEROUS_DEADLINE,
+        language: fixture.keyword.language,
+      },
+      { fetchResource, now: fixedClock() },
+    );
+
+    const observation = result.observed[0];
+    const excerpt = observation?.excerpts[0];
+    expectBoundedAstralString(observation?.h2[0], HEADING_MAX_CHARS);
+    expectBoundedAstralString(observation?.h3[0], HEADING_MAX_CHARS);
+    expectBoundedAstralString(excerpt?.heading, HEADING_MAX_CHARS);
+    expectBoundedAstralString(excerpt?.text, CRAWL_EXCERPT_MAX_CHARS);
+
+    if (observation === undefined) throw new Error("expected one crawl observation");
+    const observed = [observation, ...fixture.evidence.crawl.observed.slice(1)];
+    const brief = await assembleContentBrief({
+      run: fixture.run,
+      keyword: fixture.keyword,
+      reads: fixture.run.reads,
+      serp: fixture.evidence.serp,
+      crawl: {
+        observed,
+        failed: fixture.evidence.crawl.failed,
+        skipped: fixture.evidence.crawl.skipped,
+      },
+      profileFacts: fixture.evidence.profile?.facts ?? null,
+      gscQueryPage: fixture.evidence.gsc_query_page,
+      gscPages: fixture.evidence.gsc_pages,
+      verdict: fixture.verdict,
+      mustAnswer: buildMustAnswerDraft({
+        serp: fixture.evidence.serp,
+        observed,
+        crawlReads: fixture.run.reads.crawl,
+        language: fixture.keyword.language,
+      }),
+      model: { output: null },
+    });
+    expect(parseContentBriefShape(brief)).toMatchObject({ ok: true });
+    await expect(parseContentBrief(brief)).resolves.toMatchObject({ ok: true });
   });
 
   it("refuses a target whose serp_id is not S<n> before fetching anything", async () => {

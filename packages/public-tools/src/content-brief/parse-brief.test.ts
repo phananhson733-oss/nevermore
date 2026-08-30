@@ -21,6 +21,7 @@ import { CONTENT_BRIEF_HANDOFF_MAX_BYTES, CONTENT_BRIEF_HANDOFF_TTL_MS, CONTENT_
 import type { ContentBrief, Origin } from "./contract.ts";
 import { contentBriefFixture, validConnectedContentBrief, validContentBrief, withFingerprint } from "./fixtures.ts";
 import { parseContentBrief, parseContentBriefHandoff, parseContentBriefShape } from "./parse-brief.ts";
+import { decodeBriefShape } from "./parse-brief-shape.ts";
 import type { ParseBriefFailure } from "./parse-brief.ts";
 
 /* ------------------------------------------------------------------ */
@@ -180,6 +181,27 @@ describe("parseContentBriefShape accepts", () => {
       draft.outline.items[0].h2 = "h".repeat(MODEL_TEXT_MAX_CHARS);
     }));
   });
+
+  it("a crawl excerpt containing astral Unicode exactly at its code-point cap", () => {
+    const excerpt = "😀".repeat(CRAWL_EXCERPT_MAX_CHARS);
+
+    expect(excerpt).toHaveLength(CRAWL_EXCERPT_MAX_CHARS * 2);
+    expectAccepted(mutated(validContentBrief(), (draft) => {
+      draft.evidence.crawl.observed[0].excerpts[0].text = excerpt;
+    }));
+  });
+
+  it("producer-owned crawl headings containing astral Unicode exactly at their code-point cap", () => {
+    const heading = "😀".repeat(HEADING_MAX_CHARS);
+    const brief = mutated(validContentBrief(), (draft) => {
+      draft.evidence.crawl.observed[0].h2[0] = heading;
+      draft.evidence.crawl.observed[0].h3[0] = heading;
+      draft.evidence.crawl.observed[0].excerpts[0].heading = heading;
+    });
+
+    expect(heading).toHaveLength(HEADING_MAX_CHARS * 2);
+    expect(decodeBriefShape(brief, "")).toMatchObject({ ok: true });
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -233,6 +255,16 @@ describe("parseContentBriefShape rejects", () => {
     expectShape(mutated(validContentBrief(), (draft) => { draft.outline.items[0].h2 = "h".repeat(MODEL_TEXT_MAX_CHARS + 1); }), "invalid_request", "outline.items[0].h2");
     expectShape(mutated(validConnectedContentBrief(), (draft) => { draft.gap_angle.rationale = "r".repeat(MODEL_TEXT_MAX_CHARS + 1); }), "invalid_request", "gap_angle.rationale");
     expectShape(mutated(validConnectedContentBrief(), (draft) => { draft.evidence.profile.facts[0].text = "f".repeat(PROFILE_FACT_MAX_CHARS + 1); }), "invalid_request", "evidence.profile.facts[0].text");
+  });
+
+  it("crawl strings one code point above their caps at the exact field path", () => {
+    const heading = "😀".repeat(HEADING_MAX_CHARS + 1);
+    const excerpt = "😀".repeat(CRAWL_EXCERPT_MAX_CHARS + 1);
+
+    expectShape(mutated(validContentBrief(), (draft) => { draft.evidence.crawl.observed[0].h2[0] = heading; }), "invalid_request", "evidence.crawl.observed[0].h2[0]");
+    expectShape(mutated(validContentBrief(), (draft) => { draft.evidence.crawl.observed[0].h3[0] = heading; }), "invalid_request", "evidence.crawl.observed[0].h3[0]");
+    expectShape(mutated(validContentBrief(), (draft) => { draft.evidence.crawl.observed[0].excerpts[0].heading = heading; }), "invalid_request", "evidence.crawl.observed[0].excerpts[0].heading");
+    expectShape(mutated(validContentBrief(), (draft) => { draft.evidence.crawl.observed[0].excerpts[0].text = excerpt; }), "invalid_request", "evidence.crawl.observed[0].excerpts[0].text");
   });
 
   it("URLs that are not http(s)", () => {

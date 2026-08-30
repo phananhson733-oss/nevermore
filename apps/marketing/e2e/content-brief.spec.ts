@@ -113,6 +113,24 @@ test.describe("Content Brief Builder", () => {
     expect(guard.unexpected).toEqual([]);
   });
 
+  test("closing the mobile sign-in dialog returns focus to the menu trigger", async ({ page }) => {
+    await installGuard(page, { signedIn: false });
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/en/tools/content-brief");
+
+    const menu = page.getByRole("button", { name: "Open menu" });
+    await menu.click();
+
+    const mobileNav = page.getByRole("navigation", { name: "Mobile navigation" });
+    await mobileNav.getByRole("button", { name: "Sign in", exact: true }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Sign in to GenGrowth" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Close" }).click();
+
+    await expect(menu).toBeFocused();
+  });
+
   test("a run without Search Console renders an undecidable verdict, never 'create'", async ({ page }) => {
     const brief = validContentBrief();
     const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(brief) });
@@ -205,6 +223,7 @@ test.describe("Content Brief Builder", () => {
       const card = page.locator('a[href$="/tools/content-brief"]').first();
       await expect(card).toBeVisible();
       await expect(card).toContainText("Content Brief Builder");
+      await expect(card).toHaveAccessibleName("Content Brief Builder");
     }
     await page.goto("/zh/tools/content-brief");
     await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
