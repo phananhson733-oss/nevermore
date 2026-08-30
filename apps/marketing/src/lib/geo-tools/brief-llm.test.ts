@@ -43,6 +43,13 @@ const FACTS: readonly GeoBriefFact[] = [
   },
 ];
 
+const USAGE = {
+  inputTokens: 10,
+  outputTokens: 20,
+  requestCount: 1,
+  retryCount: 0,
+} as const;
+
 function input(overrides: Partial<GeoBriefLlmInput> = {}): GeoBriefLlmInput {
   return {
     questionText: "best project trackers for mid-market ops",
@@ -64,12 +71,7 @@ function client(content: string): KeywordLlmClient {
     complete: vi.fn(async () => ({
       content,
       modelId: "gpt-test",
-      usage: {
-        inputTokens: 10,
-        outputTokens: 20,
-        requestCount: 1,
-        retryCount: 0,
-      },
+      usage: USAGE,
     })),
   } as unknown as KeywordLlmClient;
 }
@@ -256,15 +258,15 @@ describe("runGeoBriefLlm", () => {
     expect(result).toEqual({ ok: false, reason: "not_configured" });
   });
 
-  it("treats a non-JSON reply as a validation failure, not a crash", async () => {
+  it("names a non-JSON reply and retains the charged usage", async () => {
     const result = await runGeoBriefLlm(input(), {
       config: CONFIG,
       client: client("I could not do that."),
     });
-    expect(result).toEqual({ ok: false, reason: "validation_failed" });
+    expect(result).toEqual({ ok: false, reason: "invalid_json", usage: USAGE });
   });
 
-  it("refuses a reply that references an id it was not given", async () => {
+  it("names a schema refusal and retains the charged usage", async () => {
     const result = await runGeoBriefLlm(input(), {
       config: CONFIG,
       client: client(
@@ -275,28 +277,45 @@ describe("runGeoBriefLlm", () => {
         }),
       ),
     });
-    expect(result).toEqual({ ok: false, reason: "validation_failed" });
+    expect(result).toEqual({ ok: false, reason: "schema_invalid", usage: USAGE });
   });
 
-  it("names a timeout apart from any other provider failure", async () => {
+  it("keeps timeout as the exact provider failure reason", async () => {
+    const usage = {
+      inputTokens: null,
+      outputTokens: null,
+      requestCount: 1,
+      retryCount: 0,
+    } as const;
     const timing = {
       complete: vi.fn(async () => {
-        throw new KeywordLlmError("timeout", "took too long");
+        throw new KeywordLlmError("timeout", "took too long", usage);
       }),
     } as unknown as KeywordLlmClient;
     expect(
       await runGeoBriefLlm(input(), { config: CONFIG, client: timing }),
-    ).toEqual({ ok: false, reason: "timeout" });
-
-    const broken = {
-      complete: vi.fn(async () => {
-        throw new KeywordLlmError("server_error", "500");
-      }),
-    } as unknown as KeywordLlmClient;
-    expect(
-      await runGeoBriefLlm(input(), { config: CONFIG, client: broken }),
-    ).toEqual({ ok: false, reason: "provider_error" });
+    ).toEqual({ ok: false, reason: "timeout", usage });
   });
+
+  it.each(["server_error", "invalid_response"] as const)(
+    "keeps %s and its usage instead of collapsing the provider failure",
+    async (reason) => {
+      const usage = {
+        inputTokens: reason === "invalid_response" ? 17 : null,
+        outputTokens: reason === "invalid_response" ? 4096 : null,
+        requestCount: 1,
+        retryCount: 0,
+      } as const;
+      const broken = {
+        complete: vi.fn(async () => {
+          throw new KeywordLlmError(reason, "safe fixture", usage);
+        }),
+      } as unknown as KeywordLlmClient;
+      expect(
+        await runGeoBriefLlm(input(), { config: CONFIG, client: broken }),
+      ).toEqual({ ok: false, reason, usage });
+    },
+  );
 
   it("lets an unexpected throw through instead of calling it a provider error", async () => {
     const exploding = {

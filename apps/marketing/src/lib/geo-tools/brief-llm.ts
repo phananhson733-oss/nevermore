@@ -7,6 +7,8 @@ import {
   KeywordLlmError,
   type KeywordLlmClient,
   type KeywordLlmConfig,
+  type KeywordLlmFailureReason,
+  type KeywordLlmUsage,
 } from "../tools/keyword-llm-client.ts";
 import {
   parseGeoBriefReply,
@@ -38,15 +40,17 @@ export const GEO_BRIEF_TEMPERATURE = 0.2;
 export const GEO_BRIEF_MAX_OUTPUT_TOKENS = 4096;
 
 export type GeoBriefLlmFailure =
-  | "not_configured"
   | "nothing_to_assemble"
-  | "timeout"
-  | "provider_error"
-  | "validation_failed";
+  | "invalid_json"
+  | KeywordLlmFailureReason;
 
 export type GeoBriefLlmResult =
   | { readonly ok: true; readonly value: GeoBriefModelReply }
-  | { readonly ok: false; readonly reason: GeoBriefLlmFailure };
+  | {
+      readonly ok: false;
+      readonly reason: GeoBriefLlmFailure;
+      readonly usage?: KeywordLlmUsage;
+    };
 
 export interface GeoBriefLlmInput {
   readonly questionText: string;
@@ -227,7 +231,7 @@ export async function runGeoBriefLlm(
     try {
       raw = JSON.parse(completion.content) as unknown;
     } catch {
-      return { ok: false, reason: "validation_failed" };
+      return { ok: false, reason: "invalid_json", usage: completion.usage };
     }
     const parsed = parseGeoBriefReply(
       raw,
@@ -235,12 +239,9 @@ export async function runGeoBriefLlm(
     );
     return parsed.ok
       ? { ok: true, value: parsed.value }
-      : { ok: false, reason: "validation_failed" };
+      : { ok: false, reason: "schema_invalid", usage: completion.usage };
   } catch (error) {
     if (!(error instanceof KeywordLlmError)) throw error;
-    return {
-      ok: false,
-      reason: error.reason === "timeout" ? "timeout" : "provider_error",
-    };
+    return { ok: false, reason: error.reason, usage: error.usage };
   }
 }
