@@ -1,0 +1,176 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { emptyGeoKbPayload } from "./kb-contract.ts";
+import {
+  GEO_QUESTION_SET_SCHEMA_VERSION,
+  type GeoQuestion,
+  type GeoQuestionMode,
+  type GeoQuestionSet,
+} from "./kb-questions.ts";
+import type { GeoKbDetails, GeoKbFrozenSnapshot } from "./kb-store.ts";
+
+const mocks = vi.hoisted(() => ({
+  ensureGeoKnowledgeBase: vi.fn(),
+  findAccountWebsiteByUrl: vi.fn(),
+  readFrozenGeoKb: vi.fn(),
+  readGeoKnowledgeBase: vi.fn(),
+}));
+
+vi.mock("../account-websites/store.ts", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../account-websites/store.ts")
+  >();
+  return {
+    ...actual,
+    findAccountWebsiteByUrl: mocks.findAccountWebsiteByUrl,
+  };
+});
+
+vi.mock("./kb-store.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./kb-store.ts")>();
+  return {
+    ...actual,
+    ensureGeoKnowledgeBase: mocks.ensureGeoKnowledgeBase,
+    readFrozenGeoKb: mocks.readFrozenGeoKb,
+    readGeoKnowledgeBase: mocks.readGeoKnowledgeBase,
+  };
+});
+
+const { DEFAULT_GEO_KB_HANDLER_DEPENDENCIES } = await import(
+  "./kb-handler-deps.ts"
+);
+
+const USER_ID = "11111111-1111-4111-8111-111111111111";
+const KB_ID = "22222222-2222-4222-8222-222222222222";
+const SNAPSHOT_ID = "33333333-3333-4333-8333-333333333333";
+const NOW = "2026-08-31T00:00:00.000Z";
+
+function question(mode: GeoQuestionMode, index: number): GeoQuestion {
+  return {
+    id: `q${String(index + 1)}`,
+    text: `question ${String(index + 1)}`,
+    layer: "discovery",
+    mode,
+    roleId: null,
+    requiredEntities: [],
+    templateId: mode === "retrieval" ? `template-${String(index + 1)}` : null,
+    calibrated: mode === "retrieval",
+  };
+}
+
+const QUESTION_SET: GeoQuestionSet = {
+  schemaVersion: GEO_QUESTION_SET_SCHEMA_VERSION,
+  registryVersion: "test",
+  language: "en",
+  country: "US",
+  questions: [
+    ...Array.from({ length: 8 }, (_, index) => question("retrieval", index)),
+    ...Array.from({ length: 3 }, (_, index) => question("demand", index + 8)),
+  ],
+};
+
+const FROZEN = {
+  snapshotId: SNAPSHOT_ID,
+  revision: 1,
+  contentHash: "content-hash",
+  questionSetHash: "question-set-hash",
+  frozenAt: NOW,
+  questionCount: QUESTION_SET.questions.length,
+} as const;
+
+function details(frozen: GeoKbDetails["frozen"] = FROZEN): GeoKbDetails {
+  return {
+    kbId: KB_ID,
+    origin: "https://example.com",
+    host: "example.com",
+    canonicalSiteKey: "example.com",
+    createdAt: NOW,
+    updatedAt: NOW,
+    draft: null,
+    frozen,
+  };
+}
+
+const SNAPSHOT: GeoKbFrozenSnapshot = {
+  ...FROZEN,
+  kbId: KB_ID,
+  payload: emptyGeoKbPayload("https://example.com"),
+  questionSet: QUESTION_SET,
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.ensureGeoKnowledgeBase.mockResolvedValue({
+    kind: "ok",
+    value: { kbId: KB_ID, created: false },
+  });
+  mocks.readGeoKnowledgeBase.mockResolvedValue({
+    kind: "ok",
+    value: details(),
+  });
+  mocks.readFrozenGeoKb.mockResolvedValue({ kind: "ok", value: SNAPSHOT });
+  mocks.findAccountWebsiteByUrl.mockResolvedValue({ kind: "missing" });
+});
+
+describe("default GEO knowledge-base load", () => {
+  it("counts retrieval questions from the exact frozen set", async () => {
+    const outcome = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadKnowledgeBase({
+      userId: USER_ID,
+      url: "https://example.com/",
+    });
+
+    expect(mocks.readFrozenGeoKb).toHaveBeenCalledWith({
+      userId: USER_ID,
+      kbId: KB_ID,
+      revision: 1,
+    });
+    expect(outcome.kind).toBe("ok");
+    if (outcome.kind === "ok") {
+      expect(outcome.value.frozen).toMatchObject({
+        questionCount: 11,
+        retrievalCount: 8,
+      });
+    }
+  });
+
+  it("fails closed when the frozen set cannot be read", async () => {
+    mocks.readFrozenGeoKb.mockResolvedValue({
+      kind: "unavailable",
+      reason: "store_unavailable",
+    });
+
+    await expect(
+      DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadKnowledgeBase({
+        userId: USER_ID,
+        url: "https://example.com/",
+      }),
+    ).resolves.toEqual({ kind: "unavailable", reason: "store_unavailable" });
+  });
+
+  it("maps a missing frozen set to not-found instead of using the total", async () => {
+    mocks.readFrozenGeoKb.mockResolvedValue({ kind: "missing" });
+
+    await expect(
+      DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadKnowledgeBase({
+        userId: USER_ID,
+        url: "https://example.com/",
+      }),
+    ).resolves.toEqual({ kind: "not_found" });
+  });
+
+  it("does not read a snapshot when the knowledge base has none frozen", async () => {
+    mocks.readGeoKnowledgeBase.mockResolvedValue({
+      kind: "ok",
+      value: details(null),
+    });
+
+    const outcome = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadKnowledgeBase({
+      userId: USER_ID,
+      url: "https://example.com/",
+    });
+
+    expect(mocks.readFrozenGeoKb).not.toHaveBeenCalled();
+    expect(outcome.kind).toBe("ok");
+    if (outcome.kind === "ok") expect(outcome.value.frozen).toBeNull();
+  });
+});
