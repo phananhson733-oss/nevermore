@@ -74,6 +74,16 @@ function present(
   return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
 }
 
+function pinnedTemperature(
+  env: Record<string, string | undefined>,
+  key: string,
+): number | null {
+  const raw = present(env, key);
+  if (raw === null) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 && value <= 2 ? value : null;
+}
+
 export function resolveGeoBriefLlmConfig(
   env: Record<string, string | undefined> = process.env,
 ): KeywordLlmConfig | null {
@@ -94,7 +104,10 @@ export function resolveGeoBriefLlmConfig(
       "api-key"
         ? "api-key"
         : "bearer",
-    temperature: null,
+    temperature: pinnedTemperature(
+      env,
+      `${GEO_BRIEF_ENV_PREFIX}_TEMPERATURE`,
+    ),
   };
 }
 

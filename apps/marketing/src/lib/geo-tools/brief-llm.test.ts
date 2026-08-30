@@ -11,6 +11,7 @@ import {
 } from "./brief-llm.ts";
 import type { GeoBriefFact } from "./brief-contract.ts";
 import {
+  createKeywordLlmClient,
   KeywordLlmError,
   type KeywordLlmClient,
 } from "../tools/keyword-llm-client.ts";
@@ -97,9 +98,12 @@ describe("resolveGeoBriefLlmConfig", () => {
       GEO_BRIEF_MODEL: "m",
       CONTENT_BRIEF_API_KEY: "other",
       CONTENT_BRIEF_MODEL: "other",
+      CONTENT_BRIEF_TEMPERATURE: "1",
+      KEYWORD_MAP_TEMPERATURE: "1",
     });
     expect(config?.model).toBe("m");
     expect(config?.apiKey).toBe("k");
+    expect(config?.temperature).toBeNull();
   });
 
   it("defaults the endpoint and honours an override", () => {
@@ -114,6 +118,60 @@ describe("resolveGeoBriefLlmConfig", () => {
         GEO_BRIEF_URL: "https://azure.test/deploy",
       })?.url,
     ).toBe("https://azure.test/deploy");
+  });
+
+  it("honours a provider-pinned temperature", () => {
+    const config = resolveGeoBriefLlmConfig({
+      GEO_BRIEF_API_KEY: "k",
+      GEO_BRIEF_MODEL: "m",
+      GEO_BRIEF_TEMPERATURE: "1",
+    });
+    expect(config?.temperature).toBe(1);
+  });
+
+  it.each(["abc", "3", "-1", ""])(
+    "drops an unusable pinned temperature %j back to null",
+    (raw) => {
+      const config = resolveGeoBriefLlmConfig({
+        GEO_BRIEF_API_KEY: "k",
+        GEO_BRIEF_MODEL: "m",
+        GEO_BRIEF_TEMPERATURE: raw,
+      });
+      expect(config?.temperature).toBeNull();
+    },
+  );
+
+  it("sends the resolved provider temperature instead of the task default", async () => {
+    const config = resolveGeoBriefLlmConfig({
+      GEO_BRIEF_API_KEY: "k",
+      GEO_BRIEF_MODEL: "gpt-5.6-luna",
+      GEO_BRIEF_URL: "https://azure.test/deploy",
+      GEO_BRIEF_AUTH_SCHEME: "api-key",
+      GEO_BRIEF_TEMPERATURE: "1",
+    });
+    expect(config).not.toBeNull();
+    if (config === null) throw new Error("expected a resolved GEO Brief config");
+
+    let sent: unknown;
+    const transport = createKeywordLlmClient({
+      config,
+      fetchImpl: async (_url, init) => {
+        sent = JSON.parse(String(init?.body));
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: "{}" } }] }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    await transport.complete({
+      system: "system",
+      user: "user",
+      temperature: GEO_BRIEF_TEMPERATURE,
+      maxOutputTokens: GEO_BRIEF_MAX_OUTPUT_TOKENS,
+    });
+
+    expect((sent as { readonly temperature: number }).temperature).toBe(1);
   });
 });
 
