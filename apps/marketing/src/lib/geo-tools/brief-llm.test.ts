@@ -9,7 +9,10 @@ import {
   GEO_BRIEF_TEMPERATURE,
   type GeoBriefLlmInput,
 } from "./brief-llm.ts";
-import type { GeoBriefFact } from "./brief-contract.ts";
+import {
+  GEO_BRIEF_LIMITS_MAX,
+  type GeoBriefFact,
+} from "./brief-contract.ts";
 import {
   createKeywordLlmClient,
   KeywordLlmError,
@@ -223,6 +226,43 @@ describe("the prompt", () => {
     expect(GEO_BRIEF_SYSTEM_PROMPT).toContain(
       "Never state a fact that is not in the fact table",
     );
+  });
+
+  it("reserves Q ids for observed items and M ids for model-added items", () => {
+    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain("Never invent a Q id");
+    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain(
+      "Return every Q id you were given exactly once",
+    );
+    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain(
+      "unique reserved id from M1, M2, ... M12",
+    );
+    expect(GEO_BRIEF_SYSTEM_PROMPT).not.toContain("in order");
+  });
+
+  it("limits outline answers to must-answer ids rather than prose", () => {
+    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain(
+      "Every outline.answers entry must be a Q or M id",
+    );
+    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain(
+      "mustAnswer array you return in this reply",
+    );
+    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain(
+      "Never put prose, entity names, or headings in outline.answers",
+    );
+  });
+
+  it("states every parser bound in both prompt halves", () => {
+    const fragments = [
+      `leadAnswerRequirement: 1..${String(GEO_BRIEF_LIMITS_MAX.requirementChars)} characters`,
+      `mustAnswer: 1..${String(GEO_BRIEF_LIMITS_MAX.mustAnswer)} items`,
+      `mustAnswer.text: 1..${String(GEO_BRIEF_LIMITS_MAX.mustAnswerChars)} characters`,
+      `outline: 1..${String(GEO_BRIEF_LIMITS_MAX.outline)} sections`,
+      `outline.heading: 1..${String(GEO_BRIEF_LIMITS_MAX.headingChars)} characters`,
+      `outline.answers: 1..${String(GEO_BRIEF_LIMITS_MAX.answersPerSection)} ids`,
+    ];
+    for (const prompt of [GEO_BRIEF_SYSTEM_PROMPT, geoBriefUserPrompt(input())]) {
+      for (const fragment of fragments) expect(prompt).toContain(fragment);
+    }
   });
 });
 
