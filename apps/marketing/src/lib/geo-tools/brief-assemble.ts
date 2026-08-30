@@ -116,6 +116,9 @@ export function parseGeoBriefReply(
     seen.add(id);
     mustAnswer.push({ id, text });
   }
+  for (const id of allowed) {
+    if (!seen.has(id)) return { ok: false, reason: "mustAnswer_missing_id" };
+  }
 
   const outlineRaw = row["outline"];
   if (!Array.isArray(outlineRaw) || outlineRaw.length === 0) {
@@ -136,7 +139,7 @@ export function parseGeoBriefReply(
     );
     if (heading === null) return { ok: false, reason: "outline_entry" };
     const answersRaw = record["answers"];
-    if (!Array.isArray(answersRaw))
+    if (!Array.isArray(answersRaw) || answersRaw.length === 0)
       return { ok: false, reason: "outline_answers" };
     if (answersRaw.length > GEO_BRIEF_LIMITS_MAX.answersPerSection) {
       return { ok: false, reason: "outline_answers_too_many" };
@@ -221,11 +224,13 @@ export function assembleGeoBrief(input: GeoBriefAssembleInput): GeoBrief {
           // added is `model`. Collapsing both to `model` would erase the only
           // signal a reader has about which items came from a real answer.
           const observed = observedItems.find((item) => item.id === entry.id);
+          if (observed !== undefined) return observed;
           return {
             id: entry.id,
             text: entry.text,
-            source:
-              observed === undefined ? ("model" as const) : observed.source,
+            // A parsed reply permits only reserved M ids after every observed Q
+            // has been matched above, so only genuinely added items reach here.
+            source: "model" as const,
           };
         });
 

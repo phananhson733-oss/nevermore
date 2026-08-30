@@ -227,7 +227,13 @@ describe("the prompt", () => {
 
   it("reserves Q ids for observed items and M ids for model-added items", () => {
     expect(GEO_BRIEF_SYSTEM_PROMPT).toContain("Never invent a Q id");
-    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain("M1, M2, ... M12");
+    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain(
+      "Return every Q id you were given exactly once",
+    );
+    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain(
+      "unique reserved id from M1, M2, ... M12",
+    );
+    expect(GEO_BRIEF_SYSTEM_PROMPT).not.toContain("in order");
   });
 
   it("limits outline answers to must-answer ids rather than prose", () => {
