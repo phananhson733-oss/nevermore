@@ -46,7 +46,6 @@ export type GeoBriefLlmFailure =
 
 export interface GeoBriefProviderProvenance {
   readonly modelRequested: string;
-  readonly modelObserved?: string | null;
   readonly authScheme: KeywordLlmConfig["authScheme"];
   readonly effectiveTemperature: number;
   readonly maxOutputTokens: number;
@@ -92,11 +91,9 @@ function evidencedUsage(
 
 function providerProvenance(
   config: KeywordLlmConfig,
-  modelObserved?: string | null,
 ): GeoBriefProviderProvenance {
   return {
     modelRequested: config.model,
-    ...(modelObserved === undefined ? {} : { modelObserved }),
     authScheme: config.authScheme,
     effectiveTemperature: config.temperature ?? GEO_BRIEF_TEMPERATURE,
     maxOutputTokens: GEO_BRIEF_MAX_OUTPUT_TOKENS,
@@ -269,7 +266,7 @@ export async function runGeoBriefLlm(
       return {
         ok: false,
         reason: "invalid_json",
-        provider: providerProvenance(config, completion.modelId),
+        provider: providerProvenance(config),
         ...(usage === undefined ? {} : { usage }),
       };
     }
@@ -282,7 +279,7 @@ export async function runGeoBriefLlm(
     return {
       ok: false,
       reason: "schema_invalid",
-      provider: providerProvenance(config, completion.modelId),
+      provider: providerProvenance(config),
       ...(usage === undefined ? {} : { usage }),
     };
   } catch (error) {

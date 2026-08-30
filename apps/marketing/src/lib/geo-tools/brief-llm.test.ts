@@ -31,11 +31,6 @@ const REQUESTED_PROVIDER = {
   maxOutputTokens: GEO_BRIEF_MAX_OUTPUT_TOKENS,
 };
 
-const OBSERVED_PROVIDER = {
-  ...REQUESTED_PROVIDER,
-  modelObserved: "gpt-test",
-};
-
 const FACTS: readonly GeoBriefFact[] = [
   {
     key: "pricing",
@@ -270,7 +265,7 @@ describe("runGeoBriefLlm", () => {
     expect(result).toEqual({ ok: false, reason: "not_configured" });
   });
 
-  it("names a non-JSON reply and retains the charged usage", async () => {
+  it("does not mislabel the completion model fallback as observed", async () => {
     const result = await runGeoBriefLlm(input(), {
       config: CONFIG,
       client: client("I could not do that."),
@@ -279,8 +274,9 @@ describe("runGeoBriefLlm", () => {
       ok: false,
       reason: "invalid_json",
       usage: USAGE,
-      provider: OBSERVED_PROVIDER,
+      provider: REQUESTED_PROVIDER,
     });
+    expect(JSON.stringify(result)).not.toContain("modelObserved");
   });
 
   it("names a schema refusal and retains the charged usage", async () => {
@@ -298,7 +294,7 @@ describe("runGeoBriefLlm", () => {
       ok: false,
       reason: "schema_invalid",
       usage: USAGE,
-      provider: OBSERVED_PROVIDER,
+      provider: REQUESTED_PROVIDER,
     });
   });
 

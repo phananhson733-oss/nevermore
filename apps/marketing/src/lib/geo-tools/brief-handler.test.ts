@@ -24,7 +24,6 @@ const ASSEMBLY_USAGE = {
 } as const;
 const ASSEMBLY_PROVIDER = {
   modelRequested: "gpt-test",
-  modelObserved: "gpt-observed",
   authScheme: "bearer" as const,
   effectiveTemperature: 0.2,
   maxOutputTokens: 4096,
@@ -212,6 +211,7 @@ describe("assembly diagnostics", () => {
     try {
       DEFAULT_BRIEF_HANDLER_DEPENDENCIES.reportAssemblyFailure(event);
       expect(warn).toHaveBeenCalledWith(JSON.stringify(event));
+      expect(String(warn.mock.calls[0]?.[0])).not.toContain("modelObserved");
     } finally {
       warn.mockRestore();
     }
@@ -406,6 +406,7 @@ describe("the brief it returns", () => {
     expect(serializedEvent).not.toContain(SNAPSHOT_ID);
     expect(serializedEvent).not.toContain(PAYLOAD.targetUrl);
     expect(serializedEvent).not.toContain("per seat");
+    expect(serializedEvent).not.toContain("modelObserved");
     // The internal cause stays out of the stable public brief contract.
     expect(JSON.stringify(parsed)).not.toContain("invalid_response");
   });
