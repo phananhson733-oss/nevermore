@@ -8,7 +8,7 @@ import { useTranslations } from "next-intl";
 import { useLocale } from "next-intl";
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Menu } from "lucide-react";
 import {
   Sheet,
@@ -39,10 +39,22 @@ export function Header() {
   // Owned here rather than by either trigger: the mobile trigger lives inside
   // the sheet, and a dialog nested there would unmount as the sheet closed.
   const [signInOpen, setSignInOpen] = useState(false);
+  const [signInOrigin, setSignInOrigin] = useState<"default" | "mobile">("default");
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   // Asked once, here. The sign-in button and the account avatar are answers to
   // the same question, and two independent probes could disagree — rendering a
   // "sign in" button beside the avatar of the account already signed in.
   const account = useAccount();
+
+  function openDesktopSignIn(): void {
+    setSignInOrigin("default");
+    setSignInOpen(true);
+  }
+
+  function openMobileSignIn(): void {
+    setSignInOrigin("mobile");
+    setSignInOpen(true);
+  }
 
   return (
     <header className="fixed top-0 right-0 left-0 z-50 border-b border-brand-border/80 bg-brand-bg/75 backdrop-blur-[14px]">
@@ -103,7 +115,7 @@ export function Header() {
           )}
           <SignInControl
             account={account}
-            onSignIn={() => setSignInOpen(true)}
+            onSignIn={openDesktopSignIn}
           />
           {/* Renders nothing for anyone signed out, so the slot is unchanged
               for the anonymous majority of this site's readers. */}
@@ -113,6 +125,7 @@ export function Header() {
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild className="lg:hidden">
               <button
+                ref={mobileMenuTriggerRef}
                 className="text-text-dark-primary p-2"
                 aria-label="Open menu"
               >
@@ -155,7 +168,7 @@ export function Header() {
                 <SignInControlMobile
                   account={account}
                   onNavigate={() => setMobileOpen(false)}
-                  onSignIn={() => setSignInOpen(true)}
+                  onSignIn={openMobileSignIn}
                 />
                 <AccountSummaryMobile
                   account={account}
@@ -167,7 +180,11 @@ export function Header() {
         </div>
       </div>
 
-      <SignInDialog open={signInOpen} onOpenChange={setSignInOpen} />
+      <SignInDialog
+        open={signInOpen}
+        onOpenChange={setSignInOpen}
+        returnFocusRef={signInOrigin === "mobile" ? mobileMenuTriggerRef : undefined}
+      />
     </header>
   );
 }

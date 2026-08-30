@@ -4,7 +4,7 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type RefObject } from "react";
 import { useTranslations } from "next-intl";
 
 import type { SignedInListener } from "../../lib/auth/gsi-client";
@@ -38,6 +38,7 @@ export function SignInDialog({
   open,
   onOpenChange,
   onSignedIn,
+  returnFocusRef,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -49,6 +50,11 @@ export function SignInDialog({
    * Returning `false` keeps the page instead of reloading it.
    */
   readonly onSignedIn?: SignedInListener;
+  /**
+   * Optional stable focus target for flows whose trigger unmounted before the
+   * dialog opened, such as the mobile Header sheet.
+   */
+  readonly returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
   const t = useTranslations();
   // Every instance closes itself on a successful credential, so the Header's
@@ -58,7 +64,15 @@ export function SignInDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent
+        className="sm:max-w-[420px]"
+        onCloseAutoFocus={(event) => {
+          const target = returnFocusRef?.current;
+          if (target === undefined || target === null || !target.isConnected) return;
+          event.preventDefault();
+          target.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="text-[19px]">{t("auth.title")}</DialogTitle>
           <DialogDescription className="text-[14px]">
