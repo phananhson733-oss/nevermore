@@ -224,6 +224,11 @@ describe("the prompt", () => {
       "Never state a fact that is not in the fact table",
     );
   });
+
+  it("reserves Q ids for observed items and M ids for model-added items", () => {
+    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain("Never invent a Q id");
+    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain("M1, M2, ... M12");
+  });
 });
 
 describe("runGeoBriefLlm", () => {

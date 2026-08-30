@@ -110,6 +110,21 @@ describe("parseGeoBriefReply", () => {
     expect(parsed.ok).toBe(true);
   });
 
+  it.each(
+    Array.from({ length: GEO_BRIEF_LIMITS_MAX.mustAnswer }, (_, index) =>
+      `M${index + 1}`,
+    ),
+  )("accepts reserved model-added id %s", (id) => {
+    const parsed = parseGeoBriefReply(
+      reply({
+        mustAnswer: [{ id, text: "A missing item the question requires" }],
+        outline: [{ heading: "Missing coverage", answers: [id] }],
+      }),
+      ids,
+    );
+    expect(parsed.ok).toBe(true);
+  });
+
   it("refuses anything that is not an object", () => {
     for (const raw of [null, [], "text", 7]) {
       expect(parseGeoBriefReply(raw, ids)).toEqual({
@@ -127,6 +142,31 @@ describe("parseGeoBriefReply", () => {
       ids,
     );
     expect(parsed).toEqual({ ok: false, reason: "mustAnswer_unknown_id" });
+  });
+
+  it.each(["M0", "M13", "M01", "m1", "M1x", "M-1", "M 1"])(
+    "refuses malformed or out-of-range model id %s",
+    (id) => {
+      const parsed = parseGeoBriefReply(
+        reply({ mustAnswer: [{ id, text: "not in the reserved namespace" }] }),
+        ids,
+      );
+      expect(parsed).toEqual({ ok: false, reason: "mustAnswer_unknown_id" });
+    },
+  );
+
+  it("refuses the same model-added id twice", () => {
+    const parsed = parseGeoBriefReply(
+      reply({
+        mustAnswer: [
+          { id: "M1", text: "one wording" },
+          { id: "M1", text: "another wording" },
+        ],
+        outline: [{ heading: "Missing coverage", answers: ["M1"] }],
+      }),
+      ids,
+    );
+    expect(parsed).toEqual({ ok: false, reason: "mustAnswer_duplicate_id" });
   });
 
   it("refuses the same id twice", () => {
@@ -291,9 +331,9 @@ describe("assembleGeoBrief", () => {
         reply: reply({
           mustAnswer: [
             { id: "Q1", text: "What does it cost?" },
-            { id: "Q2", text: "Something nobody observed" },
+            { id: "M1", text: "Something nobody observed" },
           ],
-          outline: [{ heading: "Pricing", answers: ["Q1", "Q2"] }],
+          outline: [{ heading: "Pricing", answers: ["Q1", "M1"] }],
         }),
       }),
     );
@@ -314,8 +354,8 @@ describe("assembleGeoBrief", () => {
         sampledSubtopics: [],
         origin: origin({ questionId: null }),
         reply: reply({
-          mustAnswer: [{ id: "Q1", text: "added by the model" }],
-          outline: [{ heading: "Fit", answers: ["Q1"] }],
+          mustAnswer: [{ id: "M1", text: "added by the model" }],
+          outline: [{ heading: "Fit", answers: ["M1"] }],
         }),
       }),
     );
