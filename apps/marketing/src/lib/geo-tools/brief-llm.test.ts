@@ -229,6 +229,18 @@ describe("the prompt", () => {
     expect(GEO_BRIEF_SYSTEM_PROMPT).toContain("Never invent a Q id");
     expect(GEO_BRIEF_SYSTEM_PROMPT).toContain("M1, M2, ... M12");
   });
+
+  it("limits outline answers to must-answer ids rather than prose", () => {
+    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain(
+      "Every outline.answers entry must be a Q or M id",
+    );
+    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain(
+      "mustAnswer array you return in this reply",
+    );
+    expect(GEO_BRIEF_SYSTEM_PROMPT).toContain(
+      "Never put prose, entity names, or headings in outline.answers",
+    );
+  });
 });
 
 describe("runGeoBriefLlm", () => {
