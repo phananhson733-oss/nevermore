@@ -24,6 +24,13 @@ const CONFIG = {
   temperature: null,
 };
 
+const REQUESTED_PROVIDER = {
+  modelRequested: "gpt-test",
+  authScheme: "bearer" as const,
+  effectiveTemperature: GEO_BRIEF_TEMPERATURE,
+  maxOutputTokens: GEO_BRIEF_MAX_OUTPUT_TOKENS,
+};
+
 const FACTS: readonly GeoBriefFact[] = [
   {
     key: "pricing",
@@ -42,6 +49,13 @@ const FACTS: readonly GeoBriefFact[] = [
     observedAt: null,
   },
 ];
+
+const USAGE = {
+  inputTokens: 10,
+  outputTokens: 20,
+  requestCount: 1,
+  retryCount: 0,
+} as const;
 
 function input(overrides: Partial<GeoBriefLlmInput> = {}): GeoBriefLlmInput {
   return {
@@ -64,12 +78,7 @@ function client(content: string): KeywordLlmClient {
     complete: vi.fn(async () => ({
       content,
       modelId: "gpt-test",
-      usage: {
-        inputTokens: 10,
-        outputTokens: 20,
-        requestCount: 1,
-        retryCount: 0,
-      },
+      usage: USAGE,
     })),
   } as unknown as KeywordLlmClient;
 }
@@ -256,15 +265,21 @@ describe("runGeoBriefLlm", () => {
     expect(result).toEqual({ ok: false, reason: "not_configured" });
   });
 
-  it("treats a non-JSON reply as a validation failure, not a crash", async () => {
+  it("does not mislabel the completion model fallback as observed", async () => {
     const result = await runGeoBriefLlm(input(), {
       config: CONFIG,
       client: client("I could not do that."),
     });
-    expect(result).toEqual({ ok: false, reason: "validation_failed" });
+    expect(result).toEqual({
+      ok: false,
+      reason: "invalid_json",
+      usage: USAGE,
+      provider: REQUESTED_PROVIDER,
+    });
+    expect(JSON.stringify(result)).not.toContain("modelObserved");
   });
 
-  it("refuses a reply that references an id it was not given", async () => {
+  it("names a schema refusal and retains the charged usage", async () => {
     const result = await runGeoBriefLlm(input(), {
       config: CONFIG,
       client: client(
@@ -275,10 +290,15 @@ describe("runGeoBriefLlm", () => {
         }),
       ),
     });
-    expect(result).toEqual({ ok: false, reason: "validation_failed" });
+    expect(result).toEqual({
+      ok: false,
+      reason: "schema_invalid",
+      usage: USAGE,
+      provider: REQUESTED_PROVIDER,
+    });
   });
 
-  it("names a timeout apart from any other provider failure", async () => {
+  it("omits unknown usage on a timeout but keeps requested provider provenance", async () => {
     const timing = {
       complete: vi.fn(async () => {
         throw new KeywordLlmError("timeout", "took too long");
@@ -286,16 +306,51 @@ describe("runGeoBriefLlm", () => {
     } as unknown as KeywordLlmClient;
     expect(
       await runGeoBriefLlm(input(), { config: CONFIG, client: timing }),
-    ).toEqual({ ok: false, reason: "timeout" });
+    ).toEqual({
+      ok: false,
+      reason: "timeout",
+      provider: REQUESTED_PROVIDER,
+    });
+  });
 
+  it("omits default empty usage on an HTTP failure and reports a pinned temperature", async () => {
     const broken = {
       complete: vi.fn(async () => {
-        throw new KeywordLlmError("server_error", "500");
+        throw new KeywordLlmError("server_error", "safe fixture");
+      }),
+    } as unknown as KeywordLlmClient;
+    expect(
+      await runGeoBriefLlm(input(), {
+        config: { ...CONFIG, temperature: 1 },
+        client: broken,
+      }),
+    ).toEqual({
+      ok: false,
+      reason: "server_error",
+      provider: { ...REQUESTED_PROVIDER, effectiveTemperature: 1 },
+    });
+  });
+
+  it("retains reported invalid-response usage with requested provenance only", async () => {
+    const usage = {
+      inputTokens: 17,
+      outputTokens: 4096,
+      requestCount: 1,
+      retryCount: 0,
+    } as const;
+    const broken = {
+      complete: vi.fn(async () => {
+        throw new KeywordLlmError("invalid_response", "safe fixture", usage);
       }),
     } as unknown as KeywordLlmClient;
     expect(
       await runGeoBriefLlm(input(), { config: CONFIG, client: broken }),
-    ).toEqual({ ok: false, reason: "provider_error" });
+    ).toEqual({
+      ok: false,
+      reason: "invalid_response",
+      usage,
+      provider: REQUESTED_PROVIDER,
+    });
   });
 
   it("lets an unexpected throw through instead of calling it a provider error", async () => {

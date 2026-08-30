@@ -18,11 +18,16 @@ import {
   type GeoBriefCitedDomain,
   type GeoBriefOrigin,
 } from "./brief-contract.ts";
-import { runGeoBriefLlm } from "./brief-llm.ts";
+import {
+  runGeoBriefLlm,
+  type GeoBriefLlmFailure,
+  type GeoBriefProviderProvenance,
+} from "./brief-llm.ts";
 import { geoBriefSubtopics } from "./brief-subtopics.ts";
 import type { GeoKbPayload } from "./kb-contract.ts";
 import type { GeoQuestion, GeoQuestionLayer } from "./kb-questions.ts";
 import { normalizeGeoHost } from "../agents/geo-url.ts";
+import type { KeywordLlmUsage } from "../tools/keyword-llm-client.ts";
 
 const BODY_LIMIT_BYTES = 8 * 1024;
 
@@ -47,6 +52,13 @@ export type BriefStoreOutcome<T> =
   | { readonly kind: "ok"; readonly value: T }
   | { readonly kind: "not_found" }
   | { readonly kind: "unavailable"; readonly reason: string };
+
+export interface BriefAssemblyFailureEvent {
+  readonly event: "geo_brief_assembly_unavailable";
+  readonly reason: GeoBriefLlmFailure;
+  readonly usage?: KeywordLlmUsage;
+  readonly provider?: GeoBriefProviderProvenance;
+}
 
 export interface BriefFrozenRead {
   readonly payload: GeoKbPayload;
@@ -83,6 +95,7 @@ export interface BriefHandlerDependencies {
     readonly competitors: readonly { readonly domain: string; readonly confirmed: boolean }[];
   }) => Promise<BriefSampleOutcome>;
   readonly assemble: typeof runGeoBriefLlm;
+  readonly reportAssemblyFailure: (event: BriefAssemblyFailureEvent) => void;
   readonly now: () => number;
 }
 
@@ -280,6 +293,20 @@ async function runBrief(
     facts: geoBriefFacts(payload.facts),
     language: payload.market.language,
   });
+
+  if (!reply.ok) {
+    const event: BriefAssemblyFailureEvent = {
+      event: "geo_brief_assembly_unavailable",
+      reason: reply.reason,
+      ...(reply.usage === undefined ? {} : { usage: reply.usage }),
+      ...(reply.provider === undefined ? {} : { provider: reply.provider }),
+    };
+    try {
+      dependencies.reportAssemblyFailure(event);
+    } catch {
+      // Diagnostics must never replace the honest degraded brief with a 500.
+    }
+  }
 
   const origin: GeoBriefOrigin = {
     kbId: parsed.kbId,

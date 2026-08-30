@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   handleBriefLoad,
   handleBriefRun,
+  type BriefAssemblyFailureEvent,
   type BriefFrozenChoice,
   type BriefHandlerDependencies,
 } from "./brief-handler.ts";
+import { DEFAULT_BRIEF_HANDLER_DEPENDENCIES } from "./brief-handler-deps.ts";
 import {
   GEO_BRIEF_DAILY_WINDOW_SECONDS,
   GEO_BRIEF_RUNS_PER_DAY,
@@ -14,6 +16,18 @@ import { GEO_KB_SCHEMA_VERSION, type GeoKbPayload } from "./kb-contract.ts";
 
 const KB_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 const SNAPSHOT_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3302";
+const ASSEMBLY_USAGE = {
+  inputTokens: 31,
+  outputTokens: 4096,
+  requestCount: 1,
+  retryCount: 0,
+} as const;
+const ASSEMBLY_PROVIDER = {
+  modelRequested: "gpt-test",
+  authScheme: "bearer" as const,
+  effectiveTemperature: 0.2,
+  maxOutputTokens: 4096,
+};
 
 const CHOICE: BriefFrozenChoice = {
   kbId: KB_ID,
@@ -103,6 +117,7 @@ function deps(
         outline: [{ heading: "Pricing", answers: ["Q1"] }],
       },
     }),
+    reportAssemblyFailure: vi.fn(),
     now: () => Date.parse("2026-08-29T10:00:00.000Z"),
     ...overrides,
   };
@@ -180,6 +195,26 @@ describe("load", () => {
       deps({ listFrozen: async () => ({ kind: "unavailable", reason: "x" }) }),
     );
     expect(response.status).toBe(503);
+  });
+});
+
+describe("assembly diagnostics", () => {
+  it("serializes only the stable event through the default warning sink", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const event: BriefAssemblyFailureEvent = {
+      event: "geo_brief_assembly_unavailable",
+      reason: "server_error",
+      usage: ASSEMBLY_USAGE,
+      provider: ASSEMBLY_PROVIDER,
+    };
+
+    try {
+      DEFAULT_BRIEF_HANDLER_DEPENDENCIES.reportAssemblyFailure(event);
+      expect(warn).toHaveBeenCalledWith(JSON.stringify(event));
+      expect(String(warn.mock.calls[0]?.[0])).not.toContain("modelObserved");
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
@@ -333,6 +368,105 @@ describe("the brief it returns", () => {
     expect(brief["limits"]).toContain("modelUnavailable");
     // The fact table survives both failures; it never depended on either.
     expect((brief["facts"] as unknown[]).length).toBe(1);
+  });
+
+  it("reports one fixed safe event when assembly degrades", async () => {
+    const reportAssemblyFailure = vi.fn();
+    const response = await handleBriefRun(
+      post("/run", runBody()),
+      deps({
+        assemble: async () => ({
+          ok: false,
+          reason: "invalid_response",
+          usage: ASSEMBLY_USAGE,
+          provider: ASSEMBLY_PROVIDER,
+        }),
+        reportAssemblyFailure,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const parsed = await body(response);
+    const brief = (parsed.data as { brief: Record<string, unknown> }).brief;
+    expect(brief["limits"]).toContain("modelUnavailable");
+    expect(reportAssemblyFailure).toHaveBeenCalledOnce();
+    expect(reportAssemblyFailure).toHaveBeenCalledWith({
+      event: "geo_brief_assembly_unavailable",
+      reason: "invalid_response",
+      usage: ASSEMBLY_USAGE,
+      provider: ASSEMBLY_PROVIDER,
+    });
+
+    const serializedEvent = JSON.stringify(reportAssemblyFailure.mock.calls[0]?.[0]);
+    expect(serializedEvent).not.toContain(CHOICE.questions[0]?.text ?? "");
+    expect(serializedEvent).not.toContain(PAYLOAD.officialName);
+    expect(serializedEvent).not.toContain(PAYLOAD.facts[0]?.sourceUrl ?? "");
+    expect(serializedEvent).not.toContain("user-1");
+    expect(serializedEvent).not.toContain(KB_ID);
+    expect(serializedEvent).not.toContain(SNAPSHOT_ID);
+    expect(serializedEvent).not.toContain(PAYLOAD.targetUrl);
+    expect(serializedEvent).not.toContain("per seat");
+    expect(serializedEvent).not.toContain("modelObserved");
+    // The internal cause stays out of the stable public brief contract.
+    expect(JSON.stringify(parsed)).not.toContain("invalid_response");
+  });
+
+  it("forwards provider provenance without inventing an empty usage record", async () => {
+    const reportAssemblyFailure = vi.fn();
+    const response = await handleBriefRun(
+      post("/run", runBody()),
+      deps({
+        assemble: async () => ({
+          ok: false,
+          reason: "server_error",
+          provider: ASSEMBLY_PROVIDER,
+        }),
+        reportAssemblyFailure,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(reportAssemblyFailure).toHaveBeenCalledWith({
+      event: "geo_brief_assembly_unavailable",
+      reason: "server_error",
+      provider: ASSEMBLY_PROVIDER,
+    });
+    expect("usage" in (reportAssemblyFailure.mock.calls[0]?.[0] ?? {})).toBe(false);
+  });
+
+  it("keeps the honest degraded 200 response when the reporter throws", async () => {
+    const reportAssemblyFailure = vi.fn(() => {
+      throw new Error("observability unavailable");
+    });
+    const response = await handleBriefRun(
+      post("/run", runBody()),
+      deps({
+        assemble: async () => ({
+          ok: false,
+          reason: "schema_invalid",
+          usage: ASSEMBLY_USAGE,
+          provider: ASSEMBLY_PROVIDER,
+        }),
+        reportAssemblyFailure,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const brief = ((await body(response)).data as { brief: Record<string, unknown> })
+      .brief;
+    expect(brief["limits"]).toContain("modelUnavailable");
+    expect(reportAssemblyFailure).toHaveBeenCalledOnce();
+  });
+
+  it("does not report a successful assembly", async () => {
+    const reportAssemblyFailure = vi.fn();
+    const response = await handleBriefRun(
+      post("/run", runBody()),
+      deps({ reportAssemblyFailure }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(reportAssemblyFailure).not.toHaveBeenCalled();
   });
 
   it("asks the frozen wording, not the wording the client sent", async () => {

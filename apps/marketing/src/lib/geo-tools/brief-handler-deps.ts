@@ -20,6 +20,7 @@ import { runGeoBriefLlm, resolveGeoBriefLlmConfig } from "./brief-llm.ts";
 import type {
   BriefFrozenChoice,
   BriefFrozenRead,
+  BriefAssemblyFailureEvent,
   BriefHandlerDependencies,
   BriefSampleOutcome,
   BriefStoreOutcome,
@@ -215,6 +216,10 @@ async function sample(input: {
   }
 }
 
+function reportAssemblyFailure(event: BriefAssemblyFailureEvent): void {
+  console.warn(JSON.stringify(event));
+}
+
 export const DEFAULT_BRIEF_HANDLER_DEPENDENCIES: BriefHandlerDependencies = {
   authenticate: authenticateAccountRequest,
   listFrozen: listFrozenVersions,
@@ -223,5 +228,6 @@ export const DEFAULT_BRIEF_HANDLER_DEPENDENCIES: BriefHandlerDependencies = {
   providerConfigured,
   sample,
   assemble: runGeoBriefLlm,
+  reportAssemblyFailure,
   now: Date.now,
 };
