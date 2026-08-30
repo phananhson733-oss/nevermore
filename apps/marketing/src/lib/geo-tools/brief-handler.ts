@@ -21,6 +21,7 @@ import {
 import {
   runGeoBriefLlm,
   type GeoBriefLlmFailure,
+  type GeoBriefProviderProvenance,
 } from "./brief-llm.ts";
 import { geoBriefSubtopics } from "./brief-subtopics.ts";
 import type { GeoKbPayload } from "./kb-contract.ts";
@@ -56,6 +57,7 @@ export interface BriefAssemblyFailureEvent {
   readonly event: "geo_brief_assembly_unavailable";
   readonly reason: GeoBriefLlmFailure;
   readonly usage?: KeywordLlmUsage;
+  readonly provider?: GeoBriefProviderProvenance;
 }
 
 export interface BriefFrozenRead {
@@ -297,6 +299,7 @@ async function runBrief(
       event: "geo_brief_assembly_unavailable",
       reason: reply.reason,
       ...(reply.usage === undefined ? {} : { usage: reply.usage }),
+      ...(reply.provider === undefined ? {} : { provider: reply.provider }),
     };
     try {
       dependencies.reportAssemblyFailure(event);

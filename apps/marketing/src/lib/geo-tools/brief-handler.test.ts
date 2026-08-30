@@ -22,6 +22,13 @@ const ASSEMBLY_USAGE = {
   requestCount: 1,
   retryCount: 0,
 } as const;
+const ASSEMBLY_PROVIDER = {
+  modelRequested: "gpt-test",
+  modelObserved: "gpt-observed",
+  authScheme: "bearer" as const,
+  effectiveTemperature: 0.2,
+  maxOutputTokens: 4096,
+};
 
 const CHOICE: BriefFrozenChoice = {
   kbId: KB_ID,
@@ -199,6 +206,7 @@ describe("assembly diagnostics", () => {
       event: "geo_brief_assembly_unavailable",
       reason: "server_error",
       usage: ASSEMBLY_USAGE,
+      provider: ASSEMBLY_PROVIDER,
     };
 
     try {
@@ -371,6 +379,7 @@ describe("the brief it returns", () => {
           ok: false,
           reason: "invalid_response",
           usage: ASSEMBLY_USAGE,
+          provider: ASSEMBLY_PROVIDER,
         }),
         reportAssemblyFailure,
       }),
@@ -385,14 +394,43 @@ describe("the brief it returns", () => {
       event: "geo_brief_assembly_unavailable",
       reason: "invalid_response",
       usage: ASSEMBLY_USAGE,
+      provider: ASSEMBLY_PROVIDER,
     });
 
     const serializedEvent = JSON.stringify(reportAssemblyFailure.mock.calls[0]?.[0]);
     expect(serializedEvent).not.toContain(CHOICE.questions[0]?.text ?? "");
     expect(serializedEvent).not.toContain(PAYLOAD.officialName);
     expect(serializedEvent).not.toContain(PAYLOAD.facts[0]?.sourceUrl ?? "");
+    expect(serializedEvent).not.toContain("user-1");
+    expect(serializedEvent).not.toContain(KB_ID);
+    expect(serializedEvent).not.toContain(SNAPSHOT_ID);
+    expect(serializedEvent).not.toContain(PAYLOAD.targetUrl);
+    expect(serializedEvent).not.toContain("per seat");
     // The internal cause stays out of the stable public brief contract.
     expect(JSON.stringify(parsed)).not.toContain("invalid_response");
+  });
+
+  it("forwards provider provenance without inventing an empty usage record", async () => {
+    const reportAssemblyFailure = vi.fn();
+    const response = await handleBriefRun(
+      post("/run", runBody()),
+      deps({
+        assemble: async () => ({
+          ok: false,
+          reason: "server_error",
+          provider: ASSEMBLY_PROVIDER,
+        }),
+        reportAssemblyFailure,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(reportAssemblyFailure).toHaveBeenCalledWith({
+      event: "geo_brief_assembly_unavailable",
+      reason: "server_error",
+      provider: ASSEMBLY_PROVIDER,
+    });
+    expect("usage" in (reportAssemblyFailure.mock.calls[0]?.[0] ?? {})).toBe(false);
   });
 
   it("keeps the honest degraded 200 response when the reporter throws", async () => {
@@ -406,6 +444,7 @@ describe("the brief it returns", () => {
           ok: false,
           reason: "schema_invalid",
           usage: ASSEMBLY_USAGE,
+          provider: ASSEMBLY_PROVIDER,
         }),
         reportAssemblyFailure,
       }),

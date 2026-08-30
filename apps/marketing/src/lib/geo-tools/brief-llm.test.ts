@@ -24,6 +24,18 @@ const CONFIG = {
   temperature: null,
 };
 
+const REQUESTED_PROVIDER = {
+  modelRequested: "gpt-test",
+  authScheme: "bearer" as const,
+  effectiveTemperature: GEO_BRIEF_TEMPERATURE,
+  maxOutputTokens: GEO_BRIEF_MAX_OUTPUT_TOKENS,
+};
+
+const OBSERVED_PROVIDER = {
+  ...REQUESTED_PROVIDER,
+  modelObserved: "gpt-test",
+};
+
 const FACTS: readonly GeoBriefFact[] = [
   {
     key: "pricing",
@@ -263,7 +275,12 @@ describe("runGeoBriefLlm", () => {
       config: CONFIG,
       client: client("I could not do that."),
     });
-    expect(result).toEqual({ ok: false, reason: "invalid_json", usage: USAGE });
+    expect(result).toEqual({
+      ok: false,
+      reason: "invalid_json",
+      usage: USAGE,
+      provider: OBSERVED_PROVIDER,
+    });
   });
 
   it("names a schema refusal and retains the charged usage", async () => {
@@ -277,45 +294,68 @@ describe("runGeoBriefLlm", () => {
         }),
       ),
     });
-    expect(result).toEqual({ ok: false, reason: "schema_invalid", usage: USAGE });
+    expect(result).toEqual({
+      ok: false,
+      reason: "schema_invalid",
+      usage: USAGE,
+      provider: OBSERVED_PROVIDER,
+    });
   });
 
-  it("keeps timeout as the exact provider failure reason", async () => {
-    const usage = {
-      inputTokens: null,
-      outputTokens: null,
-      requestCount: 1,
-      retryCount: 0,
-    } as const;
+  it("omits unknown usage on a timeout but keeps requested provider provenance", async () => {
     const timing = {
       complete: vi.fn(async () => {
-        throw new KeywordLlmError("timeout", "took too long", usage);
+        throw new KeywordLlmError("timeout", "took too long");
       }),
     } as unknown as KeywordLlmClient;
     expect(
       await runGeoBriefLlm(input(), { config: CONFIG, client: timing }),
-    ).toEqual({ ok: false, reason: "timeout", usage });
+    ).toEqual({
+      ok: false,
+      reason: "timeout",
+      provider: REQUESTED_PROVIDER,
+    });
   });
 
-  it.each(["server_error", "invalid_response"] as const)(
-    "keeps %s and its usage instead of collapsing the provider failure",
-    async (reason) => {
-      const usage = {
-        inputTokens: reason === "invalid_response" ? 17 : null,
-        outputTokens: reason === "invalid_response" ? 4096 : null,
-        requestCount: 1,
-        retryCount: 0,
-      } as const;
-      const broken = {
-        complete: vi.fn(async () => {
-          throw new KeywordLlmError(reason, "safe fixture", usage);
-        }),
-      } as unknown as KeywordLlmClient;
-      expect(
-        await runGeoBriefLlm(input(), { config: CONFIG, client: broken }),
-      ).toEqual({ ok: false, reason, usage });
-    },
-  );
+  it("omits default empty usage on an HTTP failure and reports a pinned temperature", async () => {
+    const broken = {
+      complete: vi.fn(async () => {
+        throw new KeywordLlmError("server_error", "safe fixture");
+      }),
+    } as unknown as KeywordLlmClient;
+    expect(
+      await runGeoBriefLlm(input(), {
+        config: { ...CONFIG, temperature: 1 },
+        client: broken,
+      }),
+    ).toEqual({
+      ok: false,
+      reason: "server_error",
+      provider: { ...REQUESTED_PROVIDER, effectiveTemperature: 1 },
+    });
+  });
+
+  it("retains reported invalid-response usage with requested provenance only", async () => {
+    const usage = {
+      inputTokens: 17,
+      outputTokens: 4096,
+      requestCount: 1,
+      retryCount: 0,
+    } as const;
+    const broken = {
+      complete: vi.fn(async () => {
+        throw new KeywordLlmError("invalid_response", "safe fixture", usage);
+      }),
+    } as unknown as KeywordLlmClient;
+    expect(
+      await runGeoBriefLlm(input(), { config: CONFIG, client: broken }),
+    ).toEqual({
+      ok: false,
+      reason: "invalid_response",
+      usage,
+      provider: REQUESTED_PROVIDER,
+    });
+  });
 
   it("lets an unexpected throw through instead of calling it a provider error", async () => {
     const exploding = {

@@ -44,12 +44,21 @@ export type GeoBriefLlmFailure =
   | "invalid_json"
   | KeywordLlmFailureReason;
 
+export interface GeoBriefProviderProvenance {
+  readonly modelRequested: string;
+  readonly modelObserved?: string | null;
+  readonly authScheme: KeywordLlmConfig["authScheme"];
+  readonly effectiveTemperature: number;
+  readonly maxOutputTokens: number;
+}
+
 export type GeoBriefLlmResult =
   | { readonly ok: true; readonly value: GeoBriefModelReply }
   | {
       readonly ok: false;
       readonly reason: GeoBriefLlmFailure;
       readonly usage?: KeywordLlmUsage;
+      readonly provider?: GeoBriefProviderProvenance;
     };
 
 export interface GeoBriefLlmInput {
@@ -68,6 +77,30 @@ export interface GeoBriefLlmDependencies {
   readonly client?: KeywordLlmClient;
   readonly env?: Record<string, string | undefined>;
   readonly timeoutMs?: number;
+}
+
+function evidencedUsage(
+  usage: KeywordLlmUsage,
+): KeywordLlmUsage | undefined {
+  return usage.requestCount > 0 ||
+    usage.retryCount > 0 ||
+    usage.inputTokens !== null ||
+    usage.outputTokens !== null
+    ? usage
+    : undefined;
+}
+
+function providerProvenance(
+  config: KeywordLlmConfig,
+  modelObserved?: string | null,
+): GeoBriefProviderProvenance {
+  return {
+    modelRequested: config.model,
+    ...(modelObserved === undefined ? {} : { modelObserved }),
+    authScheme: config.authScheme,
+    effectiveTemperature: config.temperature ?? GEO_BRIEF_TEMPERATURE,
+    maxOutputTokens: GEO_BRIEF_MAX_OUTPUT_TOKENS,
+  };
 }
 
 function present(
@@ -217,6 +250,7 @@ export async function runGeoBriefLlm(
   if (config === null) return { ok: false, reason: "not_configured" };
 
   const client = dependencies.client ?? createKeywordLlmClient({ config });
+  const requestedProvider = providerProvenance(config);
   try {
     const completion = await client.complete({
       system: GEO_BRIEF_SYSTEM_PROMPT,
@@ -231,17 +265,34 @@ export async function runGeoBriefLlm(
     try {
       raw = JSON.parse(completion.content) as unknown;
     } catch {
-      return { ok: false, reason: "invalid_json", usage: completion.usage };
+      const usage = evidencedUsage(completion.usage);
+      return {
+        ok: false,
+        reason: "invalid_json",
+        provider: providerProvenance(config, completion.modelId),
+        ...(usage === undefined ? {} : { usage }),
+      };
     }
     const parsed = parseGeoBriefReply(
       raw,
       input.subtopics.map((entry) => entry.id),
     );
-    return parsed.ok
-      ? { ok: true, value: parsed.value }
-      : { ok: false, reason: "schema_invalid", usage: completion.usage };
+    if (parsed.ok) return { ok: true, value: parsed.value };
+    const usage = evidencedUsage(completion.usage);
+    return {
+      ok: false,
+      reason: "schema_invalid",
+      provider: providerProvenance(config, completion.modelId),
+      ...(usage === undefined ? {} : { usage }),
+    };
   } catch (error) {
     if (!(error instanceof KeywordLlmError)) throw error;
-    return { ok: false, reason: error.reason, usage: error.usage };
+    const usage = evidencedUsage(error.usage);
+    return {
+      ok: false,
+      reason: error.reason,
+      provider: requestedProvider,
+      ...(usage === undefined ? {} : { usage }),
+    };
   }
 }
