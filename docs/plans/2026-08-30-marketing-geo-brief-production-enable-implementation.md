@@ -4,7 +4,7 @@
 
 **Goal:** Enable the deployed Marketing GEO Brief on Azure OpenAI without losing its independent configuration, quota, evidence, or release boundaries.
 
-**Architecture:** Keep DataForSEO sampling on the existing GEO Agent transport and keep Brief assembly on the bounded `keyword-llm-client` transport. Extend only the GEO Brief scoped resolver with the same optional pinned-temperature rule already proven by Content Brief, then configure the Marketing Vercel project with a complete Azure-specific `GEO_BRIEF_*` set.
+**Architecture:** Keep DataForSEO sampling on the existing GEO Agent transport and keep Brief assembly on the bounded `keyword-llm-client` transport. Extend only the GEO Brief scoped resolver with the established prefixed configuration shape and `0..2` temperature range, while making an explicitly invalid value disable the whole config; then configure the Marketing Vercel project with a complete Azure-specific `GEO_BRIEF_*` set.
 
 **Tech Stack:** TypeScript, Vitest, Next.js 16 Marketing app, Vercel, Azure OpenAI Chat Completions, DataForSEO ChatGPT LLM Responses.
 
@@ -63,7 +63,7 @@ expect(config?.temperature).toBe(1);
 
 **Step 2: Write invalid-value cases**
 
-Add a table test for `"abc"`, `"3"`, `"-1"`, and `""`, each expected to resolve to `null` while key/model remain valid.
+Add a table test for `"abc"`, `"3"`, `"-1"`, `""`, `"   "`, `"NaN"`, and `"Infinity"`. Even with a valid key/model, each explicitly present invalid value must make the entire resolver return `null`; it must not silently become an unpinned task-default request.
 
 **Step 3: Write the transport-effective test**
 
@@ -78,7 +78,7 @@ pnpm exec vitest run --project unit \
   apps/marketing/src/lib/geo-tools/brief-llm.test.ts
 ```
 
-Expected: the new `temperature === 1` assertion fails because the current resolver returns `null`; existing tests stay green.
+Expected against the baseline: the new `temperature === 1` assertion fails because the resolver is always unpinned, and the present-invalid cases fail because the resolver still returns an otherwise usable config. These failures specify both the provider override and the fail-closed boundary.
 
 ### Task 3: GREEN — implement the minimal scoped resolver
 
@@ -88,26 +88,39 @@ Expected: the new `temperature === 1` assertion fails because the current resolv
 
 **Step 1: Add bounded parsing**
 
-Add module-local constants for the accepted provider range (`0..2`) and a `pinnedTemperature(env, key)` helper equivalent to Content Brief's proven rule:
+Add a module-local `pinnedTemperature(env, key)` parser for the accepted provider range (`0..2`). Distinguish an absent key from an explicitly present invalid value:
 
 ```ts
 function pinnedTemperature(
   env: Record<string, string | undefined>,
   key: string,
-): number | null {
-  const raw = present(env, key);
-  if (raw === null) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) && value >= 0 && value <= 2 ? value : null;
+):
+  | { readonly valid: true; readonly value: number | null }
+  | { readonly valid: false } {
+  const raw = env[key];
+  if (raw === undefined) return { valid: true, value: null };
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return { valid: false };
+  const value = Number(trimmed);
+  return Number.isFinite(value) && value >= 0 && value <= 2
+    ? { valid: true, value }
+    : { valid: false };
 }
 ```
 
 **Step 2: Wire only the GEO Brief prefix**
 
-Change the resolver field from `temperature: null` to:
+Parse only the GEO Brief key, reject an invalid result before constructing the provider config, and then wire the parsed value:
 
 ```ts
-temperature: pinnedTemperature(env, `${GEO_BRIEF_ENV_PREFIX}_TEMPERATURE`),
+const temperature = pinnedTemperature(
+  env,
+  `${GEO_BRIEF_ENV_PREFIX}_TEMPERATURE`,
+);
+if (!temperature.valid) return null;
+
+// ...inside the config
+temperature: temperature.value,
 ```
 
 Do not add fallback to any neighbouring prefix or global Azure/OpenAI variables.
@@ -153,15 +166,15 @@ GEO_BRIEF_AUTH_SCHEME=bearer
 GEO_BRIEF_TEMPERATURE=0.2
 ```
 
-Explain that Azure uses a full deployment URL, `api-key`, and its deployment-required temperature.
+Explain that direct OpenAI-compatible usage defaults to the standard Chat Completions URL, bearer auth, and task temperature `0.2` when the temperature variable is absent. Azure uses a full deployment Chat Completions URL including `api-version`, `api-key`, and its deployment-required temperature (`1` for the current `gpt-5.6-luna`). Explicitly present empty/whitespace/nonnumeric/out-of-range temperature disables the provider config; it never falls back to `0.2`.
 
 **Step 2: Update infrastructure ownership**
 
-Extend the `gengrowth-agents` column in `docs/INFRASTRUCTURE.md`; do not put Marketing secrets in Product `nevermore` or Railway columns.
+Extend the `gengrowth-agents` column in `docs/INFRASTRUCTURE.md`; list all five names explicitly and do not put Marketing secrets in Product `nevermore` or Railway columns. Record Production as the owner, with Preview configured only for an authorized authenticated/billable candidate, and do not imply the five variables are already present.
 
 **Step 3: Record the defect and release contract**
 
-Append a dated closeout to the existing GEO tools implementation record: production had DataForSEO but no `GEO_BRIEF_*`; existing Azure requires pinned temperature `1`; describe the scoped fix without secret values.
+Append a dated closeout to the existing GEO tools implementation record: production had DataForSEO but no `GEO_BRIEF_*`; existing Azure requires pinned temperature `1`; describe absent-versus-explicit-invalid fail-closed behavior without secret values; keep Vercel configuration, deployment, and canary as still-required activation evidence.
 
 **Step 4: Verify documentation**
 
@@ -174,7 +187,7 @@ rg -n "GEO_BRIEF_(API_KEY|MODEL|URL|AUTH_SCHEME|TEMPERATURE)" \
 git diff --check
 ```
 
-Expected: all five names appear in the Marketing contract; no secret value or whitespace error appears.
+Expected: all five names appear in both the Marketing env example and infrastructure ownership contract; no secret value or whitespace error appears.
 
 **Step 5: Commit configuration documentation**
 
@@ -242,7 +255,7 @@ Read the existing ignored local provider file. Validate presence of key, endpoin
 
 **Step 2: Set the dedicated Vercel variables**
 
-Create/update `GEO_BRIEF_API_KEY`, `GEO_BRIEF_MODEL`, `GEO_BRIEF_URL`, `GEO_BRIEF_AUTH_SCHEME=api-key`, and `GEO_BRIEF_TEMPERATURE=1` in the Marketing environment needed for the canary and Production. Keep DataForSEO credentials unchanged.
+Create/update `GEO_BRIEF_API_KEY`, `GEO_BRIEF_MODEL`, `GEO_BRIEF_URL`, `GEO_BRIEF_AUTH_SCHEME=api-key`, and `GEO_BRIEF_TEMPERATURE=1` in Marketing Production. Configure Preview only if the authenticated/billable candidate will be run there. Keep DataForSEO credentials unchanged.
 
 **Step 3: Wait for exact Marketing deployment**
 

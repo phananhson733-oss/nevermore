@@ -1,7 +1,7 @@
 # GEO Brief 生产启用设计
 
-日期：2026-08-30  
-基线：`origin/main` / `e9a5735dd28d3560c6f77f64bcc883e2bfc44abd`  
+日期：2026-08-30
+基线：`origin/main` / `e9a5735dd28d3560c6f77f64bcc883e2bfc44abd`
 范围：`gengrowth.ai` Marketing 项目；不修改 Product、Worker 或数据库 schema
 
 ## 目标
@@ -11,7 +11,7 @@
 完成必须同时证明：
 
 1. Azure `gpt-5.6-luna` 收到它要求的 `temperature=1`，而不是任务默认的 `0.2`；
-2. 没有 `GEO_BRIEF_API_KEY` 或 `GEO_BRIEF_MODEL` 时仍在扣配额前返回 `503 provider_unconfigured`；
+2. 没有 `GEO_BRIEF_API_KEY` / `GEO_BRIEF_MODEL`，或显式提供非法 `GEO_BRIEF_TEMPERATURE` 时，仍在扣配额前返回 `503 provider_unconfigured`；
 3. GEO Brief 不回退到 `CONTENT_BRIEF_*`、`CONTENT_DRAFT_*`、`KEYWORD_MAP_*`、`OPENAI_*` 或 `AZURE_OPENAI_*`；
 4. 生产配置、不可变部署 SHA、登录后页面、一次真实 Brief、导出和 provider 费用边界均有证据；
 5. Marketing 发布不冒充 Product 发布，且共享 `main` push 后独立核验 `app.gengrowth.ai` 的生产身份。
@@ -22,15 +22,16 @@
 
 GEO Brief 已正确复用这条 DataForSEO transport 做一次问题采样；第二次调用是不同职责的结构化 Brief 组装，继续使用 `keyword-llm-client.ts` 的受限 Chat Completions transport。
 
-Content Brief 已有成熟的 scoped configuration 规则：
+Content Brief 已提供可复用的 scoped configuration 形态：
 
 - 独立 `<PREFIX>_API_KEY` 与 `<PREFIX>_MODEL`；
 - 可选 `<PREFIX>_URL` 与 `<PREFIX>_AUTH_SCHEME`；
-- 可选 `<PREFIX>_TEMPERATURE`，只接受 `0..2` 的有限数字；
-- 缺失或非法 temperature 回退为任务自己的温度；
+- 可选 `<PREFIX>_TEMPERATURE`，有效范围是 `0..2` 的有限数字；
 - 不回退到相邻工具或全局 provider 配置。
 
-GEO Brief 沿用这套规则，但不抽出新的共享 abstraction：当前只有两个简单 resolver，直接保持模块内的小函数更符合最小改动原则。
+GEO Brief 沿用变量形态和数值范围，但对“显式存在却非法”的 temperature 使用更
+严格的 fail-closed 语义：只有变量完全未设置时才回退任务温度。它不抽出新的共享
+abstraction；当前只有两个简单 resolver，直接保持模块内的小函数更符合最小改动原则。
 
 ## 代码设计
 
@@ -42,7 +43,7 @@ GEO Brief 沿用这套规则，但不抽出新的共享 abstraction：当前只�
 |---|---:|---:|
 | 未设置 `GEO_BRIEF_TEMPERATURE` | `null` | 任务默认 `0.2` |
 | `GEO_BRIEF_TEMPERATURE=1` | `1` | `1` |
-| 空、非数字、负数、超过 `2` | `null` | 任务默认 `0.2` |
+| 显式空值、纯空白、非数字、负数、超过 `2` | 整个 config 为 `null` | 不发请求；pre-quota `503 provider_unconfigured` |
 
 不增加新的 public error code，不改变 route response，不改变 prompt、输出 schema、配额顺序、超时或调用次数。
 
@@ -56,7 +57,10 @@ GEO Brief 沿用这套规则，但不抽出新的共享 abstraction：当前只�
 - `GEO_BRIEF_AUTH_SCHEME=api-key`；
 - `GEO_BRIEF_TEMPERATURE=1`。
 
-DataForSEO 继续读取现有 `DATAFORSEO_LOGIN/PASSWORD`。任何 secret 只写入 Vercel secret store 与未提交本地 env，不进入 Git、测试输出、日志或发布记录。
+DataForSEO 继续读取现有 `DATAFORSEO_LOGIN/PASSWORD`。五个 `GEO_BRIEF_*` 只属于
+Marketing Vercel `gengrowth-agents` 的 Production；Preview 只在执行授权的
+认证/付费 candidate 时配置。任何 secret 只写入 Vercel secret store 与未提交
+本地 env，不进入 Git、测试输出、日志或发布记录。
 
 同步更新 Marketing `apps/marketing/.env.example` 与 `docs/INFRASTRUCTURE.md`，使变量名称、默认行为和 Azure 要求成为部署合同。根 `.env.example` 与 `.env.gengrowth-production.template` 属于 Product/Railway Worker provider handoff；后者还明确禁止把 LLM secret 放进 Product Vercel Web，因此本次不得把 Marketing-only secret 写进这两个模板。
 
@@ -66,7 +70,7 @@ DataForSEO 继续读取现有 `DATAFORSEO_LOGIN/PASSWORD`。任何 secret 只写
 
 因此：
 
-- 缺配置不扣配额、不采样、不调用模型；
+- 缺 key/model 或显式非法 temperature 都不扣配额、不采样、不调用模型；
 - DataForSEO 失败与 LLM 失败继续分别披露；
 - LLM 400/超时/非法 JSON 不会返回一份假完整 Brief；
 - 不增加重试；
@@ -76,8 +80,8 @@ DataForSEO 继续读取现有 `DATAFORSEO_LOGIN/PASSWORD`。任何 secret 只写
 
 严格测试先行：
 
-1. 新增 `GEO_BRIEF_TEMPERATURE=1` 的 resolver 测试，先观察当前实现返回 `null`；
-2. 新增非法温度表格测试；
+1. 新增 `GEO_BRIEF_TEMPERATURE=1` 的 resolver 测试，先观察基线 config 的 temperature 仍为 `null`；
+2. 新增非法温度表格测试，证明显式空值、空白、非数字和越界值使整个 resolver 返回 `null`；
 3. 新增 client request 测试，证明 pinned `1` 覆盖任务默认 `0.2`；
 4. 保留“只读自己前缀”和“缺 key/model 返回 null”的回归测试；
 5. 运行 GEO Brief、全部 GEO tools、Marketing typecheck、定向 lint、全量 unit 与 production build；
