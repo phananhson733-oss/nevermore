@@ -1,5 +1,5 @@
 // @input  -- ui/dialog, GoogleSignInButton, next-intl
-// @output — 登录弹层：标题 + Google 官方按钮 + 授权说明
+// @output — 登录弹层：标题 + Google 官方按钮 + 授权说明 + 可用目标焦点恢复
 // @pos    -- 由 Header 持有开合状态，桌面端与移动端抽屉共用同一个实例
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -18,6 +18,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { GoogleSignInButton } from "./google-sign-in-button";
+
+function isUsableReturnFocusTarget(target: HTMLElement): boolean {
+  if (!target.isConnected || target.matches(":disabled")) return false;
+
+  const view = target.ownerDocument.defaultView;
+  if (view === null) return false;
+
+  for (let element: HTMLElement | null = target; element !== null; element = element.parentElement) {
+    const style = view.getComputedStyle(element);
+    if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 /**
  * The sign-in panel.
@@ -52,7 +68,8 @@ export function SignInDialog({
   readonly onSignedIn?: SignedInListener;
   /**
    * Optional stable focus target for flows whose trigger unmounted before the
-   * dialog opened, such as the mobile Header sheet.
+   * dialog opened, such as the mobile Header sheet. Hidden or disabled targets
+   * are ignored so Radix keeps control of its default close-focus handling.
    */
   readonly returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
@@ -68,7 +85,7 @@ export function SignInDialog({
         className="sm:max-w-[420px]"
         onCloseAutoFocus={(event) => {
           const target = returnFocusRef?.current;
-          if (target === undefined || target === null || !target.isConnected) return;
+          if (target === undefined || target === null || !isUsableReturnFocusTarget(target)) return;
           event.preventDefault();
           target.focus();
         }}
