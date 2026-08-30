@@ -24,10 +24,10 @@ import type { GeoKbPayload } from "./kb-contract.ts";
 /**
  * What the assembly call is allowed to return.
  *
- * Ids are server-assigned and the model returns them unchanged. That is the
- * whole reason the parse is strict about them: a model that invents an id is
- * referring to a must-answer item nobody wrote, and an outline section pointing
- * at one would look like coverage of something that does not exist.
+ * Q ids are server-assigned and the model returns them unchanged. A model may
+ * add an item only in the reserved M1..M12 namespace. Keeping those namespaces
+ * separate is how the assembled brief can retain which items were observed and
+ * which were introduced by the assembly model.
  */
 export interface GeoBriefModelReply {
   readonly leadAnswerRequirement: string;
@@ -50,6 +50,13 @@ function boundedString(value: unknown, max: number): string | null {
   const trimmed = value.trim();
   if (trimmed.length === 0 || trimmed.length > max) return null;
   return trimmed;
+}
+
+function isModelAddedId(id: string): boolean {
+  const match = /^M([1-9][0-9]*)$/.exec(id);
+  return (
+    match !== null && Number(match[1]) <= GEO_BRIEF_LIMITS_MAX.mustAnswer
+  );
 }
 
 /**
@@ -100,12 +107,17 @@ export function parseGeoBriefReply(
     if (id === null || text === null) {
       return { ok: false, reason: "mustAnswer_entry" };
     }
-    if (!allowed.has(id)) return { ok: false, reason: "mustAnswer_unknown_id" };
+    if (!allowed.has(id) && !isModelAddedId(id)) {
+      return { ok: false, reason: "mustAnswer_unknown_id" };
+    }
     // One id twice would let a section claim to answer something another
     // section also claims, and the two texts would disagree.
     if (seen.has(id)) return { ok: false, reason: "mustAnswer_duplicate_id" };
     seen.add(id);
     mustAnswer.push({ id, text });
+  }
+  for (const id of allowed) {
+    if (!seen.has(id)) return { ok: false, reason: "mustAnswer_missing_id" };
   }
 
   const outlineRaw = row["outline"];
@@ -127,7 +139,7 @@ export function parseGeoBriefReply(
     );
     if (heading === null) return { ok: false, reason: "outline_entry" };
     const answersRaw = record["answers"];
-    if (!Array.isArray(answersRaw))
+    if (!Array.isArray(answersRaw) || answersRaw.length === 0)
       return { ok: false, reason: "outline_answers" };
     if (answersRaw.length > GEO_BRIEF_LIMITS_MAX.answersPerSection) {
       return { ok: false, reason: "outline_answers_too_many" };
@@ -212,11 +224,13 @@ export function assembleGeoBrief(input: GeoBriefAssembleInput): GeoBrief {
           // added is `model`. Collapsing both to `model` would erase the only
           // signal a reader has about which items came from a real answer.
           const observed = observedItems.find((item) => item.id === entry.id);
+          if (observed !== undefined) return observed;
           return {
             id: entry.id,
             text: entry.text,
-            source:
-              observed === undefined ? ("model" as const) : observed.source,
+            // A parsed reply permits only reserved M ids after every observed Q
+            // has been matched above, so only genuinely added items reach here.
+            source: "model" as const,
           };
         });
 

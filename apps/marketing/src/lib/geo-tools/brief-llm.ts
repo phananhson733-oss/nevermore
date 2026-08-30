@@ -153,6 +153,15 @@ export function resolveGeoBriefLlmConfig(
   };
 }
 
+const GEO_BRIEF_PARSER_BOUND_LINES = [
+  `- leadAnswerRequirement: 1..${String(GEO_BRIEF_LIMITS_MAX.requirementChars)} characters`,
+  `- mustAnswer: 1..${String(GEO_BRIEF_LIMITS_MAX.mustAnswer)} items`,
+  `- mustAnswer.text: 1..${String(GEO_BRIEF_LIMITS_MAX.mustAnswerChars)} characters`,
+  `- outline: 1..${String(GEO_BRIEF_LIMITS_MAX.outline)} sections`,
+  `- outline.heading: 1..${String(GEO_BRIEF_LIMITS_MAX.headingChars)} characters`,
+  `- outline.answers: 1..${String(GEO_BRIEF_LIMITS_MAX.answersPerSection)} ids`,
+] as const;
+
 /**
  * The one instruction that matters.
  *
@@ -174,10 +183,19 @@ export const GEO_BRIEF_SYSTEM_PROMPT = [
   "- Never state a fact that is not in the fact table. If a subtopic needs a",
   "  number that is not there, still list it as something to answer, and let",
   "  the writer find the number.",
-  "- Never invent a subtopic id. Return the ids you were given, unchanged.",
-  "- You may add a must-answer item with a new id only when the question",
-  "  obviously requires it and no given subtopic covers it.",
+  "- Never invent a Q id. Return every Q id you were given exactly once,",
+  "  unchanged.",
+  "- You may add a must-answer item only when the question obviously requires",
+  "  it and no given subtopic covers it.",
+  "  Give each added item a unique reserved id from M1, M2, ... M12; never",
+  "  use that M namespace for an observed item.",
+  "- Every outline.answers entry must be a Q or M id that appears in the",
+  "  mustAnswer array you return in this reply.",
+  "- Never put prose, entity names, or headings in outline.answers.",
   "- Write in the language named in the input.",
+  "",
+  "Hard output bounds:",
+  ...GEO_BRIEF_PARSER_BOUND_LINES,
   "",
   "Return only JSON, with this exact shape:",
   '{"leadAnswerRequirement": string,',
@@ -217,8 +235,8 @@ export function geoBriefUserPrompt(input: GeoBriefLlmInput): string {
     "Verified facts (the only source of specifics):",
     factLines(input.facts),
     "",
-    `Return at most ${String(GEO_BRIEF_LIMITS_MAX.mustAnswer)} must-answer items`,
-    `and at most ${String(GEO_BRIEF_LIMITS_MAX.outline)} outline sections.`,
+    "Hard output bounds:",
+    ...GEO_BRIEF_PARSER_BOUND_LINES,
   ].join("\n");
 }
 
