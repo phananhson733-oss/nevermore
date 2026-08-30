@@ -120,24 +120,37 @@ describe("resolveGeoBriefLlmConfig", () => {
     ).toBe("https://azure.test/deploy");
   });
 
-  it("honours a provider-pinned temperature", () => {
+  it("leaves the task temperature unpinned when the key is absent", () => {
     const config = resolveGeoBriefLlmConfig({
       GEO_BRIEF_API_KEY: "k",
       GEO_BRIEF_MODEL: "m",
-      GEO_BRIEF_TEMPERATURE: "1",
     });
-    expect(config?.temperature).toBe(1);
+    expect(config).not.toBeNull();
+    expect(config?.temperature).toBeNull();
   });
 
-  it.each(["abc", "3", "-1", ""])(
-    "drops an unusable pinned temperature %j back to null",
+  it.each(["0", "1", "2"])(
+    "accepts provider-pinned temperature %j",
     (raw) => {
       const config = resolveGeoBriefLlmConfig({
         GEO_BRIEF_API_KEY: "k",
         GEO_BRIEF_MODEL: "m",
         GEO_BRIEF_TEMPERATURE: raw,
       });
-      expect(config?.temperature).toBeNull();
+      expect(config?.temperature).toBe(Number(raw));
+    },
+  );
+
+  it.each(["abc", "3", "-1", "", "   ", "NaN", "Infinity"])(
+    "fails the config closed for invalid pinned temperature %j",
+    (raw) => {
+      expect(
+        resolveGeoBriefLlmConfig({
+          GEO_BRIEF_API_KEY: "k",
+          GEO_BRIEF_MODEL: "m",
+          GEO_BRIEF_TEMPERATURE: raw,
+        }),
+      ).toBeNull();
     },
   );
 

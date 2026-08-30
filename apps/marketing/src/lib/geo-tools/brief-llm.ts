@@ -77,11 +77,17 @@ function present(
 function pinnedTemperature(
   env: Record<string, string | undefined>,
   key: string,
-): number | null {
-  const raw = present(env, key);
-  if (raw === null) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) && value >= 0 && value <= 2 ? value : null;
+):
+  | { readonly valid: true; readonly value: number | null }
+  | { readonly valid: false } {
+  const raw = env[key];
+  if (raw === undefined) return { valid: true, value: null };
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return { valid: false };
+  const value = Number(trimmed);
+  return Number.isFinite(value) && value >= 0 && value <= 2
+    ? { valid: true, value }
+    : { valid: false };
 }
 
 export function resolveGeoBriefLlmConfig(
@@ -90,6 +96,11 @@ export function resolveGeoBriefLlmConfig(
   const apiKey = present(env, `${GEO_BRIEF_ENV_PREFIX}_API_KEY`);
   const model = present(env, `${GEO_BRIEF_ENV_PREFIX}_MODEL`);
   if (apiKey === null || model === null) return null;
+  const temperature = pinnedTemperature(
+    env,
+    `${GEO_BRIEF_ENV_PREFIX}_TEMPERATURE`,
+  );
+  if (!temperature.valid) return null;
   return {
     apiKey,
     model,
@@ -104,10 +115,7 @@ export function resolveGeoBriefLlmConfig(
       "api-key"
         ? "api-key"
         : "bearer",
-    temperature: pinnedTemperature(
-      env,
-      `${GEO_BRIEF_ENV_PREFIX}_TEMPERATURE`,
-    ),
+    temperature: temperature.value,
   };
 }
 
