@@ -67,7 +67,7 @@ Add a table test for `"abc"`, `"3"`, `"-1"`, `""`, `"   "`, `"NaN"`, and `"Infin
 
 **Step 3: Write the transport-effective test**
 
-Use the real `createKeywordLlmClient` with an injected fetch. Resolve a GEO Brief config pinned to `1`, call `runGeoBriefLlm`, parse the request body, and assert the effective request temperature is `1`, not `GEO_BRIEF_TEMPERATURE` (`0.2`).
+Use the real `createKeywordLlmClient` with an injected fetch. Resolve a GEO Brief config pinned to `1`, call `runGeoBriefLlm`, parse the request body, and assert the effective request temperature is `1`, not the task default `0.2`.
 
 **Step 4: Run RED**
 
