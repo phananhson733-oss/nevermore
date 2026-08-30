@@ -18,6 +18,7 @@ import type { GeoQuestionSet } from "./kb-questions.ts";
 import {
   ensureGeoKnowledgeBase,
   freezeGeoKb,
+  readFrozenGeoKb,
   readGeoKnowledgeBase,
   saveGeoKbDraft,
   type GeoKbDetails,
@@ -99,7 +100,7 @@ function siteKeyOf(url: string): {
 function viewFrom(
   details: GeoKbDetails,
   importAvailable: boolean,
-  questionCounts: { readonly retrieval: number } | null,
+  retrievalCount: number,
 ): GeoKbView {
   const payload: GeoKbPayload =
     details.draft?.payload ?? emptyGeoKbPayload(details.origin);
@@ -118,9 +119,7 @@ function viewFrom(
             frozenAt: details.frozen.frozenAt,
             contentHash: details.frozen.contentHash,
             questionCount: details.frozen.questionCount,
-            // Only known once the set itself is read; the editor shows the
-            // total until then rather than inventing a split.
-            retrievalCount: questionCounts?.retrieval ?? details.frozen.questionCount,
+            retrievalCount,
           },
     importAvailable,
   };
@@ -160,8 +159,29 @@ export const DEFAULT_GEO_KB_HANDLER_DEPENDENCIES: GeoKbHandlerDependencies = {
       kbId: registration.value.kbId,
     });
     if (details.kind !== "ok") return toOutcome(details, () => null as never);
+    let retrievalCount = 0;
+    if (details.value.frozen !== null) {
+      const frozen = await readFrozenGeoKb({
+        userId,
+        kbId: details.value.kbId,
+        revision: details.value.frozen.revision,
+      });
+      if (frozen.kind !== "ok") {
+        return {
+          kind: "unavailable",
+          reason:
+            frozen.kind === "unavailable"
+              ? frozen.reason
+              : "frozen snapshot unavailable",
+        };
+      }
+      retrievalCount = retrievalCountOf(frozen.value.questionSet);
+    }
     const profile = await profileFor(userId, url);
-    return { kind: "ok", value: viewFrom(details.value, profile.ok, null) };
+    return {
+      kind: "ok",
+      value: viewFrom(details.value, profile.ok, retrievalCount),
+    };
   },
 
   saveDraft: async ({ userId, kbId, payload, baseVersion }) => {
