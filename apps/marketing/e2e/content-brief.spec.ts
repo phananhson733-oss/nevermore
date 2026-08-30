@@ -131,6 +131,70 @@ test.describe("Content Brief Builder", () => {
     await expect(menu).toBeFocused();
   });
 
+  test("does not focus the mobile menu trigger after it becomes hidden", async ({ page }) => {
+    await installGuard(page, { signedIn: false });
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/en/tools/content-brief");
+
+    const menu = page.locator('button[aria-label="Open menu"]');
+    await menu.click();
+    await page
+      .getByRole("navigation", { name: "Mobile navigation" })
+      .getByRole("button", { name: "Sign in", exact: true })
+      .click();
+    await expect(page.locator('[data-slot="sheet-content"]')).toHaveCount(0);
+
+    const dialog = page.getByRole("dialog", { name: "Sign in to GenGrowth" });
+    await expect(dialog).toBeVisible();
+    await menu.evaluate((element) => {
+      const button = element as HTMLButtonElement;
+      const focus = button.focus.bind(button);
+      button.focus = (options?: FocusOptions): void => {
+        button.dataset.focusAttempts = String(Number(button.dataset.focusAttempts ?? "0") + 1);
+        focus(options);
+      };
+    });
+
+    await page.setViewportSize({ width: 1280, height: 812 });
+    await expect(menu).toBeHidden();
+    await dialog.getByRole("button", { name: "Close" }).click();
+    await expect(dialog).toHaveCount(0);
+
+    await expect(menu).not.toHaveAttribute("data-focus-attempts", /.+/u);
+  });
+
+  test("does not focus the mobile menu trigger after it becomes disabled", async ({ page }) => {
+    await installGuard(page, { signedIn: false });
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/en/tools/content-brief");
+
+    const menu = page.locator('button[aria-label="Open menu"]');
+    await menu.click();
+    await page
+      .getByRole("navigation", { name: "Mobile navigation" })
+      .getByRole("button", { name: "Sign in", exact: true })
+      .click();
+    await expect(page.locator('[data-slot="sheet-content"]')).toHaveCount(0);
+
+    const dialog = page.getByRole("dialog", { name: "Sign in to GenGrowth" });
+    await expect(dialog).toBeVisible();
+    await menu.evaluate((element) => {
+      const button = element as HTMLButtonElement;
+      const focus = button.focus.bind(button);
+      button.focus = (options?: FocusOptions): void => {
+        button.dataset.focusAttempts = String(Number(button.dataset.focusAttempts ?? "0") + 1);
+        focus(options);
+      };
+      button.disabled = true;
+    });
+
+    await expect(menu).toBeDisabled();
+    await dialog.getByRole("button", { name: "Close" }).click();
+    await expect(dialog).toHaveCount(0);
+
+    await expect(menu).not.toHaveAttribute("data-focus-attempts", /.+/u);
+  });
+
   test("a run without Search Console renders an undecidable verdict, never 'create'", async ({ page }) => {
     const brief = validContentBrief();
     const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(brief) });
