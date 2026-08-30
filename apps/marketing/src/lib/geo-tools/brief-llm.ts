@@ -74,12 +74,33 @@ function present(
   return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
 }
 
+function pinnedTemperature(
+  env: Record<string, string | undefined>,
+  key: string,
+):
+  | { readonly valid: true; readonly value: number | null }
+  | { readonly valid: false } {
+  const raw = env[key];
+  if (raw === undefined) return { valid: true, value: null };
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return { valid: false };
+  const value = Number(trimmed);
+  return Number.isFinite(value) && value >= 0 && value <= 2
+    ? { valid: true, value }
+    : { valid: false };
+}
+
 export function resolveGeoBriefLlmConfig(
   env: Record<string, string | undefined> = process.env,
 ): KeywordLlmConfig | null {
   const apiKey = present(env, `${GEO_BRIEF_ENV_PREFIX}_API_KEY`);
   const model = present(env, `${GEO_BRIEF_ENV_PREFIX}_MODEL`);
   if (apiKey === null || model === null) return null;
+  const temperature = pinnedTemperature(
+    env,
+    `${GEO_BRIEF_ENV_PREFIX}_TEMPERATURE`,
+  );
+  if (!temperature.valid) return null;
   return {
     apiKey,
     model,
@@ -94,7 +115,7 @@ export function resolveGeoBriefLlmConfig(
       "api-key"
         ? "api-key"
         : "bearer",
-    temperature: null,
+    temperature: temperature.value,
   };
 }
 

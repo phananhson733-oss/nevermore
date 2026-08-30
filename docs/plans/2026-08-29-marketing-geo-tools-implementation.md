@@ -177,3 +177,40 @@
 **自己复查抓到的：** 我在 handler 里第一次写 `targetHost` 时又写成了 `new URL(payload.targetUrl).host` ——和可见性工具刚修掉的是同一个 www 缺陷，本仓库第三次。已改成 `normalizeGeoHost`，并加了断言 `https://www.acme.test/` 必须以 `acme.test` 到达采样层的测试。
 
 **测试**：`brief-contract` / `brief-assemble` / `brief-subtopics` / `brief-llm` / `brief-export` / `brief-handler` 共 73 条。
+
+### 生产审计与启用收口（2026-08-30，待发布）
+
+2026-08-30 的生产审计确认 `gengrowth-agents` 已有
+`DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD`，但没有
+`GEO_BRIEF_API_KEY`、`GEO_BRIEF_MODEL`、`GEO_BRIEF_URL`、
+`GEO_BRIEF_AUTH_SCHEME` 或 `GEO_BRIEF_TEMPERATURE`。这证明采样凭据存在，不等于
+本轮已执行一次付费采样；Brief 的第二段组装仍因专用配置缺失而关闭。
+
+旧 Marketing GEO Agent 的代码只提供 DataForSEO ChatGPT LLM Responses 采样，
+没有 Azure Brief 组装 resolver。其他旧工具或 worker 里的 Azure/OpenAI 变量可以
+作为配置形态参考，但不是 GEO Brief 可以读取的配置，也不能作为 silent fallback。
+
+代码收口由两个原子提交组成：`119c6419` 增加 GEO Brief 专用 pinned temperature，
+`863be2ad` 把显式非法配置改成 fail closed。最终合同是：
+
+- `resolveGeoBriefLlmConfig()` 继续只读 `GEO_BRIEF_*`，不回退到
+  `CONTENT_BRIEF_*`、`CONTENT_DRAFT_*`、`KEYWORD_MAP_*`、`OPENAI_*` 或
+  `AZURE_OPENAI_*`；
+- 未设置 `GEO_BRIEF_TEMPERATURE` 时，resolver 保持 temperature `null`，实际请求
+  使用任务默认的 `0.2`；显式提供 `0..2` 的有限数字时才覆盖任务默认值；
+- 显式提供空值、纯空白、非数字、负数或大于 `2` 的 temperature 时，整个 resolver
+  返回 `null`，existing provider gate 在扣配额、DataForSEO 采样和 LLM 调用前返回
+  `503 provider_unconfigured`；
+- transport 测试证明当前 Azure `gpt-5.6-luna` deployment 需要
+  `temperature=1` 时，请求体发出的是 `1`，而不是任务默认的 `0.2`；
+- 缺失 `GEO_BRIEF_API_KEY` 或 `GEO_BRIEF_MODEL` 时沿用相同的 pre-quota 503，
+  不会落出半份 Brief。
+
+生产启用时，Marketing Vercel `gengrowth-agents` 需要完整设置五个专用变量；
+Azure 路径使用完整 deployment Chat Completions URL（含 `api-version`）、
+`GEO_BRIEF_AUTH_SCHEME=api-key` 与 `GEO_BRIEF_TEMPERATURE=1`。secret 只进 Vercel
+secret store 与未提交本地 env，不进 Git、日志或实施记录。
+
+截至本节写入时，这仍不是“已发布”证据。关闭本项还需要：把专用变量写入
+Vercel Production（Preview 只在执行授权的认证/付费 candidate 时配置）、部署并
+绑定不可变 SHA，然后各执行一次授权的登录后 Brief canary 和完整导出检查。

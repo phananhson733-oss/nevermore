@@ -158,11 +158,26 @@ Redirect URLs 含 `https://app.gengrowth.ai/app/auth/callback`
 | `GOOGLE_OAUTH_CLIENT_ID/SECRET` | ✅ | — | ✅ |
 | `GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI` | — | ✅ | — |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID`（One Tap 用） | — | ✅ | — |
+| `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` | — | Production（既有）；Preview 仅在授权的认证/付费 candidate 中配置 | — |
+| `GEO_BRIEF_API_KEY` | — | Production；Preview 仅在授权的认证/付费 candidate 中配置 | — |
+| `GEO_BRIEF_MODEL` | — | Production；Preview 仅在授权的认证/付费 candidate 中配置 | — |
+| `GEO_BRIEF_URL` | — | Production；Preview 仅在授权的认证/付费 candidate 中配置 | — |
+| `GEO_BRIEF_AUTH_SCHEME` | — | Production；Preview 仅在授权的认证/付费 candidate 中配置 | — |
+| `GEO_BRIEF_TEMPERATURE` | — | Production；Preview 仅在授权的认证/付费 candidate 中配置 | — |
 | `APP_ORIGIN` = `https://app.gengrowth.ai` | ✅ | — | ✅ |
 | `APP_BUILD_SHA` | ✅ | — | ✅ |
 
 `APP_BUILD_SHA` 在产品站和 worker 上**各有一份，必须同步**——不一致会导致
 两边行为对不上（画像生成失败的经典症状）。`railway up` 之后尤其要检查。
+
+上表表达变量所有权和目标环境，不等于已经配置。2026-08-30 的生产审计只确认
+`DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` 已存在；五个 `GEO_BRIEF_*` 当时均未配置。
+
+Marketing-only GEO provider secret 只落在 Vercel `gengrowth-agents`。不要把
+`GEO_BRIEF_*` 或 DataForSEO 凭据写进 Product Vercel `nevermore` 或 Railway
+worker。旧 Marketing GEO Agent 只有 DataForSEO 采样 transport；其他旧代码里
+相似的 Azure/OpenAI 变量属于 worker 或别的工具，不是这次 GEO Brief 的配置
+fallback，也不是它的部署落点。
 
 `DATABASE_URL` 必须是 **Supabase session 模式（端口 5432）**。
 `packages/contracts/src/runtime-url.ts` 的 `postgresUrlIssue()` 会**拒绝事务池
