@@ -58,7 +58,7 @@ GEO Brief 沿用这套规则，但不抽出新的共享 abstraction：当前只�
 
 DataForSEO 继续读取现有 `DATAFORSEO_LOGIN/PASSWORD`。任何 secret 只写入 Vercel secret store 与未提交本地 env，不进入 Git、测试输出、日志或发布记录。
 
-同步更新根 `.env.example`、`.env.gengrowth-production.template`、Marketing `.env.example` 与 `docs/INFRASTRUCTURE.md`，使变量名称、默认行为和 Azure 要求成为部署合同。
+同步更新 Marketing `apps/marketing/.env.example` 与 `docs/INFRASTRUCTURE.md`，使变量名称、默认行为和 Azure 要求成为部署合同。根 `.env.example` 与 `.env.gengrowth-production.template` 属于 Product/Railway Worker provider handoff；后者还明确禁止把 LLM secret 放进 Product Vercel Web，因此本次不得把 Marketing-only secret 写进这两个模板。
 
 ## 错误与费用边界
 
