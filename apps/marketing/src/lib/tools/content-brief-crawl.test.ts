@@ -10,6 +10,8 @@ import {
   ENVELOPE_MS,
   HEADING_MAX_CHARS,
 } from "@sf/public-tools/content-brief/constants";
+import { validContentBrief } from "@sf/public-tools/content-brief/fixtures";
+import { parseContentBriefShape } from "@sf/public-tools/content-brief/parse-brief";
 import type {
   fetchPublicResource,
   PublicResourceFetchOptions,
@@ -485,6 +487,50 @@ describe("crawlContentBriefTargets", () => {
       "Section 1",
       "Section 2",
     ]);
+  });
+
+  it("bounds astral crawl strings by code points without breaking producer-parser agreement", async () => {
+    const heading = "😀".repeat(HEADING_MAX_CHARS + 1);
+    const prose = "😀".repeat(CRAWL_EXCERPT_MAX_CHARS + 1);
+    const { fetchResource } = fetchReturning(() =>
+      page({ body: `<html><body><h2>${heading}</h2><p>${prose}</p></body></html>` }),
+    );
+
+    const result = await crawlContentBriefTargets(
+      { targets: [target(1)], deadlineAt: GENEROUS_DEADLINE, language: "en" },
+      { fetchResource, now: fixedClock() },
+    );
+
+    const observation = result.observed[0];
+    const excerpt = observation?.excerpts[0];
+    expect(observation?.h2[0]).toBe("😀".repeat(HEADING_MAX_CHARS));
+    expect(excerpt?.heading).toBe("😀".repeat(HEADING_MAX_CHARS));
+    expect(excerpt?.text).toBe("😀".repeat(CRAWL_EXCERPT_MAX_CHARS));
+    expect([...(excerpt?.text ?? "")]).toHaveLength(CRAWL_EXCERPT_MAX_CHARS);
+
+    const fixture = validContentBrief();
+    const fixtureObservation = fixture.evidence.crawl.observed[0];
+    const fixtureExcerpt = fixtureObservation?.excerpts[0];
+    const brief = {
+      ...fixture,
+      evidence: {
+        ...fixture.evidence,
+        crawl: {
+          ...fixture.evidence.crawl,
+          observed: [
+            {
+              ...fixtureObservation,
+              excerpts: [
+                { ...fixtureExcerpt, text: excerpt?.text },
+                ...(fixtureObservation?.excerpts.slice(1) ?? []),
+              ],
+            },
+            ...fixture.evidence.crawl.observed.slice(1),
+          ],
+        },
+      },
+    };
+    expect(parseContentBriefShape(brief)).toMatchObject({ ok: true });
   });
 
   it("refuses a target whose serp_id is not S<n> before fetching anything", async () => {

@@ -1,5 +1,5 @@
 // @input  -- an untrusted value that claims to be a ContentBrief or ContentBriefHandoff
-// @output -- a freshly built, shape-exact ContentBrief (or handoff envelope), or one closed failure code with the offending path
+// @output -- a freshly built, shape-exact ContentBrief (or handoff envelope), including code-point-bounded crawl strings, or one closed failure code with the offending path
 // @pos    -- the decoder toolkit and every per-field shape pin of the content-brief contract; parse-brief.ts adds the cross-field invariants on top
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -102,6 +102,15 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export function text(max = FREE_TEXT_MAX_CHARS, min = 0): Decoder<string> {
   return (input, path) =>
     typeof input === "string" && input.length >= min && input.length <= max ? ok(input) : invalid(path);
+}
+
+/** Non-model text emitted by boundChars, whose contract counts Unicode code points. */
+function codePointText(max = FREE_TEXT_MAX_CHARS, min = 0): Decoder<string> {
+  return (input, path) => {
+    if (typeof input !== "string") return invalid(path);
+    const length = [...input].length;
+    return length >= min && length <= max ? ok(input) : invalid(path);
+  };
 }
 
 /** Model-written text: non-empty, no control characters or angle brackets, single spaces, code points <= max (text.ts). */
@@ -398,9 +407,9 @@ const serpObservation = object({
 });
 
 const crawlExcerpt = object({
-  heading: text(HEADING_MAX_CHARS),
+  heading: codePointText(HEADING_MAX_CHARS),
   level: oneOf(HEADING_LEVELS),
-  text: text(CRAWL_EXCERPT_MAX_CHARS),
+  text: codePointText(CRAWL_EXCERPT_MAX_CHARS),
 });
 
 const crawlObservationBase = {
@@ -409,8 +418,8 @@ const crawlObservationBase = {
   url: httpUrl,
   final_url: httpUrl,
   fetched_at: timestamp,
-  h2: array(text(HEADING_MAX_CHARS), { max: CRAWL_HEADINGS_PER_PAGE_MAX }),
-  h3: array(text(HEADING_MAX_CHARS), { max: CRAWL_HEADINGS_PER_PAGE_MAX }),
+  h2: array(codePointText(HEADING_MAX_CHARS), { max: CRAWL_HEADINGS_PER_PAGE_MAX }),
+  h3: array(codePointText(HEADING_MAX_CHARS), { max: CRAWL_HEADINGS_PER_PAGE_MAX }),
   excerpts: array(crawlExcerpt, { max: CRAWL_EXCERPTS_PER_PAGE_MAX }),
   content_hash: text(FREE_TEXT_MAX_CHARS, 1),
 };
