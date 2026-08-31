@@ -3,7 +3,7 @@
 // @output -- state-reset, request, accessibility, and error-boundary guards for the Daily Briefing form
 // @pos    -- primary interaction contract for /[locale]/tools/daily-search-briefing
 
-import { act, type ComponentProps } from "react";
+import { act, StrictMode, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -125,12 +125,25 @@ afterEach(async () => {
 
 async function renderTool(
   props: Partial<ComponentProps<typeof DailyBriefingTool>> = {},
+  refreshProperties?: () => Promise<Response>,
+  strict = false,
 ) {
+  const reportFetch = globalThis.fetch;
+  globalThis.fetch = vi.fn(async (input, init) => {
+    if (input === "/api/tools/gsc-properties") {
+      return refreshProperties?.() ?? Response.json({ data: {
+        properties: props.properties ?? [PROPERTY],
+        propertyTotal: props.propertyTotal ?? 1,
+        brandCandidates: props.brandCandidates ?? { [PROPERTY]: ["example"] },
+      } });
+    }
+    return reportFetch(input, init);
+  }) as typeof fetch;
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
   await act(async () => {
-    root?.render(
+    const tool = (
       <NextIntlClientProvider
         locale="en"
         timeZone="UTC"
@@ -145,8 +158,9 @@ async function renderTool(
           brandCandidates={{ [PROPERTY]: ["example"] }}
           {...props}
         />
-      </NextIntlClientProvider>,
+      </NextIntlClientProvider>
     );
+    root?.render(strict ? <StrictMode>{tool}</StrictMode> : tool);
   });
   return host;
 }
@@ -230,7 +244,7 @@ describe("DailyBriefingTool connection boundary", () => {
 
     await renderTool();
 
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(vi.mocked(globalThis.fetch).mock.calls.every(([url]) => url === "/api/tools/gsc-properties")).toBe(true);
   });
 
   it("shows both approved result previews before the first run without mock evidence", async () => {
@@ -243,7 +257,7 @@ describe("DailyBriefingTool connection boundary", () => {
     expect(host.textContent).toContain("Run the briefing to generate");
     expect(host.querySelector("[data-change]")).toBeNull();
     expect(host.querySelector("[data-action-row]")).toBeNull();
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(vi.mocked(globalThis.fetch).mock.calls.every(([url]) => url === "/api/tools/gsc-properties")).toBe(true);
   });
 
   it("replaces both result previews after a successful run", async () => {
@@ -456,6 +470,103 @@ describe("DailyBriefingTool request states and errors", () => {
       "/api/auth/google/start?scope=gsc&next=%2Ftools%2Fdaily-search-briefing",
     );
     expect(host.textContent).not.toContain("gsc_revoked");
+  });
+});
+
+describe("fresh Search Console properties", () => {
+  const fresh = (properties: readonly string[]) => Response.json({ data: {
+    properties,
+    propertyTotal: properties.length,
+    brandCandidates: { [PROPERTY]: ["example"], [SECOND_PROPERTY]: ["new brand"] },
+  } });
+
+  it("loads a newly granted site on mount without logging out or running a report", async () => {
+    globalThis.fetch = vi.fn(async () => success()) as typeof fetch;
+    const host = await renderTool({}, async () => fresh([PROPERTY, SECOND_PROPERTY]));
+    const select = host.querySelector<HTMLSelectElement>("select")!;
+    expect([...select.options].map((option) => option.value)).toEqual([PROPERTY, SECOND_PROPERTY]);
+    expect(select.value).toBe(PROPERTY);
+    expect(vi.mocked(globalThis.fetch).mock.calls).toHaveLength(1);
+    expect(trackMarketingEventMock).not.toHaveBeenCalled();
+    await changeValue(select, SECOND_PROPERTY);
+    expect(host.querySelector<HTMLInputElement>('input[name="brandTerms"]')?.value).toBe("new brand");
+    await click(buttonWith(host, "Build today's briefing"));
+    expect(lastRequestBody().property).toBe(SECOND_PROPERTY);
+  });
+
+  it("completes the automatic refresh under Strict Mode effect remounts", async () => {
+    const host = await renderTool({}, async () => fresh([PROPERTY, SECOND_PROPERTY]), true);
+    expect(host.querySelectorAll("select option")).toHaveLength(2);
+    expect(buttonWith(host, "Refresh sites").disabled).toBe(false);
+  });
+
+  it("coalesces focus and click requests while a refresh is pending", async () => {
+    let finish!: (response: Response) => void;
+    const refresh = vi.fn(() => new Promise<Response>((resolve) => { finish = resolve; }));
+    const host = await renderTool({}, refresh);
+    expect(buttonWith(host, "Refreshing sites").disabled).toBe(true);
+    expect(buttonWith(host, "Build today's briefing").disabled).toBe(true);
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    expect(refresh).toHaveBeenCalledOnce();
+    await act(async () => { finish(fresh([PROPERTY, SECOND_PROPERTY])); });
+    expect(buttonWith(host, "Refresh sites").disabled).toBe(false);
+  });
+
+  it("refreshes on returning to the page and preserves the selected site's inputs and report", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(100_000);
+    globalThis.fetch = vi.fn(async () => success()) as typeof fetch;
+    const refresh = vi.fn().mockResolvedValueOnce(fresh([PROPERTY])).mockResolvedValueOnce(fresh([SECOND_PROPERTY, PROPERTY]));
+    const host = await renderTool({}, refresh);
+    const brand = host.querySelector<HTMLInputElement>('input[name="brandTerms"]')!;
+    await changeValue(brand, "my custom brand");
+    await click(host.querySelector<HTMLInputElement>('input[name="brandTermsConfirmed"]')!);
+    await click(buttonWith(host, "Build today's briefing"));
+    vi.spyOn(Date, "now").mockReturnValue(131_000);
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(host.querySelector<HTMLSelectElement>("select")?.value).toBe(PROPERTY);
+    expect(brand.value).toBe("my custom brand");
+    expect(host.querySelector<HTMLInputElement>('input[name="brandTermsConfirmed"]')?.checked).toBe(true);
+    expect(host.textContent).toContain("Search performance trend");
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("recovers from an empty saved list when the first site is added", async () => {
+    const host = await renderTool({ properties: [], propertyTotal: 0 }, async () => fresh([SECOND_PROPERTY]));
+    expect(host.querySelector<HTMLSelectElement>("select")?.value).toBe(SECOND_PROPERTY);
+    expect(host.querySelector<HTMLInputElement>('input[name="brandTerms"]')?.value).toBe("new brand");
+  });
+
+  it("keeps the saved list on temporary failure and offers refresh without reconnecting", async () => {
+    const refresh = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(fresh([PROPERTY, SECOND_PROPERTY]));
+    const host = await renderTool({}, refresh);
+    expect(host.querySelector<HTMLSelectElement>("select")?.value).toBe(PROPERTY);
+    expect(host.textContent).toContain("Could not refresh the site list");
+    expect(host.querySelector('a[href*="/api/auth/google/start"]')).toBeNull();
+    await click(buttonWith(host, "Refresh sites"));
+    expect(host.querySelectorAll("select option")).toHaveLength(2);
+    expect(host.textContent).not.toContain("Could not refresh the site list");
+  });
+
+  it("clears site-owned state and asks for a selection if access to the selected site disappears", async () => {
+    globalThis.fetch = vi.fn(async () => success()) as typeof fetch;
+    const refresh = vi.fn().mockResolvedValueOnce(fresh([PROPERTY])).mockResolvedValueOnce(fresh([SECOND_PROPERTY]));
+    const host = await renderTool({}, refresh);
+    await click(host.querySelector<HTMLInputElement>('input[name="brandTermsConfirmed"]')!);
+    await click(buttonWith(host, "Build today's briefing"));
+    await click(buttonWith(host, "Refresh sites"));
+    expect(host.querySelector<HTMLSelectElement>("select")?.value).toBe("");
+    expect(host.querySelector<HTMLInputElement>('input[name="brandTerms"]')?.value).toBe("");
+    expect(host.querySelector<HTMLInputElement>('input[name="brandTermsConfirmed"]')?.checked).toBe(false);
+    expect(host.textContent).not.toContain("Search performance trend");
+    expect(buttonWith(host, "Build today's briefing").disabled).toBe(true);
+  });
+
+  it("does not fetch properties for a disconnected visitor", async () => {
+    const refresh = vi.fn(async () => fresh([PROPERTY]));
+    await renderTool({ properties: null }, refresh);
+    expect(refresh).not.toHaveBeenCalled();
   });
 });
 
