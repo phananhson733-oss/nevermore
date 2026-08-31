@@ -4803,8 +4803,8 @@
         "label": "检查视图",
         "input": "输入",
         "result": "结果",
-        "note": "单页检查 · 无需登录",
-        "runNote": "访问与答案结构检查 · 无语言模型调用"
+        "note": "单页检查 · 基础检查无需登录",
+        "runNote": "基础检查不调用语言模型；可选 AI 复核需另行确认。"
       },
       "metrics": {
         "passedHelp": "{count} 项已判定检查中",
@@ -4817,7 +4817,7 @@
       },
       "eyebrow": "GEO 工具",
       "title": "页面可引用性检查",
-      "intro": "贴一个网址。检查抓取访问与答案结构，对比原始 HTML 和有界隔离 Chromium 渲染结果，再查看保留逐项证据的根因分组。不需要账号、知识库或语言模型。",
+      "intro": "贴一个网址，查看抓取访问、答案结构模式与原始／渲染证据。基础检查不需要账号或语言模型；可选 AI 语义复核需要登录并另行确认。",
       "fields": {
         "urlLabel": "页面网址",
         "urlPlaceholder": "https://example.com/pricing",
@@ -4834,6 +4834,100 @@
         "copy": "复制报告",
         "copied": "已复制",
         "copyFailed": "复制失败"
+      },
+      "conclusion": {
+        "title": "检查结论",
+        "verdict": {
+          "needs_attention": "发现需要确认或处理的页面信号",
+          "needs_review": "内容线索需要进一步复核",
+          "no_issues_observed": "本次已完成的检查未发现问题",
+          "incomplete": "证据不完整，暂不能形成完整判断"
+        },
+        "coverage": {
+          "complete": "本次适用输入已完整采集",
+          "partial": "本次适用输入采集不完整"
+        },
+        "counts": "实测待处理 {observed} 项 · 模式待复核 {review} 项 · 读不到 {unknown} 项 · 不适用 {notApplicable} 项 · 仅提示 {advisory} 项",
+        "priorityTitle": "建议先查看",
+        "noPriorities": "本报告没有需要优先处理的未通过或读不到项目。",
+        "limitations": {
+          "not_citation_observation": "不代表任何 AI 真的引用过该页。",
+          "not_fact_verification": "未核实断言真伪，也未验证链接是否支持断言。",
+          "limited_crawler_scope": "仅检查列明的抓取路径与当前页面。",
+          "target_question_not_provided": "未填写目标提问，不判断答题相关性。",
+          "render_incomplete": "原始／渲染对比尚不完整。",
+          "checks_incomplete": "部分适用检查缺少可读证据。",
+          "no_applicable_checks": "没有可评估的适用计权检查。"
+        }
+      },
+      "ai": {
+        "title": "AI 语义复核（可选）",
+        "boundary": "仅对已提供正文片段的模型评估，不是事实核查、实时联网研究，也不是 AI 实际引用证据；不会替换上方的实测结论。",
+        "sendNote": "点击运行即同意：服务端重新抓取此公开网址、核对 HTML 哈希，再将网址、可选提问、有界正文片段以及捕获时间和覆盖范围发送给 DataForSEO。可能产生供应商费用；不发送账户画像或登录 Cookie。",
+        "limitNote": "需要登录；同一快照每小时限申请一次，不会自动调用或自动重试。",
+        "run": "同意发送并运行 AI 复核",
+        "running": "AI 请求处理中…",
+        "done": "AI 复核已完成",
+        "idle": "尚未为本报告调用模型。",
+        "evidenceUnavailable": "缺少原始 HTML 身份或完整正文证据，暂不可进行 AI 复核。",
+        "noQuestion": "未填写目标提问时，相关性保留为证据不足；仍可评估表达清晰度。",
+        "outcomeUnknown": "供应商执行结果不确定，可能已经计费。请勿立即重试；先核实任务或等待一小时限制结束。本次不展示为复核成功。",
+        "waitNote": "服务端要求至少等待 {minutes} 分钟后才能再次申请。",
+        "cost": "供应商返回费用：USD {cost}",
+        "costUnknown": "供应商未返回费用（不等于零）。",
+        "task": "供应商任务：{task}",
+        "model": "DataForSEO · 请求模型 {requested} · 返回模型 {actual}",
+        "observedAt": "模型响应时间 {time}",
+        "capturedAt": "复核 HTML 捕获时间 {time}",
+        "identity": "复核原始 HTML SHA-256：{hash}",
+        "coverage": "正文证据：{included} / {total} 字符 · {coverage}",
+        "coverages": {
+          "full": "完整提取正文",
+          "excerpt": "有界片段"
+        },
+        "excerptsTitle": "查看发送给模型的正文片段",
+        "source": "来源 {id}",
+        "dimensions": {
+          "answer_relevance": "答题相关性",
+          "answer_clarity": "表达清晰度",
+          "attribution_clarity": "来源说明清晰度"
+        },
+        "verdicts": {
+          "clear": "在已提供片段中清晰",
+          "needs_work": "需要改进",
+          "insufficient_evidence": "证据不足"
+        },
+        "suggestion": "模型建议：{suggestion}",
+        "errors": {
+          "auth_required": "请先使用网站账户入口登录，再明确发起复核；当前没有 AI 结果。",
+          "auth_unavailable": "账户身份验证不可用，未开始复核。",
+          "invalid_origin": "请求来源校验未通过。",
+          "invalid_request": "复核请求未通过校验。",
+          "payload_too_large": "复核请求过大。",
+          "unsupported_media_type": "复核请求必须为 JSON。",
+          "invalid_url": "该网址不是可复核的公开页面。",
+          "provider_unconfigured": "AI 供应商尚未配置。实测报告继续保留，未生成 AI 评估。",
+          "fetch_blocked": "无法安全地重新抓取页面进行复核。",
+          "fetch_timeout": "复核前的页面重抓取超时。",
+          "fetch_failed": "无法重新抓取页面进行复核。",
+          "page_not_ok": "重新抓取的页面未返回 HTTP 200。",
+          "not_html": "重新抓取的页面不是 HTML。",
+          "not_utf8": "无法安全解码页面字符集。",
+          "evidence_incomplete": "正文捕获不完整，未启动模型复核。",
+          "evidence_changed": "页面在本报告之后已变化。请先重新检查页面，再申请 AI 复核。",
+          "rate_limited": "已达到 AI 复核限额，请等待后再明确申请。",
+          "quota_unavailable": "AI 配额存储不可用，复核暂时关闭。",
+          "review_already_requested": "这一快照在一小时窗口内已有复核请求，请勿重复提交。",
+          "input_budget_exceeded": "证据超过模型输入预算。",
+          "evidence_invalid": "捕获证据未通过校验。",
+          "provider_invalid_response": "供应商未返回符合证据约束的有效评估。",
+          "provider_error": "供应商未完成可用的复核。",
+          "provider_timeout": "等待供应商响应超时。",
+          "provider_network_error": "供应商连接失败。",
+          "internal_error": "未能完成复核。",
+          "receipt_mismatch": "返回评估与当前报告的网址、提问或 HTML 哈希不匹配。",
+          "network": "无法确认请求的执行结果。"
+        }
       },
       "summary": {
         "title": "结果",
@@ -4885,14 +4979,15 @@
         "ssr": "HTML 里带正文",
         "canonical": "canonical 指向本页",
         "llmsTxt": "已发布 /llms.txt",
-        "leadAnswer": "开头就回答了提问",
+        "leadAnswer": "开头命中提问词与回答模式标记",
         "extractableStructure": "存在表格或真正的列表",
-        "qualifiers": "限定条件有量化",
-        "citedData": "数字带来源",
-        "faqSchema": "FAQ 结构化数据有效"
+        "qualifiers": "命中量化限定模式",
+        "citedData": "数字文本带来源线索",
+        "faqSchema": "支持的内联 FAQ 字段齐全"
       },
       "details": {
         "robots": {
+          "incomplete": "robots.txt 返回 {status}，但只捕获 {bytes} 字节且不完整；对 {bot} 的规则仍未知。",
           "absent": "该站没有 robots.txt，因此 {bot} 默认在任何路径都被允许。",
           "unreachable": "robots.txt 返回 {status}，所以该站对 {bot} 的规则未知。这和「被禁止」不是一回事。",
           "allowedByRule": "对 {bot} 放行；最接近的匹配规则是 {pattern}。",
@@ -4914,6 +5009,7 @@
           "unparsable": "canonical 无法解析成网址：{value}"
         },
         "llms": {
+          "incomplete": "/llms.txt 返回 {status}，但 {bytes} 字节捕获不完整，不能确认已完整发布。",
           "present": "/llms.txt 存在，返回 {bytes} 字节。本工具不解析它的内容。",
           "absent": "/llms.txt 返回 {status}。",
           "unreachable": "/llms.txt 返回 {status}，因此它是否存在未知。"
@@ -4921,29 +5017,31 @@
         "leadAnswer": {
           "notAsked": "没有填目标提问，因此没有可对照开头的东西。",
           "noComparableTerms": "「{question}」里全是常用词，没有可以拿去对照开头的实词。换成读者真会搜的词来问——产品名、品类、地点。",
-          "ok": "前 {window} 字里出现了 {matched}，并给出了结论。",
+          "ok": "前 {window} 字命中了 {matched} 和回答模式标记；不代表已经真正回答提问。",
           "noTerms": "前 {window} 字里没有出现 {terms}。",
-          "noMarker": "前 {window} 字提到了主题，但没有给出结论。",
-          "neither": "前 {window} 字既没有出现 {terms}，也没有给出结论。"
+          "noMarker": "前 {window} 字命中了主题词，但没有命中回答模式标记。",
+          "neither": "前 {window} 字既未命中 {terms}，也未命中回答模式标记。"
         },
         "structure": {
           "ok": "{tables} 个带单元格的表格、{lists} 个不是导航的列表。",
           "none": "没有带单元格的表格，也没有至少 {minItems} 项非链接条目的列表。"
         },
         "qualifiers": {
-          "ok": "至少有一处量化的限定条件，例如规模或区间。",
-          "none": "没有找到量化的限定条件；只有年份区间不算。"
+          "ok": "至少命中一处量化限定模式，例如规模或区间；尚未验证其语义。",
+          "none": "没有命中量化限定模式；只有年份区间不算。"
         },
         "citedData": {
-          "noNumbers": "这一页没有任何数字断言，因此没有需要标来源的东西。",
-          "allSourced": "{total} 处数字断言全部在同一句里带链接或写明来源。",
-          "unsourced": "{total} 处数字断言里有 {unsourced} 处同句内没有来源，第一处是：{sample}"
+          "noNumbers": "未检测到数字断言模式；这不代表已经枚举页面全部断言。",
+          "allSourced": "{total} 处数字模式匹配均有邻近链接或来源线索；未读取来源，也未验证其是否支持断言。",
+          "unsourced": "{total} 处数字模式匹配中，有 {unsourced} 处同句内缺少来源线索，第一处是：{sample}。有线索也不等于有事实支持。"
         },
         "faq": {
-          "none": "这一页没有声明 FAQ 结构化数据。",
-          "noneWithBroken": "这一页没有声明 FAQ 结构化数据。另有 {broken} 个 JSON-LD 块无法解析。",
-          "valid": "{count} 组问答，每组都有问题名称与答案正文。",
-          "incomplete": "{total} 组问答里有 {incomplete} 组缺少问题名称或答案正文。",
+          "scanIncomplete": "JSON-LD 扫描达到 {limit} 项安全上限，无法给出完整 FAQ 结论。",
+          "referencesNotResolved": "FAQ 使用了本工具不会解析的引用；本检查只支持内联结构，有效性仍未知。",
+          "none": "已完整扫描的 JSON-LD 中，未发现本工具支持的内联 FAQ 声明。",
+          "noneWithBroken": "可读 JSON-LD 中未发现支持的内联 FAQ；另有 {broken} 块无法解析，不能据此确认不存在。",
+          "valid": "{count} 组支持的内联问答包含所需 name 与 text 字段；不代表完整 Schema 有效性或搜索展示资格。",
+          "incomplete": "{total} 组内联问答里有 {incomplete} 组缺少或不符合受支持的 Question/Answer 类型，或缺少 name/text 字段。",
           "emptyMainEntity": "声明了 FAQPage，但 mainEntity 是空的。"
         },
         "truncated": "这一页只读到了前 {chars} 个字符，因此无法判断它在不在。"
@@ -4978,7 +5076,7 @@
           "unsourced": "让每个数字在同一句里带上来源：一个链接，或写明来源与日期。"
         },
         "faq": {
-          "incomplete": "给每个 Question 补上 name，给每个 acceptedAnswer 补上 text。",
+          "incomplete": "将每个 mainEntity 项设为 @type=Question 并填写非空 name；将每个 acceptedAnswer 设为 @type=Answer 并填写非空 text。",
           "emptyMainEntity": "把问答放进 mainEntity，或者干脆去掉 FAQPage 声明。"
         }
       },
@@ -5021,7 +5119,7 @@
         "onePage": "只读一个页面，外加该站的 robots.txt 与 llms.txt。不爬全站，也不去抓 canonical 指向的那一页。",
         "noRanking": "不涉及排名、流量，也不代表任何模型真的引用过这一页。它描述的是页面，不是市场。",
         "advisoryRows": "ClaudeBot 与 GPTBot 的训练访问、Google-Extended 的 Gemini 训练/检索增强控制与 /llms.txt 不进入通用通过数。未测量 Claude-SearchBot 搜索抓取与 Claude-User 用户请求抓取。Google Search 抓取、AI Overviews 与 AI Mode 使用独立的 Search 控制。",
-        "heuristicRows": "有两行是模式匹配而不是理解语义：开头直答与限定条件量化。它们带标记，值得去看一眼，但不必照办。",
+        "heuristicRows": "有三行采用模式匹配，不做语义或事实验证：开头回答标记、限定条件量化与数字来源线索。请查看证据后再判断。",
         "truncation": "它只读页面的前一段。文档超出这个范围时，凡是要报「不存在」的检查都改说「读不到」。"
       },
       "errors": {
