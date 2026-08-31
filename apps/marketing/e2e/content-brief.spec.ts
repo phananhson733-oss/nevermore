@@ -452,6 +452,13 @@ test.describe("Content Brief Builder", () => {
     await page.keyboard.press("Space");
     await expect(pageEvidence).toHaveJSProperty("open", false);
     await page.keyboard.press("Tab");
+    const intentDetails = result.locator('[data-field-details="intent"]');
+    await expect(intentDetails.locator(":scope > summary")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(intentDetails.locator("[data-field-rationale]")).toBeVisible();
+    await page.keyboard.press("Space");
+    await expect(intentDetails).toHaveJSProperty("open", false);
+    await page.keyboard.press("Tab");
     const formatEvidence = result.locator("[data-observed-formats] details");
     await expect(formatEvidence.locator(":scope > summary")).toBeFocused();
     await page.keyboard.press("Enter");
@@ -460,6 +467,13 @@ test.describe("Content Brief Builder", () => {
     await expect(formatEvidence.locator('[data-format-source="S9"] a, [data-format-source="S10"] a')).toHaveCount(0);
     await page.keyboard.press("Space");
     await expect(formatEvidence).toHaveJSProperty("open", false);
+    await page.keyboard.press("Tab");
+    const lengthDetails = result.locator('[data-field-details="length"]');
+    await expect(lengthDetails.locator(":scope > summary")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(lengthDetails.locator("[data-quantile-method]")).toBeVisible();
+    await page.keyboard.press("Space");
+    await expect(lengthDetails).toHaveJSProperty("open", false);
     await page.keyboard.press("Tab");
     await expect(result.locator('[data-question-row="Q1"] details > summary')).toBeFocused();
     const header = page.locator("[data-brief-header]");
@@ -681,6 +695,19 @@ test.describe("Content Brief Builder", () => {
       await expect(result.locator("[data-read-coverage-status]")).toHaveText(locale === "zh" ? "已请求的来源读取完成" : "Requested reads complete");
       await expect(result.locator("[data-length-quantiles]")).toBeVisible();
       await expect(result.locator("[data-observed-formats]")).toContainText(locale === "zh" ? "SERP 标题 + URL" : "SERP title + URL");
+      const fields = result.locator("[data-field-cards]");
+      if (viewport.width >= 1000) {
+        const height = await fields.evaluate(element => element.getBoundingClientRect().height);
+        expect(height, "The default three-field row must stay compact").toBeLessThanOrEqual(380);
+      }
+      for (const field of ["intent", "format", "length"]) await expect(fields.locator(`[data-field-details="${field}"]`)).toHaveJSProperty("open", false);
+      await expect(fields.locator("[data-format-method]")).toBeHidden();
+      await expect(fields.locator("[data-format-boundary]")).toBeHidden();
+      await expect(fields.locator("[data-quantile-method]")).toBeHidden();
+      await expect(fields.locator("[data-serp-format-coverage]")).toBeVisible();
+      await expect(fields.locator('[data-format-count="unknown"]')).toBeVisible();
+      await expect(fields.locator("[data-length-sample]")).toBeVisible();
+      await expect(fields.locator("[data-length-boundary]")).toBeVisible();
       await expect(result.locator('[data-question-row="Q1"] [data-covered-by]')).toContainText("1/1");
       await expect(result.locator('[data-question-row="Q1"] [data-question-coverage-bar]')).toBeVisible();
       await expect(result.locator('[data-question-row="Q1"] [data-source-layer="third"]')).toBeVisible();

@@ -58,7 +58,7 @@ export async function runContentBriefV2Llm(
     completion = await client.complete({ system: prepared.system, user: prepared.user, temperature: CONTENT_BRIEF_LLM_TEMPERATURE, maxOutputTokens: LLM_MAX_OUTPUT_TOKENS, timeoutMs,
       // Verified on the configured Luna deployment; other deployment names
       // retain provider defaults rather than assuming compatible capabilities.
-      ...(config.model === "gpt-5.6-luna" ? { reasoningEffort: "none" as const } : {}),
+      ...(config.model === "gpt-5.6-luna" ? { reasoningEffort: "low" as const } : {}),
     });
   } catch (error) {
     if (!(error instanceof KeywordLlmError)) throw error;

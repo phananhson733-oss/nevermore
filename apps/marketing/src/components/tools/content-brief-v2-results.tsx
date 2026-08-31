@@ -41,25 +41,30 @@ function Fields({ brief, observations, locale, t }: { readonly brief: ContentBri
   const baseT = useTranslations("tools.contentBrief");
   const formats = observations.formats;
   const isSerp = formats.method === "url_title_heuristic";
-  return <div data-field-cards className="grid gap-3 md:grid-cols-3">
+  return <div data-field-cards className={`${styles.fieldCards} grid gap-3 md:grid-cols-3`}>
     {(["intent", "format"] as const).map((field) => {
       const value = brief.generated?.[field];
       return <section key={field} data-field-card={field} className={CARD}>
         <h3 className="text-[11px] font-semibold text-text-dark-secondary">{t(field)}</h3>
         <div className="mt-2 text-[18px] font-semibold text-text-dark-primary">{value ? t(`${field === "intent" ? "intents" : "formats"}.${value.value}`) : t("unknown")}</div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5"><SourceLayerBadge tone="model" t={baseT} /><span className="text-[10.5px] text-text-dark-secondary">{t("modelJudgment")}</span></div>
-        <p className={`mt-2 ${BODY_TEXT}`}>{value ? value.rationale : t("noModelRecommendation")}</p>
+        {field === "intent" ? <details data-field-details="intent" className={styles.fieldDetails}><summary className={SUMMARY}>{t("fieldDetails", { field: t("intent") })}</summary><p data-field-rationale className={`mt-2 ${BODY_TEXT}`}>{value ? value.rationale : t("noModelRecommendation")}</p></details> : null}
         {field === "format" ? <div data-observed-formats className="mt-3 border-t border-brand-border-card pt-3">
           <div className="flex flex-wrap items-center gap-1.5"><span className="text-[11px] font-semibold text-text-dark-primary">{t("observedFormats")}</span><SourceLayerBadge tone="third" t={baseT} /></div>
-          <p className="mt-2 text-[11.5px] text-text-dark-secondary">{t(isSerp ? "serpFormatMethod" : "formatMethod")}</p>
           {formats.denominator > 0 ? <>
-            <ul className="mt-2 space-y-1.5">{formats.counts.filter((item) => item.count > 0).map((item) => <li key={item.format} data-format-count={item.format} className="flex items-center justify-between gap-2 text-[11.5px] text-text-dark-primary"><span>{t(`observedFormatNames.${item.format}`)}</span><span className="font-mono">{item.count}/{formats.denominator}</span></li>)}</ul>
-            <p className="mt-2 text-[11.5px] text-text-dark-secondary">{formats.majority ? t("formatMajority", { format: t(`observedFormatNames.${formats.majority}`) }) : t("formatNoMajority")}</p>
-            {formats.candidates.length > 1 ? <p className="mt-1 text-[11.5px] text-text-dark-secondary">{t("formatCandidates", { formats: formats.candidates.map((format) => t(`observedFormatNames.${format}`)).join(" · ") })}</p> : null}
-          </> : <p className={`mt-2 ${BODY_TEXT}`}>{t(isSerp ? "serpFormatsUnavailable" : "formatsUnavailable")}</p>}
+            <div className={styles.formatBar} aria-hidden="true">{formats.counts.filter(item => item.count > 0).map(item => <span key={item.format} data-format-portion={item.format} style={{ width: `${item.count / formats.denominator * 100}%` }} />)}</div>
+            <ul className={styles.formatCounts}>{formats.counts.filter((item) => item.count > 0).map((item) => <li key={item.format} data-format-count={item.format}><span>{t(`observedFormatNames.${item.format}`)}</span><span className="font-mono">{item.count}/{formats.denominator}</span></li>)}</ul>
+            <p className="mt-2 text-[11.5px] text-text-dark-secondary">{formats.majority ? t("formatMajority", { format: t(`observedFormatNames.${formats.majority}`) }) : t("formatNoMajorityShort")}</p>
+          </> : <p className={`mt-2 ${BODY_TEXT}`}>{t("states.unavailable")}</p>}
           {formats.read && formats.read.status !== "unavailable" ? <p data-serp-format-coverage className="mt-2 font-mono text-[10.5px] text-text-dark-secondary">{t("serpFormatCoverage", { returned: formats.read.returned, requested: formats.read.requested, unresolved: formats.read.unresolved, status: t(`states.${formats.read.status}`) })}</p> : null}
-          <p className="mt-2 text-[10.5px] text-text-dark-secondary">{isSerp ? t("serpFormatBoundary") : t("formatScope", { count: formats.denominator, partial: formats.partial_page_count ?? t("unknown") })}</p>
-          {formats.pages.length > 0 ? <details className="mt-2"><summary className={SUMMARY}>{t("formatEvidence")}</summary><ul className="mt-2 space-y-2">{formats.pages.map((page) => <li key={page.page_ref} data-format-source={page.page_ref} className="text-[10.5px] text-text-dark-secondary"><span className="font-mono">{page.page_ref} · {t(`observedFormatNames.${page.format}`)}</span>{page.title ? <div className="mt-1 text-text-dark-primary">{page.title}</div> : null}<div>{page.url ? <PageLink url={page.url} /> : t("formatUrlUnavailable")}</div><div>{t("formatRules", { rules: page.rules_hit.join(", ") || t("none") })}</div></li>)}</ul></details> : null}
+          <details data-field-details="format" className={styles.fieldDetails}><summary className={SUMMARY}>{t(isSerp ? "serpFormatEvidence" : "formatEvidence")}</summary>
+            <p data-field-rationale className={`mt-2 ${BODY_TEXT}`}>{value ? value.rationale : t("noModelRecommendation")}</p>
+            <p data-format-method className="mt-2 text-[11.5px] text-text-dark-secondary">{t(isSerp ? "serpFormatMethod" : "formatMethod")}</p>
+            <p data-format-boundary className="mt-2 text-[10.5px] text-text-dark-secondary">{isSerp ? t("serpFormatBoundary") : t("formatScope", { count: formats.denominator, partial: formats.partial_page_count ?? t("unknown") })}</p>
+            {formats.denominator === 0 ? <p className={`mt-2 ${BODY_TEXT}`}>{t(isSerp ? "serpFormatsUnavailable" : "formatsUnavailable")}</p> : <p className="mt-2 text-[11.5px] text-text-dark-secondary">{formats.majority ? t("formatMajority", { format: t(`observedFormatNames.${formats.majority}`) }) : t("formatNoMajority")}</p>}
+            {formats.candidates.length > 1 ? <p className="mt-2 text-[11.5px] text-text-dark-secondary">{t("formatCandidates", { formats: formats.candidates.map((format) => t(`observedFormatNames.${format}`)).join(" · ") })}</p> : null}
+            {formats.pages.length > 0 ? <ul className="mt-2 space-y-2">{formats.pages.map((page) => <li key={page.page_ref} data-format-source={page.page_ref} className="text-[10.5px] text-text-dark-secondary"><span className="font-mono">{page.page_ref} · {t(`observedFormatNames.${page.format}`)}</span>{page.title ? <div className="mt-1 text-text-dark-primary">{page.title}</div> : null}<div>{page.url ? <PageLink url={page.url} /> : t("formatUrlUnavailable")}</div><div>{t("formatRules", { rules: page.rules_hit.join(", ") || t("none") })}</div></li>)}</ul> : null}
+          </details>
         </div> : null}
       </section>;
     })}
@@ -68,11 +73,11 @@ function Fields({ brief, observations, locale, t }: { readonly brief: ContentBri
       {observations.lengths.length === 0 ? <p className={`mt-2 ${BODY_TEXT}`}>{t("lengthUnavailable")}</p> : observations.lengths.map((group) => <div key={group.unit} className="mt-3">
         <div data-observed-length={group.unit} className="text-[16px] font-semibold text-text-dark-primary">{t("lengthValue", { value: number(group.median, locale, 1), unit: t(`lengthUnits.${group.unit}`) })}</div>
         <dl data-length-quantiles={group.unit} className={styles.quantiles}>{(["p25", "median", "p75"] as const).map((quantile) => <div key={quantile}><dt>{quantile === "median" ? t("median") : quantile.toUpperCase()}</dt><dd>{number(group[quantile], locale, 1)}</dd></div>)}</dl>
-        <p className={`mt-2 ${BODY_TEXT}`}>{t("lengthRange", { min: number(group.min, locale), max: number(group.max, locale), count: group.count })}</p>
+        <p data-length-sample className={`mt-2 ${BODY_TEXT}`}>{t("lengthRange", { min: number(group.min, locale), max: number(group.max, locale), count: group.count })}</p>
       </div>)}
       <div className="mt-2"><SourceLayerBadge tone="third" t={baseT} /></div>
-      <p className={`mt-2 ${BODY_TEXT}`}>{t("lengthBoundary")}</p>
-      <p className="mt-2 text-[10.5px] text-text-dark-secondary">{t("quantileMethod")}</p>
+      <p data-length-boundary className={`mt-2 ${BODY_TEXT}`}>{t("lengthBoundaryShort")}</p>
+      <details data-field-details="length" className={styles.fieldDetails}><summary className={SUMMARY}>{t("fieldDetails", { field: t("observedLength") })}</summary><p className={`mt-2 ${BODY_TEXT}`}>{t("lengthBoundary")}</p><p data-quantile-method className="mt-2 text-[10.5px] text-text-dark-secondary">{t("quantileMethod")}</p></details>
     </section>
   </div>;
 }

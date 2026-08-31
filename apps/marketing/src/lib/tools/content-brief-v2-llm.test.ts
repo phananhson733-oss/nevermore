@@ -73,7 +73,7 @@ describe("one-call Brief v2 assembly", () => {
     expect(result.output?.research.questions).toEqual([{ id: "Q1", anchor: "U1", q: "How does medical billing software validate claims?", source_refs: ["U1", "U2"], covered_by: 1, paa_refs: ["A1"] }]);
     expect(result.output?.research.outline).toEqual([{ id: "O1", h2: "Validate claims before submission", h3: ["Insurance checks"], answers: ["Q1"] }]);
     expect(recorded.requests).toHaveLength(1);
-    expect(recorded.requests[0]).toMatchObject({ reasoningEffort: "none", timeoutMs: 30_000, maxOutputTokens: 4000 });
+    expect(recorded.requests[0]).toMatchObject({ reasoningEffort: "low", timeoutMs: 30_000, maxOutputTokens: 4000 });
     expect(JSON.parse(recorded.requests[0]!.user).serp).toEqual(data.serp);
     expect(result.reads).toMatchObject({ status: "complete", calls: 1, input_tokens: 1200, output_tokens: 500 });
   });
@@ -82,6 +82,18 @@ describe("one-call Brief v2 assembly", () => {
     const recorded = recorder();
     await runContentBriefV2Llm({ context: context(), deadlineAt: NOW + 45_000 }, { config: { ...CONFIG, model }, client: recorded.client, now: () => NOW });
     expect(recorded.requests[0]).not.toHaveProperty("reasoningEffort");
+  });
+
+  it.each(["v2", "v3"])("rejects the other private model protocol for %s without fallback or retry", async version => {
+    const original = context();
+    const data = version === "v2" ? original : { ...original, serp: { rows: buildSerpObservations([{ rank: 1, url: original.research.pages[0]!.url, title: "Medical billing guide", domain: "c1.example" }]), read: { status: "partial" as const, requested: 10, returned: 1, unresolved: 0 } } };
+    const response = JSON.parse(RESPONSE);
+    if (version === "v2") response.research = { sections: [{ h2: "Validate claims", h3: [], questions: response.research.questions }] };
+    const recorded = recorder(JSON.stringify(response));
+    const result = await runContentBriefV2Llm({ context: data, deadlineAt: NOW + 45_000 }, { config: CONFIG, client: recorded.client, now: () => NOW });
+    expect(result.output).toBeNull();
+    expect(result.reads).toMatchObject({ status: "unavailable", reason: "validation_failed", calls: 1, input_tokens: 1200, output_tokens: 500 });
+    expect(recorded.requests).toHaveLength(1);
   });
   it("accepts one page plus PAA as one relevant question and usable outline, with server-assigned coverage", async () => {
     const { result, requests } = await run();

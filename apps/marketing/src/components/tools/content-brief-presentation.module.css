@@ -61,6 +61,58 @@
   color: var(--sc-text-primary);
 }
 
+.fieldCards {
+  align-items: start;
+}
+
+.fieldDetails {
+  margin-top: 10px;
+}
+
+.fieldDetails[open] {
+  padding-top: 8px;
+  border-top: 1px solid var(--sc-border-card);
+}
+
+.formatBar {
+  display: flex;
+  height: 6px;
+  gap: 2px;
+  margin-top: 10px;
+}
+
+.formatBar > span {
+  min-width: 0;
+  background: var(--sc-source-third);
+}
+
+.formatBar > [data-format-portion="unknown"] {
+  background: var(--sc-border-strong);
+}
+
+.formatCounts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 12px;
+  margin-top: 8px;
+}
+
+.formatCounts li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  color: var(--sc-text-primary);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.formatCounts li > :last-child {
+  white-space: nowrap;
+  color: var(--sc-text-secondary);
+}
+
 .questionCoverageBar {
   display: block;
   width: 54px;

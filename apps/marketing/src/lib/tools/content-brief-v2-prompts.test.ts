@@ -115,6 +115,34 @@ describe("Brief v2 assembly prompt", () => {
     expect(system).toContain("do not pad the outline to meet a fixed question count");
   });
 
+  it("retains an evidenced how-to need separately from definition and inputs, with its matching PAA", () => {
+    const system = prepareContentBriefV2Prompt(context())!.system;
+    expect(system).toContain("A definition or list of required inputs does not replace the how-to task");
+    expect(system).toContain("include that procedure as a distinct reader-need question");
+    expect(system).toContain("keep its PAA U id in that question's sources");
+    expect(system).toContain("Keep definitions and required inputs as distinct questions");
+  });
+
+  it("makes inferred positioning tentative and does not universalize source-specific procedures", () => {
+    const system = prepareContentBriefV2Prompt(context())!.system;
+    expect(system).toContain("source-specific steps must not be generalized to every tool");
+    expect(system).toContain("explicitly call the profile-based differentiation tentative");
+  });
+
+  it("requires direct excerpt support and headings bounded by the mapped questions", () => {
+    const system = prepareContentBriefV2Prompt(context())!.system;
+    expect(system).toContain("Every cited U must directly support the exact reader need");
+    expect(system).toContain("do not borrow uncited text or truncated continuation");
+    expect(system).toContain("Section headings may only promise topics answered by their questions and cited units");
+    expect(system).toContain("Narrow an unsupported heading rather than inventing a filler question");
+  });
+
+  it("leaves a safe prose-length margin below the unchanged strict parser cap", () => {
+    const system = prepareContentBriefV2Prompt(context())!.system;
+    expect(system).toContain("Keep each rationale and why to one short sentence, aiming for at most 240 Unicode code points");
+    expect(system).toContain("Nonempty free text is at most 400 Unicode code points");
+  });
+
   it("fits maximum CJK research by removing final round-robin units while keeping observed totals and all PAA counters", () => {
     const input = context(Array.from({ length: 10 }, (_, i) => page(`C${i + 1}`, true, 12)));
     const original = JSON.stringify(input);
@@ -210,5 +238,30 @@ describe("Brief v2 assembly prompt", () => {
     }
     expect(parseResearchBundle(prepared!.context.research).ok).toBe(true);
     expect(prepared!.context.research.paa).toEqual(input.research.paa);
+  });
+
+  it("binds every packed U to the exact retained segment after shrinking unequal page lengths", () => {
+    const pages = [["C1", 4], ["C2", 9], ["C3", 12], ["T1", 12]].map(([id, count]) => {
+      const original = page(String(id), true, Number(count));
+      return { ...original, research: { ...original.research, segments: original.research.segments.map((segment, index) => index === Number(count) - 1
+        ? { ...segment, heading: { level: "h2" as const, text: "Medical billing software" }, text: `Medical billing software validates insurance claims: final ${id}.` }
+        : segment) } };
+    });
+    const input = context(pages);
+    const packed = prepareContentBriefV2Prompt(input)!;
+    expect(packed.context.research.budget.page_units_retained).toBeLessThan(input.research.budget.page_units_retained);
+    const wire = JSON.parse(packed.user);
+    for (const unit of packed.context.research.units) {
+      const emitted = wire.units.find((item: { id: string }) => item.id === unit.id);
+      if (unit.kind === "paa") {
+        expect(emitted.text).toBe(packed.context.research.paa.find(item => item.id === unit.paa_ref)!.question);
+        continue;
+      }
+      const packedPage = packed.context.research.pages.find(item => item.id === unit.page_ref)!;
+      const segment = packedPage.research.segments[unit.segment_index]!;
+      expect(emitted).toMatchObject({ ...unit, ...segment, role: packedPage.role });
+      expect(pages.find(item => item.id === unit.page_ref)!.research.segments).toContainEqual(segment);
+    }
+    for (const source of pages) expect(wire.units.some((unit: { text: string }) => unit.text.includes(`final ${source.id}.`))).toBe(true);
   });
 });

@@ -14,6 +14,7 @@ import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
 import { ContentBriefV2Results } from "./content-brief-v2-results.tsx";
 import { validContentBriefV2 as fixture } from "./content-brief-v2-fixture.ts";
+import { confirmedDraftV3Fixture } from "./content-brief-v3-fixture.ts";
 import { CONTENT_BRIEF_HANDOFF_KEY } from "@sf/public-tools/content-brief/contract";
 import { parseConfirmedBriefHandoff } from "../../lib/tools/content-brief-v2-handoff.ts";
 
@@ -47,6 +48,35 @@ async function confirmedValue(onConfirmed: ReturnType<typeof vi.fn<(value: Confi
 }
 
 describe("Artifact-aligned Brief v2 result", () => {
+  it.each([{ locale: "en", version: 2 }, { locale: "zh", version: 2 }, { locale: "en", version: 3 }, { locale: "zh", version: 3 }] as const)("states the v$version format heuristic in the default visible summary ($locale)", async ({ locale, version }) => {
+    const brief = version === 3 ? (await confirmedDraftV3Fixture()).brief : await fixture({ locale });
+    expect((await confirmation.parseContentBriefV2(brief)).ok).toBe(true);
+    const { host } = await render(brief, locale);
+    const details = node<HTMLDetailsElement>(host, '[data-field-details="format"]'); const summary = node(details, ":scope > summary");
+    expect(details.open).toBe(false); expect(summary).toBe(details.firstElementChild); expect(summary.hasAttribute("hidden")).toBe(false);
+    expect(summary.textContent).toBe(locale === "zh"
+      ? version === 3 ? "标题 + URL 启发式：规则和来源" : "仅 URL 启发式：规则和来源"
+      : version === 3 ? "Title + URL heuristic: rules and sources" : "URL-only heuristic: rules and sources");
+    expect(node(details, "[data-format-method]").closest("details")?.open).toBe(false);
+  });
+  it.each(["en", "zh"] as const)("keeps field headlines and quantiles visible while long explanations use closed native details (%s)", async (locale) => {
+    const brief = await fixture({ locale }); const before = JSON.stringify(brief); const { host } = await render(brief, locale);
+    for (const field of ["intent", "format", "length"]) {
+      const card = node(host, `[data-field-card="${field}"]`);
+      const details = node<HTMLDetailsElement>(card, `[data-field-details="${field}"]`);
+      expect(details.open).toBe(false);
+      const summary = node<HTMLElement>(details, "summary"); summary.focus(); expect(document.activeElement).toBe(summary);
+      await click(details, "summary"); expect(details.open).toBe(true); await click(details, "summary"); expect(details.open).toBe(false);
+      expect(node(card, "[data-source-layer]").closest("details")).toBeNull();
+    }
+    expect(node(host, '[data-field-card="intent"] [data-field-rationale]').closest("details")?.open).toBe(false);
+    expect(node(host, '[data-field-card="format"] [data-format-method]').closest("details")?.open).toBe(false);
+    expect(node(host, '[data-field-card="format"] [data-format-boundary]').closest("details")?.open).toBe(false);
+    expect(node(host, '[data-field-card="length"] [data-quantile-method]').closest("details")?.open).toBe(false);
+    for (const selector of ["[data-length-quantiles]", "[data-length-sample]", "[data-length-boundary]"]) expect(node(host, selector).closest("details")).toBeNull();
+    expect(node(host, "[data-length-boundary]").textContent).toMatch(locale === "en" ? /not a writing or ranking target/i : /不是写作或排名目标/);
+    expect(JSON.stringify(brief)).toBe(before);
+  });
   it("keeps collection time and budget visible and separates generation from partial source reads", async () => {
     const original = await fixture();
     const brief = { ...original, run: { ...original.run, reads: original.run.reads.map((read) => read.source === "competitors" ? { ...read, status: "partial" as const, attempted: 3 } : read) } };
@@ -182,6 +212,10 @@ describe("Artifact-aligned Brief v2 result", () => {
     expect(node(formats, '[data-format-count="unknown"]').textContent).toContain("1/4");
     expect(node(formats, '[data-format-source="S1"]').textContent).toContain("How to check reporting delays");
     expect(node(formats, '[data-format-source="S2"]').querySelector("a")).toBeNull();
+    expect(node(formats, '[data-format-count="unknown"]').closest("details")).toBeNull();
+    expect(node(formats, "[data-serp-format-coverage]").closest("details")).toBeNull();
+    expect(node<HTMLElement>(formats, '[data-format-portion="unknown"]').style.width).toBe("25%");
+    expect(node<HTMLDetailsElement>(formats, '[data-field-details="format"]').open).toBe(false);
     if (!unavailable) {
       expect(node(host, '[data-question-row="Q1"] [data-covered-by]').textContent).toContain("1/1");
       await click(host, "[data-confirm-brief]");
