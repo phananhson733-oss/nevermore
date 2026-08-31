@@ -13,9 +13,11 @@ const choice = {
   snapshotId: "11111111-1111-4111-8111-111111111112",
   revision: 3, host: "fixture.example", frozenAt: "2026-08-31T00:00:00Z", contentHash: "a".repeat(64),
   promptsetRef: { schema: "marketing-geo-question-set.v1", registryVersion: "registry-3", hash: "b".repeat(64) },
+  market: { country: "US", language: "en" }, properNames: [],
+  evidenceSummary: { snapshotFacts: 0, contextFacts: null, usableFacts: 0, missingFacts: 0, profileAttached: false, contextAttached: false },
   questions: [
-    { id: "q1", text: "Which tool fits a small team?", layer: "comparison", roleId: "buyer", role: { id: "buyer", label: "Small-team buyer", segment: "Teams of three" } },
-    { id: "q2", text: "How does it work?", layer: "problem", roleId: null, role: null },
+    { id: "q1", text: "Which tool fits a small team?", layer: "comparison", qualityIssues: [], roleId: "buyer", role: { id: "buyer", label: "Small-team buyer", segment: "Teams of three" } },
+    { id: "q2", text: "How does it work?", layer: "problem", qualityIssues: [], roleId: null, role: null },
   ],
 };
 const pointer = { destination: "geo-brief" as const, kbId: choice.kbId, snapshotId: choice.snapshotId, runId: "11111111-1111-4111-8111-111111111113", questionId: "q1", gapId: "gap-q1", pageUrl: null, questionText: null };
@@ -55,7 +57,7 @@ describe("GEO Brief input and result views", () => {
     expect(host.querySelector("[data-shared-geo-result]")).toBeNull();
     await click('[data-geo-view="result"]');
     expect(host.querySelector("[data-shared-geo-result]")).not.toBeNull();
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
   it("loads verified gap context before generation and discards it permanently when the question changes", async () => {

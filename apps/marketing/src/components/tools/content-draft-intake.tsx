@@ -1,6 +1,6 @@
 // @input  -- the intake state (empty / parsing / rejected / loaded), the translator
 // @output -- the empty-state copy, the paste + upload entrances, the rejection line, and the
-//            loaded-brief summary with its replace control
+//            loaded-brief identity and actual GEO evidence status with its replace control
 // @pos    -- the three entrances of handoff §5.1 in one card; parsing itself happens in the
 //            tool's version-specific parsers; this card collects input and offers local schema guidance
 
@@ -12,6 +12,7 @@ import {
 } from "@sf/public-tools/content-brief/contract";
 import { isWhitespaceTokenizedLanguage } from "@sf/public-tools/content-brief/constants";
 import { localePath } from "../../lib/locale-path";
+import { geoBriefQuality } from "../../lib/geo-tools/brief-quality.ts";
 
 import {
   ACTION_BUTTON,
@@ -68,6 +69,7 @@ function LoadedBrief({
   readonly t: DraftTranslate;
 }) {
   const geo = isGeoContentBrief(brief);
+  const quality = geo ? geoBriefQuality(brief) : null;
   const unsupported = geo ? geoGenerationLanguage(brief.keyword.language) === null : !isWhitespaceTokenizedLanguage(brief.keyword.language);
   const { gaps } = brief.draft_readiness;
   const writable = unsupported ? [] : brief.draft_readiness.writable;
@@ -88,12 +90,25 @@ function LoadedBrief({
           <div className="mt-2 flex flex-wrap gap-1.5">
             <span className={BADGE}>{brief.keyword.market}</span>
             <span className={BADGE}>{brief.keyword.language}</span>
-            <span data-brief-writable className={`${DATA_CHIP} ${chipTone(writable.length > 0 ? "positive" : "caution")}`}>
-              {t("intake.writable", { count: writable.length })}
-            </span>
-            <span className={`${DATA_CHIP} ${chipTone(gaps.length > 0 ? "caution" : "muted")}`}>
-              {t("intake.gaps", { count: gaps.length })}
-            </span>
+            {quality !== null ? (
+              <>
+                <span data-geo-evidence-status={quality.status} className={`${DATA_CHIP} ${chipTone(quality.status === "evidence_available" ? "muted" : "caution")}`}>
+                  {t(quality.status === "structure_only" ? "intake.geoStructureOnly" : quality.status === "evidence_available" ? "intake.geoEvidenceAvailable" : quality.status === "no_outline" ? "intake.geoNoOutline" : "intake.geoLimited")}
+                </span>
+                <span className={BADGE}>
+                  {t("intake.geoEvidenceSummary", { facts: quality.usableFacts, samples: quality.answeredSamples })}
+                </span>
+              </>
+            ) : (
+              <>
+                <span data-brief-writable className={`${DATA_CHIP} ${chipTone(writable.length > 0 ? "positive" : "caution")}`}>
+                  {t("intake.writable", { count: writable.length })}
+                </span>
+                <span className={`${DATA_CHIP} ${chipTone(gaps.length > 0 ? "caution" : "muted")}`}>
+                  {t("intake.gaps", { count: gaps.length })}
+                </span>
+              </>
+            )}
           </div>
         </div>
         <button
@@ -106,6 +121,7 @@ function LoadedBrief({
           {t("intake.replace")}
         </button>
       </div>
+      {quality !== null ? <p data-geo-evidence-check className={`mt-3 ${BODY_TEXT}`}>{t("intake.geoEvidenceCheck")}</p> : null}
       <div className="mt-3 space-y-1 font-mono text-[10.5px] text-text-dark-secondary">
         <div className="flex flex-wrap gap-x-2">
           <span className="uppercase tracking-[0.12em]">{t("intake.briefRun")}</span>

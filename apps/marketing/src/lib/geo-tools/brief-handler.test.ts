@@ -17,6 +17,7 @@ import { GEO_CONTENT_BRIEF_SCHEMA } from "@sf/public-tools/content-brief/geo-con
 import { SHARED_FROZEN } from "./brief-shared-fixtures.ts";
 import type { SharedBriefHandlerDependencies } from "./brief-shared-handler.ts";
 import type { SharedBriefRunEvidence } from "./brief-shared.ts";
+import type { GeoSnapshotContext } from "./snapshot-context.ts";
 
 const KB_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 const SNAPSHOT_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3302";
@@ -216,7 +217,7 @@ describe("exact frozen and handoff loads", () => {
     const shared: SharedBriefHandlerDependencies = {
       readFrozen: vi.fn(async () => ({ kind: "ok" as const, value: SHARED_FROZEN })),
       readRunEvidence: vi.fn(async () => ({ kind: "ok" as const, value: evidence })),
-      readContext: vi.fn(), configured: () => true, assemble: vi.fn(), runId: vi.fn(),
+      readContext: vi.fn(async () => ({ kind: "ok" as const, value: null })), configured: () => true, assemble: vi.fn(), runId: vi.fn(),
       ...overrides,
     };
     const dependencies = deps({ shared, listFrozen: vi.fn(), readFrozen: vi.fn(), consumeDailyRun: vi.fn(), sample: vi.fn(), assemble: vi.fn() });
@@ -227,7 +228,18 @@ describe("exact frozen and handoff loads", () => {
     expect(dependencies.sample).not.toHaveBeenCalled();
     expect(dependencies.assemble).not.toHaveBeenCalled();
     expect(dependencies.shared!.assemble).not.toHaveBeenCalled();
-    expect(dependencies.shared!.readContext).not.toHaveBeenCalled();
+  }
+
+  function snapshotContext(): GeoSnapshotContext {
+    return {
+      schemaVersion: "marketing-geo-snapshot-context.v1", kbId: SHARED_FROZEN.kbId, targetHost: "fixture.example", payloadHash: SHARED_FROZEN.contentHash, questionSetHash: SHARED_FROZEN.questionSetHash, contentHash: "c".repeat(64), enrichment: null, roles: [], competitors: [], skippedLayers: [],
+      facts: SHARED_FROZEN.payload.facts.map(fact => ({ key: fact.key, value: fact.value || null, reason: fact.reason, source: "kb", sourceUrl: fact.sourceUrl || null, observedAt: fact.observedAt || null, evidenceId: null })),
+      profile: {
+        reference: { schemaVersion: "website-profile-reference.v1", websiteId: "fixture-website", snapshotId: "fixture-profile", snapshotRevision: 1, profileSchemaVersion: "marketing-website-profile.v1", profileHash: "d".repeat(64) },
+        productName: "Private frozen product name", oneLinePositioning: "Unverified profile claim", coreFeatures: ["Private frozen feature"], market: { country: "US", language: "en" },
+        fieldProvenance: ["productName", "oneLinePositioning", "coreFeatures"].map(field => ({ path: `/${field}` as "/productName" | "/oneLinePositioning" | "/coreFeatures", derivation: field === "oneLinePositioning" ? "inferred" : "declared", confidence: "high", source: "user_edit", limitation: null, observedAt: null, evidenceUrls: [] })),
+      },
+    };
   }
 
   it("keeps the old exact load request and returns only frozen input metadata", async () => {
@@ -239,10 +251,50 @@ describe("exact frozen and handoff loads", () => {
       kbId: exact.kbId, snapshotId: exact.snapshotId, host: "fixture.example", revision: 1, frozenAt: SHARED_FROZEN.frozenAt,
       contentHash: SHARED_FROZEN.contentHash,
       promptsetRef: { schema: SHARED_FROZEN.questionSet.schemaVersion, registryVersion: "fixture", hash: SHARED_FROZEN.questionSetHash },
-      questions: [{ id: "q1", text: SHARED_FROZEN.questionSet.questions[0]!.text, layer: "comparison", roleId: "buyer", role: { id: "buyer", label: "Buyer", segment: "small team" } }],
+      market: { country: "US", language: "en" }, properNames: ["Fixture", "Fixture"],
+      evidenceSummary: { snapshotFacts: 2, contextFacts: null, usableFacts: 1, missingFacts: 1, profileAttached: false, contextAttached: false },
+      questions: [{ id: "q1", text: SHARED_FROZEN.questionSet.questions[0]!.text, layer: "comparison", roleId: "buyer", role: { id: "buyer", label: "Buyer", segment: "small team" }, qualityIssues: [] }],
     }]);
     expect(data.context).toBeUndefined();
+    expect(shared.readContext).toHaveBeenCalledWith({ userId: "user-1", kbId: exact.kbId, snapshotId: exact.snapshotId });
+    expect(JSON.stringify(data)).not.toContain("Three seats");
     expect(shared.readRunEvidence).not.toHaveBeenCalled();
+    expectFree(dependencies);
+  });
+
+  it("counts only receipts and missing rows from the exact frozen context without exposing facts", async () => {
+    const { dependencies, shared } = setup({ readContext: vi.fn(async () => ({ kind: "ok" as const, value: snapshotContext() })) });
+    const response = await handleBriefLoad(post("/load", exact), dependencies);
+    expect(response.status).toBe(200);
+    const data = (await response.json()).data;
+    expect(data.choices[0].evidenceSummary).toEqual({ snapshotFacts: 2, contextFacts: 2, usableFacts: 3, missingFacts: 2, profileAttached: true, contextAttached: true });
+    expect(shared.readContext).toHaveBeenCalledWith({ userId: "user-1", kbId: exact.kbId, snapshotId: exact.snapshotId });
+    for (const privateValue of ["Three seats", "Private frozen product name", "Private frozen feature", "Unverified profile claim"]) expect(JSON.stringify(data)).not.toContain(privateValue);
+    expectFree(dependencies);
+  });
+
+  it.each(["unavailable", "not_found", "throw"] as const)("reports context %s as a store outage, never zero facts", async outcome => {
+    const { dependencies } = setup({ readContext: vi.fn(async () => {
+      if (outcome === "throw") throw new Error("private store failure");
+      return outcome === "unavailable" ? { kind: outcome, reason: "private store failure" } : { kind: outcome };
+    }) });
+    for (const request of [exact, handoff]) {
+      const response = await handleBriefLoad(post("/load", request), dependencies);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: { code: "store_unavailable" } });
+    }
+    expectFree(dependencies);
+  });
+
+  it.each(["kbId", "targetHost", "payloadHash", "questionSetHash", "missing_facts", "changed_fact"] as const)("refuses context %s mismatches against the selected frozen version", async field => {
+    const context = snapshotContext();
+    if (field === "missing_facts") context.facts = [];
+    else if (field === "changed_fact") context.facts[0]!.value = "Unowned current profile value";
+    else context[field] = "different";
+    const { dependencies } = setup({ readContext: vi.fn(async () => ({ kind: "ok" as const, value: context })) });
+    const response = await handleBriefLoad(post("/load", exact), dependencies);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: { code: "store_unavailable" } });
     expectFree(dependencies);
   });
 
@@ -254,6 +306,8 @@ describe("exact frozen and handoff loads", () => {
     expect(data.context).toEqual({ gap, runRef: { id: "run-1", fingerprint: evidence.fingerprint }, samples: evidence.samples.map(sample => ({ id: sample.id, engine: sample.engine, status: sample.status, collectedAt: sample.collected_at })) });
     expect(shared.readFrozen).toHaveBeenCalledWith({ userId: "user-1", kbId: exact.kbId, snapshotId: exact.snapshotId });
     expect(shared.readRunEvidence).toHaveBeenCalledWith({ userId: "user-1", runId: "run-1", gapId: "gap-q1", questionId: "q1", frozen: SHARED_FROZEN });
+    expect(shared.readContext).toHaveBeenCalledWith({ userId: "user-1", kbId: exact.kbId, snapshotId: exact.snapshotId });
+    expect(data.choices[0].evidenceSummary).toEqual({ snapshotFacts: 2, contextFacts: null, usableFacts: 1, missingFacts: 1, profileAttached: false, contextAttached: false });
     expect(JSON.stringify(data.context)).not.toContain("Private observed answer");
     expectFree(dependencies);
   });
@@ -264,6 +318,7 @@ describe("exact frozen and handoff loads", () => {
       expect((await handleBriefLoad(post("/load", request), dependencies)).status).toBe(404);
     }
     expect(shared.readRunEvidence).not.toHaveBeenCalled();
+    expect(shared.readContext).not.toHaveBeenCalled();
     expectFree(dependencies);
   });
 

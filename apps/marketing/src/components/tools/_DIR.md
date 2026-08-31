@@ -33,7 +33,7 @@ One line per module: what it reads, what it returns, where it sits. Update the l
 - `content-brief-tool.test.tsx` — session-first submission and real result rendering; success focuses the named result; reopening/editing preserves the frozen keyword; deferred failures and cancelled sign-in restore usable settings without another request.
 - `geo-brief.tsx` — preserves the legacy v1 renderer and reexports the shared v1.1 tool as the current entry.
 - `geo-brief-shared-tool.tsx` — exact frozen/gap selectors, Artifact-order shared result, source/time/anchor disclosure and same-object Markdown/JSON/Draft handoff.
-- `content-draft-intake.tsx` — shared brief identity, readiness and explicit carried-GEO-evidence verification notice.
+- `content-draft-intake.tsx`, `.test.tsx` — shared brief identity; GEO structure-only/limited status from actual fact receipts and observed samples rather than legacy readiness, with exact server verification before quota explained.
 - `content-draft-settings.tsx` — shared section selection; GEO direct-answer-only fact scope is labelled separately from SEO gap-angle scope.
 - `content-draft-results.tsx` — common Draft result surface, including GEO-only exact provenance appendix.
 - `content-draft-coverage-card.tsx` — the shared immutable must-answer list and server/model coverage results.

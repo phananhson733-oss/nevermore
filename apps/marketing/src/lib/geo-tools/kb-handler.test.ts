@@ -207,6 +207,44 @@ describe("save draft", () => {
 });
 
 describe("freeze", () => {
+  it("rejects persisted draft questions with unrelated entities instead of freezing an old generation policy", async () => {
+    const kbId = "11111111-1111-4111-8111-111111111113";
+    const payload = { ...READY, categoryTerms: ["project management", "invoicing"] };
+    const generated = buildGeoSnapshotContext({ kbId, targetHost: "acme-kb-example.com", payload, profile: null, receipt: null });
+    const questionSet = { ...generated.questionSet, registryVersion: "2026-08-17/13", questions: generated.questionSet.questions.map((q) => ({ ...q, requiredEntities: [...q.requiredEntities, "invoicing"] })) };
+    const freeze = vi.fn(deps().freeze);
+    const response = await handleGeoKbFreeze(post("/api/tools/geo-knowledge-base/freeze", { kbId, baseVersion: 2, contextHash: generated.context.contentHash }), deps({
+      freeze,
+      readDraftPayload: async () => ({ kind: "ok", value: { payload, draftVersion: 2, context: generated.context, questionSet } }),
+    }));
+    expect(response.status).toBe(422);
+    expect((await response.json()).blockers).toEqual(["question_quality"]);
+    expect(freeze).not.toHaveBeenCalled();
+    expect(questionSet.registryVersion).toBe("2026-08-17/13");
+  });
+
+  it("rejects a non-English role label when it reaches an English template", async () => {
+    const freeze = vi.fn(deps().freeze);
+    const response = await handleGeoKbFreeze(post("/api/tools/geo-knowledge-base/freeze", { kbId: "kb-1", baseVersion: 2 }), deps({
+      freeze,
+      readDraftPayload: async () => ({ kind: "ok", value: { payload: { ...READY, roles: [{ ...READY.roles[0]!, label: "初学者" }] }, draftVersion: 2 } }),
+    }));
+    expect(response.status).toBe(422);
+    expect((await response.json()).blockers).toEqual(["question_quality"]);
+    expect(freeze).not.toHaveBeenCalled();
+  });
+
+  it("rejects mixed-language categories before writing a new freeze", async () => {
+    const freeze = vi.fn(deps().freeze);
+    const response = await handleGeoKbFreeze(post("/api/tools/geo-knowledge-base/freeze", { kbId: "kb-1", baseVersion: 2 }), deps({
+      freeze,
+      readDraftPayload: async () => ({ kind: "ok", value: { payload: { ...READY, categoryTerms: ["占星工具", "心理占星", "自我探索", "CBT 日记", "知识库", "合盘分析"] }, draftVersion: 2 } }),
+    }));
+    expect(response.status).toBe(422);
+    expect((await response.json()).blockers).toContain("category_language_mismatch");
+    expect(freeze).not.toHaveBeenCalled();
+  });
+
   it("uses source-conditioned frozen questions and returns their role/entities", async () => {
     const kbId = "11111111-1111-4111-8111-111111111113";
     const payload = { ...READY, roles: [] };

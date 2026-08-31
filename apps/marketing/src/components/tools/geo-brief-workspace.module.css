@@ -66,6 +66,7 @@ select.field { text-overflow: ellipsis; padding-right: 28px; }
 .primary:disabled { opacity: .55; cursor: not-allowed; }
 .secondary { color: var(--sc-accent-text); text-decoration: underline; text-underline-offset: 3px; font-size: 14px; }
 .error { border-radius: var(--radius); color: var(--sc-error); border: 1px solid var(--sc-error); background: var(--sc-panel); padding: 14px 18px; font-size: 14px; line-height: 1.7; margin-top: 20px; }
+.error p { margin: 0; font-size: 14px; line-height: 1.7; }
 .support { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--sc-border-card); }
 .workspace :is(button, a, select, textarea, summary):focus-visible { outline: 2px solid var(--sc-accent-text); outline-offset: 4px; }
 .workspace [tabindex="-1"]:focus { outline: none; }
@@ -78,8 +79,7 @@ select.field { text-overflow: ellipsis; padding-right: 28px; }
   .label { padding-top: 0; }
   .title { font-size: 24px; }
   .notice { padding: 16px; }
-  .field, .value { font-size: 13px; }
-  .questionPreview { display: block; margin-top: 10px; color: var(--sc-text-primary); font-size: 13px; line-height: 1.75; overflow-wrap: anywhere; }
+  .questionPreview { display: block; margin-top: 10px; color: var(--sc-text-primary); font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; }
   .context { gap: 8px; }
   .brand { width: 100%; }
 }

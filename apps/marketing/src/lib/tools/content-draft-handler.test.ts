@@ -1,5 +1,5 @@
 // @input  -- the shared SEO/GEO and confirmed-v2 draft handlers with every collaborator injected
-// @output -- proof of Next-proxy admission, wire caps, private GEO verification, fan-out, self-check, and whole-result reruns
+// @output -- proof of admission, wire caps, owned GEO question-quality refusal before quota, fan-out, and reruns
 // @pos    -- content-draft-handler's unit tests
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -36,11 +36,47 @@ import { generateDraftV2Section, runDraftV2Coverage } from "./content-draft-v2-l
 import type { KeywordLlmConfig } from "./keyword-llm-client.ts";
 import { readPublicToolJson } from "./public-tool-request.ts";
 import { confirmedDraftV3Fixture } from "../../components/tools/content-brief-v3-fixture.ts";
+import { verifyOwnedGeoBrief } from "../geo-tools/brief-reference.ts";
+import { SHARED_FROZEN } from "../geo-tools/brief-shared-fixtures.ts";
+import { assembleSharedGeoBrief, sharedGeoBriefBasis } from "../geo-tools/brief-shared.ts";
 
 const START = Date.parse("2026-08-29T10:00:00.000Z");
 const SETTINGS = { tone: "explanatory", person: "second", product_mention: "gap_only" } as const;
 
 describe("GEO branch in the existing Draft route", () => {
+  it.each([
+    { endpoint: "run", handler: handleContentDraftRunRequest },
+    { endpoint: "section", handler: handleContentDraftSectionRequest },
+  ])("refuses a verified old mixed-language question before $endpoint quota or provider work", async ({ handler }) => {
+    const frozen = structuredClone(SHARED_FROZEN);
+    Object.assign(frozen.payload, { categoryTerms: ["占星工具"] });
+    Object.assign(frozen.questionSet.questions[0]!, { text: "What are the top 占星工具 tools right now?", requiredEntities: ["占星工具"] });
+    const basis = sharedGeoBriefBasis({ frozen, context: null, questionId: "q1", questionText: "", runEvidence: null, runId: "old-brief", now: "2026-08-31T00:00:00Z" });
+    const geo = await assembleSharedGeoBrief(basis, { ok: true, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: basis.must_answer.items.map(q => q.id), provenance: { method: "model", derived_from: ["kb"] } }] });
+    const consumeQuota = vi.fn();
+    const generateSection = vi.fn();
+    const runCoverage = vi.fn();
+    const release = vi.fn();
+    const emit = vi.fn();
+    const response = await handler(request({ brief: geo, settings: SETTINGS, section_ids: ["O1"], section_id: "O1", previous: {} }), dependencies({
+      consumeQuota, generateSection, runCoverage, emit,
+      acquireSlot: () => ({ acquired: true, release }),
+      verifyGeoBrief: (brief, userId) => verifyOwnedGeoBrief(brief, userId, {
+        readFrozen: async () => ({ kind: "ok", value: frozen }),
+        readContext: async () => ({ kind: "ok", value: null }),
+        readRun: async () => ({ kind: "missing" }),
+        readRunEvidence: async () => ({ kind: "not_found" }),
+      }),
+    }));
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: { code: "question_needs_review" } });
+    expect(consumeQuota).not.toHaveBeenCalled();
+    expect(generateSection).not.toHaveBeenCalled();
+    expect(runCoverage).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     { endpoint: "run", maxBytes: DRAFT_REQUEST_MAX_BYTES, handler: handleContentDraftRunRequest },
     { endpoint: "section", maxBytes: SECTION_REQUEST_MAX_BYTES, handler: handleContentDraftSectionRequest },

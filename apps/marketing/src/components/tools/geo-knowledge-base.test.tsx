@@ -288,6 +288,13 @@ afterEach(async () => {
 /* ------------------------------------------------------------------ */
 
 describe("a row that was added but not filled in", () => {
+  it("explains English category wording and limits required entities before freezing", async () => {
+    await open();
+    expect(text()).toContain("The first term supplies the English question subject.");
+    expect(text()).toContain("secondary terms stay as context, not automatic required entities.");
+    expect(intlErrors).toEqual([]);
+  });
+
   // The reported failure, exactly: "Add a competitor" inserts an empty row,
   // the write contract refuses a row that identifies nobody, and the refusal
   // is of the whole payload - so the name typed in the same minute is gone
