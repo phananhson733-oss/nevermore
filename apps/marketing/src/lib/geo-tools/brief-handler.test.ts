@@ -13,6 +13,10 @@ import {
   GEO_BRIEF_RUNS_PER_DAY,
 } from "./brief-contract.ts";
 import { GEO_KB_SCHEMA_VERSION, type GeoKbPayload } from "./kb-contract.ts";
+import { GEO_CONTENT_BRIEF_SCHEMA } from "@sf/public-tools/content-brief/geo-contract";
+import { SHARED_FROZEN } from "./brief-shared-fixtures.ts";
+import type { SharedBriefHandlerDependencies } from "./brief-shared-handler.ts";
+import type { SharedBriefRunEvidence } from "./brief-shared.ts";
 
 const KB_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 const SNAPSHOT_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3302";
@@ -35,12 +39,15 @@ const CHOICE: BriefFrozenChoice = {
   snapshotId: SNAPSHOT_ID,
   revision: 3,
   frozenAt: "2026-08-29T09:00:00.000Z",
+  contentHash: "a".repeat(64),
+  promptsetRef: { schema: "marketing-geo-question-set.v1", registryVersion: "fixture", hash: "b".repeat(64) },
   questions: [
     {
       id: "q01-discovery",
       text: "best project trackers for mid-market ops",
       layer: "discovery",
       roleId: "role-1",
+      role: { id: "role-1", label: "Head of Ops", segment: "mid-market" },
     },
   ],
 };
@@ -195,6 +202,131 @@ describe("load", () => {
       deps({ listFrozen: async () => ({ kind: "unavailable", reason: "x" }) }),
     );
     expect(response.status).toBe(503);
+  });
+});
+
+describe("exact frozen and handoff loads", () => {
+  const exact = { schema: GEO_CONTENT_BRIEF_SCHEMA, kbId: SHARED_FROZEN.kbId, snapshotId: SHARED_FROZEN.snapshotId };
+  const handoff = { ...exact, questionId: "q1", runId: "run-1", gapId: "gap-q1" };
+  const evidence: SharedBriefRunEvidence = {
+    runId: "run-1", fingerprint: "e".repeat(64), gap: "D", siteIndex: [],
+    samples: ["answered", "failed"].map((status, index) => ({ id: `sample-${index}`, run_id: "run-1", question_id: "q1", engine: "chatgpt", collected_at: "2026-08-31T00:00:00Z", status: status as "answered" | "failed", search_enabled: status === "answered", excerpt: status === "answered" ? "Private observed answer" : "", topics: [] })),
+  };
+  function setup(overrides: Partial<SharedBriefHandlerDependencies> = {}) {
+    const shared: SharedBriefHandlerDependencies = {
+      readFrozen: vi.fn(async () => ({ kind: "ok" as const, value: SHARED_FROZEN })),
+      readRunEvidence: vi.fn(async () => ({ kind: "ok" as const, value: evidence })),
+      readContext: vi.fn(), configured: () => true, assemble: vi.fn(), runId: vi.fn(),
+      ...overrides,
+    };
+    const dependencies = deps({ shared, listFrozen: vi.fn(), readFrozen: vi.fn(), consumeDailyRun: vi.fn(), sample: vi.fn(), assemble: vi.fn() });
+    return { dependencies, shared };
+  }
+  function expectFree(dependencies: BriefHandlerDependencies) {
+    expect(dependencies.consumeDailyRun).not.toHaveBeenCalled();
+    expect(dependencies.sample).not.toHaveBeenCalled();
+    expect(dependencies.assemble).not.toHaveBeenCalled();
+    expect(dependencies.shared!.assemble).not.toHaveBeenCalled();
+    expect(dependencies.shared!.readContext).not.toHaveBeenCalled();
+  }
+
+  it("keeps the old exact load request and returns only frozen input metadata", async () => {
+    const { dependencies, shared } = setup();
+    const response = await handleBriefLoad(post("/load", exact), dependencies);
+    expect(response.status).toBe(200);
+    const data = (await response.json()).data;
+    expect(data.choices).toEqual([{
+      kbId: exact.kbId, snapshotId: exact.snapshotId, host: "fixture.example", revision: 1, frozenAt: SHARED_FROZEN.frozenAt,
+      contentHash: SHARED_FROZEN.contentHash,
+      promptsetRef: { schema: SHARED_FROZEN.questionSet.schemaVersion, registryVersion: "fixture", hash: SHARED_FROZEN.questionSetHash },
+      questions: [{ id: "q1", text: SHARED_FROZEN.questionSet.questions[0]!.text, layer: "comparison", roleId: "buyer", role: { id: "buyer", label: "Buyer", segment: "small team" } }],
+    }]);
+    expect(data.context).toBeUndefined();
+    expect(shared.readRunEvidence).not.toHaveBeenCalled();
+    expectFree(dependencies);
+  });
+
+  it.each(["A", "D"] as const)("resolves owned %s context without quota, sampling or assembly", async gap => {
+    const { dependencies, shared } = setup({ readRunEvidence: vi.fn(async () => ({ kind: "ok" as const, value: { ...evidence, gap } })) });
+    const response = await handleBriefLoad(post("/load", handoff), dependencies);
+    expect(response.status).toBe(200);
+    const data = (await response.json()).data;
+    expect(data.context).toEqual({ gap, runRef: { id: "run-1", fingerprint: evidence.fingerprint }, samples: evidence.samples.map(sample => ({ id: sample.id, engine: sample.engine, status: sample.status, collectedAt: sample.collected_at })) });
+    expect(shared.readFrozen).toHaveBeenCalledWith({ userId: "user-1", kbId: exact.kbId, snapshotId: exact.snapshotId });
+    expect(shared.readRunEvidence).toHaveBeenCalledWith({ userId: "user-1", runId: "run-1", gapId: "gap-q1", questionId: "q1", frozen: SHARED_FROZEN });
+    expect(JSON.stringify(data.context)).not.toContain("Private observed answer");
+    expectFree(dependencies);
+  });
+
+  it.each(["kbId", "snapshotId"] as const)("refuses stale %s returned by the frozen reader before resolving the run", async key => {
+    const { dependencies, shared } = setup({ readFrozen: vi.fn(async () => ({ kind: "ok" as const, value: { ...SHARED_FROZEN, [key]: "different-id" } })) });
+    for (const request of [exact, handoff]) {
+      expect((await handleBriefLoad(post("/load", request), dependencies)).status).toBe(404);
+    }
+    expect(shared.readRunEvidence).not.toHaveBeenCalled();
+    expectFree(dependencies);
+  });
+
+  it("refuses a question absent from the selected archived version before resolving the run", async () => {
+    const { dependencies, shared } = setup();
+    expect((await handleBriefLoad(post("/load", { ...handoff, questionId: "other-question" }), dependencies)).status).toBe(404);
+    expect(shared.readRunEvidence).not.toHaveBeenCalled();
+    expectFree(dependencies);
+  });
+
+  it.each(["kbId", "snapshotId", "questionId", "runId", "gapId"])("rejects malformed %s before any reads", async key => {
+    const { dependencies, shared } = setup();
+    for (const value of [null, 1, "", "   ", "x".repeat(201)]) {
+      expect((await handleBriefLoad(post("/load", { ...handoff, [key]: value }), dependencies)).status).toBe(400);
+    }
+    expect(shared.readFrozen).not.toHaveBeenCalled();
+    expect(shared.readRunEvidence).not.toHaveBeenCalled();
+    expectFree(dependencies);
+  });
+
+  it("rejects client gap classifications instead of treating them as evidence", async () => {
+    const { dependencies, shared } = setup();
+    expect((await handleBriefLoad(post("/load", { ...handoff, gap: "A" }), dependencies)).status).toBe(400);
+    expect(shared.readFrozen).not.toHaveBeenCalled();
+    expectFree(dependencies);
+  });
+
+  it.each([
+    ["not_found", 404, "not_found"],
+    ["not_eligible", 422, "gap_not_eligible"],
+    ["unavailable", 503, "run_evidence_unavailable"],
+  ] as const)("preserves the owned-run reader's %s refusal", async (kind, status, code) => {
+    const { dependencies } = setup({ readRunEvidence: vi.fn(async () => kind === "unavailable" ? { kind, reason: "run_snapshot_mismatch" } : { kind }) });
+    const response = await handleBriefLoad(post("/load", handoff), dependencies);
+    expect(response.status).toBe(status);
+    expect((await response.json()).error.code).toBe(code);
+    expectFree(dependencies);
+  });
+
+  it("rejects evidence for another run", async () => {
+    const { dependencies } = setup({ readRunEvidence: vi.fn(async () => ({ kind: "ok" as const, value: { ...evidence, runId: "other-run" } })) });
+    const response = await handleBriefLoad(post("/load", handoff), dependencies);
+    expect(response.status).toBe(503);
+    expect((await response.json()).error.code).toBe("run_evidence_unavailable");
+    expectFree(dependencies);
+  });
+
+  it.each(["B", "C"])("never projects an ineligible %s gap even if a reader returns it as ok", async gap => {
+    const malformed = { ...evidence, gap } as unknown as SharedBriefRunEvidence;
+    const { dependencies } = setup({ readRunEvidence: vi.fn(async () => ({ kind: "ok" as const, value: malformed })) });
+    const response = await handleBriefLoad(post("/load", handoff), dependencies);
+    expect(response.status).toBe(422);
+    expect((await response.json()).error.code).toBe("gap_not_eligible");
+    expectFree(dependencies);
+  });
+
+  it("authenticates handoff loads before reading frozen or run data", async () => {
+    const { dependencies, shared } = setup();
+    const response = await handleBriefLoad(post("/load", handoff), { ...dependencies, authenticate: async () => ({ ok: false, response: Response.json({ error: { code: "auth_required" } }, { status: 401 }) }) });
+    expect(response.status).toBe(401);
+    expect(shared.readFrozen).not.toHaveBeenCalled();
+    expect(shared.readRunEvidence).not.toHaveBeenCalled();
+    expectFree(dependencies);
   });
 });
 

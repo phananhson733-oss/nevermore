@@ -23,7 +23,7 @@ describe("shared GEO Brief browser chain", () => {
     }); globalThis.fetch = fetch as unknown as typeof globalThis.fetch;
     const host = document.createElement("div"); document.body.append(host); root = createRoot(host); await act(async () => root?.render(<GeoBriefSharedTool />));
     await click(host, "[data-load-geo-brief]");
-    const select = host.querySelector("select");
+    const select = host.querySelector<HTMLSelectElement>("#geo-brief-version");
     await act(async () => { if (select) { select.value = "snapshot-2"; select.dispatchEvent(new Event("change", { bubbles: true })); } });
     await click(host, "[data-run-geo-brief]");
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -54,7 +54,7 @@ describe("shared GEO Brief browser chain", () => {
     const basis = sharedGeoBriefBasis({ frozen, context: null, questionId: "q1", questionText: "", runEvidence: { runId: pointer.runId, fingerprint: "e".repeat(64), gap: "D", siteIndex: [], samples: [{ id: "S1", run_id: pointer.runId, question_id: "q1", engine: "chatgpt", collected_at: "2026-08-31T00:00:00Z", status: "answered", search_enabled: null, excerpt: "Actual fixture answer", topics: ["Pricing"] }] }, runId: "fixture-brief", now: "2026-08-31T00:00:01Z" });
     const brief = await assembleSharedGeoBrief(basis, { ok: true, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: basis.must_answer.items.map(item => item.id), provenance: { method: "model", derived_from: ["kb", "ai_sample"] } }] });
     const fetch = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.endsWith("/load")) { expect(JSON.parse(String(init?.body))).toEqual({ schema: brief.schema, kbId: frozen.kbId, snapshotId: frozen.snapshotId }); return Response.json({ data: { choices: [{ kbId: frozen.kbId, snapshotId: frozen.snapshotId, revision: 1, host: "fixture.example", frozenAt: frozen.frozenAt, questions: frozen.questionSet.questions }], runsPerDay: 20, providerConfigured: true } }); }
+      if (url.endsWith("/load")) { expect(JSON.parse(String(init?.body))).toEqual({ schema: brief.schema, kbId: frozen.kbId, snapshotId: frozen.snapshotId, questionId: pointer.questionId, runId: pointer.runId, gapId: pointer.gapId }); return Response.json({ data: { context: { gap: "D", runRef: { id: pointer.runId, fingerprint: "e".repeat(64) }, samples: brief.evidence.samples.map(sample => ({ id: sample.id, engine: sample.engine, status: sample.status, collectedAt: sample.collected_at })) }, choices: [{ kbId: frozen.kbId, snapshotId: frozen.snapshotId, revision: 1, host: "fixture.example", frozenAt: frozen.frozenAt, questions: frozen.questionSet.questions }], runsPerDay: 20, providerConfigured: true } }); }
       expect(JSON.parse(String(init?.body))).toEqual({ schema: brief.schema, kbId: frozen.kbId, snapshotId: frozen.snapshotId, questionId: "q1", manualQuestion: null, runId: pointer.runId, gapId: pointer.gapId });
       return Response.json({ data: { brief } });
     }); globalThis.fetch = fetch as unknown as typeof globalThis.fetch;

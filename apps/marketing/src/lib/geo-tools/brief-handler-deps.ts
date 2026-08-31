@@ -28,6 +28,7 @@ import type {
 import { readFrozenGeoKb } from "./kb-store.ts";
 import { listFrozenGeoKbVersions } from "./kb-history.ts";
 import { DEFAULT_SHARED_BRIEF_DEPENDENCIES } from "./brief-shared-deps.ts";
+import { projectBriefFrozenChoice } from "./brief-load-projection.ts";
 
 export { handleBriefLoad, handleBriefRun } from "./brief-handler.ts";
 
@@ -50,7 +51,7 @@ export async function listFrozenVersions(
 ): Promise<BriefStoreOutcome<readonly BriefFrozenChoice[]>> {
   const list = await readHistory({ userId });
   if (list.kind !== "ok") return { kind: "unavailable", reason: "store unavailable" };
-  return { kind: "ok", value: list.value.map(({ host, snapshot }) => ({ kbId: snapshot.kbId, host, snapshotId: snapshot.snapshotId, revision: snapshot.revision, frozenAt: snapshot.frozenAt, questions: snapshot.questionSet.questions.map(question => ({ id: question.id, text: question.text, layer: question.layer, roleId: question.roleId })) })) };
+  return { kind: "ok", value: list.value.map(({ host, snapshot }) => projectBriefFrozenChoice(snapshot, host)) };
 }
 
 async function readFrozen(input: {
