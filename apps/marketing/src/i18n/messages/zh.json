@@ -3955,10 +3955,13 @@
     "contentBrief": {
       "title": "Content Brief Builder",
       "form": {
+        "settings": "运行设置",
+        "reopen": "展开调参 · 仅显式提交才重新运行",
         "title": "设置内容简报",
         "intro": "输入一个主关键词。简报会读取它的前 {depth} 条搜索结果，抓取这些页面，推导出一篇竞争页必须回答的问题。只在你点击时运行，服务端不保存任何报告。"
       },
       "fields": {
+        "details": "推导明细",
         "primary": {
           "label": "主关键词",
           "placeholder": "approval workflow"
@@ -4039,12 +4042,14 @@
       },
       "modeBody": {
         "complete": "每一路请求过的读取都完成了。标为「证据不足」的字段不改变这一点：证据读到了，只是支持的结论更少。",
-        "partial": "至少有一路读取被截短：SERP 行数少于请求、页面抓取有截断或失败、或 Search Console 样本被截断。",
-        "degraded": "至少有一路请求过的读取不可得，或某个字段因超时、上游错误、未配置、校验失败或语言不支持而无法产出。",
+        "partial": "部分读取不完整，实际计数见下方。",
+        "degraded": "部分请求过的读取或字段未能产出，实际原因见下方。",
         "unavailable": "没有拿到 SERP，就没有简报主体。只显示证据覆盖。"
       },
       "run": {
         "eyebrow": "内容简报",
+        "resultLabel": "{keyword}的内容简报结果",
+        "details": "运行明细 · 模型、temperature 与指纹",
         "title": "本次运行",
         "collectedAt": "采集时间",
         "elapsed": "用时 {elapsed} 秒 / 预算 {budget} 秒",
@@ -4070,6 +4075,10 @@
       },
       "coverage": {
         "title": "证据覆盖",
+        "notUsed": "未使用",
+        "details": "证据明细 · 读取计数与冻结账本",
+        "ledger": "检查完整冻结证据账本（JSON）",
+        "onlyHelp": "展开运行设置，检查关键词、市场和语言，准备好后再次显式提交。仅展开设置不会启动运行；没有简报主体时不能生成 draft。",
         "serp": "SERP",
         "crawl": "竞品正文",
         "gsc": "Search Console",
@@ -4245,7 +4254,7 @@
         "pageMissing": "页面引用 {ref} 不在 Search Console 页面账本里",
         "empty": "模型没有提出任何一条。",
         "reason": {
-          "not_requested": "未选择 Search Console 资源，没有可链接或可排除的自有页面。",
+          "not_requested": "未使用：本次没有选择 Search Console 资源，因此没有用于内链或排除主题的自有页面证据；这不表示站内没有相关页面。",
           "not_connected": "未连接 Search Console，没有可链接或可排除的自有页面。",
           "timeout": "Search Console 页面维度读取耗尽了时间预算。",
           "provider_error": "Search Console 页面维度没有完整读到。",

@@ -1,6 +1,6 @@
 // @input  -- one ContentBrief's gap_angle field, its product-profile read, and the ledger
-// @output -- the angle with the profile facts it cites (and their derivation), or the
-//            reason it could not be produced; nothing at all when it was not requested
+// @output -- the angle with closed cited-fact/source details, or the visible failure
+//            reason; nothing at all when it was not requested
 // @pos    -- the one section of the brief that reads the visitor's own product profile
 
 import type { ContentBrief } from "@sf/public-tools/content-brief/contract";
@@ -18,7 +18,7 @@ import {
   translated,
   type Translate,
 } from "./content-brief-results-shared";
-import { SourceChip } from "./content-brief-source-chip";
+import { SourceChip, SourceLayerBadge, sourceTone } from "./content-brief-source-chip";
 
 /**
  * Why the section disappears for `not_requested` and for nothing else.
@@ -74,7 +74,7 @@ export function GapAngleCard({
     <section data-gap-angle data-field-status="available" className={CARD}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className={SECTION_TITLE}>{t("gapAngle.title")}</h3>
-        <SourceChip provenance={field.provenance} t={t} locale={locale} />
+        <SourceLayerBadge tone={sourceTone(field.provenance)} t={t} />
       </div>
       <p data-gap-angle-value className="mt-3 text-[15px] font-semibold leading-[1.45] text-text-dark-primary">
         {field.value}
@@ -85,11 +85,14 @@ export function GapAngleCard({
         </span>
         <p className={`mt-1 ${BODY_TEXT}`}>{field.rationale}</p>
       </div>
-      <div className="mt-3">
-        <span className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
+      <details className="mt-3">
+        <summary className="cursor-pointer text-[12px] text-text-dark-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
           {t("gapAngle.refs")}
-        </span>
-        <ul className="mt-1.5 space-y-1.5">
+        </summary>
+        <div className="mt-2">
+          <SourceChip provenance={field.provenance} t={t} locale={locale} />
+        </div>
+        <ul className="mt-2 space-y-1.5">
           {field.profile_fact_refs.map((ref) => {
             const fact = profileFact(brief, ref);
             return (
@@ -118,7 +121,7 @@ export function GapAngleCard({
             );
           })}
         </ul>
-      </div>
+      </details>
       <p data-checked-against className={`mt-3 ${BODY_TEXT} font-mono text-[11.5px]`}>
         {observed === null || observed === field.checked_against.length
           ? t("gapAngle.checkedAgainst", { count: observed ?? field.checked_against.length })

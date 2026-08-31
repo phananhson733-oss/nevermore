@@ -12,8 +12,8 @@ import { SUPPORTING_KEYWORDS_MAX } from "@sf/public-tools/content-brief/constant
 import { validContentBrief } from "./content-brief-fixture.ts";
 
 const { signInDialogMock, trackMarketingEventMock } = vi.hoisted(() => ({
-  signInDialogMock: vi.fn(({ open }: { readonly open: boolean }) =>
-    open ? <div data-testid="sign-in-dialog">sign in</div> : null,
+  signInDialogMock: vi.fn(({ open, onOpenChange }: { readonly open: boolean; readonly onOpenChange: (open: boolean) => void }) =>
+    open ? <div data-testid="sign-in-dialog">sign in<button data-close-sign-in onClick={() => onOpenChange(false)}>close</button></div> : null,
   ),
   trackMarketingEventMock: vi.fn(),
 }));
@@ -27,6 +27,7 @@ vi.mock("next-intl", () => ({
       if (key === "fields.supporting.count") {
         return `${String(values?.count ?? 0)}/${String(values?.max ?? 0)}`;
       }
+      if (key === "run.resultLabel") return `Content brief result for ${String(values?.keyword)}`;
       return key;
     };
     translate.has = () => true;
@@ -40,14 +41,6 @@ vi.mock("../auth/sign-in-dialog", () => ({
 
 vi.mock("../layout/google-analytics", () => ({
   trackMarketingEvent: trackMarketingEventMock,
-}));
-
-// The result surface is covered by i18n/content-brief-messages.test.tsx with
-// the real catalog; here it would only render key paths.
-vi.mock("./content-brief-results", () => ({
-  ContentBriefResults: ({ brief }: { readonly brief: { readonly run: { readonly run_id: string } } }) => (
-    <div data-testid="brief-results">{brief.run.run_id}</div>
-  ),
 }));
 
 const { ContentBriefTool } = await import("./content-brief-tool.tsx");
@@ -248,18 +241,37 @@ describe("ContentBriefTool", () => {
       );
       property.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await click(host.querySelector("[data-run-brief]"));
+    const submit = host.querySelector("[data-run-brief]");
+    if (!(submit instanceof HTMLButtonElement)) throw new Error("no submit button");
+    submit.focus();
+    await click(submit);
     await act(async () => {
       await Promise.resolve();
     });
 
     expect(fetchCalls()).toContain("/api/tools/content-brief/run");
-    expect(host.querySelector('[data-testid="brief-results"]')?.textContent).toBe(
-      brief.run.run_id,
+    expect(host.querySelector('[data-run-header] h3')?.textContent).toBe(
+      brief.keyword.primary,
     );
+    const result = host.querySelector("[data-content-brief-result]");
+    expect(document.activeElement === result).toBe(true);
+    expect(result?.getAttribute("tabindex")).toBe("-1");
+    expect(result?.getAttribute("role")).toBe("region");
+    expect(result?.getAttribute("aria-label")).toBe(`Content brief result for ${brief.keyword.primary}`);
+    expect(result?.closest("details:not([open])") === null).toBe(true);
     expect(trackMarketingEventMock).toHaveBeenCalledWith("tool_complete", {
       tool_name: "content_brief",
     });
+
+    const settings = host.querySelector("details[data-brief-settings]");
+    expect(settings).not.toBeNull();
+    expect(settings?.hasAttribute("open")).toBe(false);
+    const submitted = fetchCalls().filter((url) => url === "/api/tools/content-brief/run").length;
+    await click(settings?.querySelector("summary") ?? null);
+    expect(settings?.hasAttribute("open")).toBe(true);
+    await type(host.querySelector("#content-brief-primary"), "a different keyword");
+    expect(host.querySelector('[data-run-header] h3')?.textContent).toBe(brief.keyword.primary);
+    expect(fetchCalls().filter((url) => url === "/api/tools/content-brief/run")).toHaveLength(submitted);
   });
 
   it("renders the server's error code and opens sign-in on auth_required", async () => {
@@ -287,6 +299,87 @@ describe("ContentBriefTool", () => {
       "auth_required",
     );
     expect(host.querySelector('[data-testid="sign-in-dialog"]')).not.toBeNull();
-    expect(host.querySelector('[data-testid="brief-results"]')).toBeNull();
+    expect(host.querySelector('[data-content-brief-results]')).toBeNull();
+  });
+
+  it.each([
+    { stage: "auth", failure: "response", code: "auth_unavailable", runs: 0 },
+    { stage: "auth", failure: "network", code: "auth_unavailable", runs: 0 },
+    { stage: "tool", failure: "response", code: "rate_limited", runs: 1 },
+    { stage: "tool", failure: "network", code: "unknown", runs: 1 },
+    { stage: "tool", failure: "response", code: "auth_required", runs: 1 },
+  ])("reveals a deferred $stage/$failure/$code failure after settings were closed while running", async ({ stage, failure, code, runs }) => {
+    let resolveResponse!: (value: Response) => void;
+    let rejectResponse!: (error: Error) => void;
+    const pending = new Promise<Response>((resolve, reject) => {
+      resolveResponse = resolve;
+      rejectResponse = reject;
+    });
+    globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/auth/session") {
+        return stage === "auth" ? pending.then((response) => response.clone()) : Promise.resolve(Response.json({ signedIn: true }));
+      }
+      if (url === "/api/account/websites") {
+        return Promise.resolve(Response.json({ data: { websites: [] } }));
+      }
+      if (url === "/api/tools/content-brief/run") return pending;
+      return Promise.resolve(Response.json({}, { status: 400 }));
+    }) as unknown as typeof fetch;
+
+    const host = await renderTool();
+    await type(host.querySelector("#content-brief-primary"), "approval workflow");
+    await click(host.querySelector("[data-run-brief]"));
+    expect(host.querySelector("#content-brief-tool")?.getAttribute("aria-busy")).toBe("true");
+    const settings = host.querySelector("details[data-brief-settings]");
+    await click(settings?.querySelector("summary") ?? null);
+    expect(settings?.hasAttribute("open")).toBe(false);
+
+    await act(async () => {
+      if (failure === "network") rejectResponse(new Error("fixture network failure"));
+      else resolveResponse(Response.json({ error: { code } }, { status: code === "auth_required" ? 401 : 429 }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const error = host.querySelector(`[data-error-code="${code}"]`);
+    expect(error).not.toBeNull();
+    expect(error?.closest("details:not([open])") === null).toBe(true);
+    expect(settings?.hasAttribute("open")).toBe(true);
+    const submit = host.querySelector("[data-run-brief]");
+    expect(submit instanceof HTMLButtonElement && submit.disabled).toBe(false);
+    expect(fetchCalls().filter((url) => url === "/api/tools/content-brief/run")).toHaveLength(runs);
+    expect(host.querySelector('[data-content-brief-results]')).toBeNull();
+  });
+
+  it("reopens settings after deferred signed-out auth so cancelling sign-in leaves the form usable", async () => {
+    let resolveSession!: (value: Response) => void;
+    const session = new Promise<Response>((resolve) => { resolveSession = resolve; });
+    globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+      if (String(input) === "/api/auth/session") return session.then((response) => response.clone());
+      return Promise.resolve(Response.json({ data: { websites: [] } }));
+    }) as unknown as typeof fetch;
+
+    const host = await renderTool();
+    await type(host.querySelector("#content-brief-primary"), "approval workflow");
+    await click(host.querySelector("[data-run-brief]"));
+    const settings = host.querySelector("details[data-brief-settings]");
+    await click(settings?.querySelector("summary") ?? null);
+    expect(settings?.hasAttribute("open")).toBe(false);
+    await act(async () => {
+      resolveSession(Response.json({ signedIn: false }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(host.querySelector('[data-testid="sign-in-dialog"]')).not.toBeNull();
+    await click(host.querySelector("[data-close-sign-in]"));
+    expect(host.querySelector('[data-testid="sign-in-dialog"]')).toBeNull();
+    expect(settings?.hasAttribute("open")).toBe(true);
+    const input = host.querySelector("#content-brief-primary");
+    expect(input instanceof HTMLInputElement && !input.disabled && input.value === "approval workflow").toBe(true);
+    const submit = host.querySelector("[data-run-brief]");
+    expect(submit instanceof HTMLButtonElement && !submit.disabled).toBe(true);
+    expect(submit?.closest("details:not([open])") === null).toBe(true);
+    expect(fetchCalls().filter((url) => url === "/api/tools/content-brief/run")).toHaveLength(0);
   });
 });

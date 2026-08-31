@@ -1,6 +1,6 @@
 // @input  -- locale, granted GSC properties, the SERP market/language allow-lists, authenticated APIs
 // @output -- the brief form (primary, supporting, market, language, profile, property), the
-//            session-first run flow, and the result surface
+//            session-first run flow, and reopenable settings beside the frozen result
 // @pos    -- primary client surface for the Marketing Content Brief Builder
 
 "use client";
@@ -121,6 +121,9 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
   const [phase, setPhase] = useState<Phase>("idle");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [brief, setBrief] = useState<ContentBrief | null>(null);
+  // Native disclosure state can change before its queued toggle event fires.
+  // Keep one source of truth and explicitly close/reopen only at run outcomes.
+  const settingsRef = useRef<HTMLDetailsElement | null>(null);
   const startedAt = useRef(0);
   const mounted = useRef(true);
   const submissionLocked = useRef(false);
@@ -151,6 +154,7 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
 
   useEffect(() => {
     if (brief === null) return;
+    resultsRef.current?.focus({ preventScroll: true });
     resultsRef.current?.scrollIntoView({ block: "start" });
   }, [brief]);
 
@@ -203,10 +207,12 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
       if (!isCurrent(controller)) return;
       if (!sessionResponse.ok || typeof sessionBody.signedIn !== "boolean") {
         setErrorCode("auth_unavailable");
+        settingsRef.current?.setAttribute("open", "");
         setPhase("idle");
         return;
       }
       if (!sessionBody.signedIn) {
+        settingsRef.current?.setAttribute("open", "");
         setSignInOpen(true);
         setPhase("idle");
         return;
@@ -239,15 +245,18 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
             : "unknown",
         );
         if (nextCode === "auth_required") setSignInOpen(true);
+        settingsRef.current?.setAttribute("open", "");
         setPhase("idle");
         return;
       }
       setBrief(nextBrief);
+      settingsRef.current?.removeAttribute("open");
       setPhase("done");
       trackMarketingEvent("tool_complete", { tool_name: "content_brief" });
     } catch {
       if (!isCurrent(controller)) return;
       setErrorCode(stage === "auth" ? "auth_unavailable" : "unknown");
+      settingsRef.current?.setAttribute("open", "");
       setPhase("idle");
     } finally {
       if (activeRequest.current === controller) {
@@ -262,8 +271,22 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
       id="content-brief-tool"
       data-locale={locale}
       aria-busy={phase === "running"}
-      className="min-w-0"
+      className="mx-auto min-w-0 max-w-[880px]"
     >
+      <details
+        data-brief-settings
+        ref={settingsRef}
+        open
+        className="rounded-[6px] border border-brand-border-card bg-brand-panel"
+      >
+        <summary className="cursor-pointer px-4 py-3 text-[13px] font-semibold text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
+          {t("form.settings")}
+          {brief !== null ? (
+            <span className="ml-2 text-[11.5px] font-normal text-text-dark-secondary">
+              {t("form.reopen")}
+            </span>
+          ) : null}
+        </summary>
       <form
         data-content-brief-form
         noValidate
@@ -518,9 +541,17 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
           {phase === "running" ? t("actions.running") : t("actions.run")}
         </button>
       </form>
+      </details>
 
       {brief !== null ? (
-        <div ref={resultsRef} data-content-brief-result className="min-w-0 scroll-mt-24">
+        <div
+          ref={resultsRef}
+          data-content-brief-result
+          role="region"
+          aria-label={t("run.resultLabel", { keyword: brief.keyword.primary })}
+          tabIndex={-1}
+          className="min-w-0 scroll-mt-24 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+        >
           <ContentBriefResults brief={brief} locale={locale} />
         </div>
       ) : null}

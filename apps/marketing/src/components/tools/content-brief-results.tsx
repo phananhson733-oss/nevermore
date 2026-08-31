@@ -18,6 +18,7 @@ import { ReadinessBar } from "./content-brief-readiness-bar";
 import { RunHeader } from "./content-brief-run-header";
 import { VerdictCard } from "./content-brief-verdict-card";
 import { WontSayFooter } from "./content-brief-wont-say-footer";
+import styles from "./content-brief-presentation.module.css";
 
 export function ContentBriefResults({
   brief,
@@ -35,11 +36,15 @@ export function ContentBriefResults({
     <div
       data-content-brief-results
       data-run-mode={brief.run.mode}
-      className="mt-6 space-y-4"
+      className={`${styles.results} mt-6 space-y-6`}
     >
       <RunHeader brief={brief} locale={locale} t={t} />
       <EvidenceCoverage brief={brief} locale={locale} t={t} />
-      {bodiless ? null : (
+      {bodiless ? (
+        <p data-coverage-only-help className="text-[12.5px] leading-[1.6] text-text-dark-secondary">
+          {t("coverage.onlyHelp")}
+        </p>
+      ) : (
         <>
           <VerdictCard brief={brief} locale={locale} t={t} />
           <FieldCards brief={brief} locale={locale} t={t} />
@@ -47,9 +52,9 @@ export function ContentBriefResults({
           <OutlineList brief={brief} locale={locale} t={t} />
           <GapAngleCard brief={brief} locale={locale} t={t} />
           <LinksCards brief={brief} locale={locale} t={t} />
-          <ReadinessBar brief={brief} locale={locale} t={t} />
         </>
       )}
+      {bodiless ? null : <ReadinessBar brief={brief} locale={locale} t={t} />}
       <WontSayFooter t={t} />
     </div>
   );

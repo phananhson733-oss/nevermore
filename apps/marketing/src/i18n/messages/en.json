@@ -3955,10 +3955,13 @@
     "contentBrief": {
       "title": "Content Brief Builder",
       "form": {
+        "settings": "Run settings",
+        "reopen": "Reopen to adjust · submit explicitly to run again",
         "title": "Set up your content brief",
         "intro": "Enter one primary keyword. The brief reads the top {depth} results for it, fetches those pages, and derives what a competing page must answer. It runs only when you ask, and no report is saved on the server."
       },
       "fields": {
+        "details": "Derivation details",
         "primary": {
           "label": "Primary keyword",
           "placeholder": "approval workflow"
@@ -4039,12 +4042,14 @@
       },
       "modeBody": {
         "complete": "Every read that was requested completed. A field marked “insufficient evidence” does not change this: the evidence was read, it just supports fewer conclusions.",
-        "partial": "At least one read was cut short: fewer SERP rows than requested, truncated or failed page fetches, or a truncated Search Console sample.",
-        "degraded": "At least one requested read was unavailable, or a field could not be produced because of a timeout, a provider error, missing configuration, failed validation, or an unsupported language.",
+        "partial": "Some reads are partial. Their recorded counts are shown below.",
+        "degraded": "Some requested reads or fields could not be produced. Their recorded reasons are shown below.",
         "unavailable": "No SERP came back, so there is no brief body. Only the evidence coverage is shown."
       },
       "run": {
         "eyebrow": "Content brief",
+        "resultLabel": "Content brief result for {keyword}",
+        "details": "Run details · model, temperature and fingerprint",
         "title": "Run",
         "collectedAt": "Collected",
         "elapsed": "{elapsed}s of a {budget}s budget",
@@ -4070,6 +4075,10 @@
       },
       "coverage": {
         "title": "Evidence coverage",
+        "notUsed": "Not used",
+        "details": "Evidence details · read counts and frozen ledger",
+        "ledger": "Inspect the complete frozen evidence ledger (JSON)",
+        "onlyHelp": "Open run settings to review the keyword, market and language, then submit again when ready. Opening settings does not start a run. No draft can be generated without a brief body.",
         "serp": "SERP",
         "crawl": "Competitor pages",
         "gsc": "Search Console",
@@ -4245,7 +4254,7 @@
         "pageMissing": "page reference {ref} is not in the Search Console page ledger",
         "empty": "The model proposed none.",
         "reason": {
-          "not_requested": "No Search Console property was selected, so there are no owned pages to link to or to exclude.",
+          "not_requested": "Not used: no Search Console property was selected. This run has no owned-page evidence for link targets or exclusions; it does not establish that related pages are absent.",
           "not_connected": "Search Console is not connected, so there are no owned pages to link to or to exclude.",
           "timeout": "The Search Console page read ran out of its time budget.",
           "provider_error": "The Search Console page dimension could not be read completely.",
