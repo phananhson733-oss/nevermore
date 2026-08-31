@@ -162,11 +162,12 @@ function requiredEntitiesFor(
 ): readonly string[] {
   const category = payload.categoryTerms[0] ?? "";
   const subject = geoCategoryStem(category);
+  const categoryEntity = geoQuestionReferencesEntity(text, category) ? category : subject;
   const names = [role?.label, rival, payload.officialName].filter(
     (value): value is string => value !== undefined && value !== null && geoQuestionReferencesEntity(text, value),
   );
   return [...new Set([
-    ...(geoQuestionReferencesEntity(text, subject) ? [category] : []),
+    ...(geoQuestionReferencesEntity(text, subject) ? [categoryEntity] : []),
     ...names,
   ])];
 }

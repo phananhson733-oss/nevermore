@@ -40,6 +40,7 @@ it("reads exact evidence after the list and labels empty-fact generation as stru
   expect(host.querySelector("[data-geo-input-evidence]")?.textContent).toContain("quality.inputNoFacts");
   expect(host.textContent).toContain("quality.inputNoProfile");
   expect(host.querySelector("[data-run-geo-brief]")?.textContent).toBe("quality.generateStructure");
+  expect(JSON.parse(host.querySelector("[data-geo-source-summary]")?.textContent ?? "null")).toEqual(summary);
 });
 it("keeps flawed old questions readable but blocks paid generation with a repair path", async () => {
   const fetch = mockRead({ issues: ["category_language_mismatch"] }); await load();
@@ -53,5 +54,6 @@ it("does not turn an exact context read failure into zero available facts", asyn
   mockRead({ failure: true }); await load();
   expect(host.textContent).toContain("errors.store_unavailable");
   expect(host.querySelector("[data-geo-input-evidence]")).toBeNull();
+  expect(host.querySelector("[data-geo-source-summary]")).toBeNull();
   expect(host.querySelector<HTMLButtonElement>("[data-run-geo-brief]")?.disabled).toBe(true);
 });

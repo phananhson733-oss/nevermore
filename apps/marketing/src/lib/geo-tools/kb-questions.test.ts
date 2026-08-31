@@ -145,6 +145,23 @@ describe("what the knowledge base decides", () => {
 });
 
 describe("required entities", () => {
+  it.each(["software", "platform", "apps"])("uses the actual question subject when a %s category suffix is replaced", (suffix) => {
+    const category = `project management ${suffix}`;
+    const set = buildGeoQuestionSet(payload({ categoryTerms: [category] }));
+    const question = set.questions.find((entry) => entry.templateId === "geo.retrieval.category_top");
+    expect(question?.text).toBe("What are the top project management tools right now?");
+    expect(question?.requiredEntities).toEqual(["project management"]);
+    expect(question?.requiredEntities).not.toContain(category);
+  });
+
+  it.each(["project management software", "project management tools"])("keeps the complete category %s when it actually appears in the question", (category) => {
+    const set = buildGeoQuestionSet(payload({ categoryTerms: [category] }));
+    const question = set.questions.find((entry) => entry.text.includes(category));
+    expect(question).toBeDefined();
+    expect(question?.requiredEntities).toContain(category);
+    expect(question?.requiredEntities).not.toContain("project management");
+  });
+
   it("requires only the primary category for a general category question", () => {
     const set = buildGeoQuestionSet(payload({ categoryTerms: ["占星工具", "心理占星", "自我探索", "CBT 日记", "知识库", "合盘分析"] }));
     expect(set.questions.find((q) => q.templateId === "geo.retrieval.category_top")?.requiredEntities).toEqual(["占星工具"]);

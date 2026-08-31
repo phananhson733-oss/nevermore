@@ -171,7 +171,7 @@ export function GeoBriefSharedTool() {
           {!evidence.profileAttached ? <p>{t("quality.inputNoProfile")}</p> : null}
           {context === null ? <p>{t("quality.inputNoRun")}</p> : null}
           <a className={styles.secondary} href={localePath(locale, "/tools/geo-knowledge-base")}>{t("artifact.createKnowledge")}</a>
-        </aside> : <p role="status" className={styles.hint}>{t("quality.readingEvidence")}</p>}
+        </aside> : busy ? <p role="status" className={styles.hint}>{t("quality.readingEvidence")}</p> : null}
         {questionNeedsRevision ? <aside role="status" className={styles.error}>
           <p>{t(typedLanguageIssue ? "quality.typedLanguageIssue" : "quality.needsRevisionInput")}</p>
           <a className={styles.secondary} href={localePath(locale, "/tools/geo-knowledge-base")}>{t("artifact.createKnowledge")}</a>
@@ -235,6 +235,7 @@ export function GeoBriefSharedTool() {
                   <div><dt>content_hash</dt><dd>{choice.contentHash ?? "—"}</dd></div>
                   <div><dt>promptset_hash</dt><dd>{choice.promptsetRef?.hash ?? "—"}</dd></div>
                   <div><dt>frozen_at</dt><dd><time dateTime={choice.frozenAt}>{choice.frozenAt}</time></dd></div>
+                  {evidence ? <div><dt>source_summary</dt><dd><pre data-geo-source-summary>{JSON.stringify(evidence, null, 2)}</pre></dd></div> : null}
                 </dl>
               </details>
             </div>
