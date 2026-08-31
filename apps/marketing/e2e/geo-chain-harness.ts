@@ -1,6 +1,6 @@
 import { expect, type BrowserContext, type Request as BrowserRequest, type Route } from "@playwright/test";
 import { handleWebsiteGeoLoad } from "../src/lib/account-websites/geo-route.ts";
-import { handleGeoKbFreeze } from "../src/lib/geo-tools/kb-handler.ts";
+import { handleGeoKbFreeze, handleGeoKbLoad, handleGeoKbSaveDraft } from "../src/lib/geo-tools/kb-handler.ts";
 import { handleVisibilityLoad, handleVisibilityStart, handleVisibilityStatus, type VisibilityHandlerDependencies } from "../src/lib/geo-tools/visibility-handler.ts";
 import { runSharedBrief } from "../src/lib/geo-tools/brief-shared-handler.ts";
 import { handleBriefLoad, type BriefHandlerDependencies } from "../src/lib/geo-tools/brief-handler.ts";
@@ -26,9 +26,9 @@ async function respond(route: Route, response: Response): Promise<void> {
 
 /** TEST-ONLY SSR auth fixture. No server/auth source changes, cookies or sessions.
  * The isolated Next server has no Supabase credentials. Replace exactly the
- * AiVisibilityCheck/ContentDraftTool prop, not a global auth string or markup.
+ * identified client prop, not a global auth string or markup.
  * This is explicitly NOT login E2E; real auth/owner gates have separate tests. */
-function injectLocalAuthFixture(html: string, componentName: "AiVisibilityCheck" | "ContentDraftTool"): string {
+function injectLocalAuthFixture(html: string, componentName: "AiVisibilityCheck" | "ContentDraftTool" | "GeoKnowledgeBase"): string {
   const scripts = [...html.matchAll(/<script([^>]*)>self\.__next_f\.push\((\[[\s\S]*?)\)<\/script>/g)];
   const decoded = scripts.map(match => {
     try { return { match, value: JSON.parse(match[2]!) as unknown[] }; } catch { throw new Error("Unrecognized local Next Flight envelope"); }
@@ -40,6 +40,7 @@ function injectLocalAuthFixture(html: string, componentName: "AiVisibilityCheck"
   const escapedId = moduleId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const props = componentName === "AiVisibilityCheck"
     ? '"authentication":"(?:unavailable|unauthenticated)","locale":"(?:en|zh)"'
+    : componentName === "GeoKnowledgeBase" ? '"locale":"(?:en|zh)","signedIn":false'
     : '"locale":"(?:en|zh)","authenticated":false';
   const component = new RegExp(`\\["\\$","\\$L${escapedId}",null,\\{${props}\\}\\]`, "g");
   if ([...stream.matchAll(component)].length !== 1) throw new Error(`Expected exactly one signed-out ${componentName} client prop`);
@@ -50,6 +51,7 @@ function injectLocalAuthFixture(html: string, componentName: "AiVisibilityCheck"
       changed += 1;
       return componentName === "AiVisibilityCheck"
         ? value.replace(/"authentication":"(?:unavailable|unauthenticated)"/, '"authentication":"authenticated"')
+        : componentName === "GeoKnowledgeBase" ? value.replace('"signedIn":false', '"signedIn":true')
         : value.replace('"authenticated":false', '"authenticated":true');
     });
     if (next === item.value[1]) continue;
@@ -62,6 +64,7 @@ function injectLocalAuthFixture(html: string, componentName: "AiVisibilityCheck"
 }
 export const injectVisibilityAuthFixture = (html: string): string => injectLocalAuthFixture(html, "AiVisibilityCheck");
 export const injectDraftAuthFixture = (html: string): string => injectLocalAuthFixture(html, "ContentDraftTool");
+export const injectKnowledgeBaseAuthFixture = (html: string): string => injectLocalAuthFixture(html, "GeoKnowledgeBase");
 
 export interface GeoChainGuard {
   readonly requests: { id: string; body: unknown }[];
@@ -151,6 +154,12 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
       await route.abort("blockedbyclient"); return;
     }
     if (!url.pathname.startsWith("/api/")) {
+      if (/\/(?:en\/|zh\/)?tools\/geo-knowledge-base$/.test(url.pathname) && request.resourceType() === "document") {
+        const response = await route.fetch();
+        const html = injectKnowledgeBaseAuthFixture(await response.text());
+        guard.ssrAuthFixtures.push(url.pathname);
+        await route.fulfill({ response, body: html }); return;
+      }
       if (/\/(?:en\/|zh\/)?tools\/ai-visibility-check$/.test(url.pathname) && request.resourceType() === "document") {
         const response = await route.fetch();
         const html = injectVisibilityAuthFixture(await response.text());
@@ -178,6 +187,8 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
       await respond(route, await handleWebsiteGeoLoad(incoming, fixture.website.websiteId, { authenticate: fixture.auth,
         readWebsite: async (userId, websiteId) => userId === GEO_CHAIN_USER && websiteId === fixture.website.websiteId ? { kind: "ok", value: fixture.website } : { kind: "missing" }, loadKnowledgeBase: fixture.kbDependencies.loadKnowledgeBase })); return;
     }
+    if (id === "POST /api/tools/geo-knowledge-base/load") { await respond(route, await handleGeoKbLoad(incoming, fixture.kbDependencies)); return; }
+    if (id === "POST /api/tools/geo-knowledge-base/draft") { await respond(route, await handleGeoKbSaveDraft(incoming, fixture.kbDependencies)); return; }
     if (id === "POST /api/tools/geo-knowledge-base/freeze") { await respond(route, await handleGeoKbFreeze(incoming, fixture.kbDependencies)); return; }
     if (id === "POST /api/tools/ai-visibility-check/load") { await respond(route, await handleVisibilityLoad(incoming, visibility)); return; }
     if (id === "POST /api/tools/ai-visibility-check/run") { lastStart = body as typeof lastStart; await respond(route, await handleVisibilityStart(incoming, visibility)); return; }

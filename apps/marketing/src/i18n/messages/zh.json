@@ -5538,6 +5538,37 @@
         "officialNameHelp": "此名称仅覆盖 GEO 品牌别名匹配，不是另一份产品名称。",
         "websiteNotFound": "你的账户中没有可用的该网站。",
         "unsupportedLanguage": "暂不支持以 {language} 生成问题。请在这里选择英文提问语言，保存后再冻结。"
+      },
+      "repair": {
+        "title": "补充当前网站的 Brief 资料",
+        "intro": "正在编辑 {host} 已有的资料。修改先保留为草稿，保存并创建新版本后才用于下一份 Brief。",
+        "loading": "正在读取这个网站已有的资料…",
+        "reason": {
+          "question": "先修正下方品类词和提问语言。首个品类词会成为问题的主题，系统不会自动翻译或改写你的资料。",
+          "facts": "这份 Brief 缺少可用事实。请核对已有产品档案，并添加能够指出来源的事实。",
+          "profile": "请核对这个网站的产品档案和事实来源，再创建用于 Brief 的新版本。"
+        },
+        "steps": {
+          "category": "1. 修正品类词与提问语言",
+          "facts": "2. 核对档案与事实来源",
+          "freeze": "3. 保存草稿，再创建新版本"
+        },
+        "profileHelp": "下方产品档案为只读。将功能加入事实表后，仍需核对表述和来源；不会自动翻译、核实或保存。",
+        "question": "原来选择的问题：{question}",
+        "questionChanged": "如果原问题不再出现在新版本中，请先选择要生成 Brief 的问题。",
+        "questionRemoved": "原问题已不在这个新版本中。请在下方选择要继续生成 Brief 的问题。",
+        "chooseQuestion": "下一份 Brief 要回答的问题",
+        "chooseQuestionPlaceholder": "请选择这个版本中的一道问题",
+        "profileNewTab": "产品档案将在新标签页打开，当前修复草稿会保留在这里。",
+        "loadError": "暂时无法读取这个网站已有的资料，没有建立新的知识库。请重试读取，或返回 Brief。",
+        "retry": "重新读取这个网站的资料",
+        "invalid": "修复位置已丢失、过期或不可读取。请返回 Brief，重新打开对应网站的修复入口。",
+        "backToBrief": "返回 Brief",
+        "beforeFreeze": "修改后请先保存草稿，再创建新版本，然后返回 Brief。",
+        "return": "使用这个版本返回生成 Brief",
+        "returnHelp": "将读取这个精确版本，不会自动复用旧版的 AI 回答，也不会自动开始生成。",
+        "returnBlocked": "请先保存最新修改并创建新版本，再返回 Brief。",
+        "storageError": "无法保存返回位置，资料仍保留在当前页面。请允许浏览器会话存储后重试。"
       }
     },
     "geoBrief": {
@@ -5546,28 +5577,28 @@
         "result": "结果",
         "viewLabel": "Brief 视图",
         "output": "输出 ContentBrief v1.1",
-        "noticeTitle": "从缺口卡带入 · C 类不进内容链",
-        "noticeBody": "A / D 类缺口会带入目标提问、角色和证据指针。B 类先做页面可引用性检查，C 类转为第三方佐证。也可选择冻结提问或手动输入；没有所属运行时，Brief 会标明「无运行观测证据」。",
+        "noticeTitle": "从一个问题开始规划内容",
+        "noticeBody": "选择要回答的问题和资料版本，生成开头要求、必答问题与写作大纲。从 AI 可见性体检进入时会带入关联回答；直接进入时，结果不会包含回答覆盖数。",
         "question": "目标提问",
-        "gap": "缺口类型",
+        "gap": "本次写作任务",
         "role": "面向角色",
-        "knowledge": "知识库 / 提问集",
-        "noGap": "未带入缺口 · 无运行观测证据",
+        "knowledge": "用于生成的资料版本",
+        "noGap": "自行选题 · 未关联可见性检查",
         "noRole": "未绑定角色",
         "roleHint": "来自所选冻结提问绑定的角色，不使用当前可变草稿。",
-        "gapHint": "缺口来自服务端核验的所属运行；D 类预选对比页，A 类按意图推断。",
+        "gapHint": "如果检查发现缺少对比内容，会建议对比页；其他问题按提问意图确定内容形式。",
         "knowledgeHint": "评分要求与事实来自这个精确冻结版本。",
         "noMetadata": "此版本尚未提供完整显示信息",
         "questionHint": "冻结提问 · {layer} · {id}",
-        "gapA": "A 缺内容",
-        "gapD": "D 缺对比内容",
+        "gapA": "补充回答这道问题的内容",
+        "gapD": "补充回答这道问题的对比内容",
         "frozen": "kb@v{revision} 已冻结",
         "questions": "{count} 条提问",
-        "createKnowledge": "打开 GEO 知识库",
+        "createKnowledge": "准备第一份资料版本",
         "submit": "生成 GEO Brief",
         "questionLayerGap": "提问 / 层 / 缺口",
-        "evidencePointer": "证据指针",
-        "versionAnchor": "版本锚",
+        "evidencePointer": "关联回答证据",
+        "versionAnchor": "资料版本",
         "versionAnchorNote": "精确版本凭证随 JSON 一并导出。",
         "exactReferences": "展开精确引用与哈希",
         "noSamples": "没有回答样本",
@@ -5706,7 +5737,8 @@
         "run_evidence_unavailable": "所属运行证据不可用或不完整。",
         "handoff_invalid": "交接已过期或不再匹配。",
         "unknown": "没跑成，而且原因不是这一页认识的那几种。",
-        "question_needs_review": "这道提问需要先核对语言或必提词范围。请更新知识库并冻结新版本；本次未扣生成额度。"
+        "question_needs_review": "这道提问需要先核对语言或必提词范围。请更新知识库并冻结新版本；本次未扣生成额度。",
+        "knowledge_return_invalid": "返回位置已失效或不完整。请从资料页重新点击返回 Brief，或手动读取并选择资料版本。"
       },
       "faq": {
         "title": "关于它的几个问题",
@@ -5774,7 +5806,7 @@
         "noSamples": "未关联成功的可见性回答，必答要求不代表已观测覆盖。",
         "noObservedTopics": "虽然关联了成功回答，但这批回答没有产出可复用的观测主题。",
         "noProfile": "此冻结版本未关联网站档案快照，不会以当前档案内容替换旧版本。",
-        "repairKnowledge": "检查知识库并创建新版本",
+        "repairKnowledge": "补充这份 Brief 使用的资料",
         "runVisibility": "打开 AI 可见性体检",
         "structureDraft": "仅继续生成结构草稿",
         "limitedDraft": "使用现有资料继续生成",
@@ -5842,7 +5874,7 @@
           "evaluation": "选型评估",
           "branded": "品牌认知"
         },
-        "gapB": "B · 页面可引用性问题",
+        "gapB": "改善已有页面，让 AI 更容易引用",
         "noGap": "未关联可见性缺口",
         "layerGap": "提问阶段与缺口",
         "profileFields": {
@@ -5863,7 +5895,18 @@
         "generateStructure": "生成结构草稿",
         "generalQuestionRole": "通用提问，不限定单一角色",
         "manualQuestionRole": "按手动提问确定，不绑定冻结角色",
-        "readingEvidence": "正在读取此版本的事实与来源…"
+        "readingEvidence": "正在读取此版本的事实与来源…",
+        "repairFacts": "补充当前网站的事实与来源",
+        "repairQuestion": "修正当前网站的提问资料",
+        "editQuestion": "在这里修改提问",
+        "repairStorageError": "无法保存本次修复位置。当前页面已保留，请允许浏览器会话存储后重试。",
+        "returnReady": "已载入更新后的第 {revision} 版资料。请确认提问后生成 Brief；旧版回答证据不会自动带入。",
+        "returnRetry": "重新读取刚保存的版本",
+        "questionIssues": {
+          "category_language_mismatch": "当前资料的首个品类词不是英文，会被直接拼入英文问题。请将首个品类词改成明确的英文类别。",
+          "question_language_mismatch": "这道问题混用了不匹配的语言。请检查品类词和角色描述；品牌名可保留原文。",
+          "unrelated_required_entities": "这道问题带入了未在问题中出现的背景词。保存资料并创建新版本后，系统会重新生成相关词。"
+        }
       }
     },
     "aiVisibility": {
@@ -6070,7 +6113,7 @@
       },
       "gaps": {
         "title": "基于证据的缺口",
-        "intro": "这些是观察到的缺口，不是因果解释。A 仅针对本次审计索引；多个条件同时满足时，按 B → A → D → C 排序。",
+        "intro": "以下建议来自本次实际读取的页面与回答，不代表因果结论。未找到内容仅指本次已检查的页面范围；同一道问题有多个缺口时，优先显示更直接的处理步骤。",
         "noEvidence": "站点证据不可用，暂不推断缺口动作。",
         "indexStatus": "审计索引：{status} · 在发现的 {discovered} 页中保留了 {count} 页读取记录",
         "indexValues": { "complete": "声明范围内完整", "partial": "部分", "unavailable": "不可用" },
@@ -6081,7 +6124,12 @@
         "handoffFailed": "未能保存交接，请在当前标签页重试。",
         "notStored": "本次运行未能保存，已禁用需要可信服务端记录的跨工具交接。",
         "actions": { "brief": "生成 GEO Brief", "citability": "检查此页面", "thirdParty": "下载第三方待办" },
-        "kind": { "A": "A · 内容覆盖", "B": "B · 页面可引用性", "C": "C · 第三方在位", "D": "D · 对比内容覆盖", "unattributed": "未归因" },
+        "kind": {
+          "A": "缺少回答这道问题的内容",
+          "B": "已有页面难以被 AI 引用",
+          "C": "缺少第三方提及与佐证",
+          "D": "缺少对比内容"
+        },
         "presence": { "present": "页面中已观察到本站或品牌", "absent": "完整读取中未找到本站或品牌", "unknown": "在位情况不可用" },
         "pageType": { "listicle": "榜单页", "comparison": "对比页", "product": "产品页", "article": "文章", "documentation": "文档", "other": "其他已读页面", "unavailable": "页面类型不可用" },
         "reasons": {

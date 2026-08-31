@@ -9,13 +9,14 @@ import type { GeoInheritedProfile } from "../../lib/geo-tools/asset-context.ts";
 import type { GeoKbFact } from "../../lib/geo-tools/kb-contract.ts";
 import { pendingGeoFeatureFact } from "./geo-kb-feature-candidates.ts";
 
-export function GeoKbInheritedProfile({ profile, websiteId, locale, profileState, facts = [], onAddFeature }: {
+export function GeoKbInheritedProfile({ profile, websiteId, locale, profileState, facts = [], onAddFeature, repairMode = false }: {
   readonly profile: GeoInheritedProfile | null;
   readonly websiteId?: string;
   readonly locale: string;
   readonly profileState?: string;
   readonly facts?: readonly GeoKbFact[];
   readonly onAddFeature?: (feature: string) => void;
+  readonly repairMode?: boolean;
 }) {
   const t = useTranslations("tools.geoKnowledgeBase");
   const owner = profile?.reference.websiteId ?? websiteId;
@@ -49,10 +50,11 @@ export function GeoKbInheritedProfile({ profile, websiteId, locale, profileState
         <a className="mt-4 inline-block text-sm text-brand-accent-text" href={`/${locale}/account/websites`}>{t("asset.backToWebsites")}</a>
       ) : (
         <div className="mt-4 flex flex-wrap gap-4 text-sm text-brand-accent-text">
-          <a href={`/${locale}/account/websites/${owner}`}>{t("asset.editProfile")}</a>
-          <a href={`/${locale}/account/websites/${owner}/geo`}>{t("asset.canonicalLink")}</a>
+          <a href={`/${locale}/account/websites/${owner}`} target={repairMode ? "_blank" : undefined} rel={repairMode ? "noopener" : undefined}>{t("asset.editProfile")}</a>
+          <a href={`/${locale}/account/websites/${owner}/geo`} target={repairMode ? "_blank" : undefined} rel={repairMode ? "noopener" : undefined}>{t("asset.canonicalLink")}</a>
         </div>
       )}
+      {repairMode && owner !== undefined ? <p className="mt-3 text-xs text-text-dark-secondary">{t("repair.profileNewTab")}</p> : null}
     </section>
   );
 }

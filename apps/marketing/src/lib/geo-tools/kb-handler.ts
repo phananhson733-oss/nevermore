@@ -97,6 +97,11 @@ export interface GeoKbHandlerDependencies {
     readonly userId: string;
     readonly url: string;
   }) => Promise<GeoKbStoreOutcome<GeoKbView>>;
+  /** Read an owned knowledge base without registering or creating a site. */
+  readonly loadExistingKnowledgeBase?: (input: {
+    readonly userId: string;
+    readonly kbId: string;
+  }) => Promise<GeoKbStoreOutcome<GeoKbView>>;
   readonly saveDraft: (input: {
     readonly userId: string;
     readonly kbId: string;
@@ -170,7 +175,7 @@ function baseVersionOf(value: unknown): number | null {
     : null;
 }
 
-/** Load, creating the knowledge base for this site if the account has none. */
+/** Load an existing ID, or register the URL's site when the account has none. */
 export async function handleGeoKbLoad(
   request: Request,
   dependencies: GeoKbHandlerDependencies,
@@ -179,6 +184,18 @@ export async function handleGeoKbLoad(
   if (!auth.ok) return auth.response;
   const body = await readAccountMutationJson(request, LOAD_BODY_LIMIT_BYTES);
   if (!body.ok) return body.response;
+  if (exactKeys(body.value, ["kbId"])) {
+    const kbId = (body.value as { kbId: unknown }).kbId;
+    if (typeof kbId !== "string" || kbId.trim().length === 0) {
+      return privateError("invalid_request", 400);
+    }
+    if (!dependencies.loadExistingKnowledgeBase) {
+      return privateError("store_unavailable", 503);
+    }
+    const outcome = await dependencies.loadExistingKnowledgeBase({ userId: auth.userId, kbId });
+    if (outcome.kind !== "ok") return storeError(outcome);
+    return privateJson({ data: outcome.value });
+  }
   if (!exactKeys(body.value, ["url"])) {
     return privateError("invalid_request", 400);
   }

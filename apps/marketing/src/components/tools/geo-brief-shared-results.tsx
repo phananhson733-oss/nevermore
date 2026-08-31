@@ -10,6 +10,7 @@ import { geoBriefQuality, geoBriefQuestionSource } from "../../lib/geo-tools/bri
 import { writeContentBriefHandoff } from "../../lib/tools/content-brief-handoff.ts";
 import { TOOL_HANDOFF_LINK_PROPS } from "../../lib/tools/tool-handoff.ts";
 import { localePath } from "../../lib/locale-path.ts";
+import { GeoKnowledgeRepairLink } from "./geo-knowledge-repair-link.tsx";
 import styles from "./geo-brief-results.module.css";
 
 function FieldRow({ label, children }: { label: string; children: ReactNode }) {
@@ -43,7 +44,8 @@ export function SharedGeoBriefResults({ brief, roleLabel, questionNeedsRevision 
   const factLabel = (label: string) => /^(productName|oneLinePositioning|coreFeatures\[\d+\])$/.test(label) ? t(`quality.profileFields.${label.startsWith("coreFeatures[") ? "coreFeatures" : label}`) : label;
   const origin = brief.geo_origin;
   const failedSamples = brief.evidence.samples.filter(sample => sample.status === "failed").length;
-  const knowledgeHref = localePath(locale, "/tools/geo-knowledge-base");
+  const repairSelection = { kbId: origin.kb_ref.kb_id, snapshotId: origin.kb_ref.snapshot_id, questionId: origin.question.id,
+    manualQuestion: origin.question.id === null ? origin.question.text : null };
   const visibilityHref = localePath(locale, "/tools/ai-visibility-check");
   const needsKnowledge = quality.usableFacts === 0 || quality.missingFacts > 0 || questionNeedsRevision;
   const layer = origin.layer && ["problem", "discovery", "comparison", "evaluation"].includes(origin.layer) ? t(`quality.layers.${origin.layer}`) : null;
@@ -62,9 +64,9 @@ export function SharedGeoBriefResults({ brief, roleLabel, questionNeedsRevision 
         {quality.missingFacts > 0 ? <li>{t("quality.missingFacts", { count: quality.missingFacts })}</li> : null}
         {quality.answeredSamples === 0 ? <li>{t("quality.noSamples")} <a data-geo-run-visibility href={visibilityHref}>{t("quality.runVisibility")}</a></li> : null}
         {quality.answeredSamples > 0 && quality.observedQuestions === 0 ? <li>{t("quality.noObservedTopics")}</li> : null}
-        {!quality.hasProfile ? <li>{t("quality.noProfile")} <a href={knowledgeHref}>{t("quality.repairKnowledge")}</a></li> : null}
+        {!quality.hasProfile ? <li>{t("quality.noProfile")} <GeoKnowledgeRepairLink selection={repairSelection} reason="profile">{t("quality.repairKnowledge")}</GeoKnowledgeRepairLink></li> : null}
       </ul>
-      {needsKnowledge ? <a data-geo-repair-knowledge className={styles.repairAction} href={knowledgeHref}>{t("quality.repairKnowledge")}</a> : null}
+      {needsKnowledge ? <GeoKnowledgeRepairLink selection={repairSelection} reason={questionNeedsRevision ? "question" : "facts"} className={styles.repairAction}>{t("quality.repairKnowledge")}</GeoKnowledgeRepairLink> : null}
     </aside>
 
     <section data-brief-section="geo_origin">
@@ -131,7 +133,7 @@ export function SharedGeoBriefResults({ brief, roleLabel, questionNeedsRevision 
             </td>
           </tr>)}</tbody>
         </table>
-      </div> : <p className={styles.empty}>{t("artifact.emptyFacts")} <a href={knowledgeHref}>{t("quality.repairKnowledge")}</a></p>}
+      </div> : <p className={styles.empty}>{t("artifact.emptyFacts")} <GeoKnowledgeRepairLink selection={repairSelection} reason="facts">{t("quality.repairKnowledge")}</GeoKnowledgeRepairLink></p>}
     </section>
 
     <section data-brief-section="outline">
@@ -162,7 +164,7 @@ export function SharedGeoBriefResults({ brief, roleLabel, questionNeedsRevision 
     <div className={styles.delivery}>
       {quality.status === "structure_only" ? <p className={styles.note}>{t("quality.structureDraftNote")}</p> : null}
       <div className={styles.actions}>
-        {needsKnowledge ? <a className={styles.primaryAction} href={knowledgeHref}>{t("quality.repairKnowledge")}</a> : null}
+        {needsKnowledge ? <GeoKnowledgeRepairLink selection={repairSelection} reason={questionNeedsRevision ? "question" : "facts"} className={styles.primaryAction}>{t("quality.repairKnowledge")}</GeoKnowledgeRepairLink> : null}
         {quality.canDraft ? <a data-geo-to-draft href={localePath(locale, "/tools/content-draft")} {...TOOL_HANDOFF_LINK_PROPS} onClick={stage} onContextMenu={stage} className={needsKnowledge ? undefined : styles.primaryAction}>{t(quality.status === "structure_only" ? "quality.structureDraft" : quality.status === "limited" ? "quality.limitedDraft" : "shared.generateDraft")}</a> : null}
         <button data-copy-geo-brief type="button" onClick={() => void copyBrief()}>{copy?.fingerprint === brief.run.fingerprint && copy.ok ? t("actions.copied") : t("actions.copy")}</button>
         <button type="button" onClick={() => download(brief, "md", questionNeedsRevision)}>{t("actions.downloadMarkdown")}</button><button type="button" onClick={() => download(brief, "json", questionNeedsRevision)}>{t("actions.downloadJson")}</button>

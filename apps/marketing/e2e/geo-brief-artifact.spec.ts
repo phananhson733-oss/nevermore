@@ -173,7 +173,7 @@ for (const [locale, viewport, kind] of [["en", "desktop", "A"], ["zh", "desktop"
       await expect(page.locator("[data-geo-question-preview]")).toBeVisible();
       await expect(page.locator("[data-geo-question-preview]")).toHaveText(fixture.question.text);
     }
-    await expect(page.locator("[data-geo-gap]")).toContainText(kind);
+    await expect(page.locator("[data-geo-gap]")).toHaveText(messages.geoBrief.artifact[kind === "A" ? "gapA" : "gapD"]);
     expect(apiCount(guard, "geo-brief/run")).toBe(0);
     expect(fixture.assemblyCalls).toBe(0);
     const providerCalls = fixture.providerCalls;

@@ -46,7 +46,7 @@ it("keeps flawed old questions readable but blocks paid generation with a repair
   const fetch = mockRead({ issues: ["category_language_mismatch"] }); await load();
   expect(host.querySelector<HTMLButtonElement>("[data-run-geo-brief]")?.disabled).toBe(true);
   expect(host.textContent).toContain("quality.needsRevisionInput");
-  expect(host.querySelector('a[href="/tools/geo-knowledge-base"]')).not.toBeNull();
+  expect(host.querySelector('a[href="/tools/geo-knowledge-base?repair=brief"]')).not.toBeNull();
   await act(async () => host.querySelector<HTMLElement>("[data-run-geo-brief]")?.click());
   expect(fetch).toHaveBeenCalledTimes(2);
 });

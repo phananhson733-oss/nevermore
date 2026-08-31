@@ -124,7 +124,7 @@ for (const locale of ["en", "zh"] as const) {
     await expect(result.locator('[data-brief-section="fact_table"] table')).toHaveCount(0);
     await expect(result.locator('[data-brief-section="fact_table"]')).toContainText(copy.artifact.emptyFacts);
     await expect(result.locator("[data-geo-to-draft]")).toHaveText(copy.quality.structureDraft);
-    await expect(result.locator("[data-geo-repair-knowledge]")).toBeVisible();
+    await expect(result.locator('[data-geo-knowledge-repair="facts"]').first()).toBeVisible();
     const opening = result.locator('[data-brief-section="lead_answer"] dd').first().locator("p").first();
     await expect(opening).toHaveCSS("font-size", "14px");
     await expect(opening).toHaveCSS("border-top-width", "0px");
