@@ -75,6 +75,7 @@ const SNAPSHOT_ID = "a53f4ddb-7cd6-42da-af53-88cc68b41987";
 const NOW = "2026-08-28T00:00:00.000Z";
 
 const EDITOR = {
+  geoExtension: "GEO extension",
   loading: "Loading profile…",
   signedOut: "Sign in to edit this profile.",
   unavailable: "Profile unavailable.",
@@ -511,6 +512,13 @@ describe("WebsiteProfileEditor", () => {
     }
     throw new Error("editor still loading");
   }
+
+  it("links the owned website to its canonical GEO extension", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ data: { website: await details(profile()) } }));
+    await mount();
+    const link = host.querySelector(`a[href='/en/account/websites/${WEBSITE_ID}/geo']`);
+    expect(link?.textContent).toBe(EDITOR.geoExtension);
+  });
 
   async function settle(): Promise<void> {
     await act(async () => {
@@ -2438,6 +2446,7 @@ describe("WebsiteProfileEditor", () => {
     await waitForConfirmation();
 
     const summary = host.querySelector('[data-website-profile-collapsed="true"]');
+    expect(summary?.querySelector(`a[href='/en/account/websites/${WEBSITE_ID}/geo']`)?.textContent).toBe(EDITOR.geoExtension);
     expect(summary).not.toBeNull();
     expect(summary?.textContent).toContain("Confirmed v1");
     expect(document.activeElement).toBe(summary);
@@ -2451,6 +2460,7 @@ describe("WebsiteProfileEditor", () => {
     expect(field("Product name").value).toBe("Example");
     expect(document.activeElement).toBe(field("Product name"));
     expect(listValues("coreFeatures")).toEqual(["Feature A", "Feature B"]);
+    expect(host.querySelector(`a[href='/en/account/websites/${WEBSITE_ID}/geo']`)?.textContent).toBe(EDITOR.geoExtension);
     expect(fetchMock).toHaveBeenCalledTimes(requestCount);
   });
 

@@ -5,6 +5,7 @@ import {
   type CitabilityFetchResult,
   type CitabilityHandlerDependencies,
 } from "./citability-handler.ts";
+import { measureCitabilityRender } from "./citability-render.ts";
 
 const PAGE_HTML = `<html><head><link rel="canonical" href="https://acme-example-site.com/guide"></head><body><p>${"content ".repeat(
   120,
@@ -31,6 +32,7 @@ function deps(
     isSignedIn: async () => false,
     openGate: async () => ({ ok: true, release }),
     chargeTarget: async () => ({ ok: true }),
+    renderPage: async (input) => measureCitabilityRender(input, null, { reason: "not_configured" }),
     fetchResource: async (url): Promise<CitabilityFetchResult> => {
       if (url.endsWith("/robots.txt")) {
         return { kind: "ok", status: 200, contentType: "text/plain", body: "" };
@@ -81,11 +83,17 @@ describe("request contract", () => {
     const response = await handleCitabilityRequest(
       post({
         url: "https://acme-example-site.com/guide",
-        question: "q".repeat(201),
+        question: "q".repeat(513),
       }),
       deps(),
     );
     expect(response.status).toBe(400);
+  });
+  it("accepts the shared 512-character question bound without truncating the frozen question", async () => {
+    const question = "问".repeat(512);
+    const response = await handleCitabilityRequest(post({ url: "https://acme-example-site.com/guide", question }), deps());
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.targetQuestion).toBe(question);
   });
 
   it("refuses an unusable URL before spending any quota", async () => {
@@ -282,6 +290,23 @@ describe("robots and llms.txt outcomes", () => {
 });
 
 describe("report", () => {
+  it("renders only the trusted fetched HTML with no supplied question or browser context", async () => {
+    const renderPage = vi.fn(async (input) => measureCitabilityRender(input, input.rawHtml, { now: () => new Date("2026-08-29T10:00:00.000Z") }));
+    const response = await handleCitabilityRequest(post({ url: "https://acme-example-site.com/guide", question: "my question" }), deps({ renderPage }));
+    expect(renderPage).toHaveBeenCalledWith({ url: "https://acme-example-site.com/guide", rawHtml: PAGE_HTML, bodyComplete: true });
+    const { data } = await response.json();
+    expect(data.render.status).toBe("measured");
+    expect(data.render.rawToRenderedRatio).toBe(1);
+    expect(data.rootCauses).toBeInstanceOf(Array);
+  });
+  it("retains raw checks when rendering fails instead of manufacturing a passing ratio", async () => {
+    const response = await handleCitabilityRequest(post({ url: "https://acme-example-site.com/guide" }), deps({ renderPage: async () => { throw new Error("transport"); } }));
+    expect(response.status).toBe(200);
+    const { data } = await response.json();
+    expect(data.render.status).toBe("unavailable");
+    expect(data.render.rawToRenderedRatio).toBeNull();
+    expect(data.checks.find((check: { ruleId: string }) => check.ruleId === "ssr").state).toBe("fetchError");
+  });
   it("returns the report with no store caching and a run timestamp", async () => {
     const response = await handleCitabilityRequest(
       post({

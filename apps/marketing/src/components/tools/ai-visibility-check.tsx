@@ -20,8 +20,12 @@ import {
   type VisibilityComparison,
   type VisibilityProportion,
   type VisibilityQuestionResult,
-  type VisibilityReport,
 } from "../../lib/geo-tools/visibility-contract.ts";
+import { GEO_VISIBILITY_V2, VISIBILITY_ENGINES, isVisibilityReportV2, type AnyVisibilityReport as VisibilityReport, type AnyVisibilityComparison, type VisibilityEngine } from "../../lib/geo-tools/visibility-v2-contract.ts";
+import { parseVisibilityReportV2 } from "../../lib/geo-tools/visibility-export.ts";
+import { decodeVisibilityWire, VISIBILITY_WIRE_SCHEMA } from "../../lib/geo-tools/visibility-wire.ts";
+import { VisibilityPortableRuns, VisibilityV2Measurements } from "./ai-visibility-check-v2.tsx";
+import { VisibilityGapEvidence } from "./ai-visibility-gaps.tsx";
 import {
   describeProportion,
   minTrialsForZeroClaim,
@@ -123,6 +127,8 @@ interface FrozenVersion {
   readonly frozenAt: string;
   readonly questionCount: number;
   readonly retrievalCount: number;
+  readonly language: string | null;
+  readonly marketCode: string | null;
 }
 
 /** What the load endpoint reports beside the choices themselves. */
@@ -213,6 +219,8 @@ function asFrozenVersion(value: unknown): FrozenVersion | null {
     revision,
     questionCount,
     retrievalCount,
+    language: typeof record["language"] === "string" ? record["language"] : null,
+    marketCode: typeof record["marketCode"] === "string" ? record["marketCode"] : null,
   };
 }
 
@@ -245,9 +253,11 @@ function asLoadedChoices(body: unknown): LoadedChoices | null {
 function asReport(value: unknown): VisibilityReport | null {
   const record = asRecord(value);
   if (record === null) return null;
+  if (record["wireSchema"] === VISIBILITY_WIRE_SCHEMA) return decodeVisibilityWire(value);
   const manifest = asRecord(record["manifest"]);
   const metrics = asRecord(record["metrics"]);
   if (manifest === null || metrics === null) return null;
+  if (manifest["schemaVersion"] === GEO_VISIBILITY_V2) return parseVisibilityReportV2(value);
   if (manifest["schemaVersion"] !== GEO_VISIBILITY_SCHEMA_VERSION) return null;
   if (!Array.isArray(metrics["byLayer"])) return null;
   if (!Array.isArray(record["questions"])) return null;
@@ -479,10 +489,13 @@ function LayerTable({ report }: { readonly report: VisibilityReport }) {
               <th className={TH} scope="col">
                 {t("layers.column.citation")}
               </th>
+              {isVisibilityReportV2(report) && <><th className={TH} scope="col">{t("layers.column.samples")}</th><th className={TH} scope="col">{t("layers.column.meanPosition")}</th></>}
             </tr>
           </thead>
           <tbody>
-            {report.metrics.byLayer.map((row) => (
+            {report.metrics.byLayer.map((row) => {
+              const detailed = isVisibilityReportV2(report) ? report.metrics.byLayer.find((entry) => entry.layer === row.layer) : undefined;
+              return (
               <tr
                 className="border-b border-brand-border-card last:border-0"
                 key={row.layer}
@@ -496,8 +509,9 @@ function LayerTable({ report }: { readonly report: VisibilityReport }) {
                 <td className={TD}>
                   <ProportionValue proportion={row.citation} />
                 </td>
+                {detailed !== undefined && <><td className={TD}>{detailed.answeredSamples}/{detailed.plannedSamples}</td><td className={TD}>{detailed.meanPosition.value === null ? t("v2.unknown") : `${detailed.meanPosition.value.toFixed(2)} (n=${detailed.meanPosition.observations})`}</td></>}
               </tr>
-            ))}
+            ); })}
           </tbody>
         </table>
       </div>
@@ -641,10 +655,10 @@ function QuestionRow({
           {question.samples.map((sample) => (
             <li
               className="rounded-lg border border-brand-border-card p-3"
-              key={`${sample.questionId}-${String(sample.sampleIndex)}`}
+              key={`${"engine" in sample ? String(sample.engine) : "chatgpt"}-${sample.questionId}-${String(sample.sampleIndex)}`}
             >
               <p className={NOTE}>
-                {t("questions.sampleLabel", { index: sample.sampleIndex + 1 })}{" "}
+                {"engine" in sample ? `${String(sample.engine)} · ` : ""}{t("questions.sampleLabel", { index: sample.sampleIndex })}{" "}
                 · {t(`questions.sampleStatus.${sample.status}`)} ·{" "}
                 {sample.webSearchPerformed === null
                   ? t("questions.sampleSearchUnknown")
@@ -774,7 +788,7 @@ function ComparisonBlock({
   comparison,
   locale,
 }: {
-  readonly comparison: VisibilityComparison;
+  readonly comparison: AnyVisibilityComparison;
   readonly locale: string;
 }) {
   const t = useTranslations("tools.aiVisibility");
@@ -825,9 +839,15 @@ function ComparisonBlock({
                 </td>
               </tr>
             ))}
+            {"shareOfVoice" in comparison && (() => {
+              const sov = comparison.shareOfVoice.comparison;
+              const percentage = (point: number | null) => point === null ? t("v2.unknown") : point === 0 ? t("v2.sovZeroObserved") : `${(point * 100).toFixed(1)}%`;
+              return <tr className="border-b border-brand-border-card last:border-0"><th className={`${TD} font-normal`} scope="row">{t("comparison.metrics.shareOfVoice")}</th><td className={TD}>{percentage(sov.beforePoint)}</td><td className={TD}>{percentage(sov.afterPoint)}</td><td className={TD}>{sov.lo === null || sov.hi === null || sov.point === null ? t("comparison.sovUnavailable", { pairs: sov.pairs, reason: t(`v2.sovReasons.${sov.intervalReason ?? "no_brand_present_answers"}`) }) : t("comparison.sovChange", { change: (sov.point * 100).toFixed(1), lo: (sov.lo * 100).toFixed(1), hi: (sov.hi * 100).toFixed(1), pairs: sov.pairs })}</td></tr>;
+            })()}
           </tbody>
         </table>
       </div>
+      {"shareOfVoice" in comparison && <p className={`mt-3 ${NOTE}`}>{t("comparison.sovScope")}</p>}
 
       <h4 className="mt-6 text-[15px] text-text-dark-primary">
         {t("comparison.questionsTitle")}
@@ -906,13 +926,13 @@ function Report({
           </p>
           {/* The model and the API it was reached through are two facts. The
               line labelled "model" used to carry the endpoint's name. */}
-          <p>
-            {t("results.model", {
-              model: manifest.model,
-              market: manifest.marketCode,
-            })}
-          </p>
-          <p>{t("results.surface", { surface: manifest.surface })}</p>
+          {isVisibilityReportV2(report) ? <>
+            <p>{t("results.engines", { engines: report.manifest.engines.map((entry) => entry.engine === "chatgpt" ? "ChatGPT" : "Perplexity").join(", ") })}</p>
+            <p>{t("form.context", { market: report.manifest.marketCode, language: report.manifest.language })}</p>
+          </> : <>
+            <p>{t("results.model", { model: report.manifest.model, market: report.manifest.marketCode })}</p>
+            <p>{t("results.surface", { surface: report.manifest.surface })}</p>
+          </>}
           <p>
             {t("results.finished", {
               time: formatMoment(manifest.finishedAt, locale),
@@ -950,6 +970,8 @@ function Report({
         </>
       )}
       <DomainTable domains={report.citedDomains} />
+      {isVisibilityReportV2(report) && <VisibilityV2Measurements report={report} />}
+      {isVisibilityReportV2(report) && <VisibilityGapEvidence report={report} locale={locale} />}
       <QuestionList questions={report.questions} />
       {report.comparison === null ||
       manifest.status === "insufficient" ? null : (
@@ -986,6 +1008,8 @@ export function AiVisibilityCheck({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState("");
   const [samples, setSamples] = useState<number>(VISIBILITY_SAMPLES_DEFAULT);
+  const [engines, setEngines] = useState<readonly VisibilityEngine[]>(["chatgpt"]);
+  const [fileComparison, setFileComparison] = useState<VisibilityComparison | null>(null);
   const [run, setRun] = useState<RunState>({ kind: "idle" });
   const [elapsedMs, setElapsedMs] = useState(0);
   const [cooldown, setCooldown] = useState(0);
@@ -1081,13 +1105,13 @@ export function AiVisibilityCheck({
   );
 
   const estimate = useMemo(() => {
-    const calls = visibilityCallCount(version?.questionCount ?? 0, samples);
+    const calls = visibilityCallCount(version?.questionCount ?? 0, samples) * engines.length;
     return {
       calls,
       cost: visibilityCostEstimateUsd(calls),
       minutes: visibilityMinutesEstimate(calls),
     };
-  }, [samples, version]);
+  }, [engines, samples, version]);
 
   const poll = useCallback(
     async (
@@ -1173,7 +1197,7 @@ export function AiVisibilityCheck({
   );
 
   const start = useCallback(async () => {
-    if (version === null) return;
+    if (version === null || engines.length === 0) return;
     abort.current?.abort();
     const controller = new AbortController();
     abort.current = controller;
@@ -1189,6 +1213,7 @@ export function AiVisibilityCheck({
           kbId: version.kbId,
           snapshotId: version.snapshotId,
           samplesPerQuestion: samples,
+          engines,
         }),
         signal: controller.signal,
       });
@@ -1216,7 +1241,7 @@ export function AiVisibilityCheck({
       if (controller.signal.aborted) return;
       setRun({ kind: "error", code: "network" });
     }
-  }, [poll, samples, version]);
+  }, [engines, poll, samples, version]);
 
   /**
    * Pick a paid run back up after a reload.
@@ -1275,6 +1300,7 @@ export function AiVisibilityCheck({
 
   if (versions.length === 0) {
     return (
+      <div className="mt-10 grid gap-8">
       <section className={`mt-10 ${PANEL}`}>
         <h2 className={HEADING}>{t("noFrozen.title")}</h2>
         <p className={`mt-3 max-w-[640px] ${BODY}`}>{t("noFrozen.body")}</p>
@@ -1285,6 +1311,9 @@ export function AiVisibilityCheck({
           {t("noFrozen.action")}
         </a>
       </section>
+      <VisibilityPortableRuns onComparison={setFileComparison} />
+      {fileComparison !== null && <ComparisonBlock comparison={fileComparison} locale={locale} />}
+      </div>
     );
   }
 
@@ -1330,6 +1359,7 @@ export function AiVisibilityCheck({
                 })}
               </p>
             )}
+            {version?.language != null && version.marketCode !== null && <p className={`mt-1.5 ${NOTE}`}>{t("form.context", { market: version.marketCode, language: version.language })}</p>}
           </div>
 
           <div>
@@ -1358,6 +1388,14 @@ export function AiVisibilityCheck({
           </div>
         </div>
 
+        <fieldset className="mt-5" disabled={busy}>
+          <legend className="text-sm text-text-dark-primary">{t("form.enginesLabel")}</legend>
+          <div className="mt-2 flex flex-wrap gap-5">{VISIBILITY_ENGINES.map((engine) => <label className="flex items-center gap-2 text-sm text-text-dark-primary" key={engine}>
+            <input type="checkbox" value={engine} checked={engines.includes(engine)} onChange={(event) => setEngines(VISIBILITY_ENGINES.filter((item) => item === engine ? event.target.checked : engines.includes(item)))} />{engine === "chatgpt" ? "ChatGPT" : "Perplexity"}
+          </label>)}</div>
+          <p className={`mt-2 ${NOTE}`}>{t("form.enginesHelp")}</p>
+        </fieldset>
+
         <p className="mt-5 text-[14.5px] text-text-dark-primary">
           {t("form.estimate", {
             calls: estimate.calls,
@@ -1365,7 +1403,7 @@ export function AiVisibilityCheck({
             minutes: estimate.minutes,
           })}
         </p>
-        <p className={`mt-1.5 ${NOTE}`}>{t("form.estimateNote")}</p>
+        <p className={`mt-1.5 ${NOTE}`}>{t(engines.includes("perplexity") ? "form.multiEngineEstimateNote" : "form.estimateNote")}</p>
         {/* The server's own number, not this bundle's: a tab open across a
             limit change would otherwise print the figure it was built with. */}
         <p className={`mt-1.5 ${NOTE}`}>
@@ -1376,7 +1414,7 @@ export function AiVisibilityCheck({
           <button
             className={PRIMARY_BUTTON}
             disabled={
-              busy || version === null || cooldown > 0 || !providerConfigured
+              busy || version === null || engines.length === 0 || cooldown > 0 || !providerConfigured
             }
             onClick={() => {
               void start();
@@ -1430,6 +1468,8 @@ export function AiVisibilityCheck({
       {run.kind === "done" ? (
         <Report locale={locale} report={run.report} />
       ) : null}
+      <VisibilityPortableRuns onComparison={setFileComparison} />
+      {fileComparison !== null && <ComparisonBlock comparison={fileComparison} locale={locale} />}
     </div>
   );
 }

@@ -271,7 +271,7 @@ const publicEvidenceUrl = z
   .string()
   .refine(isPublicEvidenceUrl, "evidence URL must be public http(s)");
 
-const fieldProvenanceSchema: z.ZodType<WebsiteProfileFieldProvenance> = z
+export const fieldProvenanceSchema: z.ZodType<WebsiteProfileFieldProvenance> = z
   .object({
     path: z.enum(
       WEBSITE_PROFILE_FIELD_NAMES.map(

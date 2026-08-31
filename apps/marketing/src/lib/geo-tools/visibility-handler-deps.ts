@@ -4,10 +4,7 @@
 
 import { authenticateAccountRequest } from "../account-websites/route-http.ts";
 import { consumePublicToolQuota } from "../tools/shared-rate-limit.ts";
-import {
-  listGeoKnowledgeBases,
-  readFrozenGeoKb,
-} from "./kb-store.ts";
+import { listFrozenGeoKbVersions } from "./kb-history.ts";
 import {
   VISIBILITY_DAILY_WINDOW_SECONDS,
   VISIBILITY_RUNS_PER_DAY,
@@ -36,28 +33,25 @@ export {
 async function listFrozenVersions(
   userId: string,
 ): Promise<VisibilityStoreOutcome<readonly VisibilityFrozenChoice[]>> {
-  const list = await listGeoKnowledgeBases({ userId });
+  const list = await listFrozenGeoKbVersions({ userId });
   if (list.kind !== "ok") {
-    return list.kind === "missing"
-      ? { kind: "ok", value: [] }
-      : { kind: "unavailable", reason: "store unavailable" };
+    return { kind: "unavailable", reason: "frozen_history_unavailable" };
   }
 
   const choices: VisibilityFrozenChoice[] = [];
-  for (const summary of list.value) {
-    if (summary.frozen === null) continue;
-    const frozen = await readFrozenGeoKb({ userId, kbId: summary.kbId });
-    if (frozen.kind !== "ok") continue;
+  for (const { host, snapshot } of list.value) {
     choices.push({
-      kbId: summary.kbId,
-      host: summary.host,
-      snapshotId: frozen.value.snapshotId,
-      revision: frozen.value.revision,
-      frozenAt: frozen.value.frozenAt,
-      questionCount: frozen.value.questionSet.questions.length,
-      retrievalCount: frozen.value.questionSet.questions.filter(
+      kbId: snapshot.kbId,
+      host,
+      snapshotId: snapshot.snapshotId,
+      revision: snapshot.revision,
+      frozenAt: snapshot.frozenAt,
+      questionCount: snapshot.questionSet.questions.length,
+      retrievalCount: snapshot.questionSet.questions.filter(
         (question) => question.mode === "retrieval",
       ).length,
+      language: snapshot.questionSet.language,
+      marketCode: snapshot.questionSet.country,
     });
   }
   return { kind: "ok", value: choices };

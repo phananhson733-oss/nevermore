@@ -4,7 +4,7 @@
 // @output -- an editor, a freeze control that states what still blocks it, and the questions a frozen version produces
 // @pos    -- the only client surface of /tools/geo-knowledge-base; it edits and renders, it never decides
 
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
 import {
@@ -33,6 +33,10 @@ import {
   type GeoKbQuestionPreview,
   type GeoKbView,
 } from "./geo-kb-wire.ts";
+import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
+import { GeoKbEnrichment } from "./geo-kb-enrichment.tsx";
+import { pendingGeoFeatureFact } from "./geo-kb-feature-candidates.ts";
+import { isSupportedGeoQuestionLanguage } from "../../lib/geo-tools/asset-context.ts";
 
 const ENDPOINTS = {
   load: "/api/tools/geo-knowledge-base/load",
@@ -50,6 +54,7 @@ const FACT_REASONS = [
 
 /** Two of the markets the sampling provider is calibrated for. */
 const COUNTRIES = ["US", "GB"] as const;
+const QUESTION_LANGUAGES = ["en", "en-US", "en-GB"] as const;
 
 type Status =
   | { readonly kind: "idle" }
@@ -83,6 +88,8 @@ const ERROR_CODES: ReadonlySet<string> = new Set([
   "invalid_payload",
   "conflict",
   "conflict_unknown",
+  "context_stale",
+  "website_required",
   "hash_mismatch",
   "not_found",
   "no_draft",
@@ -243,20 +250,30 @@ function TextField({
 export function GeoKnowledgeBase({
   locale,
   signedIn,
+  initialView,
+  initialUrl,
+  canonicalWebsiteId,
+  profileState,
 }: {
   readonly locale: string;
   readonly signedIn: boolean;
+  readonly initialView?: GeoKbView;
+  readonly initialUrl?: string;
+  readonly canonicalWebsiteId?: string;
+  readonly profileState?: string;
 }) {
   const t = useTranslations("tools.geoKnowledgeBase");
-  const [siteUrl, setSiteUrl] = useState("");
-  const [view, setView] = useState<GeoKbView | null>(null);
-  const [payload, setPayload] = useState<GeoKbPayload | null>(null);
+  // Initial data is adopted only on mount, never synchronized over unsaved edits.
+  const [siteUrl, setSiteUrl] = useState(initialUrl ?? "");
+  const [view, setView] = useState<GeoKbView | null>(initialView ?? null);
+  const [payload, setPayload] = useState<GeoKbPayload | null>(initialView?.payload ?? null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [questions, setQuestions] = useState<
     readonly GeoKbQuestionPreview[] | null
-  >(null);
+  >(initialView?.frozen?.questions ?? null);
   const [showQuestions, setShowQuestions] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const editRevision = useRef(0);
   /**
    * Whether a save has been attempted since this knowledge base was loaded.
    *
@@ -289,8 +306,11 @@ export function GeoKnowledgeBase({
    * had no sentence on this side.
    */
   const blockers = useMemo(
-    () => (submission === null ? [] : geoKbBlockers(submission)),
-    [submission],
+    () => (submission === null ? [] : geoKbBlockers(submission, {
+      roleLayersSkipped: view?.context?.skippedLayers.includes("problem") === true &&
+        view.context.skippedLayers.includes("evaluation"),
+    })),
+    [submission, view?.context],
   );
 
   const post = useCallback(
@@ -403,7 +423,7 @@ export function GeoKnowledgeBase({
     // of the set is reset together because that is how it goes wrong.
     setView(next);
     setPayload(next.payload);
-    setQuestions(null);
+    setQuestions(next.frozen?.questions ?? null);
     setShowQuestions(false);
     setShowRowIssues(false);
     setDirty(false);
@@ -420,11 +440,13 @@ export function GeoKnowledgeBase({
       setStatus({ kind: "error", code: "form_invalid" });
       return;
     }
+    const savedEditRevision = editRevision.current;
     setStatus({ kind: "busy" });
     const result = await post(ENDPOINTS.draft, {
       kbId: view.kbId,
       payload: submission,
       baseVersion: view.draftVersion,
+      ...(view.profile === undefined ? {} : { expectedProfileReference: view.profile?.reference ?? null }),
     });
     if (!result.ok) {
       if (result.code === "conflict") {
@@ -449,8 +471,11 @@ export function GeoKnowledgeBase({
     const data = result.data;
     // The saved copy is what was sent, not what is in the boxes: an untouched
     // row is still on screen and is deliberately not in the draft.
-    setView({ ...view, draftVersion: data.draftVersion, payload: submission });
-    setDirty(false);
+    setView({ ...view, draftVersion: data.draftVersion, payload: submission,
+      ...(data.context === undefined ? {} : { context: data.context }),
+    });
+    // The response acknowledges only the submitted edit, not later typing.
+    setDirty(editRevision.current !== savedEditRevision);
     setStatus({ kind: "saved", at: data.updatedAt });
   }, [adoptConflictVersion, post, rowIssues, submission, view]);
 
@@ -460,6 +485,7 @@ export function GeoKnowledgeBase({
     const result = await post(ENDPOINTS.freeze, {
       kbId: view.kbId,
       baseVersion: view.draftVersion,
+      ...(view.context === undefined ? {} : { contextHash: view.context.contentHash }),
     });
     if (!result.ok) {
       if (result.code === "conflict") {
@@ -496,7 +522,12 @@ export function GeoKnowledgeBase({
         contentHash: data.contentHash,
         questionCount: data.questionCount,
         retrievalCount: data.retrievalCount,
+        ...(data.questionSetHash === undefined ? {} : { questionSetHash: data.questionSetHash }),
+        ...(data.registryVersion === undefined ? {} : { registryVersion: data.registryVersion }),
+        ...(data.skippedLayers === undefined ? {} : { skippedLayers: data.skippedLayers }),
+        questions: data.questions,
       },
+      ...(data.context === undefined ? {} : { context: data.context }),
     });
     setQuestions(data.questions);
     setStatus({
@@ -524,6 +555,7 @@ export function GeoKnowledgeBase({
   }, [post, view]);
 
   const update = useCallback((next: Partial<GeoKbPayload>) => {
+    editRevision.current += 1;
     setPayload((current) =>
       current === null ? current : { ...current, ...next },
     );
@@ -536,6 +568,21 @@ export function GeoKnowledgeBase({
       first,
     );
   }, [payload]);
+
+  const reloadSources = useCallback(async () => {
+    if (view === null) return;
+    setStatus({ kind: "busy" });
+    const result = await post(ENDPOINTS.load, { url: view.origin });
+    if (!result.ok) { setStatus({ kind: "error", code: result.code }); return; }
+    if (!isGeoKbView(result.data) || result.data.kbId !== view.kbId) {
+      setStatus({ kind: "error", code: "schema_mismatch" }); return;
+    }
+    setView(result.data);
+    setQuestions(result.data.frozen?.questions ?? null);
+    // Refresh references only; keep local edits for an explicit save/review.
+    setDirty(true);
+    setStatus({ kind: "idle" });
+  }, [post, view]);
 
   /**
    * One error line, and the list that belongs to it.
@@ -550,6 +597,12 @@ export function GeoKnowledgeBase({
         <p className="text-[13.5px] text-brand-error">
           {errorMessage(t, status)}
         </p>
+        {status.code !== "context_stale" || view === null ? null : <button
+          className="justify-self-start rounded-lg border border-brand-border-card px-3 py-2 text-sm text-brand-accent-text"
+          type="button" onClick={() => void reloadSources()}>{t("asset.reloadSources")}</button>}
+        {status.code !== "website_required" ? null : <a
+          className="justify-self-start text-sm text-brand-accent-text underline"
+          href={`/${locale}/account/websites`}>{t("asset.backToWebsites")}</a>}
         {status.blockers === undefined || status.blockers.length === 0 ? null : (
           <ul className="grid gap-1.5">
             {status.blockers.map((blocker) => (
@@ -582,7 +635,7 @@ export function GeoKnowledgeBase({
     <div className="mt-10 grid gap-8">
       <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
         <h2 className="text-[19px] text-text-dark-primary">{t("site.title")}</h2>
-        <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
+        {canonicalWebsiteId === undefined ? <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
           <div>
             <label
               className="block text-[13px] text-text-dark-secondary"
@@ -614,6 +667,7 @@ export function GeoKnowledgeBase({
             {view === null ? t("site.start") : t("site.switch")}
           </button>
         </div>
+        : null}
         {view === null ? null : (
           <p className="mt-4 text-[13px] leading-[1.7] text-text-dark-secondary">
             {t("site.loaded", { host: view.host, origin: view.origin })}
@@ -629,7 +683,15 @@ export function GeoKnowledgeBase({
         // someone was in the middle of writing for one site reappears under
         // the next one.
         <Fragment key={view.kbId}>
-          <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
+          {view.profile !== undefined || canonicalWebsiteId !== undefined ? (
+            <GeoKbInheritedProfile profile={view.profile ?? null} locale={locale}
+              facts={payload.facts} onAddFeature={(feature) => {
+                const candidate = pendingGeoFeatureFact(feature, payload.facts);
+                if (candidate.status === "ready") update({ facts: [...payload.facts, candidate.fact] });
+              }}
+              {...(canonicalWebsiteId === undefined ? {} : { websiteId: canonicalWebsiteId })}
+              {...(profileState === undefined ? {} : { profileState })} />
+          ) : <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
             <h2 className="text-[19px] text-text-dark-primary">
               {t("site.importTitle")}
             </h2>
@@ -659,7 +721,11 @@ export function GeoKnowledgeBase({
                 })}
               </p>
             ) : null}
-          </section>
+          </section>}
+
+          <GeoKbEnrichment kbId={view.kbId} targetHost={view.host.replace(/^www\./u, "")}
+            draftVersion={view.draftVersion} payload={payload} dirty={dirty || status.kind === "busy"}
+            onApply={(next) => update(next)} />
 
           <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
             <h2 className="text-[19px] text-text-dark-primary">
@@ -667,7 +733,7 @@ export function GeoKnowledgeBase({
             </h2>
             <div className="mt-5 grid gap-5">
               <TextField
-                help={t("brand.officialNameHelp")}
+                help={t(view.profile == null ? "brand.officialNameHelp" : "asset.officialNameHelp")}
                 label={t("brand.officialNameLabel")}
                 onChange={(value) => update({ officialName: value })}
                 placeholder={t("brand.officialNamePlaceholder")}
@@ -715,7 +781,9 @@ export function GeoKnowledgeBase({
                     }
                     value={payload.market.country}
                   >
-                    {COUNTRIES.map((country) => (
+                    {(COUNTRIES.some((country) => country === payload.market.country)
+                      ? COUNTRIES
+                      : [payload.market.country, ...COUNTRIES]).map((country) => (
                       <option key={country} value={country}>
                         {country}
                       </option>
@@ -723,14 +791,29 @@ export function GeoKnowledgeBase({
                   </select>
                 </div>
                 <div>
-                  <span className="block text-[13px] text-text-dark-secondary">
+                  <label className="block text-[13px] text-text-dark-secondary" htmlFor="kb-language">
                     {t("brand.languageLabel")}
-                  </span>
-                  <p className="mt-1.5 rounded-lg border border-dashed border-brand-border-card px-3 py-2 text-[14px] text-text-dark-secondary">
-                    en
+                  </label>
+                  <select
+                    className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
+                    id="kb-language"
+                    aria-describedby="kb-language-help kb-language-support"
+                    value={payload.market.language}
+                    onChange={(event) => update({ market: { ...payload.market, language: event.target.value } })}
+                  >
+                    {(QUESTION_LANGUAGES.some((language) => language === payload.market.language)
+                      ? QUESTION_LANGUAGES
+                      : [payload.market.language, ...QUESTION_LANGUAGES]).map((language) => (
+                      <option key={language} value={language}>{language}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary" id="kb-language-help">
+                    {t("brand.languageHelp")}
                   </p>
-                  <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
-                    {t("brand.languageNote")}
+                  <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary" id="kb-language-support">
+                    {isSupportedGeoQuestionLanguage(payload.market.language)
+                      ? t("brand.languageNote")
+                      : t("asset.unsupportedLanguage", { language: payload.market.language })}
                   </p>
                 </div>
               </div>
@@ -928,8 +1011,13 @@ export function GeoKnowledgeBase({
                       }
                       type="button"
                     >
-                      {t("competitors.remove")}
+                    {t("competitors.remove")}
                     </button>
+                    <div className="md:col-span-4">
+                      <ChipsField label={t("competitors.aliasesLabel")} help={t("competitors.aliasesHelp")}
+                        values={competitor.aliases ?? []} max={10}
+                        onChange={(aliases) => patch({ aliases, confirmed: false })} />
+                    </div>
                     {competitor.confirmed ? null : (
                       <p className="text-[12.5px] text-text-dark-secondary md:col-span-4">
                         {t("competitors.unconfirmed")}
@@ -1141,7 +1229,7 @@ export function GeoKnowledgeBase({
                   {t("draft.unsaved")}
                 </span>
               ) : null}
-              {status.kind === "saved" ? (
+              {status.kind === "saved" && !dirty ? (
                 <span className="text-[13px] text-text-dark-secondary">
                   {t("draft.saved", {
                     time: new Intl.DateTimeFormat(
@@ -1171,6 +1259,12 @@ export function GeoKnowledgeBase({
               </div>
             ) : null}
 
+            {view.context === undefined ? null : <p className="mt-4 text-[13px] text-text-dark-secondary">
+              {view.context.skippedLayers.length === 0 ? t("freeze.draftPolicyComplete") : t("freeze.draftPolicy", {
+                layers: view.context.skippedLayers.map((layer) => t(`questions.layers.${layer}`)).join(", "),
+              })}
+            </p>}
+
             {errorLine}
 
             <div className="mt-5 grid gap-2 text-[13px] text-text-dark-secondary">
@@ -1193,6 +1287,12 @@ export function GeoKnowledgeBase({
                       retrieval: view.frozen.retrievalCount,
                     })}
                   </p>
+                  <p className="break-all font-mono text-xs">{t("freeze.contentHash", { hash: view.frozen.contentHash })}</p>
+                  {view.frozen.questionSetHash === undefined ? null : <p className="break-all font-mono text-xs">{t("freeze.questionSetHash", { hash: view.frozen.questionSetHash })}</p>}
+                  {view.frozen.registryVersion === undefined ? null : <p>{t("freeze.registry", { version: view.frozen.registryVersion })}</p>}
+                  {view.frozen.skippedLayers === undefined || view.frozen.skippedLayers.length === 0 ? null : <p>{t("freeze.frozenSkipped", {
+                    layers: view.frozen.skippedLayers.map((layer) => t(`questions.layers.${layer}`)).join(", "),
+                  })}</p>}
                 </>
               )}
               {status.kind === "frozen" && status.reused ? (
@@ -1230,6 +1330,16 @@ export function GeoKnowledgeBase({
                               ? ""
                               : ` · ${t("questions.uncalibrated")}`}
                           </span>
+                          {question.roleId == null ? null : (
+                            <span className="text-[12.5px] text-text-dark-secondary">
+                              {t("questions.role", { role: question.roleId })}
+                            </span>
+                          )}
+                          {question.requiredEntities === undefined ? null : (
+                            <span className="text-[12.5px] text-text-dark-secondary">
+                              {t("questions.entities", { entities: question.requiredEntities.join(", ") })}
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>

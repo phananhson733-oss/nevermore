@@ -560,6 +560,8 @@ export interface Sentence {
   evidence_refs: string[];
   /** 服务端派生：evidence_refs 里 distinct 的 C* 数量。 */
   support_count: number;
+  /** GEO v1.1 only: derived from resolved receipt types, never model assertions. */
+  sources?: ("kb" | "crawl" | "product_profile" | "model")[];
 }
 
 export type SectionFailReason =
@@ -571,7 +573,7 @@ export type SectionFailReason =
 interface DraftSectionBase {
   id: string; // 与 OutlineItem.id 一一对应
   h2: string;
-  answers: [string, ...string[]];
+  answers: string[];
 }
 
 export type DraftSection =
@@ -651,11 +653,14 @@ export interface DraftResult {
   schema: typeof DRAFT_RESULT_SCHEMA;
   run: DraftRunMeta;
   brief_ref: {
-    schema: typeof CONTENT_BRIEF_SCHEMA;
+    schema: typeof CONTENT_BRIEF_SCHEMA | "gengrowth.content_brief/v1.1";
     run_id: string;
     /** 解析时已重算核对过的 brief 指纹。 */
     fingerprint: string;
     keyword: string;
+    /** Present only for the GEO schema; exact immutable provenance is carried into exports. */
+    geo_origin?: import("./geo-contract.ts").GeoOrigin;
+    evidence?: import("./geo-contract.ts").GeoContentBrief["evidence"];
   };
 
   settings: {

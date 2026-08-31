@@ -10,7 +10,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   DRAFT_RESULT_SCHEMA,
-  type ContentBrief,
   type DraftResult,
 } from "@sf/public-tools/content-brief/contract";
 import {
@@ -21,9 +20,10 @@ import {
   SECTION_RERUN_SOFT_MAX,
 } from "@sf/public-tools/content-brief/constants";
 import {
-  parseContentBrief,
-  parseContentBriefHandoff,
-} from "@sf/public-tools/content-brief/parse-brief";
+  parseSharedContentBrief as parseContentBrief,
+  parseSharedContentBriefHandoff as parseContentBriefHandoff,
+} from "@sf/public-tools/content-brief/parse-geo-brief";
+import type { SharedContentBrief as ContentBrief } from "@sf/public-tools/content-brief/geo-contract";
 
 import {
   clearMatchingContentBriefHandoff,

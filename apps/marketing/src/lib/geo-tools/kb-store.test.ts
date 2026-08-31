@@ -908,6 +908,13 @@ describe("freezing a GEO knowledge base", () => {
 });
 
 describe("reading a frozen GEO knowledge base", () => {
+  it("resolves an archived snapshot id exactly, without using the current pointer", async () => {
+    const deps = dependencies();
+    expect((await readFrozenGeoKb({ userId: USER_ID, kbId: KB_ID, snapshotId: SNAPSHOT_ID }, deps)).kind).toBe("ok");
+    expect(deps.readSnapshot).toHaveBeenCalledWith(USER_ID, KB_ID, { by: "snapshotId", snapshotId: SNAPSHOT_ID });
+    expect((await readFrozenGeoKb({ userId: USER_ID, kbId: KB_ID, snapshotId: OTHER_KB_ID }, deps)).kind).toBe("unavailable");
+  });
+
   it("returns the frozen payload and the question set that was frozen with it", async () => {
     const deps = dependencies();
 

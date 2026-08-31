@@ -5,10 +5,10 @@
 //            use to say the draft answers the brief, so it never renders unavailable as 8/8
 
 import type {
-  ContentBrief,
   CoverageItem,
   DraftResult,
 } from "@sf/public-tools/content-brief/contract";
+import type { SharedContentBrief as ContentBrief } from "@sf/public-tools/content-brief/geo-contract";
 
 import {
   BODY_TEXT,

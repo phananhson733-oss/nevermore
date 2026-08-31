@@ -294,7 +294,7 @@ const isRetrieval = (result: VisibilityQuestionResult): boolean =>
 const isUnprompted = (result: VisibilityQuestionResult): boolean =>
   !result.prompted;
 
-function metricsFrom(
+export function visibilityMetricsFromQuestions(
   results: readonly VisibilityQuestionResult[],
 ): VisibilityMetrics {
   const unprompted = results.filter(isUnprompted);
@@ -489,7 +489,7 @@ export function aggregateVisibility(
         : "ok";
 
   return {
-    metrics: metricsFrom(results),
+    metrics: visibilityMetricsFromQuestions(results),
     citedDomains: citedDomainsFrom(samples, options),
     questions: results,
     successRatio,

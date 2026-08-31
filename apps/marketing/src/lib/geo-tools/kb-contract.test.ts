@@ -211,6 +211,25 @@ describe("payload validation", () => {
 });
 
 describe("blockers", () => {
+  it("does not demand fabricated roles when the source-conditioned layers are skipped", () => {
+    expect(geoKbBlockers({ ...VALID, roles: [] }, { roleLayersSkipped: true })).not.toContain("role_missing");
+    expect(geoKbBlockers({ ...VALID, roles: [] })).toContain("role_missing");
+  });
+  it("keeps optional competitor aliases without rewriting legacy payloads", () => {
+    const legacy = parseGeoKbPayload(VALID);
+    expect(legacy.ok && Object.hasOwn(legacy.value.competitors[0]!, "aliases")).toBe(false);
+    const parsed = parseGeoKbPayload({ ...VALID, competitors: [{ ...VALID.competitors[0], aliases: [" Rival ", "Rival"] }] });
+    expect(parsed.ok && parsed.value.competitors[0]?.aliases).toEqual(["Rival"]);
+    expect(parseGeoKbPayload({ ...VALID, competitors: [{ ...VALID.competitors[0], aliases: [42] }] }).ok).toBe(false);
+  });
+
+  it("refuses languages without a matching question registry before freezing", () => {
+    expect(geoKbBlockers({ ...VALID, market: { country: "CN", language: "zh" } }))
+      .toContain("unsupported_language");
+    expect(geoKbBlockers({ ...VALID, market: { country: "US", language: "en-US" } }))
+      .not.toContain("unsupported_language");
+  });
+
   it("names every reason a knowledge base cannot be frozen yet", () => {
     // An empty payload is valid to save and not ready to freeze - those are
     // different questions, and the editor asks both.

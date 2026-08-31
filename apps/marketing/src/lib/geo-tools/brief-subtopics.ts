@@ -6,6 +6,13 @@ import { normalizeGeoText } from "../agents/geo-canonical.ts";
 
 /** Subtopics kept from one answer. Beyond this the list stops being a list. */
 export const GEO_BRIEF_MAX_SUBTOPICS = 8;
+export function geoBriefSubtopicEvidence(answerText: string): { readonly items: readonly string[]; readonly candidateCount: number; readonly omittedCount: number } {
+  const all = extractSubtopics(answerText, Number.POSITIVE_INFINITY);
+  return { items: all.slice(0, 50), candidateCount: all.length, omittedCount: Math.max(0, all.length - 50) };
+}
+export function geoBriefAllSubtopics(answerText: string): readonly string[] {
+  return geoBriefSubtopicEvidence(answerText).items;
+}
 
 /** Longest subtopic worth carrying. A paragraph is not a subtopic. */
 export const GEO_BRIEF_MAX_SUBTOPIC_CHARS = 120;
@@ -84,10 +91,13 @@ function candidate(line: string): string | null {
  * says it observed.
  */
 export function geoBriefSubtopics(answerText: string): readonly string[] {
+  return extractSubtopics(answerText, GEO_BRIEF_MAX_SUBTOPICS);
+}
+function extractSubtopics(answerText: string, cap: number): readonly string[] {
   const seen = new Set<string>();
   const kept: string[] = [];
   for (const line of answerText.split("\n")) {
-    if (kept.length >= GEO_BRIEF_MAX_SUBTOPICS) break;
+    if (kept.length >= cap) break;
     const raw = candidate(line);
     if (raw === null) continue;
     const text = normalizeGeoText(raw);

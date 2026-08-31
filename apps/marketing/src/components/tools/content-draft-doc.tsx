@@ -108,12 +108,14 @@ function SentenceSpan({
       ) : null}
       <span
         data-sentence
+        data-sentence-sources={sentence.sources?.join(",")}
         data-claim={sentence.claim}
         data-claim-underline={tone ?? undefined}
         style={underlineStyle(tone)}
       >
         {sentence.text}
       </span>
+      {annotate && sentence.sources !== undefined ? <span data-source-label className="ml-1 font-mono text-[10px] text-text-dark-secondary">[{sentence.sources.join(" · ")}]</span> : null}
     </>
   );
 }

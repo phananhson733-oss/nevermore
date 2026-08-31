@@ -93,6 +93,7 @@ export function geoKbSubmission(payload: GeoKbPayload): GeoKbPayload {
         domain: row.domain.trim().toLowerCase(),
         brandName: row.brandName.trim(),
         confirmed: row.confirmed,
+        ...(row.aliases === undefined ? {} : { aliases: cleanList(row.aliases) }),
       })),
     facts: payload.facts
       .filter((row) => !isBlankFact(row))

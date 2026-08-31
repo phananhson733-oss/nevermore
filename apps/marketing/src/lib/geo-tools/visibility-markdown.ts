@@ -1,0 +1,19 @@
+// @input -- one validated report and the output language
+// @output -- one Markdown projection containing the measured evidence and every supported task
+// @pos -- main Visibility download; A/B/C/D are not lost in an observations-only export
+import type { VisibilityReportV2 } from "./visibility-v2-contract.ts";
+import { thirdPartyGapMarkdown } from "./gap-markdown.ts";
+const plain = (value: string): string => value.replace(/[\\`*_{}[\]<>|]/g, "\\$&").replace(/\r?\n/g, " ");
+export function visibilityReportMarkdown(report: VisibilityReportV2, locale: string): string {
+  const zh = locale === "zh";
+  const tasks = report.gaps.flatMap((gap): string[] => {
+    const question = report.questions.find((question) => question.questionId === gap.questionId);
+    if (question === undefined || gap.action === "none") return [];
+    const header = [`### ${gap.kind} · ${gap.id} · ${plain(question.text)}`, `Reason: ${gap.reason}`, `Evidence: ${gap.evidenceIds.join(", ")}`, ...(gap.pageUrl === null ? [] : [`Page: ${plain(gap.pageUrl)}`]), ...gap.sourceUrls.map((url) => `Source: ${plain(url)}`)];
+    if (gap.kind === "C") return [...header, thirdPartyGapMarkdown(report, gap.id, locale) ?? "", ""];
+    const task = gap.kind === "B" ? (zh ? "对照这份实际 T2 检查，修复相关页面的失败项。" : "Review the actual T2 evidence and fix the relevant page's failed checks.") : gap.kind === "D" ? (zh ? "以这些实际编号列表为证据，创建或调整对比内容 Brief。" : "Create or revise a comparison Brief using these actual ordered-list observations.") : (zh ? "在本次审计索引范围内，为冻结问题创建内容 Brief；不把索引外页面视为不存在。" : "Create a Brief for this frozen question within the audited inventory scope; do not assume pages outside that scope are absent.");
+    const check = report.siteEvidence?.citability.find((check) => gap.evidenceIds.includes(check.id));
+    return [...header, `- [ ] ${task}`, ...(check?.checks.filter((row) => row.state === "fail").map((row) => `  - ${row.ruleId} (${row.kind}): ${row.measured.key}`) ?? []), ""];
+  });
+  return [zh ? "# GEO 可见性证据与待办" : "# GEO visibility evidence and tasks", "", "## Manifest", "```json", JSON.stringify(report.manifest, null, 2), "```", "", "## Metrics", "```json", JSON.stringify({ aggregate: report.metrics, byEngine: report.byEngine.map(({ engine, metrics, calls, answered, status }) => ({ engine, metrics, calls, answered, status })) }, null, 2), "```", "", ...report.questions.flatMap((question) => [`## ${plain(question.text)}`, `Question: ${question.questionId} · role=${question.definition.roleId ?? "unavailable"} · ${question.layer}/${question.mode}`, `Required entities: ${question.definition.requiredEntities.map(plain).join(", ")}`, `Answered: ${question.answered}; mentioned: ${question.mentioned}; cited: ${question.cited}/${question.citationEvaluable}`, ...question.samples.flatMap((sample) => [`- ${sample.slotId}: ${sample.status}; search=${String(sample.webSearchPerformed)}; cited=${String(sample.cited)}; position=${sample.listPosition ?? "unavailable"}`, `  - model requested=${plain(sample.modelRequested)}; observed=${sample.modelObserved === null ? "unavailable" : plain(sample.modelObserved)}`, ...sample.citedUrls.map((url) => `  - ${plain(url)}`), ...(sample.answerExcerpt === null ? [] : [`  - ${plain(sample.answerExcerpt)}`]), `  - topics: ${sample.subtopics === null ? "unavailable" : sample.subtopics.map(plain).join("; ")}; omitted=${sample.subtopicsOmitted ?? "unavailable"}; URLs omitted=${sample.citedUrlsOmitted ?? "unavailable"}; domains omitted=${sample.citedDomainsOmitted ?? "unavailable"}`]), ""]), zh ? "## 基于证据的待办" : "## Evidence-conditioned tasks", ...tasks, "## Unattributed", ...report.gaps.filter((gap) => gap.action === "none").map((gap) => `- ${gap.questionId}: ${gap.reason}`), "", "## Site evidence", "```json", JSON.stringify(report.siteEvidence, null, 2), "```", "", "## Limitations", ...report.limits.map((limit) => `- ${limit}`)].join("\n");
+}

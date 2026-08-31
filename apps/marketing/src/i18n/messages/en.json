@@ -4368,7 +4368,9 @@
         "gaps": "{count, plural, =0 {no gaps} one {# gap} other {# gaps}}",
         "noWritable": "This brief has no section that can be generated, so nothing can be drafted from it.",
         "unsupportedLanguage": "This brief's language ({language}) is not supported by v1 for draft generation.",
-        "replace": "Replace brief"
+        "replace": "Replace brief",
+        "geoOrigin": "GEO brief · carried evidence requires server verification",
+        "geoUnsupportedLanguage": "GEO generation currently supports English locales (en and en-*) only. This brief uses {language}; its original locale is retained."
       },
       "settings": {
         "title": "Draft settings",
@@ -4390,7 +4392,9 @@
           "throughout": "Naturally throughout",
           "help": "Profile facts reach the model only where you allow them. The gap angle attaches to section {section}.",
           "helpNoGap": "This brief has no gap angle, so “only in the gap-angle section” hands the model no profile facts at all.",
-          "helpThroughout": "Mentioning the product throughout significantly increases the number of sentences you must verify by hand."
+          "helpThroughout": "Mentioning the product throughout significantly increases the number of sentences you must verify by hand.",
+          "geoGapOnly": "Direct-answer section only",
+          "geoHelp": "In GEO, this option supplies verified facts to the section answering Q1. Missing facts stay gaps."
         },
         "sections": {
           "label": "Sections to generate",
@@ -4441,7 +4445,8 @@
         "exportJson": "Export JSON",
         "openOnPage": "Open On-Page SEO Checker →",
         "expand": "Expand",
-        "collapse": "Collapse"
+        "collapse": "Collapse",
+        "openCitability": "Check page citability"
       },
       "modes": {
         "complete": "complete",
@@ -4578,7 +4583,8 @@
         "publishedUrlPlaceholder": "https://example.com/blog/your-article",
         "publishedUrlHelp": "This tool does not know where you publish. Enter the live URL to hand the page and the primary keyword to the On-Page SEO Checker; the button appears once the URL is valid.",
         "invalidUrl": "Enter a full http(s) URL without credentials.",
-        "failed": "The handoff could not be stored in this browser, so the checker was not opened."
+        "failed": "The handoff could not be stored in this browser, so the checker was not opened.",
+        "geoPublishedUrlHelp": "Publish the draft yourself, then check its URL for citability."
       },
       "wontSay": {
         "title": "What this draft will not claim",
@@ -4595,14 +4601,15 @@
     "pageCitability": {
       "eyebrow": "GEO tools",
       "title": "Page Citability Check",
-      "intro": "Paste one URL. This checks whether the crawlers that answer questions can read the page at all, and whether what they read can be lifted out as an answer. It does not run JavaScript, and it says so on every row where that matters.",
+      "intro": "Paste one URL. Check crawler access and answer structure, compare the fetched HTML with a bounded isolated Chromium render, and inspect grouped issues with their original evidence. No account, knowledge base or language model is required.",
       "fields": {
         "urlLabel": "Page URL",
         "urlPlaceholder": "https://example.com/pricing",
         "urlHelp": "One page, not a whole site. The page has to return 200 and be HTML.",
         "questionLabel": "Target question (optional)",
         "questionPlaceholder": "which project tool is best for a five-person agency",
-        "questionHelp": "Fill this in and the opening-answer row is checked against it. Leave it empty and that row reports itself as not applicable rather than failing."
+        "questionHelp": "Fill this in and the opening-answer row is checked against it. Leave it empty and that row reports itself as not applicable rather than failing.",
+        "questionTooLong": "This question is {count} characters; the checker accepts {max}. Edit it before running. Nothing has been submitted."
       },
       "actions": {
         "run": "Check this page",
@@ -4620,7 +4627,7 @@
         "notApplicable": "Not applicable",
         "counted": "{passed} of {counted} checks passed",
         "rows": "{total} rows checked. {weighted} of them count toward the result; {notApplicable} were not applicable this run and {fetchError} could not be read, which leaves a denominator of {denominator}.",
-        "advisoryNote": "Advisory rows are shown but never counted: training-crawler access and /llms.txt do not decide whether an answer can cite this page.",
+        "advisoryNote": "ClaudeBot and GPTBot govern training. Model-specific controls and /llms.txt stay outside the cross-engine pass count. Google-Extended governs Gemini training and grounding, not Google Search inclusion or ranking.",
         "fetchedAt": "Checked at {time}",
         "finalUrl": "Read from {url}",
         "redirected": "The URL you submitted redirected here; every row below is about the page that was actually served.",
@@ -4631,7 +4638,7 @@
       },
       "sections": {
         "readable": "Can a crawler read it",
-        "readableIntro": "Access and delivery. A page that fails here cannot be quoted no matter how well it is written.",
+        "readableIntro": "Access and delivery for the measured retrieval paths. Advisory rows do not determine whether a page can be cited.",
         "extractable": "Can an answer be lifted out",
         "extractableIntro": "Shape of the content. These rows describe how easily a model can take a specific claim out of the page."
       },
@@ -4655,9 +4662,9 @@
           "oai-searchbot": "robots.txt allows OAI-SearchBot",
           "chatgpt-user": "robots.txt allows ChatGPT-User",
           "perplexitybot": "robots.txt allows PerplexityBot",
-          "claudebot": "robots.txt allows ClaudeBot",
+          "claudebot": "robots.txt allows ClaudeBot (training)",
           "gptbot": "robots.txt allows GPTBot (training)",
-          "google-extended": "robots.txt allows Google-Extended (training)"
+          "google-extended": "robots.txt allows Google-Extended (Gemini training and grounding)"
         },
         "ssr": "The HTML carries the copy",
         "canonical": "Canonical points at this page",
@@ -4677,6 +4684,9 @@
           "disallowed": "Blocked for {bot} by {pattern}, matched against {path}."
         },
         "ssr": {
+          "renderUnavailable": "A complete raw/render comparison is unavailable: {reason}. Raw HTML checks remain separate.",
+          "renderRatio": "Raw body: {raw} characters; rendered body: {rendered}. Raw/render ratio: {ratio}% (threshold: {threshold}%).",
+          "renderEmpty": "The rendered body contains zero visible characters, so a raw/render ratio cannot be calculated.",
           "sufficient": "{chars} characters of copy are in the HTML itself, above the {floor}-character floor.",
           "clientRendered": "Only {chars} characters of copy in the HTML against {scriptKb} KB of script. A reader that does not run JavaScript sees the {chars} characters.",
           "thin": "Only {chars} characters of copy in the HTML, below the {floor}-character floor."
@@ -4724,9 +4734,12 @@
       },
       "fixes": {
         "robots": {
-          "disallowed": "Allow {bot} for this path in robots.txt, or remove the {pattern} rule that matches it."
+          "disallowed": "Allow {bot} for this path in robots.txt, or remove the {pattern} rule that matches it.",
+          "advisoryDisallowed": "Change the {pattern} rule for {bot} only if you intend to allow its documented model-specific use. This advisory block is not a general retrieval failure."
         },
         "ssr": {
+          "renderRatio": "Serve the answer content in the initial HTML with server rendering or prerendering, then repeat the comparison.",
+          "renderEmpty": "Check that this public URL delivers visible answer content without login or interaction, then rerun it.",
           "clientRendered": "Render the copy on the server or prerender it. Whatever a reader needs has to be in the HTML before JavaScript runs.",
           "thin": "Put the answer on the page. A model can only quote what the HTML actually contains."
         },
@@ -4753,12 +4766,45 @@
           "emptyMainEntity": "Put the question and answer pairs in mainEntity, or remove the FAQPage declaration."
         }
       },
+      "handoff": { "contentDraft": "Prefilled from Content Draft. Review the URL and question, then run the check; no request has been sent.", "geoGap": "Prefilled from AI Visibility. These are inputs, not new checking evidence. Review them, then run the check; no request has been sent." },
+      "render": {
+        "title": "Raw HTML vs rendered body",
+        "status": { "measured": "Measured", "partial": "Partial capture", "unavailable": "Render unavailable" },
+        "rawChars": "Raw body: {chars} characters",
+        "renderedChars": "Rendered body: {chars} characters",
+        "ratio": "Raw/render ratio: {ratio}%",
+        "ratioUnknown": "Raw/render ratio: unknown — no complete comparable pair",
+        "time": "Captured at {time}",
+        "requests": "{count} admitted requests; {blocked} blocked; {omitted} presentation resources intentionally omitted; {bytes} response bytes",
+        "methods": { "html_projection": "Raw text is an HTML projection; browser visibility was not measured.", "browser_visible_text": "Both captures use the same browser-visible body text definition, with JavaScript off then on." },
+        "rawBody": "Inspect raw body text",
+        "renderedBody": "Inspect rendered body text",
+        "reasons": {
+          "not_configured": "The isolated renderer is not configured.",
+          "timeout": "The rendering deadline was reached.",
+          "service_failed": "The renderer did not return a usable capture.",
+          "invalid_response": "The render capture did not match this exact fetched document.",
+          "blocked": "One or more resources were blocked by the public-fetch safety policy.",
+          "resource_limit": "The request or response byte budget was reached.",
+          "truncated": "A raw or rendered capture was truncated.",
+          "navigation": "The page attempted another navigation or opened a new page."
+        }
+      },
+      "causes": {
+        "title": "Grouped issues and possible root causes",
+        "intro": "Deterministic groups share a source or suggest a dependency. They are not model-generated diagnoses; every original measurement and fix remains below.",
+        "none": "No failed rows to group. Unavailable checks are not passing checks.",
+        "groups": { "crawlerAccess": "Crawler access", "rendering": "Initial HTML delivery", "canonical": "Canonical identity", "answerStructure": "Answer structure", "claimEvidence": "Claim conditions and sources", "faq": "FAQ markup", "advisory": "Optional model-specific controls" },
+        "basis": { "sharedEvidence": "These failures share the same source document.", "possibleDependency": "Missing initial content may affect related checks; this is a possible dependency, not proof of causation.", "independent": "Inspect the linked evidence and fix for this group." },
+        "related": "Recheck after fixing delivery: {rules}"
+      },
       "limitsTitle": "What this check does not do",
       "limits": {
         "noJavaScript": "It does not run JavaScript. A page whose copy only appears after hydration is reported as HTML without copy, because that is what a crawler that does not render sees.",
+        "boundedRendering": "Two fresh Chromium contexts compare the same HTML with JavaScript off and on, within 12 seconds, 40 GET requests and 2 MB. Public images/media/fonts are intentionally omitted; private targets, workers, sockets, downloads and navigation are blocked. Original HTTP CSP is not preserved; a stricter safety policy is applied. This measures controlled body text, not full image/layout fidelity or every browser. Incomplete captures have no ratio.",
         "onePage": "It reads one page plus that host's robots.txt and llms.txt. It does not crawl the site and does not fetch the canonical target.",
         "noRanking": "It says nothing about ranking, traffic or whether any model has actually cited the page. It describes the page, not the market.",
-        "advisoryRows": "Training-crawler rows and /llms.txt are shown but not counted, because neither decides whether an answer can cite this page.",
+        "advisoryRows": "ClaudeBot and GPTBot training access, Google-Extended Gemini training/grounding controls and /llms.txt are outside the generic pass count. Claude-SearchBot search and Claude-User user-directed fetching are not measured. Google Search crawling, AI Overviews and AI Mode use separate Search controls.",
         "heuristicRows": "Two rows match patterns rather than reading meaning: the opening answer and the quantified conditions. They are marked, and they are worth looking at rather than obeying.",
         "truncation": "It reads a bounded slice of the page. When a document exceeds it, every check that would report an absence says it could not read instead."
       },
@@ -4789,8 +4835,8 @@
             "a": "No. These rows describe access and shape: whether a crawler is allowed in, whether the copy is in the HTML, and whether a claim can be lifted out. Whether any model actually answers with your page depends on the question asked and on what else exists on the web. This tool never claims otherwise."
           },
           {
-            "q": "Why is GPTBot shown but not counted?",
-            "a": "GPTBot and Google-Extended govern training-corpus collection. The crawlers that fetch a page in order to answer with it are OAI-SearchBot, ChatGPT-User, PerplexityBot and ClaudeBot, and those are the four rows that count. Blocking GPTBot does not stop you being cited."
+            "q": "Why are ClaudeBot and GPTBot shown but not counted?",
+            "a": "ClaudeBot and GPTBot collect training material. Blocking them does not establish a retrieval failure. Anthropic uses Claude-SearchBot for search and Claude-User for user-directed fetching; neither is measured here. Google-Extended additionally controls Gemini grounding in Gemini Apps and Vertex AI, not Google Search inclusion or ranking, including AI Overviews and AI Mode. These controls remain separate from a generic citation score."
           },
           {
             "q": "Why does a missing robots.txt pass?",
@@ -4798,7 +4844,7 @@
           },
           {
             "q": "The page looks fine in my browser but the HTML row failed.",
-            "a": "Your browser runs JavaScript. This check does not, and neither do most crawlers when they first fetch a page. If the copy only exists after hydration, the row is telling you what a non-rendering reader receives."
+            "a": "The check compares the exact fetched HTML with an isolated Chromium render. If most copy appears only after scripts execute, a non-rendering reader receives less content. The report shows both captures; blocked resources, truncation or a missing renderer make the comparison unknown instead of passing it."
           }
         ]
       },
@@ -4820,6 +4866,47 @@
       }
     },
     "geoKnowledgeBase": {
+      "enrichment": {
+        "title": "Source evidence",
+        "body": "Read public competitor pages, check saved fact URLs, and use the connected account’s last 90 finalized days of GSC queries. Suggestions never save themselves.",
+        "action": "Read source evidence",
+        "loading": "Reading source evidence…",
+        "saveFirst": "Save this draft before reading its sources.",
+        "review": "Review suggestions before applying. Editing an accepted value makes it a manual entry unless it still exactly matches its source receipt.",
+        "captured": "Evidence captured {time}",
+        "window": "GSC window: {start} to {end}",
+        "queryCount": "{count} observed queries",
+        "truncated": "The bounded query read or representative query list is incomplete.",
+        "gscUnavailable": "GSC roles unavailable: {reason}. Problem and evaluation layers will be skipped.",
+        "noRoles": "No supported query cluster was found. No audience role was invented.",
+        "competitors": "Competitor names and aliases",
+        "roles": "Query-derived role candidates",
+        "facts": "Fact-source checks",
+        "unavailable": "Unavailable: {reason}",
+        "apply": "Use suggestion",
+        "used": "Applied to this draft",
+        "conflict": "This field changed after the source read. Your edit was preserved; save and read again to compare.",
+        "stale": "This report belongs to an earlier draft version. Read sources again after saving.",
+        "confirmCompetitor": "The suggested name remains unconfirmed. Confirm it in the competitor editor after review.",
+        "source": "Source: {url}",
+        "roleQueries": "{count} queries in this cluster",
+        "error": "Source evidence could not be read. Your draft was not changed.",
+        "identityMismatch": "The connected Search Console account does not match the signed-in account. Reconnect the correct account.",
+        "aliases": "Aliases: {aliases}",
+        "reasons": {
+          "not_connected": "Search Console is not connected",
+          "property_not_granted": "no permitted property matches this website",
+          "grant_unavailable": "the grant could not be used",
+          "fetch_failed": "the source could not be read",
+          "rate_limited": "the source admission gate refused this read",
+          "invalid_response": "the source returned an invalid response",
+          "missing_url": "no valid source URL was supplied",
+          "not_found": "the supplied content was not found in the page",
+          "target_redirected": "the page changed identity through a redirect",
+          "partial_body": "the page exceeded the complete-body limit",
+          "not_html": "the source was not an HTML page"
+        }
+      },
       "eyebrow": "GEO tools",
       "title": "GEO Knowledge Base",
       "intro": "What a model would have to know to recognise you: the names you go by, the category you compete in, who you sell to, and the facts you can point at a source for. Freeze it and the questions your visibility check asks are derived from it, the same way every time.",
@@ -4854,7 +4941,8 @@
         "categoryWarning": "A category that is only a generic noun (\"tools\", \"software\") produces questions with no subject, and those were measured never to reach the live web. Name the thing: \"project management\", \"invoicing\".",
         "countryLabel": "Market",
         "languageLabel": "Question language",
-        "languageNote": "English only for now. The calibrated question wording was measured in English; asking in another language would spend the same money on wording nobody has measured."
+        "languageNote": "English only for now. The calibrated question wording was measured in English; asking in another language would spend the same money on wording nobody has measured.",
+        "languageHelp": "This changes only the GEO draft. Save it before freezing; the website profile and existing frozen versions stay unchanged."
       },
       "roles": {
         "title": "Who you sell to",
@@ -4877,6 +4965,8 @@
         "remove": "Remove",
         "domainLabel": "Domain",
         "brandLabel": "Name a model would use",
+        "aliasesLabel": "Competitor aliases",
+        "aliasesHelp": "Names extracted from the competitor site or added manually. Changing them requires confirmation again.",
         "confirmLabel": "Confirmed",
         "unconfirmed": "Not confirmed. Shown, never counted.",
         "empty": "No competitors yet. Comparison questions need at least one confirmed name.",
@@ -4922,6 +5012,12 @@
       },
       "freeze": {
         "title": "Freeze a version",
+        "draftPolicy": "Saved draft source policy: skipped {layers}.",
+        "draftPolicyComplete": "Saved draft source policy: role-dependent layers are supported.",
+        "frozenSkipped": "This frozen version skipped: {layers}.",
+        "questionSetHash": "Frozen question-set hash: {hash}",
+        "registry": "Frozen registry: {version}",
+        "contentHash": "Frozen KB hash: {hash}",
         "intro": "A frozen version is immutable. The visibility check runs against one, so a report can always say exactly what it asked and why.",
         "action": "Freeze this version",
         "freezing": "Freezing…",
@@ -4932,7 +5028,8 @@
           "category_terms_missing": "Add at least one category word.",
           "role_missing": "Add at least one role.",
           "no_confirmed_competitor": "Confirm at least one competitor's name.",
-          "alias_too_short": "That name is too short for the matcher to look for: at least three letters, or two characters in a script written without spaces. Write it out in full, or add a longer alias — a name this short would make every answer that mentions you read as one that did not."
+          "alias_too_short": "That name is too short for the matcher to look for: at least three letters, or two characters in a script written without spaces. Write it out in full, or add a longer alias — a name this short would make every answer that mentions you read as one that did not.",
+          "unsupported_language": "The question registry does not support the selected language."
         },
         "current": "Current version: {revision}, frozen at {time}",
         "questions": "{count} questions, {retrieval} of them with measured search wording",
@@ -4958,7 +5055,9 @@
           "evaluation": "Evaluation",
           "branded": "Branded"
         },
-        "uncalibrated": "This wording was assembled here, not taken from the measured library."
+        "uncalibrated": "This wording was assembled here, not taken from the measured library.",
+        "role": "Role: {role}",
+        "entities": "Required entities: {entities}"
       },
       "errors": {
         "auth_required": "Sign in to build a knowledge base.",
@@ -4971,6 +5070,8 @@
         "invalid_payload": "Something in the form is not usable: {reason}",
         "conflict": "This knowledge base changed while you were editing, and nothing was written. Your edits are still in the form: press Save draft again to write them over the newer version.",
         "conflict_unknown": "This knowledge base changed while you were editing and the server did not say which version is current, so nothing was written. Copy anything you cannot lose, then use Switch site to load it again.",
+        "context_stale": "The Profile or source evidence changed after you reviewed it. Reload the source references, review them, then save again. Your local draft is preserved.",
+        "website_required": "Add or select this site in Settings → Websites before freezing. Your knowledge-base draft is preserved.",
         "not_ready": "Nothing was frozen: the knowledge base is still missing the items below. Fill them in, save the draft, and freeze again.",
         "form_invalid": "Nothing was sent, so nothing else you changed was lost. The rows marked below have to be finished or removed first.",
         "bad_response": "The reply could not be read as JSON, which usually means a gateway answered instead of the tool. It is not certain whether anything was written — reload this site before editing further.",
@@ -4999,9 +5100,9 @@
       },
       "limitsTitle": "What this does not do",
       "limits": {
-        "notSynced": "It does not stay in sync with your website profile. The prefill is a copy taken once.",
+        "notSynced": "Product fields are inherited from an exact confirmed Website Profile. Changes require review before the next freeze; previously frozen versions never change.",
         "noGuess": "It does not fill in facts for you. An empty value with a reason is the honest state, and the brief generator relies on it.",
-        "noGsc": "It does not read Search Console. Roles are yours to write, because a query cluster is not a person.",
+        "noGsc": "GSC query-derived role suggestions require the same signed-in Google account and a granted property. Without that evidence, problem and evaluation layers are skipped; a query cluster is not an observed persona.",
         "englishOnly": "It produces English questions. The wording that reaches the live web was measured in English, and translating it would discard that measurement."
       },
       "faq": {
@@ -5020,12 +5121,39 @@
             "a": "A model writes \"Linear\", not \"linear.app\". Counting a mention needs the name; knowing where a citation points needs the domain. An unconfirmed competitor stays in the list and out of the share figures, and the report names it as excluded."
           }
         ]
+      },
+      "asset": {
+        "title": "Website GEO extension",
+        "loading": "Loading website GEO…",
+        "retry": "Retry",
+        "profileRequired": "Confirm this website’s Product Profile to inherit its product facts.",
+        "profileUnavailable": "The confirmed Product Profile could not be resolved. Reload after reviewing the original Profile.",
+        "editProfile": "Edit original Product Profile",
+        "canonicalLink": "Open this website’s GEO settings",
+        "backToWebsites": "All websites",
+        "shortcutDescription": "This address is a compatibility shortcut to your website’s GEO extension in Settings. Both entries edit the same asset, not a second knowledge base.",
+        "profileTitle": "Inherited Product Profile",
+        "reloadSources": "Reload source references (keep my draft)",
+        "profileBody": "Read-only facts from the exact confirmed website Profile. Edit the original Profile to change them.",
+        "productName": "Product name",
+        "positioning": "One-line positioning",
+        "features": "Core features",
+        "featureCandidateHelp": "Add a pending fact, then review its value, source URL and capture time. This does not verify or save a fact automatically.",
+        "featureCandidateAdd": "Add pending fact",
+        "featureCandidateExists": "Fact already exists",
+        "featureCandidateTooLong": "Feature exceeds the fact-name limit; it was not truncated",
+        "featureCandidateFull": "Fact limit reached",
+        "revision": "Confirmed Profile revision {revision}",
+        "hash": "Profile hash: {hash}",
+        "officialNameHelp": "This GEO matching name is a brand alias override, not a second product name.",
+        "websiteNotFound": "This website is not available in your account.",
+        "unsupportedLanguage": "Question generation is not available for {language}. Choose an English question language here, then save before freezing."
       }
     },
     "geoBrief": {
       "eyebrow": "GEO tools",
       "title": "GEO Brief Builder",
-      "intro": "Take one question buyers ask an AI, read how a real answer to it was organised, and pair that with the facts you have verified yourself. What comes out is a brief a writer can work from, with a source on every line.",
+      "intro": "Build a shared ContentBrief from a frozen knowledge base or an eligible gap in an owned visibility run. Requirements, observed topics and facts remain separate, with exact sources and version anchors preserved through Draft.",
       "running": "Building the brief",
       "limitsTitle": "What this does not do",
       "form": {
@@ -5038,7 +5166,7 @@
         "typeYourOwn": "Type a different question",
         "typedQuestion": "Your question",
         "typedNote": "A typed question carries no observed counts. The brief says so rather than leaving the numbers looking merely absent.",
-        "estimate": "One sampling call and one assembly call. {runs} briefs per day per account — a stop on runaway loops, not a price.",
+        "estimate": "One outline assembly call; no new visibility resampling. {runs} briefs per day per account.",
         "submit": "Build the brief",
         "submitting": "Building"
       },
@@ -5076,8 +5204,30 @@
       "sources": {
         "kb": "from your knowledge base",
         "crawl": "crawled from your site",
-        "ai_sample": "seen in one answer",
-        "model": "written by this tool"
+        "ai_sample": "observed in answer samples",
+        "model": "written by this tool",
+        "user_input": "manual input",
+        "product_profile": "website profile",
+        "site_index": "site index"
+      },
+      "shared": {
+        "origin": "GEO origin",
+        "noEvidence": "Manual entry · no observed run evidence",
+        "format": "Format",
+        "verdict": "Page decision",
+        "length": "Length",
+        "internalLinks": "Internal links from the site index",
+        "readiness": "{count} writable sections",
+        "candidates": "Candidates {candidates} · shown {shown} · hidden {hidden}",
+        "coverage": "{covered} / {total} answered samples",
+        "requirement": "Required by the frozen knowledge base",
+        "unavailable": "Unavailable: {reason}",
+        "generateDraft": "Generate Draft →",
+        "handoffFailed": "Unable to store the handoff; export JSON instead.",
+        "evidence": "Evidence and version anchors",
+        "estimate": "Uses frozen knowledge or the selected owned run; no extra visibility resampling.",
+        "role": "Role",
+        "manualNote": "A typed question is user input, not a frozen scoring requirement."
       },
       "limits": {
         "singleSample": "The subtopics were read from one answer, asked once, on one surface. The same question asked again returns something different — measuring that is the AI visibility check, not this.",
@@ -5109,11 +5259,15 @@
         "unsupported_media_type": "That request was not JSON.",
         "not_found": "That frozen version, or that question, is not one of yours.",
         "daily_limit": "You have built {limit} briefs today. The counter resets 24 hours after the first one.",
-        "provider_unconfigured": "This deployment has no sampling credentials or no assembly model configured, so a brief would come out missing half of itself. Nothing was charged.",
+        "provider_unconfigured": "A required provider is not configured on this deployment. Nothing was charged.",
         "store_unavailable": "Your knowledge bases could not be read just now. Nothing was charged.",
         "brief_unavailable": "The brief came back in a shape this page could not read. Nothing further was charged.",
         "internal_error": "Something went wrong here, not on your side.",
-        "network": "That request did not reach the tool.",
+        "network": "The response could not be received. Check the current state before trying again.",
+        "gap_not_eligible": "This gap does not enter the content chain.",
+        "unsupported_language": "GEO generation currently supports English locales (en and en-*) only. Nothing was charged.",
+        "run_evidence_unavailable": "The owned run evidence is unavailable or incomplete.",
+        "handoff_invalid": "The handoff expired or no longer matches.",
         "unknown": "That did not work, and the reason was not one this page recognises."
       },
       "faq": {
@@ -5121,7 +5275,7 @@
         "items": [
           {
             "q": "Where do the subtopics come from?",
-            "a": "From one real answer to your question, read once on ChatGPT. The tool takes the headings and list lead-ins that answer used — not a model's summary of it — and marks each one as observed. If the answer was unstructured prose, you get nothing there and the brief says so, because splitting a paragraph into subtopics would be inventing the evidence."
+            "a": "An owned visibility run supplies the actual headings and list lead-ins from its successful answers. Their cross-sample counts exclude failed calls. Without a run, the brief contains only frozen requirements and facts, or your explicitly labelled manual question; it does not invent observations or buy a replacement sample."
           },
           {
             "q": "Can it write the numbers for me?",
@@ -5133,7 +5287,7 @@
           },
           {
             "q": "Does it write the page?",
-            "a": "No. It produces a brief: what the opening has to answer, what the page has to cover, a shape, the facts you may use, and what not to put a number on. Writing is yours, or your writer's."
+            "a": "The Brief does not write or publish the page. It hands the same versioned contract to the shared Content Draft tool, whose sentences are constrained by the non-null fact table. After you publish, the GEO draft links to the page citability check."
           }
         ]
       },
@@ -5162,7 +5316,7 @@
     "aiVisibility": {
       "eyebrow": "GEO tools",
       "title": "AI Visibility Check",
-      "intro": "Ask a frozen question set on one AI surface, several times each. It reports where you were mentioned, where you were cited, and which domains the answers were built from. It does not tell you why.",
+      "intro": "Ask a frozen question set on the engines you select, several times each. Compare mentions and citations with independently read page evidence. Historical single-engine reports keep their original scope; no report proves why a model chose its answer.",
       "loading": "Loading your frozen versions…",
       "retryLoad": "Try again",
       "signIn": {
@@ -5177,7 +5331,7 @@
       },
       "form": {
         "title": "Run a check",
-        "intro": "One frozen version, one market, one surface. The numbers below come from the set itself, not from an average.",
+        "intro": "One frozen version and market. Select the engines before starting; the call count is questions × samples per engine × selected engines.",
         "versionLabel": "Frozen version",
         "versionOption": "{host} · revision {revision} · frozen {time}",
         "versionQuestions": "{count} questions, {retrieval} with measured search wording",
@@ -5189,7 +5343,11 @@
         "start": "Start the run",
         "starting": "Starting…",
         "dailyLimit": "{runs} runs per day per account. This is a guard against a loop, not a budget.",
-        "cooldown": "Try again in {seconds} seconds."
+        "cooldown": "Try again in {seconds} seconds.",
+        "enginesLabel": "Engines",
+        "enginesHelp": "Each selected engine runs every frozen question. Selecting more engines increases calls and cost.",
+        "context": "Market: {market} · Language: {language}",
+        "multiEngineEstimateNote": "Cost and time use historical ChatGPT calibration as an indicative estimate. Perplexity may differ; actual billing is reported from responses."
       },
       "running": {
         "title": "Running",
@@ -5207,15 +5365,17 @@
         },
         "coverage": "{answered} of {calls} calls answered",
         "minSuccess": "Below {percent}% answered, this run does not draw conclusions and does not become a baseline.",
-        "questions": "{count} questions, {samples} samples each",
+        "questions": "{count} questions, {samples} samples per question per engine",
         "revision": "Frozen version {revision}",
         "model": "{model}, market {market}",
         "finished": "Finished {time}",
         "cost": "Provider cost {cost, number, ::currency/USD}",
-        "costUnavailable": "The provider returned no price for this run.",
+        "costUnavailable": "The total provider cost is unavailable because some calls have no observed price.",
         "withheldTitle": "No conclusions from this run",
         "withheldBody": "Fewer than {percent}% of the calls came back, so the rates, the stage table and the comparison against your last run are not shown: an interval built on the samples that survived would describe the ones that failed as if they had answered. Every question and every answer that did come back is below, with what the run cost.",
-        "surface": "Reached through {surface}"
+        "surface": "Reached through {surface}",
+        "engines": "Engines: {engines}",
+        "language": "Language: {language}"
       },
       "overview": {
         "title": "Overview",
@@ -5247,7 +5407,9 @@
         "column": {
           "layer": "Stage",
           "mention": "Mentioned",
-          "citation": "Cited"
+          "citation": "Cited",
+          "samples": "Answered / planned samples",
+          "meanPosition": "Mean observed list position"
         },
         "names": {
           "problem": "Problem",
@@ -5307,7 +5469,7 @@
         "citationUnknown": "{count} answers came back with a citation list this run could not read. They are neither cited nor uncited, and they are outside the rate above."
       },
       "comparison": {
-        "title": "Against your last run",
+        "title": "Run comparison",
         "intro": "Compared with the run finished {time}. Only runs of the same frozen question set are compared; a re-frozen knowledge base asks different questions.",
         "column": {
           "metric": "Measure",
@@ -5317,11 +5479,15 @@
         },
         "metrics": {
           "questionsMentioned": "Questions you appeared in",
-          "questionsCited": "Questions you were cited in"
+          "questionsCited": "Questions you were cited in",
+          "shareOfVoice": "Conditional SOV · paired questions"
         },
         "changed": "{gained} improved, {lost} got worse, of {pairs} comparable questions. One-sided: {lo}–{hi}% of the questions that moved improved.",
         "unchanged": "The questions that moved do not point one way",
         "notTestable": "Too few questions comparable on both sides to test",
+        "sovChange": "{change} pp; conservative 95% bound {lo} to {hi} pp across {pairs} question pairs",
+        "sovUnavailable": "Bound unavailable for {pairs} question pairs: {reason}",
+        "sovScope": "Paired SOV uses only questions observed on both sides, so these ratios can differ from full-run headlines. Repeated answers do not create additional independent question pairs.",
         "questionsTitle": "Questions that moved",
         "questionRow": "{base} → {current} of {of} answers",
         "direction": {
@@ -5334,12 +5500,50 @@
       "limitsTitle": "What this run does not tell you",
       "limits": {
         "oneSurface": "One surface: ChatGPT answers collected through the DataForSEO API. Not a consumer session, and not Google, Perplexity, Claude or Gemini.",
-        "notAttribution": "It observes; it does not explain. Deciding why a question missed you needs your own pages read as well, which this run does not do. The page checker is where that starts.",
+        "notAttribution": "Observed gaps are not causal explanations of a model's answer or proof of future growth. Any site inventory is bounded and explicitly scoped; incomplete page evidence cannot establish absence.",
         "sampledNotCensus": "It is a sample. The same question can cite four sources one minute and none the next, which is why each is asked several times and why every number carries its interval.",
         "demandQuestions": "Questions written the way a buyer would ask usually get answered from memory. Their mentions are worth counting; their citations are reported without a denominator.",
         "englishOnly": "The questions are in English, because that is the language the wording was measured in. A market other than the calibrated one is reported as such.",
         "notStored": "This run was not saved. The report is complete, but it could not be written to the store, so it will not be the baseline your next run is compared against.",
-        "denseScriptMatching": "In a script written without spaces — Chinese, Japanese, Thai — the matcher has no word boundary to hold it to. It finds the brand name inside a longer word as readily as on its own, so a longer word that contains the name counts as a mention here and the count may be higher than the answers warrant."
+        "denseScriptMatching": "In a script written without spaces — Chinese, Japanese, Thai — the matcher has no word boundary to hold it to. It finds the brand name inside a longer word as readily as on its own, so a longer word that contains the name counts as a mention here and the count may be higher than the answers warrant.",
+        "confirmedSubset": "Share of voice covers only the site and confirmed competitor brands, not the whole market.",
+        "rankObservedOnly": "Mean position uses actual numbered answer lists only, not prose order.",
+        "perplexityWordingUncalibrated": "Perplexity wording has not inherited ChatGPT calibration; actual search and citation availability are reported per response.",
+        "siteEvidenceUnavailable": "Independent site evidence was unavailable. No content or placement cause is inferred from missing reads.",
+        "siteEvidenceBudget": "The site-evidence budget was reached. The retained inventory is partial; omitted pages or checks cannot establish absence.",
+        "citationEvidenceTruncated": "Some citation URLs or domain names were omitted to fit the evidence budget. Citation counts remain observed; the source table covers retained evidence only.",
+        "topicEvidenceTruncated": "Some structural answer topics were omitted. Incomplete topic samples cannot prove a topic absent or fully covered.",
+        "answerEvidenceTruncated": "Answer and mention excerpts are bounded or omitted. They are not complete copies of the provider answers."
+      },
+      "gaps": {
+        "title": "Evidence-conditioned gaps",
+        "intro": "These are observed gaps, not causal explanations. A is limited to the audited inventory. When several conditions apply, precedence is B → A → D → C.",
+        "noEvidence": "Site evidence is unavailable; no gap action is inferred.",
+        "indexStatus": "Audited inventory: {status} · retained reads for {count}/{discovered} discovered pages",
+        "indexValues": { "complete": "complete within the declared scope", "partial": "partial", "unavailable": "unavailable" },
+        "references": "Independently read reference pages",
+        "readAt": "Read at {time}",
+        "referenceOmitted": "{count} reference pages have no retained read evidence.",
+        "citabilityOmitted": "{count} candidate page checks were incomplete or their evidence was omitted.",
+        "handoffFailed": "The handoff could not be saved. Try again in this tab.",
+        "notStored": "Save was unavailable; trusted cross-tool handoff is disabled.",
+        "actions": { "brief": "Build GEO Brief", "citability": "Check this page", "thirdParty": "Download third-party tasks" },
+        "kind": { "A": "A · Content coverage", "B": "B · Page citability", "C": "C · Third-party presence", "D": "D · Comparison coverage", "unattributed": "Unattributed" },
+        "presence": { "present": "Site or brand observed on the page", "absent": "Site or brand not found in the complete read", "unknown": "Presence unavailable" },
+        "pageType": { "listicle": "List page", "comparison": "Comparison", "product": "Product", "article": "Article", "documentation": "Documentation", "other": "Other observed page", "unavailable": "Page type unavailable" },
+        "reasons": {
+          "measurement_insufficient": "Too few comparable answers",
+          "prompted_question": "The question already names the brand",
+          "site_evidence_unavailable": "Site evidence unavailable",
+          "question_mapping_unavailable": "No reliable frozen question-to-page mapping",
+          "relevant_page_citability_failed": "A relevant page failed actual citability checks",
+          "no_matching_page_in_audited_inventory": "No matching page in the fully read audited inventory",
+          "repeated_competitor_list_position": "Confirmed rivals preceded the site in repeated explicit lists",
+          "missing_from_read_reference_pages": "The site is absent from independently read cited comparison or list pages",
+          "inventory_incomplete": "Inventory incomplete; absence is unknown",
+          "citability_unavailable": "Relevant page citability was not measured",
+          "no_actionable_gap": "No supported next action from this evidence"
+        }
       },
       "errors": {
         "auth_required": "Sign in to run a visibility check.",
@@ -5373,7 +5577,7 @@
           },
           {
             "q": "It says I was not mentioned. What do I fix?",
-            "a": "This run does not know. It sees what the model said, not what your site contains, so it cannot tell a missing page from an unreadable one. The page citability check answers the second half for a page you name."
+            "a": "The current report can offer evidence-conditioned content, page-citability, third-party-placement or comparison actions when independent reads support them. A content gap applies only to the audited inventory. Missing or incomplete evidence remains unattributed. Historical v1 reports contain observations only."
           }
         ]
       },
@@ -5392,6 +5596,33 @@
             "blurb": "Change the names, the category or the competitors, and freeze a new version to ask a different set."
           }
         ]
+      },
+      "v2": {
+        "title": "Engine measurements",
+        "mixed": "Mixed aggregate",
+        "engine": "Engine: {engine}",
+        "modelRequested": "Requested model: {model}",
+        "modelObserved": "Observed models: {models}",
+        "unknown": "Unavailable",
+        "sov": "Conditional SOV: own brand in {own}/{total} brand-present answers · {count} confirmed competitors",
+        "sovInterval": "Conservative 95% bound: {lo}–{hi}% across {clusters} question clusters",
+        "sovIntervalUnavailable": "Confidence bound unavailable: {reason}",
+        "sovAssumption": "This bound assumes independent questions. Repeated answers to one question are not additional independent clusters.",
+        "sovZeroObserved": "Not observed in these answered samples",
+        "sovReasons": { "no_observed_questions": "no question produced a valid answer", "no_brand_present_answers": "no eligible answer named a tracked brand", "fewer_than_10_question_clusters": "fewer than 10 observed question clusters", "no_paired_questions": "no question had valid answers on both sides", "fewer_than_10_question_pairs": "fewer than 10 comparable question pairs" },
+        "coverage": "Valid-sample coverage: {covered}/{total} frozen questions",
+        "position": "Mean observed list position: {position} ({count} ranked answers)",
+        "positionUnavailable": "Mean position unavailable: no explicit ordered-list evidence",
+        "importTitle": "Compare two run files",
+        "importBase": "Baseline run JSON",
+        "importCurrent": "Current run JSON",
+        "imported": "Imported files are untrusted local evidence, not server-owned runs.",
+        "loaded": "Loaded: {id}",
+        "compare": "Compare files",
+        "invalidFile": "Invalid, oversized or incompatible run file",
+        "incompatible": "These runs cannot serve as a shared baseline: {reason}",
+        "exportJson": "Download run JSON",
+        "exportMarkdown": "Download evidence Markdown"
       }
     }
   },
@@ -7544,7 +7775,8 @@
           "failed": "The profile could not be confirmed. Review the fields and try again."
         },
         "draftVersion": "Draft v{version}",
-        "noSources": "No source URLs yet."
+        "noSources": "No source URLs yet.",
+        "geoExtension": "GEO extension"
       }
     },
     "menu": {

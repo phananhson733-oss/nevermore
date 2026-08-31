@@ -222,7 +222,7 @@ function FactRow({ fact }: { readonly fact: GeoBriefFact }) {
 /* The tool                                                            */
 /* ------------------------------------------------------------------ */
 
-export function GeoBriefTool() {
+export function LegacyGeoBriefTool() {
   const t = useTranslations("tools.geoBrief");
   const [load, setLoad] = useState<LoadState>({ kind: "idle" });
   const [kbId, setKbId] = useState("");
@@ -663,3 +663,5 @@ export function GeoBriefTool() {
     </div>
   );
 }
+
+export { GeoBriefSharedTool as GeoBriefTool } from "./geo-brief-shared-tool.tsx";

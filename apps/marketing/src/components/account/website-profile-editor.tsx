@@ -1475,6 +1475,10 @@ export function WebsiteProfileEditor({
           </p>
         </div>
         <p className="text-[13px] text-text-dark-secondary">{t("confirm.body")}</p>
+        <a className="inline-flex items-center rounded-md border border-brand-border-card px-3 py-2 text-sm text-brand-accent-text"
+          href={`/${locale}/account/websites/${websiteId}/geo`}>
+          {t("geoExtension")}
+        </a>
         <Button
           type="button"
           variant="outline"
@@ -1551,6 +1555,10 @@ export function WebsiteProfileEditor({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
+          <a className="inline-flex items-center rounded-md border border-brand-border-card px-3 py-2 text-sm text-brand-accent-text"
+            href={`/${locale}/account/websites/${websiteId}/geo`}>
+            {t("geoExtension")}
+          </a>
           <Button
             type="button"
             variant="outline"

@@ -16,6 +16,9 @@ import {
 import type { ContentBrief, DraftResult } from "@sf/public-tools/content-brief/contract";
 import { contentBriefFixture, withFingerprint } from "@sf/public-tools/content-brief/fixtures";
 import { parseDraftResult } from "@sf/public-tools/content-brief/parse-draft";
+import { geoBriefFixture } from "@sf/public-tools/content-brief/geo-fixtures";
+import { validateSectionOutput } from "@sf/public-tools/content-brief/validate-section";
+import { deriveGeoMustAnswer, deriveGeoReadiness, geoFingerprint } from "@sf/public-tools/content-brief/parse-geo-brief";
 
 import {
   handleContentDraftRunRequest,
@@ -26,6 +29,84 @@ import type { DraftCoverageInput, DraftSectionInput, DraftSectionResult } from "
 
 const START = Date.parse("2026-08-29T10:00:00.000Z");
 const SETTINGS = { tone: "explanatory", person: "second", product_mention: "gap_only" } as const;
+
+describe("GEO branch in the existing Draft route", () => {
+  it.each(["es", "zh"])("refuses GEO %s before private verification, quota and provider calls", async language => {
+    const geo = await geoBriefFixture(); geo.keyword.language = language; geo.run.fingerprint = await geoFingerprint(geo);
+    const verifyGeoBrief = vi.fn(async () => true); const consumeQuota = vi.fn(); const generateSection = vi.fn();
+    const response = await handleContentDraftRunRequest(request({ brief: geo, settings: SETTINGS, section_ids: ["O1"] }), dependencies({ verifyGeoBrief, consumeQuota, generateSection }));
+    expect(response.status).toBe(422); expect(verifyGeoBrief).not.toHaveBeenCalled(); expect(consumeQuota).not.toHaveBeenCalled(); expect(generateSection).not.toHaveBeenCalled();
+  });
+  it("acquires the account slot before hashing or resolving private GEO evidence", async () => {
+    const geo = await geoBriefFixture();
+    const verifyGeoBrief = vi.fn(async () => false);
+    const consumeQuota = vi.fn();
+    const response = await handleContentDraftRunRequest(request({ brief: geo, settings: SETTINGS, section_ids: ["O1"] }), dependencies({ acquireSlot: () => ({ acquired: false }), verifyGeoBrief, consumeQuota }));
+    expect(response.status).toBe(409);
+    expect(verifyGeoBrief).not.toHaveBeenCalled();
+    expect(consumeQuota).not.toHaveBeenCalled();
+  });
+
+  it("bounds a stalled GEO reference read and releases its slot without charging", async () => {
+    const geo = await geoBriefFixture();
+    const release = vi.fn();
+    const consumeQuota = vi.fn();
+    let reached!: () => void;
+    const started = new Promise<void>((resolve) => { reached = resolve; });
+    vi.useFakeTimers();
+    try {
+      const pending = handleContentDraftRunRequest(request({ brief: geo, settings: SETTINGS, section_ids: ["O1"] }), dependencies({ acquireSlot: () => ({ acquired: true, release }), consumeQuota, verifyGeoBrief: async () => { reached(); return new Promise<boolean>(() => undefined); } }));
+      await started;
+      await vi.advanceTimersByTimeAsync(5_001);
+      const result = await Promise.race([pending, Promise.resolve(null)]);
+      expect(result?.status).toBe(503);
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(consumeQuota).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("requires server receipt verification before quota or model work", async () => {
+    const geo = await geoBriefFixture();
+    const consumeQuota = vi.fn();
+    const generateSection = vi.fn();
+    const response = await handleContentDraftRunRequest(new Request("https://example.test/api/tools/content-draft/run", { method: "POST", body: JSON.stringify({ brief: geo, settings: SETTINGS, section_ids: ["O1", "O2"] }), headers: { "Content-Type": "application/json" } }), dependencies({ consumeQuota, generateSection }));
+    expect(response.status).toBe(422);
+    expect(consumeQuota).not.toHaveBeenCalled();
+    expect(generateSection).not.toHaveBeenCalled();
+  });
+  it.each([{ count: 2, language: "en" }, { count: 8, language: "en" }, { count: 2, language: "en-US" }, { count: 2, language: "en-GB" }])("writes $count GEO sections for $language through the same pipeline without AI samples as facts", async ({ count, language }) => {
+    const geo = await geoBriefFixture();
+    geo.keyword.language = language; geo.run.fingerprint = await geoFingerprint(geo);
+    if (count === 8) {
+      geo.evidence.samples[0]!.topics = Array.from({ length: 7 }, (_, index) => `Topic ${index + 1}`);
+      geo.evidence.samples[1]!.topics = [...geo.evidence.samples[0]!.topics];
+      Object.assign(geo, deriveGeoMustAnswer(geo.lead_answer, geo.evidence.samples));
+      const outline: import("@sf/public-tools/content-brief/geo-contract").GeoOutlineItem[] = geo.must_answer.items.map((question, index) => ({ id: `O${index + 1}`, h2: `Topic ${String.fromCharCode(65 + index)}`, h3: [], answers: [question.id], provenance: { method: "model", derived_from: ["kb", "ai_sample"] } }));
+      geo.outline = { status: "available", items: [outline[0]!, ...outline.slice(1)] };
+      geo.draft_readiness = deriveGeoReadiness(geo);
+      geo.run.fingerprint = await geoFingerprint(geo);
+    }
+    const generated = vi.fn(async (input: DraftSectionInput): Promise<DraftSectionResult> => {
+      expect(input.language).toBe("en");
+      expect(input.pages).toEqual([]);
+      expect(input.facts).toEqual([]);
+      expect(input.geo?.missingFacts).toContainEqual({ label: "Price", reason: "missing" });
+      expect(JSON.stringify(input.geo?.facts)).not.toContain("Synthetic fixture answer");
+      const fact = input.geo?.facts[0];
+      const checked = validateSectionOutput({ paragraphs: [{ sentences: [{ text: fact?.text ?? "This section needs verification.", claim: fact ? "bound" : "gap", evidence_refs: fact ? [fact.id] : [] }] }] }, { citableCrawlIds: new Set(), profileFacts: new Map(), stanceAllowed: false, geoFacts: new Map((input.geo?.facts ?? []).map(item => [item.id, item])) });
+      if (!checked.ok) throw new Error(checked.rule);
+      return { ...okResult(input), paragraphs: checked.paragraphs, word_count: checked.word_count };
+    });
+    const runCoverage = vi.fn(async (input: DraftCoverageInput) => { expect(input.language).toBe("en"); expect(input.source).toBe("geo"); return coverageOf(input); });
+    const response = await handleContentDraftRunRequest(new Request("https://example.test/api/tools/content-draft/run", { method: "POST", body: JSON.stringify({ brief: geo, settings: SETTINGS, section_ids: geo.draft_readiness.writable }), headers: { "Content-Type": "application/json" } }), dependencies({ verifyGeoBrief: async checked => { expect(checked.keyword.language).toBe(language); return true; }, generateSection: generated, runCoverage }));
+    expect(response.status).toBe(200);
+    const body = await response.json() as DraftResult;
+    expect(body.brief_ref.schema).toBe(geo.schema);
+    expect((await parseDraftResult(body, geo)).ok).toBe(true);
+    expect(generated).toHaveBeenCalledTimes(count);
+    expect(geo.keyword.language).toBe(language);
+  });
+});
 
 let brief: ContentBrief;
 let ids = 0;

@@ -4368,7 +4368,9 @@
         "gaps": "{count} 处缺口",
         "noWritable": "本 brief 没有可生成的段落，生成不了 draft。",
         "unsupportedLanguage": "本 brief 的语言（{language}）v1 不支持生成 draft。",
-        "replace": "更换 brief"
+        "replace": "更换 brief",
+        "geoOrigin": "GEO Brief · 携带证据须经服务端核验",
+        "geoUnsupportedLanguage": "GEO 生成目前仅支持英语及其地区变体（en、en-*）。这份 Brief 的语言为 {language}；原始语言信息不会被改写。"
       },
       "settings": {
         "title": "生成设置",
@@ -4390,7 +4392,9 @@
           "throughout": "全文自然提及",
           "help": "档案事实只在你允许的地方交给模型。缺口角度挂在第 {section} 节。",
           "helpNoGap": "本 brief 没有缺口角度，选「只在缺口角度那一节提」时模型不会拿到任何档案事实。",
-          "helpThroughout": "会显著增加需人工核实的句子数量。"
+          "helpThroughout": "会显著增加需人工核实的句子数量。",
+          "geoGapOnly": "仅直答段",
+          "geoHelp": "GEO 中该选项只向回答 Q1 的直答段提供已核验事实；缺失事实仍保留为缺口。"
         },
         "sections": {
           "label": "要生成的段落",
@@ -4441,7 +4445,8 @@
         "exportJson": "导出 JSON",
         "openOnPage": "打开 On-Page SEO Checker →",
         "expand": "展开",
-        "collapse": "收起"
+        "collapse": "收起",
+        "openCitability": "检查页面可引用性"
       },
       "modes": {
         "complete": "完整",
@@ -4578,7 +4583,8 @@
         "publishedUrlPlaceholder": "https://example.com/blog/your-article",
         "publishedUrlHelp": "本工具不知道你把文章发到了哪里。填入线上 URL，就能把页面和主关键词交给 On-Page SEO Checker；URL 合法后按钮才出现。",
         "invalidUrl": "请填完整的 http(s) URL，不带凭据。",
-        "failed": "交接没能写进这个浏览器，没有打开检查器。"
+        "failed": "交接没能写进这个浏览器，没有打开检查器。",
+        "geoPublishedUrlHelp": "请自行发布草稿，再检查页面 URL 的可引用性。"
       },
       "wontSay": {
         "title": "这份初稿不会声称的事",
@@ -4595,14 +4601,15 @@
     "pageCitability": {
       "eyebrow": "GEO 工具",
       "title": "页面可引用性检查",
-      "intro": "贴一个网址。这里检查两件事：回答问题的那些抓取器能不能读到这一页，以及读到之后能不能把结论抽出来。本工具不执行 JavaScript，凡是因此受影响的行都会写明。",
+      "intro": "贴一个网址。检查抓取访问与答案结构，对比原始 HTML 和有界隔离 Chromium 渲染结果，再查看保留逐项证据的根因分组。不需要账号、知识库或语言模型。",
       "fields": {
         "urlLabel": "页面网址",
         "urlPlaceholder": "https://example.com/pricing",
         "urlHelp": "一个页面，不是整站。该页需要返回 200 且是 HTML。",
         "questionLabel": "目标提问（选填）",
         "questionPlaceholder": "五人代理公司适合用哪个项目管理工具",
-        "questionHelp": "填了这项，开头直答那一行才会对着它检查；不填时那一行显示「不适用」，不会算成未通过。"
+        "questionHelp": "填了这项，开头直答那一行才会对着它检查；不填时那一行显示「不适用」，不会算成未通过。",
+        "questionTooLong": "提问有 {count} 个字符，本检查最多接受 {max} 个。请编辑后再运行，尚未提交任何请求。"
       },
       "actions": {
         "run": "检查这一页",
@@ -4620,7 +4627,7 @@
         "notApplicable": "不适用",
         "counted": "{counted} 项计入结论，其中 {passed} 项通过",
         "rows": "共检查 {total} 行。其中 {weighted} 行计权；本次有 {notApplicable} 行不适用、{fetchError} 行读不到，因此分母是 {denominator}。",
-        "advisoryNote": "仅展示行不计入结论：训练类抓取器的放行与 /llms.txt 都不决定这一页能否被回答引用。",
+        "advisoryNote": "ClaudeBot 与 GPTBot 用于训练采集。模型专属控制与 /llms.txt 不进入跨引擎通过数。Google-Extended 控制 Gemini 训练与检索增强，不控制 Google Search 的收录或排名。",
         "fetchedAt": "检查时间 {time}",
         "finalUrl": "实际读取自 {url}",
         "redirected": "你提交的网址跳转到了这里，下面每一行说的都是实际返回的那一页。",
@@ -4631,7 +4638,7 @@
       },
       "sections": {
         "readable": "抓取器能不能读到",
-        "readableIntro": "访问与交付。这一段不通过，写得再好也无法被引用。",
+        "readableIntro": "已测检索路径的访问与交付。仅展示的提示项不决定页面能否被引用。",
         "extractable": "能不能把答案抽出来",
         "extractableIntro": "内容的形态。这几行说明模型要从这一页取走一条具体结论有多容易。"
       },
@@ -4655,9 +4662,9 @@
           "oai-searchbot": "robots.txt 放行 OAI-SearchBot",
           "chatgpt-user": "robots.txt 放行 ChatGPT-User",
           "perplexitybot": "robots.txt 放行 PerplexityBot",
-          "claudebot": "robots.txt 放行 ClaudeBot",
+          "claudebot": "robots.txt 放行 ClaudeBot（训练用途）",
           "gptbot": "robots.txt 放行 GPTBot（训练用途）",
-          "google-extended": "robots.txt 放行 Google-Extended（训练用途）"
+          "google-extended": "robots.txt 放行 Google-Extended（Gemini 训练与检索增强）"
         },
         "ssr": "HTML 里带正文",
         "canonical": "canonical 指向本页",
@@ -4677,6 +4684,9 @@
           "disallowed": "被 {pattern} 拦住，对 {bot} 不放行，命中的是 {path}。"
         },
         "ssr": {
+          "renderUnavailable": "没有完整的原始/渲染对比：{reason} 原始 HTML 检查独立保留。",
+          "renderRatio": "原始正文 {raw} 字；渲染正文 {rendered} 字。原始/渲染比值 {ratio}%（门槛 {threshold}%）。",
+          "renderEmpty": "渲染后的正文为零字，无法计算原始/渲染比值。",
           "sufficient": "HTML 本身就有 {chars} 字正文，高于 {floor} 字的门槛。",
           "clientRendered": "HTML 里只有 {chars} 字正文，脚本却有 {scriptKb} KB。不执行 JavaScript 的读者看到的就是那 {chars} 字。",
           "thin": "HTML 里只有 {chars} 字正文，低于 {floor} 字的门槛。"
@@ -4724,9 +4734,12 @@
       },
       "fixes": {
         "robots": {
-          "disallowed": "在 robots.txt 里为 {bot} 放行该路径，或去掉命中的 {pattern} 规则。"
+          "disallowed": "在 robots.txt 里为 {bot} 放行该路径，或去掉命中的 {pattern} 规则。",
+          "advisoryDisallowed": "只有在你希望允许 {bot} 所声明的模型专属用途时，才修改 {pattern} 规则。这项提示性屏蔽不代表通用检索失败。"
         },
         "ssr": {
+          "renderRatio": "使用服务端渲染或预渲染，把答案正文放入首次返回的 HTML，再重新对比。",
+          "renderEmpty": "确认该公开网址无需登录或交互就能显示答案正文，再重新检查。",
           "clientRendered": "改成服务端渲染或预渲染。读者需要的内容必须在 JavaScript 执行之前就出现在 HTML 里。",
           "thin": "把答案写进页面。模型只能引用 HTML 里真实存在的内容。"
         },
@@ -4753,12 +4766,45 @@
           "emptyMainEntity": "把问答放进 mainEntity，或者干脆去掉 FAQPage 声明。"
         }
       },
+      "handoff": { "contentDraft": "已由 Content Draft 预填网址与提问。请核对后手动运行，尚未发送检查请求。", "geoGap": "已由可见性体检预填。这些是输入，不是新的检查证据；请核对后手动运行，尚未发送检查请求。" },
+      "render": {
+        "title": "原始 HTML 与渲染后正文",
+        "status": { "measured": "已实测", "partial": "部分捕获", "unavailable": "渲染不可用" },
+        "rawChars": "原始正文：{chars} 字",
+        "renderedChars": "渲染正文：{chars} 字",
+        "ratio": "原始/渲染比值：{ratio}%",
+        "ratioUnknown": "原始/渲染比值未知：没有完整、可对照的两次捕获",
+        "time": "捕获时间 {time}",
+        "requests": "接纳 {count} 次请求；拦截 {blocked} 次；主动省略 {omitted} 个展示资源；响应 {bytes} 字节",
+        "methods": { "html_projection": "原始文字来自 HTML 投影，尚未测量浏览器可见性。", "browser_visible_text": "两次捕获使用同一套浏览器可见正文定义，先关闭、再开启 JavaScript。" },
+        "rawBody": "查看原始正文",
+        "renderedBody": "查看渲染后正文",
+        "reasons": {
+          "not_configured": "隔离渲染服务尚未配置。",
+          "timeout": "达到渲染时限。",
+          "service_failed": "渲染服务没有返回可用捕获。",
+          "invalid_response": "渲染捕获与本次抓取的精确文档不匹配。",
+          "blocked": "公开抓取安全策略拦截了一个或多个资源。",
+          "resource_limit": "达到请求数或响应字节预算。",
+          "truncated": "原始或渲染捕获被截断。",
+          "navigation": "页面尝试再次跳转或打开新页面。"
+        }
+      },
+      "causes": {
+        "title": "问题分组与可能的根因",
+        "intro": "按共同来源或可能的依赖关系确定性分组，不由模型诊断；每项原始测量和修法仍完整保留在下方。",
+        "none": "没有可分组的失败项。不可用的检查不等于通过。",
+        "groups": { "crawlerAccess": "抓取器访问", "rendering": "首屏 HTML 交付", "canonical": "规范页面身份", "answerStructure": "答案结构", "claimEvidence": "断言条件与来源", "faq": "FAQ 标记", "advisory": "可选的模型专属控制" },
+        "basis": { "sharedEvidence": "这些失败项读取同一份来源文档。", "possibleDependency": "首次返回缺少正文可能影响相关检查；这是待验证的依赖关系，不是已证明的因果。", "independent": "查看本组链接的测量证据与修法。" },
+        "related": "修复正文交付后复查：{rules}"
+      },
       "limitsTitle": "这项检查不做什么",
       "limits": {
         "noJavaScript": "不执行 JavaScript。正文只在 hydration 之后才出现的页面，会被报成「HTML 里没有正文」——因为不渲染的抓取器看到的就是这样。",
+        "boundedRendering": "两个全新 Chromium 上下文在 12 秒、40 次 GET 和 2 MB 内对比同一 HTML，先关闭再开启 JavaScript。主动省略公开图片、媒体和字体；拦截私网、worker、socket、下载与跳转。不保留原始 HTTP CSP，而是施加更严格的安全策略。测量的是受控正文，不是完整图片/布局或所有浏览器的复现；不完整捕获不算比值。",
         "onePage": "只读一个页面，外加该站的 robots.txt 与 llms.txt。不爬全站，也不去抓 canonical 指向的那一页。",
         "noRanking": "不涉及排名、流量，也不代表任何模型真的引用过这一页。它描述的是页面，不是市场。",
-        "advisoryRows": "训练类抓取器与 /llms.txt 只展示、不计入，因为两者都不决定这一页能否被回答引用。",
+        "advisoryRows": "ClaudeBot 与 GPTBot 的训练访问、Google-Extended 的 Gemini 训练/检索增强控制与 /llms.txt 不进入通用通过数。未测量 Claude-SearchBot 搜索抓取与 Claude-User 用户请求抓取。Google Search 抓取、AI Overviews 与 AI Mode 使用独立的 Search 控制。",
         "heuristicRows": "有两行是模式匹配而不是理解语义：开头直答与限定条件量化。它们带标记，值得去看一眼，但不必照办。",
         "truncation": "它只读页面的前一段。文档超出这个范围时，凡是要报「不存在」的检查都改说「读不到」。"
       },
@@ -4789,8 +4835,8 @@
             "a": "不代表。这些行说的是访问与形态：抓取器是否被放行、正文是否在 HTML 里、一条结论能否被抽出来。模型是否真的用你的页面回答，取决于被问的问题以及网上还有什么，本工具从不声称能替你判断这件事。"
           },
           {
-            "q": "为什么 GPTBot 只展示不计分？",
-            "a": "GPTBot 与 Google-Extended 管的是训练语料采集。真正为了回答而去抓取页面的是 OAI-SearchBot、ChatGPT-User、PerplexityBot 与 ClaudeBot，计入结论的就是这四行。禁掉 GPTBot 不会让你无法被引用。"
+            "q": "为什么 ClaudeBot 与 GPTBot 只展示不计分？",
+            "a": "ClaudeBot 与 GPTBot 采集训练材料，屏蔽它们不能证明检索失败。Anthropic 使用 Claude-SearchBot 搜索抓取、Claude-User 按用户请求抓取；本工具未测量这两项。Google-Extended 还控制 Gemini Apps 与 Vertex AI 中的 Gemini 检索增强，但不控制 Google Search 收录或排名，包括 AI Overviews 与 AI Mode。这些控制独立展示，不拼成通用引用分。"
           },
           {
             "q": "为什么没有 robots.txt 反而算通过？",
@@ -4798,7 +4844,7 @@
           },
           {
             "q": "页面在我浏览器里正常，为什么 HTML 那行没通过？",
-            "a": "你的浏览器会执行 JavaScript，本检查不会，多数抓取器第一次取页面时也不会。如果正文只在 hydration 之后才存在，这一行告诉你的正是「不渲染的读者会收到什么」。"
+            "a": "本检查对比本次精确抓取的 HTML 与隔离 Chromium 渲染。如果大部分正文在脚本执行后才出现，不渲染的读者收到的内容就更少。报告会显示两次捕获；资源被拦、截断或渲染服务缺失时，比值是未知，不会算通过。"
           }
         ]
       },
@@ -4820,6 +4866,47 @@
       }
     },
     "geoKnowledgeBase": {
+      "enrichment": {
+        "title": "来源证据",
+        "body": "读取竞品公开页面、核对已保存的事实网址，并使用同一已连接账户最近 90 个已完成统计日的 GSC 查询。建议不会自动保存。",
+        "action": "读取来源证据",
+        "loading": "正在读取来源证据…",
+        "saveFirst": "请先保存这份草稿，再读取它的来源。",
+        "review": "审阅后再应用建议。改动已接受的取值后，除非它仍与来源凭证完全一致，否则会成为人工填写项。",
+        "captured": "证据采集时间：{time}",
+        "window": "GSC 时间范围：{start} 至 {end}",
+        "queryCount": "实际读取 {count} 条查询",
+        "truncated": "受读取上限影响，查询数据或展示的代表查询并不完整。",
+        "gscUnavailable": "GSC 角色不可用：{reason}。将跳过问题层与评估层。",
+        "noRoles": "没有找到可支持的查询聚类，未编造受众角色。",
+        "competitors": "竞品名字与别名",
+        "roles": "基于真实查询的角色候选",
+        "facts": "事实来源核对",
+        "unavailable": "不可用：{reason}",
+        "apply": "采用建议",
+        "used": "已应用到这份草稿",
+        "conflict": "读取来源后，这个字段已经修改。你的编辑已保留；请保存后重新读取并比较。",
+        "stale": "这份报告属于较早的草稿版本。保存后请重新读取来源。",
+        "confirmCompetitor": "建议的名字仍未确认。审阅后请在竞品编辑区明确确认。",
+        "source": "来源：{url}",
+        "roleQueries": "这个聚类包含 {count} 条查询",
+        "error": "来源证据暂时无法读取，你的草稿没有改变。",
+        "identityMismatch": "已连接的 Search Console 账户与当前登录账户不一致，请重新连接正确的账户。",
+        "aliases": "别名：{aliases}",
+        "reasons": {
+          "not_connected": "尚未连接 Search Console",
+          "property_not_granted": "没有与该网站匹配的已授权资源",
+          "grant_unavailable": "授权暂时无法使用",
+          "fetch_failed": "来源无法读取",
+          "rate_limited": "来源读取准入检查未通过",
+          "invalid_response": "来源返回了无效响应",
+          "missing_url": "没有提供有效的来源网址",
+          "not_found": "页面中未找到提供的内容",
+          "target_redirected": "重定向改变了页面身份",
+          "partial_body": "页面超出完整正文读取上限",
+          "not_html": "来源不是 HTML 页面"
+        }
+      },
       "eyebrow": "GEO 工具",
       "title": "GEO 知识库",
       "intro": "模型要认出你，需要知道的那些事：你被叫什么、你在哪个品类里、你卖给谁、以及哪些事实你能指出来源。冻结之后，可见性体检要问的问题就由它确定性地推导出来，每次都一样。",
@@ -4854,7 +4941,8 @@
         "categoryWarning": "只填一个通用名词（「工具」「软件」）会造出没有主语的问句，而实测表明这类问句从不触发联网检索。要点名：「项目管理」「开票」。",
         "countryLabel": "市场",
         "languageLabel": "提问语言",
-        "languageNote": "目前只有英文。已标定的问句措辞是在英文下测出来的；换语言等于用同样的钱去问没人测过的措辞。"
+        "languageNote": "目前只有英文。已标定的问句措辞是在英文下测出来的；换语言等于用同样的钱去问没人测过的措辞。",
+        "languageHelp": "这里只修改 GEO 草稿。冻结前请保存；网站档案与已有冻结版本不变。"
       },
       "roles": {
         "title": "你卖给谁",
@@ -4877,6 +4965,8 @@
         "remove": "删除",
         "domainLabel": "域名",
         "brandLabel": "模型会用的名字",
+        "aliasesLabel": "竞品别名",
+        "aliasesHelp": "从竞品页面提取或人工补充的名字。修改后需要重新确认。",
         "confirmLabel": "已确认",
         "unconfirmed": "未确认。展示，但不计入。",
         "empty": "还没有竞品。对比类问题至少需要一个已确认的名字。",
@@ -4922,6 +5012,12 @@
       },
       "freeze": {
         "title": "冻结一个版本",
+        "draftPolicy": "已保存草稿的来源策略：跳过{layers}。",
+        "draftPolicyComplete": "已保存草稿的来源策略：支持依赖角色的题目层。",
+        "frozenSkipped": "此冻结版本跳过：{layers}。",
+        "questionSetHash": "冻结提问集哈希：{hash}",
+        "registry": "冻结题库版本：{version}",
+        "contentHash": "冻结知识库哈希：{hash}",
         "intro": "冻结版本不可修改。可见性体检对着某一个版本跑，报告因此永远能说清它问了什么、为什么问。",
         "action": "冻结当前内容",
         "freezing": "冻结中…",
@@ -4932,7 +5028,8 @@
           "category_terms_missing": "至少填一个品类词。",
           "role_missing": "至少加一个角色。",
           "no_confirmed_competitor": "至少确认一个竞品的名字。",
-          "alias_too_short": "这个名字太短，匹配器不会去找它：拉丁字母至少 3 个，不写空格的文字（中日文等）至少 2 个。请写全称，或者补一个更长的别名——名字这么短，每一个提到你的回答都会被报成没提到你。"
+          "alias_too_short": "这个名字太短，匹配器不会去找它：拉丁字母至少 3 个，不写空格的文字（中日文等）至少 2 个。请写全称，或者补一个更长的别名——名字这么短，每一个提到你的回答都会被报成没提到你。",
+          "unsupported_language": "当前问题模板不支持所选语言。"
         },
         "current": "当前版本：第 {revision} 版，冻结于 {time}",
         "questions": "共 {count} 条问题，其中 {retrieval} 条用的是已标定的检索措辞",
@@ -4958,7 +5055,9 @@
           "evaluation": "选型",
           "branded": "品牌词"
         },
-        "uncalibrated": "这句是在这里拼出来的，不来自已测量的模板库。"
+        "uncalibrated": "这句是在这里拼出来的，不来自已测量的模板库。",
+        "role": "角色：{role}",
+        "entities": "必含实体：{entities}"
       },
       "errors": {
         "auth_required": "登录后才能建立知识库。",
@@ -4971,6 +5070,8 @@
         "invalid_payload": "表单里有内容不可用：{reason}",
         "conflict": "你编辑期间这个知识库变过了，这次什么都没写。你的修改还在表单里：再按一次「保存草稿」，就会覆盖到那个更新的版本上。",
         "conflict_unknown": "你编辑期间这个知识库变过了，而且服务端没有说清当前是哪一版，这次什么都没写。先把不能丢的内容复制出来，再用「切换站点」重新载入。",
+        "context_stale": "你审阅后，网站档案或来源证据已变化。请重新载入来源引用并审阅，再次保存；本地草稿会保留。",
+        "website_required": "冻结前，请先在「设置 → 网站」中添加或选择这个站点。知识库草稿会保留。",
         "not_ready": "没有冻结成功：下面这几项还缺。补齐之后先保存草稿，再冻结一次。",
         "form_invalid": "什么都没发出去，所以你改的其它内容一样没丢。先把下面标出来的行补完或删掉。",
         "bad_response": "返回的内容不是 JSON，通常是网关替工具应答了。这一次是否写入并不确定——先重新载入这个站点，再继续编辑。",
@@ -4999,9 +5100,9 @@
       },
       "limitsTitle": "这件工具不做什么",
       "limits": {
-        "notSynced": "它不与网站档案保持同步。预填是一次性的复制。",
+        "notSynced": "产品字段继承自已确认的网站档案精确版本。来源变化后，下一次冻结前需要重新审阅；历史冻结版本不会被改写。",
         "noGuess": "它不替你补事实。留空并写明原因才是诚实状态，Brief 生成器依赖这一点。",
-        "noGsc": "它不读 Search Console。角色要你自己写，因为一堆查询词不等于一个人。",
+        "noGsc": "GSC 查询角色建议要求已授权资源属于同一个登录 Google 账户。缺少这份证据时会跳过问题层和评估层；查询聚类不等于已观测的人群画像。",
         "englishOnly": "它产出英文问题。能触达联网检索的措辞是在英文下测出来的，翻译等于把这份测量丢掉。"
       },
       "faq": {
@@ -5020,12 +5121,39 @@
             "a": "模型写的是「Linear」，不是「linear.app」。算提及要用名字，判断引用指向谁要用域名。未确认的竞品会留在列表里、不进份额计算，报告会点名说它被排除了。"
           }
         ]
+      },
+      "asset": {
+        "title": "网站 GEO 扩展",
+        "loading": "正在加载网站 GEO…",
+        "retry": "重试",
+        "profileRequired": "请先确认该网站的产品档案，以继承产品事实。",
+        "profileUnavailable": "无法读取已确认的产品档案。请检查原始档案后重新加载。",
+        "editProfile": "编辑原始产品档案",
+        "canonicalLink": "打开该网站的 GEO 设置",
+        "backToWebsites": "所有网站",
+        "shortcutDescription": "这个地址是「设置 → 网站 → GEO 扩展」的兼容快捷入口，两处编辑的是同一资产，不是第二份知识库。",
+        "profileTitle": "继承的产品档案",
+        "reloadSources": "重新载入来源引用（保留我的草稿）",
+        "profileBody": "以下只读字段来自已确认的精确版本。要修改产品信息，请编辑原始产品档案。",
+        "productName": "产品名称",
+        "positioning": "一句话定位",
+        "features": "核心功能",
+        "featureCandidateHelp": "先添加待核事实，再审阅取值、来源网址与采集时间。这个动作不会自动核实或保存事实。",
+        "featureCandidateAdd": "添加待核事实",
+        "featureCandidateExists": "该事实已存在",
+        "featureCandidateTooLong": "功能名称超出事实名称上限，未截断原文",
+        "featureCandidateFull": "已达到事实条数上限",
+        "revision": "已确认的档案版本 {revision}",
+        "hash": "档案哈希：{hash}",
+        "officialNameHelp": "此名称仅覆盖 GEO 品牌别名匹配，不是另一份产品名称。",
+        "websiteNotFound": "你的账户中没有可用的该网站。",
+        "unsupportedLanguage": "暂不支持以 {language} 生成问题。请在这里选择英文提问语言，保存后再冻结。"
       }
     },
     "geoBrief": {
       "eyebrow": "GEO 工具",
       "title": "GEO Brief 生成器",
-      "intro": "拿一道买家会去问 AI 的题，看一次真实回答是怎么分段的，再配上你自己核实过的事实。产出的是一份写手可以直接开工的 Brief，每一行都带着出处。",
+      "intro": "从冻结知识库或所属可见性运行中的合格缺口，生成共享 ContentBrief。评分要求、观测子话题与事实分开呈现，来源和精确版本锚一直保留到 Draft。",
       "running": "正在生成 Brief",
       "limitsTitle": "这份 Brief 做不到什么",
       "form": {
@@ -5038,7 +5166,7 @@
         "typeYourOwn": "自己写一道题",
         "typedQuestion": "你的提问",
         "typedNote": "自己写的题没有观测计数。Brief 会写明这一点，而不是让那些数字看起来只是碰巧缺了。",
-        "estimate": "一次采样调用加一次组装调用。每个账号每天 {runs} 份——这是防跑飞的闸门，不是定价。",
+        "estimate": "一次大纲组装调用，不额外重采可见性。每个账号每天 {runs} 份。",
         "submit": "生成 Brief",
         "submitting": "生成中"
       },
@@ -5076,8 +5204,30 @@
       "sources": {
         "kb": "来自你的知识库",
         "crawl": "从你站上抓的",
-        "ai_sample": "一次回答里出现过",
-        "model": "本工具写的"
+        "ai_sample": "回答样本中的观测",
+        "model": "本工具写的",
+        "user_input": "手动输入",
+        "product_profile": "网站档案",
+        "site_index": "站点索引"
+      },
+      "shared": {
+        "origin": "GEO 来源",
+        "noEvidence": "手动入口 · 无运行观测证据",
+        "format": "内容形式",
+        "verdict": "页面决策",
+        "length": "篇幅",
+        "internalLinks": "站点索引内链",
+        "readiness": "{count} 段可写",
+        "candidates": "候选 {candidates} · 展示 {shown} · 未展示 {hidden}",
+        "coverage": "{covered} / {total} 个成功回答",
+        "requirement": "冻结知识库要求项",
+        "unavailable": "不可用：{reason}",
+        "generateDraft": "生成 Draft →",
+        "handoffFailed": "无法保存交接，请导出 JSON。",
+        "evidence": "证据与版本锚",
+        "estimate": "使用冻结知识或所选所属运行；不额外重采可见性。",
+        "role": "角色",
+        "manualNote": "手填提问属于用户输入，不冒充冻结评分要求。"
       },
       "limits": {
         "singleSample": "这些子话题是从一次回答里读来的：问了一次，只在一个面上。同一道题再问一次会得到不一样的东西——量那个的是 AI 可见性体检，不是这里。",
@@ -5109,11 +5259,15 @@
         "unsupported_media_type": "那个请求不是 JSON。",
         "not_found": "那个冻结版本、或者那道题，不是你的。",
         "daily_limit": "今天已经生成了 {limit} 份。从第一份算起 24 小时后重置。",
-        "provider_unconfigured": "这个部署没有配采样凭据或者没有配组装模型，跑出来的 Brief 会缺一半。没有产生花费。",
+        "provider_unconfigured": "这个部署尚未配置所需的服务。没有产生花费。",
         "store_unavailable": "刚才读不到你的知识库。没有产生花费。",
         "brief_unavailable": "Brief 回来的形状这一页读不了。没有产生新的花费。",
         "internal_error": "这边出了问题，不是你的问题。",
-        "network": "那个请求没有到达工具。",
+        "network": "未能收到响应。再次尝试前请先检查当前状态。",
+        "gap_not_eligible": "该缺口不进入内容链。",
+        "unsupported_language": "GEO 生成目前仅支持英语及其地区变体（en、en-*）。没有产生花费。",
+        "run_evidence_unavailable": "所属运行证据不可用或不完整。",
+        "handoff_invalid": "交接已过期或不再匹配。",
         "unknown": "没跑成，而且原因不是这一页认识的那几种。"
       },
       "faq": {
@@ -5121,7 +5275,7 @@
         "items": [
           {
             "q": "子话题是从哪来的？",
-            "a": "从一次对你这道题的真实回答里来——在 ChatGPT 上问一次。工具取的是那次回答自己用的标题和列表引导词，不是让另一个模型去总结它，然后把每一条标成「观测到的」。如果那次回答是没有结构的散文，这一块就是空的，Brief 会写明——把一段话切成子话题，就是在伪造证据。"
+            "a": "所属可见性运行提供成功回答中实际出现的标题与列表引导词，跨样本覆盖数排除失败调用。没有运行时，Brief 只使用冻结要求和事实，或明确标为用户输入的手填问题；不会编造观测，也不会另买一次采样替代上游证据。"
           },
           {
             "q": "它能替我把数字写出来吗？",
@@ -5133,7 +5287,7 @@
           },
           {
             "q": "它会把页面写出来吗？",
-            "a": "不会。它产出的是 Brief：开头要回答什么、这一页要覆盖什么、一个结构、可以用哪些事实、哪些维度不要写数字。写作是你或者你的写手的事。"
+            "a": "Brief 本身不写作或发布页面。它把同一份版本化合同交给共用 Content Draft 工具，正文事实受非空事实表约束。你自行发布后，GEO Draft 会转向页面可引用性检查。"
           }
         ]
       },
@@ -5162,7 +5316,7 @@
     "aiVisibility": {
       "eyebrow": "GEO 工具",
       "title": "AI 可见性体检",
-      "intro": "用冻结的问题集在一个 AI 面上重复提问。它报告你在哪些回答里被提到、在哪些里被引用，以及这些回答是用哪些域名的内容拼出来的。它不告诉你为什么。",
+      "intro": "用冻结的问题集，在你选择的引擎上重复提问，并将提及、引用与独立读取的页面证据对照。历史单引擎报告保留原有范围；任何报告都不能证明模型为什么选择某个答案。",
       "loading": "正在载入你的冻结版本…",
       "retryLoad": "重试",
       "signIn": {
@@ -5177,7 +5331,7 @@
       },
       "form": {
         "title": "跑一次体检",
-        "intro": "一个冻结版本、一个市场、一个面。下面这几个数来自问题集本身，不是平均值。",
+        "intro": "一个冻结版本和市场，开始前选择引擎。调用数 = 问题数 × 每个引擎的采样次数 × 所选引擎数。",
         "versionLabel": "冻结版本",
         "versionOption": "{host} · 第 {revision} 版 · 冻结于 {time}",
         "versionQuestions": "共 {count} 题，其中 {retrieval} 题用的是已标定的检索措辞",
@@ -5189,7 +5343,11 @@
         "start": "开始运行",
         "starting": "启动中…",
         "dailyLimit": "每个账号每天 {runs} 轮。这是防跑飞的闸，不是预算。",
-        "cooldown": "请 {seconds} 秒后再试。"
+        "cooldown": "请 {seconds} 秒后再试。",
+        "enginesLabel": "引擎",
+        "enginesHelp": "每个所选引擎都会运行全部冻结问题。增加引擎会增加调用次数和费用。",
+        "context": "市场：{market} · 语言：{language}",
+        "multiEngineEstimateNote": "费用与耗时仅参考历史 ChatGPT 校准值。Perplexity 可能不同；实际费用以返回的计费数据为准。"
       },
       "running": {
         "title": "运行中",
@@ -5207,15 +5365,17 @@
         },
         "coverage": "{calls} 次调用中有 {answered} 次拿到回答",
         "minSuccess": "回答率低于 {percent}% 时，这一轮不下结论，也不会成为对比基线。",
-        "questions": "{count} 题，每题 {samples} 次",
+        "questions": "{count} 题，每个引擎对每题采样 {samples} 次",
         "revision": "冻结版本第 {revision} 版",
         "model": "{model}，市场 {market}",
         "finished": "完成于 {time}",
         "cost": "调用花费 {cost, number, ::currency/USD}",
-        "costUnavailable": "这一轮供应商没有返回价格。",
+        "costUnavailable": "部分调用没有已观察到的价格，因此无法给出完整调用总价。",
         "withheldTitle": "这一轮不下结论",
         "withheldBody": "回来的调用不到 {percent}%，因此比例、阶段表和与上一轮的对比都不显示：用活下来的采样算区间，等于把失败的那些当成回答过。下面是这一轮确实回来的每一题、每一个回答，以及它花了多少钱。",
-        "surface": "经由 {surface} 采集"
+        "surface": "经由 {surface} 采集",
+        "engines": "引擎：{engines}",
+        "language": "语言：{language}"
       },
       "overview": {
         "title": "概览",
@@ -5247,7 +5407,9 @@
         "column": {
           "layer": "阶段",
           "mention": "被提到",
-          "citation": "被引用"
+          "citation": "被引用",
+          "samples": "有效 / 计划样本",
+          "meanPosition": "实际列表平均位次"
         },
         "names": {
           "problem": "问题",
@@ -5307,7 +5469,7 @@
         "citationUnknown": "有 {count} 个回答回来了，但它们的引用列表这一轮读不出来。它们既不算引用也不算未引用，不在上面那个比例里。"
       },
       "comparison": {
-        "title": "与你上一轮相比",
+        "title": "两轮对比",
         "intro": "与完成于 {time} 的那一轮对比。只对比同一套冻结问题集的运行；重新冻结过的知识库问的是另一套问题。",
         "column": {
           "metric": "指标",
@@ -5317,11 +5479,15 @@
         },
         "metrics": {
           "questionsMentioned": "出现过你的问题数",
-          "questionsCited": "引用过你的问题数"
+          "questionsCited": "引用过你的问题数",
+          "shareOfVoice": "条件声量占比 · 配对问题"
         },
         "changed": "{pairs} 个可比问题里，{gained} 个变好、{lost} 个变差。方向一边倒：移动了的问题里有 {lo}–{hi}% 是变好的。",
         "unchanged": "移动了的问题没有指向同一个方向",
         "notTestable": "两侧都可比的问题太少，无法检验",
+        "sovChange": "变化 {change} 个百分点；{pairs} 对问题的保守 95% 区间为 {lo} 至 {hi} 个百分点",
+        "sovUnavailable": "{pairs} 对问题暂不可给出区间：{reason}",
+        "sovScope": "配对声量占比只使用两轮均有有效回答的问题，因此可能与整轮指标不同。同一问题的重复回答不会增加独立问题对数量。",
         "questionsTitle": "有变动的问题",
         "questionRow": "{of} 个回答里，从 {base} 变成 {current}",
         "direction": {
@@ -5334,12 +5500,50 @@
       "limitsTitle": "这一轮不能告诉你什么",
       "limits": {
         "oneSurface": "只有一个面：通过 DataForSEO API 采集的 ChatGPT 回答。不是消费者版会话，也不是 Google、Perplexity、Claude 或 Gemini。",
-        "notAttribution": "它只观测，不解释。要判断某一题为什么没有你，还需要读你自己的页面，而这一轮不读。那件事从页面可引用性检查开始。",
+        "notAttribution": "观察到的缺口不是模型选择答案的因果解释，也不证明未来增长。站点索引均有明确边界；不完整的页面证据不能证明不存在。",
         "sampledNotCensus": "这是抽样。同一个问题这一分钟引用四个来源、下一分钟一个都不引，所以每题要问几遍，每个数字都带区间。",
         "demandQuestions": "按买家口吻写的问题通常是凭记忆回答的。它们的提及值得数，它们的引用数只报数、不带分母。",
         "englishOnly": "问题是英文的，因为措辞是在英文下测出来的。市场不是被标定的那个时，报告会写明。",
         "notStored": "这一轮没有存下来。报告本身是完整的，但它没能写进存储，因此不会成为下一轮的对比基线。",
-        "denseScriptMatching": "品牌名写在不用空格分词的文字里（中文、日文、泰文等）时，匹配器没有词边界可依。它在更长的词里找到这个名字，和在它单独出现时一样算数，所以包含品牌名的更长词也会被算作一次提及，这一轮的提及数可能因此偏高。"
+        "denseScriptMatching": "品牌名写在不用空格分词的文字里（中文、日文、泰文等）时，匹配器没有词边界可依。它在更长的词里找到这个名字，和在它单独出现时一样算数，所以包含品牌名的更长词也会被算作一次提及，这一轮的提及数可能因此偏高。",
+        "confirmedSubset": "声量占比仅覆盖本站和已确认竞品品牌，不代表整个市场。",
+        "rankObservedOnly": "平均位次只使用实际带编号的回答列表，不把普通段落顺序当作排名。",
+        "perplexityWordingUncalibrated": "Perplexity 的提问措辞未继承 ChatGPT 的校准；搜索和引用的实际可用性按每份回答记录。",
+        "siteEvidenceUnavailable": "无法取得独立站点证据；不能从未读到的页面推断内容或收录原因。",
+        "siteEvidenceBudget": "已达到站点证据预算，保留的索引不完整；省略的页面或检查不能作为不存在的证据。",
+        "citationEvidenceTruncated": "为满足证据预算，部分引用 URL 或域名已省略。引用计数仍来自实际观察；来源表只覆盖保留的证据。",
+        "topicEvidenceTruncated": "部分结构化回答主题已省略。主题证据不完整的样本不能证明某主题缺失或已完整覆盖。",
+        "answerEvidenceTruncated": "回答及提及片段受到长度限制，或已省略；它们不是完整的服务商回答。"
+      },
+      "gaps": {
+        "title": "基于证据的缺口",
+        "intro": "这些是观察到的缺口，不是因果解释。A 仅针对本次审计索引；多个条件同时满足时，按 B → A → D → C 排序。",
+        "noEvidence": "站点证据不可用，暂不推断缺口动作。",
+        "indexStatus": "审计索引：{status} · 在发现的 {discovered} 页中保留了 {count} 页读取记录",
+        "indexValues": { "complete": "声明范围内完整", "partial": "部分", "unavailable": "不可用" },
+        "references": "独立读取的引用页面",
+        "readAt": "读取时间：{time}",
+        "referenceOmitted": "有 {count} 个引用页面没有保留的读取证据。",
+        "citabilityOmitted": "有 {count} 项候选页面检查未完成，或其证据已省略。",
+        "handoffFailed": "未能保存交接，请在当前标签页重试。",
+        "notStored": "本次运行未能保存，已禁用需要可信服务端记录的跨工具交接。",
+        "actions": { "brief": "生成 GEO Brief", "citability": "检查此页面", "thirdParty": "下载第三方待办" },
+        "kind": { "A": "A · 内容覆盖", "B": "B · 页面可引用性", "C": "C · 第三方在位", "D": "D · 对比内容覆盖", "unattributed": "未归因" },
+        "presence": { "present": "页面中已观察到本站或品牌", "absent": "完整读取中未找到本站或品牌", "unknown": "在位情况不可用" },
+        "pageType": { "listicle": "榜单页", "comparison": "对比页", "product": "产品页", "article": "文章", "documentation": "文档", "other": "其他已读页面", "unavailable": "页面类型不可用" },
+        "reasons": {
+          "measurement_insufficient": "可比较的回答不足",
+          "prompted_question": "问题本身已包含品牌名",
+          "site_evidence_unavailable": "站点证据不可用",
+          "question_mapping_unavailable": "缺少可靠的冻结问题与页面映射",
+          "relevant_page_citability_failed": "相关页面的真实可引用性检查未通过",
+          "no_matching_page_in_audited_inventory": "完整读取的审计索引中没有匹配页面",
+          "repeated_competitor_list_position": "多份明确编号的列表中，已确认竞品排在本站之前",
+          "missing_from_read_reference_pages": "独立读取的被引用对比页或榜单页中没有本站",
+          "inventory_incomplete": "索引不完整，无法判断不存在",
+          "citability_unavailable": "相关页面的可引用性尚未测量",
+          "no_actionable_gap": "现有证据不足以支持后续动作"
+        }
       },
       "errors": {
         "auth_required": "登录后才能跑可见性体检。",
@@ -5373,7 +5577,7 @@
           },
           {
             "q": "它说我没被提到，那我该改什么？",
-            "a": "这一轮不知道。它看到的是模型说了什么，不是你站上有什么，所以它分不清「没有这一页」和「这一页读不到」。后半个问题，页面可引用性检查能对着你指定的页面回答。"
+            "a": "新版报告仅在独立读取的证据足够时，提供内容覆盖、页面可引用性、第三方在位或对比内容动作。内容缺口仅针对本次审计索引；缺失或不完整的证据保持未归因。历史 v1 报告只包含观测。"
           }
         ]
       },
@@ -5392,6 +5596,33 @@
             "blurb": "改名字、改品类、改竞品，冻结一个新版本，问另一套问题。"
           }
         ]
+      },
+      "v2": {
+        "title": "分引擎测量",
+        "mixed": "混合汇总",
+        "engine": "引擎：{engine}",
+        "modelRequested": "请求模型：{model}",
+        "modelObserved": "实际返回模型：{models}",
+        "unknown": "不可用",
+        "sov": "条件声量占比：出现已确认品牌的 {total} 个回答中，本站出现于 {own} 个 · 已确认竞品 {count} 个",
+        "sovInterval": "保守 95% 区间：{lo}–{hi}%，来自 {clusters} 个问题簇",
+        "sovIntervalUnavailable": "置信区间不可用：{reason}",
+        "sovAssumption": "此区间假设问题之间独立；同一问题的重复回答不会增加独立问题簇数量。",
+        "sovZeroObserved": "这些有效回答中未观察到",
+        "sovReasons": { "no_observed_questions": "没有问题取得有效回答", "no_brand_present_answers": "合格回答中没有出现已跟踪品牌", "fewer_than_10_question_clusters": "有效问题簇不足 10 个", "no_paired_questions": "没有两轮均取得有效回答的问题", "fewer_than_10_question_pairs": "可比较的问题对不足 10 个" },
+        "coverage": "有效样本覆盖率：{covered}/{total} 个冻结问题",
+        "position": "实际列表平均位次：{position}（{count} 个有排名的回答）",
+        "positionUnavailable": "平均位次不可用：没有明确的有序列表证据",
+        "importTitle": "对比两份运行文件",
+        "importBase": "基线运行 JSON",
+        "importCurrent": "本次运行 JSON",
+        "imported": "导入文件仅是未经服务端核验的本地证据，不是账户拥有的服务端运行。",
+        "loaded": "已加载：{id}",
+        "compare": "对比文件",
+        "invalidFile": "运行文件无效、过大或不兼容",
+        "incompatible": "这两轮不能共用比较基线：{reason}",
+        "exportJson": "下载运行 JSON",
+        "exportMarkdown": "下载证据 Markdown"
       }
     }
   },
@@ -7544,7 +7775,8 @@
           "failed": "画像确认失败，请检查字段后重试。"
         },
         "draftVersion": "草稿 v{version}",
-        "noSources": "还没有来源 URL。"
+        "noSources": "还没有来源 URL。",
+        "geoExtension": "GEO 扩展"
       }
     },
     "menu": {

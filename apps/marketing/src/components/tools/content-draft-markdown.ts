@@ -45,7 +45,20 @@ export function draftMarkdown(result: DraftResult, notes: MarkdownNotes): string
   const sections = result.sections.map((section) =>
     sectionMarkdown(section, notes),
   );
-  return `${[title, ...sections].join("\n\n")}\n`;
+  const provenance = draftGeoProvenanceMarkdown(result);
+  return `${[title, ...sections, ...(provenance === "" ? [] : [provenance])].join("\n\n")}\n`;
+}
+
+/** GEO-only appendices preserve the evidence chain without altering authored sentence bytes. */
+export function draftGeoProvenanceMarkdown(result: DraftResult): string {
+  const origin = result.brief_ref.geo_origin;
+  const evidence = result.brief_ref.evidence;
+  if (origin === undefined || evidence === undefined) return "";
+  const lines = ["## geo_origin", `question: ${origin.question.text}`, `question_id: ${origin.question.id ?? "manual"} · role: ${origin.role ?? "none"}`, `kind: ${origin.kind} · layer: ${origin.layer ?? "unavailable"} · gap: ${origin.gap ?? "none"}`, `kb_ref: ${origin.kb_ref.kb_id} · ${origin.kb_ref.snapshot_id} · v${origin.kb_ref.revision} · ${origin.kb_ref.content_hash}`, `promptset_ref: ${origin.promptset_ref.schema} · ${origin.promptset_ref.registry_version} · ${origin.promptset_ref.hash}`, `profile_ref: ${origin.profile_ref === null ? "none" : JSON.stringify(origin.profile_ref)}`, `run_ref: ${origin.run_ref === null ? "none (manual; no observed run)" : `${origin.run_ref.id} · ${origin.run_ref.fingerprint}`}`, "", "## evidence"];
+  for (const fact of evidence.facts) lines.push(`- ${fact.id} · source=${fact.source} · ${fact.observed_at} · ${fact.url ?? "no URL"}: ${fact.text}`);
+  for (const sample of evidence.samples) lines.push(`- ${sample.id} · ai_sample (topic evidence only; not a fact source) · ${sample.engine} · ${sample.status} · ${sample.collected_at}: ${sample.excerpt}`);
+  for (const page of evidence.site_index) lines.push(`- ${page.id} · site_index · ${page.observed_at} · ${page.url}: ${page.title}`);
+  return lines.join("\n");
 }
 
 /** The H2 lines of a Markdown document, in order, without the marker. */

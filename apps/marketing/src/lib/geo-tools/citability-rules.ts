@@ -1,5 +1,5 @@
 // @input  -- one fetched page, its robots.txt and llms.txt outcomes, and an optional target question
-// @output -- fourteen checks, six of them counted toward the readable conclusion, five toward the extractable one
+// @output -- fourteen checks, five counted toward readability, five toward extraction, four advisory
 // @pos    -- the whole judgement of the page-citability tool; no network, no model, no locale strings
 
 import { parseRobots, matchRobotsRule } from "@sf/sources/crawl-robots";
@@ -11,8 +11,6 @@ import {
   CITABILITY_LIST_LINK_DENSITY_MAX,
   CITABILITY_MIN_LIST_ITEMS,
   CITABILITY_RETRIEVAL_BOTS,
-  CITABILITY_SCRIPT_DOMINANCE,
-  CITABILITY_TEXT_FLOOR_CHARS,
   CITABILITY_TRAINING_BOTS,
   type CitabilityCheck,
   type CitabilityContext,
@@ -30,6 +28,9 @@ import {
   QUESTION_COVERAGE_FLOOR,
   splitSentences,
 } from "./citability-text.ts";
+import { citabilityRenderCheck } from "./citability-render-rule.ts";
+import { measureCitabilityRender } from "./citability-render.ts";
+import { groupCitabilityCauses } from "./citability-causes.ts";
 
 /**
  * Conclusion markers, matched as whole words.
@@ -185,7 +186,7 @@ function botCheck(
       key: "robots.disallowed",
       values: { bot, path, pattern: decision.pattern ?? "" },
     },
-    { key: "robots.disallowed", values: { bot, pattern: decision.pattern ?? "" } },
+    { key: weight === "advisory" ? "robots.advisoryDisallowed" : "robots.disallowed", values: { bot, pattern: decision.pattern ?? "" } },
   );
 }
 
@@ -208,60 +209,6 @@ function truncated(
         key: "truncated",
         values: { chars: input.rawHtml.length },
       });
-}
-
-function ssrCheck(
-  input: CitabilityInput,
-  context: CitabilityContext,
-): CitabilityCheck {
-  const incomplete = truncated(input, "ssr", "readable", "deterministic");
-  if (incomplete !== null) return incomplete;
-  const chars = context.textChars;
-  if (chars >= CITABILITY_TEXT_FLOOR_CHARS) {
-    return citabilityCheck(
-      "ssr",
-      "readable",
-      "deterministic",
-      "counted",
-      "pass",
-      { key: "ssr.sufficient", values: { chars, floor: CITABILITY_TEXT_FLOOR_CHARS } },
-    );
-  }
-  const scriptDominant =
-    context.scriptBytes > Math.max(1, chars) * CITABILITY_SCRIPT_DOMINANCE;
-  // Both branches fail, and they fail for different reasons with different
-  // fixes. Neither one infers a served/rendered ratio: this tool does not
-  // execute JavaScript, so it has no rendered side to compare against and
-  // will not manufacture a ratio of 1 for a page it could not read.
-  return scriptDominant
-    ? citabilityCheck(
-        "ssr",
-        "readable",
-        "deterministic",
-        "counted",
-        "fail",
-        {
-          key: "ssr.clientRendered",
-          values: {
-            chars,
-            floor: CITABILITY_TEXT_FLOOR_CHARS,
-            scriptKb: Math.round(context.scriptBytes / 1024),
-          },
-        },
-        { key: "ssr.clientRendered" },
-      )
-    : citabilityCheck(
-        "ssr",
-        "readable",
-        "deterministic",
-        "counted",
-        "fail",
-        {
-          key: "ssr.thin",
-          values: { chars, floor: CITABILITY_TEXT_FLOOR_CHARS },
-        },
-        { key: "ssr.thin" },
-      );
 }
 
 /** The document's `<base href>`, which relative links resolve against. */
@@ -776,7 +723,7 @@ function faqCheck(input: CitabilityInput): CitabilityCheck {
 
 /** Limits this tool states up front, rendered with every report. */
 export const CITABILITY_LIMITS = [
-  "noJavaScript",
+  "boundedRendering",
   "onePage",
   "noRanking",
   "advisoryRows",
@@ -793,7 +740,7 @@ export function runCitabilityChecks(
     provided ?? buildCitabilityContext(input.rawHtml, input.targetQuestion);
   return [
     ...CITABILITY_RETRIEVAL_BOTS.map((bot) => botCheck(input, bot, "counted")),
-    ssrCheck(input, context),
+    citabilityRenderCheck(input),
     canonicalCheck(input),
     ...CITABILITY_TRAINING_BOTS.map((bot) => botCheck(input, bot, "advisory")),
     llmsTxtCheck(input),
@@ -812,12 +759,14 @@ export function buildCitabilityReport(
   const context = buildCitabilityContext(input.rawHtml, input.targetQuestion);
   const checks = runCitabilityChecks(input, context);
   return {
+    render: input.render ?? measureCitabilityRender({ url: input.finalUrl, rawHtml: input.rawHtml, bodyComplete: input.bodyComplete }, null, { reason: "not_configured", now: () => new Date(fetchedAt) }),
+    rootCauses: groupCitabilityCauses(checks),
     url: input.url,
     finalUrl: input.finalUrl,
     targetQuestion: input.targetQuestion,
     questionTerms: context.questionTerms,
     fetchedAt,
-    textChars: context.textChars,
+    textChars: input.render?.raw.textChars ?? context.textChars,
     checks,
     summary: summarizeCitability(checks),
     limits: [...CITABILITY_LIMITS],

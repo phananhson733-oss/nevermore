@@ -1,0 +1,667 @@
+import React, { useState } from "react";
+
+/**
+ * GenGrowth · GEO 产品界面（v2 · astrologywiki 实例）
+ * 知识库改为「网站档案的 GEO 扩展区」：复用已有的 产品名称/一句话定位/核心功能，
+ * 只补 GEO 特有字段（别名、竞品映射、ICP、品类词、市场语言、冻结版本）。
+ * 数据为示例，状态与口径与 geo/ 实现包一致。
+ */
+
+const T = {
+  bg: "#0D1319",
+  panel: "#151E27",
+  panel2: "#1B2731",
+  line: "#253340",
+  line2: "#32424F",
+  text: "#E4EAF0",
+  text2: "#9CACBA",
+  text3: "#67788A",
+  pass: "#3FAFA3",
+  fail: "#C2788E",
+  brass: "#D2A248",
+};
+
+const NAV = [
+  { id: "kb", name: "知识库", c: "#8FA0B0", sub: "设置 → 网站 → GEO 扩展 · 非工具页" },
+  { id: "T1", name: "AI 可见性体检", c: "#3FAFA3", sub: "/zh/tools/ai-visibility-check" },
+  { id: "T2", name: "页面可引用性检查", c: "#6E97D6", sub: "/zh/tools/page-citability-check" },
+  { id: "T3", name: "GEO Brief 生成器", c: "#D2A248", sub: "/zh/tools/geo-brief · 输出 ContentBrief v1.1" },
+  { id: "chain", name: "内容链衔接", c: "#C2788E", sub: "draft 复用 /tools/content-draft · 不再自建成稿" },
+];
+
+const HAS_INPUT = { kb: true, T1: true, T2: true, T3: true, chain: false };
+
+export default function GeoProductUI() {
+  const [tool, setTool] = useState("kb");
+  const [mode, setMode] = useState("input");
+  const nav = NAV.find((n) => n.id === tool);
+
+  const go = (id) => {
+    setTool(id);
+    setMode(HAS_INPUT[id] ? "input" : "result");
+  };
+
+  return (
+    <div className="p-body" style={{ background: T.bg, color: T.text, minHeight: "100%" }}>
+      <style>{`
+        .p-body{font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,sans-serif;}
+        .p-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-feature-settings:"tnum";}
+        .p-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
+        .p-top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-bottom:1px solid ${T.line};}
+        .p-tabs{display:flex;gap:2px;overflow-x:auto;padding:0 12px;border-bottom:1px solid ${T.line};}
+        .p-main{max-width:1120px;margin:0 auto;padding:22px 16px 48px;}
+        @media(min-width:768px){.p-main{padding:28px 28px 60px;}}
+        .p-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:22px;}
+        .p-stack>*+*{margin-top:20px;}
+        .p-2{display:grid;gap:12px;grid-template-columns:1fr;}
+        @media(min-width:800px){.p-2{grid-template-columns:1fr 1fr;}}
+        .p-3{display:grid;gap:12px;grid-template-columns:1fr;}
+        @media(min-width:800px){.p-3{grid-template-columns:repeat(3,1fr);}}
+        .p-4{display:grid;gap:10px;grid-template-columns:1fr 1fr;}
+        @media(min-width:720px){.p-4{grid-template-columns:repeat(4,1fr);}}
+        .p-5{display:grid;gap:10px;grid-template-columns:1fr 1fr;}
+        @media(min-width:900px){.p-5{grid-template-columns:repeat(5,1fr);}}
+        .p-field{display:grid;gap:6px;grid-template-columns:1fr;padding:13px 16px;}
+        @media(min-width:700px){.p-field{grid-template-columns:184px minmax(0,1fr);gap:16px;align-items:start;}}
+        .p-x{overflow-x:auto;}
+        .p-x::-webkit-scrollbar,.p-tabs::-webkit-scrollbar{height:6px;}
+        .p-x::-webkit-scrollbar-thumb,.p-tabs::-webkit-scrollbar-thumb{background:${T.line2};border-radius:99px;}
+        .p-btn:focus-visible,.p-tab:focus-visible{outline:2px solid ${T.brass};outline-offset:2px;}
+        .p-tab{transition:color .12s ease,border-color .12s ease;}
+      `}</style>
+
+      {/* 顶栏 */}
+      <div className="p-top">
+        <div className="p-row" style={{ gap: 14 }}>
+          <span className="p-mono" style={{ fontSize: 12, letterSpacing: "0.14em", color: T.brass }}>GENGROWTH</span>
+          <span className="p-mono" style={{ fontSize: 11, color: T.text3 }}>GEO 模块</span>
+        </div>
+        <div className="p-row" style={{ gap: 8 }}>
+          <span className="p-mono" style={{ fontSize: 11, padding: "3px 9px", background: T.panel, border: `1px solid ${T.line2}`, color: T.text2 }}>astrologywiki.com</span>
+          <span className="p-mono" style={{ fontSize: 11, padding: "3px 9px", border: `1px solid ${T.pass}`, color: T.pass }}>kb@v1 已冻结</span>
+          <span className="p-mono" style={{ fontSize: 11, padding: "3px 9px", border: `1px solid ${T.line2}`, color: T.text3 }}>prompt-set@v1 · 42 条</span>
+        </div>
+      </div>
+
+      {/* 切换 */}
+      <div className="p-tabs">
+        {NAV.map((n) => {
+          const on = n.id === tool;
+          return (
+            <button key={n.id} onClick={() => go(n.id)} className="p-tab p-btn"
+              style={{ whiteSpace: "nowrap", padding: "12px 15px", fontSize: 13, background: "transparent",
+                border: "none", borderBottom: `2px solid ${on ? n.c : "transparent"}`,
+                color: on ? T.text : T.text3, fontWeight: on ? 600 : 400, cursor: "pointer", marginBottom: -1 }}>
+              {n.name}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="p-main">
+        <div className="p-head">
+          <div style={{ minWidth: 0 }}>
+            <div className="p-mono" style={{ fontSize: 11, color: nav.c, marginBottom: 7 }}>{nav.sub}</div>
+            <h1 style={{ fontSize: 22, fontWeight: 600 }}>{nav.name}</h1>
+          </div>
+          {HAS_INPUT[tool] && (
+            <div style={{ display: "flex", border: `1px solid ${T.line2}` }}>
+              {[["input", tool === "kb" ? "补充与确认" : "输入"], ["result", tool === "kb" ? "冻结快照" : "结果"]].map(([k, label]) => (
+                <button key={k} onClick={() => setMode(k)} className="p-btn p-mono"
+                  style={{ padding: "6px 14px", fontSize: 11, background: mode === k ? nav.c : "transparent",
+                    color: mode === k ? T.bg : T.text2, border: "none", cursor: "pointer", fontWeight: mode === k ? 700 : 400 }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="p-stack">
+          {tool === "kb" && (mode === "input" ? <KbInput /> : <KbResult />)}
+          {tool === "T1" && (mode === "input" ? <T1Input /> : <T1Result />)}
+          {tool === "T2" && (mode === "input" ? <T2Input /> : <T2Result />)}
+          {tool === "T3" && (mode === "input" ? <T3Input /> : <T3Result />)}
+          {tool === "chain" && <Chain />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════ 通用组件 ════════ */
+
+function Sec({ title, note, children, c }) {
+  return (
+    <section>
+      <div className="p-row" style={{ marginBottom: 10, gap: 10 }}>
+        <span className="p-mono" style={{ fontSize: 11, letterSpacing: "0.12em", color: c || T.text3 }}>{title}</span>
+        {note && <span style={{ fontSize: 11, color: T.text3 }}>{note}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Field({ label, value, hint, required, chips, inherit }) {
+  return (
+    <div className="p-field" style={{ borderTop: `1px solid ${T.line}` }}>
+      <div style={{ fontSize: 12, color: T.text2, lineHeight: 1.7 }}>
+        {label}{required && <span style={{ color: T.fail }}> *</span>}
+        {inherit && <div className="p-mono" style={{ fontSize: 9, marginTop: 5, display: "inline-block", padding: "1px 5px", border: `1px solid ${T.text3}`, color: T.text3 }}>继承自网站档案</div>}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        {chips ? (
+          <div className="p-row" style={{ gap: 6 }}>
+            {chips.map((c) => (
+              <span key={c} className="p-mono" style={{ fontSize: 11, padding: "4px 9px", background: T.panel2, border: `1px solid ${T.line2}`, color: T.text }}>{c}</span>
+            ))}
+          </div>
+        ) : (
+          <div className="p-mono" style={{ padding: "9px 12px", background: T.bg, border: `1px solid ${T.line2}`, fontSize: 12, color: T.text, lineHeight: 1.8 }}>{value}</div>
+        )}
+        {hint && <div style={{ fontSize: 11, color: T.text3, marginTop: 7, lineHeight: 1.8 }}>{hint}</div>}
+      </div>
+    </div>
+  );
+}
+
+function Fields({ children }) {
+  return <div style={{ border: `1px solid ${T.line}`, borderTop: "none", background: T.panel }}>{children}</div>;
+}
+
+function Submit({ label, note, c }) {
+  return (
+    <div className="p-row" style={{ gap: 14 }}>
+      <span style={{ padding: "10px 20px", background: c, color: T.bg, fontSize: 13, fontWeight: 600 }}>{label}</span>
+      {note && <span className="p-mono" style={{ fontSize: 11, color: T.text3 }}>{note}</span>}
+    </div>
+  );
+}
+
+function Metric({ label, value, sub, tone, tag }) {
+  return (
+    <div style={{ padding: "13px 15px", background: T.panel, border: `1px solid ${T.line}` }}>
+      <div style={{ fontSize: 11, color: T.text3 }}>{label}</div>
+      <div className="p-mono" style={{ fontSize: value.length > 12 ? 14 : 20, fontWeight: 700, color: tone || T.text, marginTop: 5, lineHeight: 1.4 }}>{value}</div>
+      <div className="p-mono" style={{ fontSize: 10, color: T.text3, marginTop: 5, lineHeight: 1.7 }}>{sub}</div>
+      {tag && <div className="p-mono" style={{ fontSize: 9.5, marginTop: 7, display: "inline-block", padding: "1px 5px", border: `1px solid ${T.text3}`, color: T.text3 }}>{tag}</div>}
+    </div>
+  );
+}
+
+function Table({ cols, rows, minW }) {
+  return (
+    <div className="p-x" style={{ border: `1px solid ${T.line}` }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: minW || 480 }}>
+        <thead>
+          <tr>{cols.map((h) => (
+            <th key={h} className="p-mono" style={{ padding: "9px 13px", textAlign: "left", fontSize: 10, fontWeight: 400, color: T.text3, background: T.panel, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" }}>{h}</th>
+          ))}</tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>{r.map((cell, j) => {
+              const arr = Array.isArray(cell);
+              const txt = arr ? cell[0] : cell;
+              const col = arr ? cell[1] : T.text2;
+              const dashed = arr && cell[2] === "dashed";
+              return (
+                <td key={j} className="p-mono" style={{ padding: "9px 13px", fontSize: 11, borderBottom: `1px solid ${T.line}`, lineHeight: 1.7, color: col, whiteSpace: j === 0 ? "normal" : "nowrap" }}>
+                  {dashed ? <span style={{ border: `1px dashed ${col}`, padding: "1px 5px" }}>{txt}</span> : txt}
+                </td>
+              );
+            })}</tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const ST = { pass: [T.pass, "通过"], fail: [T.fail, "未通过"], na: [T.text3, "抓取失败"], skip: [T.text3, "不适用"] };
+
+function Checks({ items }) {
+  return (
+    <div style={{ border: `1px solid ${T.line}` }}>
+      {items.map((it, i) => {
+        const [col, label] = ST[it[0]];
+        const dashed = it[0] === "na" || it[0] === "skip";
+        return (
+          <div key={i} className="p-row" style={{ padding: "10px 14px", alignItems: "flex-start", borderTop: i === 0 ? "none" : `1px solid ${T.line}`, background: T.panel }}>
+            <span className="p-mono" style={{ fontSize: 10, padding: "1px 6px", color: col, border: `1px ${dashed ? "dashed" : "solid"} ${col}`, whiteSpace: "nowrap" }}>{label}</span>
+            <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+              <div style={{ fontSize: 12, color: T.text, lineHeight: 1.7 }}>
+                {it[1]}
+                {it[3] === "h" && <span className="p-mono" style={{ fontSize: 9, marginLeft: 7, padding: "0 4px", border: `1px solid ${T.brass}`, color: T.brass }}>启发式</span>}
+              </div>
+              <div className="p-mono" style={{ fontSize: 10, color: T.text3, marginTop: 3, lineHeight: 1.7 }}>{it[2]}</div>
+              {it[4] && <div style={{ fontSize: 10.5, color: T.text2, marginTop: 5, lineHeight: 1.7 }}>修法：{it[4]}</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Notice({ tone, title, body }) {
+  const c = tone === "warn" ? T.brass : tone === "good" ? T.pass : tone === "bad" ? T.fail : "#6E97D6";
+  return (
+    <div style={{ padding: 15, background: T.panel, border: `1px solid ${T.line}`, borderLeft: `3px solid ${c}` }}>
+      <div className="p-mono" style={{ fontSize: 11, color: c, marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 12, lineHeight: 1.9, color: T.text2 }}>{body}</div>
+    </div>
+  );
+}
+
+function Bar({ children }) {
+  return (
+    <div className="p-mono" style={{ padding: "10px 14px", background: "#080D12", border: `1px solid ${T.line}`, fontSize: 10, color: T.text3, lineHeight: 1.8 }}>
+      {children}
+    </div>
+  );
+}
+
+/* ════════ 知识库 · 网站档案的 GEO 扩展 ════════ */
+
+function KbInput() {
+  return (
+    <>
+      <Notice tone="info" title="不是新页面，是网站档案的一个区块"
+        body="放在 设置 → 网站 里，紧跟现有的「产品」区。产品名称、一句话定位、核心功能直接继承，不重复填。GEO 只补它缺的：别名、竞品映射、ICP、品类词、市场语言 —— 以及一个「冻结」动作。" />
+
+      <Sec title="继承 · 已从网站档案带入" c="#8FA0B0">
+        <Fields>
+          <Field label="域名" value="astrologywiki.com（已扫描 · 已保存）" inherit />
+          <Field label="产品名称" value="AstrologyWiki" inherit hint="作为 officialName 初始值 —— 提及判定的根。请确认这是模型口中会说的名字" />
+          <Field label="一句话定位" value="将本命星盘、占星知识与 CBT 日记结合，用现代心理学语境帮助用户进行自我探索，而非提供宿命式预测" inherit />
+          <Field label="核心功能" inherit chips={["免费本命星盘计算器", "今日星空与行星过运", "土星回归计算器", "合盘兼容性工具", "AI Oracle 与 Ask 问答", "CBT 日记与情绪记录", "占星百科知识库"]}
+            hint="两个用途：① 工具页进入站点索引的优先抓取清单 ② 转为已核实事实的候选（需逐条补来源与采集时间）" />
+        </Fields>
+      </Sec>
+
+      <Sec title="GEO 补充 · 网站档案里没有的" c="#8FA0B0">
+        <Fields>
+          <Field label="officialName 别名" required chips={["AstrologyWiki", "Astrology Wiki", "astrologywiki", "astrologywiki.com"]}
+            hint="提及判定的别名表，随 kb 一并冻结。大小写与分词变体已自动生成，可增删" />
+          <Field label="品类词" required chips={["birth chart calculator", "natal chart", "astrology site", "saturn return", "synastry"]}
+            hint="用户提问视角，不是产品视角 —— 没人会问「占星百科知识库」，他们问 best birth chart site。这是提问集的骨架" />
+          <Field label="市场 / 语言" value="US / en" required hint="网站档案里没有这个字段。它决定提问集语言与引擎的区域参数" />
+          <Field label="竞品域名" required chips={["cafeastrology.com", "astro.com", "costarastrology.com", "astro-seek.com", "thepattern.com"]}
+            hint="1–5 个。系统会抓各家首页解析 brandName —— 模型说的是 Cafe Astrology，不是 cafeastrology.com" />
+          <Field label="Search Console" value="sc-domain:astrologywiki.com（已连接）" hint="用近 90 天真实 query 聚类出 ICP 角色。不连接则跳过角色，问题层与评估层不生成" />
+        </Fields>
+      </Sec>
+
+      <Notice tone="warn" title="草稿与冻结是两回事"
+        body="网站档案的「保存草稿 / 已保存」是可变的，随时能改。GEO 的基线对比需要一个不可变锚点 —— 冻结会生成 kb@v1 快照，之后修改档案不影响已冻结版本，只会产生 v2。提及率变了到底是因为世界变了还是因为你改了别名表，必须分得开。" />
+
+      <Submit label="解析竞品并生成角色与提问集" note="抓竞品首页各 1 页 + GSC 聚类 · 约 30 秒" c="#8FA0B0" />
+    </>
+  );
+}
+
+function KbResult() {
+  return (
+    <>
+      <Sec title="竞品映射" c="#8FA0B0" note="域名不能直接用于提及判定">
+        <Table cols={["域名", "brandName", "aliases", "状态"]} rows={[
+          ["cafeastrology.com", "Cafe Astrology", "Cafe Astrology, Cafeastrology", ["已确认", T.pass]],
+          ["astro.com", "Astrodienst", "Astrodienst, Astro.com, astro dot com", ["已确认", T.pass]],
+          ["costarastrology.com", "Co–Star", "Co-Star, CoStar, Co Star", ["已确认", T.pass]],
+          ["astro-seek.com", "Astro-Seek", "Astro-Seek, AstroSeek", ["已确认", T.pass]],
+          ["thepattern.com", "—", "—", ["未确认 · 不参与 SOV", T.fail, "dashed"]],
+        ]} minW={560} />
+      </Sec>
+      <Notice tone="warn" title="thepattern.com 的 brandName 抽取失败"
+        body="首页 og:site_name 与 title 无公共前缀。该竞品已排除出 SOV 分母，T1 结果页会说明。可手动填写 The Pattern 后重新冻结为 v2。" />
+
+      <Sec title="ICP 角色 · 3 个" c="#8FA0B0" note="决定提问集的问题层与评估层能否生成">
+        <div className="p-3">
+          {[
+            ["占星入门者", "刚接触本命盘", ["术语看不懂，报告太玄"], ["Co–Star 推送 + TikTok 帖子"], ["免费", "无需注册", "解释说人话"], "GSC 18 条 query", T.pass],
+            ["进阶自学者", "查过运与合盘", ["免费工具精度与宫位制支持不足"], ["astro.com + Cafe Astrology 拼用"], ["星历精度", "宫位制", "可导出"], "GSC 9 条 query", T.pass],
+            ["心理向自我探索者", "用日记做自我觉察", ["占星内容太宿命论"], ["心理类 app 与占星内容分开用"], ["现代心理学语气", "隐私"], "仅公开 HTML 推断（价值主张）", T.text3],
+          ].map((r) => (
+            <div key={r[0]} style={{ padding: 15, background: T.panel, border: `1px solid ${T.line}` }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{r[0]}</div>
+              <div className="p-mono" style={{ fontSize: 10, color: T.text3, marginBottom: 10 }}>{r[1]}</div>
+              {[["痛点", r[2].join(" · ")], ["现有替代", r[3].join(" · ")], ["判断标准", r[4].join(" · ")]].map((x) => (
+                <div key={x[0]} style={{ padding: "6px 0", borderTop: `1px solid ${T.line}` }}>
+                  <span className="p-mono" style={{ fontSize: 10, color: T.text3, marginRight: 8 }}>{x[0]}</span>
+                  <span style={{ fontSize: 11, color: T.text2, lineHeight: 1.7 }}>{x[1]}</span>
+                </div>
+              ))}
+              <div className="p-mono" style={{ fontSize: 9.5, marginTop: 9, display: "inline-block", padding: "1px 5px", border: `1px solid ${r[6]}`, color: r[6] }}>{r[5]}</div>
+            </div>
+          ))}
+        </div>
+      </Sec>
+
+      <Sec title="已核实事实" c="#8FA0B0" note="由核心功能转化而来，逐条补来源；T3 的事实表只能引用这里或一次带来源的抓取">
+        <Table cols={["key", "value", "来源", "状态"]} rows={[
+          ["本命星盘计算器", "免费 · 无需注册", "/tools/birth-chart · 08-26", ["firstParty", T.pass]],
+          ["土星回归计算器", "免费", "/tools/saturn-return · 08-26", ["firstParty", T.pass]],
+          ["CBT 日记", "需登录 · 免费档", "/journal · 08-26", ["firstParty", T.pass]],
+          ["星历数据源", ["—", T.text3], ["未公开 · notPublished", T.text3, "dashed"], ["null + reason", T.text3]],
+        ]} minW={560} />
+      </Sec>
+
+      <Sec title="提问集 · 42 条" c="#8FA0B0" note="每条绑定角色，requiredEntities 按层从知识库取">
+        <Table cols={["提问", "层", "角色", "requiredEntities"]} rows={[
+          ["how to read my birth chart without paying an astrologer", "problem", "入门者", "birth chart · free"],
+          ["best free birth chart calculator no sign up", "discovery", "入门者", "birth chart calculator · 无需注册"],
+          ["astro.com vs cafe astrology for birth charts", "comparison", "进阶", "Astrodienst · Cafe Astrology · birth chart"],
+          ["is astrologywiki actually psychology-based or just horoscopes", "evaluation", "心理向", "AstrologyWiki · CBT"],
+          ["what is astrologywiki", "branded", "全部", "AstrologyWiki · Astrology Wiki"],
+        ]} minW={660} />
+      </Sec>
+
+      <Submit label="冻结为 kb@v1 + prompt-set@v1" note="不可变快照 · 之后改网站档案只产生 v2，不影响 v1 的历史" c="#8FA0B0" />
+      <Bar>继承网站档案（产品名称 / 定位 / 核心功能）· 补 GEO 字段 5 项 · 竞品 4/5 确认 · GSC 已连接 · 2026-08-26 09:12 PT</Bar>
+    </>
+  );
+}
+
+/* ════════ T1 ════════ */
+
+function T1Input() {
+  return (
+    <>
+      <Sec title="配置" c="#3FAFA3">
+        <Fields>
+          <Field label="提问集" value="prompt-set@v1（42 条 · 基于 kb@v1）" required hint="只能选已冻结的版本。改动集合会提示这是新基线" />
+          <Field label="引擎" required chips={["ChatGPT", "Perplexity"]} hint="不返回引用的引擎不参与引用率计算，但仍参与提及率与 SOV" />
+          <Field label="每条采样次数 n" value="5" required hint="可选 3 / 5 / 10。n 越大区间越窄，调用量线性上升" />
+          <Field label="市场 / 语言" value="US / en" required hint="继承自 kb@v1" />
+        </Fields>
+      </Sec>
+      <Submit label="运行体检" note="42 × 5 × 2 = 420 次调用 · 约 6 分钟 · 按需运行，无定时任务" c="#3FAFA3" />
+    </>
+  );
+}
+
+function T1Result() {
+  return (
+    <>
+      <Sec title="① 可见性指标" c="#3FAFA3" note="跨引擎混合">
+        <div className="p-4">
+          <Metric label="提及率" value="16.2%" sub="n=210 · CI 12%–21%" tag="混合" />
+          <Metric label="引用率" value="6.7%" sub="n=105 · 分母仅含支持引用的引擎" tag="混合" />
+          <Metric label="Prompt 覆盖率" value="39 / 42" sub="3 条无有效样本" />
+          <Metric label="SOV" value="4.6%" sub="n=124 · CI 2%–9%" tag="不含 branded" />
+        </div>
+      </Sec>
+      <Notice tone="info" title="SOV 的分母是什么"
+        body="在「本站或任一竞品被提及」的样本子集中，本站被提及的比例 —— 定义良好的伯努利比例，置信区间才成立。thepattern.com 未确认 brandName，已排除出分母。" />
+
+      <Sec title="分引擎" c="#3FAFA3" note="混合值会掩盖引擎差异，两者都要看">
+        <Table cols={["引擎", "提及率", "引用率", "SOV", "状态"]} rows={[
+          ["ChatGPT", "21.0% (n=105)", "9.5% (n=105)", "5.9%", ["ok", T.pass]],
+          ["Perplexity", "11.4% (n=105)", "3.8% (n=105)", "3.1%", ["partial · 3 条超时", T.brass]],
+        ]} minW={520} />
+      </Sec>
+
+      <Sec title="按意图层" c="#3FAFA3">
+        <Table cols={["层", "提及率", "引用率", "平均位次", "样本"]} rows={[
+          ["problem", "2.0%", "0.0%", "—", "n=50"],
+          ["discovery", "10.9%", "3.6%", "第 4 位", "n=55"],
+          ["comparison", "26.0%", "14.0%", "第 3 位", "n=50"],
+          ["evaluation", "53.3%", "20.0%", "第 1 位", "n=15"],
+          ["branded", ["本次 n=3 未观测到（区间上界 56%）", T.text3, "dashed"], "—", "—", ["n=3", T.text3]],
+        ]} minW={620} />
+      </Sec>
+      <Notice tone="warn" title="0.0% 与「未观测到」不是一回事"
+        body="problem 层的引用率 0.0% 是 n=50 内一次都没有的真实观测结论。branded 层写「未观测到」是因为 n=3 不足以下结论 —— 两者对应完全不同的动作，界面上必须分开。" />
+
+      <Sec title="② 引用源清单" c="#3FAFA3" note="计数单位是出现过该域名的回答数，不是 URL 数">
+        <Table cols={["域名", "被引回答数", "页面类型", "本站在位"]} rows={[
+          ["reddit.com/r/astrology", "31", "community", ["缺席", T.fail]],
+          ["cafeastrology.com", "26", "竞品自有", ["—", T.text3]],
+          ["bustle.com", "18", "listicle", ["缺席", T.fail]],
+          ["en.wikipedia.org", "15", "other", ["缺席", T.fail]],
+          ["astro-seek.com", "12", "竞品自有", ["—", T.text3]],
+        ]} minW={520} />
+      </Sec>
+
+      <Sec title="③ 缺口清单 · 26 条" c="#3FAFA3">
+        <div className="p-5" style={{ marginBottom: 12 }}>
+          {[["A 缺内容", "8", "#D2A248"], ["B 不可抽取", "5", "#6E97D6"], ["C 缺佐证", "9", "#D2A248"], ["D 被压制", "4", "#C2788E"], ["未归因", "6", T.text3]].map((g) => (
+            <div key={g[0]} style={{ padding: "11px 13px", background: T.panel, border: `1px solid ${T.line}`, borderLeft: `3px solid ${g[2]}` }}>
+              <div className="p-mono" style={{ fontSize: 18, fontWeight: 700, color: g[2] }}>{g[1]}</div>
+              <div style={{ fontSize: 10.5, color: T.text2, marginTop: 3 }}>{g[0]}</div>
+            </div>
+          ))}
+        </div>
+        <Table cols={["提问", "归因", "证据", "动作"]} rows={[
+          ["best astrology app for beginners", ["C", "#D2A248"], "run#26 回答 2/3/4/5 引用 bustle 榜单", "导出待办"],
+          ["synastry compatibility explained", ["A", "#D2A248"], "实体覆盖 0.22 < 0.4（索引 187 页）", "→ GEO Brief"],
+          ["when is my saturn return calculator", ["B", "#6E97D6"], "/tools/saturn-return T2 未通过 7 项", "→ T2"],
+          ["best free birth chart calculator no sign up", ["D", "#C2788E"], "均位次 4.2 · 共现竞品 3 个", "→ GEO Brief"],
+          ["what does my moon sign mean", ["未归因", T.text3], "被提及未被引用，目标页检查通过", "—"],
+        ]} minW={680} />
+      </Sec>
+      <Notice tone="info" title="6 条未归因"
+        body="证据不足以支撑任一类判定，不会硬塞进四类凑数。留在待补证据中，下次基线重跑后重新判定。" />
+
+      <Sec title="与上次对比 · 本地" c="#3FAFA3" note="上次摘要存于本浏览器 · 仅同一 prompt-set 版本显示 · 首次运行无此区块">
+        <Table cols={["指标", "上次 (08-19)", "本次 (08-26)", "差值 CI", "判定"]} rows={[
+          ["整体提及率", "13.3%", "16.2%", "[−3.9pp, +9.7pp]", ["不显著", T.text3]],
+          ["SOV", "2.5%", "4.6%", "[+0.4pp, +3.9pp]", ["显著", T.pass]],
+          ["引用率", "5.7%", "6.7%", "[−5.8pp, +7.7pp]", ["不显著", T.text3]],
+        ]} minW={620} />
+        <div style={{ height: 10 }} />
+        <Table cols={["提问", "上次", "本次", "方向"]} rows={[
+          ["best astrology app for beginners", "0 / 5", "2 / 5", ["新增提及", T.pass]],
+          ["best free birth chart calculator no sign up", "1 / 5", "2 / 5", ["新增提及", T.pass]],
+          ["astro.com vs cafe astrology for birth charts", "1 / 5", "0 / 5", ["失去提及", T.fail]],
+        ]} minW={620} />
+      </Sec>
+      <Notice tone="warn" title="工具形态不做归因"
+        body="这里只报「变了什么」，不报「因为你做了什么」—— 无状态工具没有动作完成时间可对齐。要把变化归因到具体动作，在 App 的周循环里跟踪缺口任务（Shipped Actions），归因在那一侧成立。逐条变化只报观测事实：单条 n=5 永远达不到显著，显著性只在上面的聚合层给出。" />
+
+      <div className="p-row" style={{ gap: 8 }}>
+        {["导出运行文件 (.json)", "对比两份运行文件", "导出待办清单 (.md)"].map((b) => (
+          <span key={b} className="p-mono" style={{ padding: "7px 13px", fontSize: 11, background: T.panel, border: `1px solid ${T.line2}`, color: T.text2 }}>{b}</span>
+        ))}
+      </div>
+
+      <Bar>自采样 ChatGPT 完整 / Perplexity 部分 · 站点索引 187 页 · 2026-08-26 09:40 PT · successRatio 0.917 · 本地摘要 gg:geo:lastrun:v1（不含回答原文）</Bar>
+    </>
+  );
+}
+
+/* ════════ T2 ════════ */
+
+function T2Input() {
+  return (
+    <>
+      <Sec title="输入" c="#6E97D6">
+        <Fields>
+          <Field label="页面 URL" value="https://astrologywiki.com/tools/saturn-return" required hint="须含协议。不需要登录，不需要连接任何账号" />
+          <Field label="目标提问" value="when is my saturn return" hint="选填。填了才做「直答段是否回答该问题」判定；留空则该项显示为不适用" />
+        </Fields>
+      </Sec>
+      <Submit label="检查这个页面" note="12 项确定性检查 · 无模型调用 · 约 8 秒" c="#6E97D6" />
+    </>
+  );
+}
+
+function T2Result() {
+  return (
+    <>
+      <div className="p-4">
+        <Metric label="通过" value="5" sub="12 项中" tone={T.pass} />
+        <Metric label="未通过" value="7" sub="每项附修法" tone={T.fail} />
+        <Metric label="抓取失败" value="0" sub="需重试确认，非未通过" tone={T.text3} />
+        <Metric label="ssr_ratio" value="0.06" sub="< 0.3 判为客户端渲染" tone={T.fail} />
+      </div>
+
+      <Notice tone="bad" title="根因只有一个：这是个客户端渲染的计算器页"
+        body="第二段的 4 项未通过全部由渲染方式导致 —— 原始 HTML 里只有空挂载容器，正文、表格、限定条件都在 JS 渲染之后。先修 SSR，其余大概率一并转绿。" />
+
+      <Sec title="第一段 · 能不能被读到" c="#6E97D6" note="7 项">
+        <Checks items={[
+          ["pass", "robots.txt 允许 GPTBot", "命中 Allow: /"],
+          ["pass", "robots.txt 允许 ClaudeBot", "未单独声明，落到默认 Allow: /"],
+          ["pass", "robots.txt 允许 PerplexityBot", "命中 Allow: /"],
+          ["fail", "robots.txt 允许 Google-Extended", "命中 Disallow: / · robots.txt 第 9 行（曾整体屏蔽 AI 训练抓取）", null, "如需出现在 Gemini 答案中，为 Google-Extended 放行"],
+          ["fail", "首屏 HTML 含正文", "ssr_ratio 0.06 · 原始 HTML 正文 96 字，渲染后 1620 字", null, "计算器外壳可保留客户端渲染，但直答段与说明文字改为服务端输出"],
+          ["pass", "canonical 正确", "自指"],
+          ["fail", "llms.txt", "不存在（404）—— 这是结论，与抓取失败（5xx）不同", null, "在根目录提供 /llms.txt"],
+        ]} />
+      </Sec>
+
+      <Sec title="第二段 · 读到了能不能抽出来" c="#6E97D6" note="5 项 · 在原始 HTML 上判定">
+        <Checks items={[
+          ["fail", "直答段在前 200 字", "原始 HTML 前 200 字为空壳，未命中实体与结论标记", "h", "服务端输出一段：土星回归约在 27–30 岁，输入出生日期可算出精确区间"],
+          ["fail", "存在可抽取表格或列表", "0 个表格 · 0 个非导航列表（渲染后有，但机器读的是原始 HTML）", null, "把年龄区间表静态输出"],
+          ["fail", "限定条件明确", "未检测到数量区间表达", "h", "写明 27–30 岁与第二次 56–60 岁"],
+          ["fail", "所有数据点标注出处", "原始 HTML 无正文，无法判定为通过", null, "静态正文补齐后为星历口径标注来源"],
+          ["pass", "FAQ schema 有效", "3 组问答通过校验（JSON-LD 在 head 中，服务端输出）"],
+        ]} />
+      </Sec>
+      <Bar>公开 HTML 抓取 · 触发渲染取（原始正文 96 字 + 空挂载容器）· 2026-08-26 10:05 PT</Bar>
+    </>
+  );
+}
+
+/* ════════ T3 ════════ */
+
+function T3Input() {
+  return (
+    <>
+      <Notice tone="info" title="从缺口卡带入 · C 类不进内容链"
+        body="目标提问、缺口类型、角色与证据指针从 T1 的 A / B / D 类缺口卡带入。C 类（缺佐证）的动作是第三方在位，不是写页面，在入口处直接拦截。也可手动输入提问，但产出的 brief 会带「无证据引用」标记。" />
+      <Sec title="输入" c="#D2A248">
+        <Fields>
+          <Field label="目标提问" value="synastry compatibility explained" required hint="来自缺口卡 A · run#26 · 实体覆盖 0.22" />
+          <Field label="缺口类型" value="A 缺内容" hint="决定 format 预选：D → 对比页；A 按意图层推断" />
+          <Field label="面向角色" value="占星入门者（术语看不懂 · 要说人话）" required hint="来自 prompt.roleId" />
+          <Field label="知识库 / 提问集" value="kb@v1 · prompt-set@v1" required hint="评分锚点与事实表从这里取" />
+        </Fields>
+      </Sec>
+      <Submit label="生成 GEO Brief" note="输出 ContentBrief v1.1 · 与关键词链共用同一契约 · 约 20 秒" c="#D2A248" />
+    </>
+  );
+}
+
+function T3Result() {
+  return (
+    <>
+      <Sec title="geo_origin · 这份 brief 由哪条提问触发" c="#D2A248">
+        <Fields>
+          <Field label="提问 / 层 / 缺口" value="synastry compatibility explained · problem · gap A" />
+          <Field label="证据指针" value="run#26 · ChatGPT #2 #4 · Perplexity #1 #3（各含 ≤300 字 excerpt，可点开）" hint="手动输入提问时此处为「无证据引用」" />
+          <Field label="版本锚" value="kb@v1 · prompt-set@v1" hint="brief 的可复算凭证，随 JSON 一并导出" />
+        </Fields>
+      </Sec>
+
+      <Sec title="lead_answer · 直答段要求" c="#D2A248" note="来自提问集冻结时确认的评分锚点 · source: kb · 同时写入 must_answer 的 Q1">
+        <Fields>
+          <Field label="requirement" value="前 200 字回答：合盘（synastry）是什么、能回答什么、不能回答什么；术语首次出现带白话解释" />
+          <Field label="required_entities" chips={["synastry", "合盘", "aspects 相位", "composite chart", "本命盘"]} />
+        </Fields>
+      </Sec>
+
+      <Sec title="must_answer · 8 条" c="#D2A248" note="ai_sample = AI 回答的子话题聚类（H2 等价物）· kb = 评分锚点">
+        <Table cols={["id", "问题", "覆盖", "来源"]} rows={[
+          ["Q1", "合盘是什么、能与不能回答什么（直答段）", "要求项", ["kb", T.pass]],
+          ["Q2", "synastry 与 composite chart 有什么区别", "4 / 5 次回答", ["ai_sample", T.brass]],
+          ["Q3", "看合盘先看哪些相位与宫位", "3 / 5 次回答", ["ai_sample", T.brass]],
+          ["Q4", "合盘能不能预测分手", "3 / 5 次回答", ["ai_sample", T.brass]],
+          ["Q5", "必须写明：适用于二人本命盘对比，不适用于择时", "要求项", ["kb", T.pass]],
+        ]} minW={620} />
+        <div className="p-mono" style={{ marginTop: 8, fontSize: 10, color: T.text3 }}>候选 11 · 展示 8（上限）· 未展示 3，已计数未丢弃 · 3 条超时回答不计入任何覆盖数</div>
+      </Sec>
+
+      <Sec title="fact_table · draft 的硬约束" c="#D2A248" note="正文里的任何数字与产品事实只能来自 value 非 null 的格子">
+        <Table cols={["维度", "own", "来源"]} rows={[
+          ["合盘工具", "免费 · 无需注册", "kb · /tools/synastry · 08-26"],
+          ["对比维度", "行星相位 + 宫位叠加", "kb · 08-26"],
+          ["星历数据源", ["—", T.text3], ["null · notPublished —— 正文只能写「未公开」或不写", T.text3, "dashed"]],
+        ]} minW={560} />
+      </Sec>
+
+      <Sec title="outline" c="#D2A248" note="source 恒为 model · 顺序与措辞可改，问题清单不可改">
+        <div style={{ border: `1px solid ${T.line}`, background: T.panel }}>
+          {[["合盘（Synastry）是什么：一篇说人话的解释", "Q1"], ["Synastry 与 Composite 的区别", "Q2"], ["三步读合盘：先看什么、再看什么", "Q3"], ["合盘能回答什么、不能回答什么", "Q1 · Q4 · Q5"], ["用本站工具跑一张你们的合盘（内链）", "—"], ["FAQ（3 组）", "Q2 · Q4"]].map((r, i) => (
+            <div key={i} className="p-row" style={{ padding: "8px 14px", justifyContent: "space-between", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}>
+              <span className="p-mono" style={{ fontSize: 11.5, color: T.text2 }}>H2 · {r[0]}</span>
+              <span className="p-mono" style={{ fontSize: 9.5, color: "#D2A248" }}>满足 {r[1]}</span>
+            </div>
+          ))}
+        </div>
+      </Sec>
+
+      <Notice tone="info" title="v1 字段的 GEO 取值"
+        body="verdict 恒为「不可判定」（自我竞争判定属于关键词链）；length 标 unavailable（GEO 没有竞品正文中位数，不假装有 SERP 证据）；internal_links 来自站点索引，指向相关工具页。draft 侧零改动即可消费这份 brief。" />
+
+      <div className="p-row" style={{ gap: 8 }}>
+        <span style={{ padding: "10px 20px", background: "#D2A248", color: T.bg, fontSize: 13, fontWeight: 600 }}>生成 Draft →（content-draft，同一工具）</span>
+        <span className="p-mono" style={{ padding: "9px 13px", fontSize: 11, background: T.panel, border: `1px solid ${T.line2}`, color: T.text2 }}>导出 ContentBrief v1.1 (.json)</span>
+      </div>
+      <Bar>交接走 sessionStorage（gg:brief:run_id），不进 URL · draft 完成后按来源分流 → 页面可引用性检查（T2）</Bar>
+    </>
+  );
+}
+
+/* ════════ 内容链衔接 ════════ */
+
+function Chain() {
+  return (
+    <>
+      <Sec title="两条链，一个 draft" c="#C2788E">
+        <div style={{ border: `1px solid ${T.line}`, background: T.panel }}>
+          {[
+            ["SEO 链", "关键词", "content-brief", "content-draft", "On-Page 检查器"],
+            ["GEO 链", "提问 / 缺口", "geo-brief（本模块 T3）", "content-draft（同一个）", "页面可引用性检查（T2）"],
+          ].map((r, i) => (
+            <div key={r[0]} className="p-row" style={{ padding: "13px 16px", gap: 8, borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}>
+              <span className="p-mono" style={{ fontSize: 10, color: T.text3, minWidth: 52 }}>{r[0]}</span>
+              {r.slice(1).map((x, j) => (
+                <React.Fragment key={x}>
+                  {j > 0 && <span className="p-mono" style={{ color: T.text3, fontSize: 11 }}>→</span>}
+                  <span className="p-mono" style={{ fontSize: 11, padding: "4px 9px", background: j === 2 ? "#2A2416" : T.panel2, border: `1px solid ${j === 2 ? T.brass : T.line2}`, color: j === 2 ? T.brass : T.text }}>{x}</span>
+                </React.Fragment>
+              ))}
+            </div>
+          ))}
+        </div>
+      </Sec>
+      <Notice tone="good" title="GEO 不自建成稿工具"
+        body="content-draft 已具备分段生成、句子级来源标注、独立覆盖度校验 —— 这正是 GEO 成稿需要的全部机制。geo-brief 输出与关键词链同一契约（ContentBrief v1.1），draft 成为共用消费者。" />
+
+      <Sec title="draft 侧的三处最小增量" c="#C2788E">
+        <div className="p-3">
+          {[
+            ["① Sentence.source 加 kb", "句子来源联合放宽为 product_profile / crawl / kb / model。kb 句子（已核实事实）不进核实清单；crawl 句子照旧派生。"],
+            ["② system prompt 加事实表硬约束", "数字与产品事实只能来自 fact_table 中 value 非 null 的格子；null 的维度正文只能写「未公开」或不写，禁止生成具体值。"],
+            ["③ HandoffBar 按来源分流", "geo_origin 非 null → 交接 T2 可引用性检查；否则交接 On-Page 检查器（现状不变）。覆盖度校验零改动 —— 直答段要求已写入 Q1。"],
+          ].map((r) => (
+            <div key={r[0]} style={{ padding: 15, background: T.panel, border: `1px solid ${T.line}` }}>
+              <div className="p-mono" style={{ fontSize: 11, color: "#C2788E", marginBottom: 8 }}>{r[0]}</div>
+              <div style={{ fontSize: 12, lineHeight: 1.9, color: T.text2 }}>{r[1]}</div>
+            </div>
+          ))}
+        </div>
+      </Sec>
+
+      <Notice tone="warn" title="铁律：ai_sample 不是事实来源"
+        body="AI 回答采样只用于确定「要回答什么」（must_answer 的子话题聚类），永远不作为正文句子的事实来源 —— 别人家模型说的话不是事实。句子级事实只能来自 kb / crawl / product_profile。这条写进 draft 的 system prompt 与校验。" />
+
+      <Sec title="GEO 分组在 /zh/tools 的最终清单" c="#C2788E">
+        <Table cols={["工具", "路由", "定位"]} rows={[
+          ["页面可引用性检查", "/zh/tools/page-citability-check", "免登录钩子 · 也是发布前闸门"],
+          ["AI 可见性体检", "/zh/tools/ai-visibility-check", "内含「与上次对比」（本地）与「对比两份运行文件」"],
+          ["GEO Brief 生成器", "/zh/tools/geo-brief", "输出 ContentBrief v1.1 · 交接 content-draft"],
+        ]} minW={640} />
+      </Sec>
+      <Notice tone="info" title="不在 tools 列表里的两样东西"
+        body="知识库在 设置 → 网站 的 GEO 区块（资产，不是工具）。动作跟踪与归因在 App 的周循环里（缺口喂 cycle_items，completed_at 在那一侧才存在）—— tools 负责测量与生成，App 负责跟踪与归因。" />
+    </>
+  );
+}
+
+
