@@ -357,6 +357,70 @@ describe("a row that was added but not filled in", () => {
 });
 
 describe("a save that lost a race", () => {
+  it.each([
+    ["later edit", ["Later Unsaved Brand"]],
+    ["successive edits", ["Later Unsaved Brand", "Newest Unsaved Brand"]],
+    ["edit back to submitted text", ["Later Unsaved Brand", "Sent Brand"]],
+  ] as const)("keeps %s during save unsaved until the next successful save", async (_name, edits) => {
+    await open();
+    const serverFetch = globalThis.fetch;
+    let releaseSave!: () => void;
+    const pendingResponse = new Promise<void>((resolve) => { releaseSave = resolve; });
+    let delayNextSave = true;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      let response = await serverFetch(input, init);
+      if (String(input).endsWith("/draft")) {
+        const body = await response.json();
+        response = Response.json({ data: { ...body.data, context: {
+          skippedLayers: [], questionSetHash: "f".repeat(64), contentHash: (draftPosts === 1 ? "c" : "d").repeat(64),
+        } } });
+        if (delayNextSave) {
+          delayNextSave = false;
+          await pendingResponse;
+        }
+      }
+      return response;
+    });
+    globalThis.fetch = fetcher;
+
+    await type(field(copy("brand.officialNameLabel")), "Sent Brand");
+    await click(button(copy("draft.save")));
+    for (const value of edits) await type(field(copy("brand.officialNameLabel")), value);
+    expect(store.payload.officialName).toBe("Sent Brand");
+    expect(text()).toContain(copy("draft.unsaved"));
+    await act(async () => { releaseSave(); });
+
+    const latest = edits.at(-1)!;
+    expect(field(copy("brand.officialNameLabel")).value).toBe(latest);
+    expect(text()).toContain(copy("draft.unsaved"));
+    expect(text()).not.toContain(literal("draft.saved"));
+    expect(button(copy("freeze.action")).disabled).toBe(true);
+    await click(button(copy("freeze.action")));
+    expect(fetcher.mock.calls.some(([url]) => String(url).endsWith("/freeze"))).toBe(false);
+
+    await click(button(copy("draft.save")));
+    expect(store.payload.officialName).toBe(latest);
+    expect(store.draftVersion).toBe(4);
+    expect(text()).not.toContain(copy("draft.unsaved"));
+    expect(text()).toContain(literal("draft.saved"));
+    expect(button(copy("freeze.action")).disabled).toBe(false);
+    await click(button(copy("freeze.action")));
+    const freezeCall = fetcher.mock.calls.find(([url]) => String(url).endsWith("/freeze"));
+    expect(JSON.parse(String(freezeCall?.[1]?.body))).toMatchObject({ kbId: "kb-1", baseVersion: 4, contextHash: "d".repeat(64) });
+    expect(draftPosts).toBe(2);
+    expect(intlErrors).toEqual([]);
+  });
+
+  it("does not label subsequent edits with the last successful save time", async () => {
+    await open();
+    await click(button(copy("draft.save")));
+    expect(text()).toContain(literal("draft.saved"));
+    await type(field(copy("brand.officialNameLabel")), "An unsaved update");
+    expect(text()).toContain(copy("draft.unsaved"));
+    expect(text()).not.toContain(literal("draft.saved"));
+    expect(button(copy("freeze.action")).disabled).toBe(true);
+  });
+
   // A 409 carries the version that is now current. The page never read it, so
   // it kept sending the version it loaded with: the first conflict was
   // permanent, and the only control that refreshed the number - "switch site" -
@@ -484,6 +548,54 @@ describe("a reply that is not what this page reads", () => {
 });
 
 describe("which site the knowledge base was actually loaded for", () => {
+  it.each(["en", "en-US", "en-GB"])("explicitly changes only the GEO language to %s while preserving its Profile and frozen view", async (language) => {
+    store.payload = ready({ market: { country: "CA", language: "zh-cn" } });
+    const originalPayload = store.payload;
+    const reference = { schemaVersion: "website-profile-reference.v1", websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6", snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987", snapshotRevision: 2, profileSchemaVersion: "marketing-website-profile.v1", profileHash: "a".repeat(64) };
+    const profile = { reference, productName: "Original Profile product", oneLinePositioning: "Original positioning", coreFeatures: ["Original feature"], market: { country: "CA", language: "en" } };
+    const frozen = { snapshotId: "old-snapshot", revision: 1, frozenAt: "2026-08-30T00:00:00Z", contentHash: "b".repeat(64), questionCount: 1, retrievalCount: 1,
+      questions: [{ id: "old-question", text: "Original frozen question", layer: "discovery", mode: "retrieval", calibrated: true }] };
+    const serverFetch = globalThis.fetch;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await serverFetch(input, init);
+      if (!String(input).endsWith("/load")) return response;
+      const body = await response.json();
+      return Response.json({ data: { ...body.data, profile, frozen } });
+    });
+    globalThis.fetch = fetcher;
+    await open();
+    const select = container?.querySelector("#kb-language");
+    expect(select).toBeInstanceOf(HTMLSelectElement);
+    if (!(select instanceof HTMLSelectElement)) throw new Error("no GEO language selector");
+    expect(select.value).toBe("zh-cn");
+    expect(select.selectedOptions[0]?.textContent).toBe("zh-cn");
+    expect([...select.options].map((option) => option.value)).toEqual(["zh-cn", "en", "en-US", "en-GB"]);
+    expect(container?.querySelector('label[for="kb-language"]')?.textContent).toBe(copy("brand.languageLabel"));
+    expect(button(copy("freeze.action")).disabled).toBe(true);
+    await click(button(copy("freeze.preview")));
+    await choose(select, language);
+    expect(select.value).toBe(language);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(store.payload).toEqual(originalPayload);
+    expect(text()).toContain(copy("draft.unsaved"));
+    expect(button(copy("freeze.action")).disabled).toBe(true);
+    expect(text()).toContain("Original frozen question");
+    expect(text()).toContain("Original Profile product");
+    expect(text()).toContain("b".repeat(64));
+
+    await click(button(copy("draft.save")));
+    const saved = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body));
+    expect(saved.payload).toEqual({ ...originalPayload, market: { ...originalPayload.market, language } });
+    expect(saved.expectedProfileReference).toEqual(reference);
+    expect(store.payload).toEqual({ ...originalPayload, market: { ...originalPayload.market, language: language.toLowerCase() } });
+    expect(button(copy("freeze.action")).disabled).toBe(false);
+    expect(text()).toContain("Original frozen question");
+    expect(text()).toContain("b".repeat(64));
+    expect(profile.market.language).toBe("en");
+    expect(fetcher.mock.calls.every(([url]) => ["/load", "/draft"].some((suffix) => String(url).endsWith(suffix)))).toBe(true);
+    expect(intlErrors).toEqual([]);
+  });
+
   it("shows a loaded country outside the presets without writing a replacement", async () => {
     store.payload = ready({ market: { country: "CA", language: "en" } });
     await open();

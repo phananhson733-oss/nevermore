@@ -4,7 +4,7 @@
 // @output -- an editor, a freeze control that states what still blocks it, and the questions a frozen version produces
 // @pos    -- the only client surface of /tools/geo-knowledge-base; it edits and renders, it never decides
 
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
 import {
@@ -54,6 +54,7 @@ const FACT_REASONS = [
 
 /** Two of the markets the sampling provider is calibrated for. */
 const COUNTRIES = ["US", "GB"] as const;
+const QUESTION_LANGUAGES = ["en", "en-US", "en-GB"] as const;
 
 type Status =
   | { readonly kind: "idle" }
@@ -272,6 +273,7 @@ export function GeoKnowledgeBase({
   >(initialView?.frozen?.questions ?? null);
   const [showQuestions, setShowQuestions] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const editRevision = useRef(0);
   /**
    * Whether a save has been attempted since this knowledge base was loaded.
    *
@@ -438,6 +440,7 @@ export function GeoKnowledgeBase({
       setStatus({ kind: "error", code: "form_invalid" });
       return;
     }
+    const savedEditRevision = editRevision.current;
     setStatus({ kind: "busy" });
     const result = await post(ENDPOINTS.draft, {
       kbId: view.kbId,
@@ -471,7 +474,8 @@ export function GeoKnowledgeBase({
     setView({ ...view, draftVersion: data.draftVersion, payload: submission,
       ...(data.context === undefined ? {} : { context: data.context }),
     });
-    setDirty(false);
+    // The response acknowledges only the submitted edit, not later typing.
+    setDirty(editRevision.current !== savedEditRevision);
     setStatus({ kind: "saved", at: data.updatedAt });
   }, [adoptConflictVersion, post, rowIssues, submission, view]);
 
@@ -551,6 +555,7 @@ export function GeoKnowledgeBase({
   }, [post, view]);
 
   const update = useCallback((next: Partial<GeoKbPayload>) => {
+    editRevision.current += 1;
     setPayload((current) =>
       current === null ? current : { ...current, ...next },
     );
@@ -786,13 +791,26 @@ export function GeoKnowledgeBase({
                   </select>
                 </div>
                 <div>
-                  <span className="block text-[13px] text-text-dark-secondary">
+                  <label className="block text-[13px] text-text-dark-secondary" htmlFor="kb-language">
                     {t("brand.languageLabel")}
-                  </span>
-                  <p className="mt-1.5 rounded-lg border border-dashed border-brand-border-card px-3 py-2 text-[14px] text-text-dark-secondary">
-                    {payload.market.language}
+                  </label>
+                  <select
+                    className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
+                    id="kb-language"
+                    aria-describedby="kb-language-help kb-language-support"
+                    value={payload.market.language}
+                    onChange={(event) => update({ market: { ...payload.market, language: event.target.value } })}
+                  >
+                    {(QUESTION_LANGUAGES.some((language) => language === payload.market.language)
+                      ? QUESTION_LANGUAGES
+                      : [payload.market.language, ...QUESTION_LANGUAGES]).map((language) => (
+                      <option key={language} value={language}>{language}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary" id="kb-language-help">
+                    {t("brand.languageHelp")}
                   </p>
-                  <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
+                  <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary" id="kb-language-support">
                     {isSupportedGeoQuestionLanguage(payload.market.language)
                       ? t("brand.languageNote")
                       : t("asset.unsupportedLanguage", { language: payload.market.language })}
@@ -1211,7 +1229,7 @@ export function GeoKnowledgeBase({
                   {t("draft.unsaved")}
                 </span>
               ) : null}
-              {status.kind === "saved" ? (
+              {status.kind === "saved" && !dirty ? (
                 <span className="text-[13px] text-text-dark-secondary">
                   {t("draft.saved", {
                     time: new Intl.DateTimeFormat(

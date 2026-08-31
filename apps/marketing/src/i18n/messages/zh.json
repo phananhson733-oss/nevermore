@@ -4904,7 +4904,8 @@
         "categoryWarning": "只填一个通用名词（「工具」「软件」）会造出没有主语的问句，而实测表明这类问句从不触发联网检索。要点名：「项目管理」「开票」。",
         "countryLabel": "市场",
         "languageLabel": "提问语言",
-        "languageNote": "目前只有英文。已标定的问句措辞是在英文下测出来的；换语言等于用同样的钱去问没人测过的措辞。"
+        "languageNote": "目前只有英文。已标定的问句措辞是在英文下测出来的；换语言等于用同样的钱去问没人测过的措辞。",
+        "languageHelp": "这里只修改 GEO 草稿。冻结前请保存；网站档案与已有冻结版本不变。"
       },
       "roles": {
         "title": "你卖给谁",
@@ -5109,7 +5110,7 @@
         "hash": "档案哈希：{hash}",
         "officialNameHelp": "此名称仅覆盖 GEO 品牌别名匹配，不是另一份产品名称。",
         "websiteNotFound": "你的账户中没有可用的该网站。",
-        "unsupportedLanguage": "暂不支持以 {language} 生成问题。冻结前请在原始产品档案中调整语言。"
+        "unsupportedLanguage": "暂不支持以 {language} 生成问题。请在这里选择英文提问语言，保存后再冻结。"
       }
     },
     "geoBrief": {

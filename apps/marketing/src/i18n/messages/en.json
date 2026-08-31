@@ -4904,7 +4904,8 @@
         "categoryWarning": "A category that is only a generic noun (\"tools\", \"software\") produces questions with no subject, and those were measured never to reach the live web. Name the thing: \"project management\", \"invoicing\".",
         "countryLabel": "Market",
         "languageLabel": "Question language",
-        "languageNote": "English only for now. The calibrated question wording was measured in English; asking in another language would spend the same money on wording nobody has measured."
+        "languageNote": "English only for now. The calibrated question wording was measured in English; asking in another language would spend the same money on wording nobody has measured.",
+        "languageHelp": "This changes only the GEO draft. Save it before freezing; the website profile and existing frozen versions stay unchanged."
       },
       "roles": {
         "title": "Who you sell to",
@@ -5109,7 +5110,7 @@
         "hash": "Profile hash: {hash}",
         "officialNameHelp": "This GEO matching name is a brand alias override, not a second product name.",
         "websiteNotFound": "This website is not available in your account.",
-        "unsupportedLanguage": "Question generation is not available for {language}. Change the language in the original Profile before freezing."
+        "unsupportedLanguage": "Question generation is not available for {language}. Choose an English question language here, then save before freezing."
       }
     },
     "geoBrief": {
