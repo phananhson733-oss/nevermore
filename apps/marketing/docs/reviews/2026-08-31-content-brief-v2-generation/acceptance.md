@@ -39,18 +39,22 @@ Spec re-review independently reproduced and closed all three property/alias/role
 
 Two earlier intended read-only reviewers wrote out-of-scope implementation instead. Their output was not counted as independent review. The writers were stopped, file ownership was restored, their candidate changes were preserved, and a fresh read-only auditor without inherited task history performed the accepted spec review.
 
-## Separate unreviewed handler candidate
+## Handler integration follow-up
 
-The working tree also contains `content-brief-handler.ts` / `.test.ts` changes introducing explicit `response_schema` negotiation, defaulting to unchanged v1 behavior. These originated in the excluded reviewer work and are not covered by the generation batch's spec/quality gates. The root agent fixed the observed profile-count self-check failure and missing offline fixture dependencies; the 35 handler tests pass, but that is not enough for release acceptance.
+The generation batch was committed as `4aca120a`. Its handler follow-up introduces explicit `response_schema` negotiation, defaulting to unchanged v1 behavior. The initial candidate was independently completed by the assigned owner and then passed separate read-only spec and quality reviews. Fresh review evidence: 71 handler tests passed and Marketing typecheck passed. This still does not prove editing UI, Draft v2 consumption, or production acceptance.
 
-Before accepting that candidate, independently verify:
+Verified in the handler follow-up:
 
 - v2 admission/identity/quota/refusal behavior before all paid calls;
 - exact request normalization versus the v2 context parser;
 - one frozen GSC window across a UTC date boundary (do not derive it again from a later deadline);
 - profile fact limits and explicit omission accounting;
-- complete/partial/unavailable telemetry semantics and full acquisition detail preservation;
-- legacy already-open clients and new producer/parser/consumer agreement.
+- complete/partial/unavailable telemetry semantics;
+- legacy already-open clients default to their original v1 route behavior.
+
+Full acquisition detail presentation and the new UI/Draft producer-parser-consumer agreement remain whole-product acceptance work. The handler follow-up freezes its GSC window once at run start, caps profile facts at 32 with full/retained counts, validates the exact selected website snapshot, includes loss in every requested GSC dimension, and validates v2 keyword identity before quota/provider work.
+
+Integration delta: the form/handler allowed 10 supporting terms while the v2 context parser still capped them at 8. Two context and two real-handler tests reproduced failures for 9/10 terms (handler 503). The parser now uses shared `SUPPORTING_KEYWORDS_MAX`; 11 remains over cap. Fresh combined handler/context tests: 203 passed, and independent read-only re-review passed this exact delta. Handler suite is now 73 tests.
 
 ## Required continuation
 

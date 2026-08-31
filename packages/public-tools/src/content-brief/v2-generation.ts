@@ -4,6 +4,7 @@
 import { canonicalizeUrl } from "@sf/sources/canonical-url";
 import { keywordCoverageProperty } from "../keyword-opportunity/property.ts";
 import { canonicalize } from "./canonical.ts";
+import { SUPPORTING_KEYWORDS_MAX } from "./constants.ts";
 import type { ProfileFact } from "./contract.ts";
 import {
   array, at, finite, identifier, invalid, literal, modelText, nullable, object, ok, oneOf, reference, tagged,
@@ -91,7 +92,7 @@ const fact: Decoder<ProfileFact> = tagged("derivation", {
 });
 const candidateId = oneOf(["T1", "T2", "T3"] as const);
 const contextShape: Decoder<BriefV2Context> = object({
-  input: object({ primary: keyword, supporting: array(keyword, { max: 8 }), market: sourceText(64), language: sourceText(64) }),
+  input: object({ primary: keyword, supporting: array(keyword, { max: SUPPORTING_KEYWORDS_MAX }), market: sourceText(64), language: sourceText(64) }),
   research: (input, path) => nested(parseResearchBundle(input), path),
   facts: array(fact, { max: 32 }),
   profile_snapshot: nullable(object({ website_id: sourceText(128), revision, hash })),

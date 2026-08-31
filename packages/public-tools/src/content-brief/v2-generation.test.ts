@@ -55,6 +55,11 @@ function changed(value: unknown, path: readonly (string | number)[], replacement
 }
 
 describe("v2 exact frozen generation context", () => {
+  it.each([9, 10])("accepts the form's legal %i supporting keywords", (count) => {
+    const input = context();
+    const supporting = [input.input.supporting[0]!, ...Array.from({ length: count - 1 }, (_, index) => "support " + index)];
+    expect(generation.parseBriefV2Context({ ...input, input: { ...input.input, supporting } }).ok).toBe(true);
+  });
   it("rejects a foreign page even when every owned-page reference has been consistently rewritten", () => {
     const input = context();
     const foreign = "https://foreign.test/owned";
@@ -171,7 +176,7 @@ describe("v2 exact frozen generation context", () => {
     ["unnormalized primary whitespace", ["input", "primary"], " GSC  delay "],
     ["equivalent supporting duplicate", ["input", "supporting"], ["Search Console data", "Ｓｅａｒｃｈ Console DATA"]],
     ["supporting equals primary", ["input", "supporting"], ["ＧＳＣ delay"]],
-    ["supporting overflow", ["input", "supporting"], Array.from({ length: 9 }, (_v, i) => `query ${i}`)],
+    ["supporting overflow", ["input", "supporting"], Array.from({ length: 11 }, (_v, i) => `query ${i}`)],
     ["empty market", ["input", "market"], ""],
     ["long language", ["input", "language"], "a".repeat(65)],
     ["empty fact", ["facts", 0, "text"], ""],
