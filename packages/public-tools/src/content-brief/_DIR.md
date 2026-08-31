@@ -1,5 +1,13 @@
 # content-brief
 
+## V2 research foundation
+
+- `v2-contract.ts` — separate v2 research types and bounds, plus descriptive length measurement with mixed-script detection. Original observation counts are not an authenticity proof; retained-graph relationships and derived counts are independently checked.
+- `v2-research.ts` — canonical C/T/A ordering, bounded round-robin evidence retention (128 KiB), PAA deduplication with explicit counts, strict graph/metadata-consistency validation, source-bound model research acceptance and server-derived Q/O/coverage fields. PAA and owned pages do not inflate competitor coverage; a single real question can have an outline.
+- `v2-contract.test.ts`, `v2-research.test.ts` — measurement, deterministic ordering, byte limits, PAA-only/zero-question cases, exact references, distinct final URLs, observable length lower bounds and derived-field forgery oracles. These do not claim that an actual LLM performed semantic grouping.
+
+The v1 modules below retain their original semantics. The v2 research foundation is not yet the full versioned Brief/Draft HTTP or editing contract.
+
 GenGrowth 内容链（Content Brief Builder / Content Draft Writer）的纯领域模块。只依赖本目录与 `@sf/public-tools` 内部；不 import apps/*，不含时钟、随机与网络。营销站只通过 `package.json` 的 `./content-brief/*` 子路径 import。
 
 | 文件 | 职责 |

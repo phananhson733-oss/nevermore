@@ -2,6 +2,10 @@
 
 One line per module: what it reads, what it returns, where it sits. Update the line when the file's header comment changes.
 
+- `content-brief-research-extract.ts` — v2 local Cheerio extraction from already-fetched HTML: iterative main/article/body traversal, scoped template/navigation removal, bounded heading/body segments and full observed main-text measurement. No fetch, model call or HTML rendering; explicit omitted/truncated counts; no whitespace-language gate.
+- `content-brief-research-extract.test.ts` — fixed HTML oracles, including ordinary div/span text, no-heading Chinese, nested templates, 10,000-level DOM/heading depth, code-point limits and observed-length/cap accounting.
+- `content-brief-serp.ts` v2 opt-in — `includePeopleAlsoAsk: true` retains the same response's independent PAA status/text/counts, including PAA-only responses. Defaults/false preserve the legacy request and return shape; no extra request or click-depth parameter. `content-brief-serp.test.ts` pins the compatible behavior and failure paths.
+
 本目录首个 `_DIR.md`（2026-08-29 随 content-brief 两个模块新建），其它模块的行由各自作者补。
 
 - `content-brief-serp.ts` — `readContentBriefSerp({ keyword, market, language, signal })`: the Content Brief Builder's only paid SERP read. One `serpOrganic` call at `SERP_DEPTH`, rows returned verbatim (rank / url / domain / title), `reads: SerpReadMeta` by count (complete / partial when returned < depth or the provider's `unresolvedItemCount` > 0, carried as `unresolved` / insufficient_evidence when nothing came back / provider_error when rows came back but every one was unresolved, or on any thrown error / timeout), cost through `onCost` plus one `[content-brief] paid_call` log line. Throws only `ContentBriefSerpInputError` (`unsupported_market` / `unsupported_language`) before any request. Deliberately not `readSerpLandscape`, which drops url/title and buys a Labs call.

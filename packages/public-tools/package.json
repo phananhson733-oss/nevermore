@@ -21,6 +21,8 @@
     "./content-brief/parse-draft": "./src/content-brief/parse-draft.ts",
     "./content-brief/fixtures": "./src/content-brief/fixtures.ts",
     "./content-brief/draft-fixtures": "./src/content-brief/draft-fixtures.ts",
+    "./content-brief/v2-contract": "./src/content-brief/v2-contract.ts",
+    "./content-brief/v2-research": "./src/content-brief/v2-research.ts",
     "./agent-audit": "./src/agent-audit/index.ts",
     "./competitor-keyword-gap": "./src/competitor-keyword-gap/index.ts",
     "./competitor-keyword-gap/csv": "./src/competitor-keyword-gap/csv.ts",
