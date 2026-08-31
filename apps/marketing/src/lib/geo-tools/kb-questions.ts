@@ -17,6 +17,7 @@ import {
   type GeoKbValue,
 } from "./kb-contract.ts";
 import { geoKbDigest } from "./kb-digest.ts";
+import { geoQuestionReferencesEntity } from "./question-quality.ts";
 
 export const GEO_QUESTION_SET_SCHEMA_VERSION = "marketing-geo-question-set.v1";
 
@@ -66,7 +67,7 @@ export interface GeoQuestion {
 
 export interface GeoQuestionSet {
   readonly schemaVersion: typeof GEO_QUESTION_SET_SCHEMA_VERSION;
-  /** Registry release the calibrated wording came from. */
+  /** Registry release plus the entity-derivation policy used for this frozen set. */
   readonly registryVersion: string;
   readonly language: string;
   readonly country: string;
@@ -149,40 +150,25 @@ function layerOf(entry: GeoTemplateEntry): GeoQuestionLayer {
 /**
  * What a correct answer to this question would have to name.
  *
- * Per layer, because the entity that proves coverage differs: a discovery
- * question is answered by naming the category, a comparison question by naming
- * a rival, a branded question by naming the brand.
+ * Only the primary category and people or brands actually named in this text.
+ * Other category terms, role criteria and brand aliases remain KB context;
+ * mentioning all of them is not a requirement for answering this question.
  */
 function requiredEntitiesFor(
-  layer: GeoQuestionLayer,
+  text: string,
   payload: GeoKbPayload,
   role: GeoKbPayload["roles"][number] | null,
   rival: string | null,
 ): readonly string[] {
-  const category = payload.categoryTerms;
-  switch (layer) {
-    case "problem":
-      return [
-        ...(role?.painPoints ?? []),
-        ...(role?.vocabulary ?? []),
-        ...category,
-      ].slice(0, 8);
-    case "discovery":
-      return [...category, ...(role ? [role.segment] : [])].slice(0, 8);
-    case "comparison":
-      return [...(rival ? [rival] : confirmedRivals(payload)), ...category].slice(
-        0,
-        8,
-      );
-    case "evaluation":
-      return [
-        payload.officialName,
-        ...(role?.decisionCriteria ?? []),
-        ...category,
-      ].slice(0, 8);
-    case "branded":
-      return [payload.officialName, ...payload.aliases].slice(0, 8);
-  }
+  const category = payload.categoryTerms[0] ?? "";
+  const subject = geoCategoryStem(category);
+  const names = [role?.label, rival, payload.officialName].filter(
+    (value): value is string => value !== undefined && value !== null && geoQuestionReferencesEntity(text, value),
+  );
+  return [...new Set([
+    ...(geoQuestionReferencesEntity(text, subject) ? [category] : []),
+    ...names,
+  ])];
 }
 
 function questionId(index: number, templateId: string | null): string {
@@ -229,7 +215,7 @@ export function buildGeoQuestionSet(payload: GeoKbPayload): GeoQuestionSet {
       layer,
       mode,
       roleId,
-      requiredEntities: requiredEntitiesFor(layer, payload, role, rival),
+      requiredEntities: requiredEntitiesFor(text, payload, role, rival),
       templateId,
       calibrated,
     });
@@ -300,7 +286,7 @@ function registryVersionOf(): string {
 
 const REGISTRY_VERSION: string = `${
   findGeoTemplate("geo.retrieval.category_top", "1")?.calibratedOn ?? "unknown"
-}/${String(GEO_TEMPLATES.length)}`;
+}/${String(GEO_TEMPLATES.length)}/question-entities-v2`;
 
 export function geoQuestionSetDigest(set: GeoQuestionSet): string {
   return geoKbDigest(set as unknown as GeoKbValue);

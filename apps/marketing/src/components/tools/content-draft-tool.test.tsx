@@ -306,6 +306,20 @@ async function loadAndRun(host: HTMLElement, brief: ContentBrief): Promise<void>
 }
 
 describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
+  it("shows an actionable pre-charge question-quality refusal from the Draft endpoint", async () => {
+    const geo = await geoBriefFixture();
+    const now = Date.now();
+    window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, JSON.stringify({ version: 1, created_at: now, expires_at: now + CONTENT_BRIEF_HANDOFF_TTL_MS, brief: geo }));
+    globalThis.fetch = signedInFetch(() => Response.json({ error: { code: "question_needs_review" } }, { status: 422 }));
+    const host = await renderTool();
+    await idle(host);
+    await click(host.querySelector("[data-run-draft]"));
+    await idle(host);
+    expect(host.querySelector("[data-error-code]")?.getAttribute("data-error-code")).toBe("question_needs_review");
+    expect(host.querySelector("[data-error-code]")?.textContent).toContain("errors.question_needs_review");
+    expect(host.querySelector("[data-brief-loaded]")).not.toBeNull();
+  });
+
   it.each(["en-US", "en-GB", "es", "zh"])("shows the correct GEO generation availability for %s without changing the displayed locale", async language => {
     const geo = await geoBriefFixture(); geo.keyword.language = language; geo.run.fingerprint = await geoFingerprint(geo);
     const now = Date.now(); window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, JSON.stringify({ version: 1, created_at: now, expires_at: now + CONTENT_BRIEF_HANDOFF_TTL_MS, brief: geo }));

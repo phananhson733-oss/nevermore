@@ -145,6 +145,35 @@ describe("what the knowledge base decides", () => {
 });
 
 describe("required entities", () => {
+  it("requires only the primary category for a general category question", () => {
+    const set = buildGeoQuestionSet(payload({ categoryTerms: ["占星工具", "心理占星", "自我探索", "CBT 日记", "知识库", "合盘分析"] }));
+    expect(set.questions.find((q) => q.templateId === "geo.retrieval.category_top")?.requiredEntities).toEqual(["占星工具"]);
+  });
+
+  it("requires the role and named rival only when the question actually references them", () => {
+    const set = buildGeoQuestionSet(payload({ categoryTerms: ["project management", "invoicing"], aliases: ["Acme Analytics", "Unused alias"] }));
+    for (const question of set.questions) {
+      expect(question.requiredEntities).not.toContain("invoicing");
+      expect(question.requiredEntities).not.toContain("missed deadlines");
+      expect(question.requiredEntities).not.toContain("client work");
+      expect(question.requiredEntities).not.toContain("price");
+      expect(question.requiredEntities).not.toContain("5 to 20 person agencies");
+      expect(question.requiredEntities).not.toContain("Unused alias");
+      expect(question.requiredEntities.includes("agency owners")).toBe(question.text.includes("agency owners"));
+      expect(question.requiredEntities.includes("Linear")).toBe(question.text.includes("Linear"));
+      expect(question.requiredEntities.includes("Acme")).toBe(question.text.includes("Acme"));
+    }
+  });
+
+  it("gives the entity policy its own version while preserving the old frozen set's bytes", () => {
+    const set = buildGeoQuestionSet(payload());
+    const historical = { ...set, registryVersion: "2026-08-17/13" };
+    const before = geoQuestionSetDigest(historical);
+    expect(set.registryVersion).toBe("2026-08-17/13/question-entities-v2");
+    expect(geoQuestionSetDigest(historical)).toBe(before);
+    expect(historical.registryVersion).toBe("2026-08-17/13");
+  });
+
   it("asks for what a correct answer to that layer would name", () => {
     const set = buildGeoQuestionSet(payload());
     const branded = set.questions.find(

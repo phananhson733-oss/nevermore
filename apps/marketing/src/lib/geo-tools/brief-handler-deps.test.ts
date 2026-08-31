@@ -35,3 +35,14 @@ it.each([null, "missing-role"])("keeps an unresolved frozen role %s explicitly n
   const result = await listFrozenVersions("owner", async () => ({ kind: "ok", value: [{ host: "fixture.example", snapshot }] }));
   expect(result).toMatchObject({ kind: "ok", value: [{ questions: [{ roleId, role: null }] }] });
 });
+
+it("projects market, proper names and quality issues from each immutable history entry", async () => {
+  const snapshot = {
+    ...SHARED_FROZEN,
+    payload: { ...SHARED_FROZEN.payload, categoryTerms: ["占星工具", "journaling"], aliases: ["Fixture Alias"], competitors: [{ domain: "rival.example", brandName: "Rival", aliases: ["Rival Alias"], confirmed: true }] },
+    questionSet: { ...SHARED_FROZEN.questionSet, questions: [{ ...SHARED_FROZEN.questionSet.questions[0]!, text: "What are the top 占星工具 tools?", requiredEntities: ["占星工具", "journaling"] }] },
+  };
+  const result = await listFrozenVersions("owner", async () => ({ kind: "ok", value: [{ host: "fixture.example", snapshot }] }));
+  expect(result).toMatchObject({ kind: "ok", value: [{ market: { country: "US", language: "en" }, properNames: ["Fixture", "Fixture Alias", "Rival", "Rival Alias"], questions: [{ qualityIssues: ["category_language_mismatch", "question_language_mismatch", "unrelated_required_entities"] }] }] });
+  if (result.kind === "ok") expect(result.value[0]).not.toHaveProperty("evidenceSummary");
+});
