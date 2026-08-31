@@ -7,6 +7,7 @@ import type { UnavailableReason } from "@sf/public-tools/content-brief/contract"
 import type { GeoKbFrozenSnapshot } from "./kb-store.ts";
 import type { GeoSnapshotContext } from "./snapshot-context.ts";
 import { normalizeGeoHost } from "../agents/geo-url.ts";
+import { geoBriefFactsForSnapshot } from "./brief-facts.ts";
 
 export interface SharedBriefRunEvidence {
   readonly runId: string;
@@ -36,33 +37,7 @@ export function sharedGeoBriefBasis(input: SharedBriefBasisInput): GeoContentBri
   const questionText = picked?.text ?? input.questionText;
   const role = picked?.roleId == null ? null : frozen.payload.roles.find(item => item.id === picked.roleId) ?? null;
   const ref = context?.profile?.reference ?? null;
-  const facts = context?.facts ?? frozen.payload.facts.map(fact => ({ key: fact.key, value: fact.value || null, reason: fact.reason, source: "kb" as const, sourceUrl: fact.sourceUrl || null, observedAt: fact.observedAt || null, evidenceId: null }));
-  const receipts: GeoContentBrief["evidence"]["facts"] = [];
-  const factTable: GeoContentBrief["fact_table"] = facts.map((fact, index) => {
-    const value = fact.reason === "conflicting" ? null : fact.value;
-    const id = `${fact.source === "crawl" ? "C" : "K"}${index + 1}`;
-    if (value !== null) {
-      if (fact.source === "crawl" && (fact.evidenceId === null || fact.sourceUrl === null || fact.observedAt === null)) throw new Error("crawl_receipt_missing");
-      receipts.push({ id, source: fact.source, text: value, observed_at: fact.observedAt ?? frozen.frozenAt, url: fact.sourceUrl });
-    }
-    return { id: `F${index + 1}`, label: fact.key, value, reason: value === null ? fact.reason || "lowConfidence" : null, evidence_refs: value === null ? [] : [id] };
-  });
-  if (context?.profile) {
-    const profile = context.profile; let receiptIndex = 0;
-    for (const field of ["productName", "oneLinePositioning", "coreFeatures"] as const) {
-      const provenance = profile.fieldProvenance?.find(item => item.path === `/${field}`);
-      const timed = provenance !== undefined && (provenance.observedAt !== null || provenance.derivation === "declared" || ["user_edit", "local_computation", "supplied_product_information", "supplied_marketing_strategy"].includes(provenance.source));
-      const verified = provenance !== undefined && timed && ["declared", "observed", "computed"].includes(provenance.derivation);
-      const raw = profile[field]; const values = typeof raw === "string" ? [raw] : raw;
-      for (const [index, text] of values.entries()) {
-        if (!text.trim()) continue;
-        const label = field === "coreFeatures" ? `${field}[${index}]` : field;
-        const id = `P${++receiptIndex}`;
-        if (verified && provenance) receipts.push({ id, source: "product_profile", text, observed_at: provenance.observedAt ?? frozen.frozenAt, url: provenance.evidenceUrls[0] ?? null });
-        factTable.push({ id: `F${factTable.length + 1}`, label, value: verified ? text : null, reason: verified ? null : "unverified", evidence_refs: verified ? [id] : [] });
-      }
-    }
-  }
+  const { receipts, factTable } = geoBriefFactsForSnapshot(frozen, context);
   const criteria = picked == null || role === null || !["comparison", "evaluation"].includes(picked.layer) ? [] : role.decisionCriteria;
   if (criteria.length > 7) throw new Error("required_anchor_budget_exceeded");
   const requirements = criteria.map((text, index) => ({ id: `${role!.id}:criterion:${index + 1}`, text }));

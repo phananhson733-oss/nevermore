@@ -16,6 +16,7 @@ import {
   type GeoKbPayload,
 } from "./kb-contract.ts";
 import { buildGeoQuestionSet, type GeoQuestionSet, type GeoQuestion } from "./kb-questions.ts";
+import { assessGeoQuestionQuality } from "./question-quality.ts";
 import type { GeoInheritedProfile } from "./asset-context.ts";
 import type { GeoSnapshotContext } from "./snapshot-context.ts";
 import { parseWebsiteProfileReference, type WebsiteProfileReferenceV1 } from "../account-websites/contracts.ts";
@@ -295,6 +296,9 @@ export async function handleGeoKbFreeze(
   }
 
   const questionSet = draft.value.questionSet ?? buildGeoQuestionSet(draft.value.payload);
+  if (questionSet.questions.some((question) => !assessGeoQuestionQuality(draft.value.payload, question, questionSet.language).ok)) {
+    return privateJson({ error: { code: "not_ready" }, blockers: ["question_quality"] }, 422);
+  }
   const outcome = await dependencies.freeze({
     userId: auth.userId,
     kbId,

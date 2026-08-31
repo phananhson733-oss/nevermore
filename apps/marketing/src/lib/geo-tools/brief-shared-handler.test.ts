@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { GEO_CONTENT_BRIEF_SCHEMA } from "@sf/public-tools/content-brief/geo-contract";
+import { GEO_CONTENT_BRIEF_SCHEMA, type GeoContentBrief } from "@sf/public-tools/content-brief/geo-contract";
 import { parseGeoContentBrief } from "@sf/public-tools/content-brief/parse-geo-brief";
 import { handleBriefRun, type BriefHandlerDependencies } from "./brief-handler.ts";
 import { SHARED_FROZEN } from "./brief-shared-fixtures.ts";
@@ -15,6 +15,25 @@ function dependencies(changes: Partial<SharedBriefHandlerDependencies> = {}) {
   return { deps, consume, sample };
 }
 describe("shared GEO HTTP branch", () => {
+  it("rejects a defective historical frozen question before quota and assembly", async () => {
+    const frozen = { ...SHARED_FROZEN, payload: { ...SHARED_FROZEN.payload, categoryTerms: ["占星工具", "CBT 日记"] },
+      questionSet: { ...SHARED_FROZEN.questionSet, questions: [{ ...SHARED_FROZEN.questionSet.questions[0]!,
+        text: "What are the top 占星工具 tools right now?", requiredEntities: ["占星工具", "CBT 日记"] }] } };
+    const assemble = vi.fn(async (brief: GeoContentBrief) => ({ ok: true as const, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: brief.must_answer.items.map(item => item.id), provenance: { method: "model" as const, derived_from: ["kb" as const] } }] }));
+    const { deps, consume, sample } = dependencies({ readFrozen: async () => ({ kind: "ok", value: frozen }), assemble });
+    const response = await handleBriefRun(post(selection), deps);
+    expect(response.status).toBe(422);
+    expect((await response.json()).error.code).toBe("question_needs_review");
+    expect(consume).not.toHaveBeenCalled(); expect(assemble).not.toHaveBeenCalled(); expect(sample).not.toHaveBeenCalled();
+  });
+  it("rejects mixed-language typed wording but permits an explicitly known Unicode brand", async () => {
+    const frozen = { ...SHARED_FROZEN, payload: { ...SHARED_FROZEN.payload, officialName: "星图", aliases: ["星图"] } };
+    const { deps, consume } = dependencies({ readFrozen: async () => ({ kind: "ok", value: frozen }) });
+    const bad = await handleBriefRun(post({ ...selection, questionId: null, manualQuestion: "What are 占星工具 tools?" }), deps);
+    expect(bad.status).toBe(422); expect(consume).not.toHaveBeenCalled();
+    const good = await handleBriefRun(post({ ...selection, questionId: null, manualQuestion: "What does 星图 do?" }), deps);
+    expect(good.status).toBe(200); expect(consume).toHaveBeenCalledOnce();
+  });
   it.each(["es", "zh"])("refuses selected and typed questions against frozen %s before a Brief debit or assembly", async language => {
     const assemble = vi.fn();
     const frozen = { ...SHARED_FROZEN, payload: { ...SHARED_FROZEN.payload, market: { country: "US", language } }, questionSet: { ...SHARED_FROZEN.questionSet, language } };

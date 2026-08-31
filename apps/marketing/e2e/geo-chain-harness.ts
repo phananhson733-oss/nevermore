@@ -68,6 +68,7 @@ export interface GeoChainGuard {
   readonly unexpected: string[];
   readonly blockedExternal: string[];
   readonly drafts: GeoContentBrief[];
+  readonly briefs: GeoContentBrief[];
   readonly clipboard: string[];
   readonly ssrAuthFixtures: string[];
   readonly authorityChecks: { userId: string; snapshotId: string; accepted: boolean }[];
@@ -75,7 +76,7 @@ export interface GeoChainGuard {
 
 export async function installGeoChainGuard(context: BrowserContext, baseURL: string, fixture: GeoChainFixture): Promise<GeoChainGuard> {
   const origin = new URL(baseURL).origin;
-  const guard: GeoChainGuard = { requests: [], unexpected: [], blockedExternal: [], drafts: [], clipboard: [], ssrAuthFixtures: [], authorityChecks: [] };
+  const guard: GeoChainGuard = { requests: [], unexpected: [], blockedExternal: [], drafts: [], briefs: [], clipboard: [], ssrAuthFixtures: [], authorityChecks: [] };
   await context.exposeBinding("__geoChainClipboard", (_source, text: string) => { guard.clipboard.push(text); });
   await context.addInitScript(() => {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (value: string) => {
@@ -120,8 +121,9 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
       expect(input.pages).toEqual([]); expect(input.facts).toEqual([]);
       expect(JSON.stringify(input.geo?.facts)).not.toContain("Compare the supported team size");
       const fact = input.geo?.facts[0];
-      if (!fact) throw new Error("Fixture needs a verified, non-null fact");
-      const checked = validateSectionOutput({ paragraphs: [{ sentences: [{ text: fact.text, claim: "bound", evidence_refs: [fact.id] }] }] }, sectionEvidenceFor(lastBrief, input.section.id, input.settings));
+      const sentence = fact ? { text: fact.text, claim: "bound" as const, evidence_refs: [fact.id] }
+        : { text: "Evidence is needed before adding product facts or comparisons.", claim: "gap" as const, evidence_refs: [] };
+      const checked = validateSectionOutput({ paragraphs: [{ sentences: [sentence] }] }, sectionEvidenceFor(lastBrief, input.section.id, input.settings));
       if (!checked.ok) throw new Error(checked.rule);
       return { status: "ok", fail_reason: null, paragraphs: checked.paragraphs, word_count: checked.word_count, attempts: 1,
         model_id: "offline-draft", temperature_requested: 0.4, temperature_effective: null, input_tokens: 0, output_tokens: 0 };
@@ -185,9 +187,16 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
       const response = await runSharedBrief(GEO_CHAIN_USER, body, fixture.shared, async () => true, Date.now);
       const parsed = await response.clone().json() as { data?: { brief: GeoContentBrief } };
       lastBrief = parsed.data?.brief ?? null;
+      if (lastBrief) guard.briefs.push(lastBrief);
       await respond(route, response); return;
     }
-    if (id === "POST /api/tools/content-draft/run") { guard.drafts.push((body as { brief: GeoContentBrief }).brief); await respond(route, await handleContentDraftRunRequest(incoming, draft)); return; }
+    if (id === "POST /api/tools/content-draft/run") {
+      lastBrief = (body as { brief: GeoContentBrief }).brief;
+      guard.drafts.push(lastBrief);
+      // The actual handler must verify ownership before the offline generator
+      // reads this submitted Brief, including historical JSON imports.
+      await respond(route, await handleContentDraftRunRequest(incoming, draft)); return;
+    }
     if (id === "POST /api/tools/page-citability-check") { await respond(route, await handleCitabilityRequest(incoming, citability)); return; }
     if (!SHELL.has(id)) guard.unexpected.push(id);
     await route.abort("blockedbyclient");

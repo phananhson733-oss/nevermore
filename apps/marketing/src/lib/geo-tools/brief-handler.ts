@@ -1,5 +1,5 @@
 // @input  -- an authenticated POST naming a frozen version and one question
-// @output -- one assembled brief, or a typed refusal
+// @output -- bounded frozen-input metadata, one assembled brief, or a typed refusal
 // @pos    -- the HTTP shape of the GEO Brief; it decides order, never content
 
 import {
@@ -31,6 +31,7 @@ import type { KeywordLlmUsage } from "../tools/keyword-llm-client.ts";
 import { GEO_CONTENT_BRIEF_SCHEMA } from "@sf/public-tools/content-brief/geo-contract";
 import { runSharedBrief, type SharedBriefHandlerDependencies } from "./brief-shared-handler.ts";
 import { projectBriefFrozenChoice } from "./brief-load-projection.ts";
+import { geoBriefFactsForSnapshot } from "./brief-facts.ts";
 
 const BODY_LIMIT_BYTES = 8 * 1024;
 
@@ -44,6 +45,17 @@ export interface BriefFrozenChoice {
   readonly revision: number;
   readonly frozenAt: string;
   readonly contentHash: string;
+  // Additive load metadata; historical selector rows may not have these fields.
+  readonly market?: { readonly country: string; readonly language: string };
+  readonly properNames?: readonly string[];
+  readonly evidenceSummary?: {
+    readonly snapshotFacts: number;
+    readonly contextFacts: number | null;
+    readonly usableFacts: number;
+    readonly missingFacts: number;
+    readonly profileAttached: boolean;
+    readonly contextAttached: boolean;
+  };
   readonly promptsetRef: {
     readonly schema: string;
     readonly registryVersion: string;
@@ -55,6 +67,7 @@ export interface BriefFrozenChoice {
     readonly layer: GeoQuestionLayer;
     readonly roleId: string | null;
     readonly role: { readonly id: string; readonly label: string; readonly segment: string } | null;
+    readonly qualityIssues?: readonly string[];
   }[];
 }
 
@@ -167,7 +180,23 @@ export async function handleBriefLoad(
         samples: resolved.value.samples.map(sample => ({ id: sample.id, engine: sample.engine, status: sample.status, collectedAt: sample.collected_at })),
       };
     }
-    return privateJson({ data: { choices: [projectBriefFrozenChoice(frozen, host)], runsPerDay: GEO_BRIEF_RUNS_PER_DAY, providerConfigured: shared.configured(), ...(context === undefined ? {} : { context }) } });
+    let evidenceSummary: BriefFrozenChoice["evidenceSummary"];
+    try {
+      const snapshotContext = await shared.readContext({ userId: auth.userId, kbId: row.kbId, snapshotId: row.snapshotId });
+      if (snapshotContext.kind !== "ok") return privateError("store_unavailable", 503);
+      const { factTable, receipts } = geoBriefFactsForSnapshot(frozen, snapshotContext.value);
+      evidenceSummary = {
+        snapshotFacts: frozen.payload.facts.length,
+        contextFacts: snapshotContext.value?.facts.length ?? null,
+        usableFacts: receipts.length,
+        missingFacts: factTable.filter(fact => fact.value === null).length,
+        profileAttached: snapshotContext.value?.profile != null,
+        contextAttached: snapshotContext.value !== null,
+      };
+    } catch {
+      return privateError("store_unavailable", 503);
+    }
+    return privateJson({ data: { choices: [{ ...projectBriefFrozenChoice(frozen, host), evidenceSummary }], runsPerDay: GEO_BRIEF_RUNS_PER_DAY, providerConfigured: shared.configured(), ...(context === undefined ? {} : { context }) } });
   }
   if (!exactKeys(body.value, [])) return privateError("invalid_request", 400);
 

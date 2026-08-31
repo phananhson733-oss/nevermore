@@ -748,7 +748,7 @@ export function GeoKnowledgeBase({
               />
               <div>
                 <ChipsField
-                  help={t("brand.categoryHelp")}
+                  help={t("brand.categoryLanguageHelp")}
                   label={t("brand.categoryLabel")}
                   max={GEO_KB_LIMITS.categoryTerms}
                   onChange={(values) => update({ categoryTerms: values })}
