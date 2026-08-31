@@ -572,7 +572,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "Content planning",
     title: "Build a content brief from what page one already answers",
     description:
-      "Sign in, enter one primary keyword, and get a brief derived from the top results: intent, format, length, the questions competing pages all answer, an outline, and a verdict on whether you would compete with your own page.",
+      "Sign in, enter a primary keyword and optional supporting terms, and build a source-backed page plan: research questions, intent, format, observed length, an editable H2/H3 outline, and a create-or-update recommendation.",
     sourceLabel: "A GenGrowth sign-in is required",
     sourceDetail:
       "Search results come from a third-party SERP source and the competing pages are fetched publicly. A Search Console property and a confirmed product profile are optional; without them the verdict and the gap angle say so instead of guessing.",
@@ -583,7 +583,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     steps: [
       {
         name: "Name one primary keyword",
-        text: "Supporting keywords are optional and go only to the outline model; they never take part in the verdict. Choose the market and language the search results should come from.",
+        text: "Choose your market and language. Optional supporting keywords join the primary keyword in the exact Search Console query scope used to find relevant pages on your site.",
       },
       {
         name: "Read the top results and fetch the pages",
@@ -591,41 +591,41 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "Derive what a competing page must answer",
-        text: "Headings shared by enough of the fetched pages become must-answer questions, each with the pages that carry it. One model call turns those clusters into questions and an outline; the clusters and page references are not model output.",
+        text: "One model call groups retained page excerpts and the initial People Also Ask (PAA) questions into research questions and an outline. One evidenced question is enough; PAA questions are not counted as competitor-page support.",
       },
       {
         name: "Decide create or rewrite only with your own evidence",
-        text: "With a Search Console property, the brief checks whether one of your pages already ranks for the primary keyword. Without one it says the verdict is undecidable rather than defaulting to a new page.",
+        text: "With Search Console, the brief examines exact primary and supporting queries and reads candidate pages before recommending create or update. An update names a read target and keep/add/rewrite steps. Missing or incomplete evidence can leave the decision undecidable.",
       },
     ],
     outputTitle: "What one run gives you",
     outputs: [
       {
-        label: "Intent, format and length with their thresholds",
-        body: "Each is derived from the search results or the fetched pages, prints the rule it was held to, and lists every tied format rather than choosing one for you.",
+        label: "Intent, format and observed length",
+        body: "Intent and format are model judgments grounded in the retained research. Length summarizes the pages actually read, identifies words or characters and labels truncated readings; it is not a promised article length.",
       },
       {
         label: "Must-answer questions with page coverage",
-        body: "Every question names how many of the fetched pages carry it, over the number of pages actually read this run, with the source headings and excerpts one click away.",
+        body: "Every question links to its retained evidence. Competitor-page coverage, owned-page evidence and PAA sources stay distinct, with headings and excerpts one click away.",
       },
       {
         label: "An outline marked as model-generated",
-        body: "Each section says which questions it answers. Its order and wording are yours to change; the question list and the evidence references are not.",
+        body: "Edit H2/H3 wording and section order, then explicitly confirm the outline. Question mappings and evidence remain frozen; another edit requires a new confirmation.",
       },
       {
         label: "A verdict, and what it cannot say",
-        body: "Create, rewrite, or undecidable, from your own Search Console rows. A query missing from the sample is not observed, never zero.",
+        body: "Create, update or undecidable, grounded in Search Console scope and read owned pages. A missing query is not observed, never zero. An undecidable plan needs an explicit choice to proceed with a new page.",
       },
       {
         label: "An exportable JSON brief",
-        body: "The whole brief with its fingerprint, which the Content Draft Writer will accept as its input. Nothing is stored on the server.",
+        body: "After you confirm the outline and page decision, export the confirmed revision or hand it to Content Draft Writer. The generated research and edited outline stay distinct; no report history is saved on the server.",
       },
     ],
     faq: [
       {
         question: "Where do the competing pages come from?",
         answer:
-          "From a third-party organic-ranking source for the market and language you select, fetched publicly one URL at a time. Your Search Console data is used only for the verdict and the link sections about your own site.",
+          "From a third-party organic-ranking source for your selected market and language, fetched publicly. Initial PAA comes from that same response. Optional Search Console evidence identifies owned pages for the page plan and related links.",
       },
       {
         question: "Do I have to connect Search Console or a product profile?",
@@ -635,12 +635,12 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "Which languages does it support?",
         answer:
-          "Every language on the market list for intent, format, verdict, gap angle and links. Length, must-answer questions and the outline need whitespace-tokenized text, so for Chinese, Japanese, Korean and Thai those three fields are marked unsupported and no draft can be generated.",
+          "The market list includes Chinese, Japanese, Korean and Thai for research questions, outlines and drafting. Length uses words or characters according to the observed text and identifies the unit; it does not compare unlike units.",
       },
       {
         question: "Does it write the article?",
         answer:
-          "Not this tool. It produces the brief and exports it as JSON; the Content Draft Writer takes that brief as its only input. Neither publishes, writes to a CMS, or generates images.",
+          "Not this tool. Confirm its outline and page decision, then send the confirmed brief to Content Draft Writer. Neither tool publishes, writes to a CMS or generates images.",
       },
       {
         question: "Does the report refresh or get saved?",
@@ -662,7 +662,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       "Sign in, bring a content brief from the Content Brief Builder, and get a section-by-section draft: every sentence carries its claim state (bound, gap, stance or no-claim), and where it applies a bound or stance sentence is also marked with the layer its evidence came from; the sentences a human must verify list their references in the verify list; a separate model call checks which must-answer questions the draft covers, and a verify list names what a human must still confirm before publishing.",
     sourceLabel: "A GenGrowth sign-in and a content brief are required",
     sourceDetail:
-      "The draft takes a Content Brief as its only input — handed over from the brief tool, pasted, or uploaded as JSON — and re-checks its fingerprint before using it. The competitor excerpts and profile facts the brief carries are the only evidence a sentence may cite.",
+      "Bring an explicitly confirmed Content Brief v2 — by handoff, paste or JSON upload — or a valid legacy v1 export. Each section may cite only its allowed competitor or owned-page excerpts and profile facts. PAA questions guide writing but are not factual citations.",
     cta: "Sign in to write a draft",
     trust:
       "No saved draft, no scheduled run, no content score, no originality claim, and no credit claim. A section whose evidence references fail validation is reported as failed rather than quietly rewritten, and an unfinished coverage check never shows a question as covered.",
@@ -670,7 +670,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     steps: [
       {
         name: "Load a brief, not a keyword",
-        text: "The page accepts only a Content Brief Builder export. The brief is parsed strictly and its fingerprint recomputed; an edited or incomplete brief is refused with the reason, not repaired.",
+        text: "Confirm the H2/H3 outline and page decision in Content Brief Builder first. The page strictly checks that revision and its fingerprint; incomplete or altered exports are refused, not repaired.",
       },
       {
         name: "Choose tone, person, product mention and sections",
@@ -678,7 +678,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "Each section written by its own model call, annotated as it is written",
-        text: "Sections are generated in parallel with their own timeouts and a bounded number of attempts each. The model marks every sentence with its claim state and cites competitor excerpts or profile facts where it relies on them; the server validates those references and reports the section as failed rather than rewriting a claim.",
+        text: "Sections are generated with bounded concurrency, timeouts and attempts, following the confirmed H2/H3 and create/update plan. The model marks each sentence's claim state; the server checks its section-scoped page and profile references and reports invalid sections as failed.",
       },
       {
         name: "Another, separate call checks coverage",
@@ -689,15 +689,15 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     outputs: [
       {
         label: "A draft in sections, with claim annotations",
-        body: "Every sentence carries a claim state; where it applies, a bound or stance sentence is also marked with its evidence's source layer, and the sentences that need human verification list their references in the verify list. Bound sentences are underlined in the colour of their evidence layer, gaps in the error colour; the annotations can be switched off without changing the verify list.",
+        body: "The draft follows the confirmed H2/H3 order. Optional sentence annotations link to observed page units or profile facts; gaps remain visibly unverified. Switching annotations off does not change the verification list or exported prose.",
       },
       {
         label: "Coverage as three raw counts",
-        body: "Covered, partial and not covered over the brief's question total. Where they apply, a question shows the section that answers it and the gap the model named; otherwise it shows why its section failed or was skipped. No score.",
+        body: "In v2, every question is checked against all successfully generated text, even if its planned section failed or was skipped. Covered, partial and not covered remain separate; a failed check is unavailable, not zero. No score.",
       },
       {
         label: "A verify-before-publishing list",
-        body: "Sentences with a single competitor source, sentences backed only by your profile, gaps, and stances — grouped, each naming its section and references.",
+        body: "Sentences supported by a single observed page, profile-only claims, gaps and stances — each naming its section and references. These checks validate evidence structure, not factual truth.",
       },
       {
         label: "One document, three projections",
@@ -717,17 +717,17 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "Why was my pasted brief refused?",
         answer:
-          "The parser recomputes the brief's fingerprint and checks every cross-reference. A brief edited after export, one whose outline cites a question it does not contain, or one from another schema is refused with the reason shown.",
+          "Confirm a generated v2 brief in Content Brief Builder before loading it here. A GEO report is a different document, not a writing brief. The parser also rejects altered exports, broken cross-references and unknown schemas; valid legacy v1 briefs remain accepted.",
       },
       {
         question: "What does a claim annotation mean?",
         answer:
-          "Bound: the sentence cites a competitor excerpt or a profile fact that the brief carries. Gap: the model thought it should be said but found no evidence. Stance: a position from the gap angle, citing profile facts. No claim: a connective sentence that asserts nothing.",
+          "Bound: the sentence cites an allowed observed page excerpt or declared profile fact. Gap: the model found no supporting evidence. Stance: a position in the designated gap-angle section, citing profile facts. No claim: a connective sentence. None is an automatic fact-check.",
       },
       {
         question: "Which languages does it support?",
         answer:
-          "The same as the brief's must-answer and outline fields: whitespace-tokenized languages. A brief in Chinese, Japanese, Korean or Thai has no writable section, and the page says so instead of generating.",
+          "Confirmed v2 briefs support the language choices in Content Brief Builder, including Chinese, Japanese, Korean and Thai. Prose length is measured in words or characters and excludes headings. Legacy v1 imports keep their original language restrictions.",
       },
       {
         question: "Does it publish, and is the draft saved?",
@@ -1235,7 +1235,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "内容规划",
     title: "从第一页已经回答的内容出发，生成一份内容简报",
     description:
-      "登录后输入一个主关键词，得到一份从前十条结果推导出的简报：意图、形态、篇幅、竞争页共同回答的问题、大纲，以及一条「会不会与自己的页面竞争」的判定。",
+      "登录后输入主关键词和可选支持词，生成有来源依据的页面计划：研究问题、意图、形态、观测篇幅、可编辑的 H2/H3 大纲，以及新建或更新页面的建议。",
     sourceLabel: "需要登录 GenGrowth 账号",
     sourceDetail:
       "搜索结果来自第三方 SERP 数据源，竞争页面按公开方式抓取。Search Console 资源与已确认的产品档案都是可选项；不选时判定和缺口角度会如实说明，而不是猜。",
@@ -1246,7 +1246,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     steps: [
       {
         name: "填一个主关键词",
-        text: "支持词可选，只交给大纲模型，不参与判定。选定搜索结果所属的市场与语言。",
+        text: "选定市场与语言。可选支持词和主关键词一起参与 Search Console 查询的精确匹配，用于查找自有站点上的相关页面。",
       },
       {
         name: "读取前十条结果并抓取页面",
@@ -1254,41 +1254,41 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "推导竞争页必须回答的问题",
-        text: "被足够多抓取页面共用的小标题成为必答问题，每条都列出承载它的页面。一次模型调用把这些簇改写成问句和大纲；簇本身与页面引用不是模型产出。",
+        text: "一次模型调用把保留的页面片段与初始 People Also Ask（PAA）问题整理为研究问题和大纲。一条有来源的问题也可形成大纲；PAA 不计入竞品页面支持数。",
       },
       {
         name: "只用你自己的证据判定新建还是改写",
-        text: "选了 Search Console 资源时，简报会检查你是否已有页面在主关键词上排名。没选时判定为「不可判定」，而不是默认新建。",
+        text: "接入 Search Console 后，按主关键词和支持词精确匹配查询，并读取候选页面再建议新建或更新。更新计划会指定已读取的目标页及保留、补充、改写步骤；证据缺失或不完整时可能仍为不可判定。",
       },
     ],
     outputTitle: "一次运行你会拿到什么",
     outputs: [
       {
-        label: "带门槛的意图、形态与篇幅",
-        body: "各自从搜索结果或抓取页面推导，印出所依据的规则；形态并列时全部列出，不替你选。",
+        label: "意图、形态与观测篇幅",
+        body: "意图和形态是基于保留研究证据的模型判断。篇幅汇总实际读到的页面，明确标注词数或字符数以及截断情况，不是承诺生成的文章长度。",
       },
       {
         label: "带页面覆盖数的必答问题",
-        body: "每条问题都写明有多少篇抓取页承载它，分母是本次真正读到的页面数；来源小标题与片段一键展开。",
+        body: "每条问题都能展开其保留证据。竞品页面覆盖、自有页面证据与 PAA 来源分别标注，来源小标题和片段一键可查。",
       },
       {
         label: "标明「模型生成」的大纲",
-        body: "每一节写明满足哪些问题。顺序与措辞可改，问题清单与证据引用不可改。",
+        body: "可编辑 H2/H3 措辞和章节顺序，再显式确认大纲。问题映射与证据保持冻结；继续编辑后需要重新确认。",
       },
       {
         label: "一条判定，以及它说不了的话",
-        body: "新建、改写或不可判定，只来自你自己的 Search Console 行。样本里没有的查询是「未观测到」，绝不是零。",
+        body: "新建、更新或不可判定，依据 Search Console 查询范围和已读取的自有页面。缺失查询是「未观测到」，不是零；不可判定时必须明确选择是否仍新建页面。",
       },
       {
         label: "可导出的 JSON 简报",
-        body: "整份简报连同指纹，可直接作为 Content Draft Writer 的输入。服务端不保存任何内容。",
+        body: "确认大纲和页面决策后，可导出已确认版本或交给 Content Draft Writer。原始研究与编辑后的大纲分别保留；服务端不保存报告历史。",
       },
     ],
     faq: [
       {
         question: "竞争页面从哪里来？",
         answer:
-          "来自你所选市场与语言的第三方自然排名数据源，再逐条 URL 公开抓取。你的 Search Console 数据只用于判定和关于自有站点的内链两节。",
+          "来自所选市场与语言的第三方自然排名数据源，再公开抓取页面。初始 PAA 来自同次响应；可选的 Search Console 证据用于找到自有页面，支撑页面计划和相关链接。",
       },
       {
         question: "必须连接 Search Console 或产品档案吗？",
@@ -1298,12 +1298,12 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "支持哪些语言？",
         answer:
-          "意图、形态、判定、缺口角度与内链支持市场清单上的全部语言。篇幅、必答问题与大纲需要空白分词的文本，因此中文、日文、韩文、泰文下这三个字段标为不支持，也不能生成 draft。",
+          "市场清单中的中文、日文、韩文、泰文也可生成研究问题、大纲和初稿。篇幅根据观测文本使用词数或字符数并明确标注单位，不混合比较不同单位。",
       },
       {
         question: "它会把文章写出来吗？",
         answer:
-          "本工具不写。它产出简报并导出 JSON；Content Draft Writer 只接受这份简报作为输入。两者都不发布、不写 CMS、不生成图片。",
+          "本工具不写正文。先确认大纲和页面决策，再把已确认简报交给 Content Draft Writer。两者都不发布、不写 CMS、不生成图片。",
       },
       {
         question: "报告会刷新或保存吗？",
@@ -1325,7 +1325,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       "登录后带上 Content Brief Builder 的一份简报，得到逐节生成的初稿：每句话都有主张状态（有据、缺口、立场或无主张）；适用时，有据/立场句再标出证据的来源层；需要人工核实的句子在核实清单里列出引用；一次独立模型调用校验初稿覆盖了哪些必答问题，核实清单列出发布前仍需人工确认的句子。",
     sourceLabel: "需要登录 GenGrowth 账号并提供一份内容简报",
     sourceDetail:
-      "初稿只接受 Content Brief 作为输入——从简报工具交接、粘贴或上传 JSON——使用前会重新核对指纹。简报里带的竞品片段与档案事实是句子唯一可引用的证据。",
+      "使用已确认的 Content Brief v2，通过交接、粘贴或上传 JSON 载入；有效的旧版 v1 导出仍可使用。每节只能引用获准的竞品或自有页面片段及档案事实。PAA 只指导问题，不作为事实引用。",
     cta: "登录后生成初稿",
     trust:
       "不保存初稿、没有定时任务、不给内容分、不声称原创、不承诺积分。证据引用没过校验的段落记为失败而不是悄悄改写；覆盖度校验没跑完时不会把任何问题显示为已覆盖。",
@@ -1333,7 +1333,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     steps: [
       {
         name: "载入简报，而不是关键词",
-        text: "页面只接受 Content Brief Builder 的导出。简报会被严格解析并重算指纹；被改过或不完整的简报会连同原因一起被拒绝，不会被修补。",
+        text: "先在 Content Brief Builder 确认 H2/H3 大纲和页面决策。本页严格检查该版本及指纹；不完整或导出后被篡改的简报会被拒绝，不会被自动修补。",
       },
       {
         name: "选定语气、人称、产品提及强度和要生成的段落",
@@ -1341,7 +1341,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "每节由各自的模型调用生成，边写边标注",
-        text: "各节并行生成，各有自己的超时和有上限的尝试次数。模型给每句话标主张状态，并在依赖竞品片段或档案事实的地方引用它们；服务端校验这些引用，不通过就把该节记为失败，绝不改写主张。",
+        text: "各节在有限并发、超时和尝试次数内，沿用已确认的 H2/H3 及新建或更新计划生成。模型标注每句话的主张状态；服务端检查本节允许的页面与档案引用，不通过就将该节记为失败。",
       },
       {
         name: "另一次独立调用校验覆盖度",
@@ -1352,15 +1352,15 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     outputs: [
       {
         label: "分节初稿，带主张标注",
-        body: "每句话都有主张状态；适用时，有据/立场句再标证据来源层；需要人工核实的句子在核实清单里列出引用。有据句按证据层的颜色画下划线，缺口用错误色；标注可以关掉，核实清单不受影响。",
+        body: "初稿沿用已确认的 H2/H3 顺序。可选的句级标注链接到观测页面单元或档案事实，缺口明确标为待核实。关闭标注不改变核实清单或导出正文。",
       },
       {
         label: "覆盖度只有三个原始计数",
-        body: "已覆盖、部分、未覆盖，分母是简报的问题总数。适用时每条问题显示回答它的节和模型指出的缺口，否则显示所在段失败或跳过的原因。不给分。",
+        body: "v2 用全部成功生成的正文检查每条问题，即使原计划回答它的章节失败或跳过。已覆盖、部分、未覆盖分别呈现；校验失败是不可得，不是零。不给分。",
       },
       {
         label: "发布前必须人工核实的清单",
-        body: "单一竞品来源的句子、只有档案支撑的句子、缺口和立场——分组列出，每条写明所在节与引用。",
+        body: "单一观测页支持的句子、只有档案支撑的主张、缺口和立场，每条写明所在章节与引用。校验的是证据结构，不代表事实已被证实。",
       },
       {
         label: "同一份文档，三种投影",
@@ -1380,17 +1380,17 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "为什么我粘贴的简报被拒绝了？",
         answer:
-          "解析器会重算简报的指纹并核对每一处交叉引用。导出后被改过的简报、大纲引用了不存在问题的简报、或者别的 schema 的文档，都会连同原因一起被拒绝。",
+          "生成的 v2 简报需先在 Content Brief Builder 确认。GEO 报告是另一类文档，不是写作简报。解析器也会拒绝导出后被篡改、交叉引用损坏或 schema 不明的文档；有效的旧版 v1 简报仍可载入。",
       },
       {
         question: "主张标注是什么意思？",
         answer:
-          "有据：这句话引用了简报里带的竞品片段或档案事实。缺口：模型认为该说但没找到证据。立场：出自缺口角度的表态，引用档案事实。无主张：不作断言的连接句。",
+          "有据：引用获准的观测页面片段或已声明的档案事实。缺口：模型未找到支持证据。立场：指定缺口角度章节内引用档案事实的表态。无主张：连接句。任何一种标注都不等于自动事实核查。",
       },
       {
         question: "支持哪些语言？",
         answer:
-          "与简报的必答问题和大纲字段相同：空白分词语言。中文、日文、韩文、泰文的简报没有可写的节，页面会直说，不会生成。",
+          "已确认的 v2 简报支持 Content Brief Builder 的语言选项，包括中文、日文、韩文、泰文。正文按词数或字符数计长，不含标题；旧版 v1 导入保留其原有语言限制。",
       },
       {
         question: "它会发布吗？初稿会保存吗？",

@@ -2,12 +2,19 @@
 
 One line per module: what it reads, what it returns, where it sits. Update the line when the file's header comment changes.
 
+- `content-draft-tool.tsx`, `.test.tsx` — separate v1/confirmed-v2 intake, explicit GEO/unconfirmed guidance, signed-out peek and successful-sign-in-only staging, exact payload cleanup and stale/unmount guards.
+- `content-draft-intake.tsx` — version-aware paste/upload rejection and localized Content Brief Builder recovery entry, without inventing a convertible GEO document.
+- `content-draft-v2-workflow.tsx`, `.test.tsx` — exact confirmed plan/settings/selection, session-first submission and full-previous rerun validation; successful result folds settings and receives focus, failures reopen controls without discarding the prior verified result.
+- `content-draft-v2-results.tsx` — actual H2/H3 prose, all-question coverage, observed U/P evidence and verify list; minified JSON and whole-outline Markdown with one confirmed related-links block; export receipts bound to current fingerprint and latest action.
+- `content-draft-v2-onpage.tsx`, `.test.tsx` — explicit user-entered published URL to same-origin On-Page popup, confirmed fingerprint and normalized base language; no auto-submit or assumed publication.
+- `connected-tool-content.ts`, `content-v2-copy.test.ts` — bilingual acquisition copy reflects current supporting-scope/PAA research, confirmation, CJK length and whole-draft evidence semantics while naming legacy v1 separately.
+
 本目录首个 `_DIR.md`（2026-08-30 随 ToolCard 无障碍修复新建），其它模块的行由各自作者补。
 
 - `tool-card.tsx` — `ToolCard({ slug, title, description, category, locale, ctaLabel })`: shared card for the public Tools Hub. The outer Next `Link` keeps its existing locale-aware destination and visual card content while using the formal tool `title` as an explicit accessible name.
 - `content-brief-tool.tsx` — session-first explicit v2 submission and full async response parsing; success collapses settings and focuses the result. Failed reruns preserve the prior confirmed result, while obsolete validations cannot publish.
 - `content-brief-v2-results.tsx` — actual v2 keyword/page plan, source strip, compact question table, observed length, owned-page evidence and closed complete run/context receipts; no fake v1 projection.
-- `content-brief-v2-editor.tsx` — browser-local H2/H3 wording/order edits, stable O/Q mappings, explicit page decision and exact confirmed revisions; minified bounded JSON export, stale async guards and no implicit Draft navigation.
+- `content-brief-v2-editor.tsx` — browser-local H2/H3 wording/order edits, stable O/Q mappings, explicit page decision and exact confirmed revisions; bounded JSON export and explicit version-2 Draft popup staging, invalidated by edits or unmount without clearing another payload.
 - `content-brief-v2-fixture.ts`, `content-brief-v2-results.test.tsx` — independent source-backed synthetic v2 fixtures, exact-parser proof, edit/confirmation/export/race/near-byte-limit tests and EN/ZH copy checks.
 - `content-brief-results.tsx` — keyword/source summary, verdict, three fields, questions, outline, gap/links, writable-only Draft/JSON handoff and collapsed boundaries in Artifact order; unavailable SERP keeps actionable coverage-only copy.
 - `content-brief-run-header.tsx` — compact keyword/time header; summary names actual read gaps and exact model/temperature/fingerprint values stay in closed native run details.

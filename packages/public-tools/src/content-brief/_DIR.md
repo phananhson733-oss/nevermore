@@ -11,7 +11,15 @@
 - `v2-gsc.ts`, `v2-gsc.test.ts` — bounded raw-query-preserving primary/supporting GSC projection, property-scoped owned candidates, explicit duplicate/cap omissions, no low-impression or position-based create shortcut.
 - `v2-brief.ts`, `v2-brief.test.ts` — 224 KiB generated Brief and 256 KiB confirmed import, causal checksums, truthful read/model metadata, stable section IDs/question mappings across heading/order edits, explicit resolution of undecidable page action.
 
-The v1 modules below retain their original semantics. The v2 generation/confirmation core does not by itself activate a new HTTP route, editing UI or Draft consumer.
+## V2 Draft delivery
+
+- `v2-draft-contract.ts` — versioned confirmed-reference, H2/H3 section, receipt, full-question coverage and rerun contracts; bounded prompt/result/request bytes without changing v1 limits.
+- `v2-draft-scope.ts`, `.test.ts` — exact confirmed section selection; scoped Q page units, observed rewrite target and applicable steps; PAA never grants factual support, and reordering never transfers gap-angle permission.
+- `v2-draft-section.ts`, `.test.ts` — strict sentence claims and structured H3 sequence, granular U/P references, canonical observed-page support counts and sentence-prose-only word/character length.
+- `v2-draft.ts`, `.test.ts` — full result assembly/revalidation, truthful no-call and billed receipts, derived counts/verify list, all-Q coverage across all successful text and exact supplied-previous rerun continuity; standalone checksums do not authenticate history.
+- `v2-draft-fixtures.ts`, `.test.ts` — source-backed synthetic confirmed/result fixtures with create/update/PAA/CJK/reordering branches; real parser/fingerprint checks, no provider proof.
+
+The v1 modules below retain their original semantics. These shared pure modules do not themselves perform HTTP, provider, storage or publication operations.
 
 GenGrowth 内容链（Content Brief Builder / Content Draft Writer）的纯领域模块。依赖本目录、`@sf/public-tools` 内部及 `@sf/sources` 的纯 URL 规范化函数；不 import apps/*，不含时钟、随机与网络。营销站只通过 `package.json` 的 `./content-brief/*` 子路径 import。
 

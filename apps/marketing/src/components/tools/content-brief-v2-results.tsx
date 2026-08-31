@@ -159,7 +159,7 @@ export function ContentBriefV2Results({ brief, locale, onConfirmed }: {
     {brief.generated ? <><PagePlan brief={brief} t={t} /><Fields brief={brief} locale={locale} t={t} /><Questions brief={brief} t={t} /></> : null}
     {/* elapsed_ms is the sole field excluded from the causal fingerprint; a
         replacement receipt must not keep an export containing its old value. */}
-    {noOutline ? <><p data-no-outline className={BODY_TEXT}>{brief.generated === null ? t("noGeneration") : t("noQuestions")}</p>{brief.generated ? <Recommendations brief={brief} t={t} /> : null}</> : <ContentBriefV2Editor key={`${brief.run.fingerprint}:${brief.run.elapsed_ms}`} brief={brief} onConfirmed={onConfirmed}><Recommendations brief={brief} t={t} /></ContentBriefV2Editor>}
+    {noOutline ? <><p data-no-outline className={BODY_TEXT}>{brief.generated === null ? t("noGeneration") : t("noQuestions")}</p>{brief.generated ? <Recommendations brief={brief} t={t} /> : null}</> : <ContentBriefV2Editor key={`${brief.run.fingerprint}:${brief.run.elapsed_ms}`} brief={brief} locale={locale} onConfirmed={onConfirmed}><Recommendations brief={brief} t={t} /></ContentBriefV2Editor>}
     <TechnicalDetails brief={brief} locale={locale} t={t} />
     <details data-wont-say className="border-t border-brand-border-card pt-3"><summary className={SUMMARY}>{t("limitations")}</summary><p className={`mt-2 ${BODY_TEXT}`}>{t("limitationsBody")}</p></details>
   </div>;

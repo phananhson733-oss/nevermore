@@ -2,6 +2,13 @@
 
 One line per module: what it reads, what it returns, where it sits. Update the line when the file's header comment changes.
 
+- `content-brief-v2-handoff.ts`, `.test.ts` — explicit version-2 confirmed envelope in the existing one-time sessionStorage slot; bounded synchronous staging, exact async parser/TTL and owned-payload cleanup; no document in URL or server persistence.
+- `content-draft-v2-language.ts`, `.test.ts` — validates supported BCP-47 tags against the existing language set, returns base adapter code and exact locale without changing the confirmed document.
+- `content-draft-v2-prompts.ts` — confirmed H2/H3, section-scoped evidence and approved intent/format/exclusions/navigation guidance; guidance never expands factual references and related links are not embedded by the model.
+- `content-draft-v2-llm.ts`, `.test.ts` — CONTENT_DRAFT-only section generation, exact 96 KiB prompt cap, bounded invalid-content retry, truthful token receipts and locale-aware coverage; all network replies in tests are offline seams.
+- `content-draft-v2-run.ts`, `.test.ts` — at most three section workers, whole-result coverage, bounded receipt-aware deadlines and exact full-previous section rerun; no missing usage fabrication or publication.
+- `content-draft-handler.ts`, `.test.ts` v2 negotiation — confirmed schema selects v2 on the same run/section endpoints; shared authentication/quota/slot gates remain before paid work, v1 wire-byte caps stay unchanged, raw generated/GEO inputs are not coerced.
+
 - `content-brief-research-extract.ts` — v2 local Cheerio extraction from already-fetched HTML: iterative main/article/body traversal, scoped template/navigation removal, bounded heading/body segments and full observed main-text measurement. No fetch, model call or HTML rendering; explicit omitted/truncated counts; no whitespace-language gate.
 - `content-brief-research-extract.test.ts` — fixed HTML oracles, including ordinary div/span text, no-heading Chinese, nested templates, 10,000-level DOM/heading depth, code-point limits and observed-length/cap accounting.
 - `content-brief-v2-crawl.ts`, `.test.ts` — one bounded public-HTTP read per C/T target, raw-body hash and v2 extraction, shared owned-page identity with per-hop/final redirect checks; no replacement-page fetch, late evidence or fabricated v1 observations.

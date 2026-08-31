@@ -70,6 +70,20 @@ Draft must consume the exact confirmed revision. Its question renderer and `sect
 
 Historical-v1 imports retain their own parser; incompatible GEO imports get a specific explanation and correct entry point. Do not coerce either into a fabricated v2 object.
 
+### Draft v2 implementation pins
+
+Draft v2 accepts the exact confirmed envelope, not an unconfirmed generated Brief. Its section headers follow the effective confirmed order/wording, while questions and evidence stay frozen. Page U refs are granular factual citations; PAA U refs can identify questions but never authorize a bound claim. Profile P refs follow the explicit product-mention setting, and inferred profile facts cannot support bound claims. Supporting-page counts deduplicate canonical observed page identities (including an actual owned rewrite target), and must not be labeled competitor counts.
+
+For rewrite, every section receives the observed target snapshot plus the applicable keep/add/rewrite instructions. Scope also includes page units behind that section's mapped questions and applicable plan steps. The gap-angle permission stays on its original generated section ID when headings are reordered, not whichever different section happens to become last. Confirmation covers the changed order and therefore changes the delivery fingerprint.
+
+Confirmed H3 headings are structured paragraph headings in the actual Draft, not merely model hints. Their non-null sequence must equal the confirmed H3 list exactly; introductory/continuation paragraphs use null. Display and Markdown render those headings, while length measures sentence prose only. Draft prompts also receive approved intent/format and do-not-cover constraints. Confirmed internal links retain their observed target URLs, are not new factual citation permissions, and are presented once as a related-links block. Markdown retains failed/skipped section headings with explicit notes so export cannot conceal an incomplete outline.
+
+Coverage checks all frozen questions against all successfully generated text, including questions originating only from PAA. Do not infer non-coverage solely from a failed/skipped planned owner if another generated section may answer it. With no generated text, all questions are deterministically uncovered and no coverage model call is needed. This is an explicit v2 behavior; legacy v1 keeps its original policy.
+
+A section rerun takes the entire previous Draft v2 through the exact parser first, uses settings from it, changes only the selected section, rechecks coverage against the resulting whole text and binds the previous run ID/fingerprint plus confirmed revision. Initial and rerun usage remain distinguishable. Generated body length and total length use the existing truthful word/character measurement, not an English word counter for CJK.
+
+Standalone Draft imports validate current structure, source bindings, counts and checksum; they do not authenticate a historical rerun without its prior document. Actual handler and client rerun paths must supply the exact previous document for continuity checks. Requiring an unbounded history chain would contradict the non-persistent tool boundary. Supported BCP-47 locale forms are resolved to the existing base-language set for adapters while preserving the original confirmed language tag/fingerprint and exact locale instruction.
+
 ## Language and bounded cost
 
 Use the existing supported language set, not a new English-only restriction. Non-whitespace languages can enter question/outline/Draft stages. Length must state its actual measurement unit/tokenizer; do not call Chinese non-whitespace character counts English words. The exact cross-language measurement contract must be pinned by tests.

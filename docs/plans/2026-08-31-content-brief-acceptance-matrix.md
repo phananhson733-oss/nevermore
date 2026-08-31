@@ -2,6 +2,17 @@
 
 This is the full-goal acceptance checklist, not a completion report. Exact fixture/source bytes, executed commands, and resulting revision/deployment identities must be attached as the work progresses. Backend rows reflect the proposed repair semantics; final contract freeze must record any clarified choice rather than silently weakening a row.
 
+## 2026-08-31 v2 checkpoint (not production acceptance)
+
+The generated/confirmed/Draft v2 contracts and actual UI now exist. The original rows below remain the initial product checklist, not a claim that their historical Pending cells describe the current code. Evidence is split as follows:
+
+- Q02/Q04/Q05/Q06, P01–P05, E01–E04, L01 and S01/S02 have deterministic extractor/parser/handler/UI coverage. The new browser suite exercises a real edited producer, explicit confirmation, v2 popup payload, PAA-only writing, exact rerun previous, failed-result retention, JSON/Markdown and published-URL On-Page handoff.
+- Q01 and the semantic portions of Q03/P03/L01 still need real provider output review. Fixed mocked completions prove source/mapping/format contracts, not that a model reliably chooses relevant questions, follows the rewrite plan or writes good prose.
+- F01's original majority-format rule is superseded by the explicit v2 research design: intent and format are labeled model judgments grounded in retained sources, not observed exclusive winners of a 4/3/3 vote. Length remains separately observed and unit-labeled. This is a declared versioned change, not a relaxed v1 rule.
+- U01–U08 have local component/browser evidence for the v2 result flow. The standalone server has no Supabase credentials: actual popup inheritance and signed-out peek pass there, but authenticated automatic take and Google reload recovery are independently unit-tested, not a live-login browser PASS.
+- Legacy v1 consumer behavior stays version-specific. Initial PAA has no additional paid search; scope is exact primary/supporting GSC phrases, not a site-wide completeness claim. Current public landing copy and form hints now describe these boundaries.
+- Release SHA, Marketing production identity, real canary semantics and independent Product retention remain open until recorded against the final merged bytes.
+
 ## Fixed-input product cases
 
 | ID | Frozen input | Independent expected outcome | State |

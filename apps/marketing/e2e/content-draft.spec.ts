@@ -25,88 +25,10 @@ import {
   draftBrief,
   draftResultFixture,
 } from "@sf/public-tools/content-brief/draft-fixtures";
+import { confirmedDraftV2Fixture } from "@sf/public-tools/content-brief/v2-draft-fixtures";
+import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { TOOL_HANDOFF_KEY } from "../src/lib/tools/tool-handoff";
-
-const RUN_REQUEST = "POST /api/tools/content-draft/run";
-const SECTION_REQUEST = "POST /api/tools/content-draft/section";
-const BRIEF_RUN_REQUEST = "POST /api/tools/content-brief/run";
-const SESSION_REQUEST = "GET /api/auth/session";
-const WEBSITES_REQUEST = "GET /api/account/websites";
-const KNOWN_SHELL_REQUESTS = new Set([
-  "GET /api/auth/profile",
-  "GET /api/auth/one-tap/nonce",
-  "GET /api/credits/balance",
-  "GET /api/credits/ledger",
-]);
-
-interface Guard {
-  runRequests: Request[];
-  sectionRequests: Request[];
-  readonly unexpected: string[];
-}
-
-/**
- * Every `/api/**` call is answered here or aborted. Installed on the CONTEXT,
- * not the page, so a tab the page opens is covered too. The standalone server
- * runs under `env -i`, so a request that slipped through would fail anyway;
- * the guard turns that into an assertion instead of a silent 500.
- */
-async function installGuard(
-  page: Page,
-  options: {
-    readonly signedIn: boolean;
-    readonly run?: (route: Route, request: Request) => Promise<void>;
-    readonly section?: (route: Route, request: Request) => Promise<void>;
-    readonly briefRun?: (route: Route, request: Request) => Promise<void>;
-  },
-): Promise<Guard> {
-  const guard: Guard = { runRequests: [], sectionRequests: [], unexpected: [] };
-  await page.context().route("**/api/**", async (route) => {
-    const request = route.request();
-    const id = `${request.method()} ${new URL(request.url()).pathname}`;
-    if (id === SESSION_REQUEST) {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ signedIn: options.signedIn }),
-      });
-      return;
-    }
-    if (id === WEBSITES_REQUEST && options.signedIn) {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { websites: [] } }) });
-      return;
-    }
-    if (id === RUN_REQUEST && options.run) {
-      guard.runRequests.push(request);
-      await options.run(route, request);
-      return;
-    }
-    if (id === SECTION_REQUEST && options.section) {
-      guard.sectionRequests.push(request);
-      await options.section(route, request);
-      return;
-    }
-    if (id === BRIEF_RUN_REQUEST && options.briefRun) {
-      await options.briefRun(route, request);
-      return;
-    }
-    if (!KNOWN_SHELL_REQUESTS.has(id) && id !== WEBSITES_REQUEST) {
-      guard.unexpected.push(id);
-    }
-    await route.abort("blockedbyclient");
-  });
-  return guard;
-}
-
-function fulfillJson(body: unknown) {
-  return async (route: Route): Promise<void> => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(body),
-    });
-  };
-}
+import { fulfillJson, installDraftApiGuard as installGuard, openConfirmedBriefV2 } from "./content-draft-e2e-helpers";
 
 /**
  * A rerun reply with the section endpoint's semantics, derived from the
@@ -349,13 +271,6 @@ test.describe("Content Draft Writer", () => {
 });
 
 test.describe("brief → draft handoff across a real new tab", () => {
-  async function openBriefResult(page: Page, brief: ContentBrief): Promise<void> {
-    await page.goto("/en/tools/content-brief");
-    await page.locator('input[name="primary"]').fill(brief.keyword.primary);
-    await page.locator("[data-run-brief]").click();
-    await expect(page.locator("[data-generate-draft]")).toBeVisible();
-  }
-
   /**
    * The standalone server has no Supabase, so the popup is server-rendered as
    * signed out. That is the hero-CTA path of the second review: the draft
@@ -365,9 +280,9 @@ test.describe("brief → draft handoff across a real new tab", () => {
    * content-draft-tool.test.tsx instead.
    */
   test('a left click on "Generate draft" carries the brief into a real new tab, which keeps it for the sign-in reload', async ({ page }) => {
-    const brief = await draftBrief();
+    const { brief } = await confirmedDraftV2Fixture();
     const guard = await installGuard(page, { signedIn: true, briefRun: fulfillJson(brief) });
-    await openBriefResult(page, brief);
+    const confirmed = await openConfirmedBriefV2(page, brief);
 
     const [popup] = await Promise.all([
       page.context().waitForEvent("page"),
@@ -383,7 +298,9 @@ test.describe("brief → draft handoff across a real new tab", () => {
     const key = CONTENT_BRIEF_HANDOFF_KEY;
     const received = await popup.evaluate((k) => sessionStorage.getItem(k), key);
     expect(received).not.toBeNull();
-    expect((JSON.parse(received ?? "null") as { brief: ContentBrief }).brief.run.fingerprint).toBe(brief.run.fingerprint);
+    const envelope = JSON.parse(received ?? "null") as { version: number; brief: ConfirmedBriefV2 };
+    expect(envelope.version).toBe(2);
+    expect(envelope.brief).toEqual(confirmed);
     expect(await page.evaluate((k) => sessionStorage.getItem(k), key)).toBe(received);
     expect(guard.unexpected).toEqual([]);
   });
@@ -397,9 +314,9 @@ test.describe("brief → draft handoff across a real new tab", () => {
    * receipt that does not happen.
    */
   test('a middle click on "Generate draft" writes the handoff, though Chromium gives the new tab no session storage', async ({ page }) => {
-    const brief = await draftBrief();
+    const { brief } = await confirmedDraftV2Fixture();
     await installGuard(page, { signedIn: true, briefRun: fulfillJson(brief) });
-    await openBriefResult(page, brief);
+    const confirmed = await openConfirmedBriefV2(page, brief);
 
     const [popup] = await Promise.all([
       page.context().waitForEvent("page"),
@@ -412,7 +329,9 @@ test.describe("brief → draft handoff across a real new tab", () => {
     const key = CONTENT_BRIEF_HANDOFF_KEY;
     const staged = await page.evaluate((k) => sessionStorage.getItem(k), key);
     expect(staged).not.toBeNull();
-    expect((JSON.parse(staged ?? "null") as { brief: ContentBrief }).brief.run.fingerprint).toBe(brief.run.fingerprint);
+    const envelope = JSON.parse(staged ?? "null") as { version: number; brief: ConfirmedBriefV2 };
+    expect(envelope.version).toBe(2);
+    expect(envelope.brief).toEqual(confirmed);
     await expect(popup.locator('[data-intake-phase="empty"]')).toBeVisible();
     expect(await popup.evaluate((k) => sessionStorage.getItem(k), key)).toBeNull();
   });

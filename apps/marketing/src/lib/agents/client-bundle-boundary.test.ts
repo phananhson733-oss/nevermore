@@ -1,5 +1,5 @@
-// @input  -- every module reachable from a "use client" entry point
-// @output -- a failing test when one of them reaches a package barrel
+// @input  -- every module reachable from a "use client" entry point, with CSS as static leaves
+// @output -- a failing test for package barrels or unparseable non-CSS modules
 // @pos    -- the one guard for a bundling break that typecheck and the suite both pass
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -68,6 +68,10 @@ interface Reference {
  * scanner that can, so this asks it.
  */
 function referencesIn(source: string, fileName = "module.tsx"): readonly Reference[] {
+  // Stylesheets are static assets, not executable modules. Keep this explicit:
+  // unknown extensions must still be parsed rather than silently hiding imports.
+  if (fileName.endsWith(".css")) return [];
+
   // Parsed as what it is. A `.ts` file read as TSX loses angle-bracket casts,
   // and a file that fails to parse yields no references at all — which is the
   // shape of a guard passing because it went blind.
@@ -77,7 +81,12 @@ function referencesIn(source: string, fileName = "module.tsx"): readonly Referen
     ts.ScriptTarget.Latest,
     true,
     fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-  );
+  ) as ts.SourceFile & {
+    readonly parseDiagnostics?: readonly ts.Diagnostic[];
+  };
+  if ((file.parseDiagnostics?.length ?? 0) > 0) {
+    throw new Error(`the scanner could not parse ${fileName}`);
+  }
   const found: Reference[] = [];
 
   const literal = (node: ts.Node | undefined): string | null =>
@@ -216,6 +225,56 @@ function clientClosure(): ReadonlyMap<string, readonly Reference[]> {
 }
 
 describe("the reference scanner reads code, not prose", () => {
+  it("treats CSS modules and stylesheets as static leaves", () => {
+    const source = [
+      '@import "./tokens.css";',
+      ".panel {",
+      "  color: var(--foreground);",
+      '  content: "import \\"@sf/sources\\"";',
+      "}",
+    ].join("\n");
+
+    for (const fileName of ["presentation.module.css", "globals.css"]) {
+      expect(referencesIn(source, fileName)).toEqual([]);
+    }
+  });
+
+  it.each(["ts", "tsx", "js", "jsx", "unknown"])(
+    "fails closed when a reachable .%s file cannot be parsed",
+    (extension) => {
+      expect(() =>
+        referencesIn('const value = ; import "@sf/sources";', `broken.${extension}`),
+      ).toThrow(/could not parse.*broken\./);
+    },
+  );
+
+  it("still sees forbidden imports beside a static CSS import", () => {
+    const source = [
+      'import styles from "./presentation.module.css";',
+      'import "./globals.css";',
+      'import { runtime } from "@sf/public-tools";',
+      'export * from "@sf/engine";',
+      'const late = import("@sf/sources");',
+    ].join("\n");
+
+    expect(referencesIn(source)).toEqual([
+      { specifier: "./presentation.module.css", typeOnly: false },
+      { specifier: "./globals.css", typeOnly: false },
+      { specifier: "@sf/public-tools", typeOnly: false },
+      { specifier: "@sf/engine", typeOnly: false },
+      { specifier: "@sf/sources", typeOnly: false },
+    ]);
+  });
+
+  it.each(["presentation.css.ts", "presentation.css.js", "presentation.unknown"])(
+    "does not mistake %s for static CSS",
+    (fileName) => {
+      expect(referencesIn('export * from "@sf/sources";', fileName)).toEqual([
+        { specifier: "@sf/sources", typeOnly: false },
+      ]);
+    },
+  );
+
   it("ignores a barrel named inside a comment", () => {
     const source = [
       "/**",
@@ -380,25 +439,9 @@ describe("modules the browser bundle reaches stay off the package barrels", () =
     // so the guard would go blind one file at a time and still pass. The
     // condition to detect is the parse failure itself, not a guess from the
     // text about which files "should" have imports.
-    const unparsed: string[] = [];
     for (const file of closure.keys()) {
-      const parsed = ts.createSourceFile(
-        file,
-        readFileSync(file, "utf8"),
-        ts.ScriptTarget.Latest,
-        true,
-        file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-      ) as ts.SourceFile & {
-        readonly parseDiagnostics?: readonly ts.Diagnostic[];
-      };
-      if ((parsed.parseDiagnostics?.length ?? 0) > 0) {
-        unparsed.push(file.slice(SOURCE_ROOT.length));
-      }
+      expect(() => referencesIn(readFileSync(file, "utf8"), file)).not.toThrow();
     }
-    expect(
-      unparsed,
-      `the scanner could not parse these, so it saw no imports in them:\n${unparsed.join("\n")}`,
-    ).toEqual([]);
   });
 
   it("follows the aliased imports this app actually writes", () => {

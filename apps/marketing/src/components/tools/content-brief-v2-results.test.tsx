@@ -13,13 +13,15 @@ import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
 import { ContentBriefV2Results } from "./content-brief-v2-results.tsx";
 import { validContentBriefV2 as fixture } from "./content-brief-v2-fixture.ts";
+import { CONTENT_BRIEF_HANDOFF_KEY } from "@sf/public-tools/content-brief/contract";
+import { parseConfirmedBriefHandoff } from "../../lib/tools/content-brief-v2-handoff.ts";
 
 
 let root: Root | null = null;
 const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
 const originalCreateUrl = Object.getOwnPropertyDescriptor(URL, "createObjectURL");
 const originalRevokeUrl = Object.getOwnPropertyDescriptor(URL, "revokeObjectURL");
-beforeEach(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; });
+beforeEach(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; window.sessionStorage.clear(); });
 afterEach(async () => {
   await act(async () => root?.unmount()); root = null; document.body.replaceChildren(); vi.restoreAllMocks();
   for (const [owner, key, descriptor] of [[navigator, "clipboard", originalClipboard], [URL, "createObjectURL", originalCreateUrl], [URL, "revokeObjectURL", originalRevokeUrl]] as const) {
@@ -44,6 +46,39 @@ async function confirmedValue(onConfirmed: ReturnType<typeof vi.fn<(value: Confi
 }
 
 describe("Artifact-aligned Brief v2 result", () => {
+  it.each(["en", "zh"] as const)("hands the exact confirmed revision privately to Draft (%s)", async (locale) => {
+    const { host, onConfirmed } = await render(await fixture({ locale }), locale);
+    expect(host.querySelector("[data-generate-draft]")).toBeNull();
+    await click(host, "[data-confirm-brief]");
+    const confirmed = await confirmedValue(onConfirmed);
+    const link = node<HTMLAnchorElement>(host, "[data-generate-draft]");
+    expect(link.getAttribute("href")).toBe(locale === "en" ? "/tools/content-draft" : "/zh/tools/content-draft");
+    expect(link.target).toBe("_blank");
+    expect(link.rel).toBe("opener");
+    await act(async () => { link.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })); });
+    const raw = window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY);
+    expect(raw).not.toBeNull();
+    expect(await parseConfirmedBriefHandoff(JSON.parse(raw!))).toEqual({ ok: true, value: confirmed });
+    expect(link.href).not.toContain(confirmed.fingerprint);
+    await type(host, '[data-outline-h2="O1"]', "Changed after staging");
+    expect(host.querySelector("[data-generate-draft]")).toBeNull();
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+  });
+  it("cancels navigation on blocked storage and does not delete a newer foreign handoff when edited", async () => {
+    const { host, onConfirmed } = await render(await fixture());
+    await click(host, "[data-confirm-brief]"); await confirmedValue(onConfirmed);
+    const link = node<HTMLAnchorElement>(host, "[data-generate-draft]");
+    await act(async () => { link.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })); });
+    window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, "newer handoff");
+    await type(host, '[data-outline-h2="O1"]', "Edited");
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe("newer handoff");
+    await click(host, "[data-confirm-brief]"); await confirmedValue(onConfirmed);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    await act(async () => { node(host, "[data-generate-draft]").dispatchEvent(event); });
+    expect(event.defaultPrevented).toBe(true);
+    expect(host.querySelector("[data-draft-handoff-error]")).not.toBeNull();
+  });
   it.each(["en", "zh"] as const)("puts the keyword, actual page recommendation, compact questions and editable outline first (%s)", async (locale) => {
     const brief = await fixture({ locale }); const { host } = await render(brief, locale);
     expect(node(host, "[data-brief-header] h3").textContent).toBe("reporting delays");
