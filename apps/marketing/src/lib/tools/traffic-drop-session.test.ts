@@ -19,12 +19,17 @@ vi.mock("next/headers", () => ({
         const value = cookieStore.get(name);
         return value === undefined ? undefined : { name, value };
       },
-      set: () => {},
-      delete: () => {},
+      set: (name: string, value: string) => {
+        cookieStore.set(name, value);
+      },
+      delete: ({ name }: { name: string }) => {
+        cookieStore.delete(name);
+      },
     }),
 }));
 
 import { seal } from "../auth/sealed-cookie.ts";
+import * as googleOAuth from "../auth/google-oauth.ts";
 import {
   isGoogleConnectEnabled,
   readGoogleConsentNotice,
@@ -95,6 +100,79 @@ describe("connect flags", () => {
 
 const PROPERTY = "sc-domain:example.com";
 const SUB = "108000000000000000001";
+
+describe("API property refresh through the Next cookie seam", () => {
+  beforeEach(() => {
+    process.env.MARKETING_GSC_CONNECT_ENABLED = "true";
+    cookieStore.set("gg_id", seal("gg_id", { sub: SUB }, 3_600));
+    cookieStore.set(
+      "gg_sites",
+      seal("gg_sites", { properties: [PROPERTY], total: 1 }, 3_600),
+    );
+    cookieStore.set("gg_gsc", seal(
+      "gg_gsc",
+      {
+        accessToken: "test-access-token",
+        refreshToken: "test-refresh-token",
+        sub: SUB,
+        accessTokenExpiresAt: Math.floor(Date.now() / 1_000) + 3_600,
+        grantedAt: Math.floor(Date.now() / 1_000) - 60,
+      },
+      3_600,
+    ));
+  });
+
+  afterEach(() => {
+    cookieStore.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("refreshes unexpired properties and exposes the saved list to the next page render", async () => {
+    const properties = [PROPERTY, "sc-domain:new-site.example"];
+    const list = vi.spyOn(googleOAuth, "listSearchConsoleProperties")
+      .mockResolvedValue(properties);
+    const refresh = vi.spyOn(googleOAuth, "refreshAccessToken");
+    const identity = cookieStore.get("gg_id");
+
+    await expect(resolveTrafficDropGrant({ refreshProperties: true }))
+      .resolves.toMatchObject({ properties, propertyTotal: 2 });
+    await expect(readTrafficDropSession()).resolves.toMatchObject({
+      properties, propertyTotal: 2,
+    });
+    expect(list).toHaveBeenCalledExactlyOnceWith({
+      accessToken: "test-access-token",
+    });
+    expect(refresh).not.toHaveBeenCalled();
+    expect(cookieStore.get("gg_id")).toBe(identity);
+  });
+
+  it("keeps ordinary unexpired report grant resolution free of provider calls", async () => {
+    const list = vi.spyOn(googleOAuth, "listSearchConsoleProperties");
+    const refresh = vi.spyOn(googleOAuth, "refreshAccessToken");
+    await expect(resolveTrafficDropGrant()).resolves.toMatchObject({
+      properties: [PROPERTY],
+    });
+    expect(list).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not refresh properties when Google connection is disabled", async () => {
+    process.env.MARKETING_GSC_CONNECT_ENABLED = "false";
+    const list = vi.spyOn(googleOAuth, "listSearchConsoleProperties");
+    await expect(resolveTrafficDropGrant({ refreshProperties: true }))
+      .resolves.toEqual({ kind: "none" });
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("preserves the page cookie and identity when listing temporarily fails", async () => {
+    vi.spyOn(googleOAuth, "listSearchConsoleProperties")
+      .mockRejectedValue(new Error("upstream temporarily unavailable"));
+    const previous = new Map(cookieStore);
+    await expect(resolveTrafficDropGrant({ refreshProperties: true }))
+      .resolves.toEqual({ kind: "unavailable" });
+    expect(cookieStore).toEqual(previous);
+  });
+});
 
 describe("the tool page on a deployment whose cookie key cannot be built", () => {
   const CONFIGURED_KEY = process.env.TOKEN_ENCRYPTION_KEY;

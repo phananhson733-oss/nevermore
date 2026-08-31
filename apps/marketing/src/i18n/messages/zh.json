@@ -1779,6 +1779,10 @@
       "ctaButton": "加入产品开放候补名单"
     },
     "dailyBriefing": {
+      "propertiesRefresh": "刷新站点",
+      "propertiesRefreshing": "正在刷新站点…",
+      "propertiesRefreshFailed": "暂时无法刷新站点列表，仍显示上次的列表，请稍后重试。",
+      "propertyChoose": "请选择 Search Console 站点",
       "connectTitle": "连接 Search Console，生成今天的简报",
       "connectBody": "选择一个已验证资源，读取 Search Console 最新可用的数据。仍在更新的日期会标为暂定，不完整时段不会触发依赖变化的动作。访问只读，报告不保存在我们的服务器上。",
       "connectCta": "连接 Search Console",
@@ -1789,9 +1793,9 @@
       "inviteOnlyCta": "已受邀则继续",
       "inviteOnlyRequest": "申请加入内测",
       "noPropertyTitle": "此次授权不含已验证站点",
-      "noPropertyBody": "连接已经成功，但这个 Google 账号没有提供本工具可运行的 Search Console 站点。请先验证站点，或换一个账号重新连接。",
+      "noPropertyBody": "连接已经成功，但这个 Google 账号没有提供本工具可运行的 Search Console 站点。请先在 Search Console 验证站点，再回到这里刷新站点列表。",
       "propertyLabel": "Search Console 站点",
-      "propertiesTruncated": "当前显示 {shown}/{total} 个已授权站点；其余名称没有放进浏览器授权 Cookie。若要选择缺失站点，请重新连接。",
+      "propertiesTruncated": "当前显示 {shown}/{total} 个已授权站点；其余名称超出了浏览器可保存的站点列表长度限制。",
       "brand": {
         "label": "品牌词（CTR 机会所需）",
         "hint": "请用逗号分隔。它只决定 CTR 机会这一条路径能否运行，其余简报内容不需要它。根据域名得到的只是候选词；即使正确列表为空，也需要单独确认。",

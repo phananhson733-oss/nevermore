@@ -34,7 +34,7 @@ async function openSyntheticBriefing(page: Page, partial = false) {
   expect(envelope.run.schemaVersion).toBe("daily_search_briefing.v10");
   expect(envelope.result.verification?.websiteChecked).toBe(false);
   expect(envelope.result.verification?.withheldCount).toBe(0);
-  const calls = { briefing: 0, unexpected: [] as string[], external: [] as string[], pageErrors: [] as string[] };
+  const calls = { briefing: 0, properties: 0, unexpected: [] as string[], external: [] as string[], pageErrors: [] as string[] };
   page.on("pageerror", (error) => calls.pageErrors.push(error.message));
   await page.context().addCookies([
     { name: "gg_id", value: seal("gg_id", { sub: "synthetic-briefing-e2e" }, 3_600), domain: "127.0.0.1", path: "/", httpOnly: true, sameSite: "Lax" },
@@ -55,6 +55,14 @@ async function openSyntheticBriefing(page: Page, partial = false) {
       return;
     }
     const id = `${request.method()} ${url.pathname}`;
+    if (id === "POST /api/tools/gsc-properties") {
+      calls.properties += 1;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {
+        properties: [SYNTHETIC_PROPERTY], propertyTotal: 1,
+        brandCandidates: { [SYNTHETIC_PROPERTY]: ["synthetic-brand"] },
+      } }) });
+      return;
+    }
     if (id === "POST /api/tools/daily-search-briefing") {
       calls.briefing += 1;
       expect(request.postDataJSON()).toEqual({ property: SYNTHETIC_PROPERTY, brandTerms: ["synthetic-brand"], brandTermsConfirmed: true });
@@ -75,6 +83,7 @@ async function openSyntheticBriefing(page: Page, partial = false) {
 
 function expectIsolated(calls: Awaited<ReturnType<typeof openSyntheticBriefing>>["calls"]) {
   expect(calls.briefing).toBe(1);
+  expect(calls.properties).toBeGreaterThanOrEqual(1);
   expect(calls.unexpected).toEqual([]);
   expect(calls.external).toEqual([]);
   expect(calls.pageErrors).toEqual([]);
