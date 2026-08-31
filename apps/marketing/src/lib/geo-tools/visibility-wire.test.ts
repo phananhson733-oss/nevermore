@@ -1,16 +1,42 @@
 // @input -- maximum admitted offline runs and bounded structural evidence
 // @output -- proof compact wire fits, retains every observation, and inflates exactly
 // @pos -- pure portable/store size budget tests; no provider transport
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { visibilityReportFixtureV2 } from "./visibility-v2.test-fixtures.ts";
 import { createVisibilityReportV2, buildVisibilityPlan } from "./visibility-v2.ts";
 import { VISIBILITY_ENGINE_CONFIG } from "./visibility-engines.ts";
 import { parseVisibilityReportV2 } from "./visibility-export.ts";
-import { budgetVisibilityReportV2, decodeVisibilityWire, encodeVisibilityWire, visibilityPlanFitsWireBudget, VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES } from "./visibility-wire.ts";
+import { budgetVisibilityReportV2, decodeVisibilityWire, encodeVisibilityWire, postgresJsonbTextBytes, visibilityPlanFitsWireBudget, VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES } from "./visibility-wire.ts";
 import type { VisibilitySampleV2 } from "./visibility-v2-contract.ts";
 
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
 describe("normalized Visibility V2 wire", () => {
+  it.each([
+    [Number.MAX_VALUE, 309], [Number.MIN_VALUE, 326], [-Number.MIN_VALUE, 327],
+    [1e-7, 9], [1.23e-7, 11], [1e21, 22], [-0, 1],
+  ])("budgets PostgreSQL numeric text for %s rather than compact exponent notation", (value, expected) => {
+    expect(postgresJsonbTextBytes(value)).toBe(expected);
+  });
+  it("counts PostgreSQL array/object whitespace and UTF-8 string bytes", () => {
+    expect(postgresJsonbTextBytes({ label: "中文", values: [0, 1, true, null] })).toBe(Buffer.byteLength('{"label": "中文", "values": [0, 1, true, null]}'));
+    expect(postgresJsonbTextBytes([1, 2, 3])).toBe(Buffer.byteLength("[1, 2, 3]"));
+  });
+  it("reserves the longest positive decimal expansion in both preflight cost fields", () => {
+    const seed = visibilityReportFixtureV2(), seen: unknown[] = [];
+    const stringify = JSON.stringify;
+    const spy = vi.spyOn(JSON, "stringify").mockImplementation((value, replacer, space) => {
+      seen.push(value);
+      return stringify(value, replacer as never, space);
+    });
+    try { expect(visibilityPlanFitsWireBudget({ context: seed.context, questions: seed.questions.map((q) => q.definition), engines: ["chatgpt"], samplesPerQuestion: 3 })).toBe(true); }
+    finally { spy.mockRestore(); }
+    const worstTuple = seen.find((value): value is unknown[] => Array.isArray(value) && value.length === 24 && value[0] === 1 && value[1] === 199);
+    const envelope = seen.find((value): value is { manifest: { costUsd: number } } => typeof value === "object" && value !== null && "wireSchema" in value && "manifest" in value);
+    expect(worstTuple?.[7]).toBe(Number.MIN_VALUE);
+    expect(envelope?.manifest.costUsd).toBe(Number.MIN_VALUE);
+    expect(postgresJsonbTextBytes(worstTuple?.[7])).toBe(326);
+    expect(postgresJsonbTextBytes(envelope?.manifest.costUsd)).toBe(326);
+  });
   it("stores each sample once and inflates the original full report", () => {
     const report = visibilityReportFixtureV2();
     const wire = encodeVisibilityWire(report);
@@ -47,6 +73,7 @@ describe("normalized Visibility V2 wire", () => {
     const bounded = budgetVisibilityReportV2(original);
     const wire = encodeVisibilityWire(bounded);
     expect(bytes(wire) + VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES).toBeLessThanOrEqual(4 * 1024 * 1024);
+    expect(postgresJsonbTextBytes(wire) + VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES).toBeLessThanOrEqual(4 * 1024 * 1024);
     expect(bounded.questions.flatMap((q) => q.samples)).toHaveLength(questionCount * 20);
     expect(bounded.metrics).toEqual(original.metrics);
     expect(bounded.manifest).toEqual(original.manifest);

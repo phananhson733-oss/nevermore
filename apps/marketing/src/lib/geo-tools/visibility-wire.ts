@@ -23,7 +23,38 @@ export interface VisibilityWire {
   readonly siteEvidence: VisibilityReportV2["siteEvidence"];
   readonly gaps: VisibilityReportV2["gaps"];
 }
-const byteLength = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+/** Budget the representation PostgreSQL's jsonb::text check actually measures.
+ * jsonb adds spaces after every comma/colon and expands decimal exponents.
+ * Key ordering cannot change byte length. Normalize through JSON first so
+ * toJSON/undefined/negative-zero semantics match the actual HTTP/RPC payload.
+ * This is a size calculation, not a replacement for the strict wire validator.
+ * Function-only work avoids executing across the codec/parser import cycle. */
+export function postgresJsonbTextBytes(value: unknown): number {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new TypeError("Visibility wire must be JSON");
+  const utf8 = (text: string) => new TextEncoder().encode(text).byteLength;
+  const numberBytes = (number: number): number => {
+    const text = JSON.stringify(number);
+    const exponentAt = text.indexOf("e");
+    if (exponentAt < 0) return text.length;
+    const coefficient = text.slice(0, exponentAt), exponent = Number(text.slice(exponentAt + 1));
+    const negative = coefficient.startsWith("-") ? 1 : 0;
+    const [integer = "", fraction = ""] = coefficient.slice(negative).split(".");
+    const digits = integer.length + fraction.length, point = integer.length + exponent;
+    return negative + (point <= 0 ? 2 - point + digits : point >= digits ? point : digits + 1);
+  };
+  const measure = (node: unknown): number => {
+    if (node === null) return 4;
+    if (typeof node === "string") return utf8(JSON.stringify(node));
+    if (typeof node === "number") return numberBytes(node);
+    if (typeof node === "boolean") return node ? 4 : 5;
+    if (Array.isArray(node)) return 2 + node.reduce<number>((total, child) => total + measure(child), 0) + Math.max(0, node.length - 1) * 2;
+    const entries = Object.entries(node as Record<string, unknown>);
+    return 2 + entries.reduce((total, [key, child]) => total + utf8(JSON.stringify(key)) + 2 + measure(child), 0) + Math.max(0, entries.length - 1) * 2;
+  };
+  return measure(JSON.parse(serialized));
+}
+const byteLength = postgresJsonbTextBytes;
 function tuple(sample: VisibilitySampleV2, engine: number, question: number, context: VisibilityContextV2): Tuple {
   const rival = (name: string) => context.competitors.findIndex((entry) => entry.brandName === name);
   // Fixed positional schema v2, 24 entries. Engine/question/model-requested/slot
@@ -96,7 +127,7 @@ export function budgetVisibilityReportV2(report: VisibilityReportV2): Visibility
   const tuples = [...wire.samples];
   const sizes = tuples.map(byteLength);
   // Reserve maximum optional limits up front: trimming can make those appear.
-  const overhead = byteLength({ ...wire, limits: [...report.limits.filter((limit) => !OMITTED_LIMITS.some((known) => known === limit)), ...OMITTED_LIMITS], samples: [], siteEvidence: null, gaps: [] }) + Math.max(0, samples.length - 1);
+  const overhead = byteLength({ ...wire, limits: [...report.limits.filter((limit) => !OMITTED_LIMITS.some((known) => known === limit)), ...OMITTED_LIMITS], samples: [], siteEvidence: null, gaps: [] }) + Math.max(0, samples.length - 1) * 2;
   let total = overhead + sizes.reduce((a, b) => a + b, 0);
   const available = VISIBILITY_EXPORT_MAX_BYTES - VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES;
   const replace = (index: number, sample: VisibilitySampleV2): void => {
@@ -142,14 +173,16 @@ export function visibilityPlanFitsWireBudget(input: VisibilityWirePlan): boolean
     const plan = buildVisibilityPlan(input.questions, input.engines, input.samplesPerQuestion);
     if (plan.length > VISIBILITY_MAX_WIRE_SLOTS) return false;
     const id = "ffffffff-ffff-4fff-8fff-ffffffffffff", time = "9999-12-31T23:59:59.999Z";
-    const manifest = { schemaVersion: "marketing-geo-visibility.v2", runId: id, kbId: id, snapshotId: id, snapshotRevision: Number.MAX_SAFE_INTEGER, questionSetHash: "f".repeat(64), questionCount: input.questions.length, samplesPerQuestion: input.samplesPerQuestion, marketCode: input.context.marketCode, language: input.context.language, engines: input.engines.map((e) => VISIBILITY_ENGINE_CONFIG[e]), startedAt: time, finishedAt: time, calls: 1000, answered: 1000, successRatio: 0.9999999999999999, costUsd: Number.MAX_VALUE, status: "insufficient", discardedSlots: 0, costKnownCalls: 1000 };
+    // Positive finite costs can expand to 326 bytes (MIN_VALUE), not just
+    // MAX_VALUE's 309 bytes. Both cost fields must reserve that longer form.
+    const manifest = { schemaVersion: "marketing-geo-visibility.v2", runId: id, kbId: id, snapshotId: id, snapshotRevision: Number.MAX_SAFE_INTEGER, questionSetHash: "f".repeat(64), questionCount: input.questions.length, samplesPerQuestion: input.samplesPerQuestion, marketCode: input.context.marketCode, language: input.context.language, engines: input.engines.map((e) => VISIBILITY_ENGINE_CONFIG[e]), startedAt: time, finishedAt: time, calls: 1000, answered: 1000, successRatio: 0.9999999999999999, costUsd: Number.MIN_VALUE, status: "insufficient", discardedSlots: 0, costKnownCalls: 1000 };
     const ownPrefix = `https://${input.context.targetHost}/`;
     const url = ownPrefix + "x".repeat(Math.max(0, 2048 - ownPrefix.length));
-    const worst: Tuple = [1,199,10,"timeout",false,false,false,Number.MAX_VALUE,time,"ࠀ".repeat(200),"ࠀ".repeat(120),30,[0,1,2,3,4],[input.context.targetHost],[url],null,null,false,[],1_000_000,[[0,30],[1,30],[2,30],[3,30],[4,30]],40,40,false];
+    const worst: Tuple = [1,199,10,"timeout",false,false,false,Number.MIN_VALUE,time,"ࠀ".repeat(200),"ࠀ".repeat(120),30,[0,1,2,3,4],[input.context.targetHost],[url],null,null,false,[],1_000_000,[[0,30],[1,30],[2,30],[3,30],[4,30]],40,40,false];
     const metadata = { wireSchema: VISIBILITY_WIRE_SCHEMA, manifest, context: input.context, questions: input.questions, samples: [], limits: ["sampledNotCensus", "demandQuestions", "notAttribution", "confirmedSubset", "rankObservedOnly", "perplexityWordingUncalibrated", "notStored", "denseScriptMatching", ...OMITTED_LIMITS], comparison: null, siteEvidence: null, gaps: [] };
     // Existing paired comparison duplicates only changed question labels, not
     // samples. Reserve all labels plus its two small aggregate-stat records.
     const comparisonReserve = byteLength(input.questions.map((q) => ({ questionId: q.id, text: q.text, baseMentioned: 20, currentMentioned: 20, of: 20, direction: "gained" }))) + byteLength(input.questions.map((q) => ({ questionId: q.id, own: 20, anyBrand: 20, answered: 20, planned: 20 }))) + byteLength(input.questions.map((q) => q.id)) + 4096;
-    return byteLength(metadata) + plan.length * (byteLength(worst) + 1) + comparisonReserve + VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES <= VISIBILITY_EXPORT_MAX_BYTES;
+    return byteLength(metadata) + plan.length * (byteLength(worst) + 2) + comparisonReserve + VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES <= VISIBILITY_EXPORT_MAX_BYTES;
   } catch { return false; }
 }

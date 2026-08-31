@@ -3,11 +3,11 @@
 // @pos -- post-sampling enrichment; no paid retries and no invented absent pages
 import type { VisibilityReportV2 } from "./visibility-v2-contract.ts";
 import { collectVisibilitySiteEvidence, type GeoSiteEvidenceDependencies } from "./site-index.ts";
-import { budgetVisibilityReportV2, VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES } from "./visibility-wire.ts";
+import { budgetVisibilityReportV2, postgresJsonbTextBytes, VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES } from "./visibility-wire.ts";
 import { classifyVisibilityGaps } from "./gap-classify.ts";
 import { parseVisibilityReportV2 } from "./visibility-export.ts";
 import type { GeoSitePriorityHints, VisibilitySiteEvidenceV1 } from "./site-index-contract.ts";
-const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+const bytes = postgresJsonbTextBytes;
 function omitOptionalSiteEvidence(evidence: VisibilitySiteEvidenceV1): VisibilitySiteEvidenceV1 {
   const pages = evidence.index.pages.slice(0, 4).map((page) => ({ ...page, headings: [], matches: [], ownPresenceExcerpt: null }));
   return { ...evidence,

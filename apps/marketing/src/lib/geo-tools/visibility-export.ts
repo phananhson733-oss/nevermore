@@ -9,7 +9,7 @@ import { VISIBILITY_ENGINE_CONFIG, parseVisibilityEngines } from "./visibility-e
 import { compareVisibility, MIN_PAIRED_QUESTIONS_FOR_TEST } from "./visibility-metrics.ts";
 import { aggregateVisibilityV2, visibilitySovClusters } from "./visibility-v2.ts";
 import { compareVisibilitySov, type VisibilitySovCluster } from "./visibility-sov.ts";
-import { decodeVisibilityWire, encodeVisibilityWire, VISIBILITY_WIRE_SCHEMA, VISIBILITY_MAX_WIRE_SLOTS } from "./visibility-wire.ts";
+import { decodeVisibilityWire, encodeVisibilityWire, postgresJsonbTextBytes, VISIBILITY_WIRE_SCHEMA, VISIBILITY_MAX_WIRE_SLOTS } from "./visibility-wire.ts";
 import { parseVisibilitySiteEvidence } from "./site-index-validate.ts";
 import { classifyVisibilityGaps } from "./gap-classify.ts";
 import { benjaminiHochberg, mcnemarExactP, wilson } from "./stats.ts";
@@ -220,7 +220,7 @@ export function parseVisibilityReportV2(value: unknown): VisibilityReportV2 | nu
       const evidence = parseVisibilitySiteEvidence(report.siteEvidence, report);
       requireValue(evidence !== null && same(report.gaps, classifyVisibilityGaps(report, evidence)));
     }
-    requireValue(new TextEncoder().encode(JSON.stringify(encodeVisibilityWire(report))).byteLength <= VISIBILITY_EXPORT_MAX_BYTES);
+    requireValue(postgresJsonbTextBytes(encodeVisibilityWire(report)) <= VISIBILITY_EXPORT_MAX_BYTES);
     return report;
   } catch { return null; }
 }

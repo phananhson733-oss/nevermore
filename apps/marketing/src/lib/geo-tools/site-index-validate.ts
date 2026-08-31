@@ -8,7 +8,7 @@ import { GEO_SITE_EVIDENCE_SCHEMA, type GeoReadPage, type VisibilitySiteEvidence
 import type { VisibilityReportV2 } from "./visibility-v2-contract.ts";
 import { siteQuestionTerms } from "./site-index-text.ts";
 import { classifyVisibilityGaps } from "./gap-classify.ts";
-import { VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES } from "./visibility-wire.ts";
+import { postgresJsonbTextBytes, VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES } from "./visibility-wire.ts";
 
 type Row = Record<string, unknown>;
 const HASH = /^[a-f0-9]{64}$/u;
@@ -108,7 +108,7 @@ function checksFrom(value: unknown, renderStatus: unknown): void {
 /** This verifies evidence consistency; private-store ownership is checked elsewhere. */
 export function parseVisibilitySiteEvidence(value: unknown, report: VisibilityReportV2): VisibilitySiteEvidenceV1 | null {
   try {
-    requireValue(new TextEncoder().encode(JSON.stringify(value)).byteLength <= VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES);
+    requireValue(postgresJsonbTextBytes(value) <= VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES);
     const root = exact(value, ["schemaVersion", "collectedAt", "index", "references", "referenceOmittedCount", "citability", "citabilityOmittedCount"]);
     requireValue(root.schemaVersion === GEO_SITE_EVIDENCE_SCHEMA && instant(root.collectedAt));
     const index = exact(root.index, ["scope", "status", "targetHost", "discoveredCount", "pages", "sitemapUrls", "inventorySources", "limits", ...(Object.hasOwn(object(root.index), "priority") ? ["priority"] : [])]);
@@ -164,7 +164,7 @@ export function parseVisibilitySiteEvidence(value: unknown, report: VisibilityRe
     requireValue(budgetTrimmed ? count(root.citabilityOmittedCount, 24 * report.questions.length, unretainedCandidates) : root.citabilityOmittedCount === unretainedCandidates);
     const evidence = value as VisibilitySiteEvidenceV1;
     const gaps = classifyVisibilityGaps(report, evidence);
-    requireValue(new TextEncoder().encode(JSON.stringify({ siteEvidence: evidence, gaps })).byteLength <= VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES);
+    requireValue(postgresJsonbTextBytes({ siteEvidence: evidence, gaps }) <= VISIBILITY_SITE_EVIDENCE_RESERVE_BYTES);
     return evidence;
   } catch { return null; }
 }
