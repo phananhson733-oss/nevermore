@@ -1,7 +1,7 @@
 {
   "scope": "Local real UI/handlers/builders with explicit offline account/store/provider seams; not production login or provider canary",
-  "base": "977f0bc4f32bf8de453e059d3ddf444a7297bad0",
-  "buildId": "kzgJivXnU0DhAWEkWsGHV",
+  "base": "59330b10e4fb5ca059a928cf002738e773032afe",
+  "buildId": "3e-pG-1Nyo8Ul7b4Qx0sJ",
   "passed": 35,
   "failed": 0,
   "screenshots": [
@@ -21,5 +21,12 @@
       "path": "screenshots/result-zh-dark-390-viewport.png",
       "sha256": "02c234e8b0a5b11e95f6b6c6e688e5e3fbded2baf71ca1d8f933974dc7df6c2c"
     }
-  ]
+  ],
+  "verifiedCodeCommit": "d872265f5c952552e1214587daaaf63e5afe6dfc",
+  "sourceTrees": {
+    "apps/marketing/src": "454794bd7c8e7f3a98fb8e087e524a44f7ad9683",
+    "apps/marketing/e2e": "8a34feb2cac997f11a61226eda9d5bd8d8e0f9b1",
+    "apps/marketing/supabase/migrations": "db34206eb8d29cebcdeb048a9efad65460253709"
+  },
+  "lockfileSha256": "8162ba0f0d3f471e9099ef21e27e10036572a1b00223d63b93f13bdcec2f2ce1"
 }

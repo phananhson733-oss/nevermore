@@ -1,6 +1,6 @@
 # AI Visibility release-candidate acceptance
 
-This record applies to the Marketing-only candidate rebased by three-way integration onto `977f0bc4f32bf8de453e059d3ddf444a7297bad0`. It supersedes the earlier local-only evidence at75fd5d9d for release decisions.
+This record applies to verified code commit `d872265f5c952552e1214587daaaf63e5afe6dfc` on foundation `59330b10e4fb5ca059a928cf002738e773032afe` ([PR #270](https://github.com/phananhson733-oss/nevermore/pull/270)), integrated with main `977f0bc4f32bf8de453e059d3ddf444a7297bad0`. Every gate below was rerun after the dependency patch except the local backup/restore drill, whose migration bytes are unchanged. This supersedes earlier local-only and pre-foundation evidence for release decisions. The final evidence-only commit changes no application, test, dependency or migration bytes; their Git tree hashes are retained in `browser-evidence.json`.
 
 ## Fresh gates
 
@@ -9,11 +9,13 @@ This record applies to the Marketing-only candidate rebased by three-way integra
 | Marketing unit | 417 files / 6964 tests PASS | Entire apps/marketing unit collection, no ignored blog failure |
 | Marketing lint | PASS | Full package eslint, no rule disabled |
 | Marketing typecheck | PASS | Full package tsc |
-| Marketing production build | PASS | Build `kzgJivXnU0DhAWEkWsGHV`;301 routes/pages; no provider credentials |
+| Marketing production build | PASS | Build `3e-pG-1Nyo8Ul7b4Qx0sJ`;301 routes/pages; no provider credentials |
 | Marketing Workflow | 2 tests PASS | Actual workflow integration harness |
 | GEO SQL | 6 files /67 tests PASS | Fresh isolated loopback PostgreSQL17; not production |
 | Local backup/restore | PASS |10 Marketing tables retained identical row digests, routine definitions identical |
 | Browser | 35/35 PASS | Same candidate build; AI Visibility, Profile update, GEO chain, current GEO Brief and Page Citability |
+| Dependency audits |PASS, no known vulnerabilities|Full and production-only audit; frozen install passes|
+| Spec verification |PASS +55/55 self-tests|No weakened checks or baseline exclusions|
 | Docs consistency |14/14 PASS|Repository gate |
 | Implementation/authority inventory |PASS|80operations,84tables,53migrations,12rules unchanged |
 | Generated contracts |PASS|OpenAPI-generated types match |
@@ -51,7 +53,7 @@ Four representative images are retained in `screenshots/` and hashed in `browser
 
 ## Known root baseline and production prerequisites
 
-At977f0bc4, verify:spec reported reviewed package.json/README lock drift and audit reported GHSA-2v37-7h3g-55p8 in nanoid3.3.17. Both are handled by the separate foundation dependency, not hidden inside this feature diff. The feature remains Marketing-only relative to that foundation; foundation integration has its own Product build-scheduling boundary. Audit/spec results for the final combined head are recorded in the release receipt/PR; earlier baseline failures are not presented as passes.
+At977f0bc4, verify:spec reported reviewed package.json/README lock drift and audit reported GHSA-2v37-7h3g-55p8 in nanoid3.3.17. Both are handled by the separate foundation dependency, not hidden inside this feature diff. The feature remains Marketing-only relative to that foundation; foundation integration has its own Product build-scheduling boundary. Full/prod audit and verify:spec now pass on the combined code commit above without exclusions. Earlier baseline failures are retained as diagnosis, not presented as passes.
 
 Production Supabase project/catalog reads were denied by the current connector permissions. No production backup, migration, restore or provider canary is claimed. See `preflight.md` and `ai-visibility-migration-preflight.sql`.
 
