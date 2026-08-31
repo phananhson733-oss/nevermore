@@ -193,10 +193,10 @@ function button(label: string): HTMLButtonElement {
 
 /** The input under a given field label, by position among same-labelled fields. */
 function field(label: string, occurrence = 0): HTMLInputElement {
-  const matches = [...(container?.querySelectorAll("span") ?? [])]
-    .filter((span) => span.textContent === label)
-    .map((span) => span.parentElement?.querySelector("input"))
-    .filter((element): element is HTMLInputElement => element !== null);
+  const matches = [...(container?.querySelectorAll("label") ?? [])]
+    .filter((entry) => entry.textContent === label)
+    .map((entry) => entry.control)
+    .filter((element): element is HTMLInputElement => element instanceof HTMLInputElement);
   const found = matches[occurrence];
   if (found === undefined) throw new Error(`no field labelled ${label}`);
   return found;

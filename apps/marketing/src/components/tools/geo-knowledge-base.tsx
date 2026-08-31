@@ -4,7 +4,7 @@
 // @output -- an editor, a freeze control that states what still blocks it, and the questions a frozen version produces
 // @pos    -- the only client surface of /tools/geo-knowledge-base; it edits and renders, it never decides
 
-import { Fragment, useCallback, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
 import {
@@ -37,6 +37,8 @@ import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { GeoKbEnrichment } from "./geo-kb-enrichment.tsx";
 import { pendingGeoFeatureFact } from "./geo-kb-feature-candidates.ts";
 import { isSupportedGeoQuestionLanguage } from "../../lib/geo-tools/asset-context.ts";
+import { consumeGeoKnowledgeRepair, GEO_BRIEF_RETURN_KEY, writeGeoBriefReturn, type GeoKnowledgeRepair } from "../../lib/geo-tools/brief-knowledge-handoff.ts";
+import { localePath } from "../../lib/locale-path.ts";
 
 const ENDPOINTS = {
   load: "/api/tools/geo-knowledge-base/load",
@@ -164,6 +166,7 @@ function ChipsField({
   readonly max: number;
   readonly onChange: (next: readonly string[]) => void;
 }) {
+  const inputId = useId();
   const [text, setText] = useState("");
   const commit = useCallback(() => {
     const cleaned = text.trim();
@@ -175,7 +178,7 @@ function ChipsField({
 
   return (
     <div>
-      <span className="block text-[13px] text-text-dark-secondary">{label}</span>
+      <label className="block text-[13px] text-text-dark-secondary" htmlFor={inputId}>{label}</label>
       <div className="mt-1.5 flex flex-wrap gap-2">
         {values.map((value) => (
           <span
@@ -195,6 +198,8 @@ function ChipsField({
         ))}
       </div>
       <input
+        id={inputId}
+        aria-describedby={`${inputId}-help`}
         className="mt-2 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
         maxLength={GEO_KB_LIMITS.listItem}
         // Committing on comma would empty the box under the cursor mid-word.
@@ -208,7 +213,7 @@ function ChipsField({
         }}
         value={text}
       />
-      <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
+      <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary" id={`${inputId}-help`}>
         {help}
       </p>
     </div>
@@ -228,10 +233,13 @@ function TextField({
   readonly value: string;
   readonly onChange: (next: string) => void;
 }) {
+  const inputId = useId();
   return (
     <div>
-      <span className="block text-[13px] text-text-dark-secondary">{label}</span>
+      <label className="block text-[13px] text-text-dark-secondary" htmlFor={inputId}>{label}</label>
       <input
+        id={inputId}
+        aria-describedby={help === undefined ? undefined : `${inputId}-help`}
         className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
         maxLength={GEO_KB_LIMITS.text}
         onChange={(event) => onChange(event.target.value)}
@@ -239,7 +247,7 @@ function TextField({
         value={value}
       />
       {help === undefined ? null : (
-        <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
+        <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary" id={`${inputId}-help`}>
           {help}
         </p>
       )}
@@ -274,6 +282,12 @@ export function GeoKnowledgeBase({
   const [showQuestions, setShowQuestions] = useState(false);
   const [dirty, setDirty] = useState(false);
   const editRevision = useRef(0);
+  const repairInitialized = useRef(false);
+  const [repair, setRepair] = useState<GeoKnowledgeRepair | null>(null);
+  const [repairInvalid, setRepairInvalid] = useState(false);
+  const [repairFrozen, setRepairFrozen] = useState<{ snapshotId: string; draftVersion: number } | null>(null);
+  const [repairQuestionId, setRepairQuestionId] = useState<string | null>(null);
+  const [returnStorageError, setReturnStorageError] = useState(false);
   /**
    * Whether a save has been attempted since this knowledge base was loaded.
    *
@@ -403,6 +417,20 @@ export function GeoKnowledgeBase({
     [],
   );
 
+  const adoptLoaded = useCallback((next: GeoKbView) => {
+    // Everything reset here belongs to a site rather than to the page. A value
+    // carried across meant the previous site's blockers stayed on screen with
+    // the freeze button live beside them; the list is derived now, and the rest
+    // of the set is reset together because that is how it goes wrong.
+    setView(next);
+    setPayload(next.payload);
+    setQuestions(next.frozen?.questions ?? null);
+    setShowQuestions(false);
+    setShowRowIssues(false);
+    setDirty(false);
+    setStatus({ kind: "idle" });
+  }, []);
+
   const load = useCallback(async () => {
     const url = siteUrl.trim();
     if (url.length === 0) return;
@@ -416,19 +444,45 @@ export function GeoKnowledgeBase({
       setStatus({ kind: "error", code: "schema_mismatch" });
       return;
     }
-    const next = result.data;
-    // Everything reset here belongs to a site rather than to the page. A value
-    // carried across meant the previous site's blockers stayed on screen with
-    // the freeze button live beside them; the list is derived now, and the rest
-    // of the set is reset together because that is how it goes wrong.
-    setView(next);
-    setPayload(next.payload);
-    setQuestions(next.frozen?.questions ?? null);
-    setShowQuestions(false);
-    setShowRowIssues(false);
-    setDirty(false);
-    setStatus({ kind: "idle" });
-  }, [post, siteUrl]);
+    adoptLoaded(result.data);
+  }, [adoptLoaded, post, siteUrl]);
+
+  const loadRepair = useCallback(async (context: GeoKnowledgeRepair) => {
+    setStatus({ kind: "busy" });
+    const result = await post(ENDPOINTS.load, { kbId: context.kbId });
+    if (!result.ok) {
+      setStatus({ kind: "error", code: result.code });
+      return;
+    }
+    if (!isGeoKbView(result.data) || result.data.kbId !== context.kbId) {
+      setStatus({ kind: "error", code: "schema_mismatch" });
+      return;
+    }
+    setSiteUrl(result.data.origin);
+    adoptLoaded(result.data);
+  }, [adoptLoaded, post]);
+
+  useEffect(() => {
+    if (!signedIn || initialView !== undefined || canonicalWebsiteId !== undefined || repairInitialized.current) return;
+    repairInitialized.current = true;
+    try {
+      const context = consumeGeoKnowledgeRepair(window.sessionStorage);
+      if (context === null) {
+        setRepairInvalid(new URLSearchParams(window.location.search).get("repair") === "brief");
+        return;
+      }
+      setRepair(context);
+      void loadRepair(context);
+    } catch {
+      setRepairInvalid(true);
+    }
+  }, [canonicalWebsiteId, initialView, loadRepair, signedIn]);
+
+  useEffect(() => {
+    if (repair === null || (!dirty && status.kind !== "busy")) return;
+    if (dirty) setRepairQuestionId(null);
+    try { window.sessionStorage.removeItem(GEO_BRIEF_RETURN_KEY); } catch { /* A new return still requires a successful storage write. */ }
+  }, [dirty, repair, status.kind]);
 
   const save = useCallback(async () => {
     if (view === null || submission === null) return;
@@ -481,6 +535,9 @@ export function GeoKnowledgeBase({
 
   const freeze = useCallback(async () => {
     if (view === null) return;
+    const frozenEditRevision = editRevision.current;
+    setRepairFrozen(null);
+    setRepairQuestionId(null);
     setStatus({ kind: "busy" });
     const result = await post(ENDPOINTS.freeze, {
       kbId: view.kbId,
@@ -530,12 +587,15 @@ export function GeoKnowledgeBase({
       ...(data.context === undefined ? {} : { context: data.context }),
     });
     setQuestions(data.questions);
+    if (repair !== null && view.kbId === repair.kbId && data.snapshotId !== repair.snapshotId && editRevision.current === frozenEditRevision) {
+      setRepairFrozen({ snapshotId: data.snapshotId, draftVersion: view.draftVersion });
+    }
     setStatus({
       kind: "frozen",
       revision: data.revision,
       reused: data.reusedExisting,
     });
-  }, [adoptConflictVersion, post, view]);
+  }, [adoptConflictVersion, post, repair, view]);
 
   const prefill = useCallback(async () => {
     if (view === null) return;
@@ -556,6 +616,9 @@ export function GeoKnowledgeBase({
 
   const update = useCallback((next: Partial<GeoKbPayload>) => {
     editRevision.current += 1;
+    setRepairFrozen(null);
+    setRepairQuestionId(null);
+    setReturnStorageError(false);
     setPayload((current) =>
       current === null ? current : { ...current, ...next },
     );
@@ -572,7 +635,7 @@ export function GeoKnowledgeBase({
   const reloadSources = useCallback(async () => {
     if (view === null) return;
     setStatus({ kind: "busy" });
-    const result = await post(ENDPOINTS.load, { url: view.origin });
+    const result = await post(ENDPOINTS.load, repair === null ? { url: view.origin } : { kbId: repair.kbId });
     if (!result.ok) { setStatus({ kind: "error", code: result.code }); return; }
     if (!isGeoKbView(result.data) || result.data.kbId !== view.kbId) {
       setStatus({ kind: "error", code: "schema_mismatch" }); return;
@@ -582,7 +645,17 @@ export function GeoKnowledgeBase({
     // Refresh references only; keep local edits for an explicit save/review.
     setDirty(true);
     setStatus({ kind: "idle" });
-  }, [post, view]);
+  }, [post, repair, view]);
+
+  const canReturnVersion = repair !== null && view?.kbId === repair.kbId && repairFrozen !== null &&
+    view.frozen?.snapshotId === repairFrozen.snapshotId && view.draftVersion === repairFrozen.draftVersion &&
+    !dirty && status.kind !== "busy" && status.kind !== "error";
+  const retainedQuestionId = questions?.find((question) => question.id === repair?.questionId)?.id ?? null;
+  const returnQuestionId = retainedQuestionId ?? questions?.find((question) => question.id === repairQuestionId)?.id ?? null;
+  const needsReplacementQuestion = repair !== null && repair.questionId !== null && retainedQuestionId === null;
+  const canReturn = canReturnVersion && (repair?.questionId === null || returnQuestionId !== null);
+  const originalQuestion = repair?.manualQuestion ?? (view?.frozen?.snapshotId === repair?.snapshotId
+    ? view?.frozen?.questions?.find((question) => question.id === repair?.questionId)?.text : undefined);
 
   /**
    * One error line, and the list that belongs to it.
@@ -634,8 +707,32 @@ export function GeoKnowledgeBase({
   return (
     <div className="mt-10 grid gap-8">
       <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
-        <h2 className="text-[19px] text-text-dark-primary">{t("site.title")}</h2>
-        {canonicalWebsiteId === undefined ? <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
+        <h2 className="text-[19px] text-text-dark-primary">{t(repair !== null || repairInvalid ? "repair.title" : "site.title")}</h2>
+        {repairInvalid ? <div className="mt-4 grid gap-3">
+          <p role="alert" className="text-sm text-brand-error">{t("repair.invalid")}</p>
+          <a className="justify-self-start text-sm text-brand-accent-text underline" href={localePath(locale, "/tools/geo-brief")}>{t("repair.backToBrief")}</a>
+        </div> : null}
+        {repair === null ? null : <div className="mt-4 grid gap-3 text-sm text-text-dark-secondary" data-geo-knowledge-repair>
+          {view === null ? <>
+            <p>{t(status.kind === "busy" ? "repair.loading" : "repair.loadError")}</p>
+            <div className="flex flex-wrap gap-4">
+              <button className="rounded-lg border border-brand-border-card px-3 py-2 text-brand-accent-text disabled:opacity-60"
+                type="button" disabled={status.kind === "busy"} onClick={() => void loadRepair(repair)}>{t("repair.retry")}</button>
+              <a className="self-center text-brand-accent-text underline" href={localePath(locale, "/tools/geo-brief")}>{t("repair.backToBrief")}</a>
+            </div>
+          </> : <>
+            <p>{t("repair.intro", { host: view.host })}</p>
+            <p>{t(`repair.reason.${repair.reason}`)}</p>
+            <p>{originalQuestion ? t("repair.question", { question: originalQuestion }) : t("repair.questionChanged")}</p>
+            <ol className="grid gap-2 text-brand-accent-text">
+              <li><a className="underline" href="#kb-repair-category">{t("repair.steps.category")}</a></li>
+              <li><a className="underline" href="#kb-repair-facts">{t("repair.steps.facts")}</a>{view.profile === undefined ? null : <>{" · "}<a className="underline" href="#kb-repair-profile">{t("asset.profileTitle")}</a></>}</li>
+              <li><a className="underline" href="#kb-repair-freeze">{t("repair.steps.freeze")}</a></li>
+            </ol>
+            <p>{t("repair.profileHelp")}</p>
+          </>}
+        </div>}
+        {canonicalWebsiteId === undefined && repair === null && !repairInvalid ? <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
           <div>
             <label
               className="block text-[13px] text-text-dark-secondary"
@@ -684,13 +781,13 @@ export function GeoKnowledgeBase({
         // the next one.
         <Fragment key={view.kbId}>
           {view.profile !== undefined || canonicalWebsiteId !== undefined ? (
-            <GeoKbInheritedProfile profile={view.profile ?? null} locale={locale}
+            <div id="kb-repair-profile" className="scroll-mt-24"><GeoKbInheritedProfile profile={view.profile ?? null} locale={locale} repairMode={repair !== null}
               facts={payload.facts} onAddFeature={(feature) => {
                 const candidate = pendingGeoFeatureFact(feature, payload.facts);
                 if (candidate.status === "ready") update({ facts: [...payload.facts, candidate.fact] });
               }}
               {...(canonicalWebsiteId === undefined ? {} : { websiteId: canonicalWebsiteId })}
-              {...(profileState === undefined ? {} : { profileState })} />
+              {...(profileState === undefined ? {} : { profileState })} /></div>
           ) : <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
             <h2 className="text-[19px] text-text-dark-primary">
               {t("site.importTitle")}
@@ -746,7 +843,7 @@ export function GeoKnowledgeBase({
                 onChange={(values) => update({ aliases: values })}
                 values={payload.aliases}
               />
-              <div>
+              <div id="kb-repair-category" className="scroll-mt-24">
                 <ChipsField
                   help={t("brand.categoryLanguageHelp")}
                   label={t("brand.categoryLabel")}
@@ -1052,7 +1149,7 @@ export function GeoKnowledgeBase({
             </button>
           </section>
 
-          <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
+          <section id="kb-repair-facts" className="scroll-mt-24 rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
             <h2 className="text-[19px] text-text-dark-primary">
               {t("facts.title")}
             </h2>
@@ -1193,7 +1290,7 @@ export function GeoKnowledgeBase({
             </button>
           </section>
 
-          <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
+          <section id="kb-repair-freeze" className="scroll-mt-24 rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
             <h2 className="text-[19px] text-text-dark-primary">
               {t("freeze.title")}
             </h2>
@@ -1240,6 +1337,39 @@ export function GeoKnowledgeBase({
                 </span>
               ) : null}
             </div>
+
+            {repair === null ? null : <div className="mt-5 grid gap-2 border-t border-brand-border-card pt-5">
+              {repairFrozen === null || !needsReplacementQuestion ? null : <div className="grid gap-2">
+                <p id="kb-repair-question-missing" className="text-sm text-text-dark-secondary">{t("repair.questionRemoved")}</p>
+                <label htmlFor="kb-repair-question" className="text-sm text-text-dark-primary">{t("repair.chooseQuestion")}</label>
+                <select id="kb-repair-question" aria-describedby="kb-repair-question-missing" required
+                  className="w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-sm text-text-dark-primary"
+                  disabled={!canReturnVersion} value={repairQuestionId ?? ""}
+                  onChange={(event) => {
+                    setRepairQuestionId(event.target.value || null);
+                    setReturnStorageError(false);
+                    try { window.sessionStorage.removeItem(GEO_BRIEF_RETURN_KEY); } catch { /* Returning requires a fresh successful write. */ }
+                  }}>
+                  <option value="">{t("repair.chooseQuestionPlaceholder")}</option>
+                  {(questions ?? []).map((question) => <option key={question.id} value={question.id}>{question.text}</option>)}
+                </select>
+              </div>}
+              <a data-geo-brief-return aria-disabled={!canReturn} tabIndex={canReturn ? undefined : -1}
+                href={canReturn ? `${localePath(locale, "/tools/geo-brief")}?resume=knowledge` : undefined}
+                className={`justify-self-start rounded-lg bg-brand-accent px-4 py-2 text-sm font-medium text-brand-on-accent ${canReturn ? "" : "cursor-not-allowed opacity-60"}`}
+                onClick={(event) => {
+                  if (!canReturn || view.frozen === null) { event.preventDefault(); return; }
+                  const questionId = repair.questionId === null ? null : returnQuestionId;
+                  let written = false;
+                  try {
+                    written = writeGeoBriefReturn(window.sessionStorage, { kbId: view.kbId, snapshotId: view.frozen.snapshotId,
+                      questionId, manualQuestion: repair.questionId === null ? repair.manualQuestion : null });
+                  } catch { /* Access to sessionStorage itself may be denied. */ }
+                  if (!written) { event.preventDefault(); setReturnStorageError(true); }
+                }}>{t("repair.return")}</a>
+              <p className="text-sm text-text-dark-secondary">{t(canReturnVersion ? "repair.returnHelp" : repairFrozen === null ? "repair.beforeFreeze" : "repair.returnBlocked")}</p>
+              {returnStorageError ? <p role="alert" className="text-sm text-brand-error">{t("repair.storageError")}</p> : null}
+            </div>}
 
             {blockers.length > 0 ? (
               <div className="mt-4">

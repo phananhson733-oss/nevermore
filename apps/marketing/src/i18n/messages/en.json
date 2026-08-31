@@ -5367,6 +5367,37 @@
         "officialNameHelp": "This GEO matching name is a brand alias override, not a second product name.",
         "websiteNotFound": "This website is not available in your account.",
         "unsupportedLanguage": "Question generation is not available for {language}. Choose an English question language here, then save before freezing."
+      },
+      "repair": {
+        "title": "Fix this site's knowledge for your Brief",
+        "intro": "Review the existing knowledge for {host}. Your edits stay in the draft until you save and create a new version.",
+        "loading": "Loading the existing knowledge base…",
+        "reason": {
+          "question": "The question wording needs correction. The first category term supplies the question subject and must match the question language; no translation is applied automatically.",
+          "facts": "This Brief needs stronger product facts. Review the confirmed Profile and add only facts you can support with a source.",
+          "profile": "Review the product's Profile and the facts used by this knowledge base before creating another Brief."
+        },
+        "steps": {
+          "category": "1. Correct the category and question language",
+          "facts": "2. Review the Profile and fact rows",
+          "freeze": "3. Save the draft, then create a new version"
+        },
+        "profileHelp": "Profile information below is read-only. Adding a Profile feature to a fact row is a separate choice; review its wording and source before saving. Facts are not automatically translated or verified.",
+        "question": "Question to return to: {question}",
+        "questionChanged": "If the original question changes, you will choose a replacement before returning to Brief.",
+        "questionRemoved": "The original question is not in this new version. Choose a question below before returning to Brief.",
+        "chooseQuestion": "Question for the next Brief",
+        "chooseQuestionPlaceholder": "Select a question from this version",
+        "profileNewTab": "Profile settings open in a new tab so your current repair draft stays here.",
+        "loadError": "This existing knowledge base could not be loaded. No new knowledge base was created. Retry the same knowledge base, or return to Brief.",
+        "retry": "Retry loading this knowledge base",
+        "invalid": "The repair context is missing, expired, or unavailable. Return to Brief and reopen the repair link for the correct site.",
+        "backToBrief": "Back to Brief",
+        "beforeFreeze": "Save your changes and create a new version before returning to Brief.",
+        "return": "Return to Brief with this version",
+        "returnHelp": "Brief will load this exact version. Earlier AI observations will not be reused, and no Brief is generated automatically.",
+        "returnBlocked": "Save and create a new version after your latest changes before returning to Brief.",
+        "storageError": "The return context could not be saved in this tab. Your knowledge stays on this page. Allow browser session storage and try Return to Brief again."
       }
     },
     "geoBrief": {
@@ -5375,28 +5406,28 @@
         "result": "Result",
         "viewLabel": "Brief views",
         "output": "Output ContentBrief v1.1",
-        "noticeTitle": "Bring a gap into the brief · C gaps stay outside the content chain",
-        "noticeBody": "A / D gaps bring their question, role and evidence pointers. B gaps go to page citability checks; C gaps need third-party evidence. You can also choose a frozen question or type one; briefs without an owned run explicitly carry no observed run evidence.",
+        "noticeTitle": "Start a content plan with one question",
+        "noticeBody": "Choose the question and knowledge version to build an opening requirement, required questions and outline. Entering from an AI visibility check includes its linked answers; a direct entry has no observed answer coverage.",
         "question": "Target question",
-        "gap": "Gap type",
+        "gap": "Writing task",
         "role": "Audience role",
-        "knowledge": "Knowledge base / question set",
-        "noGap": "No gap selected · no observed run evidence",
+        "knowledge": "Knowledge version for this Brief",
+        "noGap": "Selected directly · no visibility check attached",
         "noRole": "No role attached",
         "roleHint": "From the role attached to the selected frozen question, not the current editable draft.",
-        "gapHint": "The gap is verified against the owned run. D selects a comparison page; A uses the question intent.",
+        "gapHint": "A missing comparison leads to a comparison page; other formats follow the question intent.",
         "knowledgeHint": "Scoring requirements and facts come from this exact frozen version.",
         "noMetadata": "Complete display metadata is not available for this version",
         "questionHint": "Frozen question · {layer} · {id}",
-        "gapA": "A · Content missing",
-        "gapD": "D · Comparison content missing",
+        "gapA": "Add content that answers this question",
+        "gapD": "Add comparison content for this question",
         "frozen": "kb@v{revision} frozen",
         "questions": "{count} questions",
-        "createKnowledge": "Open GEO knowledge base",
+        "createKnowledge": "Prepare your first knowledge version",
         "submit": "Generate GEO Brief",
         "questionLayerGap": "Question / layer / gap",
-        "evidencePointer": "Evidence pointers",
-        "versionAnchor": "Version anchors",
+        "evidencePointer": "Linked answer evidence",
+        "versionAnchor": "Knowledge version",
         "versionAnchorNote": "Exact version references are included in the JSON export.",
         "exactReferences": "Show exact references and hashes",
         "noSamples": "No answer samples",
@@ -5535,7 +5566,8 @@
         "run_evidence_unavailable": "The owned run evidence is unavailable or incomplete.",
         "handoff_invalid": "The handoff expired or no longer matches.",
         "unknown": "That did not work, and the reason was not one this page recognises.",
-        "question_needs_review": "Review this question’s language or required terms in the knowledge base and freeze a new version. No generation quota was consumed."
+        "question_needs_review": "Review this question’s language or required terms in the knowledge base and freeze a new version. No generation quota was consumed.",
+        "knowledge_return_invalid": "The return context is missing or expired. Return from the knowledge editor again, or explicitly load and select a knowledge version."
       },
       "faq": {
         "title": "Questions about this",
@@ -5603,7 +5635,7 @@
         "noSamples": "No successful visibility answers are linked. Required questions are not observed coverage.",
         "noObservedTopics": "Linked answers were present, but they did not yield reusable observed topics.",
         "noProfile": "This frozen version has no linked website profile snapshot. Current profile edits are not substituted.",
-        "repairKnowledge": "Review knowledge and create a new version",
+        "repairKnowledge": "Improve the knowledge used by this Brief",
         "runVisibility": "Open AI visibility check",
         "structureDraft": "Continue with a structure-only Draft",
         "limitedDraft": "Continue with the available evidence",
@@ -5671,7 +5703,7 @@
           "evaluation": "Evaluation",
           "branded": "Brand awareness"
         },
-        "gapB": "B · Page citability issue",
+        "gapB": "Make an existing page easier for AI to quote",
         "noGap": "No visibility gap linked",
         "layerGap": "Question stage and gap",
         "profileFields": {
@@ -5692,7 +5724,18 @@
         "generateStructure": "Generate structure draft",
         "generalQuestionRole": "General question, no specific persona",
         "manualQuestionRole": "Defined by your question, no frozen persona",
-        "readingEvidence": "Reading this version’s facts and sources…"
+        "readingEvidence": "Reading this version’s facts and sources…",
+        "repairFacts": "Add facts and sources for this site",
+        "repairQuestion": "Correct this site’s question inputs",
+        "editQuestion": "Edit this question here",
+        "repairStorageError": "The repair context could not be saved. This page is preserved; allow browser session storage and try again.",
+        "returnReady": "Updated knowledge version {revision} is loaded. Review the question before generating; old answer evidence is not carried over.",
+        "returnRetry": "Reload the version you just saved",
+        "questionIssues": {
+          "category_language_mismatch": "The first category term is not in English and is inserted into an English question. Change it to a specific English category.",
+          "question_language_mismatch": "The question mixes incompatible wording languages. Check category terms and role descriptions; brand names may keep their original spelling.",
+          "unrelated_required_entities": "The question includes background terms that do not appear in it. Save and create a new knowledge version to derive relevant terms."
+        }
       }
     },
     "aiVisibility": {
@@ -5899,7 +5942,7 @@
       },
       "gaps": {
         "title": "Evidence-conditioned gaps",
-        "intro": "These are observed gaps, not causal explanations. A is limited to the audited inventory. When several conditions apply, precedence is B → A → D → C.",
+        "intro": "These suggestions describe the pages and answers actually checked, not causal explanations. Missing content is limited to the audited pages. When several issues apply, the most direct next action is shown first.",
         "noEvidence": "Site evidence is unavailable; no gap action is inferred.",
         "indexStatus": "Audited inventory: {status} · retained reads for {count}/{discovered} discovered pages",
         "indexValues": { "complete": "complete within the declared scope", "partial": "partial", "unavailable": "unavailable" },
@@ -5910,7 +5953,12 @@
         "handoffFailed": "The handoff could not be saved. Try again in this tab.",
         "notStored": "Save was unavailable; trusted cross-tool handoff is disabled.",
         "actions": { "brief": "Build GEO Brief", "citability": "Check this page", "thirdParty": "Download third-party tasks" },
-        "kind": { "A": "A · Content coverage", "B": "B · Page citability", "C": "C · Third-party presence", "D": "D · Comparison coverage", "unattributed": "Unattributed" },
+        "kind": {
+          "A": "Content needed to answer this question",
+          "B": "An existing page is hard for AI to quote",
+          "C": "Third-party mentions and evidence are missing",
+          "D": "Comparison content is missing"
+        },
         "presence": { "present": "Site or brand observed on the page", "absent": "Site or brand not found in the complete read", "unknown": "Presence unavailable" },
         "pageType": { "listicle": "List page", "comparison": "Comparison", "product": "Product", "article": "Article", "documentation": "Documentation", "other": "Other observed page", "unavailable": "Page type unavailable" },
         "reasons": {

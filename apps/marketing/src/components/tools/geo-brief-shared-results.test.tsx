@@ -52,7 +52,7 @@ describe("GEO Brief Artifact result presentation", () => {
     expect(host.textContent).toContain("General question · not persona-specific");
     expect(host.textContent).not.toContain("writable sections");
     expect(host.querySelector("[data-geo-to-draft]")?.textContent).toBe("Continue with a structure-only Draft");
-    expect(host.querySelector('[data-geo-repair-knowledge]')?.getAttribute("href")).toBe("/tools/geo-knowledge-base");
+    expect(host.querySelector('[data-geo-knowledge-repair="facts"]')?.getAttribute("href")).toBe("/tools/geo-knowledge-base?repair=brief");
     expect(host.querySelector('[data-geo-run-visibility]')?.getAttribute("href")).toBe("/tools/ai-visibility-check");
   });
 
@@ -100,7 +100,7 @@ describe("GEO Brief Artifact result presentation", () => {
     brief.internal_links = { status: "unavailable", reason: "insufficient_evidence", attempted: 0 };
     const host = await render(brief);
     const limitations = host.querySelector("[data-brief-quality]")!;
-    expect(limitations.querySelector('a[href="/tools/geo-knowledge-base"]')).not.toBeNull();
+    expect(limitations.querySelector('a[href="/tools/geo-knowledge-base?repair=brief"]')).not.toBeNull();
     const links = host.querySelector('[data-brief-section="internal_links"]')!;
     expect(links.textContent).toContain("No usable site index was supplied");
     expect(links.querySelector('a[href="/tools/ai-visibility-check"]')).not.toBeNull();
@@ -120,7 +120,7 @@ describe("GEO Brief Artifact result presentation", () => {
     const brief = await geoBriefFixture(); brief.geo_origin.gap = "B";
     const host = await render(brief);
     const origin = host.querySelector('[data-brief-section="geo_origin"]')!;
-    expect(origin.textContent).toContain("B · Page citability issue");
+    expect(origin.textContent).toContain(en.tools.geoBrief.quality.gapB);
     expect(origin.textContent).not.toContain("No visibility gap linked");
   });
 

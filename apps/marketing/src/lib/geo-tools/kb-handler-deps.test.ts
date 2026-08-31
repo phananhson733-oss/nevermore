@@ -131,6 +131,52 @@ beforeEach(() => {
 });
 
 describe("default GEO knowledge-base load", () => {
+  it("reads the owned existing knowledge base without ensuring or creating a site", async () => {
+    const loadedByUrl = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadKnowledgeBase({ userId: USER_ID, url: "https://example.com" });
+    vi.clearAllMocks();
+
+    const loaded = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadExistingKnowledgeBase?.({ userId: USER_ID, kbId: KB_ID });
+
+    expect(loaded).toEqual(loadedByUrl);
+    expect(mocks.ensureGeoKnowledgeBase).not.toHaveBeenCalled();
+    expect(mocks.readGeoKnowledgeBase).toHaveBeenCalledExactlyOnceWith({ userId: USER_ID, kbId: KB_ID });
+    expect(mocks.findAccountWebsiteByUrl).toHaveBeenCalledExactlyOnceWith(USER_ID, "https://example.com");
+    expect(mocks.readFrozenGeoKb).toHaveBeenCalledExactlyOnceWith({ userId: USER_ID, kbId: KB_ID, revision: FROZEN.revision });
+    expect(mocks.saveGeoKbDraft).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { kind: "missing" } as const,
+    { kind: "invalid", code: "invalid_kb_id" } as const,
+  ])("returns not_found for an unknown or inaccessible existing knowledge base: $kind", async (result) => {
+    mocks.readGeoKnowledgeBase.mockResolvedValue(result);
+
+    const loaded = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadExistingKnowledgeBase?.({ userId: USER_ID, kbId: KB_ID });
+
+    expect(loaded).toEqual({ kind: "not_found" });
+    expect(mocks.readGeoKnowledgeBase).toHaveBeenCalledExactlyOnceWith({ userId: USER_ID, kbId: KB_ID });
+    expect(mocks.ensureGeoKnowledgeBase).not.toHaveBeenCalled();
+    expect(mocks.findAccountWebsiteByUrl).not.toHaveBeenCalled();
+    expect(mocks.readFrozenGeoKb).not.toHaveBeenCalled();
+    expect(mocks.readLatestGeoEnrichmentReceipt).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { source: "knowledge base", mock: mocks.readGeoKnowledgeBase, result: { kind: "unavailable", reason: "store_unavailable" }, reason: "store_unavailable" },
+    { source: "frozen snapshot", mock: mocks.readFrozenGeoKb, result: { kind: "missing" }, reason: "frozen snapshot unavailable" },
+    { source: "frozen context", mock: mocks.readGeoSnapshotContext, result: { kind: "unavailable" }, reason: "frozen context unavailable" },
+    { source: "profile", mock: mocks.findAccountWebsiteByUrl, result: { kind: "unavailable" }, reason: "profile unavailable" },
+    { source: "source receipt", mock: mocks.readLatestGeoEnrichmentReceipt, result: { kind: "unavailable" }, reason: "source receipt unavailable" },
+  ])("fails closed when the existing knowledge base's $source cannot be read", async ({ mock, result, reason }) => {
+    mock.mockResolvedValue(result);
+
+    const loaded = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadExistingKnowledgeBase?.({ userId: USER_ID, kbId: KB_ID });
+
+    expect(loaded).toEqual({ kind: "unavailable", reason });
+    expect(mocks.ensureGeoKnowledgeBase).not.toHaveBeenCalled();
+    expect(mocks.saveGeoKbDraft).not.toHaveBeenCalled();
+  });
+
   it("requires the Profile reference the editor actually saw before saving a new-source draft", async () => {
     const result = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.saveDraft({ userId: USER_ID, kbId: KB_ID, payload: emptyGeoKbPayload("https://example.com"), baseVersion: 0 });
     expect(result.kind).toBe("context_stale");
