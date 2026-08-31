@@ -61,7 +61,7 @@ Completed locally as `1705aa31`. Fresh final evidence: 184 UI/i18n unit tests; b
 
 ## Task 2: Freeze and implement v2 evidence/question contract
 
-Status: detailed implementation awaits business-rule confirmation; not complete.
+Status: in progress. The continued user goal and re-supplied Artifact fix the intended outcome; the research design is now consolidated into the bounded implementation tasks below. This is not approval for a GEO-to-Draft bridge or a Product/CMS expansion.
 
 Required scope: retain PAA from the existing advanced SERP response, bounded source ledger, semantic question selection with template exclusion, coverage denominators, language-appropriate length measurements, strict v2 parser/fingerprint, and unchanged legacy-v1 parser. Write independent fixtures and fail-before-fix tests for each invariant. PAA must feed outline/Draft coverage, not merely appear in a disconnected supplemental card.
 
@@ -78,6 +78,48 @@ This source-preservation foundation does not decide the new question-selection r
 5. Independent spec then code review before commit. This is not evidence that Brief/Draft consumes PAA yet; that remains in Tasks 2–4.
 
 Source milestone evidence: commit `5180b875` contains the adapter and tests. Spec review caught UTF-16 vs code-point counting; a 512/513 astral-character title/seed test failed first and then passed after matching the existing code-point boundary. Spec re-review and independent code-quality review found no remaining P1/P2 blockers. Final metrics tests: 54/54; source package typecheck and changed-file ESLint exit 0. A broader DataForSEO/consumer regression run passed 369 tests before the final test-only coverage addition. No live provider request or deployment occurred.
+
+### Task 2b: Main-content research extraction
+
+**Files:** create `apps/marketing/src/lib/tools/content-brief-research-extract.ts` and its `.test.ts`. Shared types/constants/length measurement live in `packages/public-tools/src/content-brief/v2-contract.ts` (contract owner: primary agent).
+
+1. Write fixed HTML oracle cases: nav/footer/script/hidden content excluded; related-articles section excluded; main/article preferred; heading-less Chinese prose retained; nested list/paragraph content not counted twice; empty content; 300-code-point excerpts; 12-segment cap with honest omitted counts.
+2. Run the new test file and observe missing behavior before implementing.
+3. Implement `extractContentBriefResearch(html, language): ExtractedPageResearch` with existing Cheerio. Keep heading/source text, normalize whitespace, preserve code points, and calculate descriptive observed length via the shared function. No fetch, network or language-based research refusal.
+4. Run the extraction tests, Marketing typecheck and changed-file ESLint. Review before commit.
+
+### Task 2c: Brief PAA adapter opt-in
+
+**Files:** `apps/marketing/src/lib/tools/content-brief-serp.ts` and `.test.ts`.
+
+1. Add failing tests for explicit PAA retention and empty-organic/PAA-present responses, unknown-vs-empty PAA, provider timeout/error, single unchanged billable request, and exact legacy output compatibility.
+2. Add local `includePeopleAlsoAsk?: boolean` input. Only opted-in callers receive a typed PAA result; no opt-in means the old return shape and request remain unchanged. Forward provider PAA without rewriting its counts/text; timeout/provider error stay unavailable, never an empty list.
+3. Run the whole adapter test file, relevant source tests, typecheck and lint. Do not enable the new output on the v1 route as a substitute for completing v2.
+
+### Task 2d: Versioned source graph and model research validation
+
+**Files:** `packages/public-tools/src/content-brief/v2-contract.ts`, `v2-research.ts`, related tests, and explicit package exports.
+
+1. Write independent graph fixtures: English paraphrases over three actual pages, one-page-plus-PAA, PAA-only, duplicate final-page URLs, unrelated/zero-question output, and injected/duplicate/orphan refs.
+2. Freeze at most 60 retained page units and 8 unique PAA items. Source-unit objects reference the frozen page segments/PAA ledger instead of duplicating their text. Round-robin page selection preserves source diversity, with omitted/duplicate counts recorded.
+3. Strictly decode `{questions:[{anchor,q,sources}], outline:[{h2,h3,answers}]}`. Anchors must be existing included U ids, belong to their question sources, and be unique. Every question must map to exactly one outline section. Zero questions requires an empty outline; one real question is sufficient. No three-page gate.
+4. Assign final Q/O IDs server-side. Derive competitor coverage using distinct normalized final URLs; owned pages and PAA do not increase it. Keep PAA refs separate from factual evidence.
+5. Validate the frozen source graph and counters independently before accepting model output. Re-fingerprinting cannot legalize a forged source edge or coverage count.
+6. Run v2 and legacy parser tests plus public-tools typecheck/lint; independently review this core before wiring the v2 route/model caller.
+
+Research-foundation batch (2026-08-31): Tasks 2b/2c/2d passed local implementation and independent spec/quality review. Extractor: 31 HTML cases; v2 core/measurement: 30 cases; adapter: 27 cases with 54 source-client regressions. Fresh combined relevant regressions: 1000/1000 across 43 files; Marketing/public-tools typecheck, changed-file lint, secret scan and 75 redaction tests passed. Main was merged at `d4ebb110` (blog-only delta), preserving the earlier UI/source commits. This batch adds reusable research code, not an activated v2 generator.
+
+Committed as `377e0e4a`; exact evidence scope and remaining work are recorded in `apps/marketing/docs/reviews/2026-08-31-content-brief-v2-research/acceptance.md`.
+
+Review-driven fixes: nested same-level headings must not reopen an excluded template; both body/heading traversal must handle deep HTML without recursion; mixed or untagged CJK needs character measurement; source identity order must not depend on completion order; observed length cannot contradict retained text. Observation authenticity remains distinct from locally checkable graph consistency.
+
+### Task 2e: Single assembly-model integration and full v2 envelope (next)
+
+- Define the final v2 response/confirmation envelope while preserving exact v1 import and already-open v1-client behavior.
+- Materialize frozen unit text and provenance into an untrusted-DATA prompt; budget the full request in bytes and keep actual token accounting separate.
+- Use the existing `CONTENT_BRIEF_*` provider configuration and one bounded call. Model-selected questions/outline must go through the new graph validator; real semantic output still needs oracle/canary review.
+- Integrate page plan, gap angle and owned-page suggestions in that same call, with all source scope actually supplied. Do not add a second hidden generation pass or leave PAA outside Draft coverage.
+- Wire a version-explicit route only when its producer, parser and consumer agree. Research-only modules are not the final delivery.
 
 ## Task 3: Page ownership, owned-page research and rewrite plan
 
