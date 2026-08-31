@@ -6,6 +6,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
+import { Button } from "../ui/button.tsx";
+import { Input } from "../ui/input.tsx";
 
 import {
   CITABILITY_ANON_IP_MAX,
@@ -18,7 +20,7 @@ import {
   type CitabilityReport,
   type CitabilityState,
 } from "../../lib/geo-tools/citability-contract.ts";
-import { CITABILITY_RENDER_SCHEMA, type CitabilityRenderEvidence } from "../../lib/geo-tools/citability-render-contract.ts";
+import { CITABILITY_RAW_RENDER_RATIO_FLOOR, CITABILITY_RENDER_SCHEMA, type CitabilityRenderEvidence } from "../../lib/geo-tools/citability-render-contract.ts";
 import { consumeToolHandoff } from "../../lib/tools/tool-handoff.ts";
 import { consumeGeoGapHandoff } from "../../lib/geo-tools/gap-handoff.ts";
 
@@ -126,7 +128,10 @@ function isCitabilityReport(value: unknown): value is CitabilityReport {
     (question === null || typeof question === "string") &&
     typeof summary === "object" &&
     summary !== null &&
-    typeof (summary as Record<string, unknown>)["counted"] === "number"
+    ["passed", "failed", "fetchError", "notApplicable", "counted", "total"].every((key) => {
+      const count = (summary as Record<string, unknown>)[key];
+      return typeof count === "number" && Number.isSafeInteger(count) && count >= 0;
+    })
   );
 }
 
@@ -142,7 +147,7 @@ function isRenderEvidence(value: unknown): value is CitabilityRenderEvidence {
     typeof render["status"] === "string" && ["measured", "partial", "unavailable"].includes(render["status"]) &&
     (render["reason"] === null || (typeof render["reason"] === "string" && ["not_configured", "timeout", "service_failed", "invalid_response", "blocked", "resource_limit", "truncated", "navigation"].includes(render["reason"]))) &&
     capture(render["raw"]) && (render["rendered"] === null || capture(render["rendered"])) &&
-    (render["rawToRenderedRatio"] === null || (typeof render["rawToRenderedRatio"] === "number" && Number.isFinite(render["rawToRenderedRatio"]))) &&
+    (render["rawToRenderedRatio"] === null || (typeof render["rawToRenderedRatio"] === "number" && Number.isFinite(render["rawToRenderedRatio"]) && render["rawToRenderedRatio"] >= 0)) &&
     typeof render["measuredAt"] === "string" && typeof render["requestCount"] === "number" &&
     typeof render["blockedRequests"] === "number" && typeof render["bytes"] === "number";
 }
@@ -184,28 +189,29 @@ function CheckRow({ check }: { readonly check: CitabilityCheck }) {
   const measuredValues = check.measured.values ?? {};
   const fixValues = check.fix?.values ?? {};
   return (
-    <li id={`citability-rule-${check.ruleId}`} className="grid gap-2 border-b border-brand-border-card py-4 last:border-b-0">
-      <div className="flex flex-wrap items-center gap-2">
+    <li id={`citability-rule-${check.ruleId}`} className="grid scroll-mt-24 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 border-b border-brand-border-card/60 px-4 py-4 last:border-b-0 md:gap-x-4 md:px-5">
         <span
-          className={`rounded-full border px-2.5 py-0.5 text-[11.5px] ${STATE_STYLES[check.state]}`}
+          className={`mt-0.5 whitespace-nowrap rounded-md border px-2 py-0.5 font-mono text-[11.5px] ${STATE_STYLES[check.state]}`}
         >
           {t(`states.${check.state}`)}
         </span>
+      <div className="min-w-0 space-y-1.5 break-words">
+        <div className="flex flex-wrap items-center gap-2">
         <span className="text-[14.5px] text-text-dark-primary">
           {t(`rules.${check.ruleId}`)}
         </span>
         {check.weight === "advisory" ? (
-          <span className="rounded-full border border-brand-border-card px-2 py-0.5 text-[11px] text-text-dark-secondary">
+          <span className="rounded-md border border-brand-border-card px-2 py-0.5 font-mono text-[11px] text-text-dark-secondary">
             {t("weights.advisory")}
           </span>
         ) : null}
         {check.kind === "heuristic" ? (
-          <span className="rounded-full border border-brand-border-card px-2 py-0.5 text-[11px] text-text-dark-secondary">
+          <span className="rounded-md border border-brand-warning/40 bg-brand-warning/[0.06] px-2 py-0.5 font-mono text-[11px] text-brand-warning">
             {t("kinds.heuristic")}
           </span>
         ) : null}
       </div>
-      <p className="text-[13.5px] leading-[1.7] text-text-dark-secondary">
+      <p className="text-[13px] leading-[1.65] text-text-dark-secondary">
         {t(`details.${check.measured.key}`, check.measured.key === "ssr.renderUnavailable" ? { ...measuredValues, reason: t(`render.reasons.${String(measuredValues["reason"])}`) } : measuredValues)}
       </p>
       {check.kind === "heuristic" ? (
@@ -219,6 +225,7 @@ function CheckRow({ check }: { readonly check: CitabilityCheck }) {
           {t(`fixes.${check.fix.key}`, fixValues)}
         </p>
       ) : null}
+      </div>
     </li>
   );
 }
@@ -232,10 +239,16 @@ export function PageCitabilityCheck({
   const [url, setUrl] = useState("");
   const [question, setQuestion] = useState("");
   const [run, setRun] = useState<RunState>({ kind: "idle" });
+  const [view, setView] = useState<"input" | "result">("input");
   const [copied, setCopied] = useState<CopyState>("idle");
   const [handoffSource, setHandoffSource] = useState<"contentDraft" | "geoGap" | null>(null);
   const urlInput = useRef<HTMLInputElement | null>(null);
+  const resultHeading = useRef<HTMLHeadingElement | null>(null);
+  const inFlight = useRef(false);
   const handoffConsumed = useRef(false);
+  useEffect(() => {
+    if (view === "result") resultHeading.current?.focus();
+  }, [view]);
   useEffect(() => {
     if (handoffConsumed.current) return;
     handoffConsumed.current = true;
@@ -263,12 +276,15 @@ export function PageCitabilityCheck({
   const questionTooLong = question.trim().length > CITABILITY_MAX_QUESTION_CHARS;
 
   const submit = useCallback(async () => {
+    if (inFlight.current) return;
     if (question.trim().length > CITABILITY_MAX_QUESTION_CHARS) return;
     const trimmed = url.trim();
     if (trimmed.length === 0) {
       urlInput.current?.focus();
       return;
     }
+    inFlight.current = true;
+    setView("input");
     setRun({ kind: "running" });
     setCopied("idle");
     try {
@@ -288,6 +304,7 @@ export function PageCitabilityCheck({
       } | null;
       if (response.ok && isCitabilityReport(payload?.data)) {
         setRun({ kind: "done", report: payload.data });
+        setView("result");
         return;
       }
       const retryAfter = Number(response.headers.get("Retry-After"));
@@ -309,6 +326,8 @@ export function PageCitabilityCheck({
         limit: null,
         signedIn: false,
       });
+    } finally {
+      inFlight.current = false;
     }
   }, [question, url]);
 
@@ -373,7 +392,7 @@ export function PageCitabilityCheck({
   }, [locale, report, t]);
 
   return (
-    <div className="mt-10 grid gap-10">
+    <div className="mt-8 grid min-w-0 gap-6">
       {/*
         One small live region instead of announcing the whole report.
         `role="status"` on the results section is implicitly atomic, so every
@@ -389,30 +408,53 @@ export function PageCitabilityCheck({
               })
             : ""}
       </p>
-      <section
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="font-mono text-[11px] tracking-wide text-text-dark-secondary">{t("views.note")}</p>
+        <div className="inline-flex h-10 items-center rounded-[10px] border border-brand-border bg-brand-panel-sunken p-[3px]" role="group" aria-label={t("views.label")}>
+          {(["input", "result"] as const).map((mode) => (
+            <Button
+              key={mode}
+              type="button"
+              data-testid={`citability-view-${mode}`}
+              aria-pressed={view === mode}
+              disabled={mode === "result" && !report}
+              onClick={() => setView(mode)}
+              variant={view === mode ? "outline" : "ghost"}
+              size="sm"
+              className={view === mode ? "bg-brand-panel" : "border border-transparent"}
+            >
+              {t(`views.${mode}`)}
+            </Button>
+          ))}
+        </div>
+      </div>
+      {view === "input" ? <section
         aria-busy={run.kind === "running"}
         aria-labelledby="citability-form"
-        className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7"
+        className="overflow-hidden rounded-xl border border-brand-border-card bg-brand-panel"
       >
         <h2
-          className="text-[19px] text-text-dark-primary"
+          className="border-b border-brand-border px-5 py-4 text-[19px] text-text-dark-primary md:px-6"
           id="citability-form"
         >
-          {t("fields.urlLabel")}
+          {t("views.input")}
         </h2>
-        <div className="mt-5 grid gap-4">
-          {handoffSource ? <p className="text-[13px] text-text-dark-secondary">{t(`handoff.${handoffSource}`)}</p> : null}
-          <div>
+        <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+          {handoffSource ? <p className="border-b border-brand-border-card px-5 py-4 text-[13px] text-text-dark-secondary md:px-6">{t(`handoff.${handoffSource}`)}</p> : null}
+          <div className="grid gap-2 border-b border-brand-border px-5 py-5 md:grid-cols-[180px_minmax(0,1fr)] md:gap-6 md:px-6">
             <label
-              className="block text-[13px] text-text-dark-secondary"
+              className="text-[13px] text-text-dark-primary md:pt-2.5"
               htmlFor="citability-url"
             >
               {t("fields.urlLabel")}
+              <span className="ml-1 text-brand-error" aria-hidden="true">*</span>
             </label>
-            <input
-              className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
+            <div className="min-w-0">
+            <Input
               id="citability-url"
               inputMode="url"
+              aria-required="true"
+              disabled={run.kind === "running"}
               maxLength={2_048}
               aria-describedby="citability-url-help"
               onChange={(event) => setUrl(event.target.value)}
@@ -426,18 +468,20 @@ export function PageCitabilityCheck({
             >
               {t("fields.urlHelp")}
             </p>
+            </div>
           </div>
-          <div>
+          <div className="grid gap-2 border-b border-brand-border px-5 py-5 md:grid-cols-[180px_minmax(0,1fr)] md:gap-6 md:px-6">
             <label
-              className="block text-[13px] text-text-dark-secondary"
+              className="text-[13px] text-text-dark-primary md:pt-2.5"
               htmlFor="citability-question"
             >
               {t("fields.questionLabel")}
             </label>
-            <input
-              className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
+            <div className="min-w-0">
+            <Input
               id="citability-question"
               maxLength={CITABILITY_MAX_QUESTION_CHARS}
+              disabled={run.kind === "running"}
               aria-invalid={questionTooLong || undefined}
               aria-describedby={questionTooLong ? "citability-question-help citability-question-error" : "citability-question-help"}
               onChange={(event) => setQuestion(event.target.value)}
@@ -451,28 +495,25 @@ export function PageCitabilityCheck({
               {t("fields.questionHelp")}
             </p>
             {questionTooLong ? <p id="citability-question-error" data-testid="citability-question-too-long" role="alert" className="mt-1.5 text-[12.5px] text-brand-error">{t("fields.questionTooLong", { count: question.trim().length, max: CITABILITY_MAX_QUESTION_CHARS })}</p> : null}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              className="rounded-lg bg-brand-accent px-4 py-2 text-[14px] font-medium text-brand-on-accent disabled:opacity-60"
+          <div className="flex flex-wrap items-center gap-3 px-5 py-5 md:px-6">
+            <Button
               disabled={run.kind === "running" || questionTooLong}
-              onClick={() => {
-                void submit();
-              }}
-              type="button"
+              type="submit"
             >
               {run.kind === "running"
                 ? t("actions.running")
                 : report
                   ? t("actions.again")
                   : t("actions.run")}
-            </button>
+            </Button>
             <p className="text-[12.5px] text-text-dark-secondary">
-              {t("summary.advisoryNote")}
+              {t("views.runNote")}
             </p>
           </div>
           {run.kind === "failed" ? (
-            <div className="grid gap-1" role="alert">
+            <div className="px-5 pb-5 md:px-6" role="alert">
               <p className="text-[14px] text-brand-error">
                 {KNOWN_ERROR_CODES.has(run.code)
                   ? t(
@@ -496,61 +537,23 @@ export function PageCitabilityCheck({
               </p>
             </div>
           ) : null}
-        </div>
-      </section>
+        </form>
+      </section> : null}
 
-      {report && grouped ? (
+      {view === "result" && report && grouped ? (
         <section aria-labelledby="citability-result" className="grid gap-6">
-          <div className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h2
-              className="text-[19px] text-text-dark-primary"
+              className="scroll-mt-24 rounded-sm text-[19px] text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent"
               id="citability-result"
+              ref={resultHeading}
+              tabIndex={-1}
             >
               {t("summary.title")}
             </h2>
-            <p className="mt-3 text-[15px] text-text-dark-primary">
-              {t("summary.counted", {
-                passed: report.summary.passed,
-                counted: report.summary.counted,
-              })}
-            </p>
-            <ul className="mt-4 grid gap-1.5 text-[13px] text-text-dark-secondary">
-              <li>
-                {t("summary.rows", {
-                  total: report.summary.total,
-                  weighted:
-                    report.summary.counted +
-                    report.summary.fetchError +
-                    report.summary.notApplicable,
-                  notApplicable: report.summary.notApplicable,
-                  fetchError: report.summary.fetchError,
-                  denominator: report.summary.counted,
-                })}
-              </li>
-              <li>
-                {t("summary.fetchedAt", {
-                  time: formatTime(report.fetchedAt, locale),
-                })}
-              </li>
-              <li>{t("summary.finalUrl", { url: report.finalUrl })}</li>
-              {report.finalUrl !== report.url ? (
-                <li className="text-text-dark-primary">
-                  {t("summary.redirected")}
-                </li>
-              ) : null}
-              <li>{t("summary.textChars", { chars: report.textChars })}</li>
-              {/*
-                The question the run was actually given, and the words taken
-                out of it. Both are in the payload; printing neither is how a
-                visitor who typed "which is best?" reads a row that says no
-                question was given and has nothing to check it against.
-              */}
-              {questionLines(t, report).map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-            <button
-              className="mt-5 rounded-lg border border-brand-border-card px-3 py-1.5 text-[13px] text-text-dark-primary"
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => {
                 void copyReport();
               }}
@@ -561,32 +564,43 @@ export function PageCitabilityCheck({
                 : copied === "failed"
                   ? t("actions.copyFailed")
                   : t("actions.copy")}
-            </button>
+            </Button>
           </div>
 
-          <div className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
-            <h3 className="text-[17px] text-text-dark-primary">{t("render.title")}</h3>
-            <p className="mt-2 text-[13.5px] text-text-dark-primary" data-testid="citability-render-status" data-status={report.render.status}>{t(`render.status.${report.render.status}`)}</p>
-            <ul className="mt-3 grid gap-1.5 text-[13px] text-text-dark-secondary">
-              {renderLines(t, report.render, locale).slice(1).map((line) => <li key={line}>{line}</li>)}
-            </ul>
-            {report.render.rawToRenderedRatio !== null ? <p data-testid="citability-render-ratio" className="mt-2 text-[14px] text-text-dark-primary">{t("render.ratio", { ratio: Math.round(report.render.rawToRenderedRatio * 1000) / 10 })}</p> : null}
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <details><summary className="cursor-pointer text-[13px] text-text-dark-primary">{t("render.rawBody")}</summary><pre data-testid="citability-render-raw" className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[12px] text-text-dark-secondary">{report.render.raw.text}</pre></details>
-              {report.render.rendered ? <details><summary className="cursor-pointer text-[13px] text-text-dark-primary">{t("render.renderedBody")}</summary><pre data-testid="citability-render-rendered" className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[12px] text-text-dark-secondary">{report.render.rendered.text}</pre></details> : null}
+          <div>
+            <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              {[
+                { id: "passed", label: t("summary.passed"), value: report.summary.passed, help: t("metrics.passedHelp", { count: report.summary.counted }), tone: "text-brand-accent-text" },
+                { id: "failed", label: t("summary.failed"), value: report.summary.failed, help: t("metrics.failedHelp"), tone: "text-brand-error" },
+                { id: "fetch-error", label: t("metrics.fetchError"), value: report.summary.fetchError, help: t("metrics.fetchErrorHelp"), tone: "text-text-dark-secondary" },
+                { id: "ratio", label: "ssr_ratio", value: report.render.rawToRenderedRatio === null ? t("metrics.unknown") : report.render.rawToRenderedRatio.toFixed(2), help: report.render.rawToRenderedRatio === null ? t("render.ratioUnknown") : t("metrics.ratioHelp", { threshold: CITABILITY_RAW_RENDER_RATIO_FLOOR }), tone: report.render.rawToRenderedRatio !== null && report.render.rawToRenderedRatio < CITABILITY_RAW_RENDER_RATIO_FLOOR ? "text-brand-error" : "text-text-dark-secondary" },
+              ].map((metric) => (
+                <div key={metric.id} data-testid={`citability-metric-${metric.id}`} className="min-w-0 rounded-xl border border-brand-border-card bg-brand-panel p-4 md:p-5">
+                  <dt className="text-[12px] text-text-dark-secondary">{metric.label}</dt>
+                  <dd className={`mt-2 break-words font-mono text-[26px] font-semibold leading-tight md:text-[30px] ${metric.tone}`}>{metric.value}</dd>
+                  <p className="mt-2 text-[11.5px] leading-[1.7] text-text-dark-secondary">{metric.help}</p>
+                </div>
+              ))}
+            </dl>
+            <div className="mt-4 space-y-1.5 text-[12px] leading-[1.7] text-text-dark-secondary">
+              <p className="text-text-dark-primary">{t("summary.counted", { passed: report.summary.passed, counted: report.summary.counted })}</p>
+              <p>{t("summary.rows", { total: report.summary.total, weighted: report.summary.counted + report.summary.fetchError + report.summary.notApplicable, notApplicable: report.summary.notApplicable, fetchError: report.summary.fetchError, denominator: report.summary.counted })}</p>
+              <p>{t("summary.advisoryNote")}</p>
             </div>
           </div>
 
-          <div data-testid="citability-root-causes" className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
-            <h3 className="text-[17px] text-text-dark-primary">{t("causes.title")}</h3>
-            <p className="mt-2 text-[13.5px] text-text-dark-secondary">{t("causes.intro")}</p>
+          <div data-testid="citability-root-causes" className={`rounded-xl border border-l-4 border-brand-border-card bg-brand-panel p-5 ${report.summary.failed > 0 ? "border-l-brand-error" : "border-l-brand-border-card"}`}>
+            <h3 className="text-[16.5px] font-semibold text-text-dark-primary">{t("causes.title")}</h3>
+            <p className="mt-1.5 text-[12px] leading-[1.7] text-text-dark-secondary">{t("causes.intro")}</p>
             {report.rootCauses.length === 0 ? <p className="mt-3 text-[13px] text-text-dark-secondary">{t("causes.none")}</p> : (
-              <ul className="mt-4 grid gap-4">
-                {report.rootCauses.map((cause) => <li key={cause.id} className="text-[13.5px] text-text-dark-secondary">
-                  <h4 className="text-text-dark-primary">{t(`causes.groups.${cause.id}`)}</h4>
-                  <p>{t(`causes.basis.${cause.basis}`)}</p>
-                  <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">{cause.checkIds.map((id) => <li key={id}><a className="underline underline-offset-2" href={`#citability-rule-${id}`}>{t(`rules.${id}`)}</a></li>)}</ul>
-                  {cause.relatedCheckIds.length > 0 ? <p className="mt-1">{t("causes.related", { rules: cause.relatedCheckIds.map((id) => t(`rules.${id}`)).join(", ") })}</p> : null}
+              <ul className="mt-3 divide-y divide-brand-border">
+                {report.rootCauses.map((cause) => <li key={cause.id} className="grid gap-1.5 py-3 text-[12.5px] leading-[1.7] text-text-dark-secondary first:pt-0 last:pb-0 md:grid-cols-[150px_minmax(0,1fr)] md:gap-4">
+                  <h4 className="font-medium text-text-dark-primary">{t(`causes.groups.${cause.id}`)}</h4>
+                  <div className="min-w-0 break-words">
+                    <p>{t(`causes.basis.${cause.basis}`)}</p>
+                    <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">{cause.checkIds.map((id) => <li key={id}><a className="underline underline-offset-2 hover:text-text-dark-primary" href={`#citability-rule-${id}`}>{t(`rules.${id}`)}</a></li>)}</ul>
+                    {cause.relatedCheckIds.length > 0 ? <p className="mt-1">{t("causes.related", { rules: cause.relatedCheckIds.map((id) => t(`rules.${id}`)).join(", ") })}</p> : null}
+                  </div>
                 </li>)}
               </ul>
             )}
@@ -599,16 +613,18 @@ export function PageCitabilityCheck({
             ] as const
           ).map(([section, checks]) => (
             <div
-              className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7"
+              data-testid={`citability-stage-${section}`}
+              className="min-w-0"
               key={section}
             >
-              <h3 className="text-[17px] text-text-dark-primary">
-                {t(`sections.${section}`)}
-              </h3>
-              <p className="mt-2 text-[13.5px] leading-[1.7] text-text-dark-secondary">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h3 className="text-[16.5px] font-semibold text-text-dark-primary">{t(`sections.${section}`)}</h3>
+                <span className="font-mono text-[11.5px] text-text-dark-secondary">{t("metrics.sectionCount", { count: checks.length })}</span>
+              </div>
+              <p className="mt-1.5 text-[12px] leading-[1.7] text-text-dark-secondary">
                 {t(`sections.${section}Intro`)}
               </p>
-              <ul className="mt-4 grid">
+              <ul className="mt-3 overflow-hidden rounded-xl border border-brand-border-card bg-brand-panel">
                 {checks.map((check) => (
                   <CheckRow check={check} key={check.ruleId} />
                 ))}
@@ -616,10 +632,18 @@ export function PageCitabilityCheck({
             </div>
           ))}
 
-          <div className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
-            <h3 className="text-[17px] text-text-dark-primary">
-              {t("limitsTitle")}
-            </h3>
+          <details data-testid="citability-evidence" className="min-w-0 rounded-xl border border-brand-border-card bg-brand-panel p-5">
+            <summary className="cursor-pointer text-[14px] font-medium text-text-dark-primary">{t("render.title")}</summary>
+            <p className="mt-3 text-[13px] text-text-dark-primary" data-testid="citability-render-status" data-status={report.render.status}>{t(`render.status.${report.render.status}`)}</p>
+            <ul className="mt-2 grid gap-1.5 text-[12px] leading-[1.7] text-text-dark-secondary">
+              {renderLines(t, report.render, locale).slice(1).map((line) => <li key={line}>{line}</li>)}
+            </ul>
+            {report.render.rawToRenderedRatio !== null ? <p data-testid="citability-render-ratio" className="mt-2 text-[13px] text-text-dark-primary">{t("render.ratio", { ratio: Math.round(report.render.rawToRenderedRatio * 1000) / 10 })}</p> : null}
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <details className="min-w-0"><summary className="cursor-pointer text-[13px] text-text-dark-primary">{t("render.rawBody")}</summary><pre data-testid="citability-render-raw" className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[12px] text-text-dark-secondary">{report.render.raw.text}</pre></details>
+              {report.render.rendered ? <details className="min-w-0"><summary className="cursor-pointer text-[13px] text-text-dark-primary">{t("render.renderedBody")}</summary><pre data-testid="citability-render-rendered" className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[12px] text-text-dark-secondary">{report.render.rendered.text}</pre></details> : null}
+            </div>
+            <h3 className="mt-5 border-t border-brand-border-card pt-4 text-[14px] text-text-dark-primary">{t("limitsTitle")}</h3>
             <ul className="mt-3 grid gap-2">
               {report.limits.map((limit) => (
                 <li
@@ -630,7 +654,15 @@ export function PageCitabilityCheck({
                 </li>
               ))}
             </ul>
-          </div>
+          </details>
+
+          <ul className="grid gap-1.5 border-t border-brand-border-card pt-4 font-mono text-[11.5px] leading-[1.8] text-text-dark-secondary [overflow-wrap:anywhere]">
+            <li>{t("summary.finalUrl", { url: report.finalUrl })}</li>
+            {report.finalUrl !== report.url ? <li className="text-text-dark-primary">{t("summary.redirected")}</li> : null}
+            {questionLines(t, report).map((line) => <li key={line}>{line}</li>)}
+            <li>{t("summary.textChars", { chars: report.textChars })}</li>
+            <li>{t("summary.fetchedAt", { time: formatTime(report.fetchedAt, locale) })}</li>
+          </ul>
         </section>
       ) : null}
     </div>

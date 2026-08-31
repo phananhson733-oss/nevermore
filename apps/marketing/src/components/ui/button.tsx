@@ -1,4 +1,4 @@
-// @input  — react, class-variance-authority, radix-ui, @/lib/utils
+// @input  — react, class-variance-authority, radix-ui, Marketing-local class merge utility
 // @output — Button 组件、buttonVariants
 // @pos    — shadcn/ui 按钮原子组件，全站最基础交互元素
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -6,7 +6,7 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
 
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils.ts";
 
 /*
  * Signal Console v1：圆角统一到 10px，高度 default 40 / lg 48。
