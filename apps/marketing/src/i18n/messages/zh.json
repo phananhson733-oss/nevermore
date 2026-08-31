@@ -5560,6 +5560,8 @@
         "chooseQuestion": "下一份 Brief 要回答的问题",
         "chooseQuestionPlaceholder": "请选择这个版本中的一道问题",
         "profileNewTab": "产品档案将在新标签页打开，当前修复草稿会保留在这里。",
+        "primaryCategory": "用于生成问题的主品类",
+        "primaryCategoryHelp": "直接用问题语言修改第一个品类词。其余品类词会按原顺序保留为背景信息，不会自动翻译。",
         "loadError": "暂时无法读取这个网站已有的资料，没有建立新的知识库。请重试读取，或返回 Brief。",
         "retry": "重新读取这个网站的资料",
         "invalid": "修复位置已丢失、过期或不可读取。请返回 Brief，重新打开对应网站的修复入口。",

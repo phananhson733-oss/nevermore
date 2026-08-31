@@ -65,7 +65,7 @@ type Status =
       readonly kind: "error";
       readonly code: string;
       readonly reason?: string;
-      /** The server's own list, when it refused a freeze with one. */
+      /** Blockers from the server or an unsaved repair form. */
       readonly blockers?: readonly GeoKbBlocker[];
     }
   | { readonly kind: "saved"; readonly at: string }
@@ -226,12 +226,14 @@ function TextField({
   placeholder,
   value,
   onChange,
+  maxLength = GEO_KB_LIMITS.text,
 }: {
   readonly label: string;
   readonly help?: string;
   readonly placeholder?: string;
   readonly value: string;
   readonly onChange: (next: string) => void;
+  readonly maxLength?: number;
 }) {
   const inputId = useId();
   return (
@@ -241,7 +243,7 @@ function TextField({
         id={inputId}
         aria-describedby={help === undefined ? undefined : `${inputId}-help`}
         className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
-        maxLength={GEO_KB_LIMITS.text}
+        maxLength={maxLength}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         value={value}
@@ -310,6 +312,8 @@ export function GeoKnowledgeBase({
     () => (payload === null ? NO_ROW_ISSUES : geoKbRowIssues(payload)),
     [payload],
   );
+  const missingRepairPrimaryCategory = repair !== null && payload !== null &&
+    (payload.categoryTerms[0]?.trim().length ?? 0) === 0;
   /**
    * One judgement of what still blocks a freeze, computed by the function the
    * server freezes with.
@@ -319,12 +323,16 @@ export function GeoKnowledgeBase({
    * server-side: the button stayed live, the freeze came back 422, and the code
    * had no sentence on this side.
    */
-  const blockers = useMemo(
-    () => (submission === null ? [] : geoKbBlockers(submission, {
-      roleLayersSkipped: view?.context?.skippedLayers.includes("problem") === true &&
-        view.context.skippedLayers.includes("evaluation"),
-    })),
-    [submission, view?.context],
+  const blockers = useMemo<readonly GeoKbBlocker[]>(
+    () => {
+      const current = submission === null ? [] : geoKbBlockers(submission, {
+        roleLayersSkipped: view?.context?.skippedLayers.includes("problem") === true &&
+          view.context.skippedLayers.includes("evaluation"),
+      });
+      return missingRepairPrimaryCategory && !current.includes("category_terms_missing")
+        ? ["category_terms_missing", ...current] : current;
+    },
+    [missingRepairPrimaryCategory, submission, view?.context],
   );
 
   const post = useCallback(
@@ -486,6 +494,10 @@ export function GeoKnowledgeBase({
 
   const save = useCallback(async () => {
     if (view === null || submission === null) return;
+    if (missingRepairPrimaryCategory) {
+      setStatus({ kind: "error", code: "not_ready", blockers: ["category_terms_missing"] });
+      return;
+    }
     if (hasGeoKbRowIssues(rowIssues)) {
       // Nothing is sent, so nothing else in this save is lost. The rows the
       // write contract would refuse are marked where they are, instead of the
@@ -531,10 +543,14 @@ export function GeoKnowledgeBase({
     // The response acknowledges only the submitted edit, not later typing.
     setDirty(editRevision.current !== savedEditRevision);
     setStatus({ kind: "saved", at: data.updatedAt });
-  }, [adoptConflictVersion, post, rowIssues, submission, view]);
+  }, [adoptConflictVersion, missingRepairPrimaryCategory, post, rowIssues, submission, view]);
 
   const freeze = useCallback(async () => {
     if (view === null) return;
+    if (missingRepairPrimaryCategory) {
+      setStatus({ kind: "error", code: "not_ready", blockers: ["category_terms_missing"] });
+      return;
+    }
     const frozenEditRevision = editRevision.current;
     setRepairFrozen(null);
     setRepairQuestionId(null);
@@ -595,7 +611,7 @@ export function GeoKnowledgeBase({
       revision: data.revision,
       reused: data.reusedExisting,
     });
-  }, [adoptConflictVersion, post, repair, view]);
+  }, [adoptConflictVersion, missingRepairPrimaryCategory, post, repair, view]);
 
   const prefill = useCallback(async () => {
     if (view === null) return;
@@ -844,6 +860,12 @@ export function GeoKnowledgeBase({
                 values={payload.aliases}
               />
               <div id="kb-repair-category" className="scroll-mt-24">
+                {repair === null ? null : <div className="mb-5">
+                  <TextField label={t("repair.primaryCategory")} help={t("repair.primaryCategoryHelp")}
+                    maxLength={GEO_KB_LIMITS.listItem}
+                    value={payload.categoryTerms[0] ?? ""}
+                    onChange={(value) => update({ categoryTerms: [value, ...payload.categoryTerms.slice(1)] })} />
+                </div>}
                 <ChipsField
                   help={t("brand.categoryLanguageHelp")}
                   label={t("brand.categoryLabel")}

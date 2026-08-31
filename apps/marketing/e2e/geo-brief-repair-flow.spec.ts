@@ -119,12 +119,8 @@ for (const locale of ["en", "zh"] as const) {
     await expect(returnLink).toHaveAttribute("aria-disabled", "true");
     expect(await editor.evaluate(key => sessionStorage.getItem(key), GEO_KNOWLEDGE_REPAIR_KEY)).toBeNull();
 
-    for (const category of state.original.payload.categoryTerms) {
-      await editor.getByRole("button", { name: `${copy.geoKnowledgeBase.brand.categoryLabel}: ${category}`, exact: true }).click();
-    }
-    const categoryInput = editor.getByLabel(copy.geoKnowledgeBase.brand.categoryLabel, { exact: true });
+    const categoryInput = editor.getByLabel(copy.geoKnowledgeBase.repair.primaryCategory, { exact: true });
     await categoryInput.fill("astrology");
-    await categoryInput.press("Enter");
     await editor.getByRole("button", { name: copy.geoKnowledgeBase.facts.add, exact: true }).click();
     await editor.getByLabel(copy.geoKnowledgeBase.facts.keyLabel, { exact: true }).fill(REPAIR_FACT.key);
     await editor.getByLabel(copy.geoKnowledgeBase.facts.valueLabel, { exact: true }).fill(REPAIR_FACT.value);
@@ -137,7 +133,7 @@ for (const locale of ["en", "zh"] as const) {
     await expect(editor.getByRole("button", { name: copy.geoKnowledgeBase.freeze.action, exact: true })).toBeEnabled();
     await expect(returnLink).toHaveAttribute("aria-disabled", "true");
     expect(state.operations.saves).toBe(1);
-    expect(state.fixture.payload.categoryTerms).toEqual(["astrology"]);
+    expect(state.fixture.payload.categoryTerms).toEqual(["astrology", ...state.original.payload.categoryTerms.slice(1)]);
     expect(state.fixture.payload.facts).toEqual([REPAIR_FACT]);
     expect(state.fixture.frozen.snapshotId).toBe(state.original.snapshotId);
 

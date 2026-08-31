@@ -5560,6 +5560,8 @@
         "chooseQuestion": "Question for the next Brief",
         "chooseQuestionPlaceholder": "Select a question from this version",
         "profileNewTab": "Profile settings open in a new tab so your current repair draft stays here.",
+        "primaryCategory": "Primary category used in questions",
+        "primaryCategoryHelp": "Edit the first category directly in the question language. Other category terms keep their order as background context; nothing is translated automatically.",
         "loadError": "This existing knowledge base could not be loaded. No new knowledge base was created. Retry the same knowledge base, or return to Brief.",
         "retry": "Retry loading this knowledge base",
         "invalid": "The repair context is missing, expired, or unavailable. Return to Brief and reopen the repair link for the correct site.",
