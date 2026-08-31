@@ -38,10 +38,44 @@ describe("strict site evidence", () => {
     const { report, evidence } = await fixture();
     expect(evidence.index.status).toBe("complete");
     expect(evidence.citability[0]?.checks).toHaveLength(14);
+    expect(evidence.citability[0]?.rulesVersion).toBe("marketing-page-citability-rules.v2");
+    expect(evidence.citability[0]?.checks.find((check) => check.ruleId === "citedData")?.kind).toBe("heuristic");
     expect(parseVisibilitySiteEvidence(evidence, report) !== null).toBe(true);
     const attached = { ...report, siteEvidence: evidence, gaps: classifyVisibilityGaps(report, evidence) };
     expect(parseVisibilityReportV2(attached) !== null).toBe(true);
     expect(parseVisibilityImport(exportVisibilityJson(attached))).toMatchObject({ ok: true, provenance: "imported_untrusted" });
+  });
+
+  it("retains historical unversioned deterministic cited-data evidence exactly on read and export", async () => {
+    const { report, evidence } = await fixture();
+    const historical: VisibilitySiteEvidenceV1 = {
+      ...evidence,
+      citability: evidence.citability.map(({ rulesVersion: _rulesVersion, ...entry }) => ({
+        ...entry,
+        checks: entry.checks.map((check) => check.ruleId === "citedData" ? { ...check, kind: "deterministic" as const } : check),
+      })),
+    };
+    const before = JSON.stringify(historical);
+    expect(parseVisibilitySiteEvidence(historical, report)).toBe(historical);
+    expect(JSON.stringify(historical)).toBe(before);
+    const attached = { ...report, siteEvidence: historical, gaps: classifyVisibilityGaps(report, historical) };
+    expect(parseVisibilityReportV2(attached)?.siteEvidence).toEqual(historical);
+    const imported = parseVisibilityImport(exportVisibilityJson(attached));
+    expect(imported).toMatchObject({ ok: true, provenance: "imported_untrusted", report: { siteEvidence: historical } });
+  });
+
+  it("rejects unknown rule versions and cross-version rule kinds", async () => {
+    const { report, evidence } = await fixture();
+    const entry = evidence.citability[0]!;
+    const { rulesVersion: _rulesVersion, ...withoutVersion } = entry;
+    for (const changed of [
+      { ...entry, rulesVersion: "marketing-page-citability-rules.v3" },
+      { ...entry, rulesVersion: undefined },
+      withoutVersion,
+      { ...entry, checks: entry.checks.map((check) => check.ruleId === "citedData" ? { ...check, kind: "deterministic" } : check) },
+      { ...entry, checks: entry.checks.map((check) => check.ruleId === "citedData" ? { ...check, kind: "model" } : check) },
+      { ...entry, checks: entry.checks.map((check) => check.ruleId === "canonical" ? { ...check, kind: "heuristic" } : check) },
+    ]) expect(parseVisibilitySiteEvidence({ ...evidence, citability: [changed] }, report)).toBeNull();
   });
 
   it("refuses impossible complete inventories and wrong host/hash/duplicate identity", async () => {

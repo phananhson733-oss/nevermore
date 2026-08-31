@@ -1,7 +1,7 @@
 // @input -- independently fetched public documents, never inferred search results
 // @output -- bounded inventory/reference-page/T2 evidence used by deterministic gaps
 // @pos -- browser-safe evidence contract; no full HTML or rendered document storage
-import type { CitabilityCheck } from "./citability-contract.ts";
+import type { CitabilityCheck, CITABILITY_RULES_VERSION } from "./citability-contract.ts";
 import type { CitabilityRenderEvidence } from "./citability-render-contract.ts";
 
 export const GEO_SITE_EVIDENCE_SCHEMA = "marketing-geo-site-evidence.v1";
@@ -42,6 +42,8 @@ export interface GeoReferencePage extends GeoReadPage {
   readonly sampleSlots: readonly string[];
 }
 export interface GeoPageCitabilityEvidence {
+  /** Absent only in historical v1 evidence; never reinterpret its original kinds. */
+  readonly rulesVersion?: typeof CITABILITY_RULES_VERSION;
   readonly id: string;
   readonly pageId: string;
   readonly questionId: string;

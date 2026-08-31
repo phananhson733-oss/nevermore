@@ -1,7 +1,7 @@
-// @input -- frozen research and scoped first-party evidence
-// @output -- v2 assembly and confirmed delivery vocabulary
-// @pos -- explicit new-generation contract; never relabel historical v1 exports
-import type { LlmReadMeta, ProfileFact } from "./contract.ts";
+// @input -- frozen research, scoped first-party evidence and optional versioned SERP snapshot
+// @output -- v2/v3 Brief assembly and confirmed delivery vocabulary
+// @pos -- v3 adds actual SERP evidence; historical v2 bytes and v1 exports retain their contracts
+import type { LlmReadMeta, ProfileFact, SerpObservation, SerpReadMeta } from "./contract.ts";
 import type { ModelResearchOutput, ResearchBundle, ResearchOutlineItem, ResearchResult } from "./v2-contract.ts";
 
 export interface BriefV2Input {
@@ -46,6 +46,11 @@ export interface BriefV2Context {
   readonly profile_snapshot: { readonly website_id: string; readonly revision: number; readonly hash: string } | null;
   readonly gsc: BriefV2Gsc;
   readonly candidates: readonly OwnedCandidate[];
+  /** Required by Brief v3, forbidden by Brief v2; raw vendor URL is source data, not a safe link. */
+  readonly serp?: {
+    readonly rows: readonly SerpObservation[];
+    readonly read: SerpReadMeta;
+  };
 }
 
 export interface BriefV2PlanStep {
@@ -91,7 +96,7 @@ export interface BriefV2Read {
 }
 
 export interface ContentBriefV2 {
-  readonly schema: "gengrowth.content_brief/v2";
+  readonly schema: "gengrowth.content_brief/v2" | "gengrowth.content_brief/v3";
   readonly context: BriefV2Context;
   readonly generated: BriefV2Generated | null;
   readonly run: {
@@ -109,7 +114,7 @@ export interface ContentBriefV2 {
 
 /** User-owned headings/order only. Questions, mappings, plan and source observations remain frozen. */
 export interface ConfirmedBriefV2 {
-  readonly schema: "gengrowth.confirmed_brief/v2";
+  readonly schema: "gengrowth.confirmed_brief/v2" | "gengrowth.confirmed_brief/v3";
   readonly brief: ContentBriefV2;
   readonly revision: number;
   readonly confirmed_at: string;

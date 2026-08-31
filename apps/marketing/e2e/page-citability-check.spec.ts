@@ -1,5 +1,5 @@
-// LOCAL, OFFLINE UI evidence only. Responses use the real report and render
-// measurement functions with deterministic HTML; no provider or live page is read.
+// LOCAL, OFFLINE UI evidence only. Standard cases use deterministic HTML;
+// the opt-in replay uses a previously captured real report. No live provider or target is read.
 // Run with the existing credential-free Playwright server and an env -i runner.
 import { readFile, writeFile } from "node:fs/promises";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
@@ -7,6 +7,7 @@ import { createTranslator } from "next-intl";
 import en from "../src/i18n/messages/en.json" with { type: "json" };
 import zh from "../src/i18n/messages/zh.json" with { type: "json" };
 import type { CitabilityInput, CitabilityReport } from "../src/lib/geo-tools/citability-contract.ts";
+import { parseCitabilityAiReview, type CitabilityAiReview } from "../src/lib/geo-tools/citability-ai-contract.ts";
 import { measureCitabilityRender } from "../src/lib/geo-tools/citability-render.ts";
 import { buildCitabilityReport } from "../src/lib/geo-tools/citability-rules.ts";
 
@@ -14,7 +15,9 @@ type Locale = "en" | "zh";
 type Theme = "dark" | "light";
 type Variant = "measured" | "unknown" | "partial" | "zero" | "complete";
 type ToolReply = { readonly data: CitabilityReport } | { readonly error: { readonly code: "fetch_failed" } };
+type AiReply = { readonly review: CitabilityAiReview } | { readonly error: { readonly code: string }; readonly outcomeUnknown?: boolean; readonly costUsd?: number | null; readonly providerTaskId?: string | null };
 const ENDPOINT = "/api/tools/page-citability-check";
+const AI_ENDPOINT = `${ENDPOINT}/ai-review`;
 const PAGE_URL = "https://citability.fixture.test/agency-guide";
 const QUESTION = "Which issue tracker is best for agencies?";
 const NOW = "2026-08-31T10:00:00.000Z";
@@ -61,18 +64,40 @@ function fixture(variant: Variant, url = PAGE_URL, question: string | null = QUE
   return buildCitabilityReport(input, NOW);
 }
 
+function aiFixture(report: CitabilityReport): CitabilityAiReview {
+  const text = report.render.raw.text.slice(0, 360);
+  return {
+    schemaVersion: "citability-ai-review.v1", inputFingerprint: "b".repeat(64),
+    rawSha256: report.render.rawSha256, finalUrl: report.finalUrl,
+    targetQuestion: report.targetQuestion, capturedAt: NOW, observedAt: NOW,
+    totalBodyChars: report.render.raw.text.length, includedBodyChars: text.length,
+    coverage: text.length === report.render.raw.text.length ? "full" : "excerpt",
+    excerpts: [{ id: "E1", text }], provider: "dataforseo", requestedModel: "gpt-4.1-mini",
+    actualModel: "gpt-4.1-mini-2025-04-14", providerTaskId: "offline-browser-fixture",
+    costUsd: null, inputTokens: null, outputTokens: null,
+    factVerification: "not_performed", scope: "provided_excerpts", webSearch: false,
+    assessmentKind: "model_assessment", summary: "Offline model fixture: supplied copy needs review; factual accuracy was not verified.",
+    dimensions: [
+      { id: "answer_relevance", verdict: "insufficient_evidence", reason: "The supplied excerpt does not establish relevance to the full question.", suggestion: null, evidenceIds: ["E1"] },
+      { id: "answer_clarity", verdict: "needs_work", reason: "The excerpt describes a loading shell, not an answer.", suggestion: "Provide a readable answer in the original page response.", evidenceIds: ["E1"] },
+      { id: "attribution_clarity", verdict: "insufficient_evidence", reason: "No source wording is available in the excerpt.", suggestion: null, evidenceIds: [] },
+    ],
+  };
+}
+
 interface Guard {
   readonly requests: { method: string; body: unknown }[];
+  readonly aiRequests: { method: string; body: unknown }[];
   readonly blockedShell: string[];
   readonly blockedExternal: string[];
   readonly unexpected: string[];
   readonly pageErrors: string[];
 }
 
-async function installGuard(context: BrowserContext, page: Page, baseURL: string, replies: readonly ToolReply[]): Promise<Guard> {
+async function installGuard(context: BrowserContext, page: Page, baseURL: string, replies: readonly ToolReply[], aiReplies: readonly AiReply[] = []): Promise<Guard> {
   const origin = new URL(baseURL).origin;
   expect(new URL(origin).hostname).toBe("127.0.0.1");
-  const guard: Guard = { requests: [], blockedShell: [], blockedExternal: [], unexpected: [], pageErrors: [] };
+  const guard: Guard = { requests: [], aiRequests: [], blockedShell: [], blockedExternal: [], unexpected: [], pageErrors: [] };
   page.on("pageerror", error => guard.pageErrors.push(error.message));
   await context.route("**/*", async route => {
     const request = route.request();
@@ -88,6 +113,17 @@ async function installGuard(context: BrowserContext, page: Page, baseURL: string
       return;
     }
     const id = `${request.method()} ${url.pathname}`;
+    if (url.pathname === AI_ENDPOINT && request.method() === "POST") {
+      guard.aiRequests.push({ method: request.method(), body: request.postDataJSON() });
+      const reply = aiReplies[guard.aiRequests.length - 1];
+      if (!reply) {
+        guard.unexpected.push(`Unexpected AI request ${guard.aiRequests.length}`);
+        await route.abort("blockedbyclient");
+        return;
+      }
+      await route.fulfill({ status: "error" in reply ? 502 : 200, contentType: "application/json", body: JSON.stringify(reply) });
+      return;
+    }
     if (url.pathname !== ENDPOINT || request.method() !== "POST") {
       if (SHELL_APIS.has(id)) guard.blockedShell.push(id);
       else guard.unexpected.push(id);
@@ -160,6 +196,24 @@ async function assertReport(page: Page, locale: Locale, report: CitabilityReport
   await expect(page.locator('section[aria-labelledby="citability-form"]')).toHaveCount(0);
   const result = page.locator('section[aria-labelledby="citability-result"]');
   await expect(result).toBeVisible();
+  const conclusion = page.getByTestId("citability-conclusion");
+  await expect(conclusion).toHaveAttribute("data-verdict", report.conclusion.verdict);
+  await expect(conclusion).toHaveAttribute("data-coverage", report.conclusion.coverage);
+  await expect(conclusion.locator("h3")).toHaveCSS("font-size", "16px");
+  for (const id of report.conclusion.priorityCheckIds) {
+    await expect(conclusion.locator(`a[href="#citability-rule-${id}"]`)).toBeVisible();
+  }
+  await expect(page.getByTestId("citability-ai-review")).toBeVisible();
+  // A font size on a parent does not override the global p element recipe.
+  // Check the computed result, not merely the presence of a container class.
+  const summaryLines = [
+    t("summary.counted", { passed: report.summary.passed, counted: report.summary.counted }),
+    t("summary.rows", { total: report.summary.total, weighted: report.summary.counted + report.summary.fetchError + report.summary.notApplicable, notApplicable: report.summary.notApplicable, fetchError: report.summary.fetchError, denominator: report.summary.counted }),
+    t("summary.advisoryNote"),
+  ];
+  for (const line of summaryLines) {
+    await expect(result.getByText(line, { exact: true })).toHaveCSS("font-size", "12px");
+  }
   for (const [id, value] of [["passed", report.summary.passed], ["failed", report.summary.failed], ["fetch-error", report.summary.fetchError]] as const) {
     await expect(page.getByTestId(`citability-metric-${id}`).locator("dd")).toHaveText(String(value));
   }
@@ -185,6 +239,10 @@ async function assertReport(page: Page, locale: Locale, report: CitabilityReport
   }
   const causes = page.getByTestId("citability-root-causes");
   await expect(causes).toBeVisible();
+  for (const paragraph of await causes.locator(":scope > ul > li > div > p").all()) {
+    await expect(paragraph).toHaveCSS("font-size", "12.5px");
+  }
+  await expect(result.locator('[id^="citability-rule-"] > div > p').first()).toHaveCSS("font-size", "13px");
   for (const cause of report.rootCauses) {
     await expect(causes).toContainText(t(`causes.groups.${cause.id}`));
     await expect(causes).toContainText(t(`causes.basis.${cause.basis}`));
@@ -254,6 +312,7 @@ for (const locale of ["en", "zh"] as const) {
           await run(page, locale);
         }
         await assertReport(page, locale, report);
+        expect(guard.aiRequests).toEqual([]);
         expect(guard.requests).toEqual([{ method: "POST", body: { url: PAGE_URL, question: QUESTION } }]);
         await assertNoHorizontalOverflow(page);
         await screenshot(page, "result");
@@ -280,9 +339,11 @@ for (const locale of ["en", "zh"] as const) {
           expect(copied).toContain(report.finalUrl);
           expect(copied).toContain(report.targetQuestion!);
           expect(copied).toContain(translate(locale)("causes.title"));
+          expect(copied).toContain(translate(locale)("conclusion.title"));
         }
         await assertNoHorizontalOverflow(page);
         expect(guard.requests).toHaveLength(1);
+        expect(guard.aiRequests).toEqual([]);
         await isolationEvidence(guard, report);
       });
     }
@@ -351,4 +412,148 @@ test("failed rerun invalidates the previous result and an explicit retry replace
     { method: "POST", body: { url: nextUrl, question: nextQuestion } },
   ]);
   await isolationEvidence(guard, nextReport);
+});
+
+test("AI review is explicit, snapshot-bound and separate from measured conclusions", async ({ page, context, baseURL }) => {
+  const report = fixture("measured");
+  const review = aiFixture(report);
+  const guard = await installGuard(context, page, baseURL!, [{ data: report }], [{ review }]);
+  await openInput(page, "en", "light");
+  await fillInput(page);
+  await run(page, "en");
+  await assertReport(page, "en", report);
+  expect(guard.aiRequests).toEqual([]);
+  await page.getByTestId("citability-ai-run").click();
+  await expect(page.getByTestId("citability-ai-result")).toContainText(review.summary);
+  expect(guard.aiRequests).toEqual([{ method: "POST", body: { url: report.finalUrl, question: QUESTION, rawSha256: report.render.rawSha256 } }]);
+  await expect(page.getByTestId("citability-ai-result")).toContainText(review.actualModel);
+  await page.getByTestId("citability-ai-result").locator('a[href="#citability-ai-evidence-E1"]').first().click();
+  await expect(page.locator("#citability-ai-evidence-E1")).toBeInViewport();
+  await expect(page.getByTestId("citability-conclusion")).toHaveAttribute("data-verdict", report.conclusion.verdict);
+  await expect(page.getByTestId("citability-metric-failed").locator("dd")).toHaveText(String(report.summary.failed));
+  await page.getByTestId("citability-view-input").click();
+  await page.getByTestId("citability-view-result").click();
+  await expect(page.getByTestId("citability-ai-result")).toContainText(review.summary);
+  expect(guard.requests).toHaveLength(1);
+  expect(guard.aiRequests).toHaveLength(1);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: baseURL! });
+  await page.getByRole("button", { name: messages("en").tools.pageCitability.actions.copy, exact: true }).click();
+  await expect(page.getByRole("button", { name: messages("en").tools.pageCitability.actions.copied, exact: true })).toBeVisible();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain(review.summary);
+  expect(copied).toContain(review.providerTaskId);
+  expect(copied).toContain(translate("en")("conclusion.title"));
+  await assertNoHorizontalOverflow(page);
+  await screenshot(page, "ai-review");
+  await isolationEvidence(guard, report);
+});
+
+for (const code of ["provider_timeout", "FUNCTION_INVOCATION_TIMEOUT"] as const) {
+test(`${code}: an unknown AI outcome does not auto-retry or alter the measured report`, async ({ page, context, baseURL }) => {
+  const report = fixture("unknown");
+  const guard = await installGuard(context, page, baseURL!, [{ data: report }], [{ error: { code }, ...(code === "provider_timeout" ? { outcomeUnknown: true } : {}), costUsd: null, providerTaskId: null }]);
+  await page.setViewportSize(VIEWPORTS.mobile);
+  await openInput(page, "zh", "dark");
+  await fillInput(page);
+  await run(page, "zh");
+  await page.getByTestId("citability-ai-run").click();
+  await expect(page.getByTestId("citability-ai-error")).toBeVisible();
+  await expect(page.getByTestId("citability-ai-run")).toBeDisabled();
+  await expect(page.getByTestId("citability-ai-result")).toHaveCount(0);
+  await expect(page.getByTestId("citability-conclusion")).toHaveAttribute("data-coverage", "partial");
+  await page.getByTestId("citability-view-input").click();
+  await page.getByTestId("citability-view-result").click();
+  expect(guard.aiRequests).toHaveLength(1);
+  await expect(page.getByTestId("citability-ai-error")).toBeVisible();
+  await assertNoHorizontalOverflow(page);
+  await screenshot(page, "ai-unknown-outcome");
+  await isolationEvidence(guard, report);
+});
+}
+
+test("the actual credential-free AI route fails closed before fetching or spending", async ({ request, baseURL }) => {
+  // This request is intentionally NOT fulfilled by installGuard. The real
+  // standalone route runs with the config's env-i server and no auth/provider
+  // configuration, so it must refuse at verified authentication.
+  const response = await request.post(AI_ENDPOINT, {
+    headers: { Origin: baseURL! },
+    data: { url: "https://gengrowth.ai/", rawSha256: "f".repeat(64) },
+  });
+  expect(response.status()).toBe(503);
+  expect(response.headers()["cache-control"]).toContain("no-store");
+  expect(await response.json()).toEqual({ error: { code: "auth_unavailable" } });
+});
+
+test("manual real-capture replay preserves measured evidence in the final browser UI", async ({ page, context, baseURL }) => {
+  const capturePath = process.env.CITABILITY_CAPTURE_REPORT;
+  test.skip(!capturePath, "Requires an explicitly selected previously captured real report; never fetches a target automatically.");
+  const capture = JSON.parse(await readFile(capturePath!, "utf8")) as { httpStatus: number; report: { data: CitabilityReport } };
+  expect(capture.httpStatus).toBe(200);
+  const report = capture.report.data;
+  expect(report.render.status).toBe("measured");
+  expect(report.render.raw.complete).toBe(true);
+  expect(report.render.rendered?.complete).toBe(true);
+  const guard = await installGuard(context, page, baseURL!, [capture.report]);
+  await openInput(page, "zh", "light");
+  await fillInput(page, report.url, report.targetQuestion ?? "");
+  await run(page, "zh");
+  await assertReport(page, "zh", report);
+  await screenshot(page, "result");
+  const evidence = page.getByTestId("citability-evidence");
+  await evidence.locator(":scope > summary").click();
+  await expect(page.getByTestId("citability-render-status")).toHaveAttribute("data-status", "measured");
+  await expect(page.getByTestId("citability-render-raw")).toHaveText(report.render.raw.text);
+  await expect(page.getByTestId("citability-render-rendered")).toHaveText(report.render.rendered!.text);
+  await assertNoHorizontalOverflow(page);
+  expect(guard.aiRequests).toEqual([]);
+  expect(guard.unexpected).toEqual([]);
+  expect(guard.pageErrors).toEqual([]);
+  const path = test.info().outputPath("real-capture-result.png");
+  await page.locator('section[aria-labelledby="citability-result"]').screenshot({ path });
+  await test.info().attach("real-capture-result", { path, contentType: "image/png" });
+});
+
+test("manual real AI receipt replay retains scope, cost and independent measured findings", async ({ page, context, baseURL }) => {
+  const reportPath = process.env.CITABILITY_AI_CAPTURE_REPORT;
+  const reviewPath = process.env.CITABILITY_AI_CAPTURE_REVIEW;
+  test.skip(!reportPath || !reviewPath, "Requires an explicitly selected real capture and paid-provider receipt; never starts a live provider call.");
+  const capture = JSON.parse(await readFile(reportPath!, "utf8")) as { httpStatus: number; aiSnapshotMatches: boolean; report: { data: CitabilityReport } };
+  const paid = JSON.parse(await readFile(reviewPath!, "utf8"));
+  const review = parseCitabilityAiReview(paid.review);
+  expect(capture.httpStatus).toBe(200);
+  expect(capture.aiSnapshotMatches).toBe(true);
+  expect(paid.outcome).toBe("passed");
+  if (!review) throw new Error("Recorded real review does not meet the current strict contract");
+  const report = capture.report.data;
+  expect([review.finalUrl, review.targetQuestion, review.rawSha256]).toEqual([report.finalUrl, report.targetQuestion, report.render.rawSha256]);
+  const guard = await installGuard(context, page, baseURL!, [capture.report], [{ review }]);
+  await page.setViewportSize({ width: 1280, height: 1200 });
+  await openInput(page, "zh", "light");
+  await fillInput(page, report.url, report.targetQuestion ?? "");
+  await run(page, "zh");
+  await assertReport(page, "zh", report);
+  await page.getByTestId("citability-ai-run").click();
+  const result = page.getByTestId("citability-ai-result");
+  await expect(result).toContainText(review.summary);
+  await expect(result).toContainText(review.actualModel);
+  await expect(result).toContainText(review.providerTaskId);
+  await expect(result.locator("[data-ai-dimension]")).toHaveCount(3);
+  await expect(page.getByTestId("citability-conclusion")).toHaveAttribute("data-verdict", report.conclusion.verdict);
+  await expect(page.getByTestId("citability-metric-failed").locator("dd")).toHaveText(String(report.summary.failed));
+  await assertNoHorizontalOverflow(page);
+  expect(guard.requests).toHaveLength(1);
+  expect(guard.aiRequests).toHaveLength(1);
+  expect(guard.unexpected).toEqual([]);
+  expect(guard.pageErrors).toEqual([]);
+  await result.locator('a[href="#citability-ai-evidence-E1"]').first().click();
+  await expect(page.locator("#citability-ai-evidence-E1")).toBeInViewport();
+  await result.locator("details > summary").click();
+  const card = page.getByTestId("citability-ai-review");
+  await card.evaluate(element => window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY - 100));
+  const box = await card.boundingBox();
+  const viewport = page.viewportSize();
+  if (!box || !viewport) throw new Error("Real AI screenshot requires a visible card");
+  const path = test.info().outputPath("real-ai-result.png");
+  await page.screenshot({ path, clip: { ...box, height: Math.min(box.height, viewport.height - box.y) }, animations: "disabled" });
+  await test.info().attach("real-ai-result", { path, contentType: "image/png" });
 });

@@ -6,7 +6,7 @@ import { CRAWL_DEADLINE_MS, ENVELOPE_MS, GSC_DEADLINE_MS, RUN_BUDGET_MS, SERP_DE
 import type { ProfileFact } from "@sf/public-tools/content-brief/contract";
 import { hostKey } from "@sf/public-tools/content-brief/host";
 import { fingerprintBriefV2, parseContentBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
-import { CONTENT_BRIEF_V2_SCHEMA, type ResearchBundle } from "@sf/public-tools/content-brief/v2-contract";
+import { CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA, type ResearchBundle } from "@sf/public-tools/content-brief/v2-contract";
 import { parseBriefV2Context } from "@sf/public-tools/content-brief/v2-generation";
 import type { BriefV2Context, BriefV2Gsc, BriefV2Input, BriefV2Read, ContentBriefV2, OwnedCandidate } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { buildResearchBundle } from "@sf/public-tools/content-brief/v2-research";
@@ -37,6 +37,8 @@ export interface ContentBriefV2ProfileLane {
 }
 export interface ContentBriefV2RunInput {
   readonly input: BriefV2Input;
+  /** Explicit negotiation preserves the byte-identical historical v2 shape. */
+  readonly responseSchema?: typeof CONTENT_BRIEF_V2_SCHEMA | typeof CONTENT_BRIEF_V3_SCHEMA;
   readonly runId: string;
   readonly startedAt: number;
   readonly deadlineAt: number;
@@ -208,7 +210,10 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
   const paa = serp.peopleAlsoAsk;
   const research = buildResearchBundle(crawl.observed, paa !== undefined && paa.status !== "unavailable" ? paa.items.map((item, index) => ({ id: `A${index + 1}`, question: item.question, seed_question: item.seedQuestion })) : []);
   if (!research.ok) throw new ContentBriefV2RunError();
-  const context: BriefV2Context = { input: keyword, research: research.value, facts: profile.facts, profile_snapshot: profile.snapshot, gsc: gsc.gsc, candidates };
+  const context: BriefV2Context = {
+    input: keyword, research: research.value, facts: profile.facts, profile_snapshot: profile.snapshot, gsc: gsc.gsc, candidates,
+    ...(input.responseSchema === CONTENT_BRIEF_V3_SCHEMA ? { serp: { rows: buildSerpObservations(serp.rows), read: serp.reads } } : {}),
+  };
   if (!parseBriefV2Context(context).ok) throw new ContentBriefV2RunError();
   // The runner owns the single provider attempt and its usage. An uncooperative
   // injected runner must not hang; without its receipt we cannot invent usage.
@@ -230,7 +235,7 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
     profile.read,
   ];
   const brief: ContentBriefV2 = {
-    schema: CONTENT_BRIEF_V2_SCHEMA, context: packed, generated: llm.output,
+    schema: input.responseSchema ?? CONTENT_BRIEF_V2_SCHEMA, context: packed, generated: llm.output,
     run: { run_id: input.runId, collected_at: new Date(input.startedAt).toISOString(), elapsed_ms: Math.max(0, clock.now() - input.startedAt), budget_ms: RUN_BUDGET_MS, reads, llm: llm.reads, prompt_bytes: llm.prompt_bytes, serp_cost_usd: serp.costUsd, fingerprint: "" },
   };
   const sealed = { ...brief, run: { ...brief.run, fingerprint: await fingerprintBriefV2(brief) } };

@@ -8,11 +8,13 @@ import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as confirmation from "@sf/public-tools/content-brief/v2-brief";
 import { buildResearchBundle, validateResearchOutput } from "@sf/public-tools/content-brief/v2-research";
+import { buildSerpObservations } from "@sf/public-tools/content-brief/assemble";
 import type { ConfirmedBriefV2, ContentBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
 import { ContentBriefV2Results } from "./content-brief-v2-results.tsx";
 import { validContentBriefV2 as fixture } from "./content-brief-v2-fixture.ts";
+import { confirmedDraftV3Fixture } from "./content-brief-v3-fixture.ts";
 import { CONTENT_BRIEF_HANDOFF_KEY } from "@sf/public-tools/content-brief/contract";
 import { parseConfirmedBriefHandoff } from "../../lib/tools/content-brief-v2-handoff.ts";
 
@@ -29,11 +31,11 @@ afterEach(async () => {
   }
 });
 
-async function render(brief: ContentBriefV2, locale: "en" | "zh" = "en", onConfirmed = vi.fn<(value: ConfirmedBriefV2 | null) => void>()) {
+async function render(brief: ContentBriefV2, locale: "en" | "zh" = "en", onConfirmed = vi.fn<(value: ConfirmedBriefV2 | null) => void>(), onReturnToSettings = vi.fn()) {
   const host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-  const rerender = async (next: ContentBriefV2) => { await act(async () => root?.render(<NextIntlClientProvider locale={locale} messages={locale === "en" ? en : zh} timeZone="UTC"><ContentBriefV2Results brief={next} locale={locale} onConfirmed={onConfirmed} /></NextIntlClientProvider>)); };
+  const rerender = async (next: ContentBriefV2) => { await act(async () => root?.render(<NextIntlClientProvider locale={locale} messages={locale === "en" ? en : zh} timeZone="UTC"><ContentBriefV2Results brief={next} locale={locale} onConfirmed={onConfirmed} onReturnToSettings={onReturnToSettings} /></NextIntlClientProvider>)); };
   await rerender(brief);
-  return { host, onConfirmed, rerender };
+  return { host, onConfirmed, onReturnToSettings, rerender };
 }
 function node<T extends Element = HTMLElement>(host: Element, selector: string): T { const found = host.querySelector(selector); expect(found, selector).not.toBeNull(); return found as T; }
 async function click(host: Element, selector: string) { await act(async () => { node<HTMLButtonElement>(host, selector).click(); }); }
@@ -46,6 +48,183 @@ async function confirmedValue(onConfirmed: ReturnType<typeof vi.fn<(value: Confi
 }
 
 describe("Artifact-aligned Brief v2 result", () => {
+  it.each([{ locale: "en", version: 2 }, { locale: "zh", version: 2 }, { locale: "en", version: 3 }, { locale: "zh", version: 3 }] as const)("states the v$version format heuristic in the default visible summary ($locale)", async ({ locale, version }) => {
+    const brief = version === 3 ? (await confirmedDraftV3Fixture()).brief : await fixture({ locale });
+    expect((await confirmation.parseContentBriefV2(brief)).ok).toBe(true);
+    const { host } = await render(brief, locale);
+    const details = node<HTMLDetailsElement>(host, '[data-field-details="format"]'); const summary = node(details, ":scope > summary");
+    expect(details.open).toBe(false); expect(summary).toBe(details.firstElementChild); expect(summary.hasAttribute("hidden")).toBe(false);
+    expect(summary.textContent).toBe(locale === "zh"
+      ? version === 3 ? "标题 + URL 启发式：规则和来源" : "仅 URL 启发式：规则和来源"
+      : version === 3 ? "Title + URL heuristic: rules and sources" : "URL-only heuristic: rules and sources");
+    expect(node(details, "[data-format-method]").closest("details")?.open).toBe(false);
+  });
+  it.each(["en", "zh"] as const)("keeps field headlines and quantiles visible while long explanations use closed native details (%s)", async (locale) => {
+    const brief = await fixture({ locale }); const before = JSON.stringify(brief); const { host } = await render(brief, locale);
+    for (const field of ["intent", "format", "length"]) {
+      const card = node(host, `[data-field-card="${field}"]`);
+      const details = node<HTMLDetailsElement>(card, `[data-field-details="${field}"]`);
+      expect(details.open).toBe(false);
+      const summary = node<HTMLElement>(details, "summary"); summary.focus(); expect(document.activeElement).toBe(summary);
+      await click(details, "summary"); expect(details.open).toBe(true); await click(details, "summary"); expect(details.open).toBe(false);
+      expect(node(card, "[data-source-layer]").closest("details")).toBeNull();
+    }
+    expect(node(host, '[data-field-card="intent"] [data-field-rationale]').closest("details")?.open).toBe(false);
+    expect(node(host, '[data-field-card="format"] [data-format-method]').closest("details")?.open).toBe(false);
+    expect(node(host, '[data-field-card="format"] [data-format-boundary]').closest("details")?.open).toBe(false);
+    expect(node(host, '[data-field-card="length"] [data-quantile-method]').closest("details")?.open).toBe(false);
+    for (const selector of ["[data-length-quantiles]", "[data-length-sample]", "[data-length-boundary]"]) expect(node(host, selector).closest("details")).toBeNull();
+    expect(node(host, "[data-length-boundary]").textContent).toMatch(locale === "en" ? /not a writing or ranking target/i : /不是写作或排名目标/);
+    expect(JSON.stringify(brief)).toBe(before);
+  });
+  it("keeps collection time and budget visible and separates generation from partial source reads", async () => {
+    const original = await fixture();
+    const brief = { ...original, run: { ...original.run, reads: original.run.reads.map((read) => read.source === "competitors" ? { ...read, status: "partial" as const, attempted: 3 } : read) } };
+    const { host } = await render(brief);
+    const timing = node(host, "[data-run-timing]");
+    expect(timing.closest("details")).toBeNull();
+    expect(timing.textContent).toContain("4.2s / 45s");
+    expect(timing.textContent).toContain("Elapsed / run budget");
+    expect(node(host, "[data-run-collected]").querySelector(".sr-only")).toBeNull();
+    expect(node(host, "[data-run-collected]").textContent).toContain("2026");
+    expect(node(host, "[data-generation-status]").textContent).toBe("Ready for review");
+    expect(node(host, "[data-read-coverage-status]").textContent).toBe("Limited evidence");
+    expect(node(host, '[data-source-summary-item="competitors"]').textContent).toContain("1/3");
+  });
+
+  it.each(["en", "zh"] as const)("keeps observed facts and raw PAA usable after timeout without inventing a plan (%s)", async (locale) => {
+    const brief = await fixture({ action: "update", unavailable: true, locale });
+    const before = JSON.stringify(brief);
+    const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no network permitted"));
+    const { host, onReturnToSettings } = await render(brief, locale);
+    expect(node(host, "[data-generation-failure]").closest("details")).toBeNull();
+    expect(node(host, "[data-generation-cause]").textContent).toContain(locale === "en" ? "timed out" : "超时");
+    expect(node(host, "[data-recovery-boundary]").textContent).toContain(locale === "en" ? "new full run" : "重新完整运行");
+    expect(node(host, '[data-field-card="length"]').textContent).toContain("P25");
+    expect(node(host, '[data-field-card="length"]').textContent).toContain("P75");
+    expect(node(host, '[data-observed-formats]').textContent).toContain(locale === "en" ? "URL-only" : "仅按 URL");
+    expect(node(host, '[data-gsc-match="G1"]').closest("details")).toBeNull();
+    expect(node(host, '[data-owned-candidate="T1"]').closest("details")).toBeNull();
+    expect(node(host, '[data-raw-paa="A1"]').textContent).toContain(brief.context.research.paa[0]!.question);
+    expect(host.querySelector("[data-verdict-card], [data-question-row], [data-outline], [data-confirm-brief], [data-generate-draft]")).toBeNull();
+    expect(onReturnToSettings).not.toHaveBeenCalled();
+    const recovery = node<HTMLButtonElement>(host, "[data-return-to-settings]");
+    recovery.focus(); expect(document.activeElement).toBe(recovery);
+    await click(host, "[data-return-to-settings]");
+    expect(onReturnToSettings).toHaveBeenCalledTimes(1);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(JSON.stringify(brief)).toBe(before);
+  });
+
+  it.each([
+    ["provider_error", "provider returned an error"],
+    ["validation_failed", "did not pass validation"],
+    ["not_configured", "not configured"],
+    ["insufficient_evidence", "Not enough usable evidence"],
+  ] as const)("shows the actual %s cause before raw metadata", async (reason, text) => {
+    const original = await fixture({ unavailable: true, action: "undecidable" });
+    if (original.run.llm.status !== "unavailable") throw new Error("fixture");
+    const brief = { ...original, run: { ...original.run, llm: { ...original.run.llm, reason } } };
+    const { host } = await render(brief);
+    expect(node(host, "[data-generation-cause]").textContent).toContain(text);
+    expect(node(host, "[data-owned-evidence]").textContent).toContain("Not used");
+    expect(node(host, '[data-source-summary-item="profile"]').textContent).toContain("Not used");
+  });
+
+  it("shows an honest question coverage denominator, inline source layers and immutable question chips", async () => {
+    const { host } = await render(await fixture());
+    const row = node(host, '[data-question-row="Q1"]');
+    expect(node(row, "[data-covered-by]").textContent).toContain("1/1");
+    expect(node(row, "[data-question-coverage-bar]").getAttribute("aria-label")).toContain("1 of 1");
+    expect(node(row, '[data-source-layer="third"]').closest("details")).toBeNull();
+    expect(node(host, '[data-outline-question="Q1"]').textContent).toBe("Q1");
+    expect(node(host, "[data-question-coverage-boundary]").textContent).toContain("retained competitor pages");
+    expect(node(host, '[data-must-answer] > div [data-source-layer="model"]').closest("details")).toBeNull();
+  });
+
+  it("keeps unreported read counts explicit instead of rendering empty fractions", async () => {
+    const original = await fixture();
+    const brief = { ...original, run: { ...original.run, reads: original.run.reads.map((read) => read.source === "serp" ? { ...read, attempted: null, retained: null } : read) } };
+    const { host } = await render(brief);
+    expect(node(host, '[data-source-summary-item="serp"]').textContent).toContain("Not reported/Not reported");
+  });
+
+  it("keeps missing GSC property distinct from an explicitly unused source", async () => {
+    const original = await fixture({ unavailable: true });
+    const brief = { ...original, context: { ...original.context, gsc: { ...original.context.gsc, status: "unavailable" as const, reason: "not_connected" as const, property: null, window: null } } };
+    const { host } = await render(brief);
+    expect(node(host, "[data-owned-evidence]").textContent).toContain("Unavailable");
+    expect(node(host, "[data-owned-evidence]").textContent).not.toContain("Not used");
+    expect(node(host, "[data-gsc-window]").textContent).toBe("Unavailable");
+  });
+
+  it("keeps selected-but-unavailable profile metadata distinct from not used", async () => {
+    const original = await fixture({ unavailable: true });
+    const brief = { ...original, run: { ...original.run, reads: original.run.reads.map((read) => read.source === "profile" ? { ...read, attempted: 1, reason: "provider_error" as const } : read) } };
+    const { host } = await render(brief);
+    expect(node(host, "[data-profile-snapshot]").textContent).toBe("Unavailable");
+  });
+
+  it("does not turn an unreadable PAA source into a zero-over-zero observation", async () => {
+    const original = await fixture({ unavailable: true, count: 0 });
+    const brief = { ...original, run: { ...original.run, reads: original.run.reads.map((read) => read.source === "paa" ? { ...read, status: "unavailable" as const, reason: "provider_error" as const, attempted: null, retained: null } : read) } };
+    const { host } = await render(brief);
+    expect(node(host, "[data-raw-paa-candidates]").textContent).toContain("Unavailable");
+    expect(node(host, "[data-raw-paa-candidates]").textContent).not.toContain("0/0");
+  });
+
+  it("renders plural observed formats and unknown counts separately from the model's chosen format", async () => {
+    const original = await fixture();
+    const page = original.context.research.pages[0]!;
+    const pages = ["https://a.example/blog/guide", "https://b.example/tools/check", "https://c.example/opaque"].map((url, index) => ({ ...page, id: `C${index + 1}`, url, final_url: url }));
+    const research = buildResearchBundle(pages, original.context.research.paa);
+    if (!research.ok) throw new Error(research.path);
+    const brief = { ...original, context: { ...original.context, research: research.value } };
+    const { host } = await render(brief);
+    const formats = node(host, "[data-observed-formats]");
+    expect(node(formats, '[data-format-count="guide"]').textContent).toContain("1/3");
+    expect(node(formats, '[data-format-count="tool"]').textContent).toContain("1/3");
+    expect(node(formats, '[data-format-count="unknown"]').textContent).toContain("1/3");
+    expect(formats.textContent).toContain("No format has a majority");
+    expect(formats.textContent).toContain("Observed candidates: Guide · Tool");
+    expect(node(host, '[data-field-card="format"]').textContent).toContain("Model suggestion");
+  });
+
+  it.each([false, true])("uses v3 SERP titles and read coverage without changing the question denominator (generation unavailable: %s)", async (unavailable) => {
+    const original = await fixture({ unavailable });
+    const rows = buildSerpObservations([
+      { url: original.context.research.pages[0]!.url, title: "How to check reporting delays" },
+      { url: null, title: "The best reporting tools" },
+      { url: "https://search.example/c", title: "Report A vs Report B" },
+      { url: "https://search.example/d", title: "Reporting overview" },
+    ].map((row, index) => ({ ...row, rank: index + 1, domain: row.url ? new URL(row.url).hostname : "search.example" })));
+    const candidate = { ...original, schema: "gengrowth.content_brief/v3" as const, context: { ...original.context, serp: { rows, read: { status: "partial" as const, requested: 10, returned: 4, unresolved: 1 } } }, run: { ...original.run, reads: original.run.reads.map((read) => read.source === "serp" ? { ...read, status: "partial" as const, retained: 4 } : read) } };
+    const brief = { ...candidate, run: { ...candidate.run, fingerprint: await confirmation.fingerprintBriefV2(candidate) } };
+    expect(await confirmation.parseContentBriefV2(brief)).toEqual({ ok: true, value: brief });
+    const { host, onConfirmed } = await render(brief);
+    const formats = node(host, "[data-observed-formats]");
+    expect(formats.textContent).toContain("SERP title + URL heuristic");
+    expect(formats.textContent).not.toContain("URL-only");
+    expect(formats.textContent).toContain("4/10 organic results");
+    expect(formats.textContent).toContain("1 unresolved");
+    expect(node(formats, '[data-format-count="guide"]').textContent).toContain("1/4");
+    expect(node(formats, '[data-format-count="listicle"]').textContent).toContain("1/4");
+    expect(node(formats, '[data-format-count="unknown"]').textContent).toContain("1/4");
+    expect(node(formats, '[data-format-source="S1"]').textContent).toContain("How to check reporting delays");
+    expect(node(formats, '[data-format-source="S2"]').querySelector("a")).toBeNull();
+    expect(node(formats, '[data-format-count="unknown"]').closest("details")).toBeNull();
+    expect(node(formats, "[data-serp-format-coverage]").closest("details")).toBeNull();
+    expect(node<HTMLElement>(formats, '[data-format-portion="unknown"]').style.width).toBe("25%");
+    expect(node<HTMLDetailsElement>(formats, '[data-field-details="format"]').open).toBe(false);
+    if (!unavailable) {
+      expect(node(host, '[data-question-row="Q1"] [data-covered-by]').textContent).toContain("1/1");
+      await click(host, "[data-confirm-brief]");
+      const confirmed = await confirmedValue(onConfirmed);
+      expect(confirmed.schema).toBe("gengrowth.confirmed_brief/v3");
+      expect(confirmed.brief.context.serp).toEqual(brief.context.serp);
+    }
+  });
+
   it.each(["en", "zh"] as const)("hands the exact confirmed revision privately to Draft (%s)", async (locale) => {
     const { host, onConfirmed } = await render(await fixture({ locale }), locale);
     expect(host.querySelector("[data-generate-draft]")).toBeNull();

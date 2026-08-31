@@ -1,4 +1,4 @@
-// @input -- an immutable parsed Brief v2 and a parent confirmation callback
+// @input -- an immutable parsed Brief v2/v3 and a parent confirmation callback
 // @output -- editable heading/order draft and an exact explicitly confirmed revision
 // @pos -- browser-local confirmation/export and explicit one-time Draft handoff; no provider calls
 "use client";
@@ -14,6 +14,8 @@ import { localePath } from "../../lib/locale-path.ts";
 import { clearMatchingContentBriefHandoff } from "../../lib/tools/content-brief-handoff.ts";
 import { writeConfirmedBriefHandoff } from "../../lib/tools/content-brief-v2-handoff.ts";
 import { TOOL_HANDOFF_LINK_PROPS } from "../../lib/tools/tool-handoff.ts";
+import { SourceLayerBadge } from "./content-brief-source-chip.tsx";
+import styles from "./content-brief-presentation.module.css";
 
 const INPUT = "w-full min-w-0 rounded-[3px] border border-brand-border-strong bg-brand-panel-sunken px-3 py-2 text-[13px] leading-[1.5] text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent";
 const DISABLED = "disabled:cursor-not-allowed disabled:opacity-45";
@@ -42,6 +44,7 @@ export function ContentBriefV2Editor({ brief, locale, onConfirmed, children }: {
   readonly children?: ReactNode;
 }) {
   const t = useTranslations("tools.contentBrief.v2");
+  const baseT = useTranslations("tools.contentBrief");
   const base = brief.generated!.research.outline;
   const [draft, setDraft] = useState(() => draftOf(base));
   const [resolved, setResolved] = useState(false);
@@ -136,9 +139,9 @@ export function ContentBriefV2Editor({ brief, locale, onConfirmed, children }: {
 
   return <>
     <section data-outline aria-label={t("outline")}>
-      <h3 className={SECTION_TITLE}>{t("outline")}</h3>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-border-card pb-2"><h3 className={SECTION_TITLE}>{t("outline")}</h3><SourceLayerBadge tone="model" t={baseT} /></div>
       <p className={`mt-2 ${BODY_TEXT}`}>{t("outlineHelp")}</p>
-      <div className="mt-4 space-y-4 border-l-2 border-brand-border-strong pl-4">
+      <div className={`mt-4 ${styles.outlineRail}`}>
         {draft.map((section, index) => {
           const original = base.find((item) => item.id === section.id)!;
           const edited = section.h2 !== original.h2 || section.h3Text !== original.h3.join("\n") || base[index]?.id !== section.id;
@@ -152,30 +155,30 @@ export function ContentBriefV2Editor({ brief, locale, onConfirmed, children }: {
             </div>
             <label className="block"><span className="sr-only">{t("h2Label", { id: section.id })}</span><input data-outline-h2={section.id} value={section.h2} onChange={(event) => edit(section.id, "h2", event.target.value)} className={INPUT} /></label>
             <details data-h3-editor={section.id}><summary className="cursor-pointer text-[11.5px] leading-[1.5] text-text-dark-secondary focus-visible:outline-2 focus-visible:outline-brand-accent">H3 · {section.h3Text.split(/\r?\n/u).filter(Boolean).join(" · ") || t("h3Empty")}</summary><label className="mt-2 block text-[11px] text-text-dark-secondary">{t("h3Label", { id: section.id })}<textarea data-outline-h3={section.id} value={section.h3Text} onChange={(event) => edit(section.id, "h3Text", event.target.value)} rows={Math.max(1, Math.min(3, section.h3Text.split("\n").length))} className={`mt-1 resize-y ${INPUT}`} /></label><div className="mt-1 text-[10.5px] text-text-dark-secondary">{t("h3Help")}</div></details>
-            <div data-outline-answers className="font-mono text-[10.5px] text-text-dark-secondary">{t("answers", { ids: section.answers.join(", ") })}</div>
+            <div data-outline-answers aria-label={t("answers", { ids: section.answers.join(", ") })} className="flex flex-wrap gap-1.5">{section.answers.map((id) => <span key={id} data-outline-question={id} className="rounded-[2px] border border-brand-border-strong px-1.5 py-0.5 font-mono text-[10.5px] text-text-dark-secondary">{id}</span>)}</div>
           </div>;
         })}
       </div>
       {invalid ? <p role="alert" className="mt-3 text-[12px] text-brand-error">{t("invalidHeadings")}</p> : null}
     </section>
     {children}
-    <section data-confirmation-bar className="rounded-[4px] border border-brand-border-strong bg-brand-panel-raised p-4">
+    <section data-confirmation-bar className={`${styles.confirmationBar} rounded-[4px] border border-brand-border-strong bg-brand-panel-raised p-4`}>
       <h3 className={SECTION_TITLE}>{t("confirmTitle")}</h3>
       <p className={`mt-2 ${BODY_TEXT}`}>{t("confirmHelp")}</p>
       {needsDecision ? <div className="mt-3 rounded-[3px] border border-brand-warning/40 p-3"><label className="flex items-start gap-2 text-[12.5px] text-text-dark-primary"><input type="checkbox" data-resolve-create checked={resolved} onChange={(event) => { invalidate(); setResolved(event.target.checked); }} className="mt-1 shrink-0 accent-brand-accent" /><span>{t("resolveCreate")}</span></label><p className={`mt-2 ${BODY_TEXT}`}>{t("resolveHelp")}</p></div> : null}
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div data-handoff-actions className="mt-4 flex flex-wrap items-center gap-2">
         <button type="button" data-confirm-brief disabled={pending || confirmed !== null || invalid || (needsDecision && !resolved)} aria-busy={pending} onClick={() => void confirm()} className={`${PRIMARY_ACTION_BUTTON} ${DISABLED}`}>{pending ? t("confirming") : confirmed ? t("confirmed") : t("confirm")}</button>
         <button type="button" data-copy-confirmed-json disabled={confirmed === null || copying} onClick={() => void copy()} className={`${ACTION_BUTTON} ${DISABLED}`}>{copying ? t("copying") : t("copyJson")}</button>
         <button type="button" data-download-confirmed-json disabled={confirmed === null} onClick={() => { if (confirmed !== null) { try { downloadJson(confirmed); setExportStatus(null); } catch { setExportStatus(t("downloadFailed")); } } }} className={`${ACTION_BUTTON} ${DISABLED}`}>{t("downloadJson")}</button>
-      </div>
-      {confirmed !== null ? <div className="mt-3"><a
+      {confirmed !== null ? <a
         data-generate-draft href={localePath(locale, "/tools/content-draft")} {...TOOL_HANDOFF_LINK_PROPS}
         onMouseDown={(event) => { if ((event.button === 0 || event.button === 1) && !stageHandoff()) event.preventDefault(); }}
         onContextMenu={(event) => { if (!stageHandoff()) event.preventDefault(); }}
         onAuxClick={(event) => { if (event.button === 1 && !stageHandoff()) event.preventDefault(); }}
         onClick={(event) => { if (!stageHandoff()) event.preventDefault(); }}
         className={PRIMARY_ACTION_BUTTON}
-      >{t("generateDraft")}</a></div> : null}
+      >{t("generateDraft")}</a> : null}
+      </div>
       {handoffFailure ? <p data-draft-handoff-error role="alert" className="mt-3 text-[12px] text-brand-error">{t("handoffFailed")}</p> : null}
       {error ? <p role="alert" className="mt-3 text-[12px] text-brand-error">{error}</p> : null}
       <div role="status" aria-live="polite" className="mt-3 text-[12px] text-text-dark-secondary">{exportStatus}</div>

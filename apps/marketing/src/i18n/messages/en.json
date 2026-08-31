@@ -4006,6 +4006,31 @@
         "ready": "Ready for review",
         "limited": "Limited evidence",
         "generationUnavailable": "Generation unavailable",
+        "readsComplete": "Requested reads complete",
+        "returnToSettings": "Return to run settings",
+        "recoveryBoundary": "This only opens your current settings; it does not replace edits or start a request. Submitting again starts a new full run, including source reads and potentially billable calls, not a model-only retry.",
+        "generationCauses": {
+          "timeout": "Brief generation timed out",
+          "provider_error": "The generation provider returned an error",
+          "validation_failed": "The generated Brief did not pass validation",
+          "not_configured": "Brief generation is not configured",
+          "insufficient_evidence": "Not enough usable evidence to generate a Brief",
+          "not_requested": "Brief generation was not requested",
+          "not_connected": "The generation service is not connected",
+          "quota_exhausted": "The generation allowance is exhausted",
+          "unsupported_language": "Generation is unavailable for this language"
+        },
+        "recoveryActions": {
+          "timeout": "The model did not finish within this run's time limit. Review the retained evidence and your keyword before deciding whether to submit again.",
+          "provider_error": "The provider could not complete this request. Your retained source evidence is still readable; you can review the settings and try a new run later.",
+          "validation_failed": "The returned content failed the strict output checks and has not been used. Review the available evidence; a new run may produce a usable result.",
+          "not_configured": "A service configuration is missing. Repeated submissions cannot repair it; try again only after the service is available.",
+          "insufficient_evidence": "Review the source availability and choose a more specific or better-supported keyword before submitting a new run.",
+          "not_requested": "Review the current inputs before explicitly submitting a new run.",
+          "not_connected": "The service connection needs to be restored before another run can generate a Brief.",
+          "quota_exhausted": "Wait for the allowance to reset before submitting a new run.",
+          "unsupported_language": "Review the language setting before explicitly submitting a new run."
+        },
         "sourceSummary": "Sources in this run",
         "readUnits": { "serp": "results", "paa": "questions", "competitors": "pages", "owned_pages": "pages", "gsc": "matched query-page rows", "profile": "facts" },
         "sources": { "serp": "SERP", "paa": "People Also Ask", "competitors": "Competitor pages", "owned_pages": "Owned pages", "gsc": "Search Console", "profile": "Product profile" },
@@ -4018,6 +4043,8 @@
         "scopes": { "primary": "Primary keyword", "supporting": "Supporting keyword" },
         "gscMetrics": "{clicks} clicks · {impressions} impressions · average position {position}",
         "noMatchedQueries": "No matching query-page rows were retained in this sample.",
+        "omittedGsc": "{count} additional matching rows were omitted from this retained evidence.",
+        "noPageDecision": "These are observed queries and owned-page reads only. No new-page or rewrite decision was generated.",
         "readStates": { "observed": "Content observed", "unavailable": "Content unavailable", "redirected": "Page replaced by a redirect" },
         "stepKinds": { "keep": "Keep", "add": "Add", "rewrite": "Rewrite" },
         "stepEvidence": "Answers {answers} · source excerpts {sources}",
@@ -4026,6 +4053,25 @@
         "intent": "Search intent",
         "format": "Page format",
         "modelJudgment": "Model suggestion",
+        "noModelRecommendation": "No validated model recommendation is available.",
+        "observedFormats": "Observed format distribution",
+        "observedFormatNames": { "guide": "Guide", "listicle": "Listicle", "comparison": "Comparison", "product_page": "Product page", "tool": "Tool", "forum": "Forum", "video": "Video", "news": "News", "unknown": "Unknown" },
+        "formatMethod": "URL-only heuristic, separate from the writing recommendation.",
+        "serpFormatMethod": "SERP title + URL heuristic, separate from the writing recommendation.",
+        "serpFormatsUnavailable": "No organic SERP rows were retained for format classification.",
+        "serpFormatCoverage": "{returned}/{requested} organic results · {unresolved} unresolved · {status}",
+        "serpFormatBoundary": "Classifies only retained organic SERP titles and URLs, not measured search intent or verified page-body formats. Unknown rows stay in the denominator.",
+        "formatUrlUnavailable": "No URL was supplied for this result.",
+        "formatScope": "{count} retained competitor pages; {partial} have partial body or excerpt coverage. Not a full SERP or measured intent classification.",
+        "formatMajority": "Majority in this sample: {format}.",
+        "formatNoMajority": "No format has a majority in this sample; unknown pages remain in the denominator.",
+        "formatNoMajorityShort": "No majority in this sample.",
+        "fieldDetails": "{field}: method and evidence",
+        "formatCandidates": "Observed candidates: {formats}",
+        "formatsUnavailable": "No retained competitor pages are available to classify.",
+        "formatEvidence": "URL-only heuristic: rules and sources",
+        "serpFormatEvidence": "Title + URL heuristic: rules and sources",
+        "formatRules": "Matched rules: {rules}",
         "intents": { "informational": "Informational", "commercial": "Commercial", "transactional": "Transactional", "navigational": "Navigational" },
         "formats": { "guide": "Guide", "listicle": "Listicle", "comparison": "Comparison", "product_page": "Product page", "tool": "Tool", "other": "Other" },
         "observedLength": "Observed length",
@@ -4033,18 +4079,28 @@
         "lengthUnits": { "words": "words", "non_whitespace_characters": "non-whitespace characters" },
         "lengthRange": "{min}–{max} · {count} fully read competitor pages",
         "lengthBoundary": "Descriptive source length, not a writing target or ranking factor. Different measurement units are never combined.",
+        "lengthBoundaryShort": "Descriptive length, not a writing or ranking target.",
+        "median": "Median",
+        "quantileMethod": "P25 / median / P75 use linear interpolation at (n − 1) × percentile. Each unit is calculated separately; a single-page sample has equal percentiles.",
         "lengthUnavailable": "No fully read competitor page is available for this measure.",
         "questions": "Must-answer questions",
         "questionCount": "{count} questions · source-bound and read-only",
         "questionColumn": "Question",
         "coverageColumn": "Observed competitor coverage",
         "coveredPages": "{count} pages",
+        "questionCoverageValue": "{count} of {total} retained competitor pages have linked excerpts for this question",
+        "coverageNoDenominator": "No page sample",
+        "questionCoverageBoundary": "Denominator: {count} distinct retained competitor pages, including partial reads. Linked excerpt coverage is not a full-page answer audit or proof that a question is absent elsewhere.",
         "pageEvidence": "Page excerpts",
         "questionEvidence": "Inspect evidence for {id}",
         "paaBoundary": "PAA identifies a question to answer; it is not factual support. Coverage counts only distinct observed competitor pages.",
         "researchBudget": "Page excerpts {retained}/{available} · {omitted} omitted; PAA {paaRetained}/{paaAvailable} · {paaDuplicates} duplicates · {paaOmitted} omitted.",
         "noQuestions": "The observed evidence did not yield a relevant, answerable question. Review the sources or run again with a more specific keyword.",
-        "noGeneration": "The sources below remain available, but no validated model result was produced. Review the run details before trying again.",
+        "noGeneration": "No usable writing plan was generated. The observed length, format clues, Search Console evidence and raw PAA below remain available where collected. Selected questions, page decisions and outlines are not invented to fill the gap.",
+        "rawPaaTitle": "Raw People Also Ask candidates",
+        "rawPaaBoundary": "Questions retained from the source, not a selected must-answer list. PAA identifies a question; it is not factual support and has no generated Q mapping here.",
+        "rawPaaUnavailable": "No PAA candidates were retained. This does not mean no related questions exist.",
+        "rawPaaCounts": "PAA {retained}/{available} retained · {duplicates} duplicates · {omitted} omitted",
         "outline": "Writing outline",
         "outlineHelp": "Edit wording and order. Section IDs, questions and answer mappings stay fixed.",
         "h2Label": "H2 heading for {id}",
@@ -4460,6 +4516,23 @@
     "contentDraft": {
       "v2": {
         "confirmed": "Confirmed writing brief",
+        "viewFullBrief": "View the full confirmed brief",
+        "received": { "action": "Page decision", "questions": "Frozen questions", "outline": "Outline sections", "language": "Market · language" },
+        "mentionNotes": { "none": "Keep the article informational, including the gap-angle section.", "gap_only": "Mention the product only in the designated gap-angle section. Keep other sections neutral.", "throughout": "Allow product mentions throughout. More claims may need your verification." },
+        "processing": { "complete": "Processing complete", "partial": "Some sections skipped", "degraded": "Processing limited", "unavailable": "No usable generation", "running": "Generation in progress" },
+        "runTime": "{elapsed}s elapsed / {budget}s budget",
+        "quality": { "noDraft": "No draft to assess", "unknown": "Coverage unknown", "revision": "Needs revision", "incomplete": "Some chapters are missing", "review": "Coverage checked · review required" },
+        "coverageTotals": { "covered": "{count} covered", "partial": "{count} partial", "none": "{count} uncovered" },
+        "qualityBoundary": "This measures coverage of the frozen brief, not factual accuracy. Processing completion and full coverage are not publishing approval.",
+        "previousAssessment": "Generation is in progress. This assessment still describes the previous validated draft shown below.",
+        "showAnnotations": "Show sources and claims",
+        "sourceTier": { "first": "First-party", "third": "Third-party · verify", "model": "Model", "mixed": "First + third-party" },
+        "profileDerivation": { "declared": "Declared", "observed": "Observed in profile", "computed": "Computed in profile", "inferred": "Inferred; stance only" },
+        "sourceLegend": "Color shows the evidence tier, not verified truth: owned pages and non-inferred profile facts are first-party; competitor excerpts are third-party. Model prose and inferred positions stay model-labeled. Mixed references retain both tiers; PAA is not factual evidence.",
+        "collapse": "Collapse",
+        "expand": "Expand",
+        "collapseSection": "Collapse chapter: {section}",
+        "expandSection": "Expand chapter: {section}",
         "revision": "Revision {revision}",
         "source": {
           "handoff": "From Content Brief Builder",
@@ -4486,9 +4559,9 @@
         "errors": {
           "invalid_result": "The returned draft did not pass v2 validation or does not match this confirmed revision, settings and section selection. The last valid draft is unchanged.",
           "timeout": "The request exceeded its time budget. The last valid draft is unchanged; check your connection before trying again.",
-          "brief_schema_mismatch": "The document schema does not match a confirmed Brief v2. Reload an exact confirmed export.",
-          "brief_reference_invalid": "The confirmed Brief v2 references are invalid. Reload an exact confirmed export.",
-          "brief_fingerprint_mismatch": "The confirmed Brief v2 fingerprint does not match its content. Reload an exact confirmed export."
+          "brief_schema_mismatch": "The document schema does not match a confirmed Brief v2/v3. Reload an exact confirmed export.",
+          "brief_reference_invalid": "The confirmed Brief v2/v3 references are invalid. Reload an exact confirmed export.",
+          "brief_fingerprint_mismatch": "The confirmed Brief v2/v3 fingerprint does not match its content. Reload an exact confirmed export."
         },
         "generatedSections": "Generated sections",
         "proseLength": "Generated prose",
@@ -4502,7 +4575,7 @@
         "coverageUnavailableBody": "Coverage could not be validated. Each question remains unknown, not zero or uncovered by assumption.",
         "coverageMethod": "A separate model check compares every frozen question, including PAA questions, with all successfully generated sections. A failed planned section does not prove its question is unanswered elsewhere.",
         "emptyDraft": "No generated text: all questions are deterministically uncovered, with no coverage model call.",
-        "claimLegend": "Bound: cited observed page or declared profile fact. Gap: missing evidence. No claim: connective prose. Stance: a profile-based position, not an observed finding.",
+        "claimLegend": "Claim labels are separate: Bound has a page or non-inferred profile reference; Gap lacks evidence; No claim is connective prose; Stance is a profile-based position, not an observed finding. Profile references add no supporting pages.",
         "supportingPages": "{count} observed supporting pages",
         "verifyBoundary": "Review these sentences against the original evidence before publishing. Claim bindings and fingerprints do not prove factual accuracy.",
         "noDraftToVerify": "No generated prose is available to verify.",
@@ -4543,16 +4616,16 @@
         "handoffPending": "A brief handed over from the Content Brief Builder is waiting. Sign in and it will be loaded.",
         "handoffKeepFailed": "Signed in. To keep the loaded brief, this page did not refresh. You can generate right away; keep your input before refreshing by hand.",
         "pasteLabel": "Paste the brief JSON",
-        "pastePlaceholder": "{ \"schema\": \"gengrowth.confirmed_brief/v2\", … } (SEO v1 and shared GEO v1.1 also accepted)",
+        "pastePlaceholder": "{ \"schema\": \"gengrowth.confirmed_brief/v3\", … } (confirmed v2, SEO v1 and shared GEO v1.1 also accepted)",
         "load": "Load brief",
         "uploadLabel": "Or upload the exported .json file",
         "invalidJson": "That is not valid JSON, so it was not parsed as a brief.",
-        "geoDocument": "This is a legacy GEO report, not a shared writing brief. Generate a current GEO Brief v1.1, or start in Content Brief Builder and confirm its v2 outline before sending it to Draft.",
-        "confirmationRequired": "This Content Brief v2 has not been confirmed. Return to Content Brief Builder, confirm its final outline and page decision, then send or export the confirmed revision.",
-        "supportedSchemas": "Load a confirmed Content Brief v2, a shared GEO Brief v1.1 or a historical SEO Brief v1 export. Each has its own exact validation; other report schemas are not converted.",
+        "geoDocument": "This is a legacy GEO report, not a shared writing brief. Generate a current GEO Brief v1.1, or start in Content Brief Builder and confirm its v2/v3 outline before sending it to Draft.",
+        "confirmationRequired": "This Content Brief v2/v3 has not been confirmed. Return to Content Brief Builder, confirm its final outline and page decision, then send or export the confirmed revision.",
+        "supportedSchemas": "Load a confirmed Content Brief v2/v3, a shared GEO Brief v1.1 or a historical SEO Brief v1 export. Each has its own exact validation; other report schemas are not converted.",
         "openContentBrief": "Open Content Brief Builder →",
         "parseFailed": "Rejected at {path}.",
-        "maxBytes": "Confirmed v2, shared GEO v1.1 and historical SEO v1 imports are accepted up to {kb} KB. Each version's cross-references and fingerprint are checked before loading.",
+        "maxBytes": "Confirmed v2/v3, shared GEO v1.1 and historical SEO v1 imports are accepted up to {kb} KB. Each version's cross-references and fingerprint are checked before loading.",
         "loaded": "Brief loaded",
         "keyword": "Primary keyword",
         "briefRun": "Brief run",
@@ -4615,7 +4688,7 @@
         "rate_limited": "The hourly allowance for this tool is used up, so the request did not start. Wait for the window to reset.",
         "quota_unavailable": "The usage limiter on our side could not be reached, so the draft did not start rather than spend an unmetered run. This is not about your usage; try again shortly.",
         "run_in_progress": "Another draft is already being generated for this account. Wait for it to finish, then try again.",
-        "brief_schema_mismatch": "This is not a Content Brief v1 document, so it was not loaded.",
+        "brief_schema_mismatch": "This document does not match a supported writing brief: confirmed Content Brief v2/v3, shared GEO Brief v1.1 or historical SEO Brief v1. It was not loaded.",
         "brief_fingerprint_mismatch": "The brief's fingerprint does not match its content: it was changed after export. Export it again from the Content Brief Builder.",
         "brief_reference_invalid": "The brief's cross-references do not hold (a section cites a question that does not exist, a question is cited by two sections, or an invariant is broken), so it was not loaded.",
         "section_not_writable": "The requested section is not writable in this brief, so the draft did not start.",
@@ -4803,8 +4876,8 @@
         "label": "Check view",
         "input": "Input",
         "result": "Result",
-        "note": "One page · No sign-in required",
-        "runNote": "Access and answer-structure checks · No language model calls"
+        "note": "One page · Base checks need no sign-in",
+        "runNote": "Base checks do not call a language model; optional AI review is requested separately."
       },
       "metrics": {
         "passedHelp": "Out of {count} checks with a verdict",
@@ -4817,7 +4890,7 @@
       },
       "eyebrow": "GEO tools",
       "title": "Page Citability Check",
-      "intro": "Paste one URL. Check crawler access and answer structure, compare the fetched HTML with a bounded isolated Chromium render, and inspect grouped issues with their original evidence. No account, knowledge base or language model is required.",
+      "intro": "Paste one URL to inspect crawler access, answer-structure patterns and raw/render evidence. Base checks need no account or language model. Optional AI semantic review requires sign-in and a separate explicit request.",
       "fields": {
         "urlLabel": "Page URL",
         "urlPlaceholder": "https://example.com/pricing",
@@ -4834,6 +4907,100 @@
         "copy": "Copy report",
         "copied": "Copied",
         "copyFailed": "Copy failed"
+      },
+      "conclusion": {
+        "title": "Check conclusion",
+        "verdict": {
+          "needs_attention": "Page signals need confirmation or action",
+          "needs_review": "Content signals need a closer review",
+          "no_issues_observed": "No issues observed in the completed checks",
+          "incomplete": "Evidence is incomplete"
+        },
+        "coverage": {
+          "complete": "Applicable input capture complete",
+          "partial": "Applicable input capture incomplete"
+        },
+        "counts": "{observed} observed issues · {review} pattern checks to review · {unknown} unread · {notApplicable} not applicable · {advisory} advisory rows",
+        "priorityTitle": "Start with these checks",
+        "noPriorities": "No failed or unread checks to prioritize in this report.",
+        "limitations": {
+          "not_citation_observation": "This is not evidence of an actual AI citation.",
+          "not_fact_verification": "Claims and linked sources have not been fact-checked.",
+          "limited_crawler_scope": "Only the named crawler paths and this page were checked.",
+          "target_question_not_provided": "No target question was provided; relevance is not assessed.",
+          "render_incomplete": "The raw/render comparison is incomplete.",
+          "checks_incomplete": "Some applicable checks lack readable evidence.",
+          "no_applicable_checks": "No applicable counted check could be evaluated."
+        }
+      },
+      "ai": {
+        "title": "AI semantic review (optional)",
+        "boundary": "A model assessment of the provided excerpts only — not fact verification, live web research, or evidence that an AI cited this page. It does not replace the measured conclusion above.",
+        "sendNote": "By choosing to run, you allow the server to re-fetch this public URL, verify the HTML hash, and send its URL, optional question, bounded body excerpts and capture/coverage context to DataForSEO. Provider charges may apply; no account profile or login cookies are sent.",
+        "limitNote": "Sign-in is required. One request per snapshot per hour; no automatic calls or retries.",
+        "run": "Agree to send and run AI review",
+        "running": "AI request in progress…",
+        "done": "AI review completed",
+        "idle": "No model has been called for this report.",
+        "evidenceUnavailable": "The original HTML identity or complete body evidence is unavailable; AI review is disabled.",
+        "noQuestion": "Without a target question, relevance remains insufficient evidence; clarity can still be assessed.",
+        "outcomeUnknown": "The provider outcome is uncertain and may already be charged. Do not immediately retry; confirm the task or wait for the one-hour limit. No assessment is shown as successful.",
+        "waitNote": "The server requires at least {minutes} minutes before another request.",
+        "cost": "Provider-reported cost: USD {cost}",
+        "costUnknown": "Provider cost not returned (not zero).",
+        "task": "Provider task: {task}",
+        "model": "DataForSEO · requested {requested} · returned {actual}",
+        "observedAt": "Model response observed at {time}",
+        "capturedAt": "Reviewed HTML captured at {time}",
+        "identity": "Reviewed raw HTML SHA-256: {hash}",
+        "coverage": "Body evidence: {included} of {total} characters · {coverage}",
+        "coverages": {
+          "full": "full extracted body",
+          "excerpt": "bounded excerpts"
+        },
+        "excerptsTitle": "Inspect the body excerpts sent to the model",
+        "source": "Source {id}",
+        "dimensions": {
+          "answer_relevance": "Answer relevance",
+          "answer_clarity": "Answer clarity",
+          "attribution_clarity": "Attribution clarity"
+        },
+        "verdicts": {
+          "clear": "Clear in the provided excerpt",
+          "needs_work": "Needs work",
+          "insufficient_evidence": "Insufficient evidence"
+        },
+        "suggestion": "Model suggestion: {suggestion}",
+        "errors": {
+          "auth_required": "Sign in using the website account control, then explicitly request this review. No AI result is available.",
+          "auth_unavailable": "Account verification is unavailable; no review was started.",
+          "invalid_origin": "The request origin was rejected.",
+          "invalid_request": "The review request could not be validated.",
+          "payload_too_large": "The review request was too large.",
+          "unsupported_media_type": "The review request must be JSON.",
+          "invalid_url": "This is not an eligible public URL.",
+          "provider_unconfigured": "The AI provider is not configured. The measured report remains available; no AI assessment was produced.",
+          "fetch_blocked": "The page could not be safely re-fetched for review.",
+          "fetch_timeout": "The page re-fetch timed out before review.",
+          "fetch_failed": "The page could not be re-fetched for review.",
+          "page_not_ok": "The re-fetched page did not return HTTP 200.",
+          "not_html": "The re-fetched page was not HTML.",
+          "not_utf8": "The page encoding cannot be read safely.",
+          "evidence_incomplete": "The page body capture is incomplete; no model review was started.",
+          "evidence_changed": "The page changed after this report. Run the page check again before requesting AI review.",
+          "rate_limited": "The AI review limit has been reached. Wait before making another explicit request.",
+          "quota_unavailable": "The AI quota store is unavailable; review is closed.",
+          "review_already_requested": "This snapshot already has a review request in the one-hour window; do not submit it again.",
+          "input_budget_exceeded": "The evidence exceeds the model input budget.",
+          "evidence_invalid": "The captured evidence could not be validated.",
+          "provider_invalid_response": "The provider returned no valid evidence-bound assessment.",
+          "provider_error": "The provider did not complete a usable review.",
+          "provider_timeout": "The provider response timed out.",
+          "provider_network_error": "The provider connection failed.",
+          "internal_error": "The review could not be completed.",
+          "receipt_mismatch": "The returned assessment does not match this report's URL, question and HTML hash.",
+          "network": "The request outcome could not be confirmed."
+        }
       },
       "summary": {
         "title": "Result",
@@ -4885,14 +5052,15 @@
         "ssr": "The HTML carries the copy",
         "canonical": "Canonical points at this page",
         "llmsTxt": "/llms.txt is published",
-        "leadAnswer": "The opening answers the question",
+        "leadAnswer": "Opening question terms and answer-pattern markers",
         "extractableStructure": "A table or a real list exists",
-        "qualifiers": "Conditions are quantified",
-        "citedData": "Numbers carry a source",
-        "faqSchema": "FAQ structured data is valid"
+        "qualifiers": "Quantified condition patterns",
+        "citedData": "Numeric text has source cues",
+        "faqSchema": "Supported inline FAQ fields are present"
       },
       "details": {
         "robots": {
+          "incomplete": "robots.txt returned {status}, but only {bytes} bytes were captured. The rules for {bot} are unknown.",
           "absent": "No robots.txt on this host, so {bot} is allowed everywhere by default.",
           "unreachable": "robots.txt returned {status}, so the site's rules for {bot} are unknown. This is not the same as being blocked.",
           "allowedByRule": "Allowed for {bot}; the closest matching rule is {pattern}.",
@@ -4914,6 +5082,7 @@
           "unparsable": "Canonical could not be read as a URL: {value}"
         },
         "llms": {
+          "incomplete": "/llms.txt returned {status}, but its {bytes}-byte capture was incomplete. Publication cannot be confirmed.",
           "present": "/llms.txt exists and returned {bytes} bytes. This tool does not parse it.",
           "absent": "/llms.txt returned {status}.",
           "unreachable": "/llms.txt returned {status}, so whether it exists is unknown."
@@ -4921,29 +5090,31 @@
         "leadAnswer": {
           "notAsked": "No target question was given, so there is nothing to check the opening against.",
           "noComparableTerms": "Every word in “{question}” is a common word, so there is no specific term to look for in the opening. Ask with the words a reader would search for — a product, a category, a place.",
-          "ok": "The first {window} characters name {matched} and state a conclusion.",
+          "ok": "The first {window} characters match {matched} and an answer-pattern marker. This does not establish that the question was answered.",
           "noTerms": "The first {window} characters do not mention {terms}.",
-          "noMarker": "The first {window} characters mention the subject but state no conclusion.",
-          "neither": "The first {window} characters neither mention {terms} nor state a conclusion."
+          "noMarker": "The first {window} characters match the subject but no answer-pattern marker.",
+          "neither": "The first {window} characters match neither {terms} nor an answer-pattern marker."
         },
         "structure": {
           "ok": "{tables} tables with cells and {lists} lists that are not navigation.",
           "none": "No table with cells and no list of at least {minItems} non-link items."
         },
         "qualifiers": {
-          "ok": "At least one quantified condition, such as a size or a range.",
-          "none": "No quantified condition found; a date range on its own does not count."
+          "ok": "At least one quantified-condition pattern matches, such as a size or a range; meaning has not been verified.",
+          "none": "No quantified-condition pattern matched; a date range on its own does not count."
         },
         "citedData": {
-          "noNumbers": "The page makes no numeric claim, so there is nothing to attribute.",
-          "allSourced": "All {total} numeric claims have a link or a stated source nearby.",
-          "unsourced": "{unsourced} of {total} numeric claims have no source in the same sentence, starting with: {sample}"
+          "noNumbers": "No numeric-claim pattern was detected; this is not a complete claim inventory.",
+          "allSourced": "All {total} numeric-pattern matches have a nearby link or source cue. The source was not checked and may not support the claim.",
+          "unsourced": "{unsourced} of {total} numeric-pattern matches lack a same-sentence source cue, starting with: {sample}. A cue does not prove support."
         },
         "faq": {
-          "none": "The page declares no FAQ structured data.",
-          "noneWithBroken": "The page declares no FAQ structured data. {broken} JSON-LD blocks could not be parsed.",
-          "valid": "{count} question and answer pairs, each with a name and answer text.",
-          "incomplete": "{incomplete} of {total} question and answer pairs are missing a name or answer text.",
+          "scanIncomplete": "The JSON-LD scan reached its {limit}-item safety limit; no complete FAQ conclusion is available.",
+          "referencesNotResolved": "FAQ uses references that this bounded inline checker does not resolve; validity is unknown.",
+          "none": "No supported inline FAQ declaration was found in the fully scanned JSON-LD.",
+          "noneWithBroken": "No supported inline FAQ declaration was found in readable JSON-LD; {broken} blocks could not be parsed, so absence is not established.",
+          "valid": "{count} supported inline question-answer pairs have the required name and text fields. This is not full schema validity or search eligibility.",
+          "incomplete": "{incomplete} of {total} inline question-answer pairs have missing or unsupported Question/Answer types, or missing name/text fields.",
           "emptyMainEntity": "An FAQPage is declared but its mainEntity list is empty."
         },
         "truncated": "Only the first {chars} characters of this page were read, so whether this is present cannot be decided."
@@ -4978,7 +5149,7 @@
           "unsourced": "Give each number a source in the same sentence: a link, or a named source and date."
         },
         "faq": {
-          "incomplete": "Give every Question a name and every acceptedAnswer a text value.",
+          "incomplete": "Use @type=Question with a non-empty name for each mainEntity item, and @type=Answer with non-empty text for each acceptedAnswer.",
           "emptyMainEntity": "Put the question and answer pairs in mainEntity, or remove the FAQPage declaration."
         }
       },
@@ -5021,7 +5192,7 @@
         "onePage": "It reads one page plus that host's robots.txt and llms.txt. It does not crawl the site and does not fetch the canonical target.",
         "noRanking": "It says nothing about ranking, traffic or whether any model has actually cited the page. It describes the page, not the market.",
         "advisoryRows": "ClaudeBot and GPTBot training access, Google-Extended Gemini training/grounding controls and /llms.txt are outside the generic pass count. Claude-SearchBot search and Claude-User user-directed fetching are not measured. Google Search crawling, AI Overviews and AI Mode use separate Search controls.",
-        "heuristicRows": "Two rows match patterns rather than reading meaning: the opening answer and the quantified conditions. They are marked, and they are worth looking at rather than obeying.",
+        "heuristicRows": "Three rows use pattern matching, not semantic or factual verification: opening-answer markers, quantified conditions, and numeric source cues. Review their evidence before acting.",
         "truncation": "It reads a bounded slice of the page. When a document exceeds it, every check that would report an absence says it could not read instead."
       },
       "errors": {

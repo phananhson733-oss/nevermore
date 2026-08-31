@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { CONTENT_BRIEF_V2_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
+import { CONTENT_BRIEF_V3_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
 import type { ContentBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { parseContentBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
 import {
@@ -80,6 +80,7 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
   // Native disclosure state can change before its queued toggle event fires.
   // Keep one source of truth and explicitly close/reopen only at run outcomes.
   const settingsRef = useRef<HTMLDetailsElement | null>(null);
+  const primaryRef = useRef<HTMLInputElement | null>(null);
   const startedAt = useRef(0);
   const mounted = useRef(true);
   const submissionLocked = useRef(false);
@@ -119,6 +120,13 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
   const hasProperties = properties !== null && properties.length > 0;
   const websiteSelectDisabled =
     phase === "running" || websites.phase !== "ready";
+
+  function returnToSettings(): void {
+    settingsRef.current?.setAttribute("open", "");
+    const target = primaryRef.current?.disabled ? settingsRef.current?.querySelector("summary") : primaryRef.current;
+    target?.focus({ preventScroll: true });
+    settingsRef.current?.scrollIntoView({ block: "start" });
+  }
 
   function isCurrent(controller: AbortController): boolean {
     return (
@@ -175,7 +183,7 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
       stage = "tool";
       trackMarketingEvent("tool_start", { tool_name: "content_brief" });
       const requestBody = {
-        response_schema: CONTENT_BRIEF_V2_SCHEMA,
+        response_schema: CONTENT_BRIEF_V3_SCHEMA,
         primary: primaryKeyword,
         supporting: parsed.keywords,
         market,
@@ -265,6 +273,7 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
             <span className={FIELD_LABEL}>{t("fields.primary.label")}</span>
             <input
               id="content-brief-primary"
+              ref={primaryRef}
               name="primary"
               type="text"
               autoComplete="off"
@@ -498,7 +507,7 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
           className="min-w-0 scroll-mt-24 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
         >
           {phase !== "done" ? <p data-previous-brief className="mt-4 text-[12px] text-text-dark-secondary">{t("v2.previousResult")}</p> : null}
-          <ContentBriefV2Results key={brief.run.fingerprint} brief={brief} locale={locale} />
+          <ContentBriefV2Results key={brief.run.fingerprint} brief={brief} locale={locale} onReturnToSettings={returnToSettings} />
         </div>
       ) : null}
       <SignInDialog open={signInOpen} onOpenChange={setSignInOpen} />

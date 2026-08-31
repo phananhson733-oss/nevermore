@@ -1,4 +1,4 @@
-// @input -- complete v2 generation, or an imported confirmed revision
+// @input -- complete v2/v3 generation, or an imported matching confirmed revision
 // @output -- exact detached brief/revision with recomputed graph and fingerprint
 // @pos -- producer/consumer agreement and user-edit boundary, separate from legacy v1
 import { canonicalize, fingerprintCanonical } from "./canonical.ts";
@@ -6,13 +6,14 @@ import {
   array, byteLength, finite, identifier, invalid, isRecord, literal, llmReadMeta, modelText,
   nullable, object, ok, oneOf, reference, text, timestamp, type Decoded, type Decoder,
 } from "./parse-brief-shape.ts";
-import { CONTENT_BRIEF_V2_SCHEMA, RESEARCH_HEADING_MAX_CHARS, RESEARCH_OUTLINE_MAX, RESEARCH_PROMPT_MAX_BYTES } from "./v2-contract.ts";
+import { CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA, RESEARCH_HEADING_MAX_CHARS, RESEARCH_OUTLINE_MAX, RESEARCH_PROMPT_MAX_BYTES } from "./v2-contract.ts";
 import { parseBriefV2Context, parseBriefV2Generated } from "./v2-generation.ts";
 import type { BriefV2Generated, ConfirmedBriefV2, ContentBriefV2 } from "./v2-generation-contract.ts";
 
 export const BRIEF_V2_MAX_BYTES = 224 * 1024;
 export const CONFIRMED_BRIEF_V2_MAX_BYTES = 256 * 1024;
 export const CONFIRMED_BRIEF_V2_SCHEMA = "gengrowth.confirmed_brief/v2";
+export const CONFIRMED_BRIEF_V3_SCHEMA = "gengrowth.confirmed_brief/v3";
 const count = (max: number, min = 0): Decoder<number> => (input, path) =>
   typeof input === "number" && Number.isSafeInteger(input) && input >= min && input <= max ? ok(input) : invalid(path);
 const hash: Decoder<string> = (input, path) => typeof input === "string" && /^[a-f0-9]{64}$/u.test(input) ? ok(input) : invalid(path);
@@ -38,12 +39,13 @@ export async function fingerprintBriefV2(brief: ContentBriefV2): Promise<string>
 export async function parseContentBriefV2(input: unknown): Promise<Decoded<ContentBriefV2>> {
   const bytes = byteLength(input);
   if (bytes === null || bytes > BRIEF_V2_MAX_BYTES) return invalid("brief.bytes");
-  if (!isRecord(input) || input.schema !== CONTENT_BRIEF_V2_SCHEMA) return { ok: false, code: "brief_schema_mismatch", path: "schema" };
+  if (!isRecord(input) || (input.schema !== CONTENT_BRIEF_V2_SCHEMA && input.schema !== CONTENT_BRIEF_V3_SCHEMA)) return { ok: false, code: "brief_schema_mismatch", path: "schema" };
   // Decode context before generated fields so no model edge escapes the frozen graph.
   const context = parseBriefV2Context(input.context);
   if (!context.ok) return context;
+  if ((input.schema === CONTENT_BRIEF_V3_SCHEMA) !== Object.hasOwn(context.value, "serp")) return reference("context.serp");
   const generated: Decoder<BriefV2Generated | null> = nullable((value) => parseBriefV2Generated(value, context.value));
-  const shape = object({ schema: literal(CONTENT_BRIEF_V2_SCHEMA), context: () => context, generated, run: runShape });
+  const shape = object({ schema: oneOf([CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA] as const), context: () => context, generated, run: runShape });
   const decoded = shape(input, "");
   if (!decoded.ok) return decoded;
   const brief = decoded.value;
@@ -55,6 +57,15 @@ export async function parseContentBriefV2(input: unknown): Promise<Decoded<Conte
     } else if (read.reason !== null || read.attempted === null || read.retained === null || read.retained > read.attempted) {
       return reference(`run.reads.${read.source}`);
     }
+  }
+  if (brief.context.serp !== undefined) {
+    const frozen = brief.context.serp.read;
+    const displayed = reads.find((read) => read.source === "serp")!;
+    const expected = frozen.status === "unavailable" ? {
+      source: "serp", status: "unavailable", attempted: frozen.attempted, retained: null,
+      reason: frozen.reason === "timeout" || frozen.reason === "provider_error" ? frozen.reason : "insufficient_evidence",
+    } : { source: "serp", status: frozen.status, attempted: frozen.requested, retained: frozen.returned, reason: null };
+    if (canonicalize(displayed) !== canonicalize(expected)) return reference("run.reads.serp");
   }
   const retained = new Map(reads.map((read) => [read.source, read.retained ?? 0]));
   const research = brief.context.research;
@@ -115,7 +126,8 @@ export async function confirmBriefV2(input: unknown, edits: unknown): Promise<De
   if (!shape.ok) return shape;
   const checked = validateEdits(brief.value, shape.value);
   if (!checked.ok) return checked;
-  const unsigned = { schema: CONFIRMED_BRIEF_V2_SCHEMA, brief: brief.value, ...checked.value } satisfies Omit<ConfirmedBriefV2, "fingerprint">;
+  const schema = brief.value.schema === CONTENT_BRIEF_V3_SCHEMA ? CONFIRMED_BRIEF_V3_SCHEMA : CONFIRMED_BRIEF_V2_SCHEMA;
+  const unsigned = { schema, brief: brief.value, ...checked.value } satisfies Omit<ConfirmedBriefV2, "fingerprint">;
   const value: ConfirmedBriefV2 = { ...unsigned, fingerprint: await fingerprintCanonical(unsigned) };
   return parseConfirmedBriefV2(value);
 }
@@ -123,11 +135,12 @@ export async function confirmBriefV2(input: unknown, edits: unknown): Promise<De
 export async function parseConfirmedBriefV2(input: unknown): Promise<Decoded<ConfirmedBriefV2>> {
   const bytes = byteLength(input);
   if (bytes === null || bytes > CONFIRMED_BRIEF_V2_MAX_BYTES) return invalid("confirmation.bytes");
-  if (!isRecord(input) || input.schema !== CONFIRMED_BRIEF_V2_SCHEMA) return { ok: false, code: "brief_schema_mismatch", path: "schema" };
+  if (!isRecord(input) || (input.schema !== CONFIRMED_BRIEF_V2_SCHEMA && input.schema !== CONFIRMED_BRIEF_V3_SCHEMA)) return { ok: false, code: "brief_schema_mismatch", path: "schema" };
   const brief = await parseContentBriefV2(input.brief);
   if (!brief.ok) return brief;
+  if ((input.schema === CONFIRMED_BRIEF_V3_SCHEMA) !== (brief.value.schema === CONTENT_BRIEF_V3_SCHEMA)) return reference("brief.schema");
   const shape = object({
-    schema: literal(CONFIRMED_BRIEF_V2_SCHEMA), brief: () => brief,
+    schema: oneOf([CONFIRMED_BRIEF_V2_SCHEMA, CONFIRMED_BRIEF_V3_SCHEMA] as const), brief: () => brief,
     outline: outlineShape, revision: count(1_000_000, 1), confirmed_at: timestamp,
     resolution: oneOf(["accept_recommendation", "create_despite_uncertainty"] as const), fingerprint: hash,
   })(input, "");

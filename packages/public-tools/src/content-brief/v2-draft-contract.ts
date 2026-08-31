@@ -1,4 +1,4 @@
-// @input -- one exact confirmed Brief v2 revision
+// @input -- one exact confirmed Brief v2 or v3 revision
 // @output -- explicit Draft v2 delivery, usage and rerun vocabulary
 // @pos -- separate from the historical v1 Draft contract
 import type { CoverageItem, DraftResult, LlmAggregateMeta, LlmReadMeta, RunMode, SectionFailReason, Unavailable } from "./contract.ts";
@@ -59,7 +59,7 @@ export interface DraftV2Rerun {
 export interface DraftResultV2 {
   readonly schema: typeof DRAFT_V2_SCHEMA;
   readonly confirmed_ref: {
-    readonly schema: "gengrowth.confirmed_brief/v2";
+    readonly schema: "gengrowth.confirmed_brief/v2" | "gengrowth.confirmed_brief/v3";
     readonly fingerprint: string;
     readonly revision: number;
     readonly brief_run_id: string;
