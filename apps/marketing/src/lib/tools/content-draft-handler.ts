@@ -1,4 +1,4 @@
-// @input  -- authenticated SEO/GEO shared briefs or exact confirmed Brief v2, settings and section selection
+// @input  -- native/Next-proxied authenticated requests carrying SEO/GEO shared briefs or exact confirmed Brief v2
 // @output -- a self-checked versioned Draft result or the stable private error envelope
 // @pos    -- shared admission and schema dispatch; private GEO verification, v1 orchestration and isolated v2 runner
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -209,7 +209,12 @@ async function admit(
   const countedBody = request.body?.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) { bodyBytes += chunk.byteLength; controller.enqueue(chunk); },
   }));
-  const countedRequest = countedBody === undefined ? request : new Request(request, { body: countedBody, duplex: "half" } as RequestInit);
+  // Next app-route proxies have no native Request private state (Node 24).
+  // Copy public fields instead of passing the proxy to the constructor.
+  const countedRequest = countedBody === undefined ? request : new Request(request.url, {
+    method: request.method, headers: request.headers, signal: request.signal,
+    body: countedBody, duplex: "half",
+  } as RequestInit);
   const body = await withBudget(() => dependencies.readJson(countedRequest, maxBytes), remaining(clock, ADMISSION_STEP_MS));
   if (body === TIMED_OUT) return refuse("invalid_request", 400);
   if (!body.ok) {

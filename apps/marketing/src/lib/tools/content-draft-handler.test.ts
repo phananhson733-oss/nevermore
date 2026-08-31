@@ -1,9 +1,10 @@
 // @input  -- the shared SEO/GEO and confirmed-v2 draft handlers with every collaborator injected
-// @output -- proof of versioned admission, private GEO verification, fan-out, self-check, and whole-result reruns
+// @output -- proof of Next-proxy admission, wire caps, private GEO verification, fan-out, self-check, and whole-result reruns
 // @pos    -- content-draft-handler's unit tests
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 
 import {
   DRAFT_ACCOUNT_MAX_PER_HOUR,
@@ -18,7 +19,7 @@ import {
 import type { ContentBrief, DraftResult } from "@sf/public-tools/content-brief/contract";
 import { contentBriefFixture, withFingerprint } from "@sf/public-tools/content-brief/fixtures";
 import { parseDraftResult } from "@sf/public-tools/content-brief/parse-draft";
-import { confirmedDraftV2Fixture } from "@sf/public-tools/content-brief/v2-draft-fixtures";
+import { confirmedDraftV2Fixture, draftResultV2Fixture } from "@sf/public-tools/content-brief/v2-draft-fixtures";
 import { parseDraftResultV2 } from "@sf/public-tools/content-brief/v2-draft";
 import type { DraftResultV2 } from "@sf/public-tools/content-brief/v2-draft-contract";
 import { geoBriefFixture } from "@sf/public-tools/content-brief/geo-fixtures";
@@ -217,6 +218,20 @@ function request(body: unknown, path = "run"): Request {
   });
 }
 
+/** Next app-route's ReflectAdapter binds functions and reads getters on the target. */
+function nextAppRouteRequest(body: string, path = "run", signal?: AbortSignal): Request {
+  const value = new NextRequest(`https://example.test/api/tools/content-draft/${path}`, {
+    method: "POST", headers: { "content-type": "application/json", "x-request-test": "preserved" }, body,
+    ...(signal === undefined ? {} : { signal }),
+  });
+  return new Proxy(value, {
+    get(target, prop) {
+      const property: unknown = Reflect.get(target, prop, target);
+      return typeof property === "function" ? property.bind(target) : property;
+    },
+  });
+}
+
 function runBody(overrides: Record<string, unknown> = {}) {
   return { brief, settings: SETTINGS, section_ids: [...brief.draft_readiness.writable], ...overrides };
 }
@@ -253,6 +268,64 @@ async function runOk(deps: ContentDraftHandlerDependencies, body = runBody()): P
   expect(check).toMatchObject({ ok: true });
   return result;
 }
+
+describe("Next app-route Request proxy admission", () => {
+  it.each(["run", "section"] as const)("accepts a real proxied v2 %s body through the bounded reader", async endpoint => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const previous = endpoint === "section" ? await draftResultV2Fixture(confirmed) : undefined;
+    const body = endpoint === "run"
+      ? { brief: confirmed, settings: SETTINGS, section_ids: confirmed.outline.map(section => section.id) }
+      : { brief: confirmed, previous, section_id: confirmed.outline[0]!.id };
+    const readJson = vi.fn(readPublicToolJson);
+    const models = offlineV2Models();
+    const handler = endpoint === "run" ? handleContentDraftRunRequest : handleContentDraftSectionRequest;
+    const response = await handler(nextAppRouteRequest(JSON.stringify(body), endpoint), dependencies({ readJson, ...models }));
+    expect(response.status).toBe(200);
+    expect(readJson).toHaveBeenCalledOnce();
+    const result: unknown = await response.json();
+    expect(await parseDraftResultV2(result, confirmed, previous)).toMatchObject({ ok: true });
+    expect(models.generateSectionV2).toHaveBeenCalledTimes(endpoint === "run" ? confirmed.outline.length : 1);
+  });
+
+  it("preserves URL, method, headers and the original abort signal while reading a proxy body", async () => {
+    const controller = new AbortController();
+    const readJson = vi.fn<ContentDraftHandlerDependencies["readJson"]>(async (counted, limit) => {
+      expect(counted.url).toBe("https://example.test/api/tools/content-draft/run");
+      expect(counted.method).toBe("POST");
+      expect(counted.headers.get("content-type")).toBe("application/json");
+      expect(counted.headers.get("x-request-test")).toBe("preserved");
+      expect(counted.signal.aborted).toBe(false);
+      controller.abort("offline-cancel");
+      expect(counted.signal.aborted).toBe(true);
+      expect(counted.signal.reason).toBe("offline-cancel");
+      return readPublicToolJson(counted, limit);
+    });
+    const response = await handleContentDraftRunRequest(nextAppRouteRequest("{}", "run", controller.signal), dependencies({ readJson }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: { code: "invalid_request" } });
+    expect(readJson).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { endpoint: "run", maxBytes: DRAFT_REQUEST_MAX_BYTES, handler: handleContentDraftRunRequest },
+    { endpoint: "section", maxBytes: SECTION_REQUEST_MAX_BYTES, handler: handleContentDraftSectionRequest },
+  ])("keeps the proxied GEO $endpoint raw-wire cap ahead of private and paid work", async ({ endpoint, maxBytes, handler }) => {
+    const geo = await geoBriefFixture();
+    const body = JSON.stringify(endpoint === "run" ? { brief: geo, settings: SETTINGS, section_ids: ["O1"] } : { brief: geo, section_id: "O1", previous: {} });
+    const padded = body + " ".repeat(maxBytes - new TextEncoder().encode(body).byteLength + 1);
+    const acquireSlot = vi.fn(() => ({ acquired: true as const, release: () => undefined }));
+    const verifyGeoBrief = vi.fn(async () => true);
+    const consumeQuota = vi.fn(async () => ({ kind: "allowed" as const, hits: 1 }));
+    const generateSection = vi.fn();
+    const response = await handler(nextAppRouteRequest(padded, endpoint), dependencies({ readJson: readPublicToolJson, acquireSlot, verifyGeoBrief, consumeQuota, generateSection }));
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ error: { code: "payload_too_large" } });
+    expect(acquireSlot).not.toHaveBeenCalled();
+    expect(verifyGeoBrief).not.toHaveBeenCalled();
+    expect(consumeQuota).not.toHaveBeenCalled();
+    expect(generateSection).not.toHaveBeenCalled();
+  });
+});
 
 describe("Draft v2 locale admission and pre-call failure compatibility", () => {
   it("keeps the legacy v1 exact-language admission policy unchanged", async () => {
