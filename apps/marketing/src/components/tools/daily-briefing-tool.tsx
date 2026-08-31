@@ -116,7 +116,7 @@ function parseBrandTerms(input: string): readonly string[] {
  * pulls server-only code into this client bundle. A contract test keeps it
  * equal to the package's own constant.
  */
-export const CLIENT_DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v9";
+export const CLIENT_DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v10";
 
 export function DailyBriefingTool({
   locale,
@@ -140,8 +140,10 @@ export function DailyBriefingTool({
   const refreshRequest = useRef<AbortController | null>(null);
   const lastRefresh = useRef<number | null>(null);
   const [errorCode, setErrorCode] = useState<KnownErrorCode | null>(null);
+  const requestGeneration = useRef(0);
   const [payload, setPayload] = useState<{
     readonly envelope: DailyBriefingEnvelope;
+    readonly property: string;
   } | null>(null);
   const brandTerms = parseBrandTerms(brandInput);
 
@@ -170,6 +172,7 @@ export function DailyBriefingTool({
       // An unchanged selection keeps its edited brands, confirmation and report.
       // Removed access clears them without silently attributing a report to another site.
       if (property !== "" && !fresh.properties.includes(property)) {
+        requestGeneration.current += 1;
         setProperty("");
         setBrandInput("");
         setBrandTermsConfirmed(false);
@@ -202,27 +205,33 @@ export function DailyBriefingTool({
   }, []);
 
   function clearRunState() {
+    // Input changes invalidate queued responses as well as the visible result.
+    requestGeneration.current += 1;
     setPayload(null);
     setErrorCode(null);
+    setLoading(false);
   }
 
   async function run() {
-    if (refreshRequest.current) return;
+    if (loading || refreshRequest.current) return;
+    clearRunState();
+    const generation = requestGeneration.current;
+    const submittedProperty = property;
     trackMarketingEvent("tool_start", { tool_name: "daily_search_briefing" });
     setLoading(true);
-    clearRunState();
 
     try {
       const response = await fetch("/api/tools/daily-search-briefing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          property,
+          property: submittedProperty,
           brandTerms,
           brandTermsConfirmed,
         }),
       });
       const body = (await response.json()) as DailyBriefingResponse;
+      if (generation !== requestGeneration.current) return;
       if (!response.ok || body.data === undefined) {
         setErrorCode(knownErrorCode(body.error?.code));
         return;
@@ -238,14 +247,15 @@ export function DailyBriefingTool({
       }
       setPayload({
         envelope: body.data,
+        property: submittedProperty,
       });
       trackMarketingEvent("tool_complete", {
         tool_name: "daily_search_briefing",
       });
     } catch {
-      setErrorCode("unknown");
+      if (generation === requestGeneration.current) setErrorCode("unknown");
     } finally {
-      setLoading(false);
+      if (generation === requestGeneration.current) setLoading(false);
     }
   }
 
@@ -455,7 +465,7 @@ export function DailyBriefingTool({
       {payload ? (
         <DailyBriefingResults
           locale={locale}
-          property={property}
+          property={payload.property}
           envelope={payload.envelope}
         />
       ) : (

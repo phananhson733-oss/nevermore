@@ -430,14 +430,14 @@ describe("Daily Search Briefing article thresholds", () => {
   });
 
   it("does not claim the trend read stops where the comparison does", () => {
-    // `dailyBriefingTrendWindow` ends on the CURRENT Pacific date, three days
-    // ahead of the comparison windows. "Nothing newer is read" was false of it.
+    // The request reaches the current Pacific date, while the displayed
+    // window ends on the latest date Google actually returned.
     for (const locale of LOCALES) {
       const prose = articleProse(getDailyBriefingArticle(locale));
       expect(prose, locale).toMatch(
         locale === "en"
-          ? /ending on the current Pacific date/
-          : /截止到当前太平洋日期/,
+          ? /current Pacific date/
+          : /覆盖到当前太平洋日期/,
       );
       expect(prose, locale).not.toMatch(
         locale === "en" ? /Nothing newer is read/ : /更新的数据不读/,
@@ -445,10 +445,12 @@ describe("Daily Search Briefing article thresholds", () => {
     }
   });
 
-  it("states the three-day lag rather than implying live data", () => {
+  it("states latest available dates and withholds incomplete comparisons", () => {
     for (const locale of LOCALES) {
       const prose = articleProse(getDailyBriefingArticle(locale));
-      expect(prose, locale).toMatch(/three days behind|三天/);
+      expect(prose, locale).toMatch(/latest available|最新可用/);
+      expect(prose, locale).toMatch(/provisional|暂定/);
+      expect(prose, locale).not.toMatch(/three days behind|落后当前 PT 日期三天/);
       expect(prose.toLowerCase(), locale).toMatch(/pacific|太平洋/);
     }
   });

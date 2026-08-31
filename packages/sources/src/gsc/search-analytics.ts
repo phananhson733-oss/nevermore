@@ -8,6 +8,7 @@
  * echoed back, and need one backoff attempt on a transient failure because a
  * visitor watching a spinner has no worker to retry them.
  *
+ * Invalid measurements are rejected, never converted into observed zeroes.
  * Retries stop after ONE attempt. Search Console quota is counted per GCP
  * project rather than per visitor, so a client that keeps retrying is not
  * being persistent on its own behalf — it is spending the budget every other
@@ -141,8 +142,11 @@ function isRetryable(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
-function toNumber(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+function measuredNumber(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new SourceError("INVALID_RESPONSE", "Search Analytics returned an invalid measurement.");
+  }
+  return value;
 }
 
 function parseRows(payload: Record<string, unknown>): SearchAnalyticsRow[] {
@@ -158,15 +162,25 @@ function parseRows(payload: Record<string, unknown>): SearchAnalyticsRow[] {
   }
 
   return raw.map((entry) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      throw new SourceError("INVALID_RESPONSE", "Search Analytics returned an invalid row.");
+    }
     const row = entry as Record<string, unknown>;
-    const keys = Array.isArray(row["keys"])
-      ? (row["keys"] as unknown[]).map((k) => String(k))
-      : [];
+    const keys = row["keys"] ?? [];
+    if (!Array.isArray(keys) || !keys.every((key): key is string => typeof key === "string")) {
+      throw new SourceError("INVALID_RESPONSE", "Search Analytics returned invalid dimension keys.");
+    }
+    const clicks = measuredNumber(row["clicks"]);
+    const impressions = measuredNumber(row["impressions"]);
+    const position = measuredNumber(row["position"]);
+    if (clicks > impressions) {
+      throw new SourceError("INVALID_RESPONSE", "Search Analytics returned inconsistent measurements.");
+    }
     return {
       keys,
-      clicks: toNumber(row["clicks"]),
-      impressions: toNumber(row["impressions"]),
-      position: toNumber(row["position"]),
+      clicks,
+      impressions,
+      position,
     };
   });
 }

@@ -1784,7 +1784,7 @@
       "propertiesRefreshFailed": "Could not refresh the site list. Your previous list is still shown; try again shortly.",
       "propertyChoose": "Choose a Search Console property",
       "connectTitle": "Connect Search Console to build today's briefing",
-      "connectBody": "Choose one verified property and turn its latest complete Search Console data into a compact daily triage. Access is read-only, and the report is not stored on our servers.",
+      "connectBody": "Choose one verified property and read its latest available Search Console data. Still-updating dates are labelled provisional; incomplete periods cannot trigger change-based actions. Access is read-only, and the report is not stored on our servers.",
       "connectCta": "Connect Search Console",
       "connectTrust": "Read-only access · On-demand report · Disconnect anytime",
       "connectPending": "The Google connection is not open in this environment yet.",
@@ -1806,7 +1806,7 @@
       },
       "run": "Build today's briefing",
       "rerun": "Rerun briefing",
-      "running": "Reading complete Search Console windows…",
+      "running": "Reading the latest available Search Console data…",
       "runComplete": "Daily briefing complete. Results are available below.",
       "reconnect": "Connect Search Console again",
       "disconnect": "Disconnect Search Console",
@@ -1830,7 +1830,7 @@
       "facts": {
         "dataThrough": "Data through",
         "timeBasis": "Time basis",
-        "timeBasisBody": "Pacific Time · latest complete day is PT current date minus 3 days",
+        "timeBasisBody": "Latest available Search Console data · daily dates use Pacific Time; still-updating data is labelled provisional",
         "cadence": "Reading cadence",
         "sharedRuns": "Shared run budget",
         "daily": "Daily",
@@ -1850,8 +1850,8 @@
         "impressions": "Impressions",
         "ctr": "CTR",
         "averagePosition": "Avg position",
-        "latestDay": "Latest complete day",
-        "currentSevenDays": "Current complete 7 days",
+        "latestDay": "Latest available day",
+        "currentSevenDays": "Latest available 7 days",
         "change": "Change {delta}",
         "unavailable": "Unavailable",
         "dailySuppressed": "Day-level interpretation is unavailable for this cadence.",
@@ -1885,7 +1885,9 @@
         "dailyPartial": "The newest daily Search Console data is still updating. Treat the newest points as provisional.",
         "windowIncomplete": "Some buckets in this exact window have no returned data. They remain gaps and are not substituted with zero.",
         "scaleNote": "Each visible metric uses its own scale so clicks, impressions, CTR, and average position stay readable. Average-position improvement is drawn upward; hover for the real values.",
-        "chartLabel": "{period} Search Console trend with {points} observed points"
+        "chartLabel": "{period} Search Console trend with {points} observed points",
+        "hourlyWindow": "Latest available 24 hours: {start} – {end} ({timezone}).",
+        "dailyWindow": "Latest available dates: {start} – {end} (Pacific Time / PT)."
       },
       "noise": {
         "label": "Noise filter on",
@@ -1915,18 +1917,18 @@
           "status": "Status",
           "queryPage": "Query / Page",
           "clicks": "Clicks",
-          "position": "Position",
+          "position": "Avg position",
           "interpretation": "Interpretation"
         },
         "observationBands": {
           "page_one": {
-            "body": "Already inside the 1-10 average position band. Check search intent, title and snippet, and whether the carrying page matches the query."
+            "body": "The current average position is inside 1–10. Verify the exact query and reporting dates in GSC before drawing a conclusion; this is not a fixed rank or a page diagnosis."
           },
           "near_page_one": {
-            "body": "Close to the 1-10 band. Confirm which page carries it and whether that page has enough topical support."
+            "body": "The current average position is near 1–10. Verify the exact query and reporting dates in GSC; no content or internal-link issue has been established."
           },
           "mid": {
-            "body": "Still some distance away. Verify that this query really maps to the current page before changing content over one position move."
+            "body": "The current average position is farther from 1–10. Verify the exact query and reporting dates in GSC before making changes."
           },
           "far": {
             "body": "A distant-position observation, not a priority for today's work."
@@ -2066,7 +2068,7 @@
       },
       "changes": {
         "title": "Changes above the noise threshold",
-        "intro": "Latest complete 7 days versus the preceding 7 days. At most three evidence-backed rows are shown.",
+        "intro": "The latest available 7 days versus the preceding 7 days, only when both periods are complete. At most three evidence-backed rows are shown.",
         "empty": "No change cleared the evidence floor in this run. That is not the same as proving nothing changed.",
         "stableEmpty": "No query/page signal or site-wide weekly trend cleared the available evidence gates. That is not proof that nothing changed.",
         "propertyEvidence": "Property-level evidence",
@@ -2089,7 +2091,7 @@
       "changeKinds": {
         "click_opportunity": {
           "title": "Clicks trail this property's own baseline for the same position band",
-          "body": "The query cleared the sample floor and trails a usable leave-one-out CTR baseline from this property. This is a measured gap, not a forecast of recoverable clicks."
+          "body": "This query trails a leave-one-out CTR baseline calculated from this property’s observed data. The baseline and click gap are calculations, not metrics returned by GSC or a forecast of recoverable clicks."
         },
         "stable_position_click_decline": {
           "title": "Clicks declined while average position held",
@@ -2101,7 +2103,7 @@
         },
         "first_observed_leading": {
           "title": "First seen in this comparison, at an average position of six or better",
-          "body": "This query-and-page pair appears in the current window's visible records and not in the prior window's, with a current average presented position of six or better. Two things have to be clear. Search Console anonymizes low-volume queries, so “not seen in the prior window” is not evidence the pair did not exist then — only that this comparison saw it first. And average presented position is weighted across every impression, not a rank: half the impressions at position one and half at position eleven average to exactly six, which is not “ranked sixth”. This is one of the few paths here that does not report bad news — the other is a move into the top band. Since the pair is being shown well up the page, the work worth doing is making it stay: internal links into it, more depth, and the relevant tool pages wired up."
+          "body": "This exact query-and-page pair appears in the current visible records but not the previous ones, with an impression-weighted average position of six or better. Search Console anonymization means the pair may have existed before. Average position is not a fixed rank. First check the linked GSC dates and exact filters; these metrics do not establish a content or internal-link problem."
         },
         "average_position_crossed_page_one_band": {
           "title": "Average position moved into the 1-10 band",
@@ -2109,7 +2111,7 @@
         },
         "actionable_position_decline": {
           "title": "Position slipped inside the actionable band",
-          "body": "This compares one page against itself on one query, not the query's blended average — moving a query's impressions onto a worse-ranking page pulls that average down while nothing about any single result changed. Here the same pair was compared across both windows and its clicks fell with it. The pair is still in a band where work on the page can matter."
+          "body": "The same exact query-and-page pair was compared across both dates: average position became numerically worse and clicks fell with it. Check the linked GSC evidence first. This does not identify a cause or establish that the page needs content or internal-link changes."
         }
       },
       "actions": {
@@ -2130,7 +2132,7 @@
         "pageWeekly": "Previous 7 days → current 7 days: clicks {clicks}; impressions {impressions}; average position {position}."
       },
       "preview": {
-        "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
+        "changes": "Read the latest available reporting windows. Changes appear only when the full comparison is complete and supported by verified GSC evidence.",
         "actions": "Every action opens the matching tool and privately carries what the signal names. Each card states which of those the next tool actually uses."
       },
       "actionKinds": {
@@ -2144,15 +2146,15 @@
         },
         "first_observed": {
           "title": "Inspect the page against the target query",
-          "body": "The page and query arrive prefilled; verify what the public HTML actually supports."
+          "body": "First verify this exact query-page pair and both periods in GSC. The page and query arrive prefilled in the checker; any page recommendation needs its own HTML evidence."
         },
         "first_observed_leading": {
-          "title": "Shore up the page while its average position holds at six or better",
-          "body": "The page and query arrive prefilled, so you can see what the public HTML actually supports. This briefing has not judged why the pair reached this position, and promises nothing about it staying."
+          "title": "Verify the query-page pair in Search Console",
+          "body": "First verify the dates, exact query and exact page using the GSC links. The checker can then inspect public HTML; the GSC metrics alone do not diagnose a content or internal-link issue or promise this position will hold."
         },
         "average_position_crossed_page_one_band": {
           "title": "Review the query that moved into the 1-10 band",
-          "body": "Check the carrying page's title, snippet and content against the search intent behind this query."
+          "body": "Verify the exact query and both reporting periods in GSC. Query-wide metrics alone do not identify a page or a content problem."
         },
         "actionable_position_decline": {
           "title": "Diagnose the in-band position decline",
@@ -2208,7 +2210,7 @@
       },
       "methodology": {
         "title": "How to read this briefing",
-        "time": "Dates use Search Console's Pacific calendar and stop at the latest complete day, three days behind the current PT date.",
+        "time": "Every run reads the latest available Search Console dates rather than imposing a fixed three-day delay. Daily dates use Pacific Time; hourly display uses your browser time zone. Incomplete reporting periods cannot trigger change comparisons or change-based actions.",
         "position": "Average position is weighted by impressions. It describes where exposures occurred, not one fixed rank.",
         "anonymization": "Search Console withholds some low-volume queries for privacy. Not observed never means zero, first ever, or newly indexed.",
         "noPersistence": "This report and both manual-check marks live only in this page state. Refreshing, rerunning, changing property, or closing the tab clears them."
@@ -2244,7 +2246,7 @@
       "pageChangeKinds": {
         "page_impression_collapse": {
           "title": "Page impressions all but gone",
-          "body": "This page had a workable impression base last window and lost four fifths of it or more this window, by more than the spread a count that size produces on its own. Page data is not subject to query anonymization, so “all but gone” is a complete reading rather than a withheld one. Impressions vanishing wholesale usually points at the page itself — removed, blocked from crawling, redirected — so start by confirming the page is still there, still loads, and still points its canonical at itself. This briefing has not judged the cause."
+          "body": "This page lost four fifths or more of its prior-window impressions, and the decline passed the stated count-based threshold. Verify the exact page and both periods in GSC first. These measurements do not establish that a page was removed, blocked, redirected or given a different canonical."
         },
         "page_click_decline": {
           "title": "Page clicks fell",
@@ -2252,13 +2254,13 @@
         },
         "page_first_observed": {
           "title": "Page first appears in this comparison",
-          "body": "The prior window carries no row for this page (or a row shown zero times), and the current window clears the sample floor with an average position inside the actionable band. This compares two windows and says nothing about whether the page ever drew impressions before them. It is the moment to calibrate the title, snippet and internal links, not a promise about rank."
+          "body": "The prior window carries no row for this page (or a row with zero impressions), and the current window clears the sample floor in the stated average-position band. This compares two windows and does not establish that the page never appeared before. Verify the exact page and dates in GSC; content and internal-link recommendations require separate page evidence."
         }
       },
       "pageActionKinds": {
         "page_impression_collapse": {
           "title": "Confirm this page is still there",
-          "body": "Impressions vanishing wholesale usually points at the page itself: open the URL yourself and see whether it still answers and whether it has become a redirect. The next tool diagnoses the property and will not use this page. This briefing has not judged the cause."
+          "body": "First verify the exact page and both periods in GSC. Its impression change does not prove a redirect, indexing fault or any other cause. The next tool diagnoses the property and will not use this page."
         },
         "page_click_decline": {
           "title": "Diagnose this page's click decline",
@@ -2277,9 +2279,43 @@
       "pageChecks": {
         "title": "These pages draw impressions and no clicks at all",
         "evidence": "Page · where it stands this window",
-        "body": "{impressions} impressions this window at average position {position}. At this property's own non-brand rate of {ctr}, {expected} clicks were expected; none arrived.",
+        "body": "Observed: {impressions} impressions, average position {position}, and 0 clicks this window. Calculated from this property’s non-brand CTR of {ctr}: {expected} expected clicks. The expectation is a calculation, not a GSC metric or a promised gain.",
         "examined": "{rows} usable page records were read this run. The rest already formed a page-signal candidate (including ones the row budget never showed), drew clicks, averaged outside the 1-10 band or carried no readable position, or were expected fewer than 3 clicks at this property's own non-brand rate for this window.",
         "handoff": "The page URL is carried over. That tool runs without a target query — it just does not test keyword placement or publish an overall score."
+      },
+      "sourceEvidence": {
+        "title": "Reporting dates and evidence",
+        "current": "Current 7 days",
+        "previous": "Previous 7 days",
+        "timeBasis": "Daily reporting dates use Pacific Time / PT. Hourly chart times use your browser time zone.",
+        "readAt": "Read at (UTC)",
+        "latestDate": "Latest available GSC date",
+        "web": "Web search · all countries and devices",
+        "byProperty": "Aggregated by property (byProperty).",
+        "byPage": "Aggregated by page (byPage).",
+        "scopes": {
+          "query": "Exact query, all pages",
+          "query_page": "Exact query and exact page",
+          "page": "Exact page, all queries",
+          "property": "Whole property, all queries and pages"
+        },
+        "metrics": "Clicks {clicks}; impressions {impressions}; CTR {ctr}; average position {position}.",
+        "openCurrent": "Check current period in GSC",
+        "openPrevious": "Check previous period in GSC",
+        "notCompared": "Not compared in this reading.",
+        "noRecord": "No comparable returned record; this is not zero.",
+        "websiteNote": "Source: Google Search Console API. These links open the same dates and exact filters for your website check; API verification is not a completed website check.",
+        "apiVerified": "GSC API exact-filter verification: {count} records matched.",
+        "withheld": "{count} records were withheld because their exact-filter read disagreed or was unavailable.",
+        "freshness": {
+          "complete": "Some comparison dates have no returned data. Changes and change-based actions are withheld; current observations are not a comparison.",
+          "partial": "The newest available GSC dates are still updating. Changes and change-based actions are withheld; current observations are provisional and are not compared with a complete prior period.",
+          "unavailable": "The latest reporting dates could not be established. No comparison or change-based action was inferred."
+        },
+        "exactVerified": "GSC API exact-filter verification passed.",
+        "incompleteFrom": "Data from {date} (PT) is still updating.",
+        "previousUnavailable": "Previous-period query data is unavailable; no absence or change is inferred.",
+        "exactVerifiedCurrent": "Current period only: GSC API exact-filter verification passed."
       }
     },
     "trafficDrop": {

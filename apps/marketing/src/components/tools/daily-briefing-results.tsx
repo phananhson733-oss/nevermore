@@ -45,6 +45,7 @@ import {
   type ToolHandoffPayload,
 } from "../../lib/tools/tool-handoff";
 import { DailyBriefingTrendChart } from "./daily-briefing-trend";
+import { DailyBriefingEvidence, previousEvidenceMessage } from "./daily-briefing-evidence";
 
 const CARD =
   "rounded-[12px] border border-brand-border-card bg-brand-bg p-4 md:p-[18px]";
@@ -933,7 +934,8 @@ export function DailyBriefingResults({
     Math.max(0, DISPLAY_ROW_LIMIT - shownChanges.length),
   );
   const watchlistItems =
-    result.queryWatchlist.evidence === "observed"
+    result.queryWatchlist.evidence === "observed" ||
+    (result.queryWatchlist.evidence === "partial" && result.freshness.status === "partial")
       ? result.queryWatchlist.items
       : [];
   const shownObservations = watchlistItems.slice(
@@ -1212,6 +1214,23 @@ export function DailyBriefingResults({
         completedAt={envelope.run.completedAt}
       />
 
+      <div data-reading-facts className={`${CARD} text-[12px] leading-[1.65] text-text-dark-secondary`}>
+        <p className="font-semibold text-text-dark-primary">{t("sourceEvidence.title")}</p>
+        <p className="mt-2 break-all">{property} · {t("sourceEvidence.web")}</p>
+        <p>{t("sourceEvidence.current")}: {result.windows === null ? t("kpis.unavailable") : `${result.windows.current7Days.startDate} – ${result.windows.current7Days.endDate}`}</p>
+        <p>{t("sourceEvidence.previous")}: {result.windows === null ? t("kpis.unavailable") : `${result.windows.previous7Days.startDate} – ${result.windows.previous7Days.endDate}`}</p>
+        <p>{t("sourceEvidence.timeBasis")}</p>
+        <p>{t("sourceEvidence.readAt")}: <time dateTime={result.freshness.readAt}>{result.freshness.readAt}</time></p>
+        <p>{t("sourceEvidence.latestDate")}: {result.freshness.latestAvailableDate ?? t("kpis.unavailable")}</p>
+        {result.freshness.firstIncompleteDate === null ? null : <p>{t("sourceEvidence.incompleteFrom", { date: result.freshness.firstIncompleteDate })}</p>}
+        {result.freshness.comparisonEligible ? null : <p data-comparison-withheld className="mt-2 text-brand-warning">{t(`sourceEvidence.freshness.${result.freshness.status}`)}</p>}
+        {result.verification === null ? null : (
+          <p data-api-verification className="mt-2">{t("sourceEvidence.apiVerified", { count: result.verification.verifiedCount })}
+            {result.verification.withheldCount > 0 ? ` ${t("sourceEvidence.withheld", { count: result.verification.withheldCount })}` : ""}
+          </p>
+        )}
+        <p className="mt-2">{t("sourceEvidence.websiteNote")}</p>
+      </div>
 
       <section
         aria-labelledby="daily-briefing-changes"
@@ -1363,6 +1382,7 @@ export function DailyBriefingResults({
                       ? change.page
                       : t("review.pageUnavailable")}
                   </p>
+                  <DailyBriefingEvidence property={property} windows={result.windows} scope={change.metricScope} query={change.query} page={change.page} current={change.current} previous={change.previous} comparisonEligible={result.freshness.comparisonEligible} verification={result.verification} />
                 </div>
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
@@ -1428,6 +1448,7 @@ export function DailyBriefingResults({
                       ? move.page
                       : t("review.pageUnavailable")}
                   </p>
+                  <DailyBriefingEvidence property={property} windows={result.windows} scope={move.metricScope} query={move.query} page={move.page} current={move.current} previous={move.previous} comparisonEligible={result.freshness.comparisonEligible} verification={result.verification} />
                 </div>
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
@@ -1485,12 +1506,9 @@ export function DailyBriefingResults({
               </div>
             ))}
             {shownObservations.map((observation) => {
-              // "Not observed" is false for a query whose prior window exists
-              // and is merely too small to compare against.
-              const priorFallback =
-                observation.previousBelowFloor === null
-                  ? t("changes.notObserved")
-                  : t("review.priorBelowFloor");
+              const priorFallback = t(previousEvidenceMessage(observation.previousEvidence));
+              const previous = observation.previousEvidence === "observed"
+                ? observation.previous : null;
               return (
               <div
                 key={`observation:${observation.kind}:${observation.query}`}
@@ -1520,6 +1538,7 @@ export function DailyBriefingResults({
                       ? observation.page
                       : t("review.pageUnavailable")}
                   </p>
+                  <DailyBriefingEvidence property={property} windows={result.windows} scope={observation.metricScope} query={observation.query} page={observation.page} current={observation.current} previous={observation.previous} previousEvidence={observation.previousEvidence} comparisonEligible={result.freshness.comparisonEligible} verification={result.verification} />
                 </div>
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
@@ -1527,7 +1546,7 @@ export function DailyBriefingResults({
                   </span>
                   <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
                     {comparison(
-                      observation.previous?.clicks ?? null,
+                      previous?.clicks ?? null,
                       observation.current.clicks,
                       (value) => number(locale, value),
                       priorFallback,
@@ -1540,7 +1559,7 @@ export function DailyBriefingResults({
                   </span>
                   <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
                     {comparison(
-                      observation.previous?.position ?? null,
+                      previous?.position ?? null,
                       observation.current.position,
                       (value) => positionText(t, value),
                       priorFallback,
@@ -1620,6 +1639,7 @@ export function DailyBriefingResults({
                   <p className="mt-1 break-all text-[10.5px] leading-[1.5] text-text-dark-secondary">
                     {change.page}
                   </p>
+                  <DailyBriefingEvidence property={property} windows={result.windows} scope="page" page={change.page} current={change.current} previous={change.previous} comparisonEligible={result.freshness.comparisonEligible} verification={result.verification} />
                 </div>
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
@@ -1781,6 +1801,7 @@ export function DailyBriefingResults({
                         <p className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary">
                           {metricsLine(t, locale, change.current)}
                         </p>
+                        <DailyBriefingEvidence property={property} windows={result.windows} scope={change.metricScope} query={change.query} page={change.page} current={change.current} previous={change.previous} comparisonEligible={result.freshness.comparisonEligible} verification={result.verification} />
                       </div>
                     </div>
                   </div>
@@ -1844,6 +1865,7 @@ export function DailyBriefingResults({
                         <p className="mt-1 break-all text-[11.5px] leading-[1.5] text-text-dark-secondary">
                           {change.page}
                         </p>
+                        <DailyBriefingEvidence property={property} windows={result.windows} scope="page" page={change.page} current={change.current} previous={change.previous} comparisonEligible={result.freshness.comparisonEligible} verification={result.verification} />
                         {/* Both windows, not just the current one. Every
                             page lane is named after a movement between two
                             windows, and the collapse lane is named after the
@@ -1940,6 +1962,7 @@ export function DailyBriefingResults({
                       <p className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary">
                         {t("actions.propertyWeekly", propertyComparisons)}
                       </p>
+                      <DailyBriefingEvidence property={property} windows={result.windows} scope="property" current={propertyChange?.current ?? null} previous={propertyChange?.previous ?? null} comparisonEligible={result.freshness.comparisonEligible} verification={result.verification} />
                     </div>
                   </div>
                 </div>
@@ -2063,6 +2086,7 @@ export function DailyBriefingResults({
                     <p className="mt-1.5 break-all text-[12.5px] font-medium text-text-dark-primary">
                       {check.page}
                     </p>
+                    <DailyBriefingEvidence property={property} windows={result.windows} scope="page" page={check.page} current={{ clicks: 0, impressions: check.impressions, position: check.position }} previous={null} comparisonEligible={false} verification={result.verification} />
                     <p className="mt-1.5 text-[12px] leading-[1.6] text-text-dark-secondary">
                       {/* The rate is named on the row it justifies, because
                           the whole claim rests on it and it is this property's
@@ -2145,13 +2169,13 @@ export function DailyBriefingResults({
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <ManualCheck
             title={t("manual.manualActions")}
-            href="https://search.google.com/search-console/manual-actions"
+            href={`https://search.google.com/search-console/manual-actions?${new URLSearchParams({ resource_id: property })}`}
             checked={manualChecked}
             onCheck={() => setManualChecked(true)}
           />
           <ManualCheck
             title={t("manual.securityIssues")}
-            href="https://search.google.com/search-console/security-issues"
+            href={`https://search.google.com/search-console/security-issues?${new URLSearchParams({ resource_id: property })}`}
             checked={securityChecked}
             onCheck={() => setSecurityChecked(true)}
           />

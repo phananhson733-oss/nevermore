@@ -131,6 +131,36 @@ const REQUIRED_LEAF_PATHS = [
   "disconnectRevokeFailed",
   "disconnectFailed",
   "disconnectGoogleSettings",
+  "sourceEvidence.title",
+  "sourceEvidence.current",
+  "sourceEvidence.previous",
+  "sourceEvidence.timeBasis",
+  "sourceEvidence.readAt",
+  "sourceEvidence.latestDate",
+  "sourceEvidence.incompleteFrom",
+  "sourceEvidence.web",
+  "sourceEvidence.byProperty",
+  "sourceEvidence.byPage",
+  "sourceEvidence.scopes.query",
+  "sourceEvidence.scopes.query_page",
+  "sourceEvidence.scopes.page",
+  "sourceEvidence.scopes.property",
+  "sourceEvidence.metrics",
+  "sourceEvidence.openCurrent",
+  "sourceEvidence.openPrevious",
+  "sourceEvidence.notCompared",
+  "sourceEvidence.noRecord",
+  "sourceEvidence.websiteNote",
+  "sourceEvidence.apiVerified",
+  "sourceEvidence.exactVerified",
+  "sourceEvidence.exactVerifiedCurrent",
+  "sourceEvidence.previousUnavailable",
+  "sourceEvidence.withheld",
+  "sourceEvidence.freshness.complete",
+  "sourceEvidence.freshness.partial",
+  "sourceEvidence.freshness.unavailable",
+  "trend.hourlyWindow",
+  "trend.dailyWindow",
   "facts.dataThrough",
   "facts.timeBasis",
   "facts.timeBasisBody",
@@ -743,5 +773,21 @@ describe("Daily Briefing message catalogs", () => {
 
     expect(source).toContain('useTranslations("tools.dailyBriefing")');
     expect(source).not.toContain("function copy(");
+  });
+});
+
+
+describe("Daily Briefing truthful freshness and recommendations", () => {
+  it("does not prescribe content fixes from GSC position alone or call calculated clicks observed", () => {
+    for (const [locale, namespace] of [["en", en.tools.dailyBriefing], ["zh", zh.tools.dailyBriefing]] as const) {
+      const positionAdvice = `${namespace.changeKinds.first_observed_leading.body} ${namespace.actionKinds.first_observed_leading.title} ${namespace.actionKinds.first_observed_leading.body}`;
+      expect(positionAdvice).not.toMatch(/internal links into it|more depth|Shore up|补内链|加深度|把这页做扎实/);
+      expect(positionAdvice).toContain("GSC");
+      expect(namespace.pageChangeKinds.page_first_observed.body).not.toMatch(/moment to calibrate|校准标题/);
+      expect(namespace.pageChangeKinds.page_impression_collapse.body).not.toMatch(/usually points|通常指向/);
+      expect(namespace.pageChecks.body).toContain(locale === "en" ? "not a GSC metric" : "不是 GSC 返回指标");
+      expect(namespace.facts.timeBasisBody).not.toMatch(/minus 3 days|减 3 天/);
+      expect(namespace.sourceEvidence.websiteNote).toContain(locale === "en" ? "not a completed website check" : "不代表已经完成网站查阅");
+    }
   });
 });

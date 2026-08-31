@@ -43,6 +43,16 @@ function jsonResponse(body: unknown = { rows: [] }): Response {
   return Response.json(body);
 }
 
+function datedResponse(endDate: string): Response {
+  return jsonResponse({
+    responseAggregationType: "byProperty",
+    rows: endDate < "2026-08-08" ? [] : Array.from({ length: 14 }, (_, index) => ({
+      keys: [`2026-08-${String(index + 8).padStart(2, "0")}`],
+      clicks: 10, impressions: 100, position: 4,
+    })),
+  });
+}
+
 beforeEach(() => {
   captures.clientOptions.length = 0;
   captures.fallbackFetchImpl = undefined;
@@ -53,19 +63,20 @@ describe("createDailyBriefingReader", () => {
     expect(REQUEST_BUDGET_MS).toBe(45_000);
   });
 
-  it("uses one request-scoped token for the fixed 14-day final-data read plan", async () => {
+  it("uses one request-scoped token for the latest-data read plan", async () => {
     const requests: Array<{
       readonly url: string;
       readonly body: Record<string, unknown>;
       readonly authorization: string | null;
     }> = [];
     const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       requests.push({
         url,
-        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        body,
         authorization: new Headers(init?.headers).get("authorization"),
       });
-      return jsonResponse();
+      return (body["dimensions"] as readonly string[])[0] === "date" ? datedResponse(String(body["endDate"])) : jsonResponse();
     });
     const remainingMs = vi.fn(() => REQUEST_BUDGET_MS);
     captures.fallbackFetchImpl = fetchImpl;
@@ -86,23 +97,21 @@ describe("createDailyBriefingReader", () => {
       fetchImpl,
       signal: expect.any(AbortSignal),
     });
-    expect(requests).toHaveLength(11);
+    expect(requests).toHaveLength(13);
     expect(requests[0]?.body).toEqual({
       dimensions: ["date"],
-      startDate: "2026-08-08",
-      endDate: "2026-08-21",
+      startDate: "2026-05-27",
+      endDate: "2026-08-24",
       rowLimit: 25_000,
       startRow: 0,
-      dataState: "final",
+      dataState: "all",
+      aggregationType: "byProperty",
     });
-    // Nine of the eleven carry the report and must be final. The two trend
-    // reads deliberately do not: a chart of recent traffic that stops three
-    // days short of today is not the chart it was added to draw. Asserting
-    // "every read is final" was true of the nine-call plan and quietly became
-    // false when those two arrived.
+    // The date response freezes the analysis window; every attachment uses
+    // the same latest-data policy, while the hourly read remains independent.
     const dataStates = requests.map(({ body }) => body["dataState"]);
-    expect(dataStates.filter((state) => state === "final")).toHaveLength(9);
-    expect(dataStates.filter((state) => state === "all")).toHaveLength(1);
+    expect(dataStates.filter((state) => state === "final")).toHaveLength(0);
+    expect(dataStates.filter((state) => state === "all")).toHaveLength(12);
     expect(dataStates.filter((state) => state === "hourly_all")).toHaveLength(
       1,
     );
@@ -135,9 +144,10 @@ describe("createDailyBriefingReader", () => {
     const fetchImpl = vi.fn((_: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as {
         readonly dimensions: readonly string[];
+        readonly endDate: string;
       };
       if (body.dimensions[0] === "date") {
-        return Promise.resolve(jsonResponse());
+        return Promise.resolve(datedResponse(body.endDate));
       }
 
       optionalCalls += 1;
@@ -175,9 +185,8 @@ describe("createDailyBriefingReader", () => {
     // siblings of a failed page read deletes the query rows that would have
     // carried this run's only signals.
     //
-    // Nine, not ten: the daily trend read also asks for the date dimension and
-    // is answered by the branch above before this counter is reached.
-    expect(optionalCalls).toBe(9);
+    // Ten analysis attachments plus the independent hourly read.
+    expect(optionalCalls).toBe(11);
     expect(siblingAborts).toBe(0);
     // The scope is still closed once the report has finished.
     expect(captures.clientOptions[0]?.signal?.aborted).toBe(true);
