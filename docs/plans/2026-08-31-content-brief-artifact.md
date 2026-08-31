@@ -113,13 +113,15 @@ Committed as `377e0e4a`; exact evidence scope and remaining work are recorded in
 
 Review-driven fixes: nested same-level headings must not reopen an excluded template; both body/heading traversal must handle deep HTML without recursion; mixed or untagged CJK needs character measurement; source identity order must not depend on completion order; observed length cannot contradict retained text. Observation authenticity remains distinct from locally checkable graph consistency.
 
-### Task 2e: Single assembly-model integration and full v2 envelope (next)
+### Task 2e: Single assembly-model integration and full v2 envelope
 
 - Define the final v2 response/confirmation envelope while preserving exact v1 import and already-open v1-client behavior.
 - Materialize frozen unit text and provenance into an untrusted-DATA prompt; budget the full request in bytes and keep actual token accounting separate.
 - Use the existing `CONTENT_BRIEF_*` provider configuration and one bounded call. Model-selected questions/outline must go through the new graph validator; real semantic output still needs oracle/canary review.
 - Integrate page plan, gap angle and owned-page suggestions in that same call, with all source scope actually supplied. Do not add a second hidden generation pass or leave PAA outside Draft coverage.
 - Wire a version-explicit route only when its producer, parser and consumer agree. Research-only modules are not the final delivery.
+
+Local generation/confirmation batch is implemented and independently spec/quality reviewed: actual SERP/PAA + owned/competitor extraction + one complete model assembly + strict v2 Brief and confirmed revision. Fresh focused v2 checks passed 360 tests; broader relevant checks passed 1095 tests, both typechecks and secret/redaction checks. This does not activate the editing UI or Draft v2 consumer. A separately preserved handler negotiation candidate is being completed and reviewed next. See `apps/marketing/docs/reviews/2026-08-31-content-brief-v2-generation/acceptance.md` for exact scope and remaining gates.
 
 ## Task 3: Page ownership, owned-page research and rewrite plan
 

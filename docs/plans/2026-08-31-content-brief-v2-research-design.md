@@ -1,6 +1,6 @@
 # Content Brief v2 research and delivery design
 
-Status: implementation proposal for the remaining business-contract work. It does not describe capabilities already shipped. The user approved the supplied Artifact as the result/UX baseline and requested that the business logic be clarified and repaired; the choices below must be consolidated before schema implementation.
+Status: local implementation in progress, not shipped. The user approved the supplied Artifact as the result/UX baseline and requested repair of its business behavior. The implementation choices below are consolidated under that repair scope; current code/tests remain the evidence of what is actually implemented.
 
 ## Why an explicit version
 
@@ -56,11 +56,15 @@ Consider primary and supporting-query evidence separately. Retain the matched qu
 
 Bounded owned-page reads must precede claims about page coverage or rewrite instructions. A rewrite plan must bind to the observed target page and identify keep/add/rewrite work with reasons. If the target was unreadable or replaced by a redirect, the rewrite stays unresolved; do not silently change it to a new-page draft. Absence of a query in a bounded GSC sample remains absence in that sample, not site-wide absence.
 
-The exact candidate selection and unresolved-action confirmation UX still require final specification. Do not add consolidate/delete/publish operations or import the unrelated older six-state Artifact.
+Candidate selection is now pinned: normalized exact primary/supporting phrases are matched separately, preserving each raw provider query. Keep at most 30 matched query-page rows and three owned-page candidates; prioritize primary then supporting matches, then use remaining slots for observed GSC page rows. Low impressions and distant positions are retained, not filtered out. Duplicate raw-query/page observations are not summed; retain the first and report the omitted duplicate as partial. GSC property scope is checked before treating a URL as owned. The actual reporting window and profile snapshot identity travel with the evidence.
+
+The model can recommend create only with a complete GSC sample and all scoped match pages represented by readable candidates. This remains a model recommendation about a bounded sample, never proof of site-wide absence. A grounded update can reference an observed candidate even if other evidence is partial. Otherwise return undecidable. The confirmation UI must offer an explicit `create_despite_uncertainty` choice before new-page writing; merely clicking a generic next button must not silently resolve an unknown action. Do not add consolidate/delete/publish operations or import the unrelated older six-state Artifact.
 
 ## Editing, provenance and Draft
 
 Preserve generated question text and its evidence bindings. Allow outline wording and order edits, retaining stable section IDs and question mappings. Store the generated base separately from effective user edits so edited text is not mislabeled as model output. Confirm and fingerprint every Draft-affecting field, including final heading order, page action, target and edit plan. A content hash is not an authenticity signature.
+
+`gengrowth.content_brief/v2` is the generated base, and `gengrowth.confirmed_brief/v2` wraps that exact base plus edited outline, revision, confirmation time, explicit resolution and its own fingerprint. The full base is limited to 224 KiB, leaving space under the 256 KiB confirmed-import ceiling for the bounded edited outline. Keep generated plan/source bindings frozen in this UI; editing scope is heading wording and order, not free-form alteration of questions or observed evidence.
 
 Draft must consume the exact confirmed revision. Its question renderer and `sectionEvidenceScope()` currently read `cluster.members`; both must move to the new source graph. PAA refs may determine what a section answers but must never appear in its factual `bound` evidence set. Sections without factual support must retain explicit gaps rather than invent assertions. Rewrite mode must consume the current target content and plan, not merely rename the action badge.
 

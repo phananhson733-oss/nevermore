@@ -6,9 +6,14 @@
 - `v2-research.ts` — canonical C/T/A ordering, bounded round-robin evidence retention (128 KiB), PAA deduplication with explicit counts, strict graph/metadata-consistency validation, source-bound model research acceptance and server-derived Q/O/coverage fields. PAA and owned pages do not inflate competitor coverage; a single real question can have an outline.
 - `v2-contract.test.ts`, `v2-research.test.ts` — measurement, deterministic ordering, byte limits, PAA-only/zero-question cases, exact references, distinct final URLs, observable length lower bounds and derived-field forgery oracles. These do not claim that an actual LLM performed semantic grouping.
 
-The v1 modules below retain their original semantics. The v2 research foundation is not yet the full versioned Brief/Draft HTTP or editing contract.
+- `v2-generation-contract.ts` — whole v2 model/context/read vocabulary and the separate confirmed-revision envelope. The generated base and user-edited headings remain distinct.
+- `v2-generation.ts`, `v2-generation.test.ts` — exact primary/supporting scope, profile/window identity, same-owned-page identity shared with the crawler, single complete model-output validation, grounded rewrite steps and independent revalidation of frozen results.
+- `v2-gsc.ts`, `v2-gsc.test.ts` — bounded raw-query-preserving primary/supporting GSC projection, property-scoped owned candidates, explicit duplicate/cap omissions, no low-impression or position-based create shortcut.
+- `v2-brief.ts`, `v2-brief.test.ts` — 224 KiB generated Brief and 256 KiB confirmed import, causal checksums, truthful read/model metadata, stable section IDs/question mappings across heading/order edits, explicit resolution of undecidable page action.
 
-GenGrowth 内容链（Content Brief Builder / Content Draft Writer）的纯领域模块。只依赖本目录与 `@sf/public-tools` 内部；不 import apps/*，不含时钟、随机与网络。营销站只通过 `package.json` 的 `./content-brief/*` 子路径 import。
+The v1 modules below retain their original semantics. The v2 generation/confirmation core does not by itself activate a new HTTP route, editing UI or Draft consumer.
+
+GenGrowth 内容链（Content Brief Builder / Content Draft Writer）的纯领域模块。依赖本目录、`@sf/public-tools` 内部及 `@sf/sources` 的纯 URL 规范化函数；不 import apps/*，不含时钟、随机与网络。营销站只通过 `package.json` 的 `./content-brief/*` 子路径 import。
 
 | 文件 | 职责 |
 |---|---|
