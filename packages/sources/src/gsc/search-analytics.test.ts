@@ -164,6 +164,21 @@ describe("createSearchAnalyticsClient", () => {
     expect((await call(REQUEST)).rows).toEqual([]);
   });
 
+  it.each([
+    { clicks: undefined }, { clicks: null }, { clicks: "12" },
+    { impressions: undefined }, { impressions: -1 },
+    { position: undefined }, { position: null }, { position: "4" },
+    { clicks: 11, impressions: 10 },
+  ])("rejects missing or malformed measurements instead of inventing zero: %j", async override => {
+    const call = client(async () => jsonResponse({ rows: [{ keys: ["query"], clicks: 1, impressions: 10, position: 4, ...override }] }));
+    await expect(call(REQUEST)).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+  });
+
+  it("does not convert a non-string dimension into a made-up query", async () => {
+    const call = client(async () => jsonResponse({ rows: [{ keys: [null], clicks: 1, impressions: 10, position: 4 }] }));
+    await expect(call(REQUEST)).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+  });
+
   it("retries once after a 429, with backoff", async () => {
     const sleep = vi.fn<(ms: number) => Promise<void>>(async () => {});
     const fetchImpl = vi

@@ -150,6 +150,15 @@ function evidence(
       },
       responseAggregationType: options.queryAggregation ?? "byPage",
     },
+    queryPageTotalsRead: {
+      rows,
+      unreadableRows: 0,
+      paging: {
+        pagesFetched: 1,
+        truncated: options.queryTruncated ?? false,
+      },
+      responseAggregationType: options.queryAggregation ?? "byPage",
+    },
     queryPageRead: {
       rows: queryPages,
       unreadableRows: options.queryPageUnreadable ?? 0,
@@ -208,9 +217,94 @@ function report(overrides: Record<string, unknown> = {}) {
   });
 }
 
+describe("fresh GSC evidence and entity scope", () => {
+  const query = "scope regression";
+  const a = "https://example.com/a";
+  const b = "https://example.com/b";
+  const scopedEvidence = (position: number) => evidence(
+    [queryRow(query, 1_000, 100, position)],
+    [
+      queryPageRow(query, a, 500, 50, 1.9),
+      queryPageRow(query, b, 500, 50, position * 2 - 1.9),
+    ],
+  );
+
+  it("cannot issue changes or actions without any observed dates", () => {
+    const result = report({
+      dateRows: [],
+      currentQueryEvidence: scopedEvidence(9),
+      previousQueryEvidence: scopedEvidence(12),
+    }).result;
+    expect(result.windows).toBeNull();
+    expect(result.freshness).toMatchObject({
+      latestAvailableDate: null,
+      status: "unavailable",
+      comparisonEligible: false,
+    });
+    expect(result.changes).toEqual([]);
+    expect(result.actions).toEqual([]);
+    expect(result.pageActions).toEqual([]);
+  });
+
+  it("keeps a query movement separate from a page that never moved", () => {
+    const result = report({
+      currentQueryEvidence: scopedEvidence(9),
+      previousQueryEvidence: scopedEvidence(12),
+    }).result;
+    expect(result.changes).toMatchObject([{
+      kind: "average_position_crossed_page_one_band",
+      metricScope: "query",
+      page: null,
+      pageEvidence: "unavailable",
+      current: { position: 9 },
+    }]);
+    expect(result.actions).toEqual([]);
+  });
+
+  it("keeps current observations but withholds comparisons when Google marks a day incomplete", () => {
+    const result = report({
+      firstIncompleteDate: "2026-08-21",
+      currentQueryEvidence: scopedEvidence(9),
+      previousQueryEvidence: scopedEvidence(12),
+    }).result;
+    expect(result.freshness).toMatchObject({
+      source: "google_search_console",
+      latestAvailableDate: "2026-08-21",
+      firstIncompleteDate: "2026-08-21",
+      status: "partial",
+      comparisonEligible: false,
+      dataState: "all",
+      timeZone: "America/Los_Angeles",
+    });
+    expect(result.weekly.evidence).toBe("partial");
+    expect(result.weekly.delta.position).toBeNull();
+    expect(result.changes).toEqual([]);
+    expect(result.actions).toEqual([]);
+    expect(result.pageChanges).toEqual([]);
+    expect(result.propertyTrend.change).toBeNull();
+    expect(result.provisionalMoves.items).toEqual([]);
+    expect(result.queryWatchlist.items).toMatchObject([{
+      metricScope: "query", page: null, previous: null,
+      positionDelta: null, current: { position: 9 },
+    }]);
+    expect(result.suggestedChecks.items).toEqual([]);
+  });
+
+  it("derives the latest date from provider rows rather than a fixed three day lag", () => {
+    const dateRows = [...completeDateRows(), ...[22, 23, 24].map((day) => ({
+      date: `2026-08-${day}`, clicks: 10, impressions: 200, position: 7,
+    }))];
+    const result = report({ dateRows, firstIncompleteDate: "2026-08-24" }).result;
+    expect(result.windows?.current7Days).toEqual({
+      startDate: "2026-08-18", endDate: "2026-08-24",
+    });
+    expect(result.freshness.latestAvailableDate).toBe("2026-08-24");
+  });
+});
+
 describe("daily briefing contract and windows", () => {
-  it("exports the frozen v1 constants and public non-persistent envelope", () => {
-    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v9");
+  it("exports the frozen v10 constants and public non-persistent envelope", () => {
+    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v10");
     expect(BRIEFING_WINDOW_DAYS).toBe(7);
     expect(DAILY_CADENCE_MIN_IMPRESSIONS).toBe(1_000);
     expect(BRIEFING_MIN_ROW_IMPRESSIONS).toBe(100);
@@ -223,7 +317,7 @@ describe("daily briefing contract and windows", () => {
 
     expect(report().run).toEqual({
       tool: "daily_search_briefing",
-      schemaVersion: "daily_search_briefing.v9",
+      schemaVersion: "daily_search_briefing.v10",
       mode: "public_preview",
       scope: "property",
       persistence: "none",
@@ -235,7 +329,7 @@ describe("daily briefing contract and windows", () => {
   it("builds non-overlapping Pacific day and seven-day windows across DST", () => {
     const result = buildDailyBriefing({
       now: new Date("2026-03-12T20:00:00.000Z"),
-      dateRows: [],
+      dateRows: [{ date: "2026-03-09", clicks: 10, impressions: 200, position: 7 }],
       currentQueryEvidence: null,
       previousQueryEvidence: null,
       brandTerms: [],
@@ -274,6 +368,174 @@ describe("daily briefing contract and windows", () => {
     expect(result.trend.hourly).toMatchObject({
       evidence: "not_observed",
       points: [],
+    });
+  });
+});
+
+describe("freshness and aggregation provenance", () => {
+  it("distinguishes an unread prior query window from an observed absence", () => {
+    const rows = [queryRow("watched query", 185, 0, 8.2)];
+    const current = evidence(rows, []);
+    const prior = evidence(rows, []);
+    const failed = report({
+      currentQueryEvidence: current,
+      previousQueryEvidence: { ...prior, queryRead: null },
+    }).result;
+    expect(failed.freshness.comparisonEligible).toBe(true);
+    expect(failed.queryWatchlist.items).toMatchObject([{
+      previousEvidence: "unavailable", previous: null,
+      previousBelowFloor: null, positionDelta: null,
+    }]);
+
+    const absent = report({
+      currentQueryEvidence: current,
+      previousQueryEvidence: evidence([], []),
+    }).result;
+    expect(absent.queryWatchlist.items).toMatchObject([{
+      previousEvidence: "not_observed", previous: null, previousBelowFloor: null,
+    }]);
+
+    const partial = report({
+      firstIncompleteDate: "2026-08-21",
+      currentQueryEvidence: current,
+      previousQueryEvidence: prior,
+    }).result;
+    expect(partial.queryWatchlist.items).toMatchObject([{
+      previousEvidence: "not_compared", previous: null, positionDelta: null,
+    }]);
+  });
+
+  it("carries observed and below-floor prior evidence without treating either as absence", () => {
+    const rows = [queryRow("watched query", 185, 0, 8.2)];
+    const current = evidence(rows, []);
+    const observed = report({
+      currentQueryEvidence: current, previousQueryEvidence: evidence(rows, []),
+    }).result;
+    expect(observed.queryWatchlist.items).toMatchObject([{
+      previousEvidence: "observed", previous: { impressions: 185 },
+      previousBelowFloor: null,
+    }]);
+    const below = report({
+      currentQueryEvidence: current,
+      previousQueryEvidence: evidence([queryRow("watched query", 49, 0, 8.2)], []),
+    }).result;
+    expect(below.queryWatchlist.items).toMatchObject([{
+      previousEvidence: "below_floor", previous: null, previousBelowFloor: 49,
+    }]);
+  });
+
+  it("cannot infer prior absence from truncated or unreadable query records", () => {
+    const rows = [queryRow("watched query", 185, 0, 8.2)];
+    const current = evidence(rows, []);
+    const emptyPrior = evidence([], []);
+    const incompletePriors = [
+      evidence([], [], { queryTruncated: true }),
+      evidence([], [], { queryAggregation: "byProperty" }),
+      { ...emptyPrior, queryRead: { ...emptyPrior.queryRead, unreadableRows: 1 } },
+      evidence([queryRow("watched query", 185, -1, 8.2)], []),
+      evidence([...rows, ...rows], []),
+    ];
+    for (const previousQueryEvidence of incompletePriors) {
+      const result = report({ currentQueryEvidence: current, previousQueryEvidence }).result;
+      expect(result.queryWatchlist.items).toMatchObject([{
+        previousEvidence: "unavailable", previous: null, positionDelta: null,
+      }]);
+    }
+  });
+
+  it("marks query capability and funnel partial when Google marks the latest day incomplete", () => {
+    const rows = [queryRow("observed query", 1_000, 100, 9)];
+    const result = report({
+      firstIncompleteDate: "2026-08-21",
+      currentQueryEvidence: evidence(rows, []),
+      previousQueryEvidence: evidence(rows, []),
+    }).result;
+
+    expect(result.freshness.status).toBe("partial");
+    expect(result.mode).toBe("current_position_watchlist");
+    expect(result.signalFunnel.evidence).toBe("partial");
+    expect(result.laneCapability.evidence).toBe("partial");
+    expect(result.queryWatchlist.items).toMatchObject([
+      { query: "observed query", current: { impressions: 1_000 }, previous: null },
+    ]);
+    const belowFloor = report({
+      firstIncompleteDate: "2026-08-21",
+      currentQueryEvidence: evidence([queryRow("small query", 49, 0, 9)], []),
+      previousQueryEvidence: evidence(rows, []),
+    }).result;
+    expect(belowFloor.queryWatchlist.items).toEqual([]);
+    expect(belowFloor.mode).toBe("unavailable");
+  });
+
+  it("uses the separate byPage totals and never falls back to primary query metrics", () => {
+    const page = "https://example.com/zero-click";
+    const queryPages = [
+      queryPageRow("acme", "https://example.com/", 400, 100, 1),
+      queryPageRow("organic", "https://example.com/organic", 600, 50, 5),
+    ];
+    const pageTotals = evidence([
+      queryRow("acme", 400, 100, 1),
+      queryRow("organic", 600, 50, 5),
+    ], queryPages).queryPageTotalsRead;
+    const readings = {
+      ...evidence([
+        queryRow("acme", 200, 50, 1),
+        queryRow("organic", 300, 30, 5),
+      ], queryPages, {
+        queryAggregation: "byProperty",
+        totals: { impressions: 2_000, clicks: 200 },
+        pages: [{ page, impressions: 500, clicks: 0, position: 5 }],
+      }),
+      queryPageTotalsRead: pageTotals,
+    };
+    const result = report({
+      currentQueryEvidence: readings,
+      previousQueryEvidence: readings,
+      brandTerms: ["acme"],
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.coverage.current).toMatchObject({
+      evidence: "observed", coveredQueries: 2, queryRows: 2,
+    });
+    expect(result.anonymization.current).toEqual({
+      evidence: "observed",
+      queryImpressions: 1_000,
+      propertyImpressions: 2_000,
+      missingImpressionShare: 0.5,
+      queryClicks: 150,
+      propertyClicks: 200,
+      missingClickShare: 0.25,
+    });
+    expect(result.pageChecks.baseline).toEqual({
+      impressions: 1_600, clicks: 100, ctr: 0.0625, brandQueriesExcluded: 1,
+    });
+    expect(result.pageChecks.items).toMatchObject([{ page, expectedClicks: 31.25 }]);
+    expect(result.limitations).not.toContain("aggregation_basis_mismatch");
+
+    const missingPrimary = report({
+      currentQueryEvidence: { ...readings, queryRead: null },
+      previousQueryEvidence: readings,
+      brandTerms: ["acme"],
+      brandTermsConfirmed: true,
+    }).result;
+    expect(missingPrimary.coverage.current).toEqual(result.coverage.current);
+    expect(missingPrimary.anonymization.current).toEqual(result.anonymization.current);
+    expect(missingPrimary.pageChecks).toEqual(result.pageChecks);
+
+    const missingTotals = report({
+      currentQueryEvidence: { ...readings, queryPageTotalsRead: null },
+      previousQueryEvidence: readings,
+      brandTerms: ["acme"],
+      brandTermsConfirmed: true,
+    }).result;
+    expect(missingTotals.coverage.current.evidence).toBe("unavailable");
+    expect(missingTotals.anonymization.current).toMatchObject({
+      evidence: "unavailable", queryImpressions: null, queryClicks: null,
+    });
+    expect(missingTotals.pageChecks).toMatchObject({
+      evidence: "unavailable", baseline: null,
+      blockers: ["query_rows_unavailable"], items: [],
     });
   });
 });
@@ -495,18 +757,13 @@ describe("query changes and actions", () => {
       kind: "click_opportunity",
       evidence: "observed",
       query: candidate.query,
-      page,
+      metricScope: "query",
+      page: null,
+      pageEvidence: "unavailable",
       baselineCtr: 0.1,
       clickGap: 100,
     });
-    expect(result.actions).toEqual([
-      expect.objectContaining({
-        kind: "click_opportunity",
-        destination: "seo-quick-wins",
-        query: candidate.query,
-        page,
-      }),
-    ]);
+    expect(result.actions).toEqual([]);
     // The CTR lane measured all six rows and found one worth reporting; the
     // five baseline rows were evaluated and rejected, not left untested.
     expect(result.rowAccounting).toMatchObject({
@@ -540,12 +797,14 @@ describe("query changes and actions", () => {
       kind: "stable_position_click_decline",
       evidence: "observed",
       query,
-      page,
+      metricScope: "query",
+      page: null,
+      pageEvidence: "unavailable",
       clickChange: -10,
       clickChangeRatio: -0.5,
       positionDelta: expect.closeTo(0.2),
     });
-    expect(result.actions[0]?.destination).toBe("traffic-drop-diagnosis");
+    expect(result.actions).toEqual([]);
   });
 
   it("represents an absent prior row as not observed and previous null", () => {
@@ -1112,7 +1371,7 @@ describe("query changes and actions", () => {
     expect(result.limitations).toContain("query_page_coverage_below_floor");
   });
 
-  it("withholds an action when no observed page row clears 100 impressions", () => {
+  it("keeps a query opportunity unassigned when its covered impressions span small pages", () => {
     const query = "small page split";
     const rows = [queryRow(query, 1_000, 0, 9), ...baselineRows("base")];
     const previousRows = [queryRow(query, 1_000, 0, 9), ...baselineRows("base")];
@@ -1136,7 +1395,8 @@ describe("query changes and actions", () => {
       { kind: "click_opportunity", query, page: null, pageEvidence: "unavailable" },
     ]);
     expect(result.actions).toEqual([]);
-    expect(result.limitations).toContain("query_page_coverage_below_floor");
+    expect(result.signalFunnel.pageAttributionWithheld).toBe(0);
+    expect(result.limitations).not.toContain("query_page_coverage_below_floor");
   });
 
   it("ranks every lane on one actionability order instead of capping each category", () => {
@@ -1169,19 +1429,21 @@ describe("query changes and actions", () => {
       brandTermsConfirmed: true,
     }).result;
 
-    expect(result.actions).toHaveLength(DAILY_BRIEFING_ACTION_LIMIT);
+    expect(result.changes).toHaveLength(DAILY_BRIEFING_ACTION_LIMIT);
     // Two strong opportunities of the same kind now outrank one weaker
     // candidate of another kind, which the per-category cap made impossible.
-    expect(result.actions.map((action) => action.kind)).toEqual([
+    expect(result.changes.map((change) => change.kind)).toEqual([
       "click_opportunity",
       "click_opportunity",
       "stable_position_click_decline",
     ]);
-    expect(result.actions.map((action) => action.query)).toEqual([
+    expect(result.changes.map((change) => change.query)).toEqual([
       "a click gap",
       "b click gap",
       "a decline",
     ]);
+    expect(result.changes.every((change) => change.metricScope === "query")).toBe(true);
+    expect(result.actions).toEqual([]);
   });
 
   it("does not pad the action list when only one category is observed", () => {
@@ -1245,7 +1507,7 @@ describe("query changes and actions", () => {
     expect(result.limitations).toContain("brand_terms_not_confirmed");
   });
 
-  it("keeps neutral click-decline actions without brand confirmation", () => {
+  it("keeps neutral query click declines without brand confirmation", () => {
     const query = "acme workflow";
     const page = "https://example.com/workflow";
     const currentRows = [
@@ -1267,14 +1529,18 @@ describe("query changes and actions", () => {
       brandTermsConfirmed: false,
     }).result;
 
-    expect(result.actions).toEqual([
+    expect(result.changes).toEqual([
       expect.objectContaining({
         kind: "stable_position_click_decline",
-        destination: "traffic-drop-diagnosis",
         query,
-        page,
+        metricScope: "query",
+        page: null,
+        pageEvidence: "unavailable",
+        clickChange: -10,
+        clickChangeRatio: -0.5,
       }),
     ]);
+    expect(result.actions).toEqual([]);
     expect(result.limitations).toContain("brand_terms_not_confirmed");
   });
 });
@@ -1610,7 +1876,7 @@ describe("property trend", () => {
     expect(result.propertyTrend.action).toBeNull();
   });
 
-  it("keeps the property trend alongside a selected query-page change", () => {
+  it("keeps the property trend alongside a selected query change", () => {
     const query = "workflow templates";
     const page = "https://example.com/templates";
     const currentRows = [queryRow(query, 200, 10, 5.2)];
@@ -1637,17 +1903,12 @@ describe("property trend", () => {
       expect.objectContaining({
         kind: "stable_position_click_decline",
         query,
-        page,
+        metricScope: "query",
+        page: null,
+        pageEvidence: "unavailable",
       }),
     ]);
-    expect(result.actions).toEqual([
-      expect.objectContaining({
-        kind: "stable_position_click_decline",
-        destination: "traffic-drop-diagnosis",
-        query,
-        page,
-      }),
-    ]);
+    expect(result.actions).toEqual([]);
     // The site-wide fact belongs to the property, not to whatever the query
     // lanes happened to find. Gating one on the other deleted it.
     expect(result.propertyTrend.change).toMatchObject({
@@ -1861,7 +2122,7 @@ describe("signal funnel", () => {
     });
   });
 
-  it("counts first-observed and selected-query page attribution rejects", () => {
+  it("counts a rejected pair attribution without counting a query-scoped fact as rejected", () => {
     const rows = ctrFunnelRows();
     const firstObserved = queryRow("new uncovered pair", 200, 20, 13);
     const currentRows = [...rows, firstObserved];
@@ -1894,7 +2155,7 @@ describe("signal funnel", () => {
       firstObservedCandidates: 0,
       firstObservedLeadingCandidates: 0,
       provisionalMoveCandidates: 0,
-      pageAttributionWithheld: 2,
+      pageAttributionWithheld: 1,
       selectedQueryChanges: 1,
     });
   });
@@ -1927,20 +2188,26 @@ describe("query observation watchlist", () => {
         expect.objectContaining({
           kind: "sample_floor_reached",
           query: "eligible hundred",
-          page: "https://example.com/eligible-hundred",
-          pageEvidence: "observed",
+          metricScope: "query",
+          page: null,
+          pageEvidence: "unavailable",
+          current: expect.objectContaining({ impressions: 100 }),
         }),
         expect.objectContaining({
           kind: "sample_building",
           query: "sample ninety nine",
-          page: "https://example.com/sample-ninety-nine",
-          pageEvidence: "observed",
+          metricScope: "query",
+          page: null,
+          pageEvidence: "unavailable",
+          current: expect.objectContaining({ impressions: 99 }),
         }),
         expect.objectContaining({
           kind: "sample_building",
           query: "sample fifty",
-          page: "https://example.com/sample-fifty",
-          pageEvidence: "observed",
+          metricScope: "query",
+          page: null,
+          pageEvidence: "unavailable",
+          current: expect.objectContaining({ impressions: 50 }),
         }),
       ],
       candidates: 3,
@@ -2085,7 +2352,7 @@ describe("query observation watchlist", () => {
     });
   });
 
-  it("attributes only pages at the tier floor with at least 80 percent coverage", () => {
+  it("keeps query observations unassigned on both sides of 80 percent page coverage", () => {
     const currentRows = [
       queryRow("coverage below", 1_000, 10, 30),
       queryRow("coverage boundary", 1_000, 10, 30),
@@ -2108,16 +2375,20 @@ describe("query observation watchlist", () => {
     );
 
     expect(byQuery.get("coverage below")).toMatchObject({
+      metricScope: "query",
       page: null,
       pageEvidence: "unavailable",
     });
     expect(byQuery.get("coverage boundary")).toMatchObject({
-      page: "https://example.com/coverage-boundary",
-      pageEvidence: "observed",
+      metricScope: "query",
+      page: null,
+      pageEvidence: "unavailable",
     });
+    expect(result.coverage.current.coveredQueries).toBe(1);
+    expect(result.queryWatchlist.candidates).toBe(2);
   });
 
-  it("requires 50 page impressions for a sample-building attribution", () => {
+  it("keeps sample-building query observations unassigned at 49 and 50 page impressions", () => {
     const currentRows = [
       queryRow("sample page below", 50, 5, 30),
       queryRow("sample page boundary", 50, 5, 30),
@@ -2136,16 +2407,22 @@ describe("query observation watchlist", () => {
     );
 
     expect(byQuery.get("sample page below")).toMatchObject({
+      kind: "sample_building",
+      metricScope: "query",
       page: null,
       pageEvidence: "unavailable",
+      current: { impressions: 50 },
     });
     expect(byQuery.get("sample page boundary")).toMatchObject({
-      page: "https://example.com/sample-boundary",
-      pageEvidence: "observed",
+      kind: "sample_building",
+      metricScope: "query",
+      page: null,
+      pageEvidence: "unavailable",
+      current: { impressions: 50 },
     });
   });
 
-  it("requires 100 page impressions for an evaluation-eligible attribution", () => {
+  it("keeps evaluation-eligible queries unassigned at 99 and 100 page impressions", () => {
     const currentRows = [
       queryRow("eligible page below", 100, 10, 30),
       queryRow("eligible page boundary", 100, 10, 30),
@@ -2164,16 +2441,22 @@ describe("query observation watchlist", () => {
     );
 
     expect(byQuery.get("eligible page below")).toMatchObject({
+      kind: "sample_floor_reached",
+      metricScope: "query",
       page: null,
       pageEvidence: "unavailable",
+      current: { impressions: 100 },
     });
     expect(byQuery.get("eligible page boundary")).toMatchObject({
-      page: "https://example.com/eligible-boundary",
-      pageEvidence: "observed",
+      kind: "sample_floor_reached",
+      metricScope: "query",
+      page: null,
+      pageEvidence: "unavailable",
+      current: { impressions: 100 },
     });
   });
 
-  it("keeps partial and unavailable watchlists distinct without ranked items", () => {
+  it("keeps unread watchlists distinct and current observations when comparison bases differ", () => {
     const rows = [queryRow("eligible", 100, 10, 30)];
     const partial = report({
       currentQueryEvidence: evidence(rows, [], { queryTruncated: true }),
@@ -2200,7 +2483,6 @@ describe("query observation watchlist", () => {
     for (const [state, watchlist] of [
       ["partial", partial],
       ["unavailable", unavailable],
-      ["unavailable", mixed],
     ] as const) {
       expect(watchlist).toEqual({
         evidence: state,
@@ -2210,6 +2492,21 @@ describe("query observation watchlist", () => {
         withheldByKind: null,
       });
     }
+    expect(mixed).toEqual({
+      evidence: "observed",
+      items: [expect.objectContaining({
+        query: "eligible",
+        metricScope: "query",
+        page: null,
+        pageEvidence: "unavailable",
+        current: expect.objectContaining({ impressions: 100, clicks: 10, position: 30 }),
+        previous: null,
+        positionDelta: null,
+      })],
+      candidates: 1,
+      withheldByBand: { page_one: 0, near_page_one: 0, mid: 0, far: 0 },
+      withheldByKind: { sample_floor_reached: 0, sample_building: 0 },
+    });
   });
 
   it("keeps the property fallback independent from observation rows", () => {
@@ -2270,11 +2567,16 @@ describe("query evidence boundaries", () => {
 
     expect(result.coverage.current.queryRows).toBe(6);
     expect(result.coverage.current.queryPageRows).toBe(1);
-    expect(result.actions[0]).toMatchObject({
+    expect(result.changes[0]).toMatchObject({
       kind: "click_opportunity",
       query,
-      page,
+      metricScope: "query",
+      page: null,
+      pageEvidence: "unavailable",
+      baselineCtr: 0.1,
+      clickGap: 100,
     });
+    expect(result.actions).toEqual([]);
   });
 
   it("refuses non-finite query-page metrics before dominant-page selection", () => {
@@ -2395,7 +2697,7 @@ describe("query evidence boundaries", () => {
     expect(result.limitations).toContain("aggregation_basis_mismatch");
   });
 
-  it("keeps query actions available when only property totals are unavailable", () => {
+  it("keeps query changes available when only property totals are unavailable", () => {
     const candidate = queryRow("pricing automation", 1_000, 0, 9);
     const rows = [candidate, ...baselineRows("base")];
     const page = "https://example.com/pricing";
@@ -2411,11 +2713,16 @@ describe("query evidence boundaries", () => {
       brandTermsConfirmed: true,
     }).result;
 
-    expect(result.actions[0]).toMatchObject({
+    expect(result.changes[0]).toMatchObject({
       kind: "click_opportunity",
       query: candidate.query,
-      page,
+      metricScope: "query",
+      page: null,
+      pageEvidence: "unavailable",
+      baselineCtr: 0.1,
+      clickGap: 100,
     });
+    expect(result.actions).toEqual([]);
     expect(result.coverage.current.evidence).toBe("observed");
     expect(result.anonymization.current.evidence).toBe("unavailable");
     expect(result.limitations).toContain("property_totals_unavailable");
@@ -2531,15 +2838,12 @@ describe("average position lanes", () => {
         kind: "average_position_crossed_page_one_band",
         query: "striking distance",
         positionDelta: -1.5,
-        pageEvidence: "observed",
+        metricScope: "query",
+        page: null,
+        pageEvidence: "unavailable",
       },
     ]);
-    expect(result.actions).toMatchObject([
-      {
-        kind: "average_position_crossed_page_one_band",
-        destination: "on-page-seo-check",
-      },
-    ]);
+    expect(result.actions).toEqual([]);
   });
 
   it("keeps a crossing below the improvement floor out of the briefing", () => {
@@ -3046,12 +3350,14 @@ describe("provisional position moves", () => {
     ]);
   });
 
-  it("offers a page to check without letting it become an action", () => {
+  it("keeps a provisional move query-scoped without a page or action", () => {
     const result = provisionalRun(70, [11.8, 9.7]);
 
     expect(result.provisionalMoves.items[0]).toMatchObject({
-      page: "https://example.com/provisional",
-      pageEvidence: "observed",
+      metricScope: "query",
+      page: null,
+      pageEvidence: "unavailable",
+      positionDelta: 9.7 - 11.8,
     });
     expect(result.actions).toEqual([]);
     expect(result.signalFunnel.provisionalMoveCandidates).toBe(1);
@@ -3161,10 +3467,10 @@ describe("lane state stands on per-query evidence, not on an aggregate", () => {
     expect(result.provisionalMoves.candidates).toBe(1);
   });
 
-  it("keeps a query the page reports as a change out of the provisional layer", () => {
+  it("keeps a query reported as a change out of the provisional layer", () => {
     // The CTR lane needs only the current window, so a query whose prior
-    // window sits at 50-99 can hold a strict change and an action while the
-    // provisional note under it promises there is none.
+    // window sits at 50-99 can hold a strict change. It must not also be
+    // restated as a provisional movement in the same briefing.
     const target = "target query";
     const page = "https://example.com/target";
     const current = [
@@ -3183,7 +3489,8 @@ describe("lane state stands on per-query evidence, not on an aggregate", () => {
     }).result;
 
     expect(result.changes.map((change) => change.query)).toContain(target);
-    expect(result.actions.map((action) => action.query)).toContain(target);
+    expect(result.changes[0]).toMatchObject({ metricScope: "query", page: null });
+    expect(result.actions).toEqual([]);
     expect(
       result.provisionalMoves.items.map((move) => move.query),
     ).not.toContain(target);
@@ -3308,13 +3615,14 @@ describe("the shape of the gengrowth.ai run of 2026-08-24", () => {
         kind: "provisional_page_one_band_entry",
         query: MANUAL,
         positionDelta: 9.7 - 11.8,
-        pageEvidence: "observed",
+        metricScope: "query",
+        page: null,
+        pageEvidence: "unavailable",
       },
     ]);
     expect(result.provisionalMoves.priorWindowImpressionRange).toEqual([50, 99]);
-    // The observation may point at a page to check. It may never become an
-    // entry in today's action list.
-    expect(result.provisionalMoves.items[0]?.page).toBe(url(MANUAL));
+    // This movement belongs to the query and cannot select a page to check.
+    expect(result.suggestedChecks.items).toEqual([]);
   });
 
   it("runs as a position-observation briefing with no strict lane evaluated", () => {
@@ -3548,7 +3856,7 @@ describe("evidence gates on the query rows, not their page attachment", () => {
 });
 
 describe("action budget", () => {
-  it("gives up the weakest un-handoffable row for one that can hand off", () => {
+  it("keeps higher-ranked query movements ahead of a lower-ranked actionable pair", () => {
     const splitPages = (query: string) =>
       Array.from({ length: 13 }, (_, index) =>
         queryPageRow(
@@ -3581,18 +3889,19 @@ describe("action budget", () => {
       previousQueryEvidence: evidence(previousRows, previousPages),
     }).result;
 
-    // Three higher-ranked crossings have no attributable page. Letting them
-    // take every slot leaves a briefing with no handoff at all while a real
-    // one waits outside the cut.
+    // A page action is not a reason to replace one of the three higher-ranked
+    // query movements with a lower-ranked pair.
     expect(result.changes).toHaveLength(DAILY_BRIEFING_ACTION_LIMIT);
+    expect(result.signalFunnel.positionDeclineCandidates).toBe(1);
+    expect(result.changes.map((change) => change.query)).toEqual(crossings);
     expect(result.changes.at(-1)).toMatchObject({
-      kind: "actionable_position_decline",
-      query: "decliner",
-      pageEvidence: "observed",
+      kind: "average_position_crossed_page_one_band",
+      metricScope: "query",
+      query: "cross c",
+      page: null,
+      pageEvidence: "unavailable",
     });
-    expect(result.actions).toMatchObject([
-      { query: "decliner", destination: "traffic-drop-diagnosis" },
-    ]);
+    expect(result.actions).toEqual([]);
   });
 
   it("keeps all three rows when none of them can hand off", () => {
@@ -3762,24 +4071,28 @@ describe("action budget boundaries", () => {
     }).result;
   }
 
-  it("keeps every top-ranked row when one of them can already hand off", () => {
+  it("keeps every top-ranked query when one has complete page coverage", () => {
     const result = budgetCase(1);
 
-    // The seat is given up only when the whole budget went to rows that
-    // cannot hand off. One that can is enough to keep the ranking intact.
+    // Coverage cannot turn a query fact into a page action or change its rank.
     expect(result.changes.map((change) => change.query)).toEqual([
       "cross a",
       "cross b",
       "cross c",
     ]);
-    expect(result.actions).toMatchObject([{ query: "cross a" }]);
+    expect(result.actions).toEqual([]);
   });
 
-  it("gives the seat up for the best handoffable row when none can", () => {
+  it("keeps the query ranking when a lower-ranked pair could hand off", () => {
     const result = budgetCase(0);
 
-    expect(result.changes.at(-1)).toMatchObject({ query: "decliner" });
-    expect(result.actions).toMatchObject([{ query: "decliner" }]);
+    expect(result.signalFunnel.positionDeclineCandidates).toBe(1);
+    expect(result.changes.map((change) => change.query)).toEqual([
+      "cross a",
+      "cross b",
+      "cross c",
+    ]);
+    expect(result.actions).toEqual([]);
   });
 });
 
@@ -3798,8 +4111,8 @@ describe("observation band boundaries", () => {
   });
 });
 
-describe("handoff seat decisions", () => {
-  it("lets a first-observed pair take the seat given up for a handoff", () => {
+describe("pair candidates outside the query budget", () => {
+  it("keeps higher-ranked queries when a first-observed pair could offer a handoff", () => {
     const crossings = ["cross a", "cross b", "cross c"];
     const splitPages = (query: string) =>
       Array.from({ length: 13 }, (_, index) =>
@@ -3833,17 +4146,18 @@ describe("handoff seat decisions", () => {
       previousQueryEvidence: evidence(previousRows, previousPages),
     }).result;
 
-    // first_observed is the weakest claim in the ranking, but it is a claim
-    // about a query and a page together, so it can carry the one handoff a
-    // briefing of otherwise un-attributable rows is able to offer.
+    // The pair is a real candidate, but the possibility of a page action
+    // cannot elevate it above three higher-ranked query facts.
+    expect(result.signalFunnel.firstObservedCandidates).toBe(1);
+    expect(result.changes.map((change) => change.query)).toEqual(crossings);
     expect(result.changes.at(-1)).toMatchObject({
-      kind: "first_observed",
-      query: newPair,
-      pageEvidence: "observed",
+      kind: "average_position_crossed_page_one_band",
+      metricScope: "query",
+      query: "cross c",
+      page: null,
+      pageEvidence: "unavailable",
     });
-    expect(result.actions).toMatchObject([
-      { kind: "first_observed", destination: "on-page-seo-check" },
-    ]);
+    expect(result.actions).toEqual([]);
   });
 });
 
@@ -4765,7 +5079,7 @@ const GONE = "https://example.com/gone";
     ]);
   });
 
-  it("refuses the zero-click check when the query rows were not read", () => {
+  it("refuses the zero-click check when the byPage query totals were not read", () => {
     // The brand rows are subtracted from the totals, so an unread query
     // attachment is a subtraction we cannot perform — not a property without
     // brand queries.
@@ -4776,6 +5090,7 @@ const GONE = "https://example.com/gone";
           totals: { impressions: 11_000, clicks: 300 },
         }),
         queryRead: null,
+        queryPageTotalsRead: null,
       },
       previousQueryEvidence: evidence([], [], {
         pages: [pageRow(PAGE, 500, 0, 5)],
@@ -5044,7 +5359,13 @@ describe("page changes beside query changes", () => {
     // of different populations and can move in opposite directions, so hiding
     // the second behind the first would substitute one for the other.
     expect(result.changes).toMatchObject([
-      { kind: "stable_position_click_decline", query: QUERY, page: PAGE },
+      {
+        kind: "stable_position_click_decline",
+        metricScope: "query",
+        query: QUERY,
+        page: null,
+        pageEvidence: "unavailable",
+      },
     ]);
     expect(result.changes[0]?.clickChange).toBe(-18);
     expect(result.pageChanges).toMatchObject([
@@ -5125,7 +5446,7 @@ describe("suggested checks", () => {
   const PAGE_ONE_QUERY = "messi zodiac sign";
   const PAGE_ONE_PAGE = "https://example.com/wiki/messi";
 
-  it("offers the rows it just displayed as checks when no lane found a change", () => {
+  it("keeps current query observations without inventing page checks", () => {
     const rows = [queryRow(PAGE_ONE_QUERY, 185, 0, 8.2)];
     const result = report({
       currentQueryEvidence: evidence(rows, [
@@ -5137,27 +5458,25 @@ describe("suggested checks", () => {
       brandTermsConfirmed: true,
     }).result;
 
-    // Nothing changed and nothing is claimed to have changed. The check says
-    // only where the property currently stands, which is what makes it
-    // offerable on evidence no lane could turn into a change.
+    // The current position belongs to the query, even when every returned
+    // impression is associated with one page.
     expect(result.actions).toEqual([]);
     expect(result.queryWatchlist.items).toHaveLength(1);
+    expect(result.queryWatchlist.items[0]).toMatchObject({
+      query: PAGE_ONE_QUERY,
+      metricScope: "query",
+      page: null,
+      pageEvidence: "unavailable",
+      band: "page_one",
+    });
     expect(result.suggestedChecks).toEqual({
       evidence: "observed",
-      items: [
-        {
-          query: PAGE_ONE_QUERY,
-          page: PAGE_ONE_PAGE,
-          band: "page_one",
-          sampleKind: "sample_floor_reached",
-          destination: "on-page-seo-check",
-        },
-      ],
-      notCheckable: 0,
+      items: [],
+      notCheckable: 1,
     });
   });
 
-  it("counts a displayed row it cannot turn into a check", () => {
+  it("counts every displayed query observation as not checkable across position bands", () => {
     const far = "buried term";
     const rows = [
       queryRow(PAGE_ONE_QUERY, 185, 0, 8.2),
@@ -5173,14 +5492,15 @@ describe("suggested checks", () => {
       brandTermsConfirmed: true,
     }).result;
 
-    // Position 62 is displayed because it is real, and is not offered as a
-    // check because nothing done to the page this week changes it. The count
-    // explains the gap between the rows above and the checks below.
+    // Both observed positions remain visible; neither query selects a page
+    // for a check, regardless of its position band.
     expect(result.queryWatchlist.items).toHaveLength(2);
-    expect(result.suggestedChecks.items).toMatchObject([
-      { query: PAGE_ONE_QUERY },
+    expect(result.queryWatchlist.items).toMatchObject([
+      { query: PAGE_ONE_QUERY, metricScope: "query", page: null, band: "page_one" },
+      { query: far, metricScope: "query", page: null, band: "far" },
     ]);
-    expect(result.suggestedChecks.notCheckable).toBe(1);
+    expect(result.suggestedChecks.items).toEqual([]);
+    expect(result.suggestedChecks.notCheckable).toBe(2);
   });
 
   it("withholds a check for a row whose page could not be attributed", () => {
@@ -5193,16 +5513,15 @@ describe("suggested checks", () => {
     }).result;
 
     expect(result.queryWatchlist.items).toMatchObject([
-      { query: PAGE_ONE_QUERY, page: null },
+      { query: PAGE_ONE_QUERY, metricScope: "query", page: null, pageEvidence: "unavailable" },
     ]);
     expect(result.suggestedChecks.items).toEqual([]);
     expect(result.suggestedChecks.notCheckable).toBe(1);
   });
 
-  it("only ever offers a check for a row the briefing also displays", () => {
-    // The page renders these straight from the contract, so a check whose row
-    // did not survive the display budget would point at nothing the reader can
-    // see. Pinned here because the construction, not the UI, is what holds it.
+  it("counts only displayed observations as not checkable after the row budget", () => {
+    // A candidate that did not survive the display budget must not inflate
+    // the count explaining the rows the reader can actually see.
     const rows = Array.from({ length: 6 }, (_, index) =>
       queryRow(`watch ${index}`, 300 - index, 0, 8 + index * 0.1),
     );
@@ -5222,27 +5541,15 @@ describe("suggested checks", () => {
     }).result;
 
     // More candidates than slots, so the budget really did cut some.
-    expect(result.queryWatchlist.candidates).toBeGreaterThan(
-      result.queryWatchlist.items.length,
-    );
-    expect(result.suggestedChecks.items.length).toBeGreaterThan(0);
-    // The whole identity, not just the query: a check with the right query and
-    // the wrong page points at a row the reader is not looking at.
-    const shown = new Set(
-      result.queryWatchlist.items.map(
-        (item) => `${item.query}\u0000${item.page ?? ""}\u0000${item.band}\u0000${item.kind}`,
-      ),
-    );
-    const offered = result.suggestedChecks.items.map(
-      (check) =>
-        `${check.query}\u0000${check.page}\u0000${check.band}\u0000${check.sampleKind}`,
-    );
-    for (const key of offered) {
-      expect(shown.has(key)).toBe(true);
-    }
-    // Cardinality too, so duplicating one check and dropping another cannot
-    // preserve membership while changing what is offered.
-    expect(new Set(offered).size).toBe(offered.length);
+    expect(result.queryWatchlist.candidates).toBe(6);
+    expect(result.queryWatchlist.items.map((item) => item.query)).toEqual([
+      "watch 0", "watch 1", "watch 2",
+    ]);
+    expect(result.queryWatchlist.items.every(
+      (item) => item.metricScope === "query" && item.page === null,
+    )).toBe(true);
+    expect(result.suggestedChecks.items).toEqual([]);
+    expect(result.suggestedChecks.notCheckable).toBe(3);
     // Items and the un-checkable count together account for every shown row.
     expect(
       result.suggestedChecks.items.length +
@@ -5268,7 +5575,7 @@ describe("suggested checks", () => {
     });
   });
 
-  it("keeps a query-scoped check beside a page-scoped change on one URL", () => {
+  it("keeps a query observation beside a page-scoped change on its associated URL", () => {
     const shared = "https://example.com/guide";
     const query = "watched term";
     const rows = [queryRow(query, 185, 0, 8.2)];
@@ -5300,26 +5607,27 @@ describe("suggested checks", () => {
     expect(result.pageActions).toMatchObject([
       { kind: "page_click_decline", page: shared },
     ]);
-    expect(result.suggestedChecks.items).toMatchObject([
-      { query, page: shared },
+    expect(result.queryWatchlist.items).toMatchObject([
+      { query, metricScope: "query", page: null, pageEvidence: "unavailable" },
     ]);
-    expect(result.suggestedChecks.notCheckable).toBe(0);
+    expect(result.suggestedChecks.items).toEqual([]);
+    expect(result.suggestedChecks.notCheckable).toBe(1);
   });
 
-  it("keeps a check for a second query on a page another query already actioned", () => {
+  it("keeps a second query observation beside an action measured on another query-page pair", () => {
     const page = "https://example.com/templates";
     const actioned = "workflow templates";
     const watched = "watched term";
     const currentRows = [
-      queryRow(actioned, 400, 2, 12),
+      queryRow(actioned, 400, 2, 16),
       queryRow(watched, 185, 0, 8.2),
     ];
     const previousRows = [
       queryRow(actioned, 400, 20, 12),
       queryRow(watched, 185, 0, 8.2),
     ];
-    // Both queries resolve to the same page, so the second one's check would
-    // sit under an action for that very page.
+    // The measured decline belongs to one pair. Sharing its page does not
+    // turn the second query's observation into a pair measurement.
     const pages = (rows: readonly ReturnType<typeof queryRow>[]) =>
       rows.map((row) =>
         queryPageRow(row.query, page, row.impressions, row.clicks, row.position),
@@ -5330,15 +5638,14 @@ describe("suggested checks", () => {
       brandTermsConfirmed: true,
     }).result;
 
-    // The action belongs to one query on that page; the check belongs to a
-    // different query on it. A query that carries an action never reaches the
-    // watchlist at all, so no check can ever restate one.
     expect(result.actions).toMatchObject([
-      { kind: "stable_position_click_decline", query: actioned, page },
+      { kind: "actionable_position_decline", query: actioned, page },
     ]);
-    expect(result.suggestedChecks.items).toMatchObject([
-      { query: watched, page },
+    expect(result.queryWatchlist.items).toMatchObject([
+      { query: watched, metricScope: "query", page: null, pageEvidence: "unavailable" },
     ]);
+    expect(result.suggestedChecks.items).toEqual([]);
+    expect(result.suggestedChecks.notCheckable).toBe(1);
     // The actioned query is absent from the watchlist itself, which is where
     // checks come from — a different fact from the one asserted above, and the
     // reason no exclusion is needed here at all.
@@ -5347,14 +5654,13 @@ describe("suggested checks", () => {
     ).toBe(false);
   });
 
-  it("names one URL the same way across both dimensions", () => {
+  it("names one URL the same way across query-page and page actions", () => {
     const shared = "https://example.com/guide";
     const query = "watched term";
-    const rows = [queryRow(query, 185, 0, 8.2)];
-    // The query-page read pads the URL; the page read does not. Normalizing
-    // only the page dimension gave one URL two identities, and the exclusion
-    // that keeps a check off an actioned page compared the wrong pair.
-    const pages = [queryPageRow(query, `${shared} `, 185, 0, 8.2)];
+    const rows = [queryRow(query, 185, 2, 16)];
+    // The query-page read pads the URL; the page read does not. Both measured
+    // changes must carry the same normalized page identity into their actions.
+    const pages = [queryPageRow(query, `${shared} `, 185, 2, 16)];
     const pageRead = (impressions: number, clicks: number, position: number) => ({
       rows: [{ page: shared, impressions, clicks, position }],
       paging: { pagesFetched: 1, truncated: false },
@@ -5366,18 +5672,29 @@ describe("suggested checks", () => {
         pageRead: pageRead(380, 8, 9.4),
       },
       previousQueryEvidence: {
-        ...evidence(rows, pages),
+        ...evidence(
+          [queryRow(query, 185, 20, 12)],
+          [queryPageRow(query, shared, 185, 20, 12)],
+        ),
         pageRead: pageRead(400, 20, 9.1),
       },
       brandTermsConfirmed: true,
     }).result;
 
     // One URL, spelled two ways by the two reads. Every surface that names it
-    // must name the same canonical string, or a reader comparing the page row
-    // against the watchlist row sees two different pages.
+    // must name the same canonical string.
     expect(result.pageActions).toMatchObject([{ page: shared }]);
-    expect(result.queryWatchlist.items).toMatchObject([{ page: shared }]);
-    expect(result.suggestedChecks.items).toMatchObject([{ page: shared }]);
+    expect(result.changes).toMatchObject([
+      { kind: "actionable_position_decline", metricScope: "query_page", page: shared },
+    ]);
+    expect(result.actions).toEqual([{
+      kind: "actionable_position_decline",
+      destination: "traffic-drop-diagnosis",
+      query,
+      page: shared,
+    }]);
+    expect(result.queryWatchlist.items).toEqual([]);
+    expect(result.suggestedChecks.items).toEqual([]);
   });
 
   it("reports checks as unavailable rather than empty when nothing was read", () => {

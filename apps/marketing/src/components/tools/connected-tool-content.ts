@@ -82,7 +82,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "Daily Search Console triage",
     title: "Run a Daily GSC Briefing Before You Start SEO Work",
     description:
-      "Turn the latest complete Search Console history into a short morning brief: what changed, what held across the last full week, and which query or page deserves the next check.",
+      "Read the latest available Search Console data in a short daily brief, with exact dates and filters. Still-updating data is provisional; change-based recommendations require complete comparison periods.",
     sourceLabel: "Requires a Google Search Console connection",
     sourceDetail:
       "GenGrowth requests read-only Search Console access. It cannot change your site, your rankings, or your Google account, and this briefing is recomputed on demand rather than stored.",
@@ -96,8 +96,8 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
         text: "Read-only, revocable at any time from your Google account settings.",
       },
       {
-        name: "Read one complete reporting window first",
-        text: "The briefing waits for Search Console's finalized Pacific-time data and compares the latest complete day and the latest full seven days against their matching prior windows.",
+        name: "Read the latest available reporting dates",
+        text: "The briefing uses the latest available date Google returns, in Pacific Time. It shows current observations while dates are provisional and only compares periods once all required dates are complete.",
       },
       {
         name: "Attach query evidence only when it is strong enough",
@@ -112,7 +112,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     outputs: [
       {
         label: "Daily and weekly KPI context",
-        body: "Clicks, impressions, CTR and exposure-weighted average position for the latest complete day and the latest complete seven days, each against a comparable prior window.",
+        body: "Latest available clicks, impressions, CTR and impression-weighted average position, with the exact reporting windows, data freshness and GSC verification links.",
       },
       {
         label: "Cadence that fits the sample",
@@ -749,7 +749,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "每日 Search Console 分诊",
     title: "在开始 SEO 工作前先跑一遍每日 GSC 简报",
     description:
-      "把最新完整的 Search Console 数据压成一份晨间简报：昨天和最近一周发生了什么变化，哪些变化值得今天优先检查。",
+      "读取 Search Console 最新可用数据，显示精确统计日期与筛选条件。更新中的数据标为暂定；依赖变化的建议需要完整的对比时段。",
     sourceLabel: "需要连接 Google Search Console",
     sourceDetail:
       "GenGrowth 仅请求 Search Console 只读权限。它不能修改站点、排名或 Google 账号，这份简报也是按需重算，而不是持久化保存。",
@@ -763,8 +763,8 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
         text: "只读授权，可随时在你的 Google 账号设置里撤销。",
       },
       {
-        name: "先读完整结算的数据窗口",
-        text: "简报只使用 Search Console 已经完成结算的 Pacific 时区数据，并把最新完整日、最新完整七天分别与上一段可比窗口对比。",
+        name: "先读最新可用统计日期",
+        text: "简报使用 Google 实际返回的最新可用日期，日级统计采用太平洋时间。数据仍在更新时只显示当前观察；所需日期完整后才比较两期。",
       },
       {
         name: "只有证据足够时才附加查询级解释",
@@ -779,7 +779,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     outputs: [
       {
         label: "日级与周级 KPI 上下文",
-        body: "最新完整日与最新完整七天的 clicks、impressions、CTR 和按曝光加权的平均排名，并分别对比上一段可比窗口。",
+        body: "最新可用的 clicks、impressions、CTR 和曝光加权平均排名，附精确统计窗口、数据新鲜度及 GSC 核验链接。",
       },
       {
         label: "和样本量匹配的节奏",

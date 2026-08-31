@@ -15,8 +15,8 @@ const DIAGNOSIS_TOOLS = [
     slug: "daily-search-briefing",
     title: { en: "GSC Daily Briefing", zh: "GSC 每日简报" },
     description: {
-      en: "Start the day with the latest complete Search Console changes, a seven-day check, and the next tool to open.",
-      zh: "用最新完整的 Search Console 变化、七天对比和下一步工具建议，先完成一天的 SEO 分诊。",
+      en: "Start with the latest available Search Console data, exact reporting dates, and evidence-backed checks.",
+      zh: "读取 Search Console 最新可用数据，核对精确统计日期，按真实证据安排检查。",
     },
     cta: { en: "Connect Search Console", zh: "连接 Search Console" },
     category: "diagnosis",

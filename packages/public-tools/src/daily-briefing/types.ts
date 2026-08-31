@@ -1,4 +1,4 @@
-// @input  -- final Search Console rows plus optional fresh daily/hourly trend reads
+// @input  -- fresh Search Console rows, actual date windows and evidence completeness
 // @output -- the schema-versioned, non-persistent daily briefing contract
 // @pos    -- public type boundary for the deterministic daily briefing core
 
@@ -143,7 +143,7 @@ export interface DailyBriefingKpiDelta {
 }
 
 export interface DailyBriefingKpiComparison {
-  readonly evidence: "observed" | "unavailable";
+  readonly evidence: "observed" | "partial" | "unavailable";
   readonly current: DailyBriefingKpis | null;
   readonly previous: DailyBriefingKpis | null;
   readonly delta: DailyBriefingKpiDelta;
@@ -178,9 +178,8 @@ export interface DailyBriefingTrendSeries {
 }
 
 /**
- * Fresh visualisation evidence, deliberately separate from finalised action
- * evidence. A partial hourly point can inform the chart but cannot dispatch
- * an SEO action.
+ * Fresh visualisation evidence. A partial hourly point can inform the chart;
+ * only complete analysis windows can produce cross-period changes or actions.
  */
 export interface DailyBriefingTrend {
   readonly daily: DailyBriefingTrendSeries;
@@ -232,6 +231,8 @@ export interface DailyBriefingPageRead {
 
 export interface DailyBriefingQueryEvidence {
   readonly queryRead: QueryRowsRead | null;
+  /** Independently read byPage query totals for page coverage and brand subtraction. */
+  readonly queryPageTotalsRead: QueryRowsRead | null;
   readonly queryPageRead: DailyBriefingQueryPageRead | null;
   /**
    * The page dimension on its own. Null means it was not read.
@@ -275,6 +276,7 @@ export interface DailyBriefingAnonymizationWindows {
 }
 
 export interface DailyBriefingChange {
+  readonly metricScope: "query" | "query_page";
   readonly kind: DailyBriefingChangeKind;
   readonly evidence: "observed" | "not_observed";
   readonly query: string;
@@ -645,14 +647,22 @@ export type DailyBriefingObservationBand =
   | "far";
 
 export interface DailyBriefingQueryObservation {
+  readonly metricScope: "query";
   readonly kind: DailyBriefingQueryObservationKind;
   readonly band: DailyBriefingObservationBand;
   readonly query: string;
   readonly page: string | null;
   readonly pageEvidence: "observed" | "unavailable";
   readonly current: GscQueryRow;
-  /** Null when no prior window exists, or when it is too small to compare. */
+  /** Null unless previousEvidence permits a comparable previous row. */
   readonly previous: GscQueryRow | null;
+  /** Why a previous value is present or withheld; null metrics never imply absence. */
+  readonly previousEvidence:
+    | "observed"
+    | "below_floor"
+    | "not_observed"
+    | "unavailable"
+    | "not_compared";
   /**
    * Prior-window impressions when a row existed but was too small to compare.
    *
@@ -740,6 +750,7 @@ export type DailyBriefingProvisionalMoveKind =
   | "provisional_actionable_position_decline";
 
 export interface DailyBriefingProvisionalMove {
+  readonly metricScope: "query";
   readonly kind: DailyBriefingProvisionalMoveKind;
   readonly evidence: "observed";
   readonly query: string;
@@ -772,11 +783,27 @@ export type DailyBriefingLimitationCode =
   | "property_change_inside_noise_floor"
   | "page_evidence_unavailable";
 
+export interface DailyBriefingFreshness {
+  readonly source: "google_search_console";
+  readonly readAt: string;
+  readonly latestAvailableDate: string | null;
+  readonly firstIncompleteDate: string | null;
+  readonly timeZone: "America/Los_Angeles";
+  readonly dataState: "all";
+  readonly aggregationType: "byProperty";
+  readonly status: "complete" | "partial" | "unavailable";
+  readonly comparisonEligible: boolean;
+  readonly missingDates: readonly string[];
+}
+
 export interface DailyBriefingResult {
-  readonly windows: DailyBriefingWindows;
+  readonly windows: DailyBriefingWindows | null;
+  readonly freshness: DailyBriefingFreshness;
+  /** Null until the selected metrics have been checked against exact GSC reads. */
+  readonly verification: import("./verification.ts").DailyBriefingVerification | null;
   readonly day: DailyBriefingKpiComparison;
   readonly weekly: DailyBriefingKpiComparison;
-  /** Fresh daily/hourly display evidence. It does not alter the action lanes. */
+  /** Daily/hourly display evidence; the same daily read anchors analysis dates. */
   readonly trend: DailyBriefingTrend;
   readonly mode: DailyBriefingMode;
   readonly cadence: DailyBriefingCadence;
@@ -811,6 +838,9 @@ export type DailyBriefingEnvelope = PublicToolResultEnvelope<
 export interface BuildDailyBriefingInput {
   readonly now: Date;
   readonly dateRows: readonly DailyBriefingDateRow[];
+  /** The end selected from the initial date read; null means no usable date. */
+  readonly windowEndDate?: string | null;
+  readonly firstIncompleteDate?: string | null;
   /** Optional trend reads may independently be unavailable without failing the briefing. */
   readonly trend?: {
     readonly daily: DailyBriefingTrendRead | null;

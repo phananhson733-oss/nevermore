@@ -1,5 +1,5 @@
 // @input  -- none; shared shapes for the Search Analytics seam
-// @output -- the request/response contract the injected client must satisfy
+// @output -- the request/response contract, including exact subject filters
 // @pos    -- keeps the reader pure: transport lives in apps/*, orchestration here
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -18,6 +18,11 @@ export interface GscQueryRequest {
   readonly aggregationType?: GscAggregationType;
   /** Omitted means the transport's safe `final` default. */
   readonly dataState?: GscDataState;
+  /** Every filter is an exact equality; no implicit substring matching. */
+  readonly filters?: readonly {
+    readonly dimension: GscDimension;
+    readonly expression: string;
+  }[];
 }
 
 export interface GscRawRow {

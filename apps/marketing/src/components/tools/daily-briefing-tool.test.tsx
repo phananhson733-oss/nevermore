@@ -240,7 +240,7 @@ describe("DailyBriefingTool connection boundary", () => {
     expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(2);
     expect(host.textContent).toContain("Queries and pages to review today");
     expect(host.textContent).toContain("Today's recommended actions");
-    expect(host.textContent).toContain("Run the briefing to generate");
+    expect(host.textContent).toContain("Read the latest available reporting windows");
     expect(host.querySelector("[data-change]")).toBeNull();
     expect(host.querySelector("[data-action-row]")).toBeNull();
     expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -369,6 +369,66 @@ describe("DailyBriefingTool brand confirmation and request body", () => {
 });
 
 describe("DailyBriefingTool request states and errors", () => {
+  it("never attaches a pending property's report to a newly selected property", async () => {
+    let resolveRead: ((value: Response) => void) | undefined;
+    globalThis.fetch = vi.fn(() => new Promise<Response>((resolve) => { resolveRead = resolve; })) as typeof fetch;
+    const host = await renderTool({ properties: [PROPERTY, SECOND_PROPERTY], propertyTotal: 2 });
+    const select = host.querySelector('select[name="property"]') as HTMLSelectElement;
+    await click(buttonWith(host, "Build today's briefing"));
+    expect(lastRequestBody().property).toBe(PROPERTY);
+
+    // Reproduces a queued change while the request is pending. Disabled
+    // controls prevent user edits; stale queued events must still be safe.
+    await changeValue(select, SECOND_PROPERTY);
+    await act(async () => { resolveRead?.(success()); });
+
+    const facts = host.querySelector("[data-reading-facts]");
+    expect(facts?.textContent ?? "").not.toContain(SECOND_PROPERTY);
+    if (select.value === SECOND_PROPERTY) expect(facts).toBeNull();
+  });
+
+  it("locks every run input until its submitted request finishes", async () => {
+    let resolveRead: ((value: Response) => void) | undefined;
+    globalThis.fetch = vi.fn(() => new Promise<Response>((resolve) => { resolveRead = resolve; })) as typeof fetch;
+    const host = await renderTool({ properties: [PROPERTY, SECOND_PROPERTY], propertyTotal: 2 });
+    await click(buttonWith(host, "Build today's briefing"));
+    const controls = [...host.querySelectorAll<HTMLInputElement | HTMLSelectElement>('select[name="property"], input[name="brandTerms"], input[name="brandTermsConfirmed"]')];
+    expect(controls).toHaveLength(3);
+    expect(controls.every((control) => control.disabled)).toBe(true);
+    await act(async () => { resolveRead?.(success()); });
+    expect(controls.every((control) => !control.disabled)).toBe(true);
+    expect(host.querySelector("[data-reading-facts]")?.textContent).toContain(PROPERTY);
+  });
+
+  it("ignores an older response after a newer property run has completed", async () => {
+    let resolveOld: ((value: Response) => void) | undefined;
+    let resolveNew: ((value: Response) => void) | undefined;
+    globalThis.fetch = vi.fn()
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveOld = resolve; }))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveNew = resolve; })) as typeof fetch;
+    const host = await renderTool({ properties: [PROPERTY, SECOND_PROPERTY], propertyTotal: 2 });
+    await click(buttonWith(host, "Build today's briefing"));
+    await changeValue(host.querySelector('select[name="property"]') as HTMLSelectElement, SECOND_PROPERTY);
+    // A queued change invalidates the old response even if it raced with the
+    // disabled state being painted; it must not prevent the replacement run.
+    await click(host.querySelector("button") as HTMLButtonElement);
+    const newerReadAt = "2026-08-24T20:02:00.000Z";
+    await act(async () => {
+      resolveNew?.(Response.json({ data: {
+        ...ENVELOPE,
+        result: { ...ENVELOPE.result, freshness: { ...ENVELOPE.result.freshness, readAt: newerReadAt } },
+      } }));
+    });
+    await act(async () => { resolveOld?.(success()); });
+    expect(lastRequestBody().property).toBe(SECOND_PROPERTY);
+    const facts = host.querySelector("[data-reading-facts]");
+    expect(facts?.textContent).toContain(SECOND_PROPERTY);
+    expect(facts?.querySelector("time")?.getAttribute("dateTime")).toBe(newerReadAt);
+    const gscLinks = [...host.querySelectorAll<HTMLAnchorElement>('a[href*="search.google.com/search-console/"]')];
+    expect(gscLinks.length).toBeGreaterThan(0);
+    expect(gscLinks.every((link) => new URL(link.href).searchParams.get("resource_id") === SECOND_PROPERTY)).toBe(true);
+  });
+
   it("exposes an aria-busy live loading state and clears the old report on rerun", async () => {
     let resolveSecond: ((value: Response) => void) | undefined;
     globalThis.fetch = vi
@@ -389,7 +449,7 @@ describe("DailyBriefingTool request states and errors", () => {
     const region = host.querySelector("#daily-briefing-tool") as HTMLElement;
     expect(region.getAttribute("aria-busy")).toBe("true");
     expect(host.querySelector('[role="status"]')?.textContent).toContain(
-      "Reading complete Search Console windows",
+      "Reading the latest available Search Console data",
     );
     expect(host.textContent).not.toContain("Daily briefing complete");
     expect(host.textContent).not.toContain("Marked on this page");

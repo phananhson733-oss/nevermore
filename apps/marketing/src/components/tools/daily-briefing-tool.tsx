@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { BellRing, CircleAlert, RefreshCw } from "lucide-react";
 import { useTranslations } from "next-intl";
 
@@ -94,7 +94,7 @@ function parseBrandTerms(input: string): readonly string[] {
  * pulls server-only code into this client bundle. A contract test keeps it
  * equal to the package's own constant.
  */
-export const CLIENT_DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v9";
+export const CLIENT_DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v10";
 
 export function DailyBriefingTool({
   locale,
@@ -113,32 +113,41 @@ export function DailyBriefingTool({
   const [brandTermsConfirmed, setBrandTermsConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorCode, setErrorCode] = useState<KnownErrorCode | null>(null);
+  const requestGeneration = useRef(0);
   const [payload, setPayload] = useState<{
     readonly envelope: DailyBriefingEnvelope;
+    readonly property: string;
   } | null>(null);
   const brandTerms = parseBrandTerms(brandInput);
 
   function clearRunState() {
+    // Input changes invalidate queued responses as well as the visible result.
+    requestGeneration.current += 1;
     setPayload(null);
     setErrorCode(null);
+    setLoading(false);
   }
 
   async function run() {
+    if (loading) return;
+    clearRunState();
+    const generation = requestGeneration.current;
+    const submittedProperty = property;
     trackMarketingEvent("tool_start", { tool_name: "daily_search_briefing" });
     setLoading(true);
-    clearRunState();
 
     try {
       const response = await fetch("/api/tools/daily-search-briefing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          property,
+          property: submittedProperty,
           brandTerms,
           brandTermsConfirmed,
         }),
       });
       const body = (await response.json()) as DailyBriefingResponse;
+      if (generation !== requestGeneration.current) return;
       if (!response.ok || body.data === undefined) {
         setErrorCode(knownErrorCode(body.error?.code));
         return;
@@ -154,14 +163,15 @@ export function DailyBriefingTool({
       }
       setPayload({
         envelope: body.data,
+        property: submittedProperty,
       });
       trackMarketingEvent("tool_complete", {
         tool_name: "daily_search_briefing",
       });
     } catch {
-      setErrorCode("unknown");
+      if (generation === requestGeneration.current) setErrorCode("unknown");
     } finally {
-      setLoading(false);
+      if (generation === requestGeneration.current) setLoading(false);
     }
   }
 
@@ -223,6 +233,7 @@ export function DailyBriefingTool({
             id="daily-briefing-property"
             name="property"
             value={property}
+            disabled={loading}
             onChange={(event) => {
               const next = event.target.value;
               setProperty(next);
@@ -247,6 +258,7 @@ export function DailyBriefingTool({
             name="brandTerms"
             type="text"
             value={brandInput}
+            disabled={loading}
             onChange={(event) => {
               setBrandInput(event.target.value);
               setBrandTermsConfirmed(false);
@@ -267,6 +279,7 @@ export function DailyBriefingTool({
           name="brandTermsConfirmed"
           type="checkbox"
           checked={brandTermsConfirmed}
+          disabled={loading}
           onChange={(event) => {
             setBrandTermsConfirmed(event.target.checked);
             clearRunState();
@@ -338,7 +351,7 @@ export function DailyBriefingTool({
       {payload ? (
         <DailyBriefingResults
           locale={locale}
-          property={property}
+          property={payload.property}
           envelope={payload.envelope}
         />
       ) : (

@@ -17,9 +17,8 @@ const READ_TIMEOUT_MS = 15_000;
 /**
  * Whole-request budget, measured from the handler's start.
  *
- * The required date read plus eight optional attachments stay within this
- * budget, and every later page read stops once it is spent. The attachments
- * run concurrently, so adding the page dimension costs a slot, not a round.
+ * Freshness discovery, optional analysis attachments and exact-subject
+ * verification share this budget. Later reads stop once it is spent.
  */
 export const REQUEST_BUDGET_MS = 45_000;
 
