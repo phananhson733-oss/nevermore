@@ -8,6 +8,8 @@
 
 **Tech Stack:** Next.js 16, React 19, TypeScript, next-intl, Vitest and Playwright in the existing pnpm monorepo.
 
+**Requested skill:** Use frontend-design for the UI task, preserving the supplied Artifact's visual/interaction structure and the current Marketing themes.
+
 ---
 
 ## Task 1: Approved presentation repair
@@ -55,11 +57,27 @@ Make run header compact; place recommendation before expanded detail surfaces; u
 
 First spec review against the accepted design; then code-quality review. Commit only task-owned files after both reviews and fresh checks. No push/deploy for this partial milestone.
 
+Completed locally as `1705aa31`. Fresh final evidence: 184 UI/i18n unit tests; broader 923 relevant regressions; 20 browser tests covering 8 viewport/locale/theme combinations plus real keyboard focus and deferred auth/API recovery; Marketing build; changed-file lint; secret scan and 75 redaction tests. Independent spec and quality review closed. See `apps/marketing/docs/reviews/2026-08-31-content-brief-artifact-ui/acceptance.md`. This does not complete Tasks 2–5.
+
 ## Task 2: Freeze and implement v2 evidence/question contract
 
 Status: detailed implementation awaits business-rule confirmation; not complete.
 
 Required scope: retain PAA from the existing advanced SERP response, bounded source ledger, semantic question selection with template exclusion, coverage denominators, language-appropriate length measurements, strict v2 parser/fingerprint, and unchanged legacy-v1 parser. Write independent fixtures and fail-before-fix tests for each invariant. PAA must feed outline/Draft coverage, not merely appear in a disconnected supplemental card.
+
+### Task 2a: Initial PAA source retention
+
+This source-preservation foundation does not decide the new question-selection rule. The Artifact already requires PAA as a source. Keep this additive for existing SERP consumers.
+
+**Files:** `packages/sources/src/dataforseo/keyword-metrics.ts`, `keyword-metrics.test.ts`, `_DIR.md`.
+
+1. Write tests for verbatim question/seed retention, duplicate order, CJK, one unchanged provider request, unavailable vs observed-empty vs missing block, malformed child/block counts, cross-block 100-entry inspection cap and invalid local-option rejection.
+2. Run `pnpm exec vitest run --project unit packages/sources/src/dataforseo/keyword-metrics.test.ts -t 'People Also Ask evidence'`. Observed RED on 2026-08-31: 9 failed, 1 legacy-compatibility test passed, 42 unrelated tests skipped.
+3. Add the local-only `includePeopleAlsoAsk` request option and optional typed response. Never pass that option or a click-depth parameter to DataForSEO; preserve other consumers' output shape. Explicitly count unusable blocks rather than guessing their child counts.
+4. Run the whole metrics test file, `pnpm --filter @sf/sources typecheck`, and ESLint on both changed TS files. Initial GREEN: 52/52; typecheck/lint exit 0.
+5. Independent spec then code review before commit. This is not evidence that Brief/Draft consumes PAA yet; that remains in Tasks 2–4.
+
+Source milestone evidence: commit `5180b875` contains the adapter and tests. Spec review caught UTF-16 vs code-point counting; a 512/513 astral-character title/seed test failed first and then passed after matching the existing code-point boundary. Spec re-review and independent code-quality review found no remaining P1/P2 blockers. Final metrics tests: 54/54; source package typecheck and changed-file ESLint exit 0. A broader DataForSEO/consumer regression run passed 369 tests before the final test-only coverage addition. No live provider request or deployment occurred.
 
 ## Task 3: Page ownership, owned-page research and rewrite plan
 

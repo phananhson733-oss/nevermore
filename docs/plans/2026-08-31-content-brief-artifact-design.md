@@ -3,7 +3,7 @@
 ## Authority and scope
 
 - User objective: repair result presentation, Brief business logic, and product acceptance against the supplied Content Tools React Artifact; start with the Brief generator.
-- Acceptance input: `/Users/wzb/.codex/attachments/e162950c-837c-4c13-8ea0-2ec0baeb9054/pasted-text.txt`, especially Brief input/results. Its mock counts are examples, not production evidence.
+- Acceptance input: `/Users/wzb/.codex/attachments/738e0054-e42a-458a-9820-3938943f6849/pasted-text.txt`, especially Brief input/results. User re-supplied this on 2026-08-31 and explicitly requested frontend-design. Its 1,103 lines and SHA-256 `8d2a145047bbd83765d2120644f17826df82ca0939cb505d6fa5187922227cfa` exactly match the earlier attachment. Its mock counts are examples, not production evidence.
 - Baseline: `807e2cdce85ed7e6cdde3016e3cfd178a0b45556` (`origin/main`, verified 2026-08-31).
 - Worktree: branch `fix/content-brief-artifact-20260831`; unrelated dirty checkouts are preserved.
 - Presentation design below was proposed in the audit and explicitly included in the user's repair objective. Business-contract choices were sent for confirmation on 2026-08-31 and are not silently treated as approved.
@@ -13,6 +13,8 @@
 ## Accepted presentation design
 
 Use the current Marketing light/dark tokens and the Artifact's compact editorial hierarchy. Do not force a theme or replace the site's typography system.
+
+Use the requested frontend-design skill within this existing visual authority: approximately 880px result width, compact question rows, three writing-summary fields, clear outline-to-question mapping, and a prominent page recommendation. Do not substitute the separate August 28 overview-card design for this Artifact.
 
 1. A completed run collapses its input form under an accessible settings disclosure. It can be reopened without clearing the frozen result; submit remains the only paid action.
 2. The result starts with the keyword, market/language, concrete availability summary, and page recommendation. Large debug cards must not precede the recommendation.
