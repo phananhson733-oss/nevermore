@@ -4777,6 +4777,22 @@
       }
     },
     "pageCitability": {
+      "views": {
+        "label": "检查视图",
+        "input": "输入",
+        "result": "结果",
+        "note": "单页检查 · 无需登录",
+        "runNote": "访问与答案结构检查 · 无语言模型调用"
+      },
+      "metrics": {
+        "passedHelp": "{count} 项已判定检查中",
+        "failedHelp": "计入结论 · 每项附修法",
+        "fetchError": "抓取失败",
+        "fetchErrorHelp": "计权项 · 未完成检查，非未通过",
+        "unknown": "未知",
+        "ratioHelp": "原始正文 / 渲染正文；低于 {threshold} 需检查交付方式",
+        "sectionCount": "{count} 项"
+      },
       "eyebrow": "GEO 工具",
       "title": "页面可引用性检查",
       "intro": "贴一个网址。检查抓取访问与答案结构，对比原始 HTML 和有界隔离 Chromium 渲染结果，再查看保留逐项证据的根因分组。不需要账号、知识库或语言模型。",
@@ -4815,10 +4831,10 @@
         "questionNoTerms": "这个提问里全是常用词，取不出可以对照开头的实词，因此那一行标为不适用。"
       },
       "sections": {
-        "readable": "抓取器能不能读到",
+        "readable": "第一段 · 能不能被读到",
         "readableIntro": "已测检索路径的访问与交付。仅展示的提示项不决定页面能否被引用。",
-        "extractable": "能不能把答案抽出来",
-        "extractableIntro": "内容的形态。这几行说明模型要从这一页取走一条具体结论有多容易。"
+        "extractable": "第二段 · 读到了能不能抽出来",
+        "extractableIntro": "在原始 HTML 上判定答案结构；启发式项目保留各自局限。"
       },
       "states": {
         "pass": "通过",

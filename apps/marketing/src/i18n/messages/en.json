@@ -4777,6 +4777,22 @@
       }
     },
     "pageCitability": {
+      "views": {
+        "label": "Check view",
+        "input": "Input",
+        "result": "Result",
+        "note": "One page · No sign-in required",
+        "runNote": "Access and answer-structure checks · No language model calls"
+      },
+      "metrics": {
+        "passedHelp": "Out of {count} checks with a verdict",
+        "failedHelp": "Counted checks · A fix for each",
+        "fetchError": "Fetch failed",
+        "fetchErrorHelp": "Counted checks · Unread, not a failed verdict",
+        "unknown": "Unknown",
+        "ratioHelp": "Raw / rendered copy; below {threshold}, review content delivery",
+        "sectionCount": "{count} checks"
+      },
       "eyebrow": "GEO tools",
       "title": "Page Citability Check",
       "intro": "Paste one URL. Check crawler access and answer structure, compare the fetched HTML with a bounded isolated Chromium render, and inspect grouped issues with their original evidence. No account, knowledge base or language model is required.",
@@ -4815,10 +4831,10 @@
         "questionNoTerms": "Every word in that question is a common word, so no term could be taken out of it to compare against the opening. That row is marked not applicable."
       },
       "sections": {
-        "readable": "Can a crawler read it",
+        "readable": "Stage 1 · Can the page be read?",
         "readableIntro": "Access and delivery for the measured retrieval paths. Advisory rows do not determine whether a page can be cited.",
-        "extractable": "Can an answer be lifted out",
-        "extractableIntro": "Shape of the content. These rows describe how easily a model can take a specific claim out of the page."
+        "extractable": "Stage 2 · Can an answer be extracted?",
+        "extractableIntro": "Answer structure is checked in the original HTML; heuristic checks retain their own limitations."
       },
       "states": {
         "pass": "Passed",
