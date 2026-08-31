@@ -82,7 +82,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "Daily Search Console triage",
     title: "Run a Daily GSC Briefing Before You Start SEO Work",
     description:
-      "Turn the latest complete Search Console history into a short morning brief: what changed, what held across the last full week, and which query or page deserves the next check.",
+      "Read the latest available Search Console data in a short daily brief, with exact dates and filters. Still-updating data is provisional; change-based recommendations require complete comparison periods.",
     sourceLabel: "Requires a Google Search Console connection",
     sourceDetail:
       "GenGrowth requests read-only Search Console access. It cannot change your site, your rankings, or your Google account, and this briefing is recomputed on demand rather than stored.",
@@ -96,8 +96,8 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
         text: "Read-only, revocable at any time from your Google account settings.",
       },
       {
-        name: "Read one complete reporting window first",
-        text: "The briefing waits for Search Console's finalized Pacific-time data and compares the latest complete day and the latest full seven days against their matching prior windows.",
+        name: "Read the latest available reporting dates",
+        text: "The briefing uses the latest available date Google returns, in Pacific Time. It shows current observations while dates are provisional and only compares periods once all required dates are complete.",
       },
       {
         name: "Attach query evidence only when it is strong enough",
@@ -112,7 +112,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     outputs: [
       {
         label: "Daily and weekly KPI context",
-        body: "Clicks, impressions, CTR and exposure-weighted average position for the latest complete day and the latest complete seven days, each against a comparable prior window.",
+        body: "Latest available clicks, impressions, CTR and impression-weighted average position, with the exact reporting windows, data freshness and GSC verification links.",
       },
       {
         label: "Cadence that fits the sample",
@@ -662,7 +662,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       "Sign in, bring a content brief from the Content Brief Builder, and get a section-by-section draft: every sentence carries its claim state (bound, gap, stance or no-claim), and where it applies a bound or stance sentence is also marked with the layer its evidence came from; the sentences a human must verify list their references in the verify list; a separate model call checks which must-answer questions the draft covers, and a verify list names what a human must still confirm before publishing.",
     sourceLabel: "A GenGrowth sign-in and a content brief are required",
     sourceDetail:
-      "Bring an explicitly confirmed Content Brief v2 — by handoff, paste or JSON upload — or a valid legacy v1 export. Each section may cite only its allowed competitor or owned-page excerpts and profile facts. PAA questions guide writing but are not factual citations.",
+      "Bring an explicitly confirmed Content Brief v2, a shared GEO Brief v1.1 or a valid legacy SEO v1 export. SEO v2 sections cite only allowed competitor or owned-page excerpts and profile facts; PAA is not factual support. Shared GEO briefs keep their own evidence contract and server-side ownership verification.",
     cta: "Sign in to write a draft",
     trust:
       "No saved draft, no scheduled run, no content score, no originality claim, and no credit claim. A section whose evidence references fail validation is reported as failed rather than quietly rewritten, and an unfinished coverage check never shows a question as covered.",
@@ -717,7 +717,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "Why was my pasted brief refused?",
         answer:
-          "Confirm a generated v2 brief in Content Brief Builder before loading it here. A GEO report is a different document, not a writing brief. The parser also rejects altered exports, broken cross-references and unknown schemas; valid legacy v1 briefs remain accepted.",
+          "Confirm a generated v2 brief in Content Brief Builder first. A legacy GEO report is not a shared GEO Brief v1.1; use the current GEO Brief export for that workflow. Altered exports, broken references and unknown schemas are rejected; valid SEO v1 exports remain accepted.",
       },
       {
         question: "What does a claim annotation mean?",
@@ -749,7 +749,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "每日 Search Console 分诊",
     title: "在开始 SEO 工作前先跑一遍每日 GSC 简报",
     description:
-      "把最新完整的 Search Console 数据压成一份晨间简报：昨天和最近一周发生了什么变化，哪些变化值得今天优先检查。",
+      "读取 Search Console 最新可用数据，显示精确统计日期与筛选条件。更新中的数据标为暂定；依赖变化的建议需要完整的对比时段。",
     sourceLabel: "需要连接 Google Search Console",
     sourceDetail:
       "GenGrowth 仅请求 Search Console 只读权限。它不能修改站点、排名或 Google 账号，这份简报也是按需重算，而不是持久化保存。",
@@ -763,8 +763,8 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
         text: "只读授权，可随时在你的 Google 账号设置里撤销。",
       },
       {
-        name: "先读完整结算的数据窗口",
-        text: "简报只使用 Search Console 已经完成结算的 Pacific 时区数据，并把最新完整日、最新完整七天分别与上一段可比窗口对比。",
+        name: "先读最新可用统计日期",
+        text: "简报使用 Google 实际返回的最新可用日期，日级统计采用太平洋时间。数据仍在更新时只显示当前观察；所需日期完整后才比较两期。",
       },
       {
         name: "只有证据足够时才附加查询级解释",
@@ -779,7 +779,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     outputs: [
       {
         label: "日级与周级 KPI 上下文",
-        body: "最新完整日与最新完整七天的 clicks、impressions、CTR 和按曝光加权的平均排名，并分别对比上一段可比窗口。",
+        body: "最新可用的 clicks、impressions、CTR 和曝光加权平均排名，附精确统计窗口、数据新鲜度及 GSC 核验链接。",
       },
       {
         label: "和样本量匹配的节奏",
@@ -1325,7 +1325,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       "登录后带上 Content Brief Builder 的一份简报，得到逐节生成的初稿：每句话都有主张状态（有据、缺口、立场或无主张）；适用时，有据/立场句再标出证据的来源层；需要人工核实的句子在核实清单里列出引用；一次独立模型调用校验初稿覆盖了哪些必答问题，核实清单列出发布前仍需人工确认的句子。",
     sourceLabel: "需要登录 GenGrowth 账号并提供一份内容简报",
     sourceDetail:
-      "使用已确认的 Content Brief v2，通过交接、粘贴或上传 JSON 载入；有效的旧版 v1 导出仍可使用。每节只能引用获准的竞品或自有页面片段及档案事实。PAA 只指导问题，不作为事实引用。",
+      "可载入已确认 Content Brief v2、共享 GEO Brief v1.1 或有效的历史 SEO v1。SEO v2 每节只能引用获准的竞品或自有页面片段及档案事实，PAA 不作为事实支持；共享 GEO Brief 保留自己的证据契约，并在服务端核验归属。",
     cta: "登录后生成初稿",
     trust:
       "不保存初稿、没有定时任务、不给内容分、不声称原创、不承诺积分。证据引用没过校验的段落记为失败而不是悄悄改写；覆盖度校验没跑完时不会把任何问题显示为已覆盖。",
@@ -1380,7 +1380,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "为什么我粘贴的简报被拒绝了？",
         answer:
-          "生成的 v2 简报需先在 Content Brief Builder 确认。GEO 报告是另一类文档，不是写作简报。解析器也会拒绝导出后被篡改、交叉引用损坏或 schema 不明的文档；有效的旧版 v1 简报仍可载入。",
+          "生成的 v2 简报需先在 Content Brief Builder 确认。旧版 GEO 报告不是共享 GEO Brief v1.1，GEO 流程请使用当前工具的 Brief 导出。导出后被篡改、引用损坏或 schema 不明的文档会被拒绝；有效的历史 SEO v1 仍可载入。",
       },
       {
         question: "主张标注是什么意思？",

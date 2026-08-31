@@ -3,6 +3,7 @@
 // @pos    -- the identity of a GEO knowledge base; the database recomputes this digest and refuses a mismatch
 
 import { isMatchableGeoName } from "../agents/geo-alias-match.ts";
+import { isSupportedGeoQuestionLanguage } from "./asset-context.ts";
 
 export const GEO_KB_SCHEMA_VERSION = "marketing-geo-kb.v1" as const;
 
@@ -32,6 +33,8 @@ export interface GeoKbRole {
 }
 
 export interface GeoKbCompetitor {
+  /** Omitted on historical v1 payloads; aliases never count as extra brands. */
+  readonly aliases?: readonly string[];
   /**
    * Empty when the competitor is known by name only.
    *
@@ -240,6 +243,10 @@ function parseCompetitors(value: unknown): readonly GeoKbCompetitor[] | null {
     const domain = cleanString(entry["domain"], 255)?.toLowerCase() ?? null;
     const brandName = cleanString(entry["brandName"], GEO_KB_LIMITS.text);
     const confirmed = entry["confirmed"];
+    const aliases = Object.hasOwn(entry, "aliases")
+      ? cleanList(entry["aliases"], 10, GEO_KB_LIMITS.text)
+      : undefined;
+    if (aliases === null) return null;
     if (domain === null || brandName === null || typeof confirmed !== "boolean") {
       return null;
     }
@@ -252,7 +259,7 @@ function parseCompetitors(value: unknown): readonly GeoKbCompetitor[] | null {
     const key = domain.length > 0 ? `d:${domain}` : `n:${brandName.toLowerCase()}`;
     if (seen.has(key)) return null;
     seen.add(key);
-    competitors.push({ domain, brandName, confirmed });
+    competitors.push({ domain, brandName, confirmed, ...(aliases === undefined ? {} : { aliases }) });
   }
   return competitors;
 }
@@ -408,12 +415,17 @@ export type GeoKbBlocker =
   | "alias_too_short"
   | "category_terms_missing"
   | "no_confirmed_competitor"
-  | "role_missing";
+  | "role_missing"
+  | "unsupported_language";
 
 export function geoKbBlockers(
   payload: GeoKbPayload,
+  options: { readonly roleLayersSkipped?: boolean } = {},
 ): readonly GeoKbBlocker[] {
   const blockers: GeoKbBlocker[] = [];
+  if (!isSupportedGeoQuestionLanguage(payload.market.language)) {
+    blockers.push("unsupported_language");
+  }
   if (payload.officialName.length === 0) blockers.push("official_name_missing");
   if (payload.aliases.length === 0) blockers.push("aliases_missing");
   // A name the mention matcher will not look for has to be refused here, before
@@ -433,7 +445,7 @@ export function geoKbBlockers(
     blockers.push("alias_too_short");
   }
   if (payload.categoryTerms.length === 0) blockers.push("category_terms_missing");
-  if (payload.roles.length === 0) blockers.push("role_missing");
+  if (payload.roles.length === 0 && options.roleLayersSkipped !== true) blockers.push("role_missing");
   if (!payload.competitors.some((entry) => entry.confirmed)) {
     blockers.push("no_confirmed_competitor");
   }

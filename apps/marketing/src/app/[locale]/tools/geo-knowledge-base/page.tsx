@@ -1,6 +1,6 @@
 // @input  -- locale, the visitor's authentication status, and the tools.geoKnowledgeBase messages
 // @output -- the knowledge-base editor, its stated limits and its FAQ
-// @pos    -- /tools/geo-knowledge-base, the asset the other GEO tools read from
+// @pos    -- compatibility shortcut to the same website-owned GEO asset
 
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, getTranslations } from "next-intl/server";
@@ -93,6 +93,10 @@ export default async function GeoKnowledgeBasePage({
             </h1>
             <p className="mt-4 text-[15px] leading-[1.65] text-text-dark-secondary md:text-[16.5px]">
               {t("intro")}
+            </p>
+            <p className="mt-4 text-sm leading-relaxed text-text-dark-secondary">
+              {t("asset.shortcutDescription")}{" "}
+              <a className="text-brand-accent-text underline" href={localePath(locale, "/account/websites")}>{t("asset.backToWebsites")}</a>
             </p>
           </div>
         </header>

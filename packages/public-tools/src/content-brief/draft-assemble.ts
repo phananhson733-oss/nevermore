@@ -7,9 +7,7 @@ import { draftFingerprint } from "./canonical.ts";
 import { boundedModelText } from "./text.ts";
 import { DRAFT_TOTAL_BUDGET_MS, MODEL_TEXT_MAX_CHARS } from "./constants.ts";
 import {
-  CONTENT_BRIEF_SCHEMA,
   DRAFT_RESULT_SCHEMA,
-  type ContentBrief,
   type Coverage,
   type CoverageItem,
   type DraftResult,
@@ -18,11 +16,12 @@ import {
   type LlmAggregateMeta,
   type LlmReadMeta,
   type ModelCoverageOutput,
-  type OutlineItem,
   type RunMode,
   type SectionFailReason,
   type VerifyItem,
 } from "./contract.ts";
+import { isGeoContentBrief, type SharedContentBrief as ContentBrief } from "./geo-contract.ts";
+import { geoDraftFacts } from "./geo-draft.ts";
 
 /**
  * Why the draft side has its own assembler.
@@ -42,7 +41,7 @@ export interface PlannedSection {
   readonly id: string;
   readonly h2: string;
   readonly h3: readonly string[];
-  readonly answers: readonly [string, ...string[]];
+  readonly answers: readonly string[];
 }
 
 export interface SectionPlan {
@@ -54,7 +53,7 @@ export interface SectionPlan {
 
 export type SectionPlanFailure = { readonly ok: false; readonly code: "section_not_writable" };
 
-function outlineItems(brief: ContentBrief): readonly OutlineItem[] {
+function outlineItems(brief: ContentBrief): readonly PlannedSection[] {
   return brief.outline.status === "available" ? brief.outline.items : [];
 }
 
@@ -107,6 +106,10 @@ export function sectionEvidenceScope(
   sectionId: string,
   settings: DraftResult["settings"],
 ): SectionEvidenceScope {
+  if (isGeoContentBrief(brief)) {
+    const facts = geoDraftFacts(brief, sectionId, settings);
+    return { citableCrawlIds: new Set(facts.filter(fact => fact.source === "crawl").map(fact => fact.id)), profileFactIds: new Set<string>(), stanceAllowed: false };
+  }
   const section = outlineItems(brief).find((item) => item.id === sectionId);
   const answers = new Set(section?.answers ?? []);
   const questions = brief.must_answer.status === "available" ? brief.must_answer.items.filter((item) => answers.has(item.id)) : [];
@@ -136,6 +139,7 @@ export function deriveVerifyList(sections: readonly DraftSection[]): VerifyItem[
     if (section.status !== "ok") continue;
     for (const paragraph of section.body.paragraphs) {
       for (const sentence of paragraph.sentences) {
+        if (sentence.claim === "bound" && sentence.sources?.length === 1 && sentence.sources[0] === "kb") continue;
         const kind: VerifyItem["kind"] | null =
           sentence.claim === "gap"
             ? "gap"
@@ -258,12 +262,13 @@ export function decideCoverage(brief: ContentBrief, sections: readonly DraftSect
   const heuristic: CoverageItem[] = [];
   const askable: string[] = [];
   const questions = brief.must_answer.status === "available" ? brief.must_answer.items.map((item) => item.id) : [];
-  const owner = new Map<string, DraftSection>();
+  const owner = new Map<string, DraftSection[]>();
   for (const section of sections) {
-    for (const question of section.answers) owner.set(question, section);
+    for (const question of section.answers) owner.set(question, [...(owner.get(question) ?? []), section]);
   }
   for (const question of questions) {
-    const section = owner.get(question);
+    const owners = owner.get(question) ?? [];
+    const section = owners.find(item => item.status === "ok") ?? owners.find(item => item.status === "failed") ?? owners[0];
     if (section === undefined || section.status === "ok") {
       askable.push(question);
       continue;
@@ -384,10 +389,11 @@ export async function assembleDraftResult(input: AssembleDraftInput): Promise<Dr
       fingerprint: "",
     },
     brief_ref: {
-      schema: CONTENT_BRIEF_SCHEMA,
+      schema: input.brief.schema,
       run_id: input.brief.run.run_id,
       fingerprint: input.brief.run.fingerprint,
       keyword: input.brief.keyword.primary,
+      ...(isGeoContentBrief(input.brief) ? { geo_origin: input.brief.geo_origin, evidence: input.brief.evidence } : {}),
     },
     settings: { ...input.settings },
     sections,

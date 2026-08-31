@@ -6,6 +6,8 @@ import {
   visibilityAssembleStep,
   visibilityPrepareStep,
   visibilitySampleStep,
+  visibilityPersistStep,
+  visibilitySiteEvidenceStep,
   type GeoVisibilityWorkflowInput,
   type GeoVisibilityWorkflowOutput,
   type VisibilitySamplePlanItem,
@@ -71,5 +73,7 @@ export async function geoVisibilityWorkflow(
     for (const sample of settled) collected.push(sample);
   }
 
-  return visibilityAssembleStep(input, prepared, collected);
+  const output = await visibilityAssembleStep(input, prepared, collected);
+  const enriched = await visibilitySiteEvidenceStep(prepared, output);
+  return visibilityPersistStep(input, enriched);
 }

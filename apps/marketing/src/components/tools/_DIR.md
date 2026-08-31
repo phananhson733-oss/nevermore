@@ -2,7 +2,7 @@
 
 One line per module: what it reads, what it returns, where it sits. Update the line when the file's header comment changes.
 
-- `content-draft-tool.tsx`, `.test.tsx` — separate v1/confirmed-v2 intake, explicit GEO/unconfirmed guidance, signed-out peek and successful-sign-in-only staging, exact payload cleanup and stale/unmount guards.
+- `content-draft-tool.tsx`, `.test.tsx` — separate SEO v1/shared GEO v1.1/confirmed SEO v2 intake; legacy GEO report and unconfirmed-v2 guidance, signed-out peek and successful-sign-in-only staging, exact payload cleanup and stale/unmount guards.
 - `content-draft-intake.tsx` — version-aware paste/upload rejection and localized Content Brief Builder recovery entry, without inventing a convertible GEO document.
 - `content-draft-v2-workflow.tsx`, `.test.tsx` — exact confirmed plan/settings/selection, session-first submission and full-previous rerun validation; successful result folds settings and receives focus, failures reopen controls without discarding the prior verified result.
 - `content-draft-v2-results.tsx` — actual H2/H3 prose, all-question coverage, observed U/P evidence and verify list; minified JSON and whole-outline Markdown with one confirmed related-links block; export receipts bound to current fingerprint and latest action.
@@ -29,3 +29,15 @@ One line per module: what it reads, what it returns, where it sits. Update the l
 - `content-brief-presentation.test.tsx` — real EN/ZH component tests for Artifact order, default-closed full evidence, neutral unused sources, actual partial summaries, coverage-only guidance and preserved source semantics.
 - `content-brief-provenance.test.tsx` — real EN/ZH Outline/Gap/Links tests for short visible source layers, complete closed evidence, immutable identities, native toggles and unchanged unavailable branches.
 - `content-brief-tool.test.tsx` — session-first submission and real result rendering; success focuses the named result; reopening/editing preserves the frozen keyword; deferred failures and cancelled sign-in restore usable settings without another request.
+- `geo-brief.tsx` — preserves the legacy v1 renderer and reexports the shared v1.1 tool as the current entry.
+- `geo-brief-shared-tool.tsx` — exact frozen/gap selectors, Artifact-order shared result, source/time/anchor disclosure and same-object Markdown/JSON/Draft handoff.
+- `content-draft-intake.tsx` — shared brief identity, readiness and explicit carried-GEO-evidence verification notice.
+- `content-draft-settings.tsx` — shared section selection; GEO direct-answer-only fact scope is labelled separately from SEO gap-angle scope.
+- `content-draft-results.tsx` — common Draft result surface, including GEO-only exact provenance appendix.
+- `content-draft-coverage-card.tsx` — the shared immutable must-answer list and server/model coverage results.
+- `content-draft-doc.tsx` — authored sentence bytes plus separate deterministic source labels and annotation controls.
+- `content-draft-handoff-bar.tsx` — same-result export; GEO published URLs go to T2 and SEO URLs to On-Page.
+- `content-draft-markdown.ts` — unchanged SEO Markdown; GEO appends origin, evidence source/time and version anchors without altering sentence bytes.
+
+- `daily-briefing-tool.tsx` — reads the saved GSC list, independently refreshes it on mount/focus or explicit retry, and preserves site-owned form/report state only while the selection remains granted.
+- `daily-briefing-tool.test.tsx` — verifies report interactions and property refresh, empty-list recovery, retry, selection removal, concurrency, and Strict Mode cleanup.

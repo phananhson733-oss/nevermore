@@ -1,0 +1,163 @@
+{
+  "baselineSha": "8ce02d2fe31f89addef50f827abad41b8baad60f",
+  "branch": "fix/gsc-briefing-truth-20260831",
+  "sourceFingerprint": "6b140805f8e96619ac2636e9e1993ddd00c44de1e67600151d4c2c5b070b1869",
+  "marketingBuildId": "kxCjFEYX4lzcOtWDOGuSn",
+  "files": [
+    {
+      "path": "apps/marketing/e2e/daily-briefing.spec.ts",
+      "bytes": 9850,
+      "sha256": "5d325b1f9d56023b88ee5815451d8e2adc0259717b7cc42435b14088fdda53d1"
+    },
+    {
+      "path": "apps/marketing/e2e/fixtures/daily-briefing.ts",
+      "bytes": 5430,
+      "sha256": "c95c720c5d05819877b42269ba14b0b2a0bf18dd2e88a0015b050832c1853bfd"
+    },
+    {
+      "path": "apps/marketing/src/app/[locale]/tools/page.tsx",
+      "bytes": 18511,
+      "sha256": "bd18de83482657f3ee5f5ce5c892226560c25d84a59d7509a6e8030d15d6d348"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/connected-tool-content.ts",
+      "bytes": 91754,
+      "sha256": "4e6ebe8415a39edc021adb8a15cae69c92856366490230427179897e2d8ee27c"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/daily-briefing-article-content.ts",
+      "bytes": 34613,
+      "sha256": "a8eb21c34b8e23ec14b5f302ee9eb84db41e0890a5fbe4ce68efc13fc67e5b3c"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/daily-briefing-evidence.tsx",
+      "bytes": 4740,
+      "sha256": "00b3e2f6be6cc9f4badef191d07f80ea6d8b52ebc115053f851b9379c6815600"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/daily-briefing-results.test.tsx",
+      "bytes": 127103,
+      "sha256": "0a2af1641899982cc6e1b088854ac80007d6fcc5647600471f697fc323d049ac"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/daily-briefing-results.tsx",
+      "bytes": 99292,
+      "sha256": "607c53f825a62a4fe9275158d1c3f6e8dce9fbf33fd312555147c0ca80f10101"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/daily-briefing-tool.test.tsx",
+      "bytes": 19867,
+      "sha256": "70a46917c99a802c713344d1b0ecbbc08149c5b48e4d389b477747b3b7395c6b"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/daily-briefing-tool.tsx",
+      "bytes": 12764,
+      "sha256": "5f67a8887c1db41ea69a319916b28265c8e242bf9e78ace7274942f4828c8b32"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/daily-briefing-trend.test.tsx",
+      "bytes": 12167,
+      "sha256": "acedcd730d2bad1f1cdf8f9c1f8765793150b22628bcacb86e711514bd4bf685"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/daily-briefing-trend.tsx",
+      "bytes": 23610,
+      "sha256": "70375b3c25451acc54ea306bf9c60a4590710ed61cc492ab3f789ae19ad3e750"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/tool-article-content.test.ts",
+      "bytes": 25515,
+      "sha256": "72eb0250957c6f11e257ffc9c8a3fa3424c814c5fe208acb51d3b23738189f79"
+    },
+    {
+      "path": "apps/marketing/src/i18n/daily-briefing-messages.test.ts",
+      "bytes": 27518,
+      "sha256": "29f8c8b416d115b2f4ef173df0ef70167c579a3fba2a7050ef43cb0bb1ecb065"
+    },
+    {
+      "path": "apps/marketing/src/i18n/messages/en.json",
+      "bytes": 517899,
+      "sha256": "c2b9dd9425b06d6f01ddd72a51947c76f532ee01167736290932e8326e57c478"
+    },
+    {
+      "path": "apps/marketing/src/i18n/messages/zh.json",
+      "bytes": 493497,
+      "sha256": "4d07c7e4dfa2bc9b0abb68f3b7951a4fb363b8094fcc9b92720a45cdc806d4e7"
+    },
+    {
+      "path": "apps/marketing/src/lib/tools/daily-briefing-gsc-link.test.ts",
+      "bytes": 2609,
+      "sha256": "ada3c89988909f9ef7b35137ab3ecf7aebfc3f6ffcd165a5018cefd8ea35edab"
+    },
+    {
+      "path": "apps/marketing/src/lib/tools/daily-briefing-gsc-link.ts",
+      "bytes": 1452,
+      "sha256": "cdd57dddff92224a78259d8490e1b0d140a8c95cf56d0701c35f85fdfda9328a"
+    },
+    {
+      "path": "apps/marketing/src/lib/tools/daily-briefing-reader.test.ts",
+      "bytes": 7223,
+      "sha256": "55ca23adb0ae59e3c0e7cbb7a746318978a2f9680ac934b4e3f6f37aba6269ed"
+    },
+    {
+      "path": "apps/marketing/src/lib/tools/daily-briefing-reader.ts",
+      "bytes": 2334,
+      "sha256": "7f715d33abc11d3fe62f09e6ab97f5dad19b76dc8b5e3042273af2df4c21d23b"
+    },
+    {
+      "path": "packages/public-tools/src/daily-briefing/index.ts",
+      "bytes": 118,
+      "sha256": "a82b06cd360adbe555a43054a6f0abb526a57d2cb567b766f8d6421e8ffc4f9c"
+    },
+    {
+      "path": "packages/public-tools/src/daily-briefing/report.test.ts",
+      "bytes": 206060,
+      "sha256": "0b99333bd0bf2b5f833b6fb98fb113afd5ac329d5c8fcbacaf3a5d1ffce82f29"
+    },
+    {
+      "path": "packages/public-tools/src/daily-briefing/report.ts",
+      "bytes": 133187,
+      "sha256": "01b95dd29cb80dfd03e5419c270eadbf17b3aa1f4a022d57c7696479020521ea"
+    },
+    {
+      "path": "packages/public-tools/src/daily-briefing/run.test.ts",
+      "bytes": 29304,
+      "sha256": "efd0c9d05faf355889174660a392ccae5831d2fc184f91e6fab6954e6b1ca283"
+    },
+    {
+      "path": "packages/public-tools/src/daily-briefing/run.ts",
+      "bytes": 9773,
+      "sha256": "09a32d8b8340a1b737fb3c2aec466287aa42cc2c977d63319beb959796ef33da"
+    },
+    {
+      "path": "packages/public-tools/src/daily-briefing/types.ts",
+      "bytes": 33631,
+      "sha256": "f5bfd4e7eaaf2939fcebe29c7c7cfeffa911c624c7dbc46e4ca00b2e912cba51"
+    },
+    {
+      "path": "packages/public-tools/src/daily-briefing/verification.test.ts",
+      "bytes": 12465,
+      "sha256": "8634fce20a0d2a33707cd45357a0b0ab4d6c336a407c89a9aad7b441bf7de385"
+    },
+    {
+      "path": "packages/public-tools/src/daily-briefing/verification.ts",
+      "bytes": 11205,
+      "sha256": "acea03eef213723d832643182f5d0c8e615d2c9490329d4f598694cf51cb13f3"
+    },
+    {
+      "path": "packages/public-tools/src/gsc-analytics/types.ts",
+      "bytes": 2874,
+      "sha256": "17c9a997371d6f2696ba4115af1c42cdabbe970f8b854a0ba8a494c6d84da0f9"
+    },
+    {
+      "path": "packages/sources/src/gsc/search-analytics.test.ts",
+      "bytes": 10880,
+      "sha256": "314d9966b3e2ada7e065e1f9abd7d4d8d598bb9b0a6de7d074617b98ebf95ff6"
+    },
+    {
+      "path": "packages/sources/src/gsc/search-analytics.ts",
+      "bytes": 13222,
+      "sha256": "11c9dff909818dd77b12c177e8c21ffeb3a3ee221df438d42866726b4eeec9bc"
+    }
+  ]
+}

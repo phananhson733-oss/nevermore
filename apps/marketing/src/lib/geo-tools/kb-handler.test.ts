@@ -8,6 +8,7 @@ import {
   type GeoKbHandlerDependencies,
 } from "./kb-handler.ts";
 import { emptyGeoKbPayload, type GeoKbPayload } from "./kb-contract.ts";
+import { buildGeoSnapshotContext } from "./snapshot-context.ts";
 
 const READY: GeoKbPayload = {
   ...emptyGeoKbPayload("https://acme-kb-example.com/"),
@@ -206,6 +207,29 @@ describe("save draft", () => {
 });
 
 describe("freeze", () => {
+  it("uses source-conditioned frozen questions and returns their role/entities", async () => {
+    const kbId = "11111111-1111-4111-8111-111111111113";
+    const payload = { ...READY, roles: [] };
+    const generated = buildGeoSnapshotContext({ kbId, targetHost: "acme-kb-example.com", payload, profile: null, receipt: null });
+    const dependencies = deps({ readDraftPayload: async () => ({ kind: "ok", value: { payload, draftVersion: 2, ...generated } }) });
+    const freeze = vi.fn(dependencies.freeze);
+    const response = await handleGeoKbFreeze(post("/api/tools/geo-knowledge-base/freeze", { kbId, baseVersion: 2, contextHash: generated.context.contentHash }), { ...dependencies, freeze });
+    expect(response.status).toBe(200);
+    expect(freeze).toHaveBeenCalledWith(expect.objectContaining(generated));
+    const data = (await response.json()).data;
+    expect(data.questions).toEqual(generated.questionSet.questions);
+  });
+
+  it("refuses an unseen source-context change rather than freezing different Profile facts", async () => {
+    const kbId = "11111111-1111-4111-8111-111111111113";
+    const generated = buildGeoSnapshotContext({ kbId, targetHost: "acme-kb-example.com", payload: READY, profile: null, receipt: null });
+    const freeze = vi.fn(deps().freeze);
+    const response = await handleGeoKbFreeze(post("/api/tools/geo-knowledge-base/freeze", { kbId, baseVersion: 2 }), deps({ freeze, readDraftPayload: async () => ({ kind: "ok", value: { payload: READY, draftVersion: 2, ...generated } }) }));
+    expect(response.status).toBe(409);
+    expect((await response.json()).error.code).toBe("context_stale");
+    expect(freeze).not.toHaveBeenCalled();
+  });
+
   it("refuses while a blocker stands, and does not call the store", async () => {
     const freeze = vi.fn();
     const response = await handleGeoKbFreeze(

@@ -1,4 +1,4 @@
-// @input  -- final Search Console day rows and optional query evidence for two weeks
+// @input  -- fresh Search Console day rows, incompleteness metadata and scoped query evidence
 // @output -- one deterministic, evidence-bounded daily search briefing envelope
 // @pos    -- pure core; network, auth, quota and persistence stay outside this module
 
@@ -9,11 +9,7 @@ import {
   type GscPageRow,
   type GscQueryPageRow,
 } from "../gsc-analytics/page-reader.ts";
-import {
-  latestFinalWindow,
-  pacificDate,
-  shiftDate,
-} from "../gsc-analytics/window.ts";
+import { pacificDate, shiftDate } from "../gsc-analytics/window.ts";
 import { buildEvidenceTable } from "../quick-wins/evidence.ts";
 import { aggregationBasesAgree } from "../quick-wins/report.ts";
 import { buildSiteCtrCurve } from "../site-baseline/ctr-curve.ts";
@@ -30,6 +26,7 @@ import type {
   DailyBriefingChangeKind,
   DailyBriefingCoverage,
   DailyBriefingEnvelope,
+  DailyBriefingFreshness,
   DailyBriefingEvidenceState,
   DailyBriefingKpiComparison,
   DailyBriefingKpiDelta,
@@ -69,7 +66,7 @@ import type {
   DailyBriefingWindows,
 } from "./types.ts";
 
-export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v9";
+export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v10";
 export const BRIEFING_WINDOW_DAYS = 7;
 /** Daily points held once so the UI can switch 7/28/90-day views locally. */
 export const DAILY_BRIEFING_TREND_DAYS = 90;
@@ -255,10 +252,11 @@ const EMPTY_DELTA: DailyBriefingKpiDelta = {
   position: null,
 };
 
-export function dailyBriefingWindowsFor(now: Date): DailyBriefingWindows {
-  const current7Days = latestFinalWindow(now, {
-    lengthDays: BRIEFING_WINDOW_DAYS,
-  });
+export function dailyBriefingWindowsFor(endDate: string): DailyBriefingWindows {
+  const current7Days = {
+    startDate: shiftDate(endDate, -(BRIEFING_WINDOW_DAYS - 1)),
+    endDate,
+  };
   const previous7End = shiftDate(current7Days.startDate, -1);
   const previous7Days = {
     startDate: shiftDate(previous7End, -(BRIEFING_WINDOW_DAYS - 1)),
@@ -283,8 +281,8 @@ export function dailyBriefingWindowsFor(now: Date): DailyBriefingWindows {
 }
 
 /**
- * Fresh visualisation windows. These never replace `dailyBriefingWindowsFor`:
- * action evidence remains the finalised 14-day comparison above.
+ * Broad fresh reads. The returned valid dates, not the caller's wall clock,
+ * decide the analysis windows; incomplete comparisons are withheld separately.
  */
 export function dailyBriefingTrendWindowsFor(now: Date): {
   readonly daily: { readonly startDate: string; readonly endDate: string };
@@ -296,8 +294,9 @@ export function dailyBriefingTrendWindowsFor(now: Date): {
       startDate: shiftDate(endDate, -(DAILY_BRIEFING_TREND_DAYS - 1)),
       endDate,
     },
-    // Two PT calendar dates cover the last 24 hourly buckets across midnight.
-    hourly: { startDate: shiftDate(endDate, -1), endDate },
+    // Retain Google's hourly retention window so reporting lag cannot erase
+    // the beginning of the latest available 24 hours.
+    hourly: { startDate: shiftDate(endDate, -9), endDate },
   };
 }
 
@@ -388,7 +387,7 @@ function trendSeriesFor(
 
 function normalizedDateRows(
   input: BuildDailyBriefingInput,
-  windows: DailyBriefingWindows,
+  windows: DailyBriefingWindows | null,
 ): {
   readonly rows: ReadonlyMap<
     string,
@@ -399,15 +398,19 @@ function normalizedDateRows(
   const rows = new Map<string, BuildDailyBriefingInput["dateRows"][number]>();
   const conflicts = new Set<string>();
   let omitted = false;
+  if (windows === null) return { rows, omitted };
 
   for (const row of input.dateRows) {
     if (
       !isDateKey(row.date) ||
-      row.date < windows.readRange.startDate ||
-      row.date > windows.readRange.endDate ||
       !isMetricRowValid(row)
     ) {
       omitted = true;
+      continue;
+    }
+    // The initial read also supplies the 90-day trend. Valid dates outside
+    // the analysis window are not malformed or omitted evidence.
+    if (row.date < windows.readRange.startDate || row.date > windows.readRange.endDate) {
       continue;
     }
     if (rows.has(row.date)) {
@@ -494,9 +497,13 @@ function ratio(before: number, after: number): number | null {
 function compareKpis(
   current: DailyBriefingKpis | null,
   previous: DailyBriefingKpis | null,
+  comparisonEligible: boolean,
 ): DailyBriefingKpiComparison {
   if (current === null || previous === null) {
     return { evidence: "unavailable", current, previous, delta: EMPTY_DELTA };
+  }
+  if (!comparisonEligible) {
+    return { evidence: "partial", current, previous, delta: EMPTY_DELTA };
   }
 
   return {
@@ -543,21 +550,21 @@ function queryEvidenceState(
 ): Exclude<DailyBriefingEvidenceState, "not_observed"> {
   if (
     evidence === null ||
-    evidence.queryRead === null ||
+    evidence.queryPageTotalsRead == null ||
     evidence.queryPageRead === null
   ) {
     return "unavailable";
   }
   if (
-    evidence.queryRead.paging.truncated ||
+    evidence.queryPageTotalsRead.paging.truncated ||
     evidence.queryPageRead.paging.truncated
   ) {
     return "partial";
   }
   if (
-    evidence.queryRead.responseAggregationType === null ||
+    evidence.queryPageTotalsRead.responseAggregationType === null ||
     evidence.queryPageRead.responseAggregationType === null ||
-    evidence.queryRead.responseAggregationType !==
+    evidence.queryPageTotalsRead.responseAggregationType !==
       evidence.queryPageRead.responseAggregationType
   ) {
     return "unavailable";
@@ -594,7 +601,7 @@ function pageAttributionUsable(
   return (
     evidence?.queryPageRead != null &&
     !evidence.queryPageRead.paging.truncated &&
-    !evidence.queryRead?.paging.truncated &&
+    !evidence.queryPageTotalsRead?.paging.truncated &&
     queryEvidenceBasisComparable(evidence)
   );
 }
@@ -602,7 +609,7 @@ function pageAttributionUsable(
 function queryEvidenceBasisComparable(
   evidence: DailyBriefingQueryEvidence | null,
 ): boolean {
-  const queryBasis = evidence?.queryRead?.responseAggregationType;
+  const queryBasis = evidence?.queryPageTotalsRead?.responseAggregationType;
   const queryPageBasis = evidence?.queryPageRead?.responseAggregationType;
   return (
     queryBasis !== null &&
@@ -669,7 +676,7 @@ function coverageOf(
   evidence: DailyBriefingQueryEvidence | null,
 ): DailyBriefingWindowCoverage {
   const state = queryEvidenceState(evidence);
-  if (evidence?.queryRead === null || evidence?.queryRead === undefined) {
+  if (evidence?.queryPageTotalsRead == null) {
     return {
       evidence: state,
       queryRows: 0,
@@ -680,7 +687,7 @@ function coverageOf(
     };
   }
 
-  const rows = validQueryRows(evidence.queryRead.rows);
+  const rows = validQueryRows(evidence.queryPageTotalsRead.rows);
   const queryPages = validQueryPageRows(evidence.queryPageRead?.rows ?? []);
   const byQuery = queryPageCoverage(rows, queryPages);
   const eligible = rows.filter(
@@ -732,11 +739,11 @@ function anonymizationOf(
     },
     limitation: null,
   });
-  if (evidence?.queryRead === null || evidence?.queryRead === undefined) {
+  if (evidence?.queryPageTotalsRead == null) {
     return unavailable();
   }
 
-  const rows = validQueryRows(evidence.queryRead.rows);
+  const rows = validQueryRows(evidence.queryPageTotalsRead.rows);
   const queryImpressions = rows.reduce((sum, row) => sum + row.impressions, 0);
   const queryClicks = rows.reduce((sum, row) => sum + row.clicks, 0);
   const totals = evidence.propertyTotals;
@@ -748,7 +755,7 @@ function anonymizationOf(
     queryClicks,
     propertyClicks: totals.clicks,
   };
-  if (evidence.queryRead.paging.truncated) {
+  if (evidence.queryPageTotalsRead.paging.truncated) {
     return {
       value: {
         evidence: "partial",
@@ -760,7 +767,7 @@ function anonymizationOf(
     };
   }
   if (
-    !aggregationBasesAgree(totals, evidence.queryRead.responseAggregationType)
+    !aggregationBasesAgree(totals, evidence.queryPageTotalsRead.responseAggregationType)
   ) {
     return {
       value: {
@@ -805,66 +812,6 @@ function mapByQuery(
   rows: readonly GscQueryRow[],
 ): ReadonlyMap<string, GscQueryRow> {
   return new Map(rows.map((row) => [row.query, row]));
-}
-
-function pageForQuery(
-  query: string,
-  evidence: DailyBriefingQueryEvidence,
-): string | null {
-  if (evidence.queryRead === null || evidence.queryPageRead === null)
-    return null;
-  if (!pageAttributionUsable(evidence)) return null;
-  const queryPages = validQueryPageRows(evidence.queryPageRead.rows);
-  const coverage = queryPageCoverage(
-    validQueryRows(evidence.queryRead.rows),
-    queryPages,
-  ).get(query);
-  if (
-    coverage === null ||
-    coverage === undefined ||
-    coverage < MIN_DIMENSION_COVERAGE
-  ) {
-    return null;
-  }
-  const rows = queryPages
-    .filter(
-      (row) =>
-        row.query === query && row.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS,
-    )
-    .sort(
-      (a, b) => b.impressions - a.impressions || a.page.localeCompare(b.page),
-    );
-  return rows[0]?.page ?? null;
-}
-
-function pageForObservation(
-  query: string,
-  evidence: DailyBriefingQueryEvidence,
-  minimumImpressions: number,
-): string | null {
-  if (evidence.queryRead === null || evidence.queryPageRead === null)
-    return null;
-  if (!pageAttributionUsable(evidence)) return null;
-  const queryPages = validQueryPageRows(evidence.queryPageRead.rows);
-  const coverage = queryPageCoverage(
-    validQueryRows(evidence.queryRead.rows),
-    queryPages,
-  ).get(query);
-  if (
-    coverage === null ||
-    coverage === undefined ||
-    coverage < MIN_DIMENSION_COVERAGE
-  ) {
-    return null;
-  }
-  const rows = queryPages
-    .filter(
-      (row) => row.query === query && row.impressions >= minimumImpressions,
-    )
-    .sort(
-      (a, b) => b.impressions - a.impressions || a.page.localeCompare(b.page),
-    );
-  return rows[0]?.page ?? null;
 }
 
 /** Everything the lane capability and the mode are derived from. */
@@ -1258,8 +1205,14 @@ function candidatesFor(
   const previousQueryPages = pairAttributionUsable
     ? validQueryPageRows(previousEvidence.queryPageRead?.rows ?? [])
     : [];
-  const currentCoverage = queryPageCoverage(currentRows, currentQueryPages);
-  const previousCoverage = queryPageCoverage(previousRows, previousQueryPages);
+  const currentCoverage = queryPageCoverage(
+    validQueryRows(currentEvidence.queryPageTotalsRead?.rows ?? []),
+    currentQueryPages,
+  );
+  const previousCoverage = queryPageCoverage(
+    validQueryRows(previousEvidence.queryPageTotalsRead?.rows ?? []),
+    previousQueryPages,
+  );
   const previousPairs = new Set(
     previousQueryPages.map((row) => `${row.query}\u0000${row.page}`),
   );
@@ -1485,19 +1438,13 @@ function candidatesFor(
         a.current.query.localeCompare(b.current.query),
     )
     .map((entry) => {
-      const page = pageForObservation(
-        entry.current.query,
-        currentEvidence,
-        BRIEFING_MIN_ROW_IMPRESSIONS,
-      );
       return {
         kind: entry.kind,
+        metricScope: "query" as const,
         evidence: "observed" as const,
         query: entry.current.query,
-        page,
-        pageEvidence: (page === null ? "unavailable" : "observed") as
-          | "observed"
-          | "unavailable",
+        page: null,
+        pageEvidence: "unavailable" as const,
         current: entry.current,
         previous: entry.previous,
         positionDelta: entry.positionDelta,
@@ -1694,7 +1641,6 @@ function withheldKey(candidate: ChangeCandidate): string {
  */
 function selectChanges(
   candidates: readonly ChangeCandidate[],
-  currentEvidence: DailyBriefingQueryEvidence,
   budget: number,
   alreadyReported: ReadonlySet<string>,
 ): {
@@ -1718,17 +1664,17 @@ function selectChanges(
   }[] = [];
   for (const candidate of ranked) {
     if (usedQueries.has(candidate.query)) continue;
-    const page =
-      candidate.page ?? pageForQuery(candidate.query, currentEvidence);
+    const page = candidate.page;
     if (page === null) {
-      pageAttributionWithheld.add(withheldKey(candidate));
       // first_observed is a statement about one query/page pair: without the
       // page there is no signal left to report. Every other lane is a
       // statement about the query, so a missing page withholds the handoff.
       if (
         candidate.kind === "first_observed" ||
-        candidate.kind === "first_observed_leading"
+        candidate.kind === "first_observed_leading" ||
+        candidate.kind === "actionable_position_decline"
       ) {
+        pageAttributionWithheld.add(withheldKey(candidate));
         continue;
       }
     }
@@ -1737,23 +1683,12 @@ function selectChanges(
   }
 
   const selected = resolved.slice(0, Math.max(0, budget));
-  // A briefing that spends its whole budget on signals it cannot hand off,
-  // while one it can hand off waits outside the cut, is the same empty page
-  // this work exists to remove. Give up the weakest un-handoffable row for it.
-  if (selected.length > 0 && selected.every((entry) => entry.page === null)) {
-    const handoffable = resolved
-      .slice(Math.max(0, budget))
-      .find((entry) => entry.page !== null);
-    if (handoffable !== undefined) {
-      selected.splice(selected.length - 1, 1, handoffable);
-    }
-  }
-
   const changes: DailyBriefingChange[] = [];
   const actions: DailyBriefingAction[] = [];
   for (const { candidate, page } of selected) {
     changes.push({
       kind: candidate.kind,
+      metricScope: page === null ? "query" : "query_page",
       // Both appearance lanes reason from the prior window having no record of
       // the pair, so both carry the label that says so. Leaving the new one on
       // "observed" would have made an absence-derived claim look like a
@@ -1849,6 +1784,7 @@ function queryWatchlistFor({
   evidence,
   excludedQueries,
   previousEvidence,
+  comparisonEvidence,
 }: {
   /** Display rows left after changes and provisional moves have taken theirs. */
   readonly budget: number;
@@ -1857,13 +1793,13 @@ function queryWatchlistFor({
   /** Queries already named elsewhere on the page. */
   readonly excludedQueries: ReadonlySet<string>;
   readonly previousEvidence: DailyBriefingQueryEvidence | null;
+  readonly comparisonEvidence: "available" | "unavailable" | "not_compared";
 }): DailyBriefingQueryWatchlist {
   if (
-    evidence !== "observed" ||
+    evidence === "unavailable" ||
     currentEvidence?.queryRead === null ||
     currentEvidence?.queryRead === undefined ||
-    previousEvidence?.queryRead === null ||
-    previousEvidence?.queryRead === undefined
+    currentEvidence.queryRead.paging.truncated
   ) {
     return {
       evidence,
@@ -1874,9 +1810,14 @@ function queryWatchlistFor({
     };
   }
 
-  const previousByQuery = mapByQuery(
-    validQueryRows(previousEvidence.queryRead.rows),
-  );
+  const previousRead = previousEvidence?.queryRead;
+  const previousRows = validQueryRows(previousRead?.rows ?? []);
+  // Discarded or unattributable records cannot prove that a query was absent.
+  // Keep that distinct from a successful, sufficiently read empty response.
+  const priorReadAvailable = comparisonEvidence === "available" &&
+    previousRead != null && (previousRead.unreadableRows ?? 0) === 0 &&
+    previousRows.length === previousRead.rows.length;
+  const previousByQuery = mapByQuery(priorReadAvailable ? previousRows : []);
   const observations = validQueryRows(currentEvidence.queryRead.rows)
     .flatMap<DailyBriefingQueryObservation>((current) => {
       if (
@@ -1895,15 +1836,6 @@ function queryWatchlistFor({
         current.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS
           ? "sample_floor_reached"
           : "sample_building";
-      const minimumPageImpressions =
-        kind === "sample_floor_reached"
-          ? BRIEFING_MIN_ROW_IMPRESSIONS
-          : BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS;
-      const page = pageForObservation(
-        current.query,
-        currentEvidence,
-        minimumPageImpressions,
-      );
       // Below the provisional floor the prior window cannot carry a position
       // comparison, and rendering "11.8 -> 9.7" from a 49-impression week is
       // exactly the low-sample claim the floors exist to refuse.
@@ -1922,12 +1854,17 @@ function queryWatchlistFor({
       return [
         {
           kind,
+          metricScope: "query",
           band,
           query: current.query,
-          page,
-          pageEvidence: page === null ? "unavailable" : "observed",
+          page: null,
+          pageEvidence: "unavailable",
           current,
           previous,
+          previousEvidence: !priorReadAvailable
+            ? comparisonEvidence === "not_compared" ? "not_compared" : "unavailable"
+            : priorWindow === undefined ? "not_observed"
+              : previousBelowFloor !== null ? "below_floor" : "observed",
           previousBelowFloor,
           positionDelta:
             previous === null
@@ -2845,7 +2782,7 @@ function pageChecksFor({
   // attachment is not "this property has no brand queries" — it is a
   // subtraction we cannot perform. Defaulting it to an empty list published
   // the property's whole rate, brand traffic included, as its non-brand one.
-  const queryRead = currentEvidence?.queryRead ?? null;
+  const queryRead = currentEvidence?.queryPageTotalsRead ?? null;
   if (queryRead === null) blockers.push("query_rows_unavailable");
   else if (queryRead.paging.truncated) {
     // A prefix is not the query list. Brand rows outside it are never
@@ -3107,38 +3044,69 @@ function modeFor(
 export function buildDailyBriefing(
   input: BuildDailyBriefingInput,
 ): DailyBriefingEnvelope {
-  const windows = dailyBriefingWindowsFor(input.now);
+  const today = pacificDate(input.now);
+  const readStartDate = shiftDate(today, -(DAILY_BRIEFING_TREND_DAYS - 1));
+  const validDates = input.dateRows
+    .filter((row) => isDateKey(row.date) && isMetricRowValid(row) &&
+      row.date >= readStartDate && row.date <= today)
+    .map((row) => row.date);
+  const latestAvailableDate = [...validDates].sort().at(-1) ?? null;
+  const requestedEndDate = input.windowEndDate === undefined
+    ? latestAvailableDate : input.windowEndDate;
+  const windowEndDate = requestedEndDate !== null && validDates.includes(requestedEndDate)
+    ? requestedEndDate : null;
+  const windows = windowEndDate === null ? null : dailyBriefingWindowsFor(windowEndDate);
   const normalized = normalizedDateRows(input, windows);
-  const latest = kpisForDates(normalized.rows, [windows.latestDay.endDate]);
-  const previousDay = kpisForDates(normalized.rows, [
-    windows.previousDay.endDate,
-  ]);
-  const currentWeek = kpisForDates(
+  const missingDates = windows === null ? [] : datesIn(windows.readRange)
+    .filter((date) => !normalized.rows.has(date));
+  const firstIncompleteDate = input.firstIncompleteDate ?? null;
+  const incomplete = windows !== null && (missingDates.length > 0 ||
+    windowEndDate === today ||
+    (firstIncompleteDate !== null && (!isDateKey(firstIncompleteDate) ||
+      firstIncompleteDate <= windows.readRange.endDate)));
+  const freshness: DailyBriefingFreshness = {
+    source: "google_search_console",
+    readAt: input.now.toISOString(),
+    latestAvailableDate,
+    firstIncompleteDate,
+    timeZone: "America/Los_Angeles",
+    dataState: "all",
+    aggregationType: "byProperty",
+    status: windows === null ? "unavailable" : incomplete ? "partial" : "complete",
+    comparisonEligible: windows !== null && !incomplete,
+    missingDates,
+  };
+  const latest = windows === null ? null : kpisForDates(normalized.rows, [windows.latestDay.endDate]);
+  const previousDay = windows === null ? null : kpisForDates(normalized.rows, [windows.previousDay.endDate]);
+  const currentWeek = windows === null ? null : kpisForDates(
     normalized.rows,
     datesIn(windows.current7Days),
   );
-  const previousWeek = kpisForDates(
+  const previousWeek = windows === null ? null : kpisForDates(
     normalized.rows,
     datesIn(windows.previous7Days),
   );
-  const day = compareKpis(latest, previousDay);
-  const weekly = compareKpis(currentWeek, previousWeek);
+  const day = compareKpis(latest, previousDay, freshness.comparisonEligible);
+  const weekly = compareKpis(currentWeek, previousWeek, freshness.comparisonEligible);
   const trend = {
     daily: trendSeriesFor(input.trend?.daily, "daily"),
     hourly: trendSeriesFor(input.trend?.hourly, "hourly"),
   };
-  const currentEvidence = input.currentQueryEvidence ?? null;
-  const previousEvidence = input.previousQueryEvidence ?? null;
+  const currentEvidence = windows === null ? null : input.currentQueryEvidence ?? null;
+  const previousEvidence = windows === null ? null : input.previousQueryEvidence ?? null;
   const currentRowsState = queryRowsState(currentEvidence);
   const previousRowsState = queryRowsState(previousEvidence);
   const comparableQueryWindows = queryWindowsComparable(
     currentEvidence,
     previousEvidence,
   );
-  const funnelEvidence = signalFunnelEvidence(
+  const queryComparisonEvidence = signalFunnelEvidence(
     currentEvidence,
     previousEvidence,
   );
+  const funnelEvidence = queryComparisonEvidence === "unavailable"
+    ? "unavailable"
+    : freshness.comparisonEligible ? queryComparisonEvidence : "partial";
   const coverage: DailyBriefingCoverage = {
     current: coverageOf(currentEvidence),
     previous: coverageOf(previousEvidence),
@@ -3147,7 +3115,7 @@ export function buildDailyBriefing(
   const previousAnonymization = anonymizationOf(previousEvidence);
   const limitations = new Set<DailyBriefingLimitationCode>();
 
-  if (day.evidence === "unavailable" || weekly.evidence === "unavailable") {
+  if (!freshness.comparisonEligible) {
     limitations.add("daily_data_incomplete");
   }
   if (normalized.omitted) limitations.add("daily_rows_omitted");
@@ -3186,12 +3154,11 @@ export function buildDailyBriefing(
   if (
     [currentEvidence, previousEvidence].some(
       (evidence) =>
-        evidence?.queryRead !== null &&
-        evidence?.queryRead !== undefined &&
+        evidence?.queryPageTotalsRead != null &&
         evidence.queryPageRead !== null &&
-        evidence.queryRead.responseAggregationType !== null &&
+        evidence.queryPageTotalsRead.responseAggregationType !== null &&
         evidence.queryPageRead.responseAggregationType !== null &&
-        evidence.queryRead.responseAggregationType !==
+        evidence.queryPageTotalsRead.responseAggregationType !==
           evidence.queryPageRead.responseAggregationType,
     )
   ) {
@@ -3224,6 +3191,7 @@ export function buildDailyBriefing(
   let capabilityCounts: CapabilityCounts | null = null;
 
   if (
+    freshness.comparisonEligible &&
     currentEvidence !== null &&
     previousEvidence !== null &&
     currentRowsState === "observed" &&
@@ -3242,13 +3210,11 @@ export function buildDailyBriefing(
     );
     const selected = selectChanges(
       changeCandidates,
-      currentEvidence,
       DAILY_BRIEFING_ACTION_LIMIT,
       new Set<string>(),
     );
     const leadingSelected = selectChanges(
       leadingCandidates,
-      currentEvidence,
       DAILY_BRIEFING_LEADING_LIMIT,
       selected.reportedQueries,
     );
@@ -3314,7 +3280,8 @@ export function buildDailyBriefing(
   // Read independently of the query evidence above. The two dimensions fail
   // separately, and on a property whose queries are mostly anonymized the page
   // rows are the only place the clicks are visible at all.
-  const pageCandidateSet = pageCandidatesFor(currentEvidence, previousEvidence);
+  const pageCandidateSet = freshness.comparisonEligible
+    ? pageCandidatesFor(currentEvidence, previousEvidence) : null;
   if (pageCandidateSet === null) limitations.add("page_evidence_unavailable");
 
   const laneCapability = laneCapabilityFor({
@@ -3323,7 +3290,7 @@ export function buildDailyBriefing(
     brandTermsConfirmed: input.brandTermsConfirmed,
     pages: pageCandidateSet,
   });
-  const mode = modeFor(capabilityCounts, pageCandidateSet);
+  const comparisonMode = modeFor(capabilityCounts, pageCandidateSet);
 
   // The page lanes have their own budget, so no count of query candidates can
   // decide whether a page measurement is shown.
@@ -3397,17 +3364,23 @@ export function buildDailyBriefing(
   const queryWatchlist = queryWatchlistFor({
     budget: provisionalBudget - provisionalMoves.items.length,
     currentEvidence,
-    evidence: funnelEvidence,
+    evidence: currentRowsState === "observed" && freshness.status === "partial"
+      ? "partial" : currentRowsState,
+    comparisonEvidence: !freshness.comparisonEligible ? "not_compared"
+      : funnelEvidence === "observed" ? "available" : "unavailable",
     excludedQueries: new Set([
       ...selectedChangeQueries,
       ...eligibleProvisionalMoves.map((move) => move.query),
     ]),
     previousEvidence,
   });
+  const mode: DailyBriefingMode = comparisonMode === "unavailable" &&
+    queryWatchlist.items.length > 0
+    ? "current_position_watchlist" : comparisonMode;
   // Built from the watchlist that was just displayed, so every check points at
   // a row the reader can see.
   const suggestedChecks = suggestedChecksFor(queryWatchlist);
-  const pageChecks = pageChecksFor({
+  const observedPageChecks = pageChecksFor({
     brandTermsConfirmed: input.brandTermsConfirmed,
     brandTerms: input.brandTerms,
     currentEvidence,
@@ -3421,6 +3394,9 @@ export function buildDailyBriefing(
       ),
     ),
   });
+  const pageChecks: DailyBriefingPageChecks = freshness.status === "partial" &&
+    observedPageChecks.evidence === "observed"
+    ? { ...observedPageChecks, evidence: "partial" } : observedPageChecks;
   const signalFunnel: DailyBriefingSignalFunnel =
     observedSignalCounts === null
       ? {
@@ -3459,6 +3435,8 @@ export function buildDailyBriefing(
     },
     {
       windows,
+      freshness,
+      verification: null,
       day,
       weekly,
       trend,

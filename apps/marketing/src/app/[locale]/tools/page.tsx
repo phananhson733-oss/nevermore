@@ -15,8 +15,8 @@ const DIAGNOSIS_TOOLS = [
     slug: "daily-search-briefing",
     title: { en: "GSC Daily Briefing", zh: "GSC 每日简报" },
     description: {
-      en: "Start the day with the latest complete Search Console changes, a seven-day check, and the next tool to open.",
-      zh: "用最新完整的 Search Console 变化、七天对比和下一步工具建议，先完成一天的 SEO 分诊。",
+      en: "Start with the latest available Search Console data, exact reporting dates, and evidence-backed checks.",
+      zh: "读取 Search Console 最新可用数据，核对精确统计日期，按真实证据安排检查。",
     },
     cta: { en: "Connect Search Console", zh: "连接 Search Console" },
     category: "diagnosis",
@@ -146,24 +146,14 @@ const GEO_TOOLS = [
     category: "geo",
   },
   {
-    slug: "geo-knowledge-base",
-    title: { en: "GEO Knowledge Base", zh: "GEO 知识库" },
-    description: {
-      en: "Record the names a model would use for you, your category, who you sell to and the facts you can source. Freeze it, and the visibility check derives its questions from it.",
-      zh: "记下模型会怎么称呼你、你在哪个品类、你卖给谁，以及哪些事实你指得出来源。冻结之后，可见性体检的问题集由它推导出来。",
-    },
-    cta: { en: "Build a knowledge base", zh: "建立知识库" },
-    category: "geo",
-  },
-  {
     slug: "ai-visibility-check",
     title: { en: "AI Visibility Check", zh: "AI 可见性体检" },
     // Both preconditions are stated here rather than discovered on the tool
     // page: a run costs provider calls and asks the questions a frozen
     // knowledge base produces, so arriving without either is a dead end.
     description: {
-      en: "Sign in, and with a frozen GEO Knowledge Base version in hand, ask its question set on one AI surface several times each: where you are mentioned, where you are cited, and which domains answers are built from.",
-      zh: "登录后、并且已经有一个冻结的 GEO 知识库版本，就能用它的问题集在一个 AI 面上重复提问：看你在哪些回答里被提到、在哪些里被引用，以及这些回答是用哪些域名的内容拼出来的。",
+      en: "Sign in and select an exact frozen GEO version, then compare repeated answers from ChatGPT and Perplexity: mentions, citations, question coverage, share of voice and evidence-backed next actions.",
+      zh: "登录并选择一个精确冻结的 GEO 版本，在 ChatGPT 与 Perplexity 上重复采样，对比提及、引用、问题覆盖率、声量占比，以及有证据支持的下一步动作。",
     },
     cta: { en: "Run a visibility check", zh: "跑一次可见性体检" },
     category: "geo",

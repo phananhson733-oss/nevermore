@@ -15,7 +15,10 @@ import {
   parseGeoKbPayload,
   type GeoKbPayload,
 } from "./kb-contract.ts";
-import { buildGeoQuestionSet, type GeoQuestionSet } from "./kb-questions.ts";
+import { buildGeoQuestionSet, type GeoQuestionSet, type GeoQuestion } from "./kb-questions.ts";
+import type { GeoInheritedProfile } from "./asset-context.ts";
+import type { GeoSnapshotContext } from "./snapshot-context.ts";
+import { parseWebsiteProfileReference, type WebsiteProfileReferenceV1 } from "../account-websites/contracts.ts";
 
 const LOAD_BODY_LIMIT_BYTES = 4_096;
 const SAVE_BODY_LIMIT_BYTES = 131_072;
@@ -34,6 +37,16 @@ export interface GeoKbFrozenSummary {
   readonly contentHash: string;
   readonly questionCount: number;
   readonly retrievalCount: number;
+  readonly questionSetHash?: string;
+  readonly registryVersion?: string;
+  readonly questions?: readonly GeoQuestion[];
+  readonly skippedLayers?: readonly ("problem" | "evaluation")[];
+}
+
+export interface GeoKbContextPreview {
+  readonly skippedLayers: readonly ("problem" | "evaluation")[];
+  readonly questionSetHash: string;
+  readonly contentHash: string;
 }
 
 export interface GeoKbView {
@@ -45,6 +58,9 @@ export interface GeoKbView {
   readonly frozen: GeoKbFrozenSummary | null;
   /** Whether a confirmed website profile exists that a prefill could read. */
   readonly importAvailable: boolean;
+  /** Exact inherited product fields; never an independently editable copy. */
+  readonly profile?: GeoInheritedProfile | null;
+  readonly context?: GeoKbContextPreview;
 }
 
 export type GeoKbStoreOutcome<T> =
@@ -53,15 +69,19 @@ export type GeoKbStoreOutcome<T> =
   | { readonly kind: "conflict"; readonly draftVersion: number }
   | { readonly kind: "hash_mismatch" }
   | { readonly kind: "no_draft" }
+  | { readonly kind: "context_stale" }
+  | { readonly kind: "website_required" }
   | { readonly kind: "unavailable"; readonly reason: string };
 
 export interface GeoKbSaveResult {
   readonly draftVersion: number;
   readonly updatedAt: string;
+  readonly context?: GeoKbContextPreview;
 }
 
 export interface GeoKbFreezeResult extends GeoKbFrozenSummary {
   readonly reusedExisting: boolean;
+  readonly context?: GeoKbContextPreview;
 }
 
 /**
@@ -81,17 +101,19 @@ export interface GeoKbHandlerDependencies {
     readonly kbId: string;
     readonly payload: GeoKbPayload;
     readonly baseVersion: number;
+    readonly expectedProfileReference?: WebsiteProfileReferenceV1 | null;
   }) => Promise<GeoKbStoreOutcome<GeoKbSaveResult>>;
   readonly freeze: (input: {
     readonly userId: string;
     readonly kbId: string;
     readonly baseVersion: number;
     readonly questionSet: GeoQuestionSet;
+    readonly context?: GeoSnapshotContext;
   }) => Promise<GeoKbStoreOutcome<GeoKbFreezeResult>>;
   readonly readDraftPayload: (input: {
     readonly userId: string;
     readonly kbId: string;
-  }) => Promise<GeoKbStoreOutcome<{ readonly payload: GeoKbPayload; readonly draftVersion: number }>>;
+  }) => Promise<GeoKbStoreOutcome<{ readonly payload: GeoKbPayload; readonly draftVersion: number; readonly questionSet?: GeoQuestionSet; readonly context?: GeoSnapshotContext }>>;
   /** A prefill from the account's confirmed profile for this site, if any. */
   readonly importFromProfile: (input: {
     readonly userId: string;
@@ -102,10 +124,14 @@ export interface GeoKbHandlerDependencies {
 function storeError(
   outcome: Extract<
     GeoKbStoreOutcome<unknown>,
-    { kind: "not_found" | "conflict" | "hash_mismatch" | "no_draft" | "unavailable" }
+    { kind: "not_found" | "conflict" | "hash_mismatch" | "no_draft" | "context_stale" | "website_required" | "unavailable" }
   >,
 ): Response {
   switch (outcome.kind) {
+    case "context_stale":
+      return privateError("context_stale", 409);
+    case "website_required":
+      return privateError("website_required", 422);
     case "not_found":
       return privateError("not_found", 404);
     case "conflict":
@@ -174,13 +200,15 @@ export async function handleGeoKbSaveDraft(
   if (!auth.ok) return auth.response;
   const body = await readAccountMutationJson(request, SAVE_BODY_LIMIT_BYTES);
   if (!body.ok) return body.response;
-  if (!exactKeys(body.value, ["kbId", "payload", "baseVersion"])) {
+  const profileProvided = isRecord(body.value) && Object.hasOwn(body.value, "expectedProfileReference");
+  if (!exactKeys(body.value, ["kbId", "payload", "baseVersion", ...(profileProvided ? ["expectedProfileReference"] : [])])) {
     return privateError("invalid_request", 400);
   }
   const record = body.value as {
     readonly kbId: unknown;
     readonly payload: unknown;
     readonly baseVersion: unknown;
+    readonly expectedProfileReference?: unknown;
   };
   const kbId = typeof record.kbId === "string" ? record.kbId : null;
   const baseVersion = baseVersionOf(record.baseVersion);
@@ -197,17 +225,24 @@ export async function handleGeoKbSaveDraft(
     );
   }
 
+  let expectedProfileReference: WebsiteProfileReferenceV1 | null | undefined;
+  if (profileProvided) {
+    try { expectedProfileReference = record.expectedProfileReference === null ? null : parseWebsiteProfileReference(record.expectedProfileReference); }
+    catch { return privateError("invalid_request", 400); }
+  }
+
   const outcome = await dependencies.saveDraft({
     userId: auth.userId,
     kbId,
     payload: parsed.value,
     baseVersion,
+    ...(expectedProfileReference === undefined ? {} : { expectedProfileReference }),
   });
   if (outcome.kind !== "ok") return storeError(outcome);
   return privateJson({
     data: {
       ...outcome.value,
-      blockers: geoKbBlockers(parsed.value),
+      blockers: geoKbBlockers(parsed.value, { roleLayersSkipped: outcome.value.context?.skippedLayers.length === 2 }),
     },
   });
 }
@@ -227,16 +262,18 @@ export async function handleGeoKbFreeze(
   if (!auth.ok) return auth.response;
   const body = await readAccountMutationJson(request, FREEZE_BODY_LIMIT_BYTES);
   if (!body.ok) return body.response;
-  if (!exactKeys(body.value, ["kbId", "baseVersion"])) {
+  const contextProvided = isRecord(body.value) && Object.hasOwn(body.value, "contextHash");
+  if (!exactKeys(body.value, ["kbId", "baseVersion", ...(contextProvided ? ["contextHash"] : [])])) {
     return privateError("invalid_request", 400);
   }
   const record = body.value as {
     readonly kbId: unknown;
     readonly baseVersion: unknown;
+    readonly contextHash?: unknown;
   };
   const kbId = typeof record.kbId === "string" ? record.kbId : null;
   const baseVersion = baseVersionOf(record.baseVersion);
-  if (kbId === null || baseVersion === null) {
+  if (kbId === null || baseVersion === null || (contextProvided && (typeof record.contextHash !== "string" || !/^[a-f0-9]{64}$/u.test(record.contextHash)))) {
     return privateError("invalid_request", 400);
   }
 
@@ -251,29 +288,25 @@ export async function handleGeoKbFreeze(
       409,
     );
   }
-  const blockers = geoKbBlockers(draft.value.payload);
+  if (draft.value.context && record.contextHash !== draft.value.context.contentHash) return privateError("context_stale", 409);
+  const blockers = geoKbBlockers(draft.value.payload, { roleLayersSkipped: draft.value.context?.skippedLayers.length === 2 });
   if (blockers.length > 0) {
     return privateJson({ error: { code: "not_ready" }, blockers }, 422);
   }
 
-  const questionSet = buildGeoQuestionSet(draft.value.payload);
+  const questionSet = draft.value.questionSet ?? buildGeoQuestionSet(draft.value.payload);
   const outcome = await dependencies.freeze({
     userId: auth.userId,
     kbId,
     baseVersion,
     questionSet,
+    ...(draft.value.context ? { context: draft.value.context } : {}),
   });
   if (outcome.kind !== "ok") return storeError(outcome);
   return privateJson({
     data: {
       ...outcome.value,
-      questions: questionSet.questions.map((question) => ({
-        id: question.id,
-        text: question.text,
-        layer: question.layer,
-        mode: question.mode,
-        calibrated: question.calibrated,
-      })),
+      questions: questionSet.questions,
     },
   });
 }

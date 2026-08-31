@@ -31,7 +31,7 @@ export async function installDraftApiGuard(page: Page, options: {
       return;
     }
     if (id === "GET /api/account/websites" && options.signedIn) {
-      await fulfillJson({ data: [] })(route);
+      await fulfillJson({ data: { websites: [] } })(route);
       return;
     }
     if (id === "POST /api/consent") {
@@ -83,6 +83,7 @@ export async function openConfirmedBriefV2(page: Page, brief: ContentBriefV2, op
   const locale = options.locale ?? "en";
   await page.goto(`/${locale}/tools/content-brief`);
   await necessaryOnly(page, locale);
+  await expect(page.locator("[data-websites-phase]")).toHaveAttribute("data-websites-phase", "ready");
   await page.locator('input[name="primary"]').fill(brief.context.input.primary);
   await page.locator("[data-run-brief]").click();
   await expect(page.locator("[data-confirm-brief]")).toBeVisible();

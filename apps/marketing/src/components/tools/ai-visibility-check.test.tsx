@@ -35,6 +35,8 @@ import {
   type VisibilityReport,
 } from "../../lib/geo-tools/visibility-contract.ts";
 import { AiVisibilityCheck } from "./ai-visibility-check.tsx";
+import { visibilityReportFixtureV2 } from "../../lib/geo-tools/visibility-v2.test-fixtures.ts";
+import { exportVisibilityJson, parseVisibilityImport } from "../../lib/geo-tools/visibility-export.ts";
 import {
   VISIBILITY_RUN_STORAGE_KEY,
   type VisibilityRunPointer,
@@ -339,6 +341,26 @@ afterEach(async () => {
 /* ------------------------------------------------------------------ */
 
 describe("loading the frozen versions", () => {
+  it("selects engines before spending and sends them in the real start request", async () => {
+    await mount();
+    const perplexity = container?.querySelector<HTMLInputElement>('input[value="perplexity"]');
+    expect(perplexity).not.toBeNull();
+    await act(async () => perplexity?.click());
+    expect(text()).toContain("150");
+    await startRun();
+    const calls = vi.mocked(globalThis.fetch).mock.calls;
+    const started = calls.find(([url]) => String(url) === "/api/tools/ai-visibility-check/run");
+    expect(JSON.parse(String(started?.[1]?.body))).toMatchObject({ engines: ["chatgpt", "perplexity"] });
+  });
+  it("has two real local file inputs for portable comparison", async () => {
+    await mount();
+    expect(container?.querySelectorAll('input[type="file"]').length).toBe(2);
+  });
+  it("keeps offline file comparison available without a frozen version or configured provider", async () => {
+    server = { choices: [], providerConfigured: false, readRun: () => ({ kind: "running" }) };
+    await mount();
+    expect(container?.querySelectorAll('input[type="file"]').length).toBe(2);
+  });
   // This is the seam the adversarial review found broken: the component read
   // `data.versions`, both branches of the handler write `data.choices`, and
   // the cast to `readonly FrozenVersion[]` made `undefined` typecheck. Every
@@ -388,6 +410,59 @@ describe("loading the frozen versions", () => {
     );
     expect(button?.disabled).toBe(true);
     expect(text()).toContain(copy("errors.provider_unconfigured"));
+  });
+});
+
+describe("V2 result and portable-file consumers", () => {
+  it("renders actual requested/observed engine identity and exports its validated bytes", async () => {
+    const value = visibilityReportFixtureV2();
+    server = { readRun: () => ({ kind: "completed", report: value }) };
+    await mount(); await startRun(); await tick(2_000);
+    expect(text()).toContain("Engine: ChatGPT");
+    expect(text()).toContain("Requested model: gpt-5-2025-08-07");
+    expect(text()).toContain("Observed models: gpt-5");
+    expect(text()).toContain("Market: US");
+    expect(text()).toContain("Language: en");
+    expect(text()).toContain(copy("layers.column.samples"));
+    expect(text()).toContain(copy("layers.column.meanPosition"));
+    expect(text()).toContain("Valid-sample coverage: 1/1 frozen questions");
+    expect(intlErrors).toEqual([]);
+    const jsonButton = [...(container?.querySelectorAll("button") ?? [])].find((button) => button.textContent === copy("v2.exportJson"));
+    expect(jsonButton).toBeDefined();
+    let written: Blob | null = null;
+    const createBefore = URL.createObjectURL, revokeBefore = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn((blob: Blob | MediaSource) => { written = blob as Blob; return "blob:offline"; });
+    URL.revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    try {
+      await act(async () => jsonButton?.click());
+      expect(click).toHaveBeenCalledOnce();
+      expect(written).not.toBeNull();
+      const bytes = await (written as unknown as Blob).text();
+      expect(JSON.parse(bytes)).toMatchObject({ wireSchema: "marketing-geo-visibility-file.v2" });
+      expect(parseVisibilityImport(bytes)).toEqual({ ok: true, report: value, provenance: "imported_untrusted" });
+    } finally { click.mockRestore(); URL.createObjectURL = createBefore; URL.revokeObjectURL = revokeBefore; }
+  });
+  it("compares two selected files locally without launching or trusting a server run", async () => {
+    await mount();
+    const base = visibilityReportFixtureV2();
+    const current = visibilityReportFixtureV2({ runId: "11111111-1111-4111-8111-111111111119", startedAt: "2026-08-31T00:02:00.000Z", finishedAt: "2026-08-31T00:03:00.000Z" });
+    const inputs = [...(container?.querySelectorAll<HTMLInputElement>('input[type="file"]') ?? [])];
+    for (const [index, value] of [base, current].entries()) {
+      const json = exportVisibilityJson(value);
+      const file = new File([json], `run-${index}.json`, { type: "application/json" });
+      Object.defineProperty(file, "text", { value: async () => json });
+      Object.defineProperty(inputs[index], "files", { configurable: true, value: [file] });
+      await act(async () => inputs[index]?.dispatchEvent(new Event("change", { bubbles: true })));
+    }
+    const compare = [...(container?.querySelectorAll("button") ?? [])].find((button) => button.textContent === copy("v2.compare"));
+    expect(compare?.disabled).toBe(false);
+    await act(async () => compare?.click());
+    expect(text()).toContain(copy("v2.imported"));
+    expect(text()).toContain(literal("comparison.title"));
+    expect(text()).toContain(copy("comparison.metrics.shareOfVoice"));
+    expect(vi.mocked(globalThis.fetch).mock.calls.every(([url]) => String(url).endsWith("/load"))).toBe(true);
+    expect(intlErrors).toEqual([]);
   });
 });
 

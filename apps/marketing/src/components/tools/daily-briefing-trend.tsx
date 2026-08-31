@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useTranslations } from "next-intl";
 
 import type {
@@ -61,15 +61,11 @@ const PACIFIC_DATE = new Intl.DateTimeFormat("en-CA", {
   month: "2-digit",
   day: "2-digit",
 });
-const PACIFIC_HOUR = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/Los_Angeles",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  hourCycle: "h23",
-  timeZoneName: "longOffset",
-});
+// The server cannot know the browser timezone. A stable server snapshot keeps
+// hydration consistent; React then reads the browser's timezone on the client.
+const subscribeToTimeZone = () => () => undefined;
+const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+const serverTimeZone = () => "UTC";
 
 function number(locale: string, value: number): string {
   return new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US", {
@@ -143,7 +139,15 @@ function aggregate(points: readonly DailyBriefingTrendPoint[]) {
   } as const;
 }
 
+function isDateKey(key: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(key)
+    && Number.isFinite(Date.parse(key))
+    && new Date(key).toISOString().slice(0, 10) === key;
+}
+
 function parseHourKey(key: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):00:00(?:\.000)?(?:Z|[+-]\d{2}:\d{2})?$/i.test(key)
+    || !isDateKey(key.slice(0, 10))) return null;
   const hasZone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(key);
   const parsed = Date.parse(hasZone ? key : `${key}Z`);
   return Number.isFinite(parsed) ? parsed : null;
@@ -155,54 +159,42 @@ function shiftDate(date: string, days: number): string {
   return instant.toISOString().slice(0, 10);
 }
 
-function pacificHourKey(timestamp: number): string {
-  const parts = Object.fromEntries(
-    PACIFIC_HOUR.formatToParts(new Date(timestamp)).map((part) => [
-      part.type,
-      part.value,
-    ]),
-  );
-  const offset = (parts["timeZoneName"] ?? "GMT").replace(/^GMT/, "") || "Z";
-  return `${parts["year"]}-${parts["month"]}-${parts["day"]}T${parts["hour"]}:00:00${offset}`;
-}
-
 function bucketsForPeriod(
   period: TrendPeriod,
   points: readonly DailyBriefingTrendPoint[],
   completedAt: string,
 ): readonly TrendBucket[] {
   const count = PERIODS.find((candidate) => candidate.id === period)?.points ?? 24;
-  const pointByKey = new Map(points.map((point) => [point.key, point]));
+  const completed = Date.parse(completedAt);
+  if (!Number.isFinite(completed)) return [];
 
   if (period !== "24h") {
-    const completed = new Date(completedAt);
-    const endDate = Number.isFinite(completed.getTime())
-      ? PACIFIC_DATE.format(completed)
-      : points.at(-1)?.key ?? "";
+    const latestAllowedDate = PACIFIC_DATE.format(completed);
+    const pointByKey = new Map(points
+      .filter((point) => isDateKey(point.key) && point.key <= latestAllowedDate)
+      .map((point) => [point.key, point]));
+    const endDate = [...pointByKey.keys()].sort().at(-1);
+    if (endDate === undefined) return [];
     return Array.from({ length: count }, (_, index) => {
       const key = shiftDate(endDate, index - (count - 1));
       return { key, point: pointByKey.get(key) ?? null };
     });
   }
 
-  const completed = Date.parse(completedAt);
-  const latestPoint = points
-    .map((point) => parseHourKey(point.key))
-    .filter((value): value is number => value !== null)
-    .at(-1);
-  const endHour = Math.floor(
-    (Number.isFinite(completed) ? completed : latestPoint ?? 0) / HOUR_MS,
-  ) * HOUR_MS;
   const pointByHour = new Map<number, DailyBriefingTrendPoint>();
   for (const point of points) {
     const timestamp = parseHourKey(point.key);
-    if (timestamp !== null) pointByHour.set(timestamp, point);
+    if (timestamp !== null && timestamp <= completed) pointByHour.set(timestamp, point);
   }
+  if (pointByHour.size === 0) return [];
+  // GSC can lag the run by several hours. Anchor to its latest returned hour,
+  // then keep 24 elapsed hours (including internal gaps), not 24 returned rows.
+  const endHour = Math.max(...pointByHour.keys());
   return Array.from({ length: count }, (_, index) => {
     const timestamp = endHour + (index - (count - 1)) * HOUR_MS;
     const point = pointByHour.get(timestamp) ?? null;
     return {
-      key: point?.key ?? pacificHourKey(timestamp),
+      key: point?.key ?? new Date(timestamp).toISOString(),
       point,
     };
   });
@@ -271,13 +263,16 @@ export function DailyBriefingTrendChart({
   readonly completedAt: string;
 }) {
   const t = useTranslations("tools.dailyBriefing");
+  const timeZone = useSyncExternalStore(subscribeToTimeZone, browserTimeZone, serverTimeZone);
   const [period, setPeriod] = useState<TrendPeriod>("24h");
   const [visible, setVisible] = useState<ReadonlySet<MetricKey>>(
     () => new Set(METRICS),
   );
   const [hovered, setHovered] = useState<number | null>(null);
   const series = period === "24h" ? trend.hourly : trend.daily;
-  const buckets = bucketsForPeriod(period, series.points, completedAt);
+  const buckets = series.evidence === "unavailable"
+    ? []
+    : bucketsForPeriod(period, series.points, completedAt);
   const points = buckets.flatMap((bucket) =>
     bucket.point === null ? [] : [bucket.point],
   );
@@ -286,6 +281,44 @@ export function DailyBriefingTrendChart({
   const totals = aggregate(points);
   const ticks = tickIndexes(buckets.length);
   const activeBucket = buckets[hovered ?? -1] ?? null;
+  const localHour = new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "shortOffset",
+  });
+  const localHourTick = new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+    timeZone,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const firstBucket = buckets[0];
+  const lastBucket = buckets.at(-1);
+  const windowLabel = firstBucket === undefined || lastBucket === undefined
+    ? null
+    : period === "24h"
+      ? t("trend.hourlyWindow", {
+          start: localHour.format(parseHourKey(firstBucket.key)!),
+          end: localHour.format(parseHourKey(lastBucket.key)! + HOUR_MS),
+          timezone: timeZone,
+        })
+      : t("trend.dailyWindow", { start: firstBucket.key, end: lastBucket.key });
+
+  function bucketLabel(key: string, compact = false): string {
+    if (period !== "24h") return compact ? key.slice(5) : `${key} (PT)`;
+    const timestamp = parseHourKey(key);
+    if (timestamp === null) return "—";
+    return compact
+      ? localHourTick.format(timestamp)
+      : `${localHour.format(timestamp)} – ${localHour.format(timestamp + HOUR_MS)}`;
+  }
 
   function toggleMetric(metric: MetricKey) {
     setVisible((current) => {
@@ -343,6 +376,12 @@ export function DailyBriefingTrendChart({
           })}
         </div>
       </div>
+
+      {windowLabel !== null ? (
+        <p data-trend-window className="mt-3 text-[11px] leading-[1.55] text-text-dark-secondary">
+          {windowLabel}
+        </p>
+      ) : null}
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4" role="group" aria-label={t("trend.metricsLabel")}>
         {METRICS.map((metric) => {
@@ -462,14 +501,16 @@ export function DailyBriefingTrendChart({
                     fontFamily="var(--font-mono)"
                     fontSize="10"
                   >
-                    {bucket.key.slice(period === "24h" ? 11 : 5)}
+                    {bucketLabel(bucket.key, true)}
                   </text>
                 );
               })}
             </svg>
             {activeBucket !== null ? (
               <div data-trend-tooltip className="pointer-events-none absolute left-3 top-3 rounded-[8px] border border-brand-border-strong bg-brand-panel-raised px-3 py-2 font-mono text-[11px] text-text-dark-primary shadow-panel">
-                <p className="mb-1 text-text-dark-secondary">{activeBucket.key}</p>
+                <p className="mb-1 text-text-dark-secondary">
+                  <time dateTime={activeBucket.key}>{bucketLabel(activeBucket.key)}</time>
+                </p>
                 {METRICS.filter((metric) => visible.has(metric)).map((metric) => (
                   <p key={metric} className="tabular-nums">
                     {t(`trend.metrics.${metric}`)} · {formatMetric(
@@ -536,7 +577,7 @@ export function DailyBriefingTrendChart({
                       className="border-t border-brand-border-faint text-text-dark-secondary"
                     >
                       <td className="py-1.5 pr-4 whitespace-nowrap">
-                        {bucket.point?.key ?? bucket.key}
+                        <time dateTime={bucket.key}>{bucketLabel(bucket.key)}</time>
                       </td>
                       {METRICS.map((metric) => (
                         <td

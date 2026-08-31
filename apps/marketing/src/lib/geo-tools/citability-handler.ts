@@ -11,6 +11,7 @@ import { readPublicToolJson } from "../tools/public-tool-request.ts";
 import {
   CITABILITY_FETCH_TIMEOUT_MS,
   CITABILITY_MAX_BODY_BYTES,
+  CITABILITY_MAX_QUESTION_CHARS,
   type CitabilityErrorCode,
   type CitabilityReport,
   type LlmsTxtFetch,
@@ -22,9 +23,10 @@ import {
   type CitabilityGateResult,
 } from "./citability-gate.ts";
 import { buildCitabilityReport } from "./citability-rules.ts";
+import { measureCitabilityRender, requestCitabilityRender } from "./citability-render.ts";
+import type { CitabilityRenderEvidence, CitabilityRenderRequest } from "./citability-render-contract.ts";
 
 const REQUEST_BODY_LIMIT_BYTES = 4_096;
-const MAX_QUESTION_CHARS = 200;
 
 /** A whitelist, so a misspelled field is refused rather than silently dropped. */
 const ALLOWED_KEYS: ReadonlySet<string> = new Set(["url", "question"]);
@@ -41,6 +43,7 @@ export interface CitabilityFetchResult {
 }
 
 export interface CitabilityHandlerDependencies {
+  readonly renderPage: (input: CitabilityRenderRequest) => Promise<CitabilityRenderEvidence>;
   readonly normalizeUrl: typeof normalizeSeoAuditUrl;
   readonly extractClientIp: (headers: Headers) => string;
   readonly isSignedIn: () => Promise<boolean>;
@@ -83,6 +86,7 @@ function toFetchResult(
 
 export const DEFAULT_CITABILITY_HANDLER_DEPENDENCIES: CitabilityHandlerDependencies =
   {
+    renderPage: requestCitabilityRender,
     normalizeUrl: normalizeSeoAuditUrl,
     extractClientIp,
     isSignedIn: async () =>
@@ -140,7 +144,7 @@ function readInput(
   }
   const question =
     typeof record.question === "string" ? record.question.trim() : "";
-  if (question.length > MAX_QUESTION_CHARS) return { ok: false };
+  if (question.length > CITABILITY_MAX_QUESTION_CHARS) return { ok: false };
   return {
     ok: true,
     value: { url: record.url, question: question.length > 0 ? question : null },
@@ -304,9 +308,11 @@ export async function handleCitabilityRequest(
       const second = await dependencies.chargeTarget(landed);
       if (!second.ok) return second.response;
     }
-    const [robots, llmsTxt] = await Promise.all([
+    const renderInput = { url: finalUrl, rawHtml: body, bodyComplete: page.bodyComplete !== false };
+    const [robots, llmsTxt, render] = await Promise.all([
       fetchRobots(origin, dependencies),
       fetchLlmsTxt(origin, dependencies),
+      dependencies.renderPage(renderInput).catch(() => measureCitabilityRender(renderInput, null, { reason: "service_failed", now: dependencies.now })),
     ]);
 
     const report: CitabilityReport = buildCitabilityReport(
@@ -318,6 +324,7 @@ export async function handleCitabilityRequest(
         robots,
         llmsTxt,
         targetQuestion: input.value.question,
+        render,
       },
       dependencies.now().toISOString(),
     );

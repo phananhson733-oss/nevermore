@@ -1,9 +1,10 @@
-// @input  -- authenticated v1 ContentBrief or exact confirmed Brief v2, settings and section selection
+// @input  -- authenticated SEO/GEO shared briefs or exact confirmed Brief v2, settings and section selection
 // @output -- a self-checked versioned Draft result or the stable private error envelope
-// @pos    -- shared admission and schema dispatch; v1 orchestration and isolated v2 runner
+// @pos    -- shared admission and schema dispatch; private GEO verification, v1 orchestration and isolated v2 runner
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { randomUUID } from "node:crypto";
+import { verifyOwnedGeoBrief } from "../geo-tools/brief-reference.ts";
 
 import { createPublicToolError } from "@sf/public-tools/contract";
 import {
@@ -21,7 +22,6 @@ import {
 } from "@sf/public-tools/content-brief/constants";
 import {
   CONTENT_BRIEF_HANDOFF_MAX_BYTES,
-  type ContentBrief,
   type ContentDraftErrorCode,
   type CoverageItem,
   type DraftResult,
@@ -40,7 +40,9 @@ import {
   type PlannedSection,
   type SectionCallMeta,
 } from "@sf/public-tools/content-brief/draft-assemble";
-import { parseContentBrief } from "@sf/public-tools/content-brief/parse-brief";
+import { parseSharedContentBrief as parseContentBrief } from "@sf/public-tools/content-brief/parse-geo-brief";
+import { GEO_CONTENT_BRIEF_SCHEMA, GEO_OUTLINE_CAP, geoGenerationLanguage, requireGeoGenerationLanguage, isGeoContentBrief, type GeoContentBrief, type SharedContentBrief as ContentBrief } from "@sf/public-tools/content-brief/geo-contract";
+import { geoDraftFacts, geoMissingFacts } from "@sf/public-tools/content-brief/geo-draft";
 import { parseDraftResult, parseDraftSettings } from "@sf/public-tools/content-brief/parse-draft";
 import { CONFIRMED_BRIEF_V2_MAX_BYTES, CONFIRMED_BRIEF_V2_SCHEMA, parseConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
 import { DRAFT_V2_REQUEST_MAX_BYTES, DRAFT_V2_SECTION_REQUEST_MAX_BYTES } from "@sf/public-tools/content-brief/v2-draft-contract";
@@ -100,6 +102,8 @@ const SLOT_RETRY_AFTER_SECONDS = 5;
 const RUN_ID_MAX_CHARS = 128;
 
 export interface ContentDraftHandlerDependencies extends DraftV2RunDependencies {
+  /** Re-resolve immutable owned receipts. A public JSON fingerprint is not authentication. */
+  readonly verifyGeoBrief?: (brief: GeoContentBrief, userId: string) => Promise<boolean>;
   readonly getServerAuthenticatedUser: () => Promise<ServerAuthenticatedUser>;
   readonly readJson: typeof readPublicToolJson;
   readonly extractClientIp: (headers: Headers) => string;
@@ -113,6 +117,7 @@ export interface ContentDraftHandlerDependencies extends DraftV2RunDependencies 
 }
 
 export const CONTENT_DRAFT_HANDLER_DEPENDENCIES: ContentDraftHandlerDependencies = {
+  verifyGeoBrief: verifyOwnedGeoBrief,
   getServerAuthenticatedUser,
   readJson: readPublicToolJson,
   extractClientIp,
@@ -240,7 +245,8 @@ function briefWithinCap(value: unknown): boolean {
  * else cannot have come from it.
  */
 function marketAndLanguageKnown(brief: ContentBrief): boolean {
-  return SERP_LANGUAGES.has(brief.keyword.language) && SERP_MARKET_OPTIONS.some((option) => option.code === brief.keyword.market);
+  const languageKnown = isGeoContentBrief(brief) ? geoGenerationLanguage(brief.keyword.language) !== null : SERP_LANGUAGES.has(brief.keyword.language);
+  return languageKnown && SERP_MARKET_OPTIONS.some((option) => option.code === brief.keyword.market);
 }
 
 async function parseBriefOrRefuse(value: unknown): Promise<ContentBrief | Response> {
@@ -254,8 +260,8 @@ async function parseBriefOrRefuse(value: unknown): Promise<ContentBrief | Respon
   return parsed.value;
 }
 
-function readSectionIds(value: unknown): string[] | null {
-  if (!Array.isArray(value) || value.length === 0 || value.length > OUTLINE_CAP) return null;
+function readSectionIds(value: unknown, max = OUTLINE_CAP): string[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > max) return null;
   if (value.some((id) => typeof id !== "string" || id === "")) return null;
   const ids = value as string[];
   // Duplicates are refused rather than merged: `requested` is defined as the
@@ -276,12 +282,18 @@ interface SectionOutcome {
   readonly call: SectionCallMeta;
 }
 
-function answersOf(planned: PlannedSection): [string, ...string[]] {
-  const [first, ...rest] = planned.answers;
-  return [first, ...rest];
+function answersOf(planned: PlannedSection): string[] {
+  return [...planned.answers];
 }
 
 function sectionInput(brief: ContentBrief, planned: PlannedSection, settings: DraftResult["settings"], clock: Clock): DraftSectionInput {
+  if (isGeoContentBrief(brief)) return {
+    section: { id: planned.id, h2: planned.h2, h3: planned.h3, answers: planned.answers },
+    questions: brief.must_answer.items.filter(item => planned.answers.includes(item.id)).map(item => ({ id: item.id, q: item.q, members: [] })),
+    pages: [], facts: [], gapAngle: null,
+    geo: { facts: geoDraftFacts(brief, planned.id, settings), missingFacts: geoMissingFacts(brief), requiredEntities: planned.answers.includes("Q1") ? brief.lead_answer.required_entities : [] },
+    settings, language: requireGeoGenerationLanguage(brief.keyword.language), primary: brief.keyword.primary, deadlineAt: clock.deadlineAt,
+  };
   const scope = sectionEvidenceScope(brief, planned.id, settings);
   const questions = brief.must_answer.status === "available" ? brief.must_answer.items.filter((item) => planned.answers.includes(item.id)) : [];
   const memberIds = new Set(questions.flatMap((item) => item.cluster.members.map((member) => member.observation_id)));
@@ -381,8 +393,9 @@ async function checkCoverage(
     return { coverage: buildCoverage(brief, decision.heuristic, [], noCall), llm: noCall };
   }
   const result = await dependencies.runCoverage({
+    ...(isGeoContentBrief(brief) ? { source: "geo" as const } : {}),
     primary: brief.keyword.primary,
-    language: brief.keyword.language,
+    language: isGeoContentBrief(brief) ? requireGeoGenerationLanguage(brief.keyword.language) : brief.keyword.language,
     questions: questions.map((item) => ({ id: item.id, q: item.q })),
     sections: okSections.map((section) => ({
       id: section.id,
@@ -462,6 +475,7 @@ async function assembleAndRespond(input: {
 interface EndpointShape {
   readonly budgetMs: number;
   readonly maxBytes: number;
+  readonly legacyMaxBytes: number;
   readonly bucketPrefix: string;
   readonly accountMax: number;
   readonly ipMax: number;
@@ -470,6 +484,7 @@ interface EndpointShape {
 const RUN_ENDPOINT: EndpointShape = {
   budgetMs: DRAFT_TOTAL_BUDGET_MS,
   maxBytes: Math.max(DRAFT_REQUEST_MAX_BYTES, DRAFT_V2_REQUEST_MAX_BYTES),
+  legacyMaxBytes: DRAFT_REQUEST_MAX_BYTES,
   bucketPrefix: `public-${TOOL}`,
   accountMax: DRAFT_ACCOUNT_MAX_PER_HOUR,
   ipMax: DRAFT_IP_MAX_PER_HOUR,
@@ -478,16 +493,16 @@ const RUN_ENDPOINT: EndpointShape = {
 const SECTION_ENDPOINT: EndpointShape = {
   budgetMs: SECTION_ENDPOINT_BUDGET_MS,
   maxBytes: Math.max(SECTION_REQUEST_MAX_BYTES, DRAFT_V2_SECTION_REQUEST_MAX_BYTES),
+  legacyMaxBytes: SECTION_REQUEST_MAX_BYTES,
   bucketPrefix: `public-${TOOL}-section`,
   accountMax: SECTION_ACCOUNT_MAX_PER_HOUR,
   ipMax: SECTION_IP_MAX_PER_HOUR,
 };
 
 /**
- * Admission in the mandated order — login, the per-account slot, the hourly
- * buckets — and only then the brief's parser and the paid work, all inside one
- * try/finally so every exit releases the slot and every unexpected error
- * becomes the closed `draft_unavailable` envelope.
+ * Login and the per-account slot bound admission work. GEO resolves owned
+ * evidence under a deadline before hourly buckets or paid work; legacy SEO
+ * keeps its existing bucket/parse order. Every exit releases the slot.
  */
 async function handle(
   request: Request,
@@ -499,8 +514,22 @@ async function handle(
   try {
     const admitted = await admit(request, dependencies, shape.budgetMs, shape.maxBytes);
     if (admitted instanceof Response) return admitted;
+    const carried = admitted.body["brief"];
+    // V2's larger rerun envelope must not expand GEO's pre-verification limit.
+    if (isRecord(carried) && carried["schema"] === GEO_CONTENT_BRIEF_SCHEMA && (admitted.bodyBytes > shape.legacyMaxBytes || !withinBytes(admitted.body, shape.legacyMaxBytes))) return refuse("payload_too_large", 413);
     slot = dependencies.acquireSlot(`${TOOL}:account:${admitted.userId}`);
     if (!slot.acquired) return refuse("run_in_progress", 409, { "Retry-After": String(SLOT_RETRY_AFTER_SECONDS) });
+    if (isRecord(carried) && carried["schema"] === GEO_CONTENT_BRIEF_SCHEMA) {
+      const verified = await withBudget(async () => {
+        const parsed = await parseContentBrief(carried);
+        if (!parsed.ok) return refuse(parsed.code, 422);
+        if (!marketAndLanguageKnown(parsed.value)) return refuse("brief_reference_invalid", 422);
+        if (!isGeoContentBrief(parsed.value) || !(await dependencies.verifyGeoBrief?.(parsed.value, admitted.userId))) return refuse("brief_reference_invalid", 422);
+        return null;
+      }, remaining(admitted.clock, ADMISSION_STEP_MS));
+      if (verified === TIMED_OUT) return refuse("draft_unavailable", 503);
+      if (verified !== null) return verified;
+    }
     const refusal = await consumeBuckets(dependencies, admitted.clock, [
       [`${shape.bucketPrefix}:account:${admitted.userId}`, shape.accountMax],
       [`${shape.bucketPrefix}:ip:${admitted.clientIp}`, shape.ipMax],
@@ -560,7 +589,7 @@ export async function handleContentDraftRunRequest(
     if (bodyBytes > DRAFT_REQUEST_MAX_BYTES || !withinBytes(body, DRAFT_REQUEST_MAX_BYTES)) return refuse("payload_too_large", 413);
     const settings = parseDraftSettings(body["settings"]);
     if (!settings.ok) return refuse("invalid_request", 400);
-    const sectionIds = readSectionIds(body["section_ids"]);
+    const sectionIds = readSectionIds(body["section_ids"], isRecord(body["brief"]) && body["brief"]["schema"] === GEO_CONTENT_BRIEF_SCHEMA ? GEO_OUTLINE_CAP : OUTLINE_CAP);
     if (sectionIds === null) return refuse("invalid_request", 400);
     const brief = await parseBriefOrRefuse(body["brief"]);
     if (brief instanceof Response) return brief;

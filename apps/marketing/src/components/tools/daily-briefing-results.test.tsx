@@ -122,6 +122,7 @@ function change(
   const page = `https://example.com/page-${index}`;
   return {
     kind,
+    metricScope: ["first_observed", "first_observed_leading", "actionable_position_decline"].includes(kind) ? "query_page" : "query",
     evidence: kind === "first_observed" ? "not_observed" : "observed",
     query,
     page,
@@ -259,6 +260,7 @@ function provisionalMove(
   const query = `provisional query ${index}`;
   return {
     kind,
+    metricScope: "query",
     evidence: "observed",
     query,
     page: `https://example.com/provisional-${index}`,
@@ -327,12 +329,14 @@ function checkableObservation(
 ): DailyBriefingQueryObservation {
   return {
     kind: "sample_floor_reached",
+    metricScope: "query",
     band: "page_one",
     query: CHECK_QUERY,
     page: CHECK_PAGE,
     pageEvidence: "observed",
     current: { query: CHECK_QUERY, clicks: 0, impressions: 185, position: 8.2 },
     previous: null,
+    previousEvidence: "not_observed",
     previousBelowFloor: null,
     positionDelta: null,
     ...overrides,
@@ -424,12 +428,14 @@ function observation(
   const query = `watch query ${index}`;
   return {
     kind,
+    metricScope: "query",
     band: "page_one",
     query,
     page: `https://example.com/watch-${index}`,
     pageEvidence: "observed",
     current: { query, clicks: 12, impressions: 120, position: 9.2 },
     previousBelowFloor: null,
+    previousEvidence: "observed",
     previous: { query, clicks: 8, impressions: 110, position: 9.5 },
     positionDelta: -0.3,
     ...overrides,
@@ -550,6 +556,110 @@ function expectToolLinksOpenInANewTab(host: HTMLElement): void {
 }
 
 describe("DailyBriefingResults trend and evidence facts", () => {
+  it("keeps exact reporting windows in row evidence without the global notice panel", async () => {
+    const host = await renderResults(envelope({ changes: [change("stable_position_click_decline", 1)] }));
+    const facts = host.querySelector("[data-reading-facts]");
+    expect(facts).toBeNull();
+    const evidence = host.querySelector("[data-gsc-evidence]");
+    expect(evidence?.textContent).toContain("2026-08-15");
+    expect(evidence?.textContent).toContain("2026-08-21");
+    expect(evidence?.textContent).toContain("2026-08-08");
+    expect(evidence?.textContent).toContain("2026-08-14");
+    expect(evidence?.querySelector("[data-gsc-period=current]")).not.toBeNull();
+    expect(evidence?.querySelector("[data-gsc-period=previous]")).not.toBeNull();
+  });
+
+  it("distinguishes query totals from exact query-page metrics in GSC links", async () => {
+    const query = change("stable_position_click_decline", 1, { metricScope: "query" });
+    const pair = change("actionable_position_decline", 2, { metricScope: "query_page" });
+    const host = await renderResults(envelope({ changes: [query, pair] }));
+    const rows = [...host.querySelectorAll("[data-change]")];
+    const queryHref = rows[0]?.querySelector("[data-gsc-period=current]")?.getAttribute("href");
+    const pairHref = rows[1]?.querySelector("[data-gsc-period=current]")?.getAttribute("href");
+    expect(queryHref).toBeTruthy();
+    expect(pairHref).toBeTruthy();
+    expect(new URL(queryHref!).searchParams.has("page")).toBe(false);
+    expect(new URL(pairHref!).searchParams.get("page")).toBe(`!${pair.page}`);
+    expect(rows[0]?.textContent).toContain("Exact query, all pages");
+    expect(rows[1]?.textContent).toContain("Exact query and exact page");
+    expect(rows[0]?.querySelector("[data-gsc-period=previous]")).not.toBeNull();
+  });
+
+  it("shows provisional current observations without claiming their prior period was unobserved", async () => {
+    const current = observation("sample_floor_reached", 1, { page: null, pageEvidence: "unavailable", previous: null, previousEvidence: "not_compared", positionDelta: null });
+    const host = await renderResults(envelope({
+      freshness: { ...BASE_ENVELOPE.result.freshness, status: "partial", comparisonEligible: false, firstIncompleteDate: "2026-08-21" },
+      queryWatchlist: watchlist("partial", [current]),
+      mode: "current_position_watchlist",
+    }));
+    const row = host.querySelector("[data-observation-row]");
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toContain("watch query 1");
+    expect(row?.textContent).toContain("Not compared");
+    expect(row?.textContent).not.toContain("Not observed");
+    expect(host.querySelector("[data-comparison-withheld]")).toBeNull();
+  });
+
+  it("keeps a failed prior query read unavailable even when all daily dates are complete", async () => {
+    const query = "current query with unavailable prior read";
+    const reading = buildDailyBriefing({
+      now: new Date("2026-08-24T20:00:00.000Z"),
+      dateRows: completeDateRows(),
+      currentQueryEvidence: {
+        queryRead: {
+          rows: [{ query, clicks: 12, impressions: 185, position: 2 }],
+          unreadableRows: 0,
+          paging: { pagesFetched: 1, truncated: false },
+          responseAggregationType: "byProperty",
+        },
+        queryPageTotalsRead: null,
+        queryPageRead: null,
+        pageRead: null,
+        propertyTotals: null,
+      },
+      previousQueryEvidence: null,
+      brandTerms: [],
+      brandTermsConfirmed: false,
+    });
+    expect(reading.result.freshness.comparisonEligible).toBe(true);
+    expect(reading.result.queryWatchlist.items).toHaveLength(1);
+    const host = await renderResults({
+      ...reading,
+      result: {
+        ...reading.result,
+        verification: {
+          source: "google_search_console_api", websiteChecked: false, checkedAt: reading.run.completedAt,
+          verifiedCount: 1, withheldCount: 0,
+          items: [{ metricScope: "query", query, page: null, status: "verified", aggregationType: "byProperty", current: { clicks: 12, impressions: 185, position: 2, ctr: 12 / 185 }, previous: null }],
+        },
+      },
+    });
+    const row = host.querySelector("[data-observation-row]");
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toContain("Previous-period query data is unavailable");
+    expect(row?.textContent).not.toContain("Not observed");
+    expect(row?.textContent).not.toContain("No comparable returned record");
+    expect(row?.querySelector("[data-api-evidence=verified]")?.textContent).toContain("Current period only");
+  });
+
+  it("labels API verification only on the matching metric scope and never claims a website check", async () => {
+    const query = change("stable_position_click_decline", 1, { metricScope: "query", page: null, pageEvidence: "unavailable" });
+    const pair = change("actionable_position_decline", 2, { metricScope: "query_page", query: query.query });
+    const host = await renderResults(envelope({
+      changes: [query, pair],
+      verification: {
+        source: "google_search_console_api", websiteChecked: false, checkedAt: BASE_ENVELOPE.run.completedAt,
+        verifiedCount: 1, withheldCount: 2,
+        items: [{ metricScope: "query", query: query.query, page: null, status: "verified", aggregationType: "byProperty", current: null, previous: null }],
+      },
+    }));
+    const rows = [...host.querySelectorAll("[data-change]")];
+    expect(rows[0]?.querySelector("[data-api-evidence=verified]")).not.toBeNull();
+    expect(rows[1]?.querySelector("[data-api-evidence=verified]")).toBeNull();
+    expect(host.querySelector("[data-api-verification]")).toBeNull();
+    expect(rows[0]?.querySelector("[data-evidence-source]")?.getAttribute("title")).toContain("not a completed website check");
+  });
+
   it("leads with the default 24h trend and removes the run-status facts and old KPI block", async () => {
     const host = await renderResults(
       envelope({
@@ -839,10 +949,10 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     );
     const clicks = host.querySelector('[data-trend-metric="clicks"] strong');
 
-    expect(clicks?.textContent).toBe("3");
+    expect(clicks?.textContent).toBe("103");
 
     await click(buttonWith(host, "7 days"));
-    expect(clicks?.textContent).toBe("3");
+    expect(clicks?.textContent).toBe("103");
   });
 
   it("uses real fractional ranges and breaks offset-hour lines across missing buckets", async () => {
@@ -882,8 +992,9 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     expect(table?.textContent).toContain("Impressions");
     expect(table?.textContent).toContain("Avg CTR");
     expect(table?.textContent).toContain("Avg position");
-    expect(table?.textContent).toContain("2026-08-23T14:00:00-07:00");
-    expect(table?.textContent).toContain("2026-08-24T17:00:00");
+    expect(table?.querySelectorAll("tbody tr")).toHaveLength(24);
+    expect(table?.textContent).toContain("2026");
+    expect(table?.textContent).not.toContain("T17:00:00");
   });
 
   it("labels a filtered count as prefix-only and keeps missing coverage honest", async () => {
@@ -1243,6 +1354,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
         queryWatchlist: watchlist("observed", [
           observation("sample_floor_reached", 7, {
             previous: null,
+            previousEvidence: "below_floor",
             previousBelowFloor: 49,
             positionDelta: null,
           }),
@@ -1548,7 +1660,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(rows[1]?.textContent).toContain("watch query 2");
     expect(rows[1]?.textContent).toContain("Observation");
     expect(rows[1]?.textContent).toContain(
-      "Already inside the 1-10 average position band",
+      en.tools.dailyBriefing.review.observationBands.page_one.body,
     );
     expect(rows[2]?.textContent).toContain("watch query 3");
     expect(rows[2]?.textContent).toContain("Building sample");
@@ -1560,6 +1672,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       page: null,
       pageEvidence: "unavailable",
       previous: null,
+      previousEvidence: "not_observed",
     });
     const host = await renderResults(
       envelope({
@@ -1813,7 +1926,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       "Status",
       "Query / Page",
       "Clicks",
-      "Position",
+      "Avg position",
       "Interpretation",
     ]);
     expect(rows).toHaveLength(3);
@@ -3125,7 +3238,7 @@ describe("DailyBriefingResults folded explanation", () => {
     // would be invented, and naming the ones we happen to expect would miss
     // the ones we do not.
     const queryPageCell = [...(row?.querySelectorAll('[role="cell"]') ?? [])][1];
-    expect(queryPageCell?.textContent).toBe(
+    expect([...queryPageCell?.querySelectorAll(":scope > span, :scope > p") ?? []].map((node) => node.textContent).join("")).toBe(
       `${en.tools.dailyBriefing.review.columns.queryPage}` +
         `${en.tools.dailyBriefing.review.pageScope}${PAGE_CHANGE_URL}`,
     );

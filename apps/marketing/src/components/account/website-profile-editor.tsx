@@ -1,10 +1,11 @@
 // @input  -- one owned website ID, its private detail API, and SEO profile refresh
-// @output -- editable/autosaved Product+ICP draft, reviewed refresh, conflict merge, confirmation
+// @output -- single-column profile, source-labeled competitor review, autosave and collapsible confirmation
 // @pos    -- stateful body of /account/websites/[websiteId]
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { Check, Minus, Pencil, Plus } from "lucide-react";
 
 import {
   applyProfileRefreshToWebsiteDraft,
@@ -32,13 +33,19 @@ import {
 } from "../../lib/agents/profile-refresh-contract.ts";
 import {
   isAgentProfileSearchEnvelope,
+  normalizeAgentProfileSearchDomain,
   type AgentProfileSearchData,
 } from "../../lib/agents/profile-search-contract.ts";
 import {
   AgentProfileSearch,
   type AgentProfileSearchCopy,
 } from "../agents/agent-profile-search.tsx";
-import type { AgentCompetitorClassification } from "../agents/agent-competitor-candidates.ts";
+import {
+  deriveAgentCompetitorDisplayFrame,
+  deriveAgentCompetitorSuggestions,
+  type AgentCompetitorClassification,
+  type AgentCompetitorDisplayEntry,
+} from "../agents/agent-competitor-candidates.ts";
 import { Button } from "../ui/button.tsx";
 import {
   Card,
@@ -117,12 +124,13 @@ const ICP_FIELDS = [
   "barriers",
   "qualificationSignals",
   "disqualifiers",
-  "firstOutcome",
 ] as const satisfies readonly WebsiteProfileFieldName[];
+const COMPETITOR_GROUPS = [
+  { classification: "direct", field: "directCompetitors" },
+  { classification: "indirect", field: "indirectAlternatives" },
+  { classification: "excluded", field: "excludedAlternatives" },
+] as const;
 const MARKET_FIELDS = [
-  "directCompetitors",
-  "indirectAlternatives",
-  "excludedAlternatives",
   "country",
   "locale",
 ] as const satisfies readonly WebsiteProfileFieldName[];
@@ -160,6 +168,7 @@ interface ReadyEditor {
   readonly refresh: RefreshState;
   readonly competitorSearch: CompetitorSearchState;
   readonly confirming: boolean;
+  readonly collapsed: boolean;
   readonly confirmError: readonly WebsiteProfileFieldName[] | null;
 }
 
@@ -299,6 +308,31 @@ function profileEqual(
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function competitorSummaryEntries(
+  entries: readonly AgentCompetitorDisplayEntry[],
+  savedValues: readonly string[],
+): readonly { readonly value: string; readonly source: "saved" | "system" }[] {
+  const values = entries.map((entry) => ({
+    value: entry.domain,
+    source: entry.source === "system" ? "system" as const : "saved" as const,
+  }));
+  const seen = new Set(values.map(({ value }) => value.toLowerCase()));
+  for (const value of savedValues) {
+    const trimmed = value.trim();
+    // Alternatives may be free-text products or workflows, not hostnames.
+    if (
+      !trimmed ||
+      normalizeAgentProfileSearchDomain(trimmed) !== null ||
+      seen.has(trimmed.toLowerCase())
+    ) {
+      continue;
+    }
+    seen.add(trimmed.toLowerCase());
+    values.push({ value: trimmed, source: "saved" });
+  }
+  return values;
+}
+
 function competitorSearchRequestForProfile(
   profile: MarketingWebsiteProfileV1,
   submittedUrl: string,
@@ -424,13 +458,14 @@ function FieldEditor({
 
   if (LIST_FIELDS.has(field) && Array.isArray(value)) {
     return (
-      <fieldset data-list-field={field} className="space-y-2">
-        <legend className="text-[12px] font-medium text-text-dark-secondary">
+      <fieldset data-list-field={field} className="min-w-0 space-y-2">
+        <legend className="mb-3 text-[14px] font-medium text-text-dark-primary">
           {label(field)}
         </legend>
         {value.map((item, index) => (
-          <div key={field + "-" + index} className="flex gap-2">
+          <div key={field + "-" + index} className="flex items-start gap-2">
             <Input
+              className="flex-1"
               aria-label={label(field) + " " + (index + 1)}
               name={`${field}[${index}]`}
               autoComplete="off"
@@ -444,9 +479,11 @@ function FieldEditor({
             />
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={editor("listRemove") + " " + label(field)}
+              variant="outline"
+              size="icon"
+              className="size-11 hover:border-brand-error/50 hover:bg-brand-error/5 hover:text-brand-error"
+              aria-label={editor("listRemove") + " " + label(field) + " " + (index + 1)}
+              title={editor("listRemove") + " " + label(field) + " " + (index + 1)}
               onClick={() =>
                 onChange(
                   field,
@@ -454,17 +491,20 @@ function FieldEditor({
                 )
               }
             >
-              {editor("listRemove")}
+              <Minus aria-hidden="true" className="size-4" />
             </Button>
           </div>
         ))}
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          size="icon"
+          className="size-11 text-brand-accent-text hover:bg-brand-accent-soft"
+          aria-label={editor("listAdd") + " " + label(field)}
+          title={editor("listAdd") + " " + label(field)}
           onClick={() => onChange(field, [...value, ""])}
         >
-          {editor("listAdd")}
+          <Plus aria-hidden="true" className="size-4" />
         </Button>
       </fieldset>
     );
@@ -473,13 +513,14 @@ function FieldEditor({
   const stringValue = typeof value === "string" ? value : "";
   const compact =
     field === "productName" ||
-    field === "businessModel" ||
     field === "primaryCta" ||
     field === "country" ||
     field === "locale";
   return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label(field)}</Label>
+    <div className="min-w-0 space-y-3">
+      <Label htmlFor={id} className="text-[14px] text-text-dark-primary">
+        {label(field)}
+      </Label>
       {compact ? (
         <Input
           id={id}
@@ -518,19 +559,30 @@ function ProfileSection({
     value: string | readonly string[],
   ) => void;
 }) {
+  const headingId = "website-profile-section-" + fields[0];
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
+    <Card
+      role="region"
+      aria-labelledby={headingId}
+      className="gap-0 overflow-hidden border-brand-border-strong py-0"
+    >
+      <CardHeader className="border-b bg-brand-panel-raised px-5 py-5 sm:px-7">
+        <CardTitle>
+          <h2 id={headingId} className="flex items-center gap-3 text-[17px]">
+            <span aria-hidden="true" className="h-5 w-1 rounded-full bg-brand-accent" />
+            {title}
+          </h2>
+        </CardTitle>
       </CardHeader>
-      <CardContent className="grid gap-5 md:grid-cols-2">
+      <CardContent className="divide-y divide-brand-border-card px-5 sm:px-7">
         {fields.map((field) => (
-          <FieldEditor
-            key={field}
-            field={field}
-            profile={profile}
-            onChange={onChange}
-          />
+          <div key={field} className="py-6 sm:py-7">
+            <FieldEditor
+              field={field}
+              profile={profile}
+              onChange={onChange}
+            />
+          </div>
         ))}
       </CardContent>
     </Card>
@@ -554,7 +606,20 @@ export function WebsiteProfileEditor({
   const refreshController = useRef<AbortController | null>(null);
   const competitorSearchController = useRef<AbortController | null>(null);
   const competitorSearchControllerIdentity = useRef<string | null>(null);
+  const summaryRef = useRef<HTMLDivElement | null>(null);
+  const wasCollapsed = useRef(false);
   stateRef.current = state;
+  const collapsed = state.phase === "ready" && state.collapsed;
+
+  useEffect(() => {
+    if (collapsed) {
+      summaryRef.current?.focus();
+      summaryRef.current?.scrollIntoView?.({ block: "start" });
+    } else if (wasCollapsed.current) {
+      document.getElementById("website-profile-productName")?.focus();
+    }
+    wasCollapsed.current = collapsed;
+  }, [collapsed]);
 
   const competitorSearchErrorCode =
     state.phase === "ready" && state.competitorSearch.status === "error"
@@ -666,6 +731,7 @@ export function WebsiteProfileEditor({
           refresh: { status: "idle" },
           competitorSearch: { status: "idle" },
           confirming: false,
+          collapsed: false,
           confirmError: null,
         });
       })
@@ -679,6 +745,7 @@ export function WebsiteProfileEditor({
     const current = stateRef.current;
     if (
       current.phase !== "ready" ||
+      current.confirming ||
       current.saveState === "saving" ||
       hasBlankListItem(current.profile) ||
       current.details.draft?.draftVersion === undefined &&
@@ -1141,6 +1208,7 @@ export function WebsiteProfileEditor({
   useEffect(() => {
     if (
       state.phase !== "ready" ||
+      state.confirming ||
       state.saveState !== "unsaved" ||
       hasBlankListItem(state.profile) ||
       state.conflict !== null
@@ -1256,8 +1324,11 @@ export function WebsiteProfileEditor({
     ) {
       return;
     }
+    const isCurrentWebsite = (latest: EditorState): latest is ReadyEditor =>
+      latest.phase === "ready" &&
+      latest.details.websiteId === current.details.websiteId;
     setState((latest) =>
-      latest.phase === "ready"
+      isCurrentWebsite(latest)
         ? { ...latest, confirming: true, confirmError: null }
         : latest,
     );
@@ -1279,7 +1350,7 @@ export function WebsiteProfileEditor({
           throw new Error("invalid conflict");
         }
         setState((latest) =>
-          latest.phase === "ready"
+          isCurrentWebsite(latest)
             ? {
                 ...latest,
                 details: server,
@@ -1296,7 +1367,7 @@ export function WebsiteProfileEditor({
       if (response.status !== 200) {
         const fields = confirmationErrorFields(body);
         setState((latest) =>
-          latest.phase === "ready"
+          isCurrentWebsite(latest)
             ? {
                 ...latest,
                 confirming: false,
@@ -1310,27 +1381,46 @@ export function WebsiteProfileEditor({
       if (
         confirmed === null ||
         confirmed.websiteId !== websiteId ||
-        confirmed.draft === null
+        confirmed.draft === null ||
+        confirmed.currentConfirmedSnapshot === null ||
+        !profileEqual(confirmed.currentConfirmedSnapshot.profile, current.profile)
       ) {
         throw new Error("invalid confirmation");
       }
-      setState((latest) =>
-        latest.phase === "ready"
-          ? {
-              ...latest,
-              details: confirmed,
-              profile: confirmed.draft?.profile ?? latest.profile,
-              saveState: "saved",
-              conflict: null,
-              conflictChoices: {},
-              confirming: false,
-              confirmError: null,
-            }
-          : latest,
-      );
+      const confirmedDraft = confirmed.draft;
+      const confirmedSnapshot = confirmed.currentConfirmedSnapshot;
+      setState((latest) => {
+        if (!isCurrentWebsite(latest)) return latest;
+        // Another tab can save a newer draft between confirmation and the
+        // server's detail read. Keep local content until the user resolves it.
+        if (!profileEqual(confirmedDraft.profile, confirmedSnapshot.profile)) {
+          return {
+            ...latest,
+            details: confirmed,
+            conflict: confirmed,
+            conflictChoices: {},
+            saveState: "unsaved",
+            confirming: false,
+            confirmError: null,
+            collapsed: false,
+          };
+        }
+        const unchanged = profileEqual(latest.profile, current.profile);
+        return {
+          ...latest,
+          details: confirmed,
+          profile: unchanged ? confirmedDraft.profile : latest.profile,
+          saveState: unchanged ? "saved" : "unsaved",
+          conflict: null,
+          conflictChoices: {},
+          confirming: false,
+          confirmError: null,
+          collapsed: unchanged,
+        };
+      });
     } catch {
       setState((latest) =>
-        latest.phase === "ready"
+        isCurrentWebsite(latest)
           ? { ...latest, confirming: false, confirmError: [] }
           : latest,
       );
@@ -1350,6 +1440,59 @@ export function WebsiteProfileEditor({
       <p className="rounded-card border border-brand-border-card bg-brand-panel p-6 text-[13px] text-text-dark-secondary">
         {message}
       </p>
+    );
+  }
+
+  if (state.collapsed && state.details.currentConfirmedSnapshot !== null) {
+    return (
+      <div
+        ref={summaryRef}
+        tabIndex={-1}
+        role="region"
+        aria-labelledby="website-profile-confirmed-title"
+        data-website-profile-collapsed="true"
+        className="scroll-mt-24 space-y-5 rounded-card border border-brand-accent/40 bg-brand-panel p-6 outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent sm:p-7"
+      >
+        <p
+          role="status"
+          data-save-state="saved"
+          className="flex items-center gap-2 text-[13px] font-medium text-brand-accent-text"
+        >
+          <Check aria-hidden="true" className="size-4" />
+          {t("confirm.version", {
+            revision: state.details.currentConfirmedSnapshot.snapshotRevision,
+          })}
+        </p>
+        <div className="space-y-2">
+          <h2 id="website-profile-confirmed-title" className="text-[20px] font-semibold text-text-dark-primary">
+            {state.profile.productName}
+          </h2>
+          <p className="break-all font-mono text-[12px] text-text-dark-secondary">
+            {state.details.host}
+          </p>
+          <p className="text-[14px] leading-relaxed text-text-dark-primary">
+            {state.profile.oneLinePositioning}
+          </p>
+        </div>
+        <p className="text-[13px] text-text-dark-secondary">{t("confirm.body")}</p>
+        <a className="inline-flex items-center rounded-md border border-brand-border-card px-3 py-2 text-sm text-brand-accent-text"
+          href={`/${locale}/account/websites/${websiteId}/geo`}>
+          {t("geoExtension")}
+        </a>
+        <Button
+          type="button"
+          variant="outline"
+          aria-expanded={false}
+          onClick={() => setState((current) =>
+            current.phase === "ready"
+              ? { ...current, collapsed: false }
+              : current,
+          )}
+        >
+          <Pencil aria-hidden="true" className="size-4" />
+          {t("confirm.edit")}
+        </Button>
+      </div>
     );
   }
 
@@ -1374,10 +1517,25 @@ export function WebsiteProfileEditor({
   const displayedSaveState =
     state.conflict === null ? state.saveState : "conflicted";
   const hasIncompleteList = hasBlankListItem(state.profile);
+  const competitorData = state.competitorSearch.status === "result"
+    ? state.competitorSearch.data
+    : null;
+  const competitorSuggestions = competitorData === null
+    ? []
+    : deriveAgentCompetitorSuggestions(competitorData, state.details.host);
+  const competitorClassifications = {
+    direct: state.profile.directCompetitors,
+    indirect: state.profile.indirectAlternatives,
+    excluded: state.profile.excludedAlternatives,
+  };
+  const competitorFrame = deriveAgentCompetitorDisplayFrame(
+    competitorSuggestions,
+    competitorClassifications,
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 rounded-card border border-brand-border-card bg-brand-panel p-6 sm:flex-row sm:items-start sm:justify-between">
+    <div className="space-y-8">
+      <div className="flex flex-col gap-4 rounded-card border border-brand-border-card bg-brand-panel p-6">
         <div>
           <p className="font-mono text-[11px] text-brand-accent-text">
             {state.details.host}
@@ -1397,6 +1555,10 @@ export function WebsiteProfileEditor({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
+          <a className="inline-flex items-center rounded-md border border-brand-border-card px-3 py-2 text-sm text-brand-accent-text"
+            href={`/${locale}/account/websites/${websiteId}/geo`}>
+            {t("geoExtension")}
+          </a>
           <Button
             type="button"
             variant="outline"
@@ -1409,6 +1571,7 @@ export function WebsiteProfileEditor({
             type="button"
             variant="outline"
             disabled={
+              state.confirming ||
               state.saveState === "saving" ||
               state.conflict !== null ||
               hasIncompleteList
@@ -1457,7 +1620,7 @@ export function WebsiteProfileEditor({
                 <p className="text-[13px] font-semibold text-text-dark-primary">
                   {fieldName(field)}
                 </p>
-                <div className="mt-2 grid gap-3 text-[12px] sm:grid-cols-2">
+                <div className="mt-2 space-y-3 break-words text-[12px]">
                   <p>
                     {t("conflict.local")}:{" "}
                     {JSON.stringify(state.profile[field])}
@@ -1555,37 +1718,109 @@ export function WebsiteProfileEditor({
         profile={state.profile}
         onChange={editField}
       />
-      <AgentProfileSearch
-        locale={locale}
-        loading={
-          state.competitorSearch.status === "pending" ||
-          state.competitorSearch.status === "loading"
-        }
-        data={
-          state.competitorSearch.status === "result"
-            ? state.competitorSearch.data
-            : null
-        }
-        errorCode={
-          state.competitorSearch.status === "error"
-            ? state.competitorSearch.code
-            : null
-        }
-        onDiscover={() => void runCompetitorSearch(state.profile)}
-        disabled={
-          competitorSearchRequestForProfile(
-            state.profile,
-            state.details.submittedUrl,
-          ) === null
-        }
-        classifications={{
-          direct: state.profile.directCompetitors,
-          indirect: state.profile.indirectAlternatives,
-          excluded: state.profile.excludedAlternatives,
-        }}
-        onClassify={classifyCompetitor}
-        copy={profileSearchCopy}
-      />
+      <Card
+        data-website-competitors
+        role="region"
+        aria-labelledby="website-profile-competitors-title"
+        className="gap-0 overflow-hidden border-brand-border-strong py-0"
+      >
+        <CardHeader className="border-b bg-brand-panel-raised px-5 py-5 sm:px-7">
+          <CardTitle>
+            <h2 id="website-profile-competitors-title" className="flex items-center gap-3 text-[17px]">
+              <span aria-hidden="true" className="h-5 w-1 rounded-full bg-brand-accent" />
+              {t("competitorSection")}
+            </h2>
+          </CardTitle>
+          <CardDescription>{t("competitors.description")}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6 px-5 py-6 sm:px-7">
+          <dl className="space-y-5">
+            {COMPETITOR_GROUPS.map(({ classification, field }) => {
+              const entries = competitorSummaryEntries(
+                competitorFrame[classification],
+                state.profile[field],
+              );
+              const classificationSaved = valueEqual(
+                state.profile[field],
+                state.details.draft?.profile[field] ??
+                  state.details.currentConfirmedSnapshot?.profile[field] ?? [],
+              );
+              return (
+                <div
+                  key={field}
+                  data-competitor-summary={classification}
+                  className="rounded-[10px] border border-brand-border-card p-4"
+                >
+                  <dt className="text-[14px] font-semibold text-text-dark-primary">{fieldName(field)}</dt>
+                  <dd className="mt-3">
+                    {entries.length === 0 ? (
+                      <p className="text-[13px] text-text-dark-secondary">{t("competitors.empty")}</p>
+                    ) : (
+                      <ul className="space-y-3">
+                        {entries.map(({ value, source }) => (
+                          <li
+                            key={value}
+                            data-competitor-source={source === "saved" && !classificationSaved ? "draft" : source}
+                            className="space-y-1"
+                          >
+                            <p className="break-all text-[14px] text-text-dark-primary">{value}</p>
+                            <p className={`text-[12px] ${source === "system" ? "text-brand-warning" : "text-text-dark-secondary"}`}>
+                              {t(source === "system"
+                                ? "competitors.systemSuggestion"
+                                : classificationSaved
+                                  ? "competitors.savedClassification"
+                                  : "competitors.draftClassification")}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+          <AgentProfileSearch
+            locale={locale}
+            loading={
+              state.competitorSearch.status === "pending" ||
+              state.competitorSearch.status === "loading"
+            }
+            data={competitorData}
+            suggestions={competitorSuggestions}
+            errorCode={
+              state.competitorSearch.status === "error"
+                ? state.competitorSearch.code
+                : null
+            }
+            onDiscover={() => void runCompetitorSearch(state.profile)}
+            disabled={
+              state.confirming ||
+              competitorSearchRequestForProfile(
+                state.profile,
+                state.details.submittedUrl,
+              ) === null
+            }
+            reviewDisabled={state.confirming}
+            classifications={competitorClassifications}
+            onClassify={classifyCompetitor}
+            copy={profileSearchCopy}
+          />
+          <details className="rounded-[10px] border border-brand-border-card bg-brand-bg p-4">
+            <summary className="cursor-pointer text-[14px] font-medium text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent">
+              {t("competitors.editSaved")}
+            </summary>
+            <p className="mt-3 text-[13px] leading-relaxed text-text-dark-secondary">{t("competitors.manualHelp")}</p>
+            <div className="divide-y divide-brand-border-card">
+              {COMPETITOR_GROUPS.map(({ field }) => (
+                <div key={field} className="py-5">
+                  <FieldEditor field={field} profile={state.profile} onChange={editField} />
+                </div>
+              ))}
+            </div>
+          </details>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -1649,12 +1884,12 @@ export function WebsiteProfileEditor({
             </div>
           )}
           {requiredMissing.length > 0 || confirmedChanges.length === 0 ? null : (
-            <ul className="mb-4 flex flex-wrap gap-2">
+            <ul className="mb-4 space-y-2">
               {confirmedChanges.map((field) => (
                 <li
                   key={field}
                   data-confirm-change={field}
-                  className="rounded-full bg-brand-panel-raised px-2.5 py-1 text-[11px] text-text-dark-secondary"
+                  className="w-fit rounded-full bg-brand-panel-raised px-2.5 py-1 text-[11px] text-text-dark-secondary"
                 >
                   {fieldName(field)}
                 </li>

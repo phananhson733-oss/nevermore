@@ -6,9 +6,9 @@
 
 import { useRef, useState } from "react";
 import type {
-  ContentBrief,
   DraftResult,
 } from "@sf/public-tools/content-brief/contract";
+import { isGeoContentBrief, type SharedContentBrief as ContentBrief } from "@sf/public-tools/content-brief/geo-contract";
 
 import { localePath } from "../../lib/locale-path";
 import {
@@ -139,7 +139,7 @@ export function HandoffBar({
     if (page === null) return false;
     const payload: ToolHandoffPayload = {
       source: "content-draft",
-      destination: "on-page-seo-check",
+      destination: isGeoContentBrief(brief) ? "page-citability-check" : "on-page-seo-check",
       scope: "query_page",
       property: null,
       query: brief.keyword.primary,
@@ -215,7 +215,7 @@ export function HandoffBar({
           />
         </label>
         <p id="content-draft-published-url-help" className={`mt-2 ${BODY_TEXT}`}>
-          {t("handoff.publishedUrlHelp")}
+          {t(isGeoContentBrief(brief) ? "handoff.geoPublishedUrlHelp" : "handoff.publishedUrlHelp")}
         </p>
         {urlInvalid ? (
           <p data-published-url-invalid className={`mt-1 ${BODY_TEXT} text-brand-error`}>
@@ -226,13 +226,13 @@ export function HandoffBar({
           <div className="mt-3">
             <a
               data-open-on-page
-              href={localePath(locale, "/tools/on-page-seo-check")}
+              href={localePath(locale, isGeoContentBrief(brief) ? "/tools/page-citability-check" : "/tools/on-page-seo-check")}
               {...TOOL_HANDOFF_LINK_PROPS}
               onClick={prepare}
               onContextMenu={prepare}
               className={PRIMARY_ACTION_BUTTON}
             >
-              {t("actions.openOnPage")}
+              {t(isGeoContentBrief(brief) ? "actions.openCitability" : "actions.openOnPage")}
             </a>
           </div>
         ) : null}

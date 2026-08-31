@@ -70,6 +70,8 @@ Draft must consume the exact confirmed revision. Its question renderer and `sect
 
 Historical-v1 imports retain their own parser; incompatible GEO imports get a specific explanation and correct entry point. Do not coerce either into a fabricated v2 object.
 
+Integration clarification: main subsequently introduced the explicit shared GEO Brief `gengrowth.content_brief/v1.1` in PR #261. Preserve that independent parser, owned-receipt verification and Draft behavior alongside SEO v1 and confirmed SEO v2. The rejected legacy GEO report remains `schemaVersion: marketing-geo-brief.v1`; do not label the new shared GEO Brief incompatible or bypass its server verification.
+
 ### Draft v2 implementation pins
 
 Draft v2 accepts the exact confirmed envelope, not an unconfirmed generated Brief. Its section headers follow the effective confirmed order/wording, while questions and evidence stay frozen. Page U refs are granular factual citations; PAA U refs can identify questions but never authorize a bound claim. Profile P refs follow the explicit product-mention setting, and inferred profile facts cannot support bound claims. Supporting-page counts deduplicate canonical observed page identities (including an actual owned rewrite target), and must not be labeled competitor counts.

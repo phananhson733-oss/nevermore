@@ -1,5 +1,5 @@
 // @input  -- active Tools hub source
-// @output -- regression guard for twelve tool entries and their public/Agent execution boundaries
+// @output -- regression guard for formal tools and the website-owned GEO asset boundary
 // @pos    -- keeps the supporting-tools hub complete and the Internal Link Audit public
 
 import { readFileSync } from "node:fs";
@@ -12,7 +12,15 @@ const TOOL_CARD = fileURLToPath(
 );
 
 describe("Tools hub execution boundaries", () => {
-  it("keeps all twelve tool entries in their established order", () => {
+  it("describes the actual two-engine GEO visibility input", () => {
+    const source = readFileSync(HUB_PAGE, "utf8");
+    const entry = source.slice(source.indexOf('slug: "ai-visibility-check"'), source.indexOf('slug: "geo-brief"'));
+    expect(entry).toContain("ChatGPT");
+    expect(entry).toContain("Perplexity");
+    expect(entry).not.toContain("one AI surface");
+    expect(entry).not.toContain("一个 AI 面");
+  });
+  it("keeps formal tool entries in their established order, with GEO Knowledge Base owned by Settings", () => {
     const source = readFileSync(HUB_PAGE, "utf8");
     const slugs = [...source.matchAll(/slug: "([^"]+)"/g)].map(
       (match) => match[1],
@@ -30,7 +38,6 @@ describe("Tools hub execution boundaries", () => {
       "content-brief",
       "content-draft",
       "page-citability-check",
-      "geo-knowledge-base",
       "ai-visibility-check",
       "geo-brief",
     ]);
@@ -40,6 +47,16 @@ describe("Tools hub execution boundaries", () => {
     expect(source).toContain(
       'cta: { en: "Open SEO Agent", zh: "打开 SEO Agent" }',
     );
+  });
+
+  it("keeps the existing KB URL as a shared-editor shortcut to canonical Website GEO settings", () => {
+    const legacy = readFileSync(new URL("./geo-knowledge-base/page.tsx", import.meta.url), "utf8");
+    const canonical = readFileSync(new URL("../account/websites/[websiteId]/geo/page.tsx", import.meta.url), "utf8");
+    expect(legacy).toContain("<GeoKnowledgeBase");
+    expect(legacy).toContain('t("asset.shortcutDescription")');
+    expect(legacy).toContain('localePath(locale, "/account/websites")');
+    expect(legacy).not.toContain("redirect(");
+    expect(canonical).toContain("<WebsiteGeoEditor websiteId={websiteId}");
   });
 
   it("describes Internal Link Audit as a standalone no-login public audit", () => {

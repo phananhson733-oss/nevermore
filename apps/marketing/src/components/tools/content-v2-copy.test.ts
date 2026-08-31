@@ -3,11 +3,19 @@
 // @pos -- acquisition copy contract for the current confirmed-v2 workflow
 import { describe, expect, it } from "vitest";
 import { getConnectedToolContent } from "./connected-tool-content.ts";
+import en from "../../i18n/messages/en.json";
+import zh from "../../i18n/messages/zh.json";
 
 describe("current content tool landing copy", () => {
   for (const locale of ["en", "zh"] as const) {
     const brief = getConnectedToolContent(locale, "content-brief");
     const draft = getConnectedToolContent(locale, "content-draft");
+    it(`${locale}: preserves the newly merged shared GEO brief without accepting a legacy GEO report`, () => {
+      const intake = (locale === "en" ? en : zh).tools.contentDraft.intake;
+      expect(intake.supportedSchemas).toContain("v1.1");
+      expect(intake.geoDocument).toMatch(/legacy|旧版/);
+      expect(draft.sourceDetail).toContain("v1.1");
+    });
     it(`${locale}: explains supporting-scope research and PAA without the old cluster gate`, () => {
       expect(brief.steps[0]?.text).toContain("Search Console");
       expect(brief.steps[2]?.text).toContain("PAA");

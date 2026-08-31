@@ -174,7 +174,7 @@ test.describe("Draft v2 — API-isolated browser acceptance", () => {
     await page.goto("/en/tools/content-draft");
     await necessaryOnly(page, "en");
     for (const [document, code, message] of [
-      [{ schemaVersion: "marketing-geo-brief.v1", title: "GEO evidence" }, "geo_document", "This is a GEO Brief"],
+      [{ schemaVersion: "marketing-geo-brief.v1", title: "GEO evidence" }, "geo_document", "This is a legacy GEO report"],
       [confirmed.brief, "confirmation_required", "has not been confirmed"],
     ] as const) {
       await page.locator("[data-paste-brief]").fill(JSON.stringify(document));

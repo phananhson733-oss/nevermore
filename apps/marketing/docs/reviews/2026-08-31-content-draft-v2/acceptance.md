@@ -40,3 +40,20 @@ Full unit rerun after the scanner/folding fixes: **16,141 / 16,142 passed** acro
 The standalone server starts under `env -i` with no provider/Supabase credentials. Tests intercept the API at browser-context scope, so popups cannot accidentally call paid services. They exercise actual producer editing/confirmation, real popups, signed-out peek, explicitly named manual-paste fallback, exact request/response/exports, CJK/PAA/update cases, unavailable branches and On-Page navigation. Authenticated automatic handoff and Google reload recovery have unit coverage, **not** a real-login browser PASS from this harness. Native middle click with no opener/sessionStorage remains explicitly tested as a browser limitation, not claimed as working handoff.
 
 Fixed completions establish structure, provenance and behavior. They do not prove model semantic relevance, writing quality or factual truth. The separately bounded production Brief → Draft → one-section canary, current signed-in UI and exact Marketing release identity are still required. No provider call, CMS write, database migration, source upload to ChatGPT Pro or production deployment is represented by this report.
+
+## Integration with newly landed main
+
+The merge target became `077355d83f4486463f52f2ba5c66acb8880e7ab2` (GEO shared-content PR #261), after the earlier GSC and profile fixes. Its shared GEO Brief v1.1 capability is preserved alongside legacy SEO v1 and confirmed SEO v2. The legacy `schemaVersion: marketing-geo-brief.v1` report remains a distinct rejected input, and public copy now names all three supported Brief contracts accurately.
+
+The handler merge added a regression check for GEO's original raw-wire byte ceiling: the larger v2 envelope must not let an oversized GEO section request acquire a slot, read private evidence or consume quota before 413. Independent handler merge review passed 8 files / 163 tests; independent UI merge review passed 4 files / 105 tests. GEO harnesses have explicit throwing v2 seams, not optional dependencies or real-provider fallbacks.
+
+Final integrated evidence:
+
+- Marketing build: **PASS, 299 pages**; Marketing/public-tools/sources typechecks passed.
+- Explicit E2E TypeScript check using Marketing's strict/ES2023 policy: **PASS**. An additional stricter optional/indexed-access experiment exposed existing shared-client/GEO-fixture diagnostics; it is not represented as a passing gate and no unrelated code was changed to satisfy that experiment.
+- Changed-source ESLint, secret scan + 75 redaction tests and diff check relative to the exact incoming main: **PASS**. Existing extra EOF blanks in incoming GEO review documents are retained, not cleaned up.
+- Related integrated Draft/domain tests: **40 files / 1,150 PASS**; adjacent Brief/source/SSR suites: **26 files / 693 PASS**.
+- Fresh isolated browser run: **60/60 PASS**, covering Brief, legacy Draft, confirmed-v2 Draft and incoming GEO A/D/B/C flows. The runner and standalone server were both credential-free; GEO SSR login is explicitly fixture-injected, not a real authentication claim.
+- Full integrated unit run: **16,777 / 16,778 PASS**, 1,080 files. Only the unchanged blog inventory test fails (80 expected, 85 observed). All task-caused failures have separate reproduced fixes.
+
+No Product, Worker, database, migration, environment or CMS change is introduced by the diff relative to incoming main. Those incoming features are not claimed as this task's implementation.

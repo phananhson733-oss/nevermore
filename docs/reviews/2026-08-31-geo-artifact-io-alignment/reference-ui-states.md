@@ -1,0 +1,1036 @@
+# Referenced GEO Artifact — read-only UI evidence
+
+Source: https://claude.ai/public/artifacts/37bb86f4-c185-4835-9394-a867a2b1264f
+
+Title: geo-product-ui.jsx - Claude
+
+Captured: 2026-08-31 (Asia/Shanghai). All figures in this prototype are scenario data, not provider observations or required literal values. Read through the page's Preview and Code views; no API calls exist in the JSX.
+
+## kbInput
+
+```text
+- link "Claude":
+  - /url: https://claude.ai
+  - img "Claude"
+- generic: Content is user-generated and unverified.
+- radiogroup "Artifact view":
+  - radio "Preview" [checked]:
+    - generic: 
+  - radio [checked]
+  - radio "Code":
+    - generic: 
+  - radio
+- button "Copy link":
+  - generic: 
+- button "Report":
+  - generic: 
+- button "Copy":
+  - text: Copy
+- link "Learn about artifacts":
+  - /url: https://support.claude.com/en/articles/9487310-what-are-artifacts-and-how-do-i-use-them
+- iframe:
+  - alert
+  - generic: GENGROWTH
+  - generic: GEO 模块
+  - generic: astrologywiki.com
+  - generic: kb@v1 已冻结
+  - generic: prompt-set@v1 · 42 条
+  - button "知识库"
+  - button "AI 可见性体检"
+  - button "页面可引用性检查"
+  - button "GEO Brief 生成器"
+  - button "内容链衔接"
+  - generic: 设置 → 网站 → GEO 扩展 · 非工具页
+  - heading "知识库" [level=1]
+  - button "补充与确认"
+  - button "冻结快照"
+  - generic: 不是新页面，是网站档案的一个区块
+  - generic: 放在 设置 → 网站 里，紧跟现有的「产品」区。产品名称、一句话定位、核心功能直接继承，不重复填。GEO 只补它缺的：别名、竞品映射、ICP、品类词、市场语言 —— 以及一个「冻结」动作。
+  - generic: 继承 · 已从网站档案带入
+  - text: 域名
+  - generic: 继承自网站档案
+  - generic: astrologywiki.com（已扫描 · 已保存）
+  - text: 产品名称
+  - generic: 继承自网站档案
+  - generic: AstrologyWiki
+  - generic: 作为 officialName 初始值 —— 提及判定的根。请确认这是模型口中会说的名字
+  - text: 一句话定位
+  - generic: 继承自网站档案
+  - generic: 将本命星盘、占星知识与 CBT 日记结合，用现代心理学语境帮助用户进行自我探索，而非提供宿命式预测
+  - text: 核心功能
+  - generic: 继承自网站档案
+  - generic: 免费本命星盘计算器
+  - generic: 今日星空与行星过运
+  - generic: 土星回归计算器
+  - generic: 合盘兼容性工具
+  - generic: AI Oracle 与 Ask 问答
+  - generic: CBT 日记与情绪记录
+  - generic: 占星百科知识库
+  - generic: 两个用途：① 工具页进入站点索引的优先抓取清单 ② 转为已核实事实的候选（需逐条补来源与采集时间）
+  - generic: GEO 补充 · 网站档案里没有的
+  - generic: officialName 别名 *
+  - generic: AstrologyWiki
+  - generic: Astrology Wiki
+  - generic: astrologywiki
+  - generic: astrologywiki.com
+  - generic: 提及判定的别名表，随 kb 一并冻结。大小写与分词变体已自动生成，可增删
+  - generic: 品类词 *
+  - generic: birth chart calculator
+  - generic: natal chart
+  - generic: astrology site
+  - generic: saturn return
+  - generic: synastry
+  - generic: 用户提问视角，不是产品视角 —— 没人会问「占星百科知识库」，他们问 best birth chart site。这是提问集的骨架
+  - generic: 市场 / 语言 *
+  - generic: US / en
+  - generic: 网站档案里没有这个字段。它决定提问集语言与引擎的区域参数
+  - generic: 竞品域名 *
+  - generic: cafeastrology.com
+  - generic: astro.com
+  - generic: costarastrology.com
+  - generic: astro-seek.com
+  - generic: thepattern.com
+  - generic: 1–5 个。系统会抓各家首页解析 brandName —— 模型说的是 Cafe Astrology，不是 cafeastrology.com
+  - generic: Search Console
+  - generic: sc-domain:astrologywiki.com（已连接）
+  - generic: 用近 90 天真实 query 聚类出 ICP 角色。不连接则跳过角色，问题层与评估层不生成
+  - generic: 草稿与冻结是两回事
+  - generic: 网站档案的「保存草稿 / 已保存」是可变的，随时能改。GEO 的基线对比需要一个不可变锚点 —— 冻结会生成 kb@v1 快照，之后修改档案不影响已冻结版本，只会产生 v2。提及率变了到底是因为世界变了还是因为你改了别名表，必须分得开。
+  - generic: 解析竞品并生成角色与提问集
+  - generic: 抓竞品首页各 1 页 + GSC 聚类 · 约 30 秒
+- status
+- region "Notifications"
+```
+
+## kbFrozen
+
+```text
+- link "Claude":
+  - /url: https://claude.ai
+  - img "Claude"
+- generic: Content is user-generated and unverified.
+- radiogroup "Artifact view":
+  - radio "Preview" [checked]:
+    - generic: 
+  - radio [checked]
+  - radio "Code":
+    - generic: 
+  - radio
+- button "Copy link":
+  - generic: 
+- button "Report":
+  - generic: 
+- button "Copy":
+  - text: Copy
+- link "Learn about artifacts":
+  - /url: https://support.claude.com/en/articles/9487310-what-are-artifacts-and-how-do-i-use-them
+- iframe [active]:
+  - alert
+  - generic: GENGROWTH
+  - generic: GEO 模块
+  - generic: astrologywiki.com
+  - generic: kb@v1 已冻结
+  - generic: prompt-set@v1 · 42 条
+  - button "知识库"
+  - button "AI 可见性体检"
+  - button "页面可引用性检查"
+  - button "GEO Brief 生成器"
+  - button "内容链衔接"
+  - generic: 设置 → 网站 → GEO 扩展 · 非工具页
+  - heading "知识库" [level=1]
+  - button "补充与确认"
+  - button "冻结快照" [active]
+  - generic: 竞品映射
+  - generic: 域名不能直接用于提及判定
+  - table:
+    - rowgroup:
+      - row "域名 brandName aliases 状态":
+        - columnheader "域名"
+        - columnheader "brandName"
+        - columnheader "aliases"
+        - columnheader "状态"
+    - rowgroup:
+      - row "cafeastrology.com Cafe Astrology Cafe Astrology, Cafeastrology 已确认":
+        - cell "cafeastrology.com"
+        - cell "Cafe Astrology"
+        - cell "Cafe Astrology, Cafeastrology"
+        - cell "已确认"
+      - row "astro.com Astrodienst Astrodienst, Astro.com, astro dot com 已确认":
+        - cell "astro.com"
+        - cell "Astrodienst"
+        - cell "Astrodienst, Astro.com, astro dot com"
+        - cell "已确认"
+      - row "costarastrology.com Co–Star Co-Star, CoStar, Co Star 已确认":
+        - cell "costarastrology.com"
+        - cell "Co–Star"
+        - cell "Co-Star, CoStar, Co Star"
+        - cell "已确认"
+      - row "astro-seek.com Astro-Seek Astro-Seek, AstroSeek 已确认":
+        - cell "astro-seek.com"
+        - cell "Astro-Seek"
+        - cell "Astro-Seek, AstroSeek"
+        - cell "已确认"
+      - row "thepattern.com — — 未确认 · 不参与 SOV":
+        - cell "thepattern.com"
+        - cell "—"
+        - cell "—"
+        - cell "未确认 · 不参与 SOV"
+  - generic: thepattern.com 的 brandName 抽取失败
+  - generic: 首页 og:site_name 与 title 无公共前缀。该竞品已排除出 SOV 分母，T1 结果页会说明。可手动填写 The Pattern 后重新冻结为 v2。
+  - generic: ICP 角色 · 3 个
+  - generic: 决定提问集的问题层与评估层能否生成
+  - generic: 占星入门者
+  - generic: 刚接触本命盘
+  - generic: 痛点术语看不懂，报告太玄
+  - generic: 现有替代Co–Star 推送 + TikTok 帖子
+  - generic: 判断标准免费 · 无需注册 · 解释说人话
+  - generic: GSC 18 条 query
+  - generic: 进阶自学者
+  - generic: 查过运与合盘
+  - generic: 痛点免费工具精度与宫位制支持不足
+  - generic: 现有替代astro.com + Cafe Astrology 拼用
+  - generic: 判断标准星历精度 · 宫位制 · 可导出
+  - generic: GSC 9 条 query
+  - generic: 心理向自我探索者
+  - generic: 用日记做自我觉察
+  - generic: 痛点占星内容太宿命论
+  - generic: 现有替代心理类 app 与占星内容分开用
+  - generic: 判断标准现代心理学语气 · 隐私
+  - generic: 仅公开 HTML 推断（价值主张）
+  - generic: 已核实事实
+  - generic: 由核心功能转化而来，逐条补来源；T3 的事实表只能引用这里或一次带来源的抓取
+  - table:
+    - rowgroup:
+      - row "key value 来源 状态":
+        - columnheader "key"
+        - columnheader "value"
+        - columnheader "来源"
+        - columnheader "状态"
+    - rowgroup:
+      - row "本命星盘计算器 免费 · 无需注册 /tools/birth-chart · 08-26 firstParty":
+        - cell "本命星盘计算器"
+        - cell "免费 · 无需注册"
+        - cell "/tools/birth-chart · 08-26"
+        - cell "firstParty"
+      - row "土星回归计算器 免费 /tools/saturn-return · 08-26 firstParty":
+        - cell "土星回归计算器"
+        - cell "免费"
+        - cell "/tools/saturn-return · 08-26"
+        - cell "firstParty"
+      - row "CBT 日记 需登录 · 免费档 /journal · 08-26 firstParty":
+        - cell "CBT 日记"
+        - cell "需登录 · 免费档"
+        - cell "/journal · 08-26"
+        - cell "firstParty"
+      - row "星历数据源 — 未公开 · notPublished null + reason":
+        - cell "星历数据源"
+        - cell "—"
+        - cell "未公开 · notPublished"
+        - cell "null + reason"
+  - generic: 提问集 · 42 条
+  - generic: 每条绑定角色，requiredEntities 按层从知识库取
+  - table:
+    - rowgroup:
+      - row "提问 层 角色 requiredEntities":
+        - columnheader "提问"
+        - columnheader "层"
+        - columnheader "角色"
+        - columnheader "requiredEntities"
+    - rowgroup:
+      - row "how to read my birth chart without paying an astrologer problem 入门者 birth chart · free":
+        - cell "how to read my birth chart without paying an astrologer"
+        - cell "problem"
+        - cell "入门者"
+        - cell "birth chart · free"
+      - row "best free birth chart calculator no sign up discovery 入门者 birth chart calculator · 无需注册":
+        - cell "best free birth chart calculator no sign up"
+        - cell "discovery"
+        - cell "入门者"
+        - cell "birth chart calculator · 无需注册"
+      - row "astro.com vs cafe astrology for birth charts comparison 进阶 Astrodienst · Cafe Astrology · birth chart":
+        - cell "astro.com vs cafe astrology for birth charts"
+        - cell "comparison"
+        - cell "进阶"
+        - cell "Astrodienst · Cafe Astrology · birth chart"
+      - row "is astrologywiki actually psychology-based or just horoscopes evaluation 心理向 AstrologyWiki · CBT":
+        - cell "is astrologywiki actually psychology-based or just horoscopes"
+        - cell "evaluation"
+        - cell "心理向"
+        - cell "AstrologyWiki · CBT"
+      - row "what is astrologywiki branded 全部 AstrologyWiki · Astrology Wiki":
+        - cell "what is astrologywiki"
+        - cell "branded"
+        - cell "全部"
+        - cell "AstrologyWiki · Astrology Wiki"
+  - generic: 冻结为 kb@v1 + prompt-set@v1
+  - generic: 不可变快照 · 之后改网站档案只产生 v2，不影响 v1 的历史
+  - generic: 继承网站档案（产品名称 / 定位 / 核心功能）· 补 GEO 字段 5 项 · 竞品 4/5 确认 · GSC 已连接 · 2026-08-26 09:12 PT
+- status
+- region "Notifications"
+```
+
+## visibility
+
+```text
+- link "Claude":
+  - /url: https://claude.ai
+  - img "Claude"
+- generic: Content is user-generated and unverified.
+- radiogroup "Artifact view":
+  - radio "Preview" [checked]:
+    - generic: 
+  - radio [checked]
+  - radio "Code":
+    - generic: 
+  - radio
+- button "Copy link":
+  - generic: 
+- button "Report":
+  - generic: 
+- button "Copy":
+  - text: Copy
+- link "Learn about artifacts":
+  - /url: https://support.claude.com/en/articles/9487310-what-are-artifacts-and-how-do-i-use-them
+- iframe [active]:
+  - alert
+  - generic: GENGROWTH
+  - generic: GEO 模块
+  - generic: astrologywiki.com
+  - generic: kb@v1 已冻结
+  - generic: prompt-set@v1 · 42 条
+  - button "知识库"
+  - button "AI 可见性体检" [active]
+  - button "页面可引用性检查"
+  - button "GEO Brief 生成器"
+  - button "内容链衔接"
+  - generic: /zh/tools/ai-visibility-check
+  - heading "AI 可见性体检" [level=1]
+  - button "输入"
+  - button "结果"
+  - generic: 配置
+  - generic: 提问集 *
+  - generic: prompt-set@v1（42 条 · 基于 kb@v1）
+  - generic: 只能选已冻结的版本。改动集合会提示这是新基线
+  - generic: 引擎 *
+  - generic: ChatGPT
+  - generic: Perplexity
+  - generic: 不返回引用的引擎不参与引用率计算，但仍参与提及率与 SOV
+  - generic: 每条采样次数 n *
+  - generic: "5"
+  - generic: 可选 3 / 5 / 10。n 越大区间越窄，调用量线性上升
+  - generic: 市场 / 语言 *
+  - generic: US / en
+  - generic: 继承自 kb@v1
+  - generic: 运行体检
+  - generic: 42 × 5 × 2 = 420 次调用 · 约 6 分钟 · 按需运行，无定时任务
+- status
+- region "Notifications"
+```
+
+## visibilityResult
+
+```text
+- link "Claude":
+  - /url: https://claude.ai
+  - img "Claude"
+- generic: Content is user-generated and unverified.
+- radiogroup "Artifact view":
+  - radio "Preview" [checked]:
+    - generic: 
+  - radio [checked]
+  - radio "Code":
+    - generic: 
+  - radio
+- button "Copy link":
+  - generic: 
+- button "Report":
+  - generic: 
+- button "Copy":
+  - text: Copy
+- link "Learn about artifacts":
+  - /url: https://support.claude.com/en/articles/9487310-what-are-artifacts-and-how-do-i-use-them
+- iframe [active]:
+  - alert
+  - generic: GENGROWTH
+  - generic: GEO 模块
+  - generic: astrologywiki.com
+  - generic: kb@v1 已冻结
+  - generic: prompt-set@v1 · 42 条
+  - button "知识库"
+  - button "AI 可见性体检"
+  - button "页面可引用性检查"
+  - button "GEO Brief 生成器"
+  - button "内容链衔接"
+  - generic: /zh/tools/ai-visibility-check
+  - heading "AI 可见性体检" [level=1]
+  - button "输入"
+  - button "结果" [active]
+  - generic: ① 可见性指标
+  - generic: 跨引擎混合
+  - generic: 提及率
+  - generic: 16.2%
+  - generic: n=210 · CI 12%–21%
+  - generic: 混合
+  - generic: 引用率
+  - generic: 6.7%
+  - generic: n=105 · 分母仅含支持引用的引擎
+  - generic: 混合
+  - generic: Prompt 覆盖率
+  - generic: 39 / 42
+  - generic: 3 条无有效样本
+  - generic: SOV
+  - generic: 4.6%
+  - generic: n=124 · CI 2%–9%
+  - generic: 不含 branded
+  - generic: SOV 的分母是什么
+  - generic: 在「本站或任一竞品被提及」的样本子集中，本站被提及的比例 —— 定义良好的伯努利比例，置信区间才成立。thepattern.com 未确认 brandName，已排除出分母。
+  - generic: 分引擎
+  - generic: 混合值会掩盖引擎差异，两者都要看
+  - table:
+    - rowgroup:
+      - row "引擎 提及率 引用率 SOV 状态":
+        - columnheader "引擎"
+        - columnheader "提及率"
+        - columnheader "引用率"
+        - columnheader "SOV"
+        - columnheader "状态"
+    - rowgroup:
+      - row "ChatGPT 21.0% (n=105) 9.5% (n=105) 5.9% ok":
+        - cell "ChatGPT"
+        - cell "21.0% (n=105)"
+        - cell "9.5% (n=105)"
+        - cell "5.9%"
+        - cell "ok"
+      - row "Perplexity 11.4% (n=105) 3.8% (n=105) 3.1% partial · 3 条超时":
+        - cell "Perplexity"
+        - cell "11.4% (n=105)"
+        - cell "3.8% (n=105)"
+        - cell "3.1%"
+        - cell "partial · 3 条超时"
+  - generic: 按意图层
+  - table:
+    - rowgroup:
+      - row "层 提及率 引用率 平均位次 样本":
+        - columnheader "层"
+        - columnheader "提及率"
+        - columnheader "引用率"
+        - columnheader "平均位次"
+        - columnheader "样本"
+    - rowgroup:
+      - row "problem 2.0% 0.0% — n=50":
+        - cell "problem"
+        - cell "2.0%"
+        - cell "0.0%"
+        - cell "—"
+        - cell "n=50"
+      - row "discovery 10.9% 3.6% 第 4 位 n=55":
+        - cell "discovery"
+        - cell "10.9%"
+        - cell "3.6%"
+        - cell "第 4 位"
+        - cell "n=55"
+      - row "comparison 26.0% 14.0% 第 3 位 n=50":
+        - cell "comparison"
+        - cell "26.0%"
+        - cell "14.0%"
+        - cell "第 3 位"
+        - cell "n=50"
+      - row "evaluation 53.3% 20.0% 第 1 位 n=15":
+        - cell "evaluation"
+        - cell "53.3%"
+        - cell "20.0%"
+        - cell "第 1 位"
+        - cell "n=15"
+      - row "branded 本次 n=3 未观测到（区间上界 56%） — — n=3":
+        - cell "branded"
+        - cell "本次 n=3 未观测到（区间上界 56%）"
+        - cell "—"
+        - cell "—"
+        - cell "n=3"
+  - generic: 0.0% 与「未观测到」不是一回事
+  - generic: problem 层的引用率 0.0% 是 n=50 内一次都没有的真实观测结论。branded 层写「未观测到」是因为 n=3 不足以下结论 —— 两者对应完全不同的动作，界面上必须分开。
+  - generic: ② 引用源清单
+  - generic: 计数单位是出现过该域名的回答数，不是 URL 数
+  - table:
+    - rowgroup:
+      - row "域名 被引回答数 页面类型 本站在位":
+        - columnheader "域名"
+        - columnheader "被引回答数"
+        - columnheader "页面类型"
+        - columnheader "本站在位"
+    - rowgroup:
+      - row "reddit.com/r/astrology 31 community 缺席":
+        - cell "reddit.com/r/astrology"
+        - cell "31"
+        - cell "community"
+        - cell "缺席"
+      - row "cafeastrology.com 26 竞品自有 —":
+        - cell "cafeastrology.com"
+        - cell "26"
+        - cell "竞品自有"
+        - cell "—"
+      - row "bustle.com 18 listicle 缺席":
+        - cell "bustle.com"
+        - cell "18"
+        - cell "listicle"
+        - cell "缺席"
+      - row "en.wikipedia.org 15 other 缺席":
+        - cell "en.wikipedia.org"
+        - cell "15"
+        - cell "other"
+        - cell "缺席"
+      - row "astro-seek.com 12 竞品自有 —":
+        - cell "astro-seek.com"
+        - cell "12"
+        - cell "竞品自有"
+        - cell "—"
+  - generic: ③ 缺口清单 · 26 条
+  - generic: "8"
+  - generic: A 缺内容
+  - generic: "5"
+  - generic: B 不可抽取
+  - generic: "9"
+  - generic: C 缺佐证
+  - generic: "4"
+  - generic: D 被压制
+  - generic: "6"
+  - generic: 未归因
+  - table:
+    - rowgroup:
+      - row "提问 归因 证据 动作":
+        - columnheader "提问"
+        - columnheader "归因"
+        - columnheader "证据"
+        - columnheader "动作"
+    - rowgroup:
+      - row "best astrology app for beginners C run#26 回答 2/3/4/5 引用 bustle 榜单 导出待办":
+        - cell "best astrology app for beginners"
+        - cell "C"
+        - cell "run#26 回答 2/3/4/5 引用 bustle 榜单"
+        - cell "导出待办"
+      - row "synastry compatibility explained A 实体覆盖 0.22 < 0.4（索引 187 页） → GEO Brief":
+        - cell "synastry compatibility explained"
+        - cell "A"
+        - cell "实体覆盖 0.22 < 0.4（索引 187 页）"
+        - cell "→ GEO Brief"
+      - row "when is my saturn return calculator B /tools/saturn-return T2 未通过 7 项 → T2":
+        - cell "when is my saturn return calculator"
+        - cell "B"
+        - cell "/tools/saturn-return T2 未通过 7 项"
+        - cell "→ T2"
+      - row "best free birth chart calculator no sign up D 均位次 4.2 · 共现竞品 3 个 → GEO Brief":
+        - cell "best free birth chart calculator no sign up"
+        - cell "D"
+        - cell "均位次 4.2 · 共现竞品 3 个"
+        - cell "→ GEO Brief"
+      - row "what does my moon sign mean 未归因 被提及未被引用，目标页检查通过 —":
+        - cell "what does my moon sign mean"
+        - cell "未归因"
+        - cell "被提及未被引用，目标页检查通过"
+        - cell "—"
+  - generic: 6 条未归因
+  - generic: 证据不足以支撑任一类判定，不会硬塞进四类凑数。留在待补证据中，下次基线重跑后重新判定。
+  - generic: 与上次对比 · 本地
+  - generic: 上次摘要存于本浏览器 · 仅同一 prompt-set 版本显示 · 首次运行无此区块
+  - table:
+    - rowgroup:
+      - row "指标 上次 (08-19) 本次 (08-26) 差值 CI 判定":
+        - columnheader "指标"
+        - columnheader "上次 (08-19)"
+        - columnheader "本次 (08-26)"
+        - columnheader "差值 CI"
+        - columnheader "判定"
+    - rowgroup:
+      - row "整体提及率 13.3% 16.2% [−3.9pp, +9.7pp] 不显著":
+        - cell "整体提及率"
+        - cell "13.3%"
+        - cell "16.2%"
+        - cell "[−3.9pp, +9.7pp]"
+        - cell "不显著"
+      - row "SOV 2.5% 4.6% [+0.4pp, +3.9pp] 显著":
+        - cell "SOV"
+        - cell "2.5%"
+        - cell "4.6%"
+        - cell "[+0.4pp, +3.9pp]"
+        - cell "显著"
+      - row "引用率 5.7% 6.7% [−5.8pp, +7.7pp] 不显著":
+        - cell "引用率"
+        - cell "5.7%"
+        - cell "6.7%"
+        - cell "[−5.8pp, +7.7pp]"
+        - cell "不显著"
+  - table:
+    - rowgroup:
+      - row "提问 上次 本次 方向":
+        - columnheader "提问"
+        - columnheader "上次"
+        - columnheader "本次"
+        - columnheader "方向"
+    - rowgroup:
+      - row "best astrology app for beginners 0 / 5 2 / 5 新增提及":
+        - cell "best astrology app for beginners"
+        - cell "0 / 5"
+        - cell "2 / 5"
+        - cell "新增提及"
+      - row "best free birth chart calculator no sign up 1 / 5 2 / 5 新增提及":
+        - cell "best free birth chart calculator no sign up"
+        - cell "1 / 5"
+        - cell "2 / 5"
+        - cell "新增提及"
+      - row "astro.com vs cafe astrology for birth charts 1 / 5 0 / 5 失去提及":
+        - cell "astro.com vs cafe astrology for birth charts"
+        - cell "1 / 5"
+        - cell "0 / 5"
+        - cell "失去提及"
+  - generic: 工具形态不做归因
+  - generic: 这里只报「变了什么」，不报「因为你做了什么」—— 无状态工具没有动作完成时间可对齐。要把变化归因到具体动作，在 App 的周循环里跟踪缺口任务（Shipped Actions），归因在那一侧成立。逐条变化只报观测事实：单条 n=5 永远达不到显著，显著性只在上面的聚合层给出。
+  - generic: 导出运行文件 (.json)
+  - generic: 对比两份运行文件
+  - generic: 导出待办清单 (.md)
+  - generic: 自采样 ChatGPT 完整 / Perplexity 部分 · 站点索引 187 页 · 2026-08-26 09:40 PT · successRatio 0.917 · 本地摘要 gg:geo:lastrun:v1（不含回答原文）
+- status
+- region "Notifications"
+```
+
+## citabilityInput
+
+```text
+- link "Claude":
+  - /url: https://claude.ai
+  - img "Claude"
+- generic: Content is user-generated and unverified.
+- radiogroup "Artifact view":
+  - radio "Preview" [checked]:
+    - generic: 
+  - radio [checked]
+  - radio "Code":
+    - generic: 
+  - radio
+- button "Copy link":
+  - generic: 
+- button "Report":
+  - generic: 
+- button "Copy":
+  - text: Copy
+- link "Learn about artifacts":
+  - /url: https://support.claude.com/en/articles/9487310-what-are-artifacts-and-how-do-i-use-them
+- iframe [active]:
+  - alert
+  - generic: GENGROWTH
+  - generic: GEO 模块
+  - generic: astrologywiki.com
+  - generic: kb@v1 已冻结
+  - generic: prompt-set@v1 · 42 条
+  - button "知识库"
+  - button "AI 可见性体检"
+  - button "页面可引用性检查" [active]
+  - button "GEO Brief 生成器"
+  - button "内容链衔接"
+  - generic: /zh/tools/page-citability-check
+  - heading "页面可引用性检查" [level=1]
+  - button "输入"
+  - button "结果"
+  - generic: 输入
+  - generic: 页面 URL *
+  - generic: https://astrologywiki.com/tools/saturn-return
+  - generic: 须含协议。不需要登录，不需要连接任何账号
+  - generic: 目标提问
+  - generic: when is my saturn return
+  - generic: 选填。填了才做「直答段是否回答该问题」判定；留空则该项显示为不适用
+  - generic: 检查这个页面
+  - generic: 12 项确定性检查 · 无模型调用 · 约 8 秒
+- status
+- region "Notifications"
+```
+
+## citabilityResult
+
+```text
+- link "Claude":
+  - /url: https://claude.ai
+  - img "Claude"
+- generic: Content is user-generated and unverified.
+- radiogroup "Artifact view":
+  - radio "Preview" [checked]:
+    - generic: 
+  - radio [checked]
+  - radio "Code":
+    - generic: 
+  - radio
+- button "Copy link":
+  - generic: 
+- button "Report":
+  - generic: 
+- button "Copy":
+  - text: Copy
+- link "Learn about artifacts":
+  - /url: https://support.claude.com/en/articles/9487310-what-are-artifacts-and-how-do-i-use-them
+- iframe [active]:
+  - alert
+  - generic: GENGROWTH
+  - generic: GEO 模块
+  - generic: astrologywiki.com
+  - generic: kb@v1 已冻结
+  - generic: prompt-set@v1 · 42 条
+  - button "知识库"
+  - button "AI 可见性体检"
+  - button "页面可引用性检查"
+  - button "GEO Brief 生成器"
+  - button "内容链衔接"
+  - generic: /zh/tools/page-citability-check
+  - heading "页面可引用性检查" [level=1]
+  - button "输入"
+  - button "结果" [active]
+  - generic: 通过
+  - generic: "5"
+  - generic: 12 项中
+  - generic: 未通过
+  - generic: "7"
+  - generic: 每项附修法
+  - generic: 抓取失败
+  - generic: "0"
+  - generic: 需重试确认，非未通过
+  - generic: ssr_ratio
+  - generic: "0.06"
+  - generic: < 0.3 判为客户端渲染
+  - generic: 根因只有一个：这是个客户端渲染的计算器页
+  - generic: 第二段的 4 项未通过全部由渲染方式导致 —— 原始 HTML 里只有空挂载容器，正文、表格、限定条件都在 JS 渲染之后。先修 SSR，其余大概率一并转绿。
+  - generic: 第一段 · 能不能被读到
+  - generic: 7 项
+  - generic: 通过
+  - generic: robots.txt 允许 GPTBot
+  - generic: "命中 Allow: /"
+  - generic: 通过
+  - generic: robots.txt 允许 ClaudeBot
+  - generic: "未单独声明，落到默认 Allow: /"
+  - generic: 通过
+  - generic: robots.txt 允许 PerplexityBot
+  - generic: "命中 Allow: /"
+  - generic: 未通过
+  - generic: robots.txt 允许 Google-Extended
+  - generic: "命中 Disallow: / · robots.txt 第 9 行（曾整体屏蔽 AI 训练抓取）"
+  - generic: 修法：如需出现在 Gemini 答案中，为 Google-Extended 放行
+  - generic: 未通过
+  - generic: 首屏 HTML 含正文
+  - generic: ssr_ratio 0.06 · 原始 HTML 正文 96 字，渲染后 1620 字
+  - generic: 修法：计算器外壳可保留客户端渲染，但直答段与说明文字改为服务端输出
+  - generic: 通过
+  - generic: canonical 正确
+  - generic: 自指
+  - generic: 未通过
+  - generic: llms.txt
+  - generic: 不存在（404）—— 这是结论，与抓取失败（5xx）不同
+  - generic: 修法：在根目录提供 /llms.txt
+  - generic: 第二段 · 读到了能不能抽出来
+  - generic: 5 项 · 在原始 HTML 上判定
+  - generic: 未通过
+  - generic: 直答段在前 200 字启发式
+  - generic: 原始 HTML 前 200 字为空壳，未命中实体与结论标记
+  - generic: 修法：服务端输出一段：土星回归约在 27–30 岁，输入出生日期可算出精确区间
+  - generic: 未通过
+  - generic: 存在可抽取表格或列表
+  - generic: 0 个表格 · 0 个非导航列表（渲染后有，但机器读的是原始 HTML）
+  - generic: 修法：把年龄区间表静态输出
+  - generic: 未通过
+  - generic: 限定条件明确启发式
+  - generic: 未检测到数量区间表达
+  - generic: 修法：写明 27–30 岁与第二次 56–60 岁
+  - generic: 未通过
+  - generic: 所有数据点标注出处
+  - generic: 原始 HTML 无正文，无法判定为通过
+  - generic: 修法：静态正文补齐后为星历口径标注来源
+  - generic: 通过
+  - generic: FAQ schema 有效
+  - generic: 3 组问答通过校验（JSON-LD 在 head 中，服务端输出）
+  - generic: 公开 HTML 抓取 · 触发渲染取（原始正文 96 字 + 空挂载容器）· 2026-08-26 10:05 PT
+- status
+- region "Notifications"
+```
+
+## briefInput
+
+```text
+- link "Claude":
+  - /url: https://claude.ai
+  - img "Claude"
+- generic: Content is user-generated and unverified.
+- radiogroup "Artifact view":
+  - radio "Preview" [checked]:
+    - generic: 
+  - radio [checked]
+  - radio "Code":
+    - generic: 
+  - radio
+- button "Copy link":
+  - generic: 
+- button "Report":
+  - generic: 
+- button "Copy":
+  - text: Copy
+- link "Learn about artifacts":
+  - /url: https://support.claude.com/en/articles/9487310-what-are-artifacts-and-how-do-i-use-them
+- iframe [active]:
+  - alert
+  - generic: GENGROWTH
+  - generic: GEO 模块
+  - generic: astrologywiki.com
+  - generic: kb@v1 已冻结
+  - generic: prompt-set@v1 · 42 条
+  - button "知识库"
+  - button "AI 可见性体检"
+  - button "页面可引用性检查"
+  - button "GEO Brief 生成器" [active]
+  - button "内容链衔接"
+  - generic: /zh/tools/geo-brief · 输出 ContentBrief v1.1
+  - heading "GEO Brief 生成器" [level=1]
+  - button "输入"
+  - button "结果"
+  - generic: 从缺口卡带入 · C 类不进内容链
+  - generic: 目标提问、缺口类型、角色与证据指针从 T1 的 A / B / D 类缺口卡带入。C 类（缺佐证）的动作是第三方在位，不是写页面，在入口处直接拦截。也可手动输入提问，但产出的 brief 会带「无证据引用」标记。
+  - generic: 输入
+  - generic: 目标提问 *
+  - generic: synastry compatibility explained
+  - generic: 来自缺口卡 A · run#26 · 实体覆盖 0.22
+  - generic: 缺口类型
+  - generic: A 缺内容
+  - generic: 决定 format 预选：D → 对比页；A 按意图层推断
+  - generic: 面向角色 *
+  - generic: 占星入门者（术语看不懂 · 要说人话）
+  - generic: 来自 prompt.roleId
+  - generic: 知识库 / 提问集 *
+  - generic: kb@v1 · prompt-set@v1
+  - generic: 评分锚点与事实表从这里取
+  - generic: 生成 GEO Brief
+  - generic: 输出 ContentBrief v1.1 · 与关键词链共用同一契约 · 约 20 秒
+- status
+- region "Notifications"
+```
+
+## briefResult
+
+```text
+- link "Claude":
+  - /url: https://claude.ai
+  - img "Claude"
+- generic: Content is user-generated and unverified.
+- radiogroup "Artifact view":
+  - radio "Preview" [checked]:
+    - generic: 
+  - radio [checked]
+  - radio "Code":
+    - generic: 
+  - radio
+- button "Copy link":
+  - generic: 
+- button "Report":
+  - generic: 
+- button "Copy":
+  - text: Copy
+- link "Learn about artifacts":
+  - /url: https://support.claude.com/en/articles/9487310-what-are-artifacts-and-how-do-i-use-them
+- iframe [active]:
+  - alert
+  - generic: GENGROWTH
+  - generic: GEO 模块
+  - generic: astrologywiki.com
+  - generic: kb@v1 已冻结
+  - generic: prompt-set@v1 · 42 条
+  - button "知识库"
+  - button "AI 可见性体检"
+  - button "页面可引用性检查"
+  - button "GEO Brief 生成器"
+  - button "内容链衔接"
+  - generic: /zh/tools/geo-brief · 输出 ContentBrief v1.1
+  - heading "GEO Brief 生成器" [level=1]
+  - button "输入"
+  - button "结果" [active]
+  - generic: geo_origin · 这份 brief 由哪条提问触发
+  - generic: 提问 / 层 / 缺口
+  - generic: synastry compatibility explained · problem · gap A
+  - generic: 证据指针
+  - generic: "run#26 · ChatGPT #2 #4 · Perplexity #1 #3（各含 ≤300 字 excerpt，可点开）"
+  - generic: 手动输入提问时此处为「无证据引用」
+  - generic: 版本锚
+  - generic: kb@v1 · prompt-set@v1
+  - generic: brief 的可复算凭证，随 JSON 一并导出
+  - generic: lead_answer · 直答段要求
+  - generic: "来自提问集冻结时确认的评分锚点 · source: kb · 同时写入 must_answer 的 Q1"
+  - generic: requirement
+  - generic: 前 200 字回答：合盘（synastry）是什么、能回答什么、不能回答什么；术语首次出现带白话解释
+  - generic: required_entities
+  - generic: synastry
+  - generic: 合盘
+  - generic: aspects 相位
+  - generic: composite chart
+  - generic: 本命盘
+  - generic: must_answer · 8 条
+  - generic: ai_sample = AI 回答的子话题聚类（H2 等价物）· kb = 评分锚点
+  - table:
+    - rowgroup:
+      - row "id 问题 覆盖 来源":
+        - columnheader "id"
+        - columnheader "问题"
+        - columnheader "覆盖"
+        - columnheader "来源"
+    - rowgroup:
+      - row "Q1 合盘是什么、能与不能回答什么（直答段） 要求项 kb":
+        - cell "Q1"
+        - cell "合盘是什么、能与不能回答什么（直答段）"
+        - cell "要求项"
+        - cell "kb"
+      - row "Q2 synastry 与 composite chart 有什么区别 4 / 5 次回答 ai_sample":
+        - cell "Q2"
+        - cell "synastry 与 composite chart 有什么区别"
+        - cell "4 / 5 次回答"
+        - cell "ai_sample"
+      - row "Q3 看合盘先看哪些相位与宫位 3 / 5 次回答 ai_sample":
+        - cell "Q3"
+        - cell "看合盘先看哪些相位与宫位"
+        - cell "3 / 5 次回答"
+        - cell "ai_sample"
+      - row "Q4 合盘能不能预测分手 3 / 5 次回答 ai_sample":
+        - cell "Q4"
+        - cell "合盘能不能预测分手"
+        - cell "3 / 5 次回答"
+        - cell "ai_sample"
+      - row "Q5 必须写明：适用于二人本命盘对比，不适用于择时 要求项 kb":
+        - cell "Q5"
+        - cell "必须写明：适用于二人本命盘对比，不适用于择时"
+        - cell "要求项"
+        - cell "kb"
+  - generic: 候选 11 · 展示 8（上限）· 未展示 3，已计数未丢弃 · 3 条超时回答不计入任何覆盖数
+  - generic: fact_table · draft 的硬约束
+  - generic: 正文里的任何数字与产品事实只能来自 value 非 null 的格子
+  - table:
+    - rowgroup:
+      - row "维度 own 来源":
+        - columnheader "维度"
+        - columnheader "own"
+        - columnheader "来源"
+    - rowgroup:
+      - row "合盘工具 免费 · 无需注册 kb · /tools/synastry · 08-26":
+        - cell "合盘工具"
+        - cell "免费 · 无需注册"
+        - cell "kb · /tools/synastry · 08-26"
+      - row "对比维度 行星相位 + 宫位叠加 kb · 08-26":
+        - cell "对比维度"
+        - cell "行星相位 + 宫位叠加"
+        - cell "kb · 08-26"
+      - row "星历数据源 — null · notPublished —— 正文只能写「未公开」或不写":
+        - cell "星历数据源"
+        - cell "—"
+        - cell "null · notPublished —— 正文只能写「未公开」或不写"
+  - generic: outline
+  - generic: source 恒为 model · 顺序与措辞可改，问题清单不可改
+  - generic: H2 · 合盘（Synastry）是什么：一篇说人话的解释
+  - generic: 满足 Q1
+  - generic: H2 · Synastry 与 Composite 的区别
+  - generic: 满足 Q2
+  - generic: H2 · 三步读合盘：先看什么、再看什么
+  - generic: 满足 Q3
+  - generic: H2 · 合盘能回答什么、不能回答什么
+  - generic: 满足 Q1 · Q4 · Q5
+  - generic: H2 · 用本站工具跑一张你们的合盘（内链）
+  - generic: 满足 —
+  - generic: H2 · FAQ（3 组）
+  - generic: 满足 Q2 · Q4
+  - generic: v1 字段的 GEO 取值
+  - generic: verdict 恒为「不可判定」（自我竞争判定属于关键词链）；length 标 unavailable（GEO 没有竞品正文中位数，不假装有 SERP 证据）；internal_links 来自站点索引，指向相关工具页。draft 侧零改动即可消费这份 brief。
+  - generic: 生成 Draft →（content-draft，同一工具）
+  - generic: 导出 ContentBrief v1.1 (.json)
+  - generic: 交接走 sessionStorage（gg:brief:run_id），不进 URL · draft 完成后按来源分流 → 页面可引用性检查（T2）
+- status
+- region "Notifications"
+```
+
+## contentChain
+
+```text
+- link "Claude":
+  - /url: https://claude.ai
+  - img "Claude"
+- generic: Content is user-generated and unverified.
+- radiogroup "Artifact view":
+  - radio "Preview" [checked]:
+    - generic: 
+  - radio [checked]
+  - radio "Code":
+    - generic: 
+  - radio
+- button "Copy link":
+  - generic: 
+- button "Report":
+  - generic: 
+- button "Copy":
+  - text: Copy
+- link "Learn about artifacts":
+  - /url: https://support.claude.com/en/articles/9487310-what-are-artifacts-and-how-do-i-use-them
+- iframe [active]:
+  - alert
+  - generic: GENGROWTH
+  - generic: GEO 模块
+  - generic: astrologywiki.com
+  - generic: kb@v1 已冻结
+  - generic: prompt-set@v1 · 42 条
+  - button "知识库"
+  - button "AI 可见性体检"
+  - button "页面可引用性检查"
+  - button "GEO Brief 生成器"
+  - button "内容链衔接" [active]
+  - generic: draft 复用 /tools/content-draft · 不再自建成稿
+  - heading "内容链衔接" [level=1]
+  - generic: 两条链，一个 draft
+  - generic: SEO 链
+  - generic: 关键词
+  - generic: →
+  - generic: content-brief
+  - generic: →
+  - generic: content-draft
+  - generic: →
+  - generic: On-Page 检查器
+  - generic: GEO 链
+  - generic: 提问 / 缺口
+  - generic: →
+  - generic: geo-brief（本模块 T3）
+  - generic: →
+  - generic: content-draft（同一个）
+  - generic: →
+  - generic: 页面可引用性检查（T2）
+  - generic: GEO 不自建成稿工具
+  - generic: content-draft 已具备分段生成、句子级来源标注、独立覆盖度校验 —— 这正是 GEO 成稿需要的全部机制。geo-brief 输出与关键词链同一契约（ContentBrief v1.1），draft 成为共用消费者。
+  - generic: draft 侧的三处最小增量
+  - generic: ① Sentence.source 加 kb
+  - generic: 句子来源联合放宽为 product_profile / crawl / kb / model。kb 句子（已核实事实）不进核实清单；crawl 句子照旧派生。
+  - generic: ② system prompt 加事实表硬约束
+  - generic: 数字与产品事实只能来自 fact_table 中 value 非 null 的格子；null 的维度正文只能写「未公开」或不写，禁止生成具体值。
+  - generic: ③ HandoffBar 按来源分流
+  - generic: geo_origin 非 null → 交接 T2 可引用性检查；否则交接 On-Page 检查器（现状不变）。覆盖度校验零改动 —— 直答段要求已写入 Q1。
+  - generic: 铁律：ai_sample 不是事实来源
+  - generic: AI 回答采样只用于确定「要回答什么」（must_answer 的子话题聚类），永远不作为正文句子的事实来源 —— 别人家模型说的话不是事实。句子级事实只能来自 kb / crawl / product_profile。这条写进 draft 的 system prompt 与校验。
+  - generic: GEO 分组在 /zh/tools 的最终清单
+  - table:
+    - rowgroup:
+      - row "工具 路由 定位":
+        - columnheader "工具"
+        - columnheader "路由"
+        - columnheader "定位"
+    - rowgroup:
+      - row "页面可引用性检查 /zh/tools/page-citability-check 免登录钩子 · 也是发布前闸门":
+        - cell "页面可引用性检查"
+        - cell "/zh/tools/page-citability-check"
+        - cell "免登录钩子 · 也是发布前闸门"
+      - row "AI 可见性体检 /zh/tools/ai-visibility-check 内含「与上次对比」（本地）与「对比两份运行文件」":
+        - cell "AI 可见性体检"
+        - cell "/zh/tools/ai-visibility-check"
+        - cell "内含「与上次对比」（本地）与「对比两份运行文件」"
+      - row "GEO Brief 生成器 /zh/tools/geo-brief 输出 ContentBrief v1.1 · 交接 content-draft":
+        - cell "GEO Brief 生成器"
+        - cell "/zh/tools/geo-brief"
+        - cell "输出 ContentBrief v1.1 · 交接 content-draft"
+  - generic: 不在 tools 列表里的两样东西
+  - generic: 知识库在 设置 → 网站 的 GEO 区块（资产，不是工具）。动作跟踪与归因在 App 的周循环里（缺口喂 cycle_items，completed_at 在那一侧才存在）—— tools 负责测量与生成，App 负责跟踪与归因。
+- status
+- region "Notifications"
+```
+
+

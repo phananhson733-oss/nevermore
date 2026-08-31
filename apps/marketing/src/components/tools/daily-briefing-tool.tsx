@@ -1,10 +1,10 @@
-// @input  -- locale, GSC grant state, Daily Briefing API, and localized client messages
-// @output -- connect/no-property states plus a reset-safe property and brand-confirmation form
+// @input  -- locale, saved GSC grant, fresh property-list and Daily Briefing APIs, localized messages
+// @output -- independently refreshed sites plus a reset-safe property and brand-confirmation form
 // @pos    -- primary client state machine for /[locale]/tools/daily-search-briefing
 
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BellRing, CircleAlert, RefreshCw } from "lucide-react";
 import { useTranslations } from "next-intl";
 
@@ -63,6 +63,28 @@ interface DailyBriefingToolProps {
   readonly brandCandidates?: Readonly<Record<string, readonly string[]>>;
 }
 
+interface FreshProperties {
+  readonly properties: readonly string[];
+  readonly propertyTotal: number;
+  readonly brandCandidates: Readonly<Record<string, readonly string[]>>;
+}
+
+function isFreshProperties(value: unknown): value is FreshProperties {
+  if (!value || typeof value !== "object") return false;
+  const data = value as Partial<FreshProperties>;
+  return (
+    Array.isArray(data.properties) &&
+    data.properties.every((property: unknown) => typeof property === "string" && property !== "") &&
+    Number.isInteger(data.propertyTotal) &&
+    (data.propertyTotal ?? -1) >= data.properties.length &&
+    data.brandCandidates !== null &&
+    typeof data.brandCandidates === "object" &&
+    Object.values(data.brandCandidates).every((terms) =>
+      Array.isArray(terms) && terms.every((term: unknown) => typeof term === "string"),
+    )
+  );
+}
+
 function knownErrorCode(value: string | undefined): KnownErrorCode {
   switch (value) {
     case "gsc_unavailable":
@@ -94,7 +116,7 @@ function parseBrandTerms(input: string): readonly string[] {
  * pulls server-only code into this client bundle. A contract test keeps it
  * equal to the package's own constant.
  */
-export const CLIENT_DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v9";
+export const CLIENT_DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v10";
 
 export function DailyBriefingTool({
   locale,
@@ -112,33 +134,104 @@ export function DailyBriefingTool({
   );
   const [brandTermsConfirmed, setBrandTermsConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [sites, setSites] = useState({ properties, propertyTotal, brandCandidates });
+  const [refreshingSites, setRefreshingSites] = useState(false);
+  const [sitesError, setSitesError] = useState<KnownErrorCode | null>(null);
+  const refreshRequest = useRef<AbortController | null>(null);
+  const lastRefresh = useRef<number | null>(null);
   const [errorCode, setErrorCode] = useState<KnownErrorCode | null>(null);
+  const requestGeneration = useRef(0);
   const [payload, setPayload] = useState<{
     readonly envelope: DailyBriefingEnvelope;
+    readonly property: string;
   } | null>(null);
   const brandTerms = parseBrandTerms(brandInput);
 
+  const refreshSites = useCallback(async (manual = false) => {
+    if (properties === null || !connectEnabled || loading || refreshRequest.current) return;
+    if (!manual && lastRefresh.current !== null && Date.now() - lastRefresh.current < 30_000) return;
+    lastRefresh.current = Date.now();
+    const controller = new AbortController();
+    refreshRequest.current = controller;
+    setRefreshingSites(true);
+    setSitesError(null);
+    try {
+      const response = await fetch("/api/tools/gsc-properties", {
+        method: "POST",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const body = await response.json() as { data?: unknown; error?: { code?: string } };
+      if (controller.signal.aborted) return;
+      if (!response.ok || !isFreshProperties(body?.data)) {
+        setSitesError(knownErrorCode(body?.error?.code));
+        return;
+      }
+      const fresh = body.data;
+      setSites(fresh);
+      // An unchanged selection keeps its edited brands, confirmation and report.
+      // Removed access clears them without silently attributing a report to another site.
+      if (property !== "" && !fresh.properties.includes(property)) {
+        requestGeneration.current += 1;
+        setProperty("");
+        setBrandInput("");
+        setBrandTermsConfirmed(false);
+        setPayload(null);
+        setErrorCode(null);
+      } else if (property === "" && sites.properties?.length === 0) {
+        const first = fresh.properties[0] ?? "";
+        setProperty(first);
+        setBrandInput((fresh.brandCandidates[first] ?? []).join(", "));
+      }
+    } catch {
+      if (!controller.signal.aborted) setSitesError("unknown");
+    } finally {
+      if (refreshRequest.current === controller) refreshRequest.current = null;
+      if (!controller.signal.aborted) setRefreshingSites(false);
+    }
+  }, [properties, connectEnabled, loading, property, sites.properties?.length]);
+
+  useEffect(() => {
+    const refresh = () => { void refreshSites(); };
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [refreshSites]);
+
+  useEffect(() => () => {
+    refreshRequest.current?.abort();
+    refreshRequest.current = null;
+    lastRefresh.current = null;
+  }, []);
+
   function clearRunState() {
+    // Input changes invalidate queued responses as well as the visible result.
+    requestGeneration.current += 1;
     setPayload(null);
     setErrorCode(null);
+    setLoading(false);
   }
 
   async function run() {
+    if (loading || refreshRequest.current) return;
+    clearRunState();
+    const generation = requestGeneration.current;
+    const submittedProperty = property;
     trackMarketingEvent("tool_start", { tool_name: "daily_search_briefing" });
     setLoading(true);
-    clearRunState();
 
     try {
       const response = await fetch("/api/tools/daily-search-briefing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          property,
+          property: submittedProperty,
           brandTerms,
           brandTermsConfirmed,
         }),
       });
       const body = (await response.json()) as DailyBriefingResponse;
+      if (generation !== requestGeneration.current) return;
       if (!response.ok || body.data === undefined) {
         setErrorCode(knownErrorCode(body.error?.code));
         return;
@@ -154,14 +247,15 @@ export function DailyBriefingTool({
       }
       setPayload({
         envelope: body.data,
+        property: submittedProperty,
       });
       trackMarketingEvent("tool_complete", {
         tool_name: "daily_search_briefing",
       });
     } catch {
-      setErrorCode("unknown");
+      if (generation === requestGeneration.current) setErrorCode("unknown");
     } finally {
-      setLoading(false);
+      if (generation === requestGeneration.current) setLoading(false);
     }
   }
 
@@ -180,7 +274,33 @@ export function DailyBriefingTool({
     );
   }
 
-  if (properties.length === 0) {
+  const siteRefresh = (
+    <div className="mt-3">
+      <button
+        type="button"
+        disabled={refreshingSites || loading}
+        aria-busy={refreshingSites}
+        onClick={() => void refreshSites(true)}
+        className="inline-flex min-h-9 items-center gap-1.5 text-[12.5px] text-brand-accent-text hover:text-brand-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:opacity-60"
+      >
+        <RefreshCw aria-hidden="true" className={`size-3.5${refreshingSites ? " animate-spin" : ""}`} />
+        {refreshingSites ? t("propertiesRefreshing") : t("propertiesRefresh")}
+      </button>
+      {sitesError !== null ? (
+        <p role="alert" className="mt-1 text-[12.5px] text-brand-warning">
+          {sitesError === "gsc_revoked" || sitesError === "gsc_unavailable"
+            ? t(`errors.${sitesError}`)
+            : t("propertiesRefreshFailed")}
+          {sitesError === "gsc_revoked" || sitesError === "gsc_unavailable" ? (
+            <a className="ml-2 underline" href={gscAuthorizeHref(locale, TOOL_PATH)}>{t("reconnect")}</a>
+          ) : null}
+        </p>
+      ) : null}
+    </div>
+  );
+
+  const availableProperties = sites.properties ?? [];
+  if (availableProperties.length === 0) {
     return (
       <section id="daily-briefing-tool" data-locale={locale} className={PANEL}>
         <div className="flex size-11 items-center justify-center rounded-[10px] border border-brand-warning/30 bg-brand-warning/[0.08] text-brand-warning">
@@ -192,6 +312,7 @@ export function DailyBriefingTool({
         <p className="mt-2 max-w-xl text-[13px] leading-[1.65] text-text-dark-secondary">
           {t("noPropertyBody")}
         </p>
+        {siteRefresh}
         <GscDisconnect namespace={NAMESPACE} />
       </section>
     );
@@ -223,16 +344,18 @@ export function DailyBriefingTool({
             id="daily-briefing-property"
             name="property"
             value={property}
+            disabled={refreshingSites || loading}
             onChange={(event) => {
               const next = event.target.value;
               setProperty(next);
-              setBrandInput((brandCandidates?.[next] ?? []).join(", "));
+              setBrandInput((sites.brandCandidates?.[next] ?? []).join(", "));
               setBrandTermsConfirmed(false);
               clearRunState();
             }}
             className={`${FIELD_BASE} font-mono text-[13px]`}
           >
-            {properties.map((candidate) => (
+            {property === "" ? <option value="" disabled>{t("propertyChoose")}</option> : null}
+            {availableProperties.map((candidate) => (
               <option key={candidate} value={candidate}>
                 {formatPropertyLabel(candidate)}
               </option>
@@ -247,6 +370,7 @@ export function DailyBriefingTool({
             name="brandTerms"
             type="text"
             value={brandInput}
+            disabled={refreshingSites || loading}
             onChange={(event) => {
               setBrandInput(event.target.value);
               setBrandTermsConfirmed(false);
@@ -258,6 +382,8 @@ export function DailyBriefingTool({
         </label>
       </div>
 
+      {siteRefresh}
+
       <p className="mt-3 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {t("brand.hint")}
       </p>
@@ -267,6 +393,7 @@ export function DailyBriefingTool({
           name="brandTermsConfirmed"
           type="checkbox"
           checked={brandTermsConfirmed}
+          disabled={refreshingSites || loading}
           onChange={(event) => {
             setBrandTermsConfirmed(event.target.checked);
             clearRunState();
@@ -285,11 +412,11 @@ export function DailyBriefingTool({
         </span>
       </label>
 
-      {propertyTotal > properties.length ? (
+      {sites.propertyTotal > availableProperties.length ? (
         <p className="mt-3 text-[12.5px] leading-[1.55] text-brand-warning">
           {t("propertiesTruncated", {
-            shown: properties.length,
-            total: propertyTotal,
+            shown: availableProperties.length,
+            total: sites.propertyTotal,
           })}
         </p>
       ) : null}
@@ -297,7 +424,7 @@ export function DailyBriefingTool({
       <div className="mt-5 flex flex-wrap items-center gap-4">
         <button
           type="button"
-          disabled={loading || property === ""}
+          disabled={loading || refreshingSites || property === "" || sitesError === "gsc_revoked" || sitesError === "gsc_unavailable"}
           onClick={() => void run()}
           className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:opacity-60 disabled:shadow-none"
         >
@@ -338,7 +465,7 @@ export function DailyBriefingTool({
       {payload ? (
         <DailyBriefingResults
           locale={locale}
-          property={property}
+          property={payload.property}
           envelope={payload.envelope}
         />
       ) : (

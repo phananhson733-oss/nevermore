@@ -88,6 +88,9 @@ jobs:
       - name: Verify deployment configuration
         run: pnpm deploy:check
 
+      - name: Verify GEO renderer CI prerequisites
+        run: node --test scripts/geo-renderer-ci.test.mjs
+
       - name: Lint workspaces
         run: pnpm lint
 
@@ -96,6 +99,9 @@ jobs:
 
       - name: Run Marketing Workflow integration tests
         run: pnpm test:workflow:marketing
+
+      - name: Install Chromium for GEO renderer unit tests
+        run: pnpm exec playwright install --with-deps chromium
 
       # The 80% coverage gate moved to the `database` job, where it can be
       # measured over unit AND integration together (see vitest.config.ts).
@@ -174,6 +180,9 @@ jobs:
       - name: Run transactional schema smoke test
         run: pnpm db:smoke
 
+      - name: Install Chromium for unit and real responsive E2E tests
+        run: pnpm exec playwright install --with-deps chromium
+
       # Both projects in one process, so coverage is reported over the union.
       # This job already has Postgres and already ran the integration project,
       # so the marginal cost is the unit project (~17s) plus instrumentation.
@@ -217,9 +226,6 @@ jobs:
             ${{ runner.temp }}/restore-drill-evidence/*.md
           if-no-files-found: ignore
           retention-days: 14
-
-      - name: Install Chromium for real responsive and a11y E2E
-        run: pnpm exec playwright install --with-deps chromium
 
       # The canonical runner provisions and migrates a distinct disposable
       # database, Next process, blob directory, output directory, and port for

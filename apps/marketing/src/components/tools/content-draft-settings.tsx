@@ -4,9 +4,9 @@
 //            and the gap-angle home is the one draft-assemble names, so both sides agree
 
 import type {
-  ContentBrief,
   DraftResult,
 } from "@sf/public-tools/content-brief/contract";
+import { geoGenerationLanguage, isGeoContentBrief, type SharedContentBrief as ContentBrief } from "@sf/public-tools/content-brief/geo-contract";
 import {
   DRAFT_TOTAL_BUDGET_MS,
   SECTION_MAX_ATTEMPTS,
@@ -45,6 +45,7 @@ const HELP = "mt-2 text-[11.5px] leading-[1.5] text-text-dark-secondary";
 
 /** The writable sections in outline order; empty when the brief has nothing writable. */
 export function writableSections(brief: ContentBrief): readonly PlannedSection[] {
+  if (isGeoContentBrief(brief) && geoGenerationLanguage(brief.keyword.language) === null) return [];
   const plan = planSections(brief, brief.draft_readiness.writable);
   return "ok" in plan ? [] : plan.requested;
 }
@@ -138,13 +139,13 @@ export function ContentDraftSettings({
             label={t("settings.productMention.label")}
             value={settings.product_mention}
             options={PRODUCT_MENTIONS}
-            optionLabel={(mention) => translated(t, `settings.productMention.${mention}`)}
+            optionLabel={(mention) => translated(t, isGeoContentBrief(brief) && mention === "gap_only" ? "settings.productMention.geoGapOnly" : `settings.productMention.${mention}`)}
             onChange={(product_mention) => onSettings({ ...settings, product_mention })}
             disabled={disabled}
             describedBy="content-draft-product-mention-help"
           />
           <p id="content-draft-product-mention-help" data-product-mention-help className={HELP}>
-            {gapHome === null
+            {isGeoContentBrief(brief) ? t("settings.productMention.geoHelp") : gapHome === null
               ? t("settings.productMention.helpNoGap")
               : t("settings.productMention.help", { section: gapHome })}
             {settings.product_mention === "throughout" ? (

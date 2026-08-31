@@ -21,6 +21,16 @@ import {
 } from "./visibility-contract.ts";
 import type { GeoKbCompetitor } from "./kb-contract.ts";
 import type { GeoQuestion } from "./kb-questions.ts";
+import { parseVisibilityEngines } from "./visibility-engines.ts";
+import { buildVisibilityPlan, createVisibilityReportV2 } from "./visibility-v2.ts";
+import { observeVisibilityV2 } from "./visibility-sampling-v2.ts";
+import { isVisibilityReportV2, type AnyVisibilityReport, type VisibilityEngine, type VisibilitySampleV2 } from "./visibility-v2-contract.ts";
+import { readPreviousVisibilityRunV2, recordVisibilityRunV2 } from "./visibility-store-v2.ts";
+import { compareVisibilityReportsV2 } from "./visibility-export.ts";
+import { visibilityPlanFitsWireBudget } from "./visibility-wire.ts";
+import { enrichVisibilityReportV2 } from "./visibility-enrich.ts";
+import { readGeoSnapshotContext } from "./asset-context-store.ts";
+import type { GeoSitePriorityHints } from "./site-index-contract.ts";
 
 /** The model the calibrated question wording was measured against. */
 const VISIBILITY_MODEL = "gpt-5-2025-08-07";
@@ -40,15 +50,19 @@ export interface GeoVisibilityRunRequest {
   readonly revision: number;
   readonly samplesPerQuestion: number;
   readonly startedAt: string;
+  readonly engines?: readonly VisibilityEngine[];
+  readonly recordRunId?: string;
 }
 
 export type GeoVisibilityWorkflowOutput =
-  | { readonly kind: "completed"; readonly report: VisibilityReport }
+  | { readonly kind: "completed"; readonly report: AnyVisibilityReport }
   | { readonly kind: "failed"; readonly code: VisibilityErrorCode };
 
 export interface VisibilitySamplePlanItem {
   readonly question: GeoQuestion;
   readonly sampleIndex: number;
+  readonly engine?: VisibilityEngine;
+  readonly slotId?: string;
 }
 
 /** What every sample needs and no sample changes. */
@@ -58,6 +72,7 @@ export interface VisibilityRunContext {
   readonly competitors: readonly GeoKbCompetitor[];
   readonly targetHost: string;
   readonly marketCode: string;
+  readonly language?: string;
 }
 
 export type VisibilityPrepareResult =
@@ -68,6 +83,7 @@ export type VisibilityPrepareResult =
       readonly plan: readonly VisibilitySamplePlanItem[];
       readonly questionSetHash: string;
       readonly snapshotRevision: number;
+      readonly priorityHints: GeoSitePriorityHints | null;
     }
   | { readonly status: "failed"; readonly code: VisibilityErrorCode };
 
@@ -80,6 +96,7 @@ function openRequest(
       input.inputToken,
     );
     if (opened === null) return null;
+    if (opened.engines !== undefined && (parseVisibilityEngines(opened.engines) === null || typeof opened.recordRunId !== "string" || !/^[a-f0-9-]{36}$/.test(opened.recordRunId))) return null;
     return typeof opened.sub === "string" &&
       typeof opened.kbId === "string" &&
       typeof opened.snapshotId === "string" &&
@@ -110,7 +127,7 @@ export async function visibilityPrepareStep(
   const frozen = await readFrozenGeoKb({
     userId: request.sub,
     kbId: request.kbId,
-    revision: request.revision,
+    snapshotId: request.snapshotId,
   });
   if (frozen.kind !== "ok") {
     return {
@@ -133,6 +150,7 @@ export async function visibilityPrepareStep(
       plan.push({ question, sampleIndex: index });
     }
   }
+  const finalPlan = request.engines === undefined ? plan : buildVisibilityPlan(questions, request.engines, request.samplesPerQuestion);
 
   // `normalizeGeoHost`, not `new URL(...).host`. The citation side canonicalizes
   // every host through that function - it lowercases, strips a leading `www.`
@@ -144,24 +162,47 @@ export async function visibilityPrepareStep(
   // acme.com as the site's own. This repo has shipped that mismatch twice
   // before; the fix is to have one canonical form and no second opinion.
   const targetHost = normalizeGeoHost(payload.targetUrl) ?? "";
+  const competitors = payload.competitors.map((entry) => ({ ...entry, domain: entry.domain === "" ? "" : normalizeGeoHost(entry.domain) }));
+  if (request.engines !== undefined && (targetHost === "" || competitors.some((entry) => entry.domain === null))) return { status: "failed", code: "invalid_request" };
+  let priorityHints: GeoSitePriorityHints | null = null;
+  if (request.engines !== undefined) {
+    const readContext = await readGeoSnapshotContext({ userId: request.sub, kbId: request.kbId, snapshotId: request.snapshotId });
+    if (readContext.kind !== "ok") return { status: "failed", code: "store_unavailable" };
+    if (readContext.value !== null) {
+      const context = readContext.value;
+      if (context.kbId !== request.kbId || context.targetHost !== targetHost || context.questionSetHash !== frozen.value.questionSetHash) return { status: "failed", code: "store_unavailable" };
+      if (context.profile !== null) priorityHints = { snapshotId: request.snapshotId, contextHash: context.contentHash, coreFeatures: context.profile.coreFeatures };
+    }
+  }
 
-  return {
-    status: "ready",
-    context: {
+  const context = {
       officialName: payload.officialName,
       aliases: payload.aliases,
       // Passed whole. The sampling layer drops the unconfirmed ones itself,
       // which keeps that rule in one place rather than in every caller.
-      competitors: payload.competitors,
+      competitors: request.engines === undefined ? payload.competitors : [...new Map(competitors.map((entry) => [`${entry.domain ?? ""}|${entry.brandName}`, { ...entry, domain: entry.domain ?? "" }])).values()],
       targetHost,
       marketCode: payload.market.country,
-    },
+      language: frozen.value.questionSet.language,
+    };
+  if (request.engines !== undefined && !visibilityPlanFitsWireBudget({ context, questions, engines: request.engines, samplesPerQuestion: request.samplesPerQuestion })) return { status: "failed", code: "invalid_request" };
+  return {
+    status: "ready",
+    context,
     questions,
-    plan,
+    plan: finalPlan,
     questionSetHash: frozen.value.questionSetHash,
     snapshotRevision: frozen.value.revision,
+    priorityHints,
   };
 }
+
+export async function visibilitySiteEvidenceStep(prepared: Extract<VisibilityPrepareResult, { status: "ready" }>, output: GeoVisibilityWorkflowOutput): Promise<GeoVisibilityWorkflowOutput> {
+  "use step";
+  if (output.kind !== "completed" || !isVisibilityReportV2(output.report)) return output;
+  return { kind: "completed", report: await enrichVisibilityReportV2(output.report, undefined, prepared.priorityHints) };
+}
+visibilitySiteEvidenceStep.maxRetries = 0;
 
 /**
  * One paid provider call, judged.
@@ -176,6 +217,9 @@ export async function visibilitySampleStep(
   item: VisibilitySamplePlanItem,
 ): Promise<VisibilitySample> {
   "use step";
+  if (item.engine !== undefined && item.slotId !== undefined && context.language !== undefined) {
+    return observeVisibilityV2({ ...context, language: context.language }, { ...item, engine: item.engine, slotId: item.slotId });
+  }
   return observeVisibilitySample(
     {
       question: item.question,
@@ -205,6 +249,15 @@ export async function visibilityAssembleStep(
   "use step";
   const request = openRequest(input);
   if (request === null) return { kind: "failed", code: "run_unavailable" };
+
+  if (request.engines !== undefined && request.recordRunId !== undefined && prepared.context.language !== undefined) {
+    const versioned = samples.filter((sample): sample is VisibilitySampleV2 => "engine" in sample && "slotId" in sample);
+    if (versioned.length !== samples.length) return { kind: "failed", code: "internal_error" };
+    const report = createVisibilityReportV2({ runId: request.recordRunId, kbId: request.kbId, snapshotId: request.snapshotId, snapshotRevision: prepared.snapshotRevision, questionSetHash: prepared.questionSetHash, startedAt: request.startedAt, finishedAt: new Date().toISOString(), context: { ...prepared.context, language: prepared.context.language }, questions: prepared.questions, samples: versioned, engines: request.engines, samplesPerQuestion: request.samplesPerQuestion });
+    const previousV2 = await readPreviousVisibilityRunV2({ userId: request.sub, kbId: request.kbId, questionSetHash: prepared.questionSetHash, excludeRunId: request.recordRunId, before: request.startedAt });
+    const comparisonV2 = previousV2.kind === "ok" ? compareVisibilityReportsV2(previousV2.value.report, report) : null;
+    return { kind: "completed", report: comparisonV2?.compatible ? { ...report, comparison: comparisonV2.comparison } : report };
+  }
 
   const aggregate = aggregateVisibility(prepared.questions, samples, {
     ownHost: prepared.context.targetHost,
@@ -344,4 +397,16 @@ export async function visibilityAssembleStep(
         ? report
         : { ...report, limits: [...report.limits, "notStored"] },
   };
+}
+
+/** A separate durable step receives the completed immutable report. Replaying
+ * its RPC reuses the same run id AND bytes, including finishedAt, so an
+ * ambiguous storage response cannot create a second row or a new report. */
+export async function visibilityPersistStep(input: GeoVisibilityWorkflowInput, output: GeoVisibilityWorkflowOutput): Promise<GeoVisibilityWorkflowOutput> {
+  "use step";
+  if (output.kind !== "completed" || !isVisibilityReportV2(output.report)) return output;
+  const request = openRequest(input);
+  if (request === null || request.recordRunId !== output.report.manifest.runId) return { kind: "failed", code: "run_unavailable" };
+  const recorded = await recordVisibilityRunV2({ userId: request.sub, report: output.report });
+  return recorded.kind === "ok" ? output : { kind: "completed", report: { ...output.report, limits: [...output.report.limits, "notStored"] } };
 }

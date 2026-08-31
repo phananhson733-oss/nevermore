@@ -32,7 +32,7 @@ const EN: ToolArticle = {
   example: [
     {
       heading: "The window it read",
-      body: "Search Console's Pacific calendar, stopping at the latest complete day — three days behind today's PT date. The briefing compares that day against a comparable earlier day, and the latest complete seven days against the seven before them. Nothing newer enters either comparison, and nothing is projected forward to fill the gap.",
+      body: "Each run reads Search Console's latest available dates, including data Google is still updating. Daily dates use the Pacific calendar. The exact current and previous windows are printed with the reading time; incomplete periods remain provisional and cannot trigger a change comparison.",
     },
     {
       heading: "A change it will name",
@@ -53,11 +53,11 @@ const EN: ToolArticle = {
   ],
   sections: [
     {
-      heading: "The windows, and why yesterday is not one of them",
+      heading: "The latest available dates, and when a comparison is valid",
       paragraphs: [
-        "Search Console finalizes its data on a Pacific-time calendar and lags the present. The briefing takes the latest complete day it can prove is finished — three days behind the current PT date — and no comparison reads past it. A run started at nine in the morning and a run started at nine at night therefore read the same window and produce the same result, which is what makes a daily habit worth having at all.",
-        "Two comparisons are built from that: the latest complete day against a comparable earlier day, and the latest complete seven days against the seven immediately before them. The seven-day pair is where every change path is evaluated. The single day exists for context, and when the required date series cannot be read the briefing says the daily reading is unavailable rather than filling the hole with the weekly number.",
-        "The trend chart is the one part that deliberately runs closer to now: a single 90-day daily series ending on the current Pacific date is fetched alongside, so the chart switches between 24 hours, 7 days, 28 days and 3 months without another read, and its newest points are marked provisional because Google is still updating them. The 24-hour view is the only one drawn from hourly data, and it carries its own warning while Google is still updating it. Buckets Search Console returned nothing for stay gaps; none of them is substituted with a zero.",
+        "Search Console reports daily data on a Pacific-time calendar. The briefing reads the latest available date returned by Google, with no fixed date offset. A later run can therefore contain newer data. The report shows the actual dates, reading time and whether the newest dates are still updating; incomplete data is not treated as settled history.",
+        "The latest available date anchors the seven-day window and the seven days immediately before it. Change paths run only when all required comparison dates are present and complete. When recent dates are provisional or missing, the report shows current observations without claiming a decline, growth or a newly appearing result. Missing values remain unavailable.",
+        "The trend request reaches the current Pacific date, and the displayed daily window ends on the latest available returned date. The 24-hour chart ends on the latest returned hour, looks back 24 consecutive hours, and displays times in your browser's local time zone. Its newest points can be provisional. The chart switches between 24 hours, 7 days, 28 days and 3 months without another read. Buckets Search Console returned nothing for stay gaps; none is substituted with zero.",
       ],
     },
     {
@@ -290,7 +290,7 @@ const ZH: ToolArticle = {
   example: [
     {
       heading: "它读取的窗口",
-      body: "Search Console 的太平洋时区日历，止于可以证明已经结算完成的那一天——落后当前 PT 日期三天。简报用那一天对比一段可比的更早日期，再用最新完整七天对比紧邻的前七天。更新的数据不进入这两组对比，缺口也不会用外推填上。",
+      body: "每次读取 Search Console 最新可用日期，包括 Google 仍在更新的数据。日级日期使用太平洋日历；报告会显示本期、上期的实际窗口和读取时间。不完整时段标为暂定，不触发变化对比。",
     },
     {
       heading: "它会指名的一种变化",
@@ -311,11 +311,11 @@ const ZH: ToolArticle = {
   ],
   sections: [
     {
-      heading: "它读的那两个窗口，以及为什么昨天不在里面",
+      heading: "最新可用日期，以及何时可以比较",
       paragraphs: [
-        "Search Console 按太平洋时区日历结算数据，并且滞后于当下。简报只取它能证明已经完整的最新一天——落后当前 PT 日期三天——任何一组对比都不会越过这条线。所以早上九点跑和晚上九点跑读的是同一个窗口、给出同一个结果；一个每天可以重复的习惯，正是建立在这一点上。",
-        "由此构建两组对比：最新完整日对比一段可比的更早日期，以及最新完整七天对比紧邻的前七天。所有变化路径都在七天这一对上评估；单日只提供上下文。当必需的日期序列读不到时，简报会说日级解读不可得，而不是拿周级数字把这个洞填上。",
-        "趋势图是刻意读得更近的那一部分：同一次请求会取回一段截止到当前太平洋日期的 90 天日级序列，所以图在 24 小时、7 天、28 天、3 个月之间切换不需要再读一次，而最新的几个点会被标为暂定，因为 Google 还在更新它们。24 小时视图是唯一使用小时级数据的视图，在 Google 仍在更新它时会带自己的提示。Search Console 没有返回数据的时间桶保持为缺口，任何一个都不会被替换成零。",
+        "Search Console 按太平洋日历提供日级数据。简报以 Google 实际返回的最新可用日期为准，不使用固定日期偏移；晚些时候重新运行，可能读到更新的数据。报告显示实际统计日期、读取时间和是否仍在更新，不把尚未完整的数据当作已结算历史。",
+        "以最新可用日期为终点取七天，再取紧邻的前七天。只有所需统计日期均有返回且已完整，才评估变化路径。最新日期仍在更新或存在缺失时，只展示当前观察，不判断下降、增长或新出现；缺失数值保持不可得。",
+        "趋势请求覆盖到当前太平洋日期，日级图实际截止于返回的最新可用日期。24 小时图以最新返回小时为终点，向前取连续 24 个小时，使用浏览器本地时区展示。最新数据可能仍为暂定。图在 24 小时、7 天、28 天、3 个月之间切换不需要再次读取。Search Console 没有返回数据的时间桶保持缺口，不会被替换成零。",
       ],
     },
     {

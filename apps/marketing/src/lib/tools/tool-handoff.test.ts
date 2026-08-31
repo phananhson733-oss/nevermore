@@ -117,6 +117,16 @@ function contentDraftPayload() {
 }
 
 describe("tool handoff storage", () => {
+  it("delivers a GEO draft only to citability and consumes it once", () => {
+    const session = storage();
+    const handoff = { ...contentDraftPayload(), destination: "page-citability-check" as const };
+    expect(writeToolHandoff(session, 1_000, handoff)).toBe(true);
+    expect(consumeToolHandoff(session, 1_001, "on-page-seo-check")).toBeNull();
+    expect(consumeToolHandoff(session, 1_002, "page-citability-check"))
+      .toMatchObject(handoff);
+    expect(consumeToolHandoff(session, 1_003, "page-citability-check")).toBeNull();
+  });
+
   it("uses one fixed tab-scoped key and a ten-minute lifetime", () => {
     expect(TOOL_HANDOFF_KEY).toBe("gengrowth.tool-handoff.v1");
     expect(TOOL_HANDOFF_TTL_MS).toBe(600_000);

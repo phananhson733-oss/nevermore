@@ -1,0 +1,145 @@
+// @vitest-environment jsdom
+
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { NextIntlClientProvider } from "next-intl";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import en from "../../i18n/messages/en.json";
+import { emptyGeoKbPayload } from "../../lib/geo-tools/kb-contract.ts";
+import { WebsiteGeoEditor } from "./website-geo-editor.tsx";
+
+const WEBSITE_ID = "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6";
+const PROFILE = {
+  reference: { schemaVersion: "website-profile-reference.v1", websiteId: WEBSITE_ID, snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987", snapshotRevision: 2, profileSchemaVersion: "marketing-website-profile.v1", profileHash: "a".repeat(64) },
+  productName: "Inherited product", oneLinePositioning: "Exact saved positioning", coreFeatures: ["Saved feature"], market: { country: "US", language: "en-US" },
+};
+const VIEW = { kbId: "kb-existing", origin: "https://example.com", host: "example.com", draftVersion: 7, payload: { ...emptyGeoKbPayload("https://example.com"), officialName: "Alias override", market: { country: "US", language: "en-us" } }, frozen: null, importAvailable: true, profile: PROFILE };
+const DATA = { website: { websiteId: WEBSITE_ID, origin: VIEW.origin, host: VIEW.host, profileState: "confirmed" }, knowledgeBase: VIEW };
+const ASSET = {
+  featureCandidateHelp: "Add a pending fact, then review its value, URL and capture time. Nothing is verified automatically.",
+  featureCandidateAdd: "Add pending fact", featureCandidateExists: "Fact already exists", featureCandidateTooLong: "Feature is too long to use without truncation", featureCandidateFull: "Fact limit reached",
+  title: "Website GEO extension", loading: "Loading website GEO…", retry: "Retry",
+  profileRequired: "Confirm this website’s Product Profile to inherit its product facts.",
+  profileUnavailable: "The confirmed Product Profile could not be resolved.",
+  editProfile: "Edit original Product Profile", canonicalLink: "Open this website’s GEO settings",
+  backToWebsites: "All websites", profileTitle: "Inherited Product Profile", profileBody: "Read-only inherited facts.",
+  productName: "Product name", positioning: "One-line positioning", features: "Core features",
+  revision: "Confirmed Profile revision {revision}", hash: "Profile hash: {hash}",
+  officialNameHelp: "Matching alias override, not product name.", websiteNotFound: "Website unavailable in your account.",
+  unsupportedLanguage: "Question generation is unavailable for {language}.",
+};
+let root: Root;
+let container: HTMLDivElement;
+let fetchMock: ReturnType<typeof vi.fn>;
+const originalFetch = globalThis.fetch;
+
+async function render(websiteId = WEBSITE_ID): Promise<void> {
+  await act(async () => root.render(<NextIntlClientProvider locale="en" timeZone="UTC" messages={{ tools: { geoKnowledgeBase: { ...en.tools.geoKnowledgeBase, asset: ASSET } } }}><WebsiteGeoEditor websiteId={websiteId} /></NextIntlClientProvider>));
+}
+beforeEach(() => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  container = document.createElement("div"); document.body.append(container); root = createRoot(container);
+  fetchMock = vi.fn(async () => Response.json({ data: DATA })); globalThis.fetch = fetchMock as typeof fetch;
+});
+afterEach(async () => {
+  await act(async () => root.unmount()); container.remove(); globalThis.fetch = originalFetch;
+});
+
+describe("website GEO canonical editor", () => {
+  it("shows an inherited saved country outside the presets without silently replacing it", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ data: { ...DATA, knowledgeBase: { ...VIEW,
+      payload: { ...VIEW.payload, market: { ...VIEW.payload.market, country: "CA" } },
+      profile: { ...PROFILE, market: { ...PROFILE.market, country: "CA" } },
+    } } }));
+    await render();
+    const country = container.querySelector<HTMLSelectElement>("#kb-country");
+    expect(country?.value).toBe("CA");
+    expect(country?.selectedOptions[0]?.textContent).toBe("CA");
+    expect([...(country?.options ?? [])].map((option) => option.value)).toEqual(["CA", "US", "GB"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it("adds an inherited feature only as an unverified fact candidate without saving or losing other edits", async () => {
+    await render();
+    const name = [...container.querySelectorAll("input")].find((input) => input.value === "Alias override");
+    if (name === undefined) throw new Error("alias field missing");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(name, "Unsaved alias");
+      name.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const add = [...container.querySelectorAll("button")].find((button) => button.textContent === ASSET.featureCandidateAdd);
+    expect(add).toBeDefined();
+    await act(async () => add?.click());
+    expect(name.value).toBe("Unsaved alias");
+    expect([...container.querySelectorAll("input")].some((input) => input.value === "Saved feature")).toBe(true);
+    expect((container.querySelector("#kb-fact-reason-0") as HTMLSelectElement)?.value).toBe("lowConfidence");
+    expect(container.textContent).toContain(ASSET.featureCandidateExists);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it("loads by route identity, then reuses the existing editor and exact read-only Profile", async () => {
+    await render();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]).toEqual([`/api/account/websites/${WEBSITE_ID}/geo`, expect.objectContaining({ method: "POST", body: "{}", cache: "no-store" })]);
+    expect(container.textContent).toContain("Inherited product");
+    expect(container.textContent).toContain("Exact saved positioning");
+    expect(container.textContent).toContain("Saved feature");
+    expect(container.textContent).toContain("Confirmed Profile revision 2");
+    expect(container.textContent).toContain("a".repeat(64));
+    expect([...container.querySelectorAll("input")].some((input) => input.value === "Inherited product")).toBe(false);
+    expect([...container.querySelectorAll("input")].some((input) => input.value === "Alias override")).toBe(true);
+    expect(container.querySelector("#kb-site-url")).toBeNull();
+    expect(container.querySelector(`a[href='/en/account/websites/${WEBSITE_ID}']`)).not.toBeNull();
+    expect(container.textContent).toContain("en-us");
+  });
+  it("does not refetch or replace unsaved GEO edits on parent rerender", async () => {
+    await render();
+    const name = [...container.querySelectorAll("input")].find((input) => input.value === "Alias override");
+    if (name === undefined) throw new Error("alias field missing");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(name, "Unsaved alias");
+      name.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await render();
+    expect(name.value).toBe("Unsaved alias");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const save = [...container.querySelectorAll("button")].find((button) => button.textContent === en.tools.geoKnowledgeBase.draft.save);
+    fetchMock.mockResolvedValueOnce(Response.json({ error: { code: "conflict" }, draftVersion: 8 }, { status: 409 }));
+    await act(async () => save?.click());
+    expect(name.value).toBe("Unsaved alias");
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({ kbId: "kb-existing", baseVersion: 7, payload: { officialName: "Unsaved alias" } });
+  });
+  it("shows confirmation as the next step when no confirmed Profile exists", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ data: { ...DATA, website: { ...DATA.website, profileState: "draft" }, knowledgeBase: { ...VIEW, profile: null, importAvailable: false } } }));
+    await render();
+    expect(container.textContent).toContain(ASSET.profileRequired);
+    expect(container.textContent).not.toContain("Inherited product");
+    expect(container.querySelector(`a[href='/en/account/websites/${WEBSITE_ID}']`)).not.toBeNull();
+  });
+  it("renders loading until the owned view arrives", async () => {
+    let resolve!: (response: Response) => void;
+    fetchMock.mockReturnValueOnce(new Promise<Response>((done) => { resolve = done; }));
+    await render();
+    expect(container.textContent).toContain(ASSET.loading);
+    await act(async () => resolve(Response.json({ data: DATA })));
+    expect(container.textContent).toContain("Inherited product");
+  });
+  it("shows the actual unsupported Profile language without suggesting English calibration", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ data: { ...DATA, knowledgeBase: { ...VIEW, payload: { ...VIEW.payload, market: { country: "US", language: "zh-cn" } } } } }));
+    await render();
+    expect(container.textContent).toContain("Question generation is unavailable for zh-cn.");
+    expect(container.textContent).not.toContain(en.tools.geoKnowledgeBase.brand.languageNote);
+  });
+  it.each([
+    [401, { error: { code: "auth_required" } }],
+    [404, { error: { code: "website_not_found" } }],
+    [503, { error: { code: "secret_infrastructure_name" } }],
+    [200, { data: { ...DATA, website: { ...DATA.website, websiteId: "another-id" } } }],
+    [200, { data: { ...DATA, knowledgeBase: { ...VIEW, profile: { ...PROFILE, coreFeatures: null } } } }],
+  ])("fails closed on status %s or malformed/foreign payload without displaying private data", async (status, body) => {
+    fetchMock.mockResolvedValueOnce(Response.json(body, { status }));
+    await render();
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Inherited product");
+    expect(container.textContent).not.toContain("secret_infrastructure_name");
+  });
+});

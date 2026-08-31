@@ -278,9 +278,9 @@ describe("geoBriefFacts", () => {
     expect(facts[1]?.reason).toBe("notPublished");
   });
 
-  it("calls a fact with a source url a crawl and one without it the base", () => {
+  it("keeps manually supplied source URLs as KB evidence, not a crawl receipt", () => {
     const facts = geoBriefFacts(payload().facts);
-    expect(facts[0]?.source).toBe("crawl");
+    expect(facts[0]?.source).toBe("kb");
     expect(facts[0]?.sourceUrl).toBe("https://acme.test/pricing");
     expect(facts[1]?.source).toBe("kb");
     expect(facts[1]?.sourceUrl).toBeNull();
