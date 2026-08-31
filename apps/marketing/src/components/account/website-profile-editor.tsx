@@ -1397,6 +1397,10 @@ export function WebsiteProfileEditor({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
+          <a className="inline-flex items-center rounded-md border border-brand-border-card px-3 py-2 text-sm text-brand-accent-text"
+            href={`/${locale}/account/websites/${websiteId}/geo`}>
+            {t("geoExtension")}
+          </a>
           <Button
             type="button"
             variant="outline"

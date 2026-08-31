@@ -7,9 +7,8 @@ import {
   CONTENT_BRIEF_HANDOFF_KEY,
   CONTENT_BRIEF_HANDOFF_MAX_BYTES,
   CONTENT_BRIEF_HANDOFF_TTL_MS,
-  type ContentBrief,
-  type ContentBriefHandoff,
 } from "@sf/public-tools/content-brief/contract";
+import type { SharedContentBrief as ContentBrief, SharedContentBriefHandoff as ContentBriefHandoff } from "@sf/public-tools/content-brief/geo-contract";
 
 import type { ToolHandoffStorage } from "./tool-handoff.ts";
 

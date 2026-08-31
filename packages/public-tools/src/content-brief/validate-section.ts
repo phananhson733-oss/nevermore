@@ -5,6 +5,8 @@
 
 import { SECTION_MAX_SENTENCES, SENTENCE_MAX_CHARS } from "./constants.ts";
 import type { ClaimState, ModelSectionOutput, ProfileFact, Sentence } from "./contract.ts";
+import type { GeoFactEvidence } from "./geo-contract.ts";
+import { checkGeoFactSupport, type GeoFactSupportFailure, type GeoMissingFact } from "./geo-fact-support.ts";
 import { boundedModelText } from "./text.ts";
 
 /**
@@ -23,6 +25,8 @@ export interface SectionEvidence {
   readonly profileFacts: ReadonlyMap<string, ProfileFact>;
   /** True only for the section that received the gap angle; a `stance` anywhere else is refused. */
   readonly stanceAllowed: boolean;
+  readonly geoFacts?: ReadonlyMap<string, GeoFactEvidence>;
+  readonly geoMissingFacts?: readonly GeoMissingFact[];
 }
 
 export type SectionValidation =
@@ -30,6 +34,7 @@ export type SectionValidation =
   | { readonly ok: false; readonly path: string; readonly rule: SectionRule };
 
 export type SectionRule =
+  | GeoFactSupportFailure
   | "empty_section"
   | "too_many_sentences"
   | "sentence_text"
@@ -77,6 +82,10 @@ export function validateSectionOutput(
         const refPath = `${path}.evidence_refs[${rIndex}]`;
         if (seen.has(ref)) return fail(refPath, "ref_repeated");
         seen.add(ref);
+        if (evidence.geoFacts !== undefined) {
+          if (!evidence.geoFacts.has(ref)) return fail(refPath, "ref_not_citable");
+          continue;
+        }
         const isCrawl = ref.startsWith("C");
         const isFact = ref.startsWith("P");
         if (isCrawl) {
@@ -113,9 +122,11 @@ export function validateSectionOutput(
         default:
           return fail(`${path}.claim`, "claim_unknown");
       }
+      if (evidence.geoFacts !== undefined) { const support = checkGeoFactSupport({ ...raw, text: text.value }, evidence.geoFacts, evidence.geoMissingFacts); if (support !== null) return fail(`${path}.text`, support); }
       const supportCount = refs.filter((ref) => ref.startsWith("C")).length;
       wordCount += countWords(text.value);
-      sentences.push({ text: text.value, claim: raw.claim, evidence_refs: [...refs], support_count: supportCount });
+      const sources: Sentence["sources"] = refs.length === 0 ? ["model"] : [...new Set(refs.map(ref => evidence.geoFacts?.get(ref)?.source ?? "model"))];
+      sentences.push({ text: text.value, claim: raw.claim, evidence_refs: [...refs], support_count: supportCount, ...(evidence.geoFacts === undefined ? {} : { sources }) });
     }
     if (sentences.length > 0) paragraphs.push({ sentences });
   }

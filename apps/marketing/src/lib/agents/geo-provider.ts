@@ -1,5 +1,5 @@
 // @input  -- DATAFORSEO_* env, an injected fetch, one buyer question
-// @output -- one bounded ChatGPT answer with its citations, or a typed failure
+// @output -- one bounded ChatGPT or Perplexity answer and citations, or a typed failure
 // @pos    -- the GEO Agent's only provider transport; the sole place answer prose is read
 
 /**
@@ -26,6 +26,9 @@ export type GeoProviderFetch = (
 
 export const DATAFORSEO_CHAT_GPT_LLM_RESPONSES_LIVE_URL =
   "https://api.dataforseo.com/v3/ai_optimization/chat_gpt/llm_responses/live";
+export const DATAFORSEO_PERPLEXITY_LLM_RESPONSES_LIVE_URL =
+  "https://api.dataforseo.com/v3/ai_optimization/perplexity/llm_responses/live";
+export const GEO_PERPLEXITY_MODEL = "sonar";
 
 /**
  * Output ceiling for one answer, in tokens.
@@ -134,18 +137,25 @@ export const GEO_MAX_ANNOTATION_TEXT_CODE_POINTS = 240;
  */
 export interface GeoProviderObservation {
   readonly observedAt: string;
-  readonly webSearchPerformed: boolean;
+  readonly webSearchPerformed: boolean | null;
   readonly answerText: string;
   readonly citations: readonly GeoProviderCitationAnnotation[];
   readonly citationsComplete: boolean;
   readonly costUsd: number | null;
+  /** Legacy display value; "unknown" is not an observed model identifier. */
   readonly model: string;
+  /** Effective model sent over the wire, never proof of the returned model. */
+  readonly modelRequested?: string;
+  readonly modelObserved?: string | null;
+  readonly providerTaskId?: string | null;
 }
 
 export interface GeoProviderRequest {
   readonly prompt: string;
   readonly model: string;
   readonly marketCode: string;
+  /** Existing GEO Agent calls remain on ChatGPT when omitted. */
+  readonly engine?: "chatgpt" | "perplexity";
 }
 
 export interface GeoProviderClient {
@@ -172,6 +182,8 @@ export interface GeoProviderClientOptions {
  * the route's own budget.
  */
 export const GEO_PROVIDER_TIMEOUT_MS = 90_000;
+/** DataForSEO documents Perplexity Live execution as taking up to 120 seconds. */
+export const GEO_PERPLEXITY_PROVIDER_TIMEOUT_MS = 120_000;
 
 function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -539,17 +551,19 @@ class HttpGeoProviderClient implements GeoProviderClient {
 
     const authorization = this.authorization();
     const fetchImpl = this.options.fetchImpl ?? globalThis.fetch;
-    const timeoutMs = this.options.timeoutMs ?? GEO_PROVIDER_TIMEOUT_MS;
+    const isPerplexity = request.engine === "perplexity";
+    const timeoutMs = this.options.timeoutMs ?? (isPerplexity
+      ? GEO_PERPLEXITY_PROVIDER_TIMEOUT_MS : GEO_PROVIDER_TIMEOUT_MS);
+    const modelRequested = isPerplexity ? GEO_PERPLEXITY_MODEL : request.model;
 
     const body = JSON.stringify([
       {
         user_prompt: request.prompt,
-        model_name: request.model,
+        model_name: modelRequested,
         max_output_tokens: GEO_MAX_OUTPUT_TOKENS,
-        // Not a parameter. An answer written without searching says nothing
-        // about who gets cited when the model does search, so a run that let
-        // this vary would be averaging two different questions.
-        web_search: true,
+        // Sonar searches by default and does not accept ChatGPT's flag. The
+        // response alone can establish whether a search actually happened.
+        ...(isPerplexity ? {} : { web_search: true }),
         web_search_country_iso_code: request.marketCode,
       },
     ]);
@@ -566,7 +580,9 @@ class HttpGeoProviderClient implements GeoProviderClient {
     try {
       let response: Response;
       try {
-        response = await fetchImpl(DATAFORSEO_CHAT_GPT_LLM_RESPONSES_LIVE_URL, {
+        response = await fetchImpl(isPerplexity
+          ? DATAFORSEO_PERPLEXITY_LLM_RESPONSES_LIVE_URL
+          : DATAFORSEO_CHAT_GPT_LLM_RESPONSES_LIVE_URL, {
           method: "POST",
           headers: {
             Authorization: authorization,
@@ -600,14 +616,22 @@ class HttpGeoProviderClient implements GeoProviderClient {
         );
       }
 
-      return this.parse(await readBoundedJson(response, () => timedOut));
+      return this.parse(
+        await readBoundedJson(response, () => timedOut),
+        modelRequested,
+        isPerplexity,
+      );
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
     }
   }
 
-  private parse(payload: unknown): GeoProviderObservation {
+  private parse(
+    payload: unknown,
+    modelRequested: string,
+    allowUnknownSearch: boolean,
+  ): GeoProviderObservation {
     if (!isObject(payload)) {
       throw new GeoProviderError(
         "invalid_response",
@@ -682,10 +706,11 @@ class HttpGeoProviderClient implements GeoProviderClient {
 
     // Coercing a missing flag to `false` would manufacture "did not search" out
     // of "could not tell", and that fabricated observation would then be
-    // reported as an instrumentation failure or, on a natural-demand question,
-    // as a fact about the answer. Fail closed instead: the sample becomes an
-    // honest no-usable-answer.
-    if (typeof result.web_search !== "boolean") {
+    // reported as a fact about the answer. Preserve legacy ChatGPT fail-closed
+    // behavior; Sonar's default search policy is not proof a search occurred,
+    // so its missing/null observation remains unknown beside a usable answer.
+    if (typeof result.web_search !== "boolean" &&
+      !(allowUnknownSearch && result.web_search == null)) {
       throw new GeoProviderError(
         "invalid_response",
         "The provider result did not say whether a web search ran.",
@@ -694,17 +719,19 @@ class HttpGeoProviderClient implements GeoProviderClient {
     }
 
     const extraction = readCitations(items);
+    const modelObserved = typeof result.model_name === "string" && result.model_name !== ""
+      ? result.model_name : null;
     return {
       observedAt,
-      webSearchPerformed: result.web_search,
+      webSearchPerformed: typeof result.web_search === "boolean" ? result.web_search : null,
       answerText,
       citations: extraction.citations,
       citationsComplete: extraction.complete,
       costUsd: cost,
-      model:
-        typeof result.model_name === "string" && result.model_name !== ""
-          ? result.model_name
-          : "unknown",
+      model: modelObserved ?? "unknown",
+      modelRequested,
+      modelObserved,
+      providerTaskId: typeof task.id === "string" && task.id !== "" ? task.id : null,
     };
   }
 }

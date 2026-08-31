@@ -4,12 +4,13 @@
 // @output -- the citability report rendered from message keys, or one stated error
 // @pos    -- the only client surface of /tools/page-citability-check; it renders, it does not judge
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
 import {
   CITABILITY_ANON_IP_MAX,
   CITABILITY_FETCH_TIMEOUT_MS,
+  CITABILITY_MAX_QUESTION_CHARS,
   CITABILITY_SIGNED_IN_IP_MAX,
   CITABILITY_TARGET_MAX,
   CITABILITY_WINDOW_SECONDS,
@@ -17,9 +18,11 @@ import {
   type CitabilityReport,
   type CitabilityState,
 } from "../../lib/geo-tools/citability-contract.ts";
+import { CITABILITY_RENDER_SCHEMA, type CitabilityRenderEvidence } from "../../lib/geo-tools/citability-render-contract.ts";
+import { consumeToolHandoff } from "../../lib/tools/tool-handoff.ts";
+import { consumeGeoGapHandoff } from "../../lib/geo-tools/gap-handoff.ts";
 
 const ENDPOINT = "/api/tools/page-citability-check";
-const MAX_QUESTION_CHARS = 200;
 
 type CopyState = "idle" | "done" | "failed";
 
@@ -99,6 +102,15 @@ function isCitabilityReport(value: unknown): value is CitabilityReport {
   const summary = record["summary"];
   const question = record["targetQuestion"];
   return (
+    isRenderEvidence(record["render"]) &&
+    Array.isArray(record["rootCauses"]) && record["rootCauses"].every((cause: unknown) => {
+      if (typeof cause !== "object" || cause === null) return false;
+      const group = cause as Record<string, unknown>;
+      return typeof group["id"] === "string" && ["crawlerAccess", "rendering", "canonical", "answerStructure", "claimEvidence", "faq", "advisory"].includes(group["id"]) &&
+        typeof group["basis"] === "string" && ["sharedEvidence", "possibleDependency", "independent"].includes(group["basis"]) &&
+        Array.isArray(group["checkIds"]) && group["checkIds"].every((id: unknown) => typeof id === "string") &&
+        Array.isArray(group["relatedCheckIds"]) && group["relatedCheckIds"].every((id: unknown) => typeof id === "string");
+    }) &&
     Array.isArray(record["checks"]) &&
     Array.isArray(record["limits"]) &&
     Array.isArray(record["questionTerms"]) &&
@@ -116,6 +128,36 @@ function isCitabilityReport(value: unknown): value is CitabilityReport {
     summary !== null &&
     typeof (summary as Record<string, unknown>)["counted"] === "number"
   );
+}
+
+function isRenderEvidence(value: unknown): value is CitabilityRenderEvidence {
+  if (typeof value !== "object" || value === null) return false;
+  const render = value as Record<string, unknown>;
+  const capture = (entry: unknown): boolean => {
+    if (typeof entry !== "object" || entry === null) return false;
+    const record = entry as Record<string, unknown>;
+    return typeof record["text"] === "string" && record["text"].length <= 100_000 && typeof record["textChars"] === "number" && typeof record["complete"] === "boolean";
+  };
+  return render["schemaVersion"] === CITABILITY_RENDER_SCHEMA &&
+    typeof render["status"] === "string" && ["measured", "partial", "unavailable"].includes(render["status"]) &&
+    (render["reason"] === null || (typeof render["reason"] === "string" && ["not_configured", "timeout", "service_failed", "invalid_response", "blocked", "resource_limit", "truncated", "navigation"].includes(render["reason"]))) &&
+    capture(render["raw"]) && (render["rendered"] === null || capture(render["rendered"])) &&
+    (render["rawToRenderedRatio"] === null || (typeof render["rawToRenderedRatio"] === "number" && Number.isFinite(render["rawToRenderedRatio"]))) &&
+    typeof render["measuredAt"] === "string" && typeof render["requestCount"] === "number" &&
+    typeof render["blockedRequests"] === "number" && typeof render["bytes"] === "number";
+}
+
+function renderLines(t: (key: string, values?: Readonly<Record<string, string | number>>) => string, render: CitabilityRenderEvidence, locale: string): readonly string[] {
+  return [
+    t(`render.status.${render.status}`),
+    ...(render.reason ? [t(`render.reasons.${render.reason}`)] : []),
+    t("render.rawChars", { chars: render.raw.textChars }),
+    ...(render.rendered ? [t("render.renderedChars", { chars: render.rendered.textChars })] : []),
+    render.rawToRenderedRatio === null ? t("render.ratioUnknown") : t("render.ratio", { ratio: Math.round(render.rawToRenderedRatio * 1000) / 10 }),
+    t("render.time", { time: formatTime(render.measuredAt, locale) }),
+    t("render.requests", { count: render.requestCount, blocked: render.blockedRequests, omitted: render.omittedRequests, bytes: render.bytes }),
+    t(`render.methods.${render.raw.method}`),
+  ];
 }
 
 /**
@@ -142,7 +184,7 @@ function CheckRow({ check }: { readonly check: CitabilityCheck }) {
   const measuredValues = check.measured.values ?? {};
   const fixValues = check.fix?.values ?? {};
   return (
-    <li className="grid gap-2 border-b border-brand-border-card py-4 last:border-b-0">
+    <li id={`citability-rule-${check.ruleId}`} className="grid gap-2 border-b border-brand-border-card py-4 last:border-b-0">
       <div className="flex flex-wrap items-center gap-2">
         <span
           className={`rounded-full border px-2.5 py-0.5 text-[11.5px] ${STATE_STYLES[check.state]}`}
@@ -164,7 +206,7 @@ function CheckRow({ check }: { readonly check: CitabilityCheck }) {
         ) : null}
       </div>
       <p className="text-[13.5px] leading-[1.7] text-text-dark-secondary">
-        {t(`details.${check.measured.key}`, measuredValues)}
+        {t(`details.${check.measured.key}`, check.measured.key === "ssr.renderUnavailable" ? { ...measuredValues, reason: t(`render.reasons.${String(measuredValues["reason"])}`) } : measuredValues)}
       </p>
       {check.kind === "heuristic" ? (
         <p className="text-[12.5px] leading-[1.7] text-text-dark-secondary">
@@ -191,9 +233,37 @@ export function PageCitabilityCheck({
   const [question, setQuestion] = useState("");
   const [run, setRun] = useState<RunState>({ kind: "idle" });
   const [copied, setCopied] = useState<CopyState>("idle");
+  const [handoffSource, setHandoffSource] = useState<"contentDraft" | "geoGap" | null>(null);
   const urlInput = useRef<HTMLInputElement | null>(null);
+  const handoffConsumed = useRef(false);
+  useEffect(() => {
+    if (handoffConsumed.current) return;
+    handoffConsumed.current = true;
+    try {
+      const marker = new URLSearchParams(window.location.search).getAll("handoff");
+      // Explicit protocol selection prevents a missing or corrupt gap from
+      // silently restoring an older unrelated Draft handoff.
+      if (marker.length === 1 && marker[0] === "geo-gap") {
+        const handoff = consumeGeoGapHandoff(window.sessionStorage, Date.now(), "page-citability-check");
+        if (!handoff || handoff.pageUrl === null || handoff.questionText === null) return;
+        setUrl(handoff.pageUrl);
+        setQuestion(handoff.questionText);
+        setHandoffSource("geoGap");
+      } else if (marker.length === 0) {
+        const handoff = consumeToolHandoff(window.sessionStorage, Date.now(), "page-citability-check");
+        if (!handoff) return;
+        setUrl(handoff.page);
+        setQuestion(handoff.query);
+        setHandoffSource("contentDraft");
+      }
+    } catch {
+      // Storage unavailable means manual input. Never read a fallback key.
+    }
+  }, []);
+  const questionTooLong = question.trim().length > CITABILITY_MAX_QUESTION_CHARS;
 
   const submit = useCallback(async () => {
+    if (question.trim().length > CITABILITY_MAX_QUESTION_CHARS) return;
     const trimmed = url.trim();
     if (trimmed.length === 0) {
       urlInput.current?.focus();
@@ -262,6 +332,8 @@ export function PageCitabilityCheck({
       // The question travels with the pasted report. Without it a model is
       // handed a lead-answer row about a question it cannot see.
       ...questionLines(t, report),
+      t("render.title"),
+      ...renderLines(t, report.render, locale),
       t("summary.counted", {
         passed: report.summary.passed,
         counted: report.summary.counted,
@@ -272,7 +344,7 @@ export function PageCitabilityCheck({
         const rule = t(`rules.${check.ruleId}`);
         const measured = t(
           `details.${check.measured.key}`,
-          check.measured.values ?? {},
+          check.measured.key === "ssr.renderUnavailable" ? { ...check.measured.values, reason: t(`render.reasons.${String(check.measured.values?.["reason"])}`) } : check.measured.values ?? {},
         );
         // The pattern-rule caveat travels with the row. Pasted into a model
         // without it, a pattern match reads as a determination.
@@ -283,6 +355,9 @@ export function PageCitabilityCheck({
           : "";
         return `- [${state}] ${rule}${kind} — ${measured}${fix}`;
       }),
+      "",
+      t("causes.title"),
+      ...report.rootCauses.map((cause) => `${t(`causes.groups.${cause.id}`)} — ${t(`causes.basis.${cause.basis}`)}: ${cause.checkIds.map((id) => t(`rules.${id}`)).join(", ")}${cause.relatedCheckIds.length ? `; ${t("causes.related", { rules: cause.relatedCheckIds.map((id) => t(`rules.${id}`)).join(", ") })}` : ""}`),
       "",
       t("limitsTitle"),
       ...report.limits.map((limit) => `- ${t(`limits.${limit}`)}`),
@@ -326,6 +401,7 @@ export function PageCitabilityCheck({
           {t("fields.urlLabel")}
         </h2>
         <div className="mt-5 grid gap-4">
+          {handoffSource ? <p className="text-[13px] text-text-dark-secondary">{t(`handoff.${handoffSource}`)}</p> : null}
           <div>
             <label
               className="block text-[13px] text-text-dark-secondary"
@@ -361,8 +437,9 @@ export function PageCitabilityCheck({
             <input
               className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
               id="citability-question"
-              maxLength={MAX_QUESTION_CHARS}
-              aria-describedby="citability-question-help"
+              maxLength={CITABILITY_MAX_QUESTION_CHARS}
+              aria-invalid={questionTooLong || undefined}
+              aria-describedby={questionTooLong ? "citability-question-help citability-question-error" : "citability-question-help"}
               onChange={(event) => setQuestion(event.target.value)}
               placeholder={t("fields.questionPlaceholder")}
               value={question}
@@ -373,11 +450,12 @@ export function PageCitabilityCheck({
             >
               {t("fields.questionHelp")}
             </p>
+            {questionTooLong ? <p id="citability-question-error" data-testid="citability-question-too-long" role="alert" className="mt-1.5 text-[12.5px] text-brand-error">{t("fields.questionTooLong", { count: question.trim().length, max: CITABILITY_MAX_QUESTION_CHARS })}</p> : null}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
               className="rounded-lg bg-brand-accent px-4 py-2 text-[14px] font-medium text-brand-on-accent disabled:opacity-60"
-              disabled={run.kind === "running"}
+              disabled={run.kind === "running" || questionTooLong}
               onClick={() => {
                 void submit();
               }}
@@ -484,6 +562,34 @@ export function PageCitabilityCheck({
                   ? t("actions.copyFailed")
                   : t("actions.copy")}
             </button>
+          </div>
+
+          <div className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
+            <h3 className="text-[17px] text-text-dark-primary">{t("render.title")}</h3>
+            <p className="mt-2 text-[13.5px] text-text-dark-primary" data-testid="citability-render-status" data-status={report.render.status}>{t(`render.status.${report.render.status}`)}</p>
+            <ul className="mt-3 grid gap-1.5 text-[13px] text-text-dark-secondary">
+              {renderLines(t, report.render, locale).slice(1).map((line) => <li key={line}>{line}</li>)}
+            </ul>
+            {report.render.rawToRenderedRatio !== null ? <p data-testid="citability-render-ratio" className="mt-2 text-[14px] text-text-dark-primary">{t("render.ratio", { ratio: Math.round(report.render.rawToRenderedRatio * 1000) / 10 })}</p> : null}
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <details><summary className="cursor-pointer text-[13px] text-text-dark-primary">{t("render.rawBody")}</summary><pre data-testid="citability-render-raw" className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[12px] text-text-dark-secondary">{report.render.raw.text}</pre></details>
+              {report.render.rendered ? <details><summary className="cursor-pointer text-[13px] text-text-dark-primary">{t("render.renderedBody")}</summary><pre data-testid="citability-render-rendered" className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[12px] text-text-dark-secondary">{report.render.rendered.text}</pre></details> : null}
+            </div>
+          </div>
+
+          <div data-testid="citability-root-causes" className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
+            <h3 className="text-[17px] text-text-dark-primary">{t("causes.title")}</h3>
+            <p className="mt-2 text-[13.5px] text-text-dark-secondary">{t("causes.intro")}</p>
+            {report.rootCauses.length === 0 ? <p className="mt-3 text-[13px] text-text-dark-secondary">{t("causes.none")}</p> : (
+              <ul className="mt-4 grid gap-4">
+                {report.rootCauses.map((cause) => <li key={cause.id} className="text-[13.5px] text-text-dark-secondary">
+                  <h4 className="text-text-dark-primary">{t(`causes.groups.${cause.id}`)}</h4>
+                  <p>{t(`causes.basis.${cause.basis}`)}</p>
+                  <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">{cause.checkIds.map((id) => <li key={id}><a className="underline underline-offset-2" href={`#citability-rule-${id}`}>{t(`rules.${id}`)}</a></li>)}</ul>
+                  {cause.relatedCheckIds.length > 0 ? <p className="mt-1">{t("causes.related", { rules: cause.relatedCheckIds.map((id) => t(`rules.${id}`)).join(", ") })}</p> : null}
+                </li>)}
+              </ul>
+            )}
           </div>
 
           {(

@@ -1,0 +1,27 @@
+services:
+  citability-renderer:
+    build:
+      context: ../../..
+      dockerfile: apps/marketing/scripts/citability-renderer.Dockerfile
+    init: true
+    user: "1000:1000"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./citability-renderer.seccomp.json
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: "1.0"
+    pids_limit: 128
+    shm_size: 128m
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=134217728,mode=1777
+    ports:
+      - "127.0.0.1:4318:4318"
+    environment:
+      NODE_ENV: production
+      CITABILITY_RENDERER_HOST: 0.0.0.0
+      CITABILITY_RENDERER_TOKEN: ${CITABILITY_RENDERER_TOKEN:?Set a scoped renderer token}
+    stop_grace_period: 15s
+    restart: "no"

@@ -41,6 +41,7 @@ export type GeoKbTransportOutcome =
 /** Which frozen version to read. */
 export type GeoKbSnapshotSelector =
   | { readonly by: "current" }
+  | { readonly by: "snapshotId"; readonly snapshotId: string }
   | { readonly by: "revision"; readonly revision: number };
 
 export interface GeoKbStoreDependencies {
@@ -133,6 +134,8 @@ export type GeoKbInvalidCode =
   | "invalid_payload"
   | "invalid_base_version"
   | "invalid_revision"
+  | "context_stale"
+  | "website_required"
   | "no_draft"
   | "not_freezable"
   | "question_set_stale";
@@ -331,6 +334,10 @@ async function readSnapshotViaSupabase(
         .eq("revision", selector.revision)
         .maybeSingle();
       return transport(byRevision.data, byRevision.error);
+    }
+    if (selector.by === "snapshotId") {
+      const exact = await snapshotQuery().eq("id", selector.snapshotId).maybeSingle();
+      return transport(exact.data, exact.error);
     }
     const knowledgeBase = await client
       .from("marketing_geo_knowledge_bases")
@@ -1055,11 +1062,15 @@ export async function readFrozenGeoKb(
     readonly userId: string;
     readonly kbId: string;
     readonly revision?: number | undefined;
+    readonly snapshotId?: string | undefined;
   },
   dependencies: GeoKbStoreDependencies = DEFAULT_GEO_KB_STORE_DEPENDENCIES,
 ): Promise<GeoKbStoreResult<GeoKbFrozenSnapshot>> {
   if (!UUID_PATTERN.test(input.kbId)) {
     return { kind: "invalid", code: "invalid_kb_id" };
+  }
+  if (input.snapshotId !== undefined && (!UUID_PATTERN.test(input.snapshotId) || input.revision !== undefined)) {
+    return { kind: "invalid", code: "invalid_revision" };
   }
   if (
     input.revision !== undefined &&
@@ -1068,7 +1079,9 @@ export async function readFrozenGeoKb(
     return { kind: "invalid", code: "invalid_revision" };
   }
   const selector: GeoKbSnapshotSelector =
-    input.revision === undefined
+    input.snapshotId !== undefined
+      ? { by: "snapshotId", snapshotId: input.snapshotId }
+      : input.revision === undefined
       ? { by: "current" }
       : { by: "revision", revision: input.revision };
   const outcome = await attempt(() =>
@@ -1086,6 +1099,9 @@ export async function readFrozenGeoKb(
       throw malformed("kb_id");
     }
     const reference = frozenRefFromRow(row);
+    if (input.snapshotId !== undefined && !sameUuid(reference.snapshotId, input.snapshotId)) {
+      throw malformed("snapshot_id");
+    }
     if (input.revision !== undefined && reference.revision !== input.revision) {
       throw malformed("revision");
     }

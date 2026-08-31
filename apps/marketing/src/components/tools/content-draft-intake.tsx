@@ -5,7 +5,7 @@
 //            tool through parseContentBrief, this card only collects the input and shows the verdict
 
 import { useId, useState } from "react";
-import type { ContentBrief } from "@sf/public-tools/content-brief/contract";
+import { geoGenerationLanguage, isGeoContentBrief, type SharedContentBrief as ContentBrief } from "@sf/public-tools/content-brief/geo-contract";
 import {
   CONTENT_BRIEF_HANDOFF_MAX_BYTES,
   type ContentDraftErrorCode,
@@ -62,10 +62,13 @@ function LoadedBrief({
   readonly disabled: boolean;
   readonly t: DraftTranslate;
 }) {
-  const { writable, gaps } = brief.draft_readiness;
-  const unsupported = !isWhitespaceTokenizedLanguage(brief.keyword.language);
+  const geo = isGeoContentBrief(brief);
+  const unsupported = geo ? geoGenerationLanguage(brief.keyword.language) === null : !isWhitespaceTokenizedLanguage(brief.keyword.language);
+  const { gaps } = brief.draft_readiness;
+  const writable = unsupported ? [] : brief.draft_readiness.writable;
   return (
     <div data-brief-loaded data-brief-source={source}>
+      {isGeoContentBrief(brief) ? <p data-geo-origin className={BODY_TEXT}>{t("intake.geoOrigin")}</p> : null}
       {source === "handoff" ? (
         <p data-handoff-loaded className={`${BODY_TEXT} mb-3`}>
           {t("intake.handoffLoaded")}
@@ -110,7 +113,7 @@ function LoadedBrief({
       </div>
       {unsupported ? (
         <p data-brief-unsupported-language role="status" className={`mt-3 ${BODY_TEXT}`}>
-          {t("intake.unsupportedLanguage", { language: brief.keyword.language })}
+          {t(geo ? "intake.geoUnsupportedLanguage" : "intake.unsupportedLanguage", { language: brief.keyword.language })}
         </p>
       ) : writable.length === 0 ? (
         <p data-brief-no-writable role="status" className={`mt-3 ${BODY_TEXT}`}>

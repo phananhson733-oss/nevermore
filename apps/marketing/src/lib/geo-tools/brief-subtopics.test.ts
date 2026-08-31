@@ -4,9 +4,15 @@ import {
   geoBriefSubtopics,
   GEO_BRIEF_MAX_SUBTOPICS,
   GEO_BRIEF_MAX_SUBTOPIC_CHARS,
+  geoBriefSubtopicEvidence,
 } from "./brief-subtopics.ts";
 
 describe("geoBriefSubtopics", () => {
+  it("retains candidate counts beyond the display and evidence caps", () => {
+    const answer = Array.from({ length: 53 }, (_, index) => `## Topic ${index + 1}`).join("\n");
+    expect(geoBriefSubtopicEvidence(answer)).toMatchObject({ candidateCount: 53, omittedCount: 3 });
+    expect(geoBriefSubtopicEvidence(answer).items).toHaveLength(50);
+  });
   it("reads the headings an answer separated itself with", () => {
     const answer = [
       "Here are the main options.",

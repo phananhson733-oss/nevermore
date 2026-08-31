@@ -9,12 +9,15 @@ import {
   readAccountMutationJson,
 } from "../account-websites/route-http.ts";
 import { open, seal } from "../auth/sealed-cookie.ts";
+import { randomUUID } from "node:crypto";
+import { parseVisibilityEngines } from "./visibility-engines.ts";
+import { isVisibilityReportV2, type AnyVisibilityReport } from "./visibility-v2-contract.ts";
+import { encodeVisibilityWire, VISIBILITY_MAX_WIRE_SLOTS } from "./visibility-wire.ts";
 import {
   VISIBILITY_DAILY_WINDOW_SECONDS,
   VISIBILITY_RUNS_PER_DAY,
   VISIBILITY_SAMPLES_OPTIONS,
   type VisibilityErrorCode,
-  type VisibilityReport,
 } from "./visibility-contract.ts";
 
 const LIST_BODY_LIMIT_BYTES = 1_024;
@@ -39,6 +42,8 @@ export interface VisibilityFrozenChoice {
   readonly frozenAt: string;
   readonly questionCount: number;
   readonly retrievalCount: number;
+  readonly language?: string;
+  readonly marketCode?: string;
 }
 
 export type VisibilityStoreOutcome<T> =
@@ -49,7 +54,7 @@ export type VisibilityStoreOutcome<T> =
 export type VisibilityRunRead =
   | { readonly kind: "missing" }
   | { readonly kind: "queued" | "running" }
-  | { readonly kind: "completed"; readonly report: VisibilityReport }
+  | { readonly kind: "completed"; readonly report: AnyVisibilityReport }
   | { readonly kind: "failed"; readonly code: VisibilityErrorCode };
 
 export interface VisibilityHandlerDependencies {
@@ -120,14 +125,18 @@ export async function handleVisibilityStart(
   if (!auth.ok) return auth.response;
   const body = await readAccountMutationJson(request, START_BODY_LIMIT_BYTES);
   if (!body.ok) return body.response;
-  if (!exactKeys(body.value, ["kbId", "snapshotId", "samplesPerQuestion"])) {
+  const legacy = exactKeys(body.value, ["kbId", "snapshotId", "samplesPerQuestion"]);
+  if (!legacy && !exactKeys(body.value, ["kbId", "snapshotId", "samplesPerQuestion", "engines"])) {
     return privateError("invalid_request", 400);
   }
   const record = body.value as {
     readonly kbId: unknown;
     readonly snapshotId: unknown;
     readonly samplesPerQuestion: unknown;
+    readonly engines?: unknown;
   };
+  const engines = legacy ? null : parseVisibilityEngines(record.engines);
+  if (!legacy && engines === null) return privateError("invalid_request", 400);
   const samples = record.samplesPerQuestion;
   if (
     typeof record.kbId !== "string" ||
@@ -159,6 +168,7 @@ export async function handleVisibilityStart(
         )
       : undefined;
   if (choice === undefined) return privateError("not_found", 404);
+  if (engines !== null && choice.questionCount * samples * engines.length > VISIBILITY_MAX_WIRE_SLOTS) return privateError("invalid_request", 400);
 
   const allowed = await dependencies.consumeDailyRun(auth.userId);
   if (!allowed) {
@@ -180,6 +190,7 @@ export async function handleVisibilityStart(
       snapshotId: record.snapshotId,
       revision: choice.revision,
       samplesPerQuestion: samples,
+      ...(engines === null ? {} : { engines, recordRunId: randomUUID() }),
       startedAt: new Date(dependencies.now()).toISOString(),
     },
     INPUT_TTL_SECONDS,
@@ -204,6 +215,7 @@ export async function handleVisibilityStart(
       ),
       questionCount: choice.questionCount,
       samplesPerQuestion: samples,
+      ...(engines === null ? {} : { engines, calls: choice.questionCount * samples * engines.length }),
     },
   });
 }
@@ -260,6 +272,6 @@ export async function handleVisibilityStatus(
     case "failed":
       return privateError(read.code, 502);
     case "completed":
-      return privateJson({ data: { status: "completed", report: read.report } });
+      return privateJson({ data: { status: "completed", report: isVisibilityReportV2(read.report) ? encodeVisibilityWire(read.report) : read.report } });
   }
 }

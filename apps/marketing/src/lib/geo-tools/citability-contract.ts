@@ -1,6 +1,8 @@
 // @input  -- nothing; the shared vocabulary the page-citability checks are written in
 // @output -- check identity, four-state outcome, weight, and the fetched inputs a check may read
 // @pos    -- the seam between what was fetched and what this tool is willing to claim
+import type { CitabilityRenderEvidence } from "./citability-render-contract.ts";
+export type { CitabilityRenderEvidence } from "./citability-render-contract.ts";
 
 /**
  * Four states, because three of them were being made to carry two meanings.
@@ -25,9 +27,9 @@ export type CitabilityRuleKind = "deterministic" | "heuristic";
 /**
  * Whether a row participates in the conclusion.
  *
- * `advisory` rows are shown and never counted: the training-crawler rows say
- * nothing about whether an answer can cite this page, and `/llms.txt` is a
- * discovery convenience rather than a precondition for being read.
+ * `advisory` rows stay outside the cross-engine denominator: ClaudeBot, GPTBot and
+ * Google-Extended have product-specific training/grounding semantics, while
+ * `/llms.txt` is a discovery convenience rather than a reading precondition.
  */
 export type CitabilityWeight = "counted" | "advisory";
 
@@ -75,6 +77,7 @@ export type LlmsTxtFetch =
 
 /** Everything a rule may read. Assembled once, passed to every rule. */
 export interface CitabilityInput {
+  readonly render?: CitabilityRenderEvidence;
   /** The URL the visitor submitted, after normalization. */
   readonly url: string;
   /** Where the fetch actually landed after redirects. */
@@ -120,6 +123,8 @@ export interface CitabilitySummary {
 }
 
 export interface CitabilityReport {
+  readonly render: CitabilityRenderEvidence;
+  readonly rootCauses: readonly CitabilityRootCause[];
   readonly url: string;
   readonly finalUrl: string;
   readonly targetQuestion: string | null;
@@ -135,6 +140,13 @@ export interface CitabilityReport {
   readonly limits: readonly string[];
 }
 
+export interface CitabilityRootCause {
+  readonly id: "crawlerAccess" | "rendering" | "canonical" | "answerStructure" | "claimEvidence" | "faq" | "advisory";
+  readonly basis: "sharedEvidence" | "possibleDependency" | "independent";
+  readonly checkIds: readonly string[];
+  readonly relatedCheckIds: readonly string[];
+}
+
 /* ------------------------------------------------------------------ */
 /* Thresholds — printed on the page, never inlined into a component    */
 /* ------------------------------------------------------------------ */
@@ -142,24 +154,24 @@ export interface CitabilityReport {
 /**
  * Retrieval crawlers: the ones that fetch a page in order to answer with it.
  *
- * Kept identical to `AI_BOT_USER_AGENTS` in `@sf/sources/crawl-robots` so the
- * two surfaces cannot disagree about which agents matter.
+ * This inventory is purpose-specific, not the shared crawler's bot list.
+ * Claude-SearchBot and Claude-User are not measured in this fourteen-row version.
  */
 export const CITABILITY_RETRIEVAL_BOTS = [
   "OAI-SearchBot",
   "ChatGPT-User",
   "PerplexityBot",
-  "ClaudeBot",
 ] as const;
 
 /**
- * Training crawlers. Shown, never counted.
+ * Model-specific controls. Shown, never counted in the cross-engine summary.
  *
- * Allowing `GPTBot` does not make a page citable and blocking it does not make
- * a page uncitable — it governs corpus collection. A checker that scores these
- * rows tells a visitor to open a door that was never the one in question.
+ * `ClaudeBot` and `GPTBot` govern training-corpus collection; their allowance
+ * does not establish citability. Google-Extended additionally
+ * controls Gemini grounding, but does not control Google Search inclusion or
+ * ranking. Keep these separate from the generic retrieval denominator.
  */
-export const CITABILITY_TRAINING_BOTS = ["GPTBot", "Google-Extended"] as const;
+export const CITABILITY_TRAINING_BOTS = ["ClaudeBot", "GPTBot", "Google-Extended"] as const;
 
 /** Below this many characters of visible text, the HTML is not carrying the copy. */
 export const CITABILITY_TEXT_FLOOR_CHARS = 400;
@@ -178,13 +190,15 @@ export const CITABILITY_LIST_LINK_DENSITY_MAX = 0.5;
 
 export const CITABILITY_FETCH_TIMEOUT_MS = 8_000;
 export const CITABILITY_MAX_BODY_BYTES = 1_500_000;
+/** Same bound as shared Draft handoffs; question identity is never truncated. */
+export const CITABILITY_MAX_QUESTION_CHARS = 512;
 
 /**
  * This tool's own quota, deliberately not the site-wide crawl gate.
  *
  * `crawl-gate` admits whole-site crawls of up to thousands of requests and is
- * shared by the audit tools; three bounded fetches against one URL is a
- * different risk with a different natural ceiling, and a visitor fixing a page
+ * shared by the audit tools; a page, two discovery files and a strictly bounded
+ * render have their own ceiling, and a visitor fixing a page
  * needs to re-check it several times in a row without spending the budget that
  * governs site crawls.
  */

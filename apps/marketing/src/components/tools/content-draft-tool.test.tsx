@@ -28,6 +28,8 @@ import {
   withFingerprint,
 } from "@sf/public-tools/content-brief/fixtures";
 import { parseContentBriefHandoff } from "@sf/public-tools/content-brief/parse-brief";
+import { geoBriefFixture, geoDraftFixture } from "@sf/public-tools/content-brief/geo-fixtures";
+import { geoFingerprint } from "@sf/public-tools/content-brief/parse-geo-brief";
 import {
   draftBrief,
   draftResultFixture,
@@ -298,6 +300,33 @@ async function loadAndRun(host: HTMLElement, brief: ContentBrief): Promise<void>
 }
 
 describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
+  it.each(["en-US", "en-GB", "es", "zh"])("shows the correct GEO generation availability for %s without changing the displayed locale", async language => {
+    const geo = await geoBriefFixture(); geo.keyword.language = language; geo.run.fingerprint = await geoFingerprint(geo);
+    const now = Date.now(); window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, JSON.stringify({ version: 1, created_at: now, expires_at: now + CONTENT_BRIEF_HANDOFF_TTL_MS, brief: geo }));
+    const host = await renderTool(); await idle(host);
+    const supported = language.startsWith("en-");
+    expect(host.querySelector<HTMLButtonElement>("[data-run-draft]")?.disabled).toBe(!supported);
+    expect(host.querySelector("[data-brief-loaded]")?.textContent).toContain(language);
+    expect(host.querySelector("[data-brief-unsupported-language]") === null).toBe(supported);
+    if (!supported) expect(host.querySelector("[data-brief-unsupported-language]")?.textContent).toContain("intake.geoUnsupportedLanguage");
+    expect(callsTo("/api/tools/content-draft/run")).toHaveLength(0);
+  });
+  it("loads a GEO handoff once and sends the same v1.1 brief through the existing Draft endpoint", async () => {
+    const geo = await geoBriefFixture();
+    const result = await geoDraftFixture(geo);
+    const now = Date.now();
+    window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, JSON.stringify({ version: 1, created_at: now, expires_at: now + CONTENT_BRIEF_HANDOFF_TTL_MS, brief: geo }));
+    globalThis.fetch = signedInFetch(body => { expect(body["brief"]).toEqual(geo); return Response.json(result); });
+    const host = await renderTool();
+    await idle(host);
+    expect(host.querySelector("[data-geo-origin]")).not.toBeNull();
+    expect(host.querySelector("[data-brief-keyword]")?.textContent).toBe(geo.keyword.primary);
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+    await click(host.querySelector("[data-run-draft]"));
+    await idle(host);
+    expect(callsTo("/api/tools/content-draft/run")).toHaveLength(1);
+    expect(runId(host)).toBe(result.run.run_id);
+  });
   it("opens on the empty state with no settings form and no keyword field", async () => {
     const host = await renderTool();
     expect(host.querySelector('[data-intake-phase="empty"]')).not.toBeNull();

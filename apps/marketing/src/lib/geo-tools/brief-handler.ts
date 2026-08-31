@@ -28,6 +28,8 @@ import type { GeoKbPayload } from "./kb-contract.ts";
 import type { GeoQuestion, GeoQuestionLayer } from "./kb-questions.ts";
 import { normalizeGeoHost } from "../agents/geo-url.ts";
 import type { KeywordLlmUsage } from "../tools/keyword-llm-client.ts";
+import { GEO_CONTENT_BRIEF_SCHEMA } from "@sf/public-tools/content-brief/geo-contract";
+import { runSharedBrief, type SharedBriefHandlerDependencies } from "./brief-shared-handler.ts";
 
 const BODY_LIMIT_BYTES = 8 * 1024;
 
@@ -77,6 +79,7 @@ export type BriefSampleOutcome =
   | { readonly kind: "unavailable" };
 
 export interface BriefHandlerDependencies {
+  readonly shared?: SharedBriefHandlerDependencies;
   readonly authenticate: typeof authenticateAccountRequest;
   readonly listFrozen: (
     userId: string,
@@ -115,6 +118,15 @@ export async function handleBriefLoad(
   if (!auth.ok) return auth.response;
   const body = await readAccountMutationJson(request, BODY_LIMIT_BYTES);
   if (!body.ok) return body.response;
+  if (exactKeys(body.value, ["schema", "kbId", "snapshotId"]) && dependencies.shared !== undefined) {
+    const row = body.value as Record<string, unknown>;
+    if (row.schema !== GEO_CONTENT_BRIEF_SCHEMA || typeof row.kbId !== "string" || typeof row.snapshotId !== "string") return privateError("invalid_request", 400);
+    const found = await dependencies.shared.readFrozen({ userId: auth.userId, kbId: row.kbId, snapshotId: row.snapshotId });
+    if (found.kind === "not_found") return privateError("not_found", 404);
+    if (found.kind !== "ok") return privateError("store_unavailable", 503);
+    const frozen = found.value;
+    return privateJson({ data: { choices: [{ kbId: frozen.kbId, host: normalizeGeoHost(frozen.payload.targetUrl), snapshotId: frozen.snapshotId, revision: frozen.revision, frozenAt: frozen.frozenAt, questions: frozen.questionSet.questions }], runsPerDay: GEO_BRIEF_RUNS_PER_DAY, providerConfigured: dependencies.shared.configured() } });
+  }
   if (!exactKeys(body.value, [])) return privateError("invalid_request", 400);
 
   const frozen = await dependencies.listFrozen(auth.userId);
@@ -127,7 +139,7 @@ export async function handleBriefLoad(
     data: {
       choices: frozen.kind === "not_found" ? [] : frozen.value,
       runsPerDay: GEO_BRIEF_RUNS_PER_DAY,
-      providerConfigured: dependencies.providerConfigured(),
+      providerConfigured: dependencies.shared?.configured() ?? dependencies.providerConfigured(),
     },
   });
 }
@@ -191,6 +203,7 @@ async function runBrief(
   const body = await readAccountMutationJson(request, BODY_LIMIT_BYTES);
   if (!body.ok) return body.response;
   const parsed = readRunBody(body.value);
+  if (typeof body.value === "object" && body.value !== null && "schema" in body.value && body.value.schema === GEO_CONTENT_BRIEF_SCHEMA) return runSharedBrief(auth.userId, body.value, dependencies.shared, dependencies.consumeDailyRun, dependencies.now);
   if (parsed === null) return privateError("invalid_request", 400);
 
   const choices = await dependencies.listFrozen(auth.userId);

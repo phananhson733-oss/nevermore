@@ -44,6 +44,7 @@
  * `content-brief-llm.ts`; there is no fallback to another tool's key.
  */
 
+import { requireGeoGenerationLanguage } from "@sf/public-tools/content-brief/geo-contract";
 import {
   COVERAGE_MAX_OUTPUT_TOKENS,
   COVERAGE_TIMEOUT_MS,
@@ -140,6 +141,8 @@ export interface DraftGapAngle {
 }
 
 export interface DraftSectionInput {
+  /** Resolved GEO facts; AI samples are intentionally not part of this input. */
+  readonly geo?: { readonly facts: readonly import("@sf/public-tools/content-brief/geo-contract").GeoFactEvidence[]; readonly missingFacts: readonly { readonly label: string; readonly reason: string }[]; readonly requiredEntities: readonly string[] };
   readonly section: {
     readonly id: string;
     readonly h2: string;
@@ -207,6 +210,7 @@ export interface DraftCoverageSection {
  * judge sees section text and questions only).
  */
 export interface DraftCoverageInput {
+  readonly source?: "geo";
   readonly primary: string;
   readonly language: string;
   readonly questions: readonly DraftCoverageQuestion[];
@@ -410,6 +414,7 @@ type SectionOutcome =
  */
 function sectionEvidence(input: DraftSectionInput): SectionEvidence {
   return {
+    ...(input.geo === undefined ? {} : { geoFacts: new Map(input.geo.facts.map(fact => [fact.id, fact])), geoMissingFacts: input.geo.missingFacts }),
     citableCrawlIds: new Set(
       input.pages
         .filter((page) => page.excerpts.length > 0)
@@ -464,7 +469,7 @@ function sectionRequest(
   timeoutMs: number,
 ): KeywordLlmRequest {
   return {
-    system: buildDraftSectionSystemPrompt(),
+    system: buildDraftSectionSystemPrompt(input.geo !== undefined),
     user: buildDraftSectionUserPrompt(input, rejection),
     temperature: CONTENT_DRAFT_LLM_TEMPERATURE,
     maxOutputTokens: SECTION_MAX_OUTPUT_TOKENS,
@@ -507,6 +512,7 @@ export async function generateDraftSection(
   input: DraftSectionInput,
   deps: ContentDraftLlmDependencies = {},
 ): Promise<DraftSectionResult> {
+  if (input.geo !== undefined) input = { ...input, language: requireGeoGenerationLanguage(input.language) };
   languageName(input.language); // throws RangeError on a code outside the table
   const config = resolveConfig(deps);
   if (config === null) return sectionFailure("not_configured", [], null, null);
@@ -675,6 +681,7 @@ export async function runDraftCoverage(
   input: DraftCoverageInput,
   deps: ContentDraftLlmDependencies = {},
 ): Promise<DraftCoverageResult> {
+  if (input.source === "geo") input = { ...input, language: requireGeoGenerationLanguage(input.language) };
   languageName(input.language); // throws RangeError on a code outside the table
   if (input.questions.length === 0) {
     return {

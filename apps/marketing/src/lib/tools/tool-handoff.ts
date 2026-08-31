@@ -39,7 +39,10 @@ export const TOOL_HANDOFF_LINK_PROPS = {
 export type ToolHandoffDestination =
   | "seo-quick-wins"
   | "traffic-drop-diagnosis"
-  | "on-page-seo-check";
+  | "on-page-seo-check"
+  | "page-citability-check";
+
+type SearchHandoffDestination = Exclude<ToolHandoffDestination, "page-citability-check">;
 
 export interface ToolHandoffStorage {
   readonly getItem: (key: string) => string | null;
@@ -50,7 +53,7 @@ export interface ToolHandoffStorage {
 export type ToolHandoffPayload =
   | {
       readonly source: "daily-search-briefing";
-      readonly destination: ToolHandoffDestination;
+      readonly destination: SearchHandoffDestination;
       readonly scope: "query_page";
       readonly property: string;
       readonly query: string;
@@ -60,7 +63,7 @@ export type ToolHandoffPayload =
   | {
       readonly source: "daily-search-briefing";
       readonly destination: Exclude<
-        ToolHandoffDestination,
+        SearchHandoffDestination,
         "on-page-seo-check"
       >;
       readonly scope: "property";
@@ -84,7 +87,7 @@ export type ToolHandoffPayload =
        * opportunities and has nothing to do with a page carrying no query, so
        * accepting it here would admit a handoff no lane can generate.
        */
-      readonly destination: Exclude<ToolHandoffDestination, "seo-quick-wins">;
+      readonly destination: Exclude<SearchHandoffDestination, "seo-quick-wins">;
       readonly scope: "page";
       readonly property: string;
       readonly query: null;
@@ -130,7 +133,7 @@ export type ToolHandoffPayload =
    */
   | {
       readonly source: "content-draft";
-      readonly destination: "on-page-seo-check";
+      readonly destination: "on-page-seo-check" | "page-citability-check";
       readonly scope: "query_page";
       readonly property: null;
       readonly query: string;
@@ -221,7 +224,7 @@ const LANGUAGE_CODE = /^[a-z]{2}$/u;
  */
 const BRIEF_FINGERPRINT = /^[0-9a-f]{64}$/u;
 
-function isDestination(value: unknown): value is ToolHandoffDestination {
+function isDestination(value: unknown): value is SearchHandoffDestination {
   return (
     value === "seo-quick-wins" ||
     value === "traffic-drop-diagnosis" ||
@@ -231,7 +234,7 @@ function isDestination(value: unknown): value is ToolHandoffDestination {
 
 function isPageDestination(
   value: unknown,
-): value is Exclude<ToolHandoffDestination, "seo-quick-wins"> {
+): value is Exclude<SearchHandoffDestination, "seo-quick-wins"> {
   return value === "traffic-drop-diagnosis" || value === "on-page-seo-check";
 }
 
@@ -348,7 +351,7 @@ function pageBelongsToProperty(property: string, page: unknown): boolean {
 
 function isPropertyDestination(
   value: unknown,
-): value is Exclude<ToolHandoffDestination, "on-page-seo-check"> {
+): value is Exclude<SearchHandoffDestination, "on-page-seo-check"> {
   return value === "seo-quick-wins" || value === "traffic-drop-diagnosis";
 }
 
@@ -474,7 +477,7 @@ function hasValidContentDraftFields(
   value: Readonly<Record<string, unknown>>,
 ): boolean {
   return (
-    value.destination === "on-page-seo-check" &&
+    (value.destination === "on-page-seo-check" || value.destination === "page-citability-check") &&
     value.scope === "query_page" &&
     value.property === null &&
     typeof value.evidenceId === "string" &&

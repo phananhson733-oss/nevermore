@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "geo-artifact-io-audit.v1",
+  "capturedDate": "2026-08-31",
+  "sourceUrl": "https://claude.ai/public/artifacts/37bb86f4-c185-4835-9394-a867a2b1264f",
+  "sourceTitle": "geo-product-ui.jsx - Claude",
+  "sourceFile": "reference-geo-product-ui.jsx.txt",
+  "sourceSha256": "597746987d71170e80353fbcbad458a6c0596d10b867369b65e54bd0d9cebe2a",
+  "sourceIsScenario": true,
+  "sourceStates": 9,
+  "sourceHasNetworkCalls": false,
+  "worktreeHead": "bfdaf79a0c5283d7ecc7cb8bc1c9b5d7b5942e77",
+  "remoteMain": "807e2cdce85ed7e6cdde3016e3cfd178a0b45556",
+  "marketingDiffFromMain": false,
+  "applicationFilesChanged": false,
+  "requirements": 38,
+  "alignmentStatus": "not_aligned",
+  "tests": {
+    "files": 21,
+    "passed": 458,
+    "scope": "current GEO implementation and 3 React surfaces, not Artifact parity"
+  },
+  "paidCalls": 0,
+  "productionWrites": 0,
+  "implementationApproved": false
+}
+

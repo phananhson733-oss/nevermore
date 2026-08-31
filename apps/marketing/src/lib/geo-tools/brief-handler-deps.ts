@@ -25,7 +25,9 @@ import type {
   BriefSampleOutcome,
   BriefStoreOutcome,
 } from "./brief-handler.ts";
-import { listGeoKnowledgeBases, readFrozenGeoKb } from "./kb-store.ts";
+import { readFrozenGeoKb } from "./kb-store.ts";
+import { listFrozenGeoKbVersions } from "./kb-history.ts";
+import { DEFAULT_SHARED_BRIEF_DEPENDENCIES } from "./brief-shared-deps.ts";
 
 export { handleBriefLoad, handleBriefRun } from "./brief-handler.ts";
 
@@ -42,36 +44,13 @@ const MAX_URLS_PER_DOMAIN = 3;
  * anything is spent, and a page that had to fetch them separately would either
  * make a second round trip per selection or guess.
  */
-async function listFrozenVersions(
+export async function listFrozenVersions(
   userId: string,
+  readHistory: typeof listFrozenGeoKbVersions = listFrozenGeoKbVersions,
 ): Promise<BriefStoreOutcome<readonly BriefFrozenChoice[]>> {
-  const list = await listGeoKnowledgeBases({ userId });
-  if (list.kind !== "ok") {
-    return list.kind === "missing"
-      ? { kind: "ok", value: [] }
-      : { kind: "unavailable", reason: "store unavailable" };
-  }
-
-  const choices: BriefFrozenChoice[] = [];
-  for (const summary of list.value) {
-    if (summary.frozen === null) continue;
-    const frozen = await readFrozenGeoKb({ userId, kbId: summary.kbId });
-    if (frozen.kind !== "ok") continue;
-    choices.push({
-      kbId: summary.kbId,
-      host: summary.host,
-      snapshotId: frozen.value.snapshotId,
-      revision: frozen.value.revision,
-      frozenAt: frozen.value.frozenAt,
-      questions: frozen.value.questionSet.questions.map((question) => ({
-        id: question.id,
-        text: question.text,
-        layer: question.layer,
-        roleId: question.roleId,
-      })),
-    });
-  }
-  return { kind: "ok", value: choices };
+  const list = await readHistory({ userId });
+  if (list.kind !== "ok") return { kind: "unavailable", reason: "store unavailable" };
+  return { kind: "ok", value: list.value.map(({ host, snapshot }) => ({ kbId: snapshot.kbId, host, snapshotId: snapshot.snapshotId, revision: snapshot.revision, frozenAt: snapshot.frozenAt, questions: snapshot.questionSet.questions.map(question => ({ id: question.id, text: question.text, layer: question.layer, roleId: question.roleId })) })) };
 }
 
 async function readFrozen(input: {
@@ -221,6 +200,7 @@ function reportAssemblyFailure(event: BriefAssemblyFailureEvent): void {
 }
 
 export const DEFAULT_BRIEF_HANDLER_DEPENDENCIES: BriefHandlerDependencies = {
+  shared: DEFAULT_SHARED_BRIEF_DEPENDENCIES,
   authenticate: authenticateAccountRequest,
   listFrozen: listFrozenVersions,
   readFrozen,

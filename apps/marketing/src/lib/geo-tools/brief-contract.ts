@@ -223,7 +223,9 @@ export function geoBriefFacts(
       // knowledge base's own validator enforces the second half, so a `""`
       // reaching here with no reason is a payload that should not have parsed.
       reason: verified ? null : ((fact.reason || "lowConfidence") as GeoBriefFactReason),
-      source: fact.sourceUrl.length > 0 ? "crawl" : "kb",
+      // This payload was edited by the account owner. A typed URL/time is a
+      // reference, not evidence that our crawler fetched it.
+      source: "kb",
       sourceUrl: fact.sourceUrl.length > 0 ? fact.sourceUrl : null,
       observedAt: fact.observedAt.length > 0 ? fact.observedAt : null,
     };

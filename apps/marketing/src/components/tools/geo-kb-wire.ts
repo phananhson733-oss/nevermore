@@ -10,6 +10,8 @@ import {
   type GeoKbPayload,
   type GeoKbRole,
 } from "../../lib/geo-tools/kb-contract.ts";
+import { parseWebsiteProfileReference } from "../../lib/account-websites/contracts.ts";
+import type { GeoInheritedProfile } from "../../lib/geo-tools/asset-context.ts";
 
 export interface GeoKbFrozenSummary {
   readonly snapshotId: string;
@@ -18,6 +20,16 @@ export interface GeoKbFrozenSummary {
   readonly contentHash: string;
   readonly questionCount: number;
   readonly retrievalCount: number;
+  readonly questionSetHash?: string;
+  readonly registryVersion?: string;
+  readonly questions?: readonly GeoKbQuestionPreview[];
+  readonly skippedLayers?: readonly ("problem" | "evaluation")[];
+}
+
+export interface GeoKbSourcePreview {
+  readonly skippedLayers: readonly ("problem" | "evaluation")[];
+  readonly questionSetHash: string;
+  readonly contentHash: string;
 }
 
 export interface GeoKbQuestionPreview {
@@ -26,6 +38,9 @@ export interface GeoKbQuestionPreview {
   readonly layer: string;
   readonly mode: "retrieval" | "demand";
   readonly calibrated: boolean;
+  readonly roleId?: string | null;
+  readonly requiredEntities?: readonly string[];
+  readonly templateId?: string | null;
 }
 
 export interface GeoKbView {
@@ -37,17 +52,21 @@ export interface GeoKbView {
   readonly payload: GeoKbPayload;
   readonly frozen: GeoKbFrozenSummary | null;
   readonly importAvailable: boolean;
+  readonly profile?: GeoInheritedProfile | null;
+  readonly context?: GeoKbSourcePreview;
 }
 
 export interface GeoKbSaveResponse {
   readonly draftVersion: number;
   readonly updatedAt: string;
   readonly blockers: readonly GeoKbBlocker[];
+  readonly context?: GeoKbSourcePreview;
 }
 
 export interface GeoKbFreezeResponse extends GeoKbFrozenSummary {
   readonly reusedExisting: boolean;
   readonly questions: readonly GeoKbQuestionPreview[];
+  readonly context?: GeoKbSourcePreview;
 }
 
 /**
@@ -64,6 +83,7 @@ const BLOCKER_CODES: ReadonlySet<string> = new Set<GeoKbBlocker>([
   "category_terms_missing",
   "no_confirmed_competitor",
   "role_missing",
+  "unsupported_language",
 ]);
 
 /** Same reason: the preview prints `questions.layers.<layer>`. */
@@ -110,7 +130,8 @@ function isCompetitor(value: unknown): value is GeoKbCompetitor {
   return (
     typeof value["domain"] === "string" &&
     typeof value["brandName"] === "string" &&
-    typeof value["confirmed"] === "boolean"
+    typeof value["confirmed"] === "boolean" &&
+    (value["aliases"] === undefined || isStringArray(value["aliases"]))
   );
 }
 
@@ -164,7 +185,11 @@ function isFrozen(value: unknown): value is GeoKbFrozenSummary {
     typeof value["frozenAt"] === "string" &&
     typeof value["contentHash"] === "string" &&
     typeof value["questionCount"] === "number" &&
-    typeof value["retrievalCount"] === "number"
+    typeof value["retrievalCount"] === "number" &&
+    (value["questionSetHash"] === undefined || isHash(value["questionSetHash"])) &&
+    (value["registryVersion"] === undefined || typeof value["registryVersion"] === "string") &&
+    (value["questions"] === undefined || (Array.isArray(value["questions"]) && value["questions"].every(isQuestion))) &&
+    (value["skippedLayers"] === undefined || isSkippedLayers(value["skippedLayers"]))
   );
 }
 
@@ -179,8 +204,35 @@ export function isGeoKbView(value: unknown): value is GeoKbView {
     Number.isSafeInteger(value["draftVersion"]) &&
     typeof value["importAvailable"] === "boolean" &&
     isGeoKbPayload(value["payload"]) &&
-    (frozen === null || isFrozen(frozen))
+    (frozen === null || isFrozen(frozen)) &&
+    (value["profile"] === undefined || value["profile"] === null || isInheritedProfile(value["profile"])) &&
+    (value["context"] === undefined || isSourcePreview(value["context"]))
   );
+}
+
+function isHash(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
+}
+function isSkippedLayers(value: unknown): value is readonly ("problem" | "evaluation")[] {
+  return Array.isArray(value) && value.length <= 2 && new Set(value).size === value.length &&
+    value.every((layer) => layer === "problem" || layer === "evaluation");
+}
+function isSourcePreview(value: unknown): value is GeoKbSourcePreview {
+  return isRecord(value) && isSkippedLayers(value["skippedLayers"]) && isHash(value["questionSetHash"]) && isHash(value["contentHash"]);
+}
+
+function isInheritedProfile(value: unknown): value is GeoInheritedProfile {
+  if (!isRecord(value) || typeof value["productName"] !== "string" ||
+      typeof value["oneLinePositioning"] !== "string" ||
+      !isStringArray(value["coreFeatures"]) || !isRecord(value["market"]) ||
+      typeof value["market"]["country"] !== "string" ||
+      typeof value["market"]["language"] !== "string") return false;
+  try {
+    parseWebsiteProfileReference(value["reference"]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function isGeoKbBlockers(
@@ -200,7 +252,8 @@ export function isGeoKbSaveResponse(
     typeof value["draftVersion"] === "number" &&
     Number.isSafeInteger(value["draftVersion"]) &&
     typeof value["updatedAt"] === "string" &&
-    isGeoKbBlockers(value["blockers"])
+    isGeoKbBlockers(value["blockers"]) &&
+    (value["context"] === undefined || isSourcePreview(value["context"]))
   );
 }
 
@@ -212,7 +265,10 @@ function isQuestion(value: unknown): value is GeoKbQuestionPreview {
     typeof value["layer"] === "string" &&
     QUESTION_LAYERS.has(value["layer"]) &&
     (value["mode"] === "retrieval" || value["mode"] === "demand") &&
-    typeof value["calibrated"] === "boolean"
+    typeof value["calibrated"] === "boolean" &&
+    (value["roleId"] === undefined || value["roleId"] === null || typeof value["roleId"] === "string") &&
+    (value["requiredEntities"] === undefined || isStringArray(value["requiredEntities"])) &&
+    (value["templateId"] === undefined || value["templateId"] === null || typeof value["templateId"] === "string")
   );
 }
 
@@ -224,7 +280,8 @@ export function isGeoKbFreezeResponse(
   return (
     typeof record["reusedExisting"] === "boolean" &&
     Array.isArray(record["questions"]) &&
-    record["questions"].every(isQuestion)
+    record["questions"].every(isQuestion) &&
+    (record["context"] === undefined || isSourcePreview(record["context"]))
   );
 }
 

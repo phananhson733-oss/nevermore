@@ -7,6 +7,7 @@ import {
   type CitabilityInput,
 } from "./citability-contract.ts";
 import { buildCitabilityReport, runCitabilityChecks } from "./citability-rules.ts";
+import { measureCitabilityRender } from "./citability-render.ts";
 
 const BODY = `<p>${"内容".repeat(300)}</p>`;
 
@@ -30,15 +31,19 @@ function byId(checks: readonly CitabilityCheck[], id: string): CitabilityCheck {
 }
 
 describe("check inventory", () => {
-  it("returns fourteen rows: eleven counted and three advisory", () => {
+  it("returns fourteen rows: ten counted and four advisory", () => {
     const checks = runCitabilityChecks(input());
     expect(checks).toHaveLength(14);
-    expect(checks.filter((check) => check.weight === "counted")).toHaveLength(11);
-    expect(checks.filter((check) => check.weight === "advisory")).toHaveLength(3);
+    expect(checks.filter((check) => check.weight === "counted")).toHaveLength(10);
+    expect(checks.filter((check) => check.weight === "advisory")).toHaveLength(4);
+    expect(checks.filter((check) => check.weight === "counted" && check.section === "readable")).toHaveLength(5);
+    expect(checks.filter((check) => check.weight === "counted" && check.section === "extractable")).toHaveLength(5);
   });
 
   it("counts the retrieval crawlers and only shows the training ones", () => {
     const checks = runCitabilityChecks(input());
+    expect(CITABILITY_RETRIEVAL_BOTS).toEqual(["OAI-SearchBot", "ChatGPT-User", "PerplexityBot"]);
+    expect(CITABILITY_TRAINING_BOTS).toContain("ClaudeBot");
     for (const bot of CITABILITY_RETRIEVAL_BOTS) {
       expect(byId(checks, `robots.${bot.toLowerCase()}`).weight).toBe("counted");
     }
@@ -67,6 +72,15 @@ describe("check inventory", () => {
 });
 
 describe("robots", () => {
+  it("keeps a ClaudeBot-only training block out of the summary and retrieval root cause", () => {
+    const allowed = buildCitabilityReport(input(), "2026-08-31T00:00:00.000Z");
+    const blocked = buildCitabilityReport(input({ robots: { status: "ok", text: "User-agent: ClaudeBot\nDisallow: /\n" } }), allowed.fetchedAt);
+    expect(byId(blocked.checks, "robots.claudebot")).toMatchObject({ weight: "advisory", state: "fail", fix: { key: "robots.advisoryDisallowed" } });
+    expect(blocked.summary).toEqual(allowed.summary);
+    expect(blocked.rootCauses.find((cause) => cause.id === "crawlerAccess")).toBeUndefined();
+    expect(blocked.rootCauses.find((cause) => cause.id === "advisory")?.checkIds).toContain("robots.claudebot");
+  });
+
   it("treats a missing robots.txt as full allowance, not as a failure", () => {
     const checks = runCitabilityChecks(
       input({ robots: { status: "absent", httpStatus: 404 } }),
@@ -114,31 +128,40 @@ describe("robots", () => {
 });
 
 describe("ssr", () => {
-  it("passes on raw text alone and never claims a rendered ratio", () => {
+  it("cannot pass a raw/render comparison without a renderer measurement", () => {
     const check = byId(runCitabilityChecks(input()), "ssr");
-    expect(check.state).toBe("pass");
-    expect(check.measured.key).toBe("ssr.sufficient");
+    expect(check.state).toBe("fetchError");
+    expect(check.measured.key).toBe("ssr.renderUnavailable");
+  });
+
+  it("uses the Artifact 30 percent raw/render threshold", () => {
+    const page = input({ rawHtml: `<body>${"x".repeat(500)}</body>` });
+    const render = measureCitabilityRender({ url: page.finalUrl, rawHtml: page.rawHtml, bodyComplete: true }, `<body>${"x".repeat(2000)}</body>`);
+    const check = byId(runCitabilityChecks({ ...page, render }), "ssr");
+    expect(check.state).toBe("fail");
+    expect(check.measured.key).toBe("ssr.renderRatio");
+    expect(check.measured.values).toEqual({ raw: 500, rendered: 2000, ratio: 25, threshold: 30 });
   });
 
   it("fails an empty client-rendered shell instead of passing it", () => {
     const shell = `<html><body><div id="__nuxt"></div><script>${"x".repeat(20_000)}</script></body></html>`;
-    const check = byId(runCitabilityChecks(input({ rawHtml: shell })), "ssr");
+    const check = byId(runCitabilityChecks(input({ rawHtml: shell, render: measureCitabilityRender({ url: "https://example.com/guide", rawHtml: shell, bodyComplete: true }, `<body>${BODY}</body>`) })), "ssr");
     expect(check.state).toBe("fail");
-    expect(check.measured.key).toBe("ssr.clientRendered");
+    expect(check.measured.key).toBe("ssr.renderRatio");
   });
 
   it("fails a client-rendered page whose mount container has no known id", () => {
     // The container-id allowlist was the old trigger, so Nuxt, Svelte and an
     // App Router shell all slipped through as a pass.
     const shell = `<html><body><div id="mount-here"><span>Loading</span></div><script>${"y".repeat(20_000)}</script></body></html>`;
-    const check = byId(runCitabilityChecks(input({ rawHtml: shell })), "ssr");
+    const check = byId(runCitabilityChecks(input({ rawHtml: shell, render: measureCitabilityRender({ url: "https://example.com/guide", rawHtml: shell, bodyComplete: true }, `<body>${BODY}</body>`) })), "ssr");
     expect(check.state).toBe("fail");
-    expect(check.measured.key).toBe("ssr.clientRendered");
+    expect(check.measured.key).toBe("ssr.renderRatio");
   });
 
   it("separates a thin page from a client-rendered one", () => {
     const thin = "<html><body><p>Short page.</p></body></html>";
-    const check = byId(runCitabilityChecks(input({ rawHtml: thin })), "ssr");
+    const check = byId(runCitabilityChecks(input({ rawHtml: thin, render: measureCitabilityRender({ url: "https://example.com/guide", rawHtml: thin, bodyComplete: true }, thin) })), "ssr");
     expect(check.state).toBe("fail");
     expect(check.measured.key).toBe("ssr.thin");
   });
@@ -184,7 +207,7 @@ describe("llms.txt", () => {
     );
     expect(report.summary.total).toBe(14);
     expect(report.summary.counted + report.summary.fetchError + report.summary.notApplicable).toBe(
-      11,
+      10,
     );
   });
 });
@@ -350,6 +373,12 @@ describe("faq schema", () => {
 });
 
 describe("report", () => {
+  it("uses the actual captured raw visible count in the report summary", () => {
+    const page = input();
+    const rawCapture = { method: "browser_visible_text" as const, text: "", textChars: 0, complete: true };
+    const render = measureCitabilityRender({ url: page.finalUrl, rawHtml: page.rawHtml, bodyComplete: true }, null, { rawCapture, renderedCapture: rawCapture });
+    expect(buildCitabilityReport({ ...page, render }, "2026-08-31T00:00:00.000Z").textChars).toBe(0);
+  });
   it("carries the derived question terms and the stated limits", () => {
     const report = buildCitabilityReport(
       input({ targetQuestion: "best issue tracker for small agencies" }),
@@ -357,7 +386,7 @@ describe("report", () => {
     );
     expect(report.questionTerms).toContain("tracker");
     expect(report.questionTerms).not.toContain("for");
-    expect(report.limits).toContain("noJavaScript");
+    expect(report.limits).toContain("boundedRendering");
     expect(report.fetchedAt).toBe("2026-08-29T00:00:00.000Z");
   });
 });

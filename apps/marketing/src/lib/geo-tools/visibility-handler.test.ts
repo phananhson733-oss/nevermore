@@ -109,6 +109,24 @@ describe("authentication", () => {
   });
 });
 
+describe("explicit engines", () => {
+  it("freezes the selected engines and durable record id before launching", async () => {
+    let token = "";
+    const response = await handleVisibilityStart(post("/run", startBody({ engines: ["perplexity", "chatgpt"] })), deps({ startRun: async (value) => { token = value; return { runId: "workflow-1" }; } }));
+    expect(response.status).toBe(200);
+    const input = open<Record<string, unknown>>("gg_geo_visibility_input", token, deps().now);
+    expect(input?.engines).toEqual(["chatgpt", "perplexity"]);
+    expect(input?.recordRunId).toMatch(/^[a-f0-9-]{36}$/);
+    expect((await body(response)).data).toMatchObject({ engines: ["chatgpt", "perplexity"], calls: 150 });
+  });
+  it.each([[], ["other"], ["chatgpt", "chatgpt"]])("refuses invalid engine selections before spending: %j", async (...engines) => {
+    const spend = vi.fn(async () => true);
+    const response = await handleVisibilityStart(post("/run", startBody({ engines })), deps({ consumeDailyRun: spend }));
+    expect(response.status).toBe(400);
+    expect(spend).not.toHaveBeenCalled();
+  });
+});
+
 describe("load", () => {
   it("returns the frozen versions with the counts the estimate is built from", async () => {
     const response = await handleVisibilityLoad(post("/load", {}), deps());

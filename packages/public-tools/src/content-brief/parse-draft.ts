@@ -19,7 +19,6 @@ import {
 import { CONTENT_BRIEF_SCHEMA, DRAFT_RESULT_SCHEMA } from "./contract.ts";
 import type {
   ClaimState,
-  ContentBrief,
   Coverage,
   CoverageItem,
   DraftResult,
@@ -75,7 +74,9 @@ import {
 import type { Decoded, Decoder, Ok, ParseBriefFailure } from "./parse-brief-shape.ts";
 import { validateSectionOutput } from "./validate-section.ts";
 import type { SectionEvidence } from "./validate-section.ts";
-
+import { GEO_CONTENT_BRIEF_SCHEMA, GEO_OUTLINE_CAP, isGeoContentBrief, type SharedContentBrief as ContentBrief } from "./geo-contract.ts";
+import { carriedGeoSectionEvidence, geoDraftFacts, geoMissingFacts, geoOutlineSupportViolation } from "./geo-draft.ts";
+import { geoOriginShape, geoEvidenceShape } from "./parse-geo-brief.ts";
 /* ------------------------------------------------------------------ */
 /* public surface                                                       */
 /* ------------------------------------------------------------------ */
@@ -137,7 +138,7 @@ const NOT_A_COVERAGE_FAILURE: ReadonlySet<UnavailableReason> = new Set<Unavailab
 const tokens = { input_tokens: nullable(integer()), output_tokens: nullable(integer()) };
 
 /** One entry per failed section (aggregateSectionLlm), so never more than the outline cap. */
-const failedReasons = array(oneOf(SECTION_FAIL_REASONS), { max: OUTLINE_CAP });
+const failedReasons = array(oneOf(SECTION_FAIL_REASONS), { max: GEO_OUTLINE_CAP });
 const aggregateAvailable = object({
   status: oneOf(AVAILABLE_STATUSES),
   calls: integer(),
@@ -157,19 +158,23 @@ const llmAggregateMeta: Decoder<LlmAggregateMeta> = tagged("status", {
 /* sections                                                             */
 /* ------------------------------------------------------------------ */
 
-const evidenceRef = identifier("[CP]");
+const evidenceRef = identifier("[KCP]");
 
-const sentence = object({
+const seoSentence = object({
   text: modelText(SENTENCE_MAX_CHARS),
   claim: oneOf(CLAIMS),
   evidence_refs: array(evidenceRef, { unique: true }),
   support_count: integer(),
 });
+const sentence: Decoder<import("./contract.ts").Sentence> = (value, path) => {
+  if (!isRecord(value) || !("sources" in value)) return seoSentence(value, path);
+  return object({ text: modelText(SENTENCE_MAX_CHARS), claim: oneOf(CLAIMS), evidence_refs: array(evidenceRef, { unique: true }), support_count: integer(), sources: nonEmpty(oneOf(["kb", "crawl", "product_profile", "model"] as const), { max: 4, unique: true }) })(value, path);
+};
 
 const sectionBase = {
   id: identifier("O"),
   h2: modelText(MODEL_TEXT_MAX_CHARS),
-  answers: nonEmpty(identifier("Q"), { max: MUST_ANSWER_CAP, unique: true }),
+  answers: array(identifier("Q"), { max: MUST_ANSWER_CAP, unique: true }),
 };
 
 /** The toolkit's integer(min), capped at the retry limit. */
@@ -235,7 +240,7 @@ const draftSection: Decoder<DraftSection> = (input, path) => {
   return checkSectionLlm(decoded.value, path) ?? decoded;
 };
 
-const sections = array(draftSection, { max: OUTLINE_CAP });
+const sections = array(draftSection, { max: GEO_OUTLINE_CAP });
 
 /* ------------------------------------------------------------------ */
 /* coverage, verify list, settings, run                                 */
@@ -334,16 +339,16 @@ const draftRunMeta: Decoder<DraftRunMeta> = object({
 const draftResult: Decoder<DraftResult> = object({
   schema: literal(DRAFT_RESULT_SCHEMA),
   run: draftRunMeta,
-  brief_ref: object({
+  brief_ref: tagged("schema", { [CONTENT_BRIEF_SCHEMA]: object({
     schema: literal(CONTENT_BRIEF_SCHEMA),
     run_id: text(FREE_TEXT_MAX_CHARS, 1),
     fingerprint: text(FREE_TEXT_MAX_CHARS, 1),
     keyword: text(FREE_TEXT_MAX_CHARS, 1),
-  }),
+  }), [GEO_CONTENT_BRIEF_SCHEMA]: object({ schema: literal(GEO_CONTENT_BRIEF_SCHEMA), run_id: text(FREE_TEXT_MAX_CHARS, 1), fingerprint: text(FREE_TEXT_MAX_CHARS, 1), keyword: text(FREE_TEXT_MAX_CHARS, 1), geo_origin: geoOriginShape, evidence: geoEvidenceShape }) }),
   settings,
   sections,
   coverage,
-  verify_before_publish: array(verifyItem, { max: OUTLINE_CAP * SECTION_MAX_SENTENCES }),
+  verify_before_publish: array(verifyItem, { max: GEO_OUTLINE_CAP * SECTION_MAX_SENTENCES }),
   totals: object({ word_count: integer() }),
 });
 
@@ -389,6 +394,7 @@ interface Ledger {
  * here even though the brief carries it.
  */
 export function sectionEvidenceFor(brief: ContentBrief, sectionId: string, settings: DraftResult["settings"]): SectionEvidence {
+  if (isGeoContentBrief(brief)) return { citableCrawlIds: new Set<string>(), profileFacts: new Map(), stanceAllowed: false, geoFacts: new Map(geoDraftFacts(brief, sectionId, settings).map(fact => [fact.id, fact])), geoMissingFacts: geoMissingFacts(brief) };
   const scope = sectionEvidenceScope(brief, sectionId, settings);
   const facts = (brief.evidence.profile?.facts ?? []).filter((fact) => scope.profileFactIds.has(fact.id));
   return {
@@ -398,13 +404,11 @@ export function sectionEvidenceFor(brief: ContentBrief, sectionId: string, setti
   };
 }
 
-/**
- * Without the brief every reference is taken on trust as a citable page or
- * a first-hand fact, so only the claim rules and the derived counts are
- * checked; existence, scope and derivation wait for the brief.
- */
+/** Shape-only checks do not authenticate carried receipts; exact ledger checking requires the brief. */
 function permissiveEvidenceOf(section: OkSection): SectionEvidence {
   const refs = section.body.paragraphs.flatMap((paragraph) => paragraph.sentences.flatMap((item) => item.evidence_refs));
+  const geo = carriedGeoSectionEvidence(section);
+  if (geo !== null) return geo;
   const facts = refs
     .filter((ref) => ref.startsWith("P"))
     .map((id): ProfileFact => ({ id, field: "", text: "", derivation: "declared", provenance: { method: "observed", origin: "product_profile" } }));
@@ -449,16 +453,19 @@ function checkSections(list: readonly DraftSection[], ledger: Ledger | null, pat
 
 function checkBriefRef(result: DraftResult, brief: ContentBrief): Violation {
   const expected: DraftResult["brief_ref"] = {
-    schema: CONTENT_BRIEF_SCHEMA,
+    schema: brief.schema,
     run_id: brief.run.run_id,
     fingerprint: brief.run.fingerprint,
     keyword: brief.keyword.primary,
+    ...(isGeoContentBrief(brief) ? { geo_origin: brief.geo_origin, evidence: brief.evidence } : {}),
   };
   return recomputed(expected, result.brief_ref, "brief_ref");
 }
 
 /** Every writable outline section, in outline order, with the outline's own h2 and answers. */
 function checkPlan(list: readonly DraftSection[], brief: ContentBrief, path: string): Violation {
+  const headingFailure = isGeoContentBrief(brief) ? geoOutlineSupportViolation(brief) : null;
+  if (headingFailure !== null) return reference(`brief.${headingFailure}`);
   const plan = planSections(brief, brief.draft_readiness.writable);
   if ("ok" in plan || list.length !== plan.requested.length) return reference(path);
   for (const [index, expected] of plan.requested.entries()) {
@@ -598,15 +605,16 @@ function checkLlmSections(result: DraftResult, trusted: Trusted): Violation {
 
 const LLM_COVERAGE = "run.reads.llm_coverage";
 
-function ownerMap(list: readonly DraftSection[]): Map<string, DraftSection> {
-  const owner = new Map<string, DraftSection>();
+function ownerMap(list: readonly DraftSection[]): Map<string, DraftSection[]> {
+  const owner = new Map<string, DraftSection[]>();
   for (const section of list) {
-    for (const question of section.answers) owner.set(question, section);
+    for (const question of section.answers) owner.set(question, [...(owner.get(question) ?? []), section]);
   }
   return owner;
 }
 
-function checkCoverageItem(item: CoverageItem, owner: DraftSection | undefined, okIds: ReadonlySet<string>, path: string): Violation {
+function checkCoverageItem(item: CoverageItem, owners: readonly DraftSection[] | undefined, okIds: ReadonlySet<string>, path: string): Violation {
+  const owner = owners?.find(section => section.status === "ok") ?? owners?.find(section => section.status === "failed") ?? owners?.[0];
   if (item.method === "heuristic") {
     if (owner === undefined || owner.status === "ok") return reference(at(path, "method"));
     const cause = owner.status === "failed" ? "section_failed" : "section_skipped";
@@ -726,6 +734,12 @@ function checkCoverageBound(result: DraftResult, brief: ContentBrief): Violation
 /* ------------------------------------------------------------------ */
 
 function firstViolation(result: DraftResult, brief: ContentBrief | null, trusted: Trusted): Violation {
+  const geo = result.brief_ref.schema === GEO_CONTENT_BRIEF_SCHEMA;
+  if (!geo && result.sections.length > OUTLINE_CAP) return invalid("sections");
+  if (!geo) { const empty = result.sections.findIndex(section => section.answers.length === 0); if (empty >= 0) return invalid(`sections[${empty}].answers`); }
+  for (const section of result.sections) if (section.status === "ok") {
+    if (section.body.paragraphs.some(paragraph => paragraph.sentences.some(sentence => (sentence.sources !== undefined) !== geo))) return reference("sections.body.sources");
+  }
   const ledger: Ledger | null = brief === null ? null : { brief, settings: result.settings };
   return (
     // A draft written against another brief, or a section outside its outline, is refused
@@ -772,6 +786,7 @@ export async function parseDraftResult(input: unknown, brief: ContentBrief, deps
 
 /** The `sections` of a section-rerun request: shape and caps, then bound to `brief` under `settings` like a result's sections. */
 export function parseDraftSections(input: unknown, brief: ContentBrief, settings: DraftResult["settings"]): ParseDraftSectionsResult {
+  if (!isGeoContentBrief(brief) && Array.isArray(input) && input.length > OUTLINE_CAP) return invalid("sections");
   const decoded = sections(input, "sections");
   if (!decoded.ok) return decoded;
   return checkPlan(decoded.value, brief, "sections") ?? checkSections(decoded.value, { brief, settings }, "sections") ?? decoded;
