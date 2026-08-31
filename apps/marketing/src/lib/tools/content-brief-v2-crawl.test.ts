@@ -94,6 +94,18 @@ describe("crawlContentBriefV2Targets", () => {
     });
   });
 
+  it.each([competitor(1), owned()])("does not admit an HTTP 200 reCAPTCHA interstitial as $role evidence", async (target) => {
+    const body = '<html><head><title>Checking your browser - reCAPTCHA</title><base href="https://www.google.com/recaptcha/challengepage/"></head><body><div class="g-recaptcha"></div><p>Checking your browser before accessing source.test ...</p><p>Click here if you are not automatically redirected after 5 seconds.</p></body></html>';
+    expect(await run([target], async (url) => page(url, { body }))).toEqual({ observed: [], failed: [{ id: target.id, url: target.url, reason: "insufficient_evidence" }] });
+  });
+
+  it("keeps a real article that quotes browser-check copy and embeds an ordinary CAPTCHA", async () => {
+    const body = '<html><head><title>Checking your browser - reCAPTCHA</title><link rel="canonical" href="https://source1.test/article"></head><body><article><h2>Understanding browser checks</h2><p>Checking your browser before accessing source.test ...</p><p>This article explains why this message appears and how site owners diagnose access failures.</p></article><form><div class="g-recaptcha"></div></form></body></html>';
+    const result = await run([competitor(1)], async (url) => page(url, { body }));
+    expect(result.failed).toEqual([]);
+    expect(result.observed[0]?.research.segments.some((segment) => segment.text.includes("site owners diagnose"))).toBe(true);
+  });
+
   it("keeps the extractor's segment and character caps with omitted counts", async () => {
     const body = `<main>${Array.from({ length: 15 }, () => `<p>${"字".repeat(350)}</p>`).join("")}</main>`;
     const result = await run([competitor(1)], async (url) => page(url, { body }), "zh");
