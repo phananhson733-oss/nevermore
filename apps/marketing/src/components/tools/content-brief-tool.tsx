@@ -7,15 +7,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import {
-  CONTENT_BRIEF_SCHEMA,
-  type ContentBrief,
-} from "@sf/public-tools/content-brief/contract";
+import { CONTENT_BRIEF_V2_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
+import type { ContentBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
+import { parseContentBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
 import {
   RUN_BUDGET_MS,
-  SERP_DEPTH,
   SUPPORTING_KEYWORDS_MAX,
-  isWhitespaceTokenizedLanguage,
 } from "@sf/public-tools/content-brief/constants";
 
 import {
@@ -27,7 +24,7 @@ import {
 import { SignInDialog } from "../auth/sign-in-dialog";
 import { trackMarketingEvent } from "../layout/google-analytics";
 import { isContentBriefErrorCode } from "./content-brief-codes";
-import { ContentBriefResults } from "./content-brief-results";
+import { ContentBriefV2Results } from "./content-brief-v2-results";
 import {
   countSupportingInput,
   parseSupportingInput,
@@ -60,47 +57,6 @@ function responseErrorCode(body: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * The shape guard a 200 has to pass before it renders.
- *
- * Deliberately shallow: the draft-side `parse-brief` is the full zod parser,
- * and re-running it here would double the client bundle for a check the
- * server already made. What this catches is a body from a different route
- * or contract version, which is the one thing a cached or proxied response
- * can hand back with a 200.
- */
-const BRIEF_FIELDS = [
-  "keyword",
-  "evidence",
-  "verdict",
-  "intent",
-  "format",
-  "length",
-  "must_answer",
-  "outline",
-  "gap_angle",
-  "internal_links",
-  "do_not_cover",
-  "draft_readiness",
-  "budget",
-] as const;
-
-function responseBrief(body: unknown): ContentBrief | null {
-  if (!isRecord(body) || body.schema !== CONTENT_BRIEF_SCHEMA) return null;
-  if (!isRecord(body.run) || !isRecord(body.run.reads)) return null;
-  if (typeof body.run.mode !== "string" || typeof body.run.fingerprint !== "string") {
-    return null;
-  }
-  for (const field of BRIEF_FIELDS) {
-    if (!isRecord(body[field])) return null;
-  }
-  return body as unknown as ContentBrief;
-}
-
 export interface ContentBriefToolProps {
   readonly locale: string;
   readonly properties: readonly string[] | null;
@@ -120,7 +76,7 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [brief, setBrief] = useState<ContentBrief | null>(null);
+  const [brief, setBrief] = useState<ContentBriefV2 | null>(null);
   // Native disclosure state can change before its queued toggle event fires.
   // Keep one source of truth and explicitly close/reopen only at run outcomes.
   const settingsRef = useRef<HTMLDetailsElement | null>(null);
@@ -160,7 +116,6 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
 
   const primaryInvalid = validationKey === "validation.primaryRequired";
   const supportingInvalid = validationKey === "validation.supportingLimit";
-  const languageUnsupported = !isWhitespaceTokenizedLanguage(language);
   const hasProperties = properties !== null && properties.length > 0;
   const websiteSelectDisabled =
     phase === "running" || websites.phase !== "ready";
@@ -189,7 +144,6 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
     setValidationKey(null);
     setErrorCode(null);
     submissionLocked.current = true;
-    setBrief(null);
     const controller = new AbortController();
     activeRequest.current = controller;
     setPhase("running");
@@ -221,6 +175,7 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
       stage = "tool";
       trackMarketingEvent("tool_start", { tool_name: "content_brief" });
       const requestBody = {
+        response_schema: CONTENT_BRIEF_V2_SCHEMA,
         primary: primaryKeyword,
         supporting: parsed.keywords,
         market,
@@ -236,8 +191,10 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
       });
       const body: unknown = await response.json();
       if (!isCurrent(controller)) return;
-      const nextBrief = responseBrief(body);
-      if (!response.ok || nextBrief === null) {
+      const decoded = response.ok ? await parseContentBriefV2(body) : null;
+      // Fingerprinting is asynchronous; obsolete runs must not publish.
+      if (!isCurrent(controller)) return;
+      if (decoded === null || !decoded.ok) {
         const nextCode = responseErrorCode(body);
         setErrorCode(
           nextCode !== null && isContentBriefErrorCode(nextCode)
@@ -249,7 +206,7 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
         setPhase("idle");
         return;
       }
-      setBrief(nextBrief);
+      setBrief(decoded.value);
       settingsRef.current?.removeAttribute("open");
       setPhase("done");
       trackMarketingEvent("tool_complete", { tool_name: "content_brief" });
@@ -300,7 +257,7 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
           {t("form.title")}
         </h2>
         <p className="mt-2 max-w-3xl text-[13px] leading-[1.6] text-text-dark-secondary">
-          {t("form.intro", { depth: SERP_DEPTH })}
+          {t("v2.formIntro")}
         </p>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -353,7 +310,7 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
                 data-supporting-hint
                 className="text-[11.5px] leading-[1.5] text-text-dark-secondary"
               >
-                {t("fields.supporting.hint", { max: SUPPORTING_KEYWORDS_MAX })}
+                {t("v2.supportingHint", { max: SUPPORTING_KEYWORDS_MAX })}
               </p>
               <p
                 data-supporting-count
@@ -394,9 +351,6 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
                 value={language}
                 onChange={(event) => setLanguage(event.target.value)}
                 disabled={phase === "running"}
-                aria-describedby={
-                  languageUnsupported ? "content-brief-language-hint" : undefined
-                }
                 className={FIELD}
               >
                 {SERP_LANGUAGE_OPTIONS.map((option) => (
@@ -406,15 +360,6 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
                 ))}
               </select>
             </label>
-            {languageUnsupported ? (
-              <p
-                id="content-brief-language-hint"
-                data-language-unsupported
-                className="mt-2 text-[11.5px] leading-[1.5] text-brand-warning"
-              >
-                {t("fields.language.unsupported")}
-              </p>
-            ) : null}
           </div>
 
           <div>
@@ -548,11 +493,12 @@ export function ContentBriefTool({ locale, properties }: ContentBriefToolProps) 
           ref={resultsRef}
           data-content-brief-result
           role="region"
-          aria-label={t("run.resultLabel", { keyword: brief.keyword.primary })}
+          aria-label={t("run.resultLabel", { keyword: brief.context.input.primary })}
           tabIndex={-1}
           className="min-w-0 scroll-mt-24 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
         >
-          <ContentBriefResults brief={brief} locale={locale} />
+          {phase !== "done" ? <p data-previous-brief className="mt-4 text-[12px] text-text-dark-secondary">{t("v2.previousResult")}</p> : null}
+          <ContentBriefV2Results key={brief.run.fingerprint} brief={brief} locale={locale} />
         </div>
       ) : null}
       <SignInDialog open={signInOpen} onOpenChange={setSignInOpen} />

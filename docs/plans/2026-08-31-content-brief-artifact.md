@@ -125,13 +125,13 @@ Local generation/confirmation batch is implemented and independently spec/qualit
 
 ## Task 3: Page ownership, owned-page research and rewrite plan
 
-Status: pending Task 2 design freeze.
+Status: implemented locally in the reviewed v2 generation/handler chain (4aca120a, 09b6e348); live semantic canary remains pending.
 
 Required scope: primary/supporting evidence separation, honest uncertainty, bounded target-page read, actionable retain/add/rewrite plan, and failure path that never falls back silently to new-page writing. Cover supporting-only observations and low-position existing pages without asserting impossible competition.
 
 ## Task 4: Outline editing and Draft contract integration
 
-Status: pending Tasks 2–3.
+Status: in progress. The actual Brief v2 editor/confirmation/export flow now passes local unit, build and 28-case browser verification. The Draft v2 intake/generation/coverage/rerun/handoff path is not yet implemented; do not declare this task complete. See `apps/marketing/docs/reviews/2026-08-31-content-brief-v2-editor/acceptance.md`.
 
 Required scope: controlled heading/order edits, immutable questions/evidence, explicit revision confirmation and causal fingerprint, v1/v2 intake, exact handoff and rerun binding, and Draft generation driven by create/update plan. Recognize GEO Brief imports and explain the unsupported cross-tool route without coercion.
 
