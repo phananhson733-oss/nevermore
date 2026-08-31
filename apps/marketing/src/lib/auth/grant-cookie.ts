@@ -1,5 +1,5 @@
-// @input  -- a cookie jar, a clock, and a way to refresh and re-list a Google grant
-// @output -- the grant to use now, or the reason there is none, with cookies brought up to date
+// @input  -- a cookie jar, clock, Google grant readers, and optional explicit property refresh
+// @output -- the usable grant or refusal, with fresh properties persisted when explicitly requested
 // @pos    -- the only place a stored Search Console grant is renewed, kept, or dropped
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -287,6 +287,8 @@ export async function resolveGrant(input: {
   readonly refresh: (refreshToken: string) => Promise<RefreshResult>;
   /** Best-effort re-listing, so a long-lived grant's picker does not go stale. */
   readonly listProperties?: (accessToken: string) => Promise<readonly string[]>;
+  /** Require a fresh property list; never report the stored list as refreshed. */
+  readonly refreshProperties?: boolean;
 }): Promise<GrantResolution> {
   const { jar, now } = input;
 
@@ -342,7 +344,7 @@ export async function resolveGrant(input: {
   // attribute, so it must never grow a revoke call here. Same rule as the
   // callback's account switch; see `decideSupersededGrant`.
   const identitySub = identitySubFrom(jar.read("gg_id"), now);
-  if (stored.sub !== identitySub) {
+  if (identitySub === null || stored.sub !== identitySub) {
     clearGrantCookies(jar);
     return { kind: "revoked" };
   }
@@ -361,6 +363,9 @@ export async function resolveGrant(input: {
   ) {
     // Sealed before offline access, or malformed. Either way there is nothing
     // to renew with, so it behaves exactly as it did before this existed.
+    if (input.refreshProperties) {
+      return refreshGrantProperties(input, stored.accessToken);
+    }
     return {
       kind: "grant",
       accessToken: stored.accessToken,
@@ -377,6 +382,9 @@ export async function resolveGrant(input: {
   }
 
   if (expiresAt - nowSeconds > REFRESH_SKEW_SECONDS) {
+    if (input.refreshProperties) {
+      return refreshGrantProperties(input, stored.accessToken);
+    }
     return {
       kind: "grant",
       accessToken: stored.accessToken,
@@ -419,6 +427,10 @@ export async function resolveGrant(input: {
     jar.write("gg_gsc", sealed, cookieAttributes("gg_gsc", GRANT_TTL_SECONDS)),
   );
 
+  if (input.refreshProperties) {
+    return refreshGrantProperties(input, refreshed.accessToken);
+  }
+
   // The property list would otherwise be a month-old snapshot, and the page
   // decides "connected" from this cookie alone — so it is re-stamped on every
   // refresh whether or not the re-list succeeds.
@@ -438,6 +450,37 @@ export async function resolveGrant(input: {
     accessToken: refreshed.accessToken,
     properties,
     propertyTotal: total,
+  };
+}
+
+/** Explicit refresh succeeds only with a freshly listed, persisted property set. */
+async function refreshGrantProperties(
+  input: {
+    readonly jar: GrantCookieJar;
+    readonly now: () => number;
+    readonly listProperties?: (accessToken: string) => Promise<readonly string[]>;
+  },
+  accessToken: string,
+): Promise<GrantResolution> {
+  const properties = await listOrKeep(input.listProperties, accessToken);
+  if (properties === null) return { kind: "unavailable" };
+
+  const sealed = sealGrantProperties(properties, GRANT_TTL_SECONDS, input.now);
+  try {
+    input.jar.write(
+      "gg_sites",
+      sealed.value,
+      cookieAttributes("gg_sites", GRANT_TTL_SECONDS),
+    );
+  } catch {
+    return { kind: "unavailable" };
+  }
+
+  return {
+    kind: "grant",
+    accessToken,
+    properties: properties.slice(0, sealed.shown),
+    propertyTotal: properties.length,
   };
 }
 

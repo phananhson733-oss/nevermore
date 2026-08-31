@@ -409,6 +409,170 @@ describe("resolveGrant", () => {
   });
 });
 
+describe("explicit Search Console property refresh", () => {
+  it.each([
+    ["an unexpired token", CONNECTED, "test-access-token", 0],
+    ["an expiring token", EXPIRING, "test-access-token-2", 1],
+    [
+      "a legacy grant without a refresh token",
+      {
+        ...CONNECTED,
+        gg_gsc: sealedGrant({ accessToken: "test-access-token", sub: SUB_A }),
+      },
+      "test-access-token",
+      0,
+    ],
+  ] as const)(
+    "lists new properties once with %s",
+    async (_label, initial, token, refreshCount) => {
+      const { jar, writes, clears } = fakeJar(initial);
+      const refresh = refreshTo(REFRESHED);
+      const properties = ["sc-domain:example.com", "sc-domain:new-site.com"];
+      const listProperties = vi.fn(async () => properties);
+
+      await expect(resolveGrant({
+        jar, now, refresh, listProperties, refreshProperties: true,
+      })).resolves.toEqual({
+        kind: "grant",
+        accessToken: token,
+        properties,
+        propertyTotal: 2,
+      });
+
+      expect(refresh).toHaveBeenCalledTimes(refreshCount);
+      expect(listProperties).toHaveBeenCalledExactlyOnceWith(token);
+      const saved = writes.find((write) => write.name === "gg_sites")?.value;
+      expect(open("gg_sites", saved, now)).toEqual({ properties, total: 2 });
+      expect(clears).toEqual([]);
+    },
+  );
+
+  it("preserves a real empty property list instead of returning the cached list", async () => {
+    const { jar, store } = fakeJar(CONNECTED);
+    await expect(resolveGrant({
+      jar,
+      now,
+      refresh: refreshTo(REFRESHED),
+      refreshProperties: true,
+      listProperties: async () => [],
+    })).resolves.toMatchObject({ kind: "grant", properties: [], propertyTotal: 0 });
+    expect(open("gg_sites", store.get("gg_sites"), now)).toEqual({
+      properties: [], total: 0,
+    });
+  });
+
+  it.each([CONNECTED, EXPIRING])(
+    "never passes stale properties off as a successful refresh",
+    async (initial) => {
+      const { jar, store, clears } = fakeJar(initial);
+      await expect(resolveGrant({
+        jar,
+        now,
+        refresh: refreshTo(REFRESHED),
+        refreshProperties: true,
+        listProperties: async () => {
+          throw new Error("temporary upstream failure");
+        },
+      })).resolves.toEqual({ kind: "unavailable" });
+      expect(store.get("gg_sites")).toBe(initial.gg_sites);
+      expect(store.get("gg_id")).toBe(initial.gg_id);
+      expect(clears).toEqual([]);
+    },
+  );
+
+  it("returns only properties persisted within the cookie budget and keeps the real total", async () => {
+    const { jar, store } = fakeJar(CONNECTED);
+    const properties = Array.from(
+      { length: 100 },
+      (_, index) => `https://long-property-${index}.example.com/some-long-path/`,
+    );
+    const result = await resolveGrant({
+      jar,
+      now,
+      refresh: refreshTo(REFRESHED),
+      refreshProperties: true,
+      listProperties: async () => properties,
+    });
+    const saved = open<{ properties: string[]; total: number }>(
+      "gg_sites", store.get("gg_sites"), now,
+    );
+    expect(saved?.properties.length).toBeGreaterThan(0);
+    expect(saved?.properties.length).toBeLessThan(properties.length);
+    expect(result).toMatchObject({
+      kind: "grant", properties: saved?.properties, propertyTotal: 100,
+    });
+    expect(saved?.total).toBe(100);
+    expect(sealedByteLength(store.get("gg_sites")!)).toBeLessThanOrEqual(
+      MAX_SEALED_VALUE_BYTES,
+    );
+  });
+
+  it.each([
+    { ...CONNECTED, gg_id: sealedIdentity(SUB_B) },
+    { gg_gsc: CONNECTED.gg_gsc, gg_sites: CONNECTED.gg_sites },
+    {
+      gg_gsc: seal(
+        "gg_gsc",
+        { accessToken: "test-access-token", sub: null },
+        GRANT_TTL_SECONDS,
+        now,
+      ),
+      gg_sites: CONNECTED.gg_sites,
+    },
+    {
+      ...CONNECTED,
+      gg_gsc: sealedGrant({
+        accessToken: "test-access-token",
+        refreshToken: "test-refresh-token",
+        accessTokenExpiresAt: NOW_SECONDS + 3_000,
+        grantedAt: NOW_SECONDS - GRANT_ABSOLUTE_MAX_SECONDS - 1,
+        sub: SUB_A,
+      }),
+    },
+  ])(
+    "refuses an unbound or expired grant before listing properties",
+    async (initial) => {
+      const { jar } = fakeJar(initial);
+      const listProperties = vi.fn(async () => ["sc-domain:new-site.com"]);
+      const refresh = refreshTo(REFRESHED);
+      await expect(resolveGrant({
+        jar, now, refresh, listProperties, refreshProperties: true,
+      })).resolves.toEqual({ kind: "revoked" });
+      expect(refresh).not.toHaveBeenCalled();
+      expect(listProperties).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not claim a persisted refresh if the property cookie cannot be written", async () => {
+    const { jar } = fakeJar(CONNECTED);
+    jar.write = () => {
+      throw new Error("read-only cookie jar");
+    };
+    await expect(resolveGrant({
+      jar,
+      now,
+      refresh: refreshTo(REFRESHED),
+      refreshProperties: true,
+      listProperties: async () => ["sc-domain:new-site.com"],
+    })).resolves.toEqual({ kind: "unavailable" });
+  });
+
+  it.each(["invalid_grant", "transient"] as const)(
+    "does not list after a %s token refresh",
+    async (kind) => {
+      const { jar } = fakeJar(EXPIRING);
+      const listProperties = vi.fn(async () => ["sc-domain:new-site.com"]);
+      await expect(resolveGrant({
+        jar, now, refresh: refreshTo({ kind }), listProperties,
+        refreshProperties: true,
+      })).resolves.toEqual({
+        kind: kind === "invalid_grant" ? "revoked" : "unavailable",
+      });
+      expect(listProperties).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe("resolveGrant account binding", () => {
   it("refuses and clears a grant that belongs to a different Google account", async () => {
     // A connects, then B signs in on the same browser. Without this the

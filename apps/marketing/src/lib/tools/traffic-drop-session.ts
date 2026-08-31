@@ -1,5 +1,5 @@
-// @input  -- request cookies and the marketing site's Google grant configuration
-// @output -- whether a Search Console grant is in place, and which properties it covers
+// @input  -- request cookies, Google grant configuration, and optional explicit property refresh
+// @output -- page-safe grant presence or API-only resolved grant with refreshed properties when requested
 // @pos    -- the single seam between the traffic-drop tool and the Google authorization layer
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -143,7 +143,9 @@ export async function readTrafficDropSession(): Promise<TrafficDropSession> {
  * The Set-Cookie reaches the response without any plumbing here: Next copies
  * the route handler's mutable cookies onto whatever the handler returned.
  */
-export async function resolveTrafficDropGrant(): Promise<GrantResolution> {
+export async function resolveTrafficDropGrant(
+  options: { readonly refreshProperties?: boolean } = {},
+): Promise<GrantResolution> {
   if (!isGoogleConnectEnabled()) return { kind: "none" };
   const jar = await cookies();
   const cookieJar: GrantCookieJar = {
@@ -155,6 +157,7 @@ export async function resolveTrafficDropGrant(): Promise<GrantResolution> {
   };
 
   return resolveGrant({
+    ...options,
     jar: cookieJar,
     now: Date.now,
     refresh: (refreshToken) =>
