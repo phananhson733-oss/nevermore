@@ -47,6 +47,62 @@ async function run(replies: readonly (string | Error | KeywordLlmCompletion)[] =
 }
 
 describe("Draft v2 frozen section generation", () => {
+  it.each(["none", "gap_only"] as const)("keeps source attribution mandatory when product mention is %s", async (product_mention) => {
+    const { result, requests } = await run([RESPONSE], undefined, { ...SETTINGS, product_mention });
+    expect(result.status).toBe("ok"); expect(requests).toHaveLength(1);
+    expect(JSON.parse(requests[0]!.user).settings.product_mention).toBe(product_mention);
+    expect(requests[0]!.system).toContain("settings.product_mention controls promotion of the target product only");
+    expect(requests[0]!.system).toContain("Source attribution is not promotion and must not be removed in none or gap_only mode");
+    expect(requests[0]!.system).toContain("include the exact source_domain value from its supporting page_unit in the same sentence");
+    expect(requests[0]!.system).toContain('"the calculator", "the form" or "supplied instructions" alone are not attribution');
+  });
+
+  it("derives each private source_domain from the frozen final URL after redirects without changing evidence", async () => {
+    const finalUrl = "https://Redirected.Provider.Example/free-report";
+    const value = await confirmed({}, brief => ({ ...brief, context: { ...brief.context, research: { ...brief.context.research, pages: brief.context.research.pages.map(page => ({ ...page, final_url: finalUrl })) } } }));
+    const before = JSON.stringify(value); const { result, requests } = await run([RESPONSE], value, { ...SETTINGS, product_mention: "none" });
+    expect(result.status).toBe("ok"); const data = JSON.parse(requests[0]!.user);
+    const page = value.brief.context.research.pages[0]!;
+    expect(new URL(page.url).hostname).not.toBe(new URL(finalUrl).hostname);
+    expect(data.page_units[0].source_domain).toBe("redirected.provider.example");
+    const { source_domain: _domain, ...unit } = data.page_units[0];
+    expect(unit).toEqual({ ...value.brief.context.research.units.find(item => item.id === "U1"), role: page.role, ...page.research.segments[0] });
+    expect(data.pages[0].final_url).toBe(finalUrl);
+    expect(data.paa_questions.every((item: Record<string, unknown>) => !("source_domain" in item))).toBe(true);
+    expect(JSON.stringify(value)).toBe(before); expect(before).not.toContain("source_domain");
+    const actualBytes = new TextEncoder().encode(JSON.stringify({ system: requests[0]!.system, user: requests[0]!.user })).byteLength;
+    const withoutDomain = { ...data, page_units: [unit] };
+    const oldBytes = new TextEncoder().encode(JSON.stringify({ system: requests[0]!.system, user: JSON.stringify(withoutDomain) })).byteLength;
+    expect(actualBytes).toBeGreaterThan(oldBytes); expect(actualBytes).toBeLessThanOrEqual(DRAFT_V2_PROMPT_MAX_BYTES);
+  });
+
+  it("requires provider-specific conditions to retain service attribution in the actual model request", async () => {
+    const { result, requests } = await run();
+    expect(result.status).toBe("ok"); expect(requests).toHaveLength(1);
+    const system = requests[0]!.system;
+    expect(system).toContain("Provider-specific interface steps, pricing, account/email requirements, privacy conditions and download/install requirements");
+    expect(system).toContain("service name in the sentence itself");
+    expect(system).toContain("source domain as a plain-text attribution, not a raw navigation URL");
+    expect(system).toContain("Never generalize one service's conditions to any tool or to the user's own product or site");
+    expect(system).toContain("clean prose when evidence annotations are removed");
+    expect(system).toContain("Do not invent a service or brand name");
+    expect(system).toMatch(/omit the specific promise or use gap with evidence_refs:\[\] and explicit uncertainty/u);
+    expect(system).toContain("never label a generic promise bound");
+    expect(system).toContain("PAA is question evidence, never factual evidence");
+    expect(system).toContain("no embedded link syntax, raw navigation URLs");
+  });
+
+  it("keeps the same service-scope rule on a model-corrected section retry", async () => {
+    const { result, requests } = await run(["{}", RESPONSE]);
+    expect(result.status).toBe("ok"); expect(requests).toHaveLength(2);
+    for (const request of requests) {
+      expect(request.system).toContain("service name in the sentence itself");
+      expect(request.system).toContain("never label a generic promise bound");
+    }
+    expect(requests[1]!.system).toBe(requests[0]!.system);
+    expect(JSON.parse(requests[1]!.user).previous_rejection).toBeTruthy();
+  });
+
   it("accepts literal one-page plus PAA evidence without a v1 page/cluster gate", async () => {
     const { result, requests } = await run();
     expect(result).toEqual({ status: "ok", body: { paragraphs: [{ heading: "Collection timing", sentences: [{ text: "Reporting data arrives late.", claim: "bound", evidence_refs: ["U1"], support_count: 1 }] }], length: { value: 4, unit: "words", tokenizer: "whitespace" } }, llm: { attempts: 1, model_id: "draft-reported", temperature_requested: 0.4, temperature_effective: null, input_tokens: 120, output_tokens: 40 } });
