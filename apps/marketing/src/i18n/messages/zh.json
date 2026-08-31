@@ -2312,10 +2312,11 @@
           "partial": "GSC 最新可用日期仍在更新。暂不判断变化或生成依赖变化的动作；当前观察为暂定数据，不与完整的前期直接比较。",
           "unavailable": "无法确定最新可用统计日期，未推断变化或生成依赖变化的动作。"
         },
-        "exactVerified": "GSC API 精确复核通过。",
+        "exactVerified": "GSC API 已核对",
         "incompleteFrom": "自 {date}（PT）起的数据仍在更新。",
         "previousUnavailable": "上期查询词数据不可得，不推断未出现或发生变化。",
-        "exactVerifiedCurrent": "仅本期：GSC API 精确复核通过。"
+        "exactVerifiedCurrent": "仅本期 · API 已核对",
+        "sourceLine": "Google Search Console API · 日期按太平洋时间（PT）统计"
       }
     },
     "trafficDrop": {

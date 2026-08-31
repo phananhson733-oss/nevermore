@@ -657,7 +657,7 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     expect(rows[0]?.querySelector("[data-api-evidence=verified]")).not.toBeNull();
     expect(rows[1]?.querySelector("[data-api-evidence=verified]")).toBeNull();
     expect(host.querySelector("[data-api-verification]")).toBeNull();
-    expect(rows[0]?.querySelector("[data-gsc-evidence]")?.textContent).toContain("not a completed website check");
+    expect(rows[0]?.querySelector("[data-evidence-source]")?.getAttribute("title")).toContain("not a completed website check");
   });
 
   it("leads with the default 24h trend and removes the run-status facts and old KPI block", async () => {

@@ -1,8 +1,10 @@
 "use client";
 
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import type { DailyBriefingWindows, DailyBriefingVerification, DailyBriefingQueryObservation } from "@sf/public-tools";
 import { dailyBriefingGscLink, type DailyBriefingMetricScope } from "../../lib/tools/daily-briefing-gsc-link";
+import { formatPropertyLabel } from "../../lib/tools/property-label";
+import styles from "./daily-briefing-evidence.module.css";
 
 interface Metrics {
   readonly clicks: number;
@@ -35,6 +37,8 @@ export function DailyBriefingEvidence({ property, windows, scope, query = null, 
   readonly previousEvidence?: DailyBriefingQueryObservation["previousEvidence"];
 }) {
   const t = useTranslations("tools.dailyBriefing");
+  const locale = useLocale();
+  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
   const verified = verification?.items.some((item) =>
     item.status === "verified" && item.metricScope === scope &&
     item.query === (scope === "query" || scope === "query_page" ? query : null) &&
@@ -55,26 +59,46 @@ export function DailyBriefingEvidence({ property, windows, scope, query = null, 
     { id: "previous", href: previousHref, window: windows?.previous7Days, metrics: previousMeasured ? previous : null },
   ] as const;
   return (
-    <details data-gsc-evidence data-metric-scope={scope} className="mt-2 text-[11px] leading-[1.55] text-text-dark-secondary">
-      <summary className="cursor-pointer font-medium text-brand-accent-text">{t(`sourceEvidence.scopes.${scope}`)}</summary>
-      {verified ? <p data-api-evidence="verified" className="mt-2 text-brand-accent-text">{t(currentOnlyVerification ? "sourceEvidence.exactVerifiedCurrent" : "sourceEvidence.exactVerified")}</p> : null}
-      <p className="mt-2 break-all">{property} · {t("sourceEvidence.web")}</p>
-      <p>{t(scope === "query" || scope === "property" ? "sourceEvidence.byProperty" : "sourceEvidence.byPage")}</p>
-      {periods.map((period) => (
-        <div key={period.id} className="mt-2">
-          <p>{t(`sourceEvidence.${period.id}`)} · {period.window === undefined ? t("kpis.unavailable") : `${period.window.startDate} – ${period.window.endDate} (PT)`}</p>
-          <p>{period.metrics === null
-            ? t(period.id === "previous" ? previousMessage : "sourceEvidence.noRecord")
-            : t("sourceEvidence.metrics", {
-              clicks: period.metrics.clicks,
-              impressions: period.metrics.impressions,
-              ctr: period.metrics.impressions > 0 ? `${(period.metrics.clicks / period.metrics.impressions * 100).toFixed(1)}%` : t("kpis.unavailable"),
-              position: period.metrics.position === null ? t("kpis.unavailable") : period.metrics.position.toFixed(1),
-            })}</p>
-          {period.href === null ? null : <a data-gsc-period={period.id} href={period.href} target="_blank" rel="noopener noreferrer" className="inline-flex mt-1 underline underline-offset-4">{t(`sourceEvidence.open${period.id === "current" ? "Current" : "Previous"}`)}</a>}
+    <details data-gsc-evidence data-metric-scope={scope} className={styles.evidence}>
+      <summary className={styles.summary}>{t(`sourceEvidence.scopes.${scope}`)}</summary>
+      <div className={styles.body}>
+        <div className={styles.context}>
+          <span className={styles.site}>{formatPropertyLabel(property)}</span>
+          {verified ? <span data-api-evidence="verified" className={styles.verified}>{t(currentOnlyVerification ? "sourceEvidence.exactVerifiedCurrent" : "sourceEvidence.exactVerified")}</span> : null}
         </div>
-      ))}
-      <p className="mt-2">{t("sourceEvidence.websiteNote")}</p>
+        <div className={styles.scope}>{t("sourceEvidence.web")}</div>
+        <div data-evidence-periods className={styles.periods}>
+          {periods.map((period) => (
+            <section key={period.id} data-evidence-period={period.id} className={styles.period} aria-label={t(`sourceEvidence.${period.id}`)}>
+              <h4 className={styles.periodTitle}>{t(`sourceEvidence.${period.id}`)}</h4>
+              <div className={styles.dates}>{period.window === undefined ? t("kpis.unavailable") : <>
+                <time dateTime={period.window.startDate}>{period.window.startDate}</time>
+                <span> – </span>
+                <time dateTime={period.window.endDate}>{period.window.endDate}</time>
+              </>}</div>
+              {period.metrics === null ? (
+                <div data-evidence-unavailable className={styles.unavailable}>{t(period.id === "previous" ? previousMessage : "sourceEvidence.noRecord")}</div>
+              ) : (
+                <dl className={styles.metrics}>
+                  {([
+                    ["clicks", number.format(period.metrics.clicks)],
+                    ["impressions", number.format(period.metrics.impressions)],
+                    ["ctr", period.metrics.impressions > 0 ? `${(period.metrics.clicks / period.metrics.impressions * 100).toFixed(1)}%` : t("kpis.unavailable")],
+                    ["position", period.metrics.position === null ? t("kpis.unavailable") : period.metrics.position.toFixed(1)],
+                  ] as const).map(([metric, value]) => (
+                    <div key={metric} data-evidence-metric={metric} className={styles.metric}>
+                      <dt className={styles.label}>{t(`trend.metrics.${metric}`)}</dt>
+                      <dd className={styles.value}>{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              {period.href === null ? null : <a data-gsc-period={period.id} href={period.href} target="_blank" rel="noopener noreferrer" className={styles.link}>{t(`sourceEvidence.open${period.id === "current" ? "Current" : "Previous"}`)}<span aria-hidden="true">↗</span></a>}
+            </section>
+          ))}
+        </div>
+        <div data-evidence-source className={styles.source} title={t("sourceEvidence.websiteNote")}>{t("sourceEvidence.sourceLine")}</div>
+      </div>
     </details>
   );
 }
