@@ -7659,8 +7659,8 @@
         "qualificationSignals": "匹配信号",
         "disqualifiers": "排除信号",
         "directCompetitors": "直接竞品",
-        "indirectAlternatives": "间接替代方案",
-        "excludedAlternatives": "排除的替代方案",
+        "indirectAlternatives": "间接竞品",
+        "excludedAlternatives": "排除的候选",
         "firstOutcome": "首个结果",
         "country": "主要市场",
         "locale": "主要语言"
@@ -7685,7 +7685,17 @@
         "notFound": "没有找到这个网站。",
         "productSection": "产品",
         "icpSection": "核心用户画像",
-        "marketSection": "市场与替代方案",
+        "marketSection": "市场与语言",
+        "competitorSection": "竞品",
+        "competitors": {
+          "description": "先查看搜索证据，再判断直接竞品、间接竞品或排除。系统建议只用于参考，不会自动写入已确认画像。",
+          "systemSuggestion": "系统建议 · 待确认",
+          "savedClassification": "已保存的分类",
+          "draftClassification": "草稿分类 · 尚未保存",
+          "empty": "暂未保存分类或获取搜索建议。",
+          "editSaved": "编辑已保存的分类",
+          "manualHelp": "其他工具只会复用已确认版本里的分类。你可以在这里增删或调整，也可以在上方对搜索候选逐项分类，完成后再确认画像。"
+        },
         "sourcesSection": "来源与版本",
         "listAdd": "添加一项",
         "listRemove": "移除",
@@ -7718,6 +7728,8 @@
           "action": "确认画像",
           "confirming": "正在确认…",
           "version": "已确认 v{revision}",
+          "edit": "编辑画像",
+          "body": "已保存为可复用的确认版本，可随时展开编辑。",
           "failed": "画像确认失败，请检查字段后重试。"
         },
         "draftVersion": "草稿 v{version}",
