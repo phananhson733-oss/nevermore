@@ -14,7 +14,8 @@ import {
 } from "@sf/public-tools/content-brief/constants";
 import type { ContentBrief, CrawlObservation } from "@sf/public-tools/content-brief/contract";
 import { parseContentBrief } from "@sf/public-tools/content-brief/parse-brief";
-import { CONTENT_BRIEF_V2_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
+import { CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
+import { buildSerpObservations } from "@sf/public-tools/content-brief/assemble";
 import { parseContentBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
 
 import type { MarketingWebsiteProfileV1 } from "../account-websites/contracts.ts";
@@ -347,7 +348,7 @@ describe("parseContentBriefRequest", () => {
   it("refuses unknown markets, languages, keys and blank optionals", () => {
     expect(parseContentBriefRequest(validBody({ market: "XX" }))).toEqual({ ok: false, code: "unsupported_market" });
     expect(parseContentBriefRequest(validBody({ language: "xx" }))).toEqual({ ok: false, code: "unsupported_language" });
-    expect(parseContentBriefRequest(validBody({ response_schema: "gengrowth.content_brief/v3" }))).toEqual({ ok: false, code: "invalid_request" });
+    expect(parseContentBriefRequest(validBody({ response_schema: "gengrowth.content_brief/v4" }))).toEqual({ ok: false, code: "invalid_request" });
     expect(parseContentBriefRequest(validBody({ extra: 1 }))).toEqual({ ok: false, code: "invalid_request" });
     expect(parseContentBriefRequest(validBody({ gsc_property: "  " }))).toEqual({ ok: false, code: "invalid_request" });
   });
@@ -422,7 +423,7 @@ describe("handleContentBriefRequest admission", () => {
     ]);
   });
 
-  it.each(["gengrowth.content_brief/v1", CONTENT_BRIEF_V2_SCHEMA])("fails closed when the quota store is unavailable (%s)", async (response_schema) => {
+  it.each(["gengrowth.content_brief/v1", CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA])("fails closed when the quota store is unavailable (%s)", async (response_schema) => {
     const response = await handleContentBriefRequest(
       request(validBody({ response_schema })),
       dependencies({ consumeQuota: async () => ({ kind: "unavailable", reason: "store_down" }) }),
@@ -443,7 +444,7 @@ describe("handleContentBriefRequest admission", () => {
 /* ------------------------------------------------------------------ */
 
 describe("handleContentBriefRequest GSC preflight", () => {
-  it.each(["gengrowth.content_brief/v1", CONTENT_BRIEF_V2_SCHEMA])("refuses a property the visitor never granted, before any paid call (%s)", async (response_schema) => {
+  it.each(["gengrowth.content_brief/v1", CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA])("refuses a property the visitor never granted, before any paid call (%s)", async (response_schema) => {
     const readSerp = vi.fn<ContentBriefHandlerDependencies["readSerp"]>(async () => serpResult());
     const response = await handleContentBriefRequest(
       request(validBody({ gsc_property: "sc-domain:other.example", response_schema })),
@@ -498,7 +499,7 @@ describe("handleContentBriefRequest GSC preflight", () => {
     expect(noSubject.status).toBe(401);
   });
 
-  it.each(["gengrowth.content_brief/v1", CONTENT_BRIEF_V2_SCHEMA])("releases a gate that was acquired after its budget ran out (%s)", async (response_schema) => {
+  it.each(["gengrowth.content_brief/v1", CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA])("releases a gate that was acquired after its budget ran out (%s)", async (response_schema) => {
     vi.useFakeTimers();
     try {
       const release = vi.fn();
@@ -535,6 +536,27 @@ describe("handleContentBriefRequest GSC preflight", () => {
 /* ------------------------------------------------------------------ */
 
 describe("handleContentBriefRequest v2 admission and evidence", () => {
+  it.each([false, true])("freezes real SERP observations only for an explicit v3 request (model unavailable: %s)", async unavailable => {
+    const deps = v2Dependencies(unavailable ? { runLlmV2: async ({ context }) => ({
+      context, output: null, prompt_bytes: 2048,
+      reads: { status: "unavailable", reason: "timeout", attempted: 1, calls: 1, model_id: null, input_tokens: null, output_tokens: null },
+    }) } : {});
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ response_schema: CONTENT_BRIEF_V3_SCHEMA })), deps));
+    expect(brief.schema).toBe(CONTENT_BRIEF_V3_SCHEMA);
+    expect(brief.context.serp).toEqual({ rows: buildSerpObservations(serpResult().rows), read: serpResult().reads });
+    expect(brief.generated === null).toBe(unavailable);
+    expect(lastRunLine(deps)["schema"]).toBe(CONTENT_BRIEF_V3_SCHEMA);
+  });
+
+  it("keeps an uncrawlable raw SERP URL in v3 source evidence without breaking the other pages", async () => {
+    const raw = serpResult();
+    const rows = raw.rows.map((row, index) => index === 0 ? { ...row, url: "not a usable URL" } : row);
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ response_schema: CONTENT_BRIEF_V3_SCHEMA })), v2Dependencies({ readSerp: async () => ({ ...raw, rows }) })));
+    expect(brief.context.serp?.rows[0]?.url).toBe("not a usable URL");
+    expect(brief.context.research.pages.some(page => page.id === "C1")).toBe(false);
+    expect(brief.context.research.pages.length).toBeGreaterThan(0);
+  });
+
   it("normalizes duplicate supporting identities before quotas and returns a usable v2 envelope", async () => {
     const consumeQuota = vi.fn<ContentBriefHandlerDependencies["consumeQuota"]>(async () => ({ kind: "allowed", hits: 1 }));
     const brief = await briefV2Of(await handleContentBriefRequest(
@@ -544,7 +566,7 @@ describe("handleContentBriefRequest v2 admission and evidence", () => {
     expect(consumeQuota).toHaveBeenCalledTimes(3);
   });
 
-  it.each([null, 2, "", "gengrowth.content_brief/v3"])("refuses unsupported schema %j before taking slots or quotas", async (response_schema) => {
+  it.each([null, 2, "", "gengrowth.content_brief/v4"])("refuses unsupported schema %j before taking slots or quotas", async (response_schema) => {
     const acquireSlot = vi.fn<ContentBriefHandlerDependencies["acquireSlot"]>(() => ({ acquired: false }));
     const consumeQuota = vi.fn<ContentBriefHandlerDependencies["consumeQuota"]>();
     const readSerp = vi.fn<ContentBriefHandlerDependencies["readSerp"]>();

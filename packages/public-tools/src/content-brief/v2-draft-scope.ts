@@ -1,9 +1,9 @@
-// @input -- one caller-parsed confirmed Brief v2 and explicit section/settings selection
+// @input -- one caller-parsed confirmed Brief v2/v3 and explicit section/settings selection
 // @output -- section-local frozen question/evidence and observed rewrite context
 // @pos -- pure Draft v2 scope projection; never reparses or re-fingerprints a confirmed revision
 import { invalid, ok, reference, type Decoded } from "./parse-brief-shape.ts";
-import { CONFIRMED_BRIEF_V2_SCHEMA } from "./v2-brief.ts";
-import type { ResearchOutlineItem, ResearchPage, ResearchQuestion } from "./v2-contract.ts";
+import { CONFIRMED_BRIEF_V2_SCHEMA, CONFIRMED_BRIEF_V3_SCHEMA } from "./v2-brief.ts";
+import { CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA, type ResearchOutlineItem, type ResearchPage, type ResearchQuestion } from "./v2-contract.ts";
 import type { DraftV2Settings } from "./v2-draft-contract.ts";
 import type { DraftV2SectionEvidence } from "./v2-draft-section.ts";
 import { sameBriefV2OwnedPage } from "./v2-generation.ts";
@@ -27,7 +27,8 @@ function deliveryPlan(confirmed: ConfirmedBriefV2): Decoded<{
   readonly target_ref: string | null;
   readonly target_page: ResearchPage | null;
 }> {
-  if (confirmed.schema !== CONFIRMED_BRIEF_V2_SCHEMA) return reference("schema");
+  if ((confirmed.schema !== CONFIRMED_BRIEF_V2_SCHEMA || confirmed.brief.schema !== CONTENT_BRIEF_V2_SCHEMA) &&
+      (confirmed.schema !== CONFIRMED_BRIEF_V3_SCHEMA || confirmed.brief.schema !== CONTENT_BRIEF_V3_SCHEMA)) return reference("schema");
   const generated = confirmed.brief.generated;
   if (generated === null || generated.research.outline.length === 0 || generated.research.questions.length === 0 || confirmed.outline.length === 0) return reference("generated.research");
   const plan = generated.page_plan;

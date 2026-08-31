@@ -1,4 +1,4 @@
-// @input  -- native/Next-proxied authenticated requests carrying SEO/GEO shared briefs or exact confirmed Brief v2
+// @input  -- native/Next-proxied authenticated requests carrying SEO/GEO shared briefs or exact confirmed Brief v2/v3
 // @output -- a self-checked versioned Draft result or the stable private error envelope
 // @pos    -- shared admission and schema dispatch; private GEO verification, v1 orchestration and isolated v2 runner
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -44,7 +44,7 @@ import { parseSharedContentBrief as parseContentBrief } from "@sf/public-tools/c
 import { GEO_CONTENT_BRIEF_SCHEMA, GEO_OUTLINE_CAP, geoGenerationLanguage, requireGeoGenerationLanguage, isGeoContentBrief, type GeoContentBrief, type SharedContentBrief as ContentBrief } from "@sf/public-tools/content-brief/geo-contract";
 import { geoDraftFacts, geoMissingFacts } from "@sf/public-tools/content-brief/geo-draft";
 import { parseDraftResult, parseDraftSettings } from "@sf/public-tools/content-brief/parse-draft";
-import { CONFIRMED_BRIEF_V2_MAX_BYTES, CONFIRMED_BRIEF_V2_SCHEMA, parseConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
+import { CONFIRMED_BRIEF_V2_MAX_BYTES, CONFIRMED_BRIEF_V2_SCHEMA, CONFIRMED_BRIEF_V3_SCHEMA, parseConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
 import { DRAFT_V2_REQUEST_MAX_BYTES, DRAFT_V2_SECTION_REQUEST_MAX_BYTES } from "@sf/public-tools/content-brief/v2-draft-contract";
 import { parseDraftResultV2 } from "@sf/public-tools/content-brief/v2-draft";
 import { planDraftV2Sections } from "@sf/public-tools/content-brief/v2-draft-scope";
@@ -590,7 +590,7 @@ export async function handleContentDraftRunRequest(
   dependencies: ContentDraftHandlerDependencies = CONTENT_DRAFT_HANDLER_DEPENDENCIES,
 ): Promise<Response> {
   return handle(request, dependencies, RUN_ENDPOINT, async ({ body, bodyBytes, clock }) => {
-    if (isRecord(body["brief"]) && body["brief"]["schema"] === CONFIRMED_BRIEF_V2_SCHEMA) return handleV2(body, clock, dependencies, false);
+    if (isRecord(body["brief"]) && (body["brief"]["schema"] === CONFIRMED_BRIEF_V2_SCHEMA || body["brief"]["schema"] === CONFIRMED_BRIEF_V3_SCHEMA)) return handleV2(body, clock, dependencies, false);
     if (bodyBytes > DRAFT_REQUEST_MAX_BYTES || !withinBytes(body, DRAFT_REQUEST_MAX_BYTES)) return refuse("payload_too_large", 413);
     const settings = parseDraftSettings(body["settings"]);
     if (!settings.ok) return refuse("invalid_request", 400);
@@ -621,7 +621,7 @@ export async function handleContentDraftSectionRequest(
   dependencies: ContentDraftHandlerDependencies = CONTENT_DRAFT_HANDLER_DEPENDENCIES,
 ): Promise<Response> {
   return handle(request, dependencies, SECTION_ENDPOINT, async ({ body, bodyBytes, clock }) => {
-    if (isRecord(body["brief"]) && body["brief"]["schema"] === CONFIRMED_BRIEF_V2_SCHEMA) return handleV2(body, clock, dependencies, true);
+    if (isRecord(body["brief"]) && (body["brief"]["schema"] === CONFIRMED_BRIEF_V2_SCHEMA || body["brief"]["schema"] === CONFIRMED_BRIEF_V3_SCHEMA)) return handleV2(body, clock, dependencies, true);
     if (bodyBytes > SECTION_REQUEST_MAX_BYTES || !withinBytes(body, SECTION_REQUEST_MAX_BYTES)) return refuse("payload_too_large", 413);
     const sectionId = readId(body["section_id"]);
     if (sectionId === null) return refuse("invalid_request", 400);

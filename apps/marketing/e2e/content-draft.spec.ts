@@ -25,7 +25,7 @@ import {
   draftBrief,
   draftResultFixture,
 } from "@sf/public-tools/content-brief/draft-fixtures";
-import { confirmedDraftV2Fixture } from "@sf/public-tools/content-brief/v2-draft-fixtures";
+import { createConfirmedBriefV3Fixture } from "./content-brief-v3-fixtures.ts";
 import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { TOOL_HANDOFF_KEY } from "../src/lib/tools/tool-handoff";
 import { fulfillJson, installDraftApiGuard as installGuard, openConfirmedBriefV2 } from "./content-draft-e2e-helpers";
@@ -280,9 +280,11 @@ test.describe("brief → draft handoff across a real new tab", () => {
    * content-draft-tool.test.tsx instead.
    */
   test('a left click on "Generate draft" carries the brief into a real new tab, which keeps it for the sign-in reload', async ({ page }) => {
-    const { brief } = await confirmedDraftV2Fixture();
+    const { brief } = await createConfirmedBriefV3Fixture();
     const guard = await installGuard(page, { signedIn: true, briefRun: fulfillJson(brief) });
     const confirmed = await openConfirmedBriefV2(page, brief);
+    expect(confirmed.schema).toBe("gengrowth.confirmed_brief/v3");
+    expect(guard.briefRequests[0]?.postDataJSON()).toMatchObject({ response_schema: "gengrowth.content_brief/v3" });
 
     const [popup] = await Promise.all([
       page.context().waitForEvent("page"),
@@ -300,6 +302,9 @@ test.describe("brief → draft handoff across a real new tab", () => {
     expect(received).not.toBeNull();
     const envelope = JSON.parse(received ?? "null") as { version: number; brief: ConfirmedBriefV2 };
     expect(envelope.version).toBe(2);
+    // The private transport envelope stays v2; its exact confirmed payload is v3.
+    expect(envelope.brief.schema).toBe("gengrowth.confirmed_brief/v3");
+    expect(envelope.brief.brief.context.serp).toEqual(brief.context.serp);
     expect(envelope.brief).toEqual(confirmed);
     expect(await page.evaluate((k) => sessionStorage.getItem(k), key)).toBe(received);
     expect(guard.unexpected).toEqual([]);
@@ -314,9 +319,10 @@ test.describe("brief → draft handoff across a real new tab", () => {
    * receipt that does not happen.
    */
   test('a middle click on "Generate draft" writes the handoff, though Chromium gives the new tab no session storage', async ({ page }) => {
-    const { brief } = await confirmedDraftV2Fixture();
+    const { brief } = await createConfirmedBriefV3Fixture();
     await installGuard(page, { signedIn: true, briefRun: fulfillJson(brief) });
     const confirmed = await openConfirmedBriefV2(page, brief);
+    expect(confirmed.schema).toBe("gengrowth.confirmed_brief/v3");
 
     const [popup] = await Promise.all([
       page.context().waitForEvent("page"),
@@ -331,6 +337,7 @@ test.describe("brief → draft handoff across a real new tab", () => {
     expect(staged).not.toBeNull();
     const envelope = JSON.parse(staged ?? "null") as { version: number; brief: ConfirmedBriefV2 };
     expect(envelope.version).toBe(2);
+    expect(envelope.brief.schema).toBe("gengrowth.confirmed_brief/v3");
     expect(envelope.brief).toEqual(confirmed);
     await expect(popup.locator('[data-intake-phase="empty"]')).toBeVisible();
     expect(await popup.evaluate((k) => sessionStorage.getItem(k), key)).toBeNull();

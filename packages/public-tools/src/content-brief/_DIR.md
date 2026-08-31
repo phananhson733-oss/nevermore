@@ -1,5 +1,12 @@
 # content-brief
 
+## V3 sampled SERP compatibility
+
+- `v2-contract.ts`, `v2-generation-contract.ts`, `v2-generation.ts`, `v2-brief.ts` — explicit v3 Brief/confirmation branch requiring the frozen SERP rows/read snapshot, recomputed S IDs/classification/counts and exact C-to-S source URLs; v2 forbids that field and keeps its historical hashes/bytes. Raw bounded vendor URLs are data, not fetch or link authority.
+- `v2-draft-contract.ts`, `v2-draft.ts`, `v2-draft-scope.ts` — Draft remains v2, accepts exact confirmed v2/v3 and binds the actual confirmation schema; no cross-version relabeling or new factual permission for SERP titles.
+- `parse-brief-shape.ts` — reusable SERP observation decoder factory enables bounded raw v3 vendor URL data without loosening the legacy HTTP URL decoder.
+- `v3-brief.test.ts` — independent v2 hash/byte regression oracles, strict v3 round trips, source-count/rank/identity tampering and confirmation/Draft cross-version rejection.
+
 ## V2 research foundation
 
 - `v2-contract.ts` — separate v2 research types and bounds, plus descriptive length measurement with mixed-script detection. Original observation counts are not an authenticity proof; retained-graph relationships and derived counts are independently checked.

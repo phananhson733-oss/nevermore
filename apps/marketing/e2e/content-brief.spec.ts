@@ -1,5 +1,5 @@
 // @input  -- the Content Brief Builder page served by the standalone build, every API stubbed
-// @output -- v2 Artifact rendering, editing, confirmed export and guarded failure-recovery evidence
+// @output -- v3 Artifact rendering, editing, confirmed export and guarded failure-recovery evidence
 // @pos    -- Brief browser acceptance against a fresh credential-free standalone build
 
 import {
@@ -12,9 +12,10 @@ import {
 } from "@playwright/test";
 
 import { fingerprintBriefV2, parseConfirmedBriefV2, parseContentBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
-import { CONTENT_BRIEF_V2_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
+import { CONTENT_BRIEF_V3_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
 import type { ContentBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
-import { validContentBriefV2 } from "../src/components/tools/content-brief-v2-fixture.ts";
+import { createBriefV3Fixture } from "./content-brief-v3-fixtures.ts";
+import { validContentBriefV2 as legacyBriefFixture } from "../src/components/tools/content-brief-v2-fixture.ts";
 import { THEME_ATTRIBUTE, THEME_STORAGE_KEY } from "../src/lib/theme.ts";
 
 const RUN_REQUEST = "POST /api/tools/content-brief/run";
@@ -145,9 +146,9 @@ async function expectReadableText(locator: Locator, text: string): Promise<void>
   })).toBe(true);
 }
 
-function expectOneV2Run(guard: Guard): void {
+function expectOneV3Run(guard: Guard): void {
   expect(guard.runRequests).toHaveLength(1);
-  expect(guard.runRequests[0]?.postDataJSON()).toMatchObject({ response_schema: CONTENT_BRIEF_V2_SCHEMA });
+  expect(guard.runRequests[0]?.postDataJSON()).toMatchObject({ response_schema: CONTENT_BRIEF_V3_SCHEMA });
   expect(guard.unexpected).toEqual([]);
 }
 
@@ -168,9 +169,11 @@ async function downloadConfirmed(page: Page) {
   if (stream === null) throw new Error("The confirmed JSON download has no readable body");
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  const parsed = await parseConfirmedBriefV2(JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown);
+  const wire = Buffer.concat(chunks).toString("utf8");
+  const parsed = await parseConfirmedBriefV2(JSON.parse(wire) as unknown);
   expect(parsed.ok).toBe(true);
   if (!parsed.ok) throw new Error(`The downloaded confirmed Brief failed parsing: ${parsed.path}`);
+  expect(wire).toBe(JSON.stringify(parsed.value));
   return parsed.value;
 }
 
@@ -311,7 +314,7 @@ test.describe("Content Brief Builder", () => {
   });
 
   test("a run without Search Console renders an undecidable verdict, never 'create'", async ({ page }) => {
-    const brief = await validContentBriefV2({ action: "undecidable" });
+    const brief = await createBriefV3Fixture({ action: "undecidable" });
     const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(brief) });
     await page.goto("/en/tools/content-brief");
     await submitKeyword(page, brief.context.input.primary);
@@ -338,15 +341,15 @@ test.describe("Content Brief Builder", () => {
     await expect(result.locator("[data-confirm-brief]")).toBeDisabled();
     await expect(result.locator("[data-download-confirmed-json]")).toBeDisabled();
 
-    expectOneV2Run(guard);
+    expectOneV3Run(guard);
     const body = guard.runRequests[0]?.postDataJSON() as Record<string, unknown>;
     expect(body).toMatchObject({ primary: brief.context.input.primary, market: "US", language: "en" });
     expect(body["gsc_property"]).toBeUndefined();
     expect(guard.unexpected).toEqual([]);
   });
 
-  test("a model-unavailable result preserves observed source counts and the full technical receipt", async ({ page }) => {
-    const brief = await validContentBriefV2({ unavailable: true });
+  test("a model-unavailable v3 result keeps visible cause, observed business fields and explicit settings recovery", async ({ page }) => {
+    const brief = await createBriefV3Fixture({ unavailable: true, action: "update" });
     const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(brief) });
     await page.goto("/en/tools/content-brief");
     await submitKeyword(page, brief.context.input.primary);
@@ -356,17 +359,72 @@ test.describe("Content Brief Builder", () => {
     await expect(result.locator('[data-source-summary-item="paa"]')).toContainText("2/2");
     await expect(result.locator('[data-source-summary-item="competitors"]')).toContainText("1/1");
     await expect(result.locator('[data-source-summary-item="profile"] [data-read-status]')).toHaveAttribute("data-read-status", "not_used");
+    await expect(result.locator("[data-run-collected]")).toBeVisible();
+    await expect(result.locator("[data-run-timing]")).toContainText("4.2s / 45s");
+    await expect(result.locator("[data-generation-cause]")).toHaveText("Brief generation timed out");
+    await expect(result.locator('[data-field-card="length"]')).toContainText("P25");
+    await expect(result.locator('[data-field-card="length"]')).toContainText("P75");
+    await expect(result.locator("[data-observed-formats]")).toContainText("SERP title + URL heuristic");
+    await expect(result.locator('[data-gsc-match="G1"]')).toBeVisible();
+    await expect(result.locator('[data-owned-candidate="T1"]')).toBeVisible();
+    await expect(result.locator('[data-raw-paa="A1"]')).toHaveText(/Why is reporting delayed\?/u);
+    await expect(result.locator("[data-question-row], [data-verdict-card], [data-outline]")).toHaveCount(0);
     await expect(result.locator("[data-no-outline]")).toBeVisible();
     await expect(result.locator("[data-confirmation-bar]")).toHaveCount(0);
     await expect(result.locator("details[data-run-details]")).toHaveJSProperty("open", false);
     await result.locator("[data-run-details] > summary").click();
     expect(JSON.parse(await result.locator("[data-run-ledger]").innerText())).toEqual(brief.run);
     expect(JSON.parse(await result.locator("[data-evidence-ledger]").innerText())).toEqual(brief.context);
-    expectOneV2Run(guard);
+    const recovery = result.locator("[data-return-to-settings]");
+    await expect(result.locator("[data-recovery-boundary]")).toContainText("new full run");
+    await recovery.focus();
+    await recovery.press("Enter");
+    const settings = page.locator("[data-brief-settings]");
+    const primary = settings.locator('input[name="primary"]');
+    await expect(settings).toHaveJSProperty("open", true);
+    await expect(primary).toBeFocused();
+    await primary.fill("my unsent newer keyword");
+    await settings.locator(":scope > summary").click();
+    await recovery.click();
+    await expect(primary).toHaveValue("my unsent newer keyword");
+    await expect(primary).toBeFocused();
+    await expect(result.locator("[data-brief-header] h3")).toHaveText(brief.context.input.primary);
+    expectOneV3Run(guard);
+  });
+
+  test("a historical v2 receipt still confirms without inventing SERP source rows", async ({ page }) => {
+    const brief = await legacyBriefFixture();
+    const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(brief) });
+    await page.goto("/en/tools/content-brief");
+    await submitKeyword(page, brief.context.input.primary);
+    await expect(page.locator("[data-observed-formats]")).toContainText("URL-only heuristic");
+    await page.locator("[data-confirm-brief]").click();
+    await expect(page.locator("[data-download-confirmed-json]")).toBeEnabled();
+    const confirmed = await downloadConfirmed(page);
+    expect(confirmed.schema).toBe("gengrowth.confirmed_brief/v2");
+    expect(confirmed.brief.context).not.toHaveProperty("serp");
+    expectOneV3Run(guard);
+  });
+
+  test("partial source coverage does not relabel successful v3 generation as a failed model", async ({ page }) => {
+    const base = await createBriefV3Fixture();
+    const brief = await resealFixture({ ...base, context: { ...base.context, serp: { ...base.context.serp!, read: { status: "partial", requested: 10, returned: 10, unresolved: 1 } } },
+      run: { ...base.run, reads: base.run.reads.map((read) => read.source === "serp" ? { ...read, status: "partial" } : read.source === "competitors" ? { ...read, status: "partial", attempted: 3 } : read) } });
+    const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(brief) });
+    await page.goto("/en/tools/content-brief");
+    await submitKeyword(page, brief.context.input.primary);
+    await expect(page.locator("[data-generation-status]")).toHaveText("Ready for review");
+    await expect(page.locator("[data-read-coverage-status]")).toHaveText("Limited evidence");
+    await expect(page.locator('[data-source-summary-item="competitors"]')).toContainText("1/3");
+    await expect(page.locator("[data-serp-format-coverage]")).toContainText("1 unresolved");
+    await expect(page.locator('[data-question-row="Q1"] [data-covered-by]')).toContainText("1/1");
+    await expect(page.locator("[data-generation-failure]")).toHaveCount(0);
+    await expect(page.locator("[data-confirm-brief]")).toBeEnabled();
+    expectOneV3Run(guard);
   });
 
   test("keyboard submission focuses the fixture result and reopening settings does not submit or change its frozen keyword", async ({ page }) => {
-    const brief = await validContentBriefV2();
+    const brief = await createBriefV3Fixture();
     const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(brief) });
     await page.goto("/en/tools/content-brief");
     const settings = page.locator("details[data-brief-settings]");
@@ -394,6 +452,15 @@ test.describe("Content Brief Builder", () => {
     await page.keyboard.press("Space");
     await expect(pageEvidence).toHaveJSProperty("open", false);
     await page.keyboard.press("Tab");
+    const formatEvidence = result.locator("[data-observed-formats] details");
+    await expect(formatEvidence.locator(":scope > summary")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(formatEvidence).toHaveJSProperty("open", true);
+    await expect(formatEvidence.locator('[data-format-source="S9"]')).toContainText("javascript:fixtureOnly()");
+    await expect(formatEvidence.locator('[data-format-source="S9"] a, [data-format-source="S10"] a')).toHaveCount(0);
+    await page.keyboard.press("Space");
+    await expect(formatEvidence).toHaveJSProperty("open", false);
+    await page.keyboard.press("Tab");
     await expect(result.locator('[data-question-row="Q1"] details > summary')).toBeFocused();
     const header = page.locator("[data-brief-header]");
     await expect(header).toBeVisible();
@@ -411,11 +478,11 @@ test.describe("Content Brief Builder", () => {
     await summary.press("Space");
     await expect(settings).toHaveJSProperty("open", false);
     await expect(header.getByRole("heading").first()).toHaveText(brief.context.input.primary);
-    expectOneV2Run(guard);
+    expectOneV3Run(guard);
   });
 
   test("a failed rerun retains the previous confirmed result and its exact downloadable revision", async ({ page }) => {
-    const brief = await validContentBriefV2();
+    const brief = await createBriefV3Fixture();
     let runs = 0;
     const guard = await installGuard(page, { signedIn: true, run: async (route) => {
       runs += 1;
@@ -441,7 +508,7 @@ test.describe("Content Brief Builder", () => {
   });
 
   test("heading edits and section order produce a stable exact confirmed revision, then editing invalidates old exports", async ({ page }) => {
-    const brief = await validContentBriefV2();
+    const brief = await createBriefV3Fixture();
     const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(brief) });
     await page.goto("/en/tools/content-brief");
     await submitKeyword(page, brief.context.input.primary);
@@ -466,6 +533,7 @@ test.describe("Content Brief Builder", () => {
     await expect(result.locator("[data-confirm-brief]")).toBeDisabled();
     await expect(result.locator("[data-copy-confirmed-json]")).toBeEnabled();
     const confirmed = await downloadConfirmed(page);
+    expect(confirmed.schema).toBe("gengrowth.confirmed_brief/v3");
     expect(confirmed.revision).toBe(1);
     expect(confirmed.resolution).toBe("accept_recommendation");
     expect(confirmed.brief).toEqual(brief);
@@ -490,11 +558,11 @@ test.describe("Content Brief Builder", () => {
     expect(next.fingerprint).not.toBe(confirmed.fingerprint);
     expect(next.outline.map(({ id, answers }) => ({ id, answers }))).toEqual(confirmed.outline.map(({ id, answers }) => ({ id, answers })));
     expect(next.brief).toEqual(brief);
-    expectOneV2Run(guard);
+    expectOneV3Run(guard);
   });
 
   test("an update recommendation exposes the actual target and source-bound rewrite instructions in the confirmed export", async ({ page }) => {
-    const brief = await validContentBriefV2({ action: "update" });
+    const brief = await createBriefV3Fixture({ action: "update" });
     const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(brief) });
     await page.goto("/en/tools/content-brief");
     await submitKeyword(page, brief.context.input.primary);
@@ -513,17 +581,18 @@ test.describe("Content Brief Builder", () => {
     expect(confirmed.resolution).toBe("accept_recommendation");
     expect(confirmed.brief.generated?.page_plan).toEqual(brief.generated?.page_plan);
     expect(confirmed.brief.context.candidates).toEqual([{ id: "T1", url: "https://owned.example/reporting", match_refs: ["G1"], read: "observed" }]);
-    expectOneV2Run(guard);
+    expectOneV3Run(guard);
   });
 
   test("one PAA-only question remains writable but shows zero competitor coverage and no invented factual evidence", async ({ page }) => {
-    const brief = await validContentBriefV2({ count: 1, paaOnly: true });
+    const brief = await createBriefV3Fixture({ count: 1, paaOnly: true });
     const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(brief) });
     await page.goto("/en/tools/content-brief");
     await submitKeyword(page, brief.context.input.primary);
     const result = page.locator("[data-content-brief-result]");
     await expect(result.locator("[data-question-row]")).toHaveCount(1);
-    await expect(result.locator("[data-covered-by]")).toHaveText("0 pages");
+    await expect(result.locator("[data-covered-by]")).toContainText("0 pages");
+    await expect(result.locator("[data-covered-by]")).not.toContainText("0/0");
     await expect(result.locator("[data-paa-boundary]")).toContainText("not factual support");
     await expect(result.locator("[data-outline-section]")).toHaveCount(1);
     await result.locator("[data-question-row] details > summary").click();
@@ -536,11 +605,11 @@ test.describe("Content Brief Builder", () => {
     expect(confirmed.brief.context.facts).toEqual([]);
     expect(confirmed.brief.context.research.units.every((unit) => unit.kind === "paa")).toBe(true);
     expect(confirmed.brief.generated?.research.questions).toEqual([{ id: "Q1", anchor: "U1", q: "Why is reporting delayed?", source_refs: ["U1"], covered_by: 0, paa_refs: ["A1"] }]);
-    expectOneV2Run(guard);
+    expectOneV3Run(guard);
   });
 
   test("a valid empty-question result does not invent an outline or expose confirmation exports", async ({ page }) => {
-    const brief = await validContentBriefV2({ count: 0 });
+    const brief = await createBriefV3Fixture({ count: 0 });
     const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(brief) });
     await page.goto("/en/tools/content-brief");
     await submitKeyword(page, brief.context.input.primary);
@@ -550,13 +619,13 @@ test.describe("Content Brief Builder", () => {
     await expect(result.locator("[data-question-row]")).toHaveCount(0);
     await expect(result.locator("[data-outline]")).toHaveCount(0);
     await expect(result.locator("[data-confirmation-bar]")).toHaveCount(0);
-    expectOneV2Run(guard);
+    expectOneV3Run(guard);
   });
 
   for (const failure of ["malformed", "fingerprint"] as const) {
     test(`a ${failure} HTTP 200 is rejected without rendering a result`, async ({ page }) => {
-      const base = await validContentBriefV2();
-      const response = failure === "malformed" ? { schema: CONTENT_BRIEF_V2_SCHEMA }
+      const base = await createBriefV3Fixture();
+      const response = failure === "malformed" ? { schema: CONTENT_BRIEF_V3_SCHEMA }
         : { ...base, run: { ...base.run, fingerprint: "f".repeat(64) } };
       const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(response) });
       await page.goto("/en/tools/content-brief");
@@ -566,7 +635,7 @@ test.describe("Content Brief Builder", () => {
       await expect(page.locator("[data-run-brief]")).toBeEnabled();
       await expect(page.locator("[data-content-brief-result]")).toHaveCount(0);
       await expect(page.locator("[data-download-confirmed-json]")).toHaveCount(0);
-      expectOneV2Run(guard);
+      expectOneV3Run(guard);
     });
   }
 
@@ -582,7 +651,7 @@ test.describe("Content Brief Builder", () => {
         key: THEME_STORAGE_KEY,
         value: theme,
       });
-      const base = await validContentBriefV2({ locale });
+      const base = await createBriefV3Fixture({ locale });
       const llm = base.run.llm;
       if (llm.status !== "complete") {
         throw new Error("The rendering fixture must include a complete model receipt");
@@ -606,6 +675,16 @@ test.describe("Content Brief Builder", () => {
       await submitKeyword(page, brief.context.input.primary);
       const result = page.locator("[data-content-brief-result]");
       await expect(result).toBeVisible();
+      await expect(result.locator("[data-run-collected]")).toBeVisible();
+      await expect(result.locator("[data-run-timing]")).toContainText("4.2s / 45s");
+      await expect(result.locator("[data-generation-status]")).toHaveText(locale === "zh" ? "待你审阅" : "Ready for review");
+      await expect(result.locator("[data-read-coverage-status]")).toHaveText(locale === "zh" ? "已请求的来源读取完成" : "Requested reads complete");
+      await expect(result.locator("[data-length-quantiles]")).toBeVisible();
+      await expect(result.locator("[data-observed-formats]")).toContainText(locale === "zh" ? "SERP 标题 + URL" : "SERP title + URL");
+      await expect(result.locator('[data-question-row="Q1"] [data-covered-by]')).toContainText("1/1");
+      await expect(result.locator('[data-question-row="Q1"] [data-question-coverage-bar]')).toBeVisible();
+      await expect(result.locator('[data-question-row="Q1"] [data-source-layer="third"]')).toBeVisible();
+      await expect(result.locator('[data-outline-question="Q1"]')).toBeVisible();
       const header = result.locator("[data-brief-header]").getByRole("heading").first();
       await expect(header).toHaveText(brief.context.input.primary);
       await expect(header).toHaveCSS("font-size", "26px");
@@ -673,8 +752,40 @@ test.describe("Content Brief Builder", () => {
       await expectReadableText(result.locator("[data-run-details] dd").filter({ hasText: model }), model);
       await expectReadableText(result.locator("[data-run-fingerprint]"), brief.run.fingerprint);
       await expectNoHorizontalOverflow(page);
-      expectOneV2Run(guard);
+      expectOneV3Run(guard);
       expect(guard.runRequests[0]?.postDataJSON()).toMatchObject({ primary: brief.context.input.primary, language: locale });
+    });
+  }
+
+  for (const scenario of [
+    { locale: "en", theme: "light", viewport: { width: 1280, height: 900 }, reason: "provider_error", cause: "The generation provider returned an error" },
+    { locale: "zh", theme: "dark", viewport: { width: 390, height: 844 }, reason: "timeout", cause: "Brief 模型生成超时" },
+  ] as const) {
+    test(`${scenario.locale} ${scenario.theme} failure screenshot retains observations before raw JSON`, async ({ page }, testInfo) => {
+      await page.setViewportSize(scenario.viewport);
+      await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), { key: THEME_STORAGE_KEY, value: scenario.theme });
+      const base = await createBriefV3Fixture({ locale: scenario.locale, action: "update", unavailable: true });
+      if (base.run.llm.status !== "unavailable") throw new Error("Expected synthetic unavailable generation");
+      const brief = await resealFixture({ ...base, run: { ...base.run, elapsed_ms: 38400, llm: { ...base.run.llm, reason: scenario.reason } } });
+      const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(brief) });
+      await page.goto(`/${scenario.locale}/tools/content-brief`);
+      const banner = page.getByRole("region", { name: "Cookie consent", exact: true });
+      await banner.getByRole("button", { name: scenario.locale === "zh" ? "仅必要" : "Necessary Only", exact: true }).click();
+      await page.locator('select[name="language"]').selectOption(scenario.locale);
+      await submitKeyword(page, brief.context.input.primary);
+      const result = page.locator("[data-content-brief-result]");
+      await expect(result.locator("[data-generation-cause]")).toHaveText(scenario.cause);
+      await expect(result.locator("[data-run-timing]")).toContainText("38.4s / 45s");
+      await expect(result.locator("[data-run-ledger]")).toBeHidden();
+      await expect(result.locator("[data-observed-formats]")).toBeVisible();
+      await expect(result.locator("[data-length-quantiles]")).toBeVisible();
+      await expect(result.locator('[data-gsc-match="G1"], [data-owned-candidate="T1"]')).toHaveCount(2);
+      await expect(result.locator('[data-raw-paa="A1"]')).toBeVisible();
+      await expect(result.locator("[data-question-row], [data-outline], [data-verdict-card], [data-confirmation-bar]")).toHaveCount(0);
+      await expectNoHorizontalOverflow(page);
+      await expect(page.locator("html")).toHaveAttribute(THEME_ATTRIBUTE, scenario.theme);
+      await result.screenshot({ path: testInfo.outputPath(`content-brief-v3-failure-${scenario.locale}-${scenario.theme}.png`), animations: "disabled" });
+      expectOneV3Run(guard);
     });
   }
 
@@ -694,7 +805,7 @@ test.describe("Content Brief Builder", () => {
     await submitKeyword(page);
     await expect(page.locator('[data-error-code="rate_limited"]')).toBeVisible();
     await expect(page.locator("[data-content-brief-result]")).toHaveCount(0);
-    expectOneV2Run(guard);
+    expectOneV3Run(guard);
   });
 
   test("a deferred rate-limit error reopens settings closed during the run without submitting again", async ({ page }) => {
@@ -727,7 +838,7 @@ test.describe("Content Brief Builder", () => {
     await expect(submit).toBeVisible();
     await expect(submit).toBeEnabled();
     await expect(page.locator("[data-content-brief-result]")).toHaveCount(0);
-    expectOneV2Run(guard);
+    expectOneV3Run(guard);
   });
 
   test("a deferred network failure reopens closed settings without submitting a second run", async ({ page }) => {
@@ -751,11 +862,11 @@ test.describe("Content Brief Builder", () => {
     await expect(settings.locator('input[name="primary"]')).toBeEditable();
     await expect(settings.locator("[data-run-brief]")).toBeEnabled();
     await expect(page.locator("[data-content-brief-result]")).toHaveCount(0);
-    expectOneV2Run(guard);
+    expectOneV3Run(guard);
   });
 
   test("reloading the page clears the report; nothing is kept server-side", async ({ page }) => {
-    const brief = await validContentBriefV2();
+    const brief = await createBriefV3Fixture();
     const guard = await installGuard(page, { signedIn: true, run: fulfillBrief(brief) });
     await page.goto("/en/tools/content-brief");
     await submitKeyword(page, brief.context.input.primary);
@@ -764,7 +875,7 @@ test.describe("Content Brief Builder", () => {
     await expect(page.locator("[data-content-brief-result]")).toHaveCount(0);
     expect(new URL(page.url()).search).toBe("");
     expect(page.url()).not.toContain("reporting");
-    expectOneV2Run(guard);
+    expectOneV3Run(guard);
   });
 
   test("the formal name is the same string on the Chinese and English hub cards", async ({ page }) => {

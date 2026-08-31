@@ -1,18 +1,20 @@
 // @input -- real standalone Brief/Draft pages with every API isolated at browser-context scope
-// @output -- confirmed-v2 handoff, exact generation/rerun/export and honest editorial boundaries
+// @output -- confirmed-v3 handoff, exact generation/rerun/export and honest editorial boundaries
 // @pos -- browser acceptance only; no Supabase login, provider call, publishing or production claim
 import { readFile } from "node:fs/promises";
 import { expect, test, type Page, type Request, type Route } from "@playwright/test";
 import { CONTENT_BRIEF_HANDOFF_KEY } from "@sf/public-tools/content-brief/contract";
 import { SECTION_ENDPOINT_BUDGET_MS } from "@sf/public-tools/content-brief/constants";
 import { confirmBriefV2, fingerprintBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
-import { confirmedDraftV2Fixture, draftResultV2Fixture } from "@sf/public-tools/content-brief/v2-draft-fixtures";
+import { confirmedDraftV2Fixture as legacyConfirmedFixture, draftResultV2Fixture } from "@sf/public-tools/content-brief/v2-draft-fixtures";
+import { createConfirmedBriefV3Fixture, createCoverageGapDraftFixture } from "./content-brief-v3-fixtures.ts";
 import { fingerprintDraftV2, parseDraftResultV2, type AssembleDraftV2Input } from "@sf/public-tools/content-brief/v2-draft";
 import { buildDraftV2SectionScope } from "@sf/public-tools/content-brief/v2-draft-scope";
 import { validateDraftV2Section } from "@sf/public-tools/content-brief/v2-draft-section";
 import type { DraftResultV2, DraftV2Section, DraftV2Settings } from "@sf/public-tools/content-brief/v2-draft-contract";
 import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { TOOL_HANDOFF_KEY } from "../src/lib/tools/tool-handoff";
+import { THEME_ATTRIBUTE, THEME_STORAGE_KEY } from "../src/lib/theme.ts";
 import { fulfillJson, installDraftApiGuard, necessaryOnly, openConfirmedBriefV2, parseConfirmed } from "./content-draft-e2e-helpers";
 
 interface RunBody { readonly brief: unknown; readonly settings: DraftV2Settings; readonly section_ids: readonly string[] }
@@ -89,6 +91,7 @@ async function downloadResult(page: Page, confirmed: ConfirmedBriefV2, previous?
   const parsed = await parseDraftResultV2(decoded, confirmed, previous);
   expect(parsed.ok).toBe(true);
   if (!parsed.ok) throw new Error(`Export rejected: ${parsed.path}`);
+  expect(text).toBe(JSON.stringify(parsed.value));
   expect(decoded).toEqual(parsed.value);
   expect(filename).toBe(`content-draft-r${confirmed.revision}-${parsed.value.run.fingerprint.slice(0, 12)}.json`);
   expect(await fingerprintDraftV2(parsed.value)).toBe(parsed.value.run.fingerprint);
@@ -97,7 +100,7 @@ async function downloadResult(page: Page, confirmed: ConfirmedBriefV2, previous?
 
 /** A real observed owned candidate, confirmed as a related page rather than the rewrite target. */
 async function confirmedWithRelatedLink(): Promise<ConfirmedBriefV2> {
-  const base = await confirmedDraftV2Fixture({ action: "update" });
+  const base = await createConfirmedBriefV3Fixture({ action: "update" });
   const unsigned = { ...base.brief, generated: {
     ...base.brief.generated!,
     page_plan: { ...base.brief.generated!.page_plan, action: "create" as const, target_ref: null, steps: [] },
@@ -110,15 +113,16 @@ async function confirmedWithRelatedLink(): Promise<ConfirmedBriefV2> {
 }
 
 test.describe("Draft v2 — API-isolated browser acceptance", () => {
-  test("real edited Brief producer opens a v2 popup that peeks while server-signed-out; exact manual-paste fallback then generates", async ({ page }) => {
-    const { brief } = await confirmedDraftV2Fixture();
+  test("real edited Brief producer opens a confirmed-v3 popup that peeks while server-signed-out; exact manual-paste fallback then generates", async ({ page }) => {
+    const { brief } = await createConfirmedBriefV3Fixture();
     const guard = await installDraftApiGuard(page, { signedIn: true, briefRun: fulfillJson(brief), run: dynamicRun });
     const confirmed = await openConfirmedBriefV2(page, brief, { edit: true });
+    expect(confirmed.schema).toBe("gengrowth.confirmed_brief/v3");
     expect(confirmed.revision).toBe(1);
     expect(confirmed.outline.map((section) => section.id)).toEqual(["O2", "O1"]);
     expect(confirmed.outline[1]).toMatchObject({ h2: "Check reporting collection dates", h3: ["Collection date", "Finalized period"], answers: ["Q1"] });
     expect(guard.briefRequests).toHaveLength(1);
-    expect(guard.briefRequests[0]?.postDataJSON()).toMatchObject({ response_schema: "gengrowth.content_brief/v2" });
+    expect(guard.briefRequests[0]?.postDataJSON()).toMatchObject({ response_schema: "gengrowth.content_brief/v3" });
     const link = page.locator("a[data-generate-draft]");
     await expect(link).toHaveAttribute("target", "_blank");
     await expect(link).toHaveAttribute("rel", "opener");
@@ -144,7 +148,7 @@ test.describe("Draft v2 — API-isolated browser acceptance", () => {
     await pasteConfirmed(popup, await parseConfirmed(envelope.brief));
     await popup.locator('[data-setting="tone"]').selectOption("technical");
     await popup.locator('[data-setting="person"]').selectOption("third");
-    await popup.locator('[data-setting="product_mention"]').selectOption("none");
+    await popup.locator('input[name="product_mention"][value="none"]').check();
     await generate(popup);
     expect(guard.runRequests).toHaveLength(1);
     await expect(popup.locator("[data-draft-settings-panel]")).toBeHidden();
@@ -161,15 +165,108 @@ test.describe("Draft v2 — API-isolated browser acceptance", () => {
     expect(body.section_ids).toEqual(["O2", "O1"]);
     expect(body.settings).toEqual({ tone: "technical", person: "third", product_mention: "none" });
     const result = await downloadResult(popup, confirmed);
-    expect(result.confirmed_ref).toMatchObject({ fingerprint: confirmed.fingerprint, revision: 1 });
+    expect(result.confirmed_ref).toMatchObject({ schema: "gengrowth.confirmed_brief/v3", fingerprint: confirmed.fingerprint, revision: 1 });
+    expect(confirmed.brief.context.serp).toEqual(brief.context.serp);
     expect(await popup.locator("[data-draft-h2]").allTextContents()).toEqual(confirmed.outline.map((section) => section.h2));
     expect(await popup.locator('[data-draft-section="O1"] [data-draft-h3]').allTextContents()).toEqual(["Collection date", "Finalized period"]);
     await expect(popup.locator('[data-draft-section="O1"]')).toContainText("Review the reporting period before comparing results.");
     expect(guard.unexpected).toEqual([]);
   });
 
-  test("GEO schemaVersion and unconfirmed Content Brief v2 get explicit local guidance before any run", async ({ page }) => {
-    const confirmed = await confirmedDraftV2Fixture();
+  test("historical confirmed v2 imports keep their original version and are never silently upgraded", async ({ page }) => {
+    const confirmed = await legacyConfirmedFixture();
+    const guard = await installDraftApiGuard(page, { signedIn: true, run: dynamicRun });
+    await openDraft(page, confirmed);
+    expect(guard.runRequests).toHaveLength(0);
+    await generate(page);
+    const result = await downloadResult(page, confirmed);
+    expect(result.confirmed_ref.schema).toBe("gengrowth.confirmed_brief/v2");
+    expect((guard.runRequests[0]?.postDataJSON() as RunBody).brief).toEqual(confirmed);
+    expect(confirmed.brief.context).not.toHaveProperty("serp");
+    expect(guard.unexpected).toEqual([]);
+  });
+
+  test("coverage leads the document, keyboard chapter toggles preserve exports, and source tiers stay distinct from claim labels", async ({ page }) => {
+    const confirmed = await createConfirmedBriefV3Fixture({ chapters: 3 });
+    const guard = await installDraftApiGuard(page, { signedIn: true, run: async (route, request) => {
+      const body = request.postDataJSON() as RunBody;
+      const actual = await parseConfirmed(body.brief);
+      await fulfillJson(await createCoverageGapDraftFixture(actual, body.settings))(route);
+    } });
+    await openDraft(page, confirmed);
+    await expect(page.locator('input[name="product_mention"]')).toHaveCount(3);
+    await page.locator('input[name="product_mention"][value="throughout"]').check();
+    expect(guard.runRequests).toHaveLength(0);
+    await generate(page);
+    const result = await downloadResult(page, confirmed);
+    await expect(page.locator("[data-processing-status]")).toHaveText("Processing complete");
+    await expect(page.locator("[data-quality-status]")).toHaveText("Needs revision");
+    await expect(page.locator('[data-coverage-total="covered"]')).toHaveText("1 covered");
+    await expect(page.locator('[data-coverage-total="partial"]')).toHaveText("1 partial");
+    await expect(page.locator('[data-coverage-total="none"]')).toHaveText("1 uncovered");
+    expect(await page.locator("[data-draft-v2-result]").evaluate((root) => {
+      const coverage = root.querySelector("[data-draft-coverage]")!;
+      const document = root.querySelector("[data-draft-document]")!;
+      return Boolean(coverage.compareDocumentPosition(document) & Node.DOCUMENT_POSITION_FOLLOWING);
+    })).toBe(true);
+    await expect(page.locator("[data-source-legend]")).toContainText("First-party");
+    await expect(page.locator("[data-source-legend]")).toContainText("Third-party · verify");
+    await expect(page.locator('[data-draft-section="O1"] [data-source-tier="third"][data-claim="bound"]')).toBeVisible();
+    await expect(page.locator('[data-draft-section="O2"] [data-source-tier="first"][data-claim="bound"]')).toBeVisible();
+    const thirdToggle = page.locator('[data-toggle-section="O3"]');
+    const thirdBody = page.locator('[data-section-body="O3"]');
+    await expect(thirdToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(thirdBody).toBeHidden();
+    await expect(thirdToggle).toHaveAttribute("aria-controls", (await thirdBody.getAttribute("id"))!);
+    await thirdToggle.focus();
+    await thirdToggle.press("Enter");
+    await expect(thirdToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(thirdBody).toBeVisible();
+    await expect(thirdBody.locator('[data-source-tier="model"][data-claim="no_claim"]')).toBeVisible();
+    await thirdToggle.press("Space");
+    await expect(thirdBody).toBeHidden();
+    await expect(page.locator('[data-rerun-section="O3"]')).toBeVisible();
+    const annotations = page.locator("[data-toggle-annotations]");
+    await annotations.focus();
+    await annotations.press("Space");
+    await expect(annotations).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator("[data-source-legend]")).toHaveCount(0);
+    await expect(page.locator('[data-marked="true"]')).toHaveCount(0);
+    expect(await downloadResult(page, confirmed)).toEqual(result);
+    const markdown = await downloadText(page, "[data-download-markdown]");
+    expect(markdown.text).toContain("## Verify the reporting checklist");
+    expect(markdown.text).toContain("### Publication checks");
+    expect(markdown.text).not.toContain("[Bound");
+    expect(guard.runRequests).toHaveLength(1);
+    expect(guard.sectionRequests).toHaveLength(0);
+    expect(guard.unexpected).toEqual([]);
+  });
+
+  test("unavailable coverage stays unknown ahead of readable v3-bound prose and in its exact export", async ({ page }) => {
+    const confirmed = await createConfirmedBriefV3Fixture();
+    const guard = await installDraftApiGuard(page, { signedIn: true, run: async (route, request) => {
+      const { confirmed: actual, result } = await resultForRequest(request);
+      await fulfillJson(await draftResultV2Fixture(actual, { settings: result.settings, sections: result.sections, coverage: {
+        items: null,
+        reads: { status: "unavailable", reason: "timeout", attempted: 1, calls: 1, model_id: "offline-coverage", input_tokens: null, output_tokens: null },
+      } }))(route);
+    } });
+    await openDraft(page, confirmed);
+    await generate(page);
+    await expect(page.locator("[data-quality-status]")).toHaveText("Coverage unknown");
+    await expect(page.locator("[data-coverage-summary]")).toHaveText("Unavailable");
+    await expect(page.locator("[data-draft-coverage] [data-coverage-total]")).toHaveCount(0);
+    await expect(page.locator('[data-draft-coverage] [data-coverage-status="unavailable"]')).toHaveCount(confirmed.brief.generated!.research.questions.length);
+    await expect(page.locator("[data-draft-document]")).toBeVisible();
+    const exported = await downloadResult(page, confirmed);
+    expect(exported.coverage).toEqual({ status: "unavailable", reason: "timeout", attempted: 1 });
+    expect(exported.confirmed_ref.schema).toBe("gengrowth.confirmed_brief/v3");
+    expect(guard.runRequests).toHaveLength(1);
+    expect(guard.unexpected).toEqual([]);
+  });
+
+  test("GEO schemaVersion and unconfirmed Content Brief v3 get explicit local guidance before any run", async ({ page }) => {
+    const confirmed = await createConfirmedBriefV3Fixture();
     const guard = await installDraftApiGuard(page, { signedIn: true });
     await page.goto("/en/tools/content-draft");
     await necessaryOnly(page, "en");
@@ -187,9 +284,9 @@ test.describe("Draft v2 — API-isolated browser acceptance", () => {
     expect(guard.unexpected).toEqual([]);
   });
 
-  test("a signed-out session blocks a confirmed v2 paid run at the sign-in dialog", async ({ page }) => {
+  test("a signed-out session blocks a confirmed v3 paid run at the sign-in dialog", async ({ page }) => {
     const guard = await installDraftApiGuard(page, { signedIn: false });
-    await openDraft(page, await confirmedDraftV2Fixture());
+    await openDraft(page, await createConfirmedBriefV3Fixture());
     await page.locator("button[data-generate-draft]").click();
     await expect(page.locator("dialog, [role=dialog]").first()).toBeVisible();
     expect(guard.runRequests).toHaveLength(0);
@@ -197,7 +294,7 @@ test.describe("Draft v2 — API-isolated browser acceptance", () => {
   });
 
   test("PAA-only questions permit prose but never fabricate factual U-reference support", async ({ page }) => {
-    const confirmed = await confirmedDraftV2Fixture({ paaOnly: true });
+    const confirmed = await createConfirmedBriefV3Fixture({ paaOnly: true });
     const guard = await installDraftApiGuard(page, { signedIn: true, run: async (route, request) => {
       const { confirmed: actual, result } = await resultForRequest(request);
       const sections = result.sections.map((section) => changedSection(actual, result, section.id, "Reporting updates can be delayed.", "gap"));
@@ -216,7 +313,7 @@ test.describe("Draft v2 — API-isolated browser acceptance", () => {
   });
 
   test("rerun posts the true previous body, changes only its target, and a failed next rerun retains the verified result", async ({ page }) => {
-    const confirmed = await confirmedDraftV2Fixture({ reverse: true });
+    const confirmed = await createConfirmedBriefV3Fixture({ reverse: true });
     let calls = 0;
     const guard = await installDraftApiGuard(page, { signedIn: true, run: dynamicRun, section: async (route, request) => {
       calls += 1;
@@ -263,7 +360,7 @@ test.describe("Draft v2 — API-isolated browser acceptance", () => {
 
   for (const invalid of ["stale-revision", "bad-fingerprint"] as const) {
     test(`rejects a ${invalid} result without rendering or exporting it`, async ({ page }) => {
-      const confirmed = await confirmedDraftV2Fixture();
+      const confirmed = await createConfirmedBriefV3Fixture();
       const guard = await installDraftApiGuard(page, { signedIn: true, run: async (route, request) => {
         const { confirmed: actual, result } = await resultForRequest(request);
         if (invalid === "bad-fingerprint") {
@@ -305,6 +402,14 @@ test.describe("Draft v2 — API-isolated browser acceptance", () => {
       expect(body.section_ids).toEqual(unavailable === "skipped" ? ["O1"] : ["O1", "O2"]);
       const result = await downloadResult(page, confirmed);
       expect(result.sections.find((section) => section.id === "O2")?.status).toBe(unavailable);
+      const sectionToggle = page.locator('[data-toggle-section="O2"]');
+      await sectionToggle.focus();
+      await sectionToggle.press("Space");
+      await expect(page.locator('[data-section-body="O2"]')).toBeHidden();
+      await expect(page.locator('[data-section-status="O2"]')).toHaveAttribute("data-status", unavailable);
+      await expect(page.locator('[data-section-status="O2"]')).toBeVisible();
+      await expect(page.locator('[data-rerun-section="O2"]')).toBeVisible();
+      expect(guard.sectionRequests).toHaveLength(0);
       await page.locator("[data-copy-draft-json]").click();
       await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(JSON.stringify(result));
       const copiedJson: unknown = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
@@ -330,7 +435,7 @@ test.describe("Draft v2 — API-isolated browser acceptance", () => {
 
   for (const action of ["create", "update"] as const) {
     test(`${action} preserves its real page plan; only a user-entered published URL opens an On-Page popup with base language and no auto-audit`, async ({ page }) => {
-      const confirmed = await confirmedDraftV2Fixture({ action, language: "zh-CN" });
+      const confirmed = await createConfirmedBriefV3Fixture({ action, language: "zh-CN" });
       const guard = await installDraftApiGuard(page, { signedIn: true, run: dynamicRun });
       await openDraft(page, confirmed, "zh");
       await expect(page.locator("[data-page-action]")).toHaveText(action === "update" ? "重写现有页面" : "新建页面");
@@ -368,30 +473,36 @@ test.describe("Draft v2 — API-isolated browser acceptance", () => {
     });
   }
 
-  for (const locale of ["en", "zh"] as const) for (const viewport of ["desktop", "mobile"] as const) {
-    test(`${locale} ${viewport} screenshot: actual Necessary Only click, compact editorial text and no horizontal overflow`, async ({ page }, testInfo) => {
+  for (const locale of ["en", "zh"] as const) for (const viewport of ["desktop", "mobile"] as const) for (const theme of ["light", "dark"] as const) {
+    test(`${locale} ${viewport} ${theme} screenshot: coverage-first editorial chapters and no horizontal overflow`, async ({ page }, testInfo) => {
       await page.setViewportSize(viewport === "desktop" ? { width: 1440, height: 1000 } : { width: 390, height: 844 });
-      const confirmed = await confirmedDraftV2Fixture({ language: locale === "zh" ? "zh-CN" : "en-US", action: viewport === "desktop" ? "update" : "create" });
+      await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), { key: THEME_STORAGE_KEY, value: theme });
+      const confirmed = await createConfirmedBriefV3Fixture({ language: locale === "zh" ? "zh-CN" : "en-US", action: viewport === "desktop" ? "update" : "create", chapters: 3 });
       const guard = await installDraftApiGuard(page, { signedIn: true, run: dynamicRun });
       await openDraft(page, confirmed, locale);
       await generate(page);
       await expect(page.locator("[data-draft-settings-panel]")).toBeHidden();
       await expect(page.locator("[data-draft-result-region]")).toBeFocused();
-      await expect(page.locator("[data-draft-h3]").first()).toHaveCSS("font-size", "15px");
+      await expect(page.locator("html")).toHaveAttribute(THEME_ATTRIBUTE, theme);
+      await expect(page.locator("[data-draft-coverage]")).toBeVisible();
+      await expect(page.locator('[data-toggle-section="O3"]')).toHaveAttribute("aria-expanded", "false");
+      await expect(page.locator('[data-section-body="O3"]')).toBeHidden();
+      await expect(page.locator("[data-source-legend]")).toBeVisible();
+      await expect(page.locator("[data-draft-h3]").first()).toHaveCSS("font-size", "17px");
       await expect(page.locator("[data-length-note]")).toHaveCSS("font-size", "11px");
-      await expect(page.locator("[data-claim]").first().locator("..")).toHaveCSS("font-size", "14px");
+      await expect(page.locator("[data-claim]").first().locator("..")).toHaveCSS("font-size", "15.5px");
       expect(await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
       expect(await page.locator("[data-draft-v2-workflow]").evaluate((element) => element.getBoundingClientRect().width)).toBeLessThanOrEqual(880);
       expect(guard.consentRequests).toHaveLength(1);
       expect(guard.consentRequests[0]?.postDataJSON()).toMatchObject({ categories: [
         { category: "necessary", status: "accepted" }, { category: "analytics", status: "rejected" }, { category: "marketing", status: "rejected" },
       ] });
-      const screenshot = testInfo.outputPath(`content-draft-v2-${locale}-${viewport}.png`);
+      const screenshot = testInfo.outputPath(`content-draft-v3-brief-${locale}-${viewport}-${theme}.png`);
       await page.screenshot({ path: screenshot, fullPage: true });
-      await testInfo.attach(`${locale}-${viewport}`, { path: screenshot, contentType: "image/png" });
-      const viewportScreenshot = testInfo.outputPath(`content-draft-v2-${locale}-${viewport}-result-viewport.png`);
+      await testInfo.attach(`${locale}-${viewport}-${theme}`, { path: screenshot, contentType: "image/png" });
+      const viewportScreenshot = testInfo.outputPath(`content-draft-v3-brief-${locale}-${viewport}-${theme}-result-viewport.png`);
       await page.screenshot({ path: viewportScreenshot });
-      await testInfo.attach(`${locale}-${viewport}-result-viewport`, { path: viewportScreenshot, contentType: "image/png" });
+      await testInfo.attach(`${locale}-${viewport}-${theme}-result-viewport`, { path: viewportScreenshot, contentType: "image/png" });
       expect(guard.unexpected).toEqual([]);
     });
   }

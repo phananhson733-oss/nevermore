@@ -35,6 +35,7 @@ import type { DraftCoverageInput, DraftSectionInput, DraftSectionResult } from "
 import { generateDraftV2Section, runDraftV2Coverage } from "./content-draft-v2-llm.ts";
 import type { KeywordLlmConfig } from "./keyword-llm-client.ts";
 import { readPublicToolJson } from "./public-tool-request.ts";
+import { confirmedDraftV3Fixture } from "../../components/tools/content-brief-v3-fixture.ts";
 
 const START = Date.parse("2026-08-29T10:00:00.000Z");
 const SETTINGS = { tone: "explanatory", person: "second", product_mention: "gap_only" } as const;
@@ -270,8 +271,8 @@ async function runOk(deps: ContentDraftHandlerDependencies, body = runBody()): P
 }
 
 describe("Next app-route Request proxy admission", () => {
-  it.each(["run", "section"] as const)("accepts a real proxied v2 %s body through the bounded reader", async endpoint => {
-    const confirmed = await confirmedDraftV2Fixture();
+  it.each([{ endpoint: "run", version: 2 }, { endpoint: "section", version: 2 }, { endpoint: "run", version: 3 }, { endpoint: "section", version: 3 }] as const)("accepts a real proxied v$version $endpoint body through the bounded reader", async ({ endpoint, version }) => {
+    const confirmed = await (version === 3 ? confirmedDraftV3Fixture() : confirmedDraftV2Fixture());
     const previous = endpoint === "section" ? await draftResultV2Fixture(confirmed) : undefined;
     const body = endpoint === "run"
       ? { brief: confirmed, settings: SETTINGS, section_ids: confirmed.outline.map(section => section.id) }

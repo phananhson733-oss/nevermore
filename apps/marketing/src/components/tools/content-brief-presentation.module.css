@@ -8,6 +8,110 @@
   overflow-wrap: anywhere;
 }
 
+.runHeader {
+  border: 1px solid var(--sc-border-card);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--sc-panel);
+}
+
+.runTop {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 11px 14px;
+  color: var(--sc-text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.runHeader [data-source-summary] {
+  border: 0;
+  border-top: 1px solid var(--sc-border-card);
+  border-radius: 0;
+}
+
+.generationFailure {
+  border: 2px solid var(--sc-error);
+  border-radius: 4px;
+  padding: 20px;
+  background: var(--sc-panel);
+}
+
+.quantiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 12px;
+  padding-block: 10px;
+  border-block: 1px solid var(--sc-border-card);
+  font-variant-numeric: tabular-nums;
+}
+
+.quantiles dt {
+  color: var(--sc-text-secondary);
+  font-size: 10px;
+}
+
+.quantiles dd {
+  margin-top: 3px;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--sc-text-primary);
+}
+
+.questionCoverageBar {
+  display: block;
+  width: 54px;
+  height: 5px;
+  margin: 8px 0 0 auto;
+  background: var(--sc-border-strong);
+}
+
+.questionCoverageBar > span {
+  display: block;
+  height: 100%;
+  background: var(--sc-source-third);
+}
+
+.outlineRail {
+  display: grid;
+  gap: 18px;
+  padding-left: 16px;
+  border-left: 2px solid var(--sc-source-model);
+}
+
+.results[data-content-brief-v2-results] [data-source-layer] {
+  border-radius: 2px;
+  padding: 2px 6px;
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+.results[data-content-brief-v2-results] :is([data-must-answer], [data-outline]) h3 {
+  padding: 0;
+  border: 0;
+}
+
+.confirmationBar [role="status"]:empty {
+  display: none;
+}
+
+@media (max-width: 699px) {
+  .runTop {
+    gap: 8px 12px;
+  }
+
+  .runTop [data-run-collected] {
+    flex-basis: 100%;
+  }
+
+  .generationFailure {
+    padding: 16px;
+  }
+}
+
 .results [data-field-card] {
   border-radius: 4px;
   padding: 14px;

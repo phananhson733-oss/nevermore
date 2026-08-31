@@ -46,7 +46,7 @@ import type {
 import { CONTENT_BRIEF_SCHEMA } from "@sf/public-tools/content-brief/contract";
 import { hostKey } from "@sf/public-tools/content-brief/host";
 import { parseContentBrief } from "@sf/public-tools/content-brief/parse-brief";
-import { CONTENT_BRIEF_V2_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
+import { CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
 import { projectBriefV2Gsc } from "@sf/public-tools/content-brief/v2-gsc";
 import { computeVerdict, normalizePosition } from "@sf/public-tools/content-brief/verdict";
 import {
@@ -150,7 +150,8 @@ export interface ContentBriefRequestBody {
   readonly gsc_property: string | null;
   readonly response_schema:
     | typeof CONTENT_BRIEF_SCHEMA
-    | typeof CONTENT_BRIEF_V2_SCHEMA;
+    | typeof CONTENT_BRIEF_V2_SCHEMA
+    | typeof CONTENT_BRIEF_V3_SCHEMA;
 }
 
 export type ProfileReadResult =
@@ -311,7 +312,8 @@ export function parseContentBriefRequest(input: unknown): ParsedBody {
   if (
     responseSchemaRaw !== undefined &&
     responseSchemaRaw !== CONTENT_BRIEF_SCHEMA &&
-    responseSchemaRaw !== CONTENT_BRIEF_V2_SCHEMA
+    responseSchemaRaw !== CONTENT_BRIEF_V2_SCHEMA &&
+    responseSchemaRaw !== CONTENT_BRIEF_V3_SCHEMA
   ) {
     return { ok: false, code: "invalid_request" };
   }
@@ -333,7 +335,7 @@ export function parseContentBriefRequest(input: unknown): ParsedBody {
         .filter((item) => item !== "" && item.length <= KEYWORD_MAX_CHARS),
     ),
   ].filter((keyword) => {
-    if (responseSchemaRaw !== CONTENT_BRIEF_V2_SCHEMA) return true;
+    if (responseSchemaRaw !== CONTENT_BRIEF_V2_SCHEMA && responseSchemaRaw !== CONTENT_BRIEF_V3_SCHEMA) return true;
     const identity = normalizeKeyword(keyword.normalize("NFKC")).toLowerCase();
     if (supportingIdentities.has(identity)) return false;
     supportingIdentities.add(identity);
@@ -362,7 +364,7 @@ export function parseContentBriefRequest(input: unknown): ParsedBody {
       language,
       website_id: websiteId,
       gsc_property: property,
-      response_schema: responseSchemaRaw === CONTENT_BRIEF_V2_SCHEMA ? CONTENT_BRIEF_V2_SCHEMA : CONTENT_BRIEF_SCHEMA,
+      response_schema: responseSchemaRaw === CONTENT_BRIEF_V3_SCHEMA ? CONTENT_BRIEF_V3_SCHEMA : responseSchemaRaw === CONTENT_BRIEF_V2_SCHEMA ? CONTENT_BRIEF_V2_SCHEMA : CONTENT_BRIEF_SCHEMA,
     },
   };
 }
@@ -526,7 +528,7 @@ export async function handleContentBriefRequest(
       const daily = await consumeDaily(dependencies, clock);
       if (daily !== null) return daily;
 
-      const brief = input.response_schema === CONTENT_BRIEF_V2_SCHEMA
+      const brief = input.response_schema === CONTENT_BRIEF_V2_SCHEMA || input.response_schema === CONTENT_BRIEF_V3_SCHEMA
         ? await runBriefV2(input, userId, dependencies, clock, gsc)
         : await runBrief(input, userId, dependencies, clock, gsc);
       return brief === null ? refuse("brief_unavailable", 503) : json(brief, 200);
@@ -1012,6 +1014,7 @@ async function runBriefV2(
         language: input.language,
       },
       runId: dependencies.runId(),
+      responseSchema: input.response_schema === CONTENT_BRIEF_V3_SCHEMA ? CONTENT_BRIEF_V3_SCHEMA : CONTENT_BRIEF_V2_SCHEMA,
       startedAt: clock.start,
       deadlineAt: clock.deadlineAt,
       gsc: gsc === null

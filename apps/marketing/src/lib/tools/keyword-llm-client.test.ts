@@ -252,6 +252,44 @@ describe("mergeKeywordLlmUsage", () => {
 });
 
 describe("createKeywordLlmClient", () => {
+  it("sends reasoning_effort none only for an explicitly opted-in request", async () => {
+    const capture = capturing(() => completion("{}", { prompt_tokens: 11, completion_tokens: 7 }));
+    const client = createKeywordLlmClient({ env: DIRECT_ENV, fetchImpl: capture.fetchImpl });
+    const result = await client.complete({ ...REQUEST, reasoningEffort: "none" });
+    expect(bodyOf(capture.calls[0]?.init)).toEqual({
+      model: "gpt-direct", temperature: 0.3, max_completion_tokens: 512,
+      reasoning_effort: "none", response_format: { type: "json_object" },
+      messages: [{ role: "system", content: "system message" }, { role: "user", content: "user message" }],
+    });
+    expect(result.usage).toEqual({ inputTokens: 11, outputTokens: 7, requestCount: 1, retryCount: 0 });
+    expect(capture.calls).toHaveLength(1);
+  });
+
+  it("preserves exact unset request bytes even for Luna and after an opted-in request", async () => {
+    const capture = capturing(() => completion("{}"));
+    const client = createKeywordLlmClient({ env: { ...DIRECT_ENV, OPENAI_MODEL: "gpt-5.6-luna" }, fetchImpl: capture.fetchImpl });
+    await client.complete({ ...REQUEST, reasoningEffort: "none" });
+    await client.complete(REQUEST);
+    await client.complete({ ...REQUEST, reasoningEffort: undefined } as unknown as KeywordLlmRequest);
+    const previousWireBytes = JSON.stringify({
+      model: "gpt-5.6-luna", temperature: 0.3, max_completion_tokens: 512,
+      response_format: { type: "json_object" },
+      messages: [{ role: "system", content: "system message" }, { role: "user", content: "user message" }],
+    });
+    expect(capture.calls[1]?.init?.body).toBe(previousWireBytes);
+    expect(capture.calls[2]?.init?.body).toBe(previousWireBytes);
+    expect(Object.hasOwn(bodyOf(capture.calls[1]?.init), "reasoning_effort")).toBe(false);
+  });
+
+  it.each([null, "", "NONE", "none ", "low", "medium", "high", 0, false, {}, []].map(reasoningEffort => ({ reasoningEffort })))("rejects invalid reasoning effort $reasoningEffort before fetch", async ({ reasoningEffort }) => {
+    const capture = capturing(() => completion("{}"));
+    const client = createKeywordLlmClient({ env: DIRECT_ENV, fetchImpl: capture.fetchImpl });
+    await expect(client.complete({ ...REQUEST, reasoningEffort } as unknown as KeywordLlmRequest)).rejects.toMatchObject({
+      name: "KeywordLlmError", code: KEYWORD_LLM_ERROR_CODE, reason: "not_configured", usage: EMPTY_KEYWORD_LLM_USAGE,
+    });
+    expect(capture.calls).toHaveLength(0);
+  });
+
   it("carries a bounded response model id and otherwise uses the configured model", async () => {
     const replies = [
       completion("{}", undefined, "gpt-5.6-luna-2026-08-01"),
