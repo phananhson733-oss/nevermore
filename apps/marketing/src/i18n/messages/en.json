@@ -7429,8 +7429,8 @@
         "qualificationSignals": "Qualification signals",
         "disqualifiers": "Disqualifiers",
         "directCompetitors": "Direct competitors",
-        "indirectAlternatives": "Indirect alternatives",
-        "excludedAlternatives": "Excluded alternatives",
+        "indirectAlternatives": "Indirect competitors",
+        "excludedAlternatives": "Excluded candidates",
         "firstOutcome": "First outcome",
         "country": "Primary market",
         "locale": "Primary language"
@@ -7455,7 +7455,17 @@
         "notFound": "Website not found.",
         "productSection": "Product",
         "icpSection": "ICP",
-        "marketSection": "Market and alternatives",
+        "marketSection": "Market and language",
+        "competitorSection": "Competitors",
+        "competitors": {
+          "description": "Review search suggestions before saving a competitor relationship. Suggestions do not change the confirmed profile.",
+          "systemSuggestion": "Search suggestion · review required",
+          "savedClassification": "Saved classification",
+          "draftClassification": "Draft classification · not saved",
+          "empty": "No saved relationship or search suggestion yet.",
+          "editSaved": "Edit saved classifications",
+          "manualHelp": "Other tools reuse classifications from the confirmed version. Add or adjust them here, or classify a search candidate above, then confirm the profile."
+        },
         "sourcesSection": "Sources and versions",
         "listAdd": "Add item",
         "listRemove": "Remove",
@@ -7488,6 +7498,8 @@
           "action": "Confirm profile",
           "confirming": "Confirming…",
           "version": "Confirmed v{revision}",
+          "edit": "Edit profile",
+          "body": "The confirmed version is ready to use. Expand the profile whenever you need to edit it.",
           "failed": "The profile could not be confirmed. Review the fields and try again."
         },
         "draftVersion": "Draft v{version}",
