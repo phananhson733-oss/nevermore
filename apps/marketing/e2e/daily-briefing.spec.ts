@@ -28,7 +28,7 @@ const KNOWN_SHELL_REQUESTS = new Set([
 
 test.use({ timezoneId: "Asia/Shanghai", locale: "en-US", viewport: { width: 1440, height: 1100 } });
 
-async function openSyntheticBriefing(page: Page, partial = false) {
+async function openSyntheticBriefing(page: Page, partial = false, locale: "en" | "zh" = "en") {
   test.info().annotations.push({ type: "evidence-tier", description: "Local synthetic API fixture; no real provider or GSC website verification." });
   const envelope = await syntheticDailyBriefing(partial);
   expect(envelope.run.schemaVersion).toBe("daily_search_briefing.v10");
@@ -72,11 +72,11 @@ async function openSyntheticBriefing(page: Page, partial = false) {
     if (!KNOWN_SHELL_REQUESTS.has(id)) calls.unexpected.push(id);
     await route.abort("blockedbyclient");
   });
-  await page.goto("/tools/daily-search-briefing");
-  await page.getByRole("button", { name: "Necessary Only", exact: true }).click();
+  await page.goto(`${locale === "zh" ? "/zh" : ""}/tools/daily-search-briefing`);
+  await page.getByRole("button", { name: locale === "zh" ? "仅必要" : "Necessary Only", exact: true }).click();
   await page.locator("#daily-briefing-brand-terms").fill("synthetic-brand");
   await page.locator('input[name="brandTermsConfirmed"]').check();
-  await page.getByRole("button", { name: "Build today's briefing", exact: true }).click();
+  await page.getByRole("button", { name: locale === "zh" ? "生成今日简报" : "Build today's briefing", exact: true }).click();
   await expect(page.locator('[data-result-section="trend"]')).toBeVisible();
   await expect(page.locator("[data-reading-facts]")).toHaveCount(0);
   return { envelope, calls };
@@ -131,7 +131,7 @@ test("synthetic newest partial PT date stays visible without change-based action
   const observation = page.locator("[data-observation-row]").filter({ hasText: SYNTHETIC_QUERY }).first();
   await observation.locator("[data-gsc-evidence] summary").click();
   await expect(observation.locator("[data-gsc-evidence]")).toContainText("Not compared");
-  await expect(observation.locator("[data-gsc-evidence]")).not.toContainText("Clicks 48;");
+  await expect(observation.locator('[data-evidence-period="previous"] [data-evidence-metric]')).toHaveCount(0);
   await observation.evaluate((element) => element.scrollIntoView({ block: "center", behavior: "instant" }));
   await observation.screenshot({ path: test.info().outputPath("synthetic-partial-row-evidence.png") });
   expectIsolated(calls);
@@ -151,8 +151,11 @@ test("synthetic verified records preserve exact query versus query-page scope an
     const evidence = row.locator(`[data-gsc-evidence][data-metric-scope="${expected.scope}"]`);
     await evidence.locator("summary").click();
     await expect(evidence.locator('[data-api-evidence="verified"]')).toBeVisible();
-    await expect(evidence).toContainText(`average position ${expected.position}`);
-    await expect(evidence).toContainText("API verification is not a completed website check.");
+    await expect(evidence.locator('[data-evidence-period="current"] [data-evidence-metric="position"] dd')).toHaveText(expected.position);
+    await expect(evidence.locator("[data-evidence-source]")).toHaveAttribute("title", /API verification is not a completed website check/);
+    await expect(evidence.locator("summary")).toHaveCSS("font-size", "13px");
+    await expect(evidence.locator("[data-gsc-period=current]")).toHaveCSS("font-size", "13px");
+    await expect(evidence.locator('[data-evidence-period="current"] dd').first()).toHaveCSS("font-size", "14px");
     for (const period of ["current", "previous"] as const) {
       const link = evidence.locator(`[data-gsc-period="${period}"]`);
       await expect(link).toBeVisible();
@@ -168,5 +171,41 @@ test("synthetic verified records preserve exact query versus query-page scope an
     }
     await row.screenshot({ path: test.info().outputPath(`synthetic-${expected.scope}-evidence.png`) });
   }
+  expectIsolated(calls);
+});
+
+test("Chinese evidence uses readable type and adapts to its container instead of the viewport", async ({ page }) => {
+  const { calls } = await openSyntheticBriefing(page, false, "zh");
+  const row = page.locator("[data-change]").filter({ hasText: SYNTHETIC_PAIR_QUERY }).first();
+  const narrow = row.locator("[data-gsc-evidence]");
+  await narrow.locator("summary").click();
+  await expect(narrow).toHaveCSS("font-size", "13px");
+  await expect(narrow).toHaveCSS("line-height", "20.8px");
+  const narrowLayout = await narrow.evaluate((element) => {
+    const periods = Array.from(element.querySelectorAll("[data-evidence-period]")).map((item) => item.getBoundingClientRect());
+    return { stacked: periods[1]!.y > periods[0]!.y, noOverflow: element.scrollWidth <= element.clientWidth + 1 };
+  });
+  expect(narrowLayout).toEqual({ stacked: true, noOverflow: true });
+  await narrow.screenshot({ path: test.info().outputPath("synthetic-readable-narrow-zh.png") });
+
+  const wide = page.locator("[data-action-row]").filter({ hasText: SYNTHETIC_PAIR_QUERY }).first().locator("[data-gsc-evidence]");
+  await wide.locator("summary").click();
+  await expect(wide.locator("[data-gsc-period=current]")).toHaveCSS("font-size", "13px");
+  await expect(wide.locator('[data-evidence-period="current"] dd').first()).toHaveCSS("font-size", "14px");
+  const wideLayout = await wide.evaluate((element) => {
+    const periods = Array.from(element.querySelectorAll("[data-evidence-period]")).map((item) => item.getBoundingClientRect());
+    return { sideBySide: Math.abs(periods[1]!.y - periods[0]!.y) < 1 && periods[1]!.x > periods[0]!.x, noOverflow: element.scrollWidth <= element.clientWidth + 1 };
+  });
+  expect(wideLayout).toEqual({ sideBySide: true, noOverflow: true });
+  await wide.screenshot({ path: test.info().outputPath("synthetic-readable-wide-zh.png") });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(narrow.locator("summary")).toHaveCSS("font-size", "13px");
+  const mobileLayout = await narrow.evaluate((element) => {
+    const periods = Array.from(element.querySelectorAll("[data-evidence-period]")).map((item) => item.getBoundingClientRect());
+    return { stacked: periods[1]!.y > periods[0]!.y, noOverflow: element.scrollWidth <= element.clientWidth + 1 };
+  });
+  expect(mobileLayout).toEqual({ stacked: true, noOverflow: true });
+  await narrow.screenshot({ path: test.info().outputPath("synthetic-readable-mobile-zh.png") });
   expectIsolated(calls);
 });

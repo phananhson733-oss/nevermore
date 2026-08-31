@@ -2312,10 +2312,11 @@
           "partial": "The newest available GSC dates are still updating. Changes and change-based actions are withheld; current observations are provisional and are not compared with a complete prior period.",
           "unavailable": "The latest reporting dates could not be established. No comparison or change-based action was inferred."
         },
-        "exactVerified": "GSC API exact-filter verification passed.",
+        "exactVerified": "GSC API verified",
         "incompleteFrom": "Data from {date} (PT) is still updating.",
         "previousUnavailable": "Previous-period query data is unavailable; no absence or change is inferred.",
-        "exactVerifiedCurrent": "Current period only: GSC API exact-filter verification passed."
+        "exactVerifiedCurrent": "Current period only · API verified",
+        "sourceLine": "Google Search Console API · Dates in Pacific Time (PT)"
       }
     },
     "trafficDrop": {

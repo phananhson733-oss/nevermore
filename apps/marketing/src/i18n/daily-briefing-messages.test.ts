@@ -154,6 +154,7 @@ const REQUIRED_LEAF_PATHS = [
   "sourceEvidence.apiVerified",
   "sourceEvidence.exactVerified",
   "sourceEvidence.exactVerifiedCurrent",
+  "sourceEvidence.sourceLine",
   "sourceEvidence.previousUnavailable",
   "sourceEvidence.withheld",
   "sourceEvidence.freshness.complete",
