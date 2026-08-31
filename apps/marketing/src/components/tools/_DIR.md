@@ -15,3 +15,6 @@ One line per module: what it reads, what it returns, where it sits. Update the l
 - `content-draft-doc.tsx` — authored sentence bytes plus separate deterministic source labels and annotation controls.
 - `content-draft-handoff-bar.tsx` — same-result export; GEO published URLs go to T2 and SEO URLs to On-Page.
 - `content-draft-markdown.ts` — unchanged SEO Markdown; GEO appends origin, evidence source/time and version anchors without altering sentence bytes.
+
+- `daily-briefing-tool.tsx` — reads the saved GSC list, independently refreshes it on mount/focus or explicit retry, and preserves site-owned form/report state only while the selection remains granted.
+- `daily-briefing-tool.test.tsx` — verifies report interactions and property refresh, empty-list recovery, retry, selection removal, concurrency, and Strict Mode cleanup.

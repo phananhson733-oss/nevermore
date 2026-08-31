@@ -1779,6 +1779,10 @@
       "ctaButton": "Join the product-access waitlist"
     },
     "dailyBriefing": {
+      "propertiesRefresh": "Refresh sites",
+      "propertiesRefreshing": "Refreshing sites…",
+      "propertiesRefreshFailed": "Could not refresh the site list. Your previous list is still shown; try again shortly.",
+      "propertyChoose": "Choose a Search Console property",
       "connectTitle": "Connect Search Console to build today's briefing",
       "connectBody": "Choose one verified property and turn its latest complete Search Console data into a compact daily triage. Access is read-only, and the report is not stored on our servers.",
       "connectCta": "Connect Search Console",
@@ -1789,9 +1793,9 @@
       "inviteOnlyCta": "Continue if invited",
       "inviteOnlyRequest": "Ask to join the beta",
       "noPropertyTitle": "No verified property in this grant",
-      "noPropertyBody": "The connection succeeded, but this Google account exposes no Search Console property this tool can run. Verify a property or reconnect with another account.",
+      "noPropertyBody": "The connection succeeded, but this Google account exposes no Search Console property this tool can run. Verify a property in Search Console, then refresh the site list here.",
       "propertyLabel": "Search Console property",
-      "propertiesTruncated": "Showing {shown} of {total} granted properties. The remaining names did not fit in the browser grant cookie; reconnect to choose one that is missing.",
+      "propertiesTruncated": "Showing {shown} of {total} granted properties. The remaining names exceed this browser’s saved site-list limit.",
       "brand": {
         "label": "Brand terms (required for CTR opportunities)",
         "hint": "Separate terms with commas. They decide only whether the CTR opportunity lane can run; the rest of the briefing does not need them. Domain-derived suggestions are only candidates; confirm the list separately, even if the correct list is empty.",
