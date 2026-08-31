@@ -6,6 +6,7 @@ import {
   type CitabilityHandlerDependencies,
 } from "./citability-handler.ts";
 import { measureCitabilityRender } from "./citability-render.ts";
+import type { CitabilityReport } from "./citability-contract.ts";
 
 const PAGE_HTML = `<html><head><link rel="canonical" href="https://acme-example-site.com/guide"></head><body><p>${"content ".repeat(
   120,
@@ -211,6 +212,51 @@ describe("page fetch", () => {
 });
 
 describe("robots and llms.txt outcomes", () => {
+  it("never interprets a truncated robots.txt prefix as the site's complete policy", async () => {
+    const prefix = "User-agent: *\nAllow: /\n# 更多规则";
+    const defaults = deps();
+    const response = await handleCitabilityRequest(
+      post({ url: "https://acme-example-site.com/guide" }),
+      deps({ fetchResource: async (url, options) => url.endsWith("/robots.txt")
+        ? { kind: "ok", status: 200, body: prefix, bodyComplete: false }
+        : defaults.fetchResource(url, options) }),
+    );
+    expect(response.status).toBe(200);
+    const { data } = await response.json() as { data: CitabilityReport };
+    const bots = data.checks.filter((check) => check.ruleId.startsWith("robots."));
+    expect(bots).toHaveLength(6);
+    for (const check of bots) {
+      expect(check).toMatchObject({
+        state: "fetchError",
+        measured: { key: "robots.incomplete", values: { status: 200, bytes: Buffer.byteLength(prefix, "utf8") } },
+      });
+    }
+    const baseline = await handleCitabilityRequest(post({ url: "https://acme-example-site.com/guide" }), defaults);
+    const baselineData = (await baseline.json() as { data: CitabilityReport }).data;
+    expect(data.summary.counted).toBe(baselineData.summary.counted - 3);
+    expect(data.summary.fetchError).toBe(baselineData.summary.fetchError + 3);
+    expect(data.summary.counted + data.summary.fetchError + data.summary.notApplicable).toBe(10);
+  });
+
+  it.each([
+    { outcome: { kind: "ok", status: 200, body: "说明", bodyComplete: true }, state: "pass", key: "llms.present", values: { bytes: 6 } },
+    { outcome: { kind: "ok", status: 200, body: "说明", bodyComplete: false }, state: "fetchError", key: "llms.incomplete", values: { status: 200, bytes: 6 } },
+    { outcome: { kind: "ok", status: 404, body: "" }, state: "fail", key: "llms.absent", values: { status: 404 } },
+    { outcome: { kind: "ok", status: 503, body: "" }, state: "fetchError", key: "llms.unreachable", values: { status: 503 } },
+    { outcome: { kind: "error", code: "network" }, state: "fetchError", key: "llms.unreachable", values: { status: 0 } },
+  ] as const)("reports $key without counting advisory llms.txt bytes as a complete file", async ({ outcome, state, key, values }) => {
+    const defaults = deps();
+    const response = await handleCitabilityRequest(
+      post({ url: "https://acme-example-site.com/guide" }),
+      deps({ fetchResource: async (url, options) => url.endsWith("/llms.txt") ? outcome : defaults.fetchResource(url, options) }),
+    );
+    const { data } = await response.json() as { data: CitabilityReport };
+    expect(data.checks.find((check) => check.ruleId === "llmsTxt")).toMatchObject({
+      state, weight: "advisory", measured: { key, values },
+    });
+    expect(data.summary).toMatchObject({ passed: 4, failed: 2, fetchError: 1, notApplicable: 3, counted: 6, total: 14 });
+  });
+
   it("treats a 404 robots.txt as allowance and a 500 as unknown", async () => {
     const allowed = await handleCitabilityRequest(
       post({ url: "https://acme-example-site.com/guide" }),

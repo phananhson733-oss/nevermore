@@ -11,9 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import enMessages from "../../i18n/messages/en.json";
 import zhMessages from "../../i18n/messages/zh.json";
-import type { CitabilityInput } from "../../lib/geo-tools/citability-contract.ts";
+import type { CitabilityInput, CitabilityReport } from "../../lib/geo-tools/citability-contract.ts";
 import { buildCitabilityReport } from "../../lib/geo-tools/citability-rules.ts";
 import { measureCitabilityRender } from "../../lib/geo-tools/citability-render.ts";
+import { buildCitabilityConclusion } from "../../lib/geo-tools/citability-conclusion.ts";
+import { isCitabilityAiReview, type CitabilityAiReview } from "../../lib/geo-tools/citability-ai-contract.ts";
 import { PageCitabilityCheck } from "./page-citability-check.tsx";
 import { TOOL_HANDOFF_KEY, TOOL_HANDOFF_TTL_MS, writeToolHandoff } from "../../lib/tools/tool-handoff.ts";
 import { GEO_GAP_HANDOFF_KEY, writeGeoGapHandoff } from "../../lib/geo-tools/gap-handoff.ts";
@@ -91,21 +93,21 @@ function answerWith(data: unknown): void {
   ) as unknown as typeof fetch;
 }
 
-async function mount(): Promise<void> {
+async function mount(locale: "en" | "zh" = "en"): Promise<void> {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(async () => {
     root?.render(
       <NextIntlClientProvider
-        locale="en"
-        messages={{ tools: { pageCitability: enMessages.tools.pageCitability } }}
+        locale={locale}
+        messages={{ tools: { pageCitability: (locale === "en" ? enMessages : zhMessages).tools.pageCitability } }}
         onError={(error) => {
           intlErrors.push(error.message);
         }}
         timeZone="UTC"
       >
-        <PageCitabilityCheck locale="en" />
+        <PageCitabilityCheck locale={locale} />
       </NextIntlClientProvider>,
     );
   });
@@ -725,6 +727,272 @@ describe("existing Marketing visual language", () => {
       expect(row.querySelector("p")?.classList.contains("text-[13px]")).toBe(true);
     }
     expect(container?.querySelector('[data-testid="citability-metric-passed"] dd')?.classList.contains("font-mono")).toBe(true);
+  });
+});
+
+describe("measured report conclusion", () => {
+  it("places the server conclusion before metrics with its actual coverage and check anchors", async () => {
+    const data = buildCitabilityReport(input("Which issue tracker is best?"), "2026-08-31T10:00:00.000Z");
+    const conclusion = buildCitabilityConclusion(data);
+    answerWith({ ...data, conclusion });
+    await mount();
+    await run(data.url, data.targetQuestion ?? "");
+    const card = container?.querySelector('[data-testid="citability-conclusion"]');
+    expect(card).not.toBeNull();
+    expect(card?.getAttribute("data-verdict")).toBe(conclusion.verdict);
+    expect(card?.getAttribute("data-coverage")).toBe(conclusion.coverage);
+    expect(card?.querySelector("h3")?.classList.contains("text-[16px]")).toBe(true);
+    const metrics = container?.querySelector('[data-testid="citability-metric-passed"]');
+    expect((card?.compareDocumentPosition(metrics as Node) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const id of conclusion.priorityCheckIds) {
+      expect(card?.querySelector(`a[href="#citability-rule-${id}"]`)).not.toBeNull();
+    }
+    for (const paragraph of card?.querySelectorAll("p") ?? []) {
+      expect([...paragraph.classList].some(value => /^text-\[\d/u.test(value))).toBe(true);
+    }
+    expect(intlErrors).toEqual([]);
+  });
+
+  it.each(["missing", "contradictory", "invalid_priority"])("rejects a %s server conclusion instead of inventing one", async (kind) => {
+    const data = buildCitabilityReport(input(null), "2026-08-31T10:00:00.000Z");
+    const conclusion = buildCitabilityConclusion(data);
+    answerWith({ ...data, conclusion: kind === "missing" ? undefined : kind === "contradictory"
+      ? { ...conclusion, verdict: "no_issues_observed", coverage: "complete" }
+      : { ...conclusion, priorityCheckIds: ["fake-rule"] } });
+    await mount();
+    await run(data.url, "");
+    expect(container?.querySelector('[data-testid="citability-conclusion"]')).toBeNull();
+    expect(text()).toContain(copy("errors.internal_error"));
+  });
+
+  it.each(["state", "kind", "weight"] as const)("rejects array-coerced check %s even when its conclusion matches", async (field) => {
+    const data = buildCitabilityReport(input(null), "2026-08-31T10:00:00.000Z");
+    const checks = data.checks.map((check, index) => index === 0 ? { ...check, [field]: [check[field]] } : check);
+    const malformed = { ...data, checks } as unknown as CitabilityReport;
+    answerWith({ ...malformed, conclusion: buildCitabilityConclusion(malformed) });
+    await mount();
+    await run(data.url, "");
+    expect(container?.querySelector('[data-testid="citability-conclusion"]')).toBeNull();
+    expect(text()).toContain(copy("errors.internal_error"));
+  });
+});
+
+describe("explicit evidence-bound AI review", () => {
+  const data = () => buildCitabilityReport(input("Which issue tracker is best?"), "2026-08-31T10:00:00.000Z");
+  const receipt = (report: CitabilityReport): CitabilityAiReview => {
+    const excerpt = report.render.raw.text.slice(0, 180);
+    const review: CitabilityAiReview = {
+      schemaVersion: "citability-ai-review.v1", inputFingerprint: "a".repeat(64), rawSha256: report.render.rawSha256,
+      finalUrl: report.finalUrl, targetQuestion: report.targetQuestion, capturedAt: report.fetchedAt,
+      observedAt: "2026-08-31T10:00:30.000Z", totalBodyChars: report.render.raw.text.length,
+      includedBodyChars: excerpt.length, coverage: "excerpt", excerpts: [{ id: "E1", text: excerpt }],
+      provider: "dataforseo", requestedModel: "gpt-4.1-mini", actualModel: "gpt-4.1-mini-2025-04-14",
+      providerTaskId: "task-123", costUsd: null, inputTokens: null, outputTokens: 80,
+      factVerification: "not_performed", scope: "provided_excerpts", webSearch: false, assessmentKind: "model_assessment",
+      summary: "The provided excerpt needs a clearer condition, not a factual verdict.",
+      dimensions: [
+        { id: "answer_relevance", verdict: report.targetQuestion ? "needs_work" : "insufficient_evidence", reason: "The available question context is limited.", suggestion: null, evidenceIds: report.targetQuestion ? ["E1"] : [] },
+        { id: "answer_clarity", verdict: "needs_work", reason: "The condition can be more specific.", suggestion: "State the audience beside the answer.", evidenceIds: ["E1"] },
+        { id: "attribution_clarity", verdict: "insufficient_evidence", reason: "No supporting source has been read.", suggestion: null, evidenceIds: [] },
+      ],
+    };
+    expect(isCitabilityAiReview(review)).toBe(true);
+    return review;
+  };
+  const button = (): HTMLButtonElement => {
+    const element = container?.querySelector('[data-testid="citability-ai-run"]');
+    expect(element).toBeInstanceOf(HTMLButtonElement);
+    return element as HTMLButtonElement;
+  };
+  const click = async () => { await act(async () => { button().click(); await Promise.resolve(); }); };
+
+  it("requires a separate explicit action and sends only the current report identity", async () => {
+    const report = data();
+    const review = receipt(report);
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ data: report })).mockResolvedValueOnce(Response.json({ review }));
+    globalThis.fetch = fetcher;
+    await mount();
+    await run(report.url, report.targetQuestion!);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(button().disabled).toBe(false);
+    const card = container?.querySelector('[data-testid="citability-ai-review"]');
+    expect(card?.textContent).toContain(copy("ai.sendNote"));
+    expect(card?.textContent).toContain(copy("ai.limitNote"));
+    await click();
+    expect(fetcher).toHaveBeenLastCalledWith("/api/tools/page-citability-check/ai-review", expect.objectContaining({ method: "POST", body: JSON.stringify({ url: report.finalUrl, question: report.targetQuestion, rawSha256: report.render.rawSha256 }) }));
+    const result = container?.querySelector('[data-testid="citability-ai-result"]');
+    expect(result?.textContent).toContain(review.summary);
+    expect(result?.textContent).toContain(review.actualModel);
+    expect(result?.textContent).toContain(review.providerTaskId);
+    expect(result?.textContent).toContain(copy("ai.costUnknown"));
+    expect(result?.querySelector('a[href="#citability-ai-evidence-E1"]')).not.toBeNull();
+    expect(result?.querySelector("#citability-ai-evidence-E1")?.textContent).toContain(review.excerpts[0]!.text);
+    expect(container?.querySelector('[data-testid="citability-conclusion"]')?.getAttribute("data-verdict")).toBe(report.conclusion.verdict);
+    expect(metricValue("failed")).toBe(String(report.summary.failed));
+    await switchView("input");
+    await switchView("result");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(button().disabled).toBe(true);
+    expect(intlErrors).toEqual([]);
+  });
+
+  it.each(["rawSha256", "finalUrl", "targetQuestion"])("rejects an AI receipt with mismatched %s", async (field) => {
+    const report = data();
+    const review = { ...receipt(report), [field]: field === "rawSha256" ? "b".repeat(64) : field === "finalUrl" ? "https://other.test/page" : "A different question?" };
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(Response.json({ data: report })).mockResolvedValueOnce(Response.json({ review }));
+    await mount();
+    await run(report.url, report.targetQuestion!);
+    await click();
+    expect(container?.querySelector('[data-testid="citability-ai-result"]')).toBeNull();
+    expect(container?.querySelector('[data-testid="citability-ai-error"]')?.textContent).toContain(copy("ai.outcomeUnknown"));
+    expect(button().disabled).toBe(true);
+  });
+
+  it.each(["auth_required", "provider_unconfigured", "review_already_requested"])("keeps %s separate from a successful assessment", async (code) => {
+    const report = data();
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(Response.json({ data: report })).mockResolvedValueOnce(Response.json({ error: { code } }, { status: code === "auth_required" ? 401 : code === "provider_unconfigured" ? 503 : 409 }));
+    await mount();
+    await run(report.url, report.targetQuestion!);
+    await click();
+    expect(container?.querySelector('[data-testid="citability-ai-error"]')?.textContent).toContain(copy(`ai.errors.${code}`));
+    expect(container?.querySelector('[data-testid="citability-ai-result"]')).toBeNull();
+    expect(button().disabled).toBe(code === "review_already_requested");
+    expect(metricValue("passed")).toBe(String(report.summary.passed));
+    expect(intlErrors).toEqual([]);
+  });
+
+  it("does not retry an uncertain outcome and preserves known cost metadata", async () => {
+    const report = data();
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(Response.json({ data: report })).mockResolvedValueOnce(Response.json({ error: { code: "provider_timeout" }, outcomeUnknown: true, costUsd: 0.023, providerTaskId: "task-timeout" }, { status: 504 }));
+    await mount();
+    await run(report.url, report.targetQuestion!);
+    await click();
+    const error = container?.querySelector('[data-testid="citability-ai-error"]');
+    expect(error?.textContent).toContain(copy("ai.outcomeUnknown"));
+    expect(error?.textContent).toContain("0.023");
+    expect(error?.textContent).toContain("task-timeout");
+    expect(button().disabled).toBe(true);
+    await click();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { label: "unknown gateway code", payload: { error: { code: "FUNCTION_INVOCATION_TIMEOUT" } } },
+    { label: "missing error code", payload: {} },
+    { label: "unexpected shape", payload: ["gateway failed"] },
+    { label: "unclassified internal error", payload: { error: { code: "internal_error" }, outcomeUnknown: false } },
+  ])("treats a $label as an uncertain provider outcome", async ({ payload }) => {
+    const report = data();
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(Response.json({ data: report })).mockResolvedValueOnce(Response.json(payload, { status: 502 }));
+    await mount();
+    await run(report.url, report.targetQuestion!);
+    await click();
+    const error = container?.querySelector('[data-testid="citability-ai-error"]');
+    expect(error?.textContent).toContain(copy("ai.outcomeUnknown"));
+    expect(error?.textContent).toContain(copy("ai.costUnknown"));
+    expect(button().disabled).toBe(true);
+    await click();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(container?.querySelector('[data-testid="citability-ai-result"]')).toBeNull();
+  });
+
+  it.each(["provider_error", "provider_invalid_response", "provider_timeout", "provider_network_error"])("does not resubmit a reserved snapshot after %s even with a known outcome", async (code) => {
+    const report = data();
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(Response.json({ data: report })).mockResolvedValueOnce(Response.json({ error: { code }, outcomeUnknown: false }, { status: 502 }));
+    await mount();
+    await run(report.url, report.targetQuestion!);
+    await click();
+    expect(button().disabled).toBe(true);
+    await click();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(container?.querySelector('[data-testid="citability-ai-result"]')).toBeNull();
+  });
+
+  it("locks synchronously and never attaches a late review to a replacement report", async () => {
+    const first = data();
+    const next = buildCitabilityReport({ ...input(null), url: "https://citability.test/new", finalUrl: "https://citability.test/new" }, "2026-08-31T11:00:00.000Z");
+    let resolve!: (value: Response) => void;
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(Response.json({ data: first })).mockImplementationOnce(() => new Promise<Response>(done => { resolve = done; })).mockResolvedValueOnce(Response.json({ data: next }));
+    await mount();
+    await run(first.url, first.targetQuestion!);
+    await act(async () => { const action = button(); action.click(); action.click(); });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    await switchView("input");
+    await run(next.url, "");
+    await act(async () => { resolve(Response.json({ review: receipt(first) })); });
+    expect(container?.querySelector('[data-testid="citability-ai-result"]')).toBeNull();
+    expect(text()).not.toContain(receipt(first).summary);
+    expect(button().disabled).toBe(false);
+  });
+
+  it("can assess clarity without a target question but keeps relevance insufficient", async () => {
+    const report = buildCitabilityReport(input(null), "2026-08-31T10:00:00.000Z");
+    const review = receipt(report);
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(Response.json({ data: report })).mockResolvedValueOnce(Response.json({ review }));
+    await mount();
+    await run(report.url, "");
+    expect(button().disabled).toBe(false);
+    await click();
+    expect(globalThis.fetch).toHaveBeenLastCalledWith("/api/tools/page-citability-check/ai-review", expect.objectContaining({ body: JSON.stringify({ url: report.finalUrl, rawSha256: report.render.rawSha256 }) }));
+    expect(container?.querySelector('[data-ai-dimension="answer_relevance"]')?.textContent).toContain(copy("ai.verdicts.insufficient_evidence"));
+  });
+
+  it("disables review when the report has no usable raw hash", async () => {
+    const report = data();
+    answerWith({ ...report, render: { ...report.render, rawSha256: undefined } });
+    await mount();
+    await run(report.url, report.targetQuestion!);
+    expect(button().disabled).toBe(true);
+    expect(text()).toContain(copy("ai.evidenceUnavailable"));
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
+  it("copies the actual conclusion, model boundary, sources and nullable cost", async () => {
+    const report = data();
+    const review = receipt(report);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", Object.create(navigator, { clipboard: { value: { writeText } } }));
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(Response.json({ data: report })).mockResolvedValueOnce(Response.json({ review }));
+    await mount();
+    await run(report.url, report.targetQuestion!);
+    await click();
+    const copyButton = [...(container?.querySelectorAll("button") ?? [])].find(element => element.textContent === copy("actions.copy"));
+    await act(async () => { copyButton?.click(); });
+    const copied = writeText.mock.calls[0]?.[0] as string;
+    expect(copied).toContain(copy("conclusion.title"));
+    expect(copied).toContain(copy(`conclusion.verdict.${report.conclusion.verdict}`));
+    expect(copied).toContain(copy("ai.boundary"));
+    expect(copied).toContain(copy("ai.costUnknown"));
+    expect(copied).toContain(review.rawSha256);
+    expect(copied).toContain(review.excerpts[0]!.text);
+  });
+});
+
+describe("FAQ type mismatch wording", () => {
+  it.each(["en", "zh"] as const)("explains wrong Question/Answer types in the %s UI and copied report", async (locale) => {
+    const schema = { "@context": "https://schema.org", "@type": "FAQPage", mainEntity: [{ "@type": "Person", name: "A complete question?", acceptedAnswer: { "@type": "Product", text: "A complete answer." } }] };
+    const data = buildCitabilityReport({ ...input(null), rawHtml: PAGE.replace("</body>", `<script type="application/ld+json">${JSON.stringify(schema)}</script></body>`) }, "2026-08-31T10:00:00.000Z");
+    const faq = data.checks.find(check => check.ruleId === "faqSchema");
+    expect(faq?.measured).toEqual({ key: "faq.incomplete", values: { incomplete: 1, total: 1 } });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", Object.create(navigator, { clipboard: { value: { writeText } } }));
+    answerWith(data);
+    await mount(locale);
+    await fill(data.url, "");
+    await act(async () => { (container?.querySelector('button[type="submit"]') as HTMLButtonElement).click(); });
+    const row = container?.querySelector("#citability-rule-faqSchema");
+    const measured = row?.querySelector("div > p");
+    expect(measured?.textContent).toContain("Question");
+    expect(measured?.textContent).toContain("Answer");
+    expect(row?.textContent).toContain("@type=Question");
+    expect(row?.textContent).toContain("@type=Answer");
+    const messages = (locale === "en" ? enMessages : zhMessages).tools.pageCitability;
+    const copyButton = [...(container?.querySelectorAll("button") ?? [])].find(element => element.textContent === messages.actions.copy);
+    await act(async () => { copyButton?.click(); });
+    expect(writeText.mock.calls[0]?.[0]).toContain("@type=Question");
+    expect(writeText.mock.calls[0]?.[0]).toContain("@type=Answer");
+    expect(writeText.mock.calls[0]?.[0]).toContain(measured?.textContent);
+    expect(intlErrors).toEqual([]);
   });
 });
 

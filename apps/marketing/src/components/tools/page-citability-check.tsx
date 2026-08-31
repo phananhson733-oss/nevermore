@@ -23,10 +23,16 @@ import {
 import { CITABILITY_RAW_RENDER_RATIO_FLOOR, CITABILITY_RENDER_SCHEMA, type CitabilityRenderEvidence } from "../../lib/geo-tools/citability-render-contract.ts";
 import { consumeToolHandoff } from "../../lib/tools/tool-handoff.ts";
 import { consumeGeoGapHandoff } from "../../lib/geo-tools/gap-handoff.ts";
+import { buildCitabilityConclusion, type CitabilityConclusion } from "../../lib/geo-tools/citability-conclusion.ts";
+import { isCitabilityAiReview, type CitabilityAiReview } from "../../lib/geo-tools/citability-ai-contract.ts";
 
 const ENDPOINT = "/api/tools/page-citability-check";
+const AI_ENDPOINT = `${ENDPOINT}/ai-review`;
 
 type CopyState = "idle" | "done" | "failed";
+type AiFailure = { readonly kind: "failed"; readonly code: string; readonly outcomeUnknown: boolean; readonly costUsd: number | null; readonly providerTaskId: string | null; readonly retryAfterSeconds: number | null };
+type AiState = { readonly kind: "idle" } | { readonly kind: "done"; readonly review: CitabilityAiReview } | AiFailure;
+const AI_ERROR_CODES = new Set(["auth_required", "auth_unavailable", "invalid_origin", "invalid_request", "payload_too_large", "unsupported_media_type", "invalid_url", "provider_unconfigured", "fetch_blocked", "fetch_timeout", "fetch_failed", "page_not_ok", "not_html", "not_utf8", "evidence_incomplete", "evidence_changed", "rate_limited", "quota_unavailable", "review_already_requested", "input_budget_exceeded", "evidence_invalid", "provider_invalid_response", "provider_error", "provider_timeout", "provider_network_error", "internal_error"]);
 
 type RunState =
   | { readonly kind: "idle" }
@@ -131,8 +137,24 @@ function isCitabilityReport(value: unknown): value is CitabilityReport {
     ["passed", "failed", "fetchError", "notApplicable", "counted", "total"].every((key) => {
       const count = (summary as Record<string, unknown>)[key];
       return typeof count === "number" && Number.isSafeInteger(count) && count >= 0;
-    })
+    }) && isReportConclusion(record["conclusion"], record)
   );
+}
+
+/** Validate the server projection against its evidence; never fill in a missing conclusion. */
+function isReportConclusion(value: unknown, report: Record<string, unknown>): value is CitabilityConclusion {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const checks = report["checks"];
+  if (!Array.isArray(checks) || !checks.every((check: unknown) => {
+    if (typeof check !== "object" || check === null) return false;
+    const row = check as Record<string, unknown>;
+    return typeof row["ruleId"] === "string" && typeof row["weight"] === "string" && ["counted", "advisory"].includes(row["weight"]) &&
+      typeof row["state"] === "string" && ["pass", "fail", "fetchError", "notApplicable"].includes(row["state"]) &&
+      typeof row["kind"] === "string" && ["deterministic", "heuristic"].includes(row["kind"]);
+  })) return false;
+  const expected = buildCitabilityConclusion({ checks: checks as CitabilityCheck[], render: report["render"] as CitabilityRenderEvidence, targetQuestion: report["targetQuestion"] as string | null });
+  const conclusion = value as Record<string, unknown>;
+  return (Object.keys(expected) as (keyof CitabilityConclusion)[]).every(key => JSON.stringify(conclusion[key]) === JSON.stringify(expected[key]));
 }
 
 function isRenderEvidence(value: unknown): value is CitabilityRenderEvidence {
@@ -181,6 +203,40 @@ function questionLines(
     report.questionTerms.length > 0
       ? t("summary.questionTerms", { terms: report.questionTerms.join(", ") })
       : t("summary.questionNoTerms"),
+  ];
+}
+
+function conclusionLines(t: (key: string, values?: Readonly<Record<string, string | number>>) => string, report: CitabilityReport): readonly string[] {
+  const conclusion = report.conclusion;
+  return [
+    t("conclusion.title"),
+    t(`conclusion.verdict.${conclusion.verdict}`),
+    t(`conclusion.coverage.${conclusion.coverage}`),
+    t("conclusion.counts", { observed: conclusion.observedIssueCheckIds.length, review: conclusion.reviewCheckIds.length, unknown: conclusion.unknownCheckIds.length, notApplicable: conclusion.notApplicableCheckIds.length, advisory: conclusion.advisoryCheckIds.length }),
+    t("conclusion.priorityTitle"),
+    ...(conclusion.priorityCheckIds.length ? conclusion.priorityCheckIds.map(id => `- ${t(`rules.${id}`)}`) : [t("conclusion.noPriorities")]),
+    ...conclusion.limitations.map(limit => `- ${t(`conclusion.limitations.${limit}`)}`),
+  ];
+}
+
+function aiReviewLines(t: (key: string, values?: Readonly<Record<string, string | number>>) => string, review: CitabilityAiReview, locale: string): readonly string[] {
+  return [
+    t("ai.model", { requested: review.requestedModel, actual: review.actualModel }),
+    t("ai.task", { task: review.providerTaskId }),
+    t("ai.observedAt", { time: formatTime(review.observedAt, locale) }),
+    t("ai.capturedAt", { time: formatTime(review.capturedAt, locale) }),
+    review.costUsd === null ? t("ai.costUnknown") : t("ai.cost", { cost: review.costUsd }),
+    t("ai.coverage", { included: review.includedBodyChars, total: review.totalBodyChars, coverage: t(`ai.coverages.${review.coverage}`) }),
+    t("ai.identity", { hash: review.rawSha256 }),
+  ];
+}
+
+function aiFailureLines(t: (key: string, values?: Readonly<Record<string, string | number>>) => string, failure: AiFailure): readonly string[] {
+  return [t(`ai.errors.${failure.code}`),
+    ...(failure.outcomeUnknown ? [t("ai.outcomeUnknown")] : []),
+    ...(failure.retryAfterSeconds ? [t("ai.waitNote", { minutes: Math.ceil(failure.retryAfterSeconds / 60) })] : []),
+    ...(failure.providerTaskId ? [t("ai.task", { task: failure.providerTaskId })] : []),
+    ...(failure.costUsd !== null ? [t("ai.cost", { cost: failure.costUsd })] : failure.outcomeUnknown ? [t("ai.costUnknown")] : []),
   ];
 }
 
@@ -241,10 +297,14 @@ export function PageCitabilityCheck({
   const [run, setRun] = useState<RunState>({ kind: "idle" });
   const [view, setView] = useState<"input" | "result">("input");
   const [copied, setCopied] = useState<CopyState>("idle");
+  const [ai, setAi] = useState<AiState>({ kind: "idle" });
+  const [aiPending, setAiPending] = useState(false);
   const [handoffSource, setHandoffSource] = useState<"contentDraft" | "geoGap" | null>(null);
   const urlInput = useRef<HTMLInputElement | null>(null);
   const resultHeading = useRef<HTMLHeadingElement | null>(null);
   const inFlight = useRef(false);
+  const aiInFlight = useRef(false);
+  const reportRevision = useRef(0);
   const handoffConsumed = useRef(false);
   useEffect(() => {
     if (view === "result") resultHeading.current?.focus();
@@ -284,6 +344,8 @@ export function PageCitabilityCheck({
       return;
     }
     inFlight.current = true;
+    reportRevision.current += 1;
+    setAi({ kind: "idle" });
     setView("input");
     setRun({ kind: "running" });
     setCopied("idle");
@@ -332,6 +394,40 @@ export function PageCitabilityCheck({
   }, [question, url]);
 
   const report = run.kind === "done" ? run.report : null;
+  const aiEvidenceAvailable = report !== null && typeof report.render.rawSha256 === "string" && /^[a-f0-9]{64}$/.test(report.render.rawSha256) && report.render.raw.complete && report.render.raw.textChars > 0;
+  const aiRequestBlocked = ai.kind === "done" || (ai.kind === "failed" && (ai.outcomeUnknown || ["rate_limited", "review_already_requested", "provider_error", "provider_invalid_response", "provider_timeout", "provider_network_error"].includes(ai.code)));
+
+  const requestAiReview = useCallback(async () => {
+    if (!report || !aiEvidenceAvailable || aiRequestBlocked || aiInFlight.current) return;
+    const revision = reportRevision.current;
+    aiInFlight.current = true;
+    setAiPending(true);
+    setAi({ kind: "idle" });
+    setCopied("idle");
+    try {
+      const response = await fetch(AI_ENDPOINT, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: report.finalUrl, ...(report.targetQuestion !== null ? { question: report.targetQuestion } : {}), rawSha256: report.render.rawSha256 }),
+      });
+      const payload = await response.json().catch(() => null) as { readonly review?: unknown; readonly error?: { readonly code?: unknown }; readonly outcomeUnknown?: unknown; readonly costUsd?: unknown; readonly providerTaskId?: unknown } | null;
+      if (revision !== reportRevision.current) return;
+      if (response.ok && isCitabilityAiReview(payload?.review) && payload.review.finalUrl === report.finalUrl && payload.review.targetQuestion === report.targetQuestion && payload.review.rawSha256 === report.render.rawSha256) {
+        setAi({ kind: "done", review: payload.review });
+        return;
+      }
+      const code = response.ok ? "receipt_mismatch" : typeof payload?.error?.code === "string" && AI_ERROR_CODES.has(payload.error.code) ? payload.error.code : "internal_error";
+      const retryAfter = Number(response.headers.get("Retry-After"));
+      setAi({ kind: "failed", code, outcomeUnknown: response.ok || code === "internal_error" || payload?.outcomeUnknown === true,
+        costUsd: typeof payload?.costUsd === "number" && Number.isFinite(payload.costUsd) && payload.costUsd >= 0 ? payload.costUsd : null,
+        providerTaskId: typeof payload?.providerTaskId === "string" && /^[a-zA-Z0-9-]{1,128}$/.test(payload.providerTaskId) ? payload.providerTaskId : null,
+        retryAfterSeconds: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null });
+    } catch {
+      if (revision === reportRevision.current) setAi({ kind: "failed", code: "network", outcomeUnknown: true, costUsd: null, providerTaskId: null, retryAfterSeconds: null });
+    } finally {
+      aiInFlight.current = false;
+      setAiPending(false);
+    }
+  }, [aiEvidenceAvailable, aiRequestBlocked, report]);
 
   const grouped = useMemo(() => {
     if (!report) return null;
@@ -351,6 +447,7 @@ export function PageCitabilityCheck({
       // The question travels with the pasted report. Without it a model is
       // handed a lead-answer row about a question it cannot see.
       ...questionLines(t, report),
+      ...conclusionLines(t, report),
       t("render.title"),
       ...renderLines(t, report.render, locale),
       t("summary.counted", {
@@ -380,6 +477,11 @@ export function PageCitabilityCheck({
       "",
       t("limitsTitle"),
       ...report.limits.map((limit) => `- ${t(`limits.${limit}`)}`),
+      "", t("ai.title"), t("ai.boundary"),
+      ...(ai.kind === "done" ? [ai.review.summary, ...aiReviewLines(t, ai.review, locale),
+        ...ai.review.dimensions.map(dimension => `${t(`ai.dimensions.${dimension.id}`)} — ${t(`ai.verdicts.${dimension.verdict}`)}: ${dimension.reason}${dimension.suggestion ? ` ${t("ai.suggestion", { suggestion: dimension.suggestion })}` : ""} [${dimension.evidenceIds.join(", ")}]`),
+        ...ai.review.excerpts.map(excerpt => `${t("ai.source", { id: excerpt.id })}: ${excerpt.text}`)]
+        : ai.kind === "failed" ? aiFailureLines(t, ai) : [t(aiPending ? "ai.running" : "ai.idle")]),
     ];
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
@@ -389,7 +491,7 @@ export function PageCitabilityCheck({
       // on the clipboard before and never learns this button did nothing.
       setCopied("failed");
     }
-  }, [locale, report, t]);
+  }, [ai, aiPending, locale, report, t]);
 
   return (
     <div className="mt-8 grid min-w-0 gap-6">
@@ -567,6 +669,20 @@ export function PageCitabilityCheck({
             </Button>
           </div>
 
+          <section data-testid="citability-conclusion" data-verdict={report.conclusion.verdict} data-coverage={report.conclusion.coverage} className="rounded-xl border border-brand-border-card bg-brand-panel p-5">
+            <h3 className="text-[16px] font-semibold text-text-dark-primary">{t("conclusion.title")}</h3>
+            <p className="mt-2 text-[13px] font-medium leading-[1.7] text-text-dark-primary">{t(`conclusion.verdict.${report.conclusion.verdict}`)}</p>
+            <p className="mt-1 text-[12.5px] leading-[1.7] text-text-dark-secondary">{t(`conclusion.coverage.${report.conclusion.coverage}`)}</p>
+            <p className="mt-1 text-[12.5px] leading-[1.7] text-text-dark-secondary">{t("conclusion.counts", { observed: report.conclusion.observedIssueCheckIds.length, review: report.conclusion.reviewCheckIds.length, unknown: report.conclusion.unknownCheckIds.length, notApplicable: report.conclusion.notApplicableCheckIds.length, advisory: report.conclusion.advisoryCheckIds.length })}</p>
+            <p className="mt-3 text-[12.5px] font-medium text-text-dark-primary">{t("conclusion.priorityTitle")}</p>
+            {report.conclusion.priorityCheckIds.length ? <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-text-dark-secondary">
+              {report.conclusion.priorityCheckIds.map(id => <li key={id}><a className="underline underline-offset-2 hover:text-text-dark-primary" href={`#citability-rule-${id}`}>{t(`rules.${id}`)}</a></li>)}
+            </ul> : <p className="mt-1 text-[12.5px] text-text-dark-secondary">{t("conclusion.noPriorities")}</p>}
+            <ul className="mt-3 grid gap-1 border-t border-brand-border-card pt-3 text-[12.5px] text-text-dark-secondary">
+              {report.conclusion.limitations.map(limit => <li key={limit}>{t(`conclusion.limitations.${limit}`)}</li>)}
+            </ul>
+          </section>
+
           <div>
             <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
               {[
@@ -583,9 +699,9 @@ export function PageCitabilityCheck({
               ))}
             </dl>
             <div className="mt-4 space-y-1.5 text-[12px] leading-[1.7] text-text-dark-secondary">
-              <p className="text-text-dark-primary">{t("summary.counted", { passed: report.summary.passed, counted: report.summary.counted })}</p>
-              <p>{t("summary.rows", { total: report.summary.total, weighted: report.summary.counted + report.summary.fetchError + report.summary.notApplicable, notApplicable: report.summary.notApplicable, fetchError: report.summary.fetchError, denominator: report.summary.counted })}</p>
-              <p>{t("summary.advisoryNote")}</p>
+              <p className="text-[12px] leading-[1.7] text-text-dark-primary">{t("summary.counted", { passed: report.summary.passed, counted: report.summary.counted })}</p>
+              <p className="text-[12px] leading-[1.7]">{t("summary.rows", { total: report.summary.total, weighted: report.summary.counted + report.summary.fetchError + report.summary.notApplicable, notApplicable: report.summary.notApplicable, fetchError: report.summary.fetchError, denominator: report.summary.counted })}</p>
+              <p className="text-[12px] leading-[1.7]">{t("summary.advisoryNote")}</p>
             </div>
           </div>
 
@@ -597,14 +713,55 @@ export function PageCitabilityCheck({
                 {report.rootCauses.map((cause) => <li key={cause.id} className="grid gap-1.5 py-3 text-[12.5px] leading-[1.7] text-text-dark-secondary first:pt-0 last:pb-0 md:grid-cols-[150px_minmax(0,1fr)] md:gap-4">
                   <h4 className="font-medium text-text-dark-primary">{t(`causes.groups.${cause.id}`)}</h4>
                   <div className="min-w-0 break-words">
-                    <p>{t(`causes.basis.${cause.basis}`)}</p>
+                    <p className="text-[12.5px] leading-[1.7]">{t(`causes.basis.${cause.basis}`)}</p>
                     <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">{cause.checkIds.map((id) => <li key={id}><a className="underline underline-offset-2 hover:text-text-dark-primary" href={`#citability-rule-${id}`}>{t(`rules.${id}`)}</a></li>)}</ul>
-                    {cause.relatedCheckIds.length > 0 ? <p className="mt-1">{t("causes.related", { rules: cause.relatedCheckIds.map((id) => t(`rules.${id}`)).join(", ") })}</p> : null}
+                    {cause.relatedCheckIds.length > 0 ? <p className="mt-1 text-[12.5px] leading-[1.7]">{t("causes.related", { rules: cause.relatedCheckIds.map((id) => t(`rules.${id}`)).join(", ") })}</p> : null}
                   </div>
                 </li>)}
               </ul>
             )}
           </div>
+
+          <section data-testid="citability-ai-review" className="rounded-xl border border-brand-border-card bg-brand-panel p-5">
+            <h3 className="text-[16px] font-semibold text-text-dark-primary">{t("ai.title")}</h3>
+            <p className="mt-2 text-[12.5px] leading-[1.7] text-text-dark-secondary">{t("ai.boundary")}</p>
+            <p className="mt-2 text-[12.5px] leading-[1.7] text-text-dark-secondary">{t("ai.sendNote")}</p>
+            <p className="mt-1 text-[12.5px] leading-[1.7] text-text-dark-secondary">{t("ai.limitNote")}</p>
+            {report.targetQuestion === null ? <p className="mt-1 text-[12.5px] leading-[1.7] text-text-dark-secondary">{t("ai.noQuestion")}</p> : null}
+            {!aiEvidenceAvailable ? <p className="mt-2 text-[12.5px] text-text-dark-secondary">{t("ai.evidenceUnavailable")}</p> : null}
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button type="button" variant="outline" size="sm" data-testid="citability-ai-run" disabled={!aiEvidenceAvailable || aiRequestBlocked || aiPending} onClick={() => { void requestAiReview(); }}>{t(aiPending ? "ai.running" : ai.kind === "done" ? "ai.done" : "ai.run")}</Button>
+              {ai.kind === "idle" && !aiPending ? <p className="text-[12px] text-text-dark-secondary">{t("ai.idle")}</p> : null}
+            </div>
+            {ai.kind === "failed" ? <div data-testid="citability-ai-error" role="alert" className="mt-3 grid gap-1 rounded-lg border border-brand-warning/30 bg-brand-warning/[0.05] p-3">
+              {aiFailureLines(t, ai).map((line, index) => <p className="text-[12.5px] leading-[1.7] text-text-dark-secondary" key={index}>{line}</p>)}
+            </div> : null}
+            {ai.kind === "done" ? <div data-testid="citability-ai-result" className="mt-4 border-t border-brand-border-card pt-4">
+              <p className="text-[13px] leading-[1.7] text-text-dark-primary">{ai.review.summary}</p>
+              <ul className="mt-3 grid gap-1 text-[11.5px] text-text-dark-secondary [overflow-wrap:anywhere]">
+                {aiReviewLines(t, ai.review, locale).map((line, index) => <li key={index}>{line}</li>)}
+              </ul>
+              <ul className="mt-4 divide-y divide-brand-border-card">
+                {ai.review.dimensions.map(dimension => <li data-ai-dimension={dimension.id} className="py-3 first:pt-0 last:pb-0" key={dimension.id}>
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <h4 className="text-[13px] font-medium text-text-dark-primary">{t(`ai.dimensions.${dimension.id}`)}</h4>
+                    <span className={`text-[11.5px] ${dimension.verdict === "clear" ? "text-brand-accent-text" : dimension.verdict === "needs_work" ? "text-brand-warning" : "text-text-dark-secondary"}`}>{t(`ai.verdicts.${dimension.verdict}`)}</span>
+                  </div>
+                  <p className="mt-1 text-[13px] leading-[1.7] text-text-dark-secondary">{dimension.reason}</p>
+                  {dimension.suggestion ? <p className="mt-1 text-[12.5px] leading-[1.7] text-text-dark-secondary">{t("ai.suggestion", { suggestion: dimension.suggestion })}</p> : null}
+                  <ul className="mt-1 flex flex-wrap gap-3 text-[11.5px] text-text-dark-secondary">
+                    {dimension.evidenceIds.map(id => <li key={id}><a className="underline underline-offset-2 hover:text-text-dark-primary" href={`#citability-ai-evidence-${id}`} onClick={() => { document.getElementById(`citability-ai-evidence-${id}`)?.closest("details")?.setAttribute("open", ""); }}>{t("ai.source", { id })}</a></li>)}
+                  </ul>
+                </li>)}
+              </ul>
+              <details className="mt-4 border-t border-brand-border-card pt-3">
+                <summary className="cursor-pointer text-[12.5px] font-medium text-text-dark-primary">{t("ai.excerptsTitle")}</summary>
+                <ol className="mt-2 grid gap-3">
+                  {ai.review.excerpts.map(excerpt => <li id={`citability-ai-evidence-${excerpt.id}`} className="scroll-mt-24" key={excerpt.id}><span className="font-mono text-[11.5px] text-text-dark-secondary">{excerpt.id}</span><p className="mt-1 whitespace-pre-wrap text-[13px] leading-[1.7] text-text-dark-secondary [overflow-wrap:anywhere]">{excerpt.text}</p></li>)}
+                </ol>
+              </details>
+            </div> : null}
+          </section>
 
           {(
             [
