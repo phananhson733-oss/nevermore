@@ -1,10 +1,10 @@
 // @input  -- native/Next-proxied authenticated requests carrying SEO/GEO shared briefs or exact confirmed Brief v2
-// @output -- a self-checked versioned Draft result or the stable private error envelope
+// @output -- a self-checked Draft or private refusal; owned GEO question defects never consume quota
 // @pos    -- shared admission and schema dispatch; private GEO verification, v1 orchestration and isolated v2 runner
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { randomUUID } from "node:crypto";
-import { verifyOwnedGeoBrief } from "../geo-tools/brief-reference.ts";
+import { GeoBriefQuestionNeedsReview, verifyOwnedGeoBrief } from "../geo-tools/brief-reference.ts";
 
 import { createPublicToolError } from "@sf/public-tools/contract";
 import {
@@ -85,9 +85,9 @@ import {
  * The brief arrives from the browser — pasted, uploaded or carried over in
  * sessionStorage — so before anything expensive runs it must pass the same
  * exact parser the brief tool ran before it answered. Admission comes first
- * though: login, the per-account slot and the hourly buckets are all settled
- * before the parser's hashing and invariant work, so a bad brief cannot be
- * used to burn CPU outside the slot. Sections are generated in parallel under
+ * though: login and the per-account slot bound parsing and reference work.
+ * GEO verifies the exact owned question before hourly quota; legacy SEO keeps
+ * its bucket-before-parser ordering. Sections are generated in parallel under
  * one entry deadline and every started call is drained before the slot is
  * released; a section that fails does not touch the others; the coverage
  * check is a separate call with a fresh context. A rerun returns a whole new
@@ -542,6 +542,7 @@ async function handle(
     if (refusal !== null) return refusal;
     return await work(admitted);
   } catch (error: unknown) {
+    if (error instanceof GeoBriefQuestionNeedsReview) return refuse("question_needs_review", 422);
     dependencies.emit(JSON.stringify({ tool: TOOL, unhandled: error instanceof Error ? error.name : typeof error }));
     return refuse("draft_unavailable", 503);
   } finally {

@@ -1,0 +1,1144 @@
+{
+  "buildId": "FZShu_pbVMUALOyQTKDuq",
+  "scope": "Integrated release candidate: actual UI/handlers with offline auth/store/provider fixtures; no production or paid-provider claim.",
+  "cases": [
+    {
+      "scope": "local built UI with offline handlers/providers/stores; not production or real-login evidence",
+      "browserBuildId": "FZShu_pbVMUALOyQTKDuq",
+      "locale": "en",
+      "viewport": "desktop",
+      "themesVerified": [
+        "light",
+        "dark"
+      ],
+      "gap": "A",
+      "snapshotId": "11111111-1111-4111-8111-111111111114",
+      "questionSetHash": "af7c49ba78dd4f17b53a061fb4e072c218cdcd6a69bda671eeb33439fab21427",
+      "offlineProviderCalls": 90,
+      "offlineAssemblyCalls": 2,
+      "apiRequests": [
+        "GET /api/auth/profile",
+        "POST /api/consent",
+        "POST /api/tools/geo-brief/load",
+        "GET /api/auth/profile",
+        "POST /api/tools/ai-visibility-check/load",
+        "POST /api/tools/ai-visibility-check/run",
+        "POST /api/tools/ai-visibility-check/run/status",
+        "GET /api/auth/profile",
+        "POST /api/tools/geo-brief/load",
+        "POST /api/tools/geo-brief/run",
+        "POST /api/tools/geo-brief/run"
+      ],
+      "externalRequestsAborted": [],
+      "unexpected": [],
+      "pageErrors": [
+        {
+          "url": "http://127.0.0.1:3139/en/tools/ai-visibility-check",
+          "message": "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+        }
+      ],
+      "fixtureHydrationErrors": [
+        {
+          "url": "http://127.0.0.1:3139/en/tools/ai-visibility-check",
+          "message": "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+        }
+      ],
+      "unexpectedPageErrors": []
+    },
+    {
+      "scope": "local built UI with offline handlers/providers/stores; not production or real-login evidence",
+      "browserBuildId": "FZShu_pbVMUALOyQTKDuq",
+      "locale": "en",
+      "viewport": "mobile",
+      "themesVerified": [
+        "light",
+        "dark"
+      ],
+      "gap": "A",
+      "snapshotId": "11111111-1111-4111-8111-111111111114",
+      "questionSetHash": "af7c49ba78dd4f17b53a061fb4e072c218cdcd6a69bda671eeb33439fab21427",
+      "offlineProviderCalls": 90,
+      "offlineAssemblyCalls": 2,
+      "apiRequests": [
+        "GET /api/auth/profile",
+        "POST /api/consent",
+        "POST /api/tools/geo-brief/load",
+        "GET /api/auth/profile",
+        "POST /api/tools/ai-visibility-check/load",
+        "POST /api/tools/ai-visibility-check/run",
+        "POST /api/tools/ai-visibility-check/run/status",
+        "GET /api/auth/profile",
+        "POST /api/tools/geo-brief/load",
+        "POST /api/tools/geo-brief/run",
+        "POST /api/tools/geo-brief/run"
+      ],
+      "externalRequestsAborted": [],
+      "unexpected": [],
+      "pageErrors": [
+        {
+          "url": "http://127.0.0.1:3139/en/tools/ai-visibility-check",
+          "message": "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+        }
+      ],
+      "fixtureHydrationErrors": [
+        {
+          "url": "http://127.0.0.1:3139/en/tools/ai-visibility-check",
+          "message": "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+        }
+      ],
+      "unexpectedPageErrors": []
+    },
+    {
+      "scope": "local built UI with offline handlers/providers/stores; not production or real-login evidence",
+      "browserBuildId": "FZShu_pbVMUALOyQTKDuq",
+      "locale": "zh",
+      "viewport": "desktop",
+      "themesVerified": [
+        "light",
+        "dark"
+      ],
+      "gap": "D",
+      "snapshotId": "11111111-1111-4111-8111-111111111114",
+      "questionSetHash": "af7c49ba78dd4f17b53a061fb4e072c218cdcd6a69bda671eeb33439fab21427",
+      "offlineProviderCalls": 90,
+      "offlineAssemblyCalls": 2,
+      "apiRequests": [
+        "GET /api/auth/profile",
+        "POST /api/consent",
+        "POST /api/tools/geo-brief/load",
+        "GET /api/auth/profile",
+        "POST /api/tools/ai-visibility-check/load",
+        "POST /api/tools/ai-visibility-check/run",
+        "POST /api/tools/ai-visibility-check/run/status",
+        "GET /api/auth/profile",
+        "POST /api/tools/geo-brief/load",
+        "POST /api/tools/geo-brief/run",
+        "POST /api/tools/geo-brief/run"
+      ],
+      "externalRequestsAborted": [],
+      "unexpected": [],
+      "pageErrors": [
+        {
+          "url": "http://127.0.0.1:3139/zh/tools/ai-visibility-check",
+          "message": "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+        }
+      ],
+      "fixtureHydrationErrors": [
+        {
+          "url": "http://127.0.0.1:3139/zh/tools/ai-visibility-check",
+          "message": "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+        }
+      ],
+      "unexpectedPageErrors": []
+    },
+    {
+      "scope": "local built UI with offline handlers/providers/stores; not production or real-login evidence",
+      "browserBuildId": "FZShu_pbVMUALOyQTKDuq",
+      "locale": "zh",
+      "viewport": "mobile",
+      "themesVerified": [
+        "light",
+        "dark"
+      ],
+      "gap": "D",
+      "snapshotId": "11111111-1111-4111-8111-111111111114",
+      "questionSetHash": "af7c49ba78dd4f17b53a061fb4e072c218cdcd6a69bda671eeb33439fab21427",
+      "offlineProviderCalls": 90,
+      "offlineAssemblyCalls": 2,
+      "apiRequests": [
+        "GET /api/auth/profile",
+        "POST /api/consent",
+        "POST /api/tools/geo-brief/load",
+        "GET /api/auth/profile",
+        "POST /api/tools/ai-visibility-check/load",
+        "POST /api/tools/ai-visibility-check/run",
+        "POST /api/tools/ai-visibility-check/run/status",
+        "GET /api/auth/profile",
+        "POST /api/tools/geo-brief/load",
+        "POST /api/tools/geo-brief/run",
+        "POST /api/tools/geo-brief/run"
+      ],
+      "externalRequestsAborted": [],
+      "unexpected": [],
+      "pageErrors": [
+        {
+          "url": "http://127.0.0.1:3139/zh/tools/ai-visibility-check",
+          "message": "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+        }
+      ],
+      "fixtureHydrationErrors": [
+        {
+          "url": "http://127.0.0.1:3139/zh/tools/ai-visibility-check",
+          "message": "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+        }
+      ],
+      "unexpectedPageErrors": []
+    }
+  ],
+  "layouts": [
+    {
+      "viewport": 1440,
+      "document": 1440,
+      "theme": "dark",
+      "colors": {
+        "rootBackgroundToken": "#0b0f14",
+        "workspaceBackgroundToken": "#0b0f14",
+        "rootTextToken": "#e8edf2",
+        "workspaceTextToken": "#e8edf2",
+        "rootColorScheme": "dark",
+        "workspaceColorScheme": "dark",
+        "bodyBackground": "rgb(11, 15, 20)",
+        "workspaceBackground": "rgb(11, 15, 20)",
+        "bodyColor": "rgb(232, 237, 242)",
+        "workspaceColor": "rgb(232, 237, 242)",
+        "resultBackground": null,
+        "resultColor": null
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 1440,
+      "document": 1440,
+      "theme": "light",
+      "colors": {
+        "rootBackgroundToken": "#f7f9fb",
+        "workspaceBackgroundToken": "#f7f9fb",
+        "rootTextToken": "#0d141c",
+        "workspaceTextToken": "#0d141c",
+        "rootColorScheme": "light",
+        "workspaceColorScheme": "light",
+        "bodyBackground": "rgb(247, 249, 251)",
+        "workspaceBackground": "rgb(247, 249, 251)",
+        "bodyColor": "rgb(13, 20, 28)",
+        "workspaceColor": "rgb(13, 20, 28)",
+        "resultBackground": null,
+        "resultColor": null
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 1440,
+      "document": 1440,
+      "theme": "light",
+      "colors": {
+        "rootBackgroundToken": "#f7f9fb",
+        "workspaceBackgroundToken": "#f7f9fb",
+        "rootTextToken": "#0d141c",
+        "workspaceTextToken": "#0d141c",
+        "rootColorScheme": "light",
+        "workspaceColorScheme": "light",
+        "bodyBackground": "rgb(247, 249, 251)",
+        "workspaceBackground": "rgb(247, 249, 251)",
+        "bodyColor": "rgb(13, 20, 28)",
+        "workspaceColor": "rgb(13, 20, 28)",
+        "resultBackground": null,
+        "resultColor": null
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 1440,
+      "document": 1440,
+      "theme": "dark",
+      "colors": {
+        "rootBackgroundToken": "#0b0f14",
+        "workspaceBackgroundToken": "#0b0f14",
+        "rootTextToken": "#e8edf2",
+        "workspaceTextToken": "#e8edf2",
+        "rootColorScheme": "dark",
+        "workspaceColorScheme": "dark",
+        "bodyBackground": "rgb(11, 15, 20)",
+        "workspaceBackground": "rgb(11, 15, 20)",
+        "bodyColor": "rgb(232, 237, 242)",
+        "workspaceColor": "rgb(232, 237, 242)",
+        "resultBackground": "rgb(11, 15, 20)",
+        "resultColor": "rgb(232, 237, 242)"
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 1440,
+      "document": 1440,
+      "theme": "light",
+      "colors": {
+        "rootBackgroundToken": "#f7f9fb",
+        "workspaceBackgroundToken": "#f7f9fb",
+        "rootTextToken": "#0d141c",
+        "workspaceTextToken": "#0d141c",
+        "rootColorScheme": "light",
+        "workspaceColorScheme": "light",
+        "bodyBackground": "rgb(247, 249, 251)",
+        "workspaceBackground": "rgb(247, 249, 251)",
+        "bodyColor": "rgb(13, 20, 28)",
+        "workspaceColor": "rgb(13, 20, 28)",
+        "resultBackground": "rgb(247, 249, 251)",
+        "resultColor": "rgb(13, 20, 28)"
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 390,
+      "document": 390,
+      "theme": "dark",
+      "colors": {
+        "rootBackgroundToken": "#0b0f14",
+        "workspaceBackgroundToken": "#0b0f14",
+        "rootTextToken": "#e8edf2",
+        "workspaceTextToken": "#e8edf2",
+        "rootColorScheme": "dark",
+        "workspaceColorScheme": "dark",
+        "bodyBackground": "rgb(11, 15, 20)",
+        "workspaceBackground": "rgb(11, 15, 20)",
+        "bodyColor": "rgb(232, 237, 242)",
+        "workspaceColor": "rgb(232, 237, 242)",
+        "resultBackground": null,
+        "resultColor": null
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 390,
+      "document": 390,
+      "theme": "light",
+      "colors": {
+        "rootBackgroundToken": "#f7f9fb",
+        "workspaceBackgroundToken": "#f7f9fb",
+        "rootTextToken": "#0d141c",
+        "workspaceTextToken": "#0d141c",
+        "rootColorScheme": "light",
+        "workspaceColorScheme": "light",
+        "bodyBackground": "rgb(247, 249, 251)",
+        "workspaceBackground": "rgb(247, 249, 251)",
+        "bodyColor": "rgb(13, 20, 28)",
+        "workspaceColor": "rgb(13, 20, 28)",
+        "resultBackground": null,
+        "resultColor": null
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 390,
+      "document": 390,
+      "theme": "light",
+      "colors": {
+        "rootBackgroundToken": "#f7f9fb",
+        "workspaceBackgroundToken": "#f7f9fb",
+        "rootTextToken": "#0d141c",
+        "workspaceTextToken": "#0d141c",
+        "rootColorScheme": "light",
+        "workspaceColorScheme": "light",
+        "bodyBackground": "rgb(247, 249, 251)",
+        "workspaceBackground": "rgb(247, 249, 251)",
+        "bodyColor": "rgb(13, 20, 28)",
+        "workspaceColor": "rgb(13, 20, 28)",
+        "resultBackground": null,
+        "resultColor": null
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 390,
+      "document": 390,
+      "theme": "dark",
+      "colors": {
+        "rootBackgroundToken": "#0b0f14",
+        "workspaceBackgroundToken": "#0b0f14",
+        "rootTextToken": "#e8edf2",
+        "workspaceTextToken": "#e8edf2",
+        "rootColorScheme": "dark",
+        "workspaceColorScheme": "dark",
+        "bodyBackground": "rgb(11, 15, 20)",
+        "workspaceBackground": "rgb(11, 15, 20)",
+        "bodyColor": "rgb(232, 237, 242)",
+        "workspaceColor": "rgb(232, 237, 242)",
+        "resultBackground": "rgb(11, 15, 20)",
+        "resultColor": "rgb(232, 237, 242)"
+      },
+      "overflow": [
+        {
+          "tag": "TABLE",
+          "className": "geo-brief-results-module__Hud0Xa__table geo-brief-results-module__Hud0Xa__questions",
+          "right": 697,
+          "width": 680,
+          "text": "idQuestionCoverageSourceQ1In the opening 200 words, directly answer: What are the top analytics tool"
+        },
+        {
+          "tag": "THEAD",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "idQuestionCoverageSource"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "idQuestionCoverageSource"
+        },
+        {
+          "tag": "TH",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "Coverage"
+        },
+        {
+          "tag": "TH",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "Source"
+        },
+        {
+          "tag": "TBODY",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q1In the opening 200 words, directly answer: What are the top analytics tools right now?Required by "
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q1In the opening 200 words, directly answer: What are the top analytics tools right now?Required by "
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "Required by the frozen knowledge base"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "kb"
+        },
+        {
+          "tag": "SPAN",
+          "className": "geo-brief-results-module__Hud0Xa__source",
+          "right": 592.5,
+          "width": 15.5,
+          "text": "kb"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q2Rival6 / 6 answered samplesai_sample"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "6 / 6 answered samples"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "SPAN",
+          "className": "geo-brief-results-module__Hud0Xa__source",
+          "right": 641.53125,
+          "width": 64.53125,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q3Other6 / 6 answered samplesai_sample"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "6 / 6 answered samples"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "SPAN",
+          "className": "geo-brief-results-module__Hud0Xa__source",
+          "right": 641.53125,
+          "width": 64.53125,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q4Team size6 / 6 answered samplesai_sample"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "6 / 6 answered samples"
+        }
+      ]
+    },
+    {
+      "viewport": 390,
+      "document": 390,
+      "theme": "light",
+      "colors": {
+        "rootBackgroundToken": "#f7f9fb",
+        "workspaceBackgroundToken": "#f7f9fb",
+        "rootTextToken": "#0d141c",
+        "workspaceTextToken": "#0d141c",
+        "rootColorScheme": "light",
+        "workspaceColorScheme": "light",
+        "bodyBackground": "rgb(247, 249, 251)",
+        "workspaceBackground": "rgb(247, 249, 251)",
+        "bodyColor": "rgb(13, 20, 28)",
+        "workspaceColor": "rgb(13, 20, 28)",
+        "resultBackground": "rgb(247, 249, 251)",
+        "resultColor": "rgb(13, 20, 28)"
+      },
+      "overflow": [
+        {
+          "tag": "TABLE",
+          "className": "geo-brief-results-module__Hud0Xa__table geo-brief-results-module__Hud0Xa__questions",
+          "right": 697,
+          "width": 680,
+          "text": "idQuestionCoverageSourceQ1In the opening 200 words, directly answer: What are the top analytics tool"
+        },
+        {
+          "tag": "THEAD",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "idQuestionCoverageSource"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "idQuestionCoverageSource"
+        },
+        {
+          "tag": "TH",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "Coverage"
+        },
+        {
+          "tag": "TH",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "Source"
+        },
+        {
+          "tag": "TBODY",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q1In the opening 200 words, directly answer: What are the top analytics tools right now?Required by "
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q1In the opening 200 words, directly answer: What are the top analytics tools right now?Required by "
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "Required by the frozen knowledge base"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "kb"
+        },
+        {
+          "tag": "SPAN",
+          "className": "geo-brief-results-module__Hud0Xa__source",
+          "right": 592.5,
+          "width": 15.5,
+          "text": "kb"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q2Rival6 / 6 answered samplesai_sample"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "6 / 6 answered samples"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "SPAN",
+          "className": "geo-brief-results-module__Hud0Xa__source",
+          "right": 641.53125,
+          "width": 64.53125,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q3Other6 / 6 answered samplesai_sample"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "6 / 6 answered samples"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "SPAN",
+          "className": "geo-brief-results-module__Hud0Xa__source",
+          "right": 641.53125,
+          "width": 64.53125,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q4Team size6 / 6 answered samplesai_sample"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "6 / 6 answered samples"
+        }
+      ]
+    },
+    {
+      "viewport": 1440,
+      "document": 1440,
+      "theme": "dark",
+      "colors": {
+        "rootBackgroundToken": "#0b0f14",
+        "workspaceBackgroundToken": "#0b0f14",
+        "rootTextToken": "#e8edf2",
+        "workspaceTextToken": "#e8edf2",
+        "rootColorScheme": "dark",
+        "workspaceColorScheme": "dark",
+        "bodyBackground": "rgb(11, 15, 20)",
+        "workspaceBackground": "rgb(11, 15, 20)",
+        "bodyColor": "rgb(232, 237, 242)",
+        "workspaceColor": "rgb(232, 237, 242)",
+        "resultBackground": null,
+        "resultColor": null
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 1440,
+      "document": 1440,
+      "theme": "light",
+      "colors": {
+        "rootBackgroundToken": "#f7f9fb",
+        "workspaceBackgroundToken": "#f7f9fb",
+        "rootTextToken": "#0d141c",
+        "workspaceTextToken": "#0d141c",
+        "rootColorScheme": "light",
+        "workspaceColorScheme": "light",
+        "bodyBackground": "rgb(247, 249, 251)",
+        "workspaceBackground": "rgb(247, 249, 251)",
+        "bodyColor": "rgb(13, 20, 28)",
+        "workspaceColor": "rgb(13, 20, 28)",
+        "resultBackground": null,
+        "resultColor": null
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 1440,
+      "document": 1440,
+      "theme": "light",
+      "colors": {
+        "rootBackgroundToken": "#f7f9fb",
+        "workspaceBackgroundToken": "#f7f9fb",
+        "rootTextToken": "#0d141c",
+        "workspaceTextToken": "#0d141c",
+        "rootColorScheme": "light",
+        "workspaceColorScheme": "light",
+        "bodyBackground": "rgb(247, 249, 251)",
+        "workspaceBackground": "rgb(247, 249, 251)",
+        "bodyColor": "rgb(13, 20, 28)",
+        "workspaceColor": "rgb(13, 20, 28)",
+        "resultBackground": null,
+        "resultColor": null
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 1440,
+      "document": 1440,
+      "theme": "dark",
+      "colors": {
+        "rootBackgroundToken": "#0b0f14",
+        "workspaceBackgroundToken": "#0b0f14",
+        "rootTextToken": "#e8edf2",
+        "workspaceTextToken": "#e8edf2",
+        "rootColorScheme": "dark",
+        "workspaceColorScheme": "dark",
+        "bodyBackground": "rgb(11, 15, 20)",
+        "workspaceBackground": "rgb(11, 15, 20)",
+        "bodyColor": "rgb(232, 237, 242)",
+        "workspaceColor": "rgb(232, 237, 242)",
+        "resultBackground": "rgb(11, 15, 20)",
+        "resultColor": "rgb(232, 237, 242)"
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 1440,
+      "document": 1440,
+      "theme": "light",
+      "colors": {
+        "rootBackgroundToken": "#f7f9fb",
+        "workspaceBackgroundToken": "#f7f9fb",
+        "rootTextToken": "#0d141c",
+        "workspaceTextToken": "#0d141c",
+        "rootColorScheme": "light",
+        "workspaceColorScheme": "light",
+        "bodyBackground": "rgb(247, 249, 251)",
+        "workspaceBackground": "rgb(247, 249, 251)",
+        "bodyColor": "rgb(13, 20, 28)",
+        "workspaceColor": "rgb(13, 20, 28)",
+        "resultBackground": "rgb(247, 249, 251)",
+        "resultColor": "rgb(13, 20, 28)"
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 390,
+      "document": 390,
+      "theme": "dark",
+      "colors": {
+        "rootBackgroundToken": "#0b0f14",
+        "workspaceBackgroundToken": "#0b0f14",
+        "rootTextToken": "#e8edf2",
+        "workspaceTextToken": "#e8edf2",
+        "rootColorScheme": "dark",
+        "workspaceColorScheme": "dark",
+        "bodyBackground": "rgb(11, 15, 20)",
+        "workspaceBackground": "rgb(11, 15, 20)",
+        "bodyColor": "rgb(232, 237, 242)",
+        "workspaceColor": "rgb(232, 237, 242)",
+        "resultBackground": null,
+        "resultColor": null
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 390,
+      "document": 390,
+      "theme": "light",
+      "colors": {
+        "rootBackgroundToken": "#f7f9fb",
+        "workspaceBackgroundToken": "#f7f9fb",
+        "rootTextToken": "#0d141c",
+        "workspaceTextToken": "#0d141c",
+        "rootColorScheme": "light",
+        "workspaceColorScheme": "light",
+        "bodyBackground": "rgb(247, 249, 251)",
+        "workspaceBackground": "rgb(247, 249, 251)",
+        "bodyColor": "rgb(13, 20, 28)",
+        "workspaceColor": "rgb(13, 20, 28)",
+        "resultBackground": null,
+        "resultColor": null
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 390,
+      "document": 390,
+      "theme": "light",
+      "colors": {
+        "rootBackgroundToken": "#f7f9fb",
+        "workspaceBackgroundToken": "#f7f9fb",
+        "rootTextToken": "#0d141c",
+        "workspaceTextToken": "#0d141c",
+        "rootColorScheme": "light",
+        "workspaceColorScheme": "light",
+        "bodyBackground": "rgb(247, 249, 251)",
+        "workspaceBackground": "rgb(247, 249, 251)",
+        "bodyColor": "rgb(13, 20, 28)",
+        "workspaceColor": "rgb(13, 20, 28)",
+        "resultBackground": null,
+        "resultColor": null
+      },
+      "overflow": []
+    },
+    {
+      "viewport": 390,
+      "document": 390,
+      "theme": "dark",
+      "colors": {
+        "rootBackgroundToken": "#0b0f14",
+        "workspaceBackgroundToken": "#0b0f14",
+        "rootTextToken": "#e8edf2",
+        "workspaceTextToken": "#e8edf2",
+        "rootColorScheme": "dark",
+        "workspaceColorScheme": "dark",
+        "bodyBackground": "rgb(11, 15, 20)",
+        "workspaceBackground": "rgb(11, 15, 20)",
+        "bodyColor": "rgb(232, 237, 242)",
+        "workspaceColor": "rgb(232, 237, 242)",
+        "resultBackground": "rgb(11, 15, 20)",
+        "resultColor": "rgb(232, 237, 242)"
+      },
+      "overflow": [
+        {
+          "tag": "TABLE",
+          "className": "geo-brief-results-module__Hud0Xa__table geo-brief-results-module__Hud0Xa__questions",
+          "right": 697,
+          "width": 680,
+          "text": "id问题覆盖来源Q1In the opening 200 words, directly answer: What are the leading analytics tools right now,"
+        },
+        {
+          "tag": "THEAD",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "id问题覆盖来源"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "id问题覆盖来源"
+        },
+        {
+          "tag": "TH",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "覆盖"
+        },
+        {
+          "tag": "TH",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "来源"
+        },
+        {
+          "tag": "TBODY",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q1In the opening 200 words, directly answer: What are the leading analytics tools right now, and how"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q1In the opening 200 words, directly answer: What are the leading analytics tools right now, and how"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "冻结知识库要求项"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "kb"
+        },
+        {
+          "tag": "SPAN",
+          "className": "geo-brief-results-module__Hud0Xa__source",
+          "right": 592.5,
+          "width": 15.5,
+          "text": "kb"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q2Rival6 / 6 个成功回答ai_sample"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "6 / 6 个成功回答"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "SPAN",
+          "className": "geo-brief-results-module__Hud0Xa__source",
+          "right": 641.53125,
+          "width": 64.53125,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q3Acme6 / 6 个成功回答ai_sample"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "6 / 6 个成功回答"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "SPAN",
+          "className": "geo-brief-results-module__Hud0Xa__source",
+          "right": 641.53125,
+          "width": 64.53125,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q4Team size6 / 6 个成功回答ai_sample"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "6 / 6 个成功回答"
+        }
+      ]
+    },
+    {
+      "viewport": 390,
+      "document": 390,
+      "theme": "light",
+      "colors": {
+        "rootBackgroundToken": "#f7f9fb",
+        "workspaceBackgroundToken": "#f7f9fb",
+        "rootTextToken": "#0d141c",
+        "workspaceTextToken": "#0d141c",
+        "rootColorScheme": "light",
+        "workspaceColorScheme": "light",
+        "bodyBackground": "rgb(247, 249, 251)",
+        "workspaceBackground": "rgb(247, 249, 251)",
+        "bodyColor": "rgb(13, 20, 28)",
+        "workspaceColor": "rgb(13, 20, 28)",
+        "resultBackground": "rgb(247, 249, 251)",
+        "resultColor": "rgb(13, 20, 28)"
+      },
+      "overflow": [
+        {
+          "tag": "TABLE",
+          "className": "geo-brief-results-module__Hud0Xa__table geo-brief-results-module__Hud0Xa__questions",
+          "right": 697,
+          "width": 680,
+          "text": "id问题覆盖来源Q1In the opening 200 words, directly answer: What are the leading analytics tools right now,"
+        },
+        {
+          "tag": "THEAD",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "id问题覆盖来源"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "id问题覆盖来源"
+        },
+        {
+          "tag": "TH",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "覆盖"
+        },
+        {
+          "tag": "TH",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "来源"
+        },
+        {
+          "tag": "TBODY",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q1In the opening 200 words, directly answer: What are the leading analytics tools right now, and how"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q1In the opening 200 words, directly answer: What are the leading analytics tools right now, and how"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "冻结知识库要求项"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "kb"
+        },
+        {
+          "tag": "SPAN",
+          "className": "geo-brief-results-module__Hud0Xa__source",
+          "right": 592.5,
+          "width": 15.5,
+          "text": "kb"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q2Rival6 / 6 个成功回答ai_sample"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "6 / 6 个成功回答"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "SPAN",
+          "className": "geo-brief-results-module__Hud0Xa__source",
+          "right": 641.53125,
+          "width": 64.53125,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q3Acme6 / 6 个成功回答ai_sample"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "6 / 6 个成功回答"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 697,
+          "width": 136,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "SPAN",
+          "className": "geo-brief-results-module__Hud0Xa__source",
+          "right": 641.53125,
+          "width": 64.53125,
+          "text": "ai_sample"
+        },
+        {
+          "tag": "TR",
+          "className": "",
+          "right": 697,
+          "width": 680,
+          "text": "Q4Team size6 / 6 个成功回答ai_sample"
+        },
+        {
+          "tag": "TD",
+          "className": "",
+          "right": 561,
+          "width": 180,
+          "text": "6 / 6 个成功回答"
+        }
+      ]
+    }
+  ]
+}

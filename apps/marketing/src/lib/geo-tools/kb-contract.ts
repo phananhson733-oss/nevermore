@@ -4,6 +4,7 @@
 
 import { isMatchableGeoName } from "../agents/geo-alias-match.ts";
 import { isSupportedGeoQuestionLanguage } from "./asset-context.ts";
+import { geoQuestionLanguageIssue, geoQuestionProperNames } from "./question-quality.ts";
 
 export const GEO_KB_SCHEMA_VERSION = "marketing-geo-kb.v1" as const;
 
@@ -28,7 +29,7 @@ export interface GeoKbRole {
   readonly segment: string;
   readonly painPoints: readonly string[];
   readonly decisionCriteria: readonly string[];
-  /** Words this role actually uses; they become required entities in questions. */
+  /** Words this role actually uses; retained as context, not automatic required entities. */
   readonly vocabulary: readonly string[];
 }
 
@@ -414,6 +415,8 @@ export type GeoKbBlocker =
   | "aliases_missing"
   | "alias_too_short"
   | "category_terms_missing"
+  | "category_language_mismatch"
+  | "question_quality"
   | "no_confirmed_competitor"
   | "role_missing"
   | "unsupported_language";
@@ -445,6 +448,9 @@ export function geoKbBlockers(
     blockers.push("alias_too_short");
   }
   if (payload.categoryTerms.length === 0) blockers.push("category_terms_missing");
+  if (geoQuestionLanguageIssue(payload.categoryTerms[0] ?? "", payload.market.language, geoQuestionProperNames(payload))) {
+    blockers.push("category_language_mismatch");
+  }
   if (payload.roles.length === 0 && options.roleLayersSkipped !== true) blockers.push("role_missing");
   if (!payload.competitors.some((entry) => entry.confirmed)) {
     blockers.push("no_confirmed_competitor");

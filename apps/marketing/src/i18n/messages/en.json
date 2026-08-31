@@ -4461,11 +4461,19 @@
       "v2": {
         "confirmed": "Confirmed writing brief",
         "revision": "Revision {revision}",
-        "source": { "handoff": "From Content Brief Builder", "paste": "Pasted JSON", "upload": "Uploaded JSON" },
+        "source": {
+          "handoff": "From Content Brief Builder",
+          "paste": "Pasted JSON",
+          "upload": "Uploaded JSON"
+        },
         "create": "Create a new page",
         "update": "Rewrite the existing page",
         "explicitCreate": "You explicitly chose to create a page despite an undecidable recommendation.",
-        "steps": { "keep": "Keep", "add": "Add", "rewrite": "Rewrite" },
+        "steps": {
+          "keep": "Keep",
+          "add": "Add",
+          "rewrite": "Rewrite"
+        },
         "confirmedReceipt": "Confirmed revision fingerprint",
         "sectionsHelp": "Generate only the checked sections. Each section uses a bounded model call; unchecked sections remain skipped. Coverage checks every frozen question against all successfully generated text.",
         "settingsChanged": "Settings changed. Section reruns are paused until the settings match this draft again; generate a new draft to apply the new settings.",
@@ -4485,7 +4493,10 @@
         "generatedSections": "Generated sections",
         "proseLength": "Generated prose",
         "questionCoverage": "Questions covered",
-        "length": { "words": "{count} words", "non_whitespace_characters": "{count} non-whitespace characters" },
+        "length": {
+          "words": "{count} words",
+          "non_whitespace_characters": "{count} non-whitespace characters"
+        },
         "lengthNote": "Length measures sentence prose only, excluding H2 and H3 headings. Character counts are not English word counts.",
         "coverageUnavailable": "Unavailable",
         "coverageUnavailableBody": "Coverage could not be validated. Each question remains unknown, not zero or uncovered by assumption.",
@@ -4509,7 +4520,11 @@
         "downloadJson": "Download draft JSON",
         "relatedLinks": "Related links",
         "exportNote": "Markdown preserves every H2, real generated H3/prose, failed or skipped section notes, and confirmed related links, without claim annotations. JSON preserves the full result and its fingerprint unchanged.",
-        "export": { "copied": "Copied to clipboard.", "downloaded": "Download prepared.", "failed": "The browser could not complete the export. Check its permissions and try again." },
+        "export": {
+          "copied": "Copied to clipboard.",
+          "downloaded": "Download prepared.",
+          "failed": "The browser could not complete the export. Check its permissions and try again."
+        },
         "runReceipt": "Run and model receipts",
         "initialUsage": "Section usage covers all requested calls in this run; coverage usage is recorded separately. Null token counts mean not reported, never zero.",
         "rerunUsage": "Section usage covers only the changed section's calls. Coverage was checked over the resulting whole draft; earlier section receipts remain attached to their sections. Null token counts mean not reported.",
@@ -4548,7 +4563,13 @@
         "unsupportedLanguage": "This brief's language ({language}) is not supported by v1 for draft generation.",
         "replace": "Replace brief",
         "geoOrigin": "GEO brief · carried evidence requires server verification",
-        "geoUnsupportedLanguage": "GEO generation currently supports English locales (en and en-*) only. This brief uses {language}; its original locale is retained."
+        "geoUnsupportedLanguage": "GEO generation currently supports English locales (en and en-*) only. This brief uses {language}; its original locale is retained.",
+        "geoEvidenceCheck": "The server verifies the exact owned question and evidence before consuming generation quota. Imported JSON is not proof of verification.",
+        "geoStructureOnly": "Structure only · no usable sourced facts",
+        "geoEvidenceSummary": "{facts} usable sourced facts · {samples} answered samples",
+        "geoLimited": "Evidence limited",
+        "geoEvidenceAvailable": "Evidence available",
+        "geoNoOutline": "No outline available"
       },
       "settings": {
         "title": "Draft settings",
@@ -4600,7 +4621,8 @@
         "section_not_writable": "The requested section is not writable in this brief, so the draft did not start.",
         "previous_draft_invalid": "The existing draft no longer passes validation (it may have been edited, or it comes from an older version), so this section cannot be rerun. Generate the draft again in full.",
         "draft_unavailable": "A verifiable draft could not be produced this time. This is not about your brief; try again shortly.",
-        "unknown": "The draft could not be completed."
+        "unknown": "The draft could not be completed.",
+        "question_needs_review": "This frozen GEO question needs review before drafting. Update its category or role wording in the GEO knowledge base, save and freeze a new version, then generate a new Brief. No generation quota was consumed."
       },
       "errorsWithRetry": {
         "run_in_progress": "Another draft is already being generated for this account. Try again in {seconds} s.",
@@ -5234,7 +5256,8 @@
         "countryLabel": "Market",
         "languageLabel": "Question language",
         "languageNote": "English only for now. The calibrated question wording was measured in English; asking in another language would spend the same money on wording nobody has measured.",
-        "languageHelp": "This changes only the GEO draft. Save it before freezing; the website profile and existing frozen versions stay unchanged."
+        "languageHelp": "This changes only the GEO draft. Save it before freezing; the website profile and existing frozen versions stay unchanged.",
+        "categoryLanguageHelp": "The first term supplies the English question subject. Use a specific English category; secondary terms stay as context, not automatic required entities. Brand names may keep their original spelling."
       },
       "roles": {
         "title": "Who you sell to",
@@ -5321,7 +5344,9 @@
           "role_missing": "Add at least one role.",
           "no_confirmed_competitor": "Confirm at least one competitor's name.",
           "alias_too_short": "That name is too short for the matcher to look for: at least three letters, or two characters in a script written without spaces. Write it out in full, or add a longer alias — a name this short would make every answer that mentions you read as one that did not.",
-          "unsupported_language": "The question registry does not support the selected language."
+          "unsupported_language": "The question registry does not support the selected language.",
+          "category_language_mismatch": "Use an English primary category for the English question templates (for example, astrology). Brand and competitor names may keep their original spelling. Save, review, and freeze a new version.",
+          "question_quality": "These questions contain a language mismatch or unrelated required terms. Review the category and role wording, then save and freeze a new version. Existing frozen versions are unchanged."
         },
         "current": "Current version: {revision}, frozen at {time}",
         "questions": "{count} questions, {retrieval} of them with measured search wording",
@@ -5443,6 +5468,53 @@
       }
     },
     "geoBrief": {
+      "artifact": {
+        "input": "Input",
+        "result": "Result",
+        "viewLabel": "Brief views",
+        "output": "Output ContentBrief v1.1",
+        "noticeTitle": "Bring a gap into the brief · C gaps stay outside the content chain",
+        "noticeBody": "A / D gaps bring their question, role and evidence pointers. B gaps go to page citability checks; C gaps need third-party evidence. You can also choose a frozen question or type one; briefs without an owned run explicitly carry no observed run evidence.",
+        "question": "Target question",
+        "gap": "Gap type",
+        "role": "Audience role",
+        "knowledge": "Knowledge base / question set",
+        "noGap": "No gap selected · no observed run evidence",
+        "noRole": "No role attached",
+        "roleHint": "From the role attached to the selected frozen question, not the current editable draft.",
+        "gapHint": "The gap is verified against the owned run. D selects a comparison page; A uses the question intent.",
+        "knowledgeHint": "Scoring requirements and facts come from this exact frozen version.",
+        "noMetadata": "Complete display metadata is not available for this version",
+        "questionHint": "Frozen question · {layer} · {id}",
+        "gapA": "A · Content missing",
+        "gapD": "D · Comparison content missing",
+        "frozen": "kb@v{revision} frozen",
+        "questions": "{count} questions",
+        "createKnowledge": "Open GEO knowledge base",
+        "submit": "Generate GEO Brief",
+        "questionLayerGap": "Question / layer / gap",
+        "evidencePointer": "Evidence pointers",
+        "versionAnchor": "Version anchors",
+        "versionAnchorNote": "Exact version references are included in the JSON export.",
+        "exactReferences": "Show exact references and hashes",
+        "noSamples": "No answer samples",
+        "sampleTopics": "Observed topics",
+        "failedSamples": "{count} failed samples are excluded from coverage.",
+        "leadAnswerNote": "Also required by must_answer {id}.",
+        "mustAnswerCount": "{count} questions",
+        "mustAnswerNote": "ai_sample = subtopics observed in AI answers; kb = frozen scoring requirements.",
+        "questionColumn": "Question",
+        "coverageColumn": "Coverage",
+        "sourceColumn": "Source",
+        "dimensionColumn": "Dimension",
+        "outlineNote": "source: model · Each section lists the questions it answers.",
+        "answers": "Answers {ids}",
+        "fieldsTitle": "GEO values for v1 fields",
+        "emptyFacts": "No facts available; do not invent specific values.",
+        "emptyLinks": "No internal links in the site index",
+        "handoffNote": "Stages this same Brief in this tab’s sessionStorage; content is not placed in the URL.",
+        "limitsBody": "Reuses successful answers from the selected owned run without resampling. Without a run, no observed coverage is invented. AI answers determine required topics only; numbers and product claims must come from non-null facts. GEO has no SERP length baseline, so length stays unavailable and the page decision remains undecidable."
+      },
       "eyebrow": "GEO tools",
       "title": "GEO Brief Builder",
       "intro": "Build a shared ContentBrief from a frozen knowledge base or an eligible gap in an owned visibility run. Requirements, observed topics and facts remain separate, with exact sources and version anchors preserved through Draft.",
@@ -5560,7 +5632,8 @@
         "unsupported_language": "GEO generation currently supports English locales (en and en-*) only. Nothing was charged.",
         "run_evidence_unavailable": "The owned run evidence is unavailable or incomplete.",
         "handoff_invalid": "The handoff expired or no longer matches.",
-        "unknown": "That did not work, and the reason was not one this page recognises."
+        "unknown": "That did not work, and the reason was not one this page recognises.",
+        "question_needs_review": "Review this question’s language or required terms in the knowledge base and freeze a new version. No generation quota was consumed."
       },
       "faq": {
         "title": "Questions about this",
@@ -5603,6 +5676,121 @@
             "blurb": "The frozen version a brief is written against: names, rivals, roles, verified facts."
           }
         ]
+      },
+      "quality": {
+        "title": "Evidence and next steps",
+        "status": {
+          "revise_question": "Revise the question before writing",
+          "no_outline": "No draft outline available",
+          "structure_only": "Structure only · facts needed",
+          "limited": "Outline available · evidence is incomplete",
+          "evidence_available": "Outline and supporting evidence available"
+        },
+        "description": {
+          "revise_question": "This frozen question has a language or relevance issue. Create and confirm a revised version before generating a Draft. The original question and evidence remain unchanged.",
+          "no_outline": "This result has no usable outline. Review the question and evidence before trying again.",
+          "structure_only": "No facts with matching source records were supplied. This outline can guide structure, but it does not support product claims, numbers or comparisons.",
+          "limited": "Only the listed facts and observed topics are supported. Missing evidence is not filled in by the model; review the gaps before writing.",
+          "evidence_available": "These counts describe the evidence supplied for this run, not a guarantee that every claim or question has been researched. Review the sources before use."
+        },
+        "outlineCount": "{count} outline sections",
+        "factCount": "{count} facts with source records",
+        "observedCount": "{questions} observed topics from {samples} answered samples",
+        "missingFacts": "Listed facts without a usable value or matching source record: {count}.",
+        "noFacts": "Add facts with their source and observation date, then freeze a new version.",
+        "noSamples": "No successful visibility answers are linked. Required questions are not observed coverage.",
+        "noObservedTopics": "Linked answers were present, but they did not yield reusable observed topics.",
+        "noProfile": "This frozen version has no linked website profile snapshot. Current profile edits are not substituted.",
+        "repairKnowledge": "Review knowledge and create a new version",
+        "runVisibility": "Open AI visibility check",
+        "structureDraft": "Continue with a structure-only Draft",
+        "limitedDraft": "Continue with the available evidence",
+        "structureDraftNote": "A structure-only Draft may contain connective text and explicit gaps only; it cannot add unsupported facts.",
+        "origin": {
+          "visibility": "From a visibility gap and its linked run",
+          "frozen_question": "From a frozen question · no visibility run linked",
+          "typed_question": "From a question you typed · no visibility run linked"
+        },
+        "question": "Target question",
+        "generalRole": "General question · not persona-specific",
+        "unresolvedRole": "A role is linked; its display name is unavailable",
+        "marketLanguage": "Market: {market} · Output language: {language}",
+        "version": "Knowledge base · version {revision}",
+        "questionSetVersion": "Question template version · {version}",
+        "technical": "Technical details and exact references",
+        "leadRequirement": "Opening requirement",
+        "entities": "Terms from the frozen question",
+        "noEntities": "No terms are prescribed for this question.",
+        "openingFrozen": "System opening rule based on the frozen question",
+        "openingManual": "System opening rule based on your typed question",
+        "frozenCriterion": "Decision requirement from the frozen role",
+        "observedQuestion": "Topic observed in answer samples",
+        "openingNote": "The opening rule is also listed as {id}; it is not a separately confirmed scoring criterion.",
+        "requiredItem": "Writing requirement · not observed coverage",
+        "questionsTitle": "Required questions · {count}",
+        "questionsNote": "System rules, frozen role criteria and observed topics are shown separately.",
+        "idColumn": "ID",
+        "factValue": "Usable value",
+        "noValue": "No usable value",
+        "factReasons": {
+          "missing": "Not supplied",
+          "conflicting": "Sources disagree",
+          "unverified": "Not verified",
+          "notPublished": "Not publicly available",
+          "fetchFailed": "Source page could not be read",
+          "lowConfidence": "Available evidence is inconclusive"
+        },
+        "factRestriction": "Do not state a specific value until this is resolved.",
+        "outlineTitle": "Suggested outline",
+        "outlineNote": "Generated by the model. Each section lists the required questions it addresses.",
+        "noOutline": "No usable outline was returned. Check the question and evidence before trying again.",
+        "boundaries": "Writing guidance and limitations",
+        "formatValues": {
+          "comparison": "Comparison page",
+          "guide": "Guide",
+          "product_page": "Product page"
+        },
+        "formatNote": "Suggested from question intent or the selected comparison gap.",
+        "formatUnavailable": "There is not enough information to suggest a format.",
+        "pageBoundary": "This GEO workflow does not inspect search results, so it cannot decide whether to create or update a page.",
+        "lengthBoundary": "This workflow does not collect a search-result length baseline; no target word count is recommended.",
+        "noSiteIndex": "No usable site index was supplied for this question. Links are not invented or fetched from the current profile.",
+        "delivered": "Created {date} · Copy and exports use this same Brief.",
+        "sampleStatus": {
+          "answered": "Answered",
+          "failed": "Failed · excluded from coverage"
+        },
+        "sampleDate": "Collected {date}",
+        "viewEvidence": "View answer evidence",
+        "layers": {
+          "problem": "Problem",
+          "discovery": "Discovery",
+          "comparison": "Comparison",
+          "evaluation": "Evaluation",
+          "branded": "Brand awareness"
+        },
+        "gapB": "B · Page citability issue",
+        "noGap": "No visibility gap linked",
+        "layerGap": "Question stage and gap",
+        "profileFields": {
+          "productName": "Product name",
+          "oneLinePositioning": "Product positioning",
+          "coreFeatures": "Product capability"
+        },
+        "inputEvidence": "What this version supports",
+        "inputFacts": "{count} sourced facts",
+        "inputNoFacts": "This frozen version has no usable fact evidence. Only a structure draft is possible. Add sourced facts in the knowledge base and freeze a new version.",
+        "inputNoProfile": "This version has no website-profile snapshot reference. Current editable profile data will not replace its historical evidence.",
+        "inputVersion": "Revision {revision} · {count} frozen questions · Content language: {language}",
+        "inputQuestionSource": "Frozen question · {layer}",
+        "inputNoRun": "No visibility run is attached: no observed coverage is reported and no new sampling is purchased.",
+        "retryRead": "Read this version again",
+        "needsRevisionInput": "This frozen question needs a language or required-term review. Update the knowledge base, save and freeze a new version; historical text and evidence stay unchanged.",
+        "typedLanguageIssue": "Write the question in the current content language, English. Known brand names may keep their original spelling.",
+        "generateStructure": "Generate structure draft",
+        "generalQuestionRole": "General question, no specific persona",
+        "manualQuestionRole": "Defined by your question, no frozen persona",
+        "readingEvidence": "Reading this version’s facts and sources…"
       }
     },
     "aiVisibility": {

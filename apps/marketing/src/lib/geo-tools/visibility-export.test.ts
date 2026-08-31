@@ -5,8 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import { createVisibilityReportV2, type VisibilityReportInputV2 } from "./visibility-v2.ts";
 import { VISIBILITY_ENGINE_CONFIG } from "./visibility-engines.ts";
 import type { GeoQuestion } from "./kb-questions.ts";
-import { buildGeoQuestionSet } from "./kb-questions.ts";
-import { emptyGeoKbPayload, parseGeoKbPayload } from "./kb-contract.ts";
 import type { VisibilitySampleV2 } from "./visibility-v2-contract.ts";
 import { compareVisibilityReportsV2, exportVisibilityJson, parseVisibilityImport, parseVisibilityReportV2 } from "./visibility-export.ts";
 import { decodeVisibilityWire } from "./visibility-wire.ts";
@@ -148,15 +146,22 @@ describe("portable visibility V2", () => {
     expect(parseVisibilityReportV2(report({ samples }))).toBeNull();
   });
 
-  it("preserves duplicate required entities emitted by the real frozen question builder", () => {
-    const parsed = parseGeoKbPayload({ ...emptyGeoKbPayload("https://acme.test"), officialName: "Acme", categoryTerms: ["analytics"], roles: [{ id: "r1", label: "founders", segment: "", painPoints: ["analytics"], vocabulary: ["analytics"], decisionCriteria: [] }] });
-    expect(parsed.ok).toBe(true);
-    if (!parsed.ok) throw new Error("fixture invalid");
-    const questions = buildGeoQuestionSet(parsed.value).questions;
-    expect(questions.some((q) => q.requiredEntities.filter((term) => term === "analytics").length > 1)).toBe(true);
+  it("preserves duplicate required entities in historical frozen question definitions", () => {
+    // Captured from the pre-quality-policy generator at 977f0bc4. New freezes
+    // no longer emit this duplication; the portable reader must retain it.
+    const questions: GeoQuestion[] = [{
+      id: "q09-natural.jtbd_best_for_buyer", text: "What are the best analytics tools for founders?",
+      layer: "problem", mode: "demand", roleId: "r1", requiredEntities: ["analytics", "analytics", "analytics"],
+      templateId: "geo.natural.jtbd_best_for_buyer", calibrated: true,
+    }, {
+      id: "q10-natural.pain_current_workflow", text: "How do founders currently handle analytics, and which tools do they use?",
+      layer: "problem", mode: "demand", roleId: "r1", requiredEntities: ["analytics", "analytics", "analytics"],
+      templateId: "geo.natural.pain_current_workflow", calibrated: true,
+    }];
     const source = report({ questions, samples: [] });
     expect(parseVisibilityReportV2(source)).not.toBeNull();
     expect(parseVisibilityImport(exportVisibilityJson(source))).toMatchObject({ ok: true, report: source });
+    expect(source.questions[0]?.definition.requiredEntities).toEqual(["analytics", "analytics", "analytics"]);
   });
 
   it("rejects reusing one provider task as two distinct observation slots", () => {

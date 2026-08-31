@@ -1,5 +1,5 @@
 // @input -- an untrusted GEO brief or shared fixed-key handoff
-// @output -- exact version, reference, derived-field and fingerprint validation
+// @output -- exact version, reference, derived-field and fingerprint validation, including the historical empty-facts readiness projection
 // @pos -- consistency validation only; a fingerprint is NOT proof of authentic observations
 import { fingerprintCanonical } from "./canonical.ts";
 import { geoOutlineSupportViolation } from "./geo-fact-support.ts";
@@ -64,7 +64,17 @@ export function deriveGeoFormat(brief: Pick<GeoContentBrief, "geo_origin" | "int
 }
 
 export function deriveGeoReadiness(brief: Pick<GeoContentBrief, "outline" | "fact_table">): GeoContentBrief["draft_readiness"] {
-  return { writable: brief.outline.status === "available" ? brief.outline.items.map(item => item.id) : [], gaps: [...(brief.outline.status === "unavailable" ? ["no_outline" as const] : []), ...(brief.fact_table.some(fact => fact.value === null) ? ["missing_facts" as const] : [])] };
+  return { writable: brief.outline.status === "available" ? brief.outline.items.map(item => item.id) : [], gaps: [...(brief.outline.status === "unavailable" ? ["no_outline" as const] : []), ...(brief.fact_table.length === 0 || brief.fact_table.some(fact => fact.value === null) ? ["missing_facts" as const] : [])] };
+}
+
+function readinessViolation(brief: GeoContentBrief): ParseBriefFailure | null {
+  const expected = deriveGeoReadiness(brief);
+  const failure = recomputed(expected, brief.draft_readiness, "draft_readiness");
+  if (failure === null || brief.fact_table.length > 0) return failure;
+  // Old v1.1 exports omitted missing_facts only when the table was empty.
+  // Preserve their bytes/fingerprint and exact structural section IDs. Factual
+  // sufficiency must come from fact_table/evidence, never this legacy gaps list.
+  return recomputed({ ...expected, gaps: expected.gaps.filter(gap => gap !== "missing_facts") }, brief.draft_readiness, "draft_readiness");
 }
 
 function topicKey(text: string): string { return text.normalize("NFC").toLowerCase().replace(/\s+/gu, " ").trim(); }
@@ -148,7 +158,7 @@ function invariants(brief: GeoContentBrief): ParseBriefFailure | null {
   return recomputed(derived.must_answer, brief.must_answer, "must_answer")
     ?? recomputed(derived.budget, brief.budget, "budget")
     ?? recomputed(deriveGeoFormat(brief), brief.format, "format")
-    ?? recomputed(deriveGeoReadiness(brief), brief.draft_readiness, "draft_readiness");
+    ?? readinessViolation(brief);
 }
 
 export function parseGeoContentBriefShape(input: unknown): Decoded<GeoContentBrief> {

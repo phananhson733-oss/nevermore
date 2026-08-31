@@ -4461,11 +4461,19 @@
       "v2": {
         "confirmed": "已确认的写作简报",
         "revision": "确认版本 {revision}",
-        "source": { "handoff": "来自 Content Brief Builder", "paste": "粘贴的 JSON", "upload": "上传的 JSON" },
+        "source": {
+          "handoff": "来自 Content Brief Builder",
+          "paste": "粘贴的 JSON",
+          "upload": "上传的 JSON"
+        },
         "create": "新建页面",
         "update": "重写现有页面",
         "explicitCreate": "在建议暂无法判定时，你明确选择了新建页面。",
-        "steps": { "keep": "保留", "add": "新增", "rewrite": "重写" },
+        "steps": {
+          "keep": "保留",
+          "add": "新增",
+          "rewrite": "重写"
+        },
         "confirmedReceipt": "已确认版本的指纹",
         "sectionsHelp": "只生成勾选的章节，每节使用有预算限制的模型调用；未勾选的章节保留为跳过。覆盖度会将全部冻结问题与所有成功生成的正文核对。",
         "settingsChanged": "设置已变更。单节重跑暂停，直到设置重新匹配当前初稿；要应用新设置，请重新生成初稿。",
@@ -4485,7 +4493,10 @@
         "generatedSections": "已生成章节",
         "proseLength": "生成正文长度",
         "questionCoverage": "已覆盖问题",
-        "length": { "words": "{count} 词", "non_whitespace_characters": "{count} 个非空白字符" },
+        "length": {
+          "words": "{count} 词",
+          "non_whitespace_characters": "{count} 个非空白字符"
+        },
         "lengthNote": "长度仅计算句子正文，不含 H2、H3 标题；字符数不是英文词数。",
         "coverageUnavailable": "暂不可用",
         "coverageUnavailableBody": "覆盖度未通过校验。每个问题的覆盖状态仍然未知，不默认记为零或未覆盖。",
@@ -4509,7 +4520,11 @@
         "downloadJson": "下载初稿 JSON",
         "relatedLinks": "相关链接",
         "exportNote": "Markdown 保留全部 H2、真实生成的 H3 与正文、失败或跳过章节的说明，以及已确认的相关链接，不包含主张注释。JSON 原样保留完整结果与指纹。",
-        "export": { "copied": "已复制到剪贴板。", "downloaded": "已准备下载。", "failed": "浏览器未能完成导出，请检查权限后重试。" },
+        "export": {
+          "copied": "已复制到剪贴板。",
+          "downloaded": "已准备下载。",
+          "failed": "浏览器未能完成导出，请检查权限后重试。"
+        },
         "runReceipt": "运行与模型收据",
         "initialUsage": "章节用量包含本轮全部请求的模型调用，覆盖度用量单独记录。Token 数为 null 表示未报告，不是零。",
         "rerunUsage": "章节用量仅包含本次变更章节的调用。覆盖度针对重跑后的整篇初稿检查，其他章节的历史收据仍保留在对应章节中。Token 数为 null 表示未报告。",
@@ -4548,7 +4563,13 @@
         "unsupportedLanguage": "本 brief 的语言（{language}）v1 不支持生成 draft。",
         "replace": "更换 brief",
         "geoOrigin": "GEO Brief · 携带证据须经服务端核验",
-        "geoUnsupportedLanguage": "GEO 生成目前仅支持英语及其地区变体（en、en-*）。这份 Brief 的语言为 {language}；原始语言信息不会被改写。"
+        "geoUnsupportedLanguage": "GEO 生成目前仅支持英语及其地区变体（en、en-*）。这份 Brief 的语言为 {language}；原始语言信息不会被改写。",
+        "geoEvidenceCheck": "服务端会在扣生成额度前核验提问及证据的精确归属；导入 JSON 不代表已通过核验。",
+        "geoStructureOnly": "仅结构稿 · 没有可用的来源事实",
+        "geoEvidenceSummary": "{facts} 条可用来源事实 · {samples} 条已回答样本",
+        "geoLimited": "证据有限",
+        "geoEvidenceAvailable": "已带入证据",
+        "geoNoOutline": "暂无可用大纲"
       },
       "settings": {
         "title": "生成设置",
@@ -4600,7 +4621,8 @@
         "section_not_writable": "请求的段落在本 brief 里不可写，draft 没有开始。",
         "previous_draft_invalid": "现有初稿无法再次通过校验（可能被改过或来自旧版本），这一段不能重跑。请重新完整生成。",
         "draft_unavailable": "这次没能生成可核实的初稿。这不是你的 brief 的问题，请稍后重试。",
-        "unknown": "draft 没有完成。"
+        "unknown": "draft 没有完成。",
+        "question_needs_review": "这份 GEO 冻结提问需要先核对。请在 GEO 知识库修改分类词或角色表述，保存并冻结新版本，再生成新的 Brief；本次未扣生成额度。"
       },
       "errorsWithRetry": {
         "run_in_progress": "这个账号已有一次生成在进行中，{seconds} 秒后再试。",
@@ -5234,7 +5256,8 @@
         "countryLabel": "市场",
         "languageLabel": "提问语言",
         "languageNote": "目前只有英文。已标定的问句措辞是在英文下测出来的；换语言等于用同样的钱去问没人测过的措辞。",
-        "languageHelp": "这里只修改 GEO 草稿。冻结前请保存；网站档案与已有冻结版本不变。"
+        "languageHelp": "这里只修改 GEO 草稿。冻结前请保存；网站档案与已有冻结版本不变。",
+        "categoryLanguageHelp": "首个分类词用于英文提问的主题，请填写明确的英文品类；其余词仅作为背景，不会自动成为必提实体。品牌名可保留原文。"
       },
       "roles": {
         "title": "你卖给谁",
@@ -5321,7 +5344,9 @@
           "role_missing": "至少加一个角色。",
           "no_confirmed_competitor": "至少确认一个竞品的名字。",
           "alias_too_short": "这个名字太短，匹配器不会去找它：拉丁字母至少 3 个，不写空格的文字（中日文等）至少 2 个。请写全称，或者补一个更长的别名——名字这么短，每一个提到你的回答都会被报成没提到你。",
-          "unsupported_language": "当前问题模板不支持所选语言。"
+          "unsupported_language": "当前问题模板不支持所选语言。",
+          "category_language_mismatch": "英文提问模板需要英文的首个分类词（例如 astrology）；品牌与竞品名可保留原文。请保存、核对后冻结新版本。",
+          "question_quality": "提问中有语言不一致或未被提问引用的必提词。请核对分类词与角色表述，保存并冻结新版本；历史冻结版本不会改写。"
         },
         "current": "当前版本：第 {revision} 版，冻结于 {time}",
         "questions": "共 {count} 条问题，其中 {retrieval} 条用的是已标定的检索措辞",
@@ -5443,6 +5468,53 @@
       }
     },
     "geoBrief": {
+      "artifact": {
+        "input": "输入",
+        "result": "结果",
+        "viewLabel": "Brief 视图",
+        "output": "输出 ContentBrief v1.1",
+        "noticeTitle": "从缺口卡带入 · C 类不进内容链",
+        "noticeBody": "A / D 类缺口会带入目标提问、角色和证据指针。B 类先做页面可引用性检查，C 类转为第三方佐证。也可选择冻结提问或手动输入；没有所属运行时，Brief 会标明「无运行观测证据」。",
+        "question": "目标提问",
+        "gap": "缺口类型",
+        "role": "面向角色",
+        "knowledge": "知识库 / 提问集",
+        "noGap": "未带入缺口 · 无运行观测证据",
+        "noRole": "未绑定角色",
+        "roleHint": "来自所选冻结提问绑定的角色，不使用当前可变草稿。",
+        "gapHint": "缺口来自服务端核验的所属运行；D 类预选对比页，A 类按意图推断。",
+        "knowledgeHint": "评分要求与事实来自这个精确冻结版本。",
+        "noMetadata": "此版本尚未提供完整显示信息",
+        "questionHint": "冻结提问 · {layer} · {id}",
+        "gapA": "A 缺内容",
+        "gapD": "D 缺对比内容",
+        "frozen": "kb@v{revision} 已冻结",
+        "questions": "{count} 条提问",
+        "createKnowledge": "打开 GEO 知识库",
+        "submit": "生成 GEO Brief",
+        "questionLayerGap": "提问 / 层 / 缺口",
+        "evidencePointer": "证据指针",
+        "versionAnchor": "版本锚",
+        "versionAnchorNote": "精确版本凭证随 JSON 一并导出。",
+        "exactReferences": "展开精确引用与哈希",
+        "noSamples": "没有回答样本",
+        "sampleTopics": "观测子话题",
+        "failedSamples": "{count} 条失败样本不计入覆盖数。",
+        "leadAnswerNote": "同时对应 must_answer 的 {id}。",
+        "mustAnswerCount": "{count} 条",
+        "mustAnswerNote": "ai_sample = AI 回答中的子话题聚类；kb = 冻结评分要求。",
+        "questionColumn": "问题",
+        "coverageColumn": "覆盖",
+        "sourceColumn": "来源",
+        "dimensionColumn": "维度",
+        "outlineNote": "source: model · 每节右侧标明对应问题。",
+        "answers": "满足 {ids}",
+        "fieldsTitle": "v1 字段的 GEO 取值",
+        "emptyFacts": "没有可用事实；不得补造具体值。",
+        "emptyLinks": "没有站点索引内链",
+        "handoffNote": "通过当前标签页的 sessionStorage 交接同一份 Brief；不把内容写入 URL。",
+        "limitsBody": "复用所选所属运行的成功回答，不重新采样；没有运行时不生成观测覆盖数。AI 回答只用于确定必答问题，数字与产品事实必须来自非空事实表。GEO 没有 SERP 篇幅基准，因此 length 保持 unavailable，页面决策保持不可判定。"
+      },
       "eyebrow": "GEO 工具",
       "title": "GEO Brief 生成器",
       "intro": "从冻结知识库或所属可见性运行中的合格缺口，生成共享 ContentBrief。评分要求、观测子话题与事实分开呈现，来源和精确版本锚一直保留到 Draft。",
@@ -5560,7 +5632,8 @@
         "unsupported_language": "GEO 生成目前仅支持英语及其地区变体（en、en-*）。没有产生花费。",
         "run_evidence_unavailable": "所属运行证据不可用或不完整。",
         "handoff_invalid": "交接已过期或不再匹配。",
-        "unknown": "没跑成，而且原因不是这一页认识的那几种。"
+        "unknown": "没跑成，而且原因不是这一页认识的那几种。",
+        "question_needs_review": "这道提问需要先核对语言或必提词范围。请更新知识库并冻结新版本；本次未扣生成额度。"
       },
       "faq": {
         "title": "关于它的几个问题",
@@ -5603,6 +5676,121 @@
             "blurb": "Brief 对着写的那个冻结版本：名字、竞品、角色、已核实的事实。"
           }
         ]
+      },
+      "quality": {
+        "title": "资料与下一步",
+        "status": {
+          "revise_question": "请先修订提问",
+          "no_outline": "尚未生成可用大纲",
+          "structure_only": "仅有结构，需补充事实",
+          "limited": "大纲已生成，资料仍有缺口",
+          "evidence_available": "已取得大纲和支持资料"
+        },
+        "description": {
+          "revise_question": "此冻结提问存在语言或相关性问题。请创建并确认修订版本后再生成 Draft；原提问及证据保持不变。",
+          "no_outline": "本次未取得可用大纲。请检查提问及资料后再试。",
+          "structure_only": "本次未取得有来源记录支持的事实。大纲仅供组织结构，不能支持产品能力、数字或对比结论。",
+          "limited": "仅表内事实和已观测主题有资料支持。模型不会补造缺失证据，请先检查下方缺口。",
+          "evidence_available": "这些数量仅代表本次带入的资料，不表示所有事实或问题均已研究充分。使用前请核对来源。"
+        },
+        "outlineCount": "{count} 个大纲章节",
+        "factCount": "{count} 条有来源的事实",
+        "observedCount": "{samples} 份成功回答中的 {questions} 个观测主题",
+        "missingFacts": "已列出的 {count} 条事实缺少可用值或匹配来源。",
+        "noFacts": "请补充事实、来源和记录时间，再冻结新版本。",
+        "noSamples": "未关联成功的可见性回答，必答要求不代表已观测覆盖。",
+        "noObservedTopics": "虽然关联了成功回答，但这批回答没有产出可复用的观测主题。",
+        "noProfile": "此冻结版本未关联网站档案快照，不会以当前档案内容替换旧版本。",
+        "repairKnowledge": "检查知识库并创建新版本",
+        "runVisibility": "打开 AI 可见性体检",
+        "structureDraft": "仅继续生成结构草稿",
+        "limitedDraft": "使用现有资料继续生成",
+        "structureDraftNote": "结构草稿仅可组织表达并标明资料缺口，不得新增无依据的事实。",
+        "origin": {
+          "visibility": "来自可见性缺口及其关联运行",
+          "frozen_question": "来自冻结提问，未关联可见性运行",
+          "typed_question": "来自手动输入的提问，未关联可见性运行"
+        },
+        "question": "目标提问",
+        "generalRole": "通用提问，未限定单一角色",
+        "unresolvedRole": "已关联角色，暂未取得可显示的角色名称",
+        "marketLanguage": "目标市场：{market} · 输出语言：{language}",
+        "version": "知识库 · 第 {revision} 版",
+        "questionSetVersion": "提问模板版本 · {version}",
+        "technical": "技术详情与精确引用",
+        "leadRequirement": "开篇要求",
+        "entities": "冻结提问中的覆盖术语",
+        "noEntities": "此提问未指定必须覆盖的术语。",
+        "openingFrozen": "基于冻结提问的系统开篇要求",
+        "openingManual": "基于手动提问的系统开篇要求",
+        "frozenCriterion": "冻结角色的决策要求",
+        "observedQuestion": "回答样本中观测到的主题",
+        "openingNote": "开篇要求同时列为 {id}，不是另行确认的评分标准。",
+        "requiredItem": "写作要求，不计入观测覆盖",
+        "questionsTitle": "必须回答的问题 · {count} 条",
+        "questionsNote": "分别标注系统要求、冻结角色要求和回答中的观测主题。",
+        "idColumn": "编号",
+        "factValue": "可用事实",
+        "noValue": "暂无可用值",
+        "factReasons": {
+          "missing": "尚未录入",
+          "conflicting": "来源相互冲突",
+          "unverified": "尚未核实",
+          "notPublished": "尚未公开",
+          "fetchFailed": "未能读取来源页面",
+          "lowConfidence": "现有证据不足以确认"
+        },
+        "factRestriction": "补全并核实之前，不得写成具体事实。",
+        "outlineTitle": "建议大纲",
+        "outlineNote": "由模型组织结构，每节标注对应的必答问题。",
+        "noOutline": "未返回可用大纲，请检查提问和资料后再试。",
+        "boundaries": "写作建议与适用边界",
+        "formatValues": {
+          "comparison": "对比页",
+          "guide": "指南",
+          "product_page": "产品介绍页"
+        },
+        "formatNote": "依据提问意图或所选对比缺口推导。",
+        "formatUnavailable": "现有信息不足以建议内容形式。",
+        "pageBoundary": "本 GEO 流程未检查搜索结果，无法据此决定新建页面还是更新已有页面。",
+        "lengthBoundary": "本流程不采集搜索结果的篇幅基线，因此不提供目标字数。",
+        "noSiteIndex": "本次未取得适用于此提问的站点索引，不会补造链接或从当前档案替换资料。",
+        "delivered": "生成于 {date} · 复制和导出使用同一份 Brief。",
+        "sampleStatus": {
+          "answered": "回答成功",
+          "failed": "回答失败，不计入覆盖"
+        },
+        "sampleDate": "采集于 {date}",
+        "viewEvidence": "查看回答证据",
+        "layers": {
+          "problem": "问题认知",
+          "discovery": "品类发现",
+          "comparison": "方案对比",
+          "evaluation": "选型评估",
+          "branded": "品牌认知"
+        },
+        "gapB": "B · 页面可引用性问题",
+        "noGap": "未关联可见性缺口",
+        "layerGap": "提问阶段与缺口",
+        "profileFields": {
+          "productName": "产品名称",
+          "oneLinePositioning": "产品定位",
+          "coreFeatures": "产品能力"
+        },
+        "inputEvidence": "这版资料能支持什么",
+        "inputFacts": "{count} 条有来源事实",
+        "inputNoFacts": "此冻结版本未带入可用事实，只能生成结构草稿。请先在知识库补充来源事实并冻结新版本。",
+        "inputNoProfile": "此冻结版本未关联网站档案快照；不会使用当前可变档案补写旧证据。",
+        "inputVersion": "第 {revision} 版 · {count} 条冻结提问 · 内容语言：{language}",
+        "inputQuestionSource": "来自冻结提问 · {layer}",
+        "inputNoRun": "未关联可见性运行：不会产生回答覆盖数，也不会重新购买采样。",
+        "retryRead": "重新读取此版本资料",
+        "needsRevisionInput": "这道冻结提问的语言或必提词范围需要更新。请核对知识库、保存并冻结新版本；旧版本原文和证据不会改写。",
+        "typedLanguageIssue": "请用当前内容语言（英语）填写提问；已知品牌名可保留原文。",
+        "generateStructure": "生成结构草稿",
+        "generalQuestionRole": "通用提问，不限定单一角色",
+        "manualQuestionRole": "按手动提问确定，不绑定冻结角色",
+        "readingEvidence": "正在读取此版本的事实与来源…"
       }
     },
     "aiVisibility": {
