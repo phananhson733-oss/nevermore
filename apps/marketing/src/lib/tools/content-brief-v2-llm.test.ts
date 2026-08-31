@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { LLM_DEADLINE_MS } from "@sf/public-tools/content-brief/constants";
 import { buildResearchBundle, parseResearchBundle } from "@sf/public-tools/content-brief/v2-research";
 import type { ResearchPage } from "@sf/public-tools/content-brief/v2-contract";
 import type { BriefV2Context, ModelBriefV2Output } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { parseBriefV2Context } from "@sf/public-tools/content-brief/v2-generation";
 import { runContentBriefV2Llm } from "./content-brief-v2-llm.ts";
-import { KeywordLlmError, type KeywordLlmClient, type KeywordLlmConfig, type KeywordLlmFailureReason, type KeywordLlmRequest } from "./keyword-llm-client.ts";
+import { createKeywordLlmClient, KeywordLlmError, type KeywordLlmClient, type KeywordLlmConfig, type KeywordLlmFailureReason, type KeywordLlmRequest } from "./keyword-llm-client.ts";
 
 const NOW = 1_800_000_000_000;
 const CONFIG: KeywordLlmConfig = { apiKey: "test-key", model: "brief-deployment", url: "https://llm.example/v1/chat/completions", authScheme: "bearer", temperature: null };
@@ -68,7 +69,8 @@ describe("one-call Brief v2 assembly", () => {
     expect(result.output?.research.outline).toEqual([{ id: "O1", h2: "Validate claims before submission", h3: ["Insurance checks"], answers: ["Q1"] }]);
     expect(result.output?.page_plan).toMatchObject({ action: "create", steps: [] });
     expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({ temperature: 0.2, timeoutMs: 15_000, maxOutputTokens: 4000 });
+    expect(requests[0]).toMatchObject({ temperature: 0.2, timeoutMs: 30_000, maxOutputTokens: 4000 });
+    expect(LLM_DEADLINE_MS).toBe(15_000);
     expect(result.reads).toEqual({ status: "complete", calls: 1, model_id: "deployment-reported", temperature_requested: 0.2, temperature_effective: null, input_tokens: 1200, output_tokens: 500 });
     expect(result.prompt_bytes).toBe(new TextEncoder().encode(JSON.stringify({ system: requests[0]!.system, user: requests[0]!.user })).byteLength);
   });
@@ -168,10 +170,10 @@ describe("one-call Brief v2 assembly", () => {
     expect(recorded.requests[0]?.timeoutMs).toBe(1200);
   });
 
-  it("rejects an otherwise valid completion after the call deadline and preserves its usage", async () => {
+  it.each([30_000, 30_001])("rejects an otherwise valid completion at or after the call deadline (%s ms) and preserves its usage", async (elapsed) => {
     const recorded = recorder();
     let clock = NOW;
-    const client: KeywordLlmClient = { complete: async (request) => { const response = await recorded.client.complete(request); clock = NOW + 15_001; return response; } };
+    const client: KeywordLlmClient = { complete: async (request) => { const response = await recorded.client.complete(request); clock = NOW + elapsed; return response; } };
     const result = await runContentBriefV2Llm({ context: context(), deadlineAt: NOW + 45_000 }, { config: CONFIG, client, now: () => clock });
     expect(result.output).toBeNull();
     expect(result.reads).toMatchObject({ reason: "timeout", attempted: 1, calls: 1, input_tokens: 1200, output_tokens: 500 });
@@ -184,6 +186,35 @@ describe("one-call Brief v2 assembly", () => {
     const { result, requests } = await run(new KeywordLlmError(reason, "redacted provider error", { requestCount: 1, retryCount: 0, inputTokens: null, outputTokens: 40 }));
     expect(requests).toHaveLength(1);
     expect(result.reads).toEqual({ status: "unavailable", reason: expected, attempted: 1, calls: 1, model_id: null, input_tokens: null, output_tokens: 40 });
+  });
+
+  it.each(["network_error", 400, 401, 429, 500, "invalid_json"] as const)("counts the factory client's attempted fetch for %s without inventing token usage", async (failure) => {
+    let fetches = 0;
+    const client = createKeywordLlmClient({ config: CONFIG, fetchImpl: async () => {
+      fetches += 1;
+      if (failure === "network_error") throw new TypeError("fixture network failure");
+      return failure === "invalid_json" ? new Response("not JSON") : new Response(null, { status: failure });
+    } });
+    const result = await runContentBriefV2Llm({ context: context(), deadlineAt: NOW + 45_000 }, { config: CONFIG, client, now: () => NOW });
+    expect(fetches).toBe(1);
+    expect(result.output).toBeNull();
+    expect(result.reads).toEqual({ status: "unavailable", reason: "provider_error", attempted: 1, calls: 1, model_id: null, input_tokens: null, output_tokens: null });
+  });
+
+  it("keeps the factory client's preflight configuration failure at zero attempted calls", async () => {
+    let fetches = 0;
+    const client = createKeywordLlmClient({ env: {}, fetchImpl: async () => { fetches += 1; return new Response(null); } });
+    const result = await runContentBriefV2Llm({ context: context(), deadlineAt: NOW + 45_000 }, { config: CONFIG, client, now: () => NOW });
+    expect(fetches).toBe(0);
+    expect(result.reads).toEqual({ status: "unavailable", reason: "not_configured", attempted: 0, calls: 0, model_id: null, input_tokens: null, output_tokens: null });
+  });
+
+  it("never starts the factory client's fetch when only envelope time remains", async () => {
+    let fetches = 0;
+    const client = createKeywordLlmClient({ config: CONFIG, fetchImpl: async () => { fetches += 1; return new Response(null); } });
+    const result = await runContentBriefV2Llm({ context: context(), deadlineAt: NOW + 5000 }, { config: CONFIG, client, now: () => NOW });
+    expect(fetches).toBe(0);
+    expect(result.reads).toEqual({ status: "unavailable", reason: "timeout", attempted: 0, calls: 0, model_id: null, input_tokens: null, output_tokens: null });
   });
 
   it("rethrows programming errors instead of blaming the provider", async () => {

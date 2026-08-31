@@ -177,6 +177,7 @@ describe("runContentBriefV2 admitted generation", () => {
     expect(brief.generated).toBeNull();
     expect(brief.run.llm).toMatchObject({ status: "unavailable", reason: "timeout", attempted: 0, calls: 0 });
     expect(brief.run.reads.find((read) => read.source === "competitors")).toMatchObject({ status: "unavailable", reason: "timeout" });
+    expect((await parseContentBriefV2(brief)).ok).toBe(true);
   });
 
   it("does not report complete research when all SERP rows omit their URL", async () => {
@@ -218,17 +219,38 @@ describe("runContentBriefV2 admitted generation", () => {
     expect(JSON.stringify(brief)).not.toContain("secret");
   });
 
-  it("fails closed and finishes if an injected LLM runner never supplies a usage receipt", async () => {
+  it.each([0, 30_000])("bounds a runner without a usage receipt when %s ms of the run is already elapsed", async (elapsed) => {
     vi.useFakeTimers();
-    vi.setSystemTime(START);
+    vi.setSystemTime(START + elapsed);
     const fixture = seams();
     const pending = runContentBriefV2(REQUEST, { ...fixture.deps, runLlm: async () => new Promise<never>(() => undefined), now: Date.now });
     let settled = false;
     const outcome = pending.then((value) => { settled = true; return { value }; }, (error: unknown) => { settled = true; return { error }; });
-    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(elapsed === 0 ? 30_000 : 9900);
     expect(settled).toBe(false);
     await vi.advanceTimersByTimeAsync(100);
     expect(await outcome).toEqual({ error: expect.any(ContentBriefV2RunError) });
+    expect(Date.now()).toBe(START + (elapsed === 0 ? 30_100 : 40_000));
+  });
+
+  it("exports a valid full brief when the factory client's single completion takes 20 seconds", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(START);
+    const fixture = seams();
+    const fetchImpl = vi.fn(async (_url: string, options?: RequestInit): Promise<Response> => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => resolve(Response.json({ model: "fixture-model", choices: [{ message: { content: JSON.stringify(model()) } }], usage: { prompt_tokens: 350, completion_tokens: 200 } })), 20_000);
+      options?.signal?.addEventListener("abort", () => { clearTimeout(timer); reject(new DOMException("fixture timeout", "AbortError")); }, { once: true });
+    }));
+    const client = createKeywordLlmClient({ config: CONFIG, fetchImpl });
+    const pending = runContentBriefV2(REQUEST, { ...fixture.deps, now: Date.now, runLlm: (input) => runContentBriefV2Llm(input, { client, config: CONFIG, now: Date.now }) });
+    const outcome = pending.then((value) => ({ value }), (error: unknown) => ({ error }));
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(await outcome).toMatchObject({ value: { generated: { research: { questions: [{ id: "Q1" }], outline: [{ id: "O1" }] } }, run: { elapsed_ms: 20_000, llm: { status: "complete", calls: 1, input_tokens: 350, output_tokens: 200 }, serp_cost_usd: 0.002 } } });
+    const brief = await pending;
+    expect(await parseContentBriefV2(brief)).toEqual({ ok: true, value: brief });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))).toMatchObject({ model: CONFIG.model, temperature: 1, max_completion_tokens: 4000 });
+    expect(fetchImpl.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
   });
 
   it("preserves the actual client timeout receipt instead of racing it with the outer watchdog", async () => {
@@ -241,9 +263,13 @@ describe("runContentBriefV2 admitted generation", () => {
     const client = createKeywordLlmClient({ config: CONFIG, fetchImpl });
     const pending = runContentBriefV2(REQUEST, { ...fixture.deps, now: Date.now, runLlm: (input) => runContentBriefV2Llm(input, { client, config: CONFIG, now: Date.now }) });
     const outcome = pending.then((value) => ({ value }), (error: unknown) => ({ error }));
-    await vi.advanceTimersByTimeAsync(15_000);
-    expect(await outcome).toMatchObject({ value: { generated: null, run: { llm: { status: "unavailable", reason: "timeout", attempted: 1 }, serp_cost_usd: 0.002 } } });
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(fetchImpl.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await outcome).toMatchObject({ value: { generated: null, run: { elapsed_ms: 30_000, llm: { status: "unavailable", reason: "timeout", attempted: 1, calls: 1, model_id: null, input_tokens: null, output_tokens: null }, serp_cost_usd: 0.002 } } });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    expect((await parseContentBriefV2(await pending)).ok).toBe(true);
   });
 
   it("keeps all five seconds of assembly headroom when the provider timeout gets the remaining budget", async () => {
@@ -256,7 +282,8 @@ describe("runContentBriefV2 admitted generation", () => {
     const pending = runContentBriefV2(REQUEST, { ...fixture.deps, now: Date.now, runLlm: (input) => runContentBriefV2Llm(input, { client, config: CONFIG, now: Date.now }) });
     const outcome = pending.then((value) => ({ value }), (error: unknown) => ({ error }));
     await vi.advanceTimersByTimeAsync(9_900);
-    expect(await outcome).toMatchObject({ value: { generated: null, run: { elapsed_ms: 39_900, llm: { status: "unavailable", reason: "timeout" } } } });
+    expect(await outcome).toMatchObject({ value: { generated: null, run: { elapsed_ms: 39_900, llm: { status: "unavailable", reason: "timeout", attempted: 1, calls: 1, input_tokens: null, output_tokens: null } } } });
+    expect((await parseContentBriefV2(await pending)).ok).toBe(true);
   });
 
   it("keeps a redirected owned candidate unresolved without substituting a new-page action", async () => {

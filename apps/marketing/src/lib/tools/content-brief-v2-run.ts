@@ -2,7 +2,7 @@
 // @output -- a self-checked whole v2 brief using the exact model-visible evidence
 // @pos -- Marketing generation orchestration, never authentication or admission
 import { buildSerpObservations, planCrawlTargets } from "@sf/public-tools/content-brief/assemble";
-import { CRAWL_DEADLINE_MS, ENVELOPE_MS, GSC_DEADLINE_MS, LLM_DEADLINE_MS, RUN_BUDGET_MS, SERP_DEADLINE_MS, SERP_DEPTH } from "@sf/public-tools/content-brief/constants";
+import { CRAWL_DEADLINE_MS, ENVELOPE_MS, GSC_DEADLINE_MS, RUN_BUDGET_MS, SERP_DEADLINE_MS, SERP_DEPTH } from "@sf/public-tools/content-brief/constants";
 import type { ProfileFact } from "@sf/public-tools/content-brief/contract";
 import { hostKey } from "@sf/public-tools/content-brief/host";
 import { fingerprintBriefV2, parseContentBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
@@ -19,7 +19,7 @@ import {
   type ContentBriefV2CrawlResult,
   type ContentBriefV2CrawlTarget,
 } from "./content-brief-v2-crawl.ts";
-import { runContentBriefV2Llm, type ContentBriefV2LlmResult } from "./content-brief-v2-llm.ts";
+import { CONTENT_BRIEF_V2_LLM_DEADLINE_MS, runContentBriefV2Llm, type ContentBriefV2LlmResult } from "./content-brief-v2-llm.ts";
 
 export interface ContentBriefV2ReadBudget {
   readonly signal: AbortSignal;
@@ -213,9 +213,9 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
   // The runner owns the single provider attempt and its usage. An uncooperative
   // injected runner must not hang; without its receipt we cannot invent usage.
   // Leave 100 ms for the client's own timeout receipt to settle before the
-  // outer watchdog. Provider work stays <=15 s and assembly keeps its full 5 s.
+  // outer watchdog. Provider work stays <=30 s and assembly keeps its full 5 s.
   const settlementMs = 100;
-  const llmBudget = remaining(clock, LLM_DEADLINE_MS + settlementMs);
+  const llmBudget = remaining(clock, CONTENT_BRIEF_V2_LLM_DEADLINE_MS + settlementMs);
   const llm: ContentBriefV2LlmResult | null = llmBudget <= settlementMs
     ? { context, output: null, reads: { status: "unavailable", reason: "timeout", attempted: 0, calls: 0, model_id: null, input_tokens: null, output_tokens: null }, prompt_bytes: 0 }
     : await lane(() => (dependencies.runLlm ?? runContentBriefV2Llm)({ context, deadlineAt: clock.deadlineAt - settlementMs }, { now: clock.now }), llmBudget, clock, () => null);

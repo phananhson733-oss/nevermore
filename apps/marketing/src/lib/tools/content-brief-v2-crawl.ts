@@ -1,9 +1,10 @@
 // @input -- bounded competitor/owned targets, research language and shared run deadline
-// @output -- shared lexical URL admission, ordered v2 evidence or an explicit failure per target
+// @output -- ordered v2 evidence or explicit failure; browser-check interstitials are not article evidence
 // @pos -- Marketing-only research acquisition via the shared SSRF-safe public transport
 
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
+import { load } from "cheerio";
 import {
   CRAWL_CONCURRENCY, CRAWL_DEADLINE_MS, CRAWL_FETCH_TIMEOUT_MS,
   CRAWL_MAX_BYTES_PER_PAGE, ENVELOPE_MS,
@@ -108,6 +109,19 @@ interface Clock {
   readonly wallClockAt: number;
 }
 
+/** Known HTTP-200 interstitial identity, not a keyword-based article-quality filter. */
+function isRecaptchaInterstitial(html: string): boolean {
+  const $ = load(html);
+  const title = $("title").first().text().replace(/\s+/gu, " ").trim();
+  if (!/^checking your browser(?:\s*[-–—]\s*recaptcha)?$/iu.test(title) || $(".g-recaptcha").length === 0) return false;
+  return $('base[href], link[rel="canonical"][href]').toArray().some((node) => {
+    try {
+      const url = new URL($(node).attr("href")!);
+      return url.protocol === "https:" && ["google.com", "www.google.com"].includes(url.hostname) && url.pathname.replace(/\/$/u, "") === "/recaptcha/challengepage";
+    } catch { return false; }
+  });
+}
+
 async function crawlOne(
   target: ContentBriefV2CrawlTarget, language: string, clock: Clock, fetchResource: typeof fetchPublicResource,
 ): Promise<Outcome> {
@@ -135,6 +149,7 @@ async function crawlOne(
   const mediaType = result.contentType?.split(";")[0]?.trim().toLowerCase();
   if (mediaType !== "text/html" && mediaType !== "application/xhtml+xml") return failure(target, "insufficient_evidence");
   try {
+    if (isRecaptchaInterstitial(result.body)) return failure(target, "insufficient_evidence");
     const research = extractContentBriefResearch(result.body, language);
     const contentHash = createHash("sha256").update(result.body).digest("hex");
     const fetchedAt = clock.now();

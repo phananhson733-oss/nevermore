@@ -1,13 +1,15 @@
 // @input -- a frozen v2 context, remaining deadline and CONTENT_BRIEF_* configuration
 // @output -- the exact model context, validated full assembly and honest usage
 // @pos -- one v2 assembly call; no retry, fallback or external source reads
-import { ENVELOPE_MS, LLM_DEADLINE_MS, LLM_MAX_OUTPUT_TOKENS } from "@sf/public-tools/content-brief/constants";
+import { ENVELOPE_MS, LLM_MAX_OUTPUT_TOKENS } from "@sf/public-tools/content-brief/constants";
 import type { LlmReadMeta, UnavailableReason } from "@sf/public-tools/content-brief/contract";
 import type { BriefV2Context, BriefV2Generated } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { parseBriefV2Context, validateModelBriefV2 } from "@sf/public-tools/content-brief/v2-generation";
 import { CONTENT_BRIEF_LLM_TEMPERATURE, resolveContentBriefLlmConfig, type ContentBriefLlmDependencies } from "./content-brief-llm.ts";
 import { prepareContentBriefV2Prompt } from "./content-brief-v2-prompts.ts";
 import { createKeywordLlmClient, EMPTY_KEYWORD_LLM_USAGE, KeywordLlmError, type KeywordLlmCompletion, type KeywordLlmFailureReason, type KeywordLlmUsage } from "./keyword-llm-client.ts";
+
+export const CONTENT_BRIEF_V2_LLM_DEADLINE_MS = 30_000;
 
 export interface ContentBriefV2LlmResult {
   readonly context: BriefV2Context;
@@ -46,7 +48,7 @@ export async function runContentBriefV2Llm(
   const startedAt = now();
   const remaining = Math.floor(input.deadlineAt - startedAt - ENVELOPE_MS);
   if (!Number.isFinite(remaining) || remaining <= 0) return withoutCall(prepared.context, "timeout");
-  const timeoutMs = Math.min(LLM_DEADLINE_MS, remaining);
+  const timeoutMs = Math.min(CONTENT_BRIEF_V2_LLM_DEADLINE_MS, remaining);
   const attemptDeadline = startedAt + timeoutMs;
   const client = deps.client ?? createKeywordLlmClient({ config });
   const { context, prompt_bytes } = prepared;
@@ -55,7 +57,10 @@ export async function runContentBriefV2Llm(
     completion = await client.complete({ system: prepared.system, user: prepared.user, temperature: CONTENT_BRIEF_LLM_TEMPERATURE, maxOutputTokens: LLM_MAX_OUTPUT_TOKENS, timeoutMs });
   } catch (error) {
     if (!(error instanceof KeywordLlmError)) throw error;
-    return { context, output: null, reads: unavailable(FAILURE_REASONS[error.reason], 1, error.usage, null), prompt_bytes };
+    // The shared client omits usage on transport errors after fetch. V2 still
+    // knows it attempted one request; only not_configured can fail preflight.
+    const usage = { ...error.usage, requestCount: error.reason === "not_configured" ? error.usage.requestCount : Math.max(1, error.usage.requestCount) };
+    return { context, output: null, reads: unavailable(FAILURE_REASONS[error.reason], usage.requestCount > 0 ? 1 : 0, usage, null), prompt_bytes };
   }
   const modelId = completion.modelId ?? config.model;
   const fail = (reason: UnavailableReason): ContentBriefV2LlmResult => ({ context, output: null, reads: unavailable(reason, 1, completion.usage, modelId), prompt_bytes });
