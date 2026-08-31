@@ -1214,24 +1214,6 @@ export function DailyBriefingResults({
         completedAt={envelope.run.completedAt}
       />
 
-      <div data-reading-facts className={`${CARD} text-[12px] leading-[1.65] text-text-dark-secondary`}>
-        <p className="font-semibold text-text-dark-primary">{t("sourceEvidence.title")}</p>
-        <p className="mt-2 break-all">{property} · {t("sourceEvidence.web")}</p>
-        <p>{t("sourceEvidence.current")}: {result.windows === null ? t("kpis.unavailable") : `${result.windows.current7Days.startDate} – ${result.windows.current7Days.endDate}`}</p>
-        <p>{t("sourceEvidence.previous")}: {result.windows === null ? t("kpis.unavailable") : `${result.windows.previous7Days.startDate} – ${result.windows.previous7Days.endDate}`}</p>
-        <p>{t("sourceEvidence.timeBasis")}</p>
-        <p>{t("sourceEvidence.readAt")}: <time dateTime={result.freshness.readAt}>{result.freshness.readAt}</time></p>
-        <p>{t("sourceEvidence.latestDate")}: {result.freshness.latestAvailableDate ?? t("kpis.unavailable")}</p>
-        {result.freshness.firstIncompleteDate === null ? null : <p>{t("sourceEvidence.incompleteFrom", { date: result.freshness.firstIncompleteDate })}</p>}
-        {result.freshness.comparisonEligible ? null : <p data-comparison-withheld className="mt-2 text-brand-warning">{t(`sourceEvidence.freshness.${result.freshness.status}`)}</p>}
-        {result.verification === null ? null : (
-          <p data-api-verification className="mt-2">{t("sourceEvidence.apiVerified", { count: result.verification.verifiedCount })}
-            {result.verification.withheldCount > 0 ? ` ${t("sourceEvidence.withheld", { count: result.verification.withheldCount })}` : ""}
-          </p>
-        )}
-        <p className="mt-2">{t("sourceEvidence.websiteNote")}</p>
-      </div>
-
       <section
         aria-labelledby="daily-briefing-changes"
         data-result-section="changes"

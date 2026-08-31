@@ -556,16 +556,17 @@ function expectToolLinksOpenInANewTab(host: HTMLElement): void {
 }
 
 describe("DailyBriefingResults trend and evidence facts", () => {
-  it("shows the exact current and previous windows beside the reading time", async () => {
-    const host = await renderResults();
+  it("keeps exact reporting windows in row evidence without the global notice panel", async () => {
+    const host = await renderResults(envelope({ changes: [change("stable_position_click_decline", 1)] }));
     const facts = host.querySelector("[data-reading-facts]");
-    expect(facts).not.toBeNull();
-    expect(facts?.textContent).toContain("2026-08-15");
-    expect(facts?.textContent).toContain("2026-08-21");
-    expect(facts?.textContent).toContain("2026-08-08");
-    expect(facts?.textContent).toContain("2026-08-14");
-    expect(facts?.textContent).toContain("Pacific Time / PT");
-    expect(facts?.querySelector("time")?.getAttribute("dateTime")).toBe(BASE_ENVELOPE.run.completedAt);
+    expect(facts).toBeNull();
+    const evidence = host.querySelector("[data-gsc-evidence]");
+    expect(evidence?.textContent).toContain("2026-08-15");
+    expect(evidence?.textContent).toContain("2026-08-21");
+    expect(evidence?.textContent).toContain("2026-08-08");
+    expect(evidence?.textContent).toContain("2026-08-14");
+    expect(evidence?.querySelector("[data-gsc-period=current]")).not.toBeNull();
+    expect(evidence?.querySelector("[data-gsc-period=previous]")).not.toBeNull();
   });
 
   it("distinguishes query totals from exact query-page metrics in GSC links", async () => {
@@ -596,7 +597,7 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     expect(row?.textContent).toContain("watch query 1");
     expect(row?.textContent).toContain("Not compared");
     expect(row?.textContent).not.toContain("Not observed");
-    expect(host.querySelector("[data-comparison-withheld]")?.textContent).toContain("still updating");
+    expect(host.querySelector("[data-comparison-withheld]")).toBeNull();
   });
 
   it("keeps a failed prior query read unavailable even when all daily dates are complete", async () => {
@@ -655,8 +656,8 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     const rows = [...host.querySelectorAll("[data-change]")];
     expect(rows[0]?.querySelector("[data-api-evidence=verified]")).not.toBeNull();
     expect(rows[1]?.querySelector("[data-api-evidence=verified]")).toBeNull();
-    expect(host.querySelector("[data-api-verification]")?.textContent).toContain("2 records were withheld");
-    expect(host.querySelector("[data-reading-facts]")?.textContent).toContain("not a completed website check");
+    expect(host.querySelector("[data-api-verification]")).toBeNull();
+    expect(rows[0]?.querySelector("[data-gsc-evidence]")?.textContent).toContain("not a completed website check");
   });
 
   it("leads with the default 24h trend and removes the run-status facts and old KPI block", async () => {
