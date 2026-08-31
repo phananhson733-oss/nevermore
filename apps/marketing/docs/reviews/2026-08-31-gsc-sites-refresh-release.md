@@ -52,6 +52,25 @@ The missing-identity check explicitly refuses a malformed sealed null subject.
   API/external guards and no report/login/logout calls. They are provider-free.
 - Secret scan and 75 redaction tests passed; docs checks passed 14 tests.
 
+## Existing baseline gate exceptions
+
+Release preflight reconfirmed the same exceptions recorded by the preceding
+Website Profile release on the current main baseline:
+
+- Full Marketing lint reports four errors in unchanged
+  `competitor-keyword-gap-tool.test.tsx`, `on-page-check-list.tsx` and
+  `lib/agents/draft-handler.ts`. Changed-file lint passes.
+- `verify:spec` reports that root `package.json` differs from the active v0.4
+  lock hash. Neither root package configuration nor Product authority/lock is
+  changed by this release; the check already fails on its source baseline.
+
+These are failing baseline gates, not newly passing checks. This bounded
+Marketing repair does not alter Product authority or unrelated code to hide
+them. Docs, implementation inventory, deployment configuration, generated
+OpenAPI contracts and OpenAPI lint passed; GitHub Actions remains intentionally
+manual (`workflow_dispatch`), with local acceptance and Vercel deployment checks
+used for this release.
+
 ## Production baseline and verification contract
 
 Before release, Marketing `gengrowth.ai` resolved to
