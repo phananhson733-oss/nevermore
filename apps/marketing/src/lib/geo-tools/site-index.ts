@@ -7,6 +7,7 @@ import { fetchPublicResource, type PublicResourceResult } from "@sf/sources/publ
 import { isPathAllowed, parseRobots, robotsCrawlDelaySeconds, type RobotsGroup } from "@sf/sources/crawl-robots";
 import { containsGeoAlias, findGeoAliasMatch, normalizeAliasForMatch } from "../agents/geo-alias-match.ts";
 import { normalizeGeoCitationUrl, normalizeGeoHost } from "../agents/geo-url.ts";
+import { WEBSITE_PROFILE_LIST_MAX_ITEMS } from "../account-websites/contracts.ts";
 import { requestCitabilityRender } from "./citability-render.ts";
 import { buildCitabilityReport } from "./citability-rules.ts";
 import { CITABILITY_RENDER_TIMEOUT_MS, type CitabilityRenderEvidence, type CitabilityRenderRequest } from "./citability-render-contract.ts";
@@ -39,7 +40,7 @@ function pageType(title: string, headings: readonly string[], types: readonly st
 }
 interface PageRead { readonly value: GeoReadPage; readonly html: string | null; readonly links: readonly string[]; readonly linkLabels?: readonly { readonly url: string; readonly label: string }[] }
 export async function collectVisibilitySiteEvidence(report: VisibilityReportV2, dependencies: GeoSiteEvidenceDependencies = DEFAULTS, priorityHints: GeoSitePriorityHints | null = null): Promise<VisibilitySiteEvidenceV1> {
-  if (priorityHints !== null && (priorityHints.snapshotId !== report.manifest.snapshotId || !/^[a-f0-9]{64}$/.test(priorityHints.contextHash) || priorityHints.coreFeatures.length > 30 || priorityHints.coreFeatures.some((feature) => typeof feature !== "string" || feature.length > 2048))) throw new Error("Invalid frozen priority context");
+  if (priorityHints !== null && (priorityHints.snapshotId !== report.manifest.snapshotId || !/^[a-f0-9]{64}$/.test(priorityHints.contextHash) || priorityHints.coreFeatures.length > WEBSITE_PROFILE_LIST_MAX_ITEMS || priorityHints.coreFeatures.some((feature) => typeof feature !== "string" || feature.length > 2048))) throw new Error("Invalid frozen priority context");
   const deadline = Date.now() + GEO_SITE_INDEX_LIMITS.milliseconds;
   const ownHost = report.context.targetHost, base = `https://${ownHost}`;
   const featureHints = priorityHints?.coreFeatures.map((feature) => normalizeAliasForMatch(feature.replace(/([a-z])([A-Z])/g, "$1 $2"))) ?? [];

@@ -7,6 +7,9 @@ import {
   type GeoKbValue,
 } from "./kb-contract.ts";
 import { geoKbDigest } from "./kb-digest.ts";
+import { createHash } from "node:crypto";
+import { canonicalProfileJson, emptyMarketingWebsiteProfile } from "../account-websites/contracts.ts";
+import { createGeoProfileCopy } from "./kb-profile-copy.ts";
 import {
   buildGeoQuestionSet,
   geoQuestionSetDigest,
@@ -71,6 +74,35 @@ function payload(): GeoKbPayload {
 const PAYLOAD_HASH = digest(payload());
 const QUESTION_SET: GeoQuestionSet = buildGeoQuestionSet(payload());
 const QUESTION_SET_HASH = geoQuestionSetDigest(QUESTION_SET);
+
+describe("complete Profile copy integrity", () => {
+  const profile = { ...emptyMarketingWebsiteProfile(), productName: "Example", coreFeatures: Array.from({ length: 32 }, (_, i) => `Feature ${String(i)}`) };
+  const copy = createGeoProfileCopy({ schemaVersion: "website-profile-reference.v1", websiteId: USER_ID, snapshotId: SNAPSHOT_ID, snapshotRevision: 1, profileSchemaVersion: "marketing-website-profile.v1", profileHash: createHash("sha256").update(canonicalProfileJson(profile)).digest("hex") }, profile);
+  it("rejects a self-consistent GEO payload that lies about its copied Profile digest before RPC", async () => {
+    const deps = dependencies();
+    const bad = { ...payload(), profileCopy: { ...copy, profile: { ...profile, productName: "Forged" } } };
+    expect(await saveGeoKbDraft({ userId: USER_ID, kbId: KB_ID, baseVersion: 2, payload: bad }, deps)).toMatchObject({ kind: "invalid", code: "invalid_payload", rejection: "profile_copy" });
+    expect(deps.callRpc).not.toHaveBeenCalled();
+  });
+  it("rejects stored copied Profile corruption even if the outer GEO digest was recomputed", async () => {
+    const bad = { ...payload(), profileCopy: { ...copy, profileHash: "b".repeat(64) } };
+    const deps = dependencies({ readSnapshot: async () => ({ kind: "ok", data: snapshotRow({ payload: bad, content_hash: digest(bad) }) }) });
+    expect((await readFrozenGeoKb({ userId: USER_ID, kbId: KB_ID }, deps)).kind).toBe("unavailable");
+  });
+  it("round-trips a valid full copy through save and frozen read with no Profile table access", async () => {
+    const complete = { ...payload(), profileCopy: copy };
+    const deps = dependencies({
+      callRpc: async () => ({ kind: "ok", data: [{ outcome: "saved", draft_version: 3, content_hash: digest(complete), updated_at: PG_NOW }] }),
+      readSnapshot: async () => ({ kind: "ok", data: snapshotRow({ payload: complete, content_hash: digest(complete) }) }),
+    });
+    expect((await saveGeoKbDraft({ userId: USER_ID, kbId: KB_ID, baseVersion: 2, payload: complete }, deps)).kind).toBe("ok");
+    expect(await readFrozenGeoKb({ userId: USER_ID, kbId: KB_ID }, deps)).toMatchObject({ kind: "ok", value: { payload: complete } });
+  });
+  it.each(["profile_stale", "profile_copy_mismatch"])("maps the atomic SQL %s fence to a reloadable source conflict", async (outcome) => {
+    const deps = dependencies({ callRpc: async () => ({ kind: "ok", data: [{ outcome }] }) });
+    expect(await saveGeoKbDraft({ userId: USER_ID, kbId: KB_ID, baseVersion: 2, payload: { ...payload(), profileCopy: copy } }, deps)).toEqual({ kind: "invalid", code: "context_stale" });
+  });
+});
 
 function kbRow(
   overrides: Readonly<Record<string, unknown>> = {},

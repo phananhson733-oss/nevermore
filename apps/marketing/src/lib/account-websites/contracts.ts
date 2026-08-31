@@ -10,6 +10,7 @@ export const MARKETING_WEBSITE_PROFILE_VERSION =
   "marketing-website-profile.v1" as const;
 export const WEBSITE_PROFILE_REFERENCE_VERSION =
   "website-profile-reference.v1" as const;
+export const WEBSITE_PROFILE_LIST_MAX_ITEMS = 32;
 
 export const WEBSITE_PROFILE_FIELD_NAMES = [
   "productName",
@@ -254,7 +255,7 @@ function isPublicEvidenceUrl(value: string): boolean {
 }
 
 const boundedText = z.string().max(2_000);
-const boundedList = z.array(z.string().min(1).max(500)).max(32);
+const boundedList = z.array(z.string().min(1).max(500)).max(WEBSITE_PROFILE_LIST_MAX_ITEMS);
 const websiteId = z.string().uuid();
 const profileHash = z.string().regex(/^[a-f0-9]{64}$/u);
 const canonicalLocale = z.string().refine(

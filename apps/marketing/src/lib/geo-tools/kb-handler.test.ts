@@ -9,6 +9,8 @@ import {
 } from "./kb-handler.ts";
 import { emptyGeoKbPayload, type GeoKbPayload } from "./kb-contract.ts";
 import { buildGeoSnapshotContext } from "./snapshot-context.ts";
+import { emptyMarketingWebsiteProfile } from "../account-websites/contracts.ts";
+import { createGeoProfileCopy } from "./kb-profile-copy.ts";
 
 const READY: GeoKbPayload = {
   ...emptyGeoKbPayload("https://acme-kb-example.com/"),
@@ -159,6 +161,26 @@ describe("load", () => {
 });
 
 describe("save draft", () => {
+  it("accepts a bounded complete Profile plus GEO supplements above the old 128KiB envelope", async () => {
+    const list = Array.from({ length: 32 }, (_, i) => `${String(i)}${"f".repeat(490)}`);
+    const profile = { ...emptyMarketingWebsiteProfile(), coreFeatures: list, trustSignals: list, useCases: list, outcomes: list, barriers: list, qualificationSignals: list };
+    const copy = createGeoProfileCopy({ schemaVersion: "website-profile-reference.v1", websiteId: "11111111-1111-4111-8111-111111111111", snapshotId: "22222222-2222-4222-8222-222222222222", snapshotRevision: 1, profileSchemaVersion: "marketing-website-profile.v1", profileHash: "a".repeat(64) }, profile);
+    const payload = { ...READY, profileCopy: copy, facts: Array.from({ length: 24 }, (_, i) => ({ key: `fact${String(i)}`, value: "v".repeat(200), reason: "" as const, sourceUrl: `https://example.com/${"s".repeat(1800)}`, observedAt: "" })) };
+    expect(Buffer.byteLength(JSON.stringify(payload))).toBeGreaterThan(131_072);
+    const saveDraft = vi.fn(deps().saveDraft);
+    const response = await handleGeoKbSaveDraft(post("/api/tools/geo-knowledge-base/draft", { kbId: "kb-1", payload, baseVersion: 2 }), deps({ saveDraft }));
+    expect(response.status).toBe(200);
+    expect(saveDraft).toHaveBeenCalledWith(expect.objectContaining({ payload }));
+  });
+  it("continues bounding the full request envelope and names missing copy recovery", async () => {
+    const saveDraft = vi.fn(deps().saveDraft);
+    const oversized = await handleGeoKbSaveDraft(post("/api/tools/geo-knowledge-base/draft", { kbId: "kb-1", payload: READY, baseVersion: 2, extra: "x".repeat(397_312) }), deps({ saveDraft }));
+    expect(oversized.status).toBe(413);
+    expect(saveDraft).not.toHaveBeenCalled();
+    const missing = await handleGeoKbSaveDraft(post("/api/tools/geo-knowledge-base/draft", { kbId: "kb-1", payload: READY, baseVersion: 2 }), deps({ saveDraft: async () => ({ kind: "profile_copy_required" }) }));
+    expect(missing.status).toBe(409);
+    expect(await missing.json()).toMatchObject({ error: { code: "profile_copy_required" } });
+  });
   it("names the field that made the payload unusable", async () => {
     const response = await handleGeoKbSaveDraft(
       post("/api/tools/geo-knowledge-base/draft", {
@@ -217,6 +239,7 @@ describe("freeze", () => {
     expect(response.status).toBe(200);
     expect(freeze).toHaveBeenCalledWith(expect.objectContaining(generated));
     const data = (await response.json()).data;
+    expect(data.payload).toEqual(payload);
     expect(data.questions).toEqual(generated.questionSet.questions);
   });
 

@@ -34,6 +34,9 @@ import {
   type VisibilityProportion,
   type VisibilityReport,
 } from "../../lib/geo-tools/visibility-contract.ts";
+import { emptyGeoKbPayload } from "../../lib/geo-tools/kb-contract.ts";
+import { VISIBILITY_CONTEXT_SCHEMA, type VisibilityContext } from "../../lib/geo-tools/visibility-context.ts";
+import { encodeVisibilityWire } from "../../lib/geo-tools/visibility-wire.ts";
 import { AiVisibilityCheck } from "./ai-visibility-check.tsx";
 import { visibilityReportFixtureV2 } from "../../lib/geo-tools/visibility-v2.test-fixtures.ts";
 import { exportVisibilityJson, parseVisibilityImport } from "../../lib/geo-tools/visibility-export.ts";
@@ -171,6 +174,8 @@ function report(
 
 interface Server {
   readonly readRun: () => VisibilityRunRead;
+  readonly context?: VisibilityContext;
+  readonly historyRun?: ReturnType<typeof visibilityReportFixtureV2>;
   readonly providerConfigured?: boolean;
   readonly choices?: readonly VisibilityFrozenChoice[];
 }
@@ -201,10 +206,22 @@ function dependencies(): VisibilityHandlerDependencies {
  * writes `data.choices` typechecks, renders, and is completely broken; only a
  * test that takes the handler's own bytes can see it.
  */
+
+const WEBSITE_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3391";
+function contextFixture(): VisibilityContext {
+  const choices = server.choices ?? [CHOICE];
+  const first = choices[0];
+  const website = { websiteId: WEBSITE_ID, origin: `https://${CHOICE.host}`, host: CHOICE.host, canonicalSiteKey: CHOICE.host, displayName: "Acme", isPrimary: true, profileState: "not_generated" as const, confirmedSnapshotId: null, confirmedSnapshotRevision: null, confirmedAt: null, createdAt: "2026-08-29T09:00:00.000Z", updatedAt: "2026-08-29T09:00:00.000Z" };
+  return { schemaVersion: VISIBILITY_CONTEXT_SCHEMA, websites: [{ website, currentProfile: null, knowledgeBase: first ? { kbId: first.kbId, draftVersion: 1, hasDraft: true } : null, frozen: first ? { snapshotId: first.snapshotId, revision: first.revision, frozenAt: first.frozenAt, contentHash: "a".repeat(64), questionSetHash: "b".repeat(64), registryVersion: "v1", questionCount: first.questionCount, retrievalCount: first.retrievalCount, payload: { ...emptyGeoKbPayload(website.origin), officialName: "Acme", categoryTerms: ["analytics"] }, questions: Array.from({ length: first.questionCount }, (_, i) => ({ id: `q${i}`, text: `Which analytics tool ${i}?`, layer: "discovery" as const, mode: i < first.retrievalCount ? "retrieval" as const : "demand" as const, calibrated: i < first.retrievalCount, roleId: null, templateId: null, requiredEntities: [] })), profileReference: null, profileCompleteness: "legacy_partial", skippedLayers: [] } : null, preparation: { status: first ? "profile_update_available" : "profile_required", profileSync: "legacy_partial", languageWarnings: [] } }, { website: { ...website, websiteId: "3f2504e0-4f89-41d3-9a0c-0305e82c3392", origin: "https://second.example", host: "second.example", canonicalSiteKey: "second.example", displayName: "Second", isPrimary: false }, currentProfile: null, knowledgeBase: null, frozen: null, preparation: { status: "profile_required", profileSync: "missing", languageWarnings: [] } }] };
+}
+
 function installFetch(): void {
   globalThis.fetch = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.includes("/context")) return Response.json(server.context ?? contextFixture());
+      if (url.endsWith("/history")) return Response.json({ data: { runs: [], hasMore: false } });
+      if (url.endsWith("/history/read")) return server.historyRun ? Response.json({ data: { status: "completed", evidenceAvailability: "recorded", report: encodeVisibilityWire(server.historyRun) } }) : Response.json({ error: { code: "not_found" } }, { status: 404 });
       const request = new Request(`https://gengrowth.ai${url}`, {
         method: "POST",
         headers: {
@@ -237,15 +254,6 @@ let intlErrors: string[] = [];
 
 function text(): string {
   return container?.textContent ?? "";
-}
-
-function cardFor(label: string): string {
-  const card = [...(container?.querySelectorAll("div") ?? [])].find(
-    (element) =>
-      element.className.includes("rounded-lg") &&
-      (element.firstElementChild?.textContent ?? "") === label,
-  );
-  return card?.textContent ?? "";
 }
 
 function copy(path: string): string {
@@ -320,6 +328,7 @@ beforeEach(() => {
   ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.useFakeTimers();
   sessionStorage.clear();
+  window.history.replaceState(null, "", "/");
   intlErrors = [];
   statusCalls = 0;
   server = { readRun: () => ({ kind: "running" }) };
@@ -341,6 +350,228 @@ afterEach(async () => {
 /* ------------------------------------------------------------------ */
 
 describe("loading the frozen versions", () => {
+  it("lists every account website and keeps an unprepared site selectable without spending", async () => {
+    await mount();
+    const siteSelect = container?.querySelector<HTMLSelectElement>("#visibility-website");
+    expect(siteSelect?.options).toHaveLength(2);
+    expect(siteSelect?.textContent).toContain("second.example");
+    await act(async () => { if (siteSelect) { siteSelect.value = "3f2504e0-4f89-41d3-9a0c-0305e82c3392"; siteSelect.dispatchEvent(new Event("change", { bubbles: true })); } });
+    expect(container?.querySelector<HTMLSelectElement>("#visibility-version")?.value ?? "").toBe("");
+    const start = [...container!.querySelectorAll("button")].find(button => button.textContent === copy("form.start"));
+    expect(start?.disabled).toBe(true);
+    expect(container?.querySelector('a[href="/account/websites/3f2504e0-4f89-41d3-9a0c-0305e82c3392/geo"]')).not.toBeNull();
+  });
+  it("blocks a paid run for frozen English questions with non-English terms", async () => {
+    const context = contextFixture();
+    server = { ...server, context: { ...context, websites: context.websites.map((site, i) => i === 0 ? { ...site, preparation: { ...site.preparation, languageWarnings: ["category_terms_not_english"] } } : site) } };
+    await mount();
+    const start = [...container!.querySelectorAll("button")].find(button => button.textContent === copy("form.start"));
+    expect(start?.disabled).toBe(true);
+  });
+  it("restores an owned report from its URL without starting a provider call", async () => {
+    const value = visibilityReportFixtureV2();
+    server = { ...server, historyRun: value };
+    window.history.replaceState(null, "", `/?run=${value.manifest.runId}`);
+    await mount();
+    expect(container?.querySelector('[role="tab"][data-view="result"]')?.getAttribute("aria-selected")).toBe("true");
+    const starts = vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === "/api/tools/ai-visibility-check/run");
+    expect(starts).toHaveLength(0);
+  });
+  it("shows an explicit error for an unauthorized report URL", async () => {
+    window.history.replaceState(null, "", "/?run=deleted-or-foreign");
+    await mount();
+    expect(container?.querySelector('[data-testid="visibility-history-error"]')).not.toBeNull();
+    expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === "/api/tools/ai-visibility-check/run")).toHaveLength(0);
+  });
+
+  it("keeps keyboard focus on the selected result tab", async () => {
+    server = { readRun: () => ({ kind: "completed", report: report() }) };
+    await mount(); await startRun(); await tick(2_000);
+    const input = container!.querySelector<HTMLButtonElement>('[data-view="input"]')!;
+    await act(async () => input.click()); input.focus();
+    await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+    const result = container!.querySelector<HTMLButtonElement>('[data-view="result"]')!;
+    expect(result.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(result);
+  });
+  it("keeps report identity independent when choosing a different website for the next check", async () => {
+    const value = visibilityReportFixtureV2();
+    server = { ...server, readRun: () => ({ kind: "completed", report: value }) };
+    await mount(); await startRun(); await tick(2_000);
+    const input = container!.querySelector<HTMLButtonElement>('[data-view="input"]')!;
+    await act(async () => input.click());
+    const site = container!.querySelector<HTMLSelectElement>("#visibility-website")!;
+    await act(async () => { site.value = "3f2504e0-4f89-41d3-9a0c-0305e82c3392"; site.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => container!.querySelector<HTMLButtonElement>('[data-view="result"]')?.click());
+    expect(container!.querySelector('[data-visibility-report] header')?.textContent).toContain("acme.test");
+    expect(container!.querySelector('[data-visibility-report] header')?.textContent).not.toContain("second.example");
+  });
+  it("refreshes source readiness when returning to the tab without starting a check", async () => {
+    await mount();
+    const context = contextFixture();
+    server = { ...server, context: { ...context, websites: context.websites.map((site, i) => i === 0 ? { ...site, preparation: { ...site.preparation, languageWarnings: ["category_terms_not_english"] } } : site) } };
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    const start = [...container!.querySelectorAll("button")].find(button => button.textContent === copy("form.start"));
+    expect(start?.disabled).toBe(true);
+    expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === "/api/tools/ai-visibility-check/context")).toHaveLength(2);
+    expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === "/api/tools/ai-visibility-check/run")).toHaveLength(0);
+  });
+  it("rejects a successful history response for a different run identity", async () => {
+    server = { ...server, historyRun: visibilityReportFixtureV2() };
+    window.history.replaceState(null, "", "/?run=11111111-1111-4111-8111-111111111199");
+    await mount();
+    expect(container?.querySelector('[data-testid="visibility-history-error"]')).not.toBeNull();
+    expect(container?.querySelector('[data-visibility-report]')).toBeNull();
+  });
+  it("does not attach a frozen source whose question hash differs from the report", async () => {
+    server = { readRun: () => ({ kind: "completed", report: report() }) };
+    await mount(); await startRun(); await tick(2_000);
+    expect(container?.querySelector('#visibility-result-panel [data-testid="visibility-source"]')).toBeNull();
+    expect(text()).toContain(copy("workbench.historicalSourceUnavailable"));
+  });
+  it.each([503, 404])("disables a cached historical input while its refresh is pending and after HTTP %i", async status => {
+    const oldContext = contextFixture();
+    const latestChoice = { ...CHOICE, snapshotId: "3f2504e0-4f89-41d3-9a0c-0305e82c3393", revision: 3 };
+    const latestContext = { ...oldContext, websites: oldContext.websites.map((site, i) => i === 0 ? { ...site, frozen: { ...site.frozen!, snapshotId: latestChoice.snapshotId, revision: 3 } } : site) };
+    server = { ...server, choices: [CHOICE, latestChoice], context: latestContext };
+    const route = globalThis.fetch;
+    let refreshExact = false;
+    let completeExact!: (value: Response) => void;
+    globalThis.fetch = vi.fn((input, init) => String(input).includes("/context?") ? refreshExact ? new Promise<Response>(resolve => { completeExact = resolve; }) : Promise.resolve(Response.json(oldContext)) : route(input, init)) as typeof fetch;
+    await mount();
+    const start = () => [...container!.querySelectorAll("button")].find(button => button.textContent === copy("form.start"));
+    expect(start()?.disabled).toBe(false);
+    refreshExact = true;
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(start()?.disabled).toBe(true);
+    await act(async () => completeExact(Response.json({ error: { code: "not_found" } }, { status })));
+    expect(start()?.disabled).toBe(true);
+    expect(container?.querySelector('[data-testid="visibility-input-panel"] [data-testid="visibility-source"]')).toBeNull();
+    expect(text()).toContain(copy("workbench.sourceUnavailable"));
+  });
+  it("keeps refreshing until the newest overlapping source request finishes", async () => {
+    await mount();
+    const route = globalThis.fetch;
+    const requests: Array<(value: Response) => void> = [];
+    globalThis.fetch = vi.fn((input, init) => String(input) === "/api/tools/ai-visibility-check/context" ? new Promise<Response>(resolve => requests.push(resolve)) : route(input, init)) as typeof fetch;
+    await act(async () => { window.dispatchEvent(new Event("focus")); document.dispatchEvent(new Event("visibilitychange")); });
+    expect(requests).toHaveLength(2);
+    await act(async () => requests[0]?.(Response.json(contextFixture())));
+    const start = () => [...container!.querySelectorAll("button")].find(button => button.textContent === copy("form.start"));
+    expect(start()?.disabled).toBe(true);
+    await act(async () => requests[1]?.(Response.json(contextFixture())));
+    expect(start()?.disabled).toBe(false);
+  });
+  it("ignores an older source response arriving after newer readiness warnings", async () => {
+    await mount();
+    const route = globalThis.fetch;
+    const requests: Array<(value: Response) => void> = [];
+    globalThis.fetch = vi.fn((input, init) => String(input) === "/api/tools/ai-visibility-check/context" ? new Promise<Response>(resolve => requests.push(resolve)) : route(input, init)) as typeof fetch;
+    await act(async () => { window.dispatchEvent(new Event("focus")); document.dispatchEvent(new Event("visibilitychange")); });
+    const valid = contextFixture();
+    const warned = { ...valid, websites: valid.websites.map((site, i) => i === 0 ? { ...site, preparation: { ...site.preparation, languageWarnings: ["category_terms_not_english"] } } : site) };
+    await act(async () => requests[1]?.(Response.json(warned)));
+    await act(async () => requests[0]?.(Response.json(valid)));
+    const start = [...container!.querySelectorAll("button")].find(button => button.textContent === copy("form.start"));
+    expect(start?.disabled).toBe(true);
+    expect(text()).toContain(copy("source.warnings.category_terms_not_english"));
+  });
+  it("follows history URL changes and clears the selected report when the URL removes it", async () => {
+    const first = visibilityReportFixtureV2();
+    server = { ...server, historyRun: first };
+    window.history.replaceState(null, "", `/?run=${first.manifest.runId}`);
+    await mount();
+    const next = visibilityReportFixtureV2({ runId: "11111111-1111-4111-8111-111111111119", finishedAt: "2026-08-31T00:03:00.000Z" });
+    server = { ...server, historyRun: next };
+    await act(async () => { window.history.pushState(null, "", `/?run=${next.manifest.runId}`); window.dispatchEvent(new PopStateEvent("popstate")); });
+    expect(container?.querySelector('[data-section="metadata"]')?.textContent).toContain(next.manifest.runId);
+    expect(container?.querySelector('[data-section="metadata"]')?.textContent).not.toContain(first.manifest.runId);
+    await act(async () => { window.history.pushState(null, "", "/"); window.dispatchEvent(new PopStateEvent("popstate")); });
+    expect(container?.querySelector('[data-visibility-report]')).toBeNull();
+    expect(container?.querySelector('[data-testid="visibility-input-panel"]')).not.toBeNull();
+    expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === "/api/tools/ai-visibility-check/run")).toHaveLength(0);
+  });
+  it("keeps the paid run's input version and estimate pinned when a newer freeze appears", async () => {
+    await mount(); await startRun();
+    const before = container!.querySelector<HTMLSelectElement>("#visibility-version")!.value;
+    const current = contextFixture();
+    const next = { ...CHOICE, snapshotId: "3f2504e0-4f89-41d3-9a0c-0305e82c3393", revision: 3, questionCount: 20 };
+    server = { ...server, choices: [next], context: { ...current, websites: current.websites.map((site, i) => i === 0 ? { ...site, frozen: { ...site.frozen!, snapshotId: next.snapshotId, revision: next.revision, questionCount: 20, questions: Array.from({ length: 20 }, (_, index) => ({ ...site.frozen!.questions[0]!, id: `q${index}`, mode: index < CHOICE.retrievalCount ? "retrieval" : "demand" })) } } : site) } };
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(container!.querySelector<HTMLSelectElement>("#visibility-version")!.value).toBe(before);
+    expect(container!.querySelector('[data-testid="visibility-input-panel"]')?.textContent).toContain("15 questions, 13 with measured search wording");
+    expect(text()).toContain("about $3.43 and roughly");
+    expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === "/api/tools/ai-visibility-check/run")).toHaveLength(1);
+  });
+  it.each(["ready", "pending"])("publishes the completed live run after %s history navigation without a late overwrite", async mode => {
+    const live = visibilityReportFixtureV2();
+    const older = visibilityReportFixtureV2({ runId: "11111111-1111-4111-8111-111111111119" });
+    server = { ...server, readRun: () => ({ kind: "completed", report: live }), historyRun: older };
+    let finishHistory!: (value: Response) => void;
+    const route = globalThis.fetch;
+    if (mode === "pending") globalThis.fetch = vi.fn((input, init) => String(input).endsWith("/history/read") ? new Promise<Response>(resolve => { finishHistory = resolve; }) : route(input, init)) as typeof fetch;
+    await mount(); await startRun();
+    await act(async () => { window.history.pushState(null, "", `/?run=${older.manifest.runId}`); window.dispatchEvent(new PopStateEvent("popstate")); });
+    await tick(2_000);
+    expect(new URL(window.location.href).searchParams.get("run")).toBe(live.manifest.runId);
+    expect(container?.querySelector('[data-section="metadata"]')?.textContent).toContain(live.manifest.runId);
+    if (mode === "pending") await act(async () => finishHistory(Response.json({ data: { status: "completed", evidenceAvailability: "recorded", report: encodeVisibilityWire(older) } })));
+    expect(container?.querySelector('[data-section="metadata"]')?.textContent).toContain(live.manifest.runId);
+    expect(container?.querySelector('[data-section="metadata"]')?.textContent).not.toContain(older.manifest.runId);
+    expect(new URL(window.location.href).searchParams.get("run")).toBe(live.manifest.runId);
+  });
+  it("shows an honest recovered-running state without guessing the paid inputs", async () => {
+    await mount(); await startRun();
+    await act(async () => root?.unmount()); root = null; container?.remove();
+    await mount();
+    expect(container?.querySelector('[data-testid="visibility-input-panel"]')).toBeNull();
+    expect(container?.querySelector("#visibility-website, #visibility-samples, input[value='chatgpt']")).toBeNull();
+    expect(container?.querySelector('[data-testid="visibility-recovered-running"]')).not.toBeNull();
+    expect(text()).not.toContain("about $3.43 and roughly");
+    expect(text()).not.toContain(CHOICE.host);
+    expect(text()).toContain(copy("running.recoveredBody"));
+  });
+  it("keeps saved reports and local imports available when the current source store fails", async () => {
+    const value = visibilityReportFixtureV2();
+    server = { ...server, historyRun: value };
+    const entry = { runId: value.manifest.runId, schemaVersion: value.manifest.schemaVersion, kbId: value.manifest.kbId, snapshotId: value.manifest.snapshotId, snapshotRevision: value.manifest.snapshotRevision, host: value.context.targetHost, finishedAt: value.manifest.finishedAt, createdAt: value.manifest.finishedAt, status: value.manifest.status, questionCount: value.manifest.questionCount, samplesPerQuestion: value.manifest.samplesPerQuestion, engines: ["chatgpt"], costUsd: value.manifest.costUsd, evidenceAvailability: "recorded" };
+    const route = globalThis.fetch;
+    globalThis.fetch = vi.fn((input, init) => String(input) === "/api/tools/ai-visibility-check/context" ? Promise.resolve(Response.json({ error: { code: "store_unavailable" } }, { status: 503 })) : String(input).endsWith("/history") ? Promise.resolve(Response.json({ data: { runs: [entry], hasMore: false } })) : route(input, init)) as typeof fetch;
+    await mount();
+    expect(container?.querySelector('[data-testid="visibility-history"]')).not.toBeNull();
+    expect(container?.querySelectorAll('input[type="file"]')).toHaveLength(2);
+    expect(container?.querySelector('[data-testid="visibility-input-panel"]')).toBeNull();
+    const open = container!.querySelector<HTMLButtonElement>(`[data-run-id="${value.manifest.runId}"]`)!;
+    expect(open.disabled).toBe(false);
+    await act(async () => open.click());
+    expect(container?.querySelector('[data-section="metadata"]')?.textContent).toContain(value.manifest.runId);
+    expect(text()).toContain(copy("workbench.historicalSourceUnavailable"));
+    expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === "/api/tools/ai-visibility-check/run")).toHaveLength(0);
+  });
+  it("distinguishes an accepted running job from starting", async () => {
+    await mount();
+    await startRun();
+    expect(text()).not.toContain(copy("form.starting"));
+    expect(text()).toContain(copy("running.title"));
+  });
+
+  it("opens the result view after completion and preserves it when returning to inputs", async () => {
+    server = { readRun: () => ({ kind: "completed", report: report() }) };
+    await mount();
+    await startRun();
+    await tick(2_000);
+    const resultTab = container?.querySelector<HTMLButtonElement>('[role="tab"][data-view="result"]');
+    expect(resultTab?.getAttribute("aria-selected")).toBe("true");
+    expect(container?.querySelector('[data-testid="visibility-input-panel"]')).toBeNull();
+    const inputTab = container?.querySelector<HTMLButtonElement>('[role="tab"][data-view="input"]');
+    await act(async () => inputTab?.click());
+    expect(container?.querySelector('[data-testid="visibility-input-panel"]')).not.toBeNull();
+    await act(async () => resultTab?.click());
+    expect(text()).toContain("gpt-5-test");
+    const starts = vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === "/api/tools/ai-visibility-check/run");
+    expect(starts).toHaveLength(1);
+  });
+
   it("selects engines before spending and sends them in the real start request", async () => {
     await mount();
     const perplexity = container?.querySelector<HTMLInputElement>('input[value="perplexity"]');
@@ -418,14 +649,13 @@ describe("V2 result and portable-file consumers", () => {
     const value = visibilityReportFixtureV2();
     server = { readRun: () => ({ kind: "completed", report: value }) };
     await mount(); await startRun(); await tick(2_000);
-    expect(text()).toContain("Engine: ChatGPT");
+    expect(container?.querySelector('[data-section="engines"]')?.textContent).toContain("ChatGPT");
     expect(text()).toContain("Requested model: gpt-5-2025-08-07");
-    expect(text()).toContain("Observed models: gpt-5");
-    expect(text()).toContain("Market: US");
-    expect(text()).toContain("Language: en");
-    expect(text()).toContain(copy("layers.column.samples"));
-    expect(text()).toContain(copy("layers.column.meanPosition"));
-    expect(text()).toContain("Valid-sample coverage: 1/1 frozen questions");
+    expect(text()).toContain("Observed model(s): gpt-5");
+    expect(container?.querySelector('[data-visibility-report] header')?.textContent).toContain("US / en");
+    expect(container?.querySelector('[data-section="layers"]')?.textContent).toContain(copy("report.samples"));
+    expect(container?.querySelector('[data-section="layers"]')?.textContent).toContain(copy("report.position"));
+    expect(container?.querySelector('[data-metric="coverage"]')?.textContent).toContain("1 / 1");
     expect(intlErrors).toEqual([]);
     const jsonButton = [...(container?.querySelectorAll("button") ?? [])].find((button) => button.textContent === copy("v2.exportJson"));
     expect(jsonButton).toBeDefined();
@@ -459,9 +689,9 @@ describe("V2 result and portable-file consumers", () => {
     expect(compare?.disabled).toBe(false);
     await act(async () => compare?.click());
     expect(text()).toContain(copy("v2.imported"));
-    expect(text()).toContain(literal("comparison.title"));
+    expect(container?.querySelector('[data-section="comparison"]')).not.toBeNull();
     expect(text()).toContain(copy("comparison.metrics.shareOfVoice"));
-    expect(vi.mocked(globalThis.fetch).mock.calls.every(([url]) => String(url).endsWith("/load"))).toBe(true);
+    expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === "/api/tools/ai-visibility-check/run")).toHaveLength(0);
     expect(intlErrors).toEqual([]);
   });
 });
@@ -587,9 +817,9 @@ describe("reading a finished run", () => {
 
     expect(text()).toContain(literal("results.withheldTitle"));
     // The three blocks that state a conclusion.
-    expect(text()).not.toContain(copy("overview.title"));
-    expect(text()).not.toContain(copy("layers.title"));
-    expect(text()).not.toContain(copy("comparison.title"));
+    expect(container?.querySelector('[data-section="metrics"]')).toBeNull();
+    expect(container?.querySelector('[data-section="layers"]')).toBeNull();
+    expect(container?.querySelector('[data-section="comparison"]')).toBeNull();
     expect(text()).not.toContain(literal("comparison.changed"));
     // The evidence and the price stay. Pinned to the result line's own
     // wording: the estimate above the form prints the same figure.
@@ -600,8 +830,8 @@ describe("reading a finished run", () => {
 
   it("still draws them when enough samples came back", async () => {
     await finish(report());
-    expect(text()).toContain(copy("overview.title"));
-    expect(text()).toContain(copy("layers.title"));
+    expect(container?.querySelector('[data-section="metrics"]')).not.toBeNull();
+    expect(container?.querySelector('[data-section="layers"]')).not.toBeNull();
     expect(text()).not.toContain(literal("results.withheldTitle"));
   });
 
@@ -611,29 +841,29 @@ describe("reading a finished run", () => {
   it("leads with the question-level rate and keeps the pooled one under it", async () => {
     await finish(report());
 
-    expect(text()).toContain(copy("overview.questionsMentioned.label"));
-    expect(text()).toContain(copy("overview.questionsCited.label"));
-    expect(text()).toContain(copy("overview.acrossSamples"));
-    // The denominator gap is on the page rather than divided away.
-    expect(text()).toContain("1 of 1 questions produced an answer");
-    // Order matters, not merely presence: the question-level figure (1 unit)
-    // is the headline and the pooled one (4 correlated samples) sits under it.
-    expect(cardFor(copy("overview.questionsMentioned.label"))).toMatch(
-      /100% \(1 samples[\s\S]*Across every sample: 25% \(4 samples/u,
-    );
+    const headline = container?.querySelector('[data-metric="questionsMentioned"]');
+    expect(headline?.textContent).toContain("100%");
+    expect(headline?.textContent).toContain("1 / 1 questions");
+    expect(headline?.textContent).not.toContain("samples");
+    expect(container?.querySelector('[data-metric="questionsCited"]')?.textContent).toContain("0 / 1 questions");
+    const methods = [...container!.querySelectorAll("details")].find(node => node.querySelector("summary")?.textContent === copy("report.methodsTitle"));
+    expect(methods?.textContent).toMatch(/25%[\s\S]*1 \/ 4 answers/u);
+    expect(headline?.compareDocumentPosition(methods!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(intlErrors).toEqual([]);
   });
 
-  // It was in an `sr-only` paragraph, so a screen reader announced
-  // "marketing-geo-visibility.v1" and nothing else did.
-  it("never reads the schema version out to anybody", async () => {
+  it("keeps the technical schema out of the default report reading order", async () => {
     await finish(report());
-    expect(text()).not.toContain(GEO_VISIBILITY_SCHEMA_VERSION);
+    const metadata = container?.querySelector<HTMLDetailsElement>('details[data-section="metadata"]');
+    expect(metadata?.open).toBe(false);
+    expect(metadata?.textContent).toContain(GEO_VISIBILITY_SCHEMA_VERSION);
+    expect(container?.querySelector('[data-visibility-report] header')?.textContent).not.toContain(GEO_VISIBILITY_SCHEMA_VERSION);
   });
 
   it("names the model and the API it was reached through separately", async () => {
     await finish(report());
-    expect(text()).toContain("gpt-5-test, market us");
+    expect(container?.querySelector('[data-section="metadata"]')?.textContent).toContain("Requested model: gpt-5-test");
+    expect(container?.querySelector('[data-visibility-report] header')?.textContent).toContain("us");
     expect(text()).toContain("Reached through dataforseo-chatgpt");
   });
 
@@ -756,13 +986,10 @@ describe("reading a finished run", () => {
   // contradictory sentences about the same empty excerpt.
   it("does not call a timed-out sample an answer without a mention", async () => {
     await finish(report({ answered: 0, status: "partial" }));
-    const toggle = [...(container?.querySelectorAll("button") ?? [])].find(
-      (element) => element.textContent === copy("questions.showSamples"),
-    );
-    if (toggle === undefined) throw new Error("no sample toggle rendered");
-    await act(async () => {
-      toggle.click();
-    });
+    const question = container?.querySelector<HTMLDetailsElement>('[data-section="questions"] details');
+    expect(question).not.toBeNull();
+    await act(async () => question?.querySelector("summary")?.click());
+    expect(question?.open).toBe(true);
 
     expect(text()).toContain(copy("questions.sampleStatus.timeout"));
     expect(text()).toContain(copy("questions.sampleNoAnswer"));

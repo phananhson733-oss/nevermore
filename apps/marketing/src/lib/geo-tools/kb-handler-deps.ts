@@ -20,6 +20,8 @@ import type { GeoInheritedProfile } from "./asset-context.ts";
 import { readGeoSnapshotContext, readLatestGeoEnrichmentReceipt } from "./asset-context-store.ts";
 import { buildGeoSnapshotContext, type GeoSnapshotContext } from "./snapshot-context.ts";
 import { canonicalGeoEnrichmentText } from "./kb-enrichment.ts";
+import { createGeoProfileCopy, profileCopyReference } from "./kb-profile-copy.ts";
+import { assertGeoProfileCopyIntegrity, inheritedProfileFromCopy } from "./kb-profile-copy-server.ts";
 import { freezeGeoKbWithContext } from "./kb-freeze-context.ts";
 import {
   ensureGeoKnowledgeBase,
@@ -122,7 +124,7 @@ function viewFrom(
             questionCount: details.frozen.questionCount,
             retrievalCount,
             questionSetHash: details.frozen.questionSetHash,
-            ...(frozen ? { questions: frozen.questionSet.questions, registryVersion: frozen.questionSet.registryVersion } : {}),
+            ...(frozen ? { payload: frozen.payload, questions: frozen.questionSet.questions, registryVersion: frozen.questionSet.registryVersion } : {}),
             ...(frozenContext ? { skippedLayers: frozenContext.skippedLayers } : {}),
           },
     importAvailable,
@@ -143,6 +145,7 @@ async function profileFor(
   return {
     ok: true,
     profile: {
+      fullProfile: resolved.value.profile,
       reference: resolved.value.reference,
       productName: resolved.value.profile.productName,
       oneLinePositioning: resolved.value.profile.oneLinePositioning,
@@ -153,29 +156,32 @@ async function profileFor(
         language: resolved.value.profile.locale,
       },
     },
-    payload: importGeoKbPayload({
+    payload: { ...importGeoKbPayload({
       websiteId: resolved.value.website.websiteId,
       snapshotId: resolved.value.reference.snapshotId,
       snapshotRevision: resolved.value.reference.snapshotRevision,
       origin: resolved.value.website.origin,
       profile: resolved.value.profile,
-    }),
+    }), profileCopy: createGeoProfileCopy(resolved.value.reference, resolved.value.profile) },
   };
 }
 
 function contextPreview(context: GeoSnapshotContext) {
-  return { skippedLayers: context.skippedLayers, questionSetHash: context.questionSetHash, contentHash: context.contentHash };
+  return { activeRoleIds: context.roles.filter(role => role.source === "gsc").map(role => role.roleId), skippedLayers: context.skippedLayers, questionSetHash: context.questionSetHash, contentHash: context.contentHash };
 }
 
-async function contextFor(userId: string, kbId: string, origin: string, payload: GeoKbPayload, profile: GeoInheritedProfile | null): Promise<GeoKbStoreOutcome<ReturnType<typeof buildGeoSnapshotContext>>> {
+async function contextFor(userId: string, kbId: string, origin: string, payload: GeoKbPayload): Promise<GeoKbStoreOutcome<ReturnType<typeof buildGeoSnapshotContext>>> {
   const source = await readLatestGeoEnrichmentReceipt({ userId, kbId });
   if (source.kind !== "ok") return { kind: "unavailable", reason: "source receipt unavailable" };
   const targetHost = normalizeAccountWebsiteUrl(origin)?.host;
   if (!targetHost || normalizeAccountWebsiteUrl(payload.targetUrl)?.host !== targetHost) return { kind: "unavailable", reason: "GEO asset identity mismatch" };
   // A Profile change makes the old enrichment stale. Its labels are not
   // borrowed by a new context; the UI explicitly shows skipped source layers.
-  const receipt = source.value && canonicalGeoEnrichmentText(source.value.profileReference) === canonicalGeoEnrichmentText(profile?.reference ?? null) ? source.value : null;
-  try { return { kind: "ok", value: buildGeoSnapshotContext({ kbId, targetHost, payload, profile, receipt }) }; }
+  try {
+    const profile = payload.profileCopy ? inheritedProfileFromCopy(payload.profileCopy) : null;
+    const receipt = source.value && canonicalGeoEnrichmentText(source.value.profileReference) === canonicalGeoEnrichmentText(profile?.reference ?? null) ? source.value : null;
+    return { kind: "ok", value: buildGeoSnapshotContext({ kbId, targetHost, payload, profile, receipt }) };
+  }
   catch { return { kind: "unavailable", reason: "source context invalid" }; }
 }
 
@@ -220,7 +226,7 @@ export const DEFAULT_GEO_KB_HANDLER_DEPENDENCIES: GeoKbHandlerDependencies = {
     if (!profile.ok && profile.unavailable) return { kind: "unavailable", reason: "profile unavailable" };
     const inherited = profile.ok ? profile.profile : null;
     const payload = details.value.draft?.payload ?? (profile.ok ? { ...profile.payload, roles: [], market: profile.profile.market } : emptyGeoKbPayload(details.value.origin));
-    const prepared = await contextFor(userId, details.value.kbId, details.value.origin, payload, inherited);
+    const prepared = await contextFor(userId, details.value.kbId, details.value.origin, payload);
     if (prepared.kind !== "ok") return prepared;
     return {
       kind: "ok",
@@ -234,7 +240,12 @@ export const DEFAULT_GEO_KB_HANDLER_DEPENDENCIES: GeoKbHandlerDependencies = {
     const profile = await profileFor(userId, owned.value.origin);
     if (!profile.ok && profile.unavailable) return { kind: "unavailable", reason: "profile unavailable" };
     if (expectedProfileReference === undefined || canonicalGeoEnrichmentText(expectedProfileReference) !== canonicalGeoEnrichmentText(profile.ok ? profile.profile.reference : null)) return { kind: "context_stale" };
-    const prepared = await contextFor(userId, kbId, owned.value.origin, payload, profile.ok ? profile.profile : null);
+    if (!payload.profileCopy) return { kind: "profile_copy_required" };
+    try {
+      assertGeoProfileCopyIntegrity(payload.profileCopy);
+      if (!profile.ok || canonicalGeoEnrichmentText(profileCopyReference(payload.profileCopy)) !== canonicalGeoEnrichmentText(profile.profile.reference) || canonicalGeoEnrichmentText(payload.profileCopy.profile) !== canonicalGeoEnrichmentText(profile.profile.fullProfile)) return { kind: "context_stale" };
+    } catch { return { kind: "context_stale" }; }
+    const prepared = await contextFor(userId, kbId, owned.value.origin, payload);
     if (prepared.kind !== "ok") return prepared;
     const result = await saveGeoKbDraft({ userId, kbId, payload, baseVersion });
     return toOutcome(result, (value) => ({
@@ -271,9 +282,8 @@ export const DEFAULT_GEO_KB_HANDLER_DEPENDENCIES: GeoKbHandlerDependencies = {
     if (details.kind !== "ok") return toOutcome(details, () => null as never);
     const draft = details.value.draft;
     if (draft === null) return { kind: "no_draft" };
-    const profile = await profileFor(userId, details.value.origin);
-    if (!profile.ok && profile.unavailable) return { kind: "unavailable", reason: "profile unavailable" };
-    const prepared = await contextFor(userId, kbId, details.value.origin, draft.payload, profile.ok ? profile.profile : null);
+    if (!draft.payload.profileCopy) return { kind: "profile_copy_required" };
+    const prepared = await contextFor(userId, kbId, details.value.origin, draft.payload);
     if (prepared.kind !== "ok") return prepared;
     return {
       kind: "ok",

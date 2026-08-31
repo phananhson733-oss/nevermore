@@ -21,6 +21,7 @@ import { resolveSharedBriefRunEvidence } from "../src/lib/geo-tools/brief-shared
 import { sharedGeoModelSources } from "../src/lib/geo-tools/brief-shared.ts";
 import type { SharedBriefHandlerDependencies } from "../src/lib/geo-tools/brief-shared-handler.ts";
 import type { GeoBriefReferenceDependencies } from "../src/lib/geo-tools/brief-reference.ts";
+import { createGeoProfileCopy } from "../src/lib/geo-tools/kb-profile-copy.ts";
 
 export const GEO_CHAIN_NOW = "2026-08-31T03:00:00.000Z";
 export const GEO_CHAIN_USER = "11111111-1111-4111-8111-111111111119";
@@ -39,8 +40,8 @@ export function createGeoChainFixture(kind: ChainGap) {
   const fullProfile = { ...emptyMarketingWebsiteProfile(), productName: "Acme", oneLinePositioning: "Analytics for teams",
     coreFeatures: ["Reporting"], country: "US", locale: "en-US" };
   const profileHash = createHash("sha256").update(canonicalProfileJson(fullProfile)).digest("hex");
-  const profile = { ...CONTEXT_PROFILE, reference: { ...CONTEXT_PROFILE.reference, profileHash } };
-  const payload = { ...contextPayload(), targetUrl: GEO_CHAIN_ORIGIN, facts: [{ key: "Seats", value: "The Acme analytics tool supports three seats.",
+  const profile = { ...CONTEXT_PROFILE, fullProfile, reference: { ...CONTEXT_PROFILE.reference, profileHash } };
+  const payload = { ...contextPayload(), targetUrl: GEO_CHAIN_ORIGIN, profileCopy: createGeoProfileCopy(profile.reference, fullProfile), facts: [{ key: "Seats", value: "The Acme analytics tool supports three seats.",
     reason: "" as const, sourceUrl: `${GEO_CHAIN_ORIGIN}/pricing`, observedAt: "2026-08-30T00:00:00.000Z" }] };
   const { contentHash: _receiptHash, ...receiptBody } = contextReceipt();
   const receipt = finalizeGeoEnrichmentReport({ ...receiptBody, targetHost: GEO_CHAIN_HOST, profileReference: profile.reference,
@@ -56,7 +57,7 @@ export function createGeoChainFixture(kind: ChainGap) {
     contentHash: frozen.contentHash, questionCount: frozen.questionCount,
     retrievalCount: questionSet.questions.filter(item => item.mode === "retrieval").length,
     questionSetHash: frozen.questionSetHash, registryVersion: questionSet.registryVersion, questions: questionSet.questions,
-    skippedLayers: context.skippedLayers };
+    skippedLayers: context.skippedLayers, payload };
   let isFrozen = false;
   let report: VisibilityReportV2 | null = null;
   let providerCalls = 0;

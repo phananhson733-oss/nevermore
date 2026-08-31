@@ -133,9 +133,6 @@ function fail(code: DraftErrorCode, retryAfterSeconds?: number): Response {
   );
 }
 
-/** Rejects a placeholder a model emitted instead of writing something. */
-const PLACEHOLDER = /^(?:todo|tbd|n\/a|none|\[[^\]]*\]|<[^>]*>)$/i;
-
 /**
  * The exact public URL, or null.
  *
@@ -144,7 +141,10 @@ const PLACEHOLDER = /^(?:todo|tbd|n\/a|none|\[[^\]]*\]|<[^>]*>)$/i;
  */
 function publicUrl(value: unknown): string | null {
   if (typeof value !== "string" || value.length > 2_048) return null;
-  if (/[\u0000-\u001f\u007f]/.test(value)) return null;
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (code <= 0x1f || code === 0x7f) return null;
+  }
   try {
     const parsed = new URL(value.trim());
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {

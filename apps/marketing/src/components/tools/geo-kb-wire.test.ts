@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { emptyGeoKbPayload } from "../../lib/geo-tools/kb-contract.ts";
 import { isGeoKbFreezeResponse, isGeoKbSaveResponse, isGeoKbView } from "./geo-kb-wire.ts";
+import { emptyMarketingWebsiteProfile } from "../../lib/account-websites/contracts.ts";
 
 const PROFILE = {
   reference: { schemaVersion: "website-profile-reference.v1", websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6", snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987", snapshotRevision: 2, profileSchemaVersion: "marketing-website-profile.v1", profileHash: "a".repeat(64) },
@@ -14,11 +15,23 @@ const FREEZE = { snapshotId: "snap", revision: 1, frozenAt: "2026-08-31T00:00:00
 };
 
 describe("GEO editor inherited-profile wire contract", () => {
+  it("validates present complete Profile copies in drafts, frozen payloads and source proposals", () => {
+    const profile = { ...emptyMarketingWebsiteProfile(), productName: "Example", locale: "en-US" };
+    const profileCopy = { schemaVersion: "marketing-geo-profile-copy.v1", websiteId: PROFILE.reference.websiteId,
+      snapshotId: PROFILE.reference.snapshotId, snapshotRevision: "2", profileHash: PROFILE.reference.profileHash, profile };
+    const payload = { ...VIEW.payload, profileCopy };
+    expect(isGeoKbView({ ...VIEW, payload, profile: { ...PROFILE, fullProfile: profile } })).toBe(true);
+    expect(isGeoKbView({ ...VIEW, payload: { ...payload, profileCopy: { ...profileCopy, profile: { ...profile, categories: "invalid" } } } })).toBe(false);
+    expect(isGeoKbView({ ...VIEW, profile: { ...PROFILE, fullProfile: { ...profile, buyer: 42 } } })).toBe(false);
+    expect(isGeoKbView({ ...VIEW, frozen: { ...FREEZE, payload: { ...payload, profileCopy: null } } })).toBe(false);
+  });
   it("checks optional draft-source policy and frozen definitions without requiring them on legacy views", () => {
     const context = { skippedLayers: ["problem", "evaluation"], questionSetHash: "c".repeat(64), contentHash: "e".repeat(64) };
     const frozen = { ...FREEZE, questionSetHash: "d".repeat(64), registryVersion: "registry-test.v1", skippedLayers: ["problem", "evaluation"] };
     expect(isGeoKbView({ ...VIEW, context, frozen })).toBe(true);
     expect(isGeoKbView({ ...VIEW, context: { ...context, skippedLayers: ["invented"] } })).toBe(false);
+    expect(isGeoKbView({ ...VIEW, context: { ...context, activeRoleIds: ["gsc-role"] } })).toBe(true);
+    expect(isGeoKbView({ ...VIEW, context: { ...context, activeRoleIds: ["gsc-role", "gsc-role"] } })).toBe(false);
     expect(isGeoKbView({ ...VIEW, context: { ...context, questionSetHash: "fake" } })).toBe(false);
     expect(isGeoKbView({ ...VIEW, context: { ...context, contentHash: "fake" } })).toBe(false);
     expect(isGeoKbView({ ...VIEW, frozen: { ...frozen, questions: [{ ...FREEZE.questions[0], templateId: 3 }] } })).toBe(false);
