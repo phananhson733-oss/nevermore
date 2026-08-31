@@ -158,8 +158,56 @@ afterEach(async () => {
 });
 
 describe("knowledge repair", () => {
+  it("edits the primary category directly while preserving all background terms in order", async () => {
+    stageRepair();
+    const categories = ["项目管理", "team collaboration", "agency workflows"];
+    globalThis.fetch = vi.fn(async () => Response.json({ data: { ...knowledge(), payload: { ...knowledge().payload, categoryTerms: categories } } }));
+    await mount();
+    const primary = field("Primary category used in questions");
+    expect(primary.value).toBe("项目管理");
+    expect(container.querySelector("#kb-repair-category")?.contains(primary)).toBe(true);
+    expect(primary.compareDocumentPosition(field(copy("brand.categoryLabel"))) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    await type(primary, "project management");
+    globalThis.fetch = vi.fn(async () => Response.json({ data: { draftVersion: 3, updatedAt: "2026-09-01T00:00:00Z", blockers: [] } }));
+    await click(button(copy("draft.save")));
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)).payload.categoryTerms).toEqual(["project management", "team collaboration", "agency workflows"]);
+    expect(button(copy("freeze.action")).disabled).toBe(false);
+    expect(intlErrors).toEqual([]);
+  });
+
+  it("keeps a temporarily empty primary category without saving a background term as the primary", async () => {
+    stageRepair();
+    globalThis.fetch = vi.fn(async () => Response.json({ data: { ...knowledge(), payload: { ...knowledge().payload, categoryTerms: ["project management", "team collaboration"] } } }));
+    await mount();
+    await type(field("Primary category used in questions"), "");
+    expect(field("Primary category used in questions").value).toBe("");
+    expect(container.textContent).toContain(copy("freeze.blockers.category_terms_missing"));
+    expect(button(copy("freeze.action")).disabled).toBe(true);
+    await click(button(copy("draft.save")));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("[role='alert']")?.textContent).toContain(copy("freeze.blockers.category_terms_missing"));
+    expect(container.textContent).toContain("team collaboration");
+    await type(field("Primary category used in questions"), "project automation");
+    globalThis.fetch = vi.fn(async () => Response.json({ data: { draftVersion: 3, updatedAt: "2026-09-01T00:00:00Z", blockers: [] } }));
+    await click(button(copy("draft.save")));
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)).payload.categoryTerms).toEqual(["project automation", "team collaboration"]);
+  });
+
+  it.each(["", "  "])("blocks save and freeze for an initially blank primary category %j even with English background terms", async (primary) => {
+    stageRepair();
+    globalThis.fetch = vi.fn(async () => Response.json({ data: { ...knowledge(), payload: { ...knowledge().payload, categoryTerms: [primary, "team collaboration"] } } }));
+    await mount();
+    expect(button(copy("freeze.action")).disabled).toBe(true);
+    expect(container.textContent).toContain(copy("freeze.blockers.category_terms_missing"));
+    await click(button(copy("draft.save")));
+    await click(button(copy("freeze.action")));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("[role='alert']")?.textContent).toContain(copy("freeze.blockers.category_terms_missing"));
+  });
+
   it("associates category, brand and fact labels with their editable controls", async () => {
     await mount({ initialView: knowledge() });
+    expect([...container.querySelectorAll("label")].some((label) => label.textContent === "Primary category used in questions")).toBe(false);
     expect(field(copy("brand.categoryLabel")).id).not.toBe("");
     expect(field(copy("brand.officialNameLabel")).value).toBe("Acme Analytics");
     expect(field(copy("facts.keyLabel")).value).toBe("pricing");
@@ -397,11 +445,7 @@ describe("knowledge repair", () => {
     expect([...container.querySelectorAll("input")].some((input) => input.value === "Original Profile name")).toBe(false);
     expect(container.textContent).toContain("项目管理");
     expect(button(copy("freeze.action")).disabled).toBe(true);
-    const removeCategory = container.querySelector(`button[aria-label='${copy("brand.categoryLabel")}: 项目管理']`);
-    expect(removeCategory).toBeInstanceOf(HTMLButtonElement);
-    await click(removeCategory as HTMLButtonElement);
-    await type(field(copy("brand.categoryLabel")), "project management");
-    await act(async () => { field(copy("brand.categoryLabel")).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+    await type(field(copy("repair.primaryCategory")), "project management");
     await click(button(copy("facts.add")));
     await type(field(copy("facts.keyLabel")), "Automation");
     await type(field(copy("facts.valueLabel")), "Supports recurring project tasks");
