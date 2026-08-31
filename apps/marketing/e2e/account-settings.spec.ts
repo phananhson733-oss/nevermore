@@ -549,10 +549,19 @@ test("desktop account flow adds, generates, confirms, switches primary, conflict
     page.getByRole("button", { name: "Confirm profile" }),
   ).toBeEnabled();
   await page.getByRole("button", { name: "Confirm profile" }).click();
-  await expect(page.getByText("Confirmed v1")).toBeVisible();
+  const collapsedProfile = page.locator('[data-website-profile-collapsed="true"]');
+  await expect(collapsedProfile).toBeVisible();
+  await expect(collapsedProfile).toContainText("Confirmed v1");
+  await expect(page.getByLabel("Product name")).toHaveCount(0);
+  await expect(page.locator("[data-website-competitors]")).toHaveCount(0);
   expect(account.sites[0]?.snapshot?.directCompetitors).toEqual([
     "rival.example",
   ]);
+  expect(account.profileSearchRequests).toHaveLength(1);
+  await page.getByRole("button", { name: "Edit profile", exact: true }).click();
+  await expect(collapsedProfile).toHaveCount(0);
+  await expect(page.getByLabel("Product name")).toHaveValue("Generated Example");
+  await expect(page.locator("[data-website-competitors]")).toBeVisible();
   expect(account.profileSearchRequests).toHaveLength(1);
 
   await page.goto("/account/websites");
@@ -593,6 +602,223 @@ test("desktop account flow adds, generates, confirms, switches primary, conflict
 
   await page.getByLabel("Target URL").fill("unrelated.example");
   await expect(page.locator("#agent-website-profile")).toHaveValue("");
+});
+
+test("keeps Chinese competitor suggestions separate from saved classifications and collapses after confirmation", async ({
+  page,
+}, testInfo) => {
+  const initialProfile = readyProfile("AstrologyWiki", {
+    oneLinePositioning: "通过星盘、占星知识和日记帮助用户进行自我探索。",
+    valueProposition: "把占星数据转化为日常的自我观察与反思。",
+    coreFeatures: ["本命盘计算器", "占星百科知识库", "CBT 日记与情绪记录"],
+    categories: ["占星工具", "自我探索"],
+    primaryCta: "生成星盘",
+    primaryIcp: "希望通过占星知识与日记进行自我探索的用户",
+    directCompetitors: ["astro.com"],
+  });
+  const site: MockSite = {
+    id: SITE_IDS[0],
+    snapshotId: SNAPSHOT_IDS[0],
+    submittedUrl: "https://astrologywiki.example/zh/",
+    origin: "https://astrologywiki.example",
+    host: "astrologywiki.example",
+    displayName: "AstrologyWiki",
+    isPrimary: true,
+    draft: initialProfile,
+    draftVersion: 1,
+    snapshot: null,
+    snapshotRevision: 0,
+  };
+  const account: MockAccount = {
+    sites: [site],
+    conflictNextSave: false,
+    profileSearchRequests: [],
+  };
+  await installConsent(page);
+  await installAccountApi(page, account);
+  await page.route("**/api/agents/seo/profile-search", async (route) => {
+    const request = route
+      .request()
+      .postDataJSON() as WebsiteCompetitorSearchRequest;
+    account.profileSearchRequests.push(request);
+    const envelope = profileSearchEnvelope(site.host);
+    await fulfillJson(route, 200, {
+      data: {
+        ...envelope.data,
+        rows: [
+          ...envelope.data.rows,
+          {
+            kind: "organic_search_overlap",
+            domain: "adjacent.example",
+            intersections: 1,
+            averagePosition: 12,
+            summedPosition: 12,
+            organicEstimatedTrafficVolume: 41,
+          },
+        ],
+      },
+    });
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/zh/account/websites/" + site.id);
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "light";
+  });
+
+  const competitors = page.locator("[data-website-competitors]");
+  const directSummary = competitors.locator(
+    '[data-competitor-summary="direct"]',
+  );
+  const indirectSummary = competitors.locator(
+    '[data-competitor-summary="indirect"]',
+  );
+  const savedDirect = directSummary.locator('[data-competitor-source="saved"]');
+  await expect(competitors).toBeVisible();
+  await expect(page.getByLabel("产品名称")).toHaveValue("AstrologyWiki");
+  await expect(savedDirect).toContainText("astro.com");
+  await expect(competitors.getByLabel("主要市场", { exact: true })).toHaveCount(0);
+  await expect(competitors.getByLabel("主要语言", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("主要市场", { exact: true })).toHaveValue("US");
+  await expect(page.getByLabel("主要语言", { exact: true })).toHaveValue("en-US");
+  expect(account.profileSearchRequests).toHaveLength(0);
+
+  await competitors
+    .getByRole("button", { name: "刷新搜索格局", exact: true })
+    .click();
+  const candidate = competitors.locator(
+    '[data-profile-competitor-candidate="rival.example"]',
+  );
+  await expect(candidate).toBeVisible();
+  await expect(
+    directSummary.locator('[data-competitor-source="system"]'),
+  ).toContainText("rival.example");
+  await expect(
+    indirectSummary.locator('[data-competitor-source="system"]'),
+  ).toContainText("adjacent.example");
+  await expect(savedDirect).toContainText("astro.com");
+  expect(account.profileSearchRequests).toEqual([
+    {
+      url: site.submittedUrl,
+      marketCode: "US",
+      languageTag: "en-US",
+      targetQuery: "",
+      productProfileSearchSeeds: ["AstrologyWiki"],
+    },
+  ]);
+  expect(site.draft).toEqual(initialProfile);
+  expect(site.draftVersion).toBe(1);
+  expect(site.snapshot).toBeNull();
+
+  const manualEditor = competitors.locator("details").filter({
+    has: page.locator("summary", { hasText: "编辑已保存的分类" }),
+  });
+  await expect(manualEditor).toHaveJSProperty("open", false);
+  await manualEditor.locator("summary").click();
+  await expect(
+    manualEditor.locator('[data-list-field="directCompetitors"] input'),
+  ).toHaveValue("astro.com");
+  await expect(
+    manualEditor.locator('[data-list-field="indirectAlternatives"] input'),
+  ).toHaveCount(0);
+  await manualEditor.locator("summary").click();
+  const competitorAccessibility = await new AxeBuilder({ page })
+    .include("[data-website-competitors]")
+    .analyze();
+  expect(competitorAccessibility.violations.filter((violation) =>
+    ["critical", "serious"].includes(violation.impact ?? ""),
+  )).toEqual([]);
+  await competitors.screenshot({
+    // Avoid the fixed global nav obscuring the component-only capture.
+    style: "header { visibility: hidden !important; }",
+    path: testInfo.outputPath("competitors-desktop-zh.png"),
+    animations: "disabled",
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+  await competitors.screenshot({
+    // Avoid the fixed global nav obscuring the component-only capture.
+    style: "header { visibility: hidden !important; }",
+    path: testInfo.outputPath("competitors-mobile-zh.png"),
+    animations: "disabled",
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+
+  await candidate
+    .getByRole("button", { name: "间接替代: rival.example", exact: true })
+    .click();
+  await expect(
+    indirectSummary.locator('[data-competitor-source="saved"]'),
+  ).toContainText("rival.example");
+  await expect(directSummary).not.toContainText("rival.example");
+  await expect(
+    indirectSummary.locator('[data-competitor-source="system"]'),
+  ).toContainText("adjacent.example");
+  await expect
+    .poll(() => site.draft?.indirectAlternatives)
+    .toEqual(["rival.example"]);
+  await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+  expect(site.draft?.directCompetitors).toEqual(["astro.com"]);
+  expect(site.draft?.excludedAlternatives).toEqual([]);
+  expect(site.draft?.fieldProvenance).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: "/indirectAlternatives",
+        source: "user_edit",
+        derivation: "declared",
+      }),
+    ]),
+  );
+  expect(site.snapshot).toBeNull();
+  expect(account.profileSearchRequests).toHaveLength(1);
+
+  await page.getByRole("button", { name: "确认画像", exact: true }).click();
+  const collapsed = page.locator('[data-website-profile-collapsed="true"]');
+  await expect(collapsed).toBeVisible();
+  await expect(collapsed).toContainText("已确认 v1");
+  await expect(page.getByLabel("产品名称")).toHaveCount(0);
+  await expect(competitors).toHaveCount(0);
+  const summaryAccessibility = await new AxeBuilder({ page })
+    .include('[data-website-profile-collapsed="true"]')
+    .analyze();
+  expect(summaryAccessibility.violations.filter((violation) =>
+    ["critical", "serious"].includes(violation.impact ?? ""),
+  )).toEqual([]);
+  expect(site.snapshot?.directCompetitors).toEqual(["astro.com"]);
+  expect(site.snapshot?.indirectAlternatives).toEqual(["rival.example"]);
+  expect(site.snapshot?.excludedAlternatives).toEqual([]);
+  expect(account.profileSearchRequests).toHaveLength(1);
+  await collapsed.screenshot({
+    path: testInfo.outputPath("profile-confirmed-desktop-zh.png"),
+    animations: "disabled",
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+  await collapsed.screenshot({
+    path: testInfo.outputPath("profile-confirmed-mobile-zh.png"),
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "编辑画像", exact: true }).click();
+  await expect(collapsed).toHaveCount(0);
+  await expect(page.getByLabel("产品名称")).toHaveValue("AstrologyWiki");
+  await expect(competitors).toBeVisible();
+  await expect(
+    indirectSummary.locator('[data-competitor-source="saved"]'),
+  ).toContainText("rival.example");
+  expect(account.profileSearchRequests).toHaveLength(1);
 });
 
 test.describe("mobile account settings", () => {

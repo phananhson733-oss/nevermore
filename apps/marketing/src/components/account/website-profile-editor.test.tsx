@@ -50,7 +50,7 @@ vi.mock("../ui/card.tsx", () => ({
     <div {...props}>{children}</div>
   ),
   CardTitle: ({ children, ...props }: React.ComponentProps<"div">) => (
-    <h3 {...props}>{children}</h3>
+    <div {...props}>{children}</div>
   ),
   CardDescription: ({ children, ...props }: React.ComponentProps<"div">) => (
     <p {...props}>{children}</p>
@@ -81,7 +81,19 @@ const EDITOR = {
   notFound: "Website not found.",
   productSection: "Product",
   icpSection: "ICP",
-  marketSection: "Market and alternatives",
+  marketSection: "Market and language",
+  competitorSection: "Competitors",
+  competitors: {
+    description:
+      "Review search suggestions before saving a competitor relationship. Suggestions do not change the confirmed profile.",
+    systemSuggestion: "Search suggestion · review required",
+    savedClassification: "Saved classification",
+    draftClassification: "Draft classification · not saved",
+    empty: "No saved relationship or search suggestion yet.",
+    editSaved: "Edit saved classifications",
+    manualHelp:
+      "Only saved classifications are reused by other tools. Add or adjust them here, or classify a search candidate above.",
+  },
   sourcesSection: "Sources and versions",
   listAdd: "Add item",
   listRemove: "Remove",
@@ -115,6 +127,8 @@ const EDITOR = {
     confirming: "Confirming…",
     version: "Confirmed v{revision}",
     failed: "Confirmation failed.",
+    edit: "Edit profile",
+    body: "The confirmed version is ready to use.",
   },
   draftVersion: "Draft v{version}",
   noSources: "No source URLs yet.",
@@ -477,12 +491,15 @@ describe("WebsiteProfileEditor", () => {
     vi.restoreAllMocks();
   });
 
-  async function mount(autoGenerate = false): Promise<void> {
+  async function mount(
+    autoGenerate = false,
+    websiteId = WEBSITE_ID,
+  ): Promise<void> {
     await act(async () => {
       root.render(
         <NextIntlClientProvider locale="en" messages={MESSAGES}>
           <WebsiteProfileEditor
-            websiteId={WEBSITE_ID}
+            websiteId={websiteId}
             autoGenerate={autoGenerate}
           />
         </NextIntlClientProvider>,
@@ -514,6 +531,13 @@ describe("WebsiteProfileEditor", () => {
       await settle();
     }
     throw new Error(`save state ${value} did not render`);
+  }
+
+  async function waitForConfirmation(): Promise<void> {
+    await vi.waitFor(async () => {
+      await settle();
+      expect(host.textContent).not.toContain(EDITOR.confirm.confirming);
+    });
   }
 
   function field(label: string): HTMLInputElement | HTMLTextAreaElement {
@@ -552,6 +576,17 @@ describe("WebsiteProfileEditor", () => {
     );
     if (node === null) throw new Error("competitor action missing");
     return node;
+  }
+
+  function competitorSummary(
+    classification: "direct" | "indirect" | "excluded",
+    source: "system" | "saved" | "draft",
+  ): readonly string[] {
+    return [
+      ...host.querySelectorAll(
+        `[data-competitor-summary="${classification}"] [data-competitor-source="${source}"]`,
+      ),
+    ].map((node) => node.textContent ?? "");
   }
 
   function profileSearchCalls(fetchMock: MockInstance<typeof fetch>) {
@@ -598,7 +633,7 @@ describe("WebsiteProfileEditor", () => {
     let inputs = fieldset.querySelectorAll<HTMLInputElement>("input");
     if (inputs[index] === undefined) {
       const add = [...fieldset.querySelectorAll<HTMLButtonElement>("button")].find(
-        (candidate) => candidate.textContent?.trim() === EDITOR.listAdd,
+        (candidate) => candidate.getAttribute("aria-label")?.startsWith(EDITOR.listAdd + " "),
       );
       if (add === undefined) throw new Error(`add ${fieldName} missing`);
       await act(async () => add.click());
@@ -615,7 +650,7 @@ describe("WebsiteProfileEditor", () => {
     );
     if (fieldset === null) throw new Error(`list field ${fieldName} missing`);
     const add = [...fieldset.querySelectorAll<HTMLButtonElement>("button")].find(
-      (candidate) => candidate.textContent?.trim() === EDITOR.listAdd,
+      (candidate) => candidate.getAttribute("aria-label")?.startsWith(EDITOR.listAdd + " "),
     );
     if (add === undefined) throw new Error(`add ${fieldName} missing`);
     await act(async () => add.click());
@@ -737,6 +772,105 @@ describe("WebsiteProfileEditor", () => {
     });
   });
 
+  it("groups search suggestions separately from saved competitors and retains free-text alternatives", async () => {
+    const initialProfile = profile({
+      directCompetitors: ["manual-direct.example"],
+      indirectAlternatives: ["manual-indirect.example", "Paper journal and counselling"],
+      excludedAlternatives: ["rival.example", "Social media groups"],
+    });
+    const initial = await details(initialProfile);
+    const search = availableProfileSearch();
+    const candidates = {
+      ...search,
+      rows: [
+        ...search.rows,
+        {
+          kind: "organic_search_overlap",
+          domain: "system-direct.example",
+          intersections: 10,
+          averagePosition: 3,
+          summedPosition: 30,
+          organicEstimatedTrafficVolume: 400,
+        },
+        {
+          kind: "organic_search_overlap",
+          domain: "system-indirect.example",
+          intersections: 1,
+          averagePosition: 8,
+          summedPosition: 8,
+          organicEstimatedTrafficVolume: 20,
+        },
+      ],
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) =>
+      String(input).endsWith("/api/agents/seo/profile-search")
+        ? answer(200, { data: candidates })
+        : answer(200, { data: { website: initial } }),
+    );
+    await mount();
+    await act(async () => button(PROFILE_SEARCH.action).click());
+    await settle();
+
+    expect(competitorSummary("direct", "system")).toEqual([
+      expect.stringContaining("system-direct.example"),
+    ]);
+    expect(competitorSummary("indirect", "system")).toEqual([
+      expect.stringContaining("system-indirect.example"),
+    ]);
+    expect(competitorSummary("excluded", "system")).toEqual([]);
+    expect(competitorSummary("direct", "saved")).toEqual([
+      expect.stringContaining("manual-direct.example"),
+    ]);
+    expect(competitorSummary("indirect", "saved")).toEqual(expect.arrayContaining([
+      expect.stringContaining("manual-indirect.example"),
+      expect.stringContaining("Paper journal and counselling"),
+    ]));
+    expect(competitorSummary("excluded", "saved")).toEqual(expect.arrayContaining([
+      expect.stringContaining("rival.example"),
+      expect.stringContaining("Social media groups"),
+    ]));
+    expect(host.querySelector('[data-website-competitors] [data-profile-competitor-candidate="rival.example"]')).not.toBeNull();
+    expectNoCompetitorDraftWrite(fetchMock, {
+      direct: initialProfile.directCompetitors,
+      indirect: initialProfile.indirectAlternatives,
+      excluded: initialProfile.excludedAlternatives,
+    });
+  });
+
+  it.each(["no_data", "error"] as const)(
+    "clears stale system summaries after discovery returns %s while preserving saved relationships",
+    async (nextResult) => {
+      const initialProfile = profile({ indirectAlternatives: ["Paper journal"] });
+      const initial = await details(initialProfile);
+      let searches = 0;
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        if (!String(input).endsWith("/api/agents/seo/profile-search")) {
+          return answer(200, { data: { website: initial } });
+        }
+        searches += 1;
+        if (searches === 1) return answer(200, { data: availableProfileSearch() });
+        return nextResult === "no_data"
+          ? answer(200, { data: unavailableProfileSearch("no_data") })
+          : answer(503, { error: { code: "auth_unavailable" } });
+      });
+      await mount();
+      await act(async () => button(PROFILE_SEARCH.action).click());
+      await settle();
+      expect(competitorSummary("direct", "system")).toEqual([
+        expect.stringContaining("rival.example"),
+      ]);
+
+      await act(async () => button(PROFILE_SEARCH.action).click());
+      await settle();
+
+      expect(host.querySelector('[data-competitor-source="system"]')).toBeNull();
+      expect(competitorSummary("indirect", "saved")).toEqual([
+        expect.stringContaining("Paper journal"),
+      ]);
+      expectNoCompetitorDraftWrite(fetchMock, { indirect: initialProfile.indirectAlternatives });
+    },
+  );
+
   it("persists only an explicit competitor classification through the existing draft save", async () => {
     vi.useFakeTimers();
     const initialProfile = profile();
@@ -777,8 +911,16 @@ describe("WebsiteProfileEditor", () => {
     expect(listValues("excludedAlternatives")).toEqual([]);
     expect(host.querySelector('[data-save-state="unsaved"]')).not.toBeNull();
 
+    expect(competitorSummary("direct", "saved")).toEqual([]);
+    expect(competitorSummary("direct", "draft").join(" ")).toContain(
+      EDITOR.competitors.draftClassification,
+    );
+
     await act(async () => vi.advanceTimersByTimeAsync(900));
     await waitForSaveState("saved");
+
+    expect(competitorSummary("direct", "draft")).toEqual([]);
+    expect(competitorSummary("direct", "saved").join(" ")).toContain("rival.example");
 
     const patchCalls = fetchMock.mock.calls.filter(
       ([, init]) => init?.method === "PATCH",
@@ -838,6 +980,44 @@ describe("WebsiteProfileEditor", () => {
     expect(host.textContent).toContain("Confirmed v1");
   });
 
+  it("keeps unchanged competitor classifications saved while an unrelated field is dirty", async () => {
+    vi.useFakeTimers();
+    const initial = await details(profile({ directCompetitors: ["saved.example"] }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      answer(200, { data: { website: initial } }),
+    );
+    await mount();
+    await act(async () => change(field("Product name"), "Unsaved product edit"));
+
+    expect(host.querySelector('[data-save-state="unsaved"]')).not.toBeNull();
+    expect(competitorSummary("direct", "saved").join(" ")).toContain("saved.example");
+    expect(competitorSummary("direct", "draft")).toEqual([]);
+  });
+
+  it("does not label a competitor classification saved when autosave fails", async () => {
+    vi.useFakeTimers();
+    const initial = await details(profile());
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input).endsWith("/api/agents/seo/profile-search")) {
+        return answer(200, { data: availableProfileSearch() });
+      }
+      if (init?.method === "PATCH") return answer(503, { error: { code: "unavailable" } });
+      return answer(200, { data: { website: initial } });
+    });
+    await mount();
+    await act(async () => button(PROFILE_SEARCH.action).click());
+    await settle();
+    await act(async () => competitorAction("direct").click());
+    await act(async () => vi.advanceTimersByTimeAsync(900));
+    await waitForSaveState("failed");
+
+    expect(competitorSummary("direct", "saved")).toEqual([]);
+    expect(competitorSummary("direct", "draft").join(" ")).toContain("rival.example");
+    expect(competitorSummary("direct", "draft").join(" ")).toContain(
+      EDITOR.competitors.draftClassification,
+    );
+  });
+
   it("moves one candidate between groups while preserving unrelated manual domains", async () => {
     vi.useFakeTimers();
     const initialProfile = profile({
@@ -864,7 +1044,10 @@ describe("WebsiteProfileEditor", () => {
           };
           return answer(200, {
             data: {
-              website: await details(body.profile, { draftVersion: 3 }),
+              website: await details(body.profile, {
+                draftVersion: 3,
+                snapshotProfile: initialProfile,
+              }),
             },
           });
         }
@@ -894,6 +1077,8 @@ describe("WebsiteProfileEditor", () => {
         '[data-profile-competitor-classification="indirect"][data-profile-competitor-classification-source="manual"]',
       ),
     ).not.toBeNull();
+    expect(competitorSummary("indirect", "draft")).toContainEqual(expect.stringContaining("rival.example"));
+    expect(competitorSummary("direct", "draft").join()).not.toContain("rival.example");
 
     await act(async () => competitorAction("excluded").click());
 
@@ -914,6 +1099,8 @@ describe("WebsiteProfileEditor", () => {
         '[data-profile-competitor-classification="excluded"][data-profile-competitor-classification-source="manual"]',
       ),
     ).not.toBeNull();
+    expect(competitorSummary("excluded", "draft")).toContainEqual(expect.stringContaining("rival.example"));
+    expect(competitorSummary("indirect", "draft").join()).not.toContain("rival.example");
 
     await act(async () => vi.advanceTimersByTimeAsync(900));
     await waitForSaveState("saved");
@@ -947,6 +1134,9 @@ describe("WebsiteProfileEditor", () => {
         String(input).endsWith("/api/agents/seo/profile-search"),
       ),
     ).toHaveLength(1);
+    expect(host.textContent).toContain("Confirmed v1");
+    expect(host.querySelector('[data-confirm-change="directCompetitors"]')).not.toBeNull();
+    expect(host.querySelector('[data-confirm-change="excludedAlternatives"]')).not.toBeNull();
   });
 
   it("keeps an exact selected relationship idempotent without a new draft save", async () => {
@@ -1648,7 +1838,7 @@ describe("WebsiteProfileEditor", () => {
 
     const featureField = host.querySelector('[data-list-field="coreFeatures"]');
     const add = [...(featureField?.querySelectorAll("button") ?? [])].find(
-      (candidate) => candidate.textContent?.trim() === EDITOR.listAdd,
+      (candidate) => candidate.getAttribute("aria-label")?.startsWith(EDITOR.listAdd + " "),
     );
     if (!(add instanceof HTMLButtonElement)) throw new Error("add item missing");
     await act(async () => add.click());
@@ -2221,7 +2411,7 @@ describe("WebsiteProfileEditor", () => {
       "0 changes from the current confirmed version",
     );
     await act(async () => button(EDITOR.confirm.action).click());
-    await settle();
+    await waitForConfirmation();
 
     expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/account/websites/" + WEBSITE_ID + "/confirm",
@@ -2232,6 +2422,171 @@ describe("WebsiteProfileEditor", () => {
       },
     );
     expect(host.textContent).toContain("Confirmed v1");
+  });
+
+  it("collapses only after successful confirmation and reopens the same profile without another request", async () => {
+    const initial = await details(profile());
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      answer(200, { data: { website: initial } }),
+    );
+    await mount();
+
+    expect(field("Product name").value).toBe("Example");
+    expect(host.querySelector('[data-website-profile-collapsed="true"]')).toBeNull();
+
+    await act(async () => button(EDITOR.confirm.action).click());
+    await waitForConfirmation();
+
+    const summary = host.querySelector('[data-website-profile-collapsed="true"]');
+    expect(summary).not.toBeNull();
+    expect(summary?.textContent).toContain("Confirmed v1");
+    expect(document.activeElement).toBe(summary);
+    expect(() => field("Product name")).toThrow("field missing");
+    const requestCount = fetchMock.mock.calls.length;
+
+    await act(async () => button(EDITOR.confirm.edit).click());
+    await settle();
+
+    expect(host.querySelector('[data-website-profile-collapsed="true"]')).toBeNull();
+    expect(field("Product name").value).toBe("Example");
+    expect(document.activeElement).toBe(field("Product name"));
+    expect(listValues("coreFeatures")).toEqual(["Feature A", "Feature B"]);
+    expect(fetchMock).toHaveBeenCalledTimes(requestCount);
+  });
+
+  it("preserves edits made while confirmation is pending and does not collapse or mark them saved", async () => {
+    vi.useFakeTimers();
+    const initial = await details(profile());
+    let resolveConfirm!: (value: Response) => void;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) =>
+      String(input).endsWith("/confirm")
+        ? new Promise<Response>((resolve) => { resolveConfirm = resolve; })
+        : answer(200, { data: { website: initial } }),
+    );
+    await mount();
+    await act(async () => button(EDITOR.confirm.action).click());
+    await act(async () => change(field("Product name"), "Newer local name"));
+    await act(async () => vi.advanceTimersByTimeAsync(1_800));
+
+    expect(button(EDITOR.confirm.confirming).disabled).toBe(true);
+    expect(field("Product name").value).toBe("Newer local name");
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(0);
+
+    await act(async () => resolveConfirm(answer(200, { data: { website: initial } })));
+    await waitForConfirmation();
+
+    expect(field("Product name").value).toBe("Newer local name");
+    expect(host.querySelector('[data-website-profile-collapsed="true"]')).toBeNull();
+    expect(host.querySelector('[data-save-state="saved"]')).toBeNull();
+    expect(host.querySelector('[data-save-state="unsaved"]')).not.toBeNull();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(0);
+  });
+
+  it.each(["missing snapshot", "different profile", "wrong website"] as const)(
+    "keeps the editor open when confirmation returns a %s",
+    async (invalidResponse) => {
+      const initial = await details(profile());
+      let returned = invalidResponse === "missing snapshot"
+        ? await details(profile(), { snapshotProfile: null })
+        : await details(profile({ productName: "Other profile" }));
+      if (invalidResponse === "wrong website") {
+        returned = {
+          ...initial,
+          currentConfirmedSnapshot: {
+            ...initial.currentConfirmedSnapshot!,
+            websiteId: "b4f53f12-8090-4c5f-8ddb-7d9587758d7a",
+          },
+        };
+      }
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(answer(200, { data: { website: initial } }))
+        .mockResolvedValueOnce(answer(200, { data: { website: returned } }));
+      await mount();
+
+      await act(async () => button(EDITOR.confirm.action).click());
+      await waitForConfirmation();
+
+      expect(host.querySelector('[data-website-profile-collapsed="true"]')).toBeNull();
+      expect(field("Product name").value).toBe("Example");
+      expect(host.querySelector('[data-confirm-error="true"]')).not.toBeNull();
+    },
+  );
+
+  it("keeps the editor open and preserves local fields when confirmation conflicts", async () => {
+    const initial = await details(profile());
+    const server = await details(profile({ productName: "New server name" }), {
+      draftVersion: 3,
+      snapshotProfile: profile(),
+    });
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(answer(200, { data: { website: initial } }))
+      .mockResolvedValueOnce(answer(409, {
+        error: { code: "profile_conflict", details: { website: server } },
+      }));
+    await mount();
+
+    await act(async () => button(EDITOR.confirm.action).click());
+    await waitForConfirmation();
+
+    expect(host.querySelector('[data-website-profile-collapsed="true"]')).toBeNull();
+    expect(field("Product name").value).toBe("Example");
+    expect(host.querySelector('[data-save-state="conflicted"]')).not.toBeNull();
+    expect(host.textContent).toContain("New server name");
+  });
+
+  it("ignores a late confirmation response after switching to another website", async () => {
+    const initial = await details(profile());
+    const nextWebsiteId = "b4f53f12-8090-4c5f-8ddb-7d9587758d7a";
+    const nextDetails = await details(profile({ productName: "Next website" }));
+    const next: WebsiteDetails = {
+      ...nextDetails,
+      websiteId: nextWebsiteId,
+      currentConfirmedSnapshot: {
+        ...nextDetails.currentConfirmedSnapshot!,
+        websiteId: nextWebsiteId,
+      },
+    };
+    let resolveConfirm!: (value: Response) => void;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input).endsWith("/confirm")) {
+        return new Promise<Response>((resolve) => { resolveConfirm = resolve; });
+      }
+      return answer(200, { data: { website: String(input).includes(nextWebsiteId) ? next : initial } });
+    });
+    await mount();
+    await act(async () => button(EDITOR.confirm.action).click());
+
+    await mount(false, nextWebsiteId);
+    expect(field("Product name").value).toBe("Next website");
+    await act(async () => resolveConfirm(answer(200, { data: { website: initial } })));
+    await settle();
+
+    expect(field("Product name").value).toBe("Next website");
+    expect(host.querySelector('[data-website-profile-collapsed="true"]')).toBeNull();
+    expect(button(EDITOR.confirm.action).disabled).toBe(false);
+  });
+
+  it("preserves local content and presents a conflict if another tab saves after confirmation", async () => {
+    const captured = profile();
+    const initial = await details(captured, { snapshotRevision: 1 });
+    const returned = await details(profile({ productName: "Other tab draft" }), {
+      draftVersion: 3,
+      snapshotProfile: captured,
+      snapshotRevision: 2,
+    });
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(answer(200, { data: { website: initial } }))
+      .mockResolvedValueOnce(answer(200, { data: { website: returned } }));
+    await mount();
+    await act(async () => button(EDITOR.confirm.action).click());
+    await waitForConfirmation();
+
+    expect(field("Product name").value).toBe(captured.productName);
+    expect(host.querySelector('[data-website-profile-collapsed="true"]')).toBeNull();
+    expect(host.querySelector('[data-save-state="conflicted"]')).not.toBeNull();
+    expect(host.querySelector('[data-conflict-field="productName"]')?.textContent)
+      .toContain("Other tab draft");
+    expect(host.textContent).toContain("Confirmed v2");
   });
 
   it("surfaces confirmation failures instead of turning the button into a no-op", async () => {
@@ -2247,10 +2602,12 @@ describe("WebsiteProfileEditor", () => {
     await settle();
 
     await act(async () => button(EDITOR.confirm.action).click());
-    await settle();
+    await waitForConfirmation();
 
     expect(host.textContent).toContain(EDITOR.confirm.failed);
     expect(host.querySelector('[data-confirm-error="true"]')).not.toBeNull();
+    expect(host.querySelector('[data-website-profile-collapsed="true"]')).toBeNull();
+    expect(field("Product name").value).toBe("Example");
 
     await act(async () => {
       change(field("Product name"), "Corrected after failure");
