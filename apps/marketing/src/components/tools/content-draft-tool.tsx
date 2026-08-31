@@ -1,5 +1,5 @@
-// @input  -- locale, one-time handoff, confirmed SEO v2/shared GEO v1.1/legacy SEO v1 JSON,
-//            and authenticated draft APIs; legacy GEO reports and unconfirmed v2 get guidance
+// @input  -- locale, one-time handoff, confirmed SEO v2/v3/shared GEO v1.1/legacy SEO v1 JSON,
+//            and authenticated draft APIs; legacy GEO reports and unconfirmed v2/v3 get guidance
 // @output -- version-specific intake/workflow, session-first generation and guarded sign-in recovery
 // @pos    -- primary client surface for the Marketing Content Draft Writer; no v2-to-v1 coercion
 
@@ -23,8 +23,8 @@ import {
   parseSharedContentBriefHandoff as parseContentBriefHandoff,
 } from "@sf/public-tools/content-brief/parse-geo-brief";
 import type { SharedContentBrief as ContentBrief } from "@sf/public-tools/content-brief/geo-contract";
-import { CONFIRMED_BRIEF_V2_SCHEMA, parseConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
-import { CONTENT_BRIEF_V2_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
+import { CONFIRMED_BRIEF_V2_SCHEMA, CONFIRMED_BRIEF_V3_SCHEMA, parseConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
+import { CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
 import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 
 import {
@@ -88,7 +88,7 @@ function responseDraft(body: unknown): DraftResult | null {
   return body as unknown as DraftResult;
 }
 
-/** Each document keeps its own parser; a confirmed v2 is never projected into a v1 Brief. */
+/** Each document keeps its own parser; a confirmed v2/v3 is never projected into a v1 Brief. */
 async function parseIntake(raw: string, source: BriefSource): Promise<ParsedIntake> {
   let json: unknown;
   try {
@@ -120,11 +120,11 @@ async function parseIntake(raw: string, source: BriefSource): Promise<ParsedInta
         : { code: parsed.code, path: parsed.path },
     };
   }
-  if (isRecord(json) && json.schema === CONFIRMED_BRIEF_V2_SCHEMA) {
+  if (isRecord(json) && (json.schema === CONFIRMED_BRIEF_V2_SCHEMA || json.schema === CONFIRMED_BRIEF_V3_SCHEMA)) {
     const parsed = await parseConfirmedBriefV2(json);
     return parsed.ok ? { phase: "loaded_v2", confirmed: parsed.value, source } : { phase: "rejected", rejection: { code: parsed.code, path: parsed.path } };
   }
-  if (isRecord(json) && json.schema === CONTENT_BRIEF_V2_SCHEMA) {
+  if (isRecord(json) && (json.schema === CONTENT_BRIEF_V2_SCHEMA || json.schema === CONTENT_BRIEF_V3_SCHEMA)) {
     return { phase: "rejected", rejection: { code: "confirmation_required", path: null } };
   }
   const parsed = await parseContentBrief(json);

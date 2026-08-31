@@ -1,0 +1,59 @@
+/* @input -- frozen Draft v2 presentation and existing Marketing theme tokens
+   @output -- compact editorial chapters, leading quality and source-tier cues
+   @pos -- locally scoped Draft styles; no site theme or prose overrides */
+.results, .workflow { min-width: 0; overflow-wrap: anywhere; }
+.coverage { border: 2px solid var(--sc-source-third); background: color-mix(in srgb, var(--sc-source-third) 5%, var(--sc-panel)); border-radius: 4px; padding: 18px 20px; }
+.coverage p { margin-bottom: 0; font-size: 11.5px; line-height: 1.55; color: var(--sc-text-secondary); }
+.coverageTotals { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 12px 0; font-size: clamp(20px, 3.5vw, 26px); font-weight: 750; line-height: 1.2; letter-spacing: -.025em; }
+.coverageTotals [data-coverage-total="covered"] { color: var(--sc-source-first); }
+.coverageTotals [data-coverage-total="partial"] { color: var(--sc-source-third); }
+.coverageTotals [data-coverage-total="none"] { color: var(--sc-error); }
+.coverage .coverageUnknown { margin: 12px 0; color: var(--sc-text-primary); font-size: 24px; font-weight: 700; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--sc-border-card); background: var(--sc-panel-sunken); }
+.annotationToggle { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; color: var(--sc-text-secondary); font-size: 11.5px; cursor: pointer; }
+.annotationToggle:focus-visible, .claimAnnotation a:focus-visible { outline: 2px solid var(--sc-source-first); outline-offset: 3px; }
+.switch { width: 30px; height: 17px; border-radius: 10px; background: var(--sc-border-strong); position: relative; flex: none; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--sc-text-secondary); transition: transform .15s ease; }
+.annotationToggle[aria-pressed="true"] .switch { background: color-mix(in srgb, var(--sc-source-first) 35%, transparent); }
+.annotationToggle[aria-pressed="true"] .switch::after { transform: translateX(13px); background: var(--sc-source-first); }
+.legend { display: flex; flex-wrap: wrap; gap: 7px 16px; width: 100%; font-size: 10.5px; color: var(--sc-text-secondary); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 16px; height: 3px; background: var(--tier); }
+.legend [data-tier="first"], .prose [data-source-tier="first"] { --tier: var(--sc-source-first); }
+.legend [data-tier="third"], .prose [data-source-tier="third"] { --tier: var(--sc-source-third); }
+.legend [data-tier="model"], .prose [data-source-tier="model"] { --tier: var(--sc-source-model); }
+.annotationNote { border-inline: 1px solid var(--sc-border-card); padding: 10px 14px; background: var(--sc-panel); }
+.annotationNote p { margin: 0; font-size: 10.5px; line-height: 1.6; color: var(--sc-text-secondary); }
+.document { border: 1px solid var(--sc-border-card); background: var(--sc-panel); }
+.chapter + .chapter { border-top: 1px solid var(--sc-border-card); }
+.chapterHeader { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 13px 16px; background: var(--sc-panel-sunken); }
+.chapterTitle { flex: 1 1 220px; margin: 0; color: var(--sc-text-primary); font-size: 14px; font-weight: 700; line-height: 1.45; letter-spacing: -.01em; }
+.chapterHeader button { padding: 5px 10px; min-height: 32px; font-size: 11px; }
+.sectionStatus { font-size: 10.5px; color: var(--sc-text-secondary); }
+.sectionStatus[data-status="failed"] { color: var(--sc-error); font-weight: 650; }
+.sectionStatus[data-status="skipped"] { color: var(--sc-source-third); }
+.prose { padding: 18px 20px 20px; color: var(--sc-text-primary); font-family: var(--font-serif), Georgia, "Songti SC", serif; }
+.prose p { margin: 0 0 16px; font-family: inherit; font-size: 15.5px; line-height: 1.85; color: inherit; }
+.prose > div:last-child p { margin-bottom: 0; }
+.prose h3 { margin: 16px 0 8px; font-family: inherit; font-size: 17px; font-weight: 650; line-height: 1.4; color: inherit; }
+.prose > div:first-child h3 { margin-top: 0; }
+.prose [data-marked="true"] > [data-sentence-text] { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--tier) 65%, transparent); }
+.prose [data-source-tier="mixed"][data-marked="true"] > [data-sentence-text] { background-image: linear-gradient(to right, var(--sc-source-first) 50%, var(--sc-source-third) 50%); background-size: 100% 2px; background-position: left bottom; background-repeat: no-repeat; }
+.claimAnnotation { margin-left: 4px; font-family: var(--font-sans), sans-serif; font-size: 10px; line-height: 1.5; color: var(--sc-text-secondary); }
+.claimAnnotation a { text-decoration: underline; text-underline-offset: 2px; }
+.failure { padding: 16px 20px; background: color-mix(in srgb, var(--sc-source-third) 5%, transparent); color: var(--sc-text-primary); font-size: 13px; }
+.failure p { margin: 5px 0 0; color: var(--sc-text-secondary); font-size: 12px; line-height: 1.6; }
+.received { border-color: var(--sc-source-first); background: color-mix(in srgb, var(--sc-source-first) 5%, var(--sc-panel)); }
+.receivedGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; border-top: 1px solid var(--sc-border-card); padding-top: 13px; }
+.receivedGrid dt { margin-bottom: 5px; font-size: 10px; color: var(--sc-text-secondary); }
+.receivedGrid dd { margin: 0; font-size: 13px; font-weight: 650; color: var(--sc-text-primary); }
+.mentionChoices { display: grid; gap: 8px; margin-top: 9px; }
+.mentionChoice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--sc-border-strong); border-radius: 4px; cursor: pointer; }
+.mentionChoice:has(input:checked) { border-color: var(--sc-source-first); background: color-mix(in srgb, var(--sc-source-first) 5%, transparent); }
+.mentionChoice:has(input:disabled) { cursor: default; opacity: .65; }
+.mentionChoice input { margin-top: 3px; accent-color: var(--sc-source-first); }
+.mentionChoice strong { display: block; font-size: 12.5px; font-weight: 650; color: var(--sc-text-primary); }
+.mentionChoice small { display: block; margin-top: 3px; font-size: 11.5px; line-height: 1.5; color: var(--sc-text-secondary); }
+@media (min-width: 700px) { .receivedGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .coverage, .prose { padding: 15px; } .chapterHeader { padding: 12px; } .chapterTitle { flex-basis: calc(100% - 56px); } }
+@media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } }

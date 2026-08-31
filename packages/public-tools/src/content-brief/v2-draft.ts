@@ -9,7 +9,7 @@ import {
   array, at, byteLength, identifier, invalid, isRecord, literal, llmReadMeta, modelText, nullable,
   object, ok, oneOf, reference, tagged, timestamp, unavailableShape, type Decoded, type Decoder,
 } from "./parse-brief-shape.ts";
-import { CONFIRMED_BRIEF_V2_SCHEMA, parseConfirmedBriefV2 } from "./v2-brief.ts";
+import { parseConfirmedBriefV2 } from "./v2-brief.ts";
 import { measureResearchLength, RESEARCH_HEADING_MAX_CHARS, RESEARCH_OUTLINE_MAX, RESEARCH_QUESTION_MAX } from "./v2-contract.ts";
 import { DRAFT_V2_MAX_BYTES, DRAFT_V2_SCHEMA, type DraftResultV2, type DraftV2Coverage, type DraftV2Rerun, type DraftV2Section, type DraftV2Settings, type DraftV2VerifyItem } from "./v2-draft-contract.ts";
 import { buildDraftV2SectionScope } from "./v2-draft-scope.ts";
@@ -189,7 +189,7 @@ function deriveCoverage(confirmed: ConfirmedBriefV2, sections: readonly DraftV2S
 }
 
 function confirmedRef(confirmed: ConfirmedBriefV2): DraftResultV2["confirmed_ref"] {
-  return { schema: CONFIRMED_BRIEF_V2_SCHEMA, fingerprint: confirmed.fingerprint, revision: confirmed.revision, brief_run_id: confirmed.brief.run.run_id, keyword: confirmed.brief.context.input.primary };
+  return { schema: confirmed.schema, fingerprint: confirmed.fingerprint, revision: confirmed.revision, brief_run_id: confirmed.brief.run.run_id, keyword: confirmed.brief.context.input.primary };
 }
 function checkRun(run: AssembleDraftV2Input["run"], sections: readonly DraftV2Section[]): boolean {
   return run.budget_ms === (run.rerun === null ? DRAFT_TOTAL_BUDGET_MS : SECTION_ENDPOINT_BUDGET_MS) &&
@@ -236,7 +236,7 @@ async function parseBoundDraft(input: unknown, confirmed: ConfirmedBriefV2): Pro
   const settings = settingsShape(input.settings, "settings");
   if (!settings.ok) return settings;
   const shape: Decoder<DraftResultV2> = object({
-    schema: literal(DRAFT_V2_SCHEMA), confirmed_ref: object({ schema: literal(CONFIRMED_BRIEF_V2_SCHEMA), fingerprint: hash, revision: count(1_000_000, 1), brief_run_id: modelText(128), keyword: modelText(200) }),
+    schema: literal(DRAFT_V2_SCHEMA), confirmed_ref: object({ schema: literal(confirmed.schema), fingerprint: hash, revision: count(1_000_000, 1), brief_run_id: modelText(128), keyword: modelText(200) }),
     settings: () => settings, sections: sectionsShape(confirmed, settings.value), coverage: coverageShape,
     verify_before_publish: array(object({ sentence: modelText(SENTENCE_MAX_CHARS), section_id: id("O"), kind: oneOf(["single_source", "profile_only", "gap", "stance"] as const), support_count: count(), evidence_refs: array(id("[UP]"), { max: 100, unique: true }) }), { max: RESEARCH_OUTLINE_MAX * SECTION_MAX_SENTENCES }),
     totals: object({ value: count(), unit: oneOf(["words", "non_whitespace_characters"] as const), tokenizer: oneOf(["whitespace", "unicode_code_points"] as const) }),
