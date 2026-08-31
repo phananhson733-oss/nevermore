@@ -43,3 +43,4 @@ One line per module: what it reads, what it returns, where it sits. Update the l
 
 - `daily-briefing-tool.tsx` — reads the saved GSC list, independently refreshes it on mount/focus or explicit retry, and preserves site-owned form/report state only while the selection remains granted.
 - `daily-briefing-tool.test.tsx` — verifies report interactions and property refresh, empty-list recovery, retry, selection removal, concurrency, and Strict Mode cleanup.
+- `page-citability-check.tsx`, `.test.tsx` — existing-site input/result styling, server-derived verdict/coverage, measured rule evidence and independently consented snapshot-bound AI review; copy and stale-response behavior retain the same report identity.

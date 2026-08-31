@@ -14,7 +14,7 @@ then run:
 ```sh
 docker compose -f apps/marketing/scripts/citability-renderer.compose.yml build
 docker compose -f apps/marketing/scripts/citability-renderer.compose.yml up -d
-docker compose -f apps/marketing/scripts/citability-renderer.compose.yml exec citability-renderer pnpm exec tsx apps/marketing/scripts/citability-renderer-runtime.ts
+docker compose -f apps/marketing/scripts/citability-renderer.compose.yml exec citability-renderer node apps/marketing/scripts/citability-renderer-runtime.ts
 ```
 
 If the Docker CLI has no Compose plugin but the standalone `docker-compose`
@@ -35,6 +35,9 @@ rule otherwise blocks this sandbox step when every host capability is dropped.
 [Upstream profile](https://github.com/microsoft/playwright/blob/v1.61.1/utils/docker/seccomp_profile.json),
 [Chromium namespace sandbox implementation](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/sandbox/linux/services/credentials.cc).
 
+Node 24 runs this TypeScript check directly, avoiding extra pnpm/tsx processes
+inside the bounded service container. Run it before sending render requests.
+
 Only loopback port 4318 is published. A trusted HTTPS reverse proxy may expose
 `POST /render`; do not expose the service's plain HTTP port directly. Set
 `CITABILITY_RENDERER_URL` in Marketing to that exact HTTPS endpoint and configure
@@ -44,8 +47,11 @@ authorization header. Do not set any customer provider key in this service.
 ## Verify the runtime before enabling Marketing
 
 ```sh
-docker compose -f apps/marketing/scripts/citability-renderer.compose.yml run --rm citability-renderer pnpm exec vitest run --project unit apps/marketing/scripts/citability-renderer.test.ts
+docker compose -f apps/marketing/scripts/citability-renderer.compose.yml run --rm citability-renderer pnpm exec vitest run --configLoader runner --cache=false --project unit apps/marketing/scripts/citability-renderer.test.ts
 ```
+
+The runner config loader and disabled test cache avoid writes to the read-only
+`/app/node_modules`; do not make the root filesystem writable for the test tool.
 
 This executes real Chromium against deterministic offline DNS/HTTP fixtures,
 including the same service HTTP adapter, isolated visible-text captures,

@@ -154,7 +154,7 @@ function readInput(
 /**
  * Read `/robots.txt` for the page's own origin.
  *
- * The three outcomes stay separate all the way to the report. RFC 9309
+ * Missing, unreachable, complete and truncated outcomes stay separate. RFC 9309
  * 2.3.1.3 makes a 404 full allowance, a 5xx makes the site's rules unknown,
  * and a transport failure is a retry — one `null` for all three is how "there
  * are no rules" gets shown to a visitor as "the check failed".
@@ -176,6 +176,9 @@ async function fetchRobots(
     return { status: "absent", httpStatus: status };
   }
   if (status >= 200 && status < 300) {
+    if (result.bodyComplete === false) {
+      return { status: "incomplete", httpStatus: status, bytes: Buffer.byteLength(result.body ?? "", "utf8") };
+    }
     return { status: "ok", text: result.body ?? "" };
   }
   return { status: "unreachable", httpStatus: status };
@@ -198,6 +201,9 @@ async function fetchLlmsTxt(
     return { status: "absent", httpStatus: status };
   }
   if (status >= 200 && status < 300) {
+    if (result.bodyComplete === false) {
+      return { status: "incomplete", httpStatus: status, bytes: Buffer.byteLength(result.body ?? "", "utf8") };
+    }
     return {
       status: "ok",
       bytes: Buffer.byteLength(result.body ?? "", "utf8"),

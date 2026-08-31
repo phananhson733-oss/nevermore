@@ -3,7 +3,7 @@
 // @pos -- client-pure evidence boundary shared by wire, store and importer
 import { codePointLength, hasLoneSurrogate } from "../agents/geo-canonical.ts";
 import { isNormalizedGeoCitationUrl, isNormalizedGeoHost, normalizeGeoHost } from "../agents/geo-url.ts";
-import { CITABILITY_RETRIEVAL_BOTS, CITABILITY_TRAINING_BOTS } from "./citability-contract.ts";
+import { CITABILITY_RETRIEVAL_BOTS, CITABILITY_TRAINING_BOTS, CITABILITY_RULES_VERSION } from "./citability-contract.ts";
 import { GEO_SITE_EVIDENCE_SCHEMA, type GeoReadPage, type VisibilitySiteEvidenceV1 } from "./site-index-contract.ts";
 import type { VisibilityReportV2 } from "./visibility-v2-contract.ts";
 import { siteQuestionTerms } from "./site-index-text.ts";
@@ -90,14 +90,17 @@ function detailFrom(value: unknown): void {
     for (const [key, value] of Object.entries(values)) requireValue(/^[A-Za-z][A-Za-z0-9_]{0,39}$/u.test(key) && (typeof value === "number" && Number.isFinite(value) || text(value, 2048, true)));
   }
 }
-function checksFrom(value: unknown, renderStatus: unknown): void {
+function checksFrom(value: unknown, renderStatus: unknown, rulesVersion: unknown): void {
   const checks = array(value, Object.keys(RULES).length), seen = new Set<string>();
   requireValue(checks.length === Object.keys(RULES).length);
   for (const value of checks) {
     const check = exact(value, ["ruleId", "section", "kind", "weight", "state", "measured", ...(Object.hasOwn(object(value), "fix") ? ["fix"] : [])]);
     requireValue(typeof check.ruleId === "string" && Object.hasOwn(RULES, check.ruleId) && !seen.has(check.ruleId)); seen.add(check.ruleId);
     const identity = RULES[check.ruleId]!;
-    requireValue(check.section === identity[0] && check.kind === identity[1] && check.weight === identity[2]);
+    // Unversioned exact snapshots retain the original deterministic citedData
+    // label. Only the explicitly versioned new inventory uses the corrected kind.
+    const kind = check.ruleId === "citedData" && rulesVersion === CITABILITY_RULES_VERSION ? "heuristic" : identity[1];
+    requireValue(check.section === identity[0] && check.kind === kind && check.weight === identity[2]);
     requireValue(typeof check.state === "string" && ["pass", "fail", "fetchError", "notApplicable"].includes(check.state));
     requireValue(Object.hasOwn(check, "fix") === (check.state === "fail"));
     detailFrom(check.measured); if (check.state === "fail") detailFrom(check.fix);
@@ -151,14 +154,15 @@ export function parseVisibilitySiteEvidence(value: unknown, report: VisibilityRe
     const candidates = pages.flatMap((page) => page.state === "read" && page.bodyComplete ? page.matches.map((match) => `${page.id}|${match.questionId}`) : []);
     const citability = array(root.citability, 3), checksSeen = new Set<string>();
     for (const value of citability) {
-      const check = exact(value, ["id", "pageId", "questionId", "url", "checkedAt", "checks", "renderStatus", "renderReason", "rawToRenderedRatio"]);
+      const check = exact(value, ["id", "pageId", "questionId", "url", "checkedAt", "checks", "renderStatus", "renderReason", "rawToRenderedRatio", ...(Object.hasOwn(object(value), "rulesVersion") ? ["rulesVersion"] : [])]);
+      if (Object.hasOwn(check, "rulesVersion")) requireValue(check.rulesVersion === CITABILITY_RULES_VERSION);
       const page = pages.find((page) => page.id === check.pageId && page.url === check.url);
       requireValue(page !== undefined && candidates.includes(`${page.id}|${String(check.questionId)}`) && check.id === `t2-${page.id}-${String(check.questionId)}` && !checksSeen.has(check.id)); checksSeen.add(check.id);
       requireValue(beforeCollection(check.checkedAt, root.collectedAt as string));
       requireValue(check.renderStatus === "measured" || check.renderStatus === "partial" || check.renderStatus === "unavailable");
       requireValue(check.rawToRenderedRatio === null || typeof check.rawToRenderedRatio === "number" && Number.isFinite(check.rawToRenderedRatio) && check.rawToRenderedRatio >= 0);
       requireValue(check.renderStatus === "measured" ? check.renderReason === null : check.rawToRenderedRatio === null && typeof check.renderReason === "string" && RENDER_REASONS.includes(check.renderReason));
-      checksFrom(check.checks, check.renderStatus);
+      checksFrom(check.checks, check.renderStatus, check.rulesVersion);
     }
     const unretainedCandidates = candidates.length - citability.length;
     requireValue(budgetTrimmed ? count(root.citabilityOmittedCount, 24 * report.questions.length, unretainedCandidates) : root.citabilityOmittedCount === unretainedCandidates);
