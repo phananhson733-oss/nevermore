@@ -14,6 +14,8 @@ import {
 } from "@sf/public-tools/content-brief/constants";
 import type { ContentBrief, CrawlObservation } from "@sf/public-tools/content-brief/contract";
 import { parseContentBrief } from "@sf/public-tools/content-brief/parse-brief";
+import { CONTENT_BRIEF_V2_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
+import { parseContentBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
 
 import type { MarketingWebsiteProfileV1 } from "../account-websites/contracts.ts";
 import type { ContentBriefCrawlResult } from "./content-brief-crawl.ts";
@@ -45,6 +47,69 @@ function request(body: unknown, init: RequestInit = {}): Request {
 
 function validBody(overrides: Record<string, unknown> = {}) {
   return { primary: "brew coffee", supporting: ["pour over"], market: "US", language: "en", ...overrides };
+}
+
+function confirmedProfile(): MarketingWebsiteProfileV1 {
+  return {
+    schemaVersion: "marketing-website-profile.v1",
+    productName: "Brewly",
+    oneLinePositioning: "Coffee workflow software for cafes",
+    valueProposition: "",
+    coreFeatures: ["Roast tracking"],
+    categories: [],
+    businessModel: "",
+    primaryCta: "",
+    trustSignals: [],
+    primaryIcp: "",
+    buyer: "",
+    user: "",
+    triggerPain: "",
+    icpInterests: [],
+    icpPain: "",
+    icpBehavior: "",
+    icpPositioning: "",
+    jtbd: "",
+    useCases: [],
+    outcomes: [],
+    barriers: [],
+    qualificationSignals: [],
+    disqualifiers: [],
+    directCompetitors: [],
+    indirectAlternatives: [],
+    excludedAlternatives: [],
+    firstOutcome: "",
+    country: "US",
+    locale: "en",
+    fieldProvenance: [
+      {
+        path: "/productName",
+        derivation: "declared",
+        confidence: "high",
+        source: "supplied_product_information",
+        limitation: null,
+        observedAt: null,
+        evidenceUrls: [],
+      },
+      {
+        path: "/oneLinePositioning",
+        derivation: "observed",
+        confidence: "medium",
+        source: "public_page",
+        limitation: null,
+        observedAt: "2026-08-31T00:00:00.000Z",
+        evidenceUrls: ["https://owned.test/about"],
+      },
+      {
+        path: "/coreFeatures",
+        derivation: "observed",
+        confidence: "medium",
+        source: "public_page",
+        limitation: null,
+        observedAt: "2026-08-31T00:00:00.000Z",
+        evidenceUrls: ["https://owned.test/features"],
+      },
+    ],
+  };
 }
 
 function serpResult(returned = 10): ContentBriefSerpResult {
@@ -158,8 +223,10 @@ function dependencies(overrides: Partial<ContentBriefHandlerDependencies> = {}):
     readGscDimensions: async () => gscRead(),
     readSerp: async () => serpResult(),
     crawl: async () => crawlResult(),
+    crawlV2: async () => { throw new Error("unexpected v2 crawl in legacy fixture"); },
     readWebsite: async (): Promise<ProfileReadResult> => ({ kind: "missing" }),
     runLlm: async () => llmResult(),
+    runLlmV2: async () => { throw new Error("unexpected v2 model in legacy fixture"); },
     now: () => {
       clock += 100;
       return clock;
@@ -172,6 +239,38 @@ function dependencies(overrides: Partial<ContentBriefHandlerDependencies> = {}):
   return { ...base, ...overrides, lines };
 }
 
+/** Offline source seams; the real v2 run and exact envelope parser remain in the test. */
+function v2Dependencies(overrides: Partial<ContentBriefHandlerDependencies> = {}): Deps {
+  return dependencies({
+    readSerp: async () => ({ ...serpResult(), peopleAlsoAsk: { status: "complete", items: [], unreadableItems: 0, unreadableBlocks: 0, truncatedItems: 0 } }),
+    crawlV2: async ({ targets }) => ({
+      observed: targets.map((target) => ({
+        ...target, final_url: target.url, fetched_at: "2026-08-31T00:00:00.000Z", content_hash: "b".repeat(64), body_complete: true,
+        research: {
+          segments: [{ heading: null, text: "Coffee brewing needs a stable ratio.", truncated: false }],
+          segments_total: 1, omitted_segments: 0, length: { value: 6, unit: "words", tokenizer: "whitespace" },
+        },
+      })),
+      failed: [],
+    }),
+    runLlmV2: async ({ context }) => ({
+      context,
+      output: {
+        research: { questions: [], outline: [] }, intent: null, format: null,
+        page_plan: { action: "undecidable", rationale: "The sampled evidence does not resolve a page action.", target_ref: null, steps: [] },
+        gap_angle: null, internal_links: [], do_not_cover: [],
+      },
+      reads: { status: "complete", calls: 1, model_id: "fixture-model", temperature_requested: 0.2, temperature_effective: 1, input_tokens: 123, output_tokens: 45 },
+      prompt_bytes: 2048,
+    }),
+    ...overrides,
+  });
+}
+
+function v2Body(overrides: Record<string, unknown> = {}) {
+  return validBody({ response_schema: CONTENT_BRIEF_V2_SCHEMA, ...overrides });
+}
+
 async function briefOf(response: Response): Promise<ContentBrief> {
   expect(response.status).toBe(200);
   const brief = (await response.json()) as ContentBrief;
@@ -180,6 +279,15 @@ async function briefOf(response: Response): Promise<ContentBrief> {
   const parsed = await parseContentBrief(brief);
   expect(parsed).toMatchObject({ ok: true });
   return brief;
+}
+
+async function briefV2Of(response: Response) {
+  expect(response.status).toBe(200);
+  const brief = await response.json();
+  const parsed = await parseContentBriefV2(brief);
+  expect(parsed).toMatchObject({ ok: true });
+  if (!parsed.ok) throw new Error("expected a v2 brief");
+  return parsed.value;
 }
 
 function lastRunLine(deps: Deps): Record<string, unknown> {
@@ -193,12 +301,42 @@ function lastRunLine(deps: Deps): Record<string, unknown> {
 /* ------------------------------------------------------------------ */
 
 describe("parseContentBriefRequest", () => {
+  it.each([9, 10])("carries %i supporting terms through the v2 handler's actual self-check", async (count) => {
+    const supporting = Array.from({ length: count }, (_, index) => "support " + index);
+    const result = await briefV2Of(await handleContentBriefRequest(request(v2Body({ supporting })), v2Dependencies()));
+    expect(result.context.input.supporting).toEqual(supporting);
+  });
   it("normalises keywords and dedupes supporting terms", () => {
     const parsed = parseContentBriefRequest(validBody({ primary: "  Brew   coffee ", supporting: ["a", " a ", "b"] }));
     expect(parsed).toEqual({
       ok: true,
-      value: { primary: "Brew coffee", supporting: ["a", "b"], market: "US", language: "en", website_id: null, gsc_property: null },
+      value: { primary: "Brew coffee", supporting: ["a", "b"], market: "US", language: "en", website_id: null, gsc_property: null, response_schema: "gengrowth.content_brief/v1" },
     });
+  });
+
+  it("accepts an explicit v2 response schema but defaults to v1", () => {
+    expect(parseContentBriefRequest(validBody())).toMatchObject({
+      ok: true,
+      value: { response_schema: "gengrowth.content_brief/v1" },
+    });
+    expect(parseContentBriefRequest(validBody({ response_schema: CONTENT_BRIEF_V2_SCHEMA }))).toMatchObject({
+      ok: true,
+      value: { response_schema: CONTENT_BRIEF_V2_SCHEMA },
+    });
+  });
+
+  it("deduplicates v2 supporting identities and excludes the primary before applying the cap", () => {
+    const supporting = ["Brew coffee", "Ｂｒｅｗ ｃｏｆｆｅｅ", " Pour   Over ", "pour over", "Ｐｏｕｒ Ｏｖｅｒ", ...Array.from({ length: 7 }, (_, index) => `side ${index}`)];
+    expect(parseContentBriefRequest(v2Body({ supporting }))).toMatchObject({
+      ok: true, value: { primary: "brew coffee", supporting: ["Pour Over", ...Array.from({ length: 7 }, (_, index) => `side ${index}`)] },
+    });
+  });
+
+  it("preserves v1 supporting normalization for both default and explicit legacy callers", () => {
+    const supporting = ["brew coffee", "Brew coffee", "Pour Over", "pour over"];
+    for (const body of [validBody({ supporting }), validBody({ supporting, response_schema: "gengrowth.content_brief/v1" })]) {
+      expect(parseContentBriefRequest(body)).toMatchObject({ ok: true, value: { supporting } });
+    }
   });
 
   it("refuses too many supporting keywords with its own code", () => {
@@ -209,6 +347,7 @@ describe("parseContentBriefRequest", () => {
   it("refuses unknown markets, languages, keys and blank optionals", () => {
     expect(parseContentBriefRequest(validBody({ market: "XX" }))).toEqual({ ok: false, code: "unsupported_market" });
     expect(parseContentBriefRequest(validBody({ language: "xx" }))).toEqual({ ok: false, code: "unsupported_language" });
+    expect(parseContentBriefRequest(validBody({ response_schema: "gengrowth.content_brief/v3" }))).toEqual({ ok: false, code: "invalid_request" });
     expect(parseContentBriefRequest(validBody({ extra: 1 }))).toEqual({ ok: false, code: "invalid_request" });
     expect(parseContentBriefRequest(validBody({ gsc_property: "  " }))).toEqual({ ok: false, code: "invalid_request" });
   });
@@ -283,9 +422,9 @@ describe("handleContentBriefRequest admission", () => {
     ]);
   });
 
-  it("fails closed when the quota store is unavailable", async () => {
+  it.each(["gengrowth.content_brief/v1", CONTENT_BRIEF_V2_SCHEMA])("fails closed when the quota store is unavailable (%s)", async (response_schema) => {
     const response = await handleContentBriefRequest(
-      request(validBody()),
+      request(validBody({ response_schema })),
       dependencies({ consumeQuota: async () => ({ kind: "unavailable", reason: "store_down" }) }),
     );
     expect(response.status).toBe(503);
@@ -304,10 +443,10 @@ describe("handleContentBriefRequest admission", () => {
 /* ------------------------------------------------------------------ */
 
 describe("handleContentBriefRequest GSC preflight", () => {
-  it("refuses a property the visitor never granted, before any paid call", async () => {
+  it.each(["gengrowth.content_brief/v1", CONTENT_BRIEF_V2_SCHEMA])("refuses a property the visitor never granted, before any paid call (%s)", async (response_schema) => {
     const readSerp = vi.fn<ContentBriefHandlerDependencies["readSerp"]>(async () => serpResult());
     const response = await handleContentBriefRequest(
-      request(validBody({ gsc_property: "sc-domain:other.example" })),
+      request(validBody({ gsc_property: "sc-domain:other.example", response_schema })),
       dependencies({ readSerp }),
     );
     expect(response.status).toBe(403);
@@ -359,7 +498,7 @@ describe("handleContentBriefRequest GSC preflight", () => {
     expect(noSubject.status).toBe(401);
   });
 
-  it("releases a gate that was acquired after its budget ran out", async () => {
+  it.each(["gengrowth.content_brief/v1", CONTENT_BRIEF_V2_SCHEMA])("releases a gate that was acquired after its budget ran out (%s)", async (response_schema) => {
     vi.useFakeTimers();
     try {
       const release = vi.fn();
@@ -370,7 +509,7 @@ describe("handleContentBriefRequest GSC preflight", () => {
           resolveGate = resolve;
         }),
       });
-      const pending = handleContentBriefRequest(request(validBody({ gsc_property: PROPERTY })), deps);
+      const pending = handleContentBriefRequest(request(validBody({ gsc_property: PROPERTY, response_schema })), deps);
       await vi.advanceTimersByTimeAsync(6_000);
       const response = await pending;
       expect(response.status).toBe(503);
@@ -395,7 +534,306 @@ describe("handleContentBriefRequest GSC preflight", () => {
 /* run                                                                  */
 /* ------------------------------------------------------------------ */
 
+describe("handleContentBriefRequest v2 admission and evidence", () => {
+  it("normalizes duplicate supporting identities before quotas and returns a usable v2 envelope", async () => {
+    const consumeQuota = vi.fn<ContentBriefHandlerDependencies["consumeQuota"]>(async () => ({ kind: "allowed", hits: 1 }));
+    const brief = await briefV2Of(await handleContentBriefRequest(
+      request(v2Body({ supporting: ["BREW coffee", "Ｐｏｕｒ Ｏｖｅｒ", "pour over"] })), v2Dependencies({ consumeQuota }),
+    ));
+    expect(brief.context.input.supporting).toEqual(["Ｐｏｕｒ Ｏｖｅｒ"]);
+    expect(consumeQuota).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([null, 2, "", "gengrowth.content_brief/v3"])("refuses unsupported schema %j before taking slots or quotas", async (response_schema) => {
+    const acquireSlot = vi.fn<ContentBriefHandlerDependencies["acquireSlot"]>(() => ({ acquired: false }));
+    const consumeQuota = vi.fn<ContentBriefHandlerDependencies["consumeQuota"]>();
+    const readSerp = vi.fn<ContentBriefHandlerDependencies["readSerp"]>();
+    const response = await handleContentBriefRequest(request(v2Body({ response_schema })), v2Dependencies({ acquireSlot, consumeQuota, readSerp }));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: { code: "invalid_request" } });
+    expect(acquireSlot).not.toHaveBeenCalled();
+    expect(consumeQuota).not.toHaveBeenCalled();
+    expect(readSerp).not.toHaveBeenCalled();
+  });
+
+  it("keeps v2 anonymous callers outside body reads, slots and paid work", async () => {
+    const readJson = vi.fn<ContentBriefHandlerDependencies["readJson"]>();
+    const acquireSlot = vi.fn<ContentBriefHandlerDependencies["acquireSlot"]>();
+    const readSerp = vi.fn<ContentBriefHandlerDependencies["readSerp"]>();
+    const response = await handleContentBriefRequest(request(v2Body()), v2Dependencies({
+      getServerAuthenticatedUser: async () => ({ status: "unauthenticated" }), readJson, acquireSlot, readSerp,
+    }));
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: { code: "auth_required" } });
+    expect(readJson).not.toHaveBeenCalled();
+    expect(acquireSlot).not.toHaveBeenCalled();
+    expect(readSerp).not.toHaveBeenCalled();
+  });
+
+  it("refuses a concurrent v2 account run before quotas", async () => {
+    const consumeQuota = vi.fn<ContentBriefHandlerDependencies["consumeQuota"]>();
+    const response = await handleContentBriefRequest(request(v2Body()), v2Dependencies({ acquireSlot: () => ({ acquired: false }), consumeQuota }));
+    expect(response.status).toBe(409);
+    expect(consumeQuota).not.toHaveBeenCalled();
+  });
+
+  it.each(["account", "ip", "daily"])("releases v2 admission resources when the %s quota refuses", async (bucket) => {
+    const slotRelease = vi.fn();
+    const gateRelease = vi.fn();
+    const readSerp = vi.fn<ContentBriefHandlerDependencies["readSerp"]>();
+    const readWebsite = vi.fn<ContentBriefHandlerDependencies["readWebsite"]>();
+    const consumeQuota = vi.fn<ContentBriefHandlerDependencies["consumeQuota"]>(async (key) => key.includes(`:${bucket}:`)
+      ? { kind: "limited", retryAfterSeconds: 42 } : { kind: "allowed", hits: 1 });
+    const response = await handleContentBriefRequest(request(v2Body({ gsc_property: PROPERTY, website_id: "w-1" })), v2Dependencies({
+      acquireSlot: () => ({ acquired: true, release: slotRelease }),
+      openGscGate: async () => ({ ok: true, release: gateRelease }), consumeQuota, readSerp, readWebsite,
+    }));
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("42");
+    expect(slotRelease).toHaveBeenCalledTimes(1);
+    expect(gateRelease).toHaveBeenCalledTimes(bucket === "daily" ? 1 : 0);
+    expect(readSerp).not.toHaveBeenCalled();
+    expect(readWebsite).not.toHaveBeenCalled();
+  });
+
+  it("refuses cross-subject v2 GSC before private profile reads or the paid daily quota", async () => {
+    const slotRelease = vi.fn();
+    const openGscGate = vi.fn<ContentBriefHandlerDependencies["openGscGate"]>();
+    const readWebsite = vi.fn<ContentBriefHandlerDependencies["readWebsite"]>();
+    const readSerp = vi.fn<ContentBriefHandlerDependencies["readSerp"]>();
+    const consumeQuota = vi.fn<ContentBriefHandlerDependencies["consumeQuota"]>(async () => ({ kind: "allowed", hits: 1 }));
+    const response = await handleContentBriefRequest(request(v2Body({ gsc_property: PROPERTY, website_id: "w-1" })), v2Dependencies({
+      acquireSlot: () => ({ acquired: true, release: slotRelease }), readGscIdentity: async () => ({ sub: "other-user" }),
+      openGscGate, readWebsite, readSerp, consumeQuota,
+    }));
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: { code: "gsc_auth_required" } });
+    expect(consumeQuota.mock.calls.map(([key]) => key)).toEqual(["public-content-brief:account:user-1", "public-content-brief:ip:203.0.113.9"]);
+    expect(openGscGate).not.toHaveBeenCalled();
+    expect(readWebsite).not.toHaveBeenCalled();
+    expect(readSerp).not.toHaveBeenCalled();
+    expect(slotRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases the v2 GSC gate on a revoked grant without spending the daily quota", async () => {
+    const slotRelease = vi.fn();
+    const gateRelease = vi.fn();
+    const consumeQuota = vi.fn<ContentBriefHandlerDependencies["consumeQuota"]>(async () => ({ kind: "allowed", hits: 1 }));
+    const readSerp = vi.fn<ContentBriefHandlerDependencies["readSerp"]>();
+    const response = await handleContentBriefRequest(request(v2Body({ gsc_property: PROPERTY })), v2Dependencies({
+      acquireSlot: () => ({ acquired: true, release: slotRelease }), openGscGate: async () => ({ ok: true, release: gateRelease }),
+      resolveGscGrant: async () => ({ kind: "none" }), consumeQuota, readSerp,
+    }));
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: { code: "gsc_revoked" } });
+    expect(slotRelease).toHaveBeenCalledTimes(1);
+    expect(gateRelease).toHaveBeenCalledTimes(1);
+    expect(consumeQuota).toHaveBeenCalledTimes(2);
+    expect(readSerp).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("releases v2 account and GSC slots after the run (model throws: %s)", async (throws) => {
+    const slotRelease = vi.fn();
+    const gateRelease = vi.fn();
+    const deps = v2Dependencies({
+      acquireSlot: () => ({ acquired: true, release: slotRelease }), openGscGate: async () => ({ ok: true, release: gateRelease }),
+      ...(throws ? { runLlmV2: async () => { throw new Error("private upstream detail"); } } : {}),
+    });
+    const response = await handleContentBriefRequest(request(v2Body({ gsc_property: PROPERTY })), deps);
+    if (throws) {
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toEqual({ error: { code: "brief_unavailable" } });
+      expect(deps.lines.join("\n")).not.toContain("private upstream detail");
+    } else await briefV2Of(response);
+    expect(slotRelease).toHaveBeenCalledTimes(1);
+    expect(gateRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses one run-start GSC window even when the lane deadline crosses UTC midnight", async () => {
+    const readGscDimensions = vi.fn<ContentBriefHandlerDependencies["readGscDimensions"]>(async () => gscRead());
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ gsc_property: PROPERTY })), v2Dependencies({
+      now: () => Date.parse("2026-08-31T23:59:59.500Z"), readGscDimensions,
+    })));
+    expect(readGscDimensions.mock.calls[0]?.[0].window).toEqual({ startDate: "2026-08-01", endDate: "2026-08-28" });
+    expect(brief.context.gsc.window).toEqual({ start: "2026-08-01", end: "2026-08-28", lookback_days: 28 });
+  });
+
+  it.each([
+    ["query", "paging"], ["query", "unreadable"], ["queryPage", "paging"], ["queryPage", "unreadable"], ["page", "paging"], ["page", "unreadable"],
+  ] as const)("reports a partial GSC read when %s has %s loss", async (source, loss) => {
+    const read = gscRead();
+    const lane = read[source];
+    const deps = v2Dependencies({ readGscDimensions: async () => ({
+      ...read, [source]: { ...lane, ...(loss === "paging" ? { paging: { ...lane.paging, truncated: true } } : { unreadableRows: 1 }) },
+    }) });
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ gsc_property: PROPERTY })), deps));
+    expect(brief.context.gsc.status).toBe("partial");
+    expect(brief.run.reads.find(({ source }) => source === "gsc")?.status).toBe("partial");
+  });
+
+  it("retains 32 profile facts with actual source counts and the exact selected snapshot", async () => {
+    const profile = { ...confirmedProfile(), coreFeatures: Array.from({ length: 32 }, (_, index) => `feature ${index}`) };
+    const readWebsite = vi.fn<ContentBriefHandlerDependencies["readWebsite"]>(async () => ({
+      kind: "ok", websiteId: "w-1", snapshotRevision: 9, profileHash: "d".repeat(64), profile,
+    }));
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), v2Dependencies({ readWebsite })));
+    expect(readWebsite).toHaveBeenCalledWith("user-1", "w-1");
+    expect(brief.context.profile_snapshot).toEqual({ website_id: "w-1", revision: 9, hash: "d".repeat(64) });
+    expect(brief.context.facts).toHaveLength(32);
+    expect(brief.context.facts[31]).toMatchObject({ id: "P32", text: "feature 29" });
+    expect(brief.run.reads.find(({ source }) => source === "profile")).toEqual({ source: "profile", status: "partial", attempted: 34, retained: 32, reason: null });
+  });
+
+  it.each(["missing", "not_confirmed", "error"] as const)("does not turn a %s profile read into an invented one-fact count", async (kind) => {
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), v2Dependencies({ readWebsite: async () => ({ kind }) })));
+    expect(brief.context.facts).toEqual([]);
+    expect(brief.context.profile_snapshot).toBeNull();
+    expect(brief.run.reads.find(({ source }) => source === "profile")).toMatchObject({ status: "unavailable", attempted: null, retained: null });
+  });
+
+  it("does not attach facts from a different website than the selected profile", async () => {
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), v2Dependencies({ readWebsite: async () => ({
+      kind: "ok", websiteId: "w-2", snapshotRevision: 9, profileHash: "d".repeat(64), profile: confirmedProfile(),
+    }) })));
+    expect(brief.context.facts).toEqual([]);
+    expect(brief.context.profile_snapshot).toBeNull();
+    expect(brief.run.reads.find(({ source }) => source === "profile")).toMatchObject({ status: "unavailable", attempted: null, retained: null, reason: "provider_error" });
+  });
+
+  it("excludes unrequested optional sources from complete telemetry", async () => {
+    const deps = v2Dependencies();
+    await briefV2Of(await handleContentBriefRequest(request(v2Body()), deps));
+    expect(lastRunLine(deps)["mode"]).toBe("complete");
+  });
+
+  it("reports partial telemetry when generation succeeds with a partial source", async () => {
+    const deps = v2Dependencies({ readSerp: async () => ({ ...serpResult(8), peopleAlsoAsk: { status: "complete", items: [], unreadableItems: 0, unreadableBlocks: 0, truncatedItems: 0 } }) });
+    await briefV2Of(await handleContentBriefRequest(request(v2Body()), deps));
+    expect(lastRunLine(deps)["mode"]).toBe("partial");
+  });
+
+  it("reports degraded telemetry when generation succeeds but a requested source was unavailable", async () => {
+    const deps = v2Dependencies({ readSerp: async () => serpResult() });
+    await briefV2Of(await handleContentBriefRequest(request(v2Body()), deps));
+    expect(lastRunLine(deps)["mode"]).toBe("degraded");
+  });
+
+  it("reports unavailable telemetry when no requested source or generation is available", async () => {
+    const deps = v2Dependencies({
+      readSerp: async () => { throw new Error("provider unavailable"); },
+      runLlmV2: async ({ context }) => ({ context, output: null, reads: llmResult().reads, prompt_bytes: 0 }),
+    });
+    await briefV2Of(await handleContentBriefRequest(request(v2Body()), deps));
+    expect(lastRunLine(deps)["mode"]).toBe("unavailable");
+  });
+
+  it("reports degraded telemetry when evidence survives but generation is unavailable", async () => {
+    const deps = v2Dependencies({ runLlmV2: async ({ context }) => ({ context, output: null, reads: llmResult().reads, prompt_bytes: 0 }) });
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body()), deps));
+    expect(brief.context.research.pages).not.toHaveLength(0);
+    expect(lastRunLine(deps)["mode"]).toBe("degraded");
+  });
+});
+
 describe("handleContentBriefRequest run", () => {
+  it("keeps the existing route on v1 unless the caller explicitly negotiates v2", async () => {
+    const response = await handleContentBriefRequest(request(validBody()), dependencies());
+    const body = await response.json();
+    expect(body).toMatchObject({ schema: "gengrowth.content_brief/v1" });
+  });
+
+  it("returns a self-checked v2 brief only when the caller explicitly requests that contract", async () => {
+    const ownedUrl = "https://site.example/coffee";
+    const deps = dependencies({
+      readWebsite: async (): Promise<ProfileReadResult> => ({
+        kind: "ok",
+        websiteId: "w-1",
+        snapshotRevision: 7,
+        profileHash: "a".repeat(64),
+        profile: confirmedProfile(),
+      }),
+      readGscDimensions: async () => gscRead({
+        query: { rows: [], paging: { pagesFetched: 1, truncated: false }, responseAggregationType: "byPage", unreadableRows: 0 },
+        queryPage: {
+          rows: [{ query: "pour over", page: ownedUrl, clicks: 0, impressions: 2, position: 51 }],
+          paging: { pagesFetched: 1, truncated: false },
+          unreadableRows: 0,
+        },
+        page: {
+          rows: [{ page: ownedUrl, clicks: 0, impressions: 2, position: 51 }],
+          paging: { pagesFetched: 1, truncated: false },
+          unreadableRows: 0,
+        },
+      }),
+      crawlV2: async () => ({
+        observed: [
+          {
+            id: "C1",
+            role: "competitor",
+            url: "https://site1.example/blog/coffee-1",
+            final_url: "https://site1.example/blog/coffee-1",
+            fetched_at: "2026-08-31T00:00:00.000Z",
+            content_hash: "b".repeat(64),
+            body_complete: true,
+            research: {
+              segments: [{ heading: null, text: "Pour over coffee needs a stable brew ratio.", truncated: false }],
+              segments_total: 1,
+              omitted_segments: 0,
+              length: { value: 8, unit: "words", tokenizer: "whitespace" },
+            },
+          },
+          {
+            id: "T1",
+            role: "owned",
+            url: ownedUrl,
+            final_url: ownedUrl,
+            fetched_at: "2026-08-31T00:00:00.000Z",
+            content_hash: "c".repeat(64),
+            body_complete: true,
+            research: {
+              segments: [{ heading: { level: "h2", text: "Pour over coffee" }, text: "Our coffee guide explains the brew workflow.", truncated: false }],
+              segments_total: 1,
+              omitted_segments: 0,
+              length: { value: 7, unit: "words", tokenizer: "whitespace" },
+            },
+          },
+        ],
+        failed: [],
+      }),
+      runLlmV2: async ({ context }) => ({
+        context,
+        output: {
+          research: {
+            questions: [{ id: "Q1", anchor: "U1", q: "How do you brew pour over coffee?", source_refs: ["U1"], covered_by: 1, paa_refs: [] }],
+            outline: [{ id: "O1", h2: "Brew pour over coffee", h3: [], answers: ["Q1"] }],
+          },
+          intent: { value: "informational", rationale: "The reader is learning the brewing workflow." },
+          format: { value: "guide", rationale: "A step-by-step explainer fits the observed evidence." },
+          page_plan: { action: "update", rationale: "A supporting-query page already exists and was read.", target_ref: "T1", steps: [
+            { kind: "keep", instruction: "Keep the current brew workflow explanation.", sources: ["U2"], answers: [] },
+            { kind: "add", instruction: "Add the missing brew-ratio explanation.", sources: ["U1"], answers: ["Q1"] },
+          ] },
+          gap_angle: null,
+          internal_links: [],
+          do_not_cover: [],
+        },
+        reads: { status: "complete", calls: 1, model_id: "fixture-model", temperature_requested: 0.2, temperature_effective: 1, input_tokens: 123, output_tokens: 45 },
+        prompt_bytes: 2048,
+      }),
+    });
+    const brief = await briefV2Of(await handleContentBriefRequest(
+      request(validBody({ website_id: "w-1", gsc_property: PROPERTY, response_schema: CONTENT_BRIEF_V2_SCHEMA })),
+      deps,
+    ));
+    expect(brief.schema).toBe(CONTENT_BRIEF_V2_SCHEMA);
+    expect(brief.context.gsc.matches).toEqual([
+      { id: "G1", query: "pour over", keyword: "pour over", scope: "supporting", page: ownedUrl, clicks: 0, impressions: 2, position: 51 },
+    ]);
+    expect(brief.context.candidates).toEqual([{ id: "T1", url: ownedUrl, match_refs: ["G1"], read: "observed" }]);
+    expect(brief.context.profile_snapshot).toEqual({ website_id: "w-1", revision: 7, hash: "a".repeat(64) });
+    expect(brief.generated?.page_plan).toMatchObject({ action: "update", target_ref: "T1" });
+  });
+
   it("assembles a brief with an undecidable verdict and prints the budget", async () => {
     const deps = dependencies();
     const brief = await briefOf(await handleContentBriefRequest(request(validBody()), deps));

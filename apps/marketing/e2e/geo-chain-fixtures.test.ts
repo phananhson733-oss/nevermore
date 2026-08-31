@@ -73,6 +73,8 @@ describe("offline browser-chain evidence fixtures", () => {
     const userId = problem === "wrong_owner" ? "another-owner" : GEO_CHAIN_USER;
     let quota = 0, slots = 0, released = 0, generations = 0;
     const dependencies: ContentDraftHandlerDependencies = {
+      generateSectionV2: async () => { throw new Error("GEO fixture must not call SEO v2 generation"); },
+      runCoverageV2: async () => { throw new Error("GEO fixture must not call SEO v2 coverage"); },
       getServerAuthenticatedUser: async () => ({ status: "authenticated", userId, email: null, avatarUrl: null }),
       readJson: async request => ({ ok: true, value: await request.json() }), extractClientIp: () => "203.0.113.9",
       verifyGeoBrief: (candidate, owner) => verifyOwnedGeoBrief(candidate, owner, fixture.referenceDependencies),

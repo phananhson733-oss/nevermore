@@ -1,5 +1,5 @@
-// @input  -- the two draft handlers with every collaborator injected
-// @output -- proof of admission order, section fan-out, self-check, and the rerun's whole-result contract
+// @input  -- the shared SEO/GEO and confirmed-v2 draft handlers with every collaborator injected
+// @output -- proof of versioned admission, private GEO verification, fan-out, self-check, and whole-result reruns
 // @pos    -- content-draft-handler's unit tests
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -8,14 +8,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DRAFT_ACCOUNT_MAX_PER_HOUR,
   DRAFT_IP_MAX_PER_HOUR,
+  DRAFT_REQUEST_MAX_BYTES,
   DRAFT_TOTAL_BUDGET_MS,
   ENVELOPE_MS,
   SECTION_ACCOUNT_MAX_PER_HOUR,
   SECTION_ENDPOINT_BUDGET_MS,
+  SECTION_REQUEST_MAX_BYTES,
 } from "@sf/public-tools/content-brief/constants";
 import type { ContentBrief, DraftResult } from "@sf/public-tools/content-brief/contract";
 import { contentBriefFixture, withFingerprint } from "@sf/public-tools/content-brief/fixtures";
 import { parseDraftResult } from "@sf/public-tools/content-brief/parse-draft";
+import { confirmedDraftV2Fixture } from "@sf/public-tools/content-brief/v2-draft-fixtures";
+import { parseDraftResultV2 } from "@sf/public-tools/content-brief/v2-draft";
+import type { DraftResultV2 } from "@sf/public-tools/content-brief/v2-draft-contract";
 import { geoBriefFixture } from "@sf/public-tools/content-brief/geo-fixtures";
 import { validateSectionOutput } from "@sf/public-tools/content-brief/validate-section";
 import { deriveGeoMustAnswer, deriveGeoReadiness, geoFingerprint } from "@sf/public-tools/content-brief/parse-geo-brief";
@@ -26,11 +31,34 @@ import {
   type ContentDraftHandlerDependencies,
 } from "./content-draft-handler.ts";
 import type { DraftCoverageInput, DraftSectionInput, DraftSectionResult } from "./content-draft-llm.ts";
+import { generateDraftV2Section, runDraftV2Coverage } from "./content-draft-v2-llm.ts";
+import type { KeywordLlmConfig } from "./keyword-llm-client.ts";
+import { readPublicToolJson } from "./public-tool-request.ts";
 
 const START = Date.parse("2026-08-29T10:00:00.000Z");
 const SETTINGS = { tone: "explanatory", person: "second", product_mention: "gap_only" } as const;
 
 describe("GEO branch in the existing Draft route", () => {
+  it.each([
+    { endpoint: "run", maxBytes: DRAFT_REQUEST_MAX_BYTES, handler: handleContentDraftRunRequest },
+    { endpoint: "section", maxBytes: SECTION_REQUEST_MAX_BYTES, handler: handleContentDraftSectionRequest },
+  ])("keeps the GEO $endpoint wire-byte cap before private verification or quota", async ({ endpoint, maxBytes, handler }) => {
+    const geo = await geoBriefFixture();
+    const body = JSON.stringify(endpoint === "run" ? { brief: geo, settings: SETTINGS, section_ids: ["O1"] } : { brief: geo, section_id: "O1", previous: {} });
+    const padded = body + " ".repeat(maxBytes - new TextEncoder().encode(body).byteLength + 1);
+    const acquireSlot = vi.fn(() => ({ acquired: true as const, release: () => undefined }));
+    const verifyGeoBrief = vi.fn(async () => true);
+    const consumeQuota = vi.fn(async () => ({ kind: "allowed" as const, hits: 1 }));
+    const generateSection = vi.fn();
+    const response = await handler(new Request(`https://example.test/api/tools/content-draft/${endpoint}`, { method: "POST", body: padded, headers: { "Content-Type": "application/json" } }), dependencies({ readJson: readPublicToolJson, acquireSlot, verifyGeoBrief, consumeQuota, generateSection }));
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ error: { code: "payload_too_large" } });
+    expect(acquireSlot).not.toHaveBeenCalled();
+    expect(verifyGeoBrief).not.toHaveBeenCalled();
+    expect(consumeQuota).not.toHaveBeenCalled();
+    expect(generateSection).not.toHaveBeenCalled();
+  });
+
   it.each(["es", "zh"])("refuses GEO %s before private verification, quota and provider calls", async language => {
     const geo = await geoBriefFixture(); geo.keyword.language = language; geo.run.fingerprint = await geoFingerprint(geo);
     const verifyGeoBrief = vi.fn(async () => true); const consumeQuota = vi.fn(); const generateSection = vi.fn();
@@ -172,6 +200,8 @@ function dependencies(overrides: Partial<ContentDraftHandlerDependencies> = {}):
     consumeQuota: async () => ({ kind: "allowed", hits: 1 }),
     generateSection: async (input) => okResult(input),
     runCoverage: async (input) => coverageOf(input),
+    generateSectionV2: async () => { throw new Error("Unexpected v2 model call in a v1 test"); },
+    runCoverageV2: async () => { throw new Error("Unexpected v2 coverage call in a v1 test"); },
     now: () => (clock += 10),
     runId: () => `draft-${(ids += 1)}`,
     emit: () => undefined,
@@ -196,6 +226,25 @@ function tamperedBrief(): ContentBrief {
   return { ...brief, gap_angle: { ...brief.gap_angle, value: "A quietly edited angle." } };
 }
 
+function offlineV2Models() {
+  const config: KeywordLlmConfig = { apiKey: "offline-test", model: "offline-model", url: "https://offline.invalid", authScheme: "bearer", temperature: null };
+  const generateSectionV2 = vi.fn<ContentDraftHandlerDependencies["generateSectionV2"]>(async (input) => {
+    const heading = input.confirmed.outline.find((section) => section.id === input.sectionId)!;
+    const text = input.confirmed.brief.context.input.language.startsWith("zh") ? "请检查完整报告区间。" : "Review complete reporting periods.";
+    return generateDraftV2Section(input, { config, now: () => START, client: { complete: async () => ({
+      content: JSON.stringify({ paragraphs: [{ heading: heading.h3[0] ?? null, sentences: [{ text, claim: "no_claim", evidence_refs: [] }] }] }),
+      modelId: "offline-section", usage: { requestCount: 1, retryCount: 0, inputTokens: 100, outputTokens: 25 },
+    }) } });
+  });
+  const runCoverageV2 = vi.fn<ContentDraftHandlerDependencies["runCoverageV2"]>((input) => runDraftV2Coverage(input, {
+    config, now: () => START, client: { complete: async () => ({
+      content: JSON.stringify({ items: input.questions.map((question) => ({ question_id: question.id, status: "covered", covered_in: input.sections[0]!.id, gap: null })) }),
+      modelId: "offline-coverage", usage: { requestCount: 1, retryCount: 0, inputTokens: 70, outputTokens: 15 },
+    }) },
+  }));
+  return { generateSectionV2, runCoverageV2 };
+}
+
 async function runOk(deps: ContentDraftHandlerDependencies, body = runBody()): Promise<DraftResult> {
   const response = await handleContentDraftRunRequest(request(body), deps);
   expect(response.status).toBe(200);
@@ -204,6 +253,64 @@ async function runOk(deps: ContentDraftHandlerDependencies, body = runBody()): P
   expect(check).toMatchObject({ ok: true });
   return result;
 }
+
+describe("Draft v2 locale admission and pre-call failure compatibility", () => {
+  it("keeps the legacy v1 exact-language admission policy unchanged", async () => {
+    const legacy = await withFingerprint({ ...brief, keyword: { ...brief.keyword, language: "en-US" } });
+    const generateSection = vi.fn();
+    const response = await handleContentDraftRunRequest(request(runBody({ brief: legacy })), dependencies({ generateSection }));
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: { code: "brief_reference_invalid" } });
+    expect(generateSection).not.toHaveBeenCalled();
+  });
+
+  it.each(["zh-CN", "zh-Hant-TW", "en-US"])("runs %s through real generation and coverage without changing the frozen tag", async (language) => {
+    const confirmed = await confirmedDraftV2Fixture({ language });
+    const frozen = JSON.stringify(confirmed);
+    const models = offlineV2Models();
+    const response = await handleContentDraftRunRequest(request({ brief: confirmed, settings: SETTINGS, section_ids: confirmed.outline.map((section) => section.id) }), dependencies(models));
+    expect(response.status).toBe(200);
+    const result = await response.json() as DraftResultV2;
+    expect(await parseDraftResultV2(result, confirmed)).toMatchObject({ ok: true });
+    expect(result.run.mode).toBe("complete");
+    expect(result.confirmed_ref.fingerprint).toBe(confirmed.fingerprint);
+    expect(models.generateSectionV2).toHaveBeenCalledTimes(2);
+    expect(models.runCoverageV2).toHaveBeenCalledTimes(1);
+    expect(models.generateSectionV2.mock.calls.every(([input]) => input.confirmed.brief.context.input.language === language && input.confirmed.fingerprint === confirmed.fingerprint)).toBe(true);
+    expect(models.runCoverageV2.mock.calls[0]![0].language).toBe(language);
+    expect(result.totals.unit).toBe(language.startsWith("zh") ? "non_whitespace_characters" : "words");
+    expect(JSON.stringify(confirmed)).toBe(frozen);
+  });
+
+  it.each(["zh_CN", "en--US", "xxx", "en-US-u"])("rejects unsupported or malformed locale %s before any model call", async (language) => {
+    const confirmed = await confirmedDraftV2Fixture({ language });
+    const models = offlineV2Models();
+    const response = await handleContentDraftRunRequest(request({ brief: confirmed, settings: SETTINGS, section_ids: ["O1"] }), dependencies(models));
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: { code: "brief_reference_invalid" } });
+    expect(models.generateSectionV2).not.toHaveBeenCalled();
+    expect(models.runCoverageV2).not.toHaveBeenCalled();
+  });
+
+  it("keeps another successful section after a zero-call prompt-cap validation failure", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const models = offlineV2Models();
+    const response = await handleContentDraftRunRequest(request({ brief: confirmed, settings: SETTINGS, section_ids: ["O1", "O2"] }), dependencies({
+      ...models,
+      generateSectionV2: (input) => input.sectionId === "O1" ? Promise.resolve({ status: "failed", fail_reason: "validation_failed", llm: { attempts: 0, model_id: null, temperature_requested: 0.4, temperature_effective: null, input_tokens: null, output_tokens: null } }) : models.generateSectionV2(input),
+    }));
+    expect(response.status).toBe(200);
+    const result = await response.json() as DraftResultV2;
+    expect(await parseDraftResultV2(result, confirmed)).toMatchObject({ ok: true });
+    expect(result.run.mode).toBe("degraded");
+    expect(result.sections.map((section) => section.status)).toEqual(["failed", "ok"]);
+    expect(result.sections[0]).toMatchObject({ fail_reason: "validation_failed", llm: { attempts: 0, input_tokens: null, output_tokens: null } });
+    expect(result.sections[1]).toMatchObject({ body: { paragraphs: [{ sentences: [{ text: "Review complete reporting periods." }] }] } });
+    expect(result.run.reads.llm_sections).toMatchObject({ calls: 1, input_tokens: 100, output_tokens: 25 });
+    expect(models.runCoverageV2.mock.calls[0]![0].questions).toHaveLength(2);
+    expect(models.runCoverageV2.mock.calls[0]![0].sections.map((section) => section.id)).toEqual(["O2"]);
+  });
+});
 
 describe("handleContentDraftRunRequest admission", () => {
   it("refuses anonymous callers before reading the body or calling the model", async () => {

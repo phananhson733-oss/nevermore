@@ -471,6 +471,145 @@ describe("keywordOverview", () => {
   });
 });
 
+describe("serpOrganic People Also Ask evidence", () => {
+  const request = {
+    keyword: "search console delay",
+    locationCode: 2840,
+    languageCode: "en",
+    includePeopleAlsoAsk: true,
+  } as const;
+
+  it("retains the sampled questions verbatim without a second call or paid expansion", async () => {
+    const { client, calls } = clientFor([serpEnvelope([
+      organicItem(1, "example.com"),
+      { type: "people_also_ask", items: [
+        { type: "people_also_ask_element", title: "When does GSC update?", seed_question: null },
+        { type: "people_also_ask_element", title: "数据何时更新？", seed_question: "When does GSC update?" },
+        { type: "people_also_ask_element", title: "When does GSC update?" },
+      ] },
+    ], ["organic", "people_also_ask"])]);
+    const result = await client.serpOrganic(request);
+    expect(result.peopleAlsoAsk).toEqual({
+      status: "complete",
+      items: [
+        { question: "When does GSC update?", seedQuestion: null },
+        { question: "数据何时更新？", seedQuestion: "When does GSC update?" },
+        { question: "When does GSC update?", seedQuestion: null },
+      ],
+      unreadableItems: 0, unreadableBlocks: 0, truncatedItems: 0,
+    });
+    expect(result.rows).toHaveLength(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.body).toEqual([{
+      keyword: "search console delay", location_code: 2840, language_code: "en", device: "desktop", depth: 10,
+    }]);
+  });
+
+  it.each([
+    { types: null, expected: { status: "unavailable", reason: "not_reported" } },
+    { types: ["organic", "people_also_ask"], expected: { status: "unavailable", reason: "missing_block" } },
+    { types: ["organic"], expected: { status: "complete", items: [], unreadableItems: 0, unreadableBlocks: 0, truncatedItems: 0 } },
+  ])("distinguishes PAA availability when item types are $types", async ({ types, expected }) => {
+    const { client } = clientFor([serpEnvelope([organicItem(1, "example.com")], types)]);
+    expect((await client.serpOrganic(request)).peopleAlsoAsk).toEqual(expected);
+  });
+
+  it("uses a returned PAA block even when item_types was not reported", async () => {
+    const { client } = clientFor([serpEnvelope([
+      { type: "people_also_ask", items: null },
+    ], null)]);
+    expect((await client.serpOrganic(request)).peopleAlsoAsk).toEqual({
+      status: "complete", items: [], unreadableItems: 0, unreadableBlocks: 0, truncatedItems: 0,
+    });
+  });
+
+  it("uses the same Unicode code-point bounds for PAA titles and seeds as other SERP text", async () => {
+    const astral = "𠀀".repeat(512);
+    const tooLong = "𠀀".repeat(513);
+    const { client } = clientFor([serpEnvelope([
+      { type: "people_also_ask", items: [
+        { type: "people_also_ask_element", title: astral, seed_question: astral },
+        { type: "people_also_ask_element", title: tooLong },
+        { type: "people_also_ask_element", title: "Question?", seed_question: tooLong },
+      ] },
+    ])]);
+    expect((await client.serpOrganic(request)).peopleAlsoAsk).toEqual({
+      status: "partial", items: [{ question: astral, seedQuestion: astral }],
+      unreadableItems: 2, unreadableBlocks: 0, truncatedItems: 0,
+    });
+  });
+
+  it("counts malformed PAA material without discarding readable organic evidence", async () => {
+    const { client } = clientFor([serpEnvelope([
+      organicItem(1, "example.com"),
+      { type: "people_also_ask", items: [
+        { type: "people_also_ask_element", title: "How long is the delay?" },
+        { type: "people_also_ask_element", title: " " },
+        { type: "people_also_ask_element", title: "x".repeat(513) },
+        { type: "people_also_ask_element", title: "Valid title", seed_question: 3 },
+        { type: "unexpected_type", title: "Not a PAA question" },
+        null,
+      ] },
+      { type: "people_also_ask" },
+    ])]);
+    const result = await client.serpOrganic(request);
+    expect(result.peopleAlsoAsk).toEqual({
+      status: "partial", items: [{ question: "How long is the delay?", seedQuestion: null }],
+      unreadableItems: 5, unreadableBlocks: 1, truncatedItems: 0,
+    });
+    expect(result.rows).toHaveLength(1);
+    expect(result.unresolvedItemCount).toBe(0);
+  });
+
+  it("bounds total inspected PAA elements across blocks and reports the rest", async () => {
+    const questions = Array.from({ length: 60 }, (_unused, index) => ({
+      type: "people_also_ask_element", title: `Question ${index}?`,
+    }));
+    const { client } = clientFor([serpEnvelope([
+      { type: "people_also_ask", items: questions },
+      { type: "people_also_ask", items: questions },
+    ])]);
+    const paa = (await client.serpOrganic(request)).peopleAlsoAsk;
+    expect(paa).toMatchObject({ status: "partial", unreadableItems: 0, unreadableBlocks: 0, truncatedItems: 20 });
+    expect(paa?.status !== "unavailable" ? paa?.items.length : null).toBe(100);
+  });
+
+  it("leaves existing consumers unchanged when PAA retention was not requested", async () => {
+    const { client } = clientFor([serpEnvelope([
+      organicItem(1, "example.com"), { type: "people_also_ask", items: "malformed" },
+    ])]);
+    const result = await client.serpOrganic({ keyword: "query", locationCode: 2840, languageCode: "en" });
+    expect(Object.hasOwn(result, "peopleAlsoAsk")).toBe(false);
+    expect(result.rows).toHaveLength(1);
+  });
+
+  it("counts malformed elements against the inspection cap rather than scanning until 100 valid questions", async () => {
+    const { client } = clientFor([serpEnvelope([
+      { type: "people_also_ask", items: [
+        ...Array.from({ length: 100 }, () => null),
+        { type: "people_also_ask_element", title: "Outside the inspection budget?" },
+      ] },
+    ])]);
+    expect((await client.serpOrganic(request)).peopleAlsoAsk).toEqual({
+      status: "partial", items: [], unreadableItems: 100, unreadableBlocks: 0, truncatedItems: 1,
+    });
+  });
+
+  it("rejects a malformed local retention option before a paid request", async () => {
+    const { client, calls } = clientFor([serpEnvelope([])]);
+    await expect(client.serpOrganic({ ...request, includePeopleAlsoAsk: "yes" as never })).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("treats explicit false like omission and keeps missing SERP evidence unknown", async () => {
+    const { client } = clientFor([serpEnvelope(null, null)]);
+    const legacy = await client.serpOrganic({ ...request, includePeopleAlsoAsk: false });
+    expect(Object.hasOwn(legacy, "peopleAlsoAsk")).toBe(false);
+    const retained = await client.serpOrganic(request);
+    expect(retained.peopleAlsoAsk).toEqual({ status: "unavailable", reason: "not_reported" });
+  });
+});
+
 describe("serpOrganic", () => {
   it("asks for one desktop page and keeps only organic results", async () => {
     const { client, calls } = clientFor([

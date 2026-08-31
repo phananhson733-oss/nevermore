@@ -1,8 +1,29 @@
 # content-brief
 
+## V2 research foundation
+
+- `v2-contract.ts` — separate v2 research types and bounds, plus descriptive length measurement with mixed-script detection. Original observation counts are not an authenticity proof; retained-graph relationships and derived counts are independently checked.
+- `v2-research.ts` — canonical C/T/A ordering, bounded round-robin evidence retention (128 KiB), PAA deduplication with explicit counts, strict graph/metadata-consistency validation, source-bound model research acceptance and server-derived Q/O/coverage fields. PAA and owned pages do not inflate competitor coverage; a single real question can have an outline.
+- `v2-contract.test.ts`, `v2-research.test.ts` — measurement, deterministic ordering, byte limits, PAA-only/zero-question cases, exact references, distinct final URLs, observable length lower bounds and derived-field forgery oracles. These do not claim that an actual LLM performed semantic grouping.
+
+- `v2-generation-contract.ts` — whole v2 model/context/read vocabulary and the separate confirmed-revision envelope. The generated base and user-edited headings remain distinct.
+- `v2-generation.ts`, `v2-generation.test.ts` — exact primary/supporting scope, profile/window identity, same-owned-page identity shared with the crawler, single complete model-output validation, grounded rewrite steps and independent revalidation of frozen results.
+- `v2-gsc.ts`, `v2-gsc.test.ts` — bounded raw-query-preserving primary/supporting GSC projection, property-scoped owned candidates, explicit duplicate/cap omissions, no low-impression or position-based create shortcut.
+- `v2-brief.ts`, `v2-brief.test.ts` — 224 KiB generated Brief and 256 KiB confirmed import, causal checksums, truthful read/model metadata, stable section IDs/question mappings across heading/order edits, explicit resolution of undecidable page action.
+
+## V2 Draft delivery
+
+- `v2-draft-contract.ts` — versioned confirmed-reference, H2/H3 section, receipt, full-question coverage and rerun contracts; bounded prompt/result/request bytes without changing v1 limits.
+- `v2-draft-scope.ts`, `.test.ts` — exact confirmed section selection; scoped Q page units, observed rewrite target and applicable steps; PAA never grants factual support, and reordering never transfers gap-angle permission.
+- `v2-draft-section.ts`, `.test.ts` — strict sentence claims and structured H3 sequence, granular U/P references, canonical observed-page support counts and sentence-prose-only word/character length.
+- `v2-draft.ts`, `.test.ts` — full result assembly/revalidation, truthful no-call and billed receipts, derived counts/verify list, all-Q coverage across all successful text and exact supplied-previous rerun continuity; standalone checksums do not authenticate history.
+- `v2-draft-fixtures.ts`, `.test.ts` — source-backed synthetic confirmed/result fixtures with create/update/PAA/CJK/reordering branches; real parser/fingerprint checks, no provider proof.
+
+The v1 modules below retain their original semantics. These shared pure modules do not themselves perform HTTP, provider, storage or publication operations.
+
+GenGrowth 内容链（Content Brief Builder / Content Draft Writer）的纯领域模块。依赖本目录、`@sf/public-tools` 内部及 `@sf/sources` 的纯 URL 规范化函数；不 import apps/*，不含时钟、随机与网络。营销站只通过 `package.json` 的 `./content-brief/*` 子路径 import。
 GEO shared-content extension: `geo-contract.ts` declares the explicit `gengrowth.content_brief/v1.1` source branch (never a fabricated SEO ledger). `parse-geo-brief.ts` validates exact shape, immutable Q1 plus additional KB requirements, case/space-normalized sample clusters, coverage/format/readiness, bounded excerpts and fingerprint. Typed manual Q1 is `user_input` with no run; known frozen Q1 is `kb`. A requirement can occur in several outline sections, but none may be omitted. Fingerprints prove consistency, not authenticity: Draft admission re-resolves owned records. `geo-draft.ts` selects usable non-conflicting K/C/P receipts; AI samples never support factual sentences. Draft carries exact `geo_origin`/evidence into JSON and Markdown; verified KB-only sentences do not enter the verification list. Legacy SEO parsers/export bytes remain unchanged. `geo-fixtures.ts` is synthetic offline data; `parse-geo-brief.test.ts` and `geo-draft.test.ts` pin rejection and compatibility.
 
-GenGrowth 内容链（Content Brief Builder / Content Draft Writer）的纯领域模块。只依赖本目录与 `@sf/public-tools` 内部；不 import apps/*，不含时钟、随机与网络。营销站只通过 `package.json` 的 `./content-brief/*` 子路径 import。
 
 | 文件 | 职责 |
 |---|---|

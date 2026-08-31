@@ -5,10 +5,12 @@
 //            an unchecked section stays out of section_ids, a signed-out visitor never triggers a
 //            POST (and gets the handoff back for the reload), reruns send the draft's own settings and
 //            the whole previous result and are counted per POST, a failed second run keeps the last good result,
-//            and a slow upload cannot overwrite a later paste
+//            and a slow upload cannot overwrite a later paste; confirmed v2 follows the same private
+//            channel with its real workflow/parser, while GEO and unconfirmed v2 never reach HTTP
 // @pos    -- interaction contract for the Marketing Content Draft Writer form
 
 import { act } from "react";
+import { webcrypto } from "node:crypto";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -28,6 +30,9 @@ import {
   withFingerprint,
 } from "@sf/public-tools/content-brief/fixtures";
 import { parseContentBriefHandoff } from "@sf/public-tools/content-brief/parse-brief";
+import { confirmedDraftV2Fixture, draftResultV2Fixture } from "@sf/public-tools/content-brief/v2-draft-fixtures";
+import { parseConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
+import { writeConfirmedBriefHandoff, parseConfirmedBriefHandoff } from "../../lib/tools/content-brief-v2-handoff.ts";
 import { geoBriefFixture, geoDraftFixture } from "@sf/public-tools/content-brief/geo-fixtures";
 import { geoFingerprint } from "@sf/public-tools/content-brief/parse-geo-brief";
 import {
@@ -187,6 +192,7 @@ afterEach(async () => {
   document.body.replaceChildren();
   globalThis.fetch = originalFetch;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 async function renderTool(authenticated = true): Promise<HTMLElement> {
@@ -486,6 +492,95 @@ describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
     await idle(host);
     expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(pasted.run.fingerprint);
     expect(host.querySelector('[data-brief-source="paste"]')).not.toBeNull();
+  });
+});
+
+describe("ContentDraftTool confirmed v2 intake with the real v2 workflow", () => {
+  async function idle(host: HTMLElement) {
+    const until = Date.now() + 5_000;
+    do {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
+      if (host.querySelector('[data-intake-phase="parsing"]') === null && host.querySelector("#content-draft-tool")?.getAttribute("aria-busy") === "false") return;
+    } while (Date.now() < until);
+    throw new Error("Draft parent did not settle within the test budget");
+  }
+  async function paste(host: HTMLElement, value: unknown) {
+    await type(host.querySelector("[data-paste-brief]"), JSON.stringify(value));
+    await click(host.querySelector("[data-load-brief]")); await idle(host);
+  }
+  async function remount(authenticated: boolean) {
+    await act(async () => root?.unmount()); root = null; document.body.replaceChildren(); const host = await renderTool(authenticated); await idle(host); return host;
+  }
+  function v2Loaded(host: HTMLElement) { return host.querySelector("[data-draft-v2-workflow]"); }
+  async function upload(host: HTMLElement, text: () => Promise<string>) {
+    const input = host.querySelector("[data-upload-brief]"); if (!(input instanceof HTMLInputElement)) throw new Error("missing upload input");
+    Object.defineProperty(input, "files", { configurable: true, value: [{ text }] }); await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+  }
+
+  it("loads exact confirmed paste and produces a real parsed v2 draft after the live session check", async () => {
+    const confirmed = await confirmedDraftV2Fixture({ action: "update", reverse: true }); const result = await draftResultV2Fixture(confirmed, { settings: { tone: "explanatory", person: "second", product_mention: "gap_only" } });
+    globalThis.fetch = signedInFetch((body) => { expect(body).toEqual({ brief: confirmed, settings: result.settings, section_ids: ["O2", "O1"] }); return Response.json(result); });
+    const host = await renderTool(); await paste(host, confirmed); expect(v2Loaded(host)).not.toBeNull(); expect(host.querySelectorAll("#content-draft-tool")).toHaveLength(1); expect(host.querySelector("[data-target-page]")?.getAttribute("href")).toBe("https://owned.test/T1"); expect(fetchCalls()).toHaveLength(0);
+    await click(host.querySelector("[data-generate-draft]")); await idle(host); expect(fetchCalls().map(({ url }) => url)).toEqual(["/api/auth/session", "/api/tools/content-draft/run"]); expect(host.querySelector("[data-draft-v2-result]")?.getAttribute("data-run-id")).toBe(result.run.run_id);
+    expect(host.querySelector('[data-testid="draft-results"]')).toBeNull(); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+  });
+  it("accepts uploaded confirmed CJK revisions without legacy language rejection", async () => {
+    const confirmed = await confirmedDraftV2Fixture({ language: "zh-CN", paaOnly: true }); const host = await renderTool(); await upload(host, async () => JSON.stringify(confirmed)); await idle(host);
+    expect(v2Loaded(host)).not.toBeNull(); expect(host.querySelector("[data-brief-unsupported-language]")).toBeNull(); expect(host.querySelector("[data-confirmed-revision]")?.textContent).toContain("upload"); expect(fetchCalls()).toHaveLength(0);
+  });
+  it("consumes the version-2 envelope once using the existing channel and exact opener clearing", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const written = writeConfirmedBriefHandoff(window.sessionStorage, Date.now(), confirmed); if (!written.ok) throw new Error("fixture write");
+    const openerStore = new Map<string, string>([[CONTENT_BRIEF_HANDOFF_KEY, written.raw]]); Object.defineProperty(window, "opener", { configurable: true, value: { sessionStorage: { getItem: (key: string) => openerStore.get(key) ?? null, removeItem: (key: string) => openerStore.delete(key) } } });
+    try { const host = await renderTool(); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull(); expect(openerStore.has(CONTENT_BRIEF_HANDOFF_KEY)).toBe(false); await idle(host); expect(v2Loaded(host)).not.toBeNull(); expect(host.querySelector("[data-confirmed-revision]")?.textContent).toContain("handoff"); const fresh = await remount(true); expect(v2Loaded(fresh)).toBeNull(); expect(fresh.querySelector('[data-intake-phase="empty"]')).not.toBeNull(); }
+    finally { Object.defineProperty(window, "opener", { configurable: true, value: null }); }
+  });
+  it("only peeks a signed-out v2 handoff until the authenticated reload consumes it", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const written = writeConfirmedBriefHandoff(window.sessionStorage, Date.now(), confirmed); if (!written.ok) throw new Error("fixture write"); const host = await renderTool(false); await idle(host);
+    expect(v2Loaded(host)).toBeNull(); expect(host.querySelector("[data-handoff-pending]")).not.toBeNull(); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(written.raw); expect(fetchCalls()).toHaveLength(0);
+    await click(host.querySelector('[data-testid="sign-in-succeed"]')); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(written.raw);
+    const signedIn = await remount(true); expect(v2Loaded(signedIn)).not.toBeNull(); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+  });
+  it("writes the confirmed v2 only after successful sign-in, then restores the exact revision on reload", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const host = await renderTool(false); await paste(host, confirmed); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull(); await click(host.querySelector("[data-generate-draft]")); await idle(host); expect(callsTo("/api/tools/content-draft/run")).toHaveLength(0); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+    await click(host.querySelector('[data-testid="sign-in-cancel"]')); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull(); await click(host.querySelector('[data-testid="sign-in-succeed"]')); expect(signedInResult.current).toBe(true);
+    const raw = window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)!; expect(JSON.parse(raw).version).toBe(2); expect(await parseConfirmedBriefHandoff(JSON.parse(raw))).toEqual({ ok: true, value: confirmed }); const reloaded = await remount(true); expect(v2Loaded(reloaded)).not.toBeNull(); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+  });
+  it("keeps the current v2 in place and vetoes reload when sign-in storage fails", async () => {
+    const host = await renderTool(false); await paste(host, await confirmedDraftV2Fixture()); vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("storage denied"); }); await click(host.querySelector('[data-testid="sign-in-succeed"]'));
+    expect(signedInResult.current).toBe(false); expect(v2Loaded(host)).not.toBeNull(); expect(host.querySelector("[data-keep-failed]")).not.toBeNull(); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+  });
+  it("clears only its exact sign-in envelope on replacement and leaves no v2 after a plain refresh", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const host = await renderTool(false); await paste(host, confirmed); await click(host.querySelector('[data-testid="sign-in-succeed"]')); const written = window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY); expect(written).not.toBeNull(); await click(host.querySelector("[data-replace-brief]")); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+    await paste(host, confirmed); const reloaded = await remount(true); expect(v2Loaded(reloaded)).toBeNull(); expect(reloaded.querySelector('[data-intake-phase="empty"]')).not.toBeNull();
+  });
+  it("does not clear a newer foreign handoff when replacing its own written v2", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const host = await renderTool(false); await paste(host, confirmed); await click(host.querySelector('[data-testid="sign-in-succeed"]')); const foreign = storeHandoff(await draftBrief()); await click(host.querySelector("[data-replace-brief]")); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(foreign);
+  });
+  it("replaces a signed-out waiting legacy handoff with pasted v2 without writing a second slot", async () => {
+    const legacy = await draftBrief(); const waiting = storeHandoff(legacy); const host = await renderTool(false); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(waiting); await paste(host, await confirmedDraftV2Fixture()); expect(v2Loaded(host)).not.toBeNull(); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull(); expect(window.sessionStorage.length).toBe(0); await click(host.querySelector("[data-replace-brief]")); await pasteBrief(host, legacy); expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(legacy.run.fingerprint); expect(v2Loaded(host)).toBeNull();
+  });
+  it.each(["geo_document", "confirmation_required"] as const)("rejects %s locally with the correct builder entry point", async (code) => {
+    const confirmed = await confirmedDraftV2Fixture(); const value = code === "geo_document" ? { schemaVersion: "marketing-geo-brief.v1", brief: { topic: "sample GEO brief" } } : confirmed.brief; const host = await renderTool(); await paste(host, value);
+    expect(host.querySelector("[data-intake-rejected]")?.getAttribute("data-intake-rejected")).toBe(code); expect(host.querySelector("[data-content-brief-entry]")?.getAttribute("href")).toBe("/tools/content-brief"); expect(v2Loaded(host)).toBeNull(); expect(host.querySelector("[data-run-draft]")).toBeNull(); expect(fetchCalls()).toHaveLength(0);
+  });
+  it("rejects an invalid confirmed fingerprint and expired v2 handoff without HTTP calls", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const host = await renderTool(); await paste(host, { ...confirmed, revision: confirmed.revision + 1 }); expect(host.querySelector("[data-intake-rejected]")?.getAttribute("data-intake-rejected")).toBe("brief_fingerprint_mismatch"); expect(fetchCalls()).toHaveLength(0);
+    const written = writeConfirmedBriefHandoff(window.sessionStorage, Date.now() - CONTENT_BRIEF_HANDOFF_TTL_MS - 10, confirmed); expect(written.ok).toBe(true); const expired = await remount(true); expect(expired.querySelector("[data-intake-rejected]")?.getAttribute("data-intake-rejected")).toBe("handoff_expired"); expect(v2Loaded(expired)).toBeNull();
+  });
+  it("keeps later v2 paste when an earlier uploaded legacy file finally resolves", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const legacy = await draftBrief(); let finish!: (text: string) => void; const host = await renderTool(); await upload(host, () => new Promise<string>((resolve) => { finish = resolve; })); await paste(host, confirmed); expect(v2Loaded(host)).not.toBeNull(); await act(async () => finish(JSON.stringify(legacy))); await idle(host); expect(v2Loaded(host)).not.toBeNull(); expect(host.querySelector("[data-brief-loaded]")).toBeNull();
+  });
+  it("keeps later legacy paste when an earlier confirmed-v2 hash resolves out of order", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const legacy = await draftBrief(); let release!: () => void; let calls = 0; vi.stubGlobal("crypto", { subtle: { digest: async (algorithm: AlgorithmIdentifier, bytes: BufferSource) => { const digest = await webcrypto.subtle.digest(algorithm, bytes); calls += 1; if (calls === 1) await new Promise<void>((resolve) => { release = resolve; }); return digest; } } });
+    const host = await renderTool(); await type(host.querySelector("[data-paste-brief]"), JSON.stringify(confirmed)); await click(host.querySelector("[data-load-brief]")); await act(async () => { await vi.waitFor(() => expect(release).toBeTypeOf("function")); }); await pasteBrief(host, legacy); await act(async () => release()); await idle(host); expect(v2Loaded(host)).toBeNull(); expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(legacy.run.fingerprint);
+  });
+  it("does not start a v2 parse when an uploaded file resolves after the parent unmounts", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const digest = vi.fn((algorithm: AlgorithmIdentifier, bytes: BufferSource) => webcrypto.subtle.digest(algorithm, bytes)); vi.stubGlobal("crypto", { subtle: { digest } }); let release!: (text: string) => void;
+    const host = await renderTool(); await upload(host, () => new Promise<string>((resolve) => { release = resolve; })); await act(async () => root?.unmount()); root = null; await act(async () => release(JSON.stringify(confirmed))); expect(digest).not.toHaveBeenCalled(); expect(fetchCalls()).toHaveLength(0);
+  });
+  it("lets a parent Google callback pending across the version switch keep the current v2 revision", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const host = await renderTool(false); const callback = signedInHandler.current; expect(callback).toBeTypeOf("function"); await paste(host, confirmed); let kept: boolean | void; await act(async () => { kept = callback?.(); }); expect(kept!).toBe(true);
+    const raw = window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY); const parsed = await parseConfirmedBriefHandoff(JSON.parse(raw ?? "null")); expect(parsed).toEqual({ ok: true, value: confirmed }); expect((await parseConfirmedBriefV2(confirmed)).ok).toBe(true);
   });
 });
 

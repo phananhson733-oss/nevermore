@@ -1,6 +1,6 @@
-// @input  -- an authenticated POST carrying a parsed ContentBrief, the visitor's settings and which sections to write
-// @output -- a fingerprinted DraftResult that passed its own parser, or a stable error envelope
-// @pos    -- the only orchestration of draft generation and single-section reruns
+// @input  -- authenticated SEO/GEO shared briefs or exact confirmed Brief v2, settings and section selection
+// @output -- a self-checked versioned Draft result or the stable private error envelope
+// @pos    -- shared admission and schema dispatch; private GEO verification, v1 orchestration and isolated v2 runner
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { randomUUID } from "node:crypto";
@@ -44,6 +44,11 @@ import { parseSharedContentBrief as parseContentBrief } from "@sf/public-tools/c
 import { GEO_CONTENT_BRIEF_SCHEMA, GEO_OUTLINE_CAP, geoGenerationLanguage, requireGeoGenerationLanguage, isGeoContentBrief, type GeoContentBrief, type SharedContentBrief as ContentBrief } from "@sf/public-tools/content-brief/geo-contract";
 import { geoDraftFacts, geoMissingFacts } from "@sf/public-tools/content-brief/geo-draft";
 import { parseDraftResult, parseDraftSettings } from "@sf/public-tools/content-brief/parse-draft";
+import { CONFIRMED_BRIEF_V2_MAX_BYTES, CONFIRMED_BRIEF_V2_SCHEMA, parseConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
+import { DRAFT_V2_REQUEST_MAX_BYTES, DRAFT_V2_SECTION_REQUEST_MAX_BYTES } from "@sf/public-tools/content-brief/v2-draft-contract";
+import { parseDraftResultV2 } from "@sf/public-tools/content-brief/v2-draft";
+import { planDraftV2Sections } from "@sf/public-tools/content-brief/v2-draft-scope";
+import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 
 import {
   getServerAuthenticatedUser,
@@ -60,6 +65,9 @@ import {
   type DraftSectionInput,
   type DraftSectionResult,
 } from "./content-draft-llm.ts";
+import { generateDraftV2Section, runDraftV2Coverage } from "./content-draft-v2-llm.ts";
+import { resolveDraftV2Language } from "./content-draft-v2-language.ts";
+import { runDraftV2, type DraftV2RunDependencies } from "./content-draft-v2-run.ts";
 import {
   acquirePublicToolSlot,
   readPublicToolJson,
@@ -93,7 +101,7 @@ const ADMISSION_STEP_MS = 5_000;
 const SLOT_RETRY_AFTER_SECONDS = 5;
 const RUN_ID_MAX_CHARS = 128;
 
-export interface ContentDraftHandlerDependencies {
+export interface ContentDraftHandlerDependencies extends DraftV2RunDependencies {
   /** Re-resolve immutable owned receipts. A public JSON fingerprint is not authentication. */
   readonly verifyGeoBrief?: (brief: GeoContentBrief, userId: string) => Promise<boolean>;
   readonly getServerAuthenticatedUser: () => Promise<ServerAuthenticatedUser>;
@@ -117,6 +125,8 @@ export const CONTENT_DRAFT_HANDLER_DEPENDENCIES: ContentDraftHandlerDependencies
   consumeQuota: (bucketKey, max, windowSeconds) => consumePublicToolQuota(bucketKey, max, windowSeconds),
   generateSection: (input) => generateDraftSection(input, { config: resolveContentDraftLlmConfig() }),
   runCoverage: (input) => runDraftCoverage(input, { config: resolveContentDraftLlmConfig() }),
+  generateSectionV2: (input) => generateDraftV2Section(input, { config: resolveContentDraftLlmConfig() }),
+  runCoverageV2: (input) => runDraftV2Coverage(input, { config: resolveContentDraftLlmConfig() }),
   now: () => Date.now(),
   runId: () => randomUUID(),
   emit: (line) => console.info(line),
@@ -174,6 +184,7 @@ interface Admitted {
   readonly userId: string;
   readonly clientIp: string;
   readonly body: Record<string, unknown>;
+  readonly bodyBytes: number;
   readonly clock: Clock;
 }
 
@@ -192,14 +203,22 @@ async function admit(
   );
   if (authentication === TIMED_OUT || authentication.status === "unavailable") return refuse("auth_unavailable", 503);
   if (authentication.status === "unauthenticated") return refuse("auth_required", 401);
-  const body = await withBudget(() => dependencies.readJson(request, maxBytes), remaining(clock, ADMISSION_STEP_MS));
+  let bodyBytes = 0;
+  // Count the wire representation, not reserialized JSON: whitespace and
+  // escaped characters must still count against the legacy branch's cap.
+  const countedBody = request.body?.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) { bodyBytes += chunk.byteLength; controller.enqueue(chunk); },
+  }));
+  const countedRequest = countedBody === undefined ? request : new Request(request, { body: countedBody, duplex: "half" } as RequestInit);
+  const body = await withBudget(() => dependencies.readJson(countedRequest, maxBytes), remaining(clock, ADMISSION_STEP_MS));
   if (body === TIMED_OUT) return refuse("invalid_request", 400);
   if (!body.ok) {
     const status = body.code === "payload_too_large" ? 413 : body.code === "unsupported_media_type" ? 415 : 400;
     return refuse(body.code, status);
   }
   if (!isRecord(body.value)) return refuse("invalid_request", 400);
-  return { userId: authentication.userId, clientIp: dependencies.extractClientIp(request.headers), body: body.value, clock };
+  const declared = Number(request.headers.get("content-length"));
+  return { userId: authentication.userId, clientIp: dependencies.extractClientIp(request.headers), body: body.value, bodyBytes: Math.max(bodyBytes, Number.isFinite(declared) ? declared : 0), clock };
 }
 
 async function consumeBuckets(
@@ -456,6 +475,7 @@ async function assembleAndRespond(input: {
 interface EndpointShape {
   readonly budgetMs: number;
   readonly maxBytes: number;
+  readonly legacyMaxBytes: number;
   readonly bucketPrefix: string;
   readonly accountMax: number;
   readonly ipMax: number;
@@ -463,7 +483,8 @@ interface EndpointShape {
 
 const RUN_ENDPOINT: EndpointShape = {
   budgetMs: DRAFT_TOTAL_BUDGET_MS,
-  maxBytes: DRAFT_REQUEST_MAX_BYTES,
+  maxBytes: Math.max(DRAFT_REQUEST_MAX_BYTES, DRAFT_V2_REQUEST_MAX_BYTES),
+  legacyMaxBytes: DRAFT_REQUEST_MAX_BYTES,
   bucketPrefix: `public-${TOOL}`,
   accountMax: DRAFT_ACCOUNT_MAX_PER_HOUR,
   ipMax: DRAFT_IP_MAX_PER_HOUR,
@@ -471,7 +492,8 @@ const RUN_ENDPOINT: EndpointShape = {
 
 const SECTION_ENDPOINT: EndpointShape = {
   budgetMs: SECTION_ENDPOINT_BUDGET_MS,
-  maxBytes: SECTION_REQUEST_MAX_BYTES,
+  maxBytes: Math.max(SECTION_REQUEST_MAX_BYTES, DRAFT_V2_SECTION_REQUEST_MAX_BYTES),
+  legacyMaxBytes: SECTION_REQUEST_MAX_BYTES,
   bucketPrefix: `public-${TOOL}-section`,
   accountMax: SECTION_ACCOUNT_MAX_PER_HOUR,
   ipMax: SECTION_IP_MAX_PER_HOUR,
@@ -492,9 +514,11 @@ async function handle(
   try {
     const admitted = await admit(request, dependencies, shape.budgetMs, shape.maxBytes);
     if (admitted instanceof Response) return admitted;
+    const carried = admitted.body["brief"];
+    // V2's larger rerun envelope must not expand GEO's pre-verification limit.
+    if (isRecord(carried) && carried["schema"] === GEO_CONTENT_BRIEF_SCHEMA && (admitted.bodyBytes > shape.legacyMaxBytes || !withinBytes(admitted.body, shape.legacyMaxBytes))) return refuse("payload_too_large", 413);
     slot = dependencies.acquireSlot(`${TOOL}:account:${admitted.userId}`);
     if (!slot.acquired) return refuse("run_in_progress", 409, { "Retry-After": String(SLOT_RETRY_AFTER_SECONDS) });
-    const carried = admitted.body["brief"];
     if (isRecord(carried) && carried["schema"] === GEO_CONTENT_BRIEF_SCHEMA) {
       const verified = await withBudget(async () => {
         const parsed = await parseContentBrief(carried);
@@ -520,11 +544,49 @@ async function handle(
   }
 }
 
+function withinBytes(value: unknown, maxBytes: number): boolean {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength <= maxBytes;
+}
+
+async function confirmedV2OrRefuse(value: unknown): Promise<ConfirmedBriefV2 | Response> {
+  if (!withinBytes(value, CONFIRMED_BRIEF_V2_MAX_BYTES)) return refuse("payload_too_large", 413);
+  const parsed = await parseConfirmedBriefV2(value);
+  if (!parsed.ok) return refuse(parsed.code, parsed.code === "invalid_request" ? 400 : 422);
+  const { market, language } = parsed.value.brief.context.input;
+  if (resolveDraftV2Language(language) === null || !SERP_MARKET_OPTIONS.some((option) => option.code === market)) return refuse("brief_reference_invalid", 422);
+  return parsed.value;
+}
+
+async function handleV2(body: Record<string, unknown>, clock: Clock, dependencies: ContentDraftHandlerDependencies, rerun: boolean): Promise<Response> {
+  const keys = rerun ? ["brief", "section_id", "previous"] : ["brief", "settings", "section_ids"];
+  if (Object.keys(body).length !== keys.length || Object.keys(body).some((key) => !keys.includes(key))) return refuse("invalid_request", 400);
+  const confirmed = await confirmedV2OrRefuse(body["brief"]);
+  if (confirmed instanceof Response) return confirmed;
+  const previous = rerun ? await parseDraftResultV2(body["previous"], confirmed) : null;
+  if (previous !== null && !previous.ok) return refuse("previous_draft_invalid", previous.code === "invalid_request" ? 400 : 422);
+  const settings = parseDraftSettings(previous?.value.settings ?? body["settings"]);
+  if (!settings.ok) return refuse("invalid_request", 400);
+  const selected = rerun ? readId(body["section_id"]) : null;
+  const ids = rerun ? selected === null ? null : [selected] : readSectionIds(body["section_ids"]);
+  if (ids === null) return refuse("invalid_request", 400);
+  const plan = planDraftV2Sections(confirmed, ids);
+  if (!plan.ok) return refuse(plan.code === "invalid_request" ? "invalid_request" : "section_not_writable", plan.code === "invalid_request" ? 400 : 422);
+  const result = await runDraftV2({ confirmed, settings: settings.value, requested: plan.value.requested, previous: previous?.value ?? null, start: clock.start, deadlineAt: clock.deadlineAt }, dependencies);
+  if (!result.ok) {
+    dependencies.emit(JSON.stringify({ tool: TOOL, schema: "v2", self_check_failed: result.path, code: result.code }));
+    return refuse("draft_unavailable", 503);
+  }
+  dependencies.emit(JSON.stringify({ tool: TOOL, schema: "v2", run_id: result.value.run.run_id, mode: result.value.run.mode, elapsed_ms: result.value.run.elapsed_ms, sections: result.value.run.reads.sections, llm_calls: result.value.run.reads.llm_sections.calls + result.value.run.reads.llm_coverage.calls, self_check: "ok" }));
+  return json(result.value, 200);
+}
+
 export async function handleContentDraftRunRequest(
   request: Request,
   dependencies: ContentDraftHandlerDependencies = CONTENT_DRAFT_HANDLER_DEPENDENCIES,
 ): Promise<Response> {
-  return handle(request, dependencies, RUN_ENDPOINT, async ({ body, clock }) => {
+  return handle(request, dependencies, RUN_ENDPOINT, async ({ body, bodyBytes, clock }) => {
+    if (isRecord(body["brief"]) && body["brief"]["schema"] === CONFIRMED_BRIEF_V2_SCHEMA) return handleV2(body, clock, dependencies, false);
+    if (bodyBytes > DRAFT_REQUEST_MAX_BYTES || !withinBytes(body, DRAFT_REQUEST_MAX_BYTES)) return refuse("payload_too_large", 413);
     const settings = parseDraftSettings(body["settings"]);
     if (!settings.ok) return refuse("invalid_request", 400);
     const sectionIds = readSectionIds(body["section_ids"], isRecord(body["brief"]) && body["brief"]["schema"] === GEO_CONTENT_BRIEF_SCHEMA ? GEO_OUTLINE_CAP : OUTLINE_CAP);
@@ -553,7 +615,9 @@ export async function handleContentDraftSectionRequest(
   request: Request,
   dependencies: ContentDraftHandlerDependencies = CONTENT_DRAFT_HANDLER_DEPENDENCIES,
 ): Promise<Response> {
-  return handle(request, dependencies, SECTION_ENDPOINT, async ({ body, clock }) => {
+  return handle(request, dependencies, SECTION_ENDPOINT, async ({ body, bodyBytes, clock }) => {
+    if (isRecord(body["brief"]) && body["brief"]["schema"] === CONFIRMED_BRIEF_V2_SCHEMA) return handleV2(body, clock, dependencies, true);
+    if (bodyBytes > SECTION_REQUEST_MAX_BYTES || !withinBytes(body, SECTION_REQUEST_MAX_BYTES)) return refuse("payload_too_large", 413);
     const sectionId = readId(body["section_id"]);
     if (sectionId === null) return refuse("invalid_request", 400);
     const brief = await parseBriefOrRefuse(body["brief"]);

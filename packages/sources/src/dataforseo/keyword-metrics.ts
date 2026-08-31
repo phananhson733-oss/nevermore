@@ -1,5 +1,5 @@
 // @input  -- three DataForSEO live endpoints, reached through an injected fetch
-// @output -- keyword metrics, typed page-one evidence, domain ranks, and what never came back
+// @output -- keyword metrics, typed page-one evidence with opt-in sampled PAA, domain ranks, and what never came back
 // @pos    -- the only place provider silence becomes a countable set and cost is summed
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -66,6 +66,7 @@ const MAX_DATAFORSEO_SERP_ITEM_TYPES = 100;
 const MAX_DATAFORSEO_SERP_ITEMS = 500;
 const MAX_DATAFORSEO_SERP_REFERENCES = 100;
 const MAX_DATAFORSEO_SERP_COMMUNITY_ITEMS = 100;
+const MAX_DATAFORSEO_SERP_PAA_ITEMS = 100;
 
 const DATAFORSEO_SERP_COMMUNITY_ITEM_TYPES = [
   "discussions_and_forums",
@@ -155,6 +156,8 @@ export interface DataForSeoSerpOrganicRequest {
   readonly depth?: number;
   /** Ask the paid Live endpoint to load an asynchronous AI Overview. */
   readonly loadAsyncAiOverview?: boolean;
+  /** Local response retention only; does not request paid PAA expansion. */
+  readonly includePeopleAlsoAsk?: boolean;
 }
 
 export interface DataForSeoSerpOrganicRow {
@@ -201,6 +204,24 @@ export interface DataForSeoSerpCommunityItem {
   readonly domain: string | null;
 }
 
+/** Sampled questions are topic observations, not verified answers or page coverage. */
+export interface DataForSeoSerpPaaQuestion {
+  readonly question: string;
+  readonly seedQuestion: string | null;
+}
+
+export type DataForSeoSerpPeopleAlsoAsk =
+  | { readonly status: "unavailable"; readonly reason: "not_reported" | "missing_block" }
+  | {
+      readonly status: "complete" | "partial";
+      /** Provider order and duplicates retained; consumers may derive their own grouping. */
+      readonly items: readonly DataForSeoSerpPaaQuestion[];
+      readonly unreadableItems: number;
+      /** A malformed/missing items array has an unknown child count, not zero questions. */
+      readonly unreadableBlocks: number;
+      readonly truncatedItems: number;
+    };
+
 export interface DataForSeoSerpOrganicResponse {
   readonly keyword: string;
   /** Organic results only, in provider order, truncated to the requested depth. */
@@ -215,6 +236,8 @@ export interface DataForSeoSerpOrganicResponse {
   readonly aiOverview: DataForSeoSerpAiOverview | null;
   /** Null means community block availability was not reported; [] means none. */
   readonly communityItems: readonly DataForSeoSerpCommunityItem[] | null;
+  /** Absent for legacy consumers; explicit availability when retention was requested. */
+  readonly peopleAlsoAsk?: DataForSeoSerpPeopleAlsoAsk;
   /**
    * Organic items dropped because their rank or domain was unusable.
    *
@@ -1032,10 +1055,66 @@ function collectSerpOrganicRows(
   return { rows, unresolvedItemCount };
 }
 
+function paaQuestion(value: unknown): DataForSeoSerpPaaQuestion | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const item = value as JsonRecord;
+  const title = item.title;
+  const seed = item.seed_question;
+  if (item.type !== "people_also_ask_element" || typeof title !== "string" ||
+      title.trim() === "" || Array.from(title).length > MAX_DATAFORSEO_SERP_TITLE_CHARS) return null;
+  if (seed !== null && seed !== undefined && (typeof seed !== "string" ||
+      seed.trim() === "" || Array.from(seed).length > MAX_DATAFORSEO_SERP_TITLE_CHARS)) return null;
+  return { question: title, seedQuestion: typeof seed === "string" ? seed : null };
+}
+
+/** Retain only initial PAA questions; do not interpret expanded answers as factual evidence. */
+function collectSerpPeopleAlsoAsk(
+  items: readonly unknown[],
+  itemTypes: readonly string[] | null,
+): DataForSeoSerpPeopleAlsoAsk {
+  const questions: DataForSeoSerpPaaQuestion[] = [];
+  let blockReported = false;
+  let inspected = 0;
+  let unreadableItems = 0;
+  let unreadableBlocks = 0;
+  let truncatedItems = 0;
+  for (const value of items) {
+    // The organic collector already checks every top-level item is an object.
+    const block = asRecord(value, "DataForSEO serp-organic item");
+    if (block.type !== "people_also_ask") continue;
+    blockReported = true;
+    if (block.items === null) continue; // The provider documents null as no child items.
+    if (!Array.isArray(block.items)) {
+      unreadableBlocks += 1;
+      continue;
+    }
+    const remaining = MAX_DATAFORSEO_SERP_PAA_ITEMS - inspected;
+    const bounded = block.items.slice(0, remaining) as unknown[];
+    inspected += bounded.length;
+    truncatedItems += block.items.length - bounded.length;
+    for (const child of bounded) {
+      const question = paaQuestion(child);
+      if (question === null) unreadableItems += 1;
+      else questions.push(question);
+    }
+  }
+  if (!blockReported && (itemTypes === null || itemTypes.includes("people_also_ask"))) {
+    return { status: "unavailable", reason: itemTypes === null ? "not_reported" : "missing_block" };
+  }
+  return {
+    status: unreadableItems + unreadableBlocks + truncatedItems > 0 ? "partial" : "complete",
+    items: questions,
+    unreadableItems,
+    unreadableBlocks,
+    truncatedItems,
+  };
+}
+
 function parseSerpOrganicResponse(
   payload: unknown,
   keyword: string,
   depth: number,
+  includePeopleAlsoAsk: boolean,
 ): DataForSeoSerpOrganicResponse {
   const task = parseLiveTask(payload, "DataForSEO serp-organic");
   const items = resultItems(task.result, "DataForSEO serp-organic");
@@ -1062,6 +1141,7 @@ function parseSerpOrganicResponse(
     aiOverview: parseSerpAiOverview(items),
     communityItems:
       itemTypes !== null || community.blockReported ? community.items : null,
+    ...(includePeopleAlsoAsk ? { peopleAlsoAsk: collectSerpPeopleAlsoAsk(items, itemTypes) } : {}),
     unresolvedItemCount: collected.unresolvedItemCount,
     costUsd: task.costUsd,
     providerStatusCode: task.providerStatusCode,
@@ -1164,6 +1244,7 @@ interface NormalizedSerpOrganicRequest {
   readonly languageCode: string;
   readonly depth: number;
   readonly loadAsyncAiOverview: boolean;
+  readonly includePeopleAlsoAsk: boolean;
 }
 
 function normalizeSerpOrganicRequest(
@@ -1192,12 +1273,16 @@ function normalizeSerpOrganicRequest(
       "DataForSEO serp-organic loadAsyncAiOverview must be a boolean.",
     );
   }
+  if (request.includePeopleAlsoAsk !== undefined && typeof request.includePeopleAlsoAsk !== "boolean") {
+    throw invalidConfiguration("DataForSEO serp-organic includePeopleAlsoAsk must be a boolean.");
+  }
   return {
     keyword: request.keyword.trim(),
     locationCode: normalizeLocationCode(request.locationCode, "serp-organic"),
     languageCode: normalizeLanguageCode(request.languageCode, "serp-organic"),
     depth,
     loadAsyncAiOverview: request.loadAsyncAiOverview === true,
+    includePeopleAlsoAsk: request.includePeopleAlsoAsk === true,
   };
 }
 
@@ -1380,6 +1465,7 @@ export function createDataForSeoKeywordMetricsClient(
             payload,
             normalized.keyword,
             normalized.depth,
+            normalized.includePeopleAlsoAsk,
           ),
         signal,
       );

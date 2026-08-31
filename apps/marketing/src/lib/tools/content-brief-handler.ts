@@ -1,6 +1,6 @@
 // @input  -- one authenticated POST asking for a content brief on a keyword
-// @output -- a fingerprinted ContentBrief that passed its own parser, or a stable error envelope
-// @pos    -- the only orchestration of the brief run: admission, one deadline, reads, assembly, self-check
+// @output -- an explicitly negotiated, self-checked v1/v2 brief or a stable error envelope
+// @pos    -- shared admission and scoped reads; v2 keeps a frozen reporting window and bounded facts
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { randomUUID } from "node:crypto";
@@ -43,8 +43,11 @@ import type {
   ProfileReadMeta,
   Verdict,
 } from "@sf/public-tools/content-brief/contract";
+import { CONTENT_BRIEF_SCHEMA } from "@sf/public-tools/content-brief/contract";
 import { hostKey } from "@sf/public-tools/content-brief/host";
 import { parseContentBrief } from "@sf/public-tools/content-brief/parse-brief";
+import { CONTENT_BRIEF_V2_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
+import { projectBriefV2Gsc } from "@sf/public-tools/content-brief/v2-gsc";
 import { computeVerdict, normalizePosition } from "@sf/public-tools/content-brief/verdict";
 import {
   MIN_DIMENSION_COVERAGE,
@@ -75,12 +78,15 @@ import {
   crawlContentBriefTargets,
   type ContentBriefCrawlResult,
 } from "./content-brief-crawl.ts";
+import { crawlContentBriefV2Targets } from "./content-brief-v2-crawl.ts";
 import {
   resolveContentBriefLlmConfig,
   runContentBriefLlm,
   type ContentBriefLlmInput,
   type ContentBriefLlmResult,
 } from "./content-brief-llm.ts";
+import { runContentBriefV2Llm } from "./content-brief-v2-llm.ts";
+import { runContentBriefV2 } from "./content-brief-v2-run.ts";
 import {
   readContentBriefSerp,
   type ContentBriefSerpResult,
@@ -130,6 +136,7 @@ import {
 
 const TOOL = "content-brief";
 const KEYWORD_MAX_CHARS = 200;
+const BRIEF_V2_PROFILE_FACT_MAX = 32;
 /** Admission calls (auth, body, quota, grant) are cheap; this only stops a hung store. */
 const ADMISSION_STEP_MS = 5_000;
 const GSC_REQUEST_TIMEOUT_MS = 8_000;
@@ -141,6 +148,9 @@ export interface ContentBriefRequestBody {
   readonly language: string;
   readonly website_id: string | null;
   readonly gsc_property: string | null;
+  readonly response_schema:
+    | typeof CONTENT_BRIEF_SCHEMA
+    | typeof CONTENT_BRIEF_V2_SCHEMA;
 }
 
 export type ProfileReadResult =
@@ -194,8 +204,10 @@ export interface ContentBriefHandlerDependencies {
   readonly readGscDimensions: (input: GscDimensionsInput) => Promise<GscDimensionsRead>;
   readonly readSerp: typeof readContentBriefSerp;
   readonly crawl: typeof crawlContentBriefTargets;
+  readonly crawlV2: typeof crawlContentBriefV2Targets;
   readonly readWebsite: (userId: string, websiteId: string) => Promise<ProfileReadResult>;
   readonly runLlm: (input: ContentBriefLlmInput) => Promise<ContentBriefLlmResult>;
+  readonly runLlmV2: typeof runContentBriefV2Llm;
   readonly now: () => number;
   readonly runId: () => string;
   readonly emit: (line: string) => void;
@@ -249,8 +261,10 @@ export const CONTENT_BRIEF_HANDLER_DEPENDENCIES: ContentBriefHandlerDependencies
   readGscDimensions: readGscDimensionsLive,
   readSerp: readContentBriefSerp,
   crawl: crawlContentBriefTargets,
+  crawlV2: crawlContentBriefV2Targets,
   readWebsite: readWebsiteProfile,
   runLlm: (input) => runContentBriefLlm(input, { config: resolveContentBriefLlmConfig() }),
+  runLlmV2: (input) => runContentBriefV2Llm(input, { config: resolveContentBriefLlmConfig() }),
   now: () => Date.now(),
   runId: () => randomUUID(),
   emit: (line) => console.info(line),
@@ -279,6 +293,7 @@ const ALLOWED_BODY_KEYS: ReadonlySet<string> = new Set([
   "language",
   "website_id",
   "gsc_property",
+  "response_schema",
 ]);
 
 function optionalString(value: unknown): string | null | false {
@@ -292,6 +307,14 @@ export function parseContentBriefRequest(input: unknown): ParsedBody {
   if (Object.keys(input).some((key) => !ALLOWED_BODY_KEYS.has(key))) {
     return { ok: false, code: "invalid_request" };
   }
+  const responseSchemaRaw = input["response_schema"];
+  if (
+    responseSchemaRaw !== undefined &&
+    responseSchemaRaw !== CONTENT_BRIEF_SCHEMA &&
+    responseSchemaRaw !== CONTENT_BRIEF_V2_SCHEMA
+  ) {
+    return { ok: false, code: "invalid_request" };
+  }
   const primaryRaw = input["primary"];
   if (typeof primaryRaw !== "string") return { ok: false, code: "invalid_request" };
   const primary = normalizeKeyword(primaryRaw);
@@ -302,13 +325,20 @@ export function parseContentBriefRequest(input: unknown): ParsedBody {
   if (!Array.isArray(supportingRaw) || supportingRaw.some((item) => typeof item !== "string")) {
     return { ok: false, code: "invalid_request" };
   }
+  const supportingIdentities = new Set([normalizeKeyword(primary.normalize("NFKC")).toLowerCase()]);
   const supporting = [
     ...new Set(
       (supportingRaw as readonly string[])
         .map(normalizeKeyword)
         .filter((item) => item !== "" && item.length <= KEYWORD_MAX_CHARS),
     ),
-  ];
+  ].filter((keyword) => {
+    if (responseSchemaRaw !== CONTENT_BRIEF_V2_SCHEMA) return true;
+    const identity = normalizeKeyword(keyword.normalize("NFKC")).toLowerCase();
+    if (supportingIdentities.has(identity)) return false;
+    supportingIdentities.add(identity);
+    return true;
+  });
   if (supporting.length > SUPPORTING_KEYWORDS_MAX) {
     return { ok: false, code: "too_many_supporting_keywords" };
   }
@@ -325,7 +355,15 @@ export function parseContentBriefRequest(input: unknown): ParsedBody {
   if (websiteId === false || property === false) return { ok: false, code: "invalid_request" };
   return {
     ok: true,
-    value: { primary, supporting, market, language, website_id: websiteId, gsc_property: property },
+    value: {
+      primary,
+      supporting,
+      market,
+      language,
+      website_id: websiteId,
+      gsc_property: property,
+      response_schema: responseSchemaRaw === CONTENT_BRIEF_V2_SCHEMA ? CONTENT_BRIEF_V2_SCHEMA : CONTENT_BRIEF_SCHEMA,
+    },
   };
 }
 
@@ -488,7 +526,9 @@ export async function handleContentBriefRequest(
       const daily = await consumeDaily(dependencies, clock);
       if (daily !== null) return daily;
 
-      const brief = await runBrief(input, userId, dependencies, clock, gsc);
+      const brief = input.response_schema === CONTENT_BRIEF_V2_SCHEMA
+        ? await runBriefV2(input, userId, dependencies, clock, gsc)
+        : await runBrief(input, userId, dependencies, clock, gsc);
       return brief === null ? refuse("brief_unavailable", 503) : json(brief, 200);
     } catch (error: unknown) {
       // Anything that escaped the lanes is a bug, not a visitor problem: log
@@ -641,6 +681,94 @@ const GSC_NOT_REQUESTED: GscLane = {
   queryPage: [],
   pages: [],
 };
+
+function briefV2Window(now: number) {
+  const window = coverageWindow(new Date(now));
+  return {
+    start: window.startDate,
+    end: window.endDate,
+    lookback_days: GSC_LOOKBACK_DAYS,
+  } as const;
+}
+
+async function readProfileV2Lane(
+  userId: string,
+  websiteId: string,
+  dependencies: ContentBriefHandlerDependencies,
+): Promise<{
+  readonly facts: readonly ProfileFact[];
+  readonly snapshot: { readonly website_id: string; readonly revision: number; readonly hash: string } | null;
+  readonly read: {
+    readonly source: "profile";
+    readonly status: "complete" | "partial" | "unavailable";
+    readonly attempted: number | null;
+    readonly retained: number | null;
+    readonly reason: "provider_error" | "insufficient_evidence" | null;
+  };
+}> {
+  const result = await dependencies.readWebsite(userId, websiteId).catch(
+    (): ProfileReadResult => ({ kind: "error" }),
+  );
+  if (result.kind !== "ok" || result.websiteId !== websiteId) {
+    return {
+      facts: [],
+      snapshot: null,
+      read: {
+        source: "profile",
+        status: "unavailable",
+        attempted: null,
+        retained: null,
+        reason: result.kind === "error" || result.kind === "ok" ? "provider_error" : "insufficient_evidence",
+      },
+    };
+  }
+  const allFacts = profileFacts(result.profile);
+  const facts = allFacts.slice(0, BRIEF_V2_PROFILE_FACT_MAX);
+  return {
+    facts,
+    snapshot: {
+      website_id: result.websiteId,
+      revision: result.snapshotRevision,
+      hash: result.profileHash,
+    },
+    read: {
+      source: "profile",
+      status: facts.length < allFacts.length ? "partial" : "complete",
+      attempted: allFacts.length,
+      retained: facts.length,
+      reason: null,
+    },
+  };
+}
+
+async function readGscV2Lane(
+  input: ContentBriefRequestBody,
+  gsc: Extract<GscPreflight, { kind: "ready" }>,
+  dependencies: ContentBriefHandlerDependencies,
+  deadlineAt: number,
+  window: ReturnType<typeof briefV2Window>,
+): Promise<ReturnType<typeof projectBriefV2Gsc>> {
+  const read = await dependencies.readGscDimensions({
+    property: gsc.property,
+    accessToken: gsc.accessToken,
+    window: { startDate: window.start, endDate: window.end },
+    deadlineAt,
+  });
+  const partial = [read.query, read.queryPage, read.page].some((lane) => lane.paging.truncated || lane.unreadableRows > 0);
+  return projectBriefV2Gsc({
+    input: {
+      primary: input.primary,
+      supporting: input.supporting,
+      market: input.market,
+      language: input.language,
+    },
+    property: gsc.property,
+    window,
+    status: partial ? "partial" : "complete",
+    rows: read.queryPage.rows,
+    pages: read.page.rows,
+  });
+}
 
 function gscUnavailable(reason: "timeout" | "provider_error"): GscLane {
   return {
@@ -865,6 +993,63 @@ async function runBrief(
   };
   dependencies.emit(JSON.stringify(line));
   return selfCheck === "failed" ? null : brief;
+}
+
+async function runBriefV2(
+  input: ContentBriefRequestBody,
+  userId: string,
+  dependencies: ContentBriefHandlerDependencies,
+  clock: Clock,
+  gsc: Extract<GscPreflight, { kind: "ready" }> | null,
+) {
+  const gscWindow = briefV2Window(clock.start);
+  const brief = await runContentBriefV2(
+    {
+      input: {
+        primary: input.primary,
+        supporting: input.supporting,
+        market: input.market,
+        language: input.language,
+      },
+      runId: dependencies.runId(),
+      startedAt: clock.start,
+      deadlineAt: clock.deadlineAt,
+      gsc: gsc === null
+        ? undefined
+        : {
+            property: gsc.property,
+            window: gscWindow,
+            read: ({ deadlineAt }) => readGscV2Lane(input, gsc, dependencies, deadlineAt, gscWindow),
+          },
+      profile: input.website_id === null
+        ? undefined
+        : {
+            read: () => readProfileV2Lane(userId, input.website_id!, dependencies),
+          },
+    },
+    {
+      readSerp: dependencies.readSerp,
+      crawl: dependencies.crawlV2,
+      runLlm: dependencies.runLlmV2,
+      now: dependencies.now,
+    },
+  );
+  const requestedReads = brief.run.reads.filter((read) => read.reason !== "not_requested");
+  const mode = brief.generated === null && requestedReads.every((read) => read.status === "unavailable") ? "unavailable"
+    : brief.generated === null || requestedReads.some((read) => read.status === "unavailable") ? "degraded"
+    : requestedReads.some((read) => read.status === "partial") ? "partial" : "complete";
+  dependencies.emit(JSON.stringify({
+    tool: TOOL,
+    run_id: brief.run.run_id,
+    mode,
+    elapsed_ms: brief.run.elapsed_ms,
+    reads: Object.fromEntries(brief.run.reads.map((read) => [read.source, read.status])),
+    llm_calls: brief.run.llm.calls,
+    serp_cost_usd: brief.run.serp_cost_usd,
+    self_check: "ok",
+    schema: brief.schema,
+  }));
+  return brief;
 }
 
 function excerptsFor(

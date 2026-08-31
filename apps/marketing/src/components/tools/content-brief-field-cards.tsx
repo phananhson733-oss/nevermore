@@ -1,5 +1,5 @@
 // @input  -- one ContentBrief's intent / format / length fields and the tool translator
-// @output -- three cards (one column on mobile) that print the threshold each field was held to
+// @output -- three compact field cards with prominent values and inspectable derivation details
 // @pos    -- the SERP- and crawl-derived summary row of the content brief result
 
 import type {
@@ -102,29 +102,32 @@ function IntentCard({
           returned: returned === null ? "—" : returned,
         })}
       </p>
-      <p className={`mt-1 ${BODY_TEXT}`}>
-        {t("intent.confirmedRule", {
-          depth: SERP_DEPTH,
-          ratio: Math.round(INTENT_CONFIRMED_MIN_RATIO * 100),
-        })}
-      </p>
-      {intent.rules_hit.length > 0 ? (
-        <div className="mt-3">
-          <div className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
-            {t("intent.rulesHit")}
-          </div>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {intent.rules_hit.map((rule) => (
-              <span key={rule} className={`${DATA_CHIP} ${chipTone("muted")}`}>
-                {rule}
-              </span>
-            ))}
-          </div>
-        </div>
-      ) : null}
       <div className="mt-3">
         <SourceChip provenance={intent.provenance} t={t} locale={locale} />
       </div>
+      <details data-field-details className="mt-3 border-t border-brand-border-card pt-2">
+        <summary className="cursor-pointer text-[11.5px] text-text-dark-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">{t("fields.details")}</summary>
+        <p className={`mt-1 ${BODY_TEXT}`}>
+          {t("intent.confirmedRule", {
+            depth: SERP_DEPTH,
+            ratio: Math.round(INTENT_CONFIRMED_MIN_RATIO * 100),
+          })}
+        </p>
+        {intent.rules_hit.length > 0 ? (
+          <div className="mt-3">
+            <div className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
+              {t("intent.rulesHit")}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {intent.rules_hit.map((rule) => (
+                <span key={rule} className={`${DATA_CHIP} ${chipTone("muted")}`}>
+                  {rule}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </details>
     </Card>
   );
 }
@@ -227,29 +230,32 @@ function FormatCard({
         {body.text}
       </p>
       <div className="mt-3">
-        <div className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
-          {t("format.distribution")}
-        </div>
-        <div data-format-distribution className="mt-1 flex flex-wrap gap-1.5">
-          {CLASSIFIED_FORMATS.filter((key) => format.distribution[key] > 0).map(
-            (key) => (
-              <span key={key} className={`${DATA_CHIP} ${chipTone("neutral")}`}>
-                {translated(t, `formats.${key}`)}{" "}
-                {number(format.distribution[key], locale)}
-              </span>
-            ),
-          )}
-          <span
-            data-format-unknown-count
-            className={`${DATA_CHIP} ${chipTone("muted")}`}
-          >
-            {t("format.unknownCount", { count: format.unknown_count })}
-          </span>
-        </div>
-      </div>
-      <div className="mt-3">
         <SourceChip provenance={format.provenance} t={t} locale={locale} />
       </div>
+      <details data-field-details className="mt-3 border-t border-brand-border-card pt-2">
+        <summary className="cursor-pointer text-[11.5px] text-text-dark-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">{t("fields.details")}</summary>
+        <div className="mt-3">
+          <div className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
+            {t("format.distribution")}
+          </div>
+          <div data-format-distribution className="mt-1 flex flex-wrap gap-1.5">
+            {CLASSIFIED_FORMATS.filter((key) => format.distribution[key] > 0).map(
+              (key) => (
+                <span key={key} className={`${DATA_CHIP} ${chipTone("neutral")}`}>
+                  {translated(t, `formats.${key}`)}{" "}
+                  {number(format.distribution[key], locale)}
+                </span>
+              ),
+            )}
+            <span
+              data-format-unknown-count
+              className={`${DATA_CHIP} ${chipTone("muted")}`}
+            >
+              {t("format.unknownCount", { count: format.unknown_count })}
+            </span>
+          </div>
+        </div>
+      </details>
     </Card>
   );
 }
@@ -273,9 +279,9 @@ function LengthCard({
         : length.attempted === null
           ? t("length.insufficientUnknown", { min: CRAWL_MIN_FOR_LENGTH })
           : t("length.insufficient", {
-              min: CRAWL_MIN_FOR_LENGTH,
-              attempted: length.attempted,
-            });
+            min: CRAWL_MIN_FOR_LENGTH,
+            attempted: length.attempted,
+          });
     return (
       <Card name="length" title={t("length.title")} status="unavailable">
         <p data-unavailable-reason={length.reason} className={BODY_TEXT}>
@@ -290,25 +296,15 @@ function LengthCard({
     );
   }
   const observed = crawlCounts(brief)?.observed ?? null;
-  const cells = [
-    ["p25", length.p25],
-    ["median", length.median],
-    ["p75", length.p75],
-  ] as const;
   return (
     <Card name="length" title={t("length.title")} status="available">
-      <div className="grid grid-cols-3 gap-2">
-        {cells.map(([key, value]) => (
-          <div key={key} className="rounded-[8px] bg-brand-bg px-3 py-2">
-            <div className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
-              {t(`length.${key}`)}
-            </div>
-            <div className={`mt-1 ${MONO_FIGURE}`}>
-              {t("length.words", { count: number(value, locale) })}
-            </div>
-          </div>
-        ))}
+      <div data-length-median className="text-[18px] font-semibold text-text-dark-primary">
+        {t("length.words", { count: number(length.median, locale) })}
+        <span className="ml-2 text-[11.5px] font-normal text-text-dark-secondary">{t("length.median")}</span>
       </div>
+      <p className="mt-2 font-mono text-[11.5px] text-text-dark-secondary">
+        {t("length.p25")} {number(length.p25, locale)} · {t("length.p75")} {number(length.p75, locale)}
+      </p>
       <p data-length-pages-counted className={`mt-2 ${BODY_TEXT}`}>
         {t("length.pagesCounted", {
           count: length.pages_counted,

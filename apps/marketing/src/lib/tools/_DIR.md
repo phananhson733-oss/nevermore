@@ -2,6 +2,22 @@
 
 One line per module: what it reads, what it returns, where it sits. Update the line when the file's header comment changes.
 
+- `content-brief-v2-handoff.ts`, `.test.ts` — explicit version-2 confirmed envelope in the existing one-time sessionStorage slot; bounded synchronous staging, exact async parser/TTL and owned-payload cleanup; no document in URL or server persistence.
+- `content-draft-v2-language.ts`, `.test.ts` — validates supported BCP-47 tags against the existing language set, returns base adapter code and exact locale without changing the confirmed document.
+- `content-draft-v2-prompts.ts` — confirmed H2/H3, section-scoped evidence and approved intent/format/exclusions/navigation guidance; guidance never expands factual references and related links are not embedded by the model.
+- `content-draft-v2-llm.ts`, `.test.ts` — CONTENT_DRAFT-only section generation, exact 96 KiB prompt cap, bounded invalid-content retry, truthful token receipts and locale-aware coverage; all network replies in tests are offline seams.
+- `content-draft-v2-run.ts`, `.test.ts` — at most three section workers, whole-result coverage, bounded receipt-aware deadlines and exact full-previous section rerun; no missing usage fabrication or publication.
+- `content-draft-handler.ts`, `.test.ts` version negotiation — confirmed SEO v2 selects its exact run/section pipeline while SEO v1 and shared GEO v1.1 retain theirs; GEO owned receipts are reverified before quota/provider work, and its original wire cap remains before private verification despite the larger v2 envelope. Legacy reports and unconfirmed v2 are not coerced.
+
+- `content-brief-research-extract.ts` — v2 local Cheerio extraction from already-fetched HTML: iterative main/article/body traversal, scoped template/navigation removal, bounded heading/body segments and full observed main-text measurement. No fetch, model call or HTML rendering; explicit omitted/truncated counts; no whitespace-language gate.
+- `content-brief-research-extract.test.ts` — fixed HTML oracles, including ordinary div/span text, no-heading Chinese, nested templates, 10,000-level DOM/heading depth, code-point limits and observed-length/cap accounting.
+- `content-brief-v2-crawl.ts`, `.test.ts` — one bounded public-HTTP read per C/T target, raw-body hash and v2 extraction, shared owned-page identity with per-hop/final redirect checks; no replacement-page fetch, late evidence or fabricated v1 observations.
+- `content-brief-v2-prompts.ts`, `.test.ts` — a single complete writing-plan prompt over explicitly untrusted source data; exact 48 KiB serialized prompt budget, fair page-unit reduction with original totals and owned evidence preserved.
+- `content-brief-v2-llm.ts`, `.test.ts` — existing CONTENT_BRIEF provider configuration, one bounded attempt and complete output validation, exact usage and returned packed context, no fallback/retry or PAA expansion.
+- `content-brief-v2-run.ts`, `.test.ts` — generation after caller admission: parallel source callbacks/SERP, one shared competitor/owned crawl, PAA research, one model assembly, whole-brief self-check. Offline provider seams exercise the real adapters/extractor/parser; this module is not a public route or proof of live provider quality.
+- `content-brief-handler.ts` v2 negotiation — explicit `response_schema` selects the new runner; omitted/v1 retains historical behavior. Shared auth/quota/GSC-subject gates precede provider work; one run-start GSC window, exact profile snapshot, 32-fact cap and all requested GSC loss states are preserved.
+- `content-brief-serp.ts` v2 opt-in — `includePeopleAlsoAsk: true` retains the same response's independent PAA status/text/counts, including PAA-only responses. Defaults/false preserve the legacy request and return shape; no extra request or click-depth parameter. `content-brief-serp.test.ts` pins the compatible behavior and failure paths.
+
 本目录首个 `_DIR.md`（2026-08-29 随 content-brief 两个模块新建），其它模块的行由各自作者补。
 
 - `gsc-properties-handler.ts` — same-origin authenticated, feature-flagged property refresh. Shares the GSC in-flight slot but uses its own durable 30/IP/hour quota bucket; admission precedes grant renewal and site-list calls. Returns only cookie-bounded properties, real total and brand candidates, with private no-store stable errors and no credentials.

@@ -1,8 +1,7 @@
-// @input  -- locale, the one-time brief handoff in sessionStorage, pasted or uploaded brief JSON,
-//            and the authenticated draft APIs
-// @output -- the brief intake, the draft settings form, the session-first run and per-section
-//            rerun flows, and the result surface
-// @pos    -- primary client surface for the Marketing Content Draft Writer
+// @input  -- locale, one-time handoff, confirmed SEO v2/shared GEO v1.1/legacy SEO v1 JSON,
+//            and authenticated draft APIs; legacy GEO reports and unconfirmed v2 get guidance
+// @output -- version-specific intake/workflow, session-first generation and guarded sign-in recovery
+// @pos    -- primary client surface for the Marketing Content Draft Writer; no v2-to-v1 coercion
 
 "use client";
 
@@ -24,6 +23,9 @@ import {
   parseSharedContentBriefHandoff as parseContentBriefHandoff,
 } from "@sf/public-tools/content-brief/parse-geo-brief";
 import type { SharedContentBrief as ContentBrief } from "@sf/public-tools/content-brief/geo-contract";
+import { CONFIRMED_BRIEF_V2_SCHEMA, parseConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
+import { CONTENT_BRIEF_V2_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
+import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 
 import {
   clearMatchingContentBriefHandoff,
@@ -31,6 +33,8 @@ import {
   takeContentBriefHandoff,
   writeContentBriefHandoff,
 } from "../../lib/tools/content-brief-handoff";
+import { parseConfirmedBriefHandoff, writeConfirmedBriefHandoff } from "../../lib/tools/content-brief-v2-handoff";
+import { GEO_BRIEF_SCHEMA_VERSION } from "../../lib/geo-tools/brief-contract";
 import { SignInDialog } from "../auth/sign-in-dialog";
 import { trackMarketingEvent } from "../layout/google-analytics";
 import {
@@ -43,6 +47,7 @@ import {
   type IntakeState,
 } from "./content-draft-intake";
 import { ContentDraftResults } from "./content-draft-results";
+import { ContentDraftV2Workflow } from "./content-draft-v2-workflow";
 import {
   ContentDraftSettings,
   DEFAULT_DRAFT_SETTINGS,
@@ -56,6 +61,8 @@ const BUTTON =
   "inline-flex h-12.5 items-center justify-center rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:opacity-60";
 
 type Phase = "idle" | "running" | "rerunning" | "done";
+type LoadedV2Intake = { readonly phase: "loaded_v2"; readonly confirmed: ConfirmedBriefV2; readonly source: BriefSource };
+type ParsedIntake = IntakeState | LoadedV2Intake;
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -81,15 +88,24 @@ function responseDraft(body: unknown): DraftResult | null {
   return body as unknown as DraftResult;
 }
 
-/** The parser's failure, or the two states only the intake knows about. */
-async function parseIntake(raw: string, source: BriefSource): Promise<IntakeState> {
+/** Each document keeps its own parser; a confirmed v2 is never projected into a v1 Brief. */
+async function parseIntake(raw: string, source: BriefSource): Promise<ParsedIntake> {
   let json: unknown;
   try {
     json = JSON.parse(raw);
   } catch {
     return { phase: "rejected", rejection: { code: "invalid_json", path: null } };
   }
+  if (isRecord(json) && json.schemaVersion === GEO_BRIEF_SCHEMA_VERSION) {
+    return { phase: "rejected", rejection: { code: "geo_document", path: null } };
+  }
   if (source === "handoff") {
+    if (isRecord(json) && json.version === 2) {
+      const parsed = await parseConfirmedBriefHandoff(json);
+      if (parsed.ok) return { phase: "loaded_v2", confirmed: parsed.value, source };
+      const expired = parsed.code === "brief_reference_invalid" && (parsed.path === "expires_at" || parsed.path === "created_at");
+      return { phase: "rejected", rejection: expired ? { code: "handoff_expired", path: null } : { code: parsed.code, path: parsed.path } };
+    }
     const parsed = await parseContentBriefHandoff(json);
     if (parsed.ok) return { phase: "loaded", brief: parsed.value.brief, source };
     // The envelope's window is the one failure a visitor can do nothing about
@@ -103,6 +119,13 @@ async function parseIntake(raw: string, source: BriefSource): Promise<IntakeStat
         ? { code: "handoff_expired", path: null }
         : { code: parsed.code, path: parsed.path },
     };
+  }
+  if (isRecord(json) && json.schema === CONFIRMED_BRIEF_V2_SCHEMA) {
+    const parsed = await parseConfirmedBriefV2(json);
+    return parsed.ok ? { phase: "loaded_v2", confirmed: parsed.value, source } : { phase: "rejected", rejection: { code: parsed.code, path: parsed.path } };
+  }
+  if (isRecord(json) && json.schema === CONTENT_BRIEF_V2_SCHEMA) {
+    return { phase: "rejected", rejection: { code: "confirmation_required", path: null } };
   }
   const parsed = await parseContentBrief(json);
   return parsed.ok
@@ -190,6 +213,8 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
    * a brief that is already being replaced.
    */
   const latestIntake = useRef<IntakeState>(intake);
+  const [loadedV2, setLoadedV2] = useState<LoadedV2Intake | null>(null);
+  const latestV2 = useRef<LoadedV2Intake | null>(null);
   const [settings, setSettings] = useState<DraftSettings>(DEFAULT_DRAFT_SETTINGS);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [phase, setPhase] = useState<Phase>("idle");
@@ -284,9 +309,11 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
   }, [result]);
 
   /** The only way the intake changes: the ref first, so a callback between now and the commit sees it. */
-  function setCurrentIntake(next: IntakeState): void {
-    latestIntake.current = next;
-    setIntake(next);
+  function setCurrentIntake(next: ParsedIntake): void {
+    latestV2.current = next.phase === "loaded_v2" ? next : null;
+    setLoadedV2(latestV2.current);
+    latestIntake.current = next.phase === "loaded_v2" ? { phase: "empty" } : next;
+    setIntake(latestIntake.current);
   }
 
   /** Removes the envelope this tab wrote for a reload, if it is still exactly that envelope. */
@@ -323,6 +350,16 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
     return false;
   }
 
+  /** The sign-in callback may keep only the revision still current at this exact transition. */
+  function keepConfirmedForReload(current: LoadedV2Intake): boolean {
+    if (!mounted.current || latestV2.current !== current) return false;
+    try {
+      const written = writeConfirmedBriefHandoff(window.sessionStorage, Date.now(), current.confirmed, { preserve: writtenRaw.current });
+      if (written.ok) { writtenRaw.current = written.raw; return true; }
+    } catch { /* A storage getter that throws must also veto the reload. */ }
+    return false;
+  }
+
   function nextGeneration(): number {
     generation.current += 1;
     activeRequest.current?.abort();
@@ -333,8 +370,8 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
     return generation.current;
   }
 
-  function loadIntake(next: IntakeState): void {
-    if (next.phase === "loaded" && next.source !== "handoff" && pendingRaw.current !== null) {
+  function loadIntake(next: ParsedIntake): void {
+    if ((next.phase === "loaded" || next.phase === "loaded_v2") && next.source !== "handoff" && pendingRaw.current !== null) {
       // A brief loaded before sign-in takes the waiting handoff's place: the
       // waiting one is cleared (only while it is still exactly what was
       // peeked). Nothing is written yet -- a plain refresh must start empty
@@ -373,7 +410,7 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
     setCurrentIntake({ phase: "parsing" });
     void file.text().then(
       (text) => {
-        if (gen === generation.current) parseAt(gen, text, "upload");
+        if (mounted.current && gen === generation.current) parseAt(gen, text, "upload");
       },
       () => {
         if (mounted.current && gen === generation.current) {
@@ -431,6 +468,8 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
    * refresh still starts empty: nothing is written on that path.
    */
   const onSignedIn = useCallback((): boolean | void => {
+    const confirmed = latestV2.current;
+    if (confirmed !== null) return keepConfirmedForReload(confirmed);
     const current = latestIntake.current;
     if (current.phase !== "loaded") return;
     // A brief that could not be kept vetoes the reload: the session exists,
@@ -584,6 +623,16 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
       ? result
       : null;
 
+  if (loadedV2 !== null) return <ContentDraftV2Workflow
+    key={loadedV2.confirmed.fingerprint}
+    confirmed={loadedV2.confirmed}
+    source={loadedV2.source}
+    locale={locale}
+    authenticated={authenticated}
+    onReplace={() => { nextGeneration(); loadIntake({ phase: "empty" }); }}
+    onKeepForSignIn={() => keepConfirmedForReload(loadedV2)}
+  />;
+
   return (
     <section id="content-draft-tool" data-locale={locale} aria-busy={busy} className="min-w-0 space-y-4">
       {handoffPending && intake.phase === "empty" ? (
@@ -605,6 +654,7 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
           loadIntake({ phase: "empty" });
         }}
         disabled={busy}
+        locale={locale}
         t={t}
       />
 

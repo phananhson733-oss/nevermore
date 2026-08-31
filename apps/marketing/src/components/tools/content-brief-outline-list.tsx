@@ -1,5 +1,5 @@
 // @input  -- one ContentBrief's outline field and the tool translator
-// @output -- the model-drafted H2/H3 list, each section naming the questions it answers
+// @output -- compact H2/H3 sections with frozen question mappings and closed full-source details
 // @pos    -- whitelisted for the --sc-source-model token (app/source-tokens.test.ts):
 //            the left rule on every section is the model colour, because every word
 //            of the outline is model-generated
@@ -21,7 +21,7 @@ import {
   reasonCopy,
   type Translate,
 } from "./content-brief-results-shared";
-import { SourceChip } from "./content-brief-source-chip";
+import { SourceChip, SourceLayerBadge, sourceTone } from "./content-brief-source-chip";
 
 export function OutlineList({
   brief,
@@ -61,9 +61,9 @@ export function OutlineList({
             className="border-l-2 border-source-model pl-4"
           >
             <div className="flex flex-wrap items-start gap-2">
-              <span className={ID_CHIP}>{item.id}</span>
+              <span className={ID_CHIP}>H2 {index + 1}</span>
               <span className="text-[14px] font-semibold leading-[1.4] text-text-dark-primary">
-                {index + 1}. {item.h2}
+                {item.h2}
               </span>
             </div>
             {item.h3.length > 0 ? (
@@ -82,8 +82,17 @@ export function OutlineList({
               >
                 {t("outline.answers", { ids: joinList(item.answers, locale) })}
               </span>
-              <SourceChip provenance={item.provenance} t={t} locale={locale} />
+              <SourceLayerBadge tone={sourceTone(item.provenance)} t={t} />
             </div>
+            <details className="mt-2">
+              <summary className="cursor-pointer text-[12px] text-text-dark-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
+                {t("fields.details")}
+              </summary>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className={ID_CHIP}>{item.id}</span>
+                <SourceChip provenance={item.provenance} t={t} locale={locale} />
+              </div>
+            </details>
           </li>
         ))}
       </ol>

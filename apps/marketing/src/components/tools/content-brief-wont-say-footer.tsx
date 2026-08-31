@@ -1,7 +1,6 @@
 // @input  -- the tool translator and the engine's language allow-list
-// @output -- the fixed list of things this brief will not claim
-// @pos    -- the boundary footer of the content brief result, after
-//            competitor-keyword-gap-coverage.tsx's EVIDENCE_BOUNDARIES
+// @output -- all v1 boundaries retained in a closed native disclosure
+// @pos    -- compact boundary footer after the Content Brief Draft/JSON handoff
 
 import {
   MUST_ANSWER_MIN_PAGES,
@@ -16,8 +15,8 @@ import {
 } from "./content-brief-results-shared";
 
 /**
- * Handoff §1's "v1 does not" list, rendered in full on every run so a reader
- * never has to infer a boundary from a section that is not there.
+ * Handoff §1's "v1 does not" list remains inspectable on every run without
+ * displacing the Draft/JSON handoff. Collapsing the list removes no boundary.
  */
 const WONT_SAY = [
   "noRewrite",
@@ -38,8 +37,10 @@ export function WontSayFooter({ t }: { readonly t: Translate }) {
     languages: [...NON_WHITESPACE_TOKENIZED_LANGUAGES].join(" / "),
   };
   return (
-    <section data-wont-say className={CARD}>
-      <h3 className={SECTION_TITLE}>{t("wontSay.title")}</h3>
+    <details data-wont-say data-wont-say-details className={CARD}>
+      <summary className={`${SECTION_TITLE} cursor-pointer border-t border-brand-border-card pt-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent`}>
+        {t("wontSay.title")}
+      </summary>
       <ul className="mt-3 grid gap-2 text-[12.5px] leading-[1.6] text-text-dark-secondary md:grid-cols-2">
         {WONT_SAY.map((key) => (
           <li
@@ -51,6 +52,6 @@ export function WontSayFooter({ t }: { readonly t: Translate }) {
           </li>
         ))}
       </ul>
-    </section>
+    </details>
   );
 }

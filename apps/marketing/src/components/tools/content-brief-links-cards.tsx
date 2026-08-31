@@ -1,5 +1,5 @@
 // @input  -- one ContentBrief's internal_links / do_not_cover fields and its GSC page ledger
-// @output -- two cards whose every URL is resolved from evidence.gsc_pages by page_ref
+// @output -- two cards with ledger-resolved URLs, compact source badges and closed full provenance
 // @pos    -- the model may only cite pages the ledger holds; a reference it invents
 //            renders as "not in the ledger", never as a URL
 
@@ -27,7 +27,7 @@ import {
   safePageUrl,
   type Translate,
 } from "./content-brief-results-shared";
-import { SourceChip } from "./content-brief-source-chip";
+import { SourceChip, SourceLayerBadge, sourceTone } from "./content-brief-source-chip";
 
 interface LinkRow {
   readonly ref: string;
@@ -158,8 +158,16 @@ function LinksCard({
               <PageRef brief={brief} pageRef={row.ref} locale={locale} t={t} />
               <p className={`mt-2 ${BODY_TEXT}`}>{row.text}</p>
               <div className="mt-2">
-                <SourceChip provenance={row.provenance} t={t} locale={locale} />
+                <SourceLayerBadge tone={sourceTone(row.provenance)} t={t} />
               </div>
+              <details className="mt-2">
+                <summary className="cursor-pointer text-[12px] text-text-dark-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
+                  {t("fields.details")}
+                </summary>
+                <div className="mt-2">
+                  <SourceChip provenance={row.provenance} t={t} locale={locale} />
+                </div>
+              </details>
             </li>
           ))}
         </ul>

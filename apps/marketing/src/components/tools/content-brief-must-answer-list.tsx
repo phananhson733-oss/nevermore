@@ -25,7 +25,8 @@ import {
   translated,
   type Translate,
 } from "./content-brief-results-shared";
-import { SourceChip } from "./content-brief-source-chip";
+import { SourceChip, SourceLayerBadge, sourceTone } from "./content-brief-source-chip";
+import styles from "./content-brief-presentation.module.css";
 
 function excerptFor(brief: ContentBrief, member: ClusterMember): string | null {
   const page = crawlObservation(brief, member.observation_id);
@@ -99,18 +100,17 @@ function QuestionRow({
   return (
     <li
       data-must-answer-item={item.id}
-      className="rounded-[10px] border border-brand-border-card bg-brand-panel-raised p-4"
+      data-question-row=""
+      className={styles.questionRow}
     >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex min-w-0 items-start gap-2">
-          <span className={`${ID_CHIP} mt-0.5`}>{item.id}</span>
-          <span
-            data-must-answer-q
-            className="text-[14px] font-semibold leading-[1.4] text-text-dark-primary"
-          >
-            {item.q}
-          </span>
-        </div>
+      <div className={styles.questionTop}>
+        <span className={`${ID_CHIP} mt-0.5`}>{item.id}</span>
+        <span
+          data-must-answer-q
+          className="text-[14px] font-semibold leading-[1.4] text-text-dark-primary"
+        >
+          {item.q}
+        </span>
         <span
           data-covered-by
           className={`${DATA_CHIP} ${chipTone("neutral")}`}
@@ -123,17 +123,16 @@ function QuestionRow({
             observed: observed === null ? "—" : observed,
           })}
         </span>
-      </div>
-      <div className="mt-2">
-        <SourceChip provenance={item.q_provenance} t={t} locale={locale} />
+        <div className={styles.questionSource}>
+          <SourceLayerBadge tone={sourceTone(item.q_provenance)} t={t} />
+        </div>
       </div>
       <details className="mt-2">
         <summary className="cursor-pointer text-[12px] text-text-dark-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
-          {t("mustAnswer.members")} ·{" "}
-          {t("mustAnswer.canonical", {
-            heading: item.cluster.canonical_heading,
-          })}
+          {t("mustAnswer.members")}
         </summary>
+        <div className="mt-2"><SourceChip provenance={item.q_provenance} t={t} locale={locale} /></div>
+        <p className="mt-2 text-[11.5px] leading-[1.5] text-text-dark-secondary">{t("mustAnswer.canonical", { heading: item.cluster.canonical_heading })}</p>
         <ul className="mt-2 space-y-1.5">
           {item.cluster.members.map((member) => (
             <MemberRow
@@ -211,9 +210,9 @@ export function MustAnswerList({
         : unknown
           ? t("mustAnswer.insufficientUnknown")
           : t("mustAnswer.insufficient", {
-              observed: field.attempted ?? "—",
-              attempted: attempted ?? "—",
-            });
+            observed: field.attempted ?? "—",
+            attempted: attempted ?? "—",
+          });
     return (
       <section
         data-must-answer
@@ -259,7 +258,7 @@ export function MustAnswerList({
           })}
         </p>
       ) : (
-        <ul className="mt-4 space-y-3">
+        <ul className="mt-3 rounded-[4px] border border-brand-border-card bg-brand-panel">
           {field.items.map((item) => (
             <QuestionRow
               key={item.id}

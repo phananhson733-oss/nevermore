@@ -1,5 +1,5 @@
-// @input  -- one primary keyword, its market and language, and the run's abort signal
-// @output -- the organic rows page one holds (rank / url / domain / title), how many came back, and what it cost
+// @input  -- one primary keyword, market/language, abort signal and optional local PAA retention
+// @output -- organic rows/counts/cost and, only on opt-in, initial PAA with independent availability
 // @pos    -- the Content Brief Builder's only paid SERP read; a thin reader, no Labs call
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -8,6 +8,7 @@ import type { SerpReadMeta } from "@sf/public-tools/content-brief/contract";
 import {
   createDataForSeoKeywordMetricsClient,
   type DataForSeoKeywordMetricsClient,
+  type DataForSeoSerpPeopleAlsoAsk,
 } from "@sf/sources/dataforseo/keyword-metrics";
 import { SERP_LANGUAGES, SERP_LOCATIONS } from "./serp-markets.ts";
 
@@ -29,6 +30,10 @@ export interface ContentBriefSerpRow {
   readonly title: string | null;
 }
 
+export type ContentBriefSerpPeopleAlsoAsk =
+  | DataForSeoSerpPeopleAlsoAsk
+  | { readonly status: "unavailable"; readonly reason: "timeout" | "provider_error" };
+
 export interface ContentBriefSerpResult {
   readonly rows: readonly ContentBriefSerpRow[];
   readonly reads: SerpReadMeta;
@@ -36,6 +41,8 @@ export interface ContentBriefSerpResult {
   readonly costUsd: number | null;
   /** Feature names on the sampled page. Null when the provider did not report them. */
   readonly itemTypes: readonly string[] | null;
+  /** Only present on opt-in; PAA availability is independent of organic row counts. */
+  readonly peopleAlsoAsk?: ContentBriefSerpPeopleAlsoAsk;
 }
 
 export interface ContentBriefSerpInput {
@@ -43,6 +50,8 @@ export interface ContentBriefSerpInput {
   readonly market: string;
   readonly language: string;
   readonly signal: AbortSignal;
+  /** Retains initial PAA from the same response, without a paid expansion request. */
+  readonly includePeopleAlsoAsk?: boolean;
 }
 
 export interface ContentBriefSerpDependencies {
@@ -159,8 +168,17 @@ function readsFor(returned: number, unresolved: number): SerpReadMeta {
   };
 }
 
-function failed(reads: SerpReadMeta): ContentBriefSerpResult {
-  return { rows: [], reads, costUsd: null, itemTypes: null };
+function failed(
+  reason: "timeout" | "provider_error",
+  includePeopleAlsoAsk: boolean,
+): ContentBriefSerpResult {
+  return {
+    rows: [],
+    reads: unavailable(reason),
+    costUsd: null,
+    itemTypes: null,
+    ...(includePeopleAlsoAsk ? { peopleAlsoAsk: { status: "unavailable" as const, reason } } : {}),
+  };
 }
 
 /**
@@ -176,6 +194,7 @@ export async function readContentBriefSerp(
   dependencies: ContentBriefSerpDependencies = {},
 ): Promise<ContentBriefSerpResult> {
   const target = resolveTarget(input);
+  const includePeopleAlsoAsk = input.includePeopleAlsoAsk === true;
   try {
     // Built inside the try: the client throws on an empty credential, and a
     // deployment without the variable set is a `provider_error` read, not a 500.
@@ -192,6 +211,7 @@ export async function readContentBriefSerp(
         locationCode: target.locationCode,
         languageCode: target.language,
         depth: SERP_DEPTH,
+        ...(includePeopleAlsoAsk ? { includePeopleAlsoAsk: true } : {}),
       },
       input.signal,
     );
@@ -216,14 +236,17 @@ export async function readContentBriefSerp(
       reads: readsFor(rows.length, response.unresolvedItemCount),
       costUsd: response.costUsd,
       itemTypes: response.itemTypes,
+      ...(includePeopleAlsoAsk ? {
+        peopleAlsoAsk: response.peopleAlsoAsk ?? { status: "unavailable" as const, reason: "not_reported" as const },
+      } : {}),
     };
   } catch (error) {
-    if (isTimeout(error, input.signal)) return failed(unavailable("timeout"));
+    if (isTimeout(error, input.signal)) return failed("timeout", includePeopleAlsoAsk);
     console.error(
       `[content-brief] serp provider_error market=${target.market}: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
-    return failed(unavailable("provider_error"));
+    return failed("provider_error", includePeopleAlsoAsk);
   }
 }

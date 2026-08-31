@@ -2,7 +2,7 @@
 // @output -- the empty-state copy, the paste + upload entrances, the rejection line, and the
 //            loaded-brief summary with its replace control
 // @pos    -- the three entrances of handoff §5.1 in one card; parsing itself happens in the
-//            tool through parseContentBrief, this card only collects the input and shows the verdict
+//            tool's version-specific parsers; this card collects input and offers local schema guidance
 
 import { useId, useState } from "react";
 import { geoGenerationLanguage, isGeoContentBrief, type SharedContentBrief as ContentBrief } from "@sf/public-tools/content-brief/geo-contract";
@@ -11,6 +11,7 @@ import {
   type ContentDraftErrorCode,
 } from "@sf/public-tools/content-brief/contract";
 import { isWhitespaceTokenizedLanguage } from "@sf/public-tools/content-brief/constants";
+import { localePath } from "../../lib/locale-path";
 
 import {
   ACTION_BUTTON,
@@ -24,11 +25,12 @@ import {
 
 export type BriefSource = "handoff" | "paste" | "upload";
 
-/** Local codes the parser does not emit: not-JSON input and an out-of-window handoff. */
+/** Local intake guidance stays separate from the paid API's error-code union. */
 export type IntakeRejection =
   | { readonly code: ContentDraftErrorCode; readonly path: string }
   | { readonly code: "invalid_json"; readonly path: null }
-  | { readonly code: "handoff_expired"; readonly path: null };
+  | { readonly code: "handoff_expired"; readonly path: null }
+  | { readonly code: "geo_document" | "confirmation_required"; readonly path: null };
 
 export type IntakeState =
   | { readonly phase: "empty" }
@@ -46,6 +48,9 @@ const TEXTAREA =
 function rejectionCopy(t: DraftTranslate, rejection: IntakeRejection): string {
   if (rejection.code === "invalid_json") return t("intake.invalidJson");
   if (rejection.code === "handoff_expired") return t("intake.handoffExpired");
+  if (rejection.code === "geo_document") return t("intake.geoDocument");
+  if (rejection.code === "confirmation_required") return t("intake.confirmationRequired");
+  if (rejection.code === "brief_schema_mismatch") return t("intake.supportedSchemas");
   return translated(t, `errors.${rejection.code}`);
 }
 
@@ -196,6 +201,7 @@ export function ContentDraftIntake({
   onUpload,
   onReplace,
   disabled,
+  locale = "en",
   t,
 }: {
   readonly intake: IntakeState;
@@ -203,6 +209,7 @@ export function ContentDraftIntake({
   readonly onUpload: (file: File) => void;
   readonly onReplace: () => void;
   readonly disabled: boolean;
+  readonly locale?: string;
   readonly t: DraftTranslate;
 }) {
   if (intake.phase === "loaded") {
@@ -235,6 +242,11 @@ export function ContentDraftIntake({
           className="mt-4 rounded-[10px] border border-brand-error/25 bg-brand-error/[0.08] px-4 py-3 text-[12.5px] text-brand-error"
         >
           <p>{rejectionCopy(t, intake.rejection)}</p>
+          {intake.rejection.code === "geo_document" || intake.rejection.code === "confirmation_required" ? (
+            <a data-content-brief-entry href={localePath(locale, "/tools/content-brief")} className="mt-2 inline-block underline underline-offset-2">
+              {t("intake.openContentBrief")}
+            </a>
+          ) : null}
           {intake.rejection.path !== null && intake.rejection.path !== "" ? (
             <p data-intake-rejected-path className="mt-1 font-mono text-[11px]">
               {t("intake.parseFailed", { path: intake.rejection.path })}

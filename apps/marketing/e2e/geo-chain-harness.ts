@@ -93,6 +93,8 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
     readRun: async runId => runId === GEO_CHAIN_RUN && fixture.report !== null ? { kind: "completed", report: fixture.report } : { kind: "missing" },
   };
   const draft: ContentDraftHandlerDependencies = {
+    generateSectionV2: async () => { throw new Error("GEO fixture must not call SEO v2 generation"); },
+    runCoverageV2: async () => { throw new Error("GEO fixture must not call SEO v2 coverage"); },
     getServerAuthenticatedUser: async () => ({ status: "authenticated", userId: GEO_CHAIN_USER, email: null, avatarUrl: null }),
     verifyGeoBrief: async (brief, userId) => {
       const accepted = await verifyOwnedGeoBrief(brief, userId, fixture.referenceDependencies);

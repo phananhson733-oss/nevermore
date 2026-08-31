@@ -1,0 +1,98 @@
+/* @input -- existing Marketing theme/font tokens and Content Brief data attributes
+   @output -- compact Artifact editorial rhythm and locally scoped text sizing
+   @pos -- Brief result only; no global prose or Draft styling changes */
+.results {
+  max-width: 880px;
+  margin-inline: auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.results [data-field-card] {
+  border-radius: 4px;
+  padding: 14px;
+}
+
+.results :is([data-must-answer], [data-outline], [data-gap-angle], [data-links-card], [data-wont-say]) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.results :is([data-must-answer], [data-outline], [data-gap-angle], [data-links-card], [data-wont-say]) h3 {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--sc-border-card);
+}
+
+.results [data-verdict-card] {
+  border-width: 2px;
+  border-radius: 4px;
+  padding: 20px;
+}
+
+.results [data-verdict-title] {
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.results [data-wont-say-item] {
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  font-size: 11.5px;
+}
+
+.results [data-readiness-bar] {
+  border-radius: 4px;
+  padding: 16px;
+}
+
+/* A font size on a parent does not override the global p rule. Set it on
+   the actual paragraphs, while retaining each theme's existing text tokens. */
+.coverage p,
+.results [data-must-answer-budget] p {
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.coverage {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.questionRow {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--sc-border-card);
+}
+
+.questionRow:last-child {
+  border-bottom: 0;
+}
+
+.questionTop {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px 10px;
+}
+
+.questionTop [data-must-answer-q] {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.questionSource {
+  grid-column: 2 / -1;
+}
+
+@media (min-width: 700px) {
+  .questionTop {
+    grid-template-columns: 28px minmax(0, 1fr) auto minmax(100px, 150px);
+    align-items: center;
+  }
+
+  .questionSource {
+    grid-column: auto;
+  }
+}
