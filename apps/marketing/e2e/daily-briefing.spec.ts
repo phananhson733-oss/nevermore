@@ -77,7 +77,8 @@ async function openSyntheticBriefing(page: Page, partial = false) {
   await page.locator("#daily-briefing-brand-terms").fill("synthetic-brand");
   await page.locator('input[name="brandTermsConfirmed"]').check();
   await page.getByRole("button", { name: "Build today's briefing", exact: true }).click();
-  await expect(page.locator("[data-reading-facts]")).toBeVisible();
+  await expect(page.locator('[data-result-section="trend"]')).toBeVisible();
+  await expect(page.locator("[data-reading-facts]")).toHaveCount(0);
   return { envelope, calls };
 }
 
@@ -117,8 +118,8 @@ test("synthetic newest partial PT date stays visible without change-based action
   expect(envelope.result.changes).toEqual([]);
   expect(envelope.result.actions).toEqual([]);
   expect(envelope.result.queryWatchlist.items.length).toBeGreaterThan(0);
-  await expect(page.locator("[data-reading-facts]")).toContainText(`Latest available GSC date: ${CURRENT_END}`);
-  await expect(page.locator("[data-comparison-withheld]")).toContainText("newest available GSC dates are still updating");
+  await expect(page.locator("[data-reading-facts]")).toHaveCount(0);
+  await expect(page.locator("[data-comparison-withheld]")).toHaveCount(0);
   await expect(page.locator("[data-action-link]")).toHaveCount(0);
   await expect(page.locator("[data-change]")).toHaveCount(0);
   await expect(page.locator("[data-observation-row]")).toHaveCount(envelope.result.queryWatchlist.items.length);
@@ -131,8 +132,8 @@ test("synthetic newest partial PT date stays visible without change-based action
   await observation.locator("[data-gsc-evidence] summary").click();
   await expect(observation.locator("[data-gsc-evidence]")).toContainText("Not compared");
   await expect(observation.locator("[data-gsc-evidence]")).not.toContainText("Clicks 48;");
-  await page.locator("[data-reading-facts]").evaluate((element) => element.scrollIntoView({ block: "center", behavior: "instant" }));
-  await page.locator("[data-reading-facts]").screenshot({ path: test.info().outputPath("synthetic-partial-reporting-dates.png") });
+  await observation.evaluate((element) => element.scrollIntoView({ block: "center", behavior: "instant" }));
+  await observation.screenshot({ path: test.info().outputPath("synthetic-partial-row-evidence.png") });
   expectIsolated(calls);
 });
 

@@ -396,9 +396,8 @@ describe("DailyBriefingTool request states and errors", () => {
     await changeValue(select, SECOND_PROPERTY);
     await act(async () => { resolveRead?.(success()); });
 
-    const facts = host.querySelector("[data-reading-facts]");
-    expect(facts?.textContent ?? "").not.toContain(SECOND_PROPERTY);
-    if (select.value === SECOND_PROPERTY) expect(facts).toBeNull();
+    expect(select.value).toBe(SECOND_PROPERTY);
+    expect(host.querySelector('[data-result-section="trend"]')).toBeNull();
   });
 
   it("locks every run input until its submitted request finishes", async () => {
@@ -411,7 +410,10 @@ describe("DailyBriefingTool request states and errors", () => {
     expect(controls.every((control) => control.disabled)).toBe(true);
     await act(async () => { resolveRead?.(success()); });
     expect(controls.every((control) => !control.disabled)).toBe(true);
-    expect(host.querySelector("[data-reading-facts]")?.textContent).toContain(PROPERTY);
+    expect(host.querySelector('[data-result-section="trend"]')).not.toBeNull();
+    const gscLinks = [...host.querySelectorAll<HTMLAnchorElement>('a[href*="search.google.com/search-console/"]')];
+    expect(gscLinks.length).toBeGreaterThan(0);
+    expect(gscLinks.every((link) => new URL(link.href).searchParams.get("resource_id") === PROPERTY)).toBe(true);
   });
 
   it("ignores an older response after a newer property run has completed", async () => {
@@ -426,18 +428,20 @@ describe("DailyBriefingTool request states and errors", () => {
     // A queued change invalidates the old response even if it raced with the
     // disabled state being painted; it must not prevent the replacement run.
     await click(buttonWith(host, "Build today's briefing"));
-    const newerReadAt = "2026-08-24T20:02:00.000Z";
     await act(async () => {
       resolveNew?.(Response.json({ data: {
         ...ENVELOPE,
-        result: { ...ENVELOPE.result, freshness: { ...ENVELOPE.result.freshness, readAt: newerReadAt } },
+        result: { ...ENVELOPE.result, trend: {
+          ...ENVELOPE.result.trend,
+          hourly: { evidence: "partial", firstIncompleteDate: null, firstIncompleteHour: null,
+            points: [{ key: "2026-08-24T12:00:00-07:00", clicks: 987, impressions: 1000, ctr: 0.987, position: 2 }],
+          },
+        } },
       } }));
     });
     await act(async () => { resolveOld?.(success()); });
     expect(lastRequestBody().property).toBe(SECOND_PROPERTY);
-    const facts = host.querySelector("[data-reading-facts]");
-    expect(facts?.textContent).toContain(SECOND_PROPERTY);
-    expect(facts?.querySelector("time")?.getAttribute("dateTime")).toBe(newerReadAt);
+    expect(host.querySelector('[data-trend-metric="clicks"] strong')?.textContent).toBe("987");
     const gscLinks = [...host.querySelectorAll<HTMLAnchorElement>('a[href*="search.google.com/search-console/"]')];
     expect(gscLinks.length).toBeGreaterThan(0);
     expect(gscLinks.every((link) => new URL(link.href).searchParams.get("resource_id") === SECOND_PROPERTY)).toBe(true);
