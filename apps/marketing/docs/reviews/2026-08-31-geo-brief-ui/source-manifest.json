@@ -1,0 +1,97 @@
+{
+  "base": "b35c359ffc3d07296aa07f06e1824c9b99846e3f",
+  "branch": "fix/geo-brief-ui-release-20260831",
+  "buildId": "FZShu_pbVMUALOyQTKDuq",
+  "source": [
+    {
+      "path": "apps/marketing/src/app/[locale]/tools/geo-brief/page.tsx",
+      "sha256": "8c4e87160ba8752186dca9c06e0af211648533b131a37f42720213af6490459f"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/geo-brief-input-view.test.tsx",
+      "sha256": "63bb419d38d7fc451440f1802c336924302755e5c34d0196369d315056416788"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/geo-brief-load.ts",
+      "sha256": "3eeda1b168010698c6cdf24a356ff5bf8e3b5087c33b822b888d5d34699a31b7"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/geo-brief-results.module.css",
+      "sha256": "01e315c0df509ff785284ca28e7a69e0803b8b0830ded36efdb129a1f9b1826a"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/geo-brief-shared-results.test.tsx",
+      "sha256": "1ef6dc241129987a0efca59c5015590d10ca327018a52680e700d04c1c76f508"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/geo-brief-shared-results.tsx",
+      "sha256": "822257a1e21698266b9db9f174d8e8254a903754517240d2848212491e6c843a"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/geo-brief-shared-tool.test.tsx",
+      "sha256": "1723c57d28065330254be96824fbd99d95c602ff6affd4cd5a18c9088bca0923"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/geo-brief-shared-tool.tsx",
+      "sha256": "866a2b927a8b30b07f4e2677b574e98fa21376e41101e31b0e7116389fee2ea3"
+    },
+    {
+      "path": "apps/marketing/src/components/tools/geo-brief-workspace.module.css",
+      "sha256": "cb8209fb49d06b53c8a63c3eaf7cd9d0bff9ec40fff78aa14011cbe322731c32"
+    },
+    {
+      "path": "apps/marketing/src/i18n/messages/en.json",
+      "sha256": "3b0461f91a1f0919d6390cc5cd0a8c3a1f06aa226847dfddc99589085dbb3ad5"
+    },
+    {
+      "path": "apps/marketing/src/i18n/messages/zh.json",
+      "sha256": "699be956a7eca9f32eee4595c37a9ec5c1487f8876b21351a3933cd82bc5e8a7"
+    },
+    {
+      "path": "apps/marketing/src/lib/geo-tools/brief-handler-deps.test.ts",
+      "sha256": "71391ef0f0ecf41e9048b09e09a7968b806231a89ae708294c2c06f583cd72c3"
+    },
+    {
+      "path": "apps/marketing/src/lib/geo-tools/brief-handler-deps.ts",
+      "sha256": "9636296d0ea52e7747e66585ef5842838d8786bf9b95fe032ea9dc5ba0069df2"
+    },
+    {
+      "path": "apps/marketing/src/lib/geo-tools/brief-handler.test.ts",
+      "sha256": "2760a819adb8e519d68d03afc87a9cf0a52c87d8f90274a8647877eb70ab1cae"
+    },
+    {
+      "path": "apps/marketing/src/lib/geo-tools/brief-handler.ts",
+      "sha256": "182151c280c6de61220709402b17f0767eb7aeb44436f7265af757b7a99d2063"
+    },
+    {
+      "path": "apps/marketing/src/lib/geo-tools/brief-load-projection.ts",
+      "sha256": "6399d2e9a9b45a4a1ab472cb9ff159d11b89e98ee77417384d4ed30534ce34fe"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "zh-desktop-gap-input-light.png",
+      "sha256": "418c78433ce658fca2c21052d426a83bece92551734b7af1166d7f3f14f01a52"
+    },
+    {
+      "path": "zh-desktop-result-dark.png",
+      "sha256": "b0c82107c70560186a9091f1be56fa8fe39d8287429d80154aa366ef9631d39f"
+    },
+    {
+      "path": "zh-desktop-result-light.png",
+      "sha256": "37c68f5d5b4c99049fd6904a7f7e9a6fbe41d9c6826fc5a2557d70d6d2a1ed4d"
+    },
+    {
+      "path": "zh-mobile-gap-input-light.png",
+      "sha256": "bea24d27d978ad2fb65073b0027bbf0494d5f7ce753b5e5ef383c825e407629a"
+    },
+    {
+      "path": "zh-mobile-result-dark.png",
+      "sha256": "9ac3ae9aa7fa3bfb33618a31c8ebdec1426daddc60cf1847b4e24b7e5454e3d7"
+    },
+    {
+      "path": "zh-mobile-result-light.png",
+      "sha256": "7937c80f13581f5a605254094a2460c772b377464a37fe8bfcd65941b2de482d"
+    }
+  ]
+}
