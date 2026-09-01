@@ -91,6 +91,19 @@ async function mount(autoGenerate = false): Promise<void> {
   });
 }
 
+async function rerender(autoGenerate = false): Promise<void> {
+  await act(async () => {
+    root.render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <WebsiteProfileWithGeo
+          websiteId="c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6"
+          autoGenerate={autoGenerate}
+        />
+      </NextIntlClientProvider>,
+    );
+  });
+}
+
 async function navigateToHash(hash: string): Promise<void> {
   await act(async () => {
     window.history.replaceState({}, "", `/en/account/websites/site-1${hash}`);
@@ -145,6 +158,8 @@ describe("WebsiteProfileWithGeo disclosures", () => {
     expect(summary("geo").textContent).toContain(
       "Brand matching, questions, evidence and frozen versions",
     );
+    expect(summary("profile").querySelector("div")).toBeNull();
+    expect(summary("geo").querySelector("div")).toBeNull();
     expect(summary("profile").querySelector("button")).toBeNull();
     expect(summary("geo").querySelector("button")).toBeNull();
   });
@@ -170,6 +185,18 @@ describe("WebsiteProfileWithGeo disclosures", () => {
 
   it("opens only the Profile card for automatic generation", async () => {
     await mount(true);
+
+    expect(disclosure("profile").open).toBe(true);
+    expect(disclosure("geo").open).toBe(false);
+    expect(input("Profile draft").dataset.autoGenerate).toBe("true");
+  });
+
+  it("opens the Profile card when the same website switches to generate mode", async () => {
+    await mount(false);
+
+    expect(disclosure("profile").open).toBe(false);
+
+    await rerender(true);
 
     expect(disclosure("profile").open).toBe(true);
     expect(disclosure("geo").open).toBe(false);

@@ -52,20 +52,20 @@ function AccountEditorCard({
       }`}
     >
       <summary className="cursor-pointer list-none rounded-card px-5 py-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 sm:px-7 [&::-webkit-details-marker]:hidden">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <h2 className="text-[17px] font-semibold text-text-dark-primary">
+        <span className="flex items-start justify-between gap-4">
+          <span className="block space-y-1.5">
+            <span className="block text-[17px] font-semibold text-text-dark-primary">
               {title}
-            </h2>
-            <p className="text-[13px] leading-relaxed text-text-dark-secondary">
+            </span>
+            <span className="block text-[13px] leading-relaxed text-text-dark-secondary">
               {description}
-            </p>
-          </div>
+            </span>
+          </span>
           <ChevronDown
             aria-hidden="true"
             className="mt-1 size-5 shrink-0 text-text-dark-secondary transition-transform duration-200 group-open:rotate-180"
           />
-        </div>
+        </span>
       </summary>
       <div className="border-t border-brand-border-card px-5 py-6 sm:px-7">
         {children}
@@ -89,6 +89,10 @@ function WebsiteProfileWithGeoBody({
   const [profileAvailable, setProfileAvailable] = useState(true);
   const [profileOpen, setProfileOpen] = useState(autoGenerate);
   const [geoOpen, setGeoOpen] = useState(false);
+
+  useEffect(() => {
+    if (autoGenerate) setProfileOpen(true);
+  }, [autoGenerate]);
 
   useEffect(() => {
     const openHashTarget = () => {
