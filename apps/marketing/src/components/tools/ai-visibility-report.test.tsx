@@ -35,6 +35,10 @@ function legacyReport(): VisibilityReport {
 const metric = (name: string) => host.querySelector(`[data-metric="${name}"]`);
 
 describe("Artifact-aligned visibility report", () => {
+  it("keeps the production EN and ZH catalogs synchronized with the report message source", () => {
+    expect(en.tools.aiVisibility.report).toEqual(aiVisibilityReportMessages.en);
+    expect(zh.tools.aiVisibility.report).toEqual(aiVisibilityReportMessages.zh);
+  });
   it("starts with four readable measured metrics and moves technical metadata into a disclosure", () => {
     mount(visibilityReportFixtureV2());
     expect([...host.querySelectorAll("[data-metric]")].map((node) => node.getAttribute("data-metric"))).toEqual(["questionsMentioned", "questionsCited", "coverage", "sov"]);
