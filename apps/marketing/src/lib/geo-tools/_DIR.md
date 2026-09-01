@@ -11,6 +11,12 @@ Website Profile owns product facts. GEO owns matching overrides, frozen question
 - `kb-store.ts` — immutable v1 payload parsing/storage and exact current/revision/snapshot-ID reads.
 - `kb-freeze-context.ts` — new atomic snapshot/context path; verifies current draft and maps Profile drift or missing canonical Website to actionable refusal.
 - `kb-history.ts` — bounded paginated owned frozen-version history for both selectors; unreadable or over-budget history never becomes an empty or silently truncated list.
+- `kb-profile-copy.ts`, `kb-profile-copy-server.ts` — complete immutable Website Profile copy, bounded JSONB size and server-verified source/hash identity; old partial payloads remain separate.
+- `kb-profile-suggestions.ts` — explicit opt-in proposals for supported GEO fields and a user-selected competitor subset; complete source retention is not automatic measurement adoption.
+- `kb-question-language.ts` — deterministic English placeholder readiness for new freezes; no translation or rewriting of historical questions.
+- `kb-question-placeholders.ts` — unchanged category wording shared by generation and registry-bound input admission; overlong proposals require explicit correction instead of silent template loss.
+- `visibility-context.ts`, `visibility-context-handler.ts` — private all-website preparation state and exact selected frozen input, with current Profile kept separate and strict identity/count/budget checks.
+- `visibility-history-contract.ts`, `visibility-history.ts` — bounded account-owned V1 summary and V2 recorded-report history; reopening only reads persisted evidence and never starts paid work.
 - `kb-enrichment-contract.ts` — strict bounded, hash-bound source receipts and explicit unavailable reasons.
 - `kb-enrichment.ts` — actual homepage identity/fact extraction and deterministic query-interest clusters; no inferred persona or typed URL is a crawl receipt.
 - `kb-enrichment-handler.ts` — verified Google-subject equality, exact 90-final-day GSC scope, source gates and persistent receipt admission.

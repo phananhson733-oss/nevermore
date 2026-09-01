@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { buildGeoSnapshotContext, parseGeoSnapshotContext } from "./snapshot-context.ts";
 import { CONTEXT_KB_ID, CONTEXT_PROFILE, contextPayload, contextReceipt } from "./snapshot-context.test-fixtures.ts";
+import { emptyMarketingWebsiteProfile } from "../account-websites/contracts.ts";
 
 const input = () => ({ kbId: CONTEXT_KB_ID, targetHost: "example.com", payload: contextPayload(), profile: CONTEXT_PROFILE, receipt: null });
 
 describe("immutable GEO snapshot context", () => {
+  it("keeps all 32 source features but excludes the editor-only full Profile proposal", () => {
+    const coreFeatures = Array.from({ length: 32 }, (_, i) => `Feature ${String(i)}`);
+    const { context } = buildGeoSnapshotContext({ ...input(), profile: { ...CONTEXT_PROFILE, coreFeatures, fullProfile: { ...emptyMarketingWebsiteProfile(), coreFeatures } } });
+    expect(context.profile?.coreFeatures).toEqual(coreFeatures);
+    expect(context.profile).not.toHaveProperty("fullProfile");
+  });
   it("keeps manual source URLs as KB claims and skips unsupported role layers", () => {
     const { context, questionSet } = buildGeoSnapshotContext(input());
     expect(context.facts[0]).toMatchObject({ source: "kb", sourceUrl: "https://example.com/pricing", evidenceId: null });

@@ -107,7 +107,7 @@ for (const locale of ["en", "zh"] as const) {
     })).toBe(true);
     await page.evaluate(([key, value]) => sessionStorage.setItem(key!, value!), [GEO_GAP_HANDOFF_KEY, storage.get(GEO_GAP_HANDOFF_KEY)!]);
     const editor = await openRepair(page, manualQuestion === null ? "question" : "facts");
-    await expect(editor.locator("section").filter({ has: editor.locator("#kb-repair-category") }).getByLabel(copy.geoKnowledgeBase.brand.officialNameLabel, { exact: true })).toHaveValue("AstrologyWiki");
+    await expect(editor.locator("section").filter({ has: editor.locator("#kb-repair-category") }).getByLabel(copy.geoKnowledgeBase.asset.matchingOverride, { exact: true })).toHaveValue("AstrologyWiki");
     await expect(editor.locator("[data-geo-knowledge-repair]")).toContainText(state.fixture.website.host);
     await expect(editor.locator("[data-geo-knowledge-repair]")).toContainText(manualQuestion ?? MIXED_QUESTION);
     await expect(editor.locator("#kb-site-url")).toHaveCount(0);
@@ -193,7 +193,7 @@ test("repair read failure retries the same existing knowledge without offering a
   await expect(editor.locator("#kb-site-url")).toHaveCount(0);
   expect(bodies(guard, "geo-knowledge-base/load")).toEqual([{ kbId: state.original.kbId }]);
   await editor.getByRole("button", { name: en.tools.geoKnowledgeBase.repair.retry, exact: true }).click();
-  await expect(editor.locator("section").filter({ has: editor.locator("#kb-repair-category") }).getByLabel(en.tools.geoKnowledgeBase.brand.officialNameLabel, { exact: true })).toHaveValue("AstrologyWiki");
+  await expect(editor.locator("section").filter({ has: editor.locator("#kb-repair-category") }).getByLabel(en.tools.geoKnowledgeBase.asset.matchingOverride, { exact: true })).toHaveValue("AstrologyWiki");
   await expect(editor.locator("#kb-site-url")).toHaveCount(0);
   expect(bodies(guard, "geo-knowledge-base/load")).toEqual([{ kbId: state.original.kbId }, { kbId: state.original.kbId }]);
   expect(state.operations).toEqual({ existingReads: 2, urlLoads: 0, saves: 0, freezes: 0, imports: 0, runEvidenceReads: 0 });

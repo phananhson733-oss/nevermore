@@ -22,16 +22,15 @@ import type { GeoSnapshotContext } from "./snapshot-context.ts";
 import { parseWebsiteProfileReference, type WebsiteProfileReferenceV1 } from "../account-websites/contracts.ts";
 
 const LOAD_BODY_LIMIT_BYTES = 4_096;
-const SAVE_BODY_LIMIT_BYTES = 131_072;
+const SAVE_BODY_LIMIT_BYTES = 397_312;
 const FREEZE_BODY_LIMIT_BYTES = 1_024;
 
 /**
- * What the editor is told about a frozen version.
- *
- * The question set itself is not returned here: it can be large, and the page
- * asks for it separately when the visitor opens the preview.
+ * Frozen identity with optional exact payload/questions for the read-only
+ * preview. Historical partial payloads stay partial; never fill from Profile.
  */
 export interface GeoKbFrozenSummary {
+  readonly payload?: GeoKbPayload;
   readonly snapshotId: string;
   readonly revision: number;
   readonly frozenAt: string;
@@ -45,6 +44,7 @@ export interface GeoKbFrozenSummary {
 }
 
 export interface GeoKbContextPreview {
+  readonly activeRoleIds?: readonly string[];
   readonly skippedLayers: readonly ("problem" | "evaluation")[];
   readonly questionSetHash: string;
   readonly contentHash: string;
@@ -59,7 +59,7 @@ export interface GeoKbView {
   readonly frozen: GeoKbFrozenSummary | null;
   /** Whether a confirmed website profile exists that a prefill could read. */
   readonly importAvailable: boolean;
-  /** Exact inherited product fields; never an independently editable copy. */
+  /** Current confirmed source proposal; does not replace the stored copy. */
   readonly profile?: GeoInheritedProfile | null;
   readonly context?: GeoKbContextPreview;
 }
@@ -71,6 +71,7 @@ export type GeoKbStoreOutcome<T> =
   | { readonly kind: "hash_mismatch" }
   | { readonly kind: "no_draft" }
   | { readonly kind: "context_stale" }
+  | { readonly kind: "profile_copy_required" }
   | { readonly kind: "website_required" }
   | { readonly kind: "unavailable"; readonly reason: string };
 
@@ -130,10 +131,12 @@ export interface GeoKbHandlerDependencies {
 function storeError(
   outcome: Extract<
     GeoKbStoreOutcome<unknown>,
-    { kind: "not_found" | "conflict" | "hash_mismatch" | "no_draft" | "context_stale" | "website_required" | "unavailable" }
+    { kind: "not_found" | "conflict" | "hash_mismatch" | "no_draft" | "context_stale" | "profile_copy_required" | "website_required" | "unavailable" }
   >,
 ): Response {
   switch (outcome.kind) {
+    case "profile_copy_required":
+      return privateError("profile_copy_required", 409);
     case "context_stale":
       return privateError("context_stale", 409);
     case "website_required":
@@ -260,7 +263,7 @@ export async function handleGeoKbSaveDraft(
   return privateJson({
     data: {
       ...outcome.value,
-      blockers: geoKbBlockers(parsed.value, { roleLayersSkipped: outcome.value.context?.skippedLayers.length === 2 }),
+      blockers: geoKbBlockers(parsed.value, { roleLayersSkipped: outcome.value.context?.skippedLayers.length === 2, ...(outcome.value.context?.activeRoleIds === undefined ? {} : { activeRoleIds: outcome.value.context.activeRoleIds }) }),
     },
   });
 }
@@ -307,7 +310,7 @@ export async function handleGeoKbFreeze(
     );
   }
   if (draft.value.context && record.contextHash !== draft.value.context.contentHash) return privateError("context_stale", 409);
-  const blockers = geoKbBlockers(draft.value.payload, { roleLayersSkipped: draft.value.context?.skippedLayers.length === 2 });
+  const blockers = geoKbBlockers(draft.value.payload, { roleLayersSkipped: draft.value.context?.skippedLayers.length === 2, ...(draft.value.context === undefined ? {} : { activeRoleIds: draft.value.context.roles.filter(role => role.source === "gsc").map(role => role.roleId) }) });
   if (blockers.length > 0) {
     return privateJson({ error: { code: "not_ready" }, blockers }, 422);
   }
@@ -328,6 +331,7 @@ export async function handleGeoKbFreeze(
     data: {
       ...outcome.value,
       questions: questionSet.questions,
+      payload: draft.value.payload,
     },
   });
 }

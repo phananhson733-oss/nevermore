@@ -11,6 +11,7 @@ import {
   type GeoKbValue,
 } from "./kb-contract.ts";
 import { geoKbDigest } from "./kb-digest.ts";
+import { emptyMarketingWebsiteProfile } from "../account-websites/contracts.ts";
 
 const VALID: GeoKbPayload = {
   ...emptyGeoKbPayload("https://acme-kb.test/"),
@@ -60,6 +61,37 @@ describe("canonical text", () => {
 });
 
 describe("payload validation", () => {
+  it("round-trips a complete Profile copy without shortening lists, prose or nullable provenance", () => {
+    const profileCopy = {
+      schemaVersion: "marketing-geo-profile-copy.v1",
+      websiteId: "11111111-1111-4111-8111-111111111111",
+      snapshotId: "22222222-2222-4222-8222-222222222222",
+      snapshotRevision: "3",
+      profileHash: "a".repeat(64),
+      profile: {
+        ...emptyMarketingWebsiteProfile(), productName: " Acme ",
+        coreFeatures: Array.from({ length: 32 }, (_, i) => `${String(i)} ${"feature".repeat(70)}`),
+        primaryIcp: "Long ICP ".repeat(200),
+        valueProposition: "Line one\nLine two\tUnnormalized e\u0301",
+        fieldProvenance: [{ path: "/productName", derivation: "declared", confidence: "high", source: "user_edit", limitation: null, observedAt: null, evidenceUrls: [] }],
+      },
+    };
+    const parsed = parseGeoKbPayload({ ...VALID, profileCopy });
+    expect(parsed).toEqual({ ok: true, value: { ...VALID, profileCopy } });
+    expect(parsed.ok && geoKbDigest(parsed.value as never)).not.toBe(geoKbDigest(VALID as never));
+  });
+
+  it.each([null, {}, { schemaVersion: "marketing-geo-profile-copy.v2" }])("rejects malformed present Profile copies instead of discarding them: %j", (profileCopy) => {
+    expect(parseGeoKbPayload({ ...VALID, profileCopy })).toEqual({ ok: false, reason: "profile_copy" });
+  });
+
+  it("does not add a Profile copy or change the digest of a legacy payload", () => {
+    const before = geoKbDigest(VALID as never);
+    const parsed = parseGeoKbPayload(VALID);
+    expect(parsed).toEqual({ ok: true, value: VALID });
+    expect(parsed.ok && Object.hasOwn(parsed.value, "profileCopy")).toBe(false);
+    expect(parsed.ok && geoKbDigest(parsed.value as never)).toBe(before);
+  });
   it("accepts a complete payload and normalizes what it keeps", () => {
     const parsed = parseGeoKbPayload({
       ...VALID,
@@ -222,7 +254,9 @@ describe("blockers", () => {
 
   it("does not treat Unicode brand names or secondary labels as an English category error", () => {
     expect(geoKbBlockers({ ...VALID, officialName: "星图", aliases: ["星图"], categoryTerms: ["astrology", "合盘分析"], competitors: [{ domain: "rival.test", brandName: "小米", confirmed: true }] })).not.toContain("category_language_mismatch");
-    expect(geoKbBlockers({ ...VALID, officialName: "小米", categoryTerms: ["小米 analytics"] })).not.toContain("category_language_mismatch");
+    const properNameCategory = geoKbBlockers({ ...VALID, officialName: "小米", categoryTerms: ["小米 analytics"] });
+    expect(properNameCategory).not.toContain("category_language_mismatch");
+    expect(properNameCategory).not.toContain("category_terms_not_english");
     expect(geoKbBlockers({ ...VALID, officialName: "小米", categoryTerms: ["小米 占星工具"] })).toContain("category_language_mismatch");
   });
 

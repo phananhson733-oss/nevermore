@@ -164,7 +164,15 @@ describe("repository-backed blog content", () => {
     // replaced said 76 while main actually carried 82: six posts landed since
     // 2026-08-20 without moving it, so the gate was already red on main before
     // this branch touched it. Same pattern the notes above keep recording.
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(80);
+    // 80 → 85: five published English posts already landed on main in
+    // dcc18101, 7db2366e, b7ce298e, e9a5735d and d4ebb110. Keep the exact
+    // inventory gate and assert those additions, rather than relaxing it.
+    for (const slug of [
+      "scalenut-alternatives", "arvow-alternatives",
+      "internal-links-not-improving-rankings", "surfer-seo-alternatives",
+      "best-autoblogging-software",
+    ]) expect(urls.has(`/en/blog/${slug}`)).toBe(true);
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(85);
     expect(posts.filter((post) => post.locale === "zh")).toHaveLength(8);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);

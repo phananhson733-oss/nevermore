@@ -2,6 +2,16 @@
 
 One line per module: what it reads, what it returns, where it sits. Update the line when the file's header comment changes.
 
+- `ai-visibility-check.tsx`, `.test.tsx` — account website and exact frozen-input selection, Input/Result tabs, paid-run state, source refresh and owned report restoration; no automatic run from navigation.
+- `ai-visibility-client.ts`, `ai-visibility-context.ts` — client wire validation and exact snapshot/source loading; a current Profile cannot fill historical evidence gaps.
+- `ai-visibility-source.tsx`, `.test.tsx` — compact current/frozen complete Profile disclosures, measurement override labels, question previews and explicit source-review links.
+- `ai-visibility-history.tsx` — latest account-owned checks and stable run-URL reopening, with historical summary-only evidence distinguished from complete V2 evidence.
+- `ai-visibility-report/` — four prominent scoped metrics, engine/intent tables, evidence-backed gaps, answer/source disclosures, V1 summary compatibility and exports; missing or omitted evidence is never an absence claim.
+- `ai-visibility-check-v2.tsx` — secondary untrusted local-file comparison, without provider work or account-run authority.
+- `geo-kb-profile.tsx`, `geo-kb-profile-copy-review.tsx`, `geo-kb-frozen-copy.tsx` — complete read-only copied Profile, explicit version difference/adoption review and immutable frozen copy display.
+- `geo-kb-measurement-review.tsx` — opt-in operational-field proposals and explicit bounded competitor selection, without saving, freezing or claiming source facts were verified.
+- `geo-knowledge-base.tsx` — separate source-copy and operational GEO review with explicit save/freeze, stale-source recovery and language readiness.
+
 - `content-draft-tool.tsx`, `.test.tsx` — separate SEO v1/shared GEO v1.1/confirmed SEO v2/v3 intake; legacy GEO report and unconfirmed-v2/v3 guidance, signed-out peek and successful-sign-in-only staging, exact payload cleanup and stale/unmount guards.
 - `content-draft-intake.tsx` — version-aware paste/upload rejection and localized Content Brief Builder recovery entry, without inventing a convertible GEO document.
 - `content-draft-v2-workflow.tsx`, `.test.tsx` — exact confirmed plan/settings/selection, readable received-plan summary and product-mention radios, session-first submission and full-previous rerun validation; successful result folds settings and receives focus, failures reopen controls without discarding the prior verified result.
