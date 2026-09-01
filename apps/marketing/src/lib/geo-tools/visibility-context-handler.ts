@@ -66,7 +66,7 @@ export async function handleVisibilityContext(request: Request, dependencies: Vi
       }
       const sync: VisibilityWebsiteContext["preparation"]["profileSync"] = !frozen ? "missing" : frozen.profileCompleteness === "legacy_partial" ? "legacy_partial" : !currentProfile || JSON.stringify(currentProfile.reference) !== JSON.stringify(frozen.profileReference) ? "outdated" : "current";
       const status: VisibilityWebsiteContext["preparation"]["status"] = !currentProfile ? "profile_required" : !kb ? "knowledge_base_required" : !frozen ? "freeze_required" : sync !== "current" ? "profile_update_available" : "ready";
-      const languageWarnings = !frozen ? [] : geoQuestionLanguageIssues(frozen.payload, {
+      const languageWarnings: VisibilityWebsiteContext["preparation"]["languageWarnings"][number][] = !frozen ? [] : geoQuestionLanguageIssues(frozen.payload, {
         roleLayersSkipped: frozen.skippedLayers.length === 2,
         activeRoleIds: frozen.questions.flatMap(question => question.roleId === null ? [] : [question.roleId]),
       }).filter((warning) => warning !== "category_terms_not_english");
