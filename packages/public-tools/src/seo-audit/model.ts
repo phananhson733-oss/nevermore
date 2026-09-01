@@ -221,21 +221,6 @@ function buildPages(raw: CrawlRaw): readonly SeoAuditPage[] {
 /** Image formats a modern-format check treats as current. */
 const MODERN_IMAGE_FORMATS = new Set(["webp", "avif"]);
 
-/**
- * The file extension of an image reference, or null when it has none.
- *
- * Read from the URL text and nothing else. A data URI, a query-string image
- * service and an extensionless CDN path all return null, which keeps them out
- * of the ratio entirely — an unreadable format is not an old format, and
- * guessing one would publish a share of something never measured.
- */
-function imageExtension(src: string | null): string | null {
-  if (src === null) return null;
-  const withoutQuery = src.split(/[?#]/)[0] ?? "";
-  const match = /\.([a-z0-9]{2,5})$/i.exec(withoutQuery);
-  return match?.[1]?.toLowerCase() ?? null;
-}
-
 function readableFormats(
   assets: ParsedOnPageFacts | null,
 ): readonly string[] {

@@ -442,9 +442,9 @@ export function geoKbBlockers(
   const blockers: GeoKbBlocker[] = [];
   // The legacy freeze fallback explicitly says role layers are active but has
   // no source-conditioned role IDs. Its rendered questions are the authority
-  // for language quality, so the generic question-quality gate handles those
-  // rows. Bare input checks still validate every role; source-conditioned calls
-  // validate exactly their active roles.
+  // for language quality, so `assessGeoQuestionQuality` reports the generic
+  // `question_quality` blocker. Bare input checks still validate every role,
+  // and source-conditioned calls still validate exactly their active roles.
   const languageOptions = options.roleLayersSkipped === false && options.activeRoleIds === undefined
     ? { ...options, activeRoleIds: [] }
     : options;

@@ -70,7 +70,7 @@ async function freezeAndRun(page: Page, locale: Locale, fixture: GeoChainFixture
   await expect(page).toHaveURL(new RegExp(`/account/websites/${fixture.website.websiteId}#geo$`, "u"));
   const geo = page.locator("#geo");
   await expect(geo.getByRole("heading", { name: messages.geoKnowledgeBase.asset.inlineTitle, exact: true })).toBeVisible();
-  await expect(geo.locator('[data-geo-profile-field="oneLinePositioning"] textarea')).toHaveValue("Analytics for teams");
+  await expect(geo.locator('[data-geo-profile-field="oneLinePositioning"] input, [data-geo-profile-field="oneLinePositioning"] textarea')).toHaveValue("Analytics for teams");
   await expect(geo.getByText(fixture.profile.reference.profileHash, { exact: false })).toBeVisible();
   expect(fixture.providerCalls).toBe(0);
   const freeze = page.getByRole("button", { name: messages.geoKnowledgeBase.freeze.action, exact: true });
@@ -113,6 +113,38 @@ test.describe("isolated GEO asset → shared content chain", () => {
       const guard = await installGeoChainGuard(page.context(), baseURL, fixture);
       const messages = copy(locale);
       const card = await freezeAndRun(page, locale, fixture, guard);
+
+      if (kind === "D") {
+        const consent = page.getByRole("region", { name: "Cookie consent", exact: true });
+        if (await consent.isVisible()) {
+          await consent.getByRole("button", { name: /^(Necessary only|仅必要)$/iu }).click();
+          await expect(consent).toHaveCount(0);
+        }
+        const gapSummary = page.locator("[data-gap-summary]");
+        await expect(gapSummary.locator("[data-gap-kind]")).toHaveCount(5);
+        for (const gapKind of ["A", "B", "C", "D", "unattributed"] as const) {
+          await expect(gapSummary.locator(`[data-gap-kind="${gapKind}"] dd`)).toHaveText(String(fixture.report!.gaps.filter(gap => gap.kind === gapKind).length));
+        }
+        const references = page.locator("[data-gap-references]");
+        await expect(references).not.toHaveAttribute("open", "");
+        const summaryPath = test.info().outputPath("gap-counts-zh.png");
+        await gapSummary.screenshot({ path: summaryPath });
+        await test.info().attach("gap-counts-zh.png", { path: summaryPath, contentType: "image/png" });
+        await references.locator(":scope > summary").click();
+        const referencePages = fixture.report!.siteEvidence!.references;
+        await expect(references.locator("tbody tr")).toHaveCount(referencePages.length);
+        for (const reference of referencePages) {
+          const row = references.locator(`[data-reference-id="${reference.id}"]`);
+          await expect(row).toBeVisible();
+          await expect(row.locator("a").first()).toHaveAttribute("href", reference.url);
+          await expect(row).toContainText(messages.aiVisibility.gaps.pageType[reference.pageType]);
+          await expect(row).toContainText(messages.aiVisibility.gaps.presence[reference.ownPresence === null ? "unknown" : reference.ownPresence ? "present" : "absent"]);
+          await expect(row).toContainText(new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(reference.fetchedAt)) + " UTC");
+        }
+        const referencesPath = test.info().outputPath("read-reference-pages-zh.png");
+        await references.screenshot({ path: referencesPath });
+        await test.info().attach("read-reference-pages-zh.png", { path: referencesPath, contentType: "image/png" });
+      }
 
       const [runDownload] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: messages.aiVisibility.v2.exportJson, exact: true }).click()]);
       const imported = parseVisibilityImport(await bytes(runDownload));

@@ -4032,55 +4032,21 @@
           "unsupported_language": "Review the language setting before explicitly submitting a new run."
         },
         "sourceSummary": "Sources in this run",
-        "readUnits": {
-          "serp": "results",
-          "paa": "questions",
-          "competitors": "pages",
-          "owned_pages": "pages",
-          "gsc": "matched query-page rows",
-          "profile": "facts"
-        },
-        "sources": {
-          "serp": "SERP",
-          "paa": "People Also Ask",
-          "competitors": "Competitor pages",
-          "owned_pages": "Owned pages",
-          "gsc": "Search Console",
-          "profile": "Product profile"
-        },
-        "states": {
-          "complete": "Complete",
-          "partial": "Partial",
-          "unavailable": "Unavailable",
-          "notUsed": "Not used"
-        },
+        "readUnits": { "serp": "results", "paa": "questions", "competitors": "pages", "owned_pages": "pages", "gsc": "matched query-page rows", "profile": "facts" },
+        "sources": { "serp": "SERP", "paa": "People Also Ask", "competitors": "Competitor pages", "owned_pages": "Owned pages", "gsc": "Search Console", "profile": "Product profile" },
+        "states": { "complete": "Complete", "partial": "Partial", "unavailable": "Unavailable", "notUsed": "Not used" },
         "pageRecommendation": "Page recommendation",
-        "actions": {
-          "create": "Create a new page",
-          "update": "Rewrite the existing page",
-          "undecidable": "Page action needs your decision"
-        },
+        "actions": { "create": "Create a new page", "update": "Rewrite the existing page", "undecidable": "Page action needs your decision" },
         "sampleBoundary": "This recommendation describes the sampled evidence, not all pages on your site. Missing queries and unread pages are not proof of absence.",
         "targetPage": "Existing target page",
         "pageEvidenceTitle": "Queries and existing-page evidence",
-        "scopes": {
-          "primary": "Primary keyword",
-          "supporting": "Supporting keyword"
-        },
+        "scopes": { "primary": "Primary keyword", "supporting": "Supporting keyword" },
         "gscMetrics": "{clicks} clicks · {impressions} impressions · average position {position}",
         "noMatchedQueries": "No matching query-page rows were retained in this sample.",
         "omittedGsc": "{count} additional matching rows were omitted from this retained evidence.",
         "noPageDecision": "These are observed queries and owned-page reads only. No new-page or rewrite decision was generated.",
-        "readStates": {
-          "observed": "Content observed",
-          "unavailable": "Content unavailable",
-          "redirected": "Page replaced by a redirect"
-        },
-        "stepKinds": {
-          "keep": "Keep",
-          "add": "Add",
-          "rewrite": "Rewrite"
-        },
+        "readStates": { "observed": "Content observed", "unavailable": "Content unavailable", "redirected": "Page replaced by a redirect" },
+        "stepKinds": { "keep": "Keep", "add": "Add", "rewrite": "Rewrite" },
         "stepEvidence": "Answers {answers} · source excerpts {sources}",
         "none": "None",
         "unknown": "Not reported",
@@ -4089,17 +4055,7 @@
         "modelJudgment": "Model suggestion",
         "noModelRecommendation": "No validated model recommendation is available.",
         "observedFormats": "Observed format distribution",
-        "observedFormatNames": {
-          "guide": "Guide",
-          "listicle": "Listicle",
-          "comparison": "Comparison",
-          "product_page": "Product page",
-          "tool": "Tool",
-          "forum": "Forum",
-          "video": "Video",
-          "news": "News",
-          "unknown": "Unknown"
-        },
+        "observedFormatNames": { "guide": "Guide", "listicle": "Listicle", "comparison": "Comparison", "product_page": "Product page", "tool": "Tool", "forum": "Forum", "video": "Video", "news": "News", "unknown": "Unknown" },
         "formatMethod": "URL-only heuristic, separate from the writing recommendation.",
         "serpFormatMethod": "SERP title + URL heuristic, separate from the writing recommendation.",
         "serpFormatsUnavailable": "No organic SERP rows were retained for format classification.",
@@ -4116,26 +4072,11 @@
         "formatEvidence": "URL-only heuristic: rules and sources",
         "serpFormatEvidence": "Title + URL heuristic: rules and sources",
         "formatRules": "Matched rules: {rules}",
-        "intents": {
-          "informational": "Informational",
-          "commercial": "Commercial",
-          "transactional": "Transactional",
-          "navigational": "Navigational"
-        },
-        "formats": {
-          "guide": "Guide",
-          "listicle": "Listicle",
-          "comparison": "Comparison",
-          "product_page": "Product page",
-          "tool": "Tool",
-          "other": "Other"
-        },
+        "intents": { "informational": "Informational", "commercial": "Commercial", "transactional": "Transactional", "navigational": "Navigational" },
+        "formats": { "guide": "Guide", "listicle": "Listicle", "comparison": "Comparison", "product_page": "Product page", "tool": "Tool", "other": "Other" },
         "observedLength": "Observed length",
         "lengthValue": "{value} {unit} · median",
-        "lengthUnits": {
-          "words": "words",
-          "non_whitespace_characters": "non-whitespace characters"
-        },
+        "lengthUnits": { "words": "words", "non_whitespace_characters": "non-whitespace characters" },
         "lengthRange": "{min}–{max} · {count} fully read competitor pages",
         "lengthBoundary": "Descriptive source length, not a writing target or ranking factor. Different measurement units are never combined.",
         "lengthBoundaryShort": "Descriptive length, not a writing or ranking target.",
@@ -4576,52 +4517,17 @@
       "v2": {
         "confirmed": "Confirmed writing brief",
         "viewFullBrief": "View the full confirmed brief",
-        "received": {
-          "action": "Page decision",
-          "questions": "Frozen questions",
-          "outline": "Outline sections",
-          "language": "Market · language"
-        },
-        "mentionNotes": {
-          "none": "Keep the article informational, including the gap-angle section.",
-          "gap_only": "Mention the product only in the designated gap-angle section. Keep other sections neutral.",
-          "throughout": "Allow product mentions throughout. More claims may need your verification."
-        },
-        "processing": {
-          "complete": "Processing complete",
-          "partial": "Some sections skipped",
-          "degraded": "Processing limited",
-          "unavailable": "No usable generation",
-          "running": "Generation in progress"
-        },
+        "received": { "action": "Page decision", "questions": "Frozen questions", "outline": "Outline sections", "language": "Market · language" },
+        "mentionNotes": { "none": "Keep the article informational, including the gap-angle section.", "gap_only": "Mention the product only in the designated gap-angle section. Keep other sections neutral.", "throughout": "Allow product mentions throughout. More claims may need your verification." },
+        "processing": { "complete": "Processing complete", "partial": "Some sections skipped", "degraded": "Processing limited", "unavailable": "No usable generation", "running": "Generation in progress" },
         "runTime": "{elapsed}s elapsed / {budget}s budget",
-        "quality": {
-          "noDraft": "No draft to assess",
-          "unknown": "Coverage unknown",
-          "revision": "Needs revision",
-          "incomplete": "Some chapters are missing",
-          "review": "Coverage checked · review required"
-        },
-        "coverageTotals": {
-          "covered": "{count} covered",
-          "partial": "{count} partial",
-          "none": "{count} uncovered"
-        },
+        "quality": { "noDraft": "No draft to assess", "unknown": "Coverage unknown", "revision": "Needs revision", "incomplete": "Some chapters are missing", "review": "Coverage checked · review required" },
+        "coverageTotals": { "covered": "{count} covered", "partial": "{count} partial", "none": "{count} uncovered" },
         "qualityBoundary": "This measures coverage of the frozen brief, not factual accuracy. Processing completion and full coverage are not publishing approval.",
         "previousAssessment": "Generation is in progress. This assessment still describes the previous validated draft shown below.",
         "showAnnotations": "Show sources and claims",
-        "sourceTier": {
-          "first": "First-party",
-          "third": "Third-party · verify",
-          "model": "Model",
-          "mixed": "First + third-party"
-        },
-        "profileDerivation": {
-          "declared": "Declared",
-          "observed": "Observed in profile",
-          "computed": "Computed in profile",
-          "inferred": "Inferred; stance only"
-        },
+        "sourceTier": { "first": "First-party", "third": "Third-party · verify", "model": "Model", "mixed": "First + third-party" },
+        "profileDerivation": { "declared": "Declared", "observed": "Observed in profile", "computed": "Computed in profile", "inferred": "Inferred; stance only" },
         "sourceLegend": "Color shows the evidence tier, not verified truth: owned pages and non-inferred profile facts are first-party; competitor excerpts are third-party. Model prose and inferred positions stay model-labeled. Mixed references retain both tiers; PAA is not factual evidence.",
         "collapse": "Collapse",
         "expand": "Expand",
@@ -5247,27 +5153,17 @@
           "emptyMainEntity": "Put the question and answer pairs in mainEntity, or remove the FAQPage declaration."
         }
       },
-      "handoff": {
-        "contentDraft": "Prefilled from Content Draft. Review the URL and question, then run the check; no request has been sent.",
-        "geoGap": "Prefilled from AI Visibility. These are inputs, not new checking evidence. Review them, then run the check; no request has been sent."
-      },
+      "handoff": { "contentDraft": "Prefilled from Content Draft. Review the URL and question, then run the check; no request has been sent.", "geoGap": "Prefilled from AI Visibility. These are inputs, not new checking evidence. Review them, then run the check; no request has been sent." },
       "render": {
         "title": "Raw HTML vs rendered body",
-        "status": {
-          "measured": "Measured",
-          "partial": "Partial capture",
-          "unavailable": "Render unavailable"
-        },
+        "status": { "measured": "Measured", "partial": "Partial capture", "unavailable": "Render unavailable" },
         "rawChars": "Raw body: {chars} characters",
         "renderedChars": "Rendered body: {chars} characters",
         "ratio": "Raw/render ratio: {ratio}%",
         "ratioUnknown": "Raw/render ratio: unknown — no complete comparable pair",
         "time": "Captured at {time}",
         "requests": "{count} admitted requests; {blocked} blocked; {omitted} presentation resources intentionally omitted; {bytes} response bytes",
-        "methods": {
-          "html_projection": "Raw text is an HTML projection; browser visibility was not measured.",
-          "browser_visible_text": "Both captures use the same browser-visible body text definition, with JavaScript off then on."
-        },
+        "methods": { "html_projection": "Raw text is an HTML projection; browser visibility was not measured.", "browser_visible_text": "Both captures use the same browser-visible body text definition, with JavaScript off then on." },
         "rawBody": "Inspect raw body text",
         "renderedBody": "Inspect rendered body text",
         "reasons": {
@@ -5285,20 +5181,8 @@
         "title": "Grouped issues and possible root causes",
         "intro": "Deterministic groups share a source or suggest a dependency. They are not model-generated diagnoses; every original measurement and fix remains below.",
         "none": "No failed rows to group. Unavailable checks are not passing checks.",
-        "groups": {
-          "crawlerAccess": "Crawler access",
-          "rendering": "Initial HTML delivery",
-          "canonical": "Canonical identity",
-          "answerStructure": "Answer structure",
-          "claimEvidence": "Claim conditions and sources",
-          "faq": "FAQ markup",
-          "advisory": "Optional model-specific controls"
-        },
-        "basis": {
-          "sharedEvidence": "These failures share the same source document.",
-          "possibleDependency": "Missing initial content may affect related checks; this is a possible dependency, not proof of causation.",
-          "independent": "Inspect the linked evidence and fix for this group."
-        },
+        "groups": { "crawlerAccess": "Crawler access", "rendering": "Initial HTML delivery", "canonical": "Canonical identity", "answerStructure": "Answer structure", "claimEvidence": "Claim conditions and sources", "faq": "FAQ markup", "advisory": "Optional model-specific controls" },
+        "basis": { "sharedEvidence": "These failures share the same source document.", "possibleDependency": "Missing initial content may affect related checks; this is a possible dependency, not proof of causation.", "independent": "Inspect the linked evidence and fix for this group." },
         "related": "Recheck after fixing delivery: {rules}"
       },
       "limitsTitle": "What this check does not do",
@@ -5646,11 +5530,12 @@
         "shortcutDescription": "Edit the complete GEO knowledge base at the bottom of your Website Profile in Settings. This public address provides information and a shortcut, not another editor or a second knowledge base.",
         "profileTitle": "Inherited Product Profile",
         "reloadSources": "Reload source references (keep my draft)",
-        "profileBody": "Read-only facts from the exact confirmed website Profile. Edit the original Profile to change them.",
+        "profileBody": "These read-only values come from the exact confirmed website Profile. Confirmation keeps each field’s original provenance; inferred fields do not automatically become writable facts.",
+        "profileFactBoundary": "Use Add pending fact to copy an exact Profile value into review. It remains unusable for writing until you add and verify its source.",
         "productName": "Product name",
         "positioning": "One-line positioning",
         "features": "Core features",
-        "featureCandidateHelp": "Add a pending fact, then review its value, source URL and capture time. This does not verify or save a fact automatically.",
+        "featureCandidateHelp": "Adding a pending fact prefills the exact Profile value. Review it and add a source URL before saving; the action does not verify the value automatically.",
         "featureCandidateAdd": "Add pending fact",
         "featureCandidateExists": "Fact already exists",
         "featureCandidateTooLong": "Feature exceeds the fact-name limit; it was not truncated",
@@ -5759,6 +5644,8 @@
         "noRole": "No role attached",
         "roleHint": "From the role attached to the selected frozen question, not the current editable draft.",
         "gapHint": "A missing comparison leads to a comparison page; other formats follow the question intent.",
+        "writingTaskHelp": "Derived from the attached AI visibility result. The linked answer evidence stays tied to that exact run.",
+        "audienceRoleHelp": "Derived from the role bound to this question in the selected saved knowledge version.",
         "knowledgeHint": "Scoring requirements and facts come from this exact frozen version.",
         "noMetadata": "Complete display metadata is not available for this version",
         "questionHint": "Frozen question · {layer} · {id}",
@@ -5974,6 +5861,9 @@
         "factCount": "{count} facts with source records",
         "observedCount": "{questions} observed topics from {samples} answered samples",
         "missingFacts": "Listed facts without a usable value or matching source record: {count}.",
+        "missingKnowledgeFacts": "Knowledge-base or crawl facts without a usable value or matching source record: {count}.",
+        "missingProfileFacts": "Website-profile fields excluded from writable facts because they lack a per-field source record: {count}.",
+        "profileFactsExcluded": "{count} website-profile fields lack a per-field source record, so their values are excluded from writable facts.",
         "noFacts": "Add facts with their source and observation date, then freeze a new version.",
         "noSamples": "No successful visibility answers are linked. Required questions are not observed coverage.",
         "noObservedTopics": "Linked answers were present, but they did not yield reusable observed topics.",
@@ -6056,6 +5946,7 @@
         },
         "inputEvidence": "What this version supports",
         "inputFacts": "{count} sourced facts",
+        "inputMissingFacts": "Facts excluded from writable use because they lack a usable value or matching source record: {count}.",
         "inputNoFacts": "This frozen version has no usable fact evidence. Only a structure draft is possible. Add sourced facts in the knowledge base and freeze a new version.",
         "inputNoProfile": "This version has no website-profile snapshot reference. Current editable profile data will not replace its historical evidence.",
         "inputVersion": "Revision {revision} · {count} frozen questions · Content language: {language}",
@@ -6301,11 +6192,7 @@
         "citabilityOmitted": "{count} candidate page checks were incomplete or their evidence was omitted.",
         "handoffFailed": "The handoff could not be saved. Try again in this tab.",
         "notStored": "Save was unavailable; trusted cross-tool handoff is disabled.",
-        "actions": {
-          "brief": "Build GEO Brief",
-          "citability": "Check this page",
-          "thirdParty": "Download third-party tasks"
-        },
+        "actions": { "brief": "Build GEO Brief", "citability": "Check this page", "thirdParty": "Download third-party tasks" },
         "kind": {
           "A": "Content needed to answer this question",
           "B": "An existing page is hard for AI to quote",
@@ -6313,20 +6200,8 @@
           "D": "Comparison content is missing",
           "unattributed": "Unattributed"
         },
-        "presence": {
-          "present": "Site or brand observed on the page",
-          "absent": "Site or brand not found in the complete read",
-          "unknown": "Presence unavailable"
-        },
-        "pageType": {
-          "listicle": "List page",
-          "comparison": "Comparison",
-          "product": "Product",
-          "article": "Article",
-          "documentation": "Documentation",
-          "other": "Other observed page",
-          "unavailable": "Page type unavailable"
-        },
+        "presence": { "present": "Site or brand observed on the page", "absent": "Site or brand not found in the complete read", "unknown": "Presence unavailable" },
+        "pageType": { "listicle": "List page", "comparison": "Comparison", "product": "Product", "article": "Article", "documentation": "Documentation", "other": "Other observed page", "unavailable": "Page type unavailable" },
         "reasons": {
           "measurement_insufficient": "Too few comparable answers",
           "prompted_question": "The question already names the brand",

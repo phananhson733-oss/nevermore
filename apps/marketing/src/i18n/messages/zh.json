@@ -4032,55 +4032,21 @@
           "unsupported_language": "请检查语言设置，再明确提交新运行。"
         },
         "sourceSummary": "本次运行的数据来源",
-        "readUnits": {
-          "serp": "条结果",
-          "paa": "条问题",
-          "competitors": "篇页面",
-          "owned_pages": "篇页面",
-          "gsc": "条匹配的查询-页面记录",
-          "profile": "条事实"
-        },
-        "sources": {
-          "serp": "SERP",
-          "paa": "People Also Ask",
-          "competitors": "竞品正文",
-          "owned_pages": "本站页面",
-          "gsc": "Search Console",
-          "profile": "产品档案"
-        },
-        "states": {
-          "complete": "完整",
-          "partial": "部分",
-          "unavailable": "不可用",
-          "notUsed": "未使用"
-        },
+        "readUnits": { "serp": "条结果", "paa": "条问题", "competitors": "篇页面", "owned_pages": "篇页面", "gsc": "条匹配的查询-页面记录", "profile": "条事实" },
+        "sources": { "serp": "SERP", "paa": "People Also Ask", "competitors": "竞品正文", "owned_pages": "本站页面", "gsc": "Search Console", "profile": "产品档案" },
+        "states": { "complete": "完整", "partial": "部分", "unavailable": "不可用", "notUsed": "未使用" },
         "pageRecommendation": "页面建议",
-        "actions": {
-          "create": "新建一篇",
-          "update": "改写已有页面",
-          "undecidable": "页面归属待你决定"
-        },
+        "actions": { "create": "新建一篇", "update": "改写已有页面", "undecidable": "页面归属待你决定" },
         "sampleBoundary": "这条建议只描述本次证据样本，不代表全站所有页面。未出现的查询和未读到的页面，不能当作不存在。",
         "targetPage": "已有目标页面",
         "pageEvidenceTitle": "查询与已有页面证据",
-        "scopes": {
-          "primary": "主关键词",
-          "supporting": "支持关键词"
-        },
+        "scopes": { "primary": "主关键词", "supporting": "支持关键词" },
         "gscMetrics": "{clicks} 次点击 · {impressions} 次曝光 · 平均位置 {position}",
         "noMatchedQueries": "本次样本没有保留匹配的查询-页面记录。",
         "omittedGsc": "另有 {count} 条匹配记录未保留在本次证据中。",
         "noPageDecision": "这里只展示实际观察到的查询和本站页面读取结果，没有生成新建或改写判定。",
-        "readStates": {
-          "observed": "已读到正文",
-          "unavailable": "正文不可用",
-          "redirected": "页面被重定向替换"
-        },
-        "stepKinds": {
-          "keep": "保留",
-          "add": "补充",
-          "rewrite": "改写"
-        },
+        "readStates": { "observed": "已读到正文", "unavailable": "正文不可用", "redirected": "页面被重定向替换" },
+        "stepKinds": { "keep": "保留", "add": "补充", "rewrite": "改写" },
         "stepEvidence": "满足 {answers} · 来源摘录 {sources}",
         "none": "无",
         "unknown": "未回报",
@@ -4089,17 +4055,7 @@
         "modelJudgment": "模型建议",
         "noModelRecommendation": "没有通过校验的模型建议。",
         "observedFormats": "观察到的格式分布",
-        "observedFormatNames": {
-          "guide": "指南",
-          "listicle": "清单",
-          "comparison": "对比",
-          "product_page": "产品页",
-          "tool": "工具",
-          "forum": "论坛",
-          "video": "视频",
-          "news": "新闻",
-          "unknown": "未知"
-        },
+        "observedFormatNames": { "guide": "指南", "listicle": "清单", "comparison": "对比", "product_page": "产品页", "tool": "工具", "forum": "论坛", "video": "视频", "news": "新闻", "unknown": "未知" },
         "formatMethod": "仅按 URL 的启发式分类，与写作建议分开。",
         "serpFormatMethod": "基于 SERP 标题 + URL 的启发式分类，与写作建议分开。",
         "serpFormatsUnavailable": "没有保留可供格式分类的自然搜索结果。",
@@ -4116,26 +4072,11 @@
         "formatEvidence": "仅 URL 启发式：规则和来源",
         "serpFormatEvidence": "标题 + URL 启发式：规则和来源",
         "formatRules": "命中的规则：{rules}",
-        "intents": {
-          "informational": "信息型",
-          "commercial": "商业调研型",
-          "transactional": "交易型",
-          "navigational": "导航型"
-        },
-        "formats": {
-          "guide": "指南",
-          "listicle": "清单",
-          "comparison": "对比",
-          "product_page": "产品页",
-          "tool": "工具页",
-          "other": "其他"
-        },
+        "intents": { "informational": "信息型", "commercial": "商业调研型", "transactional": "交易型", "navigational": "导航型" },
+        "formats": { "guide": "指南", "listicle": "清单", "comparison": "对比", "product_page": "产品页", "tool": "工具页", "other": "其他" },
         "observedLength": "观测篇幅",
         "lengthValue": "{value} {unit} · 中位数",
-        "lengthUnits": {
-          "words": "词",
-          "non_whitespace_characters": "非空白字符"
-        },
+        "lengthUnits": { "words": "词", "non_whitespace_characters": "非空白字符" },
         "lengthRange": "{min}–{max} · 基于 {count} 篇完整读取的竞品",
         "lengthBoundary": "这是来源的描述性篇幅，不是写作目标或排名因素。不同计量单位不会混算。",
         "lengthBoundaryShort": "仅描述来源篇幅，不是写作或排名目标。",
@@ -4576,52 +4517,17 @@
       "v2": {
         "confirmed": "已确认的写作简报",
         "viewFullBrief": "查看完整的已确认 brief",
-        "received": {
-          "action": "页面判定",
-          "questions": "冻结问题",
-          "outline": "大纲章节",
-          "language": "市场 · 语言"
-        },
-        "mentionNotes": {
-          "none": "保持为信息文章，缺口角度那一节也不提产品。",
-          "gap_only": "仅在指定的缺口角度章节提及产品，其余章节保持中立。",
-          "throughout": "允许在全文自然提及产品，可能增加需要你核实的主张。"
-        },
-        "processing": {
-          "complete": "处理已结束",
-          "partial": "部分章节已跳过",
-          "degraded": "处理结果受限",
-          "unavailable": "未生成可用内容",
-          "running": "正在生成"
-        },
+        "received": { "action": "页面判定", "questions": "冻结问题", "outline": "大纲章节", "language": "市场 · 语言" },
+        "mentionNotes": { "none": "保持为信息文章，缺口角度那一节也不提产品。", "gap_only": "仅在指定的缺口角度章节提及产品，其余章节保持中立。", "throughout": "允许在全文自然提及产品，可能增加需要你核实的主张。" },
+        "processing": { "complete": "处理已结束", "partial": "部分章节已跳过", "degraded": "处理结果受限", "unavailable": "未生成可用内容", "running": "正在生成" },
         "runTime": "用时 {elapsed} 秒 / 预算 {budget} 秒",
-        "quality": {
-          "noDraft": "尚无正文可评估",
-          "unknown": "覆盖情况未知",
-          "revision": "仍需补写",
-          "incomplete": "仍有章节缺失",
-          "review": "已检查覆盖 · 仍需人工审核"
-        },
-        "coverageTotals": {
-          "covered": "{count} 已覆盖",
-          "partial": "{count} 部分覆盖",
-          "none": "{count} 未覆盖"
-        },
+        "quality": { "noDraft": "尚无正文可评估", "unknown": "覆盖情况未知", "revision": "仍需补写", "incomplete": "仍有章节缺失", "review": "已检查覆盖 · 仍需人工审核" },
+        "coverageTotals": { "covered": "{count} 已覆盖", "partial": "{count} 部分覆盖", "none": "{count} 未覆盖" },
         "qualityBoundary": "这检查的是对冻结 brief 的覆盖，不是事实准确性。处理结束或问题全部覆盖，都不代表发布批准。",
         "previousAssessment": "正在生成；这里的覆盖评估仍对应下方保留的上一份有效初稿。",
         "showAnnotations": "显示来源与主张标注",
-        "sourceTier": {
-          "first": "一手资料",
-          "third": "第三方 · 需核实",
-          "model": "模型",
-          "mixed": "一手 + 第三方"
-        },
-        "profileDerivation": {
-          "declared": "声明事实",
-          "observed": "档案中的观测事实",
-          "computed": "档案中的计算事实",
-          "inferred": "推断事实；仅用于立场"
-        },
+        "sourceTier": { "first": "一手资料", "third": "第三方 · 需核实", "model": "模型", "mixed": "一手 + 第三方" },
+        "profileDerivation": { "declared": "声明事实", "observed": "档案中的观测事实", "computed": "档案中的计算事实", "inferred": "推断事实；仅用于立场" },
         "sourceLegend": "颜色表示证据层级，不代表事实已核实：自有页面与非推断的档案事实属于一手资料，竞品摘录属于第三方。模型正文与推断性立场仍标为模型；混合引用保留两类来源，PAA 不充当事实证据。",
         "collapse": "收起",
         "expand": "展开",
@@ -5247,27 +5153,17 @@
           "emptyMainEntity": "把问答放进 mainEntity，或者干脆去掉 FAQPage 声明。"
         }
       },
-      "handoff": {
-        "contentDraft": "已由 Content Draft 预填网址与提问。请核对后手动运行，尚未发送检查请求。",
-        "geoGap": "已由可见性体检预填。这些是输入，不是新的检查证据；请核对后手动运行，尚未发送检查请求。"
-      },
+      "handoff": { "contentDraft": "已由 Content Draft 预填网址与提问。请核对后手动运行，尚未发送检查请求。", "geoGap": "已由可见性体检预填。这些是输入，不是新的检查证据；请核对后手动运行，尚未发送检查请求。" },
       "render": {
         "title": "原始 HTML 与渲染后正文",
-        "status": {
-          "measured": "已实测",
-          "partial": "部分捕获",
-          "unavailable": "渲染不可用"
-        },
+        "status": { "measured": "已实测", "partial": "部分捕获", "unavailable": "渲染不可用" },
         "rawChars": "原始正文：{chars} 字",
         "renderedChars": "渲染正文：{chars} 字",
         "ratio": "原始/渲染比值：{ratio}%",
         "ratioUnknown": "原始/渲染比值未知：没有完整、可对照的两次捕获",
         "time": "捕获时间 {time}",
         "requests": "接纳 {count} 次请求；拦截 {blocked} 次；主动省略 {omitted} 个展示资源；响应 {bytes} 字节",
-        "methods": {
-          "html_projection": "原始文字来自 HTML 投影，尚未测量浏览器可见性。",
-          "browser_visible_text": "两次捕获使用同一套浏览器可见正文定义，先关闭、再开启 JavaScript。"
-        },
+        "methods": { "html_projection": "原始文字来自 HTML 投影，尚未测量浏览器可见性。", "browser_visible_text": "两次捕获使用同一套浏览器可见正文定义，先关闭、再开启 JavaScript。" },
         "rawBody": "查看原始正文",
         "renderedBody": "查看渲染后正文",
         "reasons": {
@@ -5285,20 +5181,8 @@
         "title": "问题分组与可能的根因",
         "intro": "按共同来源或可能的依赖关系确定性分组，不由模型诊断；每项原始测量和修法仍完整保留在下方。",
         "none": "没有可分组的失败项。不可用的检查不等于通过。",
-        "groups": {
-          "crawlerAccess": "抓取器访问",
-          "rendering": "首屏 HTML 交付",
-          "canonical": "规范页面身份",
-          "answerStructure": "答案结构",
-          "claimEvidence": "断言条件与来源",
-          "faq": "FAQ 标记",
-          "advisory": "可选的模型专属控制"
-        },
-        "basis": {
-          "sharedEvidence": "这些失败项读取同一份来源文档。",
-          "possibleDependency": "首次返回缺少正文可能影响相关检查；这是待验证的依赖关系，不是已证明的因果。",
-          "independent": "查看本组链接的测量证据与修法。"
-        },
+        "groups": { "crawlerAccess": "抓取器访问", "rendering": "首屏 HTML 交付", "canonical": "规范页面身份", "answerStructure": "答案结构", "claimEvidence": "断言条件与来源", "faq": "FAQ 标记", "advisory": "可选的模型专属控制" },
+        "basis": { "sharedEvidence": "这些失败项读取同一份来源文档。", "possibleDependency": "首次返回缺少正文可能影响相关检查；这是待验证的依赖关系，不是已证明的因果。", "independent": "查看本组链接的测量证据与修法。" },
         "related": "修复正文交付后复查：{rules}"
       },
       "limitsTitle": "这项检查不做什么",
@@ -5646,11 +5530,12 @@
         "shortcutDescription": "完整 GEO 知识库统一在「设置 → 网站」的 Profile 底部维护。这个公开地址只提供说明和快捷入口，不再放置另一套编辑器，也不是第二份知识库。",
         "profileTitle": "继承的产品档案",
         "reloadSources": "重新载入来源引用（保留我的草稿）",
-        "profileBody": "以下只读字段来自已确认的精确版本。要修改产品信息，请编辑原始产品档案。",
+        "profileBody": "以下只读内容来自已确认的精确产品档案。确认会保留每个字段原有的来源状态；推断字段不会自动成为可写事实。",
+        "profileFactBoundary": "点击“添加待核事实”会把档案原文带入核对区；补充并核实来源之前，仍不能用于正文写作。",
         "productName": "产品名称",
         "positioning": "一句话定位",
         "features": "核心功能",
-        "featureCandidateHelp": "先添加待核事实，再审阅取值、来源网址与采集时间。这个动作不会自动核实或保存事实。",
+        "featureCandidateHelp": "添加待核事实会预填档案原文。保存前仍需核对并填写来源网址；这个动作不会自动把它标成已核实。",
         "featureCandidateAdd": "添加待核事实",
         "featureCandidateExists": "该事实已存在",
         "featureCandidateTooLong": "功能名称超出事实名称上限，未截断原文",
@@ -5759,6 +5644,8 @@
         "noRole": "未绑定角色",
         "roleHint": "来自所选冻结提问绑定的角色，不使用当前可变草稿。",
         "gapHint": "如果检查发现缺少对比内容，会建议对比页；其他问题按提问意图确定内容形式。",
+        "writingTaskHelp": "根据已关联的 AI 可见性结果确定；下方回答证据始终绑定这次精确运行。",
+        "audienceRoleHelp": "来自所选已保存资料版本中与这道问题绑定的角色。",
         "knowledgeHint": "评分要求与事实来自这个精确冻结版本。",
         "noMetadata": "此版本尚未提供完整显示信息",
         "questionHint": "冻结提问 · {layer} · {id}",
@@ -5974,6 +5861,9 @@
         "factCount": "{count} 条有来源的事实",
         "observedCount": "{samples} 份成功回答中的 {questions} 个观测主题",
         "missingFacts": "已列出的 {count} 条事实缺少可用值或匹配来源。",
+        "missingKnowledgeFacts": "缺少可用值或匹配来源记录的知识库或抓取事实：{count} 条。",
+        "missingProfileFacts": "{count} 个产品档案字段未达到逐字段来源条件，已从可写事实中排除。",
+        "profileFactsExcluded": "{count} 个产品档案字段未达到逐字段来源条件，因此其值未进入可写事实。",
         "noFacts": "请补充事实、来源和记录时间，再冻结新版本。",
         "noSamples": "未关联成功的可见性回答，必答要求不代表已观测覆盖。",
         "noObservedTopics": "虽然关联了成功回答，但这批回答没有产出可复用的观测主题。",
@@ -6056,6 +5946,7 @@
         },
         "inputEvidence": "这版资料能支持什么",
         "inputFacts": "{count} 条有来源事实",
+        "inputMissingFacts": "因缺少可用值或匹配来源记录而无法写入使用的事实：{count} 条。",
         "inputNoFacts": "此冻结版本未带入可用事实，只能生成结构草稿。请先在知识库补充来源事实并冻结新版本。",
         "inputNoProfile": "此冻结版本未关联网站档案快照；不会使用当前可变档案补写旧证据。",
         "inputVersion": "第 {revision} 版 · {count} 条冻结提问 · 内容语言：{language}",
@@ -6301,11 +6192,7 @@
         "citabilityOmitted": "有 {count} 项候选页面检查未完成，或其证据已省略。",
         "handoffFailed": "未能保存交接，请在当前标签页重试。",
         "notStored": "本次运行未能保存，已禁用需要可信服务端记录的跨工具交接。",
-        "actions": {
-          "brief": "生成 GEO Brief",
-          "citability": "检查此页面",
-          "thirdParty": "下载第三方待办"
-        },
+        "actions": { "brief": "生成 GEO Brief", "citability": "检查此页面", "thirdParty": "下载第三方待办" },
         "kind": {
           "A": "缺少回答这道问题的内容",
           "B": "已有页面难以被 AI 引用",
@@ -6313,20 +6200,8 @@
           "D": "缺少对比内容",
           "unattributed": "未归因"
         },
-        "presence": {
-          "present": "页面中已观察到本站或品牌",
-          "absent": "完整读取中未找到本站或品牌",
-          "unknown": "在位情况不可用"
-        },
-        "pageType": {
-          "listicle": "榜单页",
-          "comparison": "对比页",
-          "product": "产品页",
-          "article": "文章",
-          "documentation": "文档",
-          "other": "其他已读页面",
-          "unavailable": "页面类型不可用"
-        },
+        "presence": { "present": "页面中已观察到本站或品牌", "absent": "完整读取中未找到本站或品牌", "unknown": "在位情况不可用" },
+        "pageType": { "listicle": "榜单页", "comparison": "对比页", "product": "产品页", "article": "文章", "documentation": "文档", "other": "其他已读页面", "unavailable": "页面类型不可用" },
         "reasons": {
           "measurement_insufficient": "可比较的回答不足",
           "prompted_question": "问题本身已包含品牌名",

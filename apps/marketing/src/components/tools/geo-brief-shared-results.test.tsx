@@ -93,6 +93,47 @@ describe("GEO Brief Artifact result presentation", () => {
     expect(host.querySelector("details[data-geo-technical]")?.textContent).toContain("coreFeatures[0]");
   });
 
+  it("collapses unavailable profile fields while retaining sourced and explicit knowledge rows", async () => {
+    const brief = await geoBriefFixture();
+    brief.fact_table[1] = { ...brief.fact_table[1]!, label: "productName", reason: "notPublished" };
+    brief.geo_origin.profile_ref = {
+      website_id: "fixture-website",
+      snapshot_id: "fixture-profile",
+      snapshot_revision: 1,
+      profile_schema: "marketing-website-profile.v1",
+      profile_hash: "d".repeat(64),
+    };
+    const profileLabels = ["productName", "oneLinePositioning", ...Array.from({ length: 8 }, (_, index) => `coreFeatures[${index}]`)];
+    brief.fact_table.push(...profileLabels.map((label, index) => ({
+      id: `F${index + 3}`,
+      label,
+      value: null,
+      reason: "unverified" as const,
+      evidence_refs: [],
+    })));
+    const before = JSON.stringify(brief);
+
+    const host = await render(brief);
+    const quality = host.querySelector("[data-brief-quality]")!;
+    expect(quality.textContent).toContain("Knowledge-base or crawl facts without a usable value or matching source record: 1.");
+    expect(quality.textContent).toContain("Website-profile fields excluded from writable facts because they lack a per-field source record: 10.");
+    const facts = host.querySelector('[data-brief-section="fact_table"]')!;
+    const rows = facts.querySelectorAll("tbody tr");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain(brief.fact_table[0]!.value);
+    expect(rows[1]?.textContent).toContain("Product name");
+    expect(rows[1]?.textContent).toContain(en.tools.geoBrief.quality.factReasons.notPublished);
+    const profileNotice = facts.querySelector("[data-geo-profile-facts-excluded]");
+    expect(profileNotice?.textContent).toContain("10 website-profile fields lack a per-field source record, so their values are excluded from writable facts.");
+    expect(profileNotice?.querySelector('[data-geo-knowledge-repair="profile"]')).not.toBeNull();
+    expect(facts.textContent?.match(/Product name/g)).toHaveLength(1);
+    expect(facts.textContent).not.toContain("One-line positioning");
+    expect(facts.textContent).not.toContain("Product capability");
+    const technical = host.querySelector("details[data-geo-technical]")!;
+    for (const label of profileLabels) expect(technical.textContent).toContain(label);
+    expect(JSON.stringify(brief)).toBe(before);
+  });
+
   it("offers concrete repair routes for missing profile and site-index evidence even with usable facts", async () => {
     const brief = await geoBriefFixture();
     brief.fact_table = brief.fact_table.filter(fact => fact.value !== null);

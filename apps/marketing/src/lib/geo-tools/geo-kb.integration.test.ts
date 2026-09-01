@@ -13,6 +13,7 @@ import {
   openConcurrentClient,
 } from "../credits/sql-test-harness.ts";
 import {
+  GEO_KB_LIMITS,
   GEO_KB_SCHEMA_VERSION,
   parseGeoKbPayload,
   type GeoKbPayload,
@@ -537,7 +538,7 @@ describe("GEO knowledge base database permissions", () => {
   it("refuses an oversized payload even through its privileged RPC", async () => {
     const kbId = (await upsertKb(db, USER_A, SITE_A)).kb_id;
     const oversized = {
-      big: "x".repeat(393_217),
+      big: "x".repeat(GEO_KB_LIMITS.payloadBytes + 1),
     } as const satisfies GeoKbValue;
     await expect(
       db.query(

@@ -26,7 +26,9 @@ describe("shared GEO Brief browser chain", () => {
       evidenceSummary: { snapshotFacts: 1, contextFacts: null, usableFacts: 1, missingFacts: 0, profileAttached: false, contextAttached: false },
       market: { country: "US", language: "en" },
       properNames: [],
-      questions: [{ ...SHARED_FROZEN.questionSet.questions[0], id: `q${revision}`, text: `Frozen question ${revision}`, qualityIssues: [] }],
+      questions: [{ ...SHARED_FROZEN.questionSet.questions[0], id: `q${revision}`, text: `Frozen question ${revision}`, qualityIssues: [],
+        roleId: revision === 1 ? "buyer" : null,
+        role: revision === 1 ? { id: "buyer", label: "Buyer", segment: "small team" } : null }],
     }));
     const fetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith("/load")) return Response.json({ data: { choices, runsPerDay: 20, providerConfigured: true } });
@@ -36,9 +38,42 @@ describe("shared GEO Brief browser chain", () => {
     const host = document.createElement("div"); document.body.append(host); root = createRoot(host); await act(async () => root?.render(<GeoBriefSharedTool />));
     await click(host, "[data-load-geo-brief]");
     const select = host.querySelector<HTMLSelectElement>("#geo-brief-version");
+    expect(select?.tagName).toBe("SELECT");
+    expect(host.querySelector<HTMLSelectElement>("#geo-brief-question")?.tagName).toBe("SELECT");
+    expect(host.querySelector("[data-geo-gap]")).toBeNull();
+    expect(host.querySelector("[data-geo-role]")?.textContent).toContain("Buyer");
     await act(async () => { if (select) { select.value = "snapshot-2"; select.dispatchEvent(new Event("change", { bubbles: true })); } });
+    expect(host.querySelector("[data-geo-gap]")).toBeNull();
+    expect(host.querySelector("[data-geo-role]")).toBeNull();
     await click(host, "[data-run-geo-brief]");
     expect(fetch).toHaveBeenCalledTimes(3);
+  });
+  it("shows missing frozen facts in input evidence when a profile snapshot is attached", async () => {
+    const choice = {
+      kbId: SHARED_FROZEN.kbId,
+      snapshotId: SHARED_FROZEN.snapshotId,
+      revision: 1,
+      host: "fixture.example",
+      frozenAt: SHARED_FROZEN.frozenAt,
+      contentHash: SHARED_FROZEN.contentHash,
+      promptsetRef: { schema: SHARED_FROZEN.questionSet.schemaVersion, registryVersion: SHARED_FROZEN.questionSet.registryVersion, hash: SHARED_FROZEN.questionSetHash },
+      evidenceSummary: { snapshotFacts: 2, contextFacts: 2, usableFacts: 3, missingFacts: 2, profileAttached: true, contextAttached: true },
+      market: { country: "US", language: "en" },
+      properNames: [],
+      questions: SHARED_FROZEN.questionSet.questions.map(question => ({ ...question, qualityIssues: [] })),
+    };
+    const fetch = vi.fn(async () => Response.json({ data: { choices: [choice], runsPerDay: 20, providerConfigured: true } }));
+    globalThis.fetch = fetch as unknown as typeof globalThis.fetch;
+    const host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+    await act(async () => root?.render(<GeoBriefSharedTool />));
+
+    await click(host, "[data-load-geo-brief]");
+    await vi.waitFor(() => expect(host.querySelector("[data-geo-input-evidence]")).not.toBeNull());
+    const evidence = host.querySelector("[data-geo-input-evidence]")!;
+    expect(evidence.textContent).toContain('quality.inputFacts {"count":3}');
+    expect(evidence.textContent).toContain('quality.inputMissingFacts {"count":2}');
+    expect(evidence.textContent).not.toContain("quality.inputNoProfile");
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
   it("uses selection IDs, renders Artifact sections, exports one result and stages the same Brief for Draft", async () => {
     const basis = sharedGeoBriefBasis({ frozen: SHARED_FROZEN, context: null, questionId: "q1", questionText: "", runEvidence: null, runId: "fixture-brief", now: "2026-08-31T00:00:01Z" });

@@ -89,6 +89,8 @@
 .factReceipt a, .links a { color: var(--sc-text-primary); text-decoration: underline; text-underline-offset: 3px; }
 .results .nullFact { display: grid; gap: 4px; padding: 7px 10px; border: 1px dashed var(--sc-border-dashed); border-radius: var(--radius); color: var(--sc-text-secondary); font-size: 12px; }
 .nullFact + .factReceipt { margin-top: 10px; }
+.results .profileFactNotice { margin-top: 12px; padding: 14px 16px; border: 1px dashed var(--sc-border-dashed); border-radius: var(--radius); color: var(--sc-text-secondary); font-size: 13px; }
+.profileFactNotice a { color: var(--sc-accent-text); text-decoration: underline; text-underline-offset: 3px; }
 .results .footnote { margin-top: 10px; }
 .outline > li { padding: 12px 16px; }
 .outline > li + li { border-top: 1px solid var(--sc-border-card); }

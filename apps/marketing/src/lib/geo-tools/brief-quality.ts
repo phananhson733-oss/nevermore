@@ -6,9 +6,13 @@ import type { GeoContentBrief, GeoMustAnswerItem } from "@sf/public-tools/conten
 export function geoBriefQuality(brief: GeoContentBrief, options: { questionNeedsRevision?: boolean } = {}) {
   const origin = brief.geo_origin;
   const outlineSections = brief.outline.status === "available" ? brief.outline.items.length : 0;
-  const usableFacts = brief.fact_table.filter(fact => fact.value !== null && fact.evidence_refs.length > 0
-    && fact.evidence_refs.every(ref => brief.evidence.facts.some(receipt => receipt.id === ref && receipt.text === fact.value))).length;
-  const missingFacts = brief.fact_table.length - usableFacts;
+  const missingFactRows = brief.fact_table.filter(fact => fact.value === null || fact.evidence_refs.length === 0
+    || !fact.evidence_refs.every(ref => brief.evidence.facts.some(receipt => receipt.id === ref && receipt.text === fact.value)));
+  const missingFacts = missingFactRows.length;
+  const missingProfileFacts = missingFactRows.filter(fact => fact.reason === "unverified"
+    && /^(productName|oneLinePositioning|coreFeatures\[\d+\])$/.test(fact.label)).length;
+  const missingKnowledgeFacts = missingFacts - missingProfileFacts;
+  const usableFacts = brief.fact_table.length - missingFacts;
   const samples = brief.evidence.samples.filter(sample => sample.status === "answered" && sample.run_id === origin.run_ref?.id
     && sample.question_id === origin.question.id && origin.sample_refs.includes(sample.id));
   const observedQuestions = brief.must_answer.items.filter(item => item.source === "ai_sample" && item.covered_by > 0
@@ -19,7 +23,8 @@ export function geoBriefQuality(brief: GeoContentBrief, options: { questionNeeds
   return {
     status,
     origin: origin.run_ref !== null ? "visibility" : origin.question.id !== null ? "frozen_question" : "typed_question",
-    outlineSections, usableFacts, missingFacts, answeredSamples: samples.length, observedQuestions,
+    outlineSections, usableFacts, missingFacts, missingProfileFacts, missingKnowledgeFacts,
+    answeredSamples: samples.length, observedQuestions,
     hasProfile: origin.profile_ref !== null, hasSiteIndex: brief.evidence.site_index.length > 0,
     canDraft: outlineSections > 0 && !options.questionNeedsRevision,
   } as const;

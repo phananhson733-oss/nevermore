@@ -41,7 +41,9 @@ export function SharedGeoBriefResults({ brief, roleLabel, questionNeedsRevision 
   const quality = geoBriefQuality(brief, { questionNeedsRevision });
   const source = (value: GeoSource | "model") => <span className={styles.source} data-source={value} title={t(`sources.${value}`)}>{t(`sources.${value}`)}</span>;
   const date = (value: string) => new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(value));
-  const factLabel = (label: string) => /^(productName|oneLinePositioning|coreFeatures\[\d+\])$/.test(label) ? t(`quality.profileFields.${label.startsWith("coreFeatures[") ? "coreFeatures" : label}`) : label;
+  const isProfileFactLabel = (label: string) => /^(productName|oneLinePositioning|coreFeatures\[\d+\])$/.test(label);
+  const factLabel = (label: string) => isProfileFactLabel(label) ? t(`quality.profileFields.${label.startsWith("coreFeatures[") ? "coreFeatures" : label}`) : label;
+  const displayedFacts = brief.fact_table.filter(fact => fact.value !== null || fact.reason !== "unverified" || !isProfileFactLabel(fact.label));
   const origin = brief.geo_origin;
   const failedSamples = brief.evidence.samples.filter(sample => sample.status === "failed").length;
   const repairSelection = { kbId: origin.kb_ref.kb_id, snapshotId: origin.kb_ref.snapshot_id, questionId: origin.question.id,
@@ -61,7 +63,8 @@ export function SharedGeoBriefResults({ brief, roleLabel, questionNeedsRevision 
       </ul>
       <ul className={styles.limitations}>
         {quality.usableFacts === 0 ? <li>{t("quality.noFacts")}</li> : null}
-        {quality.missingFacts > 0 ? <li>{t("quality.missingFacts", { count: quality.missingFacts })}</li> : null}
+        {quality.missingKnowledgeFacts > 0 ? <li>{t("quality.missingKnowledgeFacts", { count: quality.missingKnowledgeFacts })}</li> : null}
+        {quality.missingProfileFacts > 0 ? <li>{t("quality.missingProfileFacts", { count: quality.missingProfileFacts })}</li> : null}
         {quality.answeredSamples === 0 ? <li>{t("quality.noSamples")} <a data-geo-run-visibility href={visibilityHref}>{t("quality.runVisibility")}</a></li> : null}
         {quality.answeredSamples > 0 && quality.observedQuestions === 0 ? <li>{t("quality.noObservedTopics")}</li> : null}
         {!quality.hasProfile ? <li>{t("quality.noProfile")} <GeoKnowledgeRepairLink selection={repairSelection} reason="profile">{t("quality.repairKnowledge")}</GeoKnowledgeRepairLink></li> : null}
@@ -120,10 +123,10 @@ export function SharedGeoBriefResults({ brief, roleLabel, questionNeedsRevision 
 
     <section data-brief-section="fact_table">
       <div className={styles.sectionHeading}><h2 id={`${id}-facts`} className={styles.heading}>{t("facts.title")}</h2><p className={styles.note}>{t("facts.note")}</p></div>
-      {brief.fact_table.length ? <div className={styles.tableScroll} role="region" aria-labelledby={`${id}-facts`} tabIndex={0}>
+      {displayedFacts.length ? <div className={styles.tableScroll} role="region" aria-labelledby={`${id}-facts`} tabIndex={0}>
         <table className={`${styles.table} ${styles.facts}`} aria-labelledby={`${id}-facts`}>
           <thead><tr><th scope="col">{t("artifact.dimensionColumn")}</th><th scope="col">{t("quality.factValue")}</th><th scope="col">{t("artifact.sourceColumn")}</th></tr></thead>
-          <tbody>{brief.fact_table.map(fact => <tr key={fact.id}>
+          <tbody>{displayedFacts.map(fact => <tr key={fact.id}>
             <th scope="row">{factLabel(fact.label)}</th><td>{fact.value ?? t("quality.noValue")}</td>
             <td>{fact.value === null ? <p className={styles.nullFact}><span>{t(`quality.factReasons.${fact.reason ?? "missing"}`)}</span><span>{t("quality.factRestriction")}</span></p> : null}
               {fact.evidence_refs.map(ref => { const receipt = brief.evidence.facts.find(item => item.id === ref); return receipt ? <div key={ref} className={styles.factReceipt}>
@@ -133,7 +136,10 @@ export function SharedGeoBriefResults({ brief, roleLabel, questionNeedsRevision 
             </td>
           </tr>)}</tbody>
         </table>
-      </div> : <p className={styles.empty}>{t("artifact.emptyFacts")} <GeoKnowledgeRepairLink selection={repairSelection} reason="facts">{t("quality.repairKnowledge")}</GeoKnowledgeRepairLink></p>}
+      </div> : quality.missingProfileFacts === 0 ? <p className={styles.empty}>{t("artifact.emptyFacts")} <GeoKnowledgeRepairLink selection={repairSelection} reason="facts">{t("quality.repairKnowledge")}</GeoKnowledgeRepairLink></p> : null}
+      {quality.missingProfileFacts > 0 ? <p data-geo-profile-facts-excluded className={styles.profileFactNotice}>
+        {t("quality.profileFactsExcluded", { count: quality.missingProfileFacts })} <GeoKnowledgeRepairLink selection={repairSelection} reason="profile">{t("quality.repairKnowledge")}</GeoKnowledgeRepairLink>
+      </p> : null}
     </section>
 
     <section data-brief-section="outline">

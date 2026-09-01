@@ -47,7 +47,8 @@ describe("GEO Brief input and result views", () => {
     const fetch = setupFetch(await geoBriefFixture());
     await act(async () => root.render(<GeoBriefSharedTool />));
     await click("[data-load-geo-brief]");
-    expect(host.textContent).toContain("Small-team buyer");
+    expect(host.querySelector("[data-geo-gap]")).toBeNull();
+    expect(host.querySelector("[data-geo-role]")?.textContent).toContain("Small-team buyer");
     expect(host.textContent).toContain("registry-3");
     expect(host.querySelector<HTMLButtonElement>('[data-geo-view="result"]')?.disabled).toBe(true);
     await click("[data-run-geo-brief]");
@@ -66,10 +67,17 @@ describe("GEO Brief input and result views", () => {
     await act(async () => root.render(<GeoBriefSharedTool />));
     await vi.waitFor(() => expect(host.querySelector("[data-run-geo-brief]")).not.toBeNull());
     expect(host.querySelector("[data-geo-gap]")?.textContent).toContain("D");
+    expect(host.querySelector("[data-geo-role]")?.textContent).toContain("Small-team buyer");
+    expect(host.textContent).toContain("artifact.writingTaskHelp");
+    expect(host.textContent).toContain(pointer.runId);
+    expect(host.textContent).toContain(context.samples[0]!.id);
     expect(JSON.parse(String(fetch.mock.calls[0]?.[1] && (fetch.mock.calls[0][1] as RequestInit).body))).toMatchObject({ runId: pointer.runId, gapId: pointer.gapId, questionId: "q1" });
     await select("#geo-brief-question", "q2");
+    expect(host.querySelector("[data-geo-gap]")).toBeNull();
+    expect(host.querySelector("[data-geo-role]")).toBeNull();
     await select("#geo-brief-question", "q1");
-    expect(host.querySelector("[data-geo-gap]")?.textContent).not.toContain("D");
+    expect(host.querySelector("[data-geo-gap]")).toBeNull();
+    expect(host.querySelector("[data-geo-role]")?.textContent).toContain("Small-team buyer");
     await click("[data-run-geo-brief]");
     const request = fetch.mock.calls.find(call => call[0].endsWith("/run"));
     expect(JSON.parse(String((request?.[1] as RequestInit)?.body))).toMatchObject({ runId: null, gapId: null, questionId: "q1" });
@@ -82,7 +90,7 @@ describe("GEO Brief input and result views", () => {
     await vi.waitFor(() => expect(host.querySelector("[data-shared-geo-result]")).not.toBeNull());
     await click('[data-geo-view="input"]'); await select("#geo-brief-question", "");
     expect(host.querySelector<HTMLButtonElement>('[data-geo-view="result"]')?.disabled).toBe(true);
-    expect(host.querySelector("[data-geo-role]")?.textContent).not.toContain("Small-team buyer");
+    expect(host.querySelector("[data-geo-role]")).toBeNull();
     expect(host.querySelector<HTMLButtonElement>("[data-run-geo-brief]")?.disabled).toBe(true);
   });
 });

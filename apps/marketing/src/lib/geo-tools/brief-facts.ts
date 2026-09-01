@@ -5,6 +5,11 @@ import type { GeoContentBrief } from "@sf/public-tools/content-brief/geo-contrac
 import type { VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
 import type { AnyGeoSnapshotContext } from "./snapshot-context-v2.ts";
 import { normalizeGeoHost } from "../agents/geo-url.ts";
+import { GEO_PROFILE_FACT_OVERRIDES_POLICY } from "./kb-questions.ts";
+
+function normalizedExactText(value: string): string {
+  return value.normalize("NFC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("en");
+}
 
 export function geoBriefFactsForSnapshot(frozen: VersionedGeoKbFrozenSnapshot, context: AnyGeoSnapshotContext | null) {
   if (frozen.payload.schemaVersion === "marketing-geo-kb.v2") {
@@ -49,6 +54,16 @@ export function geoBriefFactsForSnapshot(frozen: VersionedGeoKbFrozenSnapshot, c
     }
     return { id: `F${index + 1}`, label: fact.key, value, reason: value === null ? fact.reason || "lowConfidence" : null, evidence_refs: value === null ? [] : [id] };
   });
+  const profileFactOverrides = frozen.questionSet.registryVersion.split("/").includes(GEO_PROFILE_FACT_OVERRIDES_POLICY);
+  const sourcedFactValues = new Map<string, Set<string>>();
+  if (profileFactOverrides) {
+    for (const fact of factTable) {
+      if (fact.value === null) continue;
+      const values = sourcedFactValues.get(fact.label) ?? new Set<string>();
+      values.add(normalizedExactText(fact.value));
+      sourcedFactValues.set(fact.label, values);
+    }
+  }
   if (context?.profile) {
     const profile = context.profile; let receiptIndex = 0;
     for (const field of ["productName", "oneLinePositioning", "coreFeatures"] as const) {
@@ -60,6 +75,7 @@ export function geoBriefFactsForSnapshot(frozen: VersionedGeoKbFrozenSnapshot, c
         if (!text.trim()) continue;
         const label = field === "coreFeatures" ? `${field}[${index}]` : field;
         const id = `P${++receiptIndex}`;
+        if (!verified && sourcedFactValues.get(label)?.has(normalizedExactText(text))) continue;
         if (verified && provenance) receipts.push({ id, source: "product_profile", text, observed_at: provenance.observedAt ?? frozen.frozenAt, url: provenance.evidenceUrls[0] ?? null });
         factTable.push({ id: `F${factTable.length + 1}`, label, value: verified ? text : null, reason: verified ? null : "unverified", evidence_refs: verified ? [id] : [] });
       }

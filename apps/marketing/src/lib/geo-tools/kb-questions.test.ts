@@ -182,11 +182,11 @@ describe("required entities", () => {
     }
   });
 
-  it("gives the entity policy its own version while preserving the old frozen set's bytes", () => {
+  it("versions current projection policies while preserving an old frozen set's bytes", () => {
     const set = buildGeoQuestionSet(payload());
     const historical = { ...set, registryVersion: "2026-08-17/13" };
     const before = geoQuestionSetDigest(historical);
-    expect(set.registryVersion).toBe("2026-08-17/13/question-entities-v2");
+    expect(set.registryVersion).toBe("2026-08-17/13/question-entities-v2/profile-fact-overrides-v1");
     expect(geoQuestionSetDigest(historical)).toBe(before);
     expect(historical.registryVersion).toBe("2026-08-17/13");
   });
