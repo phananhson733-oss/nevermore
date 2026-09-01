@@ -448,7 +448,12 @@ export function geoKbBlockers(
   const languageOptions = options.roleLayersSkipped === false && options.activeRoleIds === undefined
     ? { ...options, activeRoleIds: [] }
     : options;
-  blockers.push(...geoQuestionLanguageIssues(payload, languageOptions), ...geoQuestionPlaceholderIssues(payload, options));
+  blockers.push(
+    ...geoQuestionLanguageIssues(payload, languageOptions).filter(
+      (issue) => issue !== "category_terms_not_english",
+    ),
+    ...geoQuestionPlaceholderIssues(payload, options),
+  );
   if (payload.officialName.length === 0) blockers.push("official_name_missing");
   if (payload.aliases.length === 0) blockers.push("aliases_missing");
   // A name the mention matcher will not look for has to be refused here, before

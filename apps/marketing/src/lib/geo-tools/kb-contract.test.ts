@@ -254,7 +254,9 @@ describe("blockers", () => {
 
   it("does not treat Unicode brand names or secondary labels as an English category error", () => {
     expect(geoKbBlockers({ ...VALID, officialName: "星图", aliases: ["星图"], categoryTerms: ["astrology", "合盘分析"], competitors: [{ domain: "rival.test", brandName: "小米", confirmed: true }] })).not.toContain("category_language_mismatch");
-    expect(geoKbBlockers({ ...VALID, officialName: "小米", categoryTerms: ["小米 analytics"] })).not.toContain("category_language_mismatch");
+    const properNameCategory = geoKbBlockers({ ...VALID, officialName: "小米", categoryTerms: ["小米 analytics"] });
+    expect(properNameCategory).not.toContain("category_language_mismatch");
+    expect(properNameCategory).not.toContain("category_terms_not_english");
     expect(geoKbBlockers({ ...VALID, officialName: "小米", categoryTerms: ["小米 占星工具"] })).toContain("category_language_mismatch");
   });
 
