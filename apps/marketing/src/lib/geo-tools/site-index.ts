@@ -10,6 +10,7 @@ import { normalizeGeoCitationUrl, normalizeGeoHost } from "../agents/geo-url.ts"
 import { WEBSITE_PROFILE_LIST_MAX_ITEMS } from "../account-websites/contracts.ts";
 import { requestCitabilityRender } from "./citability-render.ts";
 import { buildCitabilityReport } from "./citability-rules.ts";
+import { CITABILITY_RULES_VERSION } from "./citability-contract.ts";
 import { CITABILITY_RENDER_TIMEOUT_MS, type CitabilityRenderEvidence, type CitabilityRenderRequest } from "./citability-render-contract.ts";
 import type { VisibilityReportV2 } from "./visibility-v2-contract.ts";
 import { GEO_SITE_EVIDENCE_SCHEMA, type GeoReadPage, type GeoPageType, type GeoReferencePage, type GeoPageCitabilityEvidence, type GeoSiteIndex, type GeoSitePriorityHints, type VisibilitySiteEvidenceV1 } from "./site-index-contract.ts";
@@ -184,7 +185,7 @@ export async function collectVisibilitySiteEvidence(report: VisibilityReportV2, 
       if (rendered === null) continue;
       const robots = ownRobots.state === "ok" ? { status: "ok" as const, text: ownRobots.text } : { status: "unreachable" as const, httpStatus: null };
       const checked = buildCitabilityReport({ url: page.url, finalUrl: page.finalUrl, rawHtml, bodyComplete: true, targetQuestion: question.text, robots, llmsTxt: { status: "unreachable", httpStatus: null }, render: rendered }, dependencies.now().toISOString());
-      citability.push({ id: `t2-${page.id}-${question.questionId}`, pageId: page.id, questionId: question.questionId, url: page.url, checkedAt: checked.fetchedAt, checks: checked.checks, renderStatus: checked.render.status, renderReason: checked.render.reason, rawToRenderedRatio: checked.render.rawToRenderedRatio });
+      citability.push({ rulesVersion: CITABILITY_RULES_VERSION, id: `t2-${page.id}-${question.questionId}`, pageId: page.id, questionId: question.questionId, url: page.url, checkedAt: checked.fetchedAt, checks: checked.checks, renderStatus: checked.render.status, renderReason: checked.render.reason, rawToRenderedRatio: checked.render.rawToRenderedRatio });
     } catch { /* Missing T2 is absence of evidence, never a pass or a B gap. */ }
   }
   return { schemaVersion: GEO_SITE_EVIDENCE_SCHEMA, collectedAt: dependencies.now().toISOString(), index: { priority: { method: priorityHints === null ? "none" : "frozen_profile_core_features.v1", snapshotId: report.manifest.snapshotId, contextHash: priorityHints?.contextHash ?? null, featureCount: featureHints.length, prioritizedUrls }, scope: "declared_and_reachable_inventory", status: pages.length === 0 ? "unavailable" : inventoryComplete ? "complete" : "partial", targetHost: ownHost, discoveredCount: discovered.size, pages, sitemapUrls, inventorySources, limits }, references, referenceOmittedCount: Math.max(0, referenceSlots.size - references.length), citability, citabilityOmittedCount: Math.max(0, candidates.length - citability.length) };

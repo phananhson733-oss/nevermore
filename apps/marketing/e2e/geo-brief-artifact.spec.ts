@@ -137,14 +137,23 @@ for (const [locale, viewport, kind] of [["en", "desktop", "A"], ["zh", "desktop"
     await expect(page.locator("[data-geo-role]")).toContainText(role.label);
     await expect(page.locator("[data-geo-role]")).toContainText(role.segment);
     await expect(page.locator("[data-geo-gap]")).toHaveText(messages.geoBrief.artifact.noGap);
-    await expect(page.getByText(fixture.frozen.questionSet.registryVersion, { exact: false }).first()).toBeVisible();
-    expect(apiCount(guard, "geo-brief/load")).toBe(1);
+    await expect(page.locator("[data-geo-input-evidence]")).toContainText(messages.geoBrief.quality.inputFacts.replace("{count}", "1"));
+    await expect(page.locator("[data-geo-input-evidence]")).not.toContainText(messages.geoBrief.quality.inputNoProfile);
+    // List metadata alone is not evidence of a successful exact-context read.
+    const expectedFreeLoads = [{}, { schema: "gengrowth.content_brief/v1.1", kbId: fixture.frozen.kbId, snapshotId: fixture.frozen.snapshotId }];
+    expect(guard.requests.filter(request => request.id === "POST /api/tools/geo-brief/load").map(request => request.body)).toEqual(expectedFreeLoads);
+    const exactReferences = page.locator("details").filter({ has: page.getByText(fixture.frozen.questionSet.registryVersion, { exact: true }) });
+    await expect(exactReferences).not.toHaveAttribute("open");
+    await exactReferences.locator("summary").click();
+    await expect(exactReferences.getByText(fixture.frozen.questionSet.registryVersion, { exact: true })).toBeVisible();
+    expect(JSON.parse(await exactReferences.locator("[data-geo-source-summary]").innerText())).toMatchObject({ snapshotFacts: fixture.frozen.payload.facts.length, profileAttached: true, usableFacts: 1 });
+    await exactReferences.locator("summary").click();
     expect(apiCount(guard, "geo-brief/run")).toBe(0);
     expect(fixture.providerCalls).toBe(0);
     expect(fixture.assemblyCalls).toBe(0);
     await screenshot(page, `${locale}-${viewport}-frozen-input`, locale, "light");
     await screenshot(page, `${locale}-${viewport}-frozen-input`, locale, "dark");
-    expect(apiCount(guard, "geo-brief/load")).toBe(1);
+    expect(guard.requests.filter(request => request.id === "POST /api/tools/geo-brief/load").map(request => request.body)).toEqual(expectedFreeLoads);
     expect(apiCount(guard, "geo-brief/run")).toBe(0);
     expect(fixture.assemblyCalls).toBe(0);
     expect(pageErrors).toEqual([]);
@@ -164,7 +173,7 @@ for (const [locale, viewport, kind] of [["en", "desktop", "A"], ["zh", "desktop"
       await expect(page.locator("[data-geo-question-preview]")).toBeVisible();
       await expect(page.locator("[data-geo-question-preview]")).toHaveText(fixture.question.text);
     }
-    await expect(page.locator("[data-geo-gap]")).toContainText(kind);
+    await expect(page.locator("[data-geo-gap]")).toHaveText(messages.geoBrief.artifact[kind === "A" ? "gapA" : "gapD"]);
     expect(apiCount(guard, "geo-brief/run")).toBe(0);
     expect(fixture.assemblyCalls).toBe(0);
     const providerCalls = fixture.providerCalls;
@@ -184,6 +193,17 @@ for (const [locale, viewport, kind] of [["en", "desktop", "A"], ["zh", "desktop"
     }
     await expect(result.locator('[data-brief-section="must_answer"] table')).toBeVisible();
     await expect(result.locator('[data-brief-section="fact_table"] table')).toBeVisible();
+    await expect(result.locator('[data-brief-section="geo_origin"]')).toContainText(messages.geoBrief.quality.origin.visibility);
+    await expect(result.locator('[data-must-answer="Q1"] [data-source="kb"]')).toHaveText(messages.geoBrief.quality.openingFrozen);
+    // Primary result prose matches the 14px input; it is not drawn as an input.
+    const opening = result.locator('[data-brief-section="lead_answer"] dd').first().locator("p").first();
+    await expect(page.locator('[data-geo-view="input"]')).toBeEnabled();
+    await expect(opening).toHaveCSS("font-size", "14px");
+    await expect(opening).toHaveCSS("border-top-width", "0px");
+    await expect(opening).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    const primaryText = await result.innerText();
+    expect(primaryText).not.toMatch(/geo_origin|required_entities|must_answer|fact_table|intent_derived|insufficient_evidence|geo_not_serp/);
+    await expect(result.locator("[data-geo-technical] pre")).not.toBeVisible();
     expect(fixture.assemblyCalls).toBe(1);
     expect(fixture.providerCalls).toBe(providerCalls);
     const unchangedResult = await result.innerText();
@@ -204,6 +224,7 @@ for (const [locale, viewport, kind] of [["en", "desktop", "A"], ["zh", "desktop"
     expect(brief.geo_origin.gap).toBe(kind);
     expect(brief.geo_origin.kb_ref.snapshot_id).toBe(fixture.frozen.snapshotId);
     expect(brief.geo_origin.promptset_ref.hash).toBe(fixture.frozen.questionSetHash);
+    expect(guard.briefs).toEqual([brief]);
     await expect(result.locator('[data-brief-section="must_answer"] tbody tr')).toHaveCount(brief.must_answer.items.length);
     await expect(result.locator('[data-brief-section="fact_table"] tbody tr')).toHaveCount(brief.fact_table.length);
     const [mdDownload] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: messages.geoBrief.actions.downloadMarkdown, exact: true }).click()]);

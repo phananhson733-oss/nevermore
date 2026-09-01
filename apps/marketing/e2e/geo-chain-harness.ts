@@ -29,9 +29,9 @@ async function respond(route: Route, response: Response): Promise<void> {
 
 /** TEST-ONLY SSR auth fixture. No server/auth source changes, cookies or sessions.
  * The isolated Next server has no Supabase credentials. Replace exactly the
- * AiVisibilityCheck/ContentDraftTool prop, not a global auth string or markup.
+ * identified client prop, not a global auth string or markup.
  * This is explicitly NOT login E2E; real auth/owner gates have separate tests. */
-function injectLocalAuthFixture(html: string, componentName: "AiVisibilityCheck" | "ContentDraftTool"): string {
+function injectLocalAuthFixture(html: string, componentName: "AiVisibilityCheck" | "ContentDraftTool" | "GeoKnowledgeBase"): string {
   const scripts = [...html.matchAll(/<script([^>]*)>self\.__next_f\.push\((\[[\s\S]*?)\)<\/script>/g)];
   const decoded = scripts.map(match => {
     try { return { match, value: JSON.parse(match[2]!) as unknown[] }; } catch { throw new Error("Unrecognized local Next Flight envelope"); }
@@ -43,6 +43,7 @@ function injectLocalAuthFixture(html: string, componentName: "AiVisibilityCheck"
   const escapedId = moduleId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const props = componentName === "AiVisibilityCheck"
     ? '"authentication":"(?:unavailable|unauthenticated)","locale":"(?:en|zh)"'
+    : componentName === "GeoKnowledgeBase" ? '"locale":"(?:en|zh)","signedIn":false'
     : '"locale":"(?:en|zh)","authenticated":false';
   const component = new RegExp(`\\["\\$","\\$L${escapedId}",null,\\{${props}\\}\\]`, "g");
   if ([...stream.matchAll(component)].length !== 1) throw new Error(`Expected exactly one signed-out ${componentName} client prop`);
@@ -53,6 +54,7 @@ function injectLocalAuthFixture(html: string, componentName: "AiVisibilityCheck"
       changed += 1;
       return componentName === "AiVisibilityCheck"
         ? value.replace(/"authentication":"(?:unavailable|unauthenticated)"/, '"authentication":"authenticated"')
+        : componentName === "GeoKnowledgeBase" ? value.replace('"signedIn":false', '"signedIn":true')
         : value.replace('"authenticated":false', '"authenticated":true');
     });
     if (next === item.value[1]) continue;
@@ -65,12 +67,14 @@ function injectLocalAuthFixture(html: string, componentName: "AiVisibilityCheck"
 }
 export const injectVisibilityAuthFixture = (html: string): string => injectLocalAuthFixture(html, "AiVisibilityCheck");
 export const injectDraftAuthFixture = (html: string): string => injectLocalAuthFixture(html, "ContentDraftTool");
+export const injectKnowledgeBaseAuthFixture = (html: string): string => injectLocalAuthFixture(html, "GeoKnowledgeBase");
 
 export interface GeoChainGuard {
   readonly requests: { id: string; body: unknown }[];
   readonly unexpected: string[];
   readonly blockedExternal: string[];
   readonly drafts: GeoContentBrief[];
+  readonly briefs: GeoContentBrief[];
   readonly clipboard: string[];
   readonly ssrAuthFixtures: string[];
   readonly authorityChecks: { userId: string; snapshotId: string; accepted: boolean }[];
@@ -78,7 +82,7 @@ export interface GeoChainGuard {
 
 export async function installGeoChainGuard(context: BrowserContext, baseURL: string, fixture: GeoChainFixture): Promise<GeoChainGuard> {
   const origin = new URL(baseURL).origin;
-  const guard: GeoChainGuard = { requests: [], unexpected: [], blockedExternal: [], drafts: [], clipboard: [], ssrAuthFixtures: [], authorityChecks: [] };
+  const guard: GeoChainGuard = { requests: [], unexpected: [], blockedExternal: [], drafts: [], briefs: [], clipboard: [], ssrAuthFixtures: [], authorityChecks: [] };
   await context.exposeBinding("__geoChainClipboard", (_source, text: string) => { guard.clipboard.push(text); });
   await context.addInitScript(() => {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (value: string) => {
@@ -138,8 +142,9 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
       expect(input.pages).toEqual([]); expect(input.facts).toEqual([]);
       expect(JSON.stringify(input.geo?.facts)).not.toContain("Compare the supported team size");
       const fact = input.geo?.facts[0];
-      if (!fact) throw new Error("Fixture needs a verified, non-null fact");
-      const checked = validateSectionOutput({ paragraphs: [{ sentences: [{ text: fact.text, claim: "bound", evidence_refs: [fact.id] }] }] }, sectionEvidenceFor(lastBrief, input.section.id, input.settings));
+      const sentence = fact ? { text: fact.text, claim: "bound" as const, evidence_refs: [fact.id] }
+        : { text: "Evidence is needed before adding product facts or comparisons.", claim: "gap" as const, evidence_refs: [] };
+      const checked = validateSectionOutput({ paragraphs: [{ sentences: [sentence] }] }, sectionEvidenceFor(lastBrief, input.section.id, input.settings));
       if (!checked.ok) throw new Error(checked.rule);
       return { status: "ok", fail_reason: null, paragraphs: checked.paragraphs, word_count: checked.word_count, attempts: 1,
         model_id: "offline-draft", temperature_requested: 0.4, temperature_effective: null, input_tokens: 0, output_tokens: 0 };
@@ -167,6 +172,12 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
       await route.abort("blockedbyclient"); return;
     }
     if (!url.pathname.startsWith("/api/")) {
+      if (/\/(?:en\/|zh\/)?tools\/geo-knowledge-base$/.test(url.pathname) && request.resourceType() === "document") {
+        const response = await route.fetch();
+        const html = injectKnowledgeBaseAuthFixture(await response.text());
+        guard.ssrAuthFixtures.push(url.pathname);
+        await route.fulfill({ response, body: html }); return;
+      }
       if (/\/(?:en\/|zh\/)?tools\/ai-visibility-check$/.test(url.pathname) && request.resourceType() === "document") {
         const response = await route.fetch();
         const html = injectVisibilityAuthFixture(await response.text());
@@ -210,9 +221,16 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
       const response = await runSharedBrief(GEO_CHAIN_USER, body, fixture.shared, async () => true, Date.now);
       const parsed = await response.clone().json() as { data?: { brief: GeoContentBrief } };
       lastBrief = parsed.data?.brief ?? null;
+      if (lastBrief) guard.briefs.push(lastBrief);
       await respond(route, response); return;
     }
-    if (id === "POST /api/tools/content-draft/run") { guard.drafts.push((body as { brief: GeoContentBrief }).brief); await respond(route, await handleContentDraftRunRequest(incoming, draft)); return; }
+    if (id === "POST /api/tools/content-draft/run") {
+      lastBrief = (body as { brief: GeoContentBrief }).brief;
+      guard.drafts.push(lastBrief);
+      // The actual handler must verify ownership before the offline generator
+      // reads this submitted Brief, including historical JSON imports.
+      await respond(route, await handleContentDraftRunRequest(incoming, draft)); return;
+    }
     if (id === "POST /api/tools/page-citability-check") { await respond(route, await handleCitabilityRequest(incoming, citability)); return; }
     if (!SHELL.has(id)) guard.unexpected.push(id);
     await route.abort("blockedbyclient");

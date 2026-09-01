@@ -185,6 +185,47 @@ async function contextFor(userId: string, kbId: string, origin: string, payload:
   catch { return { kind: "unavailable", reason: "source context invalid" }; }
 }
 
+async function loadView(
+  userId: string,
+  details: GeoKbDetails,
+  profileUrl: string,
+): Promise<GeoKbStoreOutcome<GeoKbView>> {
+  let retrievalCount = 0;
+  let snapshot: GeoKbFrozenSnapshot | null = null;
+  let frozenContext: GeoSnapshotContext | null = null;
+  if (details.frozen !== null) {
+    const frozen = await readFrozenGeoKb({
+      userId,
+      kbId: details.kbId,
+      revision: details.frozen.revision,
+    });
+    if (frozen.kind !== "ok") {
+      return {
+        kind: "unavailable",
+        reason:
+          frozen.kind === "unavailable"
+            ? frozen.reason
+            : "frozen snapshot unavailable",
+      };
+    }
+    retrievalCount = retrievalCountOf(frozen.value.questionSet);
+    snapshot = frozen.value;
+    const context = await readGeoSnapshotContext({ userId, kbId: details.kbId, snapshotId: frozen.value.snapshotId });
+    if (context.kind !== "ok") return { kind: "unavailable", reason: "frozen context unavailable" };
+    frozenContext = context.value;
+  }
+  const profile = await profileFor(userId, profileUrl);
+  if (!profile.ok && profile.unavailable) return { kind: "unavailable", reason: "profile unavailable" };
+  const inherited = profile.ok ? profile.profile : null;
+  const payload = details.draft?.payload ?? (profile.ok ? { ...profile.payload, roles: [], market: profile.profile.market } : emptyGeoKbPayload(details.origin));
+  const prepared = await contextFor(userId, details.kbId, details.origin, payload);
+  if (prepared.kind !== "ok") return prepared;
+  return {
+    kind: "ok",
+    value: viewFrom(details, profile.ok, retrievalCount, inherited, payload, prepared.value.context, snapshot, frozenContext),
+  };
+}
+
 export const DEFAULT_GEO_KB_HANDLER_DEPENDENCIES: GeoKbHandlerDependencies = {
   authenticate: authenticateAccountRequest,
 
@@ -198,40 +239,13 @@ export const DEFAULT_GEO_KB_HANDLER_DEPENDENCIES: GeoKbHandlerDependencies = {
       kbId: registration.value.kbId,
     });
     if (details.kind !== "ok") return toOutcome(details, () => null as never);
-    let retrievalCount = 0;
-    let snapshot: GeoKbFrozenSnapshot | null = null;
-    let frozenContext: GeoSnapshotContext | null = null;
-    if (details.value.frozen !== null) {
-      const frozen = await readFrozenGeoKb({
-        userId,
-        kbId: details.value.kbId,
-        revision: details.value.frozen.revision,
-      });
-      if (frozen.kind !== "ok") {
-        return {
-          kind: "unavailable",
-          reason:
-            frozen.kind === "unavailable"
-              ? frozen.reason
-              : "frozen snapshot unavailable",
-        };
-      }
-      retrievalCount = retrievalCountOf(frozen.value.questionSet);
-      snapshot = frozen.value;
-      const context = await readGeoSnapshotContext({ userId, kbId: details.value.kbId, snapshotId: frozen.value.snapshotId });
-      if (context.kind !== "ok") return { kind: "unavailable", reason: "frozen context unavailable" };
-      frozenContext = context.value;
-    }
-    const profile = await profileFor(userId, url);
-    if (!profile.ok && profile.unavailable) return { kind: "unavailable", reason: "profile unavailable" };
-    const inherited = profile.ok ? profile.profile : null;
-    const payload = details.value.draft?.payload ?? (profile.ok ? { ...profile.payload, roles: [], market: profile.profile.market } : emptyGeoKbPayload(details.value.origin));
-    const prepared = await contextFor(userId, details.value.kbId, details.value.origin, payload);
-    if (prepared.kind !== "ok") return prepared;
-    return {
-      kind: "ok",
-      value: viewFrom(details.value, profile.ok, retrievalCount, inherited, payload, prepared.value.context, snapshot, frozenContext),
-    };
+    return loadView(userId, details.value, url);
+  },
+
+  loadExistingKnowledgeBase: async ({ userId, kbId }) => {
+    const details = await readGeoKnowledgeBase({ userId, kbId });
+    if (details.kind !== "ok") return toOutcome(details, () => null as never);
+    return loadView(userId, details.value, details.value.origin);
   },
 
   saveDraft: async ({ userId, kbId, payload, baseVersion, expectedProfileReference }) => {

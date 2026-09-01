@@ -46,10 +46,10 @@ async function confirmedWithLinks(url = "https://owned.test/dates(a)[b]?next=(x)
   return { confirmed: confirmed.value, url };
 }
 
-async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolean; empty?: boolean; unavailable?: boolean; previous?: DraftResultV2; settings?: DraftV2Settings; cjk?: boolean; claims?: boolean } = {}) {
+async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolean; skipped?: boolean; empty?: boolean; unavailable?: boolean; previous?: DraftResultV2; settings?: DraftV2Settings; cjk?: boolean; claims?: boolean; quality?: "none" | "partial" } = {}) {
   const currentSettings = options.settings ?? settings;
   const sections: DraftV2Section[] = confirmed.outline.map((heading, index) => {
-    if (options.empty && index === 1) return { ...heading, status: "skipped" };
+    if ((options.empty || options.skipped) && index === 1) return { ...heading, status: "skipped" };
     if ((options.failed || options.empty) && index === 0) return { ...heading, status: "failed", fail_reason: "provider_error", llm };
     const scope = buildDraftV2SectionScope(confirmed, heading.id, currentSettings);
     if (!scope.ok) throw new Error(scope.path);
@@ -68,7 +68,7 @@ async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolea
   });
   const input: AssembleDraftV2Input = {
     confirmed, settings: currentSettings, sections,
-    coverage: { items: options.empty ? null : options.unavailable ? [] : confirmed.brief.generated!.research.questions.map((question) => ({ question_id: question.id, status: "covered", covered_in: options.failed ? "O2" : confirmed.outline.find((heading) => heading.answers.includes(question.id))!.id, gap: null })), reads: options.empty ? noCoverage : coverageRead },
+    coverage: { items: options.empty ? null : options.unavailable ? [] : confirmed.brief.generated!.research.questions.map((question, index) => options.quality ? ({ question_id: question.id, status: options.quality === "partial" && index === 0 ? "partial" : "none", covered_in: options.quality === "partial" && index === 0 ? "O1" : null, gap: "Explain the practical reporting checks." }) : ({ question_id: question.id, status: "covered", covered_in: options.failed ? "O2" : confirmed.outline.find((heading) => heading.answers.includes(question.id))!.id, gap: null })), reads: options.empty ? noCoverage : coverageRead },
     run: { run_id: options.previous ? "draft-rerun" : "draft-fixture", collected_at: "2026-08-31T02:00:00.000Z", elapsed_ms: 100, budget_ms: options.previous ? SECTION_ENDPOINT_BUDGET_MS : DRAFT_TOTAL_BUDGET_MS, rerun: options.previous ? { section_id: "O1", previous_run_id: options.previous.run.run_id, previous_fingerprint: options.previous.run.fingerprint } : null },
   };
   const result = await assembleDraftV2(input);
@@ -95,11 +95,23 @@ function api(result: DraftResultV2) { const fetcher = vi.fn(async (url: RequestI
 async function render(confirmed: ConfirmedBriefV2, options: { locale?: "en" | "zh"; authenticated?: boolean; result?: DraftResultV2 } = {}) {
   const locale = options.locale ?? "en"; const host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   const onReplace = vi.fn(); const onKeepForSignIn = vi.fn(() => true);
-  const rerender = async (next: ConfirmedBriefV2, nextResult = options.result) => { await act(async () => root?.render(<NextIntlClientProvider locale={locale} messages={locale === "zh" ? zh : en} timeZone="UTC">{nextResult ? <ContentDraftV2Results confirmed={next} result={nextResult} locale={locale} rerun={{ disabled: false, runningSection: null, onRerun: vi.fn() }} /> : <ContentDraftV2Workflow key={next.fingerprint} confirmed={next} source="paste" locale={locale} authenticated={options.authenticated ?? true} onReplace={onReplace} onKeepForSignIn={onKeepForSignIn} />}</NextIntlClientProvider>)); };
+  const rerender = async (next: ConfirmedBriefV2, nextResult = options.result, nextLocale = locale) => { await act(async () => root?.render(<NextIntlClientProvider locale={nextLocale} messages={nextLocale === "zh" ? zh : en} timeZone="UTC">{nextResult ? <ContentDraftV2Results confirmed={next} result={nextResult} locale={nextLocale} rerun={{ disabled: false, runningSection: null, onRerun: vi.fn() }} /> : <ContentDraftV2Workflow key={next.fingerprint} confirmed={next} source="paste" locale={nextLocale} authenticated={options.authenticated ?? true} onReplace={onReplace} onKeepForSignIn={onKeepForSignIn} />}</NextIntlClientProvider>)); };
   await rerender(confirmed); return { host, onReplace, onKeepForSignIn, rerender };
 }
 
 describe("Draft v2 exact-revision workflow", () => {
+  it.each(["en", "zh"] as const)("shows a compact received-brief summary and three explicit product-mention choices (%s)", async (locale) => {
+    const confirmed = await confirmedDraftV2Fixture(); const fetcher = api(await resultFor(confirmed)); const { host } = await render(confirmed, { locale });
+    expect(node(host, "[data-received-question-count]").textContent).toContain("2");
+    expect(node(host, "[data-received-outline-count]").textContent).toContain("2");
+    const radios = host.querySelectorAll<HTMLInputElement>('input[type="radio"][name="product_mention"]');
+    expect(Array.from(radios, (radio) => radio.value)).toEqual(["none", "gap_only", "throughout"]);
+    expect(radios[1]!.checked).toBe(true);
+    expect(radios[1]!.closest("label")!.textContent).toContain(locale === "en" ? "gap" : "缺口");
+    await click(host, 'input[type="radio"][value="throughout"]');
+    expect(radios[2]!.checked).toBe(true); expect(fetcher).not.toHaveBeenCalled();
+    expect(node(host, "[data-confirmed-brief-json]").textContent).toBe(JSON.stringify(confirmed));
+  });
   it.each(["en", "zh"] as const)("starts with settings open, then folds them and focuses the named result region after success (%s)", async (locale) => {
     const confirmed = await confirmedDraftV2Fixture(); api(await resultFor(confirmed)); const { host } = await render(confirmed, { locale }); expect(node<HTMLElement>(host, "[data-draft-settings-panel]").hidden).toBe(false);
     await click(host, "[data-generate-draft]"); await flush(); expect(node<HTMLElement>(host, "[data-draft-settings-panel]").hidden).toBe(true); expect(node(host, "[data-toggle-settings]").getAttribute("aria-expanded")).toBe("false"); const region = node(host, "[data-draft-result-region]"); expect(region.getAttribute("role")).toBe("region"); expect(region.getAttribute("aria-label")).toBe(locale === "en" ? "Draft result" : "初稿结果"); expect(document.activeElement).toBe(region);
@@ -111,6 +123,23 @@ describe("Draft v2 exact-revision workflow", () => {
   it("reopens folded settings on a failed section rerun and keeps the previous result and alert visible", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed); const fetcher = api(result); const { host } = await render(confirmed); await click(host, "[data-generate-draft]"); await flush(); expect(node<HTMLElement>(host, "[data-draft-settings-panel]").hidden).toBe(true);
     fetcher.mockImplementation(async (url) => String(url) === "/api/auth/session" ? response({ signedIn: true }) : response({ error: { code: "quota_unavailable" } }, 503)); await click(host, '[data-rerun-section="O1"]'); await flush(); expect(node<HTMLElement>(host, "[data-draft-settings-panel]").hidden).toBe(false); const alert = node(host, '[data-error-code="quota_unavailable"]'); expect(alert.closest("[hidden]")).toBeNull(); expect(node(host, "[data-draft-v2-result]").getAttribute("data-run-id")).toBe(result.run.run_id);
+  });
+  it("labels a running rerun without claiming that the previous zero-coverage draft became ready", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const previous = await resultFor(confirmed, { quality: "none" }); const next = await resultFor(confirmed, { previous }); const fetcher = api(previous); const { host } = await render(confirmed);
+    await click(host, "[data-generate-draft]"); await flush(); await click(host, '[data-toggle-section="O1"]');
+    let finish!: (response: Response) => void;
+    fetcher.mockImplementation((url) => String(url) === "/api/auth/session" ? Promise.resolve(response({ signedIn: true })) : new Promise((resolve) => { finish = resolve; }));
+    await click(host, '[data-rerun-section="O1"]');
+    expect(node(host, "[data-processing-status]").textContent).toBe("Generation in progress");
+    expect(node(host, "[data-previous-assessment]").textContent).toContain("previous validated draft");
+    expect(node(host, "[data-quality-status]").textContent).toBe("Needs revision");
+    expect(node(host, "[data-coverage-summary]").textContent).toBe("0/2");
+    expect(JSON.parse(node(host, "[data-draft-json]").textContent!)).toEqual(previous);
+    expect(node<HTMLButtonElement>(host, '[data-rerun-section="O2"]').disabled).toBe(true);
+    await act(async () => finish(response(next))); await flush();
+    expect(host.querySelector("[data-previous-assessment]")).toBeNull();
+    expect(node(host, '[data-toggle-section="O1"]').getAttribute("aria-expanded")).toBe("false");
+    expect(node(host, "[data-quality-status]").textContent).toBe("Coverage checked · review required");
   });
   it("preserves the published URL across a successful section rerun while settings stay folded", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const previous = await resultFor(confirmed); const next = await resultFor(confirmed, { previous }); const fetcher = api(previous); const { host } = await render(confirmed); await click(host, "[data-generate-draft]"); await flush(); await act(async () => { const input = node<HTMLInputElement>(host, "[data-published-url]"); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "https://published.test/keep-through-rerun"); input.dispatchEvent(new Event("input", { bubbles: true })); });
@@ -192,6 +221,75 @@ describe("Draft v2 exact-revision workflow", () => {
 });
 
 describe("Draft v2 truthful results and exact exports", () => {
+  it.each(["en", "zh"] as const)("does not call skipped-only partial processing a section failure (%s)", async (locale) => {
+    const confirmed = await confirmedDraftV2Fixture(); const partial = await resultFor(confirmed, { skipped: true, quality: "none" });
+    expect(partial.run.mode).toBe("partial"); expect(partial.run.reads.sections).toEqual({ requested: 1, ok: 1, failed: 0, skipped: 1 });
+    const { host, rerender } = await render(confirmed, { locale, result: partial });
+    expect(node(host, "[data-processing-status]").textContent).toBe(locale === "en" ? "Some sections skipped" : "部分章节已跳过");
+    expect(node(host, "[data-processing-status]").textContent).not.toMatch(/failed|失败/i);
+    const failed = await resultFor(confirmed, { failed: true }); expect(failed.run.mode).toBe("degraded"); await rerender(confirmed, failed);
+    expect(node(host, "[data-processing-status]").textContent).toBe(locale === "en" ? "Processing limited" : "处理结果受限");
+    const unknown = await resultFor(confirmed, { unavailable: true }); expect(unknown.run.mode).toBe("degraded"); await rerender(confirmed, unknown);
+    expect(node(host, "[data-processing-status]").textContent).toBe(locale === "en" ? "Processing limited" : "处理结果受限");
+    expect(node(host, "[data-quality-status]").textContent).toBe(locale === "en" ? "Coverage unknown" : "覆盖情况未知");
+    expect(host.querySelector("[data-coverage-total]")).toBeNull();
+  });
+  it.each(["en", "zh"] as const)("puts coverage counts and gaps before the document, separating processing completion from readiness (%s)", async (locale) => {
+    const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed, { quality: "partial" }); expect(result.run.mode).toBe("complete");
+    const { host } = await render(confirmed, { locale, result });
+    const coverage = node(host, "[data-draft-coverage]"); const document = node(host, "[data-draft-document]");
+    expect(coverage.compareDocumentPosition(document) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(node(coverage, '[data-coverage-total="covered"]').textContent).toContain("0");
+    expect(node(coverage, '[data-coverage-total="partial"]').textContent).toContain("1");
+    expect(node(coverage, '[data-coverage-total="none"]').textContent).toContain("1");
+    expect(coverage.textContent).toContain("Explain the practical reporting checks.");
+    expect(node(host, "[data-processing-status]").textContent).toBe(locale === "en" ? "Processing complete" : "处理已结束");
+    expect(node(coverage, "[data-quality-status]").textContent).toBe(locale === "en" ? "Needs revision" : "仍需补写");
+    expect(coverage.textContent).toContain(locale === "en" ? "not publishing approval" : "不代表发布批准");
+  });
+  it("collapses chapters with linked ARIA controls without changing exports or hiding failure status", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed, { failed: true }); const before = contentDraftV2Markdown(result, confirmed, exportNotes()); const { host } = await render(confirmed, { result });
+    const toggle = node<HTMLButtonElement>(host, '[data-toggle-section="O1"]'); const panelId = toggle.getAttribute("aria-controls")!; const panel = document.getElementById(panelId)!;
+    expect(toggle.getAttribute("aria-expanded")).toBe("true"); expect(panel.hidden).toBe(false);
+    await click(host, '[data-toggle-section="O1"]'); expect(toggle.getAttribute("aria-expanded")).toBe("false"); expect(panel.hidden).toBe(true);
+    expect(node(host, '[data-section-status="O1"]').textContent).toMatch(/failed/i);
+    expect(node(host, '[data-rerun-section="O1"]').closest("[hidden]")).toBeNull();
+    expect(contentDraftV2Markdown(result, confirmed, exportNotes())).toBe(before);
+    await click(host, '[data-toggle-section="O1"]'); expect(panel.hidden).toBe(false);
+  });
+  it("marks source tiers independently of claim types and keeps every exact evidence link", async () => {
+    const confirmed = await confirmedDraftV2Fixture({ action: "update" }); const result = await resultFor(confirmed, { claims: true }); const { host } = await render(confirmed, { result });
+    expect(node(host, "[data-source-legend]").textContent).toMatch(/First.party.*Third.party.*Model/s);
+    const sentences = host.querySelectorAll<HTMLElement>("[data-claim]");
+    expect(sentences[0]!.getAttribute("data-source-tier")).toBe("mixed");
+    expect(sentences[1]!.getAttribute("data-source-tier")).toBe("model");
+    expect(sentences[2]!.getAttribute("data-source-tier")).toBe("first");
+    expect(sentences[4]!.getAttribute("data-source-tier")).toBe("model");
+    expect(node(sentences[2]!, "[data-support-count]").textContent).toContain("0 observed supporting pages");
+    expect(node(host, '[data-evidence-ref="P2"]').textContent).toContain("Inferred; stance only");
+    for (const link of host.querySelectorAll<HTMLAnchorElement>('[data-claim] a[href^="#draft-v2-evidence-"]')) expect(document.getElementById(link.hash.slice(1))).not.toBeNull();
+    const before = JSON.stringify(result); await click(host, "[data-toggle-annotations]");
+    expect(node(host, "[data-toggle-annotations]").getAttribute("aria-pressed")).toBe("false");
+    expect(host.querySelector("[data-source-legend]")).toBeNull(); expect(JSON.stringify(result)).toBe(before);
+  });
+  it("labels competitor-only support third-party and keeps skipped/failed status visible", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed, { claims: true }); const { host, rerender } = await render(confirmed, { result });
+    expect(node(host, '[data-claim="bound"]').getAttribute("data-source-tier")).toBe("third");
+    const empty = await resultFor(confirmed, { empty: true }); await rerender(confirmed, empty);
+    for (const id of ["O1", "O2"]) { await click(host, `[data-toggle-section="${id}"]`); expect(node(host, `[data-section-status="${id}"]`).closest("[hidden]")).toBeNull(); }
+    expect(node(host, '[data-section-status="O1"]').textContent).toMatch(/failed/i);
+    expect(node(host, '[data-section-status="O2"]').textContent).toMatch(/skipped/i);
+    expect(node(host, "[data-quality-status]").textContent).toBe("No draft to assess");
+  });
+  it.each(["observed", "computed"] as const)("does not relabel a %s profile fact as declared", async (derivation) => {
+    const original = await confirmedDraftV2Fixture();
+    const unsigned = { ...original.brief, context: { ...original.brief.context, facts: original.brief.context.facts.map((fact) => fact.id === "P1" ? { ...fact, derivation, provenance: { method: "observed" as const, origin: "product_profile" as const } } : fact) } };
+    const brief = { ...unsigned, run: { ...unsigned.run, fingerprint: await fingerprintBriefV2(unsigned) } };
+    const checked = await confirmBriefV2(brief, { outline: original.outline, revision: original.revision, confirmed_at: original.confirmed_at, resolution: original.resolution });
+    if (!checked.ok) throw new Error(checked.path);
+    const result = await resultFor(checked.value, { claims: true }); const { host } = await render(checked.value, { result });
+    expect(node(host, '[data-evidence-ref="P1"]').textContent).toContain(derivation === "observed" ? "Observed in profile" : "Computed in profile");
+  });
   it("hides an old export success on rerun while preserving the visitor's published URL", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const previous = await resultFor(confirmed); const next = await resultFor(confirmed, { previous }); const { host, rerender } = await render(confirmed, { result: previous }); Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
     await act(async () => { const input = node<HTMLInputElement>(host, "[data-published-url]"); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "https://published.test/keep-me"); input.dispatchEvent(new Event("input", { bubbles: true })); }); await click(host, "[data-copy-markdown]"); expect(node(host, '[role="status"]').textContent).toBe(en.tools.contentDraft.v2.export.copied);
@@ -200,6 +298,34 @@ describe("Draft v2 truthful results and exact exports", () => {
   it("does not attach an old asynchronous clipboard success to the replacement result", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const previous = await resultFor(confirmed); const next = await resultFor(confirmed, { previous }); let resolve!: () => void; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn(() => new Promise<void>((finish) => { resolve = finish; })) } }); const { host, rerender } = await render(confirmed, { result: previous });
     await click(host, "[data-copy-draft-json]"); await rerender(confirmed, next); await act(async () => resolve()); expect(host.querySelector('[role="status"]')).toBeNull();
+  });
+  it.each([false, true])("invalidates an elapsed-only JSON replacement even when its causal fingerprint is unchanged (pending copy: %s)", async (pending) => {
+    const confirmed = await confirmedDraftV2Fixture(); const previous = await resultFor(confirmed);
+    const parsed = await parseDraftResultV2({ ...previous, run: { ...previous.run, elapsed_ms: previous.run.elapsed_ms + 1 } }, confirmed);
+    if (!parsed.ok) throw new Error(parsed.path);
+    const next = parsed.value; expect(next.run.fingerprint).toBe(previous.run.fingerprint); expect(JSON.stringify(next)).not.toBe(JSON.stringify(previous));
+    let finish!: () => void; const writeText = vi.fn(async (_text: string): Promise<void> => undefined);
+    if (pending) writeText.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const { host, rerender } = await render(confirmed, { result: previous }); await click(host, "[data-copy-draft-json]");
+    expect(writeText.mock.calls[0]![0]).toBe(JSON.stringify(previous));
+    if (!pending) expect(node(host, '[role="status"]').textContent).toBe(en.tools.contentDraft.v2.export.copied);
+    await rerender(confirmed, next); if (pending) await act(async () => finish());
+    expect(host.querySelector('[role="status"]')).toBeNull();
+    await click(host, "[data-copy-draft-json]"); expect(writeText.mock.calls[1]![0]).toBe(JSON.stringify(next));
+    expect(node(host, '[role="status"]').textContent).toBe(en.tools.contentDraft.v2.export.copied);
+  });
+  it.each([false, true])("invalidates localized Markdown export receipts on locale changes (pending copy: %s)", async (pending) => {
+    const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed, { empty: true });
+    const english = contentDraftV2Markdown(result, confirmed, exportNotes("en")); const chinese = contentDraftV2Markdown(result, confirmed, exportNotes("zh")); expect(english).not.toBe(chinese);
+    let finish!: () => void; const writeText = vi.fn(async (_text: string): Promise<void> => undefined);
+    if (pending) writeText.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const { host, rerender } = await render(confirmed, { result, locale: "en" }); await click(host, "[data-copy-markdown]"); expect(writeText.mock.calls[0]![0]).toBe(english);
+    await rerender(confirmed, result, "zh"); if (pending) await act(async () => finish());
+    expect(host.querySelector('[role="status"]')).toBeNull();
+    await click(host, "[data-copy-markdown]"); expect(writeText.mock.calls[1]![0]).toBe(chinese);
+    expect(node(host, '[role="status"]').textContent).toBe(zh.tools.contentDraft.v2.export.copied);
   });
   it("keeps the newest export action's receipt when an earlier clipboard promise finishes later", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed); let resolve!: () => void; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn(() => new Promise<void>((finish) => { resolve = finish; })) } }); Object.defineProperty(URL, "createObjectURL", { configurable: true, value: () => "blob:latest-export" }); Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() }); vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {}); const { host } = await render(confirmed, { result });

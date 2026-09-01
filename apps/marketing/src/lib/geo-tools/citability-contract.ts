@@ -2,7 +2,11 @@
 // @output -- check identity, four-state outcome, weight, and the fetched inputs a check may read
 // @pos    -- the seam between what was fetched and what this tool is willing to claim
 import type { CitabilityRenderEvidence } from "./citability-render-contract.ts";
+import type { CitabilityConclusion } from "./citability-conclusion.ts";
 export type { CitabilityRenderEvidence } from "./citability-render-contract.ts";
+
+/** Explicit lineage for corrected rule semantics in newly persisted site evidence. */
+export const CITABILITY_RULES_VERSION = "marketing-page-citability-rules.v2" as const;
 
 /**
  * Four states, because three of them were being made to carry two meanings.
@@ -66,12 +70,14 @@ export interface CitabilityCheck {
  */
 export type RobotsFetch =
   | { readonly status: "ok"; readonly text: string }
+  | { readonly status: "incomplete"; readonly httpStatus: number; readonly bytes: number }
   | { readonly status: "absent"; readonly httpStatus: number }
   | { readonly status: "unreachable"; readonly httpStatus: number | null };
 
-/** How `/llms.txt` came back. Advisory in every branch. */
+/** How `/llms.txt` came back. Incomplete bytes describe only the captured prefix. Advisory in every branch. */
 export type LlmsTxtFetch =
   | { readonly status: "ok"; readonly bytes: number }
+  | { readonly status: "incomplete"; readonly httpStatus: number; readonly bytes: number }
   | { readonly status: "absent"; readonly httpStatus: number }
   | { readonly status: "unreachable"; readonly httpStatus: number | null };
 
@@ -123,6 +129,7 @@ export interface CitabilitySummary {
 }
 
 export interface CitabilityReport {
+  readonly conclusion: CitabilityConclusion;
   readonly render: CitabilityRenderEvidence;
   readonly rootCauses: readonly CitabilityRootCause[];
   readonly url: string;

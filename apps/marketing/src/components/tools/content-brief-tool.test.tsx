@@ -11,7 +11,7 @@ import { SUPPORTING_KEYWORDS_MAX } from "@sf/public-tools/content-brief/constant
 
 import { validContentBriefV2 } from "./content-brief-v2-fixture.ts";
 import { validContentBrief } from "./content-brief-fixture.ts";
-import { CONTENT_BRIEF_V2_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
+import { CONTENT_BRIEF_V3_SCHEMA } from "@sf/public-tools/content-brief/v2-contract";
 
 const { signInDialogMock, trackMarketingEventMock } = vi.hoisted(() => ({
   signInDialogMock: vi.fn(({ open, onOpenChange }: { readonly open: boolean; readonly onOpenChange: (open: boolean) => void }) =>
@@ -149,6 +149,53 @@ function serveRun(body: unknown) {
 }
 
 describe("ContentBriefTool", () => {
+  it("requests the SERP-preserving v3 response for new runs while accepting an older valid v2 receipt", async () => {
+    const brief = await validContentBriefV2();
+    serveRun(brief);
+    const host = await renderTool();
+    await type(host.querySelector("#content-brief-primary"), brief.context.input.primary);
+    await click(host.querySelector("[data-run-brief]"));
+    await vi.waitFor(async () => { await act(async () => { await Promise.resolve(); }); expect(host.querySelector("[data-content-brief-result]")).not.toBeNull(); });
+    const request = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(([input]) => String(input) === "/api/tools/content-brief/run");
+    expect(JSON.parse(String((request?.[1] as RequestInit).body)).response_schema).toBe("gengrowth.content_brief/v3");
+  });
+
+  it("returns a failed generation to visible current settings without overwriting edits or starting a run", async () => {
+    const brief = await validContentBriefV2({ unavailable: true });
+    serveRun(brief);
+    const host = await renderTool();
+    await type(host.querySelector("#content-brief-primary"), brief.context.input.primary);
+    await click(host.querySelector("[data-run-brief]"));
+    await vi.waitFor(async () => { await act(async () => { await Promise.resolve(); }); expect(host.querySelector("[data-return-to-settings]")).not.toBeNull(); });
+    await click(host.querySelector("[data-brief-settings] > summary"));
+    await type(host.querySelector("#content-brief-primary"), "my newer keyword");
+    await click(host.querySelector("[data-brief-settings] > summary"));
+    const before = fetchCalls().length;
+    await click(host.querySelector("[data-return-to-settings]"));
+    expect(host.querySelector<HTMLDetailsElement>("[data-brief-settings]")?.open).toBe(true);
+    expect(document.activeElement).toBe(host.querySelector("#content-brief-primary"));
+    expect(host.querySelector<HTMLInputElement>("#content-brief-primary")?.value).toBe("my newer keyword");
+    expect(fetchCalls()).toHaveLength(before);
+    expect(host.querySelector("[data-generation-failure]")).not.toBeNull();
+  });
+
+  it("focuses the settings disclosure when returning from a previous failure during a pending run", async () => {
+    const brief = await validContentBriefV2({ unavailable: true });
+    serveRun(brief);
+    const host = await renderTool();
+    await type(host.querySelector("#content-brief-primary"), brief.context.input.primary);
+    await click(host.querySelector("[data-run-brief]"));
+    await vi.waitFor(async () => { await act(async () => { await Promise.resolve(); }); expect(host.querySelector("[data-return-to-settings]")).not.toBeNull(); });
+    await click(host.querySelector("[data-return-to-settings]"));
+    globalThis.fetch = vi.fn(async () => new Promise<Response>(() => undefined)) as unknown as typeof fetch;
+    await click(host.querySelector("[data-run-brief]"));
+    const button = host.querySelector<HTMLElement>("[data-return-to-settings]")!;
+    button.focus();
+    await click(button);
+    expect(document.activeElement).toBe(host.querySelector("[data-brief-settings] > summary"));
+    expect(fetchCalls()).toHaveLength(1);
+  });
+
   it("preserves the last confirmed/exportable result when a rerun fails or needs sign-in", async () => {
     const brief = await validContentBriefV2();
     serveRun(brief);
@@ -325,7 +372,7 @@ describe("ContentBriefTool", () => {
           market: "US",
           language: "en",
           gsc_property: "sc-domain:owned.example",
-          response_schema: CONTENT_BRIEF_V2_SCHEMA,
+          response_schema: CONTENT_BRIEF_V3_SCHEMA,
         });
         return Promise.resolve(Response.json(brief));
       }

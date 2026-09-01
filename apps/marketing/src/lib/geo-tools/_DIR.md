@@ -40,5 +40,11 @@ Website Profile owns product facts. GEO owns matching overrides, frozen question
 - `citability-render.ts` — authenticated isolated-service adapter, raw hash/URL binding, strict capture validation and nullable ratio.
 - `citability-render-rule.ts` — actual two-sided SSR text measurement, with partial/empty captures excluded from passing conclusions.
 - `citability-causes.ts` — deterministic groups of shared evidence/possible dependencies while retaining every original check and fix.
+- `citability-conclusion.ts` — measured issues versus heuristic review, independent coverage and traceable priorities; not a citation probability or factual verification.
+- `citability-ai-contract.ts` — strict bounded semantic-review receipts, excerpt references and fixed no-search/no-fact-verification scope.
+- `citability-ai-evidence.ts` — server-owned raw hash, exact input fingerprint and bounded disjoint excerpts with explicit coverage.
+- `citability-ai-provider.ts` — single bounded DataForSEO call, model identity validation, observed cost/task provenance and unknown-outcome errors without retries.
+- `citability-ai-handler.ts` — explicit authenticated same-origin review, safe refetch/hash binding and durable per-user/IP/snapshot admission before spending.
+- `site-index-validate.ts` — exact historical unversioned rule identities remain readable; new T2 evidence explicitly marks the corrected v2 heuristic inventory.
 
 The isolated Chromium service and enforced Linux runtime live in `apps/marketing/scripts/citability-renderer*`, not in the Next bundle. Local SQL and mocked-provider/browser evidence are documented separately from production evidence in the alignment review directory.

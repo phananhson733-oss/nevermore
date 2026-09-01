@@ -108,6 +108,81 @@ describe("authentication", () => {
 });
 
 describe("load", () => {
+  it("loads an existing knowledge base only through the authenticated read dependency", async () => {
+    const kbId = "11111111-1111-4111-8111-111111111113";
+    const existing = await deps().loadKnowledgeBase({ userId: "user-1", url: READY.targetUrl });
+    const loadExistingKnowledgeBase = vi.fn(async () => existing);
+    const loadKnowledgeBase = vi.fn();
+    const response = await handleGeoKbLoad(
+      post("/api/tools/geo-knowledge-base/load", { kbId }),
+      deps({ loadExistingKnowledgeBase, loadKnowledgeBase }),
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect((await body(response)).data).toEqual(existing.kind === "ok" ? existing.value : null);
+    expect(loadExistingKnowledgeBase).toHaveBeenCalledExactlyOnceWith({ userId: "user-1", kbId });
+    expect(loadKnowledgeBase).not.toHaveBeenCalled();
+  });
+
+  it("authenticates an existing knowledge-base read before looking it up", async () => {
+    const loadExistingKnowledgeBase = vi.fn();
+    const response = await handleGeoKbLoad(
+      post("/api/tools/geo-knowledge-base/load", { kbId: "kb-1" }),
+      deps({
+        authenticate: async () => ({ ok: false, response: Response.json({ error: { code: "auth_required" } }, { status: 401 }) }),
+        loadExistingKnowledgeBase,
+      }),
+    );
+    expect(response.status).toBe(401);
+    expect(loadExistingKnowledgeBase).not.toHaveBeenCalled();
+  });
+
+  it("fails unavailable when the existing-read dependency is unsupported", async () => {
+    const loadKnowledgeBase = vi.fn();
+    const response = await handleGeoKbLoad(
+      post("/api/tools/geo-knowledge-base/load", { kbId: "kb-1" }),
+      deps({ loadKnowledgeBase }),
+    );
+    expect(response.status).toBe(503);
+    expect((await body(response)).error).toEqual({ code: "store_unavailable" });
+    expect(loadKnowledgeBase).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { outcome: { kind: "not_found" } as const, status: 404, code: "not_found" },
+    { outcome: { kind: "context_stale" } as const, status: 409, code: "context_stale" },
+    { outcome: { kind: "unavailable", reason: "private store details" } as const, status: 503, code: "store_unavailable" },
+  ])("preserves the $code existing-read error", async ({ outcome, status, code }) => {
+    const loadKnowledgeBase = vi.fn();
+    const response = await handleGeoKbLoad(
+      post("/api/tools/geo-knowledge-base/load", { kbId: "kb-1" }),
+      deps({ loadKnowledgeBase, loadExistingKnowledgeBase: async () => outcome }),
+    );
+    expect(response.status).toBe(status);
+    expect(await body(response)).toEqual({ error: { code } });
+    expect(loadKnowledgeBase).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { kbId: "" },
+    { kbId: " " },
+    { kbId: null },
+    { kbId: 1 },
+    { kbId: "kb-1", extra: true },
+    { kbId: "kb-1", url: "https://acme-kb-example.com/" },
+  ])("refuses a malformed or ambiguous existing-read body: %j", async (input) => {
+    const loadExistingKnowledgeBase = vi.fn();
+    const loadKnowledgeBase = vi.fn();
+    const response = await handleGeoKbLoad(
+      post("/api/tools/geo-knowledge-base/load", input),
+      deps({ loadExistingKnowledgeBase, loadKnowledgeBase }),
+    );
+    expect(response.status).toBe(400);
+    expect((await body(response)).error).toEqual({ code: "invalid_request" });
+    expect(loadExistingKnowledgeBase).not.toHaveBeenCalled();
+    expect(loadKnowledgeBase).not.toHaveBeenCalled();
+  });
+
   it("refuses a request with an extra field", async () => {
     const response = await handleGeoKbLoad(
       post("/api/tools/geo-knowledge-base/load", {
@@ -229,6 +304,44 @@ describe("save draft", () => {
 });
 
 describe("freeze", () => {
+  it("rejects persisted draft questions with unrelated entities instead of freezing an old generation policy", async () => {
+    const kbId = "11111111-1111-4111-8111-111111111113";
+    const payload = { ...READY, categoryTerms: ["project management", "invoicing"] };
+    const generated = buildGeoSnapshotContext({ kbId, targetHost: "acme-kb-example.com", payload, profile: null, receipt: null });
+    const questionSet = { ...generated.questionSet, registryVersion: "2026-08-17/13", questions: generated.questionSet.questions.map((q) => ({ ...q, requiredEntities: [...q.requiredEntities, "invoicing"] })) };
+    const freeze = vi.fn(deps().freeze);
+    const response = await handleGeoKbFreeze(post("/api/tools/geo-knowledge-base/freeze", { kbId, baseVersion: 2, contextHash: generated.context.contentHash }), deps({
+      freeze,
+      readDraftPayload: async () => ({ kind: "ok", value: { payload, draftVersion: 2, context: generated.context, questionSet } }),
+    }));
+    expect(response.status).toBe(422);
+    expect((await response.json()).blockers).toEqual(["question_quality"]);
+    expect(freeze).not.toHaveBeenCalled();
+    expect(questionSet.registryVersion).toBe("2026-08-17/13");
+  });
+
+  it("rejects a non-English role label when it reaches an English template", async () => {
+    const freeze = vi.fn(deps().freeze);
+    const response = await handleGeoKbFreeze(post("/api/tools/geo-knowledge-base/freeze", { kbId: "kb-1", baseVersion: 2 }), deps({
+      freeze,
+      readDraftPayload: async () => ({ kind: "ok", value: { payload: { ...READY, roles: [{ ...READY.roles[0]!, label: "初学者" }] }, draftVersion: 2 } }),
+    }));
+    expect(response.status).toBe(422);
+    expect((await response.json()).blockers).toEqual(["question_quality"]);
+    expect(freeze).not.toHaveBeenCalled();
+  });
+
+  it("rejects mixed-language categories before writing a new freeze", async () => {
+    const freeze = vi.fn(deps().freeze);
+    const response = await handleGeoKbFreeze(post("/api/tools/geo-knowledge-base/freeze", { kbId: "kb-1", baseVersion: 2 }), deps({
+      freeze,
+      readDraftPayload: async () => ({ kind: "ok", value: { payload: { ...READY, categoryTerms: ["占星工具", "心理占星", "自我探索", "CBT 日记", "知识库", "合盘分析"] }, draftVersion: 2 } }),
+    }));
+    expect(response.status).toBe(422);
+    expect((await response.json()).blockers).toContain("category_language_mismatch");
+    expect(freeze).not.toHaveBeenCalled();
+  });
+
   it("uses source-conditioned frozen questions and returns their role/entities", async () => {
     const kbId = "11111111-1111-4111-8111-111111111113";
     const payload = { ...READY, roles: [] };

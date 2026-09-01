@@ -23,9 +23,9 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(brief: GeoContentBrief, roleLabel?: string) {
+async function render(brief: GeoContentBrief, roleLabel?: string, questionNeedsRevision = false) {
   const host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-  await act(async () => root?.render(<NextIntlClientProvider locale="en" messages={en} timeZone="UTC"><SharedGeoBriefResults brief={brief} roleLabel={roleLabel} /></NextIntlClientProvider>));
+  await act(async () => root?.render(<NextIntlClientProvider locale="en" messages={en} timeZone="UTC"><SharedGeoBriefResults brief={brief} roleLabel={roleLabel} questionNeedsRevision={questionNeedsRevision} /></NextIntlClientProvider>));
   return host;
 }
 async function clickButton(host: Element, label: string) {
@@ -40,24 +40,109 @@ function blobText(blob: Blob): Promise<string> {
 }
 
 describe("GEO Brief Artifact result presentation", () => {
+  it("prioritizes repairing missing facts and offers only an explicitly limited structural Draft", async () => {
+    const brief = await geoBriefFixture();
+    brief.fact_table = []; brief.evidence.facts = []; brief.evidence.samples = [];
+    brief.geo_origin = { ...brief.geo_origin, kind: "manual", role: null, gap: null, run_ref: null, sample_refs: [] };
+    brief.draft_readiness = { writable: ["O1", "O2"], gaps: [] };
+    const host = await render(brief);
+    expect(host.querySelector("[data-brief-quality]")?.getAttribute("data-brief-quality")).toBe("structure_only");
+    expect(host.textContent).toContain("0 facts with source records");
+    expect(host.textContent).toContain("0 observed topics from 0 answered samples");
+    expect(host.textContent).toContain("General question · not persona-specific");
+    expect(host.textContent).not.toContain("writable sections");
+    expect(host.querySelector("[data-geo-to-draft]")?.textContent).toBe("Continue with a structure-only Draft");
+    expect(host.querySelector('[data-geo-knowledge-repair="facts"]')?.getAttribute("href")).toBe("/tools/geo-knowledge-base?repair=brief");
+    expect(host.querySelector('[data-geo-run-visibility]')?.getAttribute("href")).toBe("/tools/ai-visibility-check");
+  });
+
+  it("retains a historical question verbatim but blocks Draft when the exact frozen version needs revision", async () => {
+    const brief = await geoBriefFixture();
+    const question = "What are the top 占星工具 tools right now?";
+    brief.geo_origin.question.text = question; brief.keyword.primary = question;
+    const original = JSON.stringify(brief);
+    const host = await render(brief, undefined, true);
+    expect(host.textContent).toContain(question);
+    expect(host.querySelector("[data-brief-quality]")?.getAttribute("data-brief-quality")).toBe("revise_question");
+    expect(host.querySelector("[data-geo-to-draft]")).toBeNull();
+    expect(host.textContent).toContain("Revise the question before writing");
+    expect(JSON.stringify(brief)).toBe(original);
+  });
+
+  it("keeps machine fields and storage instructions in technical details, not primary copy", async () => {
+    const brief = await geoBriefFixture();
+    const host = await render(brief);
+    const primary = host.cloneNode(true) as HTMLElement;
+    primary.querySelectorAll("details").forEach(node => node.remove());
+    expect(primary.textContent).not.toMatch(/geo_origin|lead_answer|must_answer|fact_table|internal_links|intent_derived|geo_not_serp|insufficient_evidence|sessionStorage|requirement\s*required_entities/);
+    expect(primary.textContent).toContain("System opening rule based on the frozen question");
+    expect(primary.textContent).toContain("Writing requirement · not observed coverage");
+    expect(primary.textContent).toContain("Topic observed in answer samples");
+    expect(primary.textContent).toContain("This GEO workflow does not inspect search results");
+    expect(host.querySelector("details[data-geo-technical]")?.textContent).toContain(brief.run.fingerprint);
+  });
+
+  it("gives frozen website-profile fact keys readable labels without replacing their values", async () => {
+    const brief = await geoBriefFixture();
+    brief.fact_table[0]!.label = "coreFeatures[0]";
+    const host = await render(brief);
+    const facts = host.querySelector('[data-brief-section="fact_table"]')!;
+    expect(facts.textContent).toContain("Product capability");
+    expect(facts.textContent).not.toContain("coreFeatures[0]");
+    expect(facts.textContent).toContain(brief.fact_table[0]!.value);
+    expect(host.querySelector("details[data-geo-technical]")?.textContent).toContain("coreFeatures[0]");
+  });
+
+  it("offers concrete repair routes for missing profile and site-index evidence even with usable facts", async () => {
+    const brief = await geoBriefFixture();
+    brief.fact_table = brief.fact_table.filter(fact => fact.value !== null);
+    brief.evidence.site_index = [];
+    brief.internal_links = { status: "unavailable", reason: "insufficient_evidence", attempted: 0 };
+    const host = await render(brief);
+    const limitations = host.querySelector("[data-brief-quality]")!;
+    expect(limitations.querySelector('a[href="/tools/geo-knowledge-base?repair=brief"]')).not.toBeNull();
+    const links = host.querySelector('[data-brief-section="internal_links"]')!;
+    expect(links.textContent).toContain("No usable site index was supplied");
+    expect(links.querySelector('a[href="/tools/ai-visibility-check"]')).not.toBeNull();
+  });
+
+  it("treats linked answers with no reusable observed topics as limited evidence", async () => {
+    const brief = await geoBriefFixture();
+    brief.fact_table = brief.fact_table.filter(fact => fact.value !== null);
+    for (const sample of brief.evidence.samples) sample.topics = [];
+    for (const item of brief.must_answer.items) if (item.source === "ai_sample") { item.covered_by = 0; item.cluster.members = []; }
+    const host = await render(brief);
+    expect(host.querySelector("[data-brief-quality]")?.getAttribute("data-brief-quality")).toBe("limited");
+    expect(host.textContent).toContain("Linked answers were present, but they did not yield reusable observed topics.");
+  });
+
+  it("does not call an older B gap absent when displaying a valid historical result", async () => {
+    const brief = await geoBriefFixture(); brief.geo_origin.gap = "B";
+    const host = await render(brief);
+    const origin = host.querySelector('[data-brief-section="geo_origin"]')!;
+    expect(origin.textContent).toContain(en.tools.geoBrief.quality.gapB);
+    expect(origin.textContent).not.toContain("No visibility gap linked");
+  });
+
   it("uses semantic question and fact tables, preserving sources and null reasons", async () => {
     const brief = await geoBriefFixture();
     const host = await render(brief);
     expect(Array.from(host.querySelectorAll("[data-brief-section]")).map(node => node.getAttribute("data-brief-section"))).toEqual(["geo_origin", "lead_answer", "must_answer", "fact_table", "outline", "fields", "internal_links"]);
     const questions = host.querySelector('[data-brief-section="must_answer"] table');
     expect(questions).not.toBeNull();
-    expect(Array.from(questions!.querySelectorAll("thead th")).map(cell => [cell.textContent, cell.getAttribute("scope")])).toEqual([["id", "col"], ["Question", "col"], ["Coverage", "col"], ["Source", "col"]]);
+    expect(Array.from(questions!.querySelectorAll("thead th")).map(cell => [cell.textContent, cell.getAttribute("scope")])).toEqual([["ID", "col"], ["Question", "col"], ["Coverage", "col"], ["Source", "col"]]);
     const rows = questions!.querySelectorAll("tbody tr");
     expect(rows).toHaveLength(brief.must_answer.items.length);
-    expect(rows[0]?.textContent).toContain(en.tools.geoBrief.shared.requirement);
+    expect(rows[0]?.textContent).toContain(en.tools.geoBrief.quality.requiredItem);
     expect(rows[1]?.querySelectorAll("td")[1]?.textContent).toBe("2 / 2 answered samples");
-    expect(rows[1]?.querySelector('[title="observed in answer samples"]')?.textContent).toBe("ai_sample");
+    expect(rows[1]?.querySelector('[data-source="ai_sample"]')?.textContent).toBe(en.tools.geoBrief.quality.observedQuestion);
     const facts = host.querySelector('[data-brief-section="fact_table"] table');
     expect(facts?.querySelectorAll("thead th")).toHaveLength(3);
     const missing = Array.from(facts!.querySelectorAll("tbody tr")).find(row => row.textContent?.includes("Price"));
-    expect(missing?.querySelectorAll("td")[0]?.textContent).toBe("—");
-    expect(missing?.querySelectorAll("td")[1]?.textContent).toContain("null · missing");
-    expect(missing?.textContent).toContain("do not put a value on this");
+    expect(missing?.querySelectorAll("td")[0]?.textContent).toBe(en.tools.geoBrief.quality.noValue);
+    expect(missing?.querySelectorAll("td")[1]?.textContent).toContain(en.tools.geoBrief.quality.factReasons.missing);
+    expect(missing?.textContent).toContain(en.tools.geoBrief.quality.factRestriction);
+    expect(host.querySelector("[data-geo-technical]")?.textContent).toContain('"reason": "missing"');
     expect(host.querySelector('[data-brief-section="outline"]')?.textContent).toContain("H2 · Direct answer");
     expect(host.querySelector('[data-brief-section="outline"]')?.textContent).toContain("Answers Q1");
   });
@@ -69,15 +154,16 @@ describe("GEO Brief Artifact result presentation", () => {
     const host = await render(brief, "Buyer · small team");
     const origin = host.querySelector('[data-brief-section="geo_origin"]')!;
     expect(origin.textContent).toContain("Buyer · small team");
-    expect(origin.textContent).toContain("kb@v1");
+    expect(origin.textContent).toContain("Knowledge base · version 1");
     expect(origin.textContent).toContain("fixture-promptset/v1");
     expect(origin.textContent).toContain("fixture-1");
     expect(origin.textContent).toContain(brief.geo_origin.kb_ref.content_hash);
     expect(origin.textContent).toContain(brief.geo_origin.promptset_ref.hash);
     expect(origin.querySelectorAll("details details")).toHaveLength(0);
     const receipt = Array.from(origin.querySelectorAll("details")).find(item => item.querySelector("summary")?.textContent?.includes("S3"));
-    expect(receipt?.textContent).toContain("failed");
-    expect(receipt?.textContent).toContain("2026-08-30T00:00:00.000Z");
+    expect(receipt?.textContent).toContain("Failed · excluded from coverage");
+    expect(receipt?.querySelector("time")?.dateTime).toBe("2026-08-30T00:00:00.000Z");
+    expect(receipt?.textContent).toContain("Aug 30, 2026");
     const questions = host.querySelector('[data-brief-section="must_answer"]')!;
     expect(questions.textContent).toContain("2 / 2 answered samples");
     expect(questions.textContent).toContain("1 failed samples are excluded from coverage.");
@@ -111,7 +197,7 @@ describe("GEO Brief Artifact result presentation", () => {
     expect(link.target).toBe("_blank"); expect(link.rel).toBe("opener");
     await act(async () => { link.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })); });
     expect(JSON.parse(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)!).brief).toEqual(brief);
-    expect(host.querySelector("[data-geo-market-language]")?.textContent).toBe("market: US · language: en");
+    expect(host.querySelector("[data-geo-market-language]")?.textContent).toBe("Market: US · Output language: en");
     expect(JSON.stringify(brief)).toBe(original);
   });
 
@@ -131,14 +217,15 @@ describe("GEO Brief Artifact result presentation", () => {
   it("keeps manual, unavailable and empty result states explicit without a Draft action", async () => {
     const brief = await geoBriefFixture();
     brief.geo_origin = { ...brief.geo_origin, kind: "manual", role: null, layer: null, gap: null, run_ref: null, sample_refs: [] };
+    brief.geo_origin.question.id = null;
     brief.evidence.samples = []; brief.fact_table = []; brief.lead_answer.source = "user_input";
     brief.must_answer.items = [{ ...brief.must_answer.items[0]!, source: "user_input", sample_total: 0 }];
     brief.outline = { status: "unavailable", reason: "insufficient_evidence", attempted: 0 };
     brief.internal_links = { status: "available", items: [] }; brief.draft_readiness.writable = [];
     const host = await render(brief);
-    expect(host.textContent).toContain(en.tools.geoBrief.shared.noEvidence);
-    expect(host.textContent).toContain(en.tools.geoBrief.shared.manualNote);
-    expect(host.querySelector('[data-brief-section="outline"]')?.textContent).toContain("Unavailable: insufficient_evidence");
+    expect(host.textContent).toContain(en.tools.geoBrief.quality.origin.typed_question);
+    expect(host.textContent).toContain(en.tools.geoBrief.quality.openingManual);
+    expect(host.querySelector('[data-brief-section="outline"]')?.textContent).toContain(en.tools.geoBrief.quality.noOutline);
     expect(host.querySelector('[data-brief-section="fact_table"]')?.textContent).toContain("No facts available");
     expect(host.querySelector('[data-brief-section="internal_links"]')?.textContent).toContain("No internal links in the site index");
     expect(host.querySelector("[data-geo-to-draft]")).toBeNull();

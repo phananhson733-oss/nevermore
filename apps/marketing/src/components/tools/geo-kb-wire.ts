@@ -84,6 +84,8 @@ const BLOCKER_CODES: ReadonlySet<string> = new Set<GeoKbBlocker>([
   "aliases_missing",
   "alias_too_short",
   "category_terms_missing",
+  "category_language_mismatch",
+  "question_quality",
   "no_confirmed_competitor",
   "role_missing",
   "unsupported_language",

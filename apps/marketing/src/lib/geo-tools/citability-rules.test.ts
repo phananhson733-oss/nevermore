@@ -8,6 +8,7 @@ import {
 } from "./citability-contract.ts";
 import { buildCitabilityReport, runCitabilityChecks } from "./citability-rules.ts";
 import { measureCitabilityRender } from "./citability-render.ts";
+import { buildCitabilityConclusion } from "./citability-conclusion.ts";
 
 const BODY = `<p>${"内容".repeat(300)}</p>`;
 
@@ -62,12 +63,12 @@ describe("check inventory", () => {
     }
   });
 
-  it("marks exactly the two pattern-proxy rules as heuristic", () => {
+  it("marks exactly the three pattern-proxy rules as heuristic", () => {
     const heuristics = runCitabilityChecks(input())
       .filter((check) => check.kind === "heuristic")
       .map((check) => check.ruleId)
       .sort();
-    expect(heuristics).toEqual(["leadAnswer", "qualifiers"]);
+    expect(heuristics).toEqual(["citedData", "leadAnswer", "qualifiers"]);
   });
 });
 
@@ -286,6 +287,47 @@ describe("qualifiers", () => {
 });
 
 describe("cited data", () => {
+  it.each(["2000 companies use the service.", "We serve 2025 customers.", "价格为 1999 元。", "The price is $1999."])(
+    "does not erase a year-shaped quantity from a numerical sentence: %s", (sentence) => {
+      const html = `<body><p>${sentence}</p></body>`;
+      expect(byId(runCitabilityChecks(input({ rawHtml: html })), "citedData")).toMatchObject({
+        state: "fail", measured: { key: "citedData.unsourced", values: { total: 1, unsourced: 1 } },
+      });
+    },
+  );
+
+  it.each(["2025", "2025-08-31", "2025年8月31日", "Copyright 2020-2026", "Published in 2025", "Updated Q3 2025"])(
+    "keeps recognizable dates outside the numeric-statement scan: %s", (sentence) => {
+      const html = `<body><p>${sentence}</p></body>`;
+      expect(byId(runCitabilityChecks(input({ rawHtml: html })), "citedData")).toMatchObject({
+        state: "notApplicable", measured: { key: "citedData.noNumbers" },
+      });
+    },
+  );
+
+  it("only records a source cue, not verified factual support, for an arbitrary signup link", () => {
+    const html = `<body><p>Revenue grew 15% <a href="/signup">start your free trial</a>.</p></body>`;
+    const check = byId(runCitabilityChecks(input({ rawHtml: html })), "citedData");
+    // A link is observable. Its relevance, contents, and support for the
+    // numeric statement are not established by this local pattern scan.
+    expect(check).toMatchObject({
+      kind: "heuristic",
+      state: "pass",
+      measured: { key: "citedData.allSourced", values: { total: 1 } },
+    });
+  });
+
+  it.each([
+    { rawHtml: "<body>No numerical statements.</body>", bodyComplete: true, state: "notApplicable" },
+    { rawHtml: "<body>Revenue grew 15%.</body>", bodyComplete: true, state: "fail" },
+    { rawHtml: "<body>Revenue grew 15%.", bodyComplete: false, state: "fetchError" },
+  ])("keeps the $state source-cue branch heuristic", ({ rawHtml, bodyComplete, state }) => {
+    expect(byId(runCitabilityChecks(input({ rawHtml, bodyComplete })), "citedData")).toMatchObject({
+      kind: "heuristic",
+      state,
+    });
+  });
+
   it("is not applicable when the page makes no numeric claim", () => {
     const check = byId(runCitabilityChecks(input()), "citedData");
     expect(check.state).toBe("notApplicable");
@@ -317,6 +359,123 @@ describe("cited data", () => {
 describe("faq schema", () => {
   const faq = (nodes: unknown) =>
     `<html><body><script type="application/ld+json">${JSON.stringify(nodes)}</script>${BODY}</body></html>`;
+
+  it("accepts multiple explicitly typed accepted answers", () => {
+    const html = faq({
+      "@type": "FAQPage",
+      mainEntity: [{
+        "@type": "Question", name: "How?",
+        acceptedAnswer: [{ "@type": "Answer", text: "First way." }, { "@type": ["Answer"], text: "Second way." }],
+      }],
+    });
+    expect(byId(runCitabilityChecks(input({ rawHtml: html })), "faqSchema")).toMatchObject({
+      state: "pass", measured: { key: "faq.valid", values: { count: 1 } },
+    });
+  });
+
+  it("keeps a malformed answer from hiding behind a well-shaped answer", () => {
+    const html = faq({
+      "@type": "FAQPage",
+      mainEntity: [{
+        "@type": "Question", name: "How?",
+        acceptedAnswer: [{ "@type": "Answer", text: "First way." }, { "@type": "Product", text: "Not an answer." }],
+      }],
+    });
+    expect(byId(runCitabilityChecks(input({ rawHtml: html })), "faqSchema").state).toBe("fail");
+  });
+
+  it("reads a singleton @graph object", () => {
+    const html = faq({ "@graph": {
+      "@type": "FAQPage",
+      mainEntity: { "@type": "Question", name: "Q", acceptedAnswer: { "@type": "Answer", text: "A" } },
+    } });
+    expect(byId(runCitabilityChecks(input({ rawHtml: html })), "faqSchema").state).toBe("pass");
+  });
+
+  it.each([
+    { label: "unvisited FAQ", before: true },
+    { label: "unvisited nodes after a valid FAQ", before: false },
+  ])("does not conclude from an incomplete JSON-LD scan: $label", ({ before }) => {
+    const node = { "@type": "FAQPage", mainEntity: [{ "@type": "Question", name: "Q", acceptedAnswer: { "@type": "Answer", text: "A" } }] };
+    const padding = Array.from({ length: 20_000 }, () => null);
+    const html = faq(before ? [node, ...padding] : [...padding, node]);
+    expect(byId(runCitabilityChecks(input({ rawHtml: html })), "faqSchema")).toMatchObject({
+      state: "fetchError", measured: { key: "faq.scanIncomplete", values: { limit: 20_000 } },
+    });
+  });
+
+  it("does not call unparseable JSON-LD confirmed absence of FAQ markup", () => {
+    const html = `<body><script type="application/ld+json">{ broken</script></body>`;
+    expect(byId(runCitabilityChecks(input({ rawHtml: html })), "faqSchema")).toMatchObject({
+      state: "fetchError", measured: { key: "faq.noneWithBroken", values: { broken: 1 } },
+    });
+  });
+
+  it.each([
+    { mainEntity: { "@id": "#question" } },
+    { mainEntity: { "@type": "Question", name: "Q", acceptedAnswer: { "@id": "#answer" } } },
+  ])("reports unresolved node references as unverified, not malformed FAQ: %j", ({ mainEntity }) => {
+    const html = faq({ "@type": "FAQPage", mainEntity });
+    expect(byId(runCitabilityChecks(input({ rawHtml: html })), "faqSchema")).toMatchObject({
+      state: "fetchError", measured: { key: "faq.referencesNotResolved" },
+    });
+  });
+
+  it.each([
+    { questionType: "Person", answerType: "Answer" },
+    { questionType: "Question", answerType: "Product" },
+    { questionType: "Person", answerType: "Product" },
+    { questionType: undefined, answerType: "Answer" },
+    { questionType: "Question", answerType: undefined },
+    { questionType: "https://example.com/Question", answerType: "Answer" },
+  ])("rejects non-Question/Answer types despite non-empty fields: $questionType / $answerType", ({ questionType, answerType }) => {
+    const html = faq({
+      "@type": "FAQPage",
+      mainEntity: [{
+        "@type": questionType,
+        name: "Does it work?",
+        acceptedAnswer: { "@type": answerType, text: "Yes." },
+      }],
+    });
+    expect(byId(runCitabilityChecks(input({ rawHtml: html })), "faqSchema")).toMatchObject({
+      state: "fail",
+      measured: { key: "faq.incomplete", values: { incomplete: 1, total: 1 } },
+    });
+  });
+
+  it.each([
+    { faqType: "FAQPage" },
+    { faqType: "http://schema.org/FAQPage" },
+    { faqType: "https://schema.org/FAQPage" },
+    { faqType: ["WebPage", "https://schema.org/FAQPage"] },
+  ])(
+    "accepts supported Schema.org type forms and a single mainEntity: $faqType",
+    ({ faqType }) => {
+      const html = faq({
+        "@type": faqType,
+        mainEntity: {
+          "@type": ["Thing", "https://schema.org/Question"],
+          name: "Does it work?",
+          acceptedAnswer: { "@type": "http://schema.org/Answer", text: "Yes." },
+        },
+      });
+      expect(byId(runCitabilityChecks(input({ rawHtml: html })), "faqSchema")).toMatchObject({
+        state: "pass",
+        measured: { key: "faq.valid", values: { count: 1 } },
+      });
+    },
+  );
+
+  it("does not hide an empty FAQPage behind another complete node", () => {
+    const html = faq([
+      { "@type": "FAQPage", mainEntity: [] },
+      { "@type": "FAQPage", mainEntity: [{ "@type": "Question", name: "Q", acceptedAnswer: { "@type": "Answer", text: "A" } }] },
+    ]);
+    expect(byId(runCitabilityChecks(input({ rawHtml: html })), "faqSchema")).toMatchObject({
+      state: "fail",
+      measured: { key: "faq.emptyMainEntity" },
+    });
+  });
 
   it("is not applicable when the page declares no FAQ markup", () => {
     const check = byId(runCitabilityChecks(input()), "faqSchema");
@@ -373,6 +532,14 @@ describe("faq schema", () => {
 });
 
 describe("report", () => {
+  it("assembles the conclusion from the exact report checks, render capture, and question", () => {
+    const report = buildCitabilityReport(input({ targetQuestion: "What is this page about?" }), "2026-08-31T00:00:00.000Z");
+    expect(report.conclusion).toEqual(buildCitabilityConclusion(report));
+    expect(report.conclusion).toMatchObject({ schemaVersion: "marketing-citability-conclusion.v1", coverage: "partial" });
+    expect(report.conclusion.unknownCheckIds).toContain("ssr");
+    expect(byId(report.checks, "citedData").kind).toBe("heuristic");
+  });
+
   it("uses the actual captured raw visible count in the report summary", () => {
     const page = input();
     const rawCapture = { method: "browser_visible_text" as const, text: "", textChars: 0, complete: true };

@@ -1,10 +1,10 @@
-// @input  -- native/Next-proxied authenticated requests carrying SEO/GEO shared briefs or exact confirmed Brief v2
-// @output -- a self-checked versioned Draft result or the stable private error envelope
+// @input  -- native/Next-proxied authenticated requests carrying SEO/GEO shared briefs or exact confirmed Brief v2/v3
+// @output -- a self-checked Draft or private refusal; owned GEO question defects never consume quota
 // @pos    -- shared admission and schema dispatch; private GEO verification, v1 orchestration and isolated v2 runner
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { randomUUID } from "node:crypto";
-import { verifyOwnedGeoBrief } from "../geo-tools/brief-reference.ts";
+import { GeoBriefQuestionNeedsReview, verifyOwnedGeoBrief } from "../geo-tools/brief-reference.ts";
 
 import { createPublicToolError } from "@sf/public-tools/contract";
 import {
@@ -44,7 +44,7 @@ import { parseSharedContentBrief as parseContentBrief } from "@sf/public-tools/c
 import { GEO_CONTENT_BRIEF_SCHEMA, GEO_OUTLINE_CAP, geoGenerationLanguage, requireGeoGenerationLanguage, isGeoContentBrief, type GeoContentBrief, type SharedContentBrief as ContentBrief } from "@sf/public-tools/content-brief/geo-contract";
 import { geoDraftFacts, geoMissingFacts } from "@sf/public-tools/content-brief/geo-draft";
 import { parseDraftResult, parseDraftSettings } from "@sf/public-tools/content-brief/parse-draft";
-import { CONFIRMED_BRIEF_V2_MAX_BYTES, CONFIRMED_BRIEF_V2_SCHEMA, parseConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
+import { CONFIRMED_BRIEF_V2_MAX_BYTES, CONFIRMED_BRIEF_V2_SCHEMA, CONFIRMED_BRIEF_V3_SCHEMA, parseConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
 import { DRAFT_V2_REQUEST_MAX_BYTES, DRAFT_V2_SECTION_REQUEST_MAX_BYTES } from "@sf/public-tools/content-brief/v2-draft-contract";
 import { parseDraftResultV2 } from "@sf/public-tools/content-brief/v2-draft";
 import { planDraftV2Sections } from "@sf/public-tools/content-brief/v2-draft-scope";
@@ -85,9 +85,9 @@ import {
  * The brief arrives from the browser — pasted, uploaded or carried over in
  * sessionStorage — so before anything expensive runs it must pass the same
  * exact parser the brief tool ran before it answered. Admission comes first
- * though: login, the per-account slot and the hourly buckets are all settled
- * before the parser's hashing and invariant work, so a bad brief cannot be
- * used to burn CPU outside the slot. Sections are generated in parallel under
+ * though: login and the per-account slot bound parsing and reference work.
+ * GEO verifies the exact owned question before hourly quota; legacy SEO keeps
+ * its bucket-before-parser ordering. Sections are generated in parallel under
  * one entry deadline and every started call is drained before the slot is
  * released; a section that fails does not touch the others; the coverage
  * check is a separate call with a fresh context. A rerun returns a whole new
@@ -542,6 +542,7 @@ async function handle(
     if (refusal !== null) return refusal;
     return await work(admitted);
   } catch (error: unknown) {
+    if (error instanceof GeoBriefQuestionNeedsReview) return refuse("question_needs_review", 422);
     dependencies.emit(JSON.stringify({ tool: TOOL, unhandled: error instanceof Error ? error.name : typeof error }));
     return refuse("draft_unavailable", 503);
   } finally {
@@ -590,7 +591,7 @@ export async function handleContentDraftRunRequest(
   dependencies: ContentDraftHandlerDependencies = CONTENT_DRAFT_HANDLER_DEPENDENCIES,
 ): Promise<Response> {
   return handle(request, dependencies, RUN_ENDPOINT, async ({ body, bodyBytes, clock }) => {
-    if (isRecord(body["brief"]) && body["brief"]["schema"] === CONFIRMED_BRIEF_V2_SCHEMA) return handleV2(body, clock, dependencies, false);
+    if (isRecord(body["brief"]) && (body["brief"]["schema"] === CONFIRMED_BRIEF_V2_SCHEMA || body["brief"]["schema"] === CONFIRMED_BRIEF_V3_SCHEMA)) return handleV2(body, clock, dependencies, false);
     if (bodyBytes > DRAFT_REQUEST_MAX_BYTES || !withinBytes(body, DRAFT_REQUEST_MAX_BYTES)) return refuse("payload_too_large", 413);
     const settings = parseDraftSettings(body["settings"]);
     if (!settings.ok) return refuse("invalid_request", 400);
@@ -621,7 +622,7 @@ export async function handleContentDraftSectionRequest(
   dependencies: ContentDraftHandlerDependencies = CONTENT_DRAFT_HANDLER_DEPENDENCIES,
 ): Promise<Response> {
   return handle(request, dependencies, SECTION_ENDPOINT, async ({ body, bodyBytes, clock }) => {
-    if (isRecord(body["brief"]) && body["brief"]["schema"] === CONFIRMED_BRIEF_V2_SCHEMA) return handleV2(body, clock, dependencies, true);
+    if (isRecord(body["brief"]) && (body["brief"]["schema"] === CONFIRMED_BRIEF_V2_SCHEMA || body["brief"]["schema"] === CONFIRMED_BRIEF_V3_SCHEMA)) return handleV2(body, clock, dependencies, true);
     if (bodyBytes > SECTION_REQUEST_MAX_BYTES || !withinBytes(body, SECTION_REQUEST_MAX_BYTES)) return refuse("payload_too_large", 413);
     const sectionId = readId(body["section_id"]);
     if (sectionId === null) return refuse("invalid_request", 400);

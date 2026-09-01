@@ -16,6 +16,7 @@ import {
   type GeoKbPayload,
 } from "./kb-contract.ts";
 import { buildGeoQuestionSet, type GeoQuestionSet, type GeoQuestion } from "./kb-questions.ts";
+import { assessGeoQuestionQuality } from "./question-quality.ts";
 import type { GeoInheritedProfile } from "./asset-context.ts";
 import type { GeoSnapshotContext } from "./snapshot-context.ts";
 import { parseWebsiteProfileReference, type WebsiteProfileReferenceV1 } from "../account-websites/contracts.ts";
@@ -97,6 +98,11 @@ export interface GeoKbHandlerDependencies {
     readonly userId: string;
     readonly url: string;
   }) => Promise<GeoKbStoreOutcome<GeoKbView>>;
+  /** Read an owned knowledge base without registering or creating a site. */
+  readonly loadExistingKnowledgeBase?: (input: {
+    readonly userId: string;
+    readonly kbId: string;
+  }) => Promise<GeoKbStoreOutcome<GeoKbView>>;
   readonly saveDraft: (input: {
     readonly userId: string;
     readonly kbId: string;
@@ -172,7 +178,7 @@ function baseVersionOf(value: unknown): number | null {
     : null;
 }
 
-/** Load, creating the knowledge base for this site if the account has none. */
+/** Load an existing ID, or register the URL's site when the account has none. */
 export async function handleGeoKbLoad(
   request: Request,
   dependencies: GeoKbHandlerDependencies,
@@ -181,6 +187,18 @@ export async function handleGeoKbLoad(
   if (!auth.ok) return auth.response;
   const body = await readAccountMutationJson(request, LOAD_BODY_LIMIT_BYTES);
   if (!body.ok) return body.response;
+  if (exactKeys(body.value, ["kbId"])) {
+    const kbId = (body.value as { kbId: unknown }).kbId;
+    if (typeof kbId !== "string" || kbId.trim().length === 0) {
+      return privateError("invalid_request", 400);
+    }
+    if (!dependencies.loadExistingKnowledgeBase) {
+      return privateError("store_unavailable", 503);
+    }
+    const outcome = await dependencies.loadExistingKnowledgeBase({ userId: auth.userId, kbId });
+    if (outcome.kind !== "ok") return storeError(outcome);
+    return privateJson({ data: outcome.value });
+  }
   if (!exactKeys(body.value, ["url"])) {
     return privateError("invalid_request", 400);
   }
@@ -298,6 +316,9 @@ export async function handleGeoKbFreeze(
   }
 
   const questionSet = draft.value.questionSet ?? buildGeoQuestionSet(draft.value.payload);
+  if (questionSet.questions.some((question) => !assessGeoQuestionQuality(draft.value.payload, question, questionSet.language).ok)) {
+    return privateJson({ error: { code: "not_ready" }, blockers: ["question_quality"] }, 422);
+  }
   const outcome = await dependencies.freeze({
     userId: auth.userId,
     kbId,

@@ -8,6 +8,7 @@ import {
   GEO_KB_SCHEMA_VERSION,
   parseGeoKbPayload,
   type GeoKbPayload,
+  type GeoKbValue,
 } from "./kb-contract.ts";
 import { geoKbDigest } from "./kb-digest.ts";
 import { emptyMarketingWebsiteProfile } from "../account-websites/contracts.ts";
@@ -243,6 +244,20 @@ describe("payload validation", () => {
 });
 
 describe("blockers", () => {
+  it.each(["en", "en-US", "en-GB"])("blocks non-English category wording for the %s registry without changing saved payloads", (language) => {
+    const legacy = { ...VALID, market: { country: "US", language }, categoryTerms: ["占星工具", "心理占星", "自我探索", "CBT 日记", "知识库", "合盘分析"] };
+    const before = canonicalGeoKbText(legacy as unknown as GeoKbValue);
+    expect(geoKbBlockers(legacy)).toContain("category_language_mismatch");
+    expect(parseGeoKbPayload(legacy).ok).toBe(true);
+    expect(canonicalGeoKbText(legacy as unknown as GeoKbValue)).toBe(before);
+  });
+
+  it("does not treat Unicode brand names or secondary labels as an English category error", () => {
+    expect(geoKbBlockers({ ...VALID, officialName: "星图", aliases: ["星图"], categoryTerms: ["astrology", "合盘分析"], competitors: [{ domain: "rival.test", brandName: "小米", confirmed: true }] })).not.toContain("category_language_mismatch");
+    expect(geoKbBlockers({ ...VALID, officialName: "小米", categoryTerms: ["小米 analytics"] })).not.toContain("category_language_mismatch");
+    expect(geoKbBlockers({ ...VALID, officialName: "小米", categoryTerms: ["小米 占星工具"] })).toContain("category_language_mismatch");
+  });
+
   it("does not demand fabricated roles when the source-conditioned layers are skipped", () => {
     expect(geoKbBlockers({ ...VALID, roles: [] }, { roleLayersSkipped: true })).not.toContain("role_missing");
     expect(geoKbBlockers({ ...VALID, roles: [] })).toContain("role_missing");

@@ -662,7 +662,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       "Sign in, bring a content brief from the Content Brief Builder, and get a section-by-section draft: every sentence carries its claim state (bound, gap, stance or no-claim), and where it applies a bound or stance sentence is also marked with the layer its evidence came from; the sentences a human must verify list their references in the verify list; a separate model call checks which must-answer questions the draft covers, and a verify list names what a human must still confirm before publishing.",
     sourceLabel: "A GenGrowth sign-in and a content brief are required",
     sourceDetail:
-      "Bring an explicitly confirmed Content Brief v2, a shared GEO Brief v1.1 or a valid legacy SEO v1 export. SEO v2 sections cite only allowed competitor or owned-page excerpts and profile facts; PAA is not factual support. Shared GEO briefs keep their own evidence contract and server-side ownership verification.",
+      "Bring an explicitly confirmed Content Brief v2/v3, a shared GEO Brief v1.1 or a valid legacy SEO v1 export. The confirmed versions produce Draft v2 sections that cite only allowed competitor or owned-page excerpts and profile facts; PAA is not factual support. Shared GEO briefs keep their own evidence contract and server-side ownership verification.",
     cta: "Sign in to write a draft",
     trust:
       "No saved draft, no scheduled run, no content score, no originality claim, and no credit claim. A section whose evidence references fail validation is reported as failed rather than quietly rewritten, and an unfinished coverage check never shows a question as covered.",
@@ -717,7 +717,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "Why was my pasted brief refused?",
         answer:
-          "Confirm a generated v2 brief in Content Brief Builder first. A legacy GEO report is not a shared GEO Brief v1.1; use the current GEO Brief export for that workflow. Altered exports, broken references and unknown schemas are rejected; valid SEO v1 exports remain accepted.",
+          "Confirm a generated v2/v3 brief in Content Brief Builder first. A legacy GEO report is not a shared GEO Brief v1.1; use the current GEO Brief export for that workflow. Altered exports, broken references and unknown schemas are rejected; valid SEO v1 exports remain accepted.",
       },
       {
         question: "What does a claim annotation mean?",
@@ -727,7 +727,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "Which languages does it support?",
         answer:
-          "Confirmed v2 briefs support the language choices in Content Brief Builder, including Chinese, Japanese, Korean and Thai. Prose length is measured in words or characters and excludes headings. Legacy v1 imports keep their original language restrictions.",
+          "Confirmed v2/v3 briefs support the language choices in Content Brief Builder, including Chinese, Japanese, Korean and Thai. Prose length is measured in words or characters and excludes headings. Legacy v1 imports keep their original language restrictions.",
       },
       {
         question: "Does it publish, and is the draft saved?",
@@ -1325,7 +1325,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       "登录后带上 Content Brief Builder 的一份简报，得到逐节生成的初稿：每句话都有主张状态（有据、缺口、立场或无主张）；适用时，有据/立场句再标出证据的来源层；需要人工核实的句子在核实清单里列出引用；一次独立模型调用校验初稿覆盖了哪些必答问题，核实清单列出发布前仍需人工确认的句子。",
     sourceLabel: "需要登录 GenGrowth 账号并提供一份内容简报",
     sourceDetail:
-      "可载入已确认 Content Brief v2、共享 GEO Brief v1.1 或有效的历史 SEO v1。SEO v2 每节只能引用获准的竞品或自有页面片段及档案事实，PAA 不作为事实支持；共享 GEO Brief 保留自己的证据契约，并在服务端核验归属。",
+      "可载入已确认 Content Brief v2/v3、共享 GEO Brief v1.1 或有效的历史 SEO v1。已确认的这两个版本生成 Draft v2，每节只能引用获准的竞品或自有页面片段及档案事实，PAA 不作为事实支持；共享 GEO Brief 保留自己的证据契约，并在服务端核验归属。",
     cta: "登录后生成初稿",
     trust:
       "不保存初稿、没有定时任务、不给内容分、不声称原创、不承诺积分。证据引用没过校验的段落记为失败而不是悄悄改写；覆盖度校验没跑完时不会把任何问题显示为已覆盖。",
@@ -1380,7 +1380,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "为什么我粘贴的简报被拒绝了？",
         answer:
-          "生成的 v2 简报需先在 Content Brief Builder 确认。旧版 GEO 报告不是共享 GEO Brief v1.1，GEO 流程请使用当前工具的 Brief 导出。导出后被篡改、引用损坏或 schema 不明的文档会被拒绝；有效的历史 SEO v1 仍可载入。",
+          "生成的 v2/v3 简报需先在 Content Brief Builder 确认。旧版 GEO 报告不是共享 GEO Brief v1.1，GEO 流程请使用当前工具的 Brief 导出。导出后被篡改、引用损坏或 schema 不明的文档会被拒绝；有效的历史 SEO v1 仍可载入。",
       },
       {
         question: "主张标注是什么意思？",
@@ -1390,7 +1390,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "支持哪些语言？",
         answer:
-          "已确认的 v2 简报支持 Content Brief Builder 的语言选项，包括中文、日文、韩文、泰文。正文按词数或字符数计长，不含标题；旧版 v1 导入保留其原有语言限制。",
+          "已确认的 v2/v3 简报支持 Content Brief Builder 的语言选项，包括中文、日文、韩文、泰文。正文按词数或字符数计长，不含标题；旧版 v1 导入保留其原有语言限制。",
       },
       {
         question: "它会发布吗？初稿会保存吗？",

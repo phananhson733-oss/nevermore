@@ -153,7 +153,9 @@ describe("real isolated Chromium renderer", () => {
 
 describe("internal render service boundary", () => {
   it("runs the actual tsx service without transpiler helpers in browser code", async () => {
-    const result = await promisify(execFile)(process.execPath, [fileURLToPath(import.meta.resolve("tsx/cli")), fileURLToPath(new URL("./citability-renderer-fixture.ts", import.meta.url))], { timeout: 20_000, maxBuffer: 100_000, env: { PATH: process.env["PATH"], NODE_ENV: "test" } });
+    // The container installs Chromium outside the user's default cache. Keep
+    // this non-secret path without forwarding provider credentials to fixtures.
+    const result = await promisify(execFile)(process.execPath, [fileURLToPath(import.meta.resolve("tsx/cli")), fileURLToPath(new URL("./citability-renderer-fixture.ts", import.meta.url))], { timeout: 20_000, maxBuffer: 100_000, env: { PATH: process.env["PATH"], NODE_ENV: "test", PLAYWRIGHT_BROWSERS_PATH: process.env["PLAYWRIGHT_BROWSERS_PATH"] } });
     const captured = JSON.parse(result.stdout.trim());
     expect(captured.status).toBe("measured");
     expect(captured.raw).toBe("raw");
