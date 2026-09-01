@@ -38,8 +38,17 @@ describe("Artifact-aligned visibility report", () => {
   it("starts with four readable measured metrics and moves technical metadata into a disclosure", () => {
     mount(visibilityReportFixtureV2());
     expect([...host.querySelectorAll("[data-metric]")].map((node) => node.getAttribute("data-metric"))).toEqual(["questionsMentioned", "questionsCited", "coverage", "sov"]);
+    expect([...host.querySelectorAll("[data-metric]")].map((node) => node.getAttribute("data-metric-tone"))).toEqual(["accent", "info", "warning", "primary"]);
+    expect([...host.querySelectorAll("[data-metric] h4")].map((node) => node.textContent)).toEqual(["Natural mentions", "Own-site citations", "Answer coverage", "Brand-present answer share"]);
     expect(metric("questionsMentioned")?.textContent).toContain("0 / 1 questions");
+    expect(metric("questionsMentioned")?.textContent).not.toContain("Unprompted questions with at least one brand mention");
+    expect(metric("questionsCited")?.textContent).not.toContain("Unprompted retrieval questions with at least one citation");
     expect(metric("coverage")?.textContent).toContain("1 / 1");
+    expect(metric("coverage")?.textContent).toContain("Every frozen question received a valid answer");
+    expect(metric("coverage")?.textContent).not.toContain("All frozen questions with at least one valid answer");
+    expect(metric("sov")?.textContent).not.toContain("SOV counts your brand among answers");
+    expect(host.textContent).toContain("Unprompted questions with at least one brand mention");
+    expect(host.textContent).toContain("SOV counts your brand among answers");
     expect(host.querySelector('[data-section="metadata"]')?.tagName).toBe("DETAILS");
     expect(host.querySelector('[data-section="metadata"]')?.hasAttribute("open")).toBe(false);
     expect(host.querySelector('[data-section="metrics"]')!.compareDocumentPosition(host.querySelector('[data-section="metadata"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -180,9 +189,9 @@ describe("Artifact-aligned visibility report", () => {
   });
   it("renders the same semantic hierarchy in Chinese", () => {
     mount(visibilityReportFixtureV2(), "zh");
-    expect(metric("questionsMentioned")?.textContent).toContain("提及率");
+    expect(metric("questionsMentioned")?.textContent).toContain("自然提及");
     expect(metric("questionsMentioned")?.textContent).toContain("0 / 1 个问题");
-    expect(metric("sov")?.textContent).toContain("SOV");
+    expect(metric("sov")?.textContent).toContain("品牌出现回答占比");
     expect(host.textContent).not.toContain("tools.aiVisibility.report");
   });
   it("does not label paired question inference as a difference confidence interval", () => {

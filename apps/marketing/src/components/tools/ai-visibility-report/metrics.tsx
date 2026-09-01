@@ -8,6 +8,12 @@ import { isVisibilityReportV2, type AnyVisibilityReport, type VisibilityMetricsV
 import { CELL, HEAD, NOTE, PANEL, Rate, RunStatus, SectionTitle, SUMMARY, TableScroll } from "./primitives.tsx";
 
 const LAYER_ORDER = ["problem", "discovery", "comparison", "evaluation", "branded"] as const;
+const METRIC_TONES = {
+  accent: { article: "border-t-2 border-brand-accent/35", title: "text-brand-accent-text" },
+  info: { article: "border-t-2 border-brand-info/35", title: "text-brand-info" },
+  warning: { article: "border-t-2 border-brand-warning/35", title: "text-brand-warning" },
+  primary: { article: "border-t-2 border-brand-border-strong", title: "text-text-dark-primary" },
+} as const;
 
 function SovValue({ sov, prominent = false }: { readonly sov: VisibilityMetricsV2["shareOfVoice"] | null; readonly prominent?: boolean }) {
   const t = useTranslations("tools.aiVisibility.report"), shared = useTranslations("tools.aiVisibility");
@@ -23,25 +29,22 @@ function SovValue({ sov, prominent = false }: { readonly sov: VisibilityMetricsV
 
 export function MetricOverview({ metrics, coverage, v2 = null }: { readonly metrics: VisibilityMetrics; readonly coverage: { readonly covered: number; readonly total: number }; readonly v2?: VisibilityMetricsV2 | null }) {
   const t = useTranslations("tools.aiVisibility.report"), shared = useTranslations("tools.aiVisibility");
+  const cards = [
+    { key: "questionsMentioned", tone: "accent", title: t("mentionCardTitle"), content: <Rate proportion={metrics.questionsMentioned} unit="questions" prominent /> },
+    { key: "questionsCited", tone: "info", title: t("citationCardTitle"), content: <Rate proportion={metrics.questionsCited} unit="questions" prominent /> },
+    { key: "coverage", tone: "warning", title: t("coverageCardTitle"), content: <>
+      <p className="font-mono text-[32px] font-semibold leading-tight tabular-nums text-text-dark-primary">{coverage.covered} / {coverage.total}</p>
+      <p className={`mt-2 ${NOTE}`}>{coverage.total === coverage.covered ? t("coverageComplete") : t("coverageMissing", { count: coverage.total - coverage.covered })}</p>
+    </> },
+    { key: "sov", tone: "primary", title: t("sovCardTitle"), content: <SovValue sov={v2?.shareOfVoice ?? null} prominent /> },
+  ] as const;
   return <section data-section="metrics">
     <SectionTitle title={t("metricsTitle")} note={t("measured")} />
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {(["questionsMentioned", "questionsCited"] as const).map((key) => <article key={key} data-metric={key} className="flex min-w-0 flex-col border border-brand-border-card bg-brand-panel-sunken p-5">
-        <h4 className="mb-5 text-sm text-text-dark-secondary">{t(key === "questionsMentioned" ? "mention" : "citation")}</h4>
-        <Rate proportion={metrics[key]} unit="questions" prominent />
-        <p className={`mt-4 border-t border-brand-border-card pt-3 ${NOTE}`}>{t(key === "questionsMentioned" ? "mentionHelp" : "citationHelp")}</p>
+      {cards.map(({ key, tone, title, content }) => <article key={key} data-metric={key} data-metric-tone={tone} className={`min-w-0 border border-brand-border-card bg-brand-panel-sunken p-5 ${METRIC_TONES[tone].article}`}>
+        <h4 className={`mb-5 text-sm ${METRIC_TONES[tone].title}`}>{title}</h4>
+        {content}
       </article>)}
-      <article data-metric="coverage" className="min-w-0 border border-brand-border-card bg-brand-panel-sunken p-5">
-        <h4 className="mb-5 text-sm text-text-dark-secondary">{t("coverage")}</h4>
-        <p className="font-mono text-[32px] font-semibold leading-tight tabular-nums text-text-dark-primary">{coverage.covered} / {coverage.total}</p>
-        <p className={`mt-2 ${NOTE}`}>{t("coverageMissing", { count: coverage.total - coverage.covered })}</p>
-        <p className={`mt-4 border-t border-brand-border-card pt-3 ${NOTE}`}>{t("coverageHelp")}</p>
-      </article>
-      <article data-metric="sov" className="min-w-0 border border-brand-border-card bg-brand-panel-sunken p-5">
-        <h4 className="mb-5 text-sm text-text-dark-secondary">{t("sov")}</h4>
-        <SovValue sov={v2?.shareOfVoice ?? null} prominent />
-        {v2 !== null && <p className={`mt-4 border-t border-brand-border-card pt-3 ${NOTE}`}>{t("sovScope", { count: v2.shareOfVoice.confirmedCompetitorCount })}</p>}
-      </article>
     </div>
     <div className="mt-4 grid gap-4 border-l-2 border-brand-accent-text bg-brand-panel px-4 py-3 sm:grid-cols-[1fr_auto]">
       <div><h4 className="text-sm font-medium text-text-dark-primary">{t("promptedTitle")}</h4><p className={`mt-1 ${NOTE}`}>{t("promptedHelp")}</p></div>
@@ -53,8 +56,14 @@ export function MetricOverview({ metrics, coverage, v2 = null }: { readonly metr
         <div><p className={`mb-2 ${NOTE}`}>{t("mention")} · {t("sampleRate")}</p><Rate proportion={metrics.unpromptedMention} unit="answers" /></div>
         <div><p className={`mb-2 ${NOTE}`}>{t("citation")} · {t("sampleRate")}</p><Rate proportion={metrics.citation} unit="answers" /></div>
       </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <p className={NOTE}><span className="text-text-dark-primary">{t("mentionCardTitle")}.</span> {t("mentionHelp")}</p>
+        <p className={NOTE}><span className="text-text-dark-primary">{t("citationCardTitle")}.</span> {t("citationHelp")}</p>
+        <p className={NOTE}><span className="text-text-dark-primary">{t("coverageCardTitle")}.</span> {t("coverageHelp")}</p>
+        <p className={NOTE}><span className="text-text-dark-primary">{t("sovCardTitle")}.</span> {t("sovHelp")}</p>
+      </div>
       <p className={`mt-4 ${NOTE}`}>{t("zeroMethod")}</p>
-      {v2 !== null && <><p className={`mt-3 ${NOTE}`}>{t("sovHelp")}</p><p className={`mt-2 ${NOTE}`}>{shared("v2.sovAssumption")}</p></>}
+      {v2 !== null && <><p className={`mt-3 ${NOTE}`}>{t("sovScope", { count: v2.shareOfVoice.confirmedCompetitorCount })}</p><p className={`mt-2 ${NOTE}`}>{shared("v2.sovAssumption")}</p></>}
     </details>
   </section>;
 }
