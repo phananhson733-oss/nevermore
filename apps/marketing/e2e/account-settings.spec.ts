@@ -269,6 +269,15 @@ async function installConsent(page: Page) {
   }, { updatedAt: NOW });
 }
 
+async function openProfileCard(page: Page): Promise<void> {
+  const profileCard = page.locator('[data-account-editor-card="profile"]');
+  await expect(profileCard).toHaveJSProperty("open", false);
+  await page
+    .locator('[data-account-editor-card="profile"] > summary')
+    .click();
+  await expect(profileCard).toHaveJSProperty("open", true);
+}
+
 async function installAccountApi(page: Page, account: MockAccount) {
   const origin = `http://127.0.0.1:${process.env.MARKETING_E2E_PORT ?? "3001"}`;
   await page.context().route("**/*", async route => {
@@ -497,6 +506,9 @@ test("desktop account flow adds, generates, confirms, switches primary, conflict
     .getByRole("button", { name: "Add and generate profile" })
     .click();
   await expect(page).toHaveURL(/\/account\/websites\/[^?]+\?generate=1/u);
+  await expect(
+    page.locator('[data-account-editor-card="profile"]'),
+  ).toHaveJSProperty("open", true);
   await expect(page.locator("#website-profile-productName")).toHaveValue("Generated Example");
   await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
   const candidate = page.locator(
@@ -565,6 +577,7 @@ test("desktop account flow adds, generates, confirms, switches primary, conflict
   expect(account.profileSearchRequests).toHaveLength(1);
 
   await page.goto("/account/websites/" + SITE_IDS[0]);
+  await openProfileCard(page);
   await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
   expect(account.profileSearchRequests).toHaveLength(1);
   await expect(
@@ -598,6 +611,7 @@ test("desktop account flow adds, generates, confirms, switches primary, conflict
   ).toContainText("Primary");
 
   await page.goto("/account/websites/" + SITE_IDS[0]);
+  await openProfileCard(page);
   account.conflictNextSave = true;
   await page.locator("#website-profile-productName").fill("Local conflicting value");
   await expect(page.getByText("Resolve conflict")).toBeVisible();
@@ -686,6 +700,7 @@ test("keeps Chinese competitor suggestions separate from saved classifications a
   await page.evaluate(() => {
     document.documentElement.dataset.theme = "light";
   });
+  await openProfileCard(page);
 
   const competitors = page.locator("[data-website-competitors]");
   const directSummary = competitors.locator(
@@ -920,6 +935,7 @@ test.describe("mobile account settings", () => {
 
     await page.goto("/zh/account/websites/" + SITE_IDS[0]);
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await openProfileCard(page);
     await page
       .getByRole("button", { name: "刷新搜索格局", exact: true })
       .click();

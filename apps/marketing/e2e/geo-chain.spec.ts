@@ -68,17 +68,17 @@ async function freezeAndRun(page: Page, locale: Locale, fixture: GeoChainFixture
   const messages = copy(locale);
   await page.goto(`/${locale}/account/websites/${fixture.website.websiteId}/geo`);
   await expect(page).toHaveURL(new RegExp(`/account/websites/${fixture.website.websiteId}#geo$`, "u"));
-  const geo = page.locator("#geo");
-  await expect(geo.getByRole("heading", { name: messages.geoKnowledgeBase.asset.inlineTitle, exact: true })).toBeVisible();
+  const geo = page.locator('[data-account-editor-card="geo"]');
+  await expect(geo).toHaveJSProperty("open", true);
   await expect(geo.locator('[data-geo-profile-field="oneLinePositioning"] input, [data-geo-profile-field="oneLinePositioning"] textarea')).toHaveValue("Analytics for teams");
   await expect(geo.getByText(fixture.profile.reference.profileHash, { exact: false })).toBeVisible();
   expect(fixture.providerCalls).toBe(0);
-  const freeze = page.getByRole("button", { name: messages.geoKnowledgeBase.freeze.action, exact: true });
+  const freeze = geo.getByRole("button", { name: messages.geoKnowledgeBase.freeze.action, exact: true });
   await expect(freeze).toBeEnabled();
   await freeze.click();
-  await expect(page.getByText(fixture.frozen.questionSetHash, { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: messages.geoKnowledgeBase.freeze.preview, exact: true }).click();
-  await expect(page.getByText(fixture.question.text, { exact: true })).toBeVisible();
+  await expect(geo.getByText(fixture.frozen.questionSetHash, { exact: false })).toBeVisible();
+  await geo.getByRole("button", { name: messages.geoKnowledgeBase.freeze.preview, exact: true }).click();
+  await expect(geo.getByText(fixture.question.text, { exact: true })).toBeVisible();
   const freezeCall = guard.requests.find(request => request.id === "POST /api/tools/geo-knowledge-base/freeze");
   expect(freezeCall?.body).toEqual({ kbId: fixture.frozen.kbId, baseVersion: 1, contextHash: fixture.context.contentHash });
 
