@@ -91,11 +91,12 @@ describe("Artifact-aligned visibility report", () => {
   });
   it("retains historical V1 measurements but labels unretained answer evidence and SOV honestly", () => {
     const report = legacyReport();
-    mount({ ...report, questions: report.questions.map((question) => ({ ...question, samples: [] })), limits: ["historicalSamplesUnavailable"] });
+    mount({ ...report, questions: report.questions.map((question) => ({ ...question, samples: [] })), citedDomains: [{ domain: "source.test", answers: 2, isOwn: false, isCompetitor: false, sampleUrls: [] }], limits: ["historicalSamplesUnavailable"] });
     expect(metric("sov")?.textContent).toContain("Not recorded in V1");
     expect(metric("coverage")?.textContent).toContain("1 / 1");
     expect(host.textContent).toContain("Original answer evidence was not retained");
     expect(host.textContent).not.toContain("No answer to this question came back");
+    expect(host.querySelector('[data-section="sources"]')?.textContent).toContain("Not independently read");
     expect([...host.querySelectorAll("button")].some((button) => button.textContent?.includes("Download run JSON"))).toBe(false);
   });
   it("reads a saved V1 summary without constructing unavailable calibration or citation-error fields", () => {
@@ -185,6 +186,57 @@ describe("Artifact-aligned visibility report", () => {
     expect(sources?.querySelector("details summary")?.textContent).toContain("Source pages");
     expect(sources?.querySelector("a")?.textContent).toBe("source.test/path");
     expect(sources?.querySelectorAll("a").length).toBe(1);
+  });
+  it("adds evidenced source types and reports omitted unsafe source URLs without inventing domain-level presence", () => {
+    const report = visibilityReportFixtureV2();
+    const typedReport = {
+      ...report,
+      limits: [...report.limits, "citationEvidenceTruncated" as const],
+      citedDomains: [
+        { domain: "source.test", answers: 2, isOwn: false, isCompetitor: false, sampleUrls: ["https://source.test/path?tracking=long", "javascript:alert(1)"] },
+        { domain: "mixed.test", answers: 1, isOwn: false, isCompetitor: true, sampleUrls: ["https://mixed.test/compare"] },
+        { domain: "unknown.test", answers: 1, isOwn: false, isCompetitor: false, sampleUrls: [] },
+        { domain: "unsafe-only.test", answers: 1, isOwn: false, isCompetitor: false, sampleUrls: ["javascript:alert(2)"] },
+      ],
+      siteEvidence: {
+        schemaVersion: "marketing-geo-site-evidence.v1",
+        collectedAt: "2026-08-31T00:02:00.000Z",
+        index: { scope: "declared_and_reachable_inventory", status: "complete", targetHost: "acme.test", discoveredCount: 0, sitemapUrls: [], inventorySources: [], limits: [], pages: [] },
+        references: [
+          { id: "ref-1", url: "https://www.source.test/path?tracking=long", finalUrl: "https://www.source.test/path?tracking=long", fetchedAt: "2026-08-31T00:02:00.000Z", state: "read", reason: null, httpStatus: 200, contentSha256: "a".repeat(64), contentMethod: "raw_html", bodyComplete: true, title: "Source", headings: [], pageType: "listicle", pageTypeBasis: "title_headings", ownPresence: true, ownPresenceBasis: "brand_text", ownPresenceExcerpt: "Acme", matches: [], sampleSlots: ["chatgpt:q1:1"] },
+          { id: "ref-2", url: "https://mixed.test/compare", finalUrl: "https://mixed.test/compare", fetchedAt: "2026-08-31T00:02:00.000Z", state: "read", reason: null, httpStatus: 200, contentSha256: "b".repeat(64), contentMethod: "raw_html", bodyComplete: true, title: "Compare", headings: [], pageType: "comparison", pageTypeBasis: "title_headings", ownPresence: false, ownPresenceBasis: "none", ownPresenceExcerpt: null, matches: [], sampleSlots: ["chatgpt:q1:1"] },
+          { id: "ref-3", url: "https://mixed.test/docs", finalUrl: "https://mixed.test/docs", fetchedAt: "2026-08-31T00:02:00.000Z", state: "read", reason: null, httpStatus: 200, contentSha256: "c".repeat(64), contentMethod: "raw_html", bodyComplete: true, title: "Docs", headings: [], pageType: "documentation", pageTypeBasis: "title_headings", ownPresence: false, ownPresenceBasis: "none", ownPresenceExcerpt: null, matches: [], sampleSlots: ["chatgpt:q1:1"] },
+        ],
+        referenceOmittedCount: 0,
+        citability: [],
+        citabilityOmittedCount: 0,
+      },
+    };
+    mount(typedReport);
+    const sources = host.querySelector('[data-section="sources"]');
+    expect([...sources!.querySelectorAll("thead th")].map((cell) => cell.textContent)).toEqual(["Domain", "Citing answers", "Source type", "Identity"]);
+    const rows = [...sources!.querySelectorAll("tbody tr")];
+    expect(rows[0]?.textContent).toContain("Listicle");
+    expect(rows[0]?.querySelectorAll("td")[0]?.textContent).toBe("2");
+    expect(rows[0]?.textContent).toContain("1 source page could not be displayed safely.");
+    expect(rows[0]?.textContent).not.toContain("javascript:alert(1)");
+    expect(rows[1]?.textContent).toContain("Multiple");
+    expect(rows[2]?.textContent).toContain("Not independently read");
+    expect(rows[3]?.querySelectorAll("td")[0]?.textContent).toBe("1");
+    expect(rows[3]?.textContent).toContain("1 source page could not be displayed safely.");
+    expect(rows[3]?.textContent).not.toContain("Source page URLs were not retained.");
+    expect(sources?.textContent).toContain("retained lower bound");
+    expect(sources?.textContent).not.toContain("Present on own page");
+
+    mount(typedReport, "zh");
+    const zhSources = host.querySelector('[data-section="sources"]');
+    expect([...zhSources!.querySelectorAll("thead th")].map((cell) => cell.textContent)).toEqual(["域名", "被引回答数", "来源类型", "身份"]);
+    const zhRows = [...zhSources!.querySelectorAll("tbody tr")];
+    expect(zhRows[0]?.textContent).toContain("榜单页");
+    expect(zhRows[1]?.textContent).toContain("多种类型");
+    expect(zhRows[2]?.textContent).toContain("未独立读取");
+    expect(zhRows[3]?.textContent).toContain("1 条来源页面无法安全展示。");
+    expect(zhSources?.textContent).toContain("已保留证据的下限");
   });
   it("exports actual V2 evidence through the existing portable format", async () => {
     const blobs: Blob[] = [];

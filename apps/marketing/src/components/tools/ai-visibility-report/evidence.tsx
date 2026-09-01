@@ -4,29 +4,50 @@
 // @pos -- bounded evidence reader; provider content is rendered only as text
 import { useTranslations } from "next-intl";
 import type { VisibilityCitedDomain, VisibilityQuestionResult, VisibilitySample } from "../../../lib/geo-tools/visibility-contract.ts";
+import { normalizeGeoHost } from "../../../lib/agents/geo-url.ts";
+import type { GeoPageType, GeoReferencePage } from "../../../lib/geo-tools/site-index-contract.ts";
 import type { VisibilityQuestionCounts } from "../../../lib/geo-tools/visibility-store.ts";
 import type { VisibilitySampleV2 } from "../../../lib/geo-tools/visibility-v2-contract.ts";
-import { CELL, EvidenceLinks, HEAD, NOTE, PANEL, SectionTitle, SUMMARY, TableScroll } from "./primitives.tsx";
+import { CELL, EvidenceLinks, HEAD, NOTE, PANEL, partitionEvidenceUrls, SectionTitle, SUMMARY, TableScroll } from "./primitives.tsx";
 
-export function SourceTable({ domains, truncated = false }: { readonly domains: readonly VisibilityCitedDomain[]; readonly truncated?: boolean }) {
+function sourceTypeLabel(pageTypes: readonly GeoPageType[], t: ReturnType<typeof useTranslations>) {
+  if (pageTypes.length === 0) return t("sourceTypeUnknown");
+  return pageTypes.length === 1 ? t(`sourceTypes.${pageTypes[0]}`) : t("sourceTypeMultiple");
+}
+
+export function SourceTable({ domains, references = [], truncated = false }: { readonly domains: readonly VisibilityCitedDomain[]; readonly references?: readonly GeoReferencePage[]; readonly truncated?: boolean }) {
   const t = useTranslations("tools.aiVisibility.report"), shared = useTranslations("tools.aiVisibility");
+  const typeByDomain = new Map<string, readonly GeoPageType[]>();
+  for (const page of references) {
+    if (page.state !== "read") continue;
+    const host = normalizeGeoHost(page.url);
+    if (host === null) continue;
+    const types = typeByDomain.get(host) ?? [];
+    if (!types.includes(page.pageType)) typeByDomain.set(host, [...types, page.pageType]);
+  }
   return <section className={PANEL} data-section="sources">
     <SectionTitle title={t("sourcesTitle")} note={t("sourcesHelp")} count={domains.length} />
     {truncated && <p className={`mb-4 border-l-2 border-brand-border-strong pl-3 ${NOTE}`}>{t("sourceTruncated")}</p>}
     {domains.length === 0 ? <p className={NOTE}>{t("noSources")}</p> : <TableScroll><table className="w-full min-w-[480px] border-collapse">
       <caption className="sr-only">{t("sourcesTitle")}</caption>
-      <thead><tr className="border-b border-brand-border-strong">{["domain", "answers", "role"].map((key) => <th key={key} className={HEAD} scope="col">{t(key)}</th>)}</tr></thead>
-      <tbody>{domains.map((domain) => <tr key={domain.domain} className="border-b border-brand-border-card last:border-0">
+      <thead><tr className="border-b border-brand-border-strong">{["domain", "answers", "sourceType", "role"].map((key) => <th key={key} className={HEAD} scope="col">{t(key)}</th>)}</tr></thead>
+      <tbody>{domains.map((domain) => {
+        const host = normalizeGeoHost(domain.domain);
+        const urlPartition = partitionEvidenceUrls(domain.sampleUrls);
+        return <tr key={domain.domain} className="border-b border-brand-border-card last:border-0">
         <th className={`${CELL} w-[65%] font-normal`} scope="row">
           <span className="font-mono text-sm">{domain.domain}</span>
-          {domain.sampleUrls.length === 0 ? <p className={`mt-2 ${NOTE}`}>{t("sourceUrlsUnavailable")}</p> : <details className="mt-2">
-            <summary className={`${SUMMARY} text-xs text-text-dark-secondary`}>{t("sourcePages", { count: domain.sampleUrls.length })}</summary>
-            <div className="mt-3 max-w-lg"><EvidenceLinks urls={domain.sampleUrls} /></div>
-          </details>}
+          {domain.sampleUrls.length === 0 ? <p className={`mt-2 ${NOTE}`}>{t("sourceUrlsUnavailable")}</p> : urlPartition.safeUrls.length > 0 ? <details className="mt-2">
+            <summary className={`${SUMMARY} text-xs text-text-dark-secondary`}>{t("sourcePages", { count: urlPartition.safeUrls.length })}</summary>
+            <div className="mt-3 max-w-lg"><EvidenceLinks partition={urlPartition} /></div>
+          </details> : null}
+          {urlPartition.omittedCount > 0 && <p className={`mt-2 ${NOTE}`}>{t("sourceUrlsOmitted", { count: urlPartition.omittedCount })}</p>}
         </th>
         <td className={`${CELL} font-mono tabular-nums`}>{domain.answers}</td>
+        <td className={CELL}><span className="text-xs text-text-dark-primary">{sourceTypeLabel(host === null ? [] : typeByDomain.get(host) ?? [], t)}</span></td>
         <td className={CELL}><span className={`text-xs ${domain.isOwn ? "text-brand-accent-text" : "text-text-dark-secondary"}`}>{shared(`domains.role.${domain.isOwn ? "own" : domain.isCompetitor ? "competitor" : "other"}`)}</span></td>
-      </tr>)}</tbody>
+      </tr>;
+      })}</tbody>
     </table></TableScroll>}
   </section>;
 }
