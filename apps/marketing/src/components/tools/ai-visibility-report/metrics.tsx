@@ -7,6 +7,8 @@ import type { VisibilityMetrics } from "../../../lib/geo-tools/visibility-contra
 import { isVisibilityReportV2, type AnyVisibilityReport, type VisibilityMetricsV2 } from "../../../lib/geo-tools/visibility-v2-contract.ts";
 import { CELL, HEAD, NOTE, PANEL, Rate, RunStatus, SectionTitle, SUMMARY, TableScroll } from "./primitives.tsx";
 
+const LAYER_ORDER = ["problem", "discovery", "comparison", "evaluation", "branded"] as const;
+
 function SovValue({ sov, prominent = false }: { readonly sov: VisibilityMetricsV2["shareOfVoice"] | null; readonly prominent?: boolean }) {
   const t = useTranslations("tools.aiVisibility.report"), shared = useTranslations("tools.aiVisibility");
   const value = sov === null ? t("sovV1") : sov.point === null ? t("unavailable") : sov.point === 0 ? t("unobserved") : `${(sov.point * 100).toFixed(1)}%`;
@@ -82,17 +84,22 @@ export function EngineTable({ report }: { readonly report: AnyVisibilityReport }
 
 export function LayerTable({ metrics, v2 = null }: { readonly metrics: VisibilityMetrics; readonly v2?: VisibilityMetricsV2 | null }) {
   const t = useTranslations("tools.aiVisibility.report"), shared = useTranslations("tools.aiVisibility");
+  const rows = LAYER_ORDER.map((layer) => ({
+    layer,
+    metric: metrics.byLayer.find((entry) => entry.layer === layer),
+    detail: v2?.byLayer.find((entry) => entry.layer === layer),
+  }));
   return <section className={PANEL} data-section="layers">
     <SectionTitle title={t("layerTitle")} note={t("layerHelp")} />
     <TableScroll><table className="w-full min-w-[600px] border-collapse"><caption className="sr-only">{t("layerTitle")}</caption>
       <thead><tr className="border-b border-brand-border-strong">{["intent", "mentionColumn", "citationColumn", ...(v2 === null ? [] : ["position", "samples"])].map((key) => <th key={key} className={HEAD} scope="col">{t(key)}</th>)}</tr></thead>
-      <tbody>{metrics.byLayer.map((row) => {
-        const detail = v2?.byLayer.find((entry) => entry.layer === row.layer);
-        return <tr key={row.layer} className="border-b border-brand-border-card last:border-0">
-          <th className={`${CELL} font-normal`} scope="row">{shared(`layers.names.${row.layer}`)}</th>
-          <td className={CELL}><Rate proportion={row.mention} unit="answers" /></td>
-          <td className={CELL}><Rate proportion={row.citation} unit="answers" /></td>
-          {v2 !== null && <><td className={`${CELL} font-mono`}>{detail?.meanPosition.value === null || detail === undefined ? t("unavailable") : t("positionValue", { position: detail.meanPosition.value.toFixed(2), count: detail.meanPosition.observations })}</td><td className={`${CELL} font-mono`}>{detail === undefined ? t("unavailable") : t("callsShort", { answered: detail.answeredSamples, calls: detail.plannedSamples })}</td></>}
+      <tbody>{rows.map(({ layer, metric, detail }) => {
+        const missing = metric === undefined;
+        return <tr key={layer} className="border-b border-brand-border-card last:border-0">
+          <th className={`${CELL} font-normal`} scope="row">{shared(`layers.names.${layer}`)}</th>
+          <td className={CELL}>{missing ? <span className={NOTE}>{t("layerMissing")}</span> : <Rate proportion={metric.mention} unit="answers" />}</td>
+          <td className={CELL}>{missing ? <span className={NOTE}>{t("layerMissing")}</span> : <Rate proportion={metric.citation} unit="answers" />}</td>
+          {v2 !== null && <><td className={`${CELL} font-mono`}>{missing || detail === undefined || detail.meanPosition.value === null ? "—" : t("positionValue", { position: detail.meanPosition.value.toFixed(2), count: detail.meanPosition.observations })}</td><td className={`${CELL} font-mono`}>{missing || detail === undefined ? "—" : t("callsShort", { answered: detail.answeredSamples, calls: detail.plannedSamples })}</td></>}
         </tr>;
       })}</tbody>
     </table></TableScroll>

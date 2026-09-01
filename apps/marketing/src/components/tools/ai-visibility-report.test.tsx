@@ -117,6 +117,32 @@ describe("Artifact-aligned visibility report", () => {
     expect(engineRows[1]?.querySelector('[data-rate-unit]')).toBeNull();
     expect(metric("coverage")?.textContent).toContain("5 / 5");
   });
+  it("renders all five intent layers and marks missing layers as not asked", () => {
+    const initial = visibilityReportFixtureV2();
+    const definitions = [
+      { ...initial.questions[0]!.definition, id: "q-discovery", text: "Which tool is best?", layer: "discovery" as const },
+      { ...initial.questions[0]!.definition, id: "q-comparison", text: "How does Acme compare with Rival?", layer: "comparison" as const },
+      { ...initial.questions[0]!.definition, id: "q-branded", text: "What is Acme?", layer: "branded" as const, mode: "demand" as const },
+    ];
+    const samples = [
+      { ...initial.questions[0]!.samples[0]!, questionId: "q-discovery", slotId: "chatgpt:q-discovery:1" },
+      { ...initial.questions[0]!.samples[0]!, questionId: "q-comparison", slotId: "chatgpt:q-comparison:1", mentioned: true },
+      { ...initial.questions[0]!.samples[0]!, questionId: "q-branded", slotId: "chatgpt:q-branded:1", mentioned: true, webSearchPerformed: false, cited: false },
+    ];
+    mount(visibilityReportFixtureV2({ questions: definitions, samples }));
+    const rows = [...host.querySelectorAll('[data-section="layers"] tbody tr')];
+    expect(rows.map((row) => row.querySelector('th[scope="row"]')?.textContent)).toEqual(["Problem", "Discovery", "Comparison", "Evaluation", "Branded"]);
+    expect(rows[0]?.textContent).toContain("No questions in this run");
+    expect(rows[0]?.textContent).toContain("—");
+    expect(rows[0]?.textContent).not.toContain("%");
+    expect(rows[1]?.textContent).not.toContain("No questions in this run");
+    expect(rows[1]?.querySelectorAll("td")[3]?.textContent).toBe("1 / 1");
+    expect(rows[2]?.textContent).toContain("100%");
+    expect(rows[2]?.querySelectorAll("td")[3]?.textContent).toBe("1 / 1");
+    expect(rows[3]?.textContent).toContain("No questions in this run");
+    expect(rows[3]?.textContent).not.toContain("%");
+    expect(rows[4]?.querySelectorAll("td")[3]?.textContent).toBe("1 / 1");
+  });
   it("withholds rate, stage, gap and comparison conclusions for insufficient runs", () => {
     const report = visibilityReportFixtureV2({ samples: [] });
     mount(report);
