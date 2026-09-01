@@ -202,7 +202,7 @@ describe("WebsitesAccountClient", () => {
     expect(host.textContent).toContain(en.account.websites.emptyTitle);
   });
 
-  it("renders every profile state, one primary, version, and edit actions", async () => {
+  it("keeps profile state metadata without rendering status details", async () => {
     const websites = [
       website(0, "not_generated"),
       website(1, "draft"),
@@ -216,15 +216,31 @@ describe("WebsitesAccountClient", () => {
     await settle();
 
     expect(host.textContent).toContain(en.account.websites.primary);
-    for (const state of [
+    const states = [
       "not_generated",
       "draft",
       "confirmed",
       "unconfirmed_changes",
-    ] as const) {
-      expect(host.textContent).toContain(en.account.websites.status[state]);
+    ] as const;
+    expect(
+      [...host.querySelectorAll("[data-profile-state]")].map((card) =>
+        card.getAttribute("data-profile-state"),
+      ),
+    ).toEqual(states);
+    for (const statusCopy of [
+      "Not generated",
+      "Draft",
+      "Confirmed",
+      "Unconfirmed changes",
+    ]) {
+      expect(host.textContent).not.toContain(statusCopy);
     }
-    expect(host.textContent).toContain("Confirmed v2");
+    expect(host.textContent).not.toContain("Confirmed v2");
+    expect(host.textContent).not.toContain(
+      new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(
+        new Date(NOW),
+      ),
+    );
     expect(host.querySelectorAll('a[href*="/account/websites/"]')).toHaveLength(4);
     const secondCard = host.querySelector(
       '[data-website-id="' + IDS[1] + '"]',

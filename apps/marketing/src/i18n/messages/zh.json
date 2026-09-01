@@ -8676,14 +8676,6 @@
       "setPrimary": "设为主要",
       "setPrimaryWebsite": "将 {name} 设为主要网站",
       "settingPrimary": "正在更新…",
-      "version": "已确认 v{revision}",
-      "confirmedAt": "确认于 {date}",
-      "status": {
-        "not_generated": "未生成",
-        "draft": "草稿",
-        "confirmed": "已确认",
-        "unconfirmed_changes": "有未确认修改"
-      },
       "dialog": {
         "title": "添加网站",
         "description": "先保存公开网站，也可以随后生成它的产品与核心用户画像。",
@@ -8741,6 +8733,10 @@
         "noChanges": "本次没有字段变化。"
       },
       "editor": {
+        "profileCardTitle": "产品 Profile",
+        "profileCardBody": "产品、核心用户画像、市场与竞品资料",
+        "geoCardTitle": "GEO 知识库",
+        "geoCardBody": "品牌匹配、提问、证据与冻结版本",
         "loading": "正在读取画像…",
         "signedOut": "登录后编辑这个画像。",
         "unavailable": "画像暂时不可用。",

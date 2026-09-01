@@ -8676,14 +8676,6 @@
       "setPrimary": "Make primary",
       "setPrimaryWebsite": "Make {name} primary",
       "settingPrimary": "Updating…",
-      "version": "Confirmed v{revision}",
-      "confirmedAt": "Confirmed {date}",
-      "status": {
-        "not_generated": "Not generated",
-        "draft": "Draft",
-        "confirmed": "Confirmed",
-        "unconfirmed_changes": "Unconfirmed changes"
-      },
       "dialog": {
         "title": "Add website",
         "description": "Save a public website now, then optionally generate its Product and ICP profile.",
@@ -8741,6 +8733,10 @@
         "noChanges": "No field changes were proposed."
       },
       "editor": {
+        "profileCardTitle": "Product Profile",
+        "profileCardBody": "Product, audience, market and competitor context",
+        "geoCardTitle": "GEO Knowledge Base",
+        "geoCardBody": "Brand matching, questions, evidence and frozen versions",
         "loading": "Loading profile…",
         "signedOut": "Sign in to edit this profile.",
         "unavailable": "This profile is temporarily unavailable.",

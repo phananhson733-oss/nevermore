@@ -105,19 +105,6 @@ export function WebsitesAccountClient() {
     };
   }, [requestVersion]);
 
-  function statusLabel(profileState: WebsiteSummary["profileState"]): string {
-    switch (profileState) {
-      case "draft":
-        return t("status.draft");
-      case "confirmed":
-        return t("status.confirmed");
-      case "unconfirmed_changes":
-        return t("status.unconfirmed_changes");
-      default:
-        return t("status.not_generated");
-    }
-  }
-
   async function setPrimary(websiteId: string): Promise<void> {
     setSettingPrimaryId(websiteId);
     try {
@@ -223,27 +210,6 @@ export function WebsitesAccountClient() {
                     <p className="mt-1 text-[13px] text-text-dark-secondary">
                       {website.host}
                     </p>
-                    <p className="mt-3 text-[13px] text-text-dark-secondary">
-                      {statusLabel(website.profileState)}
-                    </p>
-                    {website.confirmedSnapshotRevision === null ? null : (
-                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-text-dark-secondary">
-                        <span>
-                          {t("version", {
-                            revision: website.confirmedSnapshotRevision,
-                          })}
-                        </span>
-                        {website.confirmedAt === null ? null : (
-                          <span>
-                            {t("confirmedAt", {
-                              date: new Intl.DateTimeFormat(locale, {
-                                dateStyle: "medium",
-                              }).format(new Date(website.confirmedAt)),
-                            })}
-                          </span>
-                        )}
-                      </div>
-                    )}
                   </div>
                 </div>
 
