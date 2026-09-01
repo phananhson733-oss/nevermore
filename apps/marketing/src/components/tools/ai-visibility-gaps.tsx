@@ -10,6 +10,17 @@ import { thirdPartyGapMarkdown } from "../../lib/geo-tools/gap-markdown.ts";
 import { localePath } from "../../lib/locale-path.ts";
 import { ACTION, CELL, EvidenceLinks, HEAD, NOTE, PANEL, SUMMARY, TableScroll } from "./ai-visibility-report/primitives.tsx";
 const GAP_KINDS = ["A", "B", "C", "D", "unattributed"] as const;
+const GAP_CARD_TONES = {
+  neutral: { card: "border-l-brand-border-card", label: "text-text-dark-secondary" },
+  warning: { card: "border-brand-warning/30 border-l-brand-warning bg-brand-warning/[0.06]", label: "text-brand-warning" },
+  info: { card: "border-brand-info/30 border-l-brand-info bg-brand-info/[0.06]", label: "text-brand-info" },
+} as const;
+
+function gapTone(kind: typeof GAP_KINDS[number], count: number) {
+  if (count === 0) return "neutral";
+  return kind === "unattributed" ? "info" : "warning";
+}
+
 export function VisibilityGapEvidence({ report, locale }: { readonly report: VisibilityReportV2; readonly locale: string }) {
   const t = useTranslations("tools.aiVisibility"), [failed, setFailed] = useState(false);
   const evidence = report.siteEvidence, stored = !report.limits.includes("notStored");
@@ -19,10 +30,15 @@ export function VisibilityGapEvidence({ report, locale }: { readonly report: Vis
     <p className={`mt-2 max-w-3xl ${NOTE}`}>{t("gaps.intro")}</p>
     {evidence === null ? <p className="mt-3 text-sm text-text-dark-secondary">{t("gaps.noEvidence")}</p> : <>
       <dl data-gap-summary className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
-        {GAP_KINDS.map(kind => <div key={kind} data-gap-kind={kind} className={`flex min-w-0 flex-col border border-brand-border-card border-l-2 bg-brand-panel-sunken p-3 ${kind === "unattributed" ? "border-l-brand-border-strong" : "border-l-brand-accent-text"}`}>
-          <dt className={`order-2 mt-2 ${NOTE}`}>{t(`gaps.kind.${kind}`)}</dt>
-          <dd className="order-1 font-mono text-2xl font-semibold tabular-nums text-text-dark-primary">{report.gaps.filter(gap => gap.kind === kind).length}</dd>
-        </div>)}
+        {GAP_KINDS.map(kind => {
+          const count = report.gaps.filter(gap => gap.kind === kind).length;
+          const tone = gapTone(kind, count);
+          const styles = GAP_CARD_TONES[tone];
+          return <div key={kind} data-gap-kind={kind} data-gap-tone={tone} className={`flex min-w-0 flex-col border border-brand-border-card border-l-2 bg-brand-panel-sunken p-3 ${styles.card}`}>
+          <dt className={`order-2 mt-2 ${NOTE} ${styles.label}`}>{t(`gaps.kind.${kind}`)}</dt>
+          <dd className="order-1 font-mono text-2xl font-semibold tabular-nums text-text-dark-primary">{count}</dd>
+        </div>;
+        })}
       </dl>
       <p className={`mt-3 ${NOTE}`}>{t("gaps.indexStatus", { status: t(`gaps.indexValues.${evidence.index.status}`), count: evidence.index.pages.filter((page) => page.state === "read").length, discovered: evidence.index.discoveredCount })}</p>
       {evidence.citabilityOmittedCount > 0 && <p className={`mt-2 ${NOTE}`}>{t("gaps.citabilityOmitted", { count: evidence.citabilityOmittedCount })}</p>}

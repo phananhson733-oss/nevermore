@@ -6198,7 +6198,7 @@
           "B": "已有页面难以被 AI 引用",
           "C": "缺少第三方提及与佐证",
           "D": "缺少对比内容",
-          "unattributed": "未归因"
+          "unattributed": "原因暂未确定"
         },
         "presence": { "present": "页面中已观察到本站或品牌", "absent": "完整读取中未找到本站或品牌", "unknown": "在位情况不可用" },
         "pageType": { "listicle": "榜单页", "comparison": "对比页", "product": "产品页", "article": "文章", "documentation": "文档", "other": "其他已读页面", "unavailable": "页面类型不可用" },

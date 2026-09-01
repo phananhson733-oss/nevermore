@@ -69,6 +69,46 @@ describe("real GAP action controls", () => {
       expect(element.querySelector('[data-gap-row] details')?.hasAttribute("open")).toBe(false);
     });
   });
+  it("renders zero actionable gaps as neutral, non-zero actionable gaps as warnings, and non-zero unattributed gaps as informational", async () => {
+    const base = visibilityReportFixtureV2();
+    const gaps = [
+      { id: "gap-a", questionId: "q1", kind: "A" as const, reason: "no_matching_page_in_audited_inventory" as const, evidenceIds: ["site-index"], pageUrl: null, sourceUrls: [], action: "brief" as const },
+      { id: "gap-u", questionId: "q2", kind: "unattributed" as const, reason: "no_actionable_gap" as const, evidenceIds: ["note"], pageUrl: null, sourceUrls: [], action: "none" as const },
+    ];
+    await inspect({ ...base, siteEvidence, gaps, questions: [base.questions[0]!, { ...base.questions[0]!, questionId: "q2" }] }, element => {
+      expect([...element.querySelectorAll("[data-gap-kind]")].map((node) => [node.getAttribute("data-gap-kind"), node.getAttribute("data-gap-tone")])).toEqual([
+        ["A", "warning"],
+        ["B", "neutral"],
+        ["C", "neutral"],
+        ["D", "neutral"],
+        ["unattributed", "info"],
+      ]);
+      expect(element.querySelector('[data-gap-kind="unattributed"]')?.textContent).toContain("Cause not yet known");
+    });
+  });
+  it("keeps zero summary cards neutral and marks non-zero actionable versus unattributed counts with distinct tones", async () => {
+    const base = visibilityReportFixtureV2();
+    const zeroKinds = ["A", "B", "C", "D"] as const;
+    const zeroReport = { ...base, siteEvidence, gaps: [{ id: "gap-unattributed", questionId: "q1", kind: "unattributed" as const, reason: "no_actionable_gap" as const, evidenceIds: ["evidence"], pageUrl: null, sourceUrls: [], action: "none" as const }], questions: [{ ...base.questions[0]!, questionId: "q1" }] };
+    await inspect(zeroReport, element => {
+      for (const kind of zeroKinds) {
+        const card = element.querySelector<HTMLElement>(`[data-gap-kind="${kind}"]`);
+        expect(card?.getAttribute("data-gap-tone")).toBe("neutral");
+      }
+      const unattributed = element.querySelector<HTMLElement>('[data-gap-kind="unattributed"]');
+      expect(unattributed?.getAttribute("data-gap-tone")).toBe("info");
+      expect(unattributed?.textContent).toContain("Cause not yet known");
+    });
+    const warningKinds = ["A", "B", "C", "D"] as const;
+    const warningGaps = warningKinds.map((kind, index) => ({ id: `gap-${kind}`, questionId: `q${index + 1}`, kind, reason: "no_actionable_gap" as const, evidenceIds: [`evidence-${kind}`], pageUrl: null, sourceUrls: [], action: "none" as const }));
+    await inspect({ ...base, siteEvidence, gaps: warningGaps, questions: warningKinds.map((_, index) => ({ ...base.questions[0]!, questionId: `q${index + 1}` })) }, element => {
+      for (const kind of warningKinds) {
+        const card = element.querySelector<HTMLElement>(`[data-gap-kind="${kind}"]`);
+        expect(card?.getAttribute("data-gap-tone")).toBe("warning");
+      }
+      expect(element.querySelector<HTMLElement>('[data-gap-kind="unattributed"]')?.getAttribute("data-gap-tone")).toBe("neutral");
+    });
+  });
   it("does not turn unavailable independent evidence into five zero counts", async () => {
     await inspect(visibilityReportFixtureV2(), element => {
       expect(element.querySelector('[data-gap-summary]')).toBeNull();

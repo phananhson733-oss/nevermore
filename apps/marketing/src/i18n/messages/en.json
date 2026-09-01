@@ -6198,7 +6198,7 @@
           "B": "An existing page is hard for AI to quote",
           "C": "Third-party mentions and evidence are missing",
           "D": "Comparison content is missing",
-          "unattributed": "Unattributed"
+          "unattributed": "Cause not yet known"
         },
         "presence": { "present": "Site or brand observed on the page", "absent": "Site or brand not found in the complete read", "unknown": "Presence unavailable" },
         "pageType": { "listicle": "List page", "comparison": "Comparison", "product": "Product", "article": "Article", "documentation": "Documentation", "other": "Other observed page", "unavailable": "Page type unavailable" },
