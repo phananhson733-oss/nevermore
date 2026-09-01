@@ -4,7 +4,7 @@
 // @output -- an editor, a freeze control that states what still blocks it, and the questions a frozen version produces
 // @pos    -- the only client surface of /tools/geo-knowledge-base; it edits and renders, it never decides
 
-import { Fragment, useCallback, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
 import {
@@ -37,6 +37,12 @@ import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { GeoKbEnrichment } from "./geo-kb-enrichment.tsx";
 import { pendingGeoFeatureFact } from "./geo-kb-feature-candidates.ts";
 import { isSupportedGeoQuestionLanguage } from "../../lib/geo-tools/asset-context.ts";
+import { createGeoProfileCopy, type GeoProfileCopy } from "../../lib/geo-tools/kb-profile-copy.ts";
+import { GeoProfileCopyReview } from "./geo-kb-profile-copy-review.tsx";
+import { GeoKbFrozenCopy } from "./geo-kb-frozen-copy.tsx";
+import { Button } from "../ui/button.tsx";
+import { Input } from "../ui/input.tsx";
+import { Label } from "../ui/label.tsx";
 
 const ENDPOINTS = {
   load: "/api/tools/geo-knowledge-base/load",
@@ -89,6 +95,7 @@ const ERROR_CODES: ReadonlySet<string> = new Set([
   "conflict",
   "conflict_unknown",
   "context_stale",
+  "profile_copy_required",
   "website_required",
   "hash_mismatch",
   "not_found",
@@ -114,6 +121,7 @@ const REJECTION_REASONS: ReadonlySet<string> = new Set<GeoKbRejection>([
   "competitors",
   "facts",
   "imported_from",
+  "profile_copy",
   "too_large",
   "control_characters",
 ]);
@@ -164,6 +172,7 @@ function ChipsField({
   readonly max: number;
   readonly onChange: (next: readonly string[]) => void;
 }) {
+  const id = useId();
   const [text, setText] = useState("");
   const commit = useCallback(() => {
     const cleaned = text.trim();
@@ -175,7 +184,7 @@ function ChipsField({
 
   return (
     <div>
-      <span className="block text-[13px] text-text-dark-secondary">{label}</span>
+      <Label htmlFor={id} className="text-[14px] text-text-dark-primary">{label}</Label>
       <div className="mt-1.5 flex flex-wrap gap-2">
         {values.map((value) => (
           <span
@@ -183,19 +192,19 @@ function ChipsField({
             key={value}
           >
             {value}
-            <button
+            <Button variant="outline"
               aria-label={`${label}: ${value}`}
               className="text-text-dark-secondary"
               onClick={() => onChange(values.filter((entry) => entry !== value))}
               type="button"
             >
               x
-            </button>
+            </Button>
           </span>
         ))}
       </div>
-      <input
-        className="mt-2 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
+      <Input
+        id={id} name={id} autoComplete="off" aria-describedby={`${id}-help`} className="mt-3"
         maxLength={GEO_KB_LIMITS.listItem}
         // Committing on comma would empty the box under the cursor mid-word.
         // Enter and blur are both deliberate acts; typing is not.
@@ -208,7 +217,7 @@ function ChipsField({
         }}
         value={text}
       />
-      <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
+      <p id={`${id}-help`} className="mt-2 text-[13px] leading-relaxed text-text-dark-secondary">
         {help}
       </p>
     </div>
@@ -221,25 +230,29 @@ function TextField({
   placeholder,
   value,
   onChange,
+  readOnly = false,
 }: {
   readonly label: string;
   readonly help?: string;
   readonly placeholder?: string;
   readonly value: string;
   readonly onChange: (next: string) => void;
+  readonly readOnly?: boolean;
 }) {
+  const id = useId();
   return (
     <div>
-      <span className="block text-[13px] text-text-dark-secondary">{label}</span>
-      <input
-        className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
+      <Label htmlFor={id} className="text-[14px] text-text-dark-primary">{label}</Label>
+      <Input
+        id={id} name={id} autoComplete="off" readOnly={readOnly} className="mt-3"
+        aria-describedby={help === undefined ? undefined : `${id}-help`}
         maxLength={GEO_KB_LIMITS.text}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         value={value}
       />
       {help === undefined ? null : (
-        <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
+        <p id={`${id}-help`} className="mt-2 text-[13px] leading-relaxed text-text-dark-secondary">
           {help}
         </p>
       )}
@@ -254,6 +267,8 @@ export function GeoKnowledgeBase({
   initialUrl,
   canonicalWebsiteId,
   profileState,
+  inline = false,
+  confirmedProfileRevision,
 }: {
   readonly locale: string;
   readonly signedIn: boolean;
@@ -261,6 +276,8 @@ export function GeoKnowledgeBase({
   readonly initialUrl?: string;
   readonly canonicalWebsiteId?: string;
   readonly profileState?: string;
+  readonly inline?: boolean;
+  readonly confirmedProfileRevision?: number;
 }) {
   const t = useTranslations("tools.geoKnowledgeBase");
   // Initial data is adopted only on mount, never synchronized over unsaved edits.
@@ -273,7 +290,29 @@ export function GeoKnowledgeBase({
   >(initialView?.frozen?.questions ?? null);
   const [showQuestions, setShowQuestions] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [copyProposal, setCopyProposal] = useState<GeoProfileCopy | null>(null);
+  const [parentSourceSignal, setParentSourceSignal] = useState({ revision: confirmedProfileRevision, sequence: 0 });
+  const [reviewedParentSequence, setReviewedParentSequence] = useState(0);
+  if (parentSourceSignal.revision !== confirmedProfileRevision) {
+    // Track observed transitions, including returning to an older deduplicated
+    // snapshot. Comparing only revision values would lose an A → B → A change.
+    setParentSourceSignal({ revision: confirmedProfileRevision, sequence: parentSourceSignal.sequence + 1 });
+  }
   const editRevision = useRef(0);
+  const copyRequired = (canonicalWebsiteId !== undefined || view?.profile != null) && payload?.profileCopy === undefined;
+  const sourceCopy = payload?.profileCopy;
+  const copyStale = sourceCopy !== undefined && (
+    // The upper editor is a source-change signal, not a permanent authority
+    // over a newer version explicitly read from the server in another tab.
+    parentSourceSignal.sequence !== reviewedParentSequence ||
+    (view?.profile != null && (sourceCopy.snapshotId !== view.profile.reference.snapshotId || sourceCopy.profileHash !== view.profile.reference.profileHash))
+  );
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
   /**
    * Whether a save has been attempted since this knowledge base was loaded.
    *
@@ -522,6 +561,7 @@ export function GeoKnowledgeBase({
         contentHash: data.contentHash,
         questionCount: data.questionCount,
         retrievalCount: data.retrievalCount,
+        ...(data.payload === undefined ? {} : { payload: data.payload }),
         ...(data.questionSetHash === undefined ? {} : { questionSetHash: data.questionSetHash }),
         ...(data.registryVersion === undefined ? {} : { registryVersion: data.registryVersion }),
         ...(data.skippedLayers === undefined ? {} : { skippedLayers: data.skippedLayers }),
@@ -584,6 +624,27 @@ export function GeoKnowledgeBase({
     setStatus({ kind: "idle" });
   }, [post, view]);
 
+  const reviewProfileCopy = useCallback(async () => {
+    if (view === null) return;
+    setStatus({ kind: "busy" });
+    const result = await post(ENDPOINTS.load, { url: view.origin });
+    if (!result.ok) { setStatus({ kind: "error", code: result.code }); return; }
+    if (!isGeoKbView(result.data) || result.data.kbId !== view.kbId ||
+        result.data.profile?.fullProfile === undefined ||
+        (canonicalWebsiteId !== undefined && result.data.profile.reference.websiteId !== canonicalWebsiteId)) {
+      setStatus({ kind: "error", code: "schema_mismatch" }); return;
+    }
+    try {
+      const sourceProfile = result.data.profile;
+      const proposal = createGeoProfileCopy(sourceProfile.reference, sourceProfile.fullProfile!);
+      // Only source metadata changes. The draft and its CAS version are not a live mirror.
+      setView(current => current === null ? null : { ...current, profile: sourceProfile });
+      setReviewedParentSequence(parentSourceSignal.sequence);
+      setCopyProposal(proposal);
+      setStatus({ kind: "idle" });
+    } catch { setStatus({ kind: "error", code: "schema_mismatch" }); }
+  }, [canonicalWebsiteId, parentSourceSignal.sequence, post, view]);
+
   /**
    * One error line, and the list that belongs to it.
    *
@@ -597,9 +658,9 @@ export function GeoKnowledgeBase({
         <p className="text-[13.5px] text-brand-error">
           {errorMessage(t, status)}
         </p>
-        {status.code !== "context_stale" || view === null ? null : <button
+        {status.code !== "context_stale" || view === null ? null : <Button variant="outline"
           className="justify-self-start rounded-lg border border-brand-border-card px-3 py-2 text-sm text-brand-accent-text"
-          type="button" onClick={() => void reloadSources()}>{t("asset.reloadSources")}</button>}
+          type="button" onClick={() => void reloadSources()}>{t("asset.reloadSources")}</Button>}
         {status.code !== "website_required" ? null : <a
           className="justify-self-start text-sm text-brand-accent-text underline"
           href={`/${locale}/account/websites`}>{t("asset.backToWebsites")}</a>}
@@ -620,8 +681,8 @@ export function GeoKnowledgeBase({
 
   if (!signedIn) {
     return (
-      <section className="mt-10 rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
-        <h2 className="text-[19px] text-text-dark-primary">
+      <section className="mt-10 overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
+        <h2 className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">
           {t("signIn.title")}
         </h2>
         <p className="mt-3 max-w-[640px] text-[14px] leading-[1.7] text-text-dark-secondary">
@@ -632,9 +693,9 @@ export function GeoKnowledgeBase({
   }
 
   return (
-    <div className="mt-10 grid gap-8">
-      <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
-        <h2 className="text-[19px] text-text-dark-primary">{t("site.title")}</h2>
+    <div className={inline ? "grid gap-8" : "mt-10 grid gap-8"} data-confirmed-profile-revision={confirmedProfileRevision}>
+      <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
+        <h2 className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">{t("site.title")}</h2>
         {canonicalWebsiteId === undefined ? <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
           <div>
             <label
@@ -643,7 +704,7 @@ export function GeoKnowledgeBase({
             >
               {t("site.urlLabel")}
             </label>
-            <input
+            <Input
               className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
               id="kb-site-url"
               inputMode="url"
@@ -656,7 +717,7 @@ export function GeoKnowledgeBase({
               {t("site.urlHelp")}
             </p>
           </div>
-          <button
+          <Button variant="outline"
             className="mt-6 rounded-lg bg-brand-accent px-4 py-2 text-[14px] font-medium text-brand-on-accent disabled:opacity-60"
             disabled={status.kind === "busy"}
             onClick={() => {
@@ -665,7 +726,7 @@ export function GeoKnowledgeBase({
             type="button"
           >
             {view === null ? t("site.start") : t("site.switch")}
-          </button>
+          </Button>
         </div>
         : null}
         {view === null ? null : (
@@ -685,21 +746,22 @@ export function GeoKnowledgeBase({
         <Fragment key={view.kbId}>
           {view.profile !== undefined || canonicalWebsiteId !== undefined ? (
             <GeoKbInheritedProfile profile={view.profile ?? null} locale={locale}
+              {...(payload.profileCopy === undefined ? {} : { copy: payload.profileCopy })} inline={inline}
               facts={payload.facts} onAddFeature={(feature) => {
                 const candidate = pendingGeoFeatureFact(feature, payload.facts);
                 if (candidate.status === "ready") update({ facts: [...payload.facts, candidate.fact] });
               }}
               {...(canonicalWebsiteId === undefined ? {} : { websiteId: canonicalWebsiteId })}
               {...(profileState === undefined ? {} : { profileState })} />
-          ) : <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
-            <h2 className="text-[19px] text-text-dark-primary">
+          ) : <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
+            <h2 className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">
               {t("site.importTitle")}
             </h2>
             <p className="mt-2 max-w-[640px] text-[13.5px] leading-[1.7] text-text-dark-secondary">
               {t("site.importBody")}
             </p>
             {view.importAvailable ? (
-              <button
+              <Button variant="outline"
                 className="mt-4 rounded-lg border border-brand-border-card px-3 py-1.5 text-[13px] text-text-dark-primary"
                 disabled={status.kind === "busy"}
                 onClick={() => {
@@ -708,7 +770,7 @@ export function GeoKnowledgeBase({
                 type="button"
               >
                 {t("site.importAction")}
-              </button>
+              </Button>
             ) : (
               <p className="mt-4 text-[13px] text-text-dark-secondary">
                 {t("site.importUnavailable")}
@@ -723,18 +785,30 @@ export function GeoKnowledgeBase({
             ) : null}
           </section>}
 
+          {canonicalWebsiteId !== undefined || view.profile != null ? <section className="rounded-card border border-brand-border-card bg-brand-panel px-5 py-5 sm:px-7">
+            {copyRequired || copyStale || view.draftVersion === 0 ? <p role="status" className="mb-4 text-[13px] leading-relaxed text-text-dark-secondary">{t(copyRequired ? "asset.copyMissing" : copyStale ? "asset.copyStale" : "asset.copyPending")}</p> : null}
+            <Button type="button" variant="outline" disabled={status.kind === "busy"} onClick={() => void reviewProfileCopy()}>{t("asset.reviewCopy")}</Button>
+          </section> : null}
+          {copyProposal === null ? null : <GeoProfileCopyReview current={payload.profileCopy} proposal={copyProposal}
+            disabled={status.kind === "busy"} onDismiss={() => setCopyProposal(null)} onApply={() => {
+              update({ profileCopy: copyProposal });
+              setCopyProposal(null);
+            }} />}
+
           <GeoKbEnrichment kbId={view.kbId} targetHost={view.host.replace(/^www\./u, "")}
+            inline={inline}
             draftVersion={view.draftVersion} payload={payload} dirty={dirty || status.kind === "busy"}
             onApply={(next) => update(next)} />
 
-          <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
-            <h2 className="text-[19px] text-text-dark-primary">
+          <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
+            <h2 className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">
               {t("brand.title")}
             </h2>
             <div className="mt-5 grid gap-5">
               <TextField
-                help={t(view.profile == null ? "brand.officialNameHelp" : "asset.officialNameHelp")}
-                label={t("brand.officialNameLabel")}
+                help={t(payload.profileCopy?.profile.productName === payload.officialName ? "asset.baseNameReadOnly" : view.profile == null ? "brand.officialNameHelp" : "asset.officialNameHelp")}
+                label={t(payload.profileCopy !== undefined && payload.profileCopy.profile.productName !== payload.officialName ? "asset.matchingOverride" : "brand.officialNameLabel")}
+                readOnly={payload.profileCopy?.profile.productName === payload.officialName}
                 onChange={(value) => update({ officialName: value })}
                 placeholder={t("brand.officialNamePlaceholder")}
                 value={payload.officialName}
@@ -817,11 +891,12 @@ export function GeoKnowledgeBase({
                   </p>
                 </div>
               </div>
+              {payload.profileCopy === undefined ? null : <p className="text-[13px] leading-relaxed text-text-dark-secondary">{t("asset.scopeHelp")}</p>}
             </div>
           </section>
 
-          <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
-            <h2 className="text-[19px] text-text-dark-primary">
+          <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
+            <h2 className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">
               {t("roles.title")}
             </h2>
             <p className="mt-2 max-w-[640px] text-[13.5px] leading-[1.7] text-text-dark-secondary">
@@ -892,7 +967,7 @@ export function GeoKnowledgeBase({
                       values={role[field]}
                     />
                   ))}
-                  <button
+                  <Button variant="outline"
                     className="justify-self-start text-[13px] text-text-dark-secondary underline"
                     onClick={() =>
                       update({
@@ -904,11 +979,11 @@ export function GeoKnowledgeBase({
                     type="button"
                   >
                     {t("roles.remove")}
-                  </button>
+                  </Button>
                 </div>
               ))}
             </div>
-            <button
+            <Button variant="outline"
               className="mt-5 rounded-lg border border-brand-border-card px-3 py-1.5 text-[13px] text-text-dark-primary disabled:opacity-60"
               disabled={payload.roles.length >= GEO_KB_LIMITS.roles}
               onClick={() =>
@@ -931,11 +1006,11 @@ export function GeoKnowledgeBase({
               type="button"
             >
               {t("roles.add")}
-            </button>
+            </Button>
           </section>
 
-          <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
-            <h2 className="text-[19px] text-text-dark-primary">
+          <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
+            <h2 className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">
               {t("competitors.title")}
             </h2>
             <p className="mt-2 max-w-[640px] text-[13.5px] leading-[1.7] text-text-dark-secondary">
@@ -1000,7 +1075,7 @@ export function GeoKnowledgeBase({
                       />
                       {t("competitors.confirmLabel")}
                     </label>
-                    <button
+                    <Button variant="outline"
                       className="text-[13px] text-text-dark-secondary underline"
                       onClick={() =>
                         update({
@@ -1012,7 +1087,7 @@ export function GeoKnowledgeBase({
                       type="button"
                     >
                     {t("competitors.remove")}
-                    </button>
+                    </Button>
                     <div className="md:col-span-4">
                       <ChipsField label={t("competitors.aliasesLabel")} help={t("competitors.aliasesHelp")}
                         values={competitor.aliases ?? []} max={10}
@@ -1035,7 +1110,7 @@ export function GeoKnowledgeBase({
                 );
               })}
             </div>
-            <button
+            <Button variant="outline"
               className="mt-5 rounded-lg border border-brand-border-card px-3 py-1.5 text-[13px] text-text-dark-primary disabled:opacity-60"
               disabled={payload.competitors.length >= GEO_KB_LIMITS.competitors}
               onClick={() =>
@@ -1049,11 +1124,11 @@ export function GeoKnowledgeBase({
               type="button"
             >
               {t("competitors.add")}
-            </button>
+            </Button>
           </section>
 
-          <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
-            <h2 className="text-[19px] text-text-dark-primary">
+          <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
+            <h2 className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">
               {t("facts.title")}
             </h2>
             <p className="mt-2 max-w-[640px] text-[13.5px] leading-[1.7] text-text-dark-secondary">
@@ -1153,7 +1228,7 @@ export function GeoKnowledgeBase({
                         {t(`facts.issues.${issue}`)}
                       </p>
                     )}
-                    <button
+                    <Button variant="outline"
                       className="justify-self-start text-[13px] text-text-dark-secondary underline"
                       onClick={() =>
                         update({
@@ -1165,12 +1240,12 @@ export function GeoKnowledgeBase({
                       type="button"
                     >
                       {t("facts.remove")}
-                    </button>
+                    </Button>
                   </div>
                 );
               })}
             </div>
-            <button
+            <Button variant="outline"
               className="mt-5 rounded-lg border border-brand-border-card px-3 py-1.5 text-[13px] text-text-dark-primary disabled:opacity-60"
               disabled={payload.facts.length >= GEO_KB_LIMITS.facts}
               onClick={() =>
@@ -1190,11 +1265,11 @@ export function GeoKnowledgeBase({
               type="button"
             >
               {t("facts.add")}
-            </button>
+            </Button>
           </section>
 
-          <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
-            <h2 className="text-[19px] text-text-dark-primary">
+          <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
+            <h2 className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">
               {t("freeze.title")}
             </h2>
             <p className="mt-2 max-w-[640px] text-[13.5px] leading-[1.7] text-text-dark-secondary">
@@ -1202,7 +1277,7 @@ export function GeoKnowledgeBase({
             </p>
 
             <div className="mt-5 flex flex-wrap items-center gap-3">
-              <button
+              <Button variant="outline"
                 className="rounded-lg border border-brand-border-card px-3 py-1.5 text-[13px] text-text-dark-primary disabled:opacity-60"
                 disabled={status.kind === "busy"}
                 onClick={() => {
@@ -1211,11 +1286,11 @@ export function GeoKnowledgeBase({
                 type="button"
               >
                 {status.kind === "busy" ? t("draft.saving") : t("draft.save")}
-              </button>
-              <button
+              </Button>
+              <Button variant="outline"
                 className="rounded-lg bg-brand-accent px-4 py-2 text-[14px] font-medium text-brand-on-accent disabled:opacity-60"
                 disabled={
-                  status.kind === "busy" || blockers.length > 0 || dirty
+                  status.kind === "busy" || blockers.length > 0 || dirty || copyRequired || copyStale || view.draftVersion === 0
                 }
                 onClick={() => {
                   void freeze();
@@ -1223,7 +1298,7 @@ export function GeoKnowledgeBase({
                 type="button"
               >
                 {t("freeze.action")}
-              </button>
+              </Button>
               {dirty ? (
                 <span className="text-[13px] text-text-dark-secondary">
                   {t("draft.unsaved")}
@@ -1299,16 +1374,17 @@ export function GeoKnowledgeBase({
                 <p>{t("freeze.reused", { revision: status.revision })}</p>
               ) : null}
             </div>
+            {view.frozen === null ? null : <GeoKbFrozenCopy payload={view.frozen.payload} locale={locale} revision={view.frozen.revision} />}
 
             {questions !== null ? (
               <div className="mt-5">
-                <button
+                <Button variant="outline"
                   className="rounded-lg border border-brand-border-card px-3 py-1.5 text-[13px] text-text-dark-primary"
                   onClick={() => setShowQuestions((current) => !current)}
                   type="button"
                 >
                   {showQuestions ? t("freeze.hidePreview") : t("freeze.preview")}
-                </button>
+                </Button>
                 {showQuestions ? (
                   <div className="mt-4">
                     <p className="text-[12.5px] leading-[1.7] text-text-dark-secondary">

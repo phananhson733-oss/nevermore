@@ -2,9 +2,9 @@
 // @output -- canonical website GEO extension, never indexed
 // @pos    -- Settings → Website → GEO; tool URL remains a shortcut
 
-import { NextIntlClientProvider } from "next-intl";
-import { getMessages, getTranslations } from "next-intl/server";
-import { WebsiteGeoEditor } from "@/components/account/website-geo-editor";
+import { getTranslations } from "next-intl/server";
+import { redirect } from "next/navigation";
+import { localePath } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
@@ -18,10 +18,6 @@ export async function generateMetadata({ params }: WebsiteGeoPageProps) {
     path: `/account/websites/${websiteId}/geo`, noIndex: true });
 }
 export default async function AccountWebsiteGeoPage({ params }: WebsiteGeoPageProps) {
-  const [{ websiteId }, messages] = await Promise.all([params, getMessages()]);
-  return (
-    <NextIntlClientProvider messages={{ tools: { geoKnowledgeBase: messages.tools.geoKnowledgeBase } }}>
-      <WebsiteGeoEditor websiteId={websiteId} />
-    </NextIntlClientProvider>
-  );
+  const { locale, websiteId } = await params;
+  redirect(localePath(locale, `/account/websites/${encodeURIComponent(websiteId)}`) + "#geo");
 }

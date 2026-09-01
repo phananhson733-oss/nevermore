@@ -5087,7 +5087,7 @@
       },
       "eyebrow": "GEO tools",
       "title": "GEO Knowledge Base",
-      "intro": "What a model would have to know to recognise you: the names you go by, the category you compete in, who you sell to, and the facts you can point at a source for. Freeze it and the questions your visibility check asks are derived from it, the same way every time.",
+      "intro": "Keep your complete Profile copy, brand identities, audience roles, sourced facts and questions together. Review the complete candidate in Website Profile before freezing the exact version your GEO tools will use.",
       "signIn": {
         "title": "Sign in to build a knowledge base",
         "body": "This one is saved to your account, because a frozen version is what a later run points at.",
@@ -5249,6 +5249,7 @@
         "conflict": "This knowledge base changed while you were editing, and nothing was written. Your edits are still in the form: press Save draft again to write them over the newer version.",
         "conflict_unknown": "This knowledge base changed while you were editing and the server did not say which version is current, so nothing was written. Copy anything you cannot lose, then use Switch site to load it again.",
         "context_stale": "The Profile or source evidence changed after you reviewed it. Reload the source references, review them, then save again. Your local draft is preserved.",
+        "profile_copy_required": "Review and copy the confirmed Profile into this GEO knowledge base, then save before freezing. Existing GEO edits are preserved.",
         "website_required": "Add or select this site in Settings → Websites before freezing. Your knowledge-base draft is preserved.",
         "not_ready": "Nothing was frozen: the knowledge base is still missing the items below. Fill them in, save the draft, and freeze again.",
         "form_invalid": "Nothing was sent, so nothing else you changed was lost. The rows marked below have to be finished or removed first.",
@@ -5272,6 +5273,7 @@
           "competitors": "one of the competitor rows",
           "facts": "one of the fact rows",
           "imported_from": "the record of which profile the prefill came from",
+          "profile_copy": "the complete confirmed Profile copy; review the source version and copy it again",
           "too_large": "the knowledge base as a whole, which is too large to store",
           "control_characters": "text containing characters that cannot be stored"
         }
@@ -5280,8 +5282,8 @@
       "limits": {
         "notSynced": "Product fields are inherited from an exact confirmed Website Profile. Changes require review before the next freeze; previously frozen versions never change.",
         "noGuess": "It does not fill in facts for you. An empty value with a reason is the honest state, and the brief generator relies on it.",
-        "noGsc": "GSC query-derived role suggestions require the same signed-in Google account and a granted property. Without that evidence, problem and evaluation layers are skipped; a query cluster is not an observed persona.",
-        "englishOnly": "It produces English questions. The wording that reaches the live web was measured in English, and translating it would discard that measurement."
+        "noGsc": "GSC evidence requires the same signed-in Google account and a granted property. Without GSC, reviewed Profile or manual roles can still support problem and evaluation questions when their pain points or criteria are present. Unsupported layers are disclosed, not invented.",
+        "englishOnly": "Question generation currently supports English. New semantic questions are uncalibrated demand questions; only separately identified, unchanged measured retrieval probes contribute to calibrated citation metrics."
       },
       "faq": {
         "title": "Questions about the knowledge base",
@@ -5291,8 +5293,8 @@
             "a": "A visibility run points at a frozen version. If the knowledge base could change underneath it, two runs would not be comparable, and the report could not say which names it was matching on. Freezing is what makes \"the same question set, asked again\" a true sentence."
           },
           {
-            "q": "Why is the question set derived instead of written by hand?",
-            "a": "The wording that reaches the live web was established by paid measurement: some phrasings search, others answer from memory, and small changes flip it. Deriving the set from calibrated templates keeps the citation numbers meaningful. The two branded questions are the exception and are marked as unmeasured."
+            "q": "How are generated questions different from calibrated retrieval probes?",
+            "a": "Semantic questions use your reviewed roles, pain points, criteria and source evidence, and you inspect them before freezing. They are uncalibrated and do not enter calibrated citation metrics. Measured retrieval probes remain a separate, clearly identified cohort. Freezing saves the exact reviewed question set rather than generating it again."
           },
           {
             "q": "Why must a competitor's name be confirmed separately from its domain?",
@@ -5302,6 +5304,34 @@
       },
       "asset": {
         "title": "Website GEO extension",
+        "inlineTitle": "GEO supplements",
+        "inlineBody": "Base information is edited in the Profile above and also stored here as a complete read-only copy. GEO adds matching, question and evidence settings; its saved versions can be read independently.",
+        "inlineUnavailable": "The website Profile could not be loaded. Resolve the message above before retrying; any GEO draft already open here is preserved.",
+        "completeBadge": "Profile copy + GEO",
+        "copyTitle": "Complete Profile copy in GEO",
+        "copyBody": "These values are part of this GEO draft, not a live lookup of the Profile above. Edit base information in Profile, then explicitly review and update this copy. Frozen versions never change.",
+        "frozenCopyBody": "These are the exact Profile values stored in this frozen GEO version. Neither today's Profile nor the current GEO draft changes this copy.",
+        "emptyField": "Not provided",
+        "provenanceTitle": "Copied field sources and limitations",
+        "observedAt": "Observed at {time}",
+        "reviewCopy": "Review latest confirmed Profile",
+        "copyMissing": "This legacy GEO draft has no complete Profile copy. Review the confirmed Profile and add its copy before saving or freezing a new version.",
+        "copyStale": "Profile has a newer confirmed version. This GEO copy is unchanged; review the differences before updating it.",
+        "copyPending": "The complete Profile copy has not been saved with this GEO draft yet.",
+        "copyReviewTitle": "Update the Profile copy in GEO",
+        "copyReviewBody": "Copy confirmed Profile v{revision} into the GEO draft. Matching aliases, query terms, measurement overrides, competitor confirmations, roles and facts stay unchanged. This does not save or freeze.",
+        "copyCurrent": "Current GEO copy",
+        "copyProposed": "Confirmed Profile proposal",
+        "copyMetadataChanged": "The source version or provenance changed; the base field values are the same.",
+        "copyUnchanged": "This GEO copy already matches the confirmed Profile version. No update is needed.",
+        "applyCopy": "Copy this version into the GEO draft",
+        "dismissCopy": "Keep the current GEO copy",
+        "frozenCopyTitle": "Inspect the frozen knowledge base",
+        "frozenLegacy": "This historical version does not contain a complete Profile copy. It has not been filled from today's Profile.",
+        "frozenOperations": "GEO settings saved in this version",
+        "baseNameReadOnly": "From the Profile copy. Change the product name in Profile, then update this copy; matching variants belong in aliases.",
+        "matchingOverride": "GEO matching-name override",
+        "scopeHelp": "The Profile market and language are copied above. These GEO-only measurement settings are explicit overrides and do not edit the Profile.",
         "loading": "Loading website GEO…",
         "retry": "Retry",
         "profileRequired": "Confirm this website’s Product Profile to inherit its product facts.",
@@ -5309,7 +5339,7 @@
         "editProfile": "Edit original Product Profile",
         "canonicalLink": "Open this website’s GEO settings",
         "backToWebsites": "All websites",
-        "shortcutDescription": "This address is a compatibility shortcut to your website’s GEO extension in Settings. Both entries edit the same asset, not a second knowledge base.",
+        "shortcutDescription": "Edit the complete GEO knowledge base at the bottom of your Website Profile in Settings. This public address provides information and a shortcut, not another editor or a second knowledge base.",
         "profileTitle": "Inherited Product Profile",
         "reloadSources": "Reload source references (keep my draft)",
         "profileBody": "Read-only facts from the exact confirmed website Profile. Edit the original Profile to change them.",

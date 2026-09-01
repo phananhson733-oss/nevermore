@@ -11,10 +11,14 @@ describe("frozen choice read integrity", () => {
     expect((await DEFAULT_VISIBILITY_HANDLER_DEPENDENCIES.listFrozen("owner")).kind).toBe("unavailable");
   });
   it("exposes separate exact snapshot choices for historical versions of the same owned KB", async () => {
-    const snapshot = { kbId: "kb-1", snapshotId: "snapshot-1", revision: 1, frozenAt: "2026-08-31T00:00:00.000Z", questionSet: { language: "en", country: "US", questions: [{ mode: "retrieval" }] } };
+    const snapshot = { kbId: "kb-1", snapshotId: "snapshot-1", revision: 1, frozenAt: "2026-08-31T00:00:00.000Z", questionSet: { schemaVersion: "marketing-geo-question-set.v1", language: "en", country: "US", questions: [{ mode: "retrieval" }] } };
     mocks.history.mockResolvedValue({ kind: "ok", value: [{ host: "acme.test", snapshot }, { host: "acme.test", snapshot: { ...snapshot, snapshotId: "snapshot-2", revision: 2 } }] });
     const read = await DEFAULT_VISIBILITY_HANDLER_DEPENDENCIES.listFrozen("owner");
     expect(read).toMatchObject({ kind: "ok", value: [{ kbId: "kb-1", snapshotId: "snapshot-1", revision: 1 }, { kbId: "kb-1", snapshotId: "snapshot-2", revision: 2 }] });
     expect(mocks.history).toHaveBeenCalledWith({ userId: "owner" });
+  });
+  it("reports unsupported V2 calibration as unavailable rather than throwing or exposing a runnable choice", async () => {
+    mocks.history.mockResolvedValue({ kind: "ok", value: [{ host: "acme.test", snapshot: { kbId: "kb-1", snapshotId: "snapshot-1", revision: 2, frozenAt: "2026-08-31T00:00:00.000Z", questionSet: { schemaVersion: "marketing-geo-question-set.v2", language: "en", country: "US", questions: [{ mode: "retrieval", calibrated: false, templateId: null, provenance: { kind: "semantic" } }] } } }] });
+    expect((await DEFAULT_VISIBILITY_HANDLER_DEPENDENCIES.listFrozen("owner")).kind).toBe("unavailable");
   });
 });

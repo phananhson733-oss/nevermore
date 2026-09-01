@@ -4,19 +4,20 @@
 
 import { isMatchableGeoName } from "../agents/geo-alias-match.ts";
 import { isSupportedGeoQuestionLanguage } from "./asset-context.ts";
+import { geoKbJsonbBytes, parseGeoProfileCopy, type GeoProfileCopy } from "./kb-profile-copy.ts";
 
 export const GEO_KB_SCHEMA_VERSION = "marketing-geo-kb.v1" as const;
 
 /**
- * Everything in a payload is a string, a boolean, or an array or object of
- * those. No numbers.
+ * Payload scalars are strings, booleans or null (including exact Profile
+ * provenance). No numbers; source revisions use an explicit string.
  *
  * The digest below has to be byte-identical to the one Postgres computes from
  * its own canonical form, and number formatting is the one place JSON.stringify
  * and jsonb::text can legitimately disagree (1e3 against 1000). Banning numbers
  * removes the disagreement instead of documenting it.
  */
-export type GeoKbScalar = string | boolean;
+export type GeoKbScalar = string | boolean | null;
 export type GeoKbValue =
   | GeoKbScalar
   | readonly GeoKbValue[]
@@ -64,6 +65,8 @@ export interface GeoKbFact {
 }
 
 export interface GeoKbPayload {
+  /** Complete exact source data; absent only in legacy partial payloads. */
+  readonly profileCopy?: GeoProfileCopy;
   readonly schemaVersion: typeof GEO_KB_SCHEMA_VERSION;
   readonly targetUrl: string;
   /** What a model calls this brand. The root of every mention decision. */
@@ -131,6 +134,7 @@ export type GeoKbRejection =
   | "competitors"
   | "facts"
   | "imported_from"
+  | "profile_copy"
   | "too_large"
   | "control_characters";
 
@@ -147,7 +151,7 @@ export const GEO_KB_LIMITS = {
   listItem: 80,
   text: 200,
   url: 2_048,
-  payloadBytes: 131_072,
+  payloadBytes: 393_216,
 } as const;
 
 /**
@@ -366,6 +370,11 @@ export function parseGeoKbPayload(input: unknown): GeoKbParseResult {
     importedFrom = { websiteId, snapshotId, snapshotRevision };
   }
 
+  let profileCopy: GeoProfileCopy | undefined;
+  if (Object.hasOwn(input, "profileCopy")) {
+    try { profileCopy = parseGeoProfileCopy(input["profileCopy"]); }
+    catch { return { ok: false, reason: "profile_copy" }; }
+  }
   const value: GeoKbPayload = {
     schemaVersion: GEO_KB_SCHEMA_VERSION,
     targetUrl,
@@ -377,9 +386,10 @@ export function parseGeoKbPayload(input: unknown): GeoKbParseResult {
     competitors,
     facts,
     importedFrom,
+    ...(profileCopy === undefined ? {} : { profileCopy }),
   };
   if (
-    Buffer.byteLength(canonicalGeoKbText(value as unknown as GeoKbValue), "utf8") >
+    geoKbJsonbBytes(value) >
     GEO_KB_LIMITS.payloadBytes
   ) {
     return { ok: false, reason: "too_large" };

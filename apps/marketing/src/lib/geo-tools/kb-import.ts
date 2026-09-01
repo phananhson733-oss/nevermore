@@ -3,7 +3,7 @@
 // @pos    -- a one-time import, not a sync; the two records diverge after this and both know it
 
 import type { MarketingWebsiteProfileV1 } from "../account-websites/contracts.ts";
-import { proposeGeoAliasCandidates } from "../agents/geo-context.ts";
+import { proposeGeoKbAliases } from "./kb-aliases.ts";
 import { normalizeGeoHost } from "../agents/geo-url.ts";
 import {
   emptyGeoKbPayload,
@@ -97,10 +97,10 @@ export interface GeoKbImportSource {
 
 export function importGeoKbPayload(source: GeoKbImportSource): GeoKbPayload {
   const base = emptyGeoKbPayload(source.origin);
-  const aliases = proposeGeoAliasCandidates(
+  const aliases = proposeGeoKbAliases(
     source.origin,
     source.profile.productName,
-  ).map((candidate) => candidate.alias);
+  );
 
   const competitors: GeoKbCompetitor[] = [];
   const seen = new Set<string>();
@@ -137,9 +137,8 @@ export function importGeoKbPayload(source: GeoKbImportSource): GeoKbPayload {
     },
     roles: roleFrom(source.profile),
     competitors,
-    // Deliberately empty. A verified fact needs a source URL and a date, and
-    // the profile carries neither; importing its prose as facts would create
-    // exactly the unsourced numbers the fact table exists to prevent.
+    // Field-level Profile provenance is copied separately. It does not make
+    // every prose claim an independently checked fact; facts need review.
     facts: [],
     importedFrom: {
       websiteId: source.websiteId,

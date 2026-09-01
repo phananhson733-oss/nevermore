@@ -2,17 +2,32 @@ import { describe, expect, it, vi } from "vitest";
 import { freezeGeoKbWithContext } from "./kb-freeze-context.ts";
 import { buildGeoSnapshotContext } from "./snapshot-context.ts";
 import { CONTEXT_KB_ID, contextPayload } from "./snapshot-context.test-fixtures.ts";
+import { createHash } from "node:crypto";
+import { canonicalProfileJson, emptyMarketingWebsiteProfile } from "../account-websites/contracts.ts";
+import { createGeoProfileCopy } from "./kb-profile-copy.ts";
+import { inheritedProfileFromCopy } from "./kb-profile-copy-server.ts";
+import type { GeoKbPayload } from "./kb-contract.ts";
 
 const USER = "11111111-1111-4111-8111-111111111111";
 const SNAPSHOT = "11111111-1111-4111-8111-111111111118";
 function fixture() {
-  const payload = { ...contextPayload(), roles: [] };
+  const payload: GeoKbPayload = { ...contextPayload(), roles: [] };
   const { context, questionSet } = buildGeoSnapshotContext({ kbId: CONTEXT_KB_ID, targetHost: "example.com", payload, profile: null, receipt: null });
   const readDraft = vi.fn(async () => ({ kind: "ok" as const, value: { payload, draftVersion: 2, contentHash: context.payloadHash, targetHost: "example.com" } }));
   const callRpc = vi.fn(async () => ({ data: [{ outcome: "frozen", snapshot_id: SNAPSHOT, revision: 1, content_hash: context.payloadHash, frozen_at: "2026-08-31T00:00:00.000Z", reused_existing: false }], error: null }));
   return { input: { userId: USER, kbId: CONTEXT_KB_ID, baseVersion: 2, context, questionSet }, deps: { readDraft, callRpc } };
 }
 describe("source-conditioned freeze admission", () => {
+  it("refuses a validly hashed context for different Profile content than the saved complete copy", async () => {
+    const { input, deps } = fixture();
+    const profile = { ...emptyMarketingWebsiteProfile(), productName: "Acme", coreFeatures: ["Reporting"], country: "US", locale: "en" };
+    const copy = createGeoProfileCopy({ schemaVersion: "website-profile-reference.v1", websiteId: USER, snapshotId: SNAPSHOT, snapshotRevision: 1, profileSchemaVersion: "marketing-website-profile.v1", profileHash: createHash("sha256").update(canonicalProfileJson(profile)).digest("hex") }, profile);
+    const payload = { ...contextPayload(), profileCopy: copy };
+    const generated = buildGeoSnapshotContext({ kbId: CONTEXT_KB_ID, targetHost: "example.com", payload, profile: { ...inheritedProfileFromCopy(copy), productName: "Other source" }, receipt: null });
+    deps.readDraft.mockResolvedValue({ kind: "ok", value: { payload, draftVersion: 2, contentHash: generated.context.payloadHash, targetHost: "example.com" } });
+    expect(await freezeGeoKbWithContext({ ...input, ...generated }, deps)).toMatchObject({ kind: "invalid", code: "context_stale" });
+    expect(deps.callRpc).not.toHaveBeenCalled();
+  });
   it("can freeze without inventing a role, while skipped layers stay absent", async () => {
     const { input, deps } = fixture();
     expect((await freezeGeoKbWithContext(input, deps)).kind).toBe("ok");

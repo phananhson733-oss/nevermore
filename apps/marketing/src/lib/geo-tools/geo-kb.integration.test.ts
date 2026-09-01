@@ -537,7 +537,7 @@ describe("GEO knowledge base database permissions", () => {
   it("refuses an oversized payload even through its privileged RPC", async () => {
     const kbId = (await upsertKb(db, USER_A, SITE_A)).kb_id;
     const oversized = {
-      big: "x".repeat(140_000),
+      big: "x".repeat(393_217),
     } as const satisfies GeoKbValue;
     await expect(
       db.query(

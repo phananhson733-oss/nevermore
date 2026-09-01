@@ -1,10 +1,10 @@
-// @input  — react, @/lib/utils
+// @input  — react, Marketing-local utils
 // @output — Card / CardHeader / CardTitle / CardDescription / CardAction / CardContent / CardFooter
 // @pos    — shadcn/ui 卡片容器组件，用于内容分组展示
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import * as React from "react"
 
-import { cn } from "@/lib/utils"
+import { cn } from "../../lib/utils.ts"
 
 function Card({ className, ...props }: React.ComponentProps<"div">) {
   return (

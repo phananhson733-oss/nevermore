@@ -23,7 +23,7 @@ function valid(value: unknown, now: number): value is GeoGapHandoff {
   const keys = ["schemaVersion", "createdAt", "expiresAt", "destination", "runId", "kbId", "snapshotId", "questionId", "gapId", "pageUrl", "questionText"];
   if (Object.keys(row).length !== keys.length || !keys.every((key) => Object.hasOwn(row, key))) return false;
   if (row.schemaVersion !== "marketing-geo-gap-handoff.v1" || typeof row.createdAt !== "number" || typeof row.expiresAt !== "number" || !Number.isSafeInteger(row.createdAt) || row.expiresAt !== row.createdAt + GEO_GAP_HANDOFF_TTL_MS || row.createdAt > now || row.expiresAt <= now) return false;
-  if (![row.runId, row.kbId, row.snapshotId].every((id) => typeof id === "string" && UUID.test(id)) || typeof row.questionId !== "string" || !/^[A-Za-z0-9_.-]{1,120}$/.test(row.questionId) || row.gapId !== `gap-${row.questionId}`) return false;
+  if (![row.runId, row.kbId, row.snapshotId].every((id) => typeof id === "string" && UUID.test(id)) || typeof row.questionId !== "string" || !/^[A-Za-z0-9:._/-]{1,128}$/.test(row.questionId) || row.gapId !== `gap-${row.questionId}`) return false;
   if (row.destination === "geo-brief") return row.pageUrl === null && row.questionText === null;
   return row.destination === "page-citability-check" && typeof row.pageUrl === "string" && row.pageUrl.length <= 2048 && isNormalizedGeoCitationUrl(row.pageUrl) && typeof row.questionText === "string" && row.questionText.length > 0 && row.questionText.length <= 500;
 }

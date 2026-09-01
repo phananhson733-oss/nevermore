@@ -7,6 +7,8 @@ import { geoKbBlockers, GEO_KB_SCHEMA_VERSION, type GeoKbPayload } from "./kb-co
 import { geoQuestionSetDigest, type GeoQuestionSet } from "./kb-questions.ts";
 import { readGeoKnowledgeBase, type GeoKbStoreResult, type GeoKbFreezeOutcome } from "./kb-store.ts";
 import { parseGeoSnapshotContext, type GeoSnapshotContext } from "./snapshot-context.ts";
+import { inheritedProfileFromCopy } from "./kb-profile-copy-server.ts";
+import { canonicalGeoEnrichmentText } from "./kb-enrichment.ts";
 
 interface DraftForFreeze { readonly payload: GeoKbPayload; readonly draftVersion: number; readonly contentHash: string; readonly targetHost: string }
 interface Dependencies {
@@ -36,6 +38,7 @@ export async function freezeGeoKbWithContext(input: {
     if (draft.kind !== "ok") return draft;
     if (draft.value.draftVersion !== input.baseVersion) return { kind: "conflict", currentDraftVersion: draft.value.draftVersion };
     if (context.kbId !== input.kbId || context.targetHost !== draft.value.targetHost || context.payloadHash !== draft.value.contentHash) return unavailable();
+    if (draft.value.payload.profileCopy && canonicalGeoEnrichmentText(context.profile) !== canonicalGeoEnrichmentText(inheritedProfileFromCopy(draft.value.payload.profileCopy))) return { kind: "invalid", code: "context_stale" };
     const blockers = geoKbBlockers(draft.value.payload, { roleLayersSkipped: context.skippedLayers.length === 2 });
     if (blockers.length) return { kind: "invalid", code: "not_freezable", blockers };
     if (geoQuestionSetDigest(input.questionSet) !== context.questionSetHash) return { kind: "invalid", code: "question_set_stale" };
@@ -47,7 +50,7 @@ export async function freezeGeoKbWithContext(input: {
     const r = result.data[0] as Record<string, unknown>;
     if (r.outcome === "not_found") return { kind: "missing" };
     if (r.outcome === "no_draft") return { kind: "invalid", code: "no_draft" };
-    if (r.outcome === "profile_stale") return { kind: "invalid", code: "context_stale" };
+    if (r.outcome === "profile_stale" || r.outcome === "profile_copy_mismatch") return { kind: "invalid", code: "context_stale" };
     if (r.outcome === "website_required") return { kind: "invalid", code: "website_required" };
     if (r.outcome === "conflict") return { kind: "conflict", currentDraftVersion: typeof r.revision === "number" ? r.revision : null };
     if (r.outcome !== "frozen" || typeof r.snapshot_id !== "string" || !/^[a-f0-9-]{36}$/iu.test(r.snapshot_id) || typeof r.revision !== "number" || !Number.isSafeInteger(r.revision) || r.revision < 1 || r.content_hash !== context.payloadHash || typeof r.frozen_at !== "string" || !Number.isFinite(Date.parse(r.frozen_at)) || typeof r.reused_existing !== "boolean") return unavailable();

@@ -5,6 +5,7 @@
 import { authenticateAccountRequest } from "../account-websites/route-http.ts";
 import { consumePublicToolQuota } from "../tools/shared-rate-limit.ts";
 import { listFrozenGeoKbVersions } from "./kb-history.ts";
+import { countGeoCitationQuestions } from "./kb-consumer-projection.ts";
 import {
   VISIBILITY_DAILY_WINDOW_SECONDS,
   VISIBILITY_RUNS_PER_DAY,
@@ -40,6 +41,9 @@ async function listFrozenVersions(
 
   const choices: VisibilityFrozenChoice[] = [];
   for (const { host, snapshot } of list.value) {
+    let retrievalCount: number;
+    try { retrievalCount = countGeoCitationQuestions(snapshot.questionSet); }
+    catch { return { kind: "unavailable", reason: "frozen_question_policy_unavailable" }; }
     choices.push({
       kbId: snapshot.kbId,
       host,
@@ -47,9 +51,7 @@ async function listFrozenVersions(
       revision: snapshot.revision,
       frozenAt: snapshot.frozenAt,
       questionCount: snapshot.questionSet.questions.length,
-      retrievalCount: snapshot.questionSet.questions.filter(
-        (question) => question.mode === "retrieval",
-      ).length,
+      retrievalCount,
       language: snapshot.questionSet.language,
       marketCode: snapshot.questionSet.country,
     });

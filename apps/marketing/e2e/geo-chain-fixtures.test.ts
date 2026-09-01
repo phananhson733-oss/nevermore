@@ -7,8 +7,21 @@ import { normalizeSeoAuditUrl } from "@sf/public-tools";
 import type { GeoContentBrief } from "@sf/public-tools/content-brief/geo-contract";
 import { verifyOwnedGeoBrief } from "../src/lib/geo-tools/brief-reference.ts";
 import { handleContentDraftRunRequest, type ContentDraftHandlerDependencies } from "../src/lib/tools/content-draft-handler.ts";
+import { parseWebsiteDetails } from "../src/lib/account-websites/contracts.ts";
 
 describe("offline browser-chain evidence fixtures", () => {
+  it("provides a complete, detached Profile in the GEO payload and exact frozen preview", async () => {
+    const fixture = createGeoChainFixture("A");
+    expect(await parseWebsiteDetails(fixture.website)).toEqual(fixture.website);
+    const profile = fixture.website.currentConfirmedSnapshot!.profile;
+    expect(fixture.view().profile?.fullProfile).toEqual(profile);
+    expect(fixture.payload.profileCopy?.profile).toEqual(profile);
+    expect(fixture.payload.profileCopy?.profile).not.toBe(profile);
+    expect(fixture.payload.profileCopy?.snapshotRevision).toBe("1");
+    await fixture.kbDependencies.freeze({ userId: GEO_CHAIN_USER, kbId: fixture.frozen.kbId, baseVersion: 1,
+      questionSet: fixture.frozen.questionSet, context: fixture.context });
+    expect(fixture.view().frozen?.payload).toEqual(fixture.frozen.payload);
+  });
   it("keeps immutable fixture reads owner- and snapshot-scoped", async () => {
     const fixture = createGeoChainFixture("A");
     await fixture.kbDependencies.freeze({ userId: GEO_CHAIN_USER, kbId: fixture.frozen.kbId, baseVersion: 1,

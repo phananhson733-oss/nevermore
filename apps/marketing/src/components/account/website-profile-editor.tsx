@@ -592,9 +592,13 @@ function ProfileSection({
 export function WebsiteProfileEditor({
   websiteId,
   autoGenerate,
+  onConfirmedRevisionChange,
+  onProfileAvailabilityChange,
 }: {
   readonly websiteId: string;
   readonly autoGenerate: boolean;
+  readonly onConfirmedRevisionChange?: (revision: number | null) => void;
+  readonly onProfileAvailabilityChange?: (available: boolean) => void;
 }) {
   const locale = useLocale();
   const t = useTranslations("account.websites.editor");
@@ -610,6 +614,16 @@ export function WebsiteProfileEditor({
   const wasCollapsed = useRef(false);
   stateRef.current = state;
   const collapsed = state.phase === "ready" && state.collapsed;
+  const confirmedRevision = state.phase === "ready"
+    ? state.details.currentConfirmedSnapshot?.snapshotRevision ?? null : undefined;
+
+  useEffect(() => {
+    if (confirmedRevision !== undefined) onConfirmedRevisionChange?.(confirmedRevision);
+  }, [confirmedRevision, onConfirmedRevisionChange]);
+  const profileAvailable = state.phase === "loading" ? undefined : state.phase === "ready";
+  useEffect(() => {
+    if (profileAvailable !== undefined) onProfileAvailabilityChange?.(profileAvailable);
+  }, [profileAvailable, onProfileAvailabilityChange]);
 
   useEffect(() => {
     if (collapsed) {
@@ -1475,10 +1489,6 @@ export function WebsiteProfileEditor({
           </p>
         </div>
         <p className="text-[13px] text-text-dark-secondary">{t("confirm.body")}</p>
-        <a className="inline-flex items-center rounded-md border border-brand-border-card px-3 py-2 text-sm text-brand-accent-text"
-          href={`/${locale}/account/websites/${websiteId}/geo`}>
-          {t("geoExtension")}
-        </a>
         <Button
           type="button"
           variant="outline"
@@ -1555,10 +1565,6 @@ export function WebsiteProfileEditor({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <a className="inline-flex items-center rounded-md border border-brand-border-card px-3 py-2 text-sm text-brand-accent-text"
-            href={`/${locale}/account/websites/${websiteId}/geo`}>
-            {t("geoExtension")}
-          </a>
           <Button
             type="button"
             variant="outline"

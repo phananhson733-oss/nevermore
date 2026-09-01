@@ -5,7 +5,7 @@
 import { handleWebsiteGeoLoad } from "../../../../../../lib/account-websites/geo-route.ts";
 import { authenticateAccountRequest } from "../../../../../../lib/account-websites/route-http.ts";
 import { readAccountWebsite } from "../../../../../../lib/account-websites/store.ts";
-import { DEFAULT_GEO_KB_HANDLER_DEPENDENCIES } from "../../../../../../lib/geo-tools/kb-handler-deps.ts";
+import { loadGeoKbEditorV2 } from "../../../../../../lib/geo-tools/kb-v2-runtime.ts";
 
 export const runtime = "nodejs";
 
@@ -17,6 +17,6 @@ export async function POST(
   return handleWebsiteGeoLoad(request, websiteId, {
     authenticate: authenticateAccountRequest,
     readWebsite: readAccountWebsite,
-    loadKnowledgeBase: DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadKnowledgeBase,
+    loadKnowledgeBase: loadGeoKbEditorV2,
   });
 }

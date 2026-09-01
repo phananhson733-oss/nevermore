@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import en from "../../i18n/messages/en.json";
 import { emptyGeoKbPayload } from "../../lib/geo-tools/kb-contract.ts";
+import { completePayloadV2, V2_KB_ID } from "../../lib/geo-tools/kb-v2.test-fixtures.ts";
 import { WebsiteGeoEditor } from "./website-geo-editor.tsx";
 
 const WEBSITE_ID = "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6";
@@ -34,8 +35,14 @@ let container: HTMLDivElement;
 let fetchMock: ReturnType<typeof vi.fn>;
 const originalFetch = globalThis.fetch;
 
-async function render(websiteId = WEBSITE_ID): Promise<void> {
-  await act(async () => root.render(<NextIntlClientProvider locale="en" timeZone="UTC" messages={{ tools: { geoKnowledgeBase: { ...en.tools.geoKnowledgeBase, asset: ASSET } } }}><WebsiteGeoEditor websiteId={websiteId} /></NextIntlClientProvider>));
+async function render(websiteId = WEBSITE_ID, confirmedRevision?: number): Promise<void> {
+  await act(async () => root.render(<NextIntlClientProvider locale="en" timeZone="UTC" messages={{ tools: { geoKnowledgeBase: { ...en.tools.geoKnowledgeBase, asset: { ...en.tools.geoKnowledgeBase.asset, ...ASSET } } } }}><WebsiteGeoEditor websiteId={websiteId} {...(confirmedRevision === undefined ? {} : { confirmedRevision })} /></NextIntlClientProvider>));
+}
+function modernData() {
+  const payload = completePayloadV2();
+  return { ...DATA, knowledgeBase: { schemaVersion: "marketing-geo-kb-editor.v2", kbId: V2_KB_ID, origin: VIEW.origin, host: VIEW.host,
+    draftVersion: 1, draftHash: "b".repeat(64), profileCopyHash: "c".repeat(64), payload: { ...payload, profileCopy: { ...payload.profileCopy, websiteId: WEBSITE_ID } }, requiresSave: false,
+    profile: null, frozen: null, sourceReceipt: null, prepared: null, generations: { roles: null, questions: null } } };
 }
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -47,6 +54,29 @@ afterEach(async () => {
 });
 
 describe("website GEO canonical editor", () => {
+  it("opens the complete V2 workflow and preserves its draft across Profile notifications", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ data: modernData() }));
+    await render(WEBSITE_ID, 1);
+    expect(container.querySelector("[data-geo-kb-v2]")).not.toBeNull();
+    const name = [...container.querySelectorAll("input")].find(input => !input.readOnly && input.value === "Acme");
+    if (!name) throw new Error("V2 alias field missing");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(name, "Unsaved V2 name");
+      name.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await render(WEBSITE_ID, 2);
+    expect(name.isConnected).toBe(true);
+    expect(name.value).toBe("Unsaved V2 name");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it("refuses a complete stored copy belonging to another route-owned website", async () => {
+    const modern = modernData();
+    modern.knowledgeBase.payload.profileCopy.websiteId = "11111111-1111-4111-8111-111111111111";
+    fetchMock.mockResolvedValueOnce(Response.json({ data: modern }));
+    await render();
+    expect(container.querySelector("[data-geo-kb-v2]")).toBeNull();
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  });
   it("shows an inherited saved country outside the presets without silently replacing it", async () => {
     fetchMock.mockResolvedValueOnce(Response.json({ data: { ...DATA, knowledgeBase: { ...VIEW,
       payload: { ...VIEW.payload, market: { ...VIEW.payload.market, country: "CA" } },

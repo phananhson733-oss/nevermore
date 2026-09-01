@@ -1,10 +1,10 @@
-// @input  — react, @/lib/utils
+// @input  — react, Marketing-local utils
 // @output — Textarea 组件
 // @pos    — shadcn/ui 多行文本输入原子组件
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import * as React from "react";
 
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils.ts";
 
 function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
   return (

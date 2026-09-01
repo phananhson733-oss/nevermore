@@ -1,11 +1,12 @@
 // @input -- exact owned frozen KB/context, selected question and optional owned run evidence
 // @output -- the shared GEO v1.1 Brief; no provider call and no client-supplied observation
 // @pos -- deterministic producer also used by the server-side Draft provenance verifier
-import { GEO_CONTENT_BRIEF_SCHEMA, type GeoContentBrief, type GeoOutlineItem, type GeoSource } from "@sf/public-tools/content-brief/geo-contract";
+import { GEO_CONTENT_BRIEF_SCHEMA, GEO_MUST_ANSWER_CAP, type GeoContentBrief, type GeoOutlineItem, type GeoSource } from "@sf/public-tools/content-brief/geo-contract";
 import { deriveGeoFormat, deriveGeoMustAnswer, deriveGeoReadiness, geoFingerprint, parseGeoContentBrief } from "@sf/public-tools/content-brief/parse-geo-brief";
 import type { UnavailableReason } from "@sf/public-tools/content-brief/contract";
-import type { GeoKbFrozenSnapshot } from "./kb-store.ts";
+import type { VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
 import type { GeoSnapshotContext } from "./snapshot-context.ts";
+import type { AnyGeoSnapshotContext } from "./snapshot-context-v2.ts";
 import { normalizeGeoHost } from "../agents/geo-url.ts";
 
 export interface SharedBriefRunEvidence {
@@ -16,8 +17,8 @@ export interface SharedBriefRunEvidence {
   readonly siteIndex: GeoContentBrief["evidence"]["site_index"];
 }
 export interface SharedBriefBasisInput {
-  readonly frozen: GeoKbFrozenSnapshot;
-  readonly context: GeoSnapshotContext | null;
+  readonly frozen: VersionedGeoKbFrozenSnapshot;
+  readonly context: AnyGeoSnapshotContext | null;
   readonly questionId: string | null;
   readonly questionText: string;
   readonly runEvidence: SharedBriefRunEvidence | null;
@@ -26,6 +27,41 @@ export interface SharedBriefBasisInput {
 }
 export type SharedBriefOutlineResult = { readonly ok: true; readonly outline: GeoOutlineItem[] } | { readonly ok: false; readonly reason: UnavailableReason };
 const missing = { status: "unavailable", reason: "insufficient_evidence", attempted: 0 } as const;
+
+/** A consumer projection of admitted V2 facts, never a V1 cast of its payload. */
+function briefFacts(frozen: VersionedGeoKbFrozenSnapshot, context: AnyGeoSnapshotContext | null): GeoSnapshotContext["facts"] {
+  if (frozen.payload.schemaVersion === "marketing-geo-kb.v2") {
+    if (context?.schemaVersion !== "marketing-geo-snapshot-context.v2") throw new Error("complete_v2_context_required");
+    return context.facts.map(fact => {
+      if (fact.value !== null && (fact.source === "none" || fact.review !== "accepted" || fact.reason !== "" || fact.sourceUrl === null || fact.observedAt === null)) throw new Error("invalid_admitted_fact");
+      if (fact.source === "crawl" && fact.supportRef === null) throw new Error("crawl_receipt_missing");
+      return { key: fact.key, value: fact.source === "none" ? null : fact.value, reason: fact.reason,
+        source: fact.source === "crawl" ? "crawl" : "kb", sourceUrl: fact.sourceUrl, observedAt: fact.observedAt, evidenceId: fact.supportRef?.evidenceId ?? null };
+    });
+  }
+  if (context?.schemaVersion === "marketing-geo-snapshot-context.v2") throw new Error("snapshot_context_version_mismatch");
+  return context?.facts ?? frozen.payload.facts.map(fact => ({ key: fact.key, value: fact.value || null, reason: fact.reason, source: "kb" as const, sourceUrl: fact.sourceUrl || null, observedAt: fact.observedAt || null, evidenceId: null }));
+}
+
+/** V2 requirements come from this exact question's translated source entities,
+ * not unrelated criteria elsewhere in the role. V1 keeps its original policy. */
+function questionCriteria(frozen: VersionedGeoKbFrozenSnapshot, questionId: string | null): readonly string[] {
+  if (questionId === null) return [];
+  const set = frozen.questionSet;
+  if (set.schemaVersion === "marketing-geo-question-set.v2") {
+    const question = set.questions.find(item => item.id === questionId);
+    if (question === undefined || question.roleId === null) return [];
+    const entities = new Map(set.entityCatalog.map(entity => [entity.id, entity]));
+    return [...new Set(question.provenance.entityRefs.flatMap(ref => {
+      const entity = entities.get(ref);
+      if (entity === undefined) throw new Error("question_entity_missing");
+      return entity.kind === "role_criterion" && entity.roleId === question.roleId ? [entity.text] : [];
+    }))];
+  }
+  const question = set.questions.find(item => item.id === questionId);
+  const role = question?.roleId == null ? null : frozen.payload.roles.find(item => item.id === question.roleId);
+  return question === undefined || role == null || !["comparison", "evaluation"].includes(question.layer) ? [] : role.decisionCriteria;
+}
 
 export function sharedGeoBriefBasis(input: SharedBriefBasisInput): GeoContentBrief {
   const { frozen, context, runEvidence } = input;
@@ -36,7 +72,7 @@ export function sharedGeoBriefBasis(input: SharedBriefBasisInput): GeoContentBri
   const questionText = picked?.text ?? input.questionText;
   const role = picked?.roleId == null ? null : frozen.payload.roles.find(item => item.id === picked.roleId) ?? null;
   const ref = context?.profile?.reference ?? null;
-  const facts = context?.facts ?? frozen.payload.facts.map(fact => ({ key: fact.key, value: fact.value || null, reason: fact.reason, source: "kb" as const, sourceUrl: fact.sourceUrl || null, observedAt: fact.observedAt || null, evidenceId: null }));
+  const facts = briefFacts(frozen, context);
   const receipts: GeoContentBrief["evidence"]["facts"] = [];
   const factTable: GeoContentBrief["fact_table"] = facts.map((fact, index) => {
     const value = fact.reason === "conflicting" ? null : fact.value;
@@ -47,7 +83,7 @@ export function sharedGeoBriefBasis(input: SharedBriefBasisInput): GeoContentBri
     }
     return { id: `F${index + 1}`, label: fact.key, value, reason: value === null ? fact.reason || "lowConfidence" : null, evidence_refs: value === null ? [] : [id] };
   });
-  if (context?.profile) {
+  if (frozen.payload.schemaVersion === "marketing-geo-kb.v1" && context?.profile) {
     const profile = context.profile; let receiptIndex = 0;
     for (const field of ["productName", "oneLinePositioning", "coreFeatures"] as const) {
       const provenance = profile.fieldProvenance?.find(item => item.path === `/${field}`);
@@ -63,10 +99,16 @@ export function sharedGeoBriefBasis(input: SharedBriefBasisInput): GeoContentBri
       }
     }
   }
-  const criteria = picked == null || role === null || !["comparison", "evaluation"].includes(picked.layer) ? [] : role.decisionCriteria;
-  if (criteria.length > 7) throw new Error("required_anchor_budget_exceeded");
+  const criteria = questionCriteria(frozen, input.questionId);
+  // Q1 reserves one of the eight mandatory answers. Never truncate a question
+  // that actually requires more than seven additional criterion statements.
+  if (criteria.length > GEO_MUST_ANSWER_CAP - 1) throw new Error("required_anchor_budget_exceeded");
   const requirements = criteria.map((text, index) => ({ id: `${role!.id}:criterion:${index + 1}`, text }));
-  const lead: GeoContentBrief["lead_answer"] = { question_id: "Q1", requirement: picked == null ? questionText : `In the opening 200 words, directly answer: ${questionText}`, required_entities: picked == null ? [] : [...picked.requiredEntities], source: picked == null ? "user_input" : "kb", fact_refs: receipts.filter(fact => fact.source === "kb").map(fact => fact.id) };
+  // parse-brief-shape's text + unique array decoder compares exact strings:
+  // no case, whitespace or Unicode folding. Keep the first frozen spelling.
+  // This display projection never changes the original entity IDs or Q hash.
+  const requiredEntities = picked == null ? [] : frozen.questionSet.schemaVersion === "marketing-geo-question-set.v2" ? [...new Set(picked.requiredEntities)] : [...picked.requiredEntities];
+  const lead: GeoContentBrief["lead_answer"] = { question_id: "Q1", requirement: picked == null ? questionText : `In the opening 200 words, directly answer: ${questionText}`, required_entities: requiredEntities, source: picked == null ? "user_input" : "kb", fact_refs: receipts.filter(fact => fact.source === "kb").map(fact => fact.id) };
   const samples = runEvidence?.samples ?? [];
   const derived = deriveGeoMustAnswer(lead, samples, requirements);
   const intent: GeoContentBrief["intent"] = picked == null ? missing : { status: "available", value: ["comparison", "evaluation"].includes(picked.layer) ? "commercial" : picked.layer === "branded" ? "navigational" : "informational", provenance: { method: "heuristic", origin: "kb" } };

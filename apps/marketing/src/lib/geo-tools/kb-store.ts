@@ -13,6 +13,7 @@ import {
   type GeoKbValue,
 } from "./kb-contract.ts";
 import { geoKbDigest } from "./kb-digest.ts";
+import { assertGeoProfileCopyIntegrity } from "./kb-profile-copy-server.ts";
 import {
   GEO_QUESTION_SET_SCHEMA_VERSION,
   buildGeoQuestionSet,
@@ -507,6 +508,7 @@ function payloadDigest(payload: GeoKbPayload): string {
 function payloadFromRow(row: Record<string, unknown>): GeoKbPayload {
   const parsed = parseGeoKbPayload(row.payload);
   if (!parsed.ok) throw new StoredValueError(GEO_KB_STORE_REASONS.malformedPayload, parsed.reason);
+  if (parsed.value.profileCopy) assertGeoProfileCopyIntegrity(parsed.value.profileCopy);
   if (payloadDigest(parsed.value) !== requiredHash(row, "content_hash")) {
     throw new StoredValueError(GEO_KB_STORE_REASONS.malformedPayload, "content_hash");
   }
@@ -592,6 +594,11 @@ function questionSetFromRow(row: Record<string, unknown>): GeoQuestionSet {
     throw new StoredValueError(GEO_KB_STORE_REASONS.malformedQuestionSet, "question_set_hash");
   }
   return set;
+}
+
+/** Version dispatchers must preserve this exact v1 projection/digest policy. */
+export function parseStoredGeoQuestionSetV1(value: unknown, expectedHash: string): GeoQuestionSet {
+  return questionSetFromRow({ question_set: value, question_set_hash: expectedHash });
 }
 
 /* ------------------------------------------------------------------ */
@@ -905,6 +912,10 @@ export async function saveGeoKbDraft(
   if (!parsed.ok) {
     return { kind: "invalid", code: "invalid_payload", rejection: parsed.reason };
   }
+  if (parsed.value.profileCopy) {
+    try { assertGeoProfileCopyIntegrity(parsed.value.profileCopy); }
+    catch { return { kind: "invalid", code: "invalid_payload", rejection: "profile_copy" }; }
+  }
   const outcome = await attempt(() =>
     dependencies.callRpc("marketing_geo_save_kb_draft", {
       p_user_id: input.userId,
@@ -921,6 +932,7 @@ export async function saveGeoKbDraft(
     return unavailable(GEO_KB_STORE_REASONS.malformedResponse, "save_kb_draft");
   }
   if (row.outcome === "not_found") return { kind: "missing" };
+  if (row.outcome === "profile_stale" || row.outcome === "profile_copy_mismatch") return { kind: "invalid", code: "context_stale" };
   if (row.outcome === "conflict") {
     return {
       kind: "conflict",

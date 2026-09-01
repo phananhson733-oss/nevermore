@@ -25,7 +25,7 @@ const factSchema = z.object({ key: text, value: text.nullable(), reason: z.enum(
 const competitorSchema = z.object({ domain: text, brandName: text, aliases: z.array(text).max(10), ...sourceFields }).strict();
 const contextSchema = z.object({
   schemaVersion: z.literal(GEO_SNAPSHOT_CONTEXT_SCHEMA), kbId: z.string().uuid(), targetHost: text, payloadHash: hash,
-  profile: z.object({ reference: profileReference, productName: text, oneLinePositioning: text, coreFeatures: z.array(text).max(30).readonly(), market: z.object({ country: text, language: text }).strict(), fieldProvenance: z.array(fieldProvenanceSchema).max(3).refine((rows) => rows.every((row) => ["/productName", "/oneLinePositioning", "/coreFeatures"].includes(row.path)) && new Set(rows.map((row) => row.path)).size === rows.length).readonly().optional() }).strict().nullable(),
+  profile: z.object({ reference: profileReference, productName: text, oneLinePositioning: text, coreFeatures: z.array(text).max(32).readonly(), market: z.object({ country: text, language: text }).strict(), fieldProvenance: z.array(fieldProvenanceSchema).max(3).refine((rows) => rows.every((row) => ["/productName", "/oneLinePositioning", "/coreFeatures"].includes(row.path)) && new Set(rows.map((row) => row.path)).size === rows.length).readonly().optional() }).strict().nullable(),
   enrichment: z.object({ receiptId: z.string().uuid(), contentHash: hash }).strict().nullable(),
   roles: z.array(roleSchema).max(6), facts: z.array(factSchema).max(24), competitors: z.array(competitorSchema).max(5),
   skippedLayers: z.array(z.enum(["problem", "evaluation"])).max(2), questionSetHash: hash, contentHash: hash,
@@ -89,7 +89,12 @@ export function buildGeoSnapshotContext(input: {
   });
   const body: GeoSnapshotContextBody = {
     schemaVersion: GEO_SNAPSHOT_CONTEXT_SCHEMA, kbId: input.kbId, targetHost: input.targetHost,
-    payloadHash: geoKbDigest(input.payload as unknown as GeoKbValue), profile: input.profile,
+    payloadHash: geoKbDigest(input.payload as unknown as GeoKbValue), profile: input.profile === null ? null : {
+      reference: input.profile.reference, productName: input.profile.productName,
+      oneLinePositioning: input.profile.oneLinePositioning, coreFeatures: input.profile.coreFeatures,
+      market: input.profile.market,
+      ...(input.profile.fieldProvenance === undefined ? {} : { fieldProvenance: input.profile.fieldProvenance }),
+    },
     enrichment: receipt ? { receiptId: receipt.receiptId, contentHash: receipt.contentHash } : null,
     roles, facts, competitors, skippedLayers, questionSetHash: geoQuestionSetDigest(questionSet),
   };

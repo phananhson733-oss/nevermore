@@ -9,7 +9,8 @@ import {
   readPreviousVisibilityRun,
   recordVisibilityRun,
 } from "./visibility-store.ts";
-import { readFrozenGeoKb } from "./kb-store.ts";
+import { readCompleteGeoKnowledgeBase } from "./kb-complete-read.ts";
+import { projectFrozenGeoQuestions } from "./kb-consumer-projection.ts";
 import { normalizeGeoHost } from "../agents/geo-url.ts";
 import { isDenseGeoName } from "../agents/geo-alias-match.ts";
 import {
@@ -29,7 +30,6 @@ import { readPreviousVisibilityRunV2, recordVisibilityRunV2 } from "./visibility
 import { compareVisibilityReportsV2 } from "./visibility-export.ts";
 import { visibilityPlanFitsWireBudget } from "./visibility-wire.ts";
 import { enrichVisibilityReportV2 } from "./visibility-enrich.ts";
-import { readGeoSnapshotContext } from "./asset-context-store.ts";
 import type { GeoSitePriorityHints } from "./site-index-contract.ts";
 
 /** The model the calibrated question wording was measured against. */
@@ -124,26 +124,29 @@ export async function visibilityPrepareStep(
   const request = openRequest(input);
   if (request === null) return { status: "failed", code: "run_unavailable" };
 
-  const frozen = await readFrozenGeoKb({
+  const knowledge = await readCompleteGeoKnowledgeBase({
     userId: request.sub,
     kbId: request.kbId,
     snapshotId: request.snapshotId,
   });
-  if (frozen.kind !== "ok") {
+  if (knowledge.kind !== "ok") {
     return {
       status: "failed",
-      code: frozen.kind === "missing" ? "not_found" : "store_unavailable",
+      code: knowledge.kind === "missing" ? "not_found" : "store_unavailable",
     };
   }
   // The read is keyed on the revision, so this asserts the row that came back
   // is the version the visitor chose rather than trusting two identifiers to
   // agree on their own.
-  if (frozen.value.snapshotId !== request.snapshotId) {
+  const frozen = knowledge.value.snapshot;
+  if (frozen.snapshotId !== request.snapshotId || frozen.kbId !== request.kbId || frozen.revision !== request.revision) {
     return { status: "failed", code: "not_found" };
   }
 
-  const payload = frozen.value.payload;
-  const questions = frozen.value.questionSet.questions;
+  const payload = frozen.payload;
+  let questions: readonly GeoQuestion[];
+  try { questions = projectFrozenGeoQuestions(frozen.questionSet); }
+  catch { return { status: "failed", code: "store_unavailable" }; }
   const plan: VisibilitySamplePlanItem[] = [];
   for (const question of questions) {
     for (let index = 1; index <= request.samplesPerQuestion; index += 1) {
@@ -166,11 +169,9 @@ export async function visibilityPrepareStep(
   if (request.engines !== undefined && (targetHost === "" || competitors.some((entry) => entry.domain === null))) return { status: "failed", code: "invalid_request" };
   let priorityHints: GeoSitePriorityHints | null = null;
   if (request.engines !== undefined) {
-    const readContext = await readGeoSnapshotContext({ userId: request.sub, kbId: request.kbId, snapshotId: request.snapshotId });
-    if (readContext.kind !== "ok") return { status: "failed", code: "store_unavailable" };
-    if (readContext.value !== null) {
-      const context = readContext.value;
-      if (context.kbId !== request.kbId || context.targetHost !== targetHost || context.questionSetHash !== frozen.value.questionSetHash) return { status: "failed", code: "store_unavailable" };
+    if (knowledge.value.context !== null) {
+      const context = knowledge.value.context;
+      if (context.kbId !== request.kbId || context.targetHost !== targetHost || context.questionSetHash !== frozen.questionSetHash) return { status: "failed", code: "store_unavailable" };
       if (context.profile !== null) priorityHints = { snapshotId: request.snapshotId, contextHash: context.contentHash, coreFeatures: context.profile.coreFeatures };
     }
   }
@@ -183,7 +184,7 @@ export async function visibilityPrepareStep(
       competitors: request.engines === undefined ? payload.competitors : [...new Map(competitors.map((entry) => [`${entry.domain ?? ""}|${entry.brandName}`, { ...entry, domain: entry.domain ?? "" }])).values()],
       targetHost,
       marketCode: payload.market.country,
-      language: frozen.value.questionSet.language,
+      language: frozen.questionSet.language,
     };
   if (request.engines !== undefined && !visibilityPlanFitsWireBudget({ context, questions, engines: request.engines, samplesPerQuestion: request.samplesPerQuestion })) return { status: "failed", code: "invalid_request" };
   return {
@@ -191,8 +192,8 @@ export async function visibilityPrepareStep(
     context,
     questions,
     plan: finalPlan,
-    questionSetHash: frozen.value.questionSetHash,
-    snapshotRevision: frozen.value.revision,
+    questionSetHash: frozen.questionSetHash,
+    snapshotRevision: frozen.revision,
     priorityHints,
   };
 }

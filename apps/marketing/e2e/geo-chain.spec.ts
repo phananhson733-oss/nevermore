@@ -67,9 +67,11 @@ async function isolationEvidence(fixture: GeoChainFixture, guard: GeoChainGuard)
 async function freezeAndRun(page: Page, locale: Locale, fixture: GeoChainFixture, guard: GeoChainGuard) {
   const messages = copy(locale);
   await page.goto(`/${locale}/account/websites/${fixture.website.websiteId}/geo`);
-  await expect(page.getByRole("heading", { name: messages.geoKnowledgeBase.asset.title, exact: true })).toBeVisible();
-  await expect(page.locator("dd").filter({ hasText: "Analytics for teams" })).toBeVisible();
-  await expect(page.getByText(fixture.profile.reference.profileHash, { exact: false })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/account/websites/${fixture.website.websiteId}#geo$`, "u"));
+  const geo = page.locator("#geo");
+  await expect(geo.getByRole("heading", { name: messages.geoKnowledgeBase.asset.inlineTitle, exact: true })).toBeVisible();
+  await expect(geo.locator('[data-geo-profile-field="oneLinePositioning"] textarea')).toHaveValue("Analytics for teams");
+  await expect(geo.getByText(fixture.profile.reference.profileHash, { exact: false })).toBeVisible();
   expect(fixture.providerCalls).toBe(0);
   const freeze = page.getByRole("button", { name: messages.geoKnowledgeBase.freeze.action, exact: true });
   await expect(freeze).toBeEnabled();

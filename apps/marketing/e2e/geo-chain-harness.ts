@@ -1,6 +1,6 @@
 import { expect, type BrowserContext, type Request as BrowserRequest, type Route } from "@playwright/test";
 import { handleWebsiteGeoLoad } from "../src/lib/account-websites/geo-route.ts";
-import { handleGeoKbFreeze } from "../src/lib/geo-tools/kb-handler.ts";
+import { handleGeoKbFreeze, handleGeoKbLoad, handleGeoKbSaveDraft } from "../src/lib/geo-tools/kb-handler.ts";
 import { handleVisibilityLoad, handleVisibilityStart, handleVisibilityStatus, type VisibilityHandlerDependencies } from "../src/lib/geo-tools/visibility-handler.ts";
 import { runSharedBrief } from "../src/lib/geo-tools/brief-shared-handler.ts";
 import { handleContentDraftRunRequest, type ContentDraftHandlerDependencies } from "../src/lib/tools/content-draft-handler.ts";
@@ -157,11 +157,14 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
     const incoming = serverRequest(request);
     if (id === "GET /api/auth/session") { await respond(route, Response.json({ signedIn: true })); return; }
     if (id === "GET /api/account/websites") { await respond(route, Response.json({ data: { websites: [fixture.website] } })); return; }
+    if (id === `GET /api/account/websites/${fixture.website.websiteId}`) { await respond(route, Response.json({ data: { website: fixture.website } })); return; }
     if (id === `POST /api/account/websites/${fixture.website.websiteId}/geo`) {
       await respond(route, await handleWebsiteGeoLoad(incoming, fixture.website.websiteId, { authenticate: fixture.auth,
         readWebsite: async (userId, websiteId) => userId === GEO_CHAIN_USER && websiteId === fixture.website.websiteId ? { kind: "ok", value: fixture.website } : { kind: "missing" }, loadKnowledgeBase: fixture.kbDependencies.loadKnowledgeBase })); return;
     }
     if (id === "POST /api/tools/geo-knowledge-base/freeze") { await respond(route, await handleGeoKbFreeze(incoming, fixture.kbDependencies)); return; }
+    if (id === "POST /api/tools/geo-knowledge-base/load") { await respond(route, await handleGeoKbLoad(incoming, fixture.kbDependencies)); return; }
+    if (id === "POST /api/tools/geo-knowledge-base/draft") { await respond(route, await handleGeoKbSaveDraft(incoming, fixture.kbDependencies)); return; }
     if (id === "POST /api/tools/ai-visibility-check/load") { await respond(route, await handleVisibilityLoad(incoming, visibility)); return; }
     if (id === "POST /api/tools/ai-visibility-check/run") { lastStart = body as typeof lastStart; await respond(route, await handleVisibilityStart(incoming, visibility)); return; }
     if (id === "POST /api/tools/ai-visibility-check/run/status") { await respond(route, await handleVisibilityStatus(incoming, visibility)); return; }

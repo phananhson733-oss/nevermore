@@ -10,10 +10,12 @@ import {
   type GeoKbPayload,
   type GeoKbRole,
 } from "../../lib/geo-tools/kb-contract.ts";
-import { parseWebsiteProfileReference } from "../../lib/account-websites/contracts.ts";
+import { parseWebsiteProfileReference, parseMarketingWebsiteProfile } from "../../lib/account-websites/contracts.ts";
+import { parseGeoProfileCopy } from "../../lib/geo-tools/kb-profile-copy.ts";
 import type { GeoInheritedProfile } from "../../lib/geo-tools/asset-context.ts";
 
 export interface GeoKbFrozenSummary {
+  readonly payload?: GeoKbPayload;
   readonly snapshotId: string;
   readonly revision: number;
   readonly frozenAt: string;
@@ -157,6 +159,9 @@ function isFact(value: unknown): value is GeoKbFact {
  */
 export function isGeoKbPayload(value: unknown): value is GeoKbPayload {
   if (!isRecord(value)) return false;
+  if (value["profileCopy"] !== undefined) {
+    try { parseGeoProfileCopy(value["profileCopy"]); } catch { return false; }
+  }
   const market = value["market"];
   return (
     value["schemaVersion"] === GEO_KB_SCHEMA_VERSION &&
@@ -177,9 +182,10 @@ export function isGeoKbPayload(value: unknown): value is GeoKbPayload {
   );
 }
 
-function isFrozen(value: unknown): value is GeoKbFrozenSummary {
+export function isFrozen(value: unknown): value is GeoKbFrozenSummary {
   if (!isRecord(value)) return false;
   return (
+    (value["payload"] === undefined || isGeoKbPayload(value["payload"])) &&
     typeof value["snapshotId"] === "string" &&
     typeof value["revision"] === "number" &&
     typeof value["frozenAt"] === "string" &&
@@ -221,7 +227,7 @@ function isSourcePreview(value: unknown): value is GeoKbSourcePreview {
   return isRecord(value) && isSkippedLayers(value["skippedLayers"]) && isHash(value["questionSetHash"]) && isHash(value["contentHash"]);
 }
 
-function isInheritedProfile(value: unknown): value is GeoInheritedProfile {
+export function isInheritedProfile(value: unknown): value is GeoInheritedProfile {
   if (!isRecord(value) || typeof value["productName"] !== "string" ||
       typeof value["oneLinePositioning"] !== "string" ||
       !isStringArray(value["coreFeatures"]) || !isRecord(value["market"]) ||
@@ -229,6 +235,7 @@ function isInheritedProfile(value: unknown): value is GeoInheritedProfile {
       typeof value["market"]["language"] !== "string") return false;
   try {
     parseWebsiteProfileReference(value["reference"]);
+    if (value["fullProfile"] !== undefined) parseMarketingWebsiteProfile(value["fullProfile"]);
     return true;
   } catch {
     return false;

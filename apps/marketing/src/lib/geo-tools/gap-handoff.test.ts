@@ -4,6 +4,16 @@ const NOW = Date.parse("2026-08-31T00:00:00.000Z");
 const payload = { destination: "geo-brief" as const, runId: "11111111-1111-4111-8111-111111111112", kbId: "11111111-1111-4111-8111-111111111113", snapshotId: "11111111-1111-4111-8111-111111111114", questionId: "q01-retrieval.category_top", gapId: "gap-q01-retrieval.category_top", pageUrl: null, questionText: null };
 function storage() { const data = new Map<string, string>(); return { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); }, removeItem: (key: string) => { data.delete(key); } }; }
 describe("one-time gap handoff", () => {
+  it("retains exact V2 semantic question identities through Brief navigation", () => {
+    const store = storage();
+    for (const questionId of ["semantic:discovery", "semantic:buyer/criterion", "s".repeat(128)]) {
+      const next = { ...payload, questionId, gapId: `gap-${questionId}` };
+      expect(writeGeoGapHandoff(store, next, NOW)).toBe(true);
+      expect(consumeGeoGapHandoff(store, NOW + 1)).toMatchObject(next);
+    }
+    expect(writeGeoGapHandoff(store, { ...payload, questionId: "s".repeat(129), gapId: `gap-${"s".repeat(129)}` }, NOW)).toBe(false);
+    expect(writeGeoGapHandoff(store, { ...payload, questionId: "semantic:q", gapId: "gap-other" }, NOW)).toBe(false);
+  });
   it("carries selectors without metrics or identity in URL and consumes exactly once", () => {
     const store = storage();
     expect(writeGeoGapHandoff(store, payload, NOW)).toBe(true);
