@@ -3,21 +3,22 @@
 // @pos    -- the identity of a GEO knowledge base; the database recomputes this digest and refuses a mismatch
 
 import { isMatchableGeoName } from "../agents/geo-alias-match.ts";
-import { isSupportedGeoQuestionLanguage } from "./asset-context.ts";
+import { geoQuestionLanguageIssues, geoQuestionPlaceholderIssues, type GeoQuestionInputOptions } from "./kb-question-language.ts";
+import { geoKbJsonbBytes, parseGeoProfileCopy, type GeoProfileCopy } from "./kb-profile-copy.ts";
 import { geoQuestionLanguageIssue, geoQuestionProperNames } from "./question-quality.ts";
 
 export const GEO_KB_SCHEMA_VERSION = "marketing-geo-kb.v1" as const;
 
 /**
- * Everything in a payload is a string, a boolean, or an array or object of
- * those. No numbers.
+ * Payload scalars are strings, booleans or null (including exact Profile
+ * provenance). No numbers; source revisions use an explicit string.
  *
  * The digest below has to be byte-identical to the one Postgres computes from
  * its own canonical form, and number formatting is the one place JSON.stringify
  * and jsonb::text can legitimately disagree (1e3 against 1000). Banning numbers
  * removes the disagreement instead of documenting it.
  */
-export type GeoKbScalar = string | boolean;
+export type GeoKbScalar = string | boolean | null;
 export type GeoKbValue =
   | GeoKbScalar
   | readonly GeoKbValue[]
@@ -65,6 +66,8 @@ export interface GeoKbFact {
 }
 
 export interface GeoKbPayload {
+  /** Complete exact source data; absent only in legacy partial payloads. */
+  readonly profileCopy?: GeoProfileCopy;
   readonly schemaVersion: typeof GEO_KB_SCHEMA_VERSION;
   readonly targetUrl: string;
   /** What a model calls this brand. The root of every mention decision. */
@@ -132,6 +135,7 @@ export type GeoKbRejection =
   | "competitors"
   | "facts"
   | "imported_from"
+  | "profile_copy"
   | "too_large"
   | "control_characters";
 
@@ -148,7 +152,7 @@ export const GEO_KB_LIMITS = {
   listItem: 80,
   text: 200,
   url: 2_048,
-  payloadBytes: 131_072,
+  payloadBytes: 393_216,
 } as const;
 
 /**
@@ -367,6 +371,11 @@ export function parseGeoKbPayload(input: unknown): GeoKbParseResult {
     importedFrom = { websiteId, snapshotId, snapshotRevision };
   }
 
+  let profileCopy: GeoProfileCopy | undefined;
+  if (Object.hasOwn(input, "profileCopy")) {
+    try { profileCopy = parseGeoProfileCopy(input["profileCopy"]); }
+    catch { return { ok: false, reason: "profile_copy" }; }
+  }
   const value: GeoKbPayload = {
     schemaVersion: GEO_KB_SCHEMA_VERSION,
     targetUrl,
@@ -378,9 +387,10 @@ export function parseGeoKbPayload(input: unknown): GeoKbParseResult {
     competitors,
     facts,
     importedFrom,
+    ...(profileCopy === undefined ? {} : { profileCopy }),
   };
   if (
-    Buffer.byteLength(canonicalGeoKbText(value as unknown as GeoKbValue), "utf8") >
+    geoKbJsonbBytes(value) >
     GEO_KB_LIMITS.payloadBytes
   ) {
     return { ok: false, reason: "too_large" };
@@ -419,16 +429,31 @@ export type GeoKbBlocker =
   | "question_quality"
   | "no_confirmed_competitor"
   | "role_missing"
-  | "unsupported_language";
+  | "unsupported_language"
+  | "category_terms_not_english"
+  | "role_terms_not_english"
+  | "category_placeholder_invalid"
+  | "role_placeholder_invalid";
 
 export function geoKbBlockers(
   payload: GeoKbPayload,
-  options: { readonly roleLayersSkipped?: boolean } = {},
+  options: GeoQuestionInputOptions = {},
 ): readonly GeoKbBlocker[] {
   const blockers: GeoKbBlocker[] = [];
-  if (!isSupportedGeoQuestionLanguage(payload.market.language)) {
-    blockers.push("unsupported_language");
-  }
+  // The legacy freeze fallback explicitly says role layers are active but has
+  // no source-conditioned role IDs. Its rendered questions are the authority
+  // for language quality, so `assessGeoQuestionQuality` reports the generic
+  // `question_quality` blocker. Bare input checks still validate every role,
+  // and source-conditioned calls still validate exactly their active roles.
+  const languageOptions = options.roleLayersSkipped === false && options.activeRoleIds === undefined
+    ? { ...options, activeRoleIds: [] }
+    : options;
+  blockers.push(
+    ...geoQuestionLanguageIssues(payload, languageOptions).filter(
+      (issue) => issue !== "category_terms_not_english",
+    ),
+    ...geoQuestionPlaceholderIssues(payload, options),
+  );
   if (payload.officialName.length === 0) blockers.push("official_name_missing");
   if (payload.aliases.length === 0) blockers.push("aliases_missing");
   // A name the mention matcher will not look for has to be refused here, before

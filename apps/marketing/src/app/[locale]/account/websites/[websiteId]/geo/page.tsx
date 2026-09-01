@@ -20,7 +20,10 @@ export async function generateMetadata({ params }: WebsiteGeoPageProps) {
 export default async function AccountWebsiteGeoPage({ params }: WebsiteGeoPageProps) {
   const [{ websiteId }, messages] = await Promise.all([params, getMessages()]);
   return (
-    <NextIntlClientProvider messages={{ tools: { geoKnowledgeBase: messages.tools.geoKnowledgeBase } }}>
+    <NextIntlClientProvider messages={{
+      tools: { geoKnowledgeBase: messages.tools.geoKnowledgeBase },
+      account: { websites: { fields: messages.account.websites.fields, editor: messages.account.websites.editor } },
+    }}>
       <WebsiteGeoEditor websiteId={websiteId} />
     </NextIntlClientProvider>
   );

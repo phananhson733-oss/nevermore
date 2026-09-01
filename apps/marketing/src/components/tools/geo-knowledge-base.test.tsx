@@ -10,6 +10,8 @@ import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import enMessages from "../../i18n/messages/en.json";
+import { emptyMarketingWebsiteProfile, profileSha256, type WebsiteProfileReferenceV1 } from "../../lib/account-websites/contracts.ts";
+import { createGeoProfileCopy } from "../../lib/geo-tools/kb-profile-copy.ts";
 import {
   emptyGeoKbPayload,
   type GeoKbPayload,
@@ -193,10 +195,15 @@ function button(label: string): HTMLButtonElement {
 
 /** The input under a given field label, by position among same-labelled fields. */
 function field(label: string, occurrence = 0): HTMLInputElement {
-  const matches = [...(container?.querySelectorAll("label") ?? [])]
-    .filter((entry) => entry.textContent === label)
-    .map((entry) => entry.control)
+  const nativeLabels = [...(container?.querySelectorAll("label") ?? [])]
+    .filter(element => element.textContent === label)
+    .map(element => element.control)
     .filter((element): element is HTMLInputElement => element instanceof HTMLInputElement);
+  const legacyLabels = [...(container?.querySelectorAll("span") ?? [])]
+    .filter((span) => span.textContent === label)
+    .map((span) => span.parentElement?.querySelector("input"))
+    .filter((element): element is HTMLInputElement => element instanceof HTMLInputElement);
+  const matches = [...new Set([...nativeLabels, ...legacyLabels])];
   const found = matches[occurrence];
   if (found === undefined) throw new Error(`no field labelled ${label}`);
   return found;
@@ -240,6 +247,7 @@ async function mount(): Promise<void> {
       <NextIntlClientProvider
         locale="en"
         messages={{
+          account: enMessages.account,
           tools: { geoKnowledgeBase: enMessages.tools.geoKnowledgeBase },
         }}
         onError={(error) => {
@@ -556,9 +564,10 @@ describe("a reply that is not what this page reads", () => {
 
 describe("which site the knowledge base was actually loaded for", () => {
   it.each(["en", "en-US", "en-GB"])("explicitly changes only the GEO language to %s while preserving its Profile and frozen view", async (language) => {
-    store.payload = ready({ market: { country: "CA", language: "zh-cn" } });
+    const completeProfile = { ...emptyMarketingWebsiteProfile(), productName: "Original Profile product", oneLinePositioning: "Original positioning", coreFeatures: ["Original feature"], country: "CA", locale: "en" };
+    const reference: WebsiteProfileReferenceV1 = { schemaVersion: "website-profile-reference.v1", websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6", snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987", snapshotRevision: 2, profileSchemaVersion: "marketing-website-profile.v1", profileHash: await profileSha256(completeProfile) };
+    store.payload = ready({ market: { country: "CA", language: "zh-cn" }, profileCopy: createGeoProfileCopy(reference, completeProfile) });
     const originalPayload = store.payload;
-    const reference = { schemaVersion: "website-profile-reference.v1", websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6", snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987", snapshotRevision: 2, profileSchemaVersion: "marketing-website-profile.v1", profileHash: "a".repeat(64) };
     const profile = { reference, productName: "Original Profile product", oneLinePositioning: "Original positioning", coreFeatures: ["Original feature"], market: { country: "CA", language: "en" } };
     const frozen = { snapshotId: "old-snapshot", revision: 1, frozenAt: "2026-08-30T00:00:00Z", contentHash: "b".repeat(64), questionCount: 1, retrievalCount: 1,
       questions: [{ id: "old-question", text: "Original frozen question", layer: "discovery", mode: "retrieval", calibrated: true }] };
@@ -587,7 +596,7 @@ describe("which site the knowledge base was actually loaded for", () => {
     expect(text()).toContain(copy("draft.unsaved"));
     expect(button(copy("freeze.action")).disabled).toBe(true);
     expect(text()).toContain("Original frozen question");
-    expect(text()).toContain("Original Profile product");
+    expect([...container!.querySelectorAll<HTMLInputElement>("[data-geo-profile-field='productName'] input")].some(input => input.value === "Original Profile product")).toBe(true);
     expect(text()).toContain("b".repeat(64));
 
     await click(button(copy("draft.save")));

@@ -10,10 +10,12 @@ import {
   type GeoKbPayload,
   type GeoKbRole,
 } from "../../lib/geo-tools/kb-contract.ts";
-import { parseWebsiteProfileReference } from "../../lib/account-websites/contracts.ts";
+import { parseWebsiteProfileReference, parseMarketingWebsiteProfile } from "../../lib/account-websites/contracts.ts";
+import { parseGeoProfileCopy } from "../../lib/geo-tools/kb-profile-copy.ts";
 import type { GeoInheritedProfile } from "../../lib/geo-tools/asset-context.ts";
 
 export interface GeoKbFrozenSummary {
+  readonly payload?: GeoKbPayload;
   readonly snapshotId: string;
   readonly revision: number;
   readonly frozenAt: string;
@@ -27,6 +29,7 @@ export interface GeoKbFrozenSummary {
 }
 
 export interface GeoKbSourcePreview {
+  readonly activeRoleIds?: readonly string[];
   readonly skippedLayers: readonly ("problem" | "evaluation")[];
   readonly questionSetHash: string;
   readonly contentHash: string;
@@ -86,6 +89,10 @@ const BLOCKER_CODES: ReadonlySet<string> = new Set<GeoKbBlocker>([
   "no_confirmed_competitor",
   "role_missing",
   "unsupported_language",
+  "category_terms_not_english",
+  "role_terms_not_english",
+  "category_placeholder_invalid",
+  "role_placeholder_invalid",
 ]);
 
 /** Same reason: the preview prints `questions.layers.<layer>`. */
@@ -159,6 +166,9 @@ function isFact(value: unknown): value is GeoKbFact {
  */
 export function isGeoKbPayload(value: unknown): value is GeoKbPayload {
   if (!isRecord(value)) return false;
+  if (value["profileCopy"] !== undefined) {
+    try { parseGeoProfileCopy(value["profileCopy"]); } catch { return false; }
+  }
   const market = value["market"];
   return (
     value["schemaVersion"] === GEO_KB_SCHEMA_VERSION &&
@@ -182,6 +192,7 @@ export function isGeoKbPayload(value: unknown): value is GeoKbPayload {
 function isFrozen(value: unknown): value is GeoKbFrozenSummary {
   if (!isRecord(value)) return false;
   return (
+    (value["payload"] === undefined || isGeoKbPayload(value["payload"])) &&
     typeof value["snapshotId"] === "string" &&
     typeof value["revision"] === "number" &&
     typeof value["frozenAt"] === "string" &&
@@ -220,7 +231,7 @@ function isSkippedLayers(value: unknown): value is readonly ("problem" | "evalua
     value.every((layer) => layer === "problem" || layer === "evaluation");
 }
 function isSourcePreview(value: unknown): value is GeoKbSourcePreview {
-  return isRecord(value) && isSkippedLayers(value["skippedLayers"]) && isHash(value["questionSetHash"]) && isHash(value["contentHash"]);
+  return isRecord(value) && (value["activeRoleIds"] === undefined || (isStringArray(value["activeRoleIds"]) && new Set(value["activeRoleIds"]).size === value["activeRoleIds"].length)) && isSkippedLayers(value["skippedLayers"]) && isHash(value["questionSetHash"]) && isHash(value["contentHash"]);
 }
 
 function isInheritedProfile(value: unknown): value is GeoInheritedProfile {
@@ -231,6 +242,7 @@ function isInheritedProfile(value: unknown): value is GeoInheritedProfile {
       typeof value["market"]["language"] !== "string") return false;
   try {
     parseWebsiteProfileReference(value["reference"]);
+    if (value["fullProfile"] !== undefined) parseMarketingWebsiteProfile(value["fullProfile"]);
     return true;
   } catch {
     return false;

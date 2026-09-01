@@ -104,6 +104,7 @@ export default async function GeoKnowledgeBasePage({
         <NextIntlClientProvider
           messages={{
             tools: { geoKnowledgeBase: messages.tools.geoKnowledgeBase },
+            account: { websites: { fields: messages.account.websites.fields, editor: messages.account.websites.editor } },
           }}
         >
           <GeoKnowledgeBase

@@ -11,6 +11,7 @@ import {
   type GeoTemplatePlaceholderName,
 } from "../agents/geo-template-registry.ts";
 import { geoCategoryStem } from "../agents/geo-category-stem.ts";
+import { geoCategoryPhrases } from "./kb-question-placeholders.ts";
 import {
   canonicalGeoKbText,
   type GeoKbPayload,
@@ -74,34 +75,12 @@ export interface GeoQuestionSet {
   readonly questions: readonly GeoQuestion[];
 }
 
-/** The four category forms the calibrated templates expect. */
-function categoryPhrases(value: string): {
-  readonly stem: string;
-  readonly plural: string;
-  readonly singular: string;
-  readonly software: string;
-} {
-  const stem = geoCategoryStem(value);
-  if (stem.length === 0) {
-    // A category that stems to nothing renders questions with no subject at
-    // all ("What are the top tools right now?"), which the calibration showed
-    // never reaches the web. The caller refuses such a payload before freezing;
-    // this branch only keeps the function total.
-    return { stem: "", plural: "tools", singular: "tool", software: "software" };
-  }
-  return {
-    stem,
-    plural: `${stem} tools`,
-    singular: `${stem} tool`,
-    software: `${stem} software`,
-  };
-}
 
 function templateValues(
   payload: GeoKbPayload,
   options: { readonly buyer?: string; readonly rivalList?: string },
 ): Partial<Record<GeoTemplatePlaceholderName, string>> {
-  const phrases = categoryPhrases(payload.categoryTerms[0] ?? "");
+  const phrases = geoCategoryPhrases(payload.categoryTerms[0] ?? "");
   return {
     categoryStem: phrases.stem.length > 0 ? phrases.stem : phrases.plural,
     categoryPlural: phrases.plural,
@@ -188,7 +167,7 @@ function questionId(index: number, templateId: string | null): string {
  */
 function brandedQuestions(payload: GeoKbPayload): readonly string[] {
   const name = payload.officialName;
-  const phrases = categoryPhrases(payload.categoryTerms[0] ?? "");
+  const phrases = geoCategoryPhrases(payload.categoryTerms[0] ?? "");
   return [
     `What is ${name}, and who is it for?`,
     `Is ${name} a good choice among ${phrases.plural}?`,

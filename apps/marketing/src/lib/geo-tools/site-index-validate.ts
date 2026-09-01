@@ -3,6 +3,7 @@
 // @pos -- client-pure evidence boundary shared by wire, store and importer
 import { codePointLength, hasLoneSurrogate } from "../agents/geo-canonical.ts";
 import { isNormalizedGeoCitationUrl, isNormalizedGeoHost, normalizeGeoHost } from "../agents/geo-url.ts";
+import { WEBSITE_PROFILE_LIST_MAX_ITEMS } from "../account-websites/contracts.ts";
 import { CITABILITY_RETRIEVAL_BOTS, CITABILITY_TRAINING_BOTS, CITABILITY_RULES_VERSION } from "./citability-contract.ts";
 import { GEO_SITE_EVIDENCE_SCHEMA, type GeoReadPage, type VisibilitySiteEvidenceV1 } from "./site-index-contract.ts";
 import type { VisibilityReportV2 } from "./visibility-v2-contract.ts";
@@ -122,7 +123,7 @@ export function parseVisibilitySiteEvidence(value: unknown, report: VisibilityRe
     const pages = array(index.pages, 24).map((page) => pageFrom(page, report, root.collectedAt as string, false, budgetTrimmed));
     if (Object.hasOwn(index, "priority")) {
       const priority = exact(index.priority, ["method", "snapshotId", "contextHash", "featureCount", "prioritizedUrls"]);
-      requireValue(priority.snapshotId === report.manifest.snapshotId && count(priority.featureCount, 30));
+      requireValue(priority.snapshotId === report.manifest.snapshotId && count(priority.featureCount, WEBSITE_PROFILE_LIST_MAX_ITEMS));
       const prioritized = strings(priority.prioritizedUrls, 24, 2048);
       requireValue(prioritized.every((url) => pages.some((page) => page.url === url)));
       if (priority.method === "none") requireValue(priority.contextHash === null && priority.featureCount === 0 && prioritized.length === 0);

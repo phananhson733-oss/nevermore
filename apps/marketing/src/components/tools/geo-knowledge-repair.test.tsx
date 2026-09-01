@@ -9,6 +9,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import enMessages from "../../i18n/messages/en.json";
+import { emptyMarketingWebsiteProfile } from "../../lib/account-websites/contracts.ts";
 import { emptyGeoKbPayload } from "../../lib/geo-tools/kb-contract.ts";
 import { consumeGeoBriefReturn, GEO_BRIEF_RETURN_KEY, GEO_KNOWLEDGE_REPAIR_KEY, writeGeoKnowledgeRepair } from "../../lib/geo-tools/brief-knowledge-handoff.ts";
 import { GeoKnowledgeBase } from "./geo-knowledge-base.tsx";
@@ -44,9 +45,18 @@ function knowledge(): GeoKbView {
 }
 
 function knowledgeWithProfile(): GeoKbView {
+  const fullProfile = {
+    ...emptyMarketingWebsiteProfile(),
+    productName: "Original Profile name",
+    oneLinePositioning: "Confirmed positioning",
+    coreFeatures: ["Confirmed feature"],
+    country: "US",
+    locale: "en",
+  };
   return { ...knowledge(), profile: {
     reference: { schemaVersion: "website-profile-reference.v1", websiteId: "890a3970-4cbb-4d4e-a3b3-c908c0d0f0b2", snapshotId: "e3694870-cc92-4f64-b9da-b52cbe9e3f01", snapshotRevision: 3, profileSchemaVersion: "marketing-website-profile.v1", profileHash: "c".repeat(64) },
-    productName: "Original Profile name", oneLinePositioning: "Confirmed positioning", coreFeatures: ["Confirmed feature"], market: { country: "US", language: "en" },
+    productName: fullProfile.productName, oneLinePositioning: fullProfile.oneLinePositioning, coreFeatures: fullProfile.coreFeatures,
+    market: { country: fullProfile.country, language: fullProfile.locale }, fullProfile,
   } };
 }
 
@@ -126,7 +136,7 @@ async function mount(props: Partial<Parameters<typeof GeoKnowledgeBase>[0]> = {}
   document.body.append(container);
   root = createRoot(container);
   await act(async () => {
-    const editor = <NextIntlClientProvider locale="en" messages={{ tools: { geoKnowledgeBase: enMessages.tools.geoKnowledgeBase } }} timeZone="UTC" onError={(error) => intlErrors.push(error.message)}>
+    const editor = <NextIntlClientProvider locale="en" messages={enMessages} timeZone="UTC" onError={(error) => intlErrors.push(error.message)}>
       <GeoKnowledgeBase locale="en" signedIn {...props} />
     </NextIntlClientProvider>;
     root?.render(strict ? <StrictMode>{editor}</StrictMode> : editor);
@@ -437,8 +447,12 @@ describe("knowledge repair", () => {
   it("keeps Profile facts read-only while a user corrects category, adds a sourced fact, saves with CAS and freezes", async () => {
     stageRepair();
     const profile = knowledgeWithProfile().profile!;
-    globalThis.fetch = vi.fn(async () => Response.json({ data: { ...knowledge(), profile,
-      payload: { ...knowledge().payload, categoryTerms: ["项目管理"], facts: [] } } }));
+    const loaded = { ...knowledge(), profile,
+      payload: { ...knowledge().payload, categoryTerms: ["项目管理"], facts: [] } };
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(Response.json({ data: loaded }))
+      .mockResolvedValueOnce(Response.json({ data: loaded }))
+      .mockResolvedValueOnce(Response.json({ data: { draftVersion: 3, updatedAt: "2026-08-31T00:00:00Z", blockers: [] } }));
     await mount();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("Confirmed feature");
@@ -452,11 +466,15 @@ describe("knowledge repair", () => {
     await type(field(copy("facts.sourceLabel")), `${ORIGIN}/features`);
     await type(field(copy("facts.observedLabel")), "2026-08-31");
     expect(button(copy("freeze.action")).disabled).toBe(true);
-    globalThis.fetch = vi.fn(async () => Response.json({ data: { draftVersion: 3, updatedAt: "2026-08-31T00:00:00Z", blockers: [] } }));
+    await click(button(copy("asset.reviewCopy")));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await click(button(copy("asset.applyCopy")));
+    const copiedProfileName = [...container.querySelectorAll("input")].find((input) => input.value === "Original Profile name");
+    expect(copiedProfileName?.readOnly).toBe(true);
     await click(button(copy("draft.save")));
-    const request = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+    const request = JSON.parse(String(vi.mocked(fetch).mock.calls[2]?.[1]?.body));
     expect(request).toMatchObject({ kbId: KB_ID, baseVersion: 2, expectedProfileReference: profile.reference,
-      payload: { officialName: "Acme Analytics", categoryTerms: ["project management"], facts: [{ key: "Automation", value: "Supports recurring project tasks", sourceUrl: `${ORIGIN}/features`, observedAt: "2026-08-31" }] } });
+      payload: { officialName: "Acme Analytics", categoryTerms: ["project management"], profileCopy: { profile: profile.fullProfile }, facts: [{ key: "Automation", value: "Supports recurring project tasks", sourceUrl: `${ORIGIN}/features`, observedAt: "2026-08-31" }] } });
     expect(button(copy("freeze.action")).disabled).toBe(false);
     await freeze();
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toEqual({ kbId: KB_ID, baseVersion: 3 });

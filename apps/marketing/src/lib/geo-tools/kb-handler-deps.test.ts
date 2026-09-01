@@ -13,6 +13,10 @@ import {
   type GeoQuestionSet,
 } from "./kb-questions.ts";
 import type { GeoKbDetails, GeoKbFrozenSnapshot } from "./kb-store.ts";
+import { createHash } from "node:crypto";
+import { canonicalProfileJson } from "../account-websites/contracts.ts";
+import { createGeoProfileCopy } from "./kb-profile-copy.ts";
+import { contextPayload } from "./snapshot-context.test-fixtures.ts";
 
 const mocks = vi.hoisted(() => ({
   ensureGeoKnowledgeBase: vi.fn(),
@@ -131,6 +135,10 @@ beforeEach(() => {
 });
 
 describe("default GEO knowledge-base load", () => {
+  it("includes exact frozen payload, not today's source proposal, in its read-only preview", async () => {
+    const loaded = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadKnowledgeBase({ userId: USER_ID, url: "https://example.com/" });
+    expect(loaded).toMatchObject({ kind: "ok", value: { frozen: { payload: SNAPSHOT.payload } } });
+  });
   it("reads the owned existing knowledge base without ensuring or creating a site", async () => {
     const loadedByUrl = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadKnowledgeBase({ userId: USER_ID, url: "https://example.com" });
     vi.clearAllMocks();
@@ -187,13 +195,18 @@ describe("default GEO knowledge-base load", () => {
     expect(loaded).toMatchObject({ kind: "ok", value: { frozen: { questions: QUESTION_SET.questions, questionSetHash: FROZEN.questionSetHash, registryVersion: "test" }, context: { skippedLayers: ["problem", "evaluation"] } } });
   });
   it("carries the confirmed website profile as an exact inherited reference", async () => {
+    const profile = {
+      ...emptyMarketingWebsiteProfile(),
+      productName: "Example", oneLinePositioning: "A confirmed product statement",
+      coreFeatures: ["Birth chart calculator", "Journal"], country: "US", locale: "en",
+    };
     const reference = {
       schemaVersion: WEBSITE_PROFILE_REFERENCE_VERSION,
       websiteId: "44444444-4444-4444-8444-444444444444",
       snapshotId: "55555555-5555-4555-8555-555555555555",
       snapshotRevision: 3,
       profileSchemaVersion: MARKETING_WEBSITE_PROFILE_VERSION,
-      profileHash: "a".repeat(64),
+      profileHash: createHash("sha256").update(canonicalProfileJson(profile)).digest("hex"),
     };
     mocks.findAccountWebsiteByUrl.mockResolvedValue({
       kind: "ok",
@@ -204,14 +217,7 @@ describe("default GEO knowledge-base load", () => {
           canonicalSiteKey: "example.com",
         },
         reference,
-        profile: {
-          ...emptyMarketingWebsiteProfile(),
-          productName: "Example",
-          oneLinePositioning: "A confirmed product statement",
-          coreFeatures: ["Birth chart calculator", "Journal"],
-          country: "US",
-          locale: "en",
-        },
+        profile,
       },
     });
     const outcome = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadKnowledgeBase({
@@ -296,5 +302,56 @@ describe("default GEO knowledge-base load", () => {
     expect(mocks.readFrozenGeoKb).not.toHaveBeenCalled();
     expect(outcome.kind).toBe("ok");
     if (outcome.kind === "ok") expect(outcome.value.frozen).toBeNull();
+  });
+});
+
+describe("complete source-copy lifecycle", () => {
+  function source() {
+    const profile = { ...emptyMarketingWebsiteProfile(), productName: "Example", categories: ["analytics"], coreFeatures: Array.from({ length: 32 }, (_, i) => `feature${String(i)}`), buyer: "Long source buyer ".repeat(100), country: "US", locale: "en" };
+    const reference = { schemaVersion: WEBSITE_PROFILE_REFERENCE_VERSION, websiteId: "44444444-4444-4444-8444-444444444444", snapshotId: "55555555-5555-4555-8555-555555555555", snapshotRevision: 3, profileSchemaVersion: MARKETING_WEBSITE_PROFILE_VERSION, profileHash: createHash("sha256").update(canonicalProfileJson(profile)).digest("hex") };
+    mocks.findAccountWebsiteByUrl.mockResolvedValue({ kind: "ok", value: { website: { websiteId: reference.websiteId, origin: "https://example.com", canonicalSiteKey: "example.com" }, profile, reference } });
+    mocks.readGeoKnowledgeBase.mockResolvedValue({ kind: "ok", value: details(null) });
+    return { profile, reference, payload: { ...contextPayload(), profileCopy: createGeoProfileCopy(reference, profile) } };
+  }
+  it("prepares an unsaved exact full copy and sends complete current source data for explicit adoption", async () => {
+    const { profile, payload } = source();
+    const loaded = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadKnowledgeBase({ userId: USER_ID, url: "https://example.com/" });
+    expect(loaded).toMatchObject({ kind: "ok", value: { draftVersion: 0, payload: { profileCopy: payload.profileCopy }, profile: { fullProfile: profile } } });
+    expect(mocks.saveGeoKbDraft).not.toHaveBeenCalled();
+  });
+  it("does not replace an existing copy or operational edits when the current Profile changes", async () => {
+    const { profile, payload, reference } = source();
+    const oldProfile = { ...profile, valueProposition: "Previously saved source" };
+    const oldCopy = createGeoProfileCopy({ ...reference, snapshotRevision: 2, profileHash: createHash("sha256").update(canonicalProfileJson(oldProfile)).digest("hex") }, oldProfile);
+    const saved = { ...payload, profileCopy: oldCopy, aliases: ["custom"], facts: contextPayload().facts };
+    mocks.readGeoKnowledgeBase.mockResolvedValue({ kind: "ok", value: { ...details(null), draft: { draftVersion: 8, payload: saved, contentHash: "c".repeat(64), updatedAt: NOW } } });
+    expect(await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadKnowledgeBase({ userId: USER_ID, url: "https://example.com/" })).toMatchObject({ kind: "ok", value: { payload: saved, profile: { fullProfile: profile } } });
+    expect(mocks.saveGeoKbDraft).not.toHaveBeenCalled();
+  });
+  it.each(["foreign", "stale", "forged", "self_hash_forged"])("rejects %s copy on save before persistence", async (kind) => {
+    const { reference, payload } = source();
+    const copy = { ...payload.profileCopy };
+    if (kind === "foreign") copy.websiteId = USER_ID;
+    if (kind === "stale") copy.snapshotRevision = "2";
+    if (kind === "forged" || kind === "self_hash_forged") copy.profile = { ...copy.profile, productName: "Forged" };
+    if (kind === "self_hash_forged") copy.profileHash = createHash("sha256").update(canonicalProfileJson(copy.profile)).digest("hex");
+    expect(await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.saveDraft({ userId: USER_ID, kbId: KB_ID, baseVersion: 0, payload: { ...payload, profileCopy: copy }, expectedProfileReference: reference })).toEqual({ kind: "context_stale" });
+    expect(mocks.saveGeoKbDraft).not.toHaveBeenCalled();
+  });
+  it("requires explicit copy adoption before saving or freezing a legacy draft", async () => {
+    const { reference } = source();
+    const payload = contextPayload();
+    expect(await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.saveDraft({ userId: USER_ID, kbId: KB_ID, baseVersion: 1, payload, expectedProfileReference: reference })).toEqual({ kind: "profile_copy_required" });
+    mocks.readGeoKnowledgeBase.mockResolvedValue({ kind: "ok", value: { ...details(null), draft: { payload, draftVersion: 1, contentHash: "d".repeat(64), updatedAt: NOW } } });
+    expect(await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.readDraftPayload({ userId: USER_ID, kbId: KB_ID })).toEqual({ kind: "profile_copy_required" });
+    expect(mocks.saveGeoKbDraft).not.toHaveBeenCalled();
+  });
+  it("builds freeze context from the saved full copy without a current Profile read", async () => {
+    const { payload } = source();
+    mocks.findAccountWebsiteByUrl.mockRejectedValue(new Error("Profile source offline"));
+    mocks.readGeoKnowledgeBase.mockResolvedValue({ kind: "ok", value: { ...details(null), draft: { payload, draftVersion: 1, contentHash: "d".repeat(64), updatedAt: NOW } } });
+    const result = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.readDraftPayload({ userId: USER_ID, kbId: KB_ID });
+    expect(result).toMatchObject({ kind: "ok", value: { payload, context: { profile: { reference: { snapshotRevision: 3, profileHash: payload.profileCopy.profileHash } } } } });
+    expect(mocks.findAccountWebsiteByUrl).not.toHaveBeenCalled();
   });
 });

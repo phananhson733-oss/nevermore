@@ -13,6 +13,9 @@ import { validateSectionOutput } from "@sf/public-tools/content-brief/validate-s
 import { verifyOwnedGeoBrief } from "../src/lib/geo-tools/brief-reference.ts";
 import type { GeoContentBrief } from "@sf/public-tools/content-brief/geo-contract";
 import { GEO_CHAIN_NOW, GEO_CHAIN_RUN, GEO_CHAIN_USER, type GeoChainFixture } from "./geo-chain-fixtures.ts";
+import { handleVisibilityContext, type VisibilityContextDependencies } from "../src/lib/geo-tools/visibility-context-handler.ts";
+import { listVisibilityHistory, readVisibilityHistory, type VisibilityHistoryDependencies } from "../src/lib/geo-tools/visibility-history.ts";
+import { visibilityHistoryRow } from "./ai-visibility-artifact-fixtures.ts";
 
 const SHELL = new Set(["GET /api/auth/profile", "GET /api/auth/one-tap/nonce", "GET /api/credits/balance", "GET /api/credits/ledger"]);
 const EXPECTED_BLOCKED_EXTERNAL = new Set(["accounts.google.com", "www.googletagmanager.com", "www.google-analytics.com"]);
@@ -92,7 +95,7 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
   const visibility: VisibilityHandlerDependencies = {
     authenticate: fixture.auth, providerConfigured: () => true, consumeDailyRun: async () => true, now: Date.now,
     listFrozen: async userId => ({ kind: "ok", value: userId !== GEO_CHAIN_USER || fixture.view().frozen === null ? [] : [{ kbId: fixture.frozen.kbId,
-      snapshotId: fixture.frozen.snapshotId, host: fixture.website.host, revision: 1, frozenAt: fixture.frozen.frozenAt,
+      snapshotId: fixture.frozen.snapshotId, host: fixture.website.host, revision: fixture.frozen.revision, frozenAt: fixture.frozen.frozenAt,
       questionCount: fixture.frozen.questionCount, retrievalCount: fixture.frozen.questionSet.questions.filter(q => q.mode === "retrieval").length,
       language: "en", marketCode: "US" }] }),
     startRun: async () => { if (!lastStart) throw new Error("Missing client selection"); await fixture.run(lastStart.engines, lastStart.samplesPerQuestion); return { runId: GEO_CHAIN_RUN }; },
@@ -107,6 +110,21 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
     sample: async () => { throw new Error("Brief load must not sample a provider"); },
     assemble: async () => { throw new Error("Brief load must not assemble a Brief"); },
     reportAssemblyFailure: () => { throw new Error("Brief load must not attempt assembly"); },
+  };
+  const visibilityContext: VisibilityContextDependencies = {
+    authenticate: fixture.auth,
+    listWebsites: async userId => ({ kind: "ok", value: userId === GEO_CHAIN_USER ? [fixture.website] : [] }),
+    readWebsite: async (userId, websiteId) => userId === GEO_CHAIN_USER && websiteId === fixture.website.websiteId ? { kind: "ok", value: fixture.website } : { kind: "missing" },
+    listKnowledgeBases: async ({ userId }) => ({ kind: "ok", value: userId !== GEO_CHAIN_USER ? [] : [{
+      kbId: fixture.frozen.kbId, origin: fixture.website.origin, host: fixture.website.host, canonicalSiteKey: fixture.website.canonicalSiteKey,
+      createdAt: GEO_CHAIN_NOW, updatedAt: GEO_CHAIN_NOW,
+      draft: { draftVersion: 1, contentHash: fixture.context.payloadHash, updatedAt: GEO_CHAIN_NOW }, frozen: fixture.view().frozen }] }),
+    readFrozen: async ({ userId, kbId, snapshotId }) => userId === GEO_CHAIN_USER && kbId === fixture.frozen.kbId && snapshotId === fixture.frozen.snapshotId && fixture.view().frozen !== null ? { kind: "ok", value: fixture.frozen } : { kind: "missing" },
+    readContext: async ({ userId, kbId, snapshotId }) => userId === GEO_CHAIN_USER && kbId === fixture.frozen.kbId && snapshotId === fixture.frozen.snapshotId ? { kind: "ok", value: fixture.context } : { kind: "missing" },
+  };
+  const visibilityHistory: VisibilityHistoryDependencies = {
+    listRuns: async ({ userId, version }) => ({ kind: "ok", data: userId === GEO_CHAIN_USER && version === "v2" && fixture.report !== null ? [visibilityHistoryRow(fixture.report)] : [] }),
+    readRun: async ({ userId, version, runId }) => ({ kind: "ok", data: userId === GEO_CHAIN_USER && version === "v2" && runId === fixture.report?.manifest.runId ? visibilityHistoryRow(fixture.report) : null }),
   };
   const draft: ContentDraftHandlerDependencies = {
     generateSectionV2: async () => { throw new Error("GEO fixture must not call SEO v2 generation"); },
@@ -179,9 +197,11 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
     guard.requests.push({ id, body });
     const incoming = serverRequest(request);
     if (id === "GET /api/auth/session") { await respond(route, Response.json({ signedIn: true })); return; }
-    // The visible Necessary Only action may persist a local browser preference,
-    // but this fixture never records consent in a remote account/store.
-    if (id === "POST /api/consent") { await respond(route, Response.json({ data: { recorded: false, reason: "persistence_not_configured" } }, { status: 202 })); return; }
+    // Local consent fixture: only the visible Necessary Only choice is admitted.
+    if (id === "POST /api/consent") {
+      if (JSON.stringify((body as { categories: unknown }).categories) !== JSON.stringify([{ category: "necessary", status: "accepted" }, { category: "analytics", status: "rejected" }, { category: "marketing", status: "rejected" }])) throw new Error("Screenshot consent must only accept necessary cookies");
+      await respond(route, Response.json({ data: { recorded: false, reason: "consent_store_unavailable" } }, { status: 202 })); return;
+    }
     if (id === "GET /api/account/websites") { await respond(route, Response.json({ data: { websites: [fixture.website] } })); return; }
     if (id === `POST /api/account/websites/${fixture.website.websiteId}/geo`) {
       await respond(route, await handleWebsiteGeoLoad(incoming, fixture.website.websiteId, { authenticate: fixture.auth,
@@ -190,6 +210,9 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
     if (id === "POST /api/tools/geo-knowledge-base/load") { await respond(route, await handleGeoKbLoad(incoming, fixture.kbDependencies)); return; }
     if (id === "POST /api/tools/geo-knowledge-base/draft") { await respond(route, await handleGeoKbSaveDraft(incoming, fixture.kbDependencies)); return; }
     if (id === "POST /api/tools/geo-knowledge-base/freeze") { await respond(route, await handleGeoKbFreeze(incoming, fixture.kbDependencies)); return; }
+    if (id === "GET /api/tools/ai-visibility-check/context") { await respond(route, await handleVisibilityContext(incoming, visibilityContext)); return; }
+    if (id === "POST /api/tools/ai-visibility-check/history") { const result = await listVisibilityHistory({ userId: GEO_CHAIN_USER }, visibilityHistory); if (result.kind !== "ok") throw new Error("Offline history list failed validation"); await respond(route, Response.json({ data: result.value })); return; }
+    if (id === "POST /api/tools/ai-visibility-check/history/read") { const result = await readVisibilityHistory({ userId: GEO_CHAIN_USER, runId: (body as { runId: string }).runId }, visibilityHistory); if (result.kind !== "ok") throw new Error("Offline history read failed validation"); await respond(route, Response.json({ data: result.value })); return; }
     if (id === "POST /api/tools/ai-visibility-check/load") { await respond(route, await handleVisibilityLoad(incoming, visibility)); return; }
     if (id === "POST /api/tools/ai-visibility-check/run") { lastStart = body as typeof lastStart; await respond(route, await handleVisibilityStart(incoming, visibility)); return; }
     if (id === "POST /api/tools/ai-visibility-check/run/status") { await respond(route, await handleVisibilityStatus(incoming, visibility)); return; }

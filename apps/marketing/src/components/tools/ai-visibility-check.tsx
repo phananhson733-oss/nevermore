@@ -1,1000 +1,35 @@
 "use client";
-
-// @input  -- the signed-in visitor's frozen knowledge-base versions, and one sampling run of the questions they imply
-// @output -- the cost and duration a run would spend before it starts, an honest clock while it runs, and its numbers after
-// @pos    -- the only client surface of /tools/ai-visibility-check; it starts a run and renders one, it never judges one
-
+// @input -- owned website/frozen contexts, run choices and recorded history
+// @output -- explicit frozen-input selection, an honest running state and artifact-aligned report
+// @pos -- visibility workbench; never writes Profile or silently updates frozen inputs
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-
-import {
-  GEO_VISIBILITY_SCHEMA_VERSION,
-  VISIBILITY_MIN_SUCCESS_RATIO,
-  VISIBILITY_RUNS_PER_DAY,
-  VISIBILITY_SAMPLES_DEFAULT,
-  VISIBILITY_SAMPLES_OPTIONS,
-  visibilityCallCount,
-  visibilityCostEstimateUsd,
-  visibilityMinutesEstimate,
-  type VisibilityCitedDomain,
-  type VisibilityComparison,
-  type VisibilityProportion,
-  type VisibilityQuestionResult,
-} from "../../lib/geo-tools/visibility-contract.ts";
-import { GEO_VISIBILITY_V2, VISIBILITY_ENGINES, isVisibilityReportV2, type AnyVisibilityReport as VisibilityReport, type AnyVisibilityComparison, type VisibilityEngine } from "../../lib/geo-tools/visibility-v2-contract.ts";
-import { parseVisibilityReportV2 } from "../../lib/geo-tools/visibility-export.ts";
-import { decodeVisibilityWire, VISIBILITY_WIRE_SCHEMA } from "../../lib/geo-tools/visibility-wire.ts";
-import { VisibilityPortableRuns, VisibilityV2Measurements } from "./ai-visibility-check-v2.tsx";
-import { VisibilityGapEvidence } from "./ai-visibility-gaps.tsx";
-import {
-  describeProportion,
-  minTrialsForZeroClaim,
-  normalCdf,
-  Z95,
-  ZERO_CLAIM_UPPER_BOUND,
-  type ProportionDescription,
-} from "../../lib/geo-tools/stats.ts";
+import { VISIBILITY_RUNS_PER_DAY, VISIBILITY_SAMPLES_DEFAULT, VISIBILITY_SAMPLES_OPTIONS, visibilityCallCount, visibilityCostEstimateUsd, visibilityMinutesEstimate, type VisibilityComparison } from "../../lib/geo-tools/visibility-contract.ts";
+import { VISIBILITY_ENGINES, isVisibilityReportV2, type AnyVisibilityReport as VisibilityReport, type VisibilityEngine } from "../../lib/geo-tools/visibility-v2-contract.ts";
+import { parseVisibilityContext, type VisibilityContext, type VisibilityWebsiteContext } from "../../lib/geo-tools/visibility-context.ts";
 import { localePath } from "../../lib/locale-path.ts";
-import {
-  clearVisibilityRunPointer,
-  readVisibilityRunPointer,
-  writeVisibilityRunPointer,
-} from "./ai-visibility-run-pointer.ts";
+import { VisibilityPortableRuns } from "./ai-visibility-check-v2.tsx";
+import { AiVisibilityReport, AiVisibilityComparison, AiVisibilityLegacySummary } from "./ai-visibility-report/index.tsx";
+import { AiVisibilitySource } from "./ai-visibility-source.tsx";
+import { useExactVisibilitySource } from "./ai-visibility-context.ts";
+import { decodeVisibilityWire } from "../../lib/geo-tools/visibility-wire.ts";
+import { AiVisibilityHistory, useVisibilityHistory, visibilityRunAddress } from "./ai-visibility-history.tsx";
+import { clearVisibilityRunPointer, readVisibilityRunPointer, writeVisibilityRunPointer } from "./ai-visibility-run-pointer.ts";
+import { asRecord, errorCodeOf, asLoadedChoices, readStatus, retryAfterSecondsFrom, pollDelayMs, waitFor, monotonicNow, POLL_DEFAULT_MS, type LoadedChoices, type FrozenVersion } from "./ai-visibility-client.ts";
 
-const ENDPOINTS = {
-  load: "/api/tools/ai-visibility-check/load",
-  run: "/api/tools/ai-visibility-check/run",
-  status: "/api/tools/ai-visibility-check/run/status",
-} as const;
-
-/** The route the empty state points at. It exists, so the button is allowed to. */
-const KNOWLEDGE_BASE_PATH = "/tools/geo-knowledge-base";
-
-/**
- * Polling floor and ceiling.
- *
- * The server's own `retryAfterSeconds` decides in between. It arrives in the
- * body rather than a header: `privateJson` sets only `Cache-Control`, so a
- * client reading `Retry-After` reads nothing and polls at the floor forever —
- * about four hundred and fifty authenticated requests for one fifteen-minute
- * answer.
- */
-const POLL_DEFAULT_MS = 2_000;
-const POLL_MAX_MS = 5_000;
-
-/**
- * How long one mounted page will watch a run before it stops asking.
- *
- * A run is about a quarter of an hour, so half an hour is generous; what it
- * rules out is a tab left open overnight polling a run that will never answer.
- * The budget is per polling session rather than per run: the pointer outlives
- * it in storage, so reloading gives the visitor another window rather than
- * stranding a run that has already been paid for.
- */
+const ENDPOINTS = { load: "/api/tools/ai-visibility-check/load", run: "/api/tools/ai-visibility-check/run", status: "/api/tools/ai-visibility-check/run/status", context: "/api/tools/ai-visibility-check/context" } as const;
 const MAX_POLL_WALL_CLOCK_MS = 30 * 60 * 1_000;
-
-/**
- * How many unreadable status replies in a row before the page stops asking.
- *
- * A run that cannot be read is not a run that failed, so the message says so;
- * what it must not do is poll a dead endpoint for the fifteen minutes the run
- * would otherwise have taken.
- */
 const MAX_STATUS_FAILURES = 5;
-
-/**
- * Error codes that mean "this stored pointer is no good", not "your run broke".
- *
- * An expired pointer opens to nothing and comes back 404; a mangled one comes
- * back 503. Neither is news to somebody who just opened the page, so a restored
- * run that gets one of these goes quietly back to the form.
- */
-const STALE_POINTER_CODES = new Set([
-  "not_found",
-  "run_unavailable",
-  "invalid_request",
-]);
-
-/** Cited URLs shown per domain. The rest are in the run, not on the page. */
-const SAMPLE_URLS_SHOWN = 3;
-
-const PANEL =
-  "rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7";
-const HEADING = "text-[19px] text-text-dark-primary";
-const BODY = "text-[13.5px] leading-[1.7] text-text-dark-secondary";
-const NOTE = "text-[12.5px] leading-[1.6] text-text-dark-secondary";
-const FIELD =
-  "mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary";
-const PRIMARY_BUTTON =
-  "rounded-lg bg-brand-accent px-4 py-2 text-[14px] font-medium text-brand-on-accent disabled:opacity-60";
-const SECONDARY_BUTTON =
-  "rounded-lg border border-brand-border-card px-3 py-1.5 text-[13px] text-text-dark-primary disabled:opacity-60";
-const TH =
-  "px-3 py-3 text-left font-mono text-[11px] tracking-[0.07em] whitespace-nowrap uppercase text-text-dark-secondary";
-const TD = "px-3 py-3 align-top text-[13px] text-text-dark-primary";
-
-/**
- * One frozen knowledge-base version, as the load endpoint reports it.
- *
- * The selection key is the snapshot rather than the knowledge base: one site
- * can have several frozen revisions and a run is pinned to exactly one of them.
- */
-interface FrozenVersion {
-  readonly kbId: string;
-  readonly snapshotId: string;
-  readonly host: string;
-  readonly revision: number;
-  readonly frozenAt: string;
-  readonly questionCount: number;
-  readonly retrievalCount: number;
-  readonly language: string | null;
-  readonly marketCode: string | null;
-}
-
-/** What the load endpoint reports beside the choices themselves. */
-interface LoadedChoices {
-  readonly versions: readonly FrozenVersion[];
-  /**
-   * False only when the server says so. Absent means the account has no frozen
-   * version at all, which is the empty state — refusing the button there would
-   * be an answer to a question nobody asked.
-   */
-  readonly providerConfigured: boolean;
-  readonly runsPerDay: number;
-}
-
-type RunState =
-  | { readonly kind: "idle" }
-  | { readonly kind: "starting" }
-  /** Queued and running are one state here: both mean "paid for, still going". */
-  | { readonly kind: "running" }
-  | { readonly kind: "done"; readonly report: VisibilityReport }
-  | { readonly kind: "error"; readonly code: string };
-
-type StatusOutcome =
-  | { readonly kind: "running" }
-  | { readonly kind: "completed"; readonly report: VisibilityReport }
-  | { readonly kind: "error"; readonly code: string }
-  | { readonly kind: "invalid" };
-
-/* ------------------------------------------------------------------ */
-/* Reading responses                                                   */
-/* ------------------------------------------------------------------ */
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function errorCodeOf(value: unknown): string | null {
-  const error = asRecord(asRecord(value)?.["error"]);
-  const code = error?.["code"];
-  return typeof code === "string" && code.length > 0 ? code : null;
-}
-
-function countOf(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? Math.trunc(value)
-    : null;
-}
-
-/**
- * One frozen choice, field by field.
- *
- * A `as readonly FrozenVersion[]` cast is why the page shipped reading
- * `data.versions` while the handler sent `data.choices`: the assertion made
- * `undefined` typecheck as a list of versions, so nothing between the two
- * modules ever compared them. Checking the fields the form indexes into is
- * what turns that class of mistake into a load error instead of a blank page.
- */
-function asFrozenVersion(value: unknown): FrozenVersion | null {
-  const record = asRecord(value);
-  if (record === null) return null;
-  const kbId = record["kbId"];
-  const snapshotId = record["snapshotId"];
-  const host = record["host"];
-  const frozenAt = record["frozenAt"];
-  const revision = countOf(record["revision"]);
-  const questionCount = countOf(record["questionCount"]);
-  const retrievalCount = countOf(record["retrievalCount"]);
-  if (
-    typeof kbId !== "string" ||
-    kbId.length === 0 ||
-    typeof snapshotId !== "string" ||
-    snapshotId.length === 0 ||
-    typeof host !== "string" ||
-    typeof frozenAt !== "string" ||
-    revision === null ||
-    questionCount === null ||
-    retrievalCount === null
-  ) {
-    return null;
-  }
-  return {
-    kbId,
-    snapshotId,
-    host,
-    frozenAt,
-    revision,
-    questionCount,
-    retrievalCount,
-    language: typeof record["language"] === "string" ? record["language"] : null,
-    marketCode: typeof record["marketCode"] === "string" ? record["marketCode"] : null,
-  };
-}
-
-/** The load endpoint's payload, or null when it is not the shape the form reads. */
-function asLoadedChoices(body: unknown): LoadedChoices | null {
-  const data = asRecord(asRecord(body)?.["data"]);
-  if (data === null) return null;
-  const list = data["choices"];
-  if (!Array.isArray(list)) return null;
-  const versions: FrozenVersion[] = [];
-  for (const entry of list) {
-    const version = asFrozenVersion(entry);
-    if (version === null) return null;
-    versions.push(version);
-  }
-  return {
-    versions,
-    providerConfigured: data["providerConfigured"] !== false,
-    runsPerDay: countOf(data["runsPerDay"]) ?? VISIBILITY_RUNS_PER_DAY,
-  };
-}
-
-/**
- * Accept a report only when the shapes the page indexes into are present.
- *
- * The schema version is checked because a tab left open across a deploy would
- * otherwise render an older reading of newer fields, and a stale bundle is
- * exactly the case where a wrong number looks like a real one.
- */
-function asReport(value: unknown): VisibilityReport | null {
-  const record = asRecord(value);
-  if (record === null) return null;
-  if (record["wireSchema"] === VISIBILITY_WIRE_SCHEMA) return decodeVisibilityWire(value);
-  const manifest = asRecord(record["manifest"]);
-  const metrics = asRecord(record["metrics"]);
-  if (manifest === null || metrics === null) return null;
-  if (manifest["schemaVersion"] === GEO_VISIBILITY_V2) return parseVisibilityReportV2(value);
-  if (manifest["schemaVersion"] !== GEO_VISIBILITY_SCHEMA_VERSION) return null;
-  if (!Array.isArray(metrics["byLayer"])) return null;
-  if (!Array.isArray(record["questions"])) return null;
-  if (!Array.isArray(record["citedDomains"])) return null;
-  if (!Array.isArray(record["limits"])) return null;
-  return value as VisibilityReport;
-}
-
-function readStatus(httpStatus: number, body: unknown): StatusOutcome {
-  const code = errorCodeOf(body);
-  if (httpStatus >= 400) {
-    return code === null ? { kind: "invalid" } : { kind: "error", code };
-  }
-  const data = asRecord(asRecord(body)?.["data"]);
-  if (data === null) return { kind: "invalid" };
-  if (data["status"] === "completed") {
-    const report = asReport(data["report"]);
-    return report === null
-      ? { kind: "error", code: "schema_mismatch" }
-      : { kind: "completed", report };
-  }
-  // Queued is not a failure. The workflow reports `pending` before it reports
-  // `running`, and a client that treated the first as unreadable spent five
-  // polls — about ten seconds — declaring a paid run dead while several
-  // hundred provider calls were still in flight.
-  if (data["status"] === "running" || data["status"] === "queued") {
-    return { kind: "running" };
-  }
-  return { kind: "invalid" };
-}
-
-/**
- * The server's own cooldown, clamped.
- *
- * It travels in the body, not in `Retry-After`: `privateJson` sets only
- * `Cache-Control`. A hostile or broken value must still not park the button
- * for a week, hence the ceiling.
- */
-function retryAfterSecondsFrom(body: unknown): number {
-  const record = asRecord(body);
-  const seconds =
-    countOf(record?.["retryAfterSeconds"]) ??
-    countOf(asRecord(record?.["data"])?.["retryAfterSeconds"]) ??
-    0;
-  return Math.min(seconds, 3_600);
-}
-
-function pollDelayMs(body: unknown): number {
-  const seconds = retryAfterSecondsFrom(body);
-  return seconds > 0 ? Math.min(POLL_MAX_MS, seconds * 1_000) : POLL_DEFAULT_MS;
-}
-
-function waitFor(delayMs: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, delayMs);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true },
-    );
-  });
-}
-
-function monotonicNow(): number {
-  return typeof performance === "undefined" ? Date.now() : performance.now();
-}
-
-/* ------------------------------------------------------------------ */
-/* Proportions                                                         */
-/* ------------------------------------------------------------------ */
-
-/**
- * `describeProportion` takes the shared `Proportion`, which carries the level
- * its interval was computed at; the run contract's proportions do not, because
- * every interval in a run is the same two-sided Wilson bound. Derived from the
- * z the run used rather than written as 0.95 so the two cannot drift apart.
- * `describeProportion` itself does not read it.
- */
-const WILSON_LEVEL = 2 * normalCdf(Z95) - 1;
-
-function describe(proportion: VisibilityProportion): ProportionDescription {
-  return describeProportion({ ...proportion, level: WILSON_LEVEL });
-}
-
-/**
- * The four shapes a proportion is allowed to take, and nothing else.
- *
- * There is no branch here that assembles a percentage, which is the whole
- * point: "0.0%" beside an n of five is a claim the run cannot support.
- */
-function ProportionValue({
-  proportion,
-}: {
-  readonly proportion: VisibilityProportion;
-}) {
-  const t = useTranslations("tools.aiVisibility");
-  const description = describe(proportion);
-  switch (description.kind) {
-    case "unavailable":
-      return <span>{t("proportion.unavailable")}</span>;
-    case "unobserved":
-      return (
-        <span>
-          {t("proportion.unobserved", {
-            trials: description.trials,
-            hi: description.hiPercent,
-          })}
-        </span>
-      );
-    case "zero":
-      return (
-        <span>
-          {t("proportion.zero", {
-            trials: description.trials,
-            hi: description.hiPercent,
-          })}
-        </span>
-      );
-    case "observed":
-      return (
-        <span>
-          {t("proportion.observed", {
-            percent: description.percent,
-            trials: description.trials,
-            lo: description.loPercent,
-            hi: description.hiPercent,
-          })}
-        </span>
-      );
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* Report sections                                                     */
-/* ------------------------------------------------------------------ */
-
-/**
- * The overview, in the unit the run can actually support.
- *
- * The headline is per question; the per-sample rate is a second line under it.
- * Seven questions asked five times each is thirty-five correlated samples, and
- * a zero over thirty-five clears the "may be written 0.0%" bound while the
- * same zero over seven does not. Leading with the pooled figure is passing
- * repeats of one question off as independent observations.
- */
-function Overview({ report }: { readonly report: VisibilityReport }) {
-  const t = useTranslations("tools.aiVisibility");
-  const metrics = report.metrics;
-  const cards = [
-    [
-      "questionsMentioned",
-      metrics.questionsMentioned,
-      metrics.unpromptedMention,
-    ],
-    ["questionsCited", metrics.questionsCited, metrics.citation],
-  ] as const;
-
-  return (
-    <section className={PANEL}>
-      <h3 className={HEADING}>{t("overview.title")}</h3>
-      {/* The denominator below is questions that answered, not questions
-          asked. The gap has to be on the page rather than divided away. */}
-      <p className={`mt-2 max-w-[640px] ${BODY}`}>
-        {t("overview.answeredQuestions", {
-          answered: metrics.questionsAnswered,
-          asked: metrics.questionsAsked,
-        })}
-      </p>
-      <div className="mt-5 grid gap-4 md:grid-cols-2">
-        {cards.map(([name, byQuestion, bySample]) => (
-          <div
-            className="rounded-lg border border-brand-border-card p-4"
-            key={name}
-          >
-            <p className="text-[13px] text-text-dark-secondary">
-              {t(`overview.${name}.label`)}
-            </p>
-            <p className="mt-2 text-[16px] text-text-dark-primary">
-              <ProportionValue proportion={byQuestion} />
-            </p>
-            <p className={`mt-2 ${NOTE}`}>{t(`overview.${name}.help`)}</p>
-            <p className={`mt-3 ${NOTE}`}>
-              {t("overview.acrossSamples")}{" "}
-              <ProportionValue proportion={bySample} />
-            </p>
-          </div>
-        ))}
-        <div className="rounded-lg border border-brand-border-card p-4">
-          <p className="text-[13px] text-text-dark-secondary">
-            {t("overview.promptedMention.label")}
-          </p>
-          <p className="mt-2 text-[16px] text-text-dark-primary">
-            <ProportionValue proportion={metrics.promptedMention} />
-          </p>
-          <p className={`mt-2 ${NOTE}`}>{t("overview.promptedMention.help")}</p>
-        </div>
-      </div>
-      <p className={`mt-5 ${NOTE}`}>
-        {t("proportion.zeroThreshold", {
-          percent: Math.round(ZERO_CLAIM_UPPER_BOUND * 100),
-          minTrials: minTrialsForZeroClaim(),
-        })}
-      </p>
-    </section>
-  );
-}
-
-function LayerTable({ report }: { readonly report: VisibilityReport }) {
-  const t = useTranslations("tools.aiVisibility");
-  return (
-    <section className={PANEL}>
-      <h3 className={HEADING}>{t("layers.title")}</h3>
-      <p className={`mt-2 max-w-[640px] ${BODY}`}>{t("layers.intro")}</p>
-      <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-[520px] border-collapse">
-          <caption className="sr-only">{t("layers.title")}</caption>
-          <thead>
-            <tr className="border-b border-brand-border-strong">
-              <th className={TH} scope="col">
-                {t("layers.column.layer")}
-              </th>
-              <th className={TH} scope="col">
-                {t("layers.column.mention")}
-              </th>
-              <th className={TH} scope="col">
-                {t("layers.column.citation")}
-              </th>
-              {isVisibilityReportV2(report) && <><th className={TH} scope="col">{t("layers.column.samples")}</th><th className={TH} scope="col">{t("layers.column.meanPosition")}</th></>}
-            </tr>
-          </thead>
-          <tbody>
-            {report.metrics.byLayer.map((row) => {
-              const detailed = isVisibilityReportV2(report) ? report.metrics.byLayer.find((entry) => entry.layer === row.layer) : undefined;
-              return (
-              <tr
-                className="border-b border-brand-border-card last:border-0"
-                key={row.layer}
-              >
-                <th className={`${TD} font-normal`} scope="row">
-                  {t(`layers.names.${row.layer}`)}
-                </th>
-                <td className={TD}>
-                  <ProportionValue proportion={row.mention} />
-                </td>
-                <td className={TD}>
-                  <ProportionValue proportion={row.citation} />
-                </td>
-                {detailed !== undefined && <><td className={TD}>{detailed.answeredSamples}/{detailed.plannedSamples}</td><td className={TD}>{detailed.meanPosition.value === null ? t("v2.unknown") : `${detailed.meanPosition.value.toFixed(2)} (n=${detailed.meanPosition.observations})`}</td></>}
-              </tr>
-            ); })}
-          </tbody>
-        </table>
-      </div>
-      <p className={`mt-4 ${NOTE}`}>{t("layers.brandedNote")}</p>
-    </section>
-  );
-}
-
-function DomainTable({
-  domains,
-}: {
-  readonly domains: readonly VisibilityCitedDomain[];
-}) {
-  const t = useTranslations("tools.aiVisibility");
-  return (
-    <section className={PANEL}>
-      <h3 className={HEADING}>{t("domains.title")}</h3>
-      <p className={`mt-2 max-w-[640px] ${BODY}`}>{t("domains.intro")}</p>
-      {domains.length === 0 ? (
-        <p className={`mt-4 ${BODY}`}>{t("domains.empty")}</p>
-      ) : (
-        <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[620px] border-collapse">
-            <caption className="sr-only">{t("domains.title")}</caption>
-            <thead>
-              <tr className="border-b border-brand-border-strong">
-                <th className={TH} scope="col">
-                  {t("domains.column.domain")}
-                </th>
-                <th className={TH} scope="col">
-                  {t("domains.column.answers")}
-                </th>
-                <th className={TH} scope="col">
-                  {t("domains.column.role")}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {domains.map((domain) => (
-                <tr
-                  className="border-b border-brand-border-card last:border-0"
-                  key={domain.domain}
-                >
-                  <th className={`${TD} font-normal`} scope="row">
-                    <span className="break-all">{domain.domain}</span>
-                    {domain.sampleUrls.length === 0 ? null : (
-                      <span className={`mt-1.5 block ${NOTE} break-all`}>
-                        {t("domains.samples")}{" "}
-                        {domain.sampleUrls
-                          .slice(0, SAMPLE_URLS_SHOWN)
-                          .join(" · ")}
-                      </span>
-                    )}
-                  </th>
-                  <td className={TD}>{domain.answers}</td>
-                  <td className={TD}>
-                    {domain.isOwn
-                      ? t("domains.role.own")
-                      : domain.isCompetitor
-                        ? t("domains.role.competitor")
-                        : t("domains.role.other")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function QuestionRow({
-  question,
-  open,
-  onToggle,
-}: {
-  readonly question: VisibilityQuestionResult;
-  readonly open: boolean;
-  readonly onToggle: () => void;
-}) {
-  const t = useTranslations("tools.aiVisibility");
-  return (
-    <li className="border-b border-brand-border-card pb-4 last:border-0">
-      <p className="text-[14.5px] text-text-dark-primary">{question.text}</p>
-      {/* Prompted is decided on the words of the question, not on its stage,
-          so it is marked per question rather than inferred from the layer. */}
-      <p className={`mt-1.5 ${NOTE}`}>
-        {t(`layers.names.${question.layer}`)} ·{" "}
-        {t(`questions.modes.${question.mode}`)}
-        {question.prompted ? ` · ${t("questions.promptedTag")}` : ""}
-        {question.calibrated ? "" : ` · ${t("questions.uncalibrated")}`}
-      </p>
-      {/*
-        Nothing came back for this question, so there is no denominator and no
-        count. "Mentioned in 0 of 0 answers" reads as a measured absence; the
-        aggregates already refuse to say that, and the per-question line has to
-        refuse it too, or the two halves of the same page disagree.
-      */}
-      {question.answered === 0 ? (
-        <p className={`mt-2 ${BODY}`}>{t("questions.noAnswers")}</p>
-      ) : (
-        <>
-          <p className={`mt-2 ${BODY}`}>
-            {t("questions.mentionCount", {
-              mentioned: question.mentioned,
-              answered: question.answered,
-            })}
-          </p>
-          <p className={`mt-1 ${BODY}`}>
-            {question.mode === "demand"
-              ? t("questions.demandCitationNote", { cited: question.cited })
-              : question.citationEvaluable === 0
-                ? t("questions.citationNotEvaluable")
-                : t("questions.citationCount", {
-                    cited: question.cited,
-                    evaluable: question.citationEvaluable,
-                  })}
-          </p>
-          {/* An answer whose citation list would not parse is neither cited
-              nor uncited. It is out of the denominator above, so the count
-              has to be visible or the rate silently shrinks. */}
-          {question.citationUnknown === 0 ? null : (
-            <p className={`mt-1 ${NOTE}`}>
-              {t("questions.citationUnknown", {
-                count: question.citationUnknown,
-              })}
-            </p>
-          )}
-        </>
-      )}
-      <button
-        className={`mt-3 ${SECONDARY_BUTTON}`}
-        onClick={onToggle}
-        type="button"
-      >
-        {open ? t("questions.hideSamples") : t("questions.showSamples")}
-      </button>
-      {open ? (
-        <ul className="mt-3 grid gap-3">
-          {question.samples.map((sample) => (
-            <li
-              className="rounded-lg border border-brand-border-card p-3"
-              key={`${"engine" in sample ? String(sample.engine) : "chatgpt"}-${sample.questionId}-${String(sample.sampleIndex)}`}
-            >
-              <p className={NOTE}>
-                {"engine" in sample ? `${String(sample.engine)} · ` : ""}{t("questions.sampleLabel", { index: sample.sampleIndex })}{" "}
-                · {t(`questions.sampleStatus.${sample.status}`)} ·{" "}
-                {sample.webSearchPerformed === null
-                  ? t("questions.sampleSearchUnknown")
-                  : sample.webSearchPerformed
-                    ? t("questions.sampleSearched")
-                    : t("questions.sampleNoSearch")}
-              </p>
-              {/*
-                A timed-out sample has no answer, so it cannot have failed to
-                mention anyone. Printing "No mention in this answer" beside a
-                label that says "timed out" is two contradictory sentences
-                about the same empty excerpt.
-              */}
-              <p className={`mt-2 ${BODY}`}>
-                {sample.status !== "ok"
-                  ? t("questions.sampleNoAnswer")
-                  : sample.excerpt === null
-                    ? t("questions.noExcerpt")
-                    : sample.excerpt}
-              </p>
-              {sample.citedDomains.length === 0 ? null : (
-                <p className={`mt-2 ${NOTE} break-all`}>
-                  {t("questions.citedDomains", {
-                    domains: sample.citedDomains.join(" · "),
-                  })}
-                </p>
-              )}
-              {sample.competitorsMentioned.length === 0 ? null : (
-                <p className={`mt-1 ${NOTE}`}>
-                  {t("questions.competitors", {
-                    names: sample.competitorsMentioned.join(" · "),
-                  })}
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </li>
-  );
-}
-
-function QuestionList({
-  questions,
-}: {
-  readonly questions: readonly VisibilityQuestionResult[];
-}) {
-  const t = useTranslations("tools.aiVisibility");
-  const [open, setOpen] = useState<readonly string[]>([]);
-  return (
-    <section className={PANEL}>
-      <h3 className={HEADING}>{t("questions.title")}</h3>
-      <p className={`mt-2 max-w-[640px] ${BODY}`}>{t("questions.intro")}</p>
-      <ul className="mt-5 grid gap-4">
-        {questions.map((question) => (
-          <QuestionRow
-            key={question.questionId}
-            onToggle={() =>
-              setOpen((current) =>
-                current.includes(question.questionId)
-                  ? current.filter((id) => id !== question.questionId)
-                  : [...current, question.questionId],
-              )
-            }
-            open={open.includes(question.questionId)}
-            question={question}
-          />
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/** A proportion as a percentage, to one decimal. */
-function percent(value: number): number {
-  return Math.round(value * 1000) / 10;
-}
-
-/**
- * The change column for one aggregate.
- *
- * Counted in questions, because that is the unit the verdict is computed in:
- * "eight of fourteen comparable questions improved, none got worse" is
- * something a reader can act on, where "eighteen points" is a difference of two
- * rates whose denominators are not on the screen.
- *
- * `lo`/`hi` bound the share of the questions that MOVED which moved for the
- * better, so they are centred on a half, not on zero: what makes a change real
- * here is that it is one-sided. They are checked rather than defaulted —
- * `lo ?? 0` printed "0.0 to 0.0" for an interval this run never computed, and
- * that `changed` currently implies both bounds is a relationship between three
- * independent fields, not something either type says.
- */
-function ChangeCell({
-  row,
-}: {
-  readonly row: VisibilityComparison["aggregates"][number];
-}) {
-  const t = useTranslations("tools.aiVisibility");
-  if (!row.testable) return <>{t("comparison.notTestable")}</>;
-  if (!row.changed) return <>{t("comparison.unchanged")}</>;
-  if (row.lo === null || row.hi === null) {
-    return (
-      <>
-        {t("comparison.changedNoInterval", {
-          gained: row.gained,
-          lost: row.lost,
-          pairs: row.pairs,
-        })}
-      </>
-    );
-  }
-  return (
-    <>
-      {t("comparison.changed", {
-        gained: row.gained,
-        lost: row.lost,
-        pairs: row.pairs,
-        lo: percent(row.lo),
-        hi: percent(row.hi),
-      })}
-    </>
-  );
-}
-
-function ComparisonBlock({
-  comparison,
-  locale,
-}: {
-  readonly comparison: AnyVisibilityComparison;
-  readonly locale: string;
-}) {
-  const t = useTranslations("tools.aiVisibility");
-  return (
-    <section className={PANEL}>
-      <h3 className={HEADING}>{t("comparison.title")}</h3>
-      <p className={`mt-2 max-w-[640px] ${BODY}`}>
-        {t("comparison.intro", {
-          time: formatMoment(comparison.baseFinishedAt, locale),
-        })}
-      </p>
-      <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-[720px] border-collapse">
-          <caption className="sr-only">{t("comparison.title")}</caption>
-          <thead>
-            <tr className="border-b border-brand-border-strong">
-              <th className={TH} scope="col">
-                {t("comparison.column.metric")}
-              </th>
-              <th className={TH} scope="col">
-                {t("comparison.column.base")}
-              </th>
-              <th className={TH} scope="col">
-                {t("comparison.column.current")}
-              </th>
-              <th className={TH} scope="col">
-                {t("comparison.column.change")}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {comparison.aggregates.map((row) => (
-              <tr
-                className="border-b border-brand-border-card last:border-0"
-                key={row.metric}
-              >
-                <th className={`${TD} font-normal`} scope="row">
-                  {t(`comparison.metrics.${row.metric}`)}
-                </th>
-                <td className={TD}>
-                  <ProportionValue proportion={row.base} />
-                </td>
-                <td className={TD}>
-                  <ProportionValue proportion={row.current} />
-                </td>
-                <td className={TD}>
-                  <ChangeCell row={row} />
-                </td>
-              </tr>
-            ))}
-            {"shareOfVoice" in comparison && (() => {
-              const sov = comparison.shareOfVoice.comparison;
-              const percentage = (point: number | null) => point === null ? t("v2.unknown") : point === 0 ? t("v2.sovZeroObserved") : `${(point * 100).toFixed(1)}%`;
-              return <tr className="border-b border-brand-border-card last:border-0"><th className={`${TD} font-normal`} scope="row">{t("comparison.metrics.shareOfVoice")}</th><td className={TD}>{percentage(sov.beforePoint)}</td><td className={TD}>{percentage(sov.afterPoint)}</td><td className={TD}>{sov.lo === null || sov.hi === null || sov.point === null ? t("comparison.sovUnavailable", { pairs: sov.pairs, reason: t(`v2.sovReasons.${sov.intervalReason ?? "no_brand_present_answers"}`) }) : t("comparison.sovChange", { change: (sov.point * 100).toFixed(1), lo: (sov.lo * 100).toFixed(1), hi: (sov.hi * 100).toFixed(1), pairs: sov.pairs })}</td></tr>;
-            })()}
-          </tbody>
-        </table>
-      </div>
-      {"shareOfVoice" in comparison && <p className={`mt-3 ${NOTE}`}>{t("comparison.sovScope")}</p>}
-
-      <h4 className="mt-6 text-[15px] text-text-dark-primary">
-        {t("comparison.questionsTitle")}
-      </h4>
-      {comparison.questions.length === 0 ? (
-        <p className={`mt-2 ${BODY}`}>{t("comparison.empty")}</p>
-      ) : (
-        <ul className="mt-3 grid gap-3">
-          {comparison.questions.map((question) => (
-            <li key={question.questionId}>
-              <p className="text-[14px] text-text-dark-primary">
-                {question.text}
-              </p>
-              <p className={`mt-1 ${NOTE}`}>
-                {t(`comparison.direction.${question.direction}`)} ·{" "}
-                {t("comparison.questionRow", {
-                  base: question.baseMentioned,
-                  current: question.currentMentioned,
-                  of: question.of,
-                })}
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function formatMoment(iso: string, locale: string): string {
-  const value = new Date(iso);
-  if (Number.isNaN(value.getTime())) return iso;
-  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
-}
-
-function Report({
-  report,
-  locale,
-}: {
-  readonly report: VisibilityReport;
-  readonly locale: string;
-}) {
-  const t = useTranslations("tools.aiVisibility");
-  const manifest = report.manifest;
-  return (
-    <div className="grid gap-8">
-      <section className={PANEL}>
-        <h3 className={HEADING}>{t("results.title")}</h3>
-        <p className={`mt-2 ${BODY}`}>
-          {t(`results.status.${manifest.status}`)}
-        </p>
-        <div className={`mt-4 grid gap-2 ${BODY}`}>
-          <p>
-            {t("results.coverage", {
-              answered: manifest.answered,
-              calls: manifest.calls,
-            })}
-          </p>
-          <p>
-            {t("results.minSuccess", {
-              percent: Math.round(VISIBILITY_MIN_SUCCESS_RATIO * 100),
-            })}
-          </p>
-          <p>
-            {t("results.questions", {
-              count: manifest.questionCount,
-              samples: manifest.samplesPerQuestion,
-            })}
-          </p>
-          <p>
-            {t("results.revision", { revision: manifest.snapshotRevision })}
-          </p>
-          {/* The model and the API it was reached through are two facts. The
-              line labelled "model" used to carry the endpoint's name. */}
-          {isVisibilityReportV2(report) ? <>
-            <p>{t("results.engines", { engines: report.manifest.engines.map((entry) => entry.engine === "chatgpt" ? "ChatGPT" : "Perplexity").join(", ") })}</p>
-            <p>{t("form.context", { market: report.manifest.marketCode, language: report.manifest.language })}</p>
-          </> : <>
-            <p>{t("results.model", { model: report.manifest.model, market: report.manifest.marketCode })}</p>
-            <p>{t("results.surface", { surface: report.manifest.surface })}</p>
-          </>}
-          <p>
-            {t("results.finished", {
-              time: formatMoment(manifest.finishedAt, locale),
-            })}
-          </p>
-          <p>
-            {manifest.costUsd === null
-              ? t("results.costUnavailable")
-              : t("results.cost", { cost: manifest.costUsd })}
-          </p>
-        </div>
-      </section>
-
-      {/*
-        `results.minSuccess` promises this run draws no conclusions and becomes
-        no baseline. The overview, the stage table and the comparison are the
-        conclusions: the comparison prints a changed/unchanged verdict outright.
-        Rendering them under that sentence would have made the sentence the
-        only part of the page that was true. The evidence stays — every
-        question, every sample, and what the run cost.
-      */}
-      {manifest.status === "insufficient" ? (
-        <section className={PANEL}>
-          <h3 className={HEADING}>{t("results.withheldTitle")}</h3>
-          <p className={`mt-2 max-w-[640px] ${BODY}`}>
-            {t("results.withheldBody", {
-              percent: Math.round(VISIBILITY_MIN_SUCCESS_RATIO * 100),
-            })}
-          </p>
-        </section>
-      ) : (
-        <>
-          <Overview report={report} />
-          <LayerTable report={report} />
-        </>
-      )}
-      <DomainTable domains={report.citedDomains} />
-      {isVisibilityReportV2(report) && <VisibilityV2Measurements report={report} />}
-      {isVisibilityReportV2(report) && <VisibilityGapEvidence report={report} locale={locale} />}
-      <QuestionList questions={report.questions} />
-      {report.comparison === null ||
-      manifest.status === "insufficient" ? null : (
-        <ComparisonBlock comparison={report.comparison} locale={locale} />
-      )}
-
-      <section className={PANEL}>
-        <h3 className={HEADING}>{t("limitsTitle")}</h3>
-        <ul className="mt-4 grid gap-3">
-          {report.limits.map((limit) => (
-            <li className={BODY} key={limit}>
-              {t(`limits.${limit}`)}
-            </li>
-          ))}
-        </ul>
-      </section>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* The tool                                                            */
-/* ------------------------------------------------------------------ */
+const STALE_POINTER_CODES = new Set(["not_found", "run_unavailable", "invalid_request"]);
+const PANEL = "rounded-xl border border-brand-border-card bg-brand-panel p-5 md:p-6";
+const HEADING = "text-lg font-semibold text-text-dark-primary";
+const BODY = "text-sm leading-relaxed text-text-dark-secondary";
+const NOTE = "text-xs leading-relaxed text-text-dark-secondary";
+const FIELD = "mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-sm text-text-dark-primary";
+const PRIMARY_BUTTON = "rounded-lg bg-brand-accent px-4 py-2 text-sm font-medium text-brand-on-accent disabled:opacity-60";
+const SECONDARY_BUTTON = "rounded-lg border border-brand-border-card px-3 py-1.5 text-sm text-text-dark-primary disabled:opacity-60";
+type RunState = { readonly kind: "idle" | "starting" | "running" } | { readonly kind: "done"; readonly report: VisibilityReport } | { readonly kind: "error"; readonly code: string };
+function formatMoment(iso: string, locale: string): string { const date = new Date(iso); return Number.isNaN(date.getTime()) ? iso : new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(date); }
 
 export function AiVisibilityCheck({
   locale,
@@ -1004,13 +39,20 @@ export function AiVisibilityCheck({
   readonly authentication: "authenticated" | "unauthenticated" | "unavailable";
 }) {
   const t = useTranslations("tools.aiVisibility");
+  const [view, setView] = useState<"input" | "result">("input");
   const [choices, setChoices] = useState<LoadedChoices | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState("");
+  const [websiteId, setWebsiteId] = useState("");
+  const [context, setContext] = useState<VisibilityContext | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [samples, setSamples] = useState<number>(VISIBILITY_SAMPLES_DEFAULT);
   const [engines, setEngines] = useState<readonly VisibilityEngine[]>(["chatgpt"]);
   const [fileComparison, setFileComparison] = useState<VisibilityComparison | null>(null);
   const [run, setRun] = useState<RunState>({ kind: "idle" });
+  const [runningInput, setRunningInput] = useState<{ version: FrozenVersion; site: VisibilityWebsiteContext } | null>(null);
+  const loadEpoch = useRef(0);
+  const loadAbort = useRef<AbortController | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [cooldown, setCooldown] = useState(0);
   const abort = useRef<AbortController | null>(null);
@@ -1019,13 +61,32 @@ export function AiVisibilityCheck({
   const resumeOffsetMs = useRef(0);
   const restoredOnce = useRef(false);
 
-  const versions = choices?.versions ?? null;
-  const signedIn = authentication === "authenticated";
   const busy = run.kind === "starting" || run.kind === "running";
-
+  const signedIn = authentication === "authenticated";
+  const history = useVisibilityHistory(signedIn);
+  const selectedSite = busy && runningInput !== null ? runningInput.site : context?.websites.find(site => site.website.websiteId === websiteId) ?? context?.websites[0] ?? null;
+  const versions = useMemo(() => busy && runningInput !== null ? [runningInput.version] : choices?.versions.filter(version => version.kbId === selectedSite?.knowledgeBase?.kbId) ?? [], [busy, choices, runningInput, selectedSite]);
+  const selectedSnapshot = versions.some(version => version.snapshotId === selected) ? selected : (versions[0]?.snapshotId ?? "");
+  const savedReport = useMemo(() => history.selected?.evidenceAvailability === "recorded" ? decodeVisibilityWire(history.selected.report) : null, [history.selected]);
+  const savedSummary = history.selected?.evidenceAvailability === "summary_only" ? history.selected.summary : null;
+  const displayedReport = history.selectedId !== null ? savedReport : run.kind === "done" ? run.report : null;
+  const resultManifest = displayedReport?.manifest ?? savedSummary?.manifest ?? null;
+  const resultSource = useExactVisibilitySource(context, resultManifest?.kbId ?? null, resultManifest?.snapshotId ?? null, resultManifest?.questionSetHash ?? null);
+  const inputSource = useExactVisibilitySource(context, selectedSite?.knowledgeBase?.kbId ?? null, selectedSnapshot || null);
+  const sourceForInput = busy && runningInput !== null ? runningInput.site : inputSource.site;
+  const hasResult = displayedReport !== null || savedSummary !== null;
+  const resultRef = useRef<HTMLDivElement | null>(null);
+  const focusedReport = useRef<string | null>(null);
+  useEffect(() => { if (history.selected !== null) setView("result"); else if (history.selectedId === null && run.kind !== "done") setView("input"); }, [history.selected, history.selectedId, run.kind]);
+  useEffect(() => {
+    const key = resultManifest === null ? null : `${resultManifest.snapshotId}:${resultManifest.finishedAt}`;
+    if (view === "result" && key !== null && focusedReport.current !== key) { resultRef.current?.focus({ preventScroll: true }); focusedReport.current = key; }
+  }, [view, resultManifest]);
   useEffect(
     () => () => {
       abort.current?.abort();
+      loadAbort.current?.abort();
+      loadEpoch.current += 1;
     },
     [],
   );
@@ -1066,32 +127,27 @@ export function AiVisibilityCheck({
   }, [busy]);
 
   const load = useCallback(async () => {
-    setLoadError(null);
+    const epoch = ++loadEpoch.current;
+    loadAbort.current?.abort();
+    const controller = new AbortController();
+    loadAbort.current = controller;
+    const current = () => epoch === loadEpoch.current && !controller.signal.aborted;
+    setLoadError(null); setRefreshing(true);
     try {
-      const response = await fetch(ENDPOINTS.load, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        setLoadError(errorCodeOf(body) ?? "unknown");
-        return;
-      }
+      const [response, contextResponse] = await Promise.all([
+        fetch(ENDPOINTS.load, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", signal: controller.signal }),
+        fetch(ENDPOINTS.context, { signal: controller.signal }),
+      ]);
+      const [body, contextBody]: [unknown, unknown] = await Promise.all([response.json(), contextResponse.json()]);
+      if (!current()) return;
+      if (!response.ok || !contextResponse.ok) { setLoadError(errorCodeOf(!response.ok ? body : contextBody) ?? "unknown"); return; }
       const loaded = asLoadedChoices(body);
-      if (loaded === null) {
-        setLoadError("schema_mismatch");
-        return;
-      }
-      setChoices(loaded);
-      setSelected((current) =>
-        loaded.versions.some((version) => version.snapshotId === current)
-          ? current
-          : (loaded.versions[0]?.snapshotId ?? ""),
-      );
-    } catch {
-      setLoadError("network");
-    }
+      if (loaded === null) { setLoadError("schema_mismatch"); return; }
+      let nextContext: VisibilityContext;
+      try { nextContext = parseVisibilityContext(contextBody); } catch { setLoadError("schema_mismatch"); return; }
+      setChoices(loaded); setContext(nextContext);
+    } catch { if (current()) setLoadError("network"); }
+    finally { if (current()) setRefreshing(false); }
   }, []);
 
   useEffect(() => {
@@ -1099,10 +155,16 @@ export function AiVisibilityCheck({
     void load();
   }, [load, signedIn]);
 
-  const version = useMemo(
-    () => versions?.find((entry) => entry.snapshotId === selected) ?? null,
-    [selected, versions],
-  );
+  useEffect(() => {
+    if (!signedIn) return;
+    const refresh = () => { if (document.visibilityState === "visible") void load(); };
+    window.addEventListener("focus", refresh); document.addEventListener("visibilitychange", refresh);
+    return () => { window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
+  }, [load, signedIn]);
+  const version = useMemo(() => versions.find(entry => entry.snapshotId === selectedSnapshot) ?? null, [selectedSnapshot, versions]);
+  const sourceMismatch = inputSource.site !== null && (inputSource.site.frozen?.questionCount !== version?.questionCount || inputSource.site.frozen?.retrievalCount !== version?.retrievalCount);
+  const sourceBlocked = refreshing || loadError !== null || inputSource.loading || inputSource.error || sourceMismatch || inputSource.site === null || inputSource.site.preparation.languageWarnings.length > 0;
+
 
   const estimate = useMemo(() => {
     const calls = visibilityCallCount(version?.questionCount ?? 0, samples) * engines.length;
@@ -1146,8 +208,12 @@ export function AiVisibilityCheck({
           delay = pollDelayMs(body);
           const outcome = readStatus(response.status, body);
           if (outcome.kind === "completed") {
+            history.clear();
             clearVisibilityRunPointer(sessionStorage);
             setRun({ kind: "done", report: outcome.report });
+            setView("result");
+            if (isVisibilityReportV2(outcome.report)) visibilityRunAddress(outcome.report.manifest.runId);
+            void history.refresh();
             return;
           }
           if (outcome.kind === "running") {
@@ -1193,11 +259,14 @@ export function AiVisibilityCheck({
         }
       }
     },
-    [],
+    [history.clear, history.refresh],
   );
 
   const start = useCallback(async () => {
-    if (version === null || engines.length === 0) return;
+    if (version === null || engines.length === 0 || sourceBlocked || inputSource.site === null) return;
+    setRunningInput({ version, site: inputSource.site });
+    setSelected(version.snapshotId); setWebsiteId(inputSource.site.website.websiteId);
+    history.clear();
     abort.current?.abort();
     const controller = new AbortController();
     abort.current = controller;
@@ -1205,6 +274,7 @@ export function AiVisibilityCheck({
     startedAt.current = monotonicNow();
     setElapsedMs(0);
     setRun({ kind: "starting" });
+    setView("input");
     try {
       const response = await fetch(ENDPOINTS.run, {
         method: "POST",
@@ -1241,7 +311,7 @@ export function AiVisibilityCheck({
       if (controller.signal.aborted) return;
       setRun({ kind: "error", code: "network" });
     }
-  }, [engines, poll, samples, version]);
+  }, [engines, history.clear, inputSource.site, poll, samples, sourceBlocked, version]);
 
   /**
    * Pick a paid run back up after a reload.
@@ -1253,6 +323,7 @@ export function AiVisibilityCheck({
   useEffect(() => {
     if (!signedIn || restoredOnce.current) return;
     restoredOnce.current = true;
+    if (new URL(window.location.href).searchParams.has("run")) return;
     const pointer = readVisibilityRunPointer(sessionStorage);
     if (pointer === null) return;
     resumeOffsetMs.current = Math.max(0, Date.now() - pointer.startedAt);
@@ -1277,55 +348,44 @@ export function AiVisibilityCheck({
     );
   }
 
-  if (choices === null || versions === null) {
-    return (
-      <section className={`mt-10 ${PANEL}`}>
-        <p className={BODY}>
-          {loadError === null ? t("loading") : t(`errors.${loadError}`)}
-        </p>
-        {loadError === null ? null : (
-          <button
-            className={`mt-4 ${SECONDARY_BUTTON}`}
-            onClick={() => {
-              void load();
-            }}
-            type="button"
-          >
-            {t("retryLoad")}
-          </button>
-        )}
-      </section>
-    );
-  }
-
-  if (versions.length === 0) {
-    return (
-      <div className="mt-10 grid gap-8">
-      <section className={`mt-10 ${PANEL}`}>
-        <h2 className={HEADING}>{t("noFrozen.title")}</h2>
-        <p className={`mt-3 max-w-[640px] ${BODY}`}>{t("noFrozen.body")}</p>
-        <a
-          className={`mt-5 inline-block ${PRIMARY_BUTTON}`}
-          href={localePath(locale, KNOWLEDGE_BASE_PATH)}
-        >
-          {t("noFrozen.action")}
-        </a>
-      </section>
-      <VisibilityPortableRuns onComparison={setFileComparison} />
-      {fileComparison !== null && <ComparisonBlock comparison={fileComparison} locale={locale} />}
-      </div>
-    );
-  }
-
+  const recovering = busy && runningInput === null;
+  const inputReady = choices !== null && context !== null;
   const elapsedSeconds = Math.floor(elapsedMs / 1_000);
-  const providerConfigured = choices.providerConfigured;
+  const providerConfigured = choices?.providerConfigured !== false;
 
   return (
-    <div className="mt-10 grid gap-8">
-      <section className={PANEL}>
+    <div className="mt-8 grid gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-brand-border pb-4">
+        <p className="font-mono text-sm text-text-dark-secondary">{recovering && view === "input" ? t("running.recoveredTitle") : <>{view === "result" ? (displayedReport !== null && isVisibilityReportV2(displayedReport) ? displayedReport.context.targetHost : resultSource.site?.website.host ?? t("history.historicalSite")) : selectedSite?.website.host ?? ""} <span className="text-brand-accent-text">· kb@v{view === "result" ? resultManifest?.snapshotRevision ?? "—" : version?.revision ?? "—"}</span></>}</p>
+        <div role="tablist" aria-label={t("workbench.views")} className="flex rounded-lg border border-brand-border-card p-1">
+          {(["input", "result"] as const).map((item) => <button key={item} type="button" id={`visibility-${item}-tab`} role="tab" data-view={item} aria-selected={view === item} aria-controls={`visibility-${item}-panel`} tabIndex={view === item ? 0 : -1} disabled={item === "result" && !hasResult} onKeyDown={(event) => {
+            if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? "input" : event.key === "End" ? "result" : item === "input" ? "result" : "input"; if (next !== "result" || hasResult) { setView(next); document.getElementById(`visibility-${next}-tab`)?.focus(); } }
+          }} onClick={() => setView(item)} className={`rounded-md px-5 py-2 text-sm font-medium transition-colors disabled:opacity-40 ${view === item ? "bg-brand-accent text-brand-on-accent" : "text-text-dark-secondary hover:text-text-dark-primary"}`}>{t(`workbench.${item}`)}</button>)}
+        </div>
+      </div>
+      {view === "input" && !recovering && !inputReady && <section className={PANEL}>
+        <p className={BODY} role={loadError === null ? "status" : "alert"}>{loadError === null ? t("loading") : t(`errors.${loadError}`)}</p>
+        {loadError !== null && <button className={`mt-4 ${SECONDARY_BUTTON}`} onClick={() => { void load(); }} type="button">{t("retryLoad")}</button>}
+      </section>}
+      {view === "input" && !recovering && inputReady && <section id="visibility-input-panel" data-testid="visibility-input-panel" role="tabpanel" aria-labelledby="visibility-input-tab" className={PANEL}>
         <h2 className={HEADING}>{t("form.title")}</h2>
         <p className={`mt-2 max-w-[640px] ${BODY}`}>{t("form.intro")}</p>
 
+        <div className="mt-5 flex flex-wrap items-end gap-3">
+          <div className="min-w-0 flex-1"><label className="block text-sm text-text-dark-secondary" htmlFor="visibility-website">{t("workbench.website")}</label>
+            <select id="visibility-website" className={FIELD} value={selectedSite?.website.websiteId ?? ""} disabled={busy || (context?.websites.length ?? 0) === 0} onChange={event => { setWebsiteId(event.target.value); setSelected(""); }}>
+              {(context?.websites.length ?? 0) === 0 && <option value="">{t("workbench.noWebsites")}</option>}
+              {context?.websites.map(site => <option key={site.website.websiteId} value={site.website.websiteId}>{site.website.host} · {t(`workbench.readiness.${site.preparation.status}`)}</option>)}
+            </select>
+          </div>
+          <button className={SECONDARY_BUTTON} type="button" disabled={refreshing} onClick={() => { void load(); }}>{t("workbench.refresh")}</button>
+        </div>
+        {loadError !== null && <p role="alert" className="mt-3 text-sm text-brand-error">{t(`errors.${loadError}`)}</p>}
+        {selectedSite !== null && version === null && <div className="mt-4 rounded-lg border border-brand-border-card p-4"><p className={BODY}>{t("noFrozen.body")}</p><a className="mt-2 inline-block text-sm text-brand-accent-text underline" href={localePath(locale, `/account/websites/${selectedSite.website.websiteId}/geo`)}>{t("workbench.prepare")}</a></div>}
+        {selectedSite === null && <a className="mt-3 inline-block text-sm text-brand-accent-text underline" href={localePath(locale, "/account/websites")}>{t("workbench.addWebsite")}</a>}
+        {sourceForInput !== null ? <AiVisibilitySource site={sourceForInput} locale={locale} /> : selectedSite?.frozen === null ? <AiVisibilitySource site={selectedSite} locale={locale} /> : null}
+        {!busy && inputSource.loading && <p className={`mt-3 ${NOTE}`}>{t("workbench.sourceLoading")}</p>}
+        {!busy && (inputSource.error || sourceMismatch) && <p className="mt-3 text-sm text-brand-error" role="alert">{t("workbench.sourceUnavailable")}</p>}
         <div className="mt-5 grid gap-5 md:grid-cols-2">
           <div>
             <label
@@ -1336,11 +396,12 @@ export function AiVisibilityCheck({
             </label>
             <select
               className={FIELD}
-              disabled={busy}
+              disabled={busy || versions.length === 0}
               id="visibility-version"
               onChange={(event) => setSelected(event.target.value)}
-              value={selected}
+              value={selectedSnapshot}
             >
+              {versions.length === 0 && <option value="">{t("workbench.noFrozen")}</option>}
               {versions.map((entry) => (
                 <option key={entry.snapshotId} value={entry.snapshotId}>
                   {t("form.versionOption", {
@@ -1407,21 +468,21 @@ export function AiVisibilityCheck({
         {/* The server's own number, not this bundle's: a tab open across a
             limit change would otherwise print the figure it was built with. */}
         <p className={`mt-1.5 ${NOTE}`}>
-          {t("form.dailyLimit", { runs: choices.runsPerDay })}
+          {t("form.dailyLimit", { runs: choices?.runsPerDay ?? VISIBILITY_RUNS_PER_DAY })}
         </p>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
             className={PRIMARY_BUTTON}
             disabled={
-              busy || version === null || engines.length === 0 || cooldown > 0 || !providerConfigured
+              busy || version === null || sourceBlocked || engines.length === 0 || cooldown > 0 || !providerConfigured
             }
             onClick={() => {
               void start();
             }}
             type="button"
           >
-            {busy ? t("form.starting") : t("form.start")}
+            {run.kind === "starting" ? t("form.starting") : busy ? t("running.title") : t("form.start")}
           </button>
           {cooldown > 0 ? (
             <span className={NOTE}>
@@ -1444,13 +505,13 @@ export function AiVisibilityCheck({
             {t(`errors.${run.code}`)}
           </p>
         ) : null}
-      </section>
+      </section>}
 
       {busy ? (
-        <section className={PANEL} aria-live="polite">
+        <section className={PANEL} aria-live="polite" data-testid={recovering ? "visibility-recovered-running" : undefined}>
           <h2 className={HEADING}>{t("running.title")}</h2>
           <p className={`mt-2 max-w-[640px] ${BODY}`}>
-            {t("running.body", { minutes: estimate.minutes })}
+            {recovering ? t("running.recoveredBody") : t("running.body", { minutes: estimate.minutes })}
           </p>
           <p className={`mt-3 ${BODY}`}>
             {t("running.elapsed", {
@@ -1465,11 +526,18 @@ export function AiVisibilityCheck({
         </section>
       ) : null}
 
-      {run.kind === "done" ? (
-        <Report locale={locale} report={run.report} />
-      ) : null}
+      {history.loading && <p role="status" className={BODY}>{t("history.loading")}</p>}
+      {history.error && <p data-testid="visibility-history-error" role="alert" className="text-sm text-brand-error">{t("history.readError")}</p>}
+      {hasResult && view === "result" && <div id="visibility-result-panel" role="tabpanel" aria-labelledby="visibility-result-tab" tabIndex={-1} ref={resultRef} className="grid gap-6 outline-none">
+        {displayedReport !== null && <AiVisibilityReport locale={locale} report={displayedReport} />}
+        {savedSummary !== null && <AiVisibilityLegacySummary locale={locale} summary={savedSummary} />}
+        {resultSource.site !== null && <AiVisibilitySource site={resultSource.site} locale={locale} historical />}
+        {resultSource.loading && <p className={NOTE}>{t("workbench.sourceLoading")}</p>}
+        {(resultSource.error || (context === null && loadError !== null)) && <p role="status" className={NOTE}>{t("workbench.historicalSourceUnavailable")}</p>}
+      </div>}
+      <AiVisibilityHistory history={history} locale={locale} disabled={busy} />
       <VisibilityPortableRuns onComparison={setFileComparison} />
-      {fileComparison !== null && <ComparisonBlock comparison={fileComparison} locale={locale} />}
+      {fileComparison !== null && <AiVisibilityComparison comparison={fileComparison} locale={locale} />}
     </div>
   );
 }

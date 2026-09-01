@@ -2,7 +2,7 @@
 // @output -- inherited product fields and their exact reference for the GEO editor
 // @pos    -- shared view shape; product fields remain owned by Website Profile
 
-import type { WebsiteProfileReferenceV1, WebsiteProfileFieldProvenance } from "../account-websites/contracts.ts";
+import type { MarketingWebsiteProfileV1, WebsiteProfileReferenceV1, WebsiteProfileFieldProvenance } from "../account-websites/contracts.ts";
 
 /** The shipped question registry is English; locale labels must not imply otherwise. */
 export function isSupportedGeoQuestionLanguage(language: string): boolean {
@@ -15,6 +15,8 @@ export function isSupportedGeoQuestionLanguage(language: string): boolean {
 }
 
 export interface GeoInheritedProfile {
+  /** Current editor source proposal, not persisted until explicit adoption/save. */
+  readonly fullProfile?: MarketingWebsiteProfileV1;
   readonly reference: WebsiteProfileReferenceV1;
   readonly productName: string;
   readonly oneLinePositioning: string;

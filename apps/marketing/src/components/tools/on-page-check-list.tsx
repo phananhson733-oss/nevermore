@@ -8,7 +8,6 @@
 import { useTranslations } from "next-intl";
 import type {
   CheckState,
-  OnPageCheck,
 } from "../../lib/on-page-checker/check-types.ts";
 import { checkLabelKey } from "../../lib/on-page-checker/check-types.ts";
 import type { CategoryScore } from "../../lib/on-page-checker/scoring.ts";
