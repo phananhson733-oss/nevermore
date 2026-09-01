@@ -180,7 +180,12 @@ describe("Draft v2 frozen section generation", () => {
       expect(request.system).toContain("Never put a raw URL path, guessed title or invented subject into prose");
     }
     expect(requests[1]!.system).toBe(requests[0]!.system);
-    expect(JSON.parse(requests[1]!.user).previous_rejection).toBeTruthy();
+    const first = JSON.parse(requests[0]!.user);
+    const second = JSON.parse(requests[1]!.user);
+    expect(second.pages).toEqual(first.pages);
+    expect(second.page_units).toEqual(first.page_units);
+    expect(first.previous_rejection).toBeNull();
+    expect(second.previous_rejection).toBeTruthy();
   });
 
   it("retains ordered exact-URL titles and redirect provenance while hostile or unrelated values stay untrusted", async () => {
