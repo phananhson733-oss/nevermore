@@ -107,7 +107,7 @@ export function LayerTable({ metrics, v2 = null }: { readonly metrics: Visibilit
         return <tr key={layer} className="border-b border-brand-border-card last:border-0">
           <th className={`${CELL} font-normal`} scope="row">{shared(`layers.names.${layer}`)}</th>
           <td className={CELL}>{missing ? <span className={NOTE}>{t("layerMissing")}</span> : <Rate proportion={metric.mention} unit="answers" />}</td>
-          <td className={CELL}>{missing ? <span className={NOTE}>{t("layerMissing")}</span> : <Rate proportion={metric.citation} unit="answers" />}</td>
+          <td className={CELL}>{missing ? "—" : <Rate proportion={metric.citation} unit="answers" />}</td>
           {v2 !== null && <><td className={`${CELL} font-mono`}>{missing || detail === undefined || detail.meanPosition.value === null ? "—" : t("positionValue", { position: detail.meanPosition.value.toFixed(2), count: detail.meanPosition.observations })}</td><td className={`${CELL} font-mono`}>{missing || detail === undefined ? "—" : t("callsShort", { answered: detail.answeredSamples, calls: detail.plannedSamples })}</td></>}
         </tr>;
       })}</tbody>

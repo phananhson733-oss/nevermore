@@ -126,7 +126,10 @@ describe("Artifact-aligned visibility report", () => {
     expect(engineRows[1]?.querySelector('[data-rate-unit]')).toBeNull();
     expect(metric("coverage")?.textContent).toContain("5 / 5");
   });
-  it("renders all five intent layers and marks missing layers as not asked", () => {
+  it.each([
+    { locale: "en", names: ["Problem", "Discovery", "Comparison", "Evaluation", "Branded"], missing: "No questions in this run" },
+    { locale: "zh", names: ["问题", "发现", "对比", "选型", "品牌词"], missing: "本轮没有这类问题" },
+  ] as const)("renders all five intent layers and marks missing layers as not asked ($locale)", ({ locale, names, missing }) => {
     const initial = visibilityReportFixtureV2();
     const definitions = [
       { ...initial.questions[0]!.definition, id: "q-discovery", text: "Which tool is best?", layer: "discovery" as const },
@@ -138,19 +141,31 @@ describe("Artifact-aligned visibility report", () => {
       { ...initial.questions[0]!.samples[0]!, questionId: "q-comparison", slotId: "chatgpt:q-comparison:1", mentioned: true },
       { ...initial.questions[0]!.samples[0]!, questionId: "q-branded", slotId: "chatgpt:q-branded:1", mentioned: true, webSearchPerformed: false, cited: false },
     ];
-    mount(visibilityReportFixtureV2({ questions: definitions, samples }));
+    mount(visibilityReportFixtureV2({ questions: definitions, samples }), locale);
     const rows = [...host.querySelectorAll('[data-section="layers"] tbody tr')];
-    expect(rows.map((row) => row.querySelector('th[scope="row"]')?.textContent)).toEqual(["Problem", "Discovery", "Comparison", "Evaluation", "Branded"]);
-    expect(rows[0]?.textContent).toContain("No questions in this run");
-    expect(rows[0]?.textContent).toContain("—");
-    expect(rows[0]?.textContent).not.toContain("%");
-    expect(rows[1]?.textContent).not.toContain("No questions in this run");
+    expect(rows.map((row) => row.querySelector('th[scope="row"]')?.textContent)).toEqual(names);
+    for (const row of [rows[0], rows[3]]) {
+      expect([...row!.querySelectorAll("td")].map((cell) => cell.textContent)).toEqual([missing, "—", "—", "—"]);
+      expect(row?.querySelector("[data-rate-unit]")).toBeNull();
+      expect(row?.textContent).not.toMatch(/[0-9%]/);
+    }
+    expect(rows[1]?.textContent).not.toContain(missing);
     expect(rows[1]?.querySelectorAll("td")[3]?.textContent).toBe("1 / 1");
     expect(rows[2]?.textContent).toContain("100%");
     expect(rows[2]?.querySelectorAll("td")[3]?.textContent).toBe("1 / 1");
-    expect(rows[3]?.textContent).toContain("No questions in this run");
-    expect(rows[3]?.textContent).not.toContain("%");
     expect(rows[4]?.querySelectorAll("td")[3]?.textContent).toBe("1 / 1");
+  });
+  it("shows the complete intent taxonomy in V1 without inventing missing-layer rates", () => {
+    mount(legacyReport());
+    const rows = [...host.querySelectorAll('[data-section="layers"] tbody tr')];
+    expect(rows.map((row) => row.querySelector('th[scope="row"]')?.textContent)).toEqual(["Problem", "Discovery", "Comparison", "Evaluation", "Branded"]);
+    const missingRows = rows.filter((row) => row.textContent?.includes("No questions in this run"));
+    expect(missingRows).toHaveLength(4);
+    for (const row of missingRows) {
+      expect([...row.querySelectorAll("td")].map((cell) => cell.textContent)).toEqual(["No questions in this run", "—"]);
+      expect(row.querySelector("[data-rate-unit]")).toBeNull();
+    }
+    expect(rows[1]?.querySelectorAll('[data-rate-unit="answers"]')).toHaveLength(2);
   });
   it("withholds rate, stage, gap and comparison conclusions for insufficient runs", () => {
     const report = visibilityReportFixtureV2({ samples: [] });
