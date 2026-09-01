@@ -97,12 +97,16 @@ describe("website GEO canonical editor", () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(name, "Unsaved alias");
       name.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    const add = [...container.querySelectorAll("button")].find((button) => button.textContent === ASSET.featureCandidateAdd);
+    const add = [...container.querySelectorAll("button")].find((button) => button.getAttribute("aria-label") === `${ASSET.featureCandidateAdd}: Saved feature`);
     expect(add).toBeDefined();
     await act(async () => add?.click());
     expect(name.value).toBe("Unsaved alias");
-    expect([...container.querySelectorAll("input")].some((input) => input.value === "Saved feature")).toBe(true);
-    expect((container.querySelector("#kb-fact-reason-0") as HTMLSelectElement)?.value).toBe("lowConfidence");
+    const factKey = [...container.querySelectorAll("input")].find((input) => input.value === "coreFeatures[0]");
+    const factRow = factKey?.parentElement?.parentElement;
+    expect([...factRow?.querySelectorAll("input") ?? []].map((input) => input.value)).toEqual([
+      "coreFeatures[0]", "Saved feature", "", "",
+    ]);
+    expect(factRow?.querySelector("select")).toBeNull();
     expect(container.textContent).toContain(ASSET.featureCandidateExists);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

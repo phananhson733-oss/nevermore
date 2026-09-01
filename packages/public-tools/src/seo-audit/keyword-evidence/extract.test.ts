@@ -255,7 +255,7 @@ describe("buildTargetPageExtract on-page facts", () => {
       // Measurements too, for the same reason: how the body and its images were
       // counted, not something the markup declared.
       imageFormats: _formats,
-      imageSources: _sources,
+      imageSources: [],
       headingLevels: _levels,
       // Also a measurement, not a declaration: whether an alternate resolves is
       // something this run went and checked, not something the markup said.
