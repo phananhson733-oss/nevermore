@@ -12,7 +12,7 @@ import { GEO_VISIBILITY_V2, VISIBILITY_MAX_PLAN_SLOTS, type VisibilityContextV2,
 
 export function buildVisibilityPlan(questions: readonly GeoQuestion[], engines: readonly VisibilityEngine[], samples: number): readonly VisibilityPlanItemV2[] {
   const ordered = parseVisibilityEngines(engines);
-  if (ordered === null || !Number.isSafeInteger(samples) || samples < 1 || samples > 10 || questions.length < 1 || questions.length > 200 || questions.length * ordered.length * samples > VISIBILITY_MAX_PLAN_SLOTS || new Set(questions.map((q) => q.id)).size !== questions.length || questions.some((q) => !/^[A-Za-z0-9_.-]{1,120}$/.test(q.id))) throw new RangeError("Invalid visibility sample plan");
+  if (ordered === null || !Number.isSafeInteger(samples) || samples < 1 || samples > 10 || questions.length < 1 || questions.length > 200 || questions.length * ordered.length * samples > VISIBILITY_MAX_PLAN_SLOTS || new Set(questions.map((q) => q.id)).size !== questions.length || questions.some((q) => !/^[A-Za-z0-9_.:/-]{1,128}$/.test(q.id))) throw new RangeError("Invalid visibility sample plan");
   return ordered.flatMap((engine) => questions.flatMap((question) => Array.from({ length: samples }, (_, index) => ({ engine, question, sampleIndex: index + 1, slotId: `${engine}:${question.id}:${index + 1}` }))));
 }
 

@@ -26,7 +26,7 @@ describe("GEO editor inherited-profile wire contract", () => {
     expect(isGeoKbView({ ...VIEW, frozen: { ...FREEZE, payload: { ...payload, profileCopy: null } } })).toBe(false);
   });
   it("recognizes actionable question-quality blockers from the freeze and save endpoints", () => {
-    expect(isGeoKbSaveResponse({ draftVersion: 3, updatedAt: "2026-08-31T00:00:00Z", blockers: ["category_language_mismatch", "question_quality"] })).toBe(true);
+    expect(isGeoKbSaveResponse({ draftVersion: 3, updatedAt: "2026-08-31T00:00:00Z", blockers: ["category_language_mismatch", "question_quality", "category_terms_not_english", "role_terms_not_english", "category_placeholder_invalid", "role_placeholder_invalid"] })).toBe(true);
   });
   it("checks optional draft-source policy and frozen definitions without requiring them on legacy views", () => {
     const context = { skippedLayers: ["problem", "evaluation"], questionSetHash: "c".repeat(64), contentHash: "e".repeat(64) };

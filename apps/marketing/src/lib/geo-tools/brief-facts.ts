@@ -2,8 +2,8 @@
 // @output -- fact rows and matching receipts, with inconsistent sources rejected
 // @pos -- one projection for Brief generation and free input evidence summaries
 import type { GeoContentBrief } from "@sf/public-tools/content-brief/geo-contract";
-import type { GeoKbFrozenSnapshot } from "./kb-store.ts";
-import type { GeoSnapshotContext } from "./snapshot-context.ts";
+import type { VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
+import type { AnyGeoSnapshotContext } from "./snapshot-context-v2.ts";
 import { normalizeGeoHost } from "../agents/geo-url.ts";
 import { GEO_PROFILE_FACT_OVERRIDES_POLICY } from "./kb-questions.ts";
 
@@ -11,7 +11,29 @@ function normalizedExactText(value: string): string {
   return value.normalize("NFC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("en");
 }
 
-export function geoBriefFactsForSnapshot(frozen: GeoKbFrozenSnapshot, context: GeoSnapshotContext | null) {
+export function geoBriefFactsForSnapshot(frozen: VersionedGeoKbFrozenSnapshot, context: AnyGeoSnapshotContext | null) {
+  if (frozen.payload.schemaVersion === "marketing-geo-kb.v2") {
+    if (context?.schemaVersion !== "marketing-geo-snapshot-context.v2") throw new Error("complete_v2_context_required");
+    const facts = context.facts.map(fact => {
+      if (fact.value !== null && (fact.source === "none" || fact.review !== "accepted" || fact.reason !== "" || fact.sourceUrl === null || fact.observedAt === null)) throw new Error("invalid_admitted_fact");
+      if (fact.source === "crawl" && fact.supportRef === null) throw new Error("crawl_receipt_missing");
+      return { key: fact.key, value: fact.source === "none" ? null : fact.value, reason: fact.reason,
+        source: fact.source === "crawl" ? "crawl" as const : "kb" as const, sourceUrl: fact.sourceUrl, observedAt: fact.observedAt, evidenceId: fact.supportRef?.evidenceId ?? null };
+    });
+    const receipts: GeoContentBrief["evidence"]["facts"] = [];
+    const factTable: GeoContentBrief["fact_table"] = facts.map((fact, index) => {
+      const value = fact.reason === "conflicting" ? null : fact.value;
+      const id = `${fact.source === "crawl" ? "C" : "K"}${index + 1}`;
+      if (value !== null) {
+        if (fact.source === "crawl" && (fact.evidenceId === null || fact.sourceUrl === null || fact.observedAt === null)) throw new Error("crawl_receipt_missing");
+        receipts.push({ id, source: fact.source, text: value, observed_at: fact.observedAt ?? frozen.frozenAt, url: fact.sourceUrl });
+      }
+      return { id: `F${index + 1}`, label: fact.key, value, reason: value === null ? fact.reason || "lowConfidence" : null, evidence_refs: value === null ? [] : [id] };
+    });
+    return { receipts, factTable };
+  }
+  if (context?.schemaVersion === "marketing-geo-snapshot-context.v2") throw new Error("snapshot_context_version_mismatch");
+  if (frozen.questionSet.schemaVersion !== "marketing-geo-question-set.v1") throw new Error("question_set_version_mismatch");
   if (context !== null) {
     if (context.kbId !== frozen.kbId || context.payloadHash !== frozen.contentHash || context.questionSetHash !== frozen.questionSetHash || context.targetHost !== normalizeGeoHost(frozen.payload.targetUrl)) throw new Error("snapshot_context_mismatch");
     if (context.facts.length !== frozen.payload.facts.length || context.facts.some((fact, index) => {

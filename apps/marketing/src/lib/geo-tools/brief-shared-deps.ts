@@ -4,8 +4,9 @@
 import { randomUUID } from "node:crypto";
 import { canonicalize, fingerprintCanonical } from "@sf/public-tools/content-brief/canonical";
 import type { GeoContentBrief } from "@sf/public-tools/content-brief/geo-contract";
-import { readFrozenGeoKb } from "./kb-store.ts";
-import { readGeoSnapshotContext } from "./asset-context-store.ts";
+import { readVersionedFrozenGeoKb } from "./kb-versioned-read.ts";
+import { readVersionedGeoSnapshotContext } from "./asset-context-store.ts";
+import { projectFrozenGeoQuestions } from "./kb-consumer-projection.ts";
 import { resolveOwnedVisibilityGap } from "./owned-gap.ts";
 import { resolveGeoBriefLlmConfig } from "./brief-llm.ts";
 import { runSharedGeoBriefLlm } from "./brief-shared-llm.ts";
@@ -20,7 +21,7 @@ export async function resolveSharedBriefRunEvidence(input: Parameters<SharedBrie
   const { report, gap, siteEvidence } = resolved.value;
   const manifest = report.manifest;
   if (report.context.targetHost !== normalizeGeoHost(input.frozen.payload.targetUrl) || siteEvidence.index.targetHost !== report.context.targetHost) return { kind: "unavailable", reason: "run_site_mismatch" };
-  const frozenQuestion = input.frozen.questionSet.questions.find(question => question.id === input.questionId);
+  const frozenQuestion = projectFrozenGeoQuestions(input.frozen.questionSet).find(question => question.id === input.questionId);
   const question = report.questions.find(row => row.questionId === input.questionId);
   if (manifest.kbId !== input.frozen.kbId || manifest.snapshotId !== input.frozen.snapshotId || manifest.snapshotRevision !== input.frozen.revision || manifest.questionSetHash !== input.frozen.questionSetHash || manifest.marketCode !== input.frozen.payload.market.country || manifest.language !== input.frozen.payload.market.language || frozenQuestion === undefined || question === undefined || canonicalize(question.definition) !== canonicalize(frozenQuestion)) return { kind: "unavailable", reason: "run_snapshot_mismatch" };
   const samples: GeoContentBrief["evidence"]["samples"] = [];
@@ -33,8 +34,8 @@ export async function resolveSharedBriefRunEvidence(input: Parameters<SharedBrie
   return { kind: "ok", value: { runId: manifest.runId, fingerprint: await fingerprintCanonical(report), gap: gap.kind, samples, siteIndex: pages.map(page => ({ id: page.id, url: page.finalUrl!, title: page.title ?? "", observed_at: page.fetchedAt })) } };
 }
 export const DEFAULT_SHARED_BRIEF_DEPENDENCIES: SharedBriefHandlerDependencies = {
-  readFrozen: async input => { const value = await readFrozenGeoKb(input); return value.kind === "ok" ? value : value.kind === "missing" ? { kind: "not_found" } : { kind: "unavailable", reason: "snapshot_unavailable" }; },
-  readContext: async input => { const value = await readGeoSnapshotContext(input); return value.kind === "ok" ? value : { kind: "unavailable", reason: "context_unavailable" }; },
+  readFrozen: async input => { const value = await readVersionedFrozenGeoKb(input); return value.kind === "ok" ? value : value.kind === "missing" ? { kind: "not_found" } : { kind: "unavailable", reason: "snapshot_unavailable" }; },
+  readContext: async input => { const value = await readVersionedGeoSnapshotContext(input); return value.kind === "ok" ? value : { kind: "unavailable", reason: "context_unavailable" }; },
   readRunEvidence: resolveSharedBriefRunEvidence,
   configured: () => resolveGeoBriefLlmConfig() !== null,
   assemble: runSharedGeoBriefLlm,

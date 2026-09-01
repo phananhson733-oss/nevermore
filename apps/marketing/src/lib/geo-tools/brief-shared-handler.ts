@@ -4,17 +4,17 @@
 import { GEO_CONTENT_BRIEF_SCHEMA, geoGenerationLanguage } from "@sf/public-tools/content-brief/geo-contract";
 import { parseGeoContentBriefShape } from "@sf/public-tools/content-brief/parse-geo-brief";
 import { privateError, privateJson } from "../account-websites/route-http.ts";
-import type { GeoKbFrozenSnapshot } from "./kb-store.ts";
-import type { GeoSnapshotContext } from "./snapshot-context.ts";
+import type { VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
+import type { AnyGeoSnapshotContext } from "./snapshot-context-v2.ts";
 import type { BriefStoreOutcome } from "./brief-handler.ts";
 import { assembleSharedGeoBrief, sharedGeoBriefBasis, type SharedBriefRunEvidence } from "./brief-shared.ts";
 import type { runSharedGeoBriefLlm } from "./brief-shared-llm.ts";
 import { assessGeoQuestionQuality, geoQuestionLanguageIssue, geoQuestionProperNames } from "./question-quality.ts";
 
 export interface SharedBriefHandlerDependencies {
-  readonly readFrozen: (input: { userId: string; kbId: string; snapshotId: string }) => Promise<BriefStoreOutcome<GeoKbFrozenSnapshot>>;
-  readonly readContext: (input: { userId: string; kbId: string; snapshotId: string }) => Promise<BriefStoreOutcome<GeoSnapshotContext | null>>;
-  readonly readRunEvidence: (input: { userId: string; runId: string; gapId: string; questionId: string; frozen: GeoKbFrozenSnapshot }) => Promise<BriefStoreOutcome<SharedBriefRunEvidence> | { kind: "not_eligible" }>;
+  readonly readFrozen: (input: { userId: string; kbId: string; snapshotId: string }) => Promise<BriefStoreOutcome<VersionedGeoKbFrozenSnapshot>>;
+  readonly readContext: (input: { userId: string; kbId: string; snapshotId: string }) => Promise<BriefStoreOutcome<AnyGeoSnapshotContext | null>>;
+  readonly readRunEvidence: (input: { userId: string; runId: string; gapId: string; questionId: string; frozen: VersionedGeoKbFrozenSnapshot }) => Promise<BriefStoreOutcome<SharedBriefRunEvidence> | { kind: "not_eligible" }>;
   readonly configured: () => boolean;
   readonly assemble: typeof runSharedGeoBriefLlm;
   readonly runId: () => string;

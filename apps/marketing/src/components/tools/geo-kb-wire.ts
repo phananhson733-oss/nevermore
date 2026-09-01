@@ -189,7 +189,7 @@ export function isGeoKbPayload(value: unknown): value is GeoKbPayload {
   );
 }
 
-function isFrozen(value: unknown): value is GeoKbFrozenSummary {
+export function isFrozen(value: unknown): value is GeoKbFrozenSummary {
   if (!isRecord(value)) return false;
   return (
     (value["payload"] === undefined || isGeoKbPayload(value["payload"])) &&
@@ -234,7 +234,7 @@ function isSourcePreview(value: unknown): value is GeoKbSourcePreview {
   return isRecord(value) && (value["activeRoleIds"] === undefined || (isStringArray(value["activeRoleIds"]) && new Set(value["activeRoleIds"]).size === value["activeRoleIds"].length)) && isSkippedLayers(value["skippedLayers"]) && isHash(value["questionSetHash"]) && isHash(value["contentHash"]);
 }
 
-function isInheritedProfile(value: unknown): value is GeoInheritedProfile {
+export function isInheritedProfile(value: unknown): value is GeoInheritedProfile {
   if (!isRecord(value) || typeof value["productName"] !== "string" ||
       typeof value["oneLinePositioning"] !== "string" ||
       !isStringArray(value["coreFeatures"]) || !isRecord(value["market"]) ||

@@ -513,11 +513,11 @@ describe("WebsiteProfileEditor", () => {
     throw new Error("editor still loading");
   }
 
-  it("links the owned website to its canonical GEO extension", async () => {
+  it("does not send the visitor to a separate GEO page from the Profile toolbar", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ data: { website: await details(profile()) } }));
     await mount();
     const link = host.querySelector(`a[href='/en/account/websites/${WEBSITE_ID}/geo']`);
-    expect(link?.textContent).toBe(EDITOR.geoExtension);
+    expect(link).toBeNull();
   });
 
   async function settle(): Promise<void> {
@@ -2446,7 +2446,7 @@ describe("WebsiteProfileEditor", () => {
     await waitForConfirmation();
 
     const summary = host.querySelector('[data-website-profile-collapsed="true"]');
-    expect(summary?.querySelector(`a[href='/en/account/websites/${WEBSITE_ID}/geo']`)?.textContent).toBe(EDITOR.geoExtension);
+    expect(summary?.querySelector(`a[href='/en/account/websites/${WEBSITE_ID}/geo']`)).toBeNull();
     expect(summary).not.toBeNull();
     expect(summary?.textContent).toContain("Confirmed v1");
     expect(document.activeElement).toBe(summary);
@@ -2460,7 +2460,7 @@ describe("WebsiteProfileEditor", () => {
     expect(field("Product name").value).toBe("Example");
     expect(document.activeElement).toBe(field("Product name"));
     expect(listValues("coreFeatures")).toEqual(["Feature A", "Feature B"]);
-    expect(host.querySelector(`a[href='/en/account/websites/${WEBSITE_ID}/geo']`)?.textContent).toBe(EDITOR.geoExtension);
+    expect(host.querySelector(`a[href='/en/account/websites/${WEBSITE_ID}/geo']`)).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(requestCount);
   });
 

@@ -11,12 +11,14 @@ import {
   privateJson,
   readAccountMutationJson,
 } from "./route-http.ts";
-import type { GeoKbHandlerDependencies } from "../geo-tools/kb-handler.ts";
+import type { GeoKbStoreOutcome, GeoKbView } from "../geo-tools/kb-handler.ts";
+import type { GeoKbEditorViewV2 } from "../../components/tools/geo-kb-v2-wire.ts";
+import { privateGeoEditorJson } from "../geo-tools/kb-editor-response.ts";
 
 export interface WebsiteGeoDependencies {
   readonly authenticate: typeof authenticateAccountRequest;
   readonly readWebsite: typeof readAccountWebsite;
-  readonly loadKnowledgeBase: GeoKbHandlerDependencies["loadKnowledgeBase"];
+  readonly loadKnowledgeBase: (input: { readonly userId: string; readonly url: string }) => Promise<GeoKbStoreOutcome<GeoKbView | GeoKbEditorViewV2>>;
 }
 
 export async function handleWebsiteGeoLoad(
@@ -48,10 +50,12 @@ export async function handleWebsiteGeoLoad(
   // Refuse inconsistent store output instead of returning another site's data.
   const site = normalizeAccountWebsiteUrl(loaded.value.origin);
   if (site === null || site.canonicalSiteKey !== website.canonicalSiteKey ||
-      (loaded.value.profile != null && loaded.value.profile.reference.websiteId !== websiteId)) {
+      (loaded.value.profile != null && loaded.value.profile.reference.websiteId !== websiteId) ||
+      (loaded.value.payload.profileCopy !== undefined && loaded.value.payload.profileCopy.websiteId !== websiteId)) {
     return privateError("store_unavailable", 503);
   }
-  return privateJson({ data: {
+  const respond = "schemaVersion" in loaded.value ? privateGeoEditorJson : privateJson;
+  return respond({ data: {
     website: { websiteId, origin: website.origin, host: website.host, profileState: website.profileState },
     knowledgeBase: loaded.value,
   } });

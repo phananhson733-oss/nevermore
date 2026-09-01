@@ -218,6 +218,8 @@ async function loadView(
   if (!profile.ok && profile.unavailable) return { kind: "unavailable", reason: "profile unavailable" };
   const inherited = profile.ok ? profile.profile : null;
   const payload = details.draft?.payload ?? (profile.ok ? { ...profile.payload, roles: [], market: profile.profile.market } : emptyGeoKbPayload(details.origin));
+  // The current Profile is only a source proposal for the view. Frozen/draft
+  // context is derived from the payload's exact saved Profile copy.
   const prepared = await contextFor(userId, details.kbId, details.origin, payload);
   if (prepared.kind !== "ok") return prepared;
   return {

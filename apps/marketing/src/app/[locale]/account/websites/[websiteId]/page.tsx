@@ -5,7 +5,7 @@
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, getTranslations } from "next-intl/server";
 
-import { WebsiteProfileEditor } from "@/components/account/website-profile-editor";
+import { WebsiteProfileWithGeo } from "@/components/account/website-profile-with-geo";
 import { generatePageMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +46,7 @@ export default async function AccountWebsiteProfilePage({
     <NextIntlClientProvider
       messages={{
         account: messages.account,
+        tools: { geoKnowledgeBase: messages.tools.geoKnowledgeBase },
         agents: {
           workbench: {
             profile: {
@@ -55,7 +56,7 @@ export default async function AccountWebsiteProfilePage({
         },
       }}
     >
-      <WebsiteProfileEditor
+      <WebsiteProfileWithGeo
         websiteId={websiteId}
         autoGenerate={generate === "1"}
       />

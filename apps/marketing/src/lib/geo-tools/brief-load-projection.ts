@@ -2,10 +2,10 @@
 // @output -- bounded input metadata and question quality diagnostics for history and exact-version loads
 // @pos -- frozen role labels and prompt-set identity never come from the editable draft
 import type { BriefFrozenChoice } from "./brief-handler.ts";
-import type { GeoKbFrozenSnapshot } from "./kb-store.ts";
+import type { VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
 import { assessGeoQuestionQuality, geoQuestionProperNames } from "./question-quality.ts";
 
-export function projectBriefFrozenChoice(frozen: GeoKbFrozenSnapshot, host: string): BriefFrozenChoice {
+export function projectBriefFrozenChoice(frozen: VersionedGeoKbFrozenSnapshot, host: string): BriefFrozenChoice {
   return {
     kbId: frozen.kbId,
     host,

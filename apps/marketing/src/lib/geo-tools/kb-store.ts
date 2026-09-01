@@ -596,6 +596,11 @@ function questionSetFromRow(row: Record<string, unknown>): GeoQuestionSet {
   return set;
 }
 
+/** Version dispatchers must preserve this exact v1 projection/digest policy. */
+export function parseStoredGeoQuestionSetV1(value: unknown, expectedHash: string): GeoQuestionSet {
+  return questionSetFromRow({ question_set: value, question_set_hash: expectedHash });
+}
+
 /* ------------------------------------------------------------------ */
 /* Row mapping                                                         */
 /* ------------------------------------------------------------------ */

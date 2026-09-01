@@ -1,13 +1,16 @@
 # Marketing GEO boundaries
 
-Website Profile owns product facts. GEO owns matching overrides, frozen questions and measured evidence. Historical v1 payloads remain readable; new source-conditioned freezes are additive. This directory does not authorize provider calls, production migrations or deployment.
+Website Profile is the single editing authority for base information. GEO stores a complete, exact Profile copy alongside matching overrides, frozen questions and measured evidence, so consumers do not join live Profile fields. Historical payloads remain readable as explicitly partial; they are never backfilled from today's Profile. This directory does not authorize provider calls, production migrations or deployment.
 
 - `asset-context.ts` — browser-safe inherited Profile view, provenance subset and supported question-language predicate.
-- `snapshot-context.ts` — source-conditioned immutable context; only exact matching server receipts grant crawl/GSC provenance, and missing GSC skips problem/evaluation.
+- `kb-profile-copy.ts` — versioned complete Profile copy, client-safe parsing and exact JSONB byte budget; scalar revisions remain strings.
+- `kb-profile-copy-server.ts` — source-copy SHA verification and the frozen provenance projection without a live Profile lookup.
+- `kb-complete-read.ts` — one exact GEO-owned snapshot/questions/context read, explicit complete/legacy-partial status and integrity validation; used by Draft authority verification.
+- `snapshot-context.ts` — legacy V1 source-conditioned immutable context; only exact matching server receipts grant crawl/GSC provenance. Its missing-GSC problem/evaluation policy and historical hashes remain unchanged; see the explicit V2 contracts below for reviewed semantic questions.
 - `asset-context-store.ts` — owner-scoped immutable context/receipt reads, digest validation and service-only receipt RPC writes; missing required context is unavailable, not legacy null.
 - `kb-contract.ts` — bounded canonical KB payloads, optional competitor aliases preserving legacy bytes and source-aware freeze blockers.
 - `kb-handler.ts` — authenticated same-origin HTTP contracts, draft CAS, expected Profile reference and exact context-hash admission.
-- `kb-handler-deps.ts` — runtime Website/KB/context integration; new source state does not silently replace what the editor saw.
+- `kb-handler-deps.ts` — explicit Profile copy preparation/update and saved-copy context construction; current Profile proposals never replace a saved copy implicitly.
 - `kb-store.ts` — immutable v1 payload parsing/storage and exact current/revision/snapshot-ID reads.
 - `kb-freeze-context.ts` — new atomic snapshot/context path; verifies current draft and maps Profile drift or missing canonical Website to actionable refusal.
 - `kb-history.ts` — bounded paginated owned frozen-version history for both selectors; unreadable or over-budget history never becomes an empty or silently truncated list.
@@ -21,6 +24,20 @@ Website Profile owns product facts. GEO owns matching overrides, frozen question
 - `kb-enrichment.ts` — actual homepage identity/fact extraction and deterministic query-interest clusters; no inferred persona or typed URL is a crawl receipt.
 - `kb-enrichment-handler.ts` — verified Google-subject equality, exact 90-final-day GSC scope, source gates and persistent receipt admission.
 - `kb-enrichment-deps.ts` — real safe public fetch and granted GSC adapters; no automatic source read from an editor render.
+- `kb-aliases.ts` / `kb-import.ts` — bounded proposals for complete canonical host and meaningful split-name aliases; no case-only duplicates, name truncation or implicit rewrite of saved overrides.
+- `kb-v2-contract.ts` / `kb-v2-json.ts` / `kb-v2-digest.ts` — explicit complete-copy payload, role review/lineage, fact support/conflicts and canonical byte/hash contracts. V2 never changes the shape or digest of stored V1 data.
+- `kb-upgrade.ts` — editable V1-to-V2 preview only; inferred legacy roles/facts require review, and preview construction does not save or rewrite history.
+- `kb-source-contract.ts` / `kb-sources.ts` / `kb-source-handler.ts` — owned exact-copy source receipts, actual query rows/counts, conservative competitor identities and inspectable fact support; a filled URL or model assertion is not verified evidence.
+- `kb-competitor-evidence.ts` — last capture per current saved domain from the exact selected receipt set, including failures/conflicts, independent of the user's current brand mapping. Complete capture metadata is frozen inline; brand-only competitors remain valid without invented crawl evidence.
+- `kb-synthesis-input.ts` / `kb-synthesis-contract.ts` / `kb-synthesis-prompts.ts` / `kb-synthesis.ts` — bounded known-evidence catalogs, GEO-specific strict Structured Outputs and unchanged server cross-reference validation for role/question generation. Reuses only `GEO_BRIEF_*` configuration; inferred demand questions never gain observed or calibrated status. A provider schema rejection never falls back to JSON mode or buys a repair call.
+- `kb-role-proposal.ts` / `kb-generation-preparer.ts` — exact saved-input/configuration preflight and lineage validation before claim/quota/model work. Prompt and response-schema hashes both participate in durable generation identity. Final user-reviewed role wording is authoritative for semantic questions; edits retain original lineage.
+- `kb-generation.ts` / `kb-generation-store.ts` / `kb-generation-handler.ts` — durable owner-scoped idempotency claim, lease-token dispatch CAS, usage/outcome recording and exact-key recovery. Expired dispatched records settle to uncertain; reads never rebuy a possibly billed request.
+- `kb-question-set-v2.ts` / `kb-preparation.ts` — semantically grounded uncalibrated questions plus separately identified exact calibrated registry probes; preparation produces one complete persisted review candidate without changing V1 measurement meaning.
+- `snapshot-context-v2.ts` / `snapshot-context-v2-shape.ts` — complete immutable V2 context with exact source references, role basis, admitted facts, competitor captures and actual source limitations. Known metadata is shape/byte-checked before model dispatch. Structural parsing is browser-safe; server parsing also checks digests. Reviewed Profile/manual roles can support V2 problem/evaluation demand questions without GSC.
+- `kb-prepared-contract.ts` / `kb-prepared-store.ts` / `kb-prepared-handler.ts` — persisted, addressable, hash-bound review candidate and exact candidate-ID/hash freeze. Freeze does not regenerate, load latest sources or move the current pointer backward on replay.
+- `kb-versioned-read.ts` / `kb-consumer-projection.ts` — explicit V1/V2 owned reads and downstream projections from complete frozen GEO data only; current Website Profile is never used to fill historical gaps.
+- `kb-editor-loader.ts` / `kb-editor-response.ts` — current Profile proposal versus stored GEO copy, recoverable generation/candidate/frozen state, and a validated bounded UTF-8 JSON stream for the full private editor response. An unavailable store does not become an empty knowledge base.
+- `kb-v2-draft-handler.ts` / `kb-v2-runtime.ts` — same-origin authenticated V2 route wiring, draft CAS/current-copy checks, exact source resolution and bounded generation quotas. Public tools navigation is a shortcut; canonical editing stays inline in Website Profile.
 - `visibility-v2-contract.ts` — multi-engine observations and explicit nullable evidence; v1 remains separate.
 - `visibility-v2.ts` — grouped engine/pooled measurements, actual question coverage, conditional-answer SOV and observed list position.
 - `visibility-sampling-v2.ts` — exactly one paid request per stable engine/question/sample slot; no ambiguous network retry.
@@ -31,7 +48,7 @@ Website Profile owns product facts. GEO owns matching overrides, frozen question
 - `site-index.ts` — bounded actual own-site/reference/T2 evidence, completeness and feature-priority hints; absent evidence is not absent content.
 - `gap-classify.ts` — deterministic evidence-conditioned B/A/D/C precedence, with unsupported cases unattributed rather than causal assertions.
 - `owned-gap.ts` — recomputed server-owned A/D evidence bridge; imported files and C/B actions cannot start a content generation.
-- `gap-handoff.ts` — scoped one-use browser pointers; B selects the explicit GEO-gap T2 protocol, A/D selects shared Brief.
+- `gap-handoff.ts` — scoped one-use browser pointers retaining exact V1 and V2 question IDs (including semantic IDs); B selects the explicit GEO-gap T2 protocol, A/D selects shared Brief.
 - `brief-shared.ts` — deterministic v1.1 GEO origin, frozen Q1/requirements, fact table, actual sample topics, honest unavailable fields and site-index links.
 - `brief-shared-handler.ts` — versioned exact selection and source resolution before quota/model work; manual input has no observed run evidence.
 - `brief-shared-deps.ts` — actual frozen/context/run/gap resolver and shared outline model adapter.

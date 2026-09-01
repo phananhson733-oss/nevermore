@@ -17,6 +17,7 @@ import {
   type WebsiteSummary,
 } from "../src/lib/account-websites/contracts.ts";
 import type { WebsiteCompetitorSearchRequest } from "../src/lib/account-websites/competitor-discovery.ts";
+import { inlineViewForWebsite } from "./geo-inline-fixtures.ts";
 
 const NOW = "2026-08-28T00:00:00.000Z";
 const SITE_IDS = [
@@ -269,6 +270,13 @@ async function installConsent(page: Page) {
 }
 
 async function installAccountApi(page: Page, account: MockAccount) {
+  const origin = `http://127.0.0.1:${process.env.MARKETING_E2E_PORT ?? "3001"}`;
+  await page.context().route("**/*", async route => {
+    const url = new URL(route.request().url());
+    if (url.origin === origin) { await route.continue(); return; }
+    await route.abort("blockedbyclient");
+    expect(["accounts.google.com", "www.googletagmanager.com", "www.google-analytics.com"]).toContain(url.hostname);
+  });
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -379,6 +387,19 @@ async function installAccountApi(page: Page, account: MockAccount) {
       return;
     }
 
+    const geoMatch = path.match(/^\/api\/account\/websites\/([^/]+)\/geo$/u);
+    if (geoMatch !== null && method === "POST") {
+      expect(request.postDataJSON()).toEqual({});
+      const site = account.sites.find(entry => entry.id === geoMatch[1]);
+      if (site === undefined || site.snapshot === null) {
+        await fulfillJson(route, 404, { error: { code: "website_not_found" } });
+        return;
+      }
+      const website = details(site);
+      await fulfillJson(route, 200, { data: { website, knowledgeBase: inlineViewForWebsite(website) } });
+      return;
+    }
+
     const detailMatch = path.match(/^\/api\/account\/websites\/([^/]+)$/u);
     if (detailMatch !== null) {
       const site = account.sites.find((entry) => entry.id === detailMatch[1]);
@@ -441,6 +462,7 @@ async function installAccountApi(page: Page, account: MockAccount) {
     }
 
     await fulfillJson(route, 404, { error: { code: "not_mocked" } });
+    throw new Error(`Unplanned offline account API: ${method} ${path}`);
   });
 }
 
@@ -475,7 +497,7 @@ test("desktop account flow adds, generates, confirms, switches primary, conflict
     .getByRole("button", { name: "Add and generate profile" })
     .click();
   await expect(page).toHaveURL(/\/account\/websites\/[^?]+\?generate=1/u);
-  await expect(page.getByLabel("Product name")).toHaveValue("Generated Example");
+  await expect(page.locator("#website-profile-productName")).toHaveValue("Generated Example");
   await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
   const candidate = page.locator(
     '[data-profile-competitor-candidate="rival.example"]',
@@ -552,7 +574,7 @@ test("desktop account flow adds, generates, confirms, switches primary, conflict
   const collapsedProfile = page.locator('[data-website-profile-collapsed="true"]');
   await expect(collapsedProfile).toBeVisible();
   await expect(collapsedProfile).toContainText("Confirmed v1");
-  await expect(page.getByLabel("Product name")).toHaveCount(0);
+  await expect(page.locator("#website-profile-productName")).toHaveCount(0);
   await expect(page.locator("[data-website-competitors]")).toHaveCount(0);
   expect(account.sites[0]?.snapshot?.directCompetitors).toEqual([
     "rival.example",
@@ -560,7 +582,7 @@ test("desktop account flow adds, generates, confirms, switches primary, conflict
   expect(account.profileSearchRequests).toHaveLength(1);
   await page.getByRole("button", { name: "Edit profile", exact: true }).click();
   await expect(collapsedProfile).toHaveCount(0);
-  await expect(page.getByLabel("Product name")).toHaveValue("Generated Example");
+  await expect(page.locator("#website-profile-productName")).toHaveValue("Generated Example");
   await expect(page.locator("[data-website-competitors]")).toBeVisible();
   expect(account.profileSearchRequests).toHaveLength(1);
 
@@ -577,7 +599,7 @@ test("desktop account flow adds, generates, confirms, switches primary, conflict
 
   await page.goto("/account/websites/" + SITE_IDS[0]);
   account.conflictNextSave = true;
-  await page.getByLabel("Product name").fill("Local conflicting value");
+  await page.locator("#website-profile-productName").fill("Local conflicting value");
   await expect(page.getByText("Resolve conflict")).toBeVisible();
   await expect(
     page.getByText('Server: "Server concurrent value"', { exact: true }),
@@ -674,12 +696,12 @@ test("keeps Chinese competitor suggestions separate from saved classifications a
   );
   const savedDirect = directSummary.locator('[data-competitor-source="saved"]');
   await expect(competitors).toBeVisible();
-  await expect(page.getByLabel("产品名称")).toHaveValue("AstrologyWiki");
+  await expect(page.locator("#website-profile-productName")).toHaveValue("AstrologyWiki");
   await expect(savedDirect).toContainText("astro.com");
   await expect(competitors.getByLabel("主要市场", { exact: true })).toHaveCount(0);
   await expect(competitors.getByLabel("主要语言", { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("主要市场", { exact: true })).toHaveValue("US");
-  await expect(page.getByLabel("主要语言", { exact: true })).toHaveValue("en-US");
+  await expect(page.locator("#website-profile-country")).toHaveValue("US");
+  await expect(page.locator("#website-profile-locale")).toHaveValue("en-US");
   expect(account.profileSearchRequests).toHaveLength(0);
 
   await competitors
@@ -782,7 +804,7 @@ test("keeps Chinese competitor suggestions separate from saved classifications a
   const collapsed = page.locator('[data-website-profile-collapsed="true"]');
   await expect(collapsed).toBeVisible();
   await expect(collapsed).toContainText("已确认 v1");
-  await expect(page.getByLabel("产品名称")).toHaveCount(0);
+  await expect(page.locator("#website-profile-productName")).toHaveCount(0);
   await expect(competitors).toHaveCount(0);
   const summaryAccessibility = await new AxeBuilder({ page })
     .include('[data-website-profile-collapsed="true"]')
@@ -813,7 +835,7 @@ test("keeps Chinese competitor suggestions separate from saved classifications a
   });
   await page.getByRole("button", { name: "编辑画像", exact: true }).click();
   await expect(collapsed).toHaveCount(0);
-  await expect(page.getByLabel("产品名称")).toHaveValue("AstrologyWiki");
+  await expect(page.locator("#website-profile-productName")).toHaveValue("AstrologyWiki");
   await expect(competitors).toBeVisible();
   await expect(
     indirectSummary.locator('[data-competitor-source="saved"]'),

@@ -1,7 +1,7 @@
 // @input -- frozen or draft question text and its owned knowledge-base payload
 // @output -- bounded language/entity issues; never rewritten text or inferred facts
 // @pos -- browser-safe quality checks shared by freezing and Brief generation
-import type { GeoKbPayload } from "./kb-contract.ts";
+import type { AnyGeoKbPayload } from "./kb-v2-contract.ts";
 import type { GeoQuestion } from "./kb-questions.ts";
 import { isSupportedGeoQuestionLanguage } from "./asset-context.ts";
 
@@ -30,11 +30,11 @@ export function geoQuestionLanguageIssue(text: string, language: string, properN
   return [...wording].some((character) => /\p{L}/u.test(character) && !/\p{Script=Latin}/u.test(character));
 }
 
-export function geoQuestionProperNames(payload: GeoKbPayload): readonly string[] {
+export function geoQuestionProperNames(payload: AnyGeoKbPayload): readonly string[] {
   return [payload.officialName, ...payload.aliases, ...payload.competitors.flatMap((competitor) => [competitor.brandName, ...(competitor.aliases ?? [])])];
 }
 
-export function assessGeoQuestionQuality(payload: GeoKbPayload, question: Pick<GeoQuestion, "text" | "roleId" | "requiredEntities">, language = payload.market.language): { readonly ok: boolean; readonly issues: readonly GeoQuestionQualityIssue[] } {
+export function assessGeoQuestionQuality(payload: AnyGeoKbPayload, question: Pick<GeoQuestion, "text" | "roleId" | "requiredEntities">, language = payload.market.language): { readonly ok: boolean; readonly issues: readonly GeoQuestionQualityIssue[] } {
   const issues: GeoQuestionQualityIssue[] = [];
   const properNames = geoQuestionProperNames(payload);
   const category = payload.categoryTerms[0] ?? "";

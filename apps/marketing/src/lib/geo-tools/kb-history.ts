@@ -2,18 +2,19 @@
 // @output -- exact historical versions, or an explicit unreadable/oversized history
 // @pos -- shared Visibility/Brief version selector; never substitutes an empty state for a failed read
 import { createAdminSupabaseClient } from "../supabase/admin.ts";
-import { DEFAULT_GEO_KB_STORE_DEPENDENCIES, listGeoKnowledgeBases, readFrozenGeoKb, type GeoKbFrozenSnapshot, type GeoKbStoreResult, type GeoKbTransportOutcome } from "./kb-store.ts";
+import { DEFAULT_GEO_KB_STORE_DEPENDENCIES, type GeoKbStoreResult, type GeoKbTransportOutcome } from "./kb-store.ts";
+import { listVersionedGeoKnowledgeBases, readVersionedFrozenGeoKb, type VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
 
 export const GEO_FROZEN_HISTORY_LIMIT = 200;
 const PAGE_SIZE = 25;
 const COLUMNS = "id,user_id,kb_id,revision,schema_version,payload,content_hash,question_set,question_set_hash,frozen_at";
 export interface GeoKbHistoryDependencies {
-  readonly listKnowledgeBases: typeof listGeoKnowledgeBases;
+  readonly listKnowledgeBases: typeof listVersionedGeoKnowledgeBases;
   readonly readPage: (userId: string, offset: number, limit: number) => Promise<GeoKbTransportOutcome>;
 }
-export interface GeoKbHistoricalVersion { readonly host: string; readonly snapshot: GeoKbFrozenSnapshot }
+export interface GeoKbHistoricalVersion { readonly host: string; readonly snapshot: VersionedGeoKbFrozenSnapshot }
 const DEFAULT: GeoKbHistoryDependencies = {
-  listKnowledgeBases: listGeoKnowledgeBases,
+  listKnowledgeBases: listVersionedGeoKnowledgeBases,
   readPage: async (userId, offset, limit) => {
     const result = await createAdminSupabaseClient().from("marketing_geo_kb_snapshots").select(COLUMNS)
       .eq("user_id", userId).order("frozen_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + limit - 1);
@@ -42,7 +43,7 @@ export async function listFrozenGeoKbVersions(input: { readonly userId: string }
         if (!kb) return unavailable();
         // Reuse the exact frozen reader's ownership/digest/registry validation
         // against the already fetched row; this introduces no N+1 network read.
-        const read = await readFrozenGeoKb({ userId, kbId: kb.kbId, snapshotId: row.id }, {
+        const read = await readVersionedFrozenGeoKb({ userId, kbId: kb.kbId, snapshotId: row.id }, {
           ...DEFAULT_GEO_KB_STORE_DEPENDENCIES,
           readSnapshot: async () => ({ kind: "ok", data: row }),
         });

@@ -49,14 +49,18 @@ describe("Tools hub execution boundaries", () => {
     );
   });
 
-  it("keeps the existing KB URL as a shared-editor shortcut to canonical Website GEO settings", () => {
+  it("keeps the existing KB URL as an information shortcut, with only an explicit Brief repair exception", () => {
     const legacy = readFileSync(new URL("./geo-knowledge-base/page.tsx", import.meta.url), "utf8");
     const canonical = readFileSync(new URL("../account/websites/[websiteId]/geo/page.tsx", import.meta.url), "utf8");
+    expect(legacy).toContain('query.repair === "brief"');
     expect(legacy).toContain("<GeoKnowledgeBase");
     expect(legacy).toContain('t("asset.shortcutDescription")');
     expect(legacy).toContain('localePath(locale, "/account/websites")');
     expect(legacy).not.toContain("redirect(");
-    expect(canonical).toContain("<WebsiteGeoEditor websiteId={websiteId}");
+    expect(canonical).toContain("redirect(");
+    expect(canonical).toContain("#geo");
+    const profile = readFileSync(new URL("../account/websites/[websiteId]/page.tsx", import.meta.url), "utf8");
+    expect(profile).toContain("<WebsiteProfileWithGeo");
   });
 
   it("describes Internal Link Audit as a standalone no-login public audit", () => {

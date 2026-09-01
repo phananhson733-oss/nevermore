@@ -39,6 +39,9 @@ import { confirmedDraftV3Fixture } from "../../components/tools/content-brief-v3
 import { verifyOwnedGeoBrief } from "../geo-tools/brief-reference.ts";
 import { SHARED_FROZEN } from "../geo-tools/brief-shared-fixtures.ts";
 import { assembleSharedGeoBrief, sharedGeoBriefBasis } from "../geo-tools/brief-shared.ts";
+import { geoKbDigest } from "../geo-tools/kb-digest.ts";
+import { geoQuestionSetDigest } from "../geo-tools/kb-questions.ts";
+import type { GeoKbValue } from "../geo-tools/kb-contract.ts";
 
 const START = Date.parse("2026-08-29T10:00:00.000Z");
 const SETTINGS = { tone: "explanatory", person: "second", product_mention: "gap_only" } as const;
@@ -51,6 +54,11 @@ describe("GEO branch in the existing Draft route", () => {
     const frozen = structuredClone(SHARED_FROZEN);
     Object.assign(frozen.payload, { categoryTerms: ["占星工具"] });
     Object.assign(frozen.questionSet.questions[0]!, { text: "What are the top 占星工具 tools right now?", requiredEntities: ["占星工具"] });
+    Object.assign(frozen, {
+      contentHash: geoKbDigest(frozen.payload as unknown as GeoKbValue),
+      questionSetHash: geoQuestionSetDigest(frozen.questionSet),
+      questionCount: frozen.questionSet.questions.length,
+    });
     const basis = sharedGeoBriefBasis({ frozen, context: null, questionId: "q1", questionText: "", runEvidence: null, runId: "old-brief", now: "2026-08-31T00:00:00Z" });
     const geo = await assembleSharedGeoBrief(basis, { ok: true, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: basis.must_answer.items.map(q => q.id), provenance: { method: "model", derived_from: ["kb"] } }] });
     const consumeQuota = vi.fn();

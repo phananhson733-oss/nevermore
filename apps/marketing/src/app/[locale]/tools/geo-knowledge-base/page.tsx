@@ -1,6 +1,6 @@
-// @input  -- locale, the visitor's authentication status, and the tools.geoKnowledgeBase messages
-// @output -- the knowledge-base editor, its stated limits and its FAQ
-// @pos    -- compatibility shortcut to the same website-owned GEO asset
+// @input  -- locale, optional explicit Brief-repair handoff, and the tools.geoKnowledgeBase messages
+// @output -- public knowledge-base explanation, canonical Profile entry, and bounded repair editor
+// @pos    -- compatibility information URL; editing lives only in Website Profile
 
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, getTranslations } from "next-intl/server";
@@ -15,7 +15,7 @@ import { generatePageMetadata } from "@/lib/seo";
 
 const PATH = "/tools/geo-knowledge-base";
 
-/** The editor reads the signed-in account, so this page cannot be prerendered. */
+/** Preserve the existing compatibility route's rendering boundary. */
 export const dynamic = "force-dynamic";
 
 const LIMITS = ["notSynced", "noGuess", "noGsc", "englishOnly"] as const;
@@ -38,8 +38,8 @@ export async function generateMetadata({
         : "GEO Knowledge Base: What a Model Needs to Recognise You",
     description:
       locale === "zh"
-        ? "记录品牌名与别名、品类词、买家角色、竞品的品牌名映射与已核实事实，冻结成不可变版本，AI 可见性体检的问题集由它确定性地推导出来。"
-        : "Record the names you go by, your category, who you sell to, competitors by the name a model would use, and the facts you can source. Freeze it, and the visibility check derives its questions from it.",
+        ? "在网站 Profile 底部统一维护完整 GEO 知识库，审阅有来源的角色、事实和提问集，再冻结为可供 GEO 工具直接使用的不可变版本。"
+        : "Maintain a complete GEO knowledge base in your Website Profile, review source-grounded roles, facts and questions, then freeze an immutable version for your GEO tools.",
     locale,
     path: PATH,
   });
@@ -47,15 +47,35 @@ export async function generateMetadata({
 
 export default async function GeoKnowledgeBasePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ repair?: string | readonly string[] }>;
 }) {
-  const { locale } = await params;
-  const [t, messages, authentication] = await Promise.all([
-    getTranslations({ locale, namespace: "tools.geoKnowledgeBase" }),
-    getMessages(),
-    getServerAuthenticationStatus(),
-  ]);
+  const [{ locale }, query] = await Promise.all([params, searchParams]);
+  const t = await getTranslations({ locale, namespace: "tools.geoKnowledgeBase" });
+  const repair = query.repair === "brief";
+  const repairContext = repair
+    ? await Promise.all([
+      getMessages(),
+      getServerAuthenticationStatus(),
+    ])
+    : null;
+  const repairEditor = repairContext === null
+    ? null
+    : (
+      <NextIntlClientProvider
+        messages={{
+          tools: { geoKnowledgeBase: repairContext[0].tools.geoKnowledgeBase },
+          account: { websites: { fields: repairContext[0].account.websites.fields, editor: repairContext[0].account.websites.editor } },
+        }}
+      >
+        <GeoKnowledgeBase
+          locale={locale}
+          signedIn={repairContext[1] === "authenticated"}
+        />
+      </NextIntlClientProvider>
+    );
   const home = locale === "zh" ? "首页" : "Home";
   const tools = locale === "zh" ? "工具" : "Tools";
   const faqItems = t.raw("faq.items") as readonly FaqItem[];
@@ -101,17 +121,7 @@ export default async function GeoKnowledgeBasePage({
           </div>
         </header>
 
-        <NextIntlClientProvider
-          messages={{
-            tools: { geoKnowledgeBase: messages.tools.geoKnowledgeBase },
-            account: { websites: { fields: messages.account.websites.fields, editor: messages.account.websites.editor } },
-          }}
-        >
-          <GeoKnowledgeBase
-            locale={locale}
-            signedIn={authentication === "authenticated"}
-          />
-        </NextIntlClientProvider>
+        {repairEditor}
 
         <section className="mt-14 border-t border-brand-border pt-10">
           <h2 className="text-[21px] text-text-dark-primary">

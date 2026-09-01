@@ -587,6 +587,9 @@ describe("which site the knowledge base was actually loaded for", () => {
     expect(select.selectedOptions[0]?.textContent).toBe("zh-cn");
     expect([...select.options].map((option) => option.value)).toEqual(["zh-cn", "en", "en-US", "en-GB"]);
     expect(container?.querySelector('label[for="kb-language"]')?.textContent).toBe(copy("brand.languageLabel"));
+    expect(container?.querySelector("[data-measurement-review]")).not.toBeNull();
+    expect([...container!.querySelectorAll<HTMLInputElement>("[data-measurement-field]")].map(input => input.dataset.measurementField)).toEqual(["officialName", "categoryTerms", "market", "roles"]);
+    expect([...container!.querySelectorAll<HTMLInputElement>("[data-measurement-review] input[type='checkbox']")].every(input => !input.checked)).toBe(true);
     expect(button(copy("freeze.action")).disabled).toBe(true);
     await click(button(copy("freeze.preview")));
     await choose(select, language);

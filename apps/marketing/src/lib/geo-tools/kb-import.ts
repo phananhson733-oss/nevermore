@@ -3,7 +3,7 @@
 // @pos    -- a one-time import, not a sync; the two records diverge after this and both know it
 
 import type { MarketingWebsiteProfileV1 } from "../account-websites/contracts.ts";
-import { proposeGeoAliasCandidates } from "../agents/geo-context.ts";
+import { proposeGeoKbAliases } from "./kb-aliases.ts";
 import { normalizeGeoHost } from "../agents/geo-url.ts";
 import {
   emptyGeoKbPayload,
@@ -97,10 +97,10 @@ export interface GeoKbImportSource {
 
 export function importGeoKbPayload(source: GeoKbImportSource): GeoKbPayload {
   const base = emptyGeoKbPayload(source.origin);
-  const aliases = proposeGeoAliasCandidates(
+  const aliases = proposeGeoKbAliases(
     source.origin,
     source.profile.productName,
-  ).map((candidate) => candidate.alias);
+  );
 
   const competitors: GeoKbCompetitor[] = [];
   const seen = new Set<string>();

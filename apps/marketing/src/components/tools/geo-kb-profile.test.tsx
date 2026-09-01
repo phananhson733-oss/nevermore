@@ -30,6 +30,12 @@ async function render(extra: Record<string, unknown> = {}) {
   await act(async () => root.render(<NextIntlClientProvider locale="en" messages={en}><GeoKbInheritedProfile {...props} /></NextIntlClientProvider>));
 }
 describe("complete GEO Profile copy display", () => {
+  it("allows the prepared-version view to describe its copy without calling it already frozen", async () => {
+    await render({ copyDescription: "This is the exact version currently under review." });
+    expect(host.textContent).toContain("This is the exact version currently under review.");
+    expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.asset.copyBody);
+    expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.asset.frozenCopyBody);
+  });
   it("stages exact Profile values as pending facts without calling them verified", async () => {
     const onAddFact = vi.fn();
     await render({ onAddFact });

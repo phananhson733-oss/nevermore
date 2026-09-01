@@ -203,6 +203,7 @@ export async function installGeoChainGuard(context: BrowserContext, baseURL: str
       await respond(route, Response.json({ data: { recorded: false, reason: "consent_store_unavailable" } }, { status: 202 })); return;
     }
     if (id === "GET /api/account/websites") { await respond(route, Response.json({ data: { websites: [fixture.website] } })); return; }
+    if (id === `GET /api/account/websites/${fixture.website.websiteId}`) { await respond(route, Response.json({ data: { website: fixture.website } })); return; }
     if (id === `POST /api/account/websites/${fixture.website.websiteId}/geo`) {
       await respond(route, await handleWebsiteGeoLoad(incoming, fixture.website.websiteId, { authenticate: fixture.auth,
         readWebsite: async (userId, websiteId) => userId === GEO_CHAIN_USER && websiteId === fixture.website.websiteId ? { kind: "ok", value: fixture.website } : { kind: "missing" }, loadKnowledgeBase: fixture.kbDependencies.loadKnowledgeBase })); return;

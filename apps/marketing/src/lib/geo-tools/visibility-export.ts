@@ -74,14 +74,14 @@ function contextFrom(value: unknown): VisibilityContextV2 {
 }
 function questionFrom(value: unknown): GeoQuestion {
   const q = exact(value, ["id", "text", "layer", "mode", "roleId", "requiredEntities", "templateId", "calibrated"]);
-  requireValue(typeof q.id === "string" && /^[A-Za-z0-9_.-]{1,120}$/u.test(q.id));
+  requireValue(typeof q.id === "string" && /^[A-Za-z0-9_.:/-]{1,128}$/u.test(q.id));
   requireValue(text(q.text, 500) && typeof q.layer === "string" && LAYERS.includes(q.layer) && typeof q.mode === "string" && ["retrieval", "demand"].includes(q.mode));
   requireValue(q.roleId === null || text(q.roleId, 64));
   requireValue(q.templateId === null || text(q.templateId, 120));
   requireValue(typeof q.calibrated === "boolean");
   // The frozen v1 builder concatenates role/category entities without deduping.
   // Preserve that exact array; a portable reader must not rewrite its identity.
-  requireValue(list(q.requiredEntities, 8).every((entity) => text(entity, 200, true)));
+  requireValue(list(q.requiredEntities, 32).every((entity) => text(entity, 200, true)));
   return q as unknown as GeoQuestion;
 }
 function sampleFrom(value: unknown, question: GeoQuestion, context: VisibilityContextV2, engines: readonly VisibilityEngine[], n: number): VisibilitySampleV2 {

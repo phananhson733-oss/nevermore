@@ -4,7 +4,8 @@
 import { createAdminSupabaseClient } from "../supabase/admin.ts";
 import { verifyGeoEnrichmentReport } from "./kb-enrichment.ts";
 import type { GeoKbEnrichmentReport } from "./kb-enrichment-contract.ts";
-import { parseGeoSnapshotContext, type GeoSnapshotContext } from "./snapshot-context.ts";
+import type { GeoSnapshotContext } from "./snapshot-context.ts";
+import { parseAnyGeoSnapshotContext, type AnyGeoSnapshotContext } from "./snapshot-context-v2.ts";
 
 interface ReadOutcome { readonly data: unknown; readonly error: unknown }
 export interface GeoContextStoreDependencies {
@@ -31,7 +32,7 @@ export const DEFAULT_GEO_CONTEXT_STORE_DEPENDENCIES: GeoContextStoreDependencies
   callRpc: async (name, params) => await createAdminSupabaseClient().rpc(name, params),
 };
 
-export async function readGeoSnapshotContext(input: { readonly userId: string; readonly kbId: string; readonly snapshotId: string }, dependencies = DEFAULT_GEO_CONTEXT_STORE_DEPENDENCIES): Promise<GeoContextRead<GeoSnapshotContext | null>> {
+export async function readVersionedGeoSnapshotContext(input: { readonly userId: string; readonly kbId: string; readonly snapshotId: string }, dependencies = DEFAULT_GEO_CONTEXT_STORE_DEPENDENCIES): Promise<GeoContextRead<AnyGeoSnapshotContext | null>> {
   if (![input.userId, input.kbId, input.snapshotId].every((id) => uuid.test(id))) return { kind: "missing" };
   input = { userId: input.userId.toLowerCase(), kbId: input.kbId.toLowerCase(), snapshotId: input.snapshotId.toLowerCase() };
   try {
@@ -45,10 +46,17 @@ export async function readGeoSnapshotContext(input: { readonly userId: string; r
     const result = await dependencies.readContext(input.userId, input.kbId, input.snapshotId);
     const stored = row(result.data);
     if (result.error || !stored || !owned(stored, input.userId, input.kbId) || stored.snapshot_id !== input.snapshotId) return { kind: "unavailable" };
-    const context = parseGeoSnapshotContext(stored.context);
+    const context = parseAnyGeoSnapshotContext(stored.context);
     if (context.kbId !== input.kbId || context.contentHash !== scope.context_hash || context.contentHash !== stored.content_hash || context.payloadHash !== scope.content_hash || context.questionSetHash !== scope.question_set_hash) return { kind: "unavailable" };
     return { kind: "ok", value: context };
   } catch { return { kind: "unavailable" }; }
+}
+
+/** The original entrypoint remains explicitly V1 for legacy editor callers. */
+export async function readGeoSnapshotContext(input: { readonly userId: string; readonly kbId: string; readonly snapshotId: string }, dependencies = DEFAULT_GEO_CONTEXT_STORE_DEPENDENCIES): Promise<GeoContextRead<GeoSnapshotContext | null>> {
+  const result = await readVersionedGeoSnapshotContext(input, dependencies);
+  if (result.kind !== "ok") return result;
+  return result.value?.schemaVersion === "marketing-geo-snapshot-context.v2" ? { kind: "unavailable" } : { kind: "ok", value: result.value };
 }
 
 export async function readLatestGeoEnrichmentReceipt(input: { readonly userId: string; readonly kbId: string; readonly receiptId?: string }, dependencies = DEFAULT_GEO_CONTEXT_STORE_DEPENDENCIES): Promise<GeoContextRead<GeoKbEnrichmentReport | null>> {

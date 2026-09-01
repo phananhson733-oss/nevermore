@@ -9,19 +9,22 @@ import { useTranslations } from "next-intl";
 import type { GeoKbPayload } from "../../lib/geo-tools/kb-contract.ts";
 import { parseGeoKbEnrichmentReport, type GeoKbEnrichmentReport } from "../../lib/geo-tools/kb-enrichment-contract.ts";
 import { applyGeoEnrichmentSuggestion } from "./geo-kb-enrichment-apply.ts";
+import { Button } from "../ui/button.tsx";
 
 type State = { readonly kind: "idle" | "loading" | "error" | "identity" } |
   { readonly kind: "ready"; readonly report: GeoKbEnrichmentReport; readonly baseline: GeoKbPayload };
 
-export function GeoKbEnrichment({ kbId, targetHost, draftVersion, payload, dirty, onApply }: {
+export function GeoKbEnrichment({ kbId, targetHost, draftVersion, payload, dirty, onApply, inline = false }: {
   readonly kbId: string;
   readonly targetHost: string;
   readonly draftVersion: number;
   readonly payload: GeoKbPayload;
   readonly dirty: boolean;
   readonly onApply: (payload: GeoKbPayload) => void;
+  readonly inline?: boolean;
 }) {
   const t = useTranslations("tools.geoKnowledgeBase.enrichment");
+  const Heading = inline ? "h3" : "h2";
   const [state, setState] = useState<State>({ kind: "idle" });
   const [applied, setApplied] = useState<readonly string[]>([]);
   const [conflict, setConflict] = useState(false);
@@ -58,15 +61,14 @@ export function GeoKbEnrichment({ kbId, targetHost, draftVersion, payload, dirty
     onApply(result.payload); setApplied((current) => [...current, evidenceId]); setConflict(false);
   };
   const applyButton = (id: string) => (
-    <button className="rounded-lg border border-brand-border-card px-3 py-1.5 text-sm text-brand-accent-text disabled:opacity-50"
-      disabled={stale || applied.includes(id)} type="button" onClick={() => apply(id)}>{t(applied.includes(id) ? "used" : "apply")}</button>
+    <Button variant="outline" disabled={stale || applied.includes(id)} type="button" onClick={() => apply(id)}>{t(applied.includes(id) ? "used" : "apply")}</Button>
   );
   return (
-    <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
-      <h2 className="text-[19px] text-text-dark-primary">{t("title")}</h2>
+    <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
+      <Heading className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">{t("title")}</Heading>
       <p className="mt-2 text-sm text-text-dark-secondary">{t("body")}</p>
-      <button className="mt-4 rounded-lg border border-brand-border-card px-3 py-2 text-sm text-brand-accent-text disabled:opacity-50"
-        disabled={dirty || draftVersion < 1 || state.kind === "loading"} type="button" onClick={() => void run()}>{t(state.kind === "loading" ? "loading" : "action")}</button>
+      <Button variant="outline" className="mt-4"
+        disabled={dirty || draftVersion < 1 || state.kind === "loading"} type="button" onClick={() => void run()}>{t(state.kind === "loading" ? "loading" : "action")}</Button>
       {dirty || draftVersion < 1 ? <p className="mt-2 text-sm text-text-dark-secondary">{t("saveFirst")}</p> : null}
       {state.kind === "error" || state.kind === "identity" ? <p role="alert" className="mt-3 text-sm text-brand-error">{t(state.kind === "identity" ? "identityMismatch" : "error")}</p> : null}
       {conflict ? <p role="alert" className="mt-3 text-sm text-brand-error">{t("conflict")}</p> : null}

@@ -252,6 +252,39 @@ describe("mergeKeywordLlmUsage", () => {
 });
 
 describe("createKeywordLlmClient", () => {
+  it("sends an internal strict JSON Schema while keeping the default JSON mode unchanged", async () => {
+    const capture = capturing(() => completion("{}"));
+    const client = createKeywordLlmClient({ env: DIRECT_ENV, fetchImpl: capture.fetchImpl });
+    const schema = { type: "object", properties: { value: { type: "string" } }, required: ["value"], additionalProperties: false };
+
+    await client.complete({ ...REQUEST, reasoningEffort: "low", responseJsonSchema: { name: "fixture_schema_v1", schema } });
+    await client.complete(REQUEST);
+
+    expect(bodyOf(capture.calls[0]?.init)["response_format"]).toEqual({ type: "json_schema", json_schema: { name: "fixture_schema_v1", strict: true, schema } });
+    expect(bodyOf(capture.calls[0]?.init)["reasoning_effort"]).toBe("low");
+    expect(bodyOf(capture.calls[1]?.init)["response_format"]).toEqual({ type: "json_object" });
+  });
+
+  it.each(["", "bad name", "x".repeat(65)])("rejects invalid JSON Schema name %j before fetch", async (name) => {
+    const capture = capturing(() => completion("{}"));
+    const client = createKeywordLlmClient({ env: DIRECT_ENV, fetchImpl: capture.fetchImpl });
+    await expect(client.complete({ ...REQUEST, responseJsonSchema: { name, schema: { type: "object" } } })).rejects.toBeInstanceOf(KeywordLlmError);
+    expect(capture.calls).toHaveLength(0);
+  });
+
+  it("rejects non-object, circular and oversized JSON Schemas before fetch", async () => {
+    const capture = capturing(() => completion("{}"));
+    const client = createKeywordLlmClient({ env: DIRECT_ENV, fetchImpl: capture.fetchImpl });
+    const circular: Record<string, unknown> = { type: "object" }; circular["self"] = circular;
+    const requests = [
+      { ...REQUEST, responseJsonSchema: { name: "array_schema", schema: [] } },
+      { ...REQUEST, responseJsonSchema: { name: "circular_schema", schema: circular } },
+      { ...REQUEST, responseJsonSchema: { name: "large_schema", schema: { type: "object", description: "界".repeat(11_000) } } },
+    ] as unknown as readonly KeywordLlmRequest[];
+    for (const request of requests) await expect(client.complete(request)).rejects.toBeInstanceOf(KeywordLlmError);
+    expect(capture.calls).toHaveLength(0);
+  });
+
   it.each(["none", "low"] as const)("sends reasoning_effort %s only for an explicitly opted-in request", async (reasoningEffort) => {
     const capture = capturing(() => completion("{}", { prompt_tokens: 11, completion_tokens: 7 }));
     const client = createKeywordLlmClient({ env: DIRECT_ENV, fetchImpl: capture.fetchImpl });

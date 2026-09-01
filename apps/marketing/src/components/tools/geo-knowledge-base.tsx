@@ -910,6 +910,7 @@ export function GeoKnowledgeBase({
           {payload.profileCopy === undefined ? null : <GeoKbMeasurementReview key={`${payload.profileCopy.snapshotId}:${payload.profileCopy.profileHash}`} profile={payload.profileCopy.profile} payload={payload} disabled={status.kind === "busy"} onApply={next => update(next)} />}
 
           <GeoKbEnrichment kbId={view.kbId} targetHost={view.host.replace(/^www\./u, "")}
+            inline={inline}
             draftVersion={view.draftVersion} payload={payload} dirty={dirty || status.kind === "busy"}
             onApply={(next) => update(next)} />
 
@@ -1409,7 +1410,7 @@ export function GeoKnowledgeBase({
               <Button variant="outline"
                 className="rounded-lg bg-brand-accent px-4 py-2 text-[14px] font-medium text-brand-on-accent disabled:opacity-60"
                 disabled={
-                  status.kind === "busy" || blockers.length > 0 || dirty || copyRequired || copyStale || view.draftVersion === 0
+                  status.kind === "busy" || blockers.length > 0 || dirty || (repair === null && (copyRequired || copyStale)) || view.draftVersion === 0
                 }
                 onClick={() => {
                   void freeze();

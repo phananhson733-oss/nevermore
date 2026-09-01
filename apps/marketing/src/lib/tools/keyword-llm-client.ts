@@ -1,5 +1,5 @@
-// @input  -- provider env/options, an injected fetch, one task-deadlined request with optional explicit reasoning opt-in
-// @output -- a request-deadlined JSON completion with model/usage, or KeywordLlmError
+// @input  -- provider env/options, an injected fetch, one task-deadlined request with optional reasoning/schema controls
+// @output -- request-deadlined JSON mode/strict-schema completion with model/usage, or KeywordLlmError
 // @pos    -- the marketing site's only LLM transport; consumed by keyword-prompts.ts
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -8,7 +8,7 @@
  * worker-side package and pulling it in here would drag the whole artifact
  * pipeline (and its node-only dependencies) into a Next bundle. So this is a
  * deliberately thin re-statement of the one thing the Keyword Opportunity Map
- * needs — a bounded Chat Completions call in JSON mode — with the same
+ * needs — a bounded Chat Completions call in JSON or strict-schema mode — with the same
  * transport safeguards the worker client already proved out: redirects
  * refused, a hard deadline, a decoded-body ceiling, and no response text in any
  * error or log.
@@ -165,8 +165,30 @@ export interface KeywordLlmRequest {
   readonly maxOutputTokens: number;
   /** Positive safe-integer task deadline up to the guarded route ceiling. */
   readonly timeoutMs?: number;
+  /** Internal structured-output contract. Omitted callers retain JSON mode. */
+  readonly responseJsonSchema?: {
+    readonly name: string;
+    readonly schema: Readonly<Record<string, unknown>>;
+  };
   /** Explicit caller opt-in only; omission leaves the provider's reasoning policy unchanged. */
   readonly reasoningEffort?: "none" | "low";
+}
+
+const MAX_KEYWORD_LLM_REQUEST_SCHEMA_BYTES = 32 * 1024;
+const SAFE_RESPONSE_SCHEMA_NAME = /^[A-Za-z0-9_-]{1,64}$/u;
+function responseFormat(request: KeywordLlmRequest): unknown {
+  const configured = request.responseJsonSchema;
+  if (configured === undefined) return { type: "json_object" };
+  if (!SAFE_RESPONSE_SCHEMA_NAME.test(configured.name) || typeof configured.schema !== "object" || configured.schema === null || Array.isArray(configured.schema)) {
+    throw new KeywordLlmError("not_configured", "LLM response JSON Schema is invalid.");
+  }
+  try {
+    const encoded = JSON.stringify(configured.schema);
+    if (new TextEncoder().encode(encoded).byteLength > MAX_KEYWORD_LLM_REQUEST_SCHEMA_BYTES) throw new Error("oversized");
+  } catch {
+    throw new KeywordLlmError("not_configured", "LLM response JSON Schema is invalid.");
+  }
+  return { type: "json_schema", json_schema: { name: configured.name, strict: true, schema: configured.schema } };
 }
 
 /**
@@ -583,7 +605,7 @@ class ChatCompletionsClient implements KeywordLlmClient {
       // wrote prose around the object" failure that would otherwise tempt a
       // free-text salvage path, and a salvage path is exactly how injected
       // page text gets read as output.
-      response_format: { type: "json_object" },
+      response_format: responseFormat(request),
       messages: [
         { role: "system", content: request.system },
         { role: "user", content: request.user },

@@ -301,6 +301,30 @@ describe("save draft", () => {
     const data = (await body(response)).data as { blockers: string[] };
     expect(data.blockers).toContain("no_confirmed_competitor");
   });
+
+  it("checks the exact active context roles after saving instead of suppressing all role input checks", async () => {
+    const payload = { ...READY, roles: [{ ...READY.roles[0]!, label: "中文角色" }] };
+    const response = await handleGeoKbSaveDraft(
+      post("/api/tools/geo-knowledge-base/draft", { kbId: "kb-1", payload, baseVersion: 2 }),
+      deps({
+        saveDraft: async () => ({
+          kind: "ok",
+          value: {
+            draftVersion: 3,
+            updatedAt: "2026-08-29T10:00:00.000Z",
+            context: {
+              activeRoleIds: ["r1"],
+              skippedLayers: [],
+              questionSetHash: "a".repeat(64),
+              contentHash: "b".repeat(64),
+            },
+          },
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(((await body(response)).data as { blockers: string[] }).blockers).toContain("role_terms_not_english");
+  });
 });
 
 describe("freeze", () => {

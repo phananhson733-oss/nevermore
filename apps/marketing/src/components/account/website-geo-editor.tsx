@@ -9,10 +9,12 @@ import { useLocale, useTranslations } from "next-intl";
 import { normalizeAccountWebsiteUrl } from "../../lib/account-websites/contracts.ts";
 import { GeoKnowledgeBase } from "../tools/geo-knowledge-base.tsx";
 import { isGeoKbView, type GeoKbView } from "../tools/geo-kb-wire.ts";
+import { parseGeoKbEditorViewV2, type GeoKbEditorViewV2 } from "../tools/geo-kb-v2-wire.ts";
+import { GeoKnowledgeBaseV2 } from "../tools/geo-knowledge-base-v2.tsx";
 
 interface WebsiteGeoData {
   readonly website: { readonly websiteId: string; readonly origin: string; readonly host: string; readonly profileState: string };
-  readonly knowledgeBase: GeoKbView;
+  readonly knowledgeBase: GeoKbView | GeoKbEditorViewV2;
 }
 type State =
   | { readonly kind: "loading" }
@@ -25,20 +27,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readData(value: unknown, websiteId: string): WebsiteGeoData | null {
   if (!isRecord(value) || !isRecord(value["data"])) return null;
-  const { website, knowledgeBase } = value["data"];
+  const { website, knowledgeBase: rawKnowledgeBase } = value["data"];
+  const knowledgeBase = isRecord(rawKnowledgeBase) && rawKnowledgeBase.schemaVersion === "marketing-geo-kb-editor.v2"
+    ? parseGeoKbEditorViewV2(rawKnowledgeBase) : isGeoKbView(rawKnowledgeBase) ? rawKnowledgeBase : null;
   if (!isRecord(website) || website["websiteId"] !== websiteId ||
       typeof website["origin"] !== "string" || typeof website["host"] !== "string" ||
       typeof website["profileState"] !== "string" ||
       !["not_generated", "draft", "confirmed", "unconfirmed_changes"].includes(website["profileState"]) ||
-      !isGeoKbView(knowledgeBase)) return null;
+      knowledgeBase === null) return null;
   const site = normalizeAccountWebsiteUrl(website["origin"]);
   const kbSite = normalizeAccountWebsiteUrl(knowledgeBase.origin);
   if (site === null || kbSite === null || site.canonicalSiteKey !== kbSite.canonicalSiteKey ||
-      (knowledgeBase.profile != null && knowledgeBase.profile.reference.websiteId !== websiteId)) return null;
+      (knowledgeBase.profile != null && knowledgeBase.profile.reference.websiteId !== websiteId) ||
+      (knowledgeBase.payload.profileCopy !== undefined && knowledgeBase.payload.profileCopy.websiteId !== websiteId)) return null;
   return { website: { websiteId, origin: website["origin"], host: website["host"], profileState: website["profileState"] }, knowledgeBase };
 }
 
-function WebsiteGeoLoader({ websiteId }: { readonly websiteId: string }) {
+interface WebsiteGeoEditorProps {
+  readonly websiteId: string;
+  readonly inline?: boolean;
+  readonly confirmedRevision?: number;
+}
+function WebsiteGeoLoader({ websiteId, inline = false, confirmedRevision }: WebsiteGeoEditorProps) {
   const locale = useLocale();
   const t = useTranslations("tools.geoKnowledgeBase");
   const [state, setState] = useState<State>({ kind: "loading" });
@@ -76,19 +86,22 @@ function WebsiteGeoLoader({ websiteId }: { readonly websiteId: string }) {
   );
   return (
     <div>
-      <nav className="flex gap-4 text-sm text-brand-accent-text" aria-label={t("asset.title")}>
+      {inline ? null : <nav className="flex gap-4 text-sm text-brand-accent-text" aria-label={t("asset.title")}>
         <a href={`/${locale}/account/websites`}>{t("asset.backToWebsites")}</a>
         <a href={`/${locale}/account/websites/${websiteId}`}>{t("asset.editProfile")}</a>
-      </nav>
-      <h1 className="mt-4 text-2xl text-text-dark-primary">{t("asset.title")}</h1>
-      <GeoKnowledgeBase key={state.data.knowledgeBase.kbId} locale={locale} signedIn
+      </nav>}
+      {inline ? null : <h1 className="mt-4 text-2xl text-text-dark-primary">{t("asset.title")}</h1>}
+      {"schemaVersion" in state.data.knowledgeBase ? <GeoKnowledgeBaseV2 key={state.data.knowledgeBase.kbId}
+        initialView={state.data.knowledgeBase} locale={locale} canonicalWebsiteId={websiteId} inline={inline}
+        {...(confirmedRevision === undefined ? {} : { confirmedProfileRevision: confirmedRevision })} /> : <GeoKnowledgeBase key={state.data.knowledgeBase.kbId} locale={locale} signedIn
         initialUrl={state.data.website.origin} initialView={state.data.knowledgeBase}
-        canonicalWebsiteId={websiteId} profileState={state.data.website.profileState} />
+        canonicalWebsiteId={websiteId} profileState={state.data.website.profileState} inline={inline}
+        {...(confirmedRevision === undefined ? {} : { confirmedProfileRevision: confirmedRevision })} />}
     </div>
   );
 }
 
-export function WebsiteGeoEditor({ websiteId }: { readonly websiteId: string }) {
+export function WebsiteGeoEditor(props: WebsiteGeoEditorProps) {
   // New identity remounts once; ordinary rerenders never refetch over a draft.
-  return <WebsiteGeoLoader key={websiteId} websiteId={websiteId} />;
+  return <WebsiteGeoLoader key={props.websiteId} {...props} />;
 }

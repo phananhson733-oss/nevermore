@@ -139,6 +139,7 @@ describe("default GEO knowledge-base load", () => {
     const loaded = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadKnowledgeBase({ userId: USER_ID, url: "https://example.com/" });
     expect(loaded).toMatchObject({ kind: "ok", value: { frozen: { payload: SNAPSHOT.payload } } });
   });
+
   it("reads the owned existing knowledge base without ensuring or creating a site", async () => {
     const loadedByUrl = await DEFAULT_GEO_KB_HANDLER_DEPENDENCIES.loadKnowledgeBase({ userId: USER_ID, url: "https://example.com" });
     vi.clearAllMocks();
