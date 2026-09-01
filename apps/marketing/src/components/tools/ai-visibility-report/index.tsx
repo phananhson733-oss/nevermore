@@ -85,7 +85,7 @@ export function AiVisibilityReport({ report, locale }: { readonly report: AnyVis
     <EngineTable report={report} />
     {sufficient && <LayerTable metrics={report.metrics} v2={v2?.metrics ?? null} />}
     {v2 !== null && sufficient && <div data-section="gaps"><VisibilityGapEvidence report={v2} locale={locale} /></div>}
-    <SourceTable domains={report.citedDomains} truncated={report.limits.includes("citationEvidenceTruncated")} />
+    <SourceTable domains={report.citedDomains} references={v2?.siteEvidence?.references ?? []} truncated={report.limits.includes("citationEvidenceTruncated")} />
     <QuestionEvidence questions={report.questions} />
     {sufficient && report.comparison !== null && <AiVisibilityComparison comparison={report.comparison} locale={locale} />}
     {v2 !== null && <ReportExports report={v2} locale={locale} />}

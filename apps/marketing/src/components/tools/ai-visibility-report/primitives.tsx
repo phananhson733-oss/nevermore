@@ -14,6 +14,26 @@ export const HEAD = "px-3 py-3 text-left text-xs font-normal text-text-dark-seco
 export const ACTION = "inline-flex min-h-10 items-center justify-center gap-2 border border-brand-border-strong bg-brand-panel px-3 py-2 text-sm text-text-dark-primary transition-colors hover:bg-brand-panel-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent-text disabled:opacity-50";
 export const SUMMARY = "cursor-pointer text-sm text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent-text";
 
+export interface EvidenceUrlPartition { readonly safeUrls: readonly string[]; readonly omittedCount: number }
+
+export function partitionEvidenceUrls(urls: readonly string[]): EvidenceUrlPartition {
+  const safeUrls: string[] = [];
+  let omittedCount = 0;
+  for (const raw of urls) {
+    try {
+      const url = new URL(raw);
+      if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) {
+        omittedCount += 1;
+        continue;
+      }
+      safeUrls.push(url.href);
+    } catch {
+      omittedCount += 1;
+    }
+  }
+  return { safeUrls, omittedCount };
+}
+
 export function SectionTitle({ title, note, count }: { readonly title: string; readonly note?: string; readonly count?: number }) {
   return <div className="mb-5 flex flex-wrap items-start justify-between gap-2">
     <div><h3 className="text-base font-semibold text-brand-accent-text">{title}</h3>{note && <p className={`mt-2 max-w-3xl ${NOTE}`}>{note}</p>}</div>
@@ -42,11 +62,15 @@ export function Rate({ proportion, unit, prominent = false }: { readonly proport
   </div>;
 }
 
-export function EvidenceLinks({ urls }: { readonly urls: readonly string[] }) {
-  return <ul className="grid min-w-0 gap-2">{urls.flatMap((raw) => {
+type EvidenceLinksProps =
+  | { readonly urls: readonly string[]; readonly partition?: never }
+  | { readonly urls?: never; readonly partition: EvidenceUrlPartition };
+
+export function EvidenceLinks(props: EvidenceLinksProps) {
+  const { safeUrls } = props.partition ?? partitionEvidenceUrls(props.urls);
+  return <ul className="grid min-w-0 gap-2">{safeUrls.flatMap((raw) => {
     try {
       const url = new URL(raw);
-      if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) return [];
       const label = `${url.host}${url.pathname === "/" ? "" : url.pathname}`;
       return [<li key={raw} className="min-w-0"><a href={url.href} title={url.href} target="_blank" rel="noopener noreferrer" className="inline-block max-w-full break-all text-sm text-brand-accent-text underline decoration-brand-accent-text/40 underline-offset-4 hover:decoration-brand-accent-text">{label}</a></li>];
     } catch { return []; }

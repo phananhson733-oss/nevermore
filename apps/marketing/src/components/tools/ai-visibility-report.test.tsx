@@ -35,11 +35,24 @@ function legacyReport(): VisibilityReport {
 const metric = (name: string) => host.querySelector(`[data-metric="${name}"]`);
 
 describe("Artifact-aligned visibility report", () => {
+  it("keeps the production EN and ZH catalogs synchronized with the report message source", () => {
+    expect(en.tools.aiVisibility.report).toEqual(aiVisibilityReportMessages.en);
+    expect(zh.tools.aiVisibility.report).toEqual(aiVisibilityReportMessages.zh);
+  });
   it("starts with four readable measured metrics and moves technical metadata into a disclosure", () => {
     mount(visibilityReportFixtureV2());
     expect([...host.querySelectorAll("[data-metric]")].map((node) => node.getAttribute("data-metric"))).toEqual(["questionsMentioned", "questionsCited", "coverage", "sov"]);
+    expect([...host.querySelectorAll("[data-metric]")].map((node) => node.getAttribute("data-metric-tone"))).toEqual(["accent", "info", "warning", "primary"]);
+    expect([...host.querySelectorAll("[data-metric] h4")].map((node) => node.textContent)).toEqual(["Natural mentions", "Own-site citations", "Answer coverage", "Brand-present answer share"]);
     expect(metric("questionsMentioned")?.textContent).toContain("0 / 1 questions");
+    expect(metric("questionsMentioned")?.textContent).not.toContain("Unprompted questions with at least one brand mention");
+    expect(metric("questionsCited")?.textContent).not.toContain("Unprompted retrieval questions with at least one citation");
     expect(metric("coverage")?.textContent).toContain("1 / 1");
+    expect(metric("coverage")?.textContent).toContain("Every frozen question received a valid answer");
+    expect(metric("coverage")?.textContent).not.toContain("All frozen questions with at least one valid answer");
+    expect(metric("sov")?.textContent).not.toContain("SOV counts your brand among answers");
+    expect(host.textContent).toContain("Unprompted questions with at least one brand mention");
+    expect(host.textContent).toContain("SOV counts your brand among answers");
     expect(host.querySelector('[data-section="metadata"]')?.tagName).toBe("DETAILS");
     expect(host.querySelector('[data-section="metadata"]')?.hasAttribute("open")).toBe(false);
     expect(host.querySelector('[data-section="metrics"]')!.compareDocumentPosition(host.querySelector('[data-section="metadata"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -82,11 +95,12 @@ describe("Artifact-aligned visibility report", () => {
   });
   it("retains historical V1 measurements but labels unretained answer evidence and SOV honestly", () => {
     const report = legacyReport();
-    mount({ ...report, questions: report.questions.map((question) => ({ ...question, samples: [] })), limits: ["historicalSamplesUnavailable"] });
+    mount({ ...report, questions: report.questions.map((question) => ({ ...question, samples: [] })), citedDomains: [{ domain: "source.test", answers: 2, isOwn: false, isCompetitor: false, sampleUrls: [] }], limits: ["historicalSamplesUnavailable"] });
     expect(metric("sov")?.textContent).toContain("Not recorded in V1");
     expect(metric("coverage")?.textContent).toContain("1 / 1");
     expect(host.textContent).toContain("Original answer evidence was not retained");
     expect(host.textContent).not.toContain("No answer to this question came back");
+    expect(host.querySelector('[data-section="sources"]')?.textContent).toContain("Not independently read");
     expect([...host.querySelectorAll("button")].some((button) => button.textContent?.includes("Download run JSON"))).toBe(false);
   });
   it("reads a saved V1 summary without constructing unavailable calibration or citation-error fields", () => {
@@ -117,6 +131,55 @@ describe("Artifact-aligned visibility report", () => {
     expect(engineRows[1]?.querySelector('[data-rate-unit]')).toBeNull();
     expect(metric("coverage")?.textContent).toContain("5 / 5");
   });
+  it("collapses a single-engine breakdown because it duplicates the headline", () => {
+    mount(visibilityReportFixtureV2());
+    const section = host.querySelector('[data-section="engines"]');
+    expect(section?.tagName).toBe("DETAILS");
+    expect(section?.hasAttribute("open")).toBe(false);
+    expect(section?.querySelector("summary")?.textContent).toContain("By engine");
+    expect(section?.querySelector("tbody tr")?.textContent).toContain("ChatGPT");
+  });
+  it.each([
+    { locale: "en", names: ["Problem", "Discovery", "Comparison", "Evaluation", "Branded"], missing: "No questions in this run" },
+    { locale: "zh", names: ["问题", "发现", "对比", "选型", "品牌词"], missing: "本轮没有这类问题" },
+  ] as const)("renders all five intent layers and marks missing layers as not asked ($locale)", ({ locale, names, missing }) => {
+    const initial = visibilityReportFixtureV2();
+    const definitions = [
+      { ...initial.questions[0]!.definition, id: "q-discovery", text: "Which tool is best?", layer: "discovery" as const },
+      { ...initial.questions[0]!.definition, id: "q-comparison", text: "How does Acme compare with Rival?", layer: "comparison" as const },
+      { ...initial.questions[0]!.definition, id: "q-branded", text: "What is Acme?", layer: "branded" as const, mode: "demand" as const },
+    ];
+    const samples = [
+      { ...initial.questions[0]!.samples[0]!, questionId: "q-discovery", slotId: "chatgpt:q-discovery:1" },
+      { ...initial.questions[0]!.samples[0]!, questionId: "q-comparison", slotId: "chatgpt:q-comparison:1", mentioned: true },
+      { ...initial.questions[0]!.samples[0]!, questionId: "q-branded", slotId: "chatgpt:q-branded:1", mentioned: true, webSearchPerformed: false, cited: false },
+    ];
+    mount(visibilityReportFixtureV2({ questions: definitions, samples }), locale);
+    const rows = [...host.querySelectorAll('[data-section="layers"] tbody tr')];
+    expect(rows.map((row) => row.querySelector('th[scope="row"]')?.textContent)).toEqual(names);
+    for (const row of [rows[0], rows[3]]) {
+      expect([...row!.querySelectorAll("td")].map((cell) => cell.textContent)).toEqual([missing, "—", "—", "—"]);
+      expect(row?.querySelector("[data-rate-unit]")).toBeNull();
+      expect(row?.textContent).not.toMatch(/[0-9%]/);
+    }
+    expect(rows[1]?.textContent).not.toContain(missing);
+    expect(rows[1]?.querySelectorAll("td")[3]?.textContent).toBe("1 / 1");
+    expect(rows[2]?.textContent).toContain("100%");
+    expect(rows[2]?.querySelectorAll("td")[3]?.textContent).toBe("1 / 1");
+    expect(rows[4]?.querySelectorAll("td")[3]?.textContent).toBe("1 / 1");
+  });
+  it("shows the complete intent taxonomy in V1 without inventing missing-layer rates", () => {
+    mount(legacyReport());
+    const rows = [...host.querySelectorAll('[data-section="layers"] tbody tr')];
+    expect(rows.map((row) => row.querySelector('th[scope="row"]')?.textContent)).toEqual(["Problem", "Discovery", "Comparison", "Evaluation", "Branded"]);
+    const missingRows = rows.filter((row) => row.textContent?.includes("No questions in this run"));
+    expect(missingRows).toHaveLength(4);
+    for (const row of missingRows) {
+      expect([...row.querySelectorAll("td")].map((cell) => cell.textContent)).toEqual(["No questions in this run", "—"]);
+      expect(row.querySelector("[data-rate-unit]")).toBeNull();
+    }
+    expect(rows[1]?.querySelectorAll('[data-rate-unit="answers"]')).toHaveLength(2);
+  });
   it("withholds rate, stage, gap and comparison conclusions for insufficient runs", () => {
     const report = visibilityReportFixtureV2({ samples: [] });
     mount(report);
@@ -136,6 +199,57 @@ describe("Artifact-aligned visibility report", () => {
     expect(sources?.querySelector("a")?.textContent).toBe("source.test/path");
     expect(sources?.querySelectorAll("a").length).toBe(1);
   });
+  it("adds evidenced source types and reports omitted unsafe source URLs without inventing domain-level presence", () => {
+    const report = visibilityReportFixtureV2();
+    const typedReport: AnyVisibilityReport = {
+      ...report,
+      limits: [...report.limits, "citationEvidenceTruncated" as const],
+      citedDomains: [
+        { domain: "source.test", answers: 2, isOwn: false, isCompetitor: false, sampleUrls: ["https://source.test/path?tracking=long", "javascript:alert(1)"] },
+        { domain: "mixed.test", answers: 1, isOwn: false, isCompetitor: true, sampleUrls: ["https://mixed.test/compare"] },
+        { domain: "unknown.test", answers: 1, isOwn: false, isCompetitor: false, sampleUrls: [] },
+        { domain: "unsafe-only.test", answers: 1, isOwn: false, isCompetitor: false, sampleUrls: ["javascript:alert(2)"] },
+      ],
+      siteEvidence: {
+        schemaVersion: "marketing-geo-site-evidence.v1",
+        collectedAt: "2026-08-31T00:02:00.000Z",
+        index: { scope: "declared_and_reachable_inventory", status: "complete", targetHost: "acme.test", discoveredCount: 0, sitemapUrls: [], inventorySources: [], limits: [], pages: [] },
+        references: [
+          { id: "ref-1", url: "https://www.source.test/path?tracking=long", finalUrl: "https://www.source.test/path?tracking=long", fetchedAt: "2026-08-31T00:02:00.000Z", state: "read", reason: null, httpStatus: 200, contentSha256: "a".repeat(64), contentMethod: "raw_html", bodyComplete: true, title: "Source", headings: [], pageType: "listicle", pageTypeBasis: "title_headings", ownPresence: true, ownPresenceBasis: "brand_text", ownPresenceExcerpt: "Acme", matches: [], sampleSlots: ["chatgpt:q1:1"] },
+          { id: "ref-2", url: "https://mixed.test/compare", finalUrl: "https://mixed.test/compare", fetchedAt: "2026-08-31T00:02:00.000Z", state: "read", reason: null, httpStatus: 200, contentSha256: "b".repeat(64), contentMethod: "raw_html", bodyComplete: true, title: "Compare", headings: [], pageType: "comparison", pageTypeBasis: "title_headings", ownPresence: false, ownPresenceBasis: "none", ownPresenceExcerpt: null, matches: [], sampleSlots: ["chatgpt:q1:1"] },
+          { id: "ref-3", url: "https://mixed.test/docs", finalUrl: "https://mixed.test/docs", fetchedAt: "2026-08-31T00:02:00.000Z", state: "read", reason: null, httpStatus: 200, contentSha256: "c".repeat(64), contentMethod: "raw_html", bodyComplete: true, title: "Docs", headings: [], pageType: "documentation", pageTypeBasis: "title_headings", ownPresence: false, ownPresenceBasis: "none", ownPresenceExcerpt: null, matches: [], sampleSlots: ["chatgpt:q1:1"] },
+        ],
+        referenceOmittedCount: 0,
+        citability: [],
+        citabilityOmittedCount: 0,
+      },
+    };
+    mount(typedReport);
+    const sources = host.querySelector('[data-section="sources"]');
+    expect([...sources!.querySelectorAll("thead th")].map((cell) => cell.textContent)).toEqual(["Domain", "Citing answers", "Source type", "Identity"]);
+    const rows = [...sources!.querySelectorAll("tbody tr")];
+    expect(rows[0]?.textContent).toContain("Listicle");
+    expect(rows[0]?.querySelectorAll("td")[0]?.textContent).toBe("2");
+    expect(rows[0]?.textContent).toContain("1 source page could not be displayed safely.");
+    expect(rows[0]?.textContent).not.toContain("javascript:alert(1)");
+    expect(rows[1]?.textContent).toContain("Multiple");
+    expect(rows[2]?.textContent).toContain("Not independently read");
+    expect(rows[3]?.querySelectorAll("td")[0]?.textContent).toBe("1");
+    expect(rows[3]?.textContent).toContain("1 source page could not be displayed safely.");
+    expect(rows[3]?.textContent).not.toContain("Source page URLs were not retained.");
+    expect(sources?.textContent).toContain("retained lower bound");
+    expect(sources?.textContent).not.toContain("Present on own page");
+
+    mount(typedReport, "zh");
+    const zhSources = host.querySelector('[data-section="sources"]');
+    expect([...zhSources!.querySelectorAll("thead th")].map((cell) => cell.textContent)).toEqual(["域名", "被引回答数", "来源类型", "身份"]);
+    const zhRows = [...zhSources!.querySelectorAll("tbody tr")];
+    expect(zhRows[0]?.textContent).toContain("榜单页");
+    expect(zhRows[1]?.textContent).toContain("多种类型");
+    expect(zhRows[2]?.textContent).toContain("未独立读取");
+    expect(zhRows[3]?.textContent).toContain("1 条来源页面无法安全展示。");
+    expect(zhSources?.textContent).toContain("已保留证据的下限");
+  });
   it("exports actual V2 evidence through the existing portable format", async () => {
     const blobs: Blob[] = [];
     vi.stubGlobal("URL", class extends URL { static override createObjectURL(blob: Blob) { blobs.push(blob); return "blob:report"; } static override revokeObjectURL() {} });
@@ -154,9 +268,9 @@ describe("Artifact-aligned visibility report", () => {
   });
   it("renders the same semantic hierarchy in Chinese", () => {
     mount(visibilityReportFixtureV2(), "zh");
-    expect(metric("questionsMentioned")?.textContent).toContain("提及率");
+    expect(metric("questionsMentioned")?.textContent).toContain("自然提及");
     expect(metric("questionsMentioned")?.textContent).toContain("0 / 1 个问题");
-    expect(metric("sov")?.textContent).toContain("SOV");
+    expect(metric("sov")?.textContent).toContain("品牌出现回答占比");
     expect(host.textContent).not.toContain("tools.aiVisibility.report");
   });
   it("does not label paired question inference as a difference confidence interval", () => {
