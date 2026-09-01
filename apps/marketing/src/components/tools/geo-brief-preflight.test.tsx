@@ -40,6 +40,8 @@ it("reads exact evidence after the list and labels empty-fact generation as stru
   expect(host.querySelector("[data-geo-input-evidence]")?.textContent).toContain("quality.inputNoFacts");
   expect(host.textContent).toContain("quality.inputNoProfile");
   expect(host.querySelector("[data-run-geo-brief]")?.textContent).toBe("quality.generateStructure");
+  expect(host.querySelector("[data-geo-gap]")).toBeNull();
+  expect(host.querySelector("[data-geo-role]")).toBeNull();
   expect(JSON.parse(host.querySelector("[data-geo-source-summary]")?.textContent ?? "null")).toEqual(summary);
 });
 it("keeps flawed old questions readable but blocks paid generation with a repair path", async () => {

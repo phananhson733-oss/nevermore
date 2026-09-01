@@ -35,7 +35,7 @@ import {
 } from "./geo-kb-wire.ts";
 import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { GeoKbEnrichment } from "./geo-kb-enrichment.tsx";
-import { pendingGeoFeatureFact } from "./geo-kb-feature-candidates.ts";
+import { pendingGeoProfileFact } from "./geo-kb-feature-candidates.ts";
 import { isSupportedGeoQuestionLanguage } from "../../lib/geo-tools/asset-context.ts";
 import { consumeGeoKnowledgeRepair, GEO_BRIEF_RETURN_KEY, writeGeoBriefReturn, type GeoKnowledgeRepair } from "../../lib/geo-tools/brief-knowledge-handoff.ts";
 import { localePath } from "../../lib/locale-path.ts";
@@ -798,9 +798,12 @@ export function GeoKnowledgeBase({
         <Fragment key={view.kbId}>
           {view.profile !== undefined || canonicalWebsiteId !== undefined ? (
             <div id="kb-repair-profile" className="scroll-mt-24"><GeoKbInheritedProfile profile={view.profile ?? null} locale={locale} repairMode={repair !== null}
-              facts={payload.facts} onAddFeature={(feature) => {
-                const candidate = pendingGeoFeatureFact(feature, payload.facts);
-                if (candidate.status === "ready") update({ facts: [...payload.facts, candidate.fact] });
+              facts={payload.facts} onAddFact={(key, value) => {
+                const candidate = pendingGeoProfileFact(key, value, payload.facts);
+                if (candidate.status === "ready") {
+                  update({ facts: [...payload.facts, candidate.fact] });
+                  window.requestAnimationFrame?.(() => document.getElementById("kb-repair-facts")?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
+                }
               }}
               {...(canonicalWebsiteId === undefined ? {} : { websiteId: canonicalWebsiteId })}
               {...(profileState === undefined ? {} : { profileState })} /></div>

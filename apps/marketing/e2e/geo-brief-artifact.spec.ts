@@ -136,7 +136,9 @@ for (const [locale, viewport, kind] of [["en", "desktop", "A"], ["zh", "desktop"
     }
     await expect(page.locator("[data-geo-role]")).toContainText(role.label);
     await expect(page.locator("[data-geo-role]")).toContainText(role.segment);
-    await expect(page.locator("[data-geo-gap]")).toHaveText(messages.geoBrief.artifact.noGap);
+    await expect(page.locator("[data-geo-role]")).toHaveCSS("border-top-width", "0px");
+    await expect(page.locator("[data-geo-role]")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(page.locator("[data-geo-gap]")).toHaveCount(0);
     await expect(page.locator("[data-geo-input-evidence]")).toContainText(messages.geoBrief.quality.inputFacts.replace("{count}", "1"));
     await expect(page.locator("[data-geo-input-evidence]")).not.toContainText(messages.geoBrief.quality.inputNoProfile);
     // List metadata alone is not evidence of a successful exact-context read.
@@ -174,6 +176,8 @@ for (const [locale, viewport, kind] of [["en", "desktop", "A"], ["zh", "desktop"
       await expect(page.locator("[data-geo-question-preview]")).toHaveText(fixture.question.text);
     }
     await expect(page.locator("[data-geo-gap]")).toHaveText(messages.geoBrief.artifact[kind === "A" ? "gapA" : "gapD"]);
+    await expect(page.locator("[data-geo-gap]")).toHaveCSS("border-top-width", "0px");
+    await expect(page.locator("[data-geo-gap]")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     expect(apiCount(guard, "geo-brief/run")).toBe(0);
     expect(fixture.assemblyCalls).toBe(0);
     const providerCalls = fixture.providerCalls;
@@ -226,7 +230,11 @@ for (const [locale, viewport, kind] of [["en", "desktop", "A"], ["zh", "desktop"
     expect(brief.geo_origin.promptset_ref.hash).toBe(fixture.frozen.questionSetHash);
     expect(guard.briefs).toEqual([brief]);
     await expect(result.locator('[data-brief-section="must_answer"] tbody tr')).toHaveCount(brief.must_answer.items.length);
-    await expect(result.locator('[data-brief-section="fact_table"] tbody tr')).toHaveCount(brief.fact_table.length);
+    const visibleFacts = brief.fact_table.filter(fact => fact.value !== null || fact.reason !== "unverified"
+      || !/^(productName|oneLinePositioning|coreFeatures\[\d+\])$/.test(fact.label));
+    await expect(result.locator('[data-brief-section="fact_table"] tbody tr')).toHaveCount(visibleFacts.length);
+    const excludedProfileFacts = brief.fact_table.length - visibleFacts.length;
+    await expect(result.locator("[data-geo-profile-facts-excluded]")).toHaveCount(excludedProfileFacts > 0 ? 1 : 0);
     const [mdDownload] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: messages.geoBrief.actions.downloadMarkdown, exact: true }).click()]);
     const markdown = await downloadedText(mdDownload);
     expect(markdown).toBe(sharedGeoBriefMarkdown(brief));
@@ -246,7 +254,7 @@ for (const [locale, viewport, kind] of [["en", "desktop", "A"], ["zh", "desktop"
     await expect(page.locator('[data-geo-view="result"]')).toBeDisabled();
     await expect(result).toHaveCount(0);
     await expect(page.locator("[data-geo-role]")).toContainText(role.label);
-    await expect(page.locator("[data-geo-gap]")).toHaveText(messages.geoBrief.artifact.noGap);
+    await expect(page.locator("[data-geo-gap]")).toHaveCount(0);
     // Returning to the original question cannot resurrect its old run context.
     await page.locator("#geo-brief-question").selectOption(fixture.question.id);
     await page.locator("[data-run-geo-brief]").click();
@@ -260,7 +268,7 @@ for (const [locale, viewport, kind] of [["en", "desktop", "A"], ["zh", "desktop"
     await expect(page.locator("[data-geo-question-preview]")).toHaveCount(0);
     await expect(page.locator('[data-geo-view="result"]')).toBeDisabled();
     await expect(page.locator("[data-run-geo-brief]")).toBeDisabled();
-    await expect(page.locator("[data-geo-role]")).not.toContainText(role.label);
+    await expect(page.locator("[data-geo-role]")).toHaveCount(0);
     // The existing Visibility-only Flight auth fixture changes signed-out SSR
     // props and causes a known hydration retry. It is not a production finding
     // and must never exempt any Brief error or any other React/runtime error.

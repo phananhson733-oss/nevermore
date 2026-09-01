@@ -3,6 +3,14 @@ import { geoBriefFixture } from "@sf/public-tools/content-brief/geo-fixtures";
 import { sharedGeoBriefJson, sharedGeoBriefMarkdown } from "./brief-shared-export.ts";
 
 describe("shared GEO Brief evidence-aware exports", () => {
+  it("collapses unverified Profile rows in Markdown while preserving exact JSON", async () => {
+    const brief = await geoBriefFixture();
+    brief.fact_table.push({ id: "FP1", label: "productName", value: null, reason: "unverified", evidence_refs: [] });
+    const markdown = sharedGeoBriefMarkdown(brief);
+    expect(markdown).toContain("1 website-profile field lacks per-field source authority and is excluded from writable facts.");
+    expect(markdown).not.toContain("FP1 productName: null");
+    expect(sharedGeoBriefJson(brief)).toContain('"label": "productName"');
+  });
   it("exports empty facts as structure-only without changing the legacy payload or fingerprint", async () => {
     const brief = await geoBriefFixture();
     brief.fact_table = []; brief.evidence.facts = []; brief.evidence.samples = [];

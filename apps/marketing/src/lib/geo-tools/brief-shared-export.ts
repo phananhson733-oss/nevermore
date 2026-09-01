@@ -20,7 +20,8 @@ export function sharedGeoBriefMarkdown(brief: GeoContentBrief, options: { questi
   if (options.questionNeedsRevision) lines.push("The exact frozen question needs revision. Do not generate a Draft until a corrected version is confirmed.");
   if (quality.outlineSections === 0) lines.push("No usable outline was supplied; Draft cannot be generated.");
   if (quality.usableFacts === 0) lines.push(`${quality.outlineSections > 0 ? "Structure only: no" : "No"} facts with matching source records were supplied. Do not add product claims, numbers or comparisons.`);
-  if (quality.missingFacts > 0) lines.push(`Listed facts without a usable value or matching source record: ${quality.missingFacts}.`);
+  if (quality.missingKnowledgeFacts > 0) lines.push(`Listed facts without a usable value or matching source record: ${quality.missingKnowledgeFacts}.`);
+  if (quality.missingProfileFacts > 0) lines.push(`${quality.missingProfileFacts} website-profile ${quality.missingProfileFacts === 1 ? "field lacks" : "fields lack"} per-field source authority and ${quality.missingProfileFacts === 1 ? "is" : "are"} excluded from writable facts.`);
   if (quality.answeredSamples === 0) lines.push("No successful visibility answers are linked. Required questions are not observed coverage.");
   if (quality.answeredSamples > 0 && quality.observedQuestions === 0) lines.push("Linked answers were present, but they did not yield any reusable observed topics for this Brief.");
   if (!quality.hasProfile) lines.push("No linked website profile snapshot; current profile edits are not substituted for frozen evidence.");
@@ -29,7 +30,7 @@ export function sharedGeoBriefMarkdown(brief: GeoContentBrief, options: { questi
   for (const item of brief.must_answer.items) lines.push(`- ${item.id}: ${item.q} · source=${item.source} · ${questionSources[geoBriefQuestionSource(brief, item)]} · ${item.source === "ai_sample" ? `${item.covered_by}/${item.sample_total} answered samples` : "writing requirement, not observed coverage"}`);
   lines.push(`candidates=${brief.budget.must_answer_candidates} · shown=${brief.budget.must_answer_shown} · hidden=${brief.budget.must_answer_hidden}`, "", "## fact_table");
   if (brief.fact_table.length === 0) lines.push("No facts were supplied. Add facts with their sources and observation dates, then freeze a new version.");
-  for (const fact of brief.fact_table) {
+  for (const fact of brief.fact_table.filter(fact => fact.reason !== "unverified" || !/^(productName|oneLinePositioning|coreFeatures\[\d+\])$/.test(fact.label))) {
     lines.push(`- ${fact.id} ${fact.label}: ${fact.value ?? `null (${fact.reason})`}`);
     for (const id of fact.evidence_refs) { const receipt = brief.evidence.facts.find(row => row.id === id); if (receipt) lines.push(`  - ${id} · source=${receipt.source} · ${receipt.observed_at} · ${receipt.url ?? "no URL"}`); }
   }

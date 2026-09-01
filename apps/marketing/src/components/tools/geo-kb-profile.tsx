@@ -7,19 +7,29 @@
 import { useTranslations } from "next-intl";
 import type { GeoInheritedProfile } from "../../lib/geo-tools/asset-context.ts";
 import type { GeoKbFact } from "../../lib/geo-tools/kb-contract.ts";
-import { pendingGeoFeatureFact } from "./geo-kb-feature-candidates.ts";
+import { pendingGeoProfileFact } from "./geo-kb-feature-candidates.ts";
 
-export function GeoKbInheritedProfile({ profile, websiteId, locale, profileState, facts = [], onAddFeature, repairMode = false }: {
+export function GeoKbInheritedProfile({ profile, websiteId, locale, profileState, facts = [], onAddFact, repairMode = false }: {
   readonly profile: GeoInheritedProfile | null;
   readonly websiteId?: string;
   readonly locale: string;
   readonly profileState?: string;
   readonly facts?: readonly GeoKbFact[];
-  readonly onAddFeature?: (feature: string) => void;
+  readonly onAddFact?: (key: string, value: string) => void;
   readonly repairMode?: boolean;
 }) {
   const t = useTranslations("tools.geoKnowledgeBase");
   const owner = profile?.reference.websiteId ?? websiteId;
+  const candidateButton = (key: string, value: string) => {
+    if (onAddFact === undefined) return null;
+    const candidate = pendingGeoProfileFact(key, value, facts);
+    const labels = { ready: "featureCandidateAdd", exists: "featureCandidateExists", too_long: "featureCandidateTooLong", full: "featureCandidateFull" } as const;
+    const fieldLabel = key === "productName" ? t("asset.productName") : key === "oneLinePositioning" ? t("asset.positioning") : value;
+    return <button type="button" disabled={candidate.status !== "ready"}
+      aria-label={`${t(`asset.${labels[candidate.status]}`)}: ${fieldLabel}`}
+      className="rounded border border-brand-border-card px-2 py-1 text-xs text-brand-accent-text disabled:opacity-50"
+      onClick={() => onAddFact(key, value)}>{t(`asset.${labels[candidate.status]}`)}</button>;
+  };
   return (
     <section className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
       <h2 className="text-[19px] text-text-dark-primary">{t("asset.profileTitle")}</h2>
@@ -29,19 +39,16 @@ export function GeoKbInheritedProfile({ profile, websiteId, locale, profileState
         <>
           <p className="mt-2 text-sm text-text-dark-secondary">{t("asset.profileBody")}</p>
           <dl className="mt-4 grid gap-3 text-sm">
-            <div><dt className="text-text-dark-secondary">{t("asset.productName")}</dt><dd>{profile.productName}</dd></div>
-            <div><dt className="text-text-dark-secondary">{t("asset.positioning")}</dt><dd>{profile.oneLinePositioning}</dd></div>
+            <div><dt className="text-text-dark-secondary">{t("asset.productName")}</dt><dd className="flex flex-wrap items-start gap-3"><span>{profile.productName}</span>{candidateButton("productName", profile.productName)}</dd></div>
+            <div><dt className="text-text-dark-secondary">{t("asset.positioning")}</dt><dd className="flex flex-wrap items-start gap-3"><span>{profile.oneLinePositioning}</span>{candidateButton("oneLinePositioning", profile.oneLinePositioning)}</dd></div>
             <div><dt className="text-text-dark-secondary">{t("asset.features")}</dt><dd><ul className="grid gap-2">{profile.coreFeatures.map((feature, index) => {
-              const candidate = pendingGeoFeatureFact(feature, facts);
-              const labels = { ready: "featureCandidateAdd", exists: "featureCandidateExists", too_long: "featureCandidateTooLong", full: "featureCandidateFull" } as const;
               return <li className="flex flex-wrap items-start gap-3" key={`${index}-${feature}`}>
                 <span className="break-words">{feature}</span>
-                {onAddFeature === undefined ? null : <button type="button" disabled={candidate.status !== "ready"}
-                  className="rounded border border-brand-border-card px-2 py-1 text-xs text-brand-accent-text disabled:opacity-50"
-                  onClick={() => onAddFeature(feature)}>{t(`asset.${labels[candidate.status]}`)}</button>}
+                {candidateButton(`coreFeatures[${index}]`, feature)}
               </li>;
-            })}</ul>{onAddFeature === undefined ? null : <p className="mt-2 text-xs text-text-dark-secondary">{t("asset.featureCandidateHelp")}</p>}</dd></div>
+            })}</ul>{onAddFact === undefined ? null : <p className="mt-2 text-xs text-text-dark-secondary">{t("asset.featureCandidateHelp")}</p>}</dd></div>
           </dl>
+          <p className="mt-3 text-xs text-text-dark-secondary">{t("asset.profileFactBoundary")}</p>
           <p className="mt-4 text-xs text-text-dark-secondary">{t("asset.revision", { revision: profile.reference.snapshotRevision })}</p>
           <p className="mt-1 break-all font-mono text-xs text-text-dark-secondary">{t("asset.hash", { hash: profile.reference.profileHash })}</p>
         </>

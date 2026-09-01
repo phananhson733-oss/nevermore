@@ -21,6 +21,37 @@ describe("GEO Brief evidence quality projection", () => {
     expect(geoBriefQuality(brief)).toMatchObject({ status: "structure_only", usableFacts: 0, missingFacts: 2, answeredSamples: 1, observedQuestions: 0 });
   });
 
+  it("separates unavailable profile fields from missing knowledge and crawl facts", async () => {
+    const brief = await geoBriefFixture();
+    brief.fact_table[1] = { ...brief.fact_table[1]!, label: "productName", reason: "notPublished" };
+    brief.geo_origin.profile_ref = {
+      website_id: "fixture-website",
+      snapshot_id: "fixture-profile",
+      snapshot_revision: 1,
+      profile_schema: "marketing-website-profile.v1",
+      profile_hash: "d".repeat(64),
+    };
+    const profileLabels = ["productName", "oneLinePositioning", ...Array.from({ length: 8 }, (_, index) => `coreFeatures[${index}]`)];
+    brief.fact_table.push(...profileLabels.map((label, index) => ({
+      id: `F${index + 3}`,
+      label,
+      value: null,
+      reason: "unverified" as const,
+      evidence_refs: [],
+    })));
+    const before = JSON.stringify(brief);
+
+    expect(geoBriefQuality(brief)).toMatchObject({
+      status: "limited",
+      usableFacts: 1,
+      missingFacts: 11,
+      missingProfileFacts: 10,
+      missingKnowledgeFacts: 1,
+      hasProfile: true,
+    });
+    expect(JSON.stringify(brief)).toBe(before);
+  });
+
   it("does not turn absence of null rows into a completeness guarantee", async () => {
     const brief = await geoBriefFixture();
     brief.fact_table = brief.fact_table.filter(fact => fact.value !== null);
