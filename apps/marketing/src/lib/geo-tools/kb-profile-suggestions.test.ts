@@ -52,7 +52,7 @@ describe("explicit Profile to measurement review", () => {
     expect(geoKbBlockers(source, { activeRoleIds: ["supported"] })).not.toContain("role_terms_not_english");
     expect(geoKbBlockers(source, { activeRoleIds: ["supported"] })).not.toContain("category_terms_not_english");
     expect(geoKbBlockers(source, { activeRoleIds: ["manual"] })).toContain("role_terms_not_english");
-    expect(geoKbBlockers({ ...source, categoryTerms: ["中文实际品类"] }, { activeRoleIds: ["supported"] })).toContain("category_terms_not_english");
+    expect(geoKbBlockers({ ...source, categoryTerms: ["中文实际品类"] }, { activeRoleIds: ["supported"] })).toContain("category_language_mismatch");
   });
   it("shows source-to-measurement differences even if the full copy has already been adopted", () => {
     expect(geoProfileMeasurementDifferences(profile, payload)).toEqual(expect.arrayContaining(["officialName", "categoryTerms", "roles", "competitors"]));
@@ -60,7 +60,7 @@ describe("explicit Profile to measurement review", () => {
   it("refuses new English freezes containing mixed-language category placeholders but allows brand names", () => {
     const valid = { ...payload, aliases: ["Acme"], officialName: "占星指南", categoryTerms: ["astrology"], market: { country: "US", language: "en" } };
     expect(geoKbBlockers(valid)).not.toContain("category_terms_not_english");
-    expect(geoKbBlockers({ ...valid, categoryTerms: ["占星工具"] })).toContain("category_terms_not_english");
+    expect(geoKbBlockers({ ...valid, categoryTerms: ["占星工具"] })).toContain("category_language_mismatch");
   });
   it("requires English role placeholders only when those layers will actually be generated", () => {
     const mixed = { ...payload, roles: [{ ...payload.roles[0]!, label: "中文买家" }] };

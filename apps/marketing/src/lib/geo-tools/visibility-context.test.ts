@@ -104,4 +104,13 @@ describe("Visibility website and immutable input context", () => {
     expect(body.websites[0]?.preparation.languageWarnings).toEqual(["category_terms_not_english"]);
     expect(body.websites[0]?.frozen?.questions[0]?.text).toBe(mixed);
   });
+  it("does not block a proper-name category that remains English", async () => {
+    const d = deps();
+    d.readFrozen = vi.fn(async () => ({ kind: "ok" as const, value: {
+      ...snapshot,
+      payload: { ...payload, officialName: "小米", categoryTerms: ["小米 analytics"] },
+    } }));
+    const body = parseVisibilityContext(await (await handleVisibilityContext(request(), d)).json());
+    expect(body.websites[0]?.preparation.languageWarnings).toEqual([]);
+  });
 });

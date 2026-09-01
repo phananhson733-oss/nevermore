@@ -9,6 +9,7 @@ import { readGeoSnapshotContext } from "./asset-context-store.ts";
 import { profileCopyReference } from "./kb-profile-copy.ts";
 import { assertGeoProfileCopyIntegrity } from "./kb-profile-copy-server.ts";
 import { geoQuestionLanguageIssues } from "./kb-question-language.ts";
+import { geoQuestionLanguageIssue, geoQuestionProperNames } from "./question-quality.ts";
 import { parseVisibilityContext, VISIBILITY_CONTEXT_SCHEMA, type VisibilityWebsiteContext, VISIBILITY_CONTEXT_MAX_WEBSITES } from "./visibility-context.ts";
 import { z } from "zod";
 
@@ -65,7 +66,16 @@ export async function handleVisibilityContext(request: Request, dependencies: Vi
       }
       const sync: VisibilityWebsiteContext["preparation"]["profileSync"] = !frozen ? "missing" : frozen.profileCompleteness === "legacy_partial" ? "legacy_partial" : !currentProfile || JSON.stringify(currentProfile.reference) !== JSON.stringify(frozen.profileReference) ? "outdated" : "current";
       const status: VisibilityWebsiteContext["preparation"]["status"] = !currentProfile ? "profile_required" : !kb ? "knowledge_base_required" : !frozen ? "freeze_required" : sync !== "current" ? "profile_update_available" : "ready";
-      rows.push({ website, currentProfile, knowledgeBase: kb ? { kbId: kb.kbId, draftVersion: kb.draft?.draftVersion ?? 0, hasDraft: kb.draft !== null } : null, frozen, preparation: { status, profileSync: sync, languageWarnings: frozen ? [...geoQuestionLanguageIssues(frozen.payload, { roleLayersSkipped: frozen.skippedLayers.length === 2, activeRoleIds: frozen.questions.flatMap(question => question.roleId === null ? [] : [question.roleId]) })] : [] } });
+      const languageWarnings = !frozen ? [] : geoQuestionLanguageIssues(frozen.payload, {
+        roleLayersSkipped: frozen.skippedLayers.length === 2,
+        activeRoleIds: frozen.questions.flatMap(question => question.roleId === null ? [] : [question.roleId]),
+      }).filter((warning) => warning !== "category_terms_not_english");
+      if (frozen && geoQuestionLanguageIssue(
+        frozen.payload.categoryTerms[0] ?? "",
+        frozen.payload.market.language,
+        geoQuestionProperNames(frozen.payload),
+      )) languageWarnings.push("category_terms_not_english");
+      rows.push({ website, currentProfile, knowledgeBase: kb ? { kbId: kb.kbId, draftVersion: kb.draft?.draftVersion ?? 0, hasDraft: kb.draft !== null } : null, frozen, preparation: { status, profileSync: sync, languageWarnings } });
     }
     return privateJson(parseVisibilityContext({ schemaVersion: VISIBILITY_CONTEXT_SCHEMA, websites: rows }));
   } catch { return privateError("store_unavailable", 503); }
