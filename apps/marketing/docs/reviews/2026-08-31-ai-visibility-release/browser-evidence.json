@@ -1,8 +1,8 @@
 {
-  "scope": "Local real UI/handlers/builders with explicit offline account/store/provider seams; not production login or provider canary",
-  "base": "59330b10e4fb5ca059a928cf002738e773032afe",
-  "buildId": "3e-pG-1Nyo8Ul7b4Qx0sJ",
-  "passed": 35,
+  "scope": "Local real Next pages/handlers/builders with explicit offline account/store/provider seams; manual real capture/provider tests intentionally skipped without authorized evidence files; not production login or paid-provider proof",
+  "base": "ca9ad4ddf6b5d2a48ead302d51e187c8a308f264",
+  "buildId": "SxKb-3Jkpi2civFvx02Xo",
+  "passed": 48,
   "failed": 0,
   "screenshots": [
     {
@@ -15,18 +15,19 @@
     },
     {
       "path": "screenshots/input-zh-dark-390-viewport.png",
-      "sha256": "7d34afbb230f1d5f89378a986562d50be8a9f01d7dff8b26bbb4925780cf7fa2"
+      "sha256": "951c9ddb7c9dfd4ef31a23be6d5e4816702daacd5aa17d41a310b58d9f39f7f5"
     },
     {
       "path": "screenshots/result-zh-dark-390-viewport.png",
       "sha256": "02c234e8b0a5b11e95f6b6c6e688e5e3fbded2baf71ca1d8f933974dc7df6c2c"
     }
   ],
-  "verifiedCodeCommit": "d872265f5c952552e1214587daaaf63e5afe6dfc",
+  "verifiedCodeCommit": "e17d8e5583b73e95eba4cb45dea79ba61ac9eea2",
   "sourceTrees": {
-    "apps/marketing/src": "454794bd7c8e7f3a98fb8e087e524a44f7ad9683",
-    "apps/marketing/e2e": "8a34feb2cac997f11a61226eda9d5bd8d8e0f9b1",
+    "apps/marketing/src": "b7e5b954e27a613ddfafb88833e2dcf321116dbe",
+    "apps/marketing/e2e": "a90671cea3fba6bd49dc0cd8f5a22dbe7ea5db73",
     "apps/marketing/supabase/migrations": "db34206eb8d29cebcdeb048a9efad65460253709"
   },
-  "lockfileSha256": "8162ba0f0d3f471e9099ef21e27e10036572a1b00223d63b93f13bdcec2f2ce1"
+  "lockfileSha256": "8162ba0f0d3f471e9099ef21e27e10036572a1b00223d63b93f13bdcec2f2ce1",
+  "skipped": 2
 }
