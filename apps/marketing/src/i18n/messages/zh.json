@@ -8676,14 +8676,6 @@
       "setPrimary": "设为主要",
       "setPrimaryWebsite": "将 {name} 设为主要网站",
       "settingPrimary": "正在更新…",
-      "version": "已确认 v{revision}",
-      "confirmedAt": "确认于 {date}",
-      "status": {
-        "not_generated": "未生成",
-        "draft": "草稿",
-        "confirmed": "已确认",
-        "unconfirmed_changes": "有未确认修改"
-      },
       "dialog": {
         "title": "添加网站",
         "description": "先保存公开网站，也可以随后生成它的产品与核心用户画像。",
