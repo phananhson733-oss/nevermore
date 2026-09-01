@@ -8733,6 +8733,10 @@
         "noChanges": "No field changes were proposed."
       },
       "editor": {
+        "profileCardTitle": "Product Profile",
+        "profileCardBody": "Product, audience, market and competitor context",
+        "geoCardTitle": "GEO Knowledge Base",
+        "geoCardBody": "Brand matching, questions, evidence and frozen versions",
         "loading": "Loading profile…",
         "signedOut": "Sign in to edit this profile.",
         "unavailable": "This profile is temporarily unavailable.",

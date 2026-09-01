@@ -8733,6 +8733,10 @@
         "noChanges": "本次没有字段变化。"
       },
       "editor": {
+        "profileCardTitle": "产品 Profile",
+        "profileCardBody": "产品、核心用户画像、市场与竞品资料",
+        "geoCardTitle": "GEO 知识库",
+        "geoCardBody": "品牌匹配、提问、证据与冻结版本",
         "loading": "正在读取画像…",
         "signedOut": "登录后编辑这个画像。",
         "unavailable": "画像暂时不可用。",
