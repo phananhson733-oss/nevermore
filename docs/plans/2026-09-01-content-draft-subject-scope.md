@@ -34,7 +34,7 @@ Build an O1 request from confirmedDraftV3Fixture and assert:
     expect(result.status).toBe("ok");
     const data = JSON.parse(requests[0]!.user);
     expect(data.pages[0]).toMatchObject({
-      source_domain: "competitor.example",
+      source_domain: "competitor.test",
       unit_ids: ["U1"],
       serp_titles: [{
         serp_ref: "S1",
@@ -44,7 +44,7 @@ Build an O1 request from confirmedDraftV3Fixture and assert:
     });
     expect(JSON.stringify(value)).toBe(before);
 
-Also assert that source_domain, unit_ids, serp_titles and every title are absent from the system message, because they are untrusted DATA.
+The system may name source_domain, unit_ids and serp_titles as rule vocabulary. Assert that every concrete untrusted domain, U ID and title value is absent from the system message and appears only in user JSON.
 
 **Step 3: Write the failing v2/owned/no-title test**
 
