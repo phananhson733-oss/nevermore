@@ -31,6 +31,20 @@ describe("evidence-conditioned GEO gaps", () => {
     expect(classifyVisibilityGaps(report(), input)[0]).toMatchObject({ kind: "C", action: "third_party", sourceUrls: [reference.url] });
     expect(classifyVisibilityGaps(report(), { ...input, references: [{ ...reference, bodyComplete: false, ownPresence: null }] })[0]?.kind).toBe("unattributed");
   });
+  it.each(["demand", "retrieval"] as const)("does not infer C from an unevaluable %s citation zero when the brand was mentioned", (mode) => {
+    const base = report();
+    const value = visibilityReportFixtureV2({
+      questions: [{ ...base.questions[0]!.definition, mode, templateId: mode === "retrieval" ? base.questions[0]!.definition.templateId : null }],
+      samplesPerQuestion: 3,
+      samples: base.questions[0]!.samples.map((sample) => ({ ...sample, mentioned: true, cited: false, citedDomains: [], citedUrls: [], webSearchPerformed: false })),
+    });
+    expect(value.questions[0]).toMatchObject({ mode, mentioned: 3, citationEvaluable: 0, cited: 0 });
+    const read = evidence();
+    const relevant = page({ matches: [{ questionId: "q1", entities: ["invoice reminders"], terms: [] }] });
+    const reference = { ...page({ id: "ref-1", url: "https://publisher.test/best", finalUrl: "https://publisher.test/best", pageType: "listicle", ownPresence: false, ownPresenceBasis: "none", ownPresenceExcerpt: null }), sampleSlots: ["chatgpt:q1:1", "chatgpt:q1:2"] };
+    const input = { ...read, index: { ...read.index, pages: [relevant] }, references: [reference], citability: [{ id: "t2-1", pageId: relevant.id, questionId: "q1", url: relevant.url, checkedAt: read.collectedAt, checks: [], renderStatus: "measured" as const, renderReason: null, rawToRenderedRatio: 1 }] };
+    expect(classifyVisibilityGaps(value, input)[0]).toMatchObject({ kind: "unattributed", reason: "no_actionable_gap", action: "none" });
+  });
   it("does not infer any content gap from insufficient or branded measurements", () => {
     const value = report();
     expect(classifyVisibilityGaps({ ...value, manifest: { ...value.manifest, status: "insufficient" } }, evidence())[0]?.reason).toBe("measurement_insufficient");

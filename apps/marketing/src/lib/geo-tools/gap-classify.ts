@@ -21,7 +21,9 @@ export function classifyVisibilityGaps(report: VisibilityReportV2, evidence: Vis
     const checks = evidence.citability.filter((check) => check.questionId === question.questionId && relevant.some((page) => page.id === check.pageId && page.url === check.url));
     const failed = checks.find((check) => check.checks.some((row) => row.weight === "counted" && row.state === "fail"));
     if (failed !== undefined) return { ...base, kind: "B", reason: "relevant_page_citability_failed", action: "citability", pageUrl: failed.url, evidenceIds: [failed.pageId, failed.id] };
-    const missed = question.mentioned === 0 || question.cited === 0;
+    const mentionMiss = question.mentioned === 0;
+    const citationMiss = question.mode === "retrieval" && question.citationEvaluable > 0 && question.cited === 0;
+    const missed = mentionMiss || citationMiss;
     if (missed && relevant.length === 0 && evidence.index.status === "complete" && evidence.index.limits.length === 0 && evidence.index.pages.length === evidence.index.discoveredCount && evidence.index.pages.every((page) => page.state === "read" && page.bodyComplete)) return { ...base, kind: "A", reason: "no_matching_page_in_audited_inventory", action: "brief", evidenceIds: ["site-index"] };
     const confirmed = new Set(visibilityTrackedRivals(report.context).map((rival) => rival.brandName));
     const outranked = question.samples.filter((sample) => sample.status === "ok" && (sample.competitorPositions ?? []).some((rival) => confirmed.has(rival.brandName) && (sample.listPosition === null ? !sample.mentioned : rival.position < sample.listPosition)));
