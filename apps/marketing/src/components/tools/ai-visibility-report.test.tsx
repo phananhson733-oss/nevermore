@@ -189,7 +189,7 @@ describe("Artifact-aligned visibility report", () => {
   });
   it("adds evidenced source types and reports omitted unsafe source URLs without inventing domain-level presence", () => {
     const report = visibilityReportFixtureV2();
-    const typedReport = {
+    const typedReport: AnyVisibilityReport = {
       ...report,
       limits: [...report.limits, "citationEvidenceTruncated" as const],
       citedDomains: [
