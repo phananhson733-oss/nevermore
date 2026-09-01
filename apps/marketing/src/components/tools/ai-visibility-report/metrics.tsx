@@ -72,9 +72,7 @@ export function EngineTable({ report }: { readonly report: AnyVisibilityReport }
   const t = useTranslations("tools.aiVisibility.report");
   const v2 = isVisibilityReportV2(report);
   const rows = v2 ? report.byEngine : [{ engine: "chatgpt", metrics: report.metrics, calls: report.manifest.calls, answered: report.manifest.answered, status: report.manifest.status }];
-  return <section className={PANEL} data-section="engines">
-    <SectionTitle title={t("engineTitle")} note={t("engineHelp")} />
-    <TableScroll><table className="w-full min-w-[680px] border-collapse"><caption className="sr-only">{t("engineTitle")}</caption>
+  const table = <TableScroll><table className="w-full min-w-[680px] border-collapse"><caption className="sr-only">{t("engineTitle")}</caption>
       <thead><tr className="border-b border-brand-border-strong">{["engine", "mentionColumn", "citationColumn", "sov", "samples", "state"].map((key) => <th key={key} scope="col" className={HEAD}>{t(key)}</th>)}</tr></thead>
       <tbody>{rows.map((row) => {
         const hasConclusions = report.manifest.status !== "insufficient" && row.status !== "insufficient";
@@ -87,7 +85,15 @@ export function EngineTable({ report }: { readonly report: AnyVisibilityReport }
           <td className={CELL}><RunStatus status={row.status} /></td>
         </tr>;
       })}</tbody>
-    </table></TableScroll>
+    </table></TableScroll>;
+  if (rows.length === 1) return <details className={PANEL} data-section="engines">
+    <summary className={SUMMARY}>{t("engineTitle")}</summary>
+    <p className={`mt-2 ${NOTE}`}>{t("engineHelp")}</p>
+    <div className="mt-5">{table}</div>
+  </details>;
+  return <section className={PANEL} data-section="engines">
+    <SectionTitle title={t("engineTitle")} note={t("engineHelp")} />
+    {table}
   </section>;
 }
 

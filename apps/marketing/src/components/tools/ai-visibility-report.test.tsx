@@ -131,6 +131,14 @@ describe("Artifact-aligned visibility report", () => {
     expect(engineRows[1]?.querySelector('[data-rate-unit]')).toBeNull();
     expect(metric("coverage")?.textContent).toContain("5 / 5");
   });
+  it("collapses a single-engine breakdown because it duplicates the headline", () => {
+    mount(visibilityReportFixtureV2());
+    const section = host.querySelector('[data-section="engines"]');
+    expect(section?.tagName).toBe("DETAILS");
+    expect(section?.hasAttribute("open")).toBe(false);
+    expect(section?.querySelector("summary")?.textContent).toContain("By engine");
+    expect(section?.querySelector("tbody tr")?.textContent).toContain("ChatGPT");
+  });
   it.each([
     { locale: "en", names: ["Problem", "Discovery", "Comparison", "Evaluation", "Branded"], missing: "No questions in this run" },
     { locale: "zh", names: ["问题", "发现", "对比", "选型", "品牌词"], missing: "本轮没有这类问题" },
