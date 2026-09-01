@@ -43,8 +43,8 @@ export async function generateMetadata({
         : "AI Visibility Check: Whether Answers Mention You, and Who They Cite",
     description:
       locale === "zh"
-        ? "用冻结的问题集在 ChatGPT 上重复提问，看你在哪些回答里被提到、在哪些里被引用，以及这些回答是用哪些域名的内容拼出来的。每个数字都带采样次数与区间。"
-        : "Ask a frozen question set on ChatGPT several times each and see where you are mentioned, where you are cited, and which domains the answers were built from. Every number carries its sample count and interval.",
+        ? "用冻结的问题集在 ChatGPT、Perplexity 上重复提问，看你在哪些回答里被提到、在哪些里被引用，以及这些回答是用哪些域名的内容拼出来的。每个数字都带采样次数与区间。"
+        : "Ask a frozen question set on ChatGPT and Perplexity several times each and see where you are mentioned, where you are cited, and which domains the answers were built from. Every number carries its sample count and interval.",
     locale,
     path: PATH,
   });
@@ -68,7 +68,7 @@ export default async function AiVisibilityCheckPage({
 
   return (
     <div className="min-h-screen bg-brand-bg pt-9 pb-24">
-      <div className="mx-auto max-w-report px-6 md:px-8">
+      <div className="mx-auto max-w-[1200px] px-4 md:px-6">
         <BreadcrumbJsonLd
           items={[
             { name: home, url: localeUrl(locale) },
@@ -85,7 +85,7 @@ export default async function AiVisibilityCheckPage({
           ]}
         />
 
-        <header className="relative overflow-hidden border-b border-brand-border pt-6 pb-10">
+        <header className="relative overflow-hidden border-b border-brand-border pt-5 pb-6">
           <div
             aria-hidden="true"
             className="absolute inset-0 bg-signal-grid opacity-40"
@@ -94,10 +94,10 @@ export default async function AiVisibilityCheckPage({
             <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
               {t("eyebrow")}
             </p>
-            <h1 className="mt-4 text-page-title text-text-dark-primary">
+            <h1 className="mt-3 text-page-title text-text-dark-primary">
               {t("title")}
             </h1>
-            <p className="mt-4 text-[15px] leading-[1.65] text-text-dark-secondary md:text-[16.5px]">
+            <p className="mt-3 text-[15px] leading-[1.65] text-text-dark-secondary md:text-[16.5px]">
               {t("intro")}
             </p>
           </div>
@@ -109,16 +109,11 @@ export default async function AiVisibilityCheckPage({
           <AiVisibilityCheck authentication={authentication} locale={locale} />
         </NextIntlClientProvider>
 
-        {/*
-          Read from the same constant the report ships, so the page and the
-          result cannot describe different boundaries.
-        */}
-        <section className="mt-14 border-t border-brand-border pt-10">
-          <h2 className="text-[21px] text-text-dark-primary">
-            {t("limitsTitle")}
-          </h2>
+        <details className="mt-10 border-t border-brand-border pt-6">
+          <summary className="cursor-pointer text-base font-medium text-text-dark-primary">{t("methodology.title")}</summary>
+          <p className="mt-4 max-w-[760px] text-sm leading-relaxed text-text-dark-secondary">{t("methodology.engines")}</p>
           <ul className="mt-4 grid max-w-[760px] gap-3">
-            {VISIBILITY_LIMITS.map((limit) => (
+            {VISIBILITY_LIMITS.filter(limit => limit !== "oneSurface").map((limit) => (
               <li
                 className="text-[13.5px] leading-[1.7] text-text-dark-secondary"
                 key={limit}
@@ -127,7 +122,7 @@ export default async function AiVisibilityCheckPage({
               </li>
             ))}
           </ul>
-        </section>
+        </details>
 
         <section className="mt-14 border-t border-brand-border pt-10">
           <h2 className="text-[21px] text-text-dark-primary">

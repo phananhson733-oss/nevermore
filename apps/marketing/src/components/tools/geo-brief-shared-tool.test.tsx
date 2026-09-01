@@ -15,7 +15,19 @@ afterEach(async () => { await act(async () => root?.unmount()); root = null; doc
 async function click(host: Element, selector: string) { await act(async () => host.querySelector<HTMLElement>(selector)?.click()); }
 describe("shared GEO Brief browser chain", () => {
   it("selects immutable snapshot identity when one KB has several frozen versions", async () => {
-    const choices = [1, 2].map(revision => ({ kbId: "same-kb", snapshotId: `snapshot-${revision}`, revision, host: "fixture.example", frozenAt: SHARED_FROZEN.frozenAt, questions: [{ ...SHARED_FROZEN.questionSet.questions[0], id: `q${revision}`, text: `Frozen question ${revision}` }] }));
+    const choices = [1, 2].map(revision => ({
+      kbId: "same-kb",
+      snapshotId: `snapshot-${revision}`,
+      revision,
+      host: "fixture.example",
+      frozenAt: SHARED_FROZEN.frozenAt,
+      contentHash: SHARED_FROZEN.contentHash,
+      promptsetRef: { schema: SHARED_FROZEN.questionSet.schemaVersion, registryVersion: SHARED_FROZEN.questionSet.registryVersion, hash: SHARED_FROZEN.questionSetHash },
+      evidenceSummary: { snapshotFacts: 1, contextFacts: null, usableFacts: 1, missingFacts: 0, profileAttached: false, contextAttached: false },
+      market: { country: "US", language: "en" },
+      properNames: [],
+      questions: [{ ...SHARED_FROZEN.questionSet.questions[0], id: `q${revision}`, text: `Frozen question ${revision}`, qualityIssues: [] }],
+    }));
     const fetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith("/load")) return Response.json({ data: { choices, runsPerDay: 20, providerConfigured: true } });
       expect(JSON.parse(String(init?.body))).toMatchObject({ kbId: "same-kb", snapshotId: "snapshot-2", questionId: "q2", manualQuestion: null });
@@ -23,16 +35,28 @@ describe("shared GEO Brief browser chain", () => {
     }); globalThis.fetch = fetch as unknown as typeof globalThis.fetch;
     const host = document.createElement("div"); document.body.append(host); root = createRoot(host); await act(async () => root?.render(<GeoBriefSharedTool />));
     await click(host, "[data-load-geo-brief]");
-    const select = host.querySelector("select");
+    const select = host.querySelector<HTMLSelectElement>("#geo-brief-version");
     await act(async () => { if (select) { select.value = "snapshot-2"; select.dispatchEvent(new Event("change", { bubbles: true })); } });
     await click(host, "[data-run-geo-brief]");
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
   it("uses selection IDs, renders Artifact sections, exports one result and stages the same Brief for Draft", async () => {
     const basis = sharedGeoBriefBasis({ frozen: SHARED_FROZEN, context: null, questionId: "q1", questionText: "", runEvidence: null, runId: "fixture-brief", now: "2026-08-31T00:00:01Z" });
     const brief = await assembleSharedGeoBrief(basis, { ok: true, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: basis.must_answer.items.map(item => item.id), provenance: { method: "model", derived_from: ["kb"] } }] });
     const fetch = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.endsWith("/load")) return Response.json({ data: { choices: [{ kbId: SHARED_FROZEN.kbId, snapshotId: SHARED_FROZEN.snapshotId, revision: 1, host: "fixture.example", frozenAt: SHARED_FROZEN.frozenAt, questions: SHARED_FROZEN.questionSet.questions }], runsPerDay: 20, providerConfigured: true } });
+      if (url.endsWith("/load")) return Response.json({ data: { choices: [{
+        kbId: SHARED_FROZEN.kbId,
+        snapshotId: SHARED_FROZEN.snapshotId,
+        revision: 1,
+        host: "fixture.example",
+        frozenAt: SHARED_FROZEN.frozenAt,
+        contentHash: SHARED_FROZEN.contentHash,
+        promptsetRef: { schema: SHARED_FROZEN.questionSet.schemaVersion, registryVersion: SHARED_FROZEN.questionSet.registryVersion, hash: SHARED_FROZEN.questionSetHash },
+        evidenceSummary: { snapshotFacts: 1, contextFacts: null, usableFacts: 1, missingFacts: 1, profileAttached: false, contextAttached: false },
+        market: { country: "US", language: "en" },
+        properNames: [],
+        questions: SHARED_FROZEN.questionSet.questions.map(question => ({ ...question, qualityIssues: [] })),
+      }], runsPerDay: 20, providerConfigured: true } });
       expect(JSON.parse(String(init?.body))).toEqual({ schema: brief.schema, kbId: SHARED_FROZEN.kbId, snapshotId: SHARED_FROZEN.snapshotId, questionId: "q1", manualQuestion: null, runId: null, gapId: null });
       return Response.json({ data: { brief } });
     }); globalThis.fetch = fetch as unknown as typeof globalThis.fetch;
@@ -40,8 +64,8 @@ describe("shared GEO Brief browser chain", () => {
     await click(host, "[data-load-geo-brief]"); await click(host, "[data-run-geo-brief]");
     await vi.waitFor(() => expect(host.querySelector("[data-shared-geo-result]")).not.toBeNull());
     expect(Array.from(host.querySelectorAll("[data-brief-section]")).map(node => node.getAttribute("data-brief-section"))).toEqual(["geo_origin", "lead_answer", "must_answer", "fact_table", "outline", "fields", "internal_links"]);
-    expect(host.textContent).toContain("Three seats"); expect(host.textContent).toContain("notPublished");
-    expect(host.querySelector("[data-geo-market-language]")?.textContent).toBe("market: US · language: en");
+    expect(host.textContent).toContain("Three seats"); expect(host.textContent).toContain("factReasons.notPublished");
+    expect(host.querySelector("[data-geo-market-language]")?.textContent).toBe('quality.marketLanguage {"market":"US","language":"en"}');
     const markdown = sharedGeoBriefMarkdown(brief); expect(markdown).toContain(SHARED_FROZEN.snapshotId); expect(markdown).toContain("2026-08-30T00:00:00Z"); expect(markdown).toContain("market: US · language: en");
     await act(async () => host.querySelector("[data-geo-to-draft]")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
     const stored = JSON.parse(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY) ?? "null"); expect(stored.brief).toEqual(brief);
@@ -54,7 +78,19 @@ describe("shared GEO Brief browser chain", () => {
     const basis = sharedGeoBriefBasis({ frozen, context: null, questionId: "q1", questionText: "", runEvidence: { runId: pointer.runId, fingerprint: "e".repeat(64), gap: "D", siteIndex: [], samples: [{ id: "S1", run_id: pointer.runId, question_id: "q1", engine: "chatgpt", collected_at: "2026-08-31T00:00:00Z", status: "answered", search_enabled: null, excerpt: "Actual fixture answer", topics: ["Pricing"] }] }, runId: "fixture-brief", now: "2026-08-31T00:00:01Z" });
     const brief = await assembleSharedGeoBrief(basis, { ok: true, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: basis.must_answer.items.map(item => item.id), provenance: { method: "model", derived_from: ["kb", "ai_sample"] } }] });
     const fetch = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.endsWith("/load")) { expect(JSON.parse(String(init?.body))).toEqual({ schema: brief.schema, kbId: frozen.kbId, snapshotId: frozen.snapshotId }); return Response.json({ data: { choices: [{ kbId: frozen.kbId, snapshotId: frozen.snapshotId, revision: 1, host: "fixture.example", frozenAt: frozen.frozenAt, questions: frozen.questionSet.questions }], runsPerDay: 20, providerConfigured: true } }); }
+      if (url.endsWith("/load")) { expect(JSON.parse(String(init?.body))).toEqual({ schema: brief.schema, kbId: frozen.kbId, snapshotId: frozen.snapshotId, questionId: pointer.questionId, runId: pointer.runId, gapId: pointer.gapId }); return Response.json({ data: { context: { gap: "D", runRef: { id: pointer.runId, fingerprint: "e".repeat(64) }, samples: brief.evidence.samples.map(sample => ({ id: sample.id, engine: sample.engine, status: sample.status, collectedAt: sample.collected_at })) }, choices: [{
+        kbId: frozen.kbId,
+        snapshotId: frozen.snapshotId,
+        revision: 1,
+        host: "fixture.example",
+        frozenAt: frozen.frozenAt,
+        contentHash: frozen.contentHash,
+        promptsetRef: { schema: frozen.questionSet.schemaVersion, registryVersion: frozen.questionSet.registryVersion, hash: frozen.questionSetHash },
+        evidenceSummary: { snapshotFacts: 1, contextFacts: 1, usableFacts: 1, missingFacts: 1, profileAttached: true, contextAttached: true },
+        market: { country: "US", language: "en" },
+        properNames: [],
+        questions: frozen.questionSet.questions.map(question => ({ ...question, qualityIssues: [] })),
+      }], runsPerDay: 20, providerConfigured: true } }); }
       expect(JSON.parse(String(init?.body))).toEqual({ schema: brief.schema, kbId: frozen.kbId, snapshotId: frozen.snapshotId, questionId: "q1", manualQuestion: null, runId: pointer.runId, gapId: pointer.gapId });
       return Response.json({ data: { brief } });
     }); globalThis.fetch = fetch as unknown as typeof globalThis.fetch;

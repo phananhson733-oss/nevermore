@@ -9,6 +9,37 @@ function imported(productName: string, origin: string) {
     profile: { ...emptyMarketingWebsiteProfile(), productName, country: "US", locale: "en-US", categories: ["birth chart calculator"] } });
 }
 
+const oversizedCompetitorSource = {
+  websiteId: "11111111-1111-4111-8111-111111111111",
+  snapshotId: "11111111-1111-4111-8111-111111111112",
+  snapshotRevision: 1,
+  origin: "https://example.com",
+  profile: {
+    ...emptyMarketingWebsiteProfile(),
+    productName: "Acme",
+    directCompetitors: ["one.com", "two.com", "three.com", "four.com", "five.com", "six.com"],
+  },
+};
+
+describe("bounded measurement prefill", () => {
+  it("leaves an oversized source competitor set unselected instead of silently taking the first five", () => {
+    const result = importGeoKbPayload(oversizedCompetitorSource);
+    expect(result.competitors).toEqual([]);
+    expect(oversizedCompetitorSource.profile.directCompetitors).toHaveLength(6);
+  });
+
+  it("keeps a within-limit source prefill unconfirmed", () => {
+    const result = importGeoKbPayload({
+      ...oversizedCompetitorSource,
+      profile: { ...oversizedCompetitorSource.profile, directCompetitors: ["one.com", "Two Brand"] },
+    });
+    expect(result.competitors).toEqual([
+      { domain: "one.com", brandName: "", confirmed: false },
+      { domain: "", brandName: "Two Brand", confirmed: false },
+    ]);
+  });
+});
+
 describe("knowledge-base alias proposals", () => {
   it("proposes the split brand and canonical hostname without duplicating casing-only variants", () => {
     const result = imported("AstrologyWiki", "https://www.astrologywiki.com");

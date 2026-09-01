@@ -29,6 +29,7 @@ export interface GeoKbFrozenSummary {
 }
 
 export interface GeoKbSourcePreview {
+  readonly activeRoleIds?: readonly string[];
   readonly skippedLayers: readonly ("problem" | "evaluation")[];
   readonly questionSetHash: string;
   readonly contentHash: string;
@@ -83,9 +84,15 @@ const BLOCKER_CODES: ReadonlySet<string> = new Set<GeoKbBlocker>([
   "aliases_missing",
   "alias_too_short",
   "category_terms_missing",
+  "category_language_mismatch",
+  "question_quality",
   "no_confirmed_competitor",
   "role_missing",
   "unsupported_language",
+  "category_terms_not_english",
+  "role_terms_not_english",
+  "category_placeholder_invalid",
+  "role_placeholder_invalid",
 ]);
 
 /** Same reason: the preview prints `questions.layers.<layer>`. */
@@ -224,7 +231,7 @@ function isSkippedLayers(value: unknown): value is readonly ("problem" | "evalua
     value.every((layer) => layer === "problem" || layer === "evaluation");
 }
 function isSourcePreview(value: unknown): value is GeoKbSourcePreview {
-  return isRecord(value) && isSkippedLayers(value["skippedLayers"]) && isHash(value["questionSetHash"]) && isHash(value["contentHash"]);
+  return isRecord(value) && (value["activeRoleIds"] === undefined || (isStringArray(value["activeRoleIds"]) && new Set(value["activeRoleIds"]).size === value["activeRoleIds"].length)) && isSkippedLayers(value["skippedLayers"]) && isHash(value["questionSetHash"]) && isHash(value["contentHash"]);
 }
 
 export function isInheritedProfile(value: unknown): value is GeoInheritedProfile {

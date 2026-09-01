@@ -1,5 +1,5 @@
 // @input -- a parsed GEO Brief plus the authenticated account, never a client trust flag
-// @output -- immutable KB/Profile/run evidence verified before Draft quota/provider work
+// @output -- immutable KB/Profile/run evidence and question quality verified before Draft quota/provider work
 // @pos -- shared Draft's GEO provenance gate; a public fingerprint is consistency only
 import { canonicalize } from "@sf/public-tools/content-brief/canonical";
 import { parseGeoContentBrief } from "@sf/public-tools/content-brief/parse-geo-brief";
@@ -7,9 +7,11 @@ import type { GeoContentBrief } from "@sf/public-tools/content-brief/geo-contrac
 import { readVersionedFrozenGeoKb } from "./kb-versioned-read.ts";
 import { readVersionedGeoSnapshotContext } from "./asset-context-store.ts";
 import { readCompleteGeoKnowledgeBase } from "./kb-complete-read.ts";
+import type { AnyGeoSnapshotContext } from "./snapshot-context-v2.ts";
 import { readVisibilityRunV2 } from "./visibility-store-v2.ts";
 import { resolveSharedBriefRunEvidence } from "./brief-shared-deps.ts";
 import { sharedGeoBriefBasis, type SharedBriefRunEvidence } from "./brief-shared.ts";
+import { assessGeoQuestionQuality, geoQuestionLanguageIssue, geoQuestionProperNames } from "./question-quality.ts";
 
 export interface GeoBriefReferenceDependencies {
   readonly readFrozen: typeof readVersionedFrozenGeoKb;
@@ -21,6 +23,10 @@ const DEFAULT: GeoBriefReferenceDependencies = { readFrozen: readVersionedFrozen
 class GeoReferenceUnavailable extends Error {
   constructor() { super("GEO reference store unavailable"); this.name = "GeoReferenceUnavailable"; }
 }
+/** Expected refusal only after the exact owned Brief has been verified. */
+export class GeoBriefQuestionNeedsReview extends Error {
+  constructor() { super("The owned GEO question needs review"); this.name = "GeoBriefQuestionNeedsReview"; }
+}
 const protectedKeys = ["source", "keyword", "geo_origin", "evidence", "lead_answer", "must_answer", "fact_table", "intent", "format", "verdict", "length", "gap_angle", "internal_links", "do_not_cover", "budget"] as const;
 
 export async function verifyOwnedGeoBrief(input: GeoContentBrief, userId: string, dependencies: GeoBriefReferenceDependencies = DEFAULT): Promise<boolean> {
@@ -29,11 +35,24 @@ export async function verifyOwnedGeoBrief(input: GeoContentBrief, userId: string
   const brief = parsed.value;
   const reference = brief.geo_origin.kb_ref;
   const selection = { userId, kbId: reference.kb_id, snapshotId: reference.snapshot_id };
-  const knowledge = await readCompleteGeoKnowledgeBase(selection, dependencies);
-  if (knowledge.kind === "unavailable") throw new GeoReferenceUnavailable();
-  if (knowledge.kind !== "ok") return false;
-  const { snapshot: frozen, context } = knowledge.value;
+  const frozenRead = await dependencies.readFrozen(selection);
+  if (frozenRead.kind === "unavailable") throw new GeoReferenceUnavailable();
+  if (frozenRead.kind !== "ok") return false;
+  const frozen = frozenRead.value;
   if (frozen.kbId !== reference.kb_id || frozen.snapshotId !== reference.snapshot_id || frozen.revision !== reference.revision || frozen.contentHash !== reference.content_hash) return false;
+  const requiresCompleteContext = "profileCopy" in frozen.payload && frozen.payload.profileCopy !== undefined;
+  let context: AnyGeoSnapshotContext | null;
+  if (requiresCompleteContext) {
+    const complete = await readCompleteGeoKnowledgeBase(selection, dependencies);
+    if (complete.kind === "unavailable") throw new GeoReferenceUnavailable();
+    if (complete.kind !== "ok") return false;
+    context = complete.value.context;
+  } else {
+    const contextRead = await dependencies.readContext(selection);
+    if (contextRead.kind === "unavailable") throw new GeoReferenceUnavailable();
+    if (contextRead.kind !== "ok") return false;
+    context = contextRead.value;
+  }
   let runEvidence: SharedBriefRunEvidence | null = null;
   if (brief.geo_origin.kind === "visibility") {
     const runRef = brief.geo_origin.run_ref;
@@ -57,5 +76,11 @@ export async function verifyOwnedGeoBrief(input: GeoContentBrief, userId: string
   } catch { return false; }
   // Model-owned outline words may be edited. Its allowed source set, Q coverage
   // and readiness were already checked by the strict parser above.
-  return brief.run.budget_ms === expected.run.budget_ms && protectedKeys.every((key) => canonicalize(brief[key]) === canonicalize(expected[key]));
+  if (brief.run.budget_ms !== expected.run.budget_ms || !protectedKeys.every((key) => canonicalize(brief[key]) === canonicalize(expected[key]))) return false;
+  const selected = frozen.questionSet.questions.find((question) => question.id === brief.geo_origin.question.id);
+  const questionNeedsReview = selected === undefined
+    ? geoQuestionLanguageIssue(brief.geo_origin.question.text, frozen.payload.market.language, geoQuestionProperNames(frozen.payload))
+    : !assessGeoQuestionQuality(frozen.payload, selected).ok;
+  if (questionNeedsReview) throw new GeoBriefQuestionNeedsReview();
+  return true;
 }

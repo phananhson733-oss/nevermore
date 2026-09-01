@@ -1,4 +1,4 @@
-// @input -- a frozen v2 context, remaining deadline and CONTENT_BRIEF_* configuration
+// @input -- a frozen v2/v3 context, remaining deadline and CONTENT_BRIEF_* configuration
 // @output -- the exact model context, validated full assembly and honest usage
 // @pos -- one v2 assembly call; no retry, fallback or external source reads
 import { ENVELOPE_MS, LLM_MAX_OUTPUT_TOKENS } from "@sf/public-tools/content-brief/constants";
@@ -7,6 +7,7 @@ import type { BriefV2Context, BriefV2Generated } from "@sf/public-tools/content-
 import { parseBriefV2Context, validateModelBriefV2 } from "@sf/public-tools/content-brief/v2-generation";
 import { CONTENT_BRIEF_LLM_TEMPERATURE, resolveContentBriefLlmConfig, type ContentBriefLlmDependencies } from "./content-brief-llm.ts";
 import { prepareContentBriefV2Prompt } from "./content-brief-v2-prompts.ts";
+import { validateSectionQuestionsBrief } from "./content-brief-v3-model.ts";
 import { createKeywordLlmClient, EMPTY_KEYWORD_LLM_USAGE, KeywordLlmError, type KeywordLlmCompletion, type KeywordLlmFailureReason, type KeywordLlmUsage } from "./keyword-llm-client.ts";
 
 export const CONTENT_BRIEF_V2_LLM_DEADLINE_MS = 30_000;
@@ -54,7 +55,11 @@ export async function runContentBriefV2Llm(
   const { context, prompt_bytes } = prepared;
   let completion: KeywordLlmCompletion;
   try {
-    completion = await client.complete({ system: prepared.system, user: prepared.user, temperature: CONTENT_BRIEF_LLM_TEMPERATURE, maxOutputTokens: LLM_MAX_OUTPUT_TOKENS, timeoutMs });
+    completion = await client.complete({ system: prepared.system, user: prepared.user, temperature: CONTENT_BRIEF_LLM_TEMPERATURE, maxOutputTokens: LLM_MAX_OUTPUT_TOKENS, timeoutMs,
+      // Verified on the configured Luna deployment; other deployment names
+      // retain provider defaults rather than assuming compatible capabilities.
+      ...(config.model === "gpt-5.6-luna" ? { reasoningEffort: "low" as const } : {}),
+    });
   } catch (error) {
     if (!(error instanceof KeywordLlmError)) throw error;
     // The shared client omits usage on transport errors after fetch. V2 still
@@ -71,7 +76,7 @@ export async function runContentBriefV2Llm(
     if (!(error instanceof SyntaxError)) throw error;
     return fail("validation_failed");
   }
-  const output = validateModelBriefV2(raw, context);
+  const output = context.serp === undefined ? validateModelBriefV2(raw, context) : validateSectionQuestionsBrief(raw, context);
   if (expired()) return fail("timeout");
   if (!output.ok) return fail("validation_failed");
   return {

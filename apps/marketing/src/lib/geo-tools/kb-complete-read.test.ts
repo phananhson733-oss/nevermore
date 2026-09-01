@@ -74,14 +74,22 @@ describe("complete immutable GEO knowledge-base reads", () => {
     expect(profileStore.read).not.toHaveBeenCalled();
   });
 
-  it.each(["payload", "questions", "selector", "revision"])("rejects a mismatched frozen %s", async (part) => {
+  it.each(["payload", "questions"])("rejects a mismatched frozen %s as unavailable integrity state", async (part) => {
     const value = fixture();
     if (part === "payload") Object.assign(value.snapshot.payload, { officialName: "Tampered" });
     if (part === "questions") Object.assign(value.snapshot.questionSet.questions[0]!, { text: "Tampered question" });
-    if (part === "selector") Object.assign(value.snapshot, { snapshotId: CONTEXT_PROFILE.reference.snapshotId });
-    if (part === "revision") Object.assign(value.snapshot, { revision: 4 });
-    const selector = part === "revision" ? { userId: USER, kbId: CONTEXT_KB_ID, revision: 3 } : input;
-    expect((await readCompleteGeoKnowledgeBase(selector, value.dependencies)).kind).toBe("unavailable");
+    expect((await readCompleteGeoKnowledgeBase(input, value.dependencies)).kind).toBe("unavailable");
+    expect(value.dependencies.readContext).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["knowledge base", { kbId: SNAPSHOT }, input],
+    ["snapshot", { snapshotId: CONTEXT_PROFILE.reference.snapshotId }, input],
+    ["revision", { revision: 4 }, { userId: USER, kbId: CONTEXT_KB_ID, revision: 3 }],
+  ] as const)("treats a mismatched frozen %s selector as missing ownership", async (_part, mismatch, selector) => {
+    const value = fixture();
+    Object.assign(value.snapshot, mismatch);
+    expect(await readCompleteGeoKnowledgeBase(selector, value.dependencies)).toEqual({ kind: "missing" });
     expect(value.dependencies.readContext).not.toHaveBeenCalled();
   });
 

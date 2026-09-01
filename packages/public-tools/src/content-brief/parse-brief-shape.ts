@@ -1,5 +1,5 @@
 // @input  -- an untrusted value that claims to be a ContentBrief or ContentBriefHandoff
-// @output -- a freshly built, shape-exact ContentBrief (or handoff envelope), including code-point-bounded crawl strings, or one closed failure code with the offending path
+// @output -- exact legacy shapes plus reusable SERP shapes with explicit version-owned URL decoding
 // @pos    -- the decoder toolkit and every per-field shape pin of the content-brief contract; parse-brief.ts adds the cross-field invariants on top
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -327,7 +327,7 @@ const serpAvailable = object({
   returned: integer(),
   unresolved: integer(),
 });
-const serpReadMeta: Decoder<SerpReadMeta> = tagged("status", {
+export const serpReadMeta: Decoder<SerpReadMeta> = tagged("status", {
   complete: serpAvailable,
   partial: serpAvailable,
   unavailable,
@@ -397,14 +397,18 @@ const briefRunMeta = object({
 /* evidence ledger                                                      */
 /* ------------------------------------------------------------------ */
 
-const serpObservation = object({
-  id: identifier("S"),
-  rank: integer(1),
-  url: nullable(httpUrl),
-  domain: text(FREE_TEXT_MAX_CHARS, 1),
-  title: nullable(text()),
-  format: object({ value: oneOf(SERP_FORMATS), method: literal("heuristic"), rules_hit: array(text()) }),
-});
+/** Legacy callers retain HTTP URLs; a versioned source-only snapshot may supply bounded raw text. */
+export function serpObservationShape(urlValue: Decoder<string> = httpUrl) {
+  return object({
+    id: identifier("S"),
+    rank: integer(1),
+    url: nullable(urlValue),
+    domain: text(FREE_TEXT_MAX_CHARS, 1),
+    title: nullable(text()),
+    format: object({ value: oneOf(SERP_FORMATS), method: literal("heuristic"), rules_hit: array(text()) }),
+  });
+}
+const serpObservation = serpObservationShape();
 
 const crawlExcerpt = object({
   heading: codePointText(HEADING_MAX_CHARS),

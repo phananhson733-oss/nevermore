@@ -42,7 +42,7 @@ export async function readCompleteGeoKnowledgeBase(
     const sameId = (left: string, right: string) => left.toLowerCase() === right.toLowerCase();
     if (!sameId(snapshot.kbId, input.kbId)
       || (input.snapshotId !== undefined && !sameId(snapshot.snapshotId, input.snapshotId))
-      || (input.revision !== undefined && snapshot.revision !== input.revision)) return unavailable();
+      || (input.revision !== undefined && snapshot.revision !== input.revision)) return { kind: "missing" };
     const parsed = parseAnyGeoKbPayload(snapshot.payload);
     const v2 = parsed.schemaVersion === "marketing-geo-kb.v2";
     if (v2 !== (snapshot.questionSet.schemaVersion === "marketing-geo-question-set.v2")) return unavailable();

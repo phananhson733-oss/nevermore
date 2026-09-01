@@ -5,9 +5,9 @@ import { GEO_CONTENT_BRIEF_SCHEMA, GEO_MUST_ANSWER_CAP, type GeoContentBrief, ty
 import { deriveGeoFormat, deriveGeoMustAnswer, deriveGeoReadiness, geoFingerprint, parseGeoContentBrief } from "@sf/public-tools/content-brief/parse-geo-brief";
 import type { UnavailableReason } from "@sf/public-tools/content-brief/contract";
 import type { VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
-import type { GeoSnapshotContext } from "./snapshot-context.ts";
 import type { AnyGeoSnapshotContext } from "./snapshot-context-v2.ts";
 import { normalizeGeoHost } from "../agents/geo-url.ts";
+import { geoBriefFactsForSnapshot } from "./brief-facts.ts";
 
 export interface SharedBriefRunEvidence {
   readonly runId: string;
@@ -28,19 +28,9 @@ export interface SharedBriefBasisInput {
 export type SharedBriefOutlineResult = { readonly ok: true; readonly outline: GeoOutlineItem[] } | { readonly ok: false; readonly reason: UnavailableReason };
 const missing = { status: "unavailable", reason: "insufficient_evidence", attempted: 0 } as const;
 
-/** A consumer projection of admitted V2 facts, never a V1 cast of its payload. */
-function briefFacts(frozen: VersionedGeoKbFrozenSnapshot, context: AnyGeoSnapshotContext | null): GeoSnapshotContext["facts"] {
-  if (frozen.payload.schemaVersion === "marketing-geo-kb.v2") {
-    if (context?.schemaVersion !== "marketing-geo-snapshot-context.v2") throw new Error("complete_v2_context_required");
-    return context.facts.map(fact => {
-      if (fact.value !== null && (fact.source === "none" || fact.review !== "accepted" || fact.reason !== "" || fact.sourceUrl === null || fact.observedAt === null)) throw new Error("invalid_admitted_fact");
-      if (fact.source === "crawl" && fact.supportRef === null) throw new Error("crawl_receipt_missing");
-      return { key: fact.key, value: fact.source === "none" ? null : fact.value, reason: fact.reason,
-        source: fact.source === "crawl" ? "crawl" : "kb", sourceUrl: fact.sourceUrl, observedAt: fact.observedAt, evidenceId: fact.supportRef?.evidenceId ?? null };
-    });
-  }
-  if (context?.schemaVersion === "marketing-geo-snapshot-context.v2") throw new Error("snapshot_context_version_mismatch");
-  return context?.facts ?? frozen.payload.facts.map(fact => ({ key: fact.key, value: fact.value || null, reason: fact.reason, source: "kb" as const, sourceUrl: fact.sourceUrl || null, observedAt: fact.observedAt || null, evidenceId: null }));
+/** V1 retains the shared source-scope repair; V2 projects only context-admitted facts. */
+function briefEvidence(frozen: VersionedGeoKbFrozenSnapshot, context: AnyGeoSnapshotContext | null) {
+  return geoBriefFactsForSnapshot(frozen, context);
 }
 
 /** V2 requirements come from this exact question's translated source entities,
@@ -72,33 +62,7 @@ export function sharedGeoBriefBasis(input: SharedBriefBasisInput): GeoContentBri
   const questionText = picked?.text ?? input.questionText;
   const role = picked?.roleId == null ? null : frozen.payload.roles.find(item => item.id === picked.roleId) ?? null;
   const ref = context?.profile?.reference ?? null;
-  const facts = briefFacts(frozen, context);
-  const receipts: GeoContentBrief["evidence"]["facts"] = [];
-  const factTable: GeoContentBrief["fact_table"] = facts.map((fact, index) => {
-    const value = fact.reason === "conflicting" ? null : fact.value;
-    const id = `${fact.source === "crawl" ? "C" : "K"}${index + 1}`;
-    if (value !== null) {
-      if (fact.source === "crawl" && (fact.evidenceId === null || fact.sourceUrl === null || fact.observedAt === null)) throw new Error("crawl_receipt_missing");
-      receipts.push({ id, source: fact.source, text: value, observed_at: fact.observedAt ?? frozen.frozenAt, url: fact.sourceUrl });
-    }
-    return { id: `F${index + 1}`, label: fact.key, value, reason: value === null ? fact.reason || "lowConfidence" : null, evidence_refs: value === null ? [] : [id] };
-  });
-  if (frozen.payload.schemaVersion === "marketing-geo-kb.v1" && context?.profile) {
-    const profile = context.profile; let receiptIndex = 0;
-    for (const field of ["productName", "oneLinePositioning", "coreFeatures"] as const) {
-      const provenance = profile.fieldProvenance?.find(item => item.path === `/${field}`);
-      const timed = provenance !== undefined && (provenance.observedAt !== null || provenance.derivation === "declared" || ["user_edit", "local_computation", "supplied_product_information", "supplied_marketing_strategy"].includes(provenance.source));
-      const verified = provenance !== undefined && timed && ["declared", "observed", "computed"].includes(provenance.derivation);
-      const raw = profile[field]; const values = typeof raw === "string" ? [raw] : raw;
-      for (const [index, text] of values.entries()) {
-        if (!text.trim()) continue;
-        const label = field === "coreFeatures" ? `${field}[${index}]` : field;
-        const id = `P${++receiptIndex}`;
-        if (verified && provenance) receipts.push({ id, source: "product_profile", text, observed_at: provenance.observedAt ?? frozen.frozenAt, url: provenance.evidenceUrls[0] ?? null });
-        factTable.push({ id: `F${factTable.length + 1}`, label, value: verified ? text : null, reason: verified ? null : "unverified", evidence_refs: verified ? [id] : [] });
-      }
-    }
-  }
+  const { receipts, factTable } = briefEvidence(frozen, context);
   const criteria = questionCriteria(frozen, input.questionId);
   // Q1 reserves one of the eight mandatory answers. Never truncate a question
   // that actually requires more than seven additional criterion statements.

@@ -1,0 +1,14 @@
+# GEO Brief repair flow
+
+Goal: a user can understand the problem, open the same site's existing knowledge, fix it, create a new version and return to Brief without losing the question or reusing old-run evidence with a new snapshot. A blocked button alone is not acceptance.
+
+Baseline: production 82683994, isolated geo-brief-repair-flow-20260831 worktree. Existing fix/deploy authorization and native Codex review apply. Current production reproduction: both repair links land on an empty URL form headed Establish knowledge base; the current site, question and return target are absent. Loading the known site manually works and shows confirmed Profile v3, Chinese primary category, English question language and no explicit fact rows.
+
+1. Replace customer-facing A/B/C/D with concrete problem descriptions. Keep enums, IDs and export contracts unchanged. Keep diagnosis scoped to observed evidence; avoid saying a page does not exist when only audited inventory was checked.
+2. Add a bounded tab-local handoff for Brief to knowledge repair and back. Only kb/snapshot/question selectors and a repair reason; no arbitrary redirect, source claims or run evidence. Require server ownership on each read. Missing/expired context must show recovery, not quietly open another site's blank editor.
+3. Existing-KB read by kbId must be read-only and never call ensure/create. Reuse the existing editor and exact profile/context resolution.
+4. Knowledge repair mode opens the correct existing draft, shows clear numbered actions with direct field anchors, preserves CAS/dirty checks, and offers an explicit return after a successful new freeze. Return loads that exact new snapshot and keeps the selected question if it still exists, otherwise lets the user select a new question. Never automatically generate or attach old visibility observations to the new version.
+5. Make field labels accessible so a user/browser can reliably reach category and fact inputs. Explain why category language needs correction and how profile/fact sourcing works; do not silently translate, mark facts verified, save or freeze.
+6. Write regression first for lost context, no create on owned read, language labels, return exactness, dirty/error states, expiry and complete editor-save-freeze-Brief output. Run integrated browser flow, not only individual rendered states. Then independent read-only review, scoped release and signed-in production canary. Any genuine provider/output failure is investigated before claiming completion.
+
+Ownership: root owns handoff contract, Brief input/results, catalogs and integration. Backend worker owns kb-handler/deps and their tests. Knowledge UI worker owns geo-knowledge-base component and its dedicated tests. No subagent may commit, push, create PRs or deploy. No Product, migration or environment changes.

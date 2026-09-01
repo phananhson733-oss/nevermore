@@ -1,4 +1,4 @@
-// @input  -- provider env/options, an injected fetch, one task-deadlined request
+// @input  -- provider env/options, an injected fetch, one task-deadlined request with optional reasoning/schema controls
 // @output -- request-deadlined JSON mode/strict-schema completion with model/usage, or KeywordLlmError
 // @pos    -- the marketing site's only LLM transport; consumed by keyword-prompts.ts
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -170,6 +170,8 @@ export interface KeywordLlmRequest {
     readonly name: string;
     readonly schema: Readonly<Record<string, unknown>>;
   };
+  /** Explicit caller opt-in only; omission leaves the provider's reasoning policy unchanged. */
+  readonly reasoningEffort?: "none" | "low";
 }
 
 const MAX_KEYWORD_LLM_REQUEST_SCHEMA_BYTES = 32 * 1024;
@@ -574,6 +576,10 @@ class ChatCompletionsClient implements KeywordLlmClient {
   }
 
   async complete(request: KeywordLlmRequest): Promise<KeywordLlmCompletion> {
+    const reasoningEffort = request.reasoningEffort;
+    if (reasoningEffort !== undefined && reasoningEffort !== "none" && reasoningEffort !== "low") {
+      throw new KeywordLlmError("not_configured", "LLM request reasoning effort is outside the supported values.");
+    }
     const timeoutMs = resolveKeywordLlmTimeoutMs(
       request.timeoutMs,
       this.options.timeoutMs,
@@ -594,6 +600,7 @@ class ChatCompletionsClient implements KeywordLlmClient {
       // both accept, and an output ceiling is not optional here — it is the
       // cost bound on a call whose length a third-party page can influence.
       max_completion_tokens: request.maxOutputTokens,
+      ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
       // JSON mode is load-bearing, not a convenience: it removes the "model
       // wrote prose around the object" failure that would otherwise tempt a
       // free-text salvage path, and a salvage path is exactly how injected

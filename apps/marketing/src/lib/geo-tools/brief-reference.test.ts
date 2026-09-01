@@ -13,13 +13,23 @@ import { createGeoProfileCopy } from "./kb-profile-copy.ts";
 import { CONTEXT_KB_ID, CONTEXT_PROFILE } from "./snapshot-context.test-fixtures.ts";
 import { buildGeoSnapshotContext, geoSnapshotContextHash } from "./snapshot-context.ts";
 import { inheritedProfileFromCopy } from "./kb-profile-copy-server.ts";
+import type { VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
+import { geoV2Digest } from "./kb-v2-digest.ts";
 
-async function fixture(complete = false) {
-  const profile = { ...emptyMarketingWebsiteProfile(), productName: "Fixture", country: "US", locale: "en" };
-  const copy = createGeoProfileCopy({ ...CONTEXT_PROFILE.reference, profileHash: await profileSha256(profile) }, profile);
-  const payload = { ...SHARED_FROZEN.payload, ...(complete ? { profileCopy: copy } : {}) };
-  const frozen = { ...structuredClone(SHARED_FROZEN), ...(complete ? { kbId: CONTEXT_KB_ID, snapshotId: "11111111-1111-4111-8111-111111111119" } : {}), payload, contentHash: geoKbDigest(payload as unknown as GeoKbValue), questionSetHash: geoQuestionSetDigest(SHARED_FROZEN.questionSet) };
-  const basis = sharedGeoBriefBasis({ frozen, context: null, questionId: "q1", questionText: "", runEvidence: null, runId: "offline-brief", now: "2026-08-31T00:00:00.000Z" });
+async function fixture(frozenOrComplete: VersionedGeoKbFrozenSnapshot | boolean = SHARED_FROZEN, questionId: string | null = "q1", questionText = "") {
+  let frozen: VersionedGeoKbFrozenSnapshot;
+  if (typeof frozenOrComplete === "boolean") {
+    const profile = { ...emptyMarketingWebsiteProfile(), productName: "Fixture", country: "US", locale: "en" };
+    const copy = createGeoProfileCopy({ ...CONTEXT_PROFILE.reference, profileHash: await profileSha256(profile) }, profile);
+    const payload = { ...SHARED_FROZEN.payload, ...(frozenOrComplete ? { profileCopy: copy } : {}) };
+    frozen = { ...structuredClone(SHARED_FROZEN), ...(frozenOrComplete ? { kbId: CONTEXT_KB_ID, snapshotId: "11111111-1111-4111-8111-111111111119" } : {}), payload,
+      contentHash: geoKbDigest(payload as unknown as GeoKbValue), questionSetHash: geoQuestionSetDigest(SHARED_FROZEN.questionSet) };
+  } else {
+    const contentHash = frozenOrComplete.payload.schemaVersion === "marketing-geo-kb.v2" ? geoV2Digest(frozenOrComplete.payload) : geoKbDigest(frozenOrComplete.payload as unknown as GeoKbValue);
+    const questionSetHash = frozenOrComplete.questionSet.schemaVersion === "marketing-geo-question-set.v2" ? geoV2Digest(frozenOrComplete.questionSet) : geoQuestionSetDigest(frozenOrComplete.questionSet);
+    frozen = { ...frozenOrComplete, contentHash, questionSetHash, questionCount: frozenOrComplete.questionSet.questions.length };
+  }
+  const basis = sharedGeoBriefBasis({ frozen, context: null, questionId, questionText, runEvidence: null, runId: "offline-brief", now: "2026-08-31T00:00:00.000Z" });
   const brief = await assembleSharedGeoBrief(basis, { ok: true, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: basis.must_answer.items.map((q) => q.id), provenance: { method: "model", derived_from: ["kb"] } }] });
   const dependencies: GeoBriefReferenceDependencies = {
     readFrozen: vi.fn(async () => ({ kind: "ok" as const, value: frozen })),
@@ -32,6 +42,48 @@ async function fixture(complete = false) {
 async function rehash(brief: GeoContentBrief) { brief.run.fingerprint = await geoFingerprint(brief); return brief; }
 
 describe("server-owned GEO Brief verification", () => {
+  it("keeps a historic mixed-language Brief parseable but refuses Draft with an expected quality error", async () => {
+    const frozen = structuredClone(SHARED_FROZEN);
+    Object.assign(frozen.payload, { categoryTerms: ["占星工具", "心理占星"] });
+    Object.assign(frozen.questionSet, { registryVersion: "2026-08-17/13" });
+    Object.assign(frozen.questionSet.questions[0]!, { text: "What are the top 占星工具 tools right now?", requiredEntities: ["占星工具", "心理占星"] });
+    const { brief, dependencies } = await fixture(frozen);
+    const original = JSON.stringify(brief);
+    expect((await parseGeoContentBrief(brief)).ok).toBe(true);
+    await expect(verifyOwnedGeoBrief(brief, "account-a", dependencies)).rejects.toMatchObject({ name: "GeoBriefQuestionNeedsReview" });
+    expect(JSON.stringify(brief)).toBe(original);
+  });
+
+  it("does not disclose a quality diagnosis before ownership and protected equality succeed", async () => {
+    const frozen = structuredClone(SHARED_FROZEN);
+    Object.assign(frozen.payload, { categoryTerms: ["占星工具"] });
+    Object.assign(frozen.questionSet.questions[0]!, { text: "What are the top 占星工具 tools right now?", requiredEntities: ["占星工具"] });
+    const { brief, dependencies } = await fixture(frozen);
+    vi.mocked(dependencies.readFrozen).mockResolvedValueOnce({ kind: "missing" });
+    expect(await verifyOwnedGeoBrief(brief, "another-account", dependencies)).toBe(false);
+    vi.mocked(dependencies.readFrozen).mockResolvedValueOnce({ kind: "ok", value: { ...frozen, snapshotId: "foreign-snapshot" } });
+    expect(await verifyOwnedGeoBrief(brief, "another-account", dependencies)).toBe(false);
+    expect(dependencies.readContext).not.toHaveBeenCalled();
+    const forged = structuredClone(brief);
+    forged.evidence.facts[0]!.text = "Nine hundred seats";
+    forged.fact_table[0]!.value = "Nine hundred seats";
+    await rehash(forged);
+    expect((await parseGeoContentBrief(forged)).ok).toBe(true);
+    expect(await verifyOwnedGeoBrief(forged, "account-a", dependencies)).toBe(false);
+  });
+
+  it("checks typed-question wording without banning owned Unicode brand names", async () => {
+    const frozen = structuredClone(SHARED_FROZEN);
+    Object.assign(frozen.payload, { officialName: "星图", aliases: ["星图"], categoryTerms: ["astrology"] });
+    const valid = await fixture(frozen, null, "What is 星图 and who is it for?");
+    expect(await verifyOwnedGeoBrief(valid.brief, "account-a", valid.dependencies)).toBe(true);
+    const invalid = await fixture(frozen, null, "What are the top 占星工具 tools right now?");
+    await expect(verifyOwnedGeoBrief(invalid.brief, "account-a", invalid.dependencies)).rejects.toMatchObject({ name: "GeoBriefQuestionNeedsReview" });
+    Object.assign(frozen.questionSet.questions[0]!, { text: "What is 星图 and who is it for?", requiredEntities: ["星图"] });
+    const selected = await fixture(frozen);
+    expect(await verifyOwnedGeoBrief(selected.brief, "account-a", selected.dependencies)).toBe(true);
+  });
+
   it("is wired into the real shared Draft runtime", () => {
     expect(CONTENT_DRAFT_HANDLER_DEPENDENCIES.verifyGeoBrief).toBe(verifyOwnedGeoBrief);
   });
@@ -91,7 +143,8 @@ describe("server-owned GEO Brief verification", () => {
   });
   it("accepts complete frozen Profile evidence through the actual Draft verifier", async () => {
     const { dependencies, frozen } = await fixture(true);
-    const profile = inheritedProfileFromCopy(frozen.payload.profileCopy!);
+    if (frozen.payload.schemaVersion !== "marketing-geo-kb.v1" || frozen.payload.profileCopy === undefined) throw new Error("fixture");
+    const profile = inheritedProfileFromCopy(frozen.payload.profileCopy);
     const prepared = buildGeoSnapshotContext({ kbId: frozen.kbId, targetHost: "fixture.example", payload: frozen.payload, profile, receipt: null });
     const { contentHash: _old, ...preparedBody } = prepared.context;
     const body = { ...preparedBody, questionSetHash: frozen.questionSetHash };

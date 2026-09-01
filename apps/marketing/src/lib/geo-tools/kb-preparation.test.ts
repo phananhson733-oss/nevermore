@@ -61,6 +61,12 @@ describe("server-owned prepared GEO knowledge assembly", () => {
     const registry = buildGeoQuestionSet(expectedRegistryProjection(input));
     const included = candidate.questionSet.questions.filter(question => question.provenance.kind === "registry");
     expect(included.length).toBeGreaterThan(0);
+    const sourceCategory = input.semanticInput.entities.find(entity => entity.kind === "category")!;
+    expect(candidate.questionSet.entityCatalog.find(entity => entity.text === "invoice reminder")).toMatchObject({
+      kind: "category",
+      roleId: null,
+      evidenceRefs: sourceCategory.evidenceRefs,
+    });
     expect(included.every(question => question.mode === "retrieval" && question.calibrated)).toBe(true);
     expect(() => assertRegistryQuestionsMatch(candidate.questionSet, registry)).not.toThrow();
     for (const { provenance: _source, ...question } of included) expect(question).toEqual(registry.questions.find(original => original.id === question.id));

@@ -38,6 +38,7 @@ export const CONTENT_DRAFT_ERROR_CODES = [
   "brief_schema_mismatch",
   "brief_fingerprint_mismatch",
   "brief_reference_invalid",
+  "question_needs_review",
   "section_not_writable",
   "previous_draft_invalid",
   "draft_unavailable",

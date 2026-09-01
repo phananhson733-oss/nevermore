@@ -1,4 +1,4 @@
-// @input  — react, Marketing-local utils
+// @input  — react, Marketing-local class merge utility
 // @output — Input 组件
 // @pos    — shadcn/ui 文本输入框原子组件
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md

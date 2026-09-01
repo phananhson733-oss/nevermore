@@ -181,7 +181,7 @@ function CompleteProfileFields({ profile, facts, onAddFeature }: {
   </div>;
 }
 
-export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profileState, facts = [], onAddFeature, inline = false, frozen = false, copyDescription }: {
+export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profileState, facts = [], onAddFeature, inline = false, frozen = false, copyDescription, repairMode = false }: {
   readonly profile: GeoInheritedProfile | null;
   readonly copy?: GeoProfileCopy;
   readonly websiteId?: string;
@@ -192,6 +192,7 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
   readonly inline?: boolean;
   readonly frozen?: boolean;
   readonly copyDescription?: string;
+  readonly repairMode?: boolean;
 }) {
   const t = useTranslations("tools.geoKnowledgeBase");
   const owner = copy?.websiteId ?? profile?.reference.websiteId ?? websiteId;
@@ -231,10 +232,11 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
         <a className="mt-4 inline-block text-sm text-brand-accent-text" href={`/${locale}/account/websites`}>{t("asset.backToWebsites")}</a>
       ) : (
         <div className="mt-4 flex flex-wrap gap-4 text-sm text-brand-accent-text">
-          <a href={inline ? "#website-profile" : `/${locale}/account/websites/${owner}`}>{t("asset.editProfile")}</a>
-          {inline ? null : <a href={`/${locale}/account/websites/${owner}#geo`}>{t("asset.canonicalLink")}</a>}
+          <a href={inline ? "#website-profile" : `/${locale}/account/websites/${owner}`} target={!inline && repairMode ? "_blank" : undefined} rel={!inline && repairMode ? "noopener" : undefined}>{t("asset.editProfile")}</a>
+          {inline ? null : <a href={`/${locale}/account/websites/${owner}/geo`} target={repairMode ? "_blank" : undefined} rel={repairMode ? "noopener" : undefined}>{t("asset.canonicalLink")}</a>}
         </div>
       )}
+      {repairMode && owner !== undefined ? <p className="mt-3 text-xs text-text-dark-secondary">{t("repair.profileNewTab")}</p> : null}
     </section>
   );
 }

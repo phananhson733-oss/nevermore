@@ -31,6 +31,7 @@ import {
 import { citabilityRenderCheck } from "./citability-render-rule.ts";
 import { measureCitabilityRender } from "./citability-render.ts";
 import { groupCitabilityCauses } from "./citability-causes.ts";
+import { buildCitabilityConclusion } from "./citability-conclusion.ts";
 
 /**
  * Conclusion markers, matched as whole words.
@@ -160,6 +161,14 @@ function botCheck(
     return citabilityCheck(ruleId, section, kind, weight, "fetchError", {
       key: "robots.unreachable",
       values: { bot, status: input.robots.httpStatus ?? 0 },
+    });
+  }
+  if (input.robots.status === "incomplete") {
+    // A later group can override the observed prefix for this bot. Neither
+    // Allow nor Disallow in that prefix establishes the complete policy.
+    return citabilityCheck(ruleId, section, kind, weight, "fetchError", {
+      key: "robots.incomplete",
+      values: { bot, status: input.robots.httpStatus, bytes: input.robots.bytes },
     });
   }
 
@@ -316,6 +325,12 @@ function canonicalCheck(input: CitabilityInput): CitabilityCheck {
 
 function llmsTxtCheck(input: CitabilityInput): CitabilityCheck {
   const id = "llmsTxt";
+  if (input.llmsTxt.status === "incomplete") {
+    return citabilityCheck(id, "readable", "deterministic", "advisory", "fetchError", {
+      key: "llms.incomplete",
+      values: { status: input.llmsTxt.httpStatus, bytes: input.llmsTxt.bytes },
+    });
+  }
   if (input.llmsTxt.status === "ok") {
     // "Present, and this many bytes." Not "valid": this tool does not parse
     // the file, and a 200 that returns an HTML error page would otherwise be
@@ -521,23 +536,25 @@ function qualifiersCheck(
       );
 }
 
-function isNumericClaim(sentence: string): boolean {
+function hasNumericStatement(sentence: string): boolean {
   if (!/\d/.test(sentence)) return false;
-  // A bare number, a date or a lone year is not a claim that needs a source.
-  const stripped = sentence.replace(/\s+/g, "");
+  // Standalone numbers and recognizable dates are excluded from this proxy.
+  // A four-digit quantity is not necessarily a year ("2000 companies").
+  const stripped = sentence.replace(/\s+/g, "").replace(/[.。]+$/u, "");
   if (/^\d+$/.test(stripped)) return false;
-  // Dates are not claims that need a source. The boundaries matter: without
-  // them "$1999" and "2000 companies" lose their digits to the year pattern
-  // and the page is reported as making no numeric claim at all.
+  // Remove full dates before year-shaped fragments; doing it in the opposite
+  // order leaves "-08-31" behind and mistakes a dateline for numerical copy.
   const withoutDates = sentence
+    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, " ")
+    .replace(/(?:19|20)\d{2}\s*年(?:\s*\d{1,2}\s*月(?:\s*\d{1,2}\s*日)?)?/gu, " ")
     .replace(/(?<![\d$£€¥])(?:19|20)\d{2}\s*[-–—~至]\s*(?:19|20)\d{2}(?![\d])/gu, " ")
-    .replace(/\b(?:q[1-4]\s*)?(?<![\d$£€¥])(?:19|20)\d{2}(?![\d])\s*年?/giu, " ")
-    .replace(/\d{4}-\d{2}-\d{2}/g, " ")
+    .replace(/(?:\b(?:q[1-4]|in|during|since|copyright)\s+|©\s*)(?:19|20)\d{2}\b/giu, " ")
     .replace(/\d{1,2}[:：]\d{2}/g, " ");
   return /\d/.test(withoutDates);
 }
 
-function isSourced(sentence: string): boolean {
+/** A nearby link or source phrase is only a cue, not verification of support. */
+function hasSourceCue(sentence: string): boolean {
   if (sentence.includes(LINK_MARKER)) return true;
   if (CJK_SOURCE_MARKERS.some((marker) => sentence.includes(marker))) return true;
   return LATIN_SOURCE_MARKERS.some((marker) => containsTerm(sentence, marker));
@@ -548,28 +565,30 @@ function citedDataCheck(
   context: CitabilityContext,
 ): CitabilityCheck {
   const id = "citedData";
-  const incomplete = truncated(input, id, "extractable", "deterministic");
+  const incomplete = truncated(input, id, "extractable", "heuristic");
   if (incomplete !== null) return incomplete;
   const sentences = splitSentences(context.textWithLinkMarkers);
-  const numeric = sentences.filter(isNumericClaim);
+  const numeric = sentences.filter(hasNumericStatement);
   if (numeric.length === 0) {
     // No numbers means nothing to attribute. Passing this would credit a page
     // for a discipline it never had to exercise.
     return citabilityCheck(
       id,
       "extractable",
-      "deterministic",
+      "heuristic",
       "counted",
       "notApplicable",
       { key: "citedData.noNumbers" },
     );
   }
-  const unsourced = numeric.filter((sentence) => !isSourced(sentence));
+  // Keep the existing detail keys and counts for report compatibility; their
+  // displayed wording must describe cues, never a fact-checked source.
+  const unsourced = numeric.filter((sentence) => !hasSourceCue(sentence));
   if (unsourced.length === 0) {
     return citabilityCheck(
       id,
       "extractable",
-      "deterministic",
+      "heuristic",
       "counted",
       "pass",
       { key: "citedData.allSourced", values: { total: numeric.length } },
@@ -578,7 +597,7 @@ function citedDataCheck(
   return citabilityCheck(
     id,
     "extractable",
-    "deterministic",
+    "heuristic",
     "counted",
     "fail",
     {
@@ -596,6 +615,7 @@ function citedDataCheck(
 interface JsonLdWalk {
   readonly faqNodes: readonly Record<string, unknown>[];
   readonly brokenBlocks: number;
+  readonly complete: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -604,11 +624,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function typeIncludes(node: Record<string, unknown>, type: string): boolean {
   const declared = node["@type"];
-  if (typeof declared === "string") return declared === type;
-  if (Array.isArray(declared)) {
-    return declared.some((entry) => entry === type);
-  }
-  return false;
+  const types: readonly unknown[] = Array.isArray(declared) ? declared : [declared];
+  return types.some((entry) => entry === type || entry === `https://schema.org/${type}` || entry === `http://schema.org/${type}`);
 }
 
 /** Walk arrays and `@graph`, and let one broken block not hide a valid one. */
@@ -633,7 +650,7 @@ function walkJsonLd(html: string): JsonLdWalk {
       // `queue.push(...node)` spreads the array into arguments, and a JSON-LD
       // array of 124,158 entries - well inside the byte budget - overflowed
       // the stack and took the whole report with it.
-      if (visited >= JSON_LD_NODE_CAP) break;
+      if (visited >= JSON_LD_NODE_CAP) return { faqNodes, brokenBlocks, complete: false };
       visited += 1;
       const node = queue.pop();
       if (Array.isArray(node)) {
@@ -645,17 +662,28 @@ function walkJsonLd(html: string): JsonLdWalk {
       const graph = node["@graph"];
       if (Array.isArray(graph)) {
         for (const entry of graph) queue.push(entry);
+      } else if (isRecord(graph)) {
+        queue.push(graph);
       }
     }
   }
-  return { faqNodes, brokenBlocks };
+  return { faqNodes, brokenBlocks, complete: true };
+}
+
+function isNodeReference(value: unknown): boolean {
+  return isRecord(value) && typeof value["@id"] === "string" && Object.keys(value).length === 1;
 }
 
 function faqCheck(input: CitabilityInput): CitabilityCheck {
   const id = "faqSchema";
   const incomplete = truncated(input, id, "extractable", "deterministic");
   if (incomplete !== null) return incomplete;
-  const { faqNodes, brokenBlocks } = walkJsonLd(uncommentedMarkup(input.rawHtml));
+  const { faqNodes, brokenBlocks, complete } = walkJsonLd(uncommentedMarkup(input.rawHtml));
+  if (!complete) {
+    return citabilityCheck(id, "extractable", "deterministic", "counted", "fetchError", {
+      key: "faq.scanIncomplete", values: { limit: JSON_LD_NODE_CAP },
+    });
+  }
   if (faqNodes.length === 0) {
     // A page with no FAQ markup is not a broken page. Scoring the absence
     // would push every explainer toward markup it may have no use for.
@@ -664,18 +692,20 @@ function faqCheck(input: CitabilityInput): CitabilityCheck {
       "extractable",
       "deterministic",
       "counted",
-      "notApplicable",
+      brokenBlocks > 0 ? "fetchError" : "notApplicable",
       {
         key: brokenBlocks > 0 ? "faq.noneWithBroken" : "faq.none",
         values: { broken: brokenBlocks },
       },
     );
   }
-  const questions = faqNodes.flatMap((node) => {
+  // A deliberately bounded inline shape check, not JSON-LD expansion, a full
+  // Schema.org validator, or a search-engine rich-result eligibility check.
+  const questionGroups = faqNodes.map((node) => {
     const mainEntity = node["mainEntity"];
-    return Array.isArray(mainEntity) ? mainEntity : [];
+    return Array.isArray(mainEntity) ? mainEntity : isRecord(mainEntity) ? [mainEntity] : [];
   });
-  if (questions.length === 0) {
+  if (questionGroups.some((questions) => questions.length === 0)) {
     return citabilityCheck(
       id,
       "extractable",
@@ -686,16 +716,28 @@ function faqCheck(input: CitabilityInput): CitabilityCheck {
       { key: "faq.emptyMainEntity" },
     );
   }
+  const questions = questionGroups.flat();
+  if (questions.some((entry) => {
+    if (isNodeReference(entry)) return true;
+    if (!isRecord(entry)) return false;
+    const answer = entry["acceptedAnswer"];
+    return (Array.isArray(answer) ? answer : [answer]).some(isNodeReference);
+  })) {
+    return citabilityCheck(id, "extractable", "deterministic", "counted", "fetchError", {
+      key: "faq.referencesNotResolved",
+    });
+  }
   const malformed = questions.filter((entry) => {
     if (!isRecord(entry)) return true;
     const name = entry["name"];
     const answer = entry["acceptedAnswer"];
-    const answerText = isRecord(answer) ? answer["text"] : undefined;
+    const answers: readonly unknown[] = Array.isArray(answer) ? answer : [answer];
     return (
+      !typeIncludes(entry, "Question") ||
       typeof name !== "string" ||
       name.trim().length === 0 ||
-      typeof answerText !== "string" ||
-      answerText.trim().length === 0
+      answers.length === 0 ||
+      answers.some((item) => !isRecord(item) || !typeIncludes(item, "Answer") || typeof item["text"] !== "string" || item["text"].trim().length === 0)
     );
   });
   return malformed.length === 0
@@ -758,8 +800,10 @@ export function buildCitabilityReport(
 ): CitabilityReport {
   const context = buildCitabilityContext(input.rawHtml, input.targetQuestion);
   const checks = runCitabilityChecks(input, context);
+  const render = input.render ?? measureCitabilityRender({ url: input.finalUrl, rawHtml: input.rawHtml, bodyComplete: input.bodyComplete }, null, { reason: "not_configured", now: () => new Date(fetchedAt) });
   return {
-    render: input.render ?? measureCitabilityRender({ url: input.finalUrl, rawHtml: input.rawHtml, bodyComplete: input.bodyComplete }, null, { reason: "not_configured", now: () => new Date(fetchedAt) }),
+    conclusion: buildCitabilityConclusion({ checks, render, targetQuestion: input.targetQuestion }),
+    render,
     rootCauses: groupCitabilityCauses(checks),
     url: input.url,
     finalUrl: input.finalUrl,

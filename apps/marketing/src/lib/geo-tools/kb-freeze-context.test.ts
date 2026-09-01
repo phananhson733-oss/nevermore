@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { freezeGeoKbWithContext } from "./kb-freeze-context.ts";
 import { buildGeoSnapshotContext } from "./snapshot-context.ts";
-import { CONTEXT_KB_ID, contextPayload } from "./snapshot-context.test-fixtures.ts";
+import { CONTEXT_KB_ID, CONTEXT_PROFILE, contextPayload, contextReceipt } from "./snapshot-context.test-fixtures.ts";
 import { createHash } from "node:crypto";
 import { canonicalProfileJson, emptyMarketingWebsiteProfile } from "../account-websites/contracts.ts";
 import { createGeoProfileCopy } from "./kb-profile-copy.ts";
@@ -27,6 +27,19 @@ describe("source-conditioned freeze admission", () => {
     deps.readDraft.mockResolvedValue({ kind: "ok", value: { payload, draftVersion: 2, contentHash: generated.context.payloadHash, targetHost: "example.com" } });
     expect(await freezeGeoKbWithContext({ ...input, ...generated }, deps)).toMatchObject({ kind: "invalid", code: "context_stale" });
     expect(deps.callRpc).not.toHaveBeenCalled();
+  });
+  it("freezes actual supported English role questions while ignoring an unused Chinese manual role", async () => {
+    const payload = { ...contextPayload(), roles: [...contextPayload().roles, { id: "unused-manual", label: "中文手工角色", segment: "本地资料", painPoints: ["未用于提问的痛点"], decisionCriteria: [], vocabulary: [] }] };
+    const generated = buildGeoSnapshotContext({ kbId: CONTEXT_KB_ID, targetHost: "example.com", payload, profile: CONTEXT_PROFILE, receipt: contextReceipt() });
+    expect(generated.context.roles).toEqual(expect.arrayContaining([expect.objectContaining({ roleId: "analytics", source: "gsc" }), expect.objectContaining({ roleId: "unused-manual", source: "kb" })]));
+    expect(generated.questionSet.questions.some(question => question.roleId === "analytics")).toBe(true);
+    expect(generated.questionSet.questions.some(question => question.roleId === "unused-manual")).toBe(false);
+    const deps = {
+      readDraft: vi.fn(async () => ({ kind: "ok" as const, value: { payload, draftVersion: 2, contentHash: generated.context.payloadHash, targetHost: "example.com" } })),
+      callRpc: vi.fn(async () => ({ data: [{ outcome: "frozen", snapshot_id: SNAPSHOT, revision: 1, content_hash: generated.context.payloadHash, frozen_at: "2026-08-31T00:00:00.000Z", reused_existing: false }], error: null })),
+    };
+    expect((await freezeGeoKbWithContext({ userId: USER, kbId: CONTEXT_KB_ID, baseVersion: 2, ...generated }, deps)).kind).toBe("ok");
+    expect(deps.callRpc).toHaveBeenCalledOnce();
   });
   it("can freeze without inventing a role, while skipped layers stay absent", async () => {
     const { input, deps } = fixture();

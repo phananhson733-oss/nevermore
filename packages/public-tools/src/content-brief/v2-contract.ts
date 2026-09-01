@@ -3,6 +3,7 @@
 // @pos -- explicit new semantics; never changes the legacy v1 contract or parser
 
 export const CONTENT_BRIEF_V2_SCHEMA = "gengrowth.content_brief/v2" as const;
+export const CONTENT_BRIEF_V3_SCHEMA = "gengrowth.content_brief/v3" as const;
 export const RESEARCH_SEGMENT_MAX_CHARS = 300;
 export const RESEARCH_HEADING_MAX_CHARS = 160;
 export const RESEARCH_SEGMENTS_PER_PAGE = 12;

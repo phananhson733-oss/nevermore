@@ -9,6 +9,7 @@ import type { AnyGeoSnapshotContext } from "./snapshot-context-v2.ts";
 import type { BriefStoreOutcome } from "./brief-handler.ts";
 import { assembleSharedGeoBrief, sharedGeoBriefBasis, type SharedBriefRunEvidence } from "./brief-shared.ts";
 import type { runSharedGeoBriefLlm } from "./brief-shared-llm.ts";
+import { assessGeoQuestionQuality, geoQuestionLanguageIssue, geoQuestionProperNames } from "./question-quality.ts";
 
 export interface SharedBriefHandlerDependencies {
   readonly readFrozen: (input: { userId: string; kbId: string; snapshotId: string }) => Promise<BriefStoreOutcome<VersionedGeoKbFrozenSnapshot>>;
@@ -40,6 +41,11 @@ export async function runSharedBrief(userId: string, raw: unknown, deps: SharedB
   if (frozen.kind !== "ok" || frozen.value.kbId !== selection.kbId || frozen.value.snapshotId !== selection.snapshotId) return privateError("not_found", 404);
   if (geoGenerationLanguage(frozen.value.payload.market.language) === null) return privateError("unsupported_language", 422);
   if (selection.questionId !== null && !frozen.value.questionSet.questions.some(question => question.id === selection.questionId)) return privateError("not_found", 404);
+  const picked = frozen.value.questionSet.questions.find(question => question.id === selection.questionId);
+  const questionInvalid = picked
+    ? !assessGeoQuestionQuality(frozen.value.payload, picked).ok
+    : geoQuestionLanguageIssue(selection.manualQuestion ?? "", frozen.value.payload.market.language, geoQuestionProperNames(frozen.value.payload));
+  if (questionInvalid) return privateError("question_needs_review", 422);
   const context = await deps.readContext(input);
   if (context.kind !== "ok") return privateError("store_unavailable", 503);
   let evidence: SharedBriefRunEvidence | null = null;
@@ -53,11 +59,11 @@ export async function runSharedBrief(userId: string, raw: unknown, deps: SharedB
   }
   const start = now();
   let basis;
-  try { basis = sharedGeoBriefBasis({ frozen: frozen.value, context: context.value, questionId: selection.questionId, questionText: selection.manualQuestion?.trim() ?? "", runEvidence: evidence, runId: deps.runId(), now: new Date(start).toISOString() }); } catch { return privateError("brief_unavailable", 422); }
+  try { basis = sharedGeoBriefBasis({ frozen: frozen.value, context: context.value, questionId: selection.questionId, questionText: selection.manualQuestion?.trim() ?? "", runEvidence: evidence, runId: deps.runId(), now: new Date(start).toISOString() }); } catch { return privateError("store_unavailable", 503); }
   if (!parseGeoContentBriefShape(basis).ok) return privateError("brief_unavailable", 422);
   if (!deps.configured()) return privateError("provider_unconfigured", 503);
   if (!await consume(userId)) return privateJson({ error: { code: "daily_limit" }, limit: 20 }, 429);
-  const reply = await deps.assemble(basis);
+  const reply = await deps.assemble(basis, { properNames: geoQuestionProperNames(frozen.value.payload) });
   basis.run.elapsed_ms = Math.max(0, now() - start);
   const brief = await assembleSharedGeoBrief(basis, reply);
   return privateJson({ data: { brief } });

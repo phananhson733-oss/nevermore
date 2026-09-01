@@ -3,8 +3,9 @@
 // @pos    -- the identity of a GEO knowledge base; the database recomputes this digest and refuses a mismatch
 
 import { isMatchableGeoName } from "../agents/geo-alias-match.ts";
-import { isSupportedGeoQuestionLanguage } from "./asset-context.ts";
+import { geoQuestionLanguageIssues, geoQuestionPlaceholderIssues, type GeoQuestionInputOptions } from "./kb-question-language.ts";
 import { geoKbJsonbBytes, parseGeoProfileCopy, type GeoProfileCopy } from "./kb-profile-copy.ts";
+import { geoQuestionLanguageIssue, geoQuestionProperNames } from "./question-quality.ts";
 
 export const GEO_KB_SCHEMA_VERSION = "marketing-geo-kb.v1" as const;
 
@@ -29,7 +30,7 @@ export interface GeoKbRole {
   readonly segment: string;
   readonly painPoints: readonly string[];
   readonly decisionCriteria: readonly string[];
-  /** Words this role actually uses; they become required entities in questions. */
+  /** Words this role actually uses; retained as context, not automatic required entities. */
   readonly vocabulary: readonly string[];
 }
 
@@ -424,18 +425,35 @@ export type GeoKbBlocker =
   | "aliases_missing"
   | "alias_too_short"
   | "category_terms_missing"
+  | "category_language_mismatch"
+  | "question_quality"
   | "no_confirmed_competitor"
   | "role_missing"
-  | "unsupported_language";
+  | "unsupported_language"
+  | "category_terms_not_english"
+  | "role_terms_not_english"
+  | "category_placeholder_invalid"
+  | "role_placeholder_invalid";
 
 export function geoKbBlockers(
   payload: GeoKbPayload,
-  options: { readonly roleLayersSkipped?: boolean } = {},
+  options: GeoQuestionInputOptions = {},
 ): readonly GeoKbBlocker[] {
   const blockers: GeoKbBlocker[] = [];
-  if (!isSupportedGeoQuestionLanguage(payload.market.language)) {
-    blockers.push("unsupported_language");
-  }
+  // The legacy freeze fallback explicitly says role layers are active but has
+  // no source-conditioned role IDs. Its rendered questions are the authority
+  // for language quality, so the generic question-quality gate handles those
+  // rows. Bare input checks still validate every role; source-conditioned calls
+  // validate exactly their active roles.
+  const languageOptions = options.roleLayersSkipped === false && options.activeRoleIds === undefined
+    ? { ...options, activeRoleIds: [] }
+    : options;
+  blockers.push(
+    ...geoQuestionLanguageIssues(payload, languageOptions).filter(
+      (issue) => issue !== "category_terms_not_english",
+    ),
+    ...geoQuestionPlaceholderIssues(payload, options),
+  );
   if (payload.officialName.length === 0) blockers.push("official_name_missing");
   if (payload.aliases.length === 0) blockers.push("aliases_missing");
   // A name the mention matcher will not look for has to be refused here, before
@@ -455,6 +473,9 @@ export function geoKbBlockers(
     blockers.push("alias_too_short");
   }
   if (payload.categoryTerms.length === 0) blockers.push("category_terms_missing");
+  if (geoQuestionLanguageIssue(payload.categoryTerms[0] ?? "", payload.market.language, geoQuestionProperNames(payload))) {
+    blockers.push("category_language_mismatch");
+  }
   if (payload.roles.length === 0 && options.roleLayersSkipped !== true) blockers.push("role_missing");
   if (!payload.competitors.some((entry) => entry.confirmed)) {
     blockers.push("no_confirmed_competitor");

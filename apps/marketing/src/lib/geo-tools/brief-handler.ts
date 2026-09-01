@@ -1,5 +1,5 @@
 // @input  -- an authenticated POST naming a frozen version and one question
-// @output -- one assembled brief, or a typed refusal
+// @output -- bounded frozen-input metadata, one assembled brief, or a typed refusal
 // @pos    -- the HTTP shape of the GEO Brief; it decides order, never content
 
 import {
@@ -30,6 +30,8 @@ import { normalizeGeoHost } from "../agents/geo-url.ts";
 import type { KeywordLlmUsage } from "../tools/keyword-llm-client.ts";
 import { GEO_CONTENT_BRIEF_SCHEMA } from "@sf/public-tools/content-brief/geo-contract";
 import { runSharedBrief, type SharedBriefHandlerDependencies } from "./brief-shared-handler.ts";
+import { projectBriefFrozenChoice } from "./brief-load-projection.ts";
+import { geoBriefFactsForSnapshot } from "./brief-facts.ts";
 
 const BODY_LIMIT_BYTES = 8 * 1024;
 
@@ -42,11 +44,41 @@ export interface BriefFrozenChoice {
   readonly snapshotId: string;
   readonly revision: number;
   readonly frozenAt: string;
+  readonly contentHash: string;
+  // Additive load metadata; historical selector rows may not have these fields.
+  readonly market?: { readonly country: string; readonly language: string };
+  readonly properNames?: readonly string[];
+  readonly evidenceSummary?: {
+    readonly snapshotFacts: number;
+    readonly contextFacts: number | null;
+    readonly usableFacts: number;
+    readonly missingFacts: number;
+    readonly profileAttached: boolean;
+    readonly contextAttached: boolean;
+  };
+  readonly promptsetRef: {
+    readonly schema: string;
+    readonly registryVersion: string;
+    readonly hash: string;
+  };
   readonly questions: readonly {
     readonly id: string;
     readonly text: string;
     readonly layer: GeoQuestionLayer;
     readonly roleId: string | null;
+    readonly role: { readonly id: string; readonly label: string; readonly segment: string } | null;
+    readonly qualityIssues?: readonly string[];
+  }[];
+}
+
+export interface BriefLoadContext {
+  readonly gap: "A" | "D";
+  readonly runRef: { readonly id: string; readonly fingerprint: string };
+  readonly samples: readonly {
+    readonly id: string;
+    readonly engine: string;
+    readonly status: "answered" | "failed";
+    readonly collectedAt: string;
   }[];
 }
 
@@ -118,14 +150,53 @@ export async function handleBriefLoad(
   if (!auth.ok) return auth.response;
   const body = await readAccountMutationJson(request, BODY_LIMIT_BYTES);
   if (!body.ok) return body.response;
-  if (exactKeys(body.value, ["schema", "kbId", "snapshotId"]) && dependencies.shared !== undefined) {
+  const exactLoad = exactKeys(body.value, ["schema", "kbId", "snapshotId"]);
+  const handoffLoad = exactKeys(body.value, ["schema", "kbId", "snapshotId", "questionId", "runId", "gapId"]);
+  if (exactLoad || handoffLoad) {
     const row = body.value as Record<string, unknown>;
-    if (row.schema !== GEO_CONTENT_BRIEF_SCHEMA || typeof row.kbId !== "string" || typeof row.snapshotId !== "string") return privateError("invalid_request", 400);
-    const found = await dependencies.shared.readFrozen({ userId: auth.userId, kbId: row.kbId, snapshotId: row.snapshotId });
+    const validId = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 200 && value.trim() === value;
+    if (row.schema !== GEO_CONTENT_BRIEF_SCHEMA || !validId(row.kbId) || !validId(row.snapshotId)) return privateError("invalid_request", 400);
+    if (handoffLoad && (!validId(row.questionId) || !validId(row.runId) || !validId(row.gapId))) return privateError("invalid_request", 400);
+    const shared = dependencies.shared;
+    if (shared === undefined) return privateError("store_unavailable", 503);
+    const found = await shared.readFrozen({ userId: auth.userId, kbId: row.kbId, snapshotId: row.snapshotId });
     if (found.kind === "not_found") return privateError("not_found", 404);
     if (found.kind !== "ok") return privateError("store_unavailable", 503);
     const frozen = found.value;
-    return privateJson({ data: { choices: [{ kbId: frozen.kbId, host: normalizeGeoHost(frozen.payload.targetUrl), snapshotId: frozen.snapshotId, revision: frozen.revision, frozenAt: frozen.frozenAt, questions: frozen.questionSet.questions }], runsPerDay: GEO_BRIEF_RUNS_PER_DAY, providerConfigured: dependencies.shared.configured() } });
+    if (frozen.kbId !== row.kbId || frozen.snapshotId !== row.snapshotId) return privateError("not_found", 404);
+    const host = normalizeGeoHost(frozen.payload.targetUrl);
+    if (host === null) return privateError("store_unavailable", 503);
+    let context: BriefLoadContext | undefined;
+    if (handoffLoad && validId(row.questionId) && validId(row.runId) && validId(row.gapId)) {
+      if (!frozen.questionSet.questions.some(question => question.id === row.questionId)) return privateError("not_found", 404);
+      const resolved = await shared.readRunEvidence({ userId: auth.userId, runId: row.runId, gapId: row.gapId, questionId: row.questionId, frozen });
+      if (resolved.kind === "not_eligible") return privateError("gap_not_eligible", 422);
+      if (resolved.kind === "not_found") return privateError("not_found", 404);
+      if (resolved.kind !== "ok" || resolved.value.runId !== row.runId) return privateError("run_evidence_unavailable", 503);
+      if (resolved.value.gap !== "A" && resolved.value.gap !== "D") return privateError("gap_not_eligible", 422);
+      context = {
+        gap: resolved.value.gap,
+        runRef: { id: resolved.value.runId, fingerprint: resolved.value.fingerprint },
+        samples: resolved.value.samples.map(sample => ({ id: sample.id, engine: sample.engine, status: sample.status, collectedAt: sample.collected_at })),
+      };
+    }
+    let evidenceSummary: BriefFrozenChoice["evidenceSummary"];
+    try {
+      const snapshotContext = await shared.readContext({ userId: auth.userId, kbId: row.kbId, snapshotId: row.snapshotId });
+      if (snapshotContext.kind !== "ok") return privateError("store_unavailable", 503);
+      const { factTable, receipts } = geoBriefFactsForSnapshot(frozen, snapshotContext.value);
+      evidenceSummary = {
+        snapshotFacts: frozen.payload.facts.length,
+        contextFacts: snapshotContext.value?.facts.length ?? null,
+        usableFacts: receipts.length,
+        missingFacts: factTable.filter(fact => fact.value === null).length,
+        profileAttached: snapshotContext.value?.profile != null,
+        contextAttached: snapshotContext.value !== null,
+      };
+    } catch {
+      return privateError("store_unavailable", 503);
+    }
+    return privateJson({ data: { choices: [{ ...projectBriefFrozenChoice(frozen, host), evidenceSummary }], runsPerDay: GEO_BRIEF_RUNS_PER_DAY, providerConfigured: shared.configured(), ...(context === undefined ? {} : { context }) } });
   }
   if (!exactKeys(body.value, [])) return privateError("invalid_request", 400);
 

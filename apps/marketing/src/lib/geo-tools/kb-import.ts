@@ -114,7 +114,6 @@ export function importGeoKbPayload(source: GeoKbImportSource): GeoKbPayload {
     if (seen.has(key)) continue;
     seen.add(key);
     competitors.push(competitor);
-    if (competitors.length >= GEO_KB_LIMITS.competitors) break;
   }
 
   const country = source.profile.country.trim().toUpperCase();
@@ -136,9 +135,12 @@ export function importGeoKbPayload(source: GeoKbImportSource): GeoKbPayload {
       language: /^[a-z]{2}$/.test(language) ? language : base.market.language,
     },
     roles: roleFrom(source.profile),
-    competitors,
-    // Field-level Profile provenance is copied separately. It does not make
-    // every prose claim an independently checked fact; facts need review.
+    // A larger source needs an explicit subset selection in the complete Profile
+    // review. Choosing the first five here would silently omit the rest.
+    competitors: competitors.length > GEO_KB_LIMITS.competitors ? [] : competitors,
+    // Deliberately empty. A verified fact needs a source URL and a date, and
+    // the profile carries neither; importing its prose as facts would create
+    // exactly the unsourced numbers the fact table exists to prevent.
     facts: [],
     importedFrom: {
       websiteId: source.websiteId,

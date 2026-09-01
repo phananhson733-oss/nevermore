@@ -279,18 +279,6 @@ async function change(
   });
 }
 
-async function pressEnter(field: HTMLInputElement): Promise<void> {
-  await act(async () => {
-    field.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "Enter",
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-}
-
 function buttonWith(host: HTMLElement, text: string): HTMLButtonElement {
   const button = [...host.querySelectorAll("button")].find((candidate) =>
     candidate.textContent?.includes(text),

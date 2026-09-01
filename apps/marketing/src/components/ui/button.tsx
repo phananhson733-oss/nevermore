@@ -1,4 +1,4 @@
-// @input  — react, class-variance-authority, radix-ui, Marketing-local utils
+// @input  — react, class-variance-authority, radix-ui, Marketing-local class merge utility
 // @output — Button 组件、buttonVariants
 // @pos    — shadcn/ui 按钮原子组件，全站最基础交互元素
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md

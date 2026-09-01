@@ -1,0 +1,57 @@
+{
+  "scope": "isolated loopback PostgreSQL17; synthetic test rows only; not production backup",
+  "port": 55448,
+  "tables": [
+    {
+      "table": "marketing_geo_enrichment_receipts",
+      "count": 0,
+      "rowsDigest": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table": "marketing_geo_kb_drafts",
+      "count": 8,
+      "rowsDigest": "65fa750166ceba15df4ac2e3336e8a63"
+    },
+    {
+      "table": "marketing_geo_kb_snapshots",
+      "count": 8,
+      "rowsDigest": "c798457745fa61f6a61893a4d252d862"
+    },
+    {
+      "table": "marketing_geo_knowledge_bases",
+      "count": 8,
+      "rowsDigest": "06bea794181e0e71985d896a3354582c"
+    },
+    {
+      "table": "marketing_geo_snapshot_contexts",
+      "count": 0,
+      "rowsDigest": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table": "marketing_geo_visibility_runs",
+      "count": 0,
+      "rowsDigest": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table": "marketing_geo_visibility_runs_v2",
+      "count": 4,
+      "rowsDigest": "d4fd3881c4970817dd725b78ea907144"
+    },
+    {
+      "table": "marketing_website_profile_drafts",
+      "count": 0,
+      "rowsDigest": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table": "marketing_website_profile_snapshots",
+      "count": 0,
+      "rowsDigest": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "table": "marketing_websites",
+      "count": 0,
+      "rowsDigest": "d41d8cd98f00b204e9800998ecf8427e"
+    }
+  ],
+  "routineDefinitionsEqual": true
+}

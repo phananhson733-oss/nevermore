@@ -5,8 +5,8 @@
 //            an unchecked section stays out of section_ids, a signed-out visitor never triggers a
 //            POST (and gets the handoff back for the reload), reruns send the draft's own settings and
 //            the whole previous result and are counted per POST, a failed second run keeps the last good result,
-//            and a slow upload cannot overwrite a later paste; confirmed v2 follows the same private
-//            channel with its real workflow/parser, while GEO and unconfirmed v2 never reach HTTP
+//            and a slow upload cannot overwrite a later paste; confirmed v2/v3 use the same private
+//            channel with exact parsers, while legacy GEO reports and unconfirmed briefs never reach HTTP
 // @pos    -- interaction contract for the Marketing Content Draft Writer form
 
 import { act } from "react";
@@ -32,6 +32,7 @@ import {
 import { parseContentBriefHandoff } from "@sf/public-tools/content-brief/parse-brief";
 import { confirmedDraftV2Fixture, draftResultV2Fixture } from "@sf/public-tools/content-brief/v2-draft-fixtures";
 import { parseConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
+import { confirmedDraftV3Fixture } from "./content-brief-v3-fixture.ts";
 import { writeConfirmedBriefHandoff, parseConfirmedBriefHandoff } from "../../lib/tools/content-brief-v2-handoff.ts";
 import { geoBriefFixture, geoDraftFixture } from "@sf/public-tools/content-brief/geo-fixtures";
 import { geoFingerprint } from "@sf/public-tools/content-brief/parse-geo-brief";
@@ -306,6 +307,20 @@ async function loadAndRun(host: HTMLElement, brief: ContentBrief): Promise<void>
 }
 
 describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
+  it("shows an actionable pre-charge question-quality refusal from the Draft endpoint", async () => {
+    const geo = await geoBriefFixture();
+    const now = Date.now();
+    window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, JSON.stringify({ version: 1, created_at: now, expires_at: now + CONTENT_BRIEF_HANDOFF_TTL_MS, brief: geo }));
+    globalThis.fetch = signedInFetch(() => Response.json({ error: { code: "question_needs_review" } }, { status: 422 }));
+    const host = await renderTool();
+    await idle(host);
+    await click(host.querySelector("[data-run-draft]"));
+    await idle(host);
+    expect(host.querySelector("[data-error-code]")?.getAttribute("data-error-code")).toBe("question_needs_review");
+    expect(host.querySelector("[data-error-code]")?.textContent).toContain("errors.question_needs_review");
+    expect(host.querySelector("[data-brief-loaded]")).not.toBeNull();
+  });
+
   it.each(["en-US", "en-GB", "es", "zh"])("shows the correct GEO generation availability for %s without changing the displayed locale", async language => {
     const geo = await geoBriefFixture(); geo.keyword.language = language; geo.run.fingerprint = await geoFingerprint(geo);
     const now = Date.now(); window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, JSON.stringify({ version: 1, created_at: now, expires_at: now + CONTENT_BRIEF_HANDOFF_TTL_MS, brief: geo }));
@@ -495,7 +510,7 @@ describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
   });
 });
 
-describe("ContentDraftTool confirmed v2 intake with the real v2 workflow", () => {
+describe("ContentDraftTool confirmed v2/v3 intake with the real versioned workflow", () => {
   async function idle(host: HTMLElement) {
     const until = Date.now() + 5_000;
     do {
@@ -555,6 +570,57 @@ describe("ContentDraftTool confirmed v2 intake with the real v2 workflow", () =>
   });
   it("does not clear a newer foreign handoff when replacing its own written v2", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const host = await renderTool(false); await paste(host, confirmed); await click(host.querySelector('[data-testid="sign-in-succeed"]')); const foreign = storeHandoff(await draftBrief()); await click(host.querySelector("[data-replace-brief]")); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(foreign);
+  });
+  it.each(["paste", "upload", "handoff"] as const)("loads confirmed v3 through %s with its exact SERP snapshot and no automatic request", async (source) => {
+    const confirmed = await confirmedDraftV3Fixture();
+    if (source === "handoff") { const written = writeConfirmedBriefHandoff(window.sessionStorage, Date.now(), confirmed); if (!written.ok) throw new Error(written.reason); }
+    const host = await renderTool();
+    if (source === "paste") await paste(host, confirmed);
+    else if (source === "upload") { await upload(host, async () => JSON.stringify(confirmed)); await idle(host); }
+    else await idle(host);
+    expect(v2Loaded(host)).not.toBeNull();
+    expect(host.querySelector("[data-intake-rejected]")).toBeNull();
+    expect(host.querySelector("[data-confirmed-revision]")?.textContent).toContain(source);
+    const displayed = JSON.parse(host.querySelector("[data-confirmed-brief-json]")!.textContent!);
+    expect(displayed).toEqual(confirmed); expect(displayed.brief.context.serp).toEqual(confirmed.brief.context.serp);
+    expect((await parseConfirmedBriefV2(displayed)).ok).toBe(true);
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+    expect(fetchCalls()).toHaveLength(0);
+    const fresh = await remount(true); expect(v2Loaded(fresh)).toBeNull(); expect(fresh.querySelector('[data-intake-phase="empty"]')).not.toBeNull();
+    expect(fetchCalls()).toHaveLength(0);
+  });
+  it("submits the exact confirmed v3 after an explicit click and retains its version in the parsed draft", async () => {
+    const confirmed = await confirmedDraftV3Fixture(); const result = await draftResultV2Fixture(confirmed, { settings: { tone: "explanatory", person: "second", product_mention: "gap_only" } });
+    globalThis.fetch = signedInFetch((body) => { expect(body).toEqual({ brief: confirmed, settings: result.settings, section_ids: confirmed.outline.map(section => section.id) }); return Response.json(result); });
+    const host = await renderTool(); await paste(host, confirmed); expect(fetchCalls()).toHaveLength(0);
+    await click(host.querySelector("[data-generate-draft]")); await idle(host);
+    expect(fetchCalls().map(({ url }) => url)).toEqual(["/api/auth/session", "/api/tools/content-draft/run"]);
+    expect(host.querySelector("[data-draft-v2-result]")?.getAttribute("data-run-id")).toBe(result.run.run_id);
+    expect(result.confirmed_ref.schema).toBe("gengrowth.confirmed_brief/v3");
+    expect(JSON.parse(host.querySelector("[data-draft-json]")!.textContent!)).toEqual(result);
+  });
+  it.each(["paste", "upload"] as const)("rejects an unconfirmed v3 %s with confirmation_required before HTTP", async (source) => {
+    const confirmed = await confirmedDraftV3Fixture(); const host = await renderTool();
+    if (source === "paste") await paste(host, confirmed.brief); else { await upload(host, async () => JSON.stringify(confirmed.brief)); await idle(host); }
+    expect(host.querySelector("[data-intake-rejected]")?.getAttribute("data-intake-rejected")).toBe("confirmation_required");
+    expect(host.querySelector("[data-content-brief-entry]")?.getAttribute("href")).toBe("/tools/content-brief");
+    expect(v2Loaded(host)).toBeNull(); expect(fetchCalls()).toHaveLength(0);
+  });
+  it.each(["outer_hash", "inner_hash", "v2_outer_v3_inner", "v3_outer_v2_inner"] as const)("rejects confirmed v3 %s locally without a paid call", async (kind) => {
+    const confirmed = await confirmedDraftV3Fixture(); const legacy = await confirmedDraftV2Fixture();
+    const invalid = kind === "outer_hash" ? { ...confirmed, fingerprint: "f".repeat(64) }
+      : kind === "inner_hash" ? { ...confirmed, brief: { ...confirmed.brief, run: { ...confirmed.brief.run, fingerprint: "f".repeat(64) } } }
+        : kind === "v2_outer_v3_inner" ? { ...confirmed, schema: "gengrowth.confirmed_brief/v2" } : { ...confirmed, brief: legacy.brief };
+    const host = await renderTool(); await paste(host, invalid);
+    expect(host.querySelector("[data-intake-rejected]")?.getAttribute("data-intake-rejected")).toBe(kind.endsWith("hash") ? "brief_fingerprint_mismatch" : "brief_reference_invalid");
+    expect(v2Loaded(host)).toBeNull(); expect(fetchCalls()).toHaveLength(0);
+  });
+  it.each([1, 3])("rejects a confirmed v3 payload wrapped in unsupported handoff version %s", async (version) => {
+    const confirmed = await confirmedDraftV3Fixture(); const now = Date.now();
+    window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, JSON.stringify({ version, created_at: now, expires_at: now + CONTENT_BRIEF_HANDOFF_TTL_MS, brief: confirmed }));
+    const host = await renderTool(); await idle(host);
+    expect(host.querySelector("[data-intake-rejected]")).not.toBeNull(); expect(v2Loaded(host)).toBeNull();
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull(); expect(fetchCalls()).toHaveLength(0);
   });
   it("replaces a signed-out waiting legacy handoff with pasted v2 without writing a second slot", async () => {
     const legacy = await draftBrief(); const waiting = storeHandoff(legacy); const host = await renderTool(false); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(waiting); await paste(host, await confirmedDraftV2Fixture()); expect(v2Loaded(host)).not.toBeNull(); expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull(); expect(window.sessionStorage.length).toBe(0); await click(host.querySelector("[data-replace-brief]")); await pasteBrief(host, legacy); expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(legacy.run.fingerprint); expect(v2Loaded(host)).toBeNull();

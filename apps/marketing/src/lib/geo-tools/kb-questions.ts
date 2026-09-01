@@ -11,12 +11,14 @@ import {
   type GeoTemplatePlaceholderName,
 } from "../agents/geo-template-registry.ts";
 import { geoCategoryStem } from "../agents/geo-category-stem.ts";
+import { geoCategoryPhrases } from "./kb-question-placeholders.ts";
 import {
   canonicalGeoKbText,
   type GeoKbPayload,
   type GeoKbValue,
 } from "./kb-contract.ts";
 import { geoKbDigest } from "./kb-digest.ts";
+import { geoQuestionReferencesEntity } from "./question-quality.ts";
 
 export const GEO_QUESTION_SET_SCHEMA_VERSION = "marketing-geo-question-set.v1";
 
@@ -66,41 +68,19 @@ export interface GeoQuestion {
 
 export interface GeoQuestionSet {
   readonly schemaVersion: typeof GEO_QUESTION_SET_SCHEMA_VERSION;
-  /** Registry release the calibrated wording came from. */
+  /** Registry release plus the entity-derivation policy used for this frozen set. */
   readonly registryVersion: string;
   readonly language: string;
   readonly country: string;
   readonly questions: readonly GeoQuestion[];
 }
 
-/** The four category forms the calibrated templates expect. */
-function categoryPhrases(value: string): {
-  readonly stem: string;
-  readonly plural: string;
-  readonly singular: string;
-  readonly software: string;
-} {
-  const stem = geoCategoryStem(value);
-  if (stem.length === 0) {
-    // A category that stems to nothing renders questions with no subject at
-    // all ("What are the top tools right now?"), which the calibration showed
-    // never reaches the web. The caller refuses such a payload before freezing;
-    // this branch only keeps the function total.
-    return { stem: "", plural: "tools", singular: "tool", software: "software" };
-  }
-  return {
-    stem,
-    plural: `${stem} tools`,
-    singular: `${stem} tool`,
-    software: `${stem} software`,
-  };
-}
 
 function templateValues(
   payload: GeoKbPayload,
   options: { readonly buyer?: string; readonly rivalList?: string },
 ): Partial<Record<GeoTemplatePlaceholderName, string>> {
-  const phrases = categoryPhrases(payload.categoryTerms[0] ?? "");
+  const phrases = geoCategoryPhrases(payload.categoryTerms[0] ?? "");
   return {
     categoryStem: phrases.stem.length > 0 ? phrases.stem : phrases.plural,
     categoryPlural: phrases.plural,
@@ -149,40 +129,26 @@ function layerOf(entry: GeoTemplateEntry): GeoQuestionLayer {
 /**
  * What a correct answer to this question would have to name.
  *
- * Per layer, because the entity that proves coverage differs: a discovery
- * question is answered by naming the category, a comparison question by naming
- * a rival, a branded question by naming the brand.
+ * Only the primary category and people or brands actually named in this text.
+ * Other category terms, role criteria and brand aliases remain KB context;
+ * mentioning all of them is not a requirement for answering this question.
  */
 function requiredEntitiesFor(
-  layer: GeoQuestionLayer,
+  text: string,
   payload: GeoKbPayload,
   role: GeoKbPayload["roles"][number] | null,
   rival: string | null,
 ): readonly string[] {
-  const category = payload.categoryTerms;
-  switch (layer) {
-    case "problem":
-      return [
-        ...(role?.painPoints ?? []),
-        ...(role?.vocabulary ?? []),
-        ...category,
-      ].slice(0, 8);
-    case "discovery":
-      return [...category, ...(role ? [role.segment] : [])].slice(0, 8);
-    case "comparison":
-      return [...(rival ? [rival] : confirmedRivals(payload)), ...category].slice(
-        0,
-        8,
-      );
-    case "evaluation":
-      return [
-        payload.officialName,
-        ...(role?.decisionCriteria ?? []),
-        ...category,
-      ].slice(0, 8);
-    case "branded":
-      return [payload.officialName, ...payload.aliases].slice(0, 8);
-  }
+  const category = payload.categoryTerms[0] ?? "";
+  const subject = geoCategoryStem(category);
+  const categoryEntity = geoQuestionReferencesEntity(text, category) ? category : subject;
+  const names = [role?.label, rival, payload.officialName].filter(
+    (value): value is string => value !== undefined && value !== null && geoQuestionReferencesEntity(text, value),
+  );
+  return [...new Set([
+    ...(geoQuestionReferencesEntity(text, subject) ? [categoryEntity] : []),
+    ...names,
+  ])];
 }
 
 function questionId(index: number, templateId: string | null): string {
@@ -201,7 +167,7 @@ function questionId(index: number, templateId: string | null): string {
  */
 function brandedQuestions(payload: GeoKbPayload): readonly string[] {
   const name = payload.officialName;
-  const phrases = categoryPhrases(payload.categoryTerms[0] ?? "");
+  const phrases = geoCategoryPhrases(payload.categoryTerms[0] ?? "");
   return [
     `What is ${name}, and who is it for?`,
     `Is ${name} a good choice among ${phrases.plural}?`,
@@ -229,7 +195,7 @@ export function buildGeoQuestionSet(payload: GeoKbPayload): GeoQuestionSet {
       layer,
       mode,
       roleId,
-      requiredEntities: requiredEntitiesFor(layer, payload, role, rival),
+      requiredEntities: requiredEntitiesFor(text, payload, role, rival),
       templateId,
       calibrated,
     });
@@ -300,7 +266,7 @@ function registryVersionOf(): string {
 
 const REGISTRY_VERSION: string = `${
   findGeoTemplate("geo.retrieval.category_top", "1")?.calibratedOn ?? "unknown"
-}/${String(GEO_TEMPLATES.length)}`;
+}/${String(GEO_TEMPLATES.length)}/question-entities-v2`;
 
 export function geoQuestionSetDigest(set: GeoQuestionSet): string {
   return geoKbDigest(set as unknown as GeoKbValue);

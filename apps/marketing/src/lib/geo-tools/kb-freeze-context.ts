@@ -39,7 +39,7 @@ export async function freezeGeoKbWithContext(input: {
     if (draft.value.draftVersion !== input.baseVersion) return { kind: "conflict", currentDraftVersion: draft.value.draftVersion };
     if (context.kbId !== input.kbId || context.targetHost !== draft.value.targetHost || context.payloadHash !== draft.value.contentHash) return unavailable();
     if (draft.value.payload.profileCopy && canonicalGeoEnrichmentText(context.profile) !== canonicalGeoEnrichmentText(inheritedProfileFromCopy(draft.value.payload.profileCopy))) return { kind: "invalid", code: "context_stale" };
-    const blockers = geoKbBlockers(draft.value.payload, { roleLayersSkipped: context.skippedLayers.length === 2 });
+    const blockers = geoKbBlockers(draft.value.payload, { roleLayersSkipped: context.skippedLayers.length === 2, activeRoleIds: context.roles.filter(role => role.source === "gsc").map(role => role.roleId) });
     if (blockers.length) return { kind: "invalid", code: "not_freezable", blockers };
     if (geoQuestionSetDigest(input.questionSet) !== context.questionSetHash) return { kind: "invalid", code: "question_set_stale" };
     const result = await dependencies.callRpc("marketing_geo_freeze_kb_with_context", {

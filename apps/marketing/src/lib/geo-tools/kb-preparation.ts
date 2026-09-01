@@ -12,6 +12,7 @@ import { parseGeoKbPayload, type GeoKbPayload } from "./kb-contract.ts";
 import { canonicalGeoV2Text } from "./kb-v2-json.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import { GEO_QUESTION_SYNTHESIS_PROMPT_VERSION } from "./kb-synthesis.ts";
+import { geoCategoryStem } from "../agents/geo-category-stem.ts";
 
 export interface BuildGeoPreparedKnowledgeBaseInput extends Pick<BuildGeoSnapshotContextV2Input, "sourceReceiptRefs" | "evidenceCatalog" | "sourceSummary" | "modelRoleEdits" | "verifiedFactSupport" | "competitorEvidence"> {
   readonly candidateId: string;
@@ -27,6 +28,14 @@ function semanticQuestionId(id: string): string {
   const prefixed = `semantic:${id}`;
   // Do not truncate model IDs into collisions when the namespace adds bytes.
   return prefixed.length <= 128 ? prefixed : `semantic:sha256:${createHash("sha256").update(id).digest("hex")}`;
+}
+
+function registryCategoryStemEntity(entity: GeoQuestionEntityV2): GeoQuestionEntityV2 | null {
+  if (entity.kind !== "category") return null;
+  const text = geoCategoryStem(entity.text);
+  if (text.length === 0 || text === entity.text) return null;
+  const digest = createHash("sha256").update(canonicalGeoV2Text(entity)).digest("hex");
+  return { ...entity, id: `registry-category-stem:sha256:${digest}`, text };
 }
 
 function assertSavedBasis(input: BuildGeoPreparedKnowledgeBaseInput, payload: GeoKbPayloadV2, semantic: GeoQuestionSynthesisInput): void {
@@ -104,6 +113,18 @@ export function buildGeoPreparedKnowledgeBase(input: BuildGeoPreparedKnowledgeBa
   const output = checkedOutput.value;
   const known = new Map(semantic.entities.map(entity => [entity.id, entity]));
   const entityCatalog: GeoQuestionEntityV2[] = output.entities.map(entity => ({ ...known.get(entity.id)!, text: entity.text }));
+  const entityKeys = new Set(entityCatalog.map(entity => `${entity.kind}\u0000${entity.roleId ?? ""}\u0000${entity.text}`));
+  const entityIds = new Set(entityCatalog.map(entity => entity.id));
+  for (const source of [...entityCatalog]) {
+    const derived = registryCategoryStemEntity(source);
+    if (derived === null) continue;
+    const key = `${derived.kind}\u0000${derived.roleId ?? ""}\u0000${derived.text}`;
+    if (entityKeys.has(key)) continue;
+    if (entityIds.has(derived.id)) throw new Error("Derived registry entity identity collision");
+    entityKeys.add(key);
+    entityIds.add(derived.id);
+    entityCatalog.push(derived);
+  }
   const entityMap = new Map(entityCatalog.map(entity => [entity.id, entity]));
   const semanticQuestions: GeoQuestionV2[] = output.questions.map(question => ({
     id: semanticQuestionId(question.id), text: question.text, layer: question.layer, mode: "demand", roleId: question.roleId,

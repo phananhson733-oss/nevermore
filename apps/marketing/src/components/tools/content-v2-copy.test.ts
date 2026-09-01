@@ -1,6 +1,6 @@
 // @input -- actual public Content Brief and Draft landing copy in both locales
 // @output -- prevents old primary-only, cluster-gated and CJK-disabled promises
-// @pos -- acquisition copy contract for the current confirmed-v2 workflow
+// @pos -- acquisition copy contract for confirmed v2/v3 inputs and Draft v2 output
 import { describe, expect, it } from "vitest";
 import { getConnectedToolContent } from "./connected-tool-content.ts";
 import en from "../../i18n/messages/en.json";
@@ -10,6 +10,25 @@ describe("current content tool landing copy", () => {
   for (const locale of ["en", "zh"] as const) {
     const brief = getConnectedToolContent(locale, "content-brief");
     const draft = getConnectedToolContent(locale, "content-draft");
+    it(`${locale}: names both confirmed input versions without claiming a Draft v3 result`, () => {
+      expect(draft.sourceDetail).toContain("Content Brief v2/v3");
+      expect(draft.sourceDetail).toContain("Draft v2");
+      expect(draft.sourceDetail).toContain("GEO Brief v1.1");
+      expect(draft.sourceDetail).toContain("SEO v1");
+      expect(draft.faq.find(item => /refused|被拒绝/.test(item.question))?.answer).toContain("v2/v3");
+      expect(draft.faq.find(item => /languages|语言/.test(item.question))?.answer).toContain("v2/v3");
+      expect(JSON.stringify(draft)).not.toContain("Draft v3");
+    });
+    it(`${locale}: gives exact current schema examples and keeps supported legacy intake explicit`, () => {
+      const copy = (locale === "en" ? en : zh).tools.contentDraft;
+      expect(copy.intake.pastePlaceholder).toContain('"schema": "gengrowth.confirmed_brief/v3"');
+      expect(copy.intake.pastePlaceholder).toContain("v2");
+      for (const text of [copy.intake.confirmationRequired, copy.intake.supportedSchemas, copy.intake.maxBytes, copy.intake.geoDocument,
+        copy.v2.errors.brief_schema_mismatch, copy.v2.errors.brief_reference_invalid, copy.v2.errors.brief_fingerprint_mismatch, copy.errors.brief_schema_mismatch]) expect(text).toContain("v2/v3");
+      for (const text of [copy.intake.supportedSchemas, copy.errors.brief_schema_mismatch]) { expect(text).toContain("SEO"); expect(text).toContain("v1.1"); }
+      expect(copy.v2.fullJson).toContain("Draft v2 JSON");
+      expect(copy.errors.brief_schema_mismatch).not.toMatch(/not a Content Brief v1|不是 Content Brief v1/);
+    });
     it(`${locale}: preserves the newly merged shared GEO brief without accepting a legacy GEO report`, () => {
       const intake = (locale === "en" ? en : zh).tools.contentDraft.intake;
       expect(intake.supportedSchemas).toContain("v1.1");

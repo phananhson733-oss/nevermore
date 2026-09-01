@@ -940,6 +940,44 @@ describe("freezing a GEO knowledge base", () => {
 });
 
 describe("reading a frozen GEO knowledge base", () => {
+  it("reads a legacy mixed-language snapshot verbatim after the generation-policy change", async () => {
+    const legacyPayload = {
+      ...payload(),
+      categoryTerms: ["占星工具", "心理占星", "自我探索", "CBT 日记", "知识库", "合盘分析"],
+    };
+    const legacySet: GeoQuestionSet = {
+      schemaVersion: "marketing-geo-question-set.v1",
+      registryVersion: "2026-08-17/13",
+      language: "en",
+      country: "US",
+      questions: [{
+        id: "q01-retrieval.category_top",
+        text: "What are the top 占星工具 tools right now?",
+        layer: "discovery",
+        mode: "retrieval",
+        roleId: null,
+        requiredEntities: legacyPayload.categoryTerms,
+        templateId: "geo.retrieval.category_top",
+        calibrated: true,
+      }],
+    };
+    const contentHash = digest(legacyPayload);
+    const questionSetHash = geoQuestionSetDigest(legacySet);
+    const deps = dependencies({
+      readSnapshot: vi.fn(async () => ({ kind: "ok" as const, data: snapshotRow({
+        payload: legacyPayload, content_hash: contentHash,
+        question_set: legacySet, question_set_hash: questionSetHash,
+      }) })),
+    });
+
+    await expect(readFrozenGeoKb({ userId: USER_ID, kbId: KB_ID, revision: 1 }, deps)).resolves.toEqual({
+      kind: "ok",
+      value: { kbId: KB_ID, snapshotId: SNAPSHOT_ID, revision: 1, frozenAt: ISO_NOW,
+        payload: legacyPayload, contentHash, questionSet: legacySet, questionSetHash, questionCount: 1 },
+    });
+    expect(deps.callRpc).not.toHaveBeenCalled();
+  });
+
   it("resolves an archived snapshot id exactly, without using the current pointer", async () => {
     const deps = dependencies();
     expect((await readFrozenGeoKb({ userId: USER_ID, kbId: KB_ID, snapshotId: SNAPSHOT_ID }, deps)).kind).toBe("ok");

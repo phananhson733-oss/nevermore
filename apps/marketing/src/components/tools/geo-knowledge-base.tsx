@@ -38,11 +38,14 @@ import { GeoKbEnrichment } from "./geo-kb-enrichment.tsx";
 import { pendingGeoFeatureFact } from "./geo-kb-feature-candidates.ts";
 import { isSupportedGeoQuestionLanguage } from "../../lib/geo-tools/asset-context.ts";
 import { createGeoProfileCopy, type GeoProfileCopy } from "../../lib/geo-tools/kb-profile-copy.ts";
+import { GeoKbMeasurementReview } from "./geo-kb-measurement-review.tsx";
 import { GeoProfileCopyReview } from "./geo-kb-profile-copy-review.tsx";
 import { GeoKbFrozenCopy } from "./geo-kb-frozen-copy.tsx";
 import { Button } from "../ui/button.tsx";
 import { Input } from "../ui/input.tsx";
 import { Label } from "../ui/label.tsx";
+import { consumeGeoKnowledgeRepair, GEO_BRIEF_RETURN_KEY, writeGeoBriefReturn, type GeoKnowledgeRepair } from "../../lib/geo-tools/brief-knowledge-handoff.ts";
+import { localePath } from "../../lib/locale-path.ts";
 
 const ENDPOINTS = {
   load: "/api/tools/geo-knowledge-base/load",
@@ -69,7 +72,7 @@ type Status =
       readonly kind: "error";
       readonly code: string;
       readonly reason?: string;
-      /** The server's own list, when it refused a freeze with one. */
+      /** Blockers from the server or an unsaved repair form. */
       readonly blockers?: readonly GeoKbBlocker[];
     }
   | { readonly kind: "saved"; readonly at: string }
@@ -231,6 +234,7 @@ function TextField({
   value,
   onChange,
   readOnly = false,
+  maxLength = GEO_KB_LIMITS.text,
 }: {
   readonly label: string;
   readonly help?: string;
@@ -238,6 +242,7 @@ function TextField({
   readonly value: string;
   readonly onChange: (next: string) => void;
   readonly readOnly?: boolean;
+  readonly maxLength?: number;
 }) {
   const id = useId();
   return (
@@ -246,7 +251,7 @@ function TextField({
       <Input
         id={id} name={id} autoComplete="off" readOnly={readOnly} className="mt-3"
         aria-describedby={help === undefined ? undefined : `${id}-help`}
-        maxLength={GEO_KB_LIMITS.text}
+        maxLength={maxLength}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         value={value}
@@ -313,6 +318,12 @@ export function GeoKnowledgeBase({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
+  const repairInitialized = useRef(false);
+  const [repair, setRepair] = useState<GeoKnowledgeRepair | null>(null);
+  const [repairInvalid, setRepairInvalid] = useState(false);
+  const [repairFrozen, setRepairFrozen] = useState<{ snapshotId: string; draftVersion: number } | null>(null);
+  const [repairQuestionId, setRepairQuestionId] = useState<string | null>(null);
+  const [returnStorageError, setReturnStorageError] = useState(false);
   /**
    * Whether a save has been attempted since this knowledge base was loaded.
    *
@@ -335,6 +346,8 @@ export function GeoKnowledgeBase({
     () => (payload === null ? NO_ROW_ISSUES : geoKbRowIssues(payload)),
     [payload],
   );
+  const missingRepairPrimaryCategory = repair !== null && payload !== null &&
+    (payload.categoryTerms[0]?.trim().length ?? 0) === 0;
   /**
    * One judgement of what still blocks a freeze, computed by the function the
    * server freezes with.
@@ -344,12 +357,17 @@ export function GeoKnowledgeBase({
    * server-side: the button stayed live, the freeze came back 422, and the code
    * had no sentence on this side.
    */
-  const blockers = useMemo(
-    () => (submission === null ? [] : geoKbBlockers(submission, {
-      roleLayersSkipped: view?.context?.skippedLayers.includes("problem") === true &&
-        view.context.skippedLayers.includes("evaluation"),
-    })),
-    [submission, view?.context],
+  const blockers = useMemo<readonly GeoKbBlocker[]>(
+    () => {
+      const current = submission === null ? [] : geoKbBlockers(submission, {
+        roleLayersSkipped: view?.context?.skippedLayers.includes("problem") === true &&
+          view.context.skippedLayers.includes("evaluation"),
+        ...(view?.context?.activeRoleIds === undefined ? {} : { activeRoleIds: view.context.activeRoleIds }),
+      });
+      return missingRepairPrimaryCategory && !current.includes("category_terms_missing")
+        ? ["category_terms_missing", ...current] : current;
+    },
+    [missingRepairPrimaryCategory, submission, view?.context],
   );
 
   const post = useCallback(
@@ -442,6 +460,20 @@ export function GeoKnowledgeBase({
     [],
   );
 
+  const adoptLoaded = useCallback((next: GeoKbView) => {
+    // Everything reset here belongs to a site rather than to the page. A value
+    // carried across meant the previous site's blockers stayed on screen with
+    // the freeze button live beside them; the list is derived now, and the rest
+    // of the set is reset together because that is how it goes wrong.
+    setView(next);
+    setPayload(next.payload);
+    setQuestions(next.frozen?.questions ?? null);
+    setShowQuestions(false);
+    setShowRowIssues(false);
+    setDirty(false);
+    setStatus({ kind: "idle" });
+  }, []);
+
   const load = useCallback(async () => {
     const url = siteUrl.trim();
     if (url.length === 0) return;
@@ -455,22 +487,52 @@ export function GeoKnowledgeBase({
       setStatus({ kind: "error", code: "schema_mismatch" });
       return;
     }
-    const next = result.data;
-    // Everything reset here belongs to a site rather than to the page. A value
-    // carried across meant the previous site's blockers stayed on screen with
-    // the freeze button live beside them; the list is derived now, and the rest
-    // of the set is reset together because that is how it goes wrong.
-    setView(next);
-    setPayload(next.payload);
-    setQuestions(next.frozen?.questions ?? null);
-    setShowQuestions(false);
-    setShowRowIssues(false);
-    setDirty(false);
-    setStatus({ kind: "idle" });
-  }, [post, siteUrl]);
+    adoptLoaded(result.data);
+  }, [adoptLoaded, post, siteUrl]);
+
+  const loadRepair = useCallback(async (context: GeoKnowledgeRepair) => {
+    setStatus({ kind: "busy" });
+    const result = await post(ENDPOINTS.load, { kbId: context.kbId });
+    if (!result.ok) {
+      setStatus({ kind: "error", code: result.code });
+      return;
+    }
+    if (!isGeoKbView(result.data) || result.data.kbId !== context.kbId) {
+      setStatus({ kind: "error", code: "schema_mismatch" });
+      return;
+    }
+    setSiteUrl(result.data.origin);
+    adoptLoaded(result.data);
+  }, [adoptLoaded, post]);
+
+  useEffect(() => {
+    if (!signedIn || initialView !== undefined || canonicalWebsiteId !== undefined || repairInitialized.current) return;
+    repairInitialized.current = true;
+    try {
+      const context = consumeGeoKnowledgeRepair(window.sessionStorage);
+      if (context === null) {
+        setRepairInvalid(new URLSearchParams(window.location.search).get("repair") === "brief");
+        return;
+      }
+      setRepair(context);
+      void loadRepair(context);
+    } catch {
+      setRepairInvalid(true);
+    }
+  }, [canonicalWebsiteId, initialView, loadRepair, signedIn]);
+
+  useEffect(() => {
+    if (repair === null || (!dirty && status.kind !== "busy")) return;
+    if (dirty) setRepairQuestionId(null);
+    try { window.sessionStorage.removeItem(GEO_BRIEF_RETURN_KEY); } catch { /* A new return still requires a successful storage write. */ }
+  }, [dirty, repair, status.kind]);
 
   const save = useCallback(async () => {
     if (view === null || submission === null) return;
+    if (missingRepairPrimaryCategory) {
+      setStatus({ kind: "error", code: "not_ready", blockers: ["category_terms_missing"] });
+      return;
+    }
     if (hasGeoKbRowIssues(rowIssues)) {
       // Nothing is sent, so nothing else in this save is lost. The rows the
       // write contract would refuse are marked where they are, instead of the
@@ -516,10 +578,17 @@ export function GeoKnowledgeBase({
     // The response acknowledges only the submitted edit, not later typing.
     setDirty(editRevision.current !== savedEditRevision);
     setStatus({ kind: "saved", at: data.updatedAt });
-  }, [adoptConflictVersion, post, rowIssues, submission, view]);
+  }, [adoptConflictVersion, missingRepairPrimaryCategory, post, rowIssues, submission, view]);
 
   const freeze = useCallback(async () => {
     if (view === null) return;
+    if (missingRepairPrimaryCategory) {
+      setStatus({ kind: "error", code: "not_ready", blockers: ["category_terms_missing"] });
+      return;
+    }
+    const frozenEditRevision = editRevision.current;
+    setRepairFrozen(null);
+    setRepairQuestionId(null);
     setStatus({ kind: "busy" });
     const result = await post(ENDPOINTS.freeze, {
       kbId: view.kbId,
@@ -570,12 +639,15 @@ export function GeoKnowledgeBase({
       ...(data.context === undefined ? {} : { context: data.context }),
     });
     setQuestions(data.questions);
+    if (repair !== null && view.kbId === repair.kbId && data.snapshotId !== repair.snapshotId && editRevision.current === frozenEditRevision) {
+      setRepairFrozen({ snapshotId: data.snapshotId, draftVersion: view.draftVersion });
+    }
     setStatus({
       kind: "frozen",
       revision: data.revision,
       reused: data.reusedExisting,
     });
-  }, [adoptConflictVersion, post, view]);
+  }, [adoptConflictVersion, missingRepairPrimaryCategory, post, repair, view]);
 
   const prefill = useCallback(async () => {
     if (view === null) return;
@@ -596,6 +668,9 @@ export function GeoKnowledgeBase({
 
   const update = useCallback((next: Partial<GeoKbPayload>) => {
     editRevision.current += 1;
+    setRepairFrozen(null);
+    setRepairQuestionId(null);
+    setReturnStorageError(false);
     setPayload((current) =>
       current === null ? current : { ...current, ...next },
     );
@@ -612,7 +687,7 @@ export function GeoKnowledgeBase({
   const reloadSources = useCallback(async () => {
     if (view === null) return;
     setStatus({ kind: "busy" });
-    const result = await post(ENDPOINTS.load, { url: view.origin });
+    const result = await post(ENDPOINTS.load, repair === null ? { url: view.origin } : { kbId: repair.kbId });
     if (!result.ok) { setStatus({ kind: "error", code: result.code }); return; }
     if (!isGeoKbView(result.data) || result.data.kbId !== view.kbId) {
       setStatus({ kind: "error", code: "schema_mismatch" }); return;
@@ -622,7 +697,17 @@ export function GeoKnowledgeBase({
     // Refresh references only; keep local edits for an explicit save/review.
     setDirty(true);
     setStatus({ kind: "idle" });
-  }, [post, view]);
+  }, [post, repair, view]);
+
+  const canReturnVersion = repair !== null && view?.kbId === repair.kbId && repairFrozen !== null &&
+    view.frozen?.snapshotId === repairFrozen.snapshotId && view.draftVersion === repairFrozen.draftVersion &&
+    !dirty && status.kind !== "busy" && status.kind !== "error";
+  const retainedQuestionId = questions?.find((question) => question.id === repair?.questionId)?.id ?? null;
+  const returnQuestionId = retainedQuestionId ?? questions?.find((question) => question.id === repairQuestionId)?.id ?? null;
+  const needsReplacementQuestion = repair !== null && repair.questionId !== null && retainedQuestionId === null;
+  const canReturn = canReturnVersion && (repair?.questionId === null || returnQuestionId !== null);
+  const originalQuestion = repair?.manualQuestion ?? (view?.frozen?.snapshotId === repair?.snapshotId
+    ? view?.frozen?.questions?.find((question) => question.id === repair?.questionId)?.text : undefined);
 
   const reviewProfileCopy = useCallback(async () => {
     if (view === null) return;
@@ -695,8 +780,32 @@ export function GeoKnowledgeBase({
   return (
     <div className={inline ? "grid gap-8" : "mt-10 grid gap-8"} data-confirmed-profile-revision={confirmedProfileRevision}>
       <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
-        <h2 className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">{t("site.title")}</h2>
-        {canonicalWebsiteId === undefined ? <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
+        <h2 className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">{t(repair !== null || repairInvalid ? "repair.title" : "site.title")}</h2>
+        {repairInvalid ? <div className="mt-4 grid gap-3">
+          <p role="alert" className="text-sm text-brand-error">{t("repair.invalid")}</p>
+          <a className="justify-self-start text-sm text-brand-accent-text underline" href={localePath(locale, "/tools/geo-brief")}>{t("repair.backToBrief")}</a>
+        </div> : null}
+        {repair === null ? null : <div className="mt-4 grid gap-3 text-sm text-text-dark-secondary" data-geo-knowledge-repair>
+          {view === null ? <>
+            <p>{t(status.kind === "busy" ? "repair.loading" : "repair.loadError")}</p>
+            <div className="flex flex-wrap gap-4">
+              <button className="rounded-lg border border-brand-border-card px-3 py-2 text-brand-accent-text disabled:opacity-60"
+                type="button" disabled={status.kind === "busy"} onClick={() => void loadRepair(repair)}>{t("repair.retry")}</button>
+              <a className="self-center text-brand-accent-text underline" href={localePath(locale, "/tools/geo-brief")}>{t("repair.backToBrief")}</a>
+            </div>
+          </> : <>
+            <p>{t("repair.intro", { host: view.host })}</p>
+            <p>{t(`repair.reason.${repair.reason}`)}</p>
+            <p>{originalQuestion ? t("repair.question", { question: originalQuestion }) : t("repair.questionChanged")}</p>
+            <ol className="grid gap-2 text-brand-accent-text">
+              <li><a className="underline" href="#kb-repair-category">{t("repair.steps.category")}</a></li>
+              <li><a className="underline" href="#kb-repair-facts">{t("repair.steps.facts")}</a>{view.profile === undefined ? null : <>{" · "}<a className="underline" href="#kb-repair-profile">{t("asset.profileTitle")}</a></>}</li>
+              <li><a className="underline" href="#kb-repair-freeze">{t("repair.steps.freeze")}</a></li>
+            </ol>
+            <p>{t("repair.profileHelp")}</p>
+          </>}
+        </div>}
+        {canonicalWebsiteId === undefined && repair === null && !repairInvalid ? <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
           <div>
             <label
               className="block text-[13px] text-text-dark-secondary"
@@ -745,14 +854,14 @@ export function GeoKnowledgeBase({
         // the next one.
         <Fragment key={view.kbId}>
           {view.profile !== undefined || canonicalWebsiteId !== undefined ? (
-            <GeoKbInheritedProfile profile={view.profile ?? null} locale={locale}
-              {...(payload.profileCopy === undefined ? {} : { copy: payload.profileCopy })} inline={inline}
+            <div id={repair !== null ? "kb-repair-profile" : undefined} className={repair !== null ? "scroll-mt-24" : undefined}><GeoKbInheritedProfile profile={view.profile ?? null} locale={locale}
+              {...(payload.profileCopy === undefined ? {} : { copy: payload.profileCopy })} inline={inline} repairMode={repair !== null}
               facts={payload.facts} onAddFeature={(feature) => {
                 const candidate = pendingGeoFeatureFact(feature, payload.facts);
                 if (candidate.status === "ready") update({ facts: [...payload.facts, candidate.fact] });
               }}
               {...(canonicalWebsiteId === undefined ? {} : { websiteId: canonicalWebsiteId })}
-              {...(profileState === undefined ? {} : { profileState })} />
+              {...(profileState === undefined ? {} : { profileState })} /></div>
           ) : <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
             <h2 className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">
               {t("site.importTitle")}
@@ -795,6 +904,8 @@ export function GeoKnowledgeBase({
               setCopyProposal(null);
             }} />}
 
+          {payload.profileCopy === undefined ? null : <GeoKbMeasurementReview key={`${payload.profileCopy.snapshotId}:${payload.profileCopy.profileHash}`} profile={payload.profileCopy.profile} payload={payload} disabled={status.kind === "busy"} onApply={next => update(next)} />}
+
           <GeoKbEnrichment kbId={view.kbId} targetHost={view.host.replace(/^www\./u, "")}
             inline={inline}
             draftVersion={view.draftVersion} payload={payload} dirty={dirty || status.kind === "busy"}
@@ -820,9 +931,15 @@ export function GeoKnowledgeBase({
                 onChange={(values) => update({ aliases: values })}
                 values={payload.aliases}
               />
-              <div>
+              <div id="kb-repair-category" className="scroll-mt-24">
+                {repair === null ? null : <div className="mb-5">
+                  <TextField label={t("repair.primaryCategory")} help={t("repair.primaryCategoryHelp")}
+                    maxLength={GEO_KB_LIMITS.listItem}
+                    value={payload.categoryTerms[0] ?? ""}
+                    onChange={(value) => update({ categoryTerms: [value, ...payload.categoryTerms.slice(1)] })} />
+                </div>}
                 <ChipsField
-                  help={t("brand.categoryHelp")}
+                  help={t("brand.categoryLanguageHelp")}
                   label={t("brand.categoryLabel")}
                   max={GEO_KB_LIMITS.categoryTerms}
                   onChange={(values) => update({ categoryTerms: values })}
@@ -1127,7 +1244,7 @@ export function GeoKnowledgeBase({
             </Button>
           </section>
 
-          <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
+          <section id="kb-repair-facts" className="scroll-mt-24 overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
             <h2 className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">
               {t("facts.title")}
             </h2>
@@ -1268,7 +1385,7 @@ export function GeoKnowledgeBase({
             </Button>
           </section>
 
-          <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
+          <section id="kb-repair-freeze" className="scroll-mt-24 overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
             <h2 className="-mx-5 -mt-5 mb-5 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7">
               {t("freeze.title")}
             </h2>
@@ -1290,7 +1407,7 @@ export function GeoKnowledgeBase({
               <Button variant="outline"
                 className="rounded-lg bg-brand-accent px-4 py-2 text-[14px] font-medium text-brand-on-accent disabled:opacity-60"
                 disabled={
-                  status.kind === "busy" || blockers.length > 0 || dirty || copyRequired || copyStale || view.draftVersion === 0
+                  status.kind === "busy" || blockers.length > 0 || dirty || (repair === null && (copyRequired || copyStale)) || view.draftVersion === 0
                 }
                 onClick={() => {
                   void freeze();
@@ -1315,6 +1432,39 @@ export function GeoKnowledgeBase({
                 </span>
               ) : null}
             </div>
+
+            {repair === null ? null : <div className="mt-5 grid gap-2 border-t border-brand-border-card pt-5">
+              {repairFrozen === null || !needsReplacementQuestion ? null : <div className="grid gap-2">
+                <p id="kb-repair-question-missing" className="text-sm text-text-dark-secondary">{t("repair.questionRemoved")}</p>
+                <label htmlFor="kb-repair-question" className="text-sm text-text-dark-primary">{t("repair.chooseQuestion")}</label>
+                <select id="kb-repair-question" aria-describedby="kb-repair-question-missing" required
+                  className="w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-sm text-text-dark-primary"
+                  disabled={!canReturnVersion} value={repairQuestionId ?? ""}
+                  onChange={(event) => {
+                    setRepairQuestionId(event.target.value || null);
+                    setReturnStorageError(false);
+                    try { window.sessionStorage.removeItem(GEO_BRIEF_RETURN_KEY); } catch { /* Returning requires a fresh successful write. */ }
+                  }}>
+                  <option value="">{t("repair.chooseQuestionPlaceholder")}</option>
+                  {(questions ?? []).map((question) => <option key={question.id} value={question.id}>{question.text}</option>)}
+                </select>
+              </div>}
+              <a data-geo-brief-return aria-disabled={!canReturn} tabIndex={canReturn ? undefined : -1}
+                href={canReturn ? `${localePath(locale, "/tools/geo-brief")}?resume=knowledge` : undefined}
+                className={`justify-self-start rounded-lg bg-brand-accent px-4 py-2 text-sm font-medium text-brand-on-accent ${canReturn ? "" : "cursor-not-allowed opacity-60"}`}
+                onClick={(event) => {
+                  if (!canReturn || view.frozen === null) { event.preventDefault(); return; }
+                  const questionId = repair.questionId === null ? null : returnQuestionId;
+                  let written = false;
+                  try {
+                    written = writeGeoBriefReturn(window.sessionStorage, { kbId: view.kbId, snapshotId: view.frozen.snapshotId,
+                      questionId, manualQuestion: repair.questionId === null ? repair.manualQuestion : null });
+                  } catch { /* Access to sessionStorage itself may be denied. */ }
+                  if (!written) { event.preventDefault(); setReturnStorageError(true); }
+                }}>{t("repair.return")}</a>
+              <p className="text-sm text-text-dark-secondary">{t(canReturnVersion ? "repair.returnHelp" : repairFrozen === null ? "repair.beforeFreeze" : "repair.returnBlocked")}</p>
+              {returnStorageError ? <p role="alert" className="text-sm text-brand-error">{t("repair.storageError")}</p> : null}
+            </div>}
 
             {blockers.length > 0 ? (
               <div className="mt-4">

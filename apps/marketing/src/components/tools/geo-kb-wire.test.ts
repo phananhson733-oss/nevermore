@@ -25,11 +25,16 @@ describe("GEO editor inherited-profile wire contract", () => {
     expect(isGeoKbView({ ...VIEW, profile: { ...PROFILE, fullProfile: { ...profile, buyer: 42 } } })).toBe(false);
     expect(isGeoKbView({ ...VIEW, frozen: { ...FREEZE, payload: { ...payload, profileCopy: null } } })).toBe(false);
   });
+  it("recognizes actionable question-quality blockers from the freeze and save endpoints", () => {
+    expect(isGeoKbSaveResponse({ draftVersion: 3, updatedAt: "2026-08-31T00:00:00Z", blockers: ["category_language_mismatch", "question_quality", "category_terms_not_english", "role_terms_not_english", "category_placeholder_invalid", "role_placeholder_invalid"] })).toBe(true);
+  });
   it("checks optional draft-source policy and frozen definitions without requiring them on legacy views", () => {
     const context = { skippedLayers: ["problem", "evaluation"], questionSetHash: "c".repeat(64), contentHash: "e".repeat(64) };
     const frozen = { ...FREEZE, questionSetHash: "d".repeat(64), registryVersion: "registry-test.v1", skippedLayers: ["problem", "evaluation"] };
     expect(isGeoKbView({ ...VIEW, context, frozen })).toBe(true);
     expect(isGeoKbView({ ...VIEW, context: { ...context, skippedLayers: ["invented"] } })).toBe(false);
+    expect(isGeoKbView({ ...VIEW, context: { ...context, activeRoleIds: ["gsc-role"] } })).toBe(true);
+    expect(isGeoKbView({ ...VIEW, context: { ...context, activeRoleIds: ["gsc-role", "gsc-role"] } })).toBe(false);
     expect(isGeoKbView({ ...VIEW, context: { ...context, questionSetHash: "fake" } })).toBe(false);
     expect(isGeoKbView({ ...VIEW, context: { ...context, contentHash: "fake" } })).toBe(false);
     expect(isGeoKbView({ ...VIEW, frozen: { ...frozen, questions: [{ ...FREEZE.questions[0], templateId: 3 }] } })).toBe(false);

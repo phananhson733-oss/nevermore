@@ -296,6 +296,13 @@ afterEach(async () => {
 /* ------------------------------------------------------------------ */
 
 describe("a row that was added but not filled in", () => {
+  it("explains English category wording and limits required entities before freezing", async () => {
+    await open();
+    expect(text()).toContain("The first term supplies the English question subject.");
+    expect(text()).toContain("secondary terms stay as context, not automatic required entities.");
+    expect(intlErrors).toEqual([]);
+  });
+
   // The reported failure, exactly: "Add a competitor" inserts an empty row,
   // the write contract refuses a row that identifies nobody, and the refusal
   // is of the whole payload - so the name typed in the same minute is gone
@@ -580,6 +587,9 @@ describe("which site the knowledge base was actually loaded for", () => {
     expect(select.selectedOptions[0]?.textContent).toBe("zh-cn");
     expect([...select.options].map((option) => option.value)).toEqual(["zh-cn", "en", "en-US", "en-GB"]);
     expect(container?.querySelector('label[for="kb-language"]')?.textContent).toBe(copy("brand.languageLabel"));
+    expect(container?.querySelector("[data-measurement-review]")).not.toBeNull();
+    expect([...container!.querySelectorAll<HTMLInputElement>("[data-measurement-field]")].map(input => input.dataset.measurementField)).toEqual(["officialName", "categoryTerms", "market", "roles"]);
+    expect([...container!.querySelectorAll<HTMLInputElement>("[data-measurement-review] input[type='checkbox']")].every(input => !input.checked)).toBe(true);
     expect(button(copy("freeze.action")).disabled).toBe(true);
     await click(button(copy("freeze.preview")));
     await choose(select, language);
@@ -737,7 +747,7 @@ describe("which site the knowledge base was actually loaded for", () => {
       productName: "Original Profile product", oneLinePositioning: "Read-only positioning", coreFeatures: ["Core feature from Profile"], market: { country: "US", language: "en" },
     } } }));
     await open();
-    expect(container?.querySelector(`a[href='/en/account/websites/${websiteId}#geo']`)).not.toBeNull();
+    expect(container?.querySelector(`a[href='/en/account/websites/${websiteId}/geo']`)).not.toBeNull();
     expect(text()).toContain("Original Profile product");
     expect(text()).toContain("Read-only positioning");
     expect(text()).toContain("Core feature from Profile");

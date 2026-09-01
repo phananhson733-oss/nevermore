@@ -1,13 +1,15 @@
-// @input -- frozen v2 context and untrusted model or exported generation
+// @input -- frozen v2/v3 context and untrusted model or exported generation
 // @output -- exact source-bound whole writing plan
 // @pos -- v2 generation validation; legacy v1 remains unchanged
 import { canonicalizeUrl } from "@sf/sources/canonical-url";
 import { keywordCoverageProperty } from "../keyword-opportunity/property.ts";
 import { canonicalize } from "./canonical.ts";
-import { SUPPORTING_KEYWORDS_MAX } from "./constants.ts";
+import { buildSerpObservations } from "./assemble.ts";
+import { SERP_DEPTH, SUPPORTING_KEYWORDS_MAX } from "./constants.ts";
 import type { ProfileFact } from "./contract.ts";
 import {
-  array, at, finite, identifier, invalid, literal, modelText, nullable, object, ok, oneOf, reference, tagged,
+  array, at, finite, identifier, invalid, isRecord, literal, modelText, nullable, object, ok, oneOf, reference,
+  serpObservationShape, serpReadMeta, tagged, text,
   type Decoded, type Decoder,
 } from "./parse-brief-shape.ts";
 import {
@@ -91,9 +93,26 @@ const fact: Decoder<ProfileFact> = tagged("derivation", {
   }) }),
 });
 const candidateId = oneOf(["T1", "T2", "T3"] as const);
-const contextShape: Decoder<BriefV2Context> = object({
+type SerpSnapshot = NonNullable<BriefV2Context["serp"]>;
+const serpSnapshotShape = object({ rows: array(serpObservationShape(text(2048)), { max: SERP_DEPTH }), read: serpReadMeta });
+const serpSnapshot: Decoder<SerpSnapshot> = (input, path) => {
+  const parsed = serpSnapshotShape(input, path);
+  if (!parsed.ok) return parsed;
+  const { rows, read } = parsed.value;
+  if (read.status === "unavailable") {
+    if (rows.length !== 0 || (read.attempted !== null && !Number.isSafeInteger(read.attempted))) return reference(path);
+  } else {
+    if (![read.requested, read.returned, read.unresolved].every(Number.isSafeInteger) || read.requested > SERP_DEPTH ||
+        read.returned < 1 || read.returned > read.requested || rows.length !== read.returned ||
+        (read.status === "partial") !== (read.returned < read.requested || read.unresolved > 0)) return reference(at(path, "read"));
+  }
+  if (new Set(rows.map((row) => row.rank)).size !== rows.length || rows.some((row) => !Number.isSafeInteger(row.rank))) return reference(at(path, "rows"));
+  const rebuilt = buildSerpObservations(rows);
+  return canonicalize(rebuilt) === canonicalize(rows) ? parsed : reference(at(path, "rows"));
+};
+const contextFields = {
   input: object({ primary: keyword, supporting: array(keyword, { max: SUPPORTING_KEYWORDS_MAX }), market: sourceText(64), language: sourceText(64) }),
-  research: (input, path) => nested(parseResearchBundle(input), path),
+  research: (input: unknown, path: string) => nested(parseResearchBundle(input), path),
   facts: array(fact, { max: 32 }),
   profile_snapshot: nullable(object({ website_id: sourceText(128), revision, hash })),
   gsc: object({
@@ -108,11 +127,13 @@ const contextShape: Decoder<BriefV2Context> = object({
   candidates: array(object({
     id: candidateId, url, match_refs: array(identifier("G"), { max: 30, unique: true }), read: oneOf(["observed", "unavailable", "redirected"] as const),
   }), { max: 3 }),
-});
+};
+const contextShape: Decoder<BriefV2Context> = object(contextFields);
+const contextWithSerpShape: Decoder<BriefV2Context> = object({ ...contextFields, serp: serpSnapshot });
 
 /** The source ledger is immutable observed data, not a source-authenticity signature. */
 export function parseBriefV2Context(input: unknown): Decoded<BriefV2Context> {
-  const parsed = contextShape(input, "");
+  const parsed = isRecord(input) && Object.hasOwn(input, "serp") ? contextWithSerpShape(input, "") : contextShape(input, "");
   if (!parsed.ok) return parsed;
   const value = parsed.value;
   const primary = queryKey(value.input.primary);
@@ -129,6 +150,10 @@ export function parseBriefV2Context(input: unknown): Decoded<BriefV2Context> {
   for (const [index, page] of value.research.pages.entries()) {
     if (page.role === "owned" ? !ownedByProperty(page.url) || !ownedByProperty(page.final_url)
       : ownedByProperty(page.url) || ownedByProperty(page.final_url)) return reference(`research.pages[${index}].role`);
+    if (value.serp !== undefined && page.role === "competitor") {
+      const row = value.serp.rows.find((item) => item.id === page.id.replace(/^C/u, "S"));
+      if (row === undefined || row.url !== page.url) return reference(`research.pages[${index}].url`);
+    }
   }
   if (gsc.window !== null && Date.parse(gsc.window.end) - Date.parse(gsc.window.start) !== 27 * 86400_000) return reference("gsc.window");
   if (gsc.status === "unavailable") {

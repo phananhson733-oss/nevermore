@@ -9,7 +9,7 @@ import { BreadcrumbJsonLd } from "@/components/seo/json-ld/breadcrumb-json-ld";
 import { FaqPageJsonLd } from "@/components/seo/json-ld/faq-page-json-ld";
 import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
 import { GeoBriefTool } from "@/components/tools/geo-brief";
-import { GEO_BRIEF_LIMITS } from "@/lib/geo-tools/brief-contract";
+import styles from "@/components/tools/geo-brief-workspace.module.css";
 import { localePath, localeUrl } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
 
@@ -65,8 +65,8 @@ export default async function GeoBriefPage({
   const relatedTools = t.raw("related.items") as readonly RelatedTool[];
 
   return (
-    <div className="min-h-screen bg-brand-bg pt-9 pb-24">
-      <div className="mx-auto max-w-report px-6 md:px-8">
+    <div className={styles.page}>
+      <div className={styles.container}>
         <BreadcrumbJsonLd
           items={[
             { name: home, url: localeUrl(locale) },
@@ -83,51 +83,20 @@ export default async function GeoBriefPage({
           ]}
         />
 
-        <header className="relative overflow-hidden border-b border-brand-border pt-6 pb-10">
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 bg-signal-grid opacity-40"
-          />
-          <div className="relative z-10 max-w-[720px]">
-            <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
-              {t("eyebrow")}
-            </p>
-            <h1 className="mt-4 text-page-title text-text-dark-primary">
-              {t("title")}
-            </h1>
-            <p className="mt-4 text-[15px] leading-[1.65] text-text-dark-secondary md:text-[16.5px]">
-              {t("intro")}
-            </p>
-          </div>
-        </header>
-
         <NextIntlClientProvider
           messages={{ tools: { geoBrief: messages.tools.geoBrief } }}
         >
           <GeoBriefTool />
         </NextIntlClientProvider>
 
-        {/*
-          The same constant the brief ships, so the page and the result cannot
-          describe different boundaries.
-        */}
-        <section className="mt-14 border-t border-brand-border pt-10">
+        <section className={styles.support}>
           <h2 className="text-[21px] text-text-dark-primary">
             {t("limitsTitle")}
           </h2>
-          <ul className="mt-4 grid max-w-[760px] gap-3">
-            {GEO_BRIEF_LIMITS.map((limit) => (
-              <li
-                className="text-[13.5px] leading-[1.7] text-text-dark-secondary"
-                key={limit}
-              >
-                {t(`limits.${limit}`)}
-              </li>
-            ))}
-          </ul>
+          <p className="mt-4 max-w-[760px]">{t("artifact.limitsBody")}</p>
         </section>
 
-        <section className="mt-14 border-t border-brand-border pt-10">
+        <section className={styles.support}>
           <h2 className="text-[21px] text-text-dark-primary">
             {t("faq.title")}
           </h2>
@@ -143,7 +112,7 @@ export default async function GeoBriefPage({
           </dl>
         </section>
 
-        <section className="mt-14 border-t border-brand-border pt-10">
+        <section className={styles.support}>
           <h2 className="text-[21px] text-text-dark-primary">
             {t("related.title")}
           </h2>
@@ -154,7 +123,7 @@ export default async function GeoBriefPage({
             {relatedTools.map((tool) => (
               <li key={tool.href}>
                 <a
-                  className="block rounded-xl border border-brand-border-card bg-brand-panel p-5 transition-colors hover:border-brand-accent/40"
+                  className="block border border-brand-border-card bg-brand-panel p-5 transition-colors hover:border-brand-accent-text"
                   href={localePath(locale, tool.href)}
                 >
                   <span className="block text-[15px] text-text-dark-primary">
