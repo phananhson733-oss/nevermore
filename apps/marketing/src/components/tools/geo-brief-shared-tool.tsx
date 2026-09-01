@@ -198,6 +198,7 @@ export function GeoBriefSharedTool() {
         {evidence ? <aside data-geo-input-evidence className={styles.notice}>
           <h2 className={styles.noticeTitle}>{t("quality.inputEvidence")}</h2>
           <p>{t("quality.inputFacts", { count: evidence.usableFacts })}</p>
+          {evidence.missingFacts > 0 ? <p>{t("quality.inputMissingFacts", { count: evidence.missingFacts })}</p> : null}
           {evidence.usableFacts === 0 ? <p>{t("quality.inputNoFacts")}</p> : null}
           {!evidence.profileAttached ? <p>{t("quality.inputNoProfile")}</p> : null}
           {context === null ? <p>{t("quality.inputNoRun")}</p> : null}
@@ -227,28 +228,26 @@ export function GeoBriefSharedTool() {
               </> : <p className={styles.hint}>{t("quality.inputQuestionSource", { layer: question ? t("quality.layers." + question.layer) : "—" })}</p>}
             </div>
           </div>
-          <div className={styles.row}>
+          {context ? <div className={[styles.row, styles.derivedRow].join(" ")}>
             <div className={styles.label}>{t("artifact.gap")}</div>
             <div className={styles.rowContent}>
-              <div data-geo-gap className={styles.value}>{context ? t(context.gap === "A" ? "artifact.gapA" : "artifact.gapD") : t("artifact.noGap")}</div>
-              <p className={styles.hint}>{t("artifact.gapHint")}</p>
-              {context ? <details className={styles.hint}>
+              <p data-geo-gap className={styles.derivedValue}>{t(context.gap === "A" ? "artifact.gapA" : "artifact.gapD")}</p>
+              <p className={styles.hint}>{t("artifact.writingTaskHelp")}</p>
+              <details className={styles.hint}>
                 <summary>{t("artifact.evidencePointer")} · {context.samples.length}</summary>
                 <p>run: {context.runRef.id}</p>
                 <p>{context.runRef.fingerprint}</p>
                 {context.samples.map(sample => <p key={sample.id}>{sample.id} · {sample.engine} · {sample.status} · {sample.collectedAt}</p>)}
-              </details> : null}
+              </details>
             </div>
-          </div>
-          <div className={styles.row}>
+          </div> : null}
+          {question?.role ? <div className={[styles.row, styles.derivedRow].join(" ")}>
             <div className={styles.label}>{t("artifact.role")}</div>
             <div className={styles.rowContent}>
-              <div data-geo-role className={styles.value}>
-                {question?.role ? question.role.label + (question.role.segment ? " · " + question.role.segment : "") : question?.roleId ?? t(questionId === null ? "quality.manualQuestionRole" : "quality.generalQuestionRole")}
-              </div>
-              <p className={styles.hint}>{questionId === null ? t("shared.manualNote") : t("artifact.roleHint")}</p>
+              <p data-geo-role className={styles.derivedValue}>{question.role.label + (question.role.segment ? " · " + question.role.segment : "")}</p>
+              <p className={styles.hint}>{t("artifact.audienceRoleHelp")}</p>
             </div>
-          </div>
+          </div> : null}
           <div className={styles.row}>
             <label className={styles.label} htmlFor="geo-brief-version">{t("artifact.knowledge")} <span className={styles.required}>*</span></label>
             <div className={styles.rowContent}>

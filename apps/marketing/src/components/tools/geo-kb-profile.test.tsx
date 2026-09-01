@@ -2,7 +2,7 @@
 import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import en from "../../i18n/messages/en.json";
 import { emptyMarketingWebsiteProfile, WEBSITE_PROFILE_FIELD_NAMES } from "../../lib/account-websites/contracts.ts";
 import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
@@ -30,6 +30,25 @@ async function render(extra: Record<string, unknown> = {}) {
   await act(async () => root.render(<NextIntlClientProvider locale="en" messages={en}><GeoKbInheritedProfile {...props} /></NextIntlClientProvider>));
 }
 describe("complete GEO Profile copy display", () => {
+  it("stages exact Profile values as pending facts without calling them verified", async () => {
+    const onAddFact = vi.fn();
+    await render({ onAddFact });
+    const actions = [...host.querySelectorAll<HTMLButtonElement>("button")].filter(button => button.textContent === en.tools.geoKnowledgeBase.asset.featureCandidateAdd);
+    expect(actions).toHaveLength(34);
+    for (const action of actions.slice(0, 3)) await act(async () => action.click());
+    expect(onAddFact.mock.calls).toEqual([
+      ["productName", "Copied product"],
+      ["oneLinePositioning", "Copied positioning"],
+      ["coreFeatures[0]", "Complete feature 1"],
+    ]);
+    expect(host.textContent).toContain(en.tools.geoKnowledgeBase.asset.profileFactBoundary);
+  });
+  it("disables a candidate whose stable fact key already exists", async () => {
+    await render({ onAddFact: vi.fn(), facts: [{ key: "productName", value: "Copied product", reason: "", sourceUrl: "https://example.com", observedAt: "2026-09-01" }] });
+    const disabled = [...host.querySelectorAll<HTMLButtonElement>("button")].filter(button => button.disabled);
+    expect(disabled).toHaveLength(1);
+    expect(disabled[0]?.textContent).toBe(en.tools.geoKnowledgeBase.asset.featureCandidateExists);
+  });
   it("gives current and frozen copies independent input and label identities", async () => {
     await act(async () => root.render(<NextIntlClientProvider locale="en" messages={en}>
       <GeoKbInheritedProfile profile={null} copy={copy} locale="en" />

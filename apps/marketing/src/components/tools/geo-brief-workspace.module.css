@@ -37,7 +37,7 @@
 .label { color: var(--sc-text-secondary); font-size: 14px; line-height: 1.7; padding-top: 8px; }
 .required { color: var(--sc-error); }
 .rowContent { min-width: 0; }
-.field, .value {
+.field {
   display: block;
   min-width: 0;
   width: 100%;
@@ -49,6 +49,15 @@
   padding: 10px 12px;
   font-size: 14px;
   line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.derivedRow { padding-block: 13px; }
+.derivedValue {
+  margin: 0;
+  color: var(--sc-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.7;
   overflow-wrap: anywhere;
 }
 .field:disabled { opacity: .65; }

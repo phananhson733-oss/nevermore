@@ -21,6 +21,8 @@ import { geoKbDigest } from "./kb-digest.ts";
 import { geoQuestionReferencesEntity } from "./question-quality.ts";
 
 export const GEO_QUESTION_SET_SCHEMA_VERSION = "marketing-geo-question-set.v1";
+/** Frozen-set policy token: absent historical versions retain their original fact projection. */
+export const GEO_PROFILE_FACT_OVERRIDES_POLICY = "profile-fact-overrides-v1";
 
 /**
  * Which stage of a buyer's search the question belongs to.
@@ -68,7 +70,7 @@ export interface GeoQuestion {
 
 export interface GeoQuestionSet {
   readonly schemaVersion: typeof GEO_QUESTION_SET_SCHEMA_VERSION;
-  /** Registry release plus the entity-derivation policy used for this frozen set. */
+  /** Registry release plus the downstream projection policies used for this frozen set. */
   readonly registryVersion: string;
   readonly language: string;
   readonly country: string;
@@ -266,7 +268,7 @@ function registryVersionOf(): string {
 
 const REGISTRY_VERSION: string = `${
   findGeoTemplate("geo.retrieval.category_top", "1")?.calibratedOn ?? "unknown"
-}/${String(GEO_TEMPLATES.length)}/question-entities-v2`;
+}/${String(GEO_TEMPLATES.length)}/question-entities-v2/${GEO_PROFILE_FACT_OVERRIDES_POLICY}`;
 
 export function geoQuestionSetDigest(set: GeoQuestionSet): string {
   return geoKbDigest(set as unknown as GeoKbValue);

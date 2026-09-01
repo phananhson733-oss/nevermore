@@ -110,7 +110,7 @@ for (const locale of ["en", "zh"] as const) {
     await expect(evidence).toContainText(copy.quality.inputNoFacts);
     await expect(evidence).toContainText(copy.quality.inputNoProfile);
     await expect(evidence).toContainText(copy.quality.inputNoRun);
-    await expect(page.locator("[data-geo-role]")).toHaveText(copy.quality.generalQuestionRole);
+    await expect(page.locator("[data-geo-role]")).toHaveCount(0);
     await expect(page.locator("[data-run-geo-brief]")).toHaveText(copy.quality.generateStructure);
     await expect(page.locator("#geo-brief-question")).toHaveCSS("font-size", "14px");
     expect(loads(guard)).toEqual([{}, selector(fixture)]);

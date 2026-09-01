@@ -10,7 +10,7 @@ import type { GeoInheritedProfile } from "../../lib/geo-tools/asset-context.ts";
 import type { GeoKbFact } from "../../lib/geo-tools/kb-contract.ts";
 import type { GeoProfileCopy } from "../../lib/geo-tools/kb-profile-copy.ts";
 import type { MarketingWebsiteProfileV1, WebsiteProfileFieldName } from "../../lib/account-websites/contracts.ts";
-import { pendingGeoFeatureFact } from "./geo-kb-feature-candidates.ts";
+import { pendingGeoProfileFact } from "./geo-kb-feature-candidates.ts";
 import { Button } from "../ui/button.tsx";
 import { Input } from "../ui/input.tsx";
 import { Label } from "../ui/label.tsx";
@@ -45,16 +45,29 @@ const LIST_FIELDS = new Set<WebsiteProfileFieldName>([
   "excludedAlternatives",
 ]);
 
+function ProfileFactButton({ factKey, value, facts, onAddFact }: {
+  readonly factKey: string; readonly value: string; readonly facts: readonly GeoKbFact[];
+  readonly onAddFact?: (key: string, value: string) => void;
+}) {
+  const t = useTranslations("tools.geoKnowledgeBase");
+  if (onAddFact === undefined) return null;
+  const candidate = pendingGeoProfileFact(factKey, value, facts);
+  const labels = { ready: "featureCandidateAdd", exists: "featureCandidateExists", too_long: "featureCandidateTooLong", full: "featureCandidateFull" } as const;
+  return <Button type="button" variant="outline" size="sm" disabled={candidate.status !== "ready"}
+    aria-label={`${t(`asset.${labels[candidate.status]}`)}: ${value}`}
+    onClick={() => onAddFact(factKey, value)}>{t(`asset.${labels[candidate.status]}`)}</Button>;
+}
+
 function ReadOnlyProfileField({
   field,
   profile,
   facts,
-  onAddFeature,
+  onAddFact,
 }: {
   readonly field: WebsiteProfileFieldName;
   readonly profile: MarketingWebsiteProfileV1;
   readonly facts: readonly GeoKbFact[];
-  readonly onAddFeature?: (feature: string) => void;
+  readonly onAddFact?: (key: string, value: string) => void;
 }) {
   const labels = useTranslations("account.websites.fields");
   const t = useTranslations("tools.geoKnowledgeBase");
@@ -78,14 +91,6 @@ function ReadOnlyProfileField({
         ) : (
           <div className="grid gap-3">
             {value.map((item, index) => {
-              const candidate =
-                field === "coreFeatures" ? pendingGeoFeatureFact(item, facts) : null;
-              const actionLabels = {
-                ready: "featureCandidateAdd",
-                exists: "featureCandidateExists",
-                too_long: "featureCandidateTooLong",
-                full: "featureCandidateFull",
-              } as const;
               return (
                 <div className="flex flex-wrap items-start gap-3" key={`${field}-${index}`}>
                   <Input
@@ -96,17 +101,7 @@ function ReadOnlyProfileField({
                     readOnly
                     value={item}
                   />
-                  {candidate === null || onAddFeature === undefined ? null : (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={candidate.status !== "ready"}
-                      onClick={() => onAddFeature(item)}
-                    >
-                      {t(`asset.${actionLabels[candidate.status]}`)}
-                    </Button>
-                  )}
+                  {field === "coreFeatures" ? <ProfileFactButton factKey={`coreFeatures[${index}]`} value={item} facts={facts} onAddFact={onAddFact} /> : null}
                 </div>
               );
             })}
@@ -117,13 +112,15 @@ function ReadOnlyProfileField({
   }
 
   const stringValue = typeof value === "string" ? value : "";
+  const factKey = field === "productName" || field === "oneLinePositioning" ? field : null;
   return (
     <div data-geo-profile-field={field} className="min-w-0 space-y-3 py-5">
       <Label htmlFor={baseId} className="text-[14px] font-medium text-text-dark-primary">
         {labels(field)}
       </Label>
-      {COMPACT_FIELDS.has(field) ? (
+      <div className="flex flex-wrap items-start gap-3">{COMPACT_FIELDS.has(field) ? (
         <Input
+          className="min-w-0 flex-1"
           id={baseId}
           name={baseId}
           readOnly
@@ -132,6 +129,7 @@ function ReadOnlyProfileField({
         />
       ) : (
         <Textarea
+          className="min-w-0 flex-1"
           id={baseId}
           name={baseId}
           readOnly
@@ -139,15 +137,15 @@ function ReadOnlyProfileField({
           value={stringValue}
           placeholder={t("asset.emptyField")}
         />
-      )}
+      )}{factKey === null ? null : <ProfileFactButton factKey={factKey} value={stringValue} facts={facts} onAddFact={onAddFact} />}</div>
     </div>
   );
 }
 
-function CompleteProfileFields({ profile, facts, onAddFeature }: {
+function CompleteProfileFields({ profile, facts, onAddFact }: {
   readonly profile: MarketingWebsiteProfileV1;
   readonly facts: readonly GeoKbFact[];
-  readonly onAddFeature?: (feature: string) => void;
+  readonly onAddFact?: (key: string, value: string) => void;
 }) {
   const labels = useTranslations("account.websites.fields");
   const sections = useTranslations("account.websites.editor");
@@ -162,7 +160,7 @@ function CompleteProfileFields({ profile, facts, onAddFeature }: {
             field={field}
             profile={profile}
             facts={facts}
-            {...(onAddFeature === undefined ? {} : { onAddFeature })}
+            {...(onAddFact === undefined ? {} : { onAddFact })}
           />
         ))}
       </div>
@@ -181,14 +179,14 @@ function CompleteProfileFields({ profile, facts, onAddFeature }: {
   </div>;
 }
 
-export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profileState, facts = [], onAddFeature, inline = false, frozen = false, repairMode = false }: {
+export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profileState, facts = [], onAddFact, inline = false, frozen = false, repairMode = false }: {
   readonly profile: GeoInheritedProfile | null;
   readonly copy?: GeoProfileCopy;
   readonly websiteId?: string;
   readonly locale: string;
   readonly profileState?: string;
   readonly facts?: readonly GeoKbFact[];
-  readonly onAddFeature?: (feature: string) => void;
+  readonly onAddFact?: (key: string, value: string) => void;
   readonly inline?: boolean;
   readonly frozen?: boolean;
   readonly repairMode?: boolean;
@@ -203,26 +201,24 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
         <p className="mt-3 text-[13px] leading-relaxed text-text-dark-secondary">{t(frozen ? "asset.frozenCopyBody" : "asset.copyBody")}</p>
         <p className="mt-2 text-xs text-text-dark-secondary">{t("asset.revision", { revision: copy.snapshotRevision })}</p>
         <p className="mt-1 break-all font-mono text-xs text-text-dark-secondary">{t("asset.hash", { hash: copy.profileHash })}</p>
-        <CompleteProfileFields profile={copy.profile} facts={facts} {...(onAddFeature === undefined ? {} : { onAddFeature })} />
+        <CompleteProfileFields profile={copy.profile} facts={facts} {...(onAddFact === undefined ? {} : { onAddFact })} />
+        {onAddFact === undefined ? null : <p className="mt-3 text-xs text-text-dark-secondary">{t("asset.profileFactBoundary")}</p>}
       </> : profile === null ? (
         <p className="mt-3 text-sm text-text-dark-secondary">{t(profileState === "confirmed" || profileState === "unconfirmed_changes" ? "asset.profileUnavailable" : "asset.profileRequired")}</p>
       ) : (
         <>
           <p className="mt-2 text-sm text-text-dark-secondary">{t("asset.profileBody")}</p>
           <dl className="mt-4 grid gap-3 text-sm">
-            <div><dt className="text-text-dark-secondary">{t("asset.productName")}</dt><dd>{profile.productName}</dd></div>
-            <div><dt className="text-text-dark-secondary">{t("asset.positioning")}</dt><dd>{profile.oneLinePositioning}</dd></div>
+            <div><dt className="text-text-dark-secondary">{t("asset.productName")}</dt><dd className="flex flex-wrap items-start gap-3"><span>{profile.productName}</span><ProfileFactButton factKey="productName" value={profile.productName} facts={facts} onAddFact={onAddFact} /></dd></div>
+            <div><dt className="text-text-dark-secondary">{t("asset.positioning")}</dt><dd className="flex flex-wrap items-start gap-3"><span>{profile.oneLinePositioning}</span><ProfileFactButton factKey="oneLinePositioning" value={profile.oneLinePositioning} facts={facts} onAddFact={onAddFact} /></dd></div>
             <div><dt className="text-text-dark-secondary">{t("asset.features")}</dt><dd><ul className="grid gap-2">{profile.coreFeatures.map((feature, index) => {
-              const candidate = pendingGeoFeatureFact(feature, facts);
-              const labels = { ready: "featureCandidateAdd", exists: "featureCandidateExists", too_long: "featureCandidateTooLong", full: "featureCandidateFull" } as const;
               return <li className="flex flex-wrap items-start gap-3" key={`${index}-${feature}`}>
                 <span className="break-words">{feature}</span>
-                {onAddFeature === undefined ? null : <button type="button" disabled={candidate.status !== "ready"}
-                  className="rounded border border-brand-border-card px-2 py-1 text-xs text-brand-accent-text disabled:opacity-50"
-                  onClick={() => onAddFeature(feature)}>{t(`asset.${labels[candidate.status]}`)}</button>}
+                <ProfileFactButton factKey={`coreFeatures[${index}]`} value={feature} facts={facts} onAddFact={onAddFact} />
               </li>;
-            })}</ul>{onAddFeature === undefined ? null : <p className="mt-2 text-xs text-text-dark-secondary">{t("asset.featureCandidateHelp")}</p>}</dd></div>
+            })}</ul>{onAddFact === undefined ? null : <p className="mt-2 text-xs text-text-dark-secondary">{t("asset.featureCandidateHelp")}</p>}</dd></div>
           </dl>
+          <p className="mt-3 text-xs text-text-dark-secondary">{t("asset.profileFactBoundary")}</p>
           <p className="mt-4 text-xs text-text-dark-secondary">{t("asset.revision", { revision: profile.reference.snapshotRevision })}</p>
           <p className="mt-1 break-all font-mono text-xs text-text-dark-secondary">{t("asset.hash", { hash: profile.reference.profileHash })}</p>
         </>
