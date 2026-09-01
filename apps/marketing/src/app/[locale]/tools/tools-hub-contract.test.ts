@@ -49,10 +49,11 @@ describe("Tools hub execution boundaries", () => {
     );
   });
 
-  it("keeps the existing KB URL as an information shortcut, with editing only in Website Profile", () => {
+  it("keeps the existing KB URL as an information shortcut, with only an explicit Brief repair exception", () => {
     const legacy = readFileSync(new URL("./geo-knowledge-base/page.tsx", import.meta.url), "utf8");
     const canonical = readFileSync(new URL("../account/websites/[websiteId]/geo/page.tsx", import.meta.url), "utf8");
-    expect(legacy).not.toContain("<GeoKnowledgeBase");
+    expect(legacy).toContain('query.repair === "brief"');
+    expect(legacy).toContain("<GeoKnowledgeBase");
     expect(legacy).toContain('t("asset.shortcutDescription")');
     expect(legacy).toContain('localePath(locale, "/account/websites")');
     expect(legacy).not.toContain("redirect(");

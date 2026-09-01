@@ -1,12 +1,15 @@
-// @input  -- locale and the tools.geoKnowledgeBase messages
-// @output -- public knowledge-base explanation and the canonical Profile entry
+// @input  -- locale, optional explicit Brief-repair handoff, and the tools.geoKnowledgeBase messages
+// @output -- public knowledge-base explanation, canonical Profile entry, and bounded repair editor
 // @pos    -- compatibility information URL; editing lives only in Website Profile
 
-import { getTranslations } from "next-intl/server";
+import { NextIntlClientProvider } from "next-intl";
+import { getMessages, getTranslations } from "next-intl/server";
 
 import { BreadcrumbJsonLd } from "@/components/seo/json-ld/breadcrumb-json-ld";
 import { FaqPageJsonLd } from "@/components/seo/json-ld/faq-page-json-ld";
 import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
+import { GeoKnowledgeBase } from "@/components/tools/geo-knowledge-base";
+import { getServerAuthenticationStatus } from "@/lib/auth/server-auth-status";
 import { localePath, localeUrl } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
 
@@ -44,11 +47,35 @@ export async function generateMetadata({
 
 export default async function GeoKnowledgeBasePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ repair?: string | readonly string[] }>;
 }) {
-  const { locale } = await params;
+  const [{ locale }, query] = await Promise.all([params, searchParams]);
   const t = await getTranslations({ locale, namespace: "tools.geoKnowledgeBase" });
+  const repair = query.repair === "brief";
+  const repairContext = repair
+    ? await Promise.all([
+      getMessages(),
+      getServerAuthenticationStatus(),
+    ])
+    : null;
+  const repairEditor = repairContext === null
+    ? null
+    : (
+      <NextIntlClientProvider
+        messages={{
+          tools: { geoKnowledgeBase: repairContext[0].tools.geoKnowledgeBase },
+          account: { websites: { fields: repairContext[0].account.websites.fields, editor: repairContext[0].account.websites.editor } },
+        }}
+      >
+        <GeoKnowledgeBase
+          locale={locale}
+          signedIn={repairContext[1] === "authenticated"}
+        />
+      </NextIntlClientProvider>
+    );
   const home = locale === "zh" ? "首页" : "Home";
   const tools = locale === "zh" ? "工具" : "Tools";
   const faqItems = t.raw("faq.items") as readonly FaqItem[];
@@ -93,6 +120,8 @@ export default async function GeoKnowledgeBasePage({
             </p>
           </div>
         </header>
+
+        {repairEditor}
 
         <section className="mt-14 border-t border-brand-border pt-10">
           <h2 className="text-[21px] text-text-dark-primary">
