@@ -42,7 +42,12 @@ export function GeoKbV2Fields({ payload, locale, onChange }: { readonly payload:
         <div className="grid gap-5 sm:grid-cols-2">{(["label", "questionLabel", "segment"] as const).map(field => <Field key={field} kind="role" field={field} label={field === "label" ? t.roleLabel : c.fields[field]} value={role[field]} onChange={value => change(editGeoKbRoleV2(role, { [field]: value }))} />)}
           {(["painPoints", "alternatives", "decisionCriteria", "vocabulary"] as const).map(field => <Field key={field} kind="role" field={field} list label={c.fields[field === "decisionCriteria" ? "criteria" : field]} value={role[field].join("\n")} onChange={value => change(editGeoKbRoleV2(role, { [field]: value.split("\n") }))} />)}
         </div>
-        <p className="break-all text-xs text-text-dark-secondary">{c.fields.source}: {c.sources[role.source.kind]} · {role.source.generationId ?? c.notRecorded} · {role.source.itemId ?? c.notRecorded}<br />{role.source.evidenceRefs.join(" · ")}</p>
+        <p className="text-xs text-text-dark-secondary">{c.fields.source}: {c.sources[role.source.kind]}</p>
+        {role.source.generationId === null && role.source.itemId === null && role.source.evidenceRefs.length === 0 ? null : <details className="text-xs text-text-dark-secondary"><summary className="cursor-pointer">{c.roleEvidence.details}</summary><dl className="mt-2 grid gap-2">
+          {role.source.generationId === null ? null : <div><dt>{c.fields.generation}</dt><dd className="break-all font-mono">{role.source.generationId}</dd></div>}
+          {role.source.itemId === null ? null : <div><dt>{c.fields.sourceItem}</dt><dd className="break-all font-mono">{role.source.itemId}</dd></div>}
+          {role.source.evidenceRefs.length === 0 ? null : <div><dt>{c.fields.evidenceRefs}</dt><dd className="break-all font-mono">{role.source.evidenceRefs.join(" · ")}</dd></div>}
+        </dl></details>}
         <Reviews kind="role" current={role.review} locale={locale} valid={geoRoleV2Schema.safeParse({ ...role, review: "accepted" }).success} onChange={review => change({ ...role, review })} />
         <Button type="button" variant="ghost" onClick={() => patch({ roles: payload.roles.filter((_, position) => position !== index) })}>{t.remove}</Button>
       </article>;

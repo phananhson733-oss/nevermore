@@ -76,6 +76,10 @@ export interface UseGeoKbV2EditorProps {
 export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision, canonicalWebsiteId }: UseGeoKbV2EditorProps) {
   const [view, setView] = useState(initialView), [payload, setPayload] = useState(initialView.payload);
   const [dirty, setDirty] = useState(initialView.requiresSave), [status, setStatus] = useState<GeoKbV2EditorStatus>({ kind: "idle" });
+  // A draft can need saving without anyone having typed: an older stored format
+  // is upgraded for display, and a conflict re-bases the version. Those still
+  // block generation, but telling the visitor they have unsaved edits is false.
+  const [edited, setEdited] = useState(false);
   const [copyProposal, setCopyProposal] = useState<GeoProfileCopy | null>(null);
   const [review, setReview] = useState<string | null>(null);
   const [signal, setSignal] = useState({ revision: confirmedProfileRevision, sequence: 0 });
@@ -138,7 +142,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   const canFreeze = !busy && candidate !== null && !candidateStale && review === candidateIdentity;
   useEffect(() => { if (!dirty) return; const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; }; window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn); }, [dirty]);
 
-  function change(next: GeoKbPayloadV2) { editRevision.current++; current.current.payload = next; current.current.dirty = true; setPayload(next); setDirty(true); setReview(null); setStatus(previous => previous.kind === "saved" ? { kind: "idle" } : previous); }
+  function change(next: GeoKbPayloadV2) { editRevision.current++; current.current.payload = next; current.current.dirty = true; setPayload(next); setDirty(true); setEdited(true); setReview(null); setStatus(previous => previous.kind === "saved" ? { kind: "idle" } : previous); }
   function setRequest(kind: GeoKbGenerationKind, value: Pending | null) {
     const previous = current.current.pending[kind];
     if (value !== null) persistPending(view.kbId, kind, value);
@@ -186,7 +190,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     if (!loaded || loaded.kbId !== view.kbId) { error({ code: "schema_mismatch" }); return false; }
     if (loaded.prepared?.candidateId !== current.current.view.prepared?.candidateId || loaded.prepared?.candidateHash !== current.current.view.prepared?.candidateHash) setReview(null);
     current.current.view = loaded; setView(loaded); setCopyHashNeedsReload(false);
-    if (!wasDirty && editRevision.current === start) { current.current.payload = loaded.payload; current.current.dirty = loaded.requiresSave; setPayload(loaded.payload); setDirty(loaded.requiresSave); }
+    if (!wasDirty && editRevision.current === start) { current.current.payload = loaded.payload; current.current.dirty = loaded.requiresSave; setPayload(loaded.payload); setDirty(loaded.requiresSave); setEdited(false); }
     for (const kind of ["roles", "questions"] as const) if (loaded.generations[kind]) acceptGeneration(loaded.generations[kind]!);
     return true;
   }
@@ -202,7 +206,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     if (!data) { error({ code: "schema_mismatch" }); return; }
     const next = { ...current.current.view, draftVersion: data.draftVersion, draftHash: data.contentHash, payload: submitted, requiresSave: false };
     current.current.view = next; setView(next);
-    const newer = editRevision.current !== version; current.current.dirty = newer; setDirty(newer);
+    const newer = editRevision.current !== version; current.current.dirty = newer; setDirty(newer); setEdited(newer);
     if (copyChanged) { setCopyHashNeedsReload(true); if (!(await readSaved())) return; }
     setStatus({ kind: current.current.dirty ? "idle" : "saved" });
   });
@@ -291,7 +295,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     if (!data) { error({ code: "schema_mismatch" }); return; }
     setReview(null); await readSaved();
   }); };
-  return { view, payload, dirty, status, busy, pending, retainedRequests, readRetainedRequest, generationAction, copyProposal, copyStale, copyHashReady, sourceSelection, roleProposalReusable, canAdoptProfileCopy: copyProposal !== null && copySequence.current === signal.sequence, candidateStale, canGenerate, canPrepare, needsReview, canFreeze, reviewed: review === candidateIdentity && candidateIdentity !== null,
+  return { view, payload, dirty, edited, status, busy, pending, retainedRequests, readRetainedRequest, generationAction, copyProposal, copyStale, copyHashReady, sourceSelection, roleProposalReusable, canAdoptProfileCopy: copyProposal !== null && copySequence.current === signal.sequence, candidateStale, canGenerate, canPrepare, needsReview, canFreeze, reviewed: review === candidateIdentity && candidateIdentity !== null,
     change, save, reload, refreshSources, generate, readGeneration, freeze, reviewProfileCopy, adoptProfileCopy, adoptRoles,
     dismissProfileCopy: () => setCopyProposal(null), confirmReview: (accepted: boolean) => setReview(accepted && !candidateStale ? candidateIdentity : null) };
 }

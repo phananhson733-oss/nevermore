@@ -1,7 +1,7 @@
 // @input -- display locale, never source text
 // @output -- explicit editor actions and honest request/review states
 export const geoKbV2EditorCopy = (locale: string) => locale.toLowerCase().startsWith("zh") ? {
-  input: "补充与确认", frozen: "冻结快照", save: "保存 GEO 草稿", saved: "草稿已保存", unsaved: "有未保存的修改；切换阶段不会丢弃输入。",
+  input: "补充与确认", frozen: "冻结快照", save: "保存 GEO 草稿", saved: "草稿已保存", unsaved: "有未保存的修改；切换阶段不会丢弃输入。", savePending: "需要保存一次才能继续：这份草稿的存档版本与当前显示不一致，内容不会改变。",
   addRole: "添加角色", addFact: "添加事实声明", addCompetitor: "添加竞品", remove: "移除", accept: "接受此条", exclude: "排除此条", pending: "设为待审阅",
   roleLabel: "角色名称", factKey: "事实维度", editHelp: "每行一项；修改会回到待审阅，原始来源不会被改成观测事实。",
   reload: "读取已保存状态", sources: "刷新来源证据", generateRoles: "生成角色建议", prepare: "生成完整待冻结版本", busy: "正在处理…",
@@ -21,8 +21,11 @@ export const geoKbV2EditorCopy = (locale: string) => locale.toLowerCase().starts
   notFoundRequest: "按原请求编号尚未读到记录，结果仍未确定。", newVersionNeeded: "相同输入的不确定记录只可查询。若要继续新工作，请修改资料并保存新版本，或明确选择已保存的新来源。", retainedRequests: "保留的旧请求（只读查询）",
   error: "操作未完成，草稿保留。", invalid: "请检查字段内容与上限；已接受事实必须有有效来源 URL 和采集时间。", conflict: "服务端草稿版本已变化。已保留输入并更新版本号，请核对后重新保存。",
   state: "状态", requestKey: "本次请求标识", readGeneration: "读取生成状态", legacy: "历史 V1 按原始内容只读展示，不补造 V2 来源。",
+  recordDetails: "查看这次生成的记录标识", reason: "服务端原因", attempt: "实际发起的模型调用", recordId: "生成记录 ID",
+  delivery: "响应情况", deliveries: { not_attempted: "未发起调用", response_received: "已收到响应", outcome_unknown: "结果未知" },
+  model: "请求的模型", tokens: "输入 / 输出 token", requestCount: "传输层记录的请求数", billingNote: "调用数为 0 不能证明供应商没有计费。",
 } : {
-  input: "Supplement and confirm", frozen: "Frozen snapshot", save: "Save GEO draft", saved: "Draft saved", unsaved: "Unsaved changes are kept when switching stages.",
+  input: "Supplement and confirm", frozen: "Frozen snapshot", save: "Save GEO draft", saved: "Draft saved", unsaved: "Unsaved changes are kept when switching stages.", savePending: "One save is needed before continuing: the stored draft differs from what is shown here. Its content does not change.",
   addRole: "Add role", addFact: "Add fact declaration", addCompetitor: "Add competitor", remove: "Remove", accept: "Accept item", exclude: "Exclude item", pending: "Mark pending",
   roleLabel: "Role name", factKey: "Fact dimension", editHelp: "One item per line. Edits need review again and retain their original source lineage.",
   reload: "Read saved state", sources: "Refresh source evidence", generateRoles: "Generate role proposals", prepare: "Prepare complete candidate", busy: "Working…",
@@ -42,4 +45,7 @@ export const geoKbV2EditorCopy = (locale: string) => locale.toLowerCase().starts
   notFoundRequest: "No record was found for the original request ID; its outcome remains unknown.", newVersionNeeded: "An uncertain record for the same input is read-only. For new work, edit and save a new data version or explicitly select new persisted source evidence.", retainedRequests: "Retained requests (read-only recovery)",
   error: "The operation did not complete. Your draft is kept.", invalid: "Check field values and bounds. Accepted facts require a valid source URL and capture time.", conflict: "The saved draft changed. Your input is kept and its version updated; review it before saving again.",
   state: "State", requestKey: "Request identity", readGeneration: "Read generation status", legacy: "Historical V1 is displayed as stored; no V2 provenance is invented.",
+  recordDetails: "Inspect this generation record", reason: "Server reason", attempt: "Model calls actually dispatched", recordId: "Generation record ID",
+  delivery: "Delivery", deliveries: { not_attempted: "Not dispatched", response_received: "Response received", outcome_unknown: "Outcome unknown" },
+  model: "Model requested", tokens: "Input / output tokens", requestCount: "Requests recorded by the transport", billingNote: "Zero dispatched calls is not proof that the provider did not bill.",
 };

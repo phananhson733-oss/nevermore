@@ -7,6 +7,7 @@ import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
 import { GeoKnowledgeBaseV2 } from "./geo-knowledge-base-v2.tsx";
 import { editorFixture } from "./geo-kb-v2-ui.test-fixtures.ts";
+import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
 let host: HTMLDivElement, root: Root;
 beforeEach(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; host = document.createElement("div"); document.body.append(host); root = createRoot(host); sessionStorage.clear(); vi.stubGlobal("fetch", vi.fn()); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
@@ -49,4 +50,36 @@ it("offers explicit same-key resend only after an exact-key read returned not fo
   expect(host.querySelector<HTMLButtonElement>('[data-resend-generation="roles"]')?.disabled).toBe(false);
   vi.mocked(fetch).mockRejectedValueOnce(new Error("network")); await click('[data-resend-generation="roles"]');
   expect(JSON.parse(String(vi.mocked(fetch).mock.calls[2]?.[1]?.body))).toEqual(sent);
+});
+
+it("does not claim unsaved edits for a draft the visitor has not touched", async () => {
+  const view = editorFixture();
+  await render({ ...view, requiresSave: true });
+  expect(host.querySelector("[data-save-pending]")?.textContent).toBe(geoKbV2EditorCopy("en").savePending);
+  expect(host.textContent).not.toContain(geoKbV2EditorCopy("en").unsaved);
+  expect(host.querySelector<HTMLButtonElement>('[data-generate="roles"]')?.disabled).toBe(true);
+  await fill("Typed by a person");
+  expect(host.textContent).toContain(geoKbV2EditorCopy("en").unsaved);
+  expect(host.querySelector("[data-save-pending]")).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+it("names the competitor difference between the Profile copy and the draft, and adopts a bounded subset", async () => {
+  const view = editorFixture();
+  const domains = ["astro.com", "astro-seek.com", "astrostyle.com", "cafeastrology.com", "astrotheme.com", "astro-charts.com"];
+  const payload = { ...view.payload, competitors: [{ domain: "astro.com", brandName: "Astrodienst", confirmed: true }],
+    profileCopy: { ...view.payload.profileCopy, profile: { ...view.payload.profileCopy.profile, directCompetitors: domains } } };
+  await render({ ...view, payload });
+  const panel = host.querySelector("[data-geo-v2-measurement]");
+  expect(panel).not.toBeNull();
+  expect(panel?.querySelector("[data-gap-competitors]")?.textContent).toContain("6");
+  expect(panel?.querySelector("[data-gap-competitors]")?.textContent).toContain("1");
+  expect(host.querySelectorAll("[data-competitor-choice]")).toHaveLength(6);
+  await click("[data-replace-competitors]");
+  const choices = [...host.querySelectorAll<HTMLInputElement>("[data-competitor-choice]")];
+  for (const choice of choices.slice(0, 5)) await act(async () => choice.click());
+  expect(choices[5]?.disabled).toBe(true);
+  await click("[data-apply-measurements]");
+  const rows = [...host.querySelectorAll<HTMLInputElement>('[data-competitor-field="domain"]')].map(node => node.value);
+  expect(rows).toEqual(domains.slice(0, 5));
+  expect(fetch).not.toHaveBeenCalled();
 });

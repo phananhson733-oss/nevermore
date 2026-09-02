@@ -14,6 +14,7 @@ import { GeoKbVersionContent } from "./geo-kb-version-content.tsx";
 import { GeoKbFrozenCopy } from "./geo-kb-frozen-copy.tsx";
 import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { GeoProfileCopyReview } from "./geo-kb-profile-copy-review.tsx";
+import { GeoKbV2MeasurementReview } from "./geo-kb-v2-measurement.tsx";
 import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
 
 export interface GeoKnowledgeBaseV2Props {
@@ -32,7 +33,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       event.preventDefault(); const next = event.key === "Home" ? "input" : event.key === "End" ? "frozen" : value === "input" ? "frozen" : "input";
       setStage(next); document.getElementById(`${id}-${next}-tab`)?.focus();
     }}>{t[value]}</Button>)}</div>
-    {editor.dirty ? <p role="status" className="text-sm text-text-dark-secondary">{t.unsaved}</p> : null}
+    {editor.edited ? <p role="status" className="text-sm text-text-dark-secondary">{t.unsaved}</p> : editor.dirty || view.requiresSave ? <p role="status" data-save-pending className="text-sm text-text-dark-secondary">{t.savePending}</p> : null}
     {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? t.conflict : t.error} <span className="break-all font-mono text-xs">{editor.status.code}</span></p> : null}
     {editor.status.kind === "saved" && !editor.dirty ? <p role="status" className="text-sm text-text-dark-secondary">{t.saved}</p> : null}
     <div role="tabpanel" hidden={stage !== "input"} id={`${id}-input-panel`} aria-labelledby={`${id}-input-tab`} className="space-y-6">
@@ -40,6 +41,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       {editor.copyStale ? <p role="status" className="text-sm text-brand-error">{t.sourceChanged}</p> : null}
       <div className="flex flex-wrap gap-3"><Button type="button" variant="outline" disabled={editor.busy} onClick={() => void editor.reviewProfileCopy()}>{t.reviewCopy}</Button><Button type="button" variant="outline" disabled={editor.busy} onClick={() => void editor.reload()}>{t.reload}</Button></div>
       {editor.copyProposal === null ? null : <GeoProfileCopyReview current={payload.profileCopy} proposal={editor.copyProposal} onApply={editor.adoptProfileCopy} onDismiss={editor.dismissProfileCopy} disabled={editor.busy || !editor.canAdoptProfileCopy} />}
+      <GeoKbV2MeasurementReview profile={payload.profileCopy.profile} payload={payload} locale={props.locale} disabled={editor.busy} onChange={editor.change} />
       <GeoKbV2Fields payload={payload} locale={props.locale} onChange={editor.change} />
       <div className="space-y-3"><div className="flex flex-wrap gap-3">
         <Button data-save-v2 type="button" disabled={editor.busy} onClick={() => void editor.save()}>{editor.busy && editor.status.kind === "busy" && editor.status.operation === "save" ? t.busy : t.save}</Button>
@@ -63,8 +65,19 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
           <h3 className="font-semibold">{kind === "roles" ? t.generateRoles : t.prepare}</h3>
           <p role="status">{pending?.readNotFound && pending.generationId === null ? t.notFoundRequest : uncertain ? t.uncertain : generation?.state === "claimed" || generation?.state === "dispatched" ? t.running : generation?.state === "failed" ? t.failed : `${t.state}: ${generation?.state ?? "unknown"}`}</p>
           {uncertain ? <p>{t.newVersionNeeded}</p> : null}
-          {pending ? <p className="break-all font-mono text-xs">{t.requestKey}: {pending.idempotencyKey}</p> : null}
-          {generation ? <details><summary>{t.state} · {generation.generationId}</summary><pre className="mt-3 overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify({ state: generation.state, errorReason: generation.errorReason, attempt: generation.attempt }, null, 2)}</pre></details> : null}
+          {generation ? <><dl className="grid gap-2 text-xs sm:grid-cols-2">
+            <div><dt className="text-text-dark-secondary">{t.state}</dt><dd>{generation.state}</dd></div>
+            {generation.errorReason === null ? null : <div><dt className="text-text-dark-secondary">{t.reason}</dt><dd className="break-words">{generation.errorReason}</dd></div>}
+            {generation.attempt === null ? null : <><div><dt className="text-text-dark-secondary">{t.attempt}</dt><dd className="tabular-nums">{generation.attempt.attemptedCalls}</dd></div>
+            <div><dt className="text-text-dark-secondary">{t.delivery}</dt><dd>{t.deliveries[generation.attempt.delivery]}</dd></div></>}
+          </dl>{generation.attempt?.attemptedCalls === 0 ? <p className="text-xs text-text-dark-secondary">{t.billingNote}</p> : null}</> : null}
+          {generation || pending ? <details data-generation-identity><summary className="cursor-pointer text-xs text-text-dark-secondary">{t.recordDetails}</summary><dl className="mt-3 grid gap-2 text-xs">
+            {generation ? <div><dt className="text-text-dark-secondary">{t.recordId}</dt><dd className="break-all font-mono">{generation.generationId}</dd></div> : null}
+            {pending ? <div><dt className="text-text-dark-secondary">{t.requestKey}</dt><dd className="break-all font-mono">{pending.idempotencyKey}</dd></div> : null}
+            {generation?.attempt?.modelRequested == null ? null : <div><dt className="text-text-dark-secondary">{t.model}</dt><dd className="break-all font-mono">{generation.attempt.modelRequested}</dd></div>}
+            {generation?.attempt == null || generation.attempt.inputTokens === null && generation.attempt.outputTokens === null ? null : <div><dt className="text-text-dark-secondary">{t.tokens}</dt><dd className="tabular-nums">{generation.attempt.inputTokens ?? "—"} / {generation.attempt.outputTokens ?? "—"}</dd></div>}
+            {generation?.attempt?.requestCount == null ? null : <div><dt className="text-text-dark-secondary">{t.requestCount}</dt><dd className="tabular-nums">{generation.attempt.requestCount}</dd></div>}
+          </dl></details> : null}
           <Button type="button" variant="outline" data-read-generation={kind} disabled={editor.busy} onClick={() => void editor.readGeneration(kind)}>{t.readGeneration}</Button>
         </section>;
       })}
@@ -76,7 +89,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       {roleProposal ? <GeoKbV2RoleProposals proposal={roleProposal} payload={payload} locale={props.locale} stale={!editor.roleProposalReusable(roleProposal)} onAdopt={(ids, mode) => editor.adoptRoles(roleProposal, ids, mode)} /> : null}
       <GeoKbV2PreparedReview candidate={view.prepared} locale={props.locale} stale={editor.candidateStale} reviewed={editor.reviewed} busy={editor.busy} canFreeze={editor.canFreeze} onReview={editor.confirmReview} onFreeze={() => void editor.freeze()} />
     </div><div role="tabpanel" hidden={stage !== "frozen"} id={`${id}-frozen-panel`} aria-labelledby={`${id}-frozen-tab`}>
-      {view.frozen === null ? <p className="text-sm text-text-dark-secondary">{t.noFrozen}</p> : "context" in view.frozen ? <div data-frozen-v2 className="space-y-5"><p className="break-all text-sm">v{view.frozen.revision} · <time dateTime={view.frozen.frozenAt}>{view.frozen.frozenAt}</time> · {view.frozen.snapshotId}</p><GeoKbVersionContent payload={view.frozen.payload} questionSet={view.frozen.questionSet} context={view.frozen.context} locale={props.locale} /></div> : <div className="space-y-5"><p className="text-sm text-text-dark-secondary">{t.legacy}</p><GeoKbFrozenCopy payload={view.frozen.payload} locale={props.locale} revision={view.frozen.revision} /><ul className="space-y-3">{view.frozen.questions?.map(question => <li key={question.id} className="rounded-[10px] border border-brand-border-card p-4 text-sm">{question.text}<p>{question.layer} · {question.roleId ?? "—"}</p><p>{question.requiredEntities?.join(" · ")}</p></li>)}</ul></div>}
+      {view.frozen === null ? <p className="text-sm text-text-dark-secondary">{t.noFrozen}</p> : "context" in view.frozen ? <div data-frozen-v2 className="space-y-5"><p className="text-sm">v{view.frozen.revision} · <time dateTime={view.frozen.frozenAt}>{view.frozen.frozenAt}</time></p><GeoKbVersionContent payload={view.frozen.payload} questionSet={view.frozen.questionSet} context={view.frozen.context} locale={props.locale} /></div> : <div className="space-y-5"><p className="text-sm text-text-dark-secondary">{t.legacy}</p><GeoKbFrozenCopy payload={view.frozen.payload} locale={props.locale} revision={view.frozen.revision} /><ul className="space-y-3">{view.frozen.questions?.map(question => <li key={question.id} className="rounded-[10px] border border-brand-border-card p-4 text-sm">{question.text}<p>{question.layer} · {question.roleId ?? "—"}</p><p>{question.requiredEntities?.join(" · ")}</p></li>)}</ul></div>}
     </div>
   </section>;
 }

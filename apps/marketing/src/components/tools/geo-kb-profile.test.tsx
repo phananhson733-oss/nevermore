@@ -78,6 +78,29 @@ describe("complete GEO Profile copy display", () => {
     expect(controls.length).toBeGreaterThan(0);
     expect(controls.every((node) => node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement ? node.readOnly : false)).toBe(true);
   });
+  it("leads with the values GEO actually measures and keeps the rest one disclosure away", async () => {
+    await render();
+    const summary = host.querySelector("[data-geo-profile-summary]");
+    expect(summary).not.toBeNull();
+    expect(summary?.textContent).toContain("Copied product");
+    expect(summary?.textContent).toContain("Copied positioning");
+    expect(summary?.textContent).toContain("Complete feature 1");
+    expect(summary?.textContent).toContain("CA");
+    expect(summary?.textContent).not.toContain("Copied ICP");
+    const complete = host.querySelector<HTMLDetailsElement>("details[data-geo-copy-complete]");
+    expect(complete).not.toBeNull();
+    expect(complete?.open).toBe(false);
+    expect(complete?.textContent).toContain(en.tools.geoKnowledgeBase.asset.hash.replace("{hash}", "a".repeat(64)));
+    expect(complete?.querySelector('[data-geo-profile-field="primaryIcp"]')).not.toBeNull();
+    expect(host.textContent).toContain(en.tools.geoKnowledgeBase.asset.copyScopeNote);
+  });
+  it("offers one fact action per Profile value rather than one per rendering of it", async () => {
+    await render({ onAddFact: vi.fn() });
+    const complete = host.querySelector("details[data-geo-copy-complete]");
+    expect(complete?.querySelectorAll("button")).toHaveLength(0);
+    const keys = [...host.querySelectorAll<HTMLButtonElement>("button")].map(button => button.getAttribute("aria-label"));
+    expect(new Set(keys).size).toBe(keys.length);
+  });
   it("does not replace a saved copy with the latest Profile proposal", async () => {
     await render();
     const values = [...host.querySelectorAll("input,textarea")].map((node) => (node as HTMLInputElement | HTMLTextAreaElement).value);
