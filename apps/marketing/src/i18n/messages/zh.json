@@ -5535,7 +5535,7 @@
         "productName": "产品名称",
         "positioning": "一句话定位",
         "features": "核心功能",
-        "featureCandidateHelp": "添加待核事实会预填档案原文。保存前仍需核对并填写来源网址；这个动作不会自动把它标成已核实。",
+        "featureCandidateHelp": "添加待核事实会预填档案原文，并带上档案为该字段记录的来源网址与采集时间（仅限确实抓取过的页面）。这不是 GEO 的抓取核实，接受前请自行核对。",
         "featureCandidateAdd": "添加待核事实",
         "featureCandidateExists": "该事实已存在",
         "featureCandidateTooLong": "功能名称超出事实名称上限，未截断原文",

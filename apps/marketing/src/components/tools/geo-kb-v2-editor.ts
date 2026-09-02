@@ -3,6 +3,7 @@
 // @pos -- client-only editing helpers, with no requests or persistence
 import type { GeoKbFactV2, GeoKbPayloadV2, GeoKbRoleV2 } from "../../lib/geo-tools/kb-v2-contract.ts";
 import type { GeoSynthesisRole } from "../../lib/geo-tools/kb-synthesis-contract.ts";
+import { geoProfileFactSource, pendingGeoProfileFact } from "./geo-kb-feature-candidates.ts";
 export { upgradeGeoKbDraftToV2 } from "../../lib/geo-tools/kb-upgrade.ts";
 
 export type GeoKbRoleBodyPatch = Partial<Pick<GeoKbRoleV2,
@@ -54,4 +55,15 @@ export function adoptGeoKbRoleProposals(roles: readonly GeoSynthesisRole[], gene
     const { evidenceRefs, ...role } = structuredClone(proposal);
     return { ...role, review: "pending", source: { kind: "model", generationId, itemId: proposal.id, evidenceRefs } };
   });
+}
+
+/**
+ * Turning an inherited Profile value into a pending fact, with whatever source
+ * the archive already recorded for that field. The fact is never accepted here.
+ */
+export function appendGeoProfileFactV2(payload: GeoKbPayloadV2, key: string, value: string): GeoKbPayloadV2 | null {
+  const candidate = pendingGeoProfileFact(key, value, payload.facts, geoProfileFactSource(payload.profileCopy.profile, key));
+  return candidate.status === "ready"
+    ? { ...payload, facts: [...payload.facts, { ...candidate.fact, review: "pending", supportRef: null }] }
+    : null;
 }

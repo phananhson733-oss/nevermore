@@ -83,3 +83,22 @@ it("names the competitor difference between the Profile copy and the draft, and 
   expect(rows).toEqual(domains.slice(0, 5));
   expect(fetch).not.toHaveBeenCalled();
 });
+
+it("turns an inherited feature into a pending fact carrying the source the Profile already recorded", async () => {
+  const view = editorFixture();
+  const profile = { ...view.payload.profileCopy.profile, coreFeatures: ["Free birth chart calculator"], fieldProvenance: [
+    { path: "/coreFeatures" as const, derivation: "inferred" as const, confidence: "high" as const, source: "public_page" as const,
+      observedAt: "2026-08-31T05:34:14.891Z", evidenceUrls: ["https://example.com/tools"], limitation: null }] };
+  await render({ ...view, payload: { ...view.payload, facts: [], profileCopy: { ...view.payload.profileCopy, profile } } });
+  const add = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.getAttribute("aria-label")?.endsWith("Free birth chart calculator"));
+  expect(add?.disabled).toBe(false);
+  expect(host.querySelectorAll("[data-edit-fact]")).toHaveLength(0);
+  await act(async () => add!.click());
+  expect(host.querySelectorAll("[data-edit-fact]")).toHaveLength(1);
+  const values = [...host.querySelectorAll<HTMLInputElement>('[data-fact-field="sourceUrl"], [data-fact-field="observedAt"], [data-fact-field="key"]')].map(node => node.value);
+  expect(values).toContain("coreFeatures[0]");
+  expect(values).toContain("https://example.com/tools");
+  expect(values).toContain("2026-08-31T05:34:14.891Z");
+  expect(host.querySelector("[data-edit-fact] [data-review-state]")?.textContent).toBe("Pending review");
+  expect(fetch).not.toHaveBeenCalled();
+});

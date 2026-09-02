@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { pendingGeoFeatureFact, pendingGeoProfileFact } from "./geo-kb-feature-candidates.ts";
+import { geoProfileFactSource, pendingGeoFeatureFact, pendingGeoProfileFact } from "./geo-kb-feature-candidates.ts";
+import { emptyMarketingWebsiteProfile } from "../../lib/account-websites/contracts.ts";
 
 describe("inherited Profile value to pending fact", () => {
   it("prefills the exact general Profile value but requires a source before save", () => {
@@ -30,5 +31,35 @@ describe("inherited Profile value to pending fact", () => {
     expect(pendingGeoProfileFact("Cafe-plan", "Same value", existing)).toEqual({
       status: "ready", fact: { key: "Cafe-plan", value: "Same value", reason: "", sourceUrl: "", observedAt: "" },
     });
+  });
+});
+
+describe("carrying the archived source of an inherited value", () => {
+  const base = emptyMarketingWebsiteProfile();
+  const profile = { ...base, coreFeatures: ["Free birth chart calculator"], fieldProvenance: [
+    { path: "/coreFeatures" as const, derivation: "inferred" as const, confidence: "high" as const, source: "public_page" as const,
+      observedAt: "2026-08-31T05:34:14.891Z", evidenceUrls: ["https://www.astrologywiki.com/en/tools"], limitation: null },
+    { path: "/productName" as const, derivation: "declared" as const, confidence: "high" as const, source: "user_edit" as const,
+      observedAt: null, evidenceUrls: [], limitation: null },
+    { path: "/oneLinePositioning" as const, derivation: "observed" as const, confidence: "high" as const, source: "public_page" as const,
+      observedAt: "not a timestamp", evidenceUrls: ["https://www.astrologywiki.com/"], limitation: null },
+    { path: "/valueProposition" as const, derivation: "observed" as const, confidence: "high" as const, source: "public_page" as const,
+      observedAt: "2026-08-31T05:34:14.891Z", evidenceUrls: ["javascript:alert(1)", "https://www.astrologywiki.com/en/"], limitation: null },
+  ] };
+  it("reads the page and time recorded for an indexed list entry", () => {
+    expect(geoProfileFactSource(profile, "coreFeatures[0]")).toEqual({ sourceUrl: "https://www.astrologywiki.com/en/tools", observedAt: "2026-08-31T05:34:14.891Z" });
+  });
+  it("refuses a field with no fetched page behind it", () => {
+    expect(geoProfileFactSource(profile, "productName")).toBeNull();
+  });
+  it("refuses a time the fact schema would reject", () => {
+    expect(geoProfileFactSource(profile, "oneLinePositioning")).toBeNull();
+  });
+  it("skips an evidence address that is not a public page", () => {
+    expect(geoProfileFactSource(profile, "valueProposition")?.sourceUrl).toBe("https://www.astrologywiki.com/en/");
+  });
+  it("prefills a candidate with that source and still leaves it pending", () => {
+    const candidate = pendingGeoProfileFact("coreFeatures[0]", "Free birth chart calculator", [], geoProfileFactSource(profile, "coreFeatures[0]"));
+    expect(candidate).toMatchObject({ status: "ready", fact: { sourceUrl: "https://www.astrologywiki.com/en/tools", observedAt: "2026-08-31T05:34:14.891Z", reason: "" } });
   });
 });

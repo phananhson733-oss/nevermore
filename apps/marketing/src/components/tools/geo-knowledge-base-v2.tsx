@@ -9,6 +9,7 @@ import { Button } from "../ui/button.tsx";
 import { useGeoKbV2Editor } from "./use-geo-kb-v2-editor.ts";
 import { GeoKbV2Fields } from "./geo-kb-v2-fields.tsx";
 import { GeoKbV2Sources, GeoKbV2RoleProposals } from "./geo-kb-v2-sources.tsx";
+import { appendGeoProfileFactV2 } from "./geo-kb-v2-editor.ts";
 import { GeoKbV2PreparedReview } from "./geo-kb-v2-prepared-review.tsx";
 import { GeoKbVersionContent } from "./geo-kb-version-content.tsx";
 import { GeoKbFrozenCopy } from "./geo-kb-frozen-copy.tsx";
@@ -37,7 +38,10 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
     {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? t.conflict : t.error} <span className="break-all font-mono text-xs">{editor.status.code}</span></p> : null}
     {editor.status.kind === "saved" && !editor.dirty ? <p role="status" className="text-sm text-text-dark-secondary">{t.saved}</p> : null}
     <div role="tabpanel" hidden={stage !== "input"} id={`${id}-input-panel`} aria-labelledby={`${id}-input-tab`} className="space-y-6">
-      <GeoKbInheritedProfile profile={view.profile} copy={payload.profileCopy} locale={props.locale} inline />
+      <GeoKbInheritedProfile profile={view.profile} copy={payload.profileCopy} locale={props.locale} inline facts={payload.facts} onAddFact={(key, value) => {
+        const next = appendGeoProfileFactV2(payload, key, value);
+        if (next !== null) editor.change(next);
+      }} />
       {editor.copyStale ? <p role="status" className="text-sm text-brand-error">{t.sourceChanged}</p> : null}
       <div className="flex flex-wrap gap-3"><Button type="button" variant="outline" disabled={editor.busy} onClick={() => void editor.reviewProfileCopy()}>{t.reviewCopy}</Button><Button type="button" variant="outline" disabled={editor.busy} onClick={() => void editor.reload()}>{t.reload}</Button></div>
       {editor.copyProposal === null ? null : <GeoProfileCopyReview current={payload.profileCopy} proposal={editor.copyProposal} onApply={editor.adoptProfileCopy} onDismiss={editor.dismissProfileCopy} disabled={editor.busy || !editor.canAdoptProfileCopy} />}

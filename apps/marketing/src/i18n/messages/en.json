@@ -5535,7 +5535,7 @@
         "productName": "Product name",
         "positioning": "One-line positioning",
         "features": "Core features",
-        "featureCandidateHelp": "Adding a pending fact prefills the exact Profile value. Review it and add a source URL before saving; the action does not verify the value automatically.",
+        "featureCandidateHelp": "Adding a pending fact prefills the archived value and carries the source address and capture time the Profile recorded for that field, but only where a page was actually fetched. That is not GEO crawl verification; check it before accepting.",
         "featureCandidateAdd": "Add pending fact",
         "featureCandidateExists": "Fact already exists",
         "featureCandidateTooLong": "Feature exceeds the fact-name limit; it was not truncated",
