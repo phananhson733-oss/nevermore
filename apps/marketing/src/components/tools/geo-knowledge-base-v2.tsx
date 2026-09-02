@@ -17,6 +17,9 @@ import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { GeoProfileCopyReview } from "./geo-kb-profile-copy-review.tsx";
 import { GeoKbV2MeasurementReview } from "./geo-kb-v2-measurement.tsx";
 import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
+import { GeoKbV2Progress } from "./geo-kb-v2-progress.tsx";
+import { GeoKbV2Block } from "./geo-kb-v2-block.tsx";
+import { GeoKbFrozenSummary } from "./geo-kb-frozen-summary.tsx";
 
 export interface GeoKnowledgeBaseV2Props {
   readonly initialView: GeoKbEditorViewV2; readonly locale: string; readonly inline?: boolean;
@@ -38,15 +41,19 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
     {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? t.conflict : t.error} <span className="break-all font-mono text-xs">{editor.status.code}</span></p> : null}
     {editor.status.kind === "saved" && !editor.dirty ? <p role="status" className="text-sm text-text-dark-secondary">{t.saved}</p> : null}
     <div role="tabpanel" hidden={stage !== "input"} id={`${id}-input-panel`} aria-labelledby={`${id}-input-tab`} className="space-y-6">
-      <GeoKbInheritedProfile profile={view.profile} copy={payload.profileCopy} locale={props.locale} inline facts={payload.facts} onAddFact={(key, value) => {
+      <GeoKbV2Block id="profile"><GeoKbInheritedProfile profile={view.profile} copy={payload.profileCopy} locale={props.locale} inline facts={payload.facts} onAddFact={(key, value) => {
         const next = appendGeoProfileFactV2(payload, key, value);
         if (next !== null) editor.change(next);
       }} />
       {editor.copyStale ? <p role="status" className="text-sm text-brand-error">{t.sourceChanged}</p> : null}
       <div className="flex flex-wrap gap-3"><Button type="button" variant="outline" disabled={editor.busy} onClick={() => void editor.reviewProfileCopy()}>{t.reviewCopy}</Button><Button type="button" variant="outline" disabled={editor.busy} onClick={() => void editor.reload()}>{t.reload}</Button></div>
       {editor.copyProposal === null ? null : <GeoProfileCopyReview current={payload.profileCopy} proposal={editor.copyProposal} onApply={editor.adoptProfileCopy} onDismiss={editor.dismissProfileCopy} disabled={editor.busy || !editor.canAdoptProfileCopy} />}
-      <GeoKbV2MeasurementReview profile={payload.profileCopy.profile} payload={payload} locale={props.locale} disabled={editor.busy} onChange={editor.change} />
-      <GeoKbV2Fields payload={payload} locale={props.locale} onChange={editor.change} />
+      <GeoKbV2MeasurementReview profile={payload.profileCopy.profile} payload={payload} locale={props.locale} disabled={editor.busy} onChange={editor.change} /></GeoKbV2Block>
+      <GeoKbV2Block id="supplement"><GeoKbV2Fields payload={payload} locale={props.locale} onChange={editor.change} /></GeoKbV2Block>
+      <GeoKbV2Block id="run">
+      <GeoKbV2Progress busy={editor.busy} dirty={editor.dirty} requiresSave={view.requiresSave} copyStale={editor.copyStale} needsReview={editor.needsReview}
+        canGenerate={editor.canGenerate} canPrepare={editor.canPrepare} canFreeze={editor.canFreeze} hasSourceReceipt={view.sourceReceipt !== null}
+        hasRoleProposal={roleProposal !== null} hasCandidate={view.prepared !== null} candidateStale={editor.candidateStale} reviewed={editor.reviewed} />
       <div className="space-y-3"><div className="flex flex-wrap gap-3">
         <Button data-save-v2 type="button" disabled={editor.busy} onClick={() => void editor.save()}>{editor.busy && editor.status.kind === "busy" && editor.status.operation === "save" ? t.busy : t.save}</Button>
         <Button data-refresh-sources type="button" variant="outline" disabled={!editor.canGenerate} onClick={() => void editor.refreshSources()}>{t.sources}</Button>
@@ -92,8 +99,9 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       {view.sourceReceipt ? <GeoKbV2Sources receipt={view.sourceReceipt} baseline={view.payload} payload={payload} locale={props.locale} stale={editor.copyStale || editor.sourceSelection.stale} onChange={editor.change} /> : null}
       {roleProposal ? <GeoKbV2RoleProposals proposal={roleProposal} payload={payload} locale={props.locale} stale={!editor.roleProposalReusable(roleProposal)} onAdopt={(ids, mode) => editor.adoptRoles(roleProposal, ids, mode)} /> : null}
       <GeoKbV2PreparedReview candidate={view.prepared} locale={props.locale} stale={editor.candidateStale} reviewed={editor.reviewed} busy={editor.busy} canFreeze={editor.canFreeze} onReview={editor.confirmReview} onFreeze={() => void editor.freeze()} />
+      </GeoKbV2Block>
     </div><div role="tabpanel" hidden={stage !== "frozen"} id={`${id}-frozen-panel`} aria-labelledby={`${id}-frozen-tab`}>
-      {view.frozen === null ? <p className="text-sm text-text-dark-secondary">{t.noFrozen}</p> : "context" in view.frozen ? <div data-frozen-v2 className="space-y-5"><p className="text-sm">v{view.frozen.revision} · <time dateTime={view.frozen.frozenAt}>{view.frozen.frozenAt}</time></p><GeoKbVersionContent payload={view.frozen.payload} questionSet={view.frozen.questionSet} context={view.frozen.context} locale={props.locale} /></div> : <div className="space-y-5"><p className="text-sm text-text-dark-secondary">{t.legacy}</p><GeoKbFrozenCopy payload={view.frozen.payload} locale={props.locale} revision={view.frozen.revision} /><ul className="space-y-3">{view.frozen.questions?.map(question => <li key={question.id} className="rounded-[10px] border border-brand-border-card p-4 text-sm">{question.text}<p>{question.layer} · {question.roleId ?? "—"}</p><p>{question.requiredEntities?.join(" · ")}</p></li>)}</ul></div>}
+      {view.frozen === null ? <p className="text-sm text-text-dark-secondary">{t.noFrozen}</p> : "context" in view.frozen ? <div data-frozen-v2 className="space-y-5"><GeoKbFrozenSummary frozen={view.frozen} /><GeoKbVersionContent payload={view.frozen.payload} questionSet={view.frozen.questionSet} context={view.frozen.context} locale={props.locale} /></div> : <div className="space-y-5"><p className="text-sm text-text-dark-secondary">{t.legacy}</p><GeoKbFrozenCopy payload={view.frozen.payload} locale={props.locale} revision={view.frozen.revision} /><ul className="space-y-3">{view.frozen.questions?.map(question => <li key={question.id} className="rounded-[10px] border border-brand-border-card p-4 text-sm">{question.text}<p>{question.layer} · {question.roleId ?? "—"}</p><p>{question.requiredEntities?.join(" · ")}</p></li>)}</ul></div>}
     </div>
   </section>;
 }

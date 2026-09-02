@@ -5570,12 +5570,39 @@
         "copyUnchanged": "当前 GEO 副本已与这个 Profile 确认版本一致，无需更新。",
         "applyCopy": "将此版本复制到 GEO 草稿",
         "dismissCopy": "保留当前 GEO 副本",
+        "frozenSummary": "v{revision} · {questions} 条提问 · {roles} 个角色 · 竞品 {confirmed}/{competitors} 已确认 · {facts} 条事实",
         "frozenCopyTitle": "查看已冻结的完整知识库",
         "frozenLegacy": "这个历史版本没有完整 Profile 副本；系统没有用今天的 Profile 回填它。",
         "frozenOperations": "该版本保存的 GEO 设置",
         "baseNameReadOnly": "来自资料副本。产品名称请在 Profile 中修改，再更新这里的副本；匹配变体请填入别名。",
         "matchingOverride": "GEO 匹配名称覆盖项",
         "scopeHelp": "上方副本保留 Profile 的原始市场和语言。这里是 GEO 专用的测量覆盖项，不修改 Profile。"
+      },
+      "blocks": {
+        "profile": "来自产品档案",
+        "profileBody": "这些值属于这份 GEO 草稿保存的档案副本。要更新，请先在上方 Profile 修改并确认，再回到这里审阅采用。",
+        "supplement": "GEO 补充",
+        "supplementBody": "档案里没有的 GEO 专用设置：匹配名称与别名、提问品类词、测量市场、竞品身份、角色与事实。",
+        "run": "生成与冻结",
+        "runBody": "按顺序完成以下步骤。每一步都要显式发起：不会自动调用模型，也不会自动冻结。"
+      },
+      "steps": {
+        "title": "进度",
+        "save": "保存 GEO 草稿",
+        "sources": "刷新来源证据",
+        "roles": "生成角色建议",
+        "prepare": "生成完整待冻结版本",
+        "freeze": "冻结这一版本",
+        "states": { "done": "已完成", "ready": "现在可做", "blocked": "暂不可用" },
+        "reasons": {
+          "unsaved": "先保存草稿",
+          "copyStale": "先审阅并采用最新档案副本",
+          "review": "先完成角色与事实的审阅",
+          "noCandidate": "先生成完整候选",
+          "staleCandidate": "候选依据已变化，请重新生成",
+          "notReviewed": "先勾选核对确认",
+          "busy": "正在处理"
+        }
       },
       "measurementReview": {
         "title": "审阅并采用 Profile 的测量输入建议",

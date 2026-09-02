@@ -102,3 +102,29 @@ it("turns an inherited feature into a pending fact carrying the source the Profi
   expect(host.querySelector("[data-edit-fact] [data-review-state]")?.textContent).toBe("Pending review");
   expect(fetch).not.toHaveBeenCalled();
 });
+
+it("reads as three named parts with one ordered progress model", async () => {
+  await render();
+  expect([...host.querySelectorAll("[data-geo-v2-block]")].map(node => node.getAttribute("data-geo-v2-block"))).toEqual(["profile", "supplement", "run"]);
+  expect(host.querySelector('[data-geo-v2-block="profile"]')?.querySelector("[data-geo-profile-summary]")).not.toBeNull();
+  expect(host.querySelector('[data-geo-v2-block="supplement"]')?.querySelector('[data-base-field="officialName"]')).not.toBeNull();
+  expect(host.querySelector('[data-geo-v2-block="run"]')?.querySelector("[data-save-v2]")).not.toBeNull();
+  expect([...host.querySelectorAll("[data-step]")].map(node => node.getAttribute("data-step"))).toEqual(["save", "sources", "roles", "prepare", "freeze"]);
+  expect(host.querySelector('[data-step="freeze"]')?.textContent).toContain(en.tools.geoKnowledgeBase.steps.reasons.notReviewed);
+});
+it("names the one blocking gate on the progress list rather than a loose hint", async () => {
+  await render({ ...editorFixture(), requiresSave: true });
+  expect(host.querySelector('[data-step="save"]')?.getAttribute("data-step-state")).toBe("ready");
+  expect(host.querySelector('[data-step="sources"]')?.getAttribute("data-step-state")).toBe("blocked");
+  expect(host.querySelector('[data-step="sources"]')?.textContent).toContain(en.tools.geoKnowledgeBase.steps.reasons.unsaved);
+});
+it("says what a frozen version holds before showing all of it", async () => {
+  const view = editorFixture(), candidate = view.prepared!;
+  await render({ ...view, frozen: { kbId: view.kbId, snapshotId: candidate.candidateId, revision: 3, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: candidate.baseDraftHash, questionSetHash: candidate.context.questionSetHash, questionCount: candidate.questionSet.questions.length, payload: candidate.payload, questionSet: candidate.questionSet, context: candidate.context } });
+  await click('[data-stage="frozen"]');
+  const summary = host.querySelector("[data-frozen-summary]")?.textContent ?? "";
+  expect(summary).toContain("v3");
+  expect(summary).toContain(`${candidate.questionSet.questions.length} questions`);
+  expect(summary).toContain(`${candidate.payload.roles.length} roles`);
+  expect(summary).toContain(`${candidate.payload.competitors.filter(row => row.confirmed).length}/${candidate.payload.competitors.length} competitors confirmed`);
+});

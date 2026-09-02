@@ -5570,12 +5570,39 @@
         "copyUnchanged": "This GEO copy already matches the confirmed Profile version. No update is needed.",
         "applyCopy": "Copy this version into the GEO draft",
         "dismissCopy": "Keep the current GEO copy",
+        "frozenSummary": "v{revision} · {questions} questions · {roles} roles · {confirmed}/{competitors} competitors confirmed · {facts} facts",
         "frozenCopyTitle": "Inspect the frozen knowledge base",
         "frozenLegacy": "This historical version does not contain a complete Profile copy. It has not been filled from today's Profile.",
         "frozenOperations": "GEO settings saved in this version",
         "baseNameReadOnly": "From the Profile copy. Change the product name in Profile, then update this copy; matching variants belong in aliases.",
         "matchingOverride": "GEO matching-name override",
         "scopeHelp": "The Profile market and language are copied above. These GEO-only measurement settings are explicit overrides and do not edit the Profile."
+      },
+      "blocks": {
+        "profile": "From the product Profile",
+        "profileBody": "These values belong to the Profile copy this GEO draft stores. To change them, edit and confirm the Profile above, then review and adopt the copy here.",
+        "supplement": "GEO supplement",
+        "supplementBody": "The GEO-only settings the Profile does not hold: matching name and aliases, question categories, measurement market, competitor identities, roles and facts.",
+        "run": "Generate and freeze",
+        "runBody": "Work through these steps in order. Each one is dispatched explicitly: no model call and no freeze happens on its own."
+      },
+      "steps": {
+        "title": "Progress",
+        "save": "Save the GEO draft",
+        "sources": "Refresh source evidence",
+        "roles": "Generate role proposals",
+        "prepare": "Prepare the complete candidate",
+        "freeze": "Freeze this version",
+        "states": { "done": "Done", "ready": "Available now", "blocked": "Not yet available" },
+        "reasons": {
+          "unsaved": "Save the draft first",
+          "copyStale": "Review and adopt the latest Profile copy first",
+          "review": "Finish reviewing roles and facts first",
+          "noCandidate": "Prepare a complete candidate first",
+          "staleCandidate": "The candidate inputs changed; prepare a new one",
+          "notReviewed": "Confirm the review checkbox first",
+          "busy": "Working"
+        }
       },
       "measurementReview": {
         "title": "Review measurement settings from this Profile",
