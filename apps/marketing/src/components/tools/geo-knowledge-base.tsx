@@ -35,7 +35,7 @@ import {
 } from "./geo-kb-wire.ts";
 import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { GeoKbEnrichment } from "./geo-kb-enrichment.tsx";
-import { pendingGeoProfileFact } from "./geo-kb-feature-candidates.ts";
+import { geoProfileFactSource, pendingGeoProfileFact } from "./geo-kb-feature-candidates.ts";
 import { isSupportedGeoQuestionLanguage } from "../../lib/geo-tools/asset-context.ts";
 import { createGeoProfileCopy, type GeoProfileCopy } from "../../lib/geo-tools/kb-profile-copy.ts";
 import { GeoKbMeasurementReview } from "./geo-kb-measurement-review.tsx";
@@ -857,7 +857,7 @@ export function GeoKnowledgeBase({
             <div id="kb-repair-profile" className="scroll-mt-24"><GeoKbInheritedProfile profile={view.profile ?? null} locale={locale}
               {...(payload.profileCopy === undefined ? {} : { copy: payload.profileCopy })} inline={inline} repairMode={repair !== null}
               facts={payload.facts} onAddFact={(key, value) => {
-                const candidate = pendingGeoProfileFact(key, value, payload.facts);
+                const candidate = pendingGeoProfileFact(key, value, payload.facts, payload.profileCopy === undefined ? null : geoProfileFactSource(payload.profileCopy.profile, key));
                 if (candidate.status === "ready") {
                   update({ facts: [...payload.facts, candidate.fact] });
                   window.requestAnimationFrame?.(() => document.getElementById("kb-repair-facts")?.scrollIntoView?.({ behavior: "smooth", block: "start" }));

@@ -19,9 +19,13 @@ export interface GeoV2MeasurementGap {
   readonly fields: readonly GeoV2MeasurementField[];
   readonly sourceCompetitorCount: number;
   readonly draftCompetitorCount: number;
+  readonly missingCompetitorCount: number;
   readonly competitorsDiffer: boolean;
   readonly overCompetitorLimit: boolean;
 }
+
+const competitorIdentity = (competitor: { readonly domain: string; readonly brandName: string }): string =>
+  competitor.domain ? `domain:${competitor.domain}` : `brand:${competitor.brandName.trim().toLowerCase()}`;
 
 export function geoV2MeasurementProposal(profile: MarketingWebsiteProfileV1, payload: GeoKbPayloadV2): GeoProfileSuggestions {
   return buildGeoProfileSuggestions(profile, { competitors: payload.competitors });
@@ -34,12 +38,20 @@ export function geoV2MeasurementGap(profile: MarketingWebsiteProfileV1, payload:
     // A proposal the source cannot supply is not a difference the visitor can act on.
     return proposed !== null && JSON.stringify(proposed) !== JSON.stringify(payload[field]);
   });
-  const source = proposal.competitors.map((row) => row.value);
+  const held = new Set(payload.competitors.map(competitorIdentity));
+  // Only a Profile competitor that can be mapped and is absent from the
+  // measurement set counts. Order is not a difference, an entry the Profile
+  // stores in a form GEO cannot use is not adoptable, and a measurement set
+  // already at the limit has no room - reporting any of those would leave a
+  // banner the visitor has no way to clear.
+  const missing = proposal.competitors.filter((row) => row.value !== null && !held.has(competitorIdentity(row.value)));
+  const room = payload.competitors.length < GEO_KB_LIMITS.competitors;
   return {
     fields,
     sourceCompetitorCount: proposal.competitors.length,
     draftCompetitorCount: payload.competitors.length,
-    competitorsDiffer: JSON.stringify(source) !== JSON.stringify(payload.competitors),
+    missingCompetitorCount: missing.length,
+    competitorsDiffer: room && missing.length > 0,
     overCompetitorLimit: proposal.competitors.length > GEO_KB_LIMITS.competitors,
   };
 }
@@ -58,9 +70,12 @@ export function applyGeoV2Measurement(
   for (const field of selection.fields) {
     const value = proposal.fields[field];
     if (value === null || value === undefined) throw new Error("Unavailable measurement proposal");
-    next = field === "market" ? { ...next, market: value as GeoKbPayloadV2["market"] }
-      : field === "categoryTerms" ? { ...next, categoryTerms: value as readonly string[] }
-        : { ...next, officialName: value as string };
+    if (field === "market") next = { ...next, market: value as GeoKbPayloadV2["market"] };
+    else if (field === "categoryTerms") next = { ...next, categoryTerms: value as readonly string[] };
+    else if (field === "officialName") next = { ...next, officialName: value as string };
+    // No fallthrough: an unrecognised field must not be written onto whichever
+    // branch happens to be last.
+    else throw new Error("Unsupported measurement field");
   }
   if (selection.competitorIndices !== null) {
     const indices = selection.competitorIndices;

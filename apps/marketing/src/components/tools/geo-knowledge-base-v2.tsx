@@ -31,6 +31,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
   const roleGeneration = view.generations.roles;
   const roleProposal = roleGeneration?.state === "succeeded" && roleGeneration.result?.schemaVersion === "marketing-geo-role-proposal.v1" ? roleGeneration.result : null;
   const blockedGeneration = (kind: GeoKbGenerationKind) => editor.generationAction(kind) !== "normal";
+  const generationRunning = (["roles", "questions"] as const).some(kind => ["claimed", "dispatched"].includes(view.generations[kind]?.state ?? ""));
   return <section data-geo-kb-v2 data-inline={inline} className="min-w-0 space-y-6 text-text-dark-primary">
     <div role="tablist" aria-label="GEO" className="flex gap-2 border-b border-brand-border-card pb-3">{(["input", "frozen"] as const).map(value => <Button key={value} id={`${id}-${value}-tab`} role="tab" aria-controls={`${id}-${value}-panel`} aria-selected={stage === value} tabIndex={stage === value ? 0 : -1} data-stage={value} type="button" variant={stage === value ? "default" : "outline"} onClick={() => setStage(value)} onKeyDown={event => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -52,14 +53,18 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       <GeoKbV2Block id="supplement"><GeoKbV2Fields payload={payload} locale={props.locale} onChange={editor.change} /></GeoKbV2Block>
       <GeoKbV2Block id="run">
       <GeoKbV2Progress busy={editor.busy} dirty={editor.dirty} requiresSave={view.requiresSave} copyStale={editor.copyStale} needsReview={editor.needsReview}
-        canGenerate={editor.canGenerate} canPrepare={editor.canPrepare} canFreeze={editor.canFreeze} hasSourceReceipt={view.sourceReceipt !== null}
-        hasRoleProposal={roleProposal !== null} hasCandidate={view.prepared !== null} candidateStale={editor.candidateStale} reviewed={editor.reviewed} />
+        sourcesActionable={editor.canGenerate && !editor.busy} rolesActionable={!blockedGeneration("roles")} prepareActionable={!blockedGeneration("questions")}
+        canFreeze={editor.canFreeze} generationRunning={generationRunning}
+        hasUsableSourceReceipt={view.sourceReceipt !== null && !editor.sourceSelection.stale}
+        hasUsableRoleProposal={roleProposal !== null && editor.roleProposalReusable(roleProposal)}
+        hasCandidate={view.prepared !== null} candidateStale={editor.candidateStale} reviewed={editor.reviewed}
+        frozenAtCurrentDraft={view.frozen !== null && "context" in view.frozen && view.frozen.contentHash === view.draftHash} />
       <div className="space-y-3"><div className="flex flex-wrap gap-3">
         <Button data-save-v2 type="button" disabled={editor.busy} onClick={() => void editor.save()}>{editor.busy && editor.status.kind === "busy" && editor.status.operation === "save" ? t.busy : t.save}</Button>
         <Button data-refresh-sources type="button" variant="outline" disabled={!editor.canGenerate} onClick={() => void editor.refreshSources()}>{t.sources}</Button>
         <Button data-generate="roles" type="button" variant="outline" disabled={blockedGeneration("roles")} onClick={() => void editor.generate("roles")}>{t.generateRoles}</Button>
         <Button data-generate="questions" type="button" variant="outline" disabled={blockedGeneration("questions")} onClick={() => void editor.generate("questions")}>{t.prepare}</Button>
-      </div><p className="text-sm text-text-dark-secondary">{t.autosave}</p>{editor.dirty || view.requiresSave ? <p className="text-sm text-text-dark-secondary">{t.saveFirst}</p> : null}{editor.needsReview ? <p className="text-sm text-text-dark-secondary">{t.reviewPending}</p> : null}</div>
+      </div>{editor.edited || !editor.dirty && !view.requiresSave ? <p className="text-sm text-text-dark-secondary">{t.autosave}</p> : null}{editor.dirty || view.requiresSave ? <p className="text-sm text-text-dark-secondary">{t.saveFirst}</p> : null}{editor.needsReview ? <p className="text-sm text-text-dark-secondary">{t.reviewPending}</p> : null}</div>
       {(["roles", "questions"] as const).map(kind => {
         const action = editor.generationAction(kind);
         if (action !== "new_input" && action !== "resend_same") return null;

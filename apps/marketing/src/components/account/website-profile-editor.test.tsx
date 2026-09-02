@@ -104,6 +104,18 @@ const EDITOR = {
   rescan: "Re-scan website",
   generating: "Scanning…",
   generationFailed: "Refresh failed.",
+  draftUnchanged: "Your current draft is unchanged.",
+  refreshErrors: {
+    rateLimited: "Scan limit reached.",
+    rateLimitedByTarget: "The site rate-limited us.",
+    botProtectionBlocked: "Bot protection blocked the crawl.",
+    robotsDisallowed: "robots.txt does not allow crawling.",
+    robotsUnreachable: "robots.txt could not be read.",
+    entryUnreachable: "The homepage did not answer.",
+    tooFewPages: "Too few pages to build a Profile.",
+    invalidTarget: "Enter a complete domain.",
+    unavailable: "The scan service is temporarily unavailable.",
+  },
   saveState: {
     unsaved: "Unsaved",
     saving: "Saving…",
@@ -2273,7 +2285,10 @@ describe("WebsiteProfileEditor", () => {
     await settle();
     await settle();
 
-    expect(host.textContent).toContain(EDITOR.generationFailed);
+    expect(host.querySelector("[data-refresh-error]")?.getAttribute("data-refresh-error")).toBe("unavailable");
+    expect(host.textContent).toContain(EDITOR.refreshErrors.unavailable);
+    expect(host.textContent).toContain(EDITOR.draftUnchanged);
+    expect(host.textContent).not.toContain(EDITOR.generationFailed);
     expect(profileSearchCalls(fetchMock)).toHaveLength(0);
     expect(
       fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH"),

@@ -42,7 +42,8 @@ export function GeoKbV2MeasurementReview({ profile, payload, locale, disabled, o
     <h3 className="text-[15px] font-semibold text-text-dark-primary">{t("gapTitle")}</h3>
     <div className="mt-3 grid gap-2 text-sm text-text-dark-secondary">
       {gap.fields.length === 0 ? null : <p data-gap-fields>{t("gapFields", { fields: gap.fields.map(field => names[field]).join(" · ") })}</p>}
-      {gap.competitorsDiffer ? <p data-gap-competitors>{t("gapCompetitors", { source: gap.sourceCompetitorCount, draft: gap.draftCompetitorCount })}</p> : null}
+      {gap.competitorsDiffer ? <p data-gap-competitors>{t("gapCompetitors", { source: gap.sourceCompetitorCount, draft: gap.draftCompetitorCount, missing: gap.missingCompetitorCount })}</p> : null}
+      {gap.competitorsDiffer && gap.overCompetitorLimit ? <p data-gap-limit>{t("competitorsBody", { sourceCount: gap.sourceCompetitorCount, limit: GEO_KB_LIMITS.competitors })}</p> : null}
     </div>
     <details className="mt-4 border-t border-brand-border-card pt-4" data-measurement-review-v2>
       <summary className="cursor-pointer text-[13px] font-medium text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent">{t("title")}</summary>

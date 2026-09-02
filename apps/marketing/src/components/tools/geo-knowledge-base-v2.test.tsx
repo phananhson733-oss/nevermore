@@ -87,7 +87,7 @@ it("names the competitor difference between the Profile copy and the draft, and 
 it("turns an inherited feature into a pending fact carrying the source the Profile already recorded", async () => {
   const view = editorFixture();
   const profile = { ...view.payload.profileCopy.profile, coreFeatures: ["Free birth chart calculator"], fieldProvenance: [
-    { path: "/coreFeatures" as const, derivation: "inferred" as const, confidence: "high" as const, source: "public_page" as const,
+    { path: "/coreFeatures" as const, derivation: "observed" as const, confidence: "high" as const, source: "public_page" as const,
       observedAt: "2026-08-31T05:34:14.891Z", evidenceUrls: ["https://example.com/tools"], limitation: null }] };
   await render({ ...view, payload: { ...view.payload, facts: [], profileCopy: { ...view.payload.profileCopy, profile } } });
   const add = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.getAttribute("aria-label")?.endsWith("Free birth chart calculator"));
@@ -127,4 +127,21 @@ it("says what a frozen version holds before showing all of it", async () => {
   expect(summary).toContain(`${candidate.questionSet.questions.length} questions`);
   expect(summary).toContain(`${candidate.payload.roles.length} roles`);
   expect(summary).toContain(`${candidate.payload.competitors.filter(row => row.confirmed).length}/${candidate.payload.competitors.length} competitors confirmed`);
+});
+
+// next-intl renders a missing key as its own path instead of throwing, and the
+// account route hands the client a narrowed message tree. Rendering against
+// exactly that tree is the only thing that catches a namespace it forgot.
+it.each(["en", "zh"])("renders no untranslated key path against the messages the account route provides in %s", async locale => {
+  const messages = locale === "zh" ? zh : en;
+  const narrowed = { account: messages.account, tools: { geoKnowledgeBase: messages.tools.geoKnowledgeBase } };
+  const view = editorFixture();
+  const payload = { ...view.payload, competitors: [{ domain: "astro.com", brandName: "Astrodienst", confirmed: true }],
+    profileCopy: { ...view.payload.profileCopy, profile: { ...view.payload.profileCopy.profile, directCompetitors: ["astro.com", "rival.example"] } } };
+  await act(async () => root.render(<NextIntlClientProvider locale={locale} timeZone="UTC" messages={narrowed}>
+    <GeoKnowledgeBaseV2 initialView={{ ...view, payload }} locale={locale} inline confirmedProfileRevision={1} />
+  </NextIntlClientProvider>));
+  for (const details of host.querySelectorAll("details")) details.open = true;
+  expect(host.querySelector("[data-geo-v2-measurement]")).not.toBeNull();
+  expect(host.textContent).not.toMatch(/tools\.geoKnowledgeBase|account\.websites/u);
 });

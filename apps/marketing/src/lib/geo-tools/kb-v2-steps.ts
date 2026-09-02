@@ -1,10 +1,10 @@
-// @input  -- the gate values the V2 editor already computes
+// @input  -- the gate values and the actual action availability the editor computes
 // @output -- one ordered, named progress model instead of scattered hints
 // @pos    -- presentation of existing gates; it never relaxes or reorders one
 export const GEO_KB_V2_STEPS = ["save", "sources", "roles", "prepare", "freeze"] as const;
 export type GeoKbV2StepId = (typeof GEO_KB_V2_STEPS)[number];
 export type GeoKbV2StepState = "done" | "ready" | "blocked";
-export type GeoKbV2StepReason = "unsaved" | "copyStale" | "review" | "noCandidate" | "staleCandidate" | "notReviewed" | "busy";
+export type GeoKbV2StepReason = "unsaved" | "copyStale" | "review" | "running" | "noCandidate" | "staleCandidate" | "notReviewed" | "busy" | "unavailable";
 
 export interface GeoKbV2Step {
   readonly id: GeoKbV2StepId;
@@ -18,25 +18,38 @@ export interface GeoKbV2StepInput {
   readonly requiresSave: boolean;
   readonly copyStale: boolean;
   readonly needsReview: boolean;
-  readonly canGenerate: boolean;
-  readonly canPrepare: boolean;
+  /**
+   * Whether each button is actually operable, taken from the same expression
+   * the button uses. A gate value alone is not enough: a dispatched generation
+   * leaves `canGenerate` true while its button is read-only.
+   */
+  readonly sourcesActionable: boolean;
+  readonly rolesActionable: boolean;
+  readonly prepareActionable: boolean;
   readonly canFreeze: boolean;
-  readonly hasSourceReceipt: boolean;
-  readonly hasRoleProposal: boolean;
+  readonly generationRunning: boolean;
+  /** Present AND usable against the current draft, not merely present. */
+  readonly hasUsableSourceReceipt: boolean;
+  readonly hasUsableRoleProposal: boolean;
   readonly hasCandidate: boolean;
   readonly candidateStale: boolean;
   readonly reviewed: boolean;
+  readonly frozenAtCurrentDraft: boolean;
 }
 
 /**
- * Why a step is blocked is decided in the same order the editor decides it, so
- * the visible reason is the one that actually has to be resolved first.
+ * Why a step is blocked, decided in the order the editor decides it, so the
+ * visible reason is the one that has to be resolved first. When none of the
+ * conditions this model knows about applies, it says so rather than naming the
+ * last one on the list and being wrong.
  */
-function blockedBecause(input: GeoKbV2StepInput): GeoKbV2StepReason {
+function blockedBecause(input: GeoKbV2StepInput, review: boolean): GeoKbV2StepReason {
   if (input.busy) return "busy";
   if (input.dirty || input.requiresSave) return "unsaved";
   if (input.copyStale) return "copyStale";
-  return "review";
+  if (input.generationRunning) return "running";
+  if (review && input.needsReview) return "review";
+  return "unavailable";
 }
 
 export function geoKbV2Steps(input: GeoKbV2StepInput): readonly GeoKbV2Step[] {
@@ -46,12 +59,11 @@ export function geoKbV2Steps(input: GeoKbV2StepInput): readonly GeoKbV2Step[] {
       : ready ? { id, state: "ready", reason: null }
         : { id, state: "blocked", reason };
   return [
-    step("save", saved, true, "busy"),
-    step("sources", input.hasSourceReceipt, input.canGenerate, blockedBecause(input)),
-    step("roles", input.hasRoleProposal, input.canGenerate, blockedBecause(input)),
-    // Preparing is the one step the review gate guards, so an outstanding
-    // review is named here even when everything else is saved and current.
-    step("prepare", input.hasCandidate && !input.candidateStale, input.canPrepare, input.needsReview && !input.busy && saved && !input.copyStale ? "review" : blockedBecause(input)),
-    step("freeze", false, input.canFreeze, !input.hasCandidate ? "noCandidate" : input.candidateStale ? "staleCandidate" : !input.reviewed ? "notReviewed" : "busy"),
+    step("save", saved, !input.busy, "busy"),
+    step("sources", input.hasUsableSourceReceipt, input.sourcesActionable, blockedBecause(input, false)),
+    step("roles", input.hasUsableRoleProposal, input.rolesActionable, blockedBecause(input, false)),
+    step("prepare", input.hasCandidate && !input.candidateStale, input.prepareActionable, blockedBecause(input, true)),
+    step("freeze", input.frozenAtCurrentDraft, input.canFreeze,
+      !input.hasCandidate ? "noCandidate" : input.candidateStale ? "staleCandidate" : !input.reviewed ? "notReviewed" : blockedBecause(input, false)),
   ];
 }

@@ -19,23 +19,31 @@ const publicUrl = (value: string) => {
 const exactTimestamp = (value: string) => Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 
 /**
- * The archived Profile already records which page each field was read from and
- * when. Carrying that forward saves retyping a URL the account has, and saves a
- * second fetch of a page already fetched.
+ * The archived Profile records which page each field was read from and when.
+ * Carrying that forward saves retyping a URL the account already holds.
  *
- * Only `public_page` qualifies: it is the one source that means bytes were
- * actually retrieved from that address. A declared, edited or locally inferred
- * field has no page behind it, and inventing one would turn a claim into a
- * citation. Carrying the address is still not verification - the fact stays
- * pending, and its crawl support reference stays empty until a GEO source
- * receipt matches it.
+ * Three conditions, each of which the fact would otherwise overstate:
+ *
+ * - `source: "public_page"`, the one source meaning bytes were actually
+ *   retrieved from that address. A declared, edited or locally computed field
+ *   has no page behind it.
+ * - `derivation: "observed"`. A `sourceUrl` on a fact asserts the page states
+ *   the value. An inferred field was composed by a model from those pages, and
+ *   citing one as though it said so is a claim the archive cannot back.
+ * - Exactly one evidence URL. With several, any single choice is arbitrary and
+ *   the fact would cite a page picked by array order.
+ *
+ * A carried address is still not verification. The fact stays pending and its
+ * crawl support reference stays empty until a GEO source receipt matches it.
  */
 export function geoProfileFactSource(profile: MarketingWebsiteProfileV1, key: string): GeoProfileFactSource | null {
   const field = key.replace(/\[\d+\]$/u, "") as WebsiteProfileFieldName;
   const entry = profile.fieldProvenance.find((row) => row.path === `/${field}`);
-  if (!entry || entry.source !== "public_page" || entry.observedAt === null || !exactTimestamp(entry.observedAt)) return null;
-  const sourceUrl = entry.evidenceUrls.find((url) => url.length <= 2048 && publicUrl(url));
-  return sourceUrl === undefined ? null : { sourceUrl, observedAt: entry.observedAt };
+  if (!entry || entry.source !== "public_page" || entry.derivation !== "observed") return null;
+  if (entry.observedAt === null || !exactTimestamp(entry.observedAt)) return null;
+  const [sourceUrl] = entry.evidenceUrls;
+  if (entry.evidenceUrls.length !== 1 || sourceUrl === undefined) return null;
+  return sourceUrl.length <= 2048 && publicUrl(sourceUrl) ? { sourceUrl, observedAt: entry.observedAt } : null;
 }
 
 type PendingGeoProfileFact =

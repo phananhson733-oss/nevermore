@@ -619,6 +619,27 @@ const websiteListSchema = z
     }
   });
 
+/**
+ * The address of a site we are about to start scanning.
+ *
+ * `new URL` accepts a bare label, so "example" parses and stores a website whose
+ * host has no registrable domain. Nothing can then resolve it: every scan fails,
+ * the Profile stays empty, and the GEO knowledge base - which only appears once
+ * a Profile is confirmed - never becomes reachable at all.
+ *
+ * This is deliberately separate from {@link normalizeAccountWebsiteUrl}. That one
+ * is also how already stored rows are read, and tightening it would hide a site
+ * somebody already added instead of explaining it.
+ */
+export function normalizeNewAccountWebsiteUrl(
+  input: string,
+): NormalizedAccountWebsiteUrl | null {
+  const normalized = normalizeAccountWebsiteUrl(input);
+  return normalized === null || !normalized.host.includes(".")
+    ? null
+    : normalized;
+}
+
 export function normalizeAccountWebsiteUrl(
   input: string,
 ): NormalizedAccountWebsiteUrl | null {

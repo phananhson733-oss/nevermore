@@ -150,6 +150,18 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
    * after a format upgrade or a version conflict is left alone: persisting it
    * on load would be a write nobody asked for.
    */
+  /**
+   * True while a model request this session dispatched has no settled outcome.
+   * The lock is released as soon as the dispatch POST returns, but the run
+   * itself continues, still bound to the draft version it was sent with.
+   */
+  function generationInFlight(): boolean {
+    return (["roles", "questions"] as const).some(kind => {
+      const held = current.current.pending[kind];
+      const generation = current.current.view.generations[kind];
+      return held !== null || unresolved(generation?.state);
+    });
+  }
   function scheduleAutosave() {
     if (autosave.current !== null) clearTimeout(autosave.current);
     autosave.current = setTimeout(() => {
@@ -157,7 +169,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
       if (!current.current.dirty) return;
       // A source refresh, generation or freeze holds the lock. Wait for it
       // rather than dropping the write.
-      if (lock.current) { scheduleAutosave(); return; }
+      if (lock.current || generationInFlight()) { scheduleAutosave(); return; }
       void save();
     }, GEO_KB_V2_AUTOSAVE_MS);
   }
@@ -219,8 +231,13 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     let submitted: GeoKbPayloadV2;
     try { submitted = parseGeoKbPayloadV2(submitGeoKbPayloadV2(current.current.payload)); } catch { error({ code: "invalid_input" }); return; }
     const version = editRevision.current;
-    const copyChanged = !same(submitted.profileCopy, view.payload.profileCopy);
-    const result = await post("draft", { kbId: view.kbId, baseVersion: view.draftVersion, payload: submitted, expectedProfileReference: view.profile?.reference ?? null });
+    // Read the version from the ref, not from this render's `view`. Autosave
+    // fires from a timer created one render earlier, so a closure read would
+    // address a version the server has already moved past and answer 409 to a
+    // visitor who was only typing.
+    const base = current.current.view;
+    const copyChanged = !same(submitted.profileCopy, base.payload.profileCopy);
+    const result = await post("draft", { kbId: base.kbId, baseVersion: base.draftVersion, payload: submitted, expectedProfileReference: base.profile?.reference ?? null });
     if (!result.ok) { error(result); return; }
     const data = parseGeoKbDraftSaveV2(result.data);
     if (!data) { error({ code: "schema_mismatch" }); return; }
@@ -290,6 +307,9 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   function adoptProfileCopy() {
     if (!copyProposal || copySequence.current !== current.current.signal.sequence) return;
     const changed = copyProposal.snapshotId !== current.current.payload.profileCopy.snapshotId || copyProposal.profileHash !== current.current.payload.profileCopy.profileHash;
+    // Adopting the copy already held is not an edit. Treating it as one would
+    // bump the draft version and stale a prepared candidate for nothing.
+    if (!changed && same(copyProposal, current.current.payload.profileCopy)) { setReviewedSequence(copySequence.current); setCopyProposal(null); return; }
     change({ ...current.current.payload, profileCopy: copyProposal,
       ...(changed ? { roles: current.current.payload.roles.map(role => ({ ...role, review: "pending" as const })), facts: current.current.payload.facts.map(fact => ({ ...fact, review: "pending" as const })) } : {}) });
     setReviewedSequence(copySequence.current); setCopyProposal(null);

@@ -37,14 +37,18 @@ describe("inherited Profile value to pending fact", () => {
 describe("carrying the archived source of an inherited value", () => {
   const base = emptyMarketingWebsiteProfile();
   const profile = { ...base, coreFeatures: ["Free birth chart calculator"], fieldProvenance: [
-    { path: "/coreFeatures" as const, derivation: "inferred" as const, confidence: "high" as const, source: "public_page" as const,
+    { path: "/coreFeatures" as const, derivation: "observed" as const, confidence: "high" as const, source: "public_page" as const,
       observedAt: "2026-08-31T05:34:14.891Z", evidenceUrls: ["https://www.astrologywiki.com/en/tools"], limitation: null },
     { path: "/productName" as const, derivation: "declared" as const, confidence: "high" as const, source: "user_edit" as const,
       observedAt: null, evidenceUrls: [], limitation: null },
     { path: "/oneLinePositioning" as const, derivation: "observed" as const, confidence: "high" as const, source: "public_page" as const,
       observedAt: "not a timestamp", evidenceUrls: ["https://www.astrologywiki.com/"], limitation: null },
-    { path: "/valueProposition" as const, derivation: "observed" as const, confidence: "high" as const, source: "public_page" as const,
-      observedAt: "2026-08-31T05:34:14.891Z", evidenceUrls: ["javascript:alert(1)", "https://www.astrologywiki.com/en/"], limitation: null },
+    { path: "/valueProposition" as const, derivation: "inferred" as const, confidence: "high" as const, source: "public_page" as const,
+      observedAt: "2026-08-31T05:34:14.891Z", evidenceUrls: ["https://www.astrologywiki.com/en/"], limitation: null },
+    { path: "/businessModel" as const, derivation: "observed" as const, confidence: "high" as const, source: "public_page" as const,
+      observedAt: "2026-08-31T05:34:14.891Z", evidenceUrls: ["https://www.astrologywiki.com/en/pricing", "https://www.astrologywiki.com/en/"], limitation: null },
+    { path: "/primaryCta" as const, derivation: "observed" as const, confidence: "high" as const, source: "public_page" as const,
+      observedAt: "2026-08-31T05:34:14.891Z", evidenceUrls: ["javascript:alert(1)"], limitation: null },
   ] };
   it("reads the page and time recorded for an indexed list entry", () => {
     expect(geoProfileFactSource(profile, "coreFeatures[0]")).toEqual({ sourceUrl: "https://www.astrologywiki.com/en/tools", observedAt: "2026-08-31T05:34:14.891Z" });
@@ -55,8 +59,14 @@ describe("carrying the archived source of an inherited value", () => {
   it("refuses a time the fact schema would reject", () => {
     expect(geoProfileFactSource(profile, "oneLinePositioning")).toBeNull();
   });
-  it("skips an evidence address that is not a public page", () => {
-    expect(geoProfileFactSource(profile, "valueProposition")?.sourceUrl).toBe("https://www.astrologywiki.com/en/");
+  it("refuses a value the archive recorded as an inference rather than an observation", () => {
+    expect(geoProfileFactSource(profile, "valueProposition")).toBeNull();
+  });
+  it("refuses to pick one page out of several recorded for the same field", () => {
+    expect(geoProfileFactSource(profile, "businessModel")).toBeNull();
+  });
+  it("refuses an evidence address that is not a public page", () => {
+    expect(geoProfileFactSource(profile, "primaryCta")).toBeNull();
   });
   it("prefills a candidate with that source and still leaves it pending", () => {
     const candidate = pendingGeoProfileFact("coreFeatures[0]", "Free birth chart calculator", [], geoProfileFactSource(profile, "coreFeatures[0]"));

@@ -226,3 +226,54 @@ it("never writes a draft the visitor has not edited", async () => {
     expect(fetch).not.toHaveBeenCalled();
   } finally { vi.useRealTimers(); }
 });
+
+it("holds a write back while a dispatched generation is still bound to this draft", async () => {
+  vi.useFakeTimers();
+  try {
+    const view = editorFixture();
+    await mount({ ...view, generations: { roles: { generationId: "11111111-1111-4111-8111-111111111111",
+      kbId: view.kbId, kind: "roles", state: "dispatched", errorReason: null, attempt: null, result: null, inputHash: "d".repeat(64) }, questions: null } });
+    await act(async () => editor.change({ ...editor.payload, officialName: "Typed while a run is out" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS * 4); });
+    // Writing now would move the draft version the running request was sent
+    // with, making its paid result unusable and opening a second dispatch.
+    expect(fetch).not.toHaveBeenCalled();
+    expect(editor.dirty).toBe(true);
+  } finally { vi.useRealTimers(); }
+});
+it("addresses the version the editor holds, not the one the queued timer's render captured", async () => {
+  vi.useFakeTimers();
+  try {
+    await mount();
+    // A write is queued while an earlier one is still in flight, so its
+    // closure predates the version the server is about to hand back.
+    const first = later<Response>();
+    vi.mocked(fetch).mockReturnValueOnce(first.promise);
+    await act(async () => editor.change({ ...editor.payload, officialName: "First" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await act(async () => editor.change({ ...editor.payload, officialName: "Second" }));
+    vi.mocked(fetch).mockResolvedValue(response({ draftVersion: 3, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] }));
+    await act(async () => { first.resolve(response({ draftVersion: 2, contentHash: "b".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)).baseVersion).toBe(1);
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body)).baseVersion).toBe(2);
+    expect(editor.view.draftVersion).toBe(3);
+    expect(editor.dirty).toBe(false);
+    expect(editor.status.kind).not.toBe("error");
+  } finally { vi.useRealTimers(); }
+});
+it("adopting the copy already held is not an edit and does not bump the version", async () => {
+  const view = editorFixture();
+  await mount(view);
+  const before = editor.payload;
+  vi.mocked(fetch).mockResolvedValueOnce(response(view));
+  await act(async () => editor.reviewProfileCopy());
+  expect(editor.copyProposal).not.toBeNull();
+  await act(async () => editor.adoptProfileCopy());
+  expect(editor.copyProposal).toBeNull();
+  expect(editor.payload).toBe(before);
+  expect(editor.edited).toBe(false);
+  expect(editor.dirty).toBe(false);
+});

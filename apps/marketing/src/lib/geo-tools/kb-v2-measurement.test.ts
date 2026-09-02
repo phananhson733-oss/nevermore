@@ -43,3 +43,33 @@ describe("GEO V2 measurement gap", () => {
     expect(next.schemaVersion).toBe("marketing-geo-kb.v2");
   });
 });
+
+describe("a gap the visitor can actually close", () => {
+  const five = SIX.slice(0, 5).map(domain => ({ domain, brandName: "", confirmed: false }));
+  it("stops reporting once the measurement set is full, so the notice can be cleared", () => {
+    const gap = geoV2MeasurementGap(profile, { ...draft, competitors: five });
+    expect(gap.draftCompetitorCount).toBe(5);
+    expect(gap.missingCompetitorCount).toBe(1);
+    expect(gap.competitorsDiffer).toBe(false);
+    expect(hasGeoV2MeasurementGap(gap)).toBe(false);
+  });
+  it("does not treat a different order as a difference", () => {
+    const reversed = [...five].reverse();
+    expect(geoV2MeasurementGap({ ...profile, directCompetitors: SIX.slice(0, 5) }, { ...draft, competitors: reversed }).competitorsDiffer).toBe(false);
+  });
+  it("ignores a Profile entry GEO cannot map, which nothing could adopt", () => {
+    const unmappable = { ...profile, directCompetitors: ["astro.com", "x".repeat(400)] };
+    const gap = geoV2MeasurementGap(unmappable, { ...draft, competitors: [{ domain: "astro.com", brandName: "Astrodienst", confirmed: true }] });
+    expect(gap.missingCompetitorCount).toBe(0);
+    expect(gap.competitorsDiffer).toBe(false);
+  });
+  it("still reports a mappable competitor that is absent while there is room", () => {
+    const gap = geoV2MeasurementGap(profile, { ...draft, competitors: [{ domain: "astro.com", brandName: "Astrodienst", confirmed: true }] });
+    expect(gap.missingCompetitorCount).toBe(5);
+    expect(gap.competitorsDiffer).toBe(true);
+  });
+  it("refuses to write an unrecognised field onto whichever branch is last", () => {
+    const proposal = geoV2MeasurementProposal(profile, draft);
+    expect(() => applyGeoV2Measurement(draft, proposal, { fields: ["roles" as never], competitorIndices: null })).toThrow();
+  });
+});
