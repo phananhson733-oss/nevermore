@@ -59,7 +59,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
         <Button data-refresh-sources type="button" variant="outline" disabled={!editor.canGenerate} onClick={() => void editor.refreshSources()}>{t.sources}</Button>
         <Button data-generate="roles" type="button" variant="outline" disabled={blockedGeneration("roles")} onClick={() => void editor.generate("roles")}>{t.generateRoles}</Button>
         <Button data-generate="questions" type="button" variant="outline" disabled={blockedGeneration("questions")} onClick={() => void editor.generate("questions")}>{t.prepare}</Button>
-      </div>{editor.dirty || view.requiresSave ? <p className="text-sm text-text-dark-secondary">{t.saveFirst}</p> : null}{editor.needsReview ? <p className="text-sm text-text-dark-secondary">{t.reviewPending}</p> : null}</div>
+      </div><p className="text-sm text-text-dark-secondary">{t.autosave}</p>{editor.dirty || view.requiresSave ? <p className="text-sm text-text-dark-secondary">{t.saveFirst}</p> : null}{editor.needsReview ? <p className="text-sm text-text-dark-secondary">{t.reviewPending}</p> : null}</div>
       {(["roles", "questions"] as const).map(kind => {
         const action = editor.generationAction(kind);
         if (action !== "new_input" && action !== "resend_same") return null;

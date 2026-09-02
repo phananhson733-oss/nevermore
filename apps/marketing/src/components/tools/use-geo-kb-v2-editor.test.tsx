@@ -5,7 +5,7 @@ import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { V2_CANDIDATE_ID } from "../../lib/geo-tools/kb-v2.test-fixtures.ts";
 import { parseGeoKbEditorViewV2, type GeoKbEditorViewV2 } from "./geo-kb-v2-wire.ts";
-import { useGeoKbV2Editor } from "./use-geo-kb-v2-editor.ts";
+import { GEO_KB_V2_AUTOSAVE_MS, useGeoKbV2Editor } from "./use-geo-kb-v2-editor.ts";
 import { editorFixture, sourceFixture } from "./geo-kb-v2-ui.test-fixtures.ts";
 import { createGeoRoleProposal } from "../../lib/geo-tools/kb-role-proposal.ts";
 import { ROLE_SYNTHESIS_INPUT, ROLE_SYNTHESIS_OUTPUT } from "../../lib/geo-tools/kb-synthesis-fixtures.ts";
@@ -178,4 +178,51 @@ it("advancing only the CAS version does not turn the same unknown generation bas
   const view = editorFixture(); await mount(view); vi.mocked(fetch).mockRejectedValueOnce(new Error("network")); await act(async () => editor.generate("roles"));
   vi.mocked(fetch).mockResolvedValueOnce(response({ draftVersion: 2, contentHash: view.draftHash, updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] })); await act(async () => editor.save());
   expect(editor.generationAction("roles")).toBe("read_only"); await act(async () => editor.generate("roles", "new_input")); expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it("writes an edit without anyone pressing save, and only after typing settles", async () => {
+  vi.useFakeTimers();
+  try {
+    await mount();
+    vi.mocked(fetch).mockResolvedValue(response({ draftVersion: 2, contentHash: "a".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] }));
+    await act(async () => editor.change({ ...editor.payload, officialName: "First" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS - 100); });
+    expect(fetch).not.toHaveBeenCalled();
+    await act(async () => editor.change({ ...editor.payload, officialName: "Second" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS - 100); });
+    expect(fetch).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)).payload.officialName).toBe("Second");
+    expect(editor.dirty).toBe(false);
+    expect(editor.view.draftVersion).toBe(2);
+  } finally { vi.useRealTimers(); }
+});
+it("waits for an operation already in flight rather than dropping the write", async () => {
+  vi.useFakeTimers();
+  try {
+    await mount({ ...editorFixture(), sourceReceipt: null });
+    const reply = later<Response>();
+    vi.mocked(fetch).mockReturnValueOnce(reply.promise);
+    let refreshing!: Promise<void>;
+    await act(async () => { refreshing = editor.refreshSources(); });
+    await act(async () => editor.change({ ...editor.payload, officialName: "Typed during a refresh" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    vi.mocked(fetch).mockResolvedValue(response({ draftVersion: 2, contentHash: "a".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] }));
+    await act(async () => { reply.resolve(Response.json({ error: { code: "rate_limited" } }, { status: 429 })); await refreshing; });
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(editor.dirty).toBe(false);
+  } finally { vi.useRealTimers(); }
+});
+it("never writes a draft the visitor has not edited", async () => {
+  vi.useFakeTimers();
+  try {
+    await mount({ ...editorFixture(), requiresSave: true });
+    expect(editor.dirty).toBe(true);
+    expect(editor.edited).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS * 5); });
+    expect(fetch).not.toHaveBeenCalled();
+  } finally { vi.useRealTimers(); }
 });

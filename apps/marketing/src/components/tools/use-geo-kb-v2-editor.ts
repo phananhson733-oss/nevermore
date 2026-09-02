@@ -13,6 +13,8 @@ import { parseGeoKbDraftSaveV2, parseGeoKbFreezeV2Response, parseGeoKbEditorView
 import { adoptGeoKbRoleProposals, submitGeoKbPayloadV2 } from "./geo-kb-v2-editor.ts";
 
 export const GEO_KB_V2_API = "/api/tools/geo-knowledge-base/v2/";
+/** Matches the account Profile editor, so both halves of the page settle alike. */
+export const GEO_KB_V2_AUTOSAVE_MS = 900;
 type Operation = "save" | "load" | "sources" | "roles" | "questions" | "freeze" | "copy";
 interface Pending { readonly idempotencyKey: string; readonly draftHash: string; readonly baseVersion: number; readonly generationId: string | null; readonly inputIdentity?: string; readonly sourceSequence?: number; readonly settled?: boolean; readonly readNotFound?: boolean; readonly knownState?: string }
 type PendingSet = Readonly<Record<GeoKbGenerationKind, Pending | null>>;
@@ -89,6 +91,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   const [retainedRequests, setRetainedRequests] = useState<readonly RetainedGeoKbRequest[]>([]);
   const historyRef = useRef<readonly RetainedGeoKbRequest[]>([]), unknownBaselines = useRef(new Map<string, { version: number; hash: string | null }>());
   const current = useRef({ view, payload, dirty, pending, signal }), lock = useRef(false), editRevision = useRef(0), invalidCandidates = useRef(new Set<string>()), copySequence = useRef(0);
+  const autosave = useRef<ReturnType<typeof setTimeout> | null>(null);
   current.current = { view, payload, dirty, pending, signal };
   useEffect(() => {
     // Server and first hydration render both use only the server DTO. Browser
@@ -142,7 +145,24 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   const canFreeze = !busy && candidate !== null && !candidateStale && review === candidateIdentity;
   useEffect(() => { if (!dirty) return; const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; }; window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn); }, [dirty]);
 
-  function change(next: GeoKbPayloadV2) { editRevision.current++; current.current.payload = next; current.current.dirty = true; setPayload(next); setDirty(true); setEdited(true); setReview(null); setStatus(previous => previous.kind === "saved" ? { kind: "idle" } : previous); }
+  /**
+   * Only a real edit schedules a write. A draft that merely needs one save
+   * after a format upgrade or a version conflict is left alone: persisting it
+   * on load would be a write nobody asked for.
+   */
+  function scheduleAutosave() {
+    if (autosave.current !== null) clearTimeout(autosave.current);
+    autosave.current = setTimeout(() => {
+      autosave.current = null;
+      if (!current.current.dirty) return;
+      // A source refresh, generation or freeze holds the lock. Wait for it
+      // rather than dropping the write.
+      if (lock.current) { scheduleAutosave(); return; }
+      void save();
+    }, GEO_KB_V2_AUTOSAVE_MS);
+  }
+  useEffect(() => () => { if (autosave.current !== null) clearTimeout(autosave.current); }, []);
+  function change(next: GeoKbPayloadV2) { editRevision.current++; current.current.payload = next; current.current.dirty = true; setPayload(next); setDirty(true); setEdited(true); setReview(null); setStatus(previous => previous.kind === "saved" ? { kind: "idle" } : previous); scheduleAutosave(); }
   function setRequest(kind: GeoKbGenerationKind, value: Pending | null) {
     const previous = current.current.pending[kind];
     if (value !== null) persistPending(view.kbId, kind, value);
