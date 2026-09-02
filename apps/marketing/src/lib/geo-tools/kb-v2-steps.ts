@@ -45,8 +45,11 @@ export interface GeoKbV2StepInput {
  */
 function blockedBecause(input: GeoKbV2StepInput, review: boolean): GeoKbV2StepReason {
   if (input.busy) return "busy";
-  if (input.dirty || input.requiresSave) return "unsaved";
+  // A stale Profile copy comes before "unsaved": every write is refused with
+  // context_stale until the copy is adopted, so telling the visitor to save
+  // first would name a step that cannot succeed.
   if (input.copyStale) return "copyStale";
+  if (input.dirty || input.requiresSave) return "unsaved";
   if (input.generationRunning) return "running";
   if (review && input.needsReview) return "review";
   return "unavailable";
@@ -59,7 +62,7 @@ export function geoKbV2Steps(input: GeoKbV2StepInput): readonly GeoKbV2Step[] {
       : ready ? { id, state: "ready", reason: null }
         : { id, state: "blocked", reason };
   return [
-    step("save", saved, !input.busy, "busy"),
+    step("save", saved, !input.busy && !input.copyStale, input.busy ? "busy" : "copyStale"),
     step("sources", input.hasUsableSourceReceipt, input.sourcesActionable, blockedBecause(input, false)),
     step("roles", input.hasUsableRoleProposal, input.rolesActionable, blockedBecause(input, false)),
     step("prepare", input.hasCandidate && !input.candidateStale, input.prepareActionable, blockedBecause(input, true)),

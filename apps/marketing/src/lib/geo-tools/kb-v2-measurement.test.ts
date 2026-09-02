@@ -73,3 +73,23 @@ describe("a gap the visitor can actually close", () => {
     expect(() => applyGeoV2Measurement(draft, proposal, { fields: ["roles" as never], competitorIndices: null })).toThrow();
   });
 });
+
+describe("a proposal in the form the draft is saved in", () => {
+  it("does not re-open a gap the save already closed by trimming and de-duplicating", () => {
+    const padded = { ...profile, categories: ["  birth chart  ", "birth chart", "synastry "] };
+    const saved = { ...draft, categoryTerms: ["birth chart", "synastry"], competitors: SIX.slice(0, 5).map(domain => ({ domain, brandName: "", confirmed: false })) };
+    expect(geoV2MeasurementGap(padded, saved).fields).not.toContain("categoryTerms");
+  });
+  it("counts two spellings of one competitor once, so both can never be selected as duplicates", () => {
+    const spelled = { ...profile, directCompetitors: ["astro.com", "https://www.astro.com/", "astro-seek.com"] };
+    const proposal = geoV2MeasurementProposal(spelled, { ...draft, competitors: [] });
+    expect(proposal.competitors.map(row => row.value?.domain)).toEqual(["astro.com", "astro-seek.com"]);
+    expect(geoV2MeasurementGap(spelled, { ...draft, competitors: [] }).missingCompetitorCount).toBe(2);
+  });
+  it("refuses an index that names no proposal, a repeated field, and returns the draft unchanged for an empty selection", () => {
+    const proposal = geoV2MeasurementProposal(profile, draft);
+    for (const competitorIndices of [[-1], [1.5], [99]]) expect(() => applyGeoV2Measurement(draft, proposal, { fields: [], competitorIndices })).toThrow();
+    expect(() => applyGeoV2Measurement(draft, proposal, { fields: ["officialName", "officialName"], competitorIndices: null })).toThrow();
+    expect(applyGeoV2Measurement(draft, proposal, { fields: [], competitorIndices: null })).toEqual(draft);
+  });
+});

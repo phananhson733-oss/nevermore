@@ -58,9 +58,10 @@ import { Input } from "../ui/input.tsx";
 import { Label } from "../ui/label.tsx";
 import { Textarea } from "../ui/textarea.tsx";
 import { profileRefreshReason, type ProfileRefreshReason } from "../../lib/account-websites/refresh-error.ts";
+import { ACCOUNT_AUTOSAVE_DELAY_MS } from "./autosave-delay.ts";
 import { ProfileRefreshReview } from "./profile-refresh-review.tsx";
 
-const AUTOSAVE_DELAY_MS = 900;
+const AUTOSAVE_DELAY_MS = ACCOUNT_AUTOSAVE_DELAY_MS;
 const PROFILE_SEARCH_CLIENT_TIMEOUT_MS = 35_000;
 const PROFILE_SEARCH_RESPONSE_LIMIT_BYTES = 256 * 1_024;
 const PROFILE_SEARCH_PUBLIC_ERROR_CODES = new Set([
@@ -1606,7 +1607,7 @@ export function WebsiteProfileEditor({
         <p role="alert" data-refresh-error={state.refresh.reason ?? "unknown"} className="text-[13px] text-brand-error">
           {state.refresh.reason === null
             ? t("generationFailed")
-            : `${t("refreshErrors." + state.refresh.reason)} ${t("draftUnchanged")}`}
+            : `${t("refreshErrors." + state.refresh.reason, { host: state.details.host })} ${t("draftUnchanged")}`}
         </p>
       ) : null}
       {state.refresh.status === "review" ? (

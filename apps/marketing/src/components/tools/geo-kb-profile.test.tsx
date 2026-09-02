@@ -85,7 +85,7 @@ describe("complete GEO Profile copy display", () => {
     expect(summary?.textContent).toContain("Copied product");
     expect(summary?.textContent).toContain("Copied positioning");
     expect(summary?.textContent).toContain("Complete feature 1");
-    expect(summary?.textContent).toContain("CA");
+    expect(summary?.textContent).toContain("CA · en-CA");
     expect(summary?.textContent).not.toContain("Copied ICP");
     const complete = host.querySelector<HTMLDetailsElement>("details[data-geo-copy-complete]");
     expect(complete).not.toBeNull();

@@ -7,7 +7,7 @@ import { useTranslations } from "next-intl";
 import type { MarketingWebsiteProfileV1 } from "../../lib/account-websites/contracts.ts";
 import { GEO_KB_LIMITS } from "../../lib/geo-tools/kb-contract.ts";
 import type { GeoKbPayloadV2 } from "../../lib/geo-tools/kb-v2-contract.ts";
-import { applyGeoV2Measurement, geoV2MeasurementGap, geoV2MeasurementProposal, hasGeoV2MeasurementGap, GEO_V2_MEASUREMENT_FIELDS, type GeoV2MeasurementField } from "../../lib/geo-tools/kb-v2-measurement.ts";
+import { applyGeoV2Measurement, geoV2MeasurementGapFrom, geoV2MeasurementProposal, hasGeoV2MeasurementGap, GEO_V2_MEASUREMENT_FIELDS, type GeoV2MeasurementField } from "../../lib/geo-tools/kb-v2-measurement.ts";
 import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
 import { Button } from "../ui/button.tsx";
 
@@ -28,18 +28,24 @@ export function GeoKbV2MeasurementReview({ profile, payload, locale, disabled, o
 }) {
   const t = useTranslations("tools.geoKnowledgeBase.measurementReview");
   const c = geoKbV2Copy(locale);
-  const proposal = useMemo(() => geoV2MeasurementProposal(profile, payload), [profile, payload]);
-  const gap = useMemo(() => geoV2MeasurementGap(profile, payload), [profile, payload]);
-  const [fields, setFields] = useState<readonly GeoV2MeasurementField[]>([]);
+  // The proposal reads only the draft's competitors, so it survives keystrokes
+  // elsewhere; the gap is cheap and is recomputed from it each render.
+  const proposal = useMemo(() => geoV2MeasurementProposal(profile, payload), [profile, payload.competitors]);
+  const gap = geoV2MeasurementGapFrom(proposal, payload);
+  const [chosenFields, setFields] = useState<readonly GeoV2MeasurementField[]>([]);
   const [replaceCompetitors, setReplaceCompetitors] = useState(false);
-  const [competitors, setCompetitors] = useState<readonly number[]>([]);
+  const [chosenCompetitors, setCompetitors] = useState<readonly number[]>([]);
+  // A choice made against an earlier proposal may no longer be adoptable; it
+  // is dropped here rather than left as a ticked box that cannot be applied.
+  const fields = chosenFields.filter(field => proposal.fields[field] !== null);
+  const competitors = chosenCompetitors.filter(index => proposal.competitors[index]?.value);
   if (!hasGeoV2MeasurementGap(gap)) return null;
   const names: Readonly<Record<GeoV2MeasurementField, string>> = { officialName: c.fields.officialName, categoryTerms: c.fields.categories, market: c.fields.market };
   let next: GeoKbPayloadV2 | null = null;
   try { next = applyGeoV2Measurement(payload, proposal, { fields, competitorIndices: replaceCompetitors ? competitors : null }); }
-  catch { /* An unavailable or over-limit selection stays visible and cannot be applied. */ }
+  catch { /* An over-limit or duplicate selection stays visible and cannot be applied. */ }
   return <section data-geo-v2-measurement className="min-w-0 rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
-    <h3 className="text-[15px] font-semibold text-text-dark-primary">{t("gapTitle")}</h3>
+    <h4 className="text-[15px] font-semibold text-text-dark-primary">{t("gapTitle")}</h4>
     <div className="mt-3 grid gap-2 text-sm text-text-dark-secondary">
       {gap.fields.length === 0 ? null : <p data-gap-fields>{t("gapFields", { fields: gap.fields.map(field => names[field]).join(" · ") })}</p>}
       {gap.competitorsDiffer ? <p data-gap-competitors>{t("gapCompetitors", { source: gap.sourceCompetitorCount, draft: gap.draftCompetitorCount, missing: gap.missingCompetitorCount })}</p> : null}
@@ -72,7 +78,7 @@ export function GeoKbV2MeasurementReview({ profile, payload, locale, disabled, o
         </label>)}</div>
         <p className="mt-4 text-xs text-text-dark-secondary">{t("selected", { count: competitors.length, limit: GEO_KB_LIMITS.competitors })}</p>
       </fieldset>
-      <Button type="button" variant="outline" data-apply-measurements className="mt-5" disabled={disabled || (!fields.length && !replaceCompetitors) || next === null} onClick={() => {
+      <Button type="button" variant="outline" data-apply-measurements className="mt-5" disabled={disabled || (!fields.length && !replaceCompetitors) || (replaceCompetitors && competitors.length === 0) || next === null} onClick={() => {
         if (next === null) return;
         onChange(next); setFields([]); setCompetitors([]); setReplaceCompetitors(false);
       }}>{t("apply")}</Button>

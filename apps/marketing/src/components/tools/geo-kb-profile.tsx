@@ -222,10 +222,10 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
 }) {
   const t = useTranslations("tools.geoKnowledgeBase");
   const owner = copy?.websiteId ?? profile?.reference.websiteId ?? websiteId;
-  const Heading = inline ? "h3" : "h2";
+  const Heading = inline ? "h4" : "h2";
   return (
     <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
-      <Heading className="flex items-center gap-3 text-[17px] font-semibold text-text-dark-primary"><span aria-hidden="true" className="h-5 w-1 rounded-full bg-brand-accent" />{t(copy ? "asset.copyTitle" : "asset.profileTitle")}</Heading>
+      <Heading className={inline ? "text-[15px] font-semibold text-text-dark-primary" : "flex items-center gap-3 text-[17px] font-semibold text-text-dark-primary"}>{inline ? null : <span aria-hidden="true" className="h-5 w-1 rounded-full bg-brand-accent" />}{t(copy ? "asset.copyTitle" : "asset.profileTitle")}</Heading>
       {copy !== undefined ? <>
         <p className="mt-3 text-[13px] leading-relaxed text-text-dark-secondary">{copyDescription ?? t(frozen ? "asset.frozenCopyBody" : "asset.copyBody")}</p>
         <p className="mt-2 text-xs text-text-dark-secondary">{t("asset.revision", { revision: copy.snapshotRevision })}</p>
@@ -237,13 +237,13 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
           facts={facts}
           {...(onAddFact === undefined ? {} : { onAddFact })}
         />
+        {onAddFact === undefined ? null : <p className="mt-3 text-xs text-text-dark-secondary">{t("asset.profileFactBoundary")}</p>}
         <p className="mt-4 text-xs leading-relaxed text-text-dark-secondary">{t("asset.copyScopeNote")}</p>
         <details data-geo-copy-complete className="mt-4 border-t border-brand-border-card pt-4">
           <summary className="cursor-pointer text-[13px] font-medium text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent">{t("asset.copyFieldsToggle")}</summary>
           <p className="mt-3 break-all font-mono text-xs text-text-dark-secondary">{t("asset.hash", { hash: copy.profileHash })}</p>
           <CompleteProfileFields profile={copy.profile} />
         </details>
-        {onAddFact === undefined ? null : <p className="mt-3 text-xs text-text-dark-secondary">{t("asset.profileFactBoundary")}</p>}
       </> : profile === null ? (
         <p className="mt-3 text-sm text-text-dark-secondary">{t(profileState === "confirmed" || profileState === "unconfirmed_changes" ? "asset.profileUnavailable" : "asset.profileRequired")}</p>
       ) : (

@@ -23,11 +23,11 @@ export const geoRoleV2Schema = z.object({ id: string(64).min(1), label: string(2
   if (role.review === "accepted" && (role.label.trim() === "" || role.questionLabel.trim() === "")) ctx.addIssue({ code: "custom", message: "Accepted role requires meaningful labels" });
 });
 export const geoFactSupportRefSchema = z.object({ receiptId: z.string().uuid(), evidenceId: geoEvidenceRefSchema }).strict();
-const absolutePublicUrl = (value: string) => {
+export const absolutePublicUrl = (value: string) => {
   try { const url = new URL(value); return (url.protocol === "http:" || url.protocol === "https:") && normalizeAccountWebsiteUrl(value) !== null; }
   catch { return false; }
 };
-const validTimestamp = (value: string) => Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+export const validTimestamp = (value: string) => Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 export const geoFactV2Schema = z.object({ key: string(200).min(1), value: string(200), reason: z.enum(["", "notPublished", "fetchFailed", "lowConfidence", "conflicting"]), sourceUrl: string(2048), observedAt: string(40), review: geoReviewSchema, supportRef: geoFactSupportRefSchema.nullable() }).strict().superRefine((fact, ctx) => {
   // Unreviewed legacy source/time strings remain editable without loss. Only
   // accepted positive values acquire the stricter source/time obligation.

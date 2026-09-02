@@ -30,7 +30,8 @@ const BY_CODE: Readonly<Record<string, ProfileRefreshReason>> = {
   too_few_pages: "tooFewPages",
   invalid_target: "invalidTarget",
   invalid_url: "invalidTarget",
-  invalid_origin: "invalidTarget",
+  // invalid_origin is the same-origin check refusing the request itself, not
+  // a verdict on the website address; it stays unnamed.
   protocol_downgrade_rejected: "invalidTarget",
   profile_source_unavailable: "unavailable",
   profile_response_invalid: "unavailable",

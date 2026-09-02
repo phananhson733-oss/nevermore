@@ -5,7 +5,7 @@ import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { V2_CANDIDATE_ID } from "../../lib/geo-tools/kb-v2.test-fixtures.ts";
 import { parseGeoKbEditorViewV2, type GeoKbEditorViewV2 } from "./geo-kb-v2-wire.ts";
-import { GEO_KB_V2_AUTOSAVE_MS, useGeoKbV2Editor } from "./use-geo-kb-v2-editor.ts";
+import { GEO_KB_V2_AUTOSAVE_MS, GEO_KB_V2_AUTOSAVE_RETRY_MS, useGeoKbV2Editor } from "./use-geo-kb-v2-editor.ts";
 import { editorFixture, sourceFixture } from "./geo-kb-v2-ui.test-fixtures.ts";
 import { createGeoRoleProposal } from "../../lib/geo-tools/kb-role-proposal.ts";
 import { ROLE_SYNTHESIS_INPUT, ROLE_SYNTHESIS_OUTPUT } from "../../lib/geo-tools/kb-synthesis-fixtures.ts";
@@ -227,6 +227,85 @@ it("never writes a draft the visitor has not edited", async () => {
   } finally { vi.useRealTimers(); }
 });
 
+it("flushes a pending edit with a kept-alive request when the editor unmounts, then never again", async () => {
+  vi.useFakeTimers();
+  try {
+    await mount();
+    await act(async () => editor.change({ ...editor.payload, officialName: "Typed then left" }));
+    await act(async () => root.unmount()); root = createRoot(host);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(fetch).mock.calls[0]?.[1]).toMatchObject({ keepalive: true, method: "POST" });
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)).payload.officialName).toBe("Typed then left");
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS * 3); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  } finally { vi.useRealTimers(); }
+});
+it("does not autosave over a conflicting version until someone saves by hand", async () => {
+  vi.useFakeTimers();
+  try {
+    await mount();
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "conflict" }, draftVersion: 5 }, { status: 409 }));
+    await act(async () => editor.change({ ...editor.payload, officialName: "A" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(editor.status).toEqual({ kind: "error", code: "conflict" });
+    expect(editor.autosaveHold).toBe("conflict");
+    await act(async () => editor.change({ ...editor.payload, officialName: "AB" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS * 3); });
+    // The re-based version is not written automatically: that would overwrite another session unread.
+    expect(fetch).toHaveBeenCalledTimes(1);
+    vi.mocked(fetch).mockResolvedValueOnce(response({ draftVersion: 6, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] }));
+    await act(async () => editor.save());
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body)).baseVersion).toBe(5);
+    expect(editor.autosaveHold).toBeNull();
+    expect(editor.dirty).toBe(false);
+  } finally { vi.useRealTimers(); }
+});
+it("does not autosave while the Profile copy is stale, since every write would be refused", async () => {
+  vi.useFakeTimers();
+  try {
+    const view = editorFixture();
+    await mount(view, 1); await mount(view, 2);
+    expect(editor.copyStale).toBe(true);
+    await act(async () => editor.change({ ...editor.payload, officialName: "Typed on a stale copy" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS * 3); });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(editor.autosaveHold).toBe("copyStale");
+  } finally { vi.useRealTimers(); }
+});
+it("does not write a draft identical to the one the server already holds", async () => {
+  vi.useFakeTimers();
+  try {
+    await mount();
+    const original = editor.payload.officialName;
+    await act(async () => editor.change({ ...editor.payload, officialName: original + "x" }));
+    await act(async () => editor.change({ ...editor.payload, officialName: original }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(editor.dirty).toBe(false);
+    expect(editor.edited).toBe(false);
+    expect(editor.status.kind).toBe("saved");
+  } finally { vi.useRealTimers(); }
+});
+it("resumes a held write as soon as the running generation settles", async () => {
+  vi.useFakeTimers();
+  try {
+    const view = editorFixture(), generationId = "66666666-6666-4666-8666-666666666666";
+    await mount({ ...view, generations: { roles: { generationId, kbId: view.kbId, kind: "roles", inputHash: "d".repeat(64), state: "dispatched", result: null, errorReason: null, attempt: null }, questions: null } });
+    await act(async () => editor.change({ ...editor.payload, officialName: "Typed during a run" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS * 2); });
+    expect(fetch).not.toHaveBeenCalled();
+    vi.mocked(fetch).mockResolvedValueOnce(response({ generation: { generationId, kbId: view.kbId, kind: "roles", inputHash: "d".repeat(64), state: "failed", result: null, errorReason: "provider_rejected", attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "m", inputTokens: 1, outputTokens: 1, requestCount: 1 } } }));
+    vi.mocked(fetch).mockResolvedValueOnce(response({ draftVersion: 2, contentHash: "e".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] }));
+    await act(async () => editor.readGeneration("roles"));
+    expect(editor.autosaveHold).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(String(vi.mocked(fetch).mock.calls[1]?.[0])).toContain("draft");
+    expect(editor.dirty).toBe(false);
+  } finally { vi.useRealTimers(); }
+});
 it("holds a write back while a dispatched generation is still bound to this draft", async () => {
   vi.useFakeTimers();
   try {
@@ -276,4 +355,45 @@ it("adopting the copy already held is not an edit and does not bump the version"
   expect(editor.payload).toBe(before);
   expect(editor.edited).toBe(false);
   expect(editor.dirty).toBe(false);
+});
+
+it("warns about leaving only for the visitor's own edits, never for a draft that merely needs one save", async () => {
+  const add = vi.spyOn(window, "addEventListener");
+  await mount({ ...editorFixture(), requiresSave: true });
+  expect(add.mock.calls.some(([type]) => type === "beforeunload")).toBe(false);
+  await act(async () => editor.change({ ...editor.payload, officialName: "Mine" }));
+  expect(add.mock.calls.some(([type]) => type === "beforeunload")).toBe(true);
+  add.mockRestore();
+});
+it("stays quietly unsaved while a row is still being filled in, instead of announcing an error every pause", async () => {
+  vi.useFakeTimers();
+  try {
+    await mount();
+    await act(async () => editor.change({ ...editor.payload, facts: [...editor.payload.facts, { key: "", value: "", reason: "lowConfidence", sourceUrl: "", observedAt: "", review: "pending", supportRef: null }] }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS * 3); });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(editor.status.kind).not.toBe("error");
+    expect(editor.dirty).toBe(true);
+    await act(async () => editor.save());
+    expect(editor.status).toEqual({ kind: "error", code: "invalid_input" });
+  } finally { vi.useRealTimers(); }
+});
+
+it("treats a server refusal for a generation running in another tab as a hold, and retries later", async () => {
+  vi.useFakeTimers();
+  try {
+    await mount();
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "generation_running" } }, { status: 409 }));
+    await act(async () => editor.change({ ...editor.payload, officialName: "Typed while another tab generates" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(editor.status.kind).not.toBe("error");
+    expect(editor.autosaveHold).toBe("running");
+    expect(editor.dirty).toBe(true);
+    vi.mocked(fetch).mockResolvedValueOnce(response({ draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_RETRY_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(editor.dirty).toBe(false);
+    expect(editor.autosaveHold).toBeNull();
+  } finally { vi.useRealTimers(); }
 });

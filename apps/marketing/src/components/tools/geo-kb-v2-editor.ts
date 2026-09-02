@@ -4,6 +4,7 @@
 import type { GeoKbFactV2, GeoKbPayloadV2, GeoKbRoleV2 } from "../../lib/geo-tools/kb-v2-contract.ts";
 import type { GeoSynthesisRole } from "../../lib/geo-tools/kb-synthesis-contract.ts";
 import { geoProfileFactSource, pendingGeoProfileFact } from "./geo-kb-feature-candidates.ts";
+import { cleanGeoList, cleanGeoText } from "../../lib/geo-tools/kb-v2-clean.ts";
 export { upgradeGeoKbDraftToV2 } from "../../lib/geo-tools/kb-upgrade.ts";
 
 export type GeoKbRoleBodyPatch = Partial<Pick<GeoKbRoleV2,
@@ -13,8 +14,7 @@ export type GeoKbFactBodyPatch = Partial<Pick<GeoKbFactV2,
 
 const roleFields = ["label", "questionLabel", "segment", "painPoints", "decisionCriteria", "vocabulary", "alternatives"] as const;
 const factFields = ["key", "value", "reason", "sourceUrl", "observedAt"] as const;
-const clean = (value: string): string => value.trim().normalize("NFC");
-const cleanList = (values: readonly string[]): readonly string[] => [...new Set(values.map(clean).filter(Boolean))];
+const clean = cleanGeoText, cleanList = cleanGeoList;
 
 /** Editor normalization only. Validation remains separate so unfinished rows
  * can be identified in the UI; nothing is truncated, filled or approved here. */

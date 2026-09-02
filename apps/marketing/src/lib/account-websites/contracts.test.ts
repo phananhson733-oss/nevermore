@@ -597,6 +597,10 @@ describe("normalizeNewAccountWebsiteUrl", () => {
     expect(normalizeNewAccountWebsiteUrl("dramashortstv.com")?.host).toBe("dramashortstv.com");
     expect(normalizeNewAccountWebsiteUrl("https://www.dramashortstv.com/")?.canonicalSiteKey).toBe("dramashortstv.com");
   });
+  it("keeps a public IPv6 literal, which has no dot but is a real address", () => {
+    expect(normalizeNewAccountWebsiteUrl("https://[2606:4700::1111]/")?.host).toBe("[2606:4700::1111]");
+    expect(normalizeNewAccountWebsiteUrl("https://[::1]/")).toBeNull();
+  });
   it("still refuses everything the shared normalizer refuses", () => {
     for (const input of ["", "localhost", "http://127.0.0.1", "ftp://example.com", "not a url"]) {
       expect(normalizeNewAccountWebsiteUrl(input)).toBeNull();

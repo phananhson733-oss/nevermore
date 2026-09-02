@@ -3,6 +3,7 @@
 // @output -- explicit supplement/review and immutable snapshot stages
 // @pos -- no live draft is ever merged into a prepared or frozen version
 import { useId, useState } from "react";
+import { useTranslations } from "next-intl";
 import type { GeoKbEditorViewV2 } from "./geo-kb-v2-wire.ts";
 import type { GeoKbGenerationKind } from "../../lib/geo-tools/kb-generation.ts";
 import { Button } from "../ui/button.tsx";
@@ -26,21 +27,25 @@ export interface GeoKnowledgeBaseV2Props {
   readonly confirmedProfileRevision?: number; readonly canonicalWebsiteId?: string;
 }
 export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBaseV2Props) {
-  const editor = useGeoKbV2Editor(props), { view, payload } = editor, t = geoKbV2EditorCopy(props.locale);
+  const editor = useGeoKbV2Editor(props), { view, payload } = editor, t = geoKbV2EditorCopy(props.locale), te = useTranslations("tools.geoKnowledgeBase.editor");
   const [stage, setStage] = useState<"input" | "frozen">("input"), id = useId();
   const roleGeneration = view.generations.roles;
   const roleProposal = roleGeneration?.state === "succeeded" && roleGeneration.result?.schemaVersion === "marketing-geo-role-proposal.v1" ? roleGeneration.result : null;
   const blockedGeneration = (kind: GeoKbGenerationKind) => editor.generationAction(kind) !== "normal";
-  const generationRunning = (["roles", "questions"] as const).some(kind => ["claimed", "dispatched"].includes(view.generations[kind]?.state ?? ""));
+  const generationRunning = editor.generationRunning;
+  const stateLabel = (state: string | undefined) => te(`generationStates.${(["claimed", "dispatched", "succeeded", "failed", "uncertain", "unknown", "not_found"] as const).find(known => known === state) ?? "unknown"}`);
+  const saveState = editor.edited ? "unsaved" : editor.autosaveHold === "conflict" ? "conflict" : editor.dirty || view.requiresSave ? (view.draftVersion === 0 ? "neverSaved" : "savePending") : editor.status.kind === "saved" ? "saved" : "idle";
   return <section data-geo-kb-v2 data-inline={inline} className="min-w-0 space-y-6 text-text-dark-primary">
     <div role="tablist" aria-label="GEO" className="flex gap-2 border-b border-brand-border-card pb-3">{(["input", "frozen"] as const).map(value => <Button key={value} id={`${id}-${value}-tab`} role="tab" aria-controls={`${id}-${value}-panel`} aria-selected={stage === value} tabIndex={stage === value ? 0 : -1} data-stage={value} type="button" variant={stage === value ? "default" : "outline"} onClick={() => setStage(value)} onKeyDown={event => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
       event.preventDefault(); const next = event.key === "Home" ? "input" : event.key === "End" ? "frozen" : value === "input" ? "frozen" : "input";
       setStage(next); document.getElementById(`${id}-${next}-tab`)?.focus();
     }}>{t[value]}</Button>)}</div>
-    {editor.edited ? <p role="status" className="text-sm text-text-dark-secondary">{t.unsaved}</p> : editor.dirty || view.requiresSave ? <p role="status" data-save-pending className="text-sm text-text-dark-secondary">{t.savePending}</p> : null}
-    {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? t.conflict : t.error} <span className="break-all font-mono text-xs">{editor.status.code}</span></p> : null}
-    {editor.status.kind === "saved" && !editor.dirty ? <p role="status" className="text-sm text-text-dark-secondary">{t.saved}</p> : null}
+    {/* One persistent live region whose text changes, as the Profile editor above does; a node inserted per change is not reliably announced. */}
+    <p aria-live="polite" aria-atomic="true" data-save-state={saveState} {...(saveState === "savePending" ? { "data-save-pending": true } : {})} className="min-h-5 text-sm text-text-dark-secondary">
+      {saveState === "unsaved" ? t.unsaved : saveState === "conflict" ? te("conflictPending") : saveState === "savePending" ? te("savePending") : saveState === "neverSaved" ? te("neverSaved") : saveState === "saved" ? t.saved : ""}
+    </p>
+    {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? te("conflict") : editor.status.code === "generation_running" ? te("generationRunning") : t.error} <span className="break-all font-mono text-xs">{editor.status.code}</span></p> : null}
     <div role="tabpanel" hidden={stage !== "input"} id={`${id}-input-panel`} aria-labelledby={`${id}-input-tab`} className="space-y-6">
       <GeoKbV2Block id="profile"><GeoKbInheritedProfile profile={view.profile} copy={payload.profileCopy} locale={props.locale} inline facts={payload.facts} onAddFact={(key, value) => {
         const next = appendGeoProfileFactV2(payload, key, value);
@@ -49,13 +54,13 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       {editor.copyStale ? <p role="status" className="text-sm text-brand-error">{t.sourceChanged}</p> : null}
       <div className="flex flex-wrap gap-3"><Button type="button" variant="outline" disabled={editor.busy} onClick={() => void editor.reviewProfileCopy()}>{t.reviewCopy}</Button><Button type="button" variant="outline" disabled={editor.busy} onClick={() => void editor.reload()}>{t.reload}</Button></div>
       {editor.copyProposal === null ? null : <GeoProfileCopyReview current={payload.profileCopy} proposal={editor.copyProposal} onApply={editor.adoptProfileCopy} onDismiss={editor.dismissProfileCopy} disabled={editor.busy || !editor.canAdoptProfileCopy} />}
-      <GeoKbV2MeasurementReview profile={payload.profileCopy.profile} payload={payload} locale={props.locale} disabled={editor.busy} onChange={editor.change} /></GeoKbV2Block>
-      <GeoKbV2Block id="supplement"><GeoKbV2Fields payload={payload} locale={props.locale} onChange={editor.change} /></GeoKbV2Block>
+      <GeoKbV2MeasurementReview key={payload.profileCopy.profileHash} profile={payload.profileCopy.profile} payload={payload} locale={props.locale} disabled={editor.busy} onChange={editor.change} /></GeoKbV2Block>
+      <GeoKbV2Block id="supplement"><GeoKbV2Fields payload={payload} locale={props.locale} onChange={editor.change} supportRefNote={te("supportRefNote")} /></GeoKbV2Block>
       <GeoKbV2Block id="run">
       <GeoKbV2Progress busy={editor.busy} dirty={editor.dirty} requiresSave={view.requiresSave} copyStale={editor.copyStale} needsReview={editor.needsReview}
         sourcesActionable={editor.canGenerate && !editor.busy} rolesActionable={!blockedGeneration("roles")} prepareActionable={!blockedGeneration("questions")}
         canFreeze={editor.canFreeze} generationRunning={generationRunning}
-        hasUsableSourceReceipt={view.sourceReceipt !== null && !editor.sourceSelection.stale}
+        hasUsableSourceReceipt={view.sourceReceipt !== null && !editor.sourceSelection.stale && view.sourceReceipt.draftHash === view.draftHash}
         hasUsableRoleProposal={roleProposal !== null && editor.roleProposalReusable(roleProposal)}
         hasCandidate={view.prepared !== null} candidateStale={editor.candidateStale} reviewed={editor.reviewed}
         frozenAtCurrentDraft={view.frozen !== null && "context" in view.frozen && view.frozen.contentHash === view.draftHash} />
@@ -64,7 +69,8 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
         <Button data-refresh-sources type="button" variant="outline" disabled={!editor.canGenerate} onClick={() => void editor.refreshSources()}>{t.sources}</Button>
         <Button data-generate="roles" type="button" variant="outline" disabled={blockedGeneration("roles")} onClick={() => void editor.generate("roles")}>{t.generateRoles}</Button>
         <Button data-generate="questions" type="button" variant="outline" disabled={blockedGeneration("questions")} onClick={() => void editor.generate("questions")}>{t.prepare}</Button>
-      </div>{editor.edited || !editor.dirty && !view.requiresSave ? <p className="text-sm text-text-dark-secondary">{t.autosave}</p> : null}{editor.dirty || view.requiresSave ? <p className="text-sm text-text-dark-secondary">{t.saveFirst}</p> : null}{editor.needsReview ? <p className="text-sm text-text-dark-secondary">{t.reviewPending}</p> : null}</div>
+      </div>{/* The progress list above names the blocking gate, so only the autosave state is stated here, and only truthfully. */}
+      <p data-autosave-hint={editor.autosaveHold ?? "on"} className="text-sm text-text-dark-secondary">{editor.autosaveHold === "conflict" || editor.autosaveHold === "copyStale" || editor.autosaveHold === "running" ? te(`autosaveHeld.${editor.autosaveHold}`) : te("autosave")}</p></div>
       {(["roles", "questions"] as const).map(kind => {
         const action = editor.generationAction(kind);
         if (action !== "new_input" && action !== "resend_same") return null;
@@ -79,20 +85,19 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
         const uncertain = generation?.state === "uncertain" || pending !== null && generation?.generationId !== pending.generationId;
         return <section data-generation-state={kind} key={kind} className="space-y-3 rounded-card border border-brand-border-card bg-brand-panel p-5 text-sm">
           <h3 className="font-semibold">{kind === "roles" ? t.generateRoles : t.prepare}</h3>
-          <p role="status">{pending?.readNotFound && pending.generationId === null ? t.notFoundRequest : uncertain ? t.uncertain : generation?.state === "claimed" || generation?.state === "dispatched" ? t.running : generation?.state === "failed" ? t.failed : `${t.state}: ${generation?.state ?? "unknown"}`}</p>
+          <p role="status">{pending?.readNotFound && pending.generationId === null ? t.notFoundRequest : uncertain ? t.uncertain : generation?.state === "claimed" || generation?.state === "dispatched" ? t.running : generation?.state === "failed" ? t.failed : `${t.state}: ${stateLabel(generation?.state)}`}</p>
           {uncertain ? <p>{t.newVersionNeeded}</p> : null}
-          {generation ? <><dl className="grid gap-2 text-xs sm:grid-cols-2">
-            <div><dt className="text-text-dark-secondary">{t.state}</dt><dd>{generation.state}</dd></div>
-            {generation.errorReason === null ? null : <div><dt className="text-text-dark-secondary">{t.reason}</dt><dd className="break-words">{generation.errorReason}</dd></div>}
-            {generation.attempt === null ? null : <><div><dt className="text-text-dark-secondary">{t.attempt}</dt><dd className="tabular-nums">{generation.attempt.attemptedCalls}</dd></div>
-            <div><dt className="text-text-dark-secondary">{t.delivery}</dt><dd>{t.deliveries[generation.attempt.delivery]}</dd></div></>}
-          </dl>{generation.attempt?.attemptedCalls === 0 ? <p className="text-xs text-text-dark-secondary">{t.billingNote}</p> : null}</> : null}
-          {generation || pending ? <details data-generation-identity><summary className="cursor-pointer text-xs text-text-dark-secondary">{t.recordDetails}</summary><dl className="mt-3 grid gap-2 text-xs">
-            {generation ? <div><dt className="text-text-dark-secondary">{t.recordId}</dt><dd className="break-all font-mono">{generation.generationId}</dd></div> : null}
+          {generation?.attempt ? <><dl className="grid gap-2 text-xs sm:grid-cols-2">
+            <div><dt className="text-text-dark-secondary">{te("attempt")}</dt><dd className="tabular-nums">{generation.attempt.attemptedCalls}</dd></div>
+            <div><dt className="text-text-dark-secondary">{te("delivery")}</dt><dd>{te(`deliveries.${generation.attempt.delivery}`)}</dd></div>
+          </dl>{generation.attempt.attemptedCalls === 0 ? <p className="text-xs text-text-dark-secondary">{te("billingNote")}</p> : null}</> : null}
+          {generation || pending ? <details data-generation-identity><summary className="cursor-pointer text-xs text-text-dark-secondary">{te("recordDetails")}</summary><dl className="mt-3 grid gap-2 text-xs">
+            {generation ? <div><dt className="text-text-dark-secondary">{te("recordId")}</dt><dd className="break-all font-mono">{generation.generationId}</dd></div> : null}
+            {generation?.errorReason == null ? null : <div><dt className="text-text-dark-secondary">{te("reason")}</dt><dd className="break-all font-mono">{generation.errorReason}</dd></div>}
             {pending ? <div><dt className="text-text-dark-secondary">{t.requestKey}</dt><dd className="break-all font-mono">{pending.idempotencyKey}</dd></div> : null}
-            {generation?.attempt?.modelRequested == null ? null : <div><dt className="text-text-dark-secondary">{t.model}</dt><dd className="break-all font-mono">{generation.attempt.modelRequested}</dd></div>}
-            {generation?.attempt == null || generation.attempt.inputTokens === null && generation.attempt.outputTokens === null ? null : <div><dt className="text-text-dark-secondary">{t.tokens}</dt><dd className="tabular-nums">{generation.attempt.inputTokens ?? "—"} / {generation.attempt.outputTokens ?? "—"}</dd></div>}
-            {generation?.attempt?.requestCount == null ? null : <div><dt className="text-text-dark-secondary">{t.requestCount}</dt><dd className="tabular-nums">{generation.attempt.requestCount}</dd></div>}
+            {generation?.attempt?.modelRequested == null ? null : <div><dt className="text-text-dark-secondary">{te("model")}</dt><dd className="break-all font-mono">{generation.attempt.modelRequested}</dd></div>}
+            {generation?.attempt == null || generation.attempt.inputTokens === null && generation.attempt.outputTokens === null ? null : <div><dt className="text-text-dark-secondary">{te("tokens")}</dt><dd className="tabular-nums">{generation.attempt.inputTokens ?? "—"} / {generation.attempt.outputTokens ?? "—"}</dd></div>}
+            {generation?.attempt?.requestCount == null ? null : <div><dt className="text-text-dark-secondary">{te("requestCount")}</dt><dd className="tabular-nums">{generation.attempt.requestCount}</dd></div>}
           </dl></details> : null}
           <Button type="button" variant="outline" data-read-generation={kind} disabled={editor.busy} onClick={() => void editor.readGeneration(kind)}>{t.readGeneration}</Button>
         </section>;

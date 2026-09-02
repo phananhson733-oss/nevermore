@@ -25,6 +25,19 @@ export interface GeoKbV2DraftDependencies {
   readonly validateLineage: (input: { readonly userId: string; readonly kbId: string; readonly payload: GeoKbPayloadV2; readonly previousPayload: AnyGeoKbPayload | null }) => Promise<"valid" | "invalid" | "unavailable">;
   readonly saveDraft: (input: { readonly userId: string; readonly kbId: string; readonly payload: GeoKbPayloadV2; readonly baseVersion: number }) => Promise<GeoKbStoreResult<GeoKbDraftSummary>>;
   readonly blockers: (payload: GeoKbPayloadV2) => readonly string[];
+  /**
+   * Autosave turns this route from a click-bounded write into one per typing
+   * pause per open tab. The bucket is sized for a person, not a loop.
+   */
+  readonly consumeQuota?: (userId: string, kbId: string) => Promise<"allowed" | "limited" | "unavailable">;
+  /**
+   * A running generation is bound to the draft version it was dispatched with.
+   * Only the server sees every tab, so this is where a write under it is
+   * refused. "unavailable" fails open: the check protects a paid result, it is
+   * not what makes a save correct, and a store that cannot answer here could
+   * not dispatch a generation either.
+   */
+  readonly generationRunning?: (userId: string, kbId: string) => Promise<boolean | "unavailable">;
 }
 async function authenticated(authenticate: () => Promise<ServerAuthenticatedUser>): Promise<{ readonly userId: string } | Response> {
   const identity = await authenticate().catch(() => ({ status: "unavailable" as const }));
@@ -64,6 +77,10 @@ export async function handleGeoKbV2Draft(request: Request, dependencies: GeoKbV2
     if (Object.hasOwn(parsed.data, "expectedProfileReference")) expectedProfileReference = parsed.data.expectedProfileReference === null ? null : parseWebsiteProfileReference(parsed.data.expectedProfileReference);
   } catch { return privateError("invalid_payload", 400); }
   const scope = { userId: identity.userId, kbId: parsed.data.kbId };
+  if (dependencies.consumeQuota) {
+    const quota = await dependencies.consumeQuota(scope.userId, scope.kbId).catch(() => "unavailable" as const);
+    if (quota !== "allowed") return privateError(quota === "limited" ? "rate_limited" : "store_unavailable", quota === "limited" ? 429 : 503);
+  }
   try {
     const loaded = await dependencies.readDetails(scope);
     if (loaded.kind !== "ok") return privateError(loaded.kind === "missing" ? "not_found" : "store_unavailable", loaded.kind === "missing" ? 404 : 503);
@@ -72,6 +89,7 @@ export async function handleGeoKbV2Draft(request: Request, dependencies: GeoKbV2
     if (normalizeAccountWebsiteUrl(payload.targetUrl)?.canonicalSiteKey !== owned.canonicalSiteKey) return privateError("invalid_payload", 400);
     const currentVersion = owned.draft?.draftVersion ?? 0;
     if (currentVersion !== parsed.data.baseVersion) return privateJson({ error: { code: "conflict" }, draftVersion: currentVersion }, 409);
+    if (dependencies.generationRunning && await dependencies.generationRunning(scope.userId, scope.kbId).catch(() => "unavailable" as const) === true) return privateError("generation_running", 409);
     const current = await dependencies.validateCurrentCopy({ userId: scope.userId, origin: owned.origin, copy: payload.profileCopy, ...(expectedProfileReference === undefined ? {} : { expectedProfileReference }) });
     if (current !== "current") return privateError(current === "stale" ? "context_stale" : "store_unavailable", current === "stale" ? 409 : 503);
     const lineage = await dependencies.validateLineage({ ...scope, payload, previousPayload: owned.draft?.payload ?? null });

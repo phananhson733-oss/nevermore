@@ -10,9 +10,12 @@ describe("naming why a Profile scan failed", () => {
     expect(profileRefreshReason({ error: { code: "rate_limited_by_target" } }, 429)).toBe("rateLimitedByTarget");
   });
   it("treats every rejected-address code as one actionable cause", () => {
-    for (const code of ["invalid_target", "invalid_url", "invalid_origin", "protocol_downgrade_rejected"]) {
+    for (const code of ["invalid_target", "invalid_url", "protocol_downgrade_rejected"]) {
       expect(profileRefreshReason({ error: { code } }, 400)).toBe("invalidTarget");
     }
+  });
+  it("does not blame the website address for a request the origin check refused", () => {
+    expect(profileRefreshReason({ error: { code: "invalid_origin" } }, 403)).toBeNull();
   });
   it("falls back to the status only where the status carries the meaning", () => {
     expect(profileRefreshReason({}, 429)).toBe("rateLimited");

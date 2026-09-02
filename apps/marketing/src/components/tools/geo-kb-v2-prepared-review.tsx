@@ -11,7 +11,7 @@ export function GeoKbV2PreparedReview({ candidate, locale, stale, reviewed, canF
 }) {
   const t = geoKbV2EditorCopy(locale);
   return <section data-prepared-review className="min-w-0 space-y-5 rounded-card border border-brand-accent/40 bg-brand-panel p-5 sm:p-7">
-    <h3 className="text-[19px] font-semibold text-text-dark-primary">{t.candidate}</h3>
+    <h4 className="text-[15px] font-semibold text-text-dark-primary">{t.candidate}</h4>
     {candidate === null ? <p className="text-sm text-text-dark-secondary">{t.noCandidate}</p> : <>
       <p className="break-all font-mono text-xs text-text-dark-secondary">{candidate.candidateId}<br />{candidate.candidateHash}</p>
       {stale ? <p data-candidate-stale role="status" className="text-sm text-brand-error">{t.stale}</p> : null}

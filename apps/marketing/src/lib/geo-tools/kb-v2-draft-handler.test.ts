@@ -57,6 +57,27 @@ describe("v2 draft save HTTP", () => {
     expect(dependencies.validateLineage).toHaveBeenCalledWith({ userId: USER, kbId: V2_KB_ID, payload, previousPayload: details.draft.payload });
     expect(dependencies.saveDraft).toHaveBeenCalledWith({ userId: USER, kbId: V2_KB_ID, payload, baseVersion: 2 });
   });
+  it("meters the write per owner and per knowledge base before any store work, so a runaway autosave cannot flood it", async () => {
+    const { dependencies, body } = fixture();
+    const limited = { ...dependencies, consumeQuota: vi.fn(async () => "limited" as const) };
+    const response = await handleGeoKbV2Draft(request(body), limited);
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: { code: "rate_limited" } });
+    expect(limited.consumeQuota).toHaveBeenCalledWith(USER, V2_KB_ID);
+    expect(dependencies.readDetails).not.toHaveBeenCalled();
+    expect(dependencies.saveDraft).not.toHaveBeenCalled();
+    expect((await handleGeoKbV2Draft(request(body), { ...dependencies, consumeQuota: async () => "unavailable" })).status).toBe(503);
+    expect((await handleGeoKbV2Draft(request(body), { ...dependencies, consumeQuota: async () => "allowed" })).status).toBe(200);
+  });
+  it("refuses a write while a generation is running for this knowledge base, and fails open when it cannot tell", async () => {
+    const { dependencies, body } = fixture();
+    const refused = await handleGeoKbV2Draft(request(body), { ...dependencies, generationRunning: async () => true });
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({ error: { code: "generation_running" } });
+    expect(dependencies.saveDraft).not.toHaveBeenCalled();
+    expect((await handleGeoKbV2Draft(request(body), { ...dependencies, generationRunning: async () => false })).status).toBe(200);
+    expect((await handleGeoKbV2Draft(request(body), { ...dependencies, generationRunning: async () => "unavailable" })).status).toBe(200);
+  });
   it("allows an omitted compatibility reference only with exact current-copy validation", async () => {
     const { dependencies, body } = fixture(); const { expectedProfileReference: _ref, ...input } = body;
     expect((await handleGeoKbV2Draft(request(input), dependencies)).status).toBe(200);

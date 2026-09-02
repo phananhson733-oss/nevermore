@@ -63,6 +63,16 @@ describe("GEO knowledge-base progress", () => {
     expect(byId({ hasCandidate: true, candidateStale: true }).prepare?.state).toBe("ready");
     expect(byId({ hasCandidate: true }).prepare?.state).toBe("done");
   });
+  it("decides busy before a stale copy, a stale copy before unsaved, and unsaved before a running generation", () => {
+    expect(byId({ busy: true, copyStale: true, dirty: true, sourcesActionable: false }).sources?.reason).toBe("busy");
+    expect(byId({ copyStale: true, dirty: true, rolesActionable: false }).roles?.reason).toBe("copyStale");
+    expect(byId({ dirty: true, generationRunning: true, prepareActionable: false }).prepare?.reason).toBe("unsaved");
+    expect(byId({ generationRunning: true, needsReview: true, prepareActionable: false }).prepare?.reason).toBe("running");
+  });
+  it("does not offer saving while the Profile copy is stale, because that save would be refused", () => {
+    const step = byId({ copyStale: true, dirty: true }).save;
+    expect(step).toMatchObject({ state: "blocked", reason: "copyStale" });
+  });
   it("keeps the fixed order the editor enforces", () => {
     expect(geoKbV2Steps(base).map(step => step.id)).toEqual(["save", "sources", "roles", "prepare", "freeze"]);
   });

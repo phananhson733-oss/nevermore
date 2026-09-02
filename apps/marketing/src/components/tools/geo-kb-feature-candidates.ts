@@ -3,20 +3,13 @@
 // @pos    -- explicit Profile→GEO review action; no writes or inferred provenance
 
 import { GEO_KB_LIMITS, type GeoKbFact } from "../../lib/geo-tools/kb-contract.ts";
-import { normalizeAccountWebsiteUrl, type MarketingWebsiteProfileV1, type WebsiteProfileFieldName } from "../../lib/account-websites/contracts.ts";
+import type { MarketingWebsiteProfileV1, WebsiteProfileFieldName } from "../../lib/account-websites/contracts.ts";
+import { absolutePublicUrl, validTimestamp } from "../../lib/geo-tools/kb-v2-contract.ts";
 
 export interface GeoProfileFactSource {
   readonly sourceUrl: string;
   readonly observedAt: string;
 }
-
-const publicUrl = (value: string) => {
-  try {
-    const url = new URL(value);
-    return (url.protocol === "http:" || url.protocol === "https:") && normalizeAccountWebsiteUrl(value) !== null;
-  } catch { return false; }
-};
-const exactTimestamp = (value: string) => Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 
 /**
  * The archived Profile records which page each field was read from and when.
@@ -33,17 +26,20 @@ const exactTimestamp = (value: string) => Number.isFinite(Date.parse(value)) && 
  * - Exactly one evidence URL. With several, any single choice is arbitrary and
  *   the fact would cite a page picked by array order.
  *
- * A carried address is still not verification. The fact stays pending and its
- * crawl support reference stays empty until a GEO source receipt matches it.
+ * A carried address is still not verification. The fact stays pending with an
+ * empty crawl support reference. Do not expect a GEO source refresh to fill
+ * it: the crawler matches a fact by finding its key text and value together on
+ * the page, and a Profile field path such as `coreFeatures[0]` appears on no
+ * page. Such a fact is user-confirmed or nothing.
  */
 export function geoProfileFactSource(profile: MarketingWebsiteProfileV1, key: string): GeoProfileFactSource | null {
   const field = key.replace(/\[\d+\]$/u, "") as WebsiteProfileFieldName;
   const entry = profile.fieldProvenance.find((row) => row.path === `/${field}`);
   if (!entry || entry.source !== "public_page" || entry.derivation !== "observed") return null;
-  if (entry.observedAt === null || !exactTimestamp(entry.observedAt)) return null;
+  if (entry.observedAt === null || !validTimestamp(entry.observedAt)) return null;
   const [sourceUrl] = entry.evidenceUrls;
   if (entry.evidenceUrls.length !== 1 || sourceUrl === undefined) return null;
-  return sourceUrl.length <= 2048 && publicUrl(sourceUrl) ? { sourceUrl, observedAt: entry.observedAt } : null;
+  return sourceUrl.length <= GEO_KB_LIMITS.url && absolutePublicUrl(sourceUrl) ? { sourceUrl, observedAt: entry.observedAt } : null;
 }
 
 type PendingGeoProfileFact =

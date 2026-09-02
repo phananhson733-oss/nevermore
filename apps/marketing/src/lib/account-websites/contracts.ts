@@ -635,9 +635,11 @@ export function normalizeNewAccountWebsiteUrl(
   input: string,
 ): NormalizedAccountWebsiteUrl | null {
   const normalized = normalizeAccountWebsiteUrl(input);
-  return normalized === null || !normalized.host.includes(".")
-    ? null
-    : normalized;
+  if (normalized === null) return null;
+  // A bracketed IPv6 literal has no dot and no label; the shared normalizer
+  // already keeps non-global ones out, so it stays as accepted as an IPv4 one.
+  const literal = normalized.host.startsWith("[");
+  return literal || normalized.host.includes(".") ? normalized : null;
 }
 
 export function normalizeAccountWebsiteUrl(

@@ -4,7 +4,8 @@
 import type { MarketingWebsiteProfileV1 } from "../account-websites/contracts.ts";
 import { GEO_KB_LIMITS } from "./kb-contract.ts";
 import type { GeoKbPayloadV2 } from "./kb-v2-contract.ts";
-import { buildGeoProfileSuggestions, type GeoProfileSuggestions } from "./kb-profile-suggestions.ts";
+import { buildGeoProfileSuggestions, competitorIdentity, selectProposedCompetitors, type GeoProfileSuggestions } from "./kb-profile-suggestions.ts";
+import { cleanGeoList, cleanGeoText } from "./kb-v2-clean.ts";
 
 /**
  * Roles are deliberately absent. A V2 role carries a review state and, when it
@@ -24,15 +25,32 @@ export interface GeoV2MeasurementGap {
   readonly overCompetitorLimit: boolean;
 }
 
-const competitorIdentity = (competitor: { readonly domain: string; readonly brandName: string }): string =>
-  competitor.domain ? `domain:${competitor.domain}` : `brand:${competitor.brandName.trim().toLowerCase()}`;
-
+/**
+ * The proposal in the form the draft would actually be saved in. The Profile
+ * stores its lists as entered (padding, duplicates); the draft cleans them on
+ * save. Comparing raw against cleaned would re-open a gap after every reload.
+ * Two Profile spellings of one competitor likewise collapse to one row, so
+ * they cannot be counted as two missing or trip the duplicate-identity check.
+ */
 export function geoV2MeasurementProposal(profile: MarketingWebsiteProfileV1, payload: GeoKbPayloadV2): GeoProfileSuggestions {
-  return buildGeoProfileSuggestions(profile, { competitors: payload.competitors });
+  const raw = buildGeoProfileSuggestions(profile, { competitors: payload.competitors });
+  const seen = new Set<string>();
+  const competitors = raw.competitors.filter((row) => {
+    if (row.value === null) return true;
+    const identity = competitorIdentity(row.value);
+    if (seen.has(identity)) return false;
+    seen.add(identity); return true;
+  });
+  return { ...raw, fields: { ...raw.fields,
+    officialName: raw.fields.officialName === null ? null : cleanGeoText(raw.fields.officialName),
+    categoryTerms: raw.fields.categoryTerms === null ? null : cleanGeoList(raw.fields.categoryTerms) }, competitors };
 }
 
 export function geoV2MeasurementGap(profile: MarketingWebsiteProfileV1, payload: GeoKbPayloadV2): GeoV2MeasurementGap {
-  const proposal = geoV2MeasurementProposal(profile, payload);
+  return geoV2MeasurementGapFrom(geoV2MeasurementProposal(profile, payload), payload);
+}
+
+export function geoV2MeasurementGapFrom(proposal: GeoProfileSuggestions, payload: GeoKbPayloadV2): GeoV2MeasurementGap {
   const fields = GEO_V2_MEASUREMENT_FIELDS.filter((field) => {
     const proposed = proposal.fields[field];
     // A proposal the source cannot supply is not a difference the visitor can act on.
@@ -77,17 +95,6 @@ export function applyGeoV2Measurement(
     // branch happens to be last.
     else throw new Error("Unsupported measurement field");
   }
-  if (selection.competitorIndices !== null) {
-    const indices = selection.competitorIndices;
-    if (indices.length > GEO_KB_LIMITS.competitors || new Set(indices).size !== indices.length) throw new Error("Choose at most five distinct competitors");
-    const competitors = indices.map((index) => {
-      const value = Number.isInteger(index) && index >= 0 ? proposal.competitors[index]?.value : null;
-      if (!value) throw new Error("Unavailable competitor proposal");
-      return value;
-    });
-    const identities = competitors.map((row) => (row.domain ? `domain:${row.domain}` : `brand:${row.brandName.toLowerCase()}`));
-    if (new Set(identities).size !== identities.length) throw new Error("Duplicate competitor identities");
-    next = { ...next, competitors };
-  }
+  if (selection.competitorIndices !== null) next = { ...next, competitors: [...selectProposedCompetitors(proposal, selection.competitorIndices)] };
   return next;
 }
