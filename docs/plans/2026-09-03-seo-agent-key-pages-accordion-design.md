@@ -18,7 +18,7 @@ Owner 在 2026-09-03 逐项拍板，均取推荐项：
 | 内容逻辑审计范围 | 判定层与建议层都审 |
 | On-Page Checker 如何进入 | 作为页面级来源并入同一份报告；Checker 工具页保留独立 |
 | 界面保真度 | 保留 P0/P1/P2 编号；不做 mock 的 4 个快捷按钮；行级不渲染 illustrative |
-| 关键页结论怎么算 | 方案 A：多目标求值。否决 B（每页重跑 Checker，会打爆每 IP 每小时 12 次的抓取闸门）和 C（抓取只抓关键页） |
+| 关键页结论怎么算 | 方案 A：多目标求值。否决 B（每页重跑 Checker，会打爆每 IP 每小时 12 次的抓取闸门，`crawl-gate.ts:35` 的 `CRAWL_IP_MAX`）和 C（抓取只抓关键页） |
 
 2026-08-21 的手风琴十项裁决（artifact `ace0ddc7`）继续有效，除 D7 被本次改写：行首允许 P0/P1/P2，且必须与 blocker/warning/tip 一比一对应，不引入第二套刻度。
 
@@ -29,7 +29,7 @@ Owner 在 2026-09-03 逐项拍板，均取推荐项：
 - 该分支落后 main 354 个提交。把 5 个提交按序 cherry-pick 到 `origin/main`：第 1 个干净落地，第 2 个在 `agent-results.test.tsx` 有 1 处冲突块。main 侧自分叉点起改了 `agent-results.tsx`（+45）、`agent-workbench.tsx`（+314，账号网站画像接入）。
 - 线上结果面 = `AgentResults` 头部（四格事实卡）→ `AgentDiagnosis`（范围切换、组导航、三轴检查台账、PolicyEditor 未挂载）→ `AgentRecommendations`（单选一条建议展开一个面板）→ 排名披露。
 - 抓取预算 `PUBLIC_TOOL_SYNC_CRAWL_BUDGET`：2000 URL、深度 6、240 秒、每主机 250ms 间隔（实际可达约 950 页）。页面级 49 项只判目标 URL；站点级 31 项聚合全部抓取页。
-- `evaluateAgentAuditScope(scope, input)` 的 `input` 已带 `targetUrl / targetInspected / inspectedTargetUrl`，页面级记录多数是 `every_collected_page` 或 `conditional_subset` 总体、按页有观测，所以换一个 URL 再求值一次是既有能力，不需要每页提取物。
+- `evaluateAgentAuditScope(scope, input)` 的 `input` 已带 `targetUrl / targetInspected / inspectedTargetUrl`，页面级记录多数是 `every_collected_page` 或 `conditional_subset` 总体、按页有观测，所以换一个 URL 再求值一次不需要每页提取物。但 `conditional_subset` 记录的「未观测即通过」判据借的是目标页的 `targetTested`，对别的页不成立，见 §5.3 的裁决。
 - GEO 站点索引（`geo-tools/site-index.ts`）：`GEO_SITE_INDEX_LIMITS.pages = 24`、45 秒；首页永远第一，其余按画像 coreFeatures 对「路径分词 + 锚文本」打分排序，整词命中 1000 分、单词命中 1 分。
 - On-Page Checker 与 Agent 共用 `handleAgentAuditRequest`（`ON_PAGE_CHECK_DEPENDENCIES` 只改账本身份），Checker 的 40 项检查是营销站客户端的评分层（`lib/on-page-checker/checks-*.ts`），读 `targetPageExtract.declared/response`。
 - 缓存 payload 版本 `seo_audit.sitewide.v17`。Agent wire 守卫 `hasCompleteNeutralRecordLedger` 要求记录数**等于**台账长度且每个 id 恰好出现一次；新增记录而不 bump 版本，1 小时内的旧缓存行会被判 502。
@@ -71,7 +71,7 @@ Owner 在 2026-09-03 逐项拍板，均取推荐项：
 
 ### 4.4 不动的部分
 
-Stage 01 画像面板、画像确认、来源发现、账号网站画像导入与回写全部保持现状。`/agents/tech` 焦点路由照旧复用同一 workbench。On-Page Checker 工具页的 IA、交互与 0–100 总分不改；它的评分层跟着 §6 与 §8.2 改三处：文本/代码比降为 observation（F10）、8.7/8.8/4.6 的常量改为从 `@sf/public-tools` import、2.1/2.4 文案注明「Agent 侧记为提示」（F6）。
+Stage 01 画像面板、画像确认、来源发现、账号网站画像导入与回写全部保持现状。`/agents/tech` 焦点路由照旧复用同一 workbench。On-Page Checker 工具页的 IA、交互与 0–100 总分的机制与刻度不改（评分项集合按 §6 调整，个别页面的分值会因此变化）；它的评分层跟着 §6 与 §8.2 改三处：文本/代码比降为 observation（F10）、8.7/8.8/4.6 的常量改为从 `@sf/public-tools` import、2.1/2.4 文案注明「Agent 侧记为提示」（F6）。
 
 ## 5. 数据层
 
@@ -100,9 +100,14 @@ Stage 01 画像面板、画像确认、来源发现、账号网站画像导入�
 
 ### 5.3 多目标求值
 
-对每个关键页调一次现有 `evaluateAgentAuditScope("page", { records, availability, targetUrl: page.url, inspectedTargetUrl: page.url, targetInspected: true })`。站点级仍只调一次 `evaluateAgentAuditScope("site", …)`。
+对每个关键页调一次现有 `evaluateAgentAuditScope("page", { records: recordsFor(page), availability, targetUrl: page.url, inspectedTargetUrl: page.url, targetInspected: true })`。站点级仍只调一次 `evaluateAgentAuditScope("site", …)`。
 
-目标页独有的记录集（`keywordChecks`、`pagePerformance`、`serpShape`、`searchPerformance` 的 `target_query_ranking_band`）只对 `inspectedTargetUrl` 生效；其他关键页上依赖它们的检查如实落 `excluded`，理由文案为「本次只对目标 URL 采集了该来源」。不为其他关键页发新的付费或配额调用。
+**`recordsFor(page)` 是本节的裁决点，不是既有能力。** `projectRecordToTarget`（`evaluate.ts:80-89`）对「无该页观测」的记录用 `record.targetTested === true || population === "every_collected_page"` 决定落 `not_observed`（通过）还是 `unverified`（排除）；而 `targetTested` 由 `recorderFor(targetSubjectUrl)` 在建报告时只对抓取目标页算一次并进缓存（`model.ts:105-117`）。直接换 `targetUrl` 再求值，2.1/2.2/2.4/2.5/4.5/5.4/6.5/7.3/7.4/1.7 等数组型 `tested` 的 `conditional_subset` 记录会拿目标页的成员关系去判别的关键页：目标页有 title 则无 title 的关键页在 2.1 上「通过」，目标页无 title 则所有关键页在 2.1 上「排除」。裁决取 fail-closed 的 (a)：
+
+- 对非目标关键页，`recordsFor(page)` = 剔除 `population === "target_page"` 的记录（`keywordChecks`、`pagePerformance`、`serpShape`、`searchPerformance` 的 `target_query_ranking_band` 与 `pageShapeChecks` 全在此列），并把所有 `conditional_subset` 记录的 `targetTested` 置 `null`。于是这类记录只有两种结果：有该页观测 → 命中；无 → 走 `evaluate.ts:89` 既有的 `unverified` 分支，limitation 沿用既有句「This condition was only tested on pages meeting a precondition the target may not meet」，零新增词汇。`every_collected_page` 记录照旧可以通过。
+- 对目标页，`recordsFor(page)` = 全部记录，行为与今天完全相同。
+- 代价写明：非目标关键页在上述十来项上只能报命中、不能报通过，§5.4 行 4 的 `keyPageEvaluatedCount` 会相应变小；这是诚实的下限。若上线后「已评估」偏低成为问题，升级路径是 (b)：在 payload 里为数组型 `tested` 记录发布可判成员关系的最小事实，需再 bump 版本并实测体积，本轮不做。
+- 依赖目标页独有记录集的检查，在其他关键页上因记录被剔除而落 `excluded`，排除理由文案为「本次只对目标 URL 采集了该来源」。不为其他关键页发新的付费或配额调用。
 
 ### 5.4 跨页聚合
 
@@ -116,27 +121,29 @@ Stage 01 画像面板、画像确认、来源发现、账号网站画像导入�
 | 1 | 任一页 blocker | blocker | actionable（P0） |
 | 2 | 任一页 warning | warning | actionable（P1） |
 | 3 | 任一页 tip | tip | actionable（P2） |
-| 4 | 任一页 pass（其余为 excluded / observed-only 皆可） | pass | passed，范围标签写「关键页 {evaluated}/{total} 已评估」 |
+| 4 | 任一页 pass（其余为 excluded 皆可；声明不作判定的检查永不产生 pass，见 §8.2 F2） | pass | passed，范围标签写「关键页 {keyPageEvaluatedCount}/{keyPageTotal} 已评估 · 通过」 |
 | 5 | 任一页 observed-only（其余 excluded） | observed-only | 仅观测区（§4.3） |
 | 6 | 全部 excluded，且至少一页 truth 为 `source-gated` | excluded | investigation |
 | 7 | 全部 excluded，无 `source-gated` | excluded | excluded，排除原因取目标页那一页的，其余页的原因在展开区逐页列出 |
 
 行 4 覆盖了「目标页 pass、其余 11 页因无目标词 excluded」这种 2.10 的常态；行 5 覆盖了「目标页 observed-only、其余 excluded」这种 4.2/4.3 的常态。没有任何合法分布会落到隔离以外的空处。
 
-- `truth` 合并：任一页 observed → observed；否则任一页 partial → partial；否则任一页 `source-gated` → `source-gated`；否则 `not-observed` 或 `unavailable` 按多数；未知值一律隔离。真值态在代码里是 kebab-case（`not-observed`、`source-gated`、`needs-integration`），映射表 fail-closed，字面必须照代码写。
+- `truth` 合并：任一页 observed → observed；否则任一页 partial → partial；否则任一页 `source-gated` → `source-gated`；否则 `not-observed` 与 `unavailable` 按多数，平票取 `unavailable`（fail-closed）；未知值一律隔离。真值态在代码里是 kebab-case（`not-observed`、`source-gated`、`needs-integration`），映射表 fail-closed，字面必须照代码写。
 - `measurement`：逐页保留，展开区「本次测量」按关键页排序列出 `{url} · {measurement}`。
 - `evidenceRecordIds`：并集。
 - `scoreValue / scoreContribution`：不再合并出总分；健康度（`health`）在头部不展示，避免用一个目标页的分数冒充关键页集合。
 
 ### 5.5 受影响目标两段式
 
-`AgentIssueAffectedTargets` 增加：
+`AgentIssueAffectedTargets` 沿用分支既有的 `totalCount`（全站 `affected` 总数）与 `enumerated`，新增四个字段：
 
-- `keyPageUrls: readonly string[]`：命中的关键页，按 5.2 排序，上限 10（`AGENT_ISSUE_URL_DISPLAY_LIMIT` 不变）。
-- `siteWideCount: number | null`：该检查项的证据记录在全站的 `affected` 总数（既有口径），减去关键页命中数得出「另有 N 页」；记录 `affected` 与 observations 不一致时沿用分支的 `enumerated = false` 说法，显示「至少」。
-- 站点级检查保持 `mode = "site-scope"`，不列 URL；来源受限保持 `mode = "unavailable"`，计数为 null 不为 0。
+- `keyPageTotal: number`：本次关键页集合大小（≤12）。
+- `keyPageEvaluatedCount: number`：该检查项在多少个关键页上得出了结论（非 excluded）。
+- `keyPageHitCount: number`：命中的关键页数，未截断。
+- `keyPageUrls: readonly string[]`：`keyPageHitCount` 的截断展示，按 5.2 排序，上限 10（`AGENT_ISSUE_URL_DISPLAY_LIMIT` 不变）。
+- 站点级检查保持 `mode = "site-scope"`，不列 URL，四个关键页字段为 0；来源受限保持 `mode = "unavailable"`，`totalCount` 为 null 不为 0。
 
-行内范围标签由这两个字段推导：`关键页 3/12 · 另有 44 页`。全站为 0 而关键页命中不为 0 不可能出现（关键页是全站子集）；出现即隔离该行并记测试。
+范围标签由这些字段推导：命中时 `关键页 {keyPageHitCount}/{keyPageTotal} · 另有 {totalCount − keyPageHitCount} 页`（`enumerated = false` 时「另有至少」）；通过时 `关键页 {keyPageEvaluatedCount}/{keyPageTotal} 已评估 · 通过`。`keyPageHitCount > totalCount` 不可能出现（关键页是全站子集）；出现即隔离该行并记测试。
 
 ## 6. Checker 独有检查进目录
 
@@ -162,13 +169,14 @@ Stage 01 画像面板、画像确认、来源发现、账号网站画像导入�
 - 2.10 必须新增记录：现有关键词记录只覆盖 title 与 H1 两个位点（`title_without_target_query` / `h1_without_target_query`），description / 副标题 / 正文 / URL 四个位点只存在于 `KeywordEvidence.slots` 证据层，没有记录可映射。合并为一条 `target_query_slot_coverage`，observation 的 values 逐位点给 `covered / not_covered / not_applicable`，避免四条记录各报一次同一页。这同时回应审计 F12：目录承认这四个位点是判定项（authority = judgment），4.3「首次出现位置」维持只观测。
 - 4.6 与 4.1 并存：4.1 保留为「不可测」并改写文案（见 §8.2 F5），4.6 是能测的绝对档。
 - Checker 的 `demandCapture`、`images.withDimensions`、`twitterCard` 是观察不是判定，不进目录；Checker 页保留原样。Checker 的文本/代码比检查（`TEXT_RATIO_FLOOR`）改为 observation 不扣分，与目录 4.4「不当成缺陷」对齐（审计 F10）。
-- 8.7、8.8、4.6 的阈值常量从 Checker 的 `checks-technical.ts` / `checks-meta.ts` 提到 `@sf/public-tools` 导出，Checker 反向 import，两边永远一致；这是 §8 审计要检查的「同一事实两侧阈值不一致」的预防。
+- 8.7、8.8、4.6 的阈值常量从 Checker 的 `checks-technical.ts` / `checks-meta.ts` 提到 `@sf/public-tools` 的一个新子路径导出（如 `@sf/public-tools/seo-audit/page-shape-thresholds`），并在 `packages/public-tools/package.json` 的 `exports` 登记；Checker 是客户端代码，`client-bundle-boundary.test.ts` 禁止裸 barrel import，先例见 `checks-meta.ts` 对 `@sf/public-tools/seo-audit/text-width` 的引用。两边永远一致；这是 §8 审计要检查的「同一事实两侧阈值不一致」的预防。
+- 八条 Tip 级新项必须加进 `catalog.ts:1078` 那张硬编码 tip 列表，不能靠 `DECLARES_NO_JUDGEMENT` 正则，否则会被 §8.2 F2 归成 `observed-only`。1.9 落页面组 1 会因 `catalog.ts:1029` 得 `scored = false`、`primaryAgent = tech`，与不给总分的房规无冲突，表里按 Tech 归属渲染。
 - 每条新记录做 `state / affected / tested` 组合的 sweep 测试，含「全站都合规」的干净分支（`not_observed`，`affected = 0`），对应 [[seo-agent-wire-invariant-refusals]] 的两次事故。
 
 ## 7. 契约与版本
 
 - **payload**：`seo_audit.sitewide.v17 → v18`，因为记录台账变了。`model.ts`、`contract.ts`、`audit-contract.ts` 的 `AGENT_AUDIT_SOURCE_SCHEMA_VERSION` 三处同 commit 改。旧缓存行读成未命中重新抓取。已打开的旧标签页在部署后下一次运行会收到「响应无法安全展示」，刷新即恢复；写进 PR 描述。
-- **wire**：`AgentAuditResult.keyPages?` 可选。守卫 `isAgentKeyPageCandidates`：数组、长度 ≤ 24、每项 `Object.keys` 恰好五个、`url` 为 string、`title / metaDescription` 为 string 或 null、`depth / inboundLinks` 为非负整数。缺字段或多字段整体拒绝。
+- **wire**：新增两个可选区域。`AgentAuditResult.keyPages?`，守卫 `isAgentKeyPageCandidates`：数组、长度 ≤ 24、每项 `Object.keys` 恰好五个、`url` 为 string、`title / metaDescription` 为 string 或 null、`depth / inboundLinks` 为非负整数，缺字段或多字段整体拒绝。`AgentAuditResult.pageShapeChecks?`（§8.2 F1），有 `pageRole` 时出现、无则缺席，守卫形态同 `keywordChecks`。
 - **请求**：白名单（`seo-audit-input.ts`：`url`、`targetQueries?`、`pageRole?`、`market?`、`language?`）不变；画像整体不上送，只按 §8.2 F1 上送其中的 `targetQuery` 与 `pageType` 两个既有字段。
 - **台账与词汇**：新记录 id、证据标签、limitation code 全部加进 `record-ledger.ts`，`agent-display-contract.ts` 的集合从台账派生；`detector-contract.test.ts` 用真实 `buildSeoAuditReport` 双向比对台账，新增记录漏登记在生产者处就红。
 - **i18n**：新增文案 en/zh 同批；保留分支的断言「渲染输出不含 `agents.workbench.issues.` 前缀」并扩到新 key 空间；`AGENT_AUDIT_COVERAGE` 由目录派生，31 站点级 + 49 页面级 = 80 变为 80 + 9 = 89，自动更新到 `step3Body`；测试从 `SITE_CHECK_IDS + PAGE_CHECK_IDS` 派生断言，不手写数字。
@@ -190,12 +198,12 @@ Stage 01 画像面板、画像确认、来源发现、账号网站画像导入�
 
 | 编号 | 级 | 层 | 现象 | 关键证据 | 修法 | 处置 |
 |---|---|---|---|---|---|---|
-| F1 | P1 | 判定 | 普通运行不上送 `targetQueries / pageRole`，8 项永远 excluded，诊断卡却渲染预设区间与「已确认目标词」 | `agent-workbench.tsx:285-298`；`agent-audit-model.ts:268-270` | 两层都改。客户端：画像 `targetQuery` 非空时上送 `targetQueries: [targetQuery]`；`pageRole: profile.pageType` 始终上送（`seo-audit-input.ts:104-110` 独立解析 `pageRole`）。服务端：`audit-handler.ts:865-880` 把 `h2/h3_count_outside_reviewed_range`、`thin_section_under_h3`、`schema_type_unmatched_to_page_type` 四条记录全挂在 `evidence === null ? {} : { keywordChecks }` 分支里，只改客户端时无目标词的运行这 4 项仍 excluded；因此把这四条从关键词证据解耦为新区域 `pageShapeChecks?: { version, records }`，只凭 `pageRole` 即构造，走与 `keywordChecks` 同样的守卫、台账与 display-contract 派生（`isKeywordEvidenceShape` 要求 `queries.length >= 1` 的守卫不动）。未上送目标词时「已确认目标词」标签不渲染，2.3/3.2/4.2/4.3/2.10 的排除理由写「本次未提交目标词」 | 第四批修 |
-| F2 | P1 | 判定+建议 | 4.2/4.3/4.4「不作判定」却渲染为 Tip，实测值写成「1 个受影响观测」，进 P2 建议并套「内容简报」模板 | `keyword-evidence/records.ts:217-223, 394-399`；`evaluate.ts:209-212`；`agent-result-helpers.ts:79-83` | 新增结果态 `observed-only`：`DECLARES_NO_JUDGEMENT` 命中项固定落此态，不进 actionable，手风琴归「已通过」区旁的「仅观测」小节；`measurement()` 对观测记录直接展示数值（密度 %、位点、比例）；补测试钉「不是 Tip、不进建议」 | 第四批修 |
+| F1 | P1 | 判定 | 普通运行不上送 `targetQueries / pageRole`，8 项永远 excluded，诊断卡却渲染预设区间与「已确认目标词」 | `agent-workbench.tsx:285-298`；`agent-audit-model.ts:268-270` | 两层都改。客户端：画像 `targetQuery` 非空时上送 `targetQueries: [targetQuery]`；`pageRole: profile.pageType` 始终上送（`seo-audit-input.ts:104-110` 独立解析 `pageRole`）。服务端：`audit-handler.ts:865-880` 把 `h2/h3_count_outside_reviewed_range`、`thin_section_under_h3`、`schema_type_unmatched_to_page_type` 四条记录全挂在 `evidence === null ? {} : { keywordChecks }` 分支里，只改客户端时无目标词的运行这 4 项仍 excluded；因此把这四条从关键词证据解耦为新区域 `pageShapeChecks?: { version, records }`，只凭 `pageRole` 即构造。台账搬迁写死：四个 id 从 `KEYWORD_EVIDENCE_RECORD_IDS` 移出（`isAgentKeywordChecks` 要求 id 集合恰等于该常量，不移出就会拒绝新响应），进新 `PAGE_SHAPE_RECORD_IDS` 连同各自的 evidence labels 与 limitation codes；`AGENT_KEYWORD_CHECKS_VERSION` 因 id 集合变化同步 bump；`allAgentAuditRecords`（`audit-contract.ts:410-419`）与 `agent-display-contract.ts` 的三个 union 各加一行；wire 守卫照 `isAgentKeywordChecks` 的 `{version, records}` 形态写 `isAgentPageShapeChecks`。`isKeywordEvidenceShape` 要求 `queries.length >= 1` 的守卫不动。未上送目标词时「已确认目标词」标签不渲染，2.3/3.2/4.2/4.3/2.10 的排除理由写「本次未提交目标词」 | 第四批修 |
+| F2 | P1 | 判定+建议 | 4.2/4.3/4.4「不作判定」却渲染为 Tip，实测值写成「1 个受影响观测」，进 P2 建议并套「内容简报」模板 | `keyword-evidence/records.ts:217-223, 394-399`；`evaluate.ts:209-212`；`agent-result-helpers.ts:79-83` | 新增结果态 `observed-only`：`DECLARES_NO_JUDGEMENT` 命中项只允许 `observed-only` 或 `excluded` 两种结果，`evaluate.ts:360-364` 的 `not_observed → pass` 路径对这些项必须短路成 `observed-only`，否则 4.4 在缺侧车的非目标关键页上会先落 pass 再被 §5.4 行 4 合并成「通过」；不进 actionable，手风琴归「仅观测」区；`measurement()` 对观测记录直接展示数值（密度 %、位点、比例）；补测试钉「不是 Tip、不是 pass、不进建议」 | 第四批修 |
 | F3 | P1 | 判定 | 3.6 文案说 CJK 页不判，代码按空白切词照判，中文页每个 H3 下约 1「词」必判 thin | `records.ts:432-449`；对照 `extract.ts:213-229` 的 CJK 置空 | `sectionSubstanceRecord` 加 CJK 门（复用 `cjkShare`），CJK 时 `unverified` + limitation | 第四批修 |
 | F8 | P1 | 建议 | AI 草稿 prompt 不给 15–60 / 50–160 显示宽度区间、不要求含目标词；reader 不校验；UI 不显示宽度 | `solution-draft.ts:96-113, 124-179`；`text-width.ts` 有 `displayWidth` 未用 | prompt 注入 `SNIPPET_*_WIDTH` 与「必须以词序列包含目标词（若已确认）」；reader 复核宽度与含词，不通过标出不拒绝；草稿旁显示宽度读数 | 第四批修 |
 | F4 | P2 | 判定 | 目标页无 onPage 侧车时 4.4 / 3.3 无观测 → `not_observed` → Pass | `model.ts:1366-1385, 1284-1296`；`evaluate.ts:80-89` | `tested` 只计有侧车的页并标 `conditional_subset`；无侧车 limitation 明示 | 第四批修（不需新数据） |
-| F5 | P2 | 判定 UI | 4.1 与 B4/B5/C5 引擎芯片显示「本版本无法识别」；4.1 卡阈值写 Warning、依据 SOP、数据源「不可观测」、修法通用句四字段互相矛盾 | `agent-diagnosis.tsx:63-80`；`catalog.ts:618-634` | 手风琴与新头部接 `needs_integration` 文案；4.1 阈值改说明性、howToFix 专属句 | 第四批修 |
+| F5 | P2 | 判定 UI | 4.1 与 B4/B5/C5 引擎芯片显示「本版本无法识别」；4.1 卡阈值写 Warning、依据 SOP、数据源「不可观测」、修法通用句四字段互相矛盾 | `agent-diagnosis.tsx:63-80`；`catalog.ts:618-634` | 手风琴接求值器的 `needs-integration`（kebab-case）到 i18n 键 `engines.needsIntegration`，不再经 view 层 `replaceAll("-","_")` 的 snake_case 中转；4.1 阈值改说明性、howToFix 专属句 | 第四批修 |
 | F6 | P2 | 判定 | 2.1/2.4 阈值文案未写严重度，实际 Tip；Checker 同事实判 warn | `catalog.ts:79, 82, 1079`；`checks-meta.ts:92-130` | 文案补「出界为提示」；Checker 文案注明「Agent 侧记为提示」 | 第四批修 |
 | F7 | P2 | 建议 | 方案预览「observed title / h1 count: [本次运行未采集]」，实际已采集 | `agent-solution-templates.ts:139-141, 260-261` | `AgentSolutionPreviewInput` 传 `targetPageExtract`，标签找不到时回退到 extract；补 2.1/2.3 测试 | 第四批修 |
 | F9 | P2 | 判定 UI | `authority()` 兜底 `"industry"`，D1 2%、D2 5% 等内部数值显示「行业惯例」 | `catalog.ts:571-583` | 兜底改 `"judgment"`，真有出处的显式列 industry | 第四批修 |
@@ -225,7 +233,8 @@ Stage 01 画像面板、画像确认、来源发现、账号网站画像导入�
 单测：
 - `agent-key-pages.ts`：coreFeatures 为空、首页即目标、候选不足 12、整词与单词计分、CJK feature、同分稳定序。
 - 服务端候选选择：非 2xx 与非 HTML 剔除、subjectUrl 去重、深度回退、上限 24。
-- `aggregateKeyPageEvaluations`：全通过、全排除、全来源受限、混合、未知枚举 fail-closed、关键页命中数 > 全站受影响数触发隔离。变异测试：把「取最差」改成「取最好」必须至少一条红。
+- `recordsFor(page)`：非目标页剔除 `target_page` 记录、`conditional_subset` 的 `targetTested` 置 null；用「目标页有 title、关键页无 title」的 fixture 断言 2.1 在该关键页不得为 pass。
+- `aggregateKeyPageEvaluations`：全通过、全排除、全来源受限、混合、未知枚举 fail-closed、关键页命中数 > 全站受影响数触发隔离、`DECLARES_NO_JUDGEMENT` 项在任何页面分布下都不得合并成 pass。变异测试：把「取最差」改成「取最好」必须至少一条红。
 - 8 条 `buildRecords` 新记录 + `target_query_slot_coverage` + `pageShapeChecks` 四条的构造器 × 消费端校验器 sweep，含全站合规的干净分支与缺侧车分支；`detector-contract.test.ts` 双向台账比对；8.7/8.8/4.6 常量同源断言（Checker 与 catalog 引用同一导出）。
 - wire 守卫：`keyPages` 多字段、少字段、超长、负数各一条拒绝用例；缺 `keyPages` 放行；`pageShapeChecks` 有 `pageRole` 无 `targetQueries` 时出现、两者都无时缺席。
 - 契约：payload v18 三处版本一致的冻结断言；en/zh key parity；渲染输出无 key 路径前缀；`AGENT_AUDIT_COVERAGE.total` 从 ids 派生为 89 且九个新 id 在集合内。
@@ -265,6 +274,7 @@ e2e（`apps/marketing/e2e/agents.spec.ts`，双 locale）：
 
 - v18 bump 使已打开的旧标签页下一次运行报错一次；接受，写进 PR 描述。
 - 每关键页一次页面级求值，12 页 × 约 50 条记录，客户端毫秒级；不做虚拟滚动。
+- §5.3 取 fail-closed 后，非目标关键页在 2.1/2.2/2.4/2.5/4.5/5.4/6.5/7.3/7.4/1.7 等 `conditional_subset` 项上只能报命中不能报通过，「已评估」计数会低于直觉；这是有意的下限，升级路径已写在 §5.3。
 - `buildRecords` 新增 8 类记录，观测数按 `MAX_OBSERVATIONS_PER_RECORD` 上限 2000 条，极端站点每记录约 100–200KB；缓存上限 4MB、平台响应 4.5MB，需在批次 3 用 950 页 fixture 实测 payload 体积并记录到 PR。
 - 手风琴分支距 main 354 个提交，cherry-pick 后必须重跑分支全部 371 个相关单测，并对新增的 `agent-workbench.tsx` 账号画像接入做一次真实点击验证。
 - 内容逻辑修复的规模取决于审计结论，批次 4 的人日是区间不是承诺。
