@@ -8,6 +8,10 @@
 import { useState } from "react";
 import { PenLine } from "lucide-react";
 import { useTranslations } from "next-intl";
+import {
+  SNIPPET_DESCRIPTION_WIDTH,
+  SNIPPET_TITLE_WIDTH,
+} from "@sf/public-tools/seo-audit/text-width";
 import type { SeoAuditTargetPageExtract } from "@sf/public-tools";
 import type {
   SolutionDraft,
@@ -122,18 +126,73 @@ export function AgentSolutionDraft({
   );
 }
 
+/**
+ * What the draft measures, stated beside it.
+ *
+ * A rewrite offered to fix a length finding can itself miss the band, and a
+ * rewrite offered to fix a missing query can drop it. Publishing the numbers
+ * is the difference between a draft the reader can judge and one they have to
+ * re-measure by hand.
+ */
+function titleNote(
+  draft: Extract<SolutionDraft, { kind: "search-presentation" }>,
+  t: ReturnType<typeof useTranslations>,
+): string | null {
+  const review = draft.review as typeof draft.review | undefined;
+  // A build that predates the review can still be the one answering: render
+  // the draft without the numbers rather than taking the panel down.
+  if (review === undefined) return null;
+  const width = t(
+    review.titleWithinRange ? "reviewWidth" : "reviewWidthOff",
+    {
+      width: review.titleWidth,
+      min: SNIPPET_TITLE_WIDTH.min,
+      max: SNIPPET_TITLE_WIDTH.max,
+    },
+  );
+  return review.titleContainsTargetQuery === null
+    ? width
+    : `${width} · ${t(
+        review.titleContainsTargetQuery ? "reviewQueryKept" : "reviewQueryLost",
+      )}`;
+}
+
+function descriptionNote(
+  draft: Extract<SolutionDraft, { kind: "search-presentation" }>,
+  t: ReturnType<typeof useTranslations>,
+): string | null {
+  const review = draft.review as typeof draft.review | undefined;
+  if (review === undefined) return null;
+  return t(
+    review.metaDescriptionWithinRange ? "reviewWidth" : "reviewWidthOff",
+    {
+      width: review.metaDescriptionWidth,
+      min: SNIPPET_DESCRIPTION_WIDTH.min,
+      max: SNIPPET_DESCRIPTION_WIDTH.max,
+    },
+  );
+}
+
 function DraftBody({ draft }: { readonly draft: SolutionDraft }) {
   const t = useTranslations("agents.workbench.recommendations.draft");
   const rows =
     draft.kind === "search-presentation"
       ? ([
-          [t("fields.title"), draft.title],
-          [t("fields.metaDescription"), draft.metaDescription],
-          [t("fields.openingLine"), draft.openingLine],
+          [t("fields.title"), draft.title, titleNote(draft, t)],
+          [
+            t("fields.metaDescription"),
+            draft.metaDescription,
+            descriptionNote(draft, t),
+          ],
+          [t("fields.openingLine"), draft.openingLine, null],
         ] as const)
       : ([
-          [t("fields.h1"), draft.h1],
-          [t("fields.h2"), draft.h2.map((entry) => `- ${entry}`).join("\n")],
+          [t("fields.h1"), draft.h1, null],
+          [
+            t("fields.h2"),
+            draft.h2.map((entry) => `- ${entry}`).join("\n"),
+            null,
+          ],
         ] as const);
 
   return (
@@ -142,7 +201,7 @@ function DraftBody({ draft }: { readonly draft: SolutionDraft }) {
         {t("readyLabel")}
       </p>
       <dl className="mt-3 grid gap-3">
-        {rows.map(([label, value]) => (
+        {rows.map(([label, value, note]) => (
           <div key={label} className="min-w-0">
             <dt className="font-mono text-[10.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
               {label}
@@ -150,6 +209,14 @@ function DraftBody({ draft }: { readonly draft: SolutionDraft }) {
             <dd className="mt-1 break-words whitespace-pre-wrap text-[12.5px] leading-[1.6] text-text-dark-primary">
               {value}
             </dd>
+            {note === null ? null : (
+              <dd
+                data-draft-review
+                className="mt-1 font-mono text-[10.5px] text-text-dark-faint"
+              >
+                {note}
+              </dd>
+            )}
           </div>
         ))}
       </dl>

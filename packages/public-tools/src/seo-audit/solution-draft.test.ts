@@ -71,11 +71,80 @@ describe("reading a reply", () => {
       }),
     );
 
-    expect(draft).toEqual({
+    expect(draft).toMatchObject({
       kind: "search-presentation",
       title: "Free natal chart calculator",
       metaDescription: "Draw your natal chart from a birth date and time.",
       openingLine: "Enter a birth date to draw your chart.",
+    });
+  });
+
+  describe("what the draft says about itself", () => {
+    const reply = (title: string, metaDescription = "x".repeat(80)) =>
+      JSON.stringify({
+        title,
+        metaDescription,
+        openingLine: "Enter a birth date to draw your chart.",
+      });
+
+    it("measures the rewrite against the bands the prompt asked for", () => {
+      // A draft offered to fix a title-length finding that itself overshoots
+      // the band is the failure mode this reports. It is reported, not
+      // refused: the sentence may still be better than what is on the page,
+      // and the reader is the one who decides.
+      const draft = readSolutionDraft(
+        "search-presentation",
+        reply("Chart"),
+        null,
+      );
+
+      expect(draft).toMatchObject({
+        review: { titleWidth: 5, titleWithinRange: false },
+      });
+    });
+
+    it("counts a CJK character as two, the way a result row renders it", () => {
+      const draft = readSolutionDraft(
+        "search-presentation",
+        reply("免费出生星盘计算器"),
+        null,
+      );
+
+      expect(
+        (draft as { review: { titleWidth: number } }).review.titleWidth,
+      ).toBe(18);
+    });
+
+    it("says whether the confirmed query survived into the title", () => {
+      expect(
+        readSolutionDraft(
+          "search-presentation",
+          reply("Free natal chart calculator"),
+          "natal chart",
+        ),
+      ).toMatchObject({ review: { titleContainsTargetQuery: true } });
+
+      expect(
+        readSolutionDraft(
+          "search-presentation",
+          reply("Free birth wheel calculator"),
+          "natal chart",
+        ),
+      ).toMatchObject({ review: { titleContainsTargetQuery: false } });
+    });
+
+    it("reports nothing about a query the owner never confirmed", () => {
+      // `false` would read as a defect in the draft rather than the absence of
+      // anything to look for.
+      expect(
+        readSolutionDraft("search-presentation", reply("Anything"), null),
+      ).toMatchObject({ review: { titleContainsTargetQuery: null } });
+    });
+
+    it("publishes the draft even when it misses every band", () => {
+      expect(
+        readSolutionDraft("search-presentation", reply("Chart", "Short"), "x"),
+      ).not.toBeNull();
     });
   });
 

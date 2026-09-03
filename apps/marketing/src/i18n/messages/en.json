@@ -1161,6 +1161,7 @@
         "declared_anchor_attributes_only": "Read from the declared anchor attributes only.",
         "transferred_markup_only_no_rendering": "Measured on the transferred markup; this run executes no script.",
         "transferred_markup_bytes_only": "Measured on the transferred markup bytes only.",
+        "this_page_is_not_measured_by_whitespace_words_so_section_substance_is_not_judged": "This page is not measured by whitespace words, so section substance is not judged here.",
         "resource_not_observed_does_not_prove_absence": "A resource that was not observed may be absent, unreachable, blocked, or outside the successfully fetched resource set.",
         "static_response_directives_only": "Indexability here comes from the collected static HTTP/HTML directives. Search-engine index coverage is not measured.",
         "normalised_text_match_within_inspected_pages": "Duplicate groups use case-insensitive, whitespace-normalised text and include only inspected pages.",
@@ -8615,6 +8616,10 @@
           "action": "Draft it",
           "running": "Drafting…",
           "offer": "Writes a draft from the text this run collected on the page. Preview only — nothing is applied to the site.",
+          "reviewWidth": "{width} in display width, reviewed band {min}-{max}",
+          "reviewWidthOff": "{width} in display width, outside the reviewed band {min}-{max}",
+          "reviewQueryKept": "Keeps the confirmed query",
+          "reviewQueryLost": "Does not contain the confirmed query",
           "readyLabel": "Draft · review only",
           "boundary": "The draft is written from text this run collected on the page, and the model is told not to invent anything. It can still get things wrong — check each line before you publish.",
           "fields": {

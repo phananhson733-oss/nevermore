@@ -1161,6 +1161,7 @@
         "declared_anchor_attributes_only": "仅依据已声明的链接属性判定。",
         "transferred_markup_only_no_rendering": "按传输到的标记度量；本次运行不执行脚本。",
         "transferred_markup_bytes_only": "仅按传输到的标记字节度量。",
+        "this_page_is_not_measured_by_whitespace_words_so_section_substance_is_not_judged": "这个页面不按空白分词度量，因此本项不判定小节内容量。",
         "resource_not_observed_does_not_prove_absence": "没有观测到资源，可能是资源不存在、不可达、被拦截，或未进入成功获取的资源集合；不能据此断言资源缺失。",
         "static_response_directives_only": "这里只读取已采集静态 HTTP/HTML 中的索引指令，不检测搜索引擎的真实索引覆盖。",
         "normalised_text_match_within_inspected_pages": "重复分组使用忽略大小写、合并空白后的文本，只覆盖本次已检查页面。",
@@ -8615,6 +8616,10 @@
           "action": "生成草稿",
           "running": "正在生成…",
           "offer": "按本页已采集到的文字生成一份草稿。仅供审阅，不会应用到站点。",
+          "reviewWidth": "显示宽度 {width}，审阅区间 {min}-{max}",
+          "reviewWidthOff": "显示宽度 {width}，超出审阅区间 {min}-{max}",
+          "reviewQueryKept": "保留了已确认目标词",
+          "reviewQueryLost": "不含已确认目标词",
           "readyLabel": "草稿 · 仅供审阅",
           "boundary": "草稿只把本页已采集到的文字作为依据写成，并被要求不许编造。模型仍可能出错——发布前请逐句核对。",
           "fields": {

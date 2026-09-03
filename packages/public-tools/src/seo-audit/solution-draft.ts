@@ -3,6 +3,12 @@
 // @pos    -- pure; owns no credential, makes no request, applies nothing
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
+import {
+  displayWidth,
+  SNIPPET_DESCRIPTION_WIDTH,
+  SNIPPET_TITLE_WIDTH,
+} from "./text-width.ts";
+
 /** What a draft can be asked for. Deliberately small: each shape is a contract. */
 export type SolutionDraftKind = "search-presentation" | "heading-structure";
 
@@ -27,11 +33,34 @@ export interface SolutionDraftInput {
   readonly openingText: string | null;
 }
 
+/**
+ * What the draft measures against the bands it was asked to write within.
+ *
+ * Reported, never enforced. A draft that overshoots by two characters is still
+ * a better sentence than the one on the page, and refusing it would hand the
+ * reader nothing; publishing it silently would hand them a rewrite that fails
+ * the very check it was offered to fix. So the numbers travel with the text.
+ */
+export interface SearchPresentationDraftReview {
+  readonly titleWidth: number;
+  readonly titleWithinRange: boolean;
+  readonly metaDescriptionWidth: number;
+  readonly metaDescriptionWithinRange: boolean;
+  /**
+   * Whether the confirmed query survives into the rewritten title.
+   *
+   * Null when the owner confirmed no query: there is nothing to look for, and
+   * reporting `false` would read as a defect in the draft.
+   */
+  readonly titleContainsTargetQuery: boolean | null;
+}
+
 export interface SearchPresentationDraft {
   readonly kind: "search-presentation";
   readonly title: string;
   readonly metaDescription: string;
   readonly openingLine: string;
+  readonly review: SearchPresentationDraftReview;
 }
 
 export interface HeadingStructureDraft {
@@ -41,6 +70,19 @@ export interface HeadingStructureDraft {
 }
 
 export type SolutionDraft = SearchPresentationDraft | HeadingStructureDraft;
+
+/**
+ * Whether the query survives as a word sequence rather than as loose letters.
+ *
+ * The same shape 2.3 judges by: normalise both sides to single-spaced
+ * lowercase and look for the phrase. No synonym set and no stemming, because
+ * the check this draft exists to satisfy applies none either.
+ */
+function containsQuerySequence(text: string, query: string): boolean {
+  const flatten = (value: string): string =>
+    value.toLowerCase().replace(/\s+/gu, " ").trim();
+  return flatten(text).includes(flatten(query));
+}
 
 /** Caps that bound one prompt, not editorial advice about length. */
 const MAX_QUOTED = 400;
@@ -101,6 +143,9 @@ export function buildSolutionDraftPrompt(input: SolutionDraftInput): string {
           "title: name what this page helps the reader do. Put the page's own subject first and the brand, if any, last.",
           "metaDescription: give the reader a reason to choose this result — what they can do after opening it.",
           "openingLine: the first sentence of the page, delivering what the description just promised.",
+          `title: aim for ${SNIPPET_TITLE_WIDTH.min}-${SNIPPET_TITLE_WIDTH.max} in display width, counting a CJK character as two.`,
+          `metaDescription: aim for ${SNIPPET_DESCRIPTION_WIDTH.min}-${SNIPPET_DESCRIPTION_WIDTH.max} in the same width.`,
+          "If a confirmed target query is given, the title must contain it as a word sequence, in the reader's own order.",
           "A title or description that would fit any sibling page on this site has not been rewritten.",
         ].join("\n")
       : [
@@ -142,6 +187,8 @@ function readString(value: unknown): string | null {
 export function readSolutionDraft(
   kind: SolutionDraftKind,
   text: string,
+  /** The confirmed query the prompt asked the title to keep, when there is one. */
+  targetQuery: string | null = null,
 ): SolutionDraft | null {
   let parsed: unknown;
   try {
@@ -161,7 +208,28 @@ export function readSolutionDraft(
     if (title === null || metaDescription === null || openingLine === null) {
       return null;
     }
-    return { kind, title, metaDescription, openingLine };
+    const titleWidth = displayWidth(title);
+    const metaDescriptionWidth = displayWidth(metaDescription);
+    return {
+      kind,
+      title,
+      metaDescription,
+      openingLine,
+      review: {
+        titleWidth,
+        titleWithinRange:
+          titleWidth >= SNIPPET_TITLE_WIDTH.min &&
+          titleWidth <= SNIPPET_TITLE_WIDTH.max,
+        metaDescriptionWidth,
+        metaDescriptionWithinRange:
+          metaDescriptionWidth >= SNIPPET_DESCRIPTION_WIDTH.min &&
+          metaDescriptionWidth <= SNIPPET_DESCRIPTION_WIDTH.max,
+        titleContainsTargetQuery:
+          targetQuery === null || targetQuery.trim() === ""
+            ? null
+            : containsQuerySequence(title, targetQuery),
+      },
+    };
   }
 
   const h1 = readString(value.h1);
