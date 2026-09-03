@@ -271,15 +271,12 @@ describe("AgentResults", () => {
     );
   }
 
-  it("connects captured evidence to the diagnosis and the issue list without inventing a score", () => {
+  it("connects captured evidence to the issue list without inventing a score", () => {
     render("seo", { response: evidencedData });
 
     expect(host.textContent).toContain("Stage 02 · Captured report");
-    expect(host.textContent).toContain("Stage 02 · Diagnosis");
     expect(host.textContent).toContain("Reading results · issue first");
     expect(accordion()).not.toBeNull();
-    expect(host.textContent).toContain("5 groups · 31 checks");
-    expect(host.textContent).toContain("Page · 9 groups / 49 checks");
     expect(host.textContent).not.toContain("0/100");
   });
 
@@ -291,74 +288,16 @@ describe("AgentResults", () => {
     expect(host.textContent).toContain("9 observed · 0 not observed");
   });
 
-  it("uses SEO defaults and preserves separate site/page group selections", () => {
-    render("seo");
-
-    expect(
-      host
-        .querySelector('[data-testid="diagnosis-group-D"]')
-        ?.getAttribute("aria-pressed"),
-    ).toBe("true");
-
-    act(() => {
-      host
-        .querySelector<HTMLButtonElement>(
-          '[data-testid="diagnosis-scope-page"]',
-        )
-        ?.click();
-    });
-    expect(
-      host
-        .querySelector('[data-testid="diagnosis-group-2"]')
-        ?.getAttribute("aria-pressed"),
-    ).toBe("true");
-
-    act(() => {
-      host
-        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-group-2"]')
-        ?.click();
-      host
-        .querySelector<HTMLButtonElement>(
-          '[data-testid="diagnosis-scope-site"]',
-        )
-        ?.click();
-    });
-    expect(
-      host
-        .querySelector('[data-testid="diagnosis-group-D"]')
-        ?.getAttribute("aria-pressed"),
-    ).toBe("true");
-
-    act(() => {
-      host
-        .querySelector<HTMLButtonElement>(
-          '[data-testid="diagnosis-scope-page"]',
-        )
-        ?.click();
-    });
-    expect(
-      host
-        .querySelector('[data-testid="diagnosis-group-2"]')
-        ?.getAttribute("aria-pressed"),
-    ).toBe("true");
-  });
-
-  it("keeps the issue list inside the active scope", () => {
+  it("shows site-wide and page-level findings in one list", () => {
+    // The scope switch is gone: a reader should not have to know that a
+    // duplicate-title problem is filed under "site" and a missing H1 under
+    // "page" to find either of them. One list, and the row says its own scope.
     render("seo", { response: evidencedData });
 
     expect(host.querySelector('[data-issue-row^="seo:site:"]')).not.toBeNull();
-    expect(host.querySelector('[data-issue-row^="seo:page:"]')).toBeNull();
-
-    act(() => {
-      host
-        .querySelector<HTMLButtonElement>(
-          '[data-testid="diagnosis-scope-page"]',
-        )
-        ?.click();
-    });
-
-    expect(host.querySelector('[data-issue-row^="seo:site:"]')).toBeNull();
     expect(host.querySelector('[data-issue-row^="seo:page:"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid^="diagnosis-scope-"]')).toBeNull();
+    expect(host.querySelector('[data-testid^="diagnosis-group-"]')).toBeNull();
   });
 
   /**
@@ -367,7 +306,7 @@ describe("AgentResults", () => {
    * guarded now is the stronger property: no check is dropped on the way to a
    * lane, and nothing is silently capped.
    */
-  it("lands every check of the active scope in exactly one lane", () => {
+  it("lands every check in exactly one lane", () => {
     render("seo", { response: evidencedData });
 
     const actionable = Number(
@@ -376,20 +315,8 @@ describe("AgentResults", () => {
     expect(issueRows()).toHaveLength(actionable);
     // The replaced surface capped the list at three.
     expect(actionable).toBeGreaterThan(3);
-    expect(lanedCheckCount()).toBe(31);
-
-    act(() => {
-      host
-        .querySelector<HTMLButtonElement>(
-          '[data-testid="diagnosis-scope-page"]',
-        )
-        ?.click();
-    });
-
-    expect(issueRows()).toHaveLength(
-      Number(accordion()?.getAttribute("data-actionable-count")),
-    );
-    expect(lanedCheckCount()).toBe(49);
+    // 31 site-wide + 49 page-level, with the scope switch gone.
+    expect(lanedCheckCount()).toBe(80);
   });
 
   it("offers investigation rows, not a verdict, when no check could be evaluated", () => {
@@ -405,50 +332,12 @@ describe("AgentResults", () => {
     ).not.toBeNull();
     expect(host.querySelector('[data-testid="agent-issues-clean"]')).toBeNull();
     expect(host.textContent).toContain("Affected population unavailable");
-    expect(lanedCheckCount()).toBe(31);
-  });
-
-  it("does not carry a filter or an open row across a scope change", () => {
-    render("seo", { response: evidencedData });
-
-    act(() => {
-      host
-        .querySelector<HTMLButtonElement>('[data-issue-filter="investigation"]')
-        ?.click();
-      host
-        .querySelector<HTMLButtonElement>(
-          '[data-issue-control="expand-visible"]',
-        )
-        ?.click();
-    });
-    expect(host.querySelector("[data-issue-detail]")).not.toBeNull();
-
-    act(() => {
-      host
-        .querySelector<HTMLButtonElement>(
-          '[data-testid="diagnosis-scope-page"]',
-        )
-        ?.click();
-    });
-
-    // A filter chosen against the other scope's list could otherwise render an
-    // empty page over real findings.
-    expect(
-      host
-        .querySelector('[data-issue-filter="all"]')
-        ?.getAttribute("aria-pressed"),
-    ).toBe("true");
-    expect(host.querySelector("[data-issue-detail]")).toBeNull();
+    expect(lanedCheckCount()).toBe(80);
   });
 
   it("uses Tech defaults and keeps its issue identity independent", () => {
     render("tech", { response: evidencedData });
 
-    expect(
-      host
-        .querySelector('[data-testid="diagnosis-group-C"]')
-        ?.getAttribute("aria-pressed"),
-    ).toBe("true");
     expect(host.querySelector('[data-issue-row^="tech:"]')).not.toBeNull();
     expect(host.querySelector('[data-issue-row^="seo:"]')).toBeNull();
 
@@ -466,35 +355,12 @@ describe("AgentResults", () => {
     expect(host.textContent).not.toContain("Primary CTA");
   });
 
-  it("honors a confirmed page-only Profile as the initial audit scope", () => {
-    render("seo", { pageOnly: true });
+  it("renders no local policy control anywhere on the surface", () => {
+    // These were only ever reachable through the diagnosis ledger, which this
+    // surface no longer has. Asserted on the whole surface rather than on the
+    // deleted panel, so the guarantee survives the panel that carried it.
+    render("seo", { response: evidencedData });
 
-    expect(
-      host
-        .querySelector('[data-testid="diagnosis-scope-page"]')
-        ?.getAttribute("aria-pressed"),
-    ).toBe("true");
-    expect(
-      host
-        .querySelector('[data-testid="diagnosis-group-2"]')
-        ?.getAttribute("aria-pressed"),
-    ).toBe("true");
-  });
-
-  it("keeps local policy controls hidden while retaining the accepted default rule", () => {
-    render("seo", { pageOnly: true });
-    act(() => {
-      host
-        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-group-3"]')
-        ?.click();
-    });
-    act(() => {
-      host
-        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-check-3.4"]')
-        ?.click();
-    });
-
-    expect(host.textContent).toContain("H2 5–9");
     expect(host.querySelector('[data-testid^="diagnosis-policy-"]')).toBeNull();
     expect(host.querySelector("[data-policy-threshold]")).toBeNull();
     expect(host.querySelector("[data-policy-weight]")).toBeNull();

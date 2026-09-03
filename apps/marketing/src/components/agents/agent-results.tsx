@@ -5,17 +5,15 @@
 "use client";
 
 import { FileSearch, Link2, ShieldCheck } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 
 import { allAgentAuditRecords } from "../../lib/agents/audit-contract";
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import {
   buildAgentAuditViewModel,
-  type AgentAuditScope,
   type AgentDiagnosisContext,
 } from "./agent-audit-model";
-import { AgentDiagnosis } from "./agent-diagnosis";
 import { AgentIssueAccordion } from "./agent-issue-accordion";
 import { buildAgentIssueModel } from "./agent-issue-model";
 import type { AgentProfileDraft } from "./agent-profile";
@@ -104,22 +102,8 @@ export function AgentResults({
       }),
     [agent, data, locale, profile],
   );
-  const initialScope: AgentAuditScope =
-    profile.auditScope === "page-only" ? "page" : "site";
-  const [scope, setScope] = useState<AgentAuditScope>(initialScope);
-  const [selectedGroupIds, setSelectedGroupIds] = useState(() => ({
-    site: model.defaults.siteGroupId,
-    page: model.defaults.pageGroupId,
-  }));
-  const [selectedCheckIds, setSelectedCheckIds] = useState<
-    Record<AgentAuditScope, string | null>
-  >({ site: null, page: null });
   const summary = summarizeAgentRecords(data.result.records);
   const notCollected = notCollectedUrlCount(data.result.coverage);
-  const scopedChecks = useMemo(
-    () => model.evaluatedChecks.filter((check) => check.check.scope === scope),
-    [model, scope],
-  );
   /**
    * The same joined list the evaluator decided from. Handing the crawl ledger
    * alone would show a search check that decided beside no evidence at all,
@@ -130,11 +114,11 @@ export function AgentResults({
     () =>
       buildAgentIssueModel({
         agent,
-        checks: scopedChecks,
+        checks: model.evaluatedChecks,
         records: joinedRecords,
         targetUrl: data.result.targetUrl,
       }),
-    [agent, data.result.targetUrl, joinedRecords, scopedChecks],
+    [agent, data.result.targetUrl, joinedRecords, model.evaluatedChecks],
   );
   /**
    * Evidence records are collected measurements, so they are labelled as
@@ -162,18 +146,8 @@ export function AgentResults({
     },
   ];
 
-  function handleScopeChange(nextScope: AgentAuditScope): void {
-    setScope(nextScope);
-  }
 
-  function handleGroupChange(groupId: string): void {
-    setSelectedGroupIds((current) => ({ ...current, [scope]: groupId }));
-    setSelectedCheckIds((current) => ({ ...current, [scope]: null }));
-  }
 
-  function handleCheckChange(checkId: string): void {
-    setSelectedCheckIds((current) => ({ ...current, [scope]: checkId }));
-  }
 
   return (
     <section
@@ -295,23 +269,12 @@ export function AgentResults({
         ) : null}
       </header>
 
-      <AgentDiagnosis
-        model={model}
-        scope={scope}
-        selectedGroupId={selectedGroupIds[scope]}
-        selectedCheckId={selectedCheckIds[scope]}
-        onScopeChange={handleScopeChange}
-        onGroupChange={handleGroupChange}
-        onCheckChange={handleCheckChange}
-      />
-
       {/*
-        Keyed by scope: filter and open-row state belong to the issue list they
-        were chosen against. Carrying a "suggestions" filter into a scope whose
-        findings are all blockers would render an empty list over real issues.
+        One list, site-wide and page-level together. The scope switch this
+        replaced made a reader guess which half a finding was filed under
+        before they could see it; the row states its own scope instead.
       */}
       <AgentIssueAccordion
-        key={scope}
         model={issueModel}
         locale={locale}
         profile={profile}
