@@ -71,7 +71,7 @@ Owner 在 2026-09-03 逐项拍板，均取推荐项：
 
 ### 4.4 不动的部分
 
-Stage 01 画像面板、画像确认、来源发现、账号网站画像导入与回写全部保持现状。`/agents/tech` 焦点路由照旧复用同一 workbench。On-Page Checker 工具页的 IA、交互与 0–100 总分的机制与刻度不改（评分项集合按 §6 调整，个别页面的分值会因此变化）；它的评分层跟着 §6 与 §8.2 改三处：文本/代码比降为 observation（F10）、8.7/8.8/4.6 的常量改为从 `@sf/public-tools` import、2.1/2.4 文案注明「Agent 侧记为提示」（F6）。
+Stage 01 画像面板、画像确认、来源发现、账号网站画像导入与回写全部保持现状。`/agents/tech` 焦点路由照旧复用同一 workbench。On-Page Checker 工具页的 IA、交互与 0–100 总分的机制与刻度不改（评分项集合按 §6 调整，个别页面的分值会因此变化）；它的评分层跟着 §6 与 §8.2 改三处：文本/代码比降为 observation（F10）、8.7/8.8/4.6 的常量、以及 8.7 的**整条判据**改为从 `@sf/public-tools` import、2.1/2.4 文案注明「Agent 侧记为提示」（F6）。
 
 ## 5. 数据层
 
@@ -162,17 +162,20 @@ Stage 01 画像面板、画像确认、来源发现、账号网站画像导入�
 | 2.7 `html lang` 属性 | 2 | `lang_missing` | 缺失或空 | Tip | `lang` |
 | 2.8 字符集声明 | 2 | `charset_missing` | meta charset 与 Content-Type 都未声明 | Tip | `charset` |
 | 2.9 favicon 声明 | 2 | `favicon_missing` | 无 `<link rel=icon>` 类声明 | Tip | `favicon` |
-| 2.10 目标词在 description / 副标题 / 正文 / URL 的覆盖 | 2 | `target_query_slot_coverage`（新记录，在 `keyword-evidence/records.ts` 从 `KeywordEvidence.slots` 派生，随 `keywordChecks` 每请求构造） | 四个位点合并为一项，measurement 列出命中与未命中位点；仅目标页且有目标词时判定 | Tip | `keyword.description / subheadings / body / url` |
+| 2.10 目标词在 description / 副标题 / 开头正文的覆盖 | 2 | `target_query_slot_coverage`（新记录，在 `keyword-evidence/records.ts` 从 `KeywordEvidence.slots` 派生，随 `keywordChecks` 每请求构造） | 三个文本位点合并为一项；仅目标页、有目标词、且至少一个位点存在时判定 | Tip | `keyword.description / subheadings / body`（**URL 位点已排除，见下**） |
 | 6.6 外链 `_blank` 无 `noopener` | 6 | `external_link_blank_without_noopener` | 计数 > 0 | Tip | `links` 里的 blankWithoutNoopener |
-| 8.7 静态 HTML 承载正文 | 8 | `client_rendered_content` | `scriptBytes > visibleTextBytes × SCRIPT_DOMINANCE`，常量与 Checker 同源导出 | Tip | `rendering` |
+| 8.7 静态 HTML 承载正文 | 8 | `client_rendered_content` | `visibleTextBytes < STATIC_TEXT_FLOOR_BYTES` **且** `scriptBytes > visibleTextBytes × SCRIPT_DOMINANCE`——两段式；**规则整体**（不只是常量）与 Checker 共用 `readsAsClientRendered()` | Tip | `rendering` |
 | 8.8 HTML 文档体积 | 8 | `html_document_oversized` | `htmlBytes > HTML_BYTES.large`，常量与 Checker 同源导出 | Tip | `htmlSize` |
 | 4.6 正文文本量绝对档 | 4 | `thin_body_text` | `onPage.textMetrics` 的 text_units 低于 `BODY_UNITS` 最低档，常量与 Checker 同源导出；CJK 页按文本单位计，不按空白分词 | Tip | `bodyLength`（审计 F11） |
 
 约束：
-- 2.10 必须新增记录：现有关键词记录只覆盖 title 与 H1 两个位点（`title_without_target_query` / `h1_without_target_query`），description / 副标题 / 正文 / URL 四个位点只存在于 `KeywordEvidence.slots` 证据层，没有记录可映射。合并为一条 `target_query_slot_coverage`，observation 的 values 逐位点给 `covered / not_covered / not_applicable`，避免四条记录各报一次同一页。这同时回应审计 F12：目录承认这四个位点是判定项（authority = judgment），4.3「首次出现位置」维持只观测。
+- 2.10 必须新增记录：现有关键词记录只覆盖 title 与 H1 两个位点（`title_without_target_query` / `h1_without_target_query`），其余位点只存在于 `KeywordEvidence.slots` 证据层，没有记录可映射。合并为一条 `target_query_slot_coverage`，避免每个位点各报一次同一页。这同时回应审计 F12：目录承认这些位点是判定项（authority = judgment），4.3「首次出现位置」维持只观测。
+- **URL 位点不进 2.10（实施期裁决，2026-09-03 第二轮评审）。** `urlCovered` 比的是整条绝对地址的字母数字**含主机名**——那是它能识别精确匹配域名的设计意图。折进覆盖计数后它就不再是证据：`astrologywiki.com` 上每一页都「覆盖」查询 `astrology wiki`，这条检查在「域名已经说明自己做什么」的那类站点上永远不可能出结论。它还是子串匹配（`chart` 命中 `/charter-schools`）而非词序列，与 2.3/3.2 是两套口径。URL 位点本身不动，2.3/3.2 与证据层照旧读它。
+- **三个文本位点全部 `not_applicable` 时早退为不判定。** 那些缺失各自已有检查在报，2.10 再罚一次等于一个页面为一处短处付两次账——title/h1 位点早就是这么做的。
+- **2.10 必须声明 limitation**：它是关键词证据里口径最杂的一条（词序列匹配 + 开头正文只采了前一段），却曾是唯一不声明口径的一条。
 - 4.6 与 4.1 并存：4.1 保留为「不可测」并改写文案（见 §8.2 F5），4.6 是能测的绝对档。
 - Checker 的 `demandCapture`、`images.withDimensions`、`twitterCard` 是观察不是判定，不进目录；Checker 页保留原样。Checker 的文本/代码比检查（`TEXT_RATIO_FLOOR`）改为 observation 不扣分，与目录 4.4「不当成缺陷」对齐（审计 F10）。
-- 8.7、8.8、4.6 的阈值常量从 Checker 的 `checks-technical.ts` / `checks-meta.ts` 提到 `@sf/public-tools` 的一个新子路径导出（如 `@sf/public-tools/seo-audit/page-shape-thresholds`），并在 `packages/public-tools/package.json` 的 `exports` 登记；Checker 是客户端代码，`client-bundle-boundary.test.ts` 禁止裸 barrel import，先例见 `checks-meta.ts` 对 `@sf/public-tools/seo-audit/text-width` 的引用。两边永远一致；这是 §8 审计要检查的「同一事实两侧阈值不一致」的预防。
+- 8.7、8.8、4.6 的阈值常量从 Checker 的 `checks-technical.ts` / `checks-meta.ts` 提到 `@sf/public-tools` 的一个新子路径导出。**共享常量不够，判据本身也要共享**：8.7 有两个子句，Checker 两个都用而目录只用了比例那个，同一个页面（5KB 正文 + 30KB 脚本）两边给相反答案。规则以 `readsAsClientRendered()` 的形式住在共享模块里，两侧调同一个函数，并有一条跨消费面的测试——只驱动共享函数的测试在任一侧内联回去照样绿（如 `@sf/public-tools/seo-audit/page-shape-thresholds`），并在 `packages/public-tools/package.json` 的 `exports` 登记；Checker 是客户端代码，`client-bundle-boundary.test.ts` 禁止裸 barrel import，先例见 `checks-meta.ts` 对 `@sf/public-tools/seo-audit/text-width` 的引用。两边永远一致；这是 §8 审计要检查的「同一事实两侧阈值不一致」的预防。
 - 八条 Tip 级新项必须加进 `catalog.ts:1078` 那张硬编码 tip 列表，不能靠 `DECLARES_NO_JUDGEMENT` 正则，否则会被 §8.2 F2 归成 `observed-only`。1.9 落页面组 1 会因 `catalog.ts:1029` 得 `scored = false`、`primaryAgent = tech`，与不给总分的房规无冲突，表里按 Tech 归属渲染。
 - 每条新记录做 `state / affected / tested` 组合的 sweep 测试，含「全站都合规」的干净分支（`not_observed`，`affected = 0`），对应 [[seo-agent-wire-invariant-refusals]] 的两次事故。
 
@@ -289,3 +292,49 @@ e2e（`apps/marketing/e2e/agents.spec.ts`，双 locale）：
 - 2026-08-21 手风琴十项裁决：artifact `ace0ddc7-26c5-4420-b084-e19c70fb7f98`
 - 统一 SEO Agent + On-Page Checker 裁决：`gengrowth-tools/artifacts/designs/2026-08-17-unified-seo-agent-onpage/decisions-2026-08-17.md`
 - 审计覆盖 48 项工单：`gengrowth-tools/artifacts/designs/2026-08-18-audit-coverage-48/`
+
+---
+
+## 15. 实施期偏离本文档的裁决（2026-09-03 回填）
+
+设计写完之后，实施与两轮评审改写了下面这些。**冲突时以本节为准**，上文已就地订正的不再重复。
+
+### 15.1 2.10 的位点集合从四个收到三个
+
+URL 位点退出。理由见 §6 约束：`urlCovered` 比的是含主机名的整条地址，在域名含目标词的站点上恒为通过，而它又是子串而非词序列匹配。这让 §6 表里「四个位点合并为一项」的原始表述作废。
+
+### 15.2 8.7 共享的是判据不是常量
+
+设计只说「阈值常量同源导出」。实施后发现常量同源仍会分歧：Checker 的规则有两个子句，目录只抄了一个。改为共享 `readsAsClientRendered()`。
+
+**通用教训**：两个界面判同一个事实时，只共享数字不够——**有几个子句就要共享几个子句**，否则「一处定义」是句空话。
+
+### 15.3 `keyPagesNone` 的判据不是页数
+
+设计 §9 写「`keyPages` 缺失或为空时」显示退化提示。实施后 `model.keyPages` 含合成目标行，长度永不为 0，按长度判会打印「关键页 1」+「没有可评估的关键页」。改用 `keyPagesWereSelected`（是否选出过候选）。
+
+### 15.4 `AgentIssueKeyPageReach` 的字段名
+
+设计 §5.5 列的是 `keyPageTotal / keyPageEvaluatedCount / keyPageHitCount / keyPageUrls` 四个平铺字段；实施为嵌套对象 `affected.keyPages: { total, evaluated, hits, urls } | null`，语义不变。`totalCount` / `enumerated` 按设计沿用。
+
+### 15.5 「通过」的措辞按 lane 分三种
+
+设计 §9 只给了通过一种格式。实施后发现同一句会被三条 lane 共用，于是拆成 `keyPagePass`（仅 passed）/ `keyPageObserved`（仅观测）/ `keyPageScope`（其余）。一个全页排除的检查曾被写成「关键页 0/12 已评估 · 通过」。
+
+### 15.6 `TARGET_ONLY_RECORD_IDS` 由手写清单改为带派生护栏
+
+设计 §5.3 只说「按 id 清单剔除」。第一轮评审的 P0 正是这张手写清单没跟上常量拆分，而当时的修法是往清单里再拼一个手写常量——下次照样漏。现在有一条护栏跑真实 producer 收集所有 `population === "target_page"` 记录并断言清单是超集。
+
+**通用教训**：手写清单的修复不能是再写一条清单项，必须是让清单可被派生验证。
+
+### 15.7 4.1 改为说明性阈值
+
+设计 §8.2 F5 只说「阈值改说明性」。实施为：阈值原文改成「本项不在此判定」，并把读者引向 4.6；`howToFix` 写专属句说明为什么这次运行给不出结论。
+
+### 15.8 已排除区显示引擎态
+
+设计 §4.3 要求「排除原因逐行可见」，但没说怎么做。实施为在已排除行右侧渲染引擎态芯片（`ready` / `needsIntegration` / `needsSupplement` / `notIntegrated` / `accessRequired`），读者要决定连不连某个来源时得知道那会解锁哪些检查。
+
+### 15.9 删诊断面板时一并清掉 185 行视图模型死码
+
+设计 §4.1 只说删范围切换、组导航、检查台账。删完后 `agent-audit-model.ts` 的 `scopes` / `defaults` / `headingPreset` 视图与 `checkView` / `scopeView` 全部零消费者，其中的 kebab→snake 真值态转换正是 §8.2 F5 点名的命名混乱来源，一并删除（305 行 → 120 行）。
