@@ -351,21 +351,33 @@ Expected: agents.spec.ts 绿（两条既有失败 `networkidle` 超时与首页 
 
 ---
 
-## 执行记录（2026-09-03）
+## 执行记录（2026-09-03，已上生产）
 
-四个批次已落地，共 28 个提交，基线 `main@c7dc27cc`。
+五个批次全部完成，走了三个 PR：
 
-**验证状态**
-- 单测：10652 项全绿（`apps/marketing` + `packages/public-tools`）。
-- typecheck / lint：干净（`packages/public-tools` 有两条既有 lint 错误 `imageExtension` 未用与空数组解构，已用基线文件复现证明非本轮引入）。
-- `pnpm --filter @sf/marketing build`：通过。
-- `pnpm secrets:scan`：通过。
-- **e2e 跑不起来**：`pnpm test:e2e` 在加载期报 8 次 `Cannot find module next/headers`，已 `git checkout c7dc27cc` 复现，是这个 worktree 的既有环境问题，与本轮无关。详见记忆 `marketing-e2e-next-headers-resolution-broken`。
+| PR | 内容 | main |
+|---|---|---|
+| #291 | 四个批次的主体实现 | `1c6e51ef` |
+| #292 | 第一轮评审修复（P0 + 五条 P2） | `f791471d` |
+| #293 | 对抗式评审第二轮（P1 + 十条） | `65fb744f` |
 
-**批次 4 之外顺手做的**
-- 删除诊断面板时一并清掉了它独有的 185 行视图模型死码，包括设计 F5 点名的 kebab→snake 真值态转换。
-- 已排除区逐行显示引擎态（设计 §4.3 要求「排除原因逐行可见」，原来只有未识别状态有标记）。
+**线上验收**：`/agents/seo`、`/zh/agents/seo`、`/agents`、`/tools/on-page-seo-check` 全部 200；**目录共 89 项 / 可判定 84 项**；hub 中文标题为「既看整站也看关键页」；零未解析 i18n key；未登录打审计接口返回 401 `auth_required`。
 
-**未完成**
-- Task 5.4 codex 跨模型评审：两次尝试都遇账号额度耗尽（当日恢复时刻 22:34）。评审包已存 `/Users/wzb/Code/nevermore/reports/2026-09-03-codex-implementation-review-prompt.txt`，额度恢复后一条命令即可重跑。
-- Task 5.5 开 PR。
+**验证门**：单测 10672 全绿（`apps/marketing` + `packages/public-tools`）；typecheck / lint 0 错误；`pnpm --filter @sf/marketing build` 通过；`pnpm secrets:scan` 通过。
+
+**e2e 未能运行**：`pnpm test:e2e` 在加载期报 8 次 `Cannot find module next/headers`，已 `git checkout c7dc27cc` 复现同样 8 条，是该 worktree 的既有环境问题，与本轮无关。详见记忆 `marketing-e2e-next-headers-resolution-broken`。
+
+## 两轮评审的账
+
+**没有一轮是白跑的，而且第二轮全部来自评审第一轮的修复代码。**
+
+- 第一轮（评审 #291）：1 个 P0 + 5 条 P2。P0 是 `TARGET_ONLY_RECORD_IDS` 没跟上常量拆分，导致提交页的判定被当成每一个关键页的判定重新发布。
+- 第二轮（评审 #292 自身）：1 个 P1 + 10 条。P1 是 2.10 在域名含目标词的站点上恒为通过。另有两条是第一轮修复只改了同形两处中的一处。
+
+设计与实现的偏离已回填进设计文档 §15。
+
+## 跨模型评审：未做
+
+codex 与 gemini 当天额度双双耗尽，Owner 明示不追。评审包已存 `/Users/wzb/Code/nevermore/reports/2026-09-03-codex-implementation-review-prompt.txt`（6414 行源码 diff + 6 个重点核查项），日后可直接 `codex exec "$(cat 该文件)" -C <worktree> -s read-only`。
+
+两轮本地对抗式评审都抓到了实质缺陷，说明跨模型跑不了时它仍值回票价；但按 `cross-model-review-catches-what-self-review-cannot` 的历史记录，跨模型那一轮抓到的与本地不重叠，欠着的仍是欠着。
