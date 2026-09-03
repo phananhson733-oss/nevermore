@@ -150,6 +150,16 @@ describe("website GEO canonical editor", () => {
     expect(container.textContent).not.toContain("Inherited product");
     expect(container.querySelector(`a[href='/en/account/websites/${WEBSITE_ID}']`)).not.toBeNull();
   });
+  it("names the missing Profile instead of blaming the store, and offers no retry", async () => {
+    // A website whose Profile was never confirmed answers 409; retrying it can
+    // never start working, so the message has to name the step that comes first.
+    fetchMock.mockResolvedValueOnce(Response.json({ error: { code: "profile_copy_required" } }, { status: 409 }));
+    await render();
+    expect(container.textContent).toContain(ASSET.profileRequired);
+    expect(container.textContent).not.toContain(en.tools.geoKnowledgeBase.errors.store_unavailable);
+    expect(container.querySelector("button")).toBeNull();
+  });
+
   it("renders loading until the owned view arrives", async () => {
     let resolve!: (response: Response) => void;
     fetchMock.mockReturnValueOnce(new Promise<Response>((done) => { resolve = done; }));

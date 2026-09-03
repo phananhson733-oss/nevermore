@@ -18,7 +18,7 @@ interface WebsiteGeoData {
 }
 type State =
   | { readonly kind: "loading" }
-  | { readonly kind: "error"; readonly code: "auth_required" | "website_not_found" | "bad_response" | "store_unavailable" | "network" }
+  | { readonly kind: "error"; readonly code: "auth_required" | "website_not_found" | "profile_copy_required" | "bad_response" | "store_unavailable" | "network" }
   | { readonly kind: "ready"; readonly data: WebsiteGeoData };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -64,7 +64,14 @@ function WebsiteGeoLoader({ websiteId, inline = false, confirmedRevision }: Webs
         const body: unknown = await response.json().catch(() => null);
         if (controller.signal.aborted) return;
         if (!response.ok) {
-          setState({ kind: "error", code: response.status === 401 ? "auth_required" : response.status === 404 ? "website_not_found" : "store_unavailable" });
+          // Every status that is not one of these renders as "the store did
+          // not respond", which is a claim about the store. Read the code the
+          // route sent rather than inventing one from the status alone.
+          const code: unknown = isRecord(body) && isRecord(body["error"]) ? body["error"]["code"] : null;
+          setState({ kind: "error", code: response.status === 401 ? "auth_required"
+            : response.status === 404 ? "website_not_found"
+            : code === "profile_copy_required" ? "profile_copy_required"
+            : "store_unavailable" });
           return;
         }
         const data = readData(body, websiteId);
@@ -80,8 +87,10 @@ function WebsiteGeoLoader({ websiteId, inline = false, confirmedRevision }: Webs
   if (state.kind === "loading") return <p role="status">{t("asset.loading")}</p>;
   if (state.kind === "error") return (
     <section className="grid gap-3 rounded-xl border border-brand-border-card bg-brand-panel p-6">
-      <p role="alert">{state.code === "website_not_found" ? t("asset.websiteNotFound") : t(`errors.${state.code}`)}</p>
-      <button type="button" onClick={() => { setState({ kind: "loading" }); setAttempt((current) => current + 1); }}>{t("asset.retry")}</button>
+      <p role="alert">{state.code === "website_not_found" ? t("asset.websiteNotFound") : state.code === "profile_copy_required" ? t("asset.profileRequired") : t(`errors.${state.code}`)}</p>
+      {/* Retrying a website whose Profile was never confirmed cannot succeed;
+          the message names the step that has to happen first instead. */}
+      {state.code === "profile_copy_required" ? null : <button type="button" onClick={() => { setState({ kind: "loading" }); setAttempt((current) => current + 1); }}>{t("asset.retry")}</button>}
     </section>
   );
   return (

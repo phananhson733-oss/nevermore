@@ -105,6 +105,15 @@ describe("website-owned GEO entry", () => {
     expect(kb.status).toBe(503);
     expect(await kb.text()).not.toContain("private-store-location");
   });
+  it("separates a website with no confirmed Profile from a store that did not answer", async () => {
+    // Both used to answer 503 store_unavailable, so the one the visitor can act
+    // on read as an outage and sent them to retry something that cannot start.
+    const deps = dependencies();
+    deps.loadKnowledgeBase = vi.fn(async () => ({ kind: "profile_copy_required" as const }));
+    const response = await handleWebsiteGeoLoad(request(), WEBSITE_ID, deps);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: { code: "profile_copy_required" } });
+  });
   it("does not return another website's inherited Profile from a mismatched store response", async () => {
     const deps = dependencies();
     deps.loadKnowledgeBase = vi.fn(async () => ({ kind: "ok" as const, value: { ...VIEW, profile: {
