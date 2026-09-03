@@ -356,8 +356,17 @@ function evaluateCheck(
   const failingRecords = records.filter(
     (_, index) => severities[index] === "full",
   );
-  const result =
-    failingRecords.length > 0
+  /*
+    A check that publishes "not judged" may only ever be observed or excluded.
+
+    Without this it fell through to `pass` whenever nothing was affected, and
+    to a failure state whenever something was -- so the same check that says
+    "keyword density is not used to judge a page" reported a page as passing
+    or failing on density. Neither is a claim this catalogue makes.
+  */
+  const result: AgentAuditResultState = check.declaresNoJudgement
+    ? "observed-only"
+    : failingRecords.length > 0
       ? failureState(check, new Set(failingRecords.map((record) => record.id)))
       : severities.includes("degraded")
         ? degradedResult(check)

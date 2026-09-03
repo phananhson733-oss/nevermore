@@ -48,6 +48,8 @@ export type AgentIssueLane =
   | "actionable"
   | "investigation"
   | "passed"
+  /** Measured and published, deliberately not graded. See the contract state. */
+  | "observed-only"
   | "excluded";
 
 export type AgentIssueCopyMode = "repair" | "investigation";
@@ -135,6 +137,7 @@ export interface AgentIssueCounts {
   readonly suggestion: number;
   readonly investigation: number;
   readonly passed: number;
+  readonly observedOnly: number;
   readonly excluded: number;
   /** Checks quarantined because this build could not read one of their states. */
   readonly quarantined: number;
@@ -144,6 +147,8 @@ export interface AgentIssueModel {
   /** Observed failures first, then investigation rows. */
   readonly actionable: readonly AgentIssue[];
   readonly passed: readonly AgentIssue[];
+  /** Measured and published, deliberately not graded. */
+  readonly observedOnly: readonly AgentIssue[];
   readonly excluded: readonly AgentIssue[];
   readonly counts: AgentIssueCounts;
   /** No actionable row at all — stated, so the surface can say it in words. */
@@ -175,6 +180,10 @@ const RESULT_LANE: Readonly<
   warning: { lane: "actionable", severity: "warning" },
   tip: { lane: "actionable", severity: "suggestion" },
   pass: { lane: "passed", severity: null },
+  // Its own lane, beside the passed list rather than inside it. A measured
+  // density is not a page that passed a density check, because there is no
+  // density check to pass.
+  "observed-only": { lane: "observed-only", severity: null },
   excluded: { lane: "excluded", severity: null },
 };
 
@@ -395,6 +404,7 @@ export function buildAgentIssueModel({
   const actionable: AgentIssue[] = [];
   const investigation: AgentIssue[] = [];
   const passed: AgentIssue[] = [];
+  const observedOnly: AgentIssue[] = [];
   const excluded: AgentIssue[] = [];
 
   const quarantine = (check: AgentAuditEvaluatedCheck): AgentIssue => ({
@@ -478,6 +488,7 @@ export function buildAgentIssueModel({
       copyMode: "repair",
     };
     if (lane === "passed") passed.push(issue);
+    else if (lane === "observed-only") observedOnly.push(issue);
     else excluded.push(issue);
   }
 
@@ -488,6 +499,7 @@ export function buildAgentIssueModel({
   return {
     actionable: [...actionable, ...investigation],
     passed,
+    observedOnly,
     excluded,
     counts: {
       blocker: severityCount("blocker"),
@@ -495,6 +507,7 @@ export function buildAgentIssueModel({
       suggestion: severityCount("suggestion"),
       investigation: investigation.length,
       passed: passed.length,
+      observedOnly: observedOnly.length,
       excluded: excluded.length,
       quarantined,
     },

@@ -6,6 +6,16 @@ export type AgentAuditResultState =
   | "blocker"
   | "warning"
   | "tip"
+  /**
+   * Measured and published, deliberately not graded.
+   *
+   * For a check whose own threshold says it does not judge — keyword density,
+   * a deliberate noindex, a follow ratio. These used to resolve to `tip`,
+   * which put a row the catalogue calls "listed for review" into the same lane
+   * as a finding, ranked it, and offered it a fix. Neither `tip` nor `pass`
+   * can say "here is the number, we are not calling it right or wrong".
+   */
+  | "observed-only"
   | "pass"
   | "excluded";
 export type AgentAuditEngineState =
@@ -118,6 +128,14 @@ export interface AgentAuditCheckDefinition {
   readonly blockerEvidenceRecordIds: readonly string[];
   readonly failureResult: Exclude<AgentAuditResultState, "blocker" | "pass" | "excluded">;
   readonly primaryAgent: AgentAuditAgent;
+  /**
+   * Whether this check's own published threshold declines to judge.
+   *
+   * Derived in the catalogue from that same sentence, so the flag cannot drift
+   * from the text a reader sees. `scored` is not a substitute: the whole
+   * indexability group is unscored and very much does judge.
+   */
+  readonly declaresNoJudgement: boolean;
   readonly inventoryReady: boolean;
   readonly engine: AgentAuditEngineState;
   readonly evidenceRecordIds: readonly string[];

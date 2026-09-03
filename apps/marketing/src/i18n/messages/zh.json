@@ -8862,6 +8862,10 @@
           "copyFailed": "浏览器未允许自动复制，下方已给出完全相同的文本。",
           "fallbackLabel": "浏览器未允许自动复制。下面是完全相同的只读任务文本，聚焦后会自动全选。"
         },
+        "observedOnlyLane": {
+          "title": "仅观测",
+          "hint": "只给数值，不作判定"
+        },
         "passedLane": {
           "title": "已通过的检查",
           "hint": "默认折叠"

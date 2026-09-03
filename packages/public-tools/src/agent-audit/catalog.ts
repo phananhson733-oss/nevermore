@@ -1133,6 +1133,7 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
       ? "tip"
       : "warning",
     primaryAgent,
+    declaresNoJudgement: DECLARES_NO_JUDGEMENT.test(thresholdEn),
     inventoryReady: ready,
     engine: engine(id, ready),
     evidenceRecordIds: EVIDENCE[id] ?? [],

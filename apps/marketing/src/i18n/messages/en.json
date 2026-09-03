@@ -8862,6 +8862,10 @@
           "copyFailed": "The browser did not allow copying; the identical text is shown below.",
           "fallbackLabel": "The browser did not allow copying. Below is the identical read-only task text; focusing it selects all."
         },
+        "observedOnlyLane": {
+          "title": "Measured, not judged",
+          "hint": "published as numbers, not verdicts"
+        },
         "passedLane": {
           "title": "Passed checks",
           "hint": "collapsed by default"

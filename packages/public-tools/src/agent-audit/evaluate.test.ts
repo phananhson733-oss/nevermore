@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SeoAuditRecord } from "../seo-audit/types.ts";
+import { PAGE_AUDIT_GROUPS, SITE_AUDIT_GROUPS } from "./catalog.ts";
 import { evaluateAgentAuditScope } from "./evaluate.ts";
 
 function record(
@@ -575,5 +576,51 @@ describe("v2 Agent audit published thresholds", () => {
     expect(
       result.checks.find((check) => check.check.id === "1.6")?.result,
     ).toBe("blocker");
+  });
+});
+
+describe("checks that decline to judge", () => {
+  /**
+   * These publish a measurement and no verdict. Before this state existed they
+   * resolved to `tip`, which put a row the catalogue calls "listed for review"
+   * into the actionable lane, ranked it, and offered it a fix.
+   */
+  const declining = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS]
+    .flatMap((group) => group.checks)
+    .filter((check) => check.declaresNoJudgement);
+
+  it("never reaches a verdict, whatever its records say", () => {
+    for (const check of declining) {
+      for (const state of ["observed", "not_observed"] as const) {
+        const records = check.evidenceRecordIds.map((id) => ({
+          id,
+          category: "structure",
+          state,
+          unit: "pages",
+          population: "every_collected_page",
+          targetTested: null,
+          tested: 4,
+          affected: state === "observed" ? 1 : 0,
+          observations:
+            state === "observed"
+              ? [{ url: "https://example.com/", values: [] }]
+              : [],
+          limitation: null,
+        })) as never;
+
+        const evaluated = evaluateAgentAuditScope(check.scope, {
+          records,
+          availability: "available",
+          targetUrl: "https://example.com/",
+          targetInspected: true,
+          inspectedTargetUrl: "https://example.com/",
+        }).checks.find((entry) => entry.check.id === check.id);
+
+        expect(evaluated?.result).not.toBe("tip");
+        expect(evaluated?.result).not.toBe("warning");
+        expect(evaluated?.result).not.toBe("blocker");
+        expect(evaluated?.result).not.toBe("pass");
+      }
+    }
   });
 });

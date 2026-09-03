@@ -50,7 +50,10 @@ const RESULT_RANK: Readonly<Record<AgentAuditResultState, number>> = {
   warning: 1,
   tip: 2,
   pass: 3,
-  excluded: 4,
+  // Ahead of excluded: a page that published a measurement said more than one
+  // that could not be judged at all, and the merged row should say the more.
+  "observed-only": 4,
+  excluded: 5,
 };
 
 /**

@@ -209,6 +209,32 @@ describe("v2 Agent audit catalog", () => {
     }
   });
 
+  it("marks exactly the checks whose own threshold declines to judge", () => {
+    // Pinned by name. The flag is derived from the threshold sentence, so
+    // asserting it against that same sentence would pass whatever the set
+    // contained; changing this list has to be a decision someone writes down.
+    const declining = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS]
+      .flatMap((group) => group.checks)
+      .filter((check) => check.declaresNoJudgement)
+      .map((check) => check.id)
+      .sort();
+
+    expect(declining).toEqual(
+      [
+        "A7",
+        "B4",
+        "B5",
+        "C6",
+        "D7",
+        "E4",
+        "4.2",
+        "4.3",
+        "4.4",
+        "6.5",
+      ].sort(),
+    );
+  });
+
   it("keeps Official CWV immutable and display-only checks out of Health", () => {
     const all = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS].flatMap(
       (group) => group.checks,

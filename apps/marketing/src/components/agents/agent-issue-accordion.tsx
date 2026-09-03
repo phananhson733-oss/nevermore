@@ -475,6 +475,18 @@ export function AgentIssueAccordion({
         </>
       )}
 
+      {/*
+        Its own lane, beside the passed list rather than inside it. A measured
+        density is not a page that passed a density check, because there is no
+        density check to pass.
+      */}
+      <QuietLane
+        testId="agent-issues-observed-only"
+        title={t("observedOnlyLane.title")}
+        hint={t("observedOnlyLane.hint")}
+        issues={model.observedOnly}
+        locale={locale}
+      />
       <QuietLane
         testId="agent-issues-passed"
         title={t("passedLane.title")}
