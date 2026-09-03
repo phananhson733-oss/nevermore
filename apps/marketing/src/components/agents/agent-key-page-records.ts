@@ -27,7 +27,7 @@ import { SERP_SHAPE_RECORD_IDS } from "@sf/public-tools/seo-audit/serp-shape";
  * query. None of them was measured for any other page, and this run does not
  * spend a provider call to change that.
  */
-const TARGET_ONLY_RECORD_IDS: ReadonlySet<string> = new Set([
+export const TARGET_ONLY_RECORD_IDS: ReadonlySet<string> = new Set([
   ...KEYWORD_EVIDENCE_RECORD_IDS,
   // Split out of the keyword region after this filter was written, and the
   // filter was not told. They are `target_page`, which `projectRecordToTarget`
@@ -37,6 +37,13 @@ const TARGET_ONLY_RECORD_IDS: ReadonlySet<string> = new Set([
   ...PAGE_SHAPE_RECORD_IDS,
   ...PAGE_PERFORMANCE_RECORD_IDS,
   ...SERP_SHAPE_RECORD_IDS,
+  /*
+    Listed by hand because `population` cannot find it: the ranking band is
+    published as a `conditional_subset` like any crawl record, so a
+    population-based filter leaves it in. It is the one exception, and
+    `agent-key-page-records.test.ts` runs the real producers to prove there is
+    no second one.
+  */
   "target_query_ranking_band",
 ]);
 

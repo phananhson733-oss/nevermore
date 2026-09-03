@@ -507,6 +507,16 @@ function sectionSubstanceRecord(
  * description has nothing to cover, so it leaves the denominator rather than
  * counting against it -- the same rule the coverage count already follows.
  */
+/**
+ * What 2.10 measured, stated on the record like its siblings do.
+ *
+ * It was the only keyword-evidence record publishing no basis at all, and the
+ * one with most to declare: word-sequence matching, and an opening text the
+ * crawl only captured the first stretch of.
+ */
+const SLOT_COVERAGE_BASIS =
+  "token_sequence_match_across_description_subheadings_and_the_captured_opening_text";
+
 function slotCoverageRecord(
   targetUrl: string,
   evidence: KeywordEvidence | null | undefined,
@@ -546,6 +556,20 @@ function slotCoverageRecord(
     );
   }
 
+  /*
+    Three text slots, and deliberately not the URL.
+
+    The URL slot compares the letters and digits of the whole absolute address,
+    hostname included -- that is what makes it able to report an exact-match
+    domain at all. Folded into a coverage count it stops being evidence: on
+    astrologywiki.com every page "covers" the query `astrology wiki`, so this
+    check could never fire on the sites whose domain already says what they are
+    about. It also matches as a substring rather than a word sequence, which is
+    a second measurement basis this record cannot state in one sentence.
+
+    The URL is still reported: 2.3 and 3.2 read the slots they own, and the
+    evidence layer keeps the URL slot for the surfaces that show it.
+  */
   const slots = ["description", "subHeadings", "openingText"] as const;
   const applicable = slots.filter(
     (slot) => query.slots[slot].state !== "not_applicable",
@@ -553,9 +577,18 @@ function slotCoverageRecord(
   const covered = applicable.filter(
     (slot) => query.slots[slot].state === "covered",
   );
-  const urlCovered = query.slots.url.state === "covered";
-  const applicableCount = applicable.length + 1;
-  const coveredCount = covered.length + (urlCovered ? 1 : 0);
+  const applicableCount = applicable.length;
+  const coveredCount = covered.length;
+
+  if (applicableCount === 0) {
+    // Every slot this check reads is absent from the page. Those absences are
+    // each reported by their own check; calling them a missing query as well
+    // would charge one page twice for one shortcoming -- the same rule the
+    // title and H1 slots already follow.
+    return unmeasured(
+      "this_page_has_no_description_subheadings_or_opening_text_to_compare",
+    );
+  }
 
   if (coveredCount > 0) {
     return {
@@ -565,7 +598,7 @@ function slotCoverageRecord(
       tested: 1,
       affected: 0,
       observations: [],
-      limitation: null,
+      limitation: SLOT_COVERAGE_BASIS,
     };
   }
   return {
@@ -579,12 +612,11 @@ function slotCoverageRecord(
         url: targetUrl,
         values: [
           { label: "target_query", value: query.displayQuery },
-          { label: "slots_covered", value: coveredCount },
           { label: "slots_applicable", value: applicableCount },
         ],
       },
     ],
-    limitation: null,
+    limitation: SLOT_COVERAGE_BASIS,
   };
 }
 
@@ -663,11 +695,12 @@ export const KEYWORD_EVIDENCE_EVIDENCE_LABELS: readonly string[] = [
   "target_query",
   "query_tokenization",
   "slot_occurrences",
-  "slots_covered",
   "slots_applicable",
 ];
 
 export const KEYWORD_EVIDENCE_LIMITATION_CODES: readonly string[] = [
+  "this_page_has_no_description_subheadings_or_opening_text_to_compare",
+  "token_sequence_match_across_description_subheadings_and_the_captured_opening_text",
   "this_page_is_not_measured_by_whitespace_words_so_section_substance_is_not_judged",
   "no_target_query_was_confirmed_so_this_page_has_nothing_to_be_checked_against",
   "the_submitted_page_was_not_captured_so_its_text_could_not_be_read",

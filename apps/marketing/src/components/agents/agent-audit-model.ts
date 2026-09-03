@@ -50,6 +50,14 @@ export interface AgentAuditViewModel {
   readonly evaluatedChecks: readonly AgentAuditEvaluatedCheck[];
   /** Pages judged individually this run, in the order the report lists them. */
   readonly keyPages: readonly AgentKeyPage[];
+  /**
+   * Whether any of them came from the run's own shortlist.
+   *
+   * False when the only judged page is the synthetic stand-in for the
+   * submitted URL. `keyPages.length` cannot answer this: it is never zero,
+   * because that stand-in is always added.
+   */
+  readonly keyPagesWereSelected: boolean;
   /** How much of the key page set each page-level check was judged on. */
   readonly keyPageReach: ReadonlyMap<string, AgentKeyPageReach>;
   /**
@@ -148,6 +156,7 @@ export function buildAgentAuditViewModel({
     // collected: it is judged from a synthetic row rather than a candidate, and
     // a header that omitted it would disagree with every row beneath it.
     keyPages: evaluated.map((entry) => entry.page),
+    keyPagesWereSelected: keyPages.length > 0,
     keyPageReach: aggregate.reach,
     evaluatedChecks: aggregate.checks,
   };

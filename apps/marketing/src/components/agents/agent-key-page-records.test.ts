@@ -6,7 +6,20 @@ import { describe, expect, it } from "vitest";
 import type { SeoAuditRecord } from "@sf/public-tools";
 import { evaluateAgentAuditScope } from "@sf/public-tools/agent-audit";
 
-import { recordsForKeyPage } from "./agent-key-page-records.ts";
+import {
+  recordsForKeyPage,
+  TARGET_ONLY_RECORD_IDS,
+} from "./agent-key-page-records.ts";
+import {
+  buildKeywordEvidenceRecords,
+  buildPageShapeRecords,
+} from "@sf/public-tools/seo-audit/keyword-evidence/records";
+import {
+  buildImageWeightRecords,
+  buildPagePerformanceRecords,
+  buildPageWeightRecords,
+} from "@sf/public-tools/seo-audit/page-performance";
+import { buildSerpShapeRecords } from "@sf/public-tools/seo-audit/serp-shape";
 
 const OTHER = "https://example.com/pricing";
 const TARGET_PAGE = "https://example.com/";
@@ -132,15 +145,13 @@ describe("recordsForKeyPage", () => {
     // `projectRecordToTarget` returns them untouched -- the submitted page's
     // H2 count, schema fit and section substance would be republished as every
     // other key page's, hits and URLs included.
+    const shape = { population: "target_page", targetTested: null } as const;
     const ledger = [
-      record({ id: "h2_count_outside_reviewed_range", targetTested: null }),
-      record({ id: "h3_count_outside_reviewed_range", targetTested: null }),
-      record({
-        id: "schema_type_unmatched_to_page_type",
-        targetTested: null,
-      }),
-      record({ id: "thin_section_under_h3", targetTested: null }),
-    ];
+      record({ id: "h2_count_outside_reviewed_range", ...shape }),
+      record({ id: "h3_count_outside_reviewed_range", ...shape }),
+      record({ id: "schema_type_unmatched_to_page_type", ...shape }),
+      record({ id: "thin_section_under_h3", ...shape }),
+    ] as SeoAuditRecord[];
 
     expect(
       recordsForKeyPage({ records: ledger, isSubmittedTarget: false }),
@@ -172,7 +183,11 @@ describe("recordsForKeyPage", () => {
     });
 
     expect(resultFor(scoped, OTHER, "3.4")?.result).toBe("excluded");
-    expect(resultFor(ledger, TARGET_PAGE, "3.4")?.result).not.toBe("excluded");
+    // Asserted for existence first: `?.` on a check that was never found makes
+    // `not.toBe("excluded")` pass on undefined, which is half an assertion.
+    const onTarget = resultFor(ledger, TARGET_PAGE, "3.4");
+    expect(onTarget).toBeDefined();
+    expect(onTarget?.result).not.toBe("excluded");
   });
 
   it("keeps the crawl ledger the other key pages are judged from", () => {
@@ -190,5 +205,32 @@ describe("recordsForKeyPage", () => {
       "title_length_outside_range",
       "meta_description_length_outside_range",
     ]);
+  });
+});
+
+describe("the target-only list against the records that actually exist", () => {
+  /**
+   * The defect this guards is the one that shipped: a set of ids was split in
+   * two, and this hand-written list was not told. Enumerating the list again in
+   * a test would repeat the same mistake, so the producers are run for real and
+   * every `target_page` record they emit has to be covered.
+   */
+  it("covers every target_page record the producers emit", () => {
+    const emitted = [
+      ...buildKeywordEvidenceRecords("https://example.com/", null),
+      ...buildPageShapeRecords("https://example.com/", null, null),
+      ...buildPagePerformanceRecords(null),
+      ...buildPageWeightRecords(null),
+      ...buildImageWeightRecords(null, undefined, true),
+      ...buildSerpShapeRecords(null, undefined),
+    ];
+    const targetOnly = emitted
+      .filter((record) => record.population === "target_page")
+      .map((record) => record.id);
+
+    expect(targetOnly.length).toBeGreaterThan(0);
+    expect(
+      targetOnly.filter((id) => !TARGET_ONLY_RECORD_IDS.has(id)),
+    ).toEqual([]);
   });
 });

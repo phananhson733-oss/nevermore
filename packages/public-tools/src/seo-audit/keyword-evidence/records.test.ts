@@ -128,7 +128,49 @@ describe("keyword evidence records", () => {
       expect(record?.observations).toHaveLength(1);
       expect(
         record?.observations[0]?.values.map((entry) => entry.label),
-      ).toEqual(["target_query", "slots_covered", "slots_applicable"]);
+      ).toEqual(["target_query", "slots_applicable"]);
+    });
+
+    it("does not read an exact-match domain as coverage", () => {
+      // The URL slot compares the letters of the whole absolute address,
+      // hostname included. Counted here, every page on astrologywiki.com would
+      // "cover" the query `astrology wiki` and this check could never fire on
+      // the sites whose domain already says what they are about.
+      const record = records(evidenceFor(["astrology wiki"])).find(
+        (entry) => entry.id === "target_query_slot_coverage",
+      );
+
+      expect(record?.state).toBe("observed");
+      expect(record?.affected).toBe(1);
+    });
+
+    it("does not charge a page for slots it does not have", () => {
+      // A page with no description, no sub-headings and no opening text is
+      // already reported by the checks that own those absences. Reading them
+      // as a missing query charges one page twice.
+      const record = buildKeywordEvidenceRecords(
+        TARGET,
+        evidenceFor(["natal chart"], {
+          metaDescription: null,
+          subHeadings: [],
+          openingText: null,
+        }),
+      ).find((entry) => entry.id === "target_query_slot_coverage");
+
+      expect(record?.state).toBe("unverified");
+      expect(record?.affected).toBe(0);
+      expect(record?.limitation).toContain(
+        "no_description_subheadings_or_opening_text",
+      );
+    });
+
+    it("states the basis it measured on", () => {
+      // It was the only keyword-evidence record publishing none.
+      const record = records(evidenceFor(["natal chart"])).find(
+        (entry) => entry.id === "target_query_slot_coverage",
+      );
+
+      expect(record?.limitation).toContain("token_sequence_match");
     });
 
     it("says nothing when no query was confirmed", () => {

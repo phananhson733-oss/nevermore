@@ -1689,8 +1689,9 @@ function buildRecords(
       limitation: "declared_anchor_attributes_only",
     }),
     record({
-      // 8.7. A ratio, not a byte count: a large page with proportionally large
-      // text is doing its job.
+      // 8.7. Both clauses or neither: a page carrying little visible text
+      // whose script payload also dwarfs that text. The rule lives in
+      // `page-shape-thresholds` so the checker cannot answer differently.
       id: "client_rendered_content",
       category: "structure",
       population: "conditional_subset",

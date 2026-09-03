@@ -15,10 +15,57 @@ import {
 } from "@sf/public-tools/seo-audit/page-shape-thresholds";
 
 import { BODY_UNITS, contentChecks, TEXT_RATIO_FLOOR } from "./checks-meta.ts";
+import { technicalChecks } from "./checks-technical.ts";
 import type { CheckInput } from "./check-types.ts";
 import { HTML_BYTES, SCRIPT_DOMINANCE } from "./checks-technical.ts";
 
-function input(htmlBytes: number, visibleTextBytes: number): CheckInput {
+function input(
+  bytes: number | { readonly visibleTextBytes: number; readonly scriptBytes: number },
+  visibleTextBytes = 0,
+): CheckInput {
+  const declared =
+    typeof bytes === "number"
+      ? { htmlBytes: bytes, visibleTextBytes, scriptBytes: 0 }
+      : { htmlBytes: 100_000, ...bytes };
+  return build(declared);
+}
+
+function build(sizes: {
+  readonly htmlBytes: number;
+  readonly visibleTextBytes: number;
+  readonly scriptBytes: number;
+}): CheckInput {
+  const declared = {
+    ...sizes,
+    lang: "en",
+    openGraph: { title: null, description: null, image: null },
+    twitterCard: null,
+    viewport: "width=device-width",
+    charset: "utf-8",
+    faviconDeclared: true,
+    hreflang: [],
+    images: {
+      total: 0,
+      withAlt: 0,
+      withEmptyAlt: 0,
+      withoutAlt: 0,
+      withDimensions: 0,
+      lazyLoaded: 0,
+      first: { lazyLoaded: false, width: null, height: null },
+      sources: [],
+    },
+    externalLinks: { total: 0, nofollow: 0, blankWithoutNoopener: 0 },
+    interactive: {
+      forms: 1,
+      inputs: 2,
+      buttons: 1,
+      selects: 0,
+      textareas: 0,
+      canvases: 0,
+      media: 0,
+      iframes: 0,
+    },
+  };
   return {
     targetUrl: "https://example.com/",
     evidence: null,
@@ -37,8 +84,22 @@ function input(htmlBytes: number, visibleTextBytes: number): CheckInput {
       truncatedLists: false,
       headingLevels: [1, 2],
       wordsUnderEachH3: [],
-      response: {} as never,
-      declared: { htmlBytes, visibleTextBytes } as never,
+      response: {
+        status: 200,
+        finalStatus: 200,
+        redirectHops: 0,
+        responseMs: 100,
+        contentType: "text/html; charset=utf-8",
+        canonicalTarget: null,
+        robotsIndexable: true,
+        robotsDirectives: [],
+        sitemapMember: true,
+        jsonLdTypes: [],
+        jsonLdErrorCount: 0,
+        internalOutlinks: 5,
+        internalOutlinksWithoutAnchorText: 0,
+      } as never,
+      declared: declared as never,
     } as unknown as CheckInput["extract"],
   };
 }
@@ -50,6 +111,25 @@ describe("thresholds shared with the Agent catalogue", () => {
     expect(BODY_UNITS).toBe(CATALOGUE_BODY_UNITS);
     expect(HTML_BYTES).toBe(CATALOGUE_HTML_BYTES);
     expect(SCRIPT_DOMINANCE).toBe(CATALOGUE_SCRIPT_DOMINANCE);
+  });
+
+  it("gives the same verdict on both surfaces for the same page", () => {
+    // The previous test only drove the shared function, so re-inlining the
+    // rule in either caller would have left it green. This one drives the two
+    // callers and compares them.
+    const cases = [
+      { visibleTextBytes: 100, scriptBytes: 30_000 },
+      { visibleTextBytes: 5_000, scriptBytes: 30_000 },
+      { visibleTextBytes: 100, scriptBytes: 200 },
+    ];
+
+    for (const facts of cases) {
+      const checkerSaysClientRendered =
+        technicalChecks(input(facts)).find((entry) => entry.id === "rendering")
+          ?.detail.key === "rendering.clientSide";
+
+      expect(checkerSaysClientRendered).toBe(readsAsClientRendered(facts));
+    }
   });
 
   it("describes both halves of the client-rendering rule in the published threshold", () => {
