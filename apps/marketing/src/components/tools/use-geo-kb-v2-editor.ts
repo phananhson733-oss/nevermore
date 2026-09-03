@@ -18,7 +18,7 @@ export const GEO_KB_V2_AUTOSAVE_MS = ACCOUNT_AUTOSAVE_DELAY_MS;
 /** Retry cadence when the server reports a generation running in another tab; this tab cannot observe it end. */
 export const GEO_KB_V2_AUTOSAVE_RETRY_MS = 5_000;
 /** Why an automatic write is being held back, for the editor to say so. */
-export type GeoKbV2AutosaveHold = "conflict" | "copyStale" | "running" | "busy";
+export type GeoKbV2AutosaveHold = "conflict" | "copyStale" | "running" | "busy" | "failed";
 type Operation = "save" | "load" | "sources" | "roles" | "questions" | "freeze" | "copy";
 interface Pending { readonly idempotencyKey: string; readonly draftHash: string; readonly baseVersion: number; readonly generationId: string | null; readonly inputIdentity?: string; readonly sourceSequence?: number; readonly settled?: boolean; readonly readNotFound?: boolean; readonly knownState?: string }
 type PendingSet = Readonly<Record<GeoKbGenerationKind, Pending | null>>;
@@ -101,6 +101,16 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   // conflict; an automatic write would turn the re-base into a silent
   // last-writer-wins over another session. Held until a manual save.
   const conflictHold = useRef(false);
+  /**
+   * Set by any refusal raised inside the running operation, read only by the
+   * save path. A write that failed must not re-arm itself: autosave runs on a
+   * fixed cadence, so a refusal the visitor cannot see past -- a rate limit, a
+   * lost session, an unreachable store -- would repeat for as long as the tab
+   * stays open. The draft route counts refused calls against the same hourly
+   * quota, so that loop would spend the visitor's own budget and then refuse
+   * their real edits. Editing again, or saving by hand, is what re-arms it.
+   */
+  const operationFailed = useRef(false), writeFailed = useRef(false);
   // The server refused a write because a generation is running for this kb
   // in a tab this one cannot see. Shown as the same "running" hold; retried.
   const runningElsewhere = useRef(false);
@@ -172,8 +182,14 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
    * paid result unusable. An uncertain or unknown outcome is not "running":
    * the editor's own recovery copy tells the visitor to save a new version,
    * and holding the write would contradict that.
+   *
+   * A claimed row is not running either. Its input was already frozen at claim
+   * time, so a write during that window cannot corrupt it, and only `claim`
+   * ever reclaims an expired claimed lease -- a read leaves it claimed forever.
+   * Treating it as running would let one abandoned claim refuse every write to
+   * this knowledge base permanently, with no action left that could clear it.
    */
-  const running = (state: string | undefined) => state === "claimed" || state === "dispatched";
+  const running = (state: string | undefined) => state === "dispatched";
   function generationRunningNow(): boolean {
     return (["roles", "questions"] as const).some(kind => running(current.current.view.generations[kind]?.state));
   }
@@ -183,9 +199,11 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     // Every write would fail with context_stale until the copy is adopted.
     if (current.current.copyStale) return "copyStale";
     if (lock.current) return "busy";
-    return generationRunningNow() || runningElsewhere.current ? "running" : null;
+    if (generationRunningNow() || runningElsewhere.current) return "running";
+    return writeFailed.current ? "failed" : null;
   }
-  const autosaveHold: GeoKbV2AutosaveHold | null = conflictHold.current ? "conflict" : copyStale ? "copyStale" : busy ? "busy" : generationRunning || runningElsewhere.current ? "running" : null;
+  const autosaveHold: GeoKbV2AutosaveHold | null = conflictHold.current ? "conflict" : copyStale ? "copyStale" : busy ? "busy"
+    : generationRunning || runningElsewhere.current ? "running" : writeFailed.current ? "failed" : null;
   /**
    * Only a real edit schedules a write. A draft that merely needs one save
    * after a format upgrade or a version conflict is left alone: persisting it
@@ -196,24 +214,33 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     if (autosave.current !== null) clearTimeout(autosave.current);
     autosave.current = setTimeout(() => {
       autosave.current = null;
-      // A retry after a remote-generation refusal asks the server again; the
-      // server, not this tab, knows whether that run has ended.
-      if (delay === GEO_KB_V2_AUTOSAVE_RETRY_MS) runningElsewhere.current = false;
-      if (!current.current.dirty || autosaveHoldNow() !== null) return;
+      // Only the server knows whether a run started in another tab has ended,
+      // so every firing asks it again. A refusal sets the hold back and arms
+      // the longer retry; keying this off the delay value instead would strand
+      // the hold as soon as a keystroke replaced the retry timer.
+      runningElsewhere.current = false;
+      if (!current.current.dirty || !current.current.edited || autosaveHoldNow() !== null) return;
       // A row the visitor is still filling in (an added fact with no key yet,
       // half a URL) does not parse. That is not an error to announce on a
       // cadence; the draft simply stays unsaved until it does, or until Save.
       try { parseGeoKbPayloadV2(submitGeoKbPayloadV2(current.current.payload)); } catch { return; }
       void persist(true);
-    }, GEO_KB_V2_AUTOSAVE_MS);
+    }, delay);
   }
-  function resumeAutosave() { if (current.current.dirty && autosave.current === null && autosaveHoldNow() === null) scheduleAutosave(); }
+  function resumeAutosave() { if (current.current.dirty && current.current.edited && autosave.current === null && autosaveHoldNow() === null) scheduleAutosave(); }
   useEffect(() => () => {
     if (autosave.current !== null) clearTimeout(autosave.current);
     // Leaving by client-side navigation skips beforeunload. A pending edit is
     // flushed with a request the browser keeps alive after the page is gone;
     // the server's version check still refuses a stale write.
-    if (!current.current.dirty || !current.current.edited || autosaveHoldNow() !== null) return;
+    //
+    // Every hold but one also applies here, because the write it describes
+    // would be refused or would overwrite another session. "failed" is the
+    // exception: it exists to stop a repeating retry, and this is one
+    // fire-and-forget request on the way out, so honouring it would discard
+    // the visitor's last edits over a transient error they never saw.
+    const hold = autosaveHoldNow();
+    if (!current.current.dirty || !current.current.edited || (hold !== null && hold !== "failed")) return;
     let submitted: GeoKbPayloadV2;
     try { submitted = parseGeoKbPayloadV2(submitGeoKbPayloadV2(current.current.payload)); } catch { return; }
     if (canonicalGeoV2Text(submitted) === lastSaved.current) return;
@@ -225,7 +252,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
         body: JSON.stringify({ kbId: base.kbId, baseVersion: base.draftVersion, payload: submitted, expectedProfileReference: base.profile?.reference ?? null }) })).catch(() => undefined);
     } catch { /* unmount must never throw */ }
   }, []);
-  function change(next: GeoKbPayloadV2) { editRevision.current++; current.current.payload = next; current.current.dirty = true; setPayload(next); setDirty(true); setEdited(true); setReview(null); setStatus(previous => previous.kind === "saved" ? { kind: "idle" } : previous); scheduleAutosave(); }
+  function change(next: GeoKbPayloadV2) { editRevision.current++; current.current.payload = next; current.current.dirty = true; current.current.edited = true; writeFailed.current = false; setPayload(next); setDirty(true); setEdited(true); setReview(null); setStatus(previous => previous.kind === "saved" ? { kind: "idle" } : previous); scheduleAutosave(); }
   function setRequest(kind: GeoKbGenerationKind, value: Pending | null) {
     const previous = current.current.pending[kind];
     if (value !== null) persistPending(view.kbId, kind, value);
@@ -244,11 +271,16 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     return saveHistory([...historyRef.current.filter(item => item.id !== entry.id), entry]);
   }
   async function perform(operation: Operation, work: () => Promise<void>) {
-    if (lock.current) return; lock.current = true; setStatus({ kind: "busy", operation });
-    try { await work(); } catch { setStatus({ kind: "error", code: "bad_response" }); }
-    finally { lock.current = false; setStatus(previous => previous.kind === "busy" ? { kind: "idle" } : previous); resumeAutosave(); }
+    if (lock.current) return; lock.current = true; operationFailed.current = false; setStatus({ kind: "busy", operation });
+    try { await work(); } catch { operationFailed.current = true; setStatus({ kind: "error", code: "bad_response" }); }
+    finally {
+      lock.current = false; setStatus(previous => previous.kind === "busy" ? { kind: "idle" } : previous);
+      if (operation === "save") writeFailed.current = operationFailed.current;
+      resumeAutosave();
+    }
   }
   function error(result: { readonly code: string; readonly draftVersion?: number }) {
+    operationFailed.current = true;
     if (result.code === "conflict") {
       conflictHold.current = true;
       if (result.draftVersion !== undefined) setView(previous => ({ ...previous, draftVersion: result.draftVersion!, requiresSave: true }));
@@ -268,7 +300,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     setView(previous => ({ ...previous, generations: { ...previous.generations, [generation.kind]: generation },
       ...(generation.state === "succeeded" && generation.result?.schemaVersion === "marketing-geo-prepared-candidate.v1" ? { prepared: generation.result } : {}) }));
     current.current.view = { ...current.current.view, generations: { ...current.current.view.generations, [generation.kind]: generation } };
-    if (!running(generation.state)) resumeAutosave();
+    if (!running(generation.state)) { runningElsewhere.current = false; resumeAutosave(); }
     setReview(null);
   }
   async function readSaved() {
@@ -306,8 +338,14 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     const copyChanged = !same(submitted.profileCopy, base.payload.profileCopy);
     const result = await post("draft", { kbId: base.kbId, baseVersion: base.draftVersion, payload: submitted, expectedProfileReference: base.profile?.reference ?? null });
     if (!result.ok && result.code === "generation_running") {
-      runningElsewhere.current = true; setStatus({ kind: "idle" });
-      if (automatic) scheduleAutosave(GEO_KB_V2_AUTOSAVE_RETRY_MS); else error(result);
+      // A hold, not a failure: the run ends on its own, so the retry timer is
+      // armed for a manual save too. Without it a Save refused here would
+      // leave autosave held until the visitor happened to save again by hand.
+      // `error` is deliberately not used -- it would mark the write failed and
+      // suppress the very retry that clears this.
+      runningElsewhere.current = true;
+      scheduleAutosave(GEO_KB_V2_AUTOSAVE_RETRY_MS);
+      setStatus(automatic ? { kind: "idle" } : { kind: "error", code: result.code });
       return;
     }
     if (!result.ok) { error(result); return; }

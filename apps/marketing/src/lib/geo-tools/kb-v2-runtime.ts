@@ -155,7 +155,7 @@ export function createGeoKbV2Runtime(overrides: Partial<GeoKbV2RuntimeDependenci
         for (const kind of ["roles", "questions"] as const) {
           const read = await dependencies.generationStore.readLatest({ userId, kbId, kind });
           if (read.kind !== "ok") return "unavailable";
-          if (read.generation !== null && (read.generation.state === "claimed" || read.generation.state === "dispatched")) return true;
+          if (read.generation !== null && read.generation.state === "dispatched") return true;
         }
         return false;
       },

@@ -5571,7 +5571,7 @@
         "applyCopy": "将此版本复制到 GEO 草稿",
         "dismissCopy": "保留当前 GEO 副本",
         "frozenIdentity": "查看这个冻结版本的标识",
-        "frozenSummary": "v{revision} · {questions} 条提问 · 角色 {acceptedRoles}/{roles} 已采用 · 竞品 {confirmed}/{competitors} 已确认 · 事实 {acceptedFacts}/{facts} 已采用",
+        "frozenSummary": "v{revision} · {questions} 条提问 · 角色 {acceptedRoles}/{roles} 已接受 · 竞品 {confirmed}/{competitors} 已确认 · 事实 {acceptedFacts}/{facts} 已接受",
         "frozenCopyTitle": "查看已冻结的完整知识库",
         "frozenLegacy": "这个历史版本没有完整 Profile 副本；系统没有用今天的 Profile 回填它。",
         "frozenOperations": "该版本保存的 GEO 设置",
@@ -5590,7 +5590,8 @@
         "autosaveHeld": {
           "conflict": "另一个会话改过这份草稿。核对后手动保存一次，之后才会继续自动保存。",
           "copyStale": "档案已有新版本；先审阅并采用最新副本，保存才能成功。",
-          "running": "生成进行中，自动保存暂停；本次生成结束后继续。"
+          "running": "生成进行中，自动保存暂停；本次生成结束后继续。",
+          "failed": "上一次自动保存没有成功，已暂停重试以免反复失败。继续编辑或点「保存 GEO 草稿」会再试一次。"
         },
         "recordDetails": "查看这次生成的记录标识",
         "reason": "服务端原因代码",

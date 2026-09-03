@@ -10,18 +10,27 @@ import { normalizeAccountWebsiteUrl } from "../../lib/account-websites/contracts
 import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { geoKbV2Copy, type GeoKbV2Copy } from "./geo-kb-v2-copy.ts";
 
+/** Depth of the panel headings, so each host can keep one unbroken outline. */
+export type GeoKbVersionHeading = 3 | 4;
 export interface GeoKbVersionContentProps {
+  readonly heading?: GeoKbVersionHeading;
   readonly payload: GeoKbPayloadV2;
   readonly questionSet: GeoQuestionSetV2;
   readonly context: GeoSnapshotContextV2;
   readonly locale: string;
 }
-function Panel({ title, children }: { readonly title: string; readonly children: ReactNode }) {
+function Panel({ title, heading, children }: { readonly title: string; readonly heading: GeoKbVersionHeading; readonly children: ReactNode }) {
   const id = useId();
+  const Heading = (heading === 3 ? "h3" : "h4") as "h3" | "h4";
   return <section aria-labelledby={id} className="min-w-0 overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
-    <h3 id={id} className="-mx-5 -mt-5 mb-5 flex items-center gap-3 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7"><span aria-hidden="true" className="h-5 w-1 rounded-full bg-brand-accent" />{title}</h3>
+    <Heading id={id} className="-mx-5 -mt-5 mb-5 flex items-center gap-3 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7"><span aria-hidden="true" className="h-5 w-1 rounded-full bg-brand-accent" />{title}</Heading>
     {children}
   </section>;
+}
+/** One level below the panel it sits in, whatever depth that panel was given. */
+function Sub({ heading, className, children }: { readonly heading: GeoKbVersionHeading; readonly className?: string; readonly children: ReactNode }) {
+  const Heading = (heading === 3 ? "h4" : "h5") as "h4" | "h5";
+  return <Heading className={className}>{children}</Heading>;
 }
 function Info({ label, children }: { readonly label: string; readonly children: ReactNode }) {
   return <div className="min-w-0 space-y-1.5"><dt className="text-[12px] text-text-dark-secondary">{label}</dt><dd className="whitespace-pre-wrap break-words text-[14px] leading-relaxed text-text-dark-primary [overflow-wrap:anywhere]">{children}</dd></div>;
@@ -41,10 +50,10 @@ function Review({ value, copy }: { readonly value: GeoKbPayloadV2["roles"][numbe
 const text = (value: string | number | null | undefined, empty: string): string | number => value === null || value === undefined || value === "" ? empty : value;
 const yesNo = (value: boolean | null | undefined, copy: GeoKbV2Copy): string => value === true ? copy.yes : value === false ? copy.no : copy.unknown;
 
-function Roles({ payload, context, copy }: { readonly payload: GeoKbPayloadV2; readonly context: GeoSnapshotContextV2; readonly copy: GeoKbV2Copy }) {
+function Roles({ payload, context, copy, heading }: { readonly payload: GeoKbPayloadV2; readonly context: GeoSnapshotContextV2; readonly copy: GeoKbV2Copy; readonly heading: GeoKbVersionHeading }) {
   const policies = new Map(context.roles.map(role => [role.roleId, role]));
   const catalog = new Map(context.evidenceCatalog.map(item => [item.id, item]));
-  return <Panel title={copy.sections.roles}>
+  return <Panel heading={heading} title={copy.sections.roles}>
     {payload.roles.length === 0 ? <p className="text-sm text-text-dark-secondary">{copy.empty}</p> : <div className="space-y-5">{payload.roles.map(role => {
       const policy = policies.get(role.id);
       const refs = [...new Set(role.source.evidenceRefs)], evidence = refs.flatMap(ref => catalog.has(ref) ? [catalog.get(ref)!] : []);
@@ -52,7 +61,7 @@ function Roles({ payload, context, copy }: { readonly payload: GeoKbPayloadV2; r
       const queries = new Set(evidence.filter(item => item.kind === "gsc").map(item => item.text));
       const basis = (["profile", "gsc", "crawl", "manual"] as const).filter(kind => evidence.some(item => item.kind === kind));
       return <article key={role.id} data-version-role={role.id} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5">
-        <div className="mb-5 flex flex-wrap items-center gap-3"><h4 className="break-words text-[15px] font-semibold [overflow-wrap:anywhere]">{text(role.label, copy.empty)}</h4><Review value={role.review} copy={copy} /></div>
+        <div className="mb-5 flex flex-wrap items-center gap-3"><Sub heading={heading} className="break-words text-[15px] font-semibold [overflow-wrap:anywhere]">{text(role.label, copy.empty)}</Sub><Review value={role.review} copy={copy} /></div>
         <div className="mb-5 space-y-2 text-[13px] leading-relaxed">
           <p data-role-source-badge className="inline-flex flex-wrap rounded-full border border-brand-border-card px-3 py-1.5 text-text-dark-secondary">{evidence.length === 0 ? missing ? copy.roleEvidence.missingEvidence : copy.roleEvidence.noEvidence : [role.source.kind === "model" ? copy.roleEvidence.inference : copy.sources[role.source.kind], ...basis.map(kind => copy.roleEvidence.basis[kind])].join(" · ")}</p>
           {queries.size > 0 ? <><p>{copy.roleEvidence.referencedQueries}: <span data-role-referenced-query-count>{queries.size}</span></p><p className="text-text-dark-secondary">{copy.roleEvidence.queryHelp}</p></> : !missing ? <p className="text-text-dark-secondary">{copy.roleEvidence.noQueries}</p> : null}
@@ -105,9 +114,9 @@ function CompetitorCapture({ evidence, copy }: { readonly evidence: GeoCompetito
   </section>;
 }
 
-function Competitors({ payload, context, copy }: { readonly payload: GeoKbPayloadV2; readonly context: GeoSnapshotContextV2; readonly copy: GeoKbV2Copy }) {
-  return <Panel title={copy.sections.competitors}>{payload.competitors.length === 0 ? <p className="text-sm text-text-dark-secondary">{copy.empty}</p> : <div className="space-y-4">{payload.competitors.map((competitor, index) => <article key={index} data-version-competitor={competitor.domain} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5">
-    <section data-current-competitor-mapping><h4 className="mb-4 text-[14px] font-semibold">{copy.competitorCapture.mapping}</h4><dl className="grid min-w-0 gap-5 sm:grid-cols-2">
+function Competitors({ payload, context, copy, heading }: { readonly payload: GeoKbPayloadV2; readonly context: GeoSnapshotContextV2; readonly copy: GeoKbV2Copy; readonly heading: GeoKbVersionHeading }) {
+  return <Panel heading={heading} title={copy.sections.competitors}>{payload.competitors.length === 0 ? <p className="text-sm text-text-dark-secondary">{copy.empty}</p> : <div className="space-y-4">{payload.competitors.map((competitor, index) => <article key={index} data-version-competitor={competitor.domain} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5">
+    <section data-current-competitor-mapping><Sub heading={heading} className="mb-4 text-[14px] font-semibold">{copy.competitorCapture.mapping}</Sub><dl className="grid min-w-0 gap-5 sm:grid-cols-2">
       <Info label={copy.fields.domain}>{text(competitor.domain, copy.empty)}</Info><Info label={copy.fields.brandName}>{text(competitor.brandName, copy.empty)}</Info>
       <Info label={copy.fields.aliases}><List values={competitor.aliases ?? []} empty={copy.empty} /></Info><Info label={copy.fields.confirmation}>{competitor.confirmed ? copy.confirmed : copy.unconfirmed}</Info>
     </dl><p data-sov-eligibility className="mt-4 text-[12px] leading-relaxed text-text-dark-secondary">{competitor.confirmed && competitor.brandName.trim() !== "" ? copy.competitorCapture.sovConfirmed : copy.competitorCapture.sovExcluded}</p></section>
@@ -115,15 +124,15 @@ function Competitors({ payload, context, copy }: { readonly payload: GeoKbPayloa
   </article>)}</div>}</Panel>;
 }
 
-function Facts({ payload, context, copy }: { readonly payload: GeoKbPayloadV2; readonly context: GeoSnapshotContextV2; readonly copy: GeoKbV2Copy }) {
+function Facts({ payload, context, copy, heading }: { readonly payload: GeoKbPayloadV2; readonly context: GeoSnapshotContextV2; readonly copy: GeoKbV2Copy; readonly heading: GeoKbVersionHeading }) {
   const admitted = new Map(context.facts.map(fact => [fact.key, fact]));
-  return <Panel title={copy.sections.facts}>
+  return <Panel heading={heading} title={copy.sections.facts}>
     <p className="mb-5 text-[13px] leading-relaxed text-text-dark-secondary">{copy.factsHelp}</p>
     {payload.facts.length === 0 ? <p className="text-sm text-text-dark-secondary">{copy.empty}</p> : <div className="space-y-5">{payload.facts.map(fact => {
       const policy = admitted.get(fact.key);
       const reason = policy?.reason || fact.reason;
       return <article key={fact.key} data-version-fact={fact.key} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5">
-        <div className="mb-5 flex flex-wrap items-center gap-3"><h4 className="break-words text-[15px] font-semibold [overflow-wrap:anywhere]">{fact.key}</h4><Review value={fact.review} copy={copy} /></div>
+        <div className="mb-5 flex flex-wrap items-center gap-3"><Sub heading={heading} className="break-words text-[15px] font-semibold [overflow-wrap:anywhere]">{fact.key}</Sub><Review value={fact.review} copy={copy} /></div>
         <dl className="grid min-w-0 gap-5 sm:grid-cols-2">
           <Info label={copy.fields.declaredValue}>{text(fact.value, copy.unknown)}</Info>
           <Info label={copy.fields.admittedValue}><span data-admitted-value>{policy === undefined ? copy.unknown : policy.value === null ? copy.notAdmitted : policy.value}</span></Info>
@@ -137,12 +146,12 @@ function Facts({ payload, context, copy }: { readonly payload: GeoKbPayloadV2; r
   </Panel>;
 }
 
-function Questions({ payload, questionSet, copy }: { readonly payload: GeoKbPayloadV2; readonly questionSet: GeoQuestionSetV2; readonly copy: GeoKbV2Copy }) {
+function Questions({ payload, questionSet, copy, heading }: { readonly payload: GeoKbPayloadV2; readonly questionSet: GeoQuestionSetV2; readonly copy: GeoKbV2Copy; readonly heading: GeoKbVersionHeading }) {
   const roles = new Map(payload.roles.map(role => [role.id, role.label]));
   const headings = [copy.fields.question, copy.fields.layer, copy.fields.role, copy.fields.entities, copy.fields.questionPolicy];
   const cell = "block min-w-0 whitespace-pre-wrap break-words text-[13px] leading-relaxed [overflow-wrap:anywhere] sm:table-cell sm:border-b sm:border-brand-border-card sm:px-3 sm:py-4 sm:align-top";
   const mobileLabel = (label: string) => <span className="mb-1 block text-[12px] text-text-dark-secondary sm:hidden">{label}</span>;
-  return <Panel title={copy.sections.questions}>
+  return <Panel heading={heading} title={copy.sections.questions}>
     <table className="block w-full table-fixed text-left sm:table"><caption className="sr-only">{copy.sections.questions}</caption>
       <thead className="hidden sm:table-header-group"><tr>{headings.map(heading => <th key={heading} scope="col" className="border-b border-brand-border-strong px-3 pb-3 text-[12px] font-medium text-text-dark-secondary">{heading}</th>)}</tr></thead>
       <tbody className="block sm:table-row-group">{questionSet.questions.map(question => <tr key={question.id} data-version-question={question.id} className="mb-4 grid gap-4 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 last:mb-0 sm:mb-0 sm:table-row sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
@@ -163,10 +172,10 @@ function Questions({ payload, questionSet, copy }: { readonly payload: GeoKbPayl
   </Panel>;
 }
 
-function Sources({ context, copy }: { readonly context: GeoSnapshotContextV2; readonly copy: GeoKbV2Copy }) {
+function Sources({ context, copy, heading }: { readonly context: GeoSnapshotContextV2; readonly copy: GeoKbV2Copy; readonly heading: GeoKbVersionHeading }) {
   const { gsc, selectedEvidenceCounts, availableEvidenceCounts } = context.sourceSummary;
-  return <Panel title={copy.sections.sources}>
-    <h4 className="mb-4 text-[15px] font-semibold">Search Console · {gsc === null ? copy.notRecorded : gsc.status === "available" ? copy.available : copy.unavailable}</h4>
+  return <Panel heading={heading} title={copy.sections.sources}>
+    <Sub heading={heading} className="mb-4 text-[15px] font-semibold">Search Console · {gsc === null ? copy.notRecorded : gsc.status === "available" ? copy.available : copy.unavailable}</Sub>
     <dl className="grid min-w-0 gap-5 sm:grid-cols-2">
       <Info label={copy.fields.property}>{text(gsc?.property, copy.unknown)}</Info><Info label={copy.fields.window}>{gsc?.window ? `${gsc.window.startDate} → ${gsc.window.endDate}` : copy.unknown}</Info>
       <Info label={copy.fields.queryCount}><span data-gsc-query-count>{text(gsc?.queryCount, copy.unknown)}</span></Info><Info label={copy.fields.truncated}><span data-gsc-truncated>{yesNo(gsc?.truncated, copy)}</span></Info>
@@ -186,19 +195,19 @@ function Sources({ context, copy }: { readonly context: GeoSnapshotContextV2; re
   </Panel>;
 }
 
-export function GeoKbVersionContent({ payload, questionSet, context, locale }: GeoKbVersionContentProps) {
+export function GeoKbVersionContent({ payload, questionSet, context, locale, heading = 3 }: GeoKbVersionContentProps) {
   const copy = geoKbV2Copy(locale);
   return <div data-geo-version-content className="grid min-w-0 gap-6 text-text-dark-primary">
     <GeoKbInheritedProfile profile={null} copy={payload.profileCopy} locale={locale} inline copyDescription={copy.profileDescription} />
-    <Panel title={copy.sections.identity}><dl className="grid min-w-0 gap-5 sm:grid-cols-2">
+    <Panel heading={heading} title={copy.sections.identity}><dl className="grid min-w-0 gap-5 sm:grid-cols-2">
       <Info label={copy.fields.website}><SourceUrl value={payload.targetUrl} empty={copy.unknown} /></Info><Info label={copy.fields.officialName}>{payload.officialName}</Info>
       <Info label={copy.fields.aliases}><List values={payload.aliases} empty={copy.empty} /></Info><Info label={copy.fields.categories}><List values={payload.categoryTerms} empty={copy.empty} /></Info>
       <Info label={copy.fields.market}>{payload.market.country}</Info><Info label={copy.fields.language}>{payload.market.language}</Info>
     </dl></Panel>
-    <Competitors payload={payload} context={context} copy={copy} />
-    <Roles payload={payload} context={context} copy={copy} /><Facts payload={payload} context={context} copy={copy} />
-    <Questions payload={payload} questionSet={questionSet} copy={copy} /><Sources context={context} copy={copy} />
-    <Panel title={copy.sections.version}><dl className="grid min-w-0 gap-5 sm:grid-cols-2">
+    <Competitors payload={payload} context={context} copy={copy} heading={heading} />
+    <Roles payload={payload} context={context} copy={copy} heading={heading} /><Facts payload={payload} context={context} copy={copy} heading={heading} />
+    <Questions payload={payload} questionSet={questionSet} copy={copy} heading={heading} /><Sources context={context} copy={copy} heading={heading} />
+    <Panel heading={heading} title={copy.sections.version}><dl className="grid min-w-0 gap-5 sm:grid-cols-2">
       <Info label={copy.fields.candidate}>{context.candidateId}</Info><Info label={copy.fields.kbId}>{context.kbId}</Info>
       <Info label={copy.fields.schema}><List values={[payload.schemaVersion, questionSet.schemaVersion, context.schemaVersion]} empty={copy.empty} /></Info>
       <Info label={copy.fields.registry}>{questionSet.registryVersion === "none" ? copy.empty : questionSet.registryVersion}</Info><Info label={copy.fields.method}>{questionSet.methodVersion}</Info>

@@ -70,7 +70,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
         <Button data-generate="roles" type="button" variant="outline" disabled={blockedGeneration("roles")} onClick={() => void editor.generate("roles")}>{t.generateRoles}</Button>
         <Button data-generate="questions" type="button" variant="outline" disabled={blockedGeneration("questions")} onClick={() => void editor.generate("questions")}>{t.prepare}</Button>
       </div>{/* The progress list above names the blocking gate, so only the autosave state is stated here, and only truthfully. */}
-      <p data-autosave-hint={editor.autosaveHold ?? "on"} className="text-sm text-text-dark-secondary">{editor.autosaveHold === "conflict" || editor.autosaveHold === "copyStale" || editor.autosaveHold === "running" ? te(`autosaveHeld.${editor.autosaveHold}`) : te("autosave")}</p></div>
+      <p data-autosave-hint={editor.autosaveHold ?? "on"} className="text-sm text-text-dark-secondary">{editor.autosaveHold === null || editor.autosaveHold === "busy" ? te("autosave") : te(`autosaveHeld.${editor.autosaveHold}`)}</p></div>
       {(["roles", "questions"] as const).map(kind => {
         const action = editor.generationAction(kind);
         if (action !== "new_input" && action !== "resend_same") return null;

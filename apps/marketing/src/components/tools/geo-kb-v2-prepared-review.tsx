@@ -15,7 +15,7 @@ export function GeoKbV2PreparedReview({ candidate, locale, stale, reviewed, canF
     {candidate === null ? <p className="text-sm text-text-dark-secondary">{t.noCandidate}</p> : <>
       <p className="break-all font-mono text-xs text-text-dark-secondary">{candidate.candidateId}<br />{candidate.candidateHash}</p>
       {stale ? <p data-candidate-stale role="status" className="text-sm text-brand-error">{t.stale}</p> : null}
-      <GeoKbVersionContent payload={candidate.payload} questionSet={candidate.questionSet} context={candidate.context} locale={locale} />
+      <GeoKbVersionContent heading={4} payload={candidate.payload} questionSet={candidate.questionSet} context={candidate.context} locale={locale} />
       <label className="flex items-start gap-3 text-sm text-text-dark-primary"><input data-confirm-prepared type="checkbox" className="mt-1" disabled={stale || busy} checked={reviewed} onChange={event => onReview(event.target.checked)} /><span>{t.reviewed}</span></label>
       <Button data-freeze-prepared type="button" disabled={!canFreeze} onClick={onFreeze}>{t.freeze}</Button>
     </>}

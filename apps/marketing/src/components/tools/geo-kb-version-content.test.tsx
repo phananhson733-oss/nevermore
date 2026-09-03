@@ -110,6 +110,22 @@ describe("complete V2 knowledge-base version content", () => {
     expect(host.textContent).toContain(sourceUrl);
     expect([...host.querySelectorAll("a")].some(link => link.getAttribute("href") === sourceUrl)).toBe(false);
   });
+  it("nests its panels one level under whatever heading the host introduced them with", async () => {
+    // Both hosts wrap this content in a heading of their own, at different
+    // depths: the frozen tab under the block's h3, the candidate review under
+    // its own h4. A fixed level made the panels siblings of one and shallower
+    // than the other, so the outline read as a flat list of peers.
+    await render();
+    expect(host.querySelectorAll("h3").length).toBeGreaterThan(0);
+    expect(host.querySelectorAll("h5")).toHaveLength(0);
+    const deep = { ...fixture(), heading: 4 as const };
+    await render(deep);
+    expect(host.querySelectorAll("h3")).toHaveLength(0);
+    expect(host.querySelectorAll("h4").length).toBeGreaterThan(0);
+    expect(host.querySelectorAll("h5").length).toBeGreaterThan(0);
+    const copy = geoKbV2Copy(deep.locale);
+    expect([...host.querySelectorAll("h4")].map(node => node.textContent)).toContain(copy.sections.facts);
+  });
   it("preserves full public source URL identity without joining to the latest Profile", async () => {
     await render();
     expect(host.querySelector('a[href="https://example.com/pricing?plan=team#limits"]')).not.toBeNull();

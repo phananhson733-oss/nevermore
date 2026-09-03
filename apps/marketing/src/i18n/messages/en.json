@@ -5590,7 +5590,8 @@
         "autosaveHeld": {
           "conflict": "Another session changed this draft. Review it and save once by hand; automatic saving resumes after that.",
           "copyStale": "The Profile has a newer version. Review and adopt the latest copy first, or saving cannot succeed.",
-          "running": "A generation is running, so automatic saving is paused; it resumes when the run finishes."
+          "running": "A generation is running, so automatic saving is paused; it resumes when the run finishes.",
+          "failed": "The last automatic save did not succeed, so retrying is paused instead of repeating. Editing again, or using Save, tries once more."
         },
         "recordDetails": "Inspect this generation record",
         "reason": "Server reason code",

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
 import { GeoKnowledgeBaseV2 } from "./geo-knowledge-base-v2.tsx";
+import { GEO_KB_V2_AUTOSAVE_MS } from "./use-geo-kb-v2-editor.ts";
 import { editorFixture, sourceFixture } from "./geo-kb-v2-ui.test-fixtures.ts";
 import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
 let host: HTMLDivElement, root: Root;
@@ -157,6 +158,23 @@ it("says zero dispatched calls are not proof of no charge, and keeps raw codes i
   expect(panel?.textContent).toContain(e.deliveries.not_attempted);
   expect(panel?.querySelector("details")?.textContent).toContain("model_unavailable");
   expect(panel?.querySelector("dl")?.textContent).not.toContain("model_unavailable");
+});
+it("stops promising the draft saves itself once a write has been refused", async () => {
+  vi.useFakeTimers();
+  try {
+    await render();
+    const hint = () => host.querySelector("[data-autosave-hint]");
+    expect(hint()?.getAttribute("data-autosave-hint")).toBe("on");
+    expect(hint()?.textContent).toBe(en.tools.geoKnowledgeBase.editor.autosave);
+    vi.mocked(fetch).mockResolvedValue(Response.json({ error: { code: "rate_limited" } }, { status: 429 }));
+    await fill("Typed into a rate limit");
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    // Nothing is armed any more, so the page must not keep saying otherwise.
+    expect(hint()?.getAttribute("data-autosave-hint")).toBe("failed");
+    expect(hint()?.textContent).toBe(en.tools.geoKnowledgeBase.editor.autosaveHeld.failed);
+    expect(hint()?.textContent).not.toBe(en.tools.geoKnowledgeBase.editor.autosave);
+  } finally { vi.useRealTimers(); }
 });
 it("announces save state from one persistent live region and states autosave truthfully", async () => {
   const view = editorFixture();

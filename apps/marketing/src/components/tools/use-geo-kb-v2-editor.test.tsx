@@ -391,9 +391,108 @@ it("treats a server refusal for a generation running in another tab as a hold, a
     expect(editor.autosaveHold).toBe("running");
     expect(editor.dirty).toBe(true);
     vi.mocked(fetch).mockResolvedValueOnce(response({ draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_RETRY_MS + 100); });
+    // The retry waits its own, longer cadence. Advancing straight past both
+    // delays would pass just as well if the retry ran at the typing cadence,
+    // which is how a hardcoded delay survived review here once already.
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_RETRY_MS - GEO_KB_V2_AUTOSAVE_MS); });
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(editor.dirty).toBe(false);
     expect(editor.autosaveHold).toBeNull();
+  } finally { vi.useRealTimers(); }
+});
+it("stops retrying a write the server refuses, instead of spending the visitor's quota on a loop", async () => {
+  vi.useFakeTimers();
+  try {
+    await mount();
+    // The draft route counts refused calls against the same hourly bucket as
+    // real edits, so a cadence-driven retry would exhaust the visitor's own
+    // budget and then refuse the edits they actually make.
+    vi.mocked(fetch).mockResolvedValue(Response.json({ error: { code: "rate_limited" } }, { status: 429 }));
+    await act(async () => editor.change({ ...editor.payload, officialName: "Typed into a rate limit" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS * 20); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(editor.autosaveHold).toBe("failed");
+    expect(editor.dirty).toBe(true);
+    // Typing is what asks again: the visitor is present and the hint said so.
+    vi.mocked(fetch).mockResolvedValue(response({ draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] }));
+    await act(async () => editor.change({ ...editor.payload, officialName: "Typed again" }));
+    expect(editor.autosaveHold).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(editor.dirty).toBe(false);
+  } finally { vi.useRealTimers(); }
+});
+it("still flushes the last edit on unmount after a failed save, since one request is not a loop", async () => {
+  vi.useFakeTimers();
+  try {
+    await mount();
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "rate_limited" } }, { status: 429 }));
+    await act(async () => editor.change({ ...editor.payload, officialName: "Typed into a rate limit" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(editor.autosaveHold).toBe("failed");
+    await act(async () => root.unmount()); root = createRoot(host);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fetch).mock.calls[1]?.[1]).toMatchObject({ keepalive: true });
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body)).payload.officialName).toBe("Typed into a rate limit");
+  } finally { vi.useRealTimers(); }
+});
+it("a manual save refused for a run elsewhere arms its own recovery instead of holding forever", async () => {
+  vi.useFakeTimers();
+  try {
+    await mount();
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "generation_running" } }, { status: 409 }));
+    await act(async () => editor.change({ ...editor.payload, officialName: "Typed then saved by hand" }));
+    await act(async () => { await editor.save(); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    // The visitor pressed Save, so they are told why nothing was written.
+    expect(editor.status).toMatchObject({ kind: "error", code: "generation_running" });
+    expect(editor.autosaveHold).toBe("running");
+    vi.mocked(fetch).mockResolvedValueOnce(response({ draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] }));
+    // The edit that preceded the manual save left a typing timer armed. The
+    // recovery has to replace it with its own, longer one, or this test would
+    // pass on that leftover timer and prove nothing about the refusal.
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_RETRY_MS - GEO_KB_V2_AUTOSAVE_MS); });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(editor.dirty).toBe(false);
+    expect(editor.autosaveHold).toBeNull();
+  } finally { vi.useRealTimers(); }
+});
+it("re-arming after an operation still refuses to write a draft the visitor never edited", async () => {
+  vi.useFakeTimers();
+  try {
+    const view = { ...editorFixture(), requiresSave: true };
+    await mount(view);
+    vi.mocked(fetch).mockResolvedValueOnce(response(view));
+    // Reload runs through the same lock as a save, so its release re-arms the
+    // autosave. The draft still needs one write, but it is not the visitor's
+    // work: writing it here would be a save nobody asked for.
+    await act(async () => editor.reload());
+    expect(editor.dirty).toBe(true);
+    expect(editor.edited).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS * 6); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toContain("/v2/load");
+  } finally { vi.useRealTimers(); }
+});
+it("an abandoned claim does not hold the write, because nothing can ever clear it", async () => {
+  vi.useFakeTimers();
+  try {
+    const view = editorFixture();
+    // Only `claim` reclaims an expired claimed lease, and claiming needs a
+    // saved draft. Holding on this state would deadlock the knowledge base.
+    await mount({ ...view, generations: { roles: { generationId: "11111111-1111-4111-8111-111111111111",
+      kbId: view.kbId, kind: "roles", state: "claimed", errorReason: null, attempt: null, result: null, inputHash: "d".repeat(64) }, questions: null } });
+    vi.mocked(fetch).mockResolvedValue(response({ draftVersion: 2, contentHash: "a".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] }));
+    await act(async () => editor.change({ ...editor.payload, officialName: "Typed after an abandoned claim" }));
+    expect(editor.autosaveHold).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(editor.dirty).toBe(false);
   } finally { vi.useRealTimers(); }
 });
