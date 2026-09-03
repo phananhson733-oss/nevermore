@@ -1,7 +1,7 @@
 // @input -- an editable GEO draft or an already persisted role proposal
 // @output -- detached V2 editor values; adoption and edits never imply approval
 // @pos -- client-only editing helpers, with no requests or persistence
-import type { GeoKbFactV2, GeoKbPayloadV2, GeoKbRoleV2 } from "../../lib/geo-tools/kb-v2-contract.ts";
+import { geoFactV2Schema, geoRoleV2Schema, type GeoKbFactV2, type GeoKbPayloadV2, type GeoKbRoleV2 } from "../../lib/geo-tools/kb-v2-contract.ts";
 import type { GeoSynthesisRole } from "../../lib/geo-tools/kb-synthesis-contract.ts";
 import { geoProfileFactSource, pendingGeoProfileFact } from "./geo-kb-feature-candidates.ts";
 import { cleanGeoList, cleanGeoText } from "../../lib/geo-tools/kb-v2-clean.ts";
@@ -66,4 +66,39 @@ export function appendGeoProfileFactV2(payload: GeoKbPayloadV2, key: string, val
   return candidate.status === "ready"
     ? { ...payload, facts: [...payload.facts, { ...candidate.fact, review: "pending", supportRef: null }] }
     : null;
+}
+
+/**
+ * What one confirm-everything gesture did, and what it could not do. An item
+ * that cannot be accepted is named rather than skipped quietly: a fact with no
+ * source URL or capture time is exactly what the schema refuses to call
+ * accepted, and a confirmation that silently left it pending would be the
+ * interface claiming a review that did not happen.
+ */
+export interface GeoKbV2AcceptAll {
+  readonly payload: GeoKbPayloadV2;
+  readonly accepted: number;
+  /** Display names of the pending items the schema will not accept. */
+  readonly blocked: readonly string[];
+}
+
+/**
+ * Accept every pending role and fact the contract allows, in one gesture. The
+ * gesture is still the person's: nothing here runs without a click, and an
+ * item that would be invalid as accepted keeps its pending state.
+ */
+export function acceptAllGeoKbV2(payload: GeoKbPayloadV2): GeoKbV2AcceptAll {
+  const blocked: string[] = [];
+  let accepted = 0;
+  const roles = payload.roles.map(role => {
+    if (role.review !== "pending") return role;
+    if (!geoRoleV2Schema.safeParse({ ...role, review: "accepted" }).success) { blocked.push(role.label.trim() || role.id); return role; }
+    accepted += 1; return { ...role, review: "accepted" as const };
+  });
+  const facts = payload.facts.map(fact => {
+    if (fact.review !== "pending") return fact;
+    if (!geoFactV2Schema.safeParse({ ...fact, review: "accepted" }).success) { blocked.push(fact.key.trim() || fact.value.trim()); return fact; }
+    accepted += 1; return { ...fact, review: "accepted" as const };
+  });
+  return { payload: accepted === 0 ? payload : { ...payload, roles, facts }, accepted, blocked };
 }

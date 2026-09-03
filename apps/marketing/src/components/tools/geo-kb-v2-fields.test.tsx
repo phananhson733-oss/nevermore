@@ -20,8 +20,22 @@ it("edits real role detail, resets acceptance and retains original model lineage
   const base = completePayloadV2(); const source = { kind: "model" as const, generationId: "11111111-1111-4111-8111-111111111112", itemId: "r1", evidenceRefs: ["profile:primaryIcp"] };
   await render({ ...base, roles: [{ ...base.roles[0]!, source }] });
   expect(host.textContent).toContain("Existing alternatives");
-  await fill('[data-role-field="alternatives"]', "A local bookkeeper\nSpreadsheets");
-  expect(current.roles[0]).toMatchObject({ alternatives: ["A local bookkeeper", "Spreadsheets"], review: "pending", source });
+  // A list is edited a row at a time now, as it is in the Profile editor: one
+  // input per entry with its own remove control, and one add control below.
+  const list = () => host.querySelector('[data-role-field="alternatives"]')!;
+  const rows = () => [...list().querySelectorAll("input")];
+  expect(rows()).toHaveLength(base.roles[0]!.alternatives.length);
+  await fill('[data-role-field="alternatives"] input', "A local bookkeeper");
+  expect(current.roles[0]).toMatchObject({ alternatives: ["A local bookkeeper"], review: "pending", source });
+  const buttons = () => [...list().querySelectorAll("button")];
+  await act(async () => buttons()[buttons().length - 1]!.click());
+  expect(current.roles[0]?.alternatives).toEqual(["A local bookkeeper", ""]);
+  await act(async () => buttons()[0]!.click());
+  expect(current.roles[0]?.alternatives).toEqual([""]);
+  expect(rows()).toHaveLength(1);
+  // A blank entry is not acceptable, so it is refilled before acceptance.
+  expect(host.querySelector<HTMLButtonElement>('[data-review-role="accepted"]')?.disabled).toBe(true);
+  await fill('[data-role-field="alternatives"] input', "Spreadsheets");
   await click('[data-review-role="accepted"]');
   expect(current.roles[0]?.review).toBe("accepted");
   expect(host.textContent).toContain(source.generationId);

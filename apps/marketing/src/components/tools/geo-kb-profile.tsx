@@ -5,7 +5,7 @@
 // @pos    -- shared website settings and legacy GEO shortcut section
 
 import { useTranslations } from "next-intl";
-import { useId, type ReactNode } from "react";
+import { useId } from "react";
 import type { GeoInheritedProfile } from "../../lib/geo-tools/asset-context.ts";
 import type { GeoKbFact } from "../../lib/geo-tools/kb-contract.ts";
 import type { GeoProfileCopy } from "../../lib/geo-tools/kb-profile-copy.ts";
@@ -155,15 +155,13 @@ function ReadOnlyProfileField({
   );
 }
 
-function ProfileSummary({ productName, oneLinePositioning, coreFeatures, market, facts, onAddFact, badge }: {
+function ProfileSummary({ productName, oneLinePositioning, coreFeatures, market, facts, onAddFact }: {
   readonly productName: string;
   readonly oneLinePositioning: string;
   readonly coreFeatures: readonly string[];
   readonly market: { readonly country: string; readonly language: string };
   readonly facts: readonly GeoKbFact[];
   readonly onAddFact?: (key: string, value: string) => void;
-  /** False on an immutable snapshot, where "inherited" would imply it still follows the Profile. */
-  readonly badge?: boolean;
 }) {
   const t = useTranslations("tools.geoKnowledgeBase");
   // One labelled row per value, with every row's action in the same place.
@@ -172,18 +170,19 @@ function ProfileSummary({ productName, oneLinePositioning, coreFeatures, market,
   // controls: they are edited in the Profile, so a control here would offer a
   // focus ring and a caret to someone who cannot change anything, and an empty
   // one would hide its "not provided" text in a placeholder.
-  const inherited = badge === false ? null : <span className="inline-flex rounded-full border border-brand-border-card px-2 py-[2px] text-[11px] text-text-dark-secondary">{t("asset.inheritedBadge")}</span>;
-  const withBadge = (action: ReactNode) => inherited === null ? action : <div className="flex items-center gap-2">{inherited}{action}</div>;
+  // No per-row "inherited" badge: the section is already titled "from the
+  // Product Profile", and stamping every row with it made one thing look like
+  // two. What the visitor needs is the value and the one action on it.
   return (
     <div data-geo-profile-summary className="mt-4">
       <GeoKbFieldRows>
-        <GeoKbFieldRow data-geo-summary-field="productName" label={t("asset.productName")} action={withBadge(<ProfileFactButton factKey="productName" value={productName} facts={facts} onAddFact={onAddFact} />)}>
+        <GeoKbFieldRow data-geo-summary-field="productName" label={t("asset.productName")} action={(<ProfileFactButton factKey="productName" value={productName} facts={facts} onAddFact={onAddFact} />)}>
           <GeoKbReadout value={productName} empty={t("asset.emptyField")} />
         </GeoKbFieldRow>
-        <GeoKbFieldRow data-geo-summary-field="oneLinePositioning" label={t("asset.positioning")} action={withBadge(<ProfileFactButton factKey="oneLinePositioning" value={oneLinePositioning} facts={facts} onAddFact={onAddFact} />)}>
+        <GeoKbFieldRow data-geo-summary-field="oneLinePositioning" label={t("asset.positioning")} action={(<ProfileFactButton factKey="oneLinePositioning" value={oneLinePositioning} facts={facts} onAddFact={onAddFact} />)}>
           <GeoKbReadout value={oneLinePositioning} empty={t("asset.emptyField")} />
         </GeoKbFieldRow>
-        <GeoKbFieldRow data-geo-summary-field="coreFeatures" label={t("asset.features")} action={inherited} {...(onAddFact === undefined ? {} : { hint: t("asset.featureCandidateHelp") })}>
+        <GeoKbFieldRow data-geo-summary-field="coreFeatures" label={t("asset.features")} {...(onAddFact === undefined ? {} : { hint: t("asset.featureCandidateHelp") })}>
           {coreFeatures.length === 0
             ? <GeoKbReadout value="" empty={t("asset.emptyField")} />
             : <ul className="grid gap-2">{coreFeatures.map((feature, index) => (
@@ -193,7 +192,7 @@ function ProfileSummary({ productName, oneLinePositioning, coreFeatures, market,
               </li>
             ))}</ul>}
         </GeoKbFieldRow>
-        <GeoKbFieldRow data-geo-summary-field="market" label={t("asset.market")} action={inherited}>
+        <GeoKbFieldRow data-geo-summary-field="market" label={t("asset.market")}>
           <GeoKbReadout value={[market.country, market.language].filter(Boolean).join(" \u00b7 ")} empty={t("asset.emptyField")} />
         </GeoKbFieldRow>
       </GeoKbFieldRows>
@@ -256,7 +255,6 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
           coreFeatures={copy.profile.coreFeatures}
           market={{ country: copy.profile.country, language: copy.profile.locale }}
           facts={facts}
-          badge={!frozen}
           {...(onAddFact === undefined ? {} : { onAddFact })}
         />
         {onAddFact === undefined ? null : <p className="mt-3 text-xs text-text-dark-secondary">{t("asset.profileFactBoundary")}</p>}
