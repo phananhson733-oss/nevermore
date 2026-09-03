@@ -260,10 +260,24 @@ function QuietLane({
                   data-issue-key-page-reach
                   className="ml-2 font-mono text-[10.5px] text-text-dark-faint"
                 >
-                  {t("row.keyPagePass", {
-                    evaluated: issue.affected.keyPages.evaluated,
-                    total: issue.affected.keyPages.total,
-                  })}
+                  {/*
+                    Per lane. Only the passed lane may say "passing": a check
+                    excluded on every page would otherwise read "0/12 key pages
+                    evaluated · passing", which claims a verdict it never
+                    reached, and a measured-not-judged row would contradict the
+                    lane heading directly above it.
+                  */}
+                  {t(
+                    issue.lane === "passed"
+                      ? "row.keyPagePass"
+                      : issue.lane === "observed-only"
+                        ? "row.keyPageObserved"
+                        : "row.keyPageScope",
+                    {
+                      evaluated: issue.affected.keyPages.evaluated,
+                      total: issue.affected.keyPages.total,
+                    },
+                  )}
                 </span>
               )}
             </span>

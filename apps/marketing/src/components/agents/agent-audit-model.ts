@@ -110,17 +110,15 @@ export function buildAgentAuditViewModel({
     siteOrigin: data.result.siteOrigin,
     inspectedTargetUrl: data.result.inspectedTargetUrl,
   });
-  const aggregate = aggregateKeyPageEvaluations({
-    site,
-    pages: evaluateAgentKeyPages({
-      records: evidence.records,
-      availability: evidence.availability,
-      keyPages,
-      targetUrl: data.result.targetUrl,
-      targetInspected: data.result.targetInspected,
-      inspectedTargetUrl: data.result.inspectedTargetUrl,
-    }),
+  const evaluated = evaluateAgentKeyPages({
+    records: evidence.records,
+    availability: evidence.availability,
+    keyPages,
+    targetUrl: data.result.targetUrl,
+    targetInspected: data.result.targetInspected,
+    inspectedTargetUrl: data.result.inspectedTargetUrl,
   });
+  const aggregate = aggregateKeyPageEvaluations({ site, pages: evaluated });
   const region = data.result.searchPerformance;
 
   return {
@@ -145,7 +143,11 @@ export function buildAgentAuditViewModel({
         : data.result.searchPerformanceUnavailable === true
           ? { state: "unavailable" }
           : { state: "absent" },
-    keyPages,
+    // The pages actually judged, which is what every denominator counts. The
+    // selection alone is one short whenever the submitted page was not
+    // collected: it is judged from a synthetic row rather than a candidate, and
+    // a header that omitted it would disagree with every row beneath it.
+    keyPages: evaluated.map((entry) => entry.page),
     keyPageReach: aggregate.reach,
     evaluatedChecks: aggregate.checks,
   };

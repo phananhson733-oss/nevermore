@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  readsAsClientRendered,
   BODY_UNITS as CATALOGUE_BODY_UNITS,
   HTML_BYTES as CATALOGUE_HTML_BYTES,
   SCRIPT_DOMINANCE as CATALOGUE_SCRIPT_DOMINANCE,
@@ -45,6 +46,17 @@ describe("thresholds shared with the Agent catalogue", () => {
     expect(BODY_UNITS).toBe(CATALOGUE_BODY_UNITS);
     expect(HTML_BYTES).toBe(CATALOGUE_HTML_BYTES);
     expect(SCRIPT_DOMINANCE).toBe(CATALOGUE_SCRIPT_DOMINANCE);
+  });
+
+  it("applies one rule for client rendering, not one constant and two rules", () => {
+    // Sharing SCRIPT_DOMINANCE was not enough: the checker required a short
+    // page as well and the catalogue did not, so a page with plenty of visible
+    // text and a big bundle passed on one surface and drew a Tip on the other.
+    const long = { visibleTextBytes: 5_000, scriptBytes: 30_000 };
+    const short = { visibleTextBytes: 100, scriptBytes: 30_000 };
+
+    expect(readsAsClientRendered(long)).toBe(false);
+    expect(readsAsClientRendered(short)).toBe(true);
   });
 
   it("shows the text ratio without grading it", () => {
