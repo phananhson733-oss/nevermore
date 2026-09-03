@@ -73,6 +73,7 @@ describe("buildAgentAuditViewModel", () => {
         agent,
         locale: "en",
         context,
+      coreFeatures: [],
         data: { ...data, run: { ...data.run, agent } },
       });
 
@@ -94,6 +95,7 @@ describe("buildAgentAuditViewModel", () => {
       agent: "seo",
       locale: "en",
       context,
+      coreFeatures: [],
       data,
     });
     const checks = model.evaluatedChecks;
@@ -116,6 +118,7 @@ describe("buildAgentAuditViewModel", () => {
       agent: "seo",
       locale: "en",
       context,
+      coreFeatures: [],
       data: {
         ...data,
         result: {
@@ -151,6 +154,7 @@ describe("buildAgentAuditViewModel", () => {
       agent: "tech",
       locale: "zh",
       context,
+      coreFeatures: [],
       data: { ...data, run: { ...data.run, agent: "tech" } },
     });
     const check = model.evaluatedChecks.find(
@@ -173,6 +177,7 @@ describe("buildAgentAuditViewModel", () => {
       agent: "seo",
       locale: "en",
       context,
+      coreFeatures: [],
       data,
     });
 

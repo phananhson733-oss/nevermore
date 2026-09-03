@@ -463,6 +463,113 @@ describe("AgentIssueAccordion", () => {
     expect(host.textContent).not.toContain("P2");
   });
 
+  describe("the key page reach", () => {
+    function reachModel(
+      reach: { total: number; evaluated: number; hits: number; urls: string[] },
+      result = "warning",
+    ) {
+      return buildAgentIssueModel({
+        agent: "seo",
+        checks: [check({ id: "2.1", result, evidenceRecordIds: ["r1"] })],
+        records: [record("r1", 12)],
+        keyPageReach: new Map([
+          [
+            "2.1",
+            {
+              keyPageTotal: reach.total,
+              keyPageEvaluatedCount: reach.evaluated,
+              keyPageHitCount: reach.hits,
+              hitUrls: reach.urls,
+              outcomes: [],
+            },
+          ],
+        ]),
+      });
+    }
+
+    function reachText(): string {
+      return (
+        host.querySelector("[data-issue-key-page-reach]")?.textContent ?? ""
+      );
+    }
+
+    it("states the key pages hit and the pages beyond them separately", () => {
+      render(
+        reachModel({ total: 12, evaluated: 12, hits: 3, urls: ["https://a/"] }),
+      );
+
+      // 12 affected overall, 3 of them key pages, so 9 elsewhere. Reporting
+      // "3 pages" alone would understate it; "12" alone would lose the ones
+      // this Profile actually cares about.
+      expect(reachText()).toContain("3/12 key pages");
+      expect(reachText()).toContain("another 9 pages");
+    });
+
+    it("says at least when the record did not enumerate its own population", () => {
+      render(
+        buildAgentIssueModel({
+          agent: "seo",
+          checks: [
+            check({ id: "2.1", result: "warning", evidenceRecordIds: ["r1"] }),
+          ],
+          records: [
+            {
+              ...record("r1", 2),
+              // Claims 30 affected while publishing 2 observations.
+              affected: 30,
+            } as never,
+          ],
+          keyPageReach: new Map([
+            [
+              "2.1",
+              {
+                keyPageTotal: 12,
+                keyPageEvaluatedCount: 12,
+                keyPageHitCount: 1,
+                hitUrls: ["https://a/"],
+                outcomes: [],
+              },
+            ],
+          ]),
+        }),
+      );
+
+      expect(reachText()).toContain("at least another");
+    });
+
+    it("states how much of the key set a passing check was judged on", () => {
+      // The honest half of the fail-closed ruling: on a key page that is not
+      // the submitted one many checks cannot pass, so "passing" has to say
+      // how many pages it actually got to look at.
+      render(
+        reachModel(
+          { total: 12, evaluated: 4, hits: 0, urls: [] },
+          "pass",
+        ),
+      );
+
+      const passed = host.querySelector(
+        '[data-testid="agent-issues-passed"]',
+      );
+      expect(passed?.textContent).toContain("4/12 key pages evaluated");
+    });
+
+    it("says nothing about key pages for a site-wide check", () => {
+      render(
+        buildAgentIssueModel({
+          agent: "seo",
+          checks: [
+            check({ id: "D1", result: "warning", evidenceRecordIds: ["r1"] }),
+          ],
+          records: [record("r1", 2)],
+          keyPageReach: new Map(),
+        }),
+      );
+
+      expect(host.querySelector("[data-issue-key-page-reach]")).toBeNull();
+    });
+  });
+
   it("renders no untranslated message key", () => {
     render(actionableModel());
     click('[data-issue-control="expand-visible"]');

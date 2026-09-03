@@ -87,6 +87,18 @@ function IssueRow({
   const check = issue.check.check;
   const title = check.title[locale === "zh" ? "zh" : "en"];
   const investigation = issue.lane === "investigation";
+  const reach = issue.affected.keyPages;
+  /**
+   * Pages outside the key set that carry the same problem.
+   *
+   * Clamped at zero rather than trusted: the key pages are a subset of the
+   * crawl, so a negative here would mean the two counts disagree, and a
+   * negative "another -2 pages" is worse than saying nothing.
+   */
+  const elsewhere =
+    reach === null
+      ? 0
+      : Math.max(0, (issue.affected.totalCount ?? 0) - reach.hits);
   const Icon = issue.severity === null ? Search : SEVERITY_ICON[issue.severity];
   const truthKey = TRUTH_KEY[String(issue.check.truth)];
 
@@ -129,6 +141,38 @@ function IssueRow({
               count: issue.affected.totalCount ?? 0,
             })}
           </p>
+          {/*
+            Two populations, stated separately on purpose: the pages this
+            Profile pointed at, and everywhere else the same problem was seen.
+            Collapsing them would let "3 pages" mean either one.
+          */}
+          {reach === null ? null : (
+            <p
+              data-issue-key-page-reach
+              className="mt-1 font-mono text-[10.5px] text-text-dark-faint"
+            >
+              {reach.hits === 0
+                ? t("row.keyPagePass", {
+                    evaluated: reach.evaluated,
+                    total: reach.total,
+                  })
+                : elsewhere === 0
+                  ? t("row.keyPageHitsOnly", {
+                      hits: reach.hits,
+                      total: reach.total,
+                    })
+                  : t(
+                      issue.affected.enumerated
+                        ? "row.keyPageHits"
+                        : "row.keyPageHitsAtLeast",
+                      {
+                        hits: reach.hits,
+                        total: reach.total,
+                        rest: elsewhere,
+                      },
+                    )}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="rounded border border-brand-border-strong bg-brand-panel-raised px-2 py-1 font-mono text-[10.5px] tracking-[0.06em] text-text-dark-secondary uppercase">
@@ -196,6 +240,17 @@ function QuietLane({
             </span>
             <span className="min-w-0 text-[11.5px] text-text-dark-secondary">
               {issue.check.check.title[locale === "zh" ? "zh" : "en"]}
+              {issue.affected.keyPages === null ? null : (
+                <span
+                  data-issue-key-page-reach
+                  className="ml-2 font-mono text-[10.5px] text-text-dark-faint"
+                >
+                  {t("row.keyPagePass", {
+                    evaluated: issue.affected.keyPages.evaluated,
+                    total: issue.affected.keyPages.total,
+                  })}
+                </span>
+              )}
             </span>
             {issue.recognized ? null : (
               <span className="justify-self-start rounded border border-brand-warning/30 bg-brand-warning/[0.07] px-2 py-0.5 font-mono text-[10px] tracking-[0.06em] text-brand-warning uppercase sm:justify-self-end">

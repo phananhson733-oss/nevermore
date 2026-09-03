@@ -99,6 +99,10 @@ export function AgentResults({
         locale,
         context: profileContext(profile),
         data,
+        // The Profile stays on this side of the wire: the response is
+        // projected from a payload cached across visitors, so which pages
+        // matter to THIS product is asked here, never there.
+        coreFeatures: profile.coreFeatures,
       }),
     [agent, data, locale, profile],
   );
@@ -115,10 +119,17 @@ export function AgentResults({
       buildAgentIssueModel({
         agent,
         checks: model.evaluatedChecks,
+        keyPageReach: model.keyPageReach,
         records: joinedRecords,
         targetUrl: data.result.targetUrl,
       }),
-    [agent, data.result.targetUrl, joinedRecords, model.evaluatedChecks],
+    [
+      agent,
+      data.result.targetUrl,
+      joinedRecords,
+      model.evaluatedChecks,
+      model.keyPageReach,
+    ],
   );
   /**
    * Evidence records are collected measurements, so they are labelled as
@@ -225,10 +236,24 @@ export function AgentResults({
         >
           {t("captureSummary", {
             pages: data.result.coverage.pagesInspected,
+            keyPages: model.keyPages.length,
             evaluated: evaluatedChecks,
             total: model.evaluatedChecks.length,
           })}
         </p>
+
+        {/*
+          Stated, not implied. A run that judged only the submitted page looks
+          exactly like one that judged twelve unless it says so.
+        */}
+        {model.keyPages.length > 1 ? null : (
+          <p
+            data-key-pages-none
+            className="mt-2 text-[11.5px] leading-[1.6] text-text-dark-secondary"
+          >
+            {t("keyPagesNone")}
+          </p>
+        )}
 
         <details
           data-capture-detail

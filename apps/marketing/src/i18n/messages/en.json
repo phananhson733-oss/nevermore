@@ -8606,8 +8606,9 @@
         "unknown": "The Agent run could not be completed."
       },
       "capturedReport": "Stage 02 · Captured report",
-      "captureSummary": "{pages} pages crawled · {evaluated}/{total} checks evaluated",
+      "captureSummary": "{pages} pages crawled · {keyPages} key pages · {evaluated}/{total} checks evaluated",
       "captureDetailLabel": "Collection boundary and counts",
+      "keyPagesNone": "This run selected no key pages, so page-level findings cover the submitted URL only.",
       "capturedLanded": "Redirected to {url} — that is the page this report read.",
       "finalOrigin": "Final public origin",
       "capturedAt": "Captured at",
@@ -8743,6 +8744,10 @@
         "unrecognizedState": "Unrecognised state",
         "row": {
           "affectedUrls": "{count} affected URLs",
+          "keyPageHits": "{hits}/{total} key pages · another {rest} pages",
+          "keyPageHitsAtLeast": "{hits}/{total} key pages · at least another {rest} pages",
+          "keyPageHitsOnly": "{hits}/{total} key pages",
+          "keyPagePass": "{evaluated}/{total} key pages evaluated · passing",
           "affectedSite": "Site-level scope",
           "affectedUnavailable": "Affected population unavailable",
           "affectedNotCaptured": "No individual target recorded",

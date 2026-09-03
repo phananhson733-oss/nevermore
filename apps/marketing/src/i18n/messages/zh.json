@@ -8606,8 +8606,9 @@
         "unknown": "本次 Agent 运行未能完成。"
       },
       "capturedReport": "阶段 02 · 已采集报告",
-      "captureSummary": "抓取 {pages} 页 · 已评估 {evaluated}/{total} 项检查",
+      "captureSummary": "抓取 {pages} 页 · 关键页 {keyPages} · 已评估 {evaluated}/{total} 项检查",
       "captureDetailLabel": "采集边界与计数",
+      "keyPagesNone": "本次没有可评估的关键页，页面级结论只针对提交的 URL。",
       "capturedLanded": "跳转到了 {url}，本报告读的是这个页面。",
       "finalOrigin": "最终公开源站",
       "capturedAt": "采集时间",
@@ -8743,6 +8744,10 @@
         "unrecognizedState": "未识别状态",
         "row": {
           "affectedUrls": "{count} 个受影响 URL",
+          "keyPageHits": "关键页 {hits}/{total} · 另有 {rest} 页",
+          "keyPageHitsAtLeast": "关键页 {hits}/{total} · 另有至少 {rest} 页",
+          "keyPageHitsOnly": "关键页 {hits}/{total}",
+          "keyPagePass": "关键页 {evaluated}/{total} 已评估 · 通过",
           "affectedSite": "站点级范围",
           "affectedUnavailable": "受影响范围不可得",
           "affectedNotCaptured": "未记录到具体目标",

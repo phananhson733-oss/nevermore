@@ -301,6 +301,15 @@ describe("AgentResults", () => {
     expect(detail?.textContent).toContain("Final public origin");
   });
 
+  it("says so when only the submitted page could be judged", () => {
+    // A run that judged one page looks exactly like one that judged twelve
+    // unless it says which happened.
+    render("seo", { response: evidencedData });
+
+    expect(host.querySelector("[data-key-pages-none]")).not.toBeNull();
+    expect(host.textContent).toContain("submitted URL only");
+  });
+
   it("reports the captured header count as evidence records, not as evaluated checks", () => {
     render("seo", { response: evidencedData });
 

@@ -10,6 +10,7 @@ import type {
   AgentAuditTruthState,
 } from "@sf/public-tools/agent-audit";
 
+import type { AgentKeyPageReach } from "./agent-key-page-aggregate";
 import type { AgentKind } from "./agent-types";
 import {
   analyzeAgentRecommendations,
@@ -79,6 +80,29 @@ export interface AgentIssueAffectedTargets {
    * False here means the count is a floor and the surface has to say so.
    */
   readonly enumerated: boolean;
+  /**
+   * How much of the key page set this issue was judged on.
+   *
+   * Separate from `totalCount`, which counts the whole crawl. A row that says
+   * "3 of 12 key pages" beside "another 44 pages" is stating two different
+   * populations on purpose: the pages this Profile pointed at, and everywhere
+   * else the same problem was seen.
+   *
+   * Null for a site-wide check, which has no page reach to state, and for a
+   * run that selected no key pages at all.
+   */
+  readonly keyPages: AgentIssueKeyPageReach | null;
+}
+
+export interface AgentIssueKeyPageReach {
+  /** Key pages this run selected. */
+  readonly total: number;
+  /** Key pages this check reached any conclusion on. */
+  readonly evaluated: number;
+  /** Key pages the problem was found on. Never truncated. */
+  readonly hits: number;
+  /** Hit pages in selection order, bounded for display. */
+  readonly urls: readonly string[];
 }
 
 export interface AgentIssue {
@@ -237,6 +261,7 @@ const UNAVAILABLE_TARGETS: AgentIssueAffectedTargets = {
   totalCount: null,
   overflowCount: 0,
   enumerated: false,
+  keyPages: null,
 };
 
 /** No observation resolved to this issue — missing evidence, not a clean zero. */
@@ -246,6 +271,7 @@ const NOT_CAPTURED_TARGETS: AgentIssueAffectedTargets = {
   totalCount: null,
   overflowCount: 0,
   enumerated: false,
+  keyPages: null,
 };
 
 /**
@@ -261,10 +287,25 @@ const NOT_CAPTURED_TARGETS: AgentIssueAffectedTargets = {
  * the finding, so the larger of the two is reported and `enumerated` says
  * whether the list actually accounts for it.
  */
+function keyPageReachOf(
+  reach: AgentKeyPageReach | undefined,
+): AgentIssueKeyPageReach | null {
+  return reach === undefined || reach.keyPageTotal === 0
+    ? null
+    : {
+        total: reach.keyPageTotal,
+        evaluated: reach.keyPageEvaluatedCount,
+        hits: reach.keyPageHitCount,
+        urls: reach.hitUrls.slice(0, AGENT_ISSUE_URL_DISPLAY_LIMIT),
+      };
+}
+
 function affectedTargets(
   records: readonly SeoAuditRecord[],
+  reach: AgentKeyPageReach | undefined,
 ): AgentIssueAffectedTargets {
-  if (records.length === 0) return NOT_CAPTURED_TARGETS;
+  const keyPages = keyPageReachOf(reach);
+  if (records.length === 0) return { ...NOT_CAPTURED_TARGETS, keyPages };
 
   const urls: string[] = [];
   const seen = new Set<string>();
@@ -292,11 +333,12 @@ function affectedTargets(
         totalCount: Math.max(siteLevel, claimedAffected),
         overflowCount: 0,
         enumerated: claimedAffected <= siteLevel,
+        keyPages,
       };
     }
     // Records exist but published no observation at all. Reporting 0 here
     // would state a measured clean population the run never established.
-    return NOT_CAPTURED_TARGETS;
+    return { ...NOT_CAPTURED_TARGETS, keyPages };
   }
 
   const shown = urls.slice(0, AGENT_ISSUE_URL_DISPLAY_LIMIT);
@@ -307,6 +349,7 @@ function affectedTargets(
     totalCount: total,
     overflowCount: total - shown.length,
     enumerated: claimedAffected <= urls.length,
+    keyPages,
   };
 }
 
@@ -316,6 +359,8 @@ export interface BuildAgentIssueModelInput {
   readonly records: readonly SeoAuditRecord[];
   /** Normalized crawl entry URL, when one page is the subject of this run. */
   readonly targetUrl?: string;
+  /** Per-check key page reach, keyed by check id. Absent for a single-page run. */
+  readonly keyPageReach?: ReadonlyMap<string, AgentKeyPageReach>;
 }
 
 /**
@@ -332,7 +377,10 @@ export function buildAgentIssueModel({
   checks,
   records,
   targetUrl,
+  keyPageReach,
 }: BuildAgentIssueModelInput): AgentIssueModel {
+  const reachOf = (check: AgentAuditEvaluatedCheck) =>
+    keyPageReach?.get(check.check.id);
   const analysis = analyzeAgentRecommendations(agent, checks, records, {
     ...(targetUrl === undefined ? {} : { targetUrl }),
     limit: Number.POSITIVE_INFINITY,
@@ -377,7 +425,7 @@ export function buildAgentIssueModel({
       severity: RESULT_LANE[check.result].severity,
       priority: RESULT_PRIORITY[check.result] ?? null,
       recognized: true,
-      affected: affectedTargets(recommendation.evidenceRecords),
+      affected: affectedTargets(recommendation.evidenceRecords, reachOf(check)),
       evidenceRecords: recommendation.evidenceRecords,
       copyMode: "repair",
     });
@@ -419,7 +467,13 @@ export function buildAgentIssueModel({
       // Passed and excluded rows carry no verdict to prioritise.
       priority: null,
       recognized: true,
-      affected: UNAVAILABLE_TARGETS,
+      // No affected URLs, but the reach still matters: a check that passed on
+      // four of twelve key pages has not passed on twelve, and the fail-closed
+      // ruling makes that the common case rather than an edge one.
+      affected: {
+        ...UNAVAILABLE_TARGETS,
+        keyPages: keyPageReachOf(reachOf(check)),
+      },
       evidenceRecords: [],
       copyMode: "repair",
     };
