@@ -1153,6 +1153,14 @@
       "noMatchingObservation": "在已检查集合中没有出现符合该条件的观测。",
       "limitationLabel": "证据边界",
       "limitations": {
+        "declared_meta_viewport_only_no_rendering": "仅依据已声明的 meta viewport 判定；本次运行不做渲染。",
+        "declared_html_lang_attribute_only": "仅依据已声明的 html lang 属性判定。",
+        "meta_charset_and_content_type_header_only": "仅依据 meta charset 与 Content-Type 响应头判定。",
+        "declared_link_rel_icon_only_no_root_probe": "仅依据已声明的 link rel=icon 判定；不会去请求根目录下的图标文件。",
+        "static_text_units_reviewed_floor_not_a_documented_rule": "按静态文本单位与一条审阅过的工作下限比较；该下限不是有据可查的规则。",
+        "declared_anchor_attributes_only": "仅依据已声明的链接属性判定。",
+        "transferred_markup_only_no_rendering": "按传输到的标记度量；本次运行不执行脚本。",
+        "transferred_markup_bytes_only": "仅按传输到的标记字节度量。",
         "resource_not_observed_does_not_prove_absence": "没有观测到资源，可能是资源不存在、不可达、被拦截，或未进入成功获取的资源集合；不能据此断言资源缺失。",
         "static_response_directives_only": "这里只读取已采集静态 HTTP/HTML 中的索引指令，不检测搜索引擎的真实索引覆盖。",
         "normalised_text_match_within_inspected_pages": "重复分组使用忽略大小写、合并空白后的文本，只覆盖本次已检查页面。",
@@ -1247,6 +1255,38 @@
         "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge": "该资源上报的曝光大部分落在本次抓取从未到达的 URL 上，比例只会在「仍然被链接的页面」上算出来——而那恰恰是没有被废弃的那些。"
       },
       "records": {
+        "viewport_missing": {
+          "title": "缺少移动端 viewport 的页面",
+          "description": "标记中没有声明 meta viewport 的页面：手机会把桌面版布局整体缩小显示。"
+        },
+        "lang_missing": {
+          "title": "缺少 html lang 属性的页面",
+          "description": "没有声明阅读语言的页面，语言只能靠猜。"
+        },
+        "charset_missing": {
+          "title": "未声明字符集的页面",
+          "description": "标记与响应头都没有说明字节该如何解码的页面。"
+        },
+        "favicon_missing": {
+          "title": "未声明站点图标的页面",
+          "description": "没有 link rel=icon 声明的页面——标签页、书签和结果行显示的就是它。"
+        },
+        "thin_body_text": {
+          "title": "正文量低于审阅下限的页面",
+          "description": "文本单位数低于审阅下限的页面。按单位而不是按词计，所以不使用词间空格的文字与使用的在同一把尺子上。"
+        },
+        "external_link_blank_without_noopener": {
+          "title": "存在 target=_blank 缺 rel=noopener 链接的页面",
+          "description": "开新标签页却不带 rel=noopener 的出站链接，会把本页的引用交给被打开的页面。"
+        },
+        "client_rendered_content": {
+          "title": "脚本体积远超可见正文的页面",
+          "description": "看的是比例不是绝对字节：大页面只要正文按比例也大，就没有问题。"
+        },
+        "html_document_oversized": {
+          "title": "标记体积超出审阅上限的页面",
+          "description": "指传输的文档本身，不含它引用的任何资源。"
+        },
         "robots_resource": {
           "title": "robots.txt 资源",
           "description": "爬虫是否成功获取并解析到 robots.txt 资源。"
@@ -1533,6 +1573,13 @@
         }
       },
       "evidence": {
+        "viewport_declared": "是否声明 viewport",
+        "html_lang": "html lang",
+        "charset_declared": "是否声明字符集",
+        "favicon_declared": "是否声明站点图标",
+        "reviewed_floor": "审阅下限",
+        "blank_without_noopener": "target=_blank 且缺 rel=noopener",
+        "reviewed_ceiling": "审阅上限",
         "fetched": "是否已获取",
         "groups_observed": "已观测 Robots 规则组",
         "sitemap_references": "Sitemap 引用",

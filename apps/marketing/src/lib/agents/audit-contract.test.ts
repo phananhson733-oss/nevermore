@@ -70,7 +70,7 @@ const success = {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v17",
+        schemaVersion: "seo_audit.sitewide.v18",
         completedAt: "2026-08-12T09:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -210,7 +210,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
       expect(isAgentAuditSuccessEnvelope(envelope)).toBe(true);
       // Pinned as a literal so adding a detector shows up here as a number
       // someone has to change on purpose.
-      expect(envelope.data.result.records).toHaveLength(47);
+      expect(envelope.data.result.records).toHaveLength(55);
       expect("pages" in envelope.data.result).toBe(false);
     },
   );

@@ -1153,6 +1153,14 @@
       "noMatchingObservation": "No matching observation was present in the inspected set.",
       "limitationLabel": "Evidence boundary",
       "limitations": {
+        "declared_meta_viewport_only_no_rendering": "Read from the declared meta viewport only; this run renders nothing.",
+        "declared_html_lang_attribute_only": "Read from the declared html lang attribute only.",
+        "meta_charset_and_content_type_header_only": "Read from the meta charset and the Content-Type header only.",
+        "declared_link_rel_icon_only_no_root_probe": "Read from the declared link rel=icon only; no request is made for a root icon file.",
+        "static_text_units_reviewed_floor_not_a_documented_rule": "Counted in static text units against a reviewed working floor, which is not a documented rule.",
+        "declared_anchor_attributes_only": "Read from the declared anchor attributes only.",
+        "transferred_markup_only_no_rendering": "Measured on the transferred markup; this run executes no script.",
+        "transferred_markup_bytes_only": "Measured on the transferred markup bytes only.",
         "resource_not_observed_does_not_prove_absence": "A resource that was not observed may be absent, unreachable, blocked, or outside the successfully fetched resource set.",
         "static_response_directives_only": "Indexability here comes from the collected static HTTP/HTML directives. Search-engine index coverage is not measured.",
         "normalised_text_match_within_inspected_pages": "Duplicate groups use case-insensitive, whitespace-normalised text and include only inspected pages.",
@@ -1247,6 +1255,38 @@
         "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge": "Most of this property's reported impressions are on URLs this crawl never reached, so the share would be computed over the pages that happen to still be linked - exactly the ones that are not abandoned."
       },
       "records": {
+        "viewport_missing": {
+          "title": "Pages without a mobile viewport",
+          "description": "Pages whose markup declares no meta viewport, so a phone renders the desktop layout scaled down."
+        },
+        "lang_missing": {
+          "title": "Pages without an html lang attribute",
+          "description": "Pages that declare no reading language, leaving it to be guessed."
+        },
+        "charset_missing": {
+          "title": "Pages declaring no character set",
+          "description": "Pages where neither the markup nor the response header said how to decode the bytes."
+        },
+        "favicon_missing": {
+          "title": "Pages declaring no icon",
+          "description": "Pages with no declared link rel=icon, which is what a tab, a bookmark and a result row show."
+        },
+        "thin_body_text": {
+          "title": "Pages below the reviewed body-text floor",
+          "description": "Pages carrying fewer text units than the reviewed floor. Units, not words, so a page written without inter-word spaces is measured on the same scale."
+        },
+        "external_link_blank_without_noopener": {
+          "title": "Pages with target=_blank links missing rel=noopener",
+          "description": "Outbound links that open a new tab without rel=noopener hand the opened page a handle on this one."
+        },
+        "client_rendered_content": {
+          "title": "Pages whose script payload dwarfs their visible text",
+          "description": "A ratio, not a byte count: a large page with proportionally large text is doing its job."
+        },
+        "html_document_oversized": {
+          "title": "Pages over the reviewed markup size",
+          "description": "The transferred document itself, before anything it references."
+        },
         "robots_resource": {
           "title": "robots.txt resource",
           "description": "Whether the crawler successfully fetched and parsed a robots.txt resource."
@@ -1533,6 +1573,13 @@
         }
       },
       "evidence": {
+        "viewport_declared": "Viewport declared",
+        "html_lang": "html lang",
+        "charset_declared": "Character set declared",
+        "favicon_declared": "Icon declared",
+        "reviewed_floor": "Reviewed floor",
+        "blank_without_noopener": "target=_blank without rel=noopener",
+        "reviewed_ceiling": "Reviewed ceiling",
         "fetched": "Fetched",
         "groups_observed": "Robots groups observed",
         "sitemap_references": "Sitemap references",

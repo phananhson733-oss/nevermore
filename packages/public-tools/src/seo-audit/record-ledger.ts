@@ -51,6 +51,14 @@ export const SEO_AUDIT_RECORD_CATEGORIES = {
   faq_schema_question_not_on_page: "structured_data",
   page_near_duplicate_of_another_page: "structure",
   json_ld_parse_error: "structured_data",
+  viewport_missing: "structure",
+  lang_missing: "metadata",
+  charset_missing: "metadata",
+  favicon_missing: "metadata",
+  thin_body_text: "structure",
+  external_link_blank_without_noopener: "links",
+  client_rendered_content: "structure",
+  html_document_oversized: "structure",
   page_outbound_broken_link: "links",
   page_not_in_sitemap: "crawl",
   title_length_outside_range: "metadata",
@@ -87,6 +95,18 @@ export const SEO_AUDIT_RECORD_IDS = Object.keys(SEO_AUDIT_RECORD_CATEGORIES);
  * either one importing the other's internals.
  */
 export const SEO_AUDIT_EVIDENCE_LABELS: readonly string[] = [
+  "viewport_declared",
+  "html_lang",
+  "charset_declared",
+  "favicon_declared",
+  "body_text_units",
+  "reviewed_floor",
+  "blank_without_noopener",
+  "external_links",
+  "script_bytes",
+  "visible_text_bytes",
+  "html_bytes",
+  "reviewed_ceiling",
   "fetched",
   "groups_observed",
   "sitemap_references",
@@ -179,6 +199,14 @@ export const SEO_AUDIT_EVIDENCE_LABELS: readonly string[] = [
  * unlisted code took every audit dark.
  */
 export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
+  "declared_meta_viewport_only_no_rendering",
+  "declared_html_lang_attribute_only",
+  "meta_charset_and_content_type_header_only",
+  "declared_link_rel_icon_only_no_root_probe",
+  "static_text_units_reviewed_floor_not_a_documented_rule",
+  "declared_anchor_attributes_only",
+  "transferred_markup_only_no_rendering",
+  "transferred_markup_bytes_only",
   "resource_not_observed_does_not_prove_absence",
   "static_response_directives_only",
   "normalised_text_match_within_inspected_pages",

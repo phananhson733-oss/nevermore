@@ -1,6 +1,11 @@
 import { subjectUrlOf } from "@sf/sources/canonical-url";
 import { measurePageSimilarity } from "./page-similarity.ts";
 import {
+  BODY_UNITS,
+  HTML_BYTES,
+  SCRIPT_DOMINANCE,
+} from "./page-shape-thresholds.ts";
+import {
   SOFT_404_BODY_FLOOR_UNITS,
   softNotFoundVerdict,
 } from "./soft-404.ts";
@@ -1563,6 +1568,160 @@ function buildRecords(
         ),
       limitation: "static_html_json_ld_only",
     }),
+    /**
+     * The eight below carry facts the crawl already parsed but the catalogue
+     * had no record for, so the On-Page Checker could grade them on one page
+     * and the Agent could not mention them on any.
+     *
+     * Every one of them reads `onPage`, which is optional on a collected page:
+     * a row without the side-car was never measured. Those pages are left out
+     * of `tested` and the population says `conditional_subset`, because
+     * counting them as tested would report an unmeasured page as compliant --
+     * the same defect this ledger removed from the alt-text counts.
+     */
+    record({
+      // 1.9. Without a viewport declaration a phone renders the desktop layout
+      // scaled down, which is a mobile experience nobody chose.
+      id: "viewport_missing",
+      category: "structure",
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => onPageOf(page) !== null),
+      observations: htmlPages.flatMap((page) => {
+        const facts = onPageOf(page);
+        return facts === null || facts.viewport !== null
+          ? []
+          : [pageObservation(page, { viewport_declared: "no" })];
+      }),
+      limitation: "declared_meta_viewport_only_no_rendering",
+    }),
+    record({
+      // 2.7. A missing `lang` leaves the reading language to be guessed.
+      id: "lang_missing",
+      category: "metadata",
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => onPageOf(page) !== null),
+      observations: htmlPages.flatMap((page) => {
+        const facts = onPageOf(page);
+        return facts === null || (facts.lang ?? "").trim() !== ""
+          ? []
+          : [pageObservation(page, { html_lang: null })];
+      }),
+      limitation: "declared_html_lang_attribute_only",
+    }),
+    record({
+      // 2.8. Neither the markup nor the response said how to decode the bytes.
+      id: "charset_missing",
+      category: "metadata",
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => onPageOf(page) !== null),
+      observations: htmlPages.flatMap((page) => {
+        const facts = onPageOf(page);
+        if (facts === null) return [];
+        const header = /charset=/i.test(page.contentType ?? "");
+        return facts.charset !== null || header
+          ? []
+          : [pageObservation(page, { charset_declared: "no" })];
+      }),
+      limitation: "meta_charset_and_content_type_header_only",
+    }),
+    record({
+      // 2.9. A declared icon is what a bookmark, a tab and a result row show.
+      id: "favicon_missing",
+      category: "metadata",
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => onPageOf(page) !== null),
+      observations: htmlPages.flatMap((page) => {
+        const facts = onPageOf(page);
+        return facts === null || facts.faviconDeclared
+          ? []
+          : [pageObservation(page, { favicon_declared: "no" })];
+      }),
+      limitation: "declared_link_rel_icon_only_no_root_probe",
+    }),
+    record({
+      // 4.6. Measured in text units, so a page written without inter-word
+      // spaces is judged on the same scale as one written with them.
+      id: "thin_body_text",
+      category: "structure",
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => onPageOf(page) !== null),
+      observations: htmlPages.flatMap((page) => {
+        const facts = onPageOf(page);
+        if (facts === null) return [];
+        const units =
+          facts.textMetrics.cjkChars + facts.textMetrics.nonCjkWords;
+        return units >= BODY_UNITS.thin
+          ? []
+          : [
+              pageObservation(page, {
+                body_text_units: units,
+                reviewed_floor: BODY_UNITS.thin,
+              }),
+            ];
+      }),
+      limitation: "static_text_units_reviewed_floor_not_a_documented_rule",
+    }),
+    record({
+      // 6.6. `target=_blank` without `rel=noopener` hands the opened page a
+      // handle on this one.
+      id: "external_link_blank_without_noopener",
+      category: "links",
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => onPageOf(page) !== null),
+      observations: htmlPages.flatMap((page) => {
+        const facts = onPageOf(page);
+        return facts === null || facts.externalLinks.blankWithoutNoopener === 0
+          ? []
+          : [
+              pageObservation(page, {
+                blank_without_noopener:
+                  facts.externalLinks.blankWithoutNoopener,
+                external_links: facts.externalLinks.total,
+              }),
+            ];
+      }),
+      limitation: "declared_anchor_attributes_only",
+    }),
+    record({
+      // 8.7. A ratio, not a byte count: a large page with proportionally large
+      // text is doing its job.
+      id: "client_rendered_content",
+      category: "structure",
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => onPageOf(page) !== null),
+      observations: htmlPages.flatMap((page) => {
+        const facts = onPageOf(page);
+        return facts === null ||
+          facts.scriptBytes <= facts.visibleTextBytes * SCRIPT_DOMINANCE
+          ? []
+          : [
+              pageObservation(page, {
+                script_bytes: facts.scriptBytes,
+                visible_text_bytes: facts.visibleTextBytes,
+              }),
+            ];
+      }),
+      limitation: "transferred_markup_only_no_rendering",
+    }),
+    record({
+      // 8.8. The document itself, before anything it references.
+      id: "html_document_oversized",
+      category: "structure",
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => onPageOf(page) !== null),
+      observations: htmlPages.flatMap((page) => {
+        const facts = onPageOf(page);
+        return facts === null || facts.htmlBytes <= HTML_BYTES.large
+          ? []
+          : [
+              pageObservation(page, {
+                html_bytes: facts.htmlBytes,
+                reviewed_ceiling: HTML_BYTES.large,
+              }),
+            ];
+      }),
+      limitation: "transferred_markup_bytes_only",
+    }),
   ];
 
   return records;
@@ -1677,7 +1836,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v17",
+      schemaVersion: "seo_audit.sitewide.v18",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },
