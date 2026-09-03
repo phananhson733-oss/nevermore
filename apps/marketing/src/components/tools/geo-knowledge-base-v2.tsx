@@ -60,7 +60,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
           blocking gate, so this states only the autosave state, and truthfully. */}
       <p data-autosave-hint={editor.autosaveHold ?? "on"} className="text-[12px] leading-relaxed text-text-dark-secondary">{editor.autosaveHold === null || editor.autosaveHold === "busy" ? te("autosave") : te(`autosaveHeld.${editor.autosaveHold}`)}</p>
       <p className="text-[12px] leading-relaxed text-text-dark-secondary">{te("buildHelp")}</p>
-      {editor.build === null ? null : <GeoKbV2BuildReport report={editor.build} locale={props.locale} />}
+      <GeoKbV2BuildReport report={editor.build} locale={props.locale} />
     </div>
     {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? te("conflict") : editor.status.code === "generation_running" ? te("generationRunning") : t.error} <span className="break-all font-mono text-xs">{editor.status.code}</span></p> : null}
     <div role="tabpanel" hidden={stage !== "input"} id={`${id}-input-panel`} aria-labelledby={`${id}-input-tab`} className="space-y-6">
@@ -81,16 +81,16 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
         hasUsableRoleProposal={roleProposal !== null && editor.roleProposalReusable(roleProposal)}
         hasCandidate={view.prepared !== null} candidateStale={editor.candidateStale} reviewed={editor.reviewed}
         frozenAtCurrentDraft={view.frozen !== null && "context" in view.frozen && view.frozen.contentHash === view.draftHash} />
-      <div className="space-y-3"><div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3">
         <Button data-refresh-sources type="button" variant="outline" disabled={!editor.canGenerate} onClick={() => void editor.refreshSources()}>{t.sources}</Button>
         <Button data-generate="roles" type="button" variant="outline" disabled={blockedGeneration("roles")} onClick={() => void editor.generate("roles")}>{t.generateRoles}</Button>
         <Button data-generate="questions" type="button" variant="outline" disabled={blockedGeneration("questions")} onClick={() => void editor.generate("questions")}>{t.prepare}</Button>
-      </div></div>
+      </div>
       {(["roles", "questions"] as const).map(kind => {
         const action = editor.generationAction(kind);
         if (action !== "new_input" && action !== "resend_same") return null;
         return <section key={kind} className="space-y-3 rounded-card border border-brand-accent/40 bg-brand-panel p-5 text-sm">
-          <h3 className="font-semibold">{kind === "roles" ? t.generateRoles : t.prepare}</h3><p>{action === "new_input" ? t.newInputHelp : t.resendHelp}</p>
+          <h4 className="font-semibold">{kind === "roles" ? t.generateRoles : t.prepare}</h4><p>{action === "new_input" ? t.newInputHelp : t.resendHelp}</p>
           <Button type="button" variant="outline" {...{ [action === "new_input" ? "data-new-generation" : "data-resend-generation"]: kind }} disabled={editor.busy} onClick={() => void editor.generate(kind, action)}>{action === "new_input" ? t.newInput : t.resendSame}</Button>
         </section>;
       })}
@@ -99,7 +99,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
         if (generation === null && pending === null) return null;
         const uncertain = generation?.state === "uncertain" || pending !== null && generation?.generationId !== pending.generationId;
         return <section data-generation-state={kind} key={kind} className="space-y-3 rounded-card border border-brand-border-card bg-brand-panel p-5 text-sm">
-          <h3 className="font-semibold">{kind === "roles" ? t.generateRoles : t.prepare}</h3>
+          <h4 className="font-semibold">{kind === "roles" ? t.generateRoles : t.prepare}</h4>
           <p role="status">{pending?.readNotFound && pending.generationId === null ? t.notFoundRequest : uncertain ? t.uncertain : generation?.state === "claimed" || generation?.state === "dispatched" ? t.running : generation?.state === "failed" ? t.failed : `${t.state}: ${stateLabel(generation?.state)}`}</p>
           {uncertain ? <p>{t.newVersionNeeded}</p> : null}
           {generation?.attempt ? <><dl className="grid gap-2 text-xs sm:grid-cols-2">
@@ -117,7 +117,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
           <Button type="button" variant="outline" data-read-generation={kind} disabled={editor.busy} onClick={() => void editor.readGeneration(kind)}>{t.readGeneration}</Button>
         </section>;
       })}
-      {editor.retainedRequests.length ? <section className="space-y-4 rounded-card border border-brand-border-card bg-brand-panel p-5 text-sm"><h3 className="font-semibold">{t.retainedRequests}</h3>{editor.retainedRequests.map(entry => <article key={entry.id} className="space-y-2 rounded-lg border border-brand-border-card p-4">
+      {editor.retainedRequests.length ? <section className="space-y-4 rounded-card border border-brand-border-card bg-brand-panel p-5 text-sm"><h4 className="font-semibold">{t.retainedRequests}</h4>{editor.retainedRequests.map(entry => <article key={entry.id} className="space-y-2 rounded-lg border border-brand-border-card p-4">
         <p>{entry.kind === "roles" ? t.generateRoles : t.prepare} · v{entry.baseVersion} · {entry.state}</p><p className="break-all font-mono text-xs">{entry.generationId ?? entry.idempotencyKey} {entry.errorReason ?? ""}</p>
         <Button type="button" variant="outline" data-read-retained={entry.id} disabled={editor.busy} onClick={() => void editor.readRetainedRequest(entry)}>{t.readGeneration}</Button>
       </article>)}</section> : null}

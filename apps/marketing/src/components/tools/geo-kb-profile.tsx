@@ -5,7 +5,7 @@
 // @pos    -- shared website settings and legacy GEO shortcut section
 
 import { useTranslations } from "next-intl";
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 import type { GeoInheritedProfile } from "../../lib/geo-tools/asset-context.ts";
 import type { GeoKbFact } from "../../lib/geo-tools/kb-contract.ts";
 import type { GeoProfileCopy } from "../../lib/geo-tools/kb-profile-copy.ts";
@@ -15,7 +15,7 @@ import { Button } from "../ui/button.tsx";
 import { Input } from "../ui/input.tsx";
 import { Label } from "../ui/label.tsx";
 import { Textarea } from "../ui/textarea.tsx";
-import { GeoKbFieldRow, GeoKbFieldRows, GeoKbSection } from "./geo-kb-section.tsx";
+import { GeoKbFieldRow, GeoKbFieldRows, GeoKbReadout, GeoKbSection } from "./geo-kb-section.tsx";
 
 const GROUPS = [
   { title: "productSection", fields: ["productName", "oneLinePositioning", "valueProposition", "coreFeatures", "categories", "businessModel", "primaryCta", "trustSignals", "firstOutcome"] },
@@ -155,41 +155,46 @@ function ReadOnlyProfileField({
   );
 }
 
-function ProfileSummary({ productName, oneLinePositioning, coreFeatures, market, facts, onAddFact }: {
+function ProfileSummary({ productName, oneLinePositioning, coreFeatures, market, facts, onAddFact, badge }: {
   readonly productName: string;
   readonly oneLinePositioning: string;
   readonly coreFeatures: readonly string[];
   readonly market: { readonly country: string; readonly language: string };
   readonly facts: readonly GeoKbFact[];
   readonly onAddFact?: (key: string, value: string) => void;
+  /** False on an immutable snapshot, where "inherited" would imply it still follows the Profile. */
+  readonly badge?: boolean;
 }) {
   const t = useTranslations("tools.geoKnowledgeBase");
-  // Drawn as the Profile editor draws its own read-only fields: one labelled
-  // row per value, the value in a control rather than as loose text, and every
-  // row's action in the same place. Trailing each action directly after the
-  // text it belongs to put the buttons at a different width on every row.
-  const inherited = <span className="inline-flex rounded-full border border-brand-border-card px-2 py-[2px] text-[11px] text-text-dark-secondary">{t("asset.inheritedBadge")}</span>;
+  // One labelled row per value, with every row's action in the same place.
+  // Trailing each action directly after the text it belongs to put the buttons
+  // at a different width on every row. The values stay read-only text, not
+  // controls: they are edited in the Profile, so a control here would offer a
+  // focus ring and a caret to someone who cannot change anything, and an empty
+  // one would hide its "not provided" text in a placeholder.
+  const inherited = badge === false ? null : <span className="inline-flex rounded-full border border-brand-border-card px-2 py-[2px] text-[11px] text-text-dark-secondary">{t("asset.inheritedBadge")}</span>;
+  const withBadge = (action: ReactNode) => inherited === null ? action : <div className="flex items-center gap-2">{inherited}{action}</div>;
   return (
     <div data-geo-profile-summary className="mt-4">
       <GeoKbFieldRows>
-        <GeoKbFieldRow data-geo-summary-field="productName" label={t("asset.productName")} action={<div className="flex items-center gap-2">{inherited}<ProfileFactButton factKey="productName" value={productName} facts={facts} onAddFact={onAddFact} /></div>}>
-          <Input readOnly aria-label={t("asset.productName")} value={productName} placeholder={t("asset.emptyField")} />
+        <GeoKbFieldRow data-geo-summary-field="productName" label={t("asset.productName")} action={withBadge(<ProfileFactButton factKey="productName" value={productName} facts={facts} onAddFact={onAddFact} />)}>
+          <GeoKbReadout value={productName} empty={t("asset.emptyField")} />
         </GeoKbFieldRow>
-        <GeoKbFieldRow data-geo-summary-field="oneLinePositioning" label={t("asset.positioning")} action={<div className="flex items-center gap-2">{inherited}<ProfileFactButton factKey="oneLinePositioning" value={oneLinePositioning} facts={facts} onAddFact={onAddFact} /></div>}>
-          <Textarea readOnly rows={2} aria-label={t("asset.positioning")} value={oneLinePositioning} placeholder={t("asset.emptyField")} />
+        <GeoKbFieldRow data-geo-summary-field="oneLinePositioning" label={t("asset.positioning")} action={withBadge(<ProfileFactButton factKey="oneLinePositioning" value={oneLinePositioning} facts={facts} onAddFact={onAddFact} />)}>
+          <GeoKbReadout value={oneLinePositioning} empty={t("asset.emptyField")} />
         </GeoKbFieldRow>
         <GeoKbFieldRow data-geo-summary-field="coreFeatures" label={t("asset.features")} action={inherited} {...(onAddFact === undefined ? {} : { hint: t("asset.featureCandidateHelp") })}>
           {coreFeatures.length === 0
-            ? <Input readOnly aria-label={t("asset.features")} value="" placeholder={t("asset.emptyField")} />
+            ? <GeoKbReadout value="" empty={t("asset.emptyField")} />
             : <ul className="grid gap-2">{coreFeatures.map((feature, index) => (
               <li className="flex items-start gap-2" key={`${index}-${feature}`}>
-                <Input className="min-w-0 flex-1" readOnly aria-label={`${t("asset.features")} ${index + 1}`} value={feature} />
+                <div className="min-w-0 flex-1"><GeoKbReadout value={feature} empty={t("asset.emptyField")} /></div>
                 <ProfileFactButton factKey={`coreFeatures[${index}]`} value={feature} facts={facts} onAddFact={onAddFact} />
               </li>
             ))}</ul>}
         </GeoKbFieldRow>
         <GeoKbFieldRow data-geo-summary-field="market" label={t("asset.market")} action={inherited}>
-          <Input readOnly aria-label={t("asset.market")} value={[market.country, market.language].filter(Boolean).join(" \u00b7 ")} placeholder={t("asset.emptyField")} />
+          <GeoKbReadout value={[market.country, market.language].filter(Boolean).join(" \u00b7 ")} empty={t("asset.emptyField")} />
         </GeoKbFieldRow>
       </GeoKbFieldRows>
     </div>
@@ -251,6 +256,7 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
           coreFeatures={copy.profile.coreFeatures}
           market={{ country: copy.profile.country, language: copy.profile.locale }}
           facts={facts}
+          badge={!frozen}
           {...(onAddFact === undefined ? {} : { onAddFact })}
         />
         {onAddFact === undefined ? null : <p className="mt-3 text-xs text-text-dark-secondary">{t("asset.profileFactBoundary")}</p>}

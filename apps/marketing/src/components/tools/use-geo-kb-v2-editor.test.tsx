@@ -58,6 +58,28 @@ it("freeze requires exact candidate review and sends only ID/hash then reloads f
   const init = vi.mocked(fetch).mock.calls[0]?.[1]; expect(JSON.parse(String(init?.body))).toEqual({ kbId: view.kbId, candidateId: view.prepared!.candidateId, candidateHash: view.prepared!.candidateHash });
   expect(vi.mocked(fetch).mock.calls[1]?.[0]).toContain("/v2/load");
 });
+it("does not call a save that succeeded a save that failed after the Profile copy changed", async () => {
+  // The build saves, and a save that carries a new Profile copy reloads the
+  // editor. The gates read a ref; if that ref were only refreshed on the next
+  // render, the very next line would read a hold that no longer applies and
+  // the visitor would be told the draft did not save when it did.
+  const view = editorFixture(); await mount(view);
+  const newer = { ...structuredClone(view), profile: { ...view.profile!, reference: { ...view.profile!.reference, snapshotId: "22222222-2222-4222-8222-222222222222", snapshotRevision: 2 } } };
+  vi.mocked(fetch).mockResolvedValueOnce(response(newer));
+  await act(async () => editor.reviewProfileCopy());
+  await act(async () => editor.adoptProfileCopy());
+  const adopted = editor.payload;
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(response({ draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] }))
+    .mockResolvedValueOnce(response({ ...newer, payload: adopted, draftVersion: 2, draftHash: "c".repeat(64), profileCopyHash: geoV2Digest(adopted.profileCopy) }))
+    .mockResolvedValueOnce(response(sourceFixture({ ...newer, payload: adopted, draftVersion: 2, draftHash: "c".repeat(64) })))
+    .mockResolvedValueOnce(response({ generation: { generationId: "44444444-4444-4444-8444-444444444444", kbId: view.kbId, kind: "roles", inputHash: "d".repeat(64), state: "dispatched", result: null, errorReason: null, attempt: null }, reused: false }));
+
+  await act(async () => editor.buildFromProfile());
+
+  expect(editor.build?.stoppedAt).not.toBe("save");
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toContain("/api/tools/geo-knowledge-base/v2/roles");
+});
 it("reading a newer Profile is only a proposal; adoption is explicit and must be saved", async () => {
   const view = editorFixture(); await mount(view); const newer = { ...structuredClone(view), profile: { ...view.profile!, reference: { ...view.profile!.reference, snapshotId: "22222222-2222-4222-8222-222222222222", snapshotRevision: 2 } } };
   vi.mocked(fetch).mockResolvedValueOnce(response(newer)); await act(async () => editor.reviewProfileCopy());

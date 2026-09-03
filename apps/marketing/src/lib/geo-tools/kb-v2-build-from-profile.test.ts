@@ -79,13 +79,48 @@ describe("buildGeoV2FromProfile", () => {
     expect(build.payload.competitors.map(row => row.domain)).toContain("astro.com");
   });
 
-  it("never derives roles or facts, whose review lineage the Profile cannot supply", () => {
+  it("returns the reviewed roles and facts untouched, and never derives its own", () => {
+    // Handing in an already-empty set would be satisfied by a function that
+    // clears them, which is the one failure that matters here.
     const profile = profileOf({ productName: "AstrologyWiki", buyer: "Beginner", primaryIcp: "Curious reader", categories: ["astrology"] });
-    const payload: GeoKbPayloadV2 = { ...base(), roles: [], facts: [], aliases: [] };
+    const payload: GeoKbPayloadV2 = { ...base(), aliases: [] };
+    expect(payload.roles.length).toBeGreaterThan(0);
+    expect(payload.facts.length).toBeGreaterThan(0);
 
     const build = buildGeoV2FromProfile(profile, payload);
 
-    expect(build.payload.roles).toEqual([]);
-    expect(build.payload.facts).toEqual([]);
+    expect(build.payload.roles).toEqual(payload.roles);
+    expect(build.payload.facts).toEqual(payload.facts);
+  });
+
+  it("does not call a full competitor set a match for a Profile it does not match", () => {
+    const profile = profileOf({ directCompetitors: ["cafeastrology.com", "astro.com"] });
+    const full = Array.from({ length: 5 }, (_row, index) => ({ domain: `hand${index}.example`, brandName: `Hand ${index}`, confirmed: true, aliases: [] }));
+
+    const build = buildGeoV2FromProfile(profile, { ...base(), competitors: full });
+
+    expect(build.competitors).toBe("manual");
+    expect(build.payload.competitors).toEqual(full);
+  });
+
+  it("reports a field the Profile cannot supply as unavailable, not as agreement", () => {
+    // A market GEO cannot read is not a market that already matches.
+    const profile = profileOf({ productName: "AstrologyWiki", categories: [], country: "not-a-country", locale: "nonsense" });
+
+    const build = buildGeoV2FromProfile(profile, { ...base(), aliases: ["Held"] });
+
+    expect([...build.unavailable]).toContain("market");
+    expect([...build.unavailable]).toContain("categoryTerms");
+    expect([...build.fields]).not.toContain("market");
+  });
+
+  it("treats an alias box the visitor emptied as empty, not as a curated list", () => {
+    // The editor splits a textarea on newlines, so a cleared box is [""].
+    const profile = profileOf({ productName: "AstrologyWiki" });
+
+    const build = buildGeoV2FromProfile(profile, { ...base(), officialName: "AstrologyWiki", aliases: [""] });
+
+    expect(build.aliases).toBe("adopted");
+    expect(build.payload.aliases).toContain("AstrologyWiki");
   });
 });

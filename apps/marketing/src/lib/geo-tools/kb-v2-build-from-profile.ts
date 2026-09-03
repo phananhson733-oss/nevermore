@@ -5,11 +5,13 @@ import type { MarketingWebsiteProfileV1 } from "../account-websites/contracts.ts
 import { GEO_KB_LIMITS } from "./kb-contract.ts";
 import type { GeoKbPayloadV2 } from "./kb-v2-contract.ts";
 import { proposeGeoKbAliases } from "./kb-aliases.ts";
+import { cleanGeoList } from "./kb-v2-clean.ts";
 import { competitorIdentity } from "./kb-profile-suggestions.ts";
 import {
   applyGeoV2Measurement,
   geoV2MeasurementGapFrom,
   geoV2MeasurementProposal,
+  GEO_V2_MEASUREMENT_FIELDS,
   type GeoV2MeasurementField,
 } from "./kb-v2-measurement.ts";
 
@@ -26,6 +28,13 @@ export interface GeoV2ProfileBuild {
   readonly payload: GeoKbPayloadV2;
   /** Measurement fields actually written, in contract order. */
   readonly fields: readonly GeoV2MeasurementField[];
+  /**
+   * Fields the Profile holds in a form GEO cannot use -- an unusable category
+   * list, a market that is not a country/language pair. They were neither
+   * written nor found to agree, and reporting them as either would be a lie:
+   * the comparison could not be made at all.
+   */
+  readonly unavailable: readonly GeoV2MeasurementField[];
   readonly aliases: GeoV2BuildOutcome;
   readonly competitors: GeoV2BuildOutcome;
   /** True when the returned payload differs from the one given. */
@@ -60,11 +69,18 @@ export function buildGeoV2FromProfile(
   const lossless = held.every((identity) =>
     adoptable.some((row) => row.identity === identity),
   );
-  const competitors: GeoV2BuildOutcome = !gap.competitorsDiffer
-    ? "unchanged"
-    : lossless && adoptable.length <= GEO_KB_LIMITS.competitors
-      ? "adopted"
-      : "manual";
+  // "No room" is not "no difference". `competitorsDiffer` folds the two
+  // together because it was written for a banner the visitor could clear;
+  // consumed as an outcome it would report a draft already holding the maximum
+  // rows as matching a Profile it does not match at all.
+  const competitors: GeoV2BuildOutcome =
+    gap.missingCompetitorCount === 0
+      ? "unchanged"
+      : gap.competitorsDiffer &&
+          lossless &&
+          adoptable.length <= GEO_KB_LIMITS.competitors
+        ? "adopted"
+        : "manual";
 
   let next = applyGeoV2Measurement(payload, proposal, {
     fields: gap.fields,
@@ -78,8 +94,10 @@ export function buildGeoV2FromProfile(
   // an existing list is a curated one, and this derivation cannot tell which
   // entries were removed on purpose.
   const derived = proposeGeoKbAliases(next.targetUrl, next.officialName);
+  // The form splits a textarea on newlines, so an emptied box is [""], not [].
+  // Cleaning only happens on submit, and this runs on the raw form payload.
   const aliases: GeoV2BuildOutcome =
-    next.aliases.length > 0
+    cleanGeoList(next.aliases).length > 0
       ? "unchanged"
       : derived.length === 0
         ? "manual"
@@ -90,9 +108,13 @@ export function buildGeoV2FromProfile(
   // nothing. What was actually written is what the outcomes above record.
   const changed =
     gap.fields.length > 0 || aliases === "adopted" || competitors === "adopted";
+  const unavailable = GEO_V2_MEASUREMENT_FIELDS.filter(
+    (field) => proposal.fields[field] === null,
+  );
   return {
     payload: changed ? next : payload,
     fields: gap.fields,
+    unavailable,
     aliases,
     competitors,
     changed,

@@ -120,8 +120,7 @@ describe("website GEO canonical editor", () => {
     expect(renderedText(container)).toContain("Saved feature");
     expect(container.textContent).toContain("Confirmed Profile revision 2");
     expect(container.textContent).toContain("a".repeat(64));
-    // Shown, never editable here: every control carrying an inherited value is read-only.
-    expect([...container.querySelectorAll("input")].filter((input) => input.value === "Inherited product").every((input) => input.readOnly)).toBe(true);
+    expect([...container.querySelectorAll("input")].some((input) => input.value === "Inherited product")).toBe(false);
     expect([...container.querySelectorAll("input")].some((input) => input.value === "Alias override")).toBe(true);
     expect(container.querySelector("#kb-site-url")).toBeNull();
     expect(container.querySelector(`a[href='/en/account/websites/${WEBSITE_ID}']`)).not.toBeNull();

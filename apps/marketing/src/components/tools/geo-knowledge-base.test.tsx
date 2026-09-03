@@ -752,10 +752,7 @@ describe("which site the knowledge base was actually loaded for", () => {
     expect(renderedText(container)).toContain("Original Profile product");
     expect(renderedText(container)).toContain("Read-only positioning");
     expect(renderedText(container)).toContain("Core feature from Profile");
-    // Shown, never editable here: the inherited name is a read-only control.
-    const nameControls = [...(container?.querySelectorAll("input") ?? [])].filter((input) => input.value === "Original Profile product");
-    expect(nameControls.length).toBeGreaterThan(0);
-    expect(nameControls.every((input) => input.readOnly)).toBe(true);
+    expect([...(container?.querySelectorAll("input") ?? [])].some((input) => input.value === "Original Profile product")).toBe(false);
     expect(field(copy("brand.officialNameLabel")).value).toBe("Acme Analytics");
   });
 

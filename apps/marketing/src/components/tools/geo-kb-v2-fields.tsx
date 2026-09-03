@@ -12,8 +12,8 @@ import { Input } from "../ui/input.tsx";
 import { Textarea } from "../ui/textarea.tsx";
 
 /** Kept as the name the other GEO panels import; the form is now the shared one. */
-export function GeoKbEditorPanel({ title, description, children }: { readonly title: string; readonly description?: string; readonly children: ReactNode }) {
-  return <GeoKbSection title={title} heading={4} {...(description === undefined ? {} : { description })}>{children}</GeoKbSection>;
+export function GeoKbEditorPanel({ title, children }: { readonly title: string; readonly children: ReactNode }) {
+  return <GeoKbSection title={title} heading={4}>{children}</GeoKbSection>;
 }
 function Field({ label, value, onChange, kind, field, list = false }: { readonly label: string; readonly value: string; readonly onChange: (value: string) => void; readonly kind: string; readonly field: string; readonly list?: boolean }) {
   const id = useId(), data = { [`data-${kind}-field`]: field };

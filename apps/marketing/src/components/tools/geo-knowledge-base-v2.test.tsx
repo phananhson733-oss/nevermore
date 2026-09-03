@@ -125,13 +125,55 @@ it("builds the whole knowledge base from the confirmed Profile in one gesture", 
   expect(saved.payload.aliases).toContain("Acme");
   expect(saved.payload.competitors.map(row => row.domain)).toEqual(["rival.example"]);
   const report = host.querySelector("[data-geo-v2-build-report]");
-  expect(report?.querySelector("[data-build-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildDone);
+  expect(report?.querySelector("[data-build-fields]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildFields.replace("{fields}", "Matching name · Question categories"));
   expect(report?.querySelector("[data-build-aliases]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildAliases.adopted);
+  // The request was dispatched, not answered: nothing is readable below yet.
+  expect(report?.querySelector("[data-build-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildStopped.rolesPending);
+});
+
+it("never calls a dispatched or refused role generation a proposal the visitor can review", async () => {
+  const base = editorFixture();
+  const view = { ...base, prepared: null, payload: { ...base.payload, aliases: [] } };
+  const roles = (state: string, errorReason: string | null) => Response.json({ data: { generation: { generationId: "44444444-4444-4444-8444-444444444444", kbId: view.kbId, kind: "roles", inputHash: "d".repeat(64), state, result: null, errorReason, attempt: null }, reused: false } });
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(Response.json({ data: { draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] } }))
+    .mockResolvedValueOnce(Response.json({ data: sourceFixture({ ...view, draftVersion: 2, draftHash: "c".repeat(64) }) }))
+    // The route answers 200 for a generation the provider refused.
+    .mockResolvedValueOnce(roles("failed", "rate_limited"));
+  await render(view);
+
+  await click("[data-build-v2]");
+
+  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildStopped.rolesFailed);
+  expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.editor.buildDone);
+});
+
+it("writes nothing and bills nothing when the draft already matches the Profile", async () => {
+  // The default fixture is saved, clean, and holds a candidate the visitor
+  // already paid to prepare. A redundant write would stale it.
+  // It also already holds source evidence for exactly this draft. Re-reading
+  // it would spend the shared crawl and Search Console budget and mint a new
+  // receipt, which alone changes the generation input identity and bills again.
+  // The redundant draft write is what staled an already-prepared candidate, so
+  // the absence of that write is what this asserts.
+  const base = editorFixture();
+  const view = { ...base, prepared: null, sourceReceipt: sourceFixture(base) };
+  await render(view);
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(Response.json({ data: { generation: { generationId: "44444444-4444-4444-8444-444444444444", kbId: view.kbId, kind: "roles", inputHash: "d".repeat(64), state: "succeeded", result: null, errorReason: null, attempt: null }, reused: false } }));
+
+  await click("[data-build-v2]");
+
+  const paths = vi.mocked(fetch).mock.calls.map(call => String(call[0]));
+  expect(paths).toEqual(["/api/tools/geo-knowledge-base/v2/roles"]);
+  expect(host.querySelector("[data-build-fields]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildNoFields);
 });
 
 it("stops the build at the failed step instead of paying for the model call after it", async () => {
+  // requiresSave with a derivation that writes nothing, so only the save's own
+  // result can stop the chain: a dirty draft would stop it for another reason.
   const base = editorFixture();
-  const view = { ...base, prepared: null, payload: { ...base.payload, aliases: [] } };
+  const view = { ...base, prepared: null, requiresSave: true };
   vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "rate_limited" } }, { status: 429 }));
   await render(view);
 
@@ -151,6 +193,10 @@ it("refuses to build onto a draft whose Profile copy is behind, and says which s
 
   expect(fetch).not.toHaveBeenCalled();
   expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildStopped.copy);
+  // No derivation ran, so no part of one is reported.
+  expect(host.querySelector("[data-build-fields]")).toBeNull();
+  expect(host.querySelector("[data-build-aliases]")).toBeNull();
+  expect(host.querySelector("[data-build-competitors]")).toBeNull();
 });
 it("reads as three named parts with one ordered progress model", async () => {
   await render();

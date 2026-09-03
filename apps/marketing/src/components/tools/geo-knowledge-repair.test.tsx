@@ -457,10 +457,7 @@ describe("knowledge repair", () => {
     await mount();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(renderedText(container)).toContain("Confirmed feature");
-    // Shown, never editable here: the inherited name is a read-only control.
-    const nameControls = [...container.querySelectorAll("input")].filter((input) => input.value === "Original Profile name");
-    expect(nameControls.length).toBeGreaterThan(0);
-    expect(nameControls.every((input) => input.readOnly)).toBe(true);
+    expect([...container.querySelectorAll("input")].some((input) => input.value === "Original Profile name")).toBe(false);
     expect(container.textContent).toContain("项目管理");
     expect(button(copy("freeze.action")).disabled).toBe(true);
     await type(field(copy("repair.primaryCategory")), "project management");
