@@ -38,7 +38,6 @@ describe("complete GEO Profile copy display", () => {
   it("allows the prepared-version view to describe its copy without calling it already frozen", async () => {
     await render({ copyDescription: "This is the exact version currently under review." });
     expect(host.textContent).toContain("This is the exact version currently under review.");
-    expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.asset.copyBody);
     expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.asset.frozenCopyBody);
   });
   it("stages exact Profile values as pending facts without calling them verified", async () => {
@@ -72,7 +71,6 @@ describe("complete GEO Profile copy display", () => {
     // The block above the card already says the copy belongs to this draft and
     // how it is updated. The panel adds no second description of its own.
     expect(host.querySelector("[data-geo-profile-fields]")?.previousElementSibling).toBeNull();
-    expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.asset.copyBody);
     expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.asset.frozenCopyBody);
     await render({ frozen: true });
     // A frozen copy is the one case the panel has something of its own to say:
@@ -133,7 +131,6 @@ describe("complete GEO Profile copy display", () => {
     // describe how the value was produced. The question this panel asks is
     // whether the value matches the product, which none of them answers.
     expect(text).not.toContain(en.tools.geoKnowledgeBase.asset.hash.replace("{hash}", "a".repeat(64)));
-    expect(text).not.toContain(en.tools.geoKnowledgeBase.asset.provenanceTitle);
     expect(text).not.toContain("public_page");
     expect(host.querySelector('a[href="https://example.com/about"]')).toBeNull();
   });
@@ -142,6 +139,51 @@ describe("complete GEO Profile copy display", () => {
     const keys = [...host.querySelectorAll<HTMLButtonElement>("button")].map(button => button.getAttribute("aria-label"));
     expect(keys).toHaveLength(34);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+  it("names the snapshot only where the record is the point", async () => {
+    // The editor asks whether the values fit the product; the archival views
+    // exist to record which confirmed Profile revision a frozen version used.
+    await render();
+    expect(host.querySelector("[data-geo-copy-identity]")).toBeNull();
+    await render({ frozen: true });
+    const identity = host.querySelector("[data-geo-copy-identity]");
+    expect(identity?.textContent).toContain("2");
+    expect(identity?.textContent).toContain("a".repeat(64));
+  });
+  it("gives every field row a name a screen reader can reach it by", async () => {
+    await render();
+    // The values are read out, not typed into, so there is no control to hang
+    // htmlFor on. Adjacency is a name only when read straight down.
+    const rows = [...host.querySelectorAll<HTMLElement>("[data-geo-profile-field]")];
+    expect(rows.length).toBe(GEO_PROFILE_SUBSET_FIELDS.length);
+    for (const row of rows) {
+      expect(row.getAttribute("role")).toBe("group");
+      const named = row.getAttribute("aria-labelledby") ?? "";
+      const label = [...host.querySelectorAll("[id]")].filter(node => node.id === named);
+      expect(label).toHaveLength(1);
+      expect(label[0]?.textContent?.trim()).not.toBe("");
+    }
+    // The group titles are real headings one level under the panel, so they can
+    // be jumped to; a styled <p> replaced a <summary> that could be.
+    const panel = host.querySelector("section[aria-labelledby]");
+    const depth = panel?.querySelector("h2") !== null ? "h3" : "h5";
+    expect(host.querySelectorAll(`[data-geo-profile-group] > ${depth}`).length).toBe(host.querySelectorAll("[data-geo-profile-group]").length);
+  });
+  it("names the address a fact action will carry, and says when it will carry none", async () => {
+    // The button writes a citation. Without this the visitor presses it and a
+    // row appears carrying a source URL and capture time they never saw.
+    await render({ onAddFact: vi.fn() });
+    const carried = host.querySelector('[data-fact-source="productName"]');
+    expect(carried?.textContent).toContain("https://example.com/about");
+    expect(carried?.textContent).toContain("2026-08-31T00:00:00.000Z");
+    const button = host.querySelector('[data-geo-profile-field="productName"] button');
+    expect(button?.getAttribute("aria-describedby")).toBe(carried?.id);
+    expect(carried?.id).toBeTruthy();
+    // oneLinePositioning has no observed single-page provenance in the fixture,
+    // so nothing is carried and nothing is said: the note appears only where an
+    // address will actually be written into the new fact.
+    expect(host.querySelector('[data-fact-source="oneLinePositioning"]')).toBeNull();
+    expect(host.querySelectorAll("[data-fact-source]")).toHaveLength(1);
   });
   it("does not replace a saved copy with the latest Profile proposal", async () => {
     await render();

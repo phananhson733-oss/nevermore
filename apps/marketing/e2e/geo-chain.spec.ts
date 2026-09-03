@@ -70,8 +70,11 @@ async function freezeAndRun(page: Page, locale: Locale, fixture: GeoChainFixture
   await expect(page).toHaveURL(new RegExp(`/account/websites/${fixture.website.websiteId}#geo$`, "u"));
   const geo = page.locator('[data-account-editor-card="geo"]');
   await expect(geo).toHaveJSProperty("open", true);
-  await expect(geo.locator('[data-geo-profile-field="oneLinePositioning"] input, [data-geo-profile-field="oneLinePositioning"] textarea')).toHaveValue("Analytics for teams");
-  await expect(geo.getByText(fixture.profile.reference.profileHash, { exact: false })).toBeVisible();
+  await expect(geo.locator('[data-geo-profile-field="oneLinePositioning"] [data-geo-readout]')).toHaveText("Analytics for teams");
+  // The editor no longer prints the copy's hash: which snapshot a value came
+  // from is not what a person judges here. It is kept in the archival views,
+  // asserted in geo-inline-profile.spec.ts against the frozen copy.
+  await expect(geo.locator("[data-geo-copy-identity]")).toHaveCount(0);
   expect(fixture.providerCalls).toBe(0);
   const freeze = geo.getByRole("button", { name: messages.geoKnowledgeBase.freeze.action, exact: true });
   await expect(freeze).toBeEnabled();

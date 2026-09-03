@@ -11,18 +11,41 @@ import { GeoKbEditorPanel } from "./geo-kb-v2-fields.tsx";
 import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
 import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
 
+/**
+ * `reason` is a closed enum in the contract, so it is mapped to copy rather
+ * than printed: `not_connected` is a code, not a sentence a visitor can act on.
+ */
+function GscLine({ gsc, c }: { readonly gsc: GeoKbSourceReportV2["gsc"]; readonly c: ReturnType<typeof geoKbV2Copy> }) {
+  if (gsc.status !== "available") return <p data-gsc-unavailable className="mt-3 text-sm text-text-dark-secondary">{c.sources.gsc}: {c.unavailable} · {c.gscReasons[gsc.reason]}</p>;
+  if (gsc.queryCount === 0) return <p data-gsc-empty className="mt-3 text-sm text-text-dark-secondary">{c.gscEmpty}</p>;
+  if (gsc.truncated) return <p data-gsc-truncated className="mt-3 text-sm text-brand-error">{c.gscTruncated}</p>;
+  return null;
+}
+
 export function GeoKbV2Sources({ receipt, payload, stale, locale, onChange }: { readonly receipt: GeoKbSourceReportV2; readonly baseline: GeoKbPayloadV2; readonly payload: GeoKbPayloadV2; readonly stale: boolean; readonly locale: string; readonly onChange: (payload: GeoKbPayloadV2) => void }) {
   const c = geoKbV2Copy(locale), t = geoKbV2EditorCopy(locale);
   const same = (a: unknown, b: unknown) => a !== undefined && canonicalGeoV2Text(a) === canonicalGeoV2Text(b);
-  // Not "source summary" any more: what is left is the two things a person
-  // can take from the last crawl, so the title names that.
+  // Not "source summary" any more: what is left is what the last refresh
+  // brought back that a person can act on. The title does not promise anything
+  // is adoptable -- every entry can be unavailable or in conflict -- and does
+  // not say "crawl", because the Search Console line above is not one.
   return <GeoKbEditorPanel title={c.sections.adoptable}>
     <p className="text-sm text-text-dark-secondary">{t.sourceHelp}</p>{stale ? <p role="status" className="mt-3 text-sm text-brand-error">{t.oldSource}</p> : null}
-    {/* Not the property, the window, the query count or the queries -- the one
-        thing here a person acts on is that Search Console had nothing to give,
-        which is why the list below is shorter than it could be. No count is
-        stated for an unavailable source; unavailable is not zero. */}
-    {receipt.gsc.status === "available" ? null : <p data-gsc-unavailable className="mt-3 text-sm text-text-dark-secondary">{c.sources.gsc}: {c.unavailable} · {receipt.gsc.reason ?? c.unknown}</p>}
+    {/* When this was captured, and nothing else about the receipt. The staleness
+        flag above compares kbId, host and Profile reference but not the draft
+        hash, so a receipt taken for an earlier draft still reads as current --
+        adding the draft hash to that flag would disable adoption after any
+        unrelated edit, which is worse. The per-entry guards below already
+        refuse an entry the draft has moved away from; this line is how a person
+        sees that the evidence is older than the draft in front of them. */}
+    <p data-receipt-captured className="mt-3 text-[12px] text-text-dark-secondary">{c.fields.observedAt}: {receipt.createdAt}</p>
+    {/* Not the property, the window or the raw queries -- those describe how
+        the refresh ran. What is stated is the two shapes of Search Console
+        result a person would act on differently before pressing a billed
+        generation: nothing came back, or what came back was clipped at the
+        row cap so roles were derived from a partial sample. An unavailable
+        source states no count at all; unavailable is not zero. */}
+    <GscLine gsc={receipt.gsc} c={c} />
     <div className="mt-5 space-y-4">{receipt.competitors.map(entry => {
       const index = payload.competitors.findIndex(item => item.domain === entry.domain);
       const current = payload.competitors[index];

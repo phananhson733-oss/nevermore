@@ -64,7 +64,16 @@ describe("complete V2 knowledge-base version content", () => {
     expect(host.querySelector('[data-version-role="r1"] [data-role-user-edited]')?.textContent).toBe("Yes");
     expect(host.textContent).toContain(geoKbV2Copy("en").profileDescription);
     expect(fetchSpy).not.toHaveBeenCalled(); expect(errorSpy).not.toHaveBeenCalled();
-    expect([...host.querySelectorAll("input,textarea")].every(node => (node as HTMLInputElement).readOnly)).toBe(true);
+    // Not `every(readOnly)` on the control list: the Profile copy renders no
+    // controls at all now, so that predicate was true of an empty set and
+    // could not go red. The claim is that there are none, and readouts instead.
+    expect(host.querySelectorAll("input,textarea,select")).toHaveLength(0);
+    expect(host.querySelectorAll("[data-geo-readout]").length).toBeGreaterThan(0);
+    // An archival view has to name the Profile snapshot its copy came from;
+    // nothing else on this page carries it.
+    const identity = host.querySelector("[data-geo-copy-identity]");
+    expect(identity?.textContent).toContain(props.payload.profileCopy.snapshotRevision);
+    expect(identity?.textContent).toContain(props.payload.profileCopy.profileHash);
   });
   it("shows the declared fact independently from the actual admitted context value and source", async () => {
     await render();

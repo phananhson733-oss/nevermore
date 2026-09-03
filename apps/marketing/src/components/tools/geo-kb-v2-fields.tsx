@@ -142,7 +142,6 @@ export function GeoKbV2Fields({ payload, locale, onChange, supportRefNote }: { r
       </article>;
     })}</div><Button type="button" variant="outline" className="mt-5" disabled={payload.competitors.length >= 5} onClick={() => patch({ competitors: [...payload.competitors, { domain: "", brandName: "", confirmed: false, aliases: [] }] })}>{t.addCompetitor}</Button></GeoKbEditorPanel>
 
-    {payload.facts.length === 0 ? <div className="min-w-0"><Button type="button" variant="outline" onClick={() => patch({ facts: [{ key: "", value: "", reason: "lowConfidence", sourceUrl: "", observedAt: "", review: "pending", supportRef: null }] })}>{t.addFact}</Button></div> :
     <GeoKbEditorPanel title={c.sections.facts}><p className="mb-5 text-[13px] leading-relaxed text-text-dark-secondary">{c.factsHelp}</p><div className="space-y-5">{payload.facts.map((fact, index) => {
       const change = (next: typeof fact) => patch({ facts: payload.facts.map((item, position) => position === index ? next : item) });
       const labels = { key: t.factKey, value: c.fields.declaredValue, sourceUrl: c.fields.declaredSource, observedAt: c.fields.declaredTime };
@@ -164,6 +163,6 @@ export function GeoKbV2Fields({ payload, locale, onChange, supportRefNote }: { r
           <Button type="button" variant="ghost" className="mt-3" onClick={() => patch({ facts: payload.facts.filter((_, position) => position !== index) })}>{t.remove}</Button>
         </details>
       </article>;
-    })}</div><Button type="button" variant="outline" className="mt-5" disabled={payload.facts.length >= 24} onClick={() => patch({ facts: [...payload.facts, { key: "", value: "", reason: "lowConfidence", sourceUrl: "", observedAt: "", review: "pending", supportRef: null }] })}>{t.addFact}</Button></GeoKbEditorPanel>}
+    })}</div><Button type="button" variant="outline" className="mt-5" disabled={payload.facts.length >= 24} onClick={() => patch({ facts: [...payload.facts, { key: "", value: "", reason: "lowConfidence", sourceUrl: "", observedAt: "", review: "pending", supportRef: null }] })}>{t.addFact}</Button></GeoKbEditorPanel>
   </div>;
 }

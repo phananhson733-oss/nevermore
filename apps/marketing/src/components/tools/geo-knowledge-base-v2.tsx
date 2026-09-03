@@ -61,7 +61,12 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       {/* Next to the Save button it describes. The progress list names the
           blocking gate, so this states only the autosave state, and truthfully. */}
       <p data-autosave-hint={editor.autosaveHold ?? "on"} className="text-[12px] leading-relaxed text-text-dark-secondary">{editor.autosaveHold === null || editor.autosaveHold === "busy" ? te("autosave") : te(`autosaveHeld.${editor.autosaveHold}`)}</p>
+      {/* One line per action, each true of the button it sits under. A single
+          merged line said roles and facts are never accepted for you, directly
+          under a Confirm button whose whole job is to accept every pending one
+          and freeze the result. */}
       <p className="text-[12px] leading-relaxed text-text-dark-secondary">{te("actionCost")}</p>
+      <p className="text-[12px] leading-relaxed text-text-dark-secondary">{te("confirmCost")}</p>
       <GeoKbV2BuildReport report={editor.build} locale={props.locale} />
       <GeoKbV2ConfirmReport report={editor.confirm} />
     </div>

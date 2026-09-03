@@ -1,15 +1,17 @@
 "use client";
 
 // @input  -- exact server-resolved Product Profile and optional canonical owner
-// @output -- inherited facts with immutable provenance, always read-only
+// @output -- the Profile values GEO reads, read out and never editable here;
+//            an archival caller additionally gets the snapshot they came from
 // @pos    -- shared website settings and legacy GEO shortcut section
 
 import { useTranslations } from "next-intl";
+import { useId } from "react";
 import type { GeoInheritedProfile } from "../../lib/geo-tools/asset-context.ts";
 import type { GeoKbFact } from "../../lib/geo-tools/kb-contract.ts";
 import type { GeoProfileCopy } from "../../lib/geo-tools/kb-profile-copy.ts";
 import type { MarketingWebsiteProfileV1, WebsiteProfileFieldName } from "../../lib/account-websites/contracts.ts";
-import { pendingGeoProfileFact } from "./geo-kb-feature-candidates.ts";
+import { geoProfileFactSource, pendingGeoProfileFact } from "./geo-kb-feature-candidates.ts";
 import { Button } from "../ui/button.tsx";
 import { GeoKbFieldRow, GeoKbFieldRows, GeoKbReadout, GeoKbSection } from "./geo-kb-section.tsx";
 import { GEO_PROFILE_SUBSET_FIELDS } from "../../lib/geo-tools/kb-profile-subset.ts";
@@ -31,25 +33,17 @@ const GROUPS = ([
   .map(group => ({ title: group.title, fields: group.fields.filter(field => SHOWN.has(field)) }))
   .filter(group => group.fields.length > 0);
 
-const LIST_FIELDS = new Set<WebsiteProfileFieldName>([
-  "coreFeatures",
-  "categories",
-  "trustSignals",
-  "icpInterests",
-  "useCases",
-  "outcomes",
-  "barriers",
-  "qualificationSignals",
-  "disqualifiers",
-  "directCompetitors",
-  "indirectAlternatives",
-  "excludedAlternatives",
-]);
-
-function ProfileFactButton({ factKey, value, facts, onAddFact }: {
+/**
+ * The button writes a citation. When the Profile recorded this field as
+ * observed on one public page, pressing it carries that page's address and
+ * capture time into the new fact -- so the address is named here, before the
+ * press, rather than appearing in a row whose basis the visitor never saw.
+ */
+function ProfileFactButton({ factKey, value, facts, describedBy, onAddFact }: {
   readonly factKey: string;
   readonly value: string;
   readonly facts: readonly GeoKbFact[];
+  readonly describedBy?: string;
   readonly onAddFact?: (key: string, value: string) => void;
 }) {
   const t = useTranslations("tools.geoKnowledgeBase");
@@ -68,11 +62,36 @@ function ProfileFactButton({ factKey, value, facts, onAddFact }: {
       size="sm"
       disabled={candidate.status !== "ready"}
       aria-label={`${t(`asset.${labels[candidate.status]}`)}: ${value}`}
+      {...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
       onClick={() => onAddFact(factKey, value)}
     >
       {t(`asset.${labels[candidate.status]}`)}
     </Button>
   );
+}
+
+function FactAction({ factKey, value, facts, profile, onAddFact }: {
+  readonly factKey: string;
+  readonly value: string;
+  readonly facts: readonly GeoKbFact[];
+  readonly profile: MarketingWebsiteProfileV1;
+  readonly onAddFact?: (key: string, value: string) => void;
+}) {
+  const t = useTranslations("tools.geoKnowledgeBase");
+  const noteId = useId();
+  const source = geoProfileFactSource(profile, factKey);
+  if (onAddFact === undefined || value.trim() === "") return null;
+  // Only where an address is actually carried. The ordinary case is that the
+  // Profile recorded no single observed page, the new fact's source field is
+  // left empty, and saying so under every button was five wrapped lines of
+  // nothing happening.
+  if (source === null) return <ProfileFactButton factKey={factKey} value={value} facts={facts} onAddFact={onAddFact} />;
+  return <div className="flex min-w-0 flex-col items-end gap-1">
+    <ProfileFactButton factKey={factKey} value={value} facts={facts} describedBy={noteId} onAddFact={onAddFact} />
+    <p id={noteId} data-fact-source={factKey} className="max-w-[22rem] break-all text-right text-[11px] leading-relaxed text-text-dark-secondary">
+      {t("asset.factSourceCarried", { url: source.sourceUrl, time: source.observedAt })}
+    </p>
+  </div>;
 }
 
 /**
@@ -83,33 +102,42 @@ function ProfileFactButton({ factKey, value, facts, onAddFact }: {
  * read-only input offers a caret and a focus ring to someone who cannot type
  * into it, then hides an empty value's "not provided" text in a placeholder.
  */
-function ProfileFields({ profile, facts, onAddFact }: {
+function ProfileFields({ profile, facts, onAddFact, heading }: {
   readonly profile: MarketingWebsiteProfileV1;
   readonly facts: readonly GeoKbFact[];
   readonly onAddFact?: (key: string, value: string) => void;
+  readonly heading: 2 | 3 | 4;
 }) {
+  // One level below the panel it sits in, the way `Sub` does it in
+  // geo-kb-version-content.tsx. A styled <p> looks like a group title but
+  // cannot be reached by heading navigation, and it replaced a <summary>,
+  // which could.
+  const Group = (heading === 2 ? "h3" : heading === 3 ? "h4" : "h5") as "h3" | "h4" | "h5";
   const labels = useTranslations("account.websites.fields");
   const sections = useTranslations("account.websites.editor");
   const t = useTranslations("tools.geoKnowledgeBase");
   const empty = t("asset.emptyField");
   return <div data-geo-profile-fields className="mt-5 space-y-7">
     {GROUPS.map(group => <div key={group.title} data-geo-profile-group={group.title} className="min-w-0">
-      <p className="mb-4 border-b border-brand-border-card pb-3 text-[13px] font-semibold uppercase tracking-[0.06em] text-text-dark-secondary">{sections(group.title)}</p>
+      <Group className="mb-4 border-b border-brand-border-card pb-3 text-[13px] font-semibold uppercase tracking-[0.06em] text-text-dark-secondary">{sections(group.title)}</Group>
       <GeoKbFieldRows>
         {group.fields.map(field => {
           const value = profile[field];
-          const list = LIST_FIELDS.has(field) && Array.isArray(value) ? value : null;
+          // `Array.isArray` is the whole test. A hand-kept set of list field
+          // names beside it only added a drift case: a list field added to the
+          // GEO subset but forgotten here rendered as an empty readout.
+          const list = Array.isArray(value) ? value : null;
           // Only the three values a fact can be filled from carry the action;
           // the rest are here to be read against the product, nothing more.
-          const action = onAddFact !== undefined && (field === "productName" || field === "oneLinePositioning")
-            ? <ProfileFactButton factKey={field} value={typeof value === "string" ? value : ""} facts={facts} onAddFact={onAddFact} />
+          const action = field === "productName" || field === "oneLinePositioning"
+            ? <FactAction factKey={field} value={typeof value === "string" ? value : ""} facts={facts} profile={profile} {...(onAddFact === undefined ? {} : { onAddFact })} />
             : undefined;
           return <GeoKbFieldRow key={field} data-geo-profile-field={field} label={labels(field)} {...(action === undefined ? {} : { action })}>
             {list === null ? <GeoKbReadout value={typeof value === "string" ? value : ""} empty={empty} />
               : list.length === 0 ? <GeoKbReadout value="" empty={empty} />
               : <ul className="grid gap-2">{list.map((item, index) => <li key={`${field}-${index}`} className="flex items-start gap-2">
                 <div className="min-w-0 flex-1"><GeoKbReadout value={item} empty={empty} /></div>
-                {onAddFact === undefined || field !== "coreFeatures" ? null : <ProfileFactButton factKey={`coreFeatures[${index}]`} value={item} facts={facts} onAddFact={onAddFact} />}
+                {field !== "coreFeatures" ? null : <FactAction factKey={`coreFeatures[${index}]`} value={item} facts={facts} profile={profile} {...(onAddFact === undefined ? {} : { onAddFact })} />}
               </li>)}</ul>}
           </GeoKbFieldRow>;
         })}
@@ -163,7 +191,7 @@ function ProfileSummary({ productName, oneLinePositioning, coreFeatures, market,
   );
 }
 
-export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profileState, facts = [], onAddFact, inline = false, frozen = false, copyDescription, repairMode = false }: {
+export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profileState, facts = [], onAddFact, inline = false, frozen = false, copyDescription, repairMode = false, heading }: {
   readonly profile: GeoInheritedProfile | null;
   readonly copy?: GeoProfileCopy;
   readonly websiteId?: string;
@@ -175,14 +203,24 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
   readonly frozen?: boolean;
   readonly copyDescription?: string;
   readonly repairMode?: boolean;
+  /** Depth override for a host with its own outline; `inline` alone hard-coded 4. */
+  readonly heading?: 2 | 3 | 4;
 }) {
   const t = useTranslations("tools.geoKnowledgeBase");
   const owner = copy?.websiteId ?? profile?.reference.websiteId ?? websiteId;
+  const depth = heading ?? (inline ? 4 : 2);
   return (
-    <GeoKbSection title={t(copy ? "asset.copyTitle" : "asset.profileTitle")} heading={inline ? 4 : 2}>
+    <GeoKbSection title={t(copy ? "asset.copyTitle" : "asset.profileTitle")} heading={depth}>
       {copy !== undefined ? <>
         {copyDescription === undefined && !frozen ? null : <p className="text-[13px] leading-relaxed text-text-dark-secondary">{copyDescription ?? t("asset.frozenCopyBody")}</p>}
-        <ProfileFields profile={copy.profile} facts={facts} {...(onAddFact === undefined ? {} : { onAddFact })} />
+        <ProfileFields profile={copy.profile} facts={facts} heading={depth} {...(onAddFact === undefined ? {} : { onAddFact })} />
+        {/* Which confirmed Profile revision this copy is, and its hash. The
+            editor does not need it, but the two archival callers exist to
+            record exactly that, and neither shows it anywhere else. */}
+        {copyDescription === undefined && !frozen ? null : <div data-geo-copy-identity className="mt-5 border-t border-brand-border-card pt-4 text-xs text-text-dark-secondary">
+          <p>{t("asset.revision", { revision: copy.snapshotRevision })}</p>
+          <p className="mt-1 break-all font-mono">{t("asset.hash", { hash: copy.profileHash })}</p>
+        </div>}
         {onAddFact === undefined ? null : <p className="mt-4 text-xs text-text-dark-secondary">{t("asset.profileFactBoundary")}</p>}
       </> : profile === null ? (
         <p className="text-sm text-text-dark-secondary">{t(profileState === "confirmed" || profileState === "unconfirmed_changes" ? "asset.profileUnavailable" : "asset.profileRequired")}</p>

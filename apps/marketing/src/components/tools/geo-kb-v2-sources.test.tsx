@@ -5,6 +5,7 @@ import { expect, it } from "vitest";
 import { completePayloadV2, V2_KB_ID } from "../../lib/geo-tools/kb-v2.test-fixtures.ts";
 import type { GeoKbSourceReportV2 } from "../../lib/geo-tools/kb-source-contract.ts";
 import { GeoKbV2Sources } from "./geo-kb-v2-sources.tsx";
+import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
 
 it("source receipt is only a proposal, explicit fact adoption remains pending, and conflicting identity is not adoptable", async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -20,10 +21,15 @@ it("source receipt is only a proposal, explicit fact adoption remains pending, a
     // Search Console gave nothing, and the panel says so without inventing a
     // count for it. The receipt id, the property, the window and the raw
     // queries describe how the refresh ran, and are not shown.
-    expect(host.querySelector("[data-gsc-unavailable]")?.textContent).toContain("not_connected");
+    // The reason is a closed enum in the contract; the panel says it in words.
+    expect(host.querySelector("[data-gsc-unavailable]")?.textContent).toContain(geoKbV2Copy("en").gscReasons.not_connected);
+    expect(host.textContent).not.toContain("not_connected");
     expect(host.querySelector("[data-gsc-unavailable]")?.textContent).not.toMatch(/\b0\b/);
     expect(host.textContent).not.toContain(receipt.receiptId);
     expect(host.textContent).not.toContain(receipt.contentHash);
+    // When it was captured stays: the staleness flag does not compare the draft
+    // hash, so this is how a person sees the evidence predates their draft.
+    expect(host.querySelector("[data-receipt-captured]")?.textContent).toContain(receipt.createdAt);
     expect(host.textContent).toContain("identity_conflict");
     expect(host.querySelector('[data-apply-competitor="C1"]')).toBeNull();
     await act(async () => host.querySelector<HTMLButtonElement>('[data-apply-fact="F1"]')?.click());

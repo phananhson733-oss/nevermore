@@ -2,7 +2,8 @@
 // No real login, Supabase, provider, publishing or production claim is made.
 import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
-import { WEBSITE_PROFILE_FIELD_NAMES, parseMarketingWebsiteProfile, type MarketingWebsiteProfileV1 } from "../src/lib/account-websites/contracts.ts";
+import { parseMarketingWebsiteProfile, type MarketingWebsiteProfileV1 } from "../src/lib/account-websites/contracts.ts";
+import { GEO_PROFILE_SUBSET_FIELDS } from "../src/lib/geo-tools/kb-profile-subset.ts";
 import en from "../src/i18n/messages/en.json" with { type: "json" };
 import zh from "../src/i18n/messages/zh.json" with { type: "json" };
 import { installGeoChainGuard } from "./geo-chain-harness.ts";
@@ -46,18 +47,19 @@ async function setup(page: Page, baseURL: string) {
 }
 
 async function assertCompleteProfile(page: Page, profile: MarketingWebsiteProfileV1) {
-  const copy = page.locator("#geo section").filter({ has: page.getByRole("heading", { name: /^(Complete Profile copy in GEO|GEO 中的完整资料副本)$/u }) }).first();
-  // Read every copied business field; empty fields are explicit rather than absent.
-  for (const details of await copy.locator("details").all()) if (await details.getAttribute("open") === null) await details.locator(":scope > summary").click();
-  expect(await copy.locator("[data-geo-profile-field]").count()).toBe(WEBSITE_PROFILE_FIELD_NAMES.length);
-  for (const field of WEBSITE_PROFILE_FIELD_NAMES) {
+  const copy = page.locator("#geo section").filter({ has: page.getByRole("heading", { name: /^(The Profile fields GEO reads|GEO 读取的档案字段)$/u }) }).first();
+  // Only the fields GEO reads, at rest -- no disclosure to open, and every one
+  // of them read out rather than held in a control. Empty fields stay explicit.
+  expect(await copy.locator("[data-geo-profile-field]").count()).toBe(GEO_PROFILE_SUBSET_FIELDS.length);
+  await expect(copy.locator("input, textarea, select")).toHaveCount(0);
+  for (const field of GEO_PROFILE_SUBSET_FIELDS) {
     const value = profile[field];
-    const expected = typeof value === "string" ? [value] : value.length === 0 ? [""] : value;
-    const controls = copy.locator(`[data-geo-profile-field="${field}"] input, [data-geo-profile-field="${field}"] textarea`);
-    await expect(controls).toHaveCount(expected.length);
+    const expected = typeof value === "string" ? [value] : value.length === 0 ? [""] : [...value];
+    const readouts = copy.locator(`[data-geo-profile-field="${field}"] [data-geo-readout]`);
+    await expect(readouts).toHaveCount(expected.length);
     for (let index = 0; index < expected.length; index += 1) {
-      await expect(controls.nth(index)).toHaveValue(expected[index]!);
-      await expect(controls.nth(index)).toHaveJSProperty("readOnly", true);
+      const text = expected[index]!;
+      await expect(readouts.nth(index)).toHaveText(text === "" ? en.tools.geoKnowledgeBase.asset.emptyField : text);
     }
   }
   await expect(copy.locator("[data-geo-profile-field]").first()).toBeVisible();
@@ -94,7 +96,7 @@ test("en: inline complete copy stays detached through Profile confirmation, expl
   await expect(page.locator('[data-website-profile-collapsed="true"]')).toContainText("Confirmed v2");
   await expect(unsavedAlias).toBeVisible();
   await expect(geo.getByText(t.asset.copyStale, { exact: true })).toBeVisible();
-  await expect(geo.locator('[data-geo-profile-field="productName"] input').first()).toHaveValue("Acme");
+  await expect(geo.locator('[data-geo-profile-field="productName"] [data-geo-readout]').first()).toHaveText("Acme");
   expect(guard.requests.filter(row => row.id.endsWith(`/${state.fixture.website.websiteId}/geo`))).toHaveLength(1);
   expect(state.savedPayloads).toEqual([]);
 
@@ -118,12 +120,12 @@ test("en: inline complete copy stays detached through Profile confirmation, expl
   await expect(geo.getByRole("button", { name: t.freeze.action, exact: true })).toBeEnabled();
   const history = geo.locator("[data-frozen-knowledge-base]");
   await history.locator(":scope > summary").click();
-  await expect(history.locator('[data-geo-profile-field="productName"] input')).toHaveValue("Acme");
+  await expect(history.locator('[data-geo-profile-field="productName"] [data-geo-readout]')).toHaveText("Acme");
   await expect(history).not.toContainText("Unsaved alias survives confirmation");
   const geoIds = await geo.locator("[id]").evaluateAll(nodes => nodes.map(node => node.id));
   expect(new Set(geoIds).size).toBe(geoIds.length);
   await page.reload();
-  await expect(geo.locator('[data-geo-profile-field="productName"] input').first()).toHaveValue("Updated Acme Profile");
+  await expect(geo.locator('[data-geo-profile-field="productName"] [data-geo-readout]').first()).toHaveText("Updated Acme Profile");
   expect(state.savedPayloads).toHaveLength(1);
   expect(state.frozen.payload).toEqual(state.initialPayload);
   expect(guard.unexpected).toEqual([]);

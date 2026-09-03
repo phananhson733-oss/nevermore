@@ -33,6 +33,11 @@ export function GeoKbSection({ title, heading, children }: {
  * rows separated by a rule rather than by guessed margins, and any per-row
  * action in the same place on every row instead of trailing the text it
  * belongs to at whatever width that text happens to end.
+ *
+ * The row is a named group. Its values are read out, not typed into, so there
+ * is no control to hang `htmlFor` on -- and adjacency alone is a name only for
+ * someone reading straight down. Anyone arriving at a value by paragraph or
+ * list-item navigation lands inside the group and hears which field it is.
  */
 export function GeoKbFieldRow({ label, hint, action, children, ...rest }: {
   readonly label: string;
@@ -40,9 +45,10 @@ export function GeoKbFieldRow({ label, hint, action, children, ...rest }: {
   readonly action?: ReactNode;
   readonly children: ReactNode;
 } & Record<`data-${string}`, string | boolean | undefined>) {
-  return <div {...rest} className="min-w-0 py-6 first:pt-0 last:pb-0 sm:py-7">
+  const labelId = useId();
+  return <div {...rest} role="group" aria-labelledby={labelId} className="min-w-0 py-6 first:pt-0 last:pb-0 sm:py-7">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <span className="text-[14px] font-medium text-text-dark-primary">{label}</span>
+      <span id={labelId} className="text-[14px] font-medium text-text-dark-primary">{label}</span>
       {action === undefined ? null : <div className="shrink-0">{action}</div>}
     </div>
     <div className="mt-3 min-w-0">{children}</div>
