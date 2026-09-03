@@ -11,7 +11,11 @@ import type {
 } from "@sf/public-tools/agent-audit";
 
 import type { AgentKind } from "./agent-types";
-import { analyzeAgentRecommendations } from "./agent-result-helpers";
+import {
+  analyzeAgentRecommendations,
+  RESULT_PRIORITY,
+} from "./agent-result-helpers";
+import type { AgentRecommendationPriority } from "./agent-result-helpers";
 
 /**
  * How many affected URLs one issue shows, and hands to an assistant, before the
@@ -84,6 +88,13 @@ export interface AgentIssue {
   readonly lane: AgentIssueLane;
   /** Null whenever the run reached no failure verdict for this check. */
   readonly severity: AgentIssueSeverity | null;
+  /**
+   * The priority label this row prints, from the same table the ranking sorts
+   * by. Null whenever no verdict was reached OR the row is quarantined -- the
+   * upstream lookup falls back to P2, and a state this build cannot read must
+   * not arrive dressed as an ordinary suggestion.
+   */
+  readonly priority: AgentRecommendationPriority | null;
   /**
    * Whether every axis of this check is a state this build knows how to say.
    * A false here means the row is quarantined rather than guessed at.
@@ -344,6 +355,7 @@ export function buildAgentIssueModel({
     check,
     lane: "excluded",
     severity: null,
+    priority: null,
     recognized: false,
     affected: UNAVAILABLE_TARGETS,
     evidenceRecords: [],
@@ -363,6 +375,7 @@ export function buildAgentIssueModel({
       check,
       lane: "actionable",
       severity: RESULT_LANE[check.result].severity,
+      priority: RESULT_PRIORITY[check.result] ?? null,
       recognized: true,
       affected: affectedTargets(recommendation.evidenceRecords),
       evidenceRecords: recommendation.evidenceRecords,
@@ -387,6 +400,7 @@ export function buildAgentIssueModel({
         lane: "investigation",
         // No verdict was reached, so no severity is claimed.
         severity: null,
+        priority: null,
         recognized: true,
         affected: UNAVAILABLE_TARGETS,
         evidenceRecords: [],
@@ -402,6 +416,8 @@ export function buildAgentIssueModel({
       check,
       lane,
       severity: null,
+      // Passed and excluded rows carry no verdict to prioritise.
+      priority: null,
       recognized: true,
       affected: UNAVAILABLE_TARGETS,
       evidenceRecords: [],

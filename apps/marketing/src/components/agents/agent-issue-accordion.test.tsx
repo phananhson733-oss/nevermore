@@ -433,6 +433,36 @@ describe("AgentIssueAccordion", () => {
     expect(excluded?.textContent).toContain("Unrecognised state");
   });
 
+  it("prefixes each actionable row with the priority its severity maps to", () => {
+    // The badge is the first thing read on a row, and it has to agree with the
+    // ranking the list is already sorted by. blocker/warning/tip map to
+    // P0/P1/P2 through the one table `analyzeAgentRecommendations` sorts with,
+    // so a row can never say P2 beside a finding the sort treated as P0.
+    render(actionableModel());
+
+    const badges = [
+      ...host.querySelectorAll<HTMLElement>("[data-issue-priority]"),
+    ].map((element) => element.textContent);
+
+    expect(badges).toEqual(["P0", "P1", "P2"]);
+  });
+
+  it("gives an unrecognised check no priority badge at all", () => {
+    // `RESULT_PRIORITY[...] ?? "P2"` upstream is fail-open. If the badge were
+    // rendered from that fallback, a state this build cannot read would arrive
+    // dressed as an ordinary suggestion. Quarantine has to win first.
+    render(
+      buildAgentIssueModel({
+        agent: "seo",
+        checks: [check({ id: "9.9", result: "supernova" })],
+        records: [],
+      }),
+    );
+
+    expect(host.querySelector("[data-issue-priority]")).toBeNull();
+    expect(host.textContent).not.toContain("P2");
+  });
+
   it("renders no untranslated message key", () => {
     render(actionableModel());
     click('[data-issue-control="expand-visible"]');

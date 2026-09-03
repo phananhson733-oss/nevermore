@@ -110,6 +110,9 @@ function IssueRow({
               }`}
             >
               <Icon aria-hidden="true" className="size-3" />
+              {investigation ? null : issue.priority === null ? null : (
+                <span data-issue-priority>{issue.priority}</span>
+              )}
               {investigation
                 ? t("lane.investigation")
                 : t(`severity.${issue.severity ?? "suggestion"}`)}

@@ -88,7 +88,16 @@ const RESULT_RANK: Readonly<Record<string, number>> = {
   tip: 1,
 };
 
-const RESULT_PRIORITY: Readonly<Record<string, AgentRecommendationPriority>> = {
+/**
+ * The one place a result state becomes a priority label.
+ *
+ * The ranking below sorts by it and the issue list prints it, so a row can
+ * never show P2 beside a finding the sort treated as P0. Exported rather than
+ * copied: a second table would drift the moment one of them gained a state.
+ */
+export const RESULT_PRIORITY: Readonly<
+  Record<string, AgentRecommendationPriority>
+> = {
   blocker: "P0",
   warning: "P1",
   tip: "P2",
