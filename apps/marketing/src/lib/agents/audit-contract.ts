@@ -150,6 +150,28 @@ export interface AgentAuditRun {
 }
 
 /** The bounded report exposed to Agent clients. Raw crawled page rows stay server-side. */
+/**
+ * One page this run is willing to judge on its own, beside the submitted one.
+ *
+ * Neutral facts only: which pages matter to a business is a question the
+ * client asks against a confirmed Profile, and this shape travels in a
+ * response projected from a payload cached across visitors.
+ */
+export interface AgentKeyPageCandidate {
+  /**
+   * The crawl's fetch URL, which is the form every observation carries.
+   *
+   * Not `subjectUrl`: the evaluator compares these with only a fragment
+   * stripped, so publishing the other normalisation would make every key page
+   * match nothing and read as "no observation".
+   */
+  readonly url: string;
+  readonly title: string | null;
+  readonly metaDescription: string | null;
+  readonly depth: number;
+  readonly inboundLinks: number;
+}
+
 export type AgentAuditResult = Pick<
   SeoAuditReport,
   | "targetUrl"
@@ -177,6 +199,14 @@ export type AgentAuditResult = Pick<
    * nothing redirected, which is the common case and says so.
    */
   readonly landedTargetUrl: string | null;
+  /**
+   * Pages this run can judge individually, beside the submitted one.
+   *
+   * Optional so an older cached payload, or a crawl that collected nothing,
+   * stays readable: absent means "this run published no shortlist", which is
+   * different from a site with one page.
+   */
+  readonly keyPages?: readonly AgentKeyPageCandidate[];
   /**
    * Present only when the caller sent target queries.
    *
@@ -710,6 +740,32 @@ function isSerpLandscapeShape(value: unknown): boolean {
   );
 }
 
+/** Bound published beside the type, so the guard and the producer agree. */
+export const AGENT_KEY_PAGE_WIRE_LIMIT = 24;
+
+function isAgentKeyPageCandidates(
+  value: unknown,
+): value is readonly AgentKeyPageCandidate[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= AGENT_KEY_PAGE_WIRE_LIMIT &&
+    value.every(
+      (entry) =>
+        isObject(entry) &&
+        // Exactly five: a sixth field would be whatever an upstream payload
+        // happened to carry, published to the browser without review.
+        Object.keys(entry).length === 5 &&
+        typeof entry.url === "string" &&
+        entry.url.length > 0 &&
+        (entry.title === null || typeof entry.title === "string") &&
+        (entry.metaDescription === null ||
+          typeof entry.metaDescription === "string") &&
+        isNonNegativeInteger(entry.depth) &&
+        isNonNegativeInteger(entry.inboundLinks),
+    )
+  );
+}
+
 function isAgentResult(value: unknown): value is AgentAuditResult {
   if (
     !isObject(value) ||
@@ -717,6 +773,9 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     typeof value.siteOrigin !== "string" ||
     typeof value.targetInspected !== "boolean" ||
     !isNullableString(value.inspectedTargetUrl) ||
+    !(
+      value.keyPages === undefined || isAgentKeyPageCandidates(value.keyPages)
+    ) ||
     !isNullableString(value.landedTargetUrl) ||
     !isCanonicalIsoTimestamp(value.scannedAt) ||
     !isCoverage(value.coverage) ||

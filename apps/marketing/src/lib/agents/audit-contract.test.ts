@@ -20,6 +20,7 @@ import type { SeoAuditPage } from "@sf/public-tools/seo-audit/types";
 import {
   AGENT_SEARCH_PERFORMANCE_VERSION,
   AGENT_SERP_SHAPE_VERSION,
+  AGENT_KEY_PAGE_WIRE_LIMIT,
   isAgentAuditSuccessEnvelope,
   type AgentAuditSuccessEnvelope,
   AGENT_AUDIT_RECORD_CATEGORIES,
@@ -213,6 +214,69 @@ describe("isAgentAuditSuccessEnvelope", () => {
       expect("pages" in envelope.data.result).toBe(false);
     },
   );
+
+  describe("the key page shortlist", () => {
+    function withKeyPages(keyPages: unknown): unknown {
+      const envelope = structuredClone(success) as unknown as {
+        data: { result: Record<string, unknown> };
+      };
+      envelope.data.result["keyPages"] = keyPages;
+      return envelope;
+    }
+
+    const valid = {
+      url: "https://example.com/pricing",
+      title: "Pricing",
+      metaDescription: "What it costs",
+      depth: 1,
+      inboundLinks: 4,
+    };
+
+    it("reads an envelope that carries no shortlist at all", () => {
+      // Absent is the honest state for a cached payload written before this
+      // region existed, and for a crawl that collected nothing.
+      expect("keyPages" in success.data.result).toBe(false);
+      expect(isAgentAuditSuccessEnvelope(success)).toBe(true);
+      expect(isAgentAuditSuccessEnvelope(withKeyPages([]))).toBe(true);
+      expect(isAgentAuditSuccessEnvelope(withKeyPages([valid]))).toBe(true);
+    });
+
+    it("refuses a row carrying anything the five published fields do not name", () => {
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withKeyPages([{ ...valid, rawHtml: "<html>" }]),
+        ),
+      ).toBe(false);
+    });
+
+    it("refuses a row missing a published field", () => {
+      const { inboundLinks: _dropped, ...incomplete } = valid;
+      expect(isAgentAuditSuccessEnvelope(withKeyPages([incomplete]))).toBe(
+        false,
+      );
+    });
+
+    it("refuses counts that cannot be counts", () => {
+      expect(
+        isAgentAuditSuccessEnvelope(withKeyPages([{ ...valid, depth: -1 }])),
+      ).toBe(false);
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withKeyPages([{ ...valid, inboundLinks: 1.5 }]),
+        ),
+      ).toBe(false);
+    });
+
+    it("refuses a shortlist longer than the published bound", () => {
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withKeyPages(
+            Array.from({ length: AGENT_KEY_PAGE_WIRE_LIMIT + 1 }, () => valid),
+          ),
+        ),
+      ).toBe(false);
+    });
+  });
 
   describe("the derived Search Performance region", () => {
     it("refuses an envelope that predates a required projection field", () => {

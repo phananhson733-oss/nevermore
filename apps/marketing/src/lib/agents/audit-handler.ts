@@ -40,6 +40,7 @@ import {
   type ImageWeightRaw,
 } from "@sf/public-tools/seo-audit/page-performance";
 import { createImageWeightReader } from "./image-weight-reader.ts";
+import { selectAgentKeyPageCandidates } from "./key-page-candidates.ts";
 import {
   defaultPagePerformanceReader,
   type PagePerformanceReadResult,
@@ -853,6 +854,15 @@ export async function handleAgentAuditRequest(
       // until now it was the one reader of this run that never saw it: the
       // report named the URL that was typed, whichever page it audited.
       landedTargetUrl: landedTargetUrl(result),
+      // Which pages are worth judging one at a time. Neutral and derived from
+      // the collected rows, so it is safe beside a payload cached across
+      // visitors; narrowing it to what this visitor's Profile points at is the
+      // client's job, against a Profile the server never sees here.
+      keyPages: selectAgentKeyPageCandidates({
+        pages: result.pages,
+        siteOrigin: result.siteOrigin,
+        inspectedTargetUrl: result.inspectedTargetUrl,
+      }),
       // Rebuilt field by field, like every other projected value. Forwarding
       // the object would publish whatever an upstream or cached payload
       // happened to carry beside these fields.

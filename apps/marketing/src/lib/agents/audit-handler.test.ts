@@ -866,6 +866,18 @@ describe("handleAgentAuditRequest", () => {
           targetInspected: upstreamPayload.result.targetInspected,
           inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
           landedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
+          // Derived from the collected rows, so it travels with every run.
+          // Neutral by construction: no Profile reaches this projection.
+          keyPages: [
+            {
+              url: upstreamPayload.result.inspectedTargetUrl,
+              title: upstreamPayload.result.pages[0]?.title ?? null,
+              metaDescription:
+                upstreamPayload.result.pages[0]?.metaDescription ?? null,
+              depth: upstreamPayload.result.pages[0]?.depth ?? 0,
+              inboundLinks: upstreamPayload.result.pages[0]?.inboundLinks ?? 0,
+            },
+          ],
           targetPageExtract: null,
           coverage: upstreamPayload.result.coverage,
           siteResources: upstreamPayload.result.siteResources,
@@ -941,6 +953,18 @@ describe("handleAgentAuditRequest", () => {
       targetInspected: upstreamPayload.result.targetInspected,
       inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
       landedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
+      // Rebuilt field by field like every other region, so an upstream row
+      // carrying page source beside these five never reaches the browser.
+      keyPages: [
+        {
+          url: upstreamPayload.result.inspectedTargetUrl,
+          title: upstreamPayload.result.pages[0]?.title ?? null,
+          metaDescription:
+            upstreamPayload.result.pages[0]?.metaDescription ?? null,
+          depth: upstreamPayload.result.pages[0]?.depth ?? 0,
+          inboundLinks: upstreamPayload.result.pages[0]?.inboundLinks ?? 0,
+        },
+      ],
       targetPageExtract: null,
       coverage: upstreamPayload.result.coverage,
       siteResources: upstreamPayload.result.siteResources,
