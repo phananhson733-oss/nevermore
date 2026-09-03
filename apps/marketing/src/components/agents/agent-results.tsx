@@ -243,8 +243,10 @@ export function AgentResults({
         </p>
 
         {/*
-          Stated, not implied. A run that judged only the submitted page looks
-          exactly like one that judged twelve unless it says so.
+          Stated, not implied. A run that judged one page looks exactly like
+          one that judged twelve unless it says so. The wording names the
+          submitted URL because a single judged page is always the submitted
+          one -- it is the only entry a run produces without a candidate.
         */}
         {model.keyPages.length > 1 ? null : (
           <p

@@ -11,7 +11,7 @@ import {
 } from "./check-types.ts";
 import {
   HTML_BYTES as SHARED_HTML_BYTES,
-  SCRIPT_DOMINANCE as SHARED_SCRIPT_DOMINANCE,
+  readsAsClientRendered,
 } from "@sf/public-tools/seo-audit/page-shape-thresholds";
 
 /** Below this a page is close to an island; above it, links are not the issue. */
@@ -28,7 +28,7 @@ export const RESPONSE_MS = { fast: 600, slow: 1_500 } as const;
  * — a landing page can be short, an app shell can be heavy — and together they
  * describe a page whose copy arrives only after JavaScript runs.
  */
-export const STATIC_TEXT_FLOOR_BYTES = 600;
+export { STATIC_TEXT_FLOOR_BYTES } from "@sf/public-tools/seo-audit/page-shape-thresholds";
 /** Reviewed URL shape. Neither is a ranking factor; both are legibility. */
 export const URL_PATH = { maxChars: 100, maxSegments: 5 } as const;
 
@@ -260,9 +260,7 @@ function urlShapeCheck(url: string): OnPageCheck {
 function renderingCheck(
   declared: NonNullable<CheckInput["extract"]["declared"]>,
 ): OnPageCheck {
-  const clientRendered =
-    declared.visibleTextBytes < STATIC_TEXT_FLOOR_BYTES &&
-    declared.scriptBytes > declared.visibleTextBytes * SHARED_SCRIPT_DOMINANCE;
+  const clientRendered = readsAsClientRendered(declared);
   const kb = (bytes: number): number => Math.round(bytes / 1024);
   return clientRendered
     ? check("rendering", "technical", "warn", 1, 3, "rendering.clientSide", {

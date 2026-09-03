@@ -9,6 +9,7 @@ import { evaluateAgentAuditScope } from "@sf/public-tools/agent-audit";
 import { recordsForKeyPage } from "./agent-key-page-records.ts";
 
 const OTHER = "https://example.com/pricing";
+const TARGET_PAGE = "https://example.com/";
 
 function record(overrides: Partial<SeoAuditRecord>): SeoAuditRecord {
   return {
@@ -123,6 +124,55 @@ describe("recordsForKeyPage", () => {
     });
 
     expect(scoped).toEqual([]);
+  });
+
+  it("drops the page-shape records, which describe the submitted page alone", () => {
+    // These four were split out of the keyword region after this filter was
+    // written, and the filter was not told. They are `target_page`, so
+    // `projectRecordToTarget` returns them untouched -- the submitted page's
+    // H2 count, schema fit and section substance would be republished as every
+    // other key page's, hits and URLs included.
+    const ledger = [
+      record({ id: "h2_count_outside_reviewed_range", targetTested: null }),
+      record({ id: "h3_count_outside_reviewed_range", targetTested: null }),
+      record({
+        id: "schema_type_unmatched_to_page_type",
+        targetTested: null,
+      }),
+      record({ id: "thin_section_under_h3", targetTested: null }),
+    ];
+
+    expect(
+      recordsForKeyPage({ records: ledger, isSubmittedTarget: false }),
+    ).toEqual([]);
+    // The submitted page still reads every one of them.
+    expect(
+      recordsForKeyPage({ records: ledger, isSubmittedTarget: true }),
+    ).toHaveLength(4);
+  });
+
+  it("never republishes a target-page verdict as another page's", () => {
+    // The symptom the filter exists to prevent, asserted end to end: a Tip the
+    // submitted page earned must not become a Tip on a page nobody measured.
+    const ledger = [
+      record({
+        id: "h2_count_outside_reviewed_range",
+        population: "target_page",
+        state: "observed",
+        targetTested: null,
+        tested: 1,
+        affected: 1,
+        observations: [{ url: TARGET_PAGE, values: [] }],
+      } as Partial<SeoAuditRecord>),
+    ];
+
+    const scoped = recordsForKeyPage({
+      records: ledger,
+      isSubmittedTarget: false,
+    });
+
+    expect(resultFor(scoped, OTHER, "3.4")?.result).toBe("excluded");
+    expect(resultFor(ledger, TARGET_PAGE, "3.4")?.result).not.toBe("excluded");
   });
 
   it("keeps the crawl ledger the other key pages are judged from", () => {

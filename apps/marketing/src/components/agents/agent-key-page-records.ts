@@ -3,7 +3,10 @@
 // @pos    -- pure filter; the fail-closed half of judging more than one page
 
 import type { SeoAuditRecord } from "@sf/public-tools";
-import { KEYWORD_EVIDENCE_RECORD_IDS } from "@sf/public-tools/seo-audit/keyword-evidence/records";
+import {
+  KEYWORD_EVIDENCE_RECORD_IDS,
+  PAGE_SHAPE_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/keyword-evidence/records";
 import { PAGE_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/page-performance";
 import { SERP_SHAPE_RECORD_IDS } from "@sf/public-tools/seo-audit/serp-shape";
 
@@ -26,6 +29,12 @@ import { SERP_SHAPE_RECORD_IDS } from "@sf/public-tools/seo-audit/serp-shape";
  */
 const TARGET_ONLY_RECORD_IDS: ReadonlySet<string> = new Set([
   ...KEYWORD_EVIDENCE_RECORD_IDS,
+  // Split out of the keyword region after this filter was written, and the
+  // filter was not told. They are `target_page`, which `projectRecordToTarget`
+  // returns untouched, so the submitted page's heading counts, schema fit and
+  // section substance were republished as every other key page's -- hits and
+  // URLs included.
+  ...PAGE_SHAPE_RECORD_IDS,
   ...PAGE_PERFORMANCE_RECORD_IDS,
   ...SERP_SHAPE_RECORD_IDS,
   "target_query_ranking_band",

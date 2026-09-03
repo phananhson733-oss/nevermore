@@ -3,7 +3,7 @@ import { measurePageSimilarity } from "./page-similarity.ts";
 import {
   BODY_UNITS,
   HTML_BYTES,
-  SCRIPT_DOMINANCE,
+  readsAsClientRendered,
 } from "./page-shape-thresholds.ts";
 import {
   SOFT_404_BODY_FLOOR_UNITS,
@@ -1697,8 +1697,7 @@ function buildRecords(
       tested: htmlPages.filter((page) => onPageOf(page) !== null),
       observations: htmlPages.flatMap((page) => {
         const facts = onPageOf(page);
-        return facts === null ||
-          facts.scriptBytes <= facts.visibleTextBytes * SCRIPT_DOMINANCE
+        return facts === null || !readsAsClientRendered(facts)
           ? []
           : [
               pageObservation(page, {
