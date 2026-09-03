@@ -8,6 +8,8 @@ One line per module: what it reads, what it returns, where it sits. Update the l
 - `ai-visibility-history.tsx` — latest account-owned checks and stable run-URL reopening, with historical summary-only evidence distinguished from complete V2 evidence.
 - `ai-visibility-report/` — four prominent scoped metrics, engine/intent tables, evidence-backed gaps, answer/source disclosures, V1 summary compatibility and exports; missing or omitted evidence is never an absence claim.
 - `ai-visibility-check-v2.tsx` — secondary untrusted local-file comparison, without provider work or account-run authority.
+- `geo-kb-section.tsx` — the Profile editor's section card and field-row rhythm, shared by the GEO editor and frozen views so both read as one asset; layout only.
+- `geo-kb-v2-build-report.tsx` — what one orchestrated build wrote and where it stopped, part by part, so a build that did nothing does not read like one that wrote everything.
 - `geo-kb-profile.tsx`, `geo-kb-profile-copy-review.tsx`, `geo-kb-frozen-copy.tsx` — complete read-only copied Profile, explicit version difference/adoption review and immutable frozen copy display.
 - `geo-kb-measurement-review.tsx` — opt-in operational-field proposals and explicit bounded competitor selection, without saving, freezing or claiming source facts were verified.
 - `geo-knowledge-base.tsx` — separate source-copy and operational GEO review with explicit save/freeze, stale-source recovery and language readiness.

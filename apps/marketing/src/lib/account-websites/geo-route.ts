@@ -44,6 +44,10 @@ export async function handleWebsiteGeoLoad(
   const website = result.value;
   const loaded = await dependencies.loadKnowledgeBase({ userId: auth.userId, url: website.origin });
   if (loaded.kind === "not_found") return privateError("not_found", 404);
+  // A website whose Profile has never been confirmed is not an outage, and
+  // telling the visitor the store did not respond sends them to retry a thing
+  // that will never start working. The tools route already separates these.
+  if (loaded.kind === "profile_copy_required") return privateError("profile_copy_required", 409);
   if (loaded.kind !== "ok") return privateError("store_unavailable", 503);
 
   // Both the old URL shortcut and this route resolve the same canonical site.

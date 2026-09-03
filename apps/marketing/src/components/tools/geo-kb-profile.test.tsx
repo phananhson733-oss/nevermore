@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import en from "../../i18n/messages/en.json";
 import { emptyMarketingWebsiteProfile, WEBSITE_PROFILE_FIELD_NAMES } from "../../lib/account-websites/contracts.ts";
 import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
+import { renderedText } from "./rendered-text.test-helper.ts";
 
 const fullProfile = { ...emptyMarketingWebsiteProfile(), productName: "Copied product", oneLinePositioning: "Copied positioning",
   coreFeatures: Array.from({ length: 32 }, (_, i) => `Complete feature ${i + 1}`), valueProposition: "Copied value",
@@ -82,11 +83,13 @@ describe("complete GEO Profile copy display", () => {
     await render();
     const summary = host.querySelector("[data-geo-profile-summary]");
     expect(summary).not.toBeNull();
-    expect(summary?.textContent).toContain("Copied product");
-    expect(summary?.textContent).toContain("Copied positioning");
-    expect(summary?.textContent).toContain("Complete feature 1");
-    expect(summary?.textContent).toContain("CA · en-CA");
-    expect(summary?.textContent).not.toContain("Copied ICP");
+    // Inherited values are rendered as read-only controls, as they are in the
+    // Profile editor, so what the visitor reads includes those values.
+    expect(renderedText(summary)).toContain("Copied product");
+    expect(renderedText(summary)).toContain("Copied positioning");
+    expect(renderedText(summary)).toContain("Complete feature 1");
+    expect(renderedText(summary)).toContain("CA · en-CA");
+    expect(renderedText(summary)).not.toContain("Copied ICP");
     const complete = host.querySelector<HTMLDetailsElement>("details[data-geo-copy-complete]");
     expect(complete).not.toBeNull();
     expect(complete?.open).toBe(false);

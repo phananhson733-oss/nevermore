@@ -5553,6 +5553,7 @@
         "copyBody": "These values are part of this GEO draft, not a live lookup of the Profile above. Edit base information in Profile, then explicitly review and update this copy. Frozen versions never change.",
         "frozenCopyBody": "These are the exact Profile values stored in this frozen GEO version. Neither today's Profile nor the current GEO draft changes this copy.",
         "emptyField": "Not provided",
+        "inheritedBadge": "Inherited from the Profile",
         "market": "Market / language",
         "copyFieldsToggle": "View the complete Profile copy (all fields and sources)",
         "copyScopeNote": "Freezing keeps the product name, one-line positioning, core features and market. The remaining fields seed role and competitor proposals and are stored with this copy for inspection.",
@@ -5580,6 +5581,35 @@
         "scopeHelp": "The Profile market and language are copied above. These GEO-only measurement settings are explicit overrides and do not edit the Profile."
       },
       "editor": {
+        "build": "Build the GEO knowledge base from the Profile",
+        "buildBusy": "Building\u2026",
+        "buildHelp": "Reads the Product Profile copy this draft already holds, writes the values GEO can derive from it (official name, aliases, category terms, market, competitors), saves the draft, refreshes source evidence, and asks the model once for a role proposal. Roles and facts are never accepted for you; adopting one is your decision, exactly as applying a rescanned Profile field is. This step makes one model call and may incur a charge.",
+        "buildTitle": "What this build did",
+        "buildFields": "Written from the Profile: {fields}",
+        "buildNoFields": "The measurement fields already matched the Profile; nothing was rewritten.",
+        "buildAliases": {
+          "adopted": "The alias table was generated from the name and domain that were available; add or remove entries below.",
+          "unchanged": "The alias table was left as it is; an existing list is never overwritten.",
+          "manual": "No usable alias could be derived from the name and domain. Please enter them."
+        },
+        "buildCompetitors": {
+          "adopted": "Competitors were written from the Profile; confirmed rows stayed confirmed.",
+          "unchanged": "Competitors already matched the Profile; nothing was rewritten.",
+          "manual": "Competitors were not written: a row here is not in the Profile, or there are more candidates than the limit. Choose them under \u201cFrom the Product Profile\u201d."
+        },
+        "buildDone": "A role proposal is ready. Review each role below, adopt what belongs, then prepare the complete version.",
+        "buildUnavailable": "The Profile holds these in a form GEO cannot use, so they were neither compared nor written: {fields}. Fix them in the Profile above, or enter them below.",
+        "buildStopped": {
+          "copy": "The Product Profile has a newer confirmed version. Review and adopt its copy first, then build again.",
+          "save": "The draft did not save, so no later step ran. The error above says why.",
+          "changed": "The draft saved, but the input changed after it saved (or the Profile copy needs review again), so no later step ran. Press the button again to continue.",
+          "running": "A generation is running for this knowledge base, possibly in another tab, so the draft cannot be written right now. Press the button again once it ends.",
+          "failed": "This build did not complete and no later step ran. Your draft is unchanged.",
+          "rolesPending": "The role proposal was requested and its outcome is not known yet. Its status is shown below; nothing is retried automatically.",
+          "rolesFailed": "The role proposal did not finish. Its server reason and actual attempt record are kept below.",
+          "sources": "Refreshing source evidence did not succeed, so no model call was made.",
+          "roles": "The role proposal step did not run: its preconditions were not met. The progress list above names the step that is missing."
+        },
         "savePending": "One save is needed before continuing: the stored draft differs from what is shown here. Its content does not change.",
         "neverSaved": "This GEO draft has not been saved yet. It saves itself once you start editing.",
         "conflict": "Another session changed this draft. What you see is still your version; saving again replaces what they just stored, so review first.",

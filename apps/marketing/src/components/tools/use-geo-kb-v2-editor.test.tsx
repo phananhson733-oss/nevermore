@@ -21,7 +21,7 @@ const response = (data: unknown) => Response.json({ data });
 it("a save acknowledges only its submitted edit and never overwrites later typing", async () => {
   await mount(); await act(async () => editor.change({ ...editor.payload, officialName: "Submitted name" }));
   const reply = later<Response>(); vi.mocked(fetch).mockReturnValueOnce(reply.promise);
-  let saving!: Promise<void>; await act(async () => { saving = editor.save(); });
+  let saving!: Promise<boolean>; await act(async () => { saving = editor.save(); });
   await act(async () => editor.change({ ...editor.payload, officialName: "Typed while saving " }));
   await act(async () => { reply.resolve(response({ draftVersion: 2, contentHash: "a".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] })); await saving; });
   expect(editor.payload.officialName).toBe("Typed while saving "); expect(editor.dirty).toBe(true); expect(editor.view.draftVersion).toBe(2);
@@ -58,6 +58,28 @@ it("freeze requires exact candidate review and sends only ID/hash then reloads f
   const init = vi.mocked(fetch).mock.calls[0]?.[1]; expect(JSON.parse(String(init?.body))).toEqual({ kbId: view.kbId, candidateId: view.prepared!.candidateId, candidateHash: view.prepared!.candidateHash });
   expect(vi.mocked(fetch).mock.calls[1]?.[0]).toContain("/v2/load");
 });
+it("does not call a save that succeeded a save that failed after the Profile copy changed", async () => {
+  // The build saves, and a save that carries a new Profile copy reloads the
+  // editor. The gates read a ref; if that ref were only refreshed on the next
+  // render, the very next line would read a hold that no longer applies and
+  // the visitor would be told the draft did not save when it did.
+  const view = editorFixture(); await mount(view);
+  const newer = { ...structuredClone(view), profile: { ...view.profile!, reference: { ...view.profile!.reference, snapshotId: "22222222-2222-4222-8222-222222222222", snapshotRevision: 2 } } };
+  vi.mocked(fetch).mockResolvedValueOnce(response(newer));
+  await act(async () => editor.reviewProfileCopy());
+  await act(async () => editor.adoptProfileCopy());
+  const adopted = editor.payload;
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(response({ draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] }))
+    .mockResolvedValueOnce(response({ ...newer, payload: adopted, draftVersion: 2, draftHash: "c".repeat(64), profileCopyHash: geoV2Digest(adopted.profileCopy) }))
+    .mockResolvedValueOnce(response(sourceFixture({ ...newer, payload: adopted, draftVersion: 2, draftHash: "c".repeat(64) })))
+    .mockResolvedValueOnce(response({ generation: { generationId: "44444444-4444-4444-8444-444444444444", kbId: view.kbId, kind: "roles", inputHash: "d".repeat(64), state: "dispatched", result: null, errorReason: null, attempt: null }, reused: false }));
+
+  await act(async () => editor.buildFromProfile());
+
+  expect(editor.build?.stoppedAt).not.toBe("save");
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toContain("/api/tools/geo-knowledge-base/v2/roles");
+});
 it("reading a newer Profile is only a proposal; adoption is explicit and must be saved", async () => {
   const view = editorFixture(); await mount(view); const newer = { ...structuredClone(view), profile: { ...view.profile!, reference: { ...view.profile!.reference, snapshotId: "22222222-2222-4222-8222-222222222222", snapshotRevision: 2 } } };
   vi.mocked(fetch).mockResolvedValueOnce(response(newer)); await act(async () => editor.reviewProfileCopy());
@@ -81,7 +103,7 @@ it("recovers an unknown delivery by its original key and reuses that key for an 
 });
 it("a candidate arriving after a Profile ABA remains stale even after the unchanged current copy is rechecked", async () => {
   const full = editorFixture(), view = { ...full, prepared: null }; await mount(view);
-  const reply = later<Response>(); vi.mocked(fetch).mockReturnValueOnce(reply.promise); let generating!: Promise<void>;
+  const reply = later<Response>(); vi.mocked(fetch).mockReturnValueOnce(reply.promise); let generating!: Promise<boolean>;
   await act(async () => { generating = editor.generate("questions"); }); await mount(view, 2); await mount(view, 1);
   await act(async () => { reply.resolve(response({ generation: { generationId: V2_CANDIDATE_ID, kbId: view.kbId, kind: "questions", inputHash: "a".repeat(64), state: "succeeded", result: full.prepared, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false })); await generating; });
   vi.mocked(fetch).mockResolvedValueOnce(response(view)); await act(async () => editor.reviewProfileCopy());
@@ -204,7 +226,7 @@ it("waits for an operation already in flight rather than dropping the write", as
     await mount({ ...editorFixture(), sourceReceipt: null });
     const reply = later<Response>();
     vi.mocked(fetch).mockReturnValueOnce(reply.promise);
-    let refreshing!: Promise<void>;
+    let refreshing!: Promise<boolean>;
     await act(async () => { refreshing = editor.refreshSources(); });
     await act(async () => editor.change({ ...editor.payload, officialName: "Typed during a refresh" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });

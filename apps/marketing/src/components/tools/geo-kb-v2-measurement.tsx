@@ -10,6 +10,7 @@ import type { GeoKbPayloadV2 } from "../../lib/geo-tools/kb-v2-contract.ts";
 import { applyGeoV2Measurement, geoV2MeasurementGapFrom, geoV2MeasurementProposal, hasGeoV2MeasurementGap, GEO_V2_MEASUREMENT_FIELDS, type GeoV2MeasurementField } from "../../lib/geo-tools/kb-v2-measurement.ts";
 import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
 import { Button } from "../ui/button.tsx";
+import { GeoKbSection } from "./geo-kb-section.tsx";
 
 function describe(value: unknown): string {
   if (value === null || value === undefined) return "—";
@@ -44,9 +45,8 @@ export function GeoKbV2MeasurementReview({ profile, payload, locale, disabled, o
   let next: GeoKbPayloadV2 | null = null;
   try { next = applyGeoV2Measurement(payload, proposal, { fields, competitorIndices: replaceCompetitors ? competitors : null }); }
   catch { /* An over-limit or duplicate selection stays visible and cannot be applied. */ }
-  return <section data-geo-v2-measurement className="min-w-0 rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
-    <h4 className="text-[15px] font-semibold text-text-dark-primary">{t("gapTitle")}</h4>
-    <div className="mt-3 grid gap-2 text-sm text-text-dark-secondary">
+  return <GeoKbSection title={t("gapTitle")} heading={4}>
+    <div data-geo-v2-measurement className="grid gap-2 text-sm text-text-dark-secondary">
       {gap.fields.length === 0 ? null : <p data-gap-fields>{t("gapFields", { fields: gap.fields.map(field => names[field]).join(" · ") })}</p>}
       {gap.competitorsDiffer ? <p data-gap-competitors>{t("gapCompetitors", { source: gap.sourceCompetitorCount, draft: gap.draftCompetitorCount, missing: gap.missingCompetitorCount })}</p> : null}
       {gap.competitorsDiffer && gap.overCompetitorLimit ? <p data-gap-limit>{t("competitorsBody", { sourceCount: gap.sourceCompetitorCount, limit: GEO_KB_LIMITS.competitors })}</p> : null}
@@ -83,5 +83,5 @@ export function GeoKbV2MeasurementReview({ profile, payload, locale, disabled, o
         onChange(next); setFields([]); setCompetitors([]); setReplaceCompetitors(false);
       }}>{t("apply")}</Button>
     </details>
-  </section>;
+  </GeoKbSection>;
 }

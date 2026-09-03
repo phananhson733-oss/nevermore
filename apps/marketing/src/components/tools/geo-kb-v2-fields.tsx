@@ -2,6 +2,7 @@
 // @input -- detached V2 draft, explicit field/review gestures
 // @output -- editable GEO-only values; fact filling never means crawl verification
 import { useId, type ReactNode } from "react";
+import { GeoKbSection } from "./geo-kb-section.tsx";
 import { geoFactV2Schema, geoRoleV2Schema, type GeoKbPayloadV2, type GeoKbReview } from "../../lib/geo-tools/kb-v2-contract.ts";
 import { editGeoKbFactV2, editGeoKbRoleV2 } from "./geo-kb-v2-editor.ts";
 import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
@@ -10,9 +11,9 @@ import { Button } from "../ui/button.tsx";
 import { Input } from "../ui/input.tsx";
 import { Textarea } from "../ui/textarea.tsx";
 
+/** Kept as the name the other GEO panels import; the form is now the shared one. */
 export function GeoKbEditorPanel({ title, children }: { readonly title: string; readonly children: ReactNode }) {
-  const id = useId();
-  return <section aria-labelledby={id} className="min-w-0 rounded-card border border-brand-border-strong bg-brand-panel p-5 sm:p-7"><h4 id={id} className="mb-5 border-b border-brand-border-card pb-4 text-[15px] font-semibold text-text-dark-primary">{title}</h4>{children}</section>;
+  return <GeoKbSection title={title} heading={4}>{children}</GeoKbSection>;
 }
 function Field({ label, value, onChange, kind, field, list = false }: { readonly label: string; readonly value: string; readonly onChange: (value: string) => void; readonly kind: string; readonly field: string; readonly list?: boolean }) {
   const id = useId(), data = { [`data-${kind}-field`]: field };

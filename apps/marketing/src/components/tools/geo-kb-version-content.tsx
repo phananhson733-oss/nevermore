@@ -5,7 +5,8 @@
 import type { GeoKbPayloadV2 } from "../../lib/geo-tools/kb-v2-contract.ts";
 import type { GeoQuestionSetV2 } from "../../lib/geo-tools/kb-question-set-v2.ts";
 import type { GeoCompetitorEvidenceV2, GeoSnapshotContextV2 } from "../../lib/geo-tools/snapshot-context-v2.ts";
-import { useId, type ReactNode } from "react";
+import { type ReactNode } from "react";
+import { GeoKbSection } from "./geo-kb-section.tsx";
 import { normalizeAccountWebsiteUrl } from "../../lib/account-websites/contracts.ts";
 import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { geoKbV2Copy, type GeoKbV2Copy } from "./geo-kb-v2-copy.ts";
@@ -19,13 +20,9 @@ export interface GeoKbVersionContentProps {
   readonly context: GeoSnapshotContextV2;
   readonly locale: string;
 }
+/** The same section card the editor stage draws, at whatever depth the host set. */
 function Panel({ title, heading, children }: { readonly title: string; readonly heading: GeoKbVersionHeading; readonly children: ReactNode }) {
-  const id = useId();
-  const Heading = (heading === 3 ? "h3" : "h4") as "h3" | "h4";
-  return <section aria-labelledby={id} className="min-w-0 overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
-    <Heading id={id} className="-mx-5 -mt-5 mb-5 flex items-center gap-3 border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 text-[17px] font-semibold text-text-dark-primary sm:-mx-7 sm:px-7"><span aria-hidden="true" className="h-5 w-1 rounded-full bg-brand-accent" />{title}</Heading>
-    {children}
-  </section>;
+  return <GeoKbSection title={title} heading={heading}>{children}</GeoKbSection>;
 }
 /** One level below the panel it sits in, whatever depth that panel was given. */
 function Sub({ heading, className, children }: { readonly heading: GeoKbVersionHeading; readonly className?: string; readonly children: ReactNode }) {

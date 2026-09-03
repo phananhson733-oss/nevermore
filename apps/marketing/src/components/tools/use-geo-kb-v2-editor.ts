@@ -11,12 +11,36 @@ import type { GeoRoleProposal } from "../../lib/geo-tools/kb-role-proposal.ts";
 import { parseGeoKbSourceReportV2 } from "../../lib/geo-tools/kb-source-contract.ts";
 import { parseGeoKbDraftSaveV2, parseGeoKbFreezeV2Response, parseGeoKbEditorViewV2, parseGeoKbGenerationWire, type GeoKbEditorViewV2, type GeoKbGenerationWire } from "./geo-kb-v2-wire.ts";
 import { adoptGeoKbRoleProposals, submitGeoKbPayloadV2 } from "./geo-kb-v2-editor.ts";
+import { buildGeoV2FromProfile, type GeoV2BuildOutcome } from "../../lib/geo-tools/kb-v2-build-from-profile.ts";
+import type { GeoV2MeasurementField } from "../../lib/geo-tools/kb-v2-measurement.ts";
 import { ACCOUNT_AUTOSAVE_DELAY_MS } from "../account/autosave-delay.ts";
 
 export const GEO_KB_V2_API = "/api/tools/geo-knowledge-base/v2/";
 export const GEO_KB_V2_AUTOSAVE_MS = ACCOUNT_AUTOSAVE_DELAY_MS;
 /** Retry cadence when the server reports a generation running in another tab; this tab cannot observe it end. */
 export const GEO_KB_V2_AUTOSAVE_RETRY_MS = 5_000;
+/**
+ * What one orchestrated build actually wrote, and the first step it could not
+ * complete. `stoppedAt: null` means it reached the roles proposal.
+ */
+export interface GeoKbV2BuildReport {
+  /**
+   * Absent when the derivation never ran. A refusal that reported "nothing was
+   * rewritten" would be stating the result of a comparison nobody performed.
+   */
+  readonly derived: {
+    readonly fields: readonly GeoV2MeasurementField[];
+    readonly unavailable: readonly GeoV2MeasurementField[];
+    readonly aliases: GeoV2BuildOutcome;
+    readonly competitors: GeoV2BuildOutcome;
+  } | null;
+  /**
+   * Where the run ended. `null` means a role proposal is actually readable
+   * now; a dispatched or failed generation is neither of those and gets its
+   * own value, because the visitor was billed either way.
+   */
+  readonly stoppedAt: "copy" | "save" | "changed" | "running" | "sources" | "roles" | "rolesPending" | "rolesFailed" | "failed" | null;
+}
 /** Why an automatic write is being held back, for the editor to say so. */
 export type GeoKbV2AutosaveHold = "conflict" | "copyStale" | "running" | "busy" | "failed";
 type Operation = "save" | "load" | "sources" | "roles" | "questions" | "freeze" | "copy";
@@ -91,8 +115,14 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   const [signal, setSignal] = useState({ revision: confirmedProfileRevision, sequence: 0 });
   const [reviewedSequence, setReviewedSequence] = useState(0);
   const [copyHashNeedsReload, setCopyHashNeedsReload] = useState(false);
+  // Mirrored imperatively wherever the state is set, the way `current.current`
+  // mirrors the view: a render-only mirror is stale in exactly the window
+  // between two awaited steps that the live gates were added for.
+  const copyHashHold = useRef(false);
   const [pending, setPending] = useState<PendingSet>({ roles: null, questions: null });
   const [retainedRequests, setRetainedRequests] = useState<readonly RetainedGeoKbRequest[]>([]);
+  const [building, setBuilding] = useState(false), [build, setBuild] = useState<GeoKbV2BuildReport | null>(null);
+  const buildRunning = useRef(false);
   const historyRef = useRef<readonly RetainedGeoKbRequest[]>([]), unknownBaselines = useRef(new Map<string, { version: number; hash: string | null }>());
   const current = useRef({ view, payload, dirty, edited: false, pending, signal, copyStale: false }), lock = useRef(false), editRevision = useRef(0), invalidCandidates = useRef(new Set<string>()), copySequence = useRef(0);
   const autosave = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -133,15 +163,31 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   const sourceCopy = payload.profileCopy;
   const copyStale = signal.sequence !== reviewedSequence || (view.profile !== null && (sourceCopy.snapshotId !== view.profile.reference.snapshotId || sourceCopy.profileHash !== view.profile.reference.profileHash));
   current.current.copyStale = copyStale;
+  copyHashHold.current = copyHashNeedsReload;
   const copyHashReady = !copyHashNeedsReload && same(sourceCopy, view.payload.profileCopy);
   const sourceSelection = currentGeoKbSourceSelection(view, payload);
   const candidate = view.prepared;
   const candidateStale = candidate !== null && (dirty || view.requiresSave || copyStale || candidate.baseDraftHash !== view.draftHash || Number(candidate.baseDraftVersion) !== view.draftVersion || invalidCandidates.current.has(candidate.candidateId) ||
     !sourceSelection.refs.every(selected => candidate.sourceReceiptRefs.some(ref => same(ref, selected))));
   const busy = status.kind === "busy";
-  const canGenerate = !busy && !dirty && !view.requiresSave && !copyStale && copyHashReady && view.draftVersion > 0 && view.draftHash !== null;
-  const needsReview = payload.roles.some(role => role.review === "pending") || payload.facts.some(fact => fact.review === "pending");
-  const canPrepare = canGenerate && !needsReview;
+  /**
+   * The generation gates, read from the refs rather than from this render's
+   * state. One click can run several steps back to back, and a step asking
+   * "may I run?" a line after the previous step saved the draft would
+   * otherwise read the snapshot taken before that save and refuse itself.
+   * During a render the refs hold exactly this render's values, so the button
+   * states below are unchanged.
+   */
+  function gatesNow() {
+    const active = current.current;
+    const copyReady = !copyHashHold.current && same(active.payload.profileCopy, active.view.payload.profileCopy);
+    const generate = !active.dirty && !active.view.requiresSave && !active.copyStale && copyReady && active.view.draftVersion > 0 && active.view.draftHash !== null;
+    const review = active.payload.roles.some(role => role.review === "pending") || active.payload.facts.some(fact => fact.review === "pending");
+    return { generate, prepare: generate && !review, needsReview: review };
+  }
+  const canGenerate = !busy && gatesNow().generate;
+  const needsReview = gatesNow().needsReview;
+  const canPrepare = !busy && gatesNow().prepare;
   for (const kind of ["roles", "questions"] as const) {
     const generation = view.generations[kind];
     if (generation && unresolved(generation.state) && !unknownBaselines.current.has(generation.generationId)) unknownBaselines.current.set(generation.generationId, { version: view.draftVersion, hash: view.draftHash });
@@ -152,21 +198,24 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     const body = { kbId: active.view.kbId, baseVersion: active.view.draftVersion, draftHash: active.view.draftHash!, sourceReceiptRefs, displayLocale };
     return { body, identity: canonicalGeoV2Text({ kind, ...body }) };
   }
-  function generationAction(kind: GeoKbGenerationKind): GenerationAction {
-    if (!(kind === "questions" ? canPrepare : canGenerate) || current.current.dirty) return "read_only";
+  function generationActionNow(kind: GeoKbGenerationKind): GenerationAction {
+    const gates = gatesNow();
+    if (!(kind === "questions" ? gates.prepare : gates.generate) || current.current.dirty) return "read_only";
     const identity = requestInput(kind).identity, held = current.current.pending[kind];
     const historical = historyRef.current.find(item => item.kind === kind && sameGenerationBasis(item.inputIdentity, identity) && unresolved(item.state));
     if (historical) return historical.inputIdentity === identity && historical.state === "not_found" && historical.generationId === null && historical.idempotencyKey !== null ? "resend_same" : "read_only";
     if (held) {
       if (held.inputIdentity === identity) return held.generationId === null && held.readNotFound === true ? "resend_same" : "read_only";
       if (held.inputIdentity !== undefined) return sameGenerationBasis(held.inputIdentity, identity) ? "read_only" : "new_input";
-      return view.draftVersion > held.baseVersion && view.draftHash !== held.draftHash ? "new_input" : "read_only";
+      return current.current.view.draftVersion > held.baseVersion && current.current.view.draftHash !== held.draftHash ? "new_input" : "read_only";
     }
     const generation = current.current.view.generations[kind];
     if (!generation || !unresolved(generation.state)) return "normal";
     const baseline = unknownBaselines.current.get(generation.generationId);
-    return baseline && view.draftVersion > baseline.version && view.draftHash !== baseline.hash ? "new_input" : "read_only";
+    return baseline && current.current.view.draftVersion > baseline.version && current.current.view.draftHash !== baseline.hash ? "new_input" : "read_only";
   }
+  /** What the buttons offer: the live answer, plus this render's busy state. */
+  const generationAction = (kind: GeoKbGenerationKind): GenerationAction => busy ? "read_only" : generationActionNow(kind);
   const candidateIdentity = candidate === null ? null : `${candidate.candidateId}:${candidate.candidateHash}`;
   const canFreeze = !busy && candidate !== null && !candidateStale && review === candidateIdentity;
   // Warn about leaving only for a visitor's own edits. A draft that merely
@@ -270,14 +319,15 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     const entry: RetainedGeoKbRequest = { id: `${kind}:${key ?? id}`, kind, idempotencyKey: key, generationId: held ? held.generationId : id, inputIdentity: held?.inputIdentity ?? null, draftHash: held?.draftHash ?? baseline?.hash ?? null, baseVersion: held?.baseVersion ?? baseline?.version ?? view.draftVersion, state: held?.knownState ?? (held && held.generationId !== generation?.generationId ? "unknown" : generation?.state ?? "unknown"), errorReason: generation?.errorReason ?? null };
     return saveHistory([...historyRef.current.filter(item => item.id !== entry.id), entry]);
   }
-  async function perform(operation: Operation, work: () => Promise<void>) {
-    if (lock.current) return; lock.current = true; operationFailed.current = false; setStatus({ kind: "busy", operation });
+  async function perform(operation: Operation, work: () => Promise<void>): Promise<boolean> {
+    if (lock.current) return false; lock.current = true; operationFailed.current = false; setStatus({ kind: "busy", operation });
     try { await work(); } catch { operationFailed.current = true; setStatus({ kind: "error", code: "bad_response" }); }
     finally {
       lock.current = false; setStatus(previous => previous.kind === "busy" ? { kind: "idle" } : previous);
       if (operation === "save") writeFailed.current = operationFailed.current;
       resumeAutosave();
     }
+    return !operationFailed.current;
   }
   function error(result: { readonly code: string; readonly draftVersion?: number }) {
     operationFailed.current = true;
@@ -309,7 +359,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     const loaded = parseGeoKbEditorViewV2(result.data);
     if (!loaded || loaded.kbId !== view.kbId) { error({ code: "schema_mismatch" }); return false; }
     if (loaded.prepared?.candidateId !== current.current.view.prepared?.candidateId || loaded.prepared?.candidateHash !== current.current.view.prepared?.candidateHash) setReview(null);
-    current.current.view = loaded; setView(loaded); setCopyHashNeedsReload(false);
+    current.current.view = loaded; setView(loaded); copyHashHold.current = false; setCopyHashNeedsReload(false);
     lastSaved.current = loaded.requiresSave ? null : canonicalGeoV2Text(submitGeoKbPayloadV2(loaded.payload));
     if (!wasDirty && editRevision.current === start) { current.current.payload = loaded.payload; current.current.dirty = loaded.requiresSave; setPayload(loaded.payload); setDirty(loaded.requiresSave); setEdited(false); }
     for (const kind of ["roles", "questions"] as const) if (loaded.generations[kind]) acceptGeneration(loaded.generations[kind]!);
@@ -355,20 +405,25 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     const next = { ...current.current.view, draftVersion: data.draftVersion, draftHash: data.contentHash, payload: submitted, requiresSave: false };
     current.current.view = next; setView(next); lastSaved.current = canonical;
     const newer = editRevision.current !== version; current.current.dirty = newer; setDirty(newer); setEdited(newer);
-    if (copyChanged) { setCopyHashNeedsReload(true); if (!(await readSaved())) return; }
+    if (copyChanged) { copyHashHold.current = true; setCopyHashNeedsReload(true); if (!(await readSaved())) return; }
     setStatus({ kind: current.current.dirty ? "idle" : "saved" });
   });
-  const refreshSources = async () => { if (!canGenerate || current.current.dirty) return; await perform("sources", async () => {
-    const startVersion = view.draftVersion, startHash = view.draftHash;
-    const result = await post("sources", { kbId: view.kbId }); if (!result.ok) { error(result); return; }
+  const refreshSources = async () => { if (!gatesNow().generate || current.current.dirty) return false; return perform("sources", async () => {
+    // The draft this refresh is for is the one the refs hold, not the one this
+    // render captured: a save immediately before this step has already moved
+    // the version, and comparing against the older one refuses every receipt.
+    const base = current.current.view;
+    const startVersion = base.draftVersion, startHash = base.draftHash;
+    const result = await post("sources", { kbId: base.kbId }); if (!result.ok) { error(result); return; }
     let receipt; try { receipt = parseGeoKbSourceReportV2(result.data); } catch { error({ code: "schema_mismatch" }); return; }
-    if (receipt.kbId !== view.kbId || receipt.targetHost !== view.host || receipt.draftVersion !== startVersion || receipt.draftHash !== startHash) { error({ code: "input_stale" }); return; }
-    if (view.prepared && !same(currentGeoKbSourceSelection({ ...view, sourceReceipt: receipt }, current.current.payload).refs, sourceSelection.refs)) invalidCandidates.current.add(view.prepared.candidateId);
+    if (receipt.kbId !== base.kbId || receipt.targetHost !== base.host || receipt.draftVersion !== startVersion || receipt.draftHash !== startHash) { error({ code: "input_stale" }); return; }
+    if (base.prepared && !same(currentGeoKbSourceSelection({ ...base, sourceReceipt: receipt }, current.current.payload).refs, currentGeoKbSourceSelection(base, current.current.payload).refs)) invalidCandidates.current.add(base.prepared.candidateId);
+    current.current.view = { ...current.current.view, sourceReceipt: receipt };
     setView(previous => ({ ...previous, sourceReceipt: receipt })); setReview(null);
   }); };
   const generate = async (kind: GeoKbGenerationKind, action: Exclude<GenerationAction, "read_only"> = "normal") => {
-    if (generationAction(kind) !== action) return;
-    await perform(kind, async () => {
+    if (generationActionNow(kind) !== action) return false;
+    return perform(kind, async () => {
       const saved = storedPending(view.kbId, kind, true);
       const input = requestInput(kind), inputIdentity = input.identity;
       const historical = historyRef.current.find(item => item.kind === kind && item.inputIdentity === inputIdentity && item.idempotencyKey !== null);
@@ -439,6 +494,61 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     if (roles.length > 5) return;
     change({ ...current.current.payload, roles });
   }
+  /**
+   * One gesture for a knowledge base whose Profile is already confirmed. The
+   * first two steps only move values the draft's own Profile copy already
+   * holds, or that are derived from them, so nothing there is a judgement
+   * anyone has to make. It stops at the roles proposal on purpose: a generated
+   * role is a claim about an audience, and adopting one is the visitor's act,
+   * exactly as applying a refreshed Profile field is over in the Profile
+   * editor. Each step is skipped rather than forced when its own gate refuses,
+   * and the report says where it stopped.
+   */
+  const buildFromProfile = async (): Promise<void> => {
+    if (lock.current || buildRunning.current) return;
+    // Nothing was derived, so nothing is reported about the derivation.
+    if (current.current.copyStale) { setBuild({ derived: null, stoppedAt: "copy" }); return; }
+    buildRunning.current = true; setBuilding(true); setBuild(null);
+    try {
+      const build = buildGeoV2FromProfile(current.current.payload.profileCopy.profile, current.current.payload);
+      if (build.changed) change(build.payload);
+      const derived = { fields: build.fields, unavailable: build.unavailable, aliases: build.aliases, competitors: build.competitors };
+      // Only write when there is something to write. A deliberate save skips
+      // the no-op guard by design, so saving unconditionally would bump the
+      // version, stale a prepared candidate the visitor already paid for, and
+      // change the generation input identity -- which makes a second press of
+      // this button a second billed model call instead of a deduplicated one.
+      if (build.changed || current.current.dirty || current.current.view.requiresSave || current.current.view.draftHash === null) {
+        if (!(await save())) return finishBuild({ derived, stoppedAt: "save" });
+        // A write refused because a generation is running elsewhere is not an
+        // error and not a success; `persist` deliberately reports neither.
+        if (runningElsewhere.current) return finishBuild({ derived, stoppedAt: "running" });
+      }
+      // A gate closing after a successful save is a different thing from a
+      // save that failed, and saying "the draft did not save" there is false.
+      if (!gatesNow().generate) return finishBuild({ derived, stoppedAt: "changed" });
+      // Re-reading evidence that is already current for this exact draft costs
+      // the shared crawl and Search Console budget and produces a new receipt,
+      // which alone would change the generation input identity.
+      if (!sourceReceiptCurrent() && !(await refreshSources())) return finishBuild({ derived, stoppedAt: "sources" });
+      if (generationActionNow("roles") !== "normal") return finishBuild({ derived, stoppedAt: "roles" });
+      if (!(await generate("roles"))) return finishBuild({ derived, stoppedAt: "rolesFailed" });
+      // A dispatched or server-failed generation is a 200 the request path does
+      // not distinguish. Only a stored, succeeded proposal is readable now.
+      const settled = current.current.view.generations.roles;
+      return finishBuild({ derived, stoppedAt: settled?.state === "succeeded" && settled.result?.schemaVersion === "marketing-geo-role-proposal.v1" ? null : settled?.state === "failed" ? "rolesFailed" : "rolesPending" });
+    } catch {
+      // Nothing below the derivation can throw without leaving the run in an
+      // unknown place; say so rather than letting the rejection disappear.
+      return finishBuild({ derived: null, stoppedAt: "failed" });
+    } finally { buildRunning.current = false; setBuilding(false); }
+  };
+  /** Whether the held source receipt already belongs to exactly this draft. */
+  function sourceReceiptCurrent(): boolean {
+    const active = current.current, selection = currentGeoKbSourceSelection(active.view, active.payload);
+    return selection.receipt !== null && !selection.stale && selection.receipt.draftHash === active.view.draftHash;
+  }
+  function finishBuild(report: GeoKbV2BuildReport): void { setBuild(report); }
   const freeze = async () => { if (!canFreeze || current.current.dirty || !candidate) return; await perform("freeze", async () => {
     const result = await post("freeze", { kbId: view.kbId, candidateId: candidate.candidateId, candidateHash: candidate.candidateHash });
     if (!result.ok) { error(result); return; }
@@ -447,6 +557,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     setReview(null); await readSaved();
   }); };
   return { view, payload, dirty, edited, status, busy, generationRunning, autosaveHold, pending, retainedRequests, readRetainedRequest, generationAction, copyProposal, copyStale, copyHashReady, sourceSelection, roleProposalReusable, canAdoptProfileCopy: copyProposal !== null && copySequence.current === signal.sequence, candidateStale, canGenerate, canPrepare, needsReview, canFreeze, reviewed: review === candidateIdentity && candidateIdentity !== null,
+    building, build, buildFromProfile,
     change, save, reload, refreshSources, generate, readGeneration, freeze, reviewProfileCopy, adoptProfileCopy, adoptRoles,
     dismissProfileCopy: () => setCopyProposal(null), confirmReview: (accepted: boolean) => setReview(accepted && !candidateStale ? candidateIdentity : null) };
 }
