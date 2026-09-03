@@ -4,7 +4,7 @@ import { useId, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
 import {
-  normalizeAccountWebsiteUrl,
+  normalizeNewAccountWebsiteUrl,
   parseWebsiteDetails,
   parseWebsiteSummary,
 } from "../../lib/account-websites/contracts.ts";
@@ -68,7 +68,7 @@ export function AddWebsiteDialog({
   async function submit(generate: boolean): Promise<void> {
     const trimmedUrl = url.trim();
     const trimmedDisplayName = displayName.trim();
-    if (normalizeAccountWebsiteUrl(trimmedUrl) === null) {
+    if (normalizeNewAccountWebsiteUrl(trimmedUrl) === null) {
       setError("invalid_url");
       urlInput.current?.focus();
       return;

@@ -18,7 +18,7 @@ const controls = /[\u0000-\u001f\u007f]/u;
 const textFits = (value: string, max: number) => value.trim().length > 0 && value.trim().length <= max && !controls.test(value);
 const listFits = (value: readonly string[], count: number, max: number) => value.length <= count && value.every(row => textFits(row, max));
 
-export function buildGeoProfileSuggestions(profile: MarketingWebsiteProfileV1, payload: GeoKbPayload): GeoProfileSuggestions {
+export function buildGeoProfileSuggestions(profile: MarketingWebsiteProfileV1, payload: { readonly competitors: readonly GeoKbCompetitor[] }): GeoProfileSuggestions {
   const label = profile.buyer.trim() || profile.primaryIcp.trim();
   const painPoints = [profile.triggerPain, profile.icpPain].filter(value => value.trim());
   const roles = textFits(label, GEO_KB_LIMITS.text) && validateGeoPlaceholderValue("buyer", label) === null && profile.primaryIcp.length <= GEO_KB_LIMITS.text && !controls.test(profile.primaryIcp) && listFits(painPoints, 8, GEO_KB_LIMITS.listItem) && listFits(profile.qualificationSignals, 8, GEO_KB_LIMITS.listItem) && listFits(profile.icpInterests, 12, GEO_KB_LIMITS.listItem)
@@ -41,6 +41,23 @@ export function buildGeoProfileSuggestions(profile: MarketingWebsiteProfileV1, p
   };
 }
 
+/** The one way two competitor rows are judged to be the same competitor. */
+export const competitorIdentity = (competitor: { readonly domain: string; readonly brandName: string }): string =>
+  competitor.domain ? `domain:${competitor.domain}` : `brand:${competitor.brandName.trim().toLowerCase()}`;
+
+/** The bounded subset a visitor may adopt from a proposal, shared by V1 and V2. */
+export function selectProposedCompetitors(proposal: GeoProfileSuggestions, indices: readonly number[]): readonly GeoKbCompetitor[] {
+  if (indices.length > GEO_KB_LIMITS.competitors || new Set(indices).size !== indices.length) throw new Error(`Choose at most ${GEO_KB_LIMITS.competitors} distinct competitors`);
+  const competitors = indices.map(index => {
+    const value = Number.isInteger(index) && index >= 0 ? proposal.competitors[index]?.value : null;
+    if (!value) throw new Error("Unavailable competitor proposal");
+    return value;
+  });
+  const identities = competitors.map(competitorIdentity);
+  if (new Set(identities).size !== identities.length) throw new Error("Duplicate competitor identities");
+  return competitors;
+}
+
 export function applyGeoProfileSuggestions(payload: GeoKbPayload, proposal: GeoProfileSuggestions, selection: { readonly fields: readonly GeoMeasurementField[]; readonly competitorIndices: readonly number[] | null }): GeoKbPayload {
   const next = { ...payload };
   if (new Set(selection.fields).size !== selection.fields.length) throw new Error("Duplicate measurement field");
@@ -49,17 +66,7 @@ export function applyGeoProfileSuggestions(payload: GeoKbPayload, proposal: GeoP
     if (value === null || value === undefined) throw new Error("Unavailable measurement proposal");
     Object.assign(next, { [field]: value });
   }
-  if (selection.competitorIndices !== null) {
-    const indices = selection.competitorIndices;
-    if (indices.length > GEO_KB_LIMITS.competitors || new Set(indices).size !== indices.length) throw new Error("Choose at most five distinct competitors");
-    next.competitors = indices.map(index => {
-      const value = Number.isInteger(index) && index >= 0 ? proposal.competitors[index]?.value : null;
-      if (!value) throw new Error("Unavailable competitor proposal");
-      return value;
-    });
-    const identities = next.competitors.map(row => row.domain ? `domain:${row.domain}` : `brand:${row.brandName.toLowerCase()}`);
-    if (new Set(identities).size !== identities.length) throw new Error("Duplicate competitor identities");
-  }
+  if (selection.competitorIndices !== null) next.competitors = [...selectProposedCompetitors(proposal, selection.competitorIndices)];
   return next;
 }
 

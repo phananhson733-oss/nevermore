@@ -104,6 +104,18 @@ const EDITOR = {
   rescan: "Re-scan website",
   generating: "Scanning…",
   generationFailed: "Refresh failed.",
+  draftUnchanged: "Your current draft is unchanged.",
+  refreshErrors: {
+    rateLimited: "Scan limit reached.",
+    rateLimitedByTarget: "The site rate-limited us.",
+    botProtectionBlocked: "Bot protection blocked the crawl.",
+    robotsDisallowed: "robots.txt does not allow crawling.",
+    robotsUnreachable: "robots.txt could not be read.",
+    entryUnreachable: "The homepage at {host} did not answer.",
+    tooFewPages: "Too few pages to build a Profile.",
+    invalidTarget: "Enter a complete domain.",
+    unavailable: "The scan service is temporarily unavailable.",
+  },
   saveState: {
     unsaved: "Unsaved",
     saving: "Saving…",
@@ -2265,7 +2277,7 @@ describe("WebsiteProfileEditor", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
       async (input) =>
         String(input).endsWith("/profile-refresh")
-          ? answer(503, { error: { code: "profile_refresh_unavailable" } })
+          ? answer(503, { error: { code: "profile_source_unavailable" } })
           : answer(200, { data: { website: initial } }),
     );
 
@@ -2273,11 +2285,38 @@ describe("WebsiteProfileEditor", () => {
     await settle();
     await settle();
 
-    expect(host.textContent).toContain(EDITOR.generationFailed);
+    expect(host.querySelector("[data-refresh-error]")?.getAttribute("data-refresh-error")).toBe("unavailable");
+    expect(host.textContent).toContain(EDITOR.refreshErrors.unavailable);
+    expect(host.textContent).toContain(EDITOR.draftUnchanged);
+    expect(host.textContent).not.toContain(EDITOR.generationFailed);
     expect(profileSearchCalls(fetchMock)).toHaveLength(0);
     expect(
       fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH"),
     ).toHaveLength(0);
+  });
+
+  it("names an unreachable homepage by its server code and the stored address", async () => {
+    const initial = await details(profile());
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) =>
+      String(input).endsWith("/profile-refresh") ? answer(502, { error: { code: "entry_unreachable" } }) : answer(200, { data: { website: initial } }));
+    await mount();
+    await act(async () => button(EDITOR.rescan).click());
+    await settle();
+    expect(host.querySelector("[data-refresh-error]")?.getAttribute("data-refresh-error")).toBe("entryUnreachable");
+    expect(host.textContent).toContain(`The homepage at ${initial.host} did not answer. ${EDITOR.draftUnchanged}`);
+  });
+
+  it("keeps the generic sentence when the failure has no named cause", async () => {
+    const initial = await details(profile());
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input).endsWith("/profile-refresh")) throw new TypeError("network");
+      return answer(200, { data: { website: initial } });
+    });
+    await mount();
+    await act(async () => button(EDITOR.rescan).click());
+    await settle();
+    expect(host.querySelector("[data-refresh-error]")?.getAttribute("data-refresh-error")).toBe("unknown");
+    expect(host.textContent).toContain(EDITOR.generationFailed);
   });
 
   it("does not discover competitors from ordinary typing and autosave", async () => {

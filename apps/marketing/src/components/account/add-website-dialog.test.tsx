@@ -149,6 +149,14 @@ describe("AddWebsiteDialog", () => {
     expect(document.activeElement).toBe(input(en.account.websites.dialog.url));
   });
 
+  it("refuses a host with no domain before sending anything", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    await act(async () => { change(input(en.account.websites.dialog.url), "dramashortstv"); });
+    await act(async () => { button(en.account.websites.dialog.addOnly).click(); });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain(en.account.websites.dialog.invalidUrl);
+  });
+
   it("adds without generation and trims the optional name", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")

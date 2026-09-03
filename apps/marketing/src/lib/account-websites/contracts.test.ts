@@ -6,6 +6,7 @@ import {
   isMarketingWebsiteProfileReady,
   MARKETING_WEBSITE_PROFILE_VERSION,
   normalizeAccountWebsiteUrl,
+  normalizeNewAccountWebsiteUrl,
   parseMarketingWebsiteProfile,
   parseWebsiteDetails,
   parseWebsiteList,
@@ -580,5 +581,29 @@ describe("website profile reference contract", () => {
         latest: true,
       }),
     ).toThrow();
+  });
+});
+
+describe("normalizeNewAccountWebsiteUrl", () => {
+  it("refuses a host with no registrable domain, which nothing could ever scan", () => {
+    // The reported case: a site added as a bare label. It parses, it stores,
+    // and then every scan fails with no reachable homepage.
+    expect(normalizeAccountWebsiteUrl("dramashortstv")?.host).toBe("dramashortstv");
+    expect(normalizeNewAccountWebsiteUrl("dramashortstv")).toBeNull();
+    expect(normalizeNewAccountWebsiteUrl("https://dramashortstv")).toBeNull();
+    expect(normalizeNewAccountWebsiteUrl("https://dramashortstv/shows")).toBeNull();
+  });
+  it("accepts the same site once it carries a domain", () => {
+    expect(normalizeNewAccountWebsiteUrl("dramashortstv.com")?.host).toBe("dramashortstv.com");
+    expect(normalizeNewAccountWebsiteUrl("https://www.dramashortstv.com/")?.canonicalSiteKey).toBe("dramashortstv.com");
+  });
+  it("keeps a public IPv6 literal, which has no dot but is a real address", () => {
+    expect(normalizeNewAccountWebsiteUrl("https://[2606:4700::1111]/")?.host).toBe("[2606:4700::1111]");
+    expect(normalizeNewAccountWebsiteUrl("https://[::1]/")).toBeNull();
+  });
+  it("still refuses everything the shared normalizer refuses", () => {
+    for (const input of ["", "localhost", "http://127.0.0.1", "ftp://example.com", "not a url"]) {
+      expect(normalizeNewAccountWebsiteUrl(input)).toBeNull();
+    }
   });
 });

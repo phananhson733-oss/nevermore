@@ -5,6 +5,8 @@ import { createGeoProfileCopy } from "../../lib/geo-tools/kb-profile-copy.ts";
 import { parseGeoKbPayloadV2, type GeoKbPayloadV2 } from "../../lib/geo-tools/kb-v2-contract.ts";
 import type { GeoSynthesisRole } from "../../lib/geo-tools/kb-synthesis-contract.ts";
 import { adoptGeoKbRoleProposals, editGeoKbFactV2, editGeoKbRoleV2, submitGeoKbPayloadV2, upgradeGeoKbDraftToV2 } from "./geo-kb-v2-editor.ts";
+import { appendGeoProfileFactV2 } from "./geo-kb-v2-editor.ts";
+import { completePayloadV2 } from "../../lib/geo-tools/kb-v2.test-fixtures.ts";
 
 const GENERATION = "aaaaaa11-1111-4111-8111-111111111111";
 function legacy(): GeoKbPayload {
@@ -122,5 +124,15 @@ describe("persisted role proposal adoption", () => {
     expect(proposal).toEqual(before); expect(roles[0]?.source.evidenceRefs).not.toBe(proposal.evidenceRefs);
     expect(roles[0]?.painPoints).not.toBe(proposal.painPoints);
     expect(Array.isArray(roles)).toBe(true); expect(roles[0]?.source.kind).not.toBe("gsc");
+  });
+});
+
+describe("appendGeoProfileFactV2", () => {
+  it("appends one pending fact per Profile value and refuses a second for the same key", () => {
+    const payload = completePayloadV2();
+    const once = appendGeoProfileFactV2(payload, "productName", "Acme");
+    expect(once?.facts.at(-1)).toMatchObject({ key: "productName", value: "Acme", review: "pending", supportRef: null, sourceUrl: "", observedAt: "" });
+    expect(appendGeoProfileFactV2(once!, "productName", "Acme")).toBeNull();
+    expect(payload.facts).toHaveLength(1);
   });
 });

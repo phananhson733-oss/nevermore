@@ -57,9 +57,11 @@ import {
 import { Input } from "../ui/input.tsx";
 import { Label } from "../ui/label.tsx";
 import { Textarea } from "../ui/textarea.tsx";
+import { profileRefreshReason, type ProfileRefreshReason } from "../../lib/account-websites/refresh-error.ts";
+import { ACCOUNT_AUTOSAVE_DELAY_MS } from "./autosave-delay.ts";
 import { ProfileRefreshReview } from "./profile-refresh-review.tsx";
 
-const AUTOSAVE_DELAY_MS = 900;
+const AUTOSAVE_DELAY_MS = ACCOUNT_AUTOSAVE_DELAY_MS;
 const PROFILE_SEARCH_CLIENT_TIMEOUT_MS = 35_000;
 const PROFILE_SEARCH_RESPONSE_LIMIT_BYTES = 256 * 1_024;
 const PROFILE_SEARCH_PUBLIC_ERROR_CODES = new Set([
@@ -137,7 +139,8 @@ const MARKET_FIELDS = [
 
 type SaveState = "saved" | "unsaved" | "saving" | "failed";
 type RefreshState =
-  | { readonly status: "idle" | "loading" | "error" }
+  | { readonly status: "idle" | "loading" }
+  | { readonly status: "error"; readonly reason: ProfileRefreshReason | null }
   | {
       readonly status: "review";
       readonly proposal: MarketingWebsiteProfileV1;
@@ -898,7 +901,18 @@ export function WebsiteProfileEditor({
           body.data.request.languageTag !== languageTag ||
           body.data.request.outputLocale !== locale
         ) {
-          throw new Error("invalid refresh");
+          // A refused scan carries a reason. A 200 whose envelope does not
+          // match this request is a different problem and stays unnamed.
+          const reason =
+            response.status === 200
+              ? null
+              : profileRefreshReason(body, response.status);
+          setState((latest) =>
+            latest.phase === "ready"
+              ? { ...latest, refresh: { status: "error", reason } }
+              : latest,
+          );
+          return;
         }
         setState((latest) => {
           if (
@@ -919,7 +933,7 @@ export function WebsiteProfileEditor({
               },
             );
           } catch {
-            return { ...latest, refresh: { status: "error" } };
+            return { ...latest, refresh: { status: "error", reason: null } };
           }
           return mode === "prefer_cache" &&
             latest.details.draft === null &&
@@ -944,7 +958,7 @@ export function WebsiteProfileEditor({
         if (!controller.signal.aborted) {
           setState((latest) =>
             latest.phase === "ready"
-              ? { ...latest, refresh: { status: "error" } }
+              ? { ...latest, refresh: { status: "error", reason: null } }
               : latest,
           );
         }
@@ -1590,8 +1604,10 @@ export function WebsiteProfileEditor({
       </div>
 
       {state.refresh.status === "error" ? (
-        <p role="alert" className="text-[13px] text-brand-error">
-          {t("generationFailed")}
+        <p role="alert" data-refresh-error={state.refresh.reason ?? "unknown"} className="text-[13px] text-brand-error">
+          {state.refresh.reason === null
+            ? t("generationFailed")
+            : `${t("refreshErrors." + state.refresh.reason, { host: state.details.host })} ${t("draftUnchanged")}`}
         </p>
       ) : null}
       {state.refresh.status === "review" ? (

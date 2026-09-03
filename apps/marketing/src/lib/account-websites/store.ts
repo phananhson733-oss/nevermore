@@ -9,6 +9,7 @@ import {
   canonicalProfileJson,
   isMarketingWebsiteProfileReady,
   normalizeAccountWebsiteUrl,
+  normalizeNewAccountWebsiteUrl,
   parseMarketingWebsiteProfile,
   parseWebsiteDetails,
   parseWebsiteList,
@@ -682,7 +683,7 @@ export async function addAccountWebsite(
   },
   dependencies: WebsiteStoreDependencies = DEFAULT_WEBSITE_STORE_DEPENDENCIES,
 ): Promise<WebsiteStoreResult<WebsiteDetails>> {
-  const normalized = normalizeAccountWebsiteUrl(input.url);
+  const normalized = normalizeNewAccountWebsiteUrl(input.url);
   if (normalized === null) return { kind: "invalid", code: "invalid_url" };
   const outcome = await dependencies.callRpc("marketing_add_website", {
     p_user_id: input.userId,

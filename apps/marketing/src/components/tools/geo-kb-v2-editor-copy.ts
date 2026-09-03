@@ -19,7 +19,7 @@ export const geoKbV2EditorCopy = (locale: string) => locale.toLowerCase().starts
   newInput: "使用已变更的保存输入发起新请求", newInputHelp: "上次请求可能已产生费用。此按钮针对当前已变化的输入，会发起新的调用并可能再次收费；旧请求保留可查询。",
   resendSame: "按原请求编号重发", resendHelp: "尚未读到原编号的记录，这不证明请求未执行或未计费。明确重发仍使用同一编号和同一输入，由服务端去重；不会自动重试。",
   notFoundRequest: "按原请求编号尚未读到记录，结果仍未确定。", newVersionNeeded: "相同输入的不确定记录只可查询。若要继续新工作，请修改资料并保存新版本，或明确选择已保存的新来源。", retainedRequests: "保留的旧请求（只读查询）",
-  error: "操作未完成，草稿保留。", invalid: "请检查字段内容与上限；已接受事实必须有有效来源 URL 和采集时间。", conflict: "服务端草稿版本已变化。已保留输入并更新版本号，请核对后重新保存。",
+  error: "操作未完成，草稿保留。", invalid: "请检查字段内容与上限；已接受事实必须有有效来源 URL 和采集时间。",
   state: "状态", requestKey: "本次请求标识", readGeneration: "读取生成状态", legacy: "历史 V1 按原始内容只读展示，不补造 V2 来源。",
 } : {
   input: "Supplement and confirm", frozen: "Frozen snapshot", save: "Save GEO draft", saved: "Draft saved", unsaved: "Unsaved changes are kept when switching stages.",
@@ -40,6 +40,6 @@ export const geoKbV2EditorCopy = (locale: string) => locale.toLowerCase().starts
   newInput: "Start a request for the changed saved input", newInputHelp: "The earlier request may already have incurred a charge. This action uses the changed input and may incur another charge. The old request remains queryable.",
   resendSame: "Resend using the original request ID", resendHelp: "No record was found for the original ID; this does not prove it was never executed or billed. An explicit resend uses exactly the same ID and input for server deduplication. It is never automatic.",
   notFoundRequest: "No record was found for the original request ID; its outcome remains unknown.", newVersionNeeded: "An uncertain record for the same input is read-only. For new work, edit and save a new data version or explicitly select new persisted source evidence.", retainedRequests: "Retained requests (read-only recovery)",
-  error: "The operation did not complete. Your draft is kept.", invalid: "Check field values and bounds. Accepted facts require a valid source URL and capture time.", conflict: "The saved draft changed. Your input is kept and its version updated; review it before saving again.",
+  error: "The operation did not complete. Your draft is kept.", invalid: "Check field values and bounds. Accepted facts require a valid source URL and capture time.",
   state: "State", requestKey: "Request identity", readGeneration: "Read generation status", legacy: "Historical V1 is displayed as stored; no V2 provenance is invented.",
 };

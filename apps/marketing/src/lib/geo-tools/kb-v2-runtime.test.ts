@@ -82,6 +82,26 @@ describe("actual GEO v2 runtime wiring", () => {
     dependencies.readWebsite.mockResolvedValue({ kind: "unavailable", reason: "offline" });
     expect(await runtime.draft.validateCurrentCopy(input)).toBe("unavailable");
   });
+  it("holds draft writes only for a dispatched run, never for a claim nothing can clear", async () => {
+    const { runtime, dependencies } = fixture();
+    const record = (state: "claimed" | "dispatched" | "uncertain") => ({ kind: "ok" as const, generation: { generationId: V2_CANDIDATE_ID, userId: USER, kbId: V2_KB_ID, kind: "roles" as const, inputHash: "d".repeat(64), state, result: null, errorReason: state === "uncertain" ? ("outcome_unknown" as const) : null, attempt: state === "uncertain" ? { attemptedCalls: 1 as const, delivery: "outcome_unknown" as const, modelRequested: "m", inputTokens: 0, outputTokens: 0, requestCount: 1 } : null } });
+    expect(await runtime.draft.generationRunning!(USER, V2_KB_ID)).toBe(false);
+    dependencies.generationStore.readLatest.mockResolvedValue(record("dispatched"));
+    expect(await runtime.draft.generationRunning!(USER, V2_KB_ID)).toBe(true);
+    // Only `claim` reclaims an expired claimed lease, and claiming needs a
+    // saved draft. Refusing writes here would leave the knowledge base with no
+    // action able to release it, and its input was frozen at claim time anyway.
+    dependencies.generationStore.readLatest.mockResolvedValue(record("claimed"));
+    expect(await runtime.draft.generationRunning!(USER, V2_KB_ID)).toBe(false);
+    dependencies.generationStore.readLatest.mockResolvedValue(record("uncertain"));
+    expect(await runtime.draft.generationRunning!(USER, V2_KB_ID)).toBe(false);
+    dependencies.generationStore.readLatest.mockResolvedValue({ kind: "unavailable" });
+    expect(await runtime.draft.generationRunning!(USER, V2_KB_ID)).toBe("unavailable");
+    // A blip reading one kind must not hide a run the other kind reports.
+    dependencies.generationStore.readLatest.mockImplementation(async ({ kind }) =>
+      kind === "roles" ? { kind: "unavailable" } : { ...record("dispatched"), generation: { ...record("dispatched").generation, kind: "questions" as const } });
+    expect(await runtime.draft.generationRunning!(USER, V2_KB_ID)).toBe(true);
+  });
   it("maps exact missing generations/candidates without substituting latest records", async () => {
     const { runtime, dependencies } = fixture();
     const scope = { userId: USER, kbId: V2_KB_ID, generationId: V2_CANDIDATE_ID };

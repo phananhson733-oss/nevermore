@@ -12,7 +12,7 @@ import { Textarea } from "../ui/textarea.tsx";
 
 export function GeoKbEditorPanel({ title, children }: { readonly title: string; readonly children: ReactNode }) {
   const id = useId();
-  return <section aria-labelledby={id} className="min-w-0 rounded-card border border-brand-border-strong bg-brand-panel p-5 sm:p-7"><h3 id={id} className="mb-5 border-b border-brand-border-card pb-4 text-[17px] font-semibold text-text-dark-primary">{title}</h3>{children}</section>;
+  return <section aria-labelledby={id} className="min-w-0 rounded-card border border-brand-border-strong bg-brand-panel p-5 sm:p-7"><h4 id={id} className="mb-5 border-b border-brand-border-card pb-4 text-[15px] font-semibold text-text-dark-primary">{title}</h4>{children}</section>;
 }
 function Field({ label, value, onChange, kind, field, list = false }: { readonly label: string; readonly value: string; readonly onChange: (value: string) => void; readonly kind: string; readonly field: string; readonly list?: boolean }) {
   const id = useId(), data = { [`data-${kind}-field`]: field };
@@ -25,7 +25,7 @@ function Reviews({ kind, current, valid, locale, onChange }: { readonly kind: "r
   return <div className="flex flex-wrap items-center gap-3"><span className="text-sm" data-review-state>{c.reviews[current]}</span>{(["accepted", "excluded", "pending"] as const).map(review => <Button key={review} type="button" variant="outline" {...{ [`data-review-${kind}`]: review }} disabled={current === review || review === "accepted" && !valid} onClick={() => onChange(review)}>{review === "accepted" ? t.accept : review === "excluded" ? t.exclude : t.pending}</Button>)}</div>;
 }
 
-export function GeoKbV2Fields({ payload, locale, onChange }: { readonly payload: GeoKbPayloadV2; readonly locale: string; readonly onChange: (payload: GeoKbPayloadV2) => void }) {
+export function GeoKbV2Fields({ payload, locale, onChange, supportRefNote }: { readonly payload: GeoKbPayloadV2; readonly locale: string; readonly onChange: (payload: GeoKbPayloadV2) => void; readonly supportRefNote?: string }) {
   const c = geoKbV2Copy(locale), t = geoKbV2EditorCopy(locale);
   const patch = (value: Partial<GeoKbPayloadV2>) => onChange({ ...payload, ...value });
   return <div className="grid min-w-0 gap-6">
@@ -42,7 +42,12 @@ export function GeoKbV2Fields({ payload, locale, onChange }: { readonly payload:
         <div className="grid gap-5 sm:grid-cols-2">{(["label", "questionLabel", "segment"] as const).map(field => <Field key={field} kind="role" field={field} label={field === "label" ? t.roleLabel : c.fields[field]} value={role[field]} onChange={value => change(editGeoKbRoleV2(role, { [field]: value }))} />)}
           {(["painPoints", "alternatives", "decisionCriteria", "vocabulary"] as const).map(field => <Field key={field} kind="role" field={field} list label={c.fields[field === "decisionCriteria" ? "criteria" : field]} value={role[field].join("\n")} onChange={value => change(editGeoKbRoleV2(role, { [field]: value.split("\n") }))} />)}
         </div>
-        <p className="break-all text-xs text-text-dark-secondary">{c.fields.source}: {c.sources[role.source.kind]} · {role.source.generationId ?? c.notRecorded} · {role.source.itemId ?? c.notRecorded}<br />{role.source.evidenceRefs.join(" · ")}</p>
+        <p className="text-xs text-text-dark-secondary">{c.fields.source}: {c.sources[role.source.kind]}</p>
+        {role.source.generationId === null && role.source.itemId === null && role.source.evidenceRefs.length === 0 ? null : <details className="text-xs text-text-dark-secondary"><summary className="cursor-pointer">{c.roleEvidence.details}</summary><dl className="mt-2 grid gap-2">
+          {role.source.generationId === null ? null : <div><dt>{c.fields.generation}</dt><dd className="break-all font-mono">{role.source.generationId}</dd></div>}
+          {role.source.itemId === null ? null : <div><dt>{c.fields.sourceItem}</dt><dd className="break-all font-mono">{role.source.itemId}</dd></div>}
+          {role.source.evidenceRefs.length === 0 ? null : <div><dt>{c.fields.evidenceRefs}</dt><dd className="break-all font-mono">{role.source.evidenceRefs.join(" · ")}</dd></div>}
+        </dl></details>}
         <Reviews kind="role" current={role.review} locale={locale} valid={geoRoleV2Schema.safeParse({ ...role, review: "accepted" }).success} onChange={review => change({ ...role, review })} />
         <Button type="button" variant="ghost" onClick={() => patch({ roles: payload.roles.filter((_, position) => position !== index) })}>{t.remove}</Button>
       </article>;
@@ -61,6 +66,7 @@ export function GeoKbV2Fields({ payload, locale, onChange }: { readonly payload:
       return <article key={index} data-edit-fact={index} className="space-y-4 rounded-[10px] border border-brand-border-card bg-brand-bg p-4"><div className="grid gap-5 sm:grid-cols-2">{(["key", "value", "sourceUrl", "observedAt"] as const).map(field => <Field key={field} kind="fact" field={field} label={labels[field]} value={fact[field]} onChange={value => change(editGeoKbFactV2(fact, { [field]: value }))} />)}
         <label className="text-sm">{c.fields.reason}<select className="mt-2 block w-full rounded-md border border-brand-border-card bg-brand-bg p-2" value={fact.reason} onChange={event => change(editGeoKbFactV2(fact, { reason: event.target.value as typeof fact.reason }))}><option value="">{c.empty}</option>{Object.entries(c.reasons).map(([reason, label]) => <option key={reason} value={reason}>{label}</option>)}</select></label>
       </div><p className="break-all text-xs text-text-dark-secondary">{c.fields.supportRef}: {fact.supportRef === null ? c.notRecorded : `${fact.supportRef.receiptId} · ${fact.supportRef.evidenceId}`}</p>
+        {fact.supportRef === null || supportRefNote === undefined ? null : <p data-support-ref-note className="text-xs text-text-dark-secondary">{supportRefNote}</p>}
         <Reviews kind="fact" current={fact.review} locale={locale} valid={geoFactV2Schema.safeParse({ ...fact, review: "accepted" }).success} onChange={review => change({ ...fact, review })} />
         <Button type="button" variant="ghost" onClick={() => patch({ facts: payload.facts.filter((_, position) => position !== index) })}>{t.remove}</Button>
       </article>;

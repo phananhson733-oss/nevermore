@@ -703,6 +703,12 @@ describe("account website store reads", () => {
 });
 
 describe("account website store writes", () => {
+  it("refuses a bare label before touching the store, so it cannot become a site nothing can scan", async () => {
+    const deps = dependencies({ callRpc: vi.fn(async () => ({ kind: "ok" as const, data: [{ outcome: "created", website_id: WEBSITE_ID }] })) });
+    expect(await addAccountWebsite({ userId: USER_ID, url: "dramashortstv", displayName: null }, deps)).toEqual({ kind: "invalid", code: "invalid_url" });
+    expect(deps.callRpc).not.toHaveBeenCalled();
+  });
+
   it("accepts the migration's created outcome for a new website", async () => {
     const result = await addAccountWebsite(
       { userId: USER_ID, url: "example.com", displayName: null },
