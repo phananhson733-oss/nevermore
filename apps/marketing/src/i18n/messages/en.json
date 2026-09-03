@@ -8444,7 +8444,7 @@
               "validation3": "Read the first screen of the page and confirm it delivers the promise the snippet just made.",
               "impactSurface": "The title, description, and opening lines a search result is built from, plus how this page reads next to its siblings.",
               "risks": "A rewrite tuned to a query rather than to the page can promise something the page does not deliver, which costs more than the duplicate wording did.",
-              "limits": "The character counts here are a reviewed working range, not a rule: results truncate by rendered width. This preview cannot tell you how the snippet will finally be displayed."
+              "limits": "The widths here are a reviewed working range, not a rule, and they are display widths — a CJK character counts as two, because that is how a result row renders it. This preview cannot tell you how the snippet will finally be displayed."
             },
             "contentBrief": {
               "recommendation": "Treat this as a content brief, not a word-count target. List the decisions a reader still cannot make on this page, write the sections that answer them, and cite where each new claim comes from.",
@@ -8861,6 +8861,14 @@
           "copied": "Copied the task text for this issue.",
           "copyFailed": "The browser did not allow copying; the identical text is shown below.",
           "fallbackLabel": "The browser did not allow copying. Below is the identical read-only task text; focusing it selects all."
+        },
+        "engine": {
+          "ready": "ready",
+          "needsIntegration": "no detector yet",
+          "needsSupplement": "needs more evidence",
+          "notIntegrated": "not wired",
+          "accessRequired": "source not connected",
+          "unknown": "unrecognised engine"
         },
         "observedOnlyLane": {
           "title": "Measured, not judged",

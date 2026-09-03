@@ -102,6 +102,19 @@ export interface AgentSolutionPreviewInput {
   /** Already localized measured value for the selected check, if any. */
   readonly measurement: string | null;
   readonly evidenceRecords: readonly SeoAuditRecord[];
+  /**
+   * What the crawl actually read off the target page.
+   *
+   * A record only publishes the values its own check measured, so 2.1 carries
+   * a title WIDTH and no title. Without this the preview printed "observed
+   * title: [not captured]" beside a title the same run had collected and had
+   * already sent to the draft endpoint.
+   */
+  readonly targetPageExtract?: {
+    readonly title: string | null;
+    readonly metaDescription: string | null;
+    readonly h1: readonly string[];
+  } | null;
 }
 
 interface PreviewFacts {
@@ -118,6 +131,8 @@ interface PreviewFacts {
   readonly scope: "site" | "page";
   readonly observedUrls: readonly string[];
   readonly observedValues: Readonly<Record<string, string>>;
+  /** Fallbacks for values the crawl read but this check's records do not carry. */
+  readonly extractValues: Readonly<Record<string, string>>;
 }
 
 interface SolutionShape {
@@ -137,7 +152,10 @@ function present(value: string | null | undefined, marker: string): string {
 }
 
 function observedValue(facts: PreviewFacts, label: string): string {
-  return present(facts.observedValues[label], facts.notCaptured);
+  return present(
+    facts.observedValues[label] ?? facts.extractValues[label],
+    facts.notCaptured,
+  );
 }
 
 function observedUrl(facts: PreviewFacts, index: number): string {
@@ -211,6 +229,28 @@ function urlParts(
   }
 }
 
+/**
+ * The page's own text, under the labels a preview asks for.
+ *
+ * Deliberately narrow: only values the crawl read verbatim off the target
+ * page. Anything derived or counted stays with the record that measured it.
+ */
+function extractValuesOf(
+  extract: AgentSolutionPreviewInput["targetPageExtract"],
+): Readonly<Record<string, string>> {
+  if (extract === undefined || extract === null) return {};
+  const values: Record<string, string> = {};
+  if (extract.title !== null) values["title"] = extract.title;
+  if (extract.metaDescription !== null) {
+    values["meta_description"] = extract.metaDescription;
+  }
+  if (extract.h1.length > 0) {
+    values["h1"] = extract.h1[0]!;
+    values["h1_count"] = String(extract.h1.length);
+  }
+  return values;
+}
+
 function previewFacts(
   input: AgentSolutionPreviewInput,
   scope: "site" | "page",
@@ -230,6 +270,7 @@ function previewFacts(
     measurement: present(input.measurement, input.notCaptured),
     observedUrls: collectObservedUrls(input.evidenceRecords),
     observedValues: collectObservedValues(input.evidenceRecords),
+    extractValues: extractValuesOf(input.targetPageExtract),
   };
 }
 

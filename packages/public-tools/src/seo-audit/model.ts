@@ -1288,7 +1288,10 @@ function buildRecords(
       // between h1 and h3 fabricates exactly the skip this reports.
       id: "heading_level_skipped",
       category: "structure",
-      tested: htmlPages.length,
+      // Same reason as 4.4: a page whose outline was never parsed has not
+      // been shown to have a continuous one.
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => onPageOf(page) !== null),
       observations: htmlPages
         .filter((page) => firstSkippedLevel(onPageOf(page)) !== null)
         .map((page) =>
@@ -1370,8 +1373,11 @@ function buildRecords(
       // reader planning work can use the number.
       id: "content_to_code_ratio",
       category: "structure",
-      population: "every_collected_page",
-      tested: htmlPages,
+      // Only the pages that carried the side-car were measured. Counting the
+      // rest as tested reported an unmeasured page as a clean one: with no
+      // observation to its name it read as "measured, nothing wrong".
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => onPageOf(page) !== null),
       observations: htmlPages.flatMap((page) => {
         const facts = onPageOf(page);
         if (facts === null || facts.htmlBytes <= 0) return [];

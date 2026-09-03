@@ -41,6 +41,21 @@ const SEVERITY_ICON = {
   suggestion: CircleHelp,
 } as const;
 
+/**
+ * Engine states, keyed to their message names.
+ *
+ * Kebab-case on the left because that is what the evaluator emits. The view
+ * layer used to convert these to snake_case on the way in, which is how the
+ * same state ended up with three spellings across three files.
+ */
+const ENGINE_KEY: Readonly<Record<string, string>> = {
+  ready: "ready",
+  "needs-integration": "needsIntegration",
+  "needs-supplement": "needsSupplement",
+  "not-integrated": "notIntegrated",
+  "access-required": "accessRequired",
+};
+
 /** Truth states a row may state, keyed to their message names. */
 const TRUTH_KEY: Readonly<Record<string, string>> = {
   observed: "observed",
@@ -252,7 +267,19 @@ function QuietLane({
                 </span>
               )}
             </span>
-            {issue.recognized ? null : (
+            {issue.recognized ? (
+              // Why a check reached no conclusion, on the row itself. Folded
+              // away is not the same as unexplained: a reader deciding whether
+              // to connect a source needs to know which checks it would unlock.
+              issue.lane === "excluded" ? (
+                <span
+                  data-issue-engine={issue.check.engine}
+                  className="justify-self-start font-mono text-[10px] tracking-[0.06em] text-text-dark-faint uppercase sm:justify-self-end"
+                >
+                  {t(`engine.${ENGINE_KEY[issue.check.engine] ?? "unknown"}`)}
+                </span>
+              ) : null
+            ) : (
               <span className="justify-self-start rounded border border-brand-warning/30 bg-brand-warning/[0.07] px-2 py-0.5 font-mono text-[10px] tracking-[0.06em] text-brand-warning uppercase sm:justify-self-end">
                 {t("unrecognizedState")}
               </span>

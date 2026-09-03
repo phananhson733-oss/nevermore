@@ -77,10 +77,10 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["1.7", "hreflang target validity", "hreflang 目标有效性", "No alternate returns 4xx or 5xx; one that does is Blocker. Only alternates this run also fetched are classified.", "没有返回 4xx 或 5xx 的备用地址；出现即为阻断。只对本次运行同时抓取到的备用地址判定。"],
   ["1.9", "Mobile viewport declaration", "移动端 viewport 声明", "A meta viewport is declared; its absence is a Warning. Read from the markup only — this run renders nothing.", "存在 meta viewport 声明；缺失为警告。仅依据标记判定——本次运行不做渲染。"],
   ["1.8", "Soft 404 detection", "软 404 检测", "Not a 200 response that both states a not-found phrase and falls below the published body floor; a soft 404 is Blocker. Thin content alone is not judged here.", "不是「返回 200、同时出现「找不到」类措辞、且正文量低于公布下限」的页面；软 404 为阻断。仅仅内容少不在这里判定。"],
-  ["2.1", "Title length", "Title 长度", `Reviewed working range ${SNIPPET_TITLE_WIDTH.min}–${SNIPPET_TITLE_WIDTH.max} in display width, counting a CJK character as two; Google truncates by rendered width, not character count`, `已审阅工作区间为显示宽度 ${SNIPPET_TITLE_WIDTH.min}–${SNIPPET_TITLE_WIDTH.max}，中日韩字符按 2 计；Google 按渲染宽度截断，而非字符数`],
+  ["2.1", "Title length", "Title 长度", `Reviewed working range ${SNIPPET_TITLE_WIDTH.min}–${SNIPPET_TITLE_WIDTH.max} in display width, counting a CJK character as two; outside it is a Tip. Google truncates by rendered width, not character count`, `已审阅工作区间为显示宽度 ${SNIPPET_TITLE_WIDTH.min}–${SNIPPET_TITLE_WIDTH.max}，中日韩字符按 2 计；超出为提示。Google 按渲染宽度截断，而非字符数`],
   ["2.2", "Sitewide title uniqueness", "Title 全站唯一", "Unique among evaluated canonical pages; otherwise Warning", "在已评估 Canonical 页面中唯一；否则为警告"],
   ["2.3", "Title contains the target query", "Title 含目标词", "Contains the confirmed target query as a token sequence; otherwise Warning; 2× check weight. No synonym or stemming set is applied.", "以词序列形式包含已确认目标词；否则为警告；检查权重 2 倍。不做同义词或词形还原。"],
-  ["2.4", "Meta description length", "Meta description 长度", `Reviewed working range ${SNIPPET_DESCRIPTION_WIDTH.min}–${SNIPPET_DESCRIPTION_WIDTH.max} in display width, counting a CJK character as two; Google truncates by rendered width, not character count`, `已审阅工作区间为显示宽度 ${SNIPPET_DESCRIPTION_WIDTH.min}–${SNIPPET_DESCRIPTION_WIDTH.max}，中日韩字符按 2 计；Google 按渲染宽度截断，而非字符数`],
+  ["2.4", "Meta description length", "Meta description 长度", `Reviewed working range ${SNIPPET_DESCRIPTION_WIDTH.min}–${SNIPPET_DESCRIPTION_WIDTH.max} in display width, counting a CJK character as two; outside it is a Tip. Google truncates by rendered width, not character count`, `已审阅工作区间为显示宽度 ${SNIPPET_DESCRIPTION_WIDTH.min}–${SNIPPET_DESCRIPTION_WIDTH.max}，中日韩字符按 2 计；超出为提示。Google 按渲染宽度截断，而非字符数`],
   ["2.5", "Meta description uniqueness", "Meta description 唯一", "Unique among evaluated canonical pages; otherwise Warning", "在已评估 Canonical 页面中唯一；否则为警告"],
   ["2.6", "Open Graph title, description, and image", "Open Graph 标题、描述与图片", "All three properties present; otherwise Tip", "三项属性均存在；否则为提示"],
   ["2.7", "Reading language declaration", "阅读语言声明", "An html lang attribute is present; its absence is a Tip. Without it the reading language is left to be guessed.", "存在 html lang 属性；缺失为提示。没有它，阅读语言只能靠猜。"],
@@ -93,7 +93,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["3.4", "H2 count", "H2 数量", "Within the reviewed range for the confirmed page type; outside it is a Tip. The range is published with the finding — it is a reviewed working band, not a documented rule.", "落在已确认页面类型的审阅区间内；超出为提示。区间会与发现一同给出——它是审阅过的工作区间，不是有据可查的规则。"],
   ["3.5", "H3 count", "H3 数量", "Within the reviewed range for the confirmed page type; outside it is a Tip. The range is published with the finding — it is a reviewed working band, not a documented rule.", "落在已确认页面类型的审阅区间内；超出为提示。区间会与发现一同给出——它是审阅过的工作区间，不是有据可查的规则。"],
   ["3.6", "Average words beneath each H3", "每个 H3 下平均字数", "Within the reviewed substance range for the confirmed page type; below it is a Tip. Whitespace words between headings, so a CJK page is not measured here.", "落在已确认页面类型的审阅内容量区间内；低于该区间为提示。按标题之间的空白分词计，因此中日韩页面不在此判定。"],
-  ["4.1", "Main-content word count", "正文字数", "At least 60% of the reviewed top-10 median; otherwise Warning", "至少为已审阅前十中位数的 60%；否则为警告"],
+  ["4.1", "Main-content word count against the top ten", "正文字数与前十名对比", "Not judged here: the body text of the top ten results is never fetched, so there is no median to compare against. 4.6 measures this page's own body against a reviewed floor instead.", "本项不在此判定：本工具从不抓取前十名结果的正文，没有可对比的中位数。改由 4.6 用审阅下限衡量本页自身的正文量。"],
   ["4.2", "Target-query density", "目标词密度", "Listed for review, not judged: keyword density is not a documented ranking signal and is not used to judge a page.", "仅列出待复核，不作判定：关键词密度不是有据可查的排名信号，不用于判定页面。"],
   ["4.3", "First target-query occurrence", "目标词首次出现位置", "Internal heuristic only. Position in the text is not a documented ranking signal.", "仅为内部启发式。目标词在正文中的位置不是有据可查的排名信号。"],
   ["4.4", "Content-to-code ratio", "内容与代码比", "Listed for review, not judged: no documented ratio threshold exists. Read it as a rendering-weight hint, never as a defect.", "仅列出待复核，不作判定：不存在有据可查的比例阈值。把它当作体积提示来读，不要当成缺陷。"],
@@ -240,8 +240,8 @@ export const UNMEASURABLE_HERE: Readonly<
   // measured against a median built from long-form guides is reported as thin
   // for being exactly the right length for what it is.
   "4.1": l(
-    "The body text of the top ten results is never fetched, so there is no median to compare this page against.",
-    "本工具从不抓取前十名结果的正文，因此没有可供本页面对比的中位数。",
+    "Nothing to do here, and nothing this run can tell you. Comparing a page against the top ten means fetching and measuring ten competitors' body text, which this bounded anonymous crawl does not do and will not start doing. Read 4.6 instead: it measures this page's own body against a reviewed floor, which is a claim the run can actually support.",
+    "这里没有可做的事，本次运行也给不出结论。要和前十名比，就得抓取并度量十个竞争对手的正文，而这次有边界的匿名抓取不做、也不会开始做。改看 4.6：它用审阅下限衡量本页自身的正文量，那是本次运行真能支撑的判断。",
   ),
 };
 
@@ -584,19 +584,32 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
 const DECLARES_NO_JUDGEMENT =
   /Internal heuristic only|Display only|Listed for review, not judged/;
 
+/**
+ * Where a threshold's number comes from.
+ *
+ * The fallback is `judgment`, not `industry`. It used to be the other way
+ * round, which put "industry practice" under numbers this catalogue chose for
+ * itself -- 2% duplicate titles, 5% duplicate descriptions -- with no source
+ * behind them. Claiming a shared standard for a house figure is the kind of
+ * borrowed authority a reader cannot check.
+ *
+ * `industry` is now an opt-in list. Every id on it names a figure that is
+ * conventional beyond this codebase; anything else says plainly that we chose
+ * it.
+ */
 function authority(id: string): AgentAuditThresholdAuthority {
   if (["8.1", "8.2", "8.3"].includes(id)) return "official";
   if (["3.4", "3.5", "4.1"].includes(id)) return "sop";
   if (
     [
-      "A2", "A7", "C6", "D7", "B1", "C1", "E2", "E3", "E4", "E5",
-      "B4", "2.1", "2.4", "3.6", "4.2", "4.3", "4.4", "4.5",
-      "5.2", "5.3", "6.2", "6.4", "C4",
+      // Conventional beyond this codebase: a single H1, a self-referencing
+      // canonical, one redirect hop, an alt attribute on every image.
+      "1.3", "1.4", "1.6", "3.1", "5.1", "D3", "D4",
     ].includes(id)
   ) {
-    return "judgment";
+    return "industry";
   }
-  return "industry";
+  return "judgment";
 }
 
 /**

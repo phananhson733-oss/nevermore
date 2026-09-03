@@ -351,6 +351,9 @@ export function AgentIssueDetail({
       ? localizedText(issue.check.measurement)
       : null,
     evidenceRecords: issue.evidenceRecords,
+    // The page's own text, so a preview stops reporting a title the same run
+    // collected as "not captured".
+    targetPageExtract,
   });
   const draftKind = draftKindFor(template.kind);
 
