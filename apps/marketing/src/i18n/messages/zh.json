@@ -1162,6 +1162,8 @@
         "transferred_markup_only_no_rendering": "按传输到的标记度量；本次运行不执行脚本。",
         "transferred_markup_bytes_only": "仅按传输到的标记字节度量。",
         "this_page_is_not_measured_by_whitespace_words_so_section_substance_is_not_judged": "这个页面不按空白分词度量，因此本项不判定小节内容量。",
+        "this_page_has_no_description_subheadings_or_opening_text_to_compare": "这个页面没有描述、副标题，也没有开头正文，因此没有可与目标词比对的文本。",
+        "token_sequence_match_across_description_subheadings_and_the_captured_opening_text": "在描述、副标题与本次采集到的开头正文中按词序列匹配。不做同义词，也不做词形还原。",
         "resource_not_observed_does_not_prove_absence": "没有观测到资源，可能是资源不存在、不可达、被拦截，或未进入成功获取的资源集合；不能据此断言资源缺失。",
         "static_response_directives_only": "这里只读取已采集静态 HTTP/HTML 中的索引指令，不检测搜索引擎的真实索引覆盖。",
         "normalised_text_match_within_inspected_pages": "重复分组使用忽略大小写、合并空白后的文本，只覆盖本次已检查页面。",
@@ -1281,8 +1283,8 @@
           "description": "开新标签页却不带 rel=noopener 的出站链接，会把本页的引用交给被打开的页面。"
         },
         "client_rendered_content": {
-          "title": "脚本体积远超可见正文的页面",
-          "description": "看的是比例不是绝对字节：大页面只要正文按比例也大，就没有问题。"
+          "title": "可见正文偏少且被脚本压过的页面",
+          "description": "两个条件同时成立才算，缺一不可：页面可见正文本就不多，且脚本体积远超这些正文。正文长、包也按比例大的页面是正常的应用页。"
         },
         "html_document_oversized": {
           "title": "标记体积超出审阅上限的页面",
@@ -1581,7 +1583,7 @@
         "slots_covered": "命中目标词的位点数",
         "slots_applicable": "可检查的位点数",
         "viewport_declared": "是否声明 viewport",
-        "html_lang": "html lang",
+        "lang_declared": "是否声明阅读语言",
         "charset_declared": "是否声明字符集",
         "favicon_declared": "是否声明站点图标",
         "reviewed_floor": "审阅下限",
@@ -8671,6 +8673,7 @@
       },
       "capturedReport": "阶段 02 · 已采集报告",
       "captureSummary": "抓取 {pages} 页 · 关键页 {keyPages} · 已评估 {evaluated}/{total} 项检查",
+      "captureSummaryTargetOnly": "抓取 {pages} 页 · 已评估 {evaluated}/{total} 项检查",
       "captureDetailLabel": "采集边界与计数",
       "keyPagesNone": "本次没有可评估的关键页，页面级结论只针对提交的 URL。",
       "capturedLanded": "跳转到了 {url}，本报告读的是这个页面。",

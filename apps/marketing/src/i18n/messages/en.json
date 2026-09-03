@@ -1162,6 +1162,8 @@
         "transferred_markup_only_no_rendering": "Measured on the transferred markup; this run executes no script.",
         "transferred_markup_bytes_only": "Measured on the transferred markup bytes only.",
         "this_page_is_not_measured_by_whitespace_words_so_section_substance_is_not_judged": "This page is not measured by whitespace words, so section substance is not judged here.",
+        "this_page_has_no_description_subheadings_or_opening_text_to_compare": "This page has no description, sub-headings or opening text, so there was nothing to compare the query against.",
+        "token_sequence_match_across_description_subheadings_and_the_captured_opening_text": "Matched as a word sequence across the description, the sub-headings and the opening text this run captured. No synonyms and no stemming.",
         "resource_not_observed_does_not_prove_absence": "A resource that was not observed may be absent, unreachable, blocked, or outside the successfully fetched resource set.",
         "static_response_directives_only": "Indexability here comes from the collected static HTTP/HTML directives. Search-engine index coverage is not measured.",
         "normalised_text_match_within_inspected_pages": "Duplicate groups use case-insensitive, whitespace-normalised text and include only inspected pages.",
@@ -1281,8 +1283,8 @@
           "description": "Outbound links that open a new tab without rel=noopener hand the opened page a handle on this one."
         },
         "client_rendered_content": {
-          "title": "Pages whose script payload dwarfs their visible text",
-          "description": "A ratio, not a byte count: a large page with proportionally large text is doing its job."
+          "title": "Pages short on visible text and dominated by script",
+          "description": "Both together, never either alone: the page carries little visible text AND its script payload dwarfs that text. A long page with a proportionally large bundle is an ordinary application page."
         },
         "html_document_oversized": {
           "title": "Pages over the reviewed markup size",
@@ -1581,7 +1583,7 @@
         "slots_covered": "Slots covering the query",
         "slots_applicable": "Slots that could be checked",
         "viewport_declared": "Viewport declared",
-        "html_lang": "html lang",
+        "lang_declared": "Reading language declared",
         "charset_declared": "Character set declared",
         "favicon_declared": "Icon declared",
         "reviewed_floor": "Reviewed floor",
@@ -8671,6 +8673,7 @@
       },
       "capturedReport": "Stage 02 · Captured report",
       "captureSummary": "{pages} pages crawled · {keyPages} key pages · {evaluated}/{total} checks evaluated",
+      "captureSummaryTargetOnly": "{pages} pages crawled · {evaluated}/{total} checks evaluated",
       "captureDetailLabel": "Collection boundary and counts",
       "keyPagesNone": "This run selected no key pages, so page-level findings cover the submitted URL only.",
       "capturedLanded": "Redirected to {url} — that is the page this report read.",

@@ -310,6 +310,20 @@ describe("AgentResults", () => {
     expect(host.textContent).toContain("submitted URL only");
   });
 
+  it("does not print a key page count beside a line denying there are any", () => {
+    // The submitted page is always judged, from a synthetic row when it is not
+    // a candidate, so the count is never zero. A count-based condition read
+    // "1 key page" in the header and "no key pages" directly beneath it.
+    render("seo", { response: evidencedData });
+
+    const summary =
+      host.querySelector("[data-capture-summary]")?.textContent ?? "";
+    const denial = host.querySelector("[data-key-pages-none]");
+
+    expect(denial).not.toBeNull();
+    expect(summary).not.toMatch(/[1-9]\d* key pages/);
+  });
+
   it("reports the captured header count as evidence records, not as evaluated checks", () => {
     render("seo", { response: evidencedData });
 

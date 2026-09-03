@@ -167,7 +167,13 @@ function IssueRow({
               className="mt-1 font-mono text-[10.5px] text-text-dark-faint"
             >
               {reach.hits === 0
-                ? t("row.keyPagePass", {
+                ? /*
+                    An actionable row with no key-page hit found the problem
+                    somewhere else on the site. An investigation row reached no
+                    verdict at all. Neither may say "passing" -- the wording
+                    that belongs to the passed lane, which this row is not in.
+                  */
+                  t("row.keyPageScope", {
                     evaluated: reach.evaluated,
                     total: reach.total,
                   })

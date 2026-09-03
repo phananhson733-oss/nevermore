@@ -21,14 +21,6 @@ export const INTERNAL_LINK_FLOOR = 3;
 export { HTML_BYTES, SCRIPT_DOMINANCE } from "@sf/public-tools/seo-audit/page-shape-thresholds";
 /** Server response time for the HTML itself, in milliseconds. */
 export const RESPONSE_MS = { fast: 600, slow: 1_500 } as const;
-/**
- * Below this much visible text, a document is not carrying its own content.
- *
- * Paired with a script payload that dwarfs it. Either signal alone is ordinary
- * — a landing page can be short, an app shell can be heavy — and together they
- * describe a page whose copy arrives only after JavaScript runs.
- */
-export { STATIC_TEXT_FLOOR_BYTES } from "@sf/public-tools/seo-audit/page-shape-thresholds";
 /** Reviewed URL shape. Neither is a ranking factor; both are legibility. */
 export const URL_PATH = { maxChars: 100, maxSegments: 5 } as const;
 

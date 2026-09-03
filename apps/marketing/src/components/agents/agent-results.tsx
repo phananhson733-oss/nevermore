@@ -234,21 +234,35 @@ export function AgentResults({
           data-capture-summary
           className="mt-4 font-mono text-[12px] text-text-dark-secondary"
         >
-          {t("captureSummary", {
-            pages: data.result.coverage.pagesInspected,
-            keyPages: model.keyPages.length,
-            evaluated: evaluatedChecks,
-            total: model.evaluatedChecks.length,
-          })}
+          {/*
+            No key page count when no shortlist was selected. The submitted
+            page is always judged, so a count would read "1 key page" directly
+            above a line saying there are none.
+          */}
+          {model.keyPagesWereSelected
+            ? t("captureSummary", {
+                pages: data.result.coverage.pagesInspected,
+                keyPages: model.keyPages.length,
+                evaluated: evaluatedChecks,
+                total: model.evaluatedChecks.length,
+              })
+            : t("captureSummaryTargetOnly", {
+                pages: data.result.coverage.pagesInspected,
+                evaluated: evaluatedChecks,
+                total: model.evaluatedChecks.length,
+              })}
         </p>
 
         {/*
           Stated, not implied. A run that judged one page looks exactly like
-          one that judged twelve unless it says so. The wording names the
-          submitted URL because a single judged page is always the submitted
-          one -- it is the only entry a run produces without a candidate.
+          one that judged twelve unless it says so.
+
+          Keyed on whether a shortlist was selected, not on how many pages were
+          judged: the submitted URL is always judged, from a synthetic row when
+          it is not a candidate, so the count is never zero and a count-based
+          condition printed "no key pages" beside a header reading "1".
         */}
-        {model.keyPages.length > 1 ? null : (
+        {model.keyPagesWereSelected ? null : (
           <p
             data-key-pages-none
             className="mt-2 text-[11.5px] leading-[1.6] text-text-dark-secondary"

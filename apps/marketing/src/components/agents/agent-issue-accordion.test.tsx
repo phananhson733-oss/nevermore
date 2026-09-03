@@ -572,6 +572,15 @@ describe("AgentIssueAccordion", () => {
       expect(reachText()).not.toContain("passing");
     });
 
+    it("never says passing on an actionable or investigation row", () => {
+      // Same defect as the quiet lanes, in the other branch: a row whose
+      // problem was found elsewhere on the site, and a source-gated row that
+      // reached no verdict at all, both used the passed lane's wording.
+      render(reachModel({ total: 12, evaluated: 12, hits: 0, urls: [] }));
+      expect(reachText()).toContain("12/12 key pages evaluated");
+      expect(reachText()).not.toContain("passing");
+    });
+
     it("says nothing about key pages for a site-wide check", () => {
       render(
         buildAgentIssueModel({
