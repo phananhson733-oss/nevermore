@@ -9,6 +9,7 @@ import {
   SNIPPET_TITLE_WIDTH,
 } from "@sf/public-tools/seo-audit/text-width";
 import { check, observation, type CheckInput, type OnPageCheck } from "./check-types.ts";
+import { BODY_UNITS as SHARED_BODY_UNITS } from "@sf/public-tools/seo-audit/page-shape-thresholds";
 
 /**
  * The snippet bounds, now shared with the site-wide audit.
@@ -28,9 +29,9 @@ export const DESCRIPTION_LENGTH = SNIPPET_DESCRIPTION_WIDTH;
  * the unit is a character, and the bands read as roughly the length of article
  * they name in either script.
  */
-export const BODY_UNITS = { thin: 300, low: 600, good: 1200 } as const;
+export { BODY_UNITS } from "@sf/public-tools/seo-audit/page-shape-thresholds";
 /** Retained under the old name for the callers that still speak in words. */
-export const BODY_WORDS = BODY_UNITS;
+export { BODY_UNITS as BODY_WORDS } from "@sf/public-tools/seo-audit/page-shape-thresholds";
 /** Reviewed H1 width. A heading is a promise, not a paragraph. */
 export const H1_WIDTH = { min: 10, max: 70 } as const;
 /** Visible text as a share of markup. Below this the page is mostly chrome. */
@@ -216,15 +217,15 @@ function bodyLengthCheck(extract: CheckInput["extract"]): OnPageCheck {
   }
   const detail = { words: measured };
   const inWords = (units?.basis ?? "words") === "words";
-  if (measured < BODY_UNITS.thin) {
+  if (measured < SHARED_BODY_UNITS.thin) {
     return check("bodyWords", "content", "fail", 0, 5,
       inWords ? "bodyWords.thin" : "bodyWords.thinUnits", detail);
   }
-  if (measured < BODY_UNITS.low) {
+  if (measured < SHARED_BODY_UNITS.low) {
     return check("bodyWords", "content", "warn", 2, 5,
       inWords ? "bodyWords.low" : "bodyWords.lowUnits", detail);
   }
-  if (measured < BODY_UNITS.good) {
+  if (measured < SHARED_BODY_UNITS.good) {
     return check("bodyWords", "content", "pass", 4, 5,
       inWords ? "bodyWords.fair" : "bodyWords.fairUnits", detail);
   }
@@ -306,14 +307,23 @@ export function contentChecks(input: CheckInput): readonly OnPageCheck[] {
   } else {
     const ratio = declared.visibleTextBytes / declared.htmlBytes;
     const percent = Math.round(ratio * 1000) / 10;
+    /*
+      Observed, not graded.
+
+      There is no documented ratio a page has to clear, and the Agent
+      catalogue says so out loud: 4.4 publishes "listed for review, not
+      judged". Scoring it here made the same measurement a defect on one
+      surface and a neutral note on the other, for the same page, with nothing
+      to tell a reader which was meant. The number is still worth showing --
+      read it as a hint about rendering weight, never as a fault.
+    */
     checks.push(
-      ratio >= TEXT_RATIO_FLOOR
-        ? check("textRatio", "content", "pass", 3, 3, "textRatio.healthy", {
-            percent,
-          })
-        : check("textRatio", "content", "warn", 1, 3, "textRatio.low", {
-            percent,
-          }),
+      observation(
+        "textRatio",
+        "content",
+        ratio >= TEXT_RATIO_FLOOR ? "textRatio.healthy" : "textRatio.low",
+        { percent },
+      ),
     );
   }
 

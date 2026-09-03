@@ -8318,6 +8318,15 @@
             "9": "Search opportunity"
           },
           "checks": {
+            "1_9": "Mobile viewport declaration",
+            "2_7": "Reading language declaration",
+            "2_8": "Character set declaration",
+            "2_9": "Icon declaration",
+            "2_10": "Target query across text slots",
+            "4_6": "Body text against the reviewed floor",
+            "6_6": "New-tab links carrying rel=noopener",
+            "8_7": "Static markup carries the page's text",
+            "8_8": "Markup document size",
             "1_1": "HTTP status code",
             "1_2": "robots.txt allowance",
             "1_3": "noindex directive",

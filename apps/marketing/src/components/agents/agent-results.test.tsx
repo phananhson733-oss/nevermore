@@ -345,8 +345,8 @@ describe("AgentResults", () => {
     expect(issueRows()).toHaveLength(actionable);
     // The replaced surface capped the list at three.
     expect(actionable).toBeGreaterThan(3);
-    // 31 site-wide + 49 page-level, with the scope switch gone.
-    expect(lanedCheckCount()).toBe(80);
+    // 31 site-wide + 58 page-level, with the scope switch gone.
+    expect(lanedCheckCount()).toBe(89);
   });
 
   it("offers investigation rows, not a verdict, when no check could be evaluated", () => {
@@ -362,7 +362,7 @@ describe("AgentResults", () => {
     ).not.toBeNull();
     expect(host.querySelector('[data-testid="agent-issues-clean"]')).toBeNull();
     expect(host.textContent).toContain("Affected population unavailable");
-    expect(lanedCheckCount()).toBe(80);
+    expect(lanedCheckCount()).toBe(89);
   });
 
   it("uses Tech defaults and keeps its issue identity independent", () => {

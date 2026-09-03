@@ -9,11 +9,16 @@ import {
   type CheckInput,
   type OnPageCheck,
 } from "./check-types.ts";
+import {
+  HTML_BYTES as SHARED_HTML_BYTES,
+  SCRIPT_DOMINANCE as SHARED_SCRIPT_DOMINANCE,
+} from "@sf/public-tools/seo-audit/page-shape-thresholds";
 
 /** Below this a page is close to an island; above it, links are not the issue. */
 export const INTERNAL_LINK_FLOOR = 3;
 /** Reviewed working bounds for a static HTML document, in bytes. */
-export const HTML_BYTES = { large: 200_000, huge: 500_000 } as const;
+/** Shared with the Agent catalogue so the two surfaces cannot disagree. */
+export { HTML_BYTES, SCRIPT_DOMINANCE } from "@sf/public-tools/seo-audit/page-shape-thresholds";
 /** Server response time for the HTML itself, in milliseconds. */
 export const RESPONSE_MS = { fast: 600, slow: 1_500 } as const;
 /**
@@ -24,7 +29,6 @@ export const RESPONSE_MS = { fast: 600, slow: 1_500 } as const;
  * describe a page whose copy arrives only after JavaScript runs.
  */
 export const STATIC_TEXT_FLOOR_BYTES = 600;
-export const SCRIPT_DOMINANCE = 5;
 /** Reviewed URL shape. Neither is a ranking factor; both are legibility. */
 export const URL_PATH = { maxChars: 100, maxSegments: 5 } as const;
 
@@ -258,7 +262,7 @@ function renderingCheck(
 ): OnPageCheck {
   const clientRendered =
     declared.visibleTextBytes < STATIC_TEXT_FLOOR_BYTES &&
-    declared.scriptBytes > declared.visibleTextBytes * SCRIPT_DOMINANCE;
+    declared.scriptBytes > declared.visibleTextBytes * SHARED_SCRIPT_DOMINANCE;
   const kb = (bytes: number): number => Math.round(bytes / 1024);
   return clientRendered
     ? check("rendering", "technical", "warn", 1, 3, "rendering.clientSide", {
@@ -428,9 +432,9 @@ export function technicalChecks(input: CheckInput): readonly OnPageCheck[] {
 
   const kb = Math.round(declared.htmlBytes / 1024);
   checks.push(
-    declared.htmlBytes <= HTML_BYTES.large
+    declared.htmlBytes <= SHARED_HTML_BYTES.large
       ? check("htmlSize", "technical", "pass", 2, 2, "htmlSize.ok", { kb })
-      : declared.htmlBytes <= HTML_BYTES.huge
+      : declared.htmlBytes <= SHARED_HTML_BYTES.huge
         ? check("htmlSize", "technical", "warn", 1, 2, "htmlSize.large", { kb })
         : check("htmlSize", "technical", "warn", 0, 2, "htmlSize.huge", { kb }),
     // Not scored: a single-language site is complete without hreflang, and

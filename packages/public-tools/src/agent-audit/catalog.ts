@@ -75,6 +75,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["1.5", "Included in sitemap", "是否在 sitemap 中", "Present in a collected sitemap; otherwise Warning. Not testable when no sitemap was collected.", "存在于已采集的 sitemap 中；否则为警告。未采集到 sitemap 时不判定。"],
   ["1.6", "Redirect chain length", "跳转链长度", "At most one hop; two or more is Warning, non-200 destination is Blocker", "最多一跳；两跳及以上为警告，终点非 200 为阻断"],
   ["1.7", "hreflang target validity", "hreflang 目标有效性", "No alternate returns 4xx or 5xx; one that does is Blocker. Only alternates this run also fetched are classified.", "没有返回 4xx 或 5xx 的备用地址；出现即为阻断。只对本次运行同时抓取到的备用地址判定。"],
+  ["1.9", "Mobile viewport declaration", "移动端 viewport 声明", "A meta viewport is declared; its absence is a Warning. Read from the markup only — this run renders nothing.", "存在 meta viewport 声明；缺失为警告。仅依据标记判定——本次运行不做渲染。"],
   ["1.8", "Soft 404 detection", "软 404 检测", "Not a 200 response that both states a not-found phrase and falls below the published body floor; a soft 404 is Blocker. Thin content alone is not judged here.", "不是「返回 200、同时出现「找不到」类措辞、且正文量低于公布下限」的页面；软 404 为阻断。仅仅内容少不在这里判定。"],
   ["2.1", "Title length", "Title 长度", `Reviewed working range ${SNIPPET_TITLE_WIDTH.min}–${SNIPPET_TITLE_WIDTH.max} in display width, counting a CJK character as two; Google truncates by rendered width, not character count`, `已审阅工作区间为显示宽度 ${SNIPPET_TITLE_WIDTH.min}–${SNIPPET_TITLE_WIDTH.max}，中日韩字符按 2 计；Google 按渲染宽度截断，而非字符数`],
   ["2.2", "Sitewide title uniqueness", "Title 全站唯一", "Unique among evaluated canonical pages; otherwise Warning", "在已评估 Canonical 页面中唯一；否则为警告"],
@@ -82,6 +83,10 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["2.4", "Meta description length", "Meta description 长度", `Reviewed working range ${SNIPPET_DESCRIPTION_WIDTH.min}–${SNIPPET_DESCRIPTION_WIDTH.max} in display width, counting a CJK character as two; Google truncates by rendered width, not character count`, `已审阅工作区间为显示宽度 ${SNIPPET_DESCRIPTION_WIDTH.min}–${SNIPPET_DESCRIPTION_WIDTH.max}，中日韩字符按 2 计；Google 按渲染宽度截断，而非字符数`],
   ["2.5", "Meta description uniqueness", "Meta description 唯一", "Unique among evaluated canonical pages; otherwise Warning", "在已评估 Canonical 页面中唯一；否则为警告"],
   ["2.6", "Open Graph title, description, and image", "Open Graph 标题、描述与图片", "All three properties present; otherwise Tip", "三项属性均存在；否则为提示"],
+  ["2.7", "Reading language declaration", "阅读语言声明", "An html lang attribute is present; its absence is a Tip. Without it the reading language is left to be guessed.", "存在 html lang 属性；缺失为提示。没有它，阅读语言只能靠猜。"],
+  ["2.8", "Character set declaration", "字符集声明", "A character set is declared in the markup or the response header; declaring neither is a Tip.", "标记或响应头中声明了字符集；两者都没有为提示。"],
+  ["2.9", "Icon declaration", "站点图标声明", "A link rel=icon is declared; its absence is a Tip. Presence only: no request is made for a root icon file.", "存在 link rel=icon 声明；缺失为提示。仅判定是否声明：不会去请求根目录下的图标文件。"],
+  ["2.10", "Target query across the page's text slots", "目标词在页面各文本位点的覆盖", "The confirmed target query appears in the description, sub-headings, opening text or URL; covering none is a Tip. Judged on the submitted page only, and only when a query was confirmed.", "已确认目标词出现在描述、副标题、开头正文或 URL 中；一个位点都没有为提示。仅对提交的页面判定，且仅在已确认目标词时判定。"],
   ["3.1", "H1 count", "H1 数量", "Exactly 1; otherwise Warning", "恰好 1 个；否则为警告"],
   ["3.2", "H1 contains the target query", "H1 含目标词", "Contains the confirmed target query as a token sequence; otherwise Tip. No synonym or stemming set is applied.", "以词序列形式包含已确认目标词；否则为提示。不做同义词或词形还原。"],
   ["3.3", "Continuous heading hierarchy", "标题层级连续", "No skipped levels; otherwise Tip", "无跳级；否则为提示"],
@@ -93,6 +98,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["4.3", "First target-query occurrence", "目标词首次出现位置", "Internal heuristic only. Position in the text is not a documented ranking signal.", "仅为内部启发式。目标词在正文中的位置不是有据可查的排名信号。"],
   ["4.4", "Content-to-code ratio", "内容与代码比", "Listed for review, not judged: no documented ratio threshold exists. Read it as a rendering-weight hint, never as a defect.", "仅列出待复核，不作判定：不存在有据可查的比例阈值。把它当作体积提示来读，不要当成缺陷。"],
   ["4.5", "Similarity with other site pages", "与站内其他页相似度", "Below 70%; otherwise Warning; P6 false-positive gate required", "低于 70%；否则为警告；必须通过 P6 假阳性门禁"],
+  ["4.6", "Body text against the reviewed floor", "正文量与审阅下限", "At or above the reviewed floor in text units; below it is a Tip. Units rather than words, so a page written without inter-word spaces is measured on the same scale. The floor is a reviewed working figure, not a documented rule.", "文本单位数达到或超过审阅下限；低于为提示。按单位而不是按词计，所以不使用词间空格的文字与使用的在同一把尺子上。该下限是审阅过的工作值，不是有据可查的规则。"],
   ["5.1", "Images missing alt text", "无 alt 图片数", "0 images with no alt attribute; otherwise Warning. An empty alt marks a decorative image and counts as covered.", "没有 alt 属性的图片为 0 张；否则为警告。空 alt 是装饰性图片的标记，计为已覆盖。"],
   ["5.2", "Per-image file size", "单图体积", "Below 200 KB; otherwise Tip", "低于 200KB；否则为提示"],
   ["5.3", "Modern image format share", "现代图片格式占比", "At least 80% WebP or AVIF among images whose format the URL states; otherwise Tip. An unreadable extension leaves the ratio rather than counting against it.", "在 URL 能读出格式的图片中，WebP 或 AVIF 至少占 80%；否则为提示。读不出扩展名的图片不计入该比例，也不算作旧格式。"],
@@ -102,6 +108,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["6.3", "Broken internal links on this page", "本页出站断链数", "0 broken outbound internal links; above 0 is Warning", "本页出站内链断链为 0；大于 0 为警告"],
   ["6.4", "Click depth", "点击深度", "At most 4 clicks from the crawl entry point; deeper is a Tip", "距抓取入口最多 4 次点击；更深为提示"],
   ["6.5", "External dofollow / nofollow ratio", "外链 dofollow / nofollow 比", "Listed for review, not judged: display only, no pass/fail threshold. Included because nofollow on outbound links is a choice, not a score.", "仅列出待复核，不作判定：仅展示，不设通过阈值。列在这里是因为出站链接加不加 nofollow 是选择，不是分数。"],
+  ["6.6", "Outbound new-tab links carrying rel=noopener", "新标签页外链是否带 rel=noopener", "No target=_blank link omits rel=noopener; any that does is a Tip. Such a link hands the opened page a handle on this one.", "没有 target=_blank 链接遗漏 rel=noopener；出现即为提示。这样的链接会把本页的引用交给被打开的页面。"],
   ["7.1", "JSON-LD presence", "JSON-LD 是否存在", "At least one parseable JSON-LD block; absent or malformed is a Tip", "至少 1 个可解析的 JSON-LD 块；缺失或损坏为提示"],
   ["7.2", "Schema type matches page type", "Schema 类型与页面类型匹配", "Declares a type from the reviewed set for the confirmed page type; otherwise Tip. Site-furniture types are ignored, and the reviewed set is published with the finding.", "声明了已确认页面类型对应审阅集合中的某个类型；否则为提示。站点通用类型不计入，审阅集合会与发现一同给出。"],
   ["7.3", "Required-property completeness", "必填字段完整性", "Every required property present for the types in the reviewed table; otherwise Warning. A type outside the table is not judged rather than assumed complete.", "审阅表中所列类型的必填字段齐全；否则为警告。表外的类型不作判定，而不是假定其完整。"],
@@ -113,6 +120,8 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["8.4", "Time to First Byte (TTFB)", "首字节时间（TTFB）", "800 ms or less good, over 800 ms to 1.8 s needs improvement, over 1.8 s poor", "不超过 800 毫秒为良好，超过 800 毫秒至 1.8 秒待改进，超过 1.8 秒为差"],
   ["8.5", "Total page weight", "页面总体积", "Below 2 MB", "低于 2MB"],
   ["8.6", "Render-blocking resource count", "渲染阻塞资源数", "0 render-blocking stylesheets or synchronous scripts in the head; above 0 is a Tip. Read from the markup, not from a lab run.", "head 中阻塞渲染的样式表与同步脚本为 0；大于 0 为提示。依据标记判定，不是实验室运行。"],
+  ["8.7", "Static markup carries the page's own text", "静态标记是否承载页面自身正文", "The script payload does not dwarf the visible text; when it does, a Tip. A ratio rather than a byte count, and read from the transferred markup — this run executes no script.", "脚本体积没有远超可见正文；超过则为提示。看的是比例不是绝对字节，且依据传输到的标记判定——本次运行不执行脚本。"],
+  ["8.8", "Markup document size", "标记文档体积", "At or below the reviewed markup size; above it is a Tip. The transferred document itself, before anything it references.", "不超过审阅的标记体积上限；超出为提示。指传输的文档本身，不含它引用的任何资源。"],
   ["9.1", "AI answer block on the results page", "结果页是否出现 AI 答案块", "Absent; present is Warning because ranking may not produce a click. Presence only — whether the block fully answers the query is a content judgement this run does not make.", "不存在；存在则为警告，因为获得排名也可能没有点击。仅判定是否存在——该答案块是否完整回答了查询属于内容判断，本次运行不作此判断。"],
   // 9.2 "recently registered domains in the top 10" was removed on 2026-08-18.
   // It needs a domain registration date, which no wired provider returns. The
@@ -301,6 +310,14 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   D1: ["title_duplicate"],
   D6: ["hreflang_target_http_error"],
   "1.7": ["hreflang_target_http_error"],
+  "1.9": ["viewport_missing"],
+  "2.7": ["lang_missing"],
+  "2.8": ["charset_missing"],
+  "2.9": ["favicon_missing"],
+  "4.6": ["thin_body_text"],
+  "6.6": ["external_link_blank_without_noopener"],
+  "8.7": ["client_rendered_content"],
+  "8.8": ["html_document_oversized"],
   "4.4": ["content_to_code_ratio"],
   "6.5": ["external_link_follow_mix"],
   "3.4": ["h2_count_outside_reviewed_range"],
@@ -914,6 +931,42 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
     "This page declares an alternate that does not resolve. Check the direction of the error first: a 404 usually means the alternate was never published or its path changed, while a 5xx means it exists and is failing, and only the second is worth a retry before editing anything. Then check reciprocity — every page in a cluster must point back at every other, including itself. A one-way declaration is the most common way a cluster looks complete on one page and is invisible from the others.",
     "这个页面声明了一个解析不了的备用地址。先看错误方向：404 通常意味着这个备用地址从未发布或路径变了，而 5xx 意味着它存在但正在出错，只有后者值得先重试再动手改。然后检查互指——簇里每个页面都必须指回其余每一个，也包括它自己。单向声明是最常见的一种情况：在这一页看起来簇是完整的，从其他页面看却根本不存在。",
   ),
+  "1.9": l(
+    "Add `<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">` to the template head. Without it a phone lays the page out at desktop width and scales the whole thing down, so every tap target shrinks with it. Ship it template-wide rather than page by page: the pages that lack it are usually the ones nobody has opened on a phone.",
+    "在模板 head 里加上 `<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">`。没有它，手机会按桌面宽度排版再整体缩小，所有可点区域跟着一起缩。改在模板层而不是逐页改：缺这一行的页面，往往正是没人用手机打开过的那些。",
+  ),
+  "2.7": l(
+    "Set `lang` on the `<html>` element to the language the page is actually written in, not the site's default. It tells a screen reader which voice to use and a translation prompt whether to offer itself at all. On a multilingual site this is per-template work: a shared layout that hard-codes one language mislabels every other locale it renders.",
+    "在 `<html>` 上设置 `lang`，值取该页实际写作的语言，而不是站点默认语言。它决定读屏软件用哪种发音，也决定是否要弹出翻译提示。多语言站点上这是逐模板的活：共享布局里写死一种语言，会把它渲染的其他所有语种都标错。",
+  ),
+  "2.8": l(
+    "Declare the character set — either `<meta charset=\"utf-8\">` as the first thing in the head, or a `charset` parameter on the `Content-Type` response header. Left undeclared, the browser guesses, and the guess is what turns a page of correct text into a page of replacement characters for some readers and not others.",
+    "声明字符集——在 head 最前面写 `<meta charset=\"utf-8\">`，或在 `Content-Type` 响应头里带上 `charset` 参数。不声明则由浏览器猜，而正是这个猜测让同一页文字对一部分读者正常、对另一部分变成乱码。",
+  ),
+  "2.9": l(
+    "Declare an icon with `<link rel=\"icon\">` pointing at a file you control, rather than relying on a root fallback. It is what a browser tab, a bookmark and some result rows display, and a missing declaration is the difference between a recognisable row and a blank square. This check reads the declaration only; it does not fetch the file.",
+    "用 `<link rel=\"icon\">` 显式声明图标并指向你能控制的文件，不要依赖根目录兜底。标签页、书签和部分结果行显示的就是它，缺声明的结果是一个可辨认的条目变成一块空白方格。本项只读声明，不去抓取文件本身。",
+  ),
+  "2.10": l(
+    "Work the confirmed query into the slots this run can read: the meta description, a sub-heading, the opening text, or the URL. Pick the ones that read naturally — a description written for a person who is deciding whether to click, a sub-heading that names the section it introduces. Slots filled to satisfy a checker read that way, and the reader is who this is for.",
+    "把已确认目标词自然地放进本次运行能读到的位点：meta description、副标题、开头正文或 URL。挑读起来自然的那些——描述写给正在决定要不要点开的人，副标题就命名它引出的那一节。为了满足检查而硬填的位点读起来就是硬填的，而这件事的对象是读者。",
+  ),
+  "4.6": l(
+    "Answer the question the page exists to answer, at the length that takes. The floor here is a reviewed working figure, not a documented rule, and padding a thin page up to it changes the number without changing what the page is worth reading for. If the page has little to say, the question is usually whether it should be its own page at all.",
+    "把这个页面存在的理由——它要回答的那个问题——答完，需要多长就多长。这里的下限是审阅过的工作值而不是有据可查的规则，为了凑数把一个单薄的页面撑长，只改变了数字，没有改变它值不值得读。如果确实没什么可说，通常该问的是它是否应该单独成页。",
+  ),
+  "6.6": l(
+    "Add `rel=\"noopener\"` to every outbound link that opens a new tab, or drop `target=\"_blank\"` where it is not earning anything. Without it the opened page gets a scriptable handle back to this one. Fix it in whatever renders links — a markdown pipeline, a rich-text field, a card component — because a per-link fix will not survive the next author.",
+    "给每一条开新标签页的出站链接加上 `rel=\"noopener\"`，或者干脆去掉那些没带来任何好处的 `target=\"_blank\"`。缺了它，被打开的页面会拿到一个可脚本操作的、指回本页的引用。改在渲染链接的地方——markdown 管线、富文本字段、卡片组件——逐条改活不过下一位作者。",
+  ),
+  "8.7": l(
+    "Serve the page's own text in the HTML the server sends, rather than assembling it in the browser. Which framework you use matters less than whether the words arrive with the document: server rendering, static generation and partial pre-rendering all get you there. This is read from the transferred markup, so a page that hydrates into rich content still reads as thin here — and to anything else that does not run your script.",
+    "让页面自己的正文出现在服务器发出的 HTML 里，而不是到浏览器里再拼。用哪个框架远不如「文字是否随文档一起到达」重要：服务端渲染、静态生成、部分预渲染都能做到。本项依据传输到的标记判定，所以一个 hydrate 之后内容很丰富的页面在这里仍读作单薄——对任何不执行你脚本的一方也是如此。",
+  ),
+  "8.8": l(
+    "Trim the document itself before optimising what it references. The usual weight is inlined data, a duplicated design system, or a component that ships every variant it might need. Measure what the server actually sent, not what the bundler reports: the reviewed ceiling is about the bytes a reader waits for on a slow connection.",
+    "先给文档本身瘦身，再去优化它引用的东西。多出来的体积通常来自内联数据、重复的设计系统，或者把所有可能用到的变体都发出去的组件。量服务器实际发出的字节，不是打包器报告的数字：这条审阅上限说的是慢网络下读者要等的那些字节。",
+  ),
   "4.4": l(
     "This is the share of the delivered HTML that is text a reader can see. There is no threshold worth publishing for it, so nothing here fails — read it as a weight hint. A low ratio on a page that renders fine usually means inline data or a large framework payload shipped with the document; that costs transfer and parse time on every visit, and it is the same bytes the performance checks measure from the other side. A high ratio is not automatically good either: it is what a page with almost no markup looks like.",
     "这是交付的 HTML 里读者能看见的文字所占的比例。没有值得公布的阈值，所以这里不会判任何页面不通过——把它当作体积提示来读。一个渲染正常的页面比例偏低，通常意味着随文档一起发出的内联数据或较大的框架负载；这会在每次访问上消耗传输和解析时间，也正是性能检查从另一侧测到的同一批字节。比例高也不自动等于好：一个几乎没有标记的页面就长这样。",
@@ -1076,7 +1129,7 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
     // page" and was still resolving to Warning because nobody added it.
     failureResult:
       DECLARES_NO_JUDGEMENT.test(thresholdEn) ||
-      ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.2", "3.3", "3.4", "3.5", "4.3", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5", "9.4", "8.6", "3.6", "9.3"].includes(id)
+      ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.2", "3.3", "3.4", "3.5", "4.3", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5", "9.4", "8.6", "3.6", "9.3", "2.7", "2.8", "2.9", "2.10", "4.6", "6.6", "8.7", "8.8"].includes(id)
       ? "tip"
       : "warning",
     primaryAgent,

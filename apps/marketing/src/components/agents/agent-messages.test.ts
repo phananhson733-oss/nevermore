@@ -380,9 +380,9 @@ describe("Agent message catalogs", () => {
     }
   });
 
-  it("names all 5/31 site and 9/49 page catalog entries bilingually", () => {
+  it("names all 5/31 site and 9/58 page catalog entries bilingually", () => {
     expect(SITE_CHECK_IDS).toHaveLength(31);
-    expect(PAGE_CHECK_IDS).toHaveLength(49);
+    expect(PAGE_CHECK_IDS).toHaveLength(58);
 
     for (const messages of [en, zh]) {
       for (const group of ["A", "B", "C", "D", "E"]) {

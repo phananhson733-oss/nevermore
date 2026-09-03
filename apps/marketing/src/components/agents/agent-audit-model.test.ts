@@ -67,7 +67,7 @@ const data: AgentAuditSuccessData = {
 
 describe("buildAgentAuditViewModel", () => {
   it.each([["seo" as const], ["tech" as const]])(
-    "keeps all 80 checks for the %s Agent",
+    "keeps all 89 checks for the %s Agent",
     (agent) => {
       const model = buildAgentAuditViewModel({
         agent,
@@ -80,13 +80,13 @@ describe("buildAgentAuditViewModel", () => {
       // 31 site-wide + 49 page-level, in one list. The per-scope group views
       // went with the scope switch; what still has to hold is that evaluating
       // drops nothing on the way.
-      expect(model.evaluatedChecks).toHaveLength(80);
+      expect(model.evaluatedChecks).toHaveLength(89);
       expect(
         model.evaluatedChecks.filter((check) => check.check.scope === "site"),
       ).toHaveLength(31);
       expect(
         model.evaluatedChecks.filter((check) => check.check.scope === "page"),
-      ).toHaveLength(49);
+      ).toHaveLength(58);
     },
   );
 
@@ -100,7 +100,7 @@ describe("buildAgentAuditViewModel", () => {
     });
     const checks = model.evaluatedChecks;
 
-    expect(checks).toHaveLength(80);
+    expect(checks).toHaveLength(89);
     expect(checks.every((check) => check.result === "excluded")).toBe(true);
     expect(checks.some((check) => check.result === "pass")).toBe(false);
     expect(checks.every((check) => check.measurement === null)).toBe(true);
