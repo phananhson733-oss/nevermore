@@ -16,7 +16,15 @@ it("source receipt is only a proposal, explicit fact adoption remains pending, a
   const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
   function Harness() { const [payload, setPayload] = useState(base); current = payload; return <GeoKbV2Sources receipt={receipt} baseline={base} payload={payload} stale={false} locale="en" onChange={setPayload} />; }
   try {
-    await act(async () => root.render(<Harness />)); expect(current).toEqual(base); expect(host.textContent).toContain("Unknown"); expect(host.textContent).toContain("identity_conflict");
+    await act(async () => root.render(<Harness />)); expect(current).toEqual(base);
+    // Search Console gave nothing, and the panel says so without inventing a
+    // count for it. The receipt id, the property, the window and the raw
+    // queries describe how the refresh ran, and are not shown.
+    expect(host.querySelector("[data-gsc-unavailable]")?.textContent).toContain("not_connected");
+    expect(host.querySelector("[data-gsc-unavailable]")?.textContent).not.toMatch(/\b0\b/);
+    expect(host.textContent).not.toContain(receipt.receiptId);
+    expect(host.textContent).not.toContain(receipt.contentHash);
+    expect(host.textContent).toContain("identity_conflict");
     expect(host.querySelector('[data-apply-competitor="C1"]')).toBeNull();
     await act(async () => host.querySelector<HTMLButtonElement>('[data-apply-fact="F1"]')?.click());
     expect(current.facts[0]).toMatchObject({ value: "3", review: "pending", supportRef: { receiptId: receipt.receiptId, evidenceId: "F1" } });

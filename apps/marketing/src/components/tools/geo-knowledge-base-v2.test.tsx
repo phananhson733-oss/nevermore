@@ -9,6 +9,7 @@ import { GeoKnowledgeBaseV2 } from "./geo-knowledge-base-v2.tsx";
 import { GEO_KB_V2_AUTOSAVE_MS } from "./use-geo-kb-v2-editor.ts";
 import { editorFixture, sourceFixture } from "./geo-kb-v2-ui.test-fixtures.ts";
 import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
+import { renderedText } from "./rendered-text.test-helper.ts";
 let host: HTMLDivElement, root: Root;
 beforeEach(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; host = document.createElement("div"); document.body.append(host); root = createRoot(host); sessionStorage.clear(); vi.stubGlobal("fetch", vi.fn()); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
@@ -18,7 +19,7 @@ async function fill(value: string) { const input = host.querySelector<HTMLInputE
 it.each(["en", "zh"])("shows the complete persisted candidate before first freeze in %s and requires explicit review", async locale => {
   await render(editorFixture(), locale); const review = host.querySelector('[data-prepared-review]');
   expect(review?.textContent).toContain("Finance teams"); expect(review?.textContent).toContain("spreadsheets"); expect(review?.textContent).toContain("How can finance teams reduce late invoices?");
-  expect(review?.querySelector('[data-geo-profile-field="productName"] input')).toHaveProperty("value", "Acme");
+  expect(renderedText(review?.querySelector('[data-geo-profile-field="productName"]'))).toContain("Acme");
   expect(host.querySelector<HTMLButtonElement>('[data-freeze-prepared]')?.disabled).toBe(true);
   await click('[data-confirm-prepared]'); expect(host.querySelector<HTMLButtonElement>('[data-freeze-prepared]')?.disabled).toBe(false);
   expect(fetch).not.toHaveBeenCalled();
@@ -267,7 +268,7 @@ it("names an entry it may not accept and freezes nothing", async () => {
 it("reads as three named parts with one ordered progress model", async () => {
   await render();
   expect([...host.querySelectorAll("[data-geo-v2-block]")].map(node => node.getAttribute("data-geo-v2-block"))).toEqual(["profile", "supplement", "run"]);
-  expect(host.querySelector('[data-geo-v2-block="profile"]')?.querySelector("[data-geo-profile-summary]")).not.toBeNull();
+  expect(host.querySelector('[data-geo-v2-block="profile"]')?.querySelector("[data-geo-profile-fields]")).not.toBeNull();
   expect(host.querySelector('[data-geo-v2-block="supplement"]')?.querySelector('[data-base-field="officialName"]')).not.toBeNull();
   // The two primary actions sit in the header, as they do in the Profile
   // editor, so the first thing on screen is the thing most visitors press.

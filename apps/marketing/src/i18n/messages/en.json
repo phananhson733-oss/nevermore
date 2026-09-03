@@ -5603,6 +5603,7 @@
           "freeze": "The complete version was prepared, but freezing it did not succeed, so there is no frozen version. The error above says why; pressing again retries it.",
           "failed": "This confirmation did not complete and nothing was frozen. Your draft is unchanged."
         },
+        "actionCost": "Building from the Profile makes one model call and may incur a charge. Roles and facts are never accepted for you.",
         "buildTitle": "What this build did",
         "buildFields": "Written from the Profile: {fields}",
         "buildNoFields": "The measurement fields already matched the Profile; nothing was rewritten.",

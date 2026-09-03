@@ -96,7 +96,6 @@ function RoleCard({ role, locale, children }: { readonly role: GeoKbPayloadV2["r
         <ReadList label={c.fields.vocabulary} values={role.vocabulary} empty={c.empty} />
         <ReadList label={c.fields.questionLabel} values={[role.questionLabel]} empty={c.empty} />
       </div>
-      <p className="mt-4 text-[12px] text-text-dark-secondary">{c.fields.source}: {c.sources[role.source.kind]}</p>
     </div>
     <details className="mt-4">
       <summary className="cursor-pointer text-[13px] text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent">{t.editRole}</summary>
@@ -124,11 +123,6 @@ export function GeoKbV2Fields({ payload, locale, onChange, supportRefNote }: { r
           {(["label", "questionLabel", "segment"] as const).map(field => <Row key={field}><Field kind="role" field={field} label={field === "label" ? t.roleLabel : c.fields[field]} value={role[field]} onChange={value => change(editGeoKbRoleV2(role, { [field]: value }))} /></Row>)}
           {(["painPoints", "alternatives", "decisionCriteria", "vocabulary"] as const).map(field => <Row key={field}><ListField locale={locale} kind="role" field={field} label={c.fields[field === "decisionCriteria" ? "criteria" : field]} values={role[field]} onChange={values => change(editGeoKbRoleV2(role, { [field]: [...values] }))} /></Row>)}
         </Rows>
-        {role.source.generationId === null && role.source.itemId === null && role.source.evidenceRefs.length === 0 ? null : <details className="mt-2 text-[12px] text-text-dark-secondary"><summary className="cursor-pointer">{c.roleEvidence.details}</summary><dl className="mt-2 grid gap-2">
-          {role.source.generationId === null ? null : <div><dt>{c.fields.generation}</dt><dd className="break-all font-mono">{role.source.generationId}</dd></div>}
-          {role.source.itemId === null ? null : <div><dt>{c.fields.sourceItem}</dt><dd className="break-all font-mono">{role.source.itemId}</dd></div>}
-          {role.source.evidenceRefs.length === 0 ? null : <div><dt>{c.fields.evidenceRefs}</dt><dd className="break-all font-mono">{role.source.evidenceRefs.join(" · ")}</dd></div>}
-        </dl></details>}
         <Review kind="role" current={role.review} locale={locale} valid={geoRoleV2Schema.safeParse({ ...role, review: "accepted" }).success} onChange={review => change({ ...role, review })} />
         <Button type="button" variant="ghost" className="mt-3" onClick={() => patch({ roles: payload.roles.filter((_, position) => position !== index) })}>{t.remove}</Button>
         </RoleCard>
@@ -148,6 +142,7 @@ export function GeoKbV2Fields({ payload, locale, onChange, supportRefNote }: { r
       </article>;
     })}</div><Button type="button" variant="outline" className="mt-5" disabled={payload.competitors.length >= 5} onClick={() => patch({ competitors: [...payload.competitors, { domain: "", brandName: "", confirmed: false, aliases: [] }] })}>{t.addCompetitor}</Button></GeoKbEditorPanel>
 
+    {payload.facts.length === 0 ? <div className="min-w-0"><Button type="button" variant="outline" onClick={() => patch({ facts: [{ key: "", value: "", reason: "lowConfidence", sourceUrl: "", observedAt: "", review: "pending", supportRef: null }] })}>{t.addFact}</Button></div> :
     <GeoKbEditorPanel title={c.sections.facts}><p className="mb-5 text-[13px] leading-relaxed text-text-dark-secondary">{c.factsHelp}</p><div className="space-y-5">{payload.facts.map((fact, index) => {
       const change = (next: typeof fact) => patch({ facts: payload.facts.map((item, position) => position === index ? next : item) });
       const labels = { key: t.factKey, value: c.fields.declaredValue, sourceUrl: c.fields.declaredSource, observedAt: c.fields.declaredTime };
@@ -155,8 +150,10 @@ export function GeoKbV2Fields({ payload, locale, onChange, supportRefNote }: { r
         <Rows>
           {(["key", "value", "sourceUrl", "observedAt"] as const).map(field => <Row key={field}><Field kind="fact" field={field} label={labels[field]} value={fact[field]} onChange={value => change(editGeoKbFactV2(fact, { [field]: value }))} /></Row>)}
         </Rows>
-        <p className="mt-5 break-all text-[12px] text-text-dark-secondary">{c.fields.supportRef}: {fact.supportRef === null ? c.notRecorded : `${fact.supportRef.receiptId} · ${fact.supportRef.evidenceId}`}</p>
-        {fact.supportRef === null || supportRefNote === undefined ? null : <p data-support-ref-note className="mt-1 text-[12px] text-text-dark-secondary">{supportRefNote}</p>}
+        {/* Not the receipt and evidence ids -- those describe the pipeline.
+            This says what editing the row costs: crawl evidence a source
+            refresh paid for, gone, and only another refresh brings it back. */}
+        {fact.supportRef === null || supportRefNote === undefined ? null : <p data-support-ref-note className="mt-5 text-[12px] text-text-dark-secondary">{supportRefNote}</p>}
         {/* The reason only matters for a fact that has no source, and the
             review state is what the one confirm gesture sets. Neither belongs
             in front of every row. */}
@@ -167,6 +164,6 @@ export function GeoKbV2Fields({ payload, locale, onChange, supportRefNote }: { r
           <Button type="button" variant="ghost" className="mt-3" onClick={() => patch({ facts: payload.facts.filter((_, position) => position !== index) })}>{t.remove}</Button>
         </details>
       </article>;
-    })}</div><Button type="button" variant="outline" className="mt-5" disabled={payload.facts.length >= 24} onClick={() => patch({ facts: [...payload.facts, { key: "", value: "", reason: "lowConfidence", sourceUrl: "", observedAt: "", review: "pending", supportRef: null }] })}>{t.addFact}</Button></GeoKbEditorPanel>
+    })}</div><Button type="button" variant="outline" className="mt-5" disabled={payload.facts.length >= 24} onClick={() => patch({ facts: [...payload.facts, { key: "", value: "", reason: "lowConfidence", sourceUrl: "", observedAt: "", review: "pending", supportRef: null }] })}>{t.addFact}</Button></GeoKbEditorPanel>}
   </div>;
 }

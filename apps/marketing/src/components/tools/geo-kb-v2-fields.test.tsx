@@ -38,7 +38,11 @@ it("edits real role detail, resets acceptance and retains original model lineage
   await fill('[data-role-field="alternatives"] input', "Spreadsheets");
   await click('[data-review-role="accepted"]');
   expect(current.roles[0]?.review).toBe("accepted");
-  expect(host.textContent).toContain(source.generationId);
+  // The lineage is retained in the value, asserted above. It is no longer
+  // displayed: which generation produced a role is how it was made, not
+  // whether it fits the product.
+  expect(current.roles[0]?.source).toEqual(source);
+  expect(host.textContent).not.toContain(source.generationId);
 });
 it("reads a role out instead of asking for it back, with hand editing one disclosure away", async () => {
   await render();
