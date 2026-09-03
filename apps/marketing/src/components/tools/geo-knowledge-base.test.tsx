@@ -24,6 +24,7 @@ import {
   type GeoKbHandlerDependencies,
 } from "../../lib/geo-tools/kb-handler.ts";
 import { GeoKnowledgeBase } from "./geo-knowledge-base.tsx";
+import { renderedText } from "./rendered-text.test-helper.ts";
 
 const ORIGIN = "https://acme-kb.test";
 
@@ -662,7 +663,7 @@ describe("which site the knowledge base was actually loaded for", () => {
     fetcher.mockResolvedValueOnce(Response.json({ data: { ...loaded.value, profile: { ...profile, reference: nextReference, productName: "Changed product" }, context: { ...context, contentHash: "f".repeat(64) } } }));
     await click(button(copy("asset.reloadSources")));
     expect(field(copy("brand.officialNameLabel")).value).toBe("My unsaved name");
-    expect(text()).toContain("Changed product");
+    expect(renderedText(container)).toContain("Changed product");
     expect(button(copy("freeze.action")).disabled).toBe(true);
     fetcher.mockResolvedValueOnce(Response.json({ data: { draftVersion: 3, updatedAt: "2026-08-31T00:00:00Z", blockers: [], context: { ...context, contentHash: "f".repeat(64) } } }));
     await click(button(copy("draft.save")));
@@ -748,10 +749,13 @@ describe("which site the knowledge base was actually loaded for", () => {
     } } }));
     await open();
     expect(container?.querySelector(`a[href='/en/account/websites/${websiteId}/geo']`)).not.toBeNull();
-    expect(text()).toContain("Original Profile product");
-    expect(text()).toContain("Read-only positioning");
-    expect(text()).toContain("Core feature from Profile");
-    expect([...(container?.querySelectorAll("input") ?? [])].some((input) => input.value === "Original Profile product")).toBe(false);
+    expect(renderedText(container)).toContain("Original Profile product");
+    expect(renderedText(container)).toContain("Read-only positioning");
+    expect(renderedText(container)).toContain("Core feature from Profile");
+    // Shown, never editable here: the inherited name is a read-only control.
+    const nameControls = [...(container?.querySelectorAll("input") ?? [])].filter((input) => input.value === "Original Profile product");
+    expect(nameControls.length).toBeGreaterThan(0);
+    expect(nameControls.every((input) => input.readOnly)).toBe(true);
     expect(field(copy("brand.officialNameLabel")).value).toBe("Acme Analytics");
   });
 

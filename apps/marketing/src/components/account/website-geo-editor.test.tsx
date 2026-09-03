@@ -9,6 +9,7 @@ import en from "../../i18n/messages/en.json";
 import { emptyGeoKbPayload } from "../../lib/geo-tools/kb-contract.ts";
 import { completePayloadV2, V2_KB_ID } from "../../lib/geo-tools/kb-v2.test-fixtures.ts";
 import { WebsiteGeoEditor } from "./website-geo-editor.tsx";
+import { renderedText } from "../tools/rendered-text.test-helper.ts";
 
 const WEBSITE_ID = "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6";
 const PROFILE = {
@@ -114,12 +115,13 @@ describe("website GEO canonical editor", () => {
     await render();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]).toEqual([`/api/account/websites/${WEBSITE_ID}/geo`, expect.objectContaining({ method: "POST", body: "{}", cache: "no-store" })]);
-    expect(container.textContent).toContain("Inherited product");
-    expect(container.textContent).toContain("Exact saved positioning");
-    expect(container.textContent).toContain("Saved feature");
+    expect(renderedText(container)).toContain("Inherited product");
+    expect(renderedText(container)).toContain("Exact saved positioning");
+    expect(renderedText(container)).toContain("Saved feature");
     expect(container.textContent).toContain("Confirmed Profile revision 2");
     expect(container.textContent).toContain("a".repeat(64));
-    expect([...container.querySelectorAll("input")].some((input) => input.value === "Inherited product")).toBe(false);
+    // Shown, never editable here: every control carrying an inherited value is read-only.
+    expect([...container.querySelectorAll("input")].filter((input) => input.value === "Inherited product").every((input) => input.readOnly)).toBe(true);
     expect([...container.querySelectorAll("input")].some((input) => input.value === "Alias override")).toBe(true);
     expect(container.querySelector("#kb-site-url")).toBeNull();
     expect(container.querySelector(`a[href='/en/account/websites/${WEBSITE_ID}']`)).not.toBeNull();
@@ -155,7 +157,7 @@ describe("website GEO canonical editor", () => {
     await render();
     expect(container.textContent).toContain(ASSET.loading);
     await act(async () => resolve(Response.json({ data: DATA })));
-    expect(container.textContent).toContain("Inherited product");
+    expect(renderedText(container)).toContain("Inherited product");
   });
   it("shows the actual unsupported Profile language without suggesting English calibration", async () => {
     fetchMock.mockResolvedValueOnce(Response.json({ data: { ...DATA, knowledgeBase: { ...VIEW, payload: { ...VIEW.payload, market: { country: "US", language: "zh-cn" } } } } }));

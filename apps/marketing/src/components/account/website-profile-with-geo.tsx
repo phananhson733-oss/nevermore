@@ -29,7 +29,6 @@ function AccountEditorCard({
   onToggle,
   open,
   title,
-  tone = "default",
 }: {
   readonly children: ReactNode;
   readonly description: string;
@@ -37,7 +36,6 @@ function AccountEditorCard({
   readonly onToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
   readonly open: boolean;
   readonly title: string;
-  readonly tone?: "default" | "accent";
 }) {
   return (
     <details
@@ -45,11 +43,9 @@ function AccountEditorCard({
       data-account-editor-card={name}
       open={open}
       onToggle={onToggle}
-      className={`group min-w-0 scroll-mt-24 overflow-hidden rounded-card border ${
-        tone === "accent"
-          ? "border-brand-accent/30 bg-brand-accent-soft"
-          : "border-brand-border-card bg-brand-panel"
-      }`}
+      // Both cards hold one website's saved settings, so both are drawn the
+      // same way. A tinted ground made GEO read as a different product.
+      className="group min-w-0 scroll-mt-24 overflow-hidden rounded-card border border-brand-border-card bg-brand-panel"
     >
       <summary className="cursor-pointer list-none rounded-card px-5 py-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 sm:px-7 [&::-webkit-details-marker]:hidden">
         <span className="flex items-start justify-between gap-4">
@@ -128,7 +124,6 @@ function WebsiteProfileWithGeoBody({
         title={cards("geoCardTitle")}
         description={cards("geoCardBody")}
         open={geoOpen}
-        tone="accent"
         onToggle={(event) => setGeoOpen(event.currentTarget.open)}
       >
         {profileAvailable ? null : (

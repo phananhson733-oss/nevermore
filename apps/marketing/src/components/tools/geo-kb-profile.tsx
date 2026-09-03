@@ -15,6 +15,7 @@ import { Button } from "../ui/button.tsx";
 import { Input } from "../ui/input.tsx";
 import { Label } from "../ui/label.tsx";
 import { Textarea } from "../ui/textarea.tsx";
+import { GeoKbFieldRow, GeoKbFieldRows, GeoKbSection } from "./geo-kb-section.tsx";
 
 const GROUPS = [
   { title: "productSection", fields: ["productName", "oneLinePositioning", "valueProposition", "coreFeatures", "categories", "businessModel", "primaryCta", "trustSignals", "firstOutcome"] },
@@ -163,18 +164,35 @@ function ProfileSummary({ productName, oneLinePositioning, coreFeatures, market,
   readonly onAddFact?: (key: string, value: string) => void;
 }) {
   const t = useTranslations("tools.geoKnowledgeBase");
+  // Drawn as the Profile editor draws its own read-only fields: one labelled
+  // row per value, the value in a control rather than as loose text, and every
+  // row's action in the same place. Trailing each action directly after the
+  // text it belongs to put the buttons at a different width on every row.
+  const inherited = <span className="inline-flex rounded-full border border-brand-border-card px-2 py-[2px] text-[11px] text-text-dark-secondary">{t("asset.inheritedBadge")}</span>;
   return (
-    <dl data-geo-profile-summary className="mt-4 grid gap-3 text-sm">
-      <div><dt className="text-text-dark-secondary">{t("asset.productName")}</dt><dd className="flex flex-wrap items-start gap-3"><span className="break-words">{productName || t("asset.emptyField")}</span><ProfileFactButton factKey="productName" value={productName} facts={facts} onAddFact={onAddFact} /></dd></div>
-      <div><dt className="text-text-dark-secondary">{t("asset.positioning")}</dt><dd className="flex flex-wrap items-start gap-3"><span className="break-words">{oneLinePositioning || t("asset.emptyField")}</span><ProfileFactButton factKey="oneLinePositioning" value={oneLinePositioning} facts={facts} onAddFact={onAddFact} /></dd></div>
-      <div><dt className="text-text-dark-secondary">{t("asset.features")}</dt><dd>{coreFeatures.length === 0 ? <span className="text-text-dark-secondary">{t("asset.emptyField")}</span> : <ul className="grid gap-2">{coreFeatures.map((feature, index) => (
-        <li className="flex flex-wrap items-start gap-3" key={`${index}-${feature}`}>
-          <span className="break-words">{feature}</span>
-          <ProfileFactButton factKey={`coreFeatures[${index}]`} value={feature} facts={facts} onAddFact={onAddFact} />
-        </li>
-      ))}</ul>}{onAddFact === undefined ? null : <p className="mt-2 text-xs text-text-dark-secondary">{t("asset.featureCandidateHelp")}</p>}</dd></div>
-      <div><dt className="text-text-dark-secondary">{t("asset.market")}</dt><dd className="break-words">{[market.country, market.language].filter(Boolean).join(" · ") || t("asset.emptyField")}</dd></div>
-    </dl>
+    <div data-geo-profile-summary className="mt-4">
+      <GeoKbFieldRows>
+        <GeoKbFieldRow data-geo-summary-field="productName" label={t("asset.productName")} action={<div className="flex items-center gap-2">{inherited}<ProfileFactButton factKey="productName" value={productName} facts={facts} onAddFact={onAddFact} /></div>}>
+          <Input readOnly aria-label={t("asset.productName")} value={productName} placeholder={t("asset.emptyField")} />
+        </GeoKbFieldRow>
+        <GeoKbFieldRow data-geo-summary-field="oneLinePositioning" label={t("asset.positioning")} action={<div className="flex items-center gap-2">{inherited}<ProfileFactButton factKey="oneLinePositioning" value={oneLinePositioning} facts={facts} onAddFact={onAddFact} /></div>}>
+          <Textarea readOnly rows={2} aria-label={t("asset.positioning")} value={oneLinePositioning} placeholder={t("asset.emptyField")} />
+        </GeoKbFieldRow>
+        <GeoKbFieldRow data-geo-summary-field="coreFeatures" label={t("asset.features")} action={inherited} {...(onAddFact === undefined ? {} : { hint: t("asset.featureCandidateHelp") })}>
+          {coreFeatures.length === 0
+            ? <Input readOnly aria-label={t("asset.features")} value="" placeholder={t("asset.emptyField")} />
+            : <ul className="grid gap-2">{coreFeatures.map((feature, index) => (
+              <li className="flex items-start gap-2" key={`${index}-${feature}`}>
+                <Input className="min-w-0 flex-1" readOnly aria-label={`${t("asset.features")} ${index + 1}`} value={feature} />
+                <ProfileFactButton factKey={`coreFeatures[${index}]`} value={feature} facts={facts} onAddFact={onAddFact} />
+              </li>
+            ))}</ul>}
+        </GeoKbFieldRow>
+        <GeoKbFieldRow data-geo-summary-field="market" label={t("asset.market")} action={inherited}>
+          <Input readOnly aria-label={t("asset.market")} value={[market.country, market.language].filter(Boolean).join(" \u00b7 ")} placeholder={t("asset.emptyField")} />
+        </GeoKbFieldRow>
+      </GeoKbFieldRows>
+    </div>
   );
 }
 
@@ -222,12 +240,10 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
 }) {
   const t = useTranslations("tools.geoKnowledgeBase");
   const owner = copy?.websiteId ?? profile?.reference.websiteId ?? websiteId;
-  const Heading = inline ? "h4" : "h2";
   return (
-    <section className="overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel px-5 py-5 sm:px-7">
-      <Heading className={inline ? "text-[15px] font-semibold text-text-dark-primary" : "flex items-center gap-3 text-[17px] font-semibold text-text-dark-primary"}>{inline ? null : <span aria-hidden="true" className="h-5 w-1 rounded-full bg-brand-accent" />}{t(copy ? "asset.copyTitle" : "asset.profileTitle")}</Heading>
+    <GeoKbSection title={t(copy ? "asset.copyTitle" : "asset.profileTitle")} heading={inline ? 4 : 2}>
       {copy !== undefined ? <>
-        <p className="mt-3 text-[13px] leading-relaxed text-text-dark-secondary">{copyDescription ?? t(frozen ? "asset.frozenCopyBody" : "asset.copyBody")}</p>
+        <p className="text-[13px] leading-relaxed text-text-dark-secondary">{copyDescription ?? t(frozen ? "asset.frozenCopyBody" : "asset.copyBody")}</p>
         <p className="mt-2 text-xs text-text-dark-secondary">{t("asset.revision", { revision: copy.snapshotRevision })}</p>
         <ProfileSummary
           productName={copy.profile.productName}
@@ -245,10 +261,10 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
           <CompleteProfileFields profile={copy.profile} />
         </details>
       </> : profile === null ? (
-        <p className="mt-3 text-sm text-text-dark-secondary">{t(profileState === "confirmed" || profileState === "unconfirmed_changes" ? "asset.profileUnavailable" : "asset.profileRequired")}</p>
+        <p className="text-sm text-text-dark-secondary">{t(profileState === "confirmed" || profileState === "unconfirmed_changes" ? "asset.profileUnavailable" : "asset.profileRequired")}</p>
       ) : (
         <>
-          <p className="mt-2 text-sm text-text-dark-secondary">{t("asset.profileBody")}</p>
+          <p className="text-sm text-text-dark-secondary">{t("asset.profileBody")}</p>
           <ProfileSummary
             productName={profile.productName}
             oneLinePositioning={profile.oneLinePositioning}
@@ -271,6 +287,6 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
         </div>
       )}
       {repairMode && !inline && owner !== undefined ? <p className="mt-3 text-xs text-text-dark-secondary">{t("repair.profileNewTab")}</p> : null}
-    </section>
+    </GeoKbSection>
   );
 }

@@ -25,6 +25,7 @@ Website Profile is the single editing authority for base information. GEO stores
 - `kb-enrichment-handler.ts` — verified Google-subject equality, exact 90-final-day GSC scope, source gates and persistent receipt admission.
 - `kb-enrichment-deps.ts` — real safe public fetch and granted GSC adapters; no automatic source read from an editor render.
 - `kb-aliases.ts` / `kb-import.ts` — bounded proposals for complete canonical host and meaningful split-name aliases; no case-only duplicates, name truncation or implicit rewrite of saved overrides.
+- `kb-v2-build-from-profile.ts`, `.test.ts` — one derived draft from the Profile copy a draft already holds, plus a named account of what it wrote and what it left to explicit review; it issues no request, derives no role or fact, and never replaces a competitor set that holds a row the Profile cannot reproduce.
 - `kb-v2-contract.ts` / `kb-v2-json.ts` / `kb-v2-digest.ts` — explicit complete-copy payload, role review/lineage, fact support/conflicts and canonical byte/hash contracts. V2 never changes the shape or digest of stored V1 data.
 - `kb-upgrade.ts` — editable V1-to-V2 preview only; inferred legacy roles/facts require review, and preview construction does not save or rewrite history.
 - `kb-source-contract.ts` / `kb-sources.ts` / `kb-source-handler.ts` — owned exact-copy source receipts, actual query rows/counts, conservative competitor identities and inspectable fact support; a filled URL or model assertion is not verified evidence.

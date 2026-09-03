@@ -14,6 +14,7 @@ import { emptyGeoKbPayload } from "../../lib/geo-tools/kb-contract.ts";
 import { consumeGeoBriefReturn, GEO_BRIEF_RETURN_KEY, GEO_KNOWLEDGE_REPAIR_KEY, writeGeoKnowledgeRepair } from "../../lib/geo-tools/brief-knowledge-handoff.ts";
 import { GeoKnowledgeBase } from "./geo-knowledge-base.tsx";
 import type { GeoKbView } from "./geo-kb-wire.ts";
+import { renderedText } from "./rendered-text.test-helper.ts";
 
 const KB_ID = "36d8b87a-cbd5-45c0-b921-ffb283d9f4b1";
 const OLD_SNAPSHOT = "282d7c7c-e641-43ea-8cfb-c34f57c973cb";
@@ -455,8 +456,11 @@ describe("knowledge repair", () => {
       .mockResolvedValueOnce(Response.json({ data: { draftVersion: 3, updatedAt: "2026-08-31T00:00:00Z", blockers: [] } }));
     await mount();
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain("Confirmed feature");
-    expect([...container.querySelectorAll("input")].some((input) => input.value === "Original Profile name")).toBe(false);
+    expect(renderedText(container)).toContain("Confirmed feature");
+    // Shown, never editable here: the inherited name is a read-only control.
+    const nameControls = [...container.querySelectorAll("input")].filter((input) => input.value === "Original Profile name");
+    expect(nameControls.length).toBeGreaterThan(0);
+    expect(nameControls.every((input) => input.readOnly)).toBe(true);
     expect(container.textContent).toContain("项目管理");
     expect(button(copy("freeze.action")).disabled).toBe(true);
     await type(field(copy("repair.primaryCategory")), "project management");

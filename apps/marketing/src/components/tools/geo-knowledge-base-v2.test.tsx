@@ -103,12 +103,68 @@ it("turns an inherited feature into a pending fact carrying the source the Profi
   expect(fetch).not.toHaveBeenCalled();
 });
 
+it("builds the whole knowledge base from the confirmed Profile in one gesture", async () => {
+  const base = editorFixture();
+  // A knowledge base that has the Profile copy but none of what GEO derives
+  // from it: this is the state a visitor lands in right after confirming.
+  const view = { ...base, prepared: null, payload: { ...base.payload, officialName: "", aliases: [], categoryTerms: [], competitors: [],
+    profileCopy: { ...base.payload.profileCopy, profile: { ...base.payload.profileCopy.profile, categories: ["invoice software"], directCompetitors: ["rival.example"] } } } };
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(Response.json({ data: { draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] } }))
+    .mockResolvedValueOnce(Response.json({ data: sourceFixture({ ...view, draftVersion: 2, draftHash: "c".repeat(64) }) }))
+    .mockResolvedValueOnce(Response.json({ data: { generation: { generationId: "44444444-4444-4444-8444-444444444444", kbId: view.kbId, kind: "roles", inputHash: "d".repeat(64), state: "dispatched", result: null, errorReason: null, attempt: null }, reused: false } }));
+  await render(view);
+
+  await click("[data-build-v2]");
+
+  const paths = vi.mocked(fetch).mock.calls.map(call => String(call[0]));
+  expect(paths).toEqual(["/api/tools/geo-knowledge-base/v2/draft", "/api/tools/geo-knowledge-base/v2/sources", "/api/tools/geo-knowledge-base/v2/roles"]);
+  const saved = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)) as { payload: { officialName: string; aliases: string[]; categoryTerms: string[]; competitors: { domain: string }[] } };
+  expect(saved.payload.officialName).toBe("Acme");
+  expect(saved.payload.categoryTerms).toEqual(["invoice software"]);
+  expect(saved.payload.aliases).toContain("Acme");
+  expect(saved.payload.competitors.map(row => row.domain)).toEqual(["rival.example"]);
+  const report = host.querySelector("[data-geo-v2-build-report]");
+  expect(report?.querySelector("[data-build-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildDone);
+  expect(report?.querySelector("[data-build-aliases]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildAliases.adopted);
+});
+
+it("stops the build at the failed step instead of paying for the model call after it", async () => {
+  const base = editorFixture();
+  const view = { ...base, prepared: null, payload: { ...base.payload, aliases: [] } };
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "rate_limited" } }, { status: 429 }));
+  await render(view);
+
+  await click("[data-build-v2]");
+
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe("/api/tools/geo-knowledge-base/v2/draft");
+  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildStopped.save);
+});
+
+it("refuses to build onto a draft whose Profile copy is behind, and says which step comes first", async () => {
+  const base = editorFixture();
+  const view = { ...base, profile: base.profile === null ? null : { ...base.profile, reference: { ...base.profile.reference, snapshotRevision: 9, profileHash: "e".repeat(64) } } };
+  await render(view);
+
+  await click("[data-build-v2]");
+
+  expect(fetch).not.toHaveBeenCalled();
+  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildStopped.copy);
+});
 it("reads as three named parts with one ordered progress model", async () => {
   await render();
   expect([...host.querySelectorAll("[data-geo-v2-block]")].map(node => node.getAttribute("data-geo-v2-block"))).toEqual(["profile", "supplement", "run"]);
   expect(host.querySelector('[data-geo-v2-block="profile"]')?.querySelector("[data-geo-profile-summary]")).not.toBeNull();
   expect(host.querySelector('[data-geo-v2-block="supplement"]')?.querySelector('[data-base-field="officialName"]')).not.toBeNull();
-  expect(host.querySelector('[data-geo-v2-block="run"]')?.querySelector("[data-save-v2]")).not.toBeNull();
+  // The two primary actions sit in the header, as they do in the Profile
+  // editor, so the first thing on screen is the thing most visitors press.
+  // The run block keeps the per-step generation actions the progress list names.
+  const header = host.querySelector("[data-save-state]")?.closest("div.rounded-card");
+  expect(header?.querySelector("[data-build-v2]")).not.toBeNull();
+  expect(header?.querySelector("[data-save-v2]")).not.toBeNull();
+  expect(host.querySelector('[data-geo-v2-block="run"]')?.querySelector("[data-refresh-sources]")).not.toBeNull();
+  expect(host.querySelector('[data-geo-v2-block="run"]')?.querySelector("[data-save-v2]")).toBeNull();
   expect([...host.querySelectorAll("[data-step]")].map(node => node.getAttribute("data-step"))).toEqual(["save", "sources", "roles", "prepare", "freeze"]);
   expect(host.querySelector('[data-step="freeze"]')?.textContent).toContain(en.tools.geoKnowledgeBase.steps.reasons.notReviewed);
 });

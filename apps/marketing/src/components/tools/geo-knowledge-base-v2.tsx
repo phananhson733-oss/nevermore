@@ -21,6 +21,7 @@ import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
 import { GeoKbV2Progress } from "./geo-kb-v2-progress.tsx";
 import { GeoKbV2Block } from "./geo-kb-v2-block.tsx";
 import { GeoKbFrozenSummary } from "./geo-kb-frozen-summary.tsx";
+import { GeoKbV2BuildReport } from "./geo-kb-v2-build-report.tsx";
 
 export interface GeoKnowledgeBaseV2Props {
   readonly initialView: GeoKbEditorViewV2; readonly locale: string; readonly inline?: boolean;
@@ -41,10 +42,26 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       event.preventDefault(); const next = event.key === "Home" ? "input" : event.key === "End" ? "frozen" : value === "input" ? "frozen" : "input";
       setStage(next); document.getElementById(`${id}-${next}-tab`)?.focus();
     }}>{t[value]}</Button>)}</div>
-    {/* One persistent live region whose text changes, as the Profile editor above does; a node inserted per change is not reliably announced. */}
-    <p aria-live="polite" aria-atomic="true" data-save-state={saveState} {...(saveState === "savePending" ? { "data-save-pending": true } : {})} className="min-h-5 text-sm text-text-dark-secondary">
-      {saveState === "unsaved" ? t.unsaved : saveState === "conflict" ? te("conflictPending") : saveState === "savePending" ? te("savePending") : saveState === "neverSaved" ? te("neverSaved") : saveState === "saved" ? t.saved : ""}
-    </p>
+    {/* The Profile editor's header, in the same order: which website this is,
+        one persistent live region whose text changes (a node inserted per
+        change is not reliably announced), then the primary actions. */}
+    <div className="flex min-w-0 flex-col gap-4 rounded-card border border-brand-border-card bg-brand-panel p-6">
+      <div>
+        <p className="break-all font-mono text-[11px] text-brand-accent-text">{view.host}</p>
+        <p aria-live="polite" aria-atomic="true" data-save-state={saveState} {...(saveState === "savePending" ? { "data-save-pending": true } : {})} className="mt-2 min-h-5 text-[13px] text-text-dark-secondary">
+          {saveState === "unsaved" ? t.unsaved : saveState === "conflict" ? te("conflictPending") : saveState === "savePending" ? te("savePending") : saveState === "neverSaved" ? te("neverSaved") : saveState === "saved" ? t.saved : ""}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button data-build-v2 type="button" disabled={editor.busy || editor.building} onClick={() => void editor.buildFromProfile()}>{editor.building ? te("buildBusy") : te("build")}</Button>
+        <Button data-save-v2 type="button" variant="outline" disabled={editor.busy || editor.building} onClick={() => void editor.save()}>{editor.busy && editor.status.kind === "busy" && editor.status.operation === "save" ? t.busy : t.save}</Button>
+      </div>
+      {/* Next to the Save button it describes. The progress list names the
+          blocking gate, so this states only the autosave state, and truthfully. */}
+      <p data-autosave-hint={editor.autosaveHold ?? "on"} className="text-[12px] leading-relaxed text-text-dark-secondary">{editor.autosaveHold === null || editor.autosaveHold === "busy" ? te("autosave") : te(`autosaveHeld.${editor.autosaveHold}`)}</p>
+      <p className="text-[12px] leading-relaxed text-text-dark-secondary">{te("buildHelp")}</p>
+      {editor.build === null ? null : <GeoKbV2BuildReport report={editor.build} locale={props.locale} />}
+    </div>
     {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? te("conflict") : editor.status.code === "generation_running" ? te("generationRunning") : t.error} <span className="break-all font-mono text-xs">{editor.status.code}</span></p> : null}
     <div role="tabpanel" hidden={stage !== "input"} id={`${id}-input-panel`} aria-labelledby={`${id}-input-tab`} className="space-y-6">
       <GeoKbV2Block id="profile"><GeoKbInheritedProfile profile={view.profile} copy={payload.profileCopy} locale={props.locale} inline facts={payload.facts} onAddFact={(key, value) => {
@@ -65,12 +82,10 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
         hasCandidate={view.prepared !== null} candidateStale={editor.candidateStale} reviewed={editor.reviewed}
         frozenAtCurrentDraft={view.frozen !== null && "context" in view.frozen && view.frozen.contentHash === view.draftHash} />
       <div className="space-y-3"><div className="flex flex-wrap gap-3">
-        <Button data-save-v2 type="button" disabled={editor.busy} onClick={() => void editor.save()}>{editor.busy && editor.status.kind === "busy" && editor.status.operation === "save" ? t.busy : t.save}</Button>
         <Button data-refresh-sources type="button" variant="outline" disabled={!editor.canGenerate} onClick={() => void editor.refreshSources()}>{t.sources}</Button>
         <Button data-generate="roles" type="button" variant="outline" disabled={blockedGeneration("roles")} onClick={() => void editor.generate("roles")}>{t.generateRoles}</Button>
         <Button data-generate="questions" type="button" variant="outline" disabled={blockedGeneration("questions")} onClick={() => void editor.generate("questions")}>{t.prepare}</Button>
-      </div>{/* The progress list above names the blocking gate, so only the autosave state is stated here, and only truthfully. */}
-      <p data-autosave-hint={editor.autosaveHold ?? "on"} className="text-sm text-text-dark-secondary">{editor.autosaveHold === null || editor.autosaveHold === "busy" ? te("autosave") : te(`autosaveHeld.${editor.autosaveHold}`)}</p></div>
+      </div></div>
       {(["roles", "questions"] as const).map(kind => {
         const action = editor.generationAction(kind);
         if (action !== "new_input" && action !== "resend_same") return null;
