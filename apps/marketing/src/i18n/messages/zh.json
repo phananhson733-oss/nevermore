@@ -7184,7 +7184,7 @@
       "metaDescription": "一个 GenGrowth Agent，基于公开静态 HTML：页面内容信号、抓取响应、索引指令与内链在同一次检查里完成，每一条状态都说明来源以及哪些没有被测量。",
       "breadcrumb": "Agents 智能体",
       "eyebrow": "聚焦式网站检查",
-      "title": "一个 SEO Agent，既看整站也看单页",
+      "title": "一个 SEO Agent，既看整站也看关键页",
       "subtitle": "对公开静态 HTML 的有证据边界检查：页面内容信号、抓取响应、索引指令与内链，都在同一处。每一条状态都会说明它由哪个来源得出、以及哪些没有被测量。",
       "boundary": "结果不会保存到 App 项目，不使用 Search Console，也不声称流量影响或自动优先级。读取任何 URL 之前都需要已验证账号。",
       "seo": {

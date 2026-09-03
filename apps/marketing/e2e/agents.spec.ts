@@ -419,22 +419,16 @@ test("signed-in SEO run renders bounded evidence and a truthful recommendation b
   const results = page.getByTestId("agent-results-seo");
   await expect(results).toBeVisible();
   await expect(results.getByText("Pages inspected")).toBeVisible();
-  await expect(page.getByTestId("agent-diagnosis")).toBeVisible();
-  await expect(page.getByTestId("diagnosis-group-D")).toHaveAttribute(
-    "aria-pressed",
-    "true",
+  // One list, site-wide and page-level together; the scope switch and the
+  // group ledger it lived in are gone.
+  await expect(page.locator('[data-testid^="diagnosis-scope-"]')).toHaveCount(
+    0,
   );
-  await page.getByTestId("diagnosis-scope-page").click();
-  await expect(page.getByText("9 groups · 49 checks")).toBeVisible();
-  await expect(page.getByTestId("diagnosis-group-2")).toHaveAttribute(
-    "aria-pressed",
-    "true",
+  await expect(page.locator('[data-testid^="diagnosis-group-"]')).toHaveCount(
+    0,
   );
-  await page.getByTestId("diagnosis-group-3").click();
-  await page.getByTestId("diagnosis-check-3.4").click();
-  await expect(page.getByTestId("diagnosis-heading-preset")).toContainText(
-    "H2 3–6",
-  );
+  await expect(page.locator('[data-issue-row^="seo:site:"]').first()).toBeVisible();
+  await expect(page.locator('[data-issue-row^="seo:page:"]').first()).toBeVisible();
   await expect(page.locator('[data-testid^="diagnosis-policy-"]')).toHaveCount(
     0,
   );
@@ -456,9 +450,8 @@ test("signed-in SEO run renders bounded evidence and a truthful recommendation b
   );
   await expect(page.locator("[data-issue-copy]").first()).toBeVisible();
 
-  // Comparing two findings at once is the whole point of the accordion, so it
-  // is asserted in the scope that has more than one to compare.
-  await page.getByTestId("diagnosis-scope-site").click();
+  // Comparing two findings at once is the whole point of the accordion.
+  await page.getByRole("button", { name: "Collapse all" }).click();
   const siteRows = page.locator("[data-issue-row]");
   expect(await siteRows.count()).toBeGreaterThan(1);
   await expect(page.locator("[data-issue-detail]")).toHaveCount(0);
@@ -510,9 +503,8 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   await completeRequiredProfileContext(page, "zh", "技术 SEO 审计");
   await page.getByRole("button", { name: "接受上下文并运行" }).click();
   await expect(page.getByTestId("agent-results-tech")).toBeVisible();
-  await expect(page.getByTestId("diagnosis-group-C")).toHaveAttribute(
-    "aria-pressed",
-    "true",
+  await expect(page.locator('[data-testid^="diagnosis-group-"]')).toHaveCount(
+    0,
   );
   await expect(page.getByTestId("agent-issue-accordion")).toBeVisible();
   await page.getByRole("button", { name: "展开当前筛选" }).click();
