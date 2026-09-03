@@ -7,12 +7,16 @@ import en from "../../i18n/messages/en.json";
 import { emptyMarketingWebsiteProfile, WEBSITE_PROFILE_FIELD_NAMES } from "../../lib/account-websites/contracts.ts";
 import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { renderedText } from "./rendered-text.test-helper.ts";
+import { GEO_PROFILE_SUBSET_FIELDS } from "../../lib/geo-tools/kb-profile-subset.ts";
 
 const fullProfile = { ...emptyMarketingWebsiteProfile(), productName: "Copied product", oneLinePositioning: "Copied positioning",
   coreFeatures: Array.from({ length: 32 }, (_, i) => `Complete feature ${i + 1}`), valueProposition: "Copied value",
   primaryIcp: "Copied ICP", buyer: "Copied buyer", country: "CA", locale: "en-CA", directCompetitors: ["rival.example"],
   fieldProvenance: [{ path: "/productName" as const, derivation: "observed" as const, confidence: "high" as const,
-    source: "public_page" as const, observedAt: "2026-08-31T00:00:00.000Z", evidenceUrls: ["https://example.com/about"], limitation: null }] };
+    source: "public_page" as const, observedAt: "2026-08-31T00:00:00.000Z", evidenceUrls: ["https://example.com/about"], limitation: null },
+    // A field GEO does not read, so the source list must not describe it either.
+    { path: "/jtbd" as const, derivation: "inferred" as const, confidence: "low" as const,
+      source: "local_inference" as const, observedAt: null, evidenceUrls: [], limitation: null }] };
 const reference = { schemaVersion: "website-profile-reference.v1" as const, websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6",
   snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987", snapshotRevision: 2, profileSchemaVersion: "marketing-website-profile.v1" as const, profileHash: "a".repeat(64) };
 const copy = { schemaVersion: "marketing-geo-profile-copy.v1" as const, websiteId: reference.websiteId, snapshotId: reference.snapshotId,
@@ -65,7 +69,7 @@ describe("complete GEO Profile copy display", () => {
     expect(new Set(ids).size).toBe(ids.length);
     for (const label of host.querySelectorAll("label")) expect(label.control).not.toBeNull();
   });
-  it("shows every copied field, including the 32nd feature and provenance, in read-only Profile-style controls", async () => {
+  it("shows the fields GEO reads, including the 32nd feature and their provenance, in read-only Profile-style controls", async () => {
     await render();
     const values = [...host.querySelectorAll("input,textarea")].map((node) => (node as HTMLInputElement | HTMLTextAreaElement).value);
     expect(values).toContain("Copied product");
@@ -73,8 +77,18 @@ describe("complete GEO Profile copy display", () => {
     expect(values).toContain("Complete feature 32");
     expect(values).toContain("en-CA");
     expect(host.querySelector('a[href="https://example.com/about"]')).not.toBeNull();
+    // Only the fields GEO reads. The other fifteen belong to the Profile
+    // editor one card above; showing them here presented values nothing in
+    // GEO consumes as though they were part of this asset.
     const names = [...host.querySelectorAll("[data-geo-profile-field]")].map(node => node.getAttribute("data-geo-profile-field"));
-    expect(names.sort()).toEqual([...WEBSITE_PROFILE_FIELD_NAMES].sort());
+    expect(names.sort()).toEqual([...GEO_PROFILE_SUBSET_FIELDS].sort());
+    expect(names).not.toContain("jtbd");
+    expect(names).not.toContain("businessModel");
+    expect(names.length).toBeLessThan(WEBSITE_PROFILE_FIELD_NAMES.length);
+    // The source list follows the fields, so it does not describe rows that
+    // are no longer here.
+    const provenance = host.querySelector("details:last-of-type")?.textContent ?? "";
+    expect(provenance).not.toContain(en.account.websites.fields.jtbd);
     const controls = [...host.querySelectorAll("input,textarea")];
     expect(controls.length).toBeGreaterThan(0);
     expect(controls.every((node) => node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement ? node.readOnly : false)).toBe(true);
