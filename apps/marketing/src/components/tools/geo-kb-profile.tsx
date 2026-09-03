@@ -16,13 +16,24 @@ import { Input } from "../ui/input.tsx";
 import { Label } from "../ui/label.tsx";
 import { Textarea } from "../ui/textarea.tsx";
 import { GeoKbFieldRow, GeoKbFieldRows, GeoKbReadout, GeoKbSection } from "./geo-kb-section.tsx";
+import { GEO_PROFILE_SUBSET_FIELDS } from "../../lib/geo-tools/kb-profile-subset.ts";
 
-const GROUPS = [
+/**
+ * Only the Profile fields GEO reads. Showing all 28 presented fifteen values
+ * that nothing in GEO consumes as though they were part of this asset; the
+ * Profile editor one card above is where they are read and edited. The list is
+ * derived from `GEO_PROFILE_SUBSET_FIELDS` rather than restated, so a field
+ * added to what GEO consumes appears here without a second edit.
+ */
+const SHOWN = new Set<string>(GEO_PROFILE_SUBSET_FIELDS);
+const GROUPS = ([
   { title: "productSection", fields: ["productName", "oneLinePositioning", "valueProposition", "coreFeatures", "categories", "businessModel", "primaryCta", "trustSignals", "firstOutcome"] },
   { title: "icpSection", fields: ["primaryIcp", "buyer", "user", "triggerPain", "icpInterests", "icpPain", "icpBehavior", "icpPositioning", "jtbd", "useCases", "outcomes", "barriers", "qualificationSignals", "disqualifiers"] },
   { title: "marketSection", fields: ["country", "locale"] },
   { title: "competitorSection", fields: ["directCompetitors", "indirectAlternatives", "excludedAlternatives"] },
-] as const satisfies readonly { readonly title: string; readonly fields: readonly WebsiteProfileFieldName[] }[];
+] as const satisfies readonly { readonly title: string; readonly fields: readonly WebsiteProfileFieldName[] }[])
+  .map(group => ({ title: group.title, fields: group.fields.filter(field => SHOWN.has(field)) }))
+  .filter(group => group.fields.length > 0);
 
 const COMPACT_FIELDS = new Set<WebsiteProfileFieldName>([
   "productName",
@@ -218,7 +229,7 @@ function CompleteProfileFields({ profile }: {
     <details className="py-4">
       <summary className="cursor-pointer text-[14px] font-semibold text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent">{t("asset.provenanceTitle")}</summary>
       <ul className="mt-4 space-y-4 text-[12px] text-text-dark-secondary">
-        {profile.fieldProvenance.map((entry) => <li key={entry.path} className="min-w-0 space-y-2">
+        {profile.fieldProvenance.filter((entry) => SHOWN.has(entry.path.slice(1))).map((entry) => <li key={entry.path} className="min-w-0 space-y-2">
           <p>{labels(entry.path.slice(1) as WebsiteProfileFieldName)} · {entry.source} · {entry.derivation} · {entry.confidence}</p>
           {entry.observedAt === null ? null : <p>{t("asset.observedAt", { time: entry.observedAt })}</p>}
           {entry.limitation === null ? null : <p className="break-words">{entry.limitation}</p>}
