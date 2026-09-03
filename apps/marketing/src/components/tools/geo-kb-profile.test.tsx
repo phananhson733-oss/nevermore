@@ -38,7 +38,6 @@ describe("complete GEO Profile copy display", () => {
   it("allows the prepared-version view to describe its copy without calling it already frozen", async () => {
     await render({ copyDescription: "This is the exact version currently under review." });
     expect(host.textContent).toContain("This is the exact version currently under review.");
-    expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.asset.copyBody);
     expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.asset.frozenCopyBody);
   });
   it("stages exact Profile values as pending facts without calling them verified", async () => {
@@ -54,29 +53,59 @@ describe("complete GEO Profile copy display", () => {
     ]);
     expect(host.textContent).toContain(en.tools.geoKnowledgeBase.asset.profileFactBoundary);
   });
+  it("offers no fact action on a blank field instead of a length complaint", async () => {
+    // A blank value is one of the two fields that carry the action, so this is
+    // a row that really can render a button. `pendingGeoProfileFact` reports a
+    // blank value as `too_long`, and the disabled button then read "the name
+    // exceeds the fact-name limit" about a field with nothing in it.
+    await render({ onAddFact: vi.fn(), copy: { ...copy, profile: { ...fullProfile, oneLinePositioning: "" } } });
+    const blank = host.querySelector('[data-geo-profile-field="oneLinePositioning"]');
+    expect(renderedText(blank)).toContain(en.tools.geoKnowledgeBase.asset.emptyField);
+    expect(blank?.querySelectorAll("button")).toHaveLength(0);
+    expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.asset.featureCandidateTooLong);
+    // The filled field beside it still offers one.
+    expect(host.querySelector('[data-geo-profile-field="productName"]')?.querySelectorAll("button")).toHaveLength(1);
+  });
+  it("does not repeat the surrounding block's description, and still describes a frozen copy", async () => {
+    await render();
+    // The block above the card already says the copy belongs to this draft and
+    // how it is updated. The panel adds no second description of its own.
+    expect(host.querySelector("[data-geo-profile-fields]")?.previousElementSibling).toBeNull();
+    expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.asset.frozenCopyBody);
+    await render({ frozen: true });
+    // A frozen copy is the one case the panel has something of its own to say:
+    // this is what was saved then, and neither editor changes it now.
+    expect(host.textContent).toContain(en.tools.geoKnowledgeBase.asset.frozenCopyBody);
+  });
   it("disables a candidate whose stable fact key already exists", async () => {
     await render({ onAddFact: vi.fn(), facts: [{ key: "productName", value: "Copied product", reason: "", sourceUrl: "https://example.com", observedAt: "2026-09-01" }] });
     const disabled = [...host.querySelectorAll<HTMLButtonElement>("button")].filter(button => button.disabled);
     expect(disabled).toHaveLength(1);
     expect(disabled[0]?.textContent).toBe(en.tools.geoKnowledgeBase.asset.featureCandidateExists);
   });
-  it("gives current and frozen copies independent input and label identities", async () => {
+  it("gives current and frozen copies independent identities", async () => {
     await act(async () => root.render(<NextIntlClientProvider locale="en" messages={en}>
       <GeoKbInheritedProfile profile={null} copy={copy} locale="en" />
       <GeoKbInheritedProfile profile={null} copy={copy} locale="en" />
     </NextIntlClientProvider>));
     const ids = [...host.querySelectorAll("[id]")].map(node => node.id);
     expect(new Set(ids).size).toBe(ids.length);
-    for (const label of host.querySelectorAll("label")) expect(label.control).not.toBeNull();
+    // Each panel's heading has to be the one its own region points at, or a
+    // screen reader announces both regions under the same name.
+    const regions = [...host.querySelectorAll("section[aria-labelledby]")];
+    expect(regions).toHaveLength(2);
+    for (const region of regions) {
+      const named = region.getAttribute("aria-labelledby") ?? "";
+      expect([...host.querySelectorAll("[id]")].filter(node => node.id === named)).toHaveLength(1);
+    }
   });
-  it("shows the fields GEO reads, including the 32nd feature and their provenance, in read-only Profile-style controls", async () => {
+  it("shows the fields GEO reads, and reads them out rather than faking editable controls", async () => {
     await render();
-    const values = [...host.querySelectorAll("input,textarea")].map((node) => (node as HTMLInputElement | HTMLTextAreaElement).value);
-    expect(values).toContain("Copied product");
-    expect(values).toContain("Copied ICP");
-    expect(values).toContain("Complete feature 32");
-    expect(values).toContain("en-CA");
-    expect(host.querySelector('a[href="https://example.com/about"]')).not.toBeNull();
+    const text = renderedText(host);
+    expect(text).toContain("Copied product");
+    expect(text).toContain("Copied ICP");
+    expect(text).toContain("Complete feature 32");
+    expect(text).toContain("en-CA");
     // Only the fields GEO reads. The other fifteen belong to the Profile
     // editor one card above; showing them here presented values nothing in
     // GEO consumes as though they were part of this asset.
@@ -85,44 +114,85 @@ describe("complete GEO Profile copy display", () => {
     expect(names).not.toContain("jtbd");
     expect(names).not.toContain("businessModel");
     expect(names.length).toBeLessThan(WEBSITE_PROFILE_FIELD_NAMES.length);
-    // The source list follows the fields, so it does not describe rows that
-    // are no longer here.
-    const provenance = host.querySelector("details:last-of-type")?.textContent ?? "";
-    expect(provenance).not.toContain(en.account.websites.fields.jtbd);
-    const controls = [...host.querySelectorAll("input,textarea")];
-    expect(controls.length).toBeGreaterThan(0);
-    expect(controls.every((node) => node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement ? node.readOnly : false)).toBe(true);
+    // Nothing here is typed into: the values are edited in the Profile. A
+    // read-only input would still carry a caret and a focus ring, and an empty
+    // one would hide its "not provided" text in a placeholder.
+    expect(host.querySelectorAll("input,textarea,select")).toHaveLength(0);
+    for (const field of names) expect(host.querySelector(`[data-geo-profile-field="${field}"] [data-geo-readout]`)).not.toBeNull();
   });
-  it("leads with the values GEO actually measures and keeps the rest one disclosure away", async () => {
+  it("shows every value at rest and says nothing about where it came from", async () => {
     await render();
-    const summary = host.querySelector("[data-geo-profile-summary]");
-    expect(summary).not.toBeNull();
-    // Inherited values are rendered as read-only controls, as they are in the
-    // Profile editor, so what the visitor reads includes those values.
-    expect(renderedText(summary)).toContain("Copied product");
-    expect(renderedText(summary)).toContain("Copied positioning");
-    expect(renderedText(summary)).toContain("Complete feature 1");
-    expect(renderedText(summary)).toContain("CA · en-CA");
-    expect(renderedText(summary)).not.toContain("Copied ICP");
-    const complete = host.querySelector<HTMLDetailsElement>("details[data-geo-copy-complete]");
-    expect(complete).not.toBeNull();
-    expect(complete?.open).toBe(false);
-    expect(complete?.textContent).toContain(en.tools.geoKnowledgeBase.asset.hash.replace("{hash}", "a".repeat(64)));
-    expect(complete?.querySelector('[data-geo-profile-field="primaryIcp"]')).not.toBeNull();
-    expect(host.textContent).toContain(en.tools.geoKnowledgeBase.asset.copyScopeNote);
+    // No disclosure to open: each of the 13 is legible without a gesture.
+    expect(host.querySelectorAll("details")).toHaveLength(0);
+    const text = renderedText(host);
+    expect(text).toContain("Copied product");
+    expect(text).toContain("Copied ICP");
+    // The hash, the revision, the per-field source list and its evidence links
+    // describe how the value was produced. The question this panel asks is
+    // whether the value matches the product, which none of them answers.
+    expect(text).not.toContain(en.tools.geoKnowledgeBase.asset.hash.replace("{hash}", "a".repeat(64)));
+    expect(text).not.toContain("public_page");
+    expect(host.querySelector('a[href="https://example.com/about"]')).toBeNull();
   });
   it("offers one fact action per Profile value rather than one per rendering of it", async () => {
     await render({ onAddFact: vi.fn() });
-    const complete = host.querySelector("details[data-geo-copy-complete]");
-    expect(complete?.querySelectorAll("button")).toHaveLength(0);
     const keys = [...host.querySelectorAll<HTMLButtonElement>("button")].map(button => button.getAttribute("aria-label"));
+    expect(keys).toHaveLength(34);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+  it("names the snapshot only where the record is the point", async () => {
+    // The editor asks whether the values fit the product; the archival views
+    // exist to record which confirmed Profile revision a frozen version used.
+    await render();
+    expect(host.querySelector("[data-geo-copy-identity]")).toBeNull();
+    await render({ frozen: true });
+    const identity = host.querySelector("[data-geo-copy-identity]");
+    expect(identity?.textContent).toContain("2");
+    expect(identity?.textContent).toContain("a".repeat(64));
+  });
+  it("gives every field row a name a screen reader can reach it by", async () => {
+    await render();
+    // The values are read out, not typed into, so there is no control to hang
+    // htmlFor on. Adjacency is a name only when read straight down.
+    const rows = [...host.querySelectorAll<HTMLElement>("[data-geo-profile-field]")];
+    expect(rows.length).toBe(GEO_PROFILE_SUBSET_FIELDS.length);
+    for (const row of rows) {
+      expect(row.getAttribute("role")).toBe("group");
+      const named = row.getAttribute("aria-labelledby") ?? "";
+      const label = [...host.querySelectorAll("[id]")].filter(node => node.id === named);
+      expect(label).toHaveLength(1);
+      expect(label[0]?.textContent?.trim()).not.toBe("");
+    }
+    // The group titles are real headings one level under the panel, so they can
+    // be jumped to; a styled <p> replaced a <summary> that could be.
+    const panel = host.querySelector("section[aria-labelledby]");
+    const depth = panel?.querySelector("h2") !== null ? "h3" : "h5";
+    expect(host.querySelectorAll(`[data-geo-profile-group] > ${depth}`).length).toBe(host.querySelectorAll("[data-geo-profile-group]").length);
+  });
+  it("names the address a fact action will carry, and says when it will carry none", async () => {
+    // The button writes a citation. Without this the visitor presses it and a
+    // row appears carrying a source URL and capture time they never saw.
+    await render({ onAddFact: vi.fn() });
+    const carried = host.querySelector('[data-fact-source="productName"]');
+    expect(carried?.textContent).toContain("https://example.com/about");
+    expect(carried?.textContent).toContain("2026-08-31T00:00:00.000Z");
+    const button = host.querySelector('[data-geo-profile-field="productName"] button');
+    expect(button?.getAttribute("aria-describedby")).toBe(carried?.id);
+    expect(carried?.id).toBeTruthy();
+    // oneLinePositioning has no observed single-page provenance in the fixture,
+    // so nothing is carried and nothing is said: the note appears only where an
+    // address will actually be written into the new fact.
+    expect(host.querySelector('[data-fact-source="oneLinePositioning"]')).toBeNull();
+    expect(host.querySelectorAll("[data-fact-source]")).toHaveLength(1);
   });
   it("does not replace a saved copy with the latest Profile proposal", async () => {
     await render();
-    const values = [...host.querySelectorAll("input,textarea")].map((node) => (node as HTMLInputElement | HTMLTextAreaElement).value);
-    expect(values).toContain("Copied product");
+    // The panel reads the draft's own copy. `latest` carries a newer Profile;
+    // nothing from it may appear until the copy is explicitly adopted. Pinning
+    // the revision number here would be a dead pin -- "2" occurs in half the
+    // fixture -- so the check is on the values themselves.
+    expect(renderedText(host)).toContain("Copied product");
     expect(host.textContent).not.toContain("New source, not copied");
-    expect(host.textContent).toContain("2");
+    expect(host.textContent).not.toContain("New source feature");
   });
 });

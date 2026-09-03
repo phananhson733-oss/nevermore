@@ -34,7 +34,7 @@ test("confirmed Profile v2 is explicitly copied, reviewed, saved and frozen befo
   await expect(reviewLink).toHaveAttribute("href", `/account/websites/${fixture.website.websiteId}/geo`);
   await reviewLink.click();
   await expect(page).toHaveURL(new RegExp(`/account/websites/${fixture.website.websiteId}/geo$`));
-  await expect(page.locator('[data-geo-profile-field="productName"] input').first()).toHaveValue("Acme");
+  await expect(page.locator('[data-geo-profile-field="productName"] [data-geo-readout]').first()).toHaveText("Acme");
   await expect(page.getByText(kb.asset.copyStale, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: kb.asset.reviewCopy, exact: true }).click();
   const copyReview = page.locator('section[aria-labelledby="geo-copy-review-title"]');
@@ -42,7 +42,7 @@ test("confirmed Profile v2 is explicitly copied, reviewed, saved and frozen befo
   expect(state.savedPayloads).toEqual([]);
   await copyReview.getByRole("button", { name: kb.asset.applyCopy, exact: true }).click();
   await expect(copyReview).toHaveCount(0);
-  await expect(page.locator('[data-geo-profile-field="productName"] input').first()).toHaveValue("Acme Insight");
+  await expect(page.locator('[data-geo-profile-field="productName"] [data-geo-readout]').first()).toHaveText("Acme Insight");
   expect(state.savedPayloads).toEqual([]);
   const measurement = page.locator("[data-measurement-review]");
   await measurement.locator(":scope > summary").click();

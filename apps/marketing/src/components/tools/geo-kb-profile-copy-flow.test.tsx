@@ -8,6 +8,7 @@ import { emptyMarketingWebsiteProfile, profileSha256, type WebsiteProfileReferen
 import { emptyGeoKbPayload } from "../../lib/geo-tools/kb-contract.ts";
 import { createGeoProfileCopy } from "../../lib/geo-tools/kb-profile-copy.ts";
 import { GeoKnowledgeBase } from "./geo-knowledge-base.tsx";
+import { renderedText } from "./rendered-text.test-helper.ts";
 import type { GeoKbView } from "./geo-kb-wire.ts";
 
 const WEBSITE = "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6";
@@ -89,7 +90,7 @@ describe("explicit complete Profile copy adoption", () => {
     fetchMock.mockResolvedValueOnce(Response.json({ data: frozen }));
     await render();
     await act(async () => button(en.tools.geoKnowledgeBase.freeze.action).click());
-    expect([...(host.querySelector('[data-frozen-knowledge-base]')?.querySelectorAll<HTMLInputElement>("input") ?? [])].some(input => input.value === "New confirmed Profile product")).toBe(true);
+    expect(renderedText(host.querySelector('[data-frozen-knowledge-base]'))).toContain("New confirmed Profile product");
     expect(host.querySelector('[data-frozen-knowledge-base]')?.textContent).not.toContain("does not contain a complete Profile copy");
   });
   it("keeps a shared base name read-only and associates GEO controls with their labels", async () => {
@@ -104,12 +105,14 @@ describe("explicit complete Profile copy adoption", () => {
   });
   it("previews then copies the source without resetting GEO operations or saving implicitly", async () => {
     await render();
-    const currentValues = () => [...host.querySelectorAll("input,textarea")].map((node) => (node as HTMLInputElement | HTMLTextAreaElement).value);
+    const currentValues = () => renderedText(host.querySelector("[data-geo-profile-fields]"));
     expect(currentValues()).toContain("Original Profile product");
     expect(button(en.tools.geoKnowledgeBase.freeze.action).disabled).toBe(true);
     await act(async () => button("Review latest confirmed Profile").click());
     expect(host.textContent).toContain("New confirmed Profile product");
+    // The proposal is visible, but the draft's own copy is untouched until adopted.
     expect(currentValues()).toContain("Original Profile product");
+    expect(currentValues()).not.toContain("New confirmed Profile product");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await act(async () => button("Copy this version into the GEO draft").click());
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -121,7 +124,7 @@ describe("explicit complete Profile copy adoption", () => {
     expect(sent.expectedProfileReference).toEqual(view.profile?.reference);
     expect(sent.baseVersion).toBe(7);
     expect(button(en.tools.geoKnowledgeBase.freeze.action).disabled).toBe(false);
-    const frozenValues = [...(host.querySelector('[data-frozen-knowledge-base]')?.querySelectorAll("input,textarea") ?? [])].map((node) => (node as HTMLInputElement | HTMLTextAreaElement).value);
+    const frozenValues = renderedText(host.querySelector('[data-frozen-knowledge-base]'));
     expect(frozenValues).toContain("Original Profile product");
     expect(frozenValues).not.toContain("New confirmed Profile product");
   });

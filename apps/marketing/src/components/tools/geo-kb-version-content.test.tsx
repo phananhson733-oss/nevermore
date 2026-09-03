@@ -11,6 +11,7 @@ import type { GeoKbPayloadV2 } from "../../lib/geo-tools/kb-v2-contract.ts";
 import type { GeoQuestionSetV2 } from "../../lib/geo-tools/kb-question-set-v2.ts";
 import { GeoKbVersionContent, type GeoKbVersionContentProps } from "./geo-kb-version-content.tsx";
 import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
+import { renderedText } from "./rendered-text.test-helper.ts";
 
 const TIME = "2026-08-31T00:00:00.000Z";
 const RECEIPT = "33333333-3333-4333-8333-333333333333";
@@ -58,12 +59,21 @@ async function render(props = fixture()) {
 describe("complete V2 knowledge-base version content", () => {
   it("renders shared Profile, identity, role details, review and original model lineage", async () => {
     const props = fixture(); await render(props);
-    expect(host.querySelector('[data-geo-profile-field="productName"] input')).toHaveProperty("value", "Acme");
+    expect(renderedText(host.querySelector('[data-geo-profile-field="productName"]'))).toContain("Acme");
     for (const text of ["Acme matching name", "Acme Analytics", "analytics software", "rival.example", "Rival Analytics", "Finance teams", "small companies", "late invoices", "spreadsheets", "setup effort", "receivables", "generation-record-1", "original-role-1", "Model proposal", "User edited the model proposal"]) expect(host.textContent).toContain(text);
     expect(host.querySelector('[data-version-role="r1"] [data-role-user-edited]')?.textContent).toBe("Yes");
     expect(host.textContent).toContain(geoKbV2Copy("en").profileDescription);
     expect(fetchSpy).not.toHaveBeenCalled(); expect(errorSpy).not.toHaveBeenCalled();
-    expect([...host.querySelectorAll("input,textarea")].every(node => (node as HTMLInputElement).readOnly)).toBe(true);
+    // Not `every(readOnly)` on the control list: the Profile copy renders no
+    // controls at all now, so that predicate was true of an empty set and
+    // could not go red. The claim is that there are none, and readouts instead.
+    expect(host.querySelectorAll("input,textarea,select")).toHaveLength(0);
+    expect(host.querySelectorAll("[data-geo-readout]").length).toBeGreaterThan(0);
+    // An archival view has to name the Profile snapshot its copy came from;
+    // nothing else on this page carries it.
+    const identity = host.querySelector("[data-geo-copy-identity]");
+    expect(identity?.textContent).toContain(props.payload.profileCopy.snapshotRevision);
+    expect(identity?.textContent).toContain(props.payload.profileCopy.profileHash);
   });
   it("shows the declared fact independently from the actual admitted context value and source", async () => {
     await render();

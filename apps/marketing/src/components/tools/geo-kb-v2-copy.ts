@@ -4,10 +4,15 @@
 import type { GeoCompetitorSourceV2 } from "../../lib/geo-tools/kb-source-contract.ts";
 export interface GeoKbV2Copy {
   readonly profileDescription: string;
-  readonly sections: Readonly<Record<"identity" | "competitors" | "roles" | "facts" | "questions" | "sources" | "version", string>>;
+  readonly sections: Readonly<Record<"identity" | "competitors" | "roles" | "facts" | "questions" | "sources" | "adoptable" | "version", string>>;
   readonly fields: Readonly<Record<"website" | "officialName" | "aliases" | "categories" | "market" | "language" | "domain" | "brandName" | "confirmation" | "questionLabel" | "segment" | "painPoints" | "alternatives" | "criteria" | "vocabulary" | "review" | "source" | "generation" | "sourceItem" | "evidenceRefs" | "userEdited" | "eligibleLayers" | "declaredValue" | "admittedValue" | "declaredSource" | "declaredTime" | "admittedSource" | "admittedTime" | "supportRef" | "reason" | "question" | "layer" | "role" | "entities" | "questionPolicy" | "generator" | "template" | "queryCount" | "property" | "window" | "truncated" | "observedAt" | "selected" | "available" | "candidate" | "kbId" | "payloadHash" | "questionHash" | "contextHash" | "schema" | "registry" | "method" | "skippedLayers", string>>;
   readonly reviews: Readonly<Record<"pending" | "accepted" | "excluded", string>>;
   readonly sources: Readonly<Record<"manual" | "profile" | "model" | "gsc" | "crawl" | "user_confirmed" | "none", string>>;
+  /** Why Search Console gave nothing. The contract's enum, in words a visitor can act on. */
+  readonly gscReasons: Readonly<Record<"not_connected" | "property_not_granted" | "grant_unavailable" | "fetch_failed" | "rate_limited" | "invalid_response", string>>;
+  /** A successful read that returned no rows, and one clipped at the row cap. */
+  readonly gscEmpty: string;
+  readonly gscTruncated: string;
   readonly layers: Readonly<Record<"problem" | "discovery" | "comparison" | "evaluation" | "branded", string>>;
   readonly reasons: Readonly<Record<"notPublished" | "fetchFailed" | "lowConfidence" | "conflicting", string>>;
   readonly modes: Readonly<Record<"demand" | "retrieval", string>>;
@@ -33,11 +38,14 @@ export interface GeoKbV2Copy {
 }
 export const GEO_KB_V2_COPY: Readonly<Record<"en" | "zh", GeoKbV2Copy>> = {
   en: {
-    profileDescription: "These complete Profile values belong to the knowledge-base version shown here. This view does not read another draft or the current Profile.",
-    sections: { identity: "Brand and measurement scope", competitors: "Competitor identities", roles: "Roles and review history", facts: "Fact declarations and admitted evidence", questions: "Complete question set", sources: "Source summary", version: "Version identity" },
+    profileDescription: "These are the Profile fields GEO reads, as this knowledge-base version stored them. This view does not read another draft or the current Profile.",
+    sections: { identity: "Brand and measurement scope", competitors: "Competitor identities", roles: "Roles and review history", facts: "Fact declarations and admitted evidence", questions: "Complete question set", sources: "Source summary", adoptable: "Ready to take from the last crawl", version: "Version identity" },
     fields: { website: "Website", officialName: "Matching name", aliases: "Brand aliases", categories: "Question categories", market: "Market", language: "Question language", domain: "Domain", brandName: "Brand name", confirmation: "Identity confirmation", questionLabel: "Question-facing role name", segment: "Segment", painPoints: "Pain points", alternatives: "Existing alternatives", criteria: "Decision criteria", vocabulary: "Vocabulary", review: "Review state", source: "Source basis", generation: "Generation ID", sourceItem: "Original item ID", evidenceRefs: "Evidence references", userEdited: "User edited the model proposal", eligibleLayers: "Eligible demand layers", declaredValue: "Declared value", admittedValue: "Value admitted to downstream evidence", declaredSource: "Declared source URL", declaredTime: "Declared capture time", admittedSource: "Admitted source URL", admittedTime: "Admitted capture time", supportRef: "Crawl support reference", reason: "Reason / conflict", question: "Question", layer: "Layer", role: "Role", entities: "Required entities", questionPolicy: "Mode and provenance", generator: "Generator version", template: "Registry template", queryCount: "Observed query count", property: "GSC property", window: "Query window", truncated: "Truncated", observedAt: "Observed at", selected: "Selected evidence", available: "Available evidence", candidate: "Candidate ID", kbId: "Knowledge-base ID", payloadHash: "Payload hash", questionHash: "Question-set hash", contextHash: "Context hash", schema: "Schema", registry: "Registry version", method: "Question method", skippedLayers: "Skipped demand layers" },
     reviews: { pending: "Pending review", accepted: "Accepted by user", excluded: "Excluded" },
     sources: { manual: "Manual input", profile: "Profile", model: "Model proposal", gsc: "Search Console", crawl: "Crawl-supported", user_confirmed: "User-confirmed declaration", none: "Not admitted" },
+    gscReasons: { not_connected: "no property is connected", property_not_granted: "this property is not in the granted set", grant_unavailable: "the grant could not be read", fetch_failed: "the request failed", rate_limited: "the request was rate limited", invalid_response: "the response could not be read" },
+    gscEmpty: "Search Console returned no queries for this window. A role or question set built now has no query evidence behind it.",
+    gscTruncated: "Search Console returned more queries than this refresh keeps, so what follows was derived from a partial sample.",
     layers: { problem: "Problem", discovery: "Discovery", comparison: "Comparison", evaluation: "Evaluation", branded: "Branded" },
     reasons: { notPublished: "Not published", fetchFailed: "Fetch failed", lowConfidence: "Insufficient confidence", conflicting: "Conflicting evidence" },
     modes: { demand: "Demand question", retrieval: "Retrieval probe" }, provenance: { semantic: "Semantic generation", registry: "Exact registry probe" },
@@ -50,11 +58,14 @@ export const GEO_KB_V2_COPY: Readonly<Record<"en" | "zh", GeoKbV2Copy>> = {
       statuses: { available: "Capture succeeded", conflict: "Identity conflict", unavailable: "Capture unavailable" }, reasons: { missing_url: "No source URL", fetch_failed: "Fetch failed", not_found: "Page not found", target_redirected: "Source redirected", partial_body: "Incomplete page capture", not_html: "Not an HTML page", invalid_response: "Invalid response", rate_limited: "Source rate limited", insufficient_identity: "Insufficient identity evidence", identity_overflow: "Identity signals exceeded the capture limit", identity_conflict: "Conflicting identity signals" } },
   },
   zh: {
-    profileDescription: "以下完整 Profile 资料属于当前展示的知识库版本；此视图不会读取其他草稿或今天的 Profile。",
-    sections: { identity: "品牌与测量范围", competitors: "竞品身份", roles: "角色与审阅记录", facts: "事实声明与实际采用的证据", questions: "完整提问集", sources: "来源汇总", version: "版本身份" },
+    profileDescription: "以下是 GEO 会读取的档案字段，取自当前展示的知识库版本；此视图不会读取其他草稿或今天的 Profile。",
+    sections: { identity: "品牌与测量范围", competitors: "竞品身份", roles: "角色与审阅记录", facts: "事实声明与实际采用的证据", questions: "完整提问集", sources: "来源汇总", adoptable: "上次抓取中可以采用的内容", version: "版本身份" },
     fields: { website: "网站", officialName: "提及匹配名称", aliases: "品牌别名", categories: "提问品类词", market: "市场", language: "提问语言", domain: "域名", brandName: "品牌名称", confirmation: "身份确认", questionLabel: "提问使用的角色名称", segment: "角色描述", painPoints: "痛点", alternatives: "现有替代方案", criteria: "决策标准", vocabulary: "使用词汇", review: "审阅状态", source: "来源依据", generation: "生成记录 ID", sourceItem: "原始条目 ID", evidenceRefs: "证据引用", userEdited: "用户已改写模型建议", eligibleLayers: "可用于需求提问的层", declaredValue: "原声明值", admittedValue: "实际采用的证据值", declaredSource: "声明的来源 URL", declaredTime: "声明的采集时间", admittedSource: "实际采用的来源 URL", admittedTime: "实际采用的采集时间", supportRef: "抓取支持引用", reason: "原因／冲突", question: "提问", layer: "层", role: "角色", entities: "必要实体", questionPolicy: "模式与来源", generator: "生成方法版本", template: "固定探针模板", queryCount: "实际查询词数", property: "GSC 资源", window: "查询窗口", truncated: "是否截断", observedAt: "实际采集时间", selected: "已选证据", available: "可用证据", candidate: "候选版本 ID", kbId: "知识库 ID", payloadHash: "内容哈希", questionHash: "提问集哈希", contextHash: "上下文哈希", schema: "数据版本", registry: "探针注册表版本", method: "提问生成方法", skippedLayers: "跳过的需求层" },
     reviews: { pending: "待审阅", accepted: "用户已接受", excluded: "已排除" },
     sources: { manual: "人工填写", profile: "Profile", model: "模型建议", gsc: "Search Console", crawl: "抓取证据支持", user_confirmed: "用户确认的声明", none: "未采用" },
+    gscReasons: { not_connected: "没有连接任何资源", property_not_granted: "这个资源不在已授权范围内", grant_unavailable: "授权信息读不到", fetch_failed: "请求失败", rate_limited: "请求被限流", invalid_response: "返回内容无法解析" },
+    gscEmpty: "这个时间窗内 Search Console 没有返回任何查询。现在生成的角色或提问集背后没有查询证据。",
+    gscTruncated: "Search Console 返回的查询超出本次刷新保留的条数，后面的内容是基于被截断的样本推导的。",
     layers: { problem: "问题", discovery: "发现", comparison: "对比", evaluation: "评估", branded: "品牌" },
     reasons: { notPublished: "未公开", fetchFailed: "抓取失败", lowConfidence: "置信度不足", conflicting: "证据冲突" },
     modes: { demand: "需求问题", retrieval: "检索探针" }, provenance: { semantic: "语义生成", registry: "原样固定探针" },

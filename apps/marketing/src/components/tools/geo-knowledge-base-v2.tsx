@@ -54,15 +54,19 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button data-build-v2 type="button" disabled={editor.busy || editor.building} onClick={() => void editor.buildFromProfile()}>{editor.building ? te("buildBusy") : te("build")}</Button>
+        <Button data-build-v2 type="button" variant="outline" disabled={editor.busy || editor.building} onClick={() => void editor.buildFromProfile()}>{editor.building ? te("buildBusy") : te("build")}</Button>
         <Button data-confirm-v2 type="button" variant="outline" disabled={editor.busy || editor.building} onClick={() => void editor.confirmAll()}>{te("confirm")}</Button>
         <Button data-save-v2 type="button" variant="outline" disabled={editor.busy || editor.building} onClick={() => void editor.save()}>{editor.busy && editor.status.kind === "busy" && editor.status.operation === "save" ? t.busy : t.save}</Button>
       </div>
       {/* Next to the Save button it describes. The progress list names the
           blocking gate, so this states only the autosave state, and truthfully. */}
       <p data-autosave-hint={editor.autosaveHold ?? "on"} className="text-[12px] leading-relaxed text-text-dark-secondary">{editor.autosaveHold === null || editor.autosaveHold === "busy" ? te("autosave") : te(`autosaveHeld.${editor.autosaveHold}`)}</p>
-      <p className="text-[12px] leading-relaxed text-text-dark-secondary">{te("buildHelp")}</p>
-      <p className="text-[12px] leading-relaxed text-text-dark-secondary">{te("confirmHelp")}</p>
+      {/* One line per action, each true of the button it sits under. A single
+          merged line said roles and facts are never accepted for you, directly
+          under a Confirm button whose whole job is to accept every pending one
+          and freeze the result. */}
+      <p className="text-[12px] leading-relaxed text-text-dark-secondary">{te("actionCost")}</p>
+      <p className="text-[12px] leading-relaxed text-text-dark-secondary">{te("confirmCost")}</p>
       <GeoKbV2BuildReport report={editor.build} locale={props.locale} />
       <GeoKbV2ConfirmReport report={editor.confirm} />
     </div>
@@ -127,6 +131,9 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
         <p>{entry.kind === "roles" ? t.generateRoles : t.prepare} · v{entry.baseVersion} · {entry.state}</p><p className="break-all font-mono text-xs">{entry.generationId ?? entry.idempotencyKey} {entry.errorReason ?? ""}</p>
         <Button type="button" variant="outline" data-read-retained={entry.id} disabled={editor.busy} onClick={() => void editor.readRetainedRequest(entry)}>{t.readGeneration}</Button>
       </article>)}</section> : null}
+      {/* Not a source summary: the two actions a refresh makes possible --
+          taking a competitor's observed identity, and attaching a fact's crawl
+          evidence, which nothing else in the editor can do. */}
       {view.sourceReceipt ? <GeoKbV2Sources receipt={view.sourceReceipt} baseline={view.payload} payload={payload} locale={props.locale} stale={editor.copyStale || editor.sourceSelection.stale} onChange={editor.change} /> : null}
       {roleProposal ? <GeoKbV2RoleProposals proposal={roleProposal} payload={payload} locale={props.locale} stale={!editor.roleProposalReusable(roleProposal)} onAdopt={(ids, mode) => editor.adoptRoles(roleProposal, ids, mode)} /> : null}
       <GeoKbV2PreparedReview candidate={view.prepared} locale={props.locale} stale={editor.candidateStale} reviewed={editor.reviewed} busy={editor.busy} canFreeze={editor.canFreeze} onReview={editor.confirmReview} onFreeze={() => void editor.freeze()} />

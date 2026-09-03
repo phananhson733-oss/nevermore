@@ -600,7 +600,7 @@ describe("which site the knowledge base was actually loaded for", () => {
     expect(text()).toContain(copy("draft.unsaved"));
     expect(button(copy("freeze.action")).disabled).toBe(true);
     expect(text()).toContain("Original frozen question");
-    expect([...container!.querySelectorAll<HTMLInputElement>("[data-geo-profile-field='productName'] input")].some(input => input.value === "Original Profile product")).toBe(true);
+    expect(renderedText(container!.querySelector("[data-geo-profile-field='productName']"))).toContain("Original Profile product");
     expect(text()).toContain("b".repeat(64));
 
     await click(button(copy("draft.save")));

@@ -470,8 +470,10 @@ describe("knowledge repair", () => {
     await click(button(copy("asset.reviewCopy")));
     expect(fetch).toHaveBeenCalledTimes(2);
     await click(button(copy("asset.applyCopy")));
-    const copiedProfileName = [...container.querySelectorAll("input")].find((input) => input.value === "Original Profile name");
-    expect(copiedProfileName?.readOnly).toBe(true);
+    // The adopted copy is read out, and there is no control to type it into:
+    // it is edited in the Profile, not here.
+    expect(renderedText(container.querySelector("[data-geo-profile-field='productName']"))).toContain("Original Profile name");
+    expect([...container.querySelectorAll("input")].some(input => input.value === "Original Profile name")).toBe(false);
     await click(button(copy("draft.save")));
     const request = JSON.parse(String(vi.mocked(fetch).mock.calls[2]?.[1]?.body));
     expect(request).toMatchObject({ kbId: KB_ID, baseVersion: 2, expectedProfileReference: profile.reference,
