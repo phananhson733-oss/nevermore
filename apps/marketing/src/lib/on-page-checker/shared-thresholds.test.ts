@@ -4,6 +4,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  PAGE_AUDIT_GROUPS,
+  SITE_AUDIT_GROUPS,
+} from "@sf/public-tools/agent-audit";
+import {
   readsAsClientRendered,
   BODY_UNITS as CATALOGUE_BODY_UNITS,
   HTML_BYTES as CATALOGUE_HTML_BYTES,
@@ -46,6 +50,29 @@ describe("thresholds shared with the Agent catalogue", () => {
     expect(BODY_UNITS).toBe(CATALOGUE_BODY_UNITS);
     expect(HTML_BYTES).toBe(CATALOGUE_HTML_BYTES);
     expect(SCRIPT_DOMINANCE).toBe(CATALOGUE_SCRIPT_DOMINANCE);
+  });
+
+  it("describes both halves of the client-rendering rule in the published threshold", () => {
+    // The rule has two clauses and the catalogue used to publish only one, so
+    // a reader was told a big bundle alone would draw the Tip. Pinned against
+    // the behaviour rather than against the sentence: the fixture that must
+    // NOT fire is exactly the case the missing clause covers.
+    const check = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS]
+      .flatMap((group) => group.checks)
+      .find((entry) => entry.id === "8.7");
+
+    expect(readsAsClientRendered({
+      visibleTextBytes: 5_000,
+      scriptBytes: 30_000,
+    })).toBe(false);
+    for (const locale of ["en", "zh"] as const) {
+      // Whatever the wording, it has to mention the text-length half.
+      expect(check?.threshold[locale]).toMatch(
+        locale === "en" ? /visible text/i : /正文/,
+      );
+    }
+    expect(check?.threshold.en).toMatch(/short on visible text/i);
+    expect(check?.threshold.zh).toMatch(/可见正文偏少/);
   });
 
   it("applies one rule for client rendering, not one constant and two rules", () => {
