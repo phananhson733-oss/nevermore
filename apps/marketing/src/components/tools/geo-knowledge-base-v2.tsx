@@ -16,12 +16,13 @@ import { GeoKbVersionContent } from "./geo-kb-version-content.tsx";
 import { GeoKbFrozenCopy } from "./geo-kb-frozen-copy.tsx";
 import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { GeoProfileCopyReview } from "./geo-kb-profile-copy-review.tsx";
-import { GeoKbV2MeasurementReview } from "./geo-kb-v2-measurement.tsx";
 import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
+import { GeoKbV2MeasurementReview } from "./geo-kb-v2-measurement.tsx";
 import { GeoKbV2Progress } from "./geo-kb-v2-progress.tsx";
 import { GeoKbV2Block } from "./geo-kb-v2-block.tsx";
 import { GeoKbFrozenSummary } from "./geo-kb-frozen-summary.tsx";
 import { GeoKbV2BuildReport } from "./geo-kb-v2-build-report.tsx";
+import { GeoKbV2ConfirmReport } from "./geo-kb-v2-confirm-report.tsx";
 
 export interface GeoKnowledgeBaseV2Props {
   readonly initialView: GeoKbEditorViewV2; readonly locale: string; readonly inline?: boolean;
@@ -54,13 +55,16 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       </div>
       <div className="flex flex-wrap gap-2">
         <Button data-build-v2 type="button" disabled={editor.busy || editor.building} onClick={() => void editor.buildFromProfile()}>{editor.building ? te("buildBusy") : te("build")}</Button>
+        <Button data-confirm-v2 type="button" variant="outline" disabled={editor.busy || editor.building} onClick={() => void editor.confirmAll()}>{te("confirm")}</Button>
         <Button data-save-v2 type="button" variant="outline" disabled={editor.busy || editor.building} onClick={() => void editor.save()}>{editor.busy && editor.status.kind === "busy" && editor.status.operation === "save" ? t.busy : t.save}</Button>
       </div>
       {/* Next to the Save button it describes. The progress list names the
           blocking gate, so this states only the autosave state, and truthfully. */}
       <p data-autosave-hint={editor.autosaveHold ?? "on"} className="text-[12px] leading-relaxed text-text-dark-secondary">{editor.autosaveHold === null || editor.autosaveHold === "busy" ? te("autosave") : te(`autosaveHeld.${editor.autosaveHold}`)}</p>
       <p className="text-[12px] leading-relaxed text-text-dark-secondary">{te("buildHelp")}</p>
+      <p className="text-[12px] leading-relaxed text-text-dark-secondary">{te("confirmHelp")}</p>
       <GeoKbV2BuildReport report={editor.build} locale={props.locale} />
+      <GeoKbV2ConfirmReport report={editor.confirm} />
     </div>
     {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? te("conflict") : editor.status.code === "generation_running" ? te("generationRunning") : t.error} <span className="break-all font-mono text-xs">{editor.status.code}</span></p> : null}
     <div role="tabpanel" hidden={stage !== "input"} id={`${id}-input-panel`} aria-labelledby={`${id}-input-tab`} className="space-y-6">
@@ -71,6 +75,8 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       {editor.copyStale ? <p role="status" className="text-sm text-brand-error">{t.sourceChanged}</p> : null}
       <div className="flex flex-wrap gap-3"><Button type="button" variant="outline" disabled={editor.busy} onClick={() => void editor.reviewProfileCopy()}>{t.reviewCopy}</Button><Button type="button" variant="outline" disabled={editor.busy} onClick={() => void editor.reload()}>{t.reload}</Button></div>
       {editor.copyProposal === null ? null : <GeoProfileCopyReview current={payload.profileCopy} proposal={editor.copyProposal} onApply={editor.adoptProfileCopy} onDismiss={editor.dismissProfileCopy} disabled={editor.busy || !editor.canAdoptProfileCopy} />}
+      {/* Shown only while a difference exists, so the one-gesture build closes
+          it by acting; it stays as the way to adopt only part of a set. */}
       <GeoKbV2MeasurementReview key={payload.profileCopy.profileHash} profile={payload.profileCopy.profile} payload={payload} locale={props.locale} disabled={editor.busy} onChange={editor.change} /></GeoKbV2Block>
       <GeoKbV2Block id="supplement"><GeoKbV2Fields payload={payload} locale={props.locale} onChange={editor.change} supportRefNote={te("supportRefNote")} /></GeoKbV2Block>
       <GeoKbV2Block id="run">

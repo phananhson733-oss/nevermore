@@ -10,7 +10,7 @@ import type { GeoKbGenerationKind } from "../../lib/geo-tools/kb-generation.ts";
 import type { GeoRoleProposal } from "../../lib/geo-tools/kb-role-proposal.ts";
 import { parseGeoKbSourceReportV2 } from "../../lib/geo-tools/kb-source-contract.ts";
 import { parseGeoKbDraftSaveV2, parseGeoKbFreezeV2Response, parseGeoKbEditorViewV2, parseGeoKbGenerationWire, type GeoKbEditorViewV2, type GeoKbGenerationWire } from "./geo-kb-v2-wire.ts";
-import { adoptGeoKbRoleProposals, submitGeoKbPayloadV2 } from "./geo-kb-v2-editor.ts";
+import { acceptAllGeoKbV2, adoptGeoKbRoleProposals, submitGeoKbPayloadV2 } from "./geo-kb-v2-editor.ts";
 import { buildGeoV2FromProfile, type GeoV2BuildOutcome } from "../../lib/geo-tools/kb-v2-build-from-profile.ts";
 import type { GeoV2MeasurementField } from "../../lib/geo-tools/kb-v2-measurement.ts";
 import { ACCOUNT_AUTOSAVE_DELAY_MS } from "../account/autosave-delay.ts";
@@ -40,6 +40,16 @@ export interface GeoKbV2BuildReport {
    * own value, because the visitor was billed either way.
    */
   readonly stoppedAt: "copy" | "save" | "changed" | "running" | "sources" | "roles" | "rolesPending" | "rolesFailed" | "failed" | null;
+}
+/**
+ * What one confirm-everything gesture did. `stoppedAt: null` means the version
+ * is frozen; every other value names the step that did not complete, because a
+ * confirmation that stopped early is not a frozen version.
+ */
+export interface GeoKbV2ConfirmReport {
+  readonly accepted: number;
+  readonly blocked: readonly string[];
+  readonly stoppedAt: "copy" | "blocked" | "save" | "changed" | "running" | "prepare" | "preparePending" | "prepareFailed" | "stale" | "freeze" | "failed" | null;
 }
 /** Why an automatic write is being held back, for the editor to say so. */
 export type GeoKbV2AutosaveHold = "conflict" | "copyStale" | "running" | "busy" | "failed";
@@ -122,6 +132,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   const [pending, setPending] = useState<PendingSet>({ roles: null, questions: null });
   const [retainedRequests, setRetainedRequests] = useState<readonly RetainedGeoKbRequest[]>([]);
   const [building, setBuilding] = useState(false), [build, setBuild] = useState<GeoKbV2BuildReport | null>(null);
+  const [confirm, setConfirm] = useState<GeoKbV2ConfirmReport | null>(null);
   const buildRunning = useRef(false);
   const historyRef = useRef<readonly RetainedGeoKbRequest[]>([]), unknownBaselines = useRef(new Map<string, { version: number; hash: string | null }>());
   const current = useRef({ view, payload, dirty, edited: false, pending, signal, copyStale: false }), lock = useRef(false), editRevision = useRef(0), invalidCandidates = useRef(new Set<string>()), copySequence = useRef(0);
@@ -549,6 +560,52 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     return selection.receipt !== null && !selection.stale && selection.receipt.draftHash === active.view.draftHash;
   }
   function finishBuild(report: GeoKbV2BuildReport): void { setBuild(report); }
+  /**
+   * One gesture for "this is right, keep it": accept every pending role and
+   * fact the contract allows, save, prepare the complete version, and freeze
+   * it. Pressing this button is the review the freeze checkbox otherwise asks
+   * for, so the button's own copy has to carry that claim. An item the schema
+   * refuses to accept is named and the run stops there rather than freezing a
+   * version that quietly left it out.
+   */
+  const confirmAll = async (): Promise<void> => {
+    if (lock.current || buildRunning.current) return;
+    if (current.current.copyStale) { setConfirm({ accepted: 0, blocked: [], stoppedAt: "copy" }); return; }
+    buildRunning.current = true; setBuilding(true); setConfirm(null);
+    try {
+      const result = acceptAllGeoKbV2(current.current.payload);
+      if (result.accepted > 0) change(result.payload);
+      const written = { accepted: result.accepted, blocked: result.blocked };
+      if (result.blocked.length > 0) return finishConfirm({ ...written, stoppedAt: "blocked" });
+      if (result.accepted > 0 || current.current.dirty || current.current.view.requiresSave || current.current.view.draftHash === null) {
+        if (!(await save())) return finishConfirm({ ...written, stoppedAt: "save" });
+        if (runningElsewhere.current) return finishConfirm({ ...written, stoppedAt: "running" });
+      }
+      if (!gatesNow().prepare) return finishConfirm({ ...written, stoppedAt: "changed" });
+      if (generationActionNow("questions") !== "normal") return finishConfirm({ ...written, stoppedAt: "prepare" });
+      if (!(await generate("questions"))) return finishConfirm({ ...written, stoppedAt: "prepareFailed" });
+      const settled = current.current.view.generations.questions;
+      if (settled?.state === "failed") return finishConfirm({ ...written, stoppedAt: "prepareFailed" });
+      const prepared = settled?.state === "succeeded" && settled.result?.schemaVersion === "marketing-geo-prepared-candidate.v1" ? settled.result : null;
+      if (prepared === null) return finishConfirm({ ...written, stoppedAt: "preparePending" });
+      // Freeze the candidate this run produced, by identity. `canFreeze` reads
+      // this render's state, which cannot know about a candidate that arrived
+      // one line ago.
+      if (invalidCandidates.current.has(prepared.candidateId)) return finishConfirm({ ...written, stoppedAt: "stale" });
+      const result2 = await perform("freeze", async () => {
+        const response = await post("freeze", { kbId: current.current.view.kbId, candidateId: prepared.candidateId, candidateHash: prepared.candidateHash });
+        if (!response.ok) { error(response); return; }
+        if (!parseGeoKbFreezeV2Response(response.data)) { error({ code: "schema_mismatch" }); return; }
+        setReview(null); await readSaved();
+      });
+      // A refused freeze is not a candidate that went stale; the error above
+      // says which it was, and the outcome must not name the wrong one.
+      return finishConfirm({ ...written, stoppedAt: result2 ? null : "freeze" });
+    } catch {
+      return finishConfirm({ accepted: 0, blocked: [], stoppedAt: "failed" });
+    } finally { buildRunning.current = false; setBuilding(false); }
+  };
+  function finishConfirm(report: GeoKbV2ConfirmReport): void { setConfirm(report); }
   const freeze = async () => { if (!canFreeze || current.current.dirty || !candidate) return; await perform("freeze", async () => {
     const result = await post("freeze", { kbId: view.kbId, candidateId: candidate.candidateId, candidateHash: candidate.candidateHash });
     if (!result.ok) { error(result); return; }
@@ -557,7 +614,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     setReview(null); await readSaved();
   }); };
   return { view, payload, dirty, edited, status, busy, generationRunning, autosaveHold, pending, retainedRequests, readRetainedRequest, generationAction, copyProposal, copyStale, copyHashReady, sourceSelection, roleProposalReusable, canAdoptProfileCopy: copyProposal !== null && copySequence.current === signal.sequence, candidateStale, canGenerate, canPrepare, needsReview, canFreeze, reviewed: review === candidateIdentity && candidateIdentity !== null,
-    building, build, buildFromProfile,
+    building, build, buildFromProfile, confirm, confirmAll,
     change, save, reload, refreshSources, generate, readGeneration, freeze, reviewProfileCopy, adoptProfileCopy, adoptRoles,
     dismissProfileCopy: () => setCopyProposal(null), confirmReview: (accepted: boolean) => setReview(accepted && !candidateStale ? candidateIdentity : null) };
 }

@@ -198,6 +198,72 @@ it("refuses to build onto a draft whose Profile copy is behind, and says which s
   expect(host.querySelector("[data-build-aliases]")).toBeNull();
   expect(host.querySelector("[data-build-competitors]")).toBeNull();
 });
+it("confirms everything in one gesture: accepts what it may, prepares, and freezes", async () => {
+  const base = editorFixture();
+  const pending = { ...base, prepared: null, payload: { ...base.payload,
+    roles: base.payload.roles.map(role => ({ ...role, review: "pending" as const })),
+    facts: base.payload.facts.map(fact => ({ ...fact, review: "pending" as const })) } };
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(Response.json({ data: { draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] } }))
+    .mockResolvedValueOnce(Response.json({ data: { generation: { generationId: base.prepared!.candidateId, kbId: base.kbId, kind: "questions", inputHash: "d".repeat(64), state: "succeeded", result: base.prepared, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false } }))
+    .mockResolvedValueOnce(Response.json({ data: { snapshotId: base.prepared!.candidateId, revision: 1, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: base.prepared!.candidateHash, questionSetHash: "e".repeat(64), questionCount: 1, reusedExisting: false } }))
+    .mockResolvedValueOnce(Response.json({ data: base }));
+  await render(pending);
+
+  await click("[data-confirm-v2]");
+
+  const paths = vi.mocked(fetch).mock.calls.map(call => String(call[0]));
+  expect(paths.slice(0, 3)).toEqual(["/api/tools/geo-knowledge-base/v2/draft", "/api/tools/geo-knowledge-base/v2/prepare", "/api/tools/geo-knowledge-base/v2/freeze"]);
+  const saved = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)) as { payload: { roles: { review: string }[]; facts: { review: string }[] } };
+  expect(saved.payload.roles.map(role => role.review)).toEqual(["accepted"]);
+  expect(saved.payload.facts.map(fact => fact.review)).toEqual(["accepted"]);
+  expect(host.querySelector("[data-confirm-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.confirmDone);
+});
+
+it("does not freeze a complete version that was only requested, and does not call it frozen", async () => {
+  const base = editorFixture();
+  const pending = { ...base, prepared: null, payload: { ...base.payload, roles: base.payload.roles.map(role => ({ ...role, review: "pending" as const })) } };
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(Response.json({ data: { draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] } }))
+    .mockResolvedValueOnce(Response.json({ data: { generation: { generationId: base.prepared!.candidateId, kbId: base.kbId, kind: "questions", inputHash: "d".repeat(64), state: "dispatched", result: null, errorReason: null, attempt: null }, reused: false } }));
+  await render(pending);
+
+  await click("[data-confirm-v2]");
+
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).not.toContain("/api/tools/geo-knowledge-base/v2/freeze");
+  expect(host.querySelector("[data-confirm-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.confirmStopped.preparePending);
+  expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.editor.confirmDone);
+});
+
+it("does not call the version frozen when the freeze itself was refused", async () => {
+  const base = editorFixture();
+  const pending = { ...base, prepared: null, payload: { ...base.payload, roles: base.payload.roles.map(role => ({ ...role, review: "pending" as const })) } };
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(Response.json({ data: { draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] } }))
+    .mockResolvedValueOnce(Response.json({ data: { generation: { generationId: base.prepared!.candidateId, kbId: base.kbId, kind: "questions", inputHash: "d".repeat(64), state: "succeeded", result: base.prepared, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false } }))
+    .mockResolvedValueOnce(Response.json({ error: { code: "conflict" } }, { status: 409 }));
+  await render(pending);
+
+  await click("[data-confirm-v2]");
+
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toContain("/api/tools/geo-knowledge-base/v2/freeze");
+  expect(host.querySelector("[data-confirm-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.confirmStopped.freeze);
+  expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.editor.confirmDone);
+});
+
+it("names an entry it may not accept and freezes nothing", async () => {
+  // A fact with no source URL is exactly what the contract refuses to accept.
+  const base = editorFixture();
+  const view = { ...base, prepared: null, payload: { ...base.payload,
+    facts: [{ ...base.payload.facts[0]!, key: "Seats", sourceUrl: "", review: "pending" as const }] } };
+  await render(view);
+
+  await click("[data-confirm-v2]");
+
+  expect(fetch).not.toHaveBeenCalled();
+  expect(host.querySelector("[data-confirm-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.confirmStopped.blocked.replace("{items}", "Seats"));
+});
+
 it("reads as three named parts with one ordered progress model", async () => {
   await render();
   expect([...host.querySelectorAll("[data-geo-v2-block]")].map(node => node.getAttribute("data-geo-v2-block"))).toEqual(["profile", "supplement", "run"]);
