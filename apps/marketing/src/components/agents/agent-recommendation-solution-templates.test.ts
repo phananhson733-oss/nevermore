@@ -78,6 +78,40 @@ const TEMPLATE_TEXT_KEYS = [
   "limitsKey",
 ] as const;
 
+describe("what the preview may call observed", () => {
+  it("quotes a title the run collected, even when this check measured only its width", () => {
+    // The defect: 2.1's record carries `title_display_width` and no title, so
+    // the preview printed "observed title: [not captured]" beside a title the
+    // same run had read and had already sent to the draft endpoint.
+    const template = solutionTemplate(
+      "seo",
+      check("2.1"),
+      {
+        ...INPUT,
+        targetPageExtract: {
+          title: "Free natal chart calculator",
+          metaDescription: "Draw your chart.",
+          h1: ["Natal chart"],
+        },
+      },
+    );
+
+    expect(template.preview).toContain("Free natal chart calculator");
+    expect(template.preview).not.toContain(NOT_CAPTURED);
+  });
+
+  it("still says not captured when the run read nothing", () => {
+    const template = solutionTemplate(
+      "seo",
+      check("2.1"),
+      { ...INPUT, targetPageExtract: null },
+    );
+
+    // The marker is the localized string the caller passes in, not a literal.
+    expect(template.preview).toContain(NOT_CAPTURED);
+  });
+});
+
 describe("Agent-specific selected solution templates", () => {
   it("turns the same canonical evidence into an SEO issue brief and a Tech config fix", () => {
     const seo = solutionTemplate("seo", check("1.4"), INPUT);

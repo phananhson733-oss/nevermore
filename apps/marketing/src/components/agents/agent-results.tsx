@@ -5,21 +5,19 @@
 "use client";
 
 import { FileSearch, Link2, ShieldCheck } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 
 import { allAgentAuditRecords } from "../../lib/agents/audit-contract";
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import {
   buildAgentAuditViewModel,
-  type AgentAuditScope,
   type AgentDiagnosisContext,
 } from "./agent-audit-model";
-import { AgentDiagnosis } from "./agent-diagnosis";
+import { AgentIssueAccordion } from "./agent-issue-accordion";
+import { buildAgentIssueModel } from "./agent-issue-model";
 import type { AgentProfileDraft } from "./agent-profile";
-import { AgentRecommendations } from "./agent-recommendations";
 import {
-  analyzeAgentRecommendations,
   notCollectedUrlCount,
   summarizeAgentRecords,
 } from "./agent-result-helpers";
@@ -101,39 +99,46 @@ export function AgentResults({
         locale,
         context: profileContext(profile),
         data,
+        // The Profile stays on this side of the wire: the response is
+        // projected from a payload cached across visitors, so which pages
+        // matter to THIS product is asked here, never there.
+        coreFeatures: profile.coreFeatures,
       }),
     [agent, data, locale, profile],
   );
-  const initialScope: AgentAuditScope =
-    profile.auditScope === "page-only" ? "page" : "site";
-  const [scope, setScope] = useState<AgentAuditScope>(initialScope);
-  const [selectedGroupIds, setSelectedGroupIds] = useState(() => ({
-    site: model.defaults.siteGroupId,
-    page: model.defaults.pageGroupId,
-  }));
-  const [selectedCheckIds, setSelectedCheckIds] = useState<
-    Record<AgentAuditScope, string | null>
-  >({ site: null, page: null });
-  const [selectedRecommendationIds, setSelectedRecommendationIds] = useState<
-    Record<AgentAuditScope, string | null>
-  >({ site: null, page: null });
   const summary = summarizeAgentRecords(data.result.records);
   const notCollected = notCollectedUrlCount(data.result.coverage);
-  const scopedChecks = useMemo(
-    () => model.evaluatedChecks.filter((check) => check.check.scope === scope),
-    [model, scope],
-  );
-  const recommendationAnalysis = useMemo(
+  /**
+   * The same joined list the evaluator decided from. Handing the crawl ledger
+   * alone would show a search check that decided beside no evidence at all,
+   * because its record lives in the other list.
+   */
+  const joinedRecords = useMemo(() => allAgentAuditRecords(data), [data]);
+  const issueModel = useMemo(
     () =>
-      analyzeAgentRecommendations(agent, scopedChecks, data.result.records, {
+      buildAgentIssueModel({
+        agent,
+        checks: model.evaluatedChecks,
+        keyPageReach: model.keyPageReach,
+        records: joinedRecords,
         targetUrl: data.result.targetUrl,
       }),
-    [agent, data.result.records, data.result.targetUrl, scopedChecks],
+    [
+      agent,
+      data.result.targetUrl,
+      joinedRecords,
+      model.evaluatedChecks,
+      model.keyPageReach,
+    ],
   );
   /**
    * Evidence records are collected measurements, so they are labelled as
    * records here. The Diagnosis panel counts checks, which is a different unit.
    */
+  /** Checks this run reached a conclusion on, out of the whole catalogue. */
+  const evaluatedChecks = model.evaluatedChecks.filter(
+    (check) => check.result !== "excluded",
+  ).length;
   const capturedFacts: readonly CapturedFact[] = [
     {
       label: t("pagesInspected"),
@@ -156,18 +161,8 @@ export function AgentResults({
     },
   ];
 
-  function handleScopeChange(nextScope: AgentAuditScope): void {
-    setScope(nextScope);
-  }
 
-  function handleGroupChange(groupId: string): void {
-    setSelectedGroupIds((current) => ({ ...current, [scope]: groupId }));
-    setSelectedCheckIds((current) => ({ ...current, [scope]: null }));
-  }
 
-  function handleCheckChange(checkId: string): void {
-    setSelectedCheckIds((current) => ({ ...current, [scope]: checkId }));
-  }
 
   return (
     <section
@@ -230,6 +225,44 @@ export function AgentResults({
           </div>
         </div>
 
+        {/*
+          One line above the fold, the rest one disclosure away. The header
+          used to spend a four-cell grid, two boundary cards and an origin line
+          before the reader reached a single finding.
+        */}
+        <p
+          data-capture-summary
+          className="mt-4 font-mono text-[12px] text-text-dark-secondary"
+        >
+          {t("captureSummary", {
+            pages: data.result.coverage.pagesInspected,
+            keyPages: model.keyPages.length,
+            evaluated: evaluatedChecks,
+            total: model.evaluatedChecks.length,
+          })}
+        </p>
+
+        {/*
+          Stated, not implied. A run that judged only the submitted page looks
+          exactly like one that judged twelve unless it says so.
+        */}
+        {model.keyPages.length > 1 ? null : (
+          <p
+            data-key-pages-none
+            className="mt-2 text-[11.5px] leading-[1.6] text-text-dark-secondary"
+          >
+            {t("keyPagesNone")}
+          </p>
+        )}
+
+        <details
+          data-capture-detail
+          className="mt-4 rounded-row border border-brand-border bg-brand-panel-sunken"
+        >
+          <summary className="cursor-pointer list-none px-4 py-2.5 font-mono text-[11px] tracking-[0.06em] text-text-dark-secondary uppercase">
+            {t("captureDetailLabel")}
+          </summary>
+          <div className="px-4 pb-4">
         <dl className="mt-5 grid gap-px overflow-hidden rounded-row border border-brand-border-card bg-brand-border-card sm:grid-cols-2 xl:grid-cols-4">
           {capturedFacts.map(({ label, value, hint }) => (
             <div key={label} className="bg-brand-panel-sunken p-4">
@@ -287,64 +320,26 @@ export function AgentResults({
             {t("stopReason", { reason: data.result.coverage.stopReason })}
           </p>
         ) : null}
+          </div>
+        </details>
       </header>
 
-      <AgentDiagnosis
-        model={model}
-        scope={scope}
-        selectedGroupId={selectedGroupIds[scope]}
-        selectedCheckId={selectedCheckIds[scope]}
-        onScopeChange={handleScopeChange}
-        onGroupChange={handleGroupChange}
-        onCheckChange={handleCheckChange}
-      />
-
-      <AgentRecommendations
-        agent={agent}
+      {/*
+        One list, site-wide and page-level together. The scope switch this
+        replaced made a reader guess which half a finding was filed under
+        before they could see it; the row states its own scope instead.
+      */}
+      <AgentIssueAccordion
+        model={issueModel}
         locale={locale}
-        targetUrl={data.result.targetUrl}
-        evaluatedChecks={scopedChecks}
-        // The same joined list the evaluator decided from. Handing the crawl
-        // ledger alone would show a search check that decided beside no
-        // evidence at all, because its record lives in the other list.
-        records={allAgentAuditRecords(data)}
-        targetPageExtract={data.result.targetPageExtract}
         profile={profile}
-        selectedRecommendationId={selectedRecommendationIds[scope]}
-        onSelectRecommendation={(recommendationId) =>
-          setSelectedRecommendationIds((current) => ({
-            ...current,
-            [scope]: recommendationId,
-          }))
-        }
+        run={{
+          completedAt: data.run.source.completedAt,
+          sourceTool: data.run.source.tool,
+          schemaVersion: data.run.source.schemaVersion,
+        }}
+        targetPageExtract={data.result.targetPageExtract}
       />
-
-      {recommendationAnalysis.hiddenCount > 0 ||
-      recommendationAnalysis.dataSourceGaps.length > 0 ? (
-        <div
-          data-testid="agent-recommendation-disclosure"
-          data-ranked-shown={recommendationAnalysis.ranked.length}
-          data-ranked-total={recommendationAnalysis.rankedTotal}
-          data-source-gaps={recommendationAnalysis.dataSourceGaps.length}
-          className="rounded-row border border-brand-border bg-brand-panel-sunken px-4 py-3"
-        >
-          {recommendationAnalysis.hiddenCount > 0 ? (
-            <p className="text-[11.5px] leading-[1.6] text-text-dark-secondary">
-              {t("recommendations.rankedDisclosure", {
-                shown: recommendationAnalysis.ranked.length,
-                total: recommendationAnalysis.rankedTotal,
-              })}
-            </p>
-          ) : null}
-          {recommendationAnalysis.dataSourceGaps.length > 0 ? (
-            <p className="mt-1.5 text-[11.5px] leading-[1.6] text-text-dark-secondary">
-              {t("recommendations.dataSourceGaps", {
-                count: recommendationAnalysis.dataSourceGaps.length,
-              })}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
 
       <p className="text-center font-mono text-[11px] tracking-[0.05em] text-text-dark-faint">
         {t("runBoundary", {

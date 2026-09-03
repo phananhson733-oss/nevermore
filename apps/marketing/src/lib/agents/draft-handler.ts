@@ -268,7 +268,14 @@ export async function handleAgentDraftRequest(
     return fail("draft_provider_unavailable");
   }
 
-  const draft: SolutionDraft | null = readSolutionDraft(input.kind, reply.text);
+  // The confirmed query travels with the reply so the reader can say whether
+  // the rewrite kept it, rather than leaving the visitor to check by eye the
+  // one thing the draft was offered to fix.
+  const draft: SolutionDraft | null = readSolutionDraft(
+    input.kind,
+    reply.text,
+    input.targetQuery,
+  );
   // A reply that is merely close is refused. Shown beside measured evidence a
   // half-read draft carries the same weight, and a field the model dropped
   // renders as an empty box the reader takes for "nothing to say here".

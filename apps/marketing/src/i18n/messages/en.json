@@ -1153,6 +1153,15 @@
       "noMatchingObservation": "No matching observation was present in the inspected set.",
       "limitationLabel": "Evidence boundary",
       "limitations": {
+        "declared_meta_viewport_only_no_rendering": "Read from the declared meta viewport only; this run renders nothing.",
+        "declared_html_lang_attribute_only": "Read from the declared html lang attribute only.",
+        "meta_charset_and_content_type_header_only": "Read from the meta charset and the Content-Type header only.",
+        "declared_link_rel_icon_only_no_root_probe": "Read from the declared link rel=icon only; no request is made for a root icon file.",
+        "static_text_units_reviewed_floor_not_a_documented_rule": "Counted in static text units against a reviewed working floor, which is not a documented rule.",
+        "declared_anchor_attributes_only": "Read from the declared anchor attributes only.",
+        "transferred_markup_only_no_rendering": "Measured on the transferred markup; this run executes no script.",
+        "transferred_markup_bytes_only": "Measured on the transferred markup bytes only.",
+        "this_page_is_not_measured_by_whitespace_words_so_section_substance_is_not_judged": "This page is not measured by whitespace words, so section substance is not judged here.",
         "resource_not_observed_does_not_prove_absence": "A resource that was not observed may be absent, unreachable, blocked, or outside the successfully fetched resource set.",
         "static_response_directives_only": "Indexability here comes from the collected static HTTP/HTML directives. Search-engine index coverage is not measured.",
         "normalised_text_match_within_inspected_pages": "Duplicate groups use case-insensitive, whitespace-normalised text and include only inspected pages.",
@@ -1247,6 +1256,38 @@
         "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge": "Most of this property's reported impressions are on URLs this crawl never reached, so the share would be computed over the pages that happen to still be linked - exactly the ones that are not abandoned."
       },
       "records": {
+        "viewport_missing": {
+          "title": "Pages without a mobile viewport",
+          "description": "Pages whose markup declares no meta viewport, so a phone renders the desktop layout scaled down."
+        },
+        "lang_missing": {
+          "title": "Pages without an html lang attribute",
+          "description": "Pages that declare no reading language, leaving it to be guessed."
+        },
+        "charset_missing": {
+          "title": "Pages declaring no character set",
+          "description": "Pages where neither the markup nor the response header said how to decode the bytes."
+        },
+        "favicon_missing": {
+          "title": "Pages declaring no icon",
+          "description": "Pages with no declared link rel=icon, which is what a tab, a bookmark and a result row show."
+        },
+        "thin_body_text": {
+          "title": "Pages below the reviewed body-text floor",
+          "description": "Pages carrying fewer text units than the reviewed floor. Units, not words, so a page written without inter-word spaces is measured on the same scale."
+        },
+        "external_link_blank_without_noopener": {
+          "title": "Pages with target=_blank links missing rel=noopener",
+          "description": "Outbound links that open a new tab without rel=noopener hand the opened page a handle on this one."
+        },
+        "client_rendered_content": {
+          "title": "Pages whose script payload dwarfs their visible text",
+          "description": "A ratio, not a byte count: a large page with proportionally large text is doing its job."
+        },
+        "html_document_oversized": {
+          "title": "Pages over the reviewed markup size",
+          "description": "The transferred document itself, before anything it references."
+        },
         "robots_resource": {
           "title": "robots.txt resource",
           "description": "Whether the crawler successfully fetched and parsed a robots.txt resource."
@@ -1533,6 +1574,13 @@
         }
       },
       "evidence": {
+        "viewport_declared": "Viewport declared",
+        "html_lang": "html lang",
+        "charset_declared": "Character set declared",
+        "favicon_declared": "Icon declared",
+        "reviewed_floor": "Reviewed floor",
+        "blank_without_noopener": "target=_blank without rel=noopener",
+        "reviewed_ceiling": "Reviewed ceiling",
         "fetched": "Fetched",
         "groups_observed": "Robots groups observed",
         "sitemap_references": "Sitemap references",
@@ -7184,7 +7232,7 @@
       "metaDescription": "One GenGrowth Agent over public static HTML: on-page content signals, crawl responses, indexability directives and internal links in one review, each condition naming its source and what was not measured.",
       "breadcrumb": "Agents",
       "eyebrow": "Focused website review",
-      "title": "One SEO Agent, for the whole site and for one page",
+      "title": "One SEO Agent, for the whole site and for the pages that matter",
       "subtitle": "An evidence-bounded review of public static HTML: on-page content signals, crawl responses, indexability directives and internal links, in one place. Every condition says which source produced it and what was not measured.",
       "boundary": "Results are not saved to an app project, do not use Search Console, and do not claim traffic impact or automatic priority. A verified account is required before any URL is read.",
       "seo": {
@@ -8271,6 +8319,15 @@
             "9": "Search opportunity"
           },
           "checks": {
+            "1_9": "Mobile viewport declaration",
+            "2_7": "Reading language declaration",
+            "2_8": "Character set declaration",
+            "2_9": "Icon declaration",
+            "2_10": "Target query across text slots",
+            "4_6": "Body text against the reviewed floor",
+            "6_6": "New-tab links carrying rel=noopener",
+            "8_7": "Static markup carries the page's text",
+            "8_8": "Markup document size",
             "1_1": "HTTP status code",
             "1_2": "robots.txt allowance",
             "1_3": "noindex directive",
@@ -8387,7 +8444,7 @@
               "validation3": "Read the first screen of the page and confirm it delivers the promise the snippet just made.",
               "impactSurface": "The title, description, and opening lines a search result is built from, plus how this page reads next to its siblings.",
               "risks": "A rewrite tuned to a query rather than to the page can promise something the page does not deliver, which costs more than the duplicate wording did.",
-              "limits": "The character counts here are a reviewed working range, not a rule: results truncate by rendered width. This preview cannot tell you how the snippet will finally be displayed."
+              "limits": "The widths here are a reviewed working range, not a rule, and they are display widths — a CJK character counts as two, because that is how a result row renders it. This preview cannot tell you how the snippet will finally be displayed."
             },
             "contentBrief": {
               "recommendation": "Treat this as a content brief, not a word-count target. List the decisions a reader still cannot make on this page, write the sections that answer them, and cite where each new claim comes from.",
@@ -8559,6 +8616,10 @@
           "action": "Draft it",
           "running": "Drafting…",
           "offer": "Writes a draft from the text this run collected on the page. Preview only — nothing is applied to the site.",
+          "reviewWidth": "{width} in display width, reviewed band {min}-{max}",
+          "reviewWidthOff": "{width} in display width, outside the reviewed band {min}-{max}",
+          "reviewQueryKept": "Keeps the confirmed query",
+          "reviewQueryLost": "Does not contain the confirmed query",
           "readyLabel": "Draft · review only",
           "boundary": "The draft is written from text this run collected on the page, and the model is told not to invent anything. It can still get things wrong — check each line before you publish.",
           "fields": {
@@ -8606,6 +8667,9 @@
         "unknown": "The Agent run could not be completed."
       },
       "capturedReport": "Stage 02 · Captured report",
+      "captureSummary": "{pages} pages crawled · {keyPages} key pages · {evaluated}/{total} checks evaluated",
+      "captureDetailLabel": "Collection boundary and counts",
+      "keyPagesNone": "This run selected no key pages, so page-level findings cover the submitted URL only.",
       "capturedLanded": "Redirected to {url} — that is the page this report read.",
       "finalOrigin": "Final public origin",
       "capturedAt": "Captured at",
@@ -8691,7 +8755,139 @@
         }
       },
       "evidenceRecords": "Evidence records measured",
-      "evidenceRecordsBoundary": "Evidence records are the measurements this run collected. Diagnosis counts checks, which is a different unit, so the two numbers are not comparable."
+      "evidenceRecordsBoundary": "Evidence records are the measurements this run collected. Diagnosis counts checks, which is a different unit, so the two numbers are not comparable.",
+      "issues": {
+        "eyebrow": "Reading results · issue first",
+        "title": "See the issues first, then decide how much evidence to open",
+        "body": "Each issue is a self-contained unit of work. The summary is there to help you judge priority; opening one reveals its affected URLs, evidence chain, repair location, validation steps, and the task text to hand an assistant. Several can stay open at once for comparison.",
+        "summary": {
+          "blocker": "Blockers",
+          "warning": "Warnings",
+          "suggestion": "Suggestions",
+          "investigation": "To investigate",
+          "passed": "Passed"
+        },
+        "filters": {
+          "all": "All issues",
+          "blocker": "Blockers",
+          "warning": "Warnings",
+          "suggestion": "Suggestions",
+          "investigation": "To investigate"
+        },
+        "controls": {
+          "expandVisible": "Expand current filter",
+          "collapseAll": "Collapse all"
+        },
+        "filterEmpty": "No issues under this filter. Switch filters to see the other categories.",
+        "clean": {
+          "title": "This run found nothing actionable",
+          "body": "That does not mean the site has no problems — only that every check this run evaluated came back clean. The passed and excluded lists below state how far this run's coverage reached.",
+          "notEvaluated": {
+            "title": "This run evaluated nothing",
+            "body": "That is not 'no problems' — this run reached no conclusion at all. The excluded list below states why each check could not be evaluated."
+          }
+        },
+        "severity": {
+          "blocker": "Blocker",
+          "warning": "Warning",
+          "suggestion": "Suggestion"
+        },
+        "lane": {
+          "investigation": "Source gated"
+        },
+        "truth": {
+          "observed": "Observed",
+          "notObserved": "Not observed",
+          "partial": "Partial",
+          "sourceGated": "Source gated",
+          "unavailable": "Unavailable"
+        },
+        "unrecognizedState": "Unrecognised state",
+        "row": {
+          "affectedUrls": "{count} affected URLs",
+          "keyPageHits": "{hits}/{total} key pages · another {rest} pages",
+          "keyPageHitsAtLeast": "{hits}/{total} key pages · at least another {rest} pages",
+          "keyPageHitsOnly": "{hits}/{total} key pages",
+          "keyPagePass": "{evaluated}/{total} key pages evaluated · passing",
+          "affectedSite": "Site-level scope",
+          "affectedUnavailable": "Affected population unavailable",
+          "affectedNotCaptured": "No individual target recorded",
+          "affectedUrlsAtLeast": "At least {count} affected URLs"
+        },
+        "investigationNote": "This run obtained no data from that source, so it reached no conclusion for this check. Unavailable is not 'no problem', and it is not zero. What follows is the path to establish the evidence, not a repair instruction.",
+        "sections": {
+          "rule": "Decision rule",
+          "measured": "Measured this run",
+          "affected": "Affected targets",
+          "evidence": "Evidence chain",
+          "repair": "Repair location",
+          "validation": "Validation steps",
+          "boundaries": "Impact, risks, and limits",
+          "impact": "Impact",
+          "risks": "Risks",
+          "limits": "Limits",
+          "boundary": "Evidence boundary",
+          "whatWouldAnswer": "What would answer this",
+          "requiredSource": "Data source required"
+        },
+        "affected": {
+          "unavailable": "This run could not obtain the affected population. Unavailable is not zero.",
+          "siteScope": "This is a site-level observation. It resolved to no individual URL, so none is listed.",
+          "none": "No individual affected target was recorded this run.",
+          "more": "Listed {shown} of {total} affected URLs; {rest} more not listed.",
+          "notCaptured": "This run kept no observation attributable to this issue. That is missing evidence, not an affected population of zero.",
+          "notEnumerated": "The record's affected total is larger than the observations listed above, so this list is not a complete enumeration.",
+          "siteScopeCounted": "Site-level observation; the record's affected count is {count}. This run resolved no individual URL, so none is listed."
+        },
+        "evidence": {
+          "none": "No evidence record is available to show.",
+          "counts": "tested {tested} · affected {affected}",
+          "limitation": "Evidence limitation",
+          "more": "{rest} further evidence records not expanded.",
+          "state": {
+            "observed": "Observed",
+            "not_observed": "Not observed",
+            "unverified": "Unverified"
+          }
+        },
+        "ai": {
+          "repairTitle": "Hand this issue to an assistant",
+          "repairBody": "Carries only this issue's affected URLs, evidence, repair boundary, and acceptance criteria — not the whole report.",
+          "investigationTitle": "Hand the investigation to an assistant",
+          "investigationBody": "Asks only for the evidence needed and a safe order to obtain it; it does not ask for a change to the site.",
+          "copyRepair": "Copy text for AI",
+          "copyInvestigation": "Copy investigation task",
+          "preview": "View task preview",
+          "copied": "Copied the task text for this issue.",
+          "copyFailed": "The browser did not allow copying; the identical text is shown below.",
+          "fallbackLabel": "The browser did not allow copying. Below is the identical read-only task text; focusing it selects all."
+        },
+        "engine": {
+          "ready": "ready",
+          "needsIntegration": "no detector yet",
+          "needsSupplement": "needs more evidence",
+          "notIntegrated": "not wired",
+          "accessRequired": "source not connected",
+          "unknown": "unrecognised engine"
+        },
+        "observedOnlyLane": {
+          "title": "Measured, not judged",
+          "hint": "published as numbers, not verdicts"
+        },
+        "passedLane": {
+          "title": "Passed checks",
+          "hint": "collapsed by default"
+        },
+        "excludedLane": {
+          "title": "Excluded checks",
+          "hint": "missing required input or source"
+        },
+        "investigationNextStep": "Confirm the source is available and covers this site, then re-run this check. Do not change the site on this basis before then.",
+        "quarantined": {
+          "title": "Some checks could not be read this run",
+          "body": "{count} check(s) arrived in a state this build does not recognise and were quarantined; they count toward no conclusion. They are neither a pass nor a failure — until that is resolved, this run cannot be called clean."
+        }
+      }
     }
   },
   "playbooks": {

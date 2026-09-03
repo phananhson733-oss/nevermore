@@ -8,15 +8,15 @@ import {
 } from "./catalog.ts";
 
 describe("v2 Agent audit catalog", () => {
-  it("freezes 5/31 site and 9/49 page entries with unique IDs", () => {
+  it("freezes 5/31 site and 9/58 page entries with unique IDs", () => {
     const site = SITE_AUDIT_GROUPS.flatMap((group) => group.checks);
     const page = PAGE_AUDIT_GROUPS.flatMap((group) => group.checks);
     expect(SITE_AUDIT_GROUPS).toHaveLength(5);
     expect(site).toHaveLength(31);
     expect(new Set(site.map((check) => check.id)).size).toBe(31);
     expect(PAGE_AUDIT_GROUPS).toHaveLength(9);
-    expect(page).toHaveLength(49);
-    expect(new Set(page.map((check) => check.id)).size).toBe(49);
+    expect(page).toHaveLength(58);
+    expect(new Set(page.map((check) => check.id)).size).toBe(58);
     expect([...site, ...page].every((check) => check.threshold.en && check.impact.en && check.howToFix.en)).toBe(true);
   });
 
@@ -27,7 +27,7 @@ describe("v2 Agent audit catalog", () => {
     // Inventory readiness is derived, not listed, so it cannot drift from the
     // detectors again. A hand-kept list is what let 47 checks advertise
     // readiness while only 24 could ever produce a verdict.
-    expect(all.filter((check) => check.inventoryReady)).toHaveLength(75);
+    expect(all.filter((check) => check.inventoryReady)).toHaveLength(83);
     for (const check of all) {
       expect(check.inventoryReady).toBe(check.evidenceRecordIds.length > 0);
     }
@@ -188,7 +188,7 @@ describe("v2 Agent audit catalog", () => {
       (group) => group.checks,
     );
     const decidable = all.filter((check) => check.evidenceRecordIds.length > 0);
-    expect(decidable).toHaveLength(75);
+    expect(decidable).toHaveLength(83);
 
     // The group fallback emits one sentence for every check in a group, so a
     // check still sharing its text with a sibling has no instructions of its
@@ -207,6 +207,32 @@ describe("v2 Agent audit catalog", () => {
       expect(check.howToFix.zh).not.toBe("");
       expect(check.howToFix.en.length).toBeGreaterThan(120);
     }
+  });
+
+  it("marks exactly the checks whose own threshold declines to judge", () => {
+    // Pinned by name. The flag is derived from the threshold sentence, so
+    // asserting it against that same sentence would pass whatever the set
+    // contained; changing this list has to be a decision someone writes down.
+    const declining = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS]
+      .flatMap((group) => group.checks)
+      .filter((check) => check.declaresNoJudgement)
+      .map((check) => check.id)
+      .sort();
+
+    expect(declining).toEqual(
+      [
+        "A7",
+        "B4",
+        "B5",
+        "C6",
+        "D7",
+        "E4",
+        "4.2",
+        "4.3",
+        "4.4",
+        "6.5",
+      ].sort(),
+    );
   });
 
   it("keeps Official CWV immutable and display-only checks out of Health", () => {
@@ -249,6 +275,10 @@ describe("v2 Agent audit catalog", () => {
         "1.6",
         "1.7",
         "1.8",
+        // Group 1 gates a page rather than scoring it, and the viewport
+        // declaration joined that group: a page that renders at desktop width
+        // on a phone is not a page with a lower score.
+        "1.9",
       ].sort(),
     );
   });

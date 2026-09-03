@@ -1,4 +1,4 @@
-// @input  -- existing seo_audit.sitewide.v17 envelopes and projected Agent data
+// @input  -- existing seo_audit.sitewide.v18 envelopes and projected Agent data
 // @output -- frozen authenticated Agent API types plus strict client/upstream guards
 // @pos    -- shared wire contract for the SEO Agent API and UI, both focuses
 
@@ -37,7 +37,10 @@ import {
 } from "@sf/public-tools/seo-audit/record-ledger";
 import { SEARCH_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/search-performance";
 import { INDEX_COVERAGE_RECORD_IDS } from "@sf/public-tools/seo-audit/index-coverage";
-import { KEYWORD_EVIDENCE_RECORD_IDS } from "@sf/public-tools/seo-audit/keyword-evidence/records";
+import {
+  KEYWORD_EVIDENCE_RECORD_IDS,
+  PAGE_SHAPE_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/keyword-evidence/records";
 import { PAGE_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/page-performance";
 import { SERP_SHAPE_RECORD_IDS } from "@sf/public-tools/seo-audit/serp-shape";
 
@@ -109,7 +112,7 @@ export type SerpLandscape =
 export type AgentKind = "seo" | "tech";
 export type AgentAuditCacheStatus = "hit" | "miss";
 export const AGENT_AUDIT_SOURCE_SCHEMA_VERSION =
-  "seo_audit.sitewide.v17" as const;
+  "seo_audit.sitewide.v18" as const;
 export const AGENT_AUDIT_SOURCE_SCOPE =
   "discoverable_same_origin_static_html_audit" as const;
 
@@ -150,6 +153,28 @@ export interface AgentAuditRun {
 }
 
 /** The bounded report exposed to Agent clients. Raw crawled page rows stay server-side. */
+/**
+ * One page this run is willing to judge on its own, beside the submitted one.
+ *
+ * Neutral facts only: which pages matter to a business is a question the
+ * client asks against a confirmed Profile, and this shape travels in a
+ * response projected from a payload cached across visitors.
+ */
+export interface AgentKeyPageCandidate {
+  /**
+   * The crawl's fetch URL, which is the form every observation carries.
+   *
+   * Not `subjectUrl`: the evaluator compares these with only a fragment
+   * stripped, so publishing the other normalisation would make every key page
+   * match nothing and read as "no observation".
+   */
+  readonly url: string;
+  readonly title: string | null;
+  readonly metaDescription: string | null;
+  readonly depth: number;
+  readonly inboundLinks: number;
+}
+
 export type AgentAuditResult = Pick<
   SeoAuditReport,
   | "targetUrl"
@@ -178,6 +203,14 @@ export type AgentAuditResult = Pick<
    */
   readonly landedTargetUrl: string | null;
   /**
+   * Pages this run can judge individually, beside the submitted one.
+   *
+   * Optional so an older cached payload, or a crawl that collected nothing,
+   * stays readable: absent means "this run published no shortlist", which is
+   * different from a site with one page.
+   */
+  readonly keyPages?: readonly AgentKeyPageCandidate[];
+  /**
    * Present only when the caller sent target queries.
    *
    * Deliberately absent from `SeoAuditReport`, which is exactly the cached
@@ -196,6 +229,7 @@ export type AgentAuditResult = Pick<
    * re-versioned to gain two audit records.
    */
   readonly keywordChecks?: AgentKeywordChecks;
+  readonly pageShapeChecks?: AgentPageShapeChecks;
   /**
    * CrUX field data for the submitted page, when a key is configured.
    *
@@ -311,11 +345,44 @@ function isAgentPagePerformance(value: unknown): value is AgentPagePerformance {
  * which the crawl version or the keyword evidence version describes.
  */
 export const AGENT_KEYWORD_CHECKS_VERSION = "keyword_checks.agent.v1" as const;
+/**
+ * Its own version, because its id set is its own.
+ *
+ * Bumped alongside `AGENT_KEYWORD_CHECKS_VERSION`: four ids left that region
+ * to form this one, so a client reading the old number against the new set
+ * would refuse a valid response.
+ */
+export const AGENT_PAGE_SHAPE_CHECKS_VERSION = "agent-page-shape.v1" as const;
 
 /** Records derived from this visitor's confirmed queries, never cached. */
 export interface AgentKeywordChecks {
   readonly version: typeof AGENT_KEYWORD_CHECKS_VERSION;
   readonly records: SeoAuditReport["records"];
+}
+
+/** The checks about a page's shape, present whenever a page type was confirmed. */
+export interface AgentPageShapeChecks {
+  readonly version: typeof AGENT_PAGE_SHAPE_CHECKS_VERSION;
+  readonly records: SeoAuditReport["records"];
+}
+
+function isAgentPageShapeChecks(
+  value: unknown,
+): value is AgentPageShapeChecks {
+  if (!isObject(value)) return false;
+  if (
+    value.version !== AGENT_PAGE_SHAPE_CHECKS_VERSION ||
+    !Array.isArray(value.records) ||
+    !value.records.every(isKeywordEvidenceRecord)
+  ) {
+    return false;
+  }
+  // Same rule as the region it split from: complete or not a region at all.
+  const ids = value.records.map((record) => record.id).sort();
+  const expected = PAGE_SHAPE_RECORD_IDS.slice().sort();
+  return (
+    ids.length === expected.length && ids.every((id, i) => id === expected[i])
+  );
 }
 
 function isAgentKeywordChecks(value: unknown): value is AgentKeywordChecks {
@@ -413,6 +480,7 @@ export function allAgentAuditRecords(
     ...data.result.records,
     ...(data.result.searchPerformance?.records ?? []),
     ...(data.result.keywordChecks?.records ?? []),
+    ...(data.result.pageShapeChecks?.records ?? []),
     ...(data.result.pagePerformance?.records ?? []),
     ...(data.result.serpShape?.records ?? []),
   ];
@@ -710,6 +778,32 @@ function isSerpLandscapeShape(value: unknown): boolean {
   );
 }
 
+/** Bound published beside the type, so the guard and the producer agree. */
+export const AGENT_KEY_PAGE_WIRE_LIMIT = 24;
+
+function isAgentKeyPageCandidates(
+  value: unknown,
+): value is readonly AgentKeyPageCandidate[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= AGENT_KEY_PAGE_WIRE_LIMIT &&
+    value.every(
+      (entry) =>
+        isObject(entry) &&
+        // Exactly five: a sixth field would be whatever an upstream payload
+        // happened to carry, published to the browser without review.
+        Object.keys(entry).length === 5 &&
+        typeof entry.url === "string" &&
+        entry.url.length > 0 &&
+        (entry.title === null || typeof entry.title === "string") &&
+        (entry.metaDescription === null ||
+          typeof entry.metaDescription === "string") &&
+        isNonNegativeInteger(entry.depth) &&
+        isNonNegativeInteger(entry.inboundLinks),
+    )
+  );
+}
+
 function isAgentResult(value: unknown): value is AgentAuditResult {
   if (
     !isObject(value) ||
@@ -717,6 +811,13 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     typeof value.siteOrigin !== "string" ||
     typeof value.targetInspected !== "boolean" ||
     !isNullableString(value.inspectedTargetUrl) ||
+    !(
+      value.keyPages === undefined || isAgentKeyPageCandidates(value.keyPages)
+    ) ||
+    !(
+      value.pageShapeChecks === undefined ||
+      isAgentPageShapeChecks(value.pageShapeChecks)
+    ) ||
     !isNullableString(value.landedTargetUrl) ||
     !isCanonicalIsoTimestamp(value.scannedAt) ||
     !isCoverage(value.coverage) ||

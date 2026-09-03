@@ -25,6 +25,7 @@ import { readPublicToolJson } from "../tools/public-tool-request.ts";
 import { readAgentSearchPerformance } from "./search-performance.ts";
 import {
   buildKeywordEvidenceRecords,
+  buildPageShapeRecords,
   type HeadingShapeInput,
 } from "@sf/public-tools/seo-audit/keyword-evidence/records";
 import { canonicalizeUrl } from "@sf/sources/canonical-url";
@@ -40,6 +41,7 @@ import {
   type ImageWeightRaw,
 } from "@sf/public-tools/seo-audit/page-performance";
 import { createImageWeightReader } from "./image-weight-reader.ts";
+import { selectAgentKeyPageCandidates } from "./key-page-candidates.ts";
 import {
   defaultPagePerformanceReader,
   type PagePerformanceReadResult,
@@ -52,6 +54,7 @@ import {
   AGENT_SERP_SHAPE_VERSION,
   AGENT_PAGE_PERFORMANCE_VERSION,
   AGENT_KEYWORD_CHECKS_VERSION,
+  AGENT_PAGE_SHAPE_CHECKS_VERSION,
   isCanonicalIsoTimestamp,
   isSeoAuditUpstreamSuccessEnvelope,
   type AgentAuditResult,
@@ -266,6 +269,9 @@ function headingShapeFor(
     h3: preset.h3,
     substanceWords: preset.substanceWords,
     wordsUnderEachH3: result.targetPageExtract?.wordsUnderEachH3 ?? [],
+    // Null whenever the extract decided a word count says nothing about this
+    // page -- a CJK-dominant body, or a crawl that produced no count at all.
+    wordCountIsMeaningful: result.targetPageExtract?.staticBodyWords !== null,
   };
 }
 
@@ -785,6 +791,7 @@ export async function handleAgentAuditRequest(
     }
   }
 
+  const pageShape = headingShapeFor(input.value.pageRole, result);
   const evidence =
     input.value.targetQueries === null
       ? null
@@ -853,6 +860,15 @@ export async function handleAgentAuditRequest(
       // until now it was the one reader of this run that never saw it: the
       // report named the URL that was typed, whichever page it audited.
       landedTargetUrl: landedTargetUrl(result),
+      // Which pages are worth judging one at a time. Neutral and derived from
+      // the collected rows, so it is safe beside a payload cached across
+      // visitors; narrowing it to what this visitor's Profile points at is the
+      // client's job, against a Profile the server never sees here.
+      keyPages: selectAgentKeyPageCandidates({
+        pages: result.pages,
+        siteOrigin: result.siteOrigin,
+        inspectedTargetUrl: result.inspectedTargetUrl,
+      }),
       // Rebuilt field by field, like every other projected value. Forwarding
       // the object would publish whatever an upstream or cached payload
       // happened to carry beside these fields.
@@ -873,7 +889,30 @@ export async function handleAgentAuditRequest(
               records: buildKeywordEvidenceRecords(
                 result.inspectedTargetUrl ?? result.targetUrl,
                 evidence,
-                headingShapeFor(input.value.pageRole, result),
+              ),
+            },
+          }),
+      /*
+        The page-shape checks need a confirmed page type and nothing else, so
+        they travel on their own. Inside the keyword region they were built
+        only when the visitor also named a query, which silently excluded all
+        four on every run started from the Agent rather than the page checker
+        -- while the surface went on rendering the reviewed ranges for the page
+        type that run had confirmed.
+
+        Keyed on the confirmed page type rather than on the heading shape: a
+        page whose levels were not captured still produces the region, and each
+        record says for itself what it could not measure. Withholding the whole
+        region would report those checks as unwired rather than unmeasured.
+      */
+      ...(input.value.pageRole === null
+        ? {}
+        : {
+            pageShapeChecks: {
+              version: AGENT_PAGE_SHAPE_CHECKS_VERSION,
+              records: buildPageShapeRecords(
+                result.inspectedTargetUrl ?? result.targetUrl,
+                pageShape,
                 result.targetPageExtract?.response.jsonLdTypes ?? null,
               ),
             },

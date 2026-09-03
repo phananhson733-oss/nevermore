@@ -1153,6 +1153,15 @@
       "noMatchingObservation": "在已检查集合中没有出现符合该条件的观测。",
       "limitationLabel": "证据边界",
       "limitations": {
+        "declared_meta_viewport_only_no_rendering": "仅依据已声明的 meta viewport 判定；本次运行不做渲染。",
+        "declared_html_lang_attribute_only": "仅依据已声明的 html lang 属性判定。",
+        "meta_charset_and_content_type_header_only": "仅依据 meta charset 与 Content-Type 响应头判定。",
+        "declared_link_rel_icon_only_no_root_probe": "仅依据已声明的 link rel=icon 判定；不会去请求根目录下的图标文件。",
+        "static_text_units_reviewed_floor_not_a_documented_rule": "按静态文本单位与一条审阅过的工作下限比较；该下限不是有据可查的规则。",
+        "declared_anchor_attributes_only": "仅依据已声明的链接属性判定。",
+        "transferred_markup_only_no_rendering": "按传输到的标记度量；本次运行不执行脚本。",
+        "transferred_markup_bytes_only": "仅按传输到的标记字节度量。",
+        "this_page_is_not_measured_by_whitespace_words_so_section_substance_is_not_judged": "这个页面不按空白分词度量，因此本项不判定小节内容量。",
         "resource_not_observed_does_not_prove_absence": "没有观测到资源，可能是资源不存在、不可达、被拦截，或未进入成功获取的资源集合；不能据此断言资源缺失。",
         "static_response_directives_only": "这里只读取已采集静态 HTTP/HTML 中的索引指令，不检测搜索引擎的真实索引覆盖。",
         "normalised_text_match_within_inspected_pages": "重复分组使用忽略大小写、合并空白后的文本，只覆盖本次已检查页面。",
@@ -1247,6 +1256,38 @@
         "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge": "该资源上报的曝光大部分落在本次抓取从未到达的 URL 上，比例只会在「仍然被链接的页面」上算出来——而那恰恰是没有被废弃的那些。"
       },
       "records": {
+        "viewport_missing": {
+          "title": "缺少移动端 viewport 的页面",
+          "description": "标记中没有声明 meta viewport 的页面：手机会把桌面版布局整体缩小显示。"
+        },
+        "lang_missing": {
+          "title": "缺少 html lang 属性的页面",
+          "description": "没有声明阅读语言的页面，语言只能靠猜。"
+        },
+        "charset_missing": {
+          "title": "未声明字符集的页面",
+          "description": "标记与响应头都没有说明字节该如何解码的页面。"
+        },
+        "favicon_missing": {
+          "title": "未声明站点图标的页面",
+          "description": "没有 link rel=icon 声明的页面——标签页、书签和结果行显示的就是它。"
+        },
+        "thin_body_text": {
+          "title": "正文量低于审阅下限的页面",
+          "description": "文本单位数低于审阅下限的页面。按单位而不是按词计，所以不使用词间空格的文字与使用的在同一把尺子上。"
+        },
+        "external_link_blank_without_noopener": {
+          "title": "存在 target=_blank 缺 rel=noopener 链接的页面",
+          "description": "开新标签页却不带 rel=noopener 的出站链接，会把本页的引用交给被打开的页面。"
+        },
+        "client_rendered_content": {
+          "title": "脚本体积远超可见正文的页面",
+          "description": "看的是比例不是绝对字节：大页面只要正文按比例也大，就没有问题。"
+        },
+        "html_document_oversized": {
+          "title": "标记体积超出审阅上限的页面",
+          "description": "指传输的文档本身，不含它引用的任何资源。"
+        },
         "robots_resource": {
           "title": "robots.txt 资源",
           "description": "爬虫是否成功获取并解析到 robots.txt 资源。"
@@ -1533,6 +1574,13 @@
         }
       },
       "evidence": {
+        "viewport_declared": "是否声明 viewport",
+        "html_lang": "html lang",
+        "charset_declared": "是否声明字符集",
+        "favicon_declared": "是否声明站点图标",
+        "reviewed_floor": "审阅下限",
+        "blank_without_noopener": "target=_blank 且缺 rel=noopener",
+        "reviewed_ceiling": "审阅上限",
         "fetched": "是否已获取",
         "groups_observed": "已观测 Robots 规则组",
         "sitemap_references": "Sitemap 引用",
@@ -7184,7 +7232,7 @@
       "metaDescription": "一个 GenGrowth Agent，基于公开静态 HTML：页面内容信号、抓取响应、索引指令与内链在同一次检查里完成，每一条状态都说明来源以及哪些没有被测量。",
       "breadcrumb": "Agents 智能体",
       "eyebrow": "聚焦式网站检查",
-      "title": "一个 SEO Agent，既看整站也看单页",
+      "title": "一个 SEO Agent，既看整站也看关键页",
       "subtitle": "对公开静态 HTML 的有证据边界检查：页面内容信号、抓取响应、索引指令与内链，都在同一处。每一条状态都会说明它由哪个来源得出、以及哪些没有被测量。",
       "boundary": "结果不会保存到 App 项目，不使用 Search Console，也不声称流量影响或自动优先级。读取任何 URL 之前都需要已验证账号。",
       "seo": {
@@ -8271,6 +8319,15 @@
             "9": "搜索机会"
           },
           "checks": {
+            "1_9": "移动端 viewport 声明",
+            "2_7": "阅读语言声明",
+            "2_8": "字符集声明",
+            "2_9": "站点图标声明",
+            "2_10": "目标词在各文本位点的覆盖",
+            "4_6": "正文量与审阅下限",
+            "6_6": "新标签页外链是否带 rel=noopener",
+            "8_7": "静态标记是否承载页面正文",
+            "8_8": "标记文档体积",
             "1_1": "HTTP 状态码",
             "1_2": "robots.txt 放行",
             "1_3": "noindex 标签",
@@ -8387,7 +8444,7 @@
               "validation3": "读一遍页面首屏，确认它兑现了摘要刚刚做出的承诺。",
               "impactSurface": "搜索结果所依据的 Title、描述和开头段落，以及这个页面与兄弟页面并排时的读感。",
               "risks": "只对着目标词而不对着页面改写，可能许下页面兑现不了的承诺，代价比原来的重复文案更高。",
-              "limits": "这里的字数只是已审阅的工作区间，不是硬规则：结果按渲染宽度截断。本预览无法告诉你摘要最终会以什么形式显示。"
+              "limits": "这里的宽度只是已审阅的工作区间，不是硬规则，而且是显示宽度——中日韩字符按 2 计，因为结果行就是这么渲染的。本预览无法告诉你摘要最终会以什么形式显示。"
             },
             "contentBrief": {
               "recommendation": "把它当成内容简报，而不是字数指标。先列出读者在这个页面上仍然做不了的判断，再写出回答这些判断的章节，并注明每条新说法的出处。",
@@ -8559,6 +8616,10 @@
           "action": "生成草稿",
           "running": "正在生成…",
           "offer": "按本页已采集到的文字生成一份草稿。仅供审阅，不会应用到站点。",
+          "reviewWidth": "显示宽度 {width}，审阅区间 {min}-{max}",
+          "reviewWidthOff": "显示宽度 {width}，超出审阅区间 {min}-{max}",
+          "reviewQueryKept": "保留了已确认目标词",
+          "reviewQueryLost": "不含已确认目标词",
           "readyLabel": "草稿 · 仅供审阅",
           "boundary": "草稿只把本页已采集到的文字作为依据写成，并被要求不许编造。模型仍可能出错——发布前请逐句核对。",
           "fields": {
@@ -8606,6 +8667,9 @@
         "unknown": "本次 Agent 运行未能完成。"
       },
       "capturedReport": "阶段 02 · 已采集报告",
+      "captureSummary": "抓取 {pages} 页 · 关键页 {keyPages} · 已评估 {evaluated}/{total} 项检查",
+      "captureDetailLabel": "采集边界与计数",
+      "keyPagesNone": "本次没有可评估的关键页，页面级结论只针对提交的 URL。",
       "capturedLanded": "跳转到了 {url}，本报告读的是这个页面。",
       "finalOrigin": "最终公开源站",
       "capturedAt": "采集时间",
@@ -8691,7 +8755,139 @@
         }
       },
       "evidenceRecords": "已测量证据记录",
-      "evidenceRecordsBoundary": "证据记录是本次运行采集到的测量条目；诊断区数的是检查项，两者口径不同，数字不能互相对照。"
+      "evidenceRecordsBoundary": "证据记录是本次运行采集到的测量条目；诊断区数的是检查项，两者口径不同，数字不能互相对照。",
+      "issues": {
+        "eyebrow": "结果阅读 · 问题优先",
+        "title": "先看问题，再决定展开多少证据",
+        "body": "每个问题都是一份独立的执行单元：摘要负责帮助判断优先级，展开后才呈现受影响 URL、证据链、修复位置、验证步骤和交给 AI 的任务文本。可以同时展开多个问题来比较。",
+        "summary": {
+          "blocker": "阻断项",
+          "warning": "警告",
+          "suggestion": "建议",
+          "investigation": "待调查",
+          "passed": "已通过"
+        },
+        "filters": {
+          "all": "全部问题",
+          "blocker": "阻断",
+          "warning": "警告",
+          "suggestion": "建议",
+          "investigation": "待调查"
+        },
+        "controls": {
+          "expandVisible": "展开当前筛选",
+          "collapseAll": "全部收起"
+        },
+        "filterEmpty": "当前筛选下没有问题。切换筛选可以查看其他类别。",
+        "clean": {
+          "title": "本次运行没有发现可行动的问题",
+          "body": "这不表示站点没有任何问题，只表示本次已评估的检查项都没有命中。下方的已通过与已排除清单说明了本次覆盖到什么程度。",
+          "notEvaluated": {
+            "title": "本次运行没有评估到任何检查项",
+            "body": "这不是「没有问题」，而是本次运行没有得出任何结论。下方的已排除清单说明每一项为什么没能评估。"
+          }
+        },
+        "severity": {
+          "blocker": "阻断",
+          "warning": "警告",
+          "suggestion": "建议"
+        },
+        "lane": {
+          "investigation": "来源受限"
+        },
+        "truth": {
+          "observed": "已观测",
+          "notObserved": "未观测到",
+          "partial": "部分观测",
+          "sourceGated": "来源受限",
+          "unavailable": "不可得"
+        },
+        "unrecognizedState": "未识别状态",
+        "row": {
+          "affectedUrls": "{count} 个受影响 URL",
+          "keyPageHits": "关键页 {hits}/{total} · 另有 {rest} 页",
+          "keyPageHitsAtLeast": "关键页 {hits}/{total} · 另有至少 {rest} 页",
+          "keyPageHitsOnly": "关键页 {hits}/{total}",
+          "keyPagePass": "关键页 {evaluated}/{total} 已评估 · 通过",
+          "affectedSite": "站点级范围",
+          "affectedUnavailable": "受影响范围不可得",
+          "affectedNotCaptured": "未记录到具体目标",
+          "affectedUrlsAtLeast": "至少 {count} 个受影响 URL"
+        },
+        "investigationNote": "本次运行没有取得该来源的数据，因此没有对这一项得出任何结论。「不可得」不等于「没有问题」，也不等于 0。下面给出的是确认证据的调查路径，不是修复指令。",
+        "sections": {
+          "rule": "判定规则",
+          "measured": "本次测量",
+          "affected": "受影响目标",
+          "evidence": "证据链",
+          "repair": "可落地解决方案",
+          "validation": "验证步骤",
+          "boundaries": "影响、风险与限制",
+          "impact": "影响",
+          "risks": "风险",
+          "limits": "限制",
+          "boundary": "证据边界",
+          "whatWouldAnswer": "什么能回答它",
+          "requiredSource": "需要的数据来源"
+        },
+        "affected": {
+          "unavailable": "本次运行无法取得受影响范围。不可得不等于 0。",
+          "siteScope": "这是站点级观测，本次没有定位到具体 URL，因此不列出 URL。",
+          "none": "本次没有记录到受影响的具体目标。",
+          "more": "以上为 {total} 个受影响 URL 中的前 {shown} 个，另有 {rest} 个未列出。",
+          "notCaptured": "本次运行没有记录到可归属于该问题的具体目标。这是证据缺失，不是「受影响 0 个」。",
+          "notEnumerated": "记录的受影响总数大于上面列出的观测条目，因此这份列表不是完整枚举。",
+          "siteScopeCounted": "站点级观测；记录的受影响数为 {count}。本次未定位到具体 URL，因此不列出 URL。"
+        },
+        "evidence": {
+          "none": "本次没有可展示的证据记录。",
+          "counts": "已测 {tested} · 命中 {affected}",
+          "limitation": "证据限制",
+          "more": "另有 {rest} 条证据记录未展开。",
+          "state": {
+            "observed": "已观测",
+            "not_observed": "未观测到",
+            "unverified": "未验证"
+          }
+        },
+        "ai": {
+          "repairTitle": "把当前问题交给 AI",
+          "repairBody": "只包含这一个问题的受影响 URL、证据、修复边界和验收要求，不复制整份报告。",
+          "investigationTitle": "把调查任务交给 AI",
+          "investigationBody": "只要求梳理所需证据与安全的调查顺序，不要求它直接修改站点。",
+          "copyRepair": "复制文本给 AI",
+          "copyInvestigation": "复制调查任务给 AI",
+          "preview": "查看任务预览",
+          "copied": "已复制当前问题的任务文本。",
+          "copyFailed": "浏览器未允许自动复制，下方已给出完全相同的文本。",
+          "fallbackLabel": "浏览器未允许自动复制。下面是完全相同的只读任务文本，聚焦后会自动全选。"
+        },
+        "engine": {
+          "ready": "就绪",
+          "needsIntegration": "尚无检测器",
+          "needsSupplement": "证据不足",
+          "notIntegrated": "未接线",
+          "accessRequired": "来源未连接",
+          "unknown": "未识别的引擎状态"
+        },
+        "observedOnlyLane": {
+          "title": "仅观测",
+          "hint": "只给数值，不作判定"
+        },
+        "passedLane": {
+          "title": "已通过的检查",
+          "hint": "默认折叠"
+        },
+        "excludedLane": {
+          "title": "已排除的检查",
+          "hint": "缺少所需输入或来源"
+        },
+        "investigationNextStep": "先确认该来源可得且覆盖本站，再重跑这一项；在此之前不要按结论修改站点。",
+        "quarantined": {
+          "title": "有检查项本次无法读取",
+          "body": "有 {count} 项检查带着本构建不认识的状态，已被隔离，不计入任何结论。它们既不是通过也不是失败——在弄清楚之前，本次运行不能被称为干净。"
+        }
+      }
     }
   },
   "playbooks": {

@@ -184,6 +184,22 @@ async function websiteDetailsFromResponse(
   }
 }
 
+/**
+ * The queries this run should be judged against.
+ *
+ * A handoff from the page checker wins: the visitor chose those on the page
+ * they came from. Otherwise the Profile's own confirmed query stands, which is
+ * the whole point of asking for it.
+ */
+function targetQueriesFor(
+  profile: AgentProfileDraft,
+  handoff: readonly string[] | null,
+): readonly string[] {
+  if (handoff !== null && handoff.length > 0) return handoff;
+  const confirmed = profile.targetQuery.trim();
+  return confirmed === "" ? [] : [confirmed];
+}
+
 export function AgentWorkbench(props: AgentWorkbenchProps) {
   return <AgentWorkbenchInstance key={props.agent} {...props} />;
 }
@@ -282,19 +298,29 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           },
           body: JSON.stringify({
           url: confirmedProfile.targetUrl,
-          // Only when this visit came from the page checker. Without a handoff
-          // the request is byte-for-byte what it was before the keyword layer.
-          // Omitted when empty as well as when absent. A URL-only check hands
-          // over a draft with no queries, and `targetQueries: []` is not the
-          // same request as no `targetQueries` — the endpoint normalises an
-          // empty list to `empty_after_normalization` and rejects the whole
-          // call, so the report's own "open the Agent" button failed.
-          ...(handoffQueriesRef.current === null ||
-          handoffQueriesRef.current.length === 0
+          /*
+            The confirmed context, sent because it was confirmed.
+
+            It used to travel only when the visit came from the page checker,
+            so a run started from the Agent silently excluded every check about
+            the target query or the page type -- eight of them -- while the
+            surface went on showing the reviewed ranges for the page type it
+            had just asked the visitor to confirm.
+
+            The page type goes on its own: the endpoint validates it
+            independently, and the page-shape checks need nothing else. The
+            query list is omitted when empty rather than sent as `[]`, which
+            the endpoint normalises to `empty_after_normalization` and refuses.
+          */
+          pageRole: confirmedProfile.pageType,
+          ...(targetQueriesFor(confirmedProfile, handoffQueriesRef.current)
+            .length === 0
             ? {}
             : {
-                targetQueries: handoffQueriesRef.current,
-                pageRole: confirmedProfile.pageType,
+                targetQueries: targetQueriesFor(
+                  confirmedProfile,
+                  handoffQueriesRef.current,
+                ),
               }),
         }),
           signal,

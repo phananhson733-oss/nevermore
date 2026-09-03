@@ -64,7 +64,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v17",
+    schemaVersion: "seo_audit.sitewide.v18",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -131,7 +131,10 @@ const upstreamPayload = {
   },
 } satisfies SeoAuditPayload;
 
-function request(accept = "application/json"): Request {
+function request(
+  extra: Readonly<Record<string, unknown>> = {},
+  accept = "application/json",
+): Request {
   return new Request("https://gengrowth.ai/api/agents/seo/audit", {
     method: "POST",
     headers: {
@@ -139,7 +142,7 @@ function request(accept = "application/json"): Request {
       "content-type": "application/json",
       "x-real-ip": "203.0.113.9",
     },
-    body: JSON.stringify({ url: "acme.test" }),
+    body: JSON.stringify({ url: "acme.test", ...extra }),
   });
 }
 
@@ -726,7 +729,7 @@ describe("handleAgentAuditRequest", () => {
     expect(body.data.result.searchPerformance).toEqual(searchRegion);
     // Beside, not inside: the crawl ledger is what gets cached by host, and
     // these numbers belong to one visitor's verified property.
-    expect(body.data.result.records).toHaveLength(47);
+    expect(body.data.result.records).toHaveLength(55);
   });
 
   it("omits the region entirely when nothing covers the host", async () => {
@@ -802,7 +805,7 @@ describe("handleAgentAuditRequest", () => {
 
   it("authenticates before delegating the original request instance", async () => {
     const order: string[] = [];
-    const incoming = request("application/x-ndjson");
+    const incoming = request({}, "application/x-ndjson");
     const response = await handleAgentAuditRequest(
       incoming,
       "seo",
@@ -854,7 +857,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v17",
+            schemaVersion: "seo_audit.sitewide.v18",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -866,6 +869,18 @@ describe("handleAgentAuditRequest", () => {
           targetInspected: upstreamPayload.result.targetInspected,
           inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
           landedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
+          // Derived from the collected rows, so it travels with every run.
+          // Neutral by construction: no Profile reaches this projection.
+          keyPages: [
+            {
+              url: upstreamPayload.result.inspectedTargetUrl,
+              title: upstreamPayload.result.pages[0]?.title ?? null,
+              metaDescription:
+                upstreamPayload.result.pages[0]?.metaDescription ?? null,
+              depth: upstreamPayload.result.pages[0]?.depth ?? 0,
+              inboundLinks: upstreamPayload.result.pages[0]?.inboundLinks ?? 0,
+            },
+          ],
           targetPageExtract: null,
           coverage: upstreamPayload.result.coverage,
           siteResources: upstreamPayload.result.siteResources,
@@ -941,6 +956,18 @@ describe("handleAgentAuditRequest", () => {
       targetInspected: upstreamPayload.result.targetInspected,
       inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
       landedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
+      // Rebuilt field by field like every other region, so an upstream row
+      // carrying page source beside these five never reaches the browser.
+      keyPages: [
+        {
+          url: upstreamPayload.result.inspectedTargetUrl,
+          title: upstreamPayload.result.pages[0]?.title ?? null,
+          metaDescription:
+            upstreamPayload.result.pages[0]?.metaDescription ?? null,
+          depth: upstreamPayload.result.pages[0]?.depth ?? 0,
+          inboundLinks: upstreamPayload.result.pages[0]?.inboundLinks ?? 0,
+        },
+      ],
       targetPageExtract: null,
       coverage: upstreamPayload.result.coverage,
       siteResources: upstreamPayload.result.siteResources,
@@ -957,6 +984,45 @@ describe("handleAgentAuditRequest", () => {
     expect(JSON.stringify(body)).not.toContain("private");
   });
 
+  describe("the page-shape region", () => {
+    it("travels on a confirmed page type alone, with no query named", () => {
+      // The defect this fixes: these four checks used to be built inside the
+      // keyword region, which exists only when a query was named. So every run
+      // started from the Agent excluded all four, while the surface went on
+      // rendering the reviewed ranges for the page type it had just confirmed.
+      return handleAgentAuditRequest(
+        request({ pageRole: "guide" }),
+        "seo",
+        dependencies(),
+      )
+        .then((response) => response.json())
+        .then((body: { data: { result: Record<string, unknown> } }) => {
+          const region = body.data.result["pageShapeChecks"] as
+            | { readonly records: readonly { readonly id: string }[] }
+            | undefined;
+
+          expect(region?.records.map((record) => record.id).sort()).toEqual(
+            [
+              "h2_count_outside_reviewed_range",
+              "h3_count_outside_reviewed_range",
+              "schema_type_unmatched_to_page_type",
+              "thin_section_under_h3",
+            ].sort(),
+          );
+          // The keyword region stays absent: no query was named.
+          expect(body.data.result["keywordChecks"]).toBeUndefined();
+        });
+    });
+
+    it("stays absent when no page type was confirmed", () => {
+      return handleAgentAuditRequest(request(), "seo", dependencies())
+        .then((response) => response.json())
+        .then((body: { data: { result: Record<string, unknown> } }) => {
+          expect(body.data.result["pageShapeChecks"]).toBeUndefined();
+        });
+    });
+  });
+
   it("returns the same complete neutral ledger for Tech with independent run identity", async () => {
     const response = await handleAgentAuditRequest(
       request(),
@@ -967,7 +1033,7 @@ describe("handleAgentAuditRequest", () => {
 
     expect(body.data.run.agent).toBe("tech");
     expect(body.data.result.records).toEqual(upstreamPayload.result.records);
-    expect(body.data.result.records).toHaveLength(47);
+    expect(body.data.result.records).toHaveLength(55);
   });
 
   it.each([

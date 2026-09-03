@@ -58,13 +58,20 @@ describe("handleAgentDraftRequest", () => {
     const response = await handleAgentDraftRequest(request(), dependencies());
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
+    await expect(response.json()).resolves.toMatchObject({
       data: {
         draft: {
           kind: "search-presentation",
           title: "Free natal chart calculator",
           metaDescription: "Draw your natal chart from a birth date and time.",
           openingLine: "Enter a birth date to draw your chart.",
+          // The draft says how it measures against the bands it was written
+          // for, so a rewrite that misses them cannot be published as a fix
+          // without the reader seeing that it does.
+          review: {
+            titleWithinRange: expect.any(Boolean),
+            metaDescriptionWithinRange: expect.any(Boolean),
+          },
         },
       },
     });

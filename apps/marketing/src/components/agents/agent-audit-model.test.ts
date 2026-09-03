@@ -29,7 +29,7 @@ const data: AgentAuditSuccessData = {
     persistence: "none",
     source: {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v17",
+      schemaVersion: "seo_audit.sitewide.v18",
       completedAt: "2026-08-13T00:00:00.000Z",
       cache: { status: "miss", capturedAt: null },
     },
@@ -66,32 +66,27 @@ const data: AgentAuditSuccessData = {
 };
 
 describe("buildAgentAuditViewModel", () => {
-  it.each([
-    ["seo" as const, "D", "2"],
-    ["tech" as const, "C", "1"],
-  ])(
-    "keeps all 80 checks and applies the %s Agent defaults",
-    (agent, siteDefault, pageDefault) => {
+  it.each([["seo" as const], ["tech" as const]])(
+    "keeps all 89 checks for the %s Agent",
+    (agent) => {
       const model = buildAgentAuditViewModel({
         agent,
         locale: "en",
         context,
+      coreFeatures: [],
         data: { ...data, run: { ...data.run, agent } },
       });
 
-      expect(model.defaults).toEqual({
-        siteGroupId: siteDefault,
-        pageGroupId: pageDefault,
-      });
-      expect(model.scopes.site.groups).toHaveLength(5);
-      expect(model.scopes.site.total).toBe(31);
-      expect(model.scopes.site.inventoryReady).toBe(27);
-      expect(model.scopes.page.groups).toHaveLength(9);
-      expect(model.scopes.page.total).toBe(49);
-      expect(model.scopes.page.inventoryReady).toBe(48);
+      // 31 site-wide + 49 page-level, in one list. The per-scope group views
+      // went with the scope switch; what still has to hold is that evaluating
+      // drops nothing on the way.
+      expect(model.evaluatedChecks).toHaveLength(89);
       expect(
-        model.scopes.site.total + model.scopes.page.total,
-      ).toBe(80);
+        model.evaluatedChecks.filter((check) => check.check.scope === "site"),
+      ).toHaveLength(31);
+      expect(
+        model.evaluatedChecks.filter((check) => check.check.scope === "page"),
+      ).toHaveLength(58);
     },
   );
 
@@ -100,25 +95,20 @@ describe("buildAgentAuditViewModel", () => {
       agent: "seo",
       locale: "en",
       context,
+      coreFeatures: [],
       data,
     });
-    const checks = [
-      ...model.scopes.site.groups.flatMap((group) => group.checks),
-      ...model.scopes.page.groups.flatMap((group) => group.checks),
-    ];
+    const checks = model.evaluatedChecks;
 
-    expect(model.scopes.site.health).toBeNull();
-    expect(model.scopes.page.health).toBeNull();
-    expect(model.scopes.site.evaluated).toBe(0);
-    expect(model.scopes.page.evaluated).toBe(0);
-    expect(checks).toHaveLength(80);
+    expect(checks).toHaveLength(89);
     expect(checks.every((check) => check.result === "excluded")).toBe(true);
     expect(checks.some((check) => check.result === "pass")).toBe(false);
     expect(checks.every((check) => check.measurement === null)).toBe(true);
+    // Contract spelling, not the view layer's old snake_case copy.
     expect(
       checks.some(
         (check) =>
-          check.truth === "source_gated" || check.truth === "unavailable",
+          check.truth === "source-gated" || check.truth === "unavailable",
       ),
     ).toBe(true);
   });
@@ -128,6 +118,7 @@ describe("buildAgentAuditViewModel", () => {
       agent: "seo",
       locale: "en",
       context,
+      coreFeatures: [],
       data: {
         ...data,
         result: {
@@ -150,43 +141,35 @@ describe("buildAgentAuditViewModel", () => {
         },
       },
     });
-    const check = model.scopes.site.groups
-      .flatMap((group) => group.checks)
-      .find((candidate) => candidate.id === "D2");
+    const check = model.evaluatedChecks.find(
+      (candidate) => candidate.check.id === "D2",
+    );
 
     expect(check?.result).toBe("pass");
-    expect(check?.truth).toBe("not_observed");
-    expect(model.scopes.site.health).toBe(100);
+    expect(check?.truth).toBe("not-observed");
   });
 
-  it("exposes every explainability field and the page-type heading policy", () => {
+  it("exposes every explainability field on each evaluated check", () => {
     const model = buildAgentAuditViewModel({
       agent: "tech",
       locale: "zh",
       context,
+      coreFeatures: [],
       data: { ...data, run: { ...data.run, agent: "tech" } },
     });
-    const check = model.scopes.page.groups[0]?.checks[0];
+    const check = model.evaluatedChecks.find(
+      (candidate) => candidate.check.scope === "page",
+    );
 
-    expect(check).toMatchObject({
-      result: "excluded",
-      measurement: null,
-    });
-    expect(check?.title).toBeTruthy();
-    expect(check?.threshold).toBeTruthy();
-    expect(check?.thresholdAuthority).toBeTruthy();
-    expect(check?.impact).toBeTruthy();
-    expect(check?.howToFix).toBeTruthy();
-    expect(check?.dataSource).toBeTruthy();
-    expect(check?.boundary).toBeTruthy();
+    expect(check).toMatchObject({ result: "excluded", measurement: null });
+    expect(check?.check.title).toBeTruthy();
+    expect(check?.check.threshold).toBeTruthy();
+    expect(check?.check.thresholdAuthority).toBeTruthy();
+    expect(check?.check.impact).toBeTruthy();
+    expect(check?.check.howToFix).toBeTruthy();
+    expect(check?.check.dataSource).toBeTruthy();
+    expect(check?.check.boundary).toBeTruthy();
     expect(check?.scoreContribution).toBeNull();
-    expect(model.headingPreset).toMatchObject({
-      pageType: "tool",
-      h2: { min: 5, max: 9 },
-      h3: { min: 6, max: 18 },
-      substanceWords: 60,
-      blocker: false,
-    });
   });
 
   it("preserves the confirmed Agent-local context and source provenance", () => {
@@ -194,6 +177,7 @@ describe("buildAgentAuditViewModel", () => {
       agent: "seo",
       locale: "en",
       context,
+      coreFeatures: [],
       data,
     });
 
@@ -201,7 +185,7 @@ describe("buildAgentAuditViewModel", () => {
     expect(model.provenance).toMatchObject({
       availability: "unavailable",
       sourceTool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v17",
+      schemaVersion: "seo_audit.sitewide.v18",
       persistence: "none",
     });
   });

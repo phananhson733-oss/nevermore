@@ -127,6 +127,15 @@ export interface HeadingShapeInput {
   readonly substanceWords: number;
   /** Words under each H3, in document order. */
   readonly wordsUnderEachH3: readonly number[];
+  /**
+   * Whether counting words means anything on this page.
+   *
+   * False for a page written without inter-word spaces, where the crawler's
+   * whitespace split reports about one "word" per section and every section
+   * reads as thin. The published threshold says this check does not judge such
+   * a page; without this flag the code judged it anyway.
+   */
+  readonly wordCountIsMeaningful: boolean;
 }
 
 function headingCountRecord(
@@ -430,6 +439,21 @@ function sectionSubstanceRecord(
     population: "target_page" as const,
   };
   const sections = shape?.wordsUnderEachH3 ?? [];
+  if (shape && !shape.wordCountIsMeaningful) {
+    // The threshold published beside this check says a page written without
+    // inter-word spaces is not measured here. It used to say that while the
+    // code measured it anyway, and reported roughly one word per section.
+    return {
+      ...base,
+      state: "unverified",
+      targetTested: null,
+      tested: 0,
+      affected: 0,
+      observations: [],
+      limitation:
+        "this_page_is_not_measured_by_whitespace_words_so_section_substance_is_not_judged",
+    };
+  }
   if (!shape || sections.length === 0) {
     return {
       ...base,
@@ -474,18 +498,35 @@ function sectionSubstanceRecord(
 export function buildKeywordEvidenceRecords(
   targetUrl: string,
   evidence: KeywordEvidence | null | undefined,
+): readonly SeoAuditRecord[] {
+  return [
+    slotRecord("title_without_target_query", "title", targetUrl, evidence),
+    slotRecord("h1_without_target_query", "h1", targetUrl, evidence),
+    densityRecord(targetUrl, evidence),
+    firstAppearanceRecord(targetUrl, evidence),
+  ];
+}
+
+/**
+ * The checks about a page's shape, which need a confirmed page type and
+ * nothing else.
+ *
+ * Split out because they used to travel inside the keyword region, and that
+ * region is only built when the visitor named a target query. So a run that
+ * confirmed a page type but no query — every run started from the Agent rather
+ * than from the page checker — silently excluded all four, while the surface
+ * went on rendering the reviewed ranges for the page type it had confirmed.
+ */
+export function buildPageShapeRecords(
+  targetUrl: string,
   headingShape?: HeadingShapeInput | null,
   /** What the target page declared, for the schema-fit check. */
   jsonLdTypes?: readonly string[] | null,
 ): readonly SeoAuditRecord[] {
   return [
-    slotRecord("title_without_target_query", "title", targetUrl, evidence),
-    slotRecord("h1_without_target_query", "h1", targetUrl, evidence),
     headingCountRecord("h2_count_outside_reviewed_range", 2, targetUrl, headingShape),
     headingCountRecord("h3_count_outside_reviewed_range", 3, targetUrl, headingShape),
-    densityRecord(targetUrl, evidence),
     schemaTypeRecord(targetUrl, headingShape?.pageType ?? null, jsonLdTypes),
-    firstAppearanceRecord(targetUrl, evidence),
     sectionSubstanceRecord(targetUrl, headingShape),
   ];
 }
@@ -493,11 +534,20 @@ export function buildKeywordEvidenceRecords(
 export const KEYWORD_EVIDENCE_RECORD_IDS: readonly string[] = [
   "title_without_target_query",
   "h1_without_target_query",
+  "target_query_density",
+  "target_query_first_appearance",
+];
+
+/**
+ * Moved out of `KEYWORD_EVIDENCE_RECORD_IDS` rather than listed in both.
+ *
+ * `isAgentKeywordChecks` requires the region's id set to equal that constant
+ * exactly, so leaving these there would make every new response fail the guard.
+ */
+export const PAGE_SHAPE_RECORD_IDS: readonly string[] = [
   "h2_count_outside_reviewed_range",
   "h3_count_outside_reviewed_range",
-  "target_query_density",
   "schema_type_unmatched_to_page_type",
-  "target_query_first_appearance",
   "thin_section_under_h3",
 ];
 
@@ -521,6 +571,7 @@ export const KEYWORD_EVIDENCE_EVIDENCE_LABELS: readonly string[] = [
 ];
 
 export const KEYWORD_EVIDENCE_LIMITATION_CODES: readonly string[] = [
+  "this_page_is_not_measured_by_whitespace_words_so_section_substance_is_not_judged",
   "no_target_query_was_confirmed_so_this_page_has_nothing_to_be_checked_against",
   "the_submitted_page_was_not_captured_so_its_text_could_not_be_read",
   "the_page_text_extract_was_missing_so_no_slot_could_be_compared",

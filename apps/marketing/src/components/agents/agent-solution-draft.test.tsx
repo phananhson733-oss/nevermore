@@ -107,6 +107,78 @@ describe("AgentSolutionDraft", () => {
     expect(render(null).textContent).toBe("");
   });
 
+  it("states what the draft measures beside the draft", async () => {
+    // A rewrite offered to fix a title-length finding can itself miss the
+    // band, and one offered to restore a query can drop it. Both are only
+    // visible if the numbers travel with the text.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          data: {
+            draft: {
+              kind: "search-presentation",
+              title: "Chart",
+              metaDescription: "Draw your natal chart from a birth date.",
+              openingLine: "Enter a birth date to draw your chart.",
+              review: {
+                titleWidth: 5,
+                titleWithinRange: false,
+                metaDescriptionWidth: 40,
+                metaDescriptionWithinRange: false,
+                titleContainsTargetQuery: false,
+              },
+            },
+          },
+        }),
+      ),
+    );
+    const element = render();
+
+    await act(async () => {
+      element
+        .querySelector("button")!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const notes = [...element.querySelectorAll("[data-draft-review]")].map(
+      (node) => node.textContent ?? "",
+    );
+    expect(notes).toHaveLength(2);
+    expect(notes[0]).toContain("outside the reviewed band");
+    expect(notes[0]).toContain("Does not contain the confirmed query");
+  });
+
+  it("renders a draft from a build that sent no review", async () => {
+    // Old server, new bundle. Rendering the draft without the numbers is the
+    // honest degradation; taking the panel down is not.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          data: {
+            draft: {
+              kind: "search-presentation",
+              title: "Free natal chart calculator",
+              metaDescription: "Draw your natal chart from a birth date.",
+              openingLine: "Enter a birth date to draw your chart.",
+            },
+          },
+        }),
+      ),
+    );
+    const element = render();
+
+    await act(async () => {
+      element
+        .querySelector("button")!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(element.textContent).toContain("Free natal chart calculator");
+    expect(element.querySelector("[data-draft-review]")).toBeNull();
+  });
+
   it("sends the page's own text and renders the returned draft", async () => {
     const fetchMock = vi.fn(async () =>
       Response.json({

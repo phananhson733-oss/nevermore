@@ -9,7 +9,7 @@ import {
   SEO_AUDIT_RECORD_IDS,
 } from "../seo-audit/record-ledger.ts";
 import { SEARCH_PERFORMANCE_RECORD_IDS } from "../seo-audit/search-performance.ts";
-import { KEYWORD_EVIDENCE_RECORD_IDS } from "../seo-audit/keyword-evidence/records.ts";
+import { KEYWORD_EVIDENCE_RECORD_IDS, PAGE_SHAPE_RECORD_IDS } from "../seo-audit/keyword-evidence/records.ts";
 import { PAGE_PERFORMANCE_RECORD_IDS } from "../seo-audit/page-performance.ts";
 import { INDEX_COVERAGE_RECORD_IDS } from "../seo-audit/index-coverage.ts";
 import { SERP_SHAPE_RECORD_IDS } from "../seo-audit/serp-shape.ts";
@@ -145,6 +145,7 @@ describe("catalog / detector contract", () => {
     const perVisitor = new Set([
       ...SEARCH_PERFORMANCE_RECORD_IDS,
       ...KEYWORD_EVIDENCE_RECORD_IDS,
+      ...PAGE_SHAPE_RECORD_IDS,
       ...PAGE_PERFORMANCE_RECORD_IDS,
       ...SERP_SHAPE_RECORD_IDS,
       ...INDEX_COVERAGE_RECORD_IDS,
