@@ -498,18 +498,35 @@ function sectionSubstanceRecord(
 export function buildKeywordEvidenceRecords(
   targetUrl: string,
   evidence: KeywordEvidence | null | undefined,
+): readonly SeoAuditRecord[] {
+  return [
+    slotRecord("title_without_target_query", "title", targetUrl, evidence),
+    slotRecord("h1_without_target_query", "h1", targetUrl, evidence),
+    densityRecord(targetUrl, evidence),
+    firstAppearanceRecord(targetUrl, evidence),
+  ];
+}
+
+/**
+ * The checks about a page's shape, which need a confirmed page type and
+ * nothing else.
+ *
+ * Split out because they used to travel inside the keyword region, and that
+ * region is only built when the visitor named a target query. So a run that
+ * confirmed a page type but no query — every run started from the Agent rather
+ * than from the page checker — silently excluded all four, while the surface
+ * went on rendering the reviewed ranges for the page type it had confirmed.
+ */
+export function buildPageShapeRecords(
+  targetUrl: string,
   headingShape?: HeadingShapeInput | null,
   /** What the target page declared, for the schema-fit check. */
   jsonLdTypes?: readonly string[] | null,
 ): readonly SeoAuditRecord[] {
   return [
-    slotRecord("title_without_target_query", "title", targetUrl, evidence),
-    slotRecord("h1_without_target_query", "h1", targetUrl, evidence),
     headingCountRecord("h2_count_outside_reviewed_range", 2, targetUrl, headingShape),
     headingCountRecord("h3_count_outside_reviewed_range", 3, targetUrl, headingShape),
-    densityRecord(targetUrl, evidence),
     schemaTypeRecord(targetUrl, headingShape?.pageType ?? null, jsonLdTypes),
-    firstAppearanceRecord(targetUrl, evidence),
     sectionSubstanceRecord(targetUrl, headingShape),
   ];
 }
@@ -517,11 +534,20 @@ export function buildKeywordEvidenceRecords(
 export const KEYWORD_EVIDENCE_RECORD_IDS: readonly string[] = [
   "title_without_target_query",
   "h1_without_target_query",
+  "target_query_density",
+  "target_query_first_appearance",
+];
+
+/**
+ * Moved out of `KEYWORD_EVIDENCE_RECORD_IDS` rather than listed in both.
+ *
+ * `isAgentKeywordChecks` requires the region's id set to equal that constant
+ * exactly, so leaving these there would make every new response fail the guard.
+ */
+export const PAGE_SHAPE_RECORD_IDS: readonly string[] = [
   "h2_count_outside_reviewed_range",
   "h3_count_outside_reviewed_range",
-  "target_query_density",
   "schema_type_unmatched_to_page_type",
-  "target_query_first_appearance",
   "thin_section_under_h3",
 ];
 

@@ -37,7 +37,10 @@ import {
 } from "@sf/public-tools/seo-audit/record-ledger";
 import { SEARCH_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/search-performance";
 import { INDEX_COVERAGE_RECORD_IDS } from "@sf/public-tools/seo-audit/index-coverage";
-import { KEYWORD_EVIDENCE_RECORD_IDS } from "@sf/public-tools/seo-audit/keyword-evidence/records";
+import {
+  KEYWORD_EVIDENCE_RECORD_IDS,
+  PAGE_SHAPE_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/keyword-evidence/records";
 import { PAGE_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/page-performance";
 import { SERP_SHAPE_RECORD_IDS } from "@sf/public-tools/seo-audit/serp-shape";
 
@@ -226,6 +229,7 @@ export type AgentAuditResult = Pick<
    * re-versioned to gain two audit records.
    */
   readonly keywordChecks?: AgentKeywordChecks;
+  readonly pageShapeChecks?: AgentPageShapeChecks;
   /**
    * CrUX field data for the submitted page, when a key is configured.
    *
@@ -341,11 +345,44 @@ function isAgentPagePerformance(value: unknown): value is AgentPagePerformance {
  * which the crawl version or the keyword evidence version describes.
  */
 export const AGENT_KEYWORD_CHECKS_VERSION = "keyword_checks.agent.v1" as const;
+/**
+ * Its own version, because its id set is its own.
+ *
+ * Bumped alongside `AGENT_KEYWORD_CHECKS_VERSION`: four ids left that region
+ * to form this one, so a client reading the old number against the new set
+ * would refuse a valid response.
+ */
+export const AGENT_PAGE_SHAPE_CHECKS_VERSION = "agent-page-shape.v1" as const;
 
 /** Records derived from this visitor's confirmed queries, never cached. */
 export interface AgentKeywordChecks {
   readonly version: typeof AGENT_KEYWORD_CHECKS_VERSION;
   readonly records: SeoAuditReport["records"];
+}
+
+/** The checks about a page's shape, present whenever a page type was confirmed. */
+export interface AgentPageShapeChecks {
+  readonly version: typeof AGENT_PAGE_SHAPE_CHECKS_VERSION;
+  readonly records: SeoAuditReport["records"];
+}
+
+function isAgentPageShapeChecks(
+  value: unknown,
+): value is AgentPageShapeChecks {
+  if (!isObject(value)) return false;
+  if (
+    value.version !== AGENT_PAGE_SHAPE_CHECKS_VERSION ||
+    !Array.isArray(value.records) ||
+    !value.records.every(isKeywordEvidenceRecord)
+  ) {
+    return false;
+  }
+  // Same rule as the region it split from: complete or not a region at all.
+  const ids = value.records.map((record) => record.id).sort();
+  const expected = PAGE_SHAPE_RECORD_IDS.slice().sort();
+  return (
+    ids.length === expected.length && ids.every((id, i) => id === expected[i])
+  );
 }
 
 function isAgentKeywordChecks(value: unknown): value is AgentKeywordChecks {
@@ -443,6 +480,7 @@ export function allAgentAuditRecords(
     ...data.result.records,
     ...(data.result.searchPerformance?.records ?? []),
     ...(data.result.keywordChecks?.records ?? []),
+    ...(data.result.pageShapeChecks?.records ?? []),
     ...(data.result.pagePerformance?.records ?? []),
     ...(data.result.serpShape?.records ?? []),
   ];
@@ -775,6 +813,10 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !isNullableString(value.inspectedTargetUrl) ||
     !(
       value.keyPages === undefined || isAgentKeyPageCandidates(value.keyPages)
+    ) ||
+    !(
+      value.pageShapeChecks === undefined ||
+      isAgentPageShapeChecks(value.pageShapeChecks)
     ) ||
     !isNullableString(value.landedTargetUrl) ||
     !isCanonicalIsoTimestamp(value.scannedAt) ||

@@ -25,6 +25,7 @@ import { readPublicToolJson } from "../tools/public-tool-request.ts";
 import { readAgentSearchPerformance } from "./search-performance.ts";
 import {
   buildKeywordEvidenceRecords,
+  buildPageShapeRecords,
   type HeadingShapeInput,
 } from "@sf/public-tools/seo-audit/keyword-evidence/records";
 import { canonicalizeUrl } from "@sf/sources/canonical-url";
@@ -53,6 +54,7 @@ import {
   AGENT_SERP_SHAPE_VERSION,
   AGENT_PAGE_PERFORMANCE_VERSION,
   AGENT_KEYWORD_CHECKS_VERSION,
+  AGENT_PAGE_SHAPE_CHECKS_VERSION,
   isCanonicalIsoTimestamp,
   isSeoAuditUpstreamSuccessEnvelope,
   type AgentAuditResult,
@@ -789,6 +791,7 @@ export async function handleAgentAuditRequest(
     }
   }
 
+  const pageShape = headingShapeFor(input.value.pageRole, result);
   const evidence =
     input.value.targetQueries === null
       ? null
@@ -886,7 +889,30 @@ export async function handleAgentAuditRequest(
               records: buildKeywordEvidenceRecords(
                 result.inspectedTargetUrl ?? result.targetUrl,
                 evidence,
-                headingShapeFor(input.value.pageRole, result),
+              ),
+            },
+          }),
+      /*
+        The page-shape checks need a confirmed page type and nothing else, so
+        they travel on their own. Inside the keyword region they were built
+        only when the visitor also named a query, which silently excluded all
+        four on every run started from the Agent rather than the page checker
+        -- while the surface went on rendering the reviewed ranges for the page
+        type that run had confirmed.
+
+        Keyed on the confirmed page type rather than on the heading shape: a
+        page whose levels were not captured still produces the region, and each
+        record says for itself what it could not measure. Withholding the whole
+        region would report those checks as unwired rather than unmeasured.
+      */
+      ...(input.value.pageRole === null
+        ? {}
+        : {
+            pageShapeChecks: {
+              version: AGENT_PAGE_SHAPE_CHECKS_VERSION,
+              records: buildPageShapeRecords(
+                result.inspectedTargetUrl ?? result.targetUrl,
+                pageShape,
                 result.targetPageExtract?.response.jsonLdTypes ?? null,
               ),
             },

@@ -9,6 +9,7 @@ import { buildKeywordEvidence } from "./evidence.ts";
 import { normalizeTargetQueries } from "./normalize.ts";
 import {
   buildKeywordEvidenceRecords,
+  buildPageShapeRecords,
   KEYWORD_EVIDENCE_RECORD_IDS,
 } from "./records.ts";
 import type { KeywordEvidence } from "./types.ts";
@@ -116,9 +117,8 @@ describe("keyword evidence records", () => {
     const decide = (words: readonly number[] | null) =>
       evaluateAgentAuditScope("page", {
         availability: "available",
-        records: buildKeywordEvidenceRecords(
+        records: buildPageShapeRecords(
           TARGET,
-          evidenceFor(["natal chart"]),
           words === null ? null : shape(words),
         ),
         targetUrl: TARGET,
@@ -148,9 +148,8 @@ describe("keyword evidence records", () => {
       // "word" per section on such a page, so measuring it anyway reported
       // every section as thin -- the copy said one thing and the code did the
       // other.
-      const record = buildKeywordEvidenceRecords(
+      const record = buildPageShapeRecords(
         TARGET,
-        evidenceFor(["natal chart"]),
         shape([1, 1, 1], false),
       ).find((entry) => entry.id === "thin_section_under_h3");
 

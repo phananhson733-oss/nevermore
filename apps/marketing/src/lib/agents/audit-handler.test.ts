@@ -131,7 +131,10 @@ const upstreamPayload = {
   },
 } satisfies SeoAuditPayload;
 
-function request(accept = "application/json"): Request {
+function request(
+  extra: Readonly<Record<string, unknown>> = {},
+  accept = "application/json",
+): Request {
   return new Request("https://gengrowth.ai/api/agents/seo/audit", {
     method: "POST",
     headers: {
@@ -139,7 +142,7 @@ function request(accept = "application/json"): Request {
       "content-type": "application/json",
       "x-real-ip": "203.0.113.9",
     },
-    body: JSON.stringify({ url: "acme.test" }),
+    body: JSON.stringify({ url: "acme.test", ...extra }),
   });
 }
 
@@ -802,7 +805,7 @@ describe("handleAgentAuditRequest", () => {
 
   it("authenticates before delegating the original request instance", async () => {
     const order: string[] = [];
-    const incoming = request("application/x-ndjson");
+    const incoming = request({}, "application/x-ndjson");
     const response = await handleAgentAuditRequest(
       incoming,
       "seo",
@@ -979,6 +982,45 @@ describe("handleAgentAuditRequest", () => {
       },
     });
     expect(JSON.stringify(body)).not.toContain("private");
+  });
+
+  describe("the page-shape region", () => {
+    it("travels on a confirmed page type alone, with no query named", () => {
+      // The defect this fixes: these four checks used to be built inside the
+      // keyword region, which exists only when a query was named. So every run
+      // started from the Agent excluded all four, while the surface went on
+      // rendering the reviewed ranges for the page type it had just confirmed.
+      return handleAgentAuditRequest(
+        request({ pageRole: "guide" }),
+        "seo",
+        dependencies(),
+      )
+        .then((response) => response.json())
+        .then((body: { data: { result: Record<string, unknown> } }) => {
+          const region = body.data.result["pageShapeChecks"] as
+            | { readonly records: readonly { readonly id: string }[] }
+            | undefined;
+
+          expect(region?.records.map((record) => record.id).sort()).toEqual(
+            [
+              "h2_count_outside_reviewed_range",
+              "h3_count_outside_reviewed_range",
+              "schema_type_unmatched_to_page_type",
+              "thin_section_under_h3",
+            ].sort(),
+          );
+          // The keyword region stays absent: no query was named.
+          expect(body.data.result["keywordChecks"]).toBeUndefined();
+        });
+    });
+
+    it("stays absent when no page type was confirmed", () => {
+      return handleAgentAuditRequest(request(), "seo", dependencies())
+        .then((response) => response.json())
+        .then((body: { data: { result: Record<string, unknown> } }) => {
+          expect(body.data.result["pageShapeChecks"]).toBeUndefined();
+        });
+    });
   });
 
   it("returns the same complete neutral ledger for Tech with independent run identity", async () => {

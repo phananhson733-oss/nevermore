@@ -2292,7 +2292,13 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
 
     expect(bodies.length).toBeGreaterThan(0);
     for (const body of bodies) {
-      expect(JSON.parse(body)).toEqual({ url: "astrologywiki.com" });
+      // The confirmed page type travels on every run — it is what the
+      // page-shape checks read, and this visitor confirmed it. What must not
+      // travel is the other visit's queries.
+      expect(JSON.parse(body)).toEqual({
+        url: "astrologywiki.com",
+        pageRole: "homepage",
+      });
     }
   });
 
@@ -2303,9 +2309,12 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
           return Response.json({ signedIn: true });
         }
         expect(input).toBe("/api/agents/seo/audit");
-        expect(init?.body).toBe(
-          JSON.stringify({ url: "astrologywiki.com/birth-chart" }),
-        );
+        expect(JSON.parse(String(init?.body))).toEqual({
+          url: "astrologywiki.com/birth-chart",
+          // Confirmed by this visitor on the Profile panel; it is what the
+          // page-shape checks read.
+          pageRole: "tool",
+        });
         return Response.json(
           successEnvelope("seo", "astrologywiki.com/birth-chart"),
         );
@@ -2387,7 +2396,10 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         if (String(input) === "/api/auth/session") {
           return Response.json({ signedIn: true });
         }
-        expect(init?.body).toBe(JSON.stringify({ url: "astrologywiki.com" }));
+        expect(JSON.parse(String(init?.body))).toEqual({
+          url: "astrologywiki.com",
+          pageRole: "homepage",
+        });
         return Response.json(successEnvelope("seo"));
       },
     );
