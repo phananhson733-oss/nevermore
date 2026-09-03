@@ -40,6 +40,19 @@ it("edits real role detail, resets acceptance and retains original model lineage
   expect(current.roles[0]?.review).toBe("accepted");
   expect(host.textContent).toContain(source.generationId);
 });
+it("reads a role out instead of asking for it back, with hand editing one disclosure away", async () => {
+  await render();
+  const card = host.querySelector('[data-edit-role="r1"]')!;
+  // The values are legible without opening anything.
+  expect(card.textContent).toContain("Finance teams");
+  expect(card.textContent).toContain("late invoices");
+  // And every control that could change them sits inside a closed disclosure,
+  // so seven fields per role are not the first thing on screen.
+  const controls = [...card.querySelectorAll("input, textarea, select")];
+  expect(controls.length).toBeGreaterThan(0);
+  expect(controls.every(control => control.closest("details")?.open === false)).toBe(true);
+});
+
 it("does not call a filled fact verified and refuses acceptance without source/time", async () => {
   await render(); await fill('[data-fact-field="value"]', "Seven seats");
   expect(current.facts[0]).toMatchObject({ value: "Seven seats", review: "pending", supportRef: null });

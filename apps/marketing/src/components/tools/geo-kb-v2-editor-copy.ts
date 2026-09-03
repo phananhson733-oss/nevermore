@@ -3,7 +3,7 @@
 export const geoKbV2EditorCopy = (locale: string) => locale.toLowerCase().startsWith("zh") ? {
   input: "补充与确认", frozen: "冻结快照", save: "保存 GEO 草稿", saved: "草稿已保存", unsaved: "有未保存的修改；切换阶段不会丢弃输入。",
   addRole: "添加角色", addFact: "添加事实声明", addCompetitor: "添加竞品", remove: "移除", accept: "接受此条", exclude: "排除此条", pending: "设为待审阅",
-  roleLabel: "角色名称", factKey: "事实维度", listAdd: "添加一项", listRemove: "移除", reviewOne: "单独审阅这一条", editHelp: "每行一项；修改会回到待审阅，原始来源不会被改成观测事实。",
+  roleLabel: "角色名称", factKey: "事实维度", listAdd: "添加一项", listRemove: "移除", reviewOne: "单独审阅这一条", editRole: "手工编辑这个角色", editFact: "补充原因、审阅或移除这一条", editHelp: "角色来自产品档案的 ICP 字段或一次角色生成，这里只读出来。要改就展开卡片里的「手工编辑这个角色」；改过的会回到待审阅，原始来源不会被改成观测事实。",
   reload: "读取已保存状态", sources: "刷新来源证据", generateRoles: "生成角色建议", prepare: "生成完整待冻结版本", busy: "正在处理…",
   saveFirst: "先保存所有 GEO 修改，再生成或刷新来源。", sourceChanged: "网站档案已变化。请明确检查并采用最新完整副本，再保存。",
   reviewPending: "角色或事实仍待审阅。采用新 Profile 后须重新核对或重新生成；正文和原始引用保持不变，完成审阅并保存后才能生成完整候选。",
@@ -24,7 +24,7 @@ export const geoKbV2EditorCopy = (locale: string) => locale.toLowerCase().starts
 } : {
   input: "Supplement and confirm", frozen: "Frozen snapshot", save: "Save GEO draft", saved: "Draft saved", unsaved: "Unsaved changes are kept when switching stages.",
   addRole: "Add role", addFact: "Add fact declaration", addCompetitor: "Add competitor", remove: "Remove", accept: "Accept item", exclude: "Exclude item", pending: "Mark pending",
-  roleLabel: "Role name", factKey: "Fact dimension", listAdd: "Add an entry to", listRemove: "Remove", reviewOne: "Review this one on its own", editHelp: "One item per line. Edits need review again and retain their original source lineage.",
+  roleLabel: "Role name", factKey: "Fact dimension", listAdd: "Add an entry to", listRemove: "Remove", reviewOne: "Review this one on its own", editRole: "Edit this role by hand", editFact: "Add a reason, review, or remove this one", editHelp: "Roles come from the Product Profile's ICP fields or from a generation and are read out here. To change one, open “Edit this role by hand” on its card; an edited role returns to pending review and keeps its original source lineage.",
   reload: "Read saved state", sources: "Refresh source evidence", generateRoles: "Generate role proposals", prepare: "Prepare complete candidate", busy: "Working…",
   saveFirst: "Save all GEO edits before generation or source refresh.", sourceChanged: "The website Profile changed. Explicitly review and adopt its complete copy, then save.",
   reviewPending: "Roles or facts still need review. A new Profile copy requires review or regeneration; text and original references are retained. Finish review and save before preparing a complete candidate.",
