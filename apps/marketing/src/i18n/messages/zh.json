@@ -1288,6 +1288,10 @@
           "title": "标记体积超出审阅上限的页面",
           "description": "指传输的文档本身，不含它引用的任何资源。"
         },
+        "target_query_slot_coverage": {
+          "title": "目标词在其余文本位点全部缺席",
+          "description": "已确认目标词在描述、副标题、开头正文与 URL 中一处都没有出现。页面本来就没有的位点不计入分母，也不算作失分。"
+        },
         "robots_resource": {
           "title": "robots.txt 资源",
           "description": "爬虫是否成功获取并解析到 robots.txt 资源。"
@@ -1574,6 +1578,8 @@
         }
       },
       "evidence": {
+        "slots_covered": "命中目标词的位点数",
+        "slots_applicable": "可检查的位点数",
         "viewport_declared": "是否声明 viewport",
         "html_lang": "html lang",
         "charset_declared": "是否声明字符集",
@@ -8808,6 +8814,8 @@
           "keyPageHits": "关键页 {hits}/{total} · 另有 {rest} 页",
           "keyPageHitsAtLeast": "关键页 {hits}/{total} · 另有至少 {rest} 页",
           "keyPageHitsOnly": "关键页 {hits}/{total}",
+          "keyPageObserved": "关键页 {evaluated}/{total} 已测量",
+          "keyPageScope": "关键页 {evaluated}/{total} 已评估",
           "keyPagePass": "关键页 {evaluated}/{total} 已评估 · 通过",
           "affectedSite": "站点级范围",
           "affectedUnavailable": "受影响范围不可得",

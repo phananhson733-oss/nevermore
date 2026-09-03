@@ -314,6 +314,7 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "2.7": ["lang_missing"],
   "2.8": ["charset_missing"],
   "2.9": ["favicon_missing"],
+  "2.10": ["target_query_slot_coverage"],
   "4.6": ["thin_body_text"],
   "6.6": ["external_link_blank_without_noopener"],
   "8.7": ["client_rendered_content"],

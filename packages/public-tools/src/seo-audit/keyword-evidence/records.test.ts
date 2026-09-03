@@ -104,6 +104,44 @@ describe("keyword evidence records", () => {
     ).toBe("natal chart");
   });
 
+  describe("2.10 — the query across the other text slots", () => {
+    it("reaches a verdict rather than sitting excluded forever", () => {
+      // It shipped in the catalogue with no record behind it, which made it a
+      // check that could never conclude while still counting in the denominator.
+      const record = records(evidenceFor(["natal chart"])).find(
+        (entry) => entry.id === "target_query_slot_coverage",
+      );
+
+      expect(record).toBeDefined();
+      expect(record?.state).not.toBe("unverified");
+    });
+
+    it("fires once for the page, not once per slot", () => {
+      // Four slots, one decision about how the page presents itself. Reporting
+      // each slot separately would charge one page four times.
+      const record = records(evidenceFor(["natal chart"])).find(
+        (entry) => entry.id === "target_query_slot_coverage",
+      );
+
+      expect(record?.state).toBe("observed");
+      expect(record?.affected).toBe(1);
+      expect(record?.observations).toHaveLength(1);
+      expect(
+        record?.observations[0]?.values.map((entry) => entry.label),
+      ).toEqual(["target_query", "slots_covered", "slots_applicable"]);
+    });
+
+    it("says nothing when no query was confirmed", () => {
+      const record = buildKeywordEvidenceRecords(TARGET, null).find(
+        (entry) => entry.id === "target_query_slot_coverage",
+      );
+
+      expect(record?.state).toBe("unverified");
+      expect(record?.affected).toBe(0);
+      expect(record?.limitation).toContain("no_target_query_was_confirmed");
+    });
+  });
+
   describe("3.6 — words under each H3", () => {
     const shape = (words: readonly number[], wordCountIsMeaningful = true) => ({
       levels: words.map(() => 3),

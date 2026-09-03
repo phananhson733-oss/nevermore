@@ -554,6 +554,24 @@ describe("AgentIssueAccordion", () => {
       expect(passed?.textContent).toContain("4/12 key pages evaluated");
     });
 
+    it("never says passing for a check that reached no verdict", () => {
+      // An excluded check counts zero evaluated pages. Rendering the passed
+      // lane's wording there claimed a verdict it never reached; the
+      // observed-only lane's heading says "not judged" and would have been
+      // contradicted by the row directly under it.
+      render(reachModel({ total: 12, evaluated: 0, hits: 0, urls: [] },
+        "excluded"));
+      expect(reachText()).toContain("0/12 key pages evaluated");
+      expect(reachText()).not.toContain("passing");
+
+      render(
+        reachModel({ total: 12, evaluated: 3, hits: 0, urls: [] },
+          "observed-only"),
+      );
+      expect(reachText()).toContain("3/12 key pages measured");
+      expect(reachText()).not.toContain("passing");
+    });
+
     it("says nothing about key pages for a site-wide check", () => {
       render(
         buildAgentIssueModel({

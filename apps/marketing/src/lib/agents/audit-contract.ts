@@ -344,7 +344,7 @@ function isAgentPagePerformance(value: unknown): value is AgentPagePerformance {
  * slot means, and that matching is a token sequence with no synonyms — none of
  * which the crawl version or the keyword evidence version describes.
  */
-export const AGENT_KEYWORD_CHECKS_VERSION = "keyword_checks.agent.v1" as const;
+export const AGENT_KEYWORD_CHECKS_VERSION = "keyword_checks.agent.v2" as const;
 /**
  * Its own version, because its id set is its own.
  *

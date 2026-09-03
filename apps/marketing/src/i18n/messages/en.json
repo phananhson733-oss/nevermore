@@ -1288,6 +1288,10 @@
           "title": "Pages over the reviewed markup size",
           "description": "The transferred document itself, before anything it references."
         },
+        "target_query_slot_coverage": {
+          "title": "Target query missing from every other text slot",
+          "description": "The confirmed query appears in none of the description, sub-headings, opening text or URL. Slots the page does not have are left out of the count rather than counted against it."
+        },
         "robots_resource": {
           "title": "robots.txt resource",
           "description": "Whether the crawler successfully fetched and parsed a robots.txt resource."
@@ -1574,6 +1578,8 @@
         }
       },
       "evidence": {
+        "slots_covered": "Slots covering the query",
+        "slots_applicable": "Slots that could be checked",
         "viewport_declared": "Viewport declared",
         "html_lang": "html lang",
         "charset_declared": "Character set declared",
@@ -8808,6 +8814,8 @@
           "keyPageHits": "{hits}/{total} key pages · another {rest} pages",
           "keyPageHitsAtLeast": "{hits}/{total} key pages · at least another {rest} pages",
           "keyPageHitsOnly": "{hits}/{total} key pages",
+          "keyPageObserved": "{evaluated}/{total} key pages measured",
+          "keyPageScope": "{evaluated}/{total} key pages evaluated",
           "keyPagePass": "{evaluated}/{total} key pages evaluated · passing",
           "affectedSite": "Site-level scope",
           "affectedUnavailable": "Affected population unavailable",

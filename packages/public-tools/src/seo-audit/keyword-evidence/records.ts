@@ -495,6 +495,99 @@ function sectionSubstanceRecord(
   };
 }
 
+/**
+ * Where else the confirmed query shows up, beyond the title and the H1.
+ *
+ * Those two have checks of their own; these four do not, and the checker has
+ * been grading them on one page while the catalogue could not mention them on
+ * any. One record rather than four, because four would report the same page
+ * four times for one decision about how it presents itself.
+ *
+ * Slots the page does not have are not failures. A page with no meta
+ * description has nothing to cover, so it leaves the denominator rather than
+ * counting against it -- the same rule the coverage count already follows.
+ */
+function slotCoverageRecord(
+  targetUrl: string,
+  evidence: KeywordEvidence | null | undefined,
+): SeoAuditRecord {
+  const base = {
+    id: "target_query_slot_coverage",
+    category: "keyword_evidence" as const,
+    unit: "pages" as const,
+    population: "target_page" as const,
+  };
+  const unmeasured = (limitation: string): SeoAuditRecord => ({
+    ...base,
+    state: "unverified",
+    targetTested: null,
+    tested: 0,
+    affected: 0,
+    observations: [],
+    limitation,
+  });
+
+  if (!evidence) {
+    return unmeasured(
+      "no_target_query_was_confirmed_so_this_page_has_nothing_to_be_checked_against",
+    );
+  }
+  if (evidence.availability !== "available") {
+    return unmeasured(
+      evidence.reason === "target_page_not_captured"
+        ? "the_submitted_page_was_not_captured_so_its_text_could_not_be_read"
+        : "the_page_text_extract_was_missing_so_no_slot_could_be_compared",
+    );
+  }
+  const query = primaryQuery(evidence);
+  if (query === null) {
+    return unmeasured(
+      "no_target_query_was_confirmed_so_this_page_has_nothing_to_be_checked_against",
+    );
+  }
+
+  const slots = ["description", "subHeadings", "openingText"] as const;
+  const applicable = slots.filter(
+    (slot) => query.slots[slot].state !== "not_applicable",
+  );
+  const covered = applicable.filter(
+    (slot) => query.slots[slot].state === "covered",
+  );
+  const urlCovered = query.slots.url.state === "covered";
+  const applicableCount = applicable.length + 1;
+  const coveredCount = covered.length + (urlCovered ? 1 : 0);
+
+  if (coveredCount > 0) {
+    return {
+      ...base,
+      state: "not_observed",
+      targetTested: true,
+      tested: 1,
+      affected: 0,
+      observations: [],
+      limitation: null,
+    };
+  }
+  return {
+    ...base,
+    state: "observed",
+    targetTested: true,
+    tested: 1,
+    affected: 1,
+    observations: [
+      {
+        url: targetUrl,
+        values: [
+          { label: "target_query", value: query.displayQuery },
+          { label: "slots_covered", value: coveredCount },
+          { label: "slots_applicable", value: applicableCount },
+        ],
+      },
+    ],
+    limitation: null,
+  };
+}
+
 export function buildKeywordEvidenceRecords(
   targetUrl: string,
   evidence: KeywordEvidence | null | undefined,
@@ -504,6 +597,7 @@ export function buildKeywordEvidenceRecords(
     slotRecord("h1_without_target_query", "h1", targetUrl, evidence),
     densityRecord(targetUrl, evidence),
     firstAppearanceRecord(targetUrl, evidence),
+    slotCoverageRecord(targetUrl, evidence),
   ];
 }
 
@@ -536,6 +630,7 @@ export const KEYWORD_EVIDENCE_RECORD_IDS: readonly string[] = [
   "h1_without_target_query",
   "target_query_density",
   "target_query_first_appearance",
+  "target_query_slot_coverage",
 ];
 
 /**
@@ -568,6 +663,8 @@ export const KEYWORD_EVIDENCE_EVIDENCE_LABELS: readonly string[] = [
   "target_query",
   "query_tokenization",
   "slot_occurrences",
+  "slots_covered",
+  "slots_applicable",
 ];
 
 export const KEYWORD_EVIDENCE_LIMITATION_CODES: readonly string[] = [
