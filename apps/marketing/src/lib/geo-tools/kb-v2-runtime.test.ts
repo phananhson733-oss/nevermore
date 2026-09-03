@@ -97,6 +97,10 @@ describe("actual GEO v2 runtime wiring", () => {
     expect(await runtime.draft.generationRunning!(USER, V2_KB_ID)).toBe(false);
     dependencies.generationStore.readLatest.mockResolvedValue({ kind: "unavailable" });
     expect(await runtime.draft.generationRunning!(USER, V2_KB_ID)).toBe("unavailable");
+    // A blip reading one kind must not hide a run the other kind reports.
+    dependencies.generationStore.readLatest.mockImplementation(async ({ kind }) =>
+      kind === "roles" ? { kind: "unavailable" } : { ...record("dispatched"), generation: { ...record("dispatched").generation, kind: "questions" as const } });
+    expect(await runtime.draft.generationRunning!(USER, V2_KB_ID)).toBe(true);
   });
   it("maps exact missing generations/candidates without substituting latest records", async () => {
     const { runtime, dependencies } = fixture();

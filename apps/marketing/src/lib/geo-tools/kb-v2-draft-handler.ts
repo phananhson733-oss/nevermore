@@ -33,9 +33,13 @@ export interface GeoKbV2DraftDependencies {
   /**
    * A running generation is bound to the draft version it was dispatched with.
    * Only the server sees every tab, so this is where a write under it is
-   * refused. "unavailable" fails open: the check protects a paid result, it is
-   * not what makes a save correct, and a store that cannot answer here could
-   * not dispatch a generation either.
+   * refused. "unavailable" fails open, and deliberately: a run dispatched
+   * before the outage keeps executing at the provider regardless of whether
+   * this read can answer, so failing open can still waste one paid result. It
+   * is the better trade because refusing would freeze every editor for the
+   * duration of the outage, and because nothing about correctness rests here
+   * -- the version check refuses a stale write, and a result that lands
+   * against a moved version is already treated as stale downstream.
    */
   readonly generationRunning?: (userId: string, kbId: string) => Promise<boolean | "unavailable">;
 }

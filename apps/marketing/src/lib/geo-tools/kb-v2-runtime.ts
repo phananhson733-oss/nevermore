@@ -151,13 +151,17 @@ export function createGeoKbV2Runtime(overrides: Partial<GeoKbV2RuntimeDependenci
   };
   return { loadEditor, load: { authenticate: dependencies.authenticate, loadEditor },
     draft: { authenticate: dependencies.authenticate, readDetails: dependencies.readDetails, validateCurrentCopy,
+      // One kind failing to read must not mask another kind that is known to
+      // be running: an outage is the weaker answer, so it is only reported
+      // once every kind has been asked and none of them said yes.
       generationRunning: async (userId, kbId) => {
+        let unavailable = false;
         for (const kind of ["roles", "questions"] as const) {
           const read = await dependencies.generationStore.readLatest({ userId, kbId, kind });
-          if (read.kind !== "ok") return "unavailable";
+          if (read.kind !== "ok") { unavailable = true; continue; }
           if (read.generation !== null && read.generation.state === "dispatched") return true;
         }
-        return false;
+        return unavailable ? "unavailable" : false;
       },
       // Generous for typing (a write needs a 900 ms pause), tight for a runaway client.
       consumeQuota: async (userId, kbId) => {
