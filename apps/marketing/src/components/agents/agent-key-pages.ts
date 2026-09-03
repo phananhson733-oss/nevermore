@@ -18,12 +18,19 @@ import type { AgentKeyPageCandidate } from "../../lib/agents/audit-contract.ts";
  */
 export const AGENT_KEY_PAGE_LIMIT = 12;
 
-/** Why a page is on the list. Stated per row, never inferred by the reader. */
+/**
+ * Why a page is on the list.
+ *
+ * Carried but not yet shown. The surface states how many key pages a check
+ * reached, not which ones or why — so this is the input a per-page breakdown
+ * would need, and nothing reads it today. Said plainly rather than described
+ * as "stated per row", which promised a row that does not exist.
+ */
 export type AgentKeyPageBasis = "homepage" | "target" | "feature" | "structure";
 
 export interface AgentKeyPage extends AgentKeyPageCandidate {
   readonly basis: AgentKeyPageBasis;
-  /** The confirmed core feature this page matched. Null unless basis is feature. */
+  /** The matched core feature. Null unless the basis is a feature. Not shown yet, like the basis. */
   readonly matchedFeature: string | null;
 }
 
