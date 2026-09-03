@@ -8606,6 +8606,8 @@
         "unknown": "本次 Agent 运行未能完成。"
       },
       "capturedReport": "阶段 02 · 已采集报告",
+      "captureSummary": "抓取 {pages} 页 · 已评估 {evaluated}/{total} 项检查",
+      "captureDetailLabel": "采集边界与计数",
       "capturedLanded": "跳转到了 {url}，本报告读的是这个页面。",
       "finalOrigin": "最终公开源站",
       "capturedAt": "采集时间",

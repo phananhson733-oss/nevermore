@@ -124,6 +124,10 @@ export function AgentResults({
    * Evidence records are collected measurements, so they are labelled as
    * records here. The Diagnosis panel counts checks, which is a different unit.
    */
+  /** Checks this run reached a conclusion on, out of the whole catalogue. */
+  const evaluatedChecks = model.evaluatedChecks.filter(
+    (check) => check.result !== "excluded",
+  ).length;
   const capturedFacts: readonly CapturedFact[] = [
     {
       label: t("pagesInspected"),
@@ -210,6 +214,30 @@ export function AgentResults({
           </div>
         </div>
 
+        {/*
+          One line above the fold, the rest one disclosure away. The header
+          used to spend a four-cell grid, two boundary cards and an origin line
+          before the reader reached a single finding.
+        */}
+        <p
+          data-capture-summary
+          className="mt-4 font-mono text-[12px] text-text-dark-secondary"
+        >
+          {t("captureSummary", {
+            pages: data.result.coverage.pagesInspected,
+            evaluated: evaluatedChecks,
+            total: model.evaluatedChecks.length,
+          })}
+        </p>
+
+        <details
+          data-capture-detail
+          className="mt-4 rounded-row border border-brand-border bg-brand-panel-sunken"
+        >
+          <summary className="cursor-pointer list-none px-4 py-2.5 font-mono text-[11px] tracking-[0.06em] text-text-dark-secondary uppercase">
+            {t("captureDetailLabel")}
+          </summary>
+          <div className="px-4 pb-4">
         <dl className="mt-5 grid gap-px overflow-hidden rounded-row border border-brand-border-card bg-brand-border-card sm:grid-cols-2 xl:grid-cols-4">
           {capturedFacts.map(({ label, value, hint }) => (
             <div key={label} className="bg-brand-panel-sunken p-4">
@@ -267,6 +295,8 @@ export function AgentResults({
             {t("stopReason", { reason: data.result.coverage.stopReason })}
           </p>
         ) : null}
+          </div>
+        </details>
       </header>
 
       {/*

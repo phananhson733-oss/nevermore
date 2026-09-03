@@ -280,6 +280,27 @@ describe("AgentResults", () => {
     expect(host.textContent).not.toContain("0/100");
   });
 
+  it("states the run in one line and folds the collection detail away", () => {
+    // The header used to open with a four-cell grid of counts, two boundary
+    // cards and an origin line before the reader reached a single finding.
+    // What survives above the fold is the one line that says how much was
+    // looked at; the rest is still there, one disclosure away.
+    render("seo", { response: evidencedData });
+
+    const summary = host.querySelector("[data-capture-summary]");
+    expect(summary?.textContent).toContain("pages crawled");
+    expect(summary?.textContent).toContain("checks evaluated");
+
+    const detail = host.querySelector<HTMLDetailsElement>(
+      "[data-capture-detail]",
+    );
+    expect(detail).not.toBeNull();
+    expect(detail?.open).toBe(false);
+    // The counts did not disappear, they moved.
+    expect(detail?.textContent).toContain("Links observed");
+    expect(detail?.textContent).toContain("Final public origin");
+  });
+
   it("reports the captured header count as evidence records, not as evaluated checks", () => {
     render("seo", { response: evidencedData });
 

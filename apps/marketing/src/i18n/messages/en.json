@@ -8606,6 +8606,8 @@
         "unknown": "The Agent run could not be completed."
       },
       "capturedReport": "Stage 02 · Captured report",
+      "captureSummary": "{pages} pages crawled · {evaluated}/{total} checks evaluated",
+      "captureDetailLabel": "Collection boundary and counts",
       "capturedLanded": "Redirected to {url} — that is the page this report read.",
       "finalOrigin": "Final public origin",
       "capturedAt": "Captured at",
