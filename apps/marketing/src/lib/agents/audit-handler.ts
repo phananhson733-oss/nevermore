@@ -267,6 +267,9 @@ function headingShapeFor(
     h3: preset.h3,
     substanceWords: preset.substanceWords,
     wordsUnderEachH3: result.targetPageExtract?.wordsUnderEachH3 ?? [],
+    // Null whenever the extract decided a word count says nothing about this
+    // page -- a CJK-dominant body, or a crawl that produced no count at all.
+    wordCountIsMeaningful: result.targetPageExtract?.staticBodyWords !== null,
   };
 }
 

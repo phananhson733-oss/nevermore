@@ -127,6 +127,15 @@ export interface HeadingShapeInput {
   readonly substanceWords: number;
   /** Words under each H3, in document order. */
   readonly wordsUnderEachH3: readonly number[];
+  /**
+   * Whether counting words means anything on this page.
+   *
+   * False for a page written without inter-word spaces, where the crawler's
+   * whitespace split reports about one "word" per section and every section
+   * reads as thin. The published threshold says this check does not judge such
+   * a page; without this flag the code judged it anyway.
+   */
+  readonly wordCountIsMeaningful: boolean;
 }
 
 function headingCountRecord(
@@ -430,6 +439,21 @@ function sectionSubstanceRecord(
     population: "target_page" as const,
   };
   const sections = shape?.wordsUnderEachH3 ?? [];
+  if (shape && !shape.wordCountIsMeaningful) {
+    // The threshold published beside this check says a page written without
+    // inter-word spaces is not measured here. It used to say that while the
+    // code measured it anyway, and reported roughly one word per section.
+    return {
+      ...base,
+      state: "unverified",
+      targetTested: null,
+      tested: 0,
+      affected: 0,
+      observations: [],
+      limitation:
+        "this_page_is_not_measured_by_whitespace_words_so_section_substance_is_not_judged",
+    };
+  }
   if (!shape || sections.length === 0) {
     return {
       ...base,
@@ -521,6 +545,7 @@ export const KEYWORD_EVIDENCE_EVIDENCE_LABELS: readonly string[] = [
 ];
 
 export const KEYWORD_EVIDENCE_LIMITATION_CODES: readonly string[] = [
+  "this_page_is_not_measured_by_whitespace_words_so_section_substance_is_not_judged",
   "no_target_query_was_confirmed_so_this_page_has_nothing_to_be_checked_against",
   "the_submitted_page_was_not_captured_so_its_text_could_not_be_read",
   "the_page_text_extract_was_missing_so_no_slot_could_be_compared",

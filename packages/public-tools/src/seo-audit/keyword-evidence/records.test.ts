@@ -104,13 +104,14 @@ describe("keyword evidence records", () => {
   });
 
   describe("3.6 — words under each H3", () => {
-    const shape = (words: readonly number[]) => ({
+    const shape = (words: readonly number[], wordCountIsMeaningful = true) => ({
       levels: words.map(() => 3),
       pageType: "guide",
       h2: { min: 0, max: 99 },
       h3: { min: 0, max: 99 },
       substanceWords: 80,
       wordsUnderEachH3: words,
+      wordCountIsMeaningful,
     });
     const decide = (words: readonly number[] | null) =>
       evaluateAgentAuditScope("page", {
@@ -141,6 +142,24 @@ describe("keyword evidence records", () => {
     it("does not judge a run with no confirmed page type", () => {
       expect(decide(null)?.result).toBe("excluded");
     });
+    it("does not judge a page whose words are not what it is made of", () => {
+      // The published threshold says a page written without inter-word spaces
+      // is not measured here. The crawler's whitespace split reports about one
+      // "word" per section on such a page, so measuring it anyway reported
+      // every section as thin -- the copy said one thing and the code did the
+      // other.
+      const record = buildKeywordEvidenceRecords(
+        TARGET,
+        evidenceFor(["natal chart"]),
+        shape([1, 1, 1], false),
+      ).find((entry) => entry.id === "thin_section_under_h3");
+
+      expect(record?.state).toBe("unverified");
+      expect(record?.affected).toBe(0);
+      expect(record?.tested).toBe(0);
+      expect(record?.limitation).toContain("not_measured_by_whitespace_words");
+    });
+
   });
 
   it("carries a category a crawl payload may never hold", () => {
