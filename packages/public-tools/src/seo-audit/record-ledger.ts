@@ -96,7 +96,7 @@ export const SEO_AUDIT_RECORD_IDS = Object.keys(SEO_AUDIT_RECORD_CATEGORIES);
  */
 export const SEO_AUDIT_EVIDENCE_LABELS: readonly string[] = [
   "viewport_declared",
-  "html_lang",
+  "lang_declared",
   "charset_declared",
   "favicon_declared",
   "body_text_units",

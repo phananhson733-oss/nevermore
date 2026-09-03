@@ -1581,7 +1581,7 @@
         "slots_covered": "命中目标词的位点数",
         "slots_applicable": "可检查的位点数",
         "viewport_declared": "是否声明 viewport",
-        "html_lang": "html lang",
+        "lang_declared": "是否声明阅读语言",
         "charset_declared": "是否声明字符集",
         "favicon_declared": "是否声明站点图标",
         "reviewed_floor": "审阅下限",

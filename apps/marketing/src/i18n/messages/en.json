@@ -1581,7 +1581,7 @@
         "slots_covered": "Slots covering the query",
         "slots_applicable": "Slots that could be checked",
         "viewport_declared": "Viewport declared",
-        "html_lang": "html lang",
+        "lang_declared": "Reading language declared",
         "charset_declared": "Character set declared",
         "favicon_declared": "Icon declared",
         "reviewed_floor": "Reviewed floor",

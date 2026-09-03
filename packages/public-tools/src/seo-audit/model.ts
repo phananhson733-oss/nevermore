@@ -1610,7 +1610,7 @@ function buildRecords(
         const facts = onPageOf(page);
         return facts === null || (facts.lang ?? "").trim() !== ""
           ? []
-          : [pageObservation(page, { html_lang: null })];
+          : [pageObservation(page, { lang_declared: "no" })];
       }),
       limitation: "declared_html_lang_attribute_only",
     }),
