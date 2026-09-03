@@ -7,7 +7,7 @@ import { buildGeoQuestionSet, geoQuestionSetDigest } from "./kb-questions.ts";
 import { geoKbDigest } from "./kb-digest.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import type { GeoKbValue } from "./kb-contract.ts";
-import type { GeoKbStoreDependencies } from "./kb-store.ts";
+import { GEO_KB_SNAPSHOT_COLUMNS, type GeoKbStoreDependencies } from "./kb-store.ts";
 const USER = "11111111-1111-4111-8111-111111111111";
 const input = { userId: USER, kbId: V2_KB_ID, snapshotId: V2_CANDIDATE_ID };
 function fixture(v2 = true) {
@@ -48,6 +48,24 @@ describe("version-aware exact frozen read", () => {
     expect(await readVersionedGeoKnowledgeBase(input, { ...dependencies, readDetails })).toMatchObject({ kind: "ok", value: { draft: { draftVersion: 2, payload: row.payload } } });
     expect(readDetails).toHaveBeenCalledTimes(1);
     expect(dependencies.readSnapshot).not.toHaveBeenCalled();
+  });
+  it.each([false, true])("reads a v2 draft beside a v2=%s frozen version using only the columns the bundle asks for", async v2 => {
+    // Production shape: the draft upgraded to v2 while the current frozen
+    // version stayed v1. The versioned reader hands the bundle's snapshot row
+    // straight to the frozen reader, so a row projected through the bundle's
+    // own column list is the only honest fixture -- a hand-written row that
+    // carries more columns than the query selects proves nothing.
+    const current = fixture(), frozen = fixture(v2);
+    const projected = Object.fromEntries(GEO_KB_SNAPSHOT_COLUMNS.split(",")
+      .map(column => column.trim())
+      .map(column => [column, (frozen.row as unknown as Record<string, unknown>)[column]]));
+    const bundle = { knowledgeBases: [{ id: V2_KB_ID, user_id: USER, origin: "https://example.com", host: "example.com", canonical_site_key: "example.com", current_frozen_snapshot_id: frozen.row.id, created_at: frozen.row.frozen_at, updated_at: frozen.row.frozen_at }],
+      drafts: [{ kb_id: V2_KB_ID, user_id: USER, schema_version: "marketing-geo-kb.v2", draft_version: 4, payload: current.row.payload, content_hash: current.row.content_hash, updated_at: frozen.row.frozen_at }],
+      snapshots: [projected] };
+
+    const result = await readVersionedGeoKnowledgeBase({ userId: USER, kbId: V2_KB_ID }, { ...current.dependencies, readDetails: async () => ({ kind: "ok" as const, data: bundle }) });
+
+    expect(result).toMatchObject({ kind: "ok", value: { draft: { draftVersion: 4 }, frozen: { snapshotId: frozen.row.id, revision: 1 } } });
   });
   it.each([false, true])("retains exact v2=%s bytes and hashes without generation/source lookup", async v2 => {
     const { row, dependencies } = fixture(v2), before = JSON.stringify(row);

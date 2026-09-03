@@ -189,7 +189,15 @@ const DRAFT_COLUMNS = `${DRAFT_SUMMARY_COLUMNS},payload`;
 const SNAPSHOT_SUMMARY_COLUMNS =
   "id,kb_id,user_id,revision,schema_version,content_hash,question_set_hash,frozen_at";
 const SNAPSHOT_DETAIL_COLUMNS = `${SNAPSHOT_SUMMARY_COLUMNS},question_set`;
-const SNAPSHOT_FULL_COLUMNS = `${SNAPSHOT_DETAIL_COLUMNS},payload`;
+/**
+ * What the single-knowledge-base bundle asks for. The version-aware reader
+ * hands this exact row to the frozen-snapshot reader instead of querying
+ * again, so whatever is missing here is missing there -- and a column the
+ * frozen reader needs but this list omits reads as a malformed stored value.
+ * Exported so a test can assert the reader works with these columns rather
+ * than with a hand-written row that happens to carry more.
+ */
+export const GEO_KB_SNAPSHOT_COLUMNS = `${SNAPSHOT_DETAIL_COLUMNS},payload`;
 
 function transport(
   data: unknown,
@@ -296,7 +304,7 @@ async function readDetailsViaSupabase(
     if (typeof currentSnapshotId === "string") {
       const snapshot = await client
         .from("marketing_geo_kb_snapshots")
-        .select(SNAPSHOT_DETAIL_COLUMNS)
+        .select(GEO_KB_SNAPSHOT_COLUMNS)
         .eq("user_id", userId)
         .eq("kb_id", kbId)
         .eq("id", currentSnapshotId)
@@ -327,7 +335,7 @@ async function readSnapshotViaSupabase(
     const snapshotQuery = () =>
       client
         .from("marketing_geo_kb_snapshots")
-        .select(SNAPSHOT_FULL_COLUMNS)
+        .select(GEO_KB_SNAPSHOT_COLUMNS)
         .eq("user_id", userId)
         .eq("kb_id", kbId);
     if (selector.by === "revision") {
