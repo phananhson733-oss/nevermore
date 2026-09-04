@@ -69,6 +69,13 @@ export interface AgentRecommendationAnalysis {
 }
 
 export interface RankAgentRecommendationOptions {
+  /**
+   * The URL the crawl inspected, when it differs from the submitted string.
+   *
+   * This is the form observations carry. Without it a redirect between host
+   * forms silently empties the evidence for every page-level row.
+   */
+  readonly inspectedTargetUrl?: string | undefined;
   readonly targetUrl?: string;
   readonly limit?: number;
 }
@@ -114,22 +121,40 @@ function comparableUrl(value: string | null | undefined): string | null {
   }
 }
 
+/**
+ * The evidence a page-level recommendation may quote.
+ *
+ * Matched against the URL the crawl INSPECTED, with the submitted string only
+ * as a fallback. They are not the same value: a submitted `www.` host that
+ * redirects to the apex is fetched — and observed — as the apex, so filtering
+ * by what the visitor typed discarded every observation. The row then said
+ * "this run recorded no specific target" and "no evidence records to show",
+ * while its own solution preview printed the page URL and the title read off
+ * it. Both forms are accepted, because either can be the one the observations
+ * carry.
+ */
 function recommendationEvidenceRecords(
   check: AgentAuditEvaluatedCheck,
   recordsById: ReadonlyMap<string, SeoAuditRecord>,
   targetUrl: string | undefined,
+  inspectedTargetUrl?: string | undefined,
 ): readonly SeoAuditRecord[] {
   const records = check.evidenceRecordIds
     .map((recordId) => recordsById.get(recordId))
     .filter((record): record is SeoAuditRecord => record !== undefined);
   if (check.check.scope !== "page" || !targetUrl) return records;
 
-  const target = comparableUrl(targetUrl);
-  if (!target) return [];
+  const targets = new Set(
+    [inspectedTargetUrl, targetUrl]
+      .map((value) => (value ? comparableUrl(value) : null))
+      .filter((value): value is string => value !== null),
+  );
+  if (targets.size === 0) return [];
   return records.flatMap((record) => {
-    const observations = record.observations.filter(
-      (observation) => comparableUrl(observation.url) === target,
-    );
+    const observations = record.observations.filter((observation) => {
+      const url = comparableUrl(observation.url);
+      return url !== null && targets.has(url);
+    });
     return observations.length === 0
       ? []
       : [
@@ -199,6 +224,7 @@ export function analyzeAgentRecommendations(
         check,
         recordsById,
         options.targetUrl,
+        options.inspectedTargetUrl,
       );
       const observedEvidence = evidenceRecords.filter(
         (record) => record.state === "observed" && record.affected > 0,

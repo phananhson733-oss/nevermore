@@ -368,6 +368,8 @@ export interface BuildAgentIssueModelInput {
   readonly records: readonly SeoAuditRecord[];
   /** Normalized crawl entry URL, when one page is the subject of this run. */
   readonly targetUrl?: string;
+  /** The URL the crawl inspected. The form observations carry. */
+  readonly inspectedTargetUrl?: string | undefined;
   /** Per-check key page reach, keyed by check id. Absent for a single-page run. */
   readonly keyPageReach?: ReadonlyMap<string, AgentKeyPageReach>;
 }
@@ -386,12 +388,14 @@ export function buildAgentIssueModel({
   checks,
   records,
   targetUrl,
+  inspectedTargetUrl,
   keyPageReach,
 }: BuildAgentIssueModelInput): AgentIssueModel {
   const reachOf = (check: AgentAuditEvaluatedCheck) =>
     keyPageReach?.get(check.check.id);
   const analysis = analyzeAgentRecommendations(agent, checks, records, {
     ...(targetUrl === undefined ? {} : { targetUrl }),
+    ...(inspectedTargetUrl === undefined ? {} : { inspectedTargetUrl }),
     limit: Number.POSITIVE_INFINITY,
   });
   const rankedById = new Map(
