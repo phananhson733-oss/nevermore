@@ -93,6 +93,10 @@ const upstreamPayload = {
       robotsGroupsObserved: 1,
       sitemapReferencesObserved: 1,
       sitemapFetched: false,
+      navigationUrls: [
+        "https://acme.test/docs",
+        "https://acme.test/pricing",
+      ],
       sitemapUrls: [],
       sitemapUrlsComplete: true,
     },
@@ -830,6 +834,8 @@ describe("handleAgentAuditRequest", () => {
             pageRole: null,
             market: null,
             language: null,
+            tier: "key-pages",
+            extraKeyPages: [],
           });
           return success();
         },
@@ -839,6 +845,27 @@ describe("handleAgentAuditRequest", () => {
 
     expect(response.status).toBe(200);
     expect(order).toEqual(["auth", "delegate"]);
+  });
+
+  it("resolves Tech policy server-side even when the client submits SEO-only options", async () => {
+    const delegate = vi.fn(async () => success());
+    const response = await handleAgentAuditRequest(
+      request({
+        tier: "key-pages",
+        extraKeyPages: ["https://acme.test/manual"],
+      }),
+      "tech",
+      dependencies({ delegate }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(delegate).toHaveBeenCalledWith(
+      expect.any(Request),
+      expect.objectContaining({
+        tier: "full-site",
+        extraKeyPages: [],
+      }),
+    );
   });
 
   it("returns the complete neutral ledger for SEO without inventing evaluation fields", async () => {
@@ -866,6 +893,7 @@ describe("handleAgentAuditRequest", () => {
           targetUrl: upstreamPayload.result.targetUrl,
           siteOrigin: upstreamPayload.result.siteOrigin,
           scannedAt: upstreamPayload.result.scannedAt,
+          crawlTier: "key-pages",
           targetInspected: upstreamPayload.result.targetInspected,
           inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
           landedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
@@ -879,8 +907,13 @@ describe("handleAgentAuditRequest", () => {
                 upstreamPayload.result.pages[0]?.metaDescription ?? null,
               depth: upstreamPayload.result.pages[0]?.depth ?? 0,
               inboundLinks: upstreamPayload.result.pages[0]?.inboundLinks ?? 0,
+              reason: "home",
             },
           ],
+          keyPageSelection: {
+            omittedUrls: [],
+            manualUnavailableUrls: [],
+          },
           targetPageExtract: null,
           coverage: upstreamPayload.result.coverage,
           siteResources: upstreamPayload.result.siteResources,
@@ -905,6 +938,193 @@ describe("handleAgentAuditRequest", () => {
     expect(JSON.stringify(body)).not.toMatch(
       /"(?:score|priority|impact|opportunities)"/,
     );
+  });
+
+  it("defaults navigation URLs to an empty list for a legacy v18 cache row", async () => {
+    const legacy = structuredClone(upstreamPayload) as unknown as {
+      result: { siteResources: Record<string, unknown> };
+    };
+    delete legacy.result.siteResources["navigationUrls"];
+
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({
+        delegate: async () => Response.json({ data: legacy }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.result.siteResources.navigationUrls).toEqual([]);
+    expect(body.data.result.keyPageSelection).toEqual({
+      omittedUrls: [],
+      manualUnavailableUrls: [],
+    });
+    expect(body.data.result.crawlTier).toBe("key-pages");
+  });
+
+  it("projects collected navigation candidates and their selection metadata together", async () => {
+    const payload = structuredClone(upstreamPayload);
+    const home = payload.result.pages[0]!;
+    payload.result.pages.push(
+      {
+        ...home,
+        url: "https://acme.test/docs",
+        subjectUrl: "https://acme.test/docs",
+        finalUrl: "https://acme.test/docs",
+        depth: 1,
+      },
+      {
+        ...home,
+        url: "https://acme.test/pricing",
+        subjectUrl: "https://acme.test/pricing",
+        finalUrl: "https://acme.test/pricing",
+        depth: 1,
+      },
+    );
+
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({
+        delegate: async () => Response.json({ data: payload }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(body.data.result.keyPages.map(
+      (entry: { url: string; reason: unknown }) => ({
+        url: entry.url,
+        reason: entry.reason,
+      }),
+    )).toEqual([
+      { url: "https://acme.test/", reason: "home" },
+      { url: "https://acme.test/docs", reason: "navigation" },
+      { url: "https://acme.test/pricing", reason: "navigation" },
+    ]);
+    expect(body.data.result.keyPageSelection).toEqual({
+      omittedUrls: [],
+      manualUnavailableUrls: [],
+    });
+    expect(body.data.result.crawlTier).toBe("key-pages");
+  });
+
+  it("projects every unique collected 2xx HTML page for an explicit full-site run", async () => {
+    const payload = structuredClone(upstreamPayload);
+    const home = payload.result.pages[0]!;
+    payload.result.pages.push(
+      {
+        ...home,
+        url: "https://acme.test/about",
+        subjectUrl: "https://acme.test/about",
+        finalUrl: "https://acme.test/about",
+        depth: 1,
+      },
+      {
+        ...home,
+        url: "https://acme.test/lonely",
+        subjectUrl: "https://acme.test/lonely",
+        finalUrl: "https://acme.test/lonely",
+        depth: 2,
+      },
+    );
+
+    const response = await handleAgentAuditRequest(
+      request({ tier: "full-site" }),
+      "seo",
+      dependencies({
+        delegate: async () => Response.json({ data: payload }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(
+      body.data.result.keyPages.map(
+        (entry: { url: string; reason: unknown }) => ({
+          url: entry.url,
+          reason: entry.reason,
+        }),
+      ),
+    ).toEqual([
+      { url: "https://acme.test/", reason: "home" },
+      { url: "https://acme.test/about", reason: "full-site" },
+      { url: "https://acme.test/lonely", reason: "full-site" },
+    ]);
+    expect(body.data.result.keyPageSelection).toEqual({
+      omittedUrls: [],
+      manualUnavailableUrls: [],
+    });
+    expect(body.data.result.crawlTier).toBe("full-site");
+  });
+
+  it.each([
+    ["Tech", "tech", "agent-audit"],
+    ["On-Page", "seo", "on-page-seo-check"],
+  ] as const)(
+    "keeps the %s compatibility route on structural page selection",
+    async (_label, agent, reportAs) => {
+      const payload = structuredClone(upstreamPayload);
+      const home = payload.result.pages[0]!;
+      payload.result.pages.push({
+        ...home,
+        url: "https://acme.test/about",
+        subjectUrl: "https://acme.test/about",
+        finalUrl: "https://acme.test/about",
+        depth: 1,
+      });
+
+      const response = await handleAgentAuditRequest(
+        request({ tier: "full-site" }),
+        agent,
+        dependencies({
+          reportAs,
+          delegate: async () => Response.json({ data: payload }),
+        }),
+      );
+      const body = await response.json();
+
+      expect(body.data.result.keyPages).toMatchObject([
+        { url: "https://acme.test/", reason: "home" },
+      ]);
+    },
+  );
+
+  it("projects manual reasons and a separate unavailable-manual ledger", async () => {
+    const payload = structuredClone(upstreamPayload);
+    const home = payload.result.pages[0]!;
+    payload.result.pages.push({
+      ...home,
+      url: "https://acme.test/about",
+      subjectUrl: "https://acme.test/about",
+      finalUrl: "https://acme.test/about",
+      depth: 1,
+    });
+    payload.result.siteResources.navigationUrls = ["https://acme.test/about"];
+
+    const response = await handleAgentAuditRequest(
+      request({
+        extraKeyPages: [
+          "https://acme.test/missing",
+          "https://acme.test/about",
+        ],
+      }),
+      "seo",
+      dependencies({
+        delegate: async () => Response.json({ data: payload }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.result.keyPages).toMatchObject([
+      { url: "https://acme.test/", reason: "home" },
+      { url: "https://acme.test/about", reason: "manual" },
+    ]);
+    expect(body.data.result.keyPageSelection).toEqual({
+      omittedUrls: [],
+      manualUnavailableUrls: ["https://acme.test/missing"],
+    });
   });
 
   it("rebuilds nested evidence objects from only public contract fields", async () => {
@@ -953,11 +1173,12 @@ describe("handleAgentAuditRequest", () => {
       targetUrl: upstreamPayload.result.targetUrl,
       siteOrigin: upstreamPayload.result.siteOrigin,
       scannedAt: upstreamPayload.result.scannedAt,
+      crawlTier: "key-pages",
       targetInspected: upstreamPayload.result.targetInspected,
       inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
       landedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
       // Rebuilt field by field like every other region, so an upstream row
-      // carrying page source beside these five never reaches the browser.
+      // carrying page source beside these six never reaches the browser.
       keyPages: [
         {
           url: upstreamPayload.result.inspectedTargetUrl,
@@ -966,8 +1187,13 @@ describe("handleAgentAuditRequest", () => {
             upstreamPayload.result.pages[0]?.metaDescription ?? null,
           depth: upstreamPayload.result.pages[0]?.depth ?? 0,
           inboundLinks: upstreamPayload.result.pages[0]?.inboundLinks ?? 0,
+          reason: "home",
         },
       ],
+      keyPageSelection: {
+        omittedUrls: [],
+        manualUnavailableUrls: [],
+      },
       targetPageExtract: null,
       coverage: upstreamPayload.result.coverage,
       siteResources: upstreamPayload.result.siteResources,
@@ -1620,7 +1846,10 @@ describe("handleAgentAuditRequest", () => {
           "content-type": "application/json",
           "x-real-ip": "203.0.113.9",
         },
-        body: JSON.stringify({ url: "acme.test", targetQueries: ["x".repeat(9_000)] }),
+        body: JSON.stringify({
+          url: "acme.test",
+          targetQueries: ["x".repeat(40_000)],
+        }),
       }),
       "seo",
       dependencies({ delegate }),

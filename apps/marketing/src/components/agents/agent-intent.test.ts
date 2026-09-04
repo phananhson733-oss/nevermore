@@ -12,6 +12,7 @@ import {
   isProfileSearchPendingAgentIntent,
   isRunnablePendingAgentIntent,
   pendingAgentIntentKey,
+  pendingAgentRunOptions,
   readPendingAgentIntent,
   restorePendingAgentIntent,
   schedulePendingAgentIntentExpiry,
@@ -143,6 +144,104 @@ describe("Agent pending intents", () => {
         url: "https://astrologywiki.com/other",
       }),
     ).toBe(false);
+  });
+
+  it("round-trips the exact full-site and manual-page snapshot for a confirmed SEO run", () => {
+    const storage = new MemoryStorage();
+    const profile = confirmAgentProfile(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "https://astrologywiki.com/pricing"),
+        { country: "US", locale: "en-US" },
+      ),
+    );
+    const runOptions = {
+      tier: "full-site" as const,
+      extraKeyPages: [
+        "https://astrologywiki.com/about",
+        "https://astrologywiki.com/tools/chart",
+      ],
+    };
+
+    const stored = storeConfirmedAgentRunIntent(
+      storage,
+      profile,
+      null,
+      runOptions,
+      1_000,
+    );
+    const resumed = readPendingAgentIntent(storage, "seo", 1_001);
+
+    expect(stored?.runOptions).toEqual(runOptions);
+    expect(resumed?.runOptions).toEqual(runOptions);
+    expect(pendingAgentRunOptions(resumed!)).toEqual(runOptions);
+  });
+
+  it.each([
+    ["seo", "key-pages"],
+    ["tech", "full-site"],
+  ] as const)(
+    "uses the %s default for an older v3 confirmed intent without runOptions",
+    (agent, tier) => {
+      const storage = new MemoryStorage();
+      const profile = confirmAgentProfile(
+        updateAgentProfile(
+          createAgentProfileDraft(agent, "https://astrologywiki.com/"),
+          { country: "US", locale: "en-US" },
+        ),
+      );
+      storeConfirmedAgentRunIntent(storage, profile, 1_000);
+
+      const resumed = readPendingAgentIntent(storage, agent, 1_001)!;
+      expect(resumed.runOptions).toBeUndefined();
+      expect(pendingAgentRunOptions(resumed)).toEqual({
+        tier,
+        extraKeyPages: [],
+      });
+    },
+  );
+
+  it("clears a confirmed intent whose stored run options are unsafe", () => {
+    const storage = new MemoryStorage();
+    const profile = confirmAgentProfile(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "https://astrologywiki.com/"),
+        { country: "US", locale: "en-US" },
+      ),
+    );
+    const base = storeConfirmedAgentRunIntent(storage, profile, 1_000)!;
+    storage.setItem(
+      pendingAgentIntentKey("seo"),
+      JSON.stringify({
+        ...base,
+        runOptions: {
+          tier: "full-site",
+          extraKeyPages: ["https://attacker.example/private"],
+        },
+      }),
+    );
+
+    expect(readPendingAgentIntent(storage, "seo", 1_001)).toBeNull();
+    expect(storage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+  });
+
+  it("rejects run options on a non-run intent instead of letting them acquire run authority", () => {
+    const storage = new MemoryStorage();
+    const prepared = storePendingAgentIntent(
+      storage,
+      "seo",
+      "https://astrologywiki.com/",
+      "prepare_profile",
+      1_000,
+    )!;
+    storage.setItem(
+      pendingAgentIntentKey("seo"),
+      JSON.stringify({
+        ...prepared,
+        runOptions: { tier: "key-pages", extraKeyPages: [] },
+      }),
+    );
+
+    expect(readPendingAgentIntent(storage, "seo", 1_001)).toBeNull();
   });
 
   it("physically removes a confirmed profile handoff at its expiry", () => {

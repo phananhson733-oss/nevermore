@@ -117,6 +117,31 @@ function raw(): SeoAuditRaw {
 }
 
 describe("catalog / detector contract", () => {
+  it("declares the full-site-only producer limitation", () => {
+    expect(SEO_AUDIT_LIMITATION_CODES).toContain("full_site_only");
+  });
+
+  it("keeps delegated keyword records in the producer ledger after removing their checks", () => {
+    const delegated = [
+      ["2.3", "title_without_target_query"],
+      ["3.2", "h1_without_target_query"],
+      ["2.10", "target_query_slot_coverage"],
+      ["4.2", "target_query_density"],
+      ["4.3", "target_query_first_appearance"],
+    ] as const;
+    const catalogIds = new Set(
+      [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS].flatMap((group) =>
+        group.checks.map((check) => check.id),
+      ),
+    );
+    const producerIds = new Set(KEYWORD_EVIDENCE_RECORD_IDS);
+
+    for (const [checkId, recordId] of delegated) {
+      expect(catalogIds.has(checkId), checkId).toBe(false);
+      expect(producerIds.has(recordId), recordId).toBe(true);
+    }
+  });
+
   /**
    * The failure this exists for.
    *

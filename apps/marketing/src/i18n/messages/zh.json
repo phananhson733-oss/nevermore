@@ -1167,6 +1167,7 @@
         "resource_not_observed_does_not_prove_absence": "没有观测到资源，可能是资源不存在、不可达、被拦截，或未进入成功获取的资源集合；不能据此断言资源缺失。",
         "static_response_directives_only": "这里只读取已采集静态 HTTP/HTML 中的索引指令，不检测搜索引擎的真实索引覆盖。",
         "normalised_text_match_within_inspected_pages": "重复分组使用忽略大小写、合并空白后的文本，只覆盖本次已检查页面。",
+        "full_site_only": "这项判定需要完整抓取全站。关键页档只是浅层样本，不会冒充全站结论。",
         "bounded_static_html_crawl_inlinks_only": "入链数量只统计已采集静态 HTML 中的链接；该记录不是对孤立页面的最终断言。",
         "uncollected_link_targets_not_classified": "只包含已实际采集且观测到 4xx/5xx 的链接目标；未采集目标不会被称为坏链。",
         "static_html_json_ld_only": "JSON-LD 观测来自已采集静态 HTML，不检测客户端渲染后添加的代码块。",
@@ -7911,6 +7912,29 @@
           "context": "结果与运行上下文",
           "competitor": "商业竞品框架"
         },
+        "runOptions": {
+          "legend": "本次运行范围",
+          "tierLabel": "抓取档位",
+          "manualLabel": "额外检查的关键页",
+          "manualPlaceholder": "https://example.com/pricing\nhttps://example.com/product",
+          "manualHelp": "每行填写一个同源的绝对 URL，最多 {count} 个。手动追加页面与所选档位共享同一抓取预算。",
+          "boundary": "本次两个范围沿用相同的积分处理；这里不展示单独价格。",
+          "tiers": {
+            "key-pages": {
+              "label": "关键页",
+              "help": "浅层发现至深度 2，最多 80 个 URL，抓取时间上限 45 秒。"
+            },
+            "full-site": {
+              "label": "全站",
+              "help": "全站发现至深度 6，最多 2,000 个 URL，抓取时间上限 240 秒。"
+            }
+          },
+          "errors": {
+            "too_many": "最多填写 10 个非空 URL。",
+            "invalid": "请填写不含凭据或片段的绝对 http(s) URL；每个 URL 最长 2,048 个字符。",
+            "cross_origin": "所有额外页面必须与目标 URL 完全同源。"
+          }
+        },
         "document": {
           "label": "Product Information",
           "sections": {
@@ -8690,9 +8714,16 @@
       },
       "capturedReport": "阶段 02 · 已采集报告",
       "captureSummary": "抓取 {pages} 页 · 关键页 {keyPages} · 已评估 {evaluated}/{total} 项检查",
+      "captureSummaryFullSite": "抓取 {pages} 页 · 页面级检查覆盖 {evaluablePages} 个可评估的已收集页面 · 已评估 {evaluated}/{total} 项检查",
       "captureSummaryTargetOnly": "抓取 {pages} 页 · 已评估 {evaluated}/{total} 项检查",
       "captureDetailLabel": "采集边界与计数",
       "keyPagesNone": "本次没有可评估的关键页，页面级结论只针对提交的 URL。",
+      "keyPageSelectionSummary": "候选页 {count} 个：导航 {navigation} · 集群页 {clusterPages}（{prefixes}）· 内容 {content}（按本次已收集页入链最多 15；总候选超过 50 时收紧到 10 或 5）· 手动 {manual}。",
+      "fullSiteSelectionSummary": "页面级候选 {count} 个：导航 {navigation} · 集群页 {clusterPages}（{prefixes}）· 内容 {content} · 手动 {manual} · 全站其余页 {fullSite}。",
+      "keyPageSelectionFixed": "抓取到时，首页和提交页固定按最高优先级纳入；即使提交页抓取失败，也仍会保留该页的可用判定。",
+      "keyPageSelectionBoundary": "这些数字只是最终页面级列表的本地分类，不是外部证据，也没有把缺失数据填成 0。",
+      "keyPageOmittedHeading": "安全阀未纳入页面级检查（{count}）",
+      "keyPageManualUnavailableHeading": "手动追加但未能抓取/评估（{count}）",
       "capturedLanded": "跳转到了 {url}，本报告读的是这个页面。",
       "finalOrigin": "最终公开源站",
       "capturedAt": "采集时间",
@@ -8800,6 +8831,10 @@
         "controls": {
           "expandVisible": "展开当前筛选",
           "collapseAll": "全部收起"
+        },
+        "groupHint": {
+          "2": "想知道某一页是否真的覆盖了目标词？用 <checker>On-Page SEO Checker</checker> 逐位点看标题、H1、描述、开头正文和密度，附 SERP 预览。",
+          "4": "想知道某一页是否真的覆盖了目标词？用 <checker>On-Page SEO Checker</checker> 逐位点看标题、H1、描述、开头正文和密度，附 SERP 预览。"
         },
         "filterEmpty": "当前筛选下没有问题。切换筛选可以查看其他类别。",
         "clean": {

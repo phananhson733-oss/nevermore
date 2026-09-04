@@ -48,6 +48,8 @@ export interface AgentAuditViewModel {
     readonly completedAt: string;
   };
   readonly evaluatedChecks: readonly AgentAuditEvaluatedCheck[];
+  /** Server-selected candidates after Profile ordering, never synthetic. */
+  readonly candidatePages: readonly AgentKeyPage[];
   /** Pages judged individually this run, in the order the report lists them. */
   readonly keyPages: readonly AgentKeyPage[];
   /**
@@ -58,6 +60,10 @@ export interface AgentAuditViewModel {
    * because that stand-in is always added.
    */
   readonly keyPagesWereSelected: boolean;
+  /** Content candidates displaced by the server's 50-page safety valve. */
+  readonly omittedUrls: readonly string[];
+  /** Manual additions that were not available as collected 2xx HTML pages. */
+  readonly manualUnavailableUrls: readonly string[];
   /** How much of the key page set each page-level check was judged on. */
   readonly keyPageReach: ReadonlyMap<string, AgentKeyPageReach>;
   /**
@@ -112,7 +118,7 @@ export function buildAgentAuditViewModel({
     inspectedTargetUrl: data.result.inspectedTargetUrl,
   } as const;
   const site = evaluateAgentAuditScope("site", evidence);
-  const keyPages = selectAgentKeyPages({
+  const candidatePages = selectAgentKeyPages({
     candidates: data.result.keyPages ?? [],
     coreFeatures,
     siteOrigin: data.result.siteOrigin,
@@ -121,7 +127,7 @@ export function buildAgentAuditViewModel({
   const evaluated = evaluateAgentKeyPages({
     records: evidence.records,
     availability: evidence.availability,
-    keyPages,
+    keyPages: candidatePages,
     targetUrl: data.result.targetUrl,
     targetInspected: data.result.targetInspected,
     inspectedTargetUrl: data.result.inspectedTargetUrl,
@@ -155,8 +161,12 @@ export function buildAgentAuditViewModel({
     // selection alone is one short whenever the submitted page was not
     // collected: it is judged from a synthetic row rather than a candidate, and
     // a header that omitted it would disagree with every row beneath it.
+    candidatePages,
     keyPages: evaluated.map((entry) => entry.page),
-    keyPagesWereSelected: keyPages.length > 0,
+    keyPagesWereSelected: candidatePages.length > 0,
+    omittedUrls: data.result.keyPageSelection?.omittedUrls ?? [],
+    manualUnavailableUrls:
+      data.result.keyPageSelection?.manualUnavailableUrls ?? [],
     keyPageReach: aggregate.reach,
     evaluatedChecks: aggregate.checks,
   };

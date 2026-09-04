@@ -18,6 +18,7 @@ function page(url: string): AgentKeyPage {
     metaDescription: null,
     depth: 1,
     inboundLinks: 1,
+    reason: "navigation",
     basis: "structure",
     matchedFeature: null,
   };

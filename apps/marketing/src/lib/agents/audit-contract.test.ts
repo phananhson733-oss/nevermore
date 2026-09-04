@@ -99,6 +99,7 @@ const success = {
         robotsGroupsObserved: 1,
         sitemapReferencesObserved: 1,
         sitemapFetched: true,
+        navigationUrls: ["https://acme.test/pricing"],
         sitemapUrls: [],
         sitemapUrlsComplete: true,
       },
@@ -215,6 +216,36 @@ describe("isAgentAuditSuccessEnvelope", () => {
     },
   );
 
+  it("keeps legacy navigation absence readable but rejects malformed present URLs", () => {
+    const legacy = structuredClone(success) as unknown as {
+      data: { result: { siteResources: Record<string, unknown> } };
+    };
+    delete legacy.data.result.siteResources["navigationUrls"];
+    const malformed = structuredClone(success) as unknown as {
+      data: { result: { siteResources: Record<string, unknown> } };
+    };
+    malformed.data.result.siteResources["navigationUrls"] = [123];
+
+    expect(isAgentAuditSuccessEnvelope(legacy)).toBe(true);
+    expect(isAgentAuditSuccessEnvelope(malformed)).toBe(false);
+  });
+
+  it("keeps legacy crawl-tier absence readable and validates a present tier", () => {
+    expect(isAgentAuditSuccessEnvelope(success)).toBe(true);
+    for (const crawlTier of ["key-pages", "full-site"] as const) {
+      const current = structuredClone(success) as unknown as {
+        data: { result: Record<string, unknown> };
+      };
+      current.data.result["crawlTier"] = crawlTier;
+      expect(isAgentAuditSuccessEnvelope(current)).toBe(true);
+    }
+    const malformed = structuredClone(success) as unknown as {
+      data: { result: Record<string, unknown> };
+    };
+    malformed.data.result["crawlTier"] = "sitewide";
+    expect(isAgentAuditSuccessEnvelope(malformed)).toBe(false);
+  });
+
   describe("the key page shortlist", () => {
     function withKeyPages(keyPages: unknown): unknown {
       const envelope = structuredClone(success) as unknown as {
@@ -230,6 +261,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
       metaDescription: "What it costs",
       depth: 1,
       inboundLinks: 4,
+      reason: "navigation",
     };
 
     it("reads an envelope that carries no shortlist at all", () => {
@@ -241,7 +273,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
       expect(isAgentAuditSuccessEnvelope(withKeyPages([valid]))).toBe(true);
     });
 
-    it("refuses a row carrying anything the five published fields do not name", () => {
+    it("refuses a row carrying anything the six published fields do not name", () => {
       expect(
         isAgentAuditSuccessEnvelope(
           withKeyPages([{ ...valid, rawHtml: "<html>" }]),
@@ -250,7 +282,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
     });
 
     it("refuses a row missing a published field", () => {
-      const { inboundLinks: _dropped, ...incomplete } = valid;
+      const { reason: _dropped, ...incomplete } = valid;
       expect(isAgentAuditSuccessEnvelope(withKeyPages([incomplete]))).toBe(
         false,
       );
@@ -267,7 +299,54 @@ describe("isAgentAuditSuccessEnvelope", () => {
       ).toBe(false);
     });
 
+    it.each([
+      ["home", "home"],
+      ["target", "target"],
+      ["navigation", "navigation"],
+      ["manual", "manual"],
+      ["full site", "full-site"],
+      ["cluster", { kind: "cluster", prefix: "/tools/" }],
+      ["content", { kind: "content", inboundLinks: 4 }],
+    ] as const)("accepts the %s reason", (_name, reason) => {
+      expect(
+        isAgentAuditSuccessEnvelope(withKeyPages([{ ...valid, reason }])),
+      ).toBe(true);
+    });
+
+    it.each([
+      ["unknown string", "featured"],
+      ["cluster root", { kind: "cluster", prefix: "/" }],
+      ["cluster without trailing slash", { kind: "cluster", prefix: "/tools" }],
+      ["cluster with two segments", { kind: "cluster", prefix: "/tools/free/" }],
+      ["cluster with an extra key", { kind: "cluster", prefix: "/tools/", rank: 1 }],
+      ["content without inbound links", { kind: "content" }],
+      ["content with an extra key", { kind: "content", inboundLinks: 4, rank: 1 }],
+      ["unknown object kind", { kind: "manual" }],
+    ])("rejects a %s reason", (_name, reason) => {
+      expect(
+        isAgentAuditSuccessEnvelope(withKeyPages([{ ...valid, reason }])),
+      ).toBe(false);
+    });
+
+    it("requires a content reason to repeat the row's exact inbound count", () => {
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withKeyPages([
+            { ...valid, reason: { kind: "content", inboundLinks: 3 } },
+          ]),
+        ),
+      ).toBe(false);
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withKeyPages([
+            { ...valid, reason: { kind: "content", inboundLinks: -1 } },
+          ]),
+        ),
+      ).toBe(false);
+    });
+
     it("refuses a shortlist longer than the published bound", () => {
+      expect(AGENT_KEY_PAGE_WIRE_LIMIT).toBe(2_000);
       expect(
         isAgentAuditSuccessEnvelope(
           withKeyPages(
@@ -275,6 +354,111 @@ describe("isAgentAuditSuccessEnvelope", () => {
           ),
         ),
       ).toBe(false);
+    });
+  });
+
+  describe("the key page safety-valve selection", () => {
+    function withSelection(selection: unknown): unknown {
+      const envelope = structuredClone(success) as unknown as {
+        data: { result: Record<string, unknown> };
+      };
+      envelope.data.result["keyPageSelection"] = selection;
+      return envelope;
+    }
+
+    it("keeps a legacy response without the optional region readable", () => {
+      expect("keyPageSelection" in success.data.result).toBe(false);
+      expect(isAgentAuditSuccessEnvelope(success)).toBe(true);
+    });
+
+    it("keeps an older one-list selection region readable", () => {
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withSelection({
+            omittedUrls: Array.from(
+              { length: 10 },
+              (_, index) => `https://acme.test/blog/${index}`,
+            ),
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it("accepts the exact bounded unavailable-manual URL region", () => {
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withSelection({
+            omittedUrls: [],
+            manualUnavailableUrls: Array.from(
+              { length: 10 },
+              (_, index) => `https://acme.test/manual/${index}`,
+            ),
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it.each([
+      ["non-array manual list", "none"],
+      ["non-string manual URL", [123]],
+      ["relative manual URL", ["/manual/one"]],
+      [
+        "duplicate manual URL",
+        ["https://acme.test/manual/one", "https://acme.test/manual/one"],
+      ],
+      ["foreign-origin manual URL", ["https://other.test/manual/one"]],
+      [
+        "credential-bearing manual URL",
+        ["https://user:pass@acme.test/manual/one"],
+      ],
+      [
+        "fragment-bearing manual URL",
+        ["https://acme.test/manual/one#details"],
+      ],
+      [
+        "more than ten manual URLs",
+        Array.from(
+          { length: 11 },
+          (_, index) => `https://acme.test/manual/${index}`,
+        ),
+      ],
+    ])("rejects a %s", (_name, manualUnavailableUrls) => {
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withSelection({ omittedUrls: [], manualUnavailableUrls }),
+        ),
+      ).toBe(false);
+    });
+
+    it.each([
+      ["missing list", {}],
+      ["extra key", { omittedUrls: [], source: "content" }],
+      ["non-array list", { omittedUrls: "none" }],
+      ["non-string URL", { omittedUrls: [123] }],
+      ["relative URL", { omittedUrls: ["/blog/one"] }],
+      ["duplicate URL", {
+        omittedUrls: [
+          "https://acme.test/blog/one",
+          "https://acme.test/blog/one",
+        ],
+      }],
+      ["foreign-origin URL", {
+        omittedUrls: ["https://other.test/blog/one"],
+      }],
+      ["credential-bearing URL", {
+        omittedUrls: ["https://user:pass@acme.test/blog/one"],
+      }],
+      ["fragment-bearing URL", {
+        omittedUrls: ["https://acme.test/blog/one#details"],
+      }],
+      ["more than ten URLs", {
+        omittedUrls: Array.from(
+          { length: 11 },
+          (_, index) => `https://acme.test/blog/${index}`,
+        ),
+      }],
+    ])("rejects a %s", (_name, selection) => {
+      expect(isAgentAuditSuccessEnvelope(withSelection(selection))).toBe(false);
     });
   });
 

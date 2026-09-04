@@ -120,7 +120,9 @@ describe("v2 Agent audit evaluator", () => {
       availability: "unavailable",
       records: [],
     });
-    expect(result.checks).toHaveLength(58);
+    expect(result.checks).toHaveLength(
+      PAGE_AUDIT_GROUPS.flatMap((group) => group.checks).length,
+    );
     expect(result.evaluated).toBe(0);
     expect(result.health).toBeNull();
     expect(result.checks.every((check) => check.result === "excluded")).toBe(

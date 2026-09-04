@@ -5,10 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentKeyPageCandidate } from "../../lib/agents/audit-contract.ts";
-import {
-  AGENT_KEY_PAGE_LIMIT,
-  selectAgentKeyPages,
-} from "./agent-key-pages.ts";
+import { selectAgentKeyPages } from "./agent-key-pages.ts";
 
 const ORIGIN = "https://example.com";
 
@@ -22,6 +19,7 @@ function candidate(
     metaDescription: null,
     depth: 1,
     inboundLinks: 1,
+    reason: "navigation",
     ...overrides,
   };
 }
@@ -165,14 +163,35 @@ describe("selectAgentKeyPages", () => {
     ]);
   });
 
-  it("stops at the published bound", () => {
+  it("keeps every server-selected candidate beyond the old twelve-page cap", () => {
     const pages = run(
-      Array.from({ length: 24 }, (_, index) =>
+      Array.from({ length: 30 }, (_, index) =>
         candidate(`${ORIGIN}/p${String(index).padStart(2, "0")}`),
       ),
     );
 
-    expect(pages).toHaveLength(AGENT_KEY_PAGE_LIMIT);
+    expect(pages).toHaveLength(30);
+  });
+
+  it("preserves the server reason while applying Profile ordering and basis", () => {
+    const pages = run(
+      [
+        candidate(`${ORIGIN}/plain`, {
+          reason: { kind: "cluster", prefix: "/tools/" },
+        }),
+        candidate(`${ORIGIN}/keyword-tool`, {
+          reason: { kind: "content", inboundLinks: 1 },
+        }),
+      ],
+      ["keyword tool"],
+    );
+
+    expect(pages[0]).toMatchObject({
+      url: `${ORIGIN}/keyword-tool`,
+      basis: "feature",
+      reason: { kind: "content", inboundLinks: 1 },
+    });
+    expect(pages[1]?.reason).toEqual({ kind: "cluster", prefix: "/tools/" });
   });
 
   it("returns nothing when the run published no shortlist", () => {

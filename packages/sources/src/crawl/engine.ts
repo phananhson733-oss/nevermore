@@ -58,6 +58,7 @@ const STOP_MAX_DURATION = "max_duration";
 const STOP_MAX_TOTAL_BYTES = "max_total_bytes";
 const STOP_MAX_REQUESTS = "max_requests";
 const STOP_ABORTED = "aborted";
+export const CRAWL_ADDITIONAL_SEED_LIMIT = 10;
 /** robots.txt could not be read, so RFC 9309 §2.3.1.4 forbids crawling. */
 const STOP_ROBOTS_UNREACHABLE = "robots_unreachable";
 /** robots.txt forbids this crawler from the seed path. */
@@ -104,6 +105,13 @@ export interface CrawlEngineOptions {
   readonly onPageProgress?: (progress: CrawlPageProgress) => void;
   /** Trusted cap across robots, sitemap documents, page fetches, and redirects. */
   readonly maxRequests?: number;
+  /** Trusted depth-zero seeds, defensively revalidated against the crawl origin. */
+  readonly additionalSeedUrls?: readonly string[];
+  /**
+   * Trusted frontier policy. The sitemap is still fetched and projected first,
+   * but its members wait until the seed-and-discovery frontier is empty.
+   */
+  readonly deferSitemapFrontier?: boolean;
 }
 
 /**
@@ -803,6 +811,22 @@ export async function crawlSite(
   const { origin, host } = params;
   const crawlOrigin = originOf(`${origin}/`) ?? origin;
   const seedPair = canonicalSeedForOrigin(params.seedUrl, crawlOrigin);
+  const additionalSeedPairs = [
+    ...new Map(
+      (options.additionalSeedUrls ?? [])
+        .map((seedUrl) => canonicalSeedForOrigin(seedUrl, crawlOrigin))
+        .filter((pair): pair is NonNullable<typeof pair> => pair !== null)
+        .map((pair) => [pair.fetchUrl, pair] as const),
+    ).values(),
+  ]
+    .sort((left, right) =>
+      left.fetchUrl < right.fetchUrl
+        ? -1
+        : left.fetchUrl > right.fetchUrl
+          ? 1
+          : 0,
+    )
+    .slice(0, CRAWL_ADDITIONAL_SEED_LIMIT);
 
   const usage: Usage = {
     urlsFetched: 0,
@@ -1166,12 +1190,20 @@ export async function crawlSite(
     queue.push(fetchUrl);
   };
 
+  let sitemapFrontierDeferred = options.deferSitemapFrontier === true;
+  const enqueueSitemapFrontier = (): void => {
+    for (const target of boundedSitemapTargets) {
+      enqueue(target.subjectUrl, target.fetchUrl, 1);
+    }
+  };
+
   const originPair = canonicalizeUrl(`${origin}/`);
   if (originPair) enqueue(originPair.subjectUrl, originPair.fetchUrl, 0);
   if (seedPair) enqueue(seedPair.subjectUrl, seedPair.fetchUrl, 0);
-  for (const target of boundedSitemapTargets) {
-    enqueue(target.subjectUrl, target.fetchUrl, 1);
+  for (const pair of additionalSeedPairs) {
+    enqueue(pair.subjectUrl, pair.fetchUrl, 0);
   }
+  if (!sitemapFrontierDeferred) enqueueSitemapFrontier();
 
   interface PageCandidate {
     readonly record: CrawlPageRecord;
@@ -1327,6 +1359,19 @@ export async function crawlSite(
       headings: parsed.headings,
       wordCount: parsed.wordCount,
       internalOutlinks: parsed.internalOutlinks,
+      ...(requestSubjectUrl === originPair?.subjectUrl
+        ? {
+            navigationOutlinks: [
+              ...new Set(
+                parsed.navigationFetchTargets.map(
+                  (target) => target.subjectUrl,
+                ),
+              ),
+            ]
+              .sort(compareAscii)
+              .slice(0, CRAWL_PROJECTION_LIMITS.maxInternalOutlinks),
+          }
+        : {}),
       jsonLd: parsed.jsonLd,
       sitemapMember: sitemapMemberFetchUrls.has(requestFetchUrl),
       bodyExcerpt: parsed.bodyExcerpt,
@@ -1378,7 +1423,14 @@ export async function crawlSite(
       const entry = fetchUrl === undefined ? undefined : pending.get(fetchUrl);
       if (fetchUrl !== undefined) pending.delete(fetchUrl);
       if (!entry) {
-        if (inFlight === 0) return;
+        if (inFlight === 0) {
+          if (sitemapFrontierDeferred) {
+            sitemapFrontierDeferred = false;
+            enqueueSitemapFrontier();
+            continue;
+          }
+          return;
+        }
         await sleep(0);
         continue;
       }

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  SeoAuditCrawlTier,
   SeoAuditPayload,
   SeoAuditRaw,
   SeoAuditScanErrorCode,
@@ -7,6 +8,7 @@ import type {
 import { SeoAuditScanError } from "@sf/public-tools";
 import {
   handleSeoAuditRequest,
+  seoAuditCacheNamespace,
   type SeoAuditHandlerDependencies,
 } from "./seo-audit-handler.ts";
 import {
@@ -159,8 +161,160 @@ describe("handleSeoAuditRequest", () => {
     expect(deps.scan).toHaveBeenCalledWith(
       "https://acme.test/",
       expect.any(AbortSignal),
+      undefined,
+      { tier: "full-site" },
+    );
+    expect(deps.cachePayload).toHaveBeenCalledWith(
+      "https://acme.test/",
+      payload,
+      "seo_audit:full-site",
     );
     expect(deps.buildPayload).toHaveBeenCalledWith(raw);
+  });
+
+  it("uses the explicit key-pages tier for buffered gate, scan, and cache", async () => {
+    const openGate = vi.fn(
+      async (
+        _clientIp: string,
+        _normalizedUrl: string,
+        _options: { readonly cacheNamespace: string },
+      ) => ({
+        ok: true as const,
+        kind: "crawl" as const,
+        release: vi.fn(),
+      }),
+    );
+    const deps = dependencies({ openGate });
+
+    const response = await handleSeoAuditRequest(
+      request({ url: "acme.test", tier: "key-pages" }),
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(openGate).toHaveBeenCalledWith(
+      "203.0.113.9",
+      "https://acme.test/",
+      { cacheNamespace: "seo_audit:key-pages" },
+    );
+    expect(deps.scan).toHaveBeenCalledWith(
+      "https://acme.test/",
+      expect.any(AbortSignal),
+      undefined,
+      { tier: "key-pages" },
+    );
+    expect(deps.cachePayload).toHaveBeenCalledWith(
+      "https://acme.test/",
+      payload,
+      "seo_audit:key-pages",
+    );
+  });
+
+  it("revalidates manual pages and threads one opaque cache namespace through the run", async () => {
+    const openGate = vi.fn(
+      async (
+        _clientIp: string,
+        _normalizedUrl: string,
+        _options: { readonly cacheNamespace: string },
+      ) => ({
+        ok: true as const,
+        kind: "crawl" as const,
+        release: vi.fn(),
+      }),
+    );
+    const cachePayload = vi.fn(async () => {});
+    const deps = dependencies({
+      normalizeUrl: () => ({
+        ok: true,
+        url: "https://acme.test/main",
+      }),
+      openGate,
+      cachePayload,
+    });
+
+    const response = await handleSeoAuditRequest(
+      request({
+        url: "https://acme.test/main",
+        tier: "key-pages",
+        extraKeyPages: [
+          "https://acme.test/zeta#fragment",
+          "acme.test/alpha",
+          "https://ACME.test/zeta",
+        ],
+      }),
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    const gateOptions = openGate.mock.calls[0]?.[2] as
+      | { readonly cacheNamespace?: string }
+      | undefined;
+    const cacheNamespace = gateOptions?.cacheNamespace;
+    expect(cacheNamespace).toMatch(/^seo_audit:key-pages:manual:[a-f0-9]{32}$/);
+    expect(cacheNamespace).not.toContain("acme");
+    expect(deps.scan).toHaveBeenCalledWith(
+      "https://acme.test/main",
+      expect.any(AbortSignal),
+      undefined,
+      {
+        tier: "key-pages",
+        additionalSeedUrls: [
+          "https://acme.test/alpha",
+          "https://acme.test/zeta",
+        ],
+      },
+    );
+    expect(cachePayload).toHaveBeenCalledWith(
+      "https://acme.test/main",
+      payload,
+      cacheNamespace,
+    );
+  });
+
+  it("rejects invalid or cross-origin manual pages before gate or transport", async () => {
+    for (const extraKeyPages of [
+      ["https://other.test/page"],
+      ["https://user:pass@acme.test/page"],
+    ]) {
+      const openGate = vi.fn();
+      const scan = vi.fn(async () => raw);
+      const response = await handleSeoAuditRequest(
+        request({
+          url: "https://acme.test/",
+          extraKeyPages,
+        }),
+        dependencies({ openGate, scan }),
+      );
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        error: { code: "invalid_request" },
+      });
+      expect(openGate).not.toHaveBeenCalled();
+      expect(scan).not.toHaveBeenCalled();
+    }
+  });
+
+  it("derives the same cache identity for reordered sets and a different one for a different set", () => {
+    const first = seoAuditCacheNamespace("key-pages", [
+      "https://acme.test/a",
+      "https://acme.test/b",
+    ]);
+    const reordered = seoAuditCacheNamespace("key-pages", [
+      "https://acme.test/b",
+      "https://acme.test/a",
+    ]);
+    const different = seoAuditCacheNamespace("key-pages", [
+      "https://acme.test/a",
+      "https://acme.test/c",
+    ]);
+
+    expect(first).toBe(reordered);
+    expect(different).not.toBe(first);
+    expect(first).not.toContain("https://");
+    expect(seoAuditCacheNamespace("key-pages", [])).toBe(
+      "seo_audit:key-pages",
+    );
   });
 
   /**
@@ -231,7 +385,12 @@ describe("handleSeoAuditRequest", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("x-crawl-cache")).toBeNull();
     await expect(response.json()).resolves.toEqual({ data: freshPayload });
-    expect(scan).toHaveBeenCalledWith(normalizedUrl, expect.any(AbortSignal));
+    expect(scan).toHaveBeenCalledWith(
+      normalizedUrl,
+      expect.any(AbortSignal),
+      undefined,
+      { tier: "full-site" },
+    );
     expect(release).toHaveBeenCalledOnce();
   });
 
@@ -477,7 +636,7 @@ describe("handleSeoAuditRequest", () => {
     const scan = vi.fn(async () => raw);
     const deps = dependencies({ scan });
     const response = await handleSeoAuditRequest(
-      request({ url: "x".repeat(5_000) }),
+      request({ url: "x".repeat(40_000) }),
       deps,
     );
 
@@ -752,13 +911,16 @@ describe("handleSeoAuditRequest", () => {
     expect(openGate).toHaveBeenCalledWith(
       "203.0.113.9",
       "https://acme.test/",
-      { requireSameEntrySubject: true },
+      {
+        cacheNamespace: "seo_audit:full-site",
+        requireSameEntrySubject: true,
+      },
     );
     expect(scan).toHaveBeenCalledWith(
       "https://acme.test/",
       expect.any(AbortSignal),
       undefined,
-      { requireSameEntrySubject: true },
+      { requireSameEntrySubject: true, tier: "full-site" },
     );
   });
 
@@ -889,6 +1051,77 @@ describe("handleSeoAuditRequest, NDJSON branch", () => {
       stageLine,
       terminalLine,
     ]);
+  });
+
+  it("uses one resolved tier for the streamed gate, scan, and cache", async () => {
+    const seen: string[] = [];
+    const openGate = vi.fn(async (
+      _clientIp: string,
+      _normalizedUrl: string,
+      options?: { readonly cacheNamespace?: string },
+    ) => {
+      if (options?.cacheNamespace) seen.push(options.cacheNamespace);
+      return {
+        ok: true as const,
+        kind: "crawl" as const,
+        release: vi.fn(),
+      };
+    });
+    const scan = vi.fn(async (
+      _url: string,
+      _signal?: AbortSignal,
+      _onProgress?: (progress: { pagesCrawled: number; requestsSent: number }) => void,
+      options?: { readonly tier?: SeoAuditCrawlTier },
+    ) => {
+      if (options?.tier) seen.push(options.tier);
+      return raw;
+    });
+    const cachePayload = vi.fn(async (
+      _url: string,
+      _payload: SeoAuditPayload,
+      cacheNamespace: string,
+    ) => {
+      seen.push(cacheNamespace);
+    });
+
+    const response = await handleSeoAuditRequest(
+      streamingRequest({ url: "acme.test", tier: "key-pages" }),
+      dependencies({ openGate, scan, cachePayload }),
+    );
+    await bodyLines(response);
+
+    expect(seen).toEqual([
+      "seo_audit:key-pages",
+      "key-pages",
+      "seo_audit:key-pages",
+    ]);
+  });
+
+  it("keeps strict entry matching and manual seeds on the streamed scan", async () => {
+    const scan = vi.fn(async () => raw);
+    const deps = dependencies({ scan });
+
+    const response = await handleSeoAuditRequest(
+      streamingRequest({
+        url: "acme.test",
+        tier: "key-pages",
+        extraKeyPages: ["https://acme.test/deep/manual"],
+      }),
+      deps,
+      { requireSameEntrySubject: true },
+    );
+    await bodyLines(response);
+
+    expect(scan).toHaveBeenCalledWith(
+      "https://acme.test/",
+      expect.any(AbortSignal),
+      expect.any(Function),
+      {
+        tier: "key-pages",
+        additionalSeedUrls: ["https://acme.test/deep/manual"],
+        requireSameEntrySubject: true,
+      },
+    );
   });
 
   /**
@@ -1122,6 +1355,7 @@ describe("handleSeoAuditRequest, NDJSON branch", () => {
     expect(deps.cachePayload).toHaveBeenCalledWith(
       "https://acme.test/",
       payload,
+      "seo_audit:full-site",
     );
   });
 

@@ -5,11 +5,22 @@ import {
   isAllowedPublicToolEntryRedirect,
   PUBLIC_PREVIEW_CRAWL_USER_AGENT,
   PublicPreviewTargetRedirectError,
+  PUBLIC_PREVIEW_ADDITIONAL_SEED_LIMIT,
   PUBLIC_TOOL_SYNC_CRAWL_BUDGET,
   PUBLIC_TOOL_SYNC_MAX_REQUESTS,
+  tightenCrawlBudget,
 } from "./public-preview.ts";
 import type { PublicResourceResult } from "../public-http/index.ts";
-import type { CrawlFetcher } from "./types.ts";
+import type { CrawlBudget, CrawlFetcher } from "./types.ts";
+
+const UPPER_BOUND_CASES = [
+  ["maxUrls", 80],
+  ["maxDepth", 2],
+  ["maxWallClockMs", 45_000],
+  ["maxRedirects", 2],
+  ["maxBodyBytes", 1_024],
+  ["maxTotalBytes", 2_048],
+] as const satisfies readonly (readonly [keyof CrawlBudget, number])[];
 
 describe("public preview crawl profile", () => {
   it("uses a synchronous safety profile rather than the former 25-page product quota", () => {
@@ -27,6 +38,263 @@ describe("public preview crawl profile", () => {
       "GenGrowth-Public-Tools-Crawler",
     );
     expect(PUBLIC_TOOL_SYNC_MAX_REQUESTS).toBe(4_500);
+  });
+
+  it("only tightens explicitly supplied crawl budget fields", () => {
+    expect(
+      tightenCrawlBudget({
+        maxDepth: 2,
+        maxUrls: 80,
+        maxWallClockMs: 45_000,
+      }),
+    ).toEqual({
+      ...PUBLIC_TOOL_SYNC_CRAWL_BUDGET,
+      maxDepth: 2,
+      maxUrls: 80,
+      maxWallClockMs: 45_000,
+    });
+  });
+
+  it("never lets a ceiling widen the fixed public crawl budget", () => {
+    expect(
+      tightenCrawlBudget({
+        maxUrls: 5_000,
+        maxDepth: 20,
+        maxWallClockMs: 500_000,
+      }),
+    ).toEqual(PUBLIC_TOOL_SYNC_CRAWL_BUDGET);
+    expect(tightenCrawlBudget()).toEqual(PUBLIC_TOOL_SYNC_CRAWL_BUDGET);
+  });
+
+  it.each(UPPER_BOUND_CASES)(
+    "sanitizes and only tightens upper-bound field %s",
+    (field, smaller) => {
+      const defaultValue = PUBLIC_TOOL_SYNC_CRAWL_BUDGET[field];
+
+      for (const invalid of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+        expect(tightenCrawlBudget({ [field]: invalid })[field]).toBe(
+          defaultValue,
+        );
+      }
+      expect(tightenCrawlBudget({ [field]: defaultValue + 1 })[field]).toBe(
+        defaultValue,
+      );
+      expect(tightenCrawlBudget({ [field]: smaller })[field]).toBe(smaller);
+    },
+  );
+
+  it("never lowers the host delay, but accepts a slower server ceiling", () => {
+    expect(tightenCrawlBudget({ minHostDelayMs: 0 }).minHostDelayMs).toBe(250);
+    expect(tightenCrawlBudget({ minHostDelayMs: 100 }).minHostDelayMs).toBe(
+      250,
+    );
+    expect(tightenCrawlBudget({ minHostDelayMs: 500 }).minHostDelayMs).toBe(
+      500,
+    );
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1])(
+    "falls back to the default host delay for invalid value %s",
+    (minHostDelayMs) => {
+      expect(tightenCrawlBudget({ minHostDelayMs }).minHostDelayMs).toBe(250);
+    },
+  );
+
+  it("requires a finite positive concurrency before applying the upper bound", () => {
+    for (const invalid of [0, Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      expect(
+        tightenCrawlBudget({ perHostConcurrency: invalid })
+          .perHostConcurrency,
+      ).toBe(PUBLIC_TOOL_SYNC_CRAWL_BUDGET.perHostConcurrency);
+    }
+    expect(
+      tightenCrawlBudget({ perHostConcurrency: 500 }).perHostConcurrency,
+    ).toBe(PUBLIC_TOOL_SYNC_CRAWL_BUDGET.perHostConcurrency);
+    expect(
+      tightenCrawlBudget({ perHostConcurrency: 2 }).perHostConcurrency,
+    ).toBe(2);
+  });
+
+  it("runs the crawl engine with the tightened budget", async () => {
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        const path = new URL(url).pathname;
+        if (path === "/robots.txt") {
+          return new Response("User-agent: *\n", {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          });
+        }
+        if (path === "/sitemap.xml") {
+          return new Response("", {
+            status: 404,
+            headers: { "content-type": "application/xml" },
+          });
+        }
+        return new Response(
+          '<html><title>Fixture</title><a href="/next">Next</a></html>',
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      },
+    };
+
+    const result = await crawlPublicSitePreview(
+      "https://acme.test/",
+      undefined,
+      {
+        fetcher,
+        entryResolver: async (url) => entryResult(url),
+        budgetCeiling: { maxUrls: 1 },
+        engineOptions: {
+          guard: async (url) => ({
+            safe: true,
+            normalizedUrl: url,
+            pinnedIp: "93.184.216.34",
+            reason: null,
+          }),
+        },
+      },
+    );
+
+    expect(result.pages).toHaveLength(1);
+    expect(result.stopReason).toBe("max_urls");
+  });
+
+  it("forwards the trusted deferred-sitemap option to the crawl frontier", async () => {
+    const requested: string[] = [];
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        requested.push(url);
+        const path = new URL(url).pathname;
+        if (path === "/robots.txt") {
+          return new Response(
+            "User-agent: *\nSitemap: https://acme.test/sitemap.xml",
+            { status: 200, headers: { "content-type": "text/plain" } },
+          );
+        }
+        if (path === "/sitemap.xml") {
+          return new Response(
+            "<urlset><url><loc>https://acme.test/sitemap-a</loc></url><url><loc>https://acme.test/sitemap-b</loc></url></urlset>",
+            { status: 200, headers: { "content-type": "application/xml" } },
+          );
+        }
+        if (path === "/") {
+          return new Response(
+            '<html><title>Home</title><nav><a href="/navigation">Navigation</a></nav></html>',
+            { status: 200, headers: { "content-type": "text/html" } },
+          );
+        }
+        if (path === "/navigation") {
+          return new Response(
+            '<html><title>Navigation</title><a href="/navigation/child">Child</a></html>',
+            { status: 200, headers: { "content-type": "text/html" } },
+          );
+        }
+        return new Response(`<html><title>${path}</title></html>`, {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      },
+    };
+    const result = await crawlPublicSitePreview(
+      "https://acme.test/",
+      undefined,
+      {
+        fetcher,
+        entryResolver: async (url) => entryResult(url),
+        budgetCeiling: {
+          maxDepth: 2,
+          maxUrls: 3,
+          perHostConcurrency: 1,
+        },
+        deferSitemapFrontier: true,
+        engineOptions: {
+          guard: async (url) => ({
+            safe: true,
+            normalizedUrl: url,
+            pinnedIp: "93.184.216.34",
+            reason: null,
+          }),
+          sleep: async () => {},
+        },
+      },
+    );
+
+    expect(requested).toEqual([
+      "https://acme.test/robots.txt",
+      "https://acme.test/sitemap.xml",
+      "https://acme.test/",
+      "https://acme.test/navigation",
+      "https://acme.test/navigation/child",
+    ]);
+    expect(result.sitemap.subjectUrls).toEqual([
+      "https://acme.test/sitemap-a",
+      "https://acme.test/sitemap-b",
+    ]);
+  });
+
+  it("ignores server-owned frontier controls smuggled through the offline engine seam", async () => {
+    const requested: string[] = [];
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        requested.push(url);
+        const path = new URL(url).pathname;
+        if (path === "/robots.txt") {
+          return new Response(
+            "User-agent: *\nSitemap: https://acme.test/sitemap.xml",
+            { status: 200, headers: { "content-type": "text/plain" } },
+          );
+        }
+        if (path === "/sitemap.xml") {
+          return new Response(
+            "<urlset><url><loc>https://acme.test/sitemap-a</loc></url></urlset>",
+            { status: 200, headers: { "content-type": "application/xml" } },
+          );
+        }
+        if (path === "/") {
+          return new Response(
+            '<html><title>Home</title><a href="/discovered">Discovered</a></html>',
+            { status: 200, headers: { "content-type": "text/html" } },
+          );
+        }
+        return new Response(`<html><title>${path}</title></html>`, {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      },
+    };
+    const engineOptions = {
+      guard: async (url: string) => ({
+        safe: true as const,
+        normalizedUrl: url,
+        pinnedIp: "93.184.216.34",
+        reason: null,
+      }),
+      sleep: async () => {},
+      additionalSeedUrls: ["https://acme.test/smuggled"],
+      deferSitemapFrontier: true,
+      maxRequests: 2,
+    } as NonNullable<
+      Parameters<typeof crawlPublicSitePreview>[2]
+    >["engineOptions"] & {
+      readonly additionalSeedUrls: readonly string[];
+      readonly deferSitemapFrontier: true;
+      readonly maxRequests: 2;
+    };
+
+    await crawlPublicSitePreview("https://acme.test/", undefined, {
+      fetcher,
+      entryResolver: async (url) => entryResult(url),
+      budgetCeiling: { maxUrls: 2, perHostConcurrency: 1 },
+      engineOptions,
+    });
+
+    expect(requested).toEqual([
+      "https://acme.test/robots.txt",
+      "https://acme.test/sitemap.xml",
+      "https://acme.test/",
+      "https://acme.test/sitemap-a",
+    ]);
   });
 
   it("keeps a submitted same-origin path as an additional crawl seed", async () => {
@@ -82,6 +350,161 @@ describe("public preview crawl profile", () => {
     expect(
       requested.some((url) => url === "https://acme.test/docs?section=seo"),
     ).toBe(true);
+  });
+
+  it("fetches and collects a manual deep page that shallow discovery never links", async () => {
+    const requested: string[] = [];
+    const manualUrl = "https://acme.test/private/manual?view=seo";
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        requested.push(url);
+        const path = new URL(url).pathname;
+        if (path === "/robots.txt") {
+          return new Response("User-agent: *\n", {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          });
+        }
+        if (path === "/sitemap.xml") {
+          return new Response("", {
+            status: 404,
+            headers: { "content-type": "application/xml" },
+          });
+        }
+        return new Response("<html><title>Fixture page</title></html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      },
+    };
+
+    const result = await crawlPublicSitePreview(
+      "https://acme.test/",
+      undefined,
+      {
+        additionalSeedUrls: [manualUrl],
+        fetcher,
+        entryResolver: async (url) => entryResult(url),
+        engineOptions: {
+          guard: async (url) => ({
+            safe: true,
+            normalizedUrl: url,
+            pinnedIp: "93.184.216.34",
+            reason: null,
+          }),
+        },
+      },
+    );
+
+    expect(requested).toContain(manualUrl);
+    expect(result.pages).toContainEqual(
+      expect.objectContaining({
+        subjectUrl: manualUrl,
+        depth: 0,
+        projection: expect.objectContaining({ fetchUrl: manualUrl }),
+      }),
+    );
+  });
+
+  it("rebases validated manual paths onto an allowed www entry origin", async () => {
+    const requested: string[] = [];
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        requested.push(url);
+        return previewFixtureResponse(url);
+      },
+    };
+
+    await crawlPublicSitePreview("https://acme.test/main", undefined, {
+      additionalSeedUrls: ["https://acme.test/deep/manual?q=1"],
+      fetcher,
+      entryResolver: async (url) =>
+        entryResult(url, "https://www.acme.test/main"),
+      engineOptions: {
+        guard: async (url) => ({
+          safe: true,
+          normalizedUrl: url,
+          pinnedIp: "93.184.216.34",
+          reason: null,
+        }),
+      },
+    });
+
+    expect(requested).toContain("https://www.acme.test/deep/manual?q=1");
+    expect(
+      requested.every((url) => new URL(url).origin === "https://www.acme.test"),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["cross-origin", "https://other.test/manual"],
+    ["credentials", "https://user:secret@acme.test/manual"],
+    ["fragment", "https://acme.test/manual#private"],
+  ])(
+    "rejects a raw %s manual seed before crawl transport",
+    async (_case, additionalSeedUrl) => {
+      const fetch = vi.fn(async (url: string) => previewFixtureResponse(url));
+
+      await expect(
+        crawlPublicSitePreview("https://acme.test/", undefined, {
+          additionalSeedUrls: [additionalSeedUrl],
+          fetcher: { fetch },
+          entryResolver: async (url) => entryResult(url),
+          engineOptions: {
+            guard: async (url) => ({
+              safe: true,
+              normalizedUrl: url,
+              pinnedIp: "93.184.216.34",
+              reason: null,
+            }),
+          },
+        }),
+      ).rejects.toThrow("public_preview_additional_seed_invalid");
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("deduplicates, ASCII sorts, and caps manual seeds at the server limit", async () => {
+    const requested: string[] = [];
+    const additionalSeedUrls = [
+      ...Array.from(
+        { length: PUBLIC_PREVIEW_ADDITIONAL_SEED_LIMIT + 1 },
+        (_, index) =>
+          `https://acme.test/manual-${String(index).padStart(2, "0")}`,
+      ).reverse(),
+      "https://acme.test/manual-03",
+    ];
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        requested.push(url);
+        return previewFixtureResponse(url);
+      },
+    };
+
+    await crawlPublicSitePreview("https://acme.test/", undefined, {
+      additionalSeedUrls,
+      fetcher,
+      entryResolver: async (url) => entryResult(url),
+      engineOptions: {
+        guard: async (url) => ({
+          safe: true,
+          normalizedUrl: url,
+          pinnedIp: "93.184.216.34",
+          reason: null,
+        }),
+        sleep: async () => {},
+      },
+      budgetCeiling: { perHostConcurrency: 1 },
+    });
+
+    expect(
+      requested.filter((url) => new URL(url).pathname.startsWith("/manual-")),
+    ).toEqual(
+      additionalSeedUrls
+        .toSorted()
+        .filter((url, index, values) => index === 0 || url !== values[index - 1])
+        .slice(0, PUBLIC_PREVIEW_ADDITIONAL_SEED_LIMIT),
+    );
   });
 
   it("rejects a replaced entry page before the crawl transport runs", async () => {

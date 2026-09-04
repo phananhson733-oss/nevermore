@@ -211,13 +211,13 @@ describe("buildAgentIssueModel", () => {
       agent: "seo",
       checks: [
         evaluatedCheck({
-          id: "4.2",
+          id: "4.4",
           result: "warning",
           truth: "illustrative",
           evidenceRecordIds: ["r1"],
         }),
         evaluatedCheck({
-          id: "4.3",
+          id: "6.5",
           result: "warning",
           truth: "documented",
           evidenceRecordIds: ["r1"],
@@ -274,7 +274,7 @@ describe("buildAgentIssueModel", () => {
       agent: "seo",
       checks: [
         evaluatedCheck({ id: "3.1", result: "pass" }),
-        evaluatedCheck({ id: "3.2", result: "pass" }),
+        evaluatedCheck({ id: "3.3", result: "pass" }),
       ],
       records: [],
     });

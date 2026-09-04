@@ -90,7 +90,7 @@ describe("Agent recommendation ranking", () => {
         evidenceRecordIds: ["status"],
       }),
       evaluatedCheck({
-        id: "2.3",
+        id: "2.2",
         result: "warning",
         primaryAgent: "seo",
         evidenceRecordIds: ["title"],
@@ -112,7 +112,7 @@ describe("Agent recommendation ranking", () => {
       rankAgentRecommendations("seo", checks, records).map(
         (recommendation) => recommendation.check.check.id,
       ),
-    ).toEqual(["1.1", "2.3", "6.1"]);
+    ).toEqual(["1.1", "2.2", "6.1"]);
   });
 
   it("uses evidence availability and Agent relevance before reach", () => {
@@ -286,7 +286,7 @@ describe("Agent recommendation disclosure", () => {
     actionable("2.2", "warning"),
     actionable("2.4", "warning"),
     actionable("3.1", "tip"),
-    actionable("3.2", "tip"),
+    actionable("3.3", "tip"),
     evaluatedCheck({
       id: "8.1",
       result: "excluded",
@@ -421,10 +421,10 @@ describe("evidence for a site whose entry redirects to another host form", () =>
    *
    * What the reader saw: "this run recorded no specific target for this
    * problem" and "no evidence records to show", on a row whose own solution
-   * preview printed the page URL and the title read off it.
+   * preview printed the page URL and the heading count read off it.
    */
   const RECORD = {
-    id: "title_without_target_query",
+    id: "h2_count_outside_reviewed_range",
     category: "keyword_evidence",
     state: "observed",
     unit: "pages",
@@ -439,10 +439,10 @@ describe("evidence for a site whose entry redirects to another host form", () =>
 
   const CHECK = {
     check: {
-      id: "2.3",
+      id: "3.4",
       scope: "page",
-      groupId: "2",
-      title: { en: "Title contains the query", zh: "标题含词" },
+      groupId: "3",
+      title: { en: "H2 count", zh: "H2 数量" },
       impact: { en: "i", zh: "i" },
       howToFix: { en: "f", zh: "f" },
       threshold: { en: "t", zh: "t" },
@@ -457,7 +457,7 @@ describe("evidence for a site whose entry redirects to another host form", () =>
       primaryAgent: "seo",
       inventoryReady: true,
       engine: "ready",
-      evidenceRecordIds: ["title_without_target_query"],
+      evidenceRecordIds: ["h2_count_outside_reviewed_range"],
       issueRules: [],
       boundary: { en: "b", zh: "b" },
     },
@@ -465,7 +465,7 @@ describe("evidence for a site whose entry redirects to another host form", () =>
     engine: "ready",
     truth: "observed",
     measurement: { en: "1 of 1", zh: "1/1" },
-    evidenceRecordIds: ["title_without_target_query"],
+    evidenceRecordIds: ["h2_count_outside_reviewed_range"],
     scoreValue: null,
     scoreContribution: null,
   } as never;

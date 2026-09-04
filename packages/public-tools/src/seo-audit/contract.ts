@@ -425,6 +425,12 @@ function isSiteResources(value: unknown): value is SeoAuditSiteResources {
     isNonNegativeInteger(value.robotsGroupsObserved) &&
     isNonNegativeInteger(value.sitemapReferencesObserved) &&
     typeof value.sitemapFetched === "boolean" &&
+    (value.navigationUrls === undefined ||
+      isBoundedStringList(
+        value.navigationUrls,
+        CRAWL_PROJECTION_LIMITS.maxInternalOutlinks,
+        CRAWL_PROJECTION_LIMITS.maxUrlChars,
+      )) &&
     isBoundedStringList(
       value.sitemapUrls,
       SITEMAP_URLS_PUBLISHED_CAP,

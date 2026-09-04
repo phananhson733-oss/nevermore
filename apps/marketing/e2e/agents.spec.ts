@@ -1,6 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { AGENT_PROFILE_REFRESH_FIELD_PATHS } from "../src/lib/agents/profile-refresh-contract";
+import {
+  AGENT_PROFILE_REFRESH_FIELD_PATHS,
+  AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
+} from "../src/lib/agents/profile-refresh-contract";
 
 import { agentEnvelope, type AgentKind } from "./fixtures/agent-envelope";
 
@@ -22,7 +25,7 @@ function profileRefreshEnvelope(agent: AgentKind) {
   ]);
   return {
     data: {
-      schemaVersion: "agent_profile_refresh.v1",
+      schemaVersion: AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
       agent,
       request: {
         submittedUrl: "astrologywiki.com",
@@ -45,7 +48,7 @@ function profileRefreshEnvelope(agent: AgentKind) {
         stopReason: "max_urls",
         contextSufficient: true,
         sourceUrls,
-        fieldsAvailable: 22,
+        fieldsAvailable: AGENT_PROFILE_REFRESH_FIELD_PATHS.length,
         fieldsMissing: 0,
       },
       fields: AGENT_PROFILE_REFRESH_FIELD_PATHS.map((path) => ({
@@ -255,10 +258,10 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   ).toContainText("14");
   await expect(
     page.locator('[data-profile-refresh-count="found"]'),
-  ).toContainText("22");
+  ).toContainText(String(AGENT_PROFILE_REFRESH_FIELD_PATHS.length));
   await expect(
     page.locator('[data-profile-refresh-count="applied"]'),
-  ).toContainText("11");
+  ).toContainText("12");
   await expect(
     page.locator('[data-profile-refresh-count="retained"]'),
   ).toContainText("11");
@@ -292,7 +295,7 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   );
   await expect(
     page.locator('[data-profile-refresh-count="applied"]'),
-  ).toContainText("12");
+  ).toContainText("13");
   await expect(
     page.locator('[data-profile-refresh-count="retained"]'),
   ).toContainText("10");
@@ -329,7 +332,7 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   );
   await expect(
     page.locator('[data-profile-competitor-count="confirmed"]'),
-  ).toContainText("2");
+  ).toContainText("1");
   await expect(page.locator('[data-profile-card="competitor"]')).toContainText(
     "astro-seek.com",
   );
@@ -358,7 +361,7 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
         url: "astrologywiki.com",
         marketCode: "US",
         languageTag: "en-US",
-        targetQuery: "",
+        targetQuery: "Live targetQuery",
         productProfileSearchSeeds: [
           "AstrologyWiki",
           "Astrology tool",
@@ -418,7 +421,11 @@ test("signed-in SEO run renders bounded evidence and a truthful recommendation b
 
   const results = page.getByTestId("agent-results-seo");
   await expect(results).toBeVisible();
-  await expect(results.getByText("Pages inspected")).toBeVisible();
+  const captureDetail = results.locator("[data-capture-detail]");
+  await captureDetail.locator("summary").click();
+  await expect(
+    captureDetail.getByText("Pages inspected", { exact: true }),
+  ).toBeVisible();
   // One list, site-wide and page-level together; the scope switch and the
   // group ledger it lived in are gone.
   await expect(page.locator('[data-testid^="diagnosis-scope-"]')).toHaveCount(
@@ -464,6 +471,104 @@ test("signed-in SEO run renders bounded evidence and a truthful recommendation b
   await expect(page.locator("[data-issue-detail]")).toHaveCount(0);
 });
 
+test("SEO run options stay frozen from confirmation to audit POST across mobile and desktop", async ({
+  page,
+}) => {
+  await mockSession(page, true);
+  const auditBodies: Array<Record<string, unknown>> = [];
+  await page.route("**/api/agents/seo/audit", async (route) => {
+    auditBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+    const envelope = agentEnvelope("seo");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          ...envelope.data,
+          result: {
+            ...envelope.data.result,
+            crawlTier: "full-site",
+            keyPages: [
+              {
+                url: "https://astrologywiki.com/",
+                title: "AstrologyWiki",
+                metaDescription: null,
+                depth: 0,
+                inboundLinks: 0,
+                reason: "home",
+              },
+              {
+                url: "https://astrologywiki.com/about",
+                title: "About AstrologyWiki",
+                metaDescription: null,
+                depth: 1,
+                inboundLinks: 1,
+                reason: "full-site",
+              },
+            ],
+            keyPageSelection: {
+              omittedUrls: [],
+              manualUnavailableUrls: [],
+            },
+          },
+        },
+      }),
+    });
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/agents/seo");
+  await page.getByLabel("Target URL").fill("astrologywiki.com");
+  await completeRequiredProfileContext(page, "en");
+
+  const runOptions = page.locator('[data-agent-run-options="seo"]');
+  const tier = page.locator("[data-agent-run-tier]");
+  const extraPages = page.locator("[data-agent-run-extra-pages]");
+  await expect(runOptions).toBeVisible();
+  await expect(tier).toHaveValue("key-pages");
+  await expect(runOptions).toContainText("depth 2");
+  await extraPages.fill(
+    [
+      "https://astrologywiki.com/pricing",
+      "https://astrologywiki.com/tools/chart",
+    ].join("\n"),
+  );
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(
+    await page.evaluate(() => document.documentElement.clientWidth),
+  );
+
+  await tier.selectOption("full-site");
+  await expect(tier).toHaveValue("full-site");
+  await expect(runOptions).toContainText("depth 6");
+  await page.setViewportSize({ width: 1440, height: 960 });
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(
+    await page.evaluate(() => document.documentElement.clientWidth),
+  );
+
+  await page.getByRole("button", { name: "Accept context & run" }).click();
+  const results = page.getByTestId("agent-results-seo");
+  await expect(results).toBeVisible();
+  await expect(results.locator("[data-capture-summary]")).toContainText(
+    "evaluable collected pages",
+  );
+  await expect(results.locator("[data-capture-summary]")).not.toContainText(
+    "key pages",
+  );
+  expect(auditBodies).toEqual([
+    expect.objectContaining({
+      tier: "full-site",
+      extraKeyPages: [
+        "https://astrologywiki.com/pricing",
+        "https://astrologywiki.com/tools/chart",
+      ],
+    }),
+  ]);
+});
+
 test("Chinese Tech page ignores the SEO intent and owns an independent run", async ({
   page,
 }) => {
@@ -494,6 +599,7 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
 
   const input = page.getByLabel("目标 URL");
   await expect(input).toHaveValue("");
+  await expect(page.locator('[data-agent-run-options="tech"]')).toHaveCount(0);
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(

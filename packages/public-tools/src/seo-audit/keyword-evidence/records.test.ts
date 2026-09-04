@@ -1,6 +1,6 @@
 // @input  -- keyword evidence built by the real producer from real page text
-// @output -- proof 2.3 and 3.2 decide, and refuse to when there is no basis
-// @pos    -- unit coverage for the record projection Batch 4 added
+// @output -- proof delegated keyword records remain complete and preserve null semantics
+// @pos    -- unit coverage for the producer ledger retained after catalog pruning
 
 import { describe, expect, it } from "vitest";
 
@@ -41,14 +41,8 @@ function records(evidence: KeywordEvidence | null) {
   return buildKeywordEvidenceRecords(TARGET, evidence);
 }
 
-function decide(evidence: KeywordEvidence | null, id: string) {
-  return evaluateAgentAuditScope("page", {
-    availability: "available",
-    records: records(evidence),
-    targetUrl: TARGET,
-    targetInspected: true,
-    inspectedTargetUrl: TARGET,
-  }).checks.find((entry) => entry.check.id === id);
+function keywordRecord(evidence: KeywordEvidence | null, id: string) {
+  return records(evidence).find((entry) => entry.id === id);
 }
 
 describe("keyword evidence records", () => {
@@ -63,32 +57,44 @@ describe("keyword evidence records", () => {
     }
   });
 
-  it("passes a page whose title and H1 both carry the query", () => {
+  it("records no missing-query condition when title and H1 both carry the query", () => {
     const evidence = evidenceFor(["natal chart"]);
-    expect(decide(evidence, "2.3")?.result).toBe("pass");
-    expect(decide(evidence, "3.2")?.result).toBe("pass");
+    expect(keywordRecord(evidence, "title_without_target_query")?.state).toBe(
+      "not_observed",
+    );
+    expect(keywordRecord(evidence, "h1_without_target_query")?.state).toBe(
+      "not_observed",
+    );
   });
 
   it("separates the two slots", () => {
     const evidence = evidenceFor(["natal chart"], {
       title: "Free calculator",
     });
-    // 2.3 is a Warning and 3.2 a Tip: the title is read before the click and
-    // the H1 after it, so they are not the same cost.
-    expect(decide(evidence, "2.3")?.result).toBe("warning");
-    expect(decide(evidence, "3.2")?.result).toBe("pass");
+    expect(keywordRecord(evidence, "title_without_target_query")?.state).toBe(
+      "observed",
+    );
+    expect(keywordRecord(evidence, "h1_without_target_query")?.state).toBe(
+      "not_observed",
+    );
   });
 
   it("does not judge a page that has no title at all", () => {
     // "This page has no title" is a different finding with its own check.
     // Reading it as "the query is missing" charges one defect twice.
     const evidence = evidenceFor(["natal chart"], { title: null });
-    expect(decide(evidence, "2.3")?.result).toBe("excluded");
+    expect(keywordRecord(evidence, "title_without_target_query")?.state).toBe(
+      "unverified",
+    );
   });
 
-  it("does not judge a run with no confirmed query", () => {
-    expect(decide(null, "2.3")?.result).toBe("excluded");
-    expect(decide(null, "3.2")?.result).toBe("excluded");
+  it("keeps both slot records unverified with no confirmed query", () => {
+    expect(keywordRecord(null, "title_without_target_query")?.state).toBe(
+      "unverified",
+    );
+    expect(keywordRecord(null, "h1_without_target_query")?.state).toBe(
+      "unverified",
+    );
   });
 
   it("names the query it judged in the evidence", () => {
@@ -104,10 +110,10 @@ describe("keyword evidence records", () => {
     ).toBe("natal chart");
   });
 
-  describe("2.10 — the query across the other text slots", () => {
+  describe("target-query coverage across the other text slots", () => {
     it("reaches a verdict rather than sitting excluded forever", () => {
-      // It shipped in the catalogue with no record behind it, which made it a
-      // check that could never conclude while still counting in the denominator.
+      // The catalog delegates this to the single-page checker, while the wire
+      // ledger still requires a present record for old and new clients alike.
       const record = records(evidenceFor(["natal chart"])).find(
         (entry) => entry.id === "target_query_slot_coverage",
       );

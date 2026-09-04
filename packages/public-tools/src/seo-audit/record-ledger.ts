@@ -210,6 +210,7 @@ export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
   "resource_not_observed_does_not_prove_absence",
   "static_response_directives_only",
   "normalised_text_match_within_inspected_pages",
+  "full_site_only",
   "bounded_static_html_crawl_inlinks_only",
   "crawl_incomplete_inlinks_unreliable",
   "faq_match_against_collected_paragraphs_only",

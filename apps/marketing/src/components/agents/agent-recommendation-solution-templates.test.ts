@@ -127,7 +127,7 @@ describe("Agent-specific selected solution templates", () => {
   });
 
   it("uses search/content previews for SEO metadata, headings, links, media, and opportunity", () => {
-    expect(solutionTemplate("seo", check("2.3"), INPUT)).toMatchObject({
+    expect(solutionTemplate("seo", check("2.4"), INPUT)).toMatchObject({
       kind: "search-presentation",
       presentation: "content",
     });
@@ -207,7 +207,7 @@ describe("Agent-specific selected solution templates", () => {
   it("gives every solution kind its own advice, validation, impact, risk, and limit keys", () => {
     const ids = [
       ["seo", "9.1"],
-      ["seo", "2.3"],
+      ["seo", "2.4"],
       ["seo", "3.1"],
       ["seo", "4.1"],
       ["seo", "5.1"],
@@ -356,7 +356,7 @@ describe("Agent-specific selected solution templates", () => {
   it("never leaves a bare bracket placeholder in any rendered preview", () => {
     const ids = [
       ["seo", "9.1"],
-      ["seo", "2.3"],
+      ["seo", "2.4"],
       ["seo", "3.1"],
       ["seo", "4.1"],
       ["seo", "5.1"],

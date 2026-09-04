@@ -10,15 +10,6 @@ import {
 import type { AgentKeyPageCandidate } from "../../lib/agents/audit-contract.ts";
 
 /**
- * How many pages the report judges individually.
- *
- * Half the shortlist the server publishes. The list is read top to bottom by
- * a person, and a finding that names twelve pages is still a finding someone
- * can act on; one that names twenty-four is a spreadsheet.
- */
-export const AGENT_KEY_PAGE_LIMIT = 12;
-
-/**
  * Why a page is on the list.
  *
  * Carried but not yet shown. The surface states how many key pages a check
@@ -95,7 +86,7 @@ export interface SelectAgentKeyPagesInput {
 }
 
 /**
- * Narrow the run's shortlist to the pages this product is actually about.
+ * Order the run's server-selected pages for this product.
  *
  * With no confirmed core features there is nothing to rank by, so the list
  * keeps the server's structural order and every row says so. Inventing an
@@ -141,7 +132,7 @@ export function selectAgentKeyPages({
     );
   });
 
-  return ranked.slice(0, AGENT_KEY_PAGE_LIMIT).map((entry) => ({
+  return ranked.map((entry) => ({
     ...entry.candidate,
     basis:
       entry.pinned ??

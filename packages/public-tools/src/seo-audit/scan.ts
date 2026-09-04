@@ -1,8 +1,16 @@
 import {
   crawlPublicSitePreview,
   PublicPreviewTargetRedirectError,
+  type CrawlBudget,
   type CrawlRaw,
 } from "@sf/sources/crawl-public-preview";
+import type { SeoAuditCrawlTier } from "./types.ts";
+
+export const KEY_PAGES_CRAWL_BUDGET_CEILING = {
+  maxDepth: 2,
+  maxUrls: 80,
+  maxWallClockMs: 45_000,
+} as const satisfies Partial<CrawlBudget>;
 
 export type SeoAuditScanErrorCode =
   | "blocked"
@@ -51,11 +59,15 @@ export type SeoAuditCrawler = (
   url: string,
   signal?: AbortSignal,
   onProgress?: SeoAuditProgressListener,
+  tier?: SeoAuditCrawlTier,
+  additionalSeedUrls?: readonly string[],
 ) => Promise<CrawlRaw>;
 
 export type SeoAuditRaw = CrawlRaw & {
   /** Normalized visitor submission retained separately from the crawl origin. */
   readonly requestedUrl: string;
+  /** Optional while older raw/cache rows remain readable. New scans always set it. */
+  readonly crawlTier?: SeoAuditCrawlTier;
 };
 
 export interface SeoAuditScanOptions {
@@ -66,6 +78,10 @@ export interface SeoAuditScanOptions {
   readonly onProgress?: SeoAuditProgressListener;
   /** Reject when the canonical entry replaces the submitted page. */
   readonly requireSameEntrySubject?: boolean;
+  /** Crawl coverage selected by the trusted server request boundary. */
+  readonly tier?: SeoAuditCrawlTier;
+  /** Normalized server-owned manual pages to enqueue at depth zero. */
+  readonly additionalSeedUrls?: readonly string[];
   /** Offline test seam. */
   readonly crawl?: SeoAuditCrawler;
 }
@@ -108,19 +124,41 @@ const instrumentedCrawler = (
   signal?: AbortSignal,
   onProgress?: SeoAuditProgressListener,
   requireSameEntrySubject?: boolean,
+  tier: SeoAuditCrawlTier = "full-site",
+  additionalSeedUrls: readonly string[] = [],
 ): Promise<CrawlRaw> => {
   const strictOptions =
     requireSameEntrySubject === true
       ? ({ requireSameEntrySubject: true } as const)
       : {};
+  const manualOptions =
+    additionalSeedUrls.length > 0 ? { additionalSeedUrls } : {};
   if (!onProgress) {
-    return requireSameEntrySubject === true
-      ? crawlPublicSitePreview(url, signal, strictOptions)
+    if (tier === "key-pages") {
+      return crawlPublicSitePreview(url, signal, {
+        ...strictOptions,
+        ...manualOptions,
+        budgetCeiling: KEY_PAGES_CRAWL_BUDGET_CEILING,
+        deferSitemapFrontier: true,
+      });
+    }
+    return requireSameEntrySubject === true || additionalSeedUrls.length > 0
+      ? crawlPublicSitePreview(url, signal, {
+          ...strictOptions,
+          ...manualOptions,
+        })
       : crawlPublicSitePreview(url, signal);
   }
   const reporter = crawlProgressReporter(onProgress);
   return crawlPublicSitePreview(url, signal, {
     ...strictOptions,
+    ...manualOptions,
+    ...(tier === "key-pages"
+      ? {
+          budgetCeiling: KEY_PAGES_CRAWL_BUDGET_CEILING,
+          deferSitemapFrontier: true,
+        }
+      : {}),
     onRequestSent: reporter.onRequest,
     onPageProgress: reporter.onPageProgress,
   });
@@ -144,13 +182,24 @@ export async function scanSeoAuditSite(
   options: SeoAuditScanOptions = {},
 ): Promise<SeoAuditRaw> {
   try {
+    const tier = options.tier ?? "full-site";
     const raw = options.crawl
-      ? await options.crawl(url, signal, options.onProgress)
+      ? await (options.additionalSeedUrls?.length
+          ? options.crawl(
+              url,
+              signal,
+              options.onProgress,
+              tier,
+              options.additionalSeedUrls,
+            )
+          : options.crawl(url, signal, options.onProgress, tier))
       : await instrumentedCrawler(
           url,
           signal,
           options.onProgress,
           options.requireSameEntrySubject,
+          tier,
+          options.additionalSeedUrls,
         );
     if (raw.availability === "unavailable") {
       // Say which of the three it was. "The site told us not to crawl it" and
@@ -164,7 +213,7 @@ export async function scanSeoAuditSite(
       }
       throw new SeoAuditScanError("scan_failed");
     }
-    return { ...raw, requestedUrl: url };
+    return { ...raw, requestedUrl: url, crawlTier: tier };
   } catch (error) {
     if (error instanceof SeoAuditScanError) throw error;
     if (error instanceof PublicPreviewTargetRedirectError) {

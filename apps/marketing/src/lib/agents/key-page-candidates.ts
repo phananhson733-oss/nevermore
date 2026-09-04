@@ -1,23 +1,32 @@
 // @input  -- the collected page rows a finished crawl payload already carries
-// @output -- a bounded, neutral shortlist of pages worth judging individually
+// @output -- a bounded neutral page set: key-page shortlist or full-site coverage
 // @pos    -- server-side projection; reads no Profile and adds no collection
 
-import type { SeoAuditReport } from "@sf/public-tools/seo-audit/types";
+import type {
+  SeoAuditCrawlTier,
+  SeoAuditReport,
+} from "@sf/public-tools/seo-audit/types";
 
-import type { AgentKeyPageCandidate } from "./audit-contract.ts";
+import type {
+  AgentKeyPageCandidate,
+  AgentKeyPageReason,
+} from "./audit-contract.ts";
 
-/**
- * How many candidates the projection publishes.
- *
- * The client narrows this to the pages a Profile actually points at, so the
- * server's job is to hand over enough structure to choose from without turning
- * the response into a second copy of the crawl. Twenty-four matches the bound
- * the GEO site index already runs at.
- */
-export const AGENT_KEY_PAGE_CANDIDATE_LIMIT = 24;
-
-/** Depths a candidate may come from, nearest first. */
-const CANDIDATE_DEPTHS: readonly number[] = [1, 2];
+const CLUSTER_MIN_PAGES = 3;
+const CLUSTER_MAX_PAGES = 20;
+const CONTENT_INITIAL_LIMIT = 15;
+const CANDIDATE_BUSINESS_THRESHOLD = 50;
+const BLACKLIST_SEGMENTS = new Set([
+  "about",
+  "contact",
+  "privacy",
+  "terms",
+  "cookie",
+  "careers",
+  "jobs",
+  "team",
+]);
+const CONTENT_SEGMENTS = new Set(["blog", "posts", "news", "articles"]);
 
 function isHtml(contentType: string | null): boolean {
   if (contentType === null) return false;
@@ -36,6 +45,7 @@ function isCollected(page: SeoAuditReport["pages"][number]): boolean {
 
 function candidate(
   page: SeoAuditReport["pages"][number],
+  reason: AgentKeyPageReason,
 ): AgentKeyPageCandidate {
   return {
     // `page.url` is the crawl's fetch URL, which is the form every observation
@@ -47,71 +57,272 @@ function candidate(
     metaDescription: page.metaDescription,
     depth: page.depth,
     inboundLinks: page.inboundLinks,
+    reason,
   };
+}
+
+interface PathInfo {
+  readonly segments: readonly string[];
+  readonly prefix: string | null;
+}
+
+function pathInfo(url: string): PathInfo {
+  try {
+    const pathSegments = new URL(url).pathname
+      .split("/")
+      .filter((segment) => segment !== "");
+    const segments = pathSegments.map((segment) => {
+      try {
+        return decodeURIComponent(segment).toLowerCase();
+      } catch {
+        return segment.toLowerCase();
+      }
+    });
+    const firstPathSegment = pathSegments[0];
+    return {
+      segments,
+      // Keep the URL-safe spelling on the wire. Decoding is useful for the
+      // blacklist, but a decoded space would make our own strict prefix guard
+      // reject an otherwise valid path segment.
+      prefix:
+        pathSegments.length >= 2 && firstPathSegment !== undefined
+          ? `/${firstPathSegment.toLowerCase()}/`
+          : null,
+    };
+  } catch {
+    return { segments: [], prefix: null };
+  }
+}
+
+function isBlacklisted(url: string): boolean {
+  const { segments } = pathInfo(url);
+  if (segments.some((segment) => BLACKLIST_SEGMENTS.has(segment))) return true;
+  if (segments.length !== 1) return false;
+  const [topLevel] = segments;
+  return (
+    topLevel !== undefined &&
+    [...BLACKLIST_SEGMENTS].some((keyword) =>
+      topLevel.startsWith(`${keyword}-`),
+    )
+  );
+}
+
+function compareAscii(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function isCanonicalHomeUrl(url: string, siteOrigin: string | null): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      siteOrigin !== null &&
+      parsed.origin === siteOrigin &&
+      parsed.pathname === "/" &&
+      parsed.search === ""
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
  * Choose the pages a run publishes as individually judgeable.
  *
- * Neutral on purpose: nothing here reads the visitor's Profile. The order is
- * home page, the submitted page, then the shallowest pages the site links to
- * most -- a structural claim the crawl can support on its own. Which of these
- * matter to this particular business is the client's question, asked against a
- * confirmed Profile, and asking it here would put one visitor's context into a
- * projection built from a payload cached across visitors.
+ * Neutral on purpose: nothing here reads the visitor's Profile. Membership and
+ * reasons come only from collected structure. Key-pages runs apply the five
+ * selection rules; full-site runs append every remaining unique collected 2xx
+ * HTML page. The client may reorder the complete set against a confirmed
+ * Profile without filtering any row.
+ * Keeping Profile context out of this projection also keeps a shared cached
+ * crawl from carrying one visitor's business context to the next visitor.
  */
 export function selectAgentKeyPageCandidates({
   pages,
   siteOrigin,
   inspectedTargetUrl,
+  navigationUrls,
+  manualUrls,
+  crawlTier = "key-pages",
 }: {
   readonly pages: SeoAuditReport["pages"];
   readonly siteOrigin: string;
   readonly inspectedTargetUrl: string | null;
-}): readonly AgentKeyPageCandidate[] {
-  const collected: SeoAuditReport["pages"][number][] = [];
-  const seen = new Set<string>();
+  readonly navigationUrls: readonly string[];
+  readonly manualUrls: readonly string[];
+  readonly crawlTier?: SeoAuditCrawlTier;
+}): {
+  readonly candidates: readonly AgentKeyPageCandidate[];
+  readonly omittedUrls: readonly string[];
+  readonly manualUnavailableUrls: readonly string[];
+} {
+  let origin: string | null = null;
+  try {
+    origin = new URL(siteOrigin).origin;
+  } catch {
+    // A validated report supplies an origin. Keeping this local guard makes
+    // this pure selector fail closed in focused tests too.
+  }
+  const bySubject = new Map<
+    string,
+    SeoAuditReport["pages"][number][]
+  >();
   for (const page of pages) {
     if (!isCollected(page)) continue;
-    // One row per subject: a crawl can reach the same page by several paths,
-    // and listing it twice would spend the budget on one page.
-    if (seen.has(page.subjectUrl)) continue;
-    seen.add(page.subjectUrl);
-    collected.push(page);
+    const rows = bySubject.get(page.subjectUrl) ?? [];
+    rows.push(page);
+    bySubject.set(page.subjectUrl, rows);
   }
+  const representativeRank = (
+    page: SeoAuditReport["pages"][number],
+  ): number =>
+    inspectedTargetUrl !== null && page.url === inspectedTargetUrl
+      ? 0
+      : isCanonicalHomeUrl(page.url, origin)
+        ? 1
+        : 2;
+  const collected = [...bySubject.values()]
+    .map(
+      (rows) =>
+        rows.toSorted(
+          (left, right) =>
+            representativeRank(left) - representativeRank(right) ||
+            compareAscii(left.url, right.url),
+        )[0]!,
+    )
+    .toSorted((left, right) => compareAscii(left.url, right.url));
 
-  const homeUrls = new Set(
-    [`${siteOrigin}/`, siteOrigin].map((value) => value.replace(/\/+$/, "/")),
-  );
   const isHome = (page: SeoAuditReport["pages"][number]): boolean =>
-    homeUrls.has(page.url) || homeUrls.has(`${page.url.replace(/\/+$/, "")}/`);
+    isCanonicalHomeUrl(page.url, origin);
   const isTarget = (page: SeoAuditReport["pages"][number]): boolean =>
     inspectedTargetUrl !== null && page.url === inspectedTargetUrl;
 
-  const ordered: SeoAuditReport["pages"][number][] = [];
-  const take = (page: SeoAuditReport["pages"][number]): void => {
-    if (ordered.includes(page)) return;
-    ordered.push(page);
+  const ordered: AgentKeyPageCandidate[] = [];
+  const selectedSubjects = new Set<string>();
+  const take = (
+    page: SeoAuditReport["pages"][number],
+    reason: AgentKeyPageReason,
+  ): void => {
+    if (selectedSubjects.has(page.subjectUrl)) return;
+    selectedSubjects.add(page.subjectUrl);
+    ordered.push(candidate(page, reason));
   };
 
   const home = collected.find(isHome);
-  if (home !== undefined) take(home);
+  if (home !== undefined) take(home, "home");
   const target = collected.find(isTarget);
-  if (target !== undefined) take(target);
+  if (target !== undefined) take(target, "target");
 
-  for (const depth of CANDIDATE_DEPTHS) {
-    const tier = collected
-      .filter((page) => page.depth === depth && !ordered.includes(page))
-      .toSorted(
-        (left, right) =>
-          right.inboundLinks - left.inboundLinks ||
-          left.url.localeCompare(right.url, "en"),
-      );
-    for (const page of tier) {
-      if (ordered.length >= AGENT_KEY_PAGE_CANDIDATE_LIMIT) break;
-      take(page);
+  const byIdentity = new Map<string, SeoAuditReport["pages"][number]>();
+  for (const page of collected) {
+    for (const identity of [page.subjectUrl, page.url, page.finalUrl]) {
+      if (!byIdentity.has(identity)) {
+        byIdentity.set(identity, page);
+      }
+    }
+  }
+  const normalizedManualUrls = [...new Set(manualUrls)]
+    .filter((url) => {
+      try {
+        const parsed = new URL(url);
+        return (
+          parsed.origin === origin &&
+          parsed.username === "" &&
+          parsed.password === "" &&
+          parsed.hash === ""
+        );
+      } catch {
+        return false;
+      }
+    })
+    .toSorted(compareAscii)
+    .slice(0, 10);
+  const manualUnavailableUrls: string[] = [];
+  for (const url of normalizedManualUrls) {
+    const page = byIdentity.get(url);
+    if (page === undefined) {
+      manualUnavailableUrls.push(url);
+      continue;
+    }
+    take(page, "manual");
+  }
+
+  for (const url of navigationUrls) {
+    const page = byIdentity.get(url);
+    if (page !== undefined) take(page, "navigation");
+  }
+
+  const clusters = new Map<string, SeoAuditReport["pages"][number][]>();
+  for (const page of collected) {
+    const prefix = pathInfo(page.url).prefix;
+    if (prefix === null) continue;
+    const members = clusters.get(prefix) ?? [];
+    members.push(page);
+    clusters.set(prefix, members);
+  }
+
+  const oversizedClusters = new Set<string>();
+  for (const prefix of [...clusters.keys()].toSorted(compareAscii)) {
+    const members = clusters.get(prefix)!.toSorted((left, right) =>
+      compareAscii(left.url, right.url),
+    );
+    if (members.length > CLUSTER_MAX_PAGES) {
+      oversizedClusters.add(prefix);
+      continue;
+    }
+    if (members.length < CLUSTER_MIN_PAGES) continue;
+    for (const page of members) {
+      if (!isBlacklisted(page.url)) {
+        take(page, { kind: "cluster", prefix });
+      }
     }
   }
 
-  return ordered.slice(0, AGENT_KEY_PAGE_CANDIDATE_LIMIT).map(candidate);
+  const content = collected
+    .filter((page) => {
+      if (selectedSubjects.has(page.subjectUrl) || isBlacklisted(page.url)) {
+        return false;
+      }
+      const info = pathInfo(page.url);
+      return (
+        (info.segments[0] !== undefined &&
+          CONTENT_SEGMENTS.has(info.segments[0])) ||
+        (info.prefix !== null && oversizedClusters.has(info.prefix))
+      );
+    })
+    .toSorted(
+      (left, right) =>
+        right.inboundLinks - left.inboundLinks ||
+        compareAscii(left.url, right.url),
+    )
+    .slice(0, CONTENT_INITIAL_LIMIT);
+
+  let contentLimit = CONTENT_INITIAL_LIMIT;
+  if (ordered.length + content.length > CANDIDATE_BUSINESS_THRESHOLD) {
+    contentLimit = 10;
+  }
+  if (
+    ordered.length + Math.min(content.length, contentLimit) >
+    CANDIDATE_BUSINESS_THRESHOLD
+  ) {
+    contentLimit = 5;
+  }
+
+  for (const page of content.slice(0, contentLimit)) {
+    take(page, { kind: "content", inboundLinks: page.inboundLinks });
+  }
+
+  if (crawlTier === "full-site") {
+    for (const page of collected) take(page, "full-site");
+    return {
+      candidates: ordered,
+      omittedUrls: [],
+      manualUnavailableUrls,
+    };
+  }
+
+  return {
+    candidates: ordered,
+    omittedUrls: content.slice(contentLimit).map((page) => page.url),
+    manualUnavailableUrls,
+  };
 }

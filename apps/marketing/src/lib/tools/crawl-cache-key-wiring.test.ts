@@ -35,7 +35,9 @@ const mocks = vi.hoisted(() => ({
   readCrawlCache: vi.fn<
     (tool: string, targetHost: string) => Promise<CachedCrawl | null>
   >(async () => null),
-  writeCrawlCache: vi.fn(async () => undefined),
+  writeCrawlCache: vi.fn<
+    (tool: string, targetHost: string, payload: unknown) => Promise<void>
+  >(async () => undefined),
   scanInternalLinkAuditSite: vi.fn(async () => ({ stopReason: null })),
   scanSeoAuditSite: vi.fn(async () => ({ stopReason: null })),
 }));
@@ -76,14 +78,17 @@ vi.mock("./crawl-cache.ts", async (importOriginal) => {
 import { handleInternalLinkAuditRequest } from "./internal-link-audit-handler.ts";
 import { handleSeoAuditRequest } from "./seo-audit-handler.ts";
 
-function request(path: string): Request {
+function request(
+  path: string,
+  body: Readonly<Record<string, unknown>> = { url: "WWW.AcMe.com" },
+): Request {
   return new Request(`https://gengrowth.ai${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-real-ip": "203.0.113.9",
     },
-    body: JSON.stringify({ url: "WWW.AcMe.com" }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -140,15 +145,167 @@ describe("default public crawl cache wiring", () => {
     );
   });
 
-  it("writes an SEO Audit result under the exact target host", async () => {
+  it("writes a default SEO Audit result under the full-site namespace", async () => {
     const response = await handleSeoAuditRequest(request("/api/tools/seo-audit"));
 
     expect(response.status).toBe(200);
     expect(mocks.writeCrawlCache).toHaveBeenCalledWith(
-      "seo_audit",
+      "seo_audit:full-site",
       "www.acme.com",
       mocks.seoPayload,
     );
+  });
+
+  it("writes an explicit key-pages result under its own namespace", async () => {
+    const response = await handleSeoAuditRequest(
+      request("/api/tools/seo-audit", {
+        url: "WWW.AcMe.com",
+        tier: "key-pages",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.writeCrawlCache).toHaveBeenCalledWith(
+      "seo_audit:key-pages",
+      "www.acme.com",
+      mocks.seoPayload,
+    );
+  });
+
+  it("hits for the same reordered manual set and misses for a different set", async () => {
+    const stored = new Map<string, CachedCrawl>();
+    useCacheProbeGate();
+    mocks.readCrawlCache.mockImplementation(async (namespace, host) =>
+      stored.get(`${namespace}:${host}`) ?? null,
+    );
+    mocks.writeCrawlCache.mockImplementation(
+      async (namespace: string, host: string) => {
+        stored.set(`${namespace}:${host}`, {
+          payload: cachedSeoPayload(false),
+          capturedAt: "2026-08-26T10:00:00.000Z",
+        });
+      },
+    );
+    const firstSet = [
+      "https://www.acme.com/b",
+      "https://www.acme.com/a",
+    ];
+    const reorderedSet = firstSet.toReversed();
+    const differentSet = [
+      "https://www.acme.com/a",
+      "https://www.acme.com/c",
+    ];
+
+    const first = await handleSeoAuditRequest(
+      request("/api/tools/seo-audit", {
+        url: "WWW.AcMe.com",
+        tier: "key-pages",
+        extraKeyPages: firstSet,
+      }),
+    );
+    const reordered = await handleSeoAuditRequest(
+      request("/api/tools/seo-audit", {
+        url: "WWW.AcMe.com",
+        tier: "key-pages",
+        extraKeyPages: reorderedSet,
+      }),
+    );
+    const different = await handleSeoAuditRequest(
+      request("/api/tools/seo-audit", {
+        url: "WWW.AcMe.com",
+        tier: "key-pages",
+        extraKeyPages: differentSet,
+      }),
+    );
+
+    expect(first.headers.get("x-crawl-cache")).toBeNull();
+    expect(reordered.headers.get("x-crawl-cache")).toBe("hit");
+    expect(different.headers.get("x-crawl-cache")).toBeNull();
+    expect(mocks.scanSeoAuditSite).toHaveBeenCalledTimes(2);
+    const namespaces = mocks.readCrawlCache.mock.calls.map(([namespace]) =>
+      namespace,
+    );
+    expect(namespaces[0]).toBe(namespaces[1]);
+    expect(namespaces[2]).not.toBe(namespaces[0]);
+    expect(namespaces.every((namespace) => !namespace.includes("https://"))).toBe(
+      true,
+    );
+  });
+
+  it("reuses a same-host cache entry only when the tier matches", async () => {
+    useCacheProbeGate();
+    const cached = cachedSeoPayload(false);
+    mocks.readCrawlCache.mockImplementation(async (namespace) =>
+      namespace === "seo_audit:key-pages"
+        ? {
+            payload: cached,
+            capturedAt: "2026-08-26T10:00:00.000Z",
+          }
+        : null,
+    );
+
+    const response = await handleSeoAuditRequest(
+      request("/api/tools/seo-audit", {
+        url: "WWW.AcMe.com",
+        tier: "key-pages",
+      }),
+    );
+
+    expect(response.headers.get("x-crawl-cache")).toBe("hit");
+    expect(mocks.readCrawlCache).toHaveBeenCalledWith(
+      "seo_audit:key-pages",
+      "www.acme.com",
+    );
+    expect(mocks.scanSeoAuditSite).not.toHaveBeenCalled();
+  });
+
+  it("does not let a key-pages row satisfy a full-site request", async () => {
+    useCacheProbeGate();
+    mocks.readCrawlCache.mockImplementation(async (namespace) =>
+      namespace === "seo_audit:key-pages"
+        ? {
+            payload: cachedSeoPayload(false),
+            capturedAt: "2026-08-26T10:00:00.000Z",
+          }
+        : null,
+    );
+
+    const response = await handleSeoAuditRequest(
+      request("/api/tools/seo-audit", {
+        url: "WWW.AcMe.com",
+        tier: "full-site",
+      }),
+    );
+
+    expect(response.headers.get("x-crawl-cache")).toBeNull();
+    expect(mocks.readCrawlCache).toHaveBeenCalledWith(
+      "seo_audit:full-site",
+      "www.acme.com",
+    );
+    expect(mocks.scanSeoAuditSite).toHaveBeenCalledOnce();
+  });
+
+  it("does not read the legacy unpartitioned SEO Audit namespace", async () => {
+    useCacheProbeGate();
+    mocks.readCrawlCache.mockImplementation(async (namespace) =>
+      namespace === "seo_audit"
+        ? {
+            payload: cachedSeoPayload(false),
+            capturedAt: "2026-08-26T10:00:00.000Z",
+          }
+        : null,
+    );
+
+    const response = await handleSeoAuditRequest(
+      request("/api/tools/seo-audit"),
+    );
+
+    expect(response.headers.get("x-crawl-cache")).toBeNull();
+    expect(mocks.readCrawlCache).toHaveBeenCalledWith(
+      "seo_audit:full-site",
+      "www.acme.com",
+    );
+    expect(mocks.scanSeoAuditSite).toHaveBeenCalledOnce();
   });
 
   it("treats a non-inspected strict target cache as a miss and scans", async () => {
@@ -166,6 +323,10 @@ describe("default public crawl cache wiring", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("x-crawl-cache")).toBeNull();
+    expect(mocks.readCrawlCache).toHaveBeenCalledWith(
+      "seo_audit:full-site",
+      "www.acme.com",
+    );
     expect(mocks.scanSeoAuditSite).toHaveBeenCalledOnce();
   });
 
