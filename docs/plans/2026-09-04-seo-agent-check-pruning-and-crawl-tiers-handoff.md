@@ -13,6 +13,12 @@ date: 2026-09-04
 有几条前提已经变了；另有三处它「不确定」或写错的地方，代码里能查到确切答案。
 这份 handoff 把交办翻译成可以直接开工的任务，并把每一处偏离原文的地方标出来。
 
+> **2026-09-04 本地落地状态**：实现候选已完成，仍未 commit、push、开 PR 或部署。
+> Owner 已裁决积分配置保持不变，未传 `tier` 的 SEO 老客户端默认 `key-pages`。
+> 当前源码在本 handoff 写成稿后已经包含 C2 detector，因此本次没有重复新增记录或 bump
+> `seo_audit.sitewide.v18`。实现、差异与验证证据见
+> `docs/reviews/2026-09-04-seo-agent-check-pruning-and-crawl-tiers-implementation.md`。
+
 **读这份文档之前先读**：`docs/plans/2026-09-03-seo-agent-key-pages-accordion-design.md`
 §5.3（fail-closed 裁决）、§5.4（聚合表）、§7（契约与版本链）。下面反复引用的
 「只对提交页判定」「wire guard」「台账」三个词都在那里定义。
