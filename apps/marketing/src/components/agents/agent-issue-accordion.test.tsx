@@ -11,6 +11,8 @@ import type { SeoAuditRecord } from "@sf/public-tools";
 import type { AgentAuditEvaluatedCheck } from "@sf/public-tools/agent-audit";
 
 import en from "../../i18n/messages/en.json";
+import zh from "../../i18n/messages/zh.json";
+import { TOOL_HANDOFF_KEY } from "../../lib/tools/tool-handoff";
 import { AgentIssueAccordion } from "./agent-issue-accordion";
 import { buildAgentIssueModel } from "./agent-issue-model";
 import {
@@ -142,14 +144,17 @@ describe("AgentIssueAccordion", () => {
     }
   });
 
-  function render(model: ReturnType<typeof buildAgentIssueModel>) {
+  function render(
+    model: ReturnType<typeof buildAgentIssueModel>,
+    currentProfile = profile(),
+  ) {
     act(() => {
       root.render(
         <NextIntlClientProvider locale="en" messages={en}>
           <AgentIssueAccordion
             model={model}
             locale="en"
-            profile={profile()}
+            profile={currentProfile}
             run={RUN}
             targetPageExtract={null}
           />
@@ -167,6 +172,30 @@ describe("AgentIssueAccordion", () => {
         check({ id: "1.3", result: "tip", evidenceRecordIds: ["r3"] }),
       ],
       records: [record("r1", 2), record("r2", 1), record("r3", 1)],
+    });
+  }
+
+  function groupHintModel() {
+    return buildAgentIssueModel({
+      agent: "seo",
+      checks: [
+        check({
+          id: "2.4",
+          result: "warning",
+          evidenceRecordIds: ["r2"],
+        }),
+        check({
+          id: "2.5",
+          result: "warning",
+          evidenceRecordIds: ["r25"],
+        }),
+        check({
+          id: "4.6",
+          result: "tip",
+          evidenceRecordIds: ["r4"],
+        }),
+      ],
+      records: [record("r2", 1), record("r25", 1), record("r4", 1)],
     });
   }
 
@@ -245,12 +274,12 @@ describe("AgentIssueAccordion", () => {
             hitUrls: ["https://example.com/", "https://example.com/pricing"],
             outcomes: [
               {
-                page: { url: "https://example.com/", title: null, metaDescription: null, depth: 0, inboundLinks: 9, score: 0 },
+                page: { url: "https://example.com/", title: null, metaDescription: null, depth: 0, inboundLinks: 9, reason: "target", score: 0, basis: "target", matchedFeature: null },
                 result: "blocker",
                 measurement: null,
               },
               {
-                page: { url: "https://example.com/pricing", title: null, metaDescription: null, depth: 1, inboundLinks: 4, score: 0 },
+                page: { url: "https://example.com/pricing", title: null, metaDescription: null, depth: 1, inboundLinks: 4, reason: "navigation", score: 0, basis: "structure", matchedFeature: null },
                 result: "warning",
                 measurement: null,
               },
@@ -376,6 +405,172 @@ describe("AgentIssueAccordion", () => {
 
     expect(host.querySelector("[data-key-page-check]")).toBeNull();
     expect(host.querySelector("[data-key-page-hit]")).not.toBeNull();
+  });
+
+  it("shows real Chinese On-Page guidance for groups 2 and 4 and hands off the submitted page", () => {
+    sessionStorage.removeItem(TOOL_HANDOFF_KEY);
+    act(() => {
+      root.render(
+        <NextIntlClientProvider locale="zh" messages={zh}>
+          <AgentIssueAccordion
+            model={groupHintModel()}
+            locale="zh"
+            profile={profile()}
+            run={RUN}
+            targetPageExtract={null}
+          />
+        </NextIntlClientProvider>,
+      );
+    });
+
+    const hints = [
+      ...host.querySelectorAll<HTMLElement>("[data-on-page-group-hint]"),
+    ];
+    expect(hints.map((hint) => hint.dataset.onPageGroupHint)).toEqual([
+      "2",
+      "4",
+    ]);
+    for (const hint of hints) {
+      expect(hint.textContent).toContain(
+        "想知道某一页是否真的覆盖了目标词？用 On-Page SEO Checker 逐位点看标题、H1、描述、开头正文和密度，附 SERP 预览。",
+      );
+    }
+    expect(host.textContent).not.toContain("agents.workbench.issues.groupHint");
+
+    const links = hints.map((hint) =>
+      hint.querySelector<HTMLAnchorElement>("a"),
+    );
+    for (const link of links) {
+      expect(link?.getAttribute("href")).toContain("/tools/on-page-seo-check");
+      expect(link?.target).toBe("_blank");
+      expect(link?.rel).toBe("opener");
+    }
+
+    for (const link of links) {
+      sessionStorage.removeItem(TOOL_HANDOFF_KEY);
+      link?.click();
+      expect(
+        JSON.parse(sessionStorage.getItem(TOOL_HANDOFF_KEY) ?? "null"),
+      ).toMatchObject({
+        source: "seo-agent-key-page",
+        destination: "on-page-seo-check",
+        scope: "query_page",
+        query: "seo audit",
+        page: "https://example.com/",
+        evidenceId: null,
+      });
+    }
+  });
+
+  it("normalizes a bare submitted host before writing the On-Page handoff", () => {
+    sessionStorage.removeItem(TOOL_HANDOFF_KEY);
+    render(groupHintModel(), {
+      ...profile(),
+      targetUrl: "astrologywiki.com",
+      host: "astrologywiki.com",
+    });
+
+    host
+      .querySelector<HTMLAnchorElement>('[data-on-page-group-hint="2"] a')
+      ?.click();
+
+    expect(
+      JSON.parse(sessionStorage.getItem(TOOL_HANDOFF_KEY) ?? "null"),
+    ).toMatchObject({ page: "https://astrologywiki.com/" });
+  });
+
+  it("keeps an unsafe submitted target as a plain checker link", () => {
+    sessionStorage.removeItem(TOOL_HANDOFF_KEY);
+    render(groupHintModel(), {
+      ...profile(),
+      targetUrl: "https://user:pass@example.com/",
+    });
+
+    const link = host.querySelector<HTMLAnchorElement>(
+      '[data-on-page-group-hint="2"] a',
+    );
+    expect(link?.getAttribute("href")).toContain("/tools/on-page-seo-check");
+    link?.click();
+    expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+  });
+
+  it("places each hint after the last visible issue in its own group", () => {
+    render(actionableModel());
+
+    expect(host.querySelector("[data-on-page-group-hint]")).toBeNull();
+
+    render(groupHintModel());
+
+    expect(
+      [
+        ...host.querySelectorAll<HTMLElement>(
+          "[data-issue-row], [data-on-page-group-hint]",
+        ),
+      ].map(
+        (node) =>
+          node.getAttribute("data-issue-row") ??
+          `hint:${node.dataset.onPageGroupHint}`,
+      ),
+    ).toEqual([
+      "seo:page:2.4",
+      "seo:page:2.5",
+      "hint:2",
+      "seo:page:4.6",
+      "hint:4",
+    ]);
+  });
+
+  it("does not show a group hint when the current filter hides that group", () => {
+    render(groupHintModel());
+    click('[data-issue-filter="warning"]');
+
+    expect(host.querySelector('[data-on-page-group-hint="2"]')).not.toBeNull();
+    expect(host.querySelector('[data-on-page-group-hint="4"]')).toBeNull();
+  });
+
+  it("keeps the group guidance as a plain checker link when no query is confirmed", () => {
+    sessionStorage.removeItem(TOOL_HANDOFF_KEY);
+    act(() => {
+      root.render(
+        <NextIntlClientProvider locale="en" messages={en}>
+          <AgentIssueAccordion
+            model={groupHintModel()}
+            locale="en"
+            profile={updateAgentProfile(profile(), { targetQuery: "" })}
+            run={RUN}
+            targetPageExtract={null}
+          />
+        </NextIntlClientProvider>,
+      );
+    });
+
+    const link = host.querySelector<HTMLAnchorElement>(
+      '[data-on-page-group-hint="2"] a',
+    );
+    expect(link?.getAttribute("href")).toContain("/tools/on-page-seo-check");
+    link?.click();
+    expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+  });
+
+  it("writes the group handoff before a new-tab mouse path too", () => {
+    sessionStorage.removeItem(TOOL_HANDOFF_KEY);
+    render(groupHintModel());
+
+    const link = host.querySelector<HTMLAnchorElement>(
+      '[data-on-page-group-hint="2"] a',
+    );
+    act(() => {
+      link?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    });
+
+    expect(
+      JSON.parse(sessionStorage.getItem(TOOL_HANDOFF_KEY) ?? "null"),
+    ).toMatchObject({
+      source: "seo-agent-key-page",
+      destination: "on-page-seo-check",
+      scope: "query_page",
+      evidenceId: null,
+    });
   });
 
   it("says the repair is for a page that passed when the submitted page is not a hit", () => {

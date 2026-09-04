@@ -1,5 +1,5 @@
 // @input  -- authenticated Agent POST request and existing bounded SEO audit handler
-// @output -- buffered, category-projected evidence or stable auth/upstream errors
+// @output -- route-tier-resolved, buffered evidence or stable auth/upstream errors
 // @pos    -- shared server-only execution boundary for both of the Agent's focuses
 
 import type {
@@ -8,6 +8,7 @@ import type {
   SeoAuditRecord,
   SeoAuditReport,
   SeoAuditSiteResources,
+  SeoAuditCrawlTier,
 } from "@sf/public-tools";
 import {
   getServerAuthenticationStatus,
@@ -17,6 +18,7 @@ import type { QualifyingTool } from "../credits/credits-config.ts";
 import { reportFirstToolRun } from "../credits/report-first-run.ts";
 import { handleSeoAuditRequest } from "../tools/seo-audit-handler.ts";
 import {
+  normalizeSeoAuditExtraKeyPages,
   readSeoAuditInput,
   SEO_AUDIT_REQUEST_BODY_LIMIT_BYTES,
   type SeoAuditRequestInput,
@@ -143,7 +145,7 @@ export interface AgentAuditHandlerDependencies {
    * getting one of its own, but it still records its own credit identity from
    * day one. Those two facts only fit together if the identity comes from the
    * boundary the request arrived at — the body cannot carry it, because the
-   * frozen request whitelist is `{url, targetQueries?, pageRole?}` and because a
+   * request whitelist has no ledger identity field and because a
    * client-supplied slug is a client-chosen ledger label. The checker therefore
    * has its own thin route over this same handler, and that route is the only
    * thing that changes here.
@@ -512,6 +514,8 @@ function projectSiteResources(
     robotsGroupsObserved: siteResources.robotsGroupsObserved,
     sitemapReferencesObserved: siteResources.sitemapReferencesObserved,
     sitemapFetched: siteResources.sitemapFetched,
+    // Additive in seo_audit.sitewide.v18: older cache rows have no field.
+    navigationUrls: [...(siteResources.navigationUrls ?? [])],
     // Carried, not blanked. This is the population A1 divides by, and an empty
     // list here does not read as "we could not measure" — it reads as "this
     // site declares no sitemap URLs", which is a statement about the site.
@@ -682,11 +686,54 @@ export async function handleAgentAuditRequest(
   if (!body.ok) {
     return errorResponse(body.code, UPSTREAM_ERROR_STATUS[body.code]);
   }
-  const input = readSeoAuditInput(body.value);
+  let inputBody = body.value;
+  if (
+    (agent === "tech" || dependencies.reportAs === "on-page-seo-check") &&
+    typeof inputBody === "object" &&
+    inputBody !== null &&
+    !Array.isArray(inputBody)
+  ) {
+    const routeScopedBody = {
+      ...(inputBody as Readonly<Record<string, unknown>>),
+    };
+    delete routeScopedBody.tier;
+    delete routeScopedBody.extraKeyPages;
+    inputBody = routeScopedBody;
+  }
+  const input = readSeoAuditInput(inputBody);
   if (!input.ok) return errorResponse("invalid_request", 400);
 
-  const upstream = await dependencies.delegate(request, input.value);
-  if (!upstream.ok) return projectUpstreamError(upstream, input.value.url);
+  // Crawl controls belong only to /agents/seo. Route identity is authoritative:
+  // a forged Tech or On-Page body cannot opt into the shallow tier or add seeds.
+  const acceptsSeoRunOptions =
+    dependencies.reportAs === "agent-audit" && agent === "seo";
+  const resolvedTier: SeoAuditCrawlTier = acceptsSeoRunOptions
+    ? (input.value.tier ?? "key-pages")
+    : "full-site";
+  let extraKeyPages = input.value.extraKeyPages;
+  if (!acceptsSeoRunOptions) {
+    extraKeyPages = [];
+  } else {
+    const normalizedMain = normalizeSeoAuditUrl(input.value.url);
+    if (normalizedMain.ok) {
+      const normalizedExtraKeyPages = normalizeSeoAuditExtraKeyPages(
+        normalizedMain.url,
+        input.value.extraKeyPages,
+      );
+      if (!normalizedExtraKeyPages.ok) {
+        return errorResponse("invalid_request", 400);
+      }
+      extraKeyPages = normalizedExtraKeyPages.urls;
+    }
+  }
+  const resolvedInput: SeoAuditRequestInput = {
+    ...input.value,
+    tier: resolvedTier,
+    extraKeyPages,
+  };
+
+  const upstream = await dependencies.delegate(request, resolvedInput);
+  if (!upstream.ok) return projectUpstreamError(upstream, resolvedInput.url);
 
   if (
     !(upstream.headers.get("content-type") ?? "")
@@ -834,6 +881,21 @@ export async function handleAgentAuditRequest(
     }
   }
 
+  // One projection produces both the selected rows and its omission ledger.
+  // Calling the selector separately for each would let later changes make the
+  // two regions disagree about one run.
+  const keyPageSelection = selectAgentKeyPageCandidates({
+    pages: result.pages,
+    siteOrigin: result.siteOrigin,
+    inspectedTargetUrl: result.inspectedTargetUrl,
+    navigationUrls: result.siteResources.navigationUrls ?? [],
+    manualUrls: resolvedInput.extraKeyPages,
+    // Only /agents/seo exposes the tier choice. Tech and the single-page
+    // checker keep their existing structural shortlist even though their
+    // crawler is forced onto the unchanged full-site budget.
+    crawlTier: acceptsSeoRunOptions ? resolvedTier : "key-pages",
+  });
+
   const projected: AgentAuditSuccessData = {
     run: {
       agent,
@@ -853,6 +915,7 @@ export async function handleAgentAuditRequest(
       targetUrl: result.targetUrl,
       siteOrigin: result.siteOrigin,
       scannedAt: result.scannedAt,
+      crawlTier: resolvedTier,
       targetInspected: result.targetInspected,
       inspectedTargetUrl: result.inspectedTargetUrl,
       // The same value the Search Console and CrUX lookups above were already
@@ -862,13 +925,15 @@ export async function handleAgentAuditRequest(
       landedTargetUrl: landedTargetUrl(result),
       // Which pages are worth judging one at a time. Neutral and derived from
       // the collected rows, so it is safe beside a payload cached across
-      // visitors; narrowing it to what this visitor's Profile points at is the
-      // client's job, against a Profile the server never sees here.
-      keyPages: selectAgentKeyPageCandidates({
-        pages: result.pages,
-        siteOrigin: result.siteOrigin,
-        inspectedTargetUrl: result.inspectedTargetUrl,
-      }),
+      // visitors; the client may reorder the complete set against a Profile
+      // the server never sees here, but it does not truncate this selection.
+      keyPages: keyPageSelection.candidates,
+      keyPageSelection: {
+        omittedUrls: [...keyPageSelection.omittedUrls],
+        manualUnavailableUrls: [
+          ...keyPageSelection.manualUnavailableUrls,
+        ],
+      },
       // Rebuilt field by field, like every other projected value. Forwarding
       // the object would publish whatever an upstream or cached payload
       // happened to carry beside these fields.

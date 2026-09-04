@@ -18,6 +18,12 @@ function keyPage(url: string, basis: AgentKeyPage["basis"]): AgentKeyPage {
     metaDescription: null,
     depth: 1,
     inboundLinks: 1,
+    reason:
+      basis === "homepage"
+        ? "home"
+        : basis === "target"
+          ? "target"
+          : "navigation",
     basis,
     matchedFeature: null,
   };

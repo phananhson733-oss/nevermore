@@ -74,6 +74,8 @@ describe("POST /api/tools/on-page-seo-check", () => {
       pageRole: null,
       market: null,
       language: null,
+      tier: "full-site",
+      extraKeyPages: [],
     } as const;
 
     const response = await ON_PAGE_CHECK_DEPENDENCIES.delegate(request, input);

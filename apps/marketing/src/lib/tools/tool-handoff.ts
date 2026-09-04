@@ -156,8 +156,9 @@ export type ToolHandoffPayload =
    * `property` is null: the Agent never reads Search Console for this page, so
    * there is no property it was observed under. `query` is the confirmed
    * target query, which the checker needs to judge the keyword slots at all.
-   * `evidenceId` is the check id the handoff came from, so the report can be
-   * traced back to the row that sent it.
+   * `evidenceId` is the check id when a finding row sent the handoff, so the
+   * reports can be traced to one another. A static group hint has no sending
+   * row and carries an explicit null instead of inventing one.
    */
   | {
       readonly source: "seo-agent-key-page";
@@ -166,7 +167,7 @@ export type ToolHandoffPayload =
       readonly property: null;
       readonly query: string;
       readonly page: string;
-      readonly evidenceId: string;
+      readonly evidenceId: string | null;
       readonly marketCode: string;
       readonly languageCode: string;
     };
@@ -530,9 +531,10 @@ function hasValidGapTarget(value: Readonly<Record<string, unknown>>): boolean {
 /**
  * The Agent's key page handoff.
  *
- * `evidenceId` is a catalogue check id (`2.3`, `A7`) rather than a hash: it
- * names the row that sent the page, which is what a reader needs to connect
- * the two reports. Kept to that shape so a free-text label cannot ride along.
+ * A row-backed `evidenceId` is a catalogue check id (`2.4`, `A7`) rather than
+ * a hash: it names the row that sent the page, which is what a reader needs to
+ * connect the reports. Null is reserved for a static group hint with no
+ * sending row; a free-text label is never accepted in either case.
  */
 function hasValidAgentKeyPageFields(
   value: Readonly<Record<string, unknown>>,
@@ -541,8 +543,9 @@ function hasValidAgentKeyPageFields(
     value.destination === "on-page-seo-check" &&
     value.scope === "query_page" &&
     value.property === null &&
-    typeof value.evidenceId === "string" &&
-    AGENT_CHECK_ID.test(value.evidenceId) &&
+    (value.evidenceId === null ||
+      (typeof value.evidenceId === "string" &&
+        AGENT_CHECK_ID.test(value.evidenceId))) &&
     nonEmptyString(value.query, MAX_QUERY_LENGTH) &&
     isSafeHttpPage(value.page) &&
     hasValidMarketContext(value)
@@ -691,7 +694,8 @@ function toGapHandoff(
  */
 /**
  * Its own builder for the same reason the others have theirs: `property` stays
- * the literal null the validator demanded rather than a trimmed string.
+ * the literal null the validator demanded, and nullable Agent evidence stays
+ * explicit rather than being normalized into a made-up row id.
  */
 function toAgentKeyPageHandoff(
   payload: Extract<ToolHandoffPayload, { source: "seo-agent-key-page" }>,

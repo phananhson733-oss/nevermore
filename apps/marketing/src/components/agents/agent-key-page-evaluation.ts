@@ -42,6 +42,7 @@ function syntheticTarget(targetUrl: string): AgentKeyPage {
     metaDescription: null,
     depth: 0,
     inboundLinks: 0,
+    reason: "target",
     basis: "target",
     matchedFeature: null,
   };

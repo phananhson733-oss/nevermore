@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CollectionContext } from "../adapter.ts";
 import { createCanonicalUrlGuard } from "../url-safety/index.ts";
-import { crawlSite } from "./engine.ts";
+import { CRAWL_ADDITIONAL_SEED_LIMIT, crawlSite } from "./engine.ts";
 import {
   CRAWL_BUDGET,
   CRAWL_ENGINE_WALL_CLOCK_BUDGET_MS,
@@ -482,6 +482,186 @@ describe("crawlSite", () => {
     );
   });
 
+  it("defers sitemap members until the discovered frontier is exhausted when requested", async () => {
+    const sitemapBody = `<urlset>
+      <url><loc>https://example.com/sitemap-a</loc></url>
+      <url><loc>https://example.com/sitemap-b</loc></url>
+      <url><loc>https://example.com/sitemap-c</loc></url>
+    </urlset>`;
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text(
+          "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml",
+        ),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+      "https://example.com/": () =>
+        html(
+          '<html><head><title>Home</title></head><body><nav><a href="/navigation">Navigation</a></nav></body></html>',
+        ),
+      "https://example.com/navigation": () =>
+        html(
+          '<html><head><title>Navigation</title></head><body><a href="/navigation/child">Child</a></body></html>',
+        ),
+      "https://example.com/navigation/child": () =>
+        html("<html><head><title>Child</title></head></html>"),
+      "https://example.com/sitemap-a": () =>
+        html("<html><head><title>Sitemap A</title></head></html>"),
+      "https://example.com/sitemap-b": () =>
+        html("<html><head><title>Sitemap B</title></head></html>"),
+      "https://example.com/sitemap-c": () =>
+        html("<html><head><title>Sitemap C</title></head></html>"),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxDepth: 2,
+        maxUrls: 3,
+        perHostConcurrency: 1,
+      },
+      deferSitemapFrontier: true,
+    });
+
+    expect(calls).toEqual([
+      "https://example.com/robots.txt",
+      "https://example.com/sitemap.xml",
+      "https://example.com/",
+      "https://example.com/navigation",
+      "https://example.com/navigation/child",
+    ]);
+    expect(raw.sitemap.subjectUrls).toEqual([
+      "https://example.com/sitemap-a",
+      "https://example.com/sitemap-b",
+      "https://example.com/sitemap-c",
+    ]);
+    expect(raw.pages.map((page) => page.projection.fetchUrl)).toEqual([
+      "https://example.com/",
+      "https://example.com/navigation",
+      "https://example.com/navigation/child",
+    ]);
+    expect(raw.stopReason).toBe("max_urls");
+  });
+
+  it("keeps the default sitemap-first frontier order", async () => {
+    const sitemapBody = `<urlset>
+      <url><loc>https://example.com/sitemap-a</loc></url>
+      <url><loc>https://example.com/sitemap-b</loc></url>
+    </urlset>`;
+    const { fetcher, calls } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text(
+          "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml",
+        ),
+      "https://example.com/sitemap.xml": () => xml(sitemapBody),
+      "https://example.com/": () =>
+        html(
+          '<html><head><title>Home</title></head><body><a href="/discovered">Discovered</a></body></html>',
+        ),
+      "https://example.com/discovered": () =>
+        html("<html><head><title>Discovered</title></head></html>"),
+      "https://example.com/sitemap-a": () =>
+        html("<html><head><title>Sitemap A</title></head></html>"),
+      "https://example.com/sitemap-b": () =>
+        html("<html><head><title>Sitemap B</title></head></html>"),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxUrls: 3,
+        perHostConcurrency: 1,
+      },
+    });
+
+    expect(calls).toEqual([
+      "https://example.com/robots.txt",
+      "https://example.com/sitemap.xml",
+      "https://example.com/",
+      "https://example.com/sitemap-a",
+      "https://example.com/sitemap-b",
+    ]);
+    expect(raw.pages.map((page) => page.projection.fetchUrl)).toEqual([
+      "https://example.com/",
+      "https://example.com/sitemap-a",
+      "https://example.com/sitemap-b",
+    ]);
+  });
+
+  it("defensively validates, sorts, deduplicates, and bounds additional depth-zero seeds", async () => {
+    expect(CRAWL_ADDITIONAL_SEED_LIMIT).toBe(10);
+    const seedUrl = "https://example.com/submitted";
+    const sitemapUrl = "https://example.com/from-sitemap";
+    const validManualUrls = Array.from(
+      { length: CRAWL_ADDITIONAL_SEED_LIMIT + 1 },
+      (_, index) =>
+        `https://example.com/manual-${String(index).padStart(2, "0")}`,
+    );
+    const additionalSeedUrls = [
+      ...validManualUrls.toReversed(),
+      validManualUrls[3]!,
+      "https://outside.example/manual",
+      "https://user:secret@example.com/manual",
+      "https://example.com/manual-fragment#private",
+    ];
+    const calls: string[] = [];
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        calls.push(url);
+        if (url === "https://example.com/robots.txt") {
+          return text(
+            "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml",
+          );
+        }
+        if (url === "https://example.com/sitemap.xml") {
+          return xml(`<urlset><url><loc>${sitemapUrl}</loc></url></urlset>`);
+        }
+        return html(`<html><head><title>${url}</title></head></html>`);
+      },
+    };
+
+    const raw = await crawlSite(
+      { ...PARAMS, seedUrl },
+      CONFIG,
+      CTX,
+      fetcher,
+      {
+        guard: GUARD,
+        budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+        additionalSeedUrls,
+      },
+    );
+
+    const admittedManualUrls = validManualUrls.slice(
+      0,
+      CRAWL_ADDITIONAL_SEED_LIMIT,
+    );
+    expect(calls).toEqual([
+      "https://example.com/robots.txt",
+      "https://example.com/sitemap.xml",
+      "https://example.com/",
+      seedUrl,
+      ...admittedManualUrls,
+      sitemapUrl,
+    ]);
+    expect(raw.pages).toEqual(
+      expect.arrayContaining(
+        admittedManualUrls.map((url) =>
+          expect.objectContaining({
+            subjectUrl: url,
+            depth: 0,
+            projection: expect.objectContaining({ fetchUrl: url }),
+          }),
+        ),
+      ),
+    );
+    expect(calls).not.toContain(validManualUrls.at(-1));
+    expect(calls.some((url) => url.includes("outside.example"))).toBe(false);
+    expect(calls.some((url) => url.includes("user:secret"))).toBe(false);
+    expect(calls.some((url) => url.includes("#"))).toBe(false);
+  });
+
   it("keeps slash and non-slash seeds as distinct exact fetch identities", async () => {
     const seedUrl = "https://example.com/pricing/";
     const sitemapUrl = "https://example.com/pricing";
@@ -527,7 +707,9 @@ describe("crawlSite", () => {
       "https://example.com/": () =>
         html("<html><head><title>Home</title></head></html>"),
       [seedUrl]: () =>
-        html("<html><head><title>Standalone</title></head></html>"),
+        html(
+          '<html><head><title>Standalone</title></head><body><nav><a href="/products/standalone">Current product</a></nav></body></html>',
+        ),
     });
 
     const raw = await crawlSite({ ...PARAMS, seedUrl }, CONFIG, CTX, fetcher, {
@@ -547,6 +729,47 @@ describe("crawlSite", () => {
         depth: 0,
         projection: expect.objectContaining({ fetchUrl: seedUrl }),
       }),
+    );
+    expect(
+      raw.pages.find((page) => page.subjectUrl === seedUrl)?.projection,
+    ).not.toHaveProperty("navigationOutlinks");
+  });
+
+  it("projects only navigation subject URLs from the origin homepage", async () => {
+    const home = `<html><head><title>Home</title></head><body>
+      <header>
+        <a href="/pricing/">Pricing slash</a>
+        <a href="/pricing">Pricing duplicate subject</a>
+      </header>
+      <nav><a href="/docs">Docs</a></nav>
+      <main><a href="/ordinary-body-link">Body link</a></main>
+    </body></html>`;
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\n"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("not found", { status: 404 }),
+      "https://example.com/": () => html(home),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: {
+        ...FAST_BUDGET,
+        maxUrls: 1,
+        perHostConcurrency: 1,
+      },
+    });
+    const homepage = raw.pages.find(
+      (page) => page.subjectUrl === "https://example.com/",
+    );
+
+    expect(homepage?.projection.navigationOutlinks).toEqual([
+      "https://example.com/docs",
+      "https://example.com/pricing",
+    ]);
+    expect(homepage?.projection.navigationOutlinks).not.toContain(
+      "https://example.com/ordinary-body-link",
     );
   });
 

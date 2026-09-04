@@ -351,6 +351,17 @@ function buildRecords(
   targetSubjectUrl: string | null,
 ): readonly SeoAuditRecord[] {
   const record = recorderFor(targetSubjectUrl);
+  const crawlTier = raw.crawlTier ?? "full-site";
+  const fullSiteRecord = (input: RecordInput): SeoAuditRecord =>
+    crawlTier === "key-pages"
+      ? record({
+          ...input,
+          state: "unverified",
+          tested: 0,
+          observations: [],
+          limitation: "full_site_only",
+        })
+      : record(input);
   // Read from the raw crawl, never from the projected page. `onPage` carries
   // per-page counts and the whole body's text metrics; hanging anything that
   // size on SeoAuditPage would put it inside `result.pages`, which IS the
@@ -872,7 +883,7 @@ function buildRecords(
         .filter((page) => page.h1Count > 1)
         .map((page) => pageObservation(page, { h1_count: page.h1Count })),
     }),
-    record({
+    fullSiteRecord({
       id: "page_without_any_discovery_path",
       // Tested population: collected HTML pages other than the entry URL.
       //
@@ -912,7 +923,7 @@ function buildRecords(
         ? "bounded_static_html_crawl_inlinks_only"
         : "crawl_incomplete_inlinks_unreliable",
     }),
-    record({
+    fullSiteRecord({
       id: "sitemap_page_without_observed_inlink",
       // Tested population: sitemap members other than the root.
       population: "conditional_subset",
@@ -941,7 +952,7 @@ function buildRecords(
         ),
       limitation: "bounded_static_html_crawl_inlinks_only",
     }),
-    record({
+    fullSiteRecord({
       id: "internal_target_http_error",
       // Tested population: collected internal link targets.
       population: "conditional_subset",
@@ -1776,6 +1787,19 @@ function targetSubjectCandidates(
     : [requestedSubject, rebased];
 }
 
+function navigationUrlsFromHomepage(raw: CrawlRaw): readonly string[] {
+  const homepageSubjectUrl = subjectUrlOf(`${raw.origin}/`);
+  const navigationOutlinks = raw.pages.flatMap((page) =>
+    page.subjectUrl === homepageSubjectUrl
+      ? (page.projection.navigationOutlinks ?? [])
+      : [],
+  );
+
+  return [...new Set(navigationOutlinks)]
+    .sort()
+    .slice(0, CRAWL_PROJECTION_LIMITS.maxInternalOutlinks);
+}
+
 export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
   const pages = buildPages(raw);
   const requestedSubject = subjectUrlOf(raw.requestedUrl);
@@ -1832,6 +1856,7 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
       robotsGroupsObserved: raw.robots.groups.length,
       sitemapReferencesObserved: raw.robots.sitemaps.length,
       sitemapFetched: raw.sitemap.fetched,
+      navigationUrls: navigationUrlsFromHomepage(raw),
       sitemapUrls: raw.sitemap.subjectUrls.slice(
         0,
         SITEMAP_URLS_PUBLISHED_CAP,

@@ -167,6 +167,23 @@ describe("record vocabulary", () => {
     expect(missing).toEqual([]);
   });
 
+  it("explains why key-pages cannot make full-site findings", () => {
+    expect(SEO_AUDIT_LIMITATION_CODES).toContain("full_site_only");
+    expect(AGENT_LIMITATION_CODES.has("full_site_only")).toBe(true);
+    expect(enMessages.tools.seoAudit.limitations.full_site_only).toContain(
+      "complete site crawl",
+    );
+    expect(enMessages.tools.seoAudit.limitations.full_site_only).toContain(
+      "shallow sample",
+    );
+    expect(zhMessages.tools.seoAudit.limitations.full_site_only).toContain(
+      "完整抓取全站",
+    );
+    expect(zhMessages.tools.seoAudit.limitations.full_site_only).toContain(
+      "浅层样本",
+    );
+  });
+
   it("names every evidence label in both shipped catalogues", () => {
     const missing: string[] = [];
     for (const locale of ["en", "zh"] as const) {

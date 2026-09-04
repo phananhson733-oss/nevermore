@@ -1,22 +1,31 @@
 // @input  -- the parsed JSON body of an SEO audit request
-// @output -- the validated URL, target queries and page role, or a rejection
+// @output -- bounded URL/tier/query/page context plus normalized-ready manual seeds, or rejection
 // @pos    -- one request contract shared by the public tool and the Agent boundary
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import {
+  normalizeSeoAuditUrl,
   normalizeTargetQueries,
   type KeywordEvidencePageRole,
   type NormalizedTargetQuery,
+  type SeoAuditCrawlTier,
 } from "@sf/public-tools";
+import {
+  AGENT_RUN_EXTRA_KEY_PAGE_LIMIT,
+  AGENT_RUN_URL_MAX_CHARS,
+  isAllowedAgentRunSiteUrl,
+} from "../agents/agent-run-options.ts";
+
+export const SEO_AUDIT_EXTRA_KEY_PAGE_LIMIT = AGENT_RUN_EXTRA_KEY_PAGE_LIMIT;
 
 /**
  * Body budget for an SEO audit request.
  *
- * A URL, five short queries and a page role. Enforced by the bounded reader
- * before anything is parsed, so a caller cannot make either layer hold an
- * arbitrary body in memory just by sending one.
+ * A URL, crawl tier, ten manual URLs, five short queries and a page role. Enforced by the
+ * bounded reader before anything is parsed, so a caller cannot make either
+ * layer hold an arbitrary body in memory just by sending one.
  */
-export const SEO_AUDIT_REQUEST_BODY_LIMIT_BYTES = 4_096;
+export const SEO_AUDIT_REQUEST_BODY_LIMIT_BYTES = 32_768;
 
 /**
  * Fields a caller may send.
@@ -32,6 +41,8 @@ const ALLOWED_INPUT_KEYS: ReadonlySet<string> = new Set([
   "pageRole",
   "market",
   "language",
+  "tier",
+  "extraKeyPages",
 ]);
 
 const PAGE_ROLES: ReadonlySet<string> = new Set([
@@ -43,6 +54,8 @@ const PAGE_ROLES: ReadonlySet<string> = new Set([
 
 export interface SeoAuditRequestInput {
   readonly url: unknown;
+  /** Null until the server boundary applies its route-specific default. */
+  readonly tier: SeoAuditCrawlTier | null;
   /** Null when the caller sent no queries at all, never an empty list. */
   readonly targetQueries: readonly NormalizedTargetQuery[] | null;
   readonly pageRole: KeywordEvidencePageRole | null;
@@ -56,6 +69,64 @@ export interface SeoAuditRequestInput {
    */
   readonly market: string | null;
   readonly language: string | null;
+  /** Structurally validated here; normalized against the submitted origin later. */
+  readonly extraKeyPages: readonly string[];
+}
+
+export type NormalizedSeoAuditExtraKeyPages =
+  | { readonly ok: true; readonly urls: readonly string[] }
+  | { readonly ok: false };
+
+function isExtraKeyPagesInput(value: unknown): value is readonly string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= SEO_AUDIT_EXTRA_KEY_PAGE_LIMIT &&
+    value.every(
+      (entry) =>
+        typeof entry === "string" &&
+        entry.trim().length > 0 &&
+        entry.length <= AGENT_RUN_URL_MAX_CHARS,
+    )
+  );
+}
+
+/** Normalize one bounded manual seed set after the main URL is normalized. */
+export function normalizeSeoAuditExtraKeyPages(
+  normalizedMainUrl: string,
+  value: unknown,
+): NormalizedSeoAuditExtraKeyPages {
+  if (!isExtraKeyPagesInput(value)) return { ok: false };
+
+  let main: URL;
+  try {
+    main = new URL(normalizedMainUrl);
+  } catch {
+    return { ok: false };
+  }
+
+  const normalized = new Set<string>();
+  for (const entry of value) {
+    const result = normalizeSeoAuditUrl(entry);
+    if (!result.ok) return { ok: false };
+    let parsed: URL;
+    try {
+      parsed = new URL(result.url);
+    } catch {
+      return { ok: false };
+    }
+    if (!isAllowedAgentRunSiteUrl(normalizedMainUrl, result.url)) {
+      return { ok: false };
+    }
+    const rebased = new URL(`${parsed.pathname}${parsed.search}`, main.origin).href;
+    if (rebased !== normalizedMainUrl) normalized.add(rebased);
+  }
+
+  return {
+    ok: true,
+    urls: [...normalized].sort((left, right) =>
+      left < right ? -1 : left > right ? 1 : 0,
+    ),
+  };
 }
 
 /**
@@ -86,7 +157,21 @@ export function readSeoAuditInput(
     readonly pageRole?: unknown;
     readonly market?: unknown;
     readonly language?: unknown;
+    readonly tier?: unknown;
+    readonly extraKeyPages?: unknown;
   };
+
+  const extraKeyPages =
+    input.extraKeyPages === undefined ? [] : input.extraKeyPages;
+  if (!isExtraKeyPagesInput(extraKeyPages)) return { ok: false };
+
+  let tier: SeoAuditCrawlTier | null = null;
+  if (input.tier !== undefined) {
+    if (input.tier !== "key-pages" && input.tier !== "full-site") {
+      return { ok: false };
+    }
+    tier = input.tier;
+  }
 
   let targetQueries: readonly NormalizedTargetQuery[] | null = null;
   if (input.targetQueries !== undefined) {
@@ -137,6 +222,14 @@ export function readSeoAuditInput(
 
   return {
     ok: true,
-    value: { url: input.url, targetQueries, pageRole, market, language },
+    value: {
+      url: input.url,
+      targetQueries,
+      pageRole,
+      market,
+      language,
+      tier,
+      extraKeyPages,
+    },
   };
 }

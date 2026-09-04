@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AGENT_AUDIT_COVERAGE,
   AGENT_AUDIT_DEFAULT_GROUPS,
   AGENT_AUDIT_HEADING_PRESETS,
   PAGE_AUDIT_GROUPS,
@@ -7,16 +8,28 @@ import {
   UNMEASURABLE_HERE,
 } from "./catalog.ts";
 
+const ON_PAGE_CHECKER_CHECK_IDS = [
+  "2.3",
+  "3.2",
+  "2.10",
+  "4.2",
+  "4.3",
+] as const;
+
 describe("v2 Agent audit catalog", () => {
-  it("freezes 5/31 site and 9/58 page entries with unique IDs", () => {
+  it("keeps unique catalog IDs while delegating the five deeper keyword checks", () => {
     const site = SITE_AUDIT_GROUPS.flatMap((group) => group.checks);
     const page = PAGE_AUDIT_GROUPS.flatMap((group) => group.checks);
     expect(SITE_AUDIT_GROUPS).toHaveLength(5);
-    expect(site).toHaveLength(31);
-    expect(new Set(site.map((check) => check.id)).size).toBe(31);
     expect(PAGE_AUDIT_GROUPS).toHaveLength(9);
-    expect(page).toHaveLength(58);
-    expect(new Set(page.map((check) => check.id)).size).toBe(58);
+    expect(new Set(site.map((check) => check.id)).size).toBe(site.length);
+    expect(new Set(page.map((check) => check.id)).size).toBe(page.length);
+    expect(AGENT_AUDIT_COVERAGE.total).toBe(site.length + page.length);
+    expect(
+      page
+        .filter((check) => ON_PAGE_CHECKER_CHECK_IDS.includes(check.id as never))
+        .map((check) => check.id),
+    ).toEqual([]);
     expect([...site, ...page].every((check) => check.threshold.en && check.impact.en && check.howToFix.en)).toBe(true);
   });
 
@@ -27,7 +40,9 @@ describe("v2 Agent audit catalog", () => {
     // Inventory readiness is derived, not listed, so it cannot drift from the
     // detectors again. A hand-kept list is what let 47 checks advertise
     // readiness while only 24 could ever produce a verdict.
-    expect(all.filter((check) => check.inventoryReady)).toHaveLength(84);
+    expect(AGENT_AUDIT_COVERAGE.decided).toBe(
+      all.filter((check) => check.inventoryReady).length,
+    );
     for (const check of all) {
       expect(check.inventoryReady).toBe(check.evidenceRecordIds.length > 0);
     }
@@ -145,24 +160,6 @@ describe("v2 Agent audit catalog", () => {
     });
   });
 
-  it("does not offer 2.10 a slot the run stopped reading", () => {
-    // The threshold shipped listing the URL as a satisfying slot after the
-    // record had dropped it -- so a page whose domain named the subject was
-    // told it already passed a check that could never see the domain. Both
-    // languages have to carry the exclusion, not just omit the word.
-    const entry = PAGE_AUDIT_GROUPS.flatMap((group) => group.checks).find(
-      (check) => check.id === "2.10",
-    );
-
-    expect(entry).toBeDefined();
-    for (const threshold of [entry?.threshold.en, entry?.threshold.zh]) {
-      expect(threshold).toBeDefined();
-      expect(threshold).toMatch(/not counted|不计 URL/);
-    }
-    expect(entry?.threshold.en).not.toMatch(/opening text or URL/);
-    expect(entry?.threshold.zh).not.toMatch(/开头正文或 URL/);
-  });
-
   it("never renders a Warning for a check that says it does not judge", () => {
     // 4.2 published "density is not used to judge a page" and resolved to
     // Warning anyway, because the severity came from a hand-kept list that
@@ -206,7 +203,7 @@ describe("v2 Agent audit catalog", () => {
       (group) => group.checks,
     );
     const decidable = all.filter((check) => check.evidenceRecordIds.length > 0);
-    expect(decidable).toHaveLength(84);
+    expect(decidable).toHaveLength(AGENT_AUDIT_COVERAGE.decided);
 
     // The group fallback emits one sentence for every check in a group, so a
     // check still sharing its text with a sibling has no instructions of its
@@ -245,8 +242,6 @@ describe("v2 Agent audit catalog", () => {
         "C6",
         "D7",
         "E4",
-        "4.2",
-        "4.3",
         "4.4",
         "6.5",
       ].sort(),
@@ -280,8 +275,6 @@ describe("v2 Agent audit catalog", () => {
         "B4",
         "B5",
         "E4",
-        "4.2",
-        "4.3",
         "4.4",
         "6.5",
         // Indexability gates a page rather than scoring it.

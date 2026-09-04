@@ -1,6 +1,6 @@
 // @input  -- the projected issue model for one Agent plus this run's provenance
-// @output -- issue-first accordion: filters, independent disclosures, quiet passed/excluded lanes
-// @pos    -- replaces the single-selection Stage 03/04 pair; reads state, executes nothing
+// @output -- issue-first accordion, quiet lanes, and static group 2/4 On-Page handoffs
+// @pos    -- replaces the single-selection Stage 03/04 pair; only the explicit tool links write a tab-scoped handoff
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 "use client";
@@ -18,6 +18,12 @@ import type {
 } from "./agent-issue-model";
 import type { AgentIssuePromptRun } from "./agent-issue-prompt";
 import type { AgentProfileDraft } from "./agent-profile";
+import { normalizeAgentRunTargetUrl } from "../../lib/agents/agent-run-options.ts";
+import { localePath } from "../../lib/locale-path";
+import {
+  TOOL_HANDOFF_LINK_PROPS,
+  writeToolHandoff,
+} from "../../lib/tools/tool-handoff";
 
 type IssueFilter = "all" | AgentIssueSeverity | "investigation";
 
@@ -40,6 +46,11 @@ const SEVERITY_ICON = {
   warning: AlertTriangle,
   suggestion: CircleHelp,
 } as const;
+
+const ON_PAGE_GROUP_HINTS = [
+  { groupId: "2" },
+  { groupId: "4" },
+] as const;
 
 /**
  * Engine states, keyed to their message names.
@@ -349,6 +360,77 @@ function QuietLane({
   );
 }
 
+/**
+ * Static guidance for keyword placement checks delegated to the single-page
+ * checker. These are links, not checks: they never enter the issue model,
+ * actionable lanes, or health denominator.
+ */
+function OnPageGroupHint({
+  groupId,
+  locale,
+  profile,
+}: {
+  readonly groupId: (typeof ON_PAGE_GROUP_HINTS)[number]["groupId"];
+  readonly locale: string;
+  readonly profile: AgentProfileDraft;
+}) {
+  const t = useTranslations("agents.workbench.issues");
+  if (profile.agent !== "seo") return null;
+
+  const query = profile.targetQuery.trim();
+  const page = normalizeAgentRunTargetUrl(profile.targetUrl);
+  const market = profile.country.trim().toUpperCase();
+  const language = profile.locale.trim().slice(0, 2).toLowerCase();
+  const canHandOff =
+    profile.reviewState === "confirmed" &&
+    query !== "" &&
+    page !== null &&
+    /^[A-Z]{2}$/u.test(market) &&
+    /^[a-z]{2}$/u.test(language);
+
+  function prepare(): void {
+    if (!canHandOff || page === null) return;
+    try {
+      writeToolHandoff(window.sessionStorage, Date.now(), {
+        source: "seo-agent-key-page",
+        destination: "on-page-seo-check",
+        scope: "query_page",
+        property: null,
+        query,
+        page,
+        evidenceId: null,
+        marketCode: market,
+        languageCode: language,
+      });
+    } catch {
+      // The href remains a usable plain checker link when storage is denied.
+    }
+  }
+
+  return (
+    <p
+      data-on-page-group-hint={groupId}
+      className="rounded-card border border-brand-border bg-brand-panel-sunken px-4 py-3 text-[12px] leading-[1.65] text-text-dark-secondary md:px-5"
+    >
+      {t.rich(`groupHint.${groupId}`, {
+        checker: (chunks) => (
+          <a
+            href={localePath(locale, "/tools/on-page-seo-check")}
+            {...TOOL_HANDOFF_LINK_PROPS}
+            onClick={() => prepare()}
+            onMouseDown={() => prepare()}
+            onContextMenu={() => prepare()}
+            onAuxClick={() => prepare()}
+            className="font-medium text-brand-accent-text underline decoration-brand-accent/45 underline-offset-2 transition-colors hover:text-text-dark-primary"
+          >
+            {chunks}
+          </a>
+        ),
+      })}
+    </p>
+  );
+}
+
 export interface AgentIssueAccordionProps {
   readonly model: AgentIssueModel;
   readonly locale: string;
@@ -379,6 +461,17 @@ export function AgentIssueAccordion({
   const visible = model.actionable.filter((issue) =>
     matchesFilter(issue, filter),
   );
+  const lastVisibleHintIndex = new Map<string, number>();
+  for (const [index, issue] of visible.entries()) {
+    if (issue.check.check.scope !== "page") continue;
+    if (
+      ON_PAGE_GROUP_HINTS.some(
+        (hint) => hint.groupId === issue.check.check.groupId,
+      )
+    ) {
+      lastVisibleHintIndex.set(issue.check.check.groupId, index);
+    }
+  }
 
   function setOpen(id: string, open: boolean): void {
     setOpenIds((current) => {
@@ -543,18 +636,33 @@ export function AgentIssueAccordion({
             </p>
           ) : (
             <div className="grid gap-2.5">
-              {visible.map((issue) => (
-                <IssueRow
-                  key={issue.id}
-                  issue={issue}
-                  open={openIds.has(issue.id)}
-                  onToggle={(open) => setOpen(issue.id, open)}
-                  locale={locale}
-                  profile={profile}
-                  run={run}
-                  targetPageExtract={targetPageExtract}
-                />
-              ))}
+              {visible.map((issue, index) => {
+                const hint = ON_PAGE_GROUP_HINTS.find(
+                  (entry) =>
+                    entry.groupId === issue.check.check.groupId &&
+                    lastVisibleHintIndex.get(entry.groupId) === index,
+                );
+                return (
+                  <div key={issue.id} className="grid gap-2.5">
+                    <IssueRow
+                      issue={issue}
+                      open={openIds.has(issue.id)}
+                      onToggle={(open) => setOpen(issue.id, open)}
+                      locale={locale}
+                      profile={profile}
+                      run={run}
+                      targetPageExtract={targetPageExtract}
+                    />
+                    {hint === undefined ? null : (
+                      <OnPageGroupHint
+                        groupId={hint.groupId}
+                        locale={locale}
+                        profile={profile}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </>

@@ -122,6 +122,84 @@ describe("site-wide SEO audit model", () => {
     expect(isSeoAuditPayload(malformed)).toBe(false);
   });
 
+  it("keeps v18 cache rows without navigation URLs readable", () => {
+    const current = buildSeoAuditPayload(raw());
+    const legacy = structuredClone(current) as unknown as {
+      result: { siteResources: Record<string, unknown> };
+    };
+    delete legacy.result.siteResources["navigationUrls"];
+
+    expect(current.result.siteResources.navigationUrls).toEqual([]);
+    expect(isSeoAuditPayload(legacy)).toBe(true);
+  });
+
+  it("publishes stable navigation URLs from the origin homepage identity", () => {
+    const submitted = page(
+      "https://acme.test/products/widget",
+      { navigationOutlinks: ["https://acme.test/not-site-navigation"] },
+      0,
+    );
+    const homepage = page(
+      "https://acme.test/",
+      {
+        navigationOutlinks: [
+          "https://acme.test/pricing",
+          "https://acme.test/docs",
+          "https://acme.test/pricing",
+        ],
+      },
+      1,
+    );
+
+    const report = buildSeoAuditReport(
+      raw({
+        requestedUrl: submitted.subjectUrl,
+        pages: [submitted, homepage],
+      }),
+    );
+
+    expect(report.siteResources.navigationUrls).toEqual([
+      "https://acme.test/docs",
+      "https://acme.test/pricing",
+    ]);
+  });
+
+  it("unions duplicate homepage-subject navigation independently of row order", () => {
+    const firstHomepage = page("https://acme.test/", {
+      fetchUrl: "https://acme.test/?journey=first",
+      navigationOutlinks: [
+        "https://acme.test/pricing",
+        "https://acme.test/docs",
+      ],
+    });
+    const secondHomepage = page("https://acme.test/", {
+      fetchUrl: "https://acme.test/?journey=second",
+      navigationOutlinks: [
+        "https://acme.test/blog",
+        "https://acme.test/pricing",
+      ],
+    });
+    const navigationUrls = (pages: readonly CrawlPageRecord[]) =>
+      buildSeoAuditReport(raw({ pages })).siteResources.navigationUrls;
+    const expected = [
+      "https://acme.test/blog",
+      "https://acme.test/docs",
+      "https://acme.test/pricing",
+    ];
+
+    expect(navigationUrls([firstHomepage, secondHomepage])).toEqual(expected);
+    expect(navigationUrls([secondHomepage, firstHomepage])).toEqual(expected);
+  });
+
+  it("rejects malformed present navigation URLs", () => {
+    const malformed = structuredClone(buildSeoAuditPayload(raw())) as unknown as {
+      result: { siteResources: Record<string, unknown> };
+    };
+    malformed.result.siteResources["navigationUrls"] = [123];
+
+    expect(isSeoAuditPayload(malformed)).toBe(false);
+  });
+
   it.each([
     ["affected differs from observations", { tested: 2, affected: 2, state: "observed" }],
     ["affected exceeds tested", { tested: 0, affected: 1, state: "observed" }],
@@ -493,6 +571,118 @@ describe("site-wide SEO audit model", () => {
         { label: "source_pages", value: "https://acme.test/" },
       ],
     });
+  });
+
+  it("keeps full-site-only findings unverified in a key-pages sample", () => {
+    const homepage = page(
+      "https://acme.test/",
+      {
+        internalOutlinks: [
+          {
+            targetSubjectUrl: "https://acme.test/missing",
+            rel: null,
+            anchorText: "Missing",
+          },
+        ],
+      },
+      0,
+    );
+    const missing = page("https://acme.test/missing", {
+      status: 404,
+      finalStatus: 404,
+      sitemapMember: false,
+    });
+    const sitemapOrphan = page("https://acme.test/sitemap-orphan");
+    const undiscoverable = page("https://acme.test/hidden", {
+      sitemapMember: false,
+    });
+    const fixture = raw({
+      crawlTier: "key-pages",
+      pages: [homepage, missing, sitemapOrphan, undiscoverable],
+      sitemap: {
+        fetched: true,
+        urlCount: 2,
+        subjectUrls: [
+          "https://acme.test/",
+          "https://acme.test/sitemap-orphan",
+        ],
+      },
+    });
+    const report = buildSeoAuditReport(fixture);
+
+    for (const id of [
+      "sitemap_page_without_observed_inlink",
+      "internal_target_http_error",
+      "page_without_any_discovery_path",
+    ]) {
+      expect(byId(report, id), id).toMatchObject({
+        state: "unverified",
+        tested: 0,
+        affected: 0,
+        observations: [],
+        limitation: "full_site_only",
+      });
+    }
+
+    // 6.3 is a page-local finding over links the shallow run actually fetched.
+    // It must not be hidden behind the site-wide census boundary.
+    expect(byId(report, "page_outbound_broken_link")).toEqual(
+      byId(
+        buildSeoAuditReport({ ...fixture, crawlTier: "full-site" }),
+        "page_outbound_broken_link",
+      ),
+    );
+  });
+
+  it("keeps explicit and legacy full-site record bytes identical", () => {
+    const homepage = page(
+      "https://acme.test/",
+      {
+        internalOutlinks: [
+          {
+            targetSubjectUrl: "https://acme.test/missing",
+            rel: null,
+            anchorText: "Missing",
+          },
+        ],
+      },
+      0,
+    );
+    const fixture = raw({
+      pages: [
+        homepage,
+        page("https://acme.test/missing", {
+          status: 404,
+          finalStatus: 404,
+          sitemapMember: false,
+        }),
+        page("https://acme.test/sitemap-orphan"),
+        page("https://acme.test/hidden", { sitemapMember: false }),
+      ],
+      sitemap: {
+        fetched: true,
+        urlCount: 2,
+        subjectUrls: [
+          "https://acme.test/",
+          "https://acme.test/sitemap-orphan",
+        ],
+      },
+    });
+    const explicit = buildSeoAuditReport({
+      ...fixture,
+      crawlTier: "full-site",
+    });
+    const legacy = buildSeoAuditReport(fixture);
+
+    expect(JSON.stringify(explicit)).toBe(JSON.stringify(legacy));
+    for (const id of [
+      "sitemap_page_without_observed_inlink",
+      "internal_target_http_error",
+      "page_without_any_discovery_path",
+      "page_outbound_broken_link",
+    ]) {
+      expect(byId(explicit, id)?.state, id).toBe("observed");
+    }
   });
 
   it("keeps robots and sitemap unverified when the crawl did not observe them", () => {

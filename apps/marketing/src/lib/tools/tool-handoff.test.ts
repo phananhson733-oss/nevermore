@@ -116,7 +116,56 @@ function contentDraftPayload() {
   };
 }
 
+function agentKeyPagePayload(evidenceId: string | null = "2.4") {
+  return {
+    source: "seo-agent-key-page" as const,
+    destination: "on-page-seo-check" as const,
+    scope: "query_page" as const,
+    property: null,
+    query: "pricing automation",
+    page: "https://example.com/pricing",
+    evidenceId,
+    marketCode: "GB",
+    languageCode: "en",
+  };
+}
+
 describe("tool handoff storage", () => {
+  it("round-trips a static Agent group handoff with no sending row", () => {
+    const session = storage();
+    const now = 1_000;
+    const handoff = agentKeyPagePayload(null);
+
+    expect(writeToolHandoff(session, now, handoff)).toBe(true);
+    expect(consumeToolHandoff(session, now + 1, "on-page-seo-check")).toEqual({
+      ...handoff,
+      createdAt: now,
+      expiresAt: now + TOOL_HANDOFF_TTL_MS,
+    });
+    expect(consumeToolHandoff(session, now + 2, "on-page-seo-check")).toBeNull();
+  });
+
+  it("keeps a row-backed Agent handoff bound to a check-shaped evidence id", () => {
+    const valid = storage();
+    const invalid = storage();
+
+    expect(writeToolHandoff(valid, 1_000, agentKeyPagePayload("A7"))).toBe(true);
+    expect(
+      writeToolHandoff(invalid, 1_000, agentKeyPagePayload("group-2")),
+    ).toBe(false);
+  });
+
+  it.each([
+    ["Daily Briefing", { ...payload(), evidenceId: null }],
+    ["competitor gap", { ...competitorGapPayload(), evidenceId: null }],
+    ["content draft", { ...contentDraftPayload(), evidenceId: null }],
+  ])("does not let Agent's null evidence loosen %s", (_label, handoff) => {
+    const session = storage();
+
+    expect(writeToolHandoff(session, 1_000, handoff as never)).toBe(false);
+    expect(session.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+  });
+
   it("delivers a GEO draft only to citability and consumes it once", () => {
     const session = storage();
     const handoff = { ...contentDraftPayload(), destination: "page-citability-check" as const };
