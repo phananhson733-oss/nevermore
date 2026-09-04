@@ -58,8 +58,8 @@ export interface ParsedPage {
   /** Ephemeral frontier inputs; never copied into `crawl.page.v1`. */
   readonly internalFetchTargets: readonly CrawlFetchTarget[];
   /**
-   * Ephemeral header/nav/footer targets used only by the keyword context
-   * frontier. Kept beside, not inside, the frozen crawl.page.v1 projection.
+   * Ephemeral header/nav/footer targets used by the keyword context frontier
+   * and by the engine's bounded origin-homepage navigation projection.
    */
   readonly navigationFetchTargets: readonly CrawlFetchTarget[];
   /** Exact canonical-link fetch target paired with persisted `canonicalTarget`. */

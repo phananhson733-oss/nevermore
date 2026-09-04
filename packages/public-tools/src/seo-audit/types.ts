@@ -2,6 +2,7 @@ import type { PublicToolResultEnvelope } from "../contract.ts";
 import type { TextUnitsBasis } from "./keyword-evidence/text-units.ts";
 
 export type SeoAuditAvailability = "available" | "partial" | "unavailable";
+export type SeoAuditCrawlTier = "key-pages" | "full-site";
 export type SeoAuditRecordState = "observed" | "not_observed" | "unverified";
 export type SeoAuditRobotsDirectiveState =
   | "noindex_observed"
@@ -157,6 +158,12 @@ export interface SeoAuditSiteResources {
   readonly robotsGroupsObserved: number;
   readonly sitemapReferencesObserved: number;
   readonly sitemapFetched: boolean;
+  /**
+   * Same-origin subject URLs linked from the origin homepage's semantic
+   * navigation containers. Optional while v18 cache rows without this additive
+   * field remain readable.
+   */
+  readonly navigationUrls?: readonly string[];
   /**
    * The URLs the sitemap declares, bounded.
    *

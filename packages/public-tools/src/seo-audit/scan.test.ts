@@ -3,6 +3,7 @@ import type { CrawlRaw } from "@sf/sources";
 import { PublicPreviewTargetRedirectError } from "@sf/sources/crawl-public-preview";
 import {
   crawlProgressReporter,
+  KEY_PAGES_CRAWL_BUDGET_CEILING,
   scanSeoAuditSite,
   SeoAuditScanError,
   type SeoAuditCrawler,
@@ -34,11 +35,51 @@ describe("scanSeoAuditSite", () => {
     ).resolves.toEqual({
       ...fixture,
       requestedUrl: "https://acme.test/path",
+      crawlTier: "full-site",
     });
     expect(crawl).toHaveBeenCalledWith(
       "https://acme.test/path",
       undefined,
       undefined,
+      "full-site",
+    );
+  });
+
+  it("passes the selected tier through the injected crawler seam", async () => {
+    const crawl = vi.fn(async () => fixture) satisfies SeoAuditCrawler;
+
+    await scanSeoAuditSite("https://acme.test/path", undefined, {
+      crawl,
+      tier: "key-pages",
+    });
+
+    expect(crawl).toHaveBeenCalledWith(
+      "https://acme.test/path",
+      undefined,
+      undefined,
+      "key-pages",
+    );
+  });
+
+  it("passes normalized manual pages through the scan seam unchanged", async () => {
+    const crawl = vi.fn(async () => fixture) satisfies SeoAuditCrawler;
+    const additionalSeedUrls = [
+      "https://acme.test/alpha",
+      "https://acme.test/zeta",
+    ];
+
+    await scanSeoAuditSite("https://acme.test/path", undefined, {
+      crawl,
+      tier: "key-pages",
+      additionalSeedUrls,
+    });
+
+    expect(crawl).toHaveBeenCalledWith(
+      "https://acme.test/path",
+      undefined,
+      undefined,
+      "key-pages",
+      additionalSeedUrls,
     );
   });
 
@@ -55,6 +96,7 @@ describe("scanSeoAuditSite", () => {
     ).resolves.toEqual({
       ...partial,
       requestedUrl: "https://acme.test",
+      crawlTier: "full-site",
     });
   });
 
@@ -121,6 +163,7 @@ describe("scanSeoAuditSite", () => {
       "https://acme.test/replaced",
       undefined,
       undefined,
+      "full-site",
     );
   });
 
@@ -170,6 +213,98 @@ describe("scanSeoAuditSite", () => {
         "https://acme.test/replaced",
         undefined,
         { requireSameEntrySubject: true },
+      );
+    } finally {
+      vi.doUnmock("@sf/sources/crawl-public-preview");
+      vi.resetModules();
+    }
+  });
+
+  it("passes the fixed crawl ceiling only for production key-pages scans", async () => {
+    const crawlPublicSitePreview = vi.fn(async () => fixture);
+    vi.resetModules();
+    vi.doMock(
+      "@sf/sources/crawl-public-preview",
+      async (importOriginal) => ({
+        ...(await importOriginal<
+          typeof import("@sf/sources/crawl-public-preview")
+        >()),
+        crawlPublicSitePreview,
+      }),
+    );
+
+    try {
+      const {
+        scanSeoAuditSite: scanWithMockedProductionCrawler,
+        KEY_PAGES_CRAWL_BUDGET_CEILING: expectedCeiling,
+      } = await import("./scan.ts");
+
+      await scanWithMockedProductionCrawler(
+        "https://acme.test/key-pages",
+        undefined,
+        { tier: "key-pages" },
+      );
+      await scanWithMockedProductionCrawler(
+        "https://acme.test/full-site",
+        undefined,
+        { tier: "full-site" },
+      );
+
+      expect(expectedCeiling).toEqual(KEY_PAGES_CRAWL_BUDGET_CEILING);
+      expect(crawlPublicSitePreview).toHaveBeenNthCalledWith(
+        1,
+        "https://acme.test/key-pages",
+        undefined,
+        {
+          budgetCeiling: expectedCeiling,
+          deferSitemapFrontier: true,
+        },
+      );
+      expect(crawlPublicSitePreview).toHaveBeenNthCalledWith(
+        2,
+        "https://acme.test/full-site",
+        undefined,
+      );
+    } finally {
+      vi.doUnmock("@sf/sources/crawl-public-preview");
+      vi.resetModules();
+    }
+  });
+
+  it("passes manual pages through the production crawler options", async () => {
+    const crawlPublicSitePreview = vi.fn(async () => fixture);
+    vi.resetModules();
+    vi.doMock(
+      "@sf/sources/crawl-public-preview",
+      async (importOriginal) => ({
+        ...(await importOriginal<
+          typeof import("@sf/sources/crawl-public-preview")
+        >()),
+        crawlPublicSitePreview,
+      }),
+    );
+
+    try {
+      const {
+        scanSeoAuditSite: scanWithMockedProductionCrawler,
+        KEY_PAGES_CRAWL_BUDGET_CEILING: expectedCeiling,
+      } = await import("./scan.ts");
+      const additionalSeedUrls = ["https://acme.test/deep/manual"];
+
+      await scanWithMockedProductionCrawler(
+        "https://acme.test/key-pages",
+        undefined,
+        { tier: "key-pages", additionalSeedUrls },
+      );
+
+      expect(crawlPublicSitePreview).toHaveBeenCalledWith(
+        "https://acme.test/key-pages",
+        undefined,
+        {
+          additionalSeedUrls,
+          budgetCeiling: expectedCeiling,
+          deferSitemapFrontier: true,
+        },
       );
     } finally {
       vi.doUnmock("@sf/sources/crawl-public-preview");

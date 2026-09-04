@@ -3,6 +3,10 @@
 // @pos    -- focused contract tests for the marketing Agent Stage 02 projection
 
 import { describe, expect, it } from "vitest";
+import {
+  PAGE_AUDIT_GROUPS,
+  SITE_AUDIT_GROUPS,
+} from "@sf/public-tools/agent-audit";
 
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import {
@@ -65,9 +69,17 @@ const data: AgentAuditSuccessData = {
   },
 };
 
+const SITE_CHECK_COUNT = SITE_AUDIT_GROUPS.flatMap(
+  (group) => group.checks,
+).length;
+const PAGE_CHECK_COUNT = PAGE_AUDIT_GROUPS.flatMap(
+  (group) => group.checks,
+).length;
+const CHECK_COUNT = SITE_CHECK_COUNT + PAGE_CHECK_COUNT;
+
 describe("buildAgentAuditViewModel", () => {
   it.each([["seo" as const], ["tech" as const]])(
-    "keeps all 89 checks for the %s Agent",
+    "keeps every catalog check for the %s Agent",
     (agent) => {
       const model = buildAgentAuditViewModel({
         agent,
@@ -77,16 +89,16 @@ describe("buildAgentAuditViewModel", () => {
         data: { ...data, run: { ...data.run, agent } },
       });
 
-      // 31 site-wide + 49 page-level, in one list. The per-scope group views
-      // went with the scope switch; what still has to hold is that evaluating
-      // drops nothing on the way.
-      expect(model.evaluatedChecks).toHaveLength(89);
+      // Both catalog scopes stay in one list. The per-scope group views went
+      // with the scope switch; what still has to hold is that evaluating drops
+      // nothing on the way when the catalog changes.
+      expect(model.evaluatedChecks).toHaveLength(CHECK_COUNT);
       expect(
         model.evaluatedChecks.filter((check) => check.check.scope === "site"),
-      ).toHaveLength(31);
+      ).toHaveLength(SITE_CHECK_COUNT);
       expect(
         model.evaluatedChecks.filter((check) => check.check.scope === "page"),
-      ).toHaveLength(58);
+      ).toHaveLength(PAGE_CHECK_COUNT);
     },
   );
 
@@ -100,7 +112,7 @@ describe("buildAgentAuditViewModel", () => {
     });
     const checks = model.evaluatedChecks;
 
-    expect(checks).toHaveLength(89);
+    expect(checks).toHaveLength(CHECK_COUNT);
     expect(checks.every((check) => check.result === "excluded")).toBe(true);
     expect(checks.some((check) => check.result === "pass")).toBe(false);
     expect(checks.every((check) => check.measurement === null)).toBe(true);
@@ -188,5 +200,109 @@ describe("buildAgentAuditViewModel", () => {
       schemaVersion: "seo_audit.sitewide.v18",
       persistence: "none",
     });
+  });
+
+  it("defaults a legacy response's selection ledgers without inventing counts", () => {
+    const model = buildAgentAuditViewModel({
+      agent: "seo",
+      locale: "en",
+      context,
+      coreFeatures: [],
+      data,
+    });
+
+    expect(model.omittedUrls).toEqual([]);
+    expect(model.manualUnavailableUrls).toEqual([]);
+    expect(model.keyPages[0]?.reason).toBe("target");
+  });
+
+  it("carries the server's exact safety-valve omission ledger", () => {
+    const omittedUrls = [
+      "https://astrologywiki.com/blog/one",
+      "https://astrologywiki.com/blog/two",
+    ];
+    const model = buildAgentAuditViewModel({
+      agent: "seo",
+      locale: "en",
+      context,
+      coreFeatures: [],
+      data: {
+        ...data,
+        result: {
+          ...data.result,
+          keyPageSelection: { omittedUrls },
+        },
+      },
+    });
+
+    expect(model.omittedUrls).toEqual(omittedUrls);
+  });
+
+  it("carries the server's unavailable-manual ledger independently", () => {
+    const manualUnavailableUrls = [
+      "https://astrologywiki.com/private/one",
+      "https://astrologywiki.com/private/two",
+    ];
+    const model = buildAgentAuditViewModel({
+      agent: "seo",
+      locale: "en",
+      context,
+      coreFeatures: [],
+      data: {
+        ...data,
+        result: {
+          ...data.result,
+          keyPageSelection: {
+            omittedUrls: [],
+            manualUnavailableUrls,
+          },
+        },
+      },
+    });
+
+    expect(model.omittedUrls).toEqual([]);
+    expect(model.manualUnavailableUrls).toEqual(manualUnavailableUrls);
+  });
+
+  it("keeps an uncollected synthetic target out of the candidate list", () => {
+    const candidateUrl = "https://astrologywiki.com/pricing";
+    const model = buildAgentAuditViewModel({
+      agent: "seo",
+      locale: "en",
+      context,
+      coreFeatures: [],
+      data: {
+        ...data,
+        result: {
+          ...data.result,
+          targetInspected: false,
+          inspectedTargetUrl: null,
+          landedTargetUrl: null,
+          keyPages: [
+            {
+              url: candidateUrl,
+              title: "Pricing",
+              metaDescription: null,
+              depth: 1,
+              inboundLinks: 3,
+              reason: "navigation",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(model.keyPages.map((page) => page.url)).toEqual([
+      data.result.targetUrl,
+      candidateUrl,
+    ]);
+    expect(model.keyPages[0]?.reason).toBe("target");
+    expect(model.candidatePages.map((page) => page.url)).toEqual([
+      candidateUrl,
+    ]);
+    expect(model.candidatePages.map((page) => page.reason)).toEqual([
+      "navigation",
+    ]);
+    expect(model.keyPagesWereSelected).toBe(true);
   });
 });

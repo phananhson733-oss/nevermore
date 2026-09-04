@@ -1,4 +1,4 @@
-// @input  -- browser sessionStorage, exact Agent identity, URL, and current time
+// @input  -- browser sessionStorage, exact Agent/Profile/run identity, URL, and current time
 // @output -- safe storage plus purpose-versioned, ten-minute Agent-local intents
 // @pos    -- homepage Profile preparation and auth-resume handoff without auto-run ambiguity
 
@@ -12,6 +12,11 @@ import {
   isConfirmedAgentProfile,
   type AgentProfileDraft,
 } from "./agent-profile";
+import {
+  defaultAgentRunOptions,
+  normalizeStoredAgentRunOptions,
+  type AgentRunOptions,
+} from "../../lib/agents/agent-run-options.ts";
 
 /** The sign-in handoff must never outlive ten minutes in this browser tab. */
 export const AGENT_INTENT_TTL_MS = 10 * 60 * 1_000;
@@ -80,6 +85,8 @@ export interface PendingAgentIntent {
   readonly confirmedProfile?: AgentProfileDraft;
   /** Exact confirmed website snapshot pinned to an auth-interrupted run. */
   readonly websiteProfileReference?: WebsiteProfileReferenceV1;
+  /** Exact crawl scope and manual-page set pinned to an auth-interrupted run. */
+  readonly runOptions?: AgentRunOptions;
   /** Present only for a profile refresh request that must never auto-run audit. */
   readonly refreshProfile?: AgentProfileDraft;
   readonly refreshMode?: AgentProfileRefreshMode;
@@ -135,6 +142,16 @@ function isPendingIntent(
       ? candidate.websiteProfileReference === undefined ||
         isWebsiteProfileReference(candidate.websiteProfileReference)
       : candidate.websiteProfileReference === undefined;
+  const runOptionsAreValid =
+    candidate.purpose === "run_confirmed_profile"
+      ? candidate.runOptions === undefined ||
+        (typeof candidate.url === "string" &&
+          normalizeStoredAgentRunOptions(
+            agent,
+            candidate.url,
+            candidate.runOptions,
+          ) !== null)
+      : candidate.runOptions === undefined;
   const searchProfileIsValid =
     candidate.purpose !== "search_profile"
       ? candidate.searchProfile === undefined
@@ -161,6 +178,7 @@ function isPendingIntent(
     candidate.expiresAt - candidate.createdAt <= AGENT_INTENT_TTL_MS &&
     confirmedProfileIsValid &&
     websiteReferenceIsValid &&
+    runOptionsAreValid &&
     refreshProfileIsValid
   );
 }
@@ -275,14 +293,32 @@ export function storePageFocusedAgentIntent(
 export function storeConfirmedAgentRunIntent(
   storage: IntentStorage,
   profile: AgentProfileDraft,
+  referenceOrNow?: WebsiteProfileReferenceV1 | number | null,
+  explicitNow?: number,
+): PendingAgentIntent | null;
+export function storeConfirmedAgentRunIntent(
+  storage: IntentStorage,
+  profile: AgentProfileDraft,
+  reference: WebsiteProfileReferenceV1 | null,
+  runOptions: AgentRunOptions,
+  explicitNow?: number,
+): PendingAgentIntent | null;
+export function storeConfirmedAgentRunIntent(
+  storage: IntentStorage,
+  profile: AgentProfileDraft,
   referenceOrNow: WebsiteProfileReferenceV1 | number | null = null,
+  runOptionsOrNow: AgentRunOptions | number = Date.now(),
   explicitNow = Date.now(),
 ): PendingAgentIntent | null {
   if (!isConfirmedAgentProfile(profile, profile.agent, profile.targetUrl)) {
     return null;
   }
   const now =
-    typeof referenceOrNow === "number" ? referenceOrNow : explicitNow;
+    typeof referenceOrNow === "number"
+      ? referenceOrNow
+      : typeof runOptionsOrNow === "number"
+        ? runOptionsOrNow
+        : explicitNow;
   let websiteProfileReference: WebsiteProfileReferenceV1 | undefined;
   if (referenceOrNow !== null && typeof referenceOrNow !== "number") {
     try {
@@ -290,6 +326,16 @@ export function storeConfirmedAgentRunIntent(
     } catch {
       return null;
     }
+  }
+  let runOptions: AgentRunOptions | undefined;
+  if (typeof runOptionsOrNow !== "number") {
+    const normalizedRunOptions = normalizeStoredAgentRunOptions(
+      profile.agent,
+      profile.targetUrl,
+      runOptionsOrNow,
+    );
+    if (normalizedRunOptions === null) return null;
+    runOptions = normalizedRunOptions;
   }
   const intent: PendingAgentIntent = {
     agent: profile.agent,
@@ -301,6 +347,7 @@ export function storeConfirmedAgentRunIntent(
     ...(websiteProfileReference === undefined
       ? {}
       : { websiteProfileReference }),
+    ...(runOptions === undefined ? {} : { runOptions }),
   };
   if (!Number.isFinite(now) || !isPendingIntent(intent, profile.agent)) return null;
   try {
@@ -403,8 +450,29 @@ export function isRunnablePendingAgentIntent(
 ): boolean {
   return (
     intent.purpose === "run_confirmed_profile" &&
-    isConfirmedAgentProfile(intent.confirmedProfile, intent.agent, intent.url)
+    isConfirmedAgentProfile(intent.confirmedProfile, intent.agent, intent.url) &&
+    (intent.runOptions === undefined ||
+      normalizeStoredAgentRunOptions(
+        intent.agent,
+        intent.url,
+        intent.runOptions,
+      ) !== null)
   );
+}
+
+/** Resolve a runnable intent without consulting live UI defaults. */
+export function pendingAgentRunOptions(
+  intent: PendingAgentIntent,
+): AgentRunOptions {
+  if (intent.runOptions !== undefined) {
+    const normalized = normalizeStoredAgentRunOptions(
+      intent.agent,
+      intent.url,
+      intent.runOptions,
+    );
+    if (normalized !== null) return normalized;
+  }
+  return defaultAgentRunOptions(intent.agent);
 }
 
 export function isProfileRefreshPendingAgentIntent(

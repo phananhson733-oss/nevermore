@@ -26,6 +26,13 @@ import type {
 } from "../../lib/agents/profile-refresh-contract";
 import type { WebsiteProfileReferenceV1 } from "../../lib/account-websites/contracts.ts";
 import {
+  AGENT_RUN_EXTRA_KEY_PAGE_LIMIT,
+  AGENT_RUN_URL_MAX_CHARS,
+  type AgentRunOptions,
+  type AgentRunOptionsError,
+  type AgentRunTier,
+} from "../../lib/agents/agent-run-options.ts";
+import {
   classifyAgentCompetitorProfile,
   deriveAgentCompetitorDisplayFrame,
   deriveAgentCompetitorSuggestions,
@@ -60,7 +67,10 @@ export interface AgentProfilePanelProps {
   readonly profile: AgentProfileDraft;
   readonly disabled?: boolean;
   readonly onChange: (profile: AgentProfileDraft) => void;
-  readonly onConfirm: (profile: AgentProfileDraft) => void;
+  readonly onConfirm: (
+    profile: AgentProfileDraft,
+    runOptions?: AgentRunOptions,
+  ) => void;
   readonly errorId?: string;
   readonly urlInvalid?: boolean;
   readonly profileSearch?: {
@@ -81,6 +91,13 @@ export interface AgentProfilePanelProps {
     readonly reference: WebsiteProfileReferenceV1 | null;
     readonly saveStatus: "idle" | "saving" | "saved" | "conflict" | "error";
     readonly onSaveBack: () => void;
+  };
+  readonly runOptions?: {
+    readonly value: AgentRunOptions;
+    readonly extraKeyPagesInput: string;
+    readonly error: AgentRunOptionsError | null;
+    readonly onTierChange: (tier: AgentRunTier) => void;
+    readonly onExtraKeyPagesInputChange: (value: string) => void;
   };
 }
 
@@ -376,6 +393,7 @@ export function AgentProfilePanel({
   profileRefresh,
   onRefresh,
   websiteProfile,
+  runOptions,
 }: AgentProfilePanelProps) {
   const t = useTranslations("agents.workbench.profile");
   const [reviewing, setReviewing] = useState(false);
@@ -438,7 +456,8 @@ export function AgentProfilePanel({
       !COMPETITOR_FIELDS.has(field),
   );
 
-  const canConfirm = !disabled && isAgentProfileReady(profile);
+  const canConfirm =
+    !disabled && isAgentProfileReady(profile) && runOptions?.error == null;
   const missingReadyFields = AGENT_PROFILE_READY_FIELDS.filter((field) => {
     const value = profile[field];
     const source = profile.fieldProvenance.find(
@@ -452,6 +471,9 @@ export function AgentProfilePanel({
     );
   });
   const readinessMessageId = `${agent}-profile-readiness`;
+  const runOptionsHelpId = `${agent}-agent-run-options-help`;
+  const runExtraHelpId = `${agent}-agent-run-extra-help`;
+  const runExtraErrorId = `${agent}-agent-run-extra-error`;
   const missingSearchPrerequisites = [
     profile.targetUrl.trim() ? null : t("fields.targetUrl"),
     /^[A-Z]{2}$/.test(profile.country) ? null : t("fields.country"),
@@ -1718,6 +1740,99 @@ export function AgentProfilePanel({
                 provenance={fieldProvenance("auditScope")}
               />
             </dl>
+            {runOptions === undefined ? null : (
+              <fieldset
+                data-agent-run-options={agent}
+                disabled={disabled}
+                className="min-w-0 rounded-md border border-brand-border-faint bg-brand-bg/55 p-3.5 md:col-span-2"
+              >
+                <legend className="px-1 font-mono text-[10.5px] tracking-[0.1em] text-brand-accent-text uppercase">
+                  {t("runOptions.legend")}
+                </legend>
+                <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(12rem,0.55fr)_minmax(0,1.45fr)]">
+                  <label className="block" htmlFor={`${agent}-agent-run-tier`}>
+                    <span className="mb-1.5 block text-[11.5px] font-medium text-text-dark-primary">
+                      {t("runOptions.tierLabel")}
+                    </span>
+                    <select
+                      id={`${agent}-agent-run-tier`}
+                      data-agent-run-tier
+                      disabled={disabled}
+                      value={runOptions.value.tier}
+                      aria-describedby={runOptionsHelpId}
+                      onChange={(event) =>
+                        runOptions.onTierChange(
+                          event.target.value as AgentRunTier,
+                        )
+                      }
+                      className="h-10.5 w-full rounded-[9px] border border-brand-border-strong bg-brand-panel-raised px-3 text-[12.5px] text-text-dark-primary outline-none focus-visible:border-brand-accent/70 focus-visible:ring-2 focus-visible:ring-brand-accent/35 disabled:opacity-60"
+                    >
+                      <option value="key-pages">
+                        {t("runOptions.tiers.key-pages.label")}
+                      </option>
+                      <option value="full-site">
+                        {t("runOptions.tiers.full-site.label")}
+                      </option>
+                    </select>
+                    <p
+                      id={runOptionsHelpId}
+                      className="mt-1.5 text-[10.5px] leading-[1.55] text-text-dark-faint"
+                    >
+                      {t(`runOptions.tiers.${runOptions.value.tier}.help`)}
+                    </p>
+                  </label>
+
+                  <label
+                    className="block"
+                    htmlFor={`${agent}-agent-run-extra-pages`}
+                  >
+                    <span className="mb-1.5 block text-[11.5px] font-medium text-text-dark-primary">
+                      {t("runOptions.manualLabel")}
+                    </span>
+                    <textarea
+                      id={`${agent}-agent-run-extra-pages`}
+                      data-agent-run-extra-pages
+                      rows={3}
+                      maxLength={
+                        (AGENT_RUN_URL_MAX_CHARS + 1) *
+                        AGENT_RUN_EXTRA_KEY_PAGE_LIMIT
+                      }
+                      disabled={disabled}
+                      value={runOptions.extraKeyPagesInput}
+                      aria-invalid={runOptions.error !== null || undefined}
+                      aria-describedby={[runExtraHelpId, runOptions.error ? runExtraErrorId : null]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onChange={(event) =>
+                        runOptions.onExtraKeyPagesInputChange(event.target.value)
+                      }
+                      placeholder={t("runOptions.manualPlaceholder")}
+                      className="min-h-20 w-full resize-y rounded-[9px] border border-brand-border-strong bg-brand-panel-raised px-3 py-2.5 font-mono text-[11.5px] leading-[1.55] text-text-dark-primary outline-none transition-colors placeholder:text-text-dark-faint focus-visible:border-brand-accent/70 focus-visible:ring-2 focus-visible:ring-brand-accent/35 disabled:opacity-60"
+                    />
+                    <p
+                      id={runExtraHelpId}
+                      className="mt-1.5 text-[10.5px] leading-[1.55] text-text-dark-faint"
+                    >
+                      {t("runOptions.manualHelp", {
+                        count: AGENT_RUN_EXTRA_KEY_PAGE_LIMIT,
+                      })}
+                    </p>
+                    {runOptions.error === null ? null : (
+                      <p
+                        id={runExtraErrorId}
+                        role="alert"
+                        className="mt-1.5 text-[11px] leading-[1.5] text-brand-error"
+                      >
+                        {t(`runOptions.errors.${runOptions.error}`)}
+                      </p>
+                    )}
+                  </label>
+                </div>
+                <p className="mt-3 border-t border-brand-border-faint pt-2.5 text-[10.5px] leading-[1.55] text-text-dark-faint">
+                  {t("runOptions.boundary")}
+                </p>
+              </fieldset>
+            )}
           </article>
         </div>
 
@@ -1904,9 +2019,18 @@ export function AgentProfilePanel({
               data-profile-action="confirm"
               disabled={!canConfirm}
               aria-describedby={
-                missingReadyFields.length > 0 ? readinessMessageId : undefined
+                [
+                  missingReadyFields.length > 0 ? readinessMessageId : null,
+                  runOptions?.error ? runExtraErrorId : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ") || undefined
               }
-              onClick={() => onConfirm(confirmAgentProfile(profile))}
+              onClick={() => {
+                const confirmed = confirmAgentProfile(profile);
+                if (runOptions === undefined) onConfirm(confirmed);
+                else onConfirm(confirmed, runOptions.value);
+              }}
               className="inline-flex h-10.5 items-center justify-center gap-2 rounded-[9px] bg-brand-gradient px-4 text-[12.5px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
             >
               {t("actions.confirmRun")}

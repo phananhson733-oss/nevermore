@@ -79,23 +79,18 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["1.8", "Soft 404 detection", "软 404 检测", "Not a 200 response that both states a not-found phrase and falls below the published body floor; a soft 404 is Blocker. Thin content alone is not judged here.", "不是「返回 200、同时出现「找不到」类措辞、且正文量低于公布下限」的页面；软 404 为阻断。仅仅内容少不在这里判定。"],
   ["2.1", "Title length", "Title 长度", `Reviewed working range ${SNIPPET_TITLE_WIDTH.min}–${SNIPPET_TITLE_WIDTH.max} in display width, counting a CJK character as two; outside it is a Tip. Google truncates by rendered width, not character count`, `已审阅工作区间为显示宽度 ${SNIPPET_TITLE_WIDTH.min}–${SNIPPET_TITLE_WIDTH.max}，中日韩字符按 2 计；超出为提示。Google 按渲染宽度截断，而非字符数`],
   ["2.2", "Sitewide title uniqueness", "Title 全站唯一", "Unique among evaluated canonical pages; otherwise Warning", "在已评估 Canonical 页面中唯一；否则为警告"],
-  ["2.3", "Title contains the target query", "Title 含目标词", "Contains the confirmed target query as a token sequence; otherwise Warning; 2× check weight. No synonym or stemming set is applied.", "以词序列形式包含已确认目标词；否则为警告；检查权重 2 倍。不做同义词或词形还原。"],
   ["2.4", "Meta description length", "Meta description 长度", `Reviewed working range ${SNIPPET_DESCRIPTION_WIDTH.min}–${SNIPPET_DESCRIPTION_WIDTH.max} in display width, counting a CJK character as two; outside it is a Tip. Google truncates by rendered width, not character count`, `已审阅工作区间为显示宽度 ${SNIPPET_DESCRIPTION_WIDTH.min}–${SNIPPET_DESCRIPTION_WIDTH.max}，中日韩字符按 2 计；超出为提示。Google 按渲染宽度截断，而非字符数`],
   ["2.5", "Meta description uniqueness", "Meta description 唯一", "Unique among evaluated canonical pages; otherwise Warning", "在已评估 Canonical 页面中唯一；否则为警告"],
   ["2.6", "Open Graph title, description, and image", "Open Graph 标题、描述与图片", "All three properties present; otherwise Tip", "三项属性均存在；否则为提示"],
   ["2.7", "Reading language declaration", "阅读语言声明", "An html lang attribute is present; its absence is a Tip. Without it the reading language is left to be guessed.", "存在 html lang 属性；缺失为提示。没有它，阅读语言只能靠猜。"],
   ["2.8", "Character set declaration", "字符集声明", "A character set is declared in the markup or the response header; declaring neither is a Tip.", "标记或响应头中声明了字符集；两者都没有为提示。"],
   ["2.9", "Icon declaration", "站点图标声明", "A link rel=icon is declared; its absence is a Tip. Presence only: no request is made for a root icon file.", "存在 link rel=icon 声明；缺失为提示。仅判定是否声明：不会去请求根目录下的图标文件。"],
-  ["2.10", "Target query across the page's text slots", "目标词在页面各文本位点的覆盖", "The confirmed target query appears in the description, sub-headings or opening text; covering none of the slots the page actually has is a Tip. The URL is not counted -- it is compared as the whole address, so a domain that already names the subject would satisfy this on every page. Judged on the submitted page only, only when a query was confirmed, and only when at least one of the three slots exists.", "已确认目标词出现在描述、副标题或开头正文中；页面实际拥有的位点一个都没覆盖为提示。不计 URL——URL 是按整个地址比对的，域名本身已经点明主题的站点会因此在每个页面上都算通过。仅对提交的页面判定，仅在已确认目标词时判定，且仅在三个位点至少存在一个时判定。"],
   ["3.1", "H1 count", "H1 数量", "Exactly 1; otherwise Warning", "恰好 1 个；否则为警告"],
-  ["3.2", "H1 contains the target query", "H1 含目标词", "Contains the confirmed target query as a token sequence; otherwise Tip. No synonym or stemming set is applied.", "以词序列形式包含已确认目标词；否则为提示。不做同义词或词形还原。"],
   ["3.3", "Continuous heading hierarchy", "标题层级连续", "No skipped levels; otherwise Tip", "无跳级；否则为提示"],
   ["3.4", "H2 count", "H2 数量", "Within the reviewed range for the confirmed page type; outside it is a Tip. The range is published with the finding — it is a reviewed working band, not a documented rule.", "落在已确认页面类型的审阅区间内；超出为提示。区间会与发现一同给出——它是审阅过的工作区间，不是有据可查的规则。"],
   ["3.5", "H3 count", "H3 数量", "Within the reviewed range for the confirmed page type; outside it is a Tip. The range is published with the finding — it is a reviewed working band, not a documented rule.", "落在已确认页面类型的审阅区间内；超出为提示。区间会与发现一同给出——它是审阅过的工作区间，不是有据可查的规则。"],
   ["3.6", "Average words beneath each H3", "每个 H3 下平均字数", "Within the reviewed substance range for the confirmed page type; below it is a Tip. Whitespace words between headings, so a CJK page is not measured here.", "落在已确认页面类型的审阅内容量区间内；低于该区间为提示。按标题之间的空白分词计，因此中日韩页面不在此判定。"],
   ["4.1", "Main-content word count against the top ten", "正文字数与前十名对比", "Not judged here: the body text of the top ten results is never fetched, so there is no median to compare against. 4.6 measures this page's own body against a reviewed floor instead.", "本项不在此判定：本工具从不抓取前十名结果的正文，没有可对比的中位数。改由 4.6 用审阅下限衡量本页自身的正文量。"],
-  ["4.2", "Target-query density", "目标词密度", "Listed for review, not judged: keyword density is not a documented ranking signal and is not used to judge a page.", "仅列出待复核，不作判定：关键词密度不是有据可查的排名信号，不用于判定页面。"],
-  ["4.3", "First target-query occurrence", "目标词首次出现位置", "Internal heuristic only. Position in the text is not a documented ranking signal.", "仅为内部启发式。目标词在正文中的位置不是有据可查的排名信号。"],
   ["4.4", "Content-to-code ratio", "内容与代码比", "Listed for review, not judged: no documented ratio threshold exists. Read it as a rendering-weight hint, never as a defect.", "仅列出待复核，不作判定：不存在有据可查的比例阈值。把它当作体积提示来读，不要当成缺陷。"],
   ["4.5", "Similarity with other site pages", "与站内其他页相似度", "Below 70%; otherwise Warning; P6 false-positive gate required", "低于 70%；否则为警告；必须通过 P6 假阳性门禁"],
   ["4.6", "Body text against the reviewed floor", "正文量与审阅下限", "At or above the reviewed floor in text units; below it is a Tip. Units rather than words, so a page written without inter-word spaces is measured on the same scale. The floor is a reviewed working figure, not a documented rule.", "文本单位数达到或超过审阅下限；低于为提示。按单位而不是按词计，所以不使用词间空格的文字与使用的在同一把尺子上。该下限是审阅过的工作值，不是有据可查的规则。"],
@@ -314,7 +309,6 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "2.7": ["lang_missing"],
   "2.8": ["charset_missing"],
   "2.9": ["favicon_missing"],
-  "2.10": ["target_query_slot_coverage"],
   "4.6": ["thin_body_text"],
   "6.6": ["external_link_blank_without_noopener"],
   "8.7": ["client_rendered_content"],
@@ -323,13 +317,11 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "6.5": ["external_link_follow_mix"],
   "3.4": ["h2_count_outside_reviewed_range"],
   "3.5": ["h3_count_outside_reviewed_range"],
-  "4.2": ["target_query_density"],
   "7.2": ["schema_type_unmatched_to_page_type"],
   "8.6": ["render_blocking_head_resource"],
   "5.4": ["first_image_lazy_loaded"],
   "3.6": ["thin_section_under_h3"],
   "7.3": ["json_ld_missing_required_property"],
-  "4.3": ["target_query_first_appearance"],
   E4: ["non_brand_click_share"],
   "8.1": ["core_web_vital_lcp"],
   "8.2": ["core_web_vital_inp"],
@@ -337,8 +329,6 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "8.4": ["core_web_vital_ttfb"],
   "9.1": ["ai_answer_block_present"],
   "9.4": ["no_community_result_present"],
-  "2.3": ["title_without_target_query"],
-  "3.2": ["h1_without_target_query"],
   C3: ["average_click_depth"],
   B1: ["fetch_without_direct_page"],
   B2: ["server_error_response"],
@@ -857,14 +847,6 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
     "Positions 7 to 10 earn impressions and very few clicks, so a large share here is effort already spent that has not converted into traffic. Treat it as a queue, not a defect: these are the queries closest to paying off. Work the ones where a single page already ranks and the intent matches what that page does; a query whose intent no page on the site serves belongs in a content decision, not in a fix list.",
     "排名 7 到 10 有曝光、几乎没有点击，所以这一档占比大，意味着已经付出的功夫还没有转化成流量。把它当队列而不是缺陷：这些是最接近见效的查询。优先处理那些已经有单一页面在排、且意图与该页面所做的事情吻合的；如果某个查询的意图站内没有页面在服务，那属于内容决策，不属于修复清单。",
   ),
-  "2.3": l(
-    "The confirmed query does not appear in this page's title as a token sequence, so the one line a searcher reads before deciding whether to click does not name what they typed. Put the page's own subject first and the brand, if any, last: a title that opens with the site name spends its most valuable characters on a word the reader already chose. Write it for the reader, not for the match — a title that names the query and promises something the page does not deliver loses the click twice, once when they bounce and again when the result stops being shown.",
-    "已确认的目标词没有以词序列的形式出现在这个页面的 title 里，也就是说，搜索者在决定是否点击之前读到的那一行，没有点出他们刚刚输入的东西。把页面自己的主题放在最前面，品牌名（如果要放）放在最后：以站点名开头的标题，把最值钱的那几个字符花在了读者本来就已经选定的词上。要为读者写，而不是为匹配写——一个点了词、却承诺了页面给不了的东西的标题，会两次失去这次点击：一次是读者跳出，一次是这条结果不再被展示。",
-  ),
-  "3.2": l(
-    "The H1 does not contain the confirmed query as a token sequence. This is a Tip rather than a Warning because the H1 is read after the click, not before it, so it changes what a reader confirms rather than whether they arrive. Make it agree with the title without repeating it word for word: the title is the promise and the H1 is the first line of keeping it. Matching is a token sequence with no synonyms and no stemming, so a heading that means the same thing in different words is reported here and is not necessarily wrong.",
-    "H1 里没有以词序列的形式包含已确认的目标词。这一项是提示而不是警告，因为 H1 是点击之后才被读到的，不是点击之前，所以它影响的是读者进来之后确认了什么，而不是他们会不会进来。让它与 title 一致，但不要逐字重复：title 是承诺，H1 是兑现承诺的第一句。匹配按词序列进行，不做同义词也不做词形还原，所以一个用不同词表达同一意思的标题会在这里被报出来，而它未必是错的。",
-  ),
   A4: l(
     "Each of these answers 200, says it cannot find something, and has almost nothing else on it. To a search system that reads as a real page, so it gets crawled, considered for indexing, and competes with the pages you meant. Answer 404 or 410 for a URL that is genuinely gone — that is the whole fix and it is usually one route handler. If the URL should exist, the finding is the opposite one: the page is failing to render its content and the status is the only thing still correct. Check the linking pages either way, because a URL nothing links to and nothing lists does not need a status at all.",
     "这些页面都返回 200，页面上写着找不到东西，除此之外几乎什么都没有。在搜索系统看来这就是一个真实页面，于是它会被抓取、被考虑收录，并和你真正想要的页面竞争。如果这个 URL 确实已经没有了，就返回 404 或 410——这就是全部的修法，通常改一处路由处理即可。如果这个 URL 本该存在，那结论正好相反：是页面没能渲染出内容，而状态码是唯一还正确的东西。无论哪种情况都去看一下链到它的页面，因为一个没人链接、也不在任何清单里的 URL，根本不需要状态码。",
@@ -905,10 +887,6 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
     "Same reading as the H2 count, one level down: H3s are the steps inside a section, so too few means a section that a reader cannot scan and too many means the section should probably have been two. Check this one against the H2 count rather than on its own — a page with three H2s and thirty H3s is not a page with too many H3s, it is a page whose top level is too coarse.",
     "读法与 H2 数量相同，只是低一层：H3 是小节内部的步骤，所以偏少意味着这个小节读者没法扫读，偏多意味着这个小节本该拆成两个。这一项要和 H2 数量放在一起看，别单独看——三个 H2 配三十个 H3 的页面，问题不是 H3 太多，而是顶层划得太粗。",
   ),
-  "4.2": l(
-    "Published, not judged. Keyword density is not a documented ranking signal, and this check says so in its own threshold — the number is here because the run already computed it and a reader asking for it should not be told no detector exists. If you are going to act on anything in this area, act on whether the page answers the query, which is what checks 2.3 and 3.2 measure. Writing to hit a density figure is the failure mode this check refuses to encourage.",
-    "只公布，不判定。关键词密度不是有据可查的排名信号，这项检查在自己的阈值里就是这么写的——数字放在这里，是因为本次运行本来就算出来了，而一个想看它的读者不该被告知「没有检测器」。如果你要在这个方向上动手，那就去看页面是否真的回答了这个查询，也就是 2.3 和 3.2 在测的东西。为了凑到某个密度数值去写作，正是这项检查拒绝鼓励的那种做法。",
-  ),
   "7.2": l(
     "The page declares structured data, but not a type from the reviewed set for the page type you confirmed — and both the set and what was found are printed with the finding, so you can decide which one is wrong. Often it is the confirmation: a page can legitimately be more than one thing, and this is a Tip precisely because the mapping is a judgement rather than a rule. When the markup really is the mismatch, change the @type rather than adding a second block; two types competing to describe one page is how a rich result stops appearing at all. Site-furniture types are ignored here, so declaring only a breadcrumb does not pass.",
     "页面声明了结构化数据，但不是你所确认的页面类型对应审阅集合里的任何一个——审阅集合和实际发现的内容都会与结论一起印出来，你可以自己判断哪一边错了。很多时候错的是确认本身：一个页面完全可能同时是好几种东西，而这一项之所以是提示，正因为这个对照关系是判断而不是规则。如果确实是标记不对，那就改 @type，而不是再加一个块；两个类型争着描述同一个页面，正是富媒体结果彻底不再出现的成因。站点通用类型在这里不计入，所以只声明一个面包屑是不能通过的。",
@@ -928,10 +906,6 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   "7.3": l(
     "A type is declared without the properties that type needs, so a search system can read the markup and still cannot use it — which is the same outcome as having no markup, after the work of adding some. Fill the named properties from data the visible page already shows; a required property invented to satisfy a validator is worse than the gap, because it makes the page claim something it does not say. Only the types in the reviewed table are judged: a type outside it is left alone rather than assumed complete, so a clean result here is not a statement about every block on the page.",
     "声明了某个类型，却没带这个类型必需的字段，于是搜索系统读得到标记却用不了它——效果和完全没有标记一样，只是白做了加标记的工。用可见页面上已经展示的数据去补上点名的那些字段；为了让校验器通过而编造出来的必填字段比缺字段更糟，因为那会让页面声称它并没有说过的事情。只有审阅表里的类型会被判定：表外的类型不作处理，也不假定其完整，所以这一项通过并不代表页面上每一个块都没问题。",
-  ),
-  "4.3": l(
-    "Published, not judged: where a term sits in the text is not a documented ranking signal, and this reports slots rather than character offsets because slots are what the run captured. What it is useful for is the coarse question — does the page name what it is about anywhere a reader meets early, or only far down. If the answer is \"none\", that is checks 2.3 and 3.2 speaking, and those are the ones worth acting on.",
-    "只公布，不判定：一个词在文本中的位置不是有据可查的排名信号；这里报的是「槽位」而不是字符偏移，因为槽位才是本次运行真正采集到的东西。它有用的地方在于那个粗粒度的问题——页面有没有在读者早期就会读到的位置点明自己讲什么，还是只在很靠后的地方才出现。如果答案是「都没有」，那说话的其实是 2.3 和 3.2，值得动手的是那两项。",
   ),
   E4: l(
     "Published, not judged: a healthy split depends on how well known the brand already is, so the level says little and the trend says a lot — compare this run against your own earlier ones rather than against anyone else. A very high non-brand share on a site with a known name usually means the brand queries are being lost rather than that the rest is winning; a very low one means the site is being found by people who already knew it, which is a marketing result rather than a search one. Brand terms are derived from the property you authorised and matched as substrings, so \"acme pricing\" counts as brand.",
@@ -960,10 +934,6 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   "2.9": l(
     "Declare an icon with `<link rel=\"icon\">` pointing at a file you control, rather than relying on a root fallback. It is what a browser tab, a bookmark and some result rows display, and a missing declaration is the difference between a recognisable row and a blank square. This check reads the declaration only; it does not fetch the file.",
     "用 `<link rel=\"icon\">` 显式声明图标并指向你能控制的文件，不要依赖根目录兜底。标签页、书签和部分结果行显示的就是它，缺声明的结果是一个可辨认的条目变成一块空白方格。本项只读声明，不去抓取文件本身。",
-  ),
-  "2.10": l(
-    "Work the confirmed query into the slots this run can read: the meta description, a sub-heading, or the opening text. Pick the ones that read naturally — a description written for a person who is deciding whether to click, a sub-heading that names the section it introduces. Slots filled to satisfy a checker read that way, and the reader is who this is for.",
-    "把已确认目标词自然地放进本次运行能读到的位点：meta description、副标题或开头正文。挑读起来自然的那些——描述写给正在决定要不要点开的人，副标题就命名它引出的那一节。为了满足检查而硬填的位点读起来就是硬填的，而这件事的对象是读者。",
   ),
   "4.6": l(
     "Answer the question the page exists to answer, at the length that takes. The floor here is a reviewed working figure, not a documented rule, and padding a thin page up to it changes the number without changing what the page is worth reading for. If the page has little to say, the question is usually whether it should be its own page at all.",
@@ -1133,7 +1103,7 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
             ? "有边界抓取"
             : "抓取已采到原料，尚无检测器读取",
     ),
-    scoreWeight: id === "2.3" || id === "6.1" ? 2 : 1,
+    scoreWeight: id === "6.1" ? 2 : 1,
     scored,
     blocking,
     blockerEvidenceRecordIds,
@@ -1143,7 +1113,7 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
     // page" and was still resolving to Warning because nobody added it.
     failureResult:
       DECLARES_NO_JUDGEMENT.test(thresholdEn) ||
-      ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.2", "3.3", "3.4", "3.5", "4.3", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5", "9.4", "8.6", "3.6", "9.3", "2.7", "2.8", "2.9", "2.10", "4.6", "6.6", "8.7", "8.8"].includes(id)
+      ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.3", "3.4", "3.5", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5", "9.4", "8.6", "3.6", "9.3", "2.7", "2.8", "2.9", "4.6", "6.6", "8.7", "8.8"].includes(id)
       ? "tip"
       : "warning",
     primaryAgent,

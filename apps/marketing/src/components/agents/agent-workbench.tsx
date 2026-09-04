@@ -22,6 +22,12 @@ import {
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import { isAgentAuditSuccessEnvelope } from "../../lib/agents/audit-contract";
 import {
+  defaultAgentRunOptions,
+  parseAgentExtraKeyPages,
+  type AgentRunOptions,
+  type AgentRunTier,
+} from "../../lib/agents/agent-run-options.ts";
+import {
   isAgentProfileSearchEnvelope,
   type AgentProfileSearchData,
 } from "../../lib/agents/profile-search-contract";
@@ -52,6 +58,7 @@ import {
   isProfileRefreshPendingAgentIntent,
   isProfileSearchPendingAgentIntent,
   isRunnablePendingAgentIntent,
+  pendingAgentRunOptions,
   readPendingAgentIntent,
   restorePendingAgentIntent,
   schedulePendingAgentIntentExpiry,
@@ -221,6 +228,10 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const [profile, setProfile] = useState<AgentProfileDraft>(() =>
     createAgentProfileDraft(agent, "", locale),
   );
+  const [runTier, setRunTier] = useState<AgentRunTier>(
+    () => defaultAgentRunOptions(agent).tier,
+  );
+  const [extraKeyPagesInput, setExtraKeyPagesInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [data, setData] = useState<AgentAuditSuccessData | null>(null);
@@ -285,6 +296,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const runAudit = useCallback(
     async (
       confirmedProfile: AgentProfileDraft,
+      runOptions: AgentRunOptions,
       currentOperation: number,
       signal?: AbortSignal,
       pendingIntent?: PendingAgentIntent,
@@ -297,32 +309,36 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             accept: "application/json",
           },
           body: JSON.stringify({
-          url: confirmedProfile.targetUrl,
-          /*
-            The confirmed context, sent because it was confirmed.
+            url: confirmedProfile.targetUrl,
+            tier: runOptions.tier,
+            ...(runOptions.extraKeyPages.length === 0
+              ? {}
+              : { extraKeyPages: runOptions.extraKeyPages }),
+            /*
+              The confirmed context, sent because it was confirmed.
 
-            It used to travel only when the visit came from the page checker,
-            so a run started from the Agent silently excluded every check about
-            the target query or the page type -- eight of them -- while the
-            surface went on showing the reviewed ranges for the page type it
-            had just asked the visitor to confirm.
+              It used to travel only when the visit came from the page checker,
+              so a run started from the Agent silently excluded every check about
+              the target query or the page type -- eight of them -- while the
+              surface went on showing the reviewed ranges for the page type it
+              had just asked the visitor to confirm.
 
-            The page type goes on its own: the endpoint validates it
-            independently, and the page-shape checks need nothing else. The
-            query list is omitted when empty rather than sent as `[]`, which
-            the endpoint normalises to `empty_after_normalization` and refuses.
-          */
-          pageRole: confirmedProfile.pageType,
-          ...(targetQueriesFor(confirmedProfile, handoffQueriesRef.current)
-            .length === 0
-            ? {}
-            : {
-                targetQueries: targetQueriesFor(
-                  confirmedProfile,
-                  handoffQueriesRef.current,
-                ),
-              }),
-        }),
+              The page type goes on its own: the endpoint validates it
+              independently, and the page-shape checks need nothing else. The
+              query list is omitted when empty rather than sent as `[]`, which
+              the endpoint normalises to `empty_after_normalization` and refuses.
+            */
+            pageRole: confirmedProfile.pageType,
+            ...(targetQueriesFor(confirmedProfile, handoffQueriesRef.current)
+              .length === 0
+              ? {}
+              : {
+                  targetQueries: targetQueriesFor(
+                    confirmedProfile,
+                    handoffQueriesRef.current,
+                  ),
+                }),
+          }),
           signal,
         });
         const body = (await response.json().catch(() => null)) as unknown;
@@ -345,6 +361,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
                     storage,
                     confirmedProfile,
                     websiteProfileContextRef.current?.reference ?? null,
+                    runOptions,
                   )
               : null;
             if (!stored) {
@@ -383,6 +400,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const gateAndRun = useCallback(
     async (
       confirmedProfile: AgentProfileDraft,
+      runOptions: AgentRunOptions,
       signal?: AbortSignal,
       replaceInterruptedResume = false,
       pendingIntent?: PendingAgentIntent,
@@ -461,6 +479,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
                 storage,
                 confirmedProfile,
                 websiteProfileContextRef.current?.reference ?? null,
+                runOptions,
               );
           if (!stored) {
             setSignInOpen(false);
@@ -479,7 +498,13 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         setSignInPurpose(null);
         const storage = getSessionIntentStorage();
         if (storage) clearPendingAgentIntent(storage, agent);
-        await runAudit(confirmedProfile, currentOperation, signal, pendingIntent);
+        await runAudit(
+          confirmedProfile,
+          runOptions,
+          currentOperation,
+          signal,
+          pendingIntent,
+        );
       } finally {
         if (currentOperation === operationId.current) {
           busy.current = false;
@@ -493,6 +518,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const startOperation = useCallback(
     (
       confirmedProfile: AgentProfileDraft,
+      runOptions: AgentRunOptions,
       replaceInterruptedResume = false,
       pendingIntent?: PendingAgentIntent,
       silentSignedOut = false,
@@ -508,6 +534,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       activeOperationController.current = controller;
       const completion = gateAndRun(
         confirmedProfile,
+        runOptions,
         controller.signal,
         replaceInterruptedResume,
         pendingIntent,
@@ -1000,8 +1027,12 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     }
     resumeIntent.current = pending;
     setProfile(pending.confirmedProfile);
+    const resumedRunOptions = pendingAgentRunOptions(pending);
+    setRunTier(resumedRunOptions.tier);
+    setExtraKeyPagesInput(resumedRunOptions.extraKeyPages.join("\n"));
     const started = startOperation(
       pending.confirmedProfile,
+      resumedRunOptions,
       true,
       pending,
     );
@@ -1055,7 +1086,16 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       ) {
         return;
       }
-      startOperation(pending.confirmedProfile, false, pending, true);
+      const resumedRunOptions = pendingAgentRunOptions(pending);
+      setRunTier(resumedRunOptions.tier);
+      setExtraKeyPagesInput(resumedRunOptions.extraKeyPages.join("\n"));
+      startOperation(
+        pending.confirmedProfile,
+        resumedRunOptions,
+        false,
+        pending,
+        true,
+      );
     }
 
     window.addEventListener("focus", resumeAfterAppSignIn);
@@ -1238,9 +1278,11 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       next.agent !== profile.agent ||
       next.targetUrl !== profile.targetUrl ||
       next.host !== profile.host ||
-      // The page role now travels with a handoff and is measured, so changing it
-      // changes what was asked — a captured report no longer answers it.
-      (handoffQueries !== null && next.pageType !== profile.pageType);
+      // Both values travel on an ordinary run. A page-checker handoff freezes
+      // its own query list, so later Profile-label edits do not change that run.
+      next.pageType !== profile.pageType ||
+      (handoffQueries === null &&
+        next.targetQuery.trim() !== profile.targetQuery.trim());
     // The handed-over queries are deliberately not compared here. They are set
     // once, by the effect that consumes the intent and deletes it, so within one
     // mount they cannot change from one question to another; a second handoff is
@@ -1294,10 +1336,56 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     setProfile(next);
   }
 
-  function handleProfileConfirm(confirmedProfile: AgentProfileDraft): void {
+  function clearAuditForRunOptionChange(): void {
+    activeOperationController.current?.abort();
+    activeOperationController.current = null;
+    operationId.current += 1;
+    busy.current = false;
+    setLoading(false);
+    setErrorCode(null);
+    setData(null);
+    setRunProfile(null);
+    setRunWebsiteReference(null);
+    resumeIntent.current = null;
+    if (signInPurpose === "audit") {
+      const storage = getSessionIntentStorage();
+      if (storage) clearPendingAgentIntent(storage, agent);
+      setSignInPurpose(null);
+      setSignInOpen(false);
+    }
+  }
+
+  function handleRunTierChange(nextTier: AgentRunTier): void {
+    if (agent !== "seo" || loading || profileRefreshLoading || nextTier === runTier) {
+      return;
+    }
+    clearAuditForRunOptionChange();
+    setRunTier(nextTier);
+  }
+
+  function handleExtraKeyPagesInputChange(nextValue: string): void {
+    if (
+      agent !== "seo" ||
+      loading ||
+      profileRefreshLoading ||
+      nextValue === extraKeyPagesInput
+    ) {
+      return;
+    }
+    clearAuditForRunOptionChange();
+    setExtraKeyPagesInput(nextValue);
+  }
+
+  function handleProfileConfirm(
+    confirmedProfile: AgentProfileDraft,
+    selectedRunOptions?: AgentRunOptions,
+  ): void {
     if (confirmedProfile.agent !== agent || busy.current) return;
     setProfile(confirmedProfile);
-    startOperation(confirmedProfile);
+    startOperation(
+      confirmedProfile,
+      selectedRunOptions ?? defaultAgentRunOptions(agent),
+    );
   }
 
   function handleDialogChange(open: boolean): void {
@@ -1348,6 +1436,17 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       : null;
   const urlIsInvalid =
     errorCode !== null && URL_INPUT_ERROR_CODES.has(errorCode);
+  const parsedExtraKeyPages = parseAgentExtraKeyPages(
+    profile.targetUrl,
+    extraKeyPagesInput,
+  );
+  const selectedRunOptions: AgentRunOptions = {
+    tier: agent === "seo" ? runTier : "full-site",
+    extraKeyPages:
+      agent === "seo" && parsedExtraKeyPages.ok
+        ? parsedExtraKeyPages.extraKeyPages
+        : [],
+  };
 
   return (
     <section
@@ -1402,6 +1501,19 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
                   void handleWebsiteProfileSaveBack();
                 },
               }
+        }
+        runOptions={
+          agent === "seo"
+            ? {
+                value: selectedRunOptions,
+                extraKeyPagesInput,
+                error: parsedExtraKeyPages.ok
+                  ? null
+                  : parsedExtraKeyPages.error,
+                onTierChange: handleRunTierChange,
+                onExtraKeyPagesInputChange: handleExtraKeyPagesInputChange,
+              }
+            : undefined
         }
       />
 

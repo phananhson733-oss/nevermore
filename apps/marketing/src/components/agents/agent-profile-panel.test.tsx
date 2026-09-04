@@ -62,6 +62,8 @@ function renderPanel(
   websiteProfile?: React.ComponentProps<
     typeof AgentProfilePanel
   >["websiteProfile"],
+  runOptions?: React.ComponentProps<typeof AgentProfilePanel>["runOptions"],
+  disabled = false,
 ) {
   const host = document.createElement("div");
   document.body.append(host);
@@ -77,6 +79,8 @@ function renderPanel(
         profileRefresh={profileRefresh}
         onRefresh={onRefresh}
         websiteProfile={websiteProfile}
+        runOptions={runOptions}
+        disabled={disabled}
       />,
     );
   });
@@ -90,6 +94,18 @@ function setValue(control: HTMLInputElement | HTMLSelectElement, value: string) 
       : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
   if (!setter) throw new Error("form value setter unavailable");
+  act(() => {
+    setter.call(control, value);
+    control.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+function setTextAreaValue(control: HTMLTextAreaElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLTextAreaElement.prototype,
+    "value",
+  )?.set;
+  if (!setter) throw new Error("HTMLTextAreaElement.value setter unavailable");
   act(() => {
     setter.call(control, value);
     control.dispatchEvent(new Event("change", { bubbles: true }));
@@ -1811,6 +1827,183 @@ describe("AgentProfilePanel", () => {
       expect.objectContaining({ agent: "seo", reviewState: "confirmed" }),
     );
     expect(sessionStorage.length).toBe(0);
+  });
+
+  it("renders SEO run options as a separate accessible fieldset in run context", () => {
+    const onTierChange = vi.fn();
+    const onExtraKeyPagesInputChange = vi.fn();
+    const runOptions = {
+      value: { tier: "key-pages" as const, extraKeyPages: [] },
+      extraKeyPagesInput: "",
+      error: null,
+      onTierChange,
+      onExtraKeyPagesInputChange,
+    };
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      { country: "US", locale: "en-US" },
+    );
+    const { onConfirm } = renderPanel(
+      profile,
+      vi.fn(),
+      vi.fn(),
+      undefined,
+      undefined,
+      vi.fn(),
+      undefined,
+      runOptions,
+    );
+
+    const fieldset = document.querySelector(
+      '[data-agent-run-options="seo"]',
+    ) as HTMLFieldSetElement;
+    const tier = fieldset.querySelector(
+      '[data-agent-run-tier]',
+    ) as HTMLSelectElement;
+    const extraPages = fieldset.querySelector(
+      '[data-agent-run-extra-pages]',
+    ) as HTMLTextAreaElement;
+    expect(fieldset.tagName).toBe("FIELDSET");
+    expect(fieldset.querySelector("legend")?.textContent).toBe(
+      "runOptions.legend",
+    );
+    expect(Array.from(tier.options, (option) => option.value)).toEqual([
+      "key-pages",
+      "full-site",
+    ]);
+    expect(extraPages.getAttribute("aria-describedby")).toContain(
+      "seo-agent-run-extra-help",
+    );
+    expect(fieldset.textContent).toContain("runOptions.tiers.key-pages.help");
+
+    setValue(tier, "full-site");
+    setTextAreaValue(extraPages, "https://astrologywiki.com/pricing");
+    expect(onTierChange).toHaveBeenCalledWith("full-site");
+    expect(onExtraKeyPagesInputChange).toHaveBeenCalledWith(
+      "https://astrologywiki.com/pricing",
+    );
+
+    act(() => {
+      (
+        document.querySelector(
+          'button[data-profile-action="confirm"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+    expect(onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewState: "confirmed" }),
+      runOptions.value,
+    );
+  });
+
+  it("keeps Tech free of SEO crawl controls", () => {
+    renderPanel(
+      updateAgentProfile(createAgentProfileDraft("tech", "astrologywiki.com"), {
+        country: "US",
+        locale: "en-US",
+      }),
+    );
+
+    expect(document.querySelector("[data-agent-run-options]")).toBeNull();
+    expect(document.querySelector("[data-agent-run-tier]")).toBeNull();
+    expect(document.querySelector("[data-agent-run-extra-pages]")).toBeNull();
+  });
+
+  it("disables confirmation and describes the manual-page error", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      { country: "US", locale: "en-US" },
+    );
+    renderPanel(
+      profile,
+      vi.fn(),
+      vi.fn(),
+      undefined,
+      undefined,
+      vi.fn(),
+      undefined,
+      {
+        value: { tier: "key-pages", extraKeyPages: [] },
+        extraKeyPagesInput: "https://other.test/page",
+        error: "cross_origin",
+        onTierChange: vi.fn(),
+        onExtraKeyPagesInputChange: vi.fn(),
+      },
+    );
+
+    const extraPages = document.querySelector(
+      "[data-agent-run-extra-pages]",
+    ) as HTMLTextAreaElement;
+    const confirm = document.querySelector(
+      'button[data-profile-action="confirm"]',
+    ) as HTMLButtonElement;
+    expect(extraPages.getAttribute("aria-invalid")).toBe("true");
+    expect(extraPages.getAttribute("aria-describedby")).toContain(
+      "seo-agent-run-extra-error",
+    );
+    expect(document.querySelector("#seo-agent-run-extra-error")?.textContent).toBe(
+      "runOptions.errors.cross_origin",
+    );
+    expect(confirm.disabled).toBe(true);
+    expect(confirm.getAttribute("aria-describedby")).toContain(
+      "seo-agent-run-extra-error",
+    );
+  });
+
+  it("disables both SEO run controls while an audit is loading", () => {
+    renderPanel(
+      updateAgentProfile(createAgentProfileDraft("seo", "astrologywiki.com"), {
+        country: "US",
+        locale: "en-US",
+      }),
+      vi.fn(),
+      vi.fn(),
+      undefined,
+      undefined,
+      vi.fn(),
+      undefined,
+      {
+        value: { tier: "key-pages", extraKeyPages: [] },
+        extraKeyPagesInput: "",
+        error: null,
+        onTierChange: vi.fn(),
+        onExtraKeyPagesInputChange: vi.fn(),
+      },
+      true,
+    );
+
+    expect(
+      (document.querySelector("[data-agent-run-tier]") as HTMLSelectElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (
+        document.querySelector(
+          "[data-agent-run-extra-pages]",
+        ) as HTMLTextAreaElement
+      ).disabled,
+    ).toBe(true);
+  });
+
+  it("keeps the real EN/ZH run-option copy aligned and names both crawl ceilings", () => {
+    const english = en.agents.workbench.profile.runOptions;
+    const chinese = zh.agents.workbench.profile.runOptions;
+    expect(Object.keys(english).sort()).toEqual(Object.keys(chinese).sort());
+    expect(Object.keys(english.errors).sort()).toEqual(
+      Object.keys(chinese.errors).sort(),
+    );
+    expect(english.tiers["key-pages"].help).toContain("depth 2");
+    expect(english.tiers["key-pages"].help).toContain("80");
+    expect(english.tiers["key-pages"].help).toContain("45 seconds");
+    expect(english.tiers["full-site"].help).toContain("depth 6");
+    expect(english.tiers["full-site"].help).toContain("2,000");
+    expect(english.tiers["full-site"].help).toContain("240 seconds");
+    expect(chinese.tiers["key-pages"].help).toContain("深度 2");
+    expect(chinese.tiers["full-site"].help).toContain("深度 6");
+    expect(english.boundary).toContain("same credit treatment");
+    expect(chinese.boundary).toContain("积分");
+    expect(english.manualHelp).toContain("selected crawl budget");
+    expect(chinese.manualHelp).toContain("抓取预算");
   });
 
   it("marks generic-host Product and ICP cards as inferred or confirmation-required", () => {

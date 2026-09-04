@@ -133,10 +133,10 @@ describe("reading a reply", () => {
       ).toMatchObject({ review: { titleContainsTargetQuery: false } });
     });
 
-    it("judges the query the way 2.3 does, not as loose letters", () => {
+    it("uses the keyword-evidence token sequence, not loose letters", () => {
       // A substring reading called this a survival: `cat` is in `Catalog`.
-      // The check the draft exists to satisfy reads word sequences, so a
-      // draft reported as keeping the query would still have failed 2.3.
+      // Keyword evidence reads word sequences, so a draft reported as keeping
+      // the query must not disagree with the retained producer record.
       expect(
         readSolutionDraft(
           "search-presentation",

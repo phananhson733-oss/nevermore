@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   buildSeoAuditPayload,
   createPublicToolError,
@@ -7,6 +8,7 @@ import {
   type SeoAuditPayload,
   type SeoAuditProgress,
   type SeoAuditRaw,
+  type SeoAuditCrawlTier,
   type SeoAuditUrlResult,
 } from "@sf/public-tools";
 import {
@@ -16,6 +18,7 @@ import {
 import { extractClientIp } from "../rate-limit.ts";
 import { readPublicToolJson } from "./public-tool-request.ts";
 import {
+  normalizeSeoAuditExtraKeyPages,
   readSeoAuditInput,
   SEO_AUDIT_REQUEST_BODY_LIMIT_BYTES,
   type SeoAuditRequestInput,
@@ -66,7 +69,11 @@ export interface SeoAuditHandlerDependencies {
     url: string,
     signal?: AbortSignal,
     onProgress?: (progress: SeoAuditProgress) => void,
-    options?: { readonly requireSameEntrySubject?: boolean },
+    options?: {
+      readonly requireSameEntrySubject?: boolean;
+      readonly tier?: SeoAuditCrawlTier;
+      readonly additionalSeedUrls?: readonly string[];
+    },
   ) => Promise<SeoAuditRaw>;
   readonly buildPayload: (raw: SeoAuditRaw) => SeoAuditPayload;
   readonly extractClientIp: (headers: Headers) => string;
@@ -79,7 +86,10 @@ export interface SeoAuditHandlerDependencies {
   readonly openGate: (
     clientIp: string,
     normalizedUrl: string,
-    options?: { readonly requireSameEntrySubject?: boolean },
+    options: {
+      readonly cacheNamespace: string;
+      readonly requireSameEntrySubject?: boolean;
+    },
   ) => Promise<CrawlGateResult>;
   /**
    * Store a fresh result so the next caller asking about this same site does
@@ -90,6 +100,7 @@ export interface SeoAuditHandlerDependencies {
   readonly cachePayload: (
     normalizedUrl: string,
     payload: SeoAuditPayload,
+    cacheNamespace: string,
   ) => Promise<void>;
 }
 
@@ -122,6 +133,10 @@ const DEFAULT_DEPENDENCIES: SeoAuditHandlerDependencies = {
       ...(options?.requireSameEntrySubject === true
         ? { requireSameEntrySubject: true }
         : {}),
+      ...(options?.tier ? { tier: options.tier } : {}),
+      ...(options?.additionalSeedUrls
+        ? { additionalSeedUrls: options.additionalSeedUrls }
+        : {}),
     }),
   buildPayload: buildSeoAuditPayload,
   extractClientIp,
@@ -131,7 +146,10 @@ const DEFAULT_DEPENDENCIES: SeoAuditHandlerDependencies = {
       normalizedUrl,
       DEFAULT_CRAWL_GATE_DEPENDENCIES,
       async (host) => {
-        const cached = await readCrawlCache(TOOL_NAME, host);
+        const cached = await readCrawlCache(
+          options.cacheNamespace,
+          host,
+        );
         return cached &&
           cachedSeoAuditMatches(
             cached,
@@ -142,11 +160,27 @@ const DEFAULT_DEPENDENCIES: SeoAuditHandlerDependencies = {
           : null;
       },
     ),
-  cachePayload: async (normalizedUrl, payload) => {
+  cachePayload: async (normalizedUrl, payload, cacheNamespace) => {
     const host = targetHostOf(normalizedUrl);
-    if (host) await writeCrawlCache(TOOL_NAME, host, payload);
+    if (host) await writeCrawlCache(cacheNamespace, host, payload);
   },
 };
+
+export function seoAuditCacheNamespace(
+  tier: SeoAuditCrawlTier,
+  extraKeyPages: readonly string[],
+): string {
+  const base = `${TOOL_NAME}:${tier}`;
+  const normalizedSet = [...new Set(extraKeyPages)].sort((left, right) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
+  if (normalizedSet.length === 0) return base;
+  const digest = createHash("sha256")
+    .update(JSON.stringify(normalizedSet))
+    .digest("hex")
+    .slice(0, 32);
+  return `${base}:manual:${digest}`;
+}
 
 function json(
   body: unknown,
@@ -237,14 +271,27 @@ export async function handleSeoAuditRequest(
   if (!normalized.ok) {
     return json(createPublicToolError(normalized.code), 400);
   }
-
+  const normalizedExtraKeyPages = normalizeSeoAuditExtraKeyPages(
+    normalized.url,
+    input.value.extraKeyPages,
+  );
+  if (!normalizedExtraKeyPages.ok) {
+    return json(createPublicToolError("invalid_request"), 400);
+  }
   const requireSameEntrySubject = options.requireSameEntrySubject === true;
+  // The public tool preserves its historical full-site behaviour. Authenticated
+  // Agent callers resolve their own legacy default to key-pages before handing
+  // the validated input to this shared boundary.
+  const resolvedTier = input.value.tier ?? "full-site";
+  const cacheNamespace = seoAuditCacheNamespace(
+    resolvedTier,
+    normalizedExtraKeyPages.urls,
+  );
   const ip = dependencies.extractClientIp(request.headers);
-  const gate = requireSameEntrySubject
-    ? await dependencies.openGate(ip, normalized.url, {
-        requireSameEntrySubject: true,
-      })
-    : await dependencies.openGate(ip, normalized.url);
+  const gate = await dependencies.openGate(ip, normalized.url, {
+    cacheNamespace,
+    ...(requireSameEntrySubject ? { requireSameEntrySubject: true } : {}),
+  });
   if (!gate.ok) return gate.response;
   if (
     gate.kind === "cached" &&
@@ -260,22 +307,40 @@ export async function handleSeoAuditRequest(
   }
 
   if (options.forceBufferedJson !== true && wantsProgressStream(request)) {
-    return streamSeoAudit(request, normalized.url, gate.release, dependencies);
+    return streamSeoAudit(
+      request,
+      normalized.url,
+      gate.release,
+      dependencies,
+      resolvedTier,
+      normalizedExtraKeyPages.urls,
+      cacheNamespace,
+      requireSameEntrySubject,
+    );
   }
 
   try {
-    const raw =
-      requireSameEntrySubject
-        ? await dependencies.scan(normalized.url, request.signal, undefined, {
-            requireSameEntrySubject: true,
-          })
-        : await dependencies.scan(normalized.url, request.signal);
+    const raw = await dependencies.scan(
+      normalized.url,
+      request.signal,
+      undefined,
+      {
+        tier: resolvedTier,
+        ...(normalizedExtraKeyPages.urls.length > 0
+          ? { additionalSeedUrls: normalizedExtraKeyPages.urls }
+          : {}),
+        ...(requireSameEntrySubject
+          ? { requireSameEntrySubject: true }
+          : {}),
+      },
+    );
     const payload = dependencies.buildPayload(raw);
     await cacheCompletedCrawl({
       raw,
       payload,
       normalizedUrl: normalized.url,
-      cachePayload: dependencies.cachePayload,
+      cachePayload: (url, completedPayload) =>
+        dependencies.cachePayload(url, completedPayload, cacheNamespace),
     });
     return json({ data: payload }, 200);
   } catch (error) {
@@ -374,6 +439,10 @@ function streamSeoAudit(
   normalizedUrl: string,
   release: () => void,
   dependencies: SeoAuditHandlerDependencies,
+  tier: SeoAuditCrawlTier,
+  additionalSeedUrls: readonly string[],
+  cacheNamespace: string,
+  requireSameEntrySubject: boolean,
 ): Response {
   const encoder = new TextEncoder();
   // Linked, not shared: a client disconnect and a cancelled response body must
@@ -438,6 +507,15 @@ function streamSeoAudit(
             normalizedUrl,
             abort.signal,
             observe,
+            {
+              tier,
+              ...(additionalSeedUrls.length > 0
+                ? { additionalSeedUrls }
+                : {}),
+              ...(requireSameEntrySubject
+                ? { requireSameEntrySubject: true }
+                : {}),
+            },
           );
           // The crawl has stopped here; nothing further is fetched from the
           // site. Everything below — the report over up to 2,000 pages, its
@@ -451,7 +529,12 @@ function streamSeoAudit(
             raw,
             payload,
             normalizedUrl,
-            cachePayload: dependencies.cachePayload,
+            cachePayload: (url, completedPayload) =>
+              dependencies.cachePayload(
+                url,
+                completedPayload,
+                cacheNamespace,
+              ),
           });
           write({ data: payload });
         } catch (error) {

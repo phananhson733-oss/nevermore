@@ -4,6 +4,7 @@
 
 import type {
   SeoAuditCoverage,
+  SeoAuditCrawlTier,
   SeoAuditPayload,
   SeoAuditReport,
   SeoAuditSiteResources,
@@ -35,6 +36,7 @@ import {
   SEO_AUDIT_RECORD_CATEGORIES,
   SEO_AUDIT_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/record-ledger";
+import { CRAWL_PROJECTION_LIMITS } from "@sf/sources/crawl-limits";
 import { SEARCH_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/search-performance";
 import { INDEX_COVERAGE_RECORD_IDS } from "@sf/public-tools/seo-audit/index-coverage";
 import {
@@ -156,10 +158,20 @@ export interface AgentAuditRun {
 /**
  * One page this run is willing to judge on its own, beside the submitted one.
  *
- * Neutral facts only: which pages matter to a business is a question the
- * client asks against a confirmed Profile, and this shape travels in a
- * response projected from a payload cached across visitors.
+ * Neutral facts only: a key-pages run selects from collected structure, while
+ * a full-site run includes every remaining unique collected 2xx HTML page.
+ * The client may reorder the complete set against a confirmed Profile. This
+ * shape travels in a response projected from a payload cached across visitors.
  */
+export type AgentKeyPageReason =
+  | "home"
+  | "target"
+  | "navigation"
+  | "full-site"
+  | { readonly kind: "cluster"; readonly prefix: string }
+  | { readonly kind: "content"; readonly inboundLinks: number }
+  | "manual";
+
 export interface AgentKeyPageCandidate {
   /**
    * The crawl's fetch URL, which is the form every observation carries.
@@ -173,6 +185,14 @@ export interface AgentKeyPageCandidate {
   readonly metaDescription: string | null;
   readonly depth: number;
   readonly inboundLinks: number;
+  readonly reason: AgentKeyPageReason;
+}
+
+export interface AgentKeyPageSelection {
+  /** Content-rule URLs displaced only by the 50-candidate safety valve. */
+  readonly omittedUrls: readonly string[];
+  /** Requested manual pages that never became a collected 2xx HTML candidate. */
+  readonly manualUnavailableUrls?: readonly string[];
 }
 
 export type AgentAuditResult = Pick<
@@ -187,6 +207,8 @@ export type AgentAuditResult = Pick<
   | "siteResources"
   | "records"
 > & {
+  /** Optional only so a response from the build before crawl tiers stays readable. */
+  readonly crawlTier?: SeoAuditCrawlTier;
   /**
    * Where the crawl actually landed for the submitted page, or null.
    *
@@ -210,6 +232,8 @@ export type AgentAuditResult = Pick<
    * different from a site with one page.
    */
   readonly keyPages?: readonly AgentKeyPageCandidate[];
+  /** Optional only so a response from the build before this region stays readable. */
+  readonly keyPageSelection?: AgentKeyPageSelection;
   /**
    * Present only when the caller sent target queries.
    *
@@ -550,7 +574,16 @@ function isSiteResources(value: unknown): value is SeoAuditSiteResources {
     typeof value.robotsFetched === "boolean" &&
     isNonNegativeInteger(value.robotsGroupsObserved) &&
     isNonNegativeInteger(value.sitemapReferencesObserved) &&
-    typeof value.sitemapFetched === "boolean"
+    typeof value.sitemapFetched === "boolean" &&
+    (value.navigationUrls === undefined ||
+      (Array.isArray(value.navigationUrls) &&
+        value.navigationUrls.length <=
+          CRAWL_PROJECTION_LIMITS.maxInternalOutlinks &&
+        value.navigationUrls.every(
+          (url) =>
+            typeof url === "string" &&
+            [...url].length <= CRAWL_PROJECTION_LIMITS.maxUrlChars,
+        )))
   );
 }
 
@@ -778,8 +811,36 @@ function isSerpLandscapeShape(value: unknown): boolean {
   );
 }
 
-/** Bound published beside the type, so the guard and the producer agree. */
-export const AGENT_KEY_PAGE_WIRE_LIMIT = 24;
+/** Transport ceiling inherited from the full crawl; not a business selection cap. */
+export const AGENT_KEY_PAGE_WIRE_LIMIT = 2_000;
+
+function isAgentKeyPageReason(
+  value: unknown,
+  inboundLinks: number,
+): value is AgentKeyPageReason {
+  if (
+    value === "home" ||
+    value === "target" ||
+    value === "navigation" ||
+    value === "full-site" ||
+    value === "manual"
+  ) {
+    return true;
+  }
+  if (!isObject(value) || Object.keys(value).length !== 2) return false;
+  if (value.kind === "cluster") {
+    return (
+      typeof value.prefix === "string" &&
+      [...value.prefix].length <= CRAWL_PROJECTION_LIMITS.maxUrlChars &&
+      /^\/[^/?#\s]+\/$/u.test(value.prefix)
+    );
+  }
+  return (
+    value.kind === "content" &&
+    isNonNegativeInteger(value.inboundLinks) &&
+    value.inboundLinks === inboundLinks
+  );
+}
 
 function isAgentKeyPageCandidates(
   value: unknown,
@@ -790,18 +851,83 @@ function isAgentKeyPageCandidates(
     value.every(
       (entry) =>
         isObject(entry) &&
-        // Exactly five: a sixth field would be whatever an upstream payload
+        // Exactly six: a seventh field would be whatever an upstream payload
         // happened to carry, published to the browser without review.
-        Object.keys(entry).length === 5 &&
+        Object.keys(entry).length === 6 &&
         typeof entry.url === "string" &&
         entry.url.length > 0 &&
         (entry.title === null || typeof entry.title === "string") &&
         (entry.metaDescription === null ||
           typeof entry.metaDescription === "string") &&
         isNonNegativeInteger(entry.depth) &&
-        isNonNegativeInteger(entry.inboundLinks),
+        isNonNegativeInteger(entry.inboundLinks) &&
+        isAgentKeyPageReason(entry.reason, entry.inboundLinks),
     )
   );
+}
+
+function isAbsoluteHttpUrl(value: unknown): value is string {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    [...value].length > CRAWL_PROJECTION_LIMITS.maxUrlChars
+  ) {
+    return false;
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isAgentKeyPageSelection(
+  value: unknown,
+  siteOrigin: string,
+): value is AgentKeyPageSelection {
+  if (
+    !isObject(value) ||
+    Object.keys(value).some(
+      (key) => key !== "omittedUrls" && key !== "manualUnavailableUrls",
+    ) ||
+    !Array.isArray(value.omittedUrls) ||
+    value.omittedUrls.length > 10 ||
+    !(
+      value.manualUnavailableUrls === undefined ||
+      (Array.isArray(value.manualUnavailableUrls) &&
+        value.manualUnavailableUrls.length <= 10)
+    )
+  ) {
+    return false;
+  }
+  let origin: string;
+  try {
+    origin = new URL(siteOrigin).origin;
+  } catch {
+    return false;
+  }
+  for (const values of [
+    value.omittedUrls,
+    value.manualUnavailableUrls ?? [],
+  ]) {
+    const seen = new Set<string>();
+    for (const valueUrl of values) {
+      if (!isAbsoluteHttpUrl(valueUrl)) return false;
+      const url = new URL(valueUrl);
+      if (
+        url.origin !== origin ||
+        url.username !== "" ||
+        url.password !== "" ||
+        url.hash !== "" ||
+        seen.has(url.href)
+      ) {
+        return false;
+      }
+      seen.add(url.href);
+    }
+  }
+  return true;
 }
 
 function isAgentResult(value: unknown): value is AgentAuditResult {
@@ -809,10 +935,19 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !isObject(value) ||
     typeof value.targetUrl !== "string" ||
     typeof value.siteOrigin !== "string" ||
+    !(
+      value.crawlTier === undefined ||
+      value.crawlTier === "key-pages" ||
+      value.crawlTier === "full-site"
+    ) ||
     typeof value.targetInspected !== "boolean" ||
     !isNullableString(value.inspectedTargetUrl) ||
     !(
       value.keyPages === undefined || isAgentKeyPageCandidates(value.keyPages)
+    ) ||
+    !(
+      value.keyPageSelection === undefined ||
+      isAgentKeyPageSelection(value.keyPageSelection, value.siteOrigin)
     ) ||
     !(
       value.pageShapeChecks === undefined ||

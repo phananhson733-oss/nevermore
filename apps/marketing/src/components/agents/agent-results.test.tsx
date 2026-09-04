@@ -9,8 +9,14 @@ import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { SeoAuditRecord } from "@sf/public-tools";
-import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
+import { AGENT_AUDIT_COVERAGE } from "@sf/public-tools/agent-audit";
+import type {
+  AgentAuditSuccessData,
+  AgentKeyPageCandidate,
+  AgentKeyPageReason,
+} from "../../lib/agents/audit-contract";
 import en from "../../i18n/messages/en.json";
+import zh from "../../i18n/messages/zh.json";
 import {
   confirmAgentProfile,
   createAgentProfileDraft,
@@ -139,6 +145,82 @@ const evidencedData: AgentAuditSuccessData = {
   },
 };
 
+function keyPage(
+  url: string,
+  reason: AgentKeyPageReason,
+): AgentKeyPageCandidate {
+  return {
+    url,
+    title: null,
+    metaDescription: null,
+    depth: 1,
+    inboundLinks:
+      typeof reason === "object" && reason.kind === "content"
+        ? reason.inboundLinks
+        : 1,
+    reason,
+  };
+}
+
+const selectionData: AgentAuditSuccessData = {
+  ...evidencedData,
+  result: {
+    ...evidencedData.result,
+    targetUrl: `${TARGET_URL}/submitted`,
+    inspectedTargetUrl: `${TARGET_URL}/submitted`,
+    landedTargetUrl: `${TARGET_URL}/submitted`,
+    keyPages: [
+      keyPage(`${TARGET_URL}/`, "home"),
+      keyPage(`${TARGET_URL}/submitted`, "target"),
+      keyPage(`${TARGET_URL}/pricing`, "navigation"),
+      keyPage(`${TARGET_URL}/docs`, "navigation"),
+      keyPage(`${TARGET_URL}/tools/alpha`, {
+        kind: "cluster",
+        prefix: "/tools/",
+      }),
+      keyPage(`${TARGET_URL}/tools/beta`, {
+        kind: "cluster",
+        prefix: "/tools/",
+      }),
+      keyPage(`${TARGET_URL}/agents/seo`, {
+        kind: "cluster",
+        prefix: "/agents/",
+      }),
+      keyPage(`${TARGET_URL}/blog/guide`, {
+        kind: "content",
+        inboundLinks: 8,
+      }),
+      keyPage(`${TARGET_URL}/manual`, "manual"),
+    ],
+    keyPageSelection: {
+      omittedUrls: [
+        `${TARGET_URL}/blog/omitted-one`,
+        `${TARGET_URL}/blog/omitted-two`,
+      ],
+      manualUnavailableUrls: [
+        `${TARGET_URL}/private/manual-one`,
+        `${TARGET_URL}/private/manual-two`,
+      ],
+    },
+  },
+};
+
+const fullSiteSelectionData: AgentAuditSuccessData = {
+  ...evidencedData,
+  result: {
+    ...evidencedData.result,
+    crawlTier: "full-site",
+    keyPages: [
+      keyPage(`${TARGET_URL}/`, "home"),
+      keyPage(`${TARGET_URL}/about`, "full-site"),
+    ],
+    keyPageSelection: {
+      omittedUrls: [],
+      manualUnavailableUrls: [],
+    },
+  },
+};
+
 describe("AgentResults", () => {
   let host: HTMLDivElement;
   let root: Root;
@@ -162,9 +244,11 @@ describe("AgentResults", () => {
     {
       pageOnly = false,
       response = data,
+      uiLocale = "en",
     }: {
       readonly pageOnly?: boolean;
       readonly response?: AgentAuditSuccessData;
+      readonly uiLocale?: "en" | "zh";
     } = {},
   ): void {
     const draft = updateAgentProfile(
@@ -182,16 +266,18 @@ describe("AgentResults", () => {
     act(() => {
       root.render(
         <NextIntlClientProvider
-          locale="en"
+          locale={uiLocale}
           timeZone="UTC"
           messages={{
-            agents: en.agents,
-            tools: { seoAudit: en.tools.seoAudit },
+            agents: (uiLocale === "zh" ? zh : en).agents,
+            tools: {
+              seoAudit: (uiLocale === "zh" ? zh : en).tools.seoAudit,
+            },
           }}
         >
           <AgentResults
             agent={agent}
-            locale="en"
+            locale={uiLocale}
             data={{ ...response, run: { ...response.run, agent } }}
             profile={profile}
           />
@@ -332,6 +418,146 @@ describe("AgentResults", () => {
     expect(host.textContent).toContain("9 observed · 0 not observed");
   });
 
+  it.each([
+    [
+      "en" as const,
+      [
+        "9 candidates",
+        "navigation 2",
+        "cluster pages 3",
+        "content 1",
+        "manual 1",
+        "up to 15 by inbound links among pages collected in this run",
+        "reduced to 10 or 5 when the 50-page safety valve applies",
+      ],
+      "Not included in page-level checks by the safety valve",
+      "Manually added but could not be crawled or evaluated",
+    ],
+    [
+      "zh" as const,
+      [
+        "候选页 9 个",
+        "导航 2",
+        "集群页 3",
+        "内容 1",
+        "手动 1",
+        "按本次已收集页入链最多 15",
+        "总候选超过 50 时收紧到 10 或 5",
+      ],
+      "安全阀未纳入页面级检查",
+      "手动追加但未能抓取/评估",
+    ],
+  ])(
+    "renders the %s candidate breakdown, prefixes and exact omissions",
+    (uiLocale, phrases, omittedHeading, manualUnavailableHeading) => {
+      render("seo", { response: selectionData, uiLocale });
+
+      const summary = host.querySelector("[data-key-page-selection-summary]");
+      expect(summary).not.toBeNull();
+      for (const phrase of phrases) {
+        expect(summary?.textContent).toContain(phrase);
+      }
+      expect(summary?.textContent).not.toMatch(/top 15|取前 15/iu);
+      expect(summary?.textContent).not.toMatch(
+        /full-site remainder|全站其余页/iu,
+      );
+      expect(summary?.textContent).toContain("/agents/");
+      expect(summary?.textContent).toContain("/tools/");
+      expect(summary?.textContent).toMatch(/home|首页/iu);
+      expect(summary?.textContent).toMatch(/submitted|提交页/u);
+
+      const omitted = host.querySelector("[data-key-page-omitted]");
+      expect(omitted?.textContent).toContain(omittedHeading);
+      expect(omitted?.querySelectorAll("li")).toHaveLength(2);
+      expect(omitted?.textContent).toContain(
+        `${TARGET_URL}/blog/omitted-one`,
+      );
+      expect(omitted?.textContent).toContain(
+        `${TARGET_URL}/blog/omitted-two`,
+      );
+      expect(omitted?.textContent).not.toContain(
+        `${TARGET_URL}/private/manual-one`,
+      );
+
+      const manualUnavailable = host.querySelector(
+        "[data-key-page-manual-unavailable]",
+      );
+      expect(manualUnavailable?.textContent).toContain(
+        manualUnavailableHeading,
+      );
+      expect(manualUnavailable?.querySelectorAll("li")).toHaveLength(2);
+      expect(manualUnavailable?.textContent).toContain(
+        `${TARGET_URL}/private/manual-one`,
+      );
+      expect(manualUnavailable?.textContent).toContain(
+        `${TARGET_URL}/private/manual-two`,
+      );
+    },
+  );
+
+  it.each([
+    ["en" as const, "full-site remainder 1", "evaluable collected pages"],
+    ["zh" as const, "全站其余页 1", "可评估的已收集页面"],
+  ])("renders the %s full-site remainder honestly", (uiLocale, phrase, scope) => {
+    render("seo", { response: fullSiteSelectionData, uiLocale });
+
+    expect(
+      host.querySelector("[data-key-page-selection-summary]")?.textContent,
+    ).toContain(phrase);
+    const capture = host.querySelector("[data-capture-summary]")?.textContent;
+    expect(capture).toContain(scope);
+    expect(capture).not.toMatch(/key pages|关键页/u);
+  });
+
+  it("does not describe a Tech full-site crawl shortlist as all-collected page evaluation", () => {
+    const techData: AgentAuditSuccessData = {
+      ...selectionData,
+      run: { ...selectionData.run, agent: "tech" },
+      result: {
+        ...selectionData.result,
+        crawlTier: "full-site",
+      },
+    };
+
+    render("tech", { response: techData });
+
+    const capture = host.querySelector("[data-capture-summary]")?.textContent;
+    const selection = host.querySelector(
+      "[data-key-page-selection-summary]",
+    )?.textContent;
+    expect(capture).toContain("key pages");
+    expect(capture).not.toContain("evaluable collected pages");
+    expect(selection).not.toContain("full-site remainder");
+  });
+
+  it("does not count the synthetic target as a server-selected candidate", () => {
+    const candidateUrl = `${TARGET_URL}/pricing`;
+    const captureFailed: AgentAuditSuccessData = {
+      ...evidencedData,
+      result: {
+        ...evidencedData.result,
+        targetUrl: `${TARGET_URL}/submitted`,
+        targetInspected: false,
+        inspectedTargetUrl: null,
+        landedTargetUrl: null,
+        keyPages: [keyPage(candidateUrl, "navigation")],
+        keyPageSelection: { omittedUrls: [] },
+      },
+    };
+
+    render("seo", { response: captureFailed });
+
+    expect(host.querySelector("[data-capture-summary]")?.textContent).toContain(
+      "1 key pages",
+    );
+    const selection = host.querySelector(
+      "[data-key-page-selection-summary]",
+    );
+    expect(selection?.textContent).toContain("1 candidates");
+    expect(selection?.textContent).toContain("navigation 1");
+    expect(selection?.textContent).not.toContain("2 candidates");
+  });
+
   it("shows site-wide and page-level findings in one list", () => {
     // The scope switch is gone: a reader should not have to know that a
     // duplicate-title problem is filed under "site" and a missing H1 under
@@ -359,8 +585,7 @@ describe("AgentResults", () => {
     expect(issueRows()).toHaveLength(actionable);
     // The replaced surface capped the list at three.
     expect(actionable).toBeGreaterThan(3);
-    // 31 site-wide + 58 page-level, with the scope switch gone.
-    expect(lanedCheckCount()).toBe(89);
+    expect(lanedCheckCount()).toBe(AGENT_AUDIT_COVERAGE.total);
   });
 
   it("offers investigation rows, not a verdict, when no check could be evaluated", () => {
@@ -376,7 +601,7 @@ describe("AgentResults", () => {
     ).not.toBeNull();
     expect(host.querySelector('[data-testid="agent-issues-clean"]')).toBeNull();
     expect(host.textContent).toContain("Affected population unavailable");
-    expect(lanedCheckCount()).toBe(89);
+    expect(lanedCheckCount()).toBe(AGENT_AUDIT_COVERAGE.total);
   });
 
   it("uses Tech defaults and keeps its issue identity independent", () => {

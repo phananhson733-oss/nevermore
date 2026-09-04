@@ -2,8 +2,9 @@
  * The synchronous crawl profile shared by the anonymous public tools.
  *
  * These are transport safety boundaries, not account, pricing, or usage
- * quotas. The HTTP caller cannot change them. A later asynchronous crawler can
- * use a different execution profile without changing the public audit facts.
+ * quotas. A server-owned ceiling may only tighten them; the HTTP caller cannot
+ * change them. A later asynchronous crawler can use a different execution
+ * profile without changing the public audit facts.
  * A caller that needs evidence for the submitted page can opt into rejecting
  * an entry redirect that replaces that page before the crawl transport exists.
  */
@@ -17,12 +18,18 @@ import {
 import {
   crawlSite,
   createDefaultCrawlFetcher,
+  CRAWL_ADDITIONAL_SEED_LIMIT,
   type CrawlEngineOptions,
   type CrawlPageProgress,
 } from "./engine.ts";
-import type { CrawlBudget, CrawlFetcher, CrawlRaw } from "./types.ts";
+import {
+  CRAWL_PROJECTION_LIMITS,
+  type CrawlBudget,
+  type CrawlFetcher,
+  type CrawlRaw,
+} from "./types.ts";
 
-export type { CrawlRaw } from "./types.ts";
+export type { CrawlBudget, CrawlRaw } from "./types.ts";
 /**
  * Re-exported so public tools can read a single collected page without
  * importing the package barrel, which pulls the whole crawl engine into
@@ -78,12 +85,71 @@ export const PUBLIC_TOOL_SYNC_CRAWL_BUDGET: CrawlBudget = {
   minHostDelayMs: 250,
 };
 
+function validCrawlBudgetCeiling(
+  value: number | undefined,
+  allowZero = true,
+): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  if (allowZero ? value < 0 : value <= 0) return undefined;
+  return value;
+}
+
+/** Apply a trusted server ceiling without ever widening the public profile. */
+export function tightenCrawlBudget(
+  ceiling: Partial<CrawlBudget> = {},
+): CrawlBudget {
+  return {
+    maxUrls: Math.min(
+      PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxUrls,
+      validCrawlBudgetCeiling(ceiling.maxUrls) ??
+        PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxUrls,
+    ),
+    maxDepth: Math.min(
+      PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxDepth,
+      validCrawlBudgetCeiling(ceiling.maxDepth) ??
+        PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxDepth,
+    ),
+    maxWallClockMs: Math.min(
+      PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxWallClockMs,
+      validCrawlBudgetCeiling(ceiling.maxWallClockMs) ??
+        PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxWallClockMs,
+    ),
+    maxRedirects: Math.min(
+      PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxRedirects,
+      validCrawlBudgetCeiling(ceiling.maxRedirects) ??
+        PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxRedirects,
+    ),
+    maxBodyBytes: Math.min(
+      PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxBodyBytes,
+      validCrawlBudgetCeiling(ceiling.maxBodyBytes) ??
+        PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxBodyBytes,
+    ),
+    maxTotalBytes: Math.min(
+      PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxTotalBytes,
+      validCrawlBudgetCeiling(ceiling.maxTotalBytes) ??
+        PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxTotalBytes,
+    ),
+    perHostConcurrency: Math.min(
+      PUBLIC_TOOL_SYNC_CRAWL_BUDGET.perHostConcurrency,
+      validCrawlBudgetCeiling(ceiling.perHostConcurrency, false) ??
+        PUBLIC_TOOL_SYNC_CRAWL_BUDGET.perHostConcurrency,
+    ),
+    minHostDelayMs: Math.max(
+      PUBLIC_TOOL_SYNC_CRAWL_BUDGET.minHostDelayMs,
+      validCrawlBudgetCeiling(ceiling.minHostDelayMs) ??
+        PUBLIC_TOOL_SYNC_CRAWL_BUDGET.minHostDelayMs,
+    ),
+  };
+}
+
 /** Includes robots.txt, sitemap documents, pages, and every redirect hop. */
 export const PUBLIC_TOOL_SYNC_MAX_REQUESTS = 4_500;
 
 /** Compatibility aliases for existing internal consumers. */
 export const PUBLIC_PREVIEW_CRAWL_BUDGET = PUBLIC_TOOL_SYNC_CRAWL_BUDGET;
 export const PUBLIC_PREVIEW_MAX_REQUESTS = PUBLIC_TOOL_SYNC_MAX_REQUESTS;
+export const PUBLIC_PREVIEW_ADDITIONAL_SEED_LIMIT =
+  CRAWL_ADDITIONAL_SEED_LIMIT;
 
 export type PublicSiteEntryResolver = (
   url: string,
@@ -105,7 +171,25 @@ export interface PublicPreviewCrawlOptions {
   /** Offline test seam. Production must use the guarded default transport. */
   readonly fetcher?: CrawlFetcher;
   /** Offline test seam. API callers cannot supply engine options. */
-  readonly engineOptions?: Omit<CrawlEngineOptions, "budget">;
+  readonly engineOptions?: Omit<
+    CrawlEngineOptions,
+    | "additionalSeedUrls"
+    | "budget"
+    | "deferSitemapFrontier"
+    | "maxRequests"
+  >;
+  /**
+   * Server-only ceiling; every supplied field may only tighten the fixed
+   * budget.
+   */
+  readonly budgetCeiling?: Partial<CrawlBudget>;
+  /** Trusted server-only manual pages; HTTP callers cannot set this directly. */
+  readonly additionalSeedUrls?: readonly string[];
+  /**
+   * Trusted server-only frontier policy. Sitemap documents are still fetched
+   * and projected before crawling pages; only their member enqueue is delayed.
+   */
+  readonly deferSitemapFrontier?: boolean;
   /** Offline test seam for canonical entry resolution. */
   readonly entryResolver?: PublicSiteEntryResolver;
   /** Opt in to rejecting an entry redirect to a different canonical page. */
@@ -154,6 +238,48 @@ export function countingCrawlFetcher(
 
 function withoutWww(hostname: string): string {
   return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+}
+
+function resolvedAdditionalSeedUrls(
+  submitted: URL,
+  resolvedSeed: URL,
+  values: readonly string[],
+): readonly string[] {
+  const seeds = new Set<string>();
+  for (const value of values) {
+    if (
+      typeof value !== "string" ||
+      value.length === 0 ||
+      value.length > CRAWL_PROJECTION_LIMITS.maxUrlChars ||
+      value.includes("#")
+    ) {
+      throw new Error("public_preview_additional_seed_invalid");
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      throw new Error("public_preview_additional_seed_invalid");
+    }
+    if (
+      !isAllowedPublicToolEntryRedirect(submitted.toString(), parsed.toString()) ||
+      parsed.username !== "" ||
+      parsed.password !== "" ||
+      parsed.hash !== ""
+    ) {
+      throw new Error("public_preview_additional_seed_invalid");
+    }
+    const rebased = canonicalizeUrl(
+      `${resolvedSeed.origin}${parsed.pathname}${parsed.search}`,
+    );
+    if (!rebased || new URL(rebased.fetchUrl).origin !== resolvedSeed.origin) {
+      throw new Error("public_preview_additional_seed_invalid");
+    }
+    seeds.add(rebased.fetchUrl);
+  }
+  return [...seeds]
+    .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+    .slice(0, PUBLIC_PREVIEW_ADDITIONAL_SEED_LIMIT);
 }
 
 /**
@@ -253,6 +379,11 @@ export async function crawlPublicSitePreview(
   if (!normalized) {
     throw new Error("public_preview_requires_normalized_origin");
   }
+  const additionalSeedUrls = resolvedAdditionalSeedUrls(
+    submitted,
+    resolvedSeed,
+    options.additionalSeedUrls ?? [],
+  );
 
   // The default is built here, not by the caller, so an observed crawl and an
   // unobserved one issue their requests through the same guarded transport.
@@ -286,8 +417,13 @@ export async function crawlPublicSitePreview(
       ...(options.onPageProgress
         ? { onPageProgress: options.onPageProgress }
         : {}),
-      budget: PUBLIC_TOOL_SYNC_CRAWL_BUDGET,
+      budget: tightenCrawlBudget(options.budgetCeiling),
       maxRequests: PUBLIC_TOOL_SYNC_MAX_REQUESTS,
+      // Always overwrite server-owned frontier controls after the offline
+      // seam. Runtime callers do not get to bypass the public normalization
+      // boundary with a cast or an untyped object.
+      additionalSeedUrls,
+      deferSitemapFrontier: options.deferSitemapFrontier === true,
     },
   );
 }

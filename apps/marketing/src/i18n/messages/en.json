@@ -1167,6 +1167,7 @@
         "resource_not_observed_does_not_prove_absence": "A resource that was not observed may be absent, unreachable, blocked, or outside the successfully fetched resource set.",
         "static_response_directives_only": "Indexability here comes from the collected static HTTP/HTML directives. Search-engine index coverage is not measured.",
         "normalised_text_match_within_inspected_pages": "Duplicate groups use case-insensitive, whitespace-normalised text and include only inspected pages.",
+        "full_site_only": "This finding requires a complete site crawl. A key-pages run is a shallow sample and does not claim a site-wide result.",
         "bounded_static_html_crawl_inlinks_only": "Inbound counts include links in collected static HTML only. This record is not a definitive orphan-page claim.",
         "uncollected_link_targets_not_classified": "Only collected link targets with an observed 4xx/5xx response are included. Uncollected targets are not called broken.",
         "static_html_json_ld_only": "JSON-LD observations come from collected static HTML. Client-rendered blocks are not measured.",
@@ -7911,6 +7912,29 @@
           "context": "Outcome and run context",
           "competitor": "Business competitor frame"
         },
+        "runOptions": {
+          "legend": "Run scope",
+          "tierLabel": "Crawl tier",
+          "manualLabel": "Additional key pages",
+          "manualPlaceholder": "https://example.com/pricing\nhttps://example.com/product",
+          "manualHelp": "Add one absolute same-origin URL per line, up to {count}. Manually added pages share the selected crawl budget.",
+          "boundary": "Both scopes use the same credit treatment for this run; no separate price is shown here.",
+          "tiers": {
+            "key-pages": {
+              "label": "Key pages",
+              "help": "Shallow discovery up to depth 2 and 80 URLs, with a crawl ceiling of 45 seconds."
+            },
+            "full-site": {
+              "label": "Full site",
+              "help": "Sitewide discovery up to depth 6 and 2,000 URLs, with a crawl ceiling of 240 seconds."
+            }
+          },
+          "errors": {
+            "too_many": "Add no more than 10 nonblank URLs.",
+            "invalid": "Use absolute http(s) URLs without credentials or fragments; each URL must be at most 2,048 characters.",
+            "cross_origin": "Every additional page must use the exact same origin as the target URL."
+          }
+        },
         "document": {
           "label": "Product Information",
           "sections": {
@@ -8690,9 +8714,16 @@
       },
       "capturedReport": "Stage 02 · Captured report",
       "captureSummary": "{pages} pages crawled · {keyPages} key pages · {evaluated}/{total} checks evaluated",
+      "captureSummaryFullSite": "{pages} pages crawled · {evaluablePages} evaluable collected pages in page-level checks · {evaluated}/{total} checks evaluated",
       "captureSummaryTargetOnly": "{pages} pages crawled · {evaluated}/{total} checks evaluated",
       "captureDetailLabel": "Collection boundary and counts",
       "keyPagesNone": "This run selected no key pages, so page-level findings cover the submitted URL only.",
+      "keyPageSelectionSummary": "{count} candidates: navigation {navigation} · cluster pages {clusterPages} ({prefixes}) · content {content} (up to 15 by inbound links among pages collected in this run, reduced to 10 or 5 when the 50-page safety valve applies) · manual {manual}.",
+      "fullSiteSelectionSummary": "{count} page-level candidates: navigation {navigation} · cluster pages {clusterPages} ({prefixes}) · content {content} · manual {manual} · full-site remainder {fullSite}.",
+      "keyPageSelectionFixed": "Home and the submitted page are fixed-priority candidates when collected; the submitted page is still evaluated if capture fails.",
+      "keyPageSelectionBoundary": "These are local classifications of the final page-level list, not external evidence or a zero filled in for missing data.",
+      "keyPageOmittedHeading": "Not included in page-level checks by the safety valve ({count})",
+      "keyPageManualUnavailableHeading": "Manually added but could not be crawled or evaluated ({count})",
       "capturedLanded": "Redirected to {url} — that is the page this report read.",
       "finalOrigin": "Final public origin",
       "capturedAt": "Captured at",
@@ -8800,6 +8831,10 @@
         "controls": {
           "expandVisible": "Expand current filter",
           "collapseAll": "Collapse all"
+        },
+        "groupHint": {
+          "2": "Want to know whether a page really covers the target query? Use the <checker>On-Page SEO Checker</checker> to inspect the title, H1, description, opening copy, and density slot by slot, with a SERP preview.",
+          "4": "Want to know whether a page really covers the target query? Use the <checker>On-Page SEO Checker</checker> to inspect the title, H1, description, opening copy, and density slot by slot, with a SERP preview."
         },
         "filterEmpty": "No issues under this filter. Switch filters to see the other categories.",
         "clean": {

@@ -76,6 +76,44 @@ interface CapturedFact {
   readonly hint: string | null;
 }
 
+function summarizeKeyPageReasons(
+  pages: AgentAuditSuccessData["result"]["keyPages"],
+): {
+  readonly navigation: number;
+  readonly clusterPages: number;
+  readonly content: number;
+  readonly manual: number;
+  readonly fullSite: number;
+  readonly prefixes: readonly string[];
+} {
+  let navigation = 0;
+  let clusterPages = 0;
+  let content = 0;
+  let manual = 0;
+  let fullSite = 0;
+  const prefixes = new Set<string>();
+  for (const page of pages ?? []) {
+    const { reason } = page;
+    if (reason === "navigation") navigation += 1;
+    else if (reason === "manual") manual += 1;
+    else if (reason === "full-site") fullSite += 1;
+    else if (typeof reason === "object" && reason.kind === "cluster") {
+      clusterPages += 1;
+      prefixes.add(reason.prefix);
+    } else if (typeof reason === "object" && reason.kind === "content") {
+      content += 1;
+    }
+  }
+  return {
+    navigation,
+    clusterPages,
+    content,
+    manual,
+    fullSite,
+    prefixes: [...prefixes].toSorted(),
+  };
+}
+
 export interface AgentResultsProps {
   readonly agent: AgentKind;
   readonly locale: string;
@@ -164,6 +202,9 @@ export function AgentResults({
       }),
     },
   ];
+  const keyPageReasons = summarizeKeyPageReasons(model.candidatePages);
+  const evaluatesAllCollectedPages =
+    agent === "seo" && data.result.crawlTier === "full-site";
 
 
 
@@ -243,19 +284,99 @@ export function AgentResults({
             page is always judged, so a count would read "1 key page" directly
             above a line saying there are none.
           */}
-          {model.keyPagesWereSelected
-            ? t("captureSummary", {
+          {evaluatesAllCollectedPages
+            ? t("captureSummaryFullSite", {
                 pages: data.result.coverage.pagesInspected,
-                keyPages: model.keyPages.length,
+                evaluablePages: model.candidatePages.length,
                 evaluated: evaluatedChecks,
                 total: model.evaluatedChecks.length,
               })
-            : t("captureSummaryTargetOnly", {
-                pages: data.result.coverage.pagesInspected,
-                evaluated: evaluatedChecks,
-                total: model.evaluatedChecks.length,
-              })}
+            : model.keyPagesWereSelected
+              ? t("captureSummary", {
+                  pages: data.result.coverage.pagesInspected,
+                  keyPages: model.candidatePages.length,
+                  evaluated: evaluatedChecks,
+                  total: model.evaluatedChecks.length,
+                })
+              : t("captureSummaryTargetOnly", {
+                  pages: data.result.coverage.pagesInspected,
+                  evaluated: evaluatedChecks,
+                  total: model.evaluatedChecks.length,
+                })}
         </p>
+
+        {model.keyPagesWereSelected ? (
+          <div
+            data-key-page-selection-summary
+            className="mt-2 text-[11.5px] leading-[1.6] text-text-dark-secondary"
+          >
+            <p>
+              {t(
+                evaluatesAllCollectedPages
+                  ? "fullSiteSelectionSummary"
+                  : "keyPageSelectionSummary",
+                {
+                  count: model.candidatePages.length,
+                  navigation: keyPageReasons.navigation,
+                  clusterPages: keyPageReasons.clusterPages,
+                  prefixes:
+                    keyPageReasons.prefixes.length > 0
+                      ? keyPageReasons.prefixes.join(" ")
+                      : "—",
+                  content: keyPageReasons.content,
+                  manual: keyPageReasons.manual,
+                  fullSite: keyPageReasons.fullSite,
+                },
+              )}
+            </p>
+            <p className="mt-1 text-text-dark-faint">
+              {t("keyPageSelectionFixed")}
+            </p>
+            <p className="mt-1 text-text-dark-faint">
+              {t("keyPageSelectionBoundary")}
+            </p>
+          </div>
+        ) : null}
+
+        {model.omittedUrls.length > 0 ? (
+          <div
+            data-key-page-omitted
+            className="mt-3 rounded-row border border-brand-warning/20 bg-brand-warning/[0.06] px-4 py-3"
+          >
+            <p className="text-[11.5px] font-medium text-text-dark-primary">
+              {t("keyPageOmittedHeading", {
+                count: model.omittedUrls.length,
+              })}
+            </p>
+            <ul className="mt-2 space-y-1 font-mono text-[10.5px] text-text-dark-secondary">
+              {model.omittedUrls.map((url) => (
+                <li key={url} className="break-all">
+                  {url}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {model.manualUnavailableUrls.length > 0 ? (
+          <div
+            data-key-page-manual-unavailable
+            className="mt-3 rounded-row border border-brand-info/20 bg-brand-info/[0.06] px-4 py-3"
+          >
+            <p className="text-[11.5px] font-medium text-text-dark-primary">
+              {t("keyPageManualUnavailableHeading", {
+                count: model.manualUnavailableUrls.length,
+              })}
+            </p>
+            <ul className="mt-2 space-y-1 font-mono text-[10.5px] text-text-dark-secondary">
+              {model.manualUnavailableUrls.map((url) => (
+                <li key={url} className="break-all">
+                  {url}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         {/*
           Stated, not implied. A run that judged one page looks exactly like

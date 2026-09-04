@@ -18,6 +18,12 @@ describe("POST /api/agents/tech/audit", () => {
     mocks.handle.mockResolvedValue(expected);
     const request = new Request("https://gengrowth.ai/api/agents/tech/audit", {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        url: "https://acme.test/main",
+        tier: "key-pages",
+        extraKeyPages: ["https://acme.test/manual"],
+      }),
     });
 
     const response = await route.POST(request);

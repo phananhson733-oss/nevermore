@@ -413,6 +413,72 @@ function setInputValue(input: HTMLInputElement, value: string): void {
   });
 }
 
+function setSelectValue(select: HTMLSelectElement, value: string): void {
+  const setValue = Object.getOwnPropertyDescriptor(
+    HTMLSelectElement.prototype,
+    "value",
+  )?.set;
+  if (!setValue) throw new Error("HTMLSelectElement.value setter unavailable");
+  act(() => {
+    setValue.call(select, value);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+function setTextAreaValue(textarea: HTMLTextAreaElement, value: string): void {
+  const setValue = Object.getOwnPropertyDescriptor(
+    HTMLTextAreaElement.prototype,
+    "value",
+  )?.set;
+  if (!setValue) throw new Error("HTMLTextAreaElement.value setter unavailable");
+  act(() => {
+    setValue.call(textarea, value);
+    textarea.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+function setRunTier(value: "key-pages" | "full-site"): void {
+  setSelectValue(
+    document.querySelector("[data-agent-run-tier]") as HTMLSelectElement,
+    value,
+  );
+}
+
+function setExtraKeyPages(value: string): void {
+  setTextAreaValue(
+    document.querySelector(
+      "[data-agent-run-extra-pages]",
+    ) as HTMLTextAreaElement,
+    value,
+  );
+}
+
+function openProfileReview(): void {
+  act(() => {
+    (
+      document.querySelector(
+        '[data-profile-action="review"]',
+      ) as HTMLButtonElement
+    ).click();
+  });
+}
+
+function setProfilePageType(value: "homepage" | "product" | "tool" | "guide"): void {
+  setSelectValue(
+    document.querySelector('[aria-label="fields.pageType"]') as HTMLSelectElement,
+    value,
+  );
+}
+
+function setProfileTargetQuery(value: string): void {
+  setInputValue(
+    document.querySelector(
+      'input[aria-label="fields.targetQuery"]',
+    ) as HTMLInputElement,
+    value,
+  );
+}
+
 function setProfileUrl(agent: AgentKind, value: string): void {
   setInputValue(
     document.querySelector(`#${agent}-profile-target-url`) as HTMLInputElement,
@@ -1943,6 +2009,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     expect(bodies).toHaveLength(1);
     expect(JSON.parse(String(bodies[0]))).toEqual({
       url: "astrologywiki.com/chart",
+      tier: "key-pages",
       // Order is the visitor's, and the wire treats it as significant.
       targetQueries: ["natal chart", "birth chart"],
       pageRole: "guide",
@@ -2270,6 +2337,124 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     expect(document.querySelector('[data-testid="agent-results"]')).toBeNull();
   });
 
+  it("discards an ordinary captured report when the always-sent page role changes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input) === "/api/auth/session"
+          ? Response.json({ signedIn: true })
+          : Response.json(successEnvelope("seo")),
+      ),
+    );
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    openProfileReview();
+    confirmProfile();
+    await flushAsyncWork();
+    expect(document.querySelector('[data-testid="agent-results"]')).not.toBeNull();
+
+    setProfilePageType("product");
+    await flushAsyncWork();
+
+    expect(document.querySelector('[data-testid="agent-results"]')).toBeNull();
+  });
+
+  it("discards an ordinary captured report when its profile target query changes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input) === "/api/auth/session"
+          ? Response.json({ signedIn: true })
+          : Response.json(successEnvelope("seo")),
+      ),
+    );
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    openProfileReview();
+    setProfileTargetQuery("birth chart");
+    confirmProfile();
+    await flushAsyncWork();
+    expect(document.querySelector('[data-testid="agent-results"]')).not.toBeNull();
+
+    setProfileTargetQuery("natal chart");
+    await flushAsyncWork();
+
+    expect(document.querySelector('[data-testid="agent-results"]')).toBeNull();
+  });
+
+  it("keeps a page-focused report when only the live Profile query changes", async () => {
+    storePageFocusedAgentIntent(sessionStorage, "astrologywiki.com/chart");
+    storeOnPageDraft(sessionStorage, {
+      url: "astrologywiki.com/chart",
+      targetQueries: ["frozen query"],
+      country: "GB",
+      locale: "en-GB",
+      pageType: "guide",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input) === "/api/auth/session"
+          ? Response.json({ signedIn: true })
+          : Response.json(successEnvelope("seo", "astrologywiki.com/chart")),
+      ),
+    );
+
+    renderStrict("seo");
+    await flushAsyncWork();
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+    expect(document.querySelector('[data-testid="agent-results"]')).not.toBeNull();
+
+    openProfileReview();
+    setProfileTargetQuery("live profile label only");
+    await flushAsyncWork();
+
+    expect(document.querySelector('[data-testid="agent-results"]')).not.toBeNull();
+  });
+
+  it.each(["pageRole", "targetQuery"] as const)(
+    "aborts an active ordinary run when its %s request identity changes",
+    async (identity) => {
+      let auditSignal: AbortSignal | null = null;
+      let finishAudit!: (response: Response) => void;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (String(input) === "/api/auth/session") {
+            return Response.json({ signedIn: true });
+          }
+          auditSignal = init?.signal ?? null;
+          return new Promise<Response>((resolve) => {
+            finishAudit = resolve;
+          });
+        }),
+      );
+
+      renderStrict("seo");
+      setProfileUrl("seo", "astrologywiki.com");
+      setRunContext();
+      openProfileReview();
+      if (identity === "targetQuery") setProfileTargetQuery("birth chart");
+      confirmProfile();
+      await flushAsyncWork();
+      expect(auditSignal).not.toBeNull();
+
+      if (identity === "pageRole") setProfilePageType("product");
+      else setProfileTargetQuery("natal chart");
+
+      expect((auditSignal as AbortSignal | null)?.aborted).toBe(true);
+      finishAudit(Response.json(successEnvelope("seo")));
+      await flushAsyncWork();
+      expect(document.querySelector('[data-testid="agent-results"]')).toBeNull();
+    },
+  );
+
   it("keeps a page-focused launch out of an ordinary Agent request", async () => {
     // No handoff: the request body must be byte-for-byte what it was before the
     // keyword layer existed.
@@ -2298,6 +2483,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       // travel is the other visit's queries.
       expect(JSON.parse(body)).toEqual({
         url: "astrologywiki.com",
+        tier: "key-pages",
         pageRole: "homepage",
       });
     }
@@ -2312,6 +2498,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         expect(input).toBe("/api/agents/seo/audit");
         expect(JSON.parse(String(init?.body))).toEqual({
           url: "astrologywiki.com/birth-chart",
+          tier: "key-pages",
           // Confirmed by this visitor on the Profile panel; it is what the
           // page-shape checks read.
           pageRole: "tool",
@@ -2344,6 +2531,166 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     });
   });
 
+  it("sends the SEO key-pages tier by default", async () => {
+    let auditBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        auditBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return Response.json(successEnvelope("seo"));
+      }),
+    );
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(auditBody).toMatchObject({ tier: "key-pages" });
+    expect(auditBody).not.toHaveProperty("extraKeyPages");
+  });
+
+  it("sends a selected full-site SEO tier", async () => {
+    let auditBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        auditBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return Response.json(successEnvelope("seo"));
+      }),
+    );
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    setRunTier("full-site");
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(auditBody).toMatchObject({ tier: "full-site" });
+  });
+
+  it("normalizes, deduplicates, sorts, and omits the main page from SEO manual URLs", async () => {
+    let auditBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        auditBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return Response.json(successEnvelope("seo", "https://astrologywiki.com/main"));
+      }),
+    );
+
+    renderStrict("seo");
+    setProfileUrl("seo", "https://astrologywiki.com/main");
+    setRunContext();
+    setExtraKeyPages(
+      [
+        " https://astrologywiki.com/zeta ",
+        "https://ASTROLOGYWIKI.com/alpha",
+        "https://astrologywiki.com/zeta",
+        "https://astrologywiki.com/main",
+      ].join("\n"),
+    );
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(auditBody).toMatchObject({
+      tier: "key-pages",
+      extraKeyPages: [
+        "https://astrologywiki.com/alpha",
+        "https://astrologywiki.com/zeta",
+      ],
+    });
+  });
+
+  it.each([
+    ["not an absolute URL", "invalid"],
+    ["https://other.test/page", "cross_origin"],
+    [
+      Array.from(
+        { length: 11 },
+        (_, index) => `https://astrologywiki.com/manual-${index}`,
+      ).join("\n"),
+      "too_many",
+    ],
+  ])("blocks an invalid manual-page set with %s", async (value, error) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    setExtraKeyPages(value);
+
+    const confirm = document.querySelector(
+      '[data-profile-action="confirm"]',
+    ) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    expect(document.querySelector("#seo-agent-run-extra-error")?.textContent).toBe(
+      `runOptions.errors.${error}`,
+    );
+    act(() => confirm.click());
+    await flushAsyncWork();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps Tech controls absent and always posts full-site without manual pages", async () => {
+    let auditBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        auditBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return Response.json(successEnvelope("tech"));
+      }),
+    );
+
+    renderStrict("tech");
+    setProfileUrl("tech", "astrologywiki.com");
+    setRunContext();
+    expect(document.querySelector("[data-agent-run-options]")).toBeNull();
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(auditBody).toMatchObject({ tier: "full-site" });
+    expect(auditBody).not.toHaveProperty("extraKeyPages");
+  });
+
+  it("clears a captured result when the next SEO run tier changes", async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL) =>
+        String(input) === "/api/auth/session"
+          ? Response.json({ signedIn: true })
+          : Response.json(successEnvelope("seo")),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+    expect(document.querySelector('[data-testid="agent-results"]')).not.toBeNull();
+
+    setRunTier("full-site");
+    await flushAsyncWork();
+
+    expect(document.querySelector('[data-testid="agent-results"]')).toBeNull();
+    expect(postCalls(fetchMock)).toHaveLength(1);
+  });
+
   it("stores a confirmed Profile and opens sign-in without an audit POST", async () => {
     const fetchMock = vi.fn(async () => Response.json({ signedIn: false }));
     vi.stubGlobal("fetch", fetchMock);
@@ -2369,7 +2716,132 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         targetUrl: "astrologywiki.com",
         reviewState: "confirmed",
       },
+      runOptions: { tier: "full-site", extraKeyPages: [] },
     });
+  });
+
+  it("resumes a signed-out SEO run with the exact full-site and manual-page options", async () => {
+    let signedIn = false;
+    const auditBodies: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn });
+        }
+        auditBodies.push(
+          JSON.parse(String(init?.body)) as Record<string, unknown>,
+        );
+        return Response.json(successEnvelope("seo"));
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    setRunTier("full-site");
+    setExtraKeyPages("https://astrologywiki.com/pricing");
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(readPendingAgentIntent(sessionStorage, "seo")?.runOptions).toEqual({
+      tier: "full-site",
+      extraKeyPages: ["https://astrologywiki.com/pricing"],
+    });
+    expect(auditBodies).toHaveLength(0);
+
+    signedIn = true;
+    act(() => window.dispatchEvent(new Event("focus")));
+    await flushAsyncWork();
+
+    expect(auditBodies).toEqual([
+      expect.objectContaining({
+        tier: "full-site",
+        extraKeyPages: ["https://astrologywiki.com/pricing"],
+      }),
+    ]);
+  });
+
+  it("restores pending run options on mount instead of reading the live SEO default", async () => {
+    const profile = confirmAgentProfile(
+      updateAgentProfile(createAgentProfileDraft("seo", "astrologywiki.com"), {
+        country: "US",
+        locale: "en-US",
+      }),
+    );
+    storeConfirmedAgentRunIntent(
+      sessionStorage,
+      profile,
+      null,
+      {
+        tier: "full-site",
+        extraKeyPages: ["https://astrologywiki.com/tools/chart"],
+      },
+    );
+    let auditBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        auditBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return Response.json(successEnvelope("seo"));
+      }),
+    );
+
+    renderStrict("seo");
+    await flushAsyncWork();
+
+    expect(auditBody).toMatchObject({
+      tier: "full-site",
+      extraKeyPages: ["https://astrologywiki.com/tools/chart"],
+    });
+    expect(
+      (document.querySelector("[data-agent-run-tier]") as HTMLSelectElement)
+        .value,
+    ).toBe("full-site");
+  });
+
+  it("replays the exact run options after an API-level authentication race", async () => {
+    const auditBodies: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        auditBodies.push(
+          JSON.parse(String(init?.body)) as Record<string, unknown>,
+        );
+        return auditBodies.length === 1
+          ? Response.json(
+              { error: { code: "auth_required" } },
+              { status: 401 },
+            )
+          : Response.json(successEnvelope("seo"));
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    setRunTier("full-site");
+    setExtraKeyPages("https://astrologywiki.com/pricing");
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(readPendingAgentIntent(sessionStorage, "seo")?.runOptions).toEqual({
+      tier: "full-site",
+      extraKeyPages: ["https://astrologywiki.com/pricing"],
+    });
+
+    act(() => window.dispatchEvent(new Event("focus")));
+    await flushAsyncWork();
+
+    expect(auditBodies).toHaveLength(2);
+    expect(auditBodies[1]).toEqual(auditBodies[0]);
+    expect(sessionStorage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
   });
 
   it("resumes a confirmed StrictMode intent exactly once", async () => {
@@ -2399,6 +2871,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         }
         expect(JSON.parse(String(init?.body))).toEqual({
           url: "astrologywiki.com",
+          tier: "key-pages",
           pageRole: "homepage",
         });
         return Response.json(successEnvelope("seo"));

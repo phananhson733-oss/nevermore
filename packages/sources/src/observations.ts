@@ -69,6 +69,11 @@ export interface CrawlPageProjection {
   readonly headings: readonly string[];
   readonly wordCount: number | null;
   readonly internalOutlinks: readonly CrawlLinkProjection[];
+  /**
+   * Same-origin subject URLs linked from the origin homepage's semantic
+   * header/nav/footer containers. Absent on every non-homepage projection.
+   */
+  readonly navigationOutlinks?: readonly string[];
   readonly jsonLd: CrawlJsonLdProjection;
   readonly sitemapMember: boolean;
   readonly bodyExcerpt: string | null;
