@@ -30,7 +30,12 @@ it("source receipt is only a proposal, explicit fact adoption remains pending, a
     // When it was captured stays: the staleness flag does not compare the draft
     // hash, so this is how a person sees the evidence predates their draft.
     expect(host.querySelector("[data-receipt-captured]")?.textContent).toContain(receipt.createdAt);
-    expect(host.textContent).toContain("identity_conflict");
+    // Why this competitor cannot be taken, in the same words the frozen view
+    // uses -- not the contract's `conflict · identity_conflict`.
+    const refused = host.querySelector("[data-entry-refused]")?.textContent ?? "";
+    expect(refused).toContain(geoKbV2Copy("en").adoptable.statuses.conflict);
+    expect(refused).toContain(geoKbV2Copy("en").adoptable.reasons.identity_conflict);
+    expect(host.textContent).not.toContain("identity_conflict");
     expect(host.querySelector('[data-apply-competitor="C1"]')).toBeNull();
     await act(async () => host.querySelector<HTMLButtonElement>('[data-apply-fact="F1"]')?.click());
     expect(current.facts[0]).toMatchObject({ value: "3", review: "pending", supportRef: { receiptId: receipt.receiptId, evidenceId: "F1" } });

@@ -20,7 +20,7 @@ const VIEW = { kbId: "kb-existing", origin: "https://example.com", host: "exampl
 const DATA = { website: { websiteId: WEBSITE_ID, origin: VIEW.origin, host: VIEW.host, profileState: "confirmed" }, knowledgeBase: VIEW };
 const ASSET = {
   featureCandidateHelp: "Add a pending fact, then review its value, URL and capture time. Nothing is verified automatically.",
-  featureCandidateAdd: "Add pending fact", featureCandidateExists: "Fact already exists", featureCandidateTooLong: "Feature is too long to use without truncation", featureCandidateFull: "Fact limit reached",
+  featureCandidateAdd: "Add pending fact",
   title: "Website GEO extension", loading: "Loading website GEO…", retry: "Retry",
   profileRequired: "Confirm this website’s Product Profile to inherit its product facts.",
   profileUnavailable: "The confirmed Product Profile could not be resolved.",
@@ -108,7 +108,13 @@ describe("website GEO canonical editor", () => {
       "coreFeatures[0]", "Saved feature", "", "",
     ]);
     expect(factRow?.querySelector("select")).toBeNull();
-    expect(container.textContent).toContain(ASSET.featureCandidateExists);
+    // The Profile row it came from no longer offers the action: the fact is in
+    // the review area, so there is nothing left to press rather than a control
+    // that refuses. The candidate labels for the refused states are gone.
+    expect([...container.querySelectorAll("button")].some((button) => button.getAttribute("aria-label") === `${ASSET.featureCandidateAdd}: Saved feature`)).toBe(false);
+    const inherited = container.querySelector("[data-geo-profile-copy], [data-geo-profile-summary]");
+    expect(inherited).not.toBeNull();
+    expect(inherited?.querySelectorAll("button:disabled")).toHaveLength(0);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it("loads by route identity, then reuses the existing editor and exact read-only Profile", async () => {

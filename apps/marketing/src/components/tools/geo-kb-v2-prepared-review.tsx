@@ -13,7 +13,9 @@ export function GeoKbV2PreparedReview({ candidate, locale, stale, reviewed, canF
   return <section data-prepared-review className="min-w-0 space-y-5 rounded-card border border-brand-accent/40 bg-brand-panel p-5 sm:p-7">
     <h4 className="text-[15px] font-semibold text-text-dark-primary">{t.candidate}</h4>
     {candidate === null ? <p className="text-sm text-text-dark-secondary">{t.noCandidate}</p> : <>
-      <p className="break-all font-mono text-xs text-text-dark-secondary">{candidate.candidateId}<br />{candidate.candidateHash}</p>
+      {/* Not the candidate id and hash: this panel asks whether the content is
+          right to freeze, and the content below ends with a version-identity
+          panel that states both for the record. */}
       {stale ? <p data-candidate-stale role="status" className="text-sm text-brand-error">{t.stale}</p> : null}
       <GeoKbVersionContent heading={4} payload={candidate.payload} questionSet={candidate.questionSet} context={candidate.context} locale={locale} />
       <label className="flex items-start gap-3 text-sm text-text-dark-primary"><input data-confirm-prepared type="checkbox" className="mt-1" disabled={stale || busy} checked={reviewed} onChange={event => onReview(event.target.checked)} /><span>{t.reviewed}</span></label>

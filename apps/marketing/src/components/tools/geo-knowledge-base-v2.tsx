@@ -17,6 +17,7 @@ import { GeoKbFrozenCopy } from "./geo-kb-frozen-copy.tsx";
 import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { GeoProfileCopyReview } from "./geo-kb-profile-copy-review.tsx";
 import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
+import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
 import { GeoKbV2MeasurementReview } from "./geo-kb-v2-measurement.tsx";
 import { GeoKbV2Progress } from "./geo-kb-v2-progress.tsx";
 import { GeoKbV2Block } from "./geo-kb-v2-block.tsx";
@@ -36,6 +37,9 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
   const blockedGeneration = (kind: GeoKbGenerationKind) => editor.generationAction(kind) !== "normal";
   const generationRunning = editor.generationRunning;
   const stateLabel = (state: string | undefined) => te(`generationStates.${(["claimed", "dispatched", "succeeded", "failed", "uncertain", "unknown", "not_found"] as const).find(known => known === state) ?? "unknown"}`);
+  // A historical question's demand layer is the same closed enum the frozen
+  // view names in words; it was printed as the code, beside a role UUID.
+  const legacyLayers: Readonly<Record<string, string | undefined>> = geoKbV2Copy(props.locale).layers;
   const saveState = editor.edited ? "unsaved" : editor.autosaveHold === "conflict" ? "conflict" : editor.dirty || view.requiresSave ? (view.draftVersion === 0 ? "neverSaved" : "savePending") : editor.status.kind === "saved" ? "saved" : "idle";
   return <section data-geo-kb-v2 data-inline={inline} className="min-w-0 space-y-6 text-text-dark-primary">
     <div role="tablist" aria-label="GEO" className="flex gap-2 border-b border-brand-border-card pb-3">{(["input", "frozen"] as const).map(value => <Button key={value} id={`${id}-${value}-tab`} role="tab" aria-controls={`${id}-${value}-panel`} aria-selected={stage === value} tabIndex={stage === value ? 0 : -1} data-stage={value} type="button" variant={stage === value ? "default" : "outline"} onClick={() => setStage(value)} onKeyDown={event => {
@@ -48,7 +52,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
         change is not reliably announced), then the primary actions. */}
     <div className="flex min-w-0 flex-col gap-4 rounded-card border border-brand-border-card bg-brand-panel p-6">
       <div>
-        <p className="break-all font-mono text-[11px] text-brand-accent-text">{view.host}</p>
+        <p className="break-all text-[13px] text-brand-accent-text">{view.host}</p>
         <p aria-live="polite" aria-atomic="true" data-save-state={saveState} {...(saveState === "savePending" ? { "data-save-pending": true } : {})} className="mt-2 min-h-5 text-[13px] text-text-dark-secondary">
           {saveState === "unsaved" ? t.unsaved : saveState === "conflict" ? te("conflictPending") : saveState === "savePending" ? te("savePending") : saveState === "neverSaved" ? te("neverSaved") : saveState === "saved" ? t.saved : ""}
         </p>
@@ -70,7 +74,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       <GeoKbV2BuildReport report={editor.build} locale={props.locale} />
       <GeoKbV2ConfirmReport report={editor.confirm} />
     </div>
-    {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? te("conflict") : editor.status.code === "generation_running" ? te("generationRunning") : t.error} <span className="break-all font-mono text-xs">{editor.status.code}</span></p> : null}
+    {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? te("conflict") : editor.status.code === "generation_running" ? te("generationRunning") : t.error}{["invalid_input", "input_stale", "conflict", "generation_running"].includes(editor.status.code) ? null : <> <span className="break-all font-mono text-xs">{editor.status.code}</span></>}</p> : null}
     <div role="tabpanel" hidden={stage !== "input"} id={`${id}-input-panel`} aria-labelledby={`${id}-input-tab`} className="space-y-6">
       <GeoKbV2Block id="profile"><GeoKbInheritedProfile profile={view.profile} copy={payload.profileCopy} locale={props.locale} inline facts={payload.facts} onAddFact={(key, value) => {
         const next = appendGeoProfileFactV2(payload, key, value);
@@ -128,7 +132,10 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
         </section>;
       })}
       {editor.retainedRequests.length ? <section className="space-y-4 rounded-card border border-brand-border-card bg-brand-panel p-5 text-sm"><h4 className="font-semibold">{t.retainedRequests}</h4>{editor.retainedRequests.map(entry => <article key={entry.id} className="space-y-2 rounded-lg border border-brand-border-card p-4">
-        <p>{entry.kind === "roles" ? t.generateRoles : t.prepare} · v{entry.baseVersion} · {entry.state}</p><p className="break-all font-mono text-xs">{entry.generationId ?? entry.idempotencyKey} {entry.errorReason ?? ""}</p>
+        <p>{entry.kind === "roles" ? t.generateRoles : t.prepare} · v{entry.baseVersion} · {stateLabel(entry.state)}</p>
+        {/* Which request this is. Two retained requests are otherwise identical
+            and the read button acts on exactly one of them. */}
+        <p className="break-all font-mono text-xs text-text-dark-secondary">{entry.generationId ?? entry.idempotencyKey} {entry.errorReason ?? ""}</p>
         <Button type="button" variant="outline" data-read-retained={entry.id} disabled={editor.busy} onClick={() => void editor.readRetainedRequest(entry)}>{t.readGeneration}</Button>
       </article>)}</section> : null}
       {/* Not a source summary: the two actions a refresh makes possible --
@@ -139,7 +146,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       <GeoKbV2PreparedReview candidate={view.prepared} locale={props.locale} stale={editor.candidateStale} reviewed={editor.reviewed} busy={editor.busy} canFreeze={editor.canFreeze} onReview={editor.confirmReview} onFreeze={() => void editor.freeze()} />
       </GeoKbV2Block>
     </div><div role="tabpanel" hidden={stage !== "frozen"} id={`${id}-frozen-panel`} aria-labelledby={`${id}-frozen-tab`}>
-      {view.frozen === null ? <p className="text-sm text-text-dark-secondary">{t.noFrozen}</p> : "context" in view.frozen ? <div data-frozen-v2 className="space-y-5"><GeoKbFrozenSummary frozen={view.frozen} /><GeoKbVersionContent payload={view.frozen.payload} questionSet={view.frozen.questionSet} context={view.frozen.context} locale={props.locale} /></div> : <div className="space-y-5"><p className="text-sm text-text-dark-secondary">{t.legacy}</p><GeoKbFrozenCopy payload={view.frozen.payload} locale={props.locale} revision={view.frozen.revision} /><ul className="space-y-3">{view.frozen.questions?.map(question => <li key={question.id} className="rounded-[10px] border border-brand-border-card p-4 text-sm">{question.text}<p>{question.layer} · {question.roleId ?? "—"}</p><p>{question.requiredEntities?.join(" · ")}</p></li>)}</ul></div>}
+      {view.frozen === null ? <p className="text-sm text-text-dark-secondary">{t.noFrozen}</p> : "context" in view.frozen ? <div data-frozen-v2 className="space-y-5"><GeoKbFrozenSummary frozen={view.frozen} /><GeoKbVersionContent payload={view.frozen.payload} questionSet={view.frozen.questionSet} context={view.frozen.context} locale={props.locale} /></div> : <div className="space-y-5"><p className="text-sm text-text-dark-secondary">{t.legacy}</p><GeoKbFrozenCopy payload={view.frozen.payload} locale={props.locale} revision={view.frozen.revision} /><ul className="space-y-3">{view.frozen.questions?.map(question => <li key={question.id} className="rounded-[10px] border border-brand-border-card p-4 text-sm">{question.text}<p className="text-text-dark-secondary">{legacyLayers[question.layer] ?? question.layer}</p><p>{question.requiredEntities?.join(" · ")}</p></li>)}</ul></div>}
     </div>
   </section>;
 }

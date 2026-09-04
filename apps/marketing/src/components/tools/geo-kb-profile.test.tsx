@@ -62,7 +62,9 @@ describe("complete GEO Profile copy display", () => {
     const blank = host.querySelector('[data-geo-profile-field="oneLinePositioning"]');
     expect(renderedText(blank)).toContain(en.tools.geoKnowledgeBase.asset.emptyField);
     expect(blank?.querySelectorAll("button")).toHaveLength(0);
-    expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.asset.featureCandidateTooLong);
+    // Nor a sentence standing in for the button: the row is its label and its
+    // "not provided", and the panel is one action short of the full 34.
+    expect(host.querySelectorAll("button")).toHaveLength(33);
     // The filled field beside it still offers one.
     expect(host.querySelector('[data-geo-profile-field="productName"]')?.querySelectorAll("button")).toHaveLength(1);
   });
@@ -77,11 +79,17 @@ describe("complete GEO Profile copy display", () => {
     // this is what was saved then, and neither editor changes it now.
     expect(host.textContent).toContain(en.tools.geoKnowledgeBase.asset.frozenCopyBody);
   });
-  it("disables a candidate whose stable fact key already exists", async () => {
+  it("takes the action back once the value is already in the review area", async () => {
     await render({ onAddFact: vi.fn(), facts: [{ key: "productName", value: "Copied product", reason: "", sourceUrl: "https://example.com", observedAt: "2026-09-01" }] });
-    const disabled = [...host.querySelectorAll<HTMLButtonElement>("button")].filter(button => button.disabled);
-    expect(disabled).toHaveLength(1);
-    expect(disabled[0]?.textContent).toBe(en.tools.geoKnowledgeBase.asset.featureCandidateExists);
+    // Nothing here refuses a press. The Profile editor parks no dead control
+    // on screen, so the row whose fact already exists simply has none.
+    expect(host.querySelectorAll("button:disabled")).toHaveLength(0);
+    expect(host.querySelector('[data-geo-profile-field="productName"]')?.querySelectorAll("button")).toHaveLength(0);
+    // And the note saying which address a press would carry goes with it,
+    // rather than describing an action that is no longer on offer.
+    expect(host.querySelector('[data-fact-source="productName"]')).toBeNull();
+    // The other 33 values keep theirs.
+    expect(host.querySelectorAll("button")).toHaveLength(33);
   });
   it("gives current and frozen copies independent identities", async () => {
     await act(async () => root.render(<NextIntlClientProvider locale="en" messages={en}>
@@ -92,8 +100,11 @@ describe("complete GEO Profile copy display", () => {
     expect(new Set(ids).size).toBe(ids.length);
     // Each panel's heading has to be the one its own region points at, or a
     // screen reader announces both regions under the same name.
+    // One card per group, twice over -- the copy is drawn as the four section
+    // cards the Profile editor uses, not as one card wrapped around them.
     const regions = [...host.querySelectorAll("section[aria-labelledby]")];
-    expect(regions).toHaveLength(2);
+    expect(regions.length).toBe(host.querySelectorAll("[data-geo-profile-group]").length);
+    expect(regions.length).toBeGreaterThan(2);
     for (const region of regions) {
       const named = region.getAttribute("aria-labelledby") ?? "";
       expect([...host.querySelectorAll("[id]")].filter(node => node.id === named)).toHaveLength(1);
@@ -163,11 +174,23 @@ describe("complete GEO Profile copy display", () => {
       expect(label).toHaveLength(1);
       expect(label[0]?.textContent?.trim()).not.toBe("");
     }
-    // The group titles are real headings one level under the panel, so they can
-    // be jumped to; a styled <p> replaced a <summary> that could be.
-    const panel = host.querySelector("section[aria-labelledby]");
-    const depth = panel?.querySelector("h2") !== null ? "h3" : "h5";
-    expect(host.querySelectorAll(`[data-geo-profile-group] > ${depth}`).length).toBe(host.querySelectorAll("[data-geo-profile-group]").length);
+    // Each group is its own section card, titled by a real heading at the depth
+    // the host set -- the shape `ProfileSection` gives Product, ICP, Market and
+    // Competitors, not four styled <p>s stacked inside one shared card.
+    const groups = [...host.querySelectorAll("[data-geo-profile-group]")];
+    expect(groups.length).toBeGreaterThan(1);
+    for (const group of groups) {
+      const card = group.querySelector("section[aria-labelledby]");
+      const named = card?.getAttribute("aria-labelledby") ?? "";
+      const title = [...host.querySelectorAll("[id]")].filter(node => node.id === named);
+      expect(title).toHaveLength(1);
+      expect(title[0]?.tagName).toBe("H2");
+      expect(title[0]?.textContent?.trim()).not.toBe("");
+    }
+    // And the depth is the host's, not a constant: a host with its own outline
+    // gets the same cards one level down.
+    await render({ heading: 4 });
+    expect(host.querySelectorAll("[data-geo-profile-group] section h4").length).toBe(host.querySelectorAll("[data-geo-profile-group]").length);
   });
   it("names the address a fact action will carry, and says when it will carry none", async () => {
     // The button writes a citation. Without this the visitor presses it and a
