@@ -568,6 +568,33 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
    * refuses to accept is named and the run stops there rather than freezing a
    * version that quietly left it out.
    */
+  /**
+   * The whole knowledge base in one gesture: derive from the confirmed Profile,
+   * save, refresh the crawl and Search Console evidence, ask for the roles,
+   * take every role that came back, accept what is pending, ask for the
+   * question set, freeze it.
+   *
+   * None of those steps was a judgement the person pressing them was making --
+   * they were the pipeline, published as five numbered buttons. Where a step
+   * really does need a decision, it stops and the report says which one; the
+   * decision is then made in the Product Profile, and this is pressed again.
+   */
+  const generateAll = async (): Promise<void> => {
+    await buildFromProfile();
+    // Read the run's own result, not this render's: the roles arrived one line
+    // ago and the closed-over `view` cannot know about them.
+    const settled = current.current.view.generations.roles;
+    const proposal = settled?.state === "succeeded" && settled.result?.schemaVersion === "marketing-geo-role-proposal.v1" ? settled.result : null;
+    if (proposal === null) return;
+    if (proposal.profileCopyHash !== current.current.view.profileCopyHash
+      || proposal.input.officialName !== current.current.payload.officialName
+      || proposal.input.questionLanguage !== current.current.payload.market.language) return;
+    const adopted = adoptGeoKbRoleProposals(proposal.output.roles, proposal.generationId);
+    if (adopted.length === 0 || adopted.length > 5) return;
+    change({ ...current.current.payload, roles: adopted });
+    await confirmAll();
+  };
+
   const confirmAll = async (): Promise<void> => {
     if (lock.current || buildRunning.current) return;
     if (current.current.copyStale) { setConfirm({ accepted: 0, blocked: [], stoppedAt: "copy" }); return; }
@@ -614,7 +641,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     setReview(null); await readSaved();
   }); };
   return { view, payload, dirty, edited, status, busy, generationRunning, autosaveHold, pending, retainedRequests, readRetainedRequest, generationAction, copyProposal, copyStale, copyHashReady, sourceSelection, roleProposalReusable, canAdoptProfileCopy: copyProposal !== null && copySequence.current === signal.sequence, candidateStale, canGenerate, canPrepare, needsReview, canFreeze, reviewed: review === candidateIdentity && candidateIdentity !== null,
-    building, build, buildFromProfile, confirm, confirmAll,
+    building, build, buildFromProfile, confirm, confirmAll, generateAll,
     change, save, reload, refreshSources, generate, readGeneration, freeze, reviewProfileCopy, adoptProfileCopy, adoptRoles,
     dismissProfileCopy: () => setCopyProposal(null), confirmReview: (accepted: boolean) => setReview(accepted && !candidateStale ? candidateIdentity : null) };
 }
