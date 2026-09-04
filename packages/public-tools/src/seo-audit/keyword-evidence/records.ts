@@ -569,6 +569,12 @@ function slotCoverageRecord(
 
     The URL is still reported: 2.3 and 3.2 read the slots they own, and the
     evidence layer keeps the URL slot for the surfaces that show it.
+
+    This list is what 2.10's published threshold has to describe. It shipped
+    saying "description, sub-headings, opening text or URL" for a run that had
+    already stopped reading the URL, which told a reader their domain
+    satisfied a check it could not satisfy. catalog.test locks the threshold
+    to explaining the exclusion.
   */
   const slots = ["description", "subHeadings", "openingText"] as const;
   const applicable = slots.filter(

@@ -204,12 +204,43 @@ function isSecretName(name: string): boolean {
  * Reset links, invite links, and share links carry their secret in the path,
  * where no parameter name announces it. A readable slug ("birth-chart-
  * calculator") has separators and vowels; a token does not.
+ *
+ * Rejecting anything that merely contains a separator let the two commonest
+ * shapes straight through: a JWT is three base64url runs joined by dots, and
+ * base64url reset tokens routinely carry `-` and `_`. Both read as slugs and
+ * were copied into a prompt bound for a third-party assistant. Three tests
+ * replace that one, each naming a shape a slug does not have.
  */
+const DENSE_RUN = 20;
+
 function looksLikeSecretSegment(segment: string): boolean {
+  if (segment.length < 24 || !/^[A-Za-z0-9._~-]+$/.test(segment)) return false;
+
+  // A JWT: header.payload.signature, each of them base64url.
+  const dotted = segment.split(".");
+  if (
+    dotted.length === 3 &&
+    dotted.every((part) => /^[A-Za-z0-9_-]{8,}$/.test(part))
+  ) {
+    return true;
+  }
+
+  // One long unbroken run carrying digits. Length alone would catch a long
+  // unhyphenated word ("understandingyourbirthchart"); a token has digits in
+  // it and a written word does not.
+  const runs = segment.split(/[-_.~]+/).filter(Boolean);
+  if (
+    runs.some(
+      (run) => run.length >= DENSE_RUN && /^(?=.*[0-9])[A-Za-z0-9]+$/.test(run),
+    )
+  ) {
+    return true;
+  }
+
+  // Mixed case and digits across the whole segment: base64url and hex tokens
+  // read this way whatever their separators, and a URL slug is lowercase.
   return (
-    segment.length >= 24 &&
-    /^[A-Za-z0-9._~-]+$/.test(segment) &&
-    !/[-_.]/.test(segment.slice(1, -1))
+    /[a-z]/.test(segment) && /[A-Z]/.test(segment) && /[0-9]/.test(segment)
   );
 }
 

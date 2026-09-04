@@ -485,6 +485,39 @@ describe("redactUrl", () => {
     expect(out).toBe("https://x.test/birth-chart-calculator/free-reading");
   });
 
+  /**
+   * The two shapes a "has a separator, so it is a slug" rule read as readable.
+   * A JWT is dots; a base64url token is `-` and `_`. Both were exported whole.
+   */
+  it.each([
+    [
+      "a JWT in the path",
+      "https://x.test/s/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXkQ",
+      "dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXkQ",
+    ],
+    [
+      "a base64url token carrying hyphens and underscores",
+      "https://x.test/invite/Xy9_aQ-3Rf7Kp2Lm-Zn4Vb8Tc-Wd6Hs1Gj5",
+      "Xy9_aQ-3Rf7Kp2Lm-Zn4Vb8Tc-Wd6Hs1Gj5",
+    ],
+    [
+      "a long unbroken run carrying digits",
+      "https://x.test/r/a8Kf92Lm03Qp47Xz15Rt68Vw",
+      "a8Kf92Lm03Qp47Xz15Rt68Vw",
+    ],
+  ])("redacts %s", (_label, input, secret) => {
+    const out = redactUrl(input);
+    expect(out).not.toContain(secret);
+    expect(out).toContain("[redacted]");
+  });
+
+  it("leaves a long unhyphenated word intact", () => {
+    // Length alone would take this: the digits are what separate a token from
+    // a slug someone wrote without hyphens.
+    const out = redactUrl("https://x.test/understandingyourbirthchart");
+    expect(out).toBe("https://x.test/understandingyourbirthchart");
+  });
+
   it("keeps every URL of a whitespace-joined value readable", () => {
     // `source_pages` evidence is a space-joined list; parsing only the first URL
     // swallowed the rest into its path as %20-escaped text.

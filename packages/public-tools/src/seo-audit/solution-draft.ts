@@ -4,6 +4,11 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import {
+  countOccurrencesInText,
+  tokenizationOf,
+} from "./keyword-evidence/match.ts";
+import { normalizeTargetQuery } from "./keyword-evidence/normalize.ts";
+import {
   displayWidth,
   SNIPPET_DESCRIPTION_WIDTH,
   SNIPPET_TITLE_WIDTH,
@@ -74,14 +79,23 @@ export type SolutionDraft = SearchPresentationDraft | HeadingStructureDraft;
 /**
  * Whether the query survives as a word sequence rather than as loose letters.
  *
- * The same shape 2.3 judges by: normalise both sides to single-spaced
- * lowercase and look for the phrase. No synonym set and no stemming, because
- * the check this draft exists to satisfy applies none either.
+ * Runs the matcher 2.3 itself judges by, rather than a second reading of the
+ * same idea. A substring test was that second reading, and it answered a
+ * different question: `cat` "survived" into `Catalog software`, so a draft
+ * 2.3 would still have failed was reported back as keeping the query. The
+ * matcher tokenises Latin queries on word boundaries and folds whitespace for
+ * queries carrying CJK, which is the only basis this field can honestly claim.
  */
 function containsQuerySequence(text: string, query: string): boolean {
-  const flatten = (value: string): string =>
-    value.toLowerCase().replace(/\s+/gu, " ").trim();
-  return flatten(text).includes(flatten(query));
+  const normalized = normalizeTargetQuery(query);
+  if (normalized === null) return false;
+  return (
+    countOccurrencesInText(
+      normalized.identity,
+      text,
+      tokenizationOf(normalized.identity),
+    ) > 0
+  );
 }
 
 /** Caps that bound one prompt, not editorial advice about length. */
