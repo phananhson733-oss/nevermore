@@ -245,9 +245,8 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
     <div data-geo-profile-copy className="min-w-0">
       {copyDescription === undefined && !frozen ? null : <p className="mb-5 text-[13px] leading-relaxed text-text-dark-secondary">{copyDescription ?? t("asset.frozenCopyBody")}</p>}
       <ProfileFields profile={copy.profile} facts={facts} heading={depth} {...(onAddFact === undefined ? {} : { onAddFact })} />
-      {/* Which confirmed Profile revision this copy is, and its hash. The
-          editor does not need it, but the two archival callers exist to
-          record exactly that, and neither shows it anywhere else. */}
+      {/* Which confirmed Profile revision this copy is, and its hash. Customer
+          views no longer mount this complete archival Profile copy. */}
       {copyDescription === undefined && !frozen ? null : <div data-geo-copy-identity className="mt-6 border-t border-brand-border-card pt-4 text-xs text-text-dark-secondary">
         <p>{t("asset.revision", { revision: copy.snapshotRevision })}</p>
         <p className="mt-1 break-all font-mono">{t("asset.hash", { hash: copy.profileHash })}</p>

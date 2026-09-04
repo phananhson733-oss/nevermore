@@ -15,6 +15,8 @@ import { geoKbV2Copy, type GeoKbV2Copy } from "./geo-kb-v2-copy.ts";
 export type GeoKbVersionHeading = 3 | 4;
 export interface GeoKbVersionContentProps {
   readonly heading?: GeoKbVersionHeading;
+  /** Customer views keep useful Profile, competitor and question content only. */
+  readonly customerFacing?: boolean;
   readonly payload: GeoKbPayloadV2;
   readonly questionSet: GeoQuestionSetV2;
   readonly context: GeoSnapshotContextV2;
@@ -192,24 +194,25 @@ function Sources({ context, copy, heading }: { readonly context: GeoSnapshotCont
   </Panel>;
 }
 
-export function GeoKbVersionContent({ payload, questionSet, context, locale, heading = 3 }: GeoKbVersionContentProps) {
+export function GeoKbVersionContent({ payload, questionSet, context, locale, heading = 3, customerFacing = false }: GeoKbVersionContentProps) {
   const copy = geoKbV2Copy(locale);
   return <div data-geo-version-content className="grid min-w-0 gap-6 text-text-dark-primary">
-    <GeoKbInheritedProfile profile={null} copy={payload.profileCopy} locale={locale} inline heading={heading} copyDescription={copy.profileDescription} />
-    <Panel heading={heading} title={copy.sections.identity}><dl className="grid min-w-0 gap-5 sm:grid-cols-2">
+    {customerFacing ? null : <GeoKbInheritedProfile profile={null} copy={payload.profileCopy} locale={locale} inline heading={heading} copyDescription={copy.profileDescription} />}
+    {customerFacing ? null : <Panel heading={heading} title={copy.sections.identity}><dl className="grid min-w-0 gap-5 sm:grid-cols-2">
       <Info label={copy.fields.website}><SourceUrl value={payload.targetUrl} empty={copy.unknown} /></Info><Info label={copy.fields.officialName}>{payload.officialName}</Info>
       <Info label={copy.fields.aliases}><List values={payload.aliases} empty={copy.empty} /></Info><Info label={copy.fields.categories}><List values={payload.categoryTerms} empty={copy.empty} /></Info>
       <Info label={copy.fields.market}>{payload.market.country}</Info><Info label={copy.fields.language}>{payload.market.language}</Info>
-    </dl></Panel>
-    <Competitors payload={payload} context={context} copy={copy} heading={heading} />
-    <Roles payload={payload} context={context} copy={copy} heading={heading} /><Facts payload={payload} context={context} copy={copy} heading={heading} />
-    <Questions payload={payload} questionSet={questionSet} copy={copy} heading={heading} /><Sources context={context} copy={copy} heading={heading} />
+    </dl></Panel>}
+    {customerFacing ? null : <Competitors payload={payload} context={context} copy={copy} heading={heading} />}
+    {customerFacing ? null : <><Roles payload={payload} context={context} copy={copy} heading={heading} /><Facts payload={payload} context={context} copy={copy} heading={heading} /></>}
+    <Questions payload={payload} questionSet={questionSet} copy={copy} heading={heading} />
+    {customerFacing ? null : <><Sources context={context} copy={copy} heading={heading} />
     <Panel heading={heading} title={copy.sections.version}><dl className="grid min-w-0 gap-5 sm:grid-cols-2">
       <Info label={copy.fields.candidate}>{context.candidateId}</Info><Info label={copy.fields.kbId}>{context.kbId}</Info>
       <Info label={copy.fields.schema}><List values={[payload.schemaVersion, questionSet.schemaVersion, context.schemaVersion]} empty={copy.empty} /></Info>
       <Info label={copy.fields.registry}>{questionSet.registryVersion === "none" ? copy.empty : questionSet.registryVersion}</Info><Info label={copy.fields.method}>{questionSet.methodVersion}</Info>
       <Info label={copy.fields.skippedLayers}><List values={context.skippedLayers.map(layer => copy.layers[layer])} empty={copy.empty} /></Info>
       <Info label={copy.fields.payloadHash}>{context.payloadHash}</Info><Info label={copy.fields.questionHash}>{context.questionSetHash}</Info><Info label={copy.fields.contextHash}>{context.contentHash}</Info>
-    </dl></Panel>
+    </dl></Panel></>}
   </div>;
 }

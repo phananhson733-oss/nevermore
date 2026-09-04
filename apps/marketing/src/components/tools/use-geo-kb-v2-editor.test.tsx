@@ -17,6 +17,17 @@ function Harness({ view, revision }: { readonly view: GeoKbEditorViewV2; readonl
 async function mount(view = editorFixture(), revision = 1) { await act(async () => root.render(<Harness view={view} revision={revision} />)); }
 function later<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
 const response = (data: unknown) => Response.json({ data });
+function unsupportedLanguageView() {
+  const base = editorFixture();
+  const profile = { ...base.payload.profileCopy.profile, locale: "zh-CN" };
+  const payload = { ...base.payload, market: { ...base.payload.market, language: "zh-cn" }, profileCopy: { ...base.payload.profileCopy, profile } };
+  return { ...base, prepared: null, frozen: null, sourceReceipt: null, draftHash: geoV2Digest(payload), profileCopyHash: geoV2Digest(payload.profileCopy), payload };
+}
+function savedUnsupportedLanguageView() {
+  const base = editorFixture();
+  const payload = { ...base.payload, market: { ...base.payload.market, language: "zh-cn" } };
+  return { ...base, prepared: null, frozen: null, sourceReceipt: null, draftHash: geoV2Digest(payload), payload };
+}
 
 it("a save acknowledges only its submitted edit and never overwrites later typing", async () => {
   await mount(); await act(async () => editor.change({ ...editor.payload, officialName: "Submitted name" }));
@@ -41,6 +52,57 @@ it("unsaved data cannot dispatch sources or either model operation and registers
   await mount(); await act(async () => editor.change({ ...editor.payload, officialName: "Unsaved" }));
   await act(async () => { await editor.generate("roles"); await editor.generate("questions"); await editor.refreshSources(); });
   expect(fetch).not.toHaveBeenCalled(); const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); expect(event.defaultPrevented).toBe(true);
+});
+it("refuses an unsupported one-gesture language before any request", async () => {
+  await mount(unsupportedLanguageView());
+
+  await act(async () => editor.generateAll());
+
+  expect(fetch).not.toHaveBeenCalled();
+  expect(editor.status).toEqual({ kind: "error", code: "unsupported_language" });
+  expect(editor.build).toBeNull();
+});
+it("preflights the unsupported language that the Profile build would apply", async () => {
+  const base = editorFixture();
+  const profile = { ...base.payload.profileCopy.profile, locale: "zh-CN" };
+  const payload = { ...base.payload, profileCopy: { ...base.payload.profileCopy, profile } };
+  const view = { ...base, prepared: null, frozen: null, sourceReceipt: null,
+    draftHash: geoV2Digest(payload), profileCopyHash: geoV2Digest(payload.profileCopy), payload };
+  await mount(view);
+
+  await act(async () => editor.generateAll());
+
+  expect(fetch).not.toHaveBeenCalled();
+  expect(editor.status).toEqual({ kind: "error", code: "unsupported_language" });
+});
+it("refuses every direct generation action for an unsupported language", async () => {
+  await mount(unsupportedLanguageView());
+
+  for (const kind of ["roles", "questions"] as const) {
+    for (const action of ["normal", "new_input", "resend_same"] as const) {
+      await act(async () => editor.generate(kind, action));
+    }
+  }
+
+  expect(fetch).not.toHaveBeenCalled();
+  expect(editor.status).toEqual({ kind: "error", code: "unsupported_language" });
+});
+it.each(["buildFromProfile", "confirmAll"] as const)("refuses direct %s work for an unsupported language", async action => {
+  await mount(unsupportedLanguageView());
+
+  await act(async () => editor[action]());
+
+  expect(fetch).not.toHaveBeenCalled();
+  expect(editor.status).toEqual({ kind: "error", code: "unsupported_language" });
+});
+it.each(["generate", "confirmAll"] as const)("refuses direct %s work when only the saved language is unsupported", async action => {
+  await mount(savedUnsupportedLanguageView());
+  expect(editor.generationLanguageSupported).toBe(true);
+
+  await act(async () => action === "generate" ? editor.generate("roles") : editor.confirmAll());
+
+  expect(fetch).not.toHaveBeenCalled();
+  expect(editor.status).toEqual({ kind: "error", code: "unsupported_language" });
 });
 it("ambiguous generation keeps its key across remount and only reads on recovery", async () => {
   const view = editorFixture(); await mount(view); vi.mocked(fetch).mockRejectedValueOnce(new Error("network"));

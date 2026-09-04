@@ -8,6 +8,8 @@ import zh from "../../i18n/messages/zh.json";
 import { GeoKnowledgeBaseV2 } from "./geo-knowledge-base-v2.tsx";
 import { editorFixture, sourceFixture } from "./geo-kb-v2-ui.test-fixtures.ts";
 import { renderedText } from "./rendered-text.test-helper.ts";
+import { geoV2Digest } from "../../lib/geo-tools/kb-v2-digest.ts";
+import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
 
 let host: HTMLDivElement, root: Root;
 beforeEach(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; host = document.createElement("div"); document.body.append(host); root = createRoot(host); sessionStorage.clear(); vi.stubGlobal("fetch", vi.fn()); });
@@ -15,6 +17,17 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi
 async function render(view = editorFixture(), locale = "en") { await act(async () => root.render(<NextIntlClientProvider locale={locale} timeZone="UTC" messages={locale === "zh" ? zh : en}><GeoKnowledgeBaseV2 initialView={view} locale={locale} inline confirmedProfileRevision={1} /></NextIntlClientProvider>)); }
 async function click(selector: string) { const node = host.querySelector<HTMLElement>(selector); if (!node) throw new Error(selector); await act(async () => node.click()); }
 const editor = en.tools.geoKnowledgeBase.editor;
+function unsupportedLanguageView() {
+  const base = editorFixture();
+  const profile = { ...base.payload.profileCopy.profile, locale: "zh-CN" };
+  const payload = { ...base.payload, market: { ...base.payload.market, language: "zh-cn" }, profileCopy: { ...base.payload.profileCopy, profile } };
+  return { ...base, prepared: null, frozen: null, sourceReceipt: null, draftHash: geoV2Digest(payload), profileCopyHash: geoV2Digest(payload.profileCopy), payload };
+}
+function savedUnsupportedLanguageView() {
+  const base = editorFixture();
+  const payload = { ...base.payload, market: { ...base.payload.market, language: "zh-cn" } };
+  return { ...base, prepared: null, frozen: null, sourceReceipt: null, draftHash: geoV2Digest(payload), payload };
+}
 
 it("offers one action and no workbench", async () => {
   await render();
@@ -29,8 +42,43 @@ it("offers one action and no workbench", async () => {
     expect(host.querySelector(gone), gone).toBeNull();
   }
   expect(host.querySelectorAll("input, textarea, select")).toHaveLength(0);
-  // The Profile it reads is still read out, in the Profile editor's own shape.
-  expect(host.querySelectorAll("[data-geo-profile-field]").length).toBeGreaterThan(0);
+  // Product data belongs to the separate Profile module, not this GEO view.
+  expect(host.querySelectorAll("[data-geo-profile-field]")).toHaveLength(0);
+  expect(host.querySelector("[data-geo-profile-copy]")).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["en", "GEO Knowledge Base generation currently supports English question languages only", "current GEO question language is zh-cn"],
+  ["zh", "当前 GEO 知识库仅支持英文提问语言", "当前 GEO 提问语言是 zh-cn"],
+])("blocks an unsupported question language before any request in %s", async (locale, boundary, actual) => {
+  await render(unsupportedLanguageView(), locale);
+
+  const button = host.querySelector<HTMLButtonElement>("[data-generate-kb]");
+  expect(button?.disabled).toBe(true);
+  expect(host.querySelector("[data-generation-language-warning]")?.textContent).toContain(boundary);
+  expect(host.querySelector("[data-generation-language-warning]")?.textContent).toContain(actual);
+  expect(host.textContent).not.toContain("unsupported_language");
+  await click("[data-generate-kb]");
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it.each(["resend_same", "new_input"] as const)("disables explicit %s recovery when the current language is unsupported", async action => {
+  const initial = savedUnsupportedLanguageView();
+  const view = action === "resend_same" ? initial : { ...initial, draftVersion: initial.draftVersion + 1 };
+  const old = action === "resend_same" ? { baseVersion: view.draftVersion, draftHash: view.draftHash } : { baseVersion: initial.draftVersion, draftHash: "a".repeat(64) };
+  const inputIdentity = JSON.stringify({ kind: "roles", kbId: view.kbId, baseVersion: old.baseVersion,
+    draftHash: old.draftHash, sourceReceiptRefs: [], displayLocale: "en" });
+  sessionStorage.setItem(`gg:geo-kb-generation:${view.kbId}:roles`, JSON.stringify({ idempotencyKey: "old-key-123",
+    draftHash: old.draftHash, baseVersion: old.baseVersion, generationId: null, inputIdentity, readNotFound: action === "resend_same" }));
+  await render(view);
+
+  const selector = action === "resend_same" ? '[data-resend-generation="roles"]' : '[data-new-generation="roles"]';
+  const recovery = host.querySelector<HTMLButtonElement>(selector);
+  expect(recovery).not.toBeNull();
+  expect(recovery?.disabled).toBe(true);
+  expect(host.querySelector<HTMLButtonElement>("[data-generate-kb]")?.disabled).toBe(false);
+  await click(selector);
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -64,12 +112,29 @@ it("does not pass off a version from an older draft as the current answer", asyn
   expect(host.querySelector("[data-frozen-v2]")).not.toBeNull();
 });
 
-it("shows what a frozen version holds, with every count distinct", async () => {
+it.each(["en", "zh"])("keeps internal provenance and version identity out of the customer frozen view in %s", async locale => {
   const base = editorFixture(), candidate = base.prepared!;
-  await render({ ...base, frozen: { kbId: base.kbId, snapshotId: candidate.candidateId, revision: 3, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: base.draftHash!, questionSetHash: candidate.context.questionSetHash, questionCount: candidate.questionSet.questions.length, payload: candidate.payload, questionSet: candidate.questionSet, context: candidate.context } });
-  const summary = host.querySelector("[data-frozen-summary]");
-  expect(summary).not.toBeNull();
-  expect(renderedText(host)).toContain("Finance teams");
+  const frozen = { kbId: base.kbId, snapshotId: candidate.candidateId, revision: 3, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: base.draftHash!, questionSetHash: candidate.context.questionSetHash, questionCount: candidate.questionSet.questions.length, payload: candidate.payload, questionSet: candidate.questionSet, context: candidate.context };
+  await render({ ...base, frozen }, locale);
+
+  const copy = geoKbV2Copy(locale);
+  for (const heading of [copy.sections.identity, copy.sections.competitors, copy.sections.roles, copy.sections.facts, copy.sections.sources, copy.sections.version]) {
+    expect(renderedText(host)).not.toContain(heading);
+  }
+  expect(host.querySelector("[data-frozen-summary]")).toBeNull();
+  expect(host.querySelector("[data-geo-copy-identity]")).toBeNull();
+  expect(host.querySelector("[data-evidence-catalog]")).toBeNull();
+  for (const internalValue of [frozen.snapshotId, frozen.frozenAt, frozen.payload.profileCopy.profileHash, frozen.context.payloadHash, frozen.context.questionSetHash, frozen.context.contentHash]) {
+    expect(host.textContent).not.toContain(internalValue);
+  }
+
+  expect(host.querySelectorAll("[data-geo-profile-field]")).toHaveLength(0);
+  expect(host.querySelector("[data-geo-profile-copy]")).toBeNull();
+  expect(host.querySelector('a[href$="#website-profile"]')).toBeNull();
+  expect(renderedText(host)).not.toContain(frozen.payload.profileCopy.profile.productName);
+  expect(host.querySelectorAll("[data-version-competitor]")).toHaveLength(0);
+  expect(host.querySelectorAll("[data-version-question]")).toHaveLength(frozen.questionSet.questions.length);
+  expect(renderedText(host)).toContain(frozen.questionSet.questions[0]!.text);
 });
 
 it("stops the run at the failed step instead of paying for the model call after it", async () => {
@@ -150,6 +215,20 @@ it("says why a run was refused without repeating the code, and keeps an unmapped
   vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "teapot" } }, { status: 418 }));
   await click("[data-generate-kb]");
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("teapot");
+});
+
+it.each([
+  ["en", "The model step was not called, but source refresh may already have completed"],
+  ["zh", "本次被拒绝的模型步骤没有发起调用，但之前的来源刷新可能已经完成"],
+])("localizes a server language refusal honestly in %s", async (locale, message) => {
+  const base = editorFixture();
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "unsupported_language" } }, { status: 422 }));
+  await render({ ...base, prepared: null, requiresSave: true }, locale);
+
+  await click("[data-generate-kb]");
+
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(message);
+  expect(host.textContent).not.toContain("unsupported_language");
 });
 
 it.each(["en", "zh"])("renders no untranslated key path in %s", async locale => {
