@@ -141,6 +141,34 @@ export type ToolHandoffPayload =
       readonly evidenceId: string;
       readonly marketCode: string;
       readonly languageCode: string;
+    }
+  /**
+   * A key page the Agent found a problem on, handed over to be audited itself.
+   *
+   * The Agent judges up to twelve key pages but captures the full text of only
+   * one -- the page that was submitted. So a problem found on one of the other
+   * eleven can be named and located, and cannot be written repair guidance for:
+   * there is no heading list or opening text to rewrite. The checker is the
+   * same engine run against a single page, which is exactly the missing
+   * capture, so the page goes there rather than growing a second text pipeline
+   * inside the Agent.
+   *
+   * `property` is null: the Agent never reads Search Console for this page, so
+   * there is no property it was observed under. `query` is the confirmed
+   * target query, which the checker needs to judge the keyword slots at all.
+   * `evidenceId` is the check id the handoff came from, so the report can be
+   * traced back to the row that sent it.
+   */
+  | {
+      readonly source: "seo-agent-key-page";
+      readonly destination: "on-page-seo-check";
+      readonly scope: "query_page";
+      readonly property: null;
+      readonly query: string;
+      readonly page: string;
+      readonly evidenceId: string;
+      readonly marketCode: string;
+      readonly languageCode: string;
     };
 
 export type ToolHandoff = ToolHandoffPayload & {
@@ -215,6 +243,26 @@ const CONTENT_DRAFT_HANDOFF_KEYS: ReadonlySet<string> = new Set([
   "createdAt",
   "expiresAt",
 ]);
+// Spelled out for the same reason: the Agent's shape coincides with the
+// draft's today, and one gaining a field must not make it required of the other.
+const AGENT_KEY_PAGE_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
+  "source",
+  "destination",
+  "scope",
+  "property",
+  "query",
+  "page",
+  "evidenceId",
+  "marketCode",
+  "languageCode",
+]);
+const AGENT_KEY_PAGE_HANDOFF_KEYS: ReadonlySet<string> = new Set([
+  ...AGENT_KEY_PAGE_PAYLOAD_KEYS,
+  "createdAt",
+  "expiresAt",
+]);
+/** A catalogue check id: `A7` for a site check, `2.10` for a page check. */
+const AGENT_CHECK_ID = /^(?:[A-Z]\d{1,2}|\d{1,2}\.\d{1,2})$/u;
 const MARKET_CODE = /^[A-Z]{2}$/u;
 const LANGUAGE_CODE = /^[a-z]{2}$/u;
 /**
@@ -391,6 +439,9 @@ function payloadKeysFor(
   if (value.source === "content-draft") {
     return CONTENT_DRAFT_PAYLOAD_KEYS;
   }
+  if (value.source === "seo-agent-key-page") {
+    return AGENT_KEY_PAGE_PAYLOAD_KEYS;
+  }
   return null;
 }
 
@@ -405,6 +456,9 @@ function handoffKeysFor(
   }
   if (value.source === "content-draft") {
     return CONTENT_DRAFT_HANDOFF_KEYS;
+  }
+  if (value.source === "seo-agent-key-page") {
+    return AGENT_KEY_PAGE_HANDOFF_KEYS;
   }
   return null;
 }
@@ -473,6 +527,28 @@ function hasValidGapTarget(value: Readonly<Record<string, unknown>>): boolean {
  * identifier. The evidence is the brief fingerprint, pinned to its exact shape
  * so an arbitrary label cannot pose as one.
  */
+/**
+ * The Agent's key page handoff.
+ *
+ * `evidenceId` is a catalogue check id (`2.3`, `A7`) rather than a hash: it
+ * names the row that sent the page, which is what a reader needs to connect
+ * the two reports. Kept to that shape so a free-text label cannot ride along.
+ */
+function hasValidAgentKeyPageFields(
+  value: Readonly<Record<string, unknown>>,
+): boolean {
+  return (
+    value.destination === "on-page-seo-check" &&
+    value.scope === "query_page" &&
+    value.property === null &&
+    typeof value.evidenceId === "string" &&
+    AGENT_CHECK_ID.test(value.evidenceId) &&
+    nonEmptyString(value.query, MAX_QUERY_LENGTH) &&
+    isSafeHttpPage(value.page) &&
+    hasValidMarketContext(value)
+  );
+}
+
 function hasValidContentDraftFields(
   value: Readonly<Record<string, unknown>>,
 ): boolean {
@@ -495,6 +571,9 @@ function hasValidPayloadFields(
   // no property, and its evidence is a fingerprint rather than a free label.
   if (value.source === "content-draft") {
     return hasValidContentDraftFields(value);
+  }
+  if (value.source === "seo-agent-key-page") {
+    return hasValidAgentKeyPageFields(value);
   }
 
   if (
@@ -610,6 +689,29 @@ function toGapHandoff(
  * validator demanded rather than a trimmed string. The fingerprint is stored
  * untrimmed because the validator accepted only its exact 64 characters.
  */
+/**
+ * Its own builder for the same reason the others have theirs: `property` stays
+ * the literal null the validator demanded rather than a trimmed string.
+ */
+function toAgentKeyPageHandoff(
+  payload: Extract<ToolHandoffPayload, { source: "seo-agent-key-page" }>,
+  now: number,
+): ToolHandoff {
+  return {
+    source: payload.source,
+    destination: payload.destination,
+    scope: payload.scope,
+    property: null,
+    query: payload.query.trim(),
+    page: payload.page.trim(),
+    evidenceId: payload.evidenceId,
+    marketCode: payload.marketCode,
+    languageCode: payload.languageCode,
+    createdAt: now,
+    expiresAt: now + TOOL_HANDOFF_TTL_MS,
+  };
+}
+
 function toContentDraftHandoff(
   payload: Extract<ToolHandoffPayload, { source: "content-draft" }>,
   now: number,
@@ -635,6 +737,9 @@ function toHandoff(payload: ToolHandoffPayload, now: number): ToolHandoff {
   }
   if (payload.source === "content-draft") {
     return toContentDraftHandoff(payload, now);
+  }
+  if (payload.source === "seo-agent-key-page") {
+    return toAgentKeyPageHandoff(payload, now);
   }
   return toBriefingHandoff(payload, now);
 }

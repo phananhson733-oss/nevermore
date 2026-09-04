@@ -101,6 +101,8 @@ function profile() {
       primaryCta: "Start free",
       firstOutcome: "First audit",
       targetQuery: "seo audit",
+      country: "US",
+      locale: "en-US",
     }),
   );
 }
@@ -216,13 +218,81 @@ describe("AgentIssueAccordion", () => {
     click('[data-issue-control="expand-visible"]');
 
     const hits = [
-      ...host.querySelectorAll<HTMLElement>("[data-key-page-hit]"),
+      ...host.querySelectorAll<HTMLElement>("[data-key-page-hit] > span"),
     ].map((node) => node.textContent ?? "");
 
     expect(hits).toEqual([
       "https://example.com/pricing",
       "https://example.com/features",
     ]);
+  });
+
+  it("hands a hit page that is not the submitted one to the checker", () => {
+    /*
+      The Agent judges twelve key pages and captures the full text of one. A
+      problem found on any of the other eleven can be named and located and
+      cannot be written repair guidance for -- there is no heading list to
+      rewrite. The checker is the same engine run against a single page, so the
+      page goes there rather than the Agent growing a second text pipeline.
+    */
+    render(
+      keyPageModel([
+        "https://example.com/",
+        "https://example.com/pricing",
+      ]),
+    );
+    click('[data-issue-control="expand-visible"]');
+
+    const links = [
+      ...host.querySelectorAll<HTMLAnchorElement>("[data-key-page-check]"),
+    ];
+
+    // Only the page whose text this run does not have. The submitted page
+    // already has its own capture, and its own guidance right below.
+    expect(links.map((node) => node.getAttribute("data-key-page-check"))).toEqual([
+      "https://example.com/pricing",
+    ]);
+    expect(links[0]?.getAttribute("href")).toContain(
+      "/tools/on-page-seo-check",
+    );
+    // sessionStorage carries the handoff, and `_blank` with `noopener` would
+    // sever it before the destination could read it.
+    expect(links[0]?.rel).toBe("opener");
+  });
+
+  it("offers no check link without a confirmed query for the checker to judge", () => {
+    // The checker's keyword slots have nothing to measure against, and the
+    // handoff validator refuses the payload -- a button that could only fail.
+    act(() => {
+      root.render(
+        <NextIntlClientProvider locale="en" messages={en}>
+          <AgentIssueAccordion
+            model={keyPageModel(["https://example.com/pricing"])}
+            locale="en"
+            profile={confirmAgentProfile(
+              updateAgentProfile(
+                createAgentProfileDraft("seo", "https://example.com"),
+                {
+                  productName: "Acme",
+                  primaryIcp: "Growth teams",
+                  primaryCta: "Start free",
+                  firstOutcome: "First audit",
+                  country: "US",
+                  locale: "en-US",
+                  targetQuery: "",
+                },
+              ),
+            )}
+            run={RUN}
+            targetPageExtract={null}
+          />
+        </NextIntlClientProvider>,
+      );
+    });
+    click('[data-issue-control="expand-visible"]');
+
+    expect(host.querySelector("[data-key-page-check]")).toBeNull();
+    expect(host.querySelector("[data-key-page-hit]")).not.toBeNull();
   });
 
   it("says the repair is for a page that passed when the submitted page is not a hit", () => {

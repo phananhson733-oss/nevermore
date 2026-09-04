@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import { useTranslations } from "next-intl";
 import type {
   SeoAuditRecord,
@@ -19,6 +19,11 @@ import {
   type AgentIssuePromptRun,
 } from "./agent-issue-prompt";
 import { comparableUrl } from "./agent-result-helpers";
+import { localePath } from "../../lib/locale-path";
+import {
+  TOOL_HANDOFF_LINK_PROPS,
+  writeToolHandoff,
+} from "../../lib/tools/tool-handoff";
 import type { AgentProfileDraft } from "./agent-profile";
 import { solutionTemplate } from "./agent-solution-templates";
 import { useCopyToClipboard } from "../../lib/use-copy-to-clipboard";
@@ -71,13 +76,60 @@ function Block({
 function KeyPageHits({
   issue,
   targetUrl,
+  locale,
+  profile,
 }: {
   readonly issue: AgentIssue;
   readonly targetUrl: string;
+  readonly locale: string;
+  readonly profile: AgentProfileDraft;
 }) {
   const t = useTranslations("agents.workbench.issues");
+  const [handoffFailed, setHandoffFailed] = useState(false);
   const reach = issue.affected.keyPages;
   if (reach === null || reach.hits === 0) return null;
+
+  /*
+    The checker is the same engine run against one page, which is exactly the
+    capture the Agent is missing for every key page but the submitted one. So a
+    page that needs repair guidance goes there, rather than the Agent growing a
+    second text pipeline for a heading list it never collected.
+
+    Gated on a confirmed query and a two-letter market, because the checker's
+    keyword slots have nothing to judge without one and the handoff validator
+    refuses a payload that carries neither.
+  */
+  const query = profile.targetQuery.trim();
+  const market = profile.country.trim().toUpperCase();
+  const language = profile.locale.trim().slice(0, 2).toLowerCase();
+  const canHandOff =
+    query !== "" &&
+    /^[A-Z]{2}$/u.test(market) &&
+    /^[a-z]{2}$/u.test(language) &&
+    /^(?:[A-Z]\d{1,2}|\d{1,2}\.\d{1,2})$/u.test(issue.check.check.id);
+
+  function prepare(page: string) {
+    return (event: MouseEvent<HTMLAnchorElement>) => {
+      let stored = false;
+      try {
+        stored = writeToolHandoff(window.sessionStorage, Date.now(), {
+          source: "seo-agent-key-page",
+          destination: "on-page-seo-check",
+          scope: "query_page",
+          property: null,
+          query,
+          page,
+          evidenceId: issue.check.check.id,
+          marketCode: market,
+          languageCode: language,
+        });
+      } catch {
+        // A denied storage getter is a failed handoff, never permission to go.
+      }
+      setHandoffFailed(!stored);
+      if (!stored) event.preventDefault();
+    };
+  }
 
   const submitted = comparableUrl(targetUrl);
   const onlyTarget =
@@ -105,15 +157,40 @@ function KeyPageHits({
                 data-key-page-is-target={
                   comparableUrl(url) === submitted ? "true" : "false"
                 }
-                className="font-mono text-[11.5px] break-all text-brand-accent-text"
+                className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
               >
-                {url}
+                <span className="min-w-0 font-mono text-[11.5px] break-all text-brand-accent-text">
+                  {url}
+                </span>
+                {canHandOff && comparableUrl(url) !== submitted ? (
+                  <a
+                    data-key-page-check={url}
+                    href={localePath(locale, "/tools/on-page-seo-check")}
+                    {...TOOL_HANDOFF_LINK_PROPS}
+                    onClick={prepare(url)}
+                    onMouseDown={prepare(url)}
+                    onContextMenu={prepare(url)}
+                    onAuxClick={prepare(url)}
+                    className="shrink-0 rounded-[6px] border border-brand-border-strong px-2 py-0.5 font-mono text-[10px] tracking-[0.04em] text-text-dark-secondary uppercase transition-colors hover:border-brand-accent/70 hover:text-text-dark-primary"
+                  >
+                    {t("affected.checkThisPage")}
+                  </a>
+                ) : null}
               </li>
             ))}
           </ul>
           {rest > 0 ? (
             <p className="mt-2 !text-[11.5px] leading-[1.6] text-text-dark-secondary">
               {t("affected.keyPagesMore", { rest })}
+            </p>
+          ) : null}
+          {handoffFailed ? (
+            <p
+              data-key-page-handoff-failed
+              role="alert"
+              className="mt-2 !text-[11.5px] leading-[1.6] text-brand-error"
+            >
+              {t("affected.checkHandoffFailed")}
             </p>
           ) : null}
         </>
@@ -495,7 +572,12 @@ export function AgentIssueDetail({
 
         <Block label={t("sections.affected")}>
           <AffectedTargets issue={issue} />
-          <KeyPageHits issue={issue} targetUrl={profile.targetUrl} />
+          <KeyPageHits
+            issue={issue}
+            targetUrl={profile.targetUrl}
+            locale={locale}
+            profile={profile}
+          />
         </Block>
 
         <Block label={t("sections.evidence")}>
