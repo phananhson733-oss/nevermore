@@ -57,6 +57,21 @@ const ENGINE_KEY: Readonly<Record<string, string>> = {
 };
 
 /** Truth states a row may state, keyed to their message names. */
+/**
+ * The part of a key page URL that distinguishes it from its siblings.
+ *
+ * Every row in a run shares an origin, so printing it spends the width that
+ * the path needs and pushes the difference past the fold.
+ */
+function pagePath(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.pathname}${parsed.search}` || "/";
+  } catch {
+    return url;
+  }
+}
+
 const TRUTH_KEY: Readonly<Record<string, string>> = {
   observed: "observed",
   "not-observed": "notObserved",
@@ -151,6 +166,29 @@ function IssueRow({
           <strong className="mt-1.5 block text-[13.5px] font-semibold text-text-dark-primary">
             {title}
           </strong>
+          {/*
+            The page this row is about, when a check that failed on several key
+            pages was split into one row each. The path alone: the origin is on
+            every row and repeating it pushes the part that differs off the
+            end of the line.
+          */}
+          {issue.keyPage === null ? null : (
+            <p
+              data-issue-key-page={issue.keyPage.url}
+              data-issue-key-page-is-target={
+                issue.keyPage.isTarget ? "true" : "false"
+              }
+              className="mt-1 font-mono text-[11px] break-all text-brand-accent-text"
+            >
+              {pagePath(issue.keyPage.url)}
+              <span className="ml-2 text-[10.5px] text-text-dark-faint">
+                {t("row.keyPageIndex", {
+                  index: issue.keyPage.index,
+                  total: issue.keyPage.total,
+                })}
+              </span>
+            </p>
+          )}
           <p className="mt-1 text-[11.5px] leading-[1.55] text-text-dark-secondary">
             {t(affectedLabelKey(issue), {
               count: issue.affected.totalCount ?? 0,

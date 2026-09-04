@@ -129,6 +129,28 @@ export interface AgentIssue {
   readonly affected: AgentIssueAffectedTargets;
   readonly evidenceRecords: readonly SeoAuditRecord[];
   readonly copyMode: AgentIssueCopyMode;
+  /**
+   * The one key page this row is about, when the row is about one page.
+   *
+   * A check that fails on four key pages produces four rows rather than one
+   * row and a list inside it. Reading a list meant holding "which of these is
+   * the verdict about" in your head, and the answer was "the worst one" --
+   * which is not a question a reader should have to ask. One row, one page,
+   * one verdict, and the repair beneath it is written for that page.
+   *
+   * Null for a site-wide check, for a run with no key pages, and for a check
+   * that reached its verdict on exactly one page (which needs no splitting).
+   */
+  readonly keyPage: AgentIssueKeyPageSubject | null;
+}
+
+export interface AgentIssueKeyPageSubject {
+  readonly url: string;
+  /** Position among this check's hit pages, 1-based, for a stable label. */
+  readonly index: number;
+  readonly total: number;
+  /** Whether this is the page the visitor submitted, whose text was captured. */
+  readonly isTarget: boolean;
 }
 
 export interface AgentIssueCounts {
@@ -262,6 +284,19 @@ function isSourceGated(check: AgentAuditEvaluatedCheck): boolean {
 
 function issueId(agent: AgentKind, check: AgentAuditEvaluatedCheck): string {
   return `${agent}:${check.check.scope}:${check.check.id}`;
+}
+
+/** The results that mean "this page has the problem", and so earn their own row. */
+const SPLIT_RESULTS: ReadonlySet<string> = new Set(["blocker", "warning", "tip"]);
+
+function comparable(value: string): string {
+  try {
+    const parsed = new URL(value);
+    parsed.hash = "";
+    return parsed.href;
+  } catch {
+    return value;
+  }
 }
 
 const UNAVAILABLE_TARGETS: AgentIssueAffectedTargets = {
@@ -422,6 +457,7 @@ export function buildAgentIssueModel({
     affected: UNAVAILABLE_TARGETS,
     evidenceRecords: [],
     copyMode: "investigation",
+    keyPage: null,
   });
 
   // Ranked order first, so the actionable lane keeps the established ordering.
@@ -431,6 +467,61 @@ export function buildAgentIssueModel({
       excluded.push(quarantine(check));
       continue;
     }
+    const reach = reachOf(check);
+    /*
+      One row per page this check actually failed on.
+
+      The aggregate took its verdict from the worst key page and listed the
+      rest inside, which left the reader holding "which of these is this
+      verdict about". Split, each row carries its own page, its own result and
+      its own measurement, so the repair below it is written for a page that
+      really has the problem -- and the row can be handed to the checker on its
+      own. Splitting only above one hit: a single-page failure is already one
+      row, and giving it a page label would add a word without adding a fact.
+    */
+    const hits = (reach?.outcomes ?? []).filter((outcome) =>
+      SPLIT_RESULTS.has(String(outcome.result)),
+    );
+    if (hits.length > 1) {
+      hits.forEach((outcome, index) => {
+        const perPageCheck: AgentAuditEvaluatedCheck = {
+          ...check,
+          result: outcome.result,
+          measurement: outcome.measurement,
+        };
+        actionable.push({
+          id: `${recommendation.id}@${outcome.page.url}`,
+          agent,
+          check: perPageCheck,
+          lane: "actionable",
+          severity: RESULT_LANE[outcome.result].severity,
+          priority: RESULT_PRIORITY[outcome.result] ?? null,
+          recognized: true,
+          affected: {
+            ...affectedTargets(recommendation.evidenceRecords, reach),
+            keyPages: {
+              total: reach?.keyPageTotal ?? 0,
+              evaluated: reach?.keyPageEvaluatedCount ?? 0,
+              hits: hits.length,
+              urls: [outcome.page.url],
+            },
+          },
+          evidenceRecords: recommendation.evidenceRecords,
+          copyMode: "repair",
+          keyPage: {
+            url: outcome.page.url,
+            index: index + 1,
+            total: hits.length,
+            isTarget:
+              inspectedTargetUrl !== undefined &&
+              inspectedTargetUrl !== null &&
+              comparable(outcome.page.url) === comparable(inspectedTargetUrl),
+          },
+        });
+      });
+      continue;
+    }
+
     actionable.push({
       id: recommendation.id,
       agent,
@@ -439,9 +530,10 @@ export function buildAgentIssueModel({
       severity: RESULT_LANE[check.result].severity,
       priority: RESULT_PRIORITY[check.result] ?? null,
       recognized: true,
-      affected: affectedTargets(recommendation.evidenceRecords, reachOf(check)),
+      affected: affectedTargets(recommendation.evidenceRecords, reach),
       evidenceRecords: recommendation.evidenceRecords,
       copyMode: "repair",
+      keyPage: null,
     });
   }
 
@@ -467,6 +559,7 @@ export function buildAgentIssueModel({
         affected: UNAVAILABLE_TARGETS,
         evidenceRecords: [],
         copyMode: "investigation",
+        keyPage: null,
       });
       continue;
     }
@@ -490,6 +583,7 @@ export function buildAgentIssueModel({
       },
       evidenceRecords: [],
       copyMode: "repair",
+      keyPage: null,
     };
     if (lane === "passed") passed.push(issue);
     else if (lane === "observed-only") observedOnly.push(issue);
