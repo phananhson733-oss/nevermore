@@ -127,7 +127,20 @@ it("derives, evidences, generates, accepts and freezes a whole knowledge base in
   // one whose identity signals conflict, one that could not be fetched.
   const signal = (host: string, name: string) => ({ kind: "json_ld_organization" as const, name, aliases: [], url: `https://${host}/`, hostMatched: true, excludedReason: null });
   const capture = { confirmed: false as const, source: "crawl" as const, observedAt: "2026-08-31T00:00:00.000Z", bodyHash: "d".repeat(64), signalsTruncated: false };
-  const receipt = { ...sourceFixture({ ...view, draftVersion: 2, draftHash: "c".repeat(64) }), competitors: [
+  const discoveredFact = { evidenceId: "F1" as const, key: "Is it free?", value: "Yes. No account is needed.", confirmed: false as const,
+    source: "crawl" as const, sourceUrl: "https://acme.example/", observedAt: "2026-08-31T00:00:00.000Z", bodyHash: "e".repeat(64),
+    status: "available" as const, reason: null, excerpt: "Yes. No account is needed." };
+  // One statement the page really made, and one the refresh could not read: a
+  // fact with no value has nothing to carry into the draft.
+  const missingFact = { evidenceId: "F2" as const, key: "What does it cost?", confirmed: false as const, source: null,
+    sourceUrl: "https://acme.example/pricing", observedAt: null, bodyHash: null,
+    status: "unavailable" as const, reason: "value_missing" as const, value: null, excerpt: null };
+  // And one the page contradicts: it has a page, a time and an excerpt, so only
+  // the status says it must not be carried.
+  const conflictedFact = { evidenceId: "F3" as const, key: "Do you store birth data?", confirmed: false as const, source: "crawl" as const,
+    sourceUrl: "https://acme.example/privacy", observedAt: "2026-08-31T00:00:00.000Z", bodyHash: "e".repeat(64),
+    status: "conflict" as const, reason: "conflicting" as const, value: null, excerpt: "The page says both." };
+  const receipt = { ...sourceFixture({ ...view, draftVersion: 2, draftHash: "c".repeat(64) }), facts: [discoveredFact, missingFact, conflictedFact], competitors: [
     { ...capture, evidenceId: "C1", domain: "rival.example", sourceUrl: "https://rival.example/", signals: [signal("rival.example", "Rival Analytics")], status: "available" as const, reason: null, brandName: "Rival Analytics", aliases: ["Rival"], method: "json_ld" as const },
     { ...capture, evidenceId: "C2", domain: "conflict.example", sourceUrl: "https://conflict.example/", signals: [signal("conflict.example", "One name"), signal("conflict.example", "Another name")], status: "conflict" as const, reason: "identity_conflict" as const, brandName: null, aliases: [], method: "conflicting_signals" as const },
     { ...capture, evidenceId: "C3", domain: "down.example", sourceUrl: "https://down.example/", signals: [], status: "unavailable" as const, reason: "fetch_failed" as const, brandName: null, aliases: [], method: null, source: null, observedAt: null, bodyHash: null },
@@ -172,6 +185,15 @@ it("derives, evidences, generates, accepts and freezes a whole knowledge base in
     { domain: "conflict.example", brandName: "", confirmed: false, aliases: [] },
     { domain: "down.example", brandName: "", confirmed: false, aliases: [] },
   ]);
+  // What the site says about itself, read off its own page by the refresh and
+  // carried into the draft with the evidence for it. Without this the frozen
+  // knowledge base holds no statement the site actually makes.
+  const facts = (JSON.parse(String(vi.mocked(fetch).mock.calls[3]?.[1]?.body)) as { payload: { facts: { key: string; value: string; review: string; sourceUrl: string; supportRef: { evidenceId: string } | null }[] } }).payload.facts;
+  expect(facts.at(-1)).toMatchObject({ key: "Is it free?", value: "Yes. No account is needed.", review: "accepted", sourceUrl: "https://acme.example/", supportRef: { evidenceId: "F1" } });
+  // And only that one: an entry the refresh could not read has no value to
+  // state, and a fact with no value cannot be accepted at all.
+  expect(facts.some(fact => fact.key === "What does it cost?")).toBe(false);
+  expect(facts.some(fact => fact.key === "Do you store birth data?")).toBe(false);
   expect(editor.confirm?.stoppedAt).toBeNull();
 });
 it("only explicit replacement adopts a colliding model role and preserves unrelated roles", async () => {

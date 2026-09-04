@@ -99,7 +99,9 @@ describe("V2 actual source collection", () => {
     const { data } = await response.json();
     expect(data.gsc).toMatchObject({ status: "unavailable", reason: "not_connected", queryCount: null, queries: [] });
     expect(deps.readQueries).not.toHaveBeenCalled(); expect(deps.resolveGrant).not.toHaveBeenCalled(); expect(deps.openGscGate).not.toHaveBeenCalled();
-    expect(deps.fetchPage).toHaveBeenCalledTimes(1);
+    // The competitor's page, and the site's own -- the second is the only page
+    // in this refresh that can say what the site states about itself.
+    expect(vi.mocked(deps.fetchPage).mock.calls.map(call => call[0])).toEqual(["https://rival.example/", ASSET.payload.targetUrl]);
   });
   it("respects GSC quota and rechecks that the refreshed grant covers the property", async () => {
     const limited = dependencies({ openGscGate: async () => ({ ok: false, response: new Response(null, { status: 429 }) }) });
@@ -121,7 +123,9 @@ describe("V2 actual source collection", () => {
     const deps = dependencies({ readAsset: async () => ({ kind: "ok", value: asset }), fetchPage: vi.fn(async (url: string) => ({ kind: "ok" as const, url, body: '<title>Rival</title><p>Price: $20.</p>', observedAt: AT })) });
     const response = await handleGeoKbSources(request(), deps);
     expect(response.status).toBe(200); expect((await response.json()).data.facts[0]).toMatchObject({ status: "available", value: "$20", confirmed: false });
-    expect(deps.fetchPage).toHaveBeenCalledTimes(1);
+    // One read for the competitor and the declared fact, which share a URL, and
+    // one for the site's own page. A third would be the same bytes again.
+    expect(vi.mocked(deps.fetchPage).mock.calls.map(call => call[0])).toEqual(["https://rival.example/", ASSET.payload.targetUrl]);
   });
   it("never returns a successful unpersisted receipt or private exception details", async () => {
     const deps = dependencies({ persistReceipt: async () => { throw new Error("private-store-detail"); } });
