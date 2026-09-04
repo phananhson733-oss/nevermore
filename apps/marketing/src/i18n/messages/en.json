@@ -5619,8 +5619,6 @@
         "copyUnchanged": "This GEO copy already matches the confirmed Profile version. No update is needed.",
         "applyCopy": "Copy this version into the GEO draft",
         "dismissCopy": "Keep the current GEO copy",
-        "frozenIdentity": "Inspect this frozen version's identity",
-        "frozenSummary": "v{revision} · {questions, plural, one {# question} other {# questions}} · {acceptedRoles}/{roles} roles accepted · {confirmed}/{competitors} competitors confirmed · {acceptedFacts}/{facts} facts accepted",
         "frozenCopyTitle": "Inspect the frozen knowledge base",
         "frozenLegacy": "This historical version does not contain a complete Profile copy. It has not been filled from today's Profile.",
         "frozenOperations": "GEO settings saved in this version",

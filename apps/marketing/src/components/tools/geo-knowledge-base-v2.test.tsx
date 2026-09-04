@@ -9,6 +9,7 @@ import { GeoKnowledgeBaseV2 } from "./geo-knowledge-base-v2.tsx";
 import { editorFixture, sourceFixture } from "./geo-kb-v2-ui.test-fixtures.ts";
 import { renderedText } from "./rendered-text.test-helper.ts";
 import { geoV2Digest } from "../../lib/geo-tools/kb-v2-digest.ts";
+import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
 
 let host: HTMLDivElement, root: Root;
 beforeEach(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; host = document.createElement("div"); document.body.append(host); root = createRoot(host); sessionStorage.clear(); vi.stubGlobal("fetch", vi.fn()); });
@@ -110,12 +111,27 @@ it("does not pass off a version from an older draft as the current answer", asyn
   expect(host.querySelector("[data-frozen-v2]")).not.toBeNull();
 });
 
-it("shows what a frozen version holds, with every count distinct", async () => {
+it.each(["en", "zh"])("keeps internal provenance and version identity out of the customer frozen view in %s", async locale => {
   const base = editorFixture(), candidate = base.prepared!;
-  await render({ ...base, frozen: { kbId: base.kbId, snapshotId: candidate.candidateId, revision: 3, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: base.draftHash!, questionSetHash: candidate.context.questionSetHash, questionCount: candidate.questionSet.questions.length, payload: candidate.payload, questionSet: candidate.questionSet, context: candidate.context } });
-  const summary = host.querySelector("[data-frozen-summary]");
-  expect(summary).not.toBeNull();
-  expect(renderedText(host)).toContain("Finance teams");
+  const frozen = { kbId: base.kbId, snapshotId: candidate.candidateId, revision: 3, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: base.draftHash!, questionSetHash: candidate.context.questionSetHash, questionCount: candidate.questionSet.questions.length, payload: candidate.payload, questionSet: candidate.questionSet, context: candidate.context };
+  await render({ ...base, frozen }, locale);
+
+  const copy = geoKbV2Copy(locale);
+  for (const heading of [copy.sections.identity, copy.sections.roles, copy.sections.facts, copy.sections.sources, copy.sections.version]) {
+    expect(renderedText(host)).not.toContain(heading);
+  }
+  expect(host.querySelector("[data-frozen-summary]")).toBeNull();
+  expect(host.querySelector("[data-geo-copy-identity]")).toBeNull();
+  expect(host.querySelector("[data-evidence-catalog]")).toBeNull();
+  for (const internalValue of [frozen.snapshotId, frozen.frozenAt, frozen.payload.profileCopy.profileHash, frozen.context.payloadHash, frozen.context.questionSetHash, frozen.context.contentHash]) {
+    expect(host.textContent).not.toContain(internalValue);
+  }
+
+  expect(host.querySelectorAll("[data-geo-profile-field]").length).toBeGreaterThan(0);
+  expect(renderedText(host)).toContain(frozen.payload.profileCopy.profile.productName);
+  expect(host.querySelectorAll("[data-version-competitor]")).toHaveLength(frozen.payload.competitors.length);
+  expect(host.querySelectorAll("[data-version-question]")).toHaveLength(frozen.questionSet.questions.length);
+  expect(renderedText(host)).toContain(frozen.questionSet.questions[0]!.text);
 });
 
 it("stops the run at the failed step instead of paying for the model call after it", async () => {

@@ -11,7 +11,6 @@ import { GeoKbFrozenCopy } from "./geo-kb-frozen-copy.tsx";
 import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
 import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
-import { GeoKbFrozenSummary } from "./geo-kb-frozen-summary.tsx";
 import { GeoKbV2BuildReport } from "./geo-kb-v2-build-report.tsx";
 import { GeoKbV2ConfirmReport } from "./geo-kb-v2-confirm-report.tsx";
 
@@ -107,7 +106,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
 
     {/* The knowledge base itself. */}
     {frozen === null ? <p data-kb-empty className="text-sm text-text-dark-secondary">{te("generateEmpty")}</p>
-      : "context" in frozen ? <div data-frozen-v2 className="space-y-5"><GeoKbFrozenSummary frozen={frozen} /><GeoKbVersionContent payload={frozen.payload} questionSet={frozen.questionSet} context={frozen.context} locale={props.locale} /></div>
+      : "context" in frozen ? <div data-frozen-v2 className="space-y-5"><GeoKbVersionContent payload={frozen.payload} questionSet={frozen.questionSet} context={frozen.context} locale={props.locale} customerFacing /></div>
       : <div className="space-y-5"><p className="text-sm text-text-dark-secondary">{t.legacy}</p><GeoKbFrozenCopy payload={frozen.payload} locale={props.locale} revision={frozen.revision} /><ul className="space-y-3">{frozen.questions?.map(question => <li key={question.id} className="rounded-[10px] border border-brand-border-card p-4 text-sm">{question.text}<p className="text-text-dark-secondary">{c.layers[question.layer as keyof typeof c.layers] ?? question.layer}</p><p>{question.requiredEntities?.join(" · ")}</p></li>)}</ul></div>}
   </section>;
 }

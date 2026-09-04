@@ -75,6 +75,26 @@ describe("complete V2 knowledge-base version content", () => {
     expect(identity?.textContent).toContain(props.payload.profileCopy.snapshotRevision);
     expect(identity?.textContent).toContain(props.payload.profileCopy.profileHash);
   });
+  it("keeps internal panels and Profile copy identity out of customer-facing content", async () => {
+    const props = fixture();
+    await render({ ...props, customerFacing: true });
+    const copy = geoKbV2Copy("en");
+
+    for (const heading of [copy.sections.identity, copy.sections.roles, copy.sections.facts, copy.sections.sources, copy.sections.version]) {
+      expect(renderedText(host)).not.toContain(heading);
+    }
+    expect(host.querySelector("[data-geo-copy-identity]")).toBeNull();
+    expect(host.querySelector("[data-version-role]")).toBeNull();
+    expect(host.querySelector("[data-version-fact]")).toBeNull();
+    expect(host.querySelector("[data-evidence-catalog]")).toBeNull();
+    for (const internalValue of [props.payload.profileCopy.profileHash, props.context.payloadHash, props.context.questionSetHash, props.context.contentHash]) {
+      expect(host.textContent).not.toContain(internalValue);
+    }
+
+    expect(renderedText(host.querySelector('[data-geo-profile-field="productName"]'))).toContain("Acme");
+    expect(host.querySelectorAll("[data-version-competitor]")).toHaveLength(props.payload.competitors.length);
+    expect(host.querySelectorAll("[data-version-question]")).toHaveLength(props.questionSet.questions.length);
+  });
   it("shows the declared fact independently from the actual admitted context value and source", async () => {
     await render();
     const pending = host.querySelector('[data-version-fact="Free plan"]');

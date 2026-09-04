@@ -163,6 +163,15 @@ describe("complete GEO Profile copy display", () => {
     expect(identity?.textContent).toContain("2");
     expect(identity?.textContent).toContain("a".repeat(64));
   });
+  it("can render an archival copy without exposing its revision or hash", async () => {
+    await render({ frozen: true, showCopyIdentity: false });
+    expect(host.querySelector("[data-geo-copy-identity]")).toBeNull();
+    expect(host.textContent).not.toContain(copy.profileHash);
+    expect(renderedText(host.querySelector('[data-geo-profile-field="productName"]'))).toContain("Copied product");
+
+    await render({ frozen: true });
+    expect(host.querySelector("[data-geo-copy-identity]")?.textContent).toContain(copy.profileHash);
+  });
   it("gives every field row a name a screen reader can reach it by", async () => {
     await render();
     // The values are read out, not typed into, so there is no control to hang

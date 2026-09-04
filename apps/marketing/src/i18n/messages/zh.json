@@ -5619,8 +5619,6 @@
         "copyUnchanged": "当前 GEO 副本已与这个 Profile 确认版本一致，无需更新。",
         "applyCopy": "将此版本复制到 GEO 草稿",
         "dismissCopy": "保留当前 GEO 副本",
-        "frozenIdentity": "查看这个冻结版本的标识",
-        "frozenSummary": "v{revision} · {questions} 条提问 · 角色 {acceptedRoles}/{roles} 已接受 · 竞品 {confirmed}/{competitors} 已确认 · 事实 {acceptedFacts}/{facts} 已接受",
         "frozenCopyTitle": "查看已冻结的完整知识库",
         "frozenLegacy": "这个历史版本没有完整 Profile 副本；系统没有用今天的 Profile 回填它。",
         "frozenOperations": "该版本保存的 GEO 设置",
