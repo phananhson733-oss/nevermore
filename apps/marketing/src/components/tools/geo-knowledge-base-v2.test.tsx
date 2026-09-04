@@ -6,153 +6,99 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
 import { GeoKnowledgeBaseV2 } from "./geo-knowledge-base-v2.tsx";
-import { GEO_KB_V2_AUTOSAVE_MS } from "./use-geo-kb-v2-editor.ts";
 import { editorFixture, sourceFixture } from "./geo-kb-v2-ui.test-fixtures.ts";
-import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
 import { renderedText } from "./rendered-text.test-helper.ts";
+
 let host: HTMLDivElement, root: Root;
 beforeEach(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; host = document.createElement("div"); document.body.append(host); root = createRoot(host); sessionStorage.clear(); vi.stubGlobal("fetch", vi.fn()); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
 async function render(view = editorFixture(), locale = "en") { await act(async () => root.render(<NextIntlClientProvider locale={locale} timeZone="UTC" messages={locale === "zh" ? zh : en}><GeoKnowledgeBaseV2 initialView={view} locale={locale} inline confirmedProfileRevision={1} /></NextIntlClientProvider>)); }
 async function click(selector: string) { const node = host.querySelector<HTMLElement>(selector); if (!node) throw new Error(selector); await act(async () => node.click()); }
-async function fill(value: string) { const input = host.querySelector<HTMLInputElement>('[data-base-field="officialName"]'); if (!input) throw new Error("input missing"); await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value); input.dispatchEvent(new Event("input", { bubbles: true })); }); }
-it.each(["en", "zh"])("shows the complete persisted candidate before first freeze in %s and requires explicit review", async locale => {
-  await render(editorFixture(), locale); const review = host.querySelector('[data-prepared-review]');
-  expect(review?.textContent).toContain("Finance teams"); expect(review?.textContent).toContain("spreadsheets"); expect(review?.textContent).toContain("How can finance teams reduce late invoices?");
-  expect(renderedText(review?.querySelector('[data-geo-profile-field="productName"]'))).toContain("Acme");
-  expect(host.querySelector<HTMLButtonElement>('[data-freeze-prepared]')?.disabled).toBe(true);
-  await click('[data-confirm-prepared]'); expect(host.querySelector<HTMLButtonElement>('[data-freeze-prepared]')?.disabled).toBe(false);
-  expect(fetch).not.toHaveBeenCalled();
-});
-it("says why a save was refused without repeating the code, and keeps an unmapped one", async () => {
-  const t = geoKbV2EditorCopy("en");
-  // A code the sentence above already covers. Printing it as well put
-  // "input_stale" beside the sentence explaining exactly that.
-  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "input_stale" } }, { status: 409 }));
-  await render(); await fill("Changed name"); await click("[data-save-v2]");
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain(t.staleLineage);
-  expect(host.textContent).not.toContain("input_stale");
-  // An unmapped one is the only case where the code carries the meaning, so it
-  // stays: the sentence is generic and support has nothing else to go on.
-  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "teapot" } }, { status: 418 }));
-  await fill("Changed again"); await click("[data-save-v2]");
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain(t.error);
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain("teapot");
-});
-it("keeps dirty edits when switching stages and never merges them into frozen content", async () => {
-  const view = editorFixture(), candidate = view.prepared!;
-  await render({ ...view, frozen: { kbId: view.kbId, snapshotId: candidate.candidateId, revision: 1, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: candidate.baseDraftHash, questionSetHash: candidate.context.questionSetHash, questionCount: candidate.questionSet.questions.length, payload: candidate.payload, questionSet: candidate.questionSet, context: candidate.context } });
-  await fill("My unsaved matching name"); await click('[data-stage="frozen"]');
-  const frozen = host.querySelector('[data-frozen-v2]'); expect(frozen?.textContent).toContain("Acme"); expect(frozen?.textContent).not.toContain("My unsaved matching name");
-  await click('[data-stage="input"]'); expect(host.querySelector('[data-base-field="officialName"]')).toHaveProperty("value", "My unsaved matching name");
-  expect(host.querySelector<HTMLButtonElement>('[data-generate="questions"]')?.disabled).toBe(true); expect(fetch).not.toHaveBeenCalled();
-});
-it("tabs retain valid panel targets and support arrow-key focus without losing draft state", async () => {
-  await render(); const input = host.querySelector<HTMLButtonElement>('[data-stage="input"]')!, frozen = host.querySelector<HTMLButtonElement>('[data-stage="frozen"]')!;
-  for (const tab of [input, frozen]) expect(document.getElementById(tab.getAttribute("aria-controls")!)).not.toBeNull();
-  input.focus(); await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
-  expect(document.activeElement).toBe(frozen); expect(frozen.getAttribute("aria-selected")).toBe("true"); expect(input.tabIndex).toBe(-1);
-});
-it("only a separate explicit new-input action can proceed past an old uncertain run", async () => {
-  const view = editorFixture(); await render({ ...view, generations: { ...view.generations, roles: { generationId: "44444444-4444-4444-8444-444444444444", kbId: view.kbId, kind: "roles", inputHash: "a".repeat(64), state: "uncertain", result: null, errorReason: "outcome_unknown", attempt: { attemptedCalls: 1, delivery: "outcome_unknown", modelRequested: "fixture", inputTokens: null, outputTokens: null, requestCount: null } } } });
-  expect(host.querySelector<HTMLButtonElement>('[data-generate="roles"]')!.disabled).toBe(true);
-  await fill("New saved brand"); vi.mocked(fetch).mockResolvedValueOnce(Response.json({ data: { draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] } })); await click('[data-save-v2]');
-  expect(host.querySelector<HTMLButtonElement>('[data-new-generation="roles"]')?.disabled).toBe(false); expect(host.textContent).toContain("another charge");
-  expect(host.querySelector<HTMLButtonElement>('[data-generate="roles"]')!.disabled).toBe(true);
-});
-it("offers explicit same-key resend only after an exact-key read returned not found", async () => {
-  await render(); vi.mocked(fetch).mockRejectedValueOnce(new Error("network")); await click('[data-generate="roles"]');
-  const sent = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)); expect(host.querySelector('[data-resend-generation="roles"]')).toBeNull();
-  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "not_found" } }, { status: 404 })); await click('[data-read-generation="roles"]');
-  expect(host.querySelector<HTMLButtonElement>('[data-resend-generation="roles"]')?.disabled).toBe(false);
-  vi.mocked(fetch).mockRejectedValueOnce(new Error("network")); await click('[data-resend-generation="roles"]');
-  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[2]?.[1]?.body))).toEqual(sent);
-});
+const editor = en.tools.geoKnowledgeBase.editor;
 
-it("does not claim unsaved edits for a draft the visitor has not touched", async () => {
-  const view = editorFixture();
-  await render({ ...view, requiresSave: true });
-  expect(host.querySelector("[data-save-pending]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.savePending);
-  expect(host.textContent).not.toContain(geoKbV2EditorCopy("en").unsaved);
-  expect(host.querySelector<HTMLButtonElement>('[data-generate="roles"]')?.disabled).toBe(true);
-  await fill("Typed by a person");
-  expect(host.textContent).toContain(geoKbV2EditorCopy("en").unsaved);
-  expect(host.querySelector("[data-save-pending]")).toBeNull();
-  expect(fetch).not.toHaveBeenCalled();
-});
-it("names the competitor difference between the Profile copy and the draft, and adopts a bounded subset", async () => {
-  const view = editorFixture();
-  const domains = ["astro.com", "astro-seek.com", "astrostyle.com", "cafeastrology.com", "astrotheme.com", "astro-charts.com"];
-  const payload = { ...view.payload, competitors: [{ domain: "astro.com", brandName: "Astrodienst", confirmed: true }],
-    profileCopy: { ...view.payload.profileCopy, profile: { ...view.payload.profileCopy.profile, directCompetitors: domains } } };
-  await render({ ...view, payload });
-  const panel = host.querySelector("[data-geo-v2-measurement]");
-  expect(panel).not.toBeNull();
-  expect(panel?.querySelector("[data-gap-competitors]")?.textContent).toBe(en.tools.geoKnowledgeBase.measurementReview.gapCompetitors.replace("{source}", "6").replace("{draft}", "1").replace("{missing}", "5"));
-  expect(host.querySelectorAll("[data-competitor-choice]")).toHaveLength(6);
-  await click("[data-replace-competitors]");
-  const choices = [...host.querySelectorAll<HTMLInputElement>("[data-competitor-choice]")];
-  for (const choice of choices.slice(0, 5)) await act(async () => choice.click());
-  expect(choices[5]?.disabled).toBe(true);
-  await click("[data-apply-measurements]");
-  const rows = [...host.querySelectorAll<HTMLInputElement>('[data-competitor-field="domain"]')].map(node => node.value);
-  expect(rows).toEqual(domains.slice(0, 5));
+it("offers one action and no workbench", async () => {
+  await render();
+  // The inputs are maintained in the Product Profile. This page derives a
+  // knowledge base from them, so it has the one button that does that and
+  // nothing to type into: no stage tabs, no per-step buttons, no editors for
+  // roles, competitors or facts, no candidate review checkbox.
+  expect(host.querySelector("[data-generate-kb]")).not.toBeNull();
+  for (const gone of ['[data-stage]', '[data-refresh-sources]', '[data-generate="roles"]', '[data-generate="questions"]',
+    "[data-build-v2]", "[data-confirm-v2]", "[data-save-v2]", "[data-geo-v2-progress]", "[data-prepared-review]",
+    "[data-edit-role]", "[data-edit-fact]", "[data-confirm-prepared]", "[data-freeze-prepared]", "[data-adopt-role]"]) {
+    expect(host.querySelector(gone), gone).toBeNull();
+  }
+  expect(host.querySelectorAll("input, textarea, select")).toHaveLength(0);
+  // The Profile it reads is still read out, in the Profile editor's own shape.
+  expect(host.querySelectorAll("[data-geo-profile-field]").length).toBeGreaterThan(0);
   expect(fetch).not.toHaveBeenCalled();
 });
 
-it("turns an inherited feature into a pending fact carrying the source the Profile already recorded", async () => {
-  const view = editorFixture();
-  const profile = { ...view.payload.profileCopy.profile, coreFeatures: ["Free birth chart calculator"], fieldProvenance: [
-    { path: "/coreFeatures" as const, derivation: "observed" as const, confidence: "high" as const, source: "public_page" as const,
-      observedAt: "2026-08-31T05:34:14.891Z", evidenceUrls: ["https://example.com/tools"], limitation: null }] };
-  await render({ ...view, payload: { ...view.payload, facts: [], profileCopy: { ...view.payload.profileCopy, profile } } });
-  const add = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.getAttribute("aria-label")?.endsWith("Free birth chart calculator"));
-  expect(add?.disabled).toBe(false);
-  expect(host.querySelectorAll("[data-edit-fact]")).toHaveLength(0);
-  await act(async () => add!.click());
-  expect(host.querySelectorAll("[data-edit-fact]")).toHaveLength(1);
-  const values = [...host.querySelectorAll<HTMLInputElement>('[data-fact-field="sourceUrl"], [data-fact-field="observedAt"], [data-fact-field="value"], [data-fact-field="key"]')].map(node => node.value);
-  // Keyed and stated by the claim -- not by "coreFeatures[0]", which is on no
-  // page and so could never be found there by the crawl check.
-  expect(values).toContain("Free birth chart calculator");
-  expect(values).not.toContain("coreFeatures[0]");
-  expect(values).toContain("https://example.com/tools");
-  // The capture time the Profile recorded is carried, and read out rather than
-  // left as an empty box for someone to hand-type an ISO string into.
-  expect(host.querySelector("[data-fact-observed-at]")?.textContent).toBe("2026-08-31T05:34:14.891Z");
-  expect(host.querySelector("[data-edit-fact] [data-review-state]")?.textContent).toBe("Pending review");
-  expect(fetch).not.toHaveBeenCalled();
+const frozenAt = (base: ReturnType<typeof editorFixture>, contentHash: string) => {
+  const candidate = base.prepared!;
+  return { kbId: base.kbId, snapshotId: candidate.candidateId, revision: 1, frozenAt: "2026-08-31T00:00:00.000Z", contentHash, questionSetHash: candidate.context.questionSetHash, questionCount: candidate.questionSet.questions.length, payload: candidate.payload, questionSet: candidate.questionSet, context: candidate.context };
+};
+
+it("says there is nothing yet, and names the action that makes one", async () => {
+  await render({ ...editorFixture(), frozen: null });
+  expect(host.querySelector("[data-kb-state]")?.getAttribute("data-kb-state")).toBe("none");
+  expect(host.querySelector("[data-kb-empty]")?.textContent).toBe(editor.generateEmpty);
+  expect(host.querySelector("[data-generate-kb]")?.textContent).toBe(editor.generate);
 });
 
-it("builds the whole knowledge base from the confirmed Profile in one gesture", async () => {
+it("shows a version generated from the current Profile as the current one", async () => {
   const base = editorFixture();
-  // A knowledge base that has the Profile copy but none of what GEO derives
-  // from it: this is the state a visitor lands in right after confirming.
-  const view = { ...base, prepared: null, payload: { ...base.payload, officialName: "", aliases: [], categoryTerms: [], competitors: [],
-    profileCopy: { ...base.payload.profileCopy, profile: { ...base.payload.profileCopy.profile, categories: ["invoice software"], directCompetitors: ["rival.example"] } } } };
-  vi.mocked(fetch)
-    .mockResolvedValueOnce(Response.json({ data: { draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] } }))
-    .mockResolvedValueOnce(Response.json({ data: sourceFixture({ ...view, draftVersion: 2, draftHash: "c".repeat(64) }) }))
-    .mockResolvedValueOnce(Response.json({ data: { generation: { generationId: "44444444-4444-4444-8444-444444444444", kbId: view.kbId, kind: "roles", inputHash: "d".repeat(64), state: "dispatched", result: null, errorReason: null, attempt: null }, reused: false } }));
+  await render({ ...base, frozen: frozenAt(base, base.draftHash!) });
+  expect(host.querySelector("[data-kb-state]")?.getAttribute("data-kb-state")).toBe("current");
+  expect(host.querySelector("[data-generate-kb]")?.textContent).toBe(editor.regenerate);
+  expect(host.querySelector("[data-frozen-v2]")).not.toBeNull();
+  expect(host.querySelector("[data-kb-empty]")).toBeNull();
+});
+
+it("does not pass off a version from an older draft as the current answer", async () => {
+  const base = editorFixture();
+  await render({ ...base, frozen: frozenAt(base, "f".repeat(64)) });
+  expect(host.querySelector("[data-kb-state]")?.getAttribute("data-kb-state")).toBe("stale");
+  // Still shown: it is what exists, and hiding it would leave the page blank
+  // while a real frozen version sits in the account.
+  expect(host.querySelector("[data-frozen-v2]")).not.toBeNull();
+});
+
+it("shows what a frozen version holds, with every count distinct", async () => {
+  const base = editorFixture(), candidate = base.prepared!;
+  await render({ ...base, frozen: { kbId: base.kbId, snapshotId: candidate.candidateId, revision: 3, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: base.draftHash!, questionSetHash: candidate.context.questionSetHash, questionCount: candidate.questionSet.questions.length, payload: candidate.payload, questionSet: candidate.questionSet, context: candidate.context } });
+  const summary = host.querySelector("[data-frozen-summary]");
+  expect(summary).not.toBeNull();
+  expect(renderedText(host)).toContain("Finance teams");
+});
+
+it("stops the run at the failed step instead of paying for the model call after it", async () => {
+  const base = editorFixture();
+  const view = { ...base, prepared: null, requiresSave: true };
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "rate_limited" } }, { status: 429 }));
   await render(view);
 
-  await click("[data-build-v2]");
+  await click("[data-generate-kb]");
 
-  const paths = vi.mocked(fetch).mock.calls.map(call => String(call[0]));
-  expect(paths).toEqual(["/api/tools/geo-knowledge-base/v2/draft", "/api/tools/geo-knowledge-base/v2/sources", "/api/tools/geo-knowledge-base/v2/roles"]);
-  const saved = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)) as { payload: { officialName: string; aliases: string[]; categoryTerms: string[]; competitors: { domain: string }[] } };
-  expect(saved.payload.officialName).toBe("Acme");
-  expect(saved.payload.categoryTerms).toEqual(["invoice software"]);
-  expect(saved.payload.aliases).toContain("Acme");
-  expect(saved.payload.competitors.map(row => row.domain)).toEqual(["rival.example"]);
-  const report = host.querySelector("[data-geo-v2-build-report]");
-  expect(report?.querySelector("[data-build-fields]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildFields.replace("{fields}", "Matching name · Question categories"));
-  expect(report?.querySelector("[data-build-aliases]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildAliases.adopted);
-  // The request was dispatched, not answered: nothing is readable below yet.
-  expect(report?.querySelector("[data-build-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildStopped.rolesPending);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe("/api/tools/geo-knowledge-base/v2/draft");
+  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(editor.buildStopped.save);
 });
 
-it("never calls a dispatched or refused role generation a proposal the visitor can review", async () => {
+it("refuses to run onto a draft whose Profile copy is behind, and says which step comes first", async () => {
+  const base = editorFixture();
+  const view = { ...base, profile: base.profile === null ? null : { ...base.profile, reference: { ...base.profile.reference, snapshotRevision: 9, profileHash: "e".repeat(64) } } };
+  await render(view);
+
+  await click("[data-generate-kb]");
+
+  expect(fetch).not.toHaveBeenCalled();
+  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(editor.buildStopped.copy);
+  // No derivation ran, so no part of one is reported.
+  expect(host.querySelector("[data-build-fields]")).toBeNull();
+});
+
+it("never calls a dispatched or refused role generation a knowledge base", async () => {
   const base = editorFixture();
   const view = { ...base, prepared: null, payload: { ...base.payload, aliases: [] } };
   const roles = (state: string, errorReason: string | null) => Response.json({ data: { generation: { generationId: "44444444-4444-4444-8444-444444444444", kbId: view.kbId, kind: "roles", inputHash: "d".repeat(64), state, result: null, errorReason, attempt: null }, reused: false } });
@@ -163,266 +109,52 @@ it("never calls a dispatched or refused role generation a proposal the visitor c
     .mockResolvedValueOnce(roles("failed", "rate_limited"));
   await render(view);
 
-  await click("[data-build-v2]");
+  await click("[data-generate-kb]");
 
-  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildStopped.rolesFailed);
-  expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.editor.buildDone);
+  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(editor.buildStopped.rolesFailed);
+  expect(host.textContent).not.toContain(editor.buildDone);
+  // The run stopped, so nothing after roles was requested or billed.
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).not.toContain("/api/tools/geo-knowledge-base/v2/prepare");
 });
 
-it("writes nothing and bills nothing when the draft already matches the Profile", async () => {
-  // The default fixture is saved, clean, and holds a candidate the visitor
-  // already paid to prepare. A redundant write would stale it.
-  // It also already holds source evidence for exactly this draft. Re-reading
-  // it would spend the shared crawl and Search Console budget and mint a new
-  // receipt, which alone changes the generation input identity and bills again.
-  // The redundant draft write is what staled an already-prepared candidate, so
-  // the absence of that write is what this asserts.
+it("says zero dispatched calls are not proof of no charge", async () => {
   const base = editorFixture();
-  const view = { ...base, prepared: null, sourceReceipt: sourceFixture(base) };
-  await render(view);
-  vi.mocked(fetch)
-    .mockResolvedValueOnce(Response.json({ data: { generation: { generationId: "44444444-4444-4444-8444-444444444444", kbId: view.kbId, kind: "roles", inputHash: "d".repeat(64), state: "succeeded", result: null, errorReason: null, attempt: null }, reused: false } }));
-
-  await click("[data-build-v2]");
-
-  const paths = vi.mocked(fetch).mock.calls.map(call => String(call[0]));
-  expect(paths).toEqual(["/api/tools/geo-knowledge-base/v2/roles"]);
-  expect(host.querySelector("[data-build-fields]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildNoFields);
+  const attempt = { attemptedCalls: 0 as const, delivery: "not_attempted" as const, modelRequested: null, inputTokens: null, outputTokens: null, requestCount: null };
+  await render({ ...base, prepared: null, generations: { ...base.generations, roles: { generationId: "44444444-4444-4444-8444-444444444444", kbId: base.kbId, kind: "roles", inputHash: "a".repeat(64), state: "failed", result: null, errorReason: "rate_limited", attempt } } });
+  const section = host.querySelector('[data-generation-state="roles"]');
+  expect(section?.textContent).toContain(editor.billingNote);
 });
 
-it("stops the build at the failed step instead of paying for the model call after it", async () => {
-  // requiresSave with a derivation that writes nothing, so only the save's own
-  // result can stop the chain: a dirty draft would stop it for another reason.
+it("will not repeat a run whose outcome the server never settled", async () => {
   const base = editorFixture();
-  const view = { ...base, prepared: null, requiresSave: true };
-  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "rate_limited" } }, { status: 429 }));
-  await render(view);
+  const uncertain = { generationId: "44444444-4444-4444-8444-444444444444", kbId: base.kbId, kind: "roles" as const, inputHash: "a".repeat(64), state: "uncertain" as const, result: null, errorReason: "outcome_unknown" as const, attempt: { attemptedCalls: 1 as const, delivery: "outcome_unknown" as const, modelRequested: "fixture", inputTokens: null, outputTokens: null, requestCount: null } };
+  await render({ ...base, prepared: null, sourceReceipt: sourceFixture(base), generations: { ...base.generations, roles: uncertain } });
+  expect(host.querySelector('[data-generation-state="roles"]')?.textContent).toContain("outcome is unknown");
 
-  await click("[data-build-v2]");
+  await click("[data-generate-kb]");
 
-  expect(fetch).toHaveBeenCalledTimes(1);
-  expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe("/api/tools/geo-knowledge-base/v2/draft");
-  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildStopped.save);
-});
-
-it("refuses to build onto a draft whose Profile copy is behind, and says which step comes first", async () => {
-  const base = editorFixture();
-  const view = { ...base, profile: base.profile === null ? null : { ...base.profile, reference: { ...base.profile.reference, snapshotRevision: 9, profileHash: "e".repeat(64) } } };
-  await render(view);
-
-  await click("[data-build-v2]");
-
+  // A request that may already have run and billed is the one thing the single
+  // gesture must not repeat on its own. It stops and says which step.
   expect(fetch).not.toHaveBeenCalled();
-  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.buildStopped.copy);
-  // No derivation ran, so no part of one is reported.
-  expect(host.querySelector("[data-build-fields]")).toBeNull();
-  expect(host.querySelector("[data-build-aliases]")).toBeNull();
-  expect(host.querySelector("[data-build-competitors]")).toBeNull();
+  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(editor.buildStopped.roles);
 });
-it("confirms everything in one gesture: accepts what it may, prepares, and freezes", async () => {
+
+it("says why a run was refused without repeating the code, and keeps an unmapped one", async () => {
   const base = editorFixture();
-  const pending = { ...base, prepared: null, payload: { ...base.payload,
-    roles: base.payload.roles.map(role => ({ ...role, review: "pending" as const })),
-    facts: base.payload.facts.map(fact => ({ ...fact, review: "pending" as const })) } };
-  vi.mocked(fetch)
-    .mockResolvedValueOnce(Response.json({ data: { draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] } }))
-    .mockResolvedValueOnce(Response.json({ data: { generation: { generationId: base.prepared!.candidateId, kbId: base.kbId, kind: "questions", inputHash: "d".repeat(64), state: "succeeded", result: base.prepared, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false } }))
-    .mockResolvedValueOnce(Response.json({ data: { snapshotId: base.prepared!.candidateId, revision: 1, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: base.prepared!.candidateHash, questionSetHash: "e".repeat(64), questionCount: 1, reusedExisting: false } }))
-    .mockResolvedValueOnce(Response.json({ data: base }));
-  await render(pending);
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "input_stale" } }, { status: 409 }));
+  await render({ ...base, prepared: null, requiresSave: true });
+  await click("[data-generate-kb]");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Saved input or the Profile source version changed");
+  expect(host.textContent).not.toContain("input_stale");
 
-  await click("[data-confirm-v2]");
-
-  const paths = vi.mocked(fetch).mock.calls.map(call => String(call[0]));
-  expect(paths.slice(0, 3)).toEqual(["/api/tools/geo-knowledge-base/v2/draft", "/api/tools/geo-knowledge-base/v2/prepare", "/api/tools/geo-knowledge-base/v2/freeze"]);
-  const saved = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)) as { payload: { roles: { review: string }[]; facts: { review: string }[] } };
-  expect(saved.payload.roles.map(role => role.review)).toEqual(["accepted"]);
-  expect(saved.payload.facts.map(fact => fact.review)).toEqual(["accepted"]);
-  expect(host.querySelector("[data-confirm-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.confirmDone);
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "teapot" } }, { status: 418 }));
+  await click("[data-generate-kb]");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("teapot");
 });
 
-it("does not freeze a complete version that was only requested, and does not call it frozen", async () => {
-  const base = editorFixture();
-  const pending = { ...base, prepared: null, payload: { ...base.payload, roles: base.payload.roles.map(role => ({ ...role, review: "pending" as const })) } };
-  vi.mocked(fetch)
-    .mockResolvedValueOnce(Response.json({ data: { draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] } }))
-    .mockResolvedValueOnce(Response.json({ data: { generation: { generationId: base.prepared!.candidateId, kbId: base.kbId, kind: "questions", inputHash: "d".repeat(64), state: "dispatched", result: null, errorReason: null, attempt: null }, reused: false } }));
-  await render(pending);
-
-  await click("[data-confirm-v2]");
-
-  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).not.toContain("/api/tools/geo-knowledge-base/v2/freeze");
-  expect(host.querySelector("[data-confirm-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.confirmStopped.preparePending);
-  expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.editor.confirmDone);
-});
-
-it("does not call the version frozen when the freeze itself was refused", async () => {
-  const base = editorFixture();
-  const pending = { ...base, prepared: null, payload: { ...base.payload, roles: base.payload.roles.map(role => ({ ...role, review: "pending" as const })) } };
-  vi.mocked(fetch)
-    .mockResolvedValueOnce(Response.json({ data: { draftVersion: 2, contentHash: "c".repeat(64), updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] } }))
-    .mockResolvedValueOnce(Response.json({ data: { generation: { generationId: base.prepared!.candidateId, kbId: base.kbId, kind: "questions", inputHash: "d".repeat(64), state: "succeeded", result: base.prepared, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false } }))
-    .mockResolvedValueOnce(Response.json({ error: { code: "conflict" } }, { status: 409 }));
-  await render(pending);
-
-  await click("[data-confirm-v2]");
-
-  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toContain("/api/tools/geo-knowledge-base/v2/freeze");
-  expect(host.querySelector("[data-confirm-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.confirmStopped.freeze);
-  expect(host.textContent).not.toContain(en.tools.geoKnowledgeBase.editor.confirmDone);
-});
-
-it("names an entry it may not accept and freezes nothing", async () => {
-  // A fact with no source URL is exactly what the contract refuses to accept.
-  const base = editorFixture();
-  const view = { ...base, prepared: null, payload: { ...base.payload,
-    facts: [{ ...base.payload.facts[0]!, key: "Seats", sourceUrl: "", review: "pending" as const }] } };
-  await render(view);
-
-  await click("[data-confirm-v2]");
-
-  expect(fetch).not.toHaveBeenCalled();
-  expect(host.querySelector("[data-confirm-outcome]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.confirmStopped.blocked.replace("{items}", "Seats"));
-});
-
-it("reads as three named parts with one ordered progress model", async () => {
-  await render();
-  expect([...host.querySelectorAll("[data-geo-v2-block]")].map(node => node.getAttribute("data-geo-v2-block"))).toEqual(["profile", "supplement", "run"]);
-  expect(host.querySelector('[data-geo-v2-block="profile"]')?.querySelector("[data-geo-profile-fields]")).not.toBeNull();
-  expect(host.querySelector('[data-geo-v2-block="supplement"]')?.querySelector('[data-base-field="officialName"]')).not.toBeNull();
-  // The two primary actions sit in the header, as they do in the Profile
-  // editor, so the first thing on screen is the thing most visitors press.
-  // The run block keeps the per-step generation actions the progress list names.
-  const header = host.querySelector("[data-save-state]")?.closest("div.rounded-card");
-  expect(header?.querySelector("[data-build-v2]")).not.toBeNull();
-  expect(header?.querySelector("[data-save-v2]")).not.toBeNull();
-  expect(host.querySelector('[data-geo-v2-block="run"]')?.querySelector("[data-refresh-sources]")).not.toBeNull();
-  expect(host.querySelector('[data-geo-v2-block="run"]')?.querySelector("[data-save-v2]")).toBeNull();
-  expect([...host.querySelectorAll("[data-step]")].map(node => node.getAttribute("data-step"))).toEqual(["save", "sources", "roles", "prepare", "freeze"]);
-  expect(host.querySelector('[data-step="freeze"]')?.textContent).toContain(en.tools.geoKnowledgeBase.steps.reasons.notReviewed);
-});
-it("names the one blocking gate on the progress list rather than a loose hint", async () => {
-  await render({ ...editorFixture(), requiresSave: true });
-  expect(host.querySelector('[data-step="save"]')?.getAttribute("data-step-state")).toBe("ready");
-  expect(host.querySelector('[data-step="sources"]')?.getAttribute("data-step-state")).toBe("blocked");
-  expect(host.querySelector('[data-step="sources"]')?.textContent).toContain(en.tools.geoKnowledgeBase.steps.reasons.unsaved);
-});
-it("says what a frozen version holds before showing all of it, with every count distinct", async () => {
-  const view = editorFixture(), c = view.prepared!, role = c.payload.roles[0]!;
-  // Distinct numbers, so swapping any two placeholders or reporting the total instead of the confirmed subset is caught.
-  const fact = c.payload.facts[0]!;
-  const payload = { ...c.payload, roles: [role, { ...role, id: "r2", review: "excluded" as const }],
-    facts: [fact, { ...fact, key: "f2" }, { ...fact, key: "f3", review: "excluded" as const }, { ...fact, key: "f4", review: "excluded" as const }, { ...fact, key: "f5", review: "pending" as const }],
-    competitors: [{ domain: "a.example", brandName: "A", confirmed: true }, { domain: "b.example", brandName: "B", confirmed: false }, { domain: "c.example", brandName: "C", confirmed: false }] };
-  await render({ ...view, frozen: { kbId: view.kbId, snapshotId: c.candidateId, revision: 7, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: c.baseDraftHash, questionSetHash: c.context.questionSetHash, questionCount: 5, payload, questionSet: c.questionSet, context: c.context } });
-  await click('[data-stage="frozen"]');
-  const summary = host.querySelector("[data-frozen-summary] p")?.textContent ?? "";
-  // Excluded and pending rows stay in the frozen record but do not measure; the line says so.
-  expect(summary).toBe("v7 · 5 questions · 1/2 roles accepted · 1/3 competitors confirmed · 2/5 facts accepted · 2026-08-31T00:00:00.000Z");
-  expect(host.querySelector("[data-frozen-summary] p details")).toBeNull();
-  expect(host.querySelector("[data-frozen-summary] details")?.textContent).toContain(c.candidateId);
-});
-it("reads one role and one fact in the singular", async () => {
-  const view = editorFixture(), c = view.prepared!;
-  await render({ ...view, frozen: { kbId: view.kbId, snapshotId: c.candidateId, revision: 1, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: c.baseDraftHash, questionSetHash: c.context.questionSetHash, questionCount: 1, payload: c.payload, questionSet: c.questionSet, context: c.context } });
-  await click('[data-stage="frozen"]');
-  expect(host.querySelector("[data-frozen-summary] p")?.textContent).toContain("1 question · 1/1 roles accepted · 1/1 competitors confirmed · 1/1 facts accepted");
-});
-it("adopts a renamed product into the matching name and clears the gap notice", async () => {
-  const view = editorFixture();
-  const profile = { ...view.payload.profileCopy.profile, productName: "Renamed" };
-  await render({ ...view, payload: { ...view.payload, profileCopy: { ...view.payload.profileCopy, profile } } });
-  expect(host.querySelector("[data-gap-fields]")?.textContent).toBe(en.tools.geoKnowledgeBase.measurementReview.gapFields.replace("{fields}", "Matching name"));
-  await click('[data-measurement-field="officialName"]'); await click("[data-apply-measurements]");
-  expect(host.querySelector<HTMLInputElement>('[data-base-field="officialName"]')?.value).toBe("Renamed");
-  expect(host.querySelector("[data-geo-v2-measurement]")).toBeNull();
-});
-it("says zero dispatched calls are not proof of no charge, and keeps raw codes in the disclosure", async () => {
-  const view = editorFixture();
-  await render({ ...view, generations: { ...view.generations, roles: { generationId: "44444444-4444-4444-8444-444444444444", kbId: view.kbId, kind: "roles", inputHash: "a".repeat(64), state: "failed", result: null, errorReason: "model_unavailable",
-    attempt: { attemptedCalls: 0, delivery: "not_attempted", modelRequested: null, inputTokens: null, outputTokens: null, requestCount: null } } } });
-  const panel = host.querySelector('[data-generation-state="roles"]');
-  const e = en.tools.geoKnowledgeBase.editor;
-  expect(panel?.textContent).toContain(e.billingNote);
-  expect(panel?.textContent).toContain(e.deliveries.not_attempted);
-  expect(panel?.querySelector("details")?.textContent).toContain("model_unavailable");
-  expect(panel?.querySelector("dl")?.textContent).not.toContain("model_unavailable");
-});
-it("stops promising the draft saves itself once a write has been refused", async () => {
-  vi.useFakeTimers();
-  try {
-    await render();
-    const hint = () => host.querySelector("[data-autosave-hint]");
-    expect(hint()?.getAttribute("data-autosave-hint")).toBe("on");
-    expect(hint()?.textContent).toBe(en.tools.geoKnowledgeBase.editor.autosave);
-    vi.mocked(fetch).mockResolvedValue(Response.json({ error: { code: "rate_limited" } }, { status: 429 }));
-    await fill("Typed into a rate limit");
-    await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V2_AUTOSAVE_MS + 100); });
-    expect(fetch).toHaveBeenCalledTimes(1);
-    // Nothing is armed any more, so the page must not keep saying otherwise.
-    expect(hint()?.getAttribute("data-autosave-hint")).toBe("failed");
-    expect(hint()?.textContent).toBe(en.tools.geoKnowledgeBase.editor.autosaveHeld.failed);
-    expect(hint()?.textContent).not.toBe(en.tools.geoKnowledgeBase.editor.autosave);
-  } finally { vi.useRealTimers(); }
-});
-it("announces save state from one persistent live region and states autosave truthfully", async () => {
-  const view = editorFixture();
-  await render({ ...view, generations: { ...view.generations, roles: { generationId: "55555555-5555-4555-8555-555555555555", kbId: view.kbId, kind: "roles", inputHash: "b".repeat(64), state: "dispatched", result: null, errorReason: null, attempt: null } } });
-  const live = host.querySelector("[aria-live=\"polite\"][data-save-state]");
-  expect(live?.getAttribute("data-save-state")).toBe("idle");
-  expect(host.querySelector("[data-autosave-hint]")?.getAttribute("data-autosave-hint")).toBe("running");
-  expect(host.querySelector("[data-autosave-hint]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.autosaveHeld.running);
-  await fill("Typed");
-  expect(host.querySelector("[aria-live=\"polite\"][data-save-state]")).toBe(live);
-  expect(live?.getAttribute("data-save-state")).toBe("unsaved");
-  expect(host.querySelectorAll("[role=\"status\"][data-save-state]")).toHaveLength(0);
-});
-
-// next-intl renders a missing key as its own path instead of throwing, and the
-// account route hands the client a narrowed message tree. Rendering against
-// exactly that tree is the only thing that catches a namespace it forgot.
-it.each(["en", "zh"])("renders no untranslated key path against the messages the account route provides in %s", async locale => {
-  const messages = locale === "zh" ? zh : en;
-  const narrowed = { account: messages.account, tools: { geoKnowledgeBase: messages.tools.geoKnowledgeBase } };
-  const view = editorFixture();
-  const payload = { ...view.payload, competitors: [{ domain: "astro.com", brandName: "Astrodienst", confirmed: true }],
-    profileCopy: { ...view.payload.profileCopy, profile: { ...view.payload.profileCopy.profile, directCompetitors: ["astro.com", "rival.example"] } } };
-  await act(async () => root.render(<NextIntlClientProvider locale={locale} timeZone="UTC" messages={narrowed}>
-    <GeoKnowledgeBaseV2 initialView={{ ...view, payload }} locale={locale} inline confirmedProfileRevision={1} />
-  </NextIntlClientProvider>));
-  for (const details of host.querySelectorAll("details")) details.open = true;
-  expect(host.querySelector("[data-geo-v2-measurement]")).not.toBeNull();
-  expect(host.textContent).not.toMatch(/tools\.geoKnowledgeBase|account\.websites/u);
-});
-
-it("tells a never-saved draft apart from one whose stored copy differs", async () => {
-  await render({ ...editorFixture(), draftVersion: 0, draftHash: null, requiresSave: true });
-  expect(host.querySelector("[data-save-state]")?.getAttribute("data-save-state")).toBe("neverSaved");
-  expect(host.querySelector("[data-save-state]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.neverSaved);
-});
-it("does not call a source receipt done once the draft has moved past the one it inspected", async () => {
-  const view = editorFixture();
-  await render({ ...view, sourceReceipt: { ...sourceFixture(view), draftHash: "f".repeat(64) } });
-  expect(host.querySelector('[data-step="sources"]')?.getAttribute("data-step-state")).not.toBe("done");
-  await act(async () => root.unmount()); root = createRoot(host);
-  await render({ ...view, sourceReceipt: sourceFixture(view) });
-  expect(host.querySelector('[data-step="sources"]')?.getAttribute("data-step-state")).toBe("done");
-});
-it("does not adopt an empty competitor list as a replacement", async () => {
-  const view = editorFixture();
-  const payload = { ...view.payload, competitors: [{ domain: "astro.com", brandName: "Astrodienst", confirmed: true }],
-    profileCopy: { ...view.payload.profileCopy, profile: { ...view.payload.profileCopy.profile, directCompetitors: ["astro.com", "rival.example"] } } };
-  await render({ ...view, payload });
-  await click("[data-replace-competitors]");
-  expect(host.querySelector<HTMLButtonElement>("[data-apply-measurements]")?.disabled).toBe(true);
-});
-
-it("says a change to a crawl-supported fact will cost its evidence", async () => {
-  const view = editorFixture();
-  const fact = view.payload.facts[0]!;
-  await render({ ...view, payload: { ...view.payload, facts: [{ ...fact, supportRef: { receiptId: "33333333-3333-4333-8333-333333333333", evidenceId: "F1" } }] } });
-  expect(host.querySelector("[data-support-ref-note]")?.textContent).toBe(en.tools.geoKnowledgeBase.editor.supportRefNote);
-  await act(async () => root.unmount()); root = createRoot(host);
-  await render({ ...view, payload: { ...view.payload, facts: [{ ...fact, supportRef: null }] } });
-  expect(host.querySelector("[data-support-ref-note]")).toBeNull();
+it.each(["en", "zh"])("renders no untranslated key path in %s", async locale => {
+  const base = editorFixture(), candidate = base.prepared!;
+  await render({ ...base, frozen: { kbId: base.kbId, snapshotId: candidate.candidateId, revision: 1, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: base.draftHash!, questionSetHash: candidate.context.questionSetHash, questionCount: candidate.questionSet.questions.length, payload: candidate.payload, questionSet: candidate.questionSet, context: candidate.context } }, locale);
+  expect(host.textContent).not.toMatch(/tools\.geoKnowledgeBase\./u);
+  expect(host.textContent).not.toMatch(/account\.websites\./u);
 });

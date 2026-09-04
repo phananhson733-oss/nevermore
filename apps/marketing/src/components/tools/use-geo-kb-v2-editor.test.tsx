@@ -109,6 +109,47 @@ it("a candidate arriving after a Profile ABA remains stale even after the unchan
   vi.mocked(fetch).mockResolvedValueOnce(response(view)); await act(async () => editor.reviewProfileCopy());
   expect(editor.copyStale).toBe(false); expect(editor.view.prepared?.candidateId).toBe(V2_CANDIDATE_ID); expect(editor.candidateStale).toBe(true);
 });
+it("derives, evidences, generates, accepts and freezes a whole knowledge base in one gesture", async () => {
+  // The state a visitor lands in right after confirming a Profile: a draft
+  // holding the Profile copy, nothing derived from it, nothing frozen.
+  const base = editorFixture(), id = "44444444-4444-4444-8444-444444444444";
+  const view = { ...base, prepared: null, frozen: null, sourceReceipt: null, requiresSave: true,
+    payload: { ...base.payload, roles: [], market: { ...base.payload.market, language: "en" } } };
+  const proposal = createGeoRoleProposal({ generationId: id, kbId: view.kbId, baseDraftVersion: "2", baseDraftHash: "c".repeat(64),
+    profileCopyHash: geoV2Digest(view.payload.profileCopy), input: { ...ROLE_SYNTHESIS_INPUT, officialName: view.payload.officialName, questionLanguage: "en" },
+    output: { ...ROLE_SYNTHESIS_OUTPUT, roles: [{ ...ROLE_SYNTHESIS_OUTPUT.roles[0]!, id: "r1" }] }, sourceReceiptRefs: [],
+    selectedEvidenceCounts: { profile: 1, gsc: 1, manual: 0, crawl: 0 }, availableEvidenceCounts: { profile: 1, gsc: 1, manual: 0, crawl: 0 } });
+  const saved = (version: number, hash: string) => response({ draftVersion: version, contentHash: hash, updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] });
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(saved(2, "c".repeat(64)))
+    .mockResolvedValueOnce(response(sourceFixture({ ...view, draftVersion: 2, draftHash: "c".repeat(64) })))
+    .mockResolvedValueOnce(response({ generation: { generationId: id, kbId: view.kbId, kind: "roles", inputHash: "d".repeat(64), state: "succeeded", result: proposal, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false }))
+    .mockResolvedValueOnce(saved(3, "e".repeat(64)))
+    .mockResolvedValueOnce(response({ generation: { generationId: base.prepared!.candidateId, kbId: view.kbId, kind: "questions", inputHash: "f".repeat(64), state: "succeeded", result: base.prepared, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false }))
+    .mockResolvedValueOnce(response({ snapshotId: base.prepared!.candidateId, revision: 1, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: base.prepared!.candidateHash, questionSetHash: "a".repeat(64), questionCount: 1, reusedExisting: false }))
+    .mockResolvedValueOnce(response(base));
+  await mount(view);
+
+  await act(async () => editor.generateAll());
+
+  // Every step of the workbench, in order, without a person pressing any of
+  // them: save, evidence, roles, save the adopted roles, question set, freeze.
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toEqual([
+    "/api/tools/geo-knowledge-base/v2/draft",
+    "/api/tools/geo-knowledge-base/v2/sources",
+    "/api/tools/geo-knowledge-base/v2/roles",
+    "/api/tools/geo-knowledge-base/v2/draft",
+    "/api/tools/geo-knowledge-base/v2/prepare",
+    "/api/tools/geo-knowledge-base/v2/freeze",
+    "/api/tools/geo-knowledge-base/v2/load",
+  ]);
+  // The roles the model proposed went into the draft that was frozen, accepted
+  // rather than left pending: nothing else would have let the freeze proceed.
+  const second = JSON.parse(String(vi.mocked(fetch).mock.calls[3]?.[1]?.body)) as { payload: { roles: { id: string; review: string; source: { kind: string; generationId: string } }[] } };
+  expect(second.payload.roles).toHaveLength(1);
+  expect(second.payload.roles[0]).toMatchObject({ id: "r1", review: "accepted", source: { kind: "model", generationId: id } });
+  expect(editor.confirm?.stoppedAt).toBeNull();
+});
 it("only explicit replacement adopts a colliding model role and preserves unrelated roles", async () => {
   const view = editorFixture(), id = "44444444-4444-4444-8444-444444444444";
   const proposal = createGeoRoleProposal({ generationId: id, kbId: view.kbId, baseDraftVersion: "1", baseDraftHash: view.draftHash!, profileCopyHash: geoV2Digest(view.payload.profileCopy), input: { ...ROLE_SYNTHESIS_INPUT, questionLanguage: "en" }, output: { ...ROLE_SYNTHESIS_OUTPUT, roles: [{ ...ROLE_SYNTHESIS_OUTPUT.roles[0]!, id: "r1" }] }, sourceReceiptRefs: [], selectedEvidenceCounts: { profile: 1, gsc: 1, manual: 0, crawl: 0 }, availableEvidenceCounts: { profile: 1, gsc: 1, manual: 0, crawl: 0 } });

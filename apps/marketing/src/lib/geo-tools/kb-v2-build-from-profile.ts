@@ -37,6 +37,14 @@ export interface GeoV2ProfileBuild {
   readonly unavailable: readonly GeoV2MeasurementField[];
   readonly aliases: GeoV2BuildOutcome;
   readonly competitors: GeoV2BuildOutcome;
+  /**
+   * How many of the Profile's competitors this measurement carries, and how
+   * many it had to offer. Equal numbers are the ordinary case; a smaller first
+   * number is the cap, and the interface has to say so rather than show a
+   * shorter list as though it were the Profile's.
+   */
+  readonly competitorsTaken: number;
+  readonly competitorsAvailable: number;
   /** True when the returned payload differs from the one given. */
   readonly changed: boolean;
 }
@@ -73,19 +81,22 @@ export function buildGeoV2FromProfile(
   // together because it was written for a banner the visitor could clear;
   // consumed as an outcome it would report a draft already holding the maximum
   // rows as matching a Profile it does not match at all.
+  // More competitors than one measurement can carry is not a question for the
+  // visitor. The Profile lists them in its own order, so the first N of that
+  // order is a rule anyone can predict, and the count taken is reported rather
+  // than passed off as the whole list. Asking instead put a panel of
+  // checkboxes in front of a knowledge base that did not exist yet.
+  const taken = adoptable.slice(0, GEO_KB_LIMITS.competitors);
   const competitors: GeoV2BuildOutcome =
     gap.missingCompetitorCount === 0
       ? "unchanged"
-      : gap.competitorsDiffer &&
-          lossless &&
-          adoptable.length <= GEO_KB_LIMITS.competitors
+      : gap.competitorsDiffer && lossless
         ? "adopted"
         : "manual";
 
   let next = applyGeoV2Measurement(payload, proposal, {
     fields: gap.fields,
-    competitorIndices:
-      competitors === "adopted" ? adoptable.map((row) => row.index) : null,
+    competitorIndices: competitors === "adopted" ? taken.map((row) => row.index) : null,
   });
 
   // The alias list is the match table for every later mention judgement, so an
@@ -117,6 +128,8 @@ export function buildGeoV2FromProfile(
     unavailable,
     aliases,
     competitors,
+    competitorsTaken: competitors === "adopted" ? taken.length : payload.competitors.length,
+    competitorsAvailable: adoptable.length,
     changed,
   };
 }

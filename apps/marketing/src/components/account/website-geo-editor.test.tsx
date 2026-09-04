@@ -55,19 +55,20 @@ afterEach(async () => {
 });
 
 describe("website GEO canonical editor", () => {
-  it("opens the complete V2 workflow and preserves its draft across Profile notifications", async () => {
+  it("mounts the V2 knowledge base once and keeps it across Profile notifications", async () => {
     fetchMock.mockResolvedValueOnce(Response.json({ data: modernData() }));
     await render(WEBSITE_ID, 1);
-    expect(container.querySelector("[data-geo-kb-v2]")).not.toBeNull();
-    const name = [...container.querySelectorAll("input")].find(input => !input.readOnly && input.value === "Acme");
-    if (!name) throw new Error("V2 alias field missing");
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(name, "Unsaved V2 name");
-      name.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    const card = container.querySelector("[data-geo-kb-v2]");
+    const generate = container.querySelector("[data-generate-kb]");
+    expect(card).not.toBeNull();
+    expect(generate).not.toBeNull();
+
+    // A new confirmed Profile revision arriving must not remount the card: a
+    // remount would discard a run in progress and re-read the knowledge base.
     await render(WEBSITE_ID, 2);
-    expect(name.isConnected).toBe(true);
-    expect(name.value).toBe("Unsaved V2 name");
+
+    expect(card?.isConnected).toBe(true);
+    expect(generate?.isConnected).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it("refuses a complete stored copy belonging to another route-owned website", async () => {
