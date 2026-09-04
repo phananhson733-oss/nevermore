@@ -5,6 +5,7 @@ import {
   type Request,
   type Route,
 } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 const AUDIT_API_REQUEST = "POST /api/tools/internal-link-audit";
 const HEADER_PROFILE_REQUEST = "GET /api/auth/profile";
@@ -261,7 +262,7 @@ const deepAuditResponse = {
           priority: "P2",
           confidence: "high",
           impact: "medium",
-          kind: "deep",
+          kind: "deep_page",
           nodeId: "deep-30",
           nodeIds: Array.from({ length: 27 }, (_, index) => `deep-${index + 4}`),
           affectedUrls: [],
@@ -277,7 +278,563 @@ const deepAuditResponse = {
   },
 };
 
-test("runs the no-login audit and renders the mocked v3 report", async ({
+const designScalePaths = [
+  "/templates/marketing",
+  "/templates/sales",
+  "/blog/internal-linking",
+  "/help/importing-data",
+  "/guides/api-migration",
+  "/zh/guides/api-migration",
+  "/integrations/notion",
+  "/integrations/zapier",
+  "/zh/integrations/notion",
+  ...Array.from({ length: 16 }, (_, index) => `/unmarked/page-${index + 1}`),
+];
+
+const designScaleAuditResponse = {
+  data: {
+    run: auditResponse.data.run,
+    result: {
+      ...auditResponse.data.result,
+      availability: "available",
+      stopReason: null,
+      limitation: "Bounded same-origin static HTML crawl.",
+      pagesCrawled: 25,
+      linksObserved: 79,
+      sitemapFetched: true,
+      sitemapUrlsObserved: 22,
+      actionablePages: 9,
+      nodes: designScalePaths.map((path, index) => {
+        const isOrphan = index >= 6 && index <= 8;
+        const isDeep = index === 4 || index === 5;
+        return {
+          id: `design-${index}`,
+          url: `https://acme.com${path}`,
+          title: `Page ${index + 1}`,
+          crawlDepth: isDeep ? 4 : 1,
+          clickDepth: isOrphan ? null : isDeep ? 4 : 1,
+          primaryParentId: isOrphan ? null : "design-9",
+          inboundLinks: isOrphan ? 0 : index === 2 || index === 3 ? 1 : 2,
+          outboundLinks: index % 3,
+          statusCode: 200,
+          sitemapMember: true,
+          robotsIndexable: true,
+          canonicalTarget: `https://acme.com${path}`,
+          kind: isOrphan ? "orphan_candidate" : isDeep ? "deep" : "page",
+        };
+      }),
+      edges: [],
+      findings: [
+        {
+          id: "design-duplicate",
+          priority: "P2",
+          confidence: "high",
+          impact: "medium",
+          kind: "duplicate_content",
+          nodeId: "design-0",
+          nodeIds: ["design-0", "design-1"],
+          affectedUrls: [
+            "https://acme.com/templates/marketing",
+            "https://acme.com/templates/sales",
+          ],
+          title: "Two template pages share a projected fingerprint",
+          detail: "The bounded static projections matched.",
+          evidence: "Matched title, headings, body, and link targets.",
+          limitation: "This is a candidate, not a redirect instruction.",
+          suggestedSourceUrl: null,
+          observedAnchorText: null,
+        },
+        {
+          id: "design-low-inbound",
+          priority: "P2",
+          confidence: "high",
+          impact: "medium",
+          kind: "low_inbound",
+          nodeId: "design-2",
+          nodeIds: ["design-2", "design-3"],
+          affectedUrls: [
+            "https://acme.com/blog/internal-linking",
+            "https://acme.com/help/importing-data",
+          ],
+          title: "Two pages have one observed inbound link",
+          detail: "Each page has one observed inbound HTML link.",
+          evidence: "Observed inboundLinks=1.",
+          limitation: "Inbound count does not prove business value.",
+          suggestedSourceUrl: "https://acme.com/blog",
+          observedAnchorText: "Internal linking guide",
+        },
+        {
+          id: "design-deep",
+          priority: "P1",
+          confidence: "high",
+          impact: "high",
+          kind: "deep_page",
+          nodeId: "design-4",
+          nodeIds: ["design-4", "design-5"],
+          affectedUrls: [
+            "https://acme.com/guides/api-migration",
+            "https://acme.com/zh/guides/api-migration",
+          ],
+          title: "Two migration guides require four homepage clicks",
+          detail: "Both pages have clickDepth=4.",
+          evidence: "Homepage BFS found a four-click path.",
+          limitation: "Click depth is not a ranking prediction.",
+          suggestedSourceUrl: "https://acme.com/product",
+          observedAnchorText: "Migration guide",
+        },
+        {
+          id: "design-orphan",
+          priority: "P1",
+          confidence: "high",
+          impact: "high",
+          kind: "orphan_candidate",
+          nodeId: "design-6",
+          nodeIds: ["design-6", "design-7", "design-8"],
+          affectedUrls: [
+            "https://acme.com/integrations/notion",
+            "https://acme.com/integrations/zapier",
+            "https://acme.com/zh/integrations/notion",
+          ],
+          title: "Three Sitemap URLs have no observed inbound link",
+          detail: "No observed homepage path reached these pages.",
+          evidence: "inboundLinks=0 and clickDepth=null.",
+          limitation: "JavaScript-only links were not evaluated.",
+          suggestedSourceUrl: "https://acme.com/integrations",
+          observedAnchorText: null,
+        },
+        {
+          id: "design-unresolved",
+          priority: "P2",
+          confidence: "low",
+          impact: "medium",
+          kind: "unresolved_target",
+          nodeId: "design-3",
+          nodeIds: ["design-3", "design-4"],
+          affectedUrls: [
+            "https://acme.com/docs/legacy-importer",
+            "https://acme.com/webinars/automation-clinic",
+          ],
+          title: "Two observed targets were not collected",
+          detail: "The report exposes target and source sets, not pairs.",
+          evidence: "Two targets are outside the collected node set.",
+          limitation: "Unresolved does not mean broken.",
+          suggestedSourceUrl: "https://acme.com/help/importing-data",
+          observedAnchorText: "Legacy importer",
+        },
+      ],
+    },
+  },
+};
+
+test("renders the completed report as one URL ledger with one AI handoff", async ({
+  page,
+}) => {
+  const api = await installApiGuard(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(auditResponse),
+    });
+  });
+
+  await page.goto("/tools/internal-link-audit");
+  await page.getByLabel("Website URL").fill("acme.com");
+  await page.getByRole("button", { name: "Run internal link audit" }).click();
+
+  const result = page.getByTestId("internal-link-audit-result");
+  const table = result.getByRole("table", {
+    name: "Collected URLs and their observed internal-link state",
+  });
+  await expect(table).toHaveCount(1);
+  await expect(table.getByRole("columnheader")).toHaveCount(6);
+  await expect(result.getByTestId("internal-link-problem-group")).toHaveAttribute(
+    "aria-label",
+    "URLs linked to findings",
+  );
+  await expect(result.getByTestId("internal-link-unmarked-group")).toHaveAttribute(
+    "aria-label",
+    "URLs not linked to findings",
+  );
+  await expect(result.getByTestId("internal-link-copy-ai")).toHaveCount(1);
+  await expect(result.getByTestId("internal-link-problem-row")).toHaveCount(2);
+  await expect(result.getByTestId("internal-link-unmarked-row")).toHaveCount(2);
+  await expect(result.getByTestId("internal-link-url-path")).toHaveText([
+    "/",
+    "/orphan",
+    "/guide",
+    "/guide/article",
+  ]);
+  const unresolvedOnlyRow = result.getByTestId("internal-link-problem-row").first();
+  await expect(unresolvedOnlyRow).toHaveAttribute("data-tone", "info");
+  await expect(unresolvedOnlyRow.locator("td").first()).toHaveClass(
+    /border-l-dashed/,
+  );
+  await expect(
+    unresolvedOnlyRow.locator('[data-finding-kind="unresolved_target"]'),
+  ).toHaveAttribute("data-tone", "info");
+  await expect(
+    result.getByText("Not marked this run", { exact: true }),
+  ).toHaveCount(2);
+
+  await expect(result.getByTestId("internal-link-tree")).toHaveCount(0);
+  await expect(result.getByRole("searchbox")).toHaveCount(0);
+  await expect(result.getByTestId("internal-link-node-detail")).toHaveCount(0);
+  await expect(
+    result.getByTestId("internal-link-finding-unresolved-targets"),
+  ).toHaveCount(0);
+
+  expect(api.auditRequestCount).toBe(1);
+  await expectNoUnexpectedApiRequests(api);
+});
+
+test("renders the approved 25 URL fixture as 9 problem rows and 16 unmarked rows", async ({
+  page,
+}) => {
+  const api = await installApiGuard(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(designScaleAuditResponse),
+    });
+  });
+
+  await page.goto("/zh/tools/internal-link-audit");
+  await page.getByLabel("网站 URL").fill("acme.com");
+  await page.getByRole("button", { name: "开始内链审计" }).click();
+
+  const result = page.getByTestId("internal-link-audit-result");
+  await expect(result.getByTestId("internal-link-url-path")).toHaveCount(25);
+  await expect(result.getByTestId("internal-link-problem-row")).toHaveCount(9);
+  await expect(result.getByTestId("internal-link-unmarked-row")).toHaveCount(16);
+  await expect(result).toContainText(
+    "已采集 25 个 URL · 9 个需要关注 · 2 个目标待验证",
+  );
+
+  const salesRow = result
+    .getByTestId("internal-link-problem-row")
+    .filter({ hasText: "/templates/sales" });
+  await expect(salesRow).toContainText("重复内容候选");
+  await expect(salesRow).not.toContainText("低入链");
+  await expect(
+    salesRow.getByText("重复内容候选", { exact: true }),
+  ).toHaveCount(1);
+  for (const theme of ["light", "deep"] as const) {
+    await page.evaluate((value) => {
+      document.documentElement.dataset.theme = value;
+    }, theme);
+    const accessibility = await new AxeBuilder({ page })
+      .include('[data-testid="internal-link-audit-result"]')
+      .analyze();
+    expect(accessibility.violations, `${theme} theme violations`).toEqual([]);
+  }
+
+  expect(api.auditRequestCount).toBe(1);
+  await expectNoUnexpectedApiRequests(api);
+});
+
+test("copies the problem-only AI handoff after a confirmed Clipboard write", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          Reflect.set(window, "__internalLinkAuditCopiedText", text);
+        },
+      },
+    });
+  });
+  const api = await installApiGuard(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(auditResponse),
+    });
+  });
+
+  await page.goto("/tools/internal-link-audit");
+  await page.getByLabel("Website URL").fill("acme.com");
+  await page.getByRole("button", { name: "Run internal link audit" }).click();
+
+  expect(
+    await page.evaluate(() =>
+      Reflect.get(window, "__internalLinkAuditCopiedText"),
+    ),
+  ).toBeUndefined();
+  await page.getByTestId("internal-link-copy-ai").click();
+
+  await expect(page.getByTestId("internal-link-copy-ai")).toHaveText(
+    "Copied",
+  );
+  await expect(page.getByTestId("internal-link-copy-status")).toHaveText(
+    "Copied 2 problem URLs and 2 unverified targets.",
+  );
+  const copiedText = await page.evaluate(() =>
+    Reflect.get(window, "__internalLinkAuditCopiedText"),
+  );
+  expect(copiedText).toContain("https://acme.com/");
+  expect(copiedText).toContain("https://acme.com/orphan");
+  expect(copiedText).not.toContain("2. https://acme.com/guide\n");
+  expect(copiedText).not.toContain("https://acme.com/guide/article");
+  expect(copiedText).toContain("## Instructions for a Chatbot");
+  expect(copiedText).toContain("## Instructions for a Code Agent");
+  expect(copiedText).toContain(
+    "The current contract does not pair each target with each source.",
+  );
+
+  expect(api.auditRequestCount).toBe(1);
+  await expectNoUnexpectedApiRequests(api);
+});
+
+test("reveals and fully selects the manual handoff when Clipboard is denied", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new DOMException("Denied", "NotAllowedError");
+        },
+      },
+    });
+  });
+  const api = await installApiGuard(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(auditResponse),
+    });
+  });
+
+  await page.goto("/zh/tools/internal-link-audit");
+  await page.getByLabel("网站 URL").fill("acme.com");
+  await page.getByRole("button", { name: "开始内链审计" }).click();
+  await page.getByTestId("internal-link-copy-ai").click();
+
+  const fallback = page.getByLabel("供手动复制的完整 AI 交接文本");
+  await expect(fallback).toBeVisible();
+  await expect(fallback).toBeFocused();
+  expect(
+    await fallback.evaluate(
+      (element) =>
+        element instanceof HTMLTextAreaElement &&
+        element.selectionStart === 0 &&
+        element.selectionEnd === element.value.length,
+    ),
+  ).toBe(true);
+  await expect(page.getByTestId("internal-link-copy-ai")).toHaveText(
+    "复制给 AI 解决",
+  );
+  await expect(page.getByTestId("internal-link-copy-status")).toContainText(
+    "完整交接文本已全选",
+  );
+
+  expect(api.auditRequestCount).toBe(1);
+  await expectNoUnexpectedApiRequests(api);
+});
+
+test("disables the AI handoff when the report has no finding-linked URL", async ({
+  page,
+}) => {
+  const api = await installApiGuard(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          ...auditResponse.data,
+          result: {
+            ...auditResponse.data.result,
+            actionablePages: 0,
+            findings: [],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/zh/tools/internal-link-audit");
+  await page.getByLabel("网站 URL").fill("acme.com");
+  await page.getByRole("button", { name: "开始内链审计" }).click();
+
+  await expect(page.getByTestId("internal-link-copy-ai")).toBeDisabled();
+  await expect(page.getByTestId("internal-link-copy-status")).toHaveText(
+    "本次没有需要交给 AI 的 URL",
+  );
+  await expect(page.getByTestId("internal-link-problem-row")).toHaveCount(0);
+  await expect(page.getByTestId("internal-link-unmarked-row")).toHaveCount(4);
+
+  expect(api.auditRequestCount).toBe(1);
+  await expectNoUnexpectedApiRequests(api);
+});
+
+test("falls back when the Clipboard promise does not settle", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: () => new Promise<void>(() => undefined),
+      },
+    });
+  });
+  const api = await installApiGuard(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(auditResponse),
+    });
+  });
+
+  await page.goto("/tools/internal-link-audit");
+  await page.getByLabel("Website URL").fill("acme.com");
+  await page.getByRole("button", { name: "Run internal link audit" }).click();
+  await page.getByTestId("internal-link-copy-ai").click();
+
+  await expect(
+    page.getByLabel("Full AI handoff text for manual copying"),
+  ).toBeVisible({ timeout: 2_000 });
+  await expect(page.getByTestId("internal-link-copy-ai")).toHaveText(
+    "Copy for AI resolution",
+  );
+
+  expect(api.auditRequestCount).toBe(1);
+  await expectNoUnexpectedApiRequests(api);
+});
+
+test("falls back when reading the Clipboard API throws synchronously", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      get: () => {
+        throw new DOMException("Denied", "SecurityError");
+      },
+    });
+  });
+  const api = await installApiGuard(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(auditResponse),
+    });
+  });
+
+  await page.goto("/tools/internal-link-audit");
+  await page.getByLabel("Website URL").fill("acme.com");
+  await page.getByRole("button", { name: "Run internal link audit" }).click();
+  await page.getByTestId("internal-link-copy-ai").click();
+
+  await expect(
+    page.getByLabel("Full AI handoff text for manual copying"),
+  ).toBeVisible({ timeout: 2_000 });
+  await expect(page.getByTestId("internal-link-copy-ai")).toHaveText(
+    "Copy for AI resolution",
+  );
+
+  expect(api.auditRequestCount).toBe(1);
+  await expectNoUnexpectedApiRequests(api);
+});
+
+test("keeps an unavailable report out of the URL ledger", async ({ page }) => {
+  const api = await installApiGuard(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          ...auditResponse.data,
+          result: {
+            ...auditResponse.data.result,
+            availability: "unavailable",
+            stopReason: "robots_unreachable",
+            limitation:
+              "No crawl evidence is available because robots.txt could not be read.",
+            pagesCrawled: 0,
+            linksObserved: 0,
+            sitemapFetched: false,
+            sitemapUrlsObserved: 0,
+            actionablePages: 0,
+            nodes: [],
+            edges: [],
+            findings: [],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/tools/internal-link-audit");
+  await page.getByLabel("Website URL").fill("acme.com");
+  await page.getByRole("button", { name: "Run internal link audit" }).click();
+
+  const result = page.getByTestId("internal-link-audit-result");
+  await expect(
+    result.getByRole("heading", { name: "Internal link audit unavailable" }),
+  ).toBeVisible();
+  await expect(result).toContainText(
+    "No crawl evidence is available because robots.txt could not be read.",
+  );
+  await expect(result.getByRole("table")).toHaveCount(0);
+  await expect(result.getByTestId("internal-link-copy-ai")).toHaveCount(0);
+
+  expect(api.auditRequestCount).toBe(1);
+  await expectNoUnexpectedApiRequests(api);
+});
+
+test("does not attach a stale Clipboard completion to a replacement report", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: () =>
+          new Promise<void>((resolve) => {
+            Reflect.set(window, "__resolveInternalLinkAuditCopy", resolve);
+          }),
+      },
+    });
+  });
+  let responseCount = 0;
+  const api = await installApiGuard(page, async (route) => {
+    responseCount += 1;
+    const result =
+      responseCount === 1
+        ? auditResponse.data.result
+        : {
+            ...auditResponse.data.result,
+            actionablePages: 0,
+            findings: [],
+          };
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: { ...auditResponse.data, result } }),
+    });
+  });
+
+  await page.goto("/tools/internal-link-audit");
+  await page.getByLabel("Website URL").fill("first.example");
+  await page.getByRole("button", { name: "Run internal link audit" }).click();
+  await page.getByTestId("internal-link-copy-ai").click();
+  await expect(page.getByTestId("internal-link-copy-ai")).toHaveText(
+    "Copying…",
+  );
+
+  await page.getByLabel("Website URL").fill("second.example");
+  await page.getByRole("button", { name: "Run internal link audit" }).click();
+  await expect(page.getByTestId("internal-link-copy-ai")).toBeDisabled();
+  await page.evaluate(() => {
+    const resolve = Reflect.get(window, "__resolveInternalLinkAuditCopy");
+    if (typeof resolve === "function") resolve();
+  });
+  await page.waitForTimeout(50);
+
+  await expect(page.getByTestId("internal-link-copy-ai")).toHaveText(
+    "Copy for AI resolution",
+  );
+  await expect(page.getByTestId("internal-link-copy-status")).toHaveText(
+    "This run has no URLs that need an AI handoff.",
+  );
+  expect(api.auditRequestCount).toBe(2);
+  await expectNoUnexpectedApiRequests(api);
+});
+
+test("keeps the no-login audit flow while presenting the partial URL ledger", async ({
   page,
 }) => {
   let requestedBody: unknown;
@@ -303,106 +860,28 @@ test("runs the no-login audit and renders the mocked v3 report", async ({
     "href",
     "/tools/seo-audit",
   );
+
   await page.getByLabel("Website URL").fill("acme.com");
   await page.getByRole("button", { name: "Run internal link audit" }).click();
 
-  await expect(
-    page.getByRole("heading", {
-      level: 2,
-      name: "Report ready · partial coverage",
-    }),
-  ).toBeVisible();
   expect(requestedBody).toEqual({ url: "acme.com" });
+  const result = page.getByTestId("internal-link-audit-result");
   await expect(
-    page.getByText(/Collected 4 page\(s\).*processing boundary/i),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Request limit reached", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByTestId("internal-link-pages-collected")).toHaveText(
-    "4",
-  );
-  await expect(
-    page.getByText("Homepage click depth", { exact: true }),
-  ).toBeVisible();
-
-  const tree = page.getByTestId("internal-link-tree");
-  const treeRows = tree.locator('button[data-testid^="internal-link-node-"]');
-  await expect(tree).toBeVisible();
-  await page.getByRole("button", { name: "All pages", exact: true }).click();
-  await expect(treeRows).toHaveCount(4);
-  await expect(
-    page.getByText("Outside the main hierarchy", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByTestId("internal-link-node-page-03")).toHaveAccessibleName(
-    /\/guide\/article.*1 other mapped inbound link.*Inbound 2.*Outbound 0.*Homepage clicks 1/,
-  );
-
-  const detail = page.getByTestId("internal-link-node-detail");
-  await expect(
-    detail.getByText(
-      "The targets /pricing and /terms were not collected in this bounded crawl.",
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await expect(
-    detail.getByText("The targets may be outside the crawl budget.", {
-      exact: true,
+    result.getByRole("heading", {
+      level: 2,
+      name: "Internal link audit URL details",
     }),
-  ).toHaveCount(0);
-  await detail
-    .getByRole("button", { name: "Interpretation limit (1)" })
-    .click();
-  await expect(
-    page
-      .getByRole("tooltip")
-      .getByText("The targets may be outside the crawl budget.", {
-        exact: true,
-      }),
   ).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("tooltip")).toHaveCount(0);
-
-  const treeSearch = page.getByRole("searchbox", {
-    name: "Find a page in this crawl",
-  });
-  await treeSearch.fill("article");
-  await expect(treeRows).toHaveCount(2);
-  await expect(page.getByText("1/4 pages match", { exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Collapse branch: /" }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "Expand all", exact: true }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "Collapse all", exact: true }),
-  ).toBeDisabled();
-  await page.getByRole("button", { name: "Clear tree search" }).click();
-  await expect(treeRows).toHaveCount(4);
-
-  await page.getByRole("button", { name: "Collapse branch: /" }).click();
-  await expect(treeRows).toHaveCount(2);
-  await page.getByRole("button", { name: "Expand branch: /" }).click();
-  await expect(treeRows).toHaveCount(4);
-
-  await page.getByTestId("internal-link-node-page-04").click();
-  await expect(detail.getByText("/orphan", { exact: true })).toBeVisible();
-  await expect(
-    detail.getByText("0 observed inbound HTML links.", { exact: true }),
-  ).toBeVisible();
-
-  const unresolvedFinding = page.getByTestId(
-    "internal-link-finding-unresolved-targets",
+  await expect(result.getByText("Partial coverage", { exact: true })).toBeVisible();
+  await expect(result).toContainText(
+    "4 URLs collected · 2 need attention · 2 targets unverified",
   );
-  await unresolvedFinding.click();
-  await expect(unresolvedFinding).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    detail.getByText(
-      "The targets /pricing and /terms were not collected in this bounded crawl.",
-      { exact: true },
-    ),
-  ).toBeVisible();
+  await expect(result.getByRole("table")).toHaveCount(1);
+  await expect(result.getByTestId("internal-link-problem-row")).toHaveCount(2);
+  await expect(result.getByTestId("internal-link-unmarked-row")).toHaveCount(2);
+  await expect(result.getByTestId("internal-link-tree")).toHaveCount(0);
+  await expect(result.getByTestId("internal-link-node-detail")).toHaveCount(0);
+
   expect(api.auditRequestCount).toBe(1);
   await expectNoUnexpectedApiRequests(api);
 });
@@ -500,7 +979,7 @@ test("renders a localized API failure at 390px without horizontal overflow", asy
   await expectNoUnexpectedApiRequests(api);
 });
 
-test("renders a deep mocked v3 report at 390px without horizontal overflow", async ({
+test("renders a deep URL ledger at 320px without horizontal overflow", async ({
   page,
 }) => {
   let requestedBody: unknown;
@@ -511,52 +990,75 @@ test("renders a deep mocked v3 report at 390px without horizontal overflow", asy
       body: JSON.stringify(deepAuditResponse),
     });
   });
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 320, height: 844 });
 
   await page.goto("/zh/tools/internal-link-audit");
   await page.getByLabel("网站 URL").fill("acme.com");
   await page.getByRole("button", { name: "开始内链审计" }).click();
-  await expect(
-    page.getByRole("heading", { level: 2, name: "报告已生成" }),
-  ).toBeVisible();
+
   expect(requestedBody).toEqual({ url: "acme.com" });
-  await page.getByRole("button", { name: "全部页面", exact: true }).click();
+  const result = page.getByTestId("internal-link-audit-result");
+  await expect(
+    result.getByRole("heading", { level: 2, name: "内链审计 URL 明细" }),
+  ).toBeVisible();
+  await expect(result.getByRole("table")).toHaveCount(1);
+  await expect(result.getByTestId("internal-link-problem-row")).toHaveCount(27);
+  await expect(result.getByTestId("internal-link-unmarked-row")).toHaveCount(4);
+  await expect(result.getByTestId("internal-link-url-path")).toHaveCount(31);
+  await expect(result.getByText("点击较深", { exact: true })).toHaveCount(27);
 
-  const tree = page.getByTestId("internal-link-tree");
-  await expect(tree).toBeVisible();
-  await expect(page.getByTestId("internal-link-pages-collected")).toHaveText(
-    "31",
-  );
-  await expect(
-    page.getByText("网站页面层级树", { exact: true }),
-  ).toBeVisible();
-
-  const deepestTreeRow = page.getByTestId("internal-link-node-deep-30");
-  await expect(deepestTreeRow).toBeVisible();
-  await expect(
-    deepestTreeRow.locator(
-      'strong[title*="level-30-with-a-deliberately-long-slug"]',
-    ),
-  ).toBeVisible();
-  await expect(
-    deepestTreeRow.getByText("深层页面", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    deepestTreeRow.locator('[title="1 条其他已映射入链"]'),
-  ).toBeVisible();
-  const deepestBox = await deepestTreeRow.boundingBox();
-  expect(deepestBox?.height ?? 0).toBeGreaterThanOrEqual(56);
-
-  const treeOverflow = await tree.evaluate(
+  const deepestPath = result
+    .getByTestId("internal-link-url-path")
+    .filter({ hasText: "level-30-with-a-deliberately-long-slug" });
+  await expect(deepestPath).toBeVisible();
+  const resultOverflow = await result.evaluate(
     (element) => element.scrollWidth > element.clientWidth,
   );
-  expect(treeOverflow).toBe(false);
+  expect(resultOverflow).toBe(false);
   const documentOverflow = await page.evaluate(
     () =>
       document.documentElement.scrollWidth >
       document.documentElement.clientWidth,
   );
   expect(documentOverflow).toBe(false);
+
+  expect(api.auditRequestCount).toBe(1);
+  await expectNoUnexpectedApiRequests(api);
+});
+
+test("keeps the URL ledger free of horizontal overflow at supported widths", async ({
+  page,
+}) => {
+  const api = await installApiGuard(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(auditResponse),
+    });
+  });
+
+  await page.goto("/tools/internal-link-audit");
+  await page.getByLabel("Website URL").fill("acme.com");
+  await page.getByRole("button", { name: "Run internal link audit" }).click();
+
+  for (const width of [320, 736, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const geometry = await page
+      .getByTestId("internal-link-audit-result")
+      .evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        documentClientWidth: document.documentElement.clientWidth,
+        documentScrollWidth: document.documentElement.scrollWidth,
+      }));
+    expect(geometry.scrollWidth, `result overflow at ${width}px`).toBeLessThanOrEqual(
+      geometry.clientWidth,
+    );
+    expect(
+      geometry.documentScrollWidth,
+      `document overflow at ${width}px`,
+    ).toBeLessThanOrEqual(geometry.documentClientWidth);
+  }
+
   expect(api.auditRequestCount).toBe(1);
   await expectNoUnexpectedApiRequests(api);
 });
