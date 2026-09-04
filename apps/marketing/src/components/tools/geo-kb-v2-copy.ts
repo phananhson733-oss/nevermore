@@ -1,7 +1,10 @@
 // @input -- the current display locale only
 // @output -- typed local copy for the V2 read-only knowledge-base view
 // @pos -- temporary local dictionary; no source content is translated here
-import type { GeoCompetitorSourceV2 } from "../../lib/geo-tools/kb-source-contract.ts";
+import type { GeoCompetitorSourceV2, GeoFactSourceV2 } from "../../lib/geo-tools/kb-source-contract.ts";
+/** Every reason one refresh entry cannot be taken, competitor and fact alike. */
+type GeoSourceReason = NonNullable<GeoCompetitorSourceV2["reason"] | GeoFactSourceV2["reason"]>;
+
 export interface GeoKbV2Copy {
   readonly profileDescription: string;
   readonly sections: Readonly<Record<"identity" | "competitors" | "roles" | "facts" | "questions" | "sources" | "adoptable" | "version", string>>;
@@ -13,6 +16,16 @@ export interface GeoKbV2Copy {
   /** A successful read that returned no rows, and one clipped at the row cap. */
   readonly gscEmpty: string;
   readonly gscTruncated: string;
+  /**
+   * One entry of the last refresh that cannot be taken. `status` and `reason`
+   * are closed enums in the contract -- codes, not sentences -- and the panel
+   * printed them straight: "unavailable · target_redirected" is a line no
+   * visitor can act on.
+   */
+  readonly adoptable: {
+    readonly statuses: Readonly<Record<Exclude<GeoCompetitorSourceV2["status"] | GeoFactSourceV2["status"], "available">, string>>;
+    readonly reasons: Readonly<Record<GeoSourceReason, string>>;
+  };
   readonly layers: Readonly<Record<"problem" | "discovery" | "comparison" | "evaluation" | "branded", string>>;
   readonly reasons: Readonly<Record<"notPublished" | "fetchFailed" | "lowConfidence" | "conflicting", string>>;
   readonly modes: Readonly<Record<"demand" | "retrieval", string>>;
@@ -36,6 +49,15 @@ export interface GeoKbV2Copy {
     readonly reasons: Readonly<Record<NonNullable<GeoCompetitorSourceV2["reason"]>, string>>;
   };
 }
+/**
+ * Shared by the competitor capture record and the adoptable list: both name the
+ * same fetch failures, so they read from one table rather than two that drift.
+ */
+const SOURCE_REASONS: Readonly<Record<"en" | "zh", Readonly<Record<GeoSourceReason, string>>>> = {
+  en: { missing_url: "No source URL", fetch_failed: "Fetch failed", not_found: "Page not found", target_redirected: "Source redirected", partial_body: "Incomplete page capture", not_html: "Not an HTML page", invalid_response: "Invalid response", rate_limited: "Source rate limited", insufficient_identity: "Insufficient identity evidence", identity_overflow: "Identity signals exceeded the capture limit", identity_conflict: "Conflicting identity signals", value_missing: "The page does not state this value", conflicting: "The page states a different value" },
+  zh: { missing_url: "没有来源 URL", fetch_failed: "抓取失败", not_found: "页面不存在", target_redirected: "来源发生跳转", partial_body: "页面采集不完整", not_html: "不是 HTML 页面", invalid_response: "响应格式无效", rate_limited: "来源限流", insufficient_identity: "身份依据不足", identity_overflow: "身份信号超过采集上限", identity_conflict: "身份信号互相冲突", value_missing: "页面上没有写这个值", conflicting: "页面上写的是另一个值" },
+};
+
 export const GEO_KB_V2_COPY: Readonly<Record<"en" | "zh", GeoKbV2Copy>> = {
   en: {
     profileDescription: "These are the Profile fields GEO reads, as this knowledge-base version stored them. This view does not read another draft or the current Profile.",
@@ -46,6 +68,7 @@ export const GEO_KB_V2_COPY: Readonly<Record<"en" | "zh", GeoKbV2Copy>> = {
     gscReasons: { not_connected: "no property is connected", property_not_granted: "this property is not in the granted set", grant_unavailable: "the grant could not be read", fetch_failed: "the request failed", rate_limited: "the request was rate limited", invalid_response: "the response could not be read" },
     gscEmpty: "Search Console returned no queries for this window. A role or question set built now has no query evidence behind it.",
     gscTruncated: "Search Console returned more queries than this refresh keeps, so what follows was derived from a partial sample.",
+    adoptable: { statuses: { conflict: "Conflicting evidence", unavailable: "Nothing to take" }, reasons: SOURCE_REASONS.en },
     layers: { problem: "Problem", discovery: "Discovery", comparison: "Comparison", evaluation: "Evaluation", branded: "Branded" },
     reasons: { notPublished: "Not published", fetchFailed: "Fetch failed", lowConfidence: "Insufficient confidence", conflicting: "Conflicting evidence" },
     modes: { demand: "Demand question", retrieval: "Retrieval probe" }, provenance: { semantic: "Semantic generation", registry: "Exact registry probe" },
@@ -55,7 +78,7 @@ export const GEO_KB_V2_COPY: Readonly<Record<"en" | "zh", GeoKbV2Copy>> = {
     rawEvidence: "Inspect the original selected evidence", receipts: "Exact source receipts", questionEvidence: "Inspect question provenance",
     roleEvidence: { details: "Inspect role generation and original references", referencedQueries: "Referenced distinct GSC queries", queryHelp: "This is a count of referenced query texts, not a count of people or verified customer segments. Role wording remains an interpretation, not a calibrated observation.", noQueries: "No GSC query references in this role's recorded evidence.", noEvidence: "No linked source evidence recorded", missingEvidence: "Source evidence unavailable", missingRefs: "Some role references are unavailable in this version; no evidence was borrowed from other roles or current data.", inference: "Model inference", basis: { profile: "Profile", gsc: "GSC query evidence", crawl: "Public-page evidence", manual: "Manual input" } },
     competitorCapture: { mapping: "Current mapping in this version", lastCapture: "Last selected extraction", separate: "This is the last selected extraction, not proof that the current mapping came from it. Manual wording and confirmation are shown separately above.", noCapture: "No extraction capture recorded in this version.", sovConfirmed: "Confirmed mapping: actual SOV applies brand deduplication and excludes this site's own identity. Aliases do not create extra competitors.", sovExcluded: "Excluded from SOV: this mapping is unconfirmed or has no matching brand name.", receiptTime: "Receipt recorded at", captureMethod: "Extraction method", signals: "Inspect captured identity signals", signalKind: "Signal kind", hostMatched: "Matches competitor host", signalExclusion: "Signal exclusion reason", receiptIdentity: "Inspect exact receipt identity", evidenceId: "Capture evidence ID", receiptHash: "Receipt content hash", bodyHash: "Captured body hash",
-      statuses: { available: "Capture succeeded", conflict: "Identity conflict", unavailable: "Capture unavailable" }, reasons: { missing_url: "No source URL", fetch_failed: "Fetch failed", not_found: "Page not found", target_redirected: "Source redirected", partial_body: "Incomplete page capture", not_html: "Not an HTML page", invalid_response: "Invalid response", rate_limited: "Source rate limited", insufficient_identity: "Insufficient identity evidence", identity_overflow: "Identity signals exceeded the capture limit", identity_conflict: "Conflicting identity signals" } },
+      statuses: { available: "Capture succeeded", conflict: "Identity conflict", unavailable: "Capture unavailable" }, reasons: SOURCE_REASONS.en },
   },
   zh: {
     profileDescription: "以下是 GEO 会读取的档案字段，取自当前展示的知识库版本；此视图不会读取其他草稿或今天的 Profile。",
@@ -66,6 +89,7 @@ export const GEO_KB_V2_COPY: Readonly<Record<"en" | "zh", GeoKbV2Copy>> = {
     gscReasons: { not_connected: "没有连接任何资源", property_not_granted: "这个资源不在已授权范围内", grant_unavailable: "授权信息读不到", fetch_failed: "请求失败", rate_limited: "请求被限流", invalid_response: "返回内容无法解析" },
     gscEmpty: "这个时间窗内 Search Console 没有返回任何查询。现在生成的角色或提问集背后没有查询证据。",
     gscTruncated: "Search Console 返回的查询超出本次刷新保留的条数，后面的内容是基于被截断的样本推导的。",
+    adoptable: { statuses: { conflict: "证据冲突", unavailable: "这次没有取到" }, reasons: SOURCE_REASONS.zh },
     layers: { problem: "问题", discovery: "发现", comparison: "对比", evaluation: "评估", branded: "品牌" },
     reasons: { notPublished: "未公开", fetchFailed: "抓取失败", lowConfidence: "置信度不足", conflicting: "证据冲突" },
     modes: { demand: "需求问题", retrieval: "检索探针" }, provenance: { semantic: "语义生成", registry: "原样固定探针" },
@@ -75,7 +99,7 @@ export const GEO_KB_V2_COPY: Readonly<Record<"en" | "zh", GeoKbV2Copy>> = {
     rawEvidence: "查看原始选中证据", receipts: "精确来源记录", questionEvidence: "查看提问来源",
     roleEvidence: { details: "查看角色生成记录与原始引用", referencedQueries: "实际引用的去重 GSC 查询词", queryHelp: "这里统计引用的查询文本，不是人数或已验证的客户分群。角色措辞仍是解释，不是经过校准的观测。", noQueries: "这个角色已记录的证据未引用 GSC 查询词。", noEvidence: "未记录关联来源证据", missingEvidence: "来源证据不可用", missingRefs: "此版本中的部分角色引用不可用；没有从其他角色或当前资料补造证据。", inference: "模型推断", basis: { profile: "Profile", gsc: "GSC 查询词证据", crawl: "公开页面证据", manual: "人工输入" } },
     competitorCapture: { mapping: "此版本的当前映射", lastCapture: "最后一次选中采集的解析结果", separate: "这里展示最后一次选中的解析结果，不证明当前映射源于这次采集。手工名称与确认状态在上方独立显示。", noCapture: "此版本未记录身份采集证据。", sovConfirmed: "映射已确认：实际 SOV 按品牌去重并排除本站身份；多个别名不会增加竞品数量。", sovExcluded: "不参与 SOV：映射未确认或缺少用于匹配的品牌名称。", receiptTime: "来源记录时间", captureMethod: "解析方法", signals: "查看采集到的身份信号", signalKind: "信号类型", hostMatched: "匹配竞品域名", signalExclusion: "信号排除原因", receiptIdentity: "查看精确来源记录标识", evidenceId: "采集证据 ID", receiptHash: "来源记录内容哈希", bodyHash: "采集正文哈希",
-      statuses: { available: "采集成功", conflict: "身份冲突", unavailable: "采集不可用" }, reasons: { missing_url: "没有来源 URL", fetch_failed: "抓取失败", not_found: "页面不存在", target_redirected: "来源发生跳转", partial_body: "页面采集不完整", not_html: "不是 HTML 页面", invalid_response: "响应格式无效", rate_limited: "来源限流", insufficient_identity: "身份依据不足", identity_overflow: "身份信号超过采集上限", identity_conflict: "身份信号互相冲突" } },
+      statuses: { available: "采集成功", conflict: "身份冲突", unavailable: "采集不可用" }, reasons: SOURCE_REASONS.zh },
   },
 };
 export function geoKbV2Copy(locale: string): GeoKbV2Copy { return GEO_KB_V2_COPY[locale.toLowerCase().startsWith("zh") ? "zh" : "en"]; }

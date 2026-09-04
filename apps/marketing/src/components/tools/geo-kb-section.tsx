@@ -63,15 +63,20 @@ export function GeoKbFieldRows({ children }: { readonly children: ReactNode }) {
 
 /**
  * A value that belongs to another editor, shown here and changeable only
- * there. Deliberately not an input: a read-only input carries this app's
- * editable styling and its focus ring, so it invites a click and then ignores
- * the typing -- and an empty one shows its "not provided" text as a
- * placeholder, which is not the value any assistive technology reads. The box
- * exists to hold the row's rhythm, not to look like a field.
+ * there. It is the Profile editor's own box -- `ui/input`'s recipe: a solid
+ * `border-brand-border-strong` at 10px, 16px of side padding, and at least the
+ * 44px an input is tall -- so a field reads at the same weight in both places
+ * instead of as a faint dashed sketch of the real one. It grows past 44px the
+ * way `ui/textarea` does, because these values are read whole, not scrolled.
+ *
+ * Deliberately still not an input: a read-only input carries this app's focus
+ * ring, so it invites a click and then ignores the typing -- and an empty one
+ * shows its "not provided" text as a placeholder, which is not the value any
+ * assistive technology reads.
  */
 export function GeoKbReadout({ value, empty }: { readonly value: string; readonly empty: string }) {
   const shown = value.trim() === "";
-  return <p data-geo-readout className={`min-w-0 whitespace-pre-wrap break-words rounded-md border border-dashed border-brand-border-card bg-brand-bg/40 px-3 py-2 text-[14px] leading-relaxed [overflow-wrap:anywhere] ${shown ? "text-text-dark-secondary" : "text-text-dark-primary"}`}>
+  return <p data-geo-readout className={`min-h-11 min-w-0 whitespace-pre-wrap break-words rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 py-2.5 text-[14px] leading-relaxed [overflow-wrap:anywhere] ${shown ? "text-text-dark-secondary" : "text-text-dark-primary"}`}>
     {shown ? empty : value}
   </p>;
 }

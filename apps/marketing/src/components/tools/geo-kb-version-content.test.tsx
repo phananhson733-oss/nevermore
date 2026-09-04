@@ -106,7 +106,10 @@ describe("complete V2 knowledge-base version content", () => {
     expect(host.querySelector('[data-source-count="manual"]')?.querySelector("[data-selected-count]")?.textContent).toBe("1");
     const evidence = host.querySelector("details[data-evidence-catalog]");
     expect(evidence?.querySelector("summary")).not.toBeNull(); expect(evidence?.textContent).toContain("Finance teams struggle with late invoices");
-    expect(evidence?.textContent).toContain("manual:r1");
+    // The disclosure promises the evidence, not the row id behind it: an id
+    // here is a query's or a capture's UUID that nothing can look up.
+    expect(evidence?.textContent).toContain(geoKbV2Copy("en").sources.manual);
+    expect(evidence?.textContent).not.toContain("manual:r1");
   });
   it.each([null, { status: "unavailable", reason: "not_connected", property: null, window: null, queryCount: null, truncated: null, observedAt: null }] as const)("does not turn unavailable GSC metadata into zero", async gsc => {
     const props = fixture();

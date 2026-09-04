@@ -47,7 +47,9 @@ async function setup(page: Page, baseURL: string) {
 }
 
 async function assertCompleteProfile(page: Page, profile: MarketingWebsiteProfileV1) {
-  const copy = page.locator("#geo section").filter({ has: page.getByRole("heading", { name: /^(The Profile fields GEO reads|GEO 读取的档案字段)$/u }) }).first();
+  // The copy is four section cards now, one per Profile group, so the block
+  // that holds them is what scopes this -- not a single card's heading.
+  const copy = page.locator("#geo [data-geo-profile-copy]").first();
   // Only the fields GEO reads, at rest -- no disclosure to open, and every one
   // of them read out rather than held in a control. Empty fields stay explicit.
   expect(await copy.locator("[data-geo-profile-field]").count()).toBe(GEO_PROFILE_SUBSET_FIELDS.length);

@@ -24,6 +24,21 @@ it.each(["en", "zh"])("shows the complete persisted candidate before first freez
   await click('[data-confirm-prepared]'); expect(host.querySelector<HTMLButtonElement>('[data-freeze-prepared]')?.disabled).toBe(false);
   expect(fetch).not.toHaveBeenCalled();
 });
+it("says why a save was refused without repeating the code, and keeps an unmapped one", async () => {
+  const t = geoKbV2EditorCopy("en");
+  // A code the sentence above already covers. Printing it as well put
+  // "input_stale" beside the sentence explaining exactly that.
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "input_stale" } }, { status: 409 }));
+  await render(); await fill("Changed name"); await click("[data-save-v2]");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(t.staleLineage);
+  expect(host.textContent).not.toContain("input_stale");
+  // An unmapped one is the only case where the code carries the meaning, so it
+  // stays: the sentence is generic and support has nothing else to go on.
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "teapot" } }, { status: 418 }));
+  await fill("Changed again"); await click("[data-save-v2]");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(t.error);
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("teapot");
+});
 it("keeps dirty edits when switching stages and never merges them into frozen content", async () => {
   const view = editorFixture(), candidate = view.prepared!;
   await render({ ...view, frozen: { kbId: view.kbId, snapshotId: candidate.candidateId, revision: 1, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: candidate.baseDraftHash, questionSetHash: candidate.context.questionSetHash, questionCount: candidate.questionSet.questions.length, payload: candidate.payload, questionSet: candidate.questionSet, context: candidate.context } });
