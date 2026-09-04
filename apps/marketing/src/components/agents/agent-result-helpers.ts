@@ -110,7 +110,14 @@ export const RESULT_PRIORITY: Readonly<
   tip: "P2",
 };
 
-function comparableUrl(value: string | null | undefined): string | null {
+/**
+ * The one URL form every comparison in the results surface is made on.
+ *
+ * Exported rather than reimplemented beside each caller: the audit already
+ * shipped two readings of "the same page" once, and a second local copy of
+ * this is how a page silently stops matching its own observations.
+ */
+export function comparableUrl(value: string | null | undefined): string | null {
   if (!value) return null;
   try {
     const parsed = new URL(value);
