@@ -2,8 +2,16 @@
 // @output -- exact v1 Product/ICP evidence types and a strict browser-safe guard
 // @pos    -- public wire contract for live/cached Agent profile diagnosis
 
+/**
+ * Bumped for `targetQuery`, the 23rd field.
+ *
+ * The guard compares the emitted key count against the path list exactly, so
+ * a v1 row read back under a 23-path build fails the length check and the
+ * cached diagnosis is refused rather than shown short a field. The version is
+ * part of the cache key, so v1 rows are simply never read again.
+ */
 export const AGENT_PROFILE_REFRESH_SCHEMA_VERSION =
-  "agent_profile_refresh.v1" as const;
+  "agent_profile_refresh.v2" as const;
 export const AGENT_PROFILE_REFRESH_MAX_PROMPT_PAGES = 14;
 export const AGENT_PROFILE_REFRESH_MAX_DIAGNOSTIC_PAGES = 20;
 
@@ -30,6 +38,18 @@ export const AGENT_PROFILE_REFRESH_FIELD_PATHS = [
   "barriers",
   "qualificationSignals",
   "disqualifiers",
+  /*
+    The one field here that is not a claim the pages make about the business.
+
+    Every other path answers "what do these pages say"; this one answers "what
+    would someone type to look for this page". It stays an inference from the
+    same text rather than a wish: the instruction asks for the subject the page
+    itself is about, phrased the way a searcher would phrase it, and the panel
+    labels it inferred and unconfirmed like any other. Eight page checks need a
+    confirmed query and sat permanently excluded because nothing ever proposed
+    one.
+  */
+  "targetQuery",
 ] as const;
 
 export type AgentProfileRefreshAgent = "seo" | "tech";

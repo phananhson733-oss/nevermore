@@ -204,7 +204,35 @@ describe("profile refresh prompt", () => {
     ).not.toMatch(/[<>]/u);
   });
 
-  it("declares all 22 paths and their string/list value kinds", () => {
+  it("asks for a target query the page settles, not one to aim for", () => {
+    // Eight page checks compare the page against this phrase. It sat
+    // permanently excluded because the refresh never proposed one, and the
+    // panel showed "unconfirmed" with nothing to confirm. The instruction has
+    // to stay descriptive: a phrase the page is already about, not a ranking
+    // wish, or the checks start measuring a query the owner never chose.
+    const prompt = buildAgentProfileRefreshUserPrompt(INPUT);
+
+    expect(prompt).toContain("targetQuery");
+    expect(prompt).toMatch(/would type/);
+    expect(prompt).toMatch(/not a phrase you would like the page to rank for/);
+    expect(prompt).toMatch(/mark it unavailable rather than picking/);
+  });
+
+  it("counts the paths it demands instead of naming a number", () => {
+    // Two hand-written "22"s stayed behind when the list grew to 23, and a
+    // model told to emit 22 of 23 paths drops one without saying which.
+    const prompt = buildAgentProfileRefreshUserPrompt(INPUT);
+
+    expect(prompt).toContain(
+      `Emit exactly these ${AGENT_PROFILE_REFRESH_FIELD_PATHS.length} paths`,
+    );
+    expect(prompt).toContain(
+      `exactly ${AGENT_PROFILE_REFRESH_FIELD_PATHS.length} field objects`,
+    );
+    expect(prompt).not.toMatch(/exactly (these )?22 /);
+  });
+
+  it("declares every contract path and its string/list value kind", () => {
     const prompt = buildAgentProfileRefreshUserPrompt(INPUT);
 
     for (const path of AGENT_PROFILE_REFRESH_FIELD_PATHS) {
@@ -340,7 +368,9 @@ describe("synthesizeAgentProfileRefresh", () => {
 
     const result = await synthesizeAgentProfileRefresh(INPUT, { client });
 
-    expect(result.fields).toHaveLength(22);
+    expect(result.fields).toHaveLength(
+      AGENT_PROFILE_REFRESH_FIELD_PATHS.length,
+    );
     expect(result.fields.map((field) => field.path)).toEqual(
       AGENT_PROFILE_REFRESH_FIELD_PATHS,
     );
@@ -371,7 +401,7 @@ describe("synthesizeAgentProfileRefresh", () => {
     expect(result.fields[0]).toEqual(soleValidField);
     expect(
       result.fields.filter((field) => field.state === "unavailable"),
-    ).toHaveLength(21);
+    ).toHaveLength(AGENT_PROFILE_REFRESH_FIELD_PATHS.length - 1);
     expect(requests).toHaveLength(1);
   });
 

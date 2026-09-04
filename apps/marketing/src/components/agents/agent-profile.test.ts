@@ -3,6 +3,7 @@
 // @pos    -- unit contract for the marketing-only Agent Profile gate
 
 import { describe, expect, it } from "vitest";
+import { AGENT_PROFILE_REFRESH_SCHEMA_VERSION } from "../../lib/agents/profile-refresh-contract.ts";
 
 import {
   AGENT_PROFILE_REFRESH_FIELD_PATHS,
@@ -59,7 +60,7 @@ function profileRefreshResult(
   });
   const fieldsAvailable = Object.keys(available).length;
   return {
-    schemaVersion: "agent_profile_refresh.v1",
+    schemaVersion: AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
     agent: "seo",
     request: {
       submittedUrl: "https://www.acme.com/pricing",
@@ -761,6 +762,37 @@ describe("Agent-local Product / ICP profiles", () => {
     ).toBe("public_page");
   });
 
+  it("fills a target query the visitor never typed, and labels it inferred", () => {
+    /*
+      The field was in the panel, in the editable set, and in the provenance
+      map from the first build -- and no source ever wrote it. It rendered
+      "unconfirmed" forever, which read as a step the visitor had skipped
+      rather than one the product never took, while the eight page checks that
+      need a confirmed query stayed excluded on every run.
+    */
+    const profile = updateAgentProfile(
+      createAgentProfileDraft(
+        "seo",
+        "https://www.astrologywiki.com/birth-chart",
+      ),
+      { country: "US", locale: "en-US" },
+    );
+
+    expect(profile.targetQuery).toBe("");
+
+    const refreshed = applyAgentProfileRefresh(
+      profile,
+      fullAstrologyRefreshResult(),
+    );
+
+    expect(refreshed.targetQuery).not.toBe("");
+    expect(
+      refreshed.fieldProvenance.find(
+        (entry) => entry.path === "/targetQuery",
+      ),
+    ).toMatchObject({ derivation: "inferred", source: "public_page" });
+  });
+
   it("summarizes the full AstrologyWiki refresh by what was actually applied", () => {
     const profile = updateAgentProfile(
       createAgentProfileDraft(
@@ -773,8 +805,10 @@ describe("Agent-local Product / ICP profiles", () => {
     const refreshed = applyAgentProfileRefresh(profile, refresh);
 
     expect(summarizeAgentProfileRefresh(refreshed, refresh)).toEqual({
-      found: 22,
-      applied: 11,
+      found: AGENT_PROFILE_REFRESH_FIELD_PATHS.length,
+      // targetQuery is the 23rd, and this draft never set one by hand, so the
+      // refresh applies it like any other unedited field.
+      applied: 12,
       retained: 11,
       unavailable: 0,
     });
@@ -871,9 +905,11 @@ describe("Agent-local Product / ICP profiles", () => {
       )?.source,
     ).toBe("user_edit");
     expect(summarizeAgentProfileRefresh(accepted, refresh)).toEqual({
-      found: 22,
+      found: AGENT_PROFILE_REFRESH_FIELD_PATHS.length,
       applied: 12,
-      retained: 10,
+      // The 23rd field is retained, not applied: this draft set a target query
+      // by hand, and the run context a visitor typed outranks an inference.
+      retained: 11,
       unavailable: 0,
     });
   });

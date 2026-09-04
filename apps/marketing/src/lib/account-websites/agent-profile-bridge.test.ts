@@ -4,7 +4,10 @@ import {
   isAgentProfileDraft,
   isConfirmedAgentProfile,
 } from "../../components/agents/agent-profile.ts";
-import type { AgentProfileRefreshResult } from "../agents/profile-refresh-contract.ts";
+import {
+  AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
+  type AgentProfileRefreshResult,
+} from "../agents/profile-refresh-contract.ts";
 import {
   agentDraftToWebsiteProfile,
   applyProfileRefreshToWebsiteDraft,
@@ -87,7 +90,7 @@ function websiteProfile(): MarketingWebsiteProfileV1 {
 
 function refresh(): AgentProfileRefreshResult {
   return {
-    schemaVersion: "agent_profile_refresh.v1",
+    schemaVersion: AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
     agent: "seo",
     request: {
       submittedUrl: RUN.targetUrl,
