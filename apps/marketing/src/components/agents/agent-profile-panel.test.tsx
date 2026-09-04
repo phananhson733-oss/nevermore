@@ -8,6 +8,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import en from "../../i18n/messages/en.json";
+import {
+  AGENT_PROFILE_REFRESH_FIELD_PATHS,
+  AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
+} from "../../lib/agents/profile-refresh-contract";
 import zh from "../../i18n/messages/zh.json";
 import type { AgentProfileRefreshData } from "../../lib/agents/profile-refresh-contract";
 import {
@@ -138,7 +142,7 @@ function makeProfileRefreshData({
   ];
 
   return {
-    schemaVersion: "agent_profile_refresh.v1" as const,
+    schemaVersion: AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
     agent: "seo" as const,
     request: {
       submittedUrl: "astrologywiki.com",
@@ -162,7 +166,7 @@ function makeProfileRefreshData({
       contextSufficient: contextSufficient ?? availableCount > 0,
       sourceUrls,
       fieldsAvailable: availableCount,
-      fieldsMissing: 22 - availableCount,
+      fieldsMissing: AGENT_PROFILE_REFRESH_FIELD_PATHS.length - availableCount,
     },
     fields: REFRESH_FIELD_SPECS.map(([path, kind], index) =>
       index < availableCount

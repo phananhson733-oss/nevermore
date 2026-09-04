@@ -8,6 +8,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AGENT_AUDIT_RECORD_CATEGORIES } from "../../lib/agents/audit-contract";
+import { AGENT_PROFILE_REFRESH_SCHEMA_VERSION } from "../../lib/agents/profile-refresh-contract";
 import { storeOnPageDraft } from "../../lib/on-page-checker/storage";
 import {
   AGENT_PROFILE_REFRESH_FIELD_PATHS,
@@ -225,7 +226,7 @@ function profileRefreshEnvelope(
   );
   return {
     data: {
-      schemaVersion: "agent_profile_refresh.v1",
+      schemaVersion: AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
       agent,
       request: {
         submittedUrl,
@@ -249,7 +250,7 @@ function profileRefreshEnvelope(
         contextSufficient: true,
         sourceUrls,
         fieldsAvailable: 1,
-        fieldsMissing: 21,
+        fieldsMissing: AGENT_PROFILE_REFRESH_FIELD_PATHS.length - 1,
       },
       fields,
     },

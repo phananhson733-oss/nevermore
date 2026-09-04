@@ -19,6 +19,7 @@ import {
   type AgentProfileRefreshData,
   type AgentProfileRefreshField,
   type AgentProfileRefreshFieldPath,
+  AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
 } from "./profile-refresh-contract.ts";
 import {
   DEFAULT_DEPENDENCIES,
@@ -202,7 +203,7 @@ function profileData(
   const context = contextResult();
   const fields = synthesisFields();
   return {
-    schemaVersion: "agent_profile_refresh.v1",
+    schemaVersion: AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
     agent,
     request: {
       submittedUrl: "https://acme.test/pricing",
@@ -223,7 +224,7 @@ function profileData(
       contextSufficient: context.contextSufficient,
       sourceUrls: context.pages.map((page) => page.url),
       fieldsAvailable: 1,
-      fieldsMissing: 21,
+      fieldsMissing: AGENT_PROFILE_REFRESH_FIELD_PATHS.length - 1,
     },
     fields,
   };
@@ -493,7 +494,7 @@ describe("handleAgentProfileRefreshRequest", () => {
     const expectedFingerprint = createHash("sha256")
       .update(
         JSON.stringify({
-          schemaVersion: "agent_profile_refresh.v1",
+          schemaVersion: AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
           promptVersion: PROFILE_REFRESH_PROMPT_SET_VERSION,
           agent: "seo",
           normalizedUrl: identity.normalizedUrl,
@@ -677,7 +678,7 @@ describe("handleAgentProfileRefreshRequest", () => {
       contextSufficient: crawlResult.contextSufficient,
       sourceUrls: pages.map((page) => page.url),
       fieldsAvailable: 1,
-      fieldsMissing: 21,
+      fieldsMissing: AGENT_PROFILE_REFRESH_FIELD_PATHS.length - 1,
     });
     expect(isAgentProfileRefreshData(body.data)).toBe(true);
     expect(reportInvalidResponse).not.toHaveBeenCalled();
@@ -745,7 +746,9 @@ describe("handleAgentProfileRefreshRequest", () => {
     const body = await response.json();
     expect(body.data.availability).toBe("available");
     expect(body.data.diagnostics.fieldsAvailable).toBe(14);
-    expect(body.data.diagnostics.fieldsMissing).toBe(8);
+    expect(body.data.diagnostics.fieldsMissing).toBe(
+      AGENT_PROFILE_REFRESH_FIELD_PATHS.length - 14,
+    );
   });
 
   it("serves a strict prefer-cache hit without crawling or synthesizing", async () => {

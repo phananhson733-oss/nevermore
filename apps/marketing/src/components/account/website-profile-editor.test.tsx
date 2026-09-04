@@ -26,6 +26,7 @@ import {
   AGENT_PROFILE_REFRESH_FIELD_PATHS,
   type AgentProfileRefreshData,
   type AgentProfileRefreshField,
+  AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
 } from "../../lib/agents/profile-refresh-contract.ts";
 import type { AgentProfileSearchData } from "../../lib/agents/profile-search-contract.ts";
 
@@ -326,7 +327,7 @@ function refresh(): AgentProfileRefreshData {
     } as AgentProfileRefreshField;
   });
   return {
-    schemaVersion: "agent_profile_refresh.v1",
+    schemaVersion: AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
     agent: "seo",
     request: {
       submittedUrl: "https://example.com/",

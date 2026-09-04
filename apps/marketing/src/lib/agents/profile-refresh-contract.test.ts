@@ -13,6 +13,7 @@ import {
   type AgentProfileRefreshEnvelope,
   type AgentProfileRefreshField,
   type AgentProfileRefreshFieldPath,
+  AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
 } from "./profile-refresh-contract.ts";
 
 const SOURCE_URLS = [
@@ -70,7 +71,7 @@ function envelopeWithAvailableCount(
   );
   return {
     data: {
-      schemaVersion: "agent_profile_refresh.v1",
+      schemaVersion: AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
       agent: "seo",
       request: {
         submittedUrl: "www.acme.com/pricing",
@@ -170,7 +171,9 @@ describe("Agent profile refresh wire contract", () => {
           value.data.diagnostics.sourceUrls,
         ),
       ).toBe(true);
-      expect(value.data.fields).toHaveLength(22);
+      expect(value.data.fields).toHaveLength(
+        AGENT_PROFILE_REFRESH_FIELD_PATHS.length,
+      );
     },
   );
 
@@ -200,7 +203,9 @@ describe("Agent profile refresh wire contract", () => {
       ...base.data.fields.slice(2),
     ]);
     const missing = withFields(base, base.data.fields.slice(1));
-    const allAvailable = envelopeWithAvailableCount(22);
+    const allAvailable = envelopeWithAvailableCount(
+      AGENT_PROFILE_REFRESH_FIELD_PATHS.length,
+    );
     const wrongKind = withFields(
       allAvailable,
       allAvailable.data.fields.map((field) =>

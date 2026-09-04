@@ -1,5 +1,5 @@
 // @input  -- bounded public-page context, selected market/language, and KeywordLlmClient
-// @output -- a strict 22-field Product/ICP draft with page-level citations and usage
+// @output -- a strict 23-field Product/ICP/target-query draft with page-level citations and usage
 // @pos    -- server-only synthesis seam for Agent profile diagnosis; no persistence
 
 import {
@@ -190,7 +190,9 @@ function buildUserPrompt(
     "- Do not output app, workspace, project, snapshot, run, or evidence IDs. Do not claim that anything was saved, confirmed, or persisted.",
     "",
     "FIELD CONTRACT",
-    `- Emit exactly these 22 paths once each: ${AGENT_PROFILE_REFRESH_FIELD_PATHS.join(", ")}.`,
+    // Counted, never typed. The two hand-written "22"s stayed behind when the
+    // list grew, and a model told to emit 22 of 23 paths drops one silently.
+    `- Emit exactly these ${AGENT_PROFILE_REFRESH_FIELD_PATHS.length} paths once each: ${AGENT_PROFILE_REFRESH_FIELD_PATHS.join(", ")}.`,
     `- STRING paths use a non-empty string value: ${STRING_FIELD_PATHS.join(", ")}.`,
     `- LIST paths use a non-empty, unique array of non-empty strings: ${LIST_FIELD_PATHS.join(", ")}.`,
     "- Keep every value concise: STRING value <= 280 characters; LIST value <= 8 items; each LIST item <= 120 characters; unavailable limitation <= 180 characters.",
@@ -198,8 +200,14 @@ function buildUserPrompt(
     '- Unavailable exact shape: {"path":"one listed path","state":"unavailable","value":null,"derivation":"missing","confidence":"unknown","source":"not_available","limitation":"specific non-empty explanation of what the pages do not establish","evidenceUrls":[]}.',
     "- Each field object must have exactly those eight keys. The root object must have exactly one key.",
     "",
+    "targetQuery",
+    "- One search phrase, two to six words, that a person looking for the submitted page would type. It names the subject the page is already about; it is not a phrase you would like the page to rank for and not the brand name on its own.",
+    "- Read it off the page: the thing the heading, the opening text and the primary action agree the page is for. If those three do not agree on one subject, mark it unavailable rather than picking whichever reads best.",
+    "- Write it lowercase, in the market language, with no punctuation, no site name and no separators. `natal chart calculator`, not `Natal Chart Calculator | AstroWiki`.",
+    "- Eight page checks compare the page against this phrase, so a guess costs more than an absence: the checks then measure a query the owner never wanted. Unavailable is the right answer for a page whose subject the text does not settle.",
+    "",
     "JSON SCHEMA",
-    '{"fields":[/* exactly 22 field objects in the listed path order */]}',
+    `{"fields":[/* exactly ${AGENT_PROFILE_REFRESH_FIELD_PATHS.length} field objects in the listed path order */]}`,
     "",
     "PUBLIC PAGES",
     renderPages(pages),
