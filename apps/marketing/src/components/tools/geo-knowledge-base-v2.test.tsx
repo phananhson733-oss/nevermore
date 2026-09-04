@@ -111,10 +111,15 @@ it("turns an inherited feature into a pending fact carrying the source the Profi
   expect(host.querySelectorAll("[data-edit-fact]")).toHaveLength(0);
   await act(async () => add!.click());
   expect(host.querySelectorAll("[data-edit-fact]")).toHaveLength(1);
-  const values = [...host.querySelectorAll<HTMLInputElement>('[data-fact-field="sourceUrl"], [data-fact-field="observedAt"], [data-fact-field="key"]')].map(node => node.value);
-  expect(values).toContain("coreFeatures[0]");
+  const values = [...host.querySelectorAll<HTMLInputElement>('[data-fact-field="sourceUrl"], [data-fact-field="observedAt"], [data-fact-field="value"], [data-fact-field="key"]')].map(node => node.value);
+  // Keyed and stated by the claim -- not by "coreFeatures[0]", which is on no
+  // page and so could never be found there by the crawl check.
+  expect(values).toContain("Free birth chart calculator");
+  expect(values).not.toContain("coreFeatures[0]");
   expect(values).toContain("https://example.com/tools");
-  expect(values).toContain("2026-08-31T05:34:14.891Z");
+  // The capture time the Profile recorded is carried, and read out rather than
+  // left as an empty box for someone to hand-type an ISO string into.
+  expect(host.querySelector("[data-fact-observed-at]")?.textContent).toBe("2026-08-31T05:34:14.891Z");
   expect(host.querySelector("[data-edit-fact] [data-review-state]")?.textContent).toBe("Pending review");
   expect(fetch).not.toHaveBeenCalled();
 });

@@ -3,10 +3,15 @@ import { geoProfileFactSource, pendingGeoFeatureFact, pendingGeoProfileFact } fr
 import { emptyMarketingWebsiteProfile } from "../../lib/account-websites/contracts.ts";
 
 describe("inherited Profile value to pending fact", () => {
-  it("prefills the exact general Profile value but requires a source before save", () => {
+  it("keys the fact by the claim, not by the Profile field it came from", () => {
+    // `inspectGeoFact` admits a fact only where one page segment carries the
+    // key and the value together, and "productName" is on no page. Keying by
+    // the field made the fact unverifiable by construction, and printed a
+    // field name where the visitor reads a dimension.
     expect(pendingGeoProfileFact("productName", "Acme Analytics", [])).toEqual({
-      status: "ready", fact: { key: "productName", value: "Acme Analytics", reason: "", sourceUrl: "", observedAt: "" },
+      status: "ready", fact: { key: "Acme Analytics", value: "Acme Analytics", reason: "", sourceUrl: "", observedAt: "" },
     });
+    expect(pendingGeoProfileFact("coreFeatures[0]", "Free natal chart calculator", [])).toMatchObject({ fact: { key: "Free natal chart calculator" } });
   });
   it("delegates an exact feature into both the fact key and value without inventing a source", () => {
     expect(pendingGeoFeatureFact("Free natal chart calculator", [])).toEqual({
@@ -23,13 +28,29 @@ describe("inherited Profile value to pending fact", () => {
   it("honors the 24-fact cap and detects normalized key duplicates", () => {
     const facts = Array.from({ length: 24 }, (_, index) => ({ key: `Feature ${index}`, value: "", reason: "lowConfidence" as const, sourceUrl: "", observedAt: "" }));
     expect(pendingGeoFeatureFact("New feature", facts)).toEqual({ status: "full" });
-    expect(pendingGeoFeatureFact("FEATURE 0", facts)).toEqual({ status: "exists" });
+    expect(pendingGeoFeatureFact("FEATURE 0", facts.map(fact => ({ ...fact, value: fact.key })))).toEqual({ status: "exists" });
   });
-  it("normalizes only NFC, case and whitespace when deduplicating by key", () => {
-    const existing = [{ key: "Caf\u00e9   plan", value: "Same value", reason: "" as const, sourceUrl: "https://example.com", observedAt: "2026-08-31" }];
-    expect(pendingGeoProfileFact("CAFE\u0301 plan", "New exact value", existing)).toEqual({ status: "exists" });
-    expect(pendingGeoProfileFact("Cafe-plan", "Same value", existing)).toEqual({
-      status: "ready", fact: { key: "Cafe-plan", value: "Same value", reason: "", sourceUrl: "", observedAt: "" },
+  it("refuses a claim that matches either half of a row already in the review area", () => {
+    // A row with a dimension of its own: "Pricing" is what a page would have to
+    // say beside the claim, "Free plan" is the claim.
+    const facts = [{ key: "Pricing", value: "Free plan", reason: "" as const, sourceUrl: "https://example.com/pricing", observedAt: "2026-08-31T00:00:00.000Z" }];
+    // Comparing against keys alone let this one through, filing the same claim
+    // a second time.
+    expect(pendingGeoProfileFact("coreFeatures[0]", "Free plan", facts)).toEqual({ status: "exists" });
+    // And this one has to be refused for a different reason: the payload keys
+    // facts uniquely, so a claim equal to an existing dimension would collide.
+    expect(pendingGeoProfileFact("productName", "Pricing", facts)).toEqual({ status: "exists" });
+    expect(pendingGeoProfileFact("productName", "Paid plans only", facts)).toMatchObject({ status: "ready" });
+  });
+  it("normalizes only NFC, case and whitespace when deduplicating by claim", () => {
+    const existing = [{ key: "Caf\u00e9   plan", value: "Caf\u00e9   plan", reason: "" as const, sourceUrl: "https://example.com", observedAt: "2026-08-31" }];
+    // The same claim twice is the same fact, whichever field offers it, and
+    // whichever of the two spellings of an accent it arrives in.
+    expect(pendingGeoProfileFact("productName", "CAFE\u0301 plan", existing)).toEqual({ status: "exists" });
+    expect(pendingGeoProfileFact("coreFeatures[0]", "CAFE\u0301 plan", existing)).toEqual({ status: "exists" });
+    // A hyphen is a different claim, not a different spelling of this one.
+    expect(pendingGeoProfileFact("productName", "Cafe-plan", existing)).toEqual({
+      status: "ready", fact: { key: "Cafe-plan", value: "Cafe-plan", reason: "", sourceUrl: "", observedAt: "" },
     });
   });
 });

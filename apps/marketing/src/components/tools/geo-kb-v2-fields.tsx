@@ -23,6 +23,21 @@ function Rows({ children }: { readonly children: ReactNode }) {
 function Row({ children }: { readonly children: ReactNode }) {
   return <div className="min-w-0 py-6 first:pt-0 last:pb-0 sm:py-7">{children}</div>;
 }
+/**
+ * A value the row carries and does not take typing for. Deliberately not in a
+ * box: it sits among fields that do, and the box is this app's shape for one
+ * that does.
+ */
+function Readout({ label, value, empty, ...rest }: {
+  readonly label: string;
+  readonly value: string;
+  readonly empty: string;
+} & Record<`data-${string}`, string | boolean | undefined>) {
+  return <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+    <span className="text-[14px] text-text-dark-primary">{label}</span>
+    <p {...rest} className="min-w-0 break-all text-[13px] text-text-dark-secondary">{value === "" ? empty : value}</p>
+  </div>;
+}
 function Field({ label, value, onChange, kind, field }: { readonly label: string; readonly value: string; readonly onChange: (value: string) => void; readonly kind: string; readonly field: string }) {
   const id = useId(), data = { [`data-${kind}-field`]: field };
   return <div className="min-w-0 space-y-3">
@@ -142,12 +157,32 @@ export function GeoKbV2Fields({ payload, locale, onChange, supportRefNote }: { r
       </article>;
     })}</div><Button type="button" variant="outline" className="mt-5" disabled={payload.competitors.length >= 5} onClick={() => patch({ competitors: [...payload.competitors, { domain: "", brandName: "", confirmed: false, aliases: [] }] })}>{t.addCompetitor}</Button></GeoKbEditorPanel>
 
-    <GeoKbEditorPanel title={c.sections.facts}><p className="mb-5 text-[13px] leading-relaxed text-text-dark-secondary">{c.factsHelp}</p><div className="space-y-5">{payload.facts.map((fact, index) => {
+    {/* Not the frozen view's title: that one sets a declared value beside the
+        value this version actually admitted, in two columns. Here there is
+        only the declaration, and promising the comparison was a copy borrowed
+        from a panel that has it. */}
+    <GeoKbEditorPanel title={t.factsTitle}><p className="mb-5 text-[13px] leading-relaxed text-text-dark-secondary">{t.factsHelp}</p><div className="space-y-5">{payload.facts.map((fact, index) => {
       const change = (next: typeof fact) => patch({ facts: payload.facts.map((item, position) => position === index ? next : item) });
       const labels = { key: t.factKey, value: c.fields.declaredValue, sourceUrl: c.fields.declaredSource, observedAt: c.fields.declaredTime };
+      // The dimension is the other half of the crawl check: `inspectGeoFact`
+      // admits a fact only where one page segment carries the key and the value
+      // together. When it is the claim itself there is nothing to show -- the
+      // row was the same sentence printed twice, above the sentence.
+      const dimension = fact.key !== fact.value;
       return <article key={index} data-edit-fact={index} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5">
         <Rows>
-          {(["key", "value", "sourceUrl", "observedAt"] as const).map(field => <Row key={field}><Field kind="fact" field={field} label={labels[field]} value={fact[field]} onChange={value => change(editGeoKbFactV2(fact, { [field]: value }))} /></Row>)}
+          {/* Read out where a distinct dimension exists, edited in the one
+              place below. Rendering an input here and another in the
+              disclosure meant the field moved out from under the cursor on the
+              first keystroke that made the two differ. */}
+          {dimension ? <Row><Readout label={labels.key} value={fact.key} empty={c.empty} data-fact-dimension /></Row> : null}
+          {(["value", "sourceUrl"] as const).map(field => <Row key={field}><Field kind="fact" field={field} label={labels[field]} value={fact[field]} onChange={value => change(editGeoKbFactV2(fact, { [field]: value }))} /></Row>)}
+          {/* Read out, not typed. It is filled when the row is created and
+              carried from the Profile or a crawl receipt when it comes from
+              one; asking a person to hand-write `2026-08-31T16:04:59.487Z` is
+              a demand no one should meet, and the editable field for the rare
+              correction sits in the disclosure below. */}
+          <Row><Readout label={labels.observedAt} value={fact.observedAt} empty={c.empty} data-fact-observed-at /></Row>
         </Rows>
         {/* Not the receipt and evidence ids -- those describe the pipeline.
             This says what editing the row costs: crawl evidence a source
@@ -158,11 +193,13 @@ export function GeoKbV2Fields({ payload, locale, onChange, supportRefNote }: { r
             in front of every row. */}
         <details className="mt-4">
           <summary className="cursor-pointer text-[13px] text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent">{t.editFact}</summary>
+          <div className="mt-4"><Field kind="fact" field="key" label={labels.key} value={fact.key} onChange={value => change(editGeoKbFactV2(fact, { key: value }))} /><p className="mt-2 text-[12px] leading-relaxed text-text-dark-secondary">{t.factKeyHelp}</p></div>
+          <div className="mt-4"><Field kind="fact" field="observedAt" label={labels.observedAt} value={fact.observedAt} onChange={value => change(editGeoKbFactV2(fact, { observedAt: value }))} /><p className="mt-2 text-[12px] leading-relaxed text-text-dark-secondary">{t.factTimeHelp}</p></div>
           <label className="mt-4 block min-w-0 space-y-3 text-[14px] text-text-dark-primary">{c.fields.reason}<select className="block w-full rounded-md border border-brand-border-card bg-brand-bg p-2 text-[14px]" value={fact.reason} onChange={event => change(editGeoKbFactV2(fact, { reason: event.target.value as typeof fact.reason }))}><option value="">{c.empty}</option>{Object.entries(c.reasons).map(([reason, label]) => <option key={reason} value={reason}>{label}</option>)}</select></label>
           <Review kind="fact" current={fact.review} locale={locale} valid={geoFactV2Schema.safeParse({ ...fact, review: "accepted" }).success} onChange={review => change({ ...fact, review })} />
           <Button type="button" variant="ghost" className="mt-3" onClick={() => patch({ facts: payload.facts.filter((_, position) => position !== index) })}>{t.remove}</Button>
         </details>
       </article>;
-    })}</div><Button type="button" variant="outline" className="mt-5" disabled={payload.facts.length >= 24} onClick={() => patch({ facts: [...payload.facts, { key: "", value: "", reason: "lowConfidence", sourceUrl: "", observedAt: "", review: "pending", supportRef: null }] })}>{t.addFact}</Button></GeoKbEditorPanel>
+    })}</div><Button data-add-fact type="button" variant="outline" className="mt-5" disabled={payload.facts.length >= 24} onClick={() => patch({ facts: [...payload.facts, { key: "", value: "", reason: "lowConfidence", sourceUrl: "", observedAt: new Date().toISOString(), review: "pending", supportRef: null }] })}>{t.addFact}</Button></GeoKbEditorPanel>
   </div>;
 }

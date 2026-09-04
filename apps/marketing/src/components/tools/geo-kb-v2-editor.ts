@@ -45,7 +45,16 @@ export function editGeoKbFactV2(fact: GeoKbFactV2, patch: GeoKbFactBodyPatch): G
   const changed = factFields.filter(field => patch[field] !== undefined && fact[field] !== patch[field]);
   if (changed.length === 0) return fact;
   const body = Object.fromEntries(changed.map(field => [field, patch[field]])) as GeoKbFactBodyPatch;
-  return { ...structuredClone(fact), ...body, review: "pending", supportRef: null };
+  // A key that is the claim itself keeps following it. It stops only when
+  // someone gives the row a dimension of its own; from then on the two are
+  // edited separately, because `inspectGeoFact` searches the page for the key
+  // and a stale copy of an earlier claim would never be found there.
+  // Not into emptiness: a fact may legitimately have no value -- "we do not
+  // publish this" carries a reason instead -- but the key it is filed under
+  // may never be empty, and `geoFactV2Schema` refuses the whole payload if it
+  // is. Clearing the claim leaves the dimension it was last filed under.
+  const mirrored = patch.value !== undefined && patch.value !== "" && patch.key === undefined && fact.key === fact.value;
+  return { ...structuredClone(fact), ...body, ...(mirrored ? { key: patch.value } : {}), review: "pending", supportRef: null };
 }
 
 /** Caller must use a successfully persisted, validated generation. This only

@@ -80,7 +80,9 @@ describe("complete GEO Profile copy display", () => {
     expect(host.textContent).toContain(en.tools.geoKnowledgeBase.asset.frozenCopyBody);
   });
   it("takes the action back once the value is already in the review area", async () => {
-    await render({ onAddFact: vi.fn(), facts: [{ key: "productName", value: "Copied product", reason: "", sourceUrl: "https://example.com", observedAt: "2026-09-01" }] });
+    // The fact in the review area is keyed by the claim, the way the editor
+    // stores one: the Profile field it came from is not what identifies it.
+    await render({ onAddFact: vi.fn(), facts: [{ key: "Copied product", value: "Copied product", reason: "", sourceUrl: "https://example.com", observedAt: "2026-09-01" }] });
     // Nothing here refuses a press. The Profile editor parks no dead control
     // on screen, so the row whose fact already exists simply has none.
     expect(host.querySelectorAll("button:disabled")).toHaveLength(0);
