@@ -597,6 +597,52 @@ describe("AgentIssueAccordion", () => {
     });
   });
 
+  describe("the opened detail", () => {
+    function openFirstRow() {
+      render(actionableModel());
+      click('[data-issue-control="expand-visible"]');
+    }
+
+    it("puts the handoff and its buttons before the reading blocks", () => {
+      // The two buttons are what a reader reaches for once they have decided
+      // the row matters. At the bottom of a long detail they were behind the
+      // answer they act on.
+      openFirstRow();
+      const detail = host.querySelector("[data-issue-detail]")!;
+      const handoff = detail.querySelector("[data-issue-handoff]")!;
+      const firstBlock = detail.querySelector("[data-issue-block]")!;
+
+      expect(handoff).not.toBeNull();
+      expect(
+        handoff.compareDocumentPosition(firstBlock) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it("reads top to bottom rather than in two columns", () => {
+      openFirstRow();
+      const detail = host.querySelector("[data-issue-detail]")!;
+
+      expect(detail.querySelector(".lg\\:grid-cols-2")).toBeNull();
+    });
+
+    it("sizes its own body text instead of inheriting the site's prose rule", () => {
+      // `@layer base` sets `p { font-size: clamp(0.97rem, 1.4vw, 1.09rem) }`
+      // for marketing prose — about 17px, larger than the issue title above
+      // it. Every sibling line here carries an explicit size, so inheriting
+      // left one paragraph per block towering over the rest.
+      openFirstRow();
+      const bodies = [
+        ...host.querySelectorAll("[data-issue-block] > div"),
+      ];
+
+      expect(bodies.length).toBeGreaterThan(0);
+      for (const body of bodies) {
+        expect(body.className).toContain("[&_p]:text-[12.5px]");
+      }
+    });
+  });
+
   it("renders no untranslated message key", () => {
     render(actionableModel());
     click('[data-issue-control="expand-visible"]');
