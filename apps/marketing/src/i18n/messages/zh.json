@@ -8381,6 +8381,19 @@
           }
         }
       },
+      "targetQuery": {
+        "action": "从 Search Console 取候选",
+        "loading": "读取中…",
+        "heading": "{start} 至 {end} 期间这一页真实获得曝光的查询：",
+        "metrics": "{impressions} 次曝光 · 均位 {position}",
+        "note": "曝光说明这一页被展示给了搜过这些词的人，不等于它就该以此为主题——哪个值得拿下由你判断。",
+        "noRows": "{start} 至 {end} 期间，Search Console 没有这一页的任何查询记录。这是「还没有人搜到它」，不是读取失败。",
+        "noProperty": "你已验证的 Search Console 资源里没有覆盖这个页面的。请确认这个站点已在 Search Console 中验证。",
+        "unavailable": "这次没能读到 Search Console。这不说明这一页的任何情况，稍后再试。",
+        "noGrant": "还没有连接 Search Console。连上之后这里会列出这一页真实获得曝光的查询。",
+        "connect": "连接 Search Console",
+        "failed": "请求没有完成。这不说明这一页的任何情况。"
+      },
       "recommendations": {
         "stage3": "阶段 03 · 建议",
         "stage3Title": "确定有证据支持的下一步",

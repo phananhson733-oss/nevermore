@@ -52,6 +52,7 @@ import {
 } from "./agent-profile";
 import { getSuppliedProductInformation } from "./agent-product-information";
 import type { AgentKind } from "./agent-types";
+import { AgentTargetQueryCandidates } from "./agent-target-query-candidates";
 
 export interface AgentProfilePanelProps {
   readonly agent: AgentKind;
@@ -1760,6 +1761,23 @@ export function AgentProfilePanel({
                   }
                   className="h-10.5 w-full rounded-[9px] border border-brand-border-strong bg-brand-panel-raised px-3 text-[12.5px] text-text-dark-primary outline-none transition-colors focus-visible:border-brand-accent/70 focus-visible:ring-2 focus-visible:ring-brand-accent/35 disabled:opacity-60"
                 />
+                {/*
+                  The one field with a source outside the page text.
+
+                  The profile refresh infers a target query from what the page
+                  says it is about; Search Console knows what people actually
+                  typed before they saw it. The second is the better answer
+                  wherever it exists, so it is offered here beside the field
+                  rather than replacing the inference -- a page nobody has
+                  found yet has no rows and still needs a query.
+                */}
+                {field === "targetQuery" ? (
+                  <AgentTargetQueryCandidates
+                    url={profile.targetUrl}
+                    disabled={disabled}
+                    onPick={(query) => handleFieldChange("targetQuery", query)}
+                  />
+                ) : null}
               </label>
             ))}
 

@@ -8381,6 +8381,19 @@
           }
         }
       },
+      "targetQuery": {
+        "action": "Get candidates from Search Console",
+        "loading": "Reading…",
+        "heading": "Queries this page actually earned impressions for, {start} to {end}:",
+        "metrics": "{impressions} impressions · avg. position {position}",
+        "note": "Impressions mean this page was shown to people who searched these terms. That is not the same as the subject it should be about — which one is worth owning is yours to judge.",
+        "noRows": "Search Console holds no query rows for this page between {start} and {end}. That is \"nobody has found it yet\", not a failed read.",
+        "noProperty": "None of your verified Search Console properties covers this page. Check that this site is verified in Search Console.",
+        "unavailable": "Search Console could not be read this time. That says nothing about this page — try again shortly.",
+        "noGrant": "Search Console is not connected yet. Once it is, this lists the queries this page actually earned impressions for.",
+        "connect": "Connect Search Console",
+        "failed": "The request did not complete. That says nothing about this page."
+      },
       "recommendations": {
         "stage3": "Stage 03 · Recommendations",
         "stage3Title": "Prioritize evidence-backed next steps",
