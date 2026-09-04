@@ -132,16 +132,26 @@ function KeyPageHits({
   }
 
   const submitted = comparableUrl(targetUrl);
+  /*
+    A row that was split already names its page in its own heading, and the
+    handoff for it sits beside that heading. Repeating the one-item list here
+    would say the same thing twice and imply there were others.
+  */
+  const split = issue.keyPage !== null;
   const onlyTarget =
+    !split &&
     reach.hits === 1 &&
     reach.urls.length === 1 &&
     comparableUrl(reach.urls[0] ?? "") === submitted;
-  const rest = reach.hits - reach.urls.length;
+  const rest = split ? 0 : reach.hits - reach.urls.length;
+  // A split row shows its own page in its heading, so the list here is just
+  // that page again. What it still needs is the way to audit it.
+  const listed = split ? [] : reach.urls;
 
   return (
     <div data-issue-key-page-hits className="mt-3">
       <p className="!text-[11.5px] leading-[1.6] font-medium text-text-dark-secondary">
-        {t("affected.keyPagesHeading")}
+        {split ? t("affected.keyPageSplit") : t("affected.keyPagesHeading")}
       </p>
       {onlyTarget ? (
         <p className="mt-1.5 !text-[11.5px] leading-[1.6] text-text-dark-secondary">
@@ -150,7 +160,7 @@ function KeyPageHits({
       ) : (
         <>
           <ul className="mt-1.5 grid gap-1.5">
-            {reach.urls.map((url) => (
+            {listed.map((url) => (
               <li
                 key={url}
                 data-key-page-hit
@@ -183,6 +193,23 @@ function KeyPageHits({
             <p className="mt-2 !text-[11.5px] leading-[1.6] text-text-dark-secondary">
               {t("affected.keyPagesMore", { rest })}
             </p>
+          ) : null}
+          {split &&
+          canHandOff &&
+          issue.keyPage !== null &&
+          !issue.keyPage.isTarget ? (
+            <a
+              data-key-page-check={issue.keyPage.url}
+              href={localePath(locale, "/tools/on-page-seo-check")}
+              {...TOOL_HANDOFF_LINK_PROPS}
+              onClick={prepare(issue.keyPage.url)}
+              onMouseDown={prepare(issue.keyPage.url)}
+              onContextMenu={prepare(issue.keyPage.url)}
+              onAuxClick={prepare(issue.keyPage.url)}
+              className="mt-1.5 inline-block rounded-[6px] border border-brand-border-strong px-2 py-0.5 font-mono text-[10px] tracking-[0.04em] text-text-dark-secondary uppercase transition-colors hover:border-brand-accent/70 hover:text-text-dark-primary"
+            >
+              {t("affected.checkThisPage")}
+            </a>
           ) : null}
           {handoffFailed ? (
             <p

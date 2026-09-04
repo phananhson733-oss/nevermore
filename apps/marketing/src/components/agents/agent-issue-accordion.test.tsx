@@ -227,6 +227,89 @@ describe("AgentIssueAccordion", () => {
     ]);
   });
 
+  /** A check that failed on several key pages, with its per-page outcomes. */
+  function splitModel() {
+    return buildAgentIssueModel({
+      agent: "seo",
+      checks: [check({ id: "1.1", result: "blocker", evidenceRecordIds: ["r1"] })],
+      records: [record("r1", 2)],
+      targetUrl: "https://example.com/",
+      inspectedTargetUrl: "https://example.com/",
+      keyPageReach: new Map([
+        [
+          "1.1",
+          {
+            keyPageTotal: 3,
+            keyPageEvaluatedCount: 3,
+            keyPageHitCount: 2,
+            hitUrls: ["https://example.com/", "https://example.com/pricing"],
+            outcomes: [
+              {
+                page: { url: "https://example.com/", title: null, metaDescription: null, depth: 0, inboundLinks: 9, score: 0 },
+                result: "blocker",
+                measurement: null,
+              },
+              {
+                page: { url: "https://example.com/pricing", title: null, metaDescription: null, depth: 1, inboundLinks: 4, score: 0 },
+                result: "warning",
+                measurement: null,
+              },
+            ],
+          },
+        ],
+      ]),
+    });
+  }
+
+  it("gives each hit page its own row instead of a list inside one", () => {
+    /*
+      The aggregate took its verdict from the worst key page and listed the
+      rest inside, which left the reader holding "which of these is this
+      verdict about". One row, one page, one verdict.
+    */
+    render(splitModel());
+
+    const rows = [
+      ...host.querySelectorAll<HTMLElement>("[data-issue-row]"),
+    ].map((node) => node.getAttribute("data-issue-row"));
+
+    expect(rows).toEqual([
+      "seo:page:1.1@https://example.com/",
+      "seo:page:1.1@https://example.com/pricing",
+    ]);
+  });
+
+  it("carries each page's own result rather than the worst one twice", () => {
+    // The whole point of splitting: the submitted page is a blocker and the
+    // other is a warning, and one row saying "blocker" for both would be the
+    // aggregate again with extra steps.
+    render(splitModel());
+
+    const severities = [
+      ...host.querySelectorAll<HTMLElement>("[data-issue-row]"),
+    ].map((node) => node.getAttribute("data-issue-severity"));
+
+    expect(severities).toEqual(["blocker", "warning"]);
+  });
+
+  it("names the page on the row itself, by path", () => {
+    render(splitModel());
+
+    const labels = [
+      ...host.querySelectorAll<HTMLElement>("[data-issue-key-page]"),
+    ];
+
+    expect(labels.map((node) => node.getAttribute("data-issue-key-page"))).toEqual([
+      "https://example.com/",
+      "https://example.com/pricing",
+    ]);
+    // The origin is on every row; the path is what differs.
+    expect(labels[1]?.textContent).toContain("/pricing");
+    expect(labels[1]?.textContent).not.toContain("https://");
+    expect(labels[0]?.getAttribute("data-issue-key-page-is-target")).toBe("true");
+    expect(labels[1]?.getAttribute("data-issue-key-page-is-target")).toBe("false");
+  });
+
   it("hands a hit page that is not the submitted one to the checker", () => {
     /*
       The Agent judges twelve key pages and captures the full text of one. A
