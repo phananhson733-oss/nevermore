@@ -2,7 +2,7 @@
 title: Handoff · /agents/seo 检查项删减 + 爬取范围分层
 date: 2026-09-04
 基线: origin/main 至 PR #305（含 2026-09-04 全天 9 个 PR）
-来源: /Users/wzb/Downloads/2026-09-04-交办-彪哥-agents-seo检查项删减与爬取分层.md
+来源: 2026-09-04-交办-彪哥-agents-seo检查项删减与爬取分层.md（本地交办原件）
 交付对象: 落地这份工作的 code agent
 范围: 只涉及 /agents/seo。/tools/on-page-seo-check 不动。
 ---

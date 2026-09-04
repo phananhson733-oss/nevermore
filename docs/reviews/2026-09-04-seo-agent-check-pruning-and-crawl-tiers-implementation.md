@@ -3,7 +3,7 @@
 Date: 2026-09-04
 Base: `25cb7214`
 Branch: `feat/seo-agent-pruning-crawl-tiers-20260904`
-Worktree: `/Users/wzb/.config/superpowers/worktrees/signalframe-mvp-app/seo-agent-pruning-crawl-tiers-20260904`
+Worktree: isolated feature worktree; local path intentionally omitted
 Implementation state: committed release candidate; push, merge, and deployment require separate live evidence bound to an immutable SHA.
 
 ## Owner decisions applied
