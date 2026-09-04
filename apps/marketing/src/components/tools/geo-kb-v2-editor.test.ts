@@ -128,11 +128,16 @@ describe("persisted role proposal adoption", () => {
 });
 
 describe("appendGeoProfileFactV2", () => {
-  it("appends one pending fact per Profile value and refuses a second for the same key", () => {
+  it("appends one pending fact per Profile value, keyed by the claim, and refuses a second of the same claim", () => {
     const payload = completePayloadV2();
     const once = appendGeoProfileFactV2(payload, "productName", "Acme");
-    expect(once?.facts.at(-1)).toMatchObject({ key: "productName", value: "Acme", review: "pending", supportRef: null, sourceUrl: "", observedAt: "" });
+    // Keyed by what the page would have to say, not by the field that offered
+    // it: the crawl check looks for the key on the page, and "productName" is
+    // on none.
+    expect(once?.facts.at(-1)).toMatchObject({ key: "Acme", value: "Acme", review: "pending", supportRef: null, sourceUrl: "", observedAt: "" });
     expect(appendGeoProfileFactV2(once!, "productName", "Acme")).toBeNull();
+    // And the same claim offered by a different field is still the same fact.
+    expect(appendGeoProfileFactV2(once!, "oneLinePositioning", "Acme")).toBeNull();
     expect(payload.facts).toHaveLength(1);
   });
 });

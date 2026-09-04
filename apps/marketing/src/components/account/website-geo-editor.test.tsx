@@ -102,10 +102,13 @@ describe("website GEO canonical editor", () => {
     expect(add).toBeDefined();
     await act(async () => add?.click());
     expect(name.value).toBe("Unsaved alias");
-    const factKey = [...container.querySelectorAll("input")].find((input) => input.value === "coreFeatures[0]");
+    // The fact is keyed by the claim: "coreFeatures[0]" names a Profile field,
+    // appears on no page, and the crawl check looks for the key on the page.
+    expect([...container.querySelectorAll("input")].some((input) => input.value === "coreFeatures[0]")).toBe(false);
+    const factKey = [...container.querySelectorAll("input")].find((input) => input.value === "Saved feature");
     const factRow = factKey?.parentElement?.parentElement;
     expect([...factRow?.querySelectorAll("input") ?? []].map((input) => input.value)).toEqual([
-      "coreFeatures[0]", "Saved feature", "", "",
+      "Saved feature", "Saved feature", "", "",
     ]);
     expect(factRow?.querySelector("select")).toBeNull();
     // The Profile row it came from no longer offers the action: the fact is in
