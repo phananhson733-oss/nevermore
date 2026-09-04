@@ -588,6 +588,27 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   }
 
   /**
+   * The statements the refresh read off the site's own page, as pending facts
+   * carrying the evidence it captured for each one. They arrive pending, not
+   * accepted: `confirmAll` is what accepts, and it refuses anything the
+   * contract will not have. A claim already in the draft is not added twice.
+   */
+  function discovered(facts: GeoKbPayloadV2["facts"]): GeoKbPayloadV2["facts"] {
+    const receipt = current.current.view.sourceReceipt;
+    if (receipt === null) return facts;
+    const claim = (value: string) => value.normalize("NFC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("en");
+    const held = new Set(facts.flatMap(fact => [claim(fact.key), claim(fact.value)]));
+    const added = receipt.facts.flatMap(entry => {
+      if (entry.status !== "available" || entry.sourceUrl === null || entry.observedAt === null) return [];
+      if (held.has(claim(entry.key)) || held.has(claim(entry.value))) return [];
+      held.add(claim(entry.key)); held.add(claim(entry.value));
+      return [{ key: entry.key, value: entry.value, reason: "" as const, sourceUrl: entry.sourceUrl, observedAt: entry.observedAt,
+        review: "pending" as const, supportRef: { receiptId: receipt.receiptId, evidenceId: entry.evidenceId } }];
+    });
+    return added.length === 0 ? facts : [...facts, ...added].slice(0, 24);
+  }
+
+  /**
    * The whole knowledge base in one gesture: derive from the confirmed Profile,
    * save, refresh the crawl and Search Console evidence, ask for the roles,
    * take every role that came back, accept what is pending, ask for the
@@ -610,7 +631,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
       || proposal.input.questionLanguage !== current.current.payload.market.language) return;
     const adopted = adoptGeoKbRoleProposals(proposal.output.roles, proposal.generationId);
     if (adopted.length === 0 || adopted.length > 5) return;
-    change({ ...current.current.payload, roles: adopted, competitors: identified(current.current.payload.competitors) });
+    change({ ...current.current.payload, roles: adopted, competitors: identified(current.current.payload.competitors), facts: discovered(current.current.payload.facts) });
     await confirmAll();
   };
 

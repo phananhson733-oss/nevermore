@@ -13,6 +13,7 @@ import { geoEnrichmentIdentity, type GeoKbEnrichmentDependencies, type GeoEnrich
 import { selectGeoGscProperty, type GeoEnrichmentPage } from "./kb-enrichment.ts";
 import { GEO_KB_SOURCE_SCHEMA, GEO_KB_SOURCE_LIMITS, type GeoGscSourceV2, type GeoKbSourceBodyV2, type GeoKbSourceReportV2 } from "./kb-source-contract.ts";
 import { collectGeoQueryEvidenceV2, extractGeoCompetitorSourceV2, inspectGeoFactSourceV2, finalizeGeoKbSourceReportV2 } from "./kb-sources.ts";
+import { discoverGeoFactSourcesV2 } from "./kb-fact-discovery.ts";
 
 export interface GeoKbSourceAsset extends Omit<GeoEnrichmentAsset, "payload"> { readonly payload: AnyGeoKbPayload }
 export type GeoKbSourceDependencies = Omit<GeoKbEnrichmentDependencies, "persistReceipt" | "readAsset"> & {
@@ -107,6 +108,16 @@ export async function handleGeoKbSources(request: Request, dependencies: GeoKbSo
       const page = fact.value.trim() === "" ? { kind: "unavailable" as const, reason: "missing_url" as const, url: null } : await pageFor(fact.sourceUrl);
       facts.push(inspectGeoFactSourceV2(fact, page, `F${index + 1}`));
     }
+    // The site's own page, which nothing else in this refresh reads. Until now
+    // a refresh could only re-check facts somebody had already typed in, so a
+    // knowledge base built without typing held no statement the site makes
+    // about itself. What is taken is what the page publishes as structured
+    // question-and-answer markup -- the site's own words, marked up by the site
+    // as its own answer -- and never a sentence lifted out of prose.
+    const declared = new Set(facts.map((fact) => fact.key.normalize("NFC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("en")));
+    const discovered = discoverGeoFactSourcesV2(await pageFor(asset.payload.targetUrl), facts.length + 1, GEO_KB_SOURCE_LIMITS.facts - facts.length)
+      .filter((fact) => !declared.has(fact.key.normalize("NFC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("en")));
+    facts.push(...discovered);
     const report = finalizeGeoKbSourceReportV2({ ...metadata, createdAt: dependencies.now().toISOString(), competitors, facts, gsc });
     const stored = await dependencies.persistReceipt({ userId: authentication.userId, report });
     return stored.kind === "ok" ? privateJson({ data: report }) : privateError("store_unavailable", 503);
