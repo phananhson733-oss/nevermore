@@ -80,7 +80,7 @@ describe("complete V2 knowledge-base version content", () => {
     await render({ ...props, customerFacing: true });
     const copy = geoKbV2Copy("en");
 
-    for (const heading of [copy.sections.identity, copy.sections.roles, copy.sections.facts, copy.sections.sources, copy.sections.version]) {
+    for (const heading of [copy.sections.identity, copy.sections.competitors, copy.sections.roles, copy.sections.facts, copy.sections.sources, copy.sections.version]) {
       expect(renderedText(host)).not.toContain(heading);
     }
     expect(host.querySelector("[data-geo-copy-identity]")).toBeNull();
@@ -91,8 +91,11 @@ describe("complete V2 knowledge-base version content", () => {
       expect(host.textContent).not.toContain(internalValue);
     }
 
-    expect(renderedText(host.querySelector('[data-geo-profile-field="productName"]'))).toContain("Acme");
-    expect(host.querySelectorAll("[data-version-competitor]")).toHaveLength(props.payload.competitors.length);
+    expect(host.querySelector("[data-geo-profile-copy]")).toBeNull();
+    expect(host.querySelectorAll("[data-geo-profile-field]")).toHaveLength(0);
+    expect(host.querySelector('a[href$="#website-profile"]')).toBeNull();
+    expect(renderedText(host)).not.toContain("Acme");
+    expect(host.querySelectorAll("[data-version-competitor]")).toHaveLength(0);
     expect(host.querySelectorAll("[data-version-question]")).toHaveLength(props.questionSet.questions.length);
   });
   it("shows the declared fact independently from the actual admitted context value and source", async () => {

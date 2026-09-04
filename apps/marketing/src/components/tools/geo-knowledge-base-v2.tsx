@@ -8,7 +8,6 @@ import { Button } from "../ui/button.tsx";
 import { useGeoKbV2Editor } from "./use-geo-kb-v2-editor.ts";
 import { GeoKbVersionContent } from "./geo-kb-version-content.tsx";
 import { GeoKbFrozenCopy } from "./geo-kb-frozen-copy.tsx";
-import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
 import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
 import { GeoKbV2BuildReport } from "./geo-kb-v2-build-report.tsx";
@@ -61,9 +60,6 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
     </div>
     {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? te("conflict") : editor.status.code === "generation_running" ? te("generationRunning") : editor.status.code === "unsupported_language" ? unsupportedLanguageAfterStart : t.error}{["invalid_input", "input_stale", "conflict", "generation_running", "unsupported_language"].includes(editor.status.code) ? null : <> <span className="break-all font-mono text-xs">{editor.status.code}</span></>}</p> : null}
 
-    {/* What it reads. Maintained in the Profile, read out here, never typed
-        into here -- which is the whole reason this page has one button. */}
-    <GeoKbInheritedProfile profile={view.profile} copy={payload.profileCopy} locale={props.locale} inline heading={3} />
     {editor.copyStale ? <p role="status" className="text-sm text-brand-error">{t.sourceChanged}</p> : null}
 
     {/* A generation the server has not settled. It is the one place a person

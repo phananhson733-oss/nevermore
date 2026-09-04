@@ -216,7 +216,7 @@ function ProfileOwnerLinks({ owner, locale, inline, repairMode }: {
   </>;
 }
 
-export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profileState, facts = [], onAddFact, inline = false, frozen = false, copyDescription, showCopyIdentity = true, repairMode = false, heading }: {
+export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profileState, facts = [], onAddFact, inline = false, frozen = false, copyDescription, repairMode = false, heading }: {
   readonly profile: GeoInheritedProfile | null;
   readonly copy?: GeoProfileCopy;
   readonly websiteId?: string;
@@ -227,7 +227,6 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
   readonly inline?: boolean;
   readonly frozen?: boolean;
   readonly copyDescription?: string;
-  readonly showCopyIdentity?: boolean;
   readonly repairMode?: boolean;
   /** Depth override for a host with its own outline; `inline` alone hard-coded 4. */
   readonly heading?: 2 | 3 | 4;
@@ -246,9 +245,9 @@ export function GeoKbInheritedProfile({ profile, copy, websiteId, locale, profil
     <div data-geo-profile-copy className="min-w-0">
       {copyDescription === undefined && !frozen ? null : <p className="mb-5 text-[13px] leading-relaxed text-text-dark-secondary">{copyDescription ?? t("asset.frozenCopyBody")}</p>}
       <ProfileFields profile={copy.profile} facts={facts} heading={depth} {...(onAddFact === undefined ? {} : { onAddFact })} />
-      {/* Internal archival callers can name the confirmed Profile revision and
-          hash. Customer-facing frozen views deliberately omit that identity. */}
-      {!showCopyIdentity || copyDescription === undefined && !frozen ? null : <div data-geo-copy-identity className="mt-6 border-t border-brand-border-card pt-4 text-xs text-text-dark-secondary">
+      {/* Which confirmed Profile revision this copy is, and its hash. Customer
+          views no longer mount this complete archival Profile copy. */}
+      {copyDescription === undefined && !frozen ? null : <div data-geo-copy-identity className="mt-6 border-t border-brand-border-card pt-4 text-xs text-text-dark-secondary">
         <p>{t("asset.revision", { revision: copy.snapshotRevision })}</p>
         <p className="mt-1 break-all font-mono">{t("asset.hash", { hash: copy.profileHash })}</p>
       </div>}

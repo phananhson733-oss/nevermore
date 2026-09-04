@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Make customer-irrelevant provenance and version identity completely absent from the V2 GEO Knowledge Base frozen view while retaining the frozen data and useful business content.
+**Goal:** Make the V2 GEO Knowledge Base customer view show only generation state and the complete frozen question set, without repeating Product Profile data or internal provenance.
 
-**Architecture:** Keep all wire, persistence, and server contracts unchanged. Add an explicit customer-facing render mode to the shared read-only version component, suppress Profile copy identity through a narrowly scoped presentation prop, and stop mounting the frozen summary in the V2 customer host.
+**Architecture:** Keep all wire, persistence, and server contracts unchanged. Remove the duplicate current Profile readout from the V2 customer host, make the shared customer-facing version mode omit the frozen Profile copy and all six internal panels, and keep the complete internal rendering mode unchanged.
 
 **Tech Stack:** React 19, Next.js 16.2, TypeScript strict, next-intl, Vitest, jsdom.
 
@@ -19,9 +19,10 @@
 
 1. Render an existing V2 frozen record through `GeoKnowledgeBaseV2` in English
    and Chinese.
-2. Assert that the frozen summary, snapshot identity, Profile identity, five
-   internal section headings, source catalog, and hash values are absent.
-3. Assert that Profile business fields, competitors, and questions remain.
+2. Assert that both Profile readouts, the edit link, frozen summary, snapshot
+   identity, six internal section headings, source catalog, competitor rows,
+   and hash values are absent.
+3. Assert that every frozen question remains.
 4. Run the focused test and confirm it fails for the expected visible content.
 
 ### Task 2: Implement the minimum presentation-only pruning
@@ -38,13 +39,16 @@
 
 1. Stop mounting the top frozen summary; do not replace it with a collapsed or
    visually hidden control.
-2. Add a default-preserving customer-facing mode to `GeoKbVersionContent`.
-3. In customer-facing mode, do not render identity, roles, facts, sources, or
-   version panels; keep Profile fields, competitors, and questions.
-4. Add a default-preserving Profile presentation prop and suppress only the
-   archival revision/hash block in customer-facing mode.
-5. Remove the orphan summary component and its now-unused locale keys.
-6. Run the focused host test and confirm it passes.
+2. Stop mounting the duplicate current Profile readout below the generation
+   controls.
+3. Add a default-preserving customer-facing mode to `GeoKbVersionContent`.
+4. In customer-facing mode, do not render the frozen Profile copy or the
+   identity, competitors, roles, facts, sources, or version panels; keep only
+   questions.
+5. Remove the Profile identity presentation prop made unnecessary when the
+   complete Profile copy is absent from customer-facing mode.
+6. Remove the orphan summary component and its now-unused locale keys.
+7. Run the focused host test and confirm it passes.
 
 ### Task 3: Protect complete rendering and regressions
 
@@ -54,7 +58,7 @@
 
 **Steps:**
 
-1. Assert customer-facing DOM absence at the shared component boundary.
+1. Assert both current and frozen Profile DOM absence at the customer boundary.
 2. Assert the default complete mode still renders internal archival content.
 3. Run the three directly changed component/host test files.
 4. Run the full GEO Knowledge Base unit-test family.

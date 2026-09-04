@@ -42,8 +42,9 @@ it("offers one action and no workbench", async () => {
     expect(host.querySelector(gone), gone).toBeNull();
   }
   expect(host.querySelectorAll("input, textarea, select")).toHaveLength(0);
-  // The Profile it reads is still read out, in the Profile editor's own shape.
-  expect(host.querySelectorAll("[data-geo-profile-field]").length).toBeGreaterThan(0);
+  // Product data belongs to the separate Profile module, not this GEO view.
+  expect(host.querySelectorAll("[data-geo-profile-field]")).toHaveLength(0);
+  expect(host.querySelector("[data-geo-profile-copy]")).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -117,7 +118,7 @@ it.each(["en", "zh"])("keeps internal provenance and version identity out of the
   await render({ ...base, frozen }, locale);
 
   const copy = geoKbV2Copy(locale);
-  for (const heading of [copy.sections.identity, copy.sections.roles, copy.sections.facts, copy.sections.sources, copy.sections.version]) {
+  for (const heading of [copy.sections.identity, copy.sections.competitors, copy.sections.roles, copy.sections.facts, copy.sections.sources, copy.sections.version]) {
     expect(renderedText(host)).not.toContain(heading);
   }
   expect(host.querySelector("[data-frozen-summary]")).toBeNull();
@@ -127,9 +128,11 @@ it.each(["en", "zh"])("keeps internal provenance and version identity out of the
     expect(host.textContent).not.toContain(internalValue);
   }
 
-  expect(host.querySelectorAll("[data-geo-profile-field]").length).toBeGreaterThan(0);
-  expect(renderedText(host)).toContain(frozen.payload.profileCopy.profile.productName);
-  expect(host.querySelectorAll("[data-version-competitor]")).toHaveLength(frozen.payload.competitors.length);
+  expect(host.querySelectorAll("[data-geo-profile-field]")).toHaveLength(0);
+  expect(host.querySelector("[data-geo-profile-copy]")).toBeNull();
+  expect(host.querySelector('a[href$="#website-profile"]')).toBeNull();
+  expect(renderedText(host)).not.toContain(frozen.payload.profileCopy.profile.productName);
+  expect(host.querySelectorAll("[data-version-competitor]")).toHaveLength(0);
   expect(host.querySelectorAll("[data-version-question]")).toHaveLength(frozen.questionSet.questions.length);
   expect(renderedText(host)).toContain(frozen.questionSet.questions[0]!.text);
 });

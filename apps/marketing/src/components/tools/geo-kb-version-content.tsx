@@ -197,13 +197,13 @@ function Sources({ context, copy, heading }: { readonly context: GeoSnapshotCont
 export function GeoKbVersionContent({ payload, questionSet, context, locale, heading = 3, customerFacing = false }: GeoKbVersionContentProps) {
   const copy = geoKbV2Copy(locale);
   return <div data-geo-version-content className="grid min-w-0 gap-6 text-text-dark-primary">
-    <GeoKbInheritedProfile profile={null} copy={payload.profileCopy} locale={locale} inline heading={heading} copyDescription={copy.profileDescription} showCopyIdentity={!customerFacing} />
+    {customerFacing ? null : <GeoKbInheritedProfile profile={null} copy={payload.profileCopy} locale={locale} inline heading={heading} copyDescription={copy.profileDescription} />}
     {customerFacing ? null : <Panel heading={heading} title={copy.sections.identity}><dl className="grid min-w-0 gap-5 sm:grid-cols-2">
       <Info label={copy.fields.website}><SourceUrl value={payload.targetUrl} empty={copy.unknown} /></Info><Info label={copy.fields.officialName}>{payload.officialName}</Info>
       <Info label={copy.fields.aliases}><List values={payload.aliases} empty={copy.empty} /></Info><Info label={copy.fields.categories}><List values={payload.categoryTerms} empty={copy.empty} /></Info>
       <Info label={copy.fields.market}>{payload.market.country}</Info><Info label={copy.fields.language}>{payload.market.language}</Info>
     </dl></Panel>}
-    <Competitors payload={payload} context={context} copy={copy} heading={heading} />
+    {customerFacing ? null : <Competitors payload={payload} context={context} copy={copy} heading={heading} />}
     {customerFacing ? null : <><Roles payload={payload} context={context} copy={copy} heading={heading} /><Facts payload={payload} context={context} copy={copy} heading={heading} /></>}
     <Questions payload={payload} questionSet={questionSet} copy={copy} heading={heading} />
     {customerFacing ? null : <><Sources context={context} copy={copy} heading={heading} />
