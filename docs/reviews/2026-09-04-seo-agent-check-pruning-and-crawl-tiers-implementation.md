@@ -1,10 +1,10 @@
 # SEO Agent check pruning and crawl tiers — local implementation evidence
 
-Date: 2026-09-04  
-Base: `25cb7214`  
-Branch: `feat/seo-agent-pruning-crawl-tiers-20260904`  
-Worktree: `/Users/wzb/.config/superpowers/worktrees/signalframe-mvp-app/seo-agent-pruning-crawl-tiers-20260904`  
-Release state: local dirty implementation only; not committed, pushed, merged, or deployed.
+Date: 2026-09-04
+Base: `25cb7214`
+Branch: `feat/seo-agent-pruning-crawl-tiers-20260904`
+Worktree: `/Users/wzb/.config/superpowers/worktrees/signalframe-mvp-app/seo-agent-pruning-crawl-tiers-20260904`
+Implementation state: committed release candidate; push, merge, and deployment require separate live evidence bound to an immutable SHA.
 
 ## Owner decisions applied
 
@@ -47,7 +47,7 @@ The handoff described C2 `internal_target_http_error` as catalogue-only and prop
 
 ## Real key-pages canary
 
-Target: `https://gengrowth.ai`  
+Target: `https://gengrowth.ai`
 Result after the frontier fix:
 
 - elapsed: 24.759 seconds
@@ -66,7 +66,7 @@ The homepage itself retains the earlier `home` reason, so the 11 navigation subj
 
 Passed:
 
-- full unit suite with four workers: 1,177 files, 18,825 tests
+- full unit suite after merging `origin/main`, with four workers: 1,177 files, 18,840 tests
 - all 32 changed unit-test files: 1,078 tests
 - full E2E TypeScript and workspace typecheck
 - full production build for Marketing and Web
