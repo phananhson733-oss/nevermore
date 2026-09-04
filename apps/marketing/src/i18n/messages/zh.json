@@ -8860,7 +8860,9 @@
             "keyPagesMore": "另有 {rest} 个命中页未列出。",
             "keyPagesOnlyTarget": "只有你提交的这一页命中。",
             "repairScopeTarget": "下面的建议和预览针对你提交的页面：{url}",
-            "repairScopeElsewhere": "注意：这一项在你提交的页面上没有命中，命中的是上面列出的其他关键页。下面的建议和预览用的仍是提交页的内容——本次运行只采集了那一页的完整文本。要为某个命中页拿到针对它的建议，把那个 URL 作为目标重跑一次。"
+            "repairScopeElsewhere": "注意：这一项在你提交的页面上没有命中，命中的是上面列出的其他关键页。下面的建议和预览用的仍是提交页的内容——本次运行只采集了那一页的完整文本。要为某个命中页拿到针对它的建议，把那个 URL 作为目标重跑一次。",
+            "checkThisPage": "检查这一页",
+            "checkHandoffFailed": "没能把这一页交接过去。请直接打开 On-Page Checker 并填入该 URL。"
         },
         "evidence": {
           "none": "本次没有可展示的证据记录。",
