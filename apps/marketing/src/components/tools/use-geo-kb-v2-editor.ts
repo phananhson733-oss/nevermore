@@ -9,6 +9,7 @@ import { parseGeoKbPayloadV2, type GeoKbPayloadV2 } from "../../lib/geo-tools/kb
 import type { GeoKbGenerationKind } from "../../lib/geo-tools/kb-generation.ts";
 import type { GeoRoleProposal } from "../../lib/geo-tools/kb-role-proposal.ts";
 import { parseGeoKbSourceReportV2 } from "../../lib/geo-tools/kb-source-contract.ts";
+import { isSupportedGeoQuestionLanguage } from "../../lib/geo-tools/asset-context.ts";
 import { parseGeoKbDraftSaveV2, parseGeoKbFreezeV2Response, parseGeoKbEditorViewV2, parseGeoKbGenerationWire, type GeoKbEditorViewV2, type GeoKbGenerationWire } from "./geo-kb-v2-wire.ts";
 import { acceptAllGeoKbV2, adoptGeoKbRoleProposals, submitGeoKbPayloadV2 } from "./geo-kb-v2-editor.ts";
 import { buildGeoV2FromProfile, type GeoV2BuildOutcome } from "../../lib/geo-tools/kb-v2-build-from-profile.ts";
@@ -84,6 +85,7 @@ function storedHistory(kbId: string): readonly RetainedGeoKbRequest[] {
   } catch { return []; }
 }
 const same = (left: unknown, right: unknown) => canonicalGeoV2Text(left) === canonicalGeoV2Text(right);
+const effectiveGenerationLanguage = (payload: GeoKbPayloadV2) => buildGeoV2FromProfile(payload.profileCopy.profile, payload).payload.market.language;
 /** One source selection for UI, request identity, generation and candidate checks. */
 export function currentGeoKbSourceSelection(view: GeoKbEditorViewV2, payload: GeoKbPayloadV2) {
   const stored = view.sourceReceipt;
@@ -181,6 +183,14 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   const candidateStale = candidate !== null && (dirty || view.requiresSave || copyStale || candidate.baseDraftHash !== view.draftHash || Number(candidate.baseDraftVersion) !== view.draftVersion || invalidCandidates.current.has(candidate.candidateId) ||
     !sourceSelection.refs.every(selected => candidate.sourceReceiptRefs.some(ref => same(ref, selected))));
   const busy = status.kind === "busy";
+  const generationLanguage = effectiveGenerationLanguage(payload);
+  const generationLanguageSupported = isSupportedGeoQuestionLanguage(generationLanguage);
+  const savedGenerationLanguageSupported = isSupportedGeoQuestionLanguage(payload.market.language);
+  function refuseUnsupportedGenerationLanguage(language: string): boolean {
+    if (isSupportedGeoQuestionLanguage(language)) return false;
+    setStatus({ kind: "error", code: "unsupported_language" });
+    return true;
+  }
   /**
    * The generation gates, read from the refs rather than from this render's
    * state. One click can run several steps back to back, and a step asking
@@ -433,6 +443,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     setView(previous => ({ ...previous, sourceReceipt: receipt })); setReview(null);
   }); };
   const generate = async (kind: GeoKbGenerationKind, action: Exclude<GenerationAction, "read_only"> = "normal") => {
+    if (refuseUnsupportedGenerationLanguage(current.current.payload.market.language)) return false;
     if (generationActionNow(kind) !== action) return false;
     return perform(kind, async () => {
       const saved = storedPending(view.kbId, kind, true);
@@ -519,6 +530,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     if (lock.current || buildRunning.current) return;
     // Nothing was derived, so nothing is reported about the derivation.
     if (current.current.copyStale) { setBuild({ derived: null, stoppedAt: "copy" }); return; }
+    if (refuseUnsupportedGenerationLanguage(effectiveGenerationLanguage(current.current.payload))) return;
     buildRunning.current = true; setBuilding(true); setBuild(null);
     try {
       const build = buildGeoV2FromProfile(current.current.payload.profileCopy.profile, current.current.payload);
@@ -618,8 +630,9 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
    * they were the pipeline, published as five numbered buttons. Where a step
    * really does need a decision, it stops and the report says which one; the
    * decision is then made in the Product Profile, and this is pressed again.
-   */
+  */
   const generateAll = async (): Promise<void> => {
+    if (refuseUnsupportedGenerationLanguage(effectiveGenerationLanguage(current.current.payload))) return;
     await buildFromProfile();
     // Read the run's own result, not this render's: the roles arrived one line
     // ago and the closed-over `view` cannot know about them.
@@ -638,6 +651,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   const confirmAll = async (): Promise<void> => {
     if (lock.current || buildRunning.current) return;
     if (current.current.copyStale) { setConfirm({ accepted: 0, blocked: [], stoppedAt: "copy" }); return; }
+    if (refuseUnsupportedGenerationLanguage(current.current.payload.market.language)) return;
     buildRunning.current = true; setBuilding(true); setConfirm(null);
     try {
       const result = acceptAllGeoKbV2(current.current.payload);
@@ -680,7 +694,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     if (!data) { error({ code: "schema_mismatch" }); return; }
     setReview(null); await readSaved();
   }); };
-  return { view, payload, dirty, edited, status, busy, generationRunning, autosaveHold, pending, retainedRequests, readRetainedRequest, generationAction, copyProposal, copyStale, copyHashReady, sourceSelection, roleProposalReusable, canAdoptProfileCopy: copyProposal !== null && copySequence.current === signal.sequence, candidateStale, canGenerate, canPrepare, needsReview, canFreeze, reviewed: review === candidateIdentity && candidateIdentity !== null,
+  return { view, payload, dirty, edited, status, busy, generationRunning, generationLanguage, generationLanguageSupported, savedGenerationLanguageSupported, autosaveHold, pending, retainedRequests, readRetainedRequest, generationAction, copyProposal, copyStale, copyHashReady, sourceSelection, roleProposalReusable, canAdoptProfileCopy: copyProposal !== null && copySequence.current === signal.sequence, candidateStale, canGenerate, canPrepare, needsReview, canFreeze, reviewed: review === candidateIdentity && candidateIdentity !== null,
     building, build, buildFromProfile, confirm, confirmAll, generateAll,
     change, save, reload, refreshSources, generate, readGeneration, freeze, reviewProfileCopy, adoptProfileCopy, adoptRoles,
     dismissProfileCopy: () => setCopyProposal(null), confirmReview: (accepted: boolean) => setReview(accepted && !candidateStale ? candidateIdentity : null) };

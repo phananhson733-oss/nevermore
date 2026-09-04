@@ -37,6 +37,8 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
   const stateLabel = (state: string | undefined) => te(`generationStates.${(["claimed", "dispatched", "succeeded", "failed", "uncertain", "unknown", "not_found"] as const).find(known => known === state) ?? "unknown"}`);
   const frozen = view.frozen;
   const current = frozen !== null && "context" in frozen && frozen.contentHash === view.draftHash;
+  const unsupportedLanguage = te("unsupportedLanguage", { language: editor.generationLanguage });
+  const unsupportedLanguageAfterStart = te("unsupportedLanguageAfterStart", { language: payload.market.language });
   return <section data-geo-kb-v2 data-inline={inline} className="min-w-0 space-y-6 text-text-dark-primary">
     {/* The Profile editor's header, in the same order: which website this is,
         one persistent live region whose text changes (a node inserted per
@@ -49,14 +51,16 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button data-generate-kb type="button" disabled={editor.busy || editor.building} onClick={() => void editor.generateAll()}>{editor.building ? t.busy : frozen === null ? te("generate") : te("regenerate")}</Button>
+        <Button data-generate-kb type="button" disabled={editor.busy || editor.building || !editor.generationLanguageSupported} onClick={() => void editor.generateAll()}>{editor.building ? t.busy : frozen === null ? te("generate") : te("regenerate")}</Button>
       </div>
       {/* One billed run, said once, beside the button that bills it. */}
-      <p className="text-[12px] leading-relaxed text-text-dark-secondary">{te("generateCost")}</p>
+      {editor.generationLanguageSupported
+        ? <p className="text-[12px] leading-relaxed text-text-dark-secondary">{te("generateCost")}</p>
+        : <p data-generation-language-warning role="status" className="text-[12px] leading-relaxed text-brand-error">{unsupportedLanguage}</p>}
       <GeoKbV2BuildReport report={editor.build} locale={props.locale} />
       <GeoKbV2ConfirmReport report={editor.confirm} />
     </div>
-    {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? te("conflict") : editor.status.code === "generation_running" ? te("generationRunning") : t.error}{["invalid_input", "input_stale", "conflict", "generation_running"].includes(editor.status.code) ? null : <> <span className="break-all font-mono text-xs">{editor.status.code}</span></>}</p> : null}
+    {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? te("conflict") : editor.status.code === "generation_running" ? te("generationRunning") : editor.status.code === "unsupported_language" ? unsupportedLanguageAfterStart : t.error}{["invalid_input", "input_stale", "conflict", "generation_running", "unsupported_language"].includes(editor.status.code) ? null : <> <span className="break-all font-mono text-xs">{editor.status.code}</span></>}</p> : null}
 
     {/* What it reads. Maintained in the Profile, read out here, never typed
         into here -- which is the whole reason this page has one button. */}
@@ -71,7 +75,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       if (action !== "new_input" && action !== "resend_same") return null;
       return <section key={kind} className="space-y-3 rounded-card border border-brand-accent/40 bg-brand-panel p-5 text-sm">
         <h3 className="font-semibold">{kind === "roles" ? t.generateRoles : t.prepare}</h3><p>{action === "new_input" ? t.newInputHelp : t.resendHelp}</p>
-        <Button type="button" variant="outline" {...{ [action === "new_input" ? "data-new-generation" : "data-resend-generation"]: kind }} disabled={editor.busy} onClick={() => void editor.generate(kind, action)}>{action === "new_input" ? t.newInput : t.resendSame}</Button>
+        <Button type="button" variant="outline" {...{ [action === "new_input" ? "data-new-generation" : "data-resend-generation"]: kind }} disabled={editor.busy || !editor.savedGenerationLanguageSupported} onClick={() => void editor.generate(kind, action)}>{action === "new_input" ? t.newInput : t.resendSame}</Button>
       </section>;
     })}
     {(["roles", "questions"] as const).map(kind => {
