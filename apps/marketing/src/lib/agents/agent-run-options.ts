@@ -76,6 +76,45 @@ function parseManualUrl(value: string): URL | null {
   }
 }
 
+function withoutWww(hostname: string): string {
+  return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+}
+
+/** Match the crawl entry policy: exact host or one apex/www transition, never HTTPS down. */
+export function isAllowedAgentRunSiteUrl(
+  targetUrl: string,
+  candidateUrl: string,
+): boolean {
+  let target: URL;
+  let candidate: URL;
+  try {
+    target = new URL(targetUrl);
+    candidate = new URL(candidateUrl);
+  } catch {
+    return false;
+  }
+  if (
+    (target.protocol !== "http:" && target.protocol !== "https:") ||
+    (candidate.protocol !== "http:" && candidate.protocol !== "https:") ||
+    target.username !== "" ||
+    target.password !== "" ||
+    candidate.username !== "" ||
+    candidate.password !== "" ||
+    (target.protocol === "https:" && candidate.protocol !== "https:")
+  ) {
+    return false;
+  }
+
+  const targetHost = target.hostname.toLowerCase();
+  const candidateHost = candidate.hostname.toLowerCase();
+  if (withoutWww(targetHost) !== withoutWww(candidateHost)) return false;
+  return (
+    targetHost === candidateHost ||
+    targetHost === `www.${candidateHost}` ||
+    candidateHost === `www.${targetHost}`
+  );
+}
+
 export function parseAgentExtraKeyPages(
   targetUrl: string,
   raw: string,
@@ -100,10 +139,11 @@ export function parseAgentExtraKeyPages(
     }
     const parsed = parseManualUrl(line.value);
     if (!parsed) return { ok: false, error: "invalid" };
-    if (parsed.origin !== target.origin) {
+    if (!isAllowedAgentRunSiteUrl(target.href, parsed.href)) {
       return { ok: false, error: "cross_origin" };
     }
-    if (parsed.href !== target.href) pages.add(parsed.href);
+    const rebased = new URL(`${parsed.pathname}${parsed.search}`, target.origin);
+    if (rebased.href !== target.href) pages.add(rebased.href);
   }
 
   return {

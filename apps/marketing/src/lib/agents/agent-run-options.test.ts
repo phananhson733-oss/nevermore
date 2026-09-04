@@ -107,6 +107,44 @@ describe("parseAgentExtraKeyPages", () => {
       ),
     ).toEqual({ ok: false, error: "cross_origin" });
   });
+
+  it.each([
+    [
+      "apex to www",
+      "https://www.acme.test/main",
+      "https://acme.test/manual?q=1",
+      "https://www.acme.test/manual?q=1",
+    ],
+    [
+      "www to apex",
+      "https://acme.test/main",
+      "https://www.acme.test/manual?q=1",
+      "https://acme.test/manual?q=1",
+    ],
+    [
+      "HTTP to HTTPS input",
+      "http://acme.test/main",
+      "https://www.acme.test/manual?q=1",
+      "http://acme.test/manual?q=1",
+    ],
+  ])(
+    "accepts a safe %s site variant and rebases it to the target origin",
+    (_label, targetUrl, manualUrl, expectedUrl) => {
+      expect(parseAgentExtraKeyPages(targetUrl, manualUrl)).toEqual({
+        ok: true,
+        extraKeyPages: [expectedUrl],
+      });
+    },
+  );
+
+  it("rejects an HTTPS downgrade even for the same host", () => {
+    expect(
+      parseAgentExtraKeyPages(
+        "https://acme.test/",
+        "http://www.acme.test/manual",
+      ),
+    ).toEqual({ ok: false, error: "cross_origin" });
+  });
 });
 
 describe("normalizeStoredAgentRunOptions", () => {

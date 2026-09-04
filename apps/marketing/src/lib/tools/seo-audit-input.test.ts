@@ -98,7 +98,37 @@ describe("normalizeSeoAuditExtraKeyPages", () => {
   });
 
   it.each([
+    [
+      "apex to www",
+      "https://www.acme.test/main",
+      "https://acme.test/manual?q=1",
+      "https://www.acme.test/manual?q=1",
+    ],
+    [
+      "www to apex",
+      "https://acme.test/main",
+      "https://www.acme.test/manual?q=1",
+      "https://acme.test/manual?q=1",
+    ],
+    [
+      "HTTP to HTTPS input",
+      "http://acme.test/main",
+      "https://www.acme.test/manual?q=1",
+      "http://acme.test/manual?q=1",
+    ],
+  ] as const)(
+    "accepts a safe %s site variant and rebases it to the main origin",
+    (_label, mainUrl, manualUrl, expectedUrl) => {
+      expect(normalizeSeoAuditExtraKeyPages(mainUrl, [manualUrl])).toEqual({
+        ok: true,
+        urls: [expectedUrl],
+      });
+    },
+  );
+
+  it.each([
     [["https://other.test/page"], "cross-origin"],
+    [["http://www.acme.test/page"], "HTTPS downgrade"],
     [["https://user:pass@acme.test/page"], "credentials"],
     [["javascript:alert(1)"], "invalid protocol"],
   ] as const)("rejects the whole list for a %s URL", (extraKeyPages, _case) => {

@@ -28,7 +28,7 @@ Implementation state: committed release candidate; push, merge, and deployment r
   home, submitted target, manual pages, navigation, 3–20 page first-path clusters, and content/oversized-cluster pages ranked by observed inbound links.
 - Navigation and manual reasons override the path blacklist. Blacklist matching is segment based, so `/tools/about-page-checker` remains eligible.
 - The 50-page safety valve reduces content rows from 15 to 10 to 5 without dropping navigation or eligible cluster rows. Displaced content URLs are returned separately.
-- Manual pages are capped at ten, normalized, same-origin, credential-free, fragment-free, depth-zero seeds that share the selected crawl budget and cache identity.
+- Manual pages are capped at ten, normalized, credential-free, fragment-free, depth-zero seeds that share the selected crawl budget and cache identity. Safe apex/`www` variants are accepted and rebased to the target origin; sibling subdomains and HTTPS downgrades remain rejected.
 
 ### Crawl tiers and truthfulness
 

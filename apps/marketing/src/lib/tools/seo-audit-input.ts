@@ -13,6 +13,7 @@ import {
 import {
   AGENT_RUN_EXTRA_KEY_PAGE_LIMIT,
   AGENT_RUN_URL_MAX_CHARS,
+  isAllowedAgentRunSiteUrl,
 } from "../agents/agent-run-options.ts";
 
 export const SEO_AUDIT_EXTRA_KEY_PAGE_LIMIT = AGENT_RUN_EXTRA_KEY_PAGE_LIMIT;
@@ -96,9 +97,9 @@ export function normalizeSeoAuditExtraKeyPages(
 ): NormalizedSeoAuditExtraKeyPages {
   if (!isExtraKeyPagesInput(value)) return { ok: false };
 
-  let mainOrigin: string;
+  let main: URL;
   try {
-    mainOrigin = new URL(normalizedMainUrl).origin;
+    main = new URL(normalizedMainUrl);
   } catch {
     return { ok: false };
   }
@@ -107,14 +108,17 @@ export function normalizeSeoAuditExtraKeyPages(
   for (const entry of value) {
     const result = normalizeSeoAuditUrl(entry);
     if (!result.ok) return { ok: false };
-    let origin: string;
+    let parsed: URL;
     try {
-      origin = new URL(result.url).origin;
+      parsed = new URL(result.url);
     } catch {
       return { ok: false };
     }
-    if (origin !== mainOrigin) return { ok: false };
-    if (result.url !== normalizedMainUrl) normalized.add(result.url);
+    if (!isAllowedAgentRunSiteUrl(normalizedMainUrl, result.url)) {
+      return { ok: false };
+    }
+    const rebased = new URL(`${parsed.pathname}${parsed.search}`, main.origin).href;
+    if (rebased !== normalizedMainUrl) normalized.add(rebased);
   }
 
   return {

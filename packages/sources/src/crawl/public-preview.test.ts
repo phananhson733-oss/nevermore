@@ -437,7 +437,53 @@ describe("public preview crawl profile", () => {
   });
 
   it.each([
+    [
+      "www target with an apex manual page",
+      "https://www.acme.test/main",
+      "https://acme.test/deep/manual?q=1",
+      "https://www.acme.test/deep/manual?q=1",
+    ],
+    [
+      "apex target with a www manual page",
+      "https://acme.test/main",
+      "https://www.acme.test/deep/manual?q=1",
+      "https://acme.test/deep/manual?q=1",
+    ],
+  ])(
+    "accepts a safe %s and rebases it to the resolved entry origin",
+    async (_label, submittedUrl, manualUrl, expectedUrl) => {
+      const requested: string[] = [];
+      const fetcher: CrawlFetcher = {
+        async fetch(url) {
+          requested.push(url);
+          return previewFixtureResponse(url);
+        },
+      };
+
+      await crawlPublicSitePreview(submittedUrl, undefined, {
+        additionalSeedUrls: [manualUrl],
+        fetcher,
+        entryResolver: async (url) => entryResult(url),
+        engineOptions: {
+          guard: async (url) => ({
+            safe: true,
+            normalizedUrl: url,
+            pinnedIp: "93.184.216.34",
+            reason: null,
+          }),
+        },
+      });
+
+      expect(requested).toContain(expectedUrl);
+      expect(
+        requested.every((url) => new URL(url).origin === new URL(expectedUrl).origin),
+      ).toBe(true);
+    },
+  );
+
+  it.each([
     ["cross-origin", "https://other.test/manual"],
+    ["HTTPS downgrade", "http://www.acme.test/manual"],
     ["credentials", "https://user:secret@acme.test/manual"],
     ["fragment", "https://acme.test/manual#private"],
   ])(

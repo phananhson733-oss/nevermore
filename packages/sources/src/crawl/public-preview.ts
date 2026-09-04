@@ -262,7 +262,7 @@ function resolvedAdditionalSeedUrls(
       throw new Error("public_preview_additional_seed_invalid");
     }
     if (
-      parsed.origin !== submitted.origin ||
+      !isAllowedPublicToolEntryRedirect(submitted.toString(), parsed.toString()) ||
       parsed.username !== "" ||
       parsed.password !== "" ||
       parsed.hash !== ""
