@@ -411,3 +411,83 @@ describe("Agent evidence summaries", () => {
     expect(notCollectedUrlCount(coverage)).toBeNull();
   });
 });
+
+describe("evidence for a site whose entry redirects to another host form", () => {
+  /**
+   * The submitted string and the URL the crawl fetched are not the same value.
+   * `www.example.com` that 301s to the apex is inspected — and observed — as
+   * `example.com`, so filtering observations by the SUBMITTED URL discards
+   * every one of them.
+   *
+   * What the reader saw: "this run recorded no specific target for this
+   * problem" and "no evidence records to show", on a row whose own solution
+   * preview printed the page URL and the title read off it.
+   */
+  const RECORD = {
+    id: "title_without_target_query",
+    category: "keyword_evidence",
+    state: "observed",
+    unit: "pages",
+    population: "target_page",
+    targetTested: true,
+    tested: 1,
+    affected: 1,
+    // The form every observation carries: what the crawl actually fetched.
+    observations: [{ url: "https://example.com/", values: [] }],
+    limitation: null,
+  } as never;
+
+  const CHECK = {
+    check: {
+      id: "2.3",
+      scope: "page",
+      groupId: "2",
+      title: { en: "Title contains the query", zh: "标题含词" },
+      impact: { en: "i", zh: "i" },
+      howToFix: { en: "f", zh: "f" },
+      threshold: { en: "t", zh: "t" },
+      thresholdAuthority: "judgment",
+      dataSource: { en: "d", zh: "d" },
+      scoreWeight: 1,
+      scored: true,
+      declaresNoJudgement: false,
+      blocking: false,
+      blockerEvidenceRecordIds: [],
+      failureResult: "warning",
+      primaryAgent: "seo",
+      inventoryReady: true,
+      engine: "ready",
+      evidenceRecordIds: ["title_without_target_query"],
+      issueRules: [],
+      boundary: { en: "b", zh: "b" },
+    },
+    result: "warning",
+    engine: "ready",
+    truth: "observed",
+    measurement: { en: "1 of 1", zh: "1/1" },
+    evidenceRecordIds: ["title_without_target_query"],
+    scoreValue: null,
+    scoreContribution: null,
+  } as never;
+
+  it("keeps the evidence when the submitted URL is the www form", () => {
+    const analysis = analyzeAgentRecommendations("seo", [CHECK], [RECORD], {
+      // What the visitor typed.
+      targetUrl: "https://www.example.com/",
+      // What the crawl inspected, and what the observations name.
+      inspectedTargetUrl: "https://example.com/",
+    });
+
+    expect(analysis.ranked).toHaveLength(1);
+    expect(analysis.ranked[0]?.evidenceRecords).toHaveLength(1);
+    expect(analysis.ranked[0]?.reach).toBe(1);
+  });
+
+  it("still matches when the submitted URL is the one that was inspected", () => {
+    const analysis = analyzeAgentRecommendations("seo", [CHECK], [RECORD], {
+      targetUrl: "https://example.com/",
+    });
+
+    expect(analysis.ranked[0]?.evidenceRecords).toHaveLength(1);
+  });
+});

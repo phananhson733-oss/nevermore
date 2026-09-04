@@ -122,10 +122,14 @@ export function AgentResults({
         keyPageReach: model.keyPageReach,
         records: joinedRecords,
         targetUrl: data.result.targetUrl,
+        // The form observations carry, which is not the submitted string on a
+        // site whose entry redirects between host forms.
+        inspectedTargetUrl: data.result.inspectedTargetUrl ?? undefined,
       }),
     [
       agent,
       data.result.targetUrl,
+      data.result.inspectedTargetUrl,
       joinedRecords,
       model.evaluatedChecks,
       model.keyPageReach,
