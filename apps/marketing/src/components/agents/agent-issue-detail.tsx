@@ -18,6 +18,7 @@ import {
   buildAgentIssuePrompt,
   type AgentIssuePromptRun,
 } from "./agent-issue-prompt";
+import { comparableUrl } from "./agent-result-helpers";
 import type { AgentProfileDraft } from "./agent-profile";
 import { solutionTemplate } from "./agent-solution-templates";
 import { useCopyToClipboard } from "../../lib/use-copy-to-clipboard";
@@ -52,6 +53,72 @@ function Block({
         {children}
       </div>
     </section>
+  );
+}
+
+/**
+ * The key pages this check actually reached a problem verdict on.
+ *
+ * The row above states this as a count -- "9/12 key pages" -- and nothing on
+ * screen ever named the nine. A reader could see that a problem was somewhere
+ * in the selected set and had no way to find out where, which is the half of
+ * the answer that costs the most to reconstruct by hand.
+ *
+ * Kept separate from the URL list below it, which comes from the record's own
+ * observations. The two are different populations and merging them would let a
+ * page appear as evidence for a verdict reached somewhere else.
+ */
+function KeyPageHits({
+  issue,
+  targetUrl,
+}: {
+  readonly issue: AgentIssue;
+  readonly targetUrl: string;
+}) {
+  const t = useTranslations("agents.workbench.issues");
+  const reach = issue.affected.keyPages;
+  if (reach === null || reach.hits === 0) return null;
+
+  const submitted = comparableUrl(targetUrl);
+  const onlyTarget =
+    reach.hits === 1 &&
+    reach.urls.length === 1 &&
+    comparableUrl(reach.urls[0] ?? "") === submitted;
+  const rest = reach.hits - reach.urls.length;
+
+  return (
+    <div data-issue-key-page-hits className="mt-3">
+      <p className="!text-[11.5px] leading-[1.6] font-medium text-text-dark-secondary">
+        {t("affected.keyPagesHeading")}
+      </p>
+      {onlyTarget ? (
+        <p className="mt-1.5 !text-[11.5px] leading-[1.6] text-text-dark-secondary">
+          {t("affected.keyPagesOnlyTarget")}
+        </p>
+      ) : (
+        <>
+          <ul className="mt-1.5 grid gap-1.5">
+            {reach.urls.map((url) => (
+              <li
+                key={url}
+                data-key-page-hit
+                data-key-page-is-target={
+                  comparableUrl(url) === submitted ? "true" : "false"
+                }
+                className="font-mono text-[11.5px] break-all text-brand-accent-text"
+              >
+                {url}
+              </li>
+            ))}
+          </ul>
+          {rest > 0 ? (
+            <p className="mt-2 !text-[11.5px] leading-[1.6] text-text-dark-secondary">
+              {t("affected.keyPagesMore", { rest })}
+            </p>
+          ) : null}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -317,6 +384,20 @@ export function AgentIssueDetail({
   const profileT = useTranslations("agents.workbench.profile");
   const check = issue.check.check;
   const investigation = issue.copyMode === "investigation";
+  /**
+   * Whether the submitted page is among the pages this issue was found on.
+   *
+   * The aggregate takes its verdict from the worst key page, while the draft,
+   * the preview and the handoff all use the submitted page -- the only one
+   * this run captured in full. False here means the repair guidance below is
+   * about a page that passed, and the screen has to say so.
+   */
+  const hitIncludesTarget = (() => {
+    const reach = issue.affected.keyPages;
+    if (reach === null || reach.hits === 0) return true;
+    const submitted = comparableUrl(profile.targetUrl);
+    return reach.urls.some((url) => comparableUrl(url) === submitted);
+  })();
   const localizedText = (value: { readonly en: string; readonly zh: string }) =>
     value[locale === "zh" ? "zh" : "en"];
 
@@ -414,6 +495,7 @@ export function AgentIssueDetail({
 
         <Block label={t("sections.affected")}>
           <AffectedTargets issue={issue} />
+          <KeyPageHits issue={issue} targetUrl={profile.targetUrl} />
         </Block>
 
         <Block label={t("sections.evidence")}>
@@ -439,6 +521,19 @@ export function AgentIssueDetail({
           </Block>
         ) : (
           <Block label={t("sections.repair")}>
+            {/*
+              Which page this guidance is actually about. Naming the scope is
+              the honest half; writing guidance for a page whose text was never
+              captured is not something this run can do.
+            */}
+            <p
+              data-repair-scope={hitIncludesTarget ? "target" : "elsewhere"}
+              className="mb-2 !text-[11.5px] leading-[1.6] text-text-dark-secondary"
+            >
+              {hitIncludesTarget
+                ? t("affected.repairScopeTarget", { url: profile.targetUrl })
+                : t("affected.repairScopeElsewhere")}
+            </p>
             <p>{localizedText(check.howToFix)}</p>
             <p className="mt-2 !text-[11.5px] leading-[1.6] text-text-dark-secondary">
               {templateT(template.recommendationKey)}

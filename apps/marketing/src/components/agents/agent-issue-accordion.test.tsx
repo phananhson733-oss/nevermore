@@ -180,6 +180,76 @@ describe("AgentIssueAccordion", () => {
     );
   }
 
+  /**
+   * The row states key page reach as a count -- "2/3 key pages" -- and until
+   * now nothing on screen ever named those pages. A reader could see that a
+   * problem was somewhere in the selected set with no way to find out where.
+   */
+  function keyPageModel(hitUrls: readonly string[]) {
+    return buildAgentIssueModel({
+      agent: "seo",
+      checks: [check({ id: "1.1", result: "blocker", evidenceRecordIds: ["r1"] })],
+      records: [record("r1", 2)],
+      targetUrl: "https://example.com/",
+      keyPageReach: new Map([
+        [
+          "1.1",
+          {
+            keyPageTotal: 3,
+            keyPageEvaluatedCount: 3,
+            keyPageHitCount: hitUrls.length,
+            hitUrls,
+            outcomes: [],
+          },
+        ],
+      ]),
+    });
+  }
+
+  it("names the key pages a problem was found on, not just how many", () => {
+    render(
+      keyPageModel([
+        "https://example.com/pricing",
+        "https://example.com/features",
+      ]),
+    );
+    click('[data-issue-control="expand-visible"]');
+
+    const hits = [
+      ...host.querySelectorAll<HTMLElement>("[data-key-page-hit]"),
+    ].map((node) => node.textContent ?? "");
+
+    expect(hits).toEqual([
+      "https://example.com/pricing",
+      "https://example.com/features",
+    ]);
+  });
+
+  it("says the repair is for a page that passed when the submitted page is not a hit", () => {
+    /*
+      The aggregate takes its verdict from the worst key page while the draft,
+      the preview and the handoff all use the submitted page. When those are
+      different pages the screen was asking the reader to change a page that
+      passed, and nothing said so.
+    */
+    render(keyPageModel(["https://example.com/pricing"]));
+    click('[data-issue-control="expand-visible"]');
+
+    const scope = host.querySelector<HTMLElement>("[data-repair-scope]");
+
+    expect(scope?.getAttribute("data-repair-scope")).toBe("elsewhere");
+    expect(scope?.textContent ?? "").toContain("not found on the page you submitted");
+  });
+
+  it("keeps the repair scoped to the submitted page when it is itself a hit", () => {
+    render(keyPageModel(["https://example.com/"]));
+    click('[data-issue-control="expand-visible"]');
+
+    const scope = host.querySelector<HTMLElement>("[data-repair-scope]");
+
+    expect(scope?.getAttribute("data-repair-scope")).toBe("target");
+  });
+
   it("states a clean run in words instead of showing an empty list", () => {
     render(
       buildAgentIssueModel({

@@ -8841,7 +8841,13 @@
           "more": "Listed {shown} of {total} affected URLs; {rest} more not listed.",
           "notCaptured": "This run kept no observation attributable to this issue. That is missing evidence, not an affected population of zero.",
           "notEnumerated": "The record's affected total is larger than the observations listed above, so this list is not a complete enumeration.",
-          "siteScopeCounted": "Site-level observation; the record's affected count is {count}. This run resolved no individual URL, so none is listed."
+          "siteScopeCounted": "Site-level observation; the record's affected count is {count}. This run resolved no individual URL, so none is listed.",
+            "keyPagesHeading": "Key pages this was found on",
+            "keyPagesNote": "This check reached a problem verdict on these pages. The repair guidance below is written for the one selected here.",
+            "keyPagesMore": "Another {rest} hit pages are not listed.",
+            "keyPagesOnlyTarget": "Only the page you submitted was hit.",
+            "repairScopeTarget": "The guidance and preview below are for the page you submitted: {url}",
+            "repairScopeElsewhere": "Note: this was not found on the page you submitted — it was found on the other key pages listed above. The guidance and preview below still use the submitted page's content, because that is the only page this run captured in full. To get guidance written for one of the hit pages, run it again with that URL as the target."
         },
         "evidence": {
           "none": "No evidence record is available to show.",

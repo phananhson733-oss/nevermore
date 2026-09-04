@@ -8841,7 +8841,13 @@
           "more": "以上为 {total} 个受影响 URL 中的前 {shown} 个，另有 {rest} 个未列出。",
           "notCaptured": "本次运行没有记录到可归属于该问题的具体目标。这是证据缺失，不是「受影响 0 个」。",
           "notEnumerated": "记录的受影响总数大于上面列出的观测条目，因此这份列表不是完整枚举。",
-          "siteScopeCounted": "站点级观测；记录的受影响数为 {count}。本次未定位到具体 URL，因此不列出 URL。"
+          "siteScopeCounted": "站点级观测；记录的受影响数为 {count}。本次未定位到具体 URL，因此不列出 URL。",
+            "keyPagesHeading": "命中的关键页",
+            "keyPagesNote": "这一项在这些页面上判定为有问题。修复建议默认针对下面选中的那一页。",
+            "keyPagesMore": "另有 {rest} 个命中页未列出。",
+            "keyPagesOnlyTarget": "只有你提交的这一页命中。",
+            "repairScopeTarget": "下面的建议和预览针对你提交的页面：{url}",
+            "repairScopeElsewhere": "注意：这一项在你提交的页面上没有命中，命中的是上面列出的其他关键页。下面的建议和预览用的仍是提交页的内容——本次运行只采集了那一页的完整文本。要为某个命中页拿到针对它的建议，把那个 URL 作为目标重跑一次。"
         },
         "evidence": {
           "none": "本次没有可展示的证据记录。",
