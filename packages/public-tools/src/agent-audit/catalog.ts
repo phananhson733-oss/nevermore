@@ -86,7 +86,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["2.7", "Reading language declaration", "阅读语言声明", "An html lang attribute is present; its absence is a Tip. Without it the reading language is left to be guessed.", "存在 html lang 属性；缺失为提示。没有它，阅读语言只能靠猜。"],
   ["2.8", "Character set declaration", "字符集声明", "A character set is declared in the markup or the response header; declaring neither is a Tip.", "标记或响应头中声明了字符集；两者都没有为提示。"],
   ["2.9", "Icon declaration", "站点图标声明", "A link rel=icon is declared; its absence is a Tip. Presence only: no request is made for a root icon file.", "存在 link rel=icon 声明；缺失为提示。仅判定是否声明：不会去请求根目录下的图标文件。"],
-  ["2.10", "Target query across the page's text slots", "目标词在页面各文本位点的覆盖", "The confirmed target query appears in the description, sub-headings, opening text or URL; covering none is a Tip. Judged on the submitted page only, and only when a query was confirmed.", "已确认目标词出现在描述、副标题、开头正文或 URL 中；一个位点都没有为提示。仅对提交的页面判定，且仅在已确认目标词时判定。"],
+  ["2.10", "Target query across the page's text slots", "目标词在页面各文本位点的覆盖", "The confirmed target query appears in the description, sub-headings or opening text; covering none of the slots the page actually has is a Tip. The URL is not counted -- it is compared as the whole address, so a domain that already names the subject would satisfy this on every page. Judged on the submitted page only, only when a query was confirmed, and only when at least one of the three slots exists.", "已确认目标词出现在描述、副标题或开头正文中；页面实际拥有的位点一个都没覆盖为提示。不计 URL——URL 是按整个地址比对的，域名本身已经点明主题的站点会因此在每个页面上都算通过。仅对提交的页面判定，仅在已确认目标词时判定，且仅在三个位点至少存在一个时判定。"],
   ["3.1", "H1 count", "H1 数量", "Exactly 1; otherwise Warning", "恰好 1 个；否则为警告"],
   ["3.2", "H1 contains the target query", "H1 含目标词", "Contains the confirmed target query as a token sequence; otherwise Tip. No synonym or stemming set is applied.", "以词序列形式包含已确认目标词；否则为提示。不做同义词或词形还原。"],
   ["3.3", "Continuous heading hierarchy", "标题层级连续", "No skipped levels; otherwise Tip", "无跳级；否则为提示"],
@@ -962,8 +962,8 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
     "用 `<link rel=\"icon\">` 显式声明图标并指向你能控制的文件，不要依赖根目录兜底。标签页、书签和部分结果行显示的就是它，缺声明的结果是一个可辨认的条目变成一块空白方格。本项只读声明，不去抓取文件本身。",
   ),
   "2.10": l(
-    "Work the confirmed query into the slots this run can read: the meta description, a sub-heading, the opening text, or the URL. Pick the ones that read naturally — a description written for a person who is deciding whether to click, a sub-heading that names the section it introduces. Slots filled to satisfy a checker read that way, and the reader is who this is for.",
-    "把已确认目标词自然地放进本次运行能读到的位点：meta description、副标题、开头正文或 URL。挑读起来自然的那些——描述写给正在决定要不要点开的人，副标题就命名它引出的那一节。为了满足检查而硬填的位点读起来就是硬填的，而这件事的对象是读者。",
+    "Work the confirmed query into the slots this run can read: the meta description, a sub-heading, or the opening text. Pick the ones that read naturally — a description written for a person who is deciding whether to click, a sub-heading that names the section it introduces. Slots filled to satisfy a checker read that way, and the reader is who this is for.",
+    "把已确认目标词自然地放进本次运行能读到的位点：meta description、副标题或开头正文。挑读起来自然的那些——描述写给正在决定要不要点开的人，副标题就命名它引出的那一节。为了满足检查而硬填的位点读起来就是硬填的，而这件事的对象是读者。",
   ),
   "4.6": l(
     "Answer the question the page exists to answer, at the length that takes. The floor here is a reviewed working figure, not a documented rule, and padding a thin page up to it changes the number without changing what the page is worth reading for. If the page has little to say, the question is usually whether it should be its own page at all.",

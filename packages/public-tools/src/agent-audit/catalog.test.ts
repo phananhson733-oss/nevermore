@@ -145,6 +145,24 @@ describe("v2 Agent audit catalog", () => {
     });
   });
 
+  it("does not offer 2.10 a slot the run stopped reading", () => {
+    // The threshold shipped listing the URL as a satisfying slot after the
+    // record had dropped it -- so a page whose domain named the subject was
+    // told it already passed a check that could never see the domain. Both
+    // languages have to carry the exclusion, not just omit the word.
+    const entry = PAGE_AUDIT_GROUPS.flatMap((group) => group.checks).find(
+      (check) => check.id === "2.10",
+    );
+
+    expect(entry).toBeDefined();
+    for (const threshold of [entry?.threshold.en, entry?.threshold.zh]) {
+      expect(threshold).toBeDefined();
+      expect(threshold).toMatch(/not counted|不计 URL/);
+    }
+    expect(entry?.threshold.en).not.toMatch(/opening text or URL/);
+    expect(entry?.threshold.zh).not.toMatch(/开头正文或 URL/);
+  });
+
   it("never renders a Warning for a check that says it does not judge", () => {
     // 4.2 published "density is not used to judge a page" and resolved to
     // Warning anyway, because the severity came from a hand-kept list that

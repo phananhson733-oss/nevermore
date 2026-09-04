@@ -133,6 +133,27 @@ describe("reading a reply", () => {
       ).toMatchObject({ review: { titleContainsTargetQuery: false } });
     });
 
+    it("judges the query the way 2.3 does, not as loose letters", () => {
+      // A substring reading called this a survival: `cat` is in `Catalog`.
+      // The check the draft exists to satisfy reads word sequences, so a
+      // draft reported as keeping the query would still have failed 2.3.
+      expect(
+        readSolutionDraft(
+          "search-presentation",
+          reply("Catalog software for teams"),
+          "cat",
+        ),
+      ).toMatchObject({ review: { titleContainsTargetQuery: false } });
+
+      expect(
+        readSolutionDraft(
+          "search-presentation",
+          reply("The cat sitting guide"),
+          "cat",
+        ),
+      ).toMatchObject({ review: { titleContainsTargetQuery: true } });
+    });
+
     it("reports nothing about a query the owner never confirmed", () => {
       // `false` would read as a defect in the draft rather than the absence of
       // anything to look for.

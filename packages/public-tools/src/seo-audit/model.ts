@@ -1373,11 +1373,17 @@ function buildRecords(
       // reader planning work can use the number.
       id: "content_to_code_ratio",
       category: "structure",
-      // Only the pages that carried the side-car were measured. Counting the
-      // rest as tested reported an unmeasured page as a clean one: with no
-      // observation to its name it read as "measured, nothing wrong".
+      // Only the pages a ratio can actually be computed for were measured.
+      // Counting the rest as tested reported an unmeasured page as a clean
+      // one: with no observation to its name it read as "measured, nothing
+      // wrong". Carrying the side-car is not enough -- a page whose delivered
+      // HTML weighed nothing has no denominator, so it is excluded from both
+      // sides here rather than from the observations alone.
       population: "conditional_subset",
-      tested: htmlPages.filter((page) => onPageOf(page) !== null),
+      tested: htmlPages.filter((page) => {
+        const facts = onPageOf(page);
+        return facts !== null && facts.htmlBytes > 0;
+      }),
       observations: htmlPages.flatMap((page) => {
         const facts = onPageOf(page);
         if (facts === null || facts.htmlBytes <= 0) return [];
