@@ -307,7 +307,20 @@ export function buildImageWeightRecords(
     {
       id: "image_over_transfer_budget",
       category: "page_performance",
-      state: "observed",
+      /*
+        A measured pass is `not_observed`, never `observed` with nothing
+        affected.
+
+        Every image was weighed and none reached the budget, which is a real
+        clean result — but published as `observed` with `affected: 0` it broke
+        the invariant the wire guard enforces, and the guard refuses the whole
+        response rather than one record. A site with tidy images was told its
+        audit could not be safely displayed.
+
+        The clean branch again: every fixture had something over budget or
+        something unweighed, so nothing exercised the pass.
+      */
+      state: over.length > 0 ? "observed" : "not_observed",
       unit: "pages",
       population: "target_page",
       targetTested: true,

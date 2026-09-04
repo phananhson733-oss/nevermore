@@ -147,3 +147,39 @@ describe("page performance records", () => {
     );
   });
 });
+
+describe("a page whose images are all within budget", () => {
+  /**
+   * The wire guard refuses a record that says `observed` with nothing affected,
+   * because that shape has meant "we found something" everywhere else. This
+   * branch — every declared image weighed, none over budget — produced exactly
+   * that, so a site with tidy images had its whole audit response rejected and
+   * the reader was told the response could not be safely displayed.
+   *
+   * It is the clean-site branch again: every fixture here had something over
+   * budget, or something unweighed, so nothing ever exercised the pass.
+   */
+  const images = [
+    { url: "https://acme.test/a.png", transferredBytes: 1_000, complete: true },
+    { url: "https://acme.test/b.png", transferredBytes: 2_000, complete: true },
+  ];
+
+  it("reports a measured pass, not an observation of nothing", () => {
+    const [record] = buildImageWeightRecords(images, undefined, true);
+
+    expect(record?.state).toBe("not_observed");
+    expect(record?.affected).toBe(0);
+    expect(record?.observations).toEqual([]);
+    // Still a real measurement: every image was weighed.
+    expect(record?.tested).toBe(2);
+    expect(record?.targetTested).toBe(true);
+  });
+
+  it("satisfies the invariant the wire guard enforces", () => {
+    for (const record of buildImageWeightRecords(images, undefined, true)) {
+      expect(record.affected).toBe(record.observations.length);
+      expect(record.affected).toBeLessThanOrEqual(record.tested);
+      expect(record.state === "observed" ? record.affected > 0 : record.affected === 0).toBe(true);
+    }
+  });
+});
