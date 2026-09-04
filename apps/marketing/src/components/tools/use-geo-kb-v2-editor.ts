@@ -569,6 +569,25 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
    * version that quietly left it out.
    */
   /**
+   * The brand identity the refresh actually read off each competitor's own
+   * page. The Profile supplies the domains; only a capture can say what the
+   * site at that domain calls itself, and a competitor with no name is dropped
+   * from share-of-voice and from the question set for lack of anything to match
+   * a mention against. A capture that failed or came back in conflict leaves
+   * the row exactly as it was -- unnamed and unconfirmed, which is what it is.
+   */
+  function identified(competitors: GeoKbPayloadV2["competitors"]): GeoKbPayloadV2["competitors"] {
+    const receipt = current.current.view.sourceReceipt;
+    if (receipt === null) return competitors;
+    return competitors.map(competitor => {
+      const observed = receipt.competitors.find(entry => entry.domain === competitor.domain);
+      return observed === undefined || observed.status !== "available" || observed.brandName.trim() === ""
+        ? competitor
+        : { ...competitor, brandName: observed.brandName, aliases: [...observed.aliases], confirmed: true };
+    });
+  }
+
+  /**
    * The whole knowledge base in one gesture: derive from the confirmed Profile,
    * save, refresh the crawl and Search Console evidence, ask for the roles,
    * take every role that came back, accept what is pending, ask for the
@@ -591,7 +610,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
       || proposal.input.questionLanguage !== current.current.payload.market.language) return;
     const adopted = adoptGeoKbRoleProposals(proposal.output.roles, proposal.generationId);
     if (adopted.length === 0 || adopted.length > 5) return;
-    change({ ...current.current.payload, roles: adopted });
+    change({ ...current.current.payload, roles: adopted, competitors: identified(current.current.payload.competitors) });
     await confirmAll();
   };
 

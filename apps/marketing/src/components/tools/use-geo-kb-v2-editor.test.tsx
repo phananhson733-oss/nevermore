@@ -114,15 +114,27 @@ it("derives, evidences, generates, accepts and freezes a whole knowledge base in
   // holding the Profile copy, nothing derived from it, nothing frozen.
   const base = editorFixture(), id = "44444444-4444-4444-8444-444444444444";
   const view = { ...base, prepared: null, frozen: null, sourceReceipt: null, requiresSave: true,
-    payload: { ...base.payload, roles: [], market: { ...base.payload.market, language: "en" } } };
+    payload: { ...base.payload, roles: [], market: { ...base.payload.market, language: "en" },
+      competitors: [{ domain: "rival.example", brandName: "", confirmed: false, aliases: [] },
+        { domain: "conflict.example", brandName: "", confirmed: false, aliases: [] },
+        { domain: "down.example", brandName: "", confirmed: false, aliases: [] }] } };
   const proposal = createGeoRoleProposal({ generationId: id, kbId: view.kbId, baseDraftVersion: "2", baseDraftHash: "c".repeat(64),
     profileCopyHash: geoV2Digest(view.payload.profileCopy), input: { ...ROLE_SYNTHESIS_INPUT, officialName: view.payload.officialName, questionLanguage: "en" },
     output: { ...ROLE_SYNTHESIS_OUTPUT, roles: [{ ...ROLE_SYNTHESIS_OUTPUT.roles[0]!, id: "r1" }] }, sourceReceiptRefs: [],
     selectedEvidenceCounts: { profile: 1, gsc: 1, manual: 0, crawl: 0 }, availableEvidenceCounts: { profile: 1, gsc: 1, manual: 0, crawl: 0 } });
   const saved = (version: number, hash: string) => response({ draftVersion: version, contentHash: hash, updatedAt: "2026-08-31T00:00:00.000Z", blockers: [] });
+  // What one refresh really brings back: one competitor page that names itself,
+  // one whose identity signals conflict, one that could not be fetched.
+  const signal = (host: string, name: string) => ({ kind: "json_ld_organization" as const, name, aliases: [], url: `https://${host}/`, hostMatched: true, excludedReason: null });
+  const capture = { confirmed: false as const, source: "crawl" as const, observedAt: "2026-08-31T00:00:00.000Z", bodyHash: "d".repeat(64), signalsTruncated: false };
+  const receipt = { ...sourceFixture({ ...view, draftVersion: 2, draftHash: "c".repeat(64) }), competitors: [
+    { ...capture, evidenceId: "C1", domain: "rival.example", sourceUrl: "https://rival.example/", signals: [signal("rival.example", "Rival Analytics")], status: "available" as const, reason: null, brandName: "Rival Analytics", aliases: ["Rival"], method: "json_ld" as const },
+    { ...capture, evidenceId: "C2", domain: "conflict.example", sourceUrl: "https://conflict.example/", signals: [signal("conflict.example", "One name"), signal("conflict.example", "Another name")], status: "conflict" as const, reason: "identity_conflict" as const, brandName: null, aliases: [], method: "conflicting_signals" as const },
+    { ...capture, evidenceId: "C3", domain: "down.example", sourceUrl: "https://down.example/", signals: [], status: "unavailable" as const, reason: "fetch_failed" as const, brandName: null, aliases: [], method: null, source: null, observedAt: null, bodyHash: null },
+  ] };
   vi.mocked(fetch)
     .mockResolvedValueOnce(saved(2, "c".repeat(64)))
-    .mockResolvedValueOnce(response(sourceFixture({ ...view, draftVersion: 2, draftHash: "c".repeat(64) })))
+    .mockResolvedValueOnce(response(receipt))
     .mockResolvedValueOnce(response({ generation: { generationId: id, kbId: view.kbId, kind: "roles", inputHash: "d".repeat(64), state: "succeeded", result: proposal, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false }))
     .mockResolvedValueOnce(saved(3, "e".repeat(64)))
     .mockResolvedValueOnce(response({ generation: { generationId: base.prepared!.candidateId, kbId: view.kbId, kind: "questions", inputHash: "f".repeat(64), state: "succeeded", result: base.prepared, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false }))
@@ -148,6 +160,18 @@ it("derives, evidences, generates, accepts and freezes a whole knowledge base in
   const second = JSON.parse(String(vi.mocked(fetch).mock.calls[3]?.[1]?.body)) as { payload: { roles: { id: string; review: string; source: { kind: string; generationId: string } }[] } };
   expect(second.payload.roles).toHaveLength(1);
   expect(second.payload.roles[0]).toMatchObject({ id: "r1", review: "accepted", source: { kind: "model", generationId: id } });
+  // And the identity each competitor's own page gave. A competitor with no
+  // name is dropped from share of voice and has nothing for a mention to match,
+  // so leaving all three unnamed -- which is what the workbench's adopt panel
+  // was for -- would have frozen a knowledge base that cannot see its rivals.
+  const competitors = (JSON.parse(String(vi.mocked(fetch).mock.calls[3]?.[1]?.body)) as { payload: { competitors: { domain: string; brandName: string; confirmed: boolean }[] } }).payload.competitors;
+  expect(competitors).toEqual([
+    { domain: "rival.example", brandName: "Rival Analytics", confirmed: true, aliases: ["Rival"] },
+    // Conflicting signals and a failed fetch stay exactly as they were: unnamed
+    // and unconfirmed, which is the truth about them.
+    { domain: "conflict.example", brandName: "", confirmed: false, aliases: [] },
+    { domain: "down.example", brandName: "", confirmed: false, aliases: [] },
+  ]);
   expect(editor.confirm?.stoppedAt).toBeNull();
 });
 it("only explicit replacement adopts a colliding model role and preserves unrelated roles", async () => {

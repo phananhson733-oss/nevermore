@@ -5665,7 +5665,7 @@
           "unchanged": "Competitors already matched the Profile; nothing was rewritten.",
           "manual": "Competitors were not written: a row here is not in the Profile, or there are more candidates than the limit. Choose them under \u201cFrom the Product Profile\u201d."
         },
-        "buildDone": "A role proposal is ready. Review each role below, adopt what belongs, then prepare the complete version.",
+        "buildDone": "The roles were generated and taken into the draft.",
         "buildUnavailable": "The Profile holds these in a form GEO cannot use, so they were neither compared nor written: {fields}. Fix them in the Profile above, or enter them below.",
         "buildStopped": {
           "copy": "The Product Profile has a newer confirmed version. Review and adopt its copy first, then build again.",
