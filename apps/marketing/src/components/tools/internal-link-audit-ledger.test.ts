@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { InternalLinkAuditPayload } from "@sf/public-tools";
+import {
+  buildInternalLinkAuditPayload,
+  type InternalLinkAuditPayload,
+  type InternalLinkAuditRaw,
+} from "@sf/public-tools";
 
 import * as ledgerModule from "./internal-link-audit-ledger";
 
@@ -183,6 +187,83 @@ const payload = {
 } satisfies InternalLinkAuditPayload;
 
 describe("internal link audit URL ledger", () => {
+  it("keeps a grouped finding source sample attached to its primary URL", () => {
+    const origin = "https://acme.example";
+    const makePage = (
+      path: string,
+      links: readonly (readonly [string, string])[] = [],
+    ): InternalLinkAuditRaw["pages"][number] => ({
+      subjectUrl: origin + path,
+      depth: path === "/" ? 0 : 1,
+      projection: {
+        fetchUrl: origin + path,
+        status: 200,
+        finalStatus: 200,
+        redirectChain: [],
+        canonicalTarget: null,
+        robotsIndexable: true,
+        robotsDirectives: [],
+        title: path,
+        metaDescription: null,
+        h1: [],
+        headings: [],
+        wordCount: 10,
+        internalOutlinks: links.map(([target, anchor]) => ({
+          targetSubjectUrl: origin + target,
+          anchorText: anchor,
+          rel: null,
+        })),
+        jsonLd: { types: [], errorCount: 0 },
+        sitemapMember: true,
+        bodyExcerpt: null,
+        paragraphs: [],
+        responseMs: 1,
+        contentType: "text/html",
+      },
+    });
+    const report = buildInternalLinkAuditPayload({
+      origin,
+      host: "acme.example",
+      availability: "available",
+      stopReason: null,
+      limitation: "bounded crawl",
+      capturedAt: "2026-09-06T00:00:00.000Z",
+      sourceWindow: {
+        start: "2026-09-06T00:00:00.000Z",
+        end: "2026-09-06T00:00:00.000Z",
+      },
+      providerUsage: {},
+      robots: { fetched: true, groups: [], sitemaps: [] },
+      sitemap: { fetched: true, urlCount: 5, subjectUrls: [] },
+      pages: [
+        makePage("/", [
+          ["/hub-a", "Hub A"],
+          ["/hub-b", "Hub B"],
+        ]),
+        makePage("/hub-a", [["/article-a", "Read A"]]),
+        makePage("/hub-b", [["/article-b", "Read B"]]),
+        makePage("/article-a"),
+        makePage("/article-b"),
+      ],
+    });
+
+    const handoff = ledgerModule.buildInternalLinkAuditAiHandoff(report)!;
+    const articleB = handoff.split("\n\n").find((block) =>
+      block.includes(". https://acme.example/article-b\n"),
+    );
+    expect(articleB).toContain("kind=low_inbound");
+    expect(articleB).not.toContain("suggestedSourceUrl=");
+    expect(articleB).not.toContain("observedAnchorText=Hub A");
+    const samples = handoff
+      .split("## Finding source samples\n")[1]
+      ?.split("## Unresolved evidence")[0];
+    expect(samples).toContain("findingId=low-inbound-pages");
+    expect(samples).toContain("sampleNodeUrl=https://acme.example/hub-a");
+    expect(samples).toContain("suggestedSourceUrl=https://acme.example/");
+    expect(samples).toContain("observedAnchorText=Hub A");
+    expect(handoff.match(/observedAnchorText=Hub A/g)).toHaveLength(1);
+  });
+
   it("groups deduplicated problem nodes first while preserving source order", () => {
     const ledger = ledgerModule.buildInternalLinkAuditLedger(payload.result);
 

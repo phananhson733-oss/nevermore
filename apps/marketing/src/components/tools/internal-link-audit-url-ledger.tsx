@@ -255,25 +255,6 @@ function LedgerRow({
   );
 }
 
-function attemptLegacyCopy(text: string): boolean {
-  const helper = document.createElement("textarea");
-  helper.value = text;
-  helper.readOnly = true;
-  helper.style.position = "fixed";
-  helper.style.left = "-9999px";
-  document.body.appendChild(helper);
-  helper.select();
-  helper.setSelectionRange(0, helper.value.length);
-  let attempted = false;
-  try {
-    attempted = document.execCommand("copy");
-  } catch {
-    attempted = false;
-  }
-  helper.remove();
-  return attempted;
-}
-
 export function InternalLinkAuditUrlLedger({
   payload,
   locale,
@@ -286,6 +267,7 @@ export function InternalLinkAuditUrlLedger({
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const [manualCopyText, setManualCopyText] = useState("");
   const copyAttemptRef = useRef(0);
+  const copyButtonRef = useRef<HTMLButtonElement>(null);
   const manualCopyRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -298,6 +280,9 @@ export function InternalLinkAuditUrlLedger({
   }, [payload]);
 
   useEffect(() => {
+    if (copyState === "copied" && document.activeElement === document.body) {
+      copyButtonRef.current?.focus({ preventScroll: true });
+    }
     if (copyState !== "fallback") return;
     const field = manualCopyRef.current;
     if (!field) return;
@@ -313,7 +298,6 @@ export function InternalLinkAuditUrlLedger({
     const attemptId = ++copyAttemptRef.current;
     setManualCopyText(handoff);
     setCopyState("copying");
-    attemptLegacyCopy(handoff);
 
     let clipboardAttempt = Promise.resolve(false);
     try {
@@ -413,6 +397,7 @@ export function InternalLinkAuditUrlLedger({
           </p>
         </div>
         <button
+          ref={copyButtonRef}
           type="button"
           disabled={problemCount === 0 || copyState === "copying"}
           aria-busy={copyState === "copying" ? "true" : undefined}
@@ -425,6 +410,33 @@ export function InternalLinkAuditUrlLedger({
           <Copy aria-hidden="true" className="size-4" />
         </button>
       </div>
+
+      <p
+        id="internal-link-copy-status"
+        className={`px-5 text-[12px] leading-[1.5] text-text-dark-secondary md:px-6 ${status ? "py-2.5" : ""}`}
+        role="status"
+        aria-live="polite"
+        data-testid="internal-link-copy-status"
+      >
+        {status}
+      </p>
+      {copyState === "fallback" ? (
+        <div className="border-b border-brand-border px-5 pb-4 md:px-6">
+          <label
+            htmlFor="internal-link-manual-copy"
+            className="block text-[12.5px] font-medium text-text-dark-primary"
+          >
+            {copy.fallbackLabel}
+          </label>
+          <textarea
+            id="internal-link-manual-copy"
+            ref={manualCopyRef}
+            readOnly
+            value={manualCopyText}
+            className="mt-2 min-h-44 w-full resize-y rounded-[10px] border border-brand-border-strong bg-brand-panel-sunken px-3.5 py-3 font-mono text-[11px] leading-[1.55] text-text-dark-primary outline-none focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+          />
+        </div>
+      ) : null}
 
       <div className="min-w-0">
         <table className="w-full table-fixed border-collapse max-[619px]:block max-[619px]:table-auto">
@@ -485,32 +497,6 @@ export function InternalLinkAuditUrlLedger({
         </table>
       </div>
 
-      <p
-        id="internal-link-copy-status"
-        className="min-h-9 border-t border-brand-border px-5 py-2.5 text-[12px] leading-[1.5] text-text-dark-secondary md:px-6"
-        role="status"
-        aria-live="polite"
-        data-testid="internal-link-copy-status"
-      >
-        {status}
-      </p>
-      {copyState === "fallback" ? (
-        <div className="border-t border-brand-border px-5 py-4 md:px-6">
-          <label
-            htmlFor="internal-link-manual-copy"
-            className="block text-[12.5px] font-medium text-text-dark-primary"
-          >
-            {copy.fallbackLabel}
-          </label>
-          <textarea
-            id="internal-link-manual-copy"
-            ref={manualCopyRef}
-            readOnly
-            value={manualCopyText}
-            className="mt-2 min-h-44 w-full resize-y rounded-[10px] border border-brand-border-strong bg-brand-panel-sunken px-3.5 py-3 font-mono text-[11px] leading-[1.55] text-text-dark-primary outline-none focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
-          />
-        </div>
-      ) : null}
     </section>
   );
 }

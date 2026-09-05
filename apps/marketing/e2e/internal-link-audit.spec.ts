@@ -539,6 +539,7 @@ test("copies the problem-only AI handoff after a confirmed Clipboard write", asy
       value: {
         writeText: async (text: string) => {
           Reflect.set(window, "__internalLinkAuditCopiedText", text);
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
         },
       },
     });
@@ -559,11 +560,14 @@ test("copies the problem-only AI handoff after a confirmed Clipboard write", asy
       Reflect.get(window, "__internalLinkAuditCopiedText"),
     ),
   ).toBeUndefined();
-  await page.getByTestId("internal-link-copy-ai").click();
+  const copyButton = page.getByTestId("internal-link-copy-ai");
+  await copyButton.focus();
+  await page.keyboard.press("Enter");
 
   await expect(page.getByTestId("internal-link-copy-ai")).toHaveText(
     "Copied",
   );
+  await expect(copyButton).toBeFocused();
   await expect(page.getByTestId("internal-link-copy-status")).toHaveText(
     "Copied 2 problem URLs and 2 unverified targets.",
   );
@@ -627,6 +631,46 @@ test("reveals and fully selects the manual handoff when Clipboard is denied", as
     "完整交接文本已全选",
   );
 
+  expect(api.auditRequestCount).toBe(1);
+  await expectNoUnexpectedApiRequests(api);
+});
+
+test("keeps manual copying beside the control on a long mobile report", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new DOMException("Denied", "NotAllowedError");
+        },
+      },
+    });
+  });
+  const api = await installApiGuard(page, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(designScaleAuditResponse),
+    });
+  });
+  await page.goto("/zh/tools/internal-link-audit");
+  await page.getByLabel("网站 URL").fill("acme.com");
+  await page.getByRole("button", { name: "开始内链审计" }).click();
+  const button = page.getByTestId("internal-link-copy-ai");
+  await button.scrollIntoViewIfNeeded();
+  await button.click();
+  const fallback = page.getByLabel("供手动复制的完整 AI 交接文本");
+  await expect(fallback).toBeFocused();
+  const buttonBox = await button.boundingBox();
+  const fallbackBox = await fallback.boundingBox();
+  expect(buttonBox).not.toBeNull();
+  expect(fallbackBox).not.toBeNull();
+  expect(fallbackBox!.y - (buttonBox!.y + buttonBox!.height)).toBeLessThan(
+    200,
+  );
+  await expect(page.getByTestId("internal-link-copy-status")).toBeInViewport();
   expect(api.auditRequestCount).toBe(1);
   await expectNoUnexpectedApiRequests(api);
 });
