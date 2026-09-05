@@ -703,6 +703,13 @@ export async function handleAgentAuditRequest(
   const input = readSeoAuditInput(inputBody);
   if (!input.ok) return errorResponse("invalid_request", 400);
 
+  // Pre-tier SEO tabs send neither control and require five fields / <=24
+  // candidates. Tier-aware tabs already send `tier`, so keep their full DTO.
+  const legacySeoClient = agent === "seo" &&
+    dependencies.reportAs === "agent-audit" &&
+    input.value.tier === null &&
+    !Object.hasOwn(inputBody as object, "extraKeyPages");
+
   // Crawl controls belong only to /agents/seo. Route identity is authoritative:
   // a forged Tech or On-Page body cannot opt into the shallow tier or add seeds.
   const acceptsSeoRunOptions =
@@ -1046,6 +1053,21 @@ export async function handleAgentAuditRequest(
   };
 
   dependencies.reportFirstRun?.(dependencies.reportAs);
+  if (legacySeoClient) {
+    const { keyPageSelection: _selection, ...legacyResult } = projected.result;
+    return Response.json({ data: {
+      ...projected,
+      result: {
+        ...legacyResult,
+        keyPages: (projected.result.keyPages ?? []).slice(0, 24).map(({ reason: _reason, ...page }) => page),
+        // This preserves unverified/zero-tested semantics while using the
+        // vocabulary available in the pre-tier browser. Never mutate the cache.
+        records: projected.result.records.map((record) => record.limitation === "full_site_only"
+          ? { ...record, limitation: "crawl_incomplete_inlinks_unreliable" }
+          : record),
+      },
+    } }, { status: upstream.status, headers: successHeaders(cache) });
+  }
   return Response.json(
     { data: projected },
     { status: upstream.status, headers: successHeaders(cache) },

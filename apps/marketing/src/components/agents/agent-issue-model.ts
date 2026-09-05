@@ -112,6 +112,8 @@ export interface AgentIssue {
   readonly agent: AgentKind;
   readonly check: AgentAuditEvaluatedCheck;
   readonly lane: AgentIssueLane;
+  /** The detector was withheld by this run's crawl scope, not a missing integration. */
+  readonly requiresFullSite?: boolean;
   /** Null whenever the run reached no failure verdict for this check. */
   readonly severity: AgentIssueSeverity | null;
   /**
@@ -565,11 +567,15 @@ export function buildAgentIssueModel({
     }
 
     const lane = RESULT_LANE[check.result].lane;
+    const exclusionRecords = records.filter((record) => check.evidenceRecordIds.includes(record.id));
+    const requiresFullSite = lane === "excluded" && exclusionRecords.length > 0 &&
+      exclusionRecords.every((record) => record.state === "unverified" && record.limitation === "full_site_only");
     const issue: AgentIssue = {
       id,
       agent,
       check,
       lane,
+      ...(requiresFullSite ? { requiresFullSite: true } : {}),
       severity: null,
       // Passed and excluded rows carry no verdict to prioritise.
       priority: null,

@@ -8949,6 +8949,9 @@
           "hint": "默认折叠"
         },
         "excludedLane": {
+          "fullSiteOnly": "关键页档不执行此项，需要全站抓取。",
+          "fullSiteHelp": "选择全站后，再确认发起新运行。能否完成判定仍取决于抓取预算和来源可用性。",
+          "chooseFullSite": "选择全站抓取",
           "title": "已排除的检查",
           "hint": "缺少所需输入或来源"
         },

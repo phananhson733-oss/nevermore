@@ -569,6 +569,56 @@ test("SEO run options stay frozen from confirmation to audit POST across mobile 
   ]);
 });
 
+for (const locale of ["en", "zh"] as const) {
+  test(`full-site exclusions explain the scope and require confirmation to rerun (${locale})`, async ({ page }) => {
+    await mockSession(page, true);
+    await page.setViewportSize(locale === "zh" ? { width: 390, height: 844 } : { width: 1440, height: 960 });
+    const auditBodies: Array<Record<string, unknown>> = [];
+    await page.route("**/api/agents/seo/audit", async (route) => {
+      const input = route.request().postDataJSON() as Record<string, unknown>;
+      auditBodies.push(input);
+      const envelope = agentEnvelope("seo");
+      await route.fulfill({ json: {
+        data: {
+          ...envelope.data,
+          result: {
+            ...envelope.data.result,
+            crawlTier: input.tier,
+            records: envelope.data.result.records.map((record) =>
+              input.tier === "key-pages" && ["sitemap_page_without_observed_inlink", "internal_target_http_error", "page_without_any_discovery_path"].includes(record.id)
+                ? { ...record, state: "unverified", tested: 0, affected: 0, observations: [], limitation: "full_site_only" }
+                : record),
+          },
+        },
+      } });
+    });
+    await page.goto(locale === "zh" ? "/zh/agents/seo" : "/agents/seo");
+    await page.getByLabel(locale === "zh" ? "目标 URL" : "Target URL", { exact: true }).fill("astrologywiki.com");
+    await completeRequiredProfileContext(page, locale);
+    await page.locator('[data-profile-action="confirm"]').click();
+    const results = page.getByTestId("agent-results-seo");
+    await expect(results).toBeVisible();
+    await results.getByTestId("agent-issues-excluded").locator("summary").click();
+    for (const id of ["C1", "C2", "C5"]) {
+      await expect(results.locator(`[data-quiet-issue="seo:site:${id}"]`)).toContainText(
+        locale === "zh" ? "关键页档不执行此项，需要全站抓取。" : "Not run in the key-pages scope; requires full-site crawling.",
+      );
+    }
+    await results.locator("[data-choose-full-site]").click();
+    await expect(page.locator("[data-agent-run-tier]")).toHaveValue("full-site");
+    await expect(page.locator("[data-agent-run-tier]")).toBeFocused();
+    await expect(results).toHaveCount(0);
+    expect(auditBodies).toHaveLength(1);
+    await page.locator('[data-profile-action="confirm"]').click();
+    await expect(results).toBeVisible();
+    expect(auditBodies.map((input) => input.tier)).toEqual(["key-pages", "full-site"]);
+    await expect(results.locator("[data-choose-full-site]")).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      await page.evaluate(() => document.documentElement.clientWidth),
+    );
+  });
+}
+
 test("Chinese Tech page ignores the SEO intent and owns an independent run", async ({
   page,
 }) => {

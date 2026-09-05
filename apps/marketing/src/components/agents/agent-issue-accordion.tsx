@@ -275,12 +275,14 @@ function QuietLane({
   hint,
   issues,
   locale,
+  onChooseFullSite,
 }: {
   readonly testId: string;
   readonly title: string;
   readonly hint: string;
   readonly issues: readonly AgentIssue[];
   readonly locale: string;
+  readonly onChooseFullSite?: () => void;
 }) {
   const t = useTranslations("agents.workbench.issues");
   if (issues.length === 0) return null;
@@ -345,7 +347,9 @@ function QuietLane({
                   data-issue-engine={issue.check.engine}
                   className="justify-self-start font-mono text-[10px] tracking-[0.06em] text-text-dark-faint uppercase sm:justify-self-end"
                 >
-                  {t(`engine.${ENGINE_KEY[issue.check.engine] ?? "unknown"}`)}
+                  {issue.requiresFullSite
+                    ? t("excludedLane.fullSiteOnly")
+                    : t(`engine.${ENGINE_KEY[issue.check.engine] ?? "unknown"}`)}
                 </span>
               ) : null
             ) : (
@@ -356,6 +360,15 @@ function QuietLane({
           </li>
         ))}
       </ul>
+      {onChooseFullSite && issues.some((issue) => issue.requiresFullSite) ? (
+        <div className="border-t border-brand-border px-4 py-3 md:px-5">
+          <p className="mb-2 text-[11.5px] text-text-dark-secondary">{t("excludedLane.fullSiteHelp")}</p>
+          <button type="button" data-choose-full-site onClick={onChooseFullSite}
+            className="rounded-md border border-brand-accent/40 px-3 py-2 text-[12px] font-medium text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
+            {t("excludedLane.chooseFullSite")}
+          </button>
+        </div>
+      ) : null}
     </details>
   );
 }
@@ -437,6 +450,7 @@ export interface AgentIssueAccordionProps {
   readonly profile: AgentProfileDraft;
   readonly run: AgentIssuePromptRun;
   readonly targetPageExtract: SeoAuditTargetPageExtract | null;
+  readonly onChooseFullSite?: () => void;
 }
 
 /**
@@ -453,6 +467,7 @@ export function AgentIssueAccordion({
   profile,
   run,
   targetPageExtract,
+  onChooseFullSite,
 }: AgentIssueAccordionProps) {
   const t = useTranslations("agents.workbench.issues");
   const [filter, setFilter] = useState<IssueFilter>("all");
@@ -693,6 +708,7 @@ export function AgentIssueAccordion({
         hint={t("excludedLane.hint")}
         issues={model.excluded}
         locale={locale}
+        {...(onChooseFullSite ? { onChooseFullSite } : {})}
       />
     </section>
   );

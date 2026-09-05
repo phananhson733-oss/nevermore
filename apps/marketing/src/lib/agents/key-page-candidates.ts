@@ -2,6 +2,9 @@
 // @output -- a bounded neutral page set: key-page shortlist or full-site coverage
 // @pos    -- server-side projection; reads no Profile and adds no collection
 
+import { canonicalizeUrl } from "@sf/sources/canonical-url";
+import { isAllowedAgentRunSiteUrl } from "./agent-run-options.ts";
+
 import type {
   SeoAuditCrawlTier,
   SeoAuditReport,
@@ -220,25 +223,36 @@ export function selectAgentKeyPageCandidates({
       }
     }
   }
-  const normalizedManualUrls = [...new Set(manualUrls)]
-    .filter((url) => {
+  const normalizedManualUrls = [...new Set(manualUrls.flatMap((url) => {
       try {
         const parsed = new URL(url);
-        return (
-          parsed.origin === origin &&
+        if (
+          origin !== null &&
+          isAllowedAgentRunSiteUrl(url, origin) &&
           parsed.username === "" &&
           parsed.password === "" &&
           parsed.hash === ""
-        );
+        ) {
+          // Match the public crawler's rebase and canonical URL contract,
+          // including HTTPS/www entry changes and stripped tracking params.
+          const resolved = canonicalizeUrl(`${origin}${parsed.pathname}${parsed.search}`);
+          return resolved ? [resolved.fetchUrl] : [];
+        }
+        return [];
       } catch {
-        return false;
+        return [];
       }
-    })
+    }))]
     .toSorted(compareAscii)
     .slice(0, 10);
   const manualUnavailableUrls: string[] = [];
+  // A subject representative can discard a successful slash variant. Match
+  // manual requests against actual successful journeys, not subject aliases;
+  // a different slash sibling returning 200 cannot rescue a requested 404.
+  const manualPages = pages.filter(isCollected);
   for (const url of normalizedManualUrls) {
-    const page = byIdentity.get(url);
+    const page = manualPages.find((page) => page.url === url) ??
+      manualPages.find((page) => page.finalUrl === url);
     if (page === undefined) {
       manualUnavailableUrls.push(url);
       continue;

@@ -697,6 +697,38 @@ describe("crawlSite", () => {
     ).toEqual([sitemapUrl, seedUrl]);
   });
 
+  it("holds ordinary discovery until a slow homepage publishes navigation", async () => {
+    const navigation = Array.from({ length: 5 }, (_, i) => `https://example.com/z-nav-${i}`);
+    let homeResolved = false;
+    const ordinaryBeforeHome: string[] = [];
+    const calls: string[] = [];
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, {
+      fetch: async (url) => {
+        calls.push(url);
+        const pathname = new URL(url).pathname;
+        if (pathname === "/robots.txt") return text("User-agent: *\n");
+        if (pathname === "/sitemap.xml") return new Response("", { status: 404 });
+        if (pathname === "/") {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          homeResolved = true;
+          return html(`<nav>${navigation.map((url) => `<a href="${url}">Nav</a>`).join("")}</nav>`);
+        }
+        if (pathname === "/manual") return html(Array.from({ length: 30 }, (_, i) => `<a href="/a-body-${i}">Body</a>`).join(""));
+        if (!homeResolved) ordinaryBeforeHome.push(url);
+        return html("<title>Page</title>");
+      },
+    }, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, maxUrls: 10, perHostConcurrency: 5 },
+      additionalSeedUrls: ["https://example.com/manual"],
+      deferSitemapFrontier: true,
+    });
+    expect(ordinaryBeforeHome).toEqual([]);
+    expect(calls).toEqual(expect.arrayContaining(navigation));
+    expect(new Set(calls).size).toBe(calls.length);
+    expect(raw.pages.length).toBeLessThanOrEqual(10);
+  });
+
   it("fetches a deep seed even when no sitemap or root outlink discovers it", async () => {
     const seedUrl = "https://example.com/products/standalone";
     const { fetcher, calls } = makeFetcher({

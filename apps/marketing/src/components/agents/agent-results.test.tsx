@@ -6,7 +6,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SeoAuditRecord } from "@sf/public-tools";
 import { AGENT_AUDIT_COVERAGE } from "@sf/public-tools/agent-audit";
@@ -245,10 +245,12 @@ describe("AgentResults", () => {
       pageOnly = false,
       response = data,
       uiLocale = "en",
+      onChooseFullSite,
     }: {
       readonly pageOnly?: boolean;
       readonly response?: AgentAuditSuccessData;
       readonly uiLocale?: "en" | "zh";
+      readonly onChooseFullSite?: () => void;
     } = {},
   ): void {
     const draft = updateAgentProfile(
@@ -280,6 +282,7 @@ describe("AgentResults", () => {
             locale={uiLocale}
             data={{ ...response, run: { ...response.run, agent } }}
             profile={profile}
+            {...(onChooseFullSite ? { onChooseFullSite } : {})}
           />
         </NextIntlClientProvider>,
       );
@@ -291,6 +294,34 @@ describe("AgentResults", () => {
       '[data-testid="agent-issue-accordion"]',
     );
   }
+
+  it.each(["en", "zh"] as const)("explains full-site-only exclusions and offers an explicit scope change in %s", (uiLocale) => {
+    const onChooseFullSite = vi.fn();
+    const response: AgentAuditSuccessData = {
+      ...evidencedData,
+      result: {
+        ...evidencedData.result,
+        crawlTier: "key-pages",
+        records: ["sitemap_page_without_observed_inlink", "internal_target_http_error", "page_without_any_discovery_path"].map((id) => ({
+          ...observedRecord(id, []),
+          state: "unverified",
+          tested: 0,
+          limitation: "full_site_only",
+        })),
+      },
+    };
+    render("seo", { response, uiLocale, onChooseFullSite });
+    for (const id of ["C1", "C2", "C5"]) {
+      const row = host.querySelector(`[data-quiet-issue="seo:site:${id}"]`);
+      expect(row?.textContent).toContain(uiLocale === "zh" ? "关键页档不执行此项" : "Not run in the key-pages scope");
+      expect(row?.textContent).toContain(uiLocale === "zh" ? "全站" : "full-site");
+    }
+    const action = host.querySelector<HTMLButtonElement>("[data-choose-full-site]");
+    expect(action).not.toBeNull();
+    expect(onChooseFullSite).not.toHaveBeenCalled();
+    act(() => action?.click());
+    expect(onChooseFullSite).toHaveBeenCalledOnce();
+  });
 
   it("names the landed page when the crawl was redirected across pages", () => {
     // This route does not require the entry to keep its subject, so a URL that
