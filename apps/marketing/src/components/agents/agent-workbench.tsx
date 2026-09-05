@@ -1580,6 +1580,12 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             locale={locale}
             data={data}
             profile={runProfile ?? profile}
+            {...(agent === "seo" && data.result.crawlTier === "key-pages" ? {
+              onChooseFullSite: () => {
+                handleRunTierChange("full-site");
+                document.getElementById("seo-agent-run-tier")?.focus();
+              },
+            } : {})}
           />
         </>
       ) : null}

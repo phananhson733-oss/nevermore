@@ -110,6 +110,7 @@ export interface CrawlEngineOptions {
   /**
    * Trusted frontier policy. The sitemap is still fetched and projected first,
    * but its members wait until the seed-and-discovery frontier is empty.
+   * This shallow profile prioritizes seeds and homepage navigation over body links.
    */
   readonly deferSitemapFrontier?: boolean;
 }
@@ -1144,11 +1145,16 @@ export async function crawlSite(
   const seenFetchDepth = new Map<string, number>();
   /** Visit order only; the entry for each URL lives in `pending`. */
   const queue: string[] = [];
+  const priorityQueue: string[] = [];
+  const priorityQueued = new Set<string>();
+  const prioritizeNavigation = options.deferSitemapFrontier === true;
+  let homepagePending = prioritizeNavigation;
   const pending = new Map<string, QueueEntry>();
   const enqueue = (
     subjectUrl: string,
     fetchUrl: string,
     depth: number,
+    priority = false,
   ): void => {
     if (
       originOf(subjectUrl) !== crawlOrigin ||
@@ -1163,6 +1169,12 @@ export async function crawlSite(
     if (depth > budget.maxDepth) {
       hitDepthLimit = true;
       return;
+    }
+    // Promote already-discovered navigation without duplicating a fetch. Its
+    // old ordinary queue entry is discarded after the priority entry runs.
+    if (priority && pending.has(fetchUrl) && !priorityQueued.has(fetchUrl)) {
+      priorityQueue.push(fetchUrl);
+      priorityQueued.add(fetchUrl);
     }
     const previousDepth = seenFetchDepth.get(fetchUrl);
     if (previousDepth !== undefined && previousDepth <= depth) return;
@@ -1187,7 +1199,12 @@ export async function crawlSite(
       return;
     }
     pending.set(fetchUrl, { fetchUrl, subjectUrl, depth });
-    queue.push(fetchUrl);
+    if (priority) {
+      priorityQueue.push(fetchUrl);
+      priorityQueued.add(fetchUrl);
+    } else {
+      queue.push(fetchUrl);
+    }
   };
 
   let sitemapFrontierDeferred = options.deferSitemapFrontier === true;
@@ -1198,10 +1215,11 @@ export async function crawlSite(
   };
 
   const originPair = canonicalizeUrl(`${origin}/`);
-  if (originPair) enqueue(originPair.subjectUrl, originPair.fetchUrl, 0);
-  if (seedPair) enqueue(seedPair.subjectUrl, seedPair.fetchUrl, 0);
+  if (originPair) enqueue(originPair.subjectUrl, originPair.fetchUrl, 0, prioritizeNavigation);
+  else homepagePending = false;
+  if (seedPair) enqueue(seedPair.subjectUrl, seedPair.fetchUrl, 0, prioritizeNavigation);
   for (const pair of additionalSeedPairs) {
-    enqueue(pair.subjectUrl, pair.fetchUrl, 0);
+    enqueue(pair.subjectUrl, pair.fetchUrl, 0, prioritizeNavigation);
   }
   if (!sitemapFrontierDeferred) enqueueSitemapFrontier();
 
@@ -1402,6 +1420,11 @@ export async function crawlSite(
     // coverage depend on concurrent completion order when `/path` and `/path/`
     // aggregate to the same subject.
     if (result.finalStatus >= 200 && result.finalStatus < 300) {
+      if (prioritizeNavigation && requestSubjectUrl === originPair?.subjectUrl) {
+        for (const target of parsed.navigationFetchTargets) {
+          enqueue(target.subjectUrl, target.fetchUrl, entry.depth + 1, true);
+        }
+      }
       for (const target of parsed.internalFetchTargets) {
         enqueue(target.subjectUrl, target.fetchUrl, entry.depth + 1);
       }
@@ -1419,10 +1442,17 @@ export async function crawlSite(
     for (;;) {
       if (stopReason) return;
       if (markOperationStop()) return;
-      const fetchUrl = queue.shift();
+      // A slow homepage must still get to publish its navigation before fast
+      // manual/target-page body discovery spends the entire shallow budget.
+      if (priorityQueue.length === 0 && homepagePending && inFlight > 0) {
+        await sleep(0);
+        continue;
+      }
+      const fetchUrl = priorityQueue.shift() ?? queue.shift();
       const entry = fetchUrl === undefined ? undefined : pending.get(fetchUrl);
       if (fetchUrl !== undefined) pending.delete(fetchUrl);
       if (!entry) {
+        if (fetchUrl !== undefined) continue;
         if (inFlight === 0) {
           if (sitemapFrontierDeferred) {
             sitemapFrontierDeferred = false;
@@ -1442,6 +1472,7 @@ export async function crawlSite(
       try {
         await processEntry(entry);
       } finally {
+        if (entry.fetchUrl === originPair?.fetchUrl) homepagePending = false;
         inFlight -= 1;
       }
     }

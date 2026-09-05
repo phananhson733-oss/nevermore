@@ -146,7 +146,7 @@ function request(
       "content-type": "application/json",
       "x-real-ip": "203.0.113.9",
     },
-    body: JSON.stringify({ url: "acme.test", ...extra }),
+    body: JSON.stringify({ url: "acme.test", tier: "key-pages", ...extra }),
   });
 }
 
@@ -158,7 +158,7 @@ function requestForUrl(url: string): Request {
       "content-type": "application/json",
       "x-real-ip": "203.0.113.9",
     },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url, tier: "key-pages" }),
   });
 }
 
@@ -175,6 +175,7 @@ function keywordRequest(
     },
     body: JSON.stringify({
       url: "acme.test",
+      tier: "key-pages",
       targetQueries,
       ...(pageRole === undefined ? {} : { pageRole }),
     }),

@@ -8949,6 +8949,9 @@
           "hint": "collapsed by default"
         },
         "excludedLane": {
+          "fullSiteOnly": "Not run in the key-pages scope; requires full-site crawling.",
+          "fullSiteHelp": "Choose Full site, then confirm a new run. The crawl budget and source availability still determine which checks can be evaluated.",
+          "chooseFullSite": "Choose Full site",
           "title": "Excluded checks",
           "hint": "missing required input or source"
         },

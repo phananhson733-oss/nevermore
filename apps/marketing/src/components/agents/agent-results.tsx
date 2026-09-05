@@ -119,6 +119,7 @@ export interface AgentResultsProps {
   readonly locale: string;
   readonly data: AgentAuditSuccessData;
   readonly profile: AgentProfileDraft;
+  readonly onChooseFullSite?: () => void;
 }
 
 export function AgentResults({
@@ -126,6 +127,7 @@ export function AgentResults({
   locale,
   data,
   profile,
+  onChooseFullSite,
 }: AgentResultsProps) {
   const t = useTranslations("agents.workbench");
   const landed = landedElsewhere(data.result);
@@ -480,6 +482,7 @@ export function AgentResults({
           schemaVersion: data.run.source.schemaVersion,
         }}
         targetPageExtract={data.result.targetPageExtract}
+        {...(onChooseFullSite ? { onChooseFullSite } : {})}
       />
 
       <p className="text-center font-mono text-[11px] tracking-[0.05em] text-text-dark-faint">
