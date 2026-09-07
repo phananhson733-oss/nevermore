@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   CRAWL_CONCURRENCY, CRAWL_DEADLINE_MS, CRAWL_FETCH_TIMEOUT_MS,
-  CRAWL_MAX_BYTES_PER_PAGE, ENVELOPE_MS,
+  CRAWL_MAX_BYTES_PER_PAGE, CRAWL_SETTLEMENT_MS, ENVELOPE_MS,
 } from "@sf/public-tools/content-brief/constants";
 import { buildResearchBundle } from "@sf/public-tools/content-brief/v2-research";
 import {
@@ -318,14 +318,35 @@ describe("crawlContentBriefV2Targets", () => {
     let settled = false;
     const fetchResource = vi.fn(() => new Promise<PublicResourceResult>(() => undefined));
     const targets = Array.from({ length: 10 }, (_, i) => competitor(i + 1));
+    // The caller's lane and this crawl share CRAWL_DEADLINE_MS, so the crawl closes
+    // CRAWL_SETTLEMENT_MS early; a shorter run deadline still wins over both.
+    const closesAt = Math.min(CRAWL_DEADLINE_MS - CRAWL_SETTLEMENT_MS, remaining);
     const pending = run(targets, fetchResource, "en", START + ENVELOPE_MS + remaining, Date.now).then((result) => { settled = true; return result; });
-    await vi.advanceTimersByTimeAsync(remaining - 1);
+    await vi.advanceTimersByTimeAsync(closesAt - 1);
     expect(settled).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     const result = await pending;
     expect(settled).toBe(true);
     expect(result.observed).toEqual([]);
     expect(result.failed).toHaveLength(10);
+  });
+
+  it("returns the pages that finished before its own clock closes, ahead of the caller's lane", async () => {
+    vi.useFakeTimers({ now: START });
+    const fetchResource = vi.fn((url: string) =>
+      url.includes("source2.") ? new Promise<PublicResourceResult>(() => undefined) : Promise.resolve(page(url)));
+    const targets = [competitor(1), competitor(2)];
+    let settledAt: number | null = null;
+    const pending = run(targets, fetchResource, "en", START + ENVELOPE_MS + CRAWL_DEADLINE_MS, Date.now)
+      .then((result) => { settledAt = Date.now() - START; return result; });
+    await vi.advanceTimersByTimeAsync(CRAWL_DEADLINE_MS);
+    const result = await pending;
+    // A crawl that settled at exactly CRAWL_DEADLINE_MS would lose the race against the
+    // caller's lane, whose fallback reports every target as failed — discarding a page
+    // that had already been read. Settling earlier is the whole point of the margin.
+    expect(settledAt).toBeLessThanOrEqual(CRAWL_DEADLINE_MS - CRAWL_SETTLEMENT_MS);
+    expect(result.observed.map((item) => item.id)).toEqual(["C1"]);
+    expect(result.failed.map((item) => item.reason)).toEqual(["timeout"]);
   });
 
   it("discards a result arriving at or after the wall clock and leaves queued pages unstarted", async () => {

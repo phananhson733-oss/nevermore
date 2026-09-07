@@ -3,6 +3,7 @@
 // @pos -- pure v2 first-party projection; page aliases share candidates, not source rows
 import type { GscPageRow, GscQueryPageRow } from "../gsc-analytics/index.ts";
 import { keywordCoverageProperty } from "../keyword-opportunity/property.ts";
+import { relevanceScore, relevanceTerms, type RelevanceTerm } from "./terms.ts";
 import { normalizePosition, compareCodeUnits } from "./verdict.ts";
 import { briefV2PageKey } from "./v2-generation.ts";
 import type { BriefV2Gsc, BriefV2Input, OwnedCandidate, ScopedQueryPage } from "./v2-generation-contract.ts";
@@ -35,7 +36,34 @@ function compareMatches(a: Match, b: Match): number {
     || compareCodeUnits(a.page, b.page);
 }
 
-function candidateUrls(matches: readonly ScopedQueryPage[], pages: readonly GscPageRow[]): string[] {
+/**
+ * A URL rendered as words, so a slug can be scored against the run's keywords.
+ * Percent-escapes are decoded first: a Chinese slug is otherwise unreadable.
+ */
+function urlText(value: string): string {
+  try {
+    const url = new URL(value);
+    let path = `${url.pathname} ${url.search}`;
+    try { path = decodeURIComponent(path); } catch { /* keep the escaped form */ }
+    return path.replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  } catch { return ""; }
+}
+
+/**
+ * Why the second list is filtered and the first is not.
+ *
+ * A page in the match ledger is a page Search Console says already earns
+ * impressions for one of these keywords: it is on topic by observation. A page
+ * that is only in the property's top-impression list is on topic by nothing at
+ * all, and the site's most popular pages are usually its most popular pages,
+ * not its pages about this keyword. Offering those as "your page to update"
+ * spends both crawl slots and the model's attention on unrelated content, so
+ * such a page is only offered when its own URL names part of the topic. Where
+ * nothing qualifies, the honest result is fewer candidates, not filler.
+ */
+function candidateUrls(
+  matches: readonly ScopedQueryPage[], pages: readonly GscPageRow[], terms: readonly RelevanceTerm[],
+): string[] {
   const matchedPages = new Map<string, { url: string; scope: Match["scope"]; impressions: number }>();
   for (const match of matches) {
     const identity = briefV2PageKey(match.page);
@@ -50,7 +78,11 @@ function candidateUrls(matches: readonly ScopedQueryPage[], pages: readonly GscP
     (a.scope === "primary" ? 0 : 1) - (b.scope === "primary" ? 0 : 1)
     || b.impressions - a.impressions || compareCodeUnits(a.url, b.url),
   ).map(({ url }) => url);
-  const fallback = [...pages].sort((a, b) => b.impressions - a.impressions || compareCodeUnits(a.page, b.page)).map((row) => row.page);
+  const fallback = pages
+    .map((row) => ({ page: row.page, impressions: row.impressions, score: relevanceScore(urlText(row.page), null, terms) }))
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score || b.impressions - a.impressions || compareCodeUnits(a.page, b.page))
+    .map((row) => row.page);
   const seen = new Set<string>();
   return [...matching, ...fallback].filter((url) => {
     const identity = briefV2PageKey(url);
@@ -111,7 +143,7 @@ export function projectBriefV2Gsc(options: {
     }
     pages.set(page, { ...row, page });
   }
-  const urls = candidateUrls(matches, [...pages.values()]);
+  const urls = candidateUrls(matches, [...pages.values()], relevanceTerms([options.input.primary, ...options.input.supporting]));
   return {
     gsc: { status: omitted > 0 || unreadable ? "partial" : options.status, property: options.property, window: { ...options.window }, reason: null, matches, omitted_matches: omitted },
     candidates: urls.map((url, index) => ({ id: `T${index + 1}`, url, match_refs: matches.filter((match) => briefV2PageKey(match.page) === briefV2PageKey(url)).map((match) => match.id), read: "unavailable" })),

@@ -15,7 +15,8 @@
 
 - `v2-generation-contract.ts` — whole v2 model/context/read vocabulary and the separate confirmed-revision envelope. The generated base and user-edited headings remain distinct.
 - `v2-generation.ts`, `v2-generation.test.ts` — exact primary/supporting scope, profile/window identity, same-owned-page identity shared with the crawler, single complete model-output validation, grounded rewrite steps and independent revalidation of frozen results.
-- `v2-gsc.ts`, `v2-gsc.test.ts` — bounded raw-query-preserving primary/supporting GSC projection, property-scoped owned candidates, explicit duplicate/cap omissions, no low-impression or position-based create shortcut.
+- `terms.ts`, `terms.test.ts` — the one weighted relevance vocabulary shared by crawl-time segment selection and prompt-time sampling: whole phrase, Latin word token and CJK bigram at separate weights, each voting once per field. Unsegmented scripts are tokenised here so the two stages cannot drift into disagreeing about what "relevant" means.
+- `v2-gsc.ts`, `v2-gsc.test.ts` — bounded raw-query-preserving primary/supporting GSC projection, property-scoped owned candidates, explicit duplicate/cap omissions, no low-impression or position-based create shortcut. A page that is only in the property's top-impression list is offered as a candidate only when its own URL names part of the topic; where nothing qualifies the candidate set is empty rather than filled.
 - `v2-brief.ts`, `v2-brief.test.ts` — 224 KiB generated Brief and 256 KiB confirmed import, causal checksums, truthful read/model metadata, stable section IDs/question mappings across heading/order edits, explicit resolution of undecidable page action.
 
 ## V2 Draft delivery

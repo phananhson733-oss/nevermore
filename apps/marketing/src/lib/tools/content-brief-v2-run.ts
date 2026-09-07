@@ -7,7 +7,7 @@ import type { ProfileFact } from "@sf/public-tools/content-brief/contract";
 import { hostKey } from "@sf/public-tools/content-brief/host";
 import { fingerprintBriefV2, parseContentBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
 import { CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA, type ResearchBundle } from "@sf/public-tools/content-brief/v2-contract";
-import { parseBriefV2Context } from "@sf/public-tools/content-brief/v2-generation";
+import { briefV2PageKey, parseBriefV2Context } from "@sf/public-tools/content-brief/v2-generation";
 import type { BriefV2Context, BriefV2Gsc, BriefV2Input, BriefV2Read, ContentBriefV2, OwnedCandidate } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { buildResearchBundle } from "@sf/public-tools/content-brief/v2-research";
 import { keywordCoverageProperty } from "@sf/public-tools/keyword-opportunity";
@@ -111,6 +111,39 @@ function urlKey(raw: string): string | null {
     return null;
   }
 }
+/**
+ * Why a ranked page outranks a ledger page.
+ *
+ * A page of the visitor's own property that Google already places in this
+ * keyword's top ten is the strongest first-party evidence available: it is the
+ * page competing for this exact query today. Before this merge such a page was
+ * dropped on sight — it could not be a competitor, because it belongs to the
+ * property, and nothing promoted it to an owned candidate — so the brief
+ * advised rewriting some other page while the ranking one went unread.
+ *
+ * The three-slot ceiling belongs to the contract, so a ranked page displaces a
+ * Search Console candidate rather than widening the set.
+ */
+function mergeOwnedCandidates(
+  fromGsc: readonly OwnedCandidate[], ranked: readonly string[], matches: BriefV2Gsc["matches"],
+): OwnedCandidate[] {
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  for (const url of [...ranked, ...fromGsc.map((candidate) => candidate.url)]) {
+    const identity = briefV2PageKey(url);
+    if (identity === null || seen.has(identity)) continue;
+    seen.add(identity);
+    urls.push(url);
+    if (urls.length === 3) break;
+  }
+  return urls.map((url, index): OwnedCandidate => ({
+    id: `T${index + 1}`,
+    url,
+    match_refs: matches.filter((match) => briefV2PageKey(match.page) === briefV2PageKey(url)).map((match) => match.id),
+    read: "unavailable",
+  }));
+}
+
 function researchRead(
   source: "competitors" | "owned_pages", targets: readonly ContentBriefV2CrawlTarget[], research: ResearchBundle,
   crawl: ContentBriefV2CrawlResult, upstreamReason: BriefV2Read["reason"],
@@ -169,6 +202,7 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
   const ownUrls = new Set(gsc.candidates.map((candidate) => urlKey(candidate.url)).filter((url): url is string => url !== null));
   const plan = planCrawlTargets(buildSerpObservations(serp.rows), hostKey);
   const prefailed: ContentBriefV2CrawlFailure[] = [];
+  const rankedOwned: string[] = [];
   const attemptedCompetitors: ContentBriefV2CrawlTarget[] = [];
   const competitorTargets: ContentBriefV2CrawlTarget[] = [];
   for (const target of plan.targets) {
@@ -180,12 +214,16 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
       continue;
     }
     if (ownUrls.has(normalized)) continue;
-    if (input.gsc !== undefined && keywordCoverageProperty(target.url, [input.gsc.property]) === input.gsc.property) continue;
+    if (input.gsc !== undefined && keywordCoverageProperty(target.url, [input.gsc.property]) === input.gsc.property) {
+      rankedOwned.push(target.url);
+      continue;
+    }
     const competitor = { id: target.serp_id.replace(/^S/u, "C"), role: "competitor" as const, url: target.url };
     attemptedCompetitors.push(competitor);
     competitorTargets.push(competitor);
   }
-  const ownedTargets = gsc.candidates.map((candidate) => ({ id: candidate.id, role: "owned" as const, url: candidate.url }));
+  const ownedCandidates = mergeOwnedCandidates(gsc.candidates, rankedOwned, gsc.gsc.matches);
+  const ownedTargets = ownedCandidates.map((candidate) => ({ id: candidate.id, role: "owned" as const, url: candidate.url }));
   const targets: ContentBriefV2CrawlTarget[] = [
     ...attemptedCompetitors,
     ...ownedTargets,
@@ -195,7 +233,7 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
     ...ownedTargets,
   ];
   const fetched = crawlTargets.length === 0 ? { observed: [], failed: [] } : await lane(
-    () => (dependencies.crawl ?? crawlContentBriefV2Targets)({ targets: crawlTargets, language: keyword.language, deadlineAt: clock.deadlineAt }, { now: clock.now }), CRAWL_DEADLINE_MS, clock,
+    () => (dependencies.crawl ?? crawlContentBriefV2Targets)({ targets: crawlTargets, language: keyword.language, keywords: [keyword.primary, ...keyword.supporting], deadlineAt: clock.deadlineAt }, { now: clock.now }), CRAWL_DEADLINE_MS, clock,
     (reason): ContentBriefV2CrawlResult => ({ observed: [], failed: crawlTargets.map((target) => ({ id: target.id, url: target.url, reason })) }),
   );
   const redirectedOwned = fetched.observed.filter((page) => page.role === "competitor" &&
@@ -205,7 +243,7 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
     observed: fetched.observed.filter((page) => !redirectedIds.has(page.id)),
     failed: [...prefailed, ...fetched.failed, ...redirectedOwned.map((page): ContentBriefV2CrawlFailure => ({ id: page.id, url: page.url, reason: "insufficient_evidence" }))],
   };
-  const candidates = gsc.candidates.map((candidate): OwnedCandidate => ({ ...candidate, read: crawl.observed.some((page) => page.id === candidate.id) ? "observed"
+  const candidates = ownedCandidates.map((candidate): OwnedCandidate => ({ ...candidate, read: crawl.observed.some((page) => page.id === candidate.id) ? "observed"
     : crawl.failed.some((page) => page.id === candidate.id && page.reason === "redirected") ? "redirected" : "unavailable" }));
   const paa = serp.peopleAlsoAsk;
   const research = buildResearchBundle(crawl.observed, paa !== undefined && paa.status !== "unavailable" ? paa.items.map((item, index) => ({ id: `A${index + 1}`, question: item.question, seed_question: item.seedQuestion })) : []);

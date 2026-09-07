@@ -139,8 +139,38 @@ describe("runContentBriefV2 admitted generation", () => {
   it("does not classify another URL from the known owned site as competitor evidence", async () => {
     const fixture = seams(model(true), [{ type: "organic", rank_group: 2, domain: "owned.test", title: "Another owned page", url: "https://www.owned.test/other" }]);
     const brief = await runContentBriefV2({ ...REQUEST, gsc: { property: GSC.property!, window: WINDOW, read: async () => ({ gsc: GSC, candidates: CANDIDATES }) } }, fixture.deps);
-    expect(fixture.fetchResource.mock.calls.map((call) => call[0])).toEqual(["https://source.test/reporting", OWNED_URL]);
+    expect(fixture.fetchResource.mock.calls.map((call) => call[0]))
+      .toEqual(["https://source.test/reporting", "https://www.owned.test/other", OWNED_URL]);
     expect(brief.context.research.pages.filter((item) => item.role === "competitor")).toHaveLength(1);
+  });
+
+  it("offers an owned page that already ranks for the keyword ahead of a Search Console candidate", async () => {
+    const ranked = "https://www.owned.test/other";
+    const fixture = seams(model(true), [{ type: "organic", rank_group: 2, domain: "owned.test", title: "Another owned page", url: ranked }]);
+    const brief = await runContentBriefV2({ ...REQUEST, gsc: { property: GSC.property!, window: WINDOW, read: async () => ({ gsc: GSC, candidates: CANDIDATES }) } }, fixture.deps);
+    // Before this, a page of the visitor's own site sitting at rank 2 was dropped on
+    // sight: it could not be competitor evidence, and nothing promoted it to owned.
+    expect(brief.context.candidates.map(({ id, url }) => ({ id, url })))
+      .toEqual([{ id: "T1", url: ranked }, { id: "T2", url: OWNED_URL }]);
+    expect(brief.context.candidates[0]?.match_refs).toEqual([]);
+    expect(brief.context.candidates[1]?.match_refs).toEqual(["G1"]);
+    expect(brief.context.research.pages.filter((item) => item.role === "owned").map((item) => item.url))
+      .toEqual([ranked, OWNED_URL]);
+  });
+
+  it("lets a ranked owned page displace the last Search Console candidate, never widen the set", async () => {
+    const ranked = "https://www.owned.test/ranked";
+    // SERP planning keeps one result per host, so at most one owned page can arrive
+    // this way; the ceiling only binds once Search Console has already filled it.
+    const fixture = seams(model(), [{ type: "organic", rank_group: 2, domain: "owned.test", title: "Ranked owned page", url: ranked }]);
+    const candidates: readonly OwnedCandidate[] = [
+      { id: "T1", url: OWNED_URL, match_refs: ["G1"], read: "unavailable" },
+      { id: "T2", url: "https://owned.test/second", match_refs: [], read: "unavailable" },
+      { id: "T3", url: "https://owned.test/third", match_refs: [], read: "unavailable" },
+    ];
+    const brief = await runContentBriefV2({ ...REQUEST, gsc: { property: GSC.property!, window: WINDOW, read: async () => ({ gsc: GSC, candidates }) } }, fixture.deps);
+    expect(brief.context.candidates.map(({ url }) => url))
+      .toEqual([ranked, OWNED_URL, "https://owned.test/second"]);
   });
 
   it("does not count a foreign SERP URL that redirects into the owned site as competitor coverage", async () => {

@@ -29,6 +29,8 @@ export const RUN_BUDGET_MS = 45_000; // route maxDuration = 300
 export const ENVELOPE_MS = 5_000; // 组装 + 序列化预留
 export const SERP_DEADLINE_MS = 10_000;
 export const CRAWL_DEADLINE_MS = 15_000; // 全部 URL 的墙钟
+/** 抓取内层墙钟比外层 lane 提前收口的余量；内层必须先返回，否则 lane 超时会丢弃已抓完的页 */
+export const CRAWL_SETTLEMENT_MS = 500;
 export const GSC_DEADLINE_MS = 15_000; // 与 SERP/抓取并行；步骤 5 前必须结束
 export const LLM_DEADLINE_MS = 15_000; // brief 唯一一次 LLM 调用
 

@@ -135,13 +135,13 @@ describe("projectBriefV2Gsc", () => {
   it("does not spend remaining candidate slots on canonical aliases from property page rows", () => {
     const sourcePages = [
       { page: "https://owned.test/guide/", clicks: 4, impressions: 100, position: 8 },
-      { page: "https://owned.test/related/?utm_source=x", clicks: 3, impressions: 90, position: 9 },
-      { page: "https://owned.test/related", clicks: 2, impressions: 50, position: 10 },
-      { page: "https://owned.test/other", clicks: 1, impressions: 10, position: 11 },
+      { page: "https://owned.test/content-brief-related/?utm_source=x", clicks: 3, impressions: 90, position: 9 },
+      { page: "https://owned.test/content-brief-related", clicks: 2, impressions: 50, position: 10 },
+      { page: "https://owned.test/seo-outline-other", clicks: 1, impressions: 10, position: 11 },
     ];
     const result = project([row({ page: "https://owned.test/guide" })], sourcePages);
     expect(result.candidates.map(({ url }) => url)).toEqual([
-      "https://owned.test/guide", "https://owned.test/related/?utm_source=x", "https://owned.test/other",
+      "https://owned.test/guide", "https://owned.test/content-brief-related/?utm_source=x", "https://owned.test/seo-outline-other",
     ]);
     expect(result.gsc.status).toBe("complete");
     expect(result).toEqual(project([row({ page: "https://owned.test/guide" })], [...sourcePages].reverse()));
@@ -175,23 +175,49 @@ describe("projectBriefV2Gsc", () => {
 
   it("fills remaining candidate slots from in-property page rows and preserves all match refs", () => {
     const result = project([row(), row({ query: "seo outline", impressions: 4 })], [
-      { page: "https://owned.test/b", clicks: 10, impressions: 500, position: 2 },
-      { page: "https://owned.test/a#part", clicks: 10, impressions: 500, position: 2 },
-      { page: "https://owned.test/c", clicks: 10, impressions: 400, position: 2 },
+      { page: "https://owned.test/topic-research-b", clicks: 10, impressions: 500, position: 2 },
+      { page: "https://owned.test/seo-outline-a#part", clicks: 10, impressions: 500, position: 2 },
+      { page: "https://owned.test/topic-research-c", clicks: 10, impressions: 400, position: 2 },
       { page: "https://owned.test/brief", clicks: 10, impressions: 1000, position: 2 },
     ]);
     expect(result.candidates).toEqual([
       { id: "T1", url: "https://owned.test/brief", match_refs: ["G1", "G2"], read: "unavailable" },
-      { id: "T2", url: "https://owned.test/a", match_refs: [], read: "unavailable" },
-      { id: "T3", url: "https://owned.test/b", match_refs: [], read: "unavailable" },
+      { id: "T2", url: "https://owned.test/seo-outline-a", match_refs: [], read: "unavailable" },
+      { id: "T3", url: "https://owned.test/topic-research-b", match_refs: [], read: "unavailable" },
     ]);
     expect(result.gsc.status).toBe("complete");
   });
 
   it("can select observed property pages when the query sample has no scoped matches", () => {
-    const result = project([], [{ page: "https://owned.test/a", clicks: 0, impressions: 0, position: 0 }]);
+    const result = project([], [{ page: "https://owned.test/content-brief-a", clicks: 0, impressions: 0, position: 0 }]);
     expect(result.gsc.matches).toEqual([]);
-    expect(result.candidates).toEqual([{ id: "T1", url: "https://owned.test/a", match_refs: [], read: "unavailable" }]);
+    expect(result.candidates).toEqual([{ id: "T1", url: "https://owned.test/content-brief-a", match_refs: [], read: "unavailable" }]);
+  });
+
+  it("offers no candidate at all rather than the property's most popular unrelated pages", () => {
+    const result = project([], [
+      { page: "https://owned.test/pricing", clicks: 900, impressions: 90_000, position: 1 },
+      { page: "https://owned.test/about-us", clicks: 800, impressions: 80_000, position: 1 },
+    ]);
+    expect(result.gsc.status).toBe("complete");
+    expect(result.candidates).toEqual([]);
+  });
+
+  it("ranks an unmatched page by how much of the topic its URL names, not by impressions", () => {
+    const result = project([], [
+      { page: "https://owned.test/brief", clicks: 900, impressions: 90_000, position: 1 },
+      { page: "https://owned.test/what-is-a-content-brief", clicks: 1, impressions: 2, position: 40 },
+    ]);
+    expect(result.candidates.map(({ url }) => url)).toEqual([
+      "https://owned.test/what-is-a-content-brief", "https://owned.test/brief",
+    ]);
+  });
+
+  it("reads a percent-encoded slug so a non-Latin page is not silently unrelated", () => {
+    const input = { ...INPUT, primary: "\u6c34\u9006\u662f\u4ec0\u4e48\u610f\u601d", supporting: [], language: "zh" };
+    const encoded = `https://owned.test/${encodeURIComponent("\u6c34\u9006\u662f\u4ec0\u4e48\u610f\u601d")}`;
+    const result = project([], [{ page: encoded, clicks: 0, impressions: 1, position: 5 }], input);
+    expect(result.candidates.map(({ url }) => url)).toEqual([encoded]);
   });
 
   it.each([
@@ -239,7 +265,7 @@ describe("projectBriefV2Gsc", () => {
 
   it("does not mutate input arrays or retain the mutable input window", () => {
     const rows = Object.freeze([Object.freeze(row())]);
-    const pages = Object.freeze([Object.freeze({ page: "https://owned.test/a", clicks: 0, impressions: 1, position: 0 })]);
+    const pages = Object.freeze([Object.freeze({ page: "https://owned.test/content-brief-a", clicks: 0, impressions: 1, position: 0 })]);
     const window = { ...WINDOW };
     const result = projector.projectBriefV2Gsc({ input: INPUT, property: PROPERTY, window, status: "complete", rows, pages });
     expect(result.gsc.window).not.toBe(window);
