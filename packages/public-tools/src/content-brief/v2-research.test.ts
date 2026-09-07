@@ -125,6 +125,45 @@ describe("v2 model research with independent source-backed oracle", () => {
     } });
   });
 
+  it("rejects two questions that are one question spelled twice", () => {
+    const value = bundle(paraphrases);
+    const result = research.validateResearchOutput({
+      questions: [
+        { anchor: "U1", q: "Why is Search Console data delayed?", sources: ["U1"] },
+        { anchor: "U2", q: "  why is search-console DATA delayed  ", sources: ["U2"] },
+      ],
+      outline: [{ h2: "Delay", h3: [], answers: ["U1"] }, { h2: "Timing", h3: [], answers: ["U2"] }],
+    }, value);
+    expect(result).toMatchObject({ ok: false, path: "questions[1].q" });
+  });
+
+  it("rejects two outline sections carrying the same heading", () => {
+    const value = bundle(paraphrases);
+    const result = research.validateResearchOutput({
+      questions: [
+        { anchor: "U1", q: "Why is Search Console data delayed?", sources: ["U1"] },
+        { anchor: "U2", q: "When does the reporting window close?", sources: ["U2"] },
+      ],
+      outline: [
+        { h2: "Understand the reporting delay", h3: [], answers: ["U1"] },
+        { h2: "Understand the Reporting Delay!", h3: [], answers: ["U2"] },
+      ],
+    }, value);
+    expect(result).toMatchObject({ ok: false, path: "outline[1].h2" });
+  });
+
+  it("keeps two genuinely different reader needs that share vocabulary", () => {
+    const value = bundle(paraphrases);
+    const result = research.validateResearchOutput({
+      questions: [
+        { anchor: "U1", q: "Why is Search Console data delayed?", sources: ["U1"] },
+        { anchor: "U2", q: "How long is Search Console data delayed?", sources: ["U2"] },
+      ],
+      outline: [{ h2: "Why the delay happens", h3: [], answers: ["U1"] }, { h2: "How long it lasts", h3: [], answers: ["U2"] }],
+    }, value);
+    expect(result.ok).toBe(true);
+  });
+
   it("allows a PAA-only question and outline with zero competitor coverage", () => {
     const value = bundle([], [{ id: "A1", question: "How long does reporting take?", seed_question: null }]);
     const result = research.validateResearchOutput({ questions: [{ anchor: "U1", q: "How long does reporting take?", sources: ["U1"] }], outline: [{ h2: "Reporting timing", h3: [], answers: ["U1"] }] }, value);

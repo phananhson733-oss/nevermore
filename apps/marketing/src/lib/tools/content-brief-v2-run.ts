@@ -34,6 +34,16 @@ export interface ContentBriefV2ProfileLane {
   readonly facts: readonly ProfileFact[];
   readonly snapshot: BriefV2Context["profile_snapshot"];
   readonly read: BriefV2Read;
+  /**
+   * The confirmed profile's own host, when one was read.
+   *
+   * Ownership is otherwise known only through the Search Console property, so
+   * without Search Console a page of the visitor's own site that ranks for the
+   * keyword was counted as a competitor and the brief reported the visitor's
+   * own coverage back to them as the competition. This is not serialized: it
+   * decides which SERP rows are competitors, nothing else.
+   */
+  readonly host?: string | null;
 }
 export interface ContentBriefV2RunInput {
   readonly input: BriefV2Input;
@@ -200,6 +210,7 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
       gsc.gsc.window?.start !== input.gsc.window.start || gsc.gsc.window.end !== input.gsc.window.end ||
       gsc.gsc.window.lookback_days !== input.gsc.window.lookback_days)) throw new ContentBriefV2RunError();
   const ownUrls = new Set(gsc.candidates.map((candidate) => urlKey(candidate.url)).filter((url): url is string => url !== null));
+  const profileHost = profile.host === undefined || profile.host === null ? null : hostKey(profile.host);
   const plan = planCrawlTargets(buildSerpObservations(serp.rows), hostKey);
   const prefailed: ContentBriefV2CrawlFailure[] = [];
   const rankedOwned: string[] = [];
@@ -218,6 +229,10 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
       rankedOwned.push(target.url);
       continue;
     }
+    // Owned but unrepresentable: a candidate needs a Search Console property to
+    // be scoped against, so this page can be kept out of the competition but not
+    // offered as the visitor's own. Silence beats calling it a competitor.
+    if (profileHost !== null && hostKey(target.url) === profileHost) continue;
     const competitor = { id: target.serp_id.replace(/^S/u, "C"), role: "competitor" as const, url: target.url };
     attemptedCompetitors.push(competitor);
     competitorTargets.push(competitor);

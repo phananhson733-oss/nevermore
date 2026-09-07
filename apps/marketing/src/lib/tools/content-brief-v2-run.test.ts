@@ -173,6 +173,29 @@ describe("runContentBriefV2 admitted generation", () => {
       .toEqual([ranked, OWNED_URL, "https://owned.test/second"]);
   });
 
+  it("does not report the visitor's own ranking page back to them as a competitor", async () => {
+    const own = "https://www.owned.test/guide";
+    const fixture = seams(model(), [{ type: "organic", rank_group: 2, domain: "owned.test", title: "Own guide", url: own }]);
+    // No Search Console here, so ownership is known only from the confirmed profile.
+    const brief = await runContentBriefV2({ ...REQUEST, profile: { read: async () => ({
+      facts: [], snapshot: null, host: "owned.test",
+      read: { source: "profile" as const, status: "complete" as const, attempted: 0, retained: 0, reason: null },
+    }) } }, fixture.deps);
+    expect(fixture.fetchResource.mock.calls.map((call) => call[0])).toEqual(["https://source.test/reporting"]);
+    expect(brief.context.research.pages.map((item) => item.url)).toEqual(["https://source.test/reporting"]);
+    expect(brief.run.reads).toContainEqual({ source: "competitors", status: "complete", attempted: 1, retained: 1, reason: null });
+  });
+
+  it("still treats a genuine competitor as a competitor when a profile host is known", async () => {
+    const fixture = seams(model(), [{ type: "organic", rank_group: 2, domain: "second.test", title: "Rival", url: "https://second.test/guide" }]);
+    const brief = await runContentBriefV2({ ...REQUEST, profile: { read: async () => ({
+      facts: [], snapshot: null, host: "owned.test",
+      read: { source: "profile" as const, status: "complete" as const, attempted: 0, retained: 0, reason: null },
+    }) } }, fixture.deps);
+    expect(brief.context.research.pages.map((item) => item.url))
+      .toEqual(["https://source.test/reporting", "https://second.test/guide"]);
+  });
+
   it("does not count a foreign SERP URL that redirects into the owned site as competitor coverage", async () => {
     const fixture = seams();
     fixture.fetchResource.mockImplementation(async (url) => ({ ...page(url), finalUrl: "https://owned.test/other", redirectChain: ["https://owned.test/other"] }));

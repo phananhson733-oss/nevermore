@@ -48,6 +48,24 @@ function recorder(reply: string | Error = RESPONSE) {
   return { client, requests };
 }
 
+/** Answers each call in turn, so a repair attempt can be given its own reply. */
+function sequenceRecorder(replies: readonly (string | Error)[]) {
+  const requests: KeywordLlmRequest[] = [];
+  const client: KeywordLlmClient = { complete: async (request) => {
+    const reply = replies[requests.length] ?? replies.at(-1)!;
+    requests.push(request);
+    if (reply instanceof Error) throw reply;
+    return { content: reply, modelId: "deployment-reported", usage: { requestCount: 1, retryCount: 0, inputTokens: 1200, outputTokens: 500 } };
+  } };
+  return { client, requests };
+}
+
+async function runSequence(replies: readonly (string | Error)[], data = context()) {
+  const recorded = sequenceRecorder(replies);
+  const result = await runContentBriefV2Llm({ context: data, deadlineAt: NOW + 45_000 }, { config: CONFIG, client: recorded.client, now: () => NOW });
+  return { ...recorded, result };
+}
+
 async function run(reply: string | Error = RESPONSE, data = context()) {
   const recorded = recorder(reply);
   const result = await runContentBriefV2Llm({ context: data, deadlineAt: NOW + 45_000 }, { config: CONFIG, client: recorded.client, now: () => NOW });
@@ -60,6 +78,11 @@ function updateFixture() {
   const raw = JSON.parse(RESPONSE) as ModelBriefV2Output;
   const output: ModelBriefV2Output = { ...raw, page_plan: { action: "update", target_ref: "T1", rationale: "The observed page already explains the validation workflow, despite low supporting-query impressions.", steps: [{ kind: "rewrite", instruction: "Clarify insurance checks using the existing explanation.", sources: ["U2"], answers: ["U1"] }] } };
   return { owned, output };
+}
+
+function changedHeading(h2: string): ModelBriefV2Output {
+  const raw = JSON.parse(RESPONSE) as ModelBriefV2Output;
+  return { ...raw, research: { ...raw.research, outline: raw.research.outline.map((item, index) => index === 0 ? { ...item, h2 } : item) } };
 }
 
 describe("one-call Brief v2 assembly", () => {
@@ -281,6 +304,41 @@ describe("one-call Brief v2 assembly", () => {
     expect(result.output?.research.questions[0]?.q).toBe("How does medical billing software validate claims?");
     const paddedId = JSON.stringify(padded).replaceAll('"U1"', '" U1 "');
     expect((await run(paddedId)).result.reads).toMatchObject({ reason: "validation_failed", attempted: 1 });
+  });
+
+  it("asks once more when a heading came back in the wrong language, and reports one complete run", async () => {
+    const wrong = JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"));
+    const { requests, result } = await runSequence([wrong, RESPONSE]);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.system).toContain("You correct one JSON object");
+    // The evidence is not resent: that is the whole reason a second call is affordable.
+    const excerpt = "checks insurance eligibility and validates claim codes";
+    expect(requests[0]!.user).toContain(excerpt);
+    expect(requests[1]!.user).not.toContain(excerpt);
+    expect(requests[1]!.system.length).toBeLessThan(requests[0]!.system.length / 4);
+    expect(Object.keys(JSON.parse(requests[1]!.user)).sort()).toEqual(["rejected_path", "reply", "rule"]);
+    expect(JSON.parse(requests[1]!.user)).toMatchObject({ rejected_path: "research.outline[0].h2" });
+    expect(result.output).not.toBeNull();
+    expect(result.validation_path).toBeNull();
+    expect(result.reads).toMatchObject({ status: "complete", calls: 2, input_tokens: 2400, output_tokens: 1000 });
+  });
+
+  it("reports the second rejection's own path and never asks a third time", async () => {
+    const wrong = JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"));
+    const stillWrong = JSON.stringify(changedHeading("\u4ecd\u7136\u662f\u4e2d\u6587\u6807\u9898\u884c"));
+    const { requests, result } = await runSequence([wrong, stillWrong]);
+    expect(requests).toHaveLength(2);
+    expect(result.output).toBeNull();
+    expect(result.validation_path).toBe("research.outline[0].h2");
+    expect(result.reads).toMatchObject({ status: "unavailable", reason: "validation_failed", attempted: 2, calls: 2 });
+  });
+
+  it("does not spend a second call on a rejection a rewrite cannot fix", async () => {
+    const paddedId = JSON.stringify(JSON.parse(RESPONSE)).replaceAll('"U1"', '" U1 "');
+    const { requests, result } = await runSequence([paddedId, RESPONSE]);
+    expect(requests).toHaveLength(1);
+    expect(result.output).toBeNull();
+    expect(result.validation_path).toBe("research.questions[0].anchor");
   });
 
   it("allows a reviewed empty assembly for wholly irrelevant evidence", async () => {

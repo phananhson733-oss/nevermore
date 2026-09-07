@@ -185,6 +185,17 @@ function finalPageKey(value: string): string {
   return url.href;
 }
 
+/**
+ * Two questions that differ only in casing, spacing or punctuation are one
+ * question presented twice, and the brief then spends an outline section and a
+ * writer's time on a need that is already covered. The same holds for two
+ * sections carrying the same heading. Normalising here rather than asking the
+ * model to notice keeps the rule enforceable.
+ */
+function phraseIdentity(value: string): string {
+  return value.normalize("NFKC").toLowerCase().replace(/[\p{P}\p{S}\s]+/gu, "");
+}
+
 export function validateResearchOutput(input: unknown, bundle: ResearchBundle): Decoded<ResearchResult> {
   const checked = parseResearchBundle(bundle);
   if (!checked.ok) return checked;
@@ -193,9 +204,13 @@ export function validateResearchOutput(input: unknown, bundle: ResearchBundle): 
   const units = new Map(checked.value.units.map((unit) => [unit.id, unit]));
   const pages = new Map(checked.value.pages.map((page) => [page.id, page]));
   const anchors = new Map<string, string>();
+  const askedQuestions = new Set<string>();
   const questions: ResearchQuestion[] = [];
   for (const [index, question] of decoded.value.questions.entries()) {
     if (anchors.has(question.anchor) || !question.sources.includes(question.anchor)) return reference(`questions[${index}].anchor`);
+    const asked = phraseIdentity(question.q);
+    if (asked === "" || askedQuestions.has(asked)) return reference(`questions[${index}].q`);
+    askedQuestions.add(asked);
     const coveredPages = new Set<string>();
     const paaRefs: string[] = [];
     for (const ref of question.sources) {
@@ -212,8 +227,12 @@ export function validateResearchOutput(input: unknown, bundle: ResearchBundle): 
     questions.push({ id, anchor: question.anchor, q: question.q, source_refs: [...question.sources], covered_by: coveredPages.size, paa_refs: paaRefs });
   }
   const answered = new Set<string>();
+  const headings = new Set<string>();
   const outline: ResearchOutlineItem[] = [];
   for (const [index, section] of decoded.value.outline.entries()) {
+    const heading = phraseIdentity(section.h2);
+    if (heading === "" || headings.has(heading)) return reference(`outline[${index}].h2`);
+    headings.add(heading);
     const answers: string[] = [];
     for (const anchor of section.answers) {
       const id = anchors.get(anchor);

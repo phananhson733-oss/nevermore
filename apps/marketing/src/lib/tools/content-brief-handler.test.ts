@@ -696,7 +696,7 @@ describe("handleContentBriefRequest v2 admission and evidence", () => {
   it("retains 32 profile facts with actual source counts and the exact selected snapshot", async () => {
     const profile = { ...confirmedProfile(), coreFeatures: Array.from({ length: 32 }, (_, index) => `feature ${index}`) };
     const readWebsite = vi.fn<ContentBriefHandlerDependencies["readWebsite"]>(async () => ({
-      kind: "ok", websiteId: "w-1", snapshotRevision: 9, profileHash: "d".repeat(64), profile,
+      kind: "ok", websiteId: "w-1", host: "site.example", snapshotRevision: 9, profileHash: "d".repeat(64), profile,
     }));
     const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), v2Dependencies({ readWebsite })));
     expect(readWebsite).toHaveBeenCalledWith("user-1", "w-1");
@@ -715,7 +715,7 @@ describe("handleContentBriefRequest v2 admission and evidence", () => {
 
   it("does not attach facts from a different website than the selected profile", async () => {
     const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), v2Dependencies({ readWebsite: async () => ({
-      kind: "ok", websiteId: "w-2", snapshotRevision: 9, profileHash: "d".repeat(64), profile: confirmedProfile(),
+      kind: "ok", websiteId: "w-2", host: "site.example", snapshotRevision: 9, profileHash: "d".repeat(64), profile: confirmedProfile(),
     }) })));
     expect(brief.context.facts).toEqual([]);
     expect(brief.context.profile_snapshot).toBeNull();
@@ -770,6 +770,7 @@ describe("handleContentBriefRequest run", () => {
       readWebsite: async (): Promise<ProfileReadResult> => ({
         kind: "ok",
         websiteId: "w-1",
+        host: "site.example",
         snapshotRevision: 7,
         profileHash: "a".repeat(64),
         profile: confirmedProfile(),

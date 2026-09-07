@@ -5,7 +5,7 @@ import { canonicalizeUrl } from "@sf/sources/canonical-url";
 import { keywordCoverageProperty } from "../keyword-opportunity/property.ts";
 import { canonicalize } from "./canonical.ts";
 import { buildSerpObservations } from "./assemble.ts";
-import { SERP_DEPTH, SUPPORTING_KEYWORDS_MAX } from "./constants.ts";
+import { NON_WHITESPACE_TOKENIZED_LANGUAGES, SERP_DEPTH, SUPPORTING_KEYWORDS_MAX } from "./constants.ts";
 import type { ProfileFact } from "./contract.ts";
 import {
   array, at, finite, identifier, invalid, isRecord, literal, modelText, nullable, object, ok, oneOf, reference,
@@ -235,6 +235,81 @@ function wholeShape<R>(input: unknown, research: Decoder<R>, strict: boolean, an
   return result.ok ? ok({ ...plan.value, research: result.value }) : result;
 }
 
+const CJK_LETTER = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}]/u;
+const LETTER = /\p{L}/u;
+/** Four letters is enough to tell a written phrase from a quoted term or a code. */
+const SCRIPT_SAMPLE_MIN = 4;
+
+/**
+ * Why the language of the output is checked at all.
+ *
+ * The evidence a brief is built from is whatever the top ten results happen to
+ * be written in, and it regularly outweighs the visitor's own keywords. An
+ * English run on 2026-09-07 came back with every heading in Chinese, because
+ * thirty-two of the supplied profile facts were Chinese and nothing in the
+ * pipeline disagreed. The instruction now names the language, and this is the
+ * check that makes the instruction enforceable.
+ *
+ * It only fires in one direction. A run in a language written without spaces
+ * may legitimately borrow a Latin term, and a Latin-script run may quote one
+ * word of the source; a whole heading in the sources' script is the failure
+ * that was actually observed, so majority is the test and the minimum sample
+ * keeps a two-character borrowing out of it.
+ */
+function wrongScript(text: string): boolean {
+  let letters = 0;
+  let cjk = 0;
+  for (const character of text) {
+    if (!LETTER.test(character)) continue;
+    letters += 1;
+    if (CJK_LETTER.test(character)) cjk += 1;
+  }
+  return letters >= SCRIPT_SAMPLE_MIN && cjk * 2 > letters;
+}
+
+/** Every generated string, with the path a rejection should name. */
+function* generatedStrings(value: BriefV2Generated): Generator<readonly [string, string]> {
+  for (const [index, question] of value.research.questions.entries()) {
+    yield [`research.questions[${index}].q`, question.q];
+  }
+  for (const [index, section] of value.research.outline.entries()) {
+    yield [`research.outline[${index}].h2`, section.h2];
+    for (const [level, heading] of section.h3.entries()) yield [`research.outline[${index}].h3[${level}]`, heading];
+  }
+  for (const key of ["intent", "format"] as const) {
+    const judgment = value[key];
+    if (judgment !== null) yield [`${key}.rationale`, judgment.rationale];
+  }
+  yield ["page_plan.rationale", value.page_plan.rationale];
+  for (const [index, step] of value.page_plan.steps.entries()) {
+    yield [`page_plan.steps[${index}].instruction`, step.instruction];
+  }
+  if (value.gap_angle !== null) {
+    yield ["gap_angle.value", value.gap_angle.value];
+    yield ["gap_angle.rationale", value.gap_angle.rationale];
+  }
+  for (const [index, link] of value.internal_links.entries()) {
+    yield [`internal_links[${index}].anchor`, link.anchor];
+    yield [`internal_links[${index}].why`, link.why];
+  }
+  for (const [index, item] of value.do_not_cover.entries()) {
+    yield [`do_not_cover[${index}].topic`, item.topic];
+    yield [`do_not_cover[${index}].why`, item.why];
+  }
+}
+
+function checkGeneratedLanguage(value: BriefV2Generated, language: string): Decoded<BriefV2Generated> | null {
+  // The tool's own codes are bare, but a confirmed revision can carry a full
+  // BCP-47 tag: "zh-CN" is Chinese, and comparing the whole tag to a set of
+  // bare codes would have this check reject a Chinese brief for being Chinese.
+  const primary = language.toLowerCase().split(/[-_]/u)[0] ?? "";
+  if (NON_WHITESPACE_TOKENIZED_LANGUAGES.has(primary)) return null;
+  for (const [path, text] of generatedStrings(value)) {
+    if (wrongScript(text)) return reference(path);
+  }
+  return null;
+}
+
 export function validateModelBriefV2(input: unknown, context: BriefV2Context): Decoded<BriefV2Generated> {
   const checked = parseBriefV2Context(context);
   if (!checked.ok) return nested(checked, "context");
@@ -290,7 +365,8 @@ export function validateModelBriefV2(input: unknown, context: BriefV2Context): D
     const identities = refs.map((ref) => { const candidate = candidates.get(ref); return candidate === undefined ? null : briefV2PageKey(candidate.url); });
     if (new Set(identities).size !== refs.length || refs.some((ref, index) => identities[index] === targetIdentity || candidates.get(ref)?.read !== "observed")) return reference(key);
   }
-  return ok({ ...decoded.value, research: research.value, page_plan: { ...plan, steps } });
+  const value: BriefV2Generated = { ...decoded.value, research: research.value, page_plan: { ...plan, steps } };
+  return checkGeneratedLanguage(value, checked.value.input.language) ?? ok(value);
 }
 
 /** Rebuild the model graph, recompute public IDs, and compare the frozen result exactly. */

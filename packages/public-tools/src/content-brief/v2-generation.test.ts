@@ -284,6 +284,46 @@ describe("v2 browser-safe owned page identity", () => {
   });
 });
 
+describe("v2 generated language", () => {
+  it("rejects an English brief whose headings came back in the sources' script", () => {
+    const zh = generation.validateModelBriefV2(
+      changed(model(), ["research", "outline", 0, "h2"], "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf"), context());
+    expect(zh.ok).toBe(false);
+    expect(zh.ok ? null : zh.path).toBe("research.outline[0].h2");
+  });
+
+  it("names the exact field, wherever the wrong script appears", () => {
+    for (const [path, replacement] of [
+      [["research", "questions", 0, "q"], "\u4e3a\u4ec0\u4e48\u6570\u636e\u4f1a\u5ef6\u8fdf\uff1f"],
+      [["page_plan", "rationale"], "\u73b0\u6709\u9875\u9762\u5df2\u7ecf\u8986\u76d6\u8fd9\u4e2a\u4e3b\u9898"],
+      [["gap_angle", "value"], "\u5c55\u793a\u65e5\u671f\u5bf9\u6bd4"],
+      [["do_not_cover", 0, "topic"], "\u5b8c\u6574\u7684\u65e5\u671f\u8bbe\u7f6e"],
+    ] as const) {
+      const result = generation.validateModelBriefV2(changed(model(), path, replacement), context());
+      expect(result.ok, path.join(".")).toBe(false);
+    }
+  });
+
+  it("allows a borrowed term inside an otherwise English string", () => {
+    const borrowed = changed(model(), ["research", "outline", 0, "h2"],
+      "Understand the \u5ef6\u8fdf reporting window and what it means for you");
+    expect(generation.validateModelBriefV2(borrowed, context()).ok).toBe(true);
+  });
+
+  it.each(["zh", "zh-CN", "zh-Hant-TW", "ja_JP"])("reads %s as that script's own language, region subtag and all", (language) => {
+    const localised = { ...context(), input: { ...context().input, language } };
+    const heading = changed(model(), ["research", "outline", 0, "h2"], "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf");
+    expect(generation.validateModelBriefV2(heading, localised).ok).toBe(true);
+  });
+
+  it("does not apply the check to a language written in that script", () => {
+    const zhContext = { ...context(), input: { ...context().input, language: "zh" } };
+    const zh = changed(model(), ["research", "outline", 0, "h2"], "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf");
+    expect(generation.validateModelBriefV2(zh, zhContext).ok).toBe(true);
+    expect(generation.validateModelBriefV2(model(), zhContext).ok).toBe(true);
+  });
+});
+
 describe("v2 whole model result", () => {
   it("requires research to be an own field rather than accepting a prototype value", () => {
     const { research, ...writing } = model();

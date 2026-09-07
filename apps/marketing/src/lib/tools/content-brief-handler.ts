@@ -158,6 +158,8 @@ export type ProfileReadResult =
   | {
       readonly kind: "ok";
       readonly websiteId: string;
+      /** Used only to keep the visitor's own pages out of competitor evidence. */
+      readonly host: string;
       readonly snapshotRevision: number;
       readonly profileHash: string;
       readonly profile: MarketingWebsiteProfileV1;
@@ -227,6 +229,7 @@ async function readWebsiteProfile(userId: string, websiteId: string): Promise<Pr
   return {
     kind: "ok",
     websiteId: details.value.websiteId,
+    host: details.value.host,
     snapshotRevision: snapshot.snapshotRevision,
     profileHash: snapshot.profileHash,
     profile: snapshot.profile,
@@ -707,6 +710,7 @@ async function readProfileV2Lane(
     readonly retained: number | null;
     readonly reason: "provider_error" | "insufficient_evidence" | null;
   };
+  readonly host: string | null;
 }> {
   const result = await dependencies.readWebsite(userId, websiteId).catch(
     (): ProfileReadResult => ({ kind: "error" }),
@@ -715,6 +719,7 @@ async function readProfileV2Lane(
     return {
       facts: [],
       snapshot: null,
+      host: null,
       read: {
         source: "profile",
         status: "unavailable",
@@ -728,6 +733,7 @@ async function readProfileV2Lane(
   const facts = allFacts.slice(0, BRIEF_V2_PROFILE_FACT_MAX);
   return {
     facts,
+    host: result.host,
     snapshot: {
       website_id: result.websiteId,
       revision: result.snapshotRevision,
@@ -1005,6 +1011,10 @@ async function runBriefV2(
   gsc: Extract<GscPreflight, { kind: "ready" }> | null,
 ) {
   const gscWindow = briefV2Window(clock.start);
+  // The rule a rejected model reply broke never reaches the brief, so it is
+  // captured here: "validation_failed" alone made every such run in production
+  // impossible to reproduce.
+  let validationPath: string | null = null;
   const brief = await runContentBriefV2(
     {
       input: {
@@ -1033,7 +1043,11 @@ async function runBriefV2(
     {
       readSerp: dependencies.readSerp,
       crawl: dependencies.crawlV2,
-      runLlm: dependencies.runLlmV2,
+      runLlm: async (llmInput, llmDependencies) => {
+        const result = await dependencies.runLlmV2(llmInput, llmDependencies);
+        validationPath = result.validation_path ?? null;
+        return result;
+      },
       now: dependencies.now,
     },
   );
@@ -1048,6 +1062,7 @@ async function runBriefV2(
     elapsed_ms: brief.run.elapsed_ms,
     reads: Object.fromEntries(brief.run.reads.map((read) => [read.source, read.status])),
     llm_calls: brief.run.llm.calls,
+    validation_path: validationPath,
     serp_cost_usd: brief.run.serp_cost_usd,
     self_check: "ok",
     schema: brief.schema,
