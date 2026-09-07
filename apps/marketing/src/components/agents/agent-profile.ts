@@ -779,7 +779,7 @@ function genericDraft(
   };
 }
 
-/** Create a new independent draft. No network request or app persistence occurs. */
+/** Create an independent draft; SEO starts with the owner's US / en-US run defaults. */
 export function createAgentProfileDraft(
   agent: AgentKind,
   url: string,
@@ -787,9 +787,25 @@ export function createAgentProfileDraft(
 ): AgentProfileDraft {
   const targetUrl = url.trim();
   const host = displayHost(targetUrl);
-  return host === "astrologywiki.com"
+  const draft = host === "astrologywiki.com"
     ? astrologyWikiDraft(agent, targetUrl, presentationLocale)
     : genericDraft(agent, targetUrl, host, presentationLocale);
+  if (agent !== "seo") return draft;
+  return {
+    ...draft,
+    country: "US",
+    locale: "en-US",
+    fieldProvenance: draft.fieldProvenance.map((entry) =>
+      entry.path === "/country" || entry.path === "/locale"
+        ? inferredProvenance(
+            entry.path === "/country" ? "country" : "locale",
+            "local_inference",
+            "Default run assumption; change it when auditing another market or language.",
+            new Date().toISOString(),
+          )
+        : entry,
+    ),
+  };
 }
 
 /** Changing a URL invalidates confirmation and any edits from the previous target. */

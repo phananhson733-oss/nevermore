@@ -155,8 +155,8 @@ describe("Agent-local Product / ICP profiles", () => {
         "Use a birth chart for self-understanding and psychological exploration.",
       firstOutcome:
         "Evaluate birth-chart search opportunities that lead to chart generation",
-      country: "",
-      locale: "",
+      country: "US",
+      locale: "en-US",
       device: "mobile",
       pageType: "tool",
       targetQuery: "",
@@ -193,21 +193,21 @@ describe("Agent-local Product / ICP profiles", () => {
     expect(profile.excludedAlternatives).toEqual([]);
   });
 
-  it("keeps unsupported search context empty and infers the homepage only from a root URL", () => {
+  it("prefills SEO run defaults without requiring a redundant market selection", () => {
     const profile = createAgentProfileDraft("seo", "astrologywiki.com");
 
     expect(profile).toMatchObject({
-      country: "",
-      locale: "",
+      country: "US",
+      locale: "en-US",
       device: "mobile",
       pageType: "homepage",
       targetQuery: "",
       auditScope: "site-first",
       reviewState: "needs_confirmation",
     });
-    expect(isAgentProfileReady(profile)).toBe(false);
+    expect(isAgentProfileReady(profile)).toBe(true);
     expect(confirmAgentProfile(profile).reviewState).toBe(
-      "needs_confirmation",
+      "confirmed",
     );
   });
 
@@ -299,22 +299,22 @@ describe("Agent-local Product / ICP profiles", () => {
     });
     expect(byPath.get("/country")).toEqual({
       path: "/country",
-      derivation: "missing",
-      confidence: "unknown",
-      source: "not_available",
+      derivation: "inferred",
+      confidence: "low",
+      source: "local_inference",
       limitation:
-        "No primary search market was supplied; select one before running the audit.",
-      observedAt: null,
+        "Default run assumption; change it when auditing another market or language.",
+      observedAt: expect.any(String),
       evidenceUrls: [],
     });
     expect(byPath.get("/locale")).toEqual({
       path: "/locale",
-      derivation: "missing",
-      confidence: "unknown",
-      source: "not_available",
+      derivation: "inferred",
+      confidence: "low",
+      source: "local_inference",
       limitation:
-        "The product supports multiple languages, but no primary audit locale was supplied; select one before running the audit.",
-      observedAt: null,
+        "Default run assumption; change it when auditing another market or language.",
+      observedAt: expect.any(String),
       evidenceUrls: [],
     });
     expect(byPath.get("/device")).toMatchObject({
@@ -421,8 +421,8 @@ describe("Agent-local Product / ICP profiles", () => {
       productName: "docs.acme.test",
       primaryIcp: "Unknown — confirm the primary audience.",
       businessModel: "Unknown — confirm the business model.",
-      country: "",
-      locale: "",
+      country: "US",
+      locale: "en-US",
       targetQuery: "",
       auditScope: "site-first",
       reviewState: "needs_confirmation",
@@ -442,16 +442,14 @@ describe("Agent-local Product / ICP profiles", () => {
       profile.fieldProvenance.map((entry) => [entry.path, entry]),
     );
     expect(provenance.get("/country")).toMatchObject({
-      derivation: "missing",
-      confidence: "unknown",
-      source: "not_available",
-      observedAt: null,
+      derivation: "inferred",
+      source: "local_inference",
+      observedAt: expect.any(String),
     });
     expect(provenance.get("/locale")).toMatchObject({
-      derivation: "missing",
-      confidence: "unknown",
-      source: "not_available",
-      observedAt: null,
+      derivation: "inferred",
+      source: "local_inference",
+      observedAt: expect.any(String),
     });
   });
 
@@ -485,6 +483,8 @@ describe("Agent-local Product / ICP profiles", () => {
     const profile = createAgentProfileDraft("seo", "astrologywiki.com", "zh");
 
     expect(profile).toMatchObject({
+      country: "US",
+      locale: "en-US",
       productName: "AstrologyWiki",
       oneLinePositioning:
         "融合占星学与现代心理学的免费出生星盘与自我探索 Web 应用。",
@@ -522,7 +522,8 @@ describe("Agent-local Product / ICP profiles", () => {
       agent: "seo",
       host: "example.com",
       productName: "example.com",
-      country: "",
+      country: "US",
+      locale: "en-US",
       targetQuery: "",
       reviewState: "needs_confirmation",
       editedFields: [],
@@ -1102,7 +1103,7 @@ describe("Agent-local Product / ICP profiles", () => {
     const draft = createAgentProfileDraft("seo", "astrologywiki.com");
 
     expect(draft.reviewState).toBe("needs_confirmation");
-    expect(isAgentProfileReady(draft)).toBe(false);
+    expect(isAgentProfileReady(draft)).toBe(true);
     expect(isAgentProfileDraft(draft)).toBe(true);
     expect(isAgentProfileDraft(draft, "seo", "astrologywiki.com")).toBe(true);
     expect(isAgentProfileDraft(draft, "tech")).toBe(false);
@@ -1156,9 +1157,9 @@ describe("Agent-local Product / ICP profiles", () => {
     const supplied = createAgentProfileDraft("seo", "astrologywiki.com");
     const generic = createAgentProfileDraft("seo", "example.com");
 
-    expect(isAgentProfileReady(supplied)).toBe(false);
+    expect(isAgentProfileReady(supplied)).toBe(true);
     expect(confirmAgentProfile(supplied).reviewState).toBe(
-      "needs_confirmation",
+      "confirmed",
     );
     const suppliedWithRunMarket = updateAgentProfile(supplied, {
       country: "US",
