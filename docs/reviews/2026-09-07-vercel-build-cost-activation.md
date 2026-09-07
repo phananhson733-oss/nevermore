@@ -42,3 +42,25 @@ not eliminating every deployment record or guaranteeing zero platform cost.
 
 Local validation, the existing secret-scan fixture exception and safe fallback
 conditions are recorded in `2026-09-07-vercel-build-cost-local-validation.md`.
+
+## Verified documentation-only result
+
+Probe commit `cbae197333bd272a9412de405f3ac819db307a3a` changed only this
+review document. Both project logs explicitly recorded
+`skip: only plan/review Markdown since last successful deployment` and canceled
+before installation/compilation:
+
+- Marketing production: `dpl_AheEAyyfkEGWduT8EbJj3ds7rY1x`.
+- Product production candidate: `dpl_GbjvP4rJRTAXPi6uWVNigS4NnQL8`.
+- Marketing main preview: `dpl_Cp11Ggz2hBiLJsq7VwhZZvjtRvtu`, canceled by the
+  redundant-main-preview rule.
+
+Final read-only domain checks returned200 for Marketing English/Chinese pages,
+Product login and Product version. The authenticated product domain still reports
+`de82f380bf2d531907bfad825dc4b755deced053` and holds its original
+`dpl_DzMBdEeuhxshcsqSt8UVttk75cc7` deployment. Marketing continues running
+`4ba9416fc2a2ad8944480713a565ae66477803e8` because subsequent documentation
+changes intentionally do not rebuild application artifacts.
+
+Both approved optimizations have actual Vercel execution evidence. No monthly
+savings amount is inferred from this short acceptance window.
