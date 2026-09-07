@@ -39,15 +39,30 @@ function fieldBody(overrides: Record<string, unknown> = {}) {
 }
 
 describe("createPagePerformanceReader", () => {
-  it("distinguishes its own deadline from an upstream failure", async () => {
+  it("accepts a lab response after 20 seconds within the bounded 60-second window", async () => {
+    vi.useFakeTimers();
+    try {
+      const read = createPagePerformanceReader({ apiKey: "test-key", fetchImpl: ((_url, init) =>
+        new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(() => resolve(fieldBody({ lighthouseResult: { finalUrl: TARGET,
+            audits: { "total-byte-weight": { numericValue: 12345 } } } })), 30_000);
+          init?.signal?.addEventListener("abort", () => { clearTimeout(timer); reject(new Error("aborted")); });
+        })) as typeof fetch });
+      const pending = read({ url: TARGET });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await pending).toMatchObject({ status: "ok", weight: { totalTransferBytes: 12345 } });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+  it.each([undefined, 15_000])("distinguishes its bounded deadline (%s) from an upstream failure", async timeoutMs => {
     vi.useFakeTimers();
     try {
       const read = createPagePerformanceReader({ apiKey: "test-key", fetchImpl: ((_url, init) =>
         new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
         })) as typeof fetch });
-      const pending = read({ url: TARGET });
-      await vi.advanceTimersByTimeAsync(20_000);
+      const pending = read({ url: TARGET, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
+      await vi.advanceTimersByTimeAsync(timeoutMs ?? 60_000);
       expect(await pending).toMatchObject({ status: "unavailable", reason: "provider_timeout", weight: null });
       expect(vi.getTimerCount()).toBe(0);
     } finally { vi.useRealTimers(); }

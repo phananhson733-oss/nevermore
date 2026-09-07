@@ -113,6 +113,7 @@ export type PagePerformanceGap =
   | "provider_rejected_credentials"
   | "provider_quota_exhausted"
   | "provider_timeout"
+  | "run_budget_exhausted"
   | "provider_unavailable";
 
 export type PageWeightGap = Exclude<PagePerformanceGap, "no_field_data"> | "lab_result_unavailable";
@@ -126,6 +127,7 @@ const GAP_LIMITATION: Readonly<Record<PagePerformanceGap, string>> = {
     "the_field_data_providers_quota_for_this_deployment_was_already_spent",
   provider_unavailable: "the_field_data_provider_did_not_answer_this_run",
   provider_timeout: "the_performance_request_timed_out_this_run",
+  run_budget_exhausted: "the_audit_time_budget_was_spent_before_performance_collection",
 };
 
 export function buildPagePerformanceRecords(

@@ -521,6 +521,27 @@ describe("handleAgentAuditRequest", () => {
     expect(body.data.result.landedTargetUrl).toBe(landed);
   });
 
+  it.each([[220_000, false, 35_000], [260_000, false, 0], [170_000, true, 20_000], [195_000, true, 0]] as const)("bounds performance after %i ms with SERP=%s", async (elapsed, withSerp, budget) => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const read = vi.fn(async () => ({ status: "unavailable" as const, reason: "no_field_data" as const, weight: null }));
+    const images = vi.fn(async () => ({ status: "unavailable" as const, reason: "no_images_declared" as const }));
+    try {
+      const response = await handleAgentAuditRequest(request(), "seo", dependencies({
+        delegate: async () => { now.mockReturnValue(elapsed); return Response.json({ data: upstreamPayload }); },
+        readPagePerformance: read, readImageWeights: images,
+        ...(withSerp ? { readSerpLandscape: async () => ({ availability: "unavailable" as const, reason: "provider_unavailable" as const }) } : {}),
+      }));
+      const body = await response.json();
+      if (budget > 0) {
+        expect(read).toHaveBeenCalledWith({ url: "https://acme.test/", timeoutMs: budget });
+      } else {
+        expect(read).not.toHaveBeenCalled();
+        expect(images).not.toHaveBeenCalled();
+        expect(body.data.result.pagePerformance.records[0].limitation).toBe("the_audit_time_budget_was_spent_before_performance_collection");
+      }
+    } finally { now.mockRestore(); }
+  });
+
   it("keeps an image failure separate from missing field and lab data", async () => {
     const response = await handleAgentAuditRequest(request(), "seo", dependencies({
       readPagePerformance: async () => ({ status: "unavailable", reason: "no_field_data", weight: null }),

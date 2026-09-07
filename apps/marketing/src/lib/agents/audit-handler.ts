@@ -47,6 +47,7 @@ import { createImageWeightReader } from "./image-weight-reader.ts";
 import { selectAgentKeyPageCandidates } from "./key-page-candidates.ts";
 import {
   defaultPagePerformanceReader,
+  PAGE_PERFORMANCE_READ_TIMEOUT_MS,
   type PagePerformanceReadResult,
 } from "./page-performance-reader.ts";
 import { buildSerpShapeRecords } from "@sf/public-tools/seo-audit/serp-shape";
@@ -113,6 +114,7 @@ export interface AgentAuditHandlerDependencies {
    */
   readonly readPagePerformance?: (input: {
     readonly url: string;
+    readonly timeoutMs?: number;
   }) => Promise<PagePerformanceReadResult> | undefined;
   /**
    * Transferred bytes for the target page's own images, or nothing.
@@ -659,6 +661,7 @@ export async function handleAgentAuditRequest(
   agent: AgentKind,
   dependencies: AgentAuditHandlerDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<Response> {
+  const requestStartedAt = Date.now();
   let authentication: ServerAuthenticationStatus = "unavailable";
   try {
     authentication = await dependencies.authenticate();
@@ -808,7 +811,18 @@ export async function handleAgentAuditRequest(
   let imageWeightsComplete = true;
   let pagePerformanceGap: PagePerformanceGap = "source_not_configured";
   let pageWeightGap: PageWeightGap = "source_not_configured";
-  if (result.targetInspected) {
+  // All shared routes allow 300s. Reserve 45s for at most seven 6s image
+  // batches plus serialization, and another 65s for the single-page SERP
+  // reader's two sequential 30s calls. A late crawl must not give performance
+  // a fresh full budget at the expense of the completed report.
+  const performanceDeadlineMs = 255_000 - (dependencies.readSerpLandscape ? 65_000 : 0);
+  const performanceBudgetMs = Math.max(0, Math.min(PAGE_PERFORMANCE_READ_TIMEOUT_MS,
+    performanceDeadlineMs - (Date.now() - requestStartedAt)));
+  if (result.targetInspected && performanceBudgetMs === 0) {
+    pagePerformanceGap = "run_budget_exhausted";
+    pageWeightGap = "run_budget_exhausted";
+  }
+  if (result.targetInspected && performanceBudgetMs > 0) {
     try {
       const read = await dependencies.readPagePerformance?.({
         // The landed URL, for the same reason the search region above uses it:
@@ -818,6 +832,7 @@ export async function handleAgentAuditRequest(
         // whole origin's p75 on every such site — the fast page inheriting the
         // slow site's verdict that this module's own comment warns about.
         url: landedTargetUrl(result) ?? result.targetUrl,
+        timeoutMs: performanceBudgetMs,
       });
       if (read?.status === "ok") {
         pagePerformance = read.field;
