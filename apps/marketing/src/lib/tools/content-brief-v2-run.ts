@@ -224,7 +224,14 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
       prefailed.push({ id: failed.id, url: failed.url, reason: "provider_error" });
       continue;
     }
-    if (ownUrls.has(normalized)) continue;
+    // A page that is already a candidate AND ranks for the keyword is the
+    // strongest owned evidence of all, so it joins the ranked list rather than
+    // keeping whatever position the Search Console ledger gave it; the merge
+    // deduplicates, so it does not take two slots.
+    if (ownUrls.has(normalized)) {
+      rankedOwned.push(target.url);
+      continue;
+    }
     if (input.gsc !== undefined && keywordCoverageProperty(target.url, [input.gsc.property]) === input.gsc.property) {
       rankedOwned.push(target.url);
       continue;
@@ -251,8 +258,14 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
     () => (dependencies.crawl ?? crawlContentBriefV2Targets)({ targets: crawlTargets, language: keyword.language, keywords: [keyword.primary, ...keyword.supporting], deadlineAt: clock.deadlineAt }, { now: clock.now }), CRAWL_DEADLINE_MS, clock,
     (reason): ContentBriefV2CrawlResult => ({ observed: [], failed: crawlTargets.map((target) => ({ id: target.id, url: target.url, reason })) }),
   );
+  // Redirects are checked again after the fetch, because a foreign URL can
+  // deliver the visitor's own article. The profile host counts here for the
+  // same reason it counts at planning time: without Search Console it is the
+  // only thing that knows whose page this is.
   const redirectedOwned = fetched.observed.filter((page) => page.role === "competitor" &&
-    (ownUrls.has(urlKey(page.final_url) ?? "") || (input.gsc !== undefined && keywordCoverageProperty(page.final_url, [input.gsc.property]) === input.gsc.property)));
+    (ownUrls.has(urlKey(page.final_url) ?? "") ||
+      (input.gsc !== undefined && keywordCoverageProperty(page.final_url, [input.gsc.property]) === input.gsc.property) ||
+      (profileHost !== null && hostKey(page.final_url) === profileHost)));
   const redirectedIds = new Set(redirectedOwned.map((page) => page.id));
   const crawl: ContentBriefV2CrawlResult = {
     observed: fetched.observed.filter((page) => !redirectedIds.has(page.id)),

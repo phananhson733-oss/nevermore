@@ -196,6 +196,36 @@ describe("runContentBriefV2 admitted generation", () => {
       .toEqual(["https://source.test/reporting", "https://second.test/guide"]);
   });
 
+  it("does not count a foreign URL redirecting onto the profile's own host as a competitor", async () => {
+    const fixture = seams(model(), [{ type: "organic", rank_group: 2, domain: "second.test", title: "Redirecting source", url: "https://second.test/guide" }]);
+    fixture.fetchResource.mockImplementation(async (url) => url.startsWith("https://second.test/")
+      ? { ...page(url), finalUrl: "https://owned.test/guide", redirectChain: ["https://owned.test/guide"] } : page(url));
+    // No Search Console: the confirmed profile host is the only thing that knows
+    // whose page arrived at the end of the redirect.
+    const brief = await runContentBriefV2({ ...REQUEST, profile: { read: async () => ({
+      facts: [], snapshot: null, host: "owned.test",
+      read: { source: "profile" as const, status: "complete" as const, attempted: 0, retained: 0, reason: null },
+    }) } }, fixture.deps);
+    expect(brief.context.research.pages.map((item) => item.url)).toEqual(["https://source.test/reporting"]);
+    expect(brief.run.reads).toContainEqual({ source: "competitors", status: "partial", attempted: 2, retained: 1, reason: null });
+  });
+
+  it("gives a Search Console candidate that also ranks the first slot rather than its ledger position", async () => {
+    const ranking = "https://owned.test/third";
+    const fixture = seams(model(), [{ type: "organic", rank_group: 2, domain: "owned.test", title: "Ranking own page", url: ranking }]);
+    const candidates: readonly OwnedCandidate[] = [
+      { id: "T1", url: OWNED_URL, match_refs: ["G1"], read: "unavailable" },
+      { id: "T2", url: "https://owned.test/second", match_refs: [], read: "unavailable" },
+      { id: "T3", url: ranking, match_refs: [], read: "unavailable" },
+    ];
+    const brief = await runContentBriefV2({ ...REQUEST, gsc: { property: GSC.property!, window: WINDOW, read: async () => ({ gsc: GSC, candidates }) } }, fixture.deps);
+    // Without this it stayed third and a newly discovered ranked page could push
+    // the page Google actually ranks out of the three-slot set entirely.
+    expect(brief.context.candidates.map(({ url }) => url))
+      .toEqual([ranking, OWNED_URL, "https://owned.test/second"]);
+    expect(brief.context.candidates.filter(({ url }) => url === ranking)).toHaveLength(1);
+  });
+
   it("does not count a foreign SERP URL that redirects into the owned site as competitor coverage", async () => {
     const fixture = seams();
     fixture.fetchResource.mockImplementation(async (url) => ({ ...page(url), finalUrl: "https://owned.test/other", redirectChain: ["https://owned.test/other"] }));

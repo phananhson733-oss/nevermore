@@ -36,6 +36,16 @@ export interface RelevanceTerm {
   /** Already NFKC-normalized and lower-cased; compare against text in the same form. */
   readonly value: string;
   readonly weight: TermWeight;
+  /**
+   * True when the term is one Latin word, which must match a whole word.
+   *
+   * Substring matching reads "cat" inside "education", and a page of
+   * education prose then scores exactly as well as the one paragraph about
+   * cats — and outranks it, because it is longer. A phrase carries its own
+   * boundaries in its spaces, and an unsegmented script has none to carry, so
+   * only this case needs the check.
+   */
+  readonly word: boolean;
 }
 
 function fold(value: string): string {
@@ -65,6 +75,10 @@ function bigrams(value: string): string[] {
  * of another phrase stays a phrase. Terms are returned in descending weight so
  * a bounded consumer can truncate without losing the strongest signals.
  */
+function isSingleLatinWord(value: string): boolean {
+  return !UNSEGMENTED.test(value) && /^[\p{L}\p{N}]+$/u.test(value);
+}
+
 export function relevanceTerms(phrases: readonly string[]): readonly RelevanceTerm[] {
   const byValue = new Map<string, TermWeight>();
   const add = (raw: string, weight: TermWeight): void => {
@@ -85,7 +99,7 @@ export function relevanceTerms(phrases: readonly string[]): readonly RelevanceTe
     for (const gram of bigrams(folded)) add(gram, 0.5);
   }
   return [...byValue.entries()]
-    .map(([value, weight]): RelevanceTerm => ({ value, weight }))
+    .map(([value, weight]): RelevanceTerm => ({ value, weight, word: isSingleLatinWord(value) }))
     .sort((a, b) => b.weight - a.weight || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
 }
 
@@ -102,10 +116,14 @@ export function relevanceScore(
 ): number {
   const body = fold(text);
   const title = heading === null ? "" : fold(heading);
+  const bodyWords = new Set(body.match(WORD) ?? []);
+  const titleWords = new Set(title.match(WORD) ?? []);
+  const found = (haystack: string, words: ReadonlySet<string>, term: RelevanceTerm): boolean =>
+    term.word ? words.has(term.value) : haystack.includes(term.value);
   let score = 0;
   for (const term of terms) {
-    if (title !== "" && title.includes(term.value)) score += term.weight * 2;
-    if (body.includes(term.value)) score += term.weight;
+    if (title !== "" && found(title, titleWords, term)) score += term.weight * 2;
+    if (found(body, bodyWords, term)) score += term.weight;
   }
   return score;
 }

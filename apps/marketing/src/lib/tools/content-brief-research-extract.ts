@@ -95,17 +95,31 @@ const CANDIDATE_MAX = 400;
 const SHORT_SEGMENT_CHARS = 30;
 const SUBSTANTIAL_SEGMENT_CHARS = 60;
 const RICH_SEGMENT_CHARS = 160;
-/** Navigation-shaped phrases are only chrome when the whole block is short. */
-const NAVIGATION_TEXT_MAX = 80;
+/**
+ * Navigation-shaped phrases are only chrome when the whole block is short.
+ *
+ * "Go to Settings and disable public access before deploying the database" is
+ * seventy characters of instruction that opens with a navigation label, so the
+ * bound has to sit well below it. Real navigation is a handful of words.
+ */
+const NAVIGATION_TEXT_MAX = 40;
+/** A credit or byline label plus its payload; longer than this is prose. */
+const CHROME_LABEL_MAX = 60;
 
 /**
  * Zero-width and soft-hyphen code points, written escaped so this file stays
- * greppable. The zero-width joiner is deliberately absent: deleting it from an
- * emoji sequence splits one glyph a reader can see into several, so it is only
- * treated as nothing when a block contains nothing else.
+ * greppable.
+ *
+ * The two joiners are deliberately absent. Deleting the zero-width joiner
+ * splits an emoji sequence into the separate glyphs it was built from, and
+ * deleting the zero-width non-joiner rewrites Persian and Indic words, which
+ * use it to stop letters from joining: "می‌روم" would be retained as "میروم",
+ * a different string from the one the page showed. Retained text is never
+ * edited, so both are kept in the prose and only treated as nothing when a
+ * block contains nothing else.
  */
-const INVISIBLE = /[\u200B\u200C\u2060\uFEFF\u00AD]/gu;
-const JOINER = /\u200D/gu;
+const INVISIBLE = /[\u200B\u2060\uFEFF\u00AD]/gu;
+const JOINER = /[\u200C\u200D]/gu;
 /**
  * Punctuation and separators alone carry nothing, so a block made only of
  * them is chrome. Symbols are not included: an emoji is content a reader can
@@ -115,30 +129,41 @@ const JOINER = /\u200D/gu;
 const UNINFORMATIVE_ONLY = /^[\p{P}\p{Z}\s]*$/u;
 
 /**
- * Whole-block chrome patterns.
+ * Chrome patterns that match a whole cleaned block and nothing less.
  *
- * Every entry matches an entire cleaned block, never a substring of a
- * sentence, because the same words appear inside real prose ("subscribe to a
- * service" is a topic; "Subscribe" alone is a button). Anything not proven to
- * be chrome stays a candidate and is ranked instead of removed.
+ * A prefix is not evidence of chrome. "Subscribe" alone is a button, but
+ * "Subscribe to a service only after comparing its cancellation policy" is a
+ * sentence about subscribing, and a pattern anchored only at the start
+ * deletes the second along with the first. Every entry here is anchored at
+ * both ends; labels that legitimately carry a short payload live in
+ * CHROME_LABELLED below, where a length bound stands in for the missing end
+ * anchor. Anything not proven to be chrome stays a candidate and is ranked.
  */
 const CHROME: readonly RegExp[] = [
+  /^primary image$/u,
+  /^(?:advertisement|advertising|sponsored)$/u,
+  /^(?:广告|廣告|赞助|贊助|推广|推廣)$/u,
+  /^(?:read more|learn more|continue reading|see also|related articles?|related posts?)$/u,
+  /^(?:阅读更多|閱讀更多|展开全文|展開全文|更多内容|更多內容|相关阅读|相關閱讀)$/u,
+  /^(?:关注我们|關注我們|分享这篇文章|分享這篇文章)$/u,
+  /^(?:订阅|訂閱|立即订阅|立即訂閱)(?:我们的|我們的)?(?:newsletter|电子报|電子報|周报|週報|通讯|通訊|邮件列表|郵件列表)?$/u,
+];
+/**
+ * A label plus a short payload: "Image Credit: NASA", "Written By: <name>".
+ * Only applied when the whole block is short, because past that length the
+ * same opening words are how an article starts a sentence about the topic.
+ */
+const CHROME_LABELLED: readonly RegExp[] = [
   /^sign\s?up\b/u,
   /^subscribe\b/u,
   /^follow us\b/u,
   /^share (?:this|on|it)\b/u,
-  /^(?:订阅|訂閱|关注我们|關注我們|分享这篇文章|分享這篇文章|立即订阅|立即訂閱)/u,
   /^(?:image|photo) credit/u,
-  /^primary image$/u,
   /^written by[:：]/u,
   /getty images$/u,
   /^(?:图片来源|圖片來源|图片版权|圖片版權)/u,
-  /^(?:advertisement|advertising|sponsored)$/u,
-  /^(?:广告|廣告)\b/u,
-  /^(?:read more|learn more|continue reading|see also|related articles?|related posts?)$/u,
-  /^(?:阅读更多|閱讀更多|展开全文|展開全文|更多内容|更多內容|相关阅读|相關閱讀)$/u,
 ];
-/** Navigation and account chrome; applied only to short blocks. */
+/** Navigation and account chrome; applied only to very short blocks. */
 const NAVIGATION_CHROME: readonly RegExp[] = [
   /^(?:skip|jump) to\b/u,
   /^(?:跳至|跳到|跳過|跳过)/u,
@@ -164,8 +189,10 @@ export function isChromeBlock(text: string): boolean {
   const folded = value.normalize("NFKC").toLowerCase();
   if (CHROME.some((pattern) => pattern.test(folded))) return true;
   if (DATE_ONLY.some((pattern) => pattern.test(folded))) return true;
+  const length = [...folded].length;
+  if (length <= CHROME_LABEL_MAX && CHROME_LABELLED.some((pattern) => pattern.test(folded))) return true;
   return (
-    [...folded].length <= NAVIGATION_TEXT_MAX &&
+    length <= NAVIGATION_TEXT_MAX &&
     NAVIGATION_CHROME.some((pattern) => pattern.test(folded))
   );
 }
@@ -283,6 +310,10 @@ function observeRegion(
   const mainText: string[] = [];
   let paragraph: string[] = [];
   let heading: ResearchHeading | null = null;
+  // Counted separately from `candidates`, which stops growing at CANDIDATE_MAX.
+  // Reporting the array's length as the number of observations would tell the
+  // reader a very long page had exactly 400 paragraphs.
+  let observed = 0;
 
   function finishParagraph(): void {
     const text = normalizeText(paragraph.join(""));
@@ -290,6 +321,7 @@ function observeRegion(
     // Chrome is not an observation the writer could have used, so it is not
     // counted as an omitted candidate either; `length` still measures it.
     if (text === "" || isChromeBlock(text)) return;
+    observed += 1;
     if (candidates.length >= CANDIDATE_MAX) return;
     const characters = Array.from(text);
     candidates.push({
@@ -350,8 +382,8 @@ function observeRegion(
   const segments = selectSegments(candidates, terms);
   return {
     segments,
-    segments_total: candidates.length,
-    omitted_segments: candidates.length - segments.length,
+    segments_total: observed,
+    omitted_segments: observed - segments.length,
     // All cleaned main text, including headings and omitted/unbounded prose.
     // This describes observed input only; HTTP body_complete belongs to the caller.
     length: measureResearchLength(normalizeText(mainText.join("")), language),

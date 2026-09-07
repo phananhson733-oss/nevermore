@@ -553,4 +553,53 @@ describe("chrome filtering and relevance selection", () => {
     expect(isChromeBlock(`${family} ${"a".repeat(80)}`)).toBe(false);
     expect(isChromeBlock("\u200D\u200D \u200B")).toBe(true);
   });
+
+  it("keeps a sentence that merely opens with a chrome label", () => {
+    for (const prose of [
+      "Subscribe to a service only after comparing its cancellation policy and total annual cost.",
+      "\u8ba2\u9605\u6a21\u5f0f\u7684\u6838\u5fc3\u662f\u6301\u7eed\u63d0\u4f9b\u4ef7\u503c\uff0c\u800c\u4e0d\u662f\u4ec5\u4ec5\u6309\u6708\u6536\u8d39\u3002",
+      "Go to Settings and disable public access before deploying the database.",
+      "Share this workload across three regions so a single outage cannot take the queue down.",
+    ]) {
+      expect(isChromeBlock(prose), prose).toBe(false);
+    }
+  });
+
+  it("still drops the label itself, with or without its short payload", () => {
+    for (const chrome of [
+      "Sign up for the Almanac newsletter.",
+      "Image Credit:",
+      "Written By: Celeste Longacre Gardener & Astrologer",
+      "Share this article",
+      "\u5e7f\u544a",
+      "\u8ba2\u9605",
+      "\u8ba2\u9605\u6211\u4eec\u7684\u5468\u62a5",
+      "Back to top",
+    ]) {
+      expect(isChromeBlock(chrome), chrome).toBe(true);
+    }
+  });
+
+  it("counts every observed paragraph, including those past the collection ceiling", () => {
+    const filler = Array.from({ length: 420 }, (_, index) =>
+      `<p>Unrelated paragraph number ${index} about municipal budgeting and procurement schedules.</p>`).join("");
+    const result = extractContentBriefResearch(`<main>${filler}</main>`, "en", ["taurine"]);
+    expect(result.segments_total).toBe(420);
+    expect(result.omitted_segments).toBe(420 - result.segments.length);
+  });
+
+  it("does not rewrite a Persian word by deleting its zero-width non-joiner", () => {
+    const word = "\u0645\u06cc\u200c\u0631\u0648\u0645";
+    const result = extractContentBriefResearch(
+      `<main><p>${word} ${"\u0627".repeat(80)}</p></main>`, "fa", []);
+    expect(result.segments[0]?.text.startsWith(word)).toBe(true);
+  });
+
+  it("does not let an unrelated word containing the keyword crowd out the only relevant excerpt", () => {
+    const decoy = Array.from({ length: 12 }, (_, index) =>
+      `<p>Education policy ${index} determines school funding, teacher training, classroom resources and assessment schedules across every district in the region.</p>`).join("");
+    const relevant = "<p>A cat needs taurine to avoid heart and retinal disease.</p>";
+    const result = extractContentBriefResearch(`<main>${decoy}${relevant}</main>`, "en", ["cat"]);
+    expect(result.segments.some((segment) => segment.text.includes("A cat needs taurine"))).toBe(true);
+  });
 });
