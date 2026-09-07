@@ -67,6 +67,14 @@ function resultOf(
 }
 
 describe("aggregateKeyPageEvaluations", () => {
+  it("does not hide ungraded index restrictions behind another page's pass", () => {
+    const result = aggregate([
+      ["https://a/", check("1.3", "pass")],
+      ["https://b/", check("1.3", "observed-only")],
+    ]);
+    expect(resultOf(result, "1.3")?.result).toBe("observed-only");
+    expect(resultOf(result, "1.3")?.scoreContribution).toBeNull();
+  });
   it("passes site-wide checks through untouched", () => {
     const result = aggregate([["https://a/", check("2.1", "pass")]]);
 

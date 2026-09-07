@@ -1211,6 +1211,8 @@
         "one_live_sample_of_one_results_page_which_changes_between_requests": "对单个结果页的一次实时采样。同一个查询再采一次，返回的区块组合可能不同。",
         "the_field_data_provider_rejected_this_deployments_credentials": "实况数据供应商拒绝了本次部署的凭据，因此没有取到任何实测值。这是我们这边的配置问题，不是对你页面的判断。",
         "the_field_data_providers_quota_for_this_deployment_was_already_spent": "本次部署在实况数据供应商处的配额已经用完，因此没有取到任何实测值。这里的一切都不是对你页面的判断。",
+        "the_performance_request_timed_out_this_run": "性能请求超过本次时限，未返回测量值。",
+        "the_lab_test_did_not_return_page_transfer_bytes_this_run": "实验室测试未返回可用页面传输体积；这与真实用户数据是否存在相互独立。",
         "the_field_data_provider_did_not_answer_this_run": "实况数据供应商没有在本次运行的时限内应答，因此没有取到任何实测值。值得再试一次。",
         "no_results_page_provider_was_configured_for_this_run": "本次运行没有配置结果页数据供应商，因此没有采样任何结果页。这里的一切都不是对这个查询的判断。",
         "this_runs_market_is_not_one_the_results_page_provider_covers": "本次运行的市场不在结果页供应商覆盖范围内，因此没有采样，也没有产生付费调用。",
@@ -1350,6 +1352,10 @@
         "multiple_h1": {
           "title": "存在多个 H1 元素",
           "description": "已检查的 2xx HTML 页面中，静态文档内 H1 元素数量大于 1 的页面。"
+        },
+        "page_inbound_link_count": {
+          "title": "来自其他页面的已观测入链",
+          "description": "本次抓取中链接到该 URL 的其他独立页面数。仅完整抓取发布零值；不完整抓取只保留实际发现的正值。"
         },
         "sitemap_page_without_observed_inlink": {
           "title": "Sitemap 页面无已观测 HTML 入链",
@@ -8075,13 +8081,13 @@
           }
         },
         "search": {
-          "eyebrow": "DataForSEO · 搜索证据",
+          "eyebrow": "搜索证据",
           "title": "值得审核的搜索域",
-          "description": "DataForSEO 观测会先生成直接或间接竞品的系统建议。你可以审核并修改任何关系；搜索重合只是证据，不等于已确认的商业关系。",
+          "description": "根据搜索观测生成直接或间接竞品建议。你可以审核并修改任何关系；搜索重合只是证据，不等于已确认的商业关系。",
           "action": "刷新搜索格局",
           "loadingAction": "正在刷新搜索格局",
           "missingPrerequisite": "请先补充 {fields}，再请求搜索证据。",
-          "organicBoundary": "竞品关系由系统基于自然关键词重合进行本地推导，可随时修改；这不是 DataForSEO 已确认的商业关系。",
+          "organicBoundary": "竞品关系根据自然关键词重合推导，可随时修改；这些建议不代表已确认的商业关系。",
           "serpBoundary": "目标查询中观测到的域名默认建议为低置信度的间接竞品；你可以逐项审核或修改。",
           "seedSerpBoundary": "由 Product Profile 搜索证据播种出的域名默认建议为低置信度的间接竞品；你可以逐项审核或修改。",
           "noData": "本次有边界请求没有观测到候选域名。",
@@ -8115,8 +8121,8 @@
           },
           "review": {
             "candidatesReady": "系统竞品建议已就绪 · 可审核或修改",
-            "providerEvidence": "DataForSEO · 搜索证据",
-            "seedSerpEvidence": "DataForSEO · Product Profile 播种 SERP 证据",
+            "providerEvidence": "搜索证据",
+            "seedSerpEvidence": "产品相关查询的搜索证据",
             "needsReview": "系统关系建议等待审核",
             "awaitingClassification": "{count} 个可修改的系统关系建议",
             "noneExcluded": "本次本地审核尚未排除候选",
@@ -8129,8 +8135,8 @@
             "currentDirect": "手动调整 · 直接竞品",
             "currentIndirect": "手动调整 · 间接替代方案",
             "currentExcluded": "手动调整 · 已排除",
-            "systemSuggestionSource": "系统建议 · DataForSEO 证据",
-            "systemSuggestionProvenance": "确定性系统建议 · DataForSEO 搜索证据",
+            "systemSuggestionSource": "系统建议 · 搜索证据",
+            "systemSuggestionProvenance": "基于搜索证据的系统建议",
             "mixedSuggestionProvenance": "系统建议 + 手动调整",
             "actions": {
               "direct": "直接竞品",
@@ -8720,8 +8726,8 @@
       "keyPagesNone": "本次没有可评估的关键页，页面级结论只针对提交的 URL。",
       "keyPageSelectionSummary": "候选页 {count} 个：导航 {navigation} · 集群页 {clusterPages}（{prefixes}）· 内容 {content}（按本次已收集页入链最多 15；总候选超过 50 时收紧到 10 或 5）· 手动 {manual}。",
       "fullSiteSelectionSummary": "页面级候选 {count} 个：导航 {navigation} · 集群页 {clusterPages}（{prefixes}）· 内容 {content} · 手动 {manual} · 全站其余页 {fullSite}。",
-      "keyPageSelectionFixed": "抓取到时，首页和提交页固定按最高优先级纳入；即使提交页抓取失败，也仍会保留该页的可用判定。",
-      "keyPageSelectionBoundary": "这些数字只是最终页面级列表的本地分类，不是外部证据，也没有把缺失数据填成 0。",
+      "keyPageSelectionFixed": "抓取到的首页和提交页优先纳入，重复 URL 只计一次。",
+      "keyPageSelectionBoundary": "以上统计仅覆盖本次抓取，未采集页面不在此分类中。",
       "keyPageOmittedHeading": "安全阀未纳入页面级检查（{count}）",
       "keyPageManualUnavailableHeading": "手动追加但未能抓取/评估（{count}）",
       "capturedLanded": "跳转到了 {url}，本报告读的是这个页面。",
@@ -8905,7 +8911,7 @@
             "keyPagesOnlyTarget": "只有你提交的这一页命中。",
             "keyPageSplit": "这一行只讲上面那一页。同一检查在其他页的命中各自成行。",
             "repairScopeTarget": "下面的建议和预览针对你提交的页面：{url}",
-            "repairScopeElsewhere": "注意：这一项在你提交的页面上没有命中，命中的是上面列出的其他关键页。下面的建议和预览用的仍是提交页的内容——本次运行只采集了那一页的完整文本。要为某个命中页拿到针对它的建议，把那个 URL 作为目标重跑一次。",
+            "repairScopeElsewhere": "这一项针对上面标出的页面，不是提交页。预览只使用该页已有观测；如需生成文案，请先点击「检查这一页」采集它的完整正文。",
             "checkThisPage": "检查这一页",
             "checkHandoffFailed": "没能把这一页交接过去。请直接打开 On-Page Checker 并填入该 URL。"
         },
@@ -8941,6 +8947,7 @@
           "unknown": "未识别的引擎状态"
         },
         "observedOnlyLane": {
+          "noindexIntent": "已观察到索引限制，但本次没有与之冲突的 sitemap 收录声明。请先确认此页是否需要收录，不要自动移除 noindex。",
           "title": "仅观测",
           "hint": "只给数值，不作判定"
         },
@@ -8952,8 +8959,21 @@
           "fullSiteOnly": "关键页档不执行此项，需要全站抓取。",
           "fullSiteHelp": "选择全站后，再确认发起新运行。能否完成判定仍取决于抓取预算和来源可用性。",
           "chooseFullSite": "选择全站抓取",
-          "title": "已排除的检查",
-          "hint": "缺少所需输入或来源"
+          "title": "本次未判定的检查",
+          "hint": "不是通过或失败，原因见各项",
+          "reasons": {
+            "crawlHistory": "需要抓取历史或服务器日志；当前尚未实现该检测器。",
+            "competitorContent": "本次未比较竞品页面正文；检查 4.6 展示当前页面的正文长度。",
+            "serpNotEnabled": "SEO Agent 未采集这类搜索结果形态证据；可使用单页检查器获取该来源。",
+            "sourceFailed": "本次性能数据源失败，未形成性能结论；不代表网站存在性能故障。",
+            "staticImageEligibility": "静态 HTML 中没有可用于本项判断、带声明尺寸的首图；尚未验证首屏位置。",
+            "crawlIncomplete": "抓取尚不完整。已发现的入链可以核实，缺失入链暂不能判定。",
+            "sourceTimeout": "本次性能请求超时，未形成网站性能结论。",
+            "labMissing": "实验室测试未返回页面体积；不是因为缺少真实用户样本。",
+            "fieldSampleMissing": "来源未提供本指标的真实用户样本，不代表性能不合格。",
+            "sourceNotConfigured": "当前部署未配置性能来源，尚未执行测量。",
+            "insufficient": "本项所需证据不足，尚未形成通过或失败的结论。"
+          }
         },
         "investigationNextStep": "先确认该来源可得且覆盖本站，再重跑这一项；在此之前不要按结论修改站点。",
         "quarantined": {

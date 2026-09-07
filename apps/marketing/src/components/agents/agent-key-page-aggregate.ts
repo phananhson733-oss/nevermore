@@ -49,10 +49,9 @@ const RESULT_RANK: Readonly<Record<AgentAuditResultState, number>> = {
   blocker: 0,
   warning: 1,
   tip: 2,
-  pass: 3,
-  // Ahead of excluded: a page that published a measurement said more than one
-  // that could not be judged at all, and the merged row should say the more.
-  "observed-only": 4,
+  // An ungraded restriction must not disappear behind another page's pass.
+  "observed-only": 3,
+  pass: 4,
   excluded: 5,
 };
 

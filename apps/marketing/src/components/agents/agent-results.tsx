@@ -310,7 +310,7 @@ export function AgentResults({
         {model.keyPagesWereSelected ? (
           <div
             data-key-page-selection-summary
-            className="mt-2 text-[11.5px] leading-[1.6] text-text-dark-secondary"
+            className="mt-2 text-[12px] leading-[1.6] text-text-dark-secondary [&_p]:text-[12px] [&_p]:leading-[1.6]"
           >
             <p>
               {t(

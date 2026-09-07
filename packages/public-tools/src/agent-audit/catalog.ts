@@ -70,7 +70,7 @@ const SITE_TITLES: readonly CheckSeed[] = [
 const PAGE_TITLES: readonly CheckSeed[] = [
   ["1.1", "HTTP status code", "HTTP 状态码", "200; any other final status is Blocker", "200；其他最终状态均为阻断"],
   ["1.2", "robots.txt allowance for search", "robots.txt 对搜索抓取的放行", "Allowed for Google's crawler; disallowed is Blocker. Read from the collected robots.txt for one crawler token, not from this run's own access.", "对 Google 的抓取器放行；被禁止为阻断。依据已采集的 robots.txt 按单一抓取器标记判定，不是依据本次运行自己的访问权限。"],
-  ["1.3", "noindex directive", "noindex 标签", "Absent; presence is Blocker", "不存在；存在即为阻断"],
+  ["1.3", "noindex directive", "noindex 标签", "A noindex conflicts with inclusion in a collected sitemap: Blocker. Without that index declaration, report the restriction for intent review, not as a repair failure.", "noindex 与已采集 sitemap 的收录声明冲突时为阻断；没有该收录声明时，仅展示限制并核对意图，不直接判为需修复的故障。"],
   ["1.4", "Canonical target", "Canonical 目标", "A canonical is present and self-referencing; a missing canonical or one pointing elsewhere is a Warning. Destination status is not collected.", "存在且自指的 Canonical；缺失或指向他页为警告。本工具不采集 Canonical 目标的状态码。"],
   ["1.5", "Included in sitemap", "是否在 sitemap 中", "Present in a collected sitemap; otherwise Warning. Not testable when no sitemap was collected.", "存在于已采集的 sitemap 中；否则为警告。未采集到 sitemap 时不判定。"],
   ["1.6", "Redirect chain length", "跳转链长度", "At most one hop; two or more is Warning, non-200 destination is Blocker", "最多一跳；两跳及以上为警告，终点非 200 为阻断"],
@@ -98,7 +98,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["5.2", "Per-image file size", "单图体积", "Below 200 KB; otherwise Tip", "低于 200KB；否则为提示"],
   ["5.3", "Modern image format share", "现代图片格式占比", "At least 80% WebP or AVIF among images whose format the URL states; otherwise Tip. An unreadable extension leaves the ratio rather than counting against it.", "在 URL 能读出格式的图片中，WebP 或 AVIF 至少占 80%；否则为提示。读不出扩展名的图片不计入该比例，也不算作旧格式。"],
   ["5.4", "Above-the-fold image lazy loading", "首屏图片是否 lazy-load", "The first image in document order is not lazy-loaded; otherwise Warning. A static crawl has no viewport, so document order stands in for the fold.", "文档顺序中的第一张图片没有被 lazy-load；否则为警告。静态抓取没有视口，因此以文档顺序代替首屏折线。"],
-  ["6.1", "Inbound internal link count", "入站内链数", "At least 1; zero is Warning; 2× check weight", "至少 1 条；0 条为警告；检查权重 2 倍"],
+  ["6.1", "Inbound internal link count", "入站内链数", "At least one distinct other collected page links here. Zero is Warning only after a complete crawl; missing links in an incomplete crawl are not judged. 2× check weight.", "至少一个其他已采集页面链接到此页。仅完整抓取中为 0 时警告；抓取不完整时不对缺失入链下结论。检查权重 2 倍。"],
   ["6.2", "Outbound internal link count", "出站内链数", "At least 1 observed outbound internal link; zero is Warning", "至少观察到 1 条出站内链；0 条为警告"],
   ["6.3", "Broken internal links on this page", "本页出站断链数", "0 broken outbound internal links; above 0 is Warning", "本页出站内链断链为 0；大于 0 为警告"],
   ["6.4", "Click depth", "点击深度", "At most 4 clicks from the crawl entry point; deeper is a Tip", "距抓取入口最多 4 次点击；更深为提示"],
@@ -273,7 +273,7 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "2.2": ["title_duplicate"],
   "2.5": ["meta_description_duplicate"],
   "3.1": ["h1_missing", "multiple_h1"],
-  "6.1": ["sitemap_page_without_observed_inlink"],
+  "6.1": ["page_inbound_link_count"],
   "6.3": ["page_outbound_broken_link"],
   "7.1": ["json_ld_missing", "json_ld_parse_error"],
   C4: ["click_depth_beyond_reviewed_limit"],
@@ -352,6 +352,7 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
  * the default.
  */
 const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
+  "6.1": [{ recordId: "page_inbound_link_count", kind: "aggregate-min", label: "observed_inbound_links", passAtOrAbove: 1 }],
   C1: [
     {
       recordId: "sitemap_page_without_observed_inlink",
@@ -800,8 +801,8 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
     "恰好一个 H1，才能让读者和解析器知道这个页面是什么。一个都没有，就把可见的页面标题提升为 H1。有多个，就保留点明页面主题的那个，其余降为 H2——多出来的通常来自页头的站名、侧栏模块，或者写死了标题层级的卡片组件。",
   ),
   "6.1": l(
-    "No page in the crawled set links here, so this page depends entirely on the sitemap to be found and receives no internal signal from the rest of the site. Add links from pages that are actually about the same thing — a hub, the parent category, or a related block — and use anchor text that describes this page rather than \"read more\".",
-    "抓取范围内没有任何页面链接到这里，所以这个页面完全依赖 sitemap 被发现，也拿不到站内其余部分传来的任何信号。从真正相关的页面加链接——聚合页、上级分类，或相关内容模块——锚文本要描述这个页面本身，不要用「阅读更多」。",
+    "No other page in this completed crawl links here. If this page is intended for discovery, add a contextual link from a related hub, parent category or article, using descriptive anchor text. This count covers collected pages only and excludes self-links; it does not prove how search engines discovered the page.",
+    "本次完整抓取中没有其他页面链接到这里。若希望读者发现此页，可从相关聚合页、上级分类或文章添加描述性内链。计数仅覆盖已采集页面，排除自链接；不能据此推断搜索引擎实际如何发现此页。",
   ),
   "6.2": l(
     "This page links nowhere internal, so it takes signal in and passes none on, and a reader who finishes it has no next step. Add links to the pages that answer what someone naturally asks next, placed in the body where the topic comes up rather than collected in a block at the bottom.",

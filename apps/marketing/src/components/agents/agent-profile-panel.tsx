@@ -1222,7 +1222,7 @@ export function AgentProfilePanel({
               refreshData.diagnostics.stopReason ? (
                 <div className="grid gap-1 text-[10.5px] leading-[1.55] text-brand-warning">
                   {!refreshData.diagnostics.contextSufficient ? (
-                    <p data-profile-refresh-limitation>
+                    <p data-profile-refresh-limitation className="text-[12px] leading-[1.6]">
                       {t("refresh.diagnostics.insufficient")}
                     </p>
                   ) : null}
@@ -1231,6 +1231,7 @@ export function AgentProfilePanel({
                       data-profile-refresh-stop-reason={
                         refreshData.diagnostics.stopReason
                       }
+                      className="text-[12px] leading-[1.6]"
                     >
                       {refreshData.diagnostics.stopReason === "max_urls"
                         ? t("refresh.diagnostics.stopReasons.max_urls", {

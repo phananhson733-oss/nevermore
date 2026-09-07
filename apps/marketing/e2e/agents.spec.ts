@@ -253,6 +253,8 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
     page.getByText("Public-page profile draft is ready"),
   ).toBeVisible();
   await expect(page.getByText("Fresh result")).toBeVisible();
+  await expect(page.locator("[data-profile-refresh-stop-reason]")).toHaveCSS("font-size", "12px");
+  await expect(page.locator("body")).not.toContainText(/dataforseo/i);
   await expect(
     page.locator('[data-profile-refresh-metric="pages"]'),
   ).toContainText("14");
@@ -320,7 +322,7 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   await expect(candidate).toContainText(
     "System suggestion · indirect alternative",
   );
-  await expect(candidate).toContainText("Product Profile seed SERP evidence");
+  await expect(candidate).toContainText("Search evidence from Product Profile queries");
   await expect(candidate).toContainText("18");
   await expect(candidate).toContainText("12,400");
   await expect(
@@ -374,6 +376,64 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   ]);
   expect(auditPosts).toBe(0);
 });
+
+for (const locale of ["en", "zh"] as const) {
+  test(`SEO acceptance typography, severity and unavailable-source reasons (${locale})`, async ({ page }, testInfo) => {
+    await mockSession(page, true);
+    const base = agentEnvelope("seo");
+    await page.route("**/api/agents/seo/audit", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        ...base, data: { ...base.data, result: { ...base.data.result,
+          crawlTier: "full-site",
+          keyPages: [{ url: "https://astrologywiki.com/about", title: null, metaDescription: null,
+            depth: 1, inboundLinks: 1, reason: "navigation" }],
+          records: base.data.result.records.map((record) => record.id === "first_image_lazy_loaded"
+            ? { ...record, state: "unverified", tested: 0, targetTested: false,
+              limitation: "first_image_in_document_order_with_a_declared_size_no_viewport_is_available" }
+            : record.id === "noindex_directive" ? { ...record, state: "observed", affected: 1,
+              observations: [{ url: "https://astrologywiki.com/about", values: [
+                { label: "robots_directive", value: "noindex" }, { label: "sitemap_member", value: false },
+              ] }] } : record),
+        } },
+      }) });
+    });
+    await page.goto(locale === "zh" ? "/zh/agents/seo" : "/agents/seo");
+    await page.getByRole("button", { name: locale === "zh" ? "仅必要" : "Necessary Only", exact: true }).click();
+    await page.getByLabel(locale === "zh" ? "目标 URL" : "Target URL", { exact: true }).fill("astrologywiki.com");
+    await completeRequiredProfileContext(page, locale, "technical seo audit");
+    await page.getByRole("button", { name: locale === "zh" ? "接受上下文并运行" : "Accept context & run" }).click();
+    await expect(page.getByTestId("agent-results-seo")).toBeVisible();
+    const summary = page.locator("[data-key-page-selection-summary] p").first();
+    await expect(summary).toHaveCSS("font-size", "12px");
+    // Chinese paragraphs retain the site's 1.75 reading rhythm.
+    await expect(summary).toHaveCSS("line-height", locale === "zh" ? "21px" : "19.2px");
+    await expect(page.locator("body")).not.toContainText(/dataforseo/i);
+    const observedOnly = page.getByTestId("agent-issues-observed-only");
+    await observedOnly.locator("summary").click();
+    await expect(observedOnly.locator("[data-noindex-intent]")).toContainText("https://astrologywiki.com/about");
+    await expect(observedOnly.locator("[data-noindex-intent]")).toContainText(locale === "zh" ? "不要自动移除 noindex" : "do not remove noindex automatically");
+    const excluded = page.getByTestId("agent-issues-excluded");
+    await excluded.locator("summary").click();
+    await expect(excluded.locator('[data-exclusion-reason="staticImageEligibility"]')).toBeVisible();
+    await expect(excluded).toContainText(locale === "zh" ? "不是通过或失败" : "not passed or failed");
+    for (const dark of [false, true]) {
+      await page.evaluate((value) => document.documentElement.classList.toggle("dark", value), dark);
+      const colors = await page.locator('[data-issue-filter="blocker"], [data-issue-filter="warning"], [data-issue-filter="suggestion"]').evaluateAll(
+        (elements) => elements.map((element) => getComputedStyle(element).color),
+      );
+      expect(new Set(colors).size).toBe(3);
+      await expect(page.locator('[data-issue-filter="blocker"]')).toHaveClass(/text-brand-error/);
+      await page.locator('[data-issue-filter="blocker"]').click();
+      await expect(page.locator('[data-issue-filter="blocker"]')).toHaveAttribute("aria-pressed", "true");
+    }
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await excluded.scrollIntoViewIfNeeded();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      await page.screenshot({ path: testInfo.outputPath(`seo-${locale}-${width}.png`) });
+    }
+  });
+}
 
 test("signed-out SEO submission opens registration without an audit POST", async ({
   page,

@@ -64,7 +64,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v18",
+    schemaVersion: "seo_audit.sitewide.v19",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -521,6 +521,32 @@ describe("handleAgentAuditRequest", () => {
     expect(body.data.result.landedTargetUrl).toBe(landed);
   });
 
+  it("keeps an image failure separate from missing field and lab data", async () => {
+    const response = await handleAgentAuditRequest(request(), "seo", dependencies({
+      readPagePerformance: async () => ({ status: "unavailable", reason: "no_field_data", weight: null }),
+      readImageWeights: async () => { throw new Error("image fetch failed"); },
+    }));
+    const body = await response.json();
+    const records = body.data.result.pagePerformance.records;
+    expect(records.find((entry: SeoAuditRecord) => entry.id === "core_web_vital_lcp").limitation)
+      .toBe("crux_reported_no_field_data_for_this_metric_on_this_url");
+    expect(records.find((entry: SeoAuditRecord) => entry.id === "page_total_transfer_bytes").limitation)
+      .toBe("the_lab_test_did_not_return_page_transfer_bytes_this_run");
+    expect(records.find((entry: SeoAuditRecord) => entry.id === "image_over_transfer_budget").limitation)
+      .toBe("no_declared_image_could_be_fetched_this_run");
+  });
+
+  it("does not call a missing lab result an unconfigured source after field success", async () => {
+    const response = await handleAgentAuditRequest(request(), "seo", dependencies({
+      readPagePerformance: async () => ({ status: "ok", weight: null, field: {
+        url: "https://acme.test/", sourceLevel: "url", formFactor: "mobile", lcp: 1000, inp: 100, cls: 0.01, ttfb: 100,
+      } }),
+    }));
+    const body = await response.json();
+    expect(body.data.result.pagePerformance.records.find((entry: SeoAuditRecord) => entry.id === "page_total_transfer_bytes").limitation)
+      .toBe("the_lab_test_did_not_return_page_transfer_bytes_this_run");
+  });
+
   it("says no source was configured, not that CrUX has nothing for the page", async () => {
     // PAGESPEED_API_KEY now exists on the marketing project for Preview and
     // Production, so this is no longer the production path — but it is still
@@ -734,7 +760,7 @@ describe("handleAgentAuditRequest", () => {
     expect(body.data.result.searchPerformance).toEqual(searchRegion);
     // Beside, not inside: the crawl ledger is what gets cached by host, and
     // these numbers belong to one visitor's verified property.
-    expect(body.data.result.records).toHaveLength(55);
+    expect(body.data.result.records).toHaveLength(56);
   });
 
   it("omits the region entirely when nothing covers the host", async () => {
@@ -885,7 +911,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v18",
+            schemaVersion: "seo_audit.sitewide.v19",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -1260,7 +1286,7 @@ describe("handleAgentAuditRequest", () => {
 
     expect(body.data.run.agent).toBe("tech");
     expect(body.data.result.records).toEqual(upstreamPayload.result.records);
-    expect(body.data.result.records).toHaveLength(55);
+    expect(body.data.result.records).toHaveLength(56);
   });
 
   it.each([

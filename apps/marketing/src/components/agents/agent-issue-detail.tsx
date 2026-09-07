@@ -27,6 +27,7 @@ import {
 import type { AgentProfileDraft } from "./agent-profile";
 import { solutionTemplate } from "./agent-solution-templates";
 import { useCopyToClipboard } from "../../lib/use-copy-to-clipboard";
+import { normalizeAgentRunTargetUrl } from "../../lib/agents/agent-run-options.ts";
 
 /** Most evidence rows one issue shows before the rest stay in the record count. */
 const EVIDENCE_ROW_LIMIT = 8;
@@ -488,18 +489,26 @@ export function AgentIssueDetail({
   const profileT = useTranslations("agents.workbench.profile");
   const check = issue.check.check;
   const investigation = issue.copyMode === "investigation";
+  const normalizedTarget = normalizeAgentRunTargetUrl(profile.targetUrl) ?? profile.targetUrl;
+  const issueTargetUrl = issue.keyPage?.url ??
+    (check.scope === "page" && issue.affected.urls.length === 1
+      ? issue.affected.urls[0]!
+      : normalizedTarget);
+  const issueExtract = targetPageExtract !== null &&
+    comparableUrl(targetPageExtract.url) === comparableUrl(issueTargetUrl)
+      ? targetPageExtract : null;
   /**
    * Whether the submitted page is among the pages this issue was found on.
    *
-   * The aggregate takes its verdict from the worst key page, while the draft,
-   * the preview and the handoff all use the submitted page -- the only one
-   * this run captured in full. False here means the repair guidance below is
-   * about a page that passed, and the screen has to say so.
+   * Each issue owns its URL and observations. Only the submitted page has a
+   * full text extract, so other pages get their own factual preview and a
+   * recheck handoff, never a generated draft using the submitted page's text.
    */
   const hitIncludesTarget = (() => {
+    if (issue.keyPage !== null) return issue.keyPage.isTarget;
     const reach = issue.affected.keyPages;
     if (reach === null || reach.hits === 0) return true;
-    const submitted = comparableUrl(profile.targetUrl);
+    const submitted = comparableUrl(targetPageExtract?.url ?? normalizedTarget);
     return reach.urls.some((url) => comparableUrl(url) === submitted);
   })();
   const localizedText = (value: { readonly en: string; readonly zh: string }) =>
@@ -538,7 +547,7 @@ export function AgentIssueDetail({
   const template = solutionTemplate(issue.agent, issue.check, {
     fillIn: recT("previewFillIn"),
     notCaptured: recT("previewNotCaptured"),
-    targetUrl: profile.targetUrl,
+    targetUrl: issueTargetUrl,
     productName: profile.productName,
     targetQuery: profile.targetQuery,
     pageType: pageTypeLabel,
@@ -551,7 +560,7 @@ export function AgentIssueDetail({
     evidenceRecords: issue.evidenceRecords,
     // The page's own text, so a preview stops reporting a title the same run
     // collected as "not captured".
-    targetPageExtract,
+    targetPageExtract: issueExtract,
   });
   const draftKind = draftKindFor(template.kind);
 
@@ -569,7 +578,7 @@ export function AgentIssueDetail({
         issue={issue}
         locale={locale}
         run={run}
-        targetUrl={profile.targetUrl}
+        targetUrl={issueTargetUrl}
       />
 
       {issue.copyMode === "investigation" ? (
@@ -601,7 +610,7 @@ export function AgentIssueDetail({
           <AffectedTargets issue={issue} />
           <KeyPageHits
             issue={issue}
-            targetUrl={profile.targetUrl}
+            targetUrl={normalizedTarget}
             locale={locale}
             profile={profile}
           />
@@ -729,11 +738,11 @@ export function AgentIssueDetail({
         )}
       </div>
 
-      {draftKind !== null && issue.copyMode === "repair" ? (
+      {draftKind !== null && issue.copyMode === "repair" && hitIncludesTarget && issueExtract !== null ? (
         <AgentSolutionDraft
           kind={draftKind}
-          targetUrl={profile.targetUrl}
-          extract={targetPageExtract}
+          targetUrl={issueTargetUrl}
+          extract={issueExtract}
           targetQuery={profile.targetQuery}
           pageType={profile.pageType}
         />

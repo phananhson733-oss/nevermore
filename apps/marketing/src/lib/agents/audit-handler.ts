@@ -38,6 +38,7 @@ import {
   buildPageWeightRecords,
   buildImageWeightRecords,
   type PagePerformanceGap,
+  type PageWeightGap,
   type PagePerformanceRaw,
   type PageWeightRaw,
   type ImageWeightRaw,
@@ -514,7 +515,7 @@ function projectSiteResources(
     robotsGroupsObserved: siteResources.robotsGroupsObserved,
     sitemapReferencesObserved: siteResources.sitemapReferencesObserved,
     sitemapFetched: siteResources.sitemapFetched,
-    // Additive in seo_audit.sitewide.v18: older cache rows have no field.
+    // Additive in seo_audit.sitewide.v19: older cache rows have no field.
     navigationUrls: [...(siteResources.navigationUrls ?? [])],
     // Carried, not blanked. This is the population A1 divides by, and an empty
     // list here does not read as "we could not measure" — it reads as "this
@@ -806,6 +807,7 @@ export async function handleAgentAuditRequest(
   let imageWeightLimitation = "no_image_weights_were_measured_for_this_run";
   let imageWeightsComplete = true;
   let pagePerformanceGap: PagePerformanceGap = "source_not_configured";
+  let pageWeightGap: PageWeightGap = "source_not_configured";
   if (result.targetInspected) {
     try {
       const read = await dependencies.readPagePerformance?.({
@@ -825,8 +827,13 @@ export async function handleAgentAuditRequest(
       // Independent of the field block: a page too new for CrUX still weighs
       // something, and that is exactly the page 8.5 is worth running on.
       pageWeight = read?.weight ?? null;
+      if (read !== undefined) {
+        pageWeightGap = read.status === "ok" || read.reason === "no_field_data"
+          ? "lab_result_unavailable" : read.reason;
+      }
     } catch {
       pagePerformanceGap = "provider_unavailable";
+      pageWeightGap = "provider_unavailable";
     }
     try {
       const sources = result.targetPageExtract?.declared?.images.sources ?? [];
@@ -841,7 +848,7 @@ export async function handleAgentAuditRequest(
             : "no_declared_image_could_be_fetched_this_run";
       }
     } catch {
-      pagePerformanceGap = "provider_unavailable";
+      imageWeightLimitation = "no_declared_image_could_be_fetched_this_run";
     }
   }
 
@@ -1038,7 +1045,7 @@ export async function handleAgentAuditRequest(
                 // reason for existing: it is one visitor's paid measurement of
                 // one page, and `page_performance` is excluded from
                 // CRAWL_CATEGORIES so it can never reach the shared cache row.
-                ...buildPageWeightRecords(pageWeight, pagePerformanceGap),
+                ...buildPageWeightRecords(pageWeight, pageWeightGap),
                 ...buildImageWeightRecords(
                   imageWeights,
                   imageWeightLimitation,

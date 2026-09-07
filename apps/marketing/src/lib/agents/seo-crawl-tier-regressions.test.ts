@@ -137,6 +137,6 @@ describe("SEO crawl-tier cross-layer regressions", () => {
     expect(run.body.data.result.keyPages).toHaveLength(31);
     expect(isAgentAuditSuccessEnvelope(run.body)).toBe(true);
     expect(supportsAgentDisplayVocabulary(run.body.data, "seo")).toBe(true);
-    expect(run.body.data.result.records.filter((r) => r.limitation === "full_site_only")).toHaveLength(3);
+    expect(run.body.data.result.records.filter((r) => r.limitation === "full_site_only")).toHaveLength(4);
   });
 });

@@ -39,6 +39,19 @@ function fieldBody(overrides: Record<string, unknown> = {}) {
 }
 
 describe("createPagePerformanceReader", () => {
+  it("distinguishes its own deadline from an upstream failure", async () => {
+    vi.useFakeTimers();
+    try {
+      const read = createPagePerformanceReader({ apiKey: "test-key", fetchImpl: ((_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        })) as typeof fetch });
+      const pending = read({ url: TARGET });
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(await pending).toMatchObject({ status: "unavailable", reason: "provider_timeout", weight: null });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
   it("asks for the mobile field data of exactly the URL it was given", async () => {
     const { fetchImpl, read } = reader(() => fieldBody());
     const result = await read({ url: TARGET });

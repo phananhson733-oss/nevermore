@@ -90,6 +90,52 @@ function evaluatedCheck({
 }
 
 describe("buildAgentIssueModel", () => {
+  it("keeps an ungraded noindex page visible beside another page's blocker", () => {
+    const restricted = "https://example.com/account";
+    const indexed = "https://example.com/pricing";
+    const check = evaluatedCheck({ id: "1.3", result: "blocker", evidenceRecordIds: ["noindex_directive"] });
+    const model = buildAgentIssueModel({ agent: "seo", checks: [check], targetUrl: indexed, inspectedTargetUrl: indexed,
+      records: [{ ...record({ id: "noindex_directive", affected: 2 }), observations: [
+        { url: restricted, values: [{ label: "sitemap_member", value: false }] },
+        { url: indexed, values: [{ label: "sitemap_member", value: true }] },
+      ] }],
+      keyPageReach: new Map([["1.3", { keyPageTotal: 2, keyPageEvaluatedCount: 2, keyPageHitCount: 1, hitUrls: [indexed],
+        outcomes: [restricted, indexed].map((url, index) => ({ page: { url, reason: "manual" as const, title: null, metaDescription: null,
+          depth: 1, inboundLinks: 1, basis: "structure" as const, matchedFeature: null }, result: index === 0 ? "observed-only" as const : "blocker" as const, measurement: null })),
+      }]]),
+    });
+    expect(model.counts.blocker).toBe(1);
+    expect(model.observedOnly).toHaveLength(1);
+    expect(model.observedOnly[0]?.affected.urls).toEqual([restricted]);
+    expect(model.observedOnly[0]?.evidenceRecords[0]?.observations[0]?.url).toBe(restricted);
+    expect(model.observedOnly[0]?.severity).toBeNull();
+  });
+  it.each([
+    ["B4", null, 0, "crawlHistory"],
+    ["B5", null, 0, "crawlHistory"],
+    ["4.1", null, 0, "competitorContent"],
+    ["9.1", null, 0, "serpNotEnabled"],
+    ["8.1", "the_field_data_provider_did_not_answer_this_run", 0, "sourceFailed"],
+    ["8.2", "unknown_future_limitation", 0, "insufficient"],
+    ["5.4", "first_image_in_document_order_with_a_declared_size_no_viewport_is_available", 0, "staticImageEligibility"],
+    ["6.1", "crawl_incomplete_inlinks_unreliable", 0, "crawlIncomplete"],
+    ["8.1", "the_performance_request_timed_out_this_run", 0, "sourceTimeout"],
+    ["8.5", "the_lab_test_did_not_return_page_transfer_bytes_this_run", 0, "labMissing"],
+    ["8.2", "crux_reported_no_field_data_for_this_metric_on_this_url", 0, "fieldSampleMissing"],
+    ["8.3", "no_field_data_source_was_configured_for_this_run", 0, "sourceNotConfigured"],
+  ] as const)("explains why %s was not judged without inventing a failure", (id, limitation, tested, reason) => {
+    const evidence = limitation === null ? [] : [{
+      ...record({ id: "r", affected: 0, state: tested > 0 ? "not_observed" : "unverified" }),
+      limitation, tested,
+    }];
+    const model = buildAgentIssueModel({ agent: "seo", records: evidence,
+      checks: [evaluatedCheck({ id, result: "excluded", truth: "unavailable", engine: "needs-supplement",
+        evidenceRecordIds: evidence.map((entry) => entry.id) })] });
+    expect(model.excluded[0]?.exclusionReason).toBe(reason);
+    expect(model.counts.blocker).toBe(0);
+    expect(model.counts.passed).toBe(0);
+  });
+
   it("maps the contract result states onto the three displayed severities", () => {
     const model = buildAgentIssueModel({
       agent: "seo",

@@ -112,7 +112,10 @@ export type PagePerformanceGap =
   | "no_field_data"
   | "provider_rejected_credentials"
   | "provider_quota_exhausted"
+  | "provider_timeout"
   | "provider_unavailable";
+
+export type PageWeightGap = Exclude<PagePerformanceGap, "no_field_data"> | "lab_result_unavailable";
 
 const GAP_LIMITATION: Readonly<Record<PagePerformanceGap, string>> = {
   source_not_configured: "no_field_data_source_was_configured_for_this_run",
@@ -122,6 +125,7 @@ const GAP_LIMITATION: Readonly<Record<PagePerformanceGap, string>> = {
   provider_quota_exhausted:
     "the_field_data_providers_quota_for_this_deployment_was_already_spent",
   provider_unavailable: "the_field_data_provider_did_not_answer_this_run",
+  provider_timeout: "the_performance_request_timed_out_this_run",
 };
 
 export function buildPagePerformanceRecords(
@@ -191,7 +195,7 @@ export function buildPagePerformanceRecords(
  */
 export function buildPageWeightRecords(
   weight: PageWeightRaw | null | undefined,
-  gap: PagePerformanceGap = "source_not_configured",
+  gap: PageWeightGap = "source_not_configured",
 ): readonly SeoAuditRecord[] {
   if (weight === null || weight === undefined) {
     return [
@@ -205,7 +209,9 @@ export function buildPageWeightRecords(
         tested: 0,
         affected: 0,
         observations: [],
-        limitation: GAP_LIMITATION[gap],
+        limitation: gap === "lab_result_unavailable"
+          ? "the_lab_test_did_not_return_page_transfer_bytes_this_run"
+          : GAP_LIMITATION[gap],
       } satisfies SeoAuditRecord,
     ];
   }
@@ -356,6 +362,7 @@ export const PAGE_PERFORMANCE_EVIDENCE_LABELS: readonly string[] = [
 
 export const PAGE_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
   ...Object.values(GAP_LIMITATION),
+  "the_lab_test_did_not_return_page_transfer_bytes_this_run",
   "crux_had_no_url_level_data_so_these_are_the_whole_origin_p75_values",
   "crux_p75_of_real_visits_over_a_28_day_window_lags_a_change_you_just_shipped",
   "page_weight_is_one_lab_load_on_an_emulated_mobile_device",

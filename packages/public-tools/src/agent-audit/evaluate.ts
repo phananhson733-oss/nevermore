@@ -42,7 +42,7 @@ function projectRecordToTarget(
   // Already about this page and nothing else, so there is nothing to narrow.
   // Running it through the filter below would drop a clean record's absent
   // observation and report a page that passed as one that was never checked.
-  if (record.population === "target_page") return record;
+  if (record.population === "target_page" && record.id !== "page_inbound_link_count") return record;
 
   // Match on the collected page's own URL as well as the submitted one: entry
   // redirects and URL normalisation routinely make them differ, and matching on
@@ -68,6 +68,12 @@ function projectRecordToTarget(
       affected: observations.length,
       observations,
     };
+  }
+
+  // This is an explicit measurement, not a sparse failure list. Membership
+  // alone cannot substitute for the current page's missing count.
+  if (record.id === "page_inbound_link_count") {
+    return { ...record, state: "unverified", tested: 0, affected: 0, targetTested: false, observations: [] };
   }
 
   // Absence is evidence about this page only when the rule tested it. That is
@@ -364,7 +370,10 @@ function evaluateCheck(
     "keyword density is not used to judge a page" reported a page as passing
     or failing on density. Neither is a claim this catalogue makes.
   */
-  const result: AgentAuditResultState = check.declaresNoJudgement
+  const noindexNeedsIntent = check.id === "1.3" && failingRecords.length > 0 &&
+    !failingRecords.some((record) => record.observations.some((observation) =>
+      observation.values.some((entry) => entry.label === "sitemap_member" && entry.value === true)));
+  const result: AgentAuditResultState = check.declaresNoJudgement || noindexNeedsIntent
     ? "observed-only"
     : failingRecords.length > 0
       ? failureState(check, new Set(failingRecords.map((record) => record.id)))
@@ -382,7 +391,7 @@ function evaluateCheck(
         ? "observed"
         : "not-observed";
 
-  const scoreValue = !check.scored
+  const scoreValue = !check.scored || result === "observed-only"
     ? null
     : result === "pass"
       ? 1
@@ -395,7 +404,9 @@ function evaluateCheck(
     result,
     engine: "ready",
     truth,
-    measurement: measurement(records, check),
+    measurement: noindexNeedsIntent
+      ? l("Indexing is blocked by noindex; intended indexing has not been established. Confirm intent before changing it.", "已观察到 noindex 阻止索引；尚未确认此页是否需要收录，修改前请先核对意图。")
+      : measurement(records, check),
     evidenceRecordIds: records.map((record) => record.id),
     scoreValue,
     scoreContribution:

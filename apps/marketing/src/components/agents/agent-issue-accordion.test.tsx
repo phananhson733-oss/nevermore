@@ -586,7 +586,7 @@ describe("AgentIssueAccordion", () => {
     const scope = host.querySelector<HTMLElement>("[data-repair-scope]");
 
     expect(scope?.getAttribute("data-repair-scope")).toBe("elsewhere");
-    expect(scope?.textContent ?? "").toContain("not found on the page you submitted");
+    expect(scope?.textContent ?? "").toContain("that page's recorded evidence");
   });
 
   it("keeps the repair scoped to the submitted page when it is itself a hit", () => {
