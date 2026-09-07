@@ -84,7 +84,7 @@ const raw = {
 const payload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v18",
+    schemaVersion: "seo_audit.sitewide.v19",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -406,7 +406,7 @@ describe("handleSeoAuditRequest", () => {
     // an hour. It has to read as a miss.
     const stale = {
       ...freshPayload,
-      run: { ...freshPayload.run, schemaVersion: "seo_audit.sitewide.v4" },
+      run: { ...freshPayload.run, schemaVersion: "seo_audit.sitewide.v18" },
     };
     const scan = vi.fn(async () => ({ ...raw, requestedUrl: normalizedUrl }));
     const release = vi.fn();

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CrawlPageRecord } from "@sf/sources";
+import { CRAWL_PROJECTION_LIMITS } from "@sf/sources/crawl-limits";
 import { buildSeoAuditPayload, buildSeoAuditReport } from "./model.ts";
 import { isSeoAuditPayload } from "./contract.ts";
 import type { SeoAuditRaw } from "./scan.ts";
@@ -100,6 +101,49 @@ function byId(report: ReturnType<typeof buildSeoAuditReport>, id: string) {
 }
 
 describe("site-wide SEO audit model", () => {
+  it.each(["stop", "partial", "truncated", "missingCounts"])("withholds zero inbound measurements for %s", (gap) => {
+    const source = raw();
+    const pages = gap === "truncated" ? [page("https://acme.test/", { internalOutlinks: Array.from(
+      { length: CRAWL_PROJECTION_LIMITS.maxInternalOutlinks }, () => ({ targetSubjectUrl: "https://acme.test/about", rel: null, anchorText: "About" })) }), source.pages[1]!] : source.pages;
+    const result = byId(buildSeoAuditReport({ ...source, pages,
+      availability: gap === "partial" ? "partial" : source.availability,
+      stopReason: gap === "stop" ? "max_urls" : null,
+      providerUsage: gap === "missingCounts" ? {} : source.providerUsage,
+    }), "page_inbound_link_count");
+    expect(result?.observations.map((entry) => entry.url)).toEqual(["https://acme.test/about"]);
+  });
+
+  it("counts normalized source pages once, not repeated links or invalid URLs", () => {
+    const source = raw();
+    const links = ["https://acme.test/about", "https://acme.test/about#section", "invalid"].map(targetSubjectUrl => ({ targetSubjectUrl, rel: null, anchorText: "About" }));
+    const result = byId(buildSeoAuditReport({ ...source, pages: [page("https://acme.test/", { internalOutlinks: links }), source.pages[1]!,
+      page("https://acme.test/other", { internalOutlinks: links })] }), "page_inbound_link_count");
+    expect(result?.observations.find((entry) => entry.url === "https://acme.test/about")?.values)
+      .toContainEqual({ label: "observed_inbound_links", value: 2 });
+  });
+  it("measures inbound links from distinct other pages, including roots and non-sitemap pages", () => {
+    const home = page("https://acme.test/", { sitemapMember: false,
+      internalOutlinks: [{ targetSubjectUrl: "https://acme.test/", rel: null, anchorText: "Self" }] }, 0);
+    const about = page("https://acme.test/about", { sitemapMember: false,
+      internalOutlinks: [{ targetSubjectUrl: "https://acme.test/", rel: null, anchorText: "Home" }] });
+    const report = buildSeoAuditReport(raw({ pages: [home, about] }));
+    const result = byId(report, "page_inbound_link_count");
+    expect(result?.tested).toBe(2);
+    expect(result?.observations).toEqual([
+      { url: "https://acme.test/", values: [{ label: "observed_inbound_links", value: 1 }] },
+      { url: "https://acme.test/about", values: [{ label: "observed_inbound_links", value: 0 }] },
+    ]);
+  });
+
+  it.each(["urlsErrored", "urlsBlocked", "urlsDisallowed", "urlsSkipped"])("does not publish zero inbound links with %s gaps", (gap) => {
+    const source = raw();
+    const report = buildSeoAuditReport({ ...source, providerUsage: { ...source.providerUsage, [gap]: 1 } });
+    const result = byId(report, "page_inbound_link_count");
+    expect(result?.observations.map((entry) => entry.url)).toEqual(["https://acme.test/about"]);
+    expect(result?.population).toBe("conditional_subset");
+    expect(result?.targetTested).toBe(false);
+  });
+
   it("accepts only the current complete payload", () => {
     const current = buildSeoAuditPayload(raw());
     const stale = {
@@ -231,7 +275,7 @@ describe("site-wide SEO audit model", () => {
 
     expect(payload.run).toEqual({
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v18",
+      schemaVersion: "seo_audit.sitewide.v19",
 
       mode: "public_preview",
       scope: "discoverable_same_origin_static_html_audit",
@@ -1288,7 +1332,7 @@ describe("target page extract", () => {
   it("pins the schema version the extract ships under", () => {
     const payload = buildSeoAuditPayload(positionalFixture());
 
-    expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v18");
+    expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v19");
 
     expect(payload.result.targetPageExtract).not.toBeNull();
     expect(isSeoAuditPayload(payload)).toBe(true);

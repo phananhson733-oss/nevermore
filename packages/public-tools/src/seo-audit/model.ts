@@ -466,6 +466,24 @@ function buildRecords(
       CRAWL_PROJECTION_LIMITS.maxInternalOutlinks,
   );
   const discoveryJudgeable = raw.stopReason === null && !outlinkListTruncated;
+  // Count distinct other source pages. Self-links do not make an orphan discoverable.
+  const inboundSources = new Map<string, Set<string>>();
+  for (const source of raw.pages) {
+    for (const link of source.projection.internalOutlinks) {
+      const target = subjectUrlOf(link.targetSubjectUrl);
+      const from = subjectUrlOf(source.subjectUrl);
+      if (target === null || from === null || target === from) continue;
+      const sources = inboundSources.get(target) ?? new Set<string>();
+      sources.add(from);
+      inboundSources.set(target, sources);
+    }
+  }
+  const inboundCensusComplete = discoveryJudgeable && raw.availability === "available" &&
+    ["urlsSkipped", "urlsBlocked", "urlsDisallowed", "urlsErrored"].every((key) => raw.providerUsage[key] === 0);
+  // Positive evidence remains usable in an incomplete crawl; missing links do not.
+  // Explicit observations preserve each measured page's eligibility at projection time.
+  const inboundMeasuredPages = htmlPages.filter((page) => inboundCensusComplete ||
+    (inboundSources.get(page.subjectUrl)?.size ?? 0) > 0);
   // Duplicate detection runs only over self-canonical pages: a page whose
   // canonical resolves to another subject is excluded from grouping AND from
   // `tested`, so `tested` counts exactly the population the check ran over.
@@ -795,7 +813,10 @@ function buildRecords(
       tested: htmlPages,
       observations: htmlPages
         .filter((page) => page.robotsDirectiveState === "noindex_observed")
-        .map((page) => pageObservation(page, { robots_directive: "noindex" })),
+        .map((page) => pageObservation(page, {
+          robots_directive: "noindex",
+          sitemap_member: raw.sitemap.fetched ? page.sitemapMember : null,
+        })),
       limitation: "static_response_directives_only",
     }),
     record({
@@ -922,6 +943,16 @@ function buildRecords(
       limitation: discoveryJudgeable
         ? "bounded_static_html_crawl_inlinks_only"
         : "crawl_incomplete_inlinks_unreliable",
+    }),
+    fullSiteRecord({
+      id: "page_inbound_link_count",
+      category: "links",
+      population: "conditional_subset",
+      tested: inboundMeasuredPages,
+      observations: inboundMeasuredPages.map((page) => pageObservation(page, {
+        observed_inbound_links: inboundSources.get(page.subjectUrl)?.size ?? 0,
+      })),
+      limitation: inboundCensusComplete ? "bounded_static_html_crawl_inlinks_only" : "crawl_incomplete_inlinks_unreliable",
     }),
     fullSiteRecord({
       id: "sitemap_page_without_observed_inlink",
@@ -1873,7 +1904,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v18",
+      schemaVersion: "seo_audit.sitewide.v19",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

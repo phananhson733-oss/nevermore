@@ -14,6 +14,7 @@ import type { AgentKeyPageReach } from "./agent-key-page-aggregate";
 import type { AgentKind } from "./agent-types";
 import {
   analyzeAgentRecommendations,
+  recommendationEvidenceRecords,
   RESULT_PRIORITY,
 } from "./agent-result-helpers";
 import type { AgentRecommendationPriority } from "./agent-result-helpers";
@@ -53,6 +54,31 @@ export type AgentIssueLane =
   | "excluded";
 
 export type AgentIssueCopyMode = "repair" | "investigation";
+
+export type AgentExclusionReason = "crawlHistory" | "competitorContent" | "serpNotEnabled"
+  | "sourceFailed" | "sourceTimeout" | "labMissing" | "fieldSampleMissing" | "sourceNotConfigured"
+  | "staticImageEligibility" | "crawlIncomplete" | "insufficient";
+
+function exclusionReason(agent: AgentKind, checkId: string, records: readonly SeoAuditRecord[]): AgentExclusionReason {
+  if (records.length === 0) {
+    if (checkId === "B4" || checkId === "B5") return "crawlHistory";
+    if (checkId === "4.1") return "competitorContent";
+    if (agent === "seo" && ["9.1", "9.3", "9.4"].includes(checkId)) return "serpNotEnabled";
+  }
+  if (records.some((record) => record.state === "unverified" && [
+    "the_field_data_provider_did_not_answer_this_run",
+    "the_field_data_provider_rejected_this_deployments_credentials",
+    "the_field_data_providers_quota_for_this_deployment_was_already_spent",
+  ].includes(record.limitation ?? ""))) return "sourceFailed";
+  if (records.some((record) => record.limitation === "the_performance_request_timed_out_this_run")) return "sourceTimeout";
+  if (records.some((record) => record.limitation === "the_lab_test_did_not_return_page_transfer_bytes_this_run")) return "labMissing";
+  if (records.some((record) => record.limitation === "crux_reported_no_field_data_for_this_metric_on_this_url")) return "fieldSampleMissing";
+  if (records.some((record) => record.limitation === "no_field_data_source_was_configured_for_this_run")) return "sourceNotConfigured";
+  if (checkId === "5.4" && records.some((record) => record.tested === 0 &&
+    record.limitation === "first_image_in_document_order_with_a_declared_size_no_viewport_is_available")) return "staticImageEligibility";
+  if (checkId === "6.1" && records.some((record) => record.limitation === "crawl_incomplete_inlinks_unreliable")) return "crawlIncomplete";
+  return "insufficient";
+}
 
 /**
  * What this issue affects.
@@ -114,6 +140,7 @@ export interface AgentIssue {
   readonly lane: AgentIssueLane;
   /** The detector was withheld by this run's crawl scope, not a missing integration. */
   readonly requiresFullSite?: boolean;
+  readonly exclusionReason?: AgentExclusionReason;
   /** Null whenever the run reached no failure verdict for this check. */
   readonly severity: AgentIssueSeverity | null;
   /**
@@ -141,7 +168,7 @@ export interface AgentIssue {
    * one verdict, and the repair beneath it is written for that page.
    *
    * Null for a site-wide check, for a run with no key pages, and for a check
-   * that reached its verdict on exactly one page (which needs no splitting).
+   * that reached its verdict on only the submitted page.
    */
   readonly keyPage: AgentIssueKeyPageSubject | null;
 }
@@ -430,6 +457,7 @@ export function buildAgentIssueModel({
 }: BuildAgentIssueModelInput): AgentIssueModel {
   const reachOf = (check: AgentAuditEvaluatedCheck) =>
     keyPageReach?.get(check.check.id);
+  const recordsById = new Map(records.map((record) => [record.id, record]));
   const analysis = analyzeAgentRecommendations(agent, checks, records, {
     ...(targetUrl === undefined ? {} : { targetUrl }),
     ...(inspectedTargetUrl === undefined ? {} : { inspectedTargetUrl }),
@@ -478,21 +506,26 @@ export function buildAgentIssueModel({
       verdict about". Split, each row carries its own page, its own result and
       its own measurement, so the repair below it is written for a page that
       really has the problem -- and the row can be handed to the checker on its
-      own. Splitting only above one hit: a single-page failure is already one
-      row, and giving it a page label would add a word without adding a fact.
+      own. A single non-target hit also needs an explicit page identity; only
+      a lone submitted-page hit can rely on the run's target label.
     */
     const hits = (reach?.outcomes ?? []).filter((outcome) =>
       SPLIT_RESULTS.has(String(outcome.result)),
     );
-    if (hits.length > 1) {
+    if (hits.length > 0) {
       hits.forEach((outcome, index) => {
         const perPageCheck: AgentAuditEvaluatedCheck = {
           ...check,
           result: outcome.result,
           measurement: outcome.measurement,
         };
+        const pageRecords = recommendationEvidenceRecords(
+          perPageCheck, recordsById, outcome.page.url, outcome.page.url,
+        );
+        const isTarget = inspectedTargetUrl !== undefined &&
+          comparable(outcome.page.url) === comparable(inspectedTargetUrl);
         actionable.push({
-          id: `${recommendation.id}@${outcome.page.url}`,
+          id: hits.length > 1 ? `${recommendation.id}@${outcome.page.url}` : recommendation.id,
           agent,
           check: perPageCheck,
           lane: "actionable",
@@ -500,25 +533,22 @@ export function buildAgentIssueModel({
           priority: RESULT_PRIORITY[outcome.result] ?? null,
           recognized: true,
           affected: {
-            ...affectedTargets(recommendation.evidenceRecords, reach),
+            ...affectedTargets(pageRecords, reach),
             keyPages: {
               total: reach?.keyPageTotal ?? 0,
               evaluated: reach?.keyPageEvaluatedCount ?? 0,
-              hits: hits.length,
+              hits: 1,
               urls: [outcome.page.url],
             },
           },
-          evidenceRecords: recommendation.evidenceRecords,
+          evidenceRecords: pageRecords,
           copyMode: "repair",
-          keyPage: {
+          keyPage: hits.length > 1 || !isTarget ? {
             url: outcome.page.url,
             index: index + 1,
             total: hits.length,
-            isTarget:
-              inspectedTargetUrl !== undefined &&
-              inspectedTargetUrl !== null &&
-              comparable(outcome.page.url) === comparable(inspectedTargetUrl),
-          },
+            isTarget,
+          } : null,
         });
       });
       continue;
@@ -541,7 +571,21 @@ export function buildAgentIssueModel({
 
   for (const check of checks) {
     const id = issueId(agent, check);
+    const restrictions = check.check.id === "1.3" && isRecognized(check)
+      ? (reachOf(check)?.outcomes ?? []).filter((outcome) => outcome.result === "observed-only") : [];
+    restrictions.forEach((outcome, index) => {
+      const evidenceRecords = recommendationEvidenceRecords(check, recordsById, outcome.page.url, outcome.page.url);
+      observedOnly.push({ id: `${id}@${outcome.page.url}`, agent,
+        check: { ...check, result: "observed-only", measurement: outcome.measurement, scoreValue: null, scoreContribution: null },
+        lane: "observed-only", severity: null, priority: null, recognized: true,
+        affected: affectedTargets(evidenceRecords, undefined), evidenceRecords, copyMode: "investigation",
+        keyPage: { url: outcome.page.url, index: index + 1, total: restrictions.length,
+          isTarget: inspectedTargetUrl !== undefined && comparable(outcome.page.url) === comparable(inspectedTargetUrl) },
+      });
+    });
     if (rankedById.has(id)) continue;
+    // Do not also label a mixed pass/intent-review aggregate as a passing check.
+    if (restrictions.length > 0) continue;
 
     if (!isRecognized(check)) {
       excluded.push(quarantine(check));
@@ -576,6 +620,7 @@ export function buildAgentIssueModel({
       check,
       lane,
       ...(requiresFullSite ? { requiresFullSite: true } : {}),
+      ...(lane === "excluded" ? { exclusionReason: exclusionReason(agent, check.check.id, exclusionRecords) } : {}),
       severity: null,
       // Passed and excluded rows carry no verdict to prioritise.
       priority: null,
@@ -583,11 +628,11 @@ export function buildAgentIssueModel({
       // No affected URLs, but the reach still matters: a check that passed on
       // four of twelve key pages has not passed on twelve, and the fail-closed
       // ruling makes that the common case rather than an edge one.
-      affected: {
+      affected: check.check.id === "1.3" && lane === "observed-only" ? affectedTargets(exclusionRecords, undefined) : {
         ...UNAVAILABLE_TARGETS,
         keyPages: keyPageReachOf(reachOf(check)),
       },
-      evidenceRecords: [],
+      evidenceRecords: check.check.id === "1.3" && lane === "observed-only" ? exclusionRecords : [],
       copyMode: "repair",
       keyPage: null,
     };

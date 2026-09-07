@@ -41,6 +41,14 @@ const SEVERITY_STYLE: Readonly<Record<AgentIssueSeverity, string>> = {
   suggestion: "border-brand-info/35 bg-brand-info/10 text-brand-info",
 };
 
+const SUMMARY_COLOR = {
+  blocker: "text-brand-error",
+  warning: "text-brand-warning",
+  suggestion: "text-brand-info",
+  investigation: "text-text-dark-secondary",
+  passed: "text-brand-success",
+} as const;
+
 const SEVERITY_ICON = {
   blocker: AlertTriangle,
   warning: AlertTriangle,
@@ -51,21 +59,6 @@ const ON_PAGE_GROUP_HINTS = [
   { groupId: "2" },
   { groupId: "4" },
 ] as const;
-
-/**
- * Engine states, keyed to their message names.
- *
- * Kebab-case on the left because that is what the evaluator emits. The view
- * layer used to convert these to snake_case on the way in, which is how the
- * same state ended up with three spellings across three files.
- */
-const ENGINE_KEY: Readonly<Record<string, string>> = {
-  ready: "ready",
-  "needs-integration": "needsIntegration",
-  "needs-supplement": "needsSupplement",
-  "not-integrated": "notIntegrated",
-  "access-required": "accessRequired",
-};
 
 /** Truth states a row may state, keyed to their message names. */
 /**
@@ -345,11 +338,12 @@ function QuietLane({
               issue.lane === "excluded" ? (
                 <span
                   data-issue-engine={issue.check.engine}
-                  className="justify-self-start font-mono text-[10px] tracking-[0.06em] text-text-dark-faint uppercase sm:justify-self-end"
+                  data-exclusion-reason={issue.exclusionReason}
+                  className={`max-w-xl justify-self-start text-[12px] leading-[1.6] sm:justify-self-end ${issue.exclusionReason === "sourceFailed" || issue.exclusionReason === "sourceTimeout" ? "text-brand-warning" : "text-text-dark-secondary"}`}
                 >
                   {issue.requiresFullSite
                     ? t("excludedLane.fullSiteOnly")
-                    : t(`engine.${ENGINE_KEY[issue.check.engine] ?? "unknown"}`)}
+                    : t(`excludedLane.reasons.${issue.exclusionReason ?? "insufficient"}`)}
                 </span>
               ) : null
             ) : (
@@ -357,6 +351,11 @@ function QuietLane({
                 {t("unrecognizedState")}
               </span>
             )}
+            {issue.check.check.id === "1.3" && issue.lane === "observed-only" ? (
+              <span data-noindex-intent className="text-[12px] leading-[1.6] break-words text-text-dark-secondary sm:col-span-2 sm:col-start-2">
+                {issue.affected.urls.join(" · ")}<br />{t("observedOnlyLane.noindexIntent")}
+              </span>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -540,7 +539,7 @@ export function AgentIssueAccordion({
               </p>
               <strong
                 data-summary-count={key}
-                className="mt-1 block text-[20px] font-semibold text-text-dark-primary"
+                className={`mt-1 block text-[20px] font-semibold ${SUMMARY_COLOR[key]}`}
               >
                 {value}
               </strong>
@@ -610,9 +609,12 @@ export function AgentIssueAccordion({
                     aria-pressed={selected}
                     onClick={() => setFilter(candidate)}
                     className={`rounded-[8px] border px-3 py-1.5 font-mono text-[11px] tracking-[0.04em] transition-colors ${
-                      selected
-                        ? "border-brand-accent/40 bg-brand-accent/[0.08] text-brand-accent-text"
-                        : "border-brand-border-strong text-text-dark-secondary hover:text-text-dark-primary"
+                      candidate === "blocker" || candidate === "warning" || candidate === "suggestion"
+                        ? SEVERITY_STYLE[candidate]
+                        : selected
+                          ? "border-brand-accent/40 bg-brand-accent/[0.08] text-brand-accent-text"
+                          : "border-brand-border-strong text-text-dark-secondary hover:text-text-dark-primary"
+                    } ${selected ? "ring-1 ring-current font-semibold" : ""
                     }`}
                   >
                     {t(`filters.${candidate}`)} · {filterCount(candidate)}

@@ -72,6 +72,7 @@ export type PagePerformanceUnavailableReason =
   | "no_field_data"
   | "provider_rejected_credentials"
   | "provider_quota_exhausted"
+  | "provider_timeout"
   | "provider_unavailable";
 
 /**
@@ -201,7 +202,7 @@ export function createPagePerformanceReader(options: {
     } catch {
       return {
         status: "unavailable",
-        reason: "provider_unavailable",
+        reason: controller.signal.aborted ? "provider_timeout" : "provider_unavailable",
         weight: null,
       };
     } finally {

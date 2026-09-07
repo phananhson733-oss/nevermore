@@ -1211,6 +1211,8 @@
         "one_live_sample_of_one_results_page_which_changes_between_requests": "One live sample of one results page. The same query sampled again can come back with a different set of blocks.",
         "the_field_data_provider_rejected_this_deployments_credentials": "The field-data provider rejected this deployment's credentials, so no measurement was taken. This is a configuration problem on our side, not a statement about your page.",
         "the_field_data_providers_quota_for_this_deployment_was_already_spent": "The field-data provider's quota for this deployment was already spent, so no measurement was taken. Nothing here is a statement about your page.",
+        "the_performance_request_timed_out_this_run": "The performance request exceeded its time budget. No measurement was returned.",
+        "the_lab_test_did_not_return_page_transfer_bytes_this_run": "The lab test returned no usable page-transfer size. This is independent of real-user field data.",
         "the_field_data_provider_did_not_answer_this_run": "The field-data provider did not answer within this run's budget, so no measurement was taken. Worth trying again.",
         "no_results_page_provider_was_configured_for_this_run": "No results-page provider was configured for this run, so no results page was sampled. Nothing here is a statement about the query.",
         "this_runs_market_is_not_one_the_results_page_provider_covers": "This run's market is not one the results-page provider covers, so no sample was taken and no paid call was made.",
@@ -1350,6 +1352,10 @@
         "multiple_h1": {
           "title": "Multiple H1 elements",
           "description": "Inspected 2xx HTML pages with more than one H1 element in the collected static document."
+        },
+        "page_inbound_link_count": {
+          "title": "Observed inbound links from other pages",
+          "description": "Distinct other collected pages linking to this URL. Zero is reported only after a complete crawl; incomplete crawls retain positive evidence only."
         },
         "sitemap_page_without_observed_inlink": {
           "title": "Sitemap page without an observed HTML inlink",
@@ -8075,13 +8081,13 @@
           }
         },
         "search": {
-          "eyebrow": "DataForSEO · search evidence",
+          "eyebrow": "Search evidence",
           "title": "Domains worth review",
-          "description": "DataForSEO observations receive an initial direct or indirect system suggestion. Review or change any relationship; search overlap is evidence, not a confirmed business fact.",
+          "description": "Search observations receive an initial direct or indirect suggestion. Review or change any relationship; search overlap is evidence, not a confirmed business fact.",
           "action": "Refresh search landscape",
           "loadingAction": "Refreshing search landscape",
           "missingPrerequisite": "Add {fields} before requesting search evidence.",
-          "organicBoundary": "Relationship suggestions are derived locally from organic keyword overlap. They remain editable and are not DataForSEO-confirmed business relationships.",
+          "organicBoundary": "Relationship suggestions come from organic keyword overlap. They remain editable and do not establish a confirmed business relationship.",
           "serpBoundary": "Domains observed for this exact target query default to an indirect alternative with low confidence. Review or change each relationship.",
           "seedSerpBoundary": "Domains seeded from Product Profile search evidence default to an indirect alternative with low confidence. Review or change each relationship.",
           "noData": "No candidate domains were observed for this bounded request.",
@@ -8115,8 +8121,8 @@
           },
           "review": {
             "candidatesReady": "System competitor suggestions ready · review or adjust",
-            "providerEvidence": "DataForSEO · search evidence",
-            "seedSerpEvidence": "DataForSEO · Product Profile seed SERP evidence",
+            "providerEvidence": "Search evidence",
+            "seedSerpEvidence": "Search evidence from Product Profile queries",
             "needsReview": "System relationship suggestion ready for review",
             "awaitingClassification": "{count} editable system relationship suggestions",
             "noneExcluded": "None excluded in this local review",
@@ -8129,8 +8135,8 @@
             "currentDirect": "Manually adjusted · direct competitor",
             "currentIndirect": "Manually adjusted · indirect alternative",
             "currentExcluded": "Manually adjusted · excluded",
-            "systemSuggestionSource": "System suggestions · DataForSEO evidence",
-            "systemSuggestionProvenance": "Deterministic system suggestion · DataForSEO search evidence",
+            "systemSuggestionSource": "System suggestions · search evidence",
+            "systemSuggestionProvenance": "System suggestion based on search evidence",
             "mixedSuggestionProvenance": "System suggestions + manual adjustments",
             "actions": {
               "direct": "Direct",
@@ -8720,8 +8726,8 @@
       "keyPagesNone": "This run selected no key pages, so page-level findings cover the submitted URL only.",
       "keyPageSelectionSummary": "{count} candidates: navigation {navigation} · cluster pages {clusterPages} ({prefixes}) · content {content} (up to 15 by inbound links among pages collected in this run, reduced to 10 or 5 when the 50-page safety valve applies) · manual {manual}.",
       "fullSiteSelectionSummary": "{count} page-level candidates: navigation {navigation} · cluster pages {clusterPages} ({prefixes}) · content {content} · manual {manual} · full-site remainder {fullSite}.",
-      "keyPageSelectionFixed": "Home and the submitted page are fixed-priority candidates when collected; the submitted page is still evaluated if capture fails.",
-      "keyPageSelectionBoundary": "These are local classifications of the final page-level list, not external evidence or a zero filled in for missing data.",
+      "keyPageSelectionFixed": "Home and the submitted page are included first when collected. Duplicate URLs are counted once.",
+      "keyPageSelectionBoundary": "These counts describe this crawl only; pages not collected are outside this breakdown.",
       "keyPageOmittedHeading": "Not included in page-level checks by the safety valve ({count})",
       "keyPageManualUnavailableHeading": "Manually added but could not be crawled or evaluated ({count})",
       "capturedLanded": "Redirected to {url} — that is the page this report read.",
@@ -8905,7 +8911,7 @@
             "keyPagesOnlyTarget": "Only the page you submitted was hit.",
             "keyPageSplit": "This row is about the page named above. The same check on other pages has its own row.",
             "repairScopeTarget": "The guidance and preview below are for the page you submitted: {url}",
-            "repairScopeElsewhere": "Note: this was not found on the page you submitted — it was found on the other key pages listed above. The guidance and preview below still use the submitted page's content, because that is the only page this run captured in full. To get guidance written for one of the hit pages, run it again with that URL as the target.",
+            "repairScopeElsewhere": "This issue concerns the page named above, not the submitted page. Its preview uses only that page's recorded evidence. Use Check this page to capture its full text before generating a draft.",
             "checkThisPage": "Check this page",
             "checkHandoffFailed": "This page could not be handed over. Open the On-Page Checker directly and enter the URL."
         },
@@ -8941,6 +8947,7 @@
           "unknown": "unrecognised engine"
         },
         "observedOnlyLane": {
+          "noindexIntent": "Indexing is blocked, but this run has no conflicting sitemap declaration. Confirm whether this page should be indexed; do not remove noindex automatically.",
           "title": "Measured, not judged",
           "hint": "published as numbers, not verdicts"
         },
@@ -8952,8 +8959,21 @@
           "fullSiteOnly": "Not run in the key-pages scope; requires full-site crawling.",
           "fullSiteHelp": "Choose Full site, then confirm a new run. The crawl budget and source availability still determine which checks can be evaluated.",
           "chooseFullSite": "Choose Full site",
-          "title": "Excluded checks",
-          "hint": "missing required input or source"
+          "title": "Checks not judged this run",
+          "hint": "not passed or failed; reasons below",
+          "reasons": {
+            "crawlHistory": "Needs crawl history or server logs; this detector is not implemented yet.",
+            "competitorContent": "Competitor-page body comparison was not run. Check 4.6 reports this page's body length.",
+            "serpNotEnabled": "Search-result layout evidence is not collected by SEO Agent. Use the single-page checker for this source.",
+            "sourceFailed": "The performance data source failed this run. No performance verdict was reached; this is not a site failure.",
+            "staticImageEligibility": "No eligible first image with declared dimensions was available in the static HTML. Above-the-fold placement was not verified.",
+            "crawlIncomplete": "The crawl is incomplete. Positive inlinks can be verified, but missing inlinks cannot be judged.",
+            "sourceTimeout": "The performance request timed out. No site-performance verdict was reached.",
+            "labMissing": "The lab test returned no page-transfer size; this is not a missing real-user sample.",
+            "fieldSampleMissing": "The source returned no real-user sample for this metric. This is not a performance failure.",
+            "sourceNotConfigured": "This deployment has no configured performance source; no measurement was attempted.",
+            "insufficient": "The required evidence was not available for this check; neither a pass nor a failure was established."
+          }
         },
         "investigationNextStep": "Confirm the source is available and covers this site, then re-run this check. Do not change the site on this basis before then.",
         "quarantined": {

@@ -47,6 +47,7 @@ export const SEO_AUDIT_RECORD_CATEGORIES = {
   multiple_h1: "structure",
   page_without_any_discovery_path: "links",
   sitemap_page_without_observed_inlink: "links",
+  page_inbound_link_count: "links",
   internal_target_http_error: "links",
   faq_schema_question_not_on_page: "structured_data",
   page_near_duplicate_of_another_page: "structure",

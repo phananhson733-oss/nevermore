@@ -140,7 +140,7 @@ export function comparableUrl(value: string | null | undefined): string | null {
  * it. Both forms are accepted, because either can be the one the observations
  * carry.
  */
-function recommendationEvidenceRecords(
+export function recommendationEvidenceRecords(
   check: AgentAuditEvaluatedCheck,
   recordsById: ReadonlyMap<string, SeoAuditRecord>,
   targetUrl: string | undefined,

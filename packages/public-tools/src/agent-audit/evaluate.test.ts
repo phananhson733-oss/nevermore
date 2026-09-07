@@ -51,6 +51,31 @@ function ratioRecord(
 }
 
 describe("v2 Agent audit evaluator", () => {
+  it("never treats a missing inbound count as a pass even when targetTested is true", () => {
+    const result = evaluateAgentAuditScope("page", { availability: "available", targetUrl: "https://example.com/",
+      targetInspected: true, records: [{ ...record("page_inbound_link_count", "not_observed"),
+        population: "conditional_subset", targetTested: true, tested: 1 }] }).checks.find((entry) => entry.check.id === "6.1");
+    expect(result?.result).toBe("excluded");
+    expect(result?.scoreContribution).toBeNull();
+  });
+  it.each([0, 2])("judges real inbound count %i instead of sitemap membership", (count) => {
+    const records = [{ ...record("page_inbound_link_count", "observed", 1), population: "conditional_subset" as const,
+      observations: [{ url: "https://example.com/", values: [{ label: "observed_inbound_links", value: count }] }] }];
+    const result = evaluateAgentAuditScope("page", { availability: "available", targetUrl: "https://example.com/",
+      targetInspected: true, records }).checks.find((entry) => entry.check.id === "6.1");
+    expect(result?.result).toBe(count === 0 ? "warning" : "pass");
+    expect(result?.measurement?.en).toContain(String(count));
+  });
+
+  it.each([true, false, null])("does not call noindex a repair blocker without a conflicting index declaration: %s", (inSitemap) => {
+    const records = [{ ...record("noindex_directive", "observed", 1),
+      observations: [{ url: "https://example.com/", values: [{ label: "sitemap_member", value: inSitemap }] }] }];
+    const result = evaluateAgentAuditScope("page", { availability: "available", targetUrl: "https://example.com/",
+      targetInspected: true, records }).checks.find((entry) => entry.check.id === "1.3");
+    expect(result?.result).toBe(inSitemap === true ? "blocker" : "observed-only");
+    if (inSitemap !== true) expect(result?.scoreContribution).toBeNull();
+  });
+
   it("compares a published average against the aggregate, not the affected count", () => {
     const aggregate = (id: string, label: string, value: number | null) => ({
       id,
@@ -328,7 +353,7 @@ describe("v2 Agent audit target identity", () => {
       targetTested: null,
       tested: 4,
       affected: 1,
-      observations: [{ url, values: [] }],
+      observations: [{ url, values: [{ label: "sitemap_member", value: true }] }],
       limitation: null,
     };
   }
