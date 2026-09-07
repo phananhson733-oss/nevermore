@@ -7,7 +7,7 @@ import type { BriefV2Context, BriefV2Generated } from "@sf/public-tools/content-
 import { parseBriefV2Context, validateModelBriefV2 } from "@sf/public-tools/content-brief/v2-generation";
 import { CONTENT_BRIEF_LLM_TEMPERATURE, resolveContentBriefLlmConfig, type ContentBriefLlmDependencies } from "./content-brief-llm.ts";
 import { prepareContentBriefV2Prompt } from "./content-brief-v2-prompts.ts";
-import { validateSectionQuestionsBrief } from "./content-brief-v3-model.ts";
+import { briefV3WirePath, validateSectionQuestionsBrief } from "./content-brief-v3-model.ts";
 import { createKeywordLlmClient, EMPTY_KEYWORD_LLM_USAGE, KeywordLlmError, type KeywordLlmCompletion, type KeywordLlmFailureReason, type KeywordLlmUsage } from "./keyword-llm-client.ts";
 
 export const CONTENT_BRIEF_V2_LLM_DEADLINE_MS = 30_000;
@@ -201,11 +201,16 @@ export async function runContentBriefV2Llm(
   if (first.ok) return complete(first.value, completion.usage);
   const rejected = fail("validation_failed", first.path);
   if (!REPAIRABLE_PATH.test(first.path)) return rejected;
-  // The path must already name a string in this exact reply. That is also what
-  // keeps the section-shaped V3 protocol out: its research paths are reported
-  // in the flattened shape the validator works in, which does not resolve
-  // against the nested reply, so no call is spent on a splice that cannot land.
-  const segments = parsePath(first.path);
+  // Under the section-shaped V3 protocol the validator reports paths in the
+  // flat shape it was handed, and research.outline / research.questions do not
+  // exist in the reply the model sent. Translating first is what lets a wrong
+  // heading or question be repaired at all: those are exactly the paths the
+  // generated-language rule rejects, and they are the reason this call exists.
+  // Everything outside research passes through untranslated.
+  const wirePath = briefV3WirePath(first.path, raw) ?? first.path;
+  // The path must name a string in this exact reply. A repair cannot be spent
+  // on a splice that has nowhere to land.
+  const segments = parsePath(wirePath);
   if (segments === null || typeof readAt(raw, segments) !== "string") return rejected;
 
   // One repair request, shown its own reply and the rule it broke. The evidence
@@ -219,7 +224,7 @@ export async function runContentBriefV2Llm(
   try {
     repair = await client.complete({
       system: REPAIR_SYSTEM,
-      user: JSON.stringify({ rejected_path: first.path, rule: first.code, reply: raw }),
+      user: JSON.stringify({ rejected_path: wirePath, rule: first.code, reply: raw }),
       temperature: CONTENT_BRIEF_LLM_TEMPERATURE, maxOutputTokens: LLM_MAX_OUTPUT_TOKENS, timeoutMs: repairTimeoutMs,
       ...(config.model === "gpt-5.6-luna" ? { reasoningEffort: "low" as const } : {}),
     });

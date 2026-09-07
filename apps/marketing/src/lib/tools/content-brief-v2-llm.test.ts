@@ -333,6 +333,29 @@ describe("one-call Brief v2 assembly", () => {
     expect(result.reads).toMatchObject({ status: "unavailable", reason: "validation_failed", attempted: 2, calls: 2 });
   });
 
+  it("repairs a heading in the section-shaped reply the tool page actually sends", async () => {
+    // The live protocol is v3: the model returns research.sections, and the
+    // validator reports research.outline[0].h2 because it judges the flattened
+    // shape. Without translating that back, the repair finds nothing at the
+    // reported path and declines — silently skipping the one case it was built
+    // for, since a wrong-language heading is exactly what lands there.
+    const original = context();
+    const data = { ...original, serp: { rows: buildSerpObservations([{ rank: 1, url: original.research.pages[0]!.url, title: "Medical billing guide", domain: "c1.example" }]),
+      read: { status: "partial" as const, requested: 10, returned: 1, unresolved: 0 } } };
+    const sectioned = (h2: string) => {
+      const reply = JSON.parse(RESPONSE);
+      reply.research = { sections: [{ h2, h3: [], questions: reply.research.questions }] };
+      return JSON.stringify(reply);
+    };
+    const { requests, result } = await runSequence(
+      [sectioned("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"), sectioned("Validate claims before submission")], data);
+    expect(requests).toHaveLength(2);
+    // The model is shown its own reply, so it must be shown its own path.
+    expect(JSON.parse(requests[1]!.user).rejected_path).toBe("research.sections[0].h2");
+    expect(result.output?.research.outline[0]?.h2).toBe("Validate claims before submission");
+    expect(result.reads).toMatchObject({ status: "complete", calls: 2 });
+  });
+
   it("takes only the rewritten string from a repair, never the rest of its reply", async () => {
     const wrong = JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"));
     // A repair asked to translate one heading also drops a source reference and
