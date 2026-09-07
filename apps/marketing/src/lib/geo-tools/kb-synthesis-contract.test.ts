@@ -23,6 +23,20 @@ describe("role synthesis output authority", () => {
     const value = structuredClone(ROLE_SYNTHESIS_OUTPUT); value.roles[0]!.label = "99人团队的财务经理";
     expect(parseGeoRoleSynthesis(value, input).ok).toBe(false);
   });
+  describe("a price the sources state in a currency the guard once could not read", () => {
+    const pricedInWon = { ...ROLE_SYNTHESIS_INPUT, sources: ROLE_SYNTHESIS_INPUT.sources.map(source => ({ ...source, text: source.text.replace("$19", "₩19") })) };
+    const claiming = (segment: string) => { const value = structuredClone(ROLE_SYNTHESIS_OUTPUT); value.roles[0]!.segment = segment; return value; };
+
+    it("refuses a segment that states the number without the currency", () => {
+      expect(parseGeoRoleSynthesis(claiming("每月预算 19 的财务团队"), pricedInWon)).toMatchObject({ ok: false, path: "roles.numeric_claim" });
+    });
+    it("refuses a segment that states the number in a different currency", () => {
+      expect(parseGeoRoleSynthesis(claiming("每月预算 $19 的财务团队"), pricedInWon)).toMatchObject({ ok: false, path: "roles.numeric_claim" });
+    });
+    it("accepts the segment that states the price the sources actually show", () => {
+      expect(parseGeoRoleSynthesis(claiming("每月预算 ₩19 的财务团队"), pricedInWon)).toMatchObject({ ok: true });
+    });
+  });
   it("reports insufficient basis instead of requiring a fabricated Persona", () => {
     expect(parseGeoRoleSynthesis({ roles: [], categoryTerms: [] }, ROLE_SYNTHESIS_INPUT)).toMatchObject({ ok: false, reason: "insufficient_basis" });
   });

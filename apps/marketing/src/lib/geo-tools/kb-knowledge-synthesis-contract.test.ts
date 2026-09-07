@@ -132,6 +132,34 @@ describe("GEO knowledge synthesis contracts", () => {
     expect(() => parseGeoKnowledgeNarrativeV1(value, input())).toThrow(/numeric/i);
   });
 
+  describe("a price the evidence states in a currency the guard once could not read", () => {
+    function pricedInWon() {
+      const priced: any = input();
+      priced.sourceCatalogue[0].excerpts = ["Pine Cloud is project software for teams of 2. A seat costs ₩9,900."];
+      priced.sourceCatalogueHash = geoKnowledgeSynthesisSourceCatalogueDigest(priced.sourceCatalogue);
+      const { contentHash: _contentHash, ...body } = priced;
+      priced.contentHash = geoKnowledgeSynthesisInputDigest(body);
+      return priced;
+    }
+    function claiming(statement: string) {
+      const value = narrative();
+      value.facts[0] = { ...value.facts[0], statement };
+      return value;
+    }
+
+    it("refuses a claim that states the number without the currency", () => {
+      expect(() => parseGeoKnowledgeNarrativeV1(claiming("Pine Cloud costs 9,900 per seat."), pricedInWon())).toThrow(/numeric/i);
+    });
+
+    it("refuses a claim that states the number in a different currency", () => {
+      expect(() => parseGeoKnowledgeNarrativeV1(claiming("Pine Cloud costs ¥9,900 per seat."), pricedInWon())).toThrow(/numeric/i);
+    });
+
+    it("accepts the claim that states the price the evidence actually shows", () => {
+      expect(() => parseGeoKnowledgeNarrativeV1(claiming("Pine Cloud costs ₩9,900 per seat."), pricedInWon())).not.toThrow();
+    });
+  });
+
   it("requires own-page, rather than accepted-fact, product evidence for comparisons", () => {
     const acceptedFactInput: any = input();
     acceptedFactInput.sourceCatalogue.push({ id: "source:accepted", kind: "accepted_fact", label: "Accepted fact", url: null, competitor: null, availability: "available", reason: null, observedAt: null, bodyHash: null, excerpts: ["Pine Cloud supports teams of 2."] });

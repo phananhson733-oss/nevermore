@@ -194,6 +194,8 @@ describe("GEO customer knowledge pack contract", () => {
     ["oversized arrays", (value: any) => { value.entity.value.aliases = Array.from({ length: GEO_KNOWLEDGE_PACK_LIMITS.aliases + 1 }, (_, index) => `Alias ${index}`); }],
     ["oversized excerpts", (value: any) => { value.sourceCatalogue[0].excerpts = ["x".repeat(GEO_KNOWLEDGE_PACK_LIMITS.excerptCodePoints + 1)]; }],
     ["unsupported numeric claims", (value: any) => { value.qa.value[0].directAnswer = "Yes. It supports 99 teams."; }],
+    ["numeric claims that drop the currency the evidence priced in", (value: any) => { value.sourceCatalogue[0].excerpts = ["Example Cloud is workflow software. It supports teams of 2. A seat costs ₩9,900. A person approves each workflow."]; value.qa.value[0].directAnswer = "Yes. Example Cloud supports teams of 2 and a seat costs 9,900."; }],
+    ["numeric claims that swap the currency the evidence priced in", (value: any) => { value.sourceCatalogue[0].excerpts = ["Example Cloud is workflow software. It supports teams of 2. A seat costs ₩9,900. A person approves each workflow."]; value.qa.value[0].directAnswer = "Yes. Example Cloud supports teams of 2 and a seat costs ¥9,900."; }],
     ["inconsistent customer counts", (value: any) => { value.meta.counts.qa = 7; }],
   ])("rejects %s", (_label, mutate) => {
     const value = body();
