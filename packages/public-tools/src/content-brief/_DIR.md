@@ -41,7 +41,7 @@ GEO shared-content extension: `geo-contract.ts` declares the explicit `gengrowth
 | `canonical.test.ts` | 键序 / undefined / 嵌套 / 数字与字符串转义 / 两条哈希路径对照向量 / 指纹对易变字段不敏感、对其它字段敏感 / 不可变 |
 | `cluster.ts` | handoff §4.5 步骤 2–5：`normalizeHeading`（序号、品牌 token、停用词、问句前缀保留、截断）、`clusterHeadings`（(rank, 原文顺序) 遍历的单链接词法聚类，Jaccard 或 token 边界子串并簇）、`selectMustAnswer`（门槛、排序、CAP、候选 / 隐藏计数） |
 | `cluster.test.ts` | 归一化各规则、同义并簇 / 不并簇、同页只计一次 covered_by、代表串、first_rank、确定性、空表语言、门槛与截断、不可变 |
-| `classify.ts` | handoff §4.6 有序规则表：四个域名集合、`FORMAT_RULES` / `classifySerpFormat`（域名 → 路径 → 标题，首条命中即 value，全部命中进 rules_hit）、`INTENT_RULES` / `classifyIntent`（navigational 优先，多数决，平局取 rank 最靠前的领先意图并标 tie） |
+| `classify.ts` | handoff §4.6 有序规则表：五个域名集合（含 `ENCYCLOPEDIA_HOSTS`，百科按 guide 归类，因为格式词表是封闭的、没有 reference 这一档，规则 id 会照实打印出来）、标题先 NFKC 再小写、中文标题规则一律不带 `\b`（JS 的词边界在汉字之间永不成立）、`FORMAT_RULES` / `classifySerpFormat`（域名 → 路径 → 标题，首条命中即 value，全部命中进 rules_hit）、`INTENT_RULES` / `classifyIntent`（navigational 优先，多数决，平局取 rank 最靠前的领先意图并标 tie） |
 | `classify.test.ts` | 每条规则一个用例、顺序优先级、unknown、www./子域后缀匹配、平局与非平局、无命中返回 null、规则表顺序钉死 |
 | `assemble.ts` | 由各路 reads 与证据派生 ContentBrief 全部字段并盖指纹（并行任务产出，职责以其文件头为准） |
 | `assemble.test.ts` | assemble 的契约真值表测试（并行任务产出） |

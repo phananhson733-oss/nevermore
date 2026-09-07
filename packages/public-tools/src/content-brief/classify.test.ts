@@ -5,6 +5,7 @@ import {
   FORMAT_RULES,
   FORUM_HOSTS,
   INTENT_RULES,
+  ENCYCLOPEDIA_HOSTS,
   NEWS_HOSTS,
   VIDEO_HOSTS,
   classifyIntent,
@@ -35,18 +36,32 @@ function row(
 
 describe("host sets", () => {
   it("pin the spec's host lists", () => {
-    expect([...VIDEO_HOSTS]).toEqual(["youtube.com", "vimeo.com"]);
+    expect([...VIDEO_HOSTS]).toEqual([
+      "youtube.com", "vimeo.com", "tiktok.com", "instagram.com", "bilibili.com", "dailymotion.com",
+    ]);
     expect([...FORUM_HOSTS]).toEqual([
       "reddit.com",
       "quora.com",
       "stackexchange.com",
       "stackoverflow.com",
+      "zhihu.com",
+      "ptt.cc",
+      "dcard.tw",
+      "v2ex.com",
+      "mobile01.com",
     ]);
     expect([...COMMERCE_HOSTS]).toEqual([
       "amazon.com",
       "ebay.com",
       "walmart.com",
       "etsy.com",
+      "shopee.com",
+      "shopee.tw",
+      "taobao.com",
+      "tmall.com",
+      "jd.com",
+      "momoshop.com.tw",
+      "pchome.com.tw",
     ]);
     expect([...NEWS_HOSTS]).toEqual([
       "nytimes.com",
@@ -54,6 +69,27 @@ describe("host sets", () => {
       "reuters.com",
       "theguardian.com",
     ]);
+    expect([...ENCYCLOPEDIA_HOSTS]).toEqual([
+      "wikipedia.org", "wiktionary.org", "baike.baidu.com", "britannica.com", "wikiwand.com",
+    ]);
+  });
+
+  it("classifies the result shapes a Chinese search returns, instead of calling them unknown", () => {
+    // Every one of these was "unknown" before: a zh run had six of nine results
+    // unclassified, which makes the observed format distribution meaningless.
+    const cases: readonly [string, string, string, string][] = [
+      ["baike.baidu.com", "https://baike.baidu.com/item/水逆", "水逆", "guide"],
+      ["zhihu.com", "https://www.zhihu.com/question/12345", "水逆是什么", "forum"],
+      ["shopee.tw", "https://shopee.tw/product/1/2", "水晶", "product_page"],
+      ["facebook.com", "https://www.facebook.com/page/videos/12345", "水逆影片", "video"],
+      ["example.com", "https://example.com/post", "水逆是什么意思？", "guide"],
+      ["example.com", "https://example.com/post", "如何應對水逆", "guide"],
+      ["example.com", "https://example.com/post", "Mercury retrograde dates for 2026", "guide"],
+      ["example.com", "https://example.com/post", "Mercury retrograde meaning", "guide"],
+    ];
+    for (const [domain, url, title, expected] of cases) {
+      expect(classifySerpFormat({ domain, url, title }).value, title).toBe(expected);
+    }
   });
 });
 
@@ -100,7 +136,7 @@ describe("classifySerpFormat: domain rules", () => {
     });
     expect(classifySerpFormat(serp("example.com", "https://www.youtube.com/watch?v=1"))).toEqual({
       value: "video",
-      rules_hit: ["host:video"],
+      rules_hit: ["host:video", "path:watch"],
     });
     expect(classifySerpFormat(serp("example.com", "https://M.YouTube.com/watch")).value).toBe("video");
   });
@@ -280,6 +316,10 @@ describe("classifySerpFormat: ordering", () => {
       "host:forum",
       "host:commerce",
       "host:news",
+      "host:encyclopedia",
+      "path:videos",
+      "path:watch",
+      "path:reels",
       "path:compare",
       "path:vs",
       "path:-vs-",
@@ -299,6 +339,13 @@ describe("classifySerpFormat: ordering", () => {
       "title:how_to",
       "title:what_is",
       "title:guide",
+      "title:meaning",
+      "title:explained",
+      "title:dates",
+      "title:zh_what_is",
+      "title:zh_how_to",
+      "title:zh_dates",
+      "title:zh_best",
     ]);
   });
 });

@@ -702,8 +702,41 @@ describe("handleContentBriefRequest v2 admission and evidence", () => {
     expect(readWebsite).toHaveBeenCalledWith("user-1", "w-1");
     expect(brief.context.profile_snapshot).toEqual({ website_id: "w-1", revision: 9, hash: "d".repeat(64) });
     expect(brief.context.facts).toHaveLength(32);
-    expect(brief.context.facts[31]).toMatchObject({ id: "P32", text: "feature 29" });
+    // The budget is still spent in full when one array is all the profile has.
+    expect(brief.context.facts.filter((fact) => fact.field.startsWith("coreFeatures"))).toHaveLength(30);
     expect(brief.run.reads.find(({ source }) => source === "profile")).toEqual({ source: "profile", status: "partial", attempted: 34, retained: 32, reason: null });
+  });
+
+  it("does not let one long array push the fields a differentiated angle needs out of the budget", async () => {
+    const profile = {
+      ...confirmedProfile(),
+      coreFeatures: Array.from({ length: 40 }, (_, index) => `feature ${index}`),
+      trustSignals: Array.from({ length: 20 }, (_, index) => `signal ${index}`),
+      valueProposition: "Cafes stop losing roast batches to spreadsheets",
+      jtbd: "Know which roast batch went to which cafe",
+      icpPain: "Batch records live in three different spreadsheets",
+      outcomes: ["Fewer wasted batches", "Faster wholesale invoicing"],
+      useCases: ["Wholesale roasting", "Single-origin release planning"],
+      directCompetitors: ["Cropster", "Artisan"],
+      fieldProvenance: [
+        ...confirmedProfile().fieldProvenance,
+        ...(["valueProposition", "trustSignals", "jtbd", "icpPain", "outcomes", "useCases", "directCompetitors"] as const)
+          .map((path) => ({
+            path: `/${path}` as const, derivation: "declared" as const, confidence: "high" as const,
+            source: "supplied_product_information" as const, limitation: null, observedAt: null, evidenceUrls: [],
+          })),
+      ],
+    };
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), v2Dependencies({
+      readWebsite: async () => ({ kind: "ok", websiteId: "w-1", host: "site.example", snapshotRevision: 9, profileHash: "d".repeat(64), profile }),
+    })));
+    const fields = brief.context.facts.map((fact) => fact.field.replace(/\[\d+\]$/u, ""));
+    // Before this, the first thirty-two facts in contract order were sixteen
+    // core features and trust signals, and every one of these fields was cut.
+    for (const field of ["valueProposition", "jtbd", "icpPain", "outcomes", "useCases", "directCompetitors"]) {
+      expect(fields, field).toContain(field);
+    }
+    expect(fields.filter((field) => field === "coreFeatures").length).toBeLessThanOrEqual(20);
   });
 
   it.each(["missing", "not_confirmed", "error"] as const)("does not turn a %s profile read into an invented one-fact count", async (kind) => {

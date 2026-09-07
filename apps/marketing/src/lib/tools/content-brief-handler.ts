@@ -137,6 +137,66 @@ import {
 const TOOL = "content-brief";
 const KEYWORD_MAX_CHARS = 200;
 const BRIEF_V2_PROFILE_FACT_MAX = 32;
+/** Per field, so one long array cannot spend the whole fact budget. */
+const BRIEF_V2_FACTS_PER_FIELD_MAX = 3;
+/**
+ * The order the brief wants its profile facts in.
+ *
+ * The contract's field order is the order a profile is written, not the order
+ * that helps write about a keyword. Taking the first thirty-two facts in that
+ * order stopped at triggerPain on a real run: jtbd, useCases, outcomes, icpPain
+ * and directCompetitors — the fields a differentiated angle is actually built
+ * from — never reached the model, while sixteen core features and trust signals
+ * did. Fields not named here keep their contract order behind these.
+ */
+const BRIEF_V2_FACT_PRIORITY: readonly string[] = [
+  "oneLinePositioning", "valueProposition", "outcomes", "useCases", "jtbd", "directCompetitors",
+  "primaryIcp", "icpPain", "triggerPain", "coreFeatures", "productName", "indirectAlternatives",
+  "barriers", "buyer", "user", "firstOutcome",
+];
+
+/** "coreFeatures[2]" is a fact about coreFeatures. */
+function factFieldName(field: string): string {
+  return field.replace(/\[\d+\]$/u, "");
+}
+
+/**
+ * Choose which facts the brief sees, without changing what it reports having
+ * read: `attempted` stays the profile's true fact count, so cutting still
+ * shows as a partial read.
+ */
+export function selectBriefV2ProfileFacts(facts: readonly ProfileFact[]): ProfileFact[] {
+  const rank = (fact: ProfileFact): number => {
+    const index = BRIEF_V2_FACT_PRIORITY.indexOf(factFieldName(fact.field));
+    return index === -1 ? BRIEF_V2_FACT_PRIORITY.length : index;
+  };
+  const ordered = facts
+    .map((fact, index) => ({ fact, index, rank: rank(fact) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index);
+
+  // Breadth first: at most three facts per field, so one long array cannot
+  // spend the budget. Then depth: an unfilled budget is spent, in the same
+  // order, on the facts the per-field bound held back — a profile whose only
+  // rich field is an array should still send as much of it as fits.
+  const perField = new Map<string, number>();
+  const chosen: typeof ordered = [];
+  const held: typeof ordered = [];
+  for (const entry of ordered) {
+    const name = factFieldName(entry.fact.field);
+    const used = perField.get(name) ?? 0;
+    if (used < BRIEF_V2_FACTS_PER_FIELD_MAX && chosen.length < BRIEF_V2_PROFILE_FACT_MAX) {
+      perField.set(name, used + 1);
+      chosen.push(entry);
+    } else held.push(entry);
+  }
+  for (const entry of held) {
+    if (chosen.length >= BRIEF_V2_PROFILE_FACT_MAX) break;
+    chosen.push(entry);
+  }
+  return chosen
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map(({ fact }) => fact);
+}
 /** Admission calls (auth, body, quota, grant) are cheap; this only stops a hung store. */
 const ADMISSION_STEP_MS = 5_000;
 const GSC_REQUEST_TIMEOUT_MS = 8_000;
@@ -730,7 +790,7 @@ async function readProfileV2Lane(
     };
   }
   const allFacts = profileFacts(result.profile);
-  const facts = allFacts.slice(0, BRIEF_V2_PROFILE_FACT_MAX);
+  const facts = selectBriefV2ProfileFacts(allFacts);
   return {
     facts,
     host: result.host,
