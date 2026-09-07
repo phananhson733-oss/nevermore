@@ -21,9 +21,29 @@ import {
 
 const NO_BRAND: readonly string[] = [];
 
-/** Perf gate for clusterHeadings; the naive O(H^2) pairwise scan measured 1843 ms at this size. */
+/**
+ * Perf gate for clusterHeadings, measured in reference units rather than
+ * milliseconds.
+ *
+ * The gate exists to catch a return to the naive O(H^2) pairwise scan, which
+ * measured 1843 ms at CLUSTER_PERF_HEADINGS against roughly 46 ms today. A
+ * millisecond budget cannot tell that regression from a busy machine: this
+ * unchanged algorithm measured 824 ms against the old 300 ms budget while a
+ * type-check ran beside it, and which of the three cases tripped varied from
+ * run to run.
+ *
+ * So each case reports its cost in units of a reference workload measured in
+ * the same process. Two things make that number stable. The ratio absorbs a
+ * slower or busier machine, because both sides slow together. Taking the best
+ * of several attempts absorbs a scheduler hiccup inside one attempt, which the
+ * single unwarmed measurement this replaces had no defence against.
+ *
+ * Budgets sit at roughly twice the highest units observed across repeated idle
+ * and loaded runs, so the naive scan (about 40x the current cost) is still
+ * caught with room to spare.
+ */
 const CLUSTER_PERF_HEADINGS = 3000;
-const CLUSTER_PERF_BUDGET_MS = 300;
+const CLUSTER_PERF_BUDGET_UNITS = 40; // observed 15.0-19.0
 const CLUSTER_PERF_VOCABULARY = 200;
 const CLUSTER_PERF_MIN_TOKENS = 2;
 const CLUSTER_PERF_MAX_TOKENS = 6;
@@ -31,7 +51,20 @@ const CLUSTER_PERF_PAGES = 10;
 /** Worst case for the inverted index: every heading shares one token, so every pair is a candidate. */
 const CLUSTER_WORST_CASE_LEVELS = 2;
 const CLUSTER_WORST_CASE_HEADINGS = CRAWL_HEADINGS_PER_PAGE_MAX * CLUSTER_WORST_CASE_LEVELS * CLUSTER_PERF_PAGES;
-const CLUSTER_WORST_CASE_BUDGET_MS = 100;
+/**
+ * The one-token case runs shortest of the three, so its ratio is the noisiest:
+ * eight samples spanned 3.8 to 6.0. Its budget therefore only catches a large
+ * constant-factor regression; a measured 29% one (allocating an array per pair
+ * inside sharedTokenCount) sits inside the natural spread and passes. The
+ * sharp guards are the other two. What this case really pins is the assertion
+ * below it: nothing merges, so all 800 survive as separate clusters.
+ */
+const CLUSTER_ONE_TOKEN_BUDGET_UNITS = 12; // observed 3.8-6.0
+/** Catches removing the already-connected short circuit, which this case leans on. */
+const CLUSTER_LONG_PREFIX_BUDGET_UNITS = 8; // observed 1.9-2.2
+const REFERENCE_ROUNDS = 20_000;
+const REFERENCE_SEED = 20_260_907;
+const PERF_ATTEMPTS = 5;
 
 /** `prefix u0`, `prefix u1`, ... : one shared token per heading, one unique token. */
 function sharedPrefixHeadings(count: number, prefix: string): HeadingInput[] {
@@ -49,6 +82,41 @@ function seededRandom(seed: number): () => number {
     state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
     return state / 2 ** 32;
   };
+}
+
+/**
+ * One fixed unit of the string splitting and Map counting that clusterHeadings
+ * spends its time on, used only to size the machine this is running on. It
+ * calls nothing from cluster.ts, so a regression there cannot hide by
+ * inflating the denominator. The total is asserted so an engine that optimises
+ * the loop away is caught instead of silently reporting a near-zero reference.
+ */
+function referenceWork(): number {
+  const seen = new Map<string, number>();
+  const next = seededRandom(REFERENCE_SEED);
+  for (let i = 0; i < REFERENCE_ROUNDS; i += 1) {
+    const key = `term${Math.floor(next() * CLUSTER_PERF_VOCABULARY)} u${i % 97}`;
+    for (const token of key.split(" ")) seen.set(token, (seen.get(token) ?? 0) + 1);
+  }
+  let total = 0;
+  for (const count of seen.values()) total += count;
+  if (total !== REFERENCE_ROUNDS * 2) throw new Error(`reference workload did not run: ${total}`);
+  return total;
+}
+
+function fastestMs(run: () => unknown): number {
+  let best = Number.POSITIVE_INFINITY;
+  for (let attempt = 0; attempt < PERF_ATTEMPTS; attempt += 1) {
+    const started = performance.now();
+    run();
+    best = Math.min(best, performance.now() - started);
+  }
+  return best;
+}
+
+/** Cost of `run` on this machine, expressed in reference-workload units. */
+function costInReferenceUnits(run: () => unknown): number {
+  return fastestMs(run) / fastestMs(referenceWork);
 }
 
 function pseudoRandomHeadings(count: number, seed: number): HeadingInput[] {
@@ -314,34 +382,31 @@ describe("clusterHeadings", () => {
     expect(out.map((c) => c.covered_by)).toEqual([2, 2]);
   });
 
-  it(`clusters ${CLUSTER_PERF_HEADINGS} headings within ${CLUSTER_PERF_BUDGET_MS} ms`, () => {
+  it(`clusters ${CLUSTER_PERF_HEADINGS} headings within ${CLUSTER_PERF_BUDGET_UNITS} reference units`, () => {
     const inputs = pseudoRandomHeadings(CLUSTER_PERF_HEADINGS, 20_260_829);
-    const started = performance.now();
     const out = clusterHeadings(inputs, "en", ["acme"]);
-    const elapsed = performance.now() - started;
     expect(out.length).toBeGreaterThan(0);
-    expect(elapsed).toBeLessThan(CLUSTER_PERF_BUDGET_MS);
+    expect(costInReferenceUnits(() => clusterHeadings(inputs, "en", ["acme"])))
+      .toBeLessThan(CLUSTER_PERF_BUDGET_UNITS);
   });
 
-  it(`clusters ${CLUSTER_WORST_CASE_HEADINGS} headings that all share one token within ${CLUSTER_WORST_CASE_BUDGET_MS} ms`, () => {
+  it(`clusters ${CLUSTER_WORST_CASE_HEADINGS} headings that all share one token within ${CLUSTER_ONE_TOKEN_BUDGET_UNITS} reference units`, () => {
     const inputs = sharedPrefixHeadings(CLUSTER_WORST_CASE_HEADINGS, "x");
-    const started = performance.now();
     const out = clusterHeadings(inputs, "en", NO_BRAND);
-    const elapsed = performance.now() - started;
     // Jaccard 1/3 and no containment: nothing merges, every pair was still a candidate.
     expect(out).toHaveLength(CLUSTER_WORST_CASE_HEADINGS);
-    expect(elapsed).toBeLessThan(CLUSTER_WORST_CASE_BUDGET_MS);
+    expect(costInReferenceUnits(() => clusterHeadings(inputs, "en", NO_BRAND)))
+      .toBeLessThan(CLUSTER_ONE_TOKEN_BUDGET_UNITS);
   });
 
-  it(`clusters ${CLUSTER_WORST_CASE_HEADINGS} headings that share a long prefix within ${CLUSTER_WORST_CASE_BUDGET_MS} ms`, () => {
+  it(`clusters ${CLUSTER_WORST_CASE_HEADINGS} headings that share a long prefix within ${CLUSTER_LONG_PREFIX_BUDGET_UNITS} reference units`, () => {
     const inputs = sharedPrefixHeadings(CLUSTER_WORST_CASE_HEADINGS, "how to brew better coffee at home");
-    const started = performance.now();
     const out = clusterHeadings(inputs, "en", NO_BRAND);
-    const elapsed = performance.now() - started;
     // Jaccard 5/7 >= threshold: everything merges into one component of ten pages.
     expect(out).toHaveLength(1);
     expect(out[0]?.covered_by).toBe(CLUSTER_PERF_PAGES);
-    expect(elapsed).toBeLessThan(CLUSTER_WORST_CASE_BUDGET_MS);
+    expect(costInReferenceUnits(() => clusterHeadings(inputs, "en", NO_BRAND)))
+      .toBeLessThan(CLUSTER_LONG_PREFIX_BUDGET_UNITS);
   });
 
   it("does not mutate the input array", () => {
