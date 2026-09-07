@@ -298,9 +298,6 @@ begin
     or v_synthesis->>'contentHash' is distinct from public.marketing_geo_json_hash(v_synthesis-'contentHash')
     or v_pack#>>'{meta,market}' is distinct from p_candidate#>>'{payload,market,country}'
     or v_pack#>>'{meta,language}' is distinct from p_candidate#>>'{payload,market,language}'
-    or v_synthesis->>'targetUrl' is distinct from (case
-      when p_candidate#>>'{payload,targetUrl}' ~ '^https://[^/?#]+$' then (p_candidate#>>'{payload,targetUrl}')||'/'
-      else p_candidate#>>'{payload,targetUrl}' end)
     or v_synthesis->>'officialName' is distinct from p_candidate#>>'{payload,officialName}'
     or v_synthesis->'aliases' is distinct from p_candidate#>'{payload,aliases}'
     or v_synthesis->'categoryTerms' is distinct from p_candidate#>'{payload,categoryTerms}'
@@ -330,6 +327,9 @@ begin
     from jsonb_array_elements(p_candidate#>'{payload,competitors}') with ordinality competitor(value,ordinality)
     where (competitor.value->>'confirmed')::boolean;
   if v_synthesis->'confirmedCompetitors' is distinct from v_confirmed then return false; end if;
+  -- URL canonicalization belongs to the application (WHATWG URL). Bind its
+  -- exact synthesis bytes and the original payload hash to the owned successful
+  -- generation below, rather than reimplementing URL normalization in SQL.
   v_manifest:=jsonb_build_object('schemaVersion','marketing-geo-knowledge-generation-input.v1','kbId',p_kb_id::text,
     'baseDraftVersion',p_candidate->>'baseDraftVersion','baseDraftHash',p_candidate->>'baseDraftHash',
     'profileCopyHash',p_candidate->>'profileCopyHash','sourceReceiptRefs',p_candidate->'sourceReceiptRefs','knowledgeSynthesisInput',v_synthesis);

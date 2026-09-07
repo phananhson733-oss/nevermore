@@ -32,10 +32,10 @@ let db: Client;
 beforeAll(async () => { db = await connectFreshMarketingSchema(); });
 afterAll(async () => { await db?.end(); });
 const ATTEMPT = { attemptedCalls: 1, delivery: "response_received", modelRequested: "offline-model", inputTokens: 12, outputTokens: 30, requestCount: 1 };
-async function fixture() {
+async function fixture(targetUrl?: string) {
   const userId = randomUUID(), websiteId = randomUUID(), snapshotId = randomUUID();
   const base = completePayloadV2();
-  const payload = { ...base, profileCopy: { ...base.profileCopy, websiteId, snapshotId } };
+  const payload = { ...base, targetUrl: targetUrl ?? base.targetUrl, profileCopy: { ...base.profileCopy, websiteId, snapshotId } };
   const result = await db.query("select * from public.marketing_geo_upsert_kb($1,'https://example.com','example.com','example.com')", [userId]);
   const kbId = result.rows[0].kb_id as string;
   await db.query("insert into public.marketing_websites(id,user_id,canonical_site_key,origin,submitted_url,host) values($1,$2,'example.com','https://example.com','https://example.com','example.com')", [websiteId, userId]);
@@ -181,8 +181,8 @@ describe("durable prepared GEO SQL", () => {
     expect(finished.generation).toMatchObject({ kind: "knowledge_pack", state: "failed", errorReason: "input_stale", result: null, attempt: ATTEMPT });
   });
 
-  it("persists and freezes an actual V2 candidate bound to a succeeded knowledge result", async () => {
-    const f = await fixture();
+  it.each(["https://example.com", "https://EXAMPLE.com", "https://example.com:443", "https://example.com/a/../"])("persists and freezes a V2 candidate for canonical-equivalent target %s", async targetUrl => {
+    const f = await fixture(targetUrl);
     const report = finalizeGeoKbSourceReportV2({ schemaVersion: "marketing-geo-kb-enrichment.v2", receiptId: randomUUID(), kbId: f.kbId,
       targetHost: "example.com", draftVersion: 1, draftHash: f.input.baseDraftHash, profileReference: profileCopyReference(f.payload.profileCopy),
       createdAt: "2026-08-31T00:00:00.000Z", competitors: [], facts: [], gsc: { status: "unavailable", reason: "not_connected",
@@ -199,6 +199,15 @@ describe("durable prepared GEO SQL", () => {
     expect((await generationStore.markDispatched(scope)).kind).toBe("dispatched");
     const id = scope.generationId;
     const prepared = candidateV2(f, id, run.knowledge, run.inputHash);
+    const { contentHash: _synthesisHash, ...synthesisBody } = prepared.knowledgeSynthesisInput;
+    const changedSynthesis = { ...synthesisBody, targetUrl: "https://other.example/" };
+    const forgedSynthesis = { ...changedSynthesis, contentHash: geoV2Digest(changedSynthesis) };
+    const { candidateHash: _preparedHash, ...preparedBody } = prepared;
+    const forgedBody = { ...preparedBody, knowledgeSynthesisInput: forgedSynthesis, knowledgeGeneration: {
+      ...prepared.knowledgeGeneration, synthesisInputHash: forgedSynthesis.contentHash,
+      inputHash: geoKnowledgeGenerationInputHash({ ...run.knowledge.manifest, knowledgeSynthesisInput: forgedSynthesis }),
+    } };
+    expect((await finish(f, id, scope.claimToken, "succeeded", { ...forgedBody, candidateHash: geoV2Digest(forgedBody) })).outcome).toBe("invalid_result");
     expect(await generationStore.finish(scope, { state: "succeeded", result: prepared as never, errorReason: null,
       attempt: { ...ATTEMPT, attemptedCalls: 1, delivery: "response_received" } })).toMatchObject({ kind: "ok", generation: { kind: "questions", state: "succeeded", result: prepared } });
     const preparedStore = createGeoKbPreparedStore({ ...transport, readCandidate: async scope => ({ data: (await db.query("select id,user_id,kb_id,candidate_hash,candidate from public.marketing_geo_kb_prepared_candidates where user_id=$1 and kb_id=$2 and id=$3", [scope.userId, scope.kbId, scope.candidateId])).rows[0] ?? null, error: null }) });
