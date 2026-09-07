@@ -56,7 +56,7 @@ export type AgentIssueLane =
 export type AgentIssueCopyMode = "repair" | "investigation";
 
 export type AgentExclusionReason = "crawlHistory" | "competitorContent" | "serpNotEnabled"
-  | "sourceFailed" | "sourceTimeout" | "labMissing" | "fieldSampleMissing" | "sourceNotConfigured"
+  | "sourceFailed" | "sourceTimeout" | "runBudgetSpent" | "labMissing" | "fieldSampleMissing" | "sourceNotConfigured"
   | "staticImageEligibility" | "crawlIncomplete" | "insufficient";
 
 function exclusionReason(agent: AgentKind, checkId: string, records: readonly SeoAuditRecord[]): AgentExclusionReason {
@@ -71,6 +71,7 @@ function exclusionReason(agent: AgentKind, checkId: string, records: readonly Se
     "the_field_data_providers_quota_for_this_deployment_was_already_spent",
   ].includes(record.limitation ?? ""))) return "sourceFailed";
   if (records.some((record) => record.limitation === "the_performance_request_timed_out_this_run")) return "sourceTimeout";
+  if (records.some((record) => record.limitation === "the_audit_time_budget_was_spent_before_performance_collection")) return "runBudgetSpent";
   if (records.some((record) => record.limitation === "the_lab_test_did_not_return_page_transfer_bytes_this_run")) return "labMissing";
   if (records.some((record) => record.limitation === "crux_reported_no_field_data_for_this_metric_on_this_url")) return "fieldSampleMissing";
   if (records.some((record) => record.limitation === "no_field_data_source_was_configured_for_this_run")) return "sourceNotConfigured";

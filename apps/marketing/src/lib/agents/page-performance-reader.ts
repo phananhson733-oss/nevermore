@@ -23,14 +23,15 @@ const PSI_ENDPOINT =
 const FORM_FACTOR = "mobile" as const;
 
 /**
- * An audit must not wait on PageSpeed Insights.
+ * Bound the wait for PageSpeed Insights without truncating normal lab runs.
  *
  * PSI runs Lighthouse before it answers, so it is slow by construction — the
- * field data we want is returned alongside a lab run we do not. A run that
+ * field data arrives alongside the lab weight. Production verification showed
+ * the old 20-second deadline aborting this request. A run that
  * cannot get an answer in time degrades to the gated state, which is a state
  * the visitor can act on, unlike a failed audit.
  */
-const READ_TIMEOUT_MS = 20_000;
+export const PAGE_PERFORMANCE_READ_TIMEOUT_MS = 60_000;
 
 /**
  * Runs the Lighthouse performance category.
@@ -55,6 +56,8 @@ const TOTAL_BYTE_WEIGHT_AUDIT = "total-byte-weight";
 export interface PagePerformanceReadInput {
   /** The URL the crawl actually landed on, never the submitted form. */
   readonly url: string;
+  /** Remaining request budget, when less than the reader's own ceiling. */
+  readonly timeoutMs?: number;
 }
 
 /**
@@ -134,7 +137,7 @@ export function createPagePerformanceReader(options: {
 }): (input: PagePerformanceReadInput) => Promise<PagePerformanceReadResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
 
-  return async ({ url }) => {
+  return async ({ url, timeoutMs }) => {
     const query = new URLSearchParams({
       url,
       strategy: FORM_FACTOR,
@@ -142,7 +145,8 @@ export function createPagePerformanceReader(options: {
       key: options.apiKey,
     });
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), READ_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), Math.max(1,
+      Math.min(PAGE_PERFORMANCE_READ_TIMEOUT_MS, timeoutMs ?? PAGE_PERFORMANCE_READ_TIMEOUT_MS)));
     try {
       const response = await fetchImpl(`${PSI_ENDPOINT}?${query.toString()}`, {
         signal: controller.signal,
