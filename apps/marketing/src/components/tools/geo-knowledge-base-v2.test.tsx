@@ -19,6 +19,21 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi
 async function render(view = editorFixture(), locale = "en") { await act(async () => root.render(<NextIntlClientProvider locale={locale} timeZone="UTC" messages={locale === "zh" ? zh : en}><GeoKnowledgeBaseV2 initialView={view} locale={locale} inline confirmedProfileRevision={1} /></NextIntlClientProvider>)); }
 async function click(selector: string) { const node = host.querySelector<HTMLElement>(selector); if (!node) throw new Error(selector); await act(async () => node.click()); }
 const editor = en.tools.geoKnowledgeBase.editor;
+it("keeps a failed update customer-facing beside the previous knowledge", async () => {
+  const base = editorFixture();
+  await render({ ...base, frozen: frozenAt(base, base.draftHash!), generations: { ...base.generations,
+    roles: { generationId: "44444444-4444-4444-8444-444444444444", kbId: base.kbId, kind: "roles", inputHash: "a".repeat(64),
+      state: "failed", result: null, errorReason: "invalid_output", attempt: { attemptedCalls: 1, delivery: "response_received",
+        modelRequested: "private-model", inputTokens: 12, outputTokens: 34, requestCount: 1 } },
+  } }, "zh");
+  expect(host.querySelector("[data-kb-state]")?.textContent).toContain("更新未完成，仍显示上次的知识内容");
+  for (const hidden of ["这次生成做了什么", "生成角色建议", "实际发起的模型调用", "响应情况", "服务端原因", "invalid_output", "private-model", "已按当前产品档案生成并冻结"]) {
+    expect(host.outerHTML).not.toContain(hidden);
+  }
+  expect(host.querySelectorAll("[data-version-question]")).not.toHaveLength(0);
+  expect(host.querySelector("[data-read-generation]")).not.toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
 function unsupportedLanguageView() {
   const base = editorFixture();
   const profile = { ...base.payload.profileCopy.profile, locale: "zh-CN" };
@@ -285,7 +300,8 @@ it("stops the run at the failed step instead of paying for the model call after 
 
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe("/api/tools/geo-knowledge-base/v2/draft");
-  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(editor.buildStopped.save);
+  expect(host.querySelector("[data-kb-state]")?.getAttribute("data-kb-state")).toBe("failed");
+  expect(host.querySelector("[data-geo-v2-build-report]")).toBeNull();
 });
 
 it("refuses to run onto a draft whose Profile copy is behind, and says which step comes first", async () => {
@@ -296,7 +312,7 @@ it("refuses to run onto a draft whose Profile copy is behind, and says which ste
   await click("[data-generate-kb]");
 
   expect(fetch).not.toHaveBeenCalled();
-  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(editor.buildStopped.copy);
+  expect(host.textContent).toContain("Save the latest website information");
   // No derivation ran, so no part of one is reported.
   expect(host.querySelector("[data-build-fields]")).toBeNull();
 });
@@ -314,18 +330,20 @@ it("never calls a dispatched or refused role generation a knowledge base", async
 
   await click("[data-generate-kb]");
 
-  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(editor.buildStopped.rolesFailed);
+  expect(host.querySelector("[data-kb-state]")?.getAttribute("data-kb-state")).toBe("failed");
+  expect(host.querySelector("[data-geo-v2-build-report]")).toBeNull();
   expect(host.textContent).not.toContain(editor.buildDone);
   // The run stopped, so nothing after roles was requested or billed.
   expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).not.toContain("/api/tools/geo-knowledge-base/v2/prepare");
 });
 
-it("says zero dispatched calls are not proof of no charge", async () => {
+it("hides zero-call telemetry without making a no-charge claim", async () => {
   const base = editorFixture();
   const attempt = { attemptedCalls: 0 as const, delivery: "not_attempted" as const, modelRequested: null, inputTokens: null, outputTokens: null, requestCount: null };
   await render({ ...base, prepared: null, generations: { ...base.generations, roles: { generationId: "44444444-4444-4444-8444-444444444444", kbId: base.kbId, kind: "roles", inputHash: "a".repeat(64), state: "failed", result: null, errorReason: "rate_limited", attempt } } });
   const section = host.querySelector('[data-generation-state="roles"]');
-  expect(section?.textContent).toContain(editor.billingNote);
+  expect(section?.querySelector("dl")).toBeNull();
+  expect(section?.textContent).toBe("Check update");
 });
 
 it("will not repeat a run whose outcome the server never settled", async () => {
@@ -339,7 +357,7 @@ it("will not repeat a run whose outcome the server never settled", async () => {
   // A request that may already have run and billed is the one thing the single
   // gesture must not repeat on its own. It stops and says which step.
   expect(fetch).not.toHaveBeenCalled();
-  expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(editor.buildStopped.roles);
+  expect(host.querySelector("[data-kb-state]")?.getAttribute("data-kb-state")).toBe("pending");
 });
 
 it("keeps an unsettled knowledge-content request visible and recoverable", async () => {
@@ -350,22 +368,23 @@ it("keeps an unsettled knowledge-content request visible and recoverable", async
   await render({ ...base, prepared: null, sourceReceipt: sourceFixture(base), generations: { ...base.generations, knowledge_pack: uncertain } });
 
   const section = host.querySelector('[data-generation-state="knowledge_pack"]');
-  expect(section?.textContent).toContain("Generate GEO knowledge content");
+  expect(section?.querySelector("h3")).toBeNull();
   expect(section?.textContent).toContain("outcome is unknown");
   expect(section?.querySelector('[data-read-generation="knowledge_pack"]')).not.toBeNull();
 });
 
-it("says why a run was refused without repeating the code, and keeps an unmapped one", async () => {
+it("uses customer guidance and never displays an unmapped server code", async () => {
   const base = editorFixture();
   vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "input_stale" } }, { status: 409 }));
   await render({ ...base, prepared: null, requiresSave: true });
   await click("[data-generate-kb]");
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Saved input or the Profile source version changed");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Save the latest website information");
   expect(host.textContent).not.toContain("input_stale");
 
   vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "teapot" } }, { status: 418 }));
   await click("[data-generate-kb]");
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain("teapot");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("The update could not finish");
+  expect(host.outerHTML).not.toContain("teapot");
 });
 
 it.each([

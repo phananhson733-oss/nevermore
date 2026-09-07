@@ -4,7 +4,6 @@
 import { readFile } from "node:fs/promises";
 import { expect, test, type Download, type Page } from "@playwright/test";
 import en from "../src/i18n/messages/en.json" with { type: "json" };
-import { geoKbV2EditorCopy } from "../src/components/tools/geo-kb-v2-editor-copy.ts";
 import { parseAnyGeoPreparedCandidate, type GeoPreparedCandidateV2 } from "../src/lib/geo-tools/kb-prepared-contract.ts";
 import { parseVisibilityImport } from "../src/lib/geo-tools/visibility-export.ts";
 import { countGeoCitationQuestions } from "../src/lib/geo-tools/kb-consumer-projection.ts";
@@ -166,7 +165,7 @@ test("a lost successful knowledge response recovers by its original key without 
   await page.reload();
   const recovered = page.locator('[data-generation-state="knowledge_pack"]');
   await expect(recovered).toBeVisible();
-  await recovered.getByRole("button", { name: geoKbV2EditorCopy("en").readGeneration, exact: true }).click();
+  await recovered.getByRole("button", { name: "Check update", exact: true }).click();
   expect(guard.requests.find(entry => entry.id.endsWith("/v2/generation"))?.body).toEqual({ kbId: fixture.kbId, kind: "knowledge_pack", idempotencyKey: request!.idempotencyKey });
   await page.locator("[data-generate-kb]").click();
   await expect.poll(() => fixture.currentFrozen?.snapshotId ?? null).not.toBeNull();
@@ -192,7 +191,7 @@ test("an uncertain knowledge-provider attempt remains inspectable and is never a
   await page.locator("[data-generate-kb]").click();
   expect(fixture.stats.dispatches).toEqual({ roles: 1, knowledge_pack: 1, questions: 0 });
   expect(fixture.stats.modelCalls).toEqual({ roles: 1, knowledge_pack: 1, questions: 0 });
-  await uncertain.getByRole("button", { name: geoKbV2EditorCopy("en").readGeneration, exact: true }).click();
+  await uncertain.getByRole("button", { name: "Check update", exact: true }).click();
   await expect(uncertain).toContainText("outcome is unknown");
   expect(guard.requests.filter(entry => entry.id.endsWith("/v2/knowledge"))).toHaveLength(1);
   await attachEvidence(fixture, guard);
