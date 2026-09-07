@@ -2,9 +2,11 @@
 // @output -- strict renderable DTOs, never cryptographic or ownership authority
 // @pos -- browser-safe boundary; no hashing, stores, provider calls or secret fields
 import { z } from "zod";
-import type { GeoPreparedCandidateV1 } from "../../lib/geo-tools/kb-prepared-contract.ts";
+import type { AnyGeoPreparedCandidate, GeoPreparedCandidateV1, GeoPreparedCandidateV2 } from "../../lib/geo-tools/kb-prepared-contract.ts";
 import type { GeoRoleProposal } from "../../lib/geo-tools/kb-role-proposal.ts";
 import type { GeoKbGenerationRecord } from "../../lib/geo-tools/kb-generation.ts";
+import type { GeoKnowledgeGenerationResultV1 } from "../../lib/geo-tools/kb-knowledge-generation-contract.ts";
+import type { GeoKnowledgePackV1 } from "../../lib/geo-tools/kb-knowledge-pack-contract.ts";
 import { parseGeoKbPayloadV2, geoRoleEligibleForLayer, geoRoleV2Schema, geoFactV2Schema, type GeoKbPayloadV2 } from "../../lib/geo-tools/kb-v2-contract.ts";
 import { parseGeoQuestionSetV2, type GeoQuestionSetV2 } from "../../lib/geo-tools/kb-question-set-v2.ts";
 import type { GeoSnapshotContextV2 } from "../../lib/geo-tools/snapshot-context-v2.ts";
@@ -15,32 +17,108 @@ import { profileCopyReference, parseGeoProfileCopy } from "../../lib/geo-tools/k
 import { normalizeAccountWebsiteUrl, parseMarketingWebsiteProfile, fieldProvenanceSchema } from "../../lib/account-websites/contracts.ts";
 import { parseGeoKbSourceReportV2, type GeoKbSourceReportV2 } from "../../lib/geo-tools/kb-source-contract.ts";
 import type { GeoInheritedProfile } from "../../lib/geo-tools/asset-context.ts";
+import { codePointLength, hasLoneSurrogate } from "../../lib/agents/geo-canonical.ts";
 import { isFrozen, isInheritedProfile, type GeoKbFrozenSummary } from "./geo-kb-wire.ts";
 
-export type GeoKbGenerationWire = Omit<GeoKbGenerationRecord, "userId" | "result"> & { readonly result: GeoPreparedCandidateV1 | GeoRoleProposal | null };
+export type GeoKbGenerationWire = Omit<GeoKbGenerationRecord, "userId" | "result"> & { readonly result: AnyGeoPreparedCandidate | GeoRoleProposal | GeoKnowledgeGenerationResultV1 | null };
 export interface GeoKbFrozenV2Wire {
   readonly kbId: string; readonly snapshotId: string; readonly revision: number; readonly frozenAt: string;
   readonly contentHash: string; readonly questionSetHash: string; readonly questionCount: number;
   readonly payload: GeoKbPayloadV2; readonly questionSet: GeoQuestionSetV2; readonly context: GeoSnapshotContextV2;
+}
+/** Additive browser read model. The immutable payload/question/context schemas
+ * stay v2; this discriminator prevents an old strict wire from being silently
+ * reinterpreted when its companion customer pack is present. */
+export interface GeoKbFrozenKnowledgeWire extends GeoKbFrozenV2Wire {
+  readonly wireSchemaVersion: "marketing-geo-kb-frozen-wire.v1";
+  readonly knowledgePack: GeoKnowledgePackV1 | null;
 }
 export interface GeoKbEditorViewV2 {
   readonly schemaVersion: "marketing-geo-kb-editor.v2";
   readonly kbId: string; readonly origin: string; readonly host: string;
   readonly draftVersion: number; readonly draftHash: string | null; readonly profileCopyHash: string; readonly payload: GeoKbPayloadV2; readonly requiresSave: boolean;
   readonly profile: GeoInheritedProfile | null;
-  readonly frozen: GeoKbFrozenV2Wire | GeoKbFrozenSummary | null;
+  readonly frozen: GeoKbFrozenKnowledgeWire | GeoKbFrozenV2Wire | GeoKbFrozenSummary | null;
   readonly sourceReceipt: GeoKbSourceReportV2 | null;
-  readonly prepared: GeoPreparedCandidateV1 | null;
-  readonly generations: { readonly roles: GeoKbGenerationWire | null; readonly questions: GeoKbGenerationWire | null };
+  readonly prepared: AnyGeoPreparedCandidate | null;
+  readonly generations: { readonly roles: GeoKbGenerationWire | null; readonly knowledge_pack?: GeoKbGenerationWire | null; readonly questions: GeoKbGenerationWire | null };
 }
+
+// Browser-safe mirrors of the durable result allowance. A test locks the
+// result value to the server candidate constant without importing server-only
+// runtime code into this module. All variable record fields are independently
+// bounded below; 4 KiB covers their encoded envelope and future fixed metadata.
+export const GEO_KB_GENERATION_RESULT_WIRE_MAX_BYTES = 2_359_296;
+export const GEO_KB_GENERATION_RECORD_WIRE_MAX_BYTES = 4_096;
+export const GEO_KB_GENERATION_WIRE_MAX_BYTES = GEO_KB_GENERATION_RESULT_WIRE_MAX_BYTES + GEO_KB_GENERATION_RECORD_WIRE_MAX_BYTES;
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/u);
 const uuid = z.string().uuid();
+const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const safeInteger = z.number().int().nonnegative().refine(Number.isSafeInteger);
-const text = (maximum: number) => z.string().min(1).max(maximum);
+// Match the persisted knowledge contracts exactly: limits count Unicode code
+// points, not UTF-16 units, and customer text cannot carry JSON-hostile
+// controls or an unpaired surrogate that would hash differently after UTF-8.
+// eslint-disable-next-line no-control-regex
+const unsafeText = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u;
+const text = (maximum: number) => z.string().refine(value => value.trim().length > 0
+  && codePointLength(value) <= maximum && !unsafeText.test(value) && !hasLoneSurrogate(value));
 const time = z.string().refine(value => Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value);
 const refs = z.array(geoSourceReceiptRefSchema).max(32).refine(rows => new Set(rows.map(row => row.receiptId)).size === rows.length);
+const canonicalRefs = refs.superRefine((rows, ctx) => {
+  if (rows.some((row, index) => index > 0 && rows[index - 1]!.receiptId.localeCompare(row.receiptId) >= 0)) ctx.addIssue({ code: "custom", message: "Source receipt references must be canonical" });
+});
 const counts = z.object({ profile: safeInteger.max(10_000), gsc: safeInteger.max(10_000), crawl: safeInteger.max(10_000), manual: safeInteger.max(10_000) }).strict();
+const knowledgeReasons = ["not_collected", "not_published", "not_found", "fetch_failed", "blocked", "rate_limited", "timeout", "invalid_response", "partial_body", "unsupported_language", "generation_unavailable", "outcome_unknown", "insufficient_evidence", "not_applicable", "context_stale"] as const;
+const publicUrl = z.string().max(2_048).refine(value => /^https?:\/\//u.test(value) && normalizeAccountWebsiteUrl(value)?.submittedUrl === value);
+const competitorIdentitySchema = z.object({ key: text(128), name: text(200), confirmed: z.literal(true) }).strict();
+const knowledgeSourceSchema = z.object({ id: text(128), kind: z.enum(["own_page", "competitor_page", "robots", "sitemap", "llms", "gsc", "accepted_fact"]), label: text(120), url: publicUrl.nullable(),
+  competitor: competitorIdentitySchema.nullable(), availability: z.enum(["available", "partial", "unavailable"]), reason: z.enum(knowledgeReasons).nullable(), observedAt: time.nullable(), bodyHash: hash.nullable(), excerpts: z.array(text(1_200)).max(8) }).strict();
+const sourceCatalogueSchema = z.array(knowledgeSourceSchema).min(1).max(32).refine(rows => new Set(rows.map(row => row.id)).size === rows.length);
+const knowledgeSynthesisInputSchema = z.object({ schemaVersion: z.literal("marketing-geo-knowledge-synthesis-input.v1"), officialName: text(200), aliases: z.array(text(200)).max(12), categoryTerms: z.array(text(200)).max(12), market: text(32), language: text(32), targetUrl: publicUrl,
+  confirmedCompetitors: z.array(competitorIdentitySchema).max(5), evidenceContentHash: hash, sourceCatalogueHash: hash, sourceCatalogue: sourceCatalogueSchema, contentHash: hash }).strict();
+const unavailableModule = z.object({ status: z.literal("unavailable"), reason: z.enum(knowledgeReasons) }).strict();
+const knowledgeModule = <T extends z.ZodTypeAny>(value: T) => z.union([
+  z.object({ status: z.literal("available"), value }).strict(),
+  z.object({ status: z.literal("partial"), limitation: text(2_400), value }).strict(),
+  unavailableModule,
+]);
+const sourceIds = z.array(text(128)).min(1).max(16).refine(values => new Set(values).size === values.length);
+const knowledgeEntitySchema = z.object({
+  name: text(200), aliases: z.array(text(200)).max(12),
+  categories: z.object({ primary: text(200), secondary: z.array(text(200)).max(12) }).strict(),
+  definitions: z.object({ w25: text(800), w55: text(800), w120: text(800) }).strict(),
+  audience: z.object({ who: text(800), notFor: text(800).nullable() }).strict(),
+  founded: z.object({ year: z.string().regex(/^\d{4}$/u).nullable(), team: text(800).nullable(), location: text(800).nullable() }).strict(),
+  disambiguation: text(800).nullable(),
+  links: z.object({ home: publicUrl, pricing: publicUrl.nullable(), docs: publicUrl.nullable(), about: publicUrl.nullable(), changelog: publicUrl.nullable(), faq: publicUrl.nullable() }).strict(),
+  sameAs: z.array(publicUrl).max(16), sourceRefs: sourceIds,
+}).strict();
+const knowledgeFactSchema = z.object({ id: text(128), type: z.enum(["price", "policy", "feature", "integration", "company", "audience", "data", "other"]), statement: text(800), sourceRefs: sourceIds, observedAt: time.nullable(), nextReviewAt: time.nullable() }).strict();
+const knowledgeQaSchema = z.object({ id: text(128), intent: z.enum(["definition", "comparison", "price", "operation", "trust", "boundary", "alternative", "applicability", "other"]), question: text(800), variants: z.array(text(800)).max(8), directAnswer: text(800), expansion: text(2_400).nullable(), sourceRefs: sourceIds }).strict();
+const knowledgeComparisonRowSchema = z.object({ id: text(128), dimension: text(120), product: text(800).nullable(), competitor: text(800).nullable(), sourceRefs: sourceIds, availability: z.enum(["available", "partial", "unavailable"]) }).strict();
+const knowledgeComparisonSchema = z.object({ id: text(128), competitor: competitorIdentitySchema, checkedAt: time, rows: z.array(knowledgeComparisonRowSchema).min(1).max(16), verdict: text(800), sourceRefs: sourceIds }).strict();
+const knowledgeStatementSchema = z.object({ id: text(128), text: text(800), sourceRefs: sourceIds }).strict();
+const knowledgeScopeSchema = z.object({ does: z.array(knowledgeStatementSchema).max(24), doesNot: z.array(knowledgeStatementSchema).max(24), needsHuman: z.array(knowledgeStatementSchema).max(24), misconceptions: z.array(knowledgeStatementSchema).max(24) }).strict();
+const knowledgeEvidenceItemSchema = z.object({ id: text(128), label: text(120), summary: text(800), url: publicUrl.nullable(), sourceRefs: sourceIds }).strict();
+const knowledgeEvidenceSchema = z.object({ proof: z.array(knowledgeEvidenceItemSchema).max(32), changelog: z.array(knowledgeEvidenceItemSchema).max(32), press: z.array(knowledgeEvidenceItemSchema).max(32), thirdPartyProfiles: z.array(knowledgeEvidenceItemSchema).max(32) }).strict();
+const machineStatus = z.enum(["present", "absent", "unreachable", "not_checked"]);
+const machineObservation = z.object({ status: machineStatus, sourceRefs: sourceIds }).strict();
+const knowledgeMachineSchema = z.object({
+  jsonLd: z.object({ status: machineStatus, types: z.array(text(200)).max(32), sourceRefs: sourceIds }).strict(),
+  llms: machineObservation, robots: machineObservation,
+  sitemap: z.object({ status: machineStatus, urlCount: safeInteger.max(1_000_000).nullable(), knowledgePagesListed: z.boolean().nullable(), sourceRefs: sourceIds }).strict(),
+  hreflang: z.object({ status: machineStatus, locales: z.array(text(200)).max(64), sourceRefs: sourceIds }).strict(),
+}).strict();
+const knowledgeCoverageSchema = z.object({ id: text(128), label: text(120), status: z.enum(["covered", "partial", "missing"]), summary: text(800), nextAction: text(800).nullable(), sourceRefs: sourceIds }).strict();
+const knowledgePackSchema = z.object({ schemaVersion: z.literal("marketing-geo-knowledge-pack.v1"),
+  meta: z.object({ generatedAt: time, lastScanAt: time, market: text(32), language: text(32), counts: z.object({ facts: safeInteger.max(64), qa: safeInteger.max(32), comparisons: safeInteger.max(5) }).strict() }).strict(),
+  entity: knowledgeModule(knowledgeEntitySchema), facts: knowledgeModule(z.array(knowledgeFactSchema).min(1).max(64)),
+  qa: knowledgeModule(z.array(knowledgeQaSchema).min(1).max(32)), comparisons: knowledgeModule(z.array(knowledgeComparisonSchema).min(1).max(5)),
+  scope: knowledgeModule(knowledgeScopeSchema), evidence: knowledgeModule(knowledgeEvidenceSchema), machine: knowledgeModule(knowledgeMachineSchema),
+  coverage: knowledgeModule(z.array(knowledgeCoverageSchema).min(1).max(24)),
+  sourceCatalogue: sourceCatalogueSchema, contentHash: hash,
+}).strict();
 const same = (a: unknown, b: unknown) => canonicalGeoV2Text(a) === canonicalGeoV2Text(b);
 function requireLink(condition: boolean): asserts condition { if (!condition) throw new Error("Inconsistent GEO wire data"); }
 function bounded(value: unknown, maximum: number): void { requireLink(geoV2JsonbBytes(value) <= maximum); }
@@ -50,6 +128,13 @@ const preparedSchema = z.object({ schemaVersion: z.literal("marketing-geo-prepar
   baseDraftHash: hash, profileCopyHash: hash, sourceReceiptRefs: refs, generatorVersion: text(128),
   payload: z.unknown().transform(parseGeoKbPayloadV2), questionSet: z.unknown().transform(parseGeoQuestionSetV2),
   context: z.unknown().transform(parseGeoSnapshotContextV2Shape), candidateHash: hash,
+}).strict();
+const preparedV2Schema = preparedSchema.omit({ schemaVersion: true, candidateHash: true }).extend({
+  schemaVersion: z.literal("marketing-geo-prepared-candidate.v2"), knowledgePack: knowledgePackSchema,
+  knowledgeSynthesisInput: knowledgeSynthesisInputSchema,
+  knowledgeGeneration: z.object({ generationId: uuid, inputHash: hash, synthesisInputHash: hash, evidenceContentHash: hash, payloadHash: hash,
+    questionSetHash: hash, packHash: hash, sourceCatalogueHash: hash, promptVersion: z.literal("geo-kb-knowledge-pack.v1") }).strict(),
+  candidateHash: hash,
 }).strict();
 
 /** These are consistency checks only. SHA verification and owner-scoped reads
@@ -91,15 +176,41 @@ function linkedKnowledge(payload: GeoKbPayloadV2, questions: GeoQuestionSetV2, c
   }
 }
 
-export function parseGeoKbPreparedWire(value: unknown): GeoPreparedCandidateV1 | null {
+function parseGeoKbPreparedV1Wire(value: unknown): GeoPreparedCandidateV1 {
+  const parsed = preparedSchema.parse(value);
+  requireLink(parsed.context.kbId === parsed.kbId && parsed.context.candidateId === parsed.candidateId
+    && parsed.context.payloadHash === parsed.baseDraftHash && parsed.generatorVersion === parsed.questionSet.methodVersion
+    && same(parsed.sourceReceiptRefs, parsed.context.sourceReceiptRefs));
+  linkedKnowledge(parsed.payload, parsed.questionSet, parsed.context);
+  return parsed;
+}
+
+export function parseGeoKbPreparedWire(value: unknown): AnyGeoPreparedCandidate | null {
   try {
-    bounded(value, 1_572_864);
-    const parsed = preparedSchema.parse(value);
-    requireLink(parsed.context.kbId === parsed.kbId && parsed.context.candidateId === parsed.candidateId
-      && parsed.context.payloadHash === parsed.baseDraftHash && parsed.generatorVersion === parsed.questionSet.methodVersion
-      && same(parsed.sourceReceiptRefs, parsed.context.sourceReceiptRefs));
-    linkedKnowledge(parsed.payload, parsed.questionSet, parsed.context);
-    return parsed;
+    bounded(value, GEO_KB_GENERATION_RESULT_WIRE_MAX_BYTES);
+    if (!record(value) || value.schemaVersion === "marketing-geo-prepared-candidate.v1") return parseGeoKbPreparedV1Wire(value);
+    const parsed = preparedV2Schema.parse(value);
+    const { knowledgePack: _pack, knowledgeSynthesisInput: _synthesis, knowledgeGeneration: _generation, ...common } = parsed;
+    parseGeoKbPreparedV1Wire({ ...common, schemaVersion: "marketing-geo-prepared-candidate.v1" });
+    const pack = parsed.knowledgePack, synthesis = parsed.knowledgeSynthesisInput, generation = parsed.knowledgeGeneration;
+    const submittedTarget = normalizeAccountWebsiteUrl(parsed.payload.targetUrl)?.submittedUrl;
+    requireLink(pack.meta.market === parsed.payload.market.country && pack.meta.language === parsed.payload.market.language
+      && normalizeAccountWebsiteUrl(synthesis.targetUrl)?.submittedUrl === submittedTarget
+      && synthesis.officialName === parsed.payload.officialName && same(synthesis.aliases, parsed.payload.aliases)
+      && same(synthesis.categoryTerms, parsed.payload.categoryTerms)
+      && synthesis.market === parsed.payload.market.country && synthesis.language === parsed.payload.market.language
+      && same(synthesis.confirmedCompetitors, parsed.payload.competitors.filter(competitor => competitor.confirmed).map(competitor => ({ key: competitor.domain, name: competitor.brandName, confirmed: true })))
+      && same(synthesis.sourceCatalogue, pack.sourceCatalogue.filter(source => source.availability !== "unavailable"))
+      && generation.synthesisInputHash === synthesis.contentHash && generation.evidenceContentHash === synthesis.evidenceContentHash
+      && generation.payloadHash === parsed.baseDraftHash && generation.questionSetHash === parsed.context.questionSetHash
+      && generation.packHash === pack.contentHash);
+    const targetHost = normalizeAccountWebsiteUrl(parsed.payload.targetUrl)?.host;
+    const competitors = new Map(parsed.payload.competitors.filter(competitor => competitor.confirmed).map(competitor => [competitor.domain, competitor.brandName]));
+    for (const source of pack.sourceCatalogue) {
+      if (["own_page", "robots", "sitemap", "llms"].includes(source.kind) && source.url !== null) requireLink(new URL(source.url).host === targetHost);
+      if (source.kind === "competitor_page") requireLink(source.competitor !== null && source.url !== null && competitors.get(source.competitor.key) === source.competitor.name && new URL(source.url).host === source.competitor.key);
+    }
+    return parsed as unknown as GeoPreparedCandidateV2;
   } catch { return null; }
 }
 
@@ -119,15 +230,39 @@ export function parseGeoKbRoleProposalWire(value: unknown): GeoRoleProposal | nu
   } catch { return null; }
 }
 
+const knowledgeEvidenceEnvelopeSchema = z.object({ schemaVersion: z.literal("marketing-geo-knowledge-evidence.v1"), collectedAt: time, targetUrl: publicUrl,
+  confirmedCompetitors: z.array(competitorIdentitySchema).max(5), availability: z.enum(["available", "partial", "unavailable"]), limitation: text(800).nullable(),
+  pages: z.array(z.unknown()).max(18), machine: z.unknown(), sourceCatalogue: sourceCatalogueSchema, contentHash: hash }).strict();
+const knowledgeNarrativeEnvelopeSchema = z.object({ schemaVersion: z.literal("marketing-geo-knowledge-narrative.v1"), entity: z.unknown(), facts: z.array(z.unknown()).max(64),
+  qa: z.array(z.unknown()).max(32), comparisons: z.array(z.unknown()).max(5), scope: z.unknown() }).strict();
+const knowledgeResultSchema = z.object({ schemaVersion: z.literal("marketing-geo-knowledge-generation-result.v1"), generationId: uuid, kbId: uuid,
+  manifest: z.object({ schemaVersion: z.literal("marketing-geo-knowledge-generation-input.v1"), kbId: uuid,
+    baseDraftVersion: z.string().regex(/^[1-9][0-9]{0,15}$/u).refine(value => Number.isSafeInteger(Number(value))), baseDraftHash: hash, profileCopyHash: hash,
+    sourceReceiptRefs: canonicalRefs, knowledgeSynthesisInput: knowledgeSynthesisInputSchema }).strict(),
+  evidence: knowledgeEvidenceEnvelopeSchema, synthesisInput: knowledgeSynthesisInputSchema, narrative: knowledgeNarrativeEnvelopeSchema,
+  generatedAt: time, contentHash: hash }).strict();
+function parseGeoKbKnowledgeGenerationWire(value: unknown): GeoKnowledgeGenerationResultV1 | null {
+  try {
+    bounded(value, 2_097_152);
+    const parsed = knowledgeResultSchema.parse(value);
+    requireLink(parsed.manifest.kbId === parsed.kbId && same(parsed.manifest.knowledgeSynthesisInput, parsed.synthesisInput)
+      && parsed.synthesisInput.evidenceContentHash === parsed.evidence.contentHash && parsed.synthesisInput.targetUrl === parsed.evidence.targetUrl
+      && same(parsed.synthesisInput.confirmedCompetitors, parsed.evidence.confirmedCompetitors)
+      && same(parsed.synthesisInput.sourceCatalogue, parsed.evidence.sourceCatalogue.filter(source => source.availability !== "unavailable"))
+      && Date.parse(parsed.generatedAt) >= Date.parse(parsed.evidence.collectedAt));
+    return parsed as unknown as GeoKnowledgeGenerationResultV1;
+  } catch { return null; }
+}
+
 const attemptSchema = z.object({ attemptedCalls: z.union([z.literal(0), z.literal(1)]), delivery: z.enum(["not_attempted", "response_received", "outcome_unknown"]), modelRequested: text(200).nullable(), inputTokens: safeInteger.nullable(), outputTokens: safeInteger.nullable(), requestCount: safeInteger.nullable() }).strict();
-const generationSchema = z.object({ generationId: uuid, kbId: uuid, kind: z.enum(["roles", "questions"]), inputHash: hash,
+const generationSchema = z.object({ generationId: uuid, kbId: uuid, kind: z.enum(["roles", "questions", "knowledge_pack"]), inputHash: hash,
   state: z.enum(["claimed", "dispatched", "succeeded", "failed", "uncertain"]), result: z.unknown(),
   errorReason: z.enum(["rate_limited", "quota_unavailable", "invalid_output", "provider_rejected", "outcome_unknown", "input_stale", "model_unavailable"]).nullable(),
   attempt: attemptSchema.nullable(),
 }).strict();
 export function parseGeoKbGenerationWire(value: unknown): GeoKbGenerationWire | null {
   try {
-    bounded(value, 2_100_000);
+    bounded(value, GEO_KB_GENERATION_WIRE_MAX_BYTES);
     const parsed = generationSchema.parse(value), attempt = parsed.attempt;
     if (attempt !== null) requireLink((attempt.attemptedCalls === 0) === (attempt.delivery === "not_attempted"));
     if (parsed.state === "claimed" || parsed.state === "dispatched") {
@@ -136,8 +271,9 @@ export function parseGeoKbGenerationWire(value: unknown): GeoKbGenerationWire | 
     }
     if (parsed.state === "succeeded") {
       requireLink(parsed.errorReason === null && attempt?.attemptedCalls === 1 && attempt.delivery === "response_received");
-      const result = parsed.kind === "roles" ? parseGeoKbRoleProposalWire(parsed.result) : parseGeoKbPreparedWire(parsed.result);
-      requireLink(result !== null && result.kbId === parsed.kbId && ("generationId" in result ? result.generationId : result.candidateId) === parsed.generationId);
+      const result = parsed.kind === "roles" ? parseGeoKbRoleProposalWire(parsed.result)
+        : parsed.kind === "knowledge_pack" ? parseGeoKbKnowledgeGenerationWire(parsed.result) : parseGeoKbPreparedWire(parsed.result);
+      requireLink(result !== null && result.kbId === parsed.kbId && ("candidateId" in result ? result.candidateId : result.generationId) === parsed.generationId);
       return { ...parsed, result };
     }
     requireLink(parsed.result === null && parsed.errorReason !== null);
@@ -160,6 +296,50 @@ export function parseGeoKbFrozenV2Wire(value: unknown): GeoKbFrozenV2Wire | null
       && parsed.questionSetHash === parsed.context.questionSetHash && parsed.questionCount === parsed.questionSet.questions.length);
     linkedKnowledge(parsed.payload, parsed.questionSet, parsed.context);
     return parsed;
+  } catch { return null; }
+}
+
+const frozenKnowledgeSchema = frozenSchema.extend({
+  wireSchemaVersion: z.literal("marketing-geo-kb-frozen-wire.v1"),
+  knowledgePack: z.unknown().nullable(),
+}).strict();
+
+function linkedCustomerPack(payload: GeoKbPayloadV2, pack: GeoKnowledgePackV1): void {
+  requireLink(pack.meta.market === payload.market.country && pack.meta.language === payload.market.language);
+  const target = normalizeAccountWebsiteUrl(payload.targetUrl);
+  requireLink(target !== null);
+  const confirmed = new Map(payload.competitors.filter(competitor => competitor.confirmed).map(competitor => [competitor.domain, competitor.brandName]));
+  if (pack.entity.status !== "unavailable") {
+    const entity = pack.entity.value;
+    requireLink(entity.name === payload.officialName && same(entity.aliases, payload.aliases));
+    requireLink(entity.categories.primary === payload.categoryTerms[0] && same(entity.categories.secondary, payload.categoryTerms.slice(1)));
+    requireLink(normalizeAccountWebsiteUrl(entity.links.home)?.host === target.host);
+  }
+  for (const source of pack.sourceCatalogue) {
+    if (["own_page", "robots", "sitemap", "llms"].includes(source.kind) && source.url !== null) {
+      requireLink(normalizeAccountWebsiteUrl(source.url)?.host === target.host);
+    }
+    if (source.kind === "competitor_page") {
+      requireLink(source.competitor !== null && source.url !== null);
+      requireLink(confirmed.get(source.competitor.key) === source.competitor.name);
+      requireLink(normalizeAccountWebsiteUrl(source.url)?.host === source.competitor.key);
+    }
+  }
+}
+
+export function parseGeoKbFrozenKnowledgeWire(value: unknown): GeoKbFrozenKnowledgeWire | null {
+  try {
+    bounded(value, 2_359_296);
+    const parsed = frozenKnowledgeSchema.parse(value);
+    const { wireSchemaVersion, knowledgePack: rawPack, ...legacy } = parsed;
+    const base = parseGeoKbFrozenV2Wire(legacy);
+    requireLink(base !== null);
+    // The server already verified the cryptographic pack identity. This
+    // browser boundary validates the complete render shape without importing
+    // Node crypto or pretending to re-establish server authority.
+    const knowledgePack = rawPack === null ? null : knowledgePackSchema.parse(rawPack) as GeoKnowledgePackV1;
+    if (knowledgePack !== null) linkedCustomerPack(base.payload, knowledgePack);
+    return { ...base, wireSchemaVersion, knowledgePack };
   } catch { return null; }
 }
 
@@ -188,7 +368,7 @@ function parsePendingDraft(value: unknown): GeoKbPayloadV2 {
 const viewSchema = z.object({ schemaVersion: z.literal("marketing-geo-kb-editor.v2"), kbId: uuid, origin: text(2048), host: text(255),
   draftVersion: safeInteger, draftHash: hash.nullable(), profileCopyHash: hash, payload: z.unknown(), requiresSave: z.boolean(),
   profile: z.unknown(), frozen: z.unknown(), sourceReceipt: z.unknown(), prepared: z.unknown(),
-  generations: z.object({ roles: z.unknown(), questions: z.unknown() }).strict(),
+  generations: z.object({ roles: z.unknown(), knowledge_pack: z.unknown().optional(), questions: z.unknown() }).strict(),
 }).strict();
 const legacyFrozenKeys = new Set(["snapshotId", "revision", "frozenAt", "contentHash", "questionCount", "retrievalCount", "payload", "questionSetHash", "registryVersion", "questions", "skippedLayers"]);
 export function parseGeoKbEditorViewV2(value: unknown): GeoKbEditorViewV2 | null {
@@ -209,9 +389,9 @@ export function parseGeoKbEditorViewV2(value: unknown): GeoKbEditorViewV2 | null
       }
       profile = shape;
     }
-    let frozen: GeoKbFrozenV2Wire | GeoKbFrozenSummary | null = null;
+    let frozen: GeoKbFrozenKnowledgeWire | GeoKbFrozenV2Wire | GeoKbFrozenSummary | null = null;
     if (parsed.frozen !== null) {
-      const full = parseGeoKbFrozenV2Wire(parsed.frozen);
+      const full = parseGeoKbFrozenKnowledgeWire(parsed.frozen) ?? parseGeoKbFrozenV2Wire(parsed.frozen);
       if (full !== null) { requireLink(full.kbId === parsed.kbId && full.context.targetHost === parsed.host); frozen = full; }
       else {
         requireLink(isFrozen(parsed.frozen) && Object.keys(parsed.frozen).every(key => legacyFrozenKeys.has(key)));
@@ -229,11 +409,14 @@ export function parseGeoKbEditorViewV2(value: unknown): GeoKbEditorViewV2 | null
     const prepared = parsed.prepared === null ? null : parseGeoKbPreparedWire(parsed.prepared);
     requireLink(parsed.prepared === null || (prepared !== null && prepared.kbId === parsed.kbId && prepared.context.targetHost === parsed.host));
     const roles = parsed.generations.roles === null ? null : parseGeoKbGenerationWire(parsed.generations.roles);
+    const knowledge = parsed.generations.knowledge_pack === undefined || parsed.generations.knowledge_pack === null ? null : parseGeoKbGenerationWire(parsed.generations.knowledge_pack);
     const questions = parsed.generations.questions === null ? null : parseGeoKbGenerationWire(parsed.generations.questions);
     requireLink(parsed.generations.roles === null || (roles !== null && roles.kbId === parsed.kbId && roles.kind === "roles"));
+    requireLink(parsed.generations.knowledge_pack === undefined || parsed.generations.knowledge_pack === null || (knowledge !== null && knowledge.kbId === parsed.kbId && knowledge.kind === "knowledge_pack"));
     requireLink(parsed.generations.questions === null || (questions !== null && questions.kbId === parsed.kbId && questions.kind === "questions"));
     if (questions?.result && "context" in questions.result) requireLink(questions.result.context.targetHost === parsed.host);
-    return { ...parsed, payload, profile, frozen, sourceReceipt, prepared, generations: { roles, questions } };
+    return { ...parsed, payload, profile, frozen, sourceReceipt, prepared,
+      generations: { roles, ...(parsed.generations.knowledge_pack === undefined ? {} : { knowledge_pack: knowledge }), questions } };
   } catch { return null; }
 }
 

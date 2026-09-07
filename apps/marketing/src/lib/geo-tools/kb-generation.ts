@@ -1,6 +1,6 @@
 // @input -- validated, owned semantic input and a durable generation store
 // @output -- one persisted attempt; uncertain delivery never causes an automatic retry
-// @pos -- shared roles/questions dispatch boundary, not an HTTP or provider adapter
+// @pos -- shared roles/questions/knowledge dispatch boundary, not an HTTP or provider adapter
 
 import { createHash } from "node:crypto";
 import { canonicalGeoV2Text } from "./kb-v2-json.ts";
@@ -8,9 +8,9 @@ import { canonicalGeoV2Text } from "./kb-v2-json.ts";
 export const GEO_GENERATION_INPUT_BYTES = 196_608;
 // A prepared candidate includes the complete Profile/payload and source context,
 // not just the provider reply. Its own stricter parser is applied by the caller.
-export const GEO_GENERATION_RESULT_BYTES = 2_097_152;
+export const GEO_GENERATION_RESULT_BYTES = 2_359_296;
 
-export type GeoKbGenerationKind = "roles" | "questions";
+export type GeoKbGenerationKind = "roles" | "questions" | "knowledge_pack";
 export type GeoKbGenerationState = "claimed" | "dispatched" | "succeeded" | "failed" | "uncertain";
 export type GeoKbGenerationError = "rate_limited" | "quota_unavailable" | "invalid_output" | "provider_rejected" | "outcome_unknown" | "input_stale" | "model_unavailable";
 export type GeoGenerationValue = null | string | boolean | number | readonly GeoGenerationValue[] | { readonly [key: string]: GeoGenerationValue };
@@ -112,7 +112,7 @@ export async function executeGeoKbGeneration(input: GeoKbGenerationInput, depend
   if (!dependencies.configured) return { kind: "model_unavailable" };
   let inputHash: string;
   try {
-    if (!uuid.test(input.userId) || !uuid.test(input.kbId) || !["roles", "questions"].includes(input.kind) || !/^[a-zA-Z0-9_-]{8,128}$/u.test(input.idempotencyKey) || input.input === null || typeof input.input !== "object" || Array.isArray(input.input)) return { kind: "invalid_input" };
+    if (!uuid.test(input.userId) || !uuid.test(input.kbId) || !["roles", "questions", "knowledge_pack"].includes(input.kind) || !/^[a-zA-Z0-9_-]{8,128}$/u.test(input.idempotencyKey) || input.input === null || typeof input.input !== "object" || Array.isArray(input.input)) return { kind: "invalid_input" };
     inputHash = geoGenerationInputHash(input.kind, input.input);
   } catch { return { kind: "invalid_input" }; }
 

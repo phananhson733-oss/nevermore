@@ -6,14 +6,19 @@ import { createGeoKbGenerationPreparer, validateGeoKbDraftLineage, type GeoKbGen
 import { completePayloadV2, V2_KB_ID as KB, V2_CANDIDATE_ID as ID } from "./kb-v2.test-fixtures.ts";
 import { createGeoProfileCopy, profileCopyReference } from "./kb-profile-copy.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
+import { canonicalGeoV2Text } from "./kb-v2-json.ts";
 import { parseGeoRoleProposal } from "./kb-role-proposal.ts";
 import { prepareGeoRoleSynthesis, prepareGeoQuestionSynthesis, type GeoSynthesisResult } from "./kb-synthesis.ts";
 import { ROLE_SYNTHESIS_INPUT, QUESTION_SYNTHESIS_INPUT } from "./kb-synthesis-fixtures.ts";
 import type { GeoRoleSynthesisInput, GeoRoleSynthesis, GeoQuestionSynthesisInput, GeoQuestionSynthesis } from "./kb-synthesis-contract.ts";
 import { geoGenerationInputHash, type GeoKbGenerationRecord } from "./kb-generation.ts";
-import { parseGeoPreparedCandidate } from "./kb-prepared-contract.ts";
+import { buildGeoKnowledgeGenerationInputManifest, geoKnowledgeGenerationInputHash, parseGeoPreparedCandidate, parseGeoPreparedCandidateV2 } from "./kb-prepared-contract.ts";
 import { finalizeGeoKbSourceReportV2, collectGeoQueryEvidenceV2, inspectGeoFactSourceV2, extractGeoCompetitorSourceV2 } from "./kb-sources.ts";
 import { GEO_KB_SOURCE_SCHEMA, type GeoKbSourceReportV2 } from "./kb-source-contract.ts";
+import { collectGeoKnowledgeEvidenceV1 } from "./kb-knowledge-evidence.ts";
+import { prepareGeoKnowledgeSynthesis, type GeoKnowledgeSynthesisResult } from "./kb-knowledge-synthesis.ts";
+import { buildGeoKnowledgeSynthesisInputV1, type GeoKnowledgeSynthesisInputV1 } from "./kb-knowledge-synthesis-contract.ts";
+import { buildGeoKnowledgeGenerationResultV1, parseGeoKnowledgeGenerationResultV1 } from "./kb-knowledge-generation-contract.ts";
 
 const USER = "11111111-1111-4111-8111-111111111111";
 const CONFIG: KeywordLlmConfig = { apiKey: "offline-private-key", model: "offline-model", url: "https://provider.example/complete?private=offline-url-secret", authScheme: "api-key", temperature: 0.4 };
@@ -45,6 +50,30 @@ function questionOutput(input: GeoQuestionSynthesisInput): GeoQuestionSynthesis 
   ] };
 }
 const usage = { inputTokens: 12, outputTokens: 34, requestCount: 1, retryCount: 0 };
+function knowledgeOutput(input: GeoKnowledgeSynthesisInputV1) {
+  const own = input.sourceCatalogue.find(source => source.kind === "own_page")!;
+  return {
+    schemaVersion: "marketing-geo-knowledge-narrative.v1" as const,
+    entity: { definitions: { w25: "Acme is analytics software.", w55: "Acme is analytics software for finance teams.", w120: "Acme is analytics software that helps finance teams research reporting workflows." }, audience: { who: "Finance teams researching analytics", notFor: null }, founded: { year: null, team: null, location: null }, disambiguation: null, sourceRefs: [own.id] },
+    facts: [], qa: [], comparisons: [],
+    scope: { does: [{ id: "scope:analytics", text: "Supports analytics research workflows.", sourceRefs: [own.id] }], doesNot: [], needsHuman: [], misconceptions: [] },
+  };
+}
+async function collectKnowledge(input: Parameters<GeoKbGenerationPreparerDependencies["collectKnowledgeEvidence"]>[0]) {
+  const observedAt = "2026-09-01T00:00:00.000Z";
+  return await collectGeoKnowledgeEvidenceV1({ targetUrl: input.targetUrl, competitors: [...input.confirmedCompetitors] }, {
+    reusedSources: input.reusedSources,
+    now: () => new Date("2026-09-01T01:00:00.000Z"),
+    readResource: async ({ url }) => {
+      if (url === input.targetUrl) return { kind: "ok", url, contentType: "text/html", observedAt, body: "<html lang=\"en\"><body><h1>Acme analytics</h1><p>Acme is analytics software for finance teams researching reporting workflows.</p></body></html>" };
+      if (new URL(url).host === "rival.example") return { kind: "ok", url, contentType: "text/html", observedAt, body: "<html><body><h1>Rival analytics</h1></body></html>" };
+      if (url.endsWith("/robots.txt")) return { kind: "ok", url, contentType: "text/plain", observedAt, body: "User-agent: *\nAllow: /" };
+      if (url.endsWith("/sitemap.xml")) return { kind: "ok", url, contentType: "application/xml", observedAt, body: `<urlset><url><loc>${input.targetUrl}</loc></url></urlset>` };
+      if (url.endsWith("/llms.txt")) return { kind: "ok", url, contentType: "text/plain", observedAt, body: "# Acme\nAnalytics software." };
+      return { kind: "unavailable", url, reason: "not_found" };
+    },
+  });
+}
 function setup(overrides: Partial<GeoKbGenerationPreparerDependencies> = {}) {
   const value = payload(), draft = { payload: value, draftVersion: 4, contentHash: geoV2Digest(value), updatedAt: "2026-08-31T00:00:00.000Z" };
   const receipts = new Map<string, GeoKbSourceReportV2>(), generations = new Map<string, GeoKbGenerationRecord>();
@@ -54,6 +83,8 @@ function setup(overrides: Partial<GeoKbGenerationPreparerDependencies> = {}) {
     readReceipt: vi.fn(async ({ receiptId }) => receipts.has(receiptId) ? { kind: "ok" as const, value: receipts.get(receiptId)! } : { kind: "missing" as const }),
     readGeneration: vi.fn(async ({ generationId }) => generations.has(generationId) ? { kind: "ok" as const, generation: generations.get(generationId)! } : { kind: "missing" as const }),
     resolveConfig: vi.fn(() => CONFIG),
+    collectKnowledgeEvidence: vi.fn(collectKnowledge),
+    now: vi.fn(() => new Date("2026-09-02T00:00:00.000Z")),
     synthesizeRoles: vi.fn(async (input: GeoRoleSynthesisInput): Promise<GeoSynthesisResult<GeoRoleSynthesis>> => {
       const prepared = prepareGeoRoleSynthesis(input, CONFIG); if (!prepared.ok) throw new Error("Invalid offline role fixture");
       return { ok: true, value: roleOutput(input), provider: prepared.value.provider, usage, attemptedCalls: 1, delivery: "response_received" };
@@ -61,6 +92,10 @@ function setup(overrides: Partial<GeoKbGenerationPreparerDependencies> = {}) {
     synthesizeQuestions: vi.fn(async (input: GeoQuestionSynthesisInput): Promise<GeoSynthesisResult<GeoQuestionSynthesis>> => {
       const prepared = prepareGeoQuestionSynthesis(input, CONFIG); if (!prepared.ok) throw new Error("Invalid offline question fixture");
       return { ok: true, value: questionOutput(input), provider: prepared.value.provider, usage, attemptedCalls: 1, delivery: "response_received" };
+    }),
+    synthesizeKnowledge: vi.fn(async (input: GeoKnowledgeSynthesisInputV1): Promise<GeoKnowledgeSynthesisResult> => {
+      const prepared = prepareGeoKnowledgeSynthesis(input, CONFIG); if (!prepared.ok) throw new Error("Invalid offline knowledge fixture");
+      return { ok: true, value: knowledgeOutput(input), provider: prepared.value.provider, usage, attemptedCalls: 1, delivery: "response_received" };
     }), ...overrides,
   };
   const request = { userId: USER, kind: "roles" as const, kbId: KB, baseVersion: 4, draftHash: draft.contentHash, idempotencyKey: "offline-prepare-1", displayLocale: "en" as const, sourceReceiptRefs: [] };
@@ -164,6 +199,242 @@ describe("exact owned source receipts", () => {
     expect(proposal.selectedEvidenceCounts.gsc).toBeGreaterThan(0);
     expect(proposal.selectedEvidenceCounts.gsc).toBeLessThan(1000);
     expect(source.gsc.queries).toHaveLength(1000);
+  });
+});
+
+describe("evidence-bound knowledge-pack preparation", () => {
+  it("builds the exact Task 5 manifest and adapts bounded selected evidence without dispatch", async () => {
+    const state = setup(), source = receipt(state); state.receipts.set(RID, source);
+    const ready = await state.prepare({ ...state.request, kind: "knowledge_pack", sourceReceiptRefs: [ref(source)] });
+    expect(ready.kind).toBe("ready"); if (ready.kind !== "ready") return;
+    expect(state.deps.synthesizeKnowledge).not.toHaveBeenCalled();
+    expect(Object.keys(ready.input).sort()).toEqual(["baseDraftHash", "baseDraftVersion", "kbId", "knowledgeSynthesisInput", "profileCopyHash", "schemaVersion", "sourceReceiptRefs"]);
+    expect(ready.input.sourceReceiptRefs).toEqual([ref(source)]);
+    const expectedManifest = buildGeoKnowledgeGenerationInputManifest({ ...ready.input as any, knowledgeSynthesisInput: ready.input.knowledgeSynthesisInput as any });
+    expect(ready.input).toEqual(expectedManifest);
+    expect(geoGenerationInputHash("knowledge_pack", ready.input)).toBe(geoKnowledgeGenerationInputHash(expectedManifest));
+
+    expect(state.deps.collectKnowledgeEvidence).toHaveBeenCalledTimes(1);
+    const collected = vi.mocked(state.deps.collectKnowledgeEvidence).mock.calls[0]![0];
+    expect(collected).toMatchObject({ userId: USER, kbId: KB, targetUrl: "https://example.com/", payload: state.draft.payload,
+      confirmedCompetitors: [{ key: "rival.example", name: "Rival", confirmed: true }] });
+    expect(collected.reusedSources).toEqual([
+      expect.objectContaining({ kind: "accepted_fact", label: "Seats", url: null, observedAt: null, bodyHash: null, excerpts: ["3"] }),
+      expect.objectContaining({ kind: "gsc", url: null, observedAt: source.gsc.observedAt, bodyHash: null, excerpts: ["late invoice reminders"] }),
+    ]);
+
+    const invoked = await ready.invoke(ID); expect(invoked.ok).toBe(true); if (!invoked.ok) return;
+    const result = parseGeoKnowledgeGenerationResultV1(invoked.value);
+    expect(result).toMatchObject({ generationId: ID, kbId: KB, manifest: expectedManifest, synthesisInput: ready.input.knowledgeSynthesisInput, generatedAt: "2026-09-02T00:00:00.000Z" });
+    expect(invoked.attempt).toMatchObject({ attemptedCalls: 1, delivery: "response_received", modelRequested: CONFIG.model, inputTokens: 12, outputTokens: 34, requestCount: 1 });
+    expect(state.deps.synthesizeKnowledge).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the exact crawl excerpt and caps accepted facts/GSC excerpts deterministically", async () => {
+    const state = setup(), original = receipt(state);
+    if (original.gsc.status !== "available") throw new Error("Expected available GSC fixture");
+    const queries = collectGeoQueryEvidenceV2(Array.from({ length: 10 }, (_, index) => `exact query ${String(index)}`));
+    const source = receipt(state, { gsc: { ...original.gsc, status: "available", reason: null, queryCount: 10, truncated: false, queries: [...queries] } });
+    state.receipts.set(RID, source);
+    const supported = state.draft.payload.facts[0]!;
+    state.draft.payload.facts = [
+      { ...supported, supportRef: { receiptId: RID, evidenceId: "F1" } },
+      ...Array.from({ length: 9 }, (_, index) => ({ ...supported, key: `Manual ${String(index)}`, value: `value-${String(index)}`, supportRef: null })),
+    ];
+    state.draft.contentHash = geoV2Digest(state.draft.payload);
+    const ready = await state.prepare({ ...state.request, kind: "knowledge_pack", draftHash: state.draft.contentHash, sourceReceiptRefs: [ref(source)] });
+    expect(ready.kind).toBe("ready"); if (ready.kind !== "ready") return;
+    const reused = vi.mocked(state.deps.collectKnowledgeEvidence).mock.calls[0]![0].reusedSources;
+    const accepted = reused.filter(item => item.kind === "accepted_fact");
+    const gsc = reused.filter(item => item.kind === "gsc");
+    expect(accepted).toHaveLength(8);
+    expect(accepted[0]).toMatchObject({ label: supported.key, url: null, observedAt: source.facts[0]!.observedAt,
+      bodyHash: source.facts[0]!.bodyHash, excerpts: [source.facts[0]!.excerpt] });
+    expect(accepted[1]).toMatchObject({ label: "Manual 0", excerpts: ["value-0"], url: null, observedAt: null, bodyHash: null });
+    expect(gsc).toHaveLength(1);
+    expect(gsc[0]).toMatchObject({ availability: "partial", reason: "partial_body" });
+    expect(gsc[0]!.excerpts).toEqual(queries.slice(0, 8).map(query => query.text));
+  });
+
+  it("keeps same-page accepted facts without suppressing the independent homepage crawl", async () => {
+    const state = setup(), original = state.draft.payload.facts[0]!;
+    const first = { ...original, sourceUrl: "https://example.com/", supportRef: { receiptId: RID, evidenceId: "F1" } };
+    const second = { ...original, key: "Users", value: "4", sourceUrl: "https://example.com/", supportRef: { receiptId: RID, evidenceId: "F2" } };
+    state.draft.payload.facts = [first, second]; state.draft.contentHash = geoV2Digest(state.draft.payload);
+    const page = { kind: "ok" as const, url: "https://example.com/", observedAt: original.observedAt, body: "<p>Seats: 3.</p><p>Users: 4.</p>" };
+    const source = receipt(state, { facts: [inspectGeoFactSourceV2(first, page, "F1"), inspectGeoFactSourceV2(second, page, "F2")] });
+    state.receipts.set(RID, source);
+    const ready = await state.prepare({ ...state.request, kind: "knowledge_pack", draftHash: state.draft.contentHash, sourceReceiptRefs: [ref(source)] });
+    expect(ready.kind).toBe("ready"); if (ready.kind !== "ready") return;
+    const reused = vi.mocked(state.deps.collectKnowledgeEvidence).mock.calls[0]![0].reusedSources.filter(item => item.kind === "accepted_fact");
+    expect(reused).toHaveLength(2);
+    expect(reused.every(item => item.url === null)).toBe(true);
+    const synthesis = ready.input.knowledgeSynthesisInput as any;
+    expect(synthesis.sourceCatalogue.filter((item: any) => item.kind === "accepted_fact")).toHaveLength(2);
+    expect(synthesis.sourceCatalogue.some((item: any) => item.kind === "own_page" && item.url === "https://example.com/")).toBe(true);
+  });
+
+  it("rejects strict collector output that changes scope or drops selected reusable evidence", async () => {
+    for (const collectKnowledgeEvidence of [
+      vi.fn(async (input: Parameters<GeoKbGenerationPreparerDependencies["collectKnowledgeEvidence"]>[0]) => await collectKnowledge({ ...input, targetUrl: "https://foreign.example/" })),
+      vi.fn(async (input: Parameters<GeoKbGenerationPreparerDependencies["collectKnowledgeEvidence"]>[0]) => await collectKnowledge({ ...input, reusedSources: [] })),
+    ]) {
+      const state = setup({ collectKnowledgeEvidence });
+      expect(await state.prepare({ ...state.request, kind: "knowledge_pack" })).toEqual({ kind: "invalid_input" });
+      expect(state.deps.synthesizeKnowledge).not.toHaveBeenCalled();
+    }
+  });
+
+  it("never invokes knowledge synthesis for config, language, evidence, or preflight refusal", async () => {
+    const unconfigured = setup({ resolveConfig: () => null });
+    expect(await unconfigured.prepare({ ...unconfigured.request, kind: "knowledge_pack" })).toEqual({ kind: "model_unavailable" });
+    expect(unconfigured.deps.collectKnowledgeEvidence).not.toHaveBeenCalled();
+    expect(unconfigured.deps.synthesizeKnowledge).not.toHaveBeenCalled();
+
+    const unsupported = setup(); unsupported.draft.payload.market = { country: "US", language: "zh" }; unsupported.draft.contentHash = geoV2Digest(unsupported.draft.payload);
+    expect(await unsupported.prepare({ ...unsupported.request, kind: "knowledge_pack", draftHash: unsupported.draft.contentHash })).toEqual({ kind: "unsupported_language" });
+    expect(unsupported.deps.collectKnowledgeEvidence).not.toHaveBeenCalled();
+    expect(unsupported.deps.synthesizeKnowledge).not.toHaveBeenCalled();
+
+    const noEvidence = setup({ collectKnowledgeEvidence: vi.fn(async (input) => await collectGeoKnowledgeEvidenceV1({ targetUrl: input.targetUrl, competitors: input.confirmedCompetitors }, {
+      now: () => new Date("2026-09-01T01:00:00.000Z"), readResource: async ({ url }) => ({ kind: "unavailable" as const, url, reason: "not_found" as const }),
+    })) });
+    expect(await noEvidence.prepare({ ...noEvidence.request, kind: "knowledge_pack" })).toEqual({ kind: "invalid_input" });
+    expect(noEvidence.deps.synthesizeKnowledge).not.toHaveBeenCalled();
+  });
+
+  it("maps an uncertain knowledge call once without leaking or retrying", async () => {
+    const synthesizeKnowledge = vi.fn(async (input: GeoKnowledgeSynthesisInputV1): Promise<GeoKnowledgeSynthesisResult> => {
+      const prepared = prepareGeoKnowledgeSynthesis(input, CONFIG); if (!prepared.ok) throw new Error("Invalid fixture");
+      return { ok: false, reason: "timeout", provider: prepared.value.provider, usage: { inputTokens: null, outputTokens: null, requestCount: 0, retryCount: 0 }, attemptedCalls: 1, delivery: "outcome_unknown" };
+    });
+    const state = setup({ synthesizeKnowledge });
+    const ready = await state.prepare({ ...state.request, kind: "knowledge_pack" }); expect(ready.kind).toBe("ready"); if (ready.kind !== "ready") return;
+    expect(await ready.invoke(ID)).toMatchObject({ ok: false, reason: "outcome_unknown", delivery: "outcome_unknown", attempt: { attemptedCalls: 1, delivery: "outcome_unknown", modelRequested: CONFIG.model } });
+    expect(synthesizeKnowledge).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["rate_limited", "rate_limited"],
+    ["bad_request", "provider_rejected"],
+    ["schema_invalid", "invalid_output"],
+  ] as const)("maps received knowledge failure %s without a repair call", async (reason, expected) => {
+    const synthesizeKnowledge = vi.fn(async (input: GeoKnowledgeSynthesisInputV1): Promise<GeoKnowledgeSynthesisResult> => {
+      const prepared = prepareGeoKnowledgeSynthesis(input, CONFIG); if (!prepared.ok) throw new Error("Invalid fixture");
+      return { ok: false, reason, provider: prepared.value.provider, usage, attemptedCalls: 1, delivery: "response_received" };
+    });
+    const state = setup({ synthesizeKnowledge }), ready = await state.prepare({ ...state.request, kind: "knowledge_pack" });
+    expect(ready.kind).toBe("ready"); if (ready.kind !== "ready") return;
+    expect(await ready.invoke(ID)).toMatchObject({ ok: false, reason: expected, delivery: "response_received", attempt: { attemptedCalls: 1, inputTokens: 12, outputTokens: 34 } });
+    expect(synthesizeKnowledge).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a received response invalid when the injected result clock predates evidence", async () => {
+    const state = setup({ now: () => new Date("2026-08-01T00:00:00.000Z") });
+    const ready = await state.prepare({ ...state.request, kind: "knowledge_pack" }); expect(ready.kind).toBe("ready"); if (ready.kind !== "ready") return;
+    expect(await ready.invoke(ID)).toMatchObject({ ok: false, reason: "invalid_output", delivery: "response_received", attempt: { attemptedCalls: 1 } });
+    expect(state.deps.synthesizeKnowledge).toHaveBeenCalledTimes(1);
+  });
+});
+
+async function seedKnowledgeGeneration(state: ReturnType<typeof setup>) {
+  const ready = await state.prepare({ ...state.request, kind: "knowledge_pack" });
+  if (ready.kind !== "ready") throw new Error(`Knowledge fixture was ${ready.kind}`);
+  const generated = await ready.invoke(ID);
+  if (!generated.ok) throw new Error(`Knowledge fixture failed: ${generated.reason}`);
+  const record: GeoKbGenerationRecord = { generationId: ID, userId: USER, kbId: KB, kind: "knowledge_pack", inputHash: geoGenerationInputHash("knowledge_pack", ready.input), state: "succeeded", result: generated.value, errorReason: null, attempt: generated.attempt ?? null };
+  state.generations.set(ID, record);
+  return { ready, result: parseGeoKnowledgeGenerationResultV1(generated.value), record };
+}
+
+describe("optional knowledge generation bound to question preparation", () => {
+  it("keeps questions without a knowledge ID on the original V1 candidate path", async () => {
+    const state = setup(), ready = await state.prepare({ ...state.request, kind: "questions" });
+    expect(ready.kind).toBe("ready"); if (ready.kind !== "ready") return;
+    const generated = await ready.invoke(ID); expect(generated.ok).toBe(true); if (!generated.ok) return;
+    expect(parseGeoPreparedCandidate(generated.value).schemaVersion).toBe("marketing-geo-prepared-candidate.v1");
+    expect(() => parseGeoPreparedCandidateV2(generated.value)).toThrow();
+    expect(state.deps.readGeneration).not.toHaveBeenCalled();
+    const explicit = setup(), explicitReady = await explicit.prepare({ ...explicit.request, kind: "questions", knowledgeGenerationId: undefined });
+    expect(explicitReady.kind).toBe("ready"); if (explicitReady.kind !== "ready") return;
+    const explicitGenerated = await explicitReady.invoke(ID); expect(explicitGenerated.ok).toBe(true); if (!explicitGenerated.ok) return;
+    expect(canonicalGeoV2Text(explicitGenerated.value)).toBe(canonicalGeoV2Text(generated.value));
+  });
+
+  it("assembles a V2 pack only from the exact owned succeeded knowledge result", async () => {
+    const state = setup(), knowledge = await seedKnowledgeGeneration(state);
+    vi.mocked(state.deps.now).mockReturnValue(new Date("2026-09-03T00:00:00.000Z"));
+    vi.mocked(state.deps.synthesizeQuestions!).mockClear();
+    const ready = await state.prepare({ ...state.request, kind: "questions", knowledgeGenerationId: ID });
+    expect(ready.kind).toBe("ready"); if (ready.kind !== "ready") return;
+    expect(ready.input.knowledgeGeneration).toEqual({ generationId: ID, inputHash: knowledge.record.inputHash, resultHash: knowledge.result.contentHash });
+    expect(state.deps.readGeneration).toHaveBeenCalledWith({ userId: USER, kbId: KB, generationId: ID });
+    expect(state.deps.synthesizeQuestions).not.toHaveBeenCalled();
+    const candidateId = "55555555-5555-4555-8555-555555555555";
+    const generated = await ready.invoke(candidateId); expect(generated.ok).toBe(true); if (!generated.ok) return;
+    const candidate = parseGeoPreparedCandidateV2(generated.value);
+    expect(candidate).toMatchObject({ candidateId, kbId: KB, schemaVersion: "marketing-geo-prepared-candidate.v2",
+      knowledgeSynthesisInput: knowledge.result.synthesisInput,
+      knowledgeGeneration: { generationId: ID, inputHash: knowledge.record.inputHash, promptVersion: "geo-kb-knowledge-pack.v1" } });
+    expect(candidate.knowledgePack.sourceCatalogue).toEqual(knowledge.result.evidence.sourceCatalogue);
+    expect(candidate.knowledgePack.meta.generatedAt).toBe(knowledge.result.generatedAt);
+    expect(state.deps.synthesizeQuestions).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a succeeded knowledge result whose receipt set differs from question preparation", async () => {
+    const state = setup(), source = receipt(state);
+    state.receipts.set(RID, source);
+    const knowledgeReady = await state.prepare({ ...state.request, kind: "knowledge_pack", sourceReceiptRefs: [ref(source)] });
+    expect(knowledgeReady.kind).toBe("ready");
+    if (knowledgeReady.kind !== "ready") return;
+    const generated = await knowledgeReady.invoke(ID);
+    expect(generated.ok).toBe(true);
+    if (!generated.ok) return;
+    state.generations.set(ID, {
+      generationId: ID, userId: USER, kbId: KB, kind: "knowledge_pack",
+      inputHash: geoGenerationInputHash("knowledge_pack", knowledgeReady.input), state: "succeeded",
+      result: generated.value, errorReason: null, attempt: generated.attempt ?? null,
+    });
+
+    expect(await state.prepare({ ...state.request, kind: "questions", knowledgeGenerationId: ID, sourceReceiptRefs: [] })).toEqual({ kind: "invalid_input" });
+    expect(state.deps.synthesizeQuestions).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing, foreign, failed, malformed, wrong-hash, and stale knowledge before question dispatch", async () => {
+    const missing = setup();
+    expect(await missing.prepare({ ...missing.request, kind: "questions", knowledgeGenerationId: ID })).toEqual({ kind: "invalid_input" });
+    expect(missing.deps.synthesizeQuestions).not.toHaveBeenCalled();
+
+    for (const variant of ["foreign", "failed", "malformed", "hash"] as const) {
+      const state = setup(), seeded = await seedKnowledgeGeneration(state);
+      const changed: GeoKbGenerationRecord = variant === "foreign" ? { ...seeded.record, userId: RID }
+        : variant === "failed" ? { ...seeded.record, state: "failed", result: null, errorReason: "invalid_output", attempt: null }
+        : variant === "malformed" ? { ...seeded.record, result: { ...seeded.result, contentHash: "f".repeat(64) } as any }
+        : { ...seeded.record, inputHash: "f".repeat(64) };
+      state.generations.set(ID, changed);
+      vi.mocked(state.deps.synthesizeQuestions!).mockClear();
+      expect(await state.prepare({ ...state.request, kind: "questions", knowledgeGenerationId: ID })).toEqual({ kind: "invalid_input" });
+      expect(state.deps.synthesizeQuestions).not.toHaveBeenCalled();
+    }
+
+    const stale = setup(), seeded = await seedKnowledgeGeneration(stale);
+    const { contentHash: _contentHash, ...resultBody } = seeded.result;
+    const staleResult = buildGeoKnowledgeGenerationResultV1({ ...resultBody, manifest: { ...resultBody.manifest, baseDraftVersion: "3" } });
+    stale.generations.set(ID, { ...seeded.record, inputHash: geoGenerationInputHash("knowledge_pack", staleResult.manifest as any), result: staleResult as any });
+    vi.mocked(stale.deps.synthesizeQuestions!).mockClear();
+    expect(await stale.prepare({ ...stale.request, kind: "questions", knowledgeGenerationId: ID })).toEqual({ kind: "input_stale" });
+    expect(stale.deps.synthesizeQuestions).not.toHaveBeenCalled();
+
+    const mismatched = setup(), current = await seedKnowledgeGeneration(mismatched);
+    const mismatchInput = buildGeoKnowledgeSynthesisInputV1({ officialName: "Other", aliases: current.result.synthesisInput.aliases,
+      categoryTerms: current.result.synthesisInput.categoryTerms, market: current.result.synthesisInput.market, language: current.result.synthesisInput.language }, current.result.evidence);
+    const { contentHash: _resultHash, ...currentBody } = current.result;
+    const mismatchResult = buildGeoKnowledgeGenerationResultV1({ ...currentBody, manifest: { ...currentBody.manifest, knowledgeSynthesisInput: mismatchInput },
+      synthesisInput: mismatchInput, narrative: knowledgeOutput(mismatchInput) });
+    mismatched.generations.set(ID, { ...current.record, inputHash: geoGenerationInputHash("knowledge_pack", mismatchResult.manifest as any), result: mismatchResult as any });
+    vi.mocked(mismatched.deps.synthesizeQuestions!).mockClear();
+    expect(await mismatched.prepare({ ...mismatched.request, kind: "questions", knowledgeGenerationId: ID })).toEqual({ kind: "invalid_input" });
+    expect(mismatched.deps.synthesizeQuestions).not.toHaveBeenCalled();
   });
 });
 

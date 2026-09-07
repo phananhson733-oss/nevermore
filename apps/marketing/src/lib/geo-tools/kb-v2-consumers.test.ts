@@ -24,6 +24,7 @@ import { resolveSharedBriefRunEvidence } from "./brief-shared-deps.ts";
 import type { OwnedGeoGapResult } from "./owned-gap.ts";
 import { CONTENT_DRAFT_HANDLER_DEPENDENCIES, handleContentDraftRunRequest } from "../tools/content-draft-handler.ts";
 import { SHARED_FROZEN } from "./brief-shared-fixtures.ts";
+import { createGeoPreparedCandidate, GEO_PREPARED_CANDIDATE_SCHEMA } from "./kb-prepared-contract.ts";
 
 const USER = "11111111-1111-4111-8111-111111111111";
 const SNAPSHOT = "44444444-4444-4444-8444-444444444444";
@@ -32,6 +33,12 @@ const TIME = "2026-08-31T00:00:00.000Z";
 const selection = { userId: USER, kbId: V2_KB_ID, snapshotId: SNAPSHOT };
 const noCurrentProfile = vi.hoisted(() => vi.fn(() => { throw new Error("A frozen consumer must never read current Profile"); }));
 vi.mock("../account-websites/store.ts", () => ({ findAccountWebsiteByUrl: noCurrentProfile, resolveWebsiteProfileReference: noCurrentProfile }));
+
+function preparedCandidate(payload: ReturnType<typeof completePayloadV2>, questionSet: ReturnType<typeof questionSetV2>, context: ReturnType<typeof buildGeoSnapshotContextV2>) {
+  return createGeoPreparedCandidate({ schemaVersion: GEO_PREPARED_CANDIDATE_SCHEMA, candidateId: V2_CANDIDATE_ID, kbId: V2_KB_ID, baseDraftVersion: "1",
+    baseDraftHash: geoV2Digest(payload), profileCopyHash: geoV2Digest(payload.profileCopy), sourceReceiptRefs: context.sourceReceiptRefs,
+    generatorVersion: questionSet.methodVersion, payload, questionSet, context });
+}
 
 function fixture() {
   const base = completePayloadV2();
@@ -54,12 +61,14 @@ function fixture() {
     sourceReceiptRefs: [{ receiptId: RECEIPT, contentHash: "b".repeat(64) }], evidenceCatalog: [{ id: "manual:r1", kind: "manual", text: "Finance teams research analytics and late invoices" }],
     sourceSummary: { gsc: null, selectedEvidenceCounts: { profile: 0, gsc: 0, crawl: 0, manual: 1 }, availableEvidenceCounts: { profile: 0, gsc: 0, crawl: 0, manual: 1 } },
     verifiedFactSupport: [{ receiptId: RECEIPT, evidenceId: "F1", key: "Crawl claim", value: "5", sourceUrl: base.facts[0]!.sourceUrl, observedAt: base.facts[0]!.observedAt }] });
-  const frozen = { kbId: V2_KB_ID, snapshotId: SNAPSHOT, revision: 2, frozenAt: TIME, contentHash: geoV2Digest(payload), questionSetHash: geoV2Digest(questionSet), questionCount: questionSet.questions.length, payload, questionSet };
-  const row = { id: SNAPSHOT, kb_id: V2_KB_ID, user_id: USER, revision: 2, schema_version: payload.schemaVersion, payload, content_hash: frozen.contentHash, question_set: questionSet, question_set_hash: frozen.questionSetHash, context_hash: context.contentHash, frozen_at: TIME };
+  const candidate = preparedCandidate(payload, questionSet, context);
+  const frozen = { kbId: V2_KB_ID, snapshotId: SNAPSHOT, revision: 2, frozenAt: TIME, contentHash: geoV2Digest(payload), questionSetHash: geoV2Digest(questionSet), questionCount: questionSet.questions.length, preparedId: V2_CANDIDATE_ID, payload, questionSet };
+  const row = { id: SNAPSHOT, kb_id: V2_KB_ID, user_id: USER, revision: 2, schema_version: payload.schemaVersion, prepared_id: V2_CANDIDATE_ID, payload, content_hash: frozen.contentHash, question_set: questionSet, question_set_hash: frozen.questionSetHash, context_hash: context.contentHash, frozen_at: TIME };
   const store = { ...DEFAULT_GEO_KB_STORE_DEPENDENCIES, readSnapshot: vi.fn(async () => ({ kind: "ok" as const, data: row })) };
   const contextStore: GeoContextStoreDependencies = { readSnapshot: vi.fn(async () => ({ data: row, error: null })), readContext: vi.fn(async () => ({ data: { snapshot_id: SNAPSHOT, user_id: USER, kb_id: V2_KB_ID, content_hash: context.contentHash, context }, error: null })),
     readReceipt: noCurrentProfile, callRpc: noCurrentProfile };
-  const dependencies = { readFrozen: (input: typeof selection | { userId: string; kbId: string; revision: number }) => readVersionedFrozenGeoKb(input, store), readContext: (input: typeof selection) => readVersionedGeoSnapshotContext(input, contextStore) };
+  const dependencies = { readFrozen: (input: typeof selection | { userId: string; kbId: string; revision: number }) => readVersionedFrozenGeoKb(input, store), readContext: (input: typeof selection) => readVersionedGeoSnapshotContext(input, contextStore),
+    readPrepared: vi.fn(async () => ({ kind: "ok" as const, value: candidate })) };
   const basis = () => sharedGeoBriefBasis({ frozen, context, questionId: questionSet.questions[0]!.id, questionText: "ignored browser words", runEvidence: null, runId: "offline-v2-brief", now: TIME });
   return { frozen, context, row, store, contextStore, dependencies, basis };
 }
@@ -76,6 +85,7 @@ function criterionFixture(texts: readonly string[]) {
   Object.assign(f.frozen, { payload, questionSet, questionCount: 1, contentHash: geoV2Digest(payload), questionSetHash: geoV2Digest(questionSet) });
   Object.assign(f.context, context);
   Object.assign(f.row, { payload, question_set: questionSet, content_hash: f.frozen.contentHash, question_set_hash: f.frozen.questionSetHash, context_hash: context.contentHash });
+  f.dependencies.readPrepared.mockResolvedValue({ kind: "ok", value: preparedCandidate(payload, questionSet, context) });
   return f;
 }
 
@@ -124,7 +134,7 @@ describe("actual frozen V2 consumers", () => {
   });
   it("reads exact full V2 payload/questions/context while every current Profile path throws", async () => {
     const f = fixture();
-    expect(await readCompleteGeoKnowledgeBase(selection, f.dependencies)).toEqual({ kind: "ok", value: { snapshot: f.frozen, context: f.context, completeness: "complete" } });
+    expect(await readCompleteGeoKnowledgeBase(selection, f.dependencies)).toEqual({ kind: "ok", value: { snapshot: f.frozen, context: f.context, completeness: "complete", knowledgePack: null } });
     expect(f.frozen.questionSet.questions[0]?.provenance.kind).toBe("semantic"); expect(noCurrentProfile).not.toHaveBeenCalled();
   });
   it("adds a versioned context reader without widening the legacy context reader", async () => {

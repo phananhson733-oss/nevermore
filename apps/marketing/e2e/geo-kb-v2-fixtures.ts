@@ -2,7 +2,7 @@
 // This proves no production database, authentication or provider integration.
 import { createHash } from "node:crypto";
 import * as React from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToString } from "react-dom/server";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../src/i18n/messages/en.json" with { type: "json" };
 import zh from "../src/i18n/messages/zh.json" with { type: "json" };
@@ -13,16 +13,16 @@ import { emptyGeoKbPayload } from "../src/lib/geo-tools/kb-contract.ts";
 import { parseGeoKbPayloadV2, type GeoKbPayloadV2 } from "../src/lib/geo-tools/kb-v2-contract.ts";
 import { geoV2Digest } from "../src/lib/geo-tools/kb-v2-digest.ts";
 import { createGeoKbV2Runtime, type GeoKbV2RuntimeDependencies } from "../src/lib/geo-tools/kb-v2-runtime.ts";
-import { createGeoKbGenerationPreparer } from "../src/lib/geo-tools/kb-generation-preparer.ts";
+import { createGeoKbGenerationPreparer, type GeoKnowledgeEvidenceCollectionInput } from "../src/lib/geo-tools/kb-generation-preparer.ts";
 import { createGeoKbGenerationStore, type GeoKbRpcTransport } from "../src/lib/geo-tools/kb-generation-store.ts";
 import type { GeoGenerationValue, GeoKbGenerationKind, GeoKbGenerationRecord } from "../src/lib/geo-tools/kb-generation.ts";
 import { createGeoKbPreparedStore, saveGeoKbDraftV2, persistGeoSourceReceiptV2, readGeoSourceReceiptV2 } from "../src/lib/geo-tools/kb-prepared-store.ts";
-import { parseGeoPreparedCandidate, type GeoPreparedCandidateV1 } from "../src/lib/geo-tools/kb-prepared-contract.ts";
+import { parseAnyGeoPreparedCandidate, type AnyGeoPreparedCandidate } from "../src/lib/geo-tools/kb-prepared-contract.ts";
 import { readVersionedGeoKnowledgeBase, readVersionedFrozenGeoKb } from "../src/lib/geo-tools/kb-versioned-read.ts";
 import { DEFAULT_GEO_KB_STORE_DEPENDENCIES } from "../src/lib/geo-tools/kb-store.ts";
 import { readCompleteGeoKnowledgeBase } from "../src/lib/geo-tools/kb-complete-read.ts";
 import { readVersionedGeoSnapshotContext, DEFAULT_GEO_CONTEXT_STORE_DEPENDENCIES } from "../src/lib/geo-tools/asset-context-store.ts";
-import { parseGeoKbEditorViewV2, parseGeoKbFrozenV2Wire, type GeoKbFrozenV2Wire } from "../src/components/tools/geo-kb-v2-wire.ts";
+import { parseGeoKbEditorViewV2, parseGeoKbFrozenKnowledgeWire, type GeoKbFrozenKnowledgeWire } from "../src/components/tools/geo-kb-v2-wire.ts";
 import { handleGeoKbV2Load, handleGeoKbV2Draft } from "../src/lib/geo-tools/kb-v2-draft-handler.ts";
 import { handleGeoKbSources } from "../src/lib/geo-tools/kb-source-handler.ts";
 import { handleGeoKbGeneration, handleGeoKbGenerationRead } from "../src/lib/geo-tools/kb-generation-handler.ts";
@@ -40,6 +40,9 @@ import { projectFrozenGeoQuestions } from "../src/lib/geo-tools/kb-consumer-proj
 import { buildVisibilityPlan, createVisibilityReportV2 } from "../src/lib/geo-tools/visibility-v2.ts";
 import { observeVisibilityV2 } from "../src/lib/geo-tools/visibility-sampling-v2.ts";
 import { enrichVisibilityReportV2 } from "../src/lib/geo-tools/visibility-enrich.ts";
+import { collectGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidenceReadResource } from "../src/lib/geo-tools/kb-knowledge-evidence.ts";
+import { synthesizeGeoKnowledgeNarrative } from "../src/lib/geo-tools/kb-knowledge-synthesis.ts";
+import type { GeoKnowledgeSynthesisInputV1 } from "../src/lib/geo-tools/kb-knowledge-synthesis-contract.ts";
 
 export const GEO_V2_USER = GEO_CHAIN_USER;
 export const GEO_V2_KB = "66666666-6666-4666-8666-666666666666";
@@ -58,7 +61,7 @@ export function renderOfflineVisibilityInitial(locale: "en" | "zh", authenticati
   // Supply React only during synchronous fixture rendering, never in the app.
   const scope = globalThis as typeof globalThis & { React?: typeof React }, previous = scope.React;
   scope.React = React;
-  try { return renderToStaticMarkup(React.createElement(NextIntlClientProvider, { locale, timeZone: "UTC", messages: locale === "zh" ? zh : en,
+  try { return renderToString(React.createElement(NextIntlClientProvider, { locale, timeZone: "UTC", messages: locale === "zh" ? zh : en,
     children: React.createElement(AiVisibilityCheck, { locale, authentication }) })); }
   finally { if (previous === undefined) Reflect.deleteProperty(scope, "React"); else scope.React = previous; }
 }
@@ -96,6 +99,15 @@ function questionReply(input: GeoQuestionSynthesisInput) {
   return { entities, questions };
 }
 
+function knowledgeReply(input: GeoKnowledgeSynthesisInputV1) {
+  const own = input.sourceCatalogue.find(item => item.kind === "own_page");
+  if (!own) throw new Error("Missing offline own-site knowledge evidence");
+  return { schemaVersion: "marketing-geo-knowledge-narrative.v1" as const,
+    entity: { definitions: { w25: "Acme is invoice reminder software.", w55: "Acme is invoice reminder software for finance teams.", w120: "Acme is invoice reminder software that helps finance teams document follow-up workflows." },
+      audience: { who: "Finance teams managing invoice reminders.", notFor: null }, founded: { year: null, team: null, location: null }, disambiguation: null, sourceRefs: [own.id] },
+    facts: [], qa: [], comparisons: [], scope: { does: [{ id: "scope:invoice-reminders", text: "Supports documented invoice reminder workflows.", sourceRefs: [own.id] }], doesNot: [], needsHuman: [], misconceptions: [] } };
+}
+
 export function createGeoKbV2Fixture(options: { readonly connected?: boolean } = {}) {
   let serial = 100;
   const id = () => `77777777-7777-4777-8777-${String(++serial).padStart(12, "0")}`;
@@ -105,13 +117,17 @@ export function createGeoKbV2Fixture(options: { readonly connected?: boolean } =
     draft: { draftVersion: 1, updatedAt: GEO_V2_NOW, profileHash: reference.profileHash, profile: clone(profile) }, currentConfirmedSnapshot: { ...reference, confirmedAt: GEO_V2_NOW, profile: clone(profile) } };
   const profiles = new Map([[reference.profileHash, website.currentConfirmedSnapshot!]]);
   let payload = parseGeoKbPayloadV2({ ...emptyGeoKbPayload(GEO_CHAIN_ORIGIN), schemaVersion: "marketing-geo-kb.v2", profileCopy: createGeoProfileCopy(reference, profile), officialName: "Acme", aliases: ["Acme", "Acme Billing"], categoryTerms: ["invoice reminder software"], roles: [], competitors: [{ domain: "rival.example", brandName: "Rival", aliases: ["Rival Billing"], confirmed: true }, { domain: "missing-rival.example", brandName: "", aliases: [], confirmed: false }],
-    facts: [{ key: "Seats", value: "The product supports three seats.", reason: "", sourceUrl: `${GEO_CHAIN_ORIGIN}/pricing`, observedAt: GEO_V2_NOW, review: "pending", supportRef: null }, { key: "Price", value: "", reason: "notPublished", sourceUrl: "", observedAt: "", review: "pending", supportRef: null }, { key: "No login", value: "No account required", reason: "", sourceUrl: "", observedAt: "", review: "pending", supportRef: null }] });
-  let draftVersion = 1, frozenId: string | null = null, source: GeoKbSourceReportV2 | null = null, candidate: GeoPreparedCandidateV1 | null = null;
+    // A no-source claim remains visible in contract tests, but this browser
+    // success fixture starts it excluded: the one-click flow must not silently
+    // admit it, and a happy path cannot depend on an impossible review state.
+    facts: [{ key: "Seats", value: "The product supports three seats.", reason: "", sourceUrl: `${GEO_CHAIN_ORIGIN}/pricing`, observedAt: GEO_V2_NOW, review: "pending", supportRef: null }, { key: "Price", value: "", reason: "notPublished", sourceUrl: "", observedAt: "", review: "pending", supportRef: null }, { key: "No login", value: "No account required", reason: "", sourceUrl: "", observedAt: "", review: "excluded", supportRef: null }] });
+  let draftVersion = 1, frozenId: string | null = null, source: GeoKbSourceReportV2 | null = null, candidate: AnyGeoPreparedCandidate | null = null;
   let unknownNext: GeoKbGenerationKind | null = null;
-  const sources = new Map<string, GeoKbSourceReportV2>(), candidates = new Map<string, GeoPreparedCandidateV1>();
+  const sources = new Map<string, GeoKbSourceReportV2>(), candidates = new Map<string, AnyGeoPreparedCandidate>();
   const frozenRows = new Map<string, Record<string, unknown>>(), frozenByCandidate = new Map<string, string>();
   const generations = new Map<string, { record: GeoKbGenerationRecord; key: string; claimToken: string; input: Record<string, GeoGenerationValue> }>();
-  const stats = { dispatches: { roles: 0, questions: 0 }, modelCalls: { roles: 0, questions: 0 }, quota: 0, sourceCalls: [] as string[], sourceReads: [] as (string | null)[],
+  const stats = { dispatches: { roles: 0, knowledge_pack: 0, questions: 0 }, modelCalls: { roles: 0, knowledge_pack: 0, questions: 0 }, quota: 0,
+    sourceCalls: [] as string[], knowledgeReads: [] as string[], sourceReads: [] as (string | null)[],
     structuredOutputRequests: [] as { kind: GeoKbGenerationKind; responseFormat: { type: "json_schema"; json_schema: { name: string; strict: true; schema: Record<string, unknown> } } }[], rpc: [] as string[] };
   const owned = (userId: unknown, kbId: unknown) => userId === GEO_V2_USER && kbId === GEO_V2_KB;
   const currentCopy = () => website.currentConfirmedSnapshot!;
@@ -156,7 +172,7 @@ export function createGeoKbV2Fixture(options: { readonly connected?: boolean } =
       const stale = !currentInput(found.input);
       found.record = { ...found.record, state: stale ? "failed" : p.p_state as GeoKbGenerationRecord["state"], result: stale ? null : clone(p.p_result) as GeoGenerationValue,
         errorReason: stale ? "input_stale" : p.p_error_reason as GeoKbGenerationRecord["errorReason"], attempt: clone(p.p_attempt) as GeoKbGenerationRecord["attempt"] };
-      if (found.record.state === "succeeded" && found.record.kind === "questions") { candidate = parseGeoPreparedCandidate(found.record.result); candidates.set(candidate.candidateId, clone(candidate)); }
+      if (found.record.state === "succeeded" && found.record.kind === "questions") { candidate = parseAnyGeoPreparedCandidate(found.record.result); candidates.set(candidate.candidateId, clone(candidate)); }
       return result("finished", { generation: found.record });
     }
     if (name === "marketing_geo_freeze_prepared_kb") {
@@ -167,7 +183,7 @@ export function createGeoKbV2Fixture(options: { readonly connected?: boolean } =
       if (old) { const row = frozenRows.get(old)!; return result("frozen", { snapshot_id: old, revision: row.revision, frozen_at: row.frozen_at, content_hash: prepared.baseDraftHash, reused_existing: true }); }
       if (!currentInput(prepared as unknown as Record<string, unknown>)) return result("input_stale");
       const snapshotId = id(), revision = frozenRows.size + 1;
-      const row = { id: snapshotId, user_id: GEO_V2_USER, kb_id: GEO_V2_KB, revision, schema_version: prepared.payload.schemaVersion, payload: clone(prepared.payload), content_hash: prepared.baseDraftHash, question_set: clone(prepared.questionSet), question_set_hash: prepared.context.questionSetHash, context_hash: prepared.context.contentHash, frozen_at: GEO_V2_NOW, context: clone(prepared.context) };
+      const row = { id: snapshotId, user_id: GEO_V2_USER, kb_id: GEO_V2_KB, revision, schema_version: prepared.payload.schemaVersion, prepared_id: prepared.candidateId, payload: clone(prepared.payload), content_hash: prepared.baseDraftHash, question_set: clone(prepared.questionSet), question_set_hash: prepared.context.questionSetHash, context_hash: prepared.context.contentHash, frozen_at: GEO_V2_NOW, context: clone(prepared.context) };
       frozenRows.set(snapshotId, row); frozenByCandidate.set(prepared.candidateId, snapshotId); frozenId = snapshotId;
       return result("frozen", { snapshot_id: snapshotId, revision, frozen_at: GEO_V2_NOW, content_hash: prepared.baseDraftHash, reused_existing: false });
     }
@@ -181,16 +197,36 @@ export function createGeoKbV2Fixture(options: { readonly connected?: boolean } =
     readFrozen: selected => readVersionedFrozenGeoKb(selected, store), readContext: selected => readVersionedGeoSnapshotContext(selected, { ...DEFAULT_GEO_CONTEXT_STORE_DEPENDENCIES,
       readSnapshot: async (userId, kbId, snapshotId) => ({ data: owned(userId, kbId) ? clone(frozenRows.get(snapshotId) ?? null) : null, error: null }),
       readContext: async (userId, kbId, snapshotId) => { const row = owned(userId, kbId) ? frozenRows.get(snapshotId) : undefined; return { data: row ? { snapshot_id: snapshotId, user_id: userId, kb_id: kbId, content_hash: row.context_hash, context: clone(row.context) } : null, error: null }; },
-    }) });
+    }), readPrepared: async selected => ({ kind: "ok", value: owned(selected.userId, selected.kbId) ? clone(candidates.get(selected.candidateId) ?? null) : null }) });
   const readSource: GeoKbV2RuntimeDependencies["readSource"] = input => readGeoSourceReceiptV2(input, async scope => { stats.sourceReads.push(scope.receiptId ?? null); const row = owned(scope.userId, scope.kbId) ? scope.receiptId ? sources.get(scope.receiptId) : source : null; return { data: row ? { id: row.receiptId, user_id: GEO_V2_USER, kb_id: GEO_V2_KB, content_hash: row.contentHash, report: clone(row) } : null, error: null }; });
   const generationStore = createGeoKbGenerationStore({ callRpc: rpc });
   const preparedStore = createGeoKbPreparedStore({ callRpc: rpc, readCandidate: async input => { const row = owned(input.userId, input.kbId) ? input.candidateId ? candidates.get(input.candidateId) : candidate : null; return { data: row ? { id: row.candidateId, user_id: GEO_V2_USER, kb_id: GEO_V2_KB, candidate_hash: row.candidateHash, candidate: clone(row) } : null, error: null }; } });
   const authenticate: GeoKbV2RuntimeDependencies["authenticate"] = async () => ({ status: "authenticated", userId: GEO_V2_USER, email: null, avatarUrl: null, googleSubject: "offline-subject" });
   const readWebsite: GeoKbV2RuntimeDependencies["readWebsite"] = async (userId, websiteId) => userId === GEO_V2_USER && websiteId === WEBSITE ? { kind: "ok", value: clone(website) } : { kind: "missing" };
+  const collectKnowledgeEvidence = async (input: GeoKnowledgeEvidenceCollectionInput) => {
+    const observedAt = GEO_V2_NOW;
+    const readResource: GeoKnowledgeEvidenceReadResource = async ({ url }) => {
+      stats.knowledgeReads.push(url);
+      if (url === input.targetUrl) return { kind: "ok", url, contentType: "text/html", observedAt,
+        body: '<html lang="en"><head><title>Acme invoice reminders</title></head><body><h1>Acme invoice reminder software</h1><p>Acme helps finance teams document invoice reminder workflows and audit trails.</p><a href="/pricing">Pricing</a></body></html>' };
+      if (url === `${input.targetUrl}pricing`) return { kind: "ok", url, contentType: "text/html", observedAt,
+        body: "<html><body><h1>Acme product details</h1><p>The product supports three seats.</p></body></html>" };
+      if (url.endsWith("/robots.txt")) return { kind: "ok", url, contentType: "text/plain", observedAt, body: "User-agent: *\nAllow: /" };
+      if (url.endsWith("/sitemap.xml")) return { kind: "ok", url, contentType: "application/xml", observedAt,
+        body: `<urlset><url><loc>${input.targetUrl}</loc></url><url><loc>${input.targetUrl}pricing</loc></url></urlset>` };
+      if (url.endsWith("/llms.txt")) return { kind: "ok", url, contentType: "text/plain", observedAt, body: "# Acme\nInvoice reminder software for finance teams." };
+      if (new URL(url).host === "rival.example") return { kind: "ok", url, contentType: "text/html", observedAt,
+        body: "<html><body><h1>Rival invoice software</h1><p>Rival supports invoice workflows.</p></body></html>" };
+      return { kind: "unavailable", url, reason: "not_found" };
+    };
+    return collectGeoKnowledgeEvidenceV1({ targetUrl: input.targetUrl, competitors: [...input.confirmedCompetitors] }, {
+      readResource, now: () => new Date(GEO_V2_NOW), reusedSources: input.reusedSources,
+    });
+  };
   const runtime = createGeoKbV2Runtime({ authenticate, ensure: async input => owned(input.userId, GEO_V2_KB) && input.origin === GEO_CHAIN_ORIGIN ? { kind: "ok", value: { kbId: GEO_V2_KB, created: false } } : { kind: "missing" }, readDetails, readWebsite,
     readProfile: async (userId, url) => { const { confirmedAt: _time, profile: currentProfile, ...currentReference } = currentCopy(); return userId === GEO_V2_USER && new URL(url).origin === GEO_CHAIN_ORIGIN ? { kind: "ok", value: { website: clone(website), reference: currentReference, profile: clone(currentProfile) } } : { kind: "missing" }; },
     readComplete, readSource, generationStore, preparedStore, persistSource: input => persistGeoSourceReceiptV2(input, { callRpc: rpc }), saveDraft: input => saveGeoKbDraftV2(input, { readKnowledgeBase: readDetails, callRpc: rpc }), resolveConfig: () => CONFIG,
-    quota: async () => { stats.quota++; return { kind: "allowed", hits: 1 }; },
+    quota: async () => { stats.quota++; return { kind: "allowed", hits: 1 }; }, now: () => new Date(GEO_V2_NOW),
     sourceTransports: { authenticate, readAsset: async () => ({ kind: "missing" }), persistReceipt: null, readIdentity: async () => options.connected === false ? null : { sub: "offline-subject" }, readGscSession: async () => ({ properties: ["sc-domain:geo-chain.test"] }), openGscGate: async () => ({ ok: true, release: () => undefined }),
       resolveGrant: async () => ({ kind: "grant", accessToken: "offline-only", properties: ["sc-domain:geo-chain.test"], propertyTotal: 1 }), readQueries: async () => ({ queries: ["manual invoice reminders", "invoice reminder software audit trails", "spreadsheet overdue invoices"], truncated: false }),
       fetchPage: async url => { stats.sourceCalls.push(url); if (url === "https://rival.example/") return { kind: "ok", url, body: '<script type="application/ld+json">{"@type":"Organization","name":"Rival","url":"https://rival.example/"}</script><meta property="og:site_name" content="Rival">', observedAt: GEO_V2_NOW };
@@ -207,8 +243,11 @@ export function createGeoKbV2Fixture(options: { readonly connected?: boolean } =
     return Response.json({ choices: [{ message: { content: JSON.stringify(output) }, finish_reason: "stop" }], model: "offline-model", usage: { prompt_tokens: 30, completion_tokens: 40, total_tokens: 70 } });
   } });
   const prepare = createGeoKbGenerationPreparer({ readDetails: async input => { const value = await readDetails(input); return value.kind === "ok" ? value : { kind: "unavailable" }; }, validateCurrentProfileCopy: runtime.draft.validateCurrentCopy,
-    readReceipt: async input => { const value = await readSource(input); return value.kind === "ok" && value.value ? { kind: "ok", value: value.value } : { kind: "missing" }; }, readGeneration: runtime.generation.store.read, resolveConfig: () => CONFIG,
+    readReceipt: async input => { const value = await readSource(input); return value.kind === "ok" && value.value ? { kind: "ok", value: value.value } : { kind: "missing" }; },
+    readGeneration: async input => { const value = await runtime.generation.store.read(input); return value.kind !== "ok" ? value : value.generation === null ? { kind: "missing" } : { kind: "ok", generation: value.generation }; },
+    resolveConfig: () => CONFIG, collectKnowledgeEvidence, now: () => new Date(GEO_V2_NOW),
     synthesizeRoles: (input, deps) => synthesizeGeoKbRoles(input, { ...deps, client: offlineClient("roles", roleReply(input)) }),
+    synthesizeKnowledge: (input, deps) => synthesizeGeoKnowledgeNarrative(input, { ...deps, client: offlineClient("knowledge_pack", knowledgeReply(input)) }),
     synthesizeQuestions: (input, deps) => synthesizeGeoKbQuestions(input, { ...deps, client: offlineClient("questions", questionReply(input)) }),
   });
   const generation = { ...runtime.generation, prepare };
@@ -216,7 +255,7 @@ export function createGeoKbV2Fixture(options: { readonly connected?: boolean } =
     if (path === "load") return handleGeoKbV2Load(request, runtime.load);
     if (path === "draft") return handleGeoKbV2Draft(request, runtime.draft);
     if (path === "sources") return handleGeoKbSources(request, runtime.sources);
-    if (path === "roles" || path === "prepare") return handleGeoKbGeneration(request, path === "roles" ? "roles" : "questions", generation);
+    if (path === "roles" || path === "knowledge" || path === "prepare") return handleGeoKbGeneration(request, path === "roles" ? "roles" : path === "knowledge" ? "knowledge_pack" : "questions", generation);
     if (path === "generation") return handleGeoKbGenerationRead(request, generation);
     if (path === "prepared") return handleGeoKbPreparedRead(request, runtime.prepared);
     if (path === "freeze") return handleGeoKbPreparedFreeze(request, runtime.prepared);
@@ -225,19 +264,30 @@ export function createGeoKbV2Fixture(options: { readonly connected?: boolean } =
   const post = (path: string, body: unknown) => dispatch(path, new Request(`http://127.0.0.1:3027/api/tools/geo-knowledge-base/v2/${path}`, { method: "POST", headers: { "content-type": "application/json", origin: "http://127.0.0.1:3027" }, body: JSON.stringify(body) }));
   const load = async () => { const response = await post("load", { url: GEO_CHAIN_ORIGIN }); const body = await response.json(); const view = parseGeoKbEditorViewV2(body.data); if (!response.ok || !view) throw new Error(`Offline complete load failed: ${JSON.stringify(body)}`); return view; };
   const save = (next: GeoKbPayloadV2) => post("draft", { kbId: GEO_V2_KB, baseVersion: draftVersion, payload: next, expectedProfileReference: profileCopyReference(next.profileCopy) });
-  const generate = (kind: GeoKbGenerationKind, key: string) => post(kind === "roles" ? "roles" : "prepare", { kbId: GEO_V2_KB, baseVersion: draftVersion, draftHash: geoV2Digest(payload), idempotencyKey: key, displayLocale: "en", sourceReceiptRefs: source ? [{ receiptId: source.receiptId, contentHash: source.contentHash }] : [] });
+  const generate = (kind: GeoKbGenerationKind, key: string, knowledgeGenerationId?: string) => post(kind === "roles" ? "roles" : kind === "knowledge_pack" ? "knowledge" : "prepare", {
+    kbId: GEO_V2_KB, baseVersion: draftVersion, draftHash: geoV2Digest(payload), idempotencyKey: key, displayLocale: "en",
+    sourceReceiptRefs: source ? [{ receiptId: source.receiptId, contentHash: source.contentHash }] : [], ...(knowledgeGenerationId === undefined ? {} : { knowledgeGenerationId }),
+  });
   const prepareComplete = async () => {
     const sourced = await post("sources", { kbId: GEO_V2_KB }); if (!sourced.ok) throw new Error(`Sources failed ${await sourced.text()}`);
     const generated = await generate("roles", "fixture_roles_key"); const body = await generated.json(); const proposal = parseGeoRoleProposal(body.data.generation.result);
     const fact = source!.facts.find(item => item.key === "Seats"); if (fact?.status !== "available" || !fact.sourceUrl || !fact.observedAt) throw new Error("Real source fixture did not support Seats");
     const next = { ...payload, roles: adoptGeoKbRoleProposals(proposal.output.roles, proposal.generationId).map(role => ({ ...role, review: "accepted" as const })), facts: payload.facts.map(item => item.key === "Seats" ? { ...item, review: "accepted" as const, sourceUrl: fact.sourceUrl!, observedAt: fact.observedAt!, supportRef: { receiptId: source!.receiptId, evidenceId: fact.evidenceId } } : { ...item, review: item.key === "Price" ? "accepted" as const : "excluded" as const }) };
     const saved = await save(next); if (!saved.ok) throw new Error(`Save failed ${await saved.text()}`);
-    const prepared = await generate("questions", "fixture_questions_key"); const response = await prepared.json(); if (response.data?.generation?.state !== "succeeded") throw new Error(`Prepare failed ${JSON.stringify(response)}`);
+    const knowledge = await generate("knowledge_pack", "fixture_knowledge_key"); const knowledgeResponse = await knowledge.json();
+    if (knowledgeResponse.data?.generation?.state !== "succeeded") throw new Error(`Knowledge failed ${JSON.stringify(knowledgeResponse)}`);
+    const prepared = await generate("questions", "fixture_questions_key", knowledgeResponse.data.generation.generationId); const response = await prepared.json();
+    if (response.data?.generation?.state !== "succeeded") throw new Error(`Prepare failed ${JSON.stringify(response)}`);
   };
   return { kbId: GEO_V2_KB, origin: GEO_CHAIN_ORIGIN, authenticate, readWebsite, readComplete, readSource, runtime, generation, dispatch, post, load, save, generate, prepareComplete, stats,
     publicFixture: createGeoChainFixture("A"),
     get payload() { return clone(payload); }, get website() { return clone(website); }, get currentCandidate() { return clone(candidate); },
-    get currentFrozen(): GeoKbFrozenV2Wire | null { const row = frozenId ? frozenRows.get(frozenId) : null; return row ? parseGeoKbFrozenV2Wire({ kbId: GEO_V2_KB, snapshotId: row.id, revision: row.revision, frozenAt: row.frozen_at, contentHash: row.content_hash, questionSetHash: row.question_set_hash, questionCount: (row.question_set as GeoPreparedCandidateV1["questionSet"]).questions.length, payload: row.payload, questionSet: row.question_set, context: row.context }) : null; },
+    get currentFrozen(): GeoKbFrozenKnowledgeWire | null { const row = frozenId ? frozenRows.get(frozenId) : null; if (!row) return null;
+      const prepared = candidates.get(String(row.prepared_id));
+      return parseGeoKbFrozenKnowledgeWire({ kbId: GEO_V2_KB, snapshotId: row.id, revision: row.revision, frozenAt: row.frozen_at, contentHash: row.content_hash,
+        questionSetHash: row.question_set_hash, questionCount: (row.question_set as AnyGeoPreparedCandidate["questionSet"]).questions.length,
+        payload: row.payload, questionSet: row.question_set, context: row.context, wireSchemaVersion: "marketing-geo-kb-frozen-wire.v1",
+        knowledgePack: prepared?.schemaVersion === "marketing-geo-prepared-candidate.v2" ? prepared.knowledgePack : null }); },
     failNextModel(kind: GeoKbGenerationKind) { unknownNext = kind; },
     saveProfile(next: MarketingWebsiteProfileV1) { const parsed = parseMarketingWebsiteProfile(next); website = { ...website, profileState: hashProfile(parsed) === currentCopy().profileHash ? "confirmed" : "unconfirmed_changes", draft: { draftVersion: website.draft!.draftVersion + 1, profileHash: hashProfile(parsed), profile: clone(parsed), updatedAt: GEO_V2_NOW } }; return clone(website); },
     confirmProfile() { const draft = website.draft!; let snapshot = profiles.get(draft.profileHash); if (!snapshot) { snapshot = { ...reference, snapshotId: id(), snapshotRevision: profiles.size + 1, profileHash: draft.profileHash, confirmedAt: GEO_V2_NOW, profile: clone(draft.profile) }; profiles.set(draft.profileHash, snapshot); } website = { ...website, profileState: "confirmed", confirmedSnapshotId: snapshot.snapshotId, confirmedSnapshotRevision: snapshot.snapshotRevision, confirmedAt: snapshot.confirmedAt, currentConfirmedSnapshot: clone(snapshot) }; return clone(website); },

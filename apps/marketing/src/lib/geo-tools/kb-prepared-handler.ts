@@ -2,13 +2,13 @@
 // @output -- persisted candidate recovery and immutable freeze identity
 // @pos -- no generator or latest-source resolver is reachable from this handler
 import type { ServerAuthenticatedUser } from "../auth/server-auth-user.ts";
-import type { GeoPreparedCandidateV1 } from "./kb-prepared-contract.ts";
+import type { AnyGeoPreparedCandidate } from "./kb-prepared-contract.ts";
 import type { GeoKbFreezeOutcome } from "./kb-store.ts";
 import { z } from "zod";
 import { privateError, privateJson, readAccountMutationJson } from "../account-websites/route-http.ts";
 export interface GeoKbPreparedHandlerDependencies {
   readonly authenticate: () => Promise<ServerAuthenticatedUser>;
-  readonly read: (input: { readonly userId: string; readonly kbId: string; readonly candidateId?: string }) => Promise<{ readonly kind: "ok"; readonly candidate: GeoPreparedCandidateV1 } | { readonly kind: "missing" | "unavailable" }>;
+  readonly read: (input: { readonly userId: string; readonly kbId: string; readonly candidateId?: string }) => Promise<{ readonly kind: "ok"; readonly candidate: AnyGeoPreparedCandidate } | { readonly kind: "missing" | "unavailable" }>;
   readonly freeze: (input: { readonly userId: string; readonly kbId: string; readonly candidateId: string; readonly candidateHash: string }) => Promise<{ readonly kind: "ok"; readonly value: GeoKbFreezeOutcome } | { readonly kind: "missing" | "stale" | "unavailable" }>;
 }
 const readSchema = z.object({ kbId: z.string().uuid(), candidateId: z.string().uuid().optional() }).strict();

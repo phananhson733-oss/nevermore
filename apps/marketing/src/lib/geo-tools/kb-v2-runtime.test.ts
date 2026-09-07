@@ -8,13 +8,23 @@ import { contextPayload } from "./snapshot-context.test-fixtures.ts";
 import { buildGeoQuestionSet } from "./kb-questions.ts";
 import { handleGeoKbGeneration } from "./kb-generation-handler.ts";
 import type { GeoKbGenerationStore } from "./kb-generation-store.ts";
+import type { KeywordLlmConfig } from "../tools/keyword-llm-client.ts";
+import { collectGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidenceReadResource } from "./kb-knowledge-evidence.ts";
 
 vi.mock("../auth/server-auth-user.ts", () => ({ getServerAuthenticatedUser: vi.fn(async () => ({ status: "unauthenticated" })) }));
 const USER = "11111111-1111-4111-8111-111111111111", SNAPSHOT = "33333333-3333-4333-8333-333333333333", AT = "2026-08-31T00:00:00.000Z";
+const CONFIG: KeywordLlmConfig = { apiKey: "offline-key", model: "offline-model", url: "https://provider.example/v1", authScheme: "bearer", temperature: 0.4 };
+const knowledgeReader: GeoKnowledgeEvidenceReadResource = async ({ url }) => {
+  const observedAt = AT;
+  if (url.endsWith("/robots.txt")) return { kind: "ok", url, contentType: "text/plain", observedAt, body: "User-agent: *\nAllow: /" };
+  if (url.endsWith("/sitemap.xml")) return { kind: "ok", url, contentType: "application/xml", observedAt, body: "<urlset><url><loc>https://example.com/</loc></url></urlset>" };
+  if (url.endsWith("/llms.txt")) return { kind: "ok", url, contentType: "text/plain", observedAt, body: "# Acme\nAnalytics software." };
+  return { kind: "ok", url, contentType: "text/html", observedAt, body: `<html><head><title>${new URL(url).host}</title></head><body><h1>Analytics software</h1></body></html>` };
+};
 function fixture() {
   const payload = completePayloadV2(), questionSet = questionSetV2(), contentHash = geoV2Digest(payload), questionSetHash = geoV2Digest(questionSet);
   const context = buildGeoSnapshotContextV2({ candidateId: V2_CANDIDATE_ID, kbId: V2_KB_ID, payload, questionSet, sourceReceiptRefs: [], evidenceCatalog: [{ id: "manual:r1", kind: "manual", text: "Finance teams struggle with late invoices" }], sourceSummary: { gsc: null, selectedEvidenceCounts: { profile: 0, gsc: 0, crawl: 0, manual: 1 }, availableEvidenceCounts: { profile: 0, gsc: 0, crawl: 0, manual: 1 } } });
-  const snapshot = { kbId: V2_KB_ID, snapshotId: SNAPSHOT, revision: 1, frozenAt: AT, contentHash, questionSetHash, questionCount: questionSet.questions.length, payload, questionSet };
+  const snapshot = { kbId: V2_KB_ID, snapshotId: SNAPSHOT, revision: 1, frozenAt: AT, contentHash, questionSetHash, questionCount: questionSet.questions.length, preparedId: V2_CANDIDATE_ID, payload, questionSet };
   const reference = profileCopyReference(payload.profileCopy);
   const website = { websiteId: reference.websiteId, origin: "https://example.com", host: "example.com", canonicalSiteKey: "example.com", displayName: "Acme", isPrimary: true, profileState: "confirmed" as const, confirmedSnapshotId: reference.snapshotId, confirmedSnapshotRevision: reference.snapshotRevision, confirmedAt: AT, createdAt: AT, updatedAt: AT, submittedUrl: "https://example.com/", draft: null, currentConfirmedSnapshot: { ...reference, confirmedAt: AT, profile: payload.profileCopy.profile } };
   const details = { kbId: V2_KB_ID, origin: "https://example.com", host: "example.com", canonicalSiteKey: "example.com", createdAt: AT, updatedAt: AT, draft: { payload, contentHash, draftVersion: 1, updatedAt: AT }, frozen: { snapshotId: SNAPSHOT, revision: 1, frozenAt: AT, contentHash, questionSetHash, questionCount: snapshot.questionCount } };
@@ -24,16 +34,19 @@ function fixture() {
     read: vi.fn<GeoKbGenerationStore["read"]>(async () => ({ kind: "ok", generation: null })), readLatest: vi.fn<GeoKbGenerationStore["readLatest"]>(async () => ({ kind: "ok", generation: null })), readByKey: vi.fn<GeoKbGenerationStore["readByKey"]>(async () => ({ kind: "ok", generation: null })),
   };
   const preparedStore = { read: vi.fn<GeoKbV2RuntimeDependencies["preparedStore"]["read"]>(async () => ({ kind: "ok", value: null })), readLatest: vi.fn<GeoKbV2RuntimeDependencies["preparedStore"]["readLatest"]>(async () => ({ kind: "ok", value: null })), freeze: vi.fn<GeoKbV2RuntimeDependencies["preparedStore"]["freeze"]>(async () => ({ kind: "invalid", code: "context_stale" })) };
+  const collectKnowledgeEvidence = vi.fn<typeof collectGeoKnowledgeEvidenceV1>(collectGeoKnowledgeEvidenceV1);
+  const createKnowledgeResourceReader = vi.fn(() => knowledgeReader);
   const dependencies = {
     authenticate: vi.fn<GeoKbV2RuntimeDependencies["authenticate"]>(async () => ({ status: "authenticated", userId: USER, email: null, avatarUrl: null })),
     ensure: vi.fn<GeoKbV2RuntimeDependencies["ensure"]>(async () => ({ kind: "ok", value: { kbId: V2_KB_ID, created: false } })),
     readDetails: vi.fn<GeoKbV2RuntimeDependencies["readDetails"]>(async () => ({ kind: "ok", value: details })),
     readProfile: vi.fn<GeoKbV2RuntimeDependencies["readProfile"]>(async () => ({ kind: "ok", value: { website, reference, profile: payload.profileCopy.profile } })),
     readWebsite: vi.fn<GeoKbV2RuntimeDependencies["readWebsite"]>(async () => ({ kind: "ok", value: website })),
-    readComplete: vi.fn<GeoKbV2RuntimeDependencies["readComplete"]>(async () => ({ kind: "ok", value: { snapshot, context, completeness: "complete" } })),
+    readComplete: vi.fn<GeoKbV2RuntimeDependencies["readComplete"]>(async () => ({ kind: "ok", value: { snapshot, context, completeness: "complete", knowledgePack: null } })),
     readSource: vi.fn<GeoKbV2RuntimeDependencies["readSource"]>(async () => ({ kind: "ok", value: null })), persistSource: vi.fn<GeoKbV2RuntimeDependencies["persistSource"]>(async () => ({ kind: "ok" })),
     generationStore, preparedStore, saveDraft: vi.fn<GeoKbV2RuntimeDependencies["saveDraft"]>(async () => ({ kind: "ok", value: { draftVersion: 2, contentHash, updatedAt: AT } })),
     resolveConfig: vi.fn<GeoKbV2RuntimeDependencies["resolveConfig"]>(() => null), quota: vi.fn<GeoKbV2RuntimeDependencies["quota"]>(async () => ({ kind: "allowed", hits: 1 })), validateLineage: vi.fn<NonNullable<GeoKbV2RuntimeDependencies["validateLineage"]>>(async () => "valid"),
+    collectKnowledgeEvidence, createKnowledgeResourceReader, now: vi.fn(() => new Date(AT)),
   };
   return { payload, reference, website, details, snapshot, context, dependencies, runtime: createGeoKbV2Runtime(dependencies) };
 }
@@ -45,13 +58,16 @@ describe("actual GEO v2 runtime wiring", () => {
   it("loads full v2 frozen payload/questions/context through the immutable complete reader", async () => {
     const { runtime, dependencies, snapshot, context } = fixture();
     const value = await runtime.loadEditor({ userId: USER, url: "https://www.example.com" });
-    expect(value).toMatchObject({ kind: "ok", value: { frozen: { ...snapshot, context } } });
+    const { preparedId: _preparedId, ...wireSnapshot } = snapshot;
+    expect(value).toMatchObject({ kind: "ok", value: { frozen: { ...wireSnapshot, context,
+      wireSchemaVersion: "marketing-geo-kb-frozen-wire.v1", knowledgePack: null } } });
+    if (value.kind === "ok") expect(value.value.frozen).not.toHaveProperty("preparedId");
     expect(dependencies.readComplete).toHaveBeenCalledWith({ userId: USER, kbId: V2_KB_ID, snapshotId: SNAPSHOT });
   });
   it("keeps legacy frozen content exact and never fills it from the current Profile", async () => {
     const { runtime, dependencies, snapshot } = fixture();
     const payload = contextPayload(), questionSet = buildGeoQuestionSet(payload);
-    dependencies.readComplete.mockResolvedValue({ kind: "ok", value: { snapshot: { ...snapshot, payload, questionSet, questionCount: questionSet.questions.length, contentHash: geoV2Digest(payload), questionSetHash: geoV2Digest(questionSet) }, context: null, completeness: "legacy_partial" } });
+    dependencies.readComplete.mockResolvedValue({ kind: "ok", value: { snapshot: { ...snapshot, payload, questionSet, questionCount: questionSet.questions.length, contentHash: geoV2Digest(payload), questionSetHash: geoV2Digest(questionSet), preparedId: null }, context: null, completeness: "legacy_partial", knowledgePack: null } });
     const value = await runtime.loadEditor({ userId: USER, url: "https://example.com" });
     expect(value).toMatchObject({ kind: "ok", value: { frozen: { payload, questions: questionSet.questions } } });
     if (value.kind !== "ok") throw new Error("Expected old frozen view");
@@ -99,14 +115,17 @@ describe("actual GEO v2 runtime wiring", () => {
     expect(await runtime.draft.generationRunning!(USER, V2_KB_ID)).toBe("unavailable");
     // A blip reading one kind must not hide a run the other kind reports.
     dependencies.generationStore.readLatest.mockImplementation(async ({ kind }) =>
-      kind === "roles" ? { kind: "unavailable" } : { ...record("dispatched"), generation: { ...record("dispatched").generation, kind: "questions" as const } });
+      kind === "roles" ? { kind: "unavailable" } : { ...record("dispatched"), generation: { ...record("dispatched").generation, kind } });
+    expect(await runtime.draft.generationRunning!(USER, V2_KB_ID)).toBe(true);
+    dependencies.generationStore.readLatest.mockImplementation(async ({ kind }) =>
+      kind === "knowledge_pack" ? { ...record("dispatched"), generation: { ...record("dispatched").generation, kind } } : { kind: "ok", generation: null });
     expect(await runtime.draft.generationRunning!(USER, V2_KB_ID)).toBe(true);
   });
   it("maps exact missing generations/candidates without substituting latest records", async () => {
     const { runtime, dependencies } = fixture();
     const scope = { userId: USER, kbId: V2_KB_ID, generationId: V2_CANDIDATE_ID };
-    expect(await runtime.generation.store.read(scope)).toEqual({ kind: "missing" });
-    expect(await runtime.generation.store.readByKey({ userId: USER, kbId: V2_KB_ID, kind: "roles", idempotencyKey: "fixture_key" })).toEqual({ kind: "missing" });
+    expect(await runtime.generation.store.read(scope)).toEqual({ kind: "ok", generation: null });
+    expect(await runtime.generation.store.readByKey({ userId: USER, kbId: V2_KB_ID, kind: "roles", idempotencyKey: "fixture_key" })).toEqual({ kind: "ok", generation: null });
     expect(await runtime.prepared.read({ userId: USER, kbId: V2_KB_ID, candidateId: V2_CANDIDATE_ID })).toEqual({ kind: "missing" });
     expect(dependencies.preparedStore.readLatest).not.toHaveBeenCalled();
     expect(await runtime.prepared.read({ userId: USER, kbId: V2_KB_ID })).toEqual({ kind: "missing" });
@@ -119,6 +138,19 @@ describe("actual GEO v2 runtime wiring", () => {
     const response = await handleGeoKbGeneration(request, "roles", runtime.generation);
     expect(response.status).toBe(503); expect(await response.json()).toEqual({ error: { code: "model_unavailable" } });
     expect(dependencies.generationStore.claim).not.toHaveBeenCalled(); expect(dependencies.quota).not.toHaveBeenCalled();
+  });
+  it("collects bounded website evidence for knowledge preflight with the injected owner reader and clock", async () => {
+    const { runtime, dependencies, details, payload } = fixture();
+    dependencies.resolveConfig.mockReturnValue(CONFIG);
+    const ready = await runtime.generation.prepare({ userId: USER, kind: "knowledge_pack", kbId: V2_KB_ID, baseVersion: 1, draftHash: details.draft.contentHash,
+      idempotencyKey: "knowledge_fixture_1", displayLocale: "en", sourceReceiptRefs: [] });
+    expect(ready.kind).toBe("ready");
+    expect(dependencies.createKnowledgeResourceReader).toHaveBeenCalledWith(USER, expect.objectContaining({ now: dependencies.now }));
+    expect(dependencies.collectKnowledgeEvidence).toHaveBeenCalledOnce();
+    expect(dependencies.collectKnowledgeEvidence.mock.calls[0]![0]).toEqual({ targetUrl: "https://example.com/", competitors: [{ key: "rival.example", name: "Rival", confirmed: true }] });
+    expect(dependencies.collectKnowledgeEvidence.mock.calls[0]![1]).toMatchObject({ readResource: knowledgeReader, reusedSources: [expect.objectContaining({ kind: "accepted_fact", label: "Seats", excerpts: ["3"] })] });
+    expect(dependencies.now).toHaveBeenCalled();
+    expect(details.draft.payload).toEqual(payload);
   });
   it("shares durable per-kind owner and KB hourly budgets and fails closed", async () => {
     const { runtime, dependencies } = fixture();
@@ -155,7 +187,7 @@ describe("actual GEO v2 runtime wiring", () => {
 });
 
 describe("v2 route entrypoints", () => {
-  it.each([["load", 60], ["draft", 60], ["sources", 120], ["roles", 300], ["prepare", 300], ["generation", 30], ["prepared", 30], ["freeze", 30]] as const)("wires %s to Node private POST admission without dispatching in a module import", async (name, maxDuration) => {
+  it.each([["load", 60], ["draft", 60], ["sources", 120], ["roles", 300], ["knowledge", 300], ["prepare", 300], ["generation", 30], ["prepared", 30], ["freeze", 30]] as const)("wires %s to Node private POST admission without dispatching in a module import", async (name, maxDuration) => {
     const route = await import(`../../app/api/tools/geo-knowledge-base/v2/${name}/route.ts`);
     const auth = await import("../auth/server-auth-user.ts");
     const request = (origin: string) => new Request(`https://gengrowth.ai/api/tools/geo-knowledge-base/v2/${name}`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: "{}" });

@@ -3,7 +3,7 @@ import { createGeoKbV2Fixture, GEO_V2_USER, hydrateSafeOfflineVisibilityHtml, re
 import { parseVisibilityImport, exportVisibilityJson } from "../src/lib/geo-tools/visibility-export.ts";
 import { countGeoCitationQuestions } from "../src/lib/geo-tools/kb-consumer-projection.ts";
 import { parseGeoKbEditorViewV2, parseGeoKbGenerationWire } from "../src/components/tools/geo-kb-v2-wire.ts";
-import { parseGeoPreparedCandidate } from "../src/lib/geo-tools/kb-prepared-contract.ts";
+import { parseAnyGeoPreparedCandidate } from "../src/lib/geo-tools/kb-prepared-contract.ts";
 
 describe("isolated V2 browser fixture uses real handler/store seams", () => {
   it.each(["en", "zh"] as const)("keeps the real %s Visibility SSR initial markup consistent with the test-only authenticated Flight prop", locale => {
@@ -32,9 +32,12 @@ describe("isolated V2 browser fixture uses real handler/store seams", () => {
   it("loads a real V2 DTO, persists a complete candidate, and recovers it without dispatch", async () => {
     const f = createGeoKbV2Fixture();
     expect(parseGeoKbEditorViewV2(await f.load())).not.toBeNull();
-    expect(f.stats.modelCalls).toEqual({ roles: 0, questions: 0 });
+    expect(f.stats.modelCalls).toEqual({ roles: 0, knowledge_pack: 0, questions: 0 });
     await f.prepareComplete();
-    const candidate = parseGeoPreparedCandidate(f.currentCandidate);
+    const candidate = parseAnyGeoPreparedCandidate(f.currentCandidate);
+    expect(candidate.schemaVersion).toBe("marketing-geo-prepared-candidate.v2");
+    if (candidate.schemaVersion !== "marketing-geo-prepared-candidate.v2") throw new Error("Expected knowledge candidate");
+    expect(candidate.knowledgePack.entity.status).not.toBe("unavailable");
     expect(candidate.payload.roles[0]?.source.kind).toBe("model");
     expect(candidate.context.sourceSummary.gsc?.queryCount).toBe(3);
     expect(candidate.questionSet.questions.length).toBeGreaterThan(5);
@@ -42,18 +45,20 @@ describe("isolated V2 browser fixture uses real handler/store seams", () => {
     expect(candidate.questionSet.questions.find(question => question.id.endsWith("problem-finance-managers"))?.text).toBe("How can finance managers reduce manual reminders of invoices?");
     expect((await f.load()).prepared?.candidateHash).toBe(candidate.candidateHash);
     expect((await f.load()).prepared?.candidateHash).toBe(candidate.candidateHash);
-    expect(f.stats.modelCalls).toEqual({ roles: 1, questions: 1 });
-    expect(f.stats.dispatches).toEqual({ roles: 1, questions: 1 });
+    expect(f.stats.modelCalls).toEqual({ roles: 1, knowledge_pack: 1, questions: 1 });
+    expect(f.stats.dispatches).toEqual({ roles: 1, knowledge_pack: 1, questions: 1 });
     expect(f.stats.structuredOutputRequests.map(request => ({ kind: request.kind, type: request.responseFormat.type,
       name: request.responseFormat.json_schema.name, strict: request.responseFormat.json_schema.strict }))).toEqual([
       { kind: "roles", type: "json_schema", name: "geo_kb_roles_v1", strict: true },
+      { kind: "knowledge_pack", type: "json_schema", name: "marketing_geo_knowledge_narrative_v1", strict: true },
       { kind: "questions", type: "json_schema", name: "geo_kb_questions_v2", strict: true },
     ]);
     for (const request of f.stats.structuredOutputRequests) expect(request.responseFormat.json_schema.schema).toMatchObject({ type: "object" });
   });
   it("freezes the exact failed competitor capture without admitting it or replacing it with a newer receipt", async () => {
     const f = createGeoKbV2Fixture(); await f.prepareComplete();
-    const candidate = parseGeoPreparedCandidate(f.currentCandidate), receipt = (await f.load()).sourceReceipt!;
+    const candidate = parseAnyGeoPreparedCandidate(f.currentCandidate), receipt = (await f.load()).sourceReceipt!;
+    if (candidate.schemaVersion !== "marketing-geo-prepared-candidate.v2") throw new Error("Expected knowledge candidate");
     const failed = receipt.competitors.find(item => item.domain === "missing-rival.example");
     expect(failed).toEqual({ evidenceId: "C2", domain: "missing-rival.example", confirmed: false, sourceUrl: "https://missing-rival.example/",
       source: null, observedAt: null, bodyHash: null, signals: [], signalsTruncated: false, brandName: null, aliases: [], method: null, status: "unavailable", reason: "fetch_failed" });
@@ -74,19 +79,21 @@ describe("isolated V2 browser fixture uses real handler/store seams", () => {
     expect(f.stats.sourceReads).toHaveLength(sourceReads);
     expect(complete.kind).toBe("ok");
     if (complete.kind !== "ok" || complete.value.context?.schemaVersion !== "marketing-geo-snapshot-context.v2") throw new Error("Missing frozen V2 context");
+    expect(complete.value.knowledgePack).toEqual(candidate.knowledgePack);
+    expect(reloaded.frozen && "knowledgePack" in reloaded.frozen ? reloaded.frozen.knowledgePack : null).toEqual(candidate.knowledgePack);
     expect(complete.value.context.competitorEvidence.find(item => item.capture.domain === "missing-rival.example")).toEqual(capture);
-    expect(f.stats.modelCalls).toEqual({ roles: 1, questions: 1 });
+    expect(f.stats.modelCalls).toEqual({ roles: 1, knowledge_pack: 1, questions: 1 });
   });
   it("freezes only persisted IDs/hash and preserves frozen content when draft/Profile changes", async () => {
     const f = createGeoKbV2Fixture(); await f.prepareComplete();
-    const candidate = parseGeoPreparedCandidate(f.currentCandidate);
+    const candidate = parseAnyGeoPreparedCandidate(f.currentCandidate);
     expect((await f.post("freeze", { kbId: f.kbId, candidateId: candidate.candidateId, candidateHash: candidate.candidateHash, payload: {} })).status).toBe(400);
     expect((await f.post("freeze", { kbId: f.kbId, candidateId: candidate.candidateId, candidateHash: candidate.candidateHash })).status).toBe(200);
     const frozen = structuredClone(f.currentFrozen);
     expect((await f.save({ ...f.payload, aliases: [...f.payload.aliases, "Later alias"] })).status).toBe(200);
     f.saveProfile({ ...f.website.draft!.profile, productName: "Later Profile" }); f.confirmProfile();
     expect((await f.load()).frozen).toEqual(frozen);
-    expect(f.stats.modelCalls).toEqual({ roles: 1, questions: 1 });
+    expect(f.stats.modelCalls).toEqual({ roles: 1, knowledge_pack: 1, questions: 1 });
   });
   it("keeps ambiguous dispatch uncertain, recoverable by the original key, and never retries it", async () => {
     const f = createGeoKbV2Fixture({ connected: false });
@@ -107,7 +114,7 @@ describe("isolated V2 browser fixture uses real handler/store seams", () => {
     expect(f.stats.quota).toBe(2);
   });
   it("uses the complete frozen V2 in actual visibility builders without mixing cost and calibrated denominators", async () => {
-    const f = createGeoKbV2Fixture(); await f.prepareComplete(); const candidate = parseGeoPreparedCandidate(f.currentCandidate);
+    const f = createGeoKbV2Fixture(); await f.prepareComplete(); const candidate = parseAnyGeoPreparedCandidate(f.currentCandidate);
     await f.post("freeze", { kbId: f.kbId, candidateId: candidate.candidateId, candidateHash: candidate.candidateHash });
     const report = await runOfflineV2Visibility(f, ["chatgpt", "perplexity"], 3);
     expect(report.manifest.calls).toBe(candidate.questionSet.questions.length * 6);

@@ -3,7 +3,9 @@
 // @pos -- pure assembly: no source reads, model calls, config access or persistence
 import { createHash } from "node:crypto";
 import { parseGeoKbPayloadV2, type GeoKbPayloadV2 } from "./kb-v2-contract.ts";
-import { createGeoPreparedCandidate, GEO_PREPARED_CANDIDATE_SCHEMA, type GeoPreparedCandidateV1 } from "./kb-prepared-contract.ts";
+import { createGeoPreparedCandidate, createGeoPreparedCandidateV2, geoKnowledgeGenerationInputHash, GEO_PREPARED_CANDIDATE_SCHEMA, GEO_PREPARED_CANDIDATE_V2_SCHEMA, type GeoPreparedCandidateV1, type GeoPreparedCandidateV2 } from "./kb-prepared-contract.ts";
+import { parseGeoKnowledgePackV1 } from "./kb-knowledge-pack-contract.ts";
+import { parseGeoKnowledgeSynthesisInputV1 } from "./kb-knowledge-synthesis-contract.ts";
 import { parseGeoQuestionSynthesis, parseGeoQuestionSynthesisInput, type GeoQuestionSynthesisInput, type GeoQuestionSynthesis, type GeoSynthesisEntity } from "./kb-synthesis-contract.ts";
 import { buildGeoSnapshotContextV2, type BuildGeoSnapshotContextV2Input } from "./snapshot-context-v2.ts";
 import { assertRegistryQuestionsMatch, parseGeoQuestionSetV2, GEO_QUESTION_SET_SCHEMA_VERSION_V2, type GeoQuestionEntityV2, type GeoQuestionV2 } from "./kb-question-set-v2.ts";
@@ -21,6 +23,15 @@ export interface BuildGeoPreparedKnowledgeBaseInput extends Pick<BuildGeoSnapsho
   readonly payload: GeoKbPayloadV2;
   readonly semanticInput: GeoQuestionSynthesisInput;
   readonly semanticOutput: unknown;
+}
+export interface BuildGeoPreparedKnowledgeBaseV2Input extends BuildGeoPreparedKnowledgeBaseInput {
+  readonly knowledgePack: unknown;
+  readonly knowledgeSynthesisInput: unknown;
+  readonly knowledgeGeneration: {
+    readonly generationId: string;
+    readonly inputHash: string;
+    readonly promptVersion: "geo-kb-knowledge-pack.v1";
+  };
 }
 
 const same = (left: unknown, right: unknown) => canonicalGeoV2Text(left) === canonicalGeoV2Text(right);
@@ -156,4 +167,14 @@ export function buildGeoPreparedKnowledgeBase(input: BuildGeoPreparedKnowledgeBa
     sourceReceiptRefs: input.sourceReceiptRefs, generatorVersion: GEO_QUESTION_SYNTHESIS_PROMPT_VERSION,
     payload, questionSet, context,
   });
+}
+export function buildGeoPreparedKnowledgeBaseV2(input: BuildGeoPreparedKnowledgeBaseV2Input): GeoPreparedCandidateV2 {
+  const candidate = buildGeoPreparedKnowledgeBase(input);
+  const knowledgePack = parseGeoKnowledgePackV1(input.knowledgePack);
+  const knowledgeSynthesisInput = parseGeoKnowledgeSynthesisInputV1(input.knowledgeSynthesisInput);
+  const { candidateHash: _candidateHash, schemaVersion: _schemaVersion, ...body } = candidate;
+  const prepared = { ...body, schemaVersion: GEO_PREPARED_CANDIDATE_V2_SCHEMA, knowledgePack, knowledgeSynthesisInput } as const;
+  const inputHash = geoKnowledgeGenerationInputHash(prepared);
+  if (input.knowledgeGeneration.inputHash !== inputHash) throw new Error("Knowledge generation input hash mismatch");
+  return createGeoPreparedCandidateV2({ ...prepared, knowledgeGeneration: { ...input.knowledgeGeneration, inputHash, synthesisInputHash: knowledgeSynthesisInput.contentHash, evidenceContentHash: knowledgeSynthesisInput.evidenceContentHash, payloadHash: candidate.baseDraftHash, questionSetHash: candidate.context.questionSetHash, packHash: knowledgePack.contentHash, sourceCatalogueHash: geoV2Digest(knowledgePack.sourceCatalogue) } });
 }

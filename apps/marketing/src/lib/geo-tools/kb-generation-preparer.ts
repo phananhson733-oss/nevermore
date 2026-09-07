@@ -2,12 +2,13 @@
 // @output -- secret-free durable input and a deferred single-invocation closure
 // @pos -- business preflight only; no routes, environment lookup or store wiring
 import { createHash } from "node:crypto";
+import { geoGenerationLanguage } from "@sf/public-tools/content-brief/geo-contract";
 import type { KeywordLlmConfig } from "../tools/keyword-llm-client.ts";
 import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";
 import { profileCopyReference, type GeoProfileCopy } from "./kb-profile-copy.ts";
 import type { VersionedGeoKbDetails } from "./kb-versioned-read.ts";
 import type { GeoKbGenerationHandlerDependencies } from "./kb-generation-handler.ts";
-import type { GeoKbGenerationRecord, GeoKbGenerationInvocation, GeoGenerationAttempt, GeoGenerationValue } from "./kb-generation.ts";
+import { GEO_GENERATION_INPUT_BYTES, geoGenerationInputHash, type GeoKbGenerationRecord, type GeoKbGenerationInvocation, type GeoGenerationAttempt, type GeoGenerationValue } from "./kb-generation.ts";
 import { synthesizeGeoKbRoles, synthesizeGeoKbQuestions, prepareGeoRoleSynthesis, prepareGeoQuestionSynthesis, isUsableGeoSynthesisConfig, type GeoSynthesisResult, type GeoSynthesisProvider } from "./kb-synthesis.ts";
 import { parseAnyGeoKbPayload, parseGeoKbPayloadV2, GEO_KB_SCHEMA_VERSION_V2, type AnyGeoKbPayload, type GeoKbPayloadV2 } from "./kb-v2-contract.ts";
 import { assertGeoProfileCopyIntegrity } from "./kb-profile-copy-server.ts";
@@ -19,17 +20,38 @@ import type { GeoSynthesisSource, GeoQuestionSynthesisInput } from "./kb-synthes
 import { verifyGeoKbSourceReportV2, geoKbSourceCatalogueV2 } from "./kb-sources.ts";
 import type { GeoKbSourceReportV2 } from "./kb-source-contract.ts";
 import { selectGeoCompetitorEvidence } from "./kb-competitor-evidence.ts";
-import { buildGeoPreparedKnowledgeBase } from "./kb-preparation.ts";
+import { buildGeoPreparedKnowledgeBase, buildGeoPreparedKnowledgeBaseV2 } from "./kb-preparation.ts";
 import { assertGeoSnapshotContextV2KnownInput, GEO_CONTEXT_EVIDENCE_MAX_BYTES, type GeoSourceReceiptRef, type GeoSourceSummaryV2, type GeoVerifiedFactSupportV2 } from "./snapshot-context-v2.ts";
+import { parseGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidenceSource } from "./kb-knowledge-evidence.ts";
+import { buildGeoKnowledgeSynthesisInputV1, type GeoKnowledgeSynthesisInputV1 } from "./kb-knowledge-synthesis-contract.ts";
+import { GEO_KNOWLEDGE_SYNTHESIS_PROMPT_VERSION, prepareGeoKnowledgeSynthesis, synthesizeGeoKnowledgeNarrative, type GeoKnowledgeSynthesisDependencies, type GeoKnowledgeSynthesisResult } from "./kb-knowledge-synthesis.ts";
+import { buildGeoKnowledgeGenerationInputManifest } from "./kb-prepared-contract.ts";
+import { buildGeoKnowledgeGenerationResultV1, parseGeoKnowledgeGenerationResultV1, type GeoKnowledgeGenerationResultV1 } from "./kb-knowledge-generation-contract.ts";
+import { buildGeoKnowledgePack } from "./kb-knowledge-pack.ts";
 
+export interface GeoKnowledgeEvidenceCollectionInput {
+  readonly userId: string;
+  readonly kbId: string;
+  readonly targetUrl: string;
+  readonly payload: GeoKbPayloadV2;
+  readonly confirmedCompetitors: readonly {
+    readonly key: string;
+    readonly name: string;
+    readonly confirmed: true;
+  }[];
+  readonly reusedSources: readonly GeoKnowledgeEvidenceSource[];
+}
 export interface GeoKbGenerationPreparerDependencies {
   readonly readDetails: (input: { readonly userId: string; readonly kbId: string }) => Promise<{ readonly kind: "ok"; readonly value: Pick<VersionedGeoKbDetails, "kbId" | "origin" | "draft"> } | { readonly kind: "missing" | "unavailable" }>;
   readonly validateCurrentProfileCopy: (input: { readonly userId: string; readonly copy: GeoProfileCopy }) => Promise<"current" | "stale" | "unavailable">;
   readonly readReceipt: (input: { readonly userId: string; readonly kbId: string; readonly receiptId: string }) => Promise<{ readonly kind: "ok"; readonly value: unknown } | { readonly kind: "missing" | "unavailable" }>;
   readonly readGeneration: (input: { readonly userId: string; readonly kbId: string; readonly generationId: string }) => Promise<{ readonly kind: "ok"; readonly generation: GeoKbGenerationRecord } | { readonly kind: "missing" | "unavailable" }>;
   readonly resolveConfig: () => KeywordLlmConfig | null;
+  readonly collectKnowledgeEvidence: (input: GeoKnowledgeEvidenceCollectionInput) => Promise<unknown>;
+  readonly now: () => Date;
   readonly synthesizeRoles?: typeof synthesizeGeoKbRoles;
   readonly synthesizeQuestions?: typeof synthesizeGeoKbQuestions;
+  readonly synthesizeKnowledge?: (input: GeoKnowledgeSynthesisInputV1, dependencies?: GeoKnowledgeSynthesisDependencies) => Promise<GeoKnowledgeSynthesisResult>;
 }
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu;
 const hash = /^[a-f0-9]{64}$/u;
@@ -39,6 +61,16 @@ function modelInput(provider: GeoSynthesisProvider, config: KeywordLlmConfig, ti
     maxOutputTokens: provider.maxOutputTokens, timeoutMs, endpointHash: createHash("sha256").update(config.url).digest("hex") };
 }
 function invocation<T>(result: GeoSynthesisResult<T>, build: (value: T) => unknown): GeoKbGenerationInvocation {
+  const attempt: GeoGenerationAttempt = { attemptedCalls: result.attemptedCalls, delivery: result.delivery, modelRequested: result.provider?.modelRequested ?? null,
+    inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, requestCount: result.usage.requestCount };
+  if (!result.ok) {
+    const reason = result.delivery === "outcome_unknown" ? "outcome_unknown" : result.reason === "not_configured" ? "model_unavailable" : result.reason === "rate_limited" ? "rate_limited" : ["auth_failed", "bad_request", "server_error"].includes(result.reason) ? "provider_rejected" : "invalid_output";
+    return { ok: false, reason, delivery: result.delivery, attempt };
+  }
+  try { return { ok: true, value: asValue(build(result.value)), attempt }; }
+  catch { return { ok: false, reason: "invalid_output", delivery: "response_received", attempt }; }
+}
+function knowledgeInvocation(result: GeoKnowledgeSynthesisResult, build: (value: Extract<GeoKnowledgeSynthesisResult, { readonly ok: true }>["value"]) => unknown): GeoKbGenerationInvocation {
   const attempt: GeoGenerationAttempt = { attemptedCalls: result.attemptedCalls, delivery: result.delivery, modelRequested: result.provider?.modelRequested ?? null,
     inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, requestCount: result.usage.requestCount };
   if (!result.ok) {
@@ -88,6 +120,60 @@ function admittedFacts(payload: GeoKbPayloadV2, receipts: ReadonlyMap<string, Ge
     facts.push({ key: fact.key, value: fact.value, sourceUrl: fact.sourceUrl, observedAt: fact.observedAt, source: fact.supportRef === null ? "user_confirmed" : "crawl" });
   }
   return { facts, verifiedFactSupport };
+}
+function knowledgeSourceId(kind: "fact" | "gsc", value: unknown): string {
+  return `knowledge-${kind}-${geoV2Digest(value).slice(0, 24)}`;
+}
+function knowledgeReusableSources(payload: GeoKbPayloadV2, receipts: ReadonlyMap<string, GeoKbSourceReportV2>, selectedReceiptIds: ReadonlySet<string>): GeoKnowledgeEvidenceSource[] {
+  const sources: GeoKnowledgeEvidenceSource[] = [];
+  for (const fact of payload.facts.filter(item => item.review === "accepted" && item.value !== "" && item.reason === "").slice(0, 8)) {
+    if (fact.supportRef === null) {
+      sources.push({ id: knowledgeSourceId("fact", { key: fact.key, value: fact.value }), kind: "accepted_fact", label: fact.key, url: null, competitor: null,
+        availability: "available", reason: null, observedAt: null, bodyHash: null, excerpts: [fact.value] });
+      continue;
+    }
+    const report = receipts.get(fact.supportRef.receiptId);
+    const support = report?.facts.find(item => item.evidenceId === fact.supportRef!.evidenceId);
+    if (!support || support.status !== "available" || support.source !== "crawl" || support.key !== fact.key || support.value !== fact.value || support.sourceUrl !== fact.sourceUrl || support.observedAt !== fact.observedAt || support.bodyHash === null || support.excerpt === null) invalid();
+    sources.push({ id: knowledgeSourceId("fact", { receiptId: report!.receiptId, evidenceId: support.evidenceId }), kind: "accepted_fact", label: fact.key,
+      // Facts are declarations, not fetched resources. Keeping their receipt
+      // URL here would participate in collector URL dedupe and could suppress
+      // the independent own-page crawl (including the homepage itself).
+      url: null, competitor: null, availability: "available", reason: null, observedAt: support.observedAt, bodyHash: support.bodyHash, excerpts: [support.excerpt] });
+  }
+  const gsc = [...receipts.values()].filter(report => selectedReceiptIds.has(report.receiptId) && report.gsc.status === "available" && report.gsc.queries.length > 0)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || left.receiptId.localeCompare(right.receiptId))[0];
+  if (gsc?.gsc.status === "available") {
+    const partial = gsc.gsc.truncated || gsc.gsc.queries.length > 8;
+    sources.push({ id: knowledgeSourceId("gsc", { receiptId: gsc.receiptId, contentHash: gsc.contentHash }), kind: "gsc", label: "Search Console queries", url: null,
+      competitor: null, availability: partial ? "partial" : "available", reason: partial ? "partial_body" : null, observedAt: gsc.gsc.observedAt, bodyHash: null, excerpts: gsc.gsc.queries.slice(0, 8).map(query => query.text) });
+  }
+  if (sources.length > 9 || sources.some(source => source.excerpts.length > 8)) invalid();
+  return sources;
+}
+function durableInput(value: unknown): Readonly<Record<string, GeoGenerationValue>> {
+  const parsed = asValue(value);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) invalid();
+  return parsed as Readonly<Record<string, GeoGenerationValue>>;
+}
+type SelectedKnowledge = { readonly record: GeoKbGenerationRecord; readonly result: GeoKnowledgeGenerationResultV1 };
+async function readSelectedKnowledge(input: { readonly userId: string; readonly kbId: string; readonly generationId: string; readonly payload: GeoKbPayloadV2; readonly base: { readonly baseDraftVersion: string; readonly baseDraftHash: string; readonly profileCopyHash: string } }, dependencies: Pick<GeoKbGenerationPreparerDependencies, "readGeneration">): Promise<{ readonly kind: "ok"; readonly value: SelectedKnowledge } | { readonly kind: "invalid_input" | "input_stale" | "unavailable" }> {
+  const read = await dependencies.readGeneration({ userId: input.userId, kbId: input.kbId, generationId: input.generationId }).catch(() => ({ kind: "unavailable" as const }));
+  if (read.kind !== "ok") return { kind: read.kind === "unavailable" ? "unavailable" : "invalid_input" };
+  const record = read.generation;
+  if (record.generationId !== input.generationId || record.userId !== input.userId || record.kbId !== input.kbId || record.kind !== "knowledge_pack" || record.state !== "succeeded" || record.errorReason !== null || record.attempt?.attemptedCalls !== 1 || record.attempt.delivery !== "response_received") return { kind: "invalid_input" };
+  let result: GeoKnowledgeGenerationResultV1;
+  try {
+    result = parseGeoKnowledgeGenerationResultV1(record.result);
+    if (result.generationId !== record.generationId || result.kbId !== record.kbId || geoGenerationInputHash("knowledge_pack", durableInput(result.manifest)) !== record.inputHash) return { kind: "invalid_input" };
+  } catch { return { kind: "invalid_input" }; }
+  if (result.manifest.baseDraftVersion !== input.base.baseDraftVersion || result.manifest.baseDraftHash !== input.base.baseDraftHash || result.manifest.profileCopyHash !== input.base.profileCopyHash) return { kind: "input_stale" };
+  const synthesis = result.synthesisInput;
+  const confirmedCompetitors = input.payload.competitors.filter(competitor => competitor.confirmed).map(competitor => ({ key: competitor.domain, name: competitor.brandName, confirmed: true }));
+  if (synthesis.targetUrl !== new URL(input.payload.targetUrl).toString() || synthesis.officialName !== input.payload.officialName || !same(synthesis.aliases, input.payload.aliases)
+    || !same(synthesis.categoryTerms, input.payload.categoryTerms) || synthesis.market !== input.payload.market.country || synthesis.language !== input.payload.market.language
+    || !same(synthesis.confirmedCompetitors, confirmedCompetitors)) return { kind: "invalid_input" };
+  return { kind: "ok", value: { record, result } };
 }
 function declaredRoleSources(payload: GeoKbPayloadV2, profileSources: readonly GeoSynthesisSource[]): GeoSynthesisSource[] {
   const known = new Map(profileSources.map((source) => [source.id, source]));
@@ -201,7 +287,8 @@ export async function validateGeoKbDraftLineage(input: LineageScope & { readonly
 
 export function createGeoKbGenerationPreparer(dependencies: GeoKbGenerationPreparerDependencies): GeoKbGenerationHandlerDependencies["prepare"] {
   return async (request) => {
-    if (!uuid.test(request.userId) || !uuid.test(request.kbId) || !Number.isSafeInteger(request.baseVersion) || request.baseVersion < 1 || !hash.test(request.draftHash) || !["roles", "questions"].includes(request.kind)
+    if (!uuid.test(request.userId) || !uuid.test(request.kbId) || !Number.isSafeInteger(request.baseVersion) || request.baseVersion < 1 || !hash.test(request.draftHash) || !["roles", "questions", "knowledge_pack"].includes(request.kind)
+      || request.knowledgeGenerationId !== undefined && (request.kind !== "questions" || !uuid.test(request.knowledgeGenerationId))
       || !Array.isArray(request.sourceReceiptRefs) || request.sourceReceiptRefs.length > 32 || new Set(request.sourceReceiptRefs.map((ref) => ref.receiptId)).size !== request.sourceReceiptRefs.length) return { kind: "invalid_input" };
     const loaded = await dependencies.readDetails({ userId: request.userId, kbId: request.kbId }).catch(() => ({ kind: "unavailable" as const }));
     if (loaded.kind !== "ok") return { kind: loaded.kind };
@@ -216,9 +303,10 @@ export function createGeoKbGenerationPreparer(dependencies: GeoKbGenerationPrepa
       if (payload.profileCopy === undefined) return { kind: "invalid_input" };
       assertGeoProfileCopyIntegrity(payload.profileCopy);
     } catch { return { kind: "invalid_input" }; }
-    if (request.kind === "questions" && (payload.schemaVersion !== GEO_KB_SCHEMA_VERSION_V2 || payload.roles.some((role) => role.review === "pending") || payload.facts.some((fact) => fact.review === "pending"))) return { kind: "invalid_input" };
+    if (request.kind !== "roles" && (payload.schemaVersion !== GEO_KB_SCHEMA_VERSION_V2 || payload.roles.some((role) => role.review === "pending") || payload.facts.some((fact) => fact.review === "pending"))) return { kind: "invalid_input" };
     const current = await dependencies.validateCurrentProfileCopy({ userId: request.userId, copy: payload.profileCopy }).catch(() => "unavailable" as const);
     if (current !== "current") return { kind: current === "stale" ? "input_stale" : "unavailable" };
+    if (request.kind === "knowledge_pack" && geoGenerationLanguage(payload.market.language) === null) return { kind: "unsupported_language" };
     let config: KeywordLlmConfig | null;
     try { const resolved = dependencies.resolveConfig(); config = resolved === null ? null : { ...resolved }; }
     catch { return { kind: "model_unavailable" }; }
@@ -245,7 +333,44 @@ export function createGeoKbGenerationPreparer(dependencies: GeoKbGenerationPrepa
             } catch { return unknownInvocation(capture.model); }
           } };
       }
-      const finalPayload = parseGeoKbPayloadV2(payload), proposals = await readRoleProposals({ userId: request.userId, kbId: request.kbId, payload: parseGeoKbPayloadV2(payload) }, dependencies);
+      if (request.kind === "knowledge_pack") {
+        const finalPayload = parseGeoKbPayloadV2(payload);
+        await reader.load(finalPayload.facts.flatMap(fact => fact.review === "accepted" && fact.value !== "" && fact.reason === "" && fact.supportRef !== null ? [{ receiptId: fact.supportRef.receiptId }] : []));
+        const reusedSources = knowledgeReusableSources(finalPayload, receipts, new Set(request.sourceReceiptRefs.map(ref => ref.receiptId)));
+        const confirmedCompetitors = finalPayload.competitors.filter(competitor => competitor.confirmed).map(competitor => ({ key: competitor.domain, name: competitor.brandName, confirmed: true as const }));
+        const targetUrl = new URL(finalPayload.targetUrl).toString();
+        let rawEvidence: unknown;
+        try {
+          rawEvidence = await dependencies.collectKnowledgeEvidence({ userId: request.userId, kbId: request.kbId, targetUrl, payload: finalPayload,
+            confirmedCompetitors, reusedSources });
+        } catch { return { kind: "unavailable" }; }
+        const evidence = parseGeoKnowledgeEvidenceV1(rawEvidence);
+        if (evidence.availability === "unavailable" || evidence.targetUrl !== targetUrl || !same(evidence.confirmedCompetitors, confirmedCompetitors)
+          || reusedSources.some(source => !evidence.sourceCatalogue.some(candidate => candidate.id === source.id && same(candidate, source)))) return { kind: "invalid_input" };
+        const synthesisInput = buildGeoKnowledgeSynthesisInputV1({ officialName: finalPayload.officialName, aliases: finalPayload.aliases, categoryTerms: finalPayload.categoryTerms,
+          market: finalPayload.market.country, language: finalPayload.market.language }, evidence);
+        const prepared = prepareGeoKnowledgeSynthesis(synthesisInput, capture);
+        if (!prepared.ok) return { kind: prepared.reason === "not_configured" ? "model_unavailable" : prepared.reason === "unsupported_language" ? "unsupported_language" : "invalid_input" };
+        const manifest = buildGeoKnowledgeGenerationInputManifest({ ...base, sourceReceiptRefs: receiptRefs(), knowledgeSynthesisInput: prepared.value.input });
+        const input = durableInput(manifest);
+        if (geoV2JsonbBytes(input) > GEO_GENERATION_INPUT_BYTES) return { kind: "invalid_input" };
+        return { kind: "ready", input,
+          invoke: async (generationId) => {
+            try {
+              const result = await (dependencies.synthesizeKnowledge ?? synthesizeGeoKnowledgeNarrative)(prepared.value.input, { config: capture, timeoutMs: prepared.value.timeoutMs });
+              return knowledgeInvocation(result, narrative => buildGeoKnowledgeGenerationResultV1({ schemaVersion: "marketing-geo-knowledge-generation-result.v1",
+                generationId, kbId: request.kbId, manifest, evidence, synthesisInput: prepared.value.input, narrative, generatedAt: dependencies.now().toISOString() }));
+            } catch { return unknownInvocation(capture.model); }
+          } };
+      }
+      const finalPayload = parseGeoKbPayloadV2(payload);
+      let selectedKnowledge: SelectedKnowledge | null = null;
+      if (request.knowledgeGenerationId !== undefined) {
+        const selected = await readSelectedKnowledge({ userId: request.userId, kbId: request.kbId, generationId: request.knowledgeGenerationId, payload: finalPayload, base }, dependencies);
+        if (selected.kind !== "ok") return { kind: selected.kind };
+        selectedKnowledge = selected.value;
+      }
+      const proposals = await readRoleProposals({ userId: request.userId, kbId: request.kbId, payload: parseGeoKbPayloadV2(payload) }, dependencies);
       if (proposals.some((proposal) => proposal.profileCopyHash !== base.profileCopyHash || proposal.input.officialName !== finalPayload.officialName || proposal.input.questionLanguage !== finalPayload.market.language)) return { kind: "input_stale" };
       const lineage = resolveGeoModelRoleLineage({ kbId: request.kbId, profileCopyHash: base.profileCopyHash, officialName: finalPayload.officialName, language: finalPayload.market.language, roles: finalPayload.roles, proposals });
       await reader.load(lineage.sourceReceiptRefs);
@@ -264,17 +389,29 @@ export function createGeoKbGenerationPreparer(dependencies: GeoKbGenerationPrepa
       const prepared = prepareGeoQuestionSynthesis(semanticInput, capture);
       if (!prepared.ok) return { kind: prepared.reason === "not_configured" ? "model_unavailable" : prepared.reason === "unsupported_language" ? "unsupported_language" : "invalid_input" };
       const sourceReceiptRefs = receiptRefs();
+      if (selectedKnowledge !== null && !same(selectedKnowledge.result.manifest.sourceReceiptRefs, sourceReceiptRefs)) invalid();
       const competitorEvidence = selectGeoCompetitorEvidence({ kbId: request.kbId, targetHost: normalizeAccountWebsiteUrl(finalPayload.targetUrl)!.host,
         competitors: finalPayload.competitors, sourceReceiptRefs, receipts: [...receipts.values()] });
       assertGeoSnapshotContextV2KnownInput({ kbId: request.kbId, payload: finalPayload, sourceReceiptRefs, evidenceCatalog, sourceSummary: summary,
         modelRoleEdits: lineage.userEdited, verifiedFactSupport, competitorEvidence });
-      return { kind: "ready", input: { ...base, promptHash: geoV2Digest(prepared.value.prompt), promptVersion: prepared.value.promptVersion,
-        responseSchemaHash: geoV2Digest(prepared.value.responseJsonSchema), provider: modelInput(prepared.value.provider, capture, prepared.value.timeoutMs), sourceReceiptRefs: sourceReceiptRefs.map((ref) => ({ ...ref })) },
+      const input = { ...base, promptHash: geoV2Digest(prepared.value.prompt), promptVersion: prepared.value.promptVersion,
+        responseSchemaHash: geoV2Digest(prepared.value.responseJsonSchema), provider: modelInput(prepared.value.provider, capture, prepared.value.timeoutMs), sourceReceiptRefs: sourceReceiptRefs.map((ref) => ({ ...ref })),
+        ...(selectedKnowledge === null ? {} : { knowledgeGeneration: { generationId: selectedKnowledge.record.generationId, inputHash: selectedKnowledge.record.inputHash, resultHash: selectedKnowledge.result.contentHash } }) };
+      return { kind: "ready", input,
         invoke: async (generationId) => {
           try {
             const result = await (dependencies.synthesizeQuestions ?? synthesizeGeoKbQuestions)(prepared.value.input, { config: capture, timeoutMs: prepared.value.timeoutMs });
-            return invocation(result, (semanticOutput) => buildGeoPreparedKnowledgeBase({ candidateId: generationId, kbId: request.kbId, baseDraftVersion: request.baseVersion, payload: finalPayload,
-              semanticInput: prepared.value.input, semanticOutput, sourceReceiptRefs, evidenceCatalog, sourceSummary: summary, modelRoleEdits: lineage.userEdited, verifiedFactSupport, competitorEvidence }));
+            return invocation(result, (semanticOutput) => {
+              const candidateInput = { candidateId: generationId, kbId: request.kbId, baseDraftVersion: request.baseVersion, payload: finalPayload,
+                semanticInput: prepared.value.input, semanticOutput, sourceReceiptRefs, evidenceCatalog, sourceSummary: summary, modelRoleEdits: lineage.userEdited, verifiedFactSupport, competitorEvidence };
+              if (selectedKnowledge === null) return buildGeoPreparedKnowledgeBase(candidateInput);
+              const candidate = buildGeoPreparedKnowledgeBase(candidateInput);
+              const knowledgePack = buildGeoKnowledgePack({ generatedAt: selectedKnowledge.result.generatedAt, payload: candidate.payload, context: candidate.context,
+                questionSet: candidate.questionSet, evidence: selectedKnowledge.result.evidence, synthesisInput: selectedKnowledge.result.synthesisInput,
+                narrative: selectedKnowledge.result.narrative, narrativeFailureReason: null });
+              return buildGeoPreparedKnowledgeBaseV2({ ...candidateInput, knowledgePack, knowledgeSynthesisInput: selectedKnowledge.result.synthesisInput,
+                knowledgeGeneration: { generationId: selectedKnowledge.record.generationId, inputHash: selectedKnowledge.record.inputHash, promptVersion: GEO_KNOWLEDGE_SYNTHESIS_PROMPT_VERSION } });
+            });
           } catch { return unknownInvocation(capture.model); }
         } };
     } catch (error) { return { kind: error instanceof PreparationFailure ? error.kind : "invalid_input" }; }

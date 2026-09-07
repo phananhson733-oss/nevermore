@@ -6,20 +6,22 @@ import { parseGeoContentBrief } from "@sf/public-tools/content-brief/parse-geo-b
 import type { GeoContentBrief } from "@sf/public-tools/content-brief/geo-contract";
 import { readVersionedFrozenGeoKb } from "./kb-versioned-read.ts";
 import { readVersionedGeoSnapshotContext } from "./asset-context-store.ts";
-import { readCompleteGeoKnowledgeBase } from "./kb-complete-read.ts";
+import { readCompleteGeoKnowledgeBase, type CompleteGeoKbDependencies } from "./kb-complete-read.ts";
 import type { AnyGeoSnapshotContext } from "./snapshot-context-v2.ts";
 import { readVisibilityRunV2 } from "./visibility-store-v2.ts";
 import { resolveSharedBriefRunEvidence } from "./brief-shared-deps.ts";
 import { sharedGeoBriefBasis, type SharedBriefRunEvidence } from "./brief-shared.ts";
 import { assessGeoQuestionQuality, geoQuestionLanguageIssue, geoQuestionProperNames } from "./question-quality.ts";
+import { DEFAULT_GEO_KB_PREPARED_STORE } from "./kb-prepared-store.ts";
 
 export interface GeoBriefReferenceDependencies {
   readonly readFrozen: typeof readVersionedFrozenGeoKb;
   readonly readContext: typeof readVersionedGeoSnapshotContext;
+  readonly readPrepared: CompleteGeoKbDependencies["readPrepared"];
   readonly readRun: typeof readVisibilityRunV2;
   readonly readRunEvidence: typeof resolveSharedBriefRunEvidence;
 }
-const DEFAULT: GeoBriefReferenceDependencies = { readFrozen: readVersionedFrozenGeoKb, readContext: readVersionedGeoSnapshotContext, readRun: readVisibilityRunV2, readRunEvidence: resolveSharedBriefRunEvidence };
+const DEFAULT: GeoBriefReferenceDependencies = { readFrozen: readVersionedFrozenGeoKb, readContext: readVersionedGeoSnapshotContext, readPrepared: DEFAULT_GEO_KB_PREPARED_STORE.read, readRun: readVisibilityRunV2, readRunEvidence: resolveSharedBriefRunEvidence };
 class GeoReferenceUnavailable extends Error {
   constructor() { super("GEO reference store unavailable"); this.name = "GeoReferenceUnavailable"; }
 }

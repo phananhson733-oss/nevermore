@@ -11,6 +11,7 @@ import type { GeoKbPayloadV2 } from "../../lib/geo-tools/kb-v2-contract.ts";
 import type { GeoQuestionSetV2 } from "../../lib/geo-tools/kb-question-set-v2.ts";
 import { GeoKbVersionContent, type GeoKbVersionContentProps } from "./geo-kb-version-content.tsx";
 import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
+import { geoKnowledgePackFixture } from "./geo-knowledge-pack.test-fixtures.ts";
 import { renderedText } from "./rendered-text.test-helper.ts";
 
 const TIME = "2026-08-31T00:00:00.000Z";
@@ -87,9 +88,19 @@ describe("complete V2 knowledge-base version content", () => {
     expect(host.querySelector("[data-version-role]")).toBeNull();
     expect(host.querySelector("[data-version-fact]")).toBeNull();
     expect(host.querySelector("[data-evidence-catalog]")).toBeNull();
-    for (const internalValue of [props.payload.profileCopy.profileHash, props.context.payloadHash, props.context.questionSetHash, props.context.contentHash]) {
-      expect(host.textContent).not.toContain(internalValue);
-    }
+    const customerHtml = host.outerHTML;
+    const internalValues = new Set([
+      props.payload.schemaVersion, props.payload.profileCopy.schemaVersion, props.payload.profileCopy.profileHash, props.payload.profileCopy.snapshotId,
+      props.questionSet.schemaVersion, props.questionSet.registryVersion, props.questionSet.methodVersion,
+      props.context.schemaVersion, props.context.kbId, props.context.candidateId, props.context.payloadHash, props.context.questionSetHash, props.context.contentHash,
+      ...props.context.sourceReceiptRefs.flatMap(ref => [ref.receiptId, ref.contentHash]),
+      ...props.context.evidenceCatalog.map(item => item.id),
+      ...props.payload.roles.flatMap(role => [role.source.generationId, role.source.itemId, ...role.source.evidenceRefs]),
+      ...props.payload.facts.flatMap(fact => fact.supportRef === null ? [] : [fact.supportRef.receiptId, fact.supportRef.evidenceId]),
+      ...props.questionSet.entityCatalog.map(entity => entity.id),
+      ...props.questionSet.questions.flatMap(question => [question.id, question.templateId, question.provenance.generatorVersion, ...question.provenance.evidenceRefs, ...question.provenance.entityRefs]),
+    ].filter((value): value is string => typeof value === "string" && value !== ""));
+    for (const internalValue of internalValues) expect(customerHtml).not.toContain(internalValue);
 
     expect(host.querySelector("[data-geo-profile-copy]")).toBeNull();
     expect(host.querySelectorAll("[data-geo-profile-field]")).toHaveLength(0);
@@ -97,6 +108,44 @@ describe("complete V2 knowledge-base version content", () => {
     expect(renderedText(host)).not.toContain("Acme");
     expect(host.querySelectorAll("[data-version-competitor]")).toHaveLength(0);
     expect(host.querySelectorAll("[data-version-question]")).toHaveLength(props.questionSet.questions.length);
+    expect(host.querySelector("details")).toBeNull();
+    expect(renderedText(host)).not.toContain("Semantic generation");
+    expect(renderedText(host)).not.toContain("registry-template");
+
+    const table = host.querySelector("table");
+    expect(table?.classList.contains("block")).toBe(true);
+    expect(table?.classList.contains("sm:table")).toBe(true);
+    expect(table?.querySelector("caption.sr-only")).not.toBeNull();
+    const desktopLabels = Array.from(table?.querySelectorAll('thead.hidden.sm\\:table-header-group th[scope="col"]') ?? []);
+    expect(desktopLabels).toHaveLength(5);
+    const firstRow = table?.querySelector("tbody > tr");
+    expect(firstRow?.classList.contains("grid")).toBe(true);
+    expect(firstRow?.classList.contains("sm:table-row")).toBe(true);
+    const mobileLabels = Array.from(firstRow?.querySelectorAll("td > span") ?? []).filter(node => node.classList.contains("sm:hidden"));
+    expect(mobileLabels).toHaveLength(5);
+    expect(mobileLabels.map(node => node.textContent)).toEqual(desktopLabels.map(node => node.textContent));
+  });
+  it("places the customer knowledge pack before the complete question set without reviving internal panels", async () => {
+    const props = fixture(), knowledgePack = geoKnowledgePackFixture();
+    await render({ ...props, customerFacing: true, knowledgePack });
+
+    const sectionHeadings = Array.from(host.querySelectorAll("h3")).map(node => node.textContent);
+    expect(sectionHeadings.slice(0, 3)).toEqual(["Entity definition", "Reliable facts", "Questions and answers"]);
+    expect(sectionHeadings.at(-1)).toBe(geoKbV2Copy("en").sections.questions);
+    expect(host.querySelector("[data-geo-knowledge-pack]")).not.toBeNull();
+    expect(host.textContent).toContain("Example Cloud keeps human approval in each workflow.");
+    expect(host.querySelector("[data-version-role]")).toBeNull();
+    expect(host.querySelector("[data-version-competitor]")).toBeNull();
+    expect(host.querySelector("details")).toBeNull();
+    expect(host.textContent).not.toContain(knowledgePack.contentHash);
+  });
+  it("keeps the question policy typography at the same compact size as the other cells", async () => {
+    await render({ ...fixture(), customerFacing: true });
+    const policy = host.querySelector('[data-version-question] [data-question-policy]');
+    expect(policy?.querySelectorAll("p")).toHaveLength(0);
+    const lines = Array.from(policy?.querySelectorAll("[data-question-policy-line]") ?? []);
+    expect(lines).toHaveLength(2);
+    expect(lines.every(line => line.classList.contains("text-[13px]"))).toBe(true);
   });
   it("shows the declared fact independently from the actual admitted context value and source", async () => {
     await render();

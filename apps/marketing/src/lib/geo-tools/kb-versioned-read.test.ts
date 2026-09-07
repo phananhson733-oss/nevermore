@@ -12,7 +12,7 @@ const USER = "11111111-1111-4111-8111-111111111111";
 const input = { userId: USER, kbId: V2_KB_ID, snapshotId: V2_CANDIDATE_ID };
 function fixture(v2 = true) {
   const payload = v2 ? completePayloadV2() : contextPayload(), questionSet = v2 ? questionSetV2() : buildGeoQuestionSet(contextPayload());
-  const row = { id: V2_CANDIDATE_ID, kb_id: V2_KB_ID, user_id: USER, revision: 1, schema_version: payload.schemaVersion, payload, content_hash: v2 ? geoV2Digest(payload) : geoKbDigest(payload as unknown as GeoKbValue), question_set: questionSet, question_set_hash: v2 ? geoV2Digest(questionSet) : geoQuestionSetDigest(questionSet as ReturnType<typeof buildGeoQuestionSet>), frozen_at: "2026-08-31T00:00:00.000Z" };
+  const row = { id: V2_CANDIDATE_ID, kb_id: V2_KB_ID, user_id: USER, revision: 1, schema_version: payload.schemaVersion, ...(v2 ? { prepared_id: V2_CANDIDATE_ID } : {}), payload, content_hash: v2 ? geoV2Digest(payload) : geoKbDigest(payload as unknown as GeoKbValue), question_set: questionSet, question_set_hash: v2 ? geoV2Digest(questionSet) : geoQuestionSetDigest(questionSet as ReturnType<typeof buildGeoQuestionSet>), frozen_at: "2026-08-31T00:00:00.000Z" };
   const dependencies: GeoKbStoreDependencies = { readList: async () => { throw new Error("No list/source read"); }, readDetails: async () => { throw new Error("No current draft/Profile read"); }, callRpc: async () => { throw new Error("No writes"); }, readSnapshot: vi.fn(async () => ({ kind: "ok" as const, data: row })) };
   return { row, dependencies };
 }
@@ -71,8 +71,22 @@ describe("version-aware exact frozen read", () => {
     const { row, dependencies } = fixture(v2), before = JSON.stringify(row);
     const result = await readVersionedFrozenGeoKb(input, dependencies);
     expect(result).toMatchObject({ kind: "ok", value: { payload: row.payload, questionSet: row.question_set, contentHash: row.content_hash, questionSetHash: row.question_set_hash } });
+    if (result.kind === "ok") expect(result.value.preparedId).toBe(v2 ? V2_CANDIDATE_ID : null);
     expect(JSON.stringify(row)).toBe(before);
     expect(dependencies.readSnapshot).toHaveBeenCalledTimes(1);
+  });
+  it.each(["missing", "null", "invalid"] as const)("requires a strict prepared_id on every V2 snapshot row (%s)", async issue => {
+    const { row, dependencies } = fixture();
+    if (issue === "missing") delete (row as Partial<typeof row>).prepared_id;
+    if (issue === "null") row.prepared_id = null as never;
+    if (issue === "invalid") row.prepared_id = "not-a-uuid";
+    expect((await readVersionedFrozenGeoKb(input, dependencies)).kind).toBe("unavailable");
+  });
+  it("projects the exact prepared snapshot identity from the selected store columns", async () => {
+    const { row, dependencies } = fixture();
+    expect(GEO_KB_SNAPSHOT_COLUMNS.split(",").map(value => value.trim())).toContain("prepared_id");
+    const result = await readVersionedFrozenGeoKb(input, dependencies);
+    expect(result).toMatchObject({ kind: "ok", value: { preparedId: row.prepared_id } });
   });
   it.each(["owner", "kb", "snapshot", "payload_hash", "question_hash", "schema", "question_schema"])("refuses %s mismatch", async field => {
     const { row, dependencies } = fixture();

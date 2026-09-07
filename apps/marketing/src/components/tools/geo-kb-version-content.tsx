@@ -10,6 +10,8 @@ import { GeoKbSection } from "./geo-kb-section.tsx";
 import { normalizeAccountWebsiteUrl } from "../../lib/account-websites/contracts.ts";
 import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { geoKbV2Copy, type GeoKbV2Copy } from "./geo-kb-v2-copy.ts";
+import type { GeoKnowledgePackV1 } from "../../lib/geo-tools/kb-knowledge-pack-contract.ts";
+import { GeoKnowledgePack } from "./geo-knowledge-pack.tsx";
 
 /** Depth of the panel headings, so each host can keep one unbroken outline. */
 export type GeoKbVersionHeading = 3 | 4;
@@ -20,6 +22,7 @@ export interface GeoKbVersionContentProps {
   readonly payload: GeoKbPayloadV2;
   readonly questionSet: GeoQuestionSetV2;
   readonly context: GeoSnapshotContextV2;
+  readonly knowledgePack?: GeoKnowledgePackV1 | null;
   readonly locale: string;
 }
 /** The same section card the editor stage draws, at whatever depth the host set. */
@@ -145,7 +148,7 @@ function Facts({ payload, context, copy, heading }: { readonly payload: GeoKbPay
   </Panel>;
 }
 
-function Questions({ payload, questionSet, copy, heading }: { readonly payload: GeoKbPayloadV2; readonly questionSet: GeoQuestionSetV2; readonly copy: GeoKbV2Copy; readonly heading: GeoKbVersionHeading }) {
+function Questions({ payload, questionSet, copy, heading, customerFacing }: { readonly payload: GeoKbPayloadV2; readonly questionSet: GeoQuestionSetV2; readonly copy: GeoKbV2Copy; readonly heading: GeoKbVersionHeading; readonly customerFacing: boolean }) {
   const roles = new Map(payload.roles.map(role => [role.id, role.label]));
   const headings = [copy.fields.question, copy.fields.layer, copy.fields.role, copy.fields.entities, copy.fields.questionPolicy];
   const cell = "block min-w-0 whitespace-pre-wrap break-words text-[13px] leading-relaxed [overflow-wrap:anywhere] sm:table-cell sm:border-b sm:border-brand-border-card sm:px-3 sm:py-4 sm:align-top";
@@ -153,18 +156,18 @@ function Questions({ payload, questionSet, copy, heading }: { readonly payload: 
   return <Panel heading={heading} title={copy.sections.questions}>
     <table className="block w-full table-fixed text-left sm:table"><caption className="sr-only">{copy.sections.questions}</caption>
       <thead className="hidden sm:table-header-group"><tr>{headings.map(heading => <th key={heading} scope="col" className="border-b border-brand-border-strong px-3 pb-3 text-[12px] font-medium text-text-dark-secondary">{heading}</th>)}</tr></thead>
-      <tbody className="block sm:table-row-group">{questionSet.questions.map(question => <tr key={question.id} data-version-question={question.id} className="mb-4 grid gap-4 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 last:mb-0 sm:mb-0 sm:table-row sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
+      <tbody className="block sm:table-row-group">{questionSet.questions.map(question => <tr key={question.id} data-version-question={customerFacing ? "" : question.id} className="mb-4 grid gap-4 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 last:mb-0 sm:mb-0 sm:table-row sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
         <td className={cell}>{mobileLabel(copy.fields.question)}{question.text}</td>
         <td className={cell}>{mobileLabel(copy.fields.layer)}{copy.layers[question.layer]}</td>
         <td className={cell}>{mobileLabel(copy.fields.role)}<span data-question-role>{question.roleId === null ? copy.allRoles : text(roles.get(question.roleId), copy.unknownRole)}</span></td>
         <td className={cell}>{mobileLabel(copy.fields.entities)}<List values={question.requiredEntities} empty={copy.empty} /></td>
-        <td className={cell}>{mobileLabel(copy.fields.questionPolicy)}<p>{copy.modes[question.mode]}</p><p className="mt-1 text-text-dark-secondary">{question.calibrated ? copy.calibrated : copy.uncalibrated}</p>
-          <details className="mt-3"><summary className="cursor-pointer text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent">{copy.questionEvidence}</summary>
+        <td data-question-policy className={cell}>{mobileLabel(copy.fields.questionPolicy)}<span data-question-policy-line className="block text-[13px] leading-relaxed">{copy.modes[question.mode]}</span><span data-question-policy-line className="mt-1 block text-[13px] leading-relaxed text-text-dark-secondary">{question.calibrated ? copy.calibrated : copy.uncalibrated}</span>
+          {customerFacing ? null : <details className="mt-3"><summary className="cursor-pointer text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent">{copy.questionEvidence}</summary>
             <dl className="mt-3 space-y-3"><Info label={copy.fields.source}>{copy.provenance[question.provenance.kind]}</Info><Info label={copy.fields.generator}>{question.provenance.generatorVersion}</Info>
               <Info label={copy.fields.template}>{text(question.templateId, copy.empty)}</Info><Info label={copy.fields.evidenceRefs}><List values={question.provenance.evidenceRefs} empty={copy.empty} /></Info>
               <Info label={copy.fields.entities}><List values={question.provenance.entityRefs} empty={copy.empty} /></Info>
             </dl>
-          </details>
+          </details>}
         </td>
       </tr>)}</tbody>
     </table>
@@ -194,7 +197,7 @@ function Sources({ context, copy, heading }: { readonly context: GeoSnapshotCont
   </Panel>;
 }
 
-export function GeoKbVersionContent({ payload, questionSet, context, locale, heading = 3, customerFacing = false }: GeoKbVersionContentProps) {
+export function GeoKbVersionContent({ payload, questionSet, context, knowledgePack = null, locale, heading = 3, customerFacing = false }: GeoKbVersionContentProps) {
   const copy = geoKbV2Copy(locale);
   return <div data-geo-version-content className="grid min-w-0 gap-6 text-text-dark-primary">
     {customerFacing ? null : <GeoKbInheritedProfile profile={null} copy={payload.profileCopy} locale={locale} inline heading={heading} copyDescription={copy.profileDescription} />}
@@ -205,7 +208,8 @@ export function GeoKbVersionContent({ payload, questionSet, context, locale, hea
     </dl></Panel>}
     {customerFacing ? null : <Competitors payload={payload} context={context} copy={copy} heading={heading} />}
     {customerFacing ? null : <><Roles payload={payload} context={context} copy={copy} heading={heading} /><Facts payload={payload} context={context} copy={copy} heading={heading} /></>}
-    <Questions payload={payload} questionSet={questionSet} copy={copy} heading={heading} />
+    {customerFacing && knowledgePack !== null ? <GeoKnowledgePack pack={knowledgePack} locale={locale} heading={heading} /> : null}
+    <Questions payload={payload} questionSet={questionSet} copy={copy} heading={heading} customerFacing={customerFacing} />
     {customerFacing ? null : <><Sources context={context} copy={copy} heading={heading} />
     <Panel heading={heading} title={copy.sections.version}><dl className="grid min-w-0 gap-5 sm:grid-cols-2">
       <Info label={copy.fields.candidate}>{context.candidateId}</Info><Info label={copy.fields.kbId}>{context.kbId}</Info>

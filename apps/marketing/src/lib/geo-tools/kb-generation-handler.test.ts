@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { handleGeoKbGeneration, handleGeoKbGenerationRead, type GeoKbGenerationHandlerDependencies } from "./kb-generation-handler.ts";
 import type { GeoKbGenerationRecord } from "./kb-generation.ts";
 
@@ -15,10 +15,10 @@ function fixture() {
   let record: GeoKbGenerationRecord | null = null;
   const deps: GeoKbGenerationHandlerDependencies = {
     authenticate: async () => ({ status: "authenticated", userId: USER, googleSubject: null, email: null, avatarUrl: null }),
-    prepare: async (input) => {
+    prepare: vi.fn(async (input) => {
       calls.push("prepare");
-      return { kind: "ready", input: { kbId: input.kbId, baseDraftVersion: String(input.baseVersion), baseDraftHash: input.draftHash, profileCopyHash: HASH }, invoke: async () => { calls.push("provider"); return { ok: true, value: { roles: [] } }; } };
-    },
+      return { kind: "ready" as const, input: { kbId: input.kbId, baseDraftVersion: String(input.baseVersion), baseDraftHash: input.draftHash, profileCopyHash: HASH }, invoke: async () => { calls.push("provider"); return { ok: true as const, value: { roles: [] } }; } };
+    }),
     store: {
       claim: async (input) => {
         calls.push("claim");
@@ -27,8 +27,8 @@ function fixture() {
       },
       markDispatched: async () => { calls.push("dispatch"); record = { ...record!, state: "dispatched" }; return { kind: "dispatched", generation: record }; },
       finish: async (_scope, finish) => { calls.push("finish"); record = { ...record!, ...finish }; return { kind: "ok", generation: record }; },
-      read: async () => record === null ? { kind: "missing" } : { kind: "ok", generation: { ...record, claimToken: TOKEN } },
-      readByKey: async () => record === null ? { kind: "missing" } : { kind: "ok", generation: record },
+      read: async () => ({ kind: "ok", generation: record === null ? null : { ...record, claimToken: TOKEN } }),
+      readByKey: async () => ({ kind: "ok", generation: record }),
     },
     consumeQuota: async () => { calls.push("quota"); return "allowed"; },
   };
@@ -48,6 +48,18 @@ describe("private GEO generation HTTP boundary", () => {
       expect((await handleGeoKbGeneration(request({ ...body(), ...extra }), "roles", deps)).status).toBe(400);
     }
     expect(calls).toEqual([]);
+  });
+  it("accepts an optional knowledge generation ID only for questions", async () => {
+    const questions = fixture();
+    const response = await handleGeoKbGeneration(request({ ...body(), knowledgeGenerationId: ID }), "questions", questions.deps);
+    expect(response.status).toBe(200);
+    expect(questions.deps.prepare).toHaveBeenCalledWith(expect.objectContaining({ userId: USER, kind: "questions", knowledgeGenerationId: ID }));
+
+    for (const [kind, value] of [["questions", "not-a-uuid"], ["roles", ID], ["knowledge_pack", ID]] as const) {
+      const state = fixture();
+      expect((await handleGeoKbGeneration(request({ ...body(), knowledgeGenerationId: value }), kind, state.deps)).status).toBe(400);
+      expect(state.calls).toEqual([]);
+    }
   });
   it("returns explicit missing/stale/config errors without a durable or billable claim", async () => {
     const { deps, calls } = fixture();
@@ -82,11 +94,41 @@ describe("private GEO generation HTTP boundary", () => {
     expect(JSON.stringify(await loaded.json())).not.toContain(TOKEN);
     expect(calls.filter(call => call === "provider")).toHaveLength(1);
   });
+  it("uses the unchanged common preflight and safe response for knowledge-pack generation", async () => {
+    const { deps, calls } = fixture();
+    const response = await handleGeoKbGeneration(request(), "knowledge_pack", deps);
+    expect(response.status).toBe(200);
+    const value = await response.json();
+    expect(value.data.generation).toMatchObject({ kind: "knowledge_pack", state: "succeeded" });
+    expect(value.data.generation).not.toHaveProperty("userId");
+    expect(value.data.generation).not.toHaveProperty("claimToken");
+    expect(calls).toEqual(["prepare", "claim", "quota", "dispatch", "provider", "finish"]);
+
+    const loaded = await handleGeoKbGenerationRead(request({
+      kbId: KB,
+      kind: "knowledge_pack",
+      idempotencyKey: body().idempotencyKey,
+    }), deps);
+    expect(loaded.status).toBe(200);
+    expect((await loaded.json()).data.generation.kind).toBe("knowledge_pack");
+    expect(calls.filter(call => call === "provider")).toHaveLength(1);
+  });
   it("does not turn unavailable/foreign generation reads into a missing-state success", async () => {
     const { deps } = fixture();
     const query = request({ kbId: KB, generationId: ID });
     expect((await handleGeoKbGenerationRead(query, { ...deps, store: { ...deps.store, read: async () => ({ kind: "unavailable" }) } })).status).toBe(503);
     expect((await handleGeoKbGenerationRead(request({ kbId: KB, generationId: ID }), deps)).status).toBe(404);
+  });
+  it.each(["generationId", "idempotencyKey"] as const)("maps a nullable concrete-store %s read to private not_found", async (path) => {
+    const { deps } = fixture();
+    const store = path === "generationId"
+      ? { ...deps.store, read: async () => ({ kind: "ok" as const, generation: null }) }
+      : { ...deps.store, readByKey: async () => ({ kind: "ok" as const, generation: null }) };
+    const input = path === "generationId" ? { kbId: KB, generationId: ID } : { kbId: KB, kind: "roles" as const, idempotencyKey: body().idempotencyKey };
+    const response = await handleGeoKbGenerationRead(request(input), { ...deps, store });
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(await response.json()).toEqual({ error: { code: "not_found" } });
   });
   it("recovers an unacknowledged generation by its original key without generating again", async () => {
     const { deps, calls } = fixture();

@@ -9,7 +9,7 @@ import type { CompleteGeoKbSelector } from "./kb-complete-read.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import { assertGeoProfileCopyIntegrity } from "./kb-profile-copy-server.ts";
 
-export interface VersionedGeoKbFrozenSnapshot extends Omit<GeoKbFrozenSnapshot, "payload" | "questionSet"> { readonly payload: AnyGeoKbPayload; readonly questionSet: AnyGeoQuestionSet }
+export interface VersionedGeoKbFrozenSnapshot extends Omit<GeoKbFrozenSnapshot, "payload" | "questionSet"> { readonly payload: AnyGeoKbPayload; readonly questionSet: AnyGeoQuestionSet; readonly preparedId?: string | null }
 export interface VersionedGeoKbDetails extends Omit<GeoKbDetails, "draft"> { readonly draft: (Omit<NonNullable<GeoKbDetails["draft"]>, "payload"> & { readonly payload: AnyGeoKbPayload }) | null }
 /** One existing transport bundle: do not fetch every draft to list identities. */
 export async function listVersionedGeoKnowledgeBases(input: { readonly userId: string }, dependencies: GeoKbStoreDependencies = DEFAULT_GEO_KB_STORE_DEPENDENCIES): Promise<GeoKbStoreResult<readonly GeoKbSummary[]>> {
@@ -51,7 +51,7 @@ export function parseStoredGeoQuestionSet(value: unknown, expectedHash: string):
   }
   return parseStoredGeoQuestionSetV1(value, expectedHash);
 }
-const headerSchema = z.object({ id: z.string().uuid(), kb_id: z.string().uuid(), user_id: z.string().uuid(), revision: z.number().int().positive().refine(Number.isSafeInteger), schema_version: z.literal("marketing-geo-kb.v2"), content_hash: z.string().regex(/^[a-f0-9]{64}$/u), question_set_hash: z.string().regex(/^[a-f0-9]{64}$/u), frozen_at: z.string().refine(value => Number.isFinite(Date.parse(value))), payload: z.unknown(), question_set: z.unknown() });
+const headerSchema = z.object({ id: z.string().uuid(), kb_id: z.string().uuid(), user_id: z.string().uuid(), revision: z.number().int().positive().refine(Number.isSafeInteger), schema_version: z.literal("marketing-geo-kb.v2"), content_hash: z.string().regex(/^[a-f0-9]{64}$/u), question_set_hash: z.string().regex(/^[a-f0-9]{64}$/u), prepared_id: z.string().uuid(), frozen_at: z.string().refine(value => Number.isFinite(Date.parse(value))), payload: z.unknown(), question_set: z.unknown() });
 const unavailable = (): GeoKbStoreResult<never> => ({ kind: "unavailable", reason: "versioned_snapshot_unavailable" });
 export async function readVersionedFrozenGeoKb(input: CompleteGeoKbSelector, dependencies: GeoKbStoreDependencies = DEFAULT_GEO_KB_STORE_DEPENDENCIES): Promise<GeoKbStoreResult<VersionedGeoKbFrozenSnapshot>> {
   try {
@@ -62,12 +62,15 @@ export async function readVersionedFrozenGeoKb(input: CompleteGeoKbSelector, dep
     if (read.kind !== "ok") return unavailable();
     if (read.data === null || read.data === undefined) return { kind: "missing" };
     if (typeof read.data !== "object" || Array.isArray(read.data)) return unavailable();
-    if ("schema_version" in read.data && read.data.schema_version === "marketing-geo-kb.v1") return readFrozenGeoKb(input, { ...dependencies, readSnapshot: async () => read });
+    if ("schema_version" in read.data && read.data.schema_version === "marketing-geo-kb.v1") {
+      const legacy = await readFrozenGeoKb(input, { ...dependencies, readSnapshot: async () => read });
+      return legacy.kind === "ok" ? { kind: "ok", value: { ...legacy.value, preparedId: null } } : legacy;
+    }
     const row = headerSchema.parse(read.data), payload = parseGeoKbPayloadV2(row.payload), questionSet = parseStoredGeoQuestionSet(row.question_set, row.question_set_hash);
     if (row.user_id.toLowerCase() !== userId || row.kb_id.toLowerCase() !== kbId || (selector.by === "snapshotId" ? row.id.toLowerCase() !== selector.snapshotId : row.revision !== selector.revision)) return unavailable();
     assertGeoProfileCopyIntegrity(payload.profileCopy);
     if (geoV2Digest(payload) !== row.content_hash || questionSet.schemaVersion !== "marketing-geo-question-set.v2" || questionSet.country !== payload.market.country || questionSet.language !== payload.market.language) return unavailable();
-    return { kind: "ok", value: { kbId: row.kb_id, snapshotId: row.id, revision: row.revision, frozenAt: new Date(row.frozen_at).toISOString(), contentHash: row.content_hash, questionSetHash: row.question_set_hash, questionCount: questionSet.questions.length, payload, questionSet } };
+    return { kind: "ok", value: { kbId: row.kb_id, snapshotId: row.id, revision: row.revision, frozenAt: new Date(row.frozen_at).toISOString(), contentHash: row.content_hash, questionSetHash: row.question_set_hash, questionCount: questionSet.questions.length, payload, questionSet, preparedId: row.prepared_id } };
   } catch { return unavailable(); }
 }
 

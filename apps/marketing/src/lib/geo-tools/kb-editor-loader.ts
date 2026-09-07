@@ -2,14 +2,15 @@
 // @output -- one complete editor view; an upgrade preview is never a write
 // @pos -- server-side loading only, with old frozen records kept independent
 import type { MarketingWebsiteProfileV1, WebsiteProfileReferenceV1 } from "../account-websites/contracts.ts";
-import type { GeoKbEditorViewV2, GeoKbFrozenV2Wire } from "../../components/tools/geo-kb-v2-wire.ts";
+import type { GeoKbEditorViewV2, GeoKbFrozenKnowledgeWire, GeoKbFrozenV2Wire } from "../../components/tools/geo-kb-v2-wire.ts";
 import type { GeoKbFrozenSummary } from "../../components/tools/geo-kb-wire.ts";
 import type { VersionedGeoKbDetails } from "./kb-versioned-read.ts";
 import type { GeoKbRegistration, GeoKbStoreResult } from "./kb-store.ts";
 import type { GeoKbStoreOutcome } from "./kb-handler.ts";
 import type { GeoKbSourceReportV2 } from "./kb-source-contract.ts";
-import type { GeoPreparedCandidateV1 } from "./kb-prepared-contract.ts";
+import type { AnyGeoPreparedCandidate } from "./kb-prepared-contract.ts";
 import type { GeoKbGenerationRead } from "./kb-generation-store.ts";
+import type { GeoKbGenerationKind } from "./kb-generation.ts";
 import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";
 import { createGeoProfileCopy } from "./kb-profile-copy.ts";
 import { assertGeoProfileCopyIntegrity, inheritedProfileFromCopy } from "./kb-profile-copy-server.ts";
@@ -23,10 +24,10 @@ export interface GeoKbEditorLoaderDependencies {
   readonly ensure: (input: { readonly userId: string; readonly origin: string; readonly host: string; readonly canonicalSiteKey: string }) => Promise<GeoKbStoreResult<GeoKbRegistration>>;
   readonly readDetails: (input: { readonly userId: string; readonly kbId: string }) => Promise<GeoKbStoreResult<VersionedGeoKbDetails>>;
   readonly readProfile: (userId: string, url: string) => Promise<{ readonly kind: "ok"; readonly value: { readonly reference: WebsiteProfileReferenceV1; readonly profile: MarketingWebsiteProfileV1 } } | { readonly kind: "missing" | "invalid" | "unavailable" }>;
-  readonly readFrozen: (input: { readonly userId: string; readonly kbId: string; readonly snapshotId: string }) => Promise<{ readonly kind: "ok"; readonly value: GeoKbFrozenV2Wire | GeoKbFrozenSummary } | { readonly kind: "unavailable" }>;
+  readonly readFrozen: (input: { readonly userId: string; readonly kbId: string; readonly snapshotId: string }) => Promise<{ readonly kind: "ok"; readonly value: GeoKbFrozenKnowledgeWire | GeoKbFrozenV2Wire | GeoKbFrozenSummary } | { readonly kind: "unavailable" }>;
   readonly readSource: (input: { readonly userId: string; readonly kbId: string }) => Promise<GeoKbStoreResult<GeoKbSourceReportV2 | null>>;
-  readonly readPrepared: (input: { readonly userId: string; readonly kbId: string }) => Promise<GeoKbStoreResult<GeoPreparedCandidateV1 | null>>;
-  readonly readGeneration: (input: { readonly userId: string; readonly kbId: string; readonly kind: "roles" | "questions" }) => Promise<GeoKbGenerationRead>;
+  readonly readPrepared: (input: { readonly userId: string; readonly kbId: string }) => Promise<GeoKbStoreResult<AnyGeoPreparedCandidate | null>>;
+  readonly readGeneration: (input: { readonly userId: string; readonly kbId: string; readonly kind: GeoKbGenerationKind }) => Promise<GeoKbGenerationRead>;
 }
 
 export function createGeoKbEditorLoader(dependencies: GeoKbEditorLoaderDependencies): (input: { readonly userId: string; readonly url: string }) => Promise<GeoKbStoreOutcome<GeoKbEditorViewV2>> {
@@ -57,16 +58,18 @@ export function createGeoKbEditorLoader(dependencies: GeoKbEditorLoaderDependenc
       }
       const requiresSave = kb.draft === null || original.schemaVersion !== "marketing-geo-kb.v2";
       const payload = original.schemaVersion === "marketing-geo-kb.v2" ? original : upgradeGeoKbDraftToV2(original);
-      const [receipt, prepared, roles, questions, frozen] = await Promise.all([
-        dependencies.readSource(scope), dependencies.readPrepared(scope), dependencies.readGeneration({ ...scope, kind: "roles" }), dependencies.readGeneration({ ...scope, kind: "questions" }),
+      const [receipt, prepared, roles, knowledge, questions, frozen] = await Promise.all([
+        dependencies.readSource(scope), dependencies.readPrepared(scope), dependencies.readGeneration({ ...scope, kind: "roles" }), dependencies.readGeneration({ ...scope, kind: "knowledge_pack" }), dependencies.readGeneration({ ...scope, kind: "questions" }),
         kb.frozen === null ? Promise.resolve({ kind: "ok" as const, value: null }) : dependencies.readFrozen({ ...scope, snapshotId: kb.frozen.snapshotId }),
       ]);
-      if (receipt.kind !== "ok" || prepared.kind !== "ok" || roles.kind !== "ok" || questions.kind !== "ok" || frozen.kind !== "ok") return unavailable();
-      for (const generation of [roles.generation, questions.generation]) if (generation && (generation.userId !== userId || generation.kbId !== scope.kbId)) return unavailable();
+      if (receipt.kind !== "ok" || prepared.kind !== "ok" || roles.kind !== "ok" || knowledge.kind !== "ok" || questions.kind !== "ok" || frozen.kind !== "ok") return unavailable();
+      for (const generation of [roles.generation, knowledge.generation, questions.generation]) if (generation && (generation.userId !== userId || generation.kbId !== scope.kbId)) return unavailable();
       const view = parseGeoKbEditorViewV2({ schemaVersion: "marketing-geo-kb-editor.v2", kbId: kb.kbId, origin: kb.origin, host: kb.host,
         draftVersion: kb.draft?.draftVersion ?? 0, draftHash: kb.draft?.contentHash ?? null, profileCopyHash: geoV2Digest(payload.profileCopy), payload, requiresSave, profile, frozen: frozen.value,
         sourceReceipt: receipt.value, prepared: prepared.value,
-        generations: { roles: roles.generation ? publicGeoKbGeneration(roles.generation) : null, questions: questions.generation ? publicGeoKbGeneration(questions.generation) : null } });
+        generations: { roles: roles.generation ? publicGeoKbGeneration(roles.generation) : null,
+          knowledge_pack: knowledge.generation ? publicGeoKbGeneration(knowledge.generation) : null,
+          questions: questions.generation ? publicGeoKbGeneration(questions.generation) : null } });
       return view === null ? unavailable() : { kind: "ok", value: view };
     } catch { return unavailable(); }
   };
