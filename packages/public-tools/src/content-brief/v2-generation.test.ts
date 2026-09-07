@@ -316,6 +316,25 @@ describe("v2 generated language", () => {
     expect(generation.validateModelBriefV2(heading, localised).ok).toBe(true);
   });
 
+  it("does not count a quoted original title against an English heading", () => {
+    const cited = changed(model(), ["research", "outline", 0, "h2"],
+      "\u300e\u543e\u8f29\u306f\u732b\u3067\u3042\u308b\u300f plot");
+    expect(generation.validateModelBriefV2(cited, context()).ok).toBe(true);
+  });
+
+  it("still rejects a CJK heading that merely quotes an English phrase", () => {
+    const disguised = changed(model(), ["research", "outline", 0, "h2"],
+      "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf\u201cdata delay\u201d\u7684\u542b\u4e49");
+    expect(generation.validateModelBriefV2(disguised, context()).ok).toBe(false);
+  });
+
+  it("reads an apostrophe as prose, not as an opening quotation mark", () => {
+    const possessive = changed(model(), ["research", "outline", 0, "h2"],
+      "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf\u7684\u542b\u4e49\u4e0e\u5f71\u54cd\u8303\u56f4: "
+      + "writer's own extended commentary here tells the reader's team");
+    expect(generation.validateModelBriefV2(possessive, context()).ok).toBe(true);
+  });
+
   it("does not apply the check to a language written in that script", () => {
     const zhContext = { ...context(), input: { ...context().input, language: "zh" } };
     const zh = changed(model(), ["research", "outline", 0, "h2"], "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf");

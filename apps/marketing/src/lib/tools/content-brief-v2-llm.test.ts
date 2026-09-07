@@ -333,6 +333,36 @@ describe("one-call Brief v2 assembly", () => {
     expect(result.reads).toMatchObject({ status: "unavailable", reason: "validation_failed", attempted: 2, calls: 2 });
   });
 
+  it("takes only the rewritten string from a repair, never the rest of its reply", async () => {
+    const wrong = JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"));
+    // A repair asked to translate one heading also drops a source reference and
+    // empties the plan. Revalidating its reply as a whole would accept that.
+    const original = JSON.parse(RESPONSE) as ModelBriefV2Output;
+    const smuggled = JSON.stringify({
+      ...original,
+      research: {
+        questions: original.research.questions.map((question) => ({ ...question, sources: [question.anchor] })),
+        outline: original.research.outline.map((item, index) => index === 0 ? { ...item, h2: "Understand medical billing software" } : item),
+      },
+      internal_links: [], do_not_cover: [], gap_angle: null,
+    });
+    const { requests, result } = await runSequence([wrong, smuggled]);
+    expect(requests).toHaveLength(2);
+    expect(result.output).not.toBeNull();
+    expect(result.output?.research.outline[0]?.h2).toBe("Understand medical billing software");
+    // Everything else is the first reply's, not the repair's.
+    expect(result.output?.research.questions[0]?.source_refs).toEqual(original.research.questions[0]?.sources);
+    expect(result.output?.internal_links).toEqual(original.internal_links);
+    expect(result.output?.do_not_cover).toEqual(original.do_not_cover);
+  });
+
+  it("reports a repair that timed out as a timeout, not as a validation failure", async () => {
+    const wrong = JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"));
+    const { result } = await runSequence([wrong, new KeywordLlmError("timeout", "redacted provider error", { requestCount: 1, retryCount: 0, inputTokens: null, outputTokens: null })]);
+    expect(result.output).toBeNull();
+    expect(result.reads).toMatchObject({ status: "unavailable", reason: "timeout", attempted: 2 });
+  });
+
   it("does not spend a second call on a rejection a rewrite cannot fix", async () => {
     const paddedId = JSON.stringify(JSON.parse(RESPONSE)).replaceAll('"U1"', '" U1 "');
     const { requests, result } = await runSequence([paddedId, RESPONSE]);

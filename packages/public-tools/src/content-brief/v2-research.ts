@@ -186,14 +186,21 @@ function finalPageKey(value: string): string {
 }
 
 /**
- * Two questions that differ only in casing, spacing or punctuation are one
- * question presented twice, and the brief then spends an outline section and a
- * writer's time on a need that is already covered. The same holds for two
- * sections carrying the same heading. Normalising here rather than asking the
- * model to notice keeps the rule enforceable.
+ * Two questions that differ only in casing, spacing or sentence punctuation are
+ * one question presented twice, and the brief then spends an outline section
+ * and a writer's time on a need that is already covered. The same holds for two
+ * sections carrying the same heading.
+ *
+ * Only whitespace and the punctuation that separates or terminates a sentence
+ * comes out. Symbols stay: stripping every symbol made "What is C?" and "What
+ * is C++?" the same question, and a comparison brief that cannot ask about both
+ * is worse than one that keeps a near-duplicate.
  */
+const PHRASE_NOISE =
+  /[\s\p{Zs}"'\u201c\u201d\u2018\u2019\u00ab\u00bb()\uff08\uff09[\]\u3010\u3011{}\u300a\u300b\u300c\u300d\u300e\u300f,\uff0c.\u3002;\uff1b:\uff1a!\uff01?\uff1f\u3001~\uff5e\u00b7\u2026\u2014\u2013\-_/]+/gu;
+
 function phraseIdentity(value: string): string {
-  return value.normalize("NFKC").toLowerCase().replace(/[\p{P}\p{S}\s]+/gu, "");
+  return value.normalize("NFKC").toLowerCase().replace(PHRASE_NOISE, "");
 }
 
 export function validateResearchOutput(input: unknown, bundle: ResearchBundle): Decoded<ResearchResult> {

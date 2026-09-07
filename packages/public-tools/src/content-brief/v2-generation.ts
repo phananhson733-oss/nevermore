@@ -256,7 +256,22 @@ const SCRIPT_SAMPLE_MIN = 4;
  * that was actually observed, so majority is the test and the minimum sample
  * keeps a two-character borrowing out of it.
  */
-function wrongScript(text: string): boolean {
+/**
+ * Quoted spans are dropped before counting.
+ *
+ * "『吾輩は猫である』: plot" is a correct English heading that names a work by
+ * its original title, and counting the title's letters as generated prose made
+ * the majority test reject it. A citation is not the writing.
+ *
+ * Only paired quotation marks delimit a span. The apostrophe is deliberately
+ * absent: "the writer's own words" would otherwise read as a quotation and
+ * lose its letters, and an English possessive is far commoner here than a
+ * single-quoted title.
+ */
+const QUOTED = /[\u300c\u300e\u201c\u00ab\u300a"][^\u300d\u300f\u201d\u00bb\u300b"]*[\u300d\u300f\u201d\u00bb\u300b"]/gu;
+
+function wrongScript(value: string): boolean {
+  const text = value.replace(QUOTED, " ");
   let letters = 0;
   let cjk = 0;
   for (const character of text) {
@@ -340,6 +355,14 @@ export function validateModelBriefV2(input: unknown, context: BriefV2Context): D
   }
   for (const [index, step] of plan.steps.entries()) {
     const path = `page_plan.steps[${index}]`;
+    // keep and rewrite act on text that exists, so they must cite the units
+    // they act on. An add step is bound by its answers instead: a question the
+    // evidence raised may be a question only PAA raised, and "add a section
+    // answering this" is a statement about what to cover, not a claim. A
+    // reviewer read the empty-sources case as an ungrounded factual
+    // instruction; the validator cannot tell one instruction's prose from
+    // another's, and forbidding it would forbid the PAA-only case the tests
+    // below name deliberately.
     if (step.kind === "add" ? step.answers.length === 0 : step.sources.length === 0) return reference(path);
     for (const ref of step.sources) {
       const unit = units.get(ref);
