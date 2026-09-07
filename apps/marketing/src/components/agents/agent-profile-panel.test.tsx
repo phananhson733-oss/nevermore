@@ -1150,7 +1150,10 @@ describe("AgentProfilePanel", () => {
   });
 
   it("renders empty run-context inputs as confirmation-required missing values", () => {
-    renderPanel(createAgentProfileDraft("seo", "astrologywiki.com"));
+    renderPanel(updateAgentProfile(createAgentProfileDraft("seo", "astrologywiki.com"), {
+      country: "",
+      locale: "",
+    }));
 
     const context = document.querySelector('[data-profile-card="context"]');
     const facts = Array.from(context?.querySelectorAll("dl > div") ?? []);
