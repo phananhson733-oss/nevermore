@@ -9,8 +9,6 @@ import { useGeoKbV2Editor } from "./use-geo-kb-v2-editor.ts";
 import { GeoKbVersionContent } from "./geo-kb-version-content.tsx";
 import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
 import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
-import { GeoKbV2BuildReport } from "./geo-kb-v2-build-report.tsx";
-import { GeoKbV2ConfirmReport } from "./geo-kb-v2-confirm-report.tsx";
 
 export interface GeoKnowledgeBaseV2Props {
   readonly initialView: GeoKbEditorViewV2; readonly locale: string; readonly inline?: boolean;
@@ -26,42 +24,60 @@ export interface GeoKnowledgeBaseV2Props {
  * button of its own, around editors for roles, competitors and facts that held
  * nothing until those steps had run. None of the five was a decision the person
  * pressing it was making; the decisions live in the Profile. Where a step
- * genuinely cannot proceed, the run stops and the report below names which one.
+ * cannot proceed, the run stops and the customer sees the update outcome.
  */
 export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBaseV2Props) {
   const editor = useGeoKbV2Editor(props), { view, payload } = editor;
   const t = geoKbV2EditorCopy(props.locale), c = geoKbV2Copy(props.locale), te = useTranslations("tools.geoKnowledgeBase.editor");
-  const stateLabel = (state: string | undefined) => te(`generationStates.${(["claimed", "dispatched", "succeeded", "failed", "uncertain", "unknown", "not_found"] as const).find(known => known === state) ?? "unknown"}`);
+  const customer = props.locale.startsWith("zh") ? {
+    failed: "更新未完成，仍显示上次的知识内容。", failedEmpty: "知识内容尚未生成，请稍后重试。",
+    pending: "更新结果尚未确认，当前内容保持不变。", running: "正在更新知识内容…", current: "当前 GEO 知识内容", empty: "还没有 GEO 知识内容。",
+    stale: "网站资料已更新，可以重新生成知识内容。", check: "检查更新结果", oldCheck: "检查之前的更新结果",
+    unknown: "更新结果尚未确认，可以检查结果；不会自动重复扣费。", retry: "继续更新", retryHelp: "继续检查并处理这次更新。",
+    newInput: "使用更新后的资料生成", newInputHelp: "将按更新后的资料重新生成，并消耗积分。",
+    sourceChanged: "请先在网站资料中保存最新内容，再重新生成。",
+    invalid: "网站资料暂时无法用于生成，请检查并保存后重试。", error: "更新暂未完成，请稍后再试。",
+  } : {
+    failed: "The update did not finish. Your previous knowledge is still shown.", failedEmpty: "Knowledge has not been generated yet. Please try again later.",
+    pending: "The update outcome is unknown. Your current content is unchanged.", running: "Updating knowledge…", current: "Current GEO knowledge", empty: "No GEO knowledge yet.",
+    stale: "Your website information changed. You can generate updated knowledge.", check: "Check update", oldCheck: "Check earlier update",
+    unknown: "The outcome is unknown. Check the result; no charge is repeated automatically.", retry: "Continue update", retryHelp: "Continue checking and processing this update.",
+    newInput: "Generate using updated information", newInputHelp: "This generates from your updated information and uses credits.",
+    sourceChanged: "Save the latest website information before generating again.",
+    invalid: "The website information cannot be used yet. Check and save it before trying again.", error: "The update could not finish. Please try again later.",
+  };
   const frozen = view.frozen;
   const current = frozen !== null && "context" in frozen && frozen.contentHash === view.draftHash;
   const unsupportedLanguage = te("unsupportedLanguage", { language: editor.generationLanguage });
   const unsupportedLanguageAfterStart = te("unsupportedLanguageAfterStart", { language: payload.market.language });
   const generationKinds = ["roles", "knowledge_pack", "questions"] as const;
-  const generationLabel = (kind: typeof generationKinds[number]) => kind === "roles" ? t.generateRoles : kind === "knowledge_pack" ? t.generateKnowledge : t.prepare;
+  const hasUnknown = generationKinds.some(kind => view.generations[kind]?.state === "uncertain" || editor.pending[kind] !== null && editor.pending[kind]?.generationId !== view.generations[kind]?.generationId);
+  const hasRunning = generationKinds.some(kind => ["claimed", "dispatched"].includes(view.generations[kind]?.state ?? ""));
+  const stopped = editor.build?.stoppedAt != null || editor.confirm?.stoppedAt != null || editor.status.kind === "error" || generationKinds.some(kind => view.generations[kind]?.state === "failed");
+  const state = editor.building || hasRunning ? "running" : hasUnknown ? "pending" : stopped ? "failed" : current ? "current" : frozen === null ? "none" : "stale";
+  const statusText = state === "running" ? customer.running : state === "pending" ? customer.pending : state === "failed" ? frozen === null ? customer.failedEmpty : customer.failed : state === "current" ? customer.current : state === "none" ? customer.empty : customer.stale;
   return <section data-geo-kb-v2 data-inline={inline} className="min-w-0 space-y-6 text-text-dark-primary">
     {/* The Profile editor's header, in the same order: which website this is,
         one persistent live region whose text changes (a node inserted per
         change is not reliably announced), then the action. */}
     <div className="flex min-w-0 flex-col gap-4 rounded-card border border-brand-border-card bg-brand-panel p-6">
       <div>
-        <p className="break-all text-[13px] text-brand-accent-text">{view.host}</p>
-        <p aria-live="polite" aria-atomic="true" data-kb-state={editor.building ? "running" : current ? "current" : frozen === null ? "none" : "stale"} className="mt-2 min-h-5 text-[13px] text-text-dark-secondary">
-          {editor.building ? te("generateBusy") : current ? te("generateCurrent") : frozen === null ? te("generateNone") : te("generateStale")}
-        </p>
+        <span className="block break-all text-[13px] text-brand-accent-text">{view.host}</span>
+        <span aria-live="polite" aria-atomic="true" data-kb-state={state} className="mt-2 block min-h-5 text-[13px] text-text-dark-secondary">
+          {statusText}
+        </span>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button data-generate-kb type="button" disabled={editor.busy || editor.building || !editor.generationLanguageSupported} onClick={() => void editor.generateAll()}>{editor.building ? t.busy : frozen === null ? te("generate") : te("regenerate")}</Button>
       </div>
       {/* One billed run, said once, beside the button that bills it. */}
       {editor.generationLanguageSupported
-        ? <p className="text-[12px] leading-relaxed text-text-dark-secondary">{te("generateCost")}</p>
-        : <p data-generation-language-warning role="status" className="text-[12px] leading-relaxed text-brand-error">{unsupportedLanguage}</p>}
-      <GeoKbV2BuildReport report={editor.build} locale={props.locale} />
-      <GeoKbV2ConfirmReport report={editor.confirm} />
+        ? <span className="block text-[12px] leading-relaxed text-text-dark-secondary">{te("generateCost")}</span>
+        : <span data-generation-language-warning role="status" className="block text-[12px] leading-relaxed text-brand-error">{unsupportedLanguage}</span>}
     </div>
-    {editor.status.kind === "error" ? <p role="alert" className="text-sm text-brand-error">{editor.status.code === "invalid_input" ? t.invalid : editor.status.code === "input_stale" ? t.staleLineage : editor.status.code === "conflict" ? te("conflict") : editor.status.code === "generation_running" ? te("generationRunning") : editor.status.code === "unsupported_language" ? unsupportedLanguageAfterStart : t.error}{["invalid_input", "input_stale", "conflict", "generation_running", "unsupported_language"].includes(editor.status.code) ? null : <> <span className="break-all font-mono text-xs">{editor.status.code}</span></>}</p> : null}
+    {editor.status.kind === "error" ? <p role="alert" className="text-[13px] text-brand-error">{editor.status.code === "invalid_input" ? customer.invalid : editor.status.code === "input_stale" ? customer.sourceChanged : editor.status.code === "generation_running" ? customer.running : editor.status.code === "unsupported_language" ? unsupportedLanguageAfterStart : customer.error}</p> : null}
 
-    {editor.copyStale ? <p role="status" className="text-sm text-brand-error">{t.sourceChanged}</p> : null}
+    {editor.copyStale ? <p role="status" className="text-[13px] text-brand-error">{customer.sourceChanged}</p> : null}
 
     {/* A generation the server has not settled. It is the one place a person
         still has to act, because pressing again could be a second billed call
@@ -70,10 +86,10 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       const knowledgeGenerationId = editor.recoveryKnowledgeGenerationId(kind);
       const action = editor.generationAction(kind, knowledgeGenerationId);
       if (action !== "new_input" && action !== "resend_same") return null;
-      return <section key={kind} className="space-y-3 rounded-card border border-brand-accent/40 bg-brand-panel p-5 text-sm">
-        <h3 className="font-semibold">{generationLabel(kind)}</h3><p>{action === "new_input" ? t.newInputHelp : t.resendHelp}</p>
-        <Button type="button" variant="outline" {...{ [action === "new_input" ? "data-new-generation" : "data-resend-generation"]: kind }} disabled={editor.busy || !editor.savedGenerationLanguageSupported} onClick={() => void editor.generate(kind, action, action === "resend_same" ? knowledgeGenerationId : undefined)}>{action === "new_input" ? t.newInput : t.resendSame}</Button>
-      </section>;
+      return <div key={kind} className="flex flex-wrap items-center gap-3 text-[13px] text-text-dark-secondary">
+        <span>{action === "new_input" ? customer.newInputHelp : customer.retryHelp}</span>
+        <Button type="button" variant="outline" {...{ [action === "new_input" ? "data-new-generation" : "data-resend-generation"]: kind }} disabled={editor.busy || !editor.savedGenerationLanguageSupported} onClick={() => void editor.generate(kind, action, action === "resend_same" ? knowledgeGenerationId : undefined)}>{action === "new_input" ? customer.newInput : customer.retry}</Button>
+      </div>;
     })}
     {generationKinds.map(kind => {
       const generation = view.generations[kind], pending = editor.pending[kind];
@@ -83,21 +99,14 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       // Only an unsettled or failed one needs a row of its own.
       const running = generation?.state === "claimed" || generation?.state === "dispatched";
       if (!uncertain && !running && generation?.state !== "failed" && pending?.readNotFound !== true) return null;
-      return <section data-generation-state={kind} key={kind} className="space-y-3 rounded-card border border-brand-border-card bg-brand-panel p-5 text-sm">
-        <h3 className="font-semibold">{generationLabel(kind)}</h3>
-        <p role="status">{pending?.readNotFound && pending.generationId === null ? t.notFoundRequest : uncertain ? t.uncertain : running ? t.running : t.failed}</p>
-        {uncertain ? <p>{t.newVersionNeeded}</p> : null}
-        {generation?.attempt ? <><dl className="grid gap-2 text-xs sm:grid-cols-2">
-          <div><dt className="text-text-dark-secondary">{te("attempt")}</dt><dd className="tabular-nums">{generation.attempt.attemptedCalls}</dd></div>
-          <div><dt className="text-text-dark-secondary">{te("delivery")}</dt><dd>{te(`deliveries.${generation.attempt.delivery}`)}</dd></div>
-        </dl>{generation.attempt.attemptedCalls === 0 ? <p className="text-xs text-text-dark-secondary">{te("billingNote")}</p> : null}</> : null}
-        <Button type="button" variant="outline" data-read-generation={kind} disabled={editor.busy} onClick={() => void editor.readGeneration(kind)}>{t.readGeneration}</Button>
-      </section>;
+      return <div data-generation-state={kind} key={kind} className="flex flex-wrap items-center gap-3 text-[13px] text-text-dark-secondary">
+        {uncertain || pending?.readNotFound ? <span role="status">{customer.unknown}</span> : null}
+        <Button type="button" variant="outline" data-read-generation={kind} disabled={editor.busy} onClick={() => void editor.readGeneration(kind)}>{customer.check}</Button>
+      </div>;
     })}
-    {editor.retainedRequests.length ? <section className="space-y-4 rounded-card border border-brand-border-card bg-brand-panel p-5 text-sm"><h3 className="font-semibold">{t.retainedRequests}</h3>{editor.retainedRequests.map(entry => <article key={entry.id} className="space-y-2 rounded-lg border border-brand-border-card p-4">
-      <p>{generationLabel(entry.kind)} · {stateLabel(entry.state)}</p>
-      <Button type="button" variant="outline" data-read-retained="" disabled={editor.busy} onClick={() => void editor.readRetainedRequest(entry)}>{t.readGeneration}</Button>
-    </article>)}</section> : null}
+    {editor.retainedRequests.length ? <div className="flex flex-wrap gap-3">{editor.retainedRequests.map(entry =>
+      <Button key={entry.id} type="button" variant="outline" data-read-retained="" disabled={editor.busy} onClick={() => void editor.readRetainedRequest(entry)}>{customer.oldCheck}</Button>
+    )}</div> : null}
 
     {/* The knowledge base itself. */}
     {frozen === null ? <p data-kb-empty className="text-sm text-text-dark-secondary">{te("generateEmpty")}</p>
