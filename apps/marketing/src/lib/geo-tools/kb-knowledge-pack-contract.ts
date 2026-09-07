@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";
 import { hasLoneSurrogate } from "../agents/geo-canonical.ts";
+import { geoNumericLiterals } from "./geo-numeric-literal.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import { geoV2JsonbBytes } from "./kb-v2-json.ts";
 
@@ -299,10 +300,6 @@ function moduleValue<T>(module: { readonly status: string; readonly value?: T })
   return "value" in module ? module.value ?? null : null;
 }
 
-function numericLiterals(value: string): readonly string[] {
-  return value.match(/[+-]?(?:[$€£¥]\s*)?\p{N}+(?:[.,:/-]\p{N}+)*(?:\s*[%％])?/gu) ?? [];
-}
-
 function assertPackIntegrity(body: GeoKnowledgePackBodyV1): void {
   if (body.meta.lastScanAt > body.meta.generatedAt) throw new Error("Knowledge pack scan time exceeds generation time");
   const sourceById = new Map(body.sourceCatalogue.map((source) => [source.id, source]));
@@ -422,8 +419,8 @@ function assertPackIntegrity(body: GeoKnowledgePackBodyV1): void {
     const sources = claim.sourceRefs.map((reference) => sourceById.get(reference));
     if (sources.some((source) => source === undefined)) throw new Error("Unknown source reference");
     if (sources.some((source) => source!.availability === "unavailable")) throw new Error("Unavailable source reference");
-    const supported = new Set(sources.flatMap((source) => source!.excerpts.flatMap(numericLiterals)));
-    for (const literal of claim.text.flatMap(numericLiterals)) {
+    const supported = new Set(sources.flatMap((source) => source!.excerpts.flatMap(geoNumericLiterals)));
+    for (const literal of claim.text.flatMap(geoNumericLiterals)) {
       if (!supported.has(literal)) throw new Error("Unsupported numeric claim");
     }
   }

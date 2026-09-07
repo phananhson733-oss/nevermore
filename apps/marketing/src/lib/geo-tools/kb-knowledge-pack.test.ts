@@ -93,7 +93,7 @@ describe("GEO knowledge pack assembler", () => {
     expect(result.facts.status).toBe("partial"); expect(result.facts.status === "partial" ? result.facts.value.some(fact => fact.statement === "13 seats are available.") : false).toBe(false);
   });
 
-  it.each(["3.5 seats are available.", "3% discount is available.", "$3 seats are available.", "3/10 seats are available."])("does not admit an accepted numeric fact from %s", excerpt => {
+  it.each(["3.5 seats are available.", "3% discount is available.", "$3 seats are available.", "₩3 seats are available.", "₹3 seats are available.", "3/10 seats are available."])("does not admit an accepted numeric fact from %s", excerpt => {
     const raw: any = structuredClone(evidence()); const { contentHash: _contentHash, ...body } = raw; const accepted = body.sourceCatalogue.find((source: any) => source.id === "source:seats"); accepted.excerpts = [excerpt];
     const boundedEvidence = buildGeoKnowledgeEvidenceV1(body); const current = payload(); const boundedInput = buildGeoKnowledgeSynthesisInputV1({ officialName: current.officialName, aliases: current.aliases, categoryTerms: current.categoryTerms, market: current.market.country, language: current.market.language }, boundedEvidence);
     const result = build({ evidence: boundedEvidence, synthesisInput: boundedInput });
