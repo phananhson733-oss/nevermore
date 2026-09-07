@@ -23,9 +23,9 @@ const COPY = {
     placeholder: "yourdomain.com",
     start: "Run internal link audit",
     running: "Crawling public static HTML…",
-    help: "We start from the submitted public URL, follow same-origin static HTML links, and respect robots.txt. To avoid repeatedly hitting the same site, public crawl facts may be temporarily shared from a server-side cache; no submitter identity or page body is stored.",
+    help: "Start from the public URL and follow same-origin static HTML links while respecting robots.txt. Crawl facts may be temporarily cached by the server; submitter identity and page body are not stored.",
     scope:
-      "No login required · roughly 950 pages per run · four-minute processing boundary",
+      "No login required · up to about 950 pages per run · crawl runs for up to about four minutes",
     progress: [
       "Checking robots and sitemap",
       "Following same-origin HTML links",
@@ -55,8 +55,8 @@ const COPY = {
     placeholder: "yourdomain.com",
     start: "开始内链审计",
     running: "正在抓取公开静态 HTML…",
-    help: "工具从提交的公开 URL 开始，跟随同源静态 HTML 链接并遵守 robots.txt。为避免短时间内重复抓取同一站点，公开抓取事实可能由服务端临时缓存并共享；不保存提交者身份或页面正文。",
-    scope: "无需登录 · 单次约覆盖 950 页 · 四分钟处理边界",
+    help: "从公开 URL 开始，沿同源静态 HTML 链接抓取，并遵循 robots.txt。抓取事实可能由服务端临时缓存；不保存提交者身份或页面正文。",
+    scope: "无需登录 · 单次最多约 950 页 · 抓取最长约 4 分钟",
     progress: ["检查 robots 与 Sitemap", "跟随同源 HTML 链接", "生成页面层级"],
     errorInvalid:
       "请输入可公开访问的 HTTP(S) 域名。不接受本地地址、IP 地址、带凭据或保留地址。",
@@ -233,9 +233,22 @@ export function InternalLinkAuditTool({
             {error}
           </p>
         ) : null}
-        <div className="mt-4 grid gap-2 border-t border-brand-border pt-4 text-[12.5px] leading-[1.6] text-text-dark-secondary md:grid-cols-2">
-          <p>{copy.help}</p>
-          <p>{copy.scope}</p>
+        <div
+          className="mt-4 flex flex-col gap-2 border-t border-brand-border pt-4"
+          data-testid="internal-link-audit-help"
+        >
+          <p
+            className="text-[15px] leading-7 text-text-dark-secondary"
+            data-testid="internal-link-audit-help-primary"
+          >
+            {copy.help}
+          </p>
+          <p
+            className="text-[13.5px] leading-6 font-medium text-text-dark-strong"
+            data-testid="internal-link-audit-help-scope"
+          >
+            {copy.scope}
+          </p>
         </div>
       </div>
 

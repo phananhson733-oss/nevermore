@@ -42,6 +42,7 @@ const LEDGER_COPY = {
     unmarkedGroup: "URLs not linked to findings",
     page: "Page",
     category: "Category",
+    priority: "Priority",
     homepageClicks: "Homepage clicks",
     inbound: "Inbound",
     outbound: "Outbound",
@@ -82,6 +83,7 @@ const LEDGER_COPY = {
     unmarkedGroup: "本次未与发现关联的 URL",
     page: "页面",
     category: "分类",
+    priority: "优先级",
     homepageClicks: "首页点击",
     inbound: "入链",
     outbound: "出链",
@@ -125,6 +127,11 @@ const CHIP_TONE_CLASSES: Record<FindingTone, string> = {
     "border-brand-warning/30 bg-brand-warning/[0.08] text-brand-warning",
   info: "border-brand-info/30 bg-brand-panel text-brand-info",
 };
+
+const PRIORITY_CLASSES = {
+  P1: "border-brand-error/40 bg-brand-error/[0.1] text-brand-error",
+  P2: "border-brand-warning/35 bg-brand-warning/[0.08] text-brand-warning",
+} as const;
 
 const CELL_LABEL_CLASS =
   "max-[619px]:before:mb-1.5 max-[619px]:before:block max-[619px]:before:font-mono max-[619px]:before:text-[9px] max-[619px]:before:font-normal max-[619px]:before:tracking-[0.1em] max-[619px]:before:text-text-dark-secondary max-[619px]:before:uppercase max-[619px]:before:content-[attr(data-label)]";
@@ -202,19 +209,34 @@ function LedgerRow({
       >
         <span className="flex flex-wrap gap-1.5">
           {problem
-            ? row.findings.map((finding) => {
-                const chipTone = findingTone([finding]);
-                return (
-                  <span
-                    key={finding.id}
-                    data-finding-kind={finding.kind}
-                    data-tone={chipTone}
-                    className={`rounded-md border px-2 py-1 font-mono text-[9.5px] leading-[1.35] ${CHIP_TONE_CLASSES[chipTone]}`}
-                  >
-                    {copy.findingLabels[finding.kind]}
-                  </span>
-                );
-              })
+            ? (
+                <>
+                  {row.highestPriority ? (
+                    <span
+                      aria-label={`${copy.priority} ${row.highestPriority}`}
+                      role="note"
+                      className={`rounded-md border px-2 py-1 font-mono text-[9.5px] font-semibold leading-[1.35] ${PRIORITY_CLASSES[row.highestPriority]}`}
+                      data-priority={row.highestPriority}
+                      data-testid="internal-link-priority"
+                    >
+                      {row.highestPriority}
+                    </span>
+                  ) : null}
+                  {row.findings.map((finding) => {
+                    const chipTone = findingTone([finding]);
+                    return (
+                      <span
+                        key={finding.id}
+                        data-finding-kind={finding.kind}
+                        data-tone={chipTone}
+                        className={`rounded-md border px-2 py-1 font-mono text-[9.5px] leading-[1.35] ${CHIP_TONE_CLASSES[chipTone]}`}
+                      >
+                        {copy.findingLabels[finding.kind]}
+                      </span>
+                    );
+                  })}
+                </>
+              )
             : (
                 <span
                   data-tone="neutral"
