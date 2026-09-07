@@ -437,6 +437,34 @@ test("renders the completed report as one URL ledger with one AI handoff", async
   });
 
   await page.goto("/tools/internal-link-audit");
+  const help = page.getByTestId("internal-link-audit-help");
+  await expect(help).toHaveCSS("display", "flex");
+  await expect(help).toHaveCSS("flex-direction", "column");
+  await expect(page.getByTestId("internal-link-audit-help-primary")).toHaveCSS(
+    "font-size",
+    "15px",
+  );
+  await expect(page.getByTestId("internal-link-audit-help-primary")).toHaveText(
+    "Start from the public URL and follow same-origin static HTML links while respecting robots.txt. Crawl facts may be temporarily cached by the server; submitter identity and page body are not stored.",
+  );
+  await expect(page.getByTestId("internal-link-audit-help-scope")).toHaveCSS(
+    "font-size",
+    "13.5px",
+  );
+  await expect(page.getByTestId("internal-link-audit-help-scope")).toHaveText(
+    "No login required · up to about 950 pages per run · crawl runs for up to about four minutes",
+  );
+  const primaryHelpBox = await page
+    .getByTestId("internal-link-audit-help-primary")
+    .boundingBox();
+  const scopeHelpBox = await page
+    .getByTestId("internal-link-audit-help-scope")
+    .boundingBox();
+  expect(primaryHelpBox).not.toBeNull();
+  expect(scopeHelpBox).not.toBeNull();
+  expect(scopeHelpBox!.y).toBeGreaterThan(
+    primaryHelpBox!.y + primaryHelpBox!.height,
+  );
   await page.getByLabel("Website URL").fill("acme.com");
   await page.getByRole("button", { name: "Run internal link audit" }).click();
 
@@ -463,6 +491,17 @@ test("renders the completed report as one URL ledger with one AI handoff", async
     "/guide",
     "/guide/article",
   ]);
+  await expect(result.getByTestId("internal-link-priority")).toHaveText([
+    "P2",
+    "P2",
+  ]);
+  await expect(result.getByTestId("internal-link-priority").first()).toHaveAttribute(
+    "aria-label",
+    "Priority P2",
+  );
+  await expect(
+    result.getByRole("note", { name: "Priority P2" }).first(),
+  ).toBeVisible();
   const unresolvedOnlyRow = result.getByTestId("internal-link-problem-row").first();
   await expect(unresolvedOnlyRow).toHaveAttribute("data-tone", "info");
   await expect(unresolvedOnlyRow.locator("td").first()).toHaveClass(
@@ -497,6 +536,12 @@ test("renders the approved 25 URL fixture as 9 problem rows and 16 unmarked rows
   });
 
   await page.goto("/zh/tools/internal-link-audit");
+  await expect(page.getByTestId("internal-link-audit-help-primary")).toHaveText(
+    "从公开 URL 开始，沿同源静态 HTML 链接抓取，并遵循 robots.txt。抓取事实可能由服务端临时缓存；不保存提交者身份或页面正文。",
+  );
+  await expect(page.getByTestId("internal-link-audit-help-scope")).toHaveText(
+    "无需登录 · 单次最多约 950 页 · 抓取最长约 4 分钟",
+  );
   await page.getByLabel("网站 URL").fill("acme.com");
   await page.getByRole("button", { name: "开始内链审计" }).click();
 
@@ -504,6 +549,29 @@ test("renders the approved 25 URL fixture as 9 problem rows and 16 unmarked rows
   await expect(result.getByTestId("internal-link-url-path")).toHaveCount(25);
   await expect(result.getByTestId("internal-link-problem-row")).toHaveCount(9);
   await expect(result.getByTestId("internal-link-unmarked-row")).toHaveCount(16);
+  await expect(result.getByTestId("internal-link-priority")).toHaveText([
+    "P1",
+    "P1",
+    "P1",
+    "P1",
+    "P1",
+    "P2",
+    "P2",
+    "P2",
+    "P2",
+  ]);
+  await expect(result.getByTestId("internal-link-priority").first()).toHaveAttribute(
+    "aria-label",
+    "优先级 P1",
+  );
+  const highestPriorityRow = result
+    .getByTestId("internal-link-problem-row")
+    .first();
+  await expect(highestPriorityRow).toContainText("点击较深");
+  await expect(highestPriorityRow).toContainText("含未验证目标");
+  await expect(result.getByTestId("internal-link-url-path").first()).toHaveText(
+    "/guides/api-migration",
+  );
   await expect(result).toContainText(
     "已采集 25 个 URL · 9 个需要关注 · 2 个目标待验证",
   );
