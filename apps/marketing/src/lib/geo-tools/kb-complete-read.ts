@@ -13,21 +13,26 @@ import { geoQuestionSetDigest } from "./kb-questions.ts";
 import { canonicalGeoEnrichmentText } from "./kb-enrichment.ts";
 import { inheritedProfileFromCopy } from "./kb-profile-copy-server.ts";
 import { normalizeGeoHost } from "../agents/geo-url.ts";
+import { parseAnyGeoPreparedCandidate, type AnyGeoPreparedCandidate } from "./kb-prepared-contract.ts";
+import type { GeoKnowledgePackV1 } from "./kb-knowledge-pack-contract.ts";
+import { canonicalGeoV2Text } from "./kb-v2-json.ts";
 
 export interface CompleteGeoKnowledgeBase {
   readonly snapshot: VersionedGeoKbFrozenSnapshot;
   readonly context: AnyGeoSnapshotContext | null;
   readonly completeness: "complete" | "legacy_partial";
+  readonly knowledgePack: GeoKnowledgePackV1 | null;
 }
 export interface CompleteGeoKbDependencies {
   readonly readFrozen: typeof readVersionedFrozenGeoKb;
   readonly readContext: typeof readVersionedGeoSnapshotContext;
+  readonly readPrepared: (input: { readonly userId: string; readonly kbId: string; readonly candidateId: string }) => Promise<GeoKbStoreResult<AnyGeoPreparedCandidate | null>>;
 }
 export type CompleteGeoKbSelector = { readonly userId: string; readonly kbId: string } & (
   | { readonly snapshotId: string; readonly revision?: never }
   | { readonly revision: number; readonly snapshotId?: never }
 );
-const DEFAULT: CompleteGeoKbDependencies = { readFrozen: readVersionedFrozenGeoKb, readContext: readVersionedGeoSnapshotContext };
+const DEFAULT: CompleteGeoKbDependencies = { readFrozen: readVersionedFrozenGeoKb, readContext: readVersionedGeoSnapshotContext, readPrepared: async input => (await import("./kb-prepared-store.ts")).DEFAULT_GEO_KB_PREPARED_STORE.read(input) };
 const unavailable = (): GeoKbStoreResult<never> => ({ kind: "unavailable", reason: "Complete GEO knowledge unavailable" });
 
 export async function readCompleteGeoKnowledgeBase(
@@ -64,6 +69,15 @@ export async function readCompleteGeoKnowledgeBase(
     // corrupt complete data, not permission to fall back to today's Profile.
     if (profile !== null && (context === null
       || canonicalGeoEnrichmentText(context.profile) !== canonicalGeoEnrichmentText(profile))) return unavailable();
-    return { kind: "ok", value: { snapshot, context, completeness: copy === undefined ? "legacy_partial" : "complete" } };
+    let knowledgePack: GeoKnowledgePackV1 | null = null;
+    if (v2) {
+      if (snapshot.preparedId === undefined || snapshot.preparedId === null) return unavailable();
+      const prepared = await dependencies.readPrepared({ userId: input.userId, kbId: snapshot.kbId, candidateId: snapshot.preparedId });
+      if (prepared.kind !== "ok" || prepared.value === null) return unavailable();
+      const candidate = parseAnyGeoPreparedCandidate(prepared.value);
+      if (context === null || candidate.candidateId !== snapshot.preparedId || candidate.kbId !== snapshot.kbId || canonicalGeoEnrichmentText(candidate.payload) !== canonicalGeoEnrichmentText(snapshot.payload) || candidate.baseDraftHash !== snapshot.contentHash || canonicalGeoEnrichmentText(candidate.questionSet) !== canonicalGeoEnrichmentText(snapshot.questionSet) || candidate.context.contentHash !== context.contentHash || canonicalGeoV2Text(candidate.context) !== canonicalGeoV2Text(context)) return unavailable();
+      knowledgePack = candidate.schemaVersion === "marketing-geo-prepared-candidate.v2" ? candidate.knowledgePack : null;
+    }
+    return { kind: "ok", value: { snapshot, context, completeness: copy === undefined ? "legacy_partial" : "complete", knowledgePack } };
   } catch { return unavailable(); }
 }

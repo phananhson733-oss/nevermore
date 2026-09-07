@@ -6,6 +6,7 @@ import { createGeoProfileCopy } from "./kb-profile-copy.ts";
 import { createGeoKbEditorLoader, type GeoKbEditorLoaderDependencies } from "./kb-editor-loader.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import { upgradeGeoKbDraftToV2 } from "./kb-upgrade.ts";
+import type { GeoPreparedCandidateV2 } from "./kb-prepared-contract.ts";
 
 const USER = "11111111-1111-4111-8111-111111111111", KB = "22222222-2222-4222-8222-222222222222", WEBSITE = "33333333-3333-4333-8333-333333333333";
 const SNAP = "44444444-4444-4444-8444-444444444444";
@@ -30,6 +31,38 @@ function fixture() {
   return { deps, details, calls };
 }
 describe("complete V2 editor load", () => {
+  it("accepts a V2 knowledge candidate from the versioned prepared reader contract", async () => {
+    const candidate = { schemaVersion: "marketing-geo-prepared-candidate.v2" } as GeoPreparedCandidateV2;
+    const readPrepared: GeoKbEditorLoaderDependencies["readPrepared"] = async () => ({ kind: "ok", value: candidate });
+    await expect(readPrepared({ userId: USER, kbId: KB })).resolves.toEqual({ kind: "ok", value: candidate });
+  });
+  it("loads the latest knowledge generation so recovery survives lost browser storage", async () => {
+    const { deps } = fixture();
+    const kinds: string[] = [];
+    const knowledge = { generationId: "55555555-5555-4555-8555-555555555555", userId: USER, kbId: KB,
+      kind: "knowledge_pack" as const, inputHash: "a".repeat(64), state: "dispatched" as const,
+      result: null, errorReason: null, attempt: null };
+    const result = await createGeoKbEditorLoader({ ...deps, readGeneration: async input => {
+      kinds.push(input.kind);
+      return { kind: "ok", generation: input.kind === "knowledge_pack" ? knowledge : null };
+    } })({ userId: USER, url: "https://example.com" });
+
+    expect(kinds).toEqual(["roles", "knowledge_pack", "questions"]);
+    expect(result).toMatchObject({ kind: "ok", value: { generations: { roles: null, knowledge_pack: {
+      generationId: knowledge.generationId, kind: "knowledge_pack", state: "dispatched",
+    }, questions: null } } });
+  });
+  it("fails closed when the latest knowledge generation is outside the owner scope", async () => {
+    const { deps } = fixture();
+    const foreign = { generationId: "55555555-5555-4555-8555-555555555555", userId: WEBSITE, kbId: KB,
+      kind: "knowledge_pack" as const, inputHash: "a".repeat(64), state: "dispatched" as const,
+      result: null, errorReason: null, attempt: null };
+    const result = await createGeoKbEditorLoader({ ...deps, readGeneration: async input => ({
+      kind: "ok", generation: input.kind === "knowledge_pack" ? foreign : null,
+    }) })({ userId: USER, url: "https://example.com" });
+
+    expect(result).toMatchObject({ kind: "unavailable" });
+  });
   it("previews a V1 upgrade without saving or replacing its stored hash", async () => {
     const { deps, details } = fixture();
     const result = await createGeoKbEditorLoader(deps)({ userId: USER, url: "https://www.example.com" });

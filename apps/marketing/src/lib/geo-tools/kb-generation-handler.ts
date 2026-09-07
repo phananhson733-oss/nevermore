@@ -1,6 +1,6 @@
 // @input -- same-origin authenticated requests naming saved drafts, not model content
 // @output -- owner-scoped durable generation status with no internal lease capability
-// @pos -- HTTP admission for role synthesis and complete candidate preparation
+// @pos -- HTTP admission for role, question and knowledge generation
 import type { ServerAuthenticatedUser } from "../auth/server-auth-user.ts";
 import { z } from "zod";
 import { privateError, privateJson, readAccountMutationJson } from "../account-websites/route-http.ts";
@@ -11,6 +11,7 @@ export interface GeoKbGenerationRequest {
   readonly kbId: string; readonly baseVersion: number; readonly draftHash: string;
   readonly idempotencyKey: string; readonly displayLocale: "en" | "zh";
   readonly sourceReceiptRefs: readonly GeoSourceReceiptRef[];
+  readonly knowledgeGenerationId?: string;
 }
 export interface GeoKbGenerationHandlerDependencies {
   readonly authenticate: () => Promise<ServerAuthenticatedUser>;
@@ -19,8 +20,8 @@ export interface GeoKbGenerationHandlerDependencies {
     | { readonly kind: "ready"; readonly input: Readonly<Record<string, GeoGenerationValue>>; readonly invoke: (generationId: string) => Promise<GeoKbGenerationInvocation> }
     | { readonly kind: "missing" | "input_stale" | "model_unavailable" | "unsupported_language" | "invalid_input" | "unavailable" }>;
   readonly store: Pick<GeoKbGenerationDependencies, "claim" | "markDispatched" | "finish"> & {
-    readonly read: (input: { readonly userId: string; readonly kbId: string; readonly generationId: string }) => Promise<{ readonly kind: "ok"; readonly generation: GeoKbGenerationRecord } | { readonly kind: "missing" | "unavailable" }>;
-    readonly readByKey: (input: { readonly userId: string; readonly kbId: string; readonly kind: GeoKbGenerationKind; readonly idempotencyKey: string }) => Promise<{ readonly kind: "ok"; readonly generation: GeoKbGenerationRecord } | { readonly kind: "missing" | "unavailable" }>;
+    readonly read: (input: { readonly userId: string; readonly kbId: string; readonly generationId: string }) => Promise<{ readonly kind: "ok"; readonly generation: GeoKbGenerationRecord | null } | { readonly kind: "unavailable" }>;
+    readonly readByKey: (input: { readonly userId: string; readonly kbId: string; readonly kind: GeoKbGenerationKind; readonly idempotencyKey: string }) => Promise<{ readonly kind: "ok"; readonly generation: GeoKbGenerationRecord | null } | { readonly kind: "unavailable" }>;
   };
   readonly consumeQuota: (userId: string, kbId: string, kind: GeoKbGenerationKind) => ReturnType<GeoKbGenerationDependencies["consumeQuota"]>;
 }
@@ -29,10 +30,11 @@ const hash = z.string().regex(/^[a-f0-9]{64}$/u);
 const generationRequest = z.object({ kbId: z.string().uuid(), baseVersion: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), draftHash: hash,
   idempotencyKey: z.string().regex(/^[a-zA-Z0-9_-]{8,128}$/u), displayLocale: z.enum(["en", "zh"]),
   sourceReceiptRefs: z.array(z.object({ receiptId: z.string().uuid(), contentHash: hash }).strict()).max(32),
+  knowledgeGenerationId: z.string().uuid().optional(),
 }).strict();
 const readRequest = z.union([
   z.object({ kbId: z.string().uuid(), generationId: z.string().uuid() }).strict(),
-  z.object({ kbId: z.string().uuid(), kind: z.enum(["roles", "questions"]), idempotencyKey: z.string().regex(/^[a-zA-Z0-9_-]{8,128}$/u) }).strict(),
+  z.object({ kbId: z.string().uuid(), kind: z.enum(["roles", "questions", "knowledge_pack"]), idempotencyKey: z.string().regex(/^[a-zA-Z0-9_-]{8,128}$/u) }).strict(),
 ]);
 
 export function publicGeoKbGeneration(record: GeoKbGenerationRecord) {
@@ -53,6 +55,7 @@ export async function handleGeoKbGeneration(request: Request, kind: GeoKbGenerat
   const parsed = generationRequest.safeParse(json.value);
   if (!parsed.success || new Set(parsed.data.sourceReceiptRefs.map(ref => ref.receiptId)).size !== parsed.data.sourceReceiptRefs.length) return privateError("invalid_request", 400);
   const input = parsed.data;
+  if (input.knowledgeGenerationId !== undefined && kind !== "questions") return privateError("invalid_request", 400);
   const ready = await dependencies.prepare({ ...input, userId: identity.userId, kind }).catch(() => ({ kind: "unavailable" as const }));
   if (ready.kind !== "ready") {
     const status = ready.kind === "missing" ? 404 : ready.kind === "input_stale" ? 409 : ready.kind === "unsupported_language" || ready.kind === "invalid_input" ? 422 : 503;
@@ -75,7 +78,8 @@ export async function handleGeoKbGenerationRead(request: Request, dependencies: 
   if (!input.success) return privateError("invalid_request", 400);
   const result = await ("generationId" in input.data ? dependencies.store.read({ userId: identity.userId, ...input.data }) : dependencies.store.readByKey({ userId: identity.userId, ...input.data }))
     .catch(() => ({ kind: "unavailable" as const }));
-  if (result.kind !== "ok") return privateError(result.kind === "missing" ? "not_found" : "store_unavailable", result.kind === "missing" ? 404 : 503);
+  if (result.kind !== "ok") return privateError("store_unavailable", 503);
+  if (result.generation === null) return privateError("not_found", 404);
   if (result.generation.userId !== identity.userId || result.generation.kbId !== input.data.kbId || ("generationId" in input.data ? result.generation.generationId !== input.data.generationId : result.generation.kind !== input.data.kind)) return privateError("store_unavailable", 503);
   return privateJson({ data: { generation: publicGeoKbGeneration(result.generation) } });
 }

@@ -3,7 +3,7 @@
 // @pos -- shared Visibility input contract, with no storage or provider imports
 import { z } from "zod";
 import { normalizeAccountWebsiteUrl, parseMarketingWebsiteProfile, parseWebsiteProfileReference, parseWebsiteSummary } from "../account-websites/contracts.ts";
-import { parseGeoKbPayload, type GeoKbPayload } from "./kb-contract.ts";
+import { parseAnyGeoKbPayload, type AnyGeoKbPayload } from "./kb-v2-contract.ts";
 import { profileCopyReference } from "./kb-profile-copy.ts";
 
 export const VISIBILITY_CONTEXT_MAX_BYTES = 4_000_000;
@@ -16,11 +16,9 @@ const date = z.string().datetime();
 const website = z.unknown().transform(value => parseWebsiteSummary(value));
 const profile = z.unknown().transform(value => parseMarketingWebsiteProfile(value));
 const reference = z.unknown().transform(value => parseWebsiteProfileReference(value));
-const payload = z.unknown().transform((value, ctx): GeoKbPayload => {
-  const parsed = parseGeoKbPayload(value);
-  if (parsed.ok) return parsed.value;
-  ctx.addIssue({ code: "custom", message: `Invalid frozen payload: ${parsed.reason}` });
-  return z.NEVER;
+const payload = z.unknown().transform((value, ctx): AnyGeoKbPayload => {
+  try { return parseAnyGeoKbPayload(value); }
+  catch { ctx.addIssue({ code: "custom", message: "Invalid frozen payload" }); return z.NEVER; }
 });
 const question = z.object({ id: z.string().min(1), text: z.string().min(1), layer: z.enum(["problem", "discovery", "comparison", "evaluation", "branded"]), mode: z.enum(["retrieval", "demand"]), calibrated: z.boolean(), roleId: z.string().nullable(), templateId: z.string().nullable(), requiredEntities: z.array(z.string()).readonly() }).strict();
 const entry = z.object({

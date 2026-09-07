@@ -79,7 +79,7 @@ const readFrozen: typeof readFrozenGeoKb = (input) => readFrozenGeoKb(input, fro
 const readContext: typeof readGeoSnapshotContext = (input) => readGeoSnapshotContext(input, contextStore);
 const resolveGap: typeof resolveOwnedVisibilityGap = (input) => resolveOwnedVisibilityGap(input, { readRun });
 const readRunEvidence: typeof resolveSharedBriefRunEvidence = (input) => resolveSharedBriefRunEvidence(input, { resolveGap });
-const referenceDependencies: GeoBriefReferenceDependencies = { readRun, readFrozen, readContext, readRunEvidence };
+const referenceDependencies: GeoBriefReferenceDependencies = { readRun, readFrozen, readContext, readPrepared: async () => { throw new Error("Legacy chain must not read a prepared candidate"); }, readRunEvidence };
 
 async function fixture() {
   const host = `${randomUUID()}.example.com`;

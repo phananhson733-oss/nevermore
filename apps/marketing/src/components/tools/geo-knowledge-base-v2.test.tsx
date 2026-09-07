@@ -10,6 +10,8 @@ import { editorFixture, sourceFixture } from "./geo-kb-v2-ui.test-fixtures.ts";
 import { renderedText } from "./rendered-text.test-helper.ts";
 import { geoV2Digest } from "../../lib/geo-tools/kb-v2-digest.ts";
 import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
+import { geoKnowledgePackFixture } from "./geo-knowledge-pack.test-fixtures.ts";
+import type { GeoKbFrozenSummary } from "./geo-kb-wire.ts";
 
 let host: HTMLDivElement, root: Root;
 beforeEach(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; host = document.createElement("div"); document.body.append(host); root = createRoot(host); sessionStorage.clear(); vi.stubGlobal("fetch", vi.fn()); });
@@ -49,6 +51,15 @@ it("offers one action and no workbench", async () => {
 });
 
 it.each([
+  ["en", "three billed model calls", "two billed model calls"],
+  ["zh", "三次模型调用（计费三次）", "两次模型调用"],
+])("states the actual three-call cost of the one-click flow in %s", async (locale, expected, stale) => {
+  await render(editorFixture(), locale);
+  expect(renderedText(host)).toContain(expected);
+  expect(renderedText(host)).not.toContain(stale);
+});
+
+it.each([
   ["en", "GEO Knowledge Base generation currently supports English question languages only", "current GEO question language is zh-cn"],
   ["zh", "当前 GEO 知识库仅支持英文提问语言", "当前 GEO 提问语言是 zh-cn"],
 ])("blocks an unsupported question language before any request in %s", async (locale, boundary, actual) => {
@@ -80,6 +91,45 @@ it.each(["resend_same", "new_input"] as const)("disables explicit %s recovery wh
   expect(host.querySelector<HTMLButtonElement>("[data-generate-kb]")?.disabled).toBe(false);
   await click(selector);
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("resends a knowledge-backed question request with its exact original generation id and key", async () => {
+  const base = editorFixture(), sourceReceipt = sourceFixture(base), sourceReceiptRefs = [{ receiptId: sourceReceipt.receiptId, contentHash: sourceReceipt.contentHash }];
+  const idempotencyKey = "knowledge-question-key-1";
+  const inputIdentity = JSON.stringify({ kind: "questions", kbId: base.kbId, baseVersion: base.draftVersion, draftHash: base.draftHash,
+    sourceReceiptRefs, displayLocale: "en", knowledgeGenerationId: "55555555-5555-4555-8555-555555555555" });
+  sessionStorage.setItem(`gg:geo-kb-generation:${base.kbId}:questions`, JSON.stringify({ idempotencyKey, draftHash: base.draftHash,
+    baseVersion: base.draftVersion, generationId: null, inputIdentity, readNotFound: true }));
+  vi.mocked(fetch).mockRejectedValueOnce(new Error("synthetic ambiguous resend"));
+  await render({ ...base, sourceReceipt });
+
+  const recovery = host.querySelector<HTMLButtonElement>('[data-resend-generation="questions"]');
+  expect(recovery).not.toBeNull();
+  await click('[data-resend-generation="questions"]');
+
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe("/api/tools/geo-knowledge-base/v2/prepare");
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ idempotencyKey,
+    knowledgeGenerationId: "55555555-5555-4555-8555-555555555555" });
+});
+
+it("does not carry a stale knowledge id into an explicitly changed question input", async () => {
+  const initial = editorFixture(), view = { ...initial, draftVersion: initial.draftVersion + 1, draftHash: "e".repeat(64) };
+  const sourceReceipt = sourceFixture(view), idempotencyKey = "old-knowledge-question-key";
+  const inputIdentity = JSON.stringify({ kind: "questions", kbId: view.kbId, baseVersion: initial.draftVersion, draftHash: initial.draftHash,
+    sourceReceiptRefs: [{ receiptId: sourceReceipt.receiptId, contentHash: sourceReceipt.contentHash }], displayLocale: "en",
+    knowledgeGenerationId: "55555555-5555-4555-8555-555555555555" });
+  sessionStorage.setItem(`gg:geo-kb-generation:${view.kbId}:questions`, JSON.stringify({ idempotencyKey, draftHash: initial.draftHash,
+    baseVersion: initial.draftVersion, generationId: null, inputIdentity }));
+  vi.mocked(fetch).mockRejectedValueOnce(new Error("synthetic changed input"));
+  await render({ ...view, sourceReceipt });
+
+  expect(host.querySelector('[data-new-generation="questions"]')).not.toBeNull();
+  await click('[data-new-generation="questions"]');
+
+  const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+  expect(body).not.toHaveProperty("knowledgeGenerationId");
+  expect(body.idempotencyKey).not.toBe(idempotencyKey);
 });
 
 const frozenAt = (base: ReturnType<typeof editorFixture>, contentHash: string) => {
@@ -135,6 +185,94 @@ it.each(["en", "zh"])("keeps internal provenance and version identity out of the
   expect(host.querySelectorAll("[data-version-competitor]")).toHaveLength(0);
   expect(host.querySelectorAll("[data-version-question]")).toHaveLength(frozen.questionSet.questions.length);
   expect(renderedText(host)).toContain(frozen.questionSet.questions[0]!.text);
+});
+
+it("shows only GEO questions for a historical V1 freeze, with no expandable product archive or version identity", async () => {
+  const base = editorFixture();
+  const frozen: GeoKbFrozenSummary = {
+    snapshotId: "77777777-7777-4777-8777-777777777777",
+    revision: 9876543,
+    frozenAt: "2026-08-30T00:00:00.000Z",
+    contentHash: "9".repeat(64),
+    questionSetHash: "8".repeat(64),
+    questionCount: 1,
+    retrievalCount: 1,
+    registryVersion: "legacy-registry-secret",
+    payload: {
+      schemaVersion: "marketing-geo-kb.v1",
+      targetUrl: base.payload.targetUrl,
+      officialName: "Legacy Product Archive Secret",
+      aliases: ["Legacy Alias Secret"],
+      categoryTerms: ["Legacy Category Secret"],
+      market: base.payload.market,
+      roles: [],
+      competitors: [],
+      facts: [],
+      importedFrom: null,
+    },
+    questions: [{ id: "legacy-question-internal-id", text: "Which historical GEO question still applies?", layer: "discovery", mode: "retrieval", calibrated: false, requiredEntities: ["historical GEO"] }],
+  };
+  await render({ ...base, frozen });
+
+  expect(renderedText(host)).toContain("Which historical GEO question still applies?");
+  expect(host.querySelector("details[data-frozen-knowledge-base]")).toBeNull();
+  const question = host.querySelector("[data-legacy-question]");
+  expect(question?.querySelectorAll("p")).toHaveLength(0);
+  expect(Array.from(question?.querySelectorAll("span") ?? []).every(node => node.classList.contains("text-[13px]"))).toBe(true);
+  for (const hidden of [frozen.snapshotId, frozen.frozenAt, frozen.contentHash, frozen.questionSetHash!, frozen.registryVersion!, "9876543", "Legacy Product Archive Secret", "Legacy Alias Secret", "Legacy Category Secret", "legacy-question-internal-id"]) {
+    expect(host.outerHTML).not.toContain(hidden);
+  }
+});
+
+it("keeps retained recovery identities and draft versions out of the page even beside frozen knowledge", async () => {
+  const base = editorFixture(), frozen = frozenAt(base, base.draftHash!);
+  const generationId = "77777777-7777-4777-8777-777777777778";
+  const idempotencyKey = "private-recovery-key-123";
+  const inputIdentity = JSON.stringify({ kind: "roles", kbId: base.kbId, baseVersion: 9876544, draftHash: "7".repeat(64), sourceReceiptRefs: [], displayLocale: "en" });
+  sessionStorage.setItem(`gg:geo-kb-generation:${base.kbId}:history`, JSON.stringify([{ id: `roles:${generationId}`, kind: "roles", idempotencyKey,
+    generationId, inputIdentity, draftHash: "7".repeat(64), baseVersion: 9876544, state: "uncertain", errorReason: "outcome_unknown" }]));
+  await render({ ...base, frozen });
+
+  expect(host.querySelector("[data-read-retained]")).not.toBeNull();
+  for (const hidden of [generationId, idempotencyKey, inputIdentity, "9876544"]) expect(host.outerHTML).not.toContain(hidden);
+});
+
+it("shows the frozen customer knowledge pack before questions while keeping its wire identity hidden", async () => {
+  const base = editorFixture(), knowledgePack = geoKnowledgePackFixture();
+  const frozen = { ...frozenAt(base, base.draftHash!), wireSchemaVersion: "marketing-geo-kb-frozen-wire.v1" as const, knowledgePack };
+  await render({ ...base, frozen }, "en");
+
+  const pack = host.querySelector("[data-geo-knowledge-pack]");
+  const questions = host.querySelector("[data-version-question]")?.closest("section");
+  expect(pack).not.toBeNull();
+  expect(questions).not.toBeNull();
+  expect(pack!.compareDocumentPosition(questions!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  expect(host.textContent).toContain("Example Cloud gives small teams a shared workflow");
+  const customerHtml = host.outerHTML;
+  const internalValues = new Set([
+    frozen.wireSchemaVersion, frozen.snapshotId, frozen.kbId, frozen.contentHash, frozen.questionSetHash,
+    frozen.payload.schemaVersion, frozen.payload.profileCopy.schemaVersion, frozen.payload.profileCopy.snapshotId, frozen.payload.profileCopy.profileHash,
+    frozen.questionSet.schemaVersion, frozen.questionSet.registryVersion, frozen.questionSet.methodVersion,
+    frozen.context.schemaVersion, frozen.context.candidateId, frozen.context.contentHash, frozen.context.payloadHash, frozen.context.questionSetHash,
+    knowledgePack.schemaVersion, knowledgePack.contentHash, knowledgePack.meta.generatedAt,
+    ...knowledgePack.sourceCatalogue.flatMap(source => [source.id, source.bodyHash]),
+    ...(knowledgePack.entity.status === "unavailable" ? [] : knowledgePack.entity.value.sourceRefs),
+    ...(knowledgePack.facts.status === "unavailable" ? [] : knowledgePack.facts.value.flatMap(item => [item.id, ...item.sourceRefs])),
+    ...(knowledgePack.qa.status === "unavailable" ? [] : knowledgePack.qa.value.flatMap(item => [item.id, ...item.sourceRefs])),
+    ...(knowledgePack.comparisons.status === "unavailable" ? [] : knowledgePack.comparisons.value.flatMap(item => [item.id, ...item.sourceRefs, ...item.rows.flatMap(row => [row.id, ...row.sourceRefs])])),
+    ...(knowledgePack.scope.status === "unavailable" ? [] : Object.values(knowledgePack.scope.value).flatMap(items => items.flatMap(item => [item.id, ...item.sourceRefs]))),
+    ...(knowledgePack.evidence.status === "unavailable" ? [] : Object.values(knowledgePack.evidence.value).flatMap(items => items.flatMap(item => [item.id, ...item.sourceRefs]))),
+    ...(knowledgePack.coverage.status === "unavailable" ? [] : knowledgePack.coverage.value.flatMap(item => [item.id, ...item.sourceRefs])),
+    ...frozen.context.evidenceCatalog.map(item => item.id),
+    ...frozen.payload.roles.flatMap(role => [role.source.generationId, role.source.itemId, ...role.source.evidenceRefs]),
+    ...frozen.questionSet.entityCatalog.map(entity => entity.id),
+    ...frozen.questionSet.questions.flatMap(question => [question.id, question.templateId, question.provenance.generatorVersion, ...question.provenance.evidenceRefs, ...question.provenance.entityRefs]),
+  // `none` is also an ordinary Tailwind/class token. Its presence is not the
+  // registry version leaking, so keep the serialized scan on identities that
+  // are distinguishable from presentation vocabulary.
+  ].filter((value): value is string => typeof value === "string" && value !== "" && value !== "none"));
+  for (const internalValue of internalValues) expect(customerHtml).not.toContain(internalValue);
+  expect(host.querySelector("details")).toBeNull();
 });
 
 it("stops the run at the failed step instead of paying for the model call after it", async () => {
@@ -202,6 +340,19 @@ it("will not repeat a run whose outcome the server never settled", async () => {
   // gesture must not repeat on its own. It stops and says which step.
   expect(fetch).not.toHaveBeenCalled();
   expect(host.querySelector("[data-build-outcome]")?.textContent).toBe(editor.buildStopped.roles);
+});
+
+it("keeps an unsettled knowledge-content request visible and recoverable", async () => {
+  const base = editorFixture();
+  const uncertain = { generationId: "44444444-4444-4444-8444-444444444445", kbId: base.kbId, kind: "knowledge_pack" as const,
+    inputHash: "b".repeat(64), state: "uncertain" as const, result: null, errorReason: "outcome_unknown" as const,
+    attempt: { attemptedCalls: 1 as const, delivery: "outcome_unknown" as const, modelRequested: "fixture", inputTokens: null, outputTokens: null, requestCount: null } };
+  await render({ ...base, prepared: null, sourceReceipt: sourceFixture(base), generations: { ...base.generations, knowledge_pack: uncertain } });
+
+  const section = host.querySelector('[data-generation-state="knowledge_pack"]');
+  expect(section?.textContent).toContain("Generate GEO knowledge content");
+  expect(section?.textContent).toContain("outcome is unknown");
+  expect(section?.querySelector('[data-read-generation="knowledge_pack"]')).not.toBeNull();
 });
 
 it("says why a run was refused without repeating the code, and keeps an unmapped one", async () => {

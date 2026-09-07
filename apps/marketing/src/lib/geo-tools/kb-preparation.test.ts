@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildGeoPreparedKnowledgeBase } from "./kb-preparation.ts";
+import { buildGeoPreparedKnowledgeBase, buildGeoPreparedKnowledgeBaseV2 } from "./kb-preparation.ts";
 import { completePayloadV2, V2_CANDIDATE_ID, V2_KB_ID } from "./kb-v2.test-fixtures.ts";
 import { parseGeoKbPayloadV2 } from "./kb-v2-contract.ts";
 import { parseGeoPreparedCandidate } from "./kb-prepared-contract.ts";
@@ -11,6 +11,9 @@ import { GEO_QUESTION_SYNTHESIS_PROMPT_VERSION } from "./kb-synthesis.ts";
 import { ROLE_SYNTHESIS_OUTPUT, QUESTION_SYNTHESIS_INPUT, QUESTION_SYNTHESIS_OUTPUT } from "./kb-synthesis-fixtures.ts";
 import type { GeoSourceSummaryV2 } from "./snapshot-context-v2.ts";
 import { extractGeoCompetitorSourceV2 } from "./kb-sources.ts";
+import { buildGeoKnowledgePackV1 } from "./kb-knowledge-pack-contract.ts";
+import { geoKnowledgeGenerationInputHash } from "./kb-prepared-contract.ts";
+import { GEO_KNOWLEDGE_SYNTHESIS_INPUT_SCHEMA, geoKnowledgeSynthesisInputDigest, geoKnowledgeSynthesisSourceCatalogueDigest, type GeoKnowledgeSynthesisInputBodyV1, type GeoKnowledgeSynthesisInputV1 } from "./kb-knowledge-synthesis-contract.ts";
 
 function fixture() {
   const { evidenceRefs, ...role } = ROLE_SYNTHESIS_OUTPUT.roles[0]!;
@@ -22,6 +25,18 @@ function fixture() {
   const sourceSummary: GeoSourceSummaryV2 = { gsc: { status: "available", reason: null, property: "sc-domain:example.com", window: { startDate: "2026-06-01", endDate: "2026-08-29" }, queryCount: 3, truncated: false, observedAt: "2026-08-31T00:00:00.000Z" }, selectedEvidenceCounts: { profile: 1, gsc: 1, crawl: 0, manual: 0 }, availableEvidenceCounts: { profile: 1, gsc: 1, crawl: 0, manual: 0 } };
   return { candidateId: V2_CANDIDATE_ID, kbId: V2_KB_ID, baseDraftVersion: 7, payload, semanticInput, semanticOutput: structuredClone(QUESTION_SYNTHESIS_OUTPUT), sourceReceiptRefs: [], evidenceCatalog: structuredClone(semanticInput.evidenceSources), sourceSummary };
 }
+function knowledgePack() {
+  return buildGeoKnowledgePackV1({
+    schemaVersion: "marketing-geo-knowledge-pack.v1", meta: { generatedAt: "2026-09-04T07:11:15.461Z", lastScanAt: "2026-09-04T07:11:15.461Z", market: "US", language: "en", counts: { facts: 0, qa: 0, comparisons: 0 } },
+    entity: { status: "unavailable", reason: "generation_unavailable" }, facts: { status: "unavailable", reason: "generation_unavailable" }, qa: { status: "unavailable", reason: "generation_unavailable" }, comparisons: { status: "unavailable", reason: "not_applicable" }, scope: { status: "unavailable", reason: "generation_unavailable" }, evidence: { status: "unavailable", reason: "insufficient_evidence" }, machine: { status: "unavailable", reason: "not_collected" }, coverage: { status: "unavailable", reason: "insufficient_evidence" },
+    sourceCatalogue: [{ id: "source:home", kind: "own_page", label: "Home", url: "https://example.com/", competitor: null, availability: "available", reason: null, observedAt: "2026-09-04T07:11:15.461Z", bodyHash: "a".repeat(64), excerpts: ["Example public evidence."] }],
+  });
+}
+function knowledgeSynthesisInput(payload: ReturnType<typeof fixture>["payload"], pack: ReturnType<typeof knowledgePack>): GeoKnowledgeSynthesisInputV1 {
+  const sourceCatalogue: GeoKnowledgeSynthesisInputBodyV1["sourceCatalogue"] = pack.sourceCatalogue.flatMap(source => source.availability === "unavailable" ? [] : [{ ...source, availability: source.availability }]);
+  const body: GeoKnowledgeSynthesisInputBodyV1 = { schemaVersion: GEO_KNOWLEDGE_SYNTHESIS_INPUT_SCHEMA, officialName: payload.officialName, aliases: [...payload.aliases], categoryTerms: [...payload.categoryTerms], market: payload.market.country, language: payload.market.language, targetUrl: new URL(payload.targetUrl).toString(), confirmedCompetitors: payload.competitors.filter(competitor => competitor.confirmed).map(competitor => ({ key: competitor.domain, name: competitor.brandName, confirmed: true as const })), evidenceContentHash: "d".repeat(64), sourceCatalogueHash: geoKnowledgeSynthesisSourceCatalogueDigest(sourceCatalogue), sourceCatalogue };
+  return { ...body, contentHash: geoKnowledgeSynthesisInputDigest(body) };
+}
 
 function expectedRegistryProjection(input: Pick<ReturnType<typeof fixture>, "payload">): GeoKbPayload {
   const parsed = parseGeoKbPayload({ ...input.payload, schemaVersion: "marketing-geo-kb.v1", facts: [], roles: [{ id: "finance", label: "finance managers", segment: input.payload.roles[0]!.segment, painPoints: ["manual invoice reminders"], decisionCriteria: ["audit trails"], vocabulary: ["overdue invoices"] }] });
@@ -30,6 +45,15 @@ function expectedRegistryProjection(input: Pick<ReturnType<typeof fixture>, "pay
 }
 
 describe("server-owned prepared GEO knowledge assembly", () => {
+  it("builds v2 from the exact v1 payload/question/context assembly without changing v1", () => {
+    const input = fixture(), v1 = buildGeoPreparedKnowledgeBase(input), pack = knowledgePack(), synthesis = knowledgeSynthesisInput(input.payload, pack);
+    const v2 = buildGeoPreparedKnowledgeBaseV2({ ...input, knowledgePack: pack, knowledgeSynthesisInput: synthesis, knowledgeGeneration: { generationId: V2_CANDIDATE_ID, inputHash: geoKnowledgeGenerationInputHash({ ...v1, knowledgeSynthesisInput: synthesis }), promptVersion: "geo-kb-knowledge-pack.v1" } });
+    expect(v2.payload).toEqual(v1.payload);
+    expect(v2.questionSet).toEqual(v1.questionSet);
+    expect(v2.context).toEqual(v1.context);
+    expect(v2.knowledgePack).toEqual(pack);
+    expect(() => buildGeoPreparedKnowledgeBaseV2({ ...input, knowledgePack: { ...pack, meta: { ...pack.meta, market: "CA" } }, knowledgeSynthesisInput: synthesis, knowledgeGeneration: { generationId: V2_CANDIDATE_ID, inputHash: "b".repeat(64), promptVersion: "geo-kb-knowledge-pack.v1" } })).toThrow();
+  });
   it("freezes failed competitor extraction metadata without changing the saved mapping", () => {
     const input = fixture(), receiptId = "11111111-1111-4111-8111-111111111118", contentHash = "c".repeat(64);
     const capture = extractGeoCompetitorSourceV2("rival.example", { kind: "unavailable", url: "https://rival.example/", reason: "fetch_failed" }, "C1");

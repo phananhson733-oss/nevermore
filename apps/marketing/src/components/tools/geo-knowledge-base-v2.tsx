@@ -7,7 +7,6 @@ import type { GeoKbEditorViewV2 } from "./geo-kb-v2-wire.ts";
 import { Button } from "../ui/button.tsx";
 import { useGeoKbV2Editor } from "./use-geo-kb-v2-editor.ts";
 import { GeoKbVersionContent } from "./geo-kb-version-content.tsx";
-import { GeoKbFrozenCopy } from "./geo-kb-frozen-copy.tsx";
 import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
 import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
 import { GeoKbV2BuildReport } from "./geo-kb-v2-build-report.tsx";
@@ -37,6 +36,8 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
   const current = frozen !== null && "context" in frozen && frozen.contentHash === view.draftHash;
   const unsupportedLanguage = te("unsupportedLanguage", { language: editor.generationLanguage });
   const unsupportedLanguageAfterStart = te("unsupportedLanguageAfterStart", { language: payload.market.language });
+  const generationKinds = ["roles", "knowledge_pack", "questions"] as const;
+  const generationLabel = (kind: typeof generationKinds[number]) => kind === "roles" ? t.generateRoles : kind === "knowledge_pack" ? t.generateKnowledge : t.prepare;
   return <section data-geo-kb-v2 data-inline={inline} className="min-w-0 space-y-6 text-text-dark-primary">
     {/* The Profile editor's header, in the same order: which website this is,
         one persistent live region whose text changes (a node inserted per
@@ -65,15 +66,16 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
     {/* A generation the server has not settled. It is the one place a person
         still has to act, because pressing again could be a second billed call
         for a request that may already have run. */}
-    {(["roles", "questions"] as const).map(kind => {
-      const action = editor.generationAction(kind);
+    {generationKinds.map(kind => {
+      const knowledgeGenerationId = editor.recoveryKnowledgeGenerationId(kind);
+      const action = editor.generationAction(kind, knowledgeGenerationId);
       if (action !== "new_input" && action !== "resend_same") return null;
       return <section key={kind} className="space-y-3 rounded-card border border-brand-accent/40 bg-brand-panel p-5 text-sm">
-        <h3 className="font-semibold">{kind === "roles" ? t.generateRoles : t.prepare}</h3><p>{action === "new_input" ? t.newInputHelp : t.resendHelp}</p>
-        <Button type="button" variant="outline" {...{ [action === "new_input" ? "data-new-generation" : "data-resend-generation"]: kind }} disabled={editor.busy || !editor.savedGenerationLanguageSupported} onClick={() => void editor.generate(kind, action)}>{action === "new_input" ? t.newInput : t.resendSame}</Button>
+        <h3 className="font-semibold">{generationLabel(kind)}</h3><p>{action === "new_input" ? t.newInputHelp : t.resendHelp}</p>
+        <Button type="button" variant="outline" {...{ [action === "new_input" ? "data-new-generation" : "data-resend-generation"]: kind }} disabled={editor.busy || !editor.savedGenerationLanguageSupported} onClick={() => void editor.generate(kind, action, action === "resend_same" ? knowledgeGenerationId : undefined)}>{action === "new_input" ? t.newInput : t.resendSame}</Button>
       </section>;
     })}
-    {(["roles", "questions"] as const).map(kind => {
+    {generationKinds.map(kind => {
       const generation = view.generations[kind], pending = editor.pending[kind];
       if (generation === null && pending === null) return null;
       const uncertain = generation?.state === "uncertain" || pending !== null && generation?.generationId !== pending.generationId;
@@ -82,7 +84,7 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       const running = generation?.state === "claimed" || generation?.state === "dispatched";
       if (!uncertain && !running && generation?.state !== "failed" && pending?.readNotFound !== true) return null;
       return <section data-generation-state={kind} key={kind} className="space-y-3 rounded-card border border-brand-border-card bg-brand-panel p-5 text-sm">
-        <h3 className="font-semibold">{kind === "roles" ? t.generateRoles : t.prepare}</h3>
+        <h3 className="font-semibold">{generationLabel(kind)}</h3>
         <p role="status">{pending?.readNotFound && pending.generationId === null ? t.notFoundRequest : uncertain ? t.uncertain : running ? t.running : t.failed}</p>
         {uncertain ? <p>{t.newVersionNeeded}</p> : null}
         {generation?.attempt ? <><dl className="grid gap-2 text-xs sm:grid-cols-2">
@@ -93,16 +95,13 @@ export function GeoKnowledgeBaseV2({ inline = false, ...props }: GeoKnowledgeBas
       </section>;
     })}
     {editor.retainedRequests.length ? <section className="space-y-4 rounded-card border border-brand-border-card bg-brand-panel p-5 text-sm"><h3 className="font-semibold">{t.retainedRequests}</h3>{editor.retainedRequests.map(entry => <article key={entry.id} className="space-y-2 rounded-lg border border-brand-border-card p-4">
-      <p>{entry.kind === "roles" ? t.generateRoles : t.prepare} · v{entry.baseVersion} · {stateLabel(entry.state)}</p>
-      {/* Which request this is. Two retained requests are otherwise identical
-          and the read button acts on exactly one of them. */}
-      <p className="break-all font-mono text-xs text-text-dark-secondary">{entry.generationId ?? entry.idempotencyKey} {entry.errorReason ?? ""}</p>
-      <Button type="button" variant="outline" data-read-retained={entry.id} disabled={editor.busy} onClick={() => void editor.readRetainedRequest(entry)}>{t.readGeneration}</Button>
+      <p>{generationLabel(entry.kind)} · {stateLabel(entry.state)}</p>
+      <Button type="button" variant="outline" data-read-retained="" disabled={editor.busy} onClick={() => void editor.readRetainedRequest(entry)}>{t.readGeneration}</Button>
     </article>)}</section> : null}
 
     {/* The knowledge base itself. */}
     {frozen === null ? <p data-kb-empty className="text-sm text-text-dark-secondary">{te("generateEmpty")}</p>
-      : "context" in frozen ? <div data-frozen-v2 className="space-y-5"><GeoKbVersionContent payload={frozen.payload} questionSet={frozen.questionSet} context={frozen.context} locale={props.locale} customerFacing /></div>
-      : <div className="space-y-5"><p className="text-sm text-text-dark-secondary">{t.legacy}</p><GeoKbFrozenCopy payload={frozen.payload} locale={props.locale} revision={frozen.revision} /><ul className="space-y-3">{frozen.questions?.map(question => <li key={question.id} className="rounded-[10px] border border-brand-border-card p-4 text-sm">{question.text}<p className="text-text-dark-secondary">{c.layers[question.layer as keyof typeof c.layers] ?? question.layer}</p><p>{question.requiredEntities?.join(" · ")}</p></li>)}</ul></div>}
+      : "context" in frozen ? <div data-frozen-v2 className="space-y-5"><GeoKbVersionContent payload={frozen.payload} questionSet={frozen.questionSet} context={frozen.context} knowledgePack={"knowledgePack" in frozen ? frozen.knowledgePack : null} locale={props.locale} customerFacing /></div>
+      : <div className="space-y-5"><p className="text-sm text-text-dark-secondary">{t.legacy}</p><ul className="space-y-3">{frozen.questions?.map(question => <li key={question.id} data-legacy-question="" className="rounded-[10px] border border-brand-border-card p-4 text-[13px] leading-relaxed">{question.text}<span className="mt-1 block text-[13px] leading-relaxed text-text-dark-secondary">{c.layers[question.layer as keyof typeof c.layers] ?? question.layer}</span><span className="mt-1 block text-[13px] leading-relaxed">{question.requiredEntities?.join(" · ")}</span></li>)}</ul></div>}
   </section>;
 }

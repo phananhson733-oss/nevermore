@@ -7,7 +7,7 @@ import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { connectFreshMarketingSchema, openConcurrentClient } from "../credits/sql-test-harness.ts";
 import { completePayloadV2, questionSetV2 } from "./kb-v2.test-fixtures.ts";
-import { createGeoPreparedCandidate } from "./kb-prepared-contract.ts";
+import { createGeoPreparedCandidate, createGeoPreparedCandidateV2, geoKnowledgeGenerationInputHash, GEO_PREPARED_CANDIDATE_V2_MAX_BYTES } from "./kb-prepared-contract.ts";
 import { buildGeoSnapshotContextV2 } from "./snapshot-context-v2.ts";
 import { geoGenerationInputHash } from "./kb-generation.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
@@ -22,15 +22,20 @@ import type { GeoCompetitorEvidenceV2 } from "./snapshot-context-v2.ts";
 import { createGeoRoleProposal } from "./kb-role-proposal.ts";
 import { ROLE_SYNTHESIS_INPUT, ROLE_SYNTHESIS_OUTPUT } from "./kb-synthesis-fixtures.ts";
 import { profileCopyReference } from "./kb-profile-copy.ts";
+import { buildGeoKnowledgeEvidenceV1 } from "./kb-knowledge-evidence.ts";
+import { buildGeoKnowledgeSynthesisInputV1 } from "./kb-knowledge-synthesis-contract.ts";
+import { buildGeoKnowledgeGenerationInputManifest } from "./kb-prepared-contract.ts";
+import { buildGeoKnowledgeGenerationResultV1, geoKnowledgeGenerationResultHash } from "./kb-knowledge-generation-contract.ts";
+import { buildGeoKnowledgePack } from "./kb-knowledge-pack.ts";
 
 let db: Client;
 beforeAll(async () => { db = await connectFreshMarketingSchema(); });
 afterAll(async () => { await db?.end(); });
 const ATTEMPT = { attemptedCalls: 1, delivery: "response_received", modelRequested: "offline-model", inputTokens: 12, outputTokens: 30, requestCount: 1 };
-async function fixture() {
+async function fixture(targetUrl?: string) {
   const userId = randomUUID(), websiteId = randomUUID(), snapshotId = randomUUID();
   const base = completePayloadV2();
-  const payload = { ...base, profileCopy: { ...base.profileCopy, websiteId, snapshotId } };
+  const payload = { ...base, targetUrl: targetUrl ?? base.targetUrl, profileCopy: { ...base.profileCopy, websiteId, snapshotId } };
   const result = await db.query("select * from public.marketing_geo_upsert_kb($1,'https://example.com','example.com','example.com')", [userId]);
   const kbId = result.rows[0].kb_id as string;
   await db.query("insert into public.marketing_websites(id,user_id,canonical_site_key,origin,submitted_url,host) values($1,$2,'example.com','https://example.com','https://example.com','example.com')", [websiteId, userId]);
@@ -42,8 +47,8 @@ async function fixture() {
   return { userId, kbId, payload, input, websiteId };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
-async function claim(f: Fixture, key = "request_key_1", kind = "questions", input = f.input, client = db) {
-  return (await client.query("select * from public.marketing_geo_claim_generation($1,$2,$3,$4,$5,$6)", [f.userId, f.kbId, kind, key, geoGenerationInputHash(kind as "questions", input), input])).rows[0];
+async function claim(f: Fixture, key = "request_key_1", kind: "roles" | "questions" | "knowledge_pack" = "questions", input = f.input, client = db) {
+  return (await client.query("select * from public.marketing_geo_claim_generation($1,$2,$3,$4,$5,$6)", [f.userId, f.kbId, kind, key, geoGenerationInputHash(kind, input), input])).rows[0];
 }
 async function dispatch(f: Fixture, generationId: string, token: string, client = db) {
   return (await client.query("select * from public.marketing_geo_dispatch_generation($1,$2,$3,$4)", [f.userId, f.kbId, generationId, token])).rows[0];
@@ -56,6 +61,44 @@ function candidate(f: Fixture, candidateId: string, sourceReceiptRefs: readonly 
   const context = buildGeoSnapshotContextV2({ candidateId, kbId: f.kbId, payload: f.payload, questionSet, sourceReceiptRefs, competitorEvidence, evidenceCatalog: [{ id: "manual:r1", kind: "manual", text: "Finance teams struggle with late invoices" }], sourceSummary: { gsc: null, selectedEvidenceCounts: { manual: 1, profile: 0, gsc: 0, crawl: 0 }, availableEvidenceCounts: { manual: 1, profile: 0, gsc: 0, crawl: 0 } } });
   return createGeoPreparedCandidate({ schemaVersion: "marketing-geo-prepared-candidate.v1", candidateId, kbId: f.kbId, baseDraftVersion: f.input.baseDraftVersion, baseDraftHash: f.input.baseDraftHash, profileCopyHash: f.input.profileCopyHash, sourceReceiptRefs, generatorVersion: questionSet.methodVersion, payload: f.payload, questionSet, context });
 }
+function knowledgeFixture(f: Fixture, generationId: string, sourceReceiptRefs: readonly { readonly receiptId: string; readonly contentHash: string }[] = []) {
+  const at = "2026-08-31T00:00:00.000Z", targetUrl = new URL(f.payload.targetUrl).toString();
+  const confirmedCompetitors = f.payload.competitors.filter(competitor => competitor.confirmed).map(competitor => ({ key: competitor.domain, name: competitor.brandName, confirmed: true as const }));
+  const evidence = buildGeoKnowledgeEvidenceV1({ schemaVersion: "marketing-geo-knowledge-evidence.v1", collectedAt: at, targetUrl, confirmedCompetitors,
+    availability: "available", limitation: null, pages: [], machine: {
+      jsonLd: { status: "absent", types: [], sourceRefs: ["source:home"] }, hreflang: { status: "absent", locales: [], sourceRefs: ["source:home"] },
+      robots: { status: "present", sourceRefs: ["source:robots"] }, llms: { status: "present", sourceRefs: ["source:llms"] },
+      sitemap: { status: "present", sourceRefs: ["source:sitemap"], urlCount: 0, knowledgePagesListed: false, locations: [], truncated: false },
+    }, sourceCatalogue: [
+      { id: "source:accepted-seats", kind: "accepted_fact", label: "Seats", url: null, competitor: null, availability: "available", reason: null, observedAt: null, bodyHash: null, excerpts: ["3"] },
+      { id: "source:home", kind: "own_page", label: "Home", url: targetUrl, competitor: null, availability: "available", reason: null, observedAt: at, bodyHash: "a".repeat(64), excerpts: ["Acme is analytics software for finance teams."] },
+      { id: "source:robots", kind: "robots", label: "robots", url: new URL("/robots.txt", targetUrl).toString(), competitor: null, availability: "available", reason: null, observedAt: at, bodyHash: "b".repeat(64), excerpts: ["User-agent: *"] },
+      { id: "source:sitemap", kind: "sitemap", label: "sitemap", url: new URL("/sitemap.xml", targetUrl).toString(), competitor: null, availability: "available", reason: null, observedAt: at, bodyHash: "c".repeat(64), excerpts: [targetUrl] },
+      { id: "source:llms", kind: "llms", label: "llms", url: new URL("/llms.txt", targetUrl).toString(), competitor: null, availability: "available", reason: null, observedAt: at, bodyHash: "d".repeat(64), excerpts: ["Acme analytics software"] },
+    ] });
+  const synthesisInput = buildGeoKnowledgeSynthesisInputV1({ officialName: f.payload.officialName, aliases: f.payload.aliases, categoryTerms: f.payload.categoryTerms,
+    market: f.payload.market.country, language: f.payload.market.language }, evidence);
+  const narrative = { schemaVersion: "marketing-geo-knowledge-narrative.v1" as const,
+    entity: { definitions: { w25: "Acme is analytics software.", w55: "Acme is analytics software for finance teams.", w120: "Acme is analytics software that helps finance teams research reporting workflows." },
+      audience: { who: "Finance teams researching analytics", notFor: null }, founded: { year: null, team: null, location: null }, disambiguation: null, sourceRefs: ["source:home"] },
+    facts: [], qa: [], comparisons: [], scope: { does: [{ id: "scope:analytics", text: "Supports analytics research workflows.", sourceRefs: ["source:home"] }], doesNot: [], needsHuman: [], misconceptions: [] } };
+  const manifest = buildGeoKnowledgeGenerationInputManifest({ kbId: f.kbId, baseDraftVersion: f.input.baseDraftVersion, baseDraftHash: f.input.baseDraftHash,
+    profileCopyHash: f.input.profileCopyHash, sourceReceiptRefs, knowledgeSynthesisInput: synthesisInput });
+  const result = buildGeoKnowledgeGenerationResultV1({ schemaVersion: "marketing-geo-knowledge-generation-result.v1", generationId, kbId: f.kbId,
+    manifest, evidence, synthesisInput, narrative, generatedAt: "2026-08-31T01:00:00.000Z" });
+  return { evidence, synthesisInput, narrative, manifest, result };
+}
+function candidateV2(f: Fixture, candidateId: string, knowledge: ReturnType<typeof knowledgeFixture>, knowledgeInputHash: string) {
+  const v1 = candidate(f, candidateId, knowledge.result.manifest.sourceReceiptRefs);
+  const knowledgePack = buildGeoKnowledgePack({ generatedAt: knowledge.result.generatedAt, payload: v1.payload, context: v1.context, questionSet: v1.questionSet,
+    evidence: knowledge.evidence, synthesisInput: knowledge.synthesisInput, narrative: knowledge.narrative, narrativeFailureReason: null });
+  const { candidateHash: _candidateHash, schemaVersion: _schemaVersion, ...base } = v1;
+  const prepared = { ...base, schemaVersion: "marketing-geo-prepared-candidate.v2" as const, knowledgePack, knowledgeSynthesisInput: knowledge.synthesisInput };
+  return createGeoPreparedCandidateV2({ ...prepared, knowledgeGeneration: { generationId: knowledge.result.generationId,
+    inputHash: knowledgeInputHash, synthesisInputHash: knowledge.synthesisInput.contentHash, evidenceContentHash: knowledge.synthesisInput.evidenceContentHash,
+    payloadHash: v1.baseDraftHash, questionSetHash: v1.context.questionSetHash, packHash: knowledgePack.contentHash,
+    sourceCatalogueHash: geoV2Digest(knowledgePack.sourceCatalogue), promptVersion: "geo-kb-knowledge-pack.v1" } });
+}
 async function freeze(f: Fixture, id: string, hash: string, client = db) { return (await client.query("select * from public.marketing_geo_freeze_prepared_kb($1,$2,$3,$4)", [f.userId, f.kbId, id, hash])).rows[0]; }
 const transport = { callRpc: async (name: string, params: Record<string, unknown>) => {
   if (!/^marketing_geo_[a-z_]+$/u.test(name)) throw new Error("Unexpected test RPC");
@@ -63,8 +106,142 @@ const transport = { callRpc: async (name: string, params: Record<string, unknown
   const result = await db.query(`select to_jsonb(r) as value from (select * from public.${name}(${values.map((_, i) => `$${i + 1}`).join(",")})) r`, values);
   return { data: result.rows.map(row => row.value), error: null };
 } };
+async function persistedKnowledge(f: Fixture, key: string, sourceReceiptRefs: readonly { readonly receiptId: string; readonly contentHash: string }[] = []) {
+  const generationStore = createGeoKbGenerationStore(transport);
+  const seed = knowledgeFixture(f, randomUUID(), sourceReceiptRefs);
+  expect(geoGenerationInputHash("knowledge_pack", seed.manifest as never)).toBe(geoKnowledgeGenerationInputHash(seed.manifest));
+  const claimed = await generationStore.claim({ userId: f.userId, kbId: f.kbId, kind: "knowledge_pack", idempotencyKey: key,
+    input: seed.manifest as never, inputHash: geoGenerationInputHash("knowledge_pack", seed.manifest as never) });
+  expect(claimed.kind).toBe("claimed");
+  if (claimed.kind !== "claimed") throw new Error("Missing knowledge generation claim");
+  const scope = { userId: f.userId, kbId: f.kbId, generationId: claimed.generation.generationId, claimToken: claimed.claimToken };
+  expect((await generationStore.markDispatched(scope)).kind).toBe("dispatched");
+  const knowledge = knowledgeFixture(f, scope.generationId, sourceReceiptRefs);
+  const finished = await generationStore.finish(scope, { state: "succeeded", result: knowledge.result as never, errorReason: null,
+    attempt: { ...ATTEMPT, attemptedCalls: 1, delivery: "response_received" } });
+  expect(finished).toMatchObject({ kind: "ok", generation: { kind: "knowledge_pack", state: "succeeded", result: knowledge.result } });
+  return { generationStore, scope, knowledge, inputHash: claimed.generation.inputHash };
+}
 
 describe("durable prepared GEO SQL", () => {
+  it("claims, dispatches, finishes and reads one strict knowledge-pack result without creating a candidate", async () => {
+    const f = await fixture(), run = await persistedKnowledge(f, "knowledge_sql_1");
+    expect(await run.generationStore.read({ userId: f.userId, kbId: f.kbId, generationId: run.scope.generationId })).toMatchObject({
+      kind: "ok", generation: { kind: "knowledge_pack", inputHash: run.inputHash, state: "succeeded", result: run.knowledge.result },
+    });
+    expect(await run.generationStore.readByKey({ userId: f.userId, kbId: f.kbId, kind: "knowledge_pack", idempotencyKey: "knowledge_sql_1" })).toMatchObject({
+      kind: "ok", generation: { generationId: run.scope.generationId, state: "succeeded" },
+    });
+    expect((await db.query("select count(*)::int as n from public.marketing_geo_kb_prepared_candidates where generation_id=$1", [run.scope.generationId])).rows[0].n).toBe(0);
+  });
+
+  it.each(["schema", "synthesis_hash", "extra", "missing_receipts", "receipt_type", "duplicate_receipts", "unsorted_receipts"] as const)("rejects malformed knowledge manifest %s at claim without durable rows", async issue => {
+    const f = await fixture(), seed = knowledgeFixture(f, randomUUID());
+    const input: any = structuredClone(seed.manifest);
+    if (issue === "schema") input.schemaVersion = "wrong";
+    if (issue === "synthesis_hash") input.knowledgeSynthesisInput.contentHash = "f".repeat(64);
+    if (issue === "extra") input.debug = true;
+    if (issue === "missing_receipts") delete input.sourceReceiptRefs;
+    if (issue === "receipt_type") input.sourceReceiptRefs = {};
+    if (issue === "duplicate_receipts") input.sourceReceiptRefs = [
+      { receiptId: "33333333-3333-4333-8333-333333333333", contentHash: "a".repeat(64) },
+      { receiptId: "33333333-3333-4333-8333-333333333333", contentHash: "a".repeat(64) },
+    ];
+    if (issue === "unsorted_receipts") input.sourceReceiptRefs = [
+      { receiptId: "44444444-4444-4444-8444-444444444444", contentHash: "b".repeat(64) },
+      { receiptId: "33333333-3333-4333-8333-333333333333", contentHash: "a".repeat(64) },
+    ];
+    const before = (await db.query("select count(*)::int as generations from public.marketing_geo_kb_generations where kb_id=$1", [f.kbId])).rows[0].generations;
+    expect((await claim(f, `invalid_manifest_${issue}`, "knowledge_pack", input)).outcome).toBe("conflict");
+    expect((await db.query("select count(*)::int as generations from public.marketing_geo_kb_generations where kb_id=$1", [f.kbId])).rows[0].generations).toBe(before);
+    expect((await db.query("select count(*)::int as keys from public.marketing_geo_kb_generation_keys where kb_id=$1 and idempotency_key=$2", [f.kbId, `invalid_manifest_${issue}`])).rows[0].keys).toBe(0);
+  });
+
+  it.each(["schema", "hash", "manifest", "foreign"] as const)("rejects a knowledge result with wrong %s and leaves the dispatch open", async issue => {
+    const f = await fixture(), seed = knowledgeFixture(f, randomUUID());
+    const generation = await claim(f, `bad_knowledge_${issue}`, "knowledge_pack", seed.manifest), id = generation.generation.generationId;
+    expect(generation.outcome).toBe("claimed"); await dispatch(f, id, generation.claim_token);
+    const valid = knowledgeFixture(f, id).result;
+    let result: any = valid;
+    if (issue === "schema") { const { contentHash: _hash, ...body } = valid; result = { ...body, schemaVersion: "wrong", contentHash: geoKnowledgeGenerationResultHash({ ...body, schemaVersion: "wrong" }) }; }
+    if (issue === "hash") result = { ...valid, contentHash: "f".repeat(64) };
+    if (issue === "manifest") { const { contentHash: _hash, ...body } = valid; result = buildGeoKnowledgeGenerationResultV1({ ...body, manifest: { ...body.manifest, profileCopyHash: "e".repeat(64) } }); }
+    if (issue === "foreign") { const foreignKb = randomUUID(), { contentHash: _hash, ...body } = valid; result = buildGeoKnowledgeGenerationResultV1({ ...body, kbId: foreignKb, manifest: { ...body.manifest, kbId: foreignKb } }); }
+    expect((await finish(f, id, generation.claim_token, "succeeded", result)).outcome).toBe("invalid_result");
+    expect((await db.query("select state,result from public.marketing_geo_kb_generations where id=$1", [id])).rows[0]).toEqual({ state: "dispatched", result: null });
+    expect((await db.query("select count(*)::int as n from public.marketing_geo_kb_prepared_candidates where generation_id=$1", [id])).rows[0].n).toBe(0);
+  });
+
+  it("marks a paid knowledge result input_stale when its exact draft changes after dispatch", async () => {
+    const f = await fixture(), seed = knowledgeFixture(f, randomUUID());
+    const generation = await claim(f, "stale_knowledge_1", "knowledge_pack", seed.manifest), id = generation.generation.generationId;
+    await dispatch(f, id, generation.claim_token);
+    await db.query("update public.marketing_geo_kb_drafts set draft_version=2 where kb_id=$1", [f.kbId]);
+    const finished = await finish(f, id, generation.claim_token, "succeeded", knowledgeFixture(f, id).result);
+    expect(finished.generation).toMatchObject({ kind: "knowledge_pack", state: "failed", errorReason: "input_stale", result: null, attempt: ATTEMPT });
+  });
+
+  it.each(["https://example.com", "https://EXAMPLE.com", "https://example.com:443", "https://example.com/a/../"])("persists and freezes a V2 candidate for canonical-equivalent target %s", async targetUrl => {
+    const f = await fixture(targetUrl);
+    const report = finalizeGeoKbSourceReportV2({ schemaVersion: "marketing-geo-kb-enrichment.v2", receiptId: randomUUID(), kbId: f.kbId,
+      targetHost: "example.com", draftVersion: 1, draftHash: f.input.baseDraftHash, profileReference: profileCopyReference(f.payload.profileCopy),
+      createdAt: "2026-08-31T00:00:00.000Z", competitors: [], facts: [], gsc: { status: "unavailable", reason: "not_connected",
+        property: null, window: { startDate: "2026-06-01", endDate: "2026-08-29" }, queryCount: null, truncated: null, observedAt: null, queries: [] } });
+    expect(await persistGeoSourceReceiptV2({ userId: f.userId, report }, transport)).toEqual({ kind: "ok" });
+    const sourceReceiptRefs = [{ receiptId: report.receiptId, contentHash: report.contentHash }];
+    const run = await persistedKnowledge(f, "knowledge_for_v2_1", sourceReceiptRefs);
+    const questionInput = { ...f.input, sourceReceiptRefs, knowledgeGeneration: { generationId: run.scope.generationId, inputHash: run.inputHash, resultHash: run.knowledge.result.contentHash } };
+    const generationStore = createGeoKbGenerationStore(transport);
+    const claimed = await generationStore.claim({ userId: f.userId, kbId: f.kbId, kind: "questions", idempotencyKey: "question_v2_1", input: questionInput as never,
+      inputHash: geoGenerationInputHash("questions", questionInput) });
+    expect(claimed.kind).toBe("claimed"); if (claimed.kind !== "claimed") throw new Error("Missing V2 question claim");
+    const scope = { userId: f.userId, kbId: f.kbId, generationId: claimed.generation.generationId, claimToken: claimed.claimToken };
+    expect((await generationStore.markDispatched(scope)).kind).toBe("dispatched");
+    const id = scope.generationId;
+    const prepared = candidateV2(f, id, run.knowledge, run.inputHash);
+    const { contentHash: _synthesisHash, ...synthesisBody } = prepared.knowledgeSynthesisInput;
+    const changedSynthesis = { ...synthesisBody, targetUrl: "https://other.example/" };
+    const forgedSynthesis = { ...changedSynthesis, contentHash: geoV2Digest(changedSynthesis) };
+    const { candidateHash: _preparedHash, ...preparedBody } = prepared;
+    const forgedBody = { ...preparedBody, knowledgeSynthesisInput: forgedSynthesis, knowledgeGeneration: {
+      ...prepared.knowledgeGeneration, synthesisInputHash: forgedSynthesis.contentHash,
+      inputHash: geoKnowledgeGenerationInputHash({ ...run.knowledge.manifest, knowledgeSynthesisInput: forgedSynthesis }),
+    } };
+    expect((await finish(f, id, scope.claimToken, "succeeded", { ...forgedBody, candidateHash: geoV2Digest(forgedBody) })).outcome).toBe("invalid_result");
+    expect(await generationStore.finish(scope, { state: "succeeded", result: prepared as never, errorReason: null,
+      attempt: { ...ATTEMPT, attemptedCalls: 1, delivery: "response_received" } })).toMatchObject({ kind: "ok", generation: { kind: "questions", state: "succeeded", result: prepared } });
+    const preparedStore = createGeoKbPreparedStore({ ...transport, readCandidate: async scope => ({ data: (await db.query("select id,user_id,kb_id,candidate_hash,candidate from public.marketing_geo_kb_prepared_candidates where user_id=$1 and kb_id=$2 and id=$3", [scope.userId, scope.kbId, scope.candidateId])).rows[0] ?? null, error: null }) });
+    expect(await preparedStore.read({ userId: f.userId, kbId: f.kbId, candidateId: id })).toMatchObject({ kind: "ok", value: { schemaVersion: "marketing-geo-prepared-candidate.v2", knowledgePack: prepared.knowledgePack } });
+    const frozen = await preparedStore.freeze({ userId: f.userId, kbId: f.kbId, candidateId: id, candidateHash: prepared.candidateHash });
+    expect(frozen).toMatchObject({ kind: "ok", value: { contentHash: prepared.baseDraftHash, questionSetHash: prepared.context.questionSetHash } });
+    const snapshot = (await db.query("select s.prepared_id,s.payload,s.question_set,p.candidate->'knowledgePack' as knowledge_pack from public.marketing_geo_kb_snapshots s join public.marketing_geo_kb_prepared_candidates p on p.id=s.prepared_id where s.id=$1", [frozen.kind === "ok" ? frozen.value.snapshotId : randomUUID()])).rows[0];
+    expect(snapshot).toEqual({ prepared_id: id, payload: prepared.payload, question_set: prepared.questionSet, knowledge_pack: prepared.knowledgePack });
+  });
+  it("rejects a V2 candidate that attaches receipt-bound knowledge to another question context", async () => {
+    const f = await fixture();
+    const knowledgeRefs = [{ receiptId: "33333333-3333-4333-8333-333333333333", contentHash: "a".repeat(64) }];
+    const run = await persistedKnowledge(f, "knowledge_receipt_scope_1", knowledgeRefs);
+    const questionInput = { ...f.input, sourceReceiptRefs: [], knowledgeGeneration: {
+      generationId: run.scope.generationId, inputHash: run.inputHash, resultHash: run.knowledge.result.contentHash,
+    } };
+    const claimed = await claim(f, "question_receipt_scope_1", "questions", questionInput);
+    expect(claimed.outcome).toBe("claimed");
+    await dispatch(f, claimed.generation.generationId, claimed.claim_token);
+
+    const v1 = candidate(f, claimed.generation.generationId);
+    const knowledgePack = buildGeoKnowledgePack({ generatedAt: run.knowledge.result.generatedAt, payload: v1.payload, context: v1.context,
+      questionSet: v1.questionSet, evidence: run.knowledge.evidence, synthesisInput: run.knowledge.synthesisInput,
+      narrative: run.knowledge.narrative, narrativeFailureReason: null });
+    const { candidateHash: _candidateHash, schemaVersion: _schemaVersion, ...base } = v1;
+    const body = { ...base, schemaVersion: "marketing-geo-prepared-candidate.v2", knowledgePack, knowledgeSynthesisInput: run.knowledge.synthesisInput,
+      knowledgeGeneration: { generationId: run.scope.generationId, inputHash: run.inputHash, synthesisInputHash: run.knowledge.synthesisInput.contentHash,
+        evidenceContentHash: run.knowledge.synthesisInput.evidenceContentHash, payloadHash: v1.baseDraftHash, questionSetHash: v1.context.questionSetHash,
+        packHash: knowledgePack.contentHash, sourceCatalogueHash: geoV2Digest(knowledgePack.sourceCatalogue), promptVersion: "geo-kb-knowledge-pack.v1" } };
+    const forged = { ...body, candidateHash: geoV2Digest(body) };
+
+    expect((await finish(f, claimed.generation.generationId, claimed.claim_token, "succeeded", forged)).outcome).toBe("invalid_result");
+    expect((await db.query("select state,result from public.marketing_geo_kb_generations where id=$1", [claimed.generation.generationId])).rows[0]).toEqual({ state: "dispatched", result: null });
+  });
   it.each(["capture", "time", "hash", "foreign_receipt", "missing", "duplicate"])("refuses self-rehashed competitor evidence with forged %s", async kind => {
     const f = await fixture();
     const report = finalizeGeoKbSourceReportV2({ schemaVersion: "marketing-geo-kb-enrichment.v2", receiptId: randomUUID(), kbId: f.kbId, targetHost: "example.com", draftVersion: 1, draftHash: f.input.baseDraftHash, profileReference: profileCopyReference(f.payload.profileCopy), createdAt: "2026-08-31T00:00:00.000Z",
@@ -296,6 +473,33 @@ describe("durable prepared GEO SQL", () => {
     expect(replay.reused_existing).toBe(true);
     expect((await db.query("select current_frozen_snapshot_id from public.marketing_geo_knowledge_bases where id=$1", [f.kbId])).rows[0].current_frozen_snapshot_id).toBe(latest.snapshot_id);
   });
+  it("installs exact kind and V2 prepared-candidate cap constraints", async () => {
+    const definitions = Object.fromEntries((await db.query(`select conname,pg_get_constraintdef(oid) as definition from pg_constraint
+      where conrelid in ('public.marketing_geo_kb_generations'::regclass,'public.marketing_geo_kb_generation_keys'::regclass,'public.marketing_geo_kb_prepared_candidates'::regclass)`)).rows
+      .map(row => [row.conname, row.definition]));
+    expect(definitions.marketing_geo_kb_generations_kind_check).toContain("knowledge_pack");
+    expect(definitions.marketing_geo_kb_generation_keys_kind_check).toContain("knowledge_pack");
+    expect(definitions.marketing_geo_kb_generations_result_check).toContain("2359296");
+    expect(definitions.marketing_geo_kb_generations_result_check).toContain("2097152");
+    expect(definitions.marketing_geo_kb_prepared_candidates_candidate_check).toContain(String(GEO_PREPARED_CANDIDATE_V2_MAX_BYTES));
+    expect(definitions.marketing_geo_kb_prepared_candidates_candidate_check).toContain("jsonb_typeof");
+  });
+  it("rejects result and candidate objects with no schema discriminator at the table boundary", async () => {
+    const f = await fixture(), claimed = await claim(f);
+    const rejectsCheck = async (operation: () => Promise<unknown>) => {
+      await db.query("begin");
+      try { await expect(operation()).rejects.toThrow(/check constraint/iu); }
+      finally { await db.query("rollback"); }
+    };
+    await rejectsCheck(() => db.query(`insert into public.marketing_geo_kb_generations
+        (id,user_id,kb_id,kind,input_hash,input,state,lease_expires_at,result,attempt)
+        values($1,$2,$3,'roles',$4,'{}'::jsonb,'succeeded',now(),'{}'::jsonb,$5::jsonb)`,
+      [randomUUID(), f.userId, f.kbId, "f".repeat(64), JSON.stringify(ATTEMPT)]));
+    await rejectsCheck(() => db.query(`insert into public.marketing_geo_kb_prepared_candidates
+        (id,user_id,kb_id,generation_id,candidate_hash,candidate)
+        values($1,$2,$3,$4,$5,'{}'::jsonb)`,
+      [randomUUID(), f.userId, f.kbId, claimed.generation.generationId, "e".repeat(64)]));
+  });
   it("denies browser RPC/direct table writes and keeps candidates/terminal generations immutable", async () => {
     const f = await fixture(), generation = await claim(f), id = generation.generation.generationId;
     await dispatch(f, id, generation.claim_token);
@@ -311,6 +515,31 @@ describe("durable prepared GEO SQL", () => {
       expect(config.prosecdef).toBe(true);
       expect(config.proconfig).toEqual(expect.arrayContaining(['search_path=""', 'TimeZone=UTC']));
     }
+    for (const signature of ["marketing_geo_knowledge_input_valid(uuid,text,jsonb)", "marketing_geo_knowledge_result_valid(uuid,uuid,text,jsonb,jsonb)", "marketing_geo_candidate_valid(uuid,uuid,jsonb)"]) {
+      expect((await db.query("select has_function_privilege('anon',$1,'execute') as anon,has_function_privilege('authenticated',$1,'execute') as browser,has_function_privilege('service_role',$1,'execute') as service", [`public.${signature}`])).rows[0]).toEqual({ anon: false, browser: false, service: false });
+      const config = (await db.query("select proconfig from pg_proc where oid=$1::regprocedure", [`public.${signature}`])).rows[0];
+      expect(config.proconfig).toEqual(expect.arrayContaining(['search_path=""', 'TimeZone=UTC']));
+    }
+    const protectedTables = ["marketing_geo_kb_generations", "marketing_geo_kb_generation_keys", "marketing_geo_kb_prepared_candidates", "marketing_geo_kb_snapshots"];
+    const security = (await db.query(`select c.relname,c.relrowsecurity,count(p.policyname)::int as policies
+      from pg_class c join pg_namespace n on n.oid=c.relnamespace
+      left join pg_policies p on p.schemaname=n.nspname and p.tablename=c.relname
+      where n.nspname='public' and c.relname=any($1::text[])
+      group by c.relname,c.relrowsecurity order by c.relname`, [protectedTables])).rows;
+    expect(security).toHaveLength(protectedTables.length);
+    expect(security.every(row => row.relrowsecurity === true && row.policies === 0)).toBe(true);
+
+    const asRole = async (role: "anon" | "authenticated" | "service_role", operation: () => Promise<unknown>) => {
+      await db.query("begin");
+      try { await db.query(`set local role ${role}`); await operation(); }
+      finally { await db.query("rollback"); }
+    };
+    for (const role of ["anon", "authenticated"] as const) {
+      await asRole(role, async () => expect(db.query("select count(*) from public.marketing_geo_kb_generations")).rejects.toThrow(/permission denied/iu));
+      await asRole(role, async () => expect(db.query("select * from public.marketing_geo_read_generation($1,$2,$3,null)", [f.userId, f.kbId, id])).rejects.toThrow(/permission denied/iu));
+    }
+    await asRole("service_role", async () => expect(db.query("select count(*) from public.marketing_geo_kb_generations")).resolves.toMatchObject({ rowCount: 1 }));
+    await asRole("service_role", async () => expect(db.query("insert into public.marketing_geo_kb_generations(id,user_id,kb_id,kind,input_hash,state) values($1,$2,$3,'roles',$4,'claimed')", [randomUUID(), f.userId, f.kbId, "a".repeat(64)])).rejects.toThrow(/permission denied/iu));
   });
   it("replays the forward migration without changing terminal records/candidates or legacy functions", async () => {
     const before = (await db.query("select to_jsonb(g) as row from public.marketing_geo_kb_generations g order by id")).rows;
@@ -320,5 +549,16 @@ describe("durable prepared GEO SQL", () => {
     await db.query(migration); await db.query(migration);
     expect((await db.query("select to_jsonb(g) as row from public.marketing_geo_kb_generations g order by id")).rows).toEqual(before);
     expect((await db.query("select value from app.geo_prepared_schema_sentinel")).rows).toEqual([{ value: "untouched" }]);
+  });
+  it("replays the knowledge companion migration twice and rolls it back without mutating durable rows", async () => {
+    const migration = readFileSync(new URL("../../../supabase/migrations/20260905155607_geo_knowledge_pack_companion.sql", import.meta.url), "utf8");
+    const beforeGenerations = (await db.query("select to_jsonb(g) as row from public.marketing_geo_kb_generations g order by id")).rows;
+    const beforeCandidates = (await db.query("select to_jsonb(c) as row from public.marketing_geo_kb_prepared_candidates c order by id")).rows;
+    await db.query("begin"); await db.query(migration); await db.query("rollback");
+    expect((await db.query("select to_jsonb(g) as row from public.marketing_geo_kb_generations g order by id")).rows).toEqual(beforeGenerations);
+    expect((await db.query("select to_jsonb(c) as row from public.marketing_geo_kb_prepared_candidates c order by id")).rows).toEqual(beforeCandidates);
+    await db.query(migration); await db.query(migration);
+    expect((await db.query("select to_jsonb(g) as row from public.marketing_geo_kb_generations g order by id")).rows).toEqual(beforeGenerations);
+    expect((await db.query("select to_jsonb(c) as row from public.marketing_geo_kb_prepared_candidates c order by id")).rows).toEqual(beforeCandidates);
   });
 });

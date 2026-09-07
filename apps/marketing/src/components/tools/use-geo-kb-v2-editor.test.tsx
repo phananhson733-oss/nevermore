@@ -10,6 +10,11 @@ import { editorFixture, sourceFixture } from "./geo-kb-v2-ui.test-fixtures.ts";
 import { createGeoRoleProposal } from "../../lib/geo-tools/kb-role-proposal.ts";
 import { ROLE_SYNTHESIS_INPUT, ROLE_SYNTHESIS_OUTPUT } from "../../lib/geo-tools/kb-synthesis-fixtures.ts";
 import { geoV2Digest } from "../../lib/geo-tools/kb-v2-digest.ts";
+import { collectGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidenceReadResource } from "../../lib/geo-tools/kb-knowledge-evidence.ts";
+import { buildGeoKnowledgeSynthesisInputV1 } from "../../lib/geo-tools/kb-knowledge-synthesis-contract.ts";
+import { buildGeoKnowledgeGenerationResultV1 } from "../../lib/geo-tools/kb-knowledge-generation-contract.ts";
+import { buildGeoKnowledgeGenerationInputManifest, createGeoPreparedCandidateV2, geoKnowledgeGenerationInputHash } from "../../lib/geo-tools/kb-prepared-contract.ts";
+import { buildGeoKnowledgePackV1 } from "../../lib/geo-tools/kb-knowledge-pack-contract.ts";
 let host: HTMLDivElement, root: Root, editor: ReturnType<typeof useGeoKbV2Editor>;
 beforeEach(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; host = document.createElement("div"); document.body.append(host); root = createRoot(host); window.sessionStorage.clear(); vi.stubGlobal("fetch", vi.fn()); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
@@ -17,6 +22,55 @@ function Harness({ view, revision }: { readonly view: GeoKbEditorViewV2; readonl
 async function mount(view = editorFixture(), revision = 1) { await act(async () => root.render(<Harness view={view} revision={revision} />)); }
 function later<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
 const response = (data: unknown) => Response.json({ data });
+const KNOWLEDGE_GENERATION_ID = "55555555-5555-4555-8555-555555555555";
+const RECEIVED_ATTEMPT = { attemptedCalls: 1 as const, delivery: "response_received" as const, modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 };
+async function knowledgeArtifacts(view: GeoKbEditorViewV2) {
+  const targetUrl = new URL(view.payload.targetUrl).toString();
+  const observedAt = "2026-09-04T07:11:15.461Z";
+  const readResource: GeoKnowledgeEvidenceReadResource = async ({ url }) => {
+    if (url === targetUrl) return { kind: "ok", url, contentType: "text/html", observedAt, body: "<html lang=\"en\"><body><h1>Acme analytics</h1><p>Acme is analytics software for finance teams.</p></body></html>" };
+    if (url === "https://rival.example/") return { kind: "ok", url, contentType: "text/html", observedAt, body: "<html lang=\"en\"><body><h1>Rival analytics</h1></body></html>" };
+    if (url.endsWith("/robots.txt")) return { kind: "ok", url, contentType: "text/plain", observedAt, body: "User-agent: *\nAllow: /" };
+    if (url.endsWith("/sitemap.xml")) return { kind: "ok", url, contentType: "application/xml", observedAt, body: `<urlset><url><loc>${targetUrl}</loc></url></urlset>` };
+    if (url.endsWith("/llms.txt")) return { kind: "ok", url, contentType: "text/plain", observedAt, body: "# Acme\nAnalytics software for finance teams." };
+    return { kind: "unavailable", url, reason: "not_found" };
+  };
+  const confirmedCompetitors = view.payload.competitors.filter(competitor => competitor.confirmed).map(competitor => ({ key: competitor.domain, name: competitor.brandName, confirmed: true }));
+  const evidence = await collectGeoKnowledgeEvidenceV1({ targetUrl, competitors: confirmedCompetitors }, { readResource, now: () => new Date("2026-09-04T07:12:00.000Z") });
+  const synthesisInput = buildGeoKnowledgeSynthesisInputV1({ officialName: view.payload.officialName, aliases: view.payload.aliases, categoryTerms: view.payload.categoryTerms,
+    market: view.payload.market.country, language: view.payload.market.language }, evidence);
+  const own = synthesisInput.sourceCatalogue.find(source => source.kind === "own_page")!;
+  const narrative = { schemaVersion: "marketing-geo-knowledge-narrative.v1" as const,
+    entity: { definitions: { w25: "Acme is analytics software.", w55: "Acme is analytics software for finance teams.", w120: "Acme is analytics software that helps finance teams research reporting workflows." }, audience: { who: "Finance teams researching analytics", notFor: null }, founded: { year: null, team: null, location: null }, disambiguation: null, sourceRefs: [own.id] },
+    facts: [], qa: [], comparisons: [], scope: { does: [{ id: "scope:analytics", text: "Supports analytics research workflows.", sourceRefs: [own.id] }], doesNot: [], needsHuman: [], misconceptions: [] } };
+  const current = view.prepared!;
+  const manifest = buildGeoKnowledgeGenerationInputManifest({ kbId: view.kbId, baseDraftVersion: current.baseDraftVersion, baseDraftHash: current.baseDraftHash,
+    profileCopyHash: current.profileCopyHash, sourceReceiptRefs: current.sourceReceiptRefs, knowledgeSynthesisInput: synthesisInput });
+  const generationResult = buildGeoKnowledgeGenerationResultV1({ schemaVersion: "marketing-geo-knowledge-generation-result.v1", generationId: KNOWLEDGE_GENERATION_ID,
+    kbId: view.kbId, manifest, evidence, synthesisInput, narrative, generatedAt: "2026-09-04T07:13:00.000Z" });
+  const knowledgePack = buildGeoKnowledgePackV1({ schemaVersion: "marketing-geo-knowledge-pack.v1",
+    meta: { generatedAt: generationResult.generatedAt, lastScanAt: evidence.collectedAt, market: view.payload.market.country, language: view.payload.market.language, counts: { facts: 0, qa: 0, comparisons: 0 } },
+    entity: { status: "unavailable", reason: "generation_unavailable" }, facts: { status: "unavailable", reason: "generation_unavailable" },
+    qa: { status: "unavailable", reason: "generation_unavailable" }, comparisons: { status: "unavailable", reason: "insufficient_evidence" },
+    scope: { status: "unavailable", reason: "generation_unavailable" }, evidence: { status: "unavailable", reason: "insufficient_evidence" },
+    machine: { status: "unavailable", reason: "not_collected" }, coverage: { status: "unavailable", reason: "insufficient_evidence" }, sourceCatalogue: evidence.sourceCatalogue });
+  const { candidateHash: _candidateHash, schemaVersion: _schemaVersion, ...common } = current;
+  const base = { ...common, schemaVersion: "marketing-geo-prepared-candidate.v2" as const, knowledgePack, knowledgeSynthesisInput: synthesisInput };
+  const prepared = createGeoPreparedCandidateV2({ ...base, knowledgeGeneration: { generationId: KNOWLEDGE_GENERATION_ID,
+    inputHash: geoKnowledgeGenerationInputHash(base), synthesisInputHash: synthesisInput.contentHash, evidenceContentHash: synthesisInput.evidenceContentHash,
+    payloadHash: current.baseDraftHash, questionSetHash: current.context.questionSetHash, packHash: knowledgePack.contentHash,
+    sourceCatalogueHash: geoV2Digest(knowledgePack.sourceCatalogue), promptVersion: "geo-kb-knowledge-pack.v1" } });
+  return { generationResult, prepared };
+}
+function knowledgeSucceeded(view: GeoKbEditorViewV2, artifacts: Awaited<ReturnType<typeof knowledgeArtifacts>>) {
+  return response({ generation: { generationId: KNOWLEDGE_GENERATION_ID, kbId: view.kbId, kind: "knowledge_pack", inputHash: artifacts.prepared.knowledgeGeneration.inputHash,
+    state: "succeeded", result: artifacts.generationResult, errorReason: null, attempt: RECEIVED_ATTEMPT }, reused: false });
+}
+function knowledgeResultWithSources(artifacts: Awaited<ReturnType<typeof knowledgeArtifacts>>, sourceReceiptRefs: readonly { readonly receiptId: string; readonly contentHash: string }[]) {
+  const manifest = buildGeoKnowledgeGenerationInputManifest({ ...artifacts.generationResult.manifest, sourceReceiptRefs });
+  const { contentHash: _contentHash, ...body } = artifacts.generationResult;
+  return { result: buildGeoKnowledgeGenerationResultV1({ ...body, manifest }), inputHash: geoKnowledgeGenerationInputHash(manifest) };
+}
 function unsupportedLanguageView() {
   const base = editorFixture();
   const profile = { ...base.payload.profileCopy.profile, locale: "zh-CN" };
@@ -48,10 +102,28 @@ it("Profile A-B-A transitions invalidate the retained candidate and reviewed cop
   await mount(view, 2); await mount(view, 1);
   expect(editor.copyStale).toBe(true); expect(editor.candidateStale).toBe(true); expect(editor.view.prepared?.candidateId).toBe(V2_CANDIDATE_ID); expect(editor.canFreeze).toBe(false);
 });
-it("unsaved data cannot dispatch sources or either model operation and registers unload protection", async () => {
+it("unsaved data cannot dispatch sources or any model operation and registers unload protection", async () => {
   await mount(); await act(async () => editor.change({ ...editor.payload, officialName: "Unsaved" }));
-  await act(async () => { await editor.generate("roles"); await editor.generate("questions"); await editor.refreshSources(); });
+  await act(async () => { await editor.generate("roles"); await editor.generate("knowledge_pack"); await editor.generate("questions"); await editor.refreshSources(); });
   expect(fetch).not.toHaveBeenCalled(); const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); expect(event.defaultPrevented).toBe(true);
+});
+it("restores a three-kind generation map after mount without calling the server", async () => {
+  await mount();
+
+  expect(editor.pending).toEqual({ roles: null, knowledge_pack: null, questions: null });
+  expect(fetch).not.toHaveBeenCalled();
+});
+it("does not generate a knowledge pack before both review acceptance and a selected source", async () => {
+  const base = editorFixture();
+  await mount({ ...base, sourceReceipt: null });
+  await act(async () => editor.generate("knowledge_pack"));
+  expect(fetch).not.toHaveBeenCalled();
+
+  const sourceReceipt = sourceFixture(base);
+  const pending = { ...base, sourceReceipt, payload: { ...base.payload, facts: base.payload.facts.map(fact => ({ ...fact, review: "pending" as const })) } };
+  await act(async () => root.unmount()); root = createRoot(host); await mount(pending);
+  await act(async () => editor.generate("knowledge_pack"));
+  expect(fetch).not.toHaveBeenCalled();
 });
 it("refuses an unsupported one-gesture language before any request", async () => {
   await mount(unsupportedLanguageView());
@@ -78,7 +150,7 @@ it("preflights the unsupported language that the Profile build would apply", asy
 it("refuses every direct generation action for an unsupported language", async () => {
   await mount(unsupportedLanguageView());
 
-  for (const kind of ["roles", "questions"] as const) {
+  for (const kind of ["roles", "knowledge_pack", "questions"] as const) {
     for (const action of ["normal", "new_input", "resend_same"] as const) {
       await act(async () => editor.generate(kind, action));
     }
@@ -86,6 +158,201 @@ it("refuses every direct generation action for an unsupported language", async (
 
   expect(fetch).not.toHaveBeenCalled();
   expect(editor.status).toEqual({ kind: "error", code: "unsupported_language" });
+});
+it("generates one knowledge pack before questions and binds its exact generation id to preparation", async () => {
+  const base = editorFixture(), sourceReceipt = sourceFixture(base), artifacts = await knowledgeArtifacts(base);
+  const view = { ...base, sourceReceipt };
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(response({ generation: { generationId: KNOWLEDGE_GENERATION_ID, kbId: view.kbId, kind: "knowledge_pack", inputHash: artifacts.prepared.knowledgeGeneration.inputHash,
+      state: "succeeded", result: artifacts.generationResult, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false }))
+    .mockResolvedValueOnce(response({ generation: { generationId: artifacts.prepared.candidateId, kbId: view.kbId, kind: "questions", inputHash: "f".repeat(64),
+      state: "succeeded", result: artifacts.prepared, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false }))
+    .mockResolvedValueOnce(response({ snapshotId: artifacts.prepared.candidateId, revision: 2, frozenAt: "2026-09-04T07:14:00.000Z", contentHash: artifacts.prepared.candidateHash,
+      questionSetHash: artifacts.prepared.context.questionSetHash, questionCount: artifacts.prepared.questionSet.questions.length, reusedExisting: false }))
+    .mockResolvedValueOnce(response(view));
+  await mount(view);
+
+  await act(async () => editor.confirmAll());
+
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toEqual([
+    "/api/tools/geo-knowledge-base/v2/knowledge",
+    "/api/tools/geo-knowledge-base/v2/prepare",
+    "/api/tools/geo-knowledge-base/v2/freeze",
+    "/api/tools/geo-knowledge-base/v2/load",
+  ]);
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body))).toMatchObject({ knowledgeGenerationId: KNOWLEDGE_GENERATION_ID });
+  expect(vi.mocked(fetch).mock.calls.filter(call => String(call[0]).endsWith("/knowledge"))).toHaveLength(1);
+  expect(editor.confirm?.stoppedAt).toBeNull();
+});
+it("reuses a loader-recovered knowledge generation only when its full current identity matches", async () => {
+  const base = editorFixture(), sourceReceipt = sourceFixture(base), artifacts = await knowledgeArtifacts(base);
+  const sourceReceiptRefs = [{ receiptId: sourceReceipt.receiptId, contentHash: sourceReceipt.contentHash }];
+  const bound = knowledgeResultWithSources(artifacts, sourceReceiptRefs);
+  const recovered = { generationId: KNOWLEDGE_GENERATION_ID, kbId: base.kbId, kind: "knowledge_pack" as const,
+    inputHash: bound.inputHash, state: "succeeded" as const, result: bound.result, errorReason: null, attempt: RECEIVED_ATTEMPT };
+  const view = { ...base, sourceReceipt, generations: { ...base.generations, knowledge_pack: recovered } };
+  const loaded = parseGeoKbEditorViewV2(view);
+  expect(loaded).not.toBeNull();
+  if (loaded === null) throw new Error("Expected a browser-safe recovered knowledge generation");
+  vi.mocked(fetch).mockResolvedValueOnce(response({ generation: { generationId: artifacts.prepared.candidateId, kbId: base.kbId, kind: "questions", inputHash: "f".repeat(64),
+    state: "dispatched", result: null, errorReason: null, attempt: null }, reused: false }));
+  await mount(loaded);
+
+  await act(async () => editor.confirmAll());
+
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toEqual(["/api/tools/geo-knowledge-base/v2/prepare"]);
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ knowledgeGenerationId: KNOWLEDGE_GENERATION_ID, sourceReceiptRefs });
+  expect(editor.confirm?.stoppedAt).toBe("preparePending");
+});
+it("resumes an unfinished one-click run after knowledge recovery without restarting roles or knowledge", async () => {
+  const base = editorFixture(), sourceReceipt = sourceFixture(base), artifacts = await knowledgeArtifacts(base);
+  const sourceReceiptRefs = [{ receiptId: sourceReceipt.receiptId, contentHash: sourceReceipt.contentHash }];
+  const bound = knowledgeResultWithSources(artifacts, sourceReceiptRefs);
+  const recovered = { generationId: KNOWLEDGE_GENERATION_ID, kbId: base.kbId, kind: "knowledge_pack" as const,
+    inputHash: bound.inputHash, state: "succeeded" as const, result: bound.result, errorReason: null, attempt: RECEIVED_ATTEMPT };
+  const view = { ...base, frozen: null, sourceReceipt, generations: { ...base.generations, knowledge_pack: recovered } };
+  vi.mocked(fetch).mockResolvedValueOnce(response({ generation: { generationId: artifacts.prepared.candidateId, kbId: base.kbId, kind: "questions", inputHash: "f".repeat(64),
+    state: "dispatched", result: null, errorReason: null, attempt: null }, reused: false }));
+  await mount(view);
+
+  await act(async () => editor.generateAll());
+
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toEqual(["/api/tools/geo-knowledge-base/v2/prepare"]);
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ knowledgeGenerationId: KNOWLEDGE_GENERATION_ID });
+  expect(editor.confirm?.stoppedAt).toBe("preparePending");
+});
+it("reuses a loader-recovered knowledge generation that also binds an accepted fact's supporting receipt", async () => {
+  const base = editorFixture(), sourceReceipt = sourceFixture(base), artifacts = await knowledgeArtifacts(base);
+  const supportReceiptId = "22222222-2222-4222-8222-222222222222";
+  const payload = { ...base.payload, facts: base.payload.facts.map((fact, index) => index === 0
+    ? { ...fact, supportRef: { receiptId: supportReceiptId, evidenceId: "F1" } }
+    : fact) };
+  const sourceReceiptRefs = [
+    { receiptId: supportReceiptId, contentHash: "a".repeat(64) },
+    { receiptId: sourceReceipt.receiptId, contentHash: sourceReceipt.contentHash },
+  ];
+  const bound = knowledgeResultWithSources(artifacts, sourceReceiptRefs);
+  const recovered = { generationId: KNOWLEDGE_GENERATION_ID, kbId: base.kbId, kind: "knowledge_pack" as const,
+    inputHash: bound.inputHash, state: "succeeded" as const, result: bound.result, errorReason: null, attempt: RECEIVED_ATTEMPT };
+  const view = { ...base, payload, sourceReceipt, generations: { ...base.generations, knowledge_pack: recovered } };
+  vi.mocked(fetch).mockResolvedValueOnce(response({ generation: { generationId: artifacts.prepared.candidateId, kbId: base.kbId, kind: "questions", inputHash: "f".repeat(64),
+    state: "dispatched", result: null, errorReason: null, attempt: null }, reused: false }));
+  await mount(view);
+
+  await act(async () => editor.confirmAll());
+
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toEqual(["/api/tools/geo-knowledge-base/v2/prepare"]);
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({ knowledgeGenerationId: KNOWLEDGE_GENERATION_ID });
+  expect(editor.confirm?.stoppedAt).toBe("preparePending");
+});
+it("starts a new knowledge input when a loader-recovered success names different source receipts", async () => {
+  const base = editorFixture(), sourceReceipt = sourceFixture(base), artifacts = await knowledgeArtifacts(base);
+  const bound = knowledgeResultWithSources(artifacts, [{ receiptId: "66666666-6666-4666-8666-666666666666", contentHash: "f".repeat(64) }]);
+  const recovered = { generationId: KNOWLEDGE_GENERATION_ID, kbId: base.kbId, kind: "knowledge_pack" as const,
+    inputHash: bound.inputHash, state: "succeeded" as const, result: bound.result, errorReason: null, attempt: RECEIVED_ATTEMPT };
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "model_unavailable" } }, { status: 503 }));
+  const loaded = parseGeoKbEditorViewV2({ ...base, sourceReceipt, generations: { ...base.generations, knowledge_pack: recovered } });
+  expect(loaded).not.toBeNull();
+  if (loaded === null) throw new Error("Expected a browser-safe stale knowledge generation");
+  await mount(loaded);
+
+  await act(async () => editor.confirmAll());
+
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toEqual(["/api/tools/geo-knowledge-base/v2/knowledge"]);
+  expect(editor.confirm?.stoppedAt).toBe("prepareFailed");
+});
+it("stops before questions and freeze when the knowledge request is refused", async () => {
+  const base = editorFixture(), view = { ...base, sourceReceipt: sourceFixture(base) };
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "model_unavailable" } }, { status: 503 }));
+  await mount(view);
+
+  await act(async () => editor.confirmAll());
+
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toEqual(["/api/tools/geo-knowledge-base/v2/knowledge"]);
+  expect(editor.confirm?.stoppedAt).toBe("prepareFailed");
+  expect(editor.view.generations.questions).toBeNull();
+});
+it("stops before questions and freeze when the stored knowledge generation failed", async () => {
+  const base = editorFixture(), view = { ...base, sourceReceipt: sourceFixture(base) };
+  vi.mocked(fetch).mockResolvedValueOnce(response({ generation: { generationId: KNOWLEDGE_GENERATION_ID, kbId: view.kbId, kind: "knowledge_pack", inputHash: "b".repeat(64),
+    state: "failed", result: null, errorReason: "provider_rejected", attempt: RECEIVED_ATTEMPT }, reused: false }));
+  await mount(view);
+
+  await act(async () => editor.confirmAll());
+
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toEqual(["/api/tools/geo-knowledge-base/v2/knowledge"]);
+  expect(editor.confirm?.stoppedAt).toBe("prepareFailed");
+  expect(editor.view.generations.questions).toBeNull();
+});
+it("does not freeze a question result that omits the selected knowledge generation", async () => {
+  const base = editorFixture(), view = { ...base, sourceReceipt: sourceFixture(base) }, artifacts = await knowledgeArtifacts(base);
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(knowledgeSucceeded(view, artifacts))
+    // A legacy V1 candidate is valid in isolation, but it is not admissible
+    // after this run selected an exact knowledge generation.
+    .mockResolvedValueOnce(response({ generation: { generationId: base.prepared!.candidateId, kbId: view.kbId, kind: "questions", inputHash: "f".repeat(64),
+      state: "succeeded", result: base.prepared, errorReason: null, attempt: RECEIVED_ATTEMPT }, reused: false }));
+  await mount(view);
+
+  await act(async () => editor.confirmAll());
+
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toEqual([
+    "/api/tools/geo-knowledge-base/v2/knowledge",
+    "/api/tools/geo-knowledge-base/v2/prepare",
+  ]);
+  expect(editor.confirm?.stoppedAt).toBe("preparePending");
+  expect(vi.mocked(fetch).mock.calls.some(call => String(call[0]).endsWith("/freeze"))).toBe(false);
+});
+it("does not freeze when the question request is refused after knowledge succeeds", async () => {
+  const base = editorFixture(), view = { ...base, sourceReceipt: sourceFixture(base) }, artifacts = await knowledgeArtifacts(base);
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(knowledgeSucceeded(view, artifacts))
+    .mockResolvedValueOnce(Response.json({ error: { code: "input_stale" } }, { status: 409 }));
+  await mount(view);
+
+  await act(async () => editor.confirmAll());
+
+  expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toEqual([
+    "/api/tools/geo-knowledge-base/v2/knowledge",
+    "/api/tools/geo-knowledge-base/v2/prepare",
+  ]);
+  expect(editor.confirm?.stoppedAt).toBe("prepareFailed");
+  expect(vi.mocked(fetch).mock.calls.some(call => String(call[0]).endsWith("/freeze"))).toBe(false);
+});
+it("keeps an uncertain knowledge delivery recoverable and never silently retries it or prepares questions", async () => {
+  const base = editorFixture(), sourceReceipt = sourceFixture(base);
+  const uncertain = { generationId: KNOWLEDGE_GENERATION_ID, kbId: base.kbId, kind: "knowledge_pack", inputHash: "b".repeat(64), state: "uncertain", result: null,
+    errorReason: "outcome_unknown", attempt: { attemptedCalls: 1, delivery: "outcome_unknown", modelRequested: "fixture", inputTokens: null, outputTokens: null, requestCount: null } };
+  vi.mocked(fetch).mockResolvedValueOnce(response({ generation: uncertain, reused: false }));
+  await mount({ ...base, sourceReceipt });
+
+  await act(async () => editor.confirmAll());
+  await act(async () => editor.confirmAll());
+
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toContain("/v2/knowledge");
+  expect(editor.pending.knowledge_pack).toMatchObject({ generationId: KNOWLEDGE_GENERATION_ID, knownState: "uncertain" });
+  expect(editor.generationAction("knowledge_pack")).toBe("read_only");
+  expect(editor.confirm?.stoppedAt).toBe("prepare");
+});
+it("recovers the exact knowledge-pack idempotency key after remount and reads instead of redispatching", async () => {
+  const base = editorFixture(), sourceReceipt = sourceFixture(base);
+  vi.mocked(fetch).mockRejectedValueOnce(new Error("ambiguous delivery"));
+  await mount({ ...base, sourceReceipt });
+  await act(async () => editor.generate("knowledge_pack"));
+  const pending = editor.pending.knowledge_pack!;
+  expect(pending.idempotencyKey).toBeTruthy();
+
+  await act(async () => root.unmount()); root = createRoot(host); await mount({ ...base, sourceReceipt });
+  expect(editor.pending.knowledge_pack).toMatchObject({ idempotencyKey: pending.idempotencyKey, generationId: null });
+  expect(fetch).toHaveBeenCalledTimes(1);
+  const uncertain = { generationId: KNOWLEDGE_GENERATION_ID, kbId: base.kbId, kind: "knowledge_pack", inputHash: "b".repeat(64), state: "uncertain", result: null,
+    errorReason: "outcome_unknown", attempt: { attemptedCalls: 1, delivery: "outcome_unknown", modelRequested: "fixture", inputTokens: null, outputTokens: null, requestCount: null } };
+  vi.mocked(fetch).mockResolvedValueOnce(response({ generation: uncertain }));
+  await act(async () => editor.readGeneration("knowledge_pack"));
+
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body))).toEqual({ kbId: base.kbId, kind: "knowledge_pack", idempotencyKey: pending.idempotencyKey });
+  expect(vi.mocked(fetch).mock.calls.filter(call => String(call[0]).endsWith("/knowledge"))).toHaveLength(1);
 });
 it.each(["buildFromProfile", "confirmAll"] as const)("refuses direct %s work for an unsupported language", async action => {
   await mount(unsupportedLanguageView());
@@ -207,25 +474,29 @@ it("derives, evidences, generates, accepts and freezes a whole knowledge base in
     { ...capture, evidenceId: "C2", domain: "conflict.example", sourceUrl: "https://conflict.example/", signals: [signal("conflict.example", "One name"), signal("conflict.example", "Another name")], status: "conflict" as const, reason: "identity_conflict" as const, brandName: null, aliases: [], method: "conflicting_signals" as const },
     { ...capture, evidenceId: "C3", domain: "down.example", sourceUrl: "https://down.example/", signals: [], status: "unavailable" as const, reason: "fetch_failed" as const, brandName: null, aliases: [], method: null, source: null, observedAt: null, bodyHash: null },
   ] };
+  const artifacts = await knowledgeArtifacts(base);
   vi.mocked(fetch)
     .mockResolvedValueOnce(saved(2, "c".repeat(64)))
     .mockResolvedValueOnce(response(receipt))
     .mockResolvedValueOnce(response({ generation: { generationId: id, kbId: view.kbId, kind: "roles", inputHash: "d".repeat(64), state: "succeeded", result: proposal, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false }))
     .mockResolvedValueOnce(saved(3, "e".repeat(64)))
-    .mockResolvedValueOnce(response({ generation: { generationId: base.prepared!.candidateId, kbId: view.kbId, kind: "questions", inputHash: "f".repeat(64), state: "succeeded", result: base.prepared, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false }))
-    .mockResolvedValueOnce(response({ snapshotId: base.prepared!.candidateId, revision: 1, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: base.prepared!.candidateHash, questionSetHash: "a".repeat(64), questionCount: 1, reusedExisting: false }))
+    .mockResolvedValueOnce(response({ generation: { generationId: KNOWLEDGE_GENERATION_ID, kbId: view.kbId, kind: "knowledge_pack", inputHash: artifacts.prepared.knowledgeGeneration.inputHash, state: "succeeded", result: artifacts.generationResult, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false }))
+    .mockResolvedValueOnce(response({ generation: { generationId: artifacts.prepared.candidateId, kbId: view.kbId, kind: "questions", inputHash: "f".repeat(64), state: "succeeded", result: artifacts.prepared, errorReason: null, attempt: { attemptedCalls: 1, delivery: "response_received", modelRequested: "fixture", inputTokens: 1, outputTokens: 1, requestCount: 1 } }, reused: false }))
+    .mockResolvedValueOnce(response({ snapshotId: artifacts.prepared.candidateId, revision: 1, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: artifacts.prepared.candidateHash, questionSetHash: "a".repeat(64), questionCount: 1, reusedExisting: false }))
     .mockResolvedValueOnce(response(base));
   await mount(view);
 
   await act(async () => editor.generateAll());
 
   // Every step of the workbench, in order, without a person pressing any of
-  // them: save, evidence, roles, save the adopted roles, question set, freeze.
+  // them: save, evidence, roles, save the adopted roles, knowledge pack,
+  // question set, freeze.
   expect(vi.mocked(fetch).mock.calls.map(call => String(call[0]))).toEqual([
     "/api/tools/geo-knowledge-base/v2/draft",
     "/api/tools/geo-knowledge-base/v2/sources",
     "/api/tools/geo-knowledge-base/v2/roles",
     "/api/tools/geo-knowledge-base/v2/draft",
+    "/api/tools/geo-knowledge-base/v2/knowledge",
     "/api/tools/geo-knowledge-base/v2/prepare",
     "/api/tools/geo-knowledge-base/v2/freeze",
     "/api/tools/geo-knowledge-base/v2/load",

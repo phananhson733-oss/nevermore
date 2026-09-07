@@ -16,6 +16,7 @@ import { readTrafficDropSession, resolveTrafficDropGrant } from "../tools/traffi
 import { GEO_KB_ENRICHMENT_LIMITS } from "./kb-enrichment-contract.ts";
 import type { GeoKbEnrichmentDependencies } from "./kb-enrichment-handler.ts";
 import type { GeoEnrichmentPage } from "./kb-enrichment.ts";
+import { GEO_KNOWLEDGE_EVIDENCE_LIMITS, type GeoKnowledgeEvidenceReadResource, type GeoKnowledgeResourceResult } from "./kb-knowledge-evidence.ts";
 import { readGeoKnowledgeBase } from "./kb-store.ts";
 import { persistGeoEnrichmentReceipt } from "./asset-context-store.ts";
 
@@ -59,6 +60,84 @@ export function createGeoEnrichmentPageReader(options: {
       return { kind: "ok", url: result.finalUrl, body: result.body, observedAt: (options.now ?? (() => new Date()))().toISOString() };
     } catch { return unavailable("fetch_failed"); }
     finally { gate.release(); }
+  };
+}
+
+type GeoKnowledgeUnavailableReason = Extract<GeoKnowledgeResourceResult, { readonly kind: "unavailable" }>["reason"];
+
+function knowledgeTransportReason(code: string): GeoKnowledgeUnavailableReason {
+  if (code === "timeout") return "timeout";
+  if (code === "blocked" || code === "cross_origin" || code === "invalid_redirect") return "blocked";
+  return "fetch_failed";
+}
+
+function knowledgeHttpReason(status: number): GeoKnowledgeUnavailableReason | null {
+  if (status === 206) return "partial_body";
+  if (status >= 200 && status <= 299) return null;
+  if (status === 404 || status === 410) return "not_found";
+  if (status === 408 || status === 504) return "timeout";
+  if (status === 401 || status === 403) return "blocked";
+  if (status === 429) return "rate_limited";
+  return "fetch_failed";
+}
+
+function sameHostHttpsPreservingRedirect(fromUrl: string, toUrl: string): boolean {
+  try {
+    const from = new URL(fromUrl), to = new URL(toUrl);
+    return from.host === to.host && !(from.protocol === "https:" && to.protocol !== "https:");
+  } catch { return false; }
+}
+
+/** SSRF-safe, quota-gated transport for the immutable knowledge evidence collector. */
+export function createGeoKnowledgeResourceReader(clientKey: string, options: {
+  readonly fetchResource?: typeof fetchPublicResource;
+  readonly openGate?: typeof openCrawlGate;
+  readonly now?: () => Date;
+} = {}): GeoKnowledgeEvidenceReadResource {
+  // One reader instance is one bounded collection. The crawl gate admits the
+  // collection once per target host, just as a crawler is gated once before
+  // it reads multiple pages; otherwise the gate's per-target run budget would
+  // be incorrectly spent once per page.
+  const admissions = new Map<string, GeoKnowledgeUnavailableReason | null>();
+  return async input => {
+    const unavailable = (reason: GeoKnowledgeUnavailableReason): GeoKnowledgeResourceResult => ({ kind: "unavailable", url: input.url, reason });
+    let host: string;
+    try { host = new URL(input.url).host; }
+    catch { return unavailable("blocked"); }
+    let release: (() => void) | null = null;
+    if (!admissions.has(host)) {
+      let gate: Awaited<ReturnType<typeof openCrawlGate>>;
+      try { gate = await (options.openGate ?? openCrawlGate)(clientKey, input.url); }
+      catch { admissions.set(host, "fetch_failed"); return unavailable("fetch_failed"); }
+      if (!gate.ok) {
+        const reason = gate.response.status === 400 ? "blocked" : gate.response.status === 409 || gate.response.status === 429 ? "rate_limited" : "fetch_failed";
+        admissions.set(host, reason);
+        return unavailable(reason);
+      }
+      if (gate.kind !== "crawl") {
+        gate.release(); admissions.set(host, "fetch_failed");
+        return unavailable("fetch_failed");
+      }
+      admissions.set(host, null); release = gate.release;
+    }
+    const admission = admissions.get(host);
+    if (admission !== null) return unavailable(admission ?? "fetch_failed");
+    const requestedTimeout = input.timeoutMs ?? 8_000;
+    const timeoutMs = Number.isFinite(requestedTimeout) ? Math.max(1, Math.min(Math.floor(requestedTimeout), 8_000)) : 8_000;
+    try {
+      const result = await (options.fetchResource ?? fetchPublicResource)(input.url, {
+        timeoutMs, maxBodyBytes: GEO_KNOWLEDGE_EVIDENCE_LIMITS.pageBytes, maxRedirects: 2,
+        allowRedirect: sameHostHttpsPreservingRedirect,
+      });
+      if (result.kind === "error") return unavailable(knowledgeTransportReason(result.code));
+      const httpReason = knowledgeHttpReason(result.finalStatus);
+      if (httpReason !== null) return unavailable(httpReason);
+      if (!result.bodyComplete) return unavailable("partial_body");
+      if (result.contentType === null) return unavailable("invalid_response");
+      return { kind: "ok", url: result.finalUrl, body: result.body, contentType: result.contentType,
+        observedAt: (options.now ?? (() => new Date()))().toISOString() };
+    } catch { return unavailable("fetch_failed"); }
+    finally { release?.(); }
   };
 }
 

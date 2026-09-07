@@ -6,6 +6,10 @@ const KB = "2daf4d6e-8efe-4a9e-8d8a-e59009077777";
 const ID = "30000000-0000-4000-8000-000000000001";
 const TOKEN = "40000000-0000-4000-8000-000000000001";
 const request = () => ({ userId: USER, kbId: KB, kind: "roles" as const, idempotencyKey: "review-roles-1", input: { draftHash: "a".repeat(64), generatorVersion: "roles.v1" } });
+const knowledgeRequest = () => ({ userId: USER, kbId: KB, kind: "knowledge_pack" as const, idempotencyKey: "knowledge-pack-1", input: {
+  schemaVersion: "marketing-geo-knowledge-generation-input.v1", kbId: KB, baseDraftVersion: "2",
+  baseDraftHash: "a".repeat(64), profileCopyHash: "b".repeat(64), sourceReceiptRefs: [], knowledgeSynthesisInput: { contentHash: "c".repeat(64) },
+} });
 
 function fixture() {
   let record: GeoKbGenerationRecord | null = null;
@@ -49,6 +53,16 @@ describe("durable GEO semantic generation", () => {
     expect(calls.filter((call) => call === "provider")).toHaveLength(1);
     expect(calls.filter((call) => call === "quota")).toHaveLength(1);
   });
+  it("gives knowledge-pack generation the same single dispatch and exact reuse semantics", async () => {
+    const { dependencies, calls } = fixture();
+    expect(await executeGeoKbGeneration(knowledgeRequest(), dependencies)).toMatchObject({
+      kind: "ok", reused: false, generation: { kind: "knowledge_pack", state: "succeeded" },
+    });
+    expect(await executeGeoKbGeneration(knowledgeRequest(), dependencies)).toMatchObject({
+      kind: "ok", reused: true, generation: { kind: "knowledge_pack", state: "succeeded" },
+    });
+    expect(calls).toEqual(["claim", "quota", "dispatch", "provider", "finish", "claim"]);
+  });
   it("configuration and bounded input failures happen before persistence or quota", async () => {
     const { dependencies, calls } = fixture();
     expect(await executeGeoKbGeneration(request(), { ...dependencies, configured: false })).toEqual({ kind: "model_unavailable" });
@@ -85,6 +99,17 @@ describe("durable GEO semantic generation", () => {
     expect(await executeGeoKbGeneration(request(), withFailure)).toMatchObject({ kind: "ok", reused: true, generation: { state: "uncertain" } });
     expect(calls.filter((call) => call === "provider")).toHaveLength(1);
   });
+  it("never retries an uncertain knowledge-pack invocation", async () => {
+    const { dependencies, calls } = fixture();
+    const uncertain = { ...dependencies, invoke: async () => { calls.push("provider"); throw new Error("possibly delivered"); } };
+    expect(await executeGeoKbGeneration(knowledgeRequest(), uncertain)).toMatchObject({
+      kind: "ok", reused: false, generation: { kind: "knowledge_pack", state: "uncertain", errorReason: "outcome_unknown" },
+    });
+    expect(await executeGeoKbGeneration(knowledgeRequest(), uncertain)).toMatchObject({
+      kind: "ok", reused: true, generation: { state: "uncertain" },
+    });
+    expect(calls.filter((call) => call === "provider")).toHaveLength(1);
+  });
   it("distinguishes response validation failure from an unknown delivery", async () => {
     const { dependencies } = fixture();
     expect(await executeGeoKbGeneration(request(), { ...dependencies,
@@ -119,6 +144,12 @@ describe("durable GEO semantic generation", () => {
   it("can persist the full candidate envelope rather than only a smaller model reply", async () => {
     const { dependencies } = fixture();
     expect(await executeGeoKbGeneration(request(), { ...dependencies, invoke: async () => ({ ok: true, value: { candidate: "x".repeat(1_200_000) } }) }))
+      .toMatchObject({ kind: "ok", generation: { state: "succeeded" } });
+  });
+  it("admits a V2 candidate envelope above 2 MiB but within the exact V2 result cap", async () => {
+    const { dependencies } = fixture();
+    expect(GEO_GENERATION_RESULT_BYTES).toBe(2_359_296);
+    expect(await executeGeoKbGeneration(request(), { ...dependencies, invoke: async () => ({ ok: true, value: { candidate: "x".repeat(2_200_000) } }) }))
       .toMatchObject({ kind: "ok", generation: { state: "succeeded" } });
   });
   it("blocks duplicate simultaneous requests while the provider is running", async () => {

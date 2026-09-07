@@ -72,6 +72,7 @@ describe("GEO branch in the existing Draft route", () => {
       verifyGeoBrief: (brief, userId) => verifyOwnedGeoBrief(brief, userId, {
         readFrozen: async () => ({ kind: "ok", value: frozen }),
         readContext: async () => ({ kind: "ok", value: null }),
+        readPrepared: async () => ({ kind: "ok", value: null }),
         readRun: async () => ({ kind: "missing" }),
         readRunEvidence: async () => ({ kind: "not_found" }),
       }),
