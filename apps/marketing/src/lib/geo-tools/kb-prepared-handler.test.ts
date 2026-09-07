@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { handleGeoKbPreparedFreeze, handleGeoKbPreparedRead, type GeoKbPreparedHandlerDependencies } from "./kb-prepared-handler.ts";
+import type { GeoPreparedCandidateV2 } from "./kb-prepared-contract.ts";
 
 const USER = "11111111-1111-4111-8111-111111111111";
 const KB = "22222222-2222-4222-8222-222222222222";
@@ -48,5 +49,12 @@ describe("exact prepared-only freeze HTTP", () => {
     expect(await empty.json()).toEqual({ data: { candidate: null } });
     expect((await handleGeoKbPreparedRead(request({ kbId: KB, candidateId: ID }), deps)).status).toBe(404);
     expect((await handleGeoKbPreparedRead(request({ kbId: KB }), { ...deps, read: async () => ({ kind: "unavailable" }) })).status).toBe(503);
+  });
+  it("returns an owner-scoped V2 knowledge candidate without downgrading it to V1", async () => {
+    const { deps } = fixture();
+    const candidate = { schemaVersion: "marketing-geo-prepared-candidate.v2", kbId: KB, candidateId: ID } as GeoPreparedCandidateV2;
+    const response = await handleGeoKbPreparedRead(request({ kbId: KB, candidateId: ID }), { ...deps, read: async () => ({ kind: "ok", candidate }) });
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.candidate).toMatchObject({ schemaVersion: "marketing-geo-prepared-candidate.v2", kbId: KB, candidateId: ID });
   });
 });

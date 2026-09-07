@@ -54,14 +54,16 @@ export interface GeoKbV2ConfirmReport {
 }
 /** Why an automatic write is being held back, for the editor to say so. */
 export type GeoKbV2AutosaveHold = "conflict" | "copyStale" | "running" | "busy" | "failed";
-type Operation = "save" | "load" | "sources" | "roles" | "questions" | "freeze" | "copy";
+type Operation = "save" | "load" | "sources" | "roles" | "knowledge_pack" | "questions" | "freeze" | "copy";
 interface Pending { readonly idempotencyKey: string; readonly draftHash: string; readonly baseVersion: number; readonly generationId: string | null; readonly inputIdentity?: string; readonly sourceSequence?: number; readonly settled?: boolean; readonly readNotFound?: boolean; readonly knownState?: string }
 type PendingSet = Readonly<Record<GeoKbGenerationKind, Pending | null>>;
 export interface RetainedGeoKbRequest { readonly id: string; readonly kind: GeoKbGenerationKind; readonly idempotencyKey: string | null; readonly generationId: string | null; readonly inputIdentity: string | null; readonly draftHash: string | null; readonly baseVersion: number; readonly state: string; readonly errorReason: string | null }
 type GenerationAction = "normal" | "read_only" | "new_input" | "resend_same";
+const GENERATION_KINDS = ["roles", "knowledge_pack", "questions"] as const satisfies readonly GeoKbGenerationKind[];
 export type GeoKbV2EditorStatus = { readonly kind: "idle" | "saved" } | { readonly kind: "busy"; readonly operation: Operation } | { readonly kind: "error"; readonly code: string };
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
+const uuid = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/iu.test(value);
 const storageKey = (kbId: string, kind: GeoKbGenerationKind) => `gg:geo-kb-generation:${kbId}:${kind}`;
 const historyKey = (kbId: string) => `gg:geo-kb-generation:${kbId}:history`;
 const unresolved = (state: string | undefined) => ["claimed", "dispatched", "uncertain", "unknown", "not_found"].includes(state ?? "");
@@ -77,11 +79,18 @@ function sameGenerationBasis(left: string | null | undefined, right: string): bo
     return canonicalGeoV2Text(a) === canonicalGeoV2Text(b);
   } catch { return false; }
 }
+function knowledgeGenerationIdFromIdentity(value: string | null | undefined): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return record(parsed) && parsed.kind === "questions" && uuid(parsed.knowledgeGenerationId) ? parsed.knowledgeGenerationId : undefined;
+  } catch { return undefined; }
+}
 function storedHistory(kbId: string): readonly RetainedGeoKbRequest[] {
   try {
     const value: unknown = JSON.parse(window.sessionStorage.getItem(historyKey(kbId)) ?? "[]");
     if (!Array.isArray(value)) return [];
-    return value.filter((item): item is RetainedGeoKbRequest => record(item) && typeof item.id === "string" && ["roles", "questions"].includes(String(item.kind)) && (item.idempotencyKey === null || typeof item.idempotencyKey === "string") && (item.generationId === null || typeof item.generationId === "string") && (item.inputIdentity === null || typeof item.inputIdentity === "string") && (item.draftHash === null || hash(item.draftHash)) && typeof item.baseVersion === "number" && Number.isSafeInteger(item.baseVersion) && typeof item.state === "string" && (item.errorReason === null || typeof item.errorReason === "string")).map(item => ({ ...item, inputIdentity: normalizedRequestIdentity(item.inputIdentity) ?? null }));
+    return value.filter((item): item is RetainedGeoKbRequest => record(item) && typeof item.id === "string" && GENERATION_KINDS.includes(item.kind as GeoKbGenerationKind) && (item.idempotencyKey === null || typeof item.idempotencyKey === "string") && (item.generationId === null || typeof item.generationId === "string") && (item.inputIdentity === null || typeof item.inputIdentity === "string") && (item.draftHash === null || hash(item.draftHash)) && typeof item.baseVersion === "number" && Number.isSafeInteger(item.baseVersion) && typeof item.state === "string" && (item.errorReason === null || typeof item.errorReason === "string")).map(item => ({ ...item, inputIdentity: normalizedRequestIdentity(item.inputIdentity) ?? null }));
   } catch { return []; }
 }
 const same = (left: unknown, right: unknown) => canonicalGeoV2Text(left) === canonicalGeoV2Text(right);
@@ -131,7 +140,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   // mirrors the view: a render-only mirror is stale in exactly the window
   // between two awaited steps that the live gates were added for.
   const copyHashHold = useRef(false);
-  const [pending, setPending] = useState<PendingSet>({ roles: null, questions: null });
+  const [pending, setPending] = useState<PendingSet>({ roles: null, knowledge_pack: null, questions: null });
   const [retainedRequests, setRetainedRequests] = useState<readonly RetainedGeoKbRequest[]>([]);
   const [building, setBuilding] = useState(false), [build, setBuild] = useState<GeoKbV2BuildReport | null>(null);
   const [confirm, setConfirm] = useState<GeoKbV2ConfirmReport | null>(null);
@@ -164,7 +173,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   useEffect(() => {
     // Server and first hydration render both use only the server DTO. Browser
     // recovery is restored after mount without sending a request.
-    const recovered = { roles: storedPending(initialView.kbId, "roles"), questions: storedPending(initialView.kbId, "questions") };
+    const recovered = { roles: storedPending(initialView.kbId, "roles"), knowledge_pack: storedPending(initialView.kbId, "knowledge_pack"), questions: storedPending(initialView.kbId, "questions") };
     current.current.pending = recovered; setPending(recovered);
     historyRef.current = storedHistory(initialView.kbId); setRetainedRequests(historyRef.current);
   }, [initialView.kbId]);
@@ -209,20 +218,22 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   const canGenerate = !busy && gatesNow().generate;
   const needsReview = gatesNow().needsReview;
   const canPrepare = !busy && gatesNow().prepare;
-  for (const kind of ["roles", "questions"] as const) {
+  for (const kind of GENERATION_KINDS) {
     const generation = view.generations[kind];
     if (generation && unresolved(generation.state) && !unknownBaselines.current.has(generation.generationId)) unknownBaselines.current.set(generation.generationId, { version: view.draftVersion, hash: view.draftHash });
   }
-  function requestInput(kind: GeoKbGenerationKind) {
+  function requestInput(kind: GeoKbGenerationKind, knowledgeGenerationId?: string) {
     const active = current.current, sourceReceiptRefs = currentGeoKbSourceSelection(active.view, active.payload).refs;
     const displayLocale = locale.toLowerCase().startsWith("zh") ? "zh" as const : "en" as const;
-    const body = { kbId: active.view.kbId, baseVersion: active.view.draftVersion, draftHash: active.view.draftHash!, sourceReceiptRefs, displayLocale };
+    const body = { kbId: active.view.kbId, baseVersion: active.view.draftVersion, draftHash: active.view.draftHash!, sourceReceiptRefs, displayLocale,
+      ...(kind === "questions" && knowledgeGenerationId !== undefined ? { knowledgeGenerationId } : {}) };
     return { body, identity: canonicalGeoV2Text({ kind, ...body }) };
   }
-  function generationActionNow(kind: GeoKbGenerationKind): GenerationAction {
+  function generationActionNow(kind: GeoKbGenerationKind, knowledgeGenerationId?: string): GenerationAction {
     const gates = gatesNow();
-    if (!(kind === "questions" ? gates.prepare : gates.generate) || current.current.dirty) return "read_only";
-    const identity = requestInput(kind).identity, held = current.current.pending[kind];
+    const sourceSelected = currentGeoKbSourceSelection(current.current.view, current.current.payload).refs.length > 0;
+    if (!(kind === "roles" ? gates.generate : gates.prepare) || kind === "knowledge_pack" && !sourceSelected || current.current.dirty) return "read_only";
+    const identity = requestInput(kind, knowledgeGenerationId).identity, held = current.current.pending[kind];
     const historical = historyRef.current.find(item => item.kind === kind && sameGenerationBasis(item.inputIdentity, identity) && unresolved(item.state));
     if (historical) return historical.inputIdentity === identity && historical.state === "not_found" && historical.generationId === null && historical.idempotencyKey !== null ? "resend_same" : "read_only";
     if (held) {
@@ -236,7 +247,9 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     return baseline && current.current.view.draftVersion > baseline.version && current.current.view.draftHash !== baseline.hash ? "new_input" : "read_only";
   }
   /** What the buttons offer: the live answer, plus this render's busy state. */
-  const generationAction = (kind: GeoKbGenerationKind): GenerationAction => busy ? "read_only" : generationActionNow(kind);
+  const recoveryKnowledgeGenerationId = (kind: GeoKbGenerationKind): string | undefined => kind === "questions"
+    ? knowledgeGenerationIdFromIdentity(current.current.pending.questions?.inputIdentity) : undefined;
+  const generationAction = (kind: GeoKbGenerationKind, knowledgeGenerationId?: string): GenerationAction => busy ? "read_only" : generationActionNow(kind, knowledgeGenerationId);
   const candidateIdentity = candidate === null ? null : `${candidate.candidateId}:${candidate.candidateHash}`;
   const canFreeze = !busy && candidate !== null && !candidateStale && review === candidateIdentity;
   // Warn about leaving only for a visitor's own edits. A draft that merely
@@ -261,9 +274,9 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
    */
   const running = (state: string | undefined) => state === "dispatched";
   function generationRunningNow(): boolean {
-    return (["roles", "questions"] as const).some(kind => running(current.current.view.generations[kind]?.state));
+    return GENERATION_KINDS.some(kind => running(current.current.view.generations[kind]?.state));
   }
-  const generationRunning = (["roles", "questions"] as const).some(kind => running(view.generations[kind]?.state));
+  const generationRunning = GENERATION_KINDS.some(kind => running(view.generations[kind]?.state));
   function autosaveHoldNow(): GeoKbV2AutosaveHold | null {
     if (conflictHold.current) return "conflict";
     // Every write would fail with context_stale until the copy is adopted.
@@ -361,7 +374,8 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   function acceptGeneration(generation: GeoKbGenerationWire) {
     if (generation.kbId !== current.current.view.kbId) throw new Error("Foreign generation");
     const existing = current.current.pending[generation.kind];
-    if (generation.result?.schemaVersion === "marketing-geo-prepared-candidate.v1" && existing && existing.sourceSequence !== current.current.signal.sequence) invalidCandidates.current.add(generation.result.candidateId);
+    const preparedResult = generation.result?.schemaVersion === "marketing-geo-prepared-candidate.v1" || generation.result?.schemaVersion === "marketing-geo-prepared-candidate.v2" ? generation.result : null;
+    if (preparedResult && existing && existing.sourceSequence !== current.current.signal.sequence) invalidCandidates.current.add(preparedResult.candidateId);
     if (existing) {
       // A latest record can belong to another explicit input/key. Only the
       // dispatch response or the exact-key read may establish this linkage.
@@ -369,7 +383,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
       if (belongs) setRequest(generation.kind, generation.state === "succeeded" || generation.state === "failed" ? null : { ...existing, generationId: generation.generationId, knownState: generation.state, readNotFound: false });
     }
     setView(previous => ({ ...previous, generations: { ...previous.generations, [generation.kind]: generation },
-      ...(generation.state === "succeeded" && generation.result?.schemaVersion === "marketing-geo-prepared-candidate.v1" ? { prepared: generation.result } : {}) }));
+      ...(generation.state === "succeeded" && preparedResult ? { prepared: preparedResult } : {}) }));
     current.current.view = { ...current.current.view, generations: { ...current.current.view.generations, [generation.kind]: generation } };
     if (!running(generation.state)) { runningElsewhere.current = false; resumeAutosave(); }
     setReview(null);
@@ -383,7 +397,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     current.current.view = loaded; setView(loaded); copyHashHold.current = false; setCopyHashNeedsReload(false);
     lastSaved.current = loaded.requiresSave ? null : canonicalGeoV2Text(submitGeoKbPayloadV2(loaded.payload));
     if (!wasDirty && editRevision.current === start) { current.current.payload = loaded.payload; current.current.dirty = loaded.requiresSave; setPayload(loaded.payload); setDirty(loaded.requiresSave); setEdited(false); }
-    for (const kind of ["roles", "questions"] as const) if (loaded.generations[kind]) acceptGeneration(loaded.generations[kind]!);
+    for (const kind of GENERATION_KINDS) if (loaded.generations[kind]) acceptGeneration(loaded.generations[kind]!);
     return true;
   }
   const reload = () => perform("load", async () => { await readSaved(); });
@@ -442,12 +456,12 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     current.current.view = { ...current.current.view, sourceReceipt: receipt };
     setView(previous => ({ ...previous, sourceReceipt: receipt })); setReview(null);
   }); };
-  const generate = async (kind: GeoKbGenerationKind, action: Exclude<GenerationAction, "read_only"> = "normal") => {
+  const generate = async (kind: GeoKbGenerationKind, action: Exclude<GenerationAction, "read_only"> = "normal", knowledgeGenerationId?: string) => {
     if (refuseUnsupportedGenerationLanguage(current.current.payload.market.language)) return false;
-    if (generationActionNow(kind) !== action) return false;
+    if (generationActionNow(kind, knowledgeGenerationId) !== action) return false;
     return perform(kind, async () => {
       const saved = storedPending(view.kbId, kind, true);
-      const input = requestInput(kind), inputIdentity = input.identity;
+      const input = requestInput(kind, knowledgeGenerationId), inputIdentity = input.identity;
       const historical = historyRef.current.find(item => item.kind === kind && item.inputIdentity === inputIdentity && item.idempotencyKey !== null);
       const held = current.current.pending[kind];
       const key = held?.inputIdentity === inputIdentity ? held.idempotencyKey : saved?.inputIdentity === inputIdentity ? saved.idempotencyKey : historical?.idempotencyKey ?? crypto.randomUUID();
@@ -456,11 +470,11 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
       const request: Pending = { idempotencyKey: key, inputIdentity, draftHash: input.body.draftHash, baseVersion: input.body.baseVersion, generationId: null, sourceSequence: current.current.signal.sequence };
       // Record identity before dispatch. If recovery storage is unavailable, do not start a potentially billed request.
       if (!persistPending(view.kbId, kind, request)) { error({ code: "recovery_unavailable" }); return; } setRequest(kind, request);
-      const result = await post(kind === "roles" ? "roles" : "prepare", { ...input.body, idempotencyKey: request.idempotencyKey });
+      const result = await post(kind === "roles" ? "roles" : kind === "knowledge_pack" ? "knowledge" : "prepare", { ...input.body, idempotencyKey: request.idempotencyKey });
       if (!result.ok) { if (["model_unavailable", "unsupported_language", "invalid_input", "input_stale", "invalid_request", "auth_required", "not_found", "conflict"].includes(result.code)) setRequest(kind, null); error(result); return; }
       const parsed = record(result.data) ? parseGeoKbGenerationWire(result.data.generation) : null;
       if (!parsed || parsed.kind !== kind || parsed.kbId !== view.kbId) { error({ code: "schema_mismatch" }); return; }
-      if (parsed.result?.schemaVersion === "marketing-geo-prepared-candidate.v1" && request.sourceSequence === current.current.signal.sequence) invalidCandidates.current.delete(parsed.result.candidateId);
+      if ((parsed.result?.schemaVersion === "marketing-geo-prepared-candidate.v1" || parsed.result?.schemaVersion === "marketing-geo-prepared-candidate.v2") && request.sourceSequence === current.current.signal.sequence) invalidCandidates.current.delete(parsed.result.candidateId);
       setRequest(kind, { ...request, generationId: parsed.generationId }); acceptGeneration(parsed);
     });
   };
@@ -571,6 +585,36 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     const active = current.current, selection = currentGeoKbSourceSelection(active.view, active.payload);
     return selection.receipt !== null && !selection.stale && selection.receipt.draftHash === active.view.draftHash;
   }
+  /**
+   * A loader result may replace a needless second billed knowledge call, but
+   * only when every browser-observable part of its durable input is still the
+   * one this editor would submit now. The server is the hash/ownership
+   * authority; this is a conservative reuse gate, not a new trust boundary.
+   */
+  function reusableKnowledgeGeneration(): GeoKbGenerationWire | null {
+    const active = current.current, generation = active.view.generations.knowledge_pack;
+    if (generation?.state !== "succeeded" || generation.result?.schemaVersion !== "marketing-geo-knowledge-generation-result.v1") return null;
+    const result = generation.result, manifest = result.manifest;
+    const synthesis = result.synthesisInput, selectedSources = [...currentGeoKbSourceSelection(active.view, active.payload).refs].sort((left, right) => left.receiptId.localeCompare(right.receiptId));
+    const expectedReceiptIds = new Set(selectedSources.map(ref => ref.receiptId));
+    for (const fact of active.payload.facts) {
+      if (fact.review === "accepted" && fact.value !== "" && fact.reason === "" && fact.supportRef !== null) expectedReceiptIds.add(fact.supportRef.receiptId);
+    }
+    const sourcesMatch = manifest.sourceReceiptRefs.length === expectedReceiptIds.size
+      && manifest.sourceReceiptRefs.every(ref => expectedReceiptIds.has(ref.receiptId))
+      && selectedSources.every(selected => manifest.sourceReceiptRefs.some(ref => same(ref, selected)));
+    let targetUrl: string;
+    try { targetUrl = new URL(active.payload.targetUrl).toString(); } catch { return null; }
+    const competitors = active.payload.competitors.filter(competitor => competitor.confirmed).map(competitor => ({ key: competitor.domain, name: competitor.brandName, confirmed: true as const }));
+    return result.generationId === generation.generationId && result.kbId === active.view.kbId && manifest.kbId === active.view.kbId
+      && manifest.baseDraftVersion === String(active.view.draftVersion) && manifest.baseDraftHash === active.view.draftHash
+      && manifest.profileCopyHash === active.view.profileCopyHash && sourcesMatch
+      && same(manifest.knowledgeSynthesisInput, synthesis)
+      && synthesis.officialName === active.payload.officialName && same(synthesis.aliases, active.payload.aliases)
+      && same(synthesis.categoryTerms, active.payload.categoryTerms) && synthesis.market === active.payload.market.country
+      && synthesis.language === active.payload.market.language && synthesis.targetUrl === targetUrl
+      && same(synthesis.confirmedCompetitors, competitors) ? generation : null;
+  }
   function finishBuild(report: GeoKbV2BuildReport): void { setBuild(report); }
   /**
    * One gesture for "this is right, keep it": accept every pending role and
@@ -621,10 +665,26 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   }
 
   /**
+   * A one-click run that already reached knowledge must resume from that
+   * durable boundary. Starting again at roles changes their generation IDs,
+   * which changes the draft and can turn a recovered paid knowledge result
+   * into a second roles + knowledge charge. A current frozen version is not a
+   * resume: its button intentionally starts a fresh regeneration.
+   */
+  function resumableOneClickRun(): boolean {
+    const active = current.current, generation = active.view.generations.knowledge_pack;
+    if (active.dirty || generation == null || currentGeoKbSourceSelection(active.view, active.payload).refs.length === 0) return false;
+    const frozen = active.view.frozen;
+    if (frozen !== null && "context" in frozen && frozen.contentHash === active.view.draftHash) return false;
+    if (generation.state === "succeeded") return reusableKnowledgeGeneration() !== null;
+    return unresolved(generation.state) || generation.state === "failed";
+  }
+
+  /**
    * The whole knowledge base in one gesture: derive from the confirmed Profile,
    * save, refresh the crawl and Search Console evidence, ask for the roles,
-   * take every role that came back, accept what is pending, ask for the
-   * question set, freeze it.
+   * take every role that came back, accept what is pending, build the
+   * evidence-backed knowledge pack, bind it to the question set, and freeze.
    *
    * None of those steps was a judgement the person pressing them was making --
    * they were the pipeline, published as five numbered buttons. Where a step
@@ -633,6 +693,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
   */
   const generateAll = async (): Promise<void> => {
     if (refuseUnsupportedGenerationLanguage(effectiveGenerationLanguage(current.current.payload))) return;
+    if (resumableOneClickRun()) { await confirmAll(); return; }
     await buildFromProfile();
     // Read the run's own result, not this render's: the roles arrived one line
     // ago and the closed-over `view` cannot know about them.
@@ -663,11 +724,30 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
         if (runningElsewhere.current) return finishConfirm({ ...written, stoppedAt: "running" });
       }
       if (!gatesNow().prepare) return finishConfirm({ ...written, stoppedAt: "changed" });
-      if (generationActionNow("questions") !== "normal") return finishConfirm({ ...written, stoppedAt: "prepare" });
-      if (!(await generate("questions"))) return finishConfirm({ ...written, stoppedAt: "prepareFailed" });
+      // A selected evidence receipt opts this preparation into the complete
+      // knowledge-pack path. Historical/no-source flows remain on the exact
+      // V1 question candidate path instead of inventing evidence they do not
+      // have. The succeeded generation ID is the only link the question
+      // preparer accepts; it owner-reads and revalidates that immutable result.
+      let knowledgeGenerationId: string | undefined;
+      if (currentGeoKbSourceSelection(current.current.view, current.current.payload).refs.length > 0) {
+        const reusable = reusableKnowledgeGeneration();
+        if (reusable !== null) knowledgeGenerationId = reusable.generationId;
+        else {
+          if (generationActionNow("knowledge_pack") !== "normal") return finishConfirm({ ...written, stoppedAt: "prepare" });
+          if (!(await generate("knowledge_pack"))) return finishConfirm({ ...written, stoppedAt: "prepareFailed" });
+          const knowledge = current.current.view.generations.knowledge_pack;
+          if (knowledge?.state === "failed") return finishConfirm({ ...written, stoppedAt: "prepareFailed" });
+          if (knowledge?.state !== "succeeded" || knowledge.result?.schemaVersion !== "marketing-geo-knowledge-generation-result.v1") return finishConfirm({ ...written, stoppedAt: "preparePending" });
+          knowledgeGenerationId = knowledge.generationId;
+        }
+      }
+      if (generationActionNow("questions", knowledgeGenerationId) !== "normal") return finishConfirm({ ...written, stoppedAt: "prepare" });
+      if (!(await generate("questions", "normal", knowledgeGenerationId))) return finishConfirm({ ...written, stoppedAt: "prepareFailed" });
       const settled = current.current.view.generations.questions;
       if (settled?.state === "failed") return finishConfirm({ ...written, stoppedAt: "prepareFailed" });
-      const prepared = settled?.state === "succeeded" && settled.result?.schemaVersion === "marketing-geo-prepared-candidate.v1" ? settled.result : null;
+      const expectedCandidateSchema = knowledgeGenerationId === undefined ? "marketing-geo-prepared-candidate.v1" : "marketing-geo-prepared-candidate.v2";
+      const prepared = settled?.state === "succeeded" && settled.result?.schemaVersion === expectedCandidateSchema ? settled.result : null;
       if (prepared === null) return finishConfirm({ ...written, stoppedAt: "preparePending" });
       // Freeze the candidate this run produced, by identity. `canFreeze` reads
       // this render's state, which cannot know about a candidate that arrived
@@ -695,7 +775,7 @@ export function useGeoKbV2Editor({ initialView, locale, confirmedProfileRevision
     setReview(null); await readSaved();
   }); };
   return { view, payload, dirty, edited, status, busy, generationRunning, generationLanguage, generationLanguageSupported, savedGenerationLanguageSupported, autosaveHold, pending, retainedRequests, readRetainedRequest, generationAction, copyProposal, copyStale, copyHashReady, sourceSelection, roleProposalReusable, canAdoptProfileCopy: copyProposal !== null && copySequence.current === signal.sequence, candidateStale, canGenerate, canPrepare, needsReview, canFreeze, reviewed: review === candidateIdentity && candidateIdentity !== null,
-    building, build, buildFromProfile, confirm, confirmAll, generateAll,
+    building, build, buildFromProfile, confirm, confirmAll, generateAll, recoveryKnowledgeGenerationId,
     change, save, reload, refreshSources, generate, readGeneration, freeze, reviewProfileCopy, adoptProfileCopy, adoptRoles,
     dismissProfileCopy: () => setCopyProposal(null), confirmReview: (accepted: boolean) => setReview(accepted && !candidateStale ? candidateIdentity : null) };
 }

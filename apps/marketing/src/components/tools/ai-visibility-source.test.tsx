@@ -83,12 +83,14 @@ describe("complete and exact AI Visibility source inspection", () => {
   });
   it("compares operational values with their exact frozen Profile, not the latest Profile", () => {
     const site = fixture();
+    if (site.frozen?.payload.schemaVersion !== "marketing-geo-kb.v1") throw new Error("Legacy visibility fixture required");
     const retained = { ...profile, categories: ["analytics"], buyer: "Teams", primaryIcp: "Operators", directCompetitors: ["one.com"] };
     mount({ ...site, frozen: { ...site.frozen!, payload: { ...site.frozen!.payload, profileCopy: createGeoProfileCopy(reference, retained), officialName: "Frozen brand", roles: [{ id: "profile-primary", label: "Teams", segment: "Operators", painPoints: [], decisionCriteria: [], vocabulary: [] }], competitors: [{ domain: "one.com", brandName: "One", aliases: ["One analytics"], confirmed: true }] } } });
     expect(host.querySelector('[data-source="measurement-differences"]')).toBeNull();
   });
   it("never fills historical legacy gaps with the current profile", () => {
     const site = fixture();
+    if (site.frozen?.payload.schemaVersion !== "marketing-geo-kb.v1") throw new Error("Legacy visibility fixture required");
     const { profileCopy: _copy, ...payload } = site.frozen!.payload;
     mount({ ...site, frozen: { ...site.frozen!, payload, profileReference: null, profileCompleteness: "legacy_partial" } }, true);
     expect(host.querySelector('[data-source="current-profile"]')).toBeNull();

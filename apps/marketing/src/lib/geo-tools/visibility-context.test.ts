@@ -5,6 +5,8 @@ import { emptyGeoKbPayload } from "./kb-contract.ts";
 import { createGeoProfileCopy } from "./kb-profile-copy.ts";
 import { parseVisibilityContext } from "./visibility-context.ts";
 import { handleVisibilityContext, type VisibilityContextDependencies } from "./visibility-context-handler.ts";
+import { completePayloadV2, questionSetV2 } from "./kb-v2.test-fixtures.ts";
+import { geoV2Digest } from "./kb-v2-digest.ts";
 
 const id = (n: number) => `11111111-1111-4111-8111-${String(n).padStart(12, "0")}`;
 const time = "2026-08-31T00:00:00.000Z";
@@ -38,6 +40,22 @@ describe("Visibility website and immutable input context", () => {
     expect(body.websites[0]?.preparation).toMatchObject({ status: "ready", profileSync: "current" });
     expect(body.websites[1]?.preparation.status).toBe("profile_required");
     expect(body.websites[1]?.frozen).toBeNull();
+  });
+  it("projects an exact V2 frozen payload and question set without leaking question provenance", async () => {
+    const d = deps(), questionSet = questionSetV2();
+    const baseV2 = completePayloadV2();
+    const v2Payload = { ...baseV2, targetUrl: site.origin, profileCopy: createGeoProfileCopy(reference, profile),
+      roles: baseV2.roles.map(role => ({ ...role, label: "财务经理", questionLabel: "finance managers" })) };
+    const v2Snapshot = { ...snapshot, contentHash: geoV2Digest(v2Payload), questionSetHash: geoV2Digest(questionSet), payload: v2Payload, questionSet };
+    d.readFrozen = vi.fn(async () => ({ kind: "ok" as const, value: v2Snapshot as never }));
+
+    const response = await handleVisibilityContext(request(), d);
+    expect(response.status).toBe(200);
+    const body = parseVisibilityContext(await response.json());
+    expect(body.websites[0]?.frozen?.payload.schemaVersion).toBe("marketing-geo-kb.v2");
+    expect(body.websites[0]?.frozen?.questions).toHaveLength(questionSet.questions.length);
+    expect(body.websites[0]?.frozen?.questions[0]).not.toHaveProperty("provenance");
+    expect(body.websites[0]?.preparation.languageWarnings).toEqual([]);
   });
   it("marks legacy frozen inputs partial without filling them from the live profile", async () => {
     const d = deps();

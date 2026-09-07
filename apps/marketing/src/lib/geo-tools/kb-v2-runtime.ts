@@ -8,7 +8,7 @@ import { readVersionedGeoKnowledgeBase } from "./kb-versioned-read.ts";
 import { readCompleteGeoKnowledgeBase } from "./kb-complete-read.ts";
 import { readGeoSourceReceiptV2, persistGeoSourceReceiptV2, saveGeoKbDraftV2, DEFAULT_GEO_KB_PREPARED_STORE } from "./kb-prepared-store.ts";
 import { DEFAULT_GEO_KB_GENERATION_STORE, type GeoKbGenerationStore } from "./kb-generation-store.ts";
-import { DEFAULT_GEO_KB_ENRICHMENT_DEPENDENCIES } from "./kb-enrichment-deps.ts";
+import { createGeoKnowledgeResourceReader, DEFAULT_GEO_KB_ENRICHMENT_DEPENDENCIES } from "./kb-enrichment-deps.ts";
 import { resolveGeoBriefLlmConfig } from "./brief-llm.ts";
 import { consumePublicToolQuota } from "../tools/shared-rate-limit.ts";
 import type { GeoKbSourceDependencies } from "./kb-source-handler.ts";
@@ -21,8 +21,9 @@ import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";
 import { profileCopyReference } from "./kb-profile-copy.ts";
 import { assertGeoProfileCopyIntegrity } from "./kb-profile-copy-server.ts";
 import { canonicalGeoV2Text } from "./kb-v2-json.ts";
-import { parseGeoKbFrozenV2Wire } from "../../components/tools/geo-kb-v2-wire.ts";
+import { parseGeoKbFrozenKnowledgeWire } from "../../components/tools/geo-kb-v2-wire.ts";
 import { geoGenerationLanguage } from "@sf/public-tools/content-brief/geo-contract";
+import { collectGeoKnowledgeEvidenceV1 } from "./kb-knowledge-evidence.ts";
 
 export interface GeoKbV2RuntimeDependencies {
   readonly authenticate: typeof getServerAuthenticatedUser;
@@ -39,6 +40,9 @@ export interface GeoKbV2RuntimeDependencies {
   readonly sourceTransports: typeof DEFAULT_GEO_KB_ENRICHMENT_DEPENDENCIES;
   readonly resolveConfig: typeof resolveGeoBriefLlmConfig;
   readonly quota: typeof consumePublicToolQuota;
+  readonly collectKnowledgeEvidence: typeof collectGeoKnowledgeEvidenceV1;
+  readonly createKnowledgeResourceReader: typeof createGeoKnowledgeResourceReader;
+  readonly now: () => Date;
   readonly validateLineage?: GeoKbV2DraftDependencies["validateLineage"];
 }
 export interface GeoKbV2Runtime {
@@ -54,7 +58,8 @@ const DEFAULT: GeoKbV2RuntimeDependencies = {
   readProfile: findAccountWebsiteByUrl, readWebsite: readAccountWebsite, readComplete: readCompleteGeoKnowledgeBase,
   readSource: readGeoSourceReceiptV2, persistSource: persistGeoSourceReceiptV2, generationStore: DEFAULT_GEO_KB_GENERATION_STORE,
   preparedStore: DEFAULT_GEO_KB_PREPARED_STORE, saveDraft: saveGeoKbDraftV2, sourceTransports: DEFAULT_GEO_KB_ENRICHMENT_DEPENDENCIES,
-  resolveConfig: resolveGeoBriefLlmConfig, quota: consumePublicToolQuota,
+  resolveConfig: resolveGeoBriefLlmConfig, quota: consumePublicToolQuota, collectKnowledgeEvidence: collectGeoKnowledgeEvidenceV1,
+  createKnowledgeResourceReader: createGeoKnowledgeResourceReader, now: () => new Date(),
 };
 
 export function createGeoKbV2Runtime(overrides: Partial<GeoKbV2RuntimeDependencies> = {}): GeoKbV2Runtime {
@@ -80,21 +85,21 @@ export function createGeoKbV2Runtime(overrides: Partial<GeoKbV2RuntimeDependenci
     const result = await dependencies.readSource(input);
     return result.kind !== "ok" ? { kind: "unavailable" } : result.value === null ? { kind: "missing" } : { kind: "ok", value: result.value };
   };
-  const readGeneration: GeoKbGenerationHandlerDependencies["store"]["read"] = async input => {
+  const readGeneration: GeoKbGenerationPreparerDependencies["readGeneration"] = async input => {
     const result = await dependencies.generationStore.read(input);
-    return result.kind !== "ok" ? { kind: "unavailable" } : result.generation === null ? { kind: "missing" } : { kind: "ok", generation: result.generation };
-  };
-  const readByKey: GeoKbGenerationHandlerDependencies["store"]["readByKey"] = async input => {
-    const result = await dependencies.generationStore.readByKey(input);
     return result.kind !== "ok" ? { kind: "unavailable" } : result.generation === null ? { kind: "missing" } : { kind: "ok", generation: result.generation };
   };
   const readFrozen: GeoKbEditorLoaderDependencies["readFrozen"] = async input => {
     const result = await dependencies.readComplete(input);
     if (result.kind !== "ok") return { kind: "unavailable" };
-    const { snapshot, context } = result.value;
+    const { snapshot, context, knowledgePack } = result.value;
     if (snapshot.payload.schemaVersion === "marketing-geo-kb.v2") {
       if (snapshot.questionSet.schemaVersion !== "marketing-geo-question-set.v2" || context?.schemaVersion !== "marketing-geo-snapshot-context.v2") return { kind: "unavailable" };
-      const value = parseGeoKbFrozenV2Wire({ ...snapshot, context });
+      // preparedId is an internal immutable lookup identity; the separately
+      // versioned customer pack wire must never expose it.
+      const { preparedId: _preparedId, ...wireSnapshot } = snapshot;
+      const value = parseGeoKbFrozenKnowledgeWire({ ...wireSnapshot, context,
+        wireSchemaVersion: "marketing-geo-kb-frozen-wire.v1", knowledgePack });
       return value === null ? { kind: "unavailable" } : { kind: "ok", value };
     }
     if (snapshot.questionSet.schemaVersion !== "marketing-geo-question-set.v1" || (context !== null && context.schemaVersion !== "marketing-geo-snapshot-context.v1")) return { kind: "unavailable" };
@@ -118,6 +123,10 @@ export function createGeoKbV2Runtime(overrides: Partial<GeoKbV2RuntimeDependenci
       return read.kind === "ok" ? read : read.kind === "missing" ? { kind: "missing" } : { kind: "unavailable" };
     },
     validateCurrentProfileCopy: validateCurrentCopy, readReceipt, readGeneration, resolveConfig: dependencies.resolveConfig,
+    collectKnowledgeEvidence: async input => dependencies.collectKnowledgeEvidence({ targetUrl: input.targetUrl, competitors: [...input.confirmedCompetitors] }, {
+      readResource: dependencies.createKnowledgeResourceReader(input.userId, { now: dependencies.now }), reusedSources: input.reusedSources, now: dependencies.now,
+    }),
+    now: dependencies.now,
   });
   const consumeQuota: GeoKbGenerationHandlerDependencies["consumeQuota"] = async (userId, kbId, kind) => {
     for (const [bucket, limit] of [[`geo-kb-v2:${kind}:owner:${userId}`, 10], [`geo-kb-v2:${kind}:kb:${kbId}`, 4]] as const) {
@@ -156,7 +165,7 @@ export function createGeoKbV2Runtime(overrides: Partial<GeoKbV2RuntimeDependenci
       // once every kind has been asked and none of them said yes.
       generationRunning: async (userId, kbId) => {
         let unavailable = false;
-        for (const kind of ["roles", "questions"] as const) {
+        for (const kind of ["roles", "questions", "knowledge_pack"] as const) {
           const read = await dependencies.generationStore.readLatest({ userId, kbId, kind });
           if (read.kind !== "ok") { unavailable = true; continue; }
           if (read.generation !== null && read.generation.state === "dispatched") return true;
@@ -179,7 +188,7 @@ export function createGeoKbV2Runtime(overrides: Partial<GeoKbV2RuntimeDependenci
         ...(payload.facts.some(fact => fact.review === "pending") ? ["facts_pending"] : []),
       ],
     },
-    sources, generation: { authenticate: dependencies.authenticate, prepare, consumeQuota, store: { ...dependencies.generationStore, read: readGeneration, readByKey } }, prepared,
+    sources, generation: { authenticate: dependencies.authenticate, prepare, consumeQuota, store: dependencies.generationStore }, prepared,
   };
 }
 export const DEFAULT_GEO_KB_V2_RUNTIME = createGeoKbV2Runtime();

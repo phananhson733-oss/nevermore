@@ -5,7 +5,7 @@
 import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { normalizeAccountWebsiteUrl, type MarketingWebsiteProfileV1, type WebsiteProfileFieldName, type WebsiteProfileReferenceV1 } from "../../lib/account-websites/contracts.ts";
-import type { GeoKbPayload } from "../../lib/geo-tools/kb-contract.ts";
+import type { AnyGeoKbPayload } from "../../lib/geo-tools/kb-v2-contract.ts";
 import { geoProfileMeasurementDifferences } from "../../lib/geo-tools/kb-profile-suggestions.ts";
 import type { VisibilityWebsiteContext } from "../../lib/geo-tools/visibility-context.ts";
 import { localePath } from "../../lib/locale-path.ts";
@@ -72,7 +72,7 @@ function CompleteProfile({ profile, locale }: { readonly profile: MarketingWebsi
     </details>
   </div>;
 }
-function MeasurementInput({ payload }: { readonly payload: GeoKbPayload }) {
+function MeasurementInput({ payload }: { readonly payload: AnyGeoKbPayload }) {
   const t = useTranslations("tools.aiVisibility");
   return <div className="mt-6 min-w-0 border-t border-brand-border-card pt-5">
     <h4 className="font-medium text-text-dark-primary">{t("source.measurement")}</h4>

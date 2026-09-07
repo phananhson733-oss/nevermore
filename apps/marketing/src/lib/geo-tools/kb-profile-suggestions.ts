@@ -6,6 +6,7 @@ import { validateGeoPlaceholderValue } from "../agents/geo-template-registry.ts"
 import { validGeoCategoryPlaceholders } from "./kb-question-placeholders.ts";
 import { normalizeGeoHost } from "../agents/geo-url.ts";
 import { GEO_KB_LIMITS, type GeoKbCompetitor, type GeoKbPayload } from "./kb-contract.ts";
+import type { AnyGeoKbPayload } from "./kb-v2-contract.ts";
 export const GEO_MEASUREMENT_FIELDS = ["officialName", "categoryTerms", "market", "roles"] as const;
 export type GeoMeasurementField = (typeof GEO_MEASUREMENT_FIELDS)[number];
 export interface GeoProfileSuggestions {
@@ -70,9 +71,12 @@ export function applyGeoProfileSuggestions(payload: GeoKbPayload, proposal: GeoP
   return next;
 }
 
-export function geoProfileMeasurementDifferences(profile: MarketingWebsiteProfileV1, payload: GeoKbPayload): readonly (GeoMeasurementField | "competitors")[] {
+export function geoProfileMeasurementDifferences(profile: MarketingWebsiteProfileV1, payload: AnyGeoKbPayload): readonly (GeoMeasurementField | "competitors")[] {
   const proposal = buildGeoProfileSuggestions(profile, payload);
-  const fields: (GeoMeasurementField | "competitors")[] = GEO_MEASUREMENT_FIELDS.filter(field => JSON.stringify(proposal.fields[field]) !== JSON.stringify(payload[field]));
+  const operationalRoles = payload.roles.map(role => ({ id: role.id, label: role.label, segment: role.segment,
+    painPoints: [...role.painPoints], decisionCriteria: [...role.decisionCriteria], vocabulary: [...role.vocabulary] }));
+  const operational = { officialName: payload.officialName, categoryTerms: payload.categoryTerms, market: payload.market, roles: operationalRoles };
+  const fields: (GeoMeasurementField | "competitors")[] = GEO_MEASUREMENT_FIELDS.filter(field => JSON.stringify(proposal.fields[field]) !== JSON.stringify(operational[field]));
   const competitors = proposal.competitors.map(row => row.value);
   if (JSON.stringify(competitors) !== JSON.stringify(payload.competitors)) fields.push("competitors");
   return fields;

@@ -34,6 +34,7 @@ async function fixture(frozenOrComplete: VersionedGeoKbFrozenSnapshot | boolean 
   const dependencies: GeoBriefReferenceDependencies = {
     readFrozen: vi.fn(async () => ({ kind: "ok" as const, value: frozen })),
     readContext: vi.fn(async () => ({ kind: "ok" as const, value: null })),
+    readPrepared: vi.fn(async () => ({ kind: "ok" as const, value: null })),
     readRun: vi.fn(async () => ({ kind: "missing" as const })),
     readRunEvidence: vi.fn(async () => ({ kind: "not_found" as const })),
   };

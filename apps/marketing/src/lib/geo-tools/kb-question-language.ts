@@ -4,7 +4,7 @@
 import { isSupportedGeoQuestionLanguage } from "./asset-context.ts";
 import { validateGeoPlaceholderValue } from "../agents/geo-template-registry.ts";
 import { validGeoCategoryPlaceholders } from "./kb-question-placeholders.ts";
-import type { GeoKbPayload } from "./kb-contract.ts";
+import type { AnyGeoKbPayload } from "./kb-v2-contract.ts";
 export type GeoQuestionLanguageIssue = "unsupported_language" | "category_terms_not_english" | "role_terms_not_english";
 /** Latin-script terms are compatible with the English registry, not a translation claim. */
 function isEnglishRegistryTerm(text: string): boolean {
@@ -15,18 +15,21 @@ export interface GeoQuestionInputOptions {
   /** Exact supported roles in source-conditioned generation; omitted for legacy all-role generation. */
   readonly activeRoleIds?: readonly string[];
 }
-function activeRoles(payload: GeoKbPayload, options: GeoQuestionInputOptions) {
+function activeRoles(payload: AnyGeoKbPayload, options: GeoQuestionInputOptions) {
   return options.roleLayersSkipped ? [] : payload.roles.filter(role => options.activeRoleIds === undefined || options.activeRoleIds.includes(role.id));
 }
-export function geoQuestionLanguageIssues(payload: GeoKbPayload, options: GeoQuestionInputOptions = {}): readonly GeoQuestionLanguageIssue[] {
+export function geoQuestionLanguageIssues(payload: AnyGeoKbPayload, options: GeoQuestionInputOptions = {}): readonly GeoQuestionLanguageIssue[] {
   if (!isSupportedGeoQuestionLanguage(payload.market.language)) return ["unsupported_language"];
   const issues: GeoQuestionLanguageIssue[] = [];
   if (payload.categoryTerms[0] !== undefined && !isEnglishRegistryTerm(payload.categoryTerms[0])) issues.push("category_terms_not_english");
-  if (activeRoles(payload, options).some(role => !isEnglishRegistryTerm(role.label))) issues.push("role_terms_not_english");
+  if (activeRoles(payload, options).some(role => {
+    const term = "questionLabel" in role && typeof role.questionLabel === "string" ? role.questionLabel : role.label;
+    return !isEnglishRegistryTerm(term);
+  })) issues.push("role_terms_not_english");
   return issues;
 }
 
-export function geoQuestionPlaceholderIssues(payload: GeoKbPayload, options: GeoQuestionInputOptions = {}): readonly ("category_placeholder_invalid" | "role_placeholder_invalid")[] {
+export function geoQuestionPlaceholderIssues(payload: AnyGeoKbPayload, options: GeoQuestionInputOptions = {}): readonly ("category_placeholder_invalid" | "role_placeholder_invalid")[] {
   const issues: ("category_placeholder_invalid" | "role_placeholder_invalid")[] = [];
   if (payload.categoryTerms[0] !== undefined && !validGeoCategoryPlaceholders(payload.categoryTerms[0])) issues.push("category_placeholder_invalid");
   if (activeRoles(payload, options).some(role => validateGeoPlaceholderValue("buyer", role.label) !== null)) issues.push("role_placeholder_invalid");

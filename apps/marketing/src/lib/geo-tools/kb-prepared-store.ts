@@ -4,7 +4,7 @@
 import { z } from "zod";
 import { createAdminSupabaseClient } from "../supabase/admin.ts";
 import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";
-import { parseGeoPreparedCandidate, type GeoPreparedCandidateV1 } from "./kb-prepared-contract.ts";
+import { parseAnyGeoPreparedCandidate, type AnyGeoPreparedCandidate } from "./kb-prepared-contract.ts";
 import { DEFAULT_GEO_KB_RPC_TRANSPORT, type GeoKbRpcTransport } from "./kb-generation-store.ts";
 import { parseGeoKbPayloadV2 } from "./kb-v2-contract.ts";
 import { assertGeoProfileCopyIntegrity } from "./kb-profile-copy-server.ts";
@@ -33,7 +33,7 @@ const rpcRow = (value: unknown): Record<string, unknown> => {
   return value[0] as Record<string, unknown>;
 };
 export function createGeoKbPreparedStore(transport: GeoKbPreparedTransport = DEFAULT) {
-  const read = async (input: { readonly userId: string; readonly kbId: string; readonly candidateId?: string }): Promise<GeoKbStoreResult<GeoPreparedCandidateV1 | null>> => {
+  const read = async (input: { readonly userId: string; readonly kbId: string; readonly candidateId?: string }): Promise<GeoKbStoreResult<AnyGeoPreparedCandidate | null>> => {
     try {
       uuid.parse(input.userId); uuid.parse(input.kbId); if (input.candidateId !== undefined) uuid.parse(input.candidateId);
       const result = await transport.readCandidate(input);
@@ -41,7 +41,7 @@ export function createGeoKbPreparedStore(transport: GeoKbPreparedTransport = DEF
       if (result.data === null) return { kind: "ok", value: null };
       const row = z.object({ id: uuid, user_id: uuid, kb_id: uuid, candidate_hash: hash, candidate: z.unknown() }).parse(result.data);
       if (row.user_id !== input.userId || row.kb_id !== input.kbId || (input.candidateId !== undefined && row.id !== input.candidateId)) return unavailable();
-      const candidate = parseGeoPreparedCandidate(row.candidate);
+      const candidate = parseAnyGeoPreparedCandidate(row.candidate);
       if (candidate.candidateId !== row.id || candidate.kbId !== row.kb_id || candidate.candidateHash !== row.candidate_hash) return unavailable();
       return { kind: "ok", value: candidate };
     } catch { return unavailable(); }

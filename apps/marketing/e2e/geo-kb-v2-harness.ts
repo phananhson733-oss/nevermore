@@ -5,8 +5,10 @@ import { execFileSync } from "node:child_process";
 import { handleWebsiteGeoLoad } from "../src/lib/account-websites/geo-route.ts";
 import { parseMarketingWebsiteProfile } from "../src/lib/account-websites/contracts.ts";
 import { handleVisibilityLoad, handleVisibilityStart, handleVisibilityStatus, type VisibilityHandlerDependencies } from "../src/lib/geo-tools/visibility-handler.ts";
+import { handleVisibilityContext, type VisibilityContextDependencies } from "../src/lib/geo-tools/visibility-context-handler.ts";
 import { countGeoCitationQuestions } from "../src/lib/geo-tools/kb-consumer-projection.ts";
 import { runSharedBrief, type SharedBriefHandlerDependencies } from "../src/lib/geo-tools/brief-shared-handler.ts";
+import { handleBriefLoad, type BriefHandlerDependencies } from "../src/lib/geo-tools/brief-handler.ts";
 import { sharedGeoModelSources } from "../src/lib/geo-tools/brief-shared.ts";
 import { resolveSharedBriefRunEvidence } from "../src/lib/geo-tools/brief-shared-deps.ts";
 import { resolveOwnedVisibilityGap } from "../src/lib/geo-tools/owned-gap.ts";
@@ -35,17 +37,17 @@ export interface GeoKbV2Guard {
   readonly expectedNetworkDrops: string[]; readonly consoleErrors: string[]; readonly pageErrors: string[];
   readonly authorityChecks: { snapshotId: string; accepted: boolean }[]; readonly authFixturePages: string[];
   visibilityCalls: number; briefCalls: number; draftCalls: number;
-  dropNextGenerationResponse(kind: "roles" | "prepare"): void;
+  dropNextGenerationResponse(kind: "roles" | "knowledge" | "prepare"): void;
   readonly report: VisibilityReportV2 | null;
 }
 export async function installGeoKbV2Guard(context: BrowserContext, baseURL: string, fixture: GeoKbV2Fixture): Promise<GeoKbV2Guard> {
   const origin = new URL(baseURL).origin;
   if (new URL(origin).hostname !== "127.0.0.1") throw new Error("V2 fixture requires a loopback app");
-  let dropped: "roles" | "prepare" | null = null, report: VisibilityReportV2 | null = null, brief: GeoContentBrief | null = null;
+  let dropped: "roles" | "knowledge" | "prepare" | null = null, report: VisibilityReportV2 | null = null, brief: GeoContentBrief | null = null;
   const guard: GeoKbV2Guard = { requests: [], unexpected: [], blockedExternal: [], expectedNetworkDrops: [], consoleErrors: [], pageErrors: [], authorityChecks: [], authFixturePages: [], visibilityCalls: 0, briefCalls: 0, draftCalls: 0,
     dropNextGenerationResponse(kind) { dropped = kind; }, get report() { return report; } };
   const recordPage = (page: import("@playwright/test").Page) => {
-    page.on("pageerror", error => guard.pageErrors.push(error.message));
+    page.on("pageerror", error => guard.pageErrors.push(`${new URL(page.url()).pathname}: ${error.message}`));
     page.on("console", message => {
       if (message.type() !== "error") return;
       if (message.text().includes("net::ERR_BLOCKED_BY_CLIENT")) return;
@@ -62,6 +64,28 @@ export async function installGeoKbV2Guard(context: BrowserContext, baseURL: stri
     startRun: async () => { if (!start) throw new Error("Missing actual visibility selection"); report = await runOfflineV2Visibility(fixture, start.engines, start.samplesPerQuestion); guard.visibilityCalls += report.manifest.calls; return { runId: GEO_V2_VISIBILITY_RUN }; },
     readRun: async runId => runId === GEO_V2_VISIBILITY_RUN && report ? { kind: "completed", report } : { kind: "missing" },
   };
+  const visibilityContext: VisibilityContextDependencies = {
+    authenticate: auth,
+    listWebsites: async userId => ({ kind: "ok", value: userId === GEO_V2_USER ? [fixture.website] : [] }),
+    readWebsite: fixture.readWebsite,
+    listKnowledgeBases: async input => {
+      if (input.userId !== GEO_V2_USER) return { kind: "ok", value: [] };
+      const view = await fixture.load(), frozen = fixture.currentFrozen;
+      return { kind: "ok", value: [{ kbId: fixture.kbId, origin: fixture.origin, host: new URL(fixture.origin).host,
+        canonicalSiteKey: new URL(fixture.origin).host, createdAt: GEO_V2_NOW, updatedAt: GEO_V2_NOW,
+        draft: view.draftHash === null ? null : { draftVersion: view.draftVersion, contentHash: view.draftHash, updatedAt: GEO_V2_NOW },
+        frozen: frozen === null ? null : { snapshotId: frozen.snapshotId, revision: frozen.revision, contentHash: frozen.contentHash,
+          questionSetHash: frozen.questionSetHash, frozenAt: frozen.frozenAt } }] };
+    },
+    readFrozen: async input => {
+      const value = await fixture.readComplete(input);
+      return value.kind === "ok" ? { kind: "ok", value: value.value.snapshot } : value.kind === "missing" ? { kind: "missing" } : { kind: "unavailable", reason: "offline_frozen_unavailable" };
+    },
+    readContext: async input => {
+      const value = await fixture.readComplete(input);
+      return value.kind === "ok" ? { kind: "ok", value: value.value.context } : value.kind === "missing" ? { kind: "missing" } : { kind: "unavailable" };
+    },
+  };
   const readRun: GeoBriefReferenceDependencies["readRun"] = async input => input.userId === GEO_V2_USER && input.runId === GEO_V2_VISIBILITY_RUN && report ? { kind: "ok", value: { provenance: "server_owned", report, runId: input.runId, createdAt: GEO_V2_NOW } } : { kind: "missing" };
   const shared: SharedBriefHandlerDependencies = {
     readFrozen: async input => { const value = await fixture.readComplete(input); return value.kind === "ok" ? { kind: "ok", value: value.value.snapshot } : { kind: "not_found" }; },
@@ -70,8 +94,19 @@ export async function installGeoKbV2Guard(context: BrowserContext, baseURL: stri
     configured: () => true, runId: () => "offline-v2-brief",
     assemble: async basis => { guard.briefCalls++; return { ok: true, outline: [{ id: "O1", h2: "Direct answer and evidence", h3: [], answers: basis.must_answer.items.map(item => item.id), provenance: { method: "model", derived_from: sharedGeoModelSources(basis) } }] }; },
   };
+  const briefLoad: BriefHandlerDependencies = {
+    shared, authenticate: auth, listFrozen: async () => ({ kind: "ok", value: [] }), readFrozen: async () => ({ kind: "not_found" }),
+    consumeDailyRun: async () => true, providerConfigured: () => true, sample: async () => ({ kind: "unavailable" }),
+    assemble: async () => { throw new Error("Unexpected legacy GEO Brief assembly"); }, reportAssemblyFailure: () => undefined, now: Date.now,
+  };
   const reference: GeoBriefReferenceDependencies = { readFrozen: async input => { const value = await fixture.readComplete(input); return value.kind === "ok" ? { kind: "ok", value: value.value.snapshot } : { kind: "missing" }; },
-    readContext: async input => { const value = await fixture.readComplete(input); return value.kind === "ok" ? { kind: "ok", value: value.value.context } : { kind: "unavailable" }; }, readRun, readRunEvidence: shared.readRunEvidence };
+    readContext: async input => { const value = await fixture.readComplete(input); return value.kind === "ok" ? { kind: "ok", value: value.value.context } : { kind: "unavailable" }; },
+    readPrepared: async input => {
+      const candidate = fixture.currentCandidate;
+      return input.userId === GEO_V2_USER && input.kbId === fixture.kbId && candidate?.candidateId === input.candidateId
+        ? { kind: "ok", value: candidate } : { kind: "missing" };
+    },
+    readRun, readRunEvidence: shared.readRunEvidence };
   const draft: ContentDraftHandlerDependencies = {
     generateSectionV2: async () => { throw new Error("Unexpected SEO generation"); }, runCoverageV2: async () => { throw new Error("Unexpected SEO coverage"); },
     getServerAuthenticatedUser: fixture.authenticate, readJson: async request => ({ ok: true, value: await request.json() }), extractClientIp: () => "203.0.113.19", acquireSlot: () => ({ acquired: true, release: () => undefined }), consumeQuota: async () => ({ kind: "allowed", hits: 1 }),
@@ -116,10 +151,12 @@ export async function installGeoKbV2Guard(context: BrowserContext, baseURL: stri
       if (dropped === path) { dropped = null; guard.expectedNetworkDrops.push(request.url()); await route.abort("failed"); return; }
       await respond(route, response); return;
     }
+    if (id === "GET /api/tools/ai-visibility-check/context") { await respond(route, await handleVisibilityContext(incoming, visibilityContext)); return; }
     if (id === "POST /api/tools/ai-visibility-check/load") { await respond(route, await handleVisibilityLoad(incoming, visibility)); return; }
+    if (id === "POST /api/tools/ai-visibility-check/history") { await respond(route, Response.json({ data: { runs: [], hasMore: false } })); return; }
     if (id === "POST /api/tools/ai-visibility-check/run") { start = body as typeof start; await respond(route, await handleVisibilityStart(incoming, visibility)); return; }
     if (id === "POST /api/tools/ai-visibility-check/run/status") { await respond(route, await handleVisibilityStatus(incoming, visibility)); return; }
-    if (id === "POST /api/tools/geo-brief/load") { const frozen = fixture.currentFrozen; await respond(route, Response.json({ data: { choices: frozen === null ? [] : [{ kbId: frozen.kbId, snapshotId: frozen.snapshotId, revision: frozen.revision, host: "geo-chain.test", frozenAt: frozen.frozenAt, questions: frozen.questionSet.questions }], runsPerDay: 20, providerConfigured: true } })); return; }
+    if (id === "POST /api/tools/geo-brief/load") { await respond(route, await handleBriefLoad(incoming, briefLoad)); return; }
     if (id === "POST /api/tools/geo-brief/run") { const response = await runSharedBrief(GEO_V2_USER, body, shared, async () => true, Date.now); const parsed = await response.clone().json() as { data?: { brief: GeoContentBrief } }; brief = parsed.data?.brief ?? null; await respond(route, response); return; }
     if (id === "POST /api/tools/content-draft/run") { await respond(route, await handleContentDraftRunRequest(incoming, draft)); return; }
     guard.unexpected.push(id); await route.abort("blockedbyclient");

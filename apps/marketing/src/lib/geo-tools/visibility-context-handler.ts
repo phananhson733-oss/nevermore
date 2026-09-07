@@ -4,8 +4,8 @@
 import { authenticateAccountRequest, privateError, privateJson } from "../account-websites/route-http.ts";
 import { listAccountWebsites, readAccountWebsite } from "../account-websites/store.ts";
 import { normalizeAccountWebsiteUrl, parseWebsiteProfileReference, parseWebsiteSummary } from "../account-websites/contracts.ts";
-import { listGeoKnowledgeBases, readFrozenGeoKb } from "./kb-store.ts";
-import { readGeoSnapshotContext } from "./asset-context-store.ts";
+import { listVersionedGeoKnowledgeBases, readVersionedFrozenGeoKb } from "./kb-versioned-read.ts";
+import { readVersionedGeoSnapshotContext } from "./asset-context-store.ts";
 import { profileCopyReference } from "./kb-profile-copy.ts";
 import { assertGeoProfileCopyIntegrity } from "./kb-profile-copy-server.ts";
 import { geoQuestionLanguageIssues } from "./kb-question-language.ts";
@@ -17,11 +17,11 @@ export interface VisibilityContextDependencies {
   authenticate: typeof authenticateAccountRequest;
   listWebsites: typeof listAccountWebsites;
   readWebsite: typeof readAccountWebsite;
-  listKnowledgeBases: typeof listGeoKnowledgeBases;
-  readFrozen: typeof readFrozenGeoKb;
-  readContext: typeof readGeoSnapshotContext;
+  listKnowledgeBases: typeof listVersionedGeoKnowledgeBases;
+  readFrozen: typeof readVersionedFrozenGeoKb;
+  readContext: typeof readVersionedGeoSnapshotContext;
 }
-const DEFAULT: VisibilityContextDependencies = { authenticate: authenticateAccountRequest, listWebsites: listAccountWebsites, readWebsite: readAccountWebsite, listKnowledgeBases: listGeoKnowledgeBases, readFrozen: readFrozenGeoKb, readContext: readGeoSnapshotContext };
+const DEFAULT: VisibilityContextDependencies = { authenticate: authenticateAccountRequest, listWebsites: listAccountWebsites, readWebsite: readAccountWebsite, listKnowledgeBases: listVersionedGeoKnowledgeBases, readFrozen: readVersionedFrozenGeoKb, readContext: readVersionedGeoSnapshotContext };
 
 export async function handleVisibilityContext(request: Request, dependencies: VisibilityContextDependencies = DEFAULT): Promise<Response> {
   const auth = await dependencies.authenticate();
@@ -61,7 +61,9 @@ export async function handleVisibilityContext(request: Request, dependencies: Vi
         frozen = {
           snapshotId: read.value.snapshotId, revision: read.value.revision, frozenAt: read.value.frozenAt, contentHash: read.value.contentHash, questionSetHash: read.value.questionSetHash,
           registryVersion: read.value.questionSet.registryVersion, questionCount: read.value.questionSet.questions.length, retrievalCount: read.value.questionSet.questions.filter(q => q.mode === "retrieval").length,
-          payload: read.value.payload, questions: [...read.value.questionSet.questions], profileReference, profileCompleteness: copy ? "complete" : "legacy_partial", skippedLayers: [...context.value?.skippedLayers ?? []],
+          payload: read.value.payload, questions: read.value.questionSet.questions.map(question => ({ id: question.id, text: question.text, layer: question.layer,
+            mode: question.mode, calibrated: question.calibrated, roleId: question.roleId ?? null, templateId: question.templateId ?? null,
+            requiredEntities: [...question.requiredEntities ?? []] })), profileReference, profileCompleteness: copy ? "complete" : "legacy_partial", skippedLayers: [...context.value?.skippedLayers ?? []],
         };
       }
       const sync: VisibilityWebsiteContext["preparation"]["profileSync"] = !frozen ? "missing" : frozen.profileCompleteness === "legacy_partial" ? "legacy_partial" : !currentProfile || JSON.stringify(currentProfile.reference) !== JSON.stringify(frozen.profileReference) ? "outdated" : "current";

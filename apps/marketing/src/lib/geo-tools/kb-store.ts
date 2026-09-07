@@ -187,7 +187,7 @@ const DRAFT_SUMMARY_COLUMNS =
   "kb_id,user_id,schema_version,draft_version,content_hash,updated_at";
 const DRAFT_COLUMNS = `${DRAFT_SUMMARY_COLUMNS},payload`;
 const SNAPSHOT_SUMMARY_COLUMNS =
-  "id,kb_id,user_id,revision,schema_version,content_hash,question_set_hash,frozen_at";
+  "id,kb_id,user_id,revision,schema_version,content_hash,question_set_hash,prepared_id,frozen_at";
 const SNAPSHOT_DETAIL_COLUMNS = `${SNAPSHOT_SUMMARY_COLUMNS},question_set`;
 /**
  * What the single-knowledge-base bundle asks for. The version-aware reader
