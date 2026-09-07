@@ -5,7 +5,7 @@ import type { ResearchPage } from "@sf/public-tools/content-brief/v2-contract";
 import type { BriefV2Context, ModelBriefV2Output } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { parseBriefV2Context } from "@sf/public-tools/content-brief/v2-generation";
 import { buildSerpObservations } from "@sf/public-tools/content-brief/assemble";
-import { runContentBriefV2Llm } from "./content-brief-v2-llm.ts";
+import { CONTENT_BRIEF_V2_REPAIR_DEADLINE_MS, runContentBriefV2Llm } from "./content-brief-v2-llm.ts";
 import { createKeywordLlmClient, KeywordLlmError, type KeywordLlmClient, type KeywordLlmConfig, type KeywordLlmFailureReason, type KeywordLlmRequest } from "./keyword-llm-client.ts";
 
 const NOW = 1_800_000_000_000;
@@ -369,6 +369,61 @@ describe("one-call Brief v2 assembly", () => {
     expect(requests).toHaveLength(1);
     expect(result.output).toBeNull();
     expect(result.validation_path).toBe("research.questions[0].anchor");
+  });
+
+  it.each([
+    ["is not JSON at all", "Sorry, here is the corrected heading."],
+    ["no longer carries a string at the rejected path", "{}"],
+    ["answers with a number where the string was", JSON.stringify({ research: { outline: [{ h2: 7 }] } })],
+  ])("keeps the first rejection when the repair reply %s", async (_label, repairReply) => {
+    const wrong = JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"));
+    const { requests, result } = await runSequence([wrong, repairReply]);
+    expect(requests).toHaveLength(2);
+    expect(result.output).toBeNull();
+    expect(result.validation_path).toBe("research.outline[0].h2");
+    // Both calls were paid for, so both are reported.
+    expect(result.reads).toMatchObject({ status: "unavailable", reason: "validation_failed", attempted: 2, calls: 2 });
+  });
+
+  it("reports a repair that came back after its own deadline as a timeout", async () => {
+    const wrong = JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"));
+    const recorded = sequenceRecorder([wrong, RESPONSE]);
+    let elapsed = 0;
+    const client: KeywordLlmClient = { complete: async (request) => {
+      const reply = await recorded.client.complete(request);
+      // The repair itself overran CONTENT_BRIEF_V2_REPAIR_DEADLINE_MS.
+      if (recorded.requests.length === 2) elapsed = CONTENT_BRIEF_V2_REPAIR_DEADLINE_MS + 1;
+      return reply;
+    } };
+    const result = await runContentBriefV2Llm(
+      { context: context(), deadlineAt: NOW + 45_000 }, { config: CONFIG, client, now: () => NOW + elapsed });
+    expect(result.output).toBeNull();
+    expect(result.validation_path).toBe("research.outline[0].h2");
+    expect(result.reads).toMatchObject({ status: "unavailable", reason: "timeout", attempted: 2, calls: 2 });
+  });
+
+  it("makes the token total unknown when one of the two calls reported no usage", async () => {
+    const replies = [JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6")), RESPONSE];
+    let calls = 0;
+    const client: KeywordLlmClient = { complete: async () => {
+      const index = calls++;
+      return { content: replies[index]!, modelId: "deployment-reported", usage: index === 0
+        ? { requestCount: 1, retryCount: 0, inputTokens: 1200, outputTokens: 500 }
+        : { requestCount: 1, retryCount: 0, inputTokens: null, outputTokens: null } };
+    } };
+    const result = await runContentBriefV2Llm(
+      { context: context(), deadlineAt: NOW + 45_000 }, { config: CONFIG, client, now: () => NOW });
+    expect(result.output).not.toBeNull();
+    // Adding only the call that reported would understate what the run cost.
+    expect(result.reads).toMatchObject({ status: "complete", calls: 2, input_tokens: null, output_tokens: null });
+  });
+
+  it("names an unparsable first reply as such rather than as a rule it broke", async () => {
+    const { requests, result } = await runSequence(["Here is your brief:"]);
+    expect(requests).toHaveLength(1);
+    expect(result.output).toBeNull();
+    expect(result.validation_path).toBe("<reply is not JSON>");
+    expect(result.reads).toMatchObject({ status: "unavailable", reason: "validation_failed", attempted: 1 });
   });
 
   it("allows a reviewed empty assembly for wholly irrelevant evidence", async () => {

@@ -106,6 +106,29 @@ describe("crawlContentBriefV2Targets", () => {
     expect(result.observed[0]?.research.segments.some((segment) => segment.text.includes("site owners diagnose"))).toBe(true);
   });
 
+  it("hands the run's keywords to the extractor, so a late relevant block survives the ceiling", async () => {
+    // Nothing else in this suite passes keywords, so dropping them on the way to
+    // extractContentBriefResearch would leave every test here green while every
+    // crawled page came back ranked by document order again.
+    const filler = Array.from({ length: 14 }, (_, index) =>
+      `<p>Unrelated background paragraph number ${index + 1} about seasonal planting charts.</p>`).join("");
+    const body = `<main>${filler}<p>Mercury retrograde meaning is an apparent reversal seen from Earth, not a real orbit change.</p></main>`;
+    const respond = async (url: string) => page(url, { body, bytes: Buffer.byteLength(body) });
+    const texts = (result: Awaited<ReturnType<typeof crawlContentBriefV2Targets>>) =>
+      result.observed[0]?.research.segments.map((segment) => segment.text) ?? [];
+    const keyworded = await crawlContentBriefV2Targets(
+      { targets: [competitor(1)], language: "en", keywords: ["mercury retrograde meaning"], deadlineAt: DEADLINE },
+      { fetchResource: respond, now: () => START },
+    );
+    const plain = await crawlContentBriefV2Targets(
+      { targets: [competitor(1)], language: "en", deadlineAt: DEADLINE }, { fetchResource: respond, now: () => START },
+    );
+    const relevant = (values: readonly string[]) => values.some((text) => text.startsWith("Mercury retrograde meaning"));
+    expect(relevant(texts(keyworded))).toBe(true);
+    expect(relevant(texts(plain))).toBe(false);
+    expect(texts(keyworded)).toHaveLength(12);
+  });
+
   it("keeps the extractor's segment and character caps with omitted counts", async () => {
     const body = `<main>${Array.from({ length: 15 }, () => `<p>${"字".repeat(350)}</p>`).join("")}</main>`;
     const result = await run([competitor(1)], async (url) => page(url, { body }), "zh");

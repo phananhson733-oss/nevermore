@@ -203,6 +203,14 @@ describe("projectBriefV2Gsc", () => {
     expect(result.candidates).toEqual([]);
   });
 
+  it("keeps a page whose slug carries a stray percent sign, instead of throwing on it", () => {
+    // decodeURIComponent rejects a lone "%"; the slug still names the topic and
+    // the projection must not lose the page or fail the whole run over it.
+    const stray = "https://owned.test/100%-content-brief-checklist";
+    const result = project([], [{ page: stray, clicks: 1, impressions: 5, position: 9 }]);
+    expect(result.candidates.map(({ url }) => url)).toEqual([stray]);
+  });
+
   it("ranks an unmatched page by how much of the topic its URL names, not by impressions", () => {
     const result = project([], [
       { page: "https://owned.test/brief", clicks: 900, impressions: 90_000, position: 1 },

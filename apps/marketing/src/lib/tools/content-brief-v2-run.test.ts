@@ -144,6 +144,42 @@ describe("runContentBriefV2 admitted generation", () => {
     expect(brief.context.research.pages.filter((item) => item.role === "competitor")).toHaveLength(1);
   });
 
+  it("still returns a parseable brief when the model needed its one repair call", async () => {
+    // The repair reports two requests, because two were paid for. v2-brief's
+    // run.llm rule used to reject any brief claiming more than one, so every
+    // run that actually used the repair threw and the handler answered 503
+    // brief_unavailable, on exactly the runs the repair was added to rescue.
+    // Neither the LLM suite nor the brief suite could see it: one never
+    // assembles a brief and the other never spends a repair. This is the only
+    // test that crosses both, so it is the one that holds BRIEF_LLM_CALLS_MAX
+    // and the reported count together.
+    const wrong = { ...model(), research: { ...model().research,
+      outline: [{ ...model().research.outline[0]!, h2: "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf" }] } };
+    const replies = [JSON.stringify(wrong), JSON.stringify(model())];
+    const fixture = seams();
+    let call = 0;
+    const complete = vi.fn(async (_request: KeywordLlmRequest) => ({
+      content: replies[call++]!, modelId: "fixture-model",
+      usage: { requestCount: 1, retryCount: 0, inputTokens: 350, outputTokens: 200 },
+    }));
+    const brief = await runContentBriefV2(REQUEST, { ...fixture.deps,
+      runLlm: (input: Parameters<typeof runContentBriefV2Llm>[0]) =>
+        runContentBriefV2Llm(input, { client: { complete }, config: CONFIG, now: () => START }) });
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(brief.generated?.research.outline[0]?.h2).toBe("Understand reporting delays");
+    expect(brief.run.llm).toMatchObject({ status: "complete" });
+    expect(await parseContentBriefV2(brief)).toMatchObject({ ok: true });
+  });
+
+  it("gives the crawler the run's own keywords, so page excerpts are ranked against them", async () => {
+    // The crawler only ranks excerpts when it is told what the run is about.
+    // Nothing else here inspects the crawl input, so dropping the keywords on
+    // this seam would leave every assertion in this file passing.
+    const fixture = seams();
+    await runContentBriefV2(REQUEST, fixture.deps);
+    expect(fixture.deps.crawl.mock.calls[0]?.[0].keywords).toEqual([KEYWORD.primary, ...KEYWORD.supporting]);
+  });
+
   it("offers an owned page that already ranks for the keyword ahead of a Search Console candidate", async () => {
     const ranked = "https://www.owned.test/other";
     const fixture = seams(model(true), [{ type: "organic", rank_group: 2, domain: "owned.test", title: "Another owned page", url: ranked }]);

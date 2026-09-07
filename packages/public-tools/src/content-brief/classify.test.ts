@@ -178,6 +178,16 @@ describe("classifySerpFormat: path rules", () => {
     }
   });
 
+  it("maps the short-video path patterns to video", () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ["https://x.example/reels/abc", "path:reels"],
+      ["https://x.example/videos/abc", "path:videos"],
+    ];
+    for (const [url, rule] of cases) {
+      expect(classifySerpFormat(serp("x.example", url)), url).toEqual({ value: "video", rules_hit: [rule] });
+    }
+  });
+
   it("treats a final path segment like a directory so /compare matches /compare/", () => {
     expect(
       classifySerpFormat(serp("x.example", "https://x.example/compare")).value,
@@ -269,6 +279,31 @@ describe("classifySerpFormat: title rules", () => {
     expect(
       classifySerpFormat(serp("x.example", null, "vs code extensions")).value,
     ).toBe("unknown");
+  });
+});
+
+describe("classifySerpFormat: title normalization", () => {
+  it("folds a full-width title to its ASCII form before matching", () => {
+    // Provider titles arrive as the page wrote them, and a CJK-authored page
+    // routinely spells Latin words full-width. Lower-casing alone leaves
+    // U+FF57 as U+FF57, so every rule below misses and the row is "unknown".
+    expect(classifySerpFormat(serp("x.example", null, "\uff37\uff48\uff41\uff54 \uff49\uff53 \uff41 \uff23\uff32\uff2d"))).toEqual({
+      value: "guide", rules_hit: ["title:what_is"],
+    });
+    expect(classifySerpFormat(serp("x.example", null, "\uff34\uff48\uff45 \uff42\uff45\uff53\uff54 \uff23\uff32\uff2d")).value).toBe("listicle");
+  });
+
+  it("maps the remaining explainer and Chinese title patterns to their formats", () => {
+    const cases: readonly (readonly [string, SerpFormat, string])[] = [
+      ["Mercury retrograde explained", "guide", "title:explained"],
+      ["\u6c34\u9006\u65f6\u95f4\u8868", "guide", "title:zh_dates"],
+      ["\u6c34\u9006\u6642\u9593\u8868", "guide", "title:zh_dates"],
+      ["\u6c34\u9006\u6c34\u6676\u63a8\u8350\u6392\u884c", "listicle", "title:zh_best"],
+      ["\u6c34\u9006\u6c34\u6676\u6392\u884c\u699c", "listicle", "title:zh_best"],
+    ];
+    for (const [title, format, rule] of cases) {
+      expect(classifySerpFormat(serp("x.example", null, title)), title).toEqual({ value: format, rules_hit: [rule] });
+    }
   });
 });
 

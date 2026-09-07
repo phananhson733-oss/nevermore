@@ -50,6 +50,16 @@ describe("relevanceTerms", () => {
     expect(relevanceTerms([])).toEqual([]);
     expect(relevanceTerms(["", "   "])).toEqual([]);
   });
+
+  it("orders terms by descending weight so a bounded consumer keeps the strongest", () => {
+    const terms = relevanceTerms(["mercury retrograde", "\u6c34\u9006\u662f\u4ec0\u4e48\u610f\u601d"]);
+    const weights = terms.map((term) => term.weight);
+
+    expect(weights).toEqual([...weights].sort((a, b) => b - a));
+    // Equal weights fall back to code-unit order, so the set is deterministic.
+    expect(terms.slice(0, 2).map((term) => term.value)).toEqual(["mercury retrograde", "\u6c34\u9006\u662f\u4ec0\u4e48\u610f\u601d"]);
+    expect(terms.at(-1)?.weight).toBe(0.5);
+  });
 });
 
 describe("relevanceScore", () => {
@@ -78,6 +88,27 @@ describe("relevanceScore", () => {
 
     expect(relevanceScore("水逆期间容易出现沟通问题", null, chinese)).toBeGreaterThan(0);
     expect(relevanceScore("完全无关的内容", null, chinese)).toBe(0);
+  });
+
+  it("does not read a one-word keyword out of a longer unrelated word", () => {
+    // "cat" is inside "education": substring matching let a page of education
+    // prose outscore the one paragraph that is actually about cats. Only a
+    // single Latin word carries the whole-word flag that stops it.
+    const cat = relevanceTerms(["cat"]);
+    const mixed = relevanceTerms(["mercury retrograde", "\u6c34\u9006"]);
+
+    expect(cat.find((term) => term.value === "cat")?.word).toBe(true);
+    expect(mixed.find((term) => term.value === "mercury retrograde")?.word).toBe(false);
+    expect(mixed.find((term) => term.value === "\u6c34\u9006")?.word).toBe(false);
+    expect(relevanceScore("Education policy sets classroom funding.", null, cat)).toBe(0);
+    expect(relevanceScore("A cat needs taurine.", null, cat)).toBeGreaterThan(0);
+    // A phrase carries its own boundaries, so it still matches inside prose.
+    expect(relevanceScore("read the mercury retrograde meaning section", null, terms)).toBeGreaterThan(0);
+  });
+
+  it("folds full-width source text before matching", () => {
+    expect(relevanceScore("\uff2d\uff25\uff32\uff23\uff35\uff32\uff39 \uff52\uff45\uff54\uff52\uff4f\uff47\uff52\uff41\uff44\uff45 \uff4d\uff45\uff41\uff4e\uff49\uff4e\uff47", null, terms))
+      .toBe(relevanceScore("mercury retrograde meaning", null, terms));
   });
 
   it("is case and width insensitive", () => {

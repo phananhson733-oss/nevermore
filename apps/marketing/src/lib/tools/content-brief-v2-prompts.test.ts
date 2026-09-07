@@ -108,6 +108,22 @@ describe("Brief v2 assembly prompt", () => {
     expect(system).toContain("do_not_cover.topic must be a topic actually covered by that owned excerpt");
   });
 
+  it("names the output language, so the instruction the validator enforces is actually given", () => {
+    // The generated-language check rejects a brief written in the sources'
+    // script. Without this sentence the model is being failed for a rule it was
+    // never told, and the run pays for a repair call to learn it.
+    const english = prepareContentBriefV2Prompt(context())!.system;
+    expect(english).toContain('Write every generated string in English (input.language "en")');
+    expect(english).toContain("Evidence in other languages does not change the output language");
+
+    const input = context();
+    const chinese = prepareContentBriefV2Prompt({ ...input, input: { ...input.input, language: "zh" } })!.system;
+    expect(chinese).toContain('Write every generated string in Chinese (input.language "zh")');
+    // An unlisted code is a worse brief, not a failed run: it passes through.
+    const unlisted = prepareContentBriefV2Prompt({ ...input, input: { ...input.input, language: "gd" } })!.system;
+    expect(unlisted).toContain('Write every generated string in gd (input.language "gd")');
+  });
+
   it("requests distinct reader needs and corroborating sources without forcing mock counts", () => {
     const system = prepareContentBriefV2Prompt(context())!.system;
     expect(system).toContain("Use all relevant corroborating units for each question");

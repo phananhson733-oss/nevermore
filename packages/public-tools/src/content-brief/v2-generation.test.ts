@@ -304,6 +304,37 @@ describe("v2 generated language", () => {
     }
   });
 
+  it("checks every generated string the brief prints, not only the four spot-checked ones", () => {
+    // A field missing from the walk is a field the model may answer in the
+    // wrong language forever, and no other test would notice.
+    for (const [path, expected] of [
+      [["research", "outline", 0, "h3", 0], "research.outline[0].h3[0]"],
+      [["intent", "rationale"], "intent.rationale"],
+      [["format", "rationale"], "format.rationale"],
+      [["page_plan", "steps", 1, "instruction"], "page_plan.steps[1].instruction"],
+      [["gap_angle", "rationale"], "gap_angle.rationale"],
+      [["internal_links", 0, "anchor"], "internal_links[0].anchor"],
+      [["internal_links", 0, "why"], "internal_links[0].why"],
+      [["do_not_cover", 0, "why"], "do_not_cover[0].why"],
+    ] as const) {
+      const result = generation.validateModelBriefV2(
+        changed(model(), path, "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf\u7684\u542b\u4e49"), context());
+      expect(result.ok ? null : result.path, expected).toBe(expected);
+    }
+  });
+
+  it("needs four letters and a real majority before it calls a string the wrong language", () => {
+    const heading = (text: string) => generation.validateModelBriefV2(
+      changed(model(), ["research", "outline", 0, "h2"], text), context()).ok;
+    // Under the sample minimum: two borrowed characters are a term, not prose.
+    expect(heading("\u5ef6\u8fdf")).toBe(true);
+    // Four letters, all of them CJK: this is the failure that was observed.
+    expect(heading("\u7406\u89e3\u5ef6\u8fdf")).toBe(false);
+    // Exactly half is not a majority, so an even split stays acceptable.
+    expect(heading("\u5ef6\u8fdf ab")).toBe(true);
+    expect(heading("\u7406\u89e3\u5ef6 ab")).toBe(false);
+  });
+
   it("allows a borrowed term inside an otherwise English string", () => {
     const borrowed = changed(model(), ["research", "outline", 0, "h2"],
       "Understand the \u5ef6\u8fdf reporting window and what it means for you");

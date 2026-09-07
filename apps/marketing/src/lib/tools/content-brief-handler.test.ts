@@ -739,6 +739,21 @@ describe("handleContentBriefRequest v2 admission and evidence", () => {
     expect(fields.filter((field) => field === "coreFeatures").length).toBeLessThanOrEqual(20);
   });
 
+  it("carries the rejected rule to the run log without letting it reach the brief", async () => {
+    // "validation_failed" alone made every such production run unreproducible.
+    const deps = v2Dependencies({
+      runLlmV2: async ({ context }) => ({
+        context, output: null, prompt_bytes: 2048, validation_path: "research.outline[0].h2",
+        reads: { status: "unavailable", reason: "validation_failed", attempted: 1, calls: 1,
+          model_id: "fixture-model", input_tokens: 1200, output_tokens: 500 },
+      }),
+    });
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), deps));
+    expect(brief.generated).toBeNull();
+    expect(JSON.stringify(brief)).not.toContain("research.outline[0].h2");
+    expect(lastRunLine(deps).validation_path).toBe("research.outline[0].h2");
+  });
+
   it.each(["missing", "not_confirmed", "error"] as const)("does not turn a %s profile read into an invented one-fact count", async (kind) => {
     const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), v2Dependencies({ readWebsite: async () => ({ kind }) })));
     expect(brief.context.facts).toEqual([]);

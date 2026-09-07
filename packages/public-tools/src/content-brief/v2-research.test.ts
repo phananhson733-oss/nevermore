@@ -164,6 +164,35 @@ describe("v2 model research with independent source-backed oracle", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("keeps a trailing symbol as part of the question, so C and C++ stay two needs", () => {
+    const value = bundle(paraphrases);
+    const result = research.validateResearchOutput({
+      questions: [
+        { anchor: "U1", q: "What is C?", sources: ["U1"] },
+        { anchor: "U2", q: "What is C++?", sources: ["U2"] },
+      ],
+      outline: [{ h2: "The C case", h3: [], answers: ["U1"] }, { h2: "The C++ case", h3: [], answers: ["U2"] }],
+    }, value);
+    expect(result.ok).toBe(true);
+  });
+
+  it.each([
+    ["questions[1].q", "\uff1f\uff1f\uff1f", "Understand the delay", "Understand the timing"],
+    ["outline[1].h2", "How long is the delay?", "Understand the delay", " -- "],
+  ])("rejects %s when it folds away to nothing", (path, second, firstHeading, secondHeading) => {
+    // A heading or question made only of punctuation carries no reader need, and
+    // an empty identity would otherwise collide with the next empty one.
+    const value = bundle(paraphrases);
+    const result = research.validateResearchOutput({
+      questions: [
+        { anchor: "U1", q: "Why is Search Console data delayed?", sources: ["U1"] },
+        { anchor: "U2", q: second, sources: ["U2"] },
+      ],
+      outline: [{ h2: firstHeading, h3: [], answers: ["U1"] }, { h2: secondHeading, h3: [], answers: ["U2"] }],
+    }, value);
+    expect(result).toMatchObject({ ok: false, path });
+  });
+
   it("allows a PAA-only question and outline with zero competitor coverage", () => {
     const value = bundle([], [{ id: "A1", question: "How long does reporting take?", seed_question: null }]);
     const result = research.validateResearchOutput({ questions: [{ anchor: "U1", q: "How long does reporting take?", sources: ["U1"] }], outline: [{ h2: "Reporting timing", h3: [], answers: ["U1"] }] }, value);
