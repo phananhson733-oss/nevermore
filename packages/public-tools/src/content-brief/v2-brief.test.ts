@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { BRIEF_LLM_CALLS_MAX } from "./constants.ts";
 import * as brief from "./v2-brief.ts";
 import { buildResearchBundle, validateResearchOutput } from "./v2-research.ts";
 import type { ContentBriefV2 } from "./v2-generation-contract.ts";
@@ -75,11 +76,33 @@ describe("whole v2 Brief and exact confirmed revision", () => {
     const value = structuredClone(original);
     if (kind === "reads") value.run = { ...value.run, reads: value.run.reads.filter((read) => read.source !== "paa") };
     if (kind === "coverage") value.generated = { ...value.generated!, research: { ...value.generated!.research, questions: [{ ...value.generated!.research.questions[0]!, covered_by: 3 }] } };
-    if (kind === "calls") value.run = { ...value.run, llm: { ...value.run.llm, calls: 2 } };
+    // One past the bound. A run may legitimately spend BRIEF_LLM_CALLS_MAX
+    // requests, so the forgery has to claim more than any real run could.
+    if (kind === "calls") value.run = { ...value.run, llm: { ...value.run.llm, calls: BRIEF_LLM_CALLS_MAX + 1 } };
     if (kind === "prompt") value.run = { ...value.run, prompt_bytes: 49153 };
     const raw = kind === "extra" ? { ...value, unexpected: true } : value;
     value.run = { ...value.run, fingerprint: await brief.fingerprintBriefV2(raw) };
     expect(await brief.parseContentBriefV2(kind === "extra" ? { ...value, unexpected: true } : value)).toMatchObject({ ok: false });
+  });
+
+  it("accepts a complete run that spent its repair call", async () => {
+    // The repair is a second paid request and says so. This is the state a
+    // real repaired run reports, so accepting it is deliberate, not an
+    // accident of the forgery bound moving.
+    const value = fixture();
+    value.run = { ...value.run, llm: { ...value.run.llm, calls: BRIEF_LLM_CALLS_MAX } };
+    value.run = { ...value.run, fingerprint: await brief.fingerprintBriefV2(value) };
+    expect(await brief.parseContentBriefV2(value)).toMatchObject({ ok: true });
+  });
+
+  it("rejects an unavailable run claiming more attempts than the bound allows", async () => {
+    const value = fixture();
+    value.generated = null;
+    value.run = { ...value.run, llm: { status: "unavailable", reason: "validation_failed",
+      attempted: BRIEF_LLM_CALLS_MAX + 1, calls: BRIEF_LLM_CALLS_MAX + 1,
+      model_id: null, input_tokens: null, output_tokens: null } };
+    value.run = { ...value.run, fingerprint: await brief.fingerprintBriefV2(value) };
+    expect(await brief.parseContentBriefV2(value)).toMatchObject({ ok: false });
   });
 
   it("preserves generation failure as unavailable, not an empty success", async () => {

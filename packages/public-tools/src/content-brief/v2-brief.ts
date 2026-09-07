@@ -6,6 +6,7 @@ import {
   array, byteLength, finite, identifier, invalid, isRecord, literal, llmReadMeta, modelText,
   nullable, object, ok, oneOf, reference, text, timestamp, type Decoded, type Decoder,
 } from "./parse-brief-shape.ts";
+import { BRIEF_LLM_CALLS_MAX } from "./constants.ts";
 import { CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA, RESEARCH_HEADING_MAX_CHARS, RESEARCH_OUTLINE_MAX, RESEARCH_PROMPT_MAX_BYTES } from "./v2-contract.ts";
 import { parseBriefV2Context, parseBriefV2Generated } from "./v2-generation.ts";
 import type { BriefV2Generated, ConfirmedBriefV2, ContentBriefV2 } from "./v2-generation-contract.ts";
@@ -82,9 +83,9 @@ export async function parseContentBriefV2(input: unknown): Promise<Decoded<Conte
       retained.get("gsc") !== brief.context.gsc.matches.length) return reference("run.reads.retained");
   const gscRead = reads.find((read) => read.source === "gsc")!;
   if (gscRead.status !== brief.context.gsc.status || gscRead.reason !== brief.context.gsc.reason) return reference("run.reads.gsc");
-  if ((llm.status === "complete") !== (brief.generated !== null) || llm.calls > 1 ||
-      (llm.status === "complete" && (llm.calls !== 1 || prompt_bytes === 0)) ||
-      (llm.status === "unavailable" && (llm.attempted === null || llm.attempted > 1 || llm.calls > llm.attempted)) ||
+  if ((llm.status === "complete") !== (brief.generated !== null) || llm.calls > BRIEF_LLM_CALLS_MAX ||
+      (llm.status === "complete" && (llm.calls < 1 || prompt_bytes === 0)) ||
+      (llm.status === "unavailable" && (llm.attempted === null || llm.attempted > BRIEF_LLM_CALLS_MAX || llm.calls > llm.attempted)) ||
       (llm.calls > 0 && prompt_bytes === 0)) return reference("run.llm");
   if ([llm.input_tokens, llm.output_tokens].some((tokens) => tokens !== null && !Number.isSafeInteger(tokens)) ||
       (llm.status === "complete" && (llm.temperature_requested !== 0.2 ||

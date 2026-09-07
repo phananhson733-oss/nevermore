@@ -1,7 +1,7 @@
 // @input -- a frozen v2/v3 context, remaining deadline and CONTENT_BRIEF_* configuration
 // @output -- the exact model context, validated full assembly and honest usage
 // @pos -- one v2 assembly call; no retry, fallback or external source reads
-import { ENVELOPE_MS, LLM_MAX_OUTPUT_TOKENS } from "@sf/public-tools/content-brief/constants";
+import { BRIEF_LLM_CALLS_MAX, ENVELOPE_MS, LLM_MAX_OUTPUT_TOKENS } from "@sf/public-tools/content-brief/constants";
 import type { LlmReadMeta, UnavailableReason } from "@sf/public-tools/content-brief/contract";
 import type { BriefV2Context, BriefV2Generated } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { parseBriefV2Context, validateModelBriefV2 } from "@sf/public-tools/content-brief/v2-generation";
@@ -228,13 +228,13 @@ export async function runContentBriefV2Llm(
     const usage = addUsage(completion.usage, { ...error.usage, requestCount: Math.max(1, error.usage.requestCount) });
     // A repair that timed out or was refused did not fail validation; it never
     // produced a reply to validate. Report what actually happened.
-    return { context, output: null, prompt_bytes, validation_path: first.path, reads: unavailable(FAILURE_REASONS[error.reason], 2, usage, modelId) };
+    return { context, output: null, prompt_bytes, validation_path: first.path, reads: unavailable(FAILURE_REASONS[error.reason], BRIEF_LLM_CALLS_MAX, usage, modelId) };
   }
   const total = addUsage(completion.usage, repair.usage);
   const failAfterRepair = (path: string): ContentBriefV2LlmResult =>
-    ({ context, output: null, prompt_bytes, validation_path: path, reads: unavailable("validation_failed", 2, total, modelId) });
+    ({ context, output: null, prompt_bytes, validation_path: path, reads: unavailable("validation_failed", BRIEF_LLM_CALLS_MAX, total, modelId) });
   if (now() >= repairDeadline) {
-    return { context, output: null, prompt_bytes, validation_path: first.path, reads: unavailable("timeout", 2, total, modelId) };
+    return { context, output: null, prompt_bytes, validation_path: first.path, reads: unavailable("timeout", BRIEF_LLM_CALLS_MAX, total, modelId) };
   }
   let repaired: unknown;
   try { repaired = JSON.parse(repair.content); } catch (error) {
