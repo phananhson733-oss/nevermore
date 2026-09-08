@@ -392,7 +392,7 @@ describe("runContentBriefV2 admitted generation", () => {
     const fixture = seams({ ...model(), gap_angle: { value: "Show the status check alongside the reporting timeline.", rationale: "The declared capability supports this example.", fact_refs: ["P1"], sources: ["U1"] } });
     const snapshot = { website_id: "website-fixture", revision: 3, hash: "a".repeat(64) };
     const facts = [{ id: "P1", field: "capabilities.0", text: "Provides a reporting status check.", derivation: "declared" as const, provenance: { method: "observed" as const, origin: "product_profile" as const } }];
-    const brief = await runContentBriefV2({ ...REQUEST, profile: { read: async () => ({ facts, snapshot, read: { source: "profile", status: "complete", attempted: 1, retained: 1, reason: null } }) } }, fixture.deps);
+    const brief = await runContentBriefV2({ ...REQUEST, profile: { read: async () => ({ facts, snapshot, host: null, read: { source: "profile", status: "complete", attempted: 1, retained: 1, reason: null } }) } }, fixture.deps);
     expect(brief.context.profile_snapshot).toEqual(snapshot);
     expect(brief.context.facts).toEqual(facts);
     expect(brief.generated?.gap_angle?.fact_refs).toEqual(["P1"]);

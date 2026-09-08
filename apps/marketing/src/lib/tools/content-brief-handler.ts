@@ -65,6 +65,7 @@ import { createSearchAnalyticsClient } from "@sf/sources/gsc/search-analytics";
 import {
   WEBSITE_PROFILE_FIELD_NAMES,
   type MarketingWebsiteProfileV1,
+  type WebsiteProfileFieldName,
   type WebsiteProfileFieldProvenance,
 } from "../account-websites/contracts.ts";
 import { readAccountWebsite } from "../account-websites/store.ts";
@@ -148,12 +149,16 @@ const BRIEF_V2_FACTS_PER_FIELD_MAX = 3;
  * and directCompetitors — the fields a differentiated angle is actually built
  * from — never reached the model, while sixteen core features and trust signals
  * did. Fields not named here keep their contract order behind these.
+ *
+ * Typed against the profile contract, not `string`: a renamed field would
+ * otherwise stay in this list as a name nothing matches, and the field it used
+ * to promote would silently drop to the back of the queue with no error.
  */
-const BRIEF_V2_FACT_PRIORITY: readonly string[] = [
+const BRIEF_V2_FACT_PRIORITY = [
   "oneLinePositioning", "valueProposition", "outcomes", "useCases", "jtbd", "directCompetitors",
   "primaryIcp", "icpPain", "triggerPain", "coreFeatures", "productName", "indirectAlternatives",
   "barriers", "buyer", "user", "firstOutcome",
-];
+] as const satisfies readonly WebsiteProfileFieldName[];
 
 /** "coreFeatures[2]" is a fact about coreFeatures. */
 function factFieldName(field: string): string {
@@ -165,9 +170,10 @@ function factFieldName(field: string): string {
  * read: `attempted` stays the profile's true fact count, so cutting still
  * shows as a partial read.
  */
-export function selectBriefV2ProfileFacts(facts: readonly ProfileFact[]): ProfileFact[] {
+function selectBriefV2ProfileFacts(facts: readonly ProfileFact[]): ProfileFact[] {
   const rank = (fact: ProfileFact): number => {
-    const index = BRIEF_V2_FACT_PRIORITY.indexOf(factFieldName(fact.field));
+    const field = factFieldName(fact.field);
+    const index = BRIEF_V2_FACT_PRIORITY.findIndex((name) => name === field);
     return index === -1 ? BRIEF_V2_FACT_PRIORITY.length : index;
   };
   const ordered = facts

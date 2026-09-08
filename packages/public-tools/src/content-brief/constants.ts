@@ -260,3 +260,27 @@ export const PRESERVED_QUESTION_PREFIXES: readonly string[] = [
   "does",
   "is",
 ];
+
+/**
+ * The scripts that write words without spaces between them, as one class body
+ * every consumer builds its own regex from.
+ *
+ * Three places decide something about language from this list: which text gets
+ * CJK bigrams instead of word tokens, which runs get split into bigrams, and
+ * whether a generated heading came back in the sources' script rather than the
+ * one that was asked for. Written out three times, a script added to one copy
+ * and missed in the others changes what counts as which language in one stage
+ * only, and every test still passes.
+ */
+export const UNSEGMENTED_SCRIPT_CLASS =
+  "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}\\p{Script=Thai}";
+
+/**
+ * How many of the visitor's own pages the brief reads.
+ *
+ * Both lanes that nominate owned pages cut to the same number: the Search
+ * Console projection ranks matched and fallback pages, and the run merges that
+ * with its own ranking. Two separate literals let one lane hand over more
+ * candidates than the other would ever keep.
+ */
+export const BRIEF_V2_OWNED_CANDIDATES_MAX = 3;

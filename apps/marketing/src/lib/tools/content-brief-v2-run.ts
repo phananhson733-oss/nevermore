@@ -2,7 +2,10 @@
 // @output -- a self-checked whole v2 brief using the exact model-visible evidence
 // @pos -- Marketing generation orchestration, never authentication or admission
 import { buildSerpObservations, planCrawlTargets } from "@sf/public-tools/content-brief/assemble";
-import { CRAWL_DEADLINE_MS, ENVELOPE_MS, GSC_DEADLINE_MS, RUN_BUDGET_MS, SERP_DEADLINE_MS, SERP_DEPTH } from "@sf/public-tools/content-brief/constants";
+import {
+  BRIEF_V2_OWNED_CANDIDATES_MAX, CRAWL_DEADLINE_MS, ENVELOPE_MS, GSC_DEADLINE_MS,
+  RUN_BUDGET_MS, SERP_DEADLINE_MS, SERP_DEPTH,
+} from "@sf/public-tools/content-brief/constants";
 import type { ProfileFact } from "@sf/public-tools/content-brief/contract";
 import { hostKey } from "@sf/public-tools/content-brief/host";
 import { fingerprintBriefV2, parseContentBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
@@ -42,8 +45,12 @@ export interface ContentBriefV2ProfileLane {
    * keyword was counted as a competitor and the brief reported the visitor's
    * own coverage back to them as the competition. This is not serialized: it
    * decides which SERP rows are competitors, nothing else.
+   *
+   * Required and nullable, not optional and nullable: "no profile host" has one
+   * spelling, so a lane that forgot to resolve one cannot pass for a lane that
+   * looked and found none.
    */
-  readonly host?: string | null;
+  readonly host: string | null;
 }
 export interface ContentBriefV2RunInput {
   readonly input: BriefV2Input;
@@ -107,7 +114,7 @@ function unavailable(source: BriefV2Read["source"], reason: NonNullable<BriefV2R
   return { source, status: "unavailable", attempted, retained: null, reason };
 }
 function emptyProfile(reason: NonNullable<BriefV2Read["reason"]>, attempted: number | null): ContentBriefV2ProfileLane {
-  return { facts: [], snapshot: null, read: unavailable("profile", reason, attempted) };
+  return { facts: [], snapshot: null, host: null, read: unavailable("profile", reason, attempted) };
 }
 function emptySerp(reason: Failure, started: boolean): ContentBriefSerpResult {
   return { rows: [], reads: { status: "unavailable", reason, attempted: started ? SERP_DEPTH : 0 }, costUsd: null, itemTypes: null, peopleAlsoAsk: { status: "unavailable", reason } };
@@ -144,7 +151,7 @@ function mergeOwnedCandidates(
     if (identity === null || seen.has(identity)) continue;
     seen.add(identity);
     urls.push(url);
-    if (urls.length === 3) break;
+    if (urls.length === BRIEF_V2_OWNED_CANDIDATES_MAX) break;
   }
   return urls.map((url, index): OwnedCandidate => ({
     id: `T${index + 1}`,
@@ -210,7 +217,7 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
       gsc.gsc.window?.start !== input.gsc.window.start || gsc.gsc.window.end !== input.gsc.window.end ||
       gsc.gsc.window.lookback_days !== input.gsc.window.lookback_days)) throw new ContentBriefV2RunError();
   const ownUrls = new Set(gsc.candidates.map((candidate) => urlKey(candidate.url)).filter((url): url is string => url !== null));
-  const profileHost = profile.host === undefined || profile.host === null ? null : hostKey(profile.host);
+  const profileHost = profile.host === null ? null : hostKey(profile.host);
   const plan = planCrawlTargets(buildSerpObservations(serp.rows), hostKey);
   const prefailed: ContentBriefV2CrawlFailure[] = [];
   const rankedOwned: string[] = [];

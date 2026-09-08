@@ -3,6 +3,7 @@
 // @pos -- pure v2 first-party projection; page aliases share candidates, not source rows
 import type { GscPageRow, GscQueryPageRow } from "../gsc-analytics/index.ts";
 import { keywordCoverageProperty } from "../keyword-opportunity/property.ts";
+import { BRIEF_V2_OWNED_CANDIDATES_MAX } from "./constants.ts";
 import { relevanceScore, relevanceTerms, type RelevanceTerm } from "./terms.ts";
 import { normalizePosition, compareCodeUnits } from "./verdict.ts";
 import { briefV2PageKey } from "./v2-generation.ts";
@@ -89,7 +90,7 @@ function candidateUrls(
     if (identity === null || seen.has(identity)) return false;
     seen.add(identity);
     return true;
-  }).slice(0, 3);
+  }).slice(0, BRIEF_V2_OWNED_CANDIDATES_MAX);
 }
 
 /** The caller has already authenticated the property and bounded the source read. */
