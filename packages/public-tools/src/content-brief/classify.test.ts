@@ -62,6 +62,9 @@ describe("host sets", () => {
       "jd.com",
       "momoshop.com.tw",
       "pchome.com.tw",
+      "apps.microsoft.com",
+      "apps.apple.com",
+      "play.google.com",
     ]);
     expect([...NEWS_HOSTS]).toEqual([
       "nytimes.com",
@@ -79,32 +82,50 @@ describe("host sets", () => {
     // titled "Birth Chart Calculator" sat in it: the table read /calculator/ as
     // a directory and never as the end of a slug, and never read the title at
     // all. The observed format distribution is only as good as this table.
+    //
+    // Each case can only be decided by the one rule it is here for: a title
+    // case carries a path nothing matches, a slug case carries a title nothing
+    // matches. A table where the title and the slug cover for each other stays
+    // green when either is deleted.
     const cases: readonly [string, string, string][] = [
       ["https://x.example/birth-chart", "Birth Chart Calculator | Astrology.com", "tool"],
-      ["https://x.example/birth-chart-calculator", "Birth Chart", "tool"],
-      ["https://x.example/natal-chart-generator", "Natal Chart Generator", "tool"],
-      ["https://x.example/tools/x", "出生星盘计算器", "tool"],
+      ["https://x.example/birth-chart-calculator", "Untitled", "tool"],
+      ["https://x.example/natal-chart-generator", "Chart Maker", "tool"],
+      ["https://x.example/a", "出生星盘计算器", "tool"],
       ["https://x.example/a", "線上排盤產生器", "tool"],
+      // Beat rules that used to take these from the calculator they name.
+      ["https://x.example/a", "2026 General Schedule (GS) Salary Calculator", "tool"],
+      ["https://x.example/a", "Pregnancy Due Dates Calculator", "tool"],
     ];
     for (const [url, title, expected] of cases) {
       expect(classifySerpFormat({ domain: "x.example", url, title }).value, title).toBe(expected);
     }
   });
 
-  it("leaves an article about a calculator an article, and a computer a computer", () => {
+  it("leaves an article about a calculator an article, and a machine a machine", () => {
     // These decide above the calculator rules on purpose. Reading any of them
     // as a tool page would trade one wrong distribution for another.
-    const cases: readonly [string, string, string][] = [
-      ["https://x.example/blog/birth-chart-calculator", "Free Birth Chart Calculator", "guide"],
-      ["https://x.example/birth-chart", "How to Use a Birth Chart Calculator", "guide"],
-      ["https://x.example/birth-chart", "What Is a Birth Chart Calculator?", "guide"],
-      ["https://x.example/guide/birth-chart-calculator", "Birth Chart Calculator Guide", "guide"],
-      ["https://x.example/best-birth-chart-calculators", "10 Best Birth Chart Calculators", "listicle"],
-      // 計算機 is the Traditional Chinese word for a computer, not a calculator.
-      ["https://x.example/a", "計算機科學導論", "unknown"],
+    const cases: readonly [string, string, string, string][] = [
+      ["x.example", "https://x.example/blog/birth-chart-calculator", "Free Birth Chart Calculator", "guide"],
+      ["x.example", "https://x.example/guide/birth-chart-calculator", "Birth Chart Calculator Guide", "guide"],
+      ["x.example", "https://x.example/birth-chart", "How to Use a Birth Chart Calculator", "guide"],
+      ["x.example", "https://x.example/birth-chart", "What Is a Birth Chart Calculator?", "guide"],
+      ["x.example", "https://x.example/a", "10 Best Birth Chart Calculators", "listicle"],
+      // An app marketplace listing for a calculator is a product page.
+      ["apps.microsoft.com", "https://apps.microsoft.com/detail/9wzdncrfhvn5", "Windows Calculator", "product_page"],
+      // A generator is as often a machine as a program, so there is no English
+      // title rule for it; this catalogue stays unclassified rather than wrong.
+      ["engines.honda.com", "https://engines.honda.com/models/application/generator", "Generator Engines", "unknown"],
+      // -calculator has to end a segment, or a review of one becomes one.
+      ["x.example", "https://x.example/mortgage-calculator-review", "Our Verdict", "unknown"],
+      // 計算機 is a calculator in Traditional Chinese and also a computer, so
+      // it is left out: this under-matches rather than reading a computer
+      // science text as a tool.
+      ["x.example", "https://x.example/a", "計算機科學導論", "unknown"],
+      ["bmi.tw", "https://bmi.tw/", "BMI計算機", "unknown"],
     ];
-    for (const [url, title, expected] of cases) {
-      expect(classifySerpFormat({ domain: "x.example", url, title }).value, title).toBe(expected);
+    for (const [domain, url, title, expected] of cases) {
+      expect(classifySerpFormat({ domain, url, title }).value, title).toBe(expected);
     }
     // One exception, known and left alone: a /calculator/ directory decides
     // above every title rule, so a round-up that lives in one still reads as a
@@ -405,6 +426,8 @@ describe("classifySerpFormat: ordering", () => {
       "path:blog",
       "path:guide",
       "path:learn",
+      "path:-calculator",
+      "path:-generator",
       "path:product",
       "path:pricing",
       "title:leading_number",
@@ -414,6 +437,8 @@ describe("classifySerpFormat: ordering", () => {
       "title:how_to",
       "title:what_is",
       "title:guide",
+      "title:calculator",
+      "title:zh_calculator",
       "title:meaning",
       "title:explained",
       "title:dates",
@@ -421,11 +446,6 @@ describe("classifySerpFormat: ordering", () => {
       "title:zh_how_to",
       "title:zh_dates",
       "title:zh_best",
-      "title:calculator",
-      "title:generator",
-      "title:zh_calculator",
-      "path:-calculator",
-      "path:-generator",
     ]);
   });
 });

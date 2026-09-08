@@ -181,6 +181,13 @@ describe("Brief v2 source observations", () => {
       page("C3", 100, { finalUrl: "https://c.example/compare/a" }), page("C4", 100, { finalUrl: "https://d.example/x" }),
     ]));
     expect(settled.formats).toMatchObject({ denominator: 4, unknown_count: 1, majority: null, majority_undecided: false });
+
+    // Nothing classified at all is undecided too, and the sentence for this
+    // state may not lean on a largest classified format: there is none.
+    const blind = buildBriefV2Observations(context([
+      page("C1", 100, { finalUrl: "https://a.example/x" }), page("C2", 100, { finalUrl: "https://b.example/y" }),
+    ]));
+    expect(blind.formats).toMatchObject({ denominator: 2, unknown_count: 2, majority: null, majority_undecided: true, candidates: [] });
   });
 
   it("declares a known format majority only above half of the entire observed denominator", () => {

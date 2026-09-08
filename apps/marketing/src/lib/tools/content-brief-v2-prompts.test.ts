@@ -117,10 +117,17 @@ describe("Brief v2 assembly prompt", () => {
     // close the escape route -- a model told to make them agree will otherwise
     // add the missing section whether the evidence supports it or not.
     const system = prepareContentBriefV2Prompt(context())!.system;
-    expect(system).toContain("format, gap_angle and the outline are one plan and have to agree");
-    expect(system).toContain("Do not choose a format whose reader task the plan does not carry out");
-    expect(system).toContain("Every distinct promise in gap_angle needs a question or section that carries it");
-    expect(system).toContain("never add a section the evidence does not support or invent a procedure");
+    expect(system).toContain("format, gap_angle and the plan have to agree");
+    expect(system).toContain("do not choose a format the outline does not carry out");
+    expect(system).toContain("do not promise work in gap_angle that the plan does not contain");
+    // Without this clause a model told to make them agree closes the gap the
+    // other way, by writing the section the evidence never supported.
+    expect(system).toContain("change the format or narrow the angle");
+    expect(system).toContain("never add a section or step the evidence does not support");
+    // An existing page's format is a fact about that page, not about the edits
+    // planned for it, and a crawl that missed the calculator's controls must
+    // not turn an update to a calculator into an update to a guide.
+    expect(system).toContain("On update the format describes the page that already exists, not the edits");
     // Instructions and excerpts share one 48 KiB budget, and a real run came
     // within 1.9 KiB of it, so every sentence added here is paid for in
     // evidence the model never sees. This sits at 10,396 bytes; the ceiling

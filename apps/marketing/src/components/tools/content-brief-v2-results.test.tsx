@@ -197,6 +197,10 @@ describe("Artifact-aligned Brief v2 result", () => {
     // pass half. The card may not report that as "no majority in this sample".
     expect(node(formats, "[data-format-majority]").getAttribute("data-format-majority")).toBe("undecided");
     expect(formats.textContent).toContain("1 of 3 results could not be classified");
+    // The sentence may say a majority cannot be identified, never that one
+    // cannot exist: a single unclassified page necessarily has a majority.
+    expect(formats.textContent).toContain("no majority format can be identified");
+    expect(formats.textContent).not.toMatch(/whether a majority exists|largest classified format/i);
     expect(formats.textContent).not.toContain("No format has a majority");
     expect(formats.textContent).toContain("Observed candidates: Guide · Tool");
     expect(node(host, '[data-field-card="format"]').textContent).toContain("Model suggestion");
@@ -222,8 +226,11 @@ describe("Artifact-aligned Brief v2 result", () => {
     // resolve, and a row this application's rules could not classify. Printed
     // as a bare "1 unresolved" beside seven unknowns, the first read as if
     // nothing had failed.
-    expect(formats.textContent).toContain("1 with an unresolved URL");
+    expect(formats.textContent).toContain("1 without a usable rank or domain");
     expect(formats.textContent).toContain("1 unclassified");
+    // A row can carry a URL and still be counted here, so naming it a URL
+    // failure named the wrong one.
+    expect(formats.textContent).not.toMatch(/unresolved URL/i);
     // Every classified format sits at one of four, so the single unknown can
     // only ever tie half. This sample really has decided.
     expect(node(formats, "[data-format-majority]").getAttribute("data-format-majority")).toBe("none");
