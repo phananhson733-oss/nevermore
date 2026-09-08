@@ -112,42 +112,18 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   pathRule("path:blog", "guide", "/blog/"),
   pathRule("path:guide", "guide", "/guide/"),
   pathRule("path:learn", "guide", "/learn/"),
-  // Below /blog/, /guide/ and /learn/, because an article about a calculator
-  // keeps the calculator's name in its own slug. The trailing slash is what
-  // makes these terminal: directoryPath appends one, so "-calculator/" ends a
-  // segment and /mortgage-calculator-review stays out. /birth-chart-calculator
-  // never contained the /calculator/ segment above.
-  pathRule("path:-calculator", "tool", "-calculator/"),
-  pathRule("path:-generator", "tool", "-generator/"),
   pathRule("path:product", "product_page", "/product/"),
   pathRule("path:pricing", "product_page", "/pricing"),
-  // Up to three digits: a leading 2026 is a year, and "2026 Salary Calculator"
-  // was read as a list of two thousand items.
-  titleRule("title:leading_number", "listicle", /^\d{1,3} /),
+  // Any leading count except one that reads as a year: "2026 Salary Calculator"
+  // was a list of two thousand items, and capping the digits at three made
+  // "1000 Questions to ask people" stop being a list at all.
+  titleRule("title:leading_number", "listicle", /^(?!(?:19|20)\d{2} )\d+ /),
   titleRule("title:best", "listicle", /\bbest /),
   titleRule("title:top_n", "listicle", /\btop \d+/),
   titleRule("title:vs", "comparison", / vs\.? /),
   titleRule("title:how_to", "guide", /\bhow to /),
   titleRule("title:what_is", "guide", /\bwhat is /),
   titleRule("title:guide", "guide", /guide/),
-  // Below the rules that mark an article ABOUT a thing -- a how-to, a
-  // what-is, a round-up, a guide all keep the page -- and above the weaker
-  // topic words, so "Pregnancy Due Dates Calculator" is the calculator it is
-  // rather than a page about dates. Before this the table read /calculator/
-  // only as a directory and never read the title at all, so a live SERP of
-  // pages titled "Birth Chart Calculator" came back seven-tenths unknown.
-  //
-  // There is no English generator rule to match: a generator is as often a
-  // machine as a program, and "Generator Engines" is a catalogue. The slug
-  // form below is the narrower claim and carries that case alone.
-  titleRule("title:calculator", "tool", /\bcalculator\b/),
-  // 生成器 / 產生器 are unambiguous where the English is not; a physical
-  // generator is 發電機. 計算機 is left out although Traditional Chinese does
-  // use it for a calculator, because it is also the word for a computer and
-  // would read 計算機科學導論 as a tool. That under-matches BMI計算機, which
-  // now shows up as a page the sample could not classify rather than as one
-  // it classified wrongly.
-  titleRule("title:zh_calculator", "tool", /计算器|計算器|生成器|產生器/u),
   titleRule("title:meaning", "guide", /\bmeaning\b/),
   titleRule("title:explained", "guide", /\bexplained\b/),
   titleRule("title:dates", "guide", /\bdates\b/),
@@ -157,6 +133,37 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   titleRule("title:zh_how_to", "guide", /怎么|怎麼|如何|教程|攻略/u),
   titleRule("title:zh_dates", "guide", /时间表|時間表|日期表/u),
   titleRule("title:zh_best", "listicle", /推荐排行|推薦排行|排行榜/u),
+  // Everything that marks an article ABOUT a calculator decides above these --
+  // how-to, what-is, guide, explained, meaning, a round-up, 教程, 是什么 -- and
+  // so does every path that names an article or a product. What is left is a
+  // page that names a calculator and nothing else, which is the calculator.
+  // Before these rules the table read /calculator/ only as a directory and
+  // never read the title at all, so a live SERP of pages titled "Birth Chart
+  // Calculator" came back seven tenths unclassified.
+  //
+  // Their first home was above the topic words, to keep "Pregnancy Due Dates
+  // Calculator" from reading as a page about dates. That cost more than it
+  // bought: "Mortgage calculator explained" and a Chinese Tkinter 教程 both
+  // became tools. The dates case is the one that loses here.
+  //
+  // There is no English generator rule. A generator is as often a machine as a
+  // program, so "Generator Engines" reads as a tool, and no lexical test
+  // separates it from "Sequence Generator" -- "portable generator" defeats
+  // every one that suggests itself. RANDOM.ORG's sequence generator is
+  // therefore unclassified rather than wrong, and 生成器 / 產生器 carry the
+  // Chinese case, where a physical generator is 發電機.
+  //
+  // 計算機 is left out although Traditional Chinese does use it for a
+  // calculator: it is also the word for a computer, and would read
+  // 計算機科學導論 as a tool. That under-matches BMI計算機, which now shows up
+  // as a page the sample could not classify rather than one it got wrong.
+  titleRule("title:calculator", "tool", /\bcalculator\b/),
+  titleRule("title:zh_calculator", "tool", /计算器|計算器|生成器|產生器/u),
+  // Terminal, and last of all: directoryPath appends a trailing slash, so
+  // "-calculator/" ends a segment and /mortgage-calculator-review stays out,
+  // while /birth-chart-calculator never contained the /calculator/ segment.
+  pathRule("path:-calculator", "tool", "-calculator/"),
+  pathRule("path:-generator", "tool", "-generator/"),
 ];
 
 /** The ordered rule table, id + format only, for the page to print. */

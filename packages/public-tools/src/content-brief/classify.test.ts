@@ -78,7 +78,7 @@ describe("host sets", () => {
   });
 
   it("reads a page that names itself a calculator as the tool it is", () => {
-    // A live "birth chart" SERP came back seven-tenths unknown while pages
+    // A live "birth chart" SERP came back seven tenths unknown while pages
     // titled "Birth Chart Calculator" sat in it: the table read /calculator/ as
     // a directory and never as the end of a slug, and never read the title at
     // all. The observed format distribution is only as good as this table.
@@ -93,9 +93,8 @@ describe("host sets", () => {
       ["https://x.example/natal-chart-generator", "Chart Maker", "tool"],
       ["https://x.example/a", "出生星盘计算器", "tool"],
       ["https://x.example/a", "線上排盤產生器", "tool"],
-      // Beat rules that used to take these from the calculator they name.
+      // A four-digit leading number that is a year is not a count.
       ["https://x.example/a", "2026 General Schedule (GS) Salary Calculator", "tool"],
-      ["https://x.example/a", "Pregnancy Due Dates Calculator", "tool"],
     ];
     for (const [url, title, expected] of cases) {
       expect(classifySerpFormat({ domain: "x.example", url, title }).value, title).toBe(expected);
@@ -103,19 +102,32 @@ describe("host sets", () => {
   });
 
   it("leaves an article about a calculator an article, and a machine a machine", () => {
-    // These decide above the calculator rules on purpose. Reading any of them
-    // as a tool page would trade one wrong distribution for another.
+    // Everything that marks an article about a calculator decides above the
+    // calculator rules, and so does every path that names an article or a
+    // product. Reading any of these as a tool page would trade one wrong
+    // distribution for another.
     const cases: readonly [string, string, string, string][] = [
       ["x.example", "https://x.example/blog/birth-chart-calculator", "Free Birth Chart Calculator", "guide"],
       ["x.example", "https://x.example/guide/birth-chart-calculator", "Birth Chart Calculator Guide", "guide"],
       ["x.example", "https://x.example/birth-chart", "How to Use a Birth Chart Calculator", "guide"],
       ["x.example", "https://x.example/birth-chart", "What Is a Birth Chart Calculator?", "guide"],
-      ["x.example", "https://x.example/a", "10 Best Birth Chart Calculators", "listicle"],
+      ["x.example", "https://x.example/mortgage-calculator", "Mortgage calculator explained", "guide"],
+      ["x.example", "https://x.example/a", "使用 Python 创建计算器 | Tkinter 教程", "guide"],
+      // A slug is not a path rule: an article's own URL keeps the calculator's
+      // name, so the suffix decides after every title rule, not before them.
+      ["rates.ca", "https://rates.ca/resources/how-to-use-a-mortgage-calculator", "How to Use a Mortgage Calculator", "guide"],
+      ["x.example", "https://x.example/product/scientific-calculator", "Scientific Calculator", "product_page"],
+      ["x.example", "https://x.example/pricing/report-generator", "Report Generator", "product_page"],
+      // The count rule keeps every count that is not a year.
+      ["x.example", "https://x.example/a", "10 Best Mortgage Calculator Sites", "listicle"],
+      ["x.example", "https://x.example/a", "1000 Questions to ask people", "listicle"],
       // An app marketplace listing for a calculator is a product page.
       ["apps.microsoft.com", "https://apps.microsoft.com/detail/9wzdncrfhvn5", "Windows Calculator", "product_page"],
-      // A generator is as often a machine as a program, so there is no English
-      // title rule for it; this catalogue stays unclassified rather than wrong.
+      // A generator is as often a machine as a program and no lexical test
+      // separates them, so there is no English rule: this catalogue stays
+      // unclassified, and so does RANDOM.ORG's "Sequence Generator".
       ["engines.honda.com", "https://engines.honda.com/models/application/generator", "Generator Engines", "unknown"],
+      ["random.org", "https://www.random.org/sequences/", "RANDOM.ORG - Sequence Generator", "unknown"],
       // -calculator has to end a segment, or a review of one becomes one.
       ["x.example", "https://x.example/mortgage-calculator-review", "Our Verdict", "unknown"],
       // 計算機 is a calculator in Traditional Chinese and also a computer, so
@@ -123,6 +135,9 @@ describe("host sets", () => {
       // science text as a tool.
       ["x.example", "https://x.example/a", "計算機科學導論", "unknown"],
       ["bmi.tw", "https://bmi.tw/", "BMI計算機", "unknown"],
+      // Knowingly lost by that ordering: "dates" decides first. Putting the
+      // calculator rules above the topic words instead cost two live pages.
+      ["mdcalc.com", "https://www.mdcalc.com/calc/423/pregnancy-due-dates", "Pregnancy Due Dates Calculator", "guide"],
     ];
     for (const [domain, url, title, expected] of cases) {
       expect(classifySerpFormat({ domain, url, title }).value, title).toBe(expected);
@@ -426,8 +441,6 @@ describe("classifySerpFormat: ordering", () => {
       "path:blog",
       "path:guide",
       "path:learn",
-      "path:-calculator",
-      "path:-generator",
       "path:product",
       "path:pricing",
       "title:leading_number",
@@ -437,8 +450,6 @@ describe("classifySerpFormat: ordering", () => {
       "title:how_to",
       "title:what_is",
       "title:guide",
-      "title:calculator",
-      "title:zh_calculator",
       "title:meaning",
       "title:explained",
       "title:dates",
@@ -446,6 +457,10 @@ describe("classifySerpFormat: ordering", () => {
       "title:zh_how_to",
       "title:zh_dates",
       "title:zh_best",
+      "title:calculator",
+      "title:zh_calculator",
+      "path:-calculator",
+      "path:-generator",
     ]);
   });
 });

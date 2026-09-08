@@ -122,15 +122,25 @@ describe("Brief v2 assembly prompt", () => {
     expect(system).toContain("do not promise work in gap_angle that the plan does not contain");
     // Without this clause a model told to make them agree closes the gap the
     // other way, by writing the section the evidence never supported.
-    expect(system).toContain("change the format or narrow the angle");
+    expect(system).toContain("narrow the angle");
     expect(system).toContain("never add a section or step the evidence does not support");
     // An existing page's format is a fact about that page, not about the edits
     // planned for it, and a crawl that missed the calculator's controls must
     // not turn an update to a calculator into an update to a guide.
     expect(system).toContain("On update the format describes the page that already exists, not the edits");
+    expect(system).toContain("and the steps are the plan");
+    // An update can hold nine reader needs and only eight questions. Without
+    // this, the ninth can live in a rewrite step answering nothing, be
+    // promised in the angle, and appear in no section at all -- and an unbound
+    // step reaches every draft section, so no section owns it.
+    expect(system).toContain("a step that answers no selected question does not carry a promise");
+    // Changing the format is a create-only escape: an existing calculator does
+    // not become a guide because the crawl missed its controls.
+    expect(system).toContain("or on create choose the format the outline does carry out");
+    expect(system).toContain("never invent a procedure");
     // Instructions and excerpts share one 48 KiB budget, and a real run came
     // within 1.9 KiB of it, so every sentence added here is paid for in
-    // evidence the model never sees. This sits at 10,396 bytes; the ceiling
+    // evidence the model never sees. This sits at 10,583 bytes; the ceiling
     // leaves room for a short rule and stops the next long one.
     expect(new TextEncoder().encode(system).byteLength).toBeLessThan(11_000);
   });
