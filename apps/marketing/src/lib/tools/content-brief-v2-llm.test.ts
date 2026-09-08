@@ -209,6 +209,39 @@ describe("one-call Brief v2 assembly", () => {
     expect(result.dropped_paths).toEqual(["gap_angle"]);
   });
 
+  it("recovers the same way on the v3 section protocol the tool page actually sends", async () => {
+    const { data, full } = angleFixture();
+    const v3: BriefV2Context = { ...data, serp: { rows: buildSerpObservations([{ rank: 1, url: data.research.pages[0]!.url, title: "Medical billing guide", domain: "c1.example" }]), read: { status: "partial", requested: 10, returned: 1, unresolved: 0 } } };
+    const reply = { ...full,
+      research: { sections: [{ h2: "Validate claims before submission", h3: ["Insurance checks"], questions: [{ anchor: "U1", q: "How does medical billing software validate claims?", sources: ["U1", "U2"] }] }] },
+      gap_angle: { ...full.gap_angle!, sources: ["U2"] },
+    };
+    const { result } = await run(JSON.stringify(reply), v3);
+    expect(result.reads.status).toBe("complete");
+    expect(result.output?.gap_angle).toBeNull();
+    expect(result.dropped_paths).toEqual(["gap_angle.sources"]);
+    expect(result.output?.research.outline).toEqual([{ id: "O1", h2: "Validate claims before submission", h3: ["Insurance checks"], answers: ["Q1"] }]);
+  });
+
+  // The exact-key validator reports an unknown top-level key as its own name,
+  // so a key literally called "gap_angle.extra" reads like a defect inside
+  // gap_angle. Dropping gap_angle would not remove it, and would say in the run
+  // log that a section was lost when none was.
+  it("does not read a top-level key whose name contains a dot as a defect inside that field", async () => {
+    const { data, full } = angleFixture();
+    const { result } = await run(JSON.stringify({ ...full, "gap_angle.extra": true }), data);
+    expect(result.output).toBeNull();
+    expect(result.validation_path).toBe("gap_angle.extra");
+    expect(result.dropped_paths).toBeUndefined();
+  });
+
+  it("keeps the paid brief when an optional field comes back as the wrong type", async () => {
+    const { data, full } = angleFixture();
+    const { result } = await run(JSON.stringify({ ...full, gap_angle: "an angle, as prose" }), data);
+    expect(result.output?.gap_angle).toBeNull();
+    expect(result.dropped_paths).toEqual(["gap_angle"]);
+  });
+
   it("rejects a structurally wrong reply whole, without dropping the optional field that is also wrong", async () => {
     const { data, full } = angleFixture();
     const reply: ModelBriefV2Output = { ...full,

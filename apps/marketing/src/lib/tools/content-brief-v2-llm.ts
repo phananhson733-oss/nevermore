@@ -70,7 +70,14 @@ const DROPPABLE_FIELDS: readonly DroppableField[] = [
 function droppableField(path: string, reply: unknown): DroppableField | null {
   if (typeof reply !== "object" || reply === null || Array.isArray(reply)) return null;
   const head = path.split(/[.[]/u)[0] ?? "";
-  return DROPPABLE_FIELDS.find((item) => item.name === head) ?? null;
+  const field = DROPPABLE_FIELDS.find((item) => item.name === head);
+  if (field === undefined) return null;
+  // An unknown top-level key is reported as its own name, so a model that sends
+  // a key literally called "gap_angle.extra" produces a path that reads like a
+  // defect inside gap_angle. The reply tells the two apart: only the literal
+  // key is an own property of the reply under the whole path. A path that is
+  // exactly the field name is the field itself, own property or not.
+  return path !== field.name && Object.hasOwn(reply, path) ? null : field;
 }
 
 const FAILURE_REASONS: Readonly<Record<KeywordLlmFailureReason, UnavailableReason>> = {
@@ -138,8 +145,9 @@ export async function runContentBriefV2Llm(
     ? validateModelBriefV2(reply, context, { checkLanguage: true })
     : validateSectionQuestionsBrief(reply, context, { checkLanguage: true });
   // One pass per droppable field, which is all a reply can need: each drop
-  // installs a value the validator accepts, so no field comes back. Validation
-  // is pure CPU over an already-parsed reply; no further call is made.
+  // installs a value the validator accepts and that has no inner path of its
+  // own, so a dropped field cannot be rejected twice. Validation is pure CPU
+  // over an already-parsed reply; no further call is made.
   let reply = raw;
   let output = validate(reply);
   for (let attempt = 0; !output.ok && attempt < DROPPABLE_FIELDS.length; attempt += 1) {

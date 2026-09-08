@@ -577,7 +577,12 @@ describe("empty recommendation sections", () => {
     // The three states must not share one sentence, which is what made the old
     // single string wrong: it explained a prerequisite as an editorial outcome.
     // Asserting only that this one differs would let an empty string pass.
-    expect(gapText(read.host)).toContain("No source-bound differentiated angle");
+    //
+    // This branch is also reached when the model did produce an angle and the
+    // validator dropped it, so the sentence may not say why: an angle rejected
+    // for its language was source-bound, and saying otherwise would be false.
+    expect(gapText(read.host)).toContain("did not produce a usable differentiated angle");
+    expect(gapText(read.host)).not.toContain("source-bound");
     expect(gapText(read.host)).not.toContain("product profile");
   });
 
@@ -600,6 +605,10 @@ describe("empty recommendation sections", () => {
       // One page read, not two: an unread candidate is not a page the model
       // could have recommended.
       expect(card.textContent).toContain("1 of your own pages");
+      // Same reason as the differentiated angle: a recommendation the validator
+      // dropped may have been source-bound, so this may not claim it was not.
+      expect(card.textContent).not.toContain("source-bound");
+      expect(card.textContent).toContain("no usable recommendation");
     }
   });
 

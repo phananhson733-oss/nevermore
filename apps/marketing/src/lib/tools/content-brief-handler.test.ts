@@ -770,6 +770,7 @@ describe("handleContentBriefRequest v2 admission and evidence", () => {
     });
     const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), deps));
     expect(brief.generated).not.toBeNull();
+    expect(JSON.stringify(brief)).not.toContain("gap_angle.sources");
     expect(lastRunLine(deps).dropped_paths).toEqual(["gap_angle.sources", "internal_links"]);
   });
 
