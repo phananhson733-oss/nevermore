@@ -38,12 +38,14 @@ const NO_BRAND: readonly string[] = [];
  * of several attempts absorbs a scheduler hiccup inside one attempt, which the
  * single unwarmed measurement this replaces had no defence against.
  *
- * Budgets sit at roughly twice the highest units observed across repeated idle
- * and loaded runs, so the naive scan (about 40x the current cost) is still
- * caught with room to spare.
+ * Budgets sit at roughly three times the highest units observed across repeated
+ * idle and loaded runs, so the naive scan (about 40x the current cost) is still
+ * caught with room to spare. Load moves the ratio down, not up: the reference
+ * allocates more than the clustering does and gives up more under contention,
+ * so a busy machine measures cheaper than an idle one and never fails here.
  */
 const CLUSTER_PERF_HEADINGS = 3000;
-const CLUSTER_PERF_BUDGET_UNITS = 40; // observed 15.0-19.0
+const CLUSTER_PERF_BUDGET_UNITS = 40; // observed 13.2 idle, 5.6 with the suite loading the box
 const CLUSTER_PERF_VOCABULARY = 200;
 const CLUSTER_PERF_MIN_TOKENS = 2;
 const CLUSTER_PERF_MAX_TOKENS = 6;
@@ -52,16 +54,16 @@ const CLUSTER_PERF_PAGES = 10;
 const CLUSTER_WORST_CASE_LEVELS = 2;
 const CLUSTER_WORST_CASE_HEADINGS = CRAWL_HEADINGS_PER_PAGE_MAX * CLUSTER_WORST_CASE_LEVELS * CLUSTER_PERF_PAGES;
 /**
- * The one-token case runs shortest of the three, so its ratio is the noisiest:
- * eight samples spanned 3.8 to 6.0. Its budget therefore only catches a large
+ * The one-token case runs shortest of the three, so its ratio is the noisiest.
+ * Its budget therefore only catches a large
  * constant-factor regression; a measured 29% one (allocating an array per pair
  * inside sharedTokenCount) sits inside the natural spread and passes. The
  * sharp guards are the other two. What this case really pins is the assertion
  * below it: nothing merges, so all 800 survive as separate clusters.
  */
-const CLUSTER_ONE_TOKEN_BUDGET_UNITS = 12; // observed 3.8-6.0
+const CLUSTER_ONE_TOKEN_BUDGET_UNITS = 12; // observed 4.0 idle, 2.7 loaded
 /** Catches removing the already-connected short circuit, which this case leans on. */
-const CLUSTER_LONG_PREFIX_BUDGET_UNITS = 8; // observed 1.9-2.2
+const CLUSTER_LONG_PREFIX_BUDGET_UNITS = 8; // observed 2.1 idle, 0.5 loaded
 const REFERENCE_ROUNDS = 20_000;
 const REFERENCE_SEED = 20_260_907;
 const PERF_ATTEMPTS = 5;
@@ -104,19 +106,31 @@ function referenceWork(): number {
   return total;
 }
 
-function fastestMs(run: () => unknown): number {
+/**
+ * Cost of `run` on this machine, expressed in reference-workload units.
+ *
+ * Both sides are timed inside the same attempt and the best RATIO is kept, not
+ * the ratio of two separately taken bests. The sides differ by more than a
+ * factor of ten in duration, so timing them in separate blocks let a load spike
+ * land on one side only: with the whole suite running in parallel, the main
+ * case measured 59.5 units against a budget of 40 that an idle run clears at
+ * 17. A spike inside one attempt now moves both sides together and leaves the
+ * ratio alone; a spike that hits only the numerator raises that attempt's ratio
+ * and the minimum ignores it. A reference that measures zero contributes no
+ * attempt, so a clock too coarse to measure anything fails instead of passing.
+ */
+function costInReferenceUnits(run: () => unknown): number {
   let best = Number.POSITIVE_INFINITY;
   for (let attempt = 0; attempt < PERF_ATTEMPTS; attempt += 1) {
+    const referenceStarted = performance.now();
+    referenceWork();
+    const referenceMs = performance.now() - referenceStarted;
     const started = performance.now();
     run();
-    best = Math.min(best, performance.now() - started);
+    const runMs = performance.now() - started;
+    if (referenceMs > 0) best = Math.min(best, runMs / referenceMs);
   }
   return best;
-}
-
-/** Cost of `run` on this machine, expressed in reference-workload units. */
-function costInReferenceUnits(run: () => unknown): number {
-  return fastestMs(run) / fastestMs(referenceWork);
 }
 
 function pseudoRandomHeadings(count: number, seed: number): HeadingInput[] {

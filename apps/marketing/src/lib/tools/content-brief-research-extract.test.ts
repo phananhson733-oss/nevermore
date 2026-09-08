@@ -552,6 +552,14 @@ describe("chrome filtering and relevance selection", () => {
     const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
     expect(isChromeBlock(`${family} ${"a".repeat(80)}`)).toBe(false);
     expect(isChromeBlock("\u200D\u200D \u200B")).toBe(true);
+    // Surviving the chrome filter is not the same as surviving intact. Retained
+    // text is never edited, so the joiners have to reach the segment: strip them
+    // and the reader is shown three separate people where the page showed one
+    // family. Only the extractor can pin that; isChromeBlock returns a verdict,
+    // not the text it judged.
+    const prose = `${family} Households compare every plan on this list before they switch providers.`;
+    const result = extractContentBriefResearch(`<main><h2>Observed heading</h2><p>${prose}</p></main>`, "en", []);
+    expect(result.segments[0]?.text).toBe(prose);
   });
 
   it("keeps a sentence that merely opens with a chrome label", () => {
