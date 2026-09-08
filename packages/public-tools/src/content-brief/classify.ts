@@ -127,6 +127,24 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   titleRule("title:zh_how_to", "guide", /怎么|怎麼|如何|教程|攻略/u),
   titleRule("title:zh_dates", "guide", /时间表|時間表|日期表/u),
   titleRule("title:zh_best", "listicle", /推荐排行|推薦排行|排行榜/u),
+  // Last, so an explainer about a calculator stays a guide. "How to read your
+  // birth chart calculator" and a /blog/ URL both decide before these do; what
+  // is left is a page that names a calculator and nothing else, which is the
+  // page itself. Before this, a SERP of pages titled "Birth Chart Calculator"
+  // came back seven-tenths unknown, and the only tool the table found was one
+  // whose URL happened to sit under /tools/.
+  titleRule("title:calculator", "tool", /\bcalculator\b/),
+  titleRule("title:generator", "tool", /\bgenerator\b/),
+  // 計算機 is left out on purpose: in Traditional Chinese it is the word for a
+  // computer, so it would read 計算機科學導論 as a calculator. 計算器 / 计算器
+  // carry only the one meaning.
+  titleRule("title:zh_calculator", "tool", /计算器|計算器|生成器|產生器/u),
+  // A trailing -calculator slug decides last, below the title rules, because a
+  // slug word can belong to an article's own title -- weaker evidence than the
+  // /calculator/ directory above, which keeps its earlier place.
+  // /birth-chart-calculator never contained that segment at all.
+  pathRule("path:-calculator", "tool", "-calculator"),
+  pathRule("path:-generator", "tool", "-generator"),
 ];
 
 /** The ordered rule table, id + format only, for the page to print. */

@@ -108,6 +108,26 @@ describe("Brief v2 assembly prompt", () => {
     expect(system).toContain("do_not_cover.topic must be a topic actually covered by that owned excerpt");
   });
 
+  it("asks for a format and an angle the outline actually carries out, and forbids closing the gap by invention", () => {
+    // A production brief chose the tool format and an angle promising a
+    // calculator paired with plain-language explanation, then wrote three
+    // sections that never reach the calculator. No validator can read that:
+    // the outline is the whole plan on create, and whether it delivers the
+    // angle is a judgment. So the instruction has to be given, and it has to
+    // close the escape route -- a model told to make them agree will otherwise
+    // add the missing section whether the evidence supports it or not.
+    const system = prepareContentBriefV2Prompt(context())!.system;
+    expect(system).toContain("format, gap_angle and the outline are one plan and have to agree");
+    expect(system).toContain("Do not choose a format whose reader task the plan does not carry out");
+    expect(system).toContain("Every distinct promise in gap_angle needs a question or section that carries it");
+    expect(system).toContain("never add a section the evidence does not support or invent a procedure");
+    // Instructions and excerpts share one 48 KiB budget, and a real run came
+    // within 1.9 KiB of it, so every sentence added here is paid for in
+    // evidence the model never sees. This sits at 10,396 bytes; the ceiling
+    // leaves room for a short rule and stops the next long one.
+    expect(new TextEncoder().encode(system).byteLength).toBeLessThan(11_000);
+  });
+
   it("names the output language, so the instruction the validator enforces is actually given", () => {
     // The generated-language check rejects a brief written in the sources'
     // script. Without this sentence the model is being failed for a rule it was

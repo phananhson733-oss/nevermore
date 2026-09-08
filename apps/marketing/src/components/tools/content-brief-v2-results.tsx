@@ -37,6 +37,19 @@ function ReadStrip({ brief, t }: { readonly brief: ContentBriefV2; readonly t: T
   </div>;
 }
 
+/**
+ * What the sample says about a majority format, which is not always an answer.
+ *
+ * The long form goes in the details, the short one on the card face; they said
+ * different things before, and the short one was the half that dropped the
+ * clause making it true.
+ */
+function majorityLine(formats: Observations["formats"], t: Translate, short: boolean): string {
+  if (formats.majority !== null) return t("formatMajority", { format: t(`observedFormatNames.${formats.majority}`) });
+  if (formats.majority_undecided) return t(short ? "formatMajorityUndecidedShort" : "formatMajorityUndecided", { unknown: formats.unknown_count, total: formats.denominator });
+  return t(short ? "formatNoMajorityShort" : "formatNoMajority");
+}
+
 function Fields({ brief, observations, locale, t }: { readonly brief: ContentBriefV2; readonly observations: Observations; readonly locale: string; readonly t: Translate }) {
   const baseT = useTranslations("tools.contentBrief");
   const formats = observations.formats;
@@ -54,14 +67,14 @@ function Fields({ brief, observations, locale, t }: { readonly brief: ContentBri
           {formats.denominator > 0 ? <>
             <div className={styles.formatBar} aria-hidden="true">{formats.counts.filter(item => item.count > 0).map(item => <span key={item.format} data-format-portion={item.format} style={{ width: `${item.count / formats.denominator * 100}%` }} />)}</div>
             <ul className={styles.formatCounts}>{formats.counts.filter((item) => item.count > 0).map((item) => <li key={item.format} data-format-count={item.format}><span>{t(`observedFormatNames.${item.format}`)}</span><span className="font-mono">{item.count}/{formats.denominator}</span></li>)}</ul>
-            <p className="mt-2 text-[11.5px] text-text-dark-secondary">{formats.majority ? t("formatMajority", { format: t(`observedFormatNames.${formats.majority}`) }) : t("formatNoMajorityShort")}</p>
+            <p data-format-majority={formats.majority ?? (formats.majority_undecided ? "undecided" : "none")} className="mt-2 text-[11.5px] text-text-dark-secondary">{majorityLine(formats, t, true)}</p>
           </> : <p className={`mt-2 ${BODY_TEXT}`}>{t("states.unavailable")}</p>}
-          {formats.read && formats.read.status !== "unavailable" ? <p data-serp-format-coverage className="mt-2 font-mono text-[10.5px] text-text-dark-secondary">{t("serpFormatCoverage", { returned: formats.read.returned, requested: formats.read.requested, unresolved: formats.read.unresolved, status: t(`states.${formats.read.status}`) })}</p> : null}
+          {formats.read && formats.read.status !== "unavailable" ? <p data-serp-format-coverage className="mt-2 font-mono text-[10.5px] text-text-dark-secondary">{t("serpFormatCoverage", { returned: formats.read.returned, requested: formats.read.requested, unresolved: formats.read.unresolved, unknown: formats.unknown_count, status: t(`states.${formats.read.status}`) })}</p> : null}
           <details data-field-details="format" className={styles.fieldDetails}><summary className={SUMMARY}>{t(isSerp ? "serpFormatEvidence" : "formatEvidence")}</summary>
             <p data-field-rationale className={`mt-2 ${BODY_TEXT}`}>{value ? value.rationale : t("noModelRecommendation")}</p>
             <p data-format-method className="mt-2 text-[11.5px] text-text-dark-secondary">{t(isSerp ? "serpFormatMethod" : "formatMethod")}</p>
             <p data-format-boundary className="mt-2 text-[10.5px] text-text-dark-secondary">{isSerp ? t("serpFormatBoundary") : t("formatScope", { count: formats.denominator, partial: formats.partial_page_count ?? t("unknown") })}</p>
-            {formats.denominator === 0 ? <p className={`mt-2 ${BODY_TEXT}`}>{t(isSerp ? "serpFormatsUnavailable" : "formatsUnavailable")}</p> : <p className="mt-2 text-[11.5px] text-text-dark-secondary">{formats.majority ? t("formatMajority", { format: t(`observedFormatNames.${formats.majority}`) }) : t("formatNoMajority")}</p>}
+            {formats.denominator === 0 ? <p className={`mt-2 ${BODY_TEXT}`}>{t(isSerp ? "serpFormatsUnavailable" : "formatsUnavailable")}</p> : <p className="mt-2 text-[11.5px] text-text-dark-secondary">{majorityLine(formats, t, false)}</p>}
             {formats.candidates.length > 1 ? <p className="mt-2 text-[11.5px] text-text-dark-secondary">{t("formatCandidates", { formats: formats.candidates.map((format) => t(`observedFormatNames.${format}`)).join(" · ") })}</p> : null}
             {formats.pages.length > 0 ? <ul className="mt-2 space-y-2">{formats.pages.map((page) => <li key={page.page_ref} data-format-source={page.page_ref} className="text-[10.5px] text-text-dark-secondary"><span className="font-mono">{page.page_ref} · {t(`observedFormatNames.${page.format}`)}</span>{page.title ? <div className="mt-1 text-text-dark-primary">{page.title}</div> : null}<div>{page.url ? <PageLink url={page.url} /> : t("formatUrlUnavailable")}</div><div>{t("formatRules", { rules: page.rules_hit.join(", ") || t("none") })}</div></li>)}</ul> : null}
           </details>

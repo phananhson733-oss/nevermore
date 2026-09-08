@@ -74,6 +74,40 @@ describe("host sets", () => {
     ]);
   });
 
+  it("reads a page that names itself a calculator as the tool it is", () => {
+    // A live "birth chart" SERP came back seven-tenths unknown while pages
+    // titled "Birth Chart Calculator" sat in it: the table read /calculator/ as
+    // a directory and never as the end of a slug, and never read the title at
+    // all. The observed format distribution is only as good as this table.
+    const cases: readonly [string, string, string][] = [
+      ["https://x.example/birth-chart", "Birth Chart Calculator | Astrology.com", "tool"],
+      ["https://x.example/birth-chart-calculator", "Birth Chart", "tool"],
+      ["https://x.example/natal-chart-generator", "Natal Chart Generator", "tool"],
+      ["https://x.example/tools/x", "出生星盘计算器", "tool"],
+      ["https://x.example/a", "線上排盤產生器", "tool"],
+    ];
+    for (const [url, title, expected] of cases) {
+      expect(classifySerpFormat({ domain: "x.example", url, title }).value, title).toBe(expected);
+    }
+  });
+
+  it("leaves an article about a calculator an article, and a computer a computer", () => {
+    // These decide above the calculator rules on purpose. Reading any of them
+    // as a tool page would trade one wrong distribution for another.
+    const cases: readonly [string, string, string][] = [
+      ["https://x.example/blog/birth-chart-calculator", "Free Birth Chart Calculator", "guide"],
+      ["https://x.example/birth-chart", "How to Use a Birth Chart Calculator", "guide"],
+      ["https://x.example/birth-chart", "What Is a Birth Chart Calculator?", "guide"],
+      ["https://x.example/guide/birth-chart-calculator", "Birth Chart Calculator Guide", "guide"],
+      ["https://x.example/best-birth-chart-calculators", "10 Best Birth Chart Calculators", "listicle"],
+      // 計算機 is the Traditional Chinese word for a computer, not a calculator.
+      ["https://x.example/a", "計算機科學導論", "unknown"],
+    ];
+    for (const [url, title, expected] of cases) {
+      expect(classifySerpFormat({ domain: "x.example", url, title }).value, title).toBe(expected);
+    }
+  });
+
   it("classifies the result shapes a Chinese search returns, instead of calling them unknown", () => {
     // Every one of these was "unknown" before: a zh run had six of nine results
     // unclassified, which makes the observed format distribution meaningless.
@@ -381,6 +415,11 @@ describe("classifySerpFormat: ordering", () => {
       "title:zh_how_to",
       "title:zh_dates",
       "title:zh_best",
+      "title:calculator",
+      "title:generator",
+      "title:zh_calculator",
+      "path:-calculator",
+      "path:-generator",
     ]);
   });
 });

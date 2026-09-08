@@ -44,6 +44,8 @@ export interface BriefV2FormatObservations {
     readonly page_refs: readonly string[];
   }[];
   readonly majority: ClassifiedSerpFormat | null;
+  /** No majority was found, and the unclassified pages could still decide one. */
+  readonly majority_undecided: boolean;
   /** All observed known formats, count-descending; ties keep source order. */
   readonly candidates: readonly ClassifiedSerpFormat[];
   readonly pages: readonly BriefV2FormatPageObservation[];
@@ -123,9 +125,22 @@ function formatDistribution(observations: readonly BriefV2FormatPageObservation[
   const counts = [...grouped.entries()].map(([format, page_refs]) => ({ format, count: page_refs.length, page_refs }))
     .toSorted((a, b) => b.count - a.count);
   const known = counts.filter((item): item is typeof item & { readonly format: ClassifiedSerpFormat } => item.format !== "unknown");
+  const unknown_count = grouped.get("unknown")?.length ?? 0;
+  const half = observations.length / 2;
+  const majority = known.find((item) => item.count > half)?.format ?? null;
+  // Whether a majority exists is a separate question from whether one was
+  // found. A majority is only ever sought among classified pages, while the
+  // denominator counts every page, so a sample with more unknowns than half
+  // can never report one -- and "no majority in this sample" was printed as an
+  // observation on a run where seven of ten pages were simply unclassified. It
+  // is undecided while the largest classified format, plus every unknown,
+  // could still pass half; a format nothing classified yet can only reach the
+  // unknowns themselves, which is the same bound.
+  const largest = known[0]?.count ?? 0;
   return {
-    denominator: observations.length, unknown_count: grouped.get("unknown")?.length ?? 0,
-    counts, majority: known.find((item) => item.count > observations.length / 2)?.format ?? null,
+    denominator: observations.length, unknown_count,
+    counts, majority,
+    majority_undecided: majority === null && observations.length > 0 && largest + unknown_count > half,
     candidates: known.map((item) => item.format), pages: observations,
   };
 }
