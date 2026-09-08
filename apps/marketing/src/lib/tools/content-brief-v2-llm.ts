@@ -1,6 +1,6 @@
 // @input -- a frozen v2/v3 context, remaining deadline and CONTENT_BRIEF_* configuration
 // @output -- the exact model context, validated full assembly and honest usage
-// @pos -- one v2 assembly call; no retry, fallback or external source reads
+// @pos -- one v2 assembly call; no retry, fallback or external source reads; a rejected optional field is dropped, never rewritten
 import { ENVELOPE_MS, LLM_MAX_OUTPUT_TOKENS } from "@sf/public-tools/content-brief/constants";
 import type { LlmReadMeta, UnavailableReason } from "@sf/public-tools/content-brief/contract";
 import type { BriefV2Context, BriefV2Generated } from "@sf/public-tools/content-brief/v2-generation-contract";
@@ -27,6 +27,50 @@ export interface ContentBriefV2LlmResult {
    * without carrying any of the reply's text; it is never part of the brief.
    */
   readonly validation_path?: string;
+  /**
+   * The rules that cost the reply an optional field, one path per drop.
+   *
+   * Run log only, like validation_path, and read the same way: the path names
+   * the rule, and its first segment names the field that went with it. The
+   * brief carries each dropped field in its own empty state, which is what the
+   * result page already reports; nothing here reaches the visitor.
+   */
+  readonly dropped_paths?: readonly string[];
+}
+
+interface DroppableField {
+  readonly name: string;
+  readonly absent: unknown;
+}
+
+/**
+ * The fields a brief can go without, and the value that stands for absent.
+ *
+ * A rejected reply used to discard the whole run. On 2026-09-08 a production
+ * brief was thrown away because gap_angle cited an owned page where the rule
+ * admits only competitor pages: the SERP call, ten crawled pages, a GSC read
+ * and the model call were all already paid for, and the visitor got a failure
+ * screen offering to run them again. Every field listed here is nullable or
+ * emptyable in the contract and already has an empty state on the result page,
+ * so dropping the one the model got wrong keeps the brief the visitor paid
+ * for. A drop can only remove: unlike asking the model to repair its reply, no
+ * text that was never validated can enter the brief this way.
+ *
+ * Structure is deliberately absent from this list. research, page_plan, intent
+ * and format are the brief; without them there is nothing to keep, and a reply
+ * that breaks one of them still fails whole.
+ */
+const DROPPABLE_FIELDS: readonly DroppableField[] = [
+  { name: "gap_angle", absent: null },
+  { name: "internal_links", absent: [] },
+  { name: "do_not_cover", absent: [] },
+];
+
+/** The droppable field a rejection path belongs to, if the reply is still an object we can rebuild. */
+function droppableField(path: string, reply: unknown): DroppableField | null {
+  if (typeof reply !== "object" || reply === null || Array.isArray(reply)) return null;
+  const head = path.split(/[.[]/u)[0] ?? "";
+  return DROPPABLE_FIELDS.find((item) => item.name === head) ?? null;
 }
 
 const FAILURE_REASONS: Readonly<Record<KeywordLlmFailureReason, UnavailableReason>> = {
@@ -78,8 +122,9 @@ export async function runContentBriefV2Llm(
     return { context, output: null, reads: unavailable(FAILURE_REASONS[error.reason], usage.requestCount > 0 ? 1 : 0, usage, null), prompt_bytes };
   }
   const modelId = completion.modelId ?? config.model;
+  const dropped: string[] = [];
   const fail = (reason: UnavailableReason, path?: string): ContentBriefV2LlmResult =>
-    ({ context, output: null, reads: unavailable(reason, 1, completion.usage, modelId), prompt_bytes, ...(path === undefined ? {} : { validation_path: path }) });
+    ({ context, output: null, reads: unavailable(reason, 1, completion.usage, modelId), prompt_bytes, ...(path === undefined ? {} : { validation_path: path }), ...(dropped.length === 0 ? {} : { dropped_paths: [...dropped] }) });
   const expired = () => { const current = now(); return !Number.isFinite(current) || current >= attemptDeadline; };
   if (expired()) return fail("timeout");
   let raw: unknown;
@@ -89,13 +134,26 @@ export async function runContentBriefV2Llm(
   }
   // Generation is the one place the language rule applies; reading a brief back
   // must not judge it by a rule that did not exist when it was issued.
-  const output = context.serp === undefined
-    ? validateModelBriefV2(raw, context, { checkLanguage: true })
-    : validateSectionQuestionsBrief(raw, context, { checkLanguage: true });
+  const validate = (reply: unknown) => context.serp === undefined
+    ? validateModelBriefV2(reply, context, { checkLanguage: true })
+    : validateSectionQuestionsBrief(reply, context, { checkLanguage: true });
+  // One pass per droppable field, which is all a reply can need: each drop
+  // installs a value the validator accepts, so no field comes back. Validation
+  // is pure CPU over an already-parsed reply; no further call is made.
+  let reply = raw;
+  let output = validate(reply);
+  for (let attempt = 0; !output.ok && attempt < DROPPABLE_FIELDS.length; attempt += 1) {
+    const field = droppableField(output.path, reply);
+    if (field === null) break;
+    dropped.push(output.path);
+    reply = { ...(reply as Record<string, unknown>), [field.name]: field.absent };
+    output = validate(reply);
+  }
   if (expired()) return fail("timeout");
   if (!output.ok) return fail("validation_failed", output.path);
   return {
     context, output: output.value, prompt_bytes,
+    ...(dropped.length === 0 ? {} : { dropped_paths: [...dropped] }),
     reads: { status: "complete", calls: completion.usage.requestCount, model_id: modelId, temperature_requested: CONTENT_BRIEF_LLM_TEMPERATURE, temperature_effective: config.temperature ?? null, input_tokens: completion.usage.inputTokens, output_tokens: completion.usage.outputTokens },
   };
 }

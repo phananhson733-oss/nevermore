@@ -62,6 +62,16 @@ function updateFixture() {
   return { owned, output };
 }
 
+function angleFixture() {
+  const { owned, output } = updateFixture();
+  const relatedUrl = "https://t1.example/validation";
+  const research = buildResearchBundle([page("C1"), page("T1"), { ...page("T2"), url: relatedUrl, final_url: relatedUrl }], []);
+  if (!research.ok) throw new Error(research.path);
+  const data: BriefV2Context = { ...owned, research: research.value, candidates: [...owned.candidates, { id: "T2", url: relatedUrl, match_refs: [], read: "observed" }], profile_snapshot: { website_id: "00000000-0000-4000-8000-000000000001", revision: 1, hash: "b".repeat(64) }, facts: [{ id: "P1", field: "coreFeatures[0]", text: "Pre-submission claim validation", derivation: "declared", provenance: { method: "observed", origin: "product_profile" } }] };
+  const full: ModelBriefV2Output = { ...output, gap_angle: { value: "Illustrate validation before claim submission", rationale: "The supplied product fact can anchor a focused workflow explanation against the observed competitor excerpt.", fact_refs: ["P1"], sources: ["U1"] }, internal_links: [{ page_ref: "T2", anchor: "claim validation details", why: "The observed page contains the detailed validation explanation." }], do_not_cover: [{ page_ref: "T2", topic: "Detailed validation definitions", why: "Refer readers to the observed existing explanation instead of duplicating it." }] };
+  return { data, full };
+}
+
 describe("one-call Brief v2 assembly", () => {
   it("assembles v3 section-owned questions through the strict graph validator in one Luna call", async () => {
     const original = context();
@@ -133,16 +143,83 @@ describe("one-call Brief v2 assembly", () => {
   });
 
   it("assembles the differentiated angle, owned links and excluded topics in the same call as questions and the rewrite", async () => {
-    const { owned, output } = updateFixture();
-    const relatedUrl = "https://t1.example/validation";
-    const research = buildResearchBundle([page("C1"), page("T1"), { ...page("T2"), url: relatedUrl, final_url: relatedUrl }], []);
-    if (!research.ok) throw new Error(research.path);
-    const data: BriefV2Context = { ...owned, research: research.value, candidates: [...owned.candidates, { id: "T2", url: relatedUrl, match_refs: [], read: "observed" }], profile_snapshot: { website_id: "00000000-0000-4000-8000-000000000001", revision: 1, hash: "b".repeat(64) }, facts: [{ id: "P1", field: "coreFeatures[0]", text: "Pre-submission claim validation", derivation: "declared", provenance: { method: "observed", origin: "product_profile" } }] };
-    const full: ModelBriefV2Output = { ...output, gap_angle: { value: "Illustrate validation before claim submission", rationale: "The supplied product fact can anchor a focused workflow explanation against the observed competitor excerpt.", fact_refs: ["P1"], sources: ["U1"] }, internal_links: [{ page_ref: "T2", anchor: "claim validation details", why: "The observed page contains the detailed validation explanation." }], do_not_cover: [{ page_ref: "T2", topic: "Detailed validation definitions", why: "Refer readers to the observed existing explanation instead of duplicating it." }] };
+    const { data, full } = angleFixture();
     const { result, requests } = await run(JSON.stringify(full), data);
     expect(result.reads.status).toBe("complete");
     expect(result.output).toMatchObject({ gap_angle: full.gap_angle, internal_links: full.internal_links, do_not_cover: full.do_not_cover, page_plan: { action: "update", target_ref: "T1" } });
+    expect(result.dropped_paths).toBeUndefined();
     expect(requests).toHaveLength(1);
+  });
+
+  // A production run on 2026-09-08 lost a whole paid brief this way: the model
+  // sourced its differentiated angle from an owned page, and the questions,
+  // outline, page plan and links it got right went out with it.
+  it("keeps the paid brief when the differentiated angle cites a page the rule forbids", async () => {
+    const { data, full } = angleFixture();
+    const reply: ModelBriefV2Output = { ...full, gap_angle: { ...full.gap_angle!, sources: ["U2"] } };
+    const { result, requests } = await run(JSON.stringify(reply), data);
+    expect(result.reads.status).toBe("complete");
+    expect(result.output?.gap_angle).toBeNull();
+    expect(result.dropped_paths).toEqual(["gap_angle.sources"]);
+    // What the model got right is still the model's own text, unedited.
+    expect(result.output).toMatchObject({ intent: full.intent, format: full.format, internal_links: full.internal_links, do_not_cover: full.do_not_cover, page_plan: { action: "update", target_ref: "T1", steps: [{ kind: "rewrite", sources: ["U2"], answers: ["Q1"] }] } });
+    expect(result.output?.research.outline).toEqual([{ id: "O1", h2: "Validate claims before submission", h3: ["Insurance checks"], answers: ["Q1"] }]);
+    expect(requests).toHaveLength(1);
+  });
+
+  it("keeps the paid brief when an internal link points at the page being rewritten", async () => {
+    const { data, full } = angleFixture();
+    const reply: ModelBriefV2Output = { ...full, internal_links: full.internal_links.map((item) => ({ ...item, page_ref: "T1" })) };
+    const { result } = await run(JSON.stringify(reply), data);
+    expect(result.reads.status).toBe("complete");
+    expect(result.output?.internal_links).toEqual([]);
+    expect(result.dropped_paths).toEqual(["internal_links"]);
+    expect(result.output?.gap_angle).toEqual(full.gap_angle);
+    expect(result.output?.do_not_cover).toEqual(full.do_not_cover);
+  });
+
+  it("keeps the paid brief when an excluded topic points at the page being rewritten", async () => {
+    const { data, full } = angleFixture();
+    const reply: ModelBriefV2Output = { ...full, do_not_cover: full.do_not_cover.map((item) => ({ ...item, page_ref: "T1" })) };
+    const { result } = await run(JSON.stringify(reply), data);
+    expect(result.reads.status).toBe("complete");
+    expect(result.output?.do_not_cover).toEqual([]);
+    expect(result.dropped_paths).toEqual(["do_not_cover"]);
+    expect(result.output?.internal_links).toEqual(full.internal_links);
+  });
+
+  it("drops each optional field at most once and makes no second call", async () => {
+    const { data, full } = angleFixture();
+    const reply: ModelBriefV2Output = { ...full,
+      gap_angle: { ...full.gap_angle!, sources: ["U2"] },
+      internal_links: full.internal_links.map((item) => ({ ...item, page_ref: "T1" })),
+      do_not_cover: full.do_not_cover.map((item) => ({ ...item, page_ref: "T1" })),
+    };
+    const { result, requests } = await run(JSON.stringify(reply), data);
+    expect(result.reads.status).toBe("complete");
+    expect(result.dropped_paths).toEqual(["gap_angle.sources", "internal_links", "do_not_cover"]);
+    expect(requests).toHaveLength(1);
+  });
+
+  it("keeps the paid brief when an optional field is missing from the reply entirely", async () => {
+    const { data, full } = angleFixture();
+    const { gap_angle: _omitted, ...without } = full;
+    const { result } = await run(JSON.stringify(without), data);
+    expect(result.output?.gap_angle).toBeNull();
+    expect(result.dropped_paths).toEqual(["gap_angle"]);
+  });
+
+  it("rejects a structurally wrong reply whole, without dropping the optional field that is also wrong", async () => {
+    const { data, full } = angleFixture();
+    const reply: ModelBriefV2Output = { ...full,
+      gap_angle: { ...full.gap_angle!, sources: ["U2"] },
+      page_plan: { ...full.page_plan, steps: full.page_plan.steps.map((step) => ({ ...step, sources: ["U3"] })) },
+    };
+    const { result } = await run(JSON.stringify(reply), data);
+    expect(result.output).toBeNull();
+    expect(result.reads).toMatchObject({ status: "unavailable", reason: "validation_failed" });
+    expect(result.validation_path).toBe("page_plan.steps[0].sources");
+    expect(result.dropped_paths).toBeUndefined();
   });
 
   it("rejects a rewrite step that tries to use PAA as factual support", async () => {
