@@ -284,3 +284,33 @@ export const UNSEGMENTED_SCRIPT_CLASS =
  * candidates than the other would ever keep.
  */
 export const BRIEF_V2_OWNED_CANDIDATES_MAX = 3;
+
+/**
+ * The script a brief written in each accepted language must actually contain.
+ *
+ * Mirrors SERP_LANGUAGES in apps/marketing/src/lib/tools/serp-markets.ts, which
+ * this package cannot import: business packages do not depend on apps. A test
+ * over there asserts every accepted language has an entry here, because a
+ * language added to the list and missed here is not an error anywhere -- the
+ * brief just stops being checked, silently.
+ *
+ * One script per language, and only the script the language cannot be written
+ * without. Latin covers every language whose alphabet is Latin, whatever its
+ * diacritics. Japanese lists kana alongside Han because a Japanese heading may
+ * be entirely kana; Chinese lists Han alone, so an all-Hangul brief cannot pass
+ * for Chinese by sharing the "unsegmented" bucket.
+ */
+export const EXPECTED_BRIEF_SCRIPTS: ReadonlyMap<string, string> = new Map([
+  ["zh", "\\p{Script=Han}"],
+  ["ja", "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}"],
+  ["ko", "\\p{Script=Hangul}"],
+  ["th", "\\p{Script=Thai}"],
+  ["ru", "\\p{Script=Cyrillic}"],
+  ["uk", "\\p{Script=Cyrillic}"],
+  ["ar", "\\p{Script=Arabic}"],
+  ["he", "\\p{Script=Hebrew}"],
+  ["hi", "\\p{Script=Devanagari}"],
+  ["el", "\\p{Script=Greek}"],
+  ...["en", "de", "fr", "es", "it", "pt", "nl", "sv", "no", "da", "fi", "pl",
+    "tr", "vi", "id", "ms", "cs", "hu", "ro"].map((code): readonly [string, string] => [code, "\\p{Script=Latin}"]),
+]);

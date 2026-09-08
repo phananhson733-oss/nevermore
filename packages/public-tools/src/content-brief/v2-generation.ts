@@ -6,7 +6,8 @@ import { keywordCoverageProperty } from "../keyword-opportunity/property.ts";
 import { canonicalize } from "./canonical.ts";
 import { buildSerpObservations } from "./assemble.ts";
 import {
-  NON_WHITESPACE_TOKENIZED_LANGUAGES, SERP_DEPTH, SUPPORTING_KEYWORDS_MAX, UNSEGMENTED_SCRIPT_CLASS,
+  EXPECTED_BRIEF_SCRIPTS, NON_WHITESPACE_TOKENIZED_LANGUAGES, SERP_DEPTH,
+  SUPPORTING_KEYWORDS_MAX, UNSEGMENTED_SCRIPT_CLASS,
 } from "./constants.ts";
 import type { ProfileFact } from "./contract.ts";
 import {
@@ -302,14 +303,38 @@ function withoutQuotedSpans(value: string): string {
  * pipeline disagreed. The instruction now names the language, and this is the
  * check that makes the instruction enforceable.
  *
- * It only fires in one direction. A run in a language written without spaces
- * may legitimately borrow a Latin term, and a Latin-script run may quote one
- * word of the source; a whole heading in the sources' script is the failure
- * that was actually observed, so majority is the test and the minimum sample
- * keeps a two-character borrowing out of it.
+ * Two tests, because the two directions are not alike. The per-string majority
+ * test below reads a Latin-script run and rejects any single string that came
+ * back mostly CJK: that is unmistakable, and the minimum sample keeps a
+ * two-character borrowing out of it. The brief-level test reads every accepted
+ * language, including the ones written without spaces, and asks only whether
+ * the brief contains its own script anywhere -- the weaker question, because
+ * the strict one has no false-positive-free answer in that direction.
+ *
+ * Neither is a language identifier. Both are script tests, and they catch the
+ * failure that happened -- a brief written wholesale in the sources' language --
+ * not a sentence of it.
  */
+/**
+ * A URL is a literal the writer copies, not prose to translate, so it is masked
+ * before any script counting. Written escaped, and stopping at CJK punctuation
+ * as well as whitespace, because Chinese runs a URL straight into the next
+ * sentence with no space: `\S+` would swallow the sentence with it and leave
+ * nothing to judge.
+ */
+const URL_TOKEN = /https?:\/\/[^\s<>"'\u3001\u3002\u3008-\u300f\u3010\u3011\uff01\uff08\uff09\uff0c\uff1a\uff1b\uff1f]+/gu;
+
+function prose(value: string): string {
+  return value.replace(URL_TOKEN, " ");
+}
+
 function wrongScript(value: string): boolean {
-  const text = withoutQuotedSpans(value);
+  const masked = prose(value);
+  // A string that is nothing but a quoted span carries no citation to exempt:
+  // it is the heading itself in quotation marks. Judging what is left would let
+  // any heading escape the check by wearing quotes.
+  const stripped = withoutQuotedSpans(masked);
+  const text = LETTER.test(stripped) ? stripped : masked;
   let letters = 0;
   let cjk = 0;
   for (const character of text) {
@@ -318,6 +343,40 @@ function wrongScript(value: string): boolean {
     if (CJK_LETTER.test(character)) cjk += 1;
   }
   return letters >= SCRIPT_SAMPLE_MIN && cjk * 2 > letters;
+}
+
+/**
+ * Whether the brief contains the script its language is written in, anywhere.
+ *
+ * The per-string test above only works in one direction. Chinese script inside
+ * English prose is unmistakable string by string; the reverse is not, because
+ * Chinese prose embeds Latin constantly -- an acronym, a product name, `Google
+ * Search Console` as a whole subheading. Any per-string rule strict enough to
+ * catch an English heading in a Chinese brief also rejects those, and rejecting
+ * costs the reader a run they paid for while a stray heading costs them an edit.
+ *
+ * So this asks the weaker question that has no false positives: does the brief
+ * contain its own script at all? A brief genuinely written in Chinese has Han in
+ * it somewhere. One that came back wholly in the sources' language does not, and
+ * that is the failure that actually happened. It returns the first string that
+ * had letters, as the place to point at.
+ *
+ * What it does not catch, deliberately: a brief that is English except for one
+ * Chinese rationale. That is visible on the page and the headings are editable.
+ */
+function missingExpectedScript(value: BriefV2Generated, primary: string): string | null {
+  const script = EXPECTED_BRIEF_SCRIPTS.get(primary);
+  if (script === undefined) return null;
+  const expected = new RegExp(`[${script}]`, "u");
+  let letters = 0;
+  let offender: string | null = null;
+  for (const [path, text] of generatedStrings(value)) {
+    const masked = prose(text);
+    if (expected.test(masked)) return null;
+    for (const character of masked) if (LETTER.test(character)) letters += 1;
+    if (offender === null && LETTER.test(masked)) offender = path;
+  }
+  return letters >= SCRIPT_SAMPLE_MIN ? offender : null;
 }
 
 /** Every generated string, with the path a rejection should name. */
@@ -356,6 +415,8 @@ function checkGeneratedLanguage(value: BriefV2Generated, language: string): Deco
   // BCP-47 tag: "zh-CN" is Chinese, and comparing the whole tag to a set of
   // bare codes would have this check reject a Chinese brief for being Chinese.
   const primary = language.toLowerCase().split(/[-_]/u)[0] ?? "";
+  const missing = missingExpectedScript(value, primary);
+  if (missing !== null) return reference(missing);
   if (NON_WHITESPACE_TOKENIZED_LANGUAGES.has(primary)) return null;
   for (const [path, text] of generatedStrings(value)) {
     if (wrongScript(text)) return reference(path);
