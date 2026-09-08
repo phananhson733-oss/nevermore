@@ -179,9 +179,14 @@ export async function crawlContentBriefV2Targets(
   // The caller races this call against a lane of the same CRAWL_DEADLINE_MS. If both
   // expire together the lane wins and every completed page is discarded, so the inner
   // wall clock closes first and returns whatever finished.
+  //
+  // The margin comes off whichever bound is binding. Subtracting it from only the
+  // CRAWL_DEADLINE_MS term left it doing nothing whenever the run budget was the
+  // shorter of the two, which is exactly the crowded run where losing every fetched
+  // page hurts most.
   const clock = {
     now,
-    wallClockAt: Math.min(now() + CRAWL_DEADLINE_MS - CRAWL_SETTLEMENT_MS, input.deadlineAt - ENVELOPE_MS),
+    wallClockAt: Math.min(now() + CRAWL_DEADLINE_MS, input.deadlineAt - ENVELOPE_MS) - CRAWL_SETTLEMENT_MS,
   };
   const outcomes: Outcome[] = new Array<Outcome>(targets.length);
   let next = 0;
