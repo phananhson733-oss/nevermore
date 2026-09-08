@@ -593,7 +593,7 @@ describe("empty recommendation sections", () => {
     const noneCards = none.host.querySelectorAll("[data-links-empty]");
     expect(noneCards).toHaveLength(2);
     for (const card of noneCards) {
-      expect(card.getAttribute("data-links-empty")).toBe("no_candidate");
+      expect(card.getAttribute("data-links-empty")).toBe("no_page_read");
       expect(card.textContent).toContain("nothing here to recommend");
     }
 
@@ -601,10 +601,13 @@ describe("empty recommendation sections", () => {
     const someCards = some.host.querySelectorAll("[data-links-empty]");
     expect(someCards).toHaveLength(2);
     for (const card of someCards) {
-      expect(card.getAttribute("data-links-empty")).toBe("none_chosen");
+      expect(card.getAttribute("data-links-empty")).toBe("none_available_chosen");
       // One page read, not two: an unread candidate is not a page the model
       // could have recommended.
-      expect(card.textContent).toContain("1 of your own pages");
+      // The count is of pages that could be named here, not of pages read: it
+      // excludes the rewrite target, so calling it a read count reported two
+      // read pages as one.
+      expect(card.textContent).toContain("1 of your own pages could be named here");
       // Same reason as the differentiated angle: a recommendation the validator
       // dropped may have been source-bound, so this may not claim it was not.
       expect(card.textContent).not.toContain("source-bound");
@@ -612,14 +615,36 @@ describe("empty recommendation sections", () => {
     }
   });
 
-  it("does not blame the model for a list that could only be empty", async () => {
+  it("does not blame the model for a list that could only be empty, or deny reading the page it read", async () => {
     // The one page read is the page being rewritten, and neither list may name
-    // it. Counting it as eligible reported a model choice that never existed.
+    // it. Counting it as available reported a model choice that never existed;
+    // then folding this into "no page of your own was read" denied a read the
+    // same screen reports elsewhere.
     const { host } = await render(emptied(await fixture(), null, [owned("T1", "observed")], "T1"));
 
     for (const card of host.querySelectorAll("[data-links-empty]")) {
-      expect(card.getAttribute("data-links-empty")).toBe("no_candidate");
+      expect(card.getAttribute("data-links-empty")).toBe("only_target_read");
+      expect(card.textContent).toContain("is the one this brief rewrites");
+      expect(card.textContent).not.toContain("No page of your own was read");
     }
     expect(host.querySelectorAll("[data-links-empty]")).toHaveLength(2);
+  });
+
+  // The result page ships in Chinese first, and every assertion above renders
+  // English: both sentences were once wrong in Chinese with the suite green.
+  it("makes the same claims in Chinese", async () => {
+    const { host } = await render(emptied(await fixture(), null, [owned("T1", "observed"), owned("T2", "observed")], "T1"), "zh");
+    expect(gapText(host)).toContain("本次没有得出可用的差异角度");
+    expect(gapText(host)).not.toContain("有来源依据");
+    for (const card of host.querySelectorAll("[data-links-empty]")) {
+      expect(card.getAttribute("data-links-empty")).toBe("none_available_chosen");
+      expect(card.textContent).toContain("本次有 1 篇本站页面可以在这里出现");
+      expect(card.textContent).not.toContain("有来源依据");
+    }
+
+    const target = await render(emptied(await fixture(), null, [owned("T1", "observed")], "T1"), "zh");
+    for (const card of target.host.querySelectorAll("[data-links-empty]")) {
+      expect(card.textContent).toContain("只有这份 Brief 要改的那一篇");
+    }
   });
 });
