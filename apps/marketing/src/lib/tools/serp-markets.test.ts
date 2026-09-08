@@ -26,15 +26,29 @@ describe("SERP_LANGUAGES", () => {
   // Written here rather than derived from the table, so the two sides are
   // independent: a table whose scripts were all replaced with Latin, or with
   // nothing at all, compiles fine and matches nothing that matters.
-  const SAMPLE: Readonly<Record<string, string>> = {
-    zh: "\u4e2d", ja: "\u3042", ko: "\ud55c", th: "\u0e44", ru: "\u0434", uk: "\u0434",
-    ar: "\u0639", he: "\u05e2", hi: "\u0939", el: "\u03b1",
+  // One character per script the language may be written in, not one per
+  // language: a single sample proves only the first entry, so dropping Hindi's
+  // Latin or Japanese's kanji went unnoticed.
+  const SAMPLE: Readonly<Record<string, readonly string[]>> = {
+    zh: ["\u4e2d"], ja: ["\u6f22", "\u3042", "\u30a2"], ko: ["\ud55c"], th: ["\u0e44"],
+    ru: ["\u0434"], uk: ["\u0434"], ar: ["\u0639"], he: ["\u05e2"],
+    hi: ["\u0939", "a"], el: ["\u03b1"],
   };
 
-  it("matches the script each language is actually written in", () => {
+  it("matches every script each language is actually written in", () => {
     for (const [code, script] of EXPECTED_BRIEF_SCRIPTS) {
       const pattern = new RegExp(`[${script}]`, "u");
-      expect(pattern.test(SAMPLE[code] ?? "a"), code).toBe(true);
+      for (const sample of SAMPLE[code] ?? ["a"]) {
+        expect(pattern.test(sample), `${code} ${sample}`).toBe(true);
+      }
+    }
+  });
+
+  it("counts one script entry per script the sample exercises", () => {
+    // Otherwise a table entry could carry a script no sample reaches, and
+    // dropping it would still pass the test above.
+    for (const [code, samples] of Object.entries(SAMPLE)) {
+      expect(EXPECTED_BRIEF_SCRIPTS.get(code)?.split("\\p{Script=").length, code).toBe(samples.length + 1);
     }
   });
 
@@ -43,9 +57,9 @@ describe("SERP_LANGUAGES", () => {
     // brief written in Hangul must not pass by sharing that bucket.
     const chinese = new RegExp(`[${EXPECTED_BRIEF_SCRIPTS.get("zh")!}]`, "u");
 
-    expect(chinese.test(SAMPLE.ko!)).toBe(false);
-    expect(chinese.test(SAMPLE.ja!)).toBe(false);
-    expect(chinese.test(SAMPLE.th!)).toBe(false);
-    expect(chinese.test(SAMPLE.zh!)).toBe(true);
+    for (const sample of [SAMPLE.ko![0]!, SAMPLE.ja![1]!, SAMPLE.ja![2]!, SAMPLE.th![0]!]) {
+      expect(chinese.test(sample), sample).toBe(false);
+    }
+    expect(chinese.test(SAMPLE.zh![0]!)).toBe(true);
   });
 });

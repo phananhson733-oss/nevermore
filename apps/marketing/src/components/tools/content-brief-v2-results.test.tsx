@@ -576,6 +576,8 @@ describe("empty recommendation sections", () => {
     expect(read.host.querySelector("[data-gap-empty]")?.getAttribute("data-gap-empty")).toBe("gapUnavailable");
     // The three states must not share one sentence, which is what made the old
     // single string wrong: it explained a prerequisite as an editorial outcome.
+    // Asserting only that this one differs would let an empty string pass.
+    expect(gapText(read.host)).toContain("No source-bound differentiated angle");
     expect(gapText(read.host)).not.toContain("product profile");
   });
 

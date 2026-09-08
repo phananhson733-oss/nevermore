@@ -191,6 +191,12 @@ function Recommendations({ brief, t }: { readonly brief: ContentBriefV2; readonl
   // things and the reader needs to know which: nothing was eligible, or
   // something was and the model passed on it. Counting the rewrite target as
   // eligible put the blame on the model for a list that could only be empty.
+  //
+  // The validator excludes the target by page identity, not by id, and this
+  // compares ids. They agree: both places that build this list drop a candidate
+  // whose identity is already present, so ids and identities are one to one.
+  // Recomputing the identity here would pull the canonical-URL reader into a
+  // client bundle for no difference in outcome.
   const readOwnPages = brief.context.candidates.filter((candidate) =>
     candidate.read === "observed" && candidate.id !== generated.page_plan.target_ref).length;
   return <>

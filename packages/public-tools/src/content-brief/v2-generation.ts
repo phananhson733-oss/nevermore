@@ -320,28 +320,31 @@ function withoutQuotedSpans(value: string): string {
  * before any script counting: a Chinese path once outvoted the English sentence
  * around it and the brief was rejected for the link it cited.
  *
- * Deliberately greedy, and case-insensitive. Chinese runs a URL straight into
- * the next sentence with no space, so no boundary rule separates them: every
- * class narrow enough to keep that sentence also cuts a Chinese domain at its
- * ideographic dot and counts the remainder as prose. The two mistakes are not
- * equal. Masking too much loses a check on text the reader can still see and
- * edit; masking too little rejects a brief that was paid for. So this runs to
- * the next space and stops only at the characters a URL cannot contain.
+ * Whitespace is the only boundary, and the scheme is matched in any case. Every
+ * narrower class was wrong in both directions: it cut a Chinese domain at its
+ * ideographic dot and counted the remainder as prose, and it ended the URL at
+ * the apostrophe in `?wd=O'Reilly...`, exposing the query string that followed.
+ * There is no boundary rule, because CJK runs a URL into the next sentence with
+ * no space at all. The two mistakes are not equal: masking too much loses a
+ * check on text the reader can still see and edit, masking too little rejects a
+ * brief that was paid for. So this masks as far as it can.
  */
-const URL_TOKEN = /https?:\/\/[^\s<>"']+/giu;
+const URL_TOKEN = /https?:\/\/\S+/giu;
 
 function prose(value: string): string {
   return value.replace(URL_TOKEN, " ");
 }
 
 function wrongScript(value: string): boolean {
-  // Quoted spans are dropped, including a string that is nothing but one. That
-  // does let a model exempt a heading by wrapping it in quotation marks, and
-  // the alternative was worse: judging the original whenever nothing lettered
-  // remained rejected `『吾輩は猫である』 (1905)`, an English heading naming a
-  // work and its year, which is the exact case the stripping exists for. The
-  // brief-level check below catches a brief quoted wholesale into another
-  // language, which is what the evasion would have to be to matter.
+  // Quoted spans are dropped, including a string that is nothing but one, so a
+  // heading in quotation marks is exempt from this test. That is a real hole and
+  // nothing below closes it: the brief-level check counts a Latin acronym
+  // anywhere as the brief's own script, so `"理解 GSC 报告延迟"` in every field
+  // still passes. The alternative was worse. Judging the original whenever no
+  // letters remained outside the quotes rejected `『吾輩は猫である』 (1905)`, an
+  // English heading naming a work and its year, because a year is not letters --
+  // and that is the exact case the stripping exists for. A quoted citation and a
+  // quoted heading are the same shape; no script test separates them.
   const text = withoutQuotedSpans(prose(value));
   let letters = 0;
   let cjk = 0;

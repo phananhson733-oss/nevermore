@@ -301,11 +301,15 @@ export const BRIEF_V2_OWNED_CANDIDATES_MAX = 3;
  * an all-Hangul brief cannot pass for Chinese by sharing the "unsegmented"
  * bucket.
  *
- * Where a language has a living second script, both are listed. Where the
- * alternative is historical (Cyrillic Romanian, Jawi Malay, Arabic-script
- * Turkish) it is not, and a brief written that way would be rejected. That is a
- * deliberate limit, written down rather than implied: this is a script test, and
- * a script test cannot tell a language from the alphabet it was typed in.
+ * A second script is listed when web pages are actually published in it, not
+ * merely when people type that way. Hindi qualifies: Latin-script Hindi is
+ * ordinary published writing and ranks. Arabizi does not, and neither do
+ * transliterated Russian or Greek -- they are chat, and nobody targets Arabic
+ * search with Latin text. Historical alternatives (Cyrillic Romanian, Jawi
+ * Malay, Arabic-script Turkish) are not listed either. A brief written in one of
+ * the unlisted forms is rejected, which is a deliberate limit written down
+ * rather than implied: this is a script test, and a script test cannot tell a
+ * language from the alphabet it was typed in.
  */
 export const EXPECTED_BRIEF_SCRIPTS: ReadonlyMap<string, string> = new Map([
   ["zh", "\\p{Script=Han}"],
