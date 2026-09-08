@@ -27,6 +27,9 @@ export const FORUM_HOSTS: ReadonlySet<string> = new Set([
 export const COMMERCE_HOSTS: ReadonlySet<string> = new Set([
   "amazon.com", "ebay.com", "walmart.com", "etsy.com",
   "shopee.com", "shopee.tw", "taobao.com", "tmall.com", "jd.com", "momoshop.com.tw", "pchome.com.tw",
+  // An app marketplace lists software the way a shop lists goods, and its
+  // listing for a calculator is a product page, not the calculator.
+  "apps.microsoft.com", "apps.apple.com", "play.google.com",
 ]);
 export const NEWS_HOSTS: ReadonlySet<string> = new Set(["nytimes.com", "bbc.com", "reuters.com", "theguardian.com"]);
 /**
@@ -109,15 +112,42 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   pathRule("path:blog", "guide", "/blog/"),
   pathRule("path:guide", "guide", "/guide/"),
   pathRule("path:learn", "guide", "/learn/"),
+  // Below /blog/, /guide/ and /learn/, because an article about a calculator
+  // keeps the calculator's name in its own slug. The trailing slash is what
+  // makes these terminal: directoryPath appends one, so "-calculator/" ends a
+  // segment and /mortgage-calculator-review stays out. /birth-chart-calculator
+  // never contained the /calculator/ segment above.
+  pathRule("path:-calculator", "tool", "-calculator/"),
+  pathRule("path:-generator", "tool", "-generator/"),
   pathRule("path:product", "product_page", "/product/"),
   pathRule("path:pricing", "product_page", "/pricing"),
-  titleRule("title:leading_number", "listicle", /^\d+ /),
+  // Up to three digits: a leading 2026 is a year, and "2026 Salary Calculator"
+  // was read as a list of two thousand items.
+  titleRule("title:leading_number", "listicle", /^\d{1,3} /),
   titleRule("title:best", "listicle", /\bbest /),
   titleRule("title:top_n", "listicle", /\btop \d+/),
   titleRule("title:vs", "comparison", / vs\.? /),
   titleRule("title:how_to", "guide", /\bhow to /),
   titleRule("title:what_is", "guide", /\bwhat is /),
   titleRule("title:guide", "guide", /guide/),
+  // Below the rules that mark an article ABOUT a thing -- a how-to, a
+  // what-is, a round-up, a guide all keep the page -- and above the weaker
+  // topic words, so "Pregnancy Due Dates Calculator" is the calculator it is
+  // rather than a page about dates. Before this the table read /calculator/
+  // only as a directory and never read the title at all, so a live SERP of
+  // pages titled "Birth Chart Calculator" came back seven-tenths unknown.
+  //
+  // There is no English generator rule to match: a generator is as often a
+  // machine as a program, and "Generator Engines" is a catalogue. The slug
+  // form below is the narrower claim and carries that case alone.
+  titleRule("title:calculator", "tool", /\bcalculator\b/),
+  // 生成器 / 產生器 are unambiguous where the English is not; a physical
+  // generator is 發電機. 計算機 is left out although Traditional Chinese does
+  // use it for a calculator, because it is also the word for a computer and
+  // would read 計算機科學導論 as a tool. That under-matches BMI計算機, which
+  // now shows up as a page the sample could not classify rather than as one
+  // it classified wrongly.
+  titleRule("title:zh_calculator", "tool", /计算器|計算器|生成器|產生器/u),
   titleRule("title:meaning", "guide", /\bmeaning\b/),
   titleRule("title:explained", "guide", /\bexplained\b/),
   titleRule("title:dates", "guide", /\bdates\b/),

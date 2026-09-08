@@ -75,6 +75,14 @@ describe("Artifact-aligned Brief v2 result", () => {
     expect(node(host, '[data-field-card="length"] [data-quantile-method]').closest("details")?.open).toBe(false);
     for (const selector of ["[data-length-quantiles]", "[data-length-sample]", "[data-length-boundary]"]) expect(node(host, selector).closest("details")).toBeNull();
     expect(node(host, "[data-length-boundary]").textContent).toMatch(locale === "en" ? /not a writing or ranking target/i : /不是写作或排名目标/);
+    // body_complete means the HTTP body arrived untruncated, and the count is
+    // of text extracted without running scripts. "Fully read competitor pages"
+    // claimed the page had been read whole, which nothing here establishes --
+    // least of all a calculator whose content a script draws.
+    const sample = node(host, "[data-length-sample]").textContent ?? "";
+    expect(sample).toMatch(locale === "en" ? /body arrived untruncated/i : /正文未被截断/);
+    expect(sample).not.toMatch(locale === "en" ? /fully read/i : /完整读取/);
+    expect(node(host, '[data-field-card="length"]').textContent).toMatch(locale === "en" ? /without running page scripts/i : /不执行页面脚本/);
     expect(JSON.stringify(brief)).toBe(before);
   });
   it("keeps collection time and budget visible and separates generation from partial source reads", async () => {
@@ -185,7 +193,15 @@ describe("Artifact-aligned Brief v2 result", () => {
     expect(node(formats, '[data-format-count="guide"]').textContent).toContain("1/3");
     expect(node(formats, '[data-format-count="tool"]').textContent).toContain("1/3");
     expect(node(formats, '[data-format-count="unknown"]').textContent).toContain("1/3");
-    expect(formats.textContent).toContain("No format has a majority");
+    // One of the three is unclassified, so either classified format could still
+    // pass half. The card may not report that as "no majority in this sample".
+    expect(node(formats, "[data-format-majority]").getAttribute("data-format-majority")).toBe("undecided");
+    expect(formats.textContent).toContain("1 of 3 results could not be classified");
+    // The sentence may say a majority cannot be identified, never that one
+    // cannot exist: a single unclassified page necessarily has a majority.
+    expect(formats.textContent).toContain("no majority format can be identified");
+    expect(formats.textContent).not.toMatch(/whether a majority exists|largest classified format/i);
+    expect(formats.textContent).not.toContain("No format has a majority");
     expect(formats.textContent).toContain("Observed candidates: Guide · Tool");
     expect(node(host, '[data-field-card="format"]').textContent).toContain("Model suggestion");
   });
@@ -206,7 +222,19 @@ describe("Artifact-aligned Brief v2 result", () => {
     expect(formats.textContent).toContain("SERP title + URL heuristic");
     expect(formats.textContent).not.toContain("URL-only");
     expect(formats.textContent).toContain("4/10 organic results");
-    expect(formats.textContent).toContain("1 unresolved");
+    // Two different failures, one number each: a URL the provider could not
+    // resolve, and a row this application's rules could not classify. Printed
+    // as a bare "1 unresolved" beside seven unknowns, the first read as if
+    // nothing had failed.
+    expect(formats.textContent).toContain("1 without a usable rank or domain");
+    expect(formats.textContent).toContain("1 unclassified");
+    // A row can carry a URL and still be counted here, so naming it a URL
+    // failure named the wrong one.
+    expect(formats.textContent).not.toMatch(/unresolved URL/i);
+    // Every classified format sits at one of four, so the single unknown can
+    // only ever tie half. This sample really has decided.
+    expect(node(formats, "[data-format-majority]").getAttribute("data-format-majority")).toBe("none");
+    expect(formats.textContent).toContain("No format has a majority here");
     expect(node(formats, '[data-format-count="guide"]').textContent).toContain("1/4");
     expect(node(formats, '[data-format-count="listicle"]').textContent).toContain("1/4");
     expect(node(formats, '[data-format-count="unknown"]').textContent).toContain("1/4");

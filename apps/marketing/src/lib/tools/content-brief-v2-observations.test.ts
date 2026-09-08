@@ -46,7 +46,7 @@ describe("Brief v2 source observations", () => {
   it("returns an explicitly scoped empty observation instead of zero-valued length statistics", () => {
     expect(buildBriefV2Observations(context([]))).toEqual({
       scope: "retained_competitor_pages", question_coverage_denominator: 0, quantile_method: "linear_interpolation_n_minus_1", lengths: [],
-      formats: { method: "url_heuristic", read: null, denominator: 0, unknown_count: 0, counts: [], majority: null, candidates: [], pages: [], partial_page_count: 0 },
+      formats: { method: "url_heuristic", read: null, denominator: 0, unknown_count: 0, counts: [], majority: null, majority_undecided: false, candidates: [], pages: [], partial_page_count: 0 },
     });
   });
 
@@ -159,7 +159,35 @@ describe("Brief v2 source observations", () => {
       page("C1", 100, { finalUrl: "https://a.example/blog/a" }), page("C2", 100, { finalUrl: "https://b.example/blog/a" }),
       page("C3", 100, { finalUrl: "https://c.example/tools/a" }), page("C4", 100, { finalUrl: "https://d.example/article" }),
     ]));
-    expect(result.formats).toMatchObject({ denominator: 4, unknown_count: 1, majority: null, candidates: ["guide", "tool"] });
+    // Guide is at exactly half, so no majority was found -- and the one
+    // unclassified page could still put it over, so none was ruled out either.
+    expect(result.formats).toMatchObject({ denominator: 4, unknown_count: 1, majority: null, majority_undecided: true, candidates: ["guide", "tool"] });
+  });
+
+  it("separates a majority nothing can reach from one the unclassified pages could still decide", () => {
+    // "No majority in this sample" was printed as an observation on a live run
+    // where seven of ten pages were unclassified: a majority is only sought
+    // among classified pages, so that sentence was arithmetic, not evidence.
+    const undecidable = buildBriefV2Observations(context([
+      page("C1", 100, { finalUrl: "https://a.example/blog/a" }), page("C2", 100, { finalUrl: "https://b.example/tools/a" }),
+      page("C3", 100, { finalUrl: "https://c.example/x" }), page("C4", 100, { finalUrl: "https://d.example/y" }),
+    ]));
+    expect(undecidable.formats).toMatchObject({ denominator: 4, unknown_count: 2, majority: null, majority_undecided: true });
+
+    // Three classified formats and one unknown: whichever way the unknown goes,
+    // its format reaches exactly half and no further. That is a real finding.
+    const settled = buildBriefV2Observations(context([
+      page("C1", 100, { finalUrl: "https://a.example/blog/a" }), page("C2", 100, { finalUrl: "https://b.example/tools/a" }),
+      page("C3", 100, { finalUrl: "https://c.example/compare/a" }), page("C4", 100, { finalUrl: "https://d.example/x" }),
+    ]));
+    expect(settled.formats).toMatchObject({ denominator: 4, unknown_count: 1, majority: null, majority_undecided: false });
+
+    // Nothing classified at all is undecided too, and the sentence for this
+    // state may not lean on a largest classified format: there is none.
+    const blind = buildBriefV2Observations(context([
+      page("C1", 100, { finalUrl: "https://a.example/x" }), page("C2", 100, { finalUrl: "https://b.example/y" }),
+    ]));
+    expect(blind.formats).toMatchObject({ denominator: 2, unknown_count: 2, majority: null, majority_undecided: true, candidates: [] });
   });
 
   it("declares a known format majority only above half of the entire observed denominator", () => {
@@ -167,7 +195,7 @@ describe("Brief v2 source observations", () => {
       page("C1", 100, { finalUrl: "https://a.example/blog/a" }), page("C2", 100, { finalUrl: "https://b.example/blog/a" }),
       page("C3", 100, { finalUrl: "https://c.example/blog/a" }), page("C4", 100, { finalUrl: "https://d.example/article" }),
     ]));
-    expect(result.formats).toMatchObject({ denominator: 4, unknown_count: 1, majority: "guide", candidates: ["guide"] });
+    expect(result.formats).toMatchObject({ denominator: 4, unknown_count: 1, majority: "guide", majority_undecided: false, candidates: ["guide"] });
   });
 
   it("uses the same URL serialization and fragment removal as the question coverage validator", () => {
