@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { relevanceScore, relevanceTerms } from "./terms.ts";
+import { RELEVANCE_TERMS_MAX, relevanceScore, relevanceTerms } from "./terms.ts";
 
 describe("relevanceTerms", () => {
   it("keeps the whole phrase strongest and its content words weaker", () => {
@@ -49,6 +49,30 @@ describe("relevanceTerms", () => {
   it("returns nothing for blank input", () => {
     expect(relevanceTerms([])).toEqual([]);
     expect(relevanceTerms(["", "   "])).toEqual([]);
+  });
+
+  it("caps the widest accepted request without dropping a single whole phrase", () => {
+    // The widest shape the handler accepts: a primary plus SUPPORTING_KEYWORDS_MAX
+    // supporting keywords, each at KEYWORD_MAX_CHARS. In an unsegmented script that
+    // is one bigram per adjacent pair, about 2200 terms, and every one of them is
+    // then tested against every observed excerpt twice per stage.
+    const KEYWORD_MAX_CHARS = 200;
+    const phrases = Array.from({ length: 11 }, (_, keyword) =>
+      String.fromCodePoint(...Array.from({ length: KEYWORD_MAX_CHARS },
+        (_unused, index) => 0x4e00 + keyword * KEYWORD_MAX_CHARS + index)));
+
+    const terms = relevanceTerms(phrases);
+
+    expect(terms).toHaveLength(RELEVANCE_TERMS_MAX);
+    // Descending weight is what makes the cut safe: it takes bigrams, never phrases.
+    const kept = new Set(terms.map((term) => term.value));
+    expect(phrases.filter((phrase) => !kept.has(phrase))).toEqual([]);
+  });
+
+  it("leaves an ordinary request uncut", () => {
+    const terms = relevanceTerms(["mercury retrograde meaning", "retrograde dates 2026", "planet in retrograde"]);
+
+    expect(terms.length).toBeLessThan(RELEVANCE_TERMS_MAX);
   });
 
   it("orders terms by descending weight so a bounded consumer keeps the strongest", () => {

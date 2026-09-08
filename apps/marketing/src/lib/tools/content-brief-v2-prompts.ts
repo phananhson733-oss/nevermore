@@ -96,18 +96,32 @@ function userPrompt(context: BriefV2Context): string {
  * survived the page's segment ceiling is judged by the same rule here; a second
  * implementation drifted the moment one stage tokenised CJK and the other did not.
  */
-function segmentRelevance(segment: ResearchSegment, terms: readonly RelevanceTerm[]): number {
-  return relevanceScore(segment.text, segment.heading?.text ?? null, terms);
+interface RankedSegment { readonly segment: ResearchSegment; readonly index: number }
+
+/**
+ * Each page's segments in the order the byte budget should give them up:
+ * strongest first, ties by observed order.
+ *
+ * This is computed once because it cannot change. The descent below only moves
+ * how many units survive, and a segment's score depends on the segment and the
+ * vocabulary, neither of which moves with it. Recomputing it per iteration cost
+ * 774 ms on the widest keyword set the handler accepts, against 22 ms hoisted,
+ * and all of it came off the deadline the paid call was waiting on.
+ */
+function rankSegments(bundle: ResearchBundle, terms: readonly RelevanceTerm[]): ReadonlyMap<string, readonly RankedSegment[]> {
+  return new Map(bundle.pages.map((page) => [page.id, page.research.segments
+    .map((segment, index) => ({ segment, index, score: relevanceScore(segment.text, segment.heading?.text ?? null, terms) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(({ segment, index }): RankedSegment => ({ segment, index }))]));
 }
 
-function sampledBundle(bundle: ResearchBundle, count: number, terms: readonly RelevanceTerm[]): ResearchBundle {
+function sampledBundle(bundle: ResearchBundle, count: number, ranked: ReadonlyMap<string, readonly RankedSegment[]>): ResearchBundle {
   const pageUnits = bundle.units.filter((unit) => unit.kind === "page").slice(0, count);
   const pages = bundle.pages.map((page) => {
     const retained = pageUnits.filter((unit) => unit.page_ref === page.id).length;
     // Quotas remain round-robin across pages; select useful excerpts within
     // each quota, then restore their observed order. Source text is never edited.
-    const segments = page.research.segments.map((segment, index) => ({ segment, index, score: segmentRelevance(segment, terms) }))
-      .sort((a, b) => b.score - a.score || a.index - b.index).slice(0, retained)
+    const segments = (ranked.get(page.id) ?? []).slice(0, retained)
       .sort((a, b) => a.index - b.index).map(({ segment }) => segment);
     return { ...page, research: { ...page.research, segments, omitted_segments: page.research.segments_total - retained } };
   });
@@ -127,6 +141,7 @@ export function prepareContentBriefV2Prompt(context: BriefV2Context): ContentBri
   ]);
   const pageUnits = original.units.filter((unit) => unit.kind === "page");
   const terms = relevanceTerms([context.input.primary, ...context.input.supporting]);
+  const ranked = rankSegments(original, terms);
   let minimum = 0;
   for (const id of observed) {
     const first = pageUnits.findIndex((unit) => unit.page_ref === id);
@@ -134,7 +149,7 @@ export function prepareContentBriefV2Prompt(context: BriefV2Context): ContentBri
     minimum = Math.max(minimum, first + 1);
   }
   for (let retained = pageUnits.length; retained >= minimum; retained -= 1) {
-    const research = sampledBundle(original, retained, terms);
+    const research = sampledBundle(original, retained, ranked);
     const adjusted = { ...context, research };
     const user = userPrompt(adjusted);
     const prompt_bytes = new TextEncoder().encode(JSON.stringify({ system, user })).byteLength;

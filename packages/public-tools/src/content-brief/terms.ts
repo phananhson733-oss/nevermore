@@ -19,9 +19,11 @@
  * boundaries — is weakest. Each term votes at most once per field.
  */
 
+import { UNSEGMENTED_SCRIPT_CLASS } from "./constants.ts";
+
 /** Scripts written without spaces, where `\p{L}+` returns one long token. */
-const UNSEGMENTED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}]/u;
-const UNSEGMENTED_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}]+/gu;
+const UNSEGMENTED = new RegExp(`[${UNSEGMENTED_SCRIPT_CLASS}]`, "u");
+const UNSEGMENTED_RUN = new RegExp(`[${UNSEGMENTED_SCRIPT_CLASS}]+`, "gu");
 const WORD = /[\p{L}\p{N}]+/gu;
 
 /** Mirrors the prompt sampler's original list; function words carry no topic. */
@@ -68,17 +70,31 @@ function bigrams(value: string): string[] {
   return out;
 }
 
-/**
- * Build the weighted term set for one run's keywords.
- *
- * A term appears once, at its strongest weight: a phrase that is also a token
- * of another phrase stays a phrase. Terms are returned in descending weight so
- * a bounded consumer can truncate without losing the strongest signals.
- */
 function isSingleLatinWord(value: string): boolean {
   return !UNSEGMENTED.test(value) && /^[\p{L}\p{N}]+$/u.test(value);
 }
 
+/**
+ * How many terms one run's keywords may contribute.
+ *
+ * Unsegmented scripts emit a bigram per adjacent character pair, so the widest
+ * request the handler accepts — a primary plus ten supporting keywords at
+ * KEYWORD_MAX_CHARS each — reaches about 2200 terms where an English run of
+ * the same shape reaches about 30. Every term is then tested against every
+ * observed excerpt, twice per stage, and the run has 45 seconds to spend on
+ * paid calls rather than on scanning. The descending-weight sort below is what
+ * makes this cap safe to apply: the phrases and whole words survive it, and
+ * only the weakest bigrams are dropped.
+ */
+export const RELEVANCE_TERMS_MAX = 400;
+
+/**
+ * Build the weighted term set for one run's keywords.
+ *
+ * A term appears once, at its strongest weight: a phrase that is also a token
+ * of another phrase stays a phrase. Terms come back in descending weight so
+ * the cap above drops the weakest signals rather than an arbitrary slice.
+ */
 export function relevanceTerms(phrases: readonly string[]): readonly RelevanceTerm[] {
   const byValue = new Map<string, TermWeight>();
   const add = (raw: string, weight: TermWeight): void => {
@@ -100,8 +116,11 @@ export function relevanceTerms(phrases: readonly string[]): readonly RelevanceTe
   }
   return [...byValue.entries()]
     .map(([value, weight]): RelevanceTerm => ({ value, weight, word: isSingleLatinWord(value) }))
-    .sort((a, b) => b.weight - a.weight || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
+    .sort((a, b) => b.weight - a.weight || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0))
+    .slice(0, RELEVANCE_TERMS_MAX);
 }
+
+const EMPTY_WORDS: ReadonlySet<string> = new Set();
 
 /**
  * Score one observed excerpt. A heading match counts double because a heading
@@ -116,8 +135,12 @@ export function relevanceScore(
 ): number {
   const body = fold(text);
   const title = heading === null ? "" : fold(heading);
-  const bodyWords = new Set(body.match(WORD) ?? []);
-  const titleWords = new Set(title.match(WORD) ?? []);
+  // Only single Latin words are looked up by whole word, and a run in an
+  // unsegmented script produces none of them. Tokenising the excerpt anyway
+  // was the largest single cost in scoring one Chinese excerpt.
+  const tokenized = terms.some((term) => term.word);
+  const bodyWords = tokenized ? new Set(body.match(WORD) ?? []) : EMPTY_WORDS;
+  const titleWords = tokenized ? new Set(title.match(WORD) ?? []) : EMPTY_WORDS;
   const found = (haystack: string, words: ReadonlySet<string>, term: RelevanceTerm): boolean =>
     term.word ? words.has(term.value) : haystack.includes(term.value);
   let score = 0;
