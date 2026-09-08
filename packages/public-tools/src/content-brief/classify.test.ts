@@ -101,6 +101,16 @@ describe("host sets", () => {
       ["https://www.timeanddate.com/date/timeduration.html", "Time Duration Calculator - Count days between dates", "tool"],
       ["https://www.mdcalc.com/calc/423/pregnancy-due-dates", "Pregnancy Due Dates Calculator", "tool"],
       ["https://plaincalculators.com/angel-number-calculator/", "Angel Number Calculator - Meaning of Repeating Numbers", "tool"],
+      // What it compares is the calculator's subject. Left above, the whole
+      // rent-vs-buy family read as editorial comparisons and a SERP of nothing
+      // but calculators reported commercial intent instead of a tool one.
+      ["https://www.calculator.net/rent-vs-buy-calculator.html", "Rent vs. Buy Calculator", "tool"],
+      ["https://www.schwab.com/ira/ira-calculators/roth-vs-traditional", "Roth vs. Traditional IRA Calculator | Charles Schwab", "tool"],
+      // A title names the page and then says something about it, so a question
+      // after the calculator's name is its subtitle, not its kind.
+      ["https://astrochart.io/moon-sign", "Free Moon Sign Calculator - What Is My Moon Sign? | AstroChart", "tool"],
+      ["https://astrofox.tw/rising-sign", "上升星座查詢計算器 | 上升星座是什麼？怎麼看？ | 占星狐狸", "tool"],
+      ["https://x.example/a", "Mortgage Calculator: How to Read Your Results", "tool"],
     ];
     for (const [url, title, expected] of cases) {
       expect(classifySerpFormat({ domain: "x.example", url, title }).value, title).toBe(expected);
@@ -123,6 +133,22 @@ describe("host sets", () => {
       // same reason. A page about a subject keeps that word; a page that is a
       // calculator keeps it too, and only one of them is a calculator.
       ["x.example", "https://x.example/a", "Angel Number 444 Meaning", "guide"],
+      // The question rules keep every title that asks before it names.
+      ["x.example", "https://x.example/a", "What Is a Birth Chart Calculator?", "guide"],
+      ["rates.ca", "https://rates.ca/resources/how-to-use-a-mortgage-calculator", "How to Use a Mortgage Calculator", "guide"],
+      ["x.example", "https://x.example/a", "如何使用星盤計算器", "guide"],
+      // 教程 and 攻略 name a kind of writing, so they hold wherever they sit:
+      // this is why the Chinese question rule could not simply be reordered.
+      ["labex.io", "https://labex.io/zh/tutorials/python-create-a-gui-calculator-with-python-298861", "使用 Python 创建基本图形用户界面计算器 | Tkinter 教程", "guide"],
+      // A comparison with no calculator in it is still a comparison.
+      ["x.example", "https://x.example/rent-vs-buy", "Rent vs Buy: Which Is Better in 2026?", "comparison"],
+      ["x.example", "https://x.example/iphone-vs-android/", "Our Verdict", "comparison"],
+      // A how-to that mentions the best of something is not a round-up.
+      ["x.example", "https://x.example/a", "How to get the best mortgage rate", "guide"],
+      // Past a hundred a leading number is nearly always an identifier. US
+      // finance is full of them and every one read as a list of hundreds.
+      ["investopedia.com", "https://www.investopedia.com/terms/1/529plan.asp", "529 Plan: What It Is, How It Works, Pros and Cons", "unknown"],
+      ["investopedia.com", "https://www.investopedia.com/terms/1/1031exchange.asp", "1031 Exchange Rules: What You Need to Know", "unknown"],
       // Moving "dates" below the calculator rules costs nothing here: a page
       // about dates that never claims to be a calculator is still a guide.
       ["irs.gov", "https://www.irs.gov/filing/important-tax-dates", "Important Tax Filing Dates 2026", "guide"],
@@ -140,6 +166,9 @@ describe("host sets", () => {
       // say which. "1040 Tax Calculator" is the case that decided it: reading
       // the number as a length made it a list of a thousand items.
       ["dinkytown.net", "https://www.dinkytown.net/java/1040-tax-calculator.html", "1040 Tax Calculator", "tool"],
+      // No "best" in it, so the hundred itself is what makes this a list: the
+      // bound is inclusive, and dropping the hundred drops this row to unknown.
+      ["x.example", "https://x.example/a", "100 Questions to ask your partner", "listicle"],
       // An app marketplace listing for a calculator is a product page.
       ["apps.microsoft.com", "https://apps.microsoft.com/detail/9wzdncrfhvn5", "Windows Calculator", "product_page"],
       // A generator is as often a machine as a program and no lexical test
@@ -463,7 +492,6 @@ describe("classifySerpFormat: ordering", () => {
       "path:reels",
       "path:compare",
       "path:vs",
-      "path:-vs-",
       "path:tools",
       "path:calculator",
       "path:forum",
@@ -475,15 +503,15 @@ describe("classifySerpFormat: ordering", () => {
       "path:products",
       "path:pricing",
       "title:leading_number",
+      "title:how_to",
       "title:best",
       "title:top_n",
-      "title:vs",
-      "title:how_to",
       "title:what_is",
       "title:guide",
       "title:explained",
       "title:faq",
       "title:zh_what_is",
+      "title:zh_tutorial",
       "title:zh_how_to",
       "title:zh_dates",
       "title:zh_best",
@@ -491,6 +519,8 @@ describe("classifySerpFormat: ordering", () => {
       "title:zh_calculator",
       "title:dates",
       "title:meaning",
+      "title:vs",
+      "path:-vs-",
       "path:-calculator",
       "path:-generator",
     ]);

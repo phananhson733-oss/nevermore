@@ -93,6 +93,27 @@ function titleRule(id: string, format: ClassifiedSerpFormat, pattern: RegExp): F
   return { id, format, matches: ({ title }) => title !== null && pattern.test(title) };
 }
 
+/**
+ * The words with which a title calls the page a calculator, one source for the
+ * rules that read them and for the rules that must stand down in front of them.
+ */
+const CALCULATOR_EN = String.raw`\bcalculator\b`;
+const CALCULATOR_ZH = String.raw`计算器|計算器|生成器|產生器`;
+
+/**
+ * `pattern`, but only where no calculator word comes before it in the title.
+ *
+ * "What Is a Birth Chart Calculator?" is an article about a calculator and
+ * "Free Moon Sign Calculator -- What Is My Moon Sign?" is the calculator, and
+ * the two differ only in which word arrives first: a title names the page and
+ * then says something about it. This is what lets the question rules keep the
+ * first without taking the second, and it is the reason the vocabulary above is
+ * shared rather than written out twice.
+ */
+function unlessAfterCalculator(word: string, pattern: string): RegExp {
+  return new RegExp(String.raw`^(?:(?!${word}).)*(?:${pattern})`, "u");
+}
+
 const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   hostRule("host:video", "video", VIDEO_HOSTS),
   hostRule("host:forum", "forum", FORUM_HOSTS),
@@ -104,7 +125,6 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   pathRule("path:reels", "video", "/reels/"),
   pathRule("path:compare", "comparison", "/compare/"),
   pathRule("path:vs", "comparison", "/vs/"),
-  pathRule("path:-vs-", "comparison", "-vs-"),
   pathRule("path:tools", "tool", "/tools/"),
   pathRule("path:calculator", "tool", "/calculator"),
   pathRule("path:forum", "forum", "/forum/"),
@@ -121,19 +141,22 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   // does; this only covers the shape that is far more common.
   pathRule("path:products", "product_page", "/products/"),
   pathRule("path:pricing", "product_page", "/pricing"),
-  // One to three digits. A longer leading number is a year, a form number or a
-  // genuine count, and the title does not say which: "2026 Salary Calculator",
-  // "1040 Tax Calculator" and "1000 Questions to ask people" are a tool, a tool
-  // and a list. Excluding only the year range was tried and let 1040 through as
-  // a list of a thousand items. The bound loses the questions page, which then
-  // falls to whatever else its title says and is reported as unclassified if
-  // nothing does -- no answer where the alternative was a wrong one.
-  titleRule("title:leading_number", "listicle", /^\d{1,3} /),
+  // One to a hundred. Past that a leading number is nearly always an identifier
+  // rather than a count, and US finance is full of them: "529 Plan", "457
+  // Plan", "1031 Exchange Rules", "1040 Tax Calculator", "1099 Tax Calculator"
+  // are a guide, a guide, a guide and two tools, and every one of them read as
+  // a list of several hundred items. Excluding only the year range was tried
+  // first and caught none of them. The bound loses a real "1000 Questions to
+  // ask people", which falls to whatever else its title says and is reported
+  // as unclassified if nothing does -- no answer where the alternative was a
+  // wrong one.
+  titleRule("title:leading_number", "listicle", /^(?:\d{1,2}|100) /),
+  // Above "best", which it used to sit under: "How to get the best mortgage
+  // rate" is a how-to that happens to say best, not a round-up.
+  titleRule("title:how_to", "guide", unlessAfterCalculator(CALCULATOR_EN, String.raw`\bhow to `)),
   titleRule("title:best", "listicle", /\bbest /),
   titleRule("title:top_n", "listicle", /\btop \d+/),
-  titleRule("title:vs", "comparison", / vs\.? /),
-  titleRule("title:how_to", "guide", /\bhow to /),
-  titleRule("title:what_is", "guide", /\bwhat is /),
+  titleRule("title:what_is", "guide", unlessAfterCalculator(CALCULATOR_EN, String.raw`\bwhat is `)),
   titleRule("title:guide", "guide", /guide/),
   titleRule("title:explained", "guide", /\bexplained\b/),
   // timeanddate.com's "FAQ: Time Duration Calculator" is the help page for the
@@ -142,8 +165,14 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   titleRule("title:faq", "guide", /\bfaq\b/),
   // No \b here: JavaScript word boundaries are ASCII-based and never fall
   // between two Han characters, so a boundary would make these never match.
-  titleRule("title:zh_what_is", "guide", /是什么|是什麼|什么意思|什麼意思/u),
-  titleRule("title:zh_how_to", "guide", /怎么|怎麼|如何|教程|攻略/u),
+  titleRule("title:zh_what_is", "guide", unlessAfterCalculator(CALCULATOR_ZH, String.raw`是什么|是什麼|什么意思|什麼意思`)),
+  // 教程 and 攻略 name a kind of writing, so they hold wherever they appear: a
+  // Chinese Tkinter 教程 that builds a calculator is a tutorial even though it
+  // says 计算器 first. 怎么 / 如何 open a question, and a question a calculator
+  // asks after naming itself is its subtitle -- "上升星座查詢計算器 |
+  // 上升星座是什麼？怎麼看？" is the calculator.
+  titleRule("title:zh_tutorial", "guide", /教程|攻略/u),
+  titleRule("title:zh_how_to", "guide", unlessAfterCalculator(CALCULATOR_ZH, String.raw`怎么|怎麼|如何`)),
   titleRule("title:zh_dates", "guide", /时间表|時間表|日期表/u),
   titleRule("title:zh_best", "listicle", /推荐排行|推薦排行|排行榜/u),
   // The words that name a kind of page decide above these -- how-to, what-is,
@@ -177,8 +206,8 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   // calculator: it is also the word for a computer, and would read
   // 計算機科學導論 as a tool. That under-matches BMI計算機, which now shows up
   // as a page the sample could not classify rather than one it got wrong.
-  titleRule("title:calculator", "tool", /\bcalculator\b/),
-  titleRule("title:zh_calculator", "tool", /计算器|計算器|生成器|產生器/u),
+  titleRule("title:calculator", "tool", new RegExp(CALCULATOR_EN, "u")),
+  titleRule("title:zh_calculator", "tool", new RegExp(CALCULATOR_ZH, "u")),
   // Below them, unlike the words above: "dates" and "meaning" name what a page
   // is about, not what kind of page it is, and one that also says "calculator"
   // is the calculator. timeanddate.com classified its own duration calculator
@@ -189,6 +218,13 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   // calculator's result means; every other kind of explainer decides above.
   titleRule("title:dates", "guide", /\bdates\b/),
   titleRule("title:meaning", "guide", /\bmeaning\b/),
+  // And "vs" with them, in both the title and the slug. "Rent vs. Buy
+  // Calculator" is an input form that computes an answer; what it compares is
+  // its subject. Left above, the whole rent-vs-buy, lease-vs-buy and
+  // Roth-vs-traditional family read as editorial comparisons, and a SERP made
+  // entirely of calculators reported commercial intent instead of a tool one.
+  titleRule("title:vs", "comparison", / vs\.? /),
+  pathRule("path:-vs-", "comparison", "-vs-"),
   // Terminal, and last of all: directoryPath appends a trailing slash, so
   // "-calculator/" ends a segment and /mortgage-calculator-review stays out,
   // while /birth-chart-calculator never contained the /calculator/ segment.
