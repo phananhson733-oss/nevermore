@@ -531,3 +531,53 @@ describe("Artifact-aligned Brief v2 result", () => {
     expect((await confirmation.parseConfirmedBriefV2(JSON.parse(downloaded))).ok).toBe(true);
   });
 });
+
+describe("empty recommendation sections", () => {
+  const profileRead = (reason: "not_requested" | "provider_error" | null) => ({
+    source: "profile" as const,
+    status: reason === null ? ("complete" as const) : ("unavailable" as const),
+    attempted: reason === null ? 4 : null, retained: reason === null ? 4 : null, reason,
+  });
+  const emptied = (brief: ContentBriefV2, reason: "not_requested" | "provider_error" | null, ownPages: number): ContentBriefV2 => ({
+    ...brief,
+    generated: brief.generated === null ? null : { ...brief.generated, gap_angle: null, internal_links: [], do_not_cover: [] },
+    context: { ...brief.context, candidates: Array.from({ length: ownPages }, (_unused, index) => ({
+      id: `T${index + 1}`, url: `https://owned.test/page-${index + 1}`, match_refs: [], read: "observed" as const,
+    })) },
+    run: { ...brief.run, reads: [...brief.run.reads.filter((read) => read.source !== "profile"), profileRead(reason)] },
+  });
+
+  it("says the differentiated angle needs a product profile instead of just 'not used'", async () => {
+    // "未使用" under the section heading left the reader to guess what was not
+    // used, and read the same as a model that looked and found nothing.
+    const { host } = await render(emptied(await fixture(), "not_requested", 2));
+
+    const empty = host.querySelector("[data-gap-empty]");
+    expect(empty?.getAttribute("data-gap-empty")).toBe("gapNoProfile");
+    expect(empty?.textContent).toContain("product profile");
+  });
+
+  it("separates a profile that could not be read from a model that proposed nothing", async () => {
+    const failed = await render(emptied(await fixture(), "provider_error", 2));
+    expect(failed.host.querySelector("[data-gap-empty]")?.getAttribute("data-gap-empty")).toBe("gapProfileUnavailable");
+
+    const read = await render(emptied(await fixture(), null, 2));
+    expect(read.host.querySelector("[data-gap-empty]")?.getAttribute("data-gap-empty")).toBe("gapUnavailable");
+  });
+
+  it("says whether a link recommendation was possible at all", async () => {
+    // A link may only name an owned page whose body was read. With none, the
+    // list is empty by arithmetic; with some, the model passed on them.
+    const none = await render(emptied(await fixture(), null, 0));
+    for (const card of none.host.querySelectorAll("[data-links-empty]")) {
+      expect(card.getAttribute("data-links-empty")).toBe("no_candidate");
+    }
+
+    const some = await render(emptied(await fixture(), null, 2));
+    for (const card of some.host.querySelectorAll("[data-links-empty]")) {
+      expect(card.getAttribute("data-links-empty")).toBe("none_chosen");
+      expect(card.textContent).toContain("2");
+    }
+    expect(some.host.querySelectorAll("[data-links-empty]")).toHaveLength(2);
+  });
+});
