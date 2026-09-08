@@ -35,7 +35,7 @@ import {
   type VisibilityReport,
 } from "../../lib/geo-tools/visibility-contract.ts";
 import { emptyGeoKbPayload } from "../../lib/geo-tools/kb-contract.ts";
-import { VISIBILITY_CONTEXT_SCHEMA, type VisibilityContext } from "../../lib/geo-tools/visibility-context.ts";
+import { parseVisibilityContext, VISIBILITY_CONTEXT_SCHEMA, type VisibilityContext, type VisibilityReadableFrozenContext, type VisibilityWebsiteContext } from "../../lib/geo-tools/visibility-context.ts";
 import { encodeVisibilityWire } from "../../lib/geo-tools/visibility-wire.ts";
 import { AiVisibilityCheck } from "./ai-visibility-check.tsx";
 import { visibilityReportFixtureV2 } from "../../lib/geo-tools/visibility-v2.test-fixtures.ts";
@@ -212,7 +212,14 @@ function contextFixture(): VisibilityContext {
   const choices = server.choices ?? [CHOICE];
   const first = choices[0];
   const website = { websiteId: WEBSITE_ID, origin: `https://${CHOICE.host}`, host: CHOICE.host, canonicalSiteKey: CHOICE.host, displayName: "Acme", isPrimary: true, profileState: "not_generated" as const, confirmedSnapshotId: null, confirmedSnapshotRevision: null, confirmedAt: null, createdAt: "2026-08-29T09:00:00.000Z", updatedAt: "2026-08-29T09:00:00.000Z" };
-  return { schemaVersion: VISIBILITY_CONTEXT_SCHEMA, websites: [{ website, currentProfile: null, knowledgeBase: first ? { kbId: first.kbId, draftVersion: 1, hasDraft: true } : null, frozen: first ? { snapshotId: first.snapshotId, revision: first.revision, frozenAt: first.frozenAt, contentHash: "a".repeat(64), questionSetHash: "b".repeat(64), registryVersion: "v1", questionCount: first.questionCount, retrievalCount: first.retrievalCount, payload: { ...emptyGeoKbPayload(website.origin), officialName: "Acme", categoryTerms: ["analytics"] }, questions: Array.from({ length: first.questionCount }, (_, i) => ({ id: `q${i}`, text: `Which analytics tool ${i}?`, layer: "discovery" as const, mode: i < first.retrievalCount ? "retrieval" as const : "demand" as const, calibrated: i < first.retrievalCount, roleId: null, templateId: null, requiredEntities: [] })), profileReference: null, profileCompleteness: "legacy_partial", skippedLayers: [] } : null, preparation: { status: first ? "profile_update_available" : "profile_required", profileSync: "legacy_partial", languageWarnings: [] } }, { website: { ...website, websiteId: "3f2504e0-4f89-41d3-9a0c-0305e82c3392", origin: "https://second.example", host: "second.example", canonicalSiteKey: "second.example", displayName: "Second", isPrimary: false }, currentProfile: null, knowledgeBase: null, frozen: null, preparation: { status: "profile_required", profileSync: "missing", languageWarnings: [] } }] };
+  return { schemaVersion: VISIBILITY_CONTEXT_SCHEMA, websites: [{ website, currentProfile: null, knowledgeBase: first ? { kbId: first.kbId, draftVersion: 1, hasDraft: true } : null, frozen: first ? { kind: "readable" as const, snapshotId: first.snapshotId, revision: first.revision, frozenAt: first.frozenAt, contentHash: "a".repeat(64), questionSetHash: "b".repeat(64), registryVersion: "v1", questionCount: first.questionCount, retrievalCount: first.retrievalCount, payload: { ...emptyGeoKbPayload(website.origin), officialName: "Acme", categoryTerms: ["analytics"] }, questions: Array.from({ length: first.questionCount }, (_, i) => ({ id: `q${i}`, text: `Which analytics tool ${i}?`, layer: "discovery" as const, mode: i < first.retrievalCount ? "retrieval" as const : "demand" as const, calibrated: i < first.retrievalCount, roleId: null, templateId: null, requiredEntities: [] })), profileReference: null, profileCompleteness: "legacy_partial", skippedLayers: [] } : null, preparation: { status: first ? "profile_update_available" : "profile_required", profileSync: "legacy_partial", languageWarnings: [] } }, { website: { ...website, websiteId: "3f2504e0-4f89-41d3-9a0c-0305e82c3392", origin: "https://second.example", host: "second.example", canonicalSiteKey: "second.example", displayName: "Second", isPrimary: false }, currentProfile: null, knowledgeBase: null, frozen: null, preparation: { status: "profile_required", profileSync: "missing", languageWarnings: [] } }] };
+}
+
+/** The readable half, refused loudly rather than asserted away with `!`. */
+function readableFrozen(row: VisibilityWebsiteContext | undefined): VisibilityReadableFrozenContext {
+  const frozen = row?.frozen ?? null;
+  if (frozen === null || frozen.kind !== "readable") throw new Error(`Expected a readable frozen version, got ${frozen === null ? "null" : frozen.kind}`);
+  return frozen;
 }
 
 function installFetch(): void {
@@ -283,8 +290,40 @@ function literal(path: string): string {
   return longest;
 }
 
+type MessageTree = { [key: string]: string | MessageTree };
+/** Deep merge, so a patch to one key does not delete its siblings. */
+function mergeMessages(base: MessageTree, patch: MessageTree): MessageTree {
+  const out: MessageTree = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    const existing = out[key];
+    out[key] = typeof value === "object" && typeof existing === "object" ? mergeMessages(existing, value) : value;
+  }
+  return out;
+}
+
+/**
+ * Remove one leaf from a catalogue copy.
+ *
+ * `mergeMessages` can only add, so a test that needs a key to be ABSENT cannot
+ * express it through the patch. What is absent is exactly what the missing-copy
+ * marker exists for, so without this the marker itself has no test.
+ */
+function omitMessage(tree: MessageTree, path: string): MessageTree {
+  const [head, ...rest] = path.split(".");
+  if (head === undefined) return tree;
+  const out: MessageTree = { ...tree };
+  if (rest.length === 0) delete out[head];
+  else {
+    const child = out[head];
+    if (typeof child === "object") out[head] = omitMessage(child, rest.join("."));
+  }
+  return out;
+}
+
 async function mount(
   authentication: "authenticated" | "unauthenticated" = "authenticated",
+  messagePatch: MessageTree = {},
+  omitPath: string | null = null,
 ): Promise<void> {
   container = document.createElement("div");
   document.body.append(container);
@@ -293,7 +332,7 @@ async function mount(
     root?.render(
       <NextIntlClientProvider
         locale="en"
-        messages={{ tools: { aiVisibility: enMessages.tools.aiVisibility } }}
+        messages={{ tools: { aiVisibility: (() => { const merged = mergeMessages(enMessages.tools.aiVisibility as unknown as MessageTree, messagePatch); return omitPath === null ? merged : omitMessage(merged, omitPath); })() } }}
         onError={(error) => {
           intlErrors.push(error.message);
         }}
@@ -496,7 +535,7 @@ describe("loading the frozen versions", () => {
     const before = container!.querySelector<HTMLSelectElement>("#visibility-version")!.value;
     const current = contextFixture();
     const next = { ...CHOICE, snapshotId: "3f2504e0-4f89-41d3-9a0c-0305e82c3393", revision: 3, questionCount: 20 };
-    server = { ...server, choices: [next], context: { ...current, websites: current.websites.map((site, i) => i === 0 ? { ...site, frozen: { ...site.frozen!, snapshotId: next.snapshotId, revision: next.revision, questionCount: 20, questions: Array.from({ length: 20 }, (_, index) => ({ ...site.frozen!.questions[0]!, id: `q${index}`, mode: index < CHOICE.retrievalCount ? "retrieval" : "demand" })) } } : site) } };
+    server = { ...server, choices: [next], context: { ...current, websites: current.websites.map((site, i) => i === 0 ? { ...site, frozen: { ...site.frozen!, snapshotId: next.snapshotId, revision: next.revision, questionCount: 20, questions: Array.from({ length: 20 }, (_, index) => ({ ...readableFrozen(site).questions[0]!, id: `q${index}`, mode: index < CHOICE.retrievalCount ? "retrieval" as const : "demand" as const })) } } : site) } };
     await act(async () => window.dispatchEvent(new Event("focus")));
     expect(container!.querySelector<HTMLSelectElement>("#visibility-version")!.value).toBe(before);
     expect(container!.querySelector('[data-testid="visibility-input-panel"]')?.textContent).toContain("15 questions, 13 with measured search wording");
@@ -996,3 +1035,200 @@ describe("reading a finished run", () => {
     expect(text()).not.toContain(copy("questions.noExcerpt"));
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* A published version this page cannot read                           */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The keys have landed, so these assertions read the catalogue rather than a
+ * tree supplied to the provider: `copy()` throws on a key that does not exist,
+ * which is what makes them a pin on `en.json` and not on this file's own words.
+ */
+
+function unreadableContext(reason: "no_question_set" | "unsupported_payload_version", questionSetHash: string | null): VisibilityContext {
+  const base = contextFixture();
+  const [first, second] = base.websites;
+  if (first === undefined || second === undefined) throw new Error("context fixture shape changed");
+  // Through the real parser: a fixture that could not come off the wire proves
+  // nothing about what the page does with what the wire sends.
+  return parseVisibilityContext({ ...base, websites: [
+    { ...first,
+      knowledgeBase: { kbId: CHOICE.kbId, draftVersion: 1, hasDraft: true },
+      frozen: { kind: "unreadable", snapshotId: CHOICE.snapshotId, revision: CHOICE.revision, frozenAt: CHOICE.frozenAt, contentHash: "a".repeat(64), questionSetHash, reason },
+      preparation: { status: "frozen_unreadable", profileSync: "unknown", languageWarnings: [] } },
+    second,
+  ] });
+}
+
+function startButton(): HTMLButtonElement | undefined {
+  return [...(container?.querySelectorAll("button") ?? [])].find((element) => element.textContent === copy("form.start"));
+}
+function runCalls(): number {
+  return vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === "/api/tools/ai-visibility-check/run").length;
+}
+function notice(): Element | null | undefined {
+  return container?.querySelector('[data-testid="visibility-frozen-unreadable"]');
+}
+function noticeText(): string {
+  return notice()?.textContent ?? "";
+}
+
+describe("a published version this page cannot read", () => {
+  it("does not send a visitor who has published one away to freeze one", async () => {
+    server = { ...server, choices: [], context: unreadableContext("no_question_set", null) };
+    await mount();
+
+    expect(container?.querySelector('[data-testid="visibility-frozen-unreadable"]')).not.toBeNull();
+    // The two sentences that would each describe this account as empty.
+    expect(text()).not.toContain(literal("noFrozen.body"));
+    expect(text()).not.toContain(literal("noFrozen.title"));
+    expect(text()).not.toContain(copy("workbench.noFrozen"));
+    expect(startButton()?.disabled).toBe(true);
+    expect(runCalls()).toBe(0);
+  });
+
+  it("says which version it cannot read, and why, in the place the state is shown", async () => {
+    server = { ...server, choices: [], context: unreadableContext("no_question_set", null) };
+    await mount();
+
+    expect(noticeText()).toContain(copy("frozenUnreadable.no_question_set"));
+    expect(noticeText()).toContain("Version 2, published 29 Aug 2026");
+    expect([...(container?.querySelectorAll("option") ?? [])].map((option) => option.textContent)).toContain(copy("workbench.frozenUnreadableOption"));
+    expect(intlErrors).toEqual([]);
+  });
+
+  it("reads the reason, rather than printing one sentence for both", async () => {
+    server = { ...server, choices: [CHOICE], context: unreadableContext("unsupported_payload_version", "b".repeat(64)) };
+    await mount();
+
+    expect(noticeText()).toContain(copy("frozenUnreadable.unsupported_payload_version"));
+    expect(noticeText()).not.toContain(copy("frozenUnreadable.no_question_set"));
+  });
+
+  // The two reasons do not share an exit. A version frozen without a question
+  // set came out of a generation that produced none, and publishing again
+  // produces them -- the editor is where that happens. A v3 payload is the
+  // opposite: the knowledge base is complete, this page is what cannot read it,
+  // and a link into the editor would name a step that changes nothing.
+  // Neither reason gets an exit, and not for the same reason.
+  // `unsupported_payload_version` is a knowledge base that is complete and
+  // correct -- this panel is what cannot read it. `no_question_set` is worse
+  // than a failed generation: `runRef.questionsGenerationId` is written null at
+  // draft creation (`kb-v3-draft-create.ts:378`) and no production code ever
+  // writes it, so this is where every v3 version this deployment can publish
+  // ends up, and publishing again cannot change it. An exit labelled "prepare
+  // your knowledge base" on either one names a step that cannot help, which is
+  // the defect this notice exists to avoid.
+  it.each([["no_question_set", null], ["unsupported_payload_version", "b".repeat(64)]] as const)(
+    "offers no exit for %s, because there is none",
+    async (reason, questionSetHash) => {
+      server = { ...server, choices: questionSetHash === null ? [] : [CHOICE], context: unreadableContext(reason, questionSetHash) };
+      await mount();
+
+      expect(notice()).not.toBeNull();
+      expect(notice()?.querySelector("a")).toBeNull();
+      expect(noticeText()).not.toContain(copy("workbench.prepare"));
+      // ...and does not swap the removed promise for another one.
+      expect(noticeText()).not.toContain("produces one");
+      expect(noticeText()).not.toContain("会生成");
+    },
+  );
+
+  // The state reaches a second component with a catalogue of its own: the
+  // source panel's status badge is keyed on `preparation.status`, and this
+  // status is new. Deleting `source.status.frozen_unreadable` renders a
+  // "[missing copy: ...]" marker in the badge and every other assertion in
+  // this file still passes, so the marker is what gets asserted here rather
+  // than any one sentence.
+  it("labels every part of the state it renders, in both components", async () => {
+    server = { ...server, choices: [CHOICE], context: unreadableContext("unsupported_payload_version", "b".repeat(64)) };
+    await mount();
+
+    expect(container?.querySelector('[data-testid="visibility-source"]')).not.toBeNull();
+    expect(container?.querySelector('[data-source="frozen-unreadable"]')?.textContent).toContain(copy("source.unreadable.unsupported_payload_version"));
+    expect(text()).not.toContain("[missing copy:");
+    expect(intlErrors).toEqual([]);
+  });
+
+  it("marks a sentence that is not in the catalogue instead of rendering nothing", async () => {
+    server = { ...server, choices: [], context: unreadableContext("no_question_set", null) };
+    await mount("authenticated", {}, "frozenUnreadable.no_question_set");
+
+    expect(noticeText()).toContain("[missing copy: tools/aiVisibility/frozenUnreadable/no_question_set]");
+    // The rest of the state still renders, so the marker is the only gap.
+    expect(noticeText()).toContain("Version 2, published 29 Aug 2026");
+    expect(notice()?.textContent?.trim().length).toBeGreaterThan(0);
+  });
+
+  // The catalogue assertions above cannot catch the sentence going back to
+  // claiming the version "cannot be selected": they compare rendered text with
+  // the same leaf the component rendered from, so changing the leaf moves both
+  // sides together. This asserts the fact such a sentence would contradict --
+  // the version is in the picker and it is the selected value.
+  it("does not claim a version cannot be selected while it is the selected one", async () => {
+    server = { ...server, choices: [CHOICE], context: unreadableContext("unsupported_payload_version", "b".repeat(64)) };
+    await mount();
+
+    const versionSelect = container?.querySelector<HTMLSelectElement>("#visibility-version");
+    expect(versionSelect?.value).toBe(CHOICE.snapshotId);
+    expect(noticeText().toLowerCase()).not.toContain("cannot be selected");
+    expect(noticeText()).not.toContain("无法在此选用");
+    expect(noticeText()).not.toContain("选不了");
+  });
+
+  // next-intl prints the key path for a missing message instead of throwing, so
+  // an unlabelled state reads as a label to everyone who does not know the
+  // catalogue. This holds whether or not the new keys have landed.
+  it.each(["profile_required", "knowledge_base_required", "freeze_required", "profile_update_available", "ready", "frozen_unreadable"] as const)(
+    "prints a state, not a key path, for %s",
+    async (status) => {
+      const base = status === "frozen_unreadable" ? unreadableContext("no_question_set", null) : contextFixture();
+      const [first, ...rest] = base.websites;
+      server = { ...server, choices: status === "frozen_unreadable" ? [] : [CHOICE],
+        context: parseVisibilityContext({ ...base, websites: [{ ...first!, preparation: { ...first!.preparation, status } }, ...rest] }) };
+      await mount();
+
+      expect(text()).not.toContain("tools.aiVisibility.");
+      expect(text()).not.toContain("workbench.readiness.");
+      // The two assertions above are blind to a missing key: this app renders
+      // one as "[missing copy: tools/aiVisibility/...]" -- slashes, not dots --
+      // and builds that marker without calling `t()`, so `intlErrors` stays
+      // empty as well. `copy()` throws on a key that does not exist, so it pins
+      // the catalogue; scoping to the option proves the label arrived there.
+      const option = [...(container?.querySelectorAll("#visibility-website option") ?? [])][0];
+      expect(option?.textContent).toContain(copy(`workbench.readiness.${status}`));
+      expect(text()).not.toContain("[missing copy:");
+      expect(intlErrors).toEqual([]);
+    },
+  );
+
+  // The load endpoint still offers a v3 version that carries a question set --
+  // the workflow can run one. This page cannot show its source, and a run whose
+  // input the visitor was never shown is the one thing this page must not buy.
+  it("refuses to spend against a version whose source it could not show", async () => {
+    server = { ...server, choices: [CHOICE], context: unreadableContext("unsupported_payload_version", "b".repeat(64)) };
+    await mount();
+
+    expect([...(container?.querySelectorAll("option") ?? [])].some((option) => (option.textContent ?? "").includes(`revision ${CHOICE.revision}`))).toBe(true);
+    // The click comes first, and the money assertion with it: asserting
+    // `disabled` first would let a mutation that re-enables the button fail on
+    // the attribute and never reach the question of whether it spent.
+    await startRun();
+    expect(runCalls()).toBe(0);
+    expect(startButton()?.disabled).toBe(true);
+    // Explained by the state's own notice, not by "refresh and try again":
+    // refreshing will not make this version readable.
+    expect(container?.querySelector('[data-testid="visibility-frozen-unreadable"]')).not.toBeNull();
+    expect(text()).not.toContain(copy("workbench.sourceUnavailable"));
+    // The source panel is handed this version now that it has a third state:
+    // it shows the readable half and says, in its own frozen slot, that the
+    // frozen half is the part it could not read. What must not appear there is
+    // a frozen payload disclosure, which is the thing this version has none of.
+    expect(container?.querySelector('[data-testid="visibility-source"]')).not.toBeNull();
+    expect(container?.querySelector('[data-source="frozen-unreadable"]')).not.toBeNull();
+    expect(container?.querySelector('[data-source="frozen"]')).toBeNull();
+    expect(container?.querySelector('[data-testid="frozen-question-preview"]')).toBeNull();
+  });
+});
+

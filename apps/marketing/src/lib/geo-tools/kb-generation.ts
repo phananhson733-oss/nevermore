@@ -59,6 +59,16 @@ export type GeoKbGenerationInvocation = { readonly ok: true; readonly value: Geo
   readonly reason: GeoKbGenerationError;
   readonly delivery: "not_attempted" | "response_received" | "outcome_unknown";
   readonly attempt?: GeoGenerationAttempt;
+  /**
+   * Which check rejected the model's output, when one did. `invalid_output` on
+   * its own is a black box: the roles step in production failed repeatedly and
+   * nothing recorded whether it was the English test, a cluster label, an
+   * unknown evidence ref or an unsupported number. This is a short internal
+   * token like `roles.numeric_claim`, never model text and never user data, and
+   * it is deliberately NOT persisted -- the stored record's key set is fixed by
+   * a database CHECK, and widening that is a separate, versioned change.
+   */
+  readonly rejection?: string;
 };
 export interface GeoKbGenerationDependencies {
   readonly configured: boolean;
@@ -76,7 +86,7 @@ export interface GeoKbGenerationDependencies {
     | { readonly kind: "unavailable" }>;
 }
 export type GeoKbGenerationOutcome =
-  | { readonly kind: "ok"; readonly generation: GeoKbGenerationRecord; readonly reused: boolean }
+  | { readonly kind: "ok"; readonly generation: GeoKbGenerationRecord; readonly reused: boolean; readonly rejection: string | null }
   | { readonly kind: "invalid_input" | "model_unavailable" | "conflict" | "store_unavailable" };
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u;
@@ -120,10 +130,10 @@ export async function executeGeoKbGeneration(input: GeoKbGenerationInput, depend
     const claimed = await dependencies.claim({ ...input, inputHash });
     if (claimed.kind === "conflict") return { kind: "conflict" };
     if (claimed.kind === "unavailable" || !("generation" in claimed) || !matches(claimed.generation, input, inputHash)) return { kind: "store_unavailable" };
-    if (claimed.kind === "existing") return { kind: "ok", generation: claimed.generation, reused: true };
+    if (claimed.kind === "existing") return { kind: "ok", generation: claimed.generation, reused: true, rejection: null };
     if (claimed.generation.state !== "claimed" || !uuid.test(claimed.claimToken)) return { kind: "store_unavailable" };
     const scope: GeoKbGenerationScope = { userId: input.userId, kbId: input.kbId, generationId: claimed.generation.generationId, claimToken: claimed.claimToken };
-    const finish = async (outcome: GeoKbGenerationFinish): Promise<GeoKbGenerationOutcome> => {
+    const finish = async (outcome: GeoKbGenerationFinish, rejection: string | null = null): Promise<GeoKbGenerationOutcome> => {
       const stored = await dependencies.finish(scope, outcome);
       if (stored.kind !== "ok" || !matches(stored.generation, input, inputHash) || stored.generation.generationId !== scope.generationId) return { kind: "store_unavailable" };
       // A final source/draft CAS may reject an otherwise valid model result.
@@ -131,7 +141,7 @@ export async function executeGeoKbGeneration(input: GeoKbGenerationInput, depend
       if (stored.generation.state !== outcome.state && !(stored.generation.state === "failed" && stored.generation.errorReason === "input_stale")) return { kind: "store_unavailable" };
       if (canonicalGeoV2Text(stored.generation.attempt) !== canonicalGeoV2Text(outcome.attempt)) return { kind: "store_unavailable" };
       if (stored.generation.state === "succeeded" && boundedCanonical(stored.generation.result, GEO_GENERATION_RESULT_BYTES) !== boundedCanonical(outcome.result, GEO_GENERATION_RESULT_BYTES)) return { kind: "store_unavailable" };
-      return { kind: "ok", generation: stored.generation, reused: false };
+      return { kind: "ok", generation: stored.generation, reused: false, rejection };
     };
     const quota = await dependencies.consumeQuota().catch(() => "unavailable" as const);
     if (quota !== "allowed") return await finish({ state: "failed", result: null, errorReason: quota === "limited" ? "rate_limited" : "quota_unavailable", attempt: null });
@@ -140,7 +150,7 @@ export async function executeGeoKbGeneration(input: GeoKbGenerationInput, depend
     // acknowledgement is not permission to retry either dispatch or the call.
     const dispatched = await dependencies.markDispatched(scope);
     if (dispatched.kind === "unavailable" || !matches(dispatched.generation, input, inputHash) || dispatched.generation.generationId !== scope.generationId) return { kind: "store_unavailable" };
-    if (dispatched.kind === "existing") return { kind: "ok", generation: dispatched.generation, reused: true };
+    if (dispatched.kind === "existing") return { kind: "ok", generation: dispatched.generation, reused: true, rejection: null };
     if (dispatched.generation.state !== "dispatched") return { kind: "store_unavailable" };
 
     let result: GeoKbGenerationInvocation;
@@ -150,7 +160,10 @@ export async function executeGeoKbGeneration(input: GeoKbGenerationInput, depend
     if (!validAttempt(attempt) || attempt.delivery !== (result.ok ? "response_received" : result.delivery)) return { kind: "store_unavailable" };
     if (!result.ok) {
       const uncertain = result.delivery === "outcome_unknown";
-      return await finish({ state: uncertain ? "uncertain" : "failed", result: null, errorReason: uncertain ? "outcome_unknown" : errors.includes(result.reason) ? result.reason : "invalid_output", attempt });
+      return await finish(
+        { state: uncertain ? "uncertain" : "failed", result: null, errorReason: uncertain ? "outcome_unknown" : errors.includes(result.reason) ? result.reason : "invalid_output", attempt },
+        result.rejection ?? null,
+      );
     }
     try {
       if (result.value === null) throw new Error("empty generation");

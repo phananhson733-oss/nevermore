@@ -6,7 +6,8 @@ import { createAdminSupabaseClient } from "../supabase/admin.ts";
 import { canonicalGeoV2Text, geoV2JsonbBytes } from "./kb-v2-json.ts";
 import { parseAnyGeoPreparedCandidate } from "./kb-prepared-contract.ts";
 import { parseGeoRoleProposal } from "./kb-role-proposal.ts";
-import { parseGeoKnowledgeGenerationResultV1, type GeoKnowledgeGenerationResultV1 } from "./kb-knowledge-generation-contract.ts";
+import { parseGeoKnowledgeGenerationResultV1 } from "./kb-knowledge-generation-contract.ts";
+import { GEO_KNOWLEDGE_GENERATION_RESULT_V2_SCHEMA, parseGeoKnowledgeGenerationResultV2 } from "./kb-knowledge-synthesis-v2-contract.ts";
 import { GEO_GENERATION_RESULT_BYTES, geoGenerationInputHash, type GeoKbGenerationDependencies, type GeoKbGenerationRecord, type GeoKbGenerationKind, type GeoGenerationValue } from "./kb-generation.ts";
 
 export interface GeoKbRpcTransport {
@@ -20,16 +21,31 @@ const generationKind = z.enum(["roles", "questions", "knowledge_pack"]);
 const count = z.number().int().nonnegative().refine(Number.isSafeInteger).nullable();
 const attemptSchema = z.object({ attemptedCalls: z.union([z.literal(0), z.literal(1)]), delivery: z.enum(["not_attempted", "response_received", "outcome_unknown"]), modelRequested: z.string().min(1).max(200).nullable(), inputTokens: count, outputTokens: count, requestCount: count }).strict().refine(value => (value.attemptedCalls === 0) === (value.delivery === "not_attempted"));
 const recordSchema = z.object({ generationId: uuid, userId: uuid, kbId: uuid, kind: generationKind, inputHash: z.string().regex(/^[a-f0-9]{64}$/u), state: z.enum(["claimed", "dispatched", "succeeded", "failed", "uncertain"]), result: z.unknown(), errorReason: z.enum(["rate_limited", "quota_unavailable", "invalid_output", "provider_rejected", "outcome_unknown", "input_stale", "model_unavailable"]).nullable(), attempt: attemptSchema.nullable() }).strict();
+function resultSchemaVersion(value: unknown): string {
+  return z.object({ schemaVersion: z.string() }).passthrough().parse(value).schemaVersion;
+}
+/**
+ * A knowledge_pack result comes in two shapes, and which one it is is decided by
+ * the record itself rather than by the caller. V1 binds a run to a `profileCopy`
+ * hash; V2 binds it to `generationInputHash`, which is the only binding a V3
+ * draft has -- it carries no profileCopy at all. Parsing every knowledge result
+ * as V1, which this store used to do, made every V3 knowledge generation
+ * unstorable: `finish` threw on the way in, the paid narrative was reported as
+ * `store_unavailable` and thrown away, and the draft never gained a knowledge
+ * body. The database has accepted both versions since 20260907143000.
+ */
 function parseSucceededResult(kind: GeoKbGenerationKind, value: unknown) {
   if (kind === "roles") return parseGeoRoleProposal(value);
   if (kind === "questions") return parseAnyGeoPreparedCandidate(value);
-  return parseGeoKnowledgeGenerationResultV1(value);
+  return resultSchemaVersion(value) === GEO_KNOWLEDGE_GENERATION_RESULT_V2_SCHEMA
+    ? parseGeoKnowledgeGenerationResultV2(value)
+    : parseGeoKnowledgeGenerationResultV1(value);
 }
 function succeededResultKind(value: unknown): GeoKbGenerationKind {
-  const schemaVersion = z.object({ schemaVersion: z.string() }).passthrough().parse(value).schemaVersion;
+  const schemaVersion = resultSchemaVersion(value);
   if (schemaVersion === "marketing-geo-role-proposal.v1") return "roles";
   if (schemaVersion === "marketing-geo-prepared-candidate.v1" || schemaVersion === "marketing-geo-prepared-candidate.v2") return "questions";
-  if (schemaVersion === "marketing-geo-knowledge-generation-result.v1") return "knowledge_pack";
+  if (schemaVersion === "marketing-geo-knowledge-generation-result.v1" || schemaVersion === GEO_KNOWLEDGE_GENERATION_RESULT_V2_SCHEMA) return "knowledge_pack";
   throw new Error("Unknown generation result schema");
 }
 function assertResultScope(result: { readonly kbId: string; readonly generationId?: string }, scope: { readonly kbId: string; readonly generationId: string }): void {
@@ -46,7 +62,10 @@ export function parseGeoKbGenerationRecord(value: unknown): GeoKbGenerationRecor
     const result = parseSucceededResult(parsed.kind, parsed.result);
     if (result.kbId !== parsed.kbId || ("generationId" in result && result.generationId !== parsed.generationId)) throw new Error("Generation result scope mismatch");
     if (parsed.kind === "knowledge_pack") {
-      const manifest = (result as GeoKnowledgeGenerationResultV1).manifest;
+      // Read off the parsed result, not off the raw JSON, and version-agnostic:
+      // both manifests are hashed the same way, and the V1 type would silently
+      // narrow a V2 manifest to the wrong shape.
+      const manifest = (result as { readonly manifest: unknown }).manifest;
       const durableInput = JSON.parse(canonicalGeoV2Text(manifest)) as Readonly<Record<string, GeoGenerationValue>>;
       if (geoGenerationInputHash("knowledge_pack", durableInput) !== parsed.inputHash) throw new Error("Knowledge generation input hash mismatch");
     }

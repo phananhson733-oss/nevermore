@@ -5316,6 +5316,293 @@
       }
     },
     "geoKnowledgeBase": {
+      "card": {
+        "state": {
+          "failed": "The update did not finish. Your previous knowledge is still shown.",
+          "failedEmpty": "Knowledge has not been generated yet. Please try again later.",
+          "pending": "The update outcome is unknown. Your current content is unchanged.",
+          "running": "Updating knowledge…",
+          "current": "Current GEO knowledge",
+          "empty": "No GEO knowledge yet.",
+          "stale": "Your website information changed. You can generate updated knowledge.",
+          "check": "Check update",
+          "oldCheck": "Check earlier update",
+          "unknown": "The outcome is unknown. Check the result; no charge is repeated automatically.",
+          "retry": "Continue update",
+          "retryHelp": "Continue checking and processing this update.",
+          "newInput": "Generate using updated information",
+          "newInputHelp": "This generates from your updated information and uses credits.",
+          "sourceChanged": "Save the latest website information before generating again.",
+          "invalid": "The website information cannot be used yet. Check and save it before trying again.",
+          "error": "The update could not finish. Please try again later."
+        },
+        "status": {
+          "none": "No knowledge base version yet.",
+          "collecting": "Collecting your website and competitor pages…",
+          "assembling": "Assembling what was collected…",
+          "synthesizing": "Deriving the knowledge…",
+          "draft": "A draft is ready for you to publish.",
+          "published": "Published kb@v{version} · {date}",
+          "publishedUpdatable": "Published kb@v{version} · {date} · the Product Profile has a newer version, so you can update"
+        },
+        "actions": {
+          "update": "Update the knowledge base",
+          "publish": "Publish kb@v{version}",
+          "view": "View",
+          "edit": "Edit"
+        },
+        "cost": "One update reads your site's robots.txt, sitemap.xml and llms.txt every time. Beyond those it reads your home page and the home page of each confirmed competitor site (up to five sites), unless a reading less than a day old can be reused — a second update on the same day re-reads only the three files. When no reading can be reused it crawls instead: up to eight pages of your website (the home page and up to seven pages linked from it) and up to two pages of each confirmed competitor site. Then it makes one billed model call. The draft it produces is yours to publish.",
+        "publishFree": "Publishing is free and makes no model call.",
+        "sections": {
+          "identity": {
+            "title": "A Identity",
+            "items": "Entity definition · Scope and boundaries"
+          },
+          "facts": {
+            "title": "B Facts and answers",
+            "items": "Reliable facts · Questions and answers · Comparison knowledge"
+          },
+          "trust": {
+            "title": "C Trust",
+            "items": "Evidence and trust"
+          },
+          "reachability": {
+            "title": "D Reachability",
+            "items": "Machine-readable readiness · Coverage and gaps"
+          },
+          "measurement": {
+            "title": "E Measurement",
+            "items": "Question set · {count, plural, one {# question} other {# questions}} · used by the AI visibility check",
+            "itemsUnavailable": "Question set · none on this draft · this update does not build one, so the AI visibility check cannot run against the version you publish",
+            "show": "Show",
+            "hide": "Hide"
+          }
+        },
+        "publish": {
+          "title": "Publish",
+          "changes": "{count} changes compared with kb@v{version}",
+          "firstVersion": "This is the first published version, with {count} knowledge items.",
+          "pending": "{count} items are still unconfirmed and will publish as accepted in bulk, not confirmed one by one.",
+          "noPending": "Nothing is left unconfirmed."
+        },
+        "published": {
+          "headline": "Published kb@v{version}",
+          "counts": "Facts {facts} (confirmed {accepted}) · Q&A {qa} · Comparisons {available}/{comparisons} · {date}"
+        },
+        "decisions": {
+          "pending": "Awaiting your confirmation",
+          "accepted": "Confirmed",
+          "acceptedInBulk": "Accepted in bulk · not confirmed one by one",
+          "excluded": "Excluded"
+        },
+        "origins": {
+          "observed_own": "Your website",
+          "observed_competitor": "Competitor page",
+          "observed_third_party": "Off-site",
+          "observed_gsc": "Search Console",
+          "declared_profile": "Product profile",
+          "declared_owner": "Owner declaration",
+          "synthesized": "Model summary"
+        },
+        "originDetail": {
+          "thirdParty": "Off-site · {domain}",
+          "profile": "Product profile v{revision}",
+          "synthesized": "Model summary · {count} cited sources"
+        },
+        "independence": {
+          "independent": "Independent",
+          "self_submitted": "Submitted by the owner",
+          "syndicated": "Syndicated",
+          "undetermined": "Undetermined",
+          "first_party": "First-party"
+        },
+        "evidenceChecks": {
+          "cited_and_literals_match": "Citation check passed",
+          "owner_declared": "Owner declaration"
+        },
+        "item": {
+          "accept": "Accept",
+          "correct": "Correct",
+          "exclude": "Exclude",
+          "revert": "Undo the correction",
+          "correctedAt": "Corrected {date}",
+          "priorBasis": "What this replaced",
+          "review": "Review by {date}",
+          "newObservation": "New observation",
+          "conflict": "May conflict with an existing fact"
+        },
+        "module": {
+          "partial": "Current limitation",
+          "unavailable": {
+            "not_collected": "This information has not been collected yet.",
+            "not_published": "No published information was found for this section.",
+            "not_found": "The expected public information was not found.",
+            "timeout": "Reading the public pages timed out, so this section cannot be confirmed yet.",
+            "fetch_failed": "The public pages could not be read, so this section cannot be confirmed yet.",
+            "blocked": "The public pages blocked access, so this section cannot be confirmed yet.",
+            "rate_limited": "The public sources temporarily limited access.",
+            "invalid_response": "The public source returned content that could not be verified.",
+            "partial_body": "Only part of the public source was readable.",
+            "unsupported_language": "This language is not supported for knowledge synthesis yet.",
+            "generation_unavailable": "Knowledge synthesis was unavailable for this section.",
+            "outcome_unknown": "The synthesis outcome is unknown, so no result is shown.",
+            "insufficient_evidence": "The available evidence is not sufficient to form this section yet.",
+            "not_applicable": "This section does not apply to the current product.",
+            "context_stale": "The saved source context changed before this section could be completed.",
+            "owner_excluded_all": "You excluded every item in this section, so it is not published.",
+            "owner_excluded_required": "You excluded a field this section cannot be published without, so it is not published."
+          }
+        },
+        "groups": {
+          "notCollected": "Not collected",
+          "collectedEmpty": "Collected · nothing found",
+          "proof": "Product proof",
+          "changelog": "Product changes",
+          "press": "Press coverage",
+          "thirdPartyProfiles": "Third-party profiles",
+          "firstPartyProof": "First-party proof"
+        },
+        "machine": {
+          "aiCrawlers": "AI crawler permissions",
+          "snippets": "Snippet permission",
+          "crawlerSearch": "Search use",
+          "crawlerTraining": "Training use",
+          "crawlerNone": "No rule was observed for this use.",
+          "access": {
+            "allowed": "Allowed",
+            "disallowed": "Disallowed",
+            "unspecified": "No rule"
+          },
+          "snippetStatuses": {
+            "allowed": "Allowed",
+            "blocked": "Blocked",
+            "not_checked": "Not checked"
+          }
+        },
+        "entityFields": {
+          "name": "Official name",
+          "aliases": "Also known as",
+          "categories": {
+            "primary": "Primary category",
+            "secondary": "Other categories"
+          },
+          "definitions": {
+            "w25": "Concise definition",
+            "w55": "Standard definition",
+            "w120": "Detailed definition"
+          },
+          "audience": {
+            "who": "For",
+            "notFor": "Not for"
+          },
+          "founded": {
+            "year": "Founded",
+            "team": "Team",
+            "location": "Location"
+          },
+          "disambiguation": "How to distinguish it",
+          "links": {
+            "home": "Home page",
+            "pricing": "Pricing page",
+            "docs": "Documentation",
+            "about": "About page",
+            "changelog": "Changelog",
+            "faq": "FAQ page"
+          },
+          "sameAs": "Same-entity links"
+        },
+        "review": {
+          "saving": "Saving…",
+          "saved": "Saved",
+          "conflict": "This knowledge base changed somewhere else. Reload the page before deciding anything more; nothing decided now can be saved.",
+          "inputChanged": "The evidence behind this draft changed. Update the knowledge base before deciding anything more.",
+          "running": "An update is writing this draft. Your decisions are saved as soon as it finishes.",
+          "failed": "Your last decision was not saved. Decide again to retry.",
+          "acceptAll": "Accept all {count} remaining",
+          "acceptAllNote": "Accepting this way is recorded as accepted in bulk, not confirmed one by one.",
+          "noDecisions": "This section carries no decisions to make. Its contents are not shown here.",
+          "measurementEmpty": "This draft carries no question set, so there is nothing to show here.",
+          "correctionSave": "Save correction",
+          "correctionCancel": "Cancel",
+          "correctionValue": "Value",
+          "correctionStatement": "Sentence",
+          "correctionText": "Text",
+          "correctionAnswer": "Direct answer",
+          "correctionProduct": "This product",
+          "correctionCompetitor": "Competitor",
+          "correctionYear": "Enter a four-digit year, for example 2019.",
+          "correctionPlainText": "This has to be plain text, at most {max} characters.",
+          "publishDone": "Published kb@v{version}.",
+          "publishReused": "This content was already published as kb@v{version}, so no new version was made.",
+          "publishNoQuestionSet": "This version has no question set, so the AI visibility check cannot run against it.",
+          "excludeRequired": "This section cannot be published without this field, so it cannot be excluded. Correct it instead."
+        },
+        "run": {
+          "checking": "Checking whether an earlier update is still open…",
+          "driving": "Updating…",
+          "complete": "The update finished.",
+          "finished": "This update had already finished.",
+          "blocked": "Everything left in this update is held by something else running right now. Try again shortly.",
+          "runActive": "This knowledge base already has an update open.",
+          "failed": "The update stopped before it finished. Nothing is charged again automatically.",
+          "failedAuth": "This update was refused because you are not signed in.",
+          "failedOffline": "The update could not reach the server, so it stopped where it was.",
+          "failedUnavailable": "The service behind updates is unavailable right now, so the update stopped.",
+          "failedRefused": "The server refused this update, so nothing further was attempted.",
+          "failedUnreadable": "The server answered with something this page cannot read, so the update stopped.",
+          "stalled": "The update stopped making progress.",
+          "aborted": "The update was stopped.",
+          "nextContinue": "There is an update to continue below.",
+          "nextReload": "This page has no update it can continue. Reload the page — if one is still open, it will be offered there.",
+          "nextSignIn": "Sign in again, then start the update.",
+          "nextSignInContinue": "Sign in again, then continue the update below.",
+          "unknown": "The update reported a state this page cannot read. Reload the page.",
+          "resumable": "An earlier update of this knowledge base was never finished.",
+          "continue": "Continue the update",
+          "remaining": "{count, plural, one {# step left} other {# steps left}}",
+          "remainingUnknown": "How many steps are left could not be read.",
+          "done": "{count} done",
+          "outstanding": "{count} still to do",
+          "unknownOutcome": "{count} whose outcome is unknown",
+          "failedOps": "{count} that could not be completed",
+          "chargeUnresolved": "{count} that this update gave up on before it learned what happened. They may already have been charged, so they are not attempted again.",
+          "unsupported": "{count} that this deployment cannot run yet, so they were not attempted and nothing was spent on them.",
+          "notReloaded": "This card is still showing the draft as it was loaded. Reload the page to see anything the update wrote."
+        },
+        "recovery": {
+          "blockedStatus": "This draft cannot be updated yet.",
+          "blockedTitle": "What has to be fixed before an update can run:",
+          "blockedNote": "Fix this in the Product Profile and confirm it, then rebuild this draft below. Until then an update would stop before it produced anything.",
+          "stuck": "This update is stopped, and a new one cannot start while it is still open. If you confirmed a new Product Profile version after this draft was locked, no update can run until the draft is rebuilt against it.",
+          "rebuild": "Rebuild this draft from the confirmed Profile",
+          "rebuildNote": "If this draft is out of date, rebuilding it discards the knowledge it holds and everything recorded about it, and the next update generates and pays for that knowledge again. If it is already up to date, nothing is written and nothing is discarded. Rebuilding itself makes no model call and reads no page.",
+          "rebuildWorking": "Rebuilding this draft…",
+          "rebuildCurrent": "This draft already names the confirmed Product Profile version, so nothing was rebuilt and nothing was discarded.",
+          "rebuildDone": "This draft was rebuilt against the confirmed Product Profile version.",
+          "rebuildKeptAll": "It held nothing an update had produced, so nothing was discarded.",
+          "rebuildDiscardedKnowledge": "The knowledge this draft held was discarded, so the next update generates and pays for it again.",
+          "rebuildDiscardedReview": "{count, plural, one {# record of what you decided} other {# records of what you decided}} went with it.",
+          "rebuildDiscardedRoles": "{count, plural, one {# audience role an earlier update had proposed} other {# audience roles an earlier update had proposed}} went with it.",
+          "rebuildCleared": "The stopped update is no longer open, so a new one can start.",
+          "rebuildClearBusy": "The stopped update could not be cleared yet because something is still holding it. Reload the page and discard it there in a moment.",
+          "rebuildClearFailed": "The stopped update could not be cleared. Reload the page and discard it there.",
+          "rebuildReload": "Reload the page to see the rebuilt draft. Until then this card is showing the one that was replaced.",
+          "reload": "Reload the page",
+          "rebuildFailedAuth": "This was refused because you are not signed in. Nothing was changed. Sign in again and try once more.",
+          "rebuildFailedLimited": "This knowledge base has been asked to rebuild too many times in the last hour. Nothing was changed. Try again later.",
+          "rebuildFailedStale": "This knowledge base changed somewhere else, so nothing was changed here. Reload the page and try again.",
+          "rebuildFailedRunning": "Something this draft already paid for is still running. Nothing was changed. Try again once it has finished.",
+          "rebuildFailedProfile": "The Product Profile cannot be used to rebuild this draft. Nothing was changed. Check and confirm the Profile, then try again.",
+          "rebuildFailedUnknown": "The rebuild did not complete, and this page cannot tell whether the draft was changed. Reload the page to see where it stands.",
+          "discard": "Discard the stopped update",
+          "discardNote": "The stopped update is dropped so a new one can start. Nothing it already sent is undone, and anything it sent without learning the outcome stays unresolved; the next update starts from the beginning and pays for the knowledge again.",
+          "discardWorking": "Discarding the stopped update…",
+          "discardDone": "The stopped update was discarded. You can start a new one.",
+          "discardGone": "There is no stopped update left to discard. You can start a new one.",
+          "discardBusy": "Something is still working on this update, so it was not discarded. Try again in a moment.",
+          "discardFailed": "The stopped update could not be discarded. Reload the page to see whether it is still open."
+        }
+      },
       "enrichment": {
         "title": "Source evidence",
         "body": "Read public competitor pages, check saved fact URLs, and use the connected account’s last 90 finalized days of GSC queries. Suggestions never save themselves.",
@@ -5636,7 +5923,7 @@
       },
       "editor": {
         "build": "Build the GEO knowledge base from the Profile",
-        "buildBusy": "Building\u2026",
+        "buildBusy": "Building…",
         "confirm": "Confirm and freeze this version",
         "confirmHelp": "Accepts every role and fact still awaiting review, saves, prepares the complete version and freezes it. Pressing this button is the statement that you reviewed this version and its sources. A fact with no source address or capture time cannot be accepted; those are listed rather than quietly left out.",
         "confirmTitle": "What this confirmation did",
@@ -5669,7 +5956,7 @@
         "buildCompetitors": {
           "adopted": "Competitors were written from the Profile; confirmed rows stayed confirmed.",
           "unchanged": "Competitors already matched the Profile; nothing was rewritten.",
-          "manual": "Competitors were not written: a row here is not in the Profile, or there are more candidates than the limit. Choose them under \u201cFrom the Product Profile\u201d."
+          "manual": "Competitors were not written: a row here is not in the Profile, or there are more candidates than the limit. Choose them under “From the Product Profile”."
         },
         "buildDone": "The roles were generated and taken into the draft.",
         "buildUnavailable": "The Profile holds these in a form GEO cannot use, so they were neither compared nor written: {fields}. Fix them in the Profile above, or enter them below.",
@@ -5709,9 +5996,6 @@
         "generateCost": "One run crawls your site, reads Search Console and makes three billed model calls, then freezes the result as a version. Edit the Product Profile and press it again.",
         "unsupportedLanguage": "GEO Knowledge Base generation currently supports English question languages only; the current GEO question language is {language}. This action will not crawl the website, read Search Console, or call a model. If the site is actually English, correct and confirm its language in the Product Profile above. A genuinely non-English site cannot be generated in this version.",
         "unsupportedLanguageAfterStart": "GEO Knowledge Base generation cannot continue because the saved question language is {language}. The model step was not called, but source refresh may already have completed. Your draft is kept; review the current saved state before trying again.",
-        "generateNone": "Not generated yet.",
-        "generateCurrent": "Generated and frozen from the current Product Profile.",
-        "generateStale": "A frozen version exists, but not from the current draft.",
         "generateEmpty": "No GEO knowledge base yet. Press the button above to derive one from the Product Profile and your site.",
         "generationStates": { "claimed": "Queued", "dispatched": "Running", "succeeded": "Completed", "failed": "Failed", "uncertain": "Outcome unknown", "unknown": "Unknown", "not_found": "No record found" },
         "model": "Model requested",
@@ -5741,7 +6025,8 @@
           "review": "Finish reviewing roles and facts first",
           "noCandidate": "Prepare a complete candidate first",
           "staleCandidate": "The candidate inputs changed; prepare a new one",
-          "running": "A generation is still running", "unavailable": "A precondition is still unmet",
+          "running": "A generation is still running",
+          "unavailable": "A precondition is still unmet",
           "notReviewed": "Confirm the review checkbox first",
           "busy": "Working"
         }
@@ -6148,7 +6433,7 @@
         }
       }
     },
-    "aiVisibility": {
+    "aiVisibility": {"frozenUnreadable": {"no_question_set": "This version was published without a question set, so there is nothing here to ask. Publishing it again will not add one — questions are not yet generated for knowledge bases in this format.", "unsupported_payload_version": "This version uses the new knowledge base format, which this check cannot read yet. The knowledge base itself is fine, and nothing you do to it will change this.", "identity": "Version {revision}, published {time}."}, 
       "eyebrow": "GEO tools",
       "title": "AI Visibility Check",
       "intro": "Ask a frozen question set on the engines you select, several times each. Compare mentions and citations with independently read page evidence. Historical single-engine reports keep their original scope; no report proves why a model chose its answer.",
@@ -6493,11 +6778,11 @@
         "noWebsites": "No websites in your account",
         "addWebsite": "Add a website in Settings",
         "prepare": "Prepare this website's knowledge base",
-        "noFrozen": "No frozen version yet",
+        "noFrozen": "No frozen version yet", "frozenUnreadableOption": "This version cannot be read here",
         "sourceLoading": "Loading the exact frozen source…",
         "sourceUnavailable": "The exact source cannot be read. Refresh or open the knowledge base before starting a paid check.",
         "historicalSourceUnavailable": "The historical frozen source is unavailable. This report still uses its recorded input; today's website Profile has not been substituted.",
-        "readiness": {
+        "readiness": {"frozen_unreadable": "version cannot be read here", 
           "profile_required": "Profile needed",
           "knowledge_base_required": "Knowledge base needed",
           "freeze_required": "Needs a frozen version",
@@ -6651,8 +6936,8 @@
         "engines": "Choose ChatGPT, Perplexity, or both. Results come from the recorded API surfaces, not consumer chat sessions; each report identifies its engines and observed models.",
         "importTitle": "Compare local report files"
       },
-      "source": {
-        "title": "Input sources",
+      "source": {"unreadable": {"no_question_set": "This frozen version carries no question set, so there is nothing here to show.", "unsupported_payload_version": "This frozen version uses the new knowledge base format, which this page cannot show yet.", "identity": "version {version}"}, 
+        "subtitleUnreadable": "Settings and frozen measurement inputs have separate versions. The settings side can be expanded below; the frozen side is the part this page could not read.", "open": "Open the knowledge base", "title": "Input sources",
         "subtitle": "Settings and frozen measurement inputs have separate versions. Expand either to inspect exactly what it contains.",
         "currentTitle": "Latest Profile in Settings",
         "currentDescription": "This is the latest confirmed website Profile. It does not automatically replace the frozen input below.",
@@ -6670,14 +6955,14 @@
         "frozenVersion": "KB v{version}",
         "frozenAt": "Frozen",
         "confirmedAt": "Confirmed",
-        "status": {
+        "status": {"frozen_unreadable": "Version cannot be read here", 
           "profile_required": "Confirm website Profile",
           "knowledge_base_required": "Prepare knowledge base",
           "freeze_required": "Freeze an input version",
           "profile_update_available": "Source update available",
           "ready": "Ready to run"
         },
-        "sync": {
+        "sync": {"unknown": "The frozen source cannot be read here, so it has not been compared with the confirmed Profile.", 
           "current": "Frozen source matches the confirmed Profile.",
           "outdated": "A newer confirmed Profile is available. Review and adopt updates, then freeze a new version to use them.",
           "legacy_partial": "The frozen version holds only part of its original Profile. Review the full source before creating a new version.",
@@ -8874,7 +9159,7 @@
           "keyPageHitsAtLeast": "{hits}/{total} key pages · at least another {rest} pages",
           "keyPageHitsOnly": "{hits}/{total} key pages",
           "keyPageObserved": "{evaluated}/{total} key pages measured",
-              "keyPageIndex": "hit page {index} of {total}",
+          "keyPageIndex": "hit page {index} of {total}",
           "keyPageScope": "{evaluated}/{total} key pages evaluated",
           "keyPagePass": "{evaluated}/{total} key pages evaluated · passing",
           "affectedSite": "Site-level scope",
@@ -8906,15 +9191,15 @@
           "notCaptured": "This run kept no observation attributable to this issue. That is missing evidence, not an affected population of zero.",
           "notEnumerated": "The record's affected total is larger than the observations listed above, so this list is not a complete enumeration.",
           "siteScopeCounted": "Site-level observation; the record's affected count is {count}. This run resolved no individual URL, so none is listed.",
-            "keyPagesHeading": "Key pages this was found on",
-            "keyPagesNote": "This check reached a problem verdict on these pages. The repair guidance below is written for the one selected here.",
-            "keyPagesMore": "Another {rest} hit pages are not listed.",
-            "keyPagesOnlyTarget": "Only the page you submitted was hit.",
-            "keyPageSplit": "This row is about the page named above. The same check on other pages has its own row.",
-            "repairScopeTarget": "The guidance and preview below are for the page you submitted: {url}",
-            "repairScopeElsewhere": "This issue concerns the page named above, not the submitted page. Its preview uses only that page's recorded evidence. Use Check this page to capture its full text before generating a draft.",
-            "checkThisPage": "Check this page",
-            "checkHandoffFailed": "This page could not be handed over. Open the On-Page Checker directly and enter the URL."
+          "keyPagesHeading": "Key pages this was found on",
+          "keyPagesNote": "This check reached a problem verdict on these pages. The repair guidance below is written for the one selected here.",
+          "keyPagesMore": "Another {rest} hit pages are not listed.",
+          "keyPagesOnlyTarget": "Only the page you submitted was hit.",
+          "keyPageSplit": "This row is about the page named above. The same check on other pages has its own row.",
+          "repairScopeTarget": "The guidance and preview below are for the page you submitted: {url}",
+          "repairScopeElsewhere": "This issue concerns the page named above, not the submitted page. Its preview uses only that page's recorded evidence. Use Check this page to capture its full text before generating a draft.",
+          "checkThisPage": "Check this page",
+          "checkHandoffFailed": "This page could not be handed over. Open the On-Page Checker directly and enter the URL."
         },
         "evidence": {
           "none": "No evidence record is available to show.",

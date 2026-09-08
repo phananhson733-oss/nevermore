@@ -30,7 +30,7 @@ function context(frozen: GeoKbFrozenSnapshot = SHARED_FROZEN): GeoSnapshotContex
   };
 }
 function basis(value: GeoSnapshotContext | null, frozen: GeoKbFrozenSnapshot = SHARED_FROZEN) {
-  return sharedGeoBriefBasis({ frozen, context: value, questionId: "q1", questionText: "",
+  return sharedGeoBriefBasis({ frozen, context: value, knowledgePack: null, questionId: "q1", questionText: "",
     runEvidence: null, runId: "fact-integrity-test", now: "2026-08-31T00:00:00Z" });
 }
 function withPositioning(frozen: GeoKbFrozenSnapshot, text: string, derivation: "declared" | "inferred", source: "kb" | "crawl" = "kb"): GeoSnapshotContext {

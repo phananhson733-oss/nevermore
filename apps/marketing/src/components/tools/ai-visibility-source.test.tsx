@@ -22,7 +22,7 @@ function fixture(): VisibilityWebsiteContext {
     website: { websiteId: id(1), origin: "https://example.com", host: "example.com", canonicalSiteKey: "example.com", displayName: "Example", isPrimary: true, profileState: "confirmed", confirmedSnapshotId: id(3), confirmedSnapshotRevision: 3, confirmedAt: time, createdAt: time, updatedAt: time },
     currentProfile: { reference: { ...reference, snapshotId: id(3), snapshotRevision: 3, profileHash: "d".repeat(64) }, profile: { ...profile, productName: "Latest brand" }, confirmedAt: time },
     knowledgeBase: { kbId: id(4), draftVersion: 5, hasDraft: true },
-    frozen: { snapshotId: id(5), revision: 2, frozenAt: time, contentHash: "b".repeat(64), questionSetHash: "c".repeat(64), registryVersion: "registry-v1", questionCount: 1, retrievalCount: 1, profileReference: reference, profileCompleteness: "complete", skippedLayers: ["problem"],
+    frozen: { kind: "readable", snapshotId: id(5), revision: 2, frozenAt: time, contentHash: "b".repeat(64), questionSetHash: "c".repeat(64), registryVersion: "registry-v1", questionCount: 1, retrievalCount: 1, profileReference: reference, profileCompleteness: "complete", skippedLayers: ["problem"],
       payload: { ...emptyGeoKbPayload("https://example.com"), officialName: "Measured brand", categoryTerms: ["analytics"], profileCopy: createGeoProfileCopy(reference, profile), roles: [{ id: "buyer", label: "Buyer", segment: "Small teams", painPoints: ["Fragmented data"], decisionCriteria: ["Accuracy"], vocabulary: ["analytics"] }], competitors: [{ domain: "one.com", brandName: "One", aliases: ["One analytics"], confirmed: true }, { domain: "two.com", brandName: "", confirmed: false }], facts: [{ key: "pricing", value: "", reason: "notPublished", sourceUrl: "javascript:alert(1)", observedAt: time }] },
       questions: [{ id: "q1", text: "What are the best analytics tools?", layer: "discovery", mode: "retrieval", calibrated: true, roleId: "buyer", templateId: "template-v1", requiredEntities: ["analytics"] }] },
     preparation: { status: "profile_update_available", profileSync: "outdated", languageWarnings: ["category_terms_not_english"] },
@@ -37,6 +37,48 @@ function mount(site = fixture(), historical = false, locale: "en" | "zh" = "en")
 }
 
 describe("complete and exact AI Visibility source inspection", () => {
+  /**
+   * The readable half of a version this page cannot read.
+   *
+   * Every unreadable fixture elsewhere carries `currentProfile: null`, so
+   * nothing established that the Profile disclosure survives this arm: adding
+   * `unreadable === null` to its render condition left the whole suite green
+   * while a real owner with a confirmed Profile lost it. The two sentences the
+   * shell prints are asserted here too, because both are false for this arm in
+   * their readable wording -- "expand either" when only one exists, and
+   * "Review source updates" when `profileSync: "unknown"` means nothing was
+   * compared.
+   */
+  function unreadableFixture(reason: "no_question_set" | "unsupported_payload_version") {
+    const base = fixture();
+    return { ...base,
+      frozen: { kind: "unreadable" as const, snapshotId: id(5), revision: 2, frozenAt: time, contentHash: "b".repeat(64),
+        questionSetHash: reason === "no_question_set" ? null : "c".repeat(64), reason },
+      preparation: { status: "frozen_unreadable" as const, profileSync: "unknown" as const, languageWarnings: [] } };
+  }
+
+  it.each(["no_question_set", "unsupported_payload_version"] as const)("keeps the readable half for %s and drops only the frozen half", (reason) => {
+    mount(unreadableFixture(reason));
+
+    const current = host.querySelector('[data-source="current-profile"]');
+    expect(current?.textContent).toContain("Latest brand");
+    expect(host.querySelector('[data-source="frozen-unreadable"]')?.textContent).toContain(en.source.unreadable[reason]);
+    expect(host.querySelector('[data-source="frozen"]')).toBeNull();
+    expect(host.querySelector('[data-testid="frozen-question-preview"]')).toBeNull();
+    // Nothing from the version it could not read leaks through the shell.
+    expect(host.textContent).not.toContain("Frozen brand");
+    expect(host.textContent).not.toContain("Measured brand");
+    expect(host.textContent).not.toContain("c".repeat(64));
+    // The two sentences that are true only of the readable arm.
+    expect(host.textContent).not.toContain(en.source.subtitle);
+    expect(host.textContent).toContain(en.source.subtitleUnreadable);
+    expect(host.textContent).not.toContain(en.source.review);
+    expect(host.textContent).toContain(en.source.open);
+    // Navigation is not lost with the frozen disclosure.
+    expect(host.querySelector('a[href="/account/websites/' + id(1) + '/geo"]')).not.toBeNull();
+    expect(host.textContent).not.toContain("[missing copy:");
+  });
+
   it("separates latest settings from the actual frozen source and measurement input", () => {
     mount();
     const current = host.querySelector('[data-source="current-profile"]');
@@ -83,14 +125,14 @@ describe("complete and exact AI Visibility source inspection", () => {
   });
   it("compares operational values with their exact frozen Profile, not the latest Profile", () => {
     const site = fixture();
-    if (site.frozen?.payload.schemaVersion !== "marketing-geo-kb.v1") throw new Error("Legacy visibility fixture required");
+    if (site.frozen?.kind !== "readable" || site.frozen.payload.schemaVersion !== "marketing-geo-kb.v1") throw new Error("Legacy visibility fixture required");
     const retained = { ...profile, categories: ["analytics"], buyer: "Teams", primaryIcp: "Operators", directCompetitors: ["one.com"] };
     mount({ ...site, frozen: { ...site.frozen!, payload: { ...site.frozen!.payload, profileCopy: createGeoProfileCopy(reference, retained), officialName: "Frozen brand", roles: [{ id: "profile-primary", label: "Teams", segment: "Operators", painPoints: [], decisionCriteria: [], vocabulary: [] }], competitors: [{ domain: "one.com", brandName: "One", aliases: ["One analytics"], confirmed: true }] } } });
     expect(host.querySelector('[data-source="measurement-differences"]')).toBeNull();
   });
   it("never fills historical legacy gaps with the current profile", () => {
     const site = fixture();
-    if (site.frozen?.payload.schemaVersion !== "marketing-geo-kb.v1") throw new Error("Legacy visibility fixture required");
+    if (site.frozen?.kind !== "readable" || site.frozen.payload.schemaVersion !== "marketing-geo-kb.v1") throw new Error("Legacy visibility fixture required");
     const { profileCopy: _copy, ...payload } = site.frozen!.payload;
     mount({ ...site, frozen: { ...site.frozen!, payload, profileReference: null, profileCompleteness: "legacy_partial" } }, true);
     expect(host.querySelector('[data-source="current-profile"]')).toBeNull();

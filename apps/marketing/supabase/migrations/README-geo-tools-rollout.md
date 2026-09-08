@@ -334,3 +334,263 @@ drop table if exists public.marketing_geo_visibility_runs;
 ## 不存什么
 
 **不存模型回答的原文。** 判定在写库之前就做完了，落下来的只有数字和问题文本本身。回答里可能有第三方的名字、也可能有模型编的东西，留着它既扩大了泄漏面，也会让人把它当成「AI 说过的话」的证据来引用——它不是，它是一次不可复现的采样。
+
+---
+
+# GEO 知识库 v3（迁移 `20260907143000_geo_kb_v3.sql`）
+
+设计稿：`docs/plans/2026-09-07-geo-kb-redesign-design.md`，切片 S1a。
+
+这条迁移把知识库从「测量管线的副产品」改成「可发布、有版本、可审阅的档案」在**库端**的那一半：
+草稿 payload 丢掉 28 字段的 `profileCopy`、改成只引用已确认 Profile 的 `generationInput`；
+提问集从「冻结的前置条件」降为「可缺席的派生产物」；发布由一个新的 RPC 承担，而不是复用冻结。
+
+**这条迁移不改任何既有迁移文件，也不重写任何一行既有数据。** v1 / v2 的草稿、快照、上下文、
+候选、生成记录全部逐字节保留，每一条 v1/v2 判据都原样留在原处，v3 判据加在它旁边。
+
+## 先决条件
+
+`20260905155607_geo_knowledge_pack_companion.sql` 必须已经在这个 Supabase 项目里跑过。
+这条迁移 `create or replace` 了它定义的四个函数（`marketing_geo_finish_generation`、
+`marketing_geo_knowledge_input_valid`、`marketing_geo_knowledge_result_valid`、
+`marketing_geo_generation_input_current`），签名逐字不变——**绝不要 `drop function`**，
+签名一变就会留下重载，两个版本同时存在时调用哪个由参数类型决定，那是最难查的一类故障。
+
+## 顺序
+
+代码先上、SQL 后跑仍然成立（理由见本文件开头那一节）：这条迁移只放宽约束、只新增分支、
+只加一个新函数，对还没有 v3 代码的部署完全是 no-op。
+
+```bash
+# DATABASE_URL 从 Railway worker 的变量里取，去掉 query string
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+  -f apps/marketing/supabase/migrations/20260907143000_geo_kb_v3.sql
+```
+
+全文幂等：每个 `add constraint` 前都有 `drop constraint if exists`，函数一律
+`create or replace`，`drop not null` 对已经可空的列是 no-op。跑两遍和跑一遍结果相同
+（集成测试里有一条用例专门断言这一点，连 `pg_get_constraintdef` 的文本都逐条对比）。
+
+## 它拆掉了哪些拦截点
+
+按「不改的话 v3 会死在哪」排列：
+
+| # | 位置 | v3 原本会怎么死 | 这条迁移怎么做 |
+|---|---|---|---|
+| 1 | `marketing_geo_kb_drafts_schema_version_check` | 23514，存不进 v3 草稿 | 允许 v3 |
+| 2 | `marketing_geo_kb_snapshots_schema_version_check` | 同上 | 允许 v3 |
+| 3 | `marketing_geo_draft_v2_shape` | 前件恒假，对 v3 **空洞通过**，等于没校验 | v2 那条原样不动，另加 `marketing_geo_draft_v3_shape`：payload 的 `schemaVersion` 必须与列一致，`generationInput`/`review`/`runRef` 必须是对象，且**不得含 `profileCopy`** |
+| 4 | `marketing_geo_snapshot_v2_requires_prepared` | `(v2)=(prepared_id not null)` 对带候选的 v3 求值为 `false=true` | 左侧放宽为 v2 或 v3；v1 仍不得带候选 |
+| 5 | `marketing_geo_kb_prepared_candidates_candidate_check` | 候选 v3 无分支 | 加 v3 分支，上限 2359296 |
+| 6 | `marketing_geo_snapshot_contexts_context_check` | context v3 无分支 | 加 v3 分支，上限 262144（v3 的 context 是薄的，不含事实） |
+| 7 | `marketing_geo_kb_generations_result_check` | 只含提问集的 result、知识 result v2 都无分支 | 加 `marketing-geo-question-generation-result.v1`（393216）与 `marketing-geo-knowledge-generation-result.v2`（2097152） |
+| 8 | `marketing_geo_kb_snapshots.question_set` / `question_set_hash` 均 `not null` | 无提问集的版本存不下 | 两列改可空，另加 `marketing_geo_snapshot_question_set_pairing`：两者要么都空要么都不空，且 v1/v2 快照仍必须非空 |
+| 9 | 草稿/快照 payload 上限 393216 | v3 payload 放不下 | 按 `schema_version` 分档：v1/v2 保持 393216；v3 总量 1048576，另加 `knowledge ≤ 524288`、`review ≤ 131072` 两个分项预算 |
+| 10 | 候选表 `generation_id uuid not null unique` | v3 候选由发布铸造、同一 run 可发布多次，一对一身份不成立 | 改可空、去掉 UNIQUE（复合 FK 保留：它是 MATCH SIMPLE，`generation_id` 为 NULL 时自动跳过，v1/v2 候选仍照旧被校验） |
+| 11 | `marketing_geo_generation_input_current` | 无条件要求草稿有合法 `profileCopy`，v3 没有 → **每一条 v3 生成永远 `input_stale`** | 加 v3 分支：改校验 `generationInputHash` 等于草稿 `runRef` 的值，且 `generationInput.profileRef` 仍指向网站当前已确认 Profile 快照（id / revision / content hash 三项）。v1/v2 路径逐字不变 |
+| 12 | `marketing_geo_save_kb_draft` | 拒绝把带 `profileCopy` 的草稿存成没有的，v2→v3 升不上去 | `p_schema_version='marketing-geo-kb.v3'` 时豁免这一条（v2 存 v2 仍然拒） |
+| 13 | 同上 | 审阅期间 `generationInput` 没有只读保护 | 新增 outcome **`generation_input_locked`**（见下节） |
+| 14 | `marketing_geo_knowledge_input_valid` | 钉死 7 键含 `profileCopyHash` + input schema v1 → v3 claim 永远 `conflict` | 加 v2 分支：键集换成 `generationInputHash`（仍是恰好 7 键，两个分支各自钉全量键） |
+| 15 | 同上，`receiptId` 正则 | 版本位钉 `[1-5]`，**会拒掉全部 UUIDv8** | v2 分支改用不钉版本位的正则（见下节） |
+| 16 | `marketing_geo_knowledge_result_valid` | narrative/result 钉 v1 | 加 v2 分支；narrative v2 **不钉键数、只钉必需键存在**（见下节） |
+| 17 | `marketing_geo_finish_generation` roles 分支 | `p_result->>'profileCopyHash' = input->>'profileCopyHash'` 两边都 NULL 时求值为 NULL → `invalid_result`，**roles 在 v3 一条也发不出** | 改 `is not distinct from` |
+| 18 | 同上 questions 分支 | 必定插入候选、且要求 result 是候选 v1/v2 | 加 v3 分支：只校验提问集 result，**不插候选** |
+| 19 | 发布 | `marketing_geo_freeze_prepared_kb` 对 v3 两条不成立 | 新增 `marketing_geo_publish_kb_v3` |
+| 20 | `marketing_geo_freeze_kb` :403 | `payload ? 'profileCopy'` 闸门对 v3 是**开的**，一路跑到 INSERT 才因 CHECK 炸出不透明的 23514 | v3 草稿直接返回 `context_required` |
+
+### 清单之外另外发现并处理的三处
+
+- **`marketing_geo_freeze_kb_with_context` 有一模一样的洞**：它钉 context v1，但 `p_schema_version`
+  取自草稿自己的 `schema_version`，所以 v3 草稿同样能一路跑到 INSERT，再死在
+  `marketing_geo_snapshot_v2_requires_prepared` 上。已一并返回 `context_required`。
+- **`marketing_geo_kb_snapshots` 也需要 v3 形状约束**：清单只要求给草稿加，但快照 payload 走的是
+  另一条写入路径。已加 `marketing_geo_snapshot_v3_shape`（同样禁 `profileCopy`）。
+- **发布 RPC 里我自己写出了一遍同类的 NULL 塌陷**：判断 questionSet 可用/不可用的两个布尔量最初用
+  `=` 比较，遇到既不是 v2 契约、也不是 unavailable 标记的畸形提问集时两个量都是 NULL，
+  `NULL = NULL` 还是 NULL，整条 OR 链求值为 NULL，plpgsql 的 IF 把它当假——畸形候选会被**发布**
+  而不是被拒。集成测试当场抓到。现在两个量都用 `coalesce(...)` + `is not distinct from`，
+  恒为布尔。`candidateId` 的正则同理加了 `coalesce`，否则缺字段会带着 NULL 主键走到 INSERT。
+
+## 三个需要单独记住的判断
+
+**`generation_input_locked`（新 outcome）。** `marketing_geo_save_kb_draft` 现在会拒绝这样一次保存：
+既有草稿是 v3、既有 `runRef.runId` 非空（也就是有 run 正在进行）、而新 payload 的
+`runRef.generationInputHash` 与既有不同。审阅期间 `generationInput` 只读——否则 Owner 的逐条决定
+会被归因到它根本不是针对的那份输入上。review 与 knowledge 照常可写。S1 阶段 `runId` 恒为 null，
+这道闸门是**休眠**的；S4 上 runs 表以后才真正生效。调用方要把这个新值加进 outcome 处理。
+
+**UUIDv8 与 `[1-5]`。** input v1 的 receiptId 正则把 RFC 4122 版本位钉成 `[1-5]`。这个仓库里
+website / profile / receipt 的标识符是 **UUIDv8**（版本位是 8），所以那条正则会拒掉每一个真实的
+v3 receipt 引用，却能放过手写的 v4 测试 fixture——这正是这类 bug 长期不被发现的原因。
+v2 分支只钉十六进制形状和短横线，不钉版本位。
+
+**narrative v2 不钉键数。** v1 钉 narrative 恰好 6 键。narrative v2 多了 `canonicalQuestions`
+（事实也改成带 qualifiers 的三元组），键数不是 6。在库里钉一个数字，等于把 TypeScript 契约冻结在
+上线那天的样子；改成钉必需键存在（`schemaVersion,entity,facts,qa,comparisons,scope`），
+这也正是那个数字原本想表达的东西。synthesis input v2 同理。
+
+## `marketing_geo_publish_kb_v3` 为什么不复用冻结
+
+`marketing_geo_freeze_prepared_kb` 有两条规矩对 v3 不成立：它把候选的 `questionSet` 原样写进
+`question_set` 列（v3 可以没有提问集），并且对候选整体跑 `generation_input_current`（候选的形状
+不是生成输入的形状）。所以 v3 走独立 RPC。
+
+它绑定的是这些东西：候选自哈希（`candidateHash` 覆盖除自己以外的全部字节，且与调用方传入的一致）、
+payload 哈希等于 `baseDraftHash`、context 自哈希、context 的 `payloadHash`/`kbId`/`candidateId`/
+`targetHost` 与候选和本知识库一致、候选的 `generationInputHash` 等于**当前草稿** `runRef` 的值
+（对不上是 `input_stale`，不是 `candidate_mismatch`——它不是伪造，是过期）。
+
+**幂等键不是 context_hash。** 每次发布都铸一个新的 `candidateId`，这个 id 在 context 里，所以
+context 哈希每次都不同——拿它当幂等键，等于让「连点两次发布」产出两个版本。真正定义一个 v3 版本的
+是 payload 摘要 + 提问集摘要（审阅决定和生成输入都在 payload 里）。同内容二次发布返回既有版本、
+`reused_existing=true`、不铸新候选行。
+
+**重放是读，不回拨指针。** 和 `marketing_geo_freeze_prepared_kb` 一致：命中既有版本时不会把
+`current_frozen_snapshot_id` 挪回旧版本。代价是「改回上一版内容再发布」会返回那个旧版本、但当前版本
+指针不动——把某个历史版本重新设为当前，需要一个显式的动作，本切片没做。
+
+**提问集三态是显式的。** `questionSet` 只接受两种形状：v2 契约本身，或
+`{status:'unavailable', reason:...}`。两者都不是就是 `candidate_mismatch`。unavailable 时
+`question_set` 与 `question_set_hash` 都写 null，而 context 的 `questionSetHash` 仍是那个
+unavailable 标记的哈希（也就是哨兵值）——「没有提问集」和「没去看」必须能区分。
+
+## 没做的事
+
+- 发布**不回写草稿**。设计稿 §10 提到「发布 RPC（含幂等与写回草稿）」，本迁移的返回签名里没有草稿字段，
+  也没有写回。发布后草稿与已发布版本的 review 一致这一条，目前靠调用方保证。
+- 没有 `marketing_geo_kb_runs` / `run_operations`（S4）。
+- 没有网站证据观察库（S2）。
+- 消费者读取路径（`kb-complete-read` / `brief-facts` / `kb-versioned-read` 等）是 TypeScript 侧的事，
+  不在这条迁移里。**在它们接受 payload v3 + context v3 + 空提问集之前，不要给任何生产站点升 v3**——
+  否则 Brief 会静默断掉。
+
+## 冒烟
+
+```sql
+-- 1. 六个约束都放开到 v3
+select conname, pg_get_constraintdef(oid) from pg_constraint where conname in (
+  'marketing_geo_kb_drafts_schema_version_check',
+  'marketing_geo_kb_snapshots_schema_version_check',
+  'marketing_geo_snapshot_v2_requires_prepared',
+  'marketing_geo_snapshot_contexts_context_check',
+  'marketing_geo_kb_prepared_candidates_candidate_check',
+  'marketing_geo_kb_generations_result_check');
+-- 期望：每条定义里都出现 .v3（result_check 里是两个新 schema 名）
+
+-- 2. 三列已可空，候选的 generation_id 唯一约束已移除
+select table_name, column_name, is_nullable from information_schema.columns
+ where table_schema='public'
+   and (table_name,column_name) in (
+     ('marketing_geo_kb_snapshots','question_set'),
+     ('marketing_geo_kb_snapshots','question_set_hash'),
+     ('marketing_geo_kb_prepared_candidates','generation_id'));
+-- 期望：三行都是 YES
+select count(*) as leftover from pg_constraint
+ where conname='marketing_geo_kb_prepared_candidates_generation_id_key';
+-- 期望：0
+
+-- 3. 历史行一行没动（跑迁移前后各跑一次，比对）
+select schema_version, count(*), min(frozen_at), max(frozen_at)
+  from public.marketing_geo_kb_snapshots group by schema_version order by 1;
+select count(*) filter (where question_set is null) as null_question_sets
+  from public.marketing_geo_kb_snapshots;
+-- 期望：分组计数与时间边界不变；null_question_sets 在还没发布过 v3 时为 0
+
+-- 4. 新函数只有 service_role 能执行，且是 SECURITY DEFINER + 空 search_path
+select has_function_privilege('service_role','public.marketing_geo_publish_kb_v3(uuid,uuid,jsonb,text)','execute') as service_role,
+       has_function_privilege('authenticated','public.marketing_geo_publish_kb_v3(uuid,uuid,jsonb,text)','execute') as authenticated,
+       has_function_privilege('anon','public.marketing_geo_publish_kb_v3(uuid,uuid,jsonb,text)','execute') as anon;
+-- 期望：t / f / f
+select prosecdef, proconfig from pg_proc
+ where oid='public.marketing_geo_publish_kb_v3(uuid,uuid,jsonb,text)'::regprocedure;
+-- 期望：t / {"search_path=\"\"",TimeZone=UTC}
+
+-- 5. 两个校验函数仍然谁都不能执行（含 service_role）——它们是纵深防御，只在 DEFINER 体内被调用
+select has_function_privilege('service_role','public.marketing_geo_knowledge_input_valid(uuid,text,jsonb)','execute') as input_valid,
+       has_function_privilege('service_role','public.marketing_geo_knowledge_result_valid(uuid,uuid,text,jsonb,jsonb)','execute') as result_valid;
+-- 期望：f / f
+
+-- 6. 没有留下重载（签名必须逐字不变）
+select proname, count(*) from pg_proc
+ where proname in ('marketing_geo_finish_generation','marketing_geo_generation_input_current',
+                   'marketing_geo_knowledge_input_valid','marketing_geo_knowledge_result_valid',
+                   'marketing_geo_save_kb_draft','marketing_geo_freeze_kb','marketing_geo_freeze_kb_with_context')
+ group by proname order by 1;
+-- 期望：每个都恰好 1
+```
+
+第 6 项值得单独盯：`create or replace` 保住签名就没事，一旦哪次改动动了参数类型，
+旧签名会原地留下来，而调用哪一个由参数类型推断决定——库里两份逻辑并存，读代码看不出来。
+
+## 回滚
+
+**首选回滚代码，不动表。** 这条迁移全是放宽：多允许一个 schema 版本、多两个可空列、多一个函数、
+多几个分支。把应用代码退回到不产出 v3 的版本，库端这些放宽就没有调用方，行为回到 v2。
+这也是唯一安全的选择——只要生产上已经发布过一个 v3 版本，收紧约束就会让那些行连 `select` 都正常、
+却在任何一次 `alter table ... validate` 或后续迁移里炸掉。
+
+如果确认**从未产出过任何 v3 行**（下面这条查询三个计数全为 0），可以收回：
+
+```sql
+select
+  (select count(*) from public.marketing_geo_kb_drafts where schema_version='marketing-geo-kb.v3') as drafts,
+  (select count(*) from public.marketing_geo_kb_snapshots where schema_version='marketing-geo-kb.v3') as snapshots,
+  (select count(*) from public.marketing_geo_kb_prepared_candidates
+     where candidate->>'schemaVersion'='marketing-geo-prepared-candidate.v3') as candidates;
+```
+
+```sql
+drop function if exists public.marketing_geo_publish_kb_v3(uuid,uuid,jsonb,text);
+alter table public.marketing_geo_kb_drafts drop constraint if exists marketing_geo_draft_v3_shape;
+alter table public.marketing_geo_kb_snapshots drop constraint if exists marketing_geo_snapshot_v3_shape;
+alter table public.marketing_geo_kb_snapshots drop constraint if exists marketing_geo_snapshot_question_set_pairing;
+-- 然后重放 20260831122810 与 20260905155607 这两个文件，把四个函数与其余约束恢复成 v2 形态。
+```
+
+`question_set` / `question_set_hash` 的 `not null` 与候选 `generation_id` 的 UNIQUE **不要**急着加回：
+加回 NOT NULL 要全表扫描并持有 ACCESS EXCLUSIVE 锁，而且只要有过一行 v3 就会直接失败。
+它们留着是无害的——v1/v2 的写入路径本来就永远填这些值，`marketing_geo_snapshot_question_set_pairing`
+在没被 drop 之前也仍然替 v1/v2 强制非空。
+
+---
+
+# 网站证据观察库与 run 账本（迁移 20260907160000、20260907170000）
+
+两份都是**纯新增**：新表、新函数、新权限，不改任何既有表、约束或函数。因此它们不像 v3 那份有
+「放宽 / 收紧」的顺序问题，跑不跑都不影响已经上线的 v1/v2/v3 路径。顺序上放在 v3 之后即可，
+两者之间没有依赖。
+
+## 先决条件
+
+- `20260907160000` 引用 `public.marketing_websites (id, user_id)`（0005）。
+- `20260907170000` 引用 `public.marketing_geo_knowledge_bases (id, user_id)`（0006）。
+
+外键在 `create table` 时就解析，所以先决条件缺失会**当场失败**，不会像 0006 那样留到第一次写入。
+
+## 代码先上、SQL 后跑的窗口
+
+同样安全，理由和上面一样：浏览器角色对这两组表没有任何权限，读写只走 service_role RPC，
+表或函数不在 schema cache 里返回 `PGRST205` / `PGRST202`，两个仓储都把它归为 `unavailable`。
+证据观察库 `unavailable` 的含义是「去抓一次」，不是「这个页面没有证据」；run 账本 `unavailable`
+的含义是编排层不动手，不是「这个操作没花过钱」。两个方向都是 fail-closed。
+
+## 回滚
+
+**首选回滚代码。** 没有调用方时这两组表就是静止的。真要收回（且确认没有任何一行是需要留存的证据）：
+
+```sql
+-- 观察库：先确认没有已发布快照的 evidenceRefs 指向它，那是另一份设计要回答的问题。
+select count(*) as observations from public.marketing_website_evidence_observations;
+select count(*) as runs from public.marketing_geo_kb_runs;
+```
+
+```sql
+drop table if exists public.marketing_geo_kb_run_operations;
+drop table if exists public.marketing_geo_kb_runs;
+drop table if exists public.marketing_website_evidence_observations;
+-- 两份迁移里的函数与 record/valid 辅助函数随之无用，可一并 drop；它们不被任何既有路径引用。
+```
+
+注意观察库与 run operations 都是 append-only（行级挡 update/delete，语句级挡 truncate），
+所以「清空但保留表」这件事做不到，也不该做：删掉旧观察等于删掉旧版本快照引用的证据，
+删掉 operation 行等于把一次可能已经计费的调用从账上抹掉。

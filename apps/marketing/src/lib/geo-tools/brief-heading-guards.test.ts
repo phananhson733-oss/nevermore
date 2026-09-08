@@ -10,7 +10,7 @@ import { parseSharedGeoOutline } from "./brief-shared-llm.ts";
 import { verifyOwnedGeoBrief, type GeoBriefReferenceDependencies } from "./brief-reference.ts";
 
 async function fixture() {
-  const basis = sharedGeoBriefBasis({ frozen: SHARED_FROZEN, context: null, questionId: "q1", questionText: "", runEvidence: null, runId: "fixture-brief", now: "2026-08-31T00:00:01Z" });
+  const basis = sharedGeoBriefBasis({ frozen: SHARED_FROZEN, context: null, knowledgePack: null, questionId: "q1", questionText: "", runEvidence: null, runId: "fixture-brief", now: "2026-08-31T00:00:01Z" });
   const item = { id: "O1", h2: "Direct answer", h3: [], answers: basis.must_answer.items.map(q => q.id), provenance: { method: "model" as const, derived_from: ["kb" as const] } };
   const brief = await assembleSharedGeoBrief(basis, { ok: true, outline: [item] });
   const dependencies: GeoBriefReferenceDependencies = { readFrozen: vi.fn(async () => ({ kind: "ok" as const, value: SHARED_FROZEN })), readContext: vi.fn(async () => ({ kind: "ok" as const, value: null })), readPrepared: vi.fn(async () => ({ kind: "ok" as const, value: null })), readRun: vi.fn(async () => ({ kind: "missing" as const })), readRunEvidence: vi.fn(async () => ({ kind: "not_found" as const })) };

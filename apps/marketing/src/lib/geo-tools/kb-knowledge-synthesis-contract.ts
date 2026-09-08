@@ -7,6 +7,7 @@ import { hasLoneSurrogate } from "../agents/geo-canonical.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import { geoV2JsonbBytes } from "./kb-v2-json.ts";
 import { parseGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidenceV1 } from "./kb-knowledge-evidence.ts";
+import { geoLiteralsAllSupported } from "./kb-knowledge-shape.ts";
 
 export const GEO_KNOWLEDGE_SYNTHESIS_INPUT_SCHEMA = "marketing-geo-knowledge-synthesis-input.v1" as const;
 export const GEO_KNOWLEDGE_NARRATIVE_SCHEMA = "marketing-geo-knowledge-narrative.v1" as const;
@@ -107,7 +108,6 @@ const scopeSchema = z.object({ does: z.array(statementSchema).max(GEO_KNOWLEDGE_
 const narrativeSchema = z.object({ schemaVersion: z.literal(GEO_KNOWLEDGE_NARRATIVE_SCHEMA), entity: entitySchema, facts: z.array(factSchema).max(GEO_KNOWLEDGE_SYNTHESIS_LIMITS.facts), qa: z.array(qaSchema).max(GEO_KNOWLEDGE_SYNTHESIS_LIMITS.qa), comparisons: z.array(comparisonSchema).max(GEO_KNOWLEDGE_SYNTHESIS_LIMITS.comparisons), scope: scopeSchema }).strict();
 export type GeoKnowledgeNarrativeV1 = z.infer<typeof narrativeSchema>;
 
-function numericLiterals(value: string): readonly string[] { return value.match(/[+-]?(?:[$€£¥]\s*)?\p{N}+(?:[.,:/-]\p{N}+)*(?:\s*[%％])?/gu) ?? []; }
 function escaped(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"); }
 function mentions(value: string, competitor: GeoKnowledgeSynthesisInputV1["confirmedCompetitors"][number]): boolean {
   return [competitor.name, competitor.key].some(candidate => new RegExp(`(^|[^\\p{L}\\p{N}_])${escaped(candidate)}(?=$|[^\\p{L}\\p{N}_])`, "iu").test(value));
@@ -128,7 +128,7 @@ function assertNarrativeIntegrity(value: GeoKnowledgeNarrativeV1, input: GeoKnow
   for (const group of Object.values(value.scope)) for (const item of group) { if (mentionedCompetitors([item.text]).length > 0) throw new Error("Competitor mention is not allowed in scope"); add(item, true, item.text); allText.push(item.text); }
   if (!unique(ids)) throw new Error("Duplicate content id"); if (!normalizedUnique(allText)) throw new Error("Duplicate narrative text");
   const knownSubjects = new Set([input.officialName, ...input.aliases, ...input.confirmedCompetitors.flatMap(competitor => [competitor.name, competitor.key])].map(normalized));
-  for (const claim of claims) { const cited = claim.sourceRefs.map(reference => sources.get(reference)); if (cited.some(source => source === undefined)) throw new Error("Unknown or unavailable source reference"); for (const subject of claim.text.flatMap(properSubjects)) if (!knownSubjects.has(normalized(subject)) && !cited.some(source => source!.excerpts.some(excerpt => normalized(excerpt).includes(normalized(subject)))) ) throw new Error("Proper-name claim subject is absent from cited evidence"); const productSources = cited.filter((source): source is GeoKnowledgeSynthesisInputV1["sourceCatalogue"][number] => source?.kind === "own_page" || source?.kind === "accepted_fact"); if (claim.productEvidence && productSources.length === 0) throw new Error("Product evidence is required"); const supported = new Set((claim.productEvidence ? productSources : cited).flatMap(source => source!.excerpts.flatMap(numericLiterals))); for (const literal of claim.text.flatMap(numericLiterals)) if (!supported.has(literal)) throw new Error("Unsupported numeric claim"); }
+  for (const claim of claims) { const cited = claim.sourceRefs.map(reference => sources.get(reference)); if (cited.some(source => source === undefined)) throw new Error("Unknown or unavailable source reference"); for (const subject of claim.text.flatMap(properSubjects)) if (!knownSubjects.has(normalized(subject)) && !cited.some(source => source!.excerpts.some(excerpt => normalized(excerpt).includes(normalized(subject)))) ) throw new Error("Proper-name claim subject is absent from cited evidence"); const productSources = cited.filter((source): source is GeoKnowledgeSynthesisInputV1["sourceCatalogue"][number] => source?.kind === "own_page" || source?.kind === "accepted_fact"); if (claim.productEvidence && productSources.length === 0) throw new Error("Product evidence is required"); if (!geoLiteralsAllSupported(claim.text, (claim.productEvidence ? productSources : cited).flatMap(source => source!.excerpts))) throw new Error("Unsupported numeric claim"); }
 }
 export function geoKnowledgeNarrativeDigest(value: GeoKnowledgeNarrativeV1): string { return geoV2Digest(value); }
 export function parseGeoKnowledgeNarrativeV1(raw: unknown, rawInput: GeoKnowledgeSynthesisInputV1): GeoKnowledgeNarrativeV1 { const input = parseGeoKnowledgeSynthesisInputV1(rawInput); const value = narrativeSchema.parse(raw); assertNarrativeIntegrity(value, input); return value; }

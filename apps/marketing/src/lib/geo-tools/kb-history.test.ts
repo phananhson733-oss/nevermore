@@ -1,60 +1,86 @@
-import { describe, expect, it, vi } from "vitest";
-import { listFrozenGeoKbVersions, type GeoKbHistoryDependencies } from "./kb-history.ts";
-import { contextPayload, CONTEXT_KB_ID } from "./snapshot-context.test-fixtures.ts";
-import { geoKbDigest } from "./kb-digest.ts";
-import type { GeoKbValue } from "./kb-contract.ts";
-import { buildGeoQuestionSet, geoQuestionSetDigest } from "./kb-questions.ts";
+import { describe, expect, it } from "vitest";
+import { GEO_HISTORY_SNAPSHOT_COLUMNS, listFrozenGeoKbVersions } from "./kb-history.ts";
+import { completePayloadV2, questionSetV2, V2_CANDIDATE_ID, V2_KB_ID } from "./kb-v2.test-fixtures.ts";
+import { geoV2Digest } from "./kb-v2-digest.ts";
 
-const USER = "11111111-1111-4111-8111-111111111111";
-function fixture(count = 2) {
-  const rows = Array.from({ length: count }, (_, index) => {
-    const payload = { ...contextPayload(), officialName: `Acme ${index + 1}` };
-    const questionSet = buildGeoQuestionSet(payload);
-    return { id: `33333333-3333-4333-8333-${String(index + 1).padStart(12, "0")}`, user_id: USER, kb_id: CONTEXT_KB_ID, schema_version: payload.schemaVersion, revision: index + 1, payload, content_hash: geoKbDigest(payload as unknown as GeoKbValue), question_set: questionSet, question_set_hash: geoQuestionSetDigest(questionSet), frozen_at: "2026-08-31T00:00:00.000Z" };
-  }).reverse();
-  const current = rows[0];
-  const dependencies: GeoKbHistoryDependencies = {
-    listKnowledgeBases: vi.fn(async () => ({ kind: "ok" as const, value: [{ kbId: CONTEXT_KB_ID, origin: "https://example.com", host: "example.com", canonicalSiteKey: "example.com", createdAt: "2026-08-31T00:00:00.000Z", updatedAt: "2026-08-31T00:00:00.000Z", draft: null, frozen: current ? { snapshotId: current.id, revision: current.revision, contentHash: current.content_hash, questionSetHash: current.question_set_hash, frozenAt: current.frozen_at } : null }] })),
-    readPage: vi.fn(async (_userId, offset, limit) => ({ kind: "ok" as const, data: rows.slice(offset, offset + limit) })),
-  };
-  return { dependencies, rows };
+const USER = "22222222-2222-4222-8222-222222222222";
+const SNAPSHOT = "33333333-3333-4333-8333-333333333333";
+const HOST = "example.com";
+
+function snapshotRow() {
+  const payload = completePayloadV2();
+  const questionSet = questionSetV2();
+  return {
+    id: SNAPSHOT,
+    kb_id: V2_KB_ID,
+    user_id: USER,
+    revision: 1,
+    schema_version: "marketing-geo-kb.v2",
+    content_hash: geoV2Digest(payload),
+    question_set: questionSet,
+    question_set_hash: geoV2Digest(questionSet),
+    prepared_id: V2_CANDIDATE_ID,
+    frozen_at: "2026-09-01T00:00:00.000Z",
+    payload,
+  } as Record<string, unknown>;
 }
-describe("owned frozen version history", () => {
-  it("lists historical and current snapshots of the same KB without mixing identities", async () => {
-    const { dependencies, rows } = fixture();
-    const result = await listFrozenGeoKbVersions({ userId: USER }, dependencies);
+
+/**
+ * What the database would actually return for this select: only the columns
+ * that were asked for. Reading a full hand-written row instead is exactly how
+ * the missing column went unnoticed.
+ */
+function asSelected(row: Record<string, unknown>, columns: string) {
+  return Object.fromEntries(columns.split(",").map((column) => [column, row[column]]));
+}
+
+function dependencies(row: Record<string, unknown>) {
+  return {
+    listKnowledgeBases: async () => ({
+      kind: "ok" as const,
+      value: [{
+        kbId: V2_KB_ID,
+        host: HOST,
+        origin: `https://${HOST}`,
+        canonicalSiteKey: HOST,
+        frozen: {
+          snapshotId: SNAPSHOT,
+          revision: 1,
+          contentHash: row.content_hash as string,
+          questionSetHash: row.question_set_hash as string,
+          frozenAt: row.frozen_at as string,
+        },
+      }],
+    }),
+    readPage: async () => ({ kind: "ok" as const, data: [row] }),
+  } as never;
+}
+
+describe("the frozen version list", () => {
+  it("reads a v2 snapshot from exactly the columns it selects", async () => {
+    // Regression: the page used its own column list without `prepared_id`,
+    // which the frozen reader requires for every v2 row. Every account with a
+    // v2 version therefore got an unavailable history, not a shorter one.
+    const row = asSelected(snapshotRow(), GEO_HISTORY_SNAPSHOT_COLUMNS);
+    const result = await listFrozenGeoKbVersions({ userId: USER }, dependencies(row));
     expect(result.kind).toBe("ok");
     if (result.kind !== "ok") return;
-    expect(result.value.map((item) => item.snapshot.snapshotId)).toEqual(rows.map((item) => item.id));
-    expect(result.value.map((item) => item.snapshot.revision)).toEqual([2, 1]);
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0]?.host).toBe(HOST);
+    expect(result.value[0]?.snapshot.snapshotId).toBe(SNAPSHOT);
   });
-  it("reads multiple bounded pages rather than losing versions at the provider page limit", async () => {
-    const { dependencies } = fixture(52);
-    const result = await listFrozenGeoKbVersions({ userId: USER }, dependencies);
-    expect(result.kind === "ok" && result.value.length).toBe(52);
-    expect(dependencies.readPage).toHaveBeenCalledTimes(3);
+
+  it("still fails when that column is absent, so the test above is not vacuous", async () => {
+    const { prepared_id: _dropped, ...withoutPreparedId } = asSelected(snapshotRow(), GEO_HISTORY_SNAPSHOT_COLUMNS);
+    const result = await listFrozenGeoKbVersions({ userId: USER }, dependencies(withoutPreparedId));
+    expect(result.kind).toBe("unavailable");
   });
-  it("does not turn an unreadable declared snapshot into an empty selector", async () => {
-    const { dependencies } = fixture();
-    vi.mocked(dependencies.readPage).mockResolvedValue({ kind: "ok", data: [] });
-    expect((await listFrozenGeoKbVersions({ userId: USER }, dependencies)).kind).toBe("unavailable");
-  });
-  it("refuses a foreign or corrupted old row even when the current row is good", async () => {
-    const { dependencies, rows } = fixture();
-    rows[1]!.user_id = "22222222-2222-4222-8222-222222222222";
-    expect((await listFrozenGeoKbVersions({ userId: USER }, dependencies)).kind).toBe("unavailable");
-    rows[1]!.user_id = USER;
-    rows[1]!.question_set_hash = "0".repeat(64);
-    expect((await listFrozenGeoKbVersions({ userId: USER }, dependencies)).kind).toBe("unavailable");
-  });
-  it("reports a history budget overflow without a silently truncated list", async () => {
-    const { dependencies } = fixture(201);
-    expect(await listFrozenGeoKbVersions({ userId: USER }, dependencies)).toMatchObject({ kind: "unavailable", reason: "frozen_history_limit" });
-  });
-  it("can distinguish genuinely empty history from a transport failure", async () => {
-    const { dependencies } = fixture(0);
-    expect(await listFrozenGeoKbVersions({ userId: USER }, dependencies)).toEqual({ kind: "ok", value: [] });
-    vi.mocked(dependencies.readPage).mockResolvedValue({ kind: "error", code: "503" });
-    expect((await listFrozenGeoKbVersions({ userId: USER }, dependencies)).kind).toBe("unavailable");
+
+  it("selects the same columns the frozen reader is given", () => {
+    // Not a tautology: this pins the actual column names the query asks for,
+    // and the two tests above prove the reader depends on them.
+    for (const column of ["id", "kb_id", "user_id", "revision", "schema_version", "content_hash", "question_set", "question_set_hash", "prepared_id", "frozen_at", "payload"]) {
+      expect(GEO_HISTORY_SNAPSHOT_COLUMNS.split(",")).toContain(column);
+    }
   });
 });

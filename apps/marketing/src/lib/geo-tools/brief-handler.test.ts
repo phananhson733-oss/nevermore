@@ -217,7 +217,7 @@ describe("exact frozen and handoff loads", () => {
     const shared: SharedBriefHandlerDependencies = {
       readFrozen: vi.fn(async () => ({ kind: "ok" as const, value: SHARED_FROZEN })),
       readRunEvidence: vi.fn(async () => ({ kind: "ok" as const, value: evidence })),
-      readContext: vi.fn(async () => ({ kind: "ok" as const, value: null })), configured: () => true, assemble: vi.fn(), runId: vi.fn(),
+      readContext: vi.fn(async () => ({ kind: "ok" as const, value: null })), readKnowledgePack: vi.fn(async () => ({ kind: "ok" as const, value: null })), configured: () => true, assemble: vi.fn(), runId: vi.fn(),
       ...overrides,
     };
     const dependencies = deps({ shared, listFrozen: vi.fn(), readFrozen: vi.fn(), consumeDailyRun: vi.fn(), sample: vi.fn(), assemble: vi.fn() });

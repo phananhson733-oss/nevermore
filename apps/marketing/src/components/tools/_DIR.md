@@ -13,6 +13,11 @@ One line per module: what it reads, what it returns, where it sits. Update the l
 - `geo-kb-profile.tsx`, `geo-kb-profile-copy-review.tsx`, `geo-kb-frozen-copy.tsx` — complete read-only copied Profile, explicit version difference/adoption review and immutable frozen copy display.
 - `geo-kb-measurement-review.tsx` — opt-in operational-field proposals and explicit bounded competitor selection, without saving, freezing or claiming source facts were verified.
 - `geo-knowledge-base.tsx` — separate source-copy and operational GEO review with explicit save/freeze, stale-source recovery and language readiness.
+- `geo-kb-copy.ts` — the whole `tools.geoKnowledgeBase.card` catalog as one typed object, and the single place contract enums are mapped to labels; `accepted_in_bulk` has its own words and never borrows the ones `accepted` has.
+- `geo-kb-card.tsx`, `.test.tsx` — the Profile-shaped shell: website, one live status line, billed update beside free publish, the five lettered sections with measurement folded away, the publish box and the collapsed published summary; it fetches nothing and decides no state.
+- `geo-kb-item-row.tsx`, `.test.tsx` — one reviewable item as two independent facts, where it came from and what was decided about it, plus accept/correct/exclude and the way back from a correction; the item key stays in the callbacks.
+- `geo-kb-module-section.tsx`, `.test.tsx` — module tri-state in the shared section card, and evidence groups that always draw, saying whether a group was never looked for or looked for and empty.
+- `geo-knowledge-pack-v2.tsx`, `.test.tsx`, `.test-fixtures.ts` — the eight published modules with per-item origin and decision, always-drawn evidence groups, and search-use/training-use crawler rules kept apart; `modules` lets the card group them.
 
 - `content-draft-tool.tsx`, `.test.tsx` — separate SEO v1/shared GEO v1.1/confirmed SEO v2/v3 intake; legacy GEO report and unconfirmed-v2/v3 guidance, signed-out peek and successful-sign-in-only staging, exact payload cleanup and stale/unmount guards.
 - `content-draft-intake.tsx` — version-aware paste/upload rejection and localized Content Brief Builder recovery entry, without inventing a convertible GEO document.
@@ -56,3 +61,4 @@ One line per module: what it reads, what it returns, where it sits. Update the l
 - `daily-briefing-tool.tsx` — reads the saved GSC list, independently refreshes it on mount/focus or explicit retry, and preserves site-owned form/report state only while the selection remains granted.
 - `daily-briefing-tool.test.tsx` — verifies report interactions and property refresh, empty-list recovery, retry, selection removal, concurrency, and Strict Mode cleanup.
 - `page-citability-check.tsx`, `.test.tsx` — existing-site input/result styling, server-derived verdict/coverage, measured rule evidence and independently consented snapshot-bound AI review; copy and stale-response behavior retain the same report identity.
+- `geo-kb-run-continue.ts`, `.test.ts` — 标签页这一侧的 run 协议：服务端一次调用推进一个操作，这里一直调到计划报告停下来为止。第一次调用带 idempotency key，之后一律带服务端返回的 runId，所以自动续调不会给一次点击造出第二个 run；`busy` 退避、无进展则停在 `stalled`，run 仍在，人可以稍后继续。

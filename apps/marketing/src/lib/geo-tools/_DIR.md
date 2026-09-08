@@ -64,5 +64,26 @@ Website Profile is the single editing authority for base information. GEO stores
 - `citability-ai-provider.ts` — single bounded DataForSEO call, model identity validation, observed cost/task provenance and unknown-outcome errors without retries.
 - `citability-ai-handler.ts` — explicit authenticated same-origin review, safe refetch/hash binding and durable per-user/IP/snapshot admission before spending.
 - `site-index-validate.ts` — exact historical unversioned rule identities remain readable; new T2 evidence explicitly marks the corrected v2 heuristic inventory.
+- `kb-evidence-observations.ts` — the immutable website evidence observation library: the newest observation for one exact `(kind, url)`, a time-only freshness verdict and one appended row per real fetch. Reuse is never decided on `bodyHash`; confirming by hash would move an old snapshot's observation time to today. Server only.
+- `kb-evidence-reuse.ts` — pure plan for one update run: which targets are reused, which are fetched, and the single fetch that opens each target's crawl gate. It performs no work and spends no budget.
+- `kb-competitor-identity-cache.ts` — competitor brand name and aliases shared across accounts through `public_tool_crawl_cache` under the `geo-competitor-identity` namespace, 24 h, exact host, failing soft in both directions.
+- `kb-offsite-serp.ts` — three brand queries through the SERP client the On-Page Checker already builds, with a written, auditable table saying what each known domain publishes. The table classifies pages, never independence; own-site and confirmed-competitor results are dropped rather than relabelled third party.
+- `kb-offsite-verification.ts` — three-state entity cross-reference and four-state independence, both computed from a fetched body only. Finding no counter-evidence is `undetermined`, never `independent`, and a provider snippet can never reach `passed`.
+- `kb-first-party-proof.ts` — R11 observation of author, reviewer, publication date, visible bylines and first-party data candidates on own-site pages. It records what markup is present and grants no credential, verification or score.
+- `kb-offsite-collect.ts` — bounded orchestration of the three: 3 SERP queries, 8 landing pages, 8 s per page and 30 s in total through the shared SSRF-safe gated reader. Over budget it returns the finished part plus explicit `incomplete` markers, and a group it did not read is never listed as collected.
 
 The isolated Chromium service and enforced Linux runtime live in `apps/marketing/scripts/citability-renderer*`, not in the Next bundle. Local SQL and mocked-provider/browser evidence are documented separately from production evidence in the alignment review directory.
+- `kb-item-identity.ts` — 两套文本归一化，分得很清楚：身份用的那套只折大小写、兼容形、不可见字符和空白，标点符号一律保留；相似度用的那套有损，只决定要不要问 Owner。共用一套会让 Pro 与 Pro+ 变成同一个条目。
+- `kb-item-key.ts` — 条目 key 的 sha256，以及一条服务端完整性断言：存下来的 key 必须真的由该条目内容派生。浏览器侧没有 sha256，所以「解析通过」不等于身份可信。
+- `kb-knowledge-shape.ts` — 草稿 v3 与已发布知识包 v2 共用的一份内容形状、原子和上限。浏览器可安全 import：没有摘要、没有仓储、没有服务端模块。
+- `kb-v3-contract.ts` — 草稿 payload v3：锁定的生成输入、不可变的知识体、可自由编辑的审阅，两个哈希域互不影响。解析时强制核对引用、数字字面量、修正的落点与条目 key 的唯一性。
+- `kb-v3.test-fixtures.ts` — 一份完整可解析的 v3 草稿，外加一份两页价格互相矛盾的草稿——冲突时事实不给值，不替 Owner 挑赢家。
+- `kb-run-plan.ts` — 一次更新的纯决策核心：每个计费操作该复用、该探查、该开始还是该跳过。派发了但没看到结果的请求只探查、绝不自动重发。
+- `kb-run-ledger.ts` — run 与 operation 记录的解析，以及读写两侧共用的仓储契约。`finishOperation` 与 `probeOperation` 分开不是为了方便：前者报告我们亲眼看到的响应，后者报告我们对一个可能已计费的请求查到了什么，只有前者能写出「可重试」。
+- `kb-run-store.ts` — run 账本的 service-role RPC 传输层。分不清的失败一律 `unavailable`，编排层据此不动手：对一张专门用来拦第二次计费的表，会猜的传输层比会停的更糟。
+- `kb-run-advance.ts` — 一次调用只推进一个操作：读账本、跑 `planGeoRun`、做一件事、把结果写回去、交还租约。派发标记写在请求发出之前；派发之后出的任何岔子都是 `outcome_unknown`，不是可重试失败。
+- `kb-run-handler.ts` / `kb-run-runtime.ts` — 单 run 路由的准入与接线。客户端只能指名知识库和 run，不能指名要做什么工作：客户端给的 URL 等于让它决定拿这个账号的抓取预算去打谁。默认接线注册的是采集半边（见下两条）；模型步没有生产者，因此仍是 `unsupported`。生产者可以回答「没什么可更新的」，这个回答必须原样传到调用方：一个开了 run、发现无事可做、报 `complete` 的响应等于告诉 Owner 知识库已经更新过了。
+- `kb-run-collect.ts` — 一次更新观察哪些页面的纯计划：站点自己那页 + 每个已确认竞品那页。键从草稿派生而不是从位置派生（位置会在计划变化时移位，等于批准第二次计费）；**每个抓取闸门目标一个操作，不是每个 URL 一个**——`openCrawlGate` 把 apex 与 `www` 记在同一个额度上，分成两个操作就是把一个站一小时的额度一次更新花掉两份。保留的 URL 是草稿写的那个（含 `www`），归一成 apex 的是闸门身份，不是可以去读的地址。
+- `kb-run-collect-executor.ts` — 采集操作的生产者与执行器，两半出自同一份计划。TTL 内的观察直接复用：不发流量、不扣闸门，存着的那行就是操作结果。闸门拒绝（`rate_limited`）永远不写进证据库——它说的是我们自己的配额，不是那个站的事实，写进去会把真正的抓取压制一整个 TTL。抓到了却写不进库是 `outcome_unknown` 不是可重试：页面已经读过、额度已经花掉。`probe` 不发任何请求，只读账本。
+- `kb-knowledge-assemble.ts` (+ `-sources` / `-observed` / `-entity`) — 采集结果与模型 narrative v2 合成一份 v3 知识体：每个 itemKey 由内容派生，`cited_and_literals_match` 现场算过才敢写，算不出就是 `not_applicable`；拿不出证据的条目直接不进来并逐条记账（发布时的引用校验是整版一起过的，混进去一条就是整版发不出）。模型失败不清空页面：机器可读、证据、覆盖与站点自己的 FAQ 标记照常装配。
+- `kb-knowledge-merge.ts` — 一次更新与上一版草稿的合并（第 4.4 节）。同 key 同内容决定原样保留；同 key 同来源页内容变了保留决定但不改 `baseContentHash`（卡片据此说「有新观察」）；同 key 不同来源页两份观察并存，事实不给值只标 `conflicting`；措辞漂移只提示、永不继承决定；排除只按精确 key 生效，且排除会活得比条目久。

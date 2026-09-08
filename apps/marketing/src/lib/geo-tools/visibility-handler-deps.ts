@@ -41,8 +41,25 @@ async function listFrozenVersions(
 
   const choices: VisibilityFrozenChoice[] = [];
   for (const { host, snapshot } of list.value) {
+    // A v3 version may be published with no question set at all. This tool asks
+    // that version's frozen questions, so such a version is not a choice: it is
+    // left out rather than offered with a question count of zero, which would
+    // price a run at nothing and then measure nothing.
+    //
+    // Left out of the *choices*, not out of the account's state. This list is
+    // what the start endpoint validates a paid run against, so an unrunnable
+    // version must not appear in it; the version itself is reported by
+    // `/context` as `frozen: { kind: "unreadable" }`, which is what stops the
+    // form from calling such an account "no frozen version yet".
+    //
+    // The test is `questionSet === null`, deliberately not `is v3`: a v3
+    // version that does carry a question set is runnable -- the workflow reads
+    // every payload version through `geoVersionedPayloadIdentity` -- and
+    // excluding it here would take a working version away.
+    if (snapshot.questionSet === null) continue;
+    const questionSet = snapshot.questionSet;
     let retrievalCount: number;
-    try { retrievalCount = countGeoCitationQuestions(snapshot.questionSet); }
+    try { retrievalCount = countGeoCitationQuestions(questionSet); }
     catch { return { kind: "unavailable", reason: "frozen_question_policy_unavailable" }; }
     choices.push({
       kbId: snapshot.kbId,
@@ -50,10 +67,10 @@ async function listFrozenVersions(
       snapshotId: snapshot.snapshotId,
       revision: snapshot.revision,
       frozenAt: snapshot.frozenAt,
-      questionCount: snapshot.questionSet.questions.length,
+      questionCount: questionSet.questions.length,
       retrievalCount,
-      language: snapshot.questionSet.language,
-      marketCode: snapshot.questionSet.country,
+      language: questionSet.language,
+      marketCode: questionSet.country,
     });
   }
   return { kind: "ok", value: choices };

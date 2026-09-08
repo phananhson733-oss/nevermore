@@ -4,6 +4,7 @@
 import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";
 import { parseGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidenceV1 } from "./kb-knowledge-evidence.ts";
 import { buildGeoKnowledgePackV1, type GeoKnowledgePackV1 } from "./kb-knowledge-pack-contract.ts";
+import { geoLiteralsSupported } from "./kb-knowledge-shape.ts";
 import { parseGeoKnowledgeNarrativeV1, parseGeoKnowledgeSynthesisInputV1, type GeoKnowledgeNarrativeV1 } from "./kb-knowledge-synthesis-contract.ts";
 import { parseGeoKbPayloadV2, type GeoKbPayloadV2 } from "./kb-v2-contract.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
@@ -35,8 +36,7 @@ function same(left: unknown, right: unknown): boolean { return JSON.stringify(le
 function normalized(value: string): string { return value.normalize("NFC").toLocaleLowerCase("en").replace(/\s+/gu, " ").trim(); }
 function escaped(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"); }
 function containsExactPhrase(excerpt: string, value: string): boolean { return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped(value)}(?=$|[^\\p{L}\\p{N}])`, "iu").test(excerpt); }
-function numericLiterals(value: string): readonly string[] { return value.match(/[+-]?(?:[$€£¥]\s*)?\p{N}+(?:[.,:/-]\p{N}+)*(?:\s*[%％])?/gu) ?? []; }
-function containsExactFactValue(excerpt: string, value: string): boolean { const excerptLiterals = new Set(numericLiterals(excerpt)); return containsExactPhrase(excerpt, value) && numericLiterals(value).every(literal => excerptLiterals.has(literal)); }
+function containsExactFactValue(excerpt: string, value: string): boolean { return containsExactPhrase(excerpt, value) && geoLiteralsSupported(value, [excerpt]); }
 function unavailable(reason: UnavailableModule["reason"]): UnavailableModule { return { status: "unavailable", reason }; }
 function latestObservation(sourceRefs: readonly string[], evidence: GeoKnowledgeEvidenceV1): string | null { return sourceRefs.flatMap(ref => evidence.sourceCatalogue.find(source => source.id === ref)?.observedAt ?? []).sort().at(-1) ?? null; }
 function uniqueSourceRefs(sourceRefs: readonly string[]): string[] { return [...new Set(sourceRefs)]; }

@@ -4,8 +4,8 @@
 import { GEO_CONTENT_BRIEF_SCHEMA, geoGenerationLanguage } from "@sf/public-tools/content-brief/geo-contract";
 import { parseGeoContentBriefShape } from "@sf/public-tools/content-brief/parse-geo-brief";
 import { privateError, privateJson } from "../account-websites/route-http.ts";
-import type { VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
-import type { AnyGeoSnapshotContext } from "./snapshot-context-v2.ts";
+import { geoVersionedPayloadIdentity, isGeoKbPayloadV3Value, type VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
+import type { AnyGeoKnowledgePack, AnyVersionedGeoSnapshotContext } from "./kb-complete-read.ts";
 import type { BriefStoreOutcome } from "./brief-handler.ts";
 import { assembleSharedGeoBrief, sharedGeoBriefBasis, type SharedBriefRunEvidence } from "./brief-shared.ts";
 import type { runSharedGeoBriefLlm } from "./brief-shared-llm.ts";
@@ -13,7 +13,13 @@ import { assessGeoQuestionQuality, geoQuestionLanguageIssue, geoQuestionProperNa
 
 export interface SharedBriefHandlerDependencies {
   readonly readFrozen: (input: { userId: string; kbId: string; snapshotId: string }) => Promise<BriefStoreOutcome<VersionedGeoKbFrozenSnapshot>>;
-  readonly readContext: (input: { userId: string; kbId: string; snapshotId: string }) => Promise<BriefStoreOutcome<AnyGeoSnapshotContext | null>>;
+  readonly readContext: (input: { userId: string; kbId: string; snapshotId: string }) => Promise<BriefStoreOutcome<AnyVersionedGeoSnapshotContext | null>>;
+  /**
+   * The pack a v3 version publishes its facts in. Read only for a v3 version:
+   * for v1/v2 the facts are in the frozen context and this would be a second
+   * read that answers nothing.
+   */
+  readonly readKnowledgePack: (input: { userId: string; kbId: string; snapshotId: string }) => Promise<BriefStoreOutcome<AnyGeoKnowledgePack | null>>;
   readonly readRunEvidence: (input: { userId: string; runId: string; gapId: string; questionId: string; frozen: VersionedGeoKbFrozenSnapshot }) => Promise<BriefStoreOutcome<SharedBriefRunEvidence> | { kind: "not_eligible" }>;
   readonly configured: () => boolean;
   readonly assemble: typeof runSharedGeoBriefLlm;
@@ -39,15 +45,26 @@ export async function runSharedBrief(userId: string, raw: unknown, deps: SharedB
   const frozen = await deps.readFrozen(input);
   if (frozen.kind === "unavailable") return privateError("store_unavailable", 503);
   if (frozen.kind !== "ok" || frozen.value.kbId !== selection.kbId || frozen.value.snapshotId !== selection.snapshotId) return privateError("not_found", 404);
-  if (geoGenerationLanguage(frozen.value.payload.market.language) === null) return privateError("unsupported_language", 422);
-  if (selection.questionId !== null && !frozen.value.questionSet.questions.some(question => question.id === selection.questionId)) return privateError("not_found", 404);
-  const picked = frozen.value.questionSet.questions.find(question => question.id === selection.questionId);
+  const identity = geoVersionedPayloadIdentity(frozen.value.payload);
+  if (geoGenerationLanguage(identity.market.language) === null) return privateError("unsupported_language", 422);
+  // A Brief is written against a frozen question. A version published without a
+  // question set has none, so there is nothing here to write about.
+  const questionSet = frozen.value.questionSet;
+  if (questionSet === null) return privateError("not_found", 404);
+  if (selection.questionId !== null && !questionSet.questions.some(question => question.id === selection.questionId)) return privateError("not_found", 404);
+  const picked = questionSet.questions.find(question => question.id === selection.questionId);
   const questionInvalid = picked
-    ? !assessGeoQuestionQuality(frozen.value.payload, picked).ok
-    : geoQuestionLanguageIssue(selection.manualQuestion ?? "", frozen.value.payload.market.language, geoQuestionProperNames(frozen.value.payload));
+    ? !assessGeoQuestionQuality(identity, picked).ok
+    : geoQuestionLanguageIssue(selection.manualQuestion ?? "", identity.market.language, geoQuestionProperNames(identity));
   if (questionInvalid) return privateError("question_needs_review", 422);
   const context = await deps.readContext(input);
   if (context.kind !== "ok") return privateError("store_unavailable", 503);
+  let knowledgePack: AnyGeoKnowledgePack | null = null;
+  if (isGeoKbPayloadV3Value(frozen.value.payload)) {
+    const pack = await deps.readKnowledgePack(input);
+    if (pack.kind !== "ok") return privateError("store_unavailable", 503);
+    knowledgePack = pack.value;
+  }
   let evidence: SharedBriefRunEvidence | null = null;
   if (selection.runId !== null && selection.gapId !== null && selection.questionId !== null) {
     const resolved = await deps.readRunEvidence({ userId, runId: selection.runId, gapId: selection.gapId, questionId: selection.questionId, frozen: frozen.value });
@@ -59,11 +76,11 @@ export async function runSharedBrief(userId: string, raw: unknown, deps: SharedB
   }
   const start = now();
   let basis;
-  try { basis = sharedGeoBriefBasis({ frozen: frozen.value, context: context.value, questionId: selection.questionId, questionText: selection.manualQuestion?.trim() ?? "", runEvidence: evidence, runId: deps.runId(), now: new Date(start).toISOString() }); } catch { return privateError("store_unavailable", 503); }
+  try { basis = sharedGeoBriefBasis({ frozen: frozen.value, context: context.value, knowledgePack, questionId: selection.questionId, questionText: selection.manualQuestion?.trim() ?? "", runEvidence: evidence, runId: deps.runId(), now: new Date(start).toISOString() }); } catch { return privateError("store_unavailable", 503); }
   if (!parseGeoContentBriefShape(basis).ok) return privateError("brief_unavailable", 422);
   if (!deps.configured()) return privateError("provider_unconfigured", 503);
   if (!await consume(userId)) return privateJson({ error: { code: "daily_limit" }, limit: 20 }, 429);
-  const reply = await deps.assemble(basis, { properNames: geoQuestionProperNames(frozen.value.payload) });
+  const reply = await deps.assemble(basis, { properNames: geoQuestionProperNames(identity) });
   basis.run.elapsed_ms = Math.max(0, now() - start);
   const brief = await assembleSharedGeoBrief(basis, reply);
   return privateJson({ data: { brief } });

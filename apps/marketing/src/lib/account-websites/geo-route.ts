@@ -13,12 +13,48 @@ import {
 } from "./route-http.ts";
 import type { GeoKbStoreOutcome, GeoKbView } from "../geo-tools/kb-handler.ts";
 import type { GeoKbEditorViewV2 } from "../../components/tools/geo-kb-v2-wire.ts";
+import type { GeoKbEditorViewV3Wire } from "../geo-tools/kb-editor-loader.ts";
 import { privateGeoEditorJson } from "../geo-tools/kb-editor-response.ts";
+
+/**
+ * The three stored formats this route can answer with. It never picks one: the
+ * loader answers with whichever the knowledge base actually holds, and
+ * `schemaVersion` -- absent on v1, a different literal for each of the other
+ * two -- is what the browser discriminates on.
+ */
+export type WebsiteGeoKnowledgeBase = GeoKbView | GeoKbEditorViewV2 | GeoKbEditorViewV3Wire;
+
+/**
+ * Pinned against the wire type rather than written twice: renaming the
+ * discriminator on `GeoKbEditorViewV3Wire` makes this assignment fail to
+ * compile instead of silently turning every v3 load into a v1 one.
+ */
+const V3_SCHEMA_VERSION: GeoKbEditorViewV3Wire["schemaVersion"] = "marketing-geo-kb-editor.v3";
+
+function isV3(knowledgeBase: WebsiteGeoKnowledgeBase): knowledgeBase is GeoKbEditorViewV3Wire {
+  return "schemaVersion" in knowledgeBase && knowledgeBase.schemaVersion === V3_SCHEMA_VERSION;
+}
+
+/**
+ * Whether the loaded knowledge base names the website this route resolved.
+ *
+ * The three formats say so in three places. A v1/v2 view carries an inherited
+ * Profile and a stored Profile copy, either of which may be absent. A v3 draft
+ * carries neither: the confirmed revision its generation was locked to is named
+ * by `profileRef`, so that is the field the same question is asked of. Skipping
+ * the check for v3 would make it the one format this route hands back with
+ * another website's product facts in it.
+ */
+function namesThisWebsite(knowledgeBase: WebsiteGeoKnowledgeBase, websiteId: string): boolean {
+  if (isV3(knowledgeBase)) return knowledgeBase.payload.generationInput.profileRef.websiteId === websiteId;
+  return (knowledgeBase.profile == null || knowledgeBase.profile.reference.websiteId === websiteId)
+    && (knowledgeBase.payload.profileCopy === undefined || knowledgeBase.payload.profileCopy.websiteId === websiteId);
+}
 
 export interface WebsiteGeoDependencies {
   readonly authenticate: typeof authenticateAccountRequest;
   readonly readWebsite: typeof readAccountWebsite;
-  readonly loadKnowledgeBase: (input: { readonly userId: string; readonly url: string }) => Promise<GeoKbStoreOutcome<GeoKbView | GeoKbEditorViewV2>>;
+  readonly loadKnowledgeBase: (input: { readonly userId: string; readonly url: string }) => Promise<GeoKbStoreOutcome<WebsiteGeoKnowledgeBase>>;
 }
 
 export async function handleWebsiteGeoLoad(
@@ -54,8 +90,7 @@ export async function handleWebsiteGeoLoad(
   // Refuse inconsistent store output instead of returning another site's data.
   const site = normalizeAccountWebsiteUrl(loaded.value.origin);
   if (site === null || site.canonicalSiteKey !== website.canonicalSiteKey ||
-      (loaded.value.profile != null && loaded.value.profile.reference.websiteId !== websiteId) ||
-      (loaded.value.payload.profileCopy !== undefined && loaded.value.payload.profileCopy.websiteId !== websiteId)) {
+      !namesThisWebsite(loaded.value, websiteId)) {
     return privateError("store_unavailable", 503);
   }
   const respond = "schemaVersion" in loaded.value ? privateGeoEditorJson : privateJson;

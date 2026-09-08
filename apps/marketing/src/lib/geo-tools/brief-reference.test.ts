@@ -26,10 +26,12 @@ async function fixture(frozenOrComplete: VersionedGeoKbFrozenSnapshot | boolean 
       contentHash: geoKbDigest(payload as unknown as GeoKbValue), questionSetHash: geoQuestionSetDigest(SHARED_FROZEN.questionSet) };
   } else {
     const contentHash = frozenOrComplete.payload.schemaVersion === "marketing-geo-kb.v2" ? geoV2Digest(frozenOrComplete.payload) : geoKbDigest(frozenOrComplete.payload as unknown as GeoKbValue);
-    const questionSetHash = frozenOrComplete.questionSet.schemaVersion === "marketing-geo-question-set.v2" ? geoV2Digest(frozenOrComplete.questionSet) : geoQuestionSetDigest(frozenOrComplete.questionSet);
-    frozen = { ...frozenOrComplete, contentHash, questionSetHash, questionCount: frozenOrComplete.questionSet.questions.length };
+    const questionSet = frozenOrComplete.questionSet;
+    if (questionSet === null) throw new Error("fixture question set required");
+    const questionSetHash = questionSet.schemaVersion === "marketing-geo-question-set.v2" ? geoV2Digest(questionSet) : geoQuestionSetDigest(questionSet);
+    frozen = { ...frozenOrComplete, contentHash, questionSetHash, questionCount: questionSet.questions.length };
   }
-  const basis = sharedGeoBriefBasis({ frozen, context: null, questionId, questionText, runEvidence: null, runId: "offline-brief", now: "2026-08-31T00:00:00.000Z" });
+  const basis = sharedGeoBriefBasis({ frozen, context: null, knowledgePack: null, questionId, questionText, runEvidence: null, runId: "offline-brief", now: "2026-08-31T00:00:00.000Z" });
   const brief = await assembleSharedGeoBrief(basis, { ok: true, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: basis.must_answer.items.map((q) => q.id), provenance: { method: "model", derived_from: ["kb"] } }] });
   const dependencies: GeoBriefReferenceDependencies = {
     readFrozen: vi.fn(async () => ({ kind: "ok" as const, value: frozen })),
@@ -130,7 +132,7 @@ describe("server-owned GEO Brief verification", () => {
   it("does not accept an imported visibility origin without a server-owned run", async () => {
     const { dependencies, frozen } = await fixture();
     const runEvidence = { runId: "unowned-run", fingerprint: "c".repeat(64), gap: "D" as const, samples: [{ id: "slot-1", run_id: "unowned-run", question_id: "q1", engine: "chatgpt", collected_at: "2026-08-31T00:00:00.000Z", status: "answered" as const, search_enabled: true, excerpt: "Observed offline answer", topics: ["Setup"] }], siteIndex: [] };
-    const basis = sharedGeoBriefBasis({ frozen, context: null, questionId: "q1", questionText: "", runEvidence, runId: "brief-run", now: "2026-08-31T00:00:00.000Z" });
+    const basis = sharedGeoBriefBasis({ frozen, context: null, knowledgePack: null, questionId: "q1", questionText: "", runEvidence, runId: "brief-run", now: "2026-08-31T00:00:00.000Z" });
     const brief = await assembleSharedGeoBrief(basis, { ok: true, outline: [{ id: "O1", h2: "Compare", h3: [], answers: basis.must_answer.items.map((q) => q.id), provenance: { method: "model", derived_from: ["kb", "ai_sample"] } }] });
     expect(await verifyOwnedGeoBrief(brief, "account-a", dependencies)).toBe(false);
     expect(dependencies.readRun).toHaveBeenCalledWith({ userId: "account-a", runId: "unowned-run" });
@@ -148,10 +150,11 @@ describe("server-owned GEO Brief verification", () => {
     const profile = inheritedProfileFromCopy(frozen.payload.profileCopy);
     const prepared = buildGeoSnapshotContext({ kbId: frozen.kbId, targetHost: "fixture.example", payload: frozen.payload, profile, receipt: null });
     const { contentHash: _old, ...preparedBody } = prepared.context;
+    if (frozen.questionSetHash === null) throw new Error("fixture question set hash required");
     const body = { ...preparedBody, questionSetHash: frozen.questionSetHash };
     const context = { ...body, contentHash: geoSnapshotContextHash(body) };
     vi.mocked(dependencies.readContext).mockResolvedValue({ kind: "ok", value: context });
-    const basis = sharedGeoBriefBasis({ frozen, context, questionId: "q1", questionText: "", runEvidence: null, runId: "complete-brief", now: "2026-08-31T00:00:00.000Z" });
+    const basis = sharedGeoBriefBasis({ frozen, context, knowledgePack: null, questionId: "q1", questionText: "", runEvidence: null, runId: "complete-brief", now: "2026-08-31T00:00:00.000Z" });
     const brief = await assembleSharedGeoBrief(basis, { ok: true, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: basis.must_answer.items.map(q => q.id), provenance: { method: "model", derived_from: ["kb"] } }] });
     expect(await verifyOwnedGeoBrief(brief, "account-a", dependencies)).toBe(true);
     expect(brief.geo_origin.profile_ref?.profile_hash).toBe(frozen.payload.profileCopy?.profileHash);

@@ -126,6 +126,23 @@ describe("actual enrichment runtime adapters", () => {
     for (const release of releases) expect(release).toHaveBeenCalledOnce();
   });
 
+  it("consumes one admission for an apex host and its www sibling", async () => {
+    // `openCrawlGate` budgets both against the same target key, so admitting
+    // them separately spends a site's hourly allowance twice for one origin
+    // family -- and `planGeoEvidenceReuse` promises one opening per gate key,
+    // which is only true if the reader agrees about what a gate key is.
+    const openGate = vi.fn(async (_clientKey: string, _url: string) => ({ ok: true as const, kind: "crawl" as const, release: vi.fn() }));
+    const fetchResource = vi.fn(async (url: string) => ({ kind: "ok" as const, requestedUrl: url, finalUrl: url, firstStatus: 200, finalStatus: 200,
+      contentType: "text/plain", xRobotsTag: null, body: "bounded", bytes: 7, bodyComplete: true, redirectChain: [] }));
+    const reader = createGeoKnowledgeResourceReader("owner-1", { openGate, fetchResource });
+
+    await reader({ url: "https://www.example.com/" });
+    await reader({ url: "https://example.com/pricing" });
+
+    expect(openGate.mock.calls.map(([, url]) => url)).toEqual(["https://www.example.com/"]);
+    expect(fetchResource).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     [{ kind: "error", code: "timeout" } as const, "timeout"],
     [{ kind: "error", code: "blocked" } as const, "blocked"],

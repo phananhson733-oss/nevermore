@@ -4,7 +4,8 @@
 import { randomUUID } from "node:crypto";
 import { canonicalize, fingerprintCanonical } from "@sf/public-tools/content-brief/canonical";
 import type { GeoContentBrief } from "@sf/public-tools/content-brief/geo-contract";
-import { readVersionedFrozenGeoKb } from "./kb-versioned-read.ts";
+import { geoVersionedPayloadIdentity, readVersionedFrozenGeoKb } from "./kb-versioned-read.ts";
+import { readCompleteGeoKnowledgeBase } from "./kb-complete-read.ts";
 import { readVersionedGeoSnapshotContext } from "./asset-context-store.ts";
 import { projectFrozenGeoQuestions } from "./kb-consumer-projection.ts";
 import { resolveOwnedVisibilityGap } from "./owned-gap.ts";
@@ -20,10 +21,15 @@ export async function resolveSharedBriefRunEvidence(input: Parameters<SharedBrie
   if (resolved.kind !== "ok") return { kind: "unavailable", reason: "run_unavailable" };
   const { report, gap, siteEvidence } = resolved.value;
   const manifest = report.manifest;
-  if (report.context.targetHost !== normalizeGeoHost(input.frozen.payload.targetUrl) || siteEvidence.index.targetHost !== report.context.targetHost) return { kind: "unavailable", reason: "run_site_mismatch" };
-  const frozenQuestion = projectFrozenGeoQuestions(input.frozen.questionSet).find(question => question.id === input.questionId);
+  const identity = geoVersionedPayloadIdentity(input.frozen.payload);
+  // A run measures a version's frozen questions. A version with none was never
+  // runnable, so no run can be evidence for it.
+  const questionSet = input.frozen.questionSet;
+  if (questionSet === null) return { kind: "unavailable", reason: "run_snapshot_mismatch" };
+  if (report.context.targetHost !== normalizeGeoHost(identity.targetUrl) || siteEvidence.index.targetHost !== report.context.targetHost) return { kind: "unavailable", reason: "run_site_mismatch" };
+  const frozenQuestion = projectFrozenGeoQuestions(questionSet).find(question => question.id === input.questionId);
   const question = report.questions.find(row => row.questionId === input.questionId);
-  if (manifest.kbId !== input.frozen.kbId || manifest.snapshotId !== input.frozen.snapshotId || manifest.snapshotRevision !== input.frozen.revision || manifest.questionSetHash !== input.frozen.questionSetHash || manifest.marketCode !== input.frozen.payload.market.country || manifest.language !== input.frozen.payload.market.language || frozenQuestion === undefined || question === undefined || canonicalize(question.definition) !== canonicalize(frozenQuestion)) return { kind: "unavailable", reason: "run_snapshot_mismatch" };
+  if (manifest.kbId !== input.frozen.kbId || manifest.snapshotId !== input.frozen.snapshotId || manifest.snapshotRevision !== input.frozen.revision || manifest.questionSetHash !== input.frozen.questionSetHash || manifest.marketCode !== identity.market.country || manifest.language !== identity.market.language || frozenQuestion === undefined || question === undefined || canonicalize(question.definition) !== canonicalize(frozenQuestion)) return { kind: "unavailable", reason: "run_snapshot_mismatch" };
   const samples: GeoContentBrief["evidence"]["samples"] = [];
   for (const sample of question.samples) {
     if (sample.status === "ok" && (sample.answerExcerpt === null || sample.subtopics === null || sample.subtopicsOmitted !== 0 || sample.observedAt === null)) return { kind: "unavailable", reason: "run_evidence_incomplete" };
@@ -36,6 +42,10 @@ export async function resolveSharedBriefRunEvidence(input: Parameters<SharedBrie
 export const DEFAULT_SHARED_BRIEF_DEPENDENCIES: SharedBriefHandlerDependencies = {
   readFrozen: async input => { const value = await readVersionedFrozenGeoKb(input); return value.kind === "ok" ? value : value.kind === "missing" ? { kind: "not_found" } : { kind: "unavailable", reason: "snapshot_unavailable" }; },
   readContext: async input => { const value = await readVersionedGeoSnapshotContext(input); return value.kind === "ok" ? value : { kind: "unavailable", reason: "context_unavailable" }; },
+  // The complete read is what binds a version to its candidate, and the pack
+  // only exists inside that candidate. Reading it any other way would hand the
+  // Brief a pack nobody proved belongs to this version.
+  readKnowledgePack: async input => { const value = await readCompleteGeoKnowledgeBase(input); return value.kind === "ok" ? { kind: "ok", value: value.value.knowledgePack } : value.kind === "missing" ? { kind: "not_found" } : { kind: "unavailable", reason: "knowledge_pack_unavailable" }; },
   readRunEvidence: resolveSharedBriefRunEvidence,
   configured: () => resolveGeoBriefLlmConfig() !== null,
   assemble: runSharedGeoBriefLlm,

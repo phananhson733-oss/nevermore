@@ -116,6 +116,26 @@ describe("durable GEO semantic generation", () => {
       invoke: async () => ({ ok: false, reason: "invalid_output", delivery: "response_received" }),
     })).toMatchObject({ kind: "ok", generation: { state: "failed", errorReason: "invalid_output" } });
   });
+  it("says which check rejected the output, and never stores it", async () => {
+    // A bare `invalid_output` is why a repeated production failure of the roles
+    // step could not be diagnosed at all. The token is returned to the caller
+    // and deliberately left out of the stored record, whose key set is fixed by
+    // a database CHECK.
+    const { dependencies } = fixture();
+    const outcome = await executeGeoKbGeneration(request(), { ...dependencies,
+      invoke: async () => ({ ok: false, reason: "invalid_output", delivery: "response_received", rejection: "schema_invalid:roles.numeric_claim" }),
+    });
+    expect(outcome).toMatchObject({ kind: "ok", rejection: "schema_invalid:roles.numeric_claim" });
+    expect(JSON.stringify(outcome.kind === "ok" ? outcome.generation : {})).not.toContain("numeric_claim");
+  });
+
+  it("reports no rejection when the model was never the problem", async () => {
+    const { dependencies } = fixture();
+    expect(await executeGeoKbGeneration(request(), { ...dependencies,
+      invoke: async () => ({ ok: false, reason: "outcome_unknown", delivery: "outcome_unknown" }),
+    })).toMatchObject({ kind: "ok", rejection: null });
+  });
+
   it("retains spent usage even when the provider response fails semantic validation", async () => {
     const { dependencies } = fixture();
     const attempt = { attemptedCalls: 1 as const, delivery: "response_received" as const, modelRequested: "configured-model", inputTokens: 200, outputTokens: 50, requestCount: 1 };

@@ -13,10 +13,23 @@ import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
 import { geoKnowledgePackFixture } from "./geo-knowledge-pack.test-fixtures.ts";
 import type { GeoKbFrozenSummary } from "./geo-kb-wire.ts";
 
-let host: HTMLDivElement, root: Root;
-beforeEach(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; host = document.createElement("div"); document.body.append(host); root = createRoot(host); sessionStorage.clear(); vi.stubGlobal("fetch", vi.fn()); });
+let host: HTMLDivElement, root: Root, onStarted: ReturnType<typeof vi.fn<() => void>>;
+beforeEach(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; host = document.createElement("div"); document.body.append(host); root = createRoot(host); sessionStorage.clear(); onStarted = vi.fn<() => void>(); vi.stubGlobal("fetch", vi.fn()); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
-async function render(view = editorFixture(), locale = "en") { await act(async () => root.render(<NextIntlClientProvider locale={locale} timeZone="UTC" messages={locale === "zh" ? zh : en}><GeoKnowledgeBaseV2 initialView={view} locale={locale} inline confirmedProfileRevision={1} /></NextIntlClientProvider>)); }
+async function render(view = editorFixture(), locale = "en") { await act(async () => root.render(<NextIntlClientProvider locale={locale} timeZone="UTC" messages={locale === "zh" ? zh : en}><GeoKnowledgeBaseV2 initialView={view} locale={locale} inline confirmedProfileRevision={1} onStarted={onStarted} /></NextIntlClientProvider>)); }
+/**
+ * A knowledge base with nothing stored in it: no draft and no published
+ * version. `draftVersion: 0` and `draftHash: null` are not free choices -- the
+ * wire parser refuses any view where the two disagree -- and the website GEO
+ * route answers exactly this for an owner who has never built one
+ * (`../../lib/geo-tools/kb-editor-loader.reachability.test.ts` reads it off the
+ * HTTP body).
+ */
+function emptyView(overrides: Partial<ReturnType<typeof editorFixture>> = {}) {
+  const base = editorFixture();
+  return { ...base, draftVersion: 0, draftHash: null, requiresSave: true, frozen: null, prepared: null, sourceReceipt: null, ...overrides };
+}
+const CREATED = { kbId: editorFixture().kbId, draftVersion: 1, contentHash: "c".repeat(64), updatedAt: "2026-09-07T00:00:00.000Z", generationInputHash: "e".repeat(64), blockers: [] };
 async function click(selector: string) { const node = host.querySelector<HTMLElement>(selector); if (!node) throw new Error(selector); await act(async () => node.click()); }
 const editor = en.tools.geoKnowledgeBase.editor;
 it("keeps a failed update customer-facing beside the previous knowledge", async () => {
@@ -406,4 +419,258 @@ it.each(["en", "zh"])("renders no untranslated key path in %s", async locale => 
   await render({ ...base, frozen: { kbId: base.kbId, snapshotId: candidate.candidateId, revision: 1, frozenAt: "2026-08-31T00:00:00.000Z", contentHash: base.draftHash!, questionSetHash: candidate.context.questionSetHash, questionCount: candidate.questionSet.questions.length, payload: candidate.payload, questionSet: candidate.questionSet, context: candidate.context } }, locale);
   expect(host.textContent).not.toMatch(/tools\.geoKnowledgeBase\./u);
   expect(host.textContent).not.toMatch(/account\.websites\./u);
+});
+
+const cardCopy = (locale: string) => (locale === "zh" ? zh : en).tools.geoKnowledgeBase.card;
+
+/**
+ * The customer sentences used to live in two inline locale literals inside the
+ * component, which put shipped copy outside the catalog and left three catalog
+ * keys orphaned behind it. Pinned to the catalog value, in both locales, so a
+ * silent regression to a hard-coded string fails here.
+ */
+it.each(["en", "zh"])("reads its customer status line from the catalog in %s", async locale => {
+  const base = editorFixture();
+  await render({ ...base, frozen: frozenAt(base, base.draftHash!), generations: { ...base.generations,
+    roles: { generationId: "44444444-4444-4444-8444-444444444444", kbId: base.kbId, kind: "roles", inputHash: "a".repeat(64),
+      state: "failed", result: null, errorReason: "invalid_output", attempt: { attemptedCalls: 1, delivery: "response_received",
+        modelRequested: "private-model", inputTokens: 12, outputTokens: 34, requestCount: 1 } },
+  } }, locale);
+
+  expect(host.querySelector("[data-kb-state]")?.textContent).toBe(cardCopy(locale).state.failed);
+  expect(host.querySelector('[data-read-generation="roles"]')?.textContent).toBe(cardCopy(locale).state.check);
+});
+
+it("leaves no orphaned generate-state keys behind the migrated copy", () => {
+  for (const messages of [en, zh]) {
+    const editorKeys = Object.keys(messages.tools.geoKnowledgeBase.editor as Record<string, unknown>);
+    for (const removed of ["generateNone", "generateCurrent", "generateStale"]) {
+      expect(editorKeys, removed).not.toContain(removed);
+    }
+    expect(Object.keys(messages.tools.geoKnowledgeBase as Record<string, unknown>)).toContain("card");
+  }
+});
+
+it("draws the shared knowledge base card shell without inventing actions this flow does not have", async () => {
+  await render();
+
+  expect(host.querySelector("[data-geo-kb-card]")).not.toBeNull();
+  expect(host.querySelector("[data-geo-kb-v2]")).not.toBeNull();
+  // This flow still generates and freezes in one gesture, so there is no
+  // separate free publish action and no reviewable draft to section up yet.
+  expect(host.querySelector("[data-publish-kb]")).toBeNull();
+  expect(host.querySelector("[data-kb-publish-box]")).toBeNull();
+  expect(host.querySelector("[data-kb-section]")).toBeNull();
+});
+
+/* ------------------------------------------------------------------ */
+/* Starting a knowledge base that does not exist yet                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The cut between the two formats, from the card's side.
+ *
+ * Nothing in the product created a v3 draft: `createGeoKbV3Draft` had no
+ * non-test caller, so an empty knowledge base got the v2 card, its button wrote
+ * a v2 draft, and the create route then refused that draft forever. These pin
+ * which knowledge base is offered the new start gesture and which is left
+ * exactly where it was.
+ */
+it("starts a v3 knowledge base for one with nothing stored, rather than writing a v1/v2 draft", async () => {
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ data: CREATED }));
+  await render(emptyView());
+
+  expect(host.querySelector("[data-geo-kb-start]")).not.toBeNull();
+  expect(host.querySelector("[data-geo-kb-v2]")).toBeNull();
+  // Creating writes a draft and spends one of the few creates an hour this
+  // knowledge base is allowed. Rendering must not do it.
+  expect(fetch).not.toHaveBeenCalled();
+
+  await click("[data-generate-kb]");
+
+  expect(vi.mocked(fetch).mock.calls.map(call => call[0])).toEqual(["/api/tools/geo-knowledge-base/v3/draft"]);
+  // The literal zero the route requires: a create that sent the version it
+  // happened to believe in would overwrite whatever another tab had written.
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body))).toEqual({ kbId: editorFixture().kbId, baseVersion: 0 });
+  expect(onStarted).toHaveBeenCalledTimes(1);
+});
+
+it("leaves a knowledge base that already has a published version on the card that can read it", async () => {
+  const base = editorFixture();
+  // No draft, but a frozen v1/v2 version. Starting a v3 draft here is what the
+  // v3 loader refuses as `v3_predecessor_unsupported`, which the website route
+  // turns into 503 -- for good, not for a moment.
+  await render(emptyView({ frozen: frozenAt(base, base.draftHash!) }));
+
+  expect(host.querySelector("[data-geo-kb-start]")).toBeNull();
+  expect(host.querySelector("[data-geo-kb-v2]")).not.toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("leaves a knowledge base with a stored draft on the v2 card", async () => {
+  await render();
+  expect(host.querySelector("[data-geo-kb-start]")).toBeNull();
+  expect(host.querySelector("[data-geo-kb-v2]")).not.toBeNull();
+});
+
+it.each([
+  ["en", ["billed model call", "crawls your site"]],
+  ["zh", ["计费", "抓取"]],
+])("claims no charge in %s for a step that makes none", async (locale, forbidden) => {
+  await render(emptyView(), locale);
+  // The shell's own cost sentence describes the update run, which is the next
+  // press on the review card this hands over to -- not this one.
+  expect(host.querySelector("[data-kb-cost]")).toBeNull();
+  for (const phrase of forbidden) expect(renderedText(host), phrase).not.toContain(phrase);
+  // And the v2 flow's three-call sentence is not being reused either.
+  expect(renderedText(host)).not.toContain(editor.generateCost);
+});
+
+it("re-reads rather than reporting a failure when the knowledge base turns out to have a draft already", async () => {
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "draft_exists" }, draftVersion: 4 }, { status: 409 }));
+  await render(emptyView());
+
+  await click("[data-generate-kb]");
+
+  // Whatever is stored, this card has stopped describing it; a start button
+  // left over the top would offer to create a second first draft.
+  expect(onStarted).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("keeps a Profile that has to be fixed apart from a failure to retry, and from success", async () => {
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "profile_unusable" }, fields: ["/subset/productName"] }, { status: 422 }));
+  await render(emptyView());
+  await click("[data-generate-kb]");
+  const invalid = host.querySelector('[role="alert"]')?.textContent;
+
+  expect(invalid).toBe(cardCopy("en").state.invalid);
+  expect(onStarted).not.toHaveBeenCalled();
+  // Nothing about the refusal reaches the screen: the code names an internal
+  // projection, and the field list names Profile internals.
+  expect(host.textContent).not.toContain("profile_unusable");
+  expect(host.textContent).not.toContain("/subset/productName");
+
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  vi.mocked(fetch).mockReset();
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "store_unavailable" } }, { status: 503 }));
+  await render(emptyView());
+  await click("[data-generate-kb]");
+  const failed = host.querySelector('[role="alert"]')?.textContent;
+
+  expect(failed).toBe(cardCopy("en").state.error);
+  // Three outcomes, three answers. Two of them reading the same sentence would
+  // send an owner to retry a refusal that will never change on its own.
+  expect(failed).not.toBe(invalid);
+  expect(onStarted).not.toHaveBeenCalled();
+});
+
+/**
+ * The status line over a knowledge base with nothing in it.
+ *
+ * Pinned in both locales and written out, because it was provably unpinned:
+ * replacing `copy.status.none` with `copy.status.draft` on this card left all
+ * 552 unit files green while the card announced "A draft is ready for you to
+ * publish" over a knowledge base that holds nothing at all. Filling the
+ * expectation from `cardCopy(locale).status.none` would not have caught it
+ * either -- that reads the same leaf the component rendered from.
+ */
+it.each([
+  ["en", "No knowledge base version yet.", "A draft is ready for you to publish."],
+  ["zh", "还没有知识库版本。", "草稿已就绪，等你发布。"],
+])("says a knowledge base with nothing stored has nothing stored, in %s", async (locale, empty, draft) => {
+  await render(emptyView(), locale);
+
+  expect(host.querySelector("[data-kb-state]")?.textContent).toBe(empty);
+  expect(renderedText(host)).not.toContain(draft);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+/**
+ * The three outcomes of a create, over their whole membership.
+ *
+ * The test above these drove one member of the four-member "the Profile has to
+ * be fixed" set and one of the three-member "something is already stored" set,
+ * so dropping any of the other five from either list left the suite green --
+ * and dropping one from the first list sends an owner to retry a refusal that
+ * will never change on its own, while dropping one from the second leaves a
+ * start button standing over a draft that already exists.
+ */
+const INVALID_SENTENCE = "The website information cannot be used yet. Check and save it before trying again.";
+const ERROR_SENTENCE = "The update could not finish. Please try again later.";
+
+it.each([
+  ["profile_unusable", 422],
+  ["profile_not_confirmed", 409],
+  ["website_not_found", 404],
+  ["draft_invalid", 422],
+])("sends %s to the Profile that has to be fixed, never to a retry", async (code, status) => {
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code } }, { status }));
+  await render(emptyView());
+
+  await click("[data-generate-kb]");
+
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(INVALID_SENTENCE);
+  expect(onStarted).not.toHaveBeenCalled();
+  // The code names an internal projection; it is never the customer's word.
+  expect(host.textContent).not.toContain(code);
+});
+
+it.each([
+  ["draft_exists", 409, 4],
+  ["legacy_draft", 409, 2],
+  ["conflict", 409, 7],
+])("re-reads rather than failing when %s says something is already stored", async (code, status, draftVersion) => {
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code }, draftVersion }, { status }));
+  await render(emptyView());
+
+  await click("[data-generate-kb]");
+
+  // Whatever is stored, this card has stopped describing it. Leaving a start
+  // button over it would offer to create a second first draft.
+  expect(onStarted).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
+it.each([
+  ["store_unavailable", 503],
+  ["rate_limited", 429],
+  ["auth_required", 401],
+  ["invalid_request", 400],
+])("reports %s as a failure to try again, not as a Profile to fix", async (code, status) => {
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code } }, { status }));
+  await render(emptyView());
+
+  await click("[data-generate-kb]");
+
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(ERROR_SENTENCE);
+  expect(ERROR_SENTENCE).not.toBe(INVALID_SENTENCE);
+  expect(onStarted).not.toHaveBeenCalled();
+});
+
+it("reports a request that never reached the server as a failure to try again", async () => {
+  vi.mocked(fetch).mockRejectedValueOnce(new TypeError("offline"));
+  await render(emptyView());
+
+  await click("[data-generate-kb]");
+
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(ERROR_SENTENCE);
+  expect(onStarted).not.toHaveBeenCalled();
+});
+
+it("creates one first draft however fast the button is pressed", async () => {
+  // Never settles, so the card stays in flight for the whole test.
+  vi.mocked(fetch).mockReturnValue(new Promise<Response>(() => undefined));
+  await render(emptyView());
+  const node = host.querySelector<HTMLElement>("[data-generate-kb]");
+  if (node === null) throw new Error("no start button");
+
+  // Both clicks in one task, which is the only case a guard can fail at and
+  // the only one `disabled` does not already cover: React has not re-rendered
+  // between them, so the button is still enabled and both run the same handler
+  // closure -- holding the same `state`. Measured before the fix: two creates.
+  await act(async () => { node.click(); node.click(); });
+
+  expect(fetch).toHaveBeenCalledTimes(1);
 });

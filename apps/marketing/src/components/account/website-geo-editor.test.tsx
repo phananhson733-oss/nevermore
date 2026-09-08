@@ -8,6 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import en from "../../i18n/messages/en.json";
 import { emptyGeoKbPayload } from "../../lib/geo-tools/kb-contract.ts";
 import { completePayloadV2, V2_KB_ID } from "../../lib/geo-tools/kb-v2.test-fixtures.ts";
+import { completePayloadV3, V3_KB_ID } from "../../lib/geo-tools/kb-v3.test-fixtures.ts";
+import { parseGeoKbPayloadV3 } from "../../lib/geo-tools/kb-v3-contract.ts";
+import { geoV2Digest } from "../../lib/geo-tools/kb-v2-digest.ts";
 import { WebsiteGeoEditor } from "./website-geo-editor.tsx";
 import { renderedText } from "../tools/rendered-text.test-helper.ts";
 
@@ -45,6 +48,42 @@ function modernData() {
     draftVersion: 1, draftHash: "b".repeat(64), profileCopyHash: "c".repeat(64), payload: { ...payload, profileCopy: { ...payload.profileCopy, websiteId: WEBSITE_ID } }, requiresSave: false,
     profile: null, frozen: null, sourceReceipt: null, prepared: null, generations: { roles: null, questions: null } } };
 }
+/**
+ * A stored v3 draft exactly as the website GEO route carries it.
+ *
+ * `websiteId` is a parameter rather than a constant because the only difference
+ * between the reachability case and the foreign-website refusal below is that
+ * one field: a negative test built from a separately hand-written object could
+ * pass because of some other difference nobody noticed.
+ */
+function v3Data(websiteId = WEBSITE_ID) {
+  const base = completePayloadV3();
+  const payload = parseGeoKbPayloadV3({ ...base, generationInput: { ...base.generationInput,
+    profileRef: { ...base.generationInput.profileRef, websiteId } } });
+  return { ...DATA, knowledgeBase: { schemaVersion: "marketing-geo-kb-editor.v3", kbId: V3_KB_ID,
+    origin: VIEW.origin, host: VIEW.host, draftVersion: 4, draftHash: geoV2Digest(payload), payload, published: null } };
+}
+
+/**
+ * The same website GEO response, for a knowledge base with nothing stored in
+ * it: version zero, no content hash, a save still owed and no published
+ * version. The route really does answer this -- see
+ * `../../lib/geo-tools/kb-editor-loader.reachability.test.ts`, which reads it
+ * off the HTTP body -- and the parser refuses any view where `draftVersion` and
+ * `draftHash` disagree about it.
+ */
+function emptyV2Data() {
+  const payload = completePayloadV2();
+  return { ...DATA, knowledgeBase: { schemaVersion: "marketing-geo-kb-editor.v2", kbId: V3_KB_ID, origin: VIEW.origin, host: VIEW.host,
+    draftVersion: 0, draftHash: null, profileCopyHash: "c".repeat(64),
+    payload: { ...payload, profileCopy: { ...payload.profileCopy, websiteId: WEBSITE_ID } }, requiresSave: true,
+    profile: null, frozen: null, sourceReceipt: null, prepared: null, generations: { roles: null, questions: null } } };
+}
+const GEO_URL = `/api/account/websites/${WEBSITE_ID}/geo`;
+const DRAFT_URL = "/api/tools/geo-knowledge-base/v3/draft";
+const CREATED = { kbId: V3_KB_ID, draftVersion: 1, contentHash: "c".repeat(64), updatedAt: "2026-09-07T00:00:00.000Z",
+  generationInputHash: "e".repeat(64), blockers: [] };
+
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
@@ -70,6 +109,69 @@ describe("website GEO canonical editor", () => {
     expect(card?.isConnected).toBe(true);
     expect(generate?.isConnected).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it("mounts the v3 review card when the route answers with a v3 draft", async () => {
+    // The whole point of this one: it goes through the response reader and the
+    // mount decision rather than rendering the card directly, because that is
+    // the link that was missing -- nothing in the tree passed a v3 draft, so
+    // the review card, its editor hook and its row components were unreachable
+    // in the product no matter how well they worked in isolation.
+    fetchMock.mockResolvedValueOnce(Response.json({ data: v3Data() }));
+    await render();
+    await act(async () => { await Promise.resolve(); });
+    expect(container.querySelector("[data-geo-kb-v3]")).not.toBeNull();
+    expect(container.querySelector("[data-geo-kb-v2]")).toBeNull();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    // The publish box belongs to the v3 card alone; its presence is what says
+    // the review tree really mounted rather than an empty shell.
+    expect(container.querySelector("[data-kb-publish-box]")).not.toBeNull();
+  });
+  it("starts the redesign from an empty knowledge base and mounts what the reload answers with", async () => {
+    /**
+     * The link that did not exist. `createGeoKbV3Draft` had no non-test caller,
+     * so nothing ever produced a first v3 draft: an owner with nothing stored
+     * got the v2 card, its button wrote a v2 draft, and the create route
+     * refused that draft from then on. Every step below is a real one -- the
+     * response reader, the mount decision, the create request and the re-read
+     * -- because the defect lived between them, not inside any of them.
+     */
+    const geo = [emptyV2Data(), v3Data()];
+    const seen: string[] = [];
+    fetchMock.mockImplementation(async (url: string) => {
+      seen.push(url);
+      if (url === GEO_URL) return Response.json({ data: geo.shift() });
+      if (url === DRAFT_URL) return Response.json({ data: CREATED });
+      return Response.json({ error: { code: "not_found" } }, { status: 404 });
+    });
+    await render();
+
+    expect(container.querySelector("[data-geo-kb-start]")).not.toBeNull();
+    expect(container.querySelector("[data-geo-kb-v3]")).toBeNull();
+    // Loading a page must not write a draft or spend a create.
+    expect(seen).toEqual([GEO_URL]);
+
+    await act(async () => container.querySelector<HTMLElement>("[data-generate-kb]")?.click());
+    await act(async () => { await Promise.resolve(); });
+
+    expect(seen.slice(0, 3)).toEqual([GEO_URL, DRAFT_URL, GEO_URL]);
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({ kbId: V3_KB_ID, baseVersion: 0 });
+    expect(container.querySelector("[data-geo-kb-v3]")).not.toBeNull();
+    expect(container.querySelector("[data-geo-kb-start]")).toBeNull();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+  it("leaves a v2 draft on the v2 card instead of redrawing it as a v3 review", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ data: modernData() }));
+    await render();
+    await act(async () => { await Promise.resolve(); });
+    expect(container.querySelector("[data-geo-kb-v2]")).not.toBeNull();
+    expect(container.querySelector("[data-geo-kb-v3]")).toBeNull();
+  });
+  it("refuses a v3 draft locked to another route-owned website's Profile", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ data: v3Data("11111111-1111-4111-8111-111111111111") }));
+    await render();
+    await act(async () => { await Promise.resolve(); });
+    expect(container.querySelector("[data-geo-kb-v3]")).toBeNull();
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
   });
   it("refuses a complete stored copy belonging to another route-owned website", async () => {
     const modern = modernData();

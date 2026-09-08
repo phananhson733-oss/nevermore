@@ -3,6 +3,7 @@
 // @pos -- no model output becomes observed evidence, review approval or calibration
 import { z } from "zod";
 import { isBoundedModelText } from "@sf/public-tools/content-brief/text";
+import { geoLiteralsAllSupported, geoLiteralTokens } from "./kb-knowledge-shape.ts";
 export interface GeoSynthesisSource {
   readonly id: string;
   readonly kind: "profile" | "gsc" | "crawl" | "manual";
@@ -83,11 +84,6 @@ const questionOutput = z.object({
 const invalid = (path: string): GeoSynthesisParseResult<never> => ({ ok: false, reason: "schema_invalid", path });
 const issuePath = (error: z.ZodError) => error.issues[0]?.path.join(".") ?? "";
 const knownRefs = (references: readonly string[], catalogue: ReadonlyMap<string, unknown>) => references.every(reference => catalogue.has(reference));
-const numericLiterals = (value: string) => value.match(/[+-]?(?:[$€£¥]\s*)?\p{N}+(?:[.,:/-]\p{N}+)*(?:\s*[%％])?/gu) ?? [];
-const numbersSupported = (values: readonly string[], evidence: readonly string[]) => {
-  const allowed = new Set(evidence.flatMap(numericLiterals));
-  return values.flatMap(numericLiterals).every(literal => allowed.has(literal));
-};
 const looksEnglish = (value: string) => /[A-Za-z]/u.test(value);
 const clusterLabel = (value: string) => /^(?:queries?\s+about\b|search[- ]query\s+cluster\b|关于.+的查询|.+查询聚类)/iu.test(value);
 const ROLE_ANCHOR_FUNCTION_WORDS = new Set(["a", "an", "the", "of", "to", "for"]);
@@ -150,11 +146,11 @@ export function parseGeoRoleSynthesis(raw: unknown, input: GeoRoleSynthesisInput
     if (!looksEnglish(role.questionLabel) || clusterLabel(role.questionLabel) || clusterLabel(role.label)) return invalid("roles.questionLabel");
     if (role.alternatives.some(alternative => /^(?:hypothesis\s*:|假设\s*[:：])/iu.test(alternative))) return invalid("roles.alternatives");
     const words = [role.label, role.questionLabel, role.segment, ...role.painPoints, ...role.alternatives, ...role.decisionCriteria, ...role.vocabulary];
-    if (!numbersSupported(words, [input.officialName, ...role.evidenceRefs.map(ref => sourceMap.get(ref)!.text)])) return invalid("roles.numeric_claim");
+    if (!geoLiteralsAllSupported(words, [input.officialName, ...role.evidenceRefs.map(ref => sourceMap.get(ref)!.text)])) return invalid("roles.numeric_claim");
   }
   for (const term of value.categoryTerms) {
     if (!knownRefs(term.evidenceRefs, sourceMap) || !looksEnglish(term.text)) return invalid("categoryTerms.evidenceRefs");
-    if (!numbersSupported([term.text], [input.officialName, ...term.evidenceRefs.map(ref => sourceMap.get(ref)!.text)])) return invalid("categoryTerms.numeric_claim");
+    if (!geoLiteralsAllSupported([term.text], [input.officialName, ...term.evidenceRefs.map(ref => sourceMap.get(ref)!.text)])) return invalid("categoryTerms.numeric_claim");
   }
   return { ok: true, value };
 }
@@ -172,8 +168,8 @@ export function parseGeoQuestionSynthesis(raw: unknown, input: GeoQuestionSynthe
   for (const entity of value.entities) {
     const original = known.get(entity.id);
     if (!original) return invalid("entities.id");
-    if ((original.kind === "brand" || original.kind === "competitor" || (original.kind === "fact" && numericLiterals(original.text).length > 0)) && entity.text !== original.text) return invalid("entities.literal");
-    if (!numbersSupported([entity.text], [original.text, ...original.evidenceRefs.map(ref => sourcesById.get(ref)!.text)])) return invalid("entities.numeric_claim");
+    if ((original.kind === "brand" || original.kind === "competitor" || (original.kind === "fact" && geoLiteralTokens(original.text).length > 0)) && entity.text !== original.text) return invalid("entities.literal");
+    if (!geoLiteralsAllSupported([entity.text], [original.text, ...original.evidenceRefs.map(ref => sourcesById.get(ref)!.text)])) return invalid("entities.numeric_claim");
   }
   const uses = (question: GeoQuestionSynthesis["questions"][number], kind: GeoSynthesisEntity["kind"]) => question.entityRefs.some(ref => {
     const original = known.get(ref), translated = returned.get(ref);
@@ -189,7 +185,7 @@ export function parseGeoQuestionSynthesis(raw: unknown, input: GeoQuestionSynthe
       const entity = known.get(ref)!;
       if ((entity.roleId !== null && entity.roleId !== question.roleId) || !entity.evidenceRefs.every(source => question.evidenceRefs.includes(source))) return invalid("questions.entity_scope");
     }
-    if (!numbersSupported([question.text], [...question.entityRefs.map(ref => returned.get(ref)!.text), ...question.evidenceRefs.map(ref => sourcesById.get(ref)!.text)])) return invalid("questions.numeric_claim");
+    if (!geoLiteralsAllSupported([question.text], [...question.entityRefs.map(ref => returned.get(ref)!.text), ...question.evidenceRefs.map(ref => sourcesById.get(ref)!.text)])) return invalid("questions.numeric_claim");
     const role = question.roleId === null ? undefined : rolesById.get(question.roleId);
     if (question.layer === "problem" && (!role?.painPoints.length || !uses(question, "role_pain"))) return invalid("questions.pain_anchor");
     if (question.layer === "evaluation" && (!role?.decisionCriteria.length || !uses(question, "role_criterion"))) return invalid("questions.criterion_anchor");

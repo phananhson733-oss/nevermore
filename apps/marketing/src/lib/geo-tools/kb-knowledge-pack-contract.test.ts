@@ -194,6 +194,9 @@ describe("GEO customer knowledge pack contract", () => {
     ["oversized arrays", (value: any) => { value.entity.value.aliases = Array.from({ length: GEO_KNOWLEDGE_PACK_LIMITS.aliases + 1 }, (_, index) => `Alias ${index}`); }],
     ["oversized excerpts", (value: any) => { value.sourceCatalogue[0].excerpts = ["x".repeat(GEO_KNOWLEDGE_PACK_LIMITS.excerptCodePoints + 1)]; }],
     ["unsupported numeric claims", (value: any) => { value.qa.value[0].directAnswer = "Yes. It supports 99 teams."; }],
+    // The digits are in the evidence; the unit is not. A guard that reads only
+    // the digits calls a price in won a supported claim about a team count.
+    ["numeric claims wearing a currency the evidence never showed", (value: any) => { value.qa.value[0].directAnswer = "Yes. It costs ₩2 per team."; }],
     ["inconsistent customer counts", (value: any) => { value.meta.counts.qa = 7; }],
   ])("rejects %s", (_label, mutate) => {
     const value = body();

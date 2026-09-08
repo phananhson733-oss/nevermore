@@ -7,6 +7,13 @@ import type { GeoRoleProposal } from "../../lib/geo-tools/kb-role-proposal.ts";
 import type { GeoKbGenerationRecord } from "../../lib/geo-tools/kb-generation.ts";
 import type { GeoKnowledgeGenerationResultV1 } from "../../lib/geo-tools/kb-knowledge-generation-contract.ts";
 import type { GeoKnowledgePackV1 } from "../../lib/geo-tools/kb-knowledge-pack-contract.ts";
+import type { GeoKnowledgePackV2 } from "../../lib/geo-tools/kb-knowledge-pack-v2-contract.ts";
+import {
+  GEO_EVIDENCE_GROUPS, GEO_KNOWLEDGE_LIMITS, geoComparisonRowContentShape, geoCoverageItemShape, geoEntityValueShape,
+  geoEvidenceCheckSchema, geoEvidenceItemShape, geoFactContentShape, geoItemOriginSchema, geoList, geoMachineValueShape,
+  geoModuleSchema, geoQaContentShape, geoRefList, geoShortText, geoSourceCatalogueItemSchema, geoSourceCompetitorSchema,
+  geoStatementContentShape, geoTimestamp, geoUnique, refineGeoComparisonRow, refineGeoMachine,
+} from "../../lib/geo-tools/kb-knowledge-shape.ts";
 import { parseGeoKbPayloadV2, geoRoleEligibleForLayer, geoRoleV2Schema, geoFactV2Schema, type GeoKbPayloadV2 } from "../../lib/geo-tools/kb-v2-contract.ts";
 import { parseGeoQuestionSetV2, type GeoQuestionSetV2 } from "../../lib/geo-tools/kb-question-set-v2.ts";
 import type { GeoSnapshotContextV2 } from "../../lib/geo-tools/snapshot-context-v2.ts";
@@ -31,7 +38,7 @@ export interface GeoKbFrozenV2Wire {
  * reinterpreted when its companion customer pack is present. */
 export interface GeoKbFrozenKnowledgeWire extends GeoKbFrozenV2Wire {
   readonly wireSchemaVersion: "marketing-geo-kb-frozen-wire.v1";
-  readonly knowledgePack: GeoKnowledgePackV1 | null;
+  readonly knowledgePack: GeoKnowledgePackV1 | GeoKnowledgePackV2 | null;
 }
 export interface GeoKbEditorViewV2 {
   readonly schemaVersion: "marketing-geo-kb-editor.v2";
@@ -119,6 +126,89 @@ const knowledgePackSchema = z.object({ schemaVersion: z.literal("marketing-geo-k
   coverage: knowledgeModule(z.array(knowledgeCoverageSchema).min(1).max(24)),
   sourceCatalogue: sourceCatalogueSchema, contentHash: hash,
 }).strict();
+/**
+ * The published knowledge pack v2, as the browser is allowed to see it.
+ *
+ * Built from the shared client-safe item shapes rather than hand-copied a
+ * second time: v1's copy below drifted from its server contract precisely
+ * because it was a copy, and a browser schema that silently fails to parse a
+ * published version renders the version as if it had no knowledge at all.
+ * What is deliberately absent is any integrity claim -- the digest and the
+ * evidence checks stay server work, and matching strings here confer no
+ * authority.
+ */
+const packDecisionSchema = z.enum(["accepted", "accepted_in_bulk"]);
+const packProvenanceShape = {
+  itemKey: hash, origin: geoItemOriginSchema, decision: packDecisionSchema,
+  sourceRefs: geoRefList(0), priorSourceRefs: geoRefList(0),
+  ownerDeclaredAt: geoTimestamp.nullable(), evidenceChecks: geoEvidenceCheckSchema,
+} as const;
+const packEntitySchema = z.object({
+  ...geoEntityValueShape,
+  fields: z.array(z.object({ field: geoShortText, ...packProvenanceShape }).strict()).max(32).refine(rows => geoUnique(rows.map(row => row.field))),
+}).strict();
+const packFactSchema = z.object({ ...geoFactContentShape, ...packProvenanceShape }).strict();
+const packQaSchema = z.object({ ...geoQaContentShape, ...packProvenanceShape }).strict();
+const packComparisonRowSchema = z.object({ ...geoComparisonRowContentShape, ...packProvenanceShape }).strict().superRefine(refineGeoComparisonRow);
+const packComparisonSchema = z.object({
+  id: text(128), competitor: geoSourceCompetitorSchema, checkedAt: geoTimestamp,
+  rows: z.array(packComparisonRowSchema).min(1).max(GEO_KNOWLEDGE_LIMITS.comparisonRows),
+  verdict: text(800), sourceRefs: geoRefList(1),
+}).strict();
+const packStatementSchema = z.object({ ...geoStatementContentShape, ...packProvenanceShape }).strict();
+const packScopeSchema = z.object({
+  does: geoList(packStatementSchema, GEO_KNOWLEDGE_LIMITS.scopeItems),
+  doesNot: geoList(packStatementSchema, GEO_KNOWLEDGE_LIMITS.scopeItems),
+  needsHuman: geoList(packStatementSchema, GEO_KNOWLEDGE_LIMITS.scopeItems),
+  misconceptions: geoList(packStatementSchema, GEO_KNOWLEDGE_LIMITS.scopeItems),
+}).strict();
+const packEvidenceItemSchema = z.object(geoEvidenceItemShape).strict();
+const packEvidenceSchema = z.object({
+  proof: geoList(packEvidenceItemSchema, GEO_KNOWLEDGE_LIMITS.evidenceItems),
+  changelog: geoList(packEvidenceItemSchema, GEO_KNOWLEDGE_LIMITS.evidenceItems),
+  press: geoList(packEvidenceItemSchema, GEO_KNOWLEDGE_LIMITS.evidenceItems),
+  thirdPartyProfiles: geoList(packEvidenceItemSchema, GEO_KNOWLEDGE_LIMITS.evidenceItems),
+  firstPartyProof: geoList(packEvidenceItemSchema, GEO_KNOWLEDGE_LIMITS.evidenceItems),
+  // Which groups were looked for at all. A group missing here was not collected;
+  // a group present but empty was collected and found nothing.
+  collected: z.array(z.enum(GEO_EVIDENCE_GROUPS)).max(GEO_EVIDENCE_GROUPS.length).refine(geoUnique),
+}).strict();
+const packMachineSchema = z.object(geoMachineValueShape).strict().superRefine(refineGeoMachine);
+const packCoverageSchema = z.object(geoCoverageItemShape).strict();
+const knowledgePackV2Schema = z.object({
+  schemaVersion: z.literal("marketing-geo-knowledge-pack.v2"),
+  meta: z.object({
+    generatedAt: geoTimestamp, lastScanAt: geoTimestamp, market: text(32), language: text(32),
+    counts: z.object({
+      facts: safeInteger.max(GEO_KNOWLEDGE_LIMITS.facts), qa: safeInteger.max(GEO_KNOWLEDGE_LIMITS.qa),
+      comparisons: safeInteger.max(GEO_KNOWLEDGE_LIMITS.comparisons),
+      // How many published items were confirmed one by one, and how many were not.
+      accepted: safeInteger.max(1_000), acceptedInBulk: safeInteger.max(1_000),
+    }).strict(),
+  }).strict(),
+  entity: geoModuleSchema(packEntitySchema),
+  facts: geoModuleSchema(z.array(packFactSchema).min(1).max(GEO_KNOWLEDGE_LIMITS.facts)),
+  qa: geoModuleSchema(z.array(packQaSchema).min(1).max(GEO_KNOWLEDGE_LIMITS.qa)),
+  comparisons: geoModuleSchema(z.array(packComparisonSchema).min(1).max(GEO_KNOWLEDGE_LIMITS.comparisons)),
+  scope: geoModuleSchema(packScopeSchema),
+  evidence: geoModuleSchema(packEvidenceSchema),
+  machine: geoModuleSchema(packMachineSchema),
+  coverage: geoModuleSchema(z.array(packCoverageSchema).min(1).max(GEO_KNOWLEDGE_LIMITS.coverageItems)),
+  sourceCatalogue: z.array(geoSourceCatalogueItemSchema).min(1).max(GEO_KNOWLEDGE_LIMITS.sources)
+    .refine(rows => geoUnique(rows.map(row => row.id))),
+  contentHash: hash,
+}).strict();
+
+/** Render-shape only. Null means this browser cannot render the value, never
+ * that the published version has no knowledge. */
+export function parseGeoKnowledgePackWire(value: unknown): GeoKnowledgePackV1 | GeoKnowledgePackV2 | null {
+  try {
+    if (!record(value)) return null;
+    return value.schemaVersion === "marketing-geo-knowledge-pack.v2"
+      ? knowledgePackV2Schema.parse(value) as unknown as GeoKnowledgePackV2
+      : knowledgePackSchema.parse(value) as GeoKnowledgePackV1;
+  } catch { return null; }
+}
 const same = (a: unknown, b: unknown) => canonicalGeoV2Text(a) === canonicalGeoV2Text(b);
 function requireLink(condition: boolean): asserts condition { if (!condition) throw new Error("Inconsistent GEO wire data"); }
 function bounded(value: unknown, maximum: number): void { requireLink(geoV2JsonbBytes(value) <= maximum); }
@@ -304,7 +394,7 @@ const frozenKnowledgeSchema = frozenSchema.extend({
   knowledgePack: z.unknown().nullable(),
 }).strict();
 
-function linkedCustomerPack(payload: GeoKbPayloadV2, pack: GeoKnowledgePackV1): void {
+function linkedCustomerPack(payload: GeoKbPayloadV2, pack: GeoKnowledgePackV1 | GeoKnowledgePackV2): void {
   requireLink(pack.meta.market === payload.market.country && pack.meta.language === payload.market.language);
   const target = normalizeAccountWebsiteUrl(payload.targetUrl);
   requireLink(target !== null);
@@ -337,7 +427,11 @@ export function parseGeoKbFrozenKnowledgeWire(value: unknown): GeoKbFrozenKnowle
     // The server already verified the cryptographic pack identity. This
     // browser boundary validates the complete render shape without importing
     // Node crypto or pretending to re-establish server authority.
-    const knowledgePack = rawPack === null ? null : knowledgePackSchema.parse(rawPack) as GeoKnowledgePackV1;
+    const knowledgePack = rawPack === null ? null : parseGeoKnowledgePackWire(rawPack);
+    // A stored pack that will not parse is an inconsistency, not an absent
+    // pack: rendering null here would show a published version as having no
+    // customer knowledge at all.
+    requireLink(rawPack === null || knowledgePack !== null);
     if (knowledgePack !== null) linkedCustomerPack(base.payload, knowledgePack);
     return { ...base, wireSchemaVersion, knowledgePack };
   } catch { return null; }

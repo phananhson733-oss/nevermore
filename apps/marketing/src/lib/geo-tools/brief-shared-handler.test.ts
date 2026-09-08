@@ -10,7 +10,7 @@ function dependencies(changes: Partial<SharedBriefHandlerDependencies> = {}) {
   const consume = vi.fn(async () => true); const sample = vi.fn();
   const deps: BriefHandlerDependencies = {
     authenticate: async () => ({ ok: true, userId: "fixture-owner" }), listFrozen: vi.fn(), readFrozen: vi.fn(), consumeDailyRun: consume, providerConfigured: () => false, sample, assemble: vi.fn(), reportAssemblyFailure: vi.fn(), now: () => Date.parse("2026-08-31T00:00:01Z"),
-    shared: { readFrozen: async () => ({ kind: "ok", value: SHARED_FROZEN }), readContext: async () => ({ kind: "ok", value: null }), readRunEvidence: async () => ({ kind: "not_eligible" }), configured: () => true, runId: () => "fixture-brief", assemble: async brief => ({ ok: true, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: brief.must_answer.items.map(item => item.id), provenance: { method: "model", derived_from: ["kb"] } }] }), ...changes },
+    shared: { readFrozen: async () => ({ kind: "ok", value: SHARED_FROZEN }), readContext: async () => ({ kind: "ok", value: null }), readKnowledgePack: async () => ({ kind: "ok", value: null }), readRunEvidence: async () => ({ kind: "not_eligible" }), configured: () => true, runId: () => "fixture-brief", assemble: async brief => ({ ok: true, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: brief.must_answer.items.map(item => item.id), provenance: { method: "model", derived_from: ["kb"] } }] }), ...changes },
   };
   return { deps, consume, sample };
 }

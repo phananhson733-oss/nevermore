@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createAdminSupabaseClient } from "../supabase/admin.ts";
 import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";
 import { parseAnyGeoPreparedCandidate, type AnyGeoPreparedCandidate } from "./kb-prepared-contract.ts";
+import { GEO_PREPARED_CANDIDATE_V3_SCHEMA, isGeoPreparedCandidateV3, parseGeoPreparedCandidateV3, type GeoPreparedCandidateV3 } from "./kb-prepared-v3-contract.ts";
 import { DEFAULT_GEO_KB_RPC_TRANSPORT, type GeoKbRpcTransport } from "./kb-generation-store.ts";
 import { parseGeoKbPayloadV2 } from "./kb-v2-contract.ts";
 import { assertGeoProfileCopyIntegrity } from "./kb-profile-copy-server.ts";
@@ -14,6 +15,13 @@ import type { GeoKbDraftSummary, GeoKbFreezeOutcome, GeoKbStoreResult } from "./
 import { verifyGeoKbSourceReportV2 } from "./kb-sources.ts";
 import type { GeoKbSourceReportV2 } from "./kb-source-contract.ts";
 
+/**
+ * Every candidate version this store can hand back. v3 candidates are read the
+ * same way v1/v2 ones are, but they may not be frozen through the legacy
+ * freeze RPC: that path writes the candidate's question set straight into the
+ * snapshot column, and a v3 version is allowed to have no question set at all.
+ */
+export type AnyVersionedGeoPreparedCandidate = AnyGeoPreparedCandidate | GeoPreparedCandidateV3;
 export interface GeoKbPreparedTransport extends GeoKbRpcTransport {
   readonly readCandidate: (input: { readonly userId: string; readonly kbId: string; readonly candidateId?: string }) => Promise<{ readonly data: unknown; readonly error: unknown }>;
 }
@@ -33,7 +41,7 @@ const rpcRow = (value: unknown): Record<string, unknown> => {
   return value[0] as Record<string, unknown>;
 };
 export function createGeoKbPreparedStore(transport: GeoKbPreparedTransport = DEFAULT) {
-  const read = async (input: { readonly userId: string; readonly kbId: string; readonly candidateId?: string }): Promise<GeoKbStoreResult<AnyGeoPreparedCandidate | null>> => {
+  const read = async (input: { readonly userId: string; readonly kbId: string; readonly candidateId?: string }): Promise<GeoKbStoreResult<AnyVersionedGeoPreparedCandidate | null>> => {
     try {
       uuid.parse(input.userId); uuid.parse(input.kbId); if (input.candidateId !== undefined) uuid.parse(input.candidateId);
       const result = await transport.readCandidate(input);
@@ -41,7 +49,7 @@ export function createGeoKbPreparedStore(transport: GeoKbPreparedTransport = DEF
       if (result.data === null) return { kind: "ok", value: null };
       const row = z.object({ id: uuid, user_id: uuid, kb_id: uuid, candidate_hash: hash, candidate: z.unknown() }).parse(result.data);
       if (row.user_id !== input.userId || row.kb_id !== input.kbId || (input.candidateId !== undefined && row.id !== input.candidateId)) return unavailable();
-      const candidate = parseAnyGeoPreparedCandidate(row.candidate);
+      const candidate = isGeoPreparedCandidateV3(row.candidate) ? parseGeoPreparedCandidateV3(row.candidate) : parseAnyGeoPreparedCandidate(row.candidate);
       if (candidate.candidateId !== row.id || candidate.kbId !== row.kb_id || candidate.candidateHash !== row.candidate_hash) return unavailable();
       return { kind: "ok", value: candidate };
     } catch { return unavailable(); }
@@ -55,6 +63,11 @@ export function createGeoKbPreparedStore(transport: GeoKbPreparedTransport = DEF
         if (loaded.kind !== "ok") return loaded;
         if (loaded.value === null) return { kind: "missing" };
         const candidate = loaded.value;
+        // The legacy freeze RPC copies `questionSet` into a NOT NULL column and
+        // reads a v2 candidate shape. A v3 candidate is published by
+        // `marketing_geo_publish_kb_v3` instead; letting one through here would
+        // fail deep inside the RPC as an opaque constraint violation.
+        if (candidate.schemaVersion === GEO_PREPARED_CANDIDATE_V3_SCHEMA) return unavailable();
         if (candidate.candidateHash !== hash.parse(input.candidateHash)) return { kind: "invalid", code: "context_stale" };
         const result = await transport.callRpc("marketing_geo_freeze_prepared_kb", { p_user_id: input.userId, p_kb_id: input.kbId, p_candidate_id: input.candidateId, p_candidate_hash: input.candidateHash });
         if (result.error) return unavailable();

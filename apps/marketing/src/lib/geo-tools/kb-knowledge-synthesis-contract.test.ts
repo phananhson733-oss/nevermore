@@ -81,6 +81,7 @@ describe("GEO knowledge synthesis contracts", () => {
     ["unconfirmed competitor", (value: any) => { value.comparisons[0].competitor.key = "other.example"; }],
     ["mismatched competitor name", (value: any) => { value.comparisons[0].competitor.name = "Other"; }],
     ["unsupported numeric literal", (value: any) => { value.facts[0].statement = "Pine Cloud supports teams of 99."; }],
+    ["numeric literal wearing an unevidenced currency", (value: any) => { value.facts[0].statement = "Pine Cloud costs ₩2 per team."; }],
     ["model URL", (value: any) => { value.facts[0].statement = "See https://product.example/."; }],
     ["bare domain", (value: any) => { value.facts[0].statement = "See rival.example."; }],
     ["model URL in entity definition", (value: any) => { value.entity.definitions.w25 = "See https://product.example/."; }],

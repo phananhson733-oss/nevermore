@@ -59,7 +59,7 @@ describe("GEO branch in the existing Draft route", () => {
       questionSetHash: geoQuestionSetDigest(frozen.questionSet),
       questionCount: frozen.questionSet.questions.length,
     });
-    const basis = sharedGeoBriefBasis({ frozen, context: null, questionId: "q1", questionText: "", runEvidence: null, runId: "old-brief", now: "2026-08-31T00:00:00Z" });
+    const basis = sharedGeoBriefBasis({ frozen, context: null, knowledgePack: null, questionId: "q1", questionText: "", runEvidence: null, runId: "old-brief", now: "2026-08-31T00:00:00Z" });
     const geo = await assembleSharedGeoBrief(basis, { ok: true, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: basis.must_answer.items.map(q => q.id), provenance: { method: "model", derived_from: ["kb"] } }] });
     const consumeQuota = vi.fn();
     const generateSection = vi.fn();

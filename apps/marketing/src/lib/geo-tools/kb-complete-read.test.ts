@@ -17,6 +17,12 @@ import { geoKnowledgeSynthesisInputDigest, geoKnowledgeSynthesisSourceCatalogueD
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import { parseGeoKbPayloadV2 } from "./kb-v2-contract.ts";
 import { parseGeoQuestionSetV2 } from "./kb-question-set-v2.ts";
+import { parseGeoKbPayloadV3, type GeoKbPayloadV3 } from "./kb-v3-contract.ts";
+import { buildGeoSnapshotContextV3, GEO_ABSENT_QUESTION_SET_HASH } from "./snapshot-context-v3.ts";
+import { buildGeoKnowledgePackV3 } from "./kb-knowledge-pack-v3.ts";
+import { createGeoPreparedCandidateV3, geoGenerationInputHashV3, geoReviewHashV3, GEO_PREPARED_CANDIDATE_V3_SCHEMA } from "./kb-prepared-v3-contract.ts";
+import { completePayloadV3, HASH_A, OBSERVED_AT, V3_KB_ID } from "./kb-v3.test-fixtures.ts";
+import type { VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
 
 const profileStore = vi.hoisted(() => ({ read: vi.fn(() => { throw new Error("Profile store must not be read by GEO consumers"); }) }));
 const preparedFallback = vi.hoisted(() => ({ read: vi.fn(async () => ({ kind: "ok" as const, value: null })) }));
@@ -113,8 +119,10 @@ describe("complete immutable GEO knowledge-base reads", () => {
     const result = await readCompleteGeoKnowledgeBase(input, value.dependencies);
     expect(result).toEqual({ kind: "ok", value: { snapshot: value.snapshot, context: value.context, completeness: "complete", knowledgePack: null } });
     if (result.kind !== "ok") throw new Error("Expected complete GEO read");
-    expect(result.value.snapshot.payload.profileCopy?.profile.buyer).toBe("Finance manager");
-    expect(result.value.snapshot.payload.profileCopy?.profile.indirectAlternatives).toEqual(["Spreadsheets"]);
+    const payload = result.value.snapshot.payload;
+    if (payload.schemaVersion === "marketing-geo-kb.v3") throw new Error("Expected a legacy payload");
+    expect(payload.profileCopy?.profile.buyer).toBe("Finance manager");
+    expect(payload.profileCopy?.profile.indirectAlternatives).toEqual(["Spreadsheets"]);
     expect(profileStore.read).not.toHaveBeenCalled();
   });
 
@@ -250,5 +258,121 @@ describe("prepared knowledge on complete V2 reads", () => {
     else candidate = { ...value.v2, candidateHash: "f".repeat(64) };
     value.dependencies.readPrepared.mockResolvedValue({ kind: "ok", value: candidate as typeof value.v1 });
     expect((await readCompleteGeoKnowledgeBase(value.selection, value.dependencies)).kind).toBe("unavailable");
+  });
+});
+
+const V3_SNAPSHOT = "44444444-4444-8444-8444-444444444441";
+const V3_CANDIDATE = "44444444-4444-8444-8444-444444444442";
+const V3_FROZEN_AT = "2026-09-03T00:00:00.000Z";
+
+function machineSource(id: string, kind: string, path: string, excerpt: string) {
+  return { id, kind, label: id, url: `https://example.com/${path}`, competitor: null, availability: "available",
+    reason: null, observedAt: OBSERVED_AT, bodyHash: HASH_A, excerpts: [excerpt], independence: null };
+}
+
+/** The shared v3 draft, publishable and with its run reference filled in. */
+function v3Payload(): GeoKbPayloadV3 {
+  const value = structuredClone(completePayloadV3()) as unknown as {
+    knowledge: { sourceCatalogue: { id: string }[]; machine: { value: { llms: { sourceRefs: string[] }; sitemap: { sourceRefs: string[] } } } };
+    runRef: { generationInputHash: string };
+  };
+  // Idempotent: the shared fixture may already carry these sources.
+  if (!value.knowledge.sourceCatalogue.some((source) => source.id === "machine:llms")) value.knowledge.sourceCatalogue.push(
+    machineSource("machine:llms", "llms", "llms.txt", "Acme product index."),
+    machineSource("machine:sitemap", "sitemap", "sitemap.xml", "The sitemap lists the product pages."),
+  );
+  value.knowledge.machine.value.llms.sourceRefs = ["machine:llms"];
+  value.knowledge.machine.value.sitemap.sourceRefs = ["machine:sitemap"];
+  const base = parseGeoKbPayloadV3(value);
+  return parseGeoKbPayloadV3({ ...base, runRef: { ...base.runRef, generationInputHash: geoGenerationInputHashV3(base) } });
+}
+
+function completeV3Fixture(withQuestions = true) {
+  const payload = v3Payload();
+  const questionSet = withQuestions ? questionSetV2() : null;
+  const context = buildGeoSnapshotContextV3({ kbId: V3_KB_ID, payload, questionSet, evidenceRefs: [] });
+  const knowledgePack = buildGeoKnowledgePackV3({ generatedAt: V3_FROZEN_AT, payload, questionSet, bulkAcceptedAt: V3_FROZEN_AT });
+  const candidate = createGeoPreparedCandidateV3({
+    schemaVersion: GEO_PREPARED_CANDIDATE_V3_SCHEMA, candidateId: V3_CANDIDATE, kbId: V3_KB_ID,
+    baseDraftVersion: "4", baseDraftHash: geoV2Digest(payload), payload,
+    questionSet: questionSet === null ? { status: "unavailable", reason: "not_attempted", failedGenerationId: null } : { status: "available", value: questionSet },
+    context, knowledgePack, generationInputHash: geoGenerationInputHashV3(payload),
+    reviewHash: geoReviewHashV3(payload), sourceReceiptRefs: [],
+  });
+  const snapshot: VersionedGeoKbFrozenSnapshot = { kbId: V3_KB_ID, snapshotId: V3_SNAPSHOT, revision: 4, contentHash: geoV2Digest(payload),
+    questionSetHash: questionSet === null ? null : geoV2Digest(questionSet), questionCount: questionSet === null ? null : questionSet.questions.length,
+    frozenAt: V3_FROZEN_AT, preparedId: V3_CANDIDATE, payload, questionSet };
+  const dependencies = {
+    readFrozen: vi.fn(async () => ({ kind: "ok" as const, value: snapshot })),
+    readContext: vi.fn(async () => ({ kind: "ok" as const, value: context as unknown })),
+    readPrepared: vi.fn(async () => ({ kind: "ok" as const, value: candidate as unknown })),
+  } as unknown as Parameters<typeof readCompleteGeoKnowledgeBase>[1];
+  const selection = { userId: USER, kbId: V3_KB_ID, snapshotId: V3_SNAPSHOT };
+  return { payload, questionSet, context, knowledgePack, candidate, snapshot, dependencies, selection };
+}
+
+describe("complete immutable GEO reads of a v3 version", () => {
+  it("returns the v3 context and the published knowledge pack as one self-contained version", async () => {
+    const value = completeV3Fixture();
+
+    const result = await readCompleteGeoKnowledgeBase(value.selection, value.dependencies);
+
+    expect(result).toEqual({ kind: "ok", value: { snapshot: value.snapshot, context: value.context, completeness: "complete", knowledgePack: value.knowledgePack } });
+    expect(profileStore.read).not.toHaveBeenCalled();
+  });
+
+  it("accepts a version published with no question set and keeps the absence explicit", async () => {
+    const value = completeV3Fixture(false);
+    expect(value.context.questionSetHash).toBe(GEO_ABSENT_QUESTION_SET_HASH);
+
+    const result = await readCompleteGeoKnowledgeBase(value.selection, value.dependencies);
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error("Expected a complete v3 read");
+    expect(result.value.snapshot.questionSet).toBeNull();
+    expect(result.value.snapshot.questionCount).toBeNull();
+    expect(result.value.knowledgePack?.schemaVersion).toBe("marketing-geo-knowledge-pack.v2");
+  });
+
+  it("refuses a question-set-less version whose context names a question set", async () => {
+    const absent = completeV3Fixture(false);
+    const withQuestions = completeV3Fixture();
+    const dependencies = { ...absent.dependencies, readContext: vi.fn(async () => ({ kind: "ok" as const, value: withQuestions.context as unknown })) } as typeof absent.dependencies;
+
+    expect((await readCompleteGeoKnowledgeBase(absent.selection, dependencies)).kind).toBe("unavailable");
+  });
+
+  it.each(["absent_sentinel_on_a_version_with_questions", "foreign_candidate", "missing_prepared", "legacy_candidate", "missing_context"])("refuses a v3 version with %s", async issue => {
+    const value = completeV3Fixture();
+    const snapshot = { ...value.snapshot } as Record<string, unknown>;
+    let dependencies = value.dependencies;
+    if (issue === "absent_sentinel_on_a_version_with_questions") {
+      const absent = completeV3Fixture(false);
+      dependencies = { ...value.dependencies, readContext: vi.fn(async () => ({ kind: "ok" as const, value: absent.context as unknown })) } as typeof value.dependencies;
+    }
+    if (issue === "foreign_candidate") {
+      const foreign = completeV3Fixture(false);
+      dependencies = { ...value.dependencies, readPrepared: vi.fn(async () => ({ kind: "ok" as const, value: foreign.candidate as unknown })) } as typeof value.dependencies;
+    }
+    if (issue === "missing_prepared") {
+      snapshot.preparedId = null;
+      dependencies = { ...value.dependencies, readFrozen: vi.fn(async () => ({ kind: "ok" as const, value: snapshot as unknown })) } as typeof value.dependencies;
+    }
+    if (issue === "legacy_candidate") {
+      dependencies = { ...value.dependencies, readPrepared: vi.fn(async () => ({ kind: "ok" as const, value: preparedCandidateFixture().v2 as unknown })) } as typeof value.dependencies;
+    }
+    if (issue === "missing_context") {
+      dependencies = { ...value.dependencies, readContext: vi.fn(async () => ({ kind: "ok" as const, value: null })) } as typeof value.dependencies;
+    }
+
+    expect((await readCompleteGeoKnowledgeBase(value.selection, dependencies)).kind).toBe("unavailable");
+  });
+
+  it("refuses a v3 context handed to a v2 version, which keeps its facts in the context", async () => {
+    const legacy = completeV2Fixture();
+    const v3 = completeV3Fixture();
+    const dependencies = { ...legacy.dependencies, readContext: vi.fn(async () => ({ kind: "ok" as const, value: v3.context as unknown })) } as unknown as typeof legacy.dependencies;
+
+    expect((await readCompleteGeoKnowledgeBase(legacy.selection, dependencies)).kind).toBe("unavailable");
   });
 });

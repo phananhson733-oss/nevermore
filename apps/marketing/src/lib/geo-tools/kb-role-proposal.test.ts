@@ -20,6 +20,14 @@ describe("immutable source-grounded role proposal", () => {
     const { contentHash: _hash, ...original } = proposal;
     expect(geoV2Digest(original)).toBe(proposal.contentHash);
   });
+  it("names the check that rejected, so a failed roles step is diagnosable", () => {
+    // The generation layer keys on this exact `(reason:path)` suffix to turn a
+    // bare `invalid_output` into something an operator can act on. A message
+    // that stops saying which check ran puts that back in the dark.
+    expect(() => createGeoRoleProposal({ ...body(), output: { ...ROLE_SYNTHESIS_OUTPUT, roles: [{ ...ROLE_SYNTHESIS_OUTPUT.roles[0]!, evidenceRefs: ["invented"] }] } }))
+      .toThrow(/\(schema_invalid:roles\.evidenceRefs\)$/u);
+  });
+
   it("checks source and numeric evidence on stored model proposals too", () => {
     expect(() => createGeoRoleProposal({ ...body(), output: { ...ROLE_SYNTHESIS_OUTPUT, roles: [{ ...ROLE_SYNTHESIS_OUTPUT.roles[0]!, evidenceRefs: ["invented"] }] } })).toThrow();
     expect(() => createGeoRoleProposal({ ...body(), selectedEvidenceCounts: { profile: 2, gsc: 0, crawl: 0, manual: 0 } })).toThrow();

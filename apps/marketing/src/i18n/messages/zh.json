@@ -5316,6 +5316,293 @@
       }
     },
     "geoKnowledgeBase": {
+      "card": {
+        "state": {
+          "failed": "更新未完成，仍显示上次的知识内容。",
+          "failedEmpty": "还没有生成知识内容，请稍后再试。",
+          "pending": "这次更新的结果未知，当前内容没有变化。",
+          "running": "正在更新知识…",
+          "current": "当前 GEO 知识",
+          "empty": "还没有 GEO 知识。",
+          "stale": "你的网站资料变了，可以生成新的知识内容。",
+          "check": "查看更新结果",
+          "oldCheck": "查看更早的更新",
+          "unknown": "结果未知。请查看结果，系统不会自动重复扣费。",
+          "retry": "继续更新",
+          "retryHelp": "继续查询并处理这次更新。",
+          "newInput": "用更新后的资料生成",
+          "newInputHelp": "这会用你更新后的资料重新生成，并消耗额度。",
+          "sourceChanged": "请先保存最新的网站资料，再生成。",
+          "invalid": "网站资料还不能使用。请检查并保存后再试。",
+          "error": "这次更新没有完成，请稍后再试。"
+        },
+        "status": {
+          "none": "还没有知识库版本。",
+          "collecting": "正在采集你的网站与竞品页面…",
+          "assembling": "正在整理采集到的内容…",
+          "synthesizing": "正在归纳知识…",
+          "draft": "草稿已就绪，等你发布。",
+          "published": "已发布 kb@v{version} · {date}",
+          "publishedUpdatable": "已发布 kb@v{version} · {date} · 产品档案已有新版本，可以更新"
+        },
+        "actions": {
+          "update": "更新知识库",
+          "publish": "发布 kb@v{version}",
+          "view": "查看",
+          "edit": "编辑"
+        },
+        "cost": "每次更新都会读取你网站的 robots.txt、sitemap.xml 和 llms.txt。除此之外会读取你的首页，以及每个已确认竞品站点的首页（最多五个站点）；如果有一天以内的读取结果可以复用就不再读——同一天内的第二次更新只会重新读那三个文件。一条读取结果都用不上时才会改为抓取：你网站最多八个页面（首页，以及首页链接到的最多七个页面），每个已确认竞品站点最多两个页面。然后发起一次模型调用（计费）。更新出的草稿由你决定何时发布。",
+        "publishFree": "发布不计费，也不会发起模型调用。",
+        "sections": {
+          "identity": {
+            "title": "A 身份",
+            "items": "实体定义 · 能力边界"
+          },
+          "facts": {
+            "title": "B 事实与回答",
+            "items": "可靠事实 · 问答知识 · 对比知识"
+          },
+          "trust": {
+            "title": "C 可信度",
+            "items": "证据与可信度"
+          },
+          "reachability": {
+            "title": "D 可达性",
+            "items": "机器可读状态 · 覆盖与缺口"
+          },
+          "measurement": {
+            "title": "E 测量",
+            "items": "提问集 · {count} 条 · 用于 AI 可见性体检",
+            "itemsUnavailable": "提问集 · 这份草稿没有 · 本次更新不会生成提问集，因此 AI 可见性体检无法针对你发布的版本运行",
+            "show": "展开",
+            "hide": "收起"
+          }
+        },
+        "publish": {
+          "title": "发布",
+          "changes": "与 kb@v{version} 相比有 {count} 项变化",
+          "firstVersion": "这是第一个发布版本，包含 {count} 条知识。",
+          "pending": "还有 {count} 条未逐条确认，将以「批量接受 · 未逐条确认」发布。",
+          "noPending": "没有未确认的条目。"
+        },
+        "published": {
+          "headline": "已发布 kb@v{version}",
+          "counts": "事实 {facts}（已确认 {accepted}）· 问答 {qa} · 对比 {available}/{comparisons} · {date}"
+        },
+        "decisions": {
+          "pending": "待你确认",
+          "accepted": "已确认",
+          "acceptedInBulk": "批量接受 · 未逐条确认",
+          "excluded": "已排除"
+        },
+        "origins": {
+          "observed_own": "网站",
+          "observed_competitor": "竞品页",
+          "observed_third_party": "站外",
+          "observed_gsc": "Search Console",
+          "declared_profile": "产品档案",
+          "declared_owner": "Owner 声明",
+          "synthesized": "模型归纳"
+        },
+        "originDetail": {
+          "thirdParty": "站外 · {domain}",
+          "profile": "产品档案 v{revision}",
+          "synthesized": "模型归纳 · {count} 条依据"
+        },
+        "independence": {
+          "independent": "独立",
+          "self_submitted": "自填",
+          "syndicated": "转载",
+          "undetermined": "未判定",
+          "first_party": "第一方"
+        },
+        "evidenceChecks": {
+          "cited_and_literals_match": "引用核对通过",
+          "owner_declared": "Owner 声明"
+        },
+        "item": {
+          "accept": "接受",
+          "correct": "修正",
+          "exclude": "排除",
+          "revert": "改回",
+          "correctedAt": "已修正 {date}",
+          "priorBasis": "修正前依据",
+          "review": "复核 {date}",
+          "newObservation": "有新观察",
+          "conflict": "与现有事实可能冲突"
+        },
+        "module": {
+          "partial": "当前限制",
+          "unavailable": {
+            "not_collected": "这部分内容还没有采集。",
+            "not_published": "没有找到与这一节有关的公开信息。",
+            "not_found": "没有找到预期的公开信息。",
+            "timeout": "读取公开页面超时，这一节暂时无法确认。",
+            "fetch_failed": "公开页面读取失败，这一节暂时无法确认。",
+            "blocked": "公开页面拒绝了访问，这一节暂时无法确认。",
+            "rate_limited": "公开来源暂时限制了访问频率。",
+            "invalid_response": "公开来源返回的内容无法核对。",
+            "partial_body": "公开来源只读到了一部分内容。",
+            "unsupported_language": "这个语言还不支持知识归纳。",
+            "generation_unavailable": "这一节的知识归纳未能完成。",
+            "outcome_unknown": "归纳结果未知，因此不展示内容。",
+            "insufficient_evidence": "现有证据还不足以形成这一节。",
+            "not_applicable": "这一节不适用于当前产品。",
+            "context_stale": "保存的来源上下文在这一节完成前发生了变化。",
+            "owner_excluded_all": "这一节的条目已被你全部排除，因此没有发布。",
+            "owner_excluded_required": "你排除了这一节不能缺少的字段，因此这一节没有发布。"
+          }
+        },
+        "groups": {
+          "notCollected": "未采集",
+          "collectedEmpty": "已采集 · 未发现内容",
+          "proof": "产品证明",
+          "changelog": "产品更新",
+          "press": "媒体报道",
+          "thirdPartyProfiles": "第三方档案",
+          "firstPartyProof": "第一方证明"
+        },
+        "machine": {
+          "aiCrawlers": "AI 爬虫许可",
+          "snippets": "摘要许可",
+          "crawlerSearch": "搜索用途",
+          "crawlerTraining": "训练用途",
+          "crawlerNone": "没有观察到针对这一用途的规则。",
+          "access": {
+            "allowed": "允许",
+            "disallowed": "禁止",
+            "unspecified": "未规定"
+          },
+          "snippetStatuses": {
+            "allowed": "允许",
+            "blocked": "禁止",
+            "not_checked": "未检测"
+          }
+        },
+        "entityFields": {
+          "name": "官方名称",
+          "aliases": "别名",
+          "categories": {
+            "primary": "主品类",
+            "secondary": "其他品类"
+          },
+          "definitions": {
+            "w25": "简短定义",
+            "w55": "标准定义",
+            "w120": "详细定义"
+          },
+          "audience": {
+            "who": "适合谁",
+            "notFor": "不适合谁"
+          },
+          "founded": {
+            "year": "成立时间",
+            "team": "团队",
+            "location": "所在地"
+          },
+          "disambiguation": "如何与同名对象区分",
+          "links": {
+            "home": "首页",
+            "pricing": "定价页",
+            "docs": "文档",
+            "about": "关于页",
+            "changelog": "更新日志",
+            "faq": "常见问题页"
+          },
+          "sameAs": "同一实体的其他页面"
+        },
+        "review": {
+          "saving": "保存中…",
+          "saved": "已保存",
+          "conflict": "这个知识库在别处被改过了。请先重新加载页面，现在做的决定无法保存。",
+          "inputChanged": "这份草稿依据的证据已经变了。请先更新知识库，再继续做决定。",
+          "running": "更新正在写入这份草稿。你的决定会在更新结束后立即保存。",
+          "failed": "上一个决定没有保存成功。再做一次即可重试。",
+          "acceptAll": "全部接受（剩余 {count} 条）",
+          "acceptAllNote": "这样接受会记为「批量接受 · 未逐条确认」。",
+          "noDecisions": "这一节没有需要你决定的条目；它的内容不在这里展示。",
+          "measurementEmpty": "这份草稿里没有提问集，所以这里没有内容可展示。",
+          "correctionSave": "保存修正",
+          "correctionCancel": "取消",
+          "correctionValue": "值",
+          "correctionStatement": "陈述",
+          "correctionText": "内容",
+          "correctionAnswer": "直接回答",
+          "correctionProduct": "本产品",
+          "correctionCompetitor": "竞品",
+          "correctionYear": "请填四位数年份，例如 2019。",
+          "correctionPlainText": "这里只能填纯文本，最多 {max} 个字符。",
+          "publishDone": "已发布 kb@v{version}。",
+          "publishReused": "这份内容此前已作为 kb@v{version} 发布，因此没有新建版本。",
+          "publishNoQuestionSet": "这个版本没有提问集，AI 可见性体检无法针对它运行。",
+          "excludeRequired": "这一节不能缺少这个字段，因此它不能被排除；请改用「修正」。"
+        },
+        "run": {
+          "checking": "正在检查是否还有没结束的更新…",
+          "driving": "正在更新…",
+          "complete": "这次更新已结束。",
+          "finished": "这次更新此前已经结束了。",
+          "blocked": "这次更新剩下的部分都被别的正在进行的工作占着，请稍后再试。",
+          "runActive": "这个知识库已经有一次更新在进行中。",
+          "failed": "更新在结束前停下了。不会自动重复计费。",
+          "failedAuth": "这次更新被拒绝了：你当前未登录。",
+          "failedOffline": "这次更新联系不上服务器，停在了原处。",
+          "failedUnavailable": "负责更新的服务当前不可用，更新停下了。",
+          "failedRefused": "服务器拒绝了这次更新，后面的步骤没有再尝试。",
+          "failedUnreadable": "服务器返回了本页面读不懂的内容，更新停下了。",
+          "stalled": "更新不再有进展。",
+          "aborted": "更新已停止。",
+          "nextContinue": "下方有一次可以继续的更新。",
+          "nextReload": "本页面没有可继续的更新。请重新加载页面——如果还有更新开着，那时会给出继续的入口。",
+          "nextSignIn": "请重新登录，然后开始更新。",
+          "nextSignInContinue": "请重新登录，然后在下方继续这次更新。",
+          "unknown": "更新返回了本页面读不懂的状态，请重新加载页面。",
+          "resumable": "这个知识库上一次更新没有结束。",
+          "continue": "继续更新",
+          "remaining": "还剩 {count} 步",
+          "remainingUnknown": "还剩多少步读不出来。",
+          "done": "已完成 {count} 项",
+          "outstanding": "待处理 {count} 项",
+          "unknownOutcome": "结果未知 {count} 项",
+          "failedOps": "无法完成 {count} 项",
+          "chargeUnresolved": "有 {count} 项在弄清结果之前就被这次更新放弃了。它们可能已经产生了费用，因此不会再次尝试。",
+          "unsupported": "有 {count} 项当前部署还跑不了，因此没有尝试，也没有为它们花费任何额度。",
+          "notReloaded": "这张卡片显示的仍是加载时的那份草稿。重新加载页面才能看到更新写入的内容。"
+        },
+        "recovery": {
+          "blockedStatus": "这份草稿还不能更新。",
+          "blockedTitle": "更新能跑起来之前，需要先解决：",
+          "blockedNote": "请在产品档案里补齐并确认，然后在下方重建这份草稿。在那之前，更新会在产出任何内容之前就停下。",
+          "stuck": "这次更新已经停下，而且只要它还开着，就无法开始新的更新。如果你在这份草稿锁定之后确认了新的产品档案版本，那么在草稿按新版本重建之前，任何更新都跑不起来。",
+          "rebuild": "按已确认的产品档案重建这份草稿",
+          "rebuildNote": "如果这份草稿已经过期，重建会丢弃它持有的知识内容和你在上面留下的全部记录，下一次更新会重新生成并重新计费。如果它本来就是最新的，则什么都不会写入，也不会丢弃任何东西。重建本身不调用模型，也不抓取任何页面。",
+          "rebuildWorking": "正在重建这份草稿…",
+          "rebuildCurrent": "这份草稿指向的已经是已确认的产品档案版本，因此没有重建，也没有丢弃任何东西。",
+          "rebuildDone": "这份草稿已按已确认的产品档案版本重建。",
+          "rebuildKeptAll": "它此前没有任何更新产出的内容，因此没有丢弃任何东西。",
+          "rebuildDiscardedKnowledge": "这份草稿原有的知识内容已被丢弃，下一次更新会重新生成并重新计费。",
+          "rebuildDiscardedReview": "同时丢弃了你留下的 {count} 条判定记录。",
+          "rebuildDiscardedRoles": "同时丢弃了此前更新提出的 {count} 个受众角色。",
+          "rebuildCleared": "已经停下的那次更新不再开着，现在可以开始新的更新。",
+          "rebuildClearBusy": "已经停下的那次更新暂时还清除不了，有东西正占着它。请重新加载页面，稍后在那里丢弃它。",
+          "rebuildClearFailed": "已经停下的那次更新没能清除。请重新加载页面，在那里丢弃它。",
+          "rebuildReload": "请重新加载页面以查看重建后的草稿。在那之前，这张卡片显示的是已被替换掉的那一份。",
+          "reload": "重新加载页面",
+          "rebuildFailedAuth": "操作被拒绝：你当前未登录。什么都没有改动。请重新登录后再试。",
+          "rebuildFailedLimited": "这个知识库最近一小时内请求重建的次数过多。什么都没有改动。请稍后再试。",
+          "rebuildFailedStale": "这个知识库在别处发生了变化，这里什么都没有改动。请重新加载页面后再试。",
+          "rebuildFailedRunning": "这份草稿已经付费的某项工作还在进行中。什么都没有改动。请等它结束后再试。",
+          "rebuildFailedProfile": "产品档案还不能用来重建这份草稿。什么都没有改动。请核对并确认产品档案后再试。",
+          "rebuildFailedUnknown": "重建没有完成，本页面无法判断草稿是否已被改动。请重新加载页面查看它当前的状态。",
+          "discard": "丢弃这次已停下的更新",
+          "discardNote": "丢弃后就能开始新的更新。它已经发出的请求不会被撤销，其中结果未知的那些仍然结果未知；下一次更新会从头开始，并为知识内容重新计费。",
+          "discardWorking": "正在丢弃这次已停下的更新…",
+          "discardDone": "这次已停下的更新已被丢弃，现在可以开始新的更新。",
+          "discardGone": "已经没有可丢弃的停下的更新了，现在可以开始新的更新。",
+          "discardBusy": "还有东西正在处理这次更新，因此没有丢弃。请稍后再试。",
+          "discardFailed": "这次已停下的更新没能丢弃。请重新加载页面，确认它是否还开着。"
+        }
+      },
       "enrichment": {
         "title": "来源证据",
         "body": "读取竞品公开页面、核对已保存的事实网址，并使用同一已连接账户最近 90 个已完成统计日的 GSC 查询。建议不会自动保存。",
@@ -5709,9 +5996,6 @@
         "generateCost": "一次生成会抓取你的网站、读取 Search Console，并发起三次模型调用（计费三次），完成后直接冻结为一个版本。产品档案改了就再点一次。",
         "unsupportedLanguage": "当前 GEO 知识库仅支持英文提问语言；当前 GEO 提问语言是 {language}。本次不会抓取网站、读取 Search Console 或调用模型。若网站实际使用英文，请先在上方产品档案中更正语言并确认；若网站主要语言确为中文，当前版本暂不能生成。",
         "unsupportedLanguageAfterStart": "GEO 知识库无法继续生成，因为已保存的提问语言是 {language}。本次被拒绝的模型步骤没有发起调用，但之前的来源刷新可能已经完成。草稿已保留；再次尝试前请先核对当前已保存状态。",
-        "generateNone": "还没有生成过。",
-        "generateCurrent": "已按当前产品档案生成并冻结。",
-        "generateStale": "已有一个冻结版本，但它不是按当前草稿生成的。",
         "generateEmpty": "还没有生成过 GEO 知识库。点上方按钮，用产品档案和你的网站生成一份。",
         "generationStates": { "claimed": "排队中", "dispatched": "运行中", "succeeded": "已完成", "failed": "失败", "uncertain": "结果未知", "unknown": "未知", "not_found": "未找到记录" },
         "model": "请求的模型",
@@ -5741,7 +6025,8 @@
           "review": "先完成角色与事实的审阅",
           "noCandidate": "先生成完整候选",
           "staleCandidate": "候选依据已变化，请重新生成",
-          "running": "生成仍在进行", "unavailable": "还有未满足的前置条件",
+          "running": "生成仍在进行",
+          "unavailable": "还有未满足的前置条件",
           "notReviewed": "先勾选核对确认",
           "busy": "正在处理"
         }
@@ -6148,7 +6433,7 @@
         }
       }
     },
-    "aiVisibility": {
+    "aiVisibility": {"frozenUnreadable": {"no_question_set": "这个版本发布时没有提问集，因此这里没有可问的东西。再发布一次也不会补上——这种格式的知识库目前还不会生成提问集。", "unsupported_payload_version": "这个版本用的是新的知识库格式，本检查暂时还读不了。知识库本身没有问题，对它做任何操作都不会改变这一点。", "identity": "版本 {revision}，发布于 {time}。"}, 
       "eyebrow": "GEO 工具",
       "title": "AI 可见性体检",
       "intro": "用冻结的问题集，在你选择的引擎上重复提问，并将提及、引用与独立读取的页面证据对照。历史单引擎报告保留原有范围；任何报告都不能证明模型为什么选择某个答案。",
@@ -6493,11 +6778,11 @@
         "noWebsites": "账户中还没有网站",
         "addWebsite": "到设置中添加网站",
         "prepare": "完善该网站的知识库",
-        "noFrozen": "尚无冻结版本",
+        "noFrozen": "尚无冻结版本", "frozenUnreadableOption": "此版本在这里读不了",
         "sourceLoading": "正在读取这个冻结版本的准确来源…",
         "sourceUnavailable": "无法读取准确的冻结来源。请刷新，或到知识库检查资料后再启动付费检测。",
         "historicalSourceUnavailable": "暂时无法读取历史冻结来源。这份报告仍使用当时记录的输入，没有用今天的网站资料替换。",
-        "readiness": {
+        "readiness": {"frozen_unreadable": "此处读不了该版本", 
           "profile_required": "待确认网站资料",
           "knowledge_base_required": "待建立知识库",
           "freeze_required": "待冻结版本",
@@ -6651,8 +6936,8 @@
         "engines": "可选择 ChatGPT、Perplexity 或两者。结果来自报告记录的 API 渠道，不是消费者聊天会话；各报告分别注明引擎和实际观测到的模型。",
         "importTitle": "对比本地报告文件"
       },
-      "source": {
-        "title": "输入资料来源",
+      "source": {"unreadable": {"no_question_set": "这个冻结版本没有提问集，因此这里没有可展示的内容。", "unsupported_payload_version": "这个冻结版本用的是新的知识库格式，本页暂时还展示不了。", "identity": "版本 {version}"}, 
+        "subtitleUnreadable": "设置中的资料与冻结检测输入分别记录版本。下面可以展开设置这一侧；冻结那一侧正是本页读不了的部分。", "open": "打开知识库", "title": "输入资料来源",
         "subtitle": "设置中的资料与冻结检测输入分别记录版本。展开后可逐项核对各自实际保存的内容。",
         "currentTitle": "设置中的最新资料",
         "currentDescription": "这是网站最新确认的 Profile，不会自动替换下方已冻结的检测输入。",
@@ -6670,14 +6955,14 @@
         "frozenVersion": "知识库第 {version} 版",
         "frozenAt": "冻结时间",
         "confirmedAt": "确认时间",
-        "status": {
+        "status": {"frozen_unreadable": "此处读不了该版本", 
           "profile_required": "需要确认网站资料",
           "knowledge_base_required": "需要准备知识库",
           "freeze_required": "需要冻结输入版本",
           "profile_update_available": "来源资料有更新",
           "ready": "可运行检测"
         },
-        "sync": {
+        "sync": {"unknown": "这里读不了冻结的来源，因此没有和已确认的 Profile 做过比较。", 
           "current": "冻结来源与当前已确认的 Profile 一致。",
           "outdated": "已有更新的已确认 Profile。请审阅并采用更新，再冻结新版本用于检测。",
           "legacy_partial": "旧冻结版本只保留了部分原始 Profile。创建新版本前请审阅完整来源。",
@@ -8874,7 +9159,7 @@
           "keyPageHitsAtLeast": "关键页 {hits}/{total} · 另有至少 {rest} 页",
           "keyPageHitsOnly": "关键页 {hits}/{total}",
           "keyPageObserved": "关键页 {evaluated}/{total} 已测量",
-              "keyPageIndex": "第 {index}/{total} 个命中页",
+          "keyPageIndex": "第 {index}/{total} 个命中页",
           "keyPageScope": "关键页 {evaluated}/{total} 已评估",
           "keyPagePass": "关键页 {evaluated}/{total} 已评估 · 通过",
           "affectedSite": "站点级范围",
@@ -8906,15 +9191,15 @@
           "notCaptured": "本次运行没有记录到可归属于该问题的具体目标。这是证据缺失，不是「受影响 0 个」。",
           "notEnumerated": "记录的受影响总数大于上面列出的观测条目，因此这份列表不是完整枚举。",
           "siteScopeCounted": "站点级观测；记录的受影响数为 {count}。本次未定位到具体 URL，因此不列出 URL。",
-            "keyPagesHeading": "命中的关键页",
-            "keyPagesNote": "这一项在这些页面上判定为有问题。修复建议默认针对下面选中的那一页。",
-            "keyPagesMore": "另有 {rest} 个命中页未列出。",
-            "keyPagesOnlyTarget": "只有你提交的这一页命中。",
-            "keyPageSplit": "这一行只讲上面那一页。同一检查在其他页的命中各自成行。",
-            "repairScopeTarget": "下面的建议和预览针对你提交的页面：{url}",
-            "repairScopeElsewhere": "这一项针对上面标出的页面，不是提交页。预览只使用该页已有观测；如需生成文案，请先点击「检查这一页」采集它的完整正文。",
-            "checkThisPage": "检查这一页",
-            "checkHandoffFailed": "没能把这一页交接过去。请直接打开 On-Page Checker 并填入该 URL。"
+          "keyPagesHeading": "命中的关键页",
+          "keyPagesNote": "这一项在这些页面上判定为有问题。修复建议默认针对下面选中的那一页。",
+          "keyPagesMore": "另有 {rest} 个命中页未列出。",
+          "keyPagesOnlyTarget": "只有你提交的这一页命中。",
+          "keyPageSplit": "这一行只讲上面那一页。同一检查在其他页的命中各自成行。",
+          "repairScopeTarget": "下面的建议和预览针对你提交的页面：{url}",
+          "repairScopeElsewhere": "这一项针对上面标出的页面，不是提交页。预览只使用该页已有观测；如需生成文案，请先点击「检查这一页」采集它的完整正文。",
+          "checkThisPage": "检查这一页",
+          "checkHandoffFailed": "没能把这一页交接过去。请直接打开 On-Page Checker 并填入该 URL。"
         },
         "evidence": {
           "none": "本次没有可展示的证据记录。",
