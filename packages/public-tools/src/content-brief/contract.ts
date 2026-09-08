@@ -74,7 +74,7 @@ export type RunMode = "complete" | "partial" | "degraded" | "unavailable";
 /* 运行元数据                                                          */
 /* ------------------------------------------------------------------ */
 
-/** 单条 LLM 读取记录（brief 的生成调用加最多一次修复、draft 的覆盖度校验）。calls 是真实发出的请求数。 */
+/** 单次 LLM 调用（brief 的唯一一次、draft 的覆盖度校验）。 */
 export type LlmReadMeta =
   | {
       status: "complete";

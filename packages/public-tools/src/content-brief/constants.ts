@@ -32,16 +32,7 @@ export const CRAWL_DEADLINE_MS = 15_000; // 全部 URL 的墙钟
 /** 抓取内层墙钟比外层 lane 提前收口的余量；内层必须先返回，否则 lane 超时会丢弃已抓完的页 */
 export const CRAWL_SETTLEMENT_MS = 500;
 export const GSC_DEADLINE_MS = 15_000; // 与 SERP/抓取并行；步骤 5 前必须结束
-export const LLM_DEADLINE_MS = 15_000; // brief 的生成调用
-/**
- * brief 一次运行最多几次付费 LLM 请求：一次生成，外加最多一次针对单个被拒字符串的修复。
- *
- * 上界写在这里是因为生产端（apps/marketing 的 v2-llm）和校验端（v2-brief）必须同一个数。
- * 加修复调用时只改了生产端，校验端仍拒 calls > 1，于是每一次真的用上修复的运行都在装配
- * 处 503——两次调用的钱照付，简报照丢。诚实性上要动的是上界不是计数：`calls` 必须继续
- * 等于真实发出的请求数。
- */
-export const BRIEF_LLM_CALLS_MAX = 2;
+export const LLM_DEADLINE_MS = 15_000; // brief 唯一一次 LLM 调用
 
 export const CRAWL_FETCH_TIMEOUT_MS = 8_000; // = fetchPublicResource 默认
 export const CRAWL_CONCURRENCY = 5;

@@ -4,7 +4,7 @@ import { measureResearchLength, type ResearchPage } from "@sf/public-tools/conte
 import type { BriefV2Context } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { validateModelBriefV2 } from "@sf/public-tools/content-brief/v2-generation";
 import { buildResearchBundle } from "@sf/public-tools/content-brief/v2-research";
-import { briefV3WirePath, validateSectionQuestionsBrief } from "./content-brief-v3-model.ts";
+import { validateSectionQuestionsBrief } from "./content-brief-v3-model.ts";
 
 function page(id: string, text: string): ResearchPage {
   const role = id.startsWith("T") ? "owned" : "competitor";
@@ -175,50 +175,5 @@ describe("Brief v3 private section-question model protocol", () => {
     const source = context();
     const invalid = { ...source, research: { ...source.research, units: [{ id: "U1", kind: "page" as const, page_ref: "C99", segment_index: 0 }] } };
     expect(validateSectionQuestionsBrief(wire(), invalid)).toMatchObject({ ok: false });
-  });
-});
-
-describe("Brief v3 rejected-path translation", () => {
-  it.each([
-    ["research.outline[0].h2", "research.sections[0].h2"],
-    ["research.outline[0].h3[0]", "research.sections[0].h3[0]"],
-    ["research.outline[1].h2", "research.sections[1].h2"],
-    // The flat question list runs across sections: index 2 is the first
-    // question of the second section, not its third.
-    ["research.questions[0].q", "research.sections[0].questions[0].q"],
-    ["research.questions[1].q", "research.sections[0].questions[1].q"],
-    ["research.questions[2].q", "research.sections[1].questions[0].q"],
-    ["research.questions[2].anchor", "research.sections[1].questions[0].anchor"],
-  ])("translates %s to %s", (flat, expected) => {
-    expect(briefV3WirePath(flat, wire())).toBe(expected);
-  });
-
-  it.each([
-    // Passed through untouched by the adapter, so the reported path already
-    // addresses the reply and must not be rewritten.
-    "page_plan.rationale", "gap_angle.value", "internal_links[0].anchor", "do_not_cover[0].why",
-    // Assembled from several questions; it is not one string anywhere.
-    "research.outline[0].answers",
-    // Past the end of what the reply actually contains.
-    "research.outline[9].h2", "research.questions[9].q", "research.outline[0].h3[9]",
-  ])("returns null for %s", (flat) => {
-    expect(briefV3WirePath(flat, wire())).toBeNull();
-  });
-
-  it("returns null for a reply that is not section-shaped", () => {
-    // The flat v2 protocol reaches the same repair code. Its paths are already
-    // reply paths, so translation must decline rather than guess.
-    const flat = { research: { questions: [{ anchor: "U1", q: "Why?", sources: ["U1"] }], outline: [] } };
-    expect(briefV3WirePath("research.questions[0].q", flat)).toBeNull();
-  });
-
-  it("keeps the map in step with the flattening it came from", () => {
-    // Both halves come from one traversal; this pins that they agree, so a
-    // change to the section shape cannot silently translate to the wrong place.
-    const source = context();
-    const zh = changed(wire(), ["research", "sections", 0, "h2"], "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf");
-    const result = validateSectionQuestionsBrief(zh, source);
-    expect(result).toMatchObject({ ok: false, path: "research.outline[0].h2" });
-    expect(briefV3WirePath(result.ok ? "" : result.path, zh)).toBe("research.sections[0].h2");
   });
 });

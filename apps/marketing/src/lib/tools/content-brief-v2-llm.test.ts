@@ -5,7 +5,7 @@ import type { ResearchPage } from "@sf/public-tools/content-brief/v2-contract";
 import type { BriefV2Context, ModelBriefV2Output } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { parseBriefV2Context } from "@sf/public-tools/content-brief/v2-generation";
 import { buildSerpObservations } from "@sf/public-tools/content-brief/assemble";
-import { CONTENT_BRIEF_V2_REPAIR_DEADLINE_MS, runContentBriefV2Llm } from "./content-brief-v2-llm.ts";
+import { runContentBriefV2Llm } from "./content-brief-v2-llm.ts";
 import { createKeywordLlmClient, KeywordLlmError, type KeywordLlmClient, type KeywordLlmConfig, type KeywordLlmFailureReason, type KeywordLlmRequest } from "./keyword-llm-client.ts";
 
 const NOW = 1_800_000_000_000;
@@ -48,24 +48,6 @@ function recorder(reply: string | Error = RESPONSE) {
   return { client, requests };
 }
 
-/** Answers each call in turn, so a repair attempt can be given its own reply. */
-function sequenceRecorder(replies: readonly (string | Error)[]) {
-  const requests: KeywordLlmRequest[] = [];
-  const client: KeywordLlmClient = { complete: async (request) => {
-    const reply = replies[requests.length] ?? replies.at(-1)!;
-    requests.push(request);
-    if (reply instanceof Error) throw reply;
-    return { content: reply, modelId: "deployment-reported", usage: { requestCount: 1, retryCount: 0, inputTokens: 1200, outputTokens: 500 } };
-  } };
-  return { client, requests };
-}
-
-async function runSequence(replies: readonly (string | Error)[], data = context()) {
-  const recorded = sequenceRecorder(replies);
-  const result = await runContentBriefV2Llm({ context: data, deadlineAt: NOW + 45_000 }, { config: CONFIG, client: recorded.client, now: () => NOW });
-  return { ...recorded, result };
-}
-
 async function run(reply: string | Error = RESPONSE, data = context()) {
   const recorded = recorder(reply);
   const result = await runContentBriefV2Llm({ context: data, deadlineAt: NOW + 45_000 }, { config: CONFIG, client: recorded.client, now: () => NOW });
@@ -78,11 +60,6 @@ function updateFixture() {
   const raw = JSON.parse(RESPONSE) as ModelBriefV2Output;
   const output: ModelBriefV2Output = { ...raw, page_plan: { action: "update", target_ref: "T1", rationale: "The observed page already explains the validation workflow, despite low supporting-query impressions.", steps: [{ kind: "rewrite", instruction: "Clarify insurance checks using the existing explanation.", sources: ["U2"], answers: ["U1"] }] } };
   return { owned, output };
-}
-
-function changedHeading(h2: string): ModelBriefV2Output {
-  const raw = JSON.parse(RESPONSE) as ModelBriefV2Output;
-  return { ...raw, research: { ...raw.research, outline: raw.research.outline.map((item, index) => index === 0 ? { ...item, h2 } : item) } };
 }
 
 describe("one-call Brief v2 assembly", () => {
@@ -306,149 +283,6 @@ describe("one-call Brief v2 assembly", () => {
     expect((await run(paddedId)).result.reads).toMatchObject({ reason: "validation_failed", attempted: 1 });
   });
 
-  it("asks once more when a heading came back in the wrong language, and reports one complete run", async () => {
-    const wrong = JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"));
-    const { requests, result } = await runSequence([wrong, RESPONSE]);
-    expect(requests).toHaveLength(2);
-    expect(requests[1]?.system).toContain("You correct one JSON object");
-    // The evidence is not resent: that is the whole reason a second call is affordable.
-    const excerpt = "checks insurance eligibility and validates claim codes";
-    expect(requests[0]!.user).toContain(excerpt);
-    expect(requests[1]!.user).not.toContain(excerpt);
-    expect(requests[1]!.system.length).toBeLessThan(requests[0]!.system.length / 4);
-    expect(Object.keys(JSON.parse(requests[1]!.user)).sort()).toEqual(["rejected_path", "reply", "rule"]);
-    expect(JSON.parse(requests[1]!.user)).toMatchObject({ rejected_path: "research.outline[0].h2" });
-    expect(result.output).not.toBeNull();
-    expect(result.validation_path).toBeNull();
-    expect(result.reads).toMatchObject({ status: "complete", calls: 2, input_tokens: 2400, output_tokens: 1000 });
-  });
-
-  it("reports the second rejection's own path and never asks a third time", async () => {
-    const wrong = JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"));
-    const stillWrong = JSON.stringify(changedHeading("\u4ecd\u7136\u662f\u4e2d\u6587\u6807\u9898\u884c"));
-    const { requests, result } = await runSequence([wrong, stillWrong]);
-    expect(requests).toHaveLength(2);
-    expect(result.output).toBeNull();
-    expect(result.validation_path).toBe("research.outline[0].h2");
-    expect(result.reads).toMatchObject({ status: "unavailable", reason: "validation_failed", attempted: 2, calls: 2 });
-  });
-
-  it("repairs a heading in the section-shaped reply the tool page actually sends", async () => {
-    // The live protocol is v3: the model returns research.sections, and the
-    // validator reports research.outline[0].h2 because it judges the flattened
-    // shape. Without translating that back, the repair finds nothing at the
-    // reported path and declines — silently skipping the one case it was built
-    // for, since a wrong-language heading is exactly what lands there.
-    const original = context();
-    const data = { ...original, serp: { rows: buildSerpObservations([{ rank: 1, url: original.research.pages[0]!.url, title: "Medical billing guide", domain: "c1.example" }]),
-      read: { status: "partial" as const, requested: 10, returned: 1, unresolved: 0 } } };
-    const sectioned = (h2: string) => {
-      const reply = JSON.parse(RESPONSE);
-      reply.research = { sections: [{ h2, h3: [], questions: reply.research.questions }] };
-      return JSON.stringify(reply);
-    };
-    const { requests, result } = await runSequence(
-      [sectioned("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"), sectioned("Validate claims before submission")], data);
-    expect(requests).toHaveLength(2);
-    // The model is shown its own reply, so it must be shown its own path.
-    expect(JSON.parse(requests[1]!.user).rejected_path).toBe("research.sections[0].h2");
-    expect(result.output?.research.outline[0]?.h2).toBe("Validate claims before submission");
-    expect(result.reads).toMatchObject({ status: "complete", calls: 2 });
-  });
-
-  it("takes only the rewritten string from a repair, never the rest of its reply", async () => {
-    const wrong = JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"));
-    // A repair asked to translate one heading also drops a source reference and
-    // empties the plan. Revalidating its reply as a whole would accept that.
-    const original = JSON.parse(RESPONSE) as ModelBriefV2Output;
-    const smuggled = JSON.stringify({
-      ...original,
-      research: {
-        questions: original.research.questions.map((question) => ({ ...question, sources: [question.anchor] })),
-        outline: original.research.outline.map((item, index) => index === 0 ? { ...item, h2: "Understand medical billing software" } : item),
-      },
-      internal_links: [], do_not_cover: [], gap_angle: null,
-    });
-    const { requests, result } = await runSequence([wrong, smuggled]);
-    expect(requests).toHaveLength(2);
-    expect(result.output).not.toBeNull();
-    expect(result.output?.research.outline[0]?.h2).toBe("Understand medical billing software");
-    // Everything else is the first reply's, not the repair's.
-    expect(result.output?.research.questions[0]?.source_refs).toEqual(original.research.questions[0]?.sources);
-    expect(result.output?.internal_links).toEqual(original.internal_links);
-    expect(result.output?.do_not_cover).toEqual(original.do_not_cover);
-  });
-
-  it("reports a repair that timed out as a timeout, not as a validation failure", async () => {
-    const wrong = JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"));
-    const { result } = await runSequence([wrong, new KeywordLlmError("timeout", "redacted provider error", { requestCount: 1, retryCount: 0, inputTokens: null, outputTokens: null })]);
-    expect(result.output).toBeNull();
-    expect(result.reads).toMatchObject({ status: "unavailable", reason: "timeout", attempted: 2 });
-  });
-
-  it("does not spend a second call on a rejection a rewrite cannot fix", async () => {
-    const paddedId = JSON.stringify(JSON.parse(RESPONSE)).replaceAll('"U1"', '" U1 "');
-    const { requests, result } = await runSequence([paddedId, RESPONSE]);
-    expect(requests).toHaveLength(1);
-    expect(result.output).toBeNull();
-    expect(result.validation_path).toBe("research.questions[0].anchor");
-  });
-
-  it.each([
-    ["is not JSON at all", "Sorry, here is the corrected heading."],
-    ["no longer carries a string at the rejected path", "{}"],
-    ["answers with a number where the string was", JSON.stringify({ research: { outline: [{ h2: 7 }] } })],
-  ])("keeps the first rejection when the repair reply %s", async (_label, repairReply) => {
-    const wrong = JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"));
-    const { requests, result } = await runSequence([wrong, repairReply]);
-    expect(requests).toHaveLength(2);
-    expect(result.output).toBeNull();
-    expect(result.validation_path).toBe("research.outline[0].h2");
-    // Both calls were paid for, so both are reported.
-    expect(result.reads).toMatchObject({ status: "unavailable", reason: "validation_failed", attempted: 2, calls: 2 });
-  });
-
-  it("reports a repair that came back after its own deadline as a timeout", async () => {
-    const wrong = JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6"));
-    const recorded = sequenceRecorder([wrong, RESPONSE]);
-    let elapsed = 0;
-    const client: KeywordLlmClient = { complete: async (request) => {
-      const reply = await recorded.client.complete(request);
-      // The repair itself overran CONTENT_BRIEF_V2_REPAIR_DEADLINE_MS.
-      if (recorded.requests.length === 2) elapsed = CONTENT_BRIEF_V2_REPAIR_DEADLINE_MS + 1;
-      return reply;
-    } };
-    const result = await runContentBriefV2Llm(
-      { context: context(), deadlineAt: NOW + 45_000 }, { config: CONFIG, client, now: () => NOW + elapsed });
-    expect(result.output).toBeNull();
-    expect(result.validation_path).toBe("research.outline[0].h2");
-    expect(result.reads).toMatchObject({ status: "unavailable", reason: "timeout", attempted: 2, calls: 2 });
-  });
-
-  it("makes the token total unknown when one of the two calls reported no usage", async () => {
-    const replies = [JSON.stringify(changedHeading("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6")), RESPONSE];
-    let calls = 0;
-    const client: KeywordLlmClient = { complete: async () => {
-      const index = calls++;
-      return { content: replies[index]!, modelId: "deployment-reported", usage: index === 0
-        ? { requestCount: 1, retryCount: 0, inputTokens: 1200, outputTokens: 500 }
-        : { requestCount: 1, retryCount: 0, inputTokens: null, outputTokens: null } };
-    } };
-    const result = await runContentBriefV2Llm(
-      { context: context(), deadlineAt: NOW + 45_000 }, { config: CONFIG, client, now: () => NOW });
-    expect(result.output).not.toBeNull();
-    // Adding only the call that reported would understate what the run cost.
-    expect(result.reads).toMatchObject({ status: "complete", calls: 2, input_tokens: null, output_tokens: null });
-  });
-
-  it("names an unparsable first reply as such rather than as a rule it broke", async () => {
-    const { requests, result } = await runSequence(["Here is your brief:"]);
-    expect(requests).toHaveLength(1);
-    expect(result.output).toBeNull();
-    expect(result.validation_path).toBe("<reply is not JSON>");
-    expect(result.reads).toMatchObject({ status: "unavailable", reason: "validation_failed", attempted: 1 });
-  });
-
   it("allows a reviewed empty assembly for wholly irrelevant evidence", async () => {
     const raw: ModelBriefV2Output = { research: { questions: [], outline: [] }, intent: null, format: null, page_plan: { action: "undecidable", target_ref: null, steps: [], rationale: "The supplied sources do not address this topic." }, gap_angle: null, internal_links: [], do_not_cover: [] };
     const { result } = await run(JSON.stringify(raw));
@@ -467,5 +301,18 @@ describe("one-call Brief v2 assembly", () => {
     expect(parseResearchBundle(result.context.research).ok).toBe(true);
     expect(JSON.parse(requests[0]!.user).units.map((unit: { id: string }) => unit.id)).toEqual(result.context.research.units.map((unit) => unit.id));
     expect(JSON.stringify(data)).toBe(before);
+  });
+
+  it("records the rejected rule for the run log without putting it in the brief", async () => {
+    // A rejected reply reaches the visitor as one unavailable read, which says
+    // nothing about why. Two production runs on 2026-09-07 had to be diagnosed
+    // by reading the model output by hand. The path is the validator's own, so
+    // it names the rule and carries none of the reply's text.
+    const zh = JSON.parse(RESPONSE);
+    zh.research.outline[0].h2 = "\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6";
+    const { result } = await run(JSON.stringify(zh));
+    expect(result.output).toBeNull();
+    expect(result.validation_path).toBe("research.outline[0].h2");
+    expect(JSON.stringify(result)).not.toContain("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6");
   });
 });
