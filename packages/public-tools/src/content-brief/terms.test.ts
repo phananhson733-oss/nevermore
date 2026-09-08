@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { RELEVANCE_TERMS_MAX, relevanceScore, relevanceTerms } from "./terms.ts";
+import { RELEVANCE_BIGRAM_TERMS_MAX, relevanceScore, relevanceTerms } from "./terms.ts";
 
 describe("relevanceTerms", () => {
   it("keeps the whole phrase strongest and its content words weaker", () => {
@@ -51,7 +51,7 @@ describe("relevanceTerms", () => {
     expect(relevanceTerms(["", "   "])).toEqual([]);
   });
 
-  it("caps the widest accepted request without dropping a single whole phrase", () => {
+  it("caps the bigram tail of the widest accepted request, keeping every phrase", () => {
     // The widest shape the handler accepts: a primary plus SUPPORTING_KEYWORDS_MAX
     // supporting keywords, each at KEYWORD_MAX_CHARS. In an unsegmented script that
     // is one bigram per adjacent pair, about 2200 terms, and every one of them is
@@ -63,16 +63,41 @@ describe("relevanceTerms", () => {
 
     const terms = relevanceTerms(phrases);
 
-    expect(terms).toHaveLength(RELEVANCE_TERMS_MAX);
-    // Descending weight is what makes the cut safe: it takes bigrams, never phrases.
-    const kept = new Set(terms.map((term) => term.value));
-    expect(phrases.filter((phrase) => !kept.has(phrase))).toEqual([]);
+    // A single unsegmented run is the phrase again, never a word, so this input
+    // is eleven phrases and nothing but bigrams behind them.
+    expect(terms.filter((term) => term.weight === 0.5)).toHaveLength(RELEVANCE_BIGRAM_TERMS_MAX);
+    expect(terms.filter((term) => term.weight !== 0.5).map((term) => term.value)).toEqual([...phrases].sort());
   });
 
-  it("leaves an ordinary request uncut", () => {
-    const terms = relevanceTerms(["mercury retrograde meaning", "retrograde dates 2026", "planet in retrograde"]);
+  it("never drops a whole word to make room, however many the request carries", () => {
+    // Eleven 199-character keywords of fifty short words each: 561 terms and not
+    // one bigram. A cap on the whole sorted list looks equivalent to a cap on the
+    // bigrams and is not — it took 161 of these words, and a word missing from the
+    // vocabulary scores zero on every excerpt that contains it.
+    const words = Array.from({ length: 550 }, (_, index) =>
+      `q${String.fromCharCode(97 + Math.floor(index / 26), 97 + (index % 26))}`);
+    const phrases = Array.from({ length: 11 }, (_, index) => words.slice(index * 50, index * 50 + 50).join(" "));
 
-    expect(terms.length).toBeLessThan(RELEVANCE_TERMS_MAX);
+    const terms = relevanceTerms(phrases);
+
+    expect(terms.filter((term) => term.weight === 1).map((term) => term.value).sort()).toEqual([...words].sort());
+    expect(relevanceScore("qvd", null, terms)).toBeGreaterThan(0);
+  });
+
+  it("leaves an ordinary request uncut, term for term", () => {
+    const terms = relevanceTerms(["mercury retrograde meaning", "retrograde dates 2026"]);
+
+    // The exact vocabulary, so a cap that started taking from ordinary requests
+    // would show up here rather than as a smaller number that still passes.
+    expect(terms).toEqual([
+      { value: "mercury retrograde meaning", weight: 3, word: false },
+      { value: "retrograde dates 2026", weight: 3, word: false },
+      { value: "2026", weight: 1, word: true },
+      { value: "dates", weight: 1, word: true },
+      { value: "meaning", weight: 1, word: true },
+      { value: "mercury", weight: 1, word: true },
+      { value: "retrograde", weight: 1, word: true },
+    ]);
   });
 
   it("orders terms by descending weight so a bounded consumer keeps the strongest", () => {

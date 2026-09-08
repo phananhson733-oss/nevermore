@@ -109,28 +109,34 @@ function referenceWork(): number {
 /**
  * Cost of `run` on this machine, expressed in reference-workload units.
  *
- * Both sides are timed inside the same attempt and the best RATIO is kept, not
- * the ratio of two separately taken bests. The sides differ by more than a
- * factor of ten in duration, so timing them in separate blocks let a load spike
- * land on one side only: with the whole suite running in parallel, the main
- * case measured 59.5 units against a budget of 40 that an idle run clears at
- * 17. A spike inside one attempt now moves both sides together and leaves the
- * ratio alone; a spike that hits only the numerator raises that attempt's ratio
- * and the minimum ignores it. A reference that measures zero contributes no
- * attempt, so a clock too coarse to measure anything fails instead of passing.
+ * Interference only ever makes a measurement longer, so the fastest attempt on
+ * each side is the closest either gets to its true cost and the ratio of the
+ * two minima is the estimate. The two sides are interleaved rather than timed
+ * in separate blocks, which is what went wrong before: with the whole suite
+ * running in parallel, every clustering attempt landed inside a busy stretch
+ * and every reference attempt after it, and the main case measured 59.5 units
+ * against a budget of 40 that an idle run clears at 13.
+ *
+ * The minimum of the per-attempt ratios is not the same statistic and is not
+ * safe here: one attempt where only the reference is descheduled produces a
+ * small ratio all by itself, and the minimum then reports that instead of the
+ * clustering cost. Taking each side's own minimum discards a pause wherever it
+ * lands. A reference that measures zero contributes no attempt, so a clock too
+ * coarse to measure anything fails instead of passing.
  */
 function costInReferenceUnits(run: () => unknown): number {
-  let best = Number.POSITIVE_INFINITY;
+  let bestRun = Number.POSITIVE_INFINITY;
+  let bestReference = Number.POSITIVE_INFINITY;
   for (let attempt = 0; attempt < PERF_ATTEMPTS; attempt += 1) {
     const referenceStarted = performance.now();
     referenceWork();
     const referenceMs = performance.now() - referenceStarted;
     const started = performance.now();
     run();
-    const runMs = performance.now() - started;
-    if (referenceMs > 0) best = Math.min(best, runMs / referenceMs);
+    if (referenceMs > 0) bestReference = Math.min(bestReference, referenceMs);
+    bestRun = Math.min(bestRun, performance.now() - started);
   }
-  return best;
+  return bestRun / bestReference;
 }
 
 function pseudoRandomHeadings(count: number, seed: number): HeadingInput[] {

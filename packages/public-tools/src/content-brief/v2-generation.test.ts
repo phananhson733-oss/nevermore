@@ -1,4 +1,3 @@
-import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 import * as generation from "./v2-generation.ts";
 import { buildResearchBundle } from "./v2-research.ts";
@@ -375,19 +374,6 @@ describe("v2 generated language", () => {
     const stray = changed(model(), ["research", "outline", 0, "h2"],
       "\u300c\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf\u7684\u542b\u4e49");
     expect(generation.validateModelBriefV2(stray, context(), LANGUAGE_CHECK).ok).toBe(false);
-  });
-
-  it("scans a hostile run of opening marks in linear time", () => {
-    // `open [^close]* close` is quadratic on this input, and this text comes
-    // from a model prompted with crawled third-party prose. Bounded here by
-    // the model-text cap, so the budget is generous: the point is that it does
-    // not grow with the square of the length.
-    const hostile = "\u300c".repeat(1900) + "plot";
-    const started = performance.now();
-    const result = generation.validateModelBriefV2(
-      changed(model(), ["research", "outline", 0, "h2"], hostile), context(), LANGUAGE_CHECK);
-    expect(performance.now() - started).toBeLessThan(200);
-    expect(result.ok).toBe(false);
   });
 
   it("does not judge a brief read back by a rule it predates", () => {

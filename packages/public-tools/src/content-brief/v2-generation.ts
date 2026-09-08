@@ -263,9 +263,12 @@ const QUOTE_CLOSE: ReadonlySet<string> = new Set(["\u300d", "\u300f", "\u201d", 
  * The obvious pattern for a quoted span is `open [^close]* close`, which is
  * quadratic on an opening mark that never closes: the inner class runs to the
  * end and backtracks, once per opening mark. Measured on that shape, 4000
- * characters cost 14 ms and 20000 cost 382 ms, and this text comes from a
- * model prompted with crawled third-party prose. A backward pass recording the
- * next closing mark makes the forward pass linear.
+ * characters cost 14 ms and 20000 cost 382 ms. This is not a live denial of
+ * service — every string that reaches here was already rejected above unless it
+ * fits its own decoder, and the longest of those is a 400-character question —
+ * so the quadratic form cost a few milliseconds, not a run. It is replaced
+ * because a bound that only holds through another module is not a bound; a
+ * backward pass recording the next closing mark makes this one local.
  *
  * An unterminated opening mark is deliberately not a span. Treating the rest
  * of the string as quoted would let one stray quote exempt a whole heading

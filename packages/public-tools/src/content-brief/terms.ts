@@ -74,26 +74,34 @@ function isSingleLatinWord(value: string): boolean {
   return !UNSEGMENTED.test(value) && /^[\p{L}\p{N}]+$/u.test(value);
 }
 
+/** The weight a CJK bigram carries; the tier the cap below applies to. */
+const BIGRAM_WEIGHT = 0.5;
+
 /**
- * How many terms one run's keywords may contribute.
+ * How many bigrams one run's keywords may contribute.
  *
  * Unsegmented scripts emit a bigram per adjacent character pair, so the widest
  * request the handler accepts — a primary plus ten supporting keywords at
  * KEYWORD_MAX_CHARS each — reaches about 2200 terms where an English run of
  * the same shape reaches about 30. Every term is then tested against every
  * observed excerpt, twice per stage, and the run has 45 seconds to spend on
- * paid calls rather than on scanning. The descending-weight sort below is what
- * makes this cap safe to apply: the phrases and whole words survive it, and
- * only the weakest bigrams are dropped.
+ * paid calls rather than on scanning.
+ *
+ * The cap is on the bigram tier alone, not on the whole vocabulary. Slicing the
+ * sorted list at a fixed length looks equivalent and is not: eleven keywords of
+ * fifty short Latin words each produce 561 terms with no bigrams at all, and a
+ * flat cap silently dropped 161 whole words from a request well inside the
+ * accepted limits. A word that never enters the vocabulary scores zero
+ * everywhere, and v2-gsc drops an owned-page candidate whose score is zero.
  */
-export const RELEVANCE_TERMS_MAX = 400;
+export const RELEVANCE_BIGRAM_TERMS_MAX = 400;
 
 /**
  * Build the weighted term set for one run's keywords.
  *
  * A term appears once, at its strongest weight: a phrase that is also a token
- * of another phrase stays a phrase. Terms come back in descending weight so
- * the cap above drops the weakest signals rather than an arbitrary slice.
+ * of another phrase stays a phrase. Terms come back in descending weight, and
+ * the cap above takes only from the bigram tail.
  */
 export function relevanceTerms(phrases: readonly string[]): readonly RelevanceTerm[] {
   const byValue = new Map<string, TermWeight>();
@@ -114,10 +122,13 @@ export function relevanceTerms(phrases: readonly string[]): readonly RelevanceTe
     }
     for (const gram of bigrams(folded)) add(gram, 0.5);
   }
-  return [...byValue.entries()]
+  const ordered = [...byValue.entries()]
     .map(([value, weight]): RelevanceTerm => ({ value, weight, word: isSingleLatinWord(value) }))
-    .sort((a, b) => b.weight - a.weight || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0))
-    .slice(0, RELEVANCE_TERMS_MAX);
+    .sort((a, b) => b.weight - a.weight || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
+  // Descending weight puts the whole phrases and words first, so the bigrams
+  // are the tail and the cut is a slice of it.
+  const strong = ordered.filter((term) => term.weight > BIGRAM_WEIGHT).length;
+  return ordered.slice(0, strong + RELEVANCE_BIGRAM_TERMS_MAX);
 }
 
 const EMPTY_WORDS: ReadonlySet<string> = new Set();
