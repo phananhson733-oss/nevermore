@@ -95,6 +95,12 @@ describe("host sets", () => {
       ["https://x.example/a", "線上排盤產生器", "tool"],
       // A four-digit leading number that is a year is not a count.
       ["https://x.example/a", "2026 General Schedule (GS) Salary Calculator", "tool"],
+      // "dates" names what the page is about; "calculator" names what it is.
+      // timeanddate.com read its own duration calculator as a guide and the
+      // FAQ about that calculator as a tool, exactly inverted.
+      ["https://www.timeanddate.com/date/timeduration.html", "Time Duration Calculator - Count days between dates", "tool"],
+      ["https://www.mdcalc.com/calc/423/pregnancy-due-dates", "Pregnancy Due Dates Calculator", "tool"],
+      ["https://plaincalculators.com/angel-number-calculator/", "Angel Number Calculator - Meaning of Repeating Numbers", "tool"],
     ];
     for (const [url, title, expected] of cases) {
       expect(classifySerpFormat({ domain: "x.example", url, title }).value, title).toBe(expected);
@@ -112,15 +118,28 @@ describe("host sets", () => {
       ["x.example", "https://x.example/birth-chart", "How to Use a Birth Chart Calculator", "guide"],
       ["x.example", "https://x.example/birth-chart", "What Is a Birth Chart Calculator?", "guide"],
       ["x.example", "https://x.example/mortgage-calculator", "Mortgage calculator explained", "guide"],
+      ["timeanddate.com", "https://www.timeanddate.com/date/timeduration-help.html", "FAQ: Time Duration Calculator", "guide"],
+      // "meaning" moved below the calculator rules with "dates", and for the
+      // same reason. A page about a subject keeps that word; a page that is a
+      // calculator keeps it too, and only one of them is a calculator.
+      ["x.example", "https://x.example/a", "Angel Number 444 Meaning", "guide"],
+      // Moving "dates" below the calculator rules costs nothing here: a page
+      // about dates that never claims to be a calculator is still a guide.
+      ["irs.gov", "https://www.irs.gov/filing/important-tax-dates", "Important Tax Filing Dates 2026", "guide"],
       ["x.example", "https://x.example/a", "使用 Python 创建计算器 | Tkinter 教程", "guide"],
       // A slug is not a path rule: an article's own URL keeps the calculator's
       // name, so the suffix decides after every title rule, not before them.
       ["rates.ca", "https://rates.ca/resources/how-to-use-a-mortgage-calculator", "How to Use a Mortgage Calculator", "guide"],
       ["x.example", "https://x.example/product/scientific-calculator", "Scientific Calculator", "product_page"],
       ["x.example", "https://x.example/pricing/report-generator", "Report Generator", "product_page"],
-      // The count rule keeps every count that is not a year.
-      ["x.example", "https://x.example/a", "10 Best Mortgage Calculator Sites", "listicle"],
-      ["x.example", "https://x.example/a", "1000 Questions to ask people", "listicle"],
+      // No "best" here: a broken count rule drops this row to title:calculator
+      // and the format changes. With "best" in it the row is listicle either
+      // way and pins nothing.
+      ["x.example", "https://x.example/a", "10 Mortgage Calculator Sites", "listicle"],
+      // Four digits are a year, a tax form or a count and the title does not
+      // say which. "1040 Tax Calculator" is the case that decided it: reading
+      // the number as a length made it a list of a thousand items.
+      ["dinkytown.net", "https://www.dinkytown.net/java/1040-tax-calculator.html", "1040 Tax Calculator", "tool"],
       // An app marketplace listing for a calculator is a product page.
       ["apps.microsoft.com", "https://apps.microsoft.com/detail/9wzdncrfhvn5", "Windows Calculator", "product_page"],
       // A generator is as often a machine as a program and no lexical test
@@ -130,24 +149,35 @@ describe("host sets", () => {
       ["random.org", "https://www.random.org/sequences/", "RANDOM.ORG - Sequence Generator", "unknown"],
       // -calculator has to end a segment, or a review of one becomes one.
       ["x.example", "https://x.example/mortgage-calculator-review", "Our Verdict", "unknown"],
+      // The bound the count rule really has: a leading number of four digits
+      // or more is not read as a count at all, so a page whose title says
+      // nothing else is reported as unclassified rather than as a list.
+      ["x.example", "https://x.example/a", "1000 Questions to ask people", "unknown"],
       // 計算機 is a calculator in Traditional Chinese and also a computer, so
       // it is left out: this under-matches rather than reading a computer
       // science text as a tool.
       ["x.example", "https://x.example/a", "計算機科學導論", "unknown"],
       ["bmi.tw", "https://bmi.tw/", "BMI計算機", "unknown"],
-      // Knowingly lost by that ordering: "dates" decides first. Putting the
-      // calculator rules above the topic words instead cost two live pages.
-      ["mdcalc.com", "https://www.mdcalc.com/calc/423/pregnancy-due-dates", "Pregnancy Due Dates Calculator", "guide"],
+      // A store sells physical calculators and generators, and neither the
+      // slug nor the Chinese title can tell those from software. The commerce
+      // path is what does. Both of these are live pages that read as tools.
+      ["duromaxpower.com", "https://www.duromaxpower.com/products/duromax-xp13000eh-13000-watt-portable-hybrid-gas-propane-generator", "13,000 Watt Dual Fuel Portable Generator", "product_page"],
+      ["keysight.com", "https://www.keysight.com/tw/zh/products/waveform-and-function-generators.bac.html", "波形和函數產生器 | Keysight", "product_page"],
+      // Accepted, and the same behaviour /product/ singular already had: a
+      // round-up that lives under /products/ reads as a product page.
+      ["x.example", "https://x.example/products/mortgage-picks", "Best Mortgage Tools", "product_page"],
     ];
     for (const [domain, url, title, expected] of cases) {
       expect(classifySerpFormat({ domain, url, title }).value, title).toBe(expected);
     }
-    // One exception, known and left alone: a /calculator/ directory decides
-    // above every title rule, so a round-up that lives in one still reads as a
-    // tool. That rule predates these and reads a structural claim the site
-    // makes about the directory, not a word in a headline; reordering it would
-    // change classifications this change is not about.
+    // One exception, known and left alone: path:calculator decides above every
+    // title rule, so a round-up that lives under one still reads as a tool.
+    // Its needle is "/calculator" with no closing slash, so it is a segment
+    // that STARTS with the word, not a directory named it -- /calculator-review
+    // matches and /mortgage-calculator does not. That rule predates these ones
+    // and reordering it would change classifications this change is not about.
     expect(classifySerpFormat({ domain: "x.example", url: "https://x.example/mortgage/calculator/", title: "The Best Mortgage Calculators of 2026" }).value).toBe("tool");
+    expect(classifySerpFormat({ domain: "x.example", url: "https://x.example/calculator-review", title: "Our Verdict" }).value).toBe("tool");
   });
 
   it("classifies the result shapes a Chinese search returns, instead of calling them unknown", () => {
@@ -442,6 +472,7 @@ describe("classifySerpFormat: ordering", () => {
       "path:guide",
       "path:learn",
       "path:product",
+      "path:products",
       "path:pricing",
       "title:leading_number",
       "title:best",
@@ -450,15 +481,16 @@ describe("classifySerpFormat: ordering", () => {
       "title:how_to",
       "title:what_is",
       "title:guide",
-      "title:meaning",
       "title:explained",
-      "title:dates",
+      "title:faq",
       "title:zh_what_is",
       "title:zh_how_to",
       "title:zh_dates",
       "title:zh_best",
       "title:calculator",
       "title:zh_calculator",
+      "title:dates",
+      "title:meaning",
       "path:-calculator",
       "path:-generator",
     ]);

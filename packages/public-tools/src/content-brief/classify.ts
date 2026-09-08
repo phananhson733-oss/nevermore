@@ -113,30 +113,45 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   pathRule("path:guide", "guide", "/guide/"),
   pathRule("path:learn", "guide", "/learn/"),
   pathRule("path:product", "product_page", "/product/"),
+  // Plural, and separate: /products/ is where a store keeps the things it
+  // sells, and calculators and generators are things that are sold. A live
+  // check found a 13,000 watt petrol generator and a Keysight waveform
+  // generator both read as online tools, one by its slug and one by its
+  // Chinese title. Deciding commerce first is what the singular rule already
+  // does; this only covers the shape that is far more common.
+  pathRule("path:products", "product_page", "/products/"),
   pathRule("path:pricing", "product_page", "/pricing"),
-  // Any leading count except one that reads as a year: "2026 Salary Calculator"
-  // was a list of two thousand items, and capping the digits at three made
-  // "1000 Questions to ask people" stop being a list at all.
-  titleRule("title:leading_number", "listicle", /^(?!(?:19|20)\d{2} )\d+ /),
+  // One to three digits. A longer leading number is a year, a form number or a
+  // genuine count, and the title does not say which: "2026 Salary Calculator",
+  // "1040 Tax Calculator" and "1000 Questions to ask people" are a tool, a tool
+  // and a list. Excluding only the year range was tried and let 1040 through as
+  // a list of a thousand items. The bound loses the questions page, which then
+  // falls to whatever else its title says and is reported as unclassified if
+  // nothing does -- no answer where the alternative was a wrong one.
+  titleRule("title:leading_number", "listicle", /^\d{1,3} /),
   titleRule("title:best", "listicle", /\bbest /),
   titleRule("title:top_n", "listicle", /\btop \d+/),
   titleRule("title:vs", "comparison", / vs\.? /),
   titleRule("title:how_to", "guide", /\bhow to /),
   titleRule("title:what_is", "guide", /\bwhat is /),
   titleRule("title:guide", "guide", /guide/),
-  titleRule("title:meaning", "guide", /\bmeaning\b/),
   titleRule("title:explained", "guide", /\bexplained\b/),
-  titleRule("title:dates", "guide", /\bdates\b/),
+  // timeanddate.com's "FAQ: Time Duration Calculator" is the help page for the
+  // calculator, not the calculator. FAQ names the page's kind as plainly as
+  // "explained" does, so it decides in the same place.
+  titleRule("title:faq", "guide", /\bfaq\b/),
   // No \b here: JavaScript word boundaries are ASCII-based and never fall
   // between two Han characters, so a boundary would make these never match.
   titleRule("title:zh_what_is", "guide", /是什么|是什麼|什么意思|什麼意思/u),
   titleRule("title:zh_how_to", "guide", /怎么|怎麼|如何|教程|攻略/u),
   titleRule("title:zh_dates", "guide", /时间表|時間表|日期表/u),
   titleRule("title:zh_best", "listicle", /推荐排行|推薦排行|排行榜/u),
-  // Everything that marks an article ABOUT a calculator decides above these --
-  // how-to, what-is, guide, explained, meaning, a round-up, 教程, 是什么 -- and
-  // so does every path that names an article or a product. What is left is a
-  // page that names a calculator and nothing else, which is the calculator.
+  // The words that name a kind of page decide above these -- how-to, what-is,
+  // guide, explained, FAQ, a round-up, 教程, 是什么 -- and so do the article and
+  // commerce paths. What reaches these rules is mostly a page that names a
+  // calculator and nothing else. Mostly, not always: the table reads a title
+  // and a URL, so a help page that calls itself none of those words still
+  // arrives here looking like the calculator it is about.
   // Before these rules the table read /calculator/ only as a directory and
   // never read the title at all, so a live SERP of pages titled "Birth Chart
   // Calculator" came back seven tenths unclassified.
@@ -144,14 +159,19 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   // Their first home was above the topic words, to keep "Pregnancy Due Dates
   // Calculator" from reading as a page about dates. That cost more than it
   // bought: "Mortgage calculator explained" and a Chinese Tkinter 教程 both
-  // became tools. The dates case is the one that loses here.
+  // became tools. Only "dates" follows them down, below.
   //
-  // There is no English generator rule. A generator is as often a machine as a
-  // program, so "Generator Engines" reads as a tool, and no lexical test
-  // separates it from "Sequence Generator" -- "portable generator" defeats
-  // every one that suggests itself. RANDOM.ORG's sequence generator is
-  // therefore unclassified rather than wrong, and 生成器 / 產生器 carry the
-  // Chinese case, where a physical generator is 發電機.
+  // There is no English generator rule, and no title here matches on the word:
+  // a generator is as often a machine as a program, so such a rule would read
+  // Honda's "Generator Engines" as a tool, and no lexical test separates that
+  // from "Sequence Generator" -- "portable generator" defeats every one that
+  // suggests itself. RANDOM.ORG's sequence generator is therefore unclassified
+  // rather than wrong.
+  //
+  // 生成器 / 產生器 are not the clean case they look like either: 發電機 is the
+  // power generator, but 函數產生器 and 波形產生器 are laboratory instruments
+  // Keysight sells. They stay, because the software sense dominates a content
+  // SERP, and the commerce paths above are what keep the instruments out.
   //
   // 計算機 is left out although Traditional Chinese does use it for a
   // calculator: it is also the word for a computer, and would read
@@ -159,6 +179,16 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   // as a page the sample could not classify rather than one it got wrong.
   titleRule("title:calculator", "tool", /\bcalculator\b/),
   titleRule("title:zh_calculator", "tool", /计算器|計算器|生成器|產生器/u),
+  // Below them, unlike the words above: "dates" and "meaning" name what a page
+  // is about, not what kind of page it is, and one that also says "calculator"
+  // is the calculator. timeanddate.com classified its own duration calculator
+  // as a guide and its FAQ about that calculator as a tool, exactly inverted,
+  // and "Angel Number Calculator -- Meaning of Repeating Numbers" is a number
+  // input with computed output. What is still lost this way is an article whose
+  // only mark is one of these two words, such as an explanation of what a
+  // calculator's result means; every other kind of explainer decides above.
+  titleRule("title:dates", "guide", /\bdates\b/),
+  titleRule("title:meaning", "guide", /\bmeaning\b/),
   // Terminal, and last of all: directoryPath appends a trailing slash, so
   // "-calculator/" ends a segment and /mortgage-calculator-review stays out,
   // while /birth-chart-calculator never contained the /calculator/ segment.
