@@ -130,11 +130,13 @@ describe("v2 model research with independent source-backed oracle", () => {
     const result = research.validateResearchOutput({
       questions: [
         { anchor: "U1", q: "Why is Search Console data delayed?", sources: ["U1"] },
-        { anchor: "U2", q: "  why is search-console DATA delayed  ", sources: ["U2"] },
+        // No leading or trailing space: padding trips the text decoder first,
+        // and this case then passes without the duplicate rule existing at all.
+        { anchor: "U2", q: "why is search-console DATA delayed", sources: ["U2"] },
       ],
       outline: [{ h2: "Delay", h3: [], answers: ["U1"] }, { h2: "Timing", h3: [], answers: ["U2"] }],
     }, value);
-    expect(result).toMatchObject({ ok: false, path: "questions[1].q" });
+    expect(result).toMatchObject({ ok: false, code: "brief_reference_invalid", path: "questions[1].q" });
   });
 
   it("rejects two outline sections carrying the same heading", () => {
