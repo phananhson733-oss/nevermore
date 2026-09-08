@@ -124,6 +124,18 @@ describe("host sets", () => {
     // distribution for another.
     const cases: readonly [string, string, string, string][] = [
       ["x.example", "https://x.example/blog/birth-chart-calculator", "Free Birth Chart Calculator", "guide"],
+      // The article paths decide below the round-up titles now, so a blog's own
+      // round-up is a list. A blog post that makes no list of itself still
+      // reaches them, which is what keeps the row above a guide.
+      ["zapier.com", "https://zapier.com/blog/best-project-management-software/", "The 8 best project management software in 2026", "listicle"],
+      ["apptunix.com", "https://www.apptunix.com/blog/top-5-best-astrology-apps/", "Top 10 Best Astrology Apps in 2026 You Can Trust", "listicle"],
+      // A number followed by a unit of time measures something; it does not
+      // count items. Both of these read as lists before.
+      ["whattoexpect.com", "https://www.whattoexpect.com/pregnancy/week-by-week/week-12.aspx", "12 Weeks Pregnant: Symptoms, Baby Development & More", "unknown"],
+      ["10minutemail.com", "https://10minutemail.com/", "10 Minute Mail - Free Anonymous Temporary Email", "unknown"],
+      // The unit has to be the whole word, or a city that starts with one
+      // stops the count: "Dayton" is not a day.
+      ["x.example", "https://x.example/a", "10 Dayton Restaurants to Try", "listicle"],
       ["x.example", "https://x.example/guide/birth-chart-calculator", "Birth Chart Calculator Guide", "guide"],
       ["x.example", "https://x.example/birth-chart", "How to Use a Birth Chart Calculator", "guide"],
       ["x.example", "https://x.example/birth-chart", "What Is a Birth Chart Calculator?", "guide"],
@@ -454,7 +466,7 @@ describe("classifySerpFormat: ordering", () => {
       ),
     ).toEqual({
       value: "video",
-      rules_hit: ["host:video", "path:blog", "title:best", "title:guide"],
+      rules_hit: ["host:video", "title:best", "path:blog", "title:guide"],
     });
   });
 
@@ -496,9 +508,6 @@ describe("classifySerpFormat: ordering", () => {
       "path:calculator",
       "path:forum",
       "path:community",
-      "path:blog",
-      "path:guide",
-      "path:learn",
       "path:product",
       "path:products",
       "path:pricing",
@@ -506,6 +515,9 @@ describe("classifySerpFormat: ordering", () => {
       "title:how_to",
       "title:best",
       "title:top_n",
+      "path:blog",
+      "path:guide",
+      "path:learn",
       "title:what_is",
       "title:guide",
       "title:explained",

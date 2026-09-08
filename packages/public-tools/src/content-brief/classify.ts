@@ -129,9 +129,6 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   pathRule("path:calculator", "tool", "/calculator"),
   pathRule("path:forum", "forum", "/forum/"),
   pathRule("path:community", "forum", "/community/"),
-  pathRule("path:blog", "guide", "/blog/"),
-  pathRule("path:guide", "guide", "/guide/"),
-  pathRule("path:learn", "guide", "/learn/"),
   pathRule("path:product", "product_page", "/product/"),
   // Plural, and separate: /products/ is where a store keeps the things it
   // sells, and calculators and generators are things that are sold. A live
@@ -150,12 +147,24 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   // ask people", which falls to whatever else its title says and is reported
   // as unclassified if nothing does -- no answer where the alternative was a
   // wrong one.
-  titleRule("title:leading_number", "listicle", /^(?:\d{1,2}|100) /),
+  //
+  // A unit of time after the number is a measurement, not a count of items:
+  // "12 Weeks Pregnant" and "10 Minute Mail" are a guide and a tool, and both
+  // read as lists. This costs a real "30 Days to Better Sleep", which becomes
+  // unclassified rather than a list -- the same trade in the same direction.
+  titleRule("title:leading_number", "listicle", /^(?:\d{1,2}|100) (?!(?:second|minute|hour|day|week|month|year)s?\b)/),
   // Above "best", which it used to sit under: "How to get the best mortgage
   // rate" is a how-to that happens to say best, not a round-up.
   titleRule("title:how_to", "guide", unlessAfterCalculator(CALCULATOR_EN, String.raw`\bhow to `)),
   titleRule("title:best", "listicle", /\bbest /),
   titleRule("title:top_n", "listicle", /\btop \d+/),
+  // Below the round-up titles, which is where a blog's own round-ups need them:
+  // "The 8 best project management software" and "Top 10 Horoscope Apps 2026"
+  // both live under /blog/ and both read as guides while these decided first.
+  // A blog post that makes no list of itself still reaches them and is one.
+  pathRule("path:blog", "guide", "/blog/"),
+  pathRule("path:guide", "guide", "/guide/"),
+  pathRule("path:learn", "guide", "/learn/"),
   titleRule("title:what_is", "guide", unlessAfterCalculator(CALCULATOR_EN, String.raw`\bwhat is `)),
   titleRule("title:guide", "guide", /guide/),
   titleRule("title:explained", "guide", /\bexplained\b/),
