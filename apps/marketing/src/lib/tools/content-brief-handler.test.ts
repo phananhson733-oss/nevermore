@@ -752,6 +752,26 @@ describe("handleContentBriefRequest v2 admission and evidence", () => {
     expect(brief.generated).toBeNull();
     expect(JSON.stringify(brief)).not.toContain("research.outline[0].h2");
     expect(lastRunLine(deps).validation_path).toBe("research.outline[0].h2");
+    expect(lastRunLine(deps).dropped_paths).toBeNull();
+  });
+
+  it("names the optional fields a reply lost on the way in", async () => {
+    // The brief shows each dropped field's empty state without saying why.
+    const deps = v2Dependencies({
+      runLlmV2: async ({ context }) => ({
+        context, prompt_bytes: 2048, dropped_paths: ["gap_angle.sources", "internal_links"],
+        output: {
+          research: { questions: [], outline: [] }, intent: null, format: null,
+          page_plan: { action: "undecidable", rationale: "The sampled evidence does not resolve a page action.", target_ref: null, steps: [] },
+          gap_angle: null, internal_links: [], do_not_cover: [],
+        },
+        reads: { status: "complete", calls: 1, model_id: "fixture-model", temperature_requested: 0.2, temperature_effective: 1, input_tokens: 123, output_tokens: 45 },
+      }),
+    });
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), deps));
+    expect(brief.generated).not.toBeNull();
+    expect(JSON.stringify(brief)).not.toContain("gap_angle.sources");
+    expect(lastRunLine(deps).dropped_paths).toEqual(["gap_angle.sources", "internal_links"]);
   });
 
   it.each(["missing", "not_confirmed", "error"] as const)("does not turn a %s profile read into an invented one-fact count", async (kind) => {

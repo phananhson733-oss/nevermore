@@ -1081,6 +1081,9 @@ async function runBriefV2(
   // captured here: "validation_failed" alone made every such run in production
   // impossible to reproduce.
   let validationPath: string | null = null;
+  // The rules that cost the reply an optional field. The brief shows each such
+  // field's empty state without saying why it is empty, so the reason is here.
+  let droppedPaths: readonly string[] = [];
   const brief = await runContentBriefV2(
     {
       input: {
@@ -1112,6 +1115,7 @@ async function runBriefV2(
       runLlm: async (llmInput, llmDependencies) => {
         const result = await dependencies.runLlmV2(llmInput, llmDependencies);
         validationPath = result.validation_path ?? null;
+        droppedPaths = result.dropped_paths ?? [];
         return result;
       },
       now: dependencies.now,
@@ -1129,6 +1133,7 @@ async function runBriefV2(
     reads: Object.fromEntries(brief.run.reads.map((read) => [read.source, read.status])),
     llm_calls: brief.run.llm.calls,
     validation_path: validationPath,
+    dropped_paths: droppedPaths.length === 0 ? null : droppedPaths,
     serp_cost_usd: brief.run.serp_cost_usd,
     self_check: "ok",
     schema: brief.schema,

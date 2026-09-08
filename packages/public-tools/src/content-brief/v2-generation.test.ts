@@ -288,6 +288,81 @@ describe("v2 browser-safe owned page identity", () => {
 const LANGUAGE_CHECK = { checkLanguage: true } as const;
 
 describe("v2 generated language", () => {
+  const inLanguage = (language: string): BriefV2Context => {
+    const base = context();
+    return { ...base, input: { ...base.input, language } };
+  };
+
+  it("rejects a Chinese brief that came back entirely in the sources' language", () => {
+    // The direction that matters most here and was unguarded: the per-string
+    // majority test never ran for a language written without spaces, so a zh
+    // brief with English in every field was accepted in silence.
+    const english = generation.validateModelBriefV2(model(), inLanguage("zh"), LANGUAGE_CHECK);
+
+    expect(english.ok).toBe(false);
+    expect(english.ok ? null : english.path).toBe("research.questions[0].q");
+  });
+
+  it("accepts a Chinese brief as soon as its own script appears, Latin terms and all", () => {
+    // Deliberately weak: one Han character anywhere is enough. A per-string rule
+    // strict enough to catch an English heading here would also reject
+    // "Generative Engine Optimization 入门", and rejecting costs a paid run.
+    const mixed = changed(model(), ["research", "outline", 0, "h2"], "Generative Engine Optimization \u5165\u95e8");
+
+    expect(generation.validateModelBriefV2(mixed, inLanguage("zh"), LANGUAGE_CHECK).ok).toBe(true);
+  });
+
+  it("does not let another unsegmented script stand in for the one that was asked for", () => {
+    // Han, Hiragana, Katakana, Hangul and Thai share one class in the tokenizer,
+    // and a Chinese brief written in Hangul must not pass by sharing that bucket.
+    const korean = changed(model(), ["research", "outline", 0, "h2"], "\ud55c\uad6d\uc5b4\uac00\uc774\ub4dc");
+
+    expect(generation.validateModelBriefV2(korean, inLanguage("zh"), LANGUAGE_CHECK).ok).toBe(false);
+  });
+
+  it("checks a language whose script is neither Latin nor CJK", () => {
+    // Every language the market picker offers is checked now, not the two the
+    // first rule happened to cover.
+    expect(generation.validateModelBriefV2(model(), inLanguage("ar"), LANGUAGE_CHECK).ok).toBe(false);
+    expect(generation.validateModelBriefV2(
+      changed(model(), ["page_plan", "rationale"], "\u0647\u0630\u0647 \u0635\u0641\u062d\u0629 \u062c\u062f\u064a\u062f\u0629"),
+      inLanguage("ar"), LANGUAGE_CHECK).ok).toBe(true);
+  });
+
+  it("reads a URL as a literal, not as prose in the wrong language", () => {
+    // The writer copies the link; its path is not something to translate. Counted
+    // as prose, a Chinese path outvoted the English sentence around it.
+    const link = changed(model(), ["research", "outline", 0, "h2"],
+      "See https://\u4f8b\u5b50.\u516c\u53f8/\u4e2d\u6587\u8def\u5f84\u8bf4\u660e\u8be6\u7ec6\u5185\u5bb9\u8bf4\u660e");
+
+    expect(generation.validateModelBriefV2(link, context(), LANGUAGE_CHECK).ok).toBe(true);
+  });
+
+  it("keeps an English heading that names a work in another script", () => {
+    // The reason quoted spans are dropped at all. Judging the original whenever
+    // stripping left no letters -- which a year in parentheses does not provide
+    // -- rejected this heading, and it is the exact case the stripping exists
+    // for. The cost is that a model can exempt a heading by quoting it; the
+    // brief-level check is what catches a brief quoted wholesale.
+    for (const heading of ["\u300e\u543e\u8f29\u306f\u732b\u3067\u3042\u308b\u300f (1905)", "\u300e\u543e\u8f29\u306f\u732b\u3067\u3042\u308b\u300f plot"]) {
+      const cited = changed(model(), ["research", "outline", 0, "h2"], heading);
+      expect(generation.validateModelBriefV2(cited, context(), LANGUAGE_CHECK).ok, heading).toBe(true);
+    }
+  });
+
+  it("masks a URL to the next space rather than guessing where it ends", () => {
+    // No boundary rule separates a URL from CJK prose that runs straight into
+    // it, so this errs toward masking: losing a check on visible text beats
+    // rejecting a paid run over a link. Scheme case is not a boundary either.
+    for (const heading of [
+      "See HTTPS://\u4f8b\u5b50.\u516c\u53f8/\u4e2d\u6587\u8def\u5f84\u8bf4\u660e\u8be6\u7ec6\u5185\u5bb9\u8bf4\u660e",
+      "See https://\u4f8b\u5b50\u3002\u516c\u53f8/\u4e2d\u6587\u8def\u5f84\u8bf4\u660e\u8be6\u7ec6\u5185\u5bb9",
+    ]) {
+      const link = changed(model(), ["research", "outline", 0, "h2"], heading);
+      expect(generation.validateModelBriefV2(link, context(), LANGUAGE_CHECK).ok, heading).toBe(true);
+    }
+  });
+
   it("rejects an English brief whose headings came back in the sources' script", () => {
     const zh = generation.validateModelBriefV2(
       changed(model(), ["research", "outline", 0, "h2"], "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf"), context(), LANGUAGE_CHECK);
@@ -398,11 +473,14 @@ describe("v2 generated language", () => {
     expect(generation.validateModelBriefV2(zh, context()).ok).toBe(true);
   });
 
-  it("does not apply the check to a language written in that script", () => {
-    const zhContext = { ...context(), input: { ...context().input, language: "zh" } };
+  it("does not read a Chinese heading in a Chinese brief as the wrong script", () => {
+    // The majority test exists to catch a Latin-script run that came back CJK.
+    // Pointing it at a run that asked for CJK would reject the brief for being
+    // written correctly, so it stays off for those languages; the brief-level
+    // test is what covers them.
     const zh = changed(model(), ["research", "outline", 0, "h2"], "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf");
-    expect(generation.validateModelBriefV2(zh, zhContext, LANGUAGE_CHECK).ok).toBe(true);
-    expect(generation.validateModelBriefV2(model(), zhContext, LANGUAGE_CHECK).ok).toBe(true);
+
+    expect(generation.validateModelBriefV2(zh, inLanguage("zh"), LANGUAGE_CHECK).ok).toBe(true);
   });
 });
 

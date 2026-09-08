@@ -170,11 +170,44 @@ function RetainedEvidence({ brief, t }: { readonly brief: ContentBriefV2; readon
   </>;
 }
 
+/**
+ * Why the differentiated angle is empty, which is not always the model's doing.
+ *
+ * The angle has to cite at least one product-profile fact, so with no profile it
+ * cannot exist however good the evidence is. Rendering "not used" under the
+ * section heading left the reader to guess what was not used and why, and read
+ * the same as a model that examined the profile and found nothing to say.
+ */
+function gapEmptyReason(brief: ContentBriefV2): "gapNoProfile" | "gapProfileUnavailable" | "gapUnavailable" {
+  const read = brief.run.reads.find((item) => item.source === "profile");
+  if (read?.reason === "not_requested") return "gapNoProfile";
+  return read?.status === "unavailable" ? "gapProfileUnavailable" : "gapUnavailable";
+}
+
 function Recommendations({ brief, t }: { readonly brief: ContentBriefV2; readonly t: Translate }) {
   const generated = brief.generated!;
+  // A link or exclusion can only name an owned page whose body was read and that
+  // is not the page being rewritten, so an empty list means one of three
+  // different things and the reader needs to know which: no page of theirs was
+  // read, the only one read is the page being rewritten, or one was available
+  // and nothing usable came back. Counting the rewrite target as available put
+  // the blame on the model for a list that could only be empty; then saying
+  // "no page was read" when the target had been read was false in the other
+  // direction, and a count of available pages was reported as a count of pages
+  // read.
+  //
+  // The validator excludes the target by page identity, not by id, and this
+  // compares ids. They agree: both places that build this list drop a candidate
+  // whose identity is already present, so ids and identities are one to one.
+  // Recomputing the identity here would pull the canonical-URL reader into a
+  // client bundle for no difference in outcome.
+  const readOwnPages = brief.context.candidates.filter((candidate) => candidate.read === "observed").length;
+  const availableOwnPages = brief.context.candidates.filter((candidate) =>
+    candidate.read === "observed" && candidate.id !== generated.page_plan.target_ref).length;
+  const linksEmpty = availableOwnPages > 0 ? "none_available_chosen" : readOwnPages === 0 ? "no_page_read" : "only_target_read";
   return <>
-    <section data-gap-angle><h3 className={SECTION_TITLE}>{t("gapAngle")}</h3>{generated.gap_angle ? <div className="mt-3 rounded-[4px] border border-brand-border-card bg-brand-panel p-4"><div className="text-[14px] font-semibold text-text-dark-primary">{generated.gap_angle.value}</div><p className={`mt-2 ${BODY_TEXT}`}>{generated.gap_angle.rationale}</p><div className="mt-2 font-mono text-[10.5px] text-text-dark-secondary">{t("gapRefs", { facts: generated.gap_angle.fact_refs.join(", "), sources: generated.gap_angle.sources.join(", ") })}</div></div> : <p className={`mt-3 ${BODY_TEXT}`}>{brief.run.reads.find((read) => read.source === "profile")?.reason === "not_requested" ? t("states.notUsed") : t("gapUnavailable")}</p>}</section>
-    {(["internal_links", "do_not_cover"] as const).map((kind) => <section key={kind} data-links-card={kind}><h3 className={SECTION_TITLE}>{t(kind === "internal_links" ? "internalLinks" : "doNotCover")}</h3>{generated[kind].length > 0 ? <ul className="mt-3 space-y-3 rounded-[4px] border border-brand-border-card bg-brand-panel p-4">{generated[kind].map((item) => { const page = brief.context.candidates.find((candidate) => candidate.id === item.page_ref); return <li key={item.page_ref} className="text-[12.5px] text-text-dark-primary"><div>{"anchor" in item ? item.anchor : item.topic}</div>{page ? <PageLink url={page.url} /> : null}<p className={`mt-1 ${BODY_TEXT}`}>{item.why}</p></li>; })}</ul> : <p className={`mt-3 ${BODY_TEXT}`}>{brief.context.gsc.reason === "not_requested" ? t("states.notUsed") : t("noLinkSuggestion")}</p>}</section>)}
+    <section data-gap-angle><h3 className={SECTION_TITLE}>{t("gapAngle")}</h3>{generated.gap_angle ? <div className="mt-3 rounded-[4px] border border-brand-border-card bg-brand-panel p-4"><div className="text-[14px] font-semibold text-text-dark-primary">{generated.gap_angle.value}</div><p className={`mt-2 ${BODY_TEXT}`}>{generated.gap_angle.rationale}</p><div className="mt-2 font-mono text-[10.5px] text-text-dark-secondary">{t("gapRefs", { facts: generated.gap_angle.fact_refs.join(", "), sources: generated.gap_angle.sources.join(", ") })}</div></div> : <p data-gap-empty={gapEmptyReason(brief)} className={`mt-3 ${BODY_TEXT}`}>{t(gapEmptyReason(brief))}</p>}</section>
+    {(["internal_links", "do_not_cover"] as const).map((kind) => <section key={kind} data-links-card={kind}><h3 className={SECTION_TITLE}>{t(kind === "internal_links" ? "internalLinks" : "doNotCover")}</h3>{generated[kind].length > 0 ? <ul className="mt-3 space-y-3 rounded-[4px] border border-brand-border-card bg-brand-panel p-4">{generated[kind].map((item) => { const page = brief.context.candidates.find((candidate) => candidate.id === item.page_ref); return <li key={item.page_ref} className="text-[12.5px] text-text-dark-primary"><div>{"anchor" in item ? item.anchor : item.topic}</div>{page ? <PageLink url={page.url} /> : null}<p className={`mt-1 ${BODY_TEXT}`}>{item.why}</p></li>; })}</ul> : <p data-links-empty={linksEmpty} className={`mt-3 ${BODY_TEXT}`}>{linksEmpty === "none_available_chosen" ? t("noLinkChosen", { count: availableOwnPages }) : t(linksEmpty === "no_page_read" ? "noLinkCandidate" : "noLinkOnlyTarget")}</p>}</section>)}
   </>;
 }
 
