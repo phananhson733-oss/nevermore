@@ -317,24 +317,32 @@ function withoutQuotedSpans(value: string): string {
  */
 /**
  * A URL is a literal the writer copies, not prose to translate, so it is masked
- * before any script counting. Written escaped, and stopping at CJK punctuation
- * as well as whitespace, because Chinese runs a URL straight into the next
- * sentence with no space: `\S+` would swallow the sentence with it and leave
- * nothing to judge.
+ * before any script counting: a Chinese path once outvoted the English sentence
+ * around it and the brief was rejected for the link it cited.
+ *
+ * Deliberately greedy, and case-insensitive. Chinese runs a URL straight into
+ * the next sentence with no space, so no boundary rule separates them: every
+ * class narrow enough to keep that sentence also cuts a Chinese domain at its
+ * ideographic dot and counts the remainder as prose. The two mistakes are not
+ * equal. Masking too much loses a check on text the reader can still see and
+ * edit; masking too little rejects a brief that was paid for. So this runs to
+ * the next space and stops only at the characters a URL cannot contain.
  */
-const URL_TOKEN = /https?:\/\/[^\s<>"'\u3001\u3002\u3008-\u300f\u3010\u3011\uff01\uff08\uff09\uff0c\uff1a\uff1b\uff1f]+/gu;
+const URL_TOKEN = /https?:\/\/[^\s<>"']+/giu;
 
 function prose(value: string): string {
   return value.replace(URL_TOKEN, " ");
 }
 
 function wrongScript(value: string): boolean {
-  const masked = prose(value);
-  // A string that is nothing but a quoted span carries no citation to exempt:
-  // it is the heading itself in quotation marks. Judging what is left would let
-  // any heading escape the check by wearing quotes.
-  const stripped = withoutQuotedSpans(masked);
-  const text = LETTER.test(stripped) ? stripped : masked;
+  // Quoted spans are dropped, including a string that is nothing but one. That
+  // does let a model exempt a heading by wrapping it in quotation marks, and
+  // the alternative was worse: judging the original whenever nothing lettered
+  // remained rejected `『吾輩は猫である』 (1905)`, an English heading naming a
+  // work and its year, which is the exact case the stripping exists for. The
+  // brief-level check below catches a brief quoted wholesale into another
+  // language, which is what the evasion would have to be to matter.
+  const text = withoutQuotedSpans(prose(value));
   let letters = 0;
   let cjk = 0;
   for (const character of text) {

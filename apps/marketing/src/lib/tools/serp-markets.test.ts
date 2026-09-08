@@ -23,9 +23,29 @@ describe("SERP_LANGUAGES", () => {
     expect(unreachable).toEqual([]);
   });
 
-  it("builds every script into a usable regular expression", () => {
+  // Written here rather than derived from the table, so the two sides are
+  // independent: a table whose scripts were all replaced with Latin, or with
+  // nothing at all, compiles fine and matches nothing that matters.
+  const SAMPLE: Readonly<Record<string, string>> = {
+    zh: "\u4e2d", ja: "\u3042", ko: "\ud55c", th: "\u0e44", ru: "\u0434", uk: "\u0434",
+    ar: "\u0639", he: "\u05e2", hi: "\u0939", el: "\u03b1",
+  };
+
+  it("matches the script each language is actually written in", () => {
     for (const [code, script] of EXPECTED_BRIEF_SCRIPTS) {
-      expect(() => new RegExp(`[${script}]`, "u"), code).not.toThrow();
+      const pattern = new RegExp(`[${script}]`, "u");
+      expect(pattern.test(SAMPLE[code] ?? "a"), code).toBe(true);
     }
+  });
+
+  it("does not let one unsegmented script stand in for another", () => {
+    // Han, kana, Hangul and Thai share one class in the tokenizer. A Chinese
+    // brief written in Hangul must not pass by sharing that bucket.
+    const chinese = new RegExp(`[${EXPECTED_BRIEF_SCRIPTS.get("zh")!}]`, "u");
+
+    expect(chinese.test(SAMPLE.ko!)).toBe(false);
+    expect(chinese.test(SAMPLE.ja!)).toBe(false);
+    expect(chinese.test(SAMPLE.th!)).toBe(false);
+    expect(chinese.test(SAMPLE.zh!)).toBe(true);
   });
 });

@@ -186,10 +186,13 @@ function gapEmptyReason(brief: ContentBriefV2): "gapNoProfile" | "gapProfileUnav
 
 function Recommendations({ brief, t }: { readonly brief: ContentBriefV2; readonly t: Translate }) {
   const generated = brief.generated!;
-  // A link or exclusion can only name an owned page whose body was read, so an
-  // empty list means one of two different things and the reader needs to know
-  // which: nothing was eligible, or something was and the model passed on it.
-  const readOwnPages = brief.context.candidates.filter((candidate) => candidate.read === "observed").length;
+  // A link or exclusion can only name an owned page whose body was read and that
+  // is not the page being rewritten, so an empty list means one of two different
+  // things and the reader needs to know which: nothing was eligible, or
+  // something was and the model passed on it. Counting the rewrite target as
+  // eligible put the blame on the model for a list that could only be empty.
+  const readOwnPages = brief.context.candidates.filter((candidate) =>
+    candidate.read === "observed" && candidate.id !== generated.page_plan.target_ref).length;
   return <>
     <section data-gap-angle><h3 className={SECTION_TITLE}>{t("gapAngle")}</h3>{generated.gap_angle ? <div className="mt-3 rounded-[4px] border border-brand-border-card bg-brand-panel p-4"><div className="text-[14px] font-semibold text-text-dark-primary">{generated.gap_angle.value}</div><p className={`mt-2 ${BODY_TEXT}`}>{generated.gap_angle.rationale}</p><div className="mt-2 font-mono text-[10.5px] text-text-dark-secondary">{t("gapRefs", { facts: generated.gap_angle.fact_refs.join(", "), sources: generated.gap_angle.sources.join(", ") })}</div></div> : <p data-gap-empty={gapEmptyReason(brief)} className={`mt-3 ${BODY_TEXT}`}>{t(gapEmptyReason(brief))}</p>}</section>
     {(["internal_links", "do_not_cover"] as const).map((kind) => <section key={kind} data-links-card={kind}><h3 className={SECTION_TITLE}>{t(kind === "internal_links" ? "internalLinks" : "doNotCover")}</h3>{generated[kind].length > 0 ? <ul className="mt-3 space-y-3 rounded-[4px] border border-brand-border-card bg-brand-panel p-4">{generated[kind].map((item) => { const page = brief.context.candidates.find((candidate) => candidate.id === item.page_ref); return <li key={item.page_ref} className="text-[12.5px] text-text-dark-primary"><div>{"anchor" in item ? item.anchor : item.topic}</div>{page ? <PageLink url={page.url} /> : null}<p className={`mt-1 ${BODY_TEXT}`}>{item.why}</p></li>; })}</ul> : <p data-links-empty={readOwnPages === 0 ? "no_candidate" : "none_chosen"} className={`mt-3 ${BODY_TEXT}`}>{readOwnPages === 0 ? t("noLinkCandidate") : t("noLinkChosen", { count: readOwnPages })}</p>}</section>)}

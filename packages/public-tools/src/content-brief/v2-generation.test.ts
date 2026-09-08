@@ -338,13 +338,29 @@ describe("v2 generated language", () => {
     expect(generation.validateModelBriefV2(link, context(), LANGUAGE_CHECK).ok).toBe(true);
   });
 
-  it("does not let a heading escape the check by wearing quotation marks", () => {
-    // Quoted spans are dropped so a cited title does not count as generated
-    // prose. A string that is nothing but a quoted span has no citation in it:
-    // it is the heading, and dropping it left nothing to judge.
-    const quoted = changed(model(), ["research", "outline", 0, "h2"], "\u201c\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf\u201d");
+  it("keeps an English heading that names a work in another script", () => {
+    // The reason quoted spans are dropped at all. Judging the original whenever
+    // stripping left no letters -- which a year in parentheses does not provide
+    // -- rejected this heading, and it is the exact case the stripping exists
+    // for. The cost is that a model can exempt a heading by quoting it; the
+    // brief-level check is what catches a brief quoted wholesale.
+    for (const heading of ["\u300e\u543e\u8f29\u306f\u732b\u3067\u3042\u308b\u300f (1905)", "\u300e\u543e\u8f29\u306f\u732b\u3067\u3042\u308b\u300f plot"]) {
+      const cited = changed(model(), ["research", "outline", 0, "h2"], heading);
+      expect(generation.validateModelBriefV2(cited, context(), LANGUAGE_CHECK).ok, heading).toBe(true);
+    }
+  });
 
-    expect(generation.validateModelBriefV2(quoted, context(), LANGUAGE_CHECK).ok).toBe(false);
+  it("masks a URL to the next space rather than guessing where it ends", () => {
+    // No boundary rule separates a URL from CJK prose that runs straight into
+    // it, so this errs toward masking: losing a check on visible text beats
+    // rejecting a paid run over a link. Scheme case is not a boundary either.
+    for (const heading of [
+      "See HTTPS://\u4f8b\u5b50.\u516c\u53f8/\u4e2d\u6587\u8def\u5f84\u8bf4\u660e\u8be6\u7ec6\u5185\u5bb9\u8bf4\u660e",
+      "See https://\u4f8b\u5b50\u3002\u516c\u53f8/\u4e2d\u6587\u8def\u5f84\u8bf4\u660e\u8be6\u7ec6\u5185\u5bb9",
+    ]) {
+      const link = changed(model(), ["research", "outline", 0, "h2"], heading);
+      expect(generation.validateModelBriefV2(link, context(), LANGUAGE_CHECK).ok, heading).toBe(true);
+    }
   });
 
   it("rejects an English brief whose headings came back in the sources' script", () => {

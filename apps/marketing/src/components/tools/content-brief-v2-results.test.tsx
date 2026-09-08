@@ -536,48 +536,79 @@ describe("empty recommendation sections", () => {
   const profileRead = (reason: "not_requested" | "provider_error" | null) => ({
     source: "profile" as const,
     status: reason === null ? ("complete" as const) : ("unavailable" as const),
-    attempted: reason === null ? 4 : null, retained: reason === null ? 4 : null, reason,
+    attempted: reason === null ? 0 : null, retained: reason === null ? 0 : null, reason,
   });
-  const emptied = (brief: ContentBriefV2, reason: "not_requested" | "provider_error" | null, ownPages: number): ContentBriefV2 => ({
+  /** Owned candidates on the fixture's own property, so the states stay ones a run could produce. */
+  const owned = (id: string, read: "observed" | "unavailable") =>
+    ({ id, url: `https://owned.example/${id.toLowerCase()}`, match_refs: [], read });
+  const emptied = (
+    brief: ContentBriefV2,
+    reason: "not_requested" | "provider_error" | null,
+    candidates: readonly { readonly id: string; readonly url: string; readonly match_refs: readonly string[]; readonly read: "observed" | "unavailable" }[],
+    targetRef: string | null = null,
+  ): ContentBriefV2 => ({
     ...brief,
-    generated: brief.generated === null ? null : { ...brief.generated, gap_angle: null, internal_links: [], do_not_cover: [] },
-    context: { ...brief.context, candidates: Array.from({ length: ownPages }, (_unused, index) => ({
-      id: `T${index + 1}`, url: `https://owned.test/page-${index + 1}`, match_refs: [], read: "observed" as const,
-    })) },
+    generated: brief.generated === null ? null : {
+      ...brief.generated, gap_angle: null, internal_links: [], do_not_cover: [],
+      page_plan: { ...brief.generated.page_plan, target_ref: targetRef },
+    },
+    context: { ...brief.context, candidates },
     run: { ...brief.run, reads: [...brief.run.reads.filter((read) => read.source !== "profile"), profileRead(reason)] },
   });
+  const gapText = (host: HTMLElement) => host.querySelector("[data-gap-empty]")?.textContent ?? "";
 
   it("says the differentiated angle needs a product profile instead of just 'not used'", async () => {
-    // "未使用" under the section heading left the reader to guess what was not
+    // "Not used" under the section heading left the reader to guess what was not
     // used, and read the same as a model that looked and found nothing.
-    const { host } = await render(emptied(await fixture(), "not_requested", 2));
+    const { host } = await render(emptied(await fixture(), "not_requested", [owned("T1", "observed")]));
 
-    const empty = host.querySelector("[data-gap-empty]");
-    expect(empty?.getAttribute("data-gap-empty")).toBe("gapNoProfile");
-    expect(empty?.textContent).toContain("product profile");
+    expect(host.querySelector("[data-gap-empty]")?.getAttribute("data-gap-empty")).toBe("gapNoProfile");
+    expect(gapText(host)).toContain("product profile");
+    expect(gapText(host)).toContain("run again");
   });
 
   it("separates a profile that could not be read from a model that proposed nothing", async () => {
-    const failed = await render(emptied(await fixture(), "provider_error", 2));
+    const failed = await render(emptied(await fixture(), "provider_error", [owned("T1", "observed")]));
     expect(failed.host.querySelector("[data-gap-empty]")?.getAttribute("data-gap-empty")).toBe("gapProfileUnavailable");
+    expect(gapText(failed.host)).toContain("could not be read");
 
-    const read = await render(emptied(await fixture(), null, 2));
+    const read = await render(emptied(await fixture(), null, [owned("T1", "observed")]));
     expect(read.host.querySelector("[data-gap-empty]")?.getAttribute("data-gap-empty")).toBe("gapUnavailable");
+    // The three states must not share one sentence, which is what made the old
+    // single string wrong: it explained a prerequisite as an editorial outcome.
+    expect(gapText(read.host)).not.toContain("product profile");
   });
 
   it("says whether a link recommendation was possible at all", async () => {
     // A link may only name an owned page whose body was read. With none, the
     // list is empty by arithmetic; with some, the model passed on them.
-    const none = await render(emptied(await fixture(), null, 0));
-    for (const card of none.host.querySelectorAll("[data-links-empty]")) {
+    const none = await render(emptied(await fixture(), null, [owned("T1", "unavailable")]));
+    const noneCards = none.host.querySelectorAll("[data-links-empty]");
+    expect(noneCards).toHaveLength(2);
+    for (const card of noneCards) {
       expect(card.getAttribute("data-links-empty")).toBe("no_candidate");
+      expect(card.textContent).toContain("nothing here to recommend");
     }
 
-    const some = await render(emptied(await fixture(), null, 2));
-    for (const card of some.host.querySelectorAll("[data-links-empty]")) {
+    const some = await render(emptied(await fixture(), null, [owned("T1", "observed"), owned("T2", "unavailable")]));
+    const someCards = some.host.querySelectorAll("[data-links-empty]");
+    expect(someCards).toHaveLength(2);
+    for (const card of someCards) {
       expect(card.getAttribute("data-links-empty")).toBe("none_chosen");
-      expect(card.textContent).toContain("2");
+      // One page read, not two: an unread candidate is not a page the model
+      // could have recommended.
+      expect(card.textContent).toContain("1 of your own pages");
     }
-    expect(some.host.querySelectorAll("[data-links-empty]")).toHaveLength(2);
+  });
+
+  it("does not blame the model for a list that could only be empty", async () => {
+    // The one page read is the page being rewritten, and neither list may name
+    // it. Counting it as eligible reported a model choice that never existed.
+    const { host } = await render(emptied(await fixture(), null, [owned("T1", "observed")], "T1"));
+
+    for (const card of host.querySelectorAll("[data-links-empty]")) {
+      expect(card.getAttribute("data-links-empty")).toBe("no_candidate");
+    }
+    expect(host.querySelectorAll("[data-links-empty]")).toHaveLength(2);
   });
 });

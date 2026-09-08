@@ -294,11 +294,18 @@ export const BRIEF_V2_OWNED_CANDIDATES_MAX = 3;
  * language added to the list and missed here is not an error anywhere -- the
  * brief just stops being checked, silently.
  *
- * One script per language, and only the script the language cannot be written
- * without. Latin covers every language whose alphabet is Latin, whatever its
- * diacritics. Japanese lists kana alongside Han because a Japanese heading may
- * be entirely kana; Chinese lists Han alone, so an all-Hangul brief cannot pass
- * for Chinese by sharing the "unsegmented" bucket.
+ * The scripts a brief in that language is actually written in today, not the
+ * scripts it has ever been written in. Latin covers every language whose modern
+ * alphabet is Latin, whatever its diacritics. Japanese lists kana alongside Han
+ * because a Japanese heading may be entirely kana; Chinese lists Han alone, so
+ * an all-Hangul brief cannot pass for Chinese by sharing the "unsegmented"
+ * bucket.
+ *
+ * Where a language has a living second script, both are listed. Where the
+ * alternative is historical (Cyrillic Romanian, Jawi Malay, Arabic-script
+ * Turkish) it is not, and a brief written that way would be rejected. That is a
+ * deliberate limit, written down rather than implied: this is a script test, and
+ * a script test cannot tell a language from the alphabet it was typed in.
  */
 export const EXPECTED_BRIEF_SCRIPTS: ReadonlyMap<string, string> = new Map([
   ["zh", "\\p{Script=Han}"],
@@ -309,7 +316,10 @@ export const EXPECTED_BRIEF_SCRIPTS: ReadonlyMap<string, string> = new Map([
   ["uk", "\\p{Script=Cyrillic}"],
   ["ar", "\\p{Script=Arabic}"],
   ["he", "\\p{Script=Hebrew}"],
-  ["hi", "\\p{Script=Devanagari}"],
+  // Romanized Hindi is ordinary online writing, not a specialist form, so
+  // Devanagari alone would reject a brief that is written the way its
+  // readers write. Accepting both costs a check nobody was getting anyway.
+  ["hi", "\\p{Script=Devanagari}\\p{Script=Latin}"],
   ["el", "\\p{Script=Greek}"],
   ...["en", "de", "fr", "es", "it", "pt", "nl", "sv", "no", "da", "fi", "pl",
     "tr", "vi", "id", "ms", "cs", "hu", "ro"].map((code): readonly [string, string] => [code, "\\p{Script=Latin}"]),
