@@ -106,6 +106,12 @@ describe("host sets", () => {
     for (const [url, title, expected] of cases) {
       expect(classifySerpFormat({ domain: "x.example", url, title }).value, title).toBe(expected);
     }
+    // One exception, known and left alone: a /calculator/ directory decides
+    // above every title rule, so a round-up that lives in one still reads as a
+    // tool. That rule predates these and reads a structural claim the site
+    // makes about the directory, not a word in a headline; reordering it would
+    // change classifications this change is not about.
+    expect(classifySerpFormat({ domain: "x.example", url: "https://x.example/mortgage/calculator/", title: "The Best Mortgage Calculators of 2026" }).value).toBe("tool");
   });
 
   it("classifies the result shapes a Chinese search returns, instead of calling them unknown", () => {

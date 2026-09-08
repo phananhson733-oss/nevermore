@@ -135,12 +135,13 @@ function formatDistribution(observations: readonly BriefV2FormatPageObservation[
   // observation on a run where seven of ten pages were simply unclassified. It
   // is undecided while the largest classified format, plus every unknown,
   // could still pass half; a format nothing classified yet can only reach the
-  // unknowns themselves, which is the same bound.
+  // unknowns themselves, which is the same bound. An empty sample needs no
+  // guard of its own: with nothing observed, nothing is above nothing.
   const largest = known[0]?.count ?? 0;
   return {
     denominator: observations.length, unknown_count,
     counts, majority,
-    majority_undecided: majority === null && observations.length > 0 && largest + unknown_count > half,
+    majority_undecided: majority === null && largest + unknown_count > half,
     candidates: known.map((item) => item.format), pages: observations,
   };
 }
