@@ -284,6 +284,128 @@ describe("v2 browser-safe owned page identity", () => {
   });
 });
 
+/** The rule applies when a model writes a brief, never when one is read back. */
+const LANGUAGE_CHECK = { checkLanguage: true } as const;
+
+describe("v2 generated language", () => {
+  it("rejects an English brief whose headings came back in the sources' script", () => {
+    const zh = generation.validateModelBriefV2(
+      changed(model(), ["research", "outline", 0, "h2"], "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf"), context(), LANGUAGE_CHECK);
+    expect(zh.ok).toBe(false);
+    expect(zh.ok ? null : zh.path).toBe("research.outline[0].h2");
+  });
+
+  it("names the exact field, wherever the wrong script appears", () => {
+    for (const [path, replacement] of [
+      [["research", "questions", 0, "q"], "\u4e3a\u4ec0\u4e48\u6570\u636e\u4f1a\u5ef6\u8fdf\uff1f"],
+      [["page_plan", "rationale"], "\u73b0\u6709\u9875\u9762\u5df2\u7ecf\u8986\u76d6\u8fd9\u4e2a\u4e3b\u9898"],
+      [["gap_angle", "value"], "\u5c55\u793a\u65e5\u671f\u5bf9\u6bd4"],
+      [["do_not_cover", 0, "topic"], "\u5b8c\u6574\u7684\u65e5\u671f\u8bbe\u7f6e"],
+    ] as const) {
+      const result = generation.validateModelBriefV2(changed(model(), path, replacement), context(), LANGUAGE_CHECK);
+      expect(result.ok, path.join(".")).toBe(false);
+    }
+  });
+
+  it("checks every generated string the brief prints, not only the four spot-checked ones", () => {
+    // A field missing from the walk is a field the model may answer in the
+    // wrong language forever, and no other test would notice.
+    for (const [path, expected] of [
+      [["research", "outline", 0, "h3", 0], "research.outline[0].h3[0]"],
+      [["intent", "rationale"], "intent.rationale"],
+      [["format", "rationale"], "format.rationale"],
+      [["page_plan", "steps", 1, "instruction"], "page_plan.steps[1].instruction"],
+      [["gap_angle", "rationale"], "gap_angle.rationale"],
+      [["internal_links", 0, "anchor"], "internal_links[0].anchor"],
+      [["internal_links", 0, "why"], "internal_links[0].why"],
+      [["do_not_cover", 0, "why"], "do_not_cover[0].why"],
+    ] as const) {
+      const result = generation.validateModelBriefV2(
+        changed(model(), path, "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf\u7684\u542b\u4e49"), context(), LANGUAGE_CHECK);
+      expect(result.ok ? null : result.path, expected).toBe(expected);
+    }
+  });
+
+  it("needs four letters and a real majority before it calls a string the wrong language", () => {
+    const heading = (text: string) => generation.validateModelBriefV2(
+      changed(model(), ["research", "outline", 0, "h2"], text), context(), LANGUAGE_CHECK).ok;
+    // Under the sample minimum: two borrowed characters are a term, not prose.
+    expect(heading("\u5ef6\u8fdf")).toBe(true);
+    // Four letters, all of them CJK: this is the failure that was observed.
+    expect(heading("\u7406\u89e3\u5ef6\u8fdf")).toBe(false);
+    // Exactly half is not a majority, so an even split stays acceptable.
+    expect(heading("\u5ef6\u8fdf ab")).toBe(true);
+    expect(heading("\u7406\u89e3\u5ef6 ab")).toBe(false);
+  });
+
+  it("allows a borrowed term inside an otherwise English string", () => {
+    const borrowed = changed(model(), ["research", "outline", 0, "h2"],
+      "Understand the \u5ef6\u8fdf reporting window and what it means for you");
+    expect(generation.validateModelBriefV2(borrowed, context(), LANGUAGE_CHECK).ok).toBe(true);
+  });
+
+  it.each(["zh", "zh-CN", "zh-Hant-TW", "ja_JP"])("reads %s as that script's own language, region subtag and all", (language) => {
+    const localised = { ...context(), input: { ...context().input, language } };
+    const heading = changed(model(), ["research", "outline", 0, "h2"], "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf");
+    expect(generation.validateModelBriefV2(heading, localised, LANGUAGE_CHECK).ok).toBe(true);
+  });
+
+  it("does not count a quoted original title against an English heading", () => {
+    const cited = changed(model(), ["research", "outline", 0, "h2"],
+      "\u300e\u543e\u8f29\u306f\u732b\u3067\u3042\u308b\u300f plot");
+    expect(generation.validateModelBriefV2(cited, context(), LANGUAGE_CHECK).ok).toBe(true);
+  });
+
+  it("still rejects a CJK heading that merely quotes an English phrase", () => {
+    const disguised = changed(model(), ["research", "outline", 0, "h2"],
+      "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf\u201cdata delay\u201d\u7684\u542b\u4e49");
+    expect(generation.validateModelBriefV2(disguised, context(), LANGUAGE_CHECK).ok).toBe(false);
+  });
+
+  it("reads an apostrophe as prose, not as an opening quotation mark", () => {
+    const possessive = changed(model(), ["research", "outline", 0, "h2"],
+      "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf\u7684\u542b\u4e49\u4e0e\u5f71\u54cd\u8303\u56f4: "
+      + "writer's own extended commentary here tells the reader's team");
+    expect(generation.validateModelBriefV2(possessive, context(), LANGUAGE_CHECK).ok).toBe(true);
+  });
+
+  it("does not treat an unterminated quotation mark as a span", () => {
+    // Otherwise one stray quote exempts the rest of a heading from the check.
+    const stray = changed(model(), ["research", "outline", 0, "h2"],
+      "\u300c\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf\u7684\u542b\u4e49");
+    expect(generation.validateModelBriefV2(stray, context(), LANGUAGE_CHECK).ok).toBe(false);
+  });
+
+  it("reads a frozen brief back whatever script its headings are in", () => {
+    // The rule the test above turns off is only half the guarantee: readback runs
+    // through parseBriefV2Generated, which must never ask for it. Asserting the
+    // default on validateModelBriefV2 does not reach that call.
+    const parsed = generation.validateModelBriefV2(
+      changed(model(), ["research", "outline", 0, "h2"], "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf"), context());
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    expect(generation.parseBriefV2Generated(parsed.value, context())).toEqual(parsed);
+  });
+
+  it("does not judge a brief read back by a rule it predates", () => {
+    // parseBriefV2Generated re-validates a frozen result, and the Draft Writer
+    // runs the same path over a confirmed brief a visitor pastes in. A brief
+    // exported before this rule existed must still read back; its schema
+    // version did not change, so nothing would warn the reader.
+    const zh = changed(model(), ["research", "outline", 0, "h2"], "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf");
+    expect(generation.validateModelBriefV2(zh, context(), LANGUAGE_CHECK).ok).toBe(false);
+    expect(generation.validateModelBriefV2(zh, context()).ok).toBe(true);
+  });
+
+  it("does not apply the check to a language written in that script", () => {
+    const zhContext = { ...context(), input: { ...context().input, language: "zh" } };
+    const zh = changed(model(), ["research", "outline", 0, "h2"], "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf");
+    expect(generation.validateModelBriefV2(zh, zhContext, LANGUAGE_CHECK).ok).toBe(true);
+    expect(generation.validateModelBriefV2(model(), zhContext, LANGUAGE_CHECK).ok).toBe(true);
+  });
+});
+
 describe("v2 whole model result", () => {
   it("requires research to be an own field rather than accepting a prototype value", () => {
     const { research, ...writing } = model();

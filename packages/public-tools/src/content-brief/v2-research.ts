@@ -185,6 +185,24 @@ function finalPageKey(value: string): string {
   return url.href;
 }
 
+/**
+ * Two questions that differ only in casing, spacing or sentence punctuation are
+ * one question presented twice, and the brief then spends an outline section
+ * and a writer's time on a need that is already covered. The same holds for two
+ * sections carrying the same heading.
+ *
+ * Only whitespace and the punctuation that separates or terminates a sentence
+ * comes out. Symbols stay: stripping every symbol made "What is C?" and "What
+ * is C++?" the same question, and a comparison brief that cannot ask about both
+ * is worse than one that keeps a near-duplicate.
+ */
+const PHRASE_NOISE =
+  /[\s\p{Zs}"'\u201c\u201d\u2018\u2019\u00ab\u00bb()\uff08\uff09[\]\u3010\u3011{}\u300a\u300b\u300c\u300d\u300e\u300f,\uff0c.\u3002;\uff1b:\uff1a!\uff01?\uff1f\u3001~\uff5e\u00b7\u2026\u2014\u2013\-_/]+/gu;
+
+function phraseIdentity(value: string): string {
+  return value.normalize("NFKC").toLowerCase().replace(PHRASE_NOISE, "");
+}
+
 export function validateResearchOutput(input: unknown, bundle: ResearchBundle): Decoded<ResearchResult> {
   const checked = parseResearchBundle(bundle);
   if (!checked.ok) return checked;
@@ -193,9 +211,13 @@ export function validateResearchOutput(input: unknown, bundle: ResearchBundle): 
   const units = new Map(checked.value.units.map((unit) => [unit.id, unit]));
   const pages = new Map(checked.value.pages.map((page) => [page.id, page]));
   const anchors = new Map<string, string>();
+  const askedQuestions = new Set<string>();
   const questions: ResearchQuestion[] = [];
   for (const [index, question] of decoded.value.questions.entries()) {
     if (anchors.has(question.anchor) || !question.sources.includes(question.anchor)) return reference(`questions[${index}].anchor`);
+    const asked = phraseIdentity(question.q);
+    if (asked === "" || askedQuestions.has(asked)) return reference(`questions[${index}].q`);
+    askedQuestions.add(asked);
     const coveredPages = new Set<string>();
     const paaRefs: string[] = [];
     for (const ref of question.sources) {
@@ -212,8 +234,12 @@ export function validateResearchOutput(input: unknown, bundle: ResearchBundle): 
     questions.push({ id, anchor: question.anchor, q: question.q, source_refs: [...question.sources], covered_by: coveredPages.size, paa_refs: paaRefs });
   }
   const answered = new Set<string>();
+  const headings = new Set<string>();
   const outline: ResearchOutlineItem[] = [];
   for (const [index, section] of decoded.value.outline.entries()) {
+    const heading = phraseIdentity(section.h2);
+    if (heading === "" || headings.has(heading)) return reference(`outline[${index}].h2`);
+    headings.add(heading);
     const answers: string[] = [];
     for (const anchor of section.answers) {
       const id = anchors.get(anchor);

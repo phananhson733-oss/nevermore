@@ -65,6 +65,7 @@ import { createSearchAnalyticsClient } from "@sf/sources/gsc/search-analytics";
 import {
   WEBSITE_PROFILE_FIELD_NAMES,
   type MarketingWebsiteProfileV1,
+  type WebsiteProfileFieldName,
   type WebsiteProfileFieldProvenance,
 } from "../account-websites/contracts.ts";
 import { readAccountWebsite } from "../account-websites/store.ts";
@@ -137,6 +138,71 @@ import {
 const TOOL = "content-brief";
 const KEYWORD_MAX_CHARS = 200;
 const BRIEF_V2_PROFILE_FACT_MAX = 32;
+/** Per field, so one long array cannot spend the whole fact budget. */
+const BRIEF_V2_FACTS_PER_FIELD_MAX = 3;
+/**
+ * The order the brief wants its profile facts in.
+ *
+ * The contract's field order is the order a profile is written, not the order
+ * that helps write about a keyword. Taking the first thirty-two facts in that
+ * order stopped at triggerPain on a real run: jtbd, useCases, outcomes, icpPain
+ * and directCompetitors — the fields a differentiated angle is actually built
+ * from — never reached the model, while sixteen core features and trust signals
+ * did. Fields not named here keep their contract order behind these.
+ *
+ * Typed against the profile contract, not `string`: a renamed field would
+ * otherwise stay in this list as a name nothing matches, and the field it used
+ * to promote would silently drop to the back of the queue with no error.
+ */
+const BRIEF_V2_FACT_PRIORITY = [
+  "oneLinePositioning", "valueProposition", "outcomes", "useCases", "jtbd", "directCompetitors",
+  "primaryIcp", "icpPain", "triggerPain", "coreFeatures", "productName", "indirectAlternatives",
+  "barriers", "buyer", "user", "firstOutcome",
+] as const satisfies readonly WebsiteProfileFieldName[];
+
+/** "coreFeatures[2]" is a fact about coreFeatures. */
+function factFieldName(field: string): string {
+  return field.replace(/\[\d+\]$/u, "");
+}
+
+/**
+ * Choose which facts the brief sees, without changing what it reports having
+ * read: `attempted` stays the profile's true fact count, so cutting still
+ * shows as a partial read.
+ */
+function selectBriefV2ProfileFacts(facts: readonly ProfileFact[]): ProfileFact[] {
+  const rank = (fact: ProfileFact): number => {
+    const field = factFieldName(fact.field);
+    const index = BRIEF_V2_FACT_PRIORITY.findIndex((name) => name === field);
+    return index === -1 ? BRIEF_V2_FACT_PRIORITY.length : index;
+  };
+  const ordered = facts
+    .map((fact, index) => ({ fact, index, rank: rank(fact) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index);
+
+  // Breadth first: at most three facts per field, so one long array cannot
+  // spend the budget. Then depth: an unfilled budget is spent, in the same
+  // order, on the facts the per-field bound held back — a profile whose only
+  // rich field is an array should still send as much of it as fits.
+  const perField = new Map<string, number>();
+  const chosen: typeof ordered = [];
+  const held: typeof ordered = [];
+  for (const entry of ordered) {
+    const name = factFieldName(entry.fact.field);
+    const used = perField.get(name) ?? 0;
+    if (used < BRIEF_V2_FACTS_PER_FIELD_MAX && chosen.length < BRIEF_V2_PROFILE_FACT_MAX) {
+      perField.set(name, used + 1);
+      chosen.push(entry);
+    } else held.push(entry);
+  }
+  for (const entry of held) {
+    if (chosen.length >= BRIEF_V2_PROFILE_FACT_MAX) break;
+    chosen.push(entry);
+  }
+  return chosen
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map(({ fact }) => fact);
+}
 /** Admission calls (auth, body, quota, grant) are cheap; this only stops a hung store. */
 const ADMISSION_STEP_MS = 5_000;
 const GSC_REQUEST_TIMEOUT_MS = 8_000;
@@ -158,6 +224,8 @@ export type ProfileReadResult =
   | {
       readonly kind: "ok";
       readonly websiteId: string;
+      /** Used only to keep the visitor's own pages out of competitor evidence. */
+      readonly host: string;
       readonly snapshotRevision: number;
       readonly profileHash: string;
       readonly profile: MarketingWebsiteProfileV1;
@@ -227,6 +295,7 @@ async function readWebsiteProfile(userId: string, websiteId: string): Promise<Pr
   return {
     kind: "ok",
     websiteId: details.value.websiteId,
+    host: details.value.host,
     snapshotRevision: snapshot.snapshotRevision,
     profileHash: snapshot.profileHash,
     profile: snapshot.profile,
@@ -707,6 +776,7 @@ async function readProfileV2Lane(
     readonly retained: number | null;
     readonly reason: "provider_error" | "insufficient_evidence" | null;
   };
+  readonly host: string | null;
 }> {
   const result = await dependencies.readWebsite(userId, websiteId).catch(
     (): ProfileReadResult => ({ kind: "error" }),
@@ -715,6 +785,7 @@ async function readProfileV2Lane(
     return {
       facts: [],
       snapshot: null,
+      host: null,
       read: {
         source: "profile",
         status: "unavailable",
@@ -725,9 +796,10 @@ async function readProfileV2Lane(
     };
   }
   const allFacts = profileFacts(result.profile);
-  const facts = allFacts.slice(0, BRIEF_V2_PROFILE_FACT_MAX);
+  const facts = selectBriefV2ProfileFacts(allFacts);
   return {
     facts,
+    host: result.host,
     snapshot: {
       website_id: result.websiteId,
       revision: result.snapshotRevision,
@@ -1005,6 +1077,10 @@ async function runBriefV2(
   gsc: Extract<GscPreflight, { kind: "ready" }> | null,
 ) {
   const gscWindow = briefV2Window(clock.start);
+  // The rule a rejected model reply broke never reaches the brief, so it is
+  // captured here: "validation_failed" alone made every such run in production
+  // impossible to reproduce.
+  let validationPath: string | null = null;
   const brief = await runContentBriefV2(
     {
       input: {
@@ -1033,7 +1109,11 @@ async function runBriefV2(
     {
       readSerp: dependencies.readSerp,
       crawl: dependencies.crawlV2,
-      runLlm: dependencies.runLlmV2,
+      runLlm: async (llmInput, llmDependencies) => {
+        const result = await dependencies.runLlmV2(llmInput, llmDependencies);
+        validationPath = result.validation_path ?? null;
+        return result;
+      },
       now: dependencies.now,
     },
   );
@@ -1048,6 +1128,7 @@ async function runBriefV2(
     elapsed_ms: brief.run.elapsed_ms,
     reads: Object.fromEntries(brief.run.reads.map((read) => [read.source, read.status])),
     llm_calls: brief.run.llm.calls,
+    validation_path: validationPath,
     serp_cost_usd: brief.run.serp_cost_usd,
     self_check: "ok",
     schema: brief.schema,

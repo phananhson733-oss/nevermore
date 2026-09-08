@@ -302,4 +302,17 @@ describe("one-call Brief v2 assembly", () => {
     expect(JSON.parse(requests[0]!.user).units.map((unit: { id: string }) => unit.id)).toEqual(result.context.research.units.map((unit) => unit.id));
     expect(JSON.stringify(data)).toBe(before);
   });
+
+  it("records the rejected rule for the run log without putting it in the brief", async () => {
+    // A rejected reply reaches the visitor as one unavailable read, which says
+    // nothing about why. Two production runs on 2026-09-07 had to be diagnosed
+    // by reading the model output by hand. The path is the validator's own, so
+    // it names the rule and carries none of the reply's text.
+    const zh = JSON.parse(RESPONSE);
+    zh.research.outline[0].h2 = "\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6";
+    const { result } = await run(JSON.stringify(zh));
+    expect(result.output).toBeNull();
+    expect(result.validation_path).toBe("research.outline[0].h2");
+    expect(JSON.stringify(result)).not.toContain("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6");
+  });
 });

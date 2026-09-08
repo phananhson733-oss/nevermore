@@ -5,7 +5,9 @@ import { canonicalizeUrl } from "@sf/sources/canonical-url";
 import { keywordCoverageProperty } from "../keyword-opportunity/property.ts";
 import { canonicalize } from "./canonical.ts";
 import { buildSerpObservations } from "./assemble.ts";
-import { SERP_DEPTH, SUPPORTING_KEYWORDS_MAX } from "./constants.ts";
+import {
+  NON_WHITESPACE_TOKENIZED_LANGUAGES, SERP_DEPTH, SUPPORTING_KEYWORDS_MAX, UNSEGMENTED_SCRIPT_CLASS,
+} from "./constants.ts";
 import type { ProfileFact } from "./contract.ts";
 import {
   array, at, finite, identifier, invalid, isRecord, literal, modelText, nullable, object, ok, oneOf, reference,
@@ -235,7 +237,152 @@ function wholeShape<R>(input: unknown, research: Decoder<R>, strict: boolean, an
   return result.ok ? ok({ ...plan.value, research: result.value }) : result;
 }
 
-export function validateModelBriefV2(input: unknown, context: BriefV2Context): Decoded<BriefV2Generated> {
+const CJK_LETTER = new RegExp(`[${UNSEGMENTED_SCRIPT_CLASS}]`, "u");
+const LETTER = /\p{L}/u;
+/** Four letters is enough to tell a written phrase from a quoted term or a code. */
+const SCRIPT_SAMPLE_MIN = 4;
+
+/**
+ * Quoted spans are dropped before counting.
+ *
+ * "『吾輩は猫である』: plot" is a correct English heading that names a work by
+ * its original title, and counting the title's letters as generated prose made
+ * the majority test reject it. A citation is not the writing.
+ *
+ * Only paired quotation marks delimit a span. The apostrophe is deliberately
+ * absent: "the writer's own words" would otherwise read as a quotation and
+ * lose its letters, and an English possessive is far commoner here than a
+ * single-quoted title.
+ */
+const QUOTE_OPEN: ReadonlySet<string> = new Set(["\u300c", "\u300e", "\u201c", "\u00ab", "\u300a", "\""]);
+const QUOTE_CLOSE: ReadonlySet<string> = new Set(["\u300d", "\u300f", "\u201d", "\u00bb", "\u300b", "\""]);
+
+/**
+ * Two passes, not a regular expression.
+ *
+ * The obvious pattern for a quoted span is `open [^close]* close`, which is
+ * quadratic on an opening mark that never closes: the inner class runs to the
+ * end and backtracks, once per opening mark. Measured on that shape, 4000
+ * characters cost 14 ms and 20000 cost 382 ms. This is not a live denial of
+ * service — every string that reaches here was already rejected above unless it
+ * fits its own decoder, and the longest of those is a 400-character question —
+ * so the quadratic form cost a few milliseconds, not a run. It is replaced
+ * because a bound that only holds through another module is not a bound; a
+ * backward pass recording the next closing mark makes this one local.
+ *
+ * An unterminated opening mark is deliberately not a span. Treating the rest
+ * of the string as quoted would let one stray quote exempt a whole heading
+ * from the language check.
+ */
+function withoutQuotedSpans(value: string): string {
+  const chars = [...value];
+  const nextClose = new Int32Array(chars.length + 1).fill(-1);
+  for (let index = chars.length - 1; index >= 0; index -= 1) {
+    nextClose[index] = QUOTE_CLOSE.has(chars[index]!) ? index : nextClose[index + 1]!;
+  }
+  let out = "";
+  for (let index = 0; index < chars.length; index += 1) {
+    const character = chars[index]!;
+    if (!QUOTE_OPEN.has(character)) { out += character; continue; }
+    const close = nextClose[index + 1]!;
+    if (close === -1) { out += character; continue; }
+    out += " ";
+    index = close;
+  }
+  return out;
+}
+
+/**
+ * Why the language of the output is checked at all.
+ *
+ * The evidence a brief is built from is whatever the top ten results happen to
+ * be written in, and it regularly outweighs the visitor's own keywords. An
+ * English run on 2026-09-07 came back with every heading in Chinese, because
+ * thirty-two of the supplied profile facts were Chinese and nothing in the
+ * pipeline disagreed. The instruction now names the language, and this is the
+ * check that makes the instruction enforceable.
+ *
+ * It only fires in one direction. A run in a language written without spaces
+ * may legitimately borrow a Latin term, and a Latin-script run may quote one
+ * word of the source; a whole heading in the sources' script is the failure
+ * that was actually observed, so majority is the test and the minimum sample
+ * keeps a two-character borrowing out of it.
+ */
+function wrongScript(value: string): boolean {
+  const text = withoutQuotedSpans(value);
+  let letters = 0;
+  let cjk = 0;
+  for (const character of text) {
+    if (!LETTER.test(character)) continue;
+    letters += 1;
+    if (CJK_LETTER.test(character)) cjk += 1;
+  }
+  return letters >= SCRIPT_SAMPLE_MIN && cjk * 2 > letters;
+}
+
+/** Every generated string, with the path a rejection should name. */
+function* generatedStrings(value: BriefV2Generated): Generator<readonly [string, string]> {
+  for (const [index, question] of value.research.questions.entries()) {
+    yield [`research.questions[${index}].q`, question.q];
+  }
+  for (const [index, section] of value.research.outline.entries()) {
+    yield [`research.outline[${index}].h2`, section.h2];
+    for (const [level, heading] of section.h3.entries()) yield [`research.outline[${index}].h3[${level}]`, heading];
+  }
+  for (const key of ["intent", "format"] as const) {
+    const judgment = value[key];
+    if (judgment !== null) yield [`${key}.rationale`, judgment.rationale];
+  }
+  yield ["page_plan.rationale", value.page_plan.rationale];
+  for (const [index, step] of value.page_plan.steps.entries()) {
+    yield [`page_plan.steps[${index}].instruction`, step.instruction];
+  }
+  if (value.gap_angle !== null) {
+    yield ["gap_angle.value", value.gap_angle.value];
+    yield ["gap_angle.rationale", value.gap_angle.rationale];
+  }
+  for (const [index, link] of value.internal_links.entries()) {
+    yield [`internal_links[${index}].anchor`, link.anchor];
+    yield [`internal_links[${index}].why`, link.why];
+  }
+  for (const [index, item] of value.do_not_cover.entries()) {
+    yield [`do_not_cover[${index}].topic`, item.topic];
+    yield [`do_not_cover[${index}].why`, item.why];
+  }
+}
+
+function checkGeneratedLanguage(value: BriefV2Generated, language: string): Decoded<BriefV2Generated> | null {
+  // The tool's own codes are bare, but a confirmed revision can carry a full
+  // BCP-47 tag: "zh-CN" is Chinese, and comparing the whole tag to a set of
+  // bare codes would have this check reject a Chinese brief for being Chinese.
+  const primary = language.toLowerCase().split(/[-_]/u)[0] ?? "";
+  if (NON_WHITESPACE_TOKENIZED_LANGUAGES.has(primary)) return null;
+  for (const [path, text] of generatedStrings(value)) {
+    if (wrongScript(text)) return reference(path);
+  }
+  return null;
+}
+
+/**
+ * The generated-language rule applies when a model writes a brief, and never
+ * when a brief is read back.
+ *
+ * `parseBriefV2Generated` re-runs this validator over a frozen result to prove
+ * it is internally consistent, and the Draft Writer runs the same path over a
+ * confirmed brief a visitor pastes in. A brief exported before this rule
+ * existed — one whose headings came back in the sources' script, exactly the
+ * population the rule was written for — would fail that read as a generic
+ * decode error, with an unchanged schema version to warn anyone. Off by
+ * default is what keeps a rule from being applied to artifacts that predate
+ * it; the two generation call sites ask for it by name.
+ */
+export interface ValidateModelBriefV2Options { readonly checkLanguage?: boolean }
+
+export function validateModelBriefV2(
+  input: unknown,
+  context: BriefV2Context,
+  options: ValidateModelBriefV2Options = {},
+): Decoded<BriefV2Generated> {
   const checked = parseBriefV2Context(context);
   if (!checked.ok) return nested(checked, "context");
   const decoded = wholeShape(input, modelResearchShape, false, "U");
@@ -265,6 +412,14 @@ export function validateModelBriefV2(input: unknown, context: BriefV2Context): D
   }
   for (const [index, step] of plan.steps.entries()) {
     const path = `page_plan.steps[${index}]`;
+    // keep and rewrite act on text that exists, so they must cite the units
+    // they act on. An add step is bound by its answers instead: a question the
+    // evidence raised may be a question only PAA raised, and "add a section
+    // answering this" is a statement about what to cover, not a claim. A
+    // reviewer read the empty-sources case as an ungrounded factual
+    // instruction; the validator cannot tell one instruction's prose from
+    // another's, and forbidding it would forbid the PAA-only case the tests
+    // below name deliberately.
     if (step.kind === "add" ? step.answers.length === 0 : step.sources.length === 0) return reference(path);
     for (const ref of step.sources) {
       const unit = units.get(ref);
@@ -290,7 +445,9 @@ export function validateModelBriefV2(input: unknown, context: BriefV2Context): D
     const identities = refs.map((ref) => { const candidate = candidates.get(ref); return candidate === undefined ? null : briefV2PageKey(candidate.url); });
     if (new Set(identities).size !== refs.length || refs.some((ref, index) => identities[index] === targetIdentity || candidates.get(ref)?.read !== "observed")) return reference(key);
   }
-  return ok({ ...decoded.value, research: research.value, page_plan: { ...plan, steps } });
+  const value: BriefV2Generated = { ...decoded.value, research: research.value, page_plan: { ...plan, steps } };
+  if (options.checkLanguage !== true) return ok(value);
+  return checkGeneratedLanguage(value, checked.value.input.language) ?? ok(value);
 }
 
 /** Rebuild the model graph, recompute public IDs, and compare the frozen result exactly. */

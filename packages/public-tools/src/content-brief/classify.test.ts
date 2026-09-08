@@ -5,6 +5,7 @@ import {
   FORMAT_RULES,
   FORUM_HOSTS,
   INTENT_RULES,
+  ENCYCLOPEDIA_HOSTS,
   NEWS_HOSTS,
   VIDEO_HOSTS,
   classifyIntent,
@@ -35,18 +36,32 @@ function row(
 
 describe("host sets", () => {
   it("pin the spec's host lists", () => {
-    expect([...VIDEO_HOSTS]).toEqual(["youtube.com", "vimeo.com"]);
+    expect([...VIDEO_HOSTS]).toEqual([
+      "youtube.com", "vimeo.com", "tiktok.com", "instagram.com", "bilibili.com", "dailymotion.com",
+    ]);
     expect([...FORUM_HOSTS]).toEqual([
       "reddit.com",
       "quora.com",
       "stackexchange.com",
       "stackoverflow.com",
+      "zhihu.com",
+      "ptt.cc",
+      "dcard.tw",
+      "v2ex.com",
+      "mobile01.com",
     ]);
     expect([...COMMERCE_HOSTS]).toEqual([
       "amazon.com",
       "ebay.com",
       "walmart.com",
       "etsy.com",
+      "shopee.com",
+      "shopee.tw",
+      "taobao.com",
+      "tmall.com",
+      "jd.com",
+      "momoshop.com.tw",
+      "pchome.com.tw",
     ]);
     expect([...NEWS_HOSTS]).toEqual([
       "nytimes.com",
@@ -54,6 +69,27 @@ describe("host sets", () => {
       "reuters.com",
       "theguardian.com",
     ]);
+    expect([...ENCYCLOPEDIA_HOSTS]).toEqual([
+      "wikipedia.org", "wiktionary.org", "baike.baidu.com", "britannica.com", "wikiwand.com",
+    ]);
+  });
+
+  it("classifies the result shapes a Chinese search returns, instead of calling them unknown", () => {
+    // Every one of these was "unknown" before: a zh run had six of nine results
+    // unclassified, which makes the observed format distribution meaningless.
+    const cases: readonly [string, string, string, string][] = [
+      ["baike.baidu.com", "https://baike.baidu.com/item/水逆", "水逆", "guide"],
+      ["zhihu.com", "https://www.zhihu.com/question/12345", "水逆是什么", "forum"],
+      ["shopee.tw", "https://shopee.tw/product/1/2", "水晶", "product_page"],
+      ["facebook.com", "https://www.facebook.com/page/videos/12345", "水逆影片", "video"],
+      ["example.com", "https://example.com/post", "水逆是什么意思？", "guide"],
+      ["example.com", "https://example.com/post", "如何應對水逆", "guide"],
+      ["example.com", "https://example.com/post", "Mercury retrograde dates for 2026", "guide"],
+      ["example.com", "https://example.com/post", "Mercury retrograde meaning", "guide"],
+    ];
+    for (const [domain, url, title, expected] of cases) {
+      expect(classifySerpFormat({ domain, url, title }).value, title).toBe(expected);
+    }
   });
 });
 
@@ -100,7 +136,7 @@ describe("classifySerpFormat: domain rules", () => {
     });
     expect(classifySerpFormat(serp("example.com", "https://www.youtube.com/watch?v=1"))).toEqual({
       value: "video",
-      rules_hit: ["host:video"],
+      rules_hit: ["host:video", "path:watch"],
     });
     expect(classifySerpFormat(serp("example.com", "https://M.YouTube.com/watch")).value).toBe("video");
   });
@@ -139,6 +175,16 @@ describe("classifySerpFormat: path rules", () => {
         value: format,
         rules_hit: [rule],
       });
+    }
+  });
+
+  it("maps the short-video path patterns to video", () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ["https://x.example/reels/abc", "path:reels"],
+      ["https://x.example/videos/abc", "path:videos"],
+    ];
+    for (const [url, rule] of cases) {
+      expect(classifySerpFormat(serp("x.example", url)), url).toEqual({ value: "video", rules_hit: [rule] });
     }
   });
 
@@ -236,6 +282,31 @@ describe("classifySerpFormat: title rules", () => {
   });
 });
 
+describe("classifySerpFormat: title normalization", () => {
+  it("folds a full-width title to its ASCII form before matching", () => {
+    // Provider titles arrive as the page wrote them, and a CJK-authored page
+    // routinely spells Latin words full-width. Lower-casing alone leaves
+    // U+FF57 as U+FF57, so every rule below misses and the row is "unknown".
+    expect(classifySerpFormat(serp("x.example", null, "\uff37\uff48\uff41\uff54 \uff49\uff53 \uff41 \uff23\uff32\uff2d"))).toEqual({
+      value: "guide", rules_hit: ["title:what_is"],
+    });
+    expect(classifySerpFormat(serp("x.example", null, "\uff34\uff48\uff45 \uff42\uff45\uff53\uff54 \uff23\uff32\uff2d")).value).toBe("listicle");
+  });
+
+  it("maps the remaining explainer and Chinese title patterns to their formats", () => {
+    const cases: readonly (readonly [string, SerpFormat, string])[] = [
+      ["Mercury retrograde explained", "guide", "title:explained"],
+      ["\u6c34\u9006\u65f6\u95f4\u8868", "guide", "title:zh_dates"],
+      ["\u6c34\u9006\u6642\u9593\u8868", "guide", "title:zh_dates"],
+      ["\u6c34\u9006\u6c34\u6676\u63a8\u8350\u6392\u884c", "listicle", "title:zh_best"],
+      ["\u6c34\u9006\u6c34\u6676\u6392\u884c\u699c", "listicle", "title:zh_best"],
+    ];
+    for (const [title, format, rule] of cases) {
+      expect(classifySerpFormat(serp("x.example", null, title)), title).toEqual({ value: format, rules_hit: [rule] });
+    }
+  });
+});
+
 describe("classifySerpFormat: ordering", () => {
   it("takes the first hit as value and records every later hit in rules_hit", () => {
     expect(
@@ -280,6 +351,10 @@ describe("classifySerpFormat: ordering", () => {
       "host:forum",
       "host:commerce",
       "host:news",
+      "host:encyclopedia",
+      "path:videos",
+      "path:watch",
+      "path:reels",
       "path:compare",
       "path:vs",
       "path:-vs-",
@@ -299,6 +374,13 @@ describe("classifySerpFormat: ordering", () => {
       "title:how_to",
       "title:what_is",
       "title:guide",
+      "title:meaning",
+      "title:explained",
+      "title:dates",
+      "title:zh_what_is",
+      "title:zh_how_to",
+      "title:zh_dates",
+      "title:zh_best",
     ]);
   });
 });

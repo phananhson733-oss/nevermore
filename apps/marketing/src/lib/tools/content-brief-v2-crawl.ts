@@ -7,7 +7,7 @@ import { isIP } from "node:net";
 import { load } from "cheerio";
 import {
   CRAWL_CONCURRENCY, CRAWL_DEADLINE_MS, CRAWL_FETCH_TIMEOUT_MS,
-  CRAWL_MAX_BYTES_PER_PAGE, ENVELOPE_MS,
+  CRAWL_MAX_BYTES_PER_PAGE, CRAWL_SETTLEMENT_MS, ENVELOPE_MS,
 } from "@sf/public-tools/content-brief/constants";
 import type { ResearchPage } from "@sf/public-tools/content-brief/v2-contract";
 import { sameBriefV2OwnedPage } from "@sf/public-tools/content-brief/v2-generation";
@@ -36,6 +36,12 @@ export interface ContentBriefV2CrawlResult {
 export interface ContentBriefV2CrawlInput {
   readonly targets: readonly ContentBriefV2CrawlTarget[];
   readonly language: string;
+  /**
+   * The run's own keywords, used only to rank which excerpts of a page survive
+   * the per-page segment ceiling. An empty list keeps document order, which is
+   * what a page with no keyword match deserves.
+   */
+  readonly keywords?: readonly string[];
   readonly deadlineAt: number;
 }
 
@@ -123,7 +129,8 @@ function isRecaptchaInterstitial(html: string): boolean {
 }
 
 async function crawlOne(
-  target: ContentBriefV2CrawlTarget, language: string, clock: Clock, fetchResource: typeof fetchPublicResource,
+  target: ContentBriefV2CrawlTarget, language: string, keywords: readonly string[],
+  clock: Clock, fetchResource: typeof fetchPublicResource,
 ): Promise<Outcome> {
   const remaining = Math.floor(clock.wallClockAt - clock.now());
   if (remaining < 1) return failure(target, "timeout");
@@ -150,7 +157,7 @@ async function crawlOne(
   if (mediaType !== "text/html" && mediaType !== "application/xhtml+xml") return failure(target, "insufficient_evidence");
   try {
     if (isRecaptchaInterstitial(result.body)) return failure(target, "insufficient_evidence");
-    const research = extractContentBriefResearch(result.body, language);
+    const research = extractContentBriefResearch(result.body, language, keywords);
     const contentHash = createHash("sha256").update(result.body).digest("hex");
     const fetchedAt = clock.now();
     if (fetchedAt >= clock.wallClockAt) return failure(target, "timeout");
@@ -169,7 +176,18 @@ export async function crawlContentBriefV2Targets(
 ): Promise<ContentBriefV2CrawlResult> {
   const targets = validateTargets(input);
   const now = dependencies.now ?? Date.now;
-  const clock = { now, wallClockAt: Math.min(now() + CRAWL_DEADLINE_MS, input.deadlineAt - ENVELOPE_MS) };
+  // The caller races this call against a lane of the same CRAWL_DEADLINE_MS. If both
+  // expire together the lane wins and every completed page is discarded, so the inner
+  // wall clock closes first and returns whatever finished.
+  //
+  // The margin comes off whichever bound is binding. Subtracting it from only the
+  // CRAWL_DEADLINE_MS term left it doing nothing whenever the run budget was the
+  // shorter of the two, which is exactly the crowded run where losing every fetched
+  // page hurts most.
+  const clock = {
+    now,
+    wallClockAt: Math.min(now() + CRAWL_DEADLINE_MS, input.deadlineAt - ENVELOPE_MS) - CRAWL_SETTLEMENT_MS,
+  };
   const outcomes: Outcome[] = new Array<Outcome>(targets.length);
   let next = 0;
   const worker = async (): Promise<void> => {
@@ -177,7 +195,10 @@ export async function crawlContentBriefV2Targets(
       const index = next++;
       const target = targets[index];
       if (!target) return;
-      outcomes[index] = await crawlOne(target, input.language, clock, dependencies.fetchResource ?? fetchPublicResource);
+      outcomes[index] = await crawlOne(
+        target, input.language, input.keywords ?? [], clock,
+        dependencies.fetchResource ?? fetchPublicResource,
+      );
     }
   };
   await Promise.all(Array.from({ length: Math.min(CRAWL_CONCURRENCY, targets.length) }, () => worker()));

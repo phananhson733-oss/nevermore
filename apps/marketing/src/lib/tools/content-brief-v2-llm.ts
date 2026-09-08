@@ -17,6 +17,16 @@ export interface ContentBriefV2LlmResult {
   readonly output: BriefV2Generated | null;
   readonly reads: LlmReadMeta;
   readonly prompt_bytes: number;
+  /**
+   * The exact rule the model's reply broke, for the run log only.
+   *
+   * A rejected reply is reported to the visitor as one unavailable read, which
+   * says nothing about why. Two production runs on 2026-09-07 were diagnosed by
+   * reading the model's output by hand because the run log recorded only that
+   * validation failed. This is the validator's own path, so it names the rule
+   * without carrying any of the reply's text; it is never part of the brief.
+   */
+  readonly validation_path?: string;
 }
 
 const FAILURE_REASONS: Readonly<Record<KeywordLlmFailureReason, UnavailableReason>> = {
@@ -68,7 +78,8 @@ export async function runContentBriefV2Llm(
     return { context, output: null, reads: unavailable(FAILURE_REASONS[error.reason], usage.requestCount > 0 ? 1 : 0, usage, null), prompt_bytes };
   }
   const modelId = completion.modelId ?? config.model;
-  const fail = (reason: UnavailableReason): ContentBriefV2LlmResult => ({ context, output: null, reads: unavailable(reason, 1, completion.usage, modelId), prompt_bytes });
+  const fail = (reason: UnavailableReason, path?: string): ContentBriefV2LlmResult =>
+    ({ context, output: null, reads: unavailable(reason, 1, completion.usage, modelId), prompt_bytes, ...(path === undefined ? {} : { validation_path: path }) });
   const expired = () => { const current = now(); return !Number.isFinite(current) || current >= attemptDeadline; };
   if (expired()) return fail("timeout");
   let raw: unknown;
@@ -76,9 +87,13 @@ export async function runContentBriefV2Llm(
     if (!(error instanceof SyntaxError)) throw error;
     return fail("validation_failed");
   }
-  const output = context.serp === undefined ? validateModelBriefV2(raw, context) : validateSectionQuestionsBrief(raw, context);
+  // Generation is the one place the language rule applies; reading a brief back
+  // must not judge it by a rule that did not exist when it was issued.
+  const output = context.serp === undefined
+    ? validateModelBriefV2(raw, context, { checkLanguage: true })
+    : validateSectionQuestionsBrief(raw, context, { checkLanguage: true });
   if (expired()) return fail("timeout");
-  if (!output.ok) return fail("validation_failed");
+  if (!output.ok) return fail("validation_failed", output.path);
   return {
     context, output: output.value, prompt_bytes,
     reads: { status: "complete", calls: completion.usage.requestCount, model_id: modelId, temperature_requested: CONTENT_BRIEF_LLM_TEMPERATURE, temperature_effective: config.temperature ?? null, input_tokens: completion.usage.inputTokens, output_tokens: completion.usage.outputTokens },

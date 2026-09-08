@@ -10,15 +10,39 @@ import type { ClassifiedSerpFormat, SerpFormat } from "./contract.ts";
 /* host sets (suffix match on the registrable host, www. stripped)     */
 /* ------------------------------------------------------------------ */
 
-export const VIDEO_HOSTS: ReadonlySet<string> = new Set(["youtube.com", "vimeo.com"]);
+export const VIDEO_HOSTS: ReadonlySet<string> = new Set([
+  "youtube.com", "vimeo.com", "tiktok.com", "instagram.com", "bilibili.com", "dailymotion.com",
+]);
 export const FORUM_HOSTS: ReadonlySet<string> = new Set([
   "reddit.com",
   "quora.com",
   "stackexchange.com",
   "stackoverflow.com",
+  "zhihu.com",
+  "ptt.cc",
+  "dcard.tw",
+  "v2ex.com",
+  "mobile01.com",
 ]);
-export const COMMERCE_HOSTS: ReadonlySet<string> = new Set(["amazon.com", "ebay.com", "walmart.com", "etsy.com"]);
+export const COMMERCE_HOSTS: ReadonlySet<string> = new Set([
+  "amazon.com", "ebay.com", "walmart.com", "etsy.com",
+  "shopee.com", "shopee.tw", "taobao.com", "tmall.com", "jd.com", "momoshop.com.tw", "pchome.com.tw",
+]);
 export const NEWS_HOSTS: ReadonlySet<string> = new Set(["nytimes.com", "bbc.com", "reuters.com", "theguardian.com"]);
+/**
+ * Encyclopedias classify as guides.
+ *
+ * The format vocabulary is closed and has no "reference" value, and adding one
+ * is a contract change. A dictionary or encyclopedia article is an explainer,
+ * which is what "guide" means here, and the rule id the page prints says
+ * exactly what was recognised — so the reader is not told the page is a blog
+ * post. Before this, every Baidu Baike and Wikipedia result was "unknown",
+ * which is how a Chinese run ended up with two thirds of its results
+ * unclassified and the observed format distribution meaningless.
+ */
+export const ENCYCLOPEDIA_HOSTS: ReadonlySet<string> = new Set([
+  "wikipedia.org", "wiktionary.org", "baike.baidu.com", "britannica.com", "wikiwand.com",
+]);
 
 function normalizeHost(domain: string): string {
   return domain.trim().toLowerCase().replace(/\.$/, "").replace(/^www\./, "");
@@ -71,6 +95,10 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   hostRule("host:forum", "forum", FORUM_HOSTS),
   hostRule("host:commerce", "product_page", COMMERCE_HOSTS),
   hostRule("host:news", "news", NEWS_HOSTS),
+  hostRule("host:encyclopedia", "guide", ENCYCLOPEDIA_HOSTS),
+  pathRule("path:videos", "video", "/videos/"),
+  pathRule("path:watch", "video", "/watch/"),
+  pathRule("path:reels", "video", "/reels/"),
   pathRule("path:compare", "comparison", "/compare/"),
   pathRule("path:vs", "comparison", "/vs/"),
   pathRule("path:-vs-", "comparison", "-vs-"),
@@ -90,6 +118,15 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   titleRule("title:how_to", "guide", /\bhow to /),
   titleRule("title:what_is", "guide", /\bwhat is /),
   titleRule("title:guide", "guide", /guide/),
+  titleRule("title:meaning", "guide", /\bmeaning\b/),
+  titleRule("title:explained", "guide", /\bexplained\b/),
+  titleRule("title:dates", "guide", /\bdates\b/),
+  // No \b here: JavaScript word boundaries are ASCII-based and never fall
+  // between two Han characters, so a boundary would make these never match.
+  titleRule("title:zh_what_is", "guide", /是什么|是什麼|什么意思|什麼意思/u),
+  titleRule("title:zh_how_to", "guide", /怎么|怎麼|如何|教程|攻略/u),
+  titleRule("title:zh_dates", "guide", /时间表|時間表|日期表/u),
+  titleRule("title:zh_best", "listicle", /推荐排行|推薦排行|排行榜/u),
 ];
 
 /** The ordered rule table, id + format only, for the page to print. */
@@ -124,7 +161,8 @@ function normalizeSerpInput(input: SerpFormatInput): NormalizedSerpInput {
   return {
     host: hostOf(input.url, input.domain, parsed),
     path: parsed === null ? null : directoryPath(parsed),
-    title: input.title === null ? null : input.title.toLowerCase(),
+    // NFKC first: a full-width title would otherwise miss every rule below.
+    title: input.title === null ? null : input.title.normalize("NFKC").toLowerCase(),
   };
 }
 

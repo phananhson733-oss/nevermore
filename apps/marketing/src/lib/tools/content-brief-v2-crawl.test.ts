@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   CRAWL_CONCURRENCY, CRAWL_DEADLINE_MS, CRAWL_FETCH_TIMEOUT_MS,
-  CRAWL_MAX_BYTES_PER_PAGE, ENVELOPE_MS,
+  CRAWL_MAX_BYTES_PER_PAGE, CRAWL_SETTLEMENT_MS, ENVELOPE_MS,
 } from "@sf/public-tools/content-brief/constants";
 import { buildResearchBundle } from "@sf/public-tools/content-brief/v2-research";
 import {
@@ -104,6 +104,29 @@ describe("crawlContentBriefV2Targets", () => {
     const result = await run([competitor(1)], async (url) => page(url, { body }));
     expect(result.failed).toEqual([]);
     expect(result.observed[0]?.research.segments.some((segment) => segment.text.includes("site owners diagnose"))).toBe(true);
+  });
+
+  it("hands the run's keywords to the extractor, so a late relevant block survives the ceiling", async () => {
+    // Nothing else in this suite passes keywords, so dropping them on the way to
+    // extractContentBriefResearch would leave every test here green while every
+    // crawled page came back ranked by document order again.
+    const filler = Array.from({ length: 14 }, (_, index) =>
+      `<p>Unrelated background paragraph number ${index + 1} about seasonal planting charts.</p>`).join("");
+    const body = `<main>${filler}<p>Mercury retrograde meaning is an apparent reversal seen from Earth, not a real orbit change.</p></main>`;
+    const respond = async (url: string) => page(url, { body, bytes: Buffer.byteLength(body) });
+    const texts = (result: Awaited<ReturnType<typeof crawlContentBriefV2Targets>>) =>
+      result.observed[0]?.research.segments.map((segment) => segment.text) ?? [];
+    const keyworded = await crawlContentBriefV2Targets(
+      { targets: [competitor(1)], language: "en", keywords: ["mercury retrograde meaning"], deadlineAt: DEADLINE },
+      { fetchResource: respond, now: () => START },
+    );
+    const plain = await crawlContentBriefV2Targets(
+      { targets: [competitor(1)], language: "en", deadlineAt: DEADLINE }, { fetchResource: respond, now: () => START },
+    );
+    const relevant = (values: readonly string[]) => values.some((text) => text.startsWith("Mercury retrograde meaning"));
+    expect(relevant(texts(keyworded))).toBe(true);
+    expect(relevant(texts(plain))).toBe(false);
+    expect(texts(keyworded)).toHaveLength(12);
   });
 
   it("keeps the extractor's segment and character caps with omitted counts", async () => {
@@ -287,10 +310,13 @@ describe("crawlContentBriefV2Targets", () => {
     expect(result.failed.map((item) => item.reason)).toEqual(["timeout", "timeout"]);
   });
 
-  it("caps timeout to the remaining overall budget", async () => {
+  it("caps timeout to the remaining overall budget, less the settlement margin", async () => {
     const fetchResource = vi.fn(success);
     await run([competitor(1)], fetchResource, "en", START + ENVELOPE_MS + 750);
-    expect(fetchResource).toHaveBeenCalledWith(competitor(1).url, { timeoutMs: 750, maxBodyBytes: CRAWL_MAX_BYTES_PER_PAGE, allowRedirect: expect.any(Function) });
+    // The margin is what the crawl keeps for itself to return before the caller's
+    // lane fires, so it comes out of the budget-bound case too, not only out of
+    // CRAWL_DEADLINE_MS. A fetch allowed the full 750 ms would still be in flight.
+    expect(fetchResource).toHaveBeenCalledWith(competitor(1).url, { timeoutMs: 750 - CRAWL_SETTLEMENT_MS, maxBodyBytes: CRAWL_MAX_BYTES_PER_PAGE, allowRedirect: expect.any(Function) });
   });
 
   it.each([Number.NaN, Number.POSITIVE_INFINITY])("rejects invalid deadline %s before fetching", async (deadline) => {
@@ -318,14 +344,42 @@ describe("crawlContentBriefV2Targets", () => {
     let settled = false;
     const fetchResource = vi.fn(() => new Promise<PublicResourceResult>(() => undefined));
     const targets = Array.from({ length: 10 }, (_, i) => competitor(i + 1));
+    // The caller's lane and this crawl share CRAWL_DEADLINE_MS, so the crawl closes
+    // CRAWL_SETTLEMENT_MS early. The margin comes off whichever bound is binding,
+    // so a shorter run deadline is shortened too: subtracting it from only the
+    // CRAWL_DEADLINE_MS term left the 750 ms case with no margin at all.
+    const closesAt = Math.min(CRAWL_DEADLINE_MS, remaining) - CRAWL_SETTLEMENT_MS;
     const pending = run(targets, fetchResource, "en", START + ENVELOPE_MS + remaining, Date.now).then((result) => { settled = true; return result; });
-    await vi.advanceTimersByTimeAsync(remaining - 1);
+    await vi.advanceTimersByTimeAsync(closesAt - 1);
     expect(settled).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     const result = await pending;
     expect(settled).toBe(true);
     expect(result.observed).toEqual([]);
     expect(result.failed).toHaveLength(10);
+  });
+
+  it("returns the pages that finished before its own clock closes, ahead of the caller's lane", async () => {
+    vi.useFakeTimers({ now: START });
+    const fetchResource = vi.fn((url: string) =>
+      url.includes("source6.") ? Promise.resolve(page(url)) : new Promise<PublicResourceResult>(() => undefined));
+    // Two waves past CRAWL_CONCURRENCY, and the reader is in the second one. Within a
+    // single wave every fetch is bounded by CRAWL_FETCH_TIMEOUT_MS plus teardown grace,
+    // which fires well before the wall clock — the margin could be deleted outright and
+    // a one-wave run would settle at the same moment. Only a target picked up after the
+    // remaining budget drops under that bound settles on the wall clock itself.
+    const targets = Array.from({ length: CRAWL_CONCURRENCY + 2 }, (_, index) => competitor(index + 1));
+    let settledAt: number | null = null;
+    const pending = run(targets, fetchResource, "en", START + ENVELOPE_MS + CRAWL_DEADLINE_MS, Date.now)
+      .then((result) => { settledAt = Date.now() - START; return result; });
+    await vi.advanceTimersByTimeAsync(CRAWL_DEADLINE_MS);
+    const result = await pending;
+    // A crawl that settled at exactly CRAWL_DEADLINE_MS would lose the race against the
+    // caller's lane, whose fallback reports every target as failed — discarding a page
+    // that had already been read. Settling earlier is the whole point of the margin.
+    expect(settledAt).toBe(CRAWL_DEADLINE_MS - CRAWL_SETTLEMENT_MS);
+    expect(result.observed.map((item) => item.id)).toEqual(["C6"]);
+    expect(result.failed).toHaveLength(CRAWL_CONCURRENCY + 1);
   });
 
   it("discards a result arriving at or after the wall clock and leaves queued pages unstarted", async () => {
