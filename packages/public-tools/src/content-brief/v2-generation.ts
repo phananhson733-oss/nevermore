@@ -5,7 +5,9 @@ import { canonicalizeUrl } from "@sf/sources/canonical-url";
 import { keywordCoverageProperty } from "../keyword-opportunity/property.ts";
 import { canonicalize } from "./canonical.ts";
 import { buildSerpObservations } from "./assemble.ts";
-import { NON_WHITESPACE_TOKENIZED_LANGUAGES, SERP_DEPTH, SUPPORTING_KEYWORDS_MAX } from "./constants.ts";
+import {
+  NON_WHITESPACE_TOKENIZED_LANGUAGES, SERP_DEPTH, SUPPORTING_KEYWORDS_MAX, UNSEGMENTED_SCRIPT_CLASS,
+} from "./constants.ts";
 import type { ProfileFact } from "./contract.ts";
 import {
   array, at, finite, identifier, invalid, isRecord, literal, modelText, nullable, object, ok, oneOf, reference,
@@ -235,10 +237,57 @@ function wholeShape<R>(input: unknown, research: Decoder<R>, strict: boolean, an
   return result.ok ? ok({ ...plan.value, research: result.value }) : result;
 }
 
-const CJK_LETTER = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}]/u;
+const CJK_LETTER = new RegExp(`[${UNSEGMENTED_SCRIPT_CLASS}]`, "u");
 const LETTER = /\p{L}/u;
 /** Four letters is enough to tell a written phrase from a quoted term or a code. */
 const SCRIPT_SAMPLE_MIN = 4;
+
+/**
+ * Quoted spans are dropped before counting.
+ *
+ * "『吾輩は猫である』: plot" is a correct English heading that names a work by
+ * its original title, and counting the title's letters as generated prose made
+ * the majority test reject it. A citation is not the writing.
+ *
+ * Only paired quotation marks delimit a span. The apostrophe is deliberately
+ * absent: "the writer's own words" would otherwise read as a quotation and
+ * lose its letters, and an English possessive is far commoner here than a
+ * single-quoted title.
+ */
+const QUOTE_OPEN: ReadonlySet<string> = new Set(["\u300c", "\u300e", "\u201c", "\u00ab", "\u300a", "\""]);
+const QUOTE_CLOSE: ReadonlySet<string> = new Set(["\u300d", "\u300f", "\u201d", "\u00bb", "\u300b", "\""]);
+
+/**
+ * Two passes, not a regular expression.
+ *
+ * The obvious pattern for a quoted span is `open [^close]* close`, which is
+ * quadratic on an opening mark that never closes: the inner class runs to the
+ * end and backtracks, once per opening mark. Measured on that shape, 4000
+ * characters cost 14 ms and 20000 cost 382 ms, and this text comes from a
+ * model prompted with crawled third-party prose. A backward pass recording the
+ * next closing mark makes the forward pass linear.
+ *
+ * An unterminated opening mark is deliberately not a span. Treating the rest
+ * of the string as quoted would let one stray quote exempt a whole heading
+ * from the language check.
+ */
+function withoutQuotedSpans(value: string): string {
+  const chars = [...value];
+  const nextClose = new Int32Array(chars.length + 1).fill(-1);
+  for (let index = chars.length - 1; index >= 0; index -= 1) {
+    nextClose[index] = QUOTE_CLOSE.has(chars[index]!) ? index : nextClose[index + 1]!;
+  }
+  let out = "";
+  for (let index = 0; index < chars.length; index += 1) {
+    const character = chars[index]!;
+    if (!QUOTE_OPEN.has(character)) { out += character; continue; }
+    const close = nextClose[index + 1]!;
+    if (close === -1) { out += character; continue; }
+    out += " ";
+    index = close;
+  }
+  return out;
+}
 
 /**
  * Why the language of the output is checked at all.
@@ -256,22 +305,8 @@ const SCRIPT_SAMPLE_MIN = 4;
  * that was actually observed, so majority is the test and the minimum sample
  * keeps a two-character borrowing out of it.
  */
-/**
- * Quoted spans are dropped before counting.
- *
- * "『吾輩は猫である』: plot" is a correct English heading that names a work by
- * its original title, and counting the title's letters as generated prose made
- * the majority test reject it. A citation is not the writing.
- *
- * Only paired quotation marks delimit a span. The apostrophe is deliberately
- * absent: "the writer's own words" would otherwise read as a quotation and
- * lose its letters, and an English possessive is far commoner here than a
- * single-quoted title.
- */
-const QUOTED = /[\u300c\u300e\u201c\u00ab\u300a"][^\u300d\u300f\u201d\u00bb\u300b"]*[\u300d\u300f\u201d\u00bb\u300b"]/gu;
-
 function wrongScript(value: string): boolean {
-  const text = value.replace(QUOTED, " ");
+  const text = withoutQuotedSpans(value);
   let letters = 0;
   let cjk = 0;
   for (const character of text) {
@@ -325,7 +360,26 @@ function checkGeneratedLanguage(value: BriefV2Generated, language: string): Deco
   return null;
 }
 
-export function validateModelBriefV2(input: unknown, context: BriefV2Context): Decoded<BriefV2Generated> {
+/**
+ * The generated-language rule applies when a model writes a brief, and never
+ * when a brief is read back.
+ *
+ * `parseBriefV2Generated` re-runs this validator over a frozen result to prove
+ * it is internally consistent, and the Draft Writer runs the same path over a
+ * confirmed brief a visitor pastes in. A brief exported before this rule
+ * existed — one whose headings came back in the sources' script, exactly the
+ * population the rule was written for — would fail that read as a generic
+ * decode error, with an unchanged schema version to warn anyone. Off by
+ * default is what keeps a rule from being applied to artifacts that predate
+ * it; the two generation call sites ask for it by name.
+ */
+export interface ValidateModelBriefV2Options { readonly checkLanguage?: boolean }
+
+export function validateModelBriefV2(
+  input: unknown,
+  context: BriefV2Context,
+  options: ValidateModelBriefV2Options = {},
+): Decoded<BriefV2Generated> {
   const checked = parseBriefV2Context(context);
   if (!checked.ok) return nested(checked, "context");
   const decoded = wholeShape(input, modelResearchShape, false, "U");
@@ -389,6 +443,7 @@ export function validateModelBriefV2(input: unknown, context: BriefV2Context): D
     if (new Set(identities).size !== refs.length || refs.some((ref, index) => identities[index] === targetIdentity || candidates.get(ref)?.read !== "observed")) return reference(key);
   }
   const value: BriefV2Generated = { ...decoded.value, research: research.value, page_plan: { ...plan, steps } };
+  if (options.checkLanguage !== true) return ok(value);
   return checkGeneratedLanguage(value, checked.value.input.language) ?? ok(value);
 }
 

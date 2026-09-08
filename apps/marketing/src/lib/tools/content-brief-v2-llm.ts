@@ -87,7 +87,11 @@ export async function runContentBriefV2Llm(
     if (!(error instanceof SyntaxError)) throw error;
     return fail("validation_failed");
   }
-  const output = context.serp === undefined ? validateModelBriefV2(raw, context) : validateSectionQuestionsBrief(raw, context);
+  // Generation is the one place the language rule applies; reading a brief back
+  // must not judge it by a rule that did not exist when it was issued.
+  const output = context.serp === undefined
+    ? validateModelBriefV2(raw, context, { checkLanguage: true })
+    : validateSectionQuestionsBrief(raw, context, { checkLanguage: true });
   if (expired()) return fail("timeout");
   if (!output.ok) return fail("validation_failed", output.path);
   return {
