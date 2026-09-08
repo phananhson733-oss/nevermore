@@ -376,6 +376,18 @@ describe("v2 generated language", () => {
     expect(generation.validateModelBriefV2(stray, context(), LANGUAGE_CHECK).ok).toBe(false);
   });
 
+  it("reads a frozen brief back whatever script its headings are in", () => {
+    // The rule the test above turns off is only half the guarantee: readback runs
+    // through parseBriefV2Generated, which must never ask for it. Asserting the
+    // default on validateModelBriefV2 does not reach that call.
+    const parsed = generation.validateModelBriefV2(
+      changed(model(), ["research", "outline", 0, "h2"], "\u7406\u89e3\u62a5\u544a\u5ef6\u8fdf"), context());
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    expect(generation.parseBriefV2Generated(parsed.value, context())).toEqual(parsed);
+  });
+
   it("does not judge a brief read back by a rule it predates", () => {
     // parseBriefV2Generated re-validates a frozen result, and the Draft Writer
     // runs the same path over a confirmed brief a visitor pastes in. A brief

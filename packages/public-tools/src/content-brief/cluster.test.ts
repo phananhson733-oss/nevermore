@@ -1,5 +1,3 @@
-import { performance } from "node:perf_hooks";
-
 import { describe, expect, it } from "vitest";
 
 import {
@@ -22,30 +20,30 @@ import {
 const NO_BRAND: readonly string[] = [];
 
 /**
- * Perf gate for clusterHeadings, measured in reference units rather than
- * milliseconds.
+ * Scale fixtures for clusterHeadings. They carry no timing budget, on purpose.
  *
- * The gate exists to catch a return to the naive O(H^2) pairwise scan, which
- * measured 1843 ms at CLUSTER_PERF_HEADINGS against roughly 46 ms today. A
- * millisecond budget cannot tell that regression from a busy machine: this
- * unchanged algorithm measured 824 ms against the old 300 ms budget while a
- * type-check ran beside it, and which of the three cases tripped varied from
- * run to run.
+ * They used to. The gate existed to catch a return to the naive O(H^2) pairwise
+ * scan, which measures about 7x the current cost at CLUSTER_PERF_HEADINGS: 73 ms
+ * against 10 ms at half this size, repeatable to within 5% inside one process.
+ * A millisecond budget could not tell that from a busy machine, so the budget
+ * became a ratio against a reference workload timed in the same process, which
+ * is the shape that should work.
  *
- * So each case reports its cost in units of a reference workload measured in
- * the same process. Two things make that number stable. The ratio absorbs a
- * slower or busier machine, because both sides slow together. Taking the best
- * of several attempts absorbs a scheduler hiccup inside one attempt, which the
- * single unwarmed measurement this replaces had no defence against.
+ * It does not. Measured across separate runs of this one file, on an idle
+ * machine, with the algorithm unchanged, that ratio came out at 15.5, 15.6,
+ * 45.1, 52.1 and 52.9, and under load at 32.8 and 68.9. The naive scan measures
+ * 109. Any threshold that never fires on the 69 also passes the 109, and any
+ * threshold that catches the 109 fires on an ordinary idle run. Growth between
+ * two input sizes was tried as well and does not separate them either: 3.6x per
+ * doubling with the inverted index, 3.8x without it, because the fixture's
+ * vocabulary is fixed and the candidate set grows quadratically either way.
  *
- * Budgets sit at roughly three times the highest units observed across repeated
- * idle and loaded runs, so the naive scan (about 40x the current cost) is still
- * caught with room to spare. Load moves the ratio down, not up: the reference
- * allocates more than the clustering does and gives up more under contention,
- * so a busy machine measures cheaper than an idle one and never fails here.
+ * So the constant factor is not machine-checked here, and a comment claiming it
+ * was would be the worse outcome. What these fixtures still do is exercise the
+ * two shapes that stress the index -- every heading sharing one token, and every
+ * heading sharing a long prefix -- and assert what comes out of them.
  */
 const CLUSTER_PERF_HEADINGS = 3000;
-const CLUSTER_PERF_BUDGET_UNITS = 40; // observed 13.2 idle, 5.6 with the suite loading the box
 const CLUSTER_PERF_VOCABULARY = 200;
 const CLUSTER_PERF_MIN_TOKENS = 2;
 const CLUSTER_PERF_MAX_TOKENS = 6;
@@ -53,20 +51,6 @@ const CLUSTER_PERF_PAGES = 10;
 /** Worst case for the inverted index: every heading shares one token, so every pair is a candidate. */
 const CLUSTER_WORST_CASE_LEVELS = 2;
 const CLUSTER_WORST_CASE_HEADINGS = CRAWL_HEADINGS_PER_PAGE_MAX * CLUSTER_WORST_CASE_LEVELS * CLUSTER_PERF_PAGES;
-/**
- * The one-token case runs shortest of the three, so its ratio is the noisiest.
- * Its budget therefore only catches a large
- * constant-factor regression; a measured 29% one (allocating an array per pair
- * inside sharedTokenCount) sits inside the natural spread and passes. The
- * sharp guards are the other two. What this case really pins is the assertion
- * below it: nothing merges, so all 800 survive as separate clusters.
- */
-const CLUSTER_ONE_TOKEN_BUDGET_UNITS = 12; // observed 4.0 idle, 2.7 loaded
-/** Catches removing the already-connected short circuit, which this case leans on. */
-const CLUSTER_LONG_PREFIX_BUDGET_UNITS = 8; // observed 2.1 idle, 0.5 loaded
-const REFERENCE_ROUNDS = 20_000;
-const REFERENCE_SEED = 20_260_907;
-const PERF_ATTEMPTS = 5;
 
 /** `prefix u0`, `prefix u1`, ... : one shared token per heading, one unique token. */
 function sharedPrefixHeadings(count: number, prefix: string): HeadingInput[] {
@@ -77,66 +61,13 @@ function sharedPrefixHeadings(count: number, prefix: string): HeadingInput[] {
   });
 }
 
-/** Seeded LCG so the perf fixture is the same on every run; no Math.random in tests. */
+/** Seeded LCG so the scale fixtures are the same on every run; no Math.random in tests. */
 function seededRandom(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
     state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
     return state / 2 ** 32;
   };
-}
-
-/**
- * One fixed unit of the string splitting and Map counting that clusterHeadings
- * spends its time on, used only to size the machine this is running on. It
- * calls nothing from cluster.ts, so a regression there cannot hide by
- * inflating the denominator. The total is asserted so an engine that optimises
- * the loop away is caught instead of silently reporting a near-zero reference.
- */
-function referenceWork(): number {
-  const seen = new Map<string, number>();
-  const next = seededRandom(REFERENCE_SEED);
-  for (let i = 0; i < REFERENCE_ROUNDS; i += 1) {
-    const key = `term${Math.floor(next() * CLUSTER_PERF_VOCABULARY)} u${i % 97}`;
-    for (const token of key.split(" ")) seen.set(token, (seen.get(token) ?? 0) + 1);
-  }
-  let total = 0;
-  for (const count of seen.values()) total += count;
-  if (total !== REFERENCE_ROUNDS * 2) throw new Error(`reference workload did not run: ${total}`);
-  return total;
-}
-
-/**
- * Cost of `run` on this machine, expressed in reference-workload units.
- *
- * Interference only ever makes a measurement longer, so the fastest attempt on
- * each side is the closest either gets to its true cost and the ratio of the
- * two minima is the estimate. The two sides are interleaved rather than timed
- * in separate blocks, which is what went wrong before: with the whole suite
- * running in parallel, every clustering attempt landed inside a busy stretch
- * and every reference attempt after it, and the main case measured 59.5 units
- * against a budget of 40 that an idle run clears at 13.
- *
- * The minimum of the per-attempt ratios is not the same statistic and is not
- * safe here: one attempt where only the reference is descheduled produces a
- * small ratio all by itself, and the minimum then reports that instead of the
- * clustering cost. Taking each side's own minimum discards a pause wherever it
- * lands. A reference that measures zero contributes no attempt, so a clock too
- * coarse to measure anything fails instead of passing.
- */
-function costInReferenceUnits(run: () => unknown): number {
-  let bestRun = Number.POSITIVE_INFINITY;
-  let bestReference = Number.POSITIVE_INFINITY;
-  for (let attempt = 0; attempt < PERF_ATTEMPTS; attempt += 1) {
-    const referenceStarted = performance.now();
-    referenceWork();
-    const referenceMs = performance.now() - referenceStarted;
-    const started = performance.now();
-    run();
-    if (referenceMs > 0) bestReference = Math.min(bestReference, referenceMs);
-    bestRun = Math.min(bestRun, performance.now() - started);
-  }
-  return bestRun / bestReference;
 }
 
 function pseudoRandomHeadings(count: number, seed: number): HeadingInput[] {
@@ -402,31 +333,30 @@ describe("clusterHeadings", () => {
     expect(out.map((c) => c.covered_by)).toEqual([2, 2]);
   });
 
-  it(`clusters ${CLUSTER_PERF_HEADINGS} headings within ${CLUSTER_PERF_BUDGET_UNITS} reference units`, () => {
+  it(`clusters ${CLUSTER_PERF_HEADINGS} headings without dropping or duplicating one`, () => {
     const inputs = pseudoRandomHeadings(CLUSTER_PERF_HEADINGS, 20_260_829);
     const out = clusterHeadings(inputs, "en", ["acme"]);
     expect(out.length).toBeGreaterThan(0);
-    expect(costInReferenceUnits(() => clusterHeadings(inputs, "en", ["acme"])))
-      .toBeLessThan(CLUSTER_PERF_BUDGET_UNITS);
+    // Every heading lands in exactly one component, at this size too.
+    const members = out.flatMap((cluster) => cluster.members);
+    expect(members).toHaveLength(CLUSTER_PERF_HEADINGS);
+    expect(out.reduce((total, cluster) => total + cluster.covered_by, 0)).toBeGreaterThanOrEqual(out.length);
   });
 
-  it(`clusters ${CLUSTER_WORST_CASE_HEADINGS} headings that all share one token within ${CLUSTER_ONE_TOKEN_BUDGET_UNITS} reference units`, () => {
+  it(`keeps ${CLUSTER_WORST_CASE_HEADINGS} headings that all share one token apart`, () => {
     const inputs = sharedPrefixHeadings(CLUSTER_WORST_CASE_HEADINGS, "x");
     const out = clusterHeadings(inputs, "en", NO_BRAND);
     // Jaccard 1/3 and no containment: nothing merges, every pair was still a candidate.
     expect(out).toHaveLength(CLUSTER_WORST_CASE_HEADINGS);
-    expect(costInReferenceUnits(() => clusterHeadings(inputs, "en", NO_BRAND)))
-      .toBeLessThan(CLUSTER_ONE_TOKEN_BUDGET_UNITS);
   });
 
-  it(`clusters ${CLUSTER_WORST_CASE_HEADINGS} headings that share a long prefix within ${CLUSTER_LONG_PREFIX_BUDGET_UNITS} reference units`, () => {
+  it(`merges ${CLUSTER_WORST_CASE_HEADINGS} headings that share a long prefix into one component`, () => {
     const inputs = sharedPrefixHeadings(CLUSTER_WORST_CASE_HEADINGS, "how to brew better coffee at home");
     const out = clusterHeadings(inputs, "en", NO_BRAND);
     // Jaccard 5/7 >= threshold: everything merges into one component of ten pages.
     expect(out).toHaveLength(1);
     expect(out[0]?.covered_by).toBe(CLUSTER_PERF_PAGES);
-    expect(costInReferenceUnits(() => clusterHeadings(inputs, "en", NO_BRAND)))
-      .toBeLessThan(CLUSTER_LONG_PREFIX_BUDGET_UNITS);
+    expect(out[0]?.members).toHaveLength(CLUSTER_WORST_CASE_HEADINGS);
   });
 
   it("does not mutate the input array", () => {

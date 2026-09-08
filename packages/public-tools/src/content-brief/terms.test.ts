@@ -29,14 +29,28 @@ describe("relevanceTerms", () => {
     expect(values).toContain("水逆是什么意思");
     expect(values).toContain("水逆");
     expect(values).toContain("意思");
-    // The unsegmented run must not also be registered as a "word" token,
-    // because that would let one phrase vote twice at two weights.
-    expect(terms.filter((term) => term.value === "水逆是什么意思")).toHaveLength(1);
     expect(terms.find((term) => term.value === "水逆")?.weight).toBe(0.5);
   });
 
+  it("does not also register the unsegmented run as a word token", () => {
+    // A phrase that is its own only token coalesces in the map at weight 3, so
+    // it looks covered whether or not the guard exists. It takes a second token
+    // to make the phrase and the run different values.
+    const terms = relevanceTerms(["水逆是什么意思 details"]);
+
+    // Absent entirely: the phrase here is the whole two-token string, so the
+    // run can only appear if the guard let it in as a weight-1 word.
+    expect(terms.filter((term) => term.value === "水逆是什么意思")).toEqual([]);
+    expect(terms.find((term) => term.value === "水逆是什么意思 details")?.weight).toBe(3);
+  });
+
   it("keeps a single-character run whole rather than producing no term", () => {
-    expect(relevanceTerms(["猫"]).map((term) => term.value)).toContain("猫");
+    // "猫" alone survives as the whole phrase either way; it needs a neighbour
+    // before the single-character branch is the only thing that can produce it.
+    const terms = relevanceTerms(["猫 犬"]);
+
+    expect(relevanceScore("猫", null, terms)).toBeGreaterThan(0);
+    expect(terms.find((term) => term.value === "犬")?.weight).toBe(0.5);
   });
 
   it("registers a value once at its strongest weight across phrases", () => {
