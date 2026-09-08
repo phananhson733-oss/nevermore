@@ -35,45 +35,27 @@ function row(
 }
 
 describe("host sets", () => {
-  it("pin the spec's host lists", () => {
+  it("pins every host list, so a site is added or removed on purpose", () => {
+    // Not a copy of an external list: these are the sites the table has been
+    // given, and the assertion exists so that adding one is a decision someone
+    // made rather than a side effect. A suffix entry covers every subdomain,
+    // which is why MacRumors appears only as its forum.
     expect([...VIDEO_HOSTS]).toEqual([
       "youtube.com", "vimeo.com", "tiktok.com", "instagram.com", "bilibili.com", "dailymotion.com",
     ]);
     expect([...FORUM_HOSTS]).toEqual([
-      "reddit.com",
-      "quora.com",
-      "stackexchange.com",
-      "stackoverflow.com",
-      "zhihu.com",
-      "ptt.cc",
-      "dcard.tw",
-      "v2ex.com",
-      "mobile01.com",
+      "reddit.com", "quora.com", "stackexchange.com", "superuser.com", "serverfault.com", "askubuntu.com",
+      "stackoverflow.com", "forums.macrumors.com", "xda-developers.com",
+      "zhihu.com", "ptt.cc", "dcard.tw", "v2ex.com", "mobile01.com",
     ]);
     expect([...COMMERCE_HOSTS]).toEqual([
-      "amazon.com",
-      "ebay.com",
-      "walmart.com",
-      "etsy.com",
-      "shopee.com",
-      "shopee.tw",
-      "taobao.com",
-      "tmall.com",
-      "jd.com",
-      "momoshop.com.tw",
-      "pchome.com.tw",
-      "apps.microsoft.com",
-      "apps.apple.com",
-      "play.google.com",
+      "amazon.com", "ebay.com", "walmart.com", "etsy.com", "bestbuy.com", "homedepot.com",
+      "shopee.com", "shopee.tw", "taobao.com", "tmall.com", "jd.com", "momoshop.com.tw", "pchome.com.tw",
+      "apps.microsoft.com", "apps.apple.com", "play.google.com",
     ]);
-    expect([...NEWS_HOSTS]).toEqual([
-      "nytimes.com",
-      "bbc.com",
-      "reuters.com",
-      "theguardian.com",
-    ]);
+    expect([...NEWS_HOSTS]).toEqual(["nytimes.com", "bbc.com", "reuters.com", "theguardian.com"]);
     expect([...ENCYCLOPEDIA_HOSTS]).toEqual([
-      "wikipedia.org", "wiktionary.org", "baike.baidu.com", "britannica.com", "wikiwand.com",
+      "wikipedia.org", "wiktionary.org", "baike.baidu.com", "britannica.com", "wikiwand.com", "medlineplus.gov",
     ]);
   });
 
@@ -283,7 +265,7 @@ describe("classifySerpFormat: domain rules", () => {
     });
     expect(classifySerpFormat(serp("example.com", "https://www.youtube.com/watch?v=1"))).toEqual({
       value: "video",
-      rules_hit: ["host:video", "path:watch"],
+      rules_hit: ["host:video"],
     });
     expect(classifySerpFormat(serp("example.com", "https://M.YouTube.com/watch")).value).toBe("video");
   });
@@ -497,10 +479,8 @@ describe("classifySerpFormat: ordering", () => {
       "host:video",
       "host:forum",
       "host:commerce",
-      "host:news",
       "host:encyclopedia",
       "path:videos",
-      "path:watch",
       "path:reels",
       "path:compare",
       "path:vs",
@@ -535,6 +515,7 @@ describe("classifySerpFormat: ordering", () => {
       "path:-vs-",
       "path:-calculator",
       "path:-generator",
+      "host:news",
     ]);
   });
 });
@@ -758,5 +739,97 @@ describe("registrableLabel", () => {
   it("returns null when there is no registrable label", () => {
     expect(registrableLabel("localhost")).toBeNull();
     expect(registrableLabel("")).toBeNull();
+  });
+});
+
+describe("classifySerpFormat: host sets", () => {
+  it("reaches the sites a suffix set does not, and stops at the ones it should not", () => {
+    // A sweep over real search results found each of these rows unclassified
+    // or classified as the wrong thing. Every one is decided by a host set, so
+    // each case is a claim about the set and nothing else.
+    const cases: readonly [string, string, string, string][] = [
+      // Stack Exchange's siblings are their own registrable domains, so the
+      // stackexchange.com suffix never reached them.
+      ["superuser.com", "https://superuser.com/questions/tagged/regex", "Newest 'regex' Questions - Super User", "forum"],
+      ["forum.xda-developers.com", "https://forum.xda-developers.com/", "XDA Forums", "forum"],
+      // Only the forum subdomain of MacRumors, which also publishes news: a
+      // suffix entry would turn its reporting into forum threads.
+      ["forums.macrumors.com", "https://forums.macrumors.com/forums/", "Forums | MacRumors Forums", "forum"],
+      ["www.macrumors.com", "https://www.macrumors.com/2026/09/08/apple-event/", "Apple Announces September Event", "unknown"],
+      ["medlineplus.gov", "https://medlineplus.gov/ency/article/007196.htm", "Body mass index (BMI): MedlinePlus Medical Encyclopedia", "guide"],
+      ["www.bestbuy.com", "https://www.bestbuy.com/", "Best Buy | Official Online Store | Shop Now & Save", "product_page"],
+      ["www.homedepot.com", "https://www.homedepot.com/b/Tools/N-5yc1vZc1xy", "Tools - The Home Depot", "product_page"],
+      // The commerce set matches by suffix, so a shop's documentation was a
+      // shop. The exception is checked against that set alone.
+      ["aws.amazon.com", "https://aws.amazon.com/cn/what-is/api/", "什么是 API？ - API 详解 - AWS", "guide"],
+      ["docs.aws.amazon.com", "https://docs.aws.amazon.com/lambda/latest/dg/welcome.html", "What is AWS Lambda? - AWS Lambda", "guide"],
+      ["www.amazon.com", "https://www.amazon.com/dp/B08N5WRWNW", "Echo Dot (4th Gen)", "product_page"],
+      // No /watch/ rule: it reads as video only because YouTube uses that path,
+      // and YouTube is a video host already.
+      ["www.apple.com", "https://www.apple.com/watch/", "Apple Watch - Apple", "unknown"],
+      ["www.youtube.com", "https://www.youtube.com/watch?v=aircAruvnKk", "But what is a neural network? | Chapter 1", "video"],
+    ];
+    for (const [domain, url, title, expected] of cases) {
+      expect(classifySerpFormat({ domain, url, title }).value, title).toBe(expected);
+    }
+  });
+
+  it("reads a Chinese question asked either way round", () => {
+    // 什么是X is the ordinary phrasing and only the postposed X是什么 matched,
+    // so most Chinese explainers were unclassified. Word order still decides
+    // between an article about a calculator and the calculator itself.
+    const cases: readonly [string, string][] = [
+      ["什么是 API？ - API 详解 - AWS", "guide"],
+      ["什麼是上升星座", "guide"],
+      ["上升星座是什麼", "guide"],
+      ["什么是星盘计算器", "guide"],
+      ["星盤計算器是什麼", "tool"],
+    ];
+    for (const [title, expected] of cases) {
+      expect(classifySerpFormat({ domain: "x.example", url: "https://x.example/a", title }).value, title).toBe(expected);
+    }
+  });
+});
+
+describe("classifySerpFormat: a news host is a fallback, not a format", () => {
+  it("lets a title say what a news publisher published", () => {
+    // 67 headlines were fetched from these four hosts and labelled by what the
+    // page is. With the host deciding first, 18 were right; with it deciding
+    // last, 25. Every row below is one of those, verbatim.
+    const cases: readonly [string, string, string][] = [
+      ["https://www.bbc.com/sport/football/articles/c2k7w0k9ky9o", "Bundesliga: What is the 50+1 ownership rule? - BBC Sport", "guide"],
+      ["https://www.bbc.com/sport/formula1/articles/cg4gzvlnpx7o", "Formula 1: What is sandbagging in F1? - BBC Sport", "guide"],
+      ["https://www.bbc.com/travel/article/20260101-the-20-best-places-to-travel-in-2026", "The 20 best places to travel in 2026", "listicle"],
+      ["https://www.bbc.com/travel/article/20260401-how-to-shop-for-perfume-in-paris", "How to shop for perfume in Paris like a Parisian", "guide"],
+      // "vs" in a fight preview, and the page is a reference: the how-to-follow
+      // rule reaches it first, which is the right answer for the right reason.
+      ["https://www.bbc.com/sport/boxing/articles/cy0z5pej8dlo", "Ryan Garcia vs Conor Benn: Date, ringwalk, UK time, undercard, venue, records & how to follow on the BBC - BBC Sport", "guide"],
+    ];
+    for (const [url, title, expected] of cases) {
+      expect(classifySerpFormat({ domain: new URL(url).hostname, url, title }).value, title).toBe(expected);
+    }
+  });
+
+  it("still calls a report on a news host news, and pays for it once", () => {
+    const news: readonly [string, string][] = [
+      ["https://www.bbc.com/news/articles/c8jdev0422jo", "US-Canada tariffs: Canada braces for prolonged trade war as counter-tariffs on US take effect"],
+      ["https://www.bbc.com/news/articles/c780nlgyd79o", "Ukraine's chief prosecutor resigns over call centre corruption scandal"],
+      ["https://www.bbc.com/news/articles/czezydp4l97o", "Indonesia airports reopen after volcano eruption leaves 340,000 stranded"],
+      // A superlative and a number in a dated report; neither rule reads them.
+      ["https://www.bbc.com/news/articles/c5y5kn143d1o", "Singapore: Highest paid world leader Lawrence Wong to get salary increase of $1 million"],
+    ];
+    for (const [url, title] of news) {
+      expect(classifySerpFormat({ domain: new URL(url).hostname, url, title }).value, title).toBe("news");
+    }
+    // The one row of fifteen that the census says this costs: a dated report on
+    // drought damage whose headline is phrased as a how-to. It is recorded
+    // here because the trade was measured, not assumed.
+    expect(
+      classifySerpFormat({
+        domain: "www.bbc.com",
+        url: "https://www.bbc.com/news/articles/cddvy47d253o",
+        title: "Drought devastation: How to save London's parched trees",
+      }).value,
+    ).toBe("guide");
   });
 });

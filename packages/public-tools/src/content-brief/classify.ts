@@ -17,7 +17,17 @@ export const FORUM_HOSTS: ReadonlySet<string> = new Set([
   "reddit.com",
   "quora.com",
   "stackexchange.com",
+  // Sibling sites of Stack Exchange, each its own registrable domain, so the
+  // suffix above does not reach them: a Super User question page was
+  // unclassified while the identical page on stackexchange.com was a forum.
+  "superuser.com",
+  "serverfault.com",
+  "askubuntu.com",
   "stackoverflow.com",
+  // Only the forum subdomain. macrumors.com itself publishes news, and a set
+  // that matches by suffix would turn its reporting into forum threads.
+  "forums.macrumors.com",
+  "xda-developers.com",
   "zhihu.com",
   "ptt.cc",
   "dcard.tw",
@@ -25,7 +35,7 @@ export const FORUM_HOSTS: ReadonlySet<string> = new Set([
   "mobile01.com",
 ]);
 export const COMMERCE_HOSTS: ReadonlySet<string> = new Set([
-  "amazon.com", "ebay.com", "walmart.com", "etsy.com",
+  "amazon.com", "ebay.com", "walmart.com", "etsy.com", "bestbuy.com", "homedepot.com",
   "shopee.com", "shopee.tw", "taobao.com", "tmall.com", "jd.com", "momoshop.com.tw", "pchome.com.tw",
   // An app marketplace lists software the way a shop lists goods, and its
   // listing for a calculator is a product page, not the calculator.
@@ -45,6 +55,21 @@ export const NEWS_HOSTS: ReadonlySet<string> = new Set(["nytimes.com", "bbc.com"
  */
 export const ENCYCLOPEDIA_HOSTS: ReadonlySet<string> = new Set([
   "wikipedia.org", "wiktionary.org", "baike.baidu.com", "britannica.com", "wikiwand.com",
+  // A medical encyclopedia is an encyclopedia. Its articles were unclassified.
+  "medlineplus.gov",
+]);
+
+/**
+ * Hosts inside a commerce suffix that do not sell anything.
+ *
+ * COMMERCE_HOSTS matches by suffix, so every subdomain of a shop is a shop:
+ * aws.amazon.com and docs.aws.amazon.com are Amazon's cloud documentation and
+ * every one of their pages, "What is an API?" included, read as a product page.
+ * An exception is only checked against the commerce set, so it cannot suppress
+ * any other rule.
+ */
+const COMMERCE_HOST_EXCEPTIONS: ReadonlySet<string> = new Set([
+  "aws.amazon.com", "docs.aws.amazon.com", "developer.amazon.com",
 ]);
 
 function normalizeHost(domain: string): string {
@@ -85,6 +110,10 @@ function hostRule(id: string, format: ClassifiedSerpFormat, hosts: ReadonlySet<s
   return { id, format, matches: ({ host }) => hostIn(host, hosts) };
 }
 
+function commerceHostRule(id: string): FormatMatcher {
+  return { id, format: "product_page", matches: ({ host }) => hostIn(host, COMMERCE_HOSTS) && !hostIn(host, COMMERCE_HOST_EXCEPTIONS) };
+}
+
 function pathRule(id: string, format: ClassifiedSerpFormat, needle: string): FormatMatcher {
   return { id, format, matches: ({ path }) => path !== null && path.includes(needle) };
 }
@@ -117,11 +146,21 @@ function unlessAfterCalculator(word: string, pattern: string): RegExp {
 const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   hostRule("host:video", "video", VIDEO_HOSTS),
   hostRule("host:forum", "forum", FORUM_HOSTS),
-  hostRule("host:commerce", "product_page", COMMERCE_HOSTS),
-  hostRule("host:news", "news", NEWS_HOSTS),
+  commerceHostRule("host:commerce"),
+  // host:news is last, not here. A news publisher is not a format: the same
+  // four hosts carry recipes, explainers, round-ups, sport references and eight
+  // daily puzzles, and while the host decided first, every one of them was
+  // news. A census of 67 confirmed headlines from these hosts, real titles
+  // fetched from the live pages, says the trade plainly: 18 rows classified
+  // correctly with the host deciding first, 25 with it deciding last. Of the 15
+  // that really were news, 13 stayed right and one moved, which is the shape to
+  // expect -- a dated report rarely says "best" or "how to" in its headline,
+  // and when it does it reads like the thing it says.
   hostRule("host:encyclopedia", "guide", ENCYCLOPEDIA_HOSTS),
   pathRule("path:videos", "video", "/videos/"),
-  pathRule("path:watch", "video", "/watch/"),
+  // There is no /watch/ rule. It reads as a video only because YouTube uses
+  // that path, and YouTube is a video host already, so the rule could only ever
+  // fire somewhere else -- where it read apple.com/watch/ as a video.
   pathRule("path:reels", "video", "/reels/"),
   pathRule("path:compare", "comparison", "/compare/"),
   pathRule("path:vs", "comparison", "/vs/"),
@@ -174,7 +213,11 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   titleRule("title:faq", "guide", /\bfaq\b/),
   // No \b here: JavaScript word boundaries are ASCII-based and never fall
   // between two Han characters, so a boundary would make these never match.
-  titleRule("title:zh_what_is", "guide", unlessAfterCalculator(CALCULATOR_ZH, String.raw`是什么|是什麼|什么意思|什麼意思`)),
+  // 什么是X is the ordinary way to ask, and it was missing: only the postposed
+  // X是什么 matched, so AWS's "什么是 API？" and most Chinese explainers were
+  // unclassified. The preposed form puts the question first, which is exactly
+  // where the rule above wants it.
+  titleRule("title:zh_what_is", "guide", unlessAfterCalculator(CALCULATOR_ZH, String.raw`是什么|是什麼|什么是|什麼是|什么意思|什麼意思`)),
   // 教程 and 攻略 name a kind of writing, so they hold wherever they appear: a
   // Chinese Tkinter 教程 that builds a calculator is a tutorial even though it
   // says 计算器 first. 怎么 / 如何 open a question, and a question a calculator
@@ -239,6 +282,10 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   // while /birth-chart-calculator never contained the /calculator/ segment.
   pathRule("path:-calculator", "tool", "-calculator/"),
   pathRule("path:-generator", "tool", "-generator/"),
+  // The fallback described at the top of the table: whatever a news host
+  // publishes, if nothing else in the title or the path says what kind of page
+  // it is, it is news.
+  hostRule("host:news", "news", NEWS_HOSTS),
 ];
 
 /** The ordered rule table, id + format only, for the page to print. */
