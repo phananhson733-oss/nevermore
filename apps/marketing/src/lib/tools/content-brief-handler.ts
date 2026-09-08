@@ -1084,6 +1084,7 @@ async function runBriefV2(
   // The rules that cost the reply an optional field. The brief shows each such
   // field's empty state without saying why it is empty, so the reason is here.
   let droppedPaths: readonly string[] = [];
+  let pagePlanDowngraded = false;
   const brief = await runContentBriefV2(
     {
       input: {
@@ -1116,6 +1117,7 @@ async function runBriefV2(
         const result = await dependencies.runLlmV2(llmInput, llmDependencies);
         validationPath = result.validation_path ?? null;
         droppedPaths = result.dropped_paths ?? [];
+        pagePlanDowngraded = result.page_plan_downgraded === true;
         return result;
       },
       now: dependencies.now,
@@ -1134,6 +1136,7 @@ async function runBriefV2(
     llm_calls: brief.run.llm.calls,
     validation_path: validationPath,
     dropped_paths: droppedPaths.length === 0 ? null : droppedPaths,
+    page_plan_downgraded: pagePlanDowngraded,
     serp_cost_usd: brief.run.serp_cost_usd,
     self_check: "ok",
     schema: brief.schema,

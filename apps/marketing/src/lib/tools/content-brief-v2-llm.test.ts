@@ -167,6 +167,76 @@ describe("one-call Brief v2 assembly", () => {
     expect(requests).toHaveLength(1);
   });
 
+  // A production run on 2026-09-08 lost a second paid brief, this time to the
+  // page decision: two of three owned candidates were read, the model
+  // recommended create anyway, and page_plan is structure, so no drop could
+  // save it. "undecidable" is the value the prompt already asks for here.
+  it("keeps the paid brief when create outruns the owned pages the crawl actually read", async () => {
+    const { data, full } = angleFixture();
+    const unread = { ...data, candidates: [...data.candidates, { id: "T3", url: "https://t1.example/pricing", match_refs: [], read: "unavailable" as const }] };
+    const rationale = "No observed owned page serves this reader task, so a new page is the cleaner answer.";
+    const reply: ModelBriefV2Output = { ...full, page_plan: { action: "create", rationale, target_ref: null, steps: [] } };
+    const { result, requests } = await run(JSON.stringify(reply), unread);
+    expect(result.reads.status).toBe("complete");
+    expect(result.output?.page_plan).toEqual({ action: "undecidable", rationale, target_ref: null, steps: [] });
+    expect(result.page_plan_downgraded).toBe(true);
+    // The server changes the decision, never the words. Server prose would have
+    // to be in the run's output language, and the generated-language check
+    // rejects a sentence in the wrong script.
+    expect(result.output?.page_plan.rationale).toBe(reply.page_plan.rationale);
+    // Everything the reply got right survives, and no second call was made.
+    expect(result.output).toMatchObject({ intent: full.intent, format: full.format, gap_angle: full.gap_angle, internal_links: full.internal_links, do_not_cover: full.do_not_cover });
+    expect(result.output?.research.outline).toEqual([{ id: "O1", h2: "Validate claims before submission", h3: ["Insurance checks"], answers: ["Q1"] }]);
+    expect(result.dropped_paths).toBeUndefined();
+    expect(requests).toHaveLength(1);
+  });
+
+  it("leaves a create the evidence does carry exactly as the model wrote it", async () => {
+    const { data, full } = angleFixture();
+    const reply: ModelBriefV2Output = { ...full, page_plan: { action: "create", rationale: "The observed candidates serve other reader tasks.", target_ref: null, steps: [] } };
+    const { result } = await run(JSON.stringify(reply), data);
+    expect(result.output?.page_plan.action).toBe("create");
+    expect(result.page_plan_downgraded).toBeUndefined();
+  });
+
+  it("does not read an unusable action as a create to be downgraded", async () => {
+    const { data, full } = angleFixture();
+    const unread = { ...data, candidates: [...data.candidates, { id: "T3", url: "https://t1.example/pricing", match_refs: [], read: "unavailable" as const }] };
+    // Same rejection path, different cause: an action the enum does not have is
+    // not a recommendation the server may reinterpret.
+    const reply = { ...full, page_plan: { action: "new", rationale: "Write a new page.", target_ref: null, steps: [] } };
+    const { result } = await run(JSON.stringify(reply), unread);
+    expect(result.output).toBeNull();
+    expect(result.validation_path).toBe("page_plan.action");
+    expect(result.page_plan_downgraded).toBeUndefined();
+  });
+
+  it("does not turn a malformed create into a rescue by dropping what the model wrote", async () => {
+    const { data, full } = angleFixture();
+    const unread = { ...data, candidates: [...data.candidates, { id: "T3", url: "https://t1.example/pricing", match_refs: [], read: "unavailable" as const }] };
+    // create carries no steps, so this reply is malformed before the gate is
+    // ever reached and it is rejected at "page_plan", not "page_plan.action".
+    // Rescuing it would mean discarding instructions the model wrote, which is
+    // a larger edit than declining to place the page.
+    const reply: ModelBriefV2Output = { ...full, page_plan: { action: "create", rationale: "A new page is cleaner.", target_ref: null, steps: full.page_plan.steps } };
+    const { result } = await run(JSON.stringify(reply), unread);
+    expect(result.output).toBeNull();
+    expect(result.validation_path).toBe("page_plan");
+    expect(result.page_plan_downgraded).toBeUndefined();
+  });
+
+  it("does not rescue an update aimed at a page the crawl never read", async () => {
+    const { data, full } = angleFixture();
+    const unread = { ...data, candidates: [...data.candidates, { id: "T3", url: "https://t1.example/pricing", match_refs: [], read: "unavailable" as const }] };
+    // Only the create gate has an honest weaker answer. An update naming a page
+    // nobody read has nothing to fall back to, so the run still fails.
+    const reply: ModelBriefV2Output = { ...full, page_plan: { ...full.page_plan, target_ref: "T3" } };
+    const { result } = await run(JSON.stringify(reply), unread);
+    expect(result.output).toBeNull();
+    expect(result.validation_path).toBe("page_plan.target_ref");
+    expect(result.page_plan_downgraded).toBeUndefined();
+  });
+
   it("keeps the paid brief when an internal link points at the page being rewritten", async () => {
     const { data, full } = angleFixture();
     const reply: ModelBriefV2Output = { ...full, internal_links: full.internal_links.map((item) => ({ ...item, page_ref: "T1" })) };

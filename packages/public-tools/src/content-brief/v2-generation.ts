@@ -450,6 +450,29 @@ function checkGeneratedLanguage(value: BriefV2Generated, language: string): Deco
  */
 export interface ValidateModelBriefV2Options { readonly checkLanguage?: boolean }
 
+/**
+ * Whether this run's evidence can carry a "create" recommendation.
+ *
+ * Saying a page should be created is saying the pages that already exist do not
+ * serve the request, and that claim needs the sample it was read from to be
+ * whole: Search Console complete, every owned candidate actually observed, and
+ * every page Search Console matched present among those observed. A candidate
+ * the crawl failed on might be exactly the page that covers the subject, and a
+ * matched page outside the three-slot candidate list is the same uncertainty
+ * one step further out.
+ *
+ * Exported because the generation boundary needs the same answer the validator
+ * reaches. A reply that recommends create against this predicate is downgraded
+ * to "undecidable" rather than discarded, and a second copy of the rule would
+ * be a second answer the moment either one changed.
+ */
+export function createActionAvailable(context: BriefV2Context): boolean {
+  const observedUrls = new Set(context.candidates.filter((item) => item.read === "observed").map((item) => briefV2PageKey(item.url)));
+  return context.gsc.status === "complete" &&
+    context.candidates.every((item) => item.read === "observed") &&
+    context.gsc.matches.every((item) => observedUrls.has(briefV2PageKey(item.page)));
+}
+
 export function validateModelBriefV2(
   input: unknown,
   context: BriefV2Context,
@@ -476,11 +499,7 @@ export function validateModelBriefV2(
     if (plan.steps.length === 0 || plan.steps.every((step) => step.kind === "keep")) return reference("page_plan.steps");
   } else {
     if (plan.target_ref !== null || plan.steps.length !== 0) return reference("page_plan");
-    if (plan.action === "create") {
-      const observedUrls = new Set(checked.value.candidates.filter((item) => item.read === "observed").map((item) => briefV2PageKey(item.url)));
-      if (checked.value.gsc.status !== "complete" || checked.value.candidates.some((item) => item.read !== "observed") ||
-          checked.value.gsc.matches.some((item) => !observedUrls.has(briefV2PageKey(item.page)))) return reference("page_plan.action");
-    }
+    if (plan.action === "create" && !createActionAvailable(checked.value)) return reference("page_plan.action");
   }
   for (const [index, step] of plan.steps.entries()) {
     const path = `page_plan.steps[${index}]`;

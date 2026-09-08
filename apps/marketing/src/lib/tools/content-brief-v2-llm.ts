@@ -4,7 +4,7 @@
 import { ENVELOPE_MS, LLM_MAX_OUTPUT_TOKENS } from "@sf/public-tools/content-brief/constants";
 import type { LlmReadMeta, UnavailableReason } from "@sf/public-tools/content-brief/contract";
 import type { BriefV2Context, BriefV2Generated } from "@sf/public-tools/content-brief/v2-generation-contract";
-import { parseBriefV2Context, validateModelBriefV2 } from "@sf/public-tools/content-brief/v2-generation";
+import { createActionAvailable, parseBriefV2Context, validateModelBriefV2 } from "@sf/public-tools/content-brief/v2-generation";
 import { CONTENT_BRIEF_LLM_TEMPERATURE, resolveContentBriefLlmConfig, type ContentBriefLlmDependencies } from "./content-brief-llm.ts";
 import { prepareContentBriefV2Prompt } from "./content-brief-v2-prompts.ts";
 import { validateSectionQuestionsBrief } from "./content-brief-v3-model.ts";
@@ -36,11 +36,77 @@ export interface ContentBriefV2LlmResult {
    * result page already reports; nothing here reaches the visitor.
    */
   readonly dropped_paths?: readonly string[];
+  /**
+   * True when the server replaced an unsupportable create with undecidable.
+   *
+   * Run log only, like the two fields above. The visitor is not told which of
+   * the two wrote "undecidable", because the page says the same true thing
+   * either way: the verdict card labels the rationale as the model's own
+   * reading rather than the decision, and the confirmation box states that
+   * owned-page coverage was not established and that choosing to create anyway
+   * is the visitor's decision, not a finding.
+   */
+  readonly page_plan_downgraded?: boolean;
 }
 
 interface DroppableField {
   readonly name: string;
   readonly absent: unknown;
+}
+
+/**
+ * A create recommendation this run's evidence cannot carry, turned into the
+ * open question it actually is.
+ *
+ * "create" says the pages that already exist do not serve the request, and
+ * createActionAvailable decides whether the sample was whole enough to say it.
+ * A run on 2026-09-08 crawled two of three owned candidates, the model
+ * recommended create anyway, and the brief was discarded whole: page_plan is
+ * structure, so no drop could save it, and the visitor lost the questions, the
+ * outline and the angle along with the decision -- after the SERP, ten crawls
+ * and the model call were paid for.
+ *
+ * "undecidable" is the value the prompt already tells the model to choose here,
+ * and the result page treats it as a first-class outcome: a caution verdict, an
+ * unchecked box reading "已有页面覆盖尚未查清，我仍明确选择按新建页面继续", and a
+ * confirmation that records the choice as the visitor's own. So the reply keeps
+ * everything it got right and loses only the claim it could not support.
+ *
+ * The server writes no prose. It changes one word and leaves everything the
+ * model wrote exactly as written, the rationale included -- server text would
+ * have to be in the run's output language, which
+ * is whatever the visitor asked for, and the generated-language check would
+ * reject an English sentence in a Chinese brief. What keeps the page honest is
+ * that it labels that rationale as the model's reading rather than as the
+ * decision, for every undecidable plan and whichever of the two wrote it.
+ */
+/*
+ * Two of the four conditions below are load-bearing and two state intent.
+ *
+ * What makes this safe is not the conditions: it is that the rewritten reply
+ * goes back through the whole validator, so anything this function gets wrong
+ * fails the run exactly as it would have failed before. Deleting the path check
+ * or the eligibility check leaves every test green for that reason. They stay
+ * because they say what this function is for, and because a second reason to
+ * reject page_plan.action -- one that is not "the sample was not whole" --
+ * should not arrive here at all. The action and rationale checks are the
+ * load-bearing pair, and a mutation of either turns a test red.
+ */
+function downgradedCreatePlan(path: string, reply: unknown, context: BriefV2Context): Record<string, unknown> | null {
+  if (path !== "page_plan.action") return null;
+  if (typeof reply !== "object" || reply === null || Array.isArray(reply)) return null;
+  const plan = (reply as Record<string, unknown>)["page_plan"];
+  if (typeof plan !== "object" || plan === null || Array.isArray(plan)) return null;
+  const record = plan as Record<string, unknown>;
+  // The path alone does not say why. An unreadable enum reports the same place,
+  // and so would a create the gate would have allowed; neither is this case.
+  if (record["action"] !== "create" || typeof record["rationale"] !== "string") return null;
+  if (createActionAvailable(context)) return null;
+  // One word. A create that reaches the eligibility gate has already been
+  // proven to carry target_ref null and no steps -- the branch above rejects it
+  // at "page_plan" otherwise -- so there is nothing else to set, and the
+  // rewritten reply goes back through the whole validator regardless.
+  return { ...(reply as Record<string, unknown>), page_plan: { ...record, action: "undecidable" } };
 }
 
 /**
@@ -150,6 +216,15 @@ export async function runContentBriefV2Llm(
   // over an already-parsed reply; no further call is made.
   let reply = raw;
   let output = validate(reply);
+  let downgraded = false;
+  if (!output.ok) {
+    const plan = downgradedCreatePlan(output.path, reply, context);
+    if (plan !== null) {
+      reply = plan;
+      downgraded = true;
+      output = validate(reply);
+    }
+  }
   for (let attempt = 0; !output.ok && attempt < DROPPABLE_FIELDS.length; attempt += 1) {
     const field = droppableField(output.path, reply);
     if (field === null) break;
@@ -162,6 +237,7 @@ export async function runContentBriefV2Llm(
   return {
     context, output: output.value, prompt_bytes,
     ...(dropped.length === 0 ? {} : { dropped_paths: [...dropped] }),
+    ...(downgraded ? { page_plan_downgraded: true } : {}),
     reads: { status: "complete", calls: completion.usage.requestCount, model_id: modelId, temperature_requested: CONTENT_BRIEF_LLM_TEMPERATURE, temperature_effective: config.temperature ?? null, input_tokens: completion.usage.inputTokens, output_tokens: completion.usage.outputTokens },
   };
 }
