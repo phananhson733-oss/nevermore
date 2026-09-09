@@ -525,7 +525,10 @@ describe("Draft v2 prompt contract", () => {
     // The prompt adds where the section sits so the first and last may carry the
     // article's opening and closing paragraph; nothing else about it changes.
     expect(data.section).toEqual({ ...scope.value.section, position: "only" });
-    expect(data.outline).toEqual(value.outline.map((item) => item.h2));
+    expect(data.article_map).toEqual(value.outline.map((item, index) => ({
+      id: item.id, position: index + 1, h2: item.h2, h3: item.h3, focus: null, this_section: true,
+      questions: item.answers.map((id: string) => ({ id, q: value.brief.generated!.research.questions.find((question) => question.id === id)!.q })),
+    })));
     expect(data.questions).toEqual(scope.value.questions);
     expect(data.page_plan.steps).toEqual(scope.value.steps);
     expect(data.page_units.map((unit: { id: string }) => unit.id)).toEqual(["U1"]);

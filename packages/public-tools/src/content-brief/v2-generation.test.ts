@@ -737,7 +737,50 @@ describe("brief planning layer: the recommended title", () => {
     expect(generation.validateModelBriefV2(titled({ ...plan, alternatives: three }), context())).toMatchObject({ ok: false });
   });
 
+  const focused = (sections: unknown) => ({ ...model(), planning: { title: plan, sections } });
+
+  it("binds one focus to each section, in outline order, and keeps the plan when a run wrote none", () => {
+    const outline = model().research.outline;
+    const sections = outline.map((_section, index) => ({ focus: `Complete reader task ${index + 1} from the excerpts this section cites.` }));
+    const bound = generation.validateModelBriefV2(focused(sections), context());
+    expect(bound).toMatchObject({ ok: true });
+    if (!bound.ok) return;
+    // The model cannot name an O id -- the ids are derived from the outline it
+    // returned -- so the server attaches them, and it attaches them in order.
+    expect(bound.value.planning?.sections).toEqual(outline.map((_section, index) => ({
+      section_id: `O${index + 1}`, focus: `Complete reader task ${index + 1} from the excerpts this section cites.`,
+    })));
+    // A brief written before the focus layer existed carries a title and no
+    // sections key at all, and still reads.
+    const titleOnly = generation.validateModelBriefV2(titled(plan), context());
+    expect(titleOnly).toMatchObject({ ok: true });
+    if (!titleOnly.ok) return;
+    expect(Object.hasOwn(titleOnly.value.planning!, "sections")).toBe(false);
+  });
+
+  it("refuses a focus list that does not match the article it plans", () => {
+    const outline = model().research.outline;
+    // Binding a short or long list anyway would attach one section's purpose to
+    // another section's evidence, silently, for every section after the gap.
+    for (const count of [outline.length - 1, outline.length + 1, 0]) {
+      const sections = Array.from({ length: count }, (_item, index) => ({ focus: `Complete reader task ${index + 1}.` }));
+      expect(generation.validateModelBriefV2(focused(sections), context())).toMatchObject({ ok: false, path: "planning.sections" });
+    }
+  });
+
   it("survives the frozen re-read that recomputes the whole graph", () => {
+    const sections = model().research.outline.map((_section, index) => ({ focus: `Complete reader task ${index + 1} from the excerpts this section cites.` }));
+    const withFocus = generation.validateModelBriefV2(focused(sections), context());
+    expect(withFocus).toMatchObject({ ok: true });
+    if (!withFocus.ok) return;
+    expect(generation.parseBriefV2Generated(withFocus.value, context())).toEqual({ ok: true, value: withFocus.value });
+    // The stored id has to be the id this outline derives. A document whose
+    // sections were renumbered cannot keep the plan written for the old ones.
+    const renumbered = { ...withFocus.value, planning: { ...withFocus.value.planning!, sections: [
+      { section_id: "O2", focus: "Complete reader task 1 from the excerpts this section cites." },
+      ...withFocus.value.planning!.sections!.slice(1),
+    ] } };
+    expect(generation.parseBriefV2Generated(renumbered, context())).toMatchObject({ ok: false, path: "planning.sections[0].section_id" });
     const decoded = generation.validateModelBriefV2(titled(plan), context());
     expect(decoded).toMatchObject({ ok: true });
     if (!decoded.ok) return;

@@ -44,6 +44,23 @@ export function draftV2Runs(sentences: readonly DraftV2Sentence[]) {
 }
 
 function markdownLinkLabel(text: string) { return text.replace(/&/gu, "&amp;").replace(/[\\`*_{}[\]()<>!#|]/gu, "\\$&"); }
+/**
+ * A heading renders its own text and nothing else.
+ *
+ * Headings are the one place the export interpolates model and operator text
+ * into Markdown syntax. "Reading [Delayed Reports](https://example.com)" is a
+ * legal title -- no number, no unsupplied acronym, nothing the generation
+ * checks refuse -- and pasted into a CMS it becomes a heading that links
+ * somewhere nobody chose. Backslash-escaping the inline constructs keeps the
+ * exported heading the string that was confirmed. The visible text is
+ * unchanged: a CommonMark reader prints the character, not the backslash.
+ *
+ * Parentheses are deliberately left alone. Escaping the bracket already breaks
+ * the link, and escaping the paren that follows a bare URL only lands a visible
+ * backslash inside the autolink GFM makes of it. A bare URL that links to
+ * itself hides nothing; a label pointing somewhere else is the whole risk.
+ */
+function markdownHeading(text: string) { return text.replace(/[\\`*_[\]<>#|~]/gu, "\\$&"); }
 function markdownLinkUrl(url: string) { return url.replace(/[()[\]<>\\]/gu, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`).replace(/&/gu, "&amp;"); }
 
 /** Full outline and real prose, with local absence notes and one confirmed related-links block. */
@@ -54,12 +71,12 @@ export function contentDraftV2Markdown(result: DraftResultV2, confirmed: Confirm
   // The one H1, and only when the confirmation recorded one. An export that
   // invented a heading from the keyword would be putting a promise on the page
   // that nobody chose and nothing checked.
-  const sections = confirmed.title === undefined ? [] : [`# ${confirmed.title}`];
+  const sections = confirmed.title === undefined ? [] : [`# ${markdownHeading(confirmed.title)}`];
   sections.push(...result.sections.map((section) => {
-    if (section.status === "failed") return `## ${section.h2}\n\n> ${notes.failed(section.fail_reason)}`;
-    if (section.status === "skipped") return `## ${section.h2}\n\n> ${notes.skipped}`;
-    return [`## ${section.h2}`, ...section.body.paragraphs.flatMap((paragraph) => [
-      ...(paragraph.heading === null ? [] : [`### ${paragraph.heading}`]),
+    if (section.status === "failed") return `## ${markdownHeading(section.h2)}\n\n> ${notes.failed(section.fail_reason)}`;
+    if (section.status === "skipped") return `## ${markdownHeading(section.h2)}\n\n> ${notes.skipped}`;
+    return [`## ${markdownHeading(section.h2)}`, ...section.body.paragraphs.flatMap((paragraph) => [
+      ...(paragraph.heading === null ? [] : [`### ${markdownHeading(paragraph.heading)}`]),
       ...draftV2Runs(paragraph.sentences).map((run) => run.bullet
         ? run.items.map(({ sentence }) => `- ${sentence.text}`).join("\n")
         : run.items.map(({ sentence }) => sentence.text).join(" ")),

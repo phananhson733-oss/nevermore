@@ -174,12 +174,15 @@ describe("Brief v2 assembly prompt", () => {
     // It was 10,583 before two deliberate trades. The REPAIR paragraph bought
     // the model-only retry 558 bytes: a run whose research cites one bad id
     // used to lose the SERP call, the crawls and the model call together.
-    // The TITLE block bought the recommended title 608 bytes, and that one was
-    // measured on the real 2026-09-09 `birth chart` run rather than estimated:
-    // page_units_retained went from 58 to 55, so the title costs three of the
-    // widest run's excerpts. Anything longer than a short rule from here on
-    // should raise the unit ceiling instead, which is leaving 382 of 440
-    // observed excerpts unused on that same run.
+    // The PLANNING block bought the recommended title and the per-section
+    // focus 953 bytes together, and the title's share was measured on the real
+    // 2026-09-09 `birth chart` run rather than estimated: page_units_retained
+    // went from 58 to 55, so that half alone costs three of the widest run's
+    // excerpts. The ceiling below now sits five bytes under the measurement and
+    // 193 under the structural quarter-of-the-budget guard, which is the real
+    // wall: the next planning layer has to trade prose out of this prompt, not
+    // raise either number. The excerpts are the cheaper place to look -- that
+    // same run left 382 of 440 observed excerpts unused behind the unit cap.
     expect(new TextEncoder().encode(system).byteLength).toBeLessThan(12_100);
   });
 
@@ -190,6 +193,10 @@ describe("Brief v2 assembly prompt", () => {
     expect(english).toContain("carries no digit in any form");
     expect(english).toContain("names no organisation, standard or acronym the input did not supply");
     expect(english).toContain('"planning":{"title":{"recommended"');
+    // One entry per section and no id: the ids are derived from the outline the
+    // reply itself returns, so a reply cannot name one.
+    expect(english).toContain("one entry per outline section, in order, each with focus");
+    expect(english).toContain('"sections":[{"focus"');
     const other = prepareContentBriefV2Prompt({ ...context(), input: { ...context().input, language: "de" } })!.system;
     // Not a translation gap: the rules are written for English titles, and an
     // unasked-for planning key is refused exactly as any unknown key is.

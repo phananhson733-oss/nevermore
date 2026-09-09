@@ -436,6 +436,30 @@ describe("Draft v2 truthful results and exact exports", () => {
     expect(markdown.match(/^# /gmu)).toHaveLength(1);
   });
 
+  it("exports a heading as its own text, never as a link the reader never chose", async () => {
+    // A title carrying link syntax passes every generation check -- no number,
+    // no unsupplied acronym -- and pasted into a CMS it would become a heading
+    // that navigates somewhere nobody approved.
+    const original = await confirmedDraftV2Fixture({ title: true });
+    const linked = "Reading [Delayed Reports](https://example.test)";
+    const unsigned = { ...original.brief, generated: { ...original.brief.generated!, planning: { title: {
+      recommended: { value: linked, rationale: "Leads with the reporting task." }, alternatives: [],
+    } } } };
+    const brief = { ...unsigned, run: { ...unsigned.run, fingerprint: await fingerprintBriefV2(unsigned) } };
+    const confirmed = await confirmBriefV2(brief, { outline: original.outline, revision: original.revision, confirmed_at: original.confirmed_at, resolution: original.resolution, title: linked });
+    if (!confirmed.ok) throw new Error(confirmed.path);
+    const result = await resultFor(confirmed.value);
+    const markdown = contentDraftV2Markdown(result, confirmed.value, exportNotes());
+    expect(markdown.split("\n")[0]).toBe("# Reading \\[Delayed Reports\\](https://example.test)");
+    const view = document.createElement("div");
+    view.innerHTML = await marked.parse(markdown);
+    // The heading reads exactly what was confirmed, and no anchor inside it
+    // points anywhere its own text does not say. GFM still autolinks a bare
+    // URL, which hides nothing; a label pointing elsewhere is what this closes.
+    expect(view.querySelector("h1")?.textContent).toBe(linked);
+    for (const anchor of view.querySelectorAll("h1 a")) expect(anchor.getAttribute("href")).toBe(anchor.textContent);
+  });
+
   it("invents no heading for a confirmation that recorded no title", async () => {
     const confirmed = await confirmedDraftV2Fixture();
     const result = await resultFor(confirmed);

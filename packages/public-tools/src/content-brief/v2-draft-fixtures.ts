@@ -82,10 +82,15 @@ export async function confirmedDraftV2Fixture(options: ConfirmedDraftV2FixtureOp
     },
     gap_angle: options.paaOnly ? null : { value: "Use finalized comparisons", rationale: "Connect the declared feature to the workflow.", fact_refs: ["P1", "P2"], sources: [pageRef("C2")] },
     internal_links: [], do_not_cover: [],
-    ...(options.title === true ? { planning: { title: {
-      recommended: { value: "Why Reporting Lags Behind Collection", rationale: "Names the reader task the retained excerpts answer." },
-      alternatives: [{ value: "Reading Reports That Lag", rationale: "Leads with the reporting task instead of the cause." }],
-    } } } : {}),
+    ...(options.title === true ? { planning: {
+      title: {
+        recommended: { value: "Why Reporting Lags Behind Collection", rationale: "Names the reader task the retained excerpts answer." },
+        alternatives: [{ value: "Reading Reports That Lag", rationale: "Leads with the reporting task instead of the cause." }],
+      },
+      sections: anchors.map((_anchor, index) => ({ focus: index === 0
+        ? "Establish why reporting lags, using the observed collection excerpt, before any comparison advice."
+        : "Turn the finalized-period excerpt into the comparison the reader makes, without redefining the lag." })),
+    } } : {}),
   };
   const generated = validateModelBriefV2(model, context);
   if (!generated.ok) throw new Error(generated.path);

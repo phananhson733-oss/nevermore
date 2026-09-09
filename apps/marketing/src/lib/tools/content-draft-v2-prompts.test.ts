@@ -109,7 +109,11 @@ function sectionPrompt(confirmed: Awaited<ReturnType<typeof confirmedBrief>>, se
     bytes: encoder.encode(JSON.stringify({ system, user })).byteLength,
     units: scope.value.page_units.size,
     system,
-    data: JSON.parse(user) as { section: { position: string }; outline: readonly string[]; article_title: string | null },
+    data: JSON.parse(user) as {
+      section: { position: string };
+      article_title: string | null;
+      article_map: readonly { id: string; position: number; h2: string; h3: readonly string[]; focus: string | null; this_section: boolean; questions: readonly { id: string; q: string | null }[] }[];
+    },
   };
 }
 
@@ -155,6 +159,26 @@ describe("Draft v2 article title", () => {
     expect(prompt.system).toContain("never factual evidence, never a source");
   });
 
+  it("carries every section's planned focus, and says the map is coordination rather than evidence", async () => {
+    const confirmed = await confirmedDraftV2Fixture({ title: true });
+    const prompt = sectionPrompt(confirmed, confirmed.outline[0]!.id);
+    expect(prompt.data.article_map.map((item) => item.focus)).toEqual([
+      "Establish why reporting lags, using the observed collection excerpt, before any comparison advice.",
+      "Turn the finalized-period excerpt into the comparison the reader makes, without redefining the lag.",
+    ]);
+    // Without this line the map is a list of things to write about, and the
+    // other sections' question text reads as material this section may use.
+    expect(prompt.system).toContain("The map is coordination context, never evidence");
+    expect(prompt.system).toContain("adds no U or P id to evidence_refs");
+  });
+
+  it("sends a null focus for a section the planning layer never wrote one for", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const map = sectionPrompt(confirmed, confirmed.outline[0]!.id).data.article_map;
+    expect(map.every((item) => item.focus === null)).toBe(true);
+    expect(map).toHaveLength(confirmed.outline.length);
+  });
+
   it("sends null rather than a substitute when the confirmation recorded no title", async () => {
     const confirmed = await confirmedDraftV2Fixture();
     expect(sectionPrompt(confirmed, confirmed.outline[0]!.id).data.article_title).toBeNull();
@@ -187,7 +211,14 @@ describe("Draft v2 section position", () => {
 
   it("shows every confirmed H2 so a section can avoid another's material", async () => {
     const confirmed = await confirmedBrief("en", 3);
-    expect(sectionPrompt(confirmed, confirmed.outline[1]!.id).data.outline)
-      .toEqual(["Section 1", "Section 2", "Section 3"]);
+    const map = sectionPrompt(confirmed, confirmed.outline[1]!.id).data.article_map;
+    expect(map.map((item) => item.h2)).toEqual(["Section 1", "Section 2", "Section 3"]);
+    // And which one is being written, so "do not restate another section" names
+    // a set the model can actually tell itself apart from.
+    expect(map.map((item) => item.this_section)).toEqual([false, true, false]);
+    expect(map.map((item) => item.position)).toEqual([1, 2, 3]);
+    // Every section's questions, not only this one's: a writer that cannot see
+    // what section two answers has no way to avoid answering it again.
+    expect(map.every((item) => item.questions.length > 0 && item.questions.every((question) => typeof question.q === "string"))).toBe(true);
   });
 });
