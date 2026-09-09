@@ -22,7 +22,7 @@ import {
 } from "./v2-contract.ts";
 import { parseResearchBundle, parseResearchResult, validateResearchOutput } from "./v2-research.ts";
 import type {
-  BriefV2Context, BriefV2Generated, BriefV2PlanStep, BriefV2Planning, BriefV2SectionPlan, BriefV2WritingPlan, ModelBriefV2Output,
+  BriefV2Context, BriefV2Generated, BriefV2PlanStep, BriefV2Planning, BriefV2SectionPlan, BriefV2SectionPurpose, BriefV2WritingPlan, ModelBriefV2Output,
 } from "./v2-generation-contract.ts";
 
 const TEXT_MAX = 400;
@@ -236,14 +236,15 @@ function writingShape(strict: boolean, answerPrefix: "U" | "Q"): Decoder<BriefV2
  * frozen document that comes back stores the O id the server bound it to. That
  * is the same distinction `strict` already carries everywhere in this file.
  */
-type DecodedSectionPlan = { readonly section_id?: string; readonly focus: string };
+type DecodedSectionPlan = { readonly section_id?: string; readonly purpose: BriefV2SectionPurpose; readonly focus: string };
 type DecodedPlanning = { readonly title: BriefV2Planning["title"]; readonly sections?: readonly DecodedSectionPlan[] };
 function planningShape(strict: boolean): Decoder<DecodedPlanning> {
   const option = object({ value: generatedText(RESEARCH_HEADING_MAX_CHARS, strict), rationale: generatedText(TEXT_MAX, strict) });
   const titled = object({ title: object({ recommended: option, alternatives: array(option, { max: BRIEF_TITLE_ALTERNATIVES_MAX }) }) });
+  const purpose = oneOf(["define", "procedure", "interpret", "compare", "limits"] as const);
   const plan: Decoder<DecodedSectionPlan> = strict
-    ? object({ section_id: identifier("O"), focus: generatedText(TEXT_MAX, strict) })
-    : object({ focus: generatedText(TEXT_MAX, strict) });
+    ? object({ section_id: identifier("O"), purpose, focus: generatedText(TEXT_MAX, strict) })
+    : object({ purpose, focus: generatedText(TEXT_MAX, strict) });
   return (input, path) => {
     if (!isRecord(input)) return invalid(path);
     const { sections, ...rest } = input;
@@ -271,7 +272,7 @@ function bindSectionPlans(planning: DecodedPlanning, outline: ResearchResult["ou
   for (const [index, plan] of sections.entries()) {
     const section_id = outline[index]!.id;
     if (plan.section_id !== undefined && plan.section_id !== section_id) return reference(`planning.sections[${index}].section_id`);
-    bound.push({ section_id, focus: plan.focus });
+    bound.push({ section_id, purpose: plan.purpose, focus: plan.focus });
   }
   return ok({ ...rest, sections: bound });
 }
@@ -725,7 +726,7 @@ export function parseBriefV2Generated(input: unknown, context: BriefV2Context): 
     // The model form has no O ids: they are derived from the outline it sent,
     // so the rebuild has to hand back the shape a reply actually has.
     ...(value.planning === undefined ? {} : { planning: { ...value.planning,
-      ...(value.planning.sections === undefined ? {} : { sections: value.planning.sections.map(({ focus }) => ({ focus })) }) } }),
+      ...(value.planning.sections === undefined ? {} : { sections: value.planning.sections.map(({ purpose, focus }) => ({ purpose, focus })) }) } }),
     research: {
       questions: value.research.questions.map((item) => ({ anchor: item.anchor, q: item.q, sources: item.source_refs })),
       outline: value.research.outline.map((item) => ({ h2: item.h2, h3: item.h3, answers: item.answers.map((id) => anchors.get(id) ?? "invalid") })),

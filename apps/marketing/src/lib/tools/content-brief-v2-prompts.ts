@@ -41,7 +41,7 @@ function briefLanguageName(code: string): string {
 const PLANNING_RULES = `
 PLANNING
 planning.title: one recommended title plus at most ${BRIEF_TITLE_ALTERNATIVES_MAX} alternative framings of the same evidence, each with a one-sentence rationale, all different. A title is published without passing the claim rules above, so it carries no digit in any form, names no organisation, standard or acronym the input did not supply, and promises only what the selected questions and their sources cover: no count, ranking, year or completeness claim.
-planning.sections: one entry per outline section, in order, each with focus: one sentence naming the reader task it completes and the supported coverage that does it. It instructs that section's writer, so make clear how its job differs from its neighbours'. It may promise only what that section's questions and sources support.`;
+planning.sections: one entry per outline section, in order, each with purpose and focus. purpose is define, procedure, interpret, compare or limits: the communication task that section carries out, chosen from what its own questions and sources can support. focus is one sentence naming the reader task it completes and the supported coverage that does it; it instructs that section's writer, so make clear how its job differs from its neighbours'.`;
 
 export function buildContentBriefV2SystemPrompt(sectionQuestions: boolean, language: string, planning: boolean = briefPlanningAvailable(language)): string {
   const languageName = briefLanguageName(language);
@@ -81,7 +81,7 @@ A top-level previous_rejection means the server rejected your previous reply to 
 ${planning ? PLANNING_RULES : ""}
 EXACT OUTPUT SHAPE
 {
- ${researchShape},${planning ? '\n "planning":{"title":{"recommended":{"value":"title","rationale":"reason"},"alternatives":[{"value":"title","rationale":"reason"}]},"sections":[{"focus":"what this section is for"}]},' : ""}
+ ${researchShape},${planning ? '\n "planning":{"title":{"recommended":{"value":"title","rationale":"reason"},"alternatives":[{"value":"title","rationale":"reason"}]},"sections":[{"purpose":"define|procedure|interpret|compare|limits","focus":"what this section is for"}]},' : ""}
  "intent":null | {"value":"informational|commercial|transactional|navigational","rationale":"reason"},
  "format":null | {"value":"guide|listicle|comparison|product_page|tool|other","rationale":"reason"},
  "page_plan":{"action":"create|update|undecidable","rationale":"reason","target_ref":null | "T1","steps":[{"kind":"keep|add|rewrite","instruction":"specific work","sources":["U2"],"answers":["U1"]}]},

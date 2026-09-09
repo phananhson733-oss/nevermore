@@ -126,9 +126,18 @@ export interface BriefV2Planning {
  * It is never published. It reaches the draft's section prompt as writing
  * instruction, and every sentence written from it still passes the draft's own
  * claim rules, which is why it carries no evidence reference and needs none.
+ *
+ * purpose is the same judgment as one word: the communication task the section
+ * carries out. It exists because "write about reporting delays" and "explain
+ * what a reporting delay is, and what it is not" produce different prose from
+ * the same excerpts, and the draft prompt can only say what a good section of
+ * each kind does if the brief says which kind this one is.
  */
+export type BriefV2SectionPurpose = "define" | "procedure" | "interpret" | "compare" | "limits";
+
 export interface BriefV2SectionPlan {
   readonly section_id: string;
+  readonly purpose: BriefV2SectionPurpose;
   readonly focus: string;
 }
 
@@ -153,7 +162,7 @@ export interface BriefV2WritingPlan {
  */
 export interface ModelBriefV2Planning {
   readonly title: BriefV2TitlePlan;
-  readonly sections?: readonly { readonly focus: string }[];
+  readonly sections?: readonly { readonly purpose: BriefV2SectionPurpose; readonly focus: string }[];
 }
 
 export interface ModelBriefV2Output extends Omit<BriefV2WritingPlan, "planning"> {

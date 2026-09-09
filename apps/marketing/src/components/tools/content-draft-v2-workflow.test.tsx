@@ -32,6 +32,7 @@ function exportNotes(locale: "en" | "zh" = "en") {
   const catalog = (locale === "en" ? en : zh).tools.contentDraft;
   return {
     failed: (reason: string) => catalog.sectionFail[reason as keyof typeof catalog.sectionFail], skipped: catalog.doc.skippedBody, relatedLinks: locale === "en" ? "Related links" : "相关链接",
+    sources: catalog.v2.sources, observedAt: (time: string) => catalog.v2.observedAt.replace("{time}", time),
     imagePrompts: catalog.v2.images.markdownHeading, imagePromptsNote: catalog.v2.images.markdownNote, imageHero: catalog.v2.images.hero, imagePrompt: catalog.v2.images.prompt, imageAlt: catalog.v2.images.alt,
   };
 }
@@ -458,6 +459,42 @@ describe("Draft v2 truthful results and exact exports", () => {
     // URL, which hides nothing; a label pointing elsewhere is what this closes.
     expect(view.querySelector("h1")?.textContent).toBe(linked);
     for (const anchor of view.querySelectorAll("h1 a")) expect(anchor.getAttribute("href")).toBe(anchor.textContent);
+  });
+
+  it("closes the article with the pages its sentences actually cited", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed, { claims: true });
+    const { host } = await render(confirmed, { result });
+    const listed = Array.from(host.querySelectorAll("[data-source-page]"), (item) => item.getAttribute("data-source-page"));
+    expect(listed.length).toBeGreaterThan(0);
+    // Only what a written sentence cited. A page the brief collected and the
+    // draft never used is not a source of this article, and printing it would
+    // be the article claiming to rest on reading it did not do.
+    const cited = new Set(result.sections.flatMap((section) => section.status !== "ok" ? [] :
+      section.body.paragraphs.flatMap((paragraph) => paragraph.sentences.flatMap((sentence) => sentence.evidence_refs))));
+    const pagesOfCited = new Set(confirmed.brief.context.research.units
+      .filter((unit) => unit.kind === "page" && cited.has(unit.id))
+      .map((unit) => unit.kind === "page" ? unit.page_ref : ""));
+    expect(new Set(listed)).toEqual(pagesOfCited);
+    const markdown = contentDraftV2Markdown(result, confirmed, exportNotes());
+    const sources = markdown.slice(markdown.indexOf("## Sources"));
+    for (const id of pagesOfCited) {
+      const page = confirmed.brief.context.research.pages.find((item) => item.id === id)!;
+      expect(sources).toContain(`- ${new URL(page.final_url).hostname} — ${page.final_url} (Observed ${page.fetched_at.slice(0, 10)})`);
+    }
+    // The article's own end matter: after every section it draws on.
+    expect(markdown.indexOf("## Sources")).toBeGreaterThan(markdown.lastIndexOf(`## ${confirmed.outline.at(-1)!.h2}`));
+    // A profile fact is not a page and never becomes a line here: section two
+    // cites P1 and P2 and contributes no source.
+    expect(sources.split("\n- ")).toHaveLength(listed.length + 1);
+  });
+
+  it("lists no sources when no written sentence cited a page", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed);
+    const { host } = await render(confirmed, { result });
+    expect(host.querySelector("[data-draft-sources]")).toBeNull();
+    expect(contentDraftV2Markdown(result, confirmed, exportNotes())).not.toContain("## Sources");
   });
 
   it("invents no heading for a confirmation that recorded no title", async () => {

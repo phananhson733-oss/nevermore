@@ -87,9 +87,9 @@ export async function confirmedDraftV2Fixture(options: ConfirmedDraftV2FixtureOp
         recommended: { value: "Why Reporting Lags Behind Collection", rationale: "Names the reader task the retained excerpts answer." },
         alternatives: [{ value: "Reading Reports That Lag", rationale: "Leads with the reporting task instead of the cause." }],
       },
-      sections: anchors.map((_anchor, index) => ({ focus: index === 0
-        ? "Establish why reporting lags, using the observed collection excerpt, before any comparison advice."
-        : "Turn the finalized-period excerpt into the comparison the reader makes, without redefining the lag." })),
+      sections: anchors.map((_anchor, index) => index === 0
+        ? { purpose: "define" as const, focus: "Establish why reporting lags, using the observed collection excerpt, before any comparison advice." }
+        : { purpose: "compare" as const, focus: "Turn the finalized-period excerpt into the comparison the reader makes, without redefining the lag." }),
     } } : {}),
   };
   const generated = validateModelBriefV2(model, context);

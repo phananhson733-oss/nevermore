@@ -31,6 +31,35 @@ function confirmedRelatedLinks(confirmed: ConfirmedBriefV2) {
   });
 }
 
+/**
+ * Every page an accepted section actually cited, in the order it was first used.
+ *
+ * Derived from the sentences, not from the research bundle: a page the brief
+ * collected and the draft never cited is not a source of this article, and
+ * listing it would be the article claiming to rest on reading it did not do.
+ * Both the rendered article and the export read this one function, so the
+ * published list and the exported list cannot drift apart.
+ */
+export function draftV2CitedPages(result: DraftResultV2, confirmed: ConfirmedBriefV2) {
+  const research = confirmed.brief.context.research;
+  const units = new Map(research.units.map((unit) => [unit.id, unit]));
+  const pages = new Map(research.pages.map((page) => [page.id, page]));
+  const seen = new Set<string>();
+  const cited: { readonly id: string; readonly domain: string; readonly url: string | null; readonly fetched_at: string }[] = [];
+  for (const section of result.sections) {
+    if (section.status !== "ok") continue;
+    for (const paragraph of section.body.paragraphs) for (const sentence of paragraph.sentences) for (const ref of sentence.evidence_refs) {
+      const unit = units.get(ref);
+      if (unit?.kind !== "page") continue;
+      const page = pages.get(unit.page_ref);
+      if (page === undefined || seen.has(page.id)) continue;
+      seen.add(page.id);
+      cited.push({ id: page.id, domain: new URL(page.final_url).hostname, url: safePageUrl(page.final_url), fetched_at: page.fetched_at });
+    }
+  }
+  return cited;
+}
+
 /** Consecutive bulleted sentences are one list; everything else stays running prose. */
 export function draftV2Runs(sentences: readonly DraftV2Sentence[]) {
   const runs: { readonly bullet: boolean; readonly items: { readonly sentence: DraftV2Sentence; readonly index: number }[] }[] = [];
@@ -67,7 +96,11 @@ function markdownLinkUrl(url: string) { return url.replace(/[()[\]<>\\]/gu, (cha
 export interface ImagePromptNotes {
   readonly imagePrompts: string; readonly imagePromptsNote: string; readonly imageHero: string; readonly imagePrompt: string; readonly imageAlt: string;
 }
-export function contentDraftV2Markdown(result: DraftResultV2, confirmed: ConfirmedBriefV2, notes: MarkdownNotes & { readonly relatedLinks: string } & ImagePromptNotes): string {
+export interface SourceListNotes {
+  readonly sources: string;
+  readonly observedAt: (time: string) => string;
+}
+export function contentDraftV2Markdown(result: DraftResultV2, confirmed: ConfirmedBriefV2, notes: MarkdownNotes & { readonly relatedLinks: string } & ImagePromptNotes & SourceListNotes): string {
   // The one H1, and only when the confirmation recorded one. An export that
   // invented a heading from the keyword would be putting a promise on the page
   // that nobody chose and nothing checked.
@@ -82,6 +115,9 @@ export function contentDraftV2Markdown(result: DraftResultV2, confirmed: Confirm
         : run.items.map(({ sentence }) => sentence.text).join(" ")),
     ])].join("\n\n");
   }));
+  const cited = draftV2CitedPages(result, confirmed);
+  if (cited.length > 0) sections.push(`## ${markdownHeading(notes.sources)}\n\n${cited.map((page) =>
+    `- ${page.domain}${page.url === null ? "" : ` — ${page.url}`} (${notes.observedAt(page.fetched_at.slice(0, 10))})`).join("\n")}`);
   const links = confirmedRelatedLinks(confirmed);
   if (links.length > 0) sections.push(`## ${notes.relatedLinks}\n\n${links.map((link) => `- [${markdownLinkLabel(link.anchor)}](${markdownLinkUrl(link.url)})`).join("\n")}`);
   const plan = result.image_prompts;
@@ -178,8 +214,10 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
     return entries;
   }
   const relatedLinks = confirmedRelatedLinks(confirmed);
+  const cited = draftV2CitedPages(result, confirmed);
   const notes = {
     ...markdownNotes(base), relatedLinks: t("relatedLinks"),
+    sources: t("sources"), observedAt: (time: string) => t("observedAt", { time }),
     imagePrompts: t("images.markdownHeading"), imagePromptsNote: t("images.markdownNote"), imageHero: t("images.hero"), imagePrompt: t("images.prompt"), imageAlt: t("images.alt"),
   };
   // Per-card copy receipt; a new result is a new set of cards, so it resets with it.
@@ -282,6 +320,7 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
         : <p data-image-prompts-unavailable className={`mt-3 ${BODY_TEXT}`}>{t("images.unavailable", { reason: t(`images.reason.${imagePlan.reason}`) })}</p>}
     </section>}
 
+    {cited.length > 0 ? <section data-draft-sources><h2 className={`${SECTION_TITLE} ${RULE}`}>{t("sources")}</h2><p className={`mt-3 ${BODY_TEXT}`}>{t("sourcesBoundary")}</p><ul className="mt-3 space-y-2">{cited.map((page) => <li key={page.id} data-source-page={page.id} className="text-[12.5px] leading-[1.6] text-text-dark-primary"><span className="font-semibold">{page.domain}</span>{page.url === null ? null : <> · <a href={page.url} target="_blank" rel="noopener noreferrer" className="break-all text-brand-accent-text underline underline-offset-2">{page.url}</a></>} <span className="text-text-dark-secondary">· {t("observedAt", { time: collectedTime(page.fetched_at, locale) })}</span></li>)}</ul></section> : null}
     {relatedLinks.length > 0 ? <section data-related-links><h2 className={`${SECTION_TITLE} ${RULE}`}>{t("relatedLinks")}</h2><ul className="mt-3 space-y-2">{relatedLinks.map((link) => <li key={link.pageRef}><a data-related-link href={link.url} target="_blank" rel="noopener noreferrer" className="text-[13px] text-brand-accent-text underline underline-offset-2">{link.anchor}</a></li>)}</ul></section> : null}
 
     <section><h2 className={`${SECTION_TITLE} ${RULE}`}>{base("verify.title")}</h2><p className={`mt-3 ${BODY_TEXT}`}>{t("verifyBoundary")}</p>{result.verify_before_publish.length === 0 ? <p className={`mt-2 ${BODY_TEXT}`}>{t(result.run.reads.sections.ok === 0 ? "noDraftToVerify" : "verifyEmpty")}</p> : <ul className="mt-3 space-y-3">{result.verify_before_publish.map((item, index) => <li key={index} className="border-l-2 border-brand-border-card pl-3"><div className="text-[11px] text-text-dark-secondary">{base(`verifyKind.${item.kind}`)} · {item.section_id}{item.kind === "single_source" ? ` · ${t("supportingPages", { count: item.support_count })}` : ""}</div><p className="mt-1 text-[12.5px] leading-[1.6] text-text-dark-primary">{item.sentence}</p><div className="mt-1 flex gap-2 text-[11px] text-text-dark-secondary">{item.evidence_refs.length === 0 ? base("verify.noRefs") : item.evidence_refs.map((ref) => <a key={ref} href={`#draft-v2-evidence-${ref}`} className="underline">{ref}</a>)}</div></li>)}</ul>}</section>

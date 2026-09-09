@@ -526,7 +526,7 @@ describe("Draft v2 prompt contract", () => {
     // article's opening and closing paragraph; nothing else about it changes.
     expect(data.section).toEqual({ ...scope.value.section, position: "only" });
     expect(data.article_map).toEqual(value.outline.map((item, index) => ({
-      id: item.id, position: index + 1, h2: item.h2, h3: item.h3, focus: null, this_section: true,
+      id: item.id, position: index + 1, h2: item.h2, h3: item.h3, purpose: null, focus: null, this_section: true,
       questions: item.answers.map((id: string) => ({ id, q: value.brief.generated!.research.questions.find((question) => question.id === id)!.q })),
     })));
     expect(data.questions).toEqual(scope.value.questions);
@@ -549,7 +549,12 @@ describe("Draft v2 prompt contract", () => {
   });
 
   it("includes approved guidance in the exact byte cap and refuses overflow before a call", async () => {
-    const facts: ProfileFact[] = Array.from({ length: 32 }, (_, index) => ({ id: `P${index + 1}`, field: `field${index}${"界".repeat(800)}`, text: "Observed date comparison feature.", derivation: "declared", provenance: { method: "observed", origin: "product_profile" } }));
+    // Sized from the live system prompt, like the retry test above, so a rule
+    // added to the prompt moves the fixture with the ceiling instead of
+    // silently pushing this base case over it.
+    const systemBytes = new TextEncoder().encode(buildDraftV2SectionSystemPrompt()).byteLength;
+    const fieldChars = Math.floor((DRAFT_V2_PROMPT_MAX_BYTES - systemBytes - 12_000) / (32 * 3));
+    const facts: ProfileFact[] = Array.from({ length: 32 }, (_, index) => ({ id: `P${index + 1}`, field: `field${index}${"界".repeat(fieldChars)}`, text: "Observed date comparison feature.", derivation: "declared", provenance: { method: "observed", origin: "product_profile" } }));
     const first = await guidedBrief(facts);
     const firstScope = buildDraftV2SectionScope(first, "O1", SETTINGS);
     if (!firstScope.ok) throw new Error(firstScope.path);
@@ -557,7 +562,7 @@ describe("Draft v2 prompt contract", () => {
     const bytes = new TextEncoder().encode(JSON.stringify({ system, user: buildDraftV2SectionUserPrompt({ confirmed: first, scope: firstScope.value, settings: SETTINGS }) })).byteLength;
     const remaining = DRAFT_V2_PROMPT_MAX_BYTES - bytes;
     expect(remaining).toBeGreaterThan(0);
-    expect(remaining).toBeLessThan(32 * 800);
+    expect(remaining).toBeLessThan(32 * fieldChars);
     const padded = facts.map((fact, index) => ({ ...fact, field: fact.field + "x".repeat(Math.floor(remaining / 32) + (index < remaining % 32 ? 1 : 0)) }));
     const value = await guidedBrief(padded, true);
     const valueScope = buildDraftV2SectionScope(value, "O1", SETTINGS);
