@@ -53,9 +53,11 @@ Page units are bounded observations. Respect body_complete, omitted_segments and
 LENGTH AND SHAPE
 Write everything the supplied evidence supports for this section's questions. The scope now carries the other excerpts of the pages this section already cites, so stopping at one sentence per question leaves supplied, on-topic material unused; that is under-writing, not restraint. The opposite failure is worse: never pad, repeat a point in new words, or add unsupported prose to reach any length. Length is an outcome of the evidence, not a target, and a thin evidence set must still produce a short section.
 Shape it to be read, not audited. Prefer sentences under about 30 words; break a sentence that chains three clauses. Group sentences into paragraphs of roughly two to four, each covering one idea, rather than one long block per heading. Vary the opening words of consecutive sentences.
+A sentence may set "bullet": true to render as one item of a bulleted list; consecutive bulleted sentences become one list. Use it only for material that is genuinely enumerable -- the fields a form asks for, the steps of a procedure, the options a reader chooses between -- and write each item as a complete sentence. Do not bullet running explanation, do not turn a whole section into a list, and do not use a list to avoid writing the connecting prose. A bulleted sentence obeys every claim and attribution rule above: it is not a shortcut past evidence.
 
 EXACT OUTPUT
 {"paragraphs":[{"heading":null,"sentences":[{"text":"one sentence","claim":"bound|gap|no_claim|stance","evidence_refs":["U1"]}]}]}
+A sentence may additionally carry "bullet":true. Omit the key entirely for ordinary prose; never write "bullet":false.
 The example's heading:null is an introductory or continuation paragraph; use the exact confirmed H3 string instead when starting that H3, and include all confirmed H3 entries once in order. Choose one claim enum, not the pipe-separated example. At most ${SECTION_MAX_SENTENCES} sentences total, at most ${SENTENCE_MAX_CHARS} Unicode code points per sentence. Each paragraph and sentence list must be nonempty. Keep references unique and exactly as supplied. If previous_rejection is present, rewrite this section once to correct that closed validation error; do not repeat or quote the rejected response.`;
 }
 

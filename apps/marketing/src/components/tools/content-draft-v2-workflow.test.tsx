@@ -46,7 +46,7 @@ async function confirmedWithLinks(url = "https://owned.test/dates(a)[b]?next=(x)
   return { confirmed: confirmed.value, url };
 }
 
-async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolean; skipped?: boolean; empty?: boolean; unavailable?: boolean; previous?: DraftResultV2; settings?: DraftV2Settings; cjk?: boolean; claims?: boolean; quality?: "none" | "partial" } = {}) {
+async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolean; skipped?: boolean; empty?: boolean; unavailable?: boolean; previous?: DraftResultV2; settings?: DraftV2Settings; cjk?: boolean; claims?: boolean; bullets?: boolean; quality?: "none" | "partial" } = {}) {
   const currentSettings = options.settings ?? settings;
   const sections: DraftV2Section[] = confirmed.outline.map((heading, index) => {
     if ((options.empty || options.skipped) && index === 1) return { ...heading, status: "skipped" };
@@ -54,7 +54,12 @@ async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolea
     const scope = buildDraftV2SectionScope(confirmed, heading.id, currentSettings);
     if (!scope.ok) throw new Error(scope.path);
     const pageRefs = [...scope.value.page_units.keys()];
-    const sentences = options.claims ? (index === 0 ? [
+    const sentences = options.bullets && index === 0 ? [
+      { text: "To create a chart, enter three things.", claim: "no_claim", evidence_refs: [] },
+      { text: "Enter the birth date.", claim: "bound", evidence_refs: pageRefs, bullet: true },
+      { text: "Enter the birth time.", claim: "bound", evidence_refs: pageRefs, bullet: true },
+      { text: "Then read the notes below the form.", claim: "no_claim", evidence_refs: [] },
+    ] : options.claims ? (index === 0 ? [
       { text: "Reporting can lag behind collection.", claim: "bound", evidence_refs: pageRefs },
       { text: "Review the reporting timeline.", claim: "no_claim", evidence_refs: [] },
     ] : [
@@ -277,6 +282,20 @@ describe("Draft v2 truthful results and exact exports", () => {
     const before = JSON.stringify(result); await click(host, "[data-toggle-annotations]");
     expect(node(host, "[data-toggle-annotations]").getAttribute("aria-pressed")).toBe("false");
     expect(host.querySelector("[data-source-legend]")).toBeNull(); expect(JSON.stringify(result)).toBe(before);
+  });
+  it("renders consecutive bulleted sentences as one list between the prose and exports them as list lines", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed, { bullets: true }); const { host } = await render(confirmed, { result });
+    const section = node(host, '[data-section-body="O1"]');
+    const lists = section.querySelectorAll("[data-draft-list]");
+    expect(lists).toHaveLength(1);
+    expect(Array.from(lists[0]!.querySelectorAll("li [data-sentence-text]"), (item) => item.textContent)).toEqual(["Enter the birth date.", "Enter the birth time."]);
+    // The prose on either side stays in paragraphs, in order, around the list.
+    const blocks = Array.from(section.querySelectorAll("p[data-paragraph-sources], p:not([data-paragraph-sources]), ul"), (item) => item.tagName);
+    expect(blocks.slice(0, 3)).toEqual(["P", "UL", "P"]);
+    // A list item keeps its claim so the toggle can still audit it.
+    expect(lists[0]!.querySelector('[data-claim="bound"]')).not.toBeNull();
+    const markdown = contentDraftV2Markdown(result, confirmed, exportNotes());
+    expect(markdown).toContain("To create a chart, enter three things.\n\n- Enter the birth date.\n- Enter the birth time.\n\nThen read the notes below the form.");
   });
   it.each(["en", "zh"] as const)("names each paragraph's sources once beneath it without the reader opening annotations (%s)", async (locale) => {
     const confirmed = await confirmedDraftV2Fixture({ action: "update" }); const result = await resultFor(confirmed, { claims: true }); const { host } = await render(confirmed, { locale, result });

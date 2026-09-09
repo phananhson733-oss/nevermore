@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { canonicalize } from "./canonical.ts";
 import { confirmBriefV2, fingerprintBriefV2, parseConfirmedBriefV2 } from "./v2-brief.ts";
 import { measureResearchLength, type ResearchPage } from "./v2-contract.ts";
 import type { DraftV2Settings } from "./v2-draft-contract.ts";
 import { buildDraftV2SectionScope, planDraftV2Sections } from "./v2-draft-scope.ts";
-import { validateDraftV2Section } from "./v2-draft-section.ts";
+import { parseDraftV2SectionBody, validateDraftV2Section } from "./v2-draft-section.ts";
 import { validateModelBriefV2 } from "./v2-generation.ts";
 import type { BriefV2Context, ConfirmedBriefV2, ContentBriefV2, ModelBriefV2Output } from "./v2-generation-contract.ts";
 import { buildResearchBundle } from "./v2-research.ts";
@@ -321,5 +322,69 @@ describe("Draft v2 selected-section planning", () => {
     if (kind === "unconfirmed") Reflect.set(changed, "schema", "gengrowth.content_brief/v2");
     expect(buildDraftV2SectionScope(changed, "O1", settings).ok).toBe(false);
     expect(planDraftV2Sections(changed, ["O1"]).ok).toBe(false);
+  });
+});
+
+describe("Draft v2 list items", () => {
+  const prose = { text: "Reporting can lag behind collection.", claim: "no_claim", evidence_refs: [] };
+  // O1 confirms exactly one H3, and the validator requires it verbatim.
+  const H3 = "Edited Check the collection timeline";
+  const para = (sentences: readonly unknown[]) => ({ paragraphs: [{ heading: H3, sentences }] });
+
+  it("keeps a bulleted sentence and marks it only when the model asked for one", async () => {
+    const scope = buildDraftV2SectionScope(await fixture(), "O1", settings);
+    if (!scope.ok) throw new Error(scope.path);
+    const body = validateDraftV2Section(para([
+      prose,
+      { text: "Enter the birth date.", claim: "bound", evidence_refs: ["U1"], bullet: true },
+    ]), scope.value, "en");
+    expect(body.ok).toBe(true);
+    if (!body.ok) throw new Error(body.path);
+    expect(body.value.paragraphs[0]!.sentences[1]!.bullet).toBe(true);
+    expect(Object.hasOwn(body.value.paragraphs[0]!.sentences[0]!, "bullet")).toBe(false);
+  });
+
+  // A draft written before lists existed has its run fingerprint recomputed from
+  // its parsed body on every rerun. If parsing injected a bullet key, that draft
+  // would fail with brief_fingerprint_mismatch in a tab the owner still has open.
+  it("canonicalizes prose exactly as it did before lists existed", async () => {
+    const scope = buildDraftV2SectionScope(await fixture(), "O1", settings);
+    if (!scope.ok) throw new Error(scope.path);
+    const body = validateDraftV2Section(para([prose]), scope.value, "en");
+    if (!body.ok) throw new Error(body.path);
+    expect(canonicalize(body.value)).toBe(canonicalize({
+      length: body.value.length,
+      paragraphs: [{ heading: H3, sentences: [{ ...prose, support_count: 0 }] }],
+    }));
+    expect(canonicalize(body.value)).not.toContain("bullet");
+  });
+
+  it("accepts an explicit false without storing it, so one sentence has one canonical form", async () => {
+    const scope = buildDraftV2SectionScope(await fixture(), "O1", settings);
+    if (!scope.ok) throw new Error(scope.path);
+    const withFalse = validateDraftV2Section(para([{ ...prose, bullet: false }]), scope.value, "en");
+    const without = validateDraftV2Section(para([prose]), scope.value, "en");
+    if (!withFalse.ok || !without.ok) throw new Error("expected both bodies");
+    expect(canonicalize(withFalse.value)).toBe(canonicalize(without.value));
+  });
+
+  it("round-trips a frozen bulleted body without rewriting it", async () => {
+    const scope = buildDraftV2SectionScope(await fixture(), "O1", settings);
+    if (!scope.ok) throw new Error(scope.path);
+    const body = validateDraftV2Section(para([
+      { text: "Enter the birth date.", claim: "bound", evidence_refs: ["U1"], bullet: true },
+    ]), scope.value, "en");
+    if (!body.ok) throw new Error(body.path);
+    const reparsed = parseDraftV2SectionBody(JSON.parse(JSON.stringify(body.value)), scope.value, "en");
+    expect(reparsed.ok).toBe(true);
+    if (!reparsed.ok) throw new Error(reparsed.path);
+    expect(canonicalize(reparsed.value)).toBe(canonicalize(body.value));
+  });
+
+  it("refuses a non-boolean bullet", async () => {
+    const scope = buildDraftV2SectionScope(await fixture(), "O1", settings);
+    if (!scope.ok) throw new Error(scope.path);
+    const body = validateDraftV2Section(para([{ ...prose, bullet: "yes" }]), scope.value, "en");
+    expect(body.ok).toBe(false);
   });
 });

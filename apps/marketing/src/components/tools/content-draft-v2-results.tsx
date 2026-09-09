@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 import type { DraftResultV2 } from "@sf/public-tools/content-brief/v2-draft-contract";
+import type { DraftV2Sentence } from "@sf/public-tools/content-brief/v2-draft-section";
 import { ACTION_BUTTON, BODY_TEXT, ID_CHIP, SECTION_TITLE, collectedTime, safePageUrl } from "./content-brief-results-shared";
 import { markdownNotes } from "./content-draft-handoff-bar";
 import type { MarkdownNotes } from "./content-draft-markdown";
@@ -30,6 +31,18 @@ function confirmedRelatedLinks(confirmed: ConfirmedBriefV2) {
   });
 }
 
+/** Consecutive bulleted sentences are one list; everything else stays running prose. */
+export function draftV2Runs(sentences: readonly DraftV2Sentence[]) {
+  const runs: { readonly bullet: boolean; readonly items: { readonly sentence: DraftV2Sentence; readonly index: number }[] }[] = [];
+  for (const [index, sentence] of sentences.entries()) {
+    const bullet = sentence.bullet === true;
+    const open = runs.at(-1);
+    if (open !== undefined && open.bullet === bullet) open.items.push({ sentence, index });
+    else runs.push({ bullet, items: [{ sentence, index }] });
+  }
+  return runs;
+}
+
 function markdownLinkLabel(text: string) { return text.replace(/&/gu, "&amp;").replace(/[\\`*_{}[\]()<>!#|]/gu, "\\$&"); }
 function markdownLinkUrl(url: string) { return url.replace(/[()[\]<>\\]/gu, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`).replace(/&/gu, "&amp;"); }
 
@@ -40,7 +53,9 @@ export function contentDraftV2Markdown(result: DraftResultV2, confirmed: Confirm
     if (section.status === "skipped") return `## ${section.h2}\n\n> ${notes.skipped}`;
     return [`## ${section.h2}`, ...section.body.paragraphs.flatMap((paragraph) => [
       ...(paragraph.heading === null ? [] : [`### ${paragraph.heading}`]),
-      paragraph.sentences.map((sentence) => sentence.text).join(" "),
+      ...draftV2Runs(paragraph.sentences).map((run) => run.bullet
+        ? run.items.map(({ sentence }) => `- ${sentence.text}`).join("\n")
+        : run.items.map(({ sentence }) => sentence.text).join(" ")),
     ])].join("\n\n");
   });
   const links = confirmedRelatedLinks(confirmed);
@@ -185,10 +200,15 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
             <button type="button" data-rerun-section={section.id} disabled={rerun.disabled} className={ACTION_BUTTON} onClick={() => rerun.onRerun(section.id)}>{base(rerun.runningSection === section.id ? "actions.rerunning" : section.status === "skipped" ? "actions.generateSection" : "actions.rerun")}</button>
           </div>
           <div id={panelId} hidden={!isOpen} data-section-body={section.id}>
-            {section.status === "ok" ? <div className={styles.prose}>{section.body.paragraphs.map((paragraph, pIndex) => <div key={pIndex}>{paragraph.heading !== null ? <h3 data-draft-h3>{paragraph.heading}</h3> : null}<p>{paragraph.sentences.map((sentence, sIndex) => {
-              const tier = sourceTier(sentence.evidence_refs, sentence.claim);
-              return <span key={sIndex} data-claim={sentence.claim} data-source-tier={tier} data-marked={showClaims ? "true" : "false"}>{sIndex > 0 ? " " : ""}<span data-sentence-text>{sentence.text}</span>{showClaims ? <span className={styles.claimAnnotation}>[{base(`claims.${sentence.claim}`)} · {t(`sourceTier.${tier}`)}{sentence.evidence_refs.length > 0 ? " · " : ""}{sentence.evidence_refs.map((ref, refIndex) => <span key={ref}>{refIndex > 0 ? ", " : ""}<a href={`#draft-v2-evidence-${ref}`}>{ref}</a></span>)}{sentence.claim === "bound" ? <span data-support-count> · {t("supportingPages", { count: sentence.support_count })}</span> : null}]</span> : null}</span>;
-            })}</p>{(() => { const sources = paragraphSources(paragraph.sentences); return sources.length === 0 ? null : <p data-paragraph-sources className={styles.paragraphSources}>{t("paragraphSources")}{sources.map((source, index) => <span key={source.ref}>{index > 0 ? "\u3001" : " "}<a href={`#draft-v2-evidence-${source.ref}`}>{source.label}</a></span>)}</p>; })()}</div>)}</div> : <div className={styles.failure}><strong>{base(section.status === "failed" ? "doc.failed" : "doc.skipped")}</strong><p>{section.status === "failed" ? base(`sectionFail.${section.fail_reason}`) : base("doc.skippedBody")}</p></div>}
+            {section.status === "ok" ? <div className={styles.prose}>{section.body.paragraphs.map((paragraph, pIndex) => <div key={pIndex}>{paragraph.heading !== null ? <h3 data-draft-h3>{paragraph.heading}</h3> : null}{draftV2Runs(paragraph.sentences).map((run, rIndex) => {
+              const nodes = run.items.map(({ sentence, index }, position) => {
+                const tier = sourceTier(sentence.evidence_refs, sentence.claim);
+                return <span key={index} data-claim={sentence.claim} data-source-tier={tier} data-marked={showClaims ? "true" : "false"}>{!run.bullet && position > 0 ? " " : ""}<span data-sentence-text>{sentence.text}</span>{showClaims ? <span className={styles.claimAnnotation}>[{base(`claims.${sentence.claim}`)} · {t(`sourceTier.${tier}`)}{sentence.evidence_refs.length > 0 ? " · " : ""}{sentence.evidence_refs.map((ref, refIndex) => <span key={ref}>{refIndex > 0 ? ", " : ""}<a href={`#draft-v2-evidence-${ref}`}>{ref}</a></span>)}{sentence.claim === "bound" ? <span data-support-count> · {t("supportingPages", { count: sentence.support_count })}</span> : null}]</span> : null}</span>;
+              });
+              return run.bullet
+                ? <ul key={rIndex} data-draft-list>{nodes.map((sentenceNode, position) => <li key={run.items[position]!.index}>{sentenceNode}</li>)}</ul>
+                : <p key={rIndex}>{nodes}</p>;
+            })}{(() => { const sources = paragraphSources(paragraph.sentences); return sources.length === 0 ? null : <p data-paragraph-sources className={styles.paragraphSources}>{t("paragraphSources")}{sources.map((source, index) => <span key={source.ref}>{index > 0 ? "\u3001" : " "}<a href={`#draft-v2-evidence-${source.ref}`}>{source.label}</a></span>)}</p>; })()}</div>)}</div> : <div className={styles.failure}><strong>{base(section.status === "failed" ? "doc.failed" : "doc.skipped")}</strong><p>{section.status === "failed" ? base(`sectionFail.${section.fail_reason}`) : base("doc.skippedBody")}</p></div>}
           </div>
         </section>;
       })}</div>

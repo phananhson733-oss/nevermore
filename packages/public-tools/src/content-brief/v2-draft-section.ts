@@ -5,7 +5,7 @@ import { canonicalize } from "./canonical.ts";
 import { SECTION_BODY_MAX_BYTES, SECTION_MAX_SENTENCES, SENTENCE_MAX_CHARS } from "./constants.ts";
 import type { ClaimState, ProfileFact } from "./contract.ts";
 import {
-  array, byteLength, invalid, isRecord, modelText, nullable, object, ok, oneOf, reference,
+  array, at, byteLength, invalid, isRecord, modelText, nullable, object, ok, oneOf, reference,
   type Decoded, type Decoder,
 } from "./parse-brief-shape.ts";
 import { RESEARCH_HEADING_MAX_CHARS, measureResearchLength, type ResearchLength } from "./v2-contract.ts";
@@ -33,6 +33,17 @@ export interface DraftV2Sentence {
   readonly evidence_refs: readonly string[];
   /** Distinct observed supporting pages, including an owned rewrite target; not a competitor count. */
   readonly support_count: number;
+  /**
+   * One item of a bulleted list rather than running prose. Present only when
+   * true, never as `bullet: false`.
+   *
+   * The absence is load-bearing, not tidiness. A stored draft's run fingerprint
+   * is recomputed from its parsed body on every rerun, so a key injected into a
+   * draft written before lists existed would change its canonical form and fail
+   * that draft with brief_fingerprint_mismatch -- in a tab the owner still has
+   * open. Prose sentences therefore carry no key at all, exactly as before.
+   */
+  readonly bullet?: true;
 }
 
 const count: Decoder<number> = (input, path) =>
@@ -45,9 +56,32 @@ const normalizedText = (max: number): Decoder<string> => (input, path) => {
   if (typeof input !== "string") return invalid(path);
   return modelText(max)(input.replace(/\s+/gu, " ").trim(), path);
 };
+/** Emits the canonical shape directly: `bullet` survives only as `true`, never as `false`. */
+function sentenceShape<T>(extra: Readonly<Record<string, Decoder<unknown>>>, text: Decoder<string>): Decoder<T> {
+  const shape: Readonly<Record<string, Decoder<unknown>>> = { text, claim, evidence_refs: refs, ...extra };
+  return (input, path) => {
+    if (!isRecord(input)) return invalid(path);
+    for (const key of Object.keys(input)) {
+      if (key !== "bullet" && !Object.hasOwn(shape, key)) return invalid(at(path, key));
+    }
+    const out: Record<string, unknown> = {};
+    for (const [key, decoder] of Object.entries(shape)) {
+      if (!Object.hasOwn(input, key)) return invalid(at(path, key));
+      const decoded = decoder(input[key], at(path, key));
+      if (!decoded.ok) return decoded;
+      out[key] = decoded.value;
+    }
+    if (Object.hasOwn(input, "bullet")) {
+      if (typeof input["bullet"] !== "boolean") return invalid(at(path, "bullet"));
+      if (input["bullet"]) out["bullet"] = true;
+    }
+    return ok(out as T);
+  };
+}
+
 const modelParagraph = object({
   heading: nullable(normalizedText(RESEARCH_HEADING_MAX_CHARS)),
-  sentences: array(object({ text: normalizedText(SENTENCE_MAX_CHARS), claim, evidence_refs: refs }), { min: 1, max: SECTION_MAX_SENTENCES }),
+  sentences: array(sentenceShape<Omit<DraftV2Sentence, "support_count">>({}, normalizedText(SENTENCE_MAX_CHARS)), { min: 1, max: SECTION_MAX_SENTENCES }),
 });
 const modelBody = object({
   paragraphs: array((input, path) => modelParagraph(
@@ -58,7 +92,7 @@ const frozenBody = object({
   length: object({ value: count, unit: oneOf(["words", "non_whitespace_characters"] as const), tokenizer: oneOf(["whitespace", "unicode_code_points"] as const) }),
   paragraphs: array(object({
     heading: nullable(modelText(RESEARCH_HEADING_MAX_CHARS)),
-    sentences: array(object({ text: modelText(SENTENCE_MAX_CHARS), claim, evidence_refs: refs, support_count: count }), { min: 1, max: SECTION_MAX_SENTENCES }),
+    sentences: array(sentenceShape<DraftV2Sentence>({ support_count: count }, modelText(SENTENCE_MAX_CHARS)), { min: 1, max: SECTION_MAX_SENTENCES }),
   }), { min: 1, max: SECTION_MAX_SENTENCES }),
 });
 function fits(input: unknown): boolean {
@@ -94,6 +128,7 @@ export function validateDraftV2Section(input: unknown, scope: DraftV2SectionEvid
         if (!scope.stance_allowed || sentence.evidence_refs.length === 0 ||
             sentence.evidence_refs.some((ref) => !scope.facts.has(ref))) return reference(path + ".claim");
       } else if (sentence.evidence_refs.length !== 0) return reference(path + ".evidence_refs");
+      // sentence carries `bullet` only when true, so the spread cannot reintroduce a false key.
       sentences.push({ ...sentence, evidence_refs: [...sentence.evidence_refs], support_count: pages.size });
     }
     paragraphs.push({ heading: paragraph.heading, sentences });
