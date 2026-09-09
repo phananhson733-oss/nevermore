@@ -32,6 +32,7 @@ import {
   type ContentDraftHandlerDependencies,
 } from "./content-draft-handler.ts";
 import type { DraftCoverageInput, DraftSectionInput, DraftSectionResult } from "./content-draft-llm.ts";
+import { runDraftV2ImagePrompts } from "./content-draft-v2-images.ts";
 import { generateDraftV2Section, runDraftV2Coverage } from "./content-draft-v2-llm.ts";
 import type { KeywordLlmConfig } from "./keyword-llm-client.ts";
 import { readPublicToolJson } from "./public-tool-request.ts";
@@ -248,6 +249,7 @@ function dependencies(overrides: Partial<ContentDraftHandlerDependencies> = {}):
     generateSection: async (input) => okResult(input),
     runCoverage: async (input) => coverageOf(input),
     generateSectionV2: async () => { throw new Error("Unexpected v2 model call in a v1 test"); },
+    runImagePromptsV2: async () => { throw new Error("Unexpected v2 model call in a v1 test"); },
     runCoverageV2: async () => { throw new Error("Unexpected v2 coverage call in a v1 test"); },
     now: () => (clock += 10),
     runId: () => `draft-${(ids += 1)}`,
@@ -303,7 +305,16 @@ function offlineV2Models() {
       modelId: "offline-coverage", usage: { requestCount: 1, retryCount: 0, inputTokens: 70, outputTokens: 15 },
     }) },
   }));
-  return { generateSectionV2, runCoverageV2 };
+  const runImagePromptsV2 = vi.fn<ContentDraftHandlerDependencies["runImagePromptsV2"]>((input) => runDraftV2ImagePrompts(input, {
+    config, now: () => START, client: { complete: async () => ({
+      content: JSON.stringify({
+        hero: { prompt: "Wide editorial illustration of a calendar beside a clock, soft daylight, no text.", alt: input.language.startsWith("zh") ? "日历旁放着一座时钟。" : "A calendar beside a clock." },
+        sections: input.sections.map((section) => ({ section_id: section.id, prompt: `Flat vector illustration for ${section.h2}, single focal object, no text.`, alt: input.language.startsWith("zh") ? "一件与该节相关的物品。" : `An object related to ${section.h2}.` })),
+      }),
+      modelId: "offline-image", usage: { requestCount: 1, retryCount: 0, inputTokens: 60, outputTokens: 40 },
+    }) },
+  }));
+  return { generateSectionV2, runCoverageV2, runImagePromptsV2 };
 }
 
 async function runOk(deps: ContentDraftHandlerDependencies, body = runBody()): Promise<DraftResult> {

@@ -2,7 +2,7 @@
 // @output -- v2 admission, frozen-input orchestration, rerun and honest usage evidence
 // @pos -- Draft v2 integration tests; no network or real provider configuration
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { COVERAGE_TIMEOUT_MS, DRAFT_REQUEST_MAX_BYTES, DRAFT_TOTAL_BUDGET_MS, ENVELOPE_MS, SECTION_ENDPOINT_BUDGET_MS, SECTION_REQUEST_MAX_BYTES, SECTION_TIMEOUT_MS } from "@sf/public-tools/content-brief/constants";
+import { COVERAGE_TIMEOUT_MS, DRAFT_REQUEST_MAX_BYTES, DRAFT_TOTAL_BUDGET_MS, ENVELOPE_MS, IMAGE_PROMPTS_TIMEOUT_MS, SECTION_ENDPOINT_BUDGET_MS, SECTION_REQUEST_MAX_BYTES, SECTION_TIMEOUT_MS } from "@sf/public-tools/content-brief/constants";
 import { CONFIRMED_BRIEF_V2_MAX_BYTES, confirmBriefV2, fingerprintBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
 import { DRAFT_V2_REQUEST_MAX_BYTES, DRAFT_V2_SECTION_REQUEST_MAX_BYTES, type DraftResultV2, type DraftV2SectionGeneration } from "@sf/public-tools/content-brief/v2-draft-contract";
 import { confirmedDraftV2Fixture, draftResultV2Fixture } from "@sf/public-tools/content-brief/v2-draft-fixtures";
@@ -12,6 +12,7 @@ import { validateDraftV2Section } from "@sf/public-tools/content-brief/v2-draft-
 import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { contentBriefFixture, withFingerprint } from "@sf/public-tools/content-brief/fixtures";
 import { handleContentDraftRunRequest, handleContentDraftSectionRequest, type ContentDraftHandlerDependencies } from "./content-draft-handler.ts";
+import { runDraftV2ImagePrompts, type DraftV2ImagePromptsInput } from "./content-draft-v2-images.ts";
 import { generateDraftV2Section, runDraftV2Coverage, type DraftV2SectionInput } from "./content-draft-v2-llm.ts";
 import type { DraftCoverageInput } from "./content-draft-llm.ts";
 import { createKeywordLlmClient, type KeywordLlmConfig, type KeywordLlmRequest } from "./keyword-llm-client.ts";
@@ -67,14 +68,24 @@ function modelDependencies(overrides: Partial<ContentDraftHandlerDependencies> =
       return { content: JSON.stringify({ items: input.questions.map((question) => ({ question_id: question.id, status: "covered", covered_in: input.sections[0]!.id, gap: null })) }), modelId: "offline-coverage", usage: { requestCount: 1, retryCount: 0, inputTokens: 70, outputTokens: 15 } };
     } },
   }));
+  const imageRequests: KeywordLlmRequest[] = [];
+  const runImagePromptsV2 = vi.fn(async (input: DraftV2ImagePromptsInput) => runDraftV2ImagePrompts(input, {
+    config: CONFIG, now: () => START, client: { complete: async (call) => {
+      imageRequests.push(call);
+      return { content: JSON.stringify({
+        hero: { prompt: "Editorial illustration of a calendar beside a clock, soft daylight, muted palette, no text.", alt: input.language === "zh" ? "日历旁放着一座时钟。" : "A calendar beside a clock." },
+        sections: input.sections.map((section) => ({ section_id: section.id, prompt: `Flat vector illustration of ${section.h2.toLowerCase()}, single focal object, no text.`, alt: input.language === "zh" ? "一件与该节相关的物品。" : `An object related to ${section.h2.toLowerCase()}.` })),
+      }), modelId: "offline-image", usage: { requestCount: 1, retryCount: 0, inputTokens: 60, outputTokens: 40 } };
+    } },
+  }));
   const deps: ContentDraftHandlerDependencies = {
     getServerAuthenticatedUser: async () => ({ status: "authenticated", userId: "user-v2", email: null, avatarUrl: null }),
     readJson: readPublicToolJson, extractClientIp: () => "203.0.113.8", acquireSlot: () => ({ acquired: true, release: () => undefined }),
     consumeQuota: async () => ({ kind: "allowed", hits: 1 }),
     generateSection: async () => { throw new Error("v1 must not be called"); }, runCoverage: async () => { throw new Error("v1 must not be called"); },
-    generateSectionV2, runCoverageV2, now: () => START, runId: () => `draft-v2-${++nextId}`, emit: () => undefined, ...overrides,
+    generateSectionV2, runCoverageV2, runImagePromptsV2, now: () => START, runId: () => `draft-v2-${++nextId}`, emit: () => undefined, ...overrides,
   };
-  return { deps, generateSectionV2, runCoverageV2, sectionRequests, coverageRequests };
+  return { deps, generateSectionV2, runCoverageV2, runImagePromptsV2, sectionRequests, coverageRequests, imageRequests };
 }
 
 function runBody(brief: ConfirmedBriefV2, extra: Record<string, unknown> = {}) {
@@ -410,5 +421,72 @@ describe("Draft v2 bounded execution and receipt deadlines", () => {
     const response = await pending;
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: { code: "draft_unavailable" } });
+  });
+});
+
+describe("Draft v2 image plan orchestration", () => {
+  it("plans one hero and one illustration per generated section after coverage, inside its own budget", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const fixture = modelDependencies();
+    const result = await readResult(await handleContentDraftRunRequest(request(runBody(confirmed)), fixture.deps), confirmed);
+    expect(result.image_prompts?.status).toBe("available");
+    if (result.image_prompts?.status !== "available") throw new Error("expected a plan");
+    expect(result.image_prompts.sections.map((section) => section.section_id)).toEqual(confirmed.outline.map((section) => section.id));
+    expect(result.image_prompts.read).toMatchObject({ status: "complete", calls: 1, model_id: "offline-image", temperature_requested: 0 });
+    // After every section and after coverage: the plan reads finished prose, never a promise of it.
+    const order = [...fixture.generateSectionV2.mock.invocationCallOrder, ...fixture.runCoverageV2.mock.invocationCallOrder];
+    expect(Math.min(...fixture.runImagePromptsV2.mock.invocationCallOrder)).toBeGreaterThan(Math.max(...order));
+    expect(fixture.imageRequests).toHaveLength(1);
+    expect(fixture.imageRequests[0]!.timeoutMs).toBeLessThanOrEqual(IMAGE_PROMPTS_TIMEOUT_MS);
+    const input = fixture.runImagePromptsV2.mock.calls[0]![0];
+    expect(input.sections.map((section) => section.id)).toEqual(confirmed.outline.map((section) => section.id));
+    expect(input.sections.every((section) => section.excerpt.length > 0)).toBe(true);
+    expect(input.deadlineAt).toBeLessThanOrEqual(START + DRAFT_TOTAL_BUDGET_MS);
+  });
+
+  it("re-derives the plan on a section rerun so a rewritten section is not illustrated from stale prose", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const fixture = modelDependencies();
+    const previous = await readResult(await handleContentDraftRunRequest(request(runBody(confirmed)), fixture.deps), confirmed);
+    const rerun = await readResult(await handleContentDraftSectionRequest(request({ brief: confirmed, section_id: "O1", previous }), fixture.deps), confirmed, previous);
+    expect(fixture.runImagePromptsV2).toHaveBeenCalledTimes(2);
+    expect(rerun.image_prompts?.status).toBe("available");
+    expect(rerun.run.budget_ms).toBe(SECTION_ENDPOINT_BUDGET_MS);
+  });
+
+  it("records nothing to illustrate as an unavailable plan without a model call", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const fixture = modelDependencies({ generateSectionV2: async () => ({ status: "failed", fail_reason: "provider_error", llm: { attempts: 1, model_id: "offline-section", temperature_requested: 0.4, temperature_effective: null, input_tokens: 10, output_tokens: 0 } }) });
+    const result = await readResult(await handleContentDraftRunRequest(request(runBody(confirmed)), fixture.deps), confirmed);
+    expect(result.image_prompts).toMatchObject({ status: "unavailable", reason: "insufficient_evidence", read: { status: "unavailable", calls: 0 } });
+    expect(fixture.runImagePromptsV2).not.toHaveBeenCalled();
+  });
+
+  it("keeps a delivered draft when the plan itself times out, and says so in the plan", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const fixture = modelDependencies({ runImagePromptsV2: async () => ({ status: "unavailable", reason: "timeout", read: { status: "unavailable", reason: "timeout", attempted: 1, calls: 1, model_id: null, input_tokens: null, output_tokens: null } }) });
+    const result = await readResult(await handleContentDraftRunRequest(request(runBody(confirmed)), fixture.deps), confirmed);
+    expect(result.run.mode).toBe("complete");
+    expect(result.run.reads.sections.ok).toBe(confirmed.outline.length);
+    expect(result.image_prompts).toMatchObject({ status: "unavailable", reason: "timeout" });
+  });
+
+  // The seam used to hand a region tag straight to the base-language table and throw.
+  it.each(["en-US", "zh-CN", "zh-Hant-TW"])("plans for a %s brief instead of refusing the region tag", async (language) => {
+    const confirmed = await confirmedDraftV2Fixture({ language });
+    const fixture = modelDependencies();
+    const result = await readResult(await handleContentDraftRunRequest(request(runBody(confirmed)), fixture.deps), confirmed);
+    expect(result.image_prompts?.status).toBe("available");
+    const data = JSON.parse(fixture.imageRequests[0]!.user) as { language: { code: string; name: string } };
+    expect(data.language.name).toBe(language.startsWith("zh") ? "Chinese" : "English");
+  });
+
+  it("counts the plan's call in the emitted receipt line", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const lines: string[] = [];
+    const fixture = modelDependencies({ emit: (line) => { lines.push(line); } });
+    await readResult(await handleContentDraftRunRequest(request(runBody(confirmed)), fixture.deps), confirmed);
+    const receipt = JSON.parse(lines.at(-1)!) as { llm_calls: number };
+    expect(receipt.llm_calls).toBe(confirmed.outline.length + 1 + 1);
   });
 });

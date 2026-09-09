@@ -44,6 +44,16 @@
 .prose li:last-child { margin-bottom: 0; }
 .prose > div:last-child ul { margin-bottom: 0; }
 
+.imageCards { display: grid; gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
+.imageCard { border: 1px solid var(--sc-border-card); border-radius: 4px; background: var(--sc-panel); padding: 12px 14px; }
+.imageCardHeader { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.imageCardHeader button { padding: 5px 10px; min-height: 32px; font-size: 11px; }
+.imageField { margin-top: 10px; }
+.imageField span { display: block; margin-bottom: 4px; font-family: var(--font-mono), monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--sc-text-secondary); }
+/* A prompt is copied verbatim into another tool, so it is shown as the exact string, wrapped, never truncated. */
+.imageField p { margin: 0; font-size: 13px; line-height: 1.65; color: var(--sc-text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.imageField p[lang="en"] { font-family: var(--font-mono), monospace; font-size: 12px; }
+
 /* With the per-sentence chips off by default this is the only place a reader
    learns which source backs a paragraph, so it is body-legible, not a footnote. */
 .paragraphSources { margin: -8px 0 16px; font-family: var(--font-sans), sans-serif; font-size: 11.5px; line-height: 1.6; color: var(--sc-text-secondary); }

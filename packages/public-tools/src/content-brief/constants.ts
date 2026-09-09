@@ -51,6 +51,12 @@ export const MODEL_TEXT_MAX_CHARS = 2_000;
 export const LLM_MAX_OUTPUT_TOKENS = 4_000; // brief
 export const SECTION_MAX_OUTPUT_TOKENS = 2_500;
 export const COVERAGE_MAX_OUTPUT_TOKENS = 1_500;
+/** hero + 最多 OUTLINE_CAP 节，每条 prompt ≤ IMAGE_PROMPT_MAX_CHARS；按 4 字节/token 留足 */
+export const IMAGE_PROMPTS_MAX_OUTPUT_TOKENS = 2_500;
+/** 图像模型的提示词；写长了模型反而抓不住主体 */
+export const IMAGE_PROMPT_MAX_CHARS = 600;
+/** 替代文本；描述画面而不是复述文章 */
+export const IMAGE_ALT_MAX_CHARS = 200;
 export const MAX_BYTES_PER_TOKEN = 4;
 /** 句级标注（claim / refs / support_count）相对纯文本的膨胀 */
 export const ANNOTATION_OVERHEAD = 2;
@@ -143,9 +149,11 @@ export const SECTION_TIMEOUT_MS = 20_000;
 export const SECTION_MAX_ATTEMPTS = 2;
 export const DRAFT_TOTAL_BUDGET_MS = 120_000; // route maxDuration = 300
 export const COVERAGE_TIMEOUT_MS = 20_000;
-/** = SECTION_TIMEOUT_MS × SECTION_MAX_ATTEMPTS + COVERAGE_TIMEOUT_MS + ENVELOPE_MS；route maxDuration = 300 */
+/** 配图提示词那一次独立调用的上限；和覆盖度一样在章节之后、整篇为单位 */
+export const IMAGE_PROMPTS_TIMEOUT_MS = 15_000;
+/** = SECTION_TIMEOUT_MS × SECTION_MAX_ATTEMPTS + COVERAGE_TIMEOUT_MS + IMAGE_PROMPTS_TIMEOUT_MS + ENVELOPE_MS；route maxDuration = 300 */
 export const SECTION_ENDPOINT_BUDGET_MS =
-  SECTION_TIMEOUT_MS * SECTION_MAX_ATTEMPTS + COVERAGE_TIMEOUT_MS + ENVELOPE_MS;
+  SECTION_TIMEOUT_MS * SECTION_MAX_ATTEMPTS + COVERAGE_TIMEOUT_MS + IMAGE_PROMPTS_TIMEOUT_MS + ENVELOPE_MS;
 /** 客户端软上限；服务端只认配额 */
 export const SECTION_RERUN_SOFT_MAX = 7;
 

@@ -4600,6 +4600,28 @@
         "profileDerivation": { "declared": "声明事实", "observed": "档案中的观测事实", "computed": "档案中的计算事实", "inferred": "推断事实；仅用于立场" },
         "sourceLegend": "颜色表示证据层级，不代表事实已核实：自有页面与非推断的档案事实属于一手资料，竞品摘录属于第三方。模型正文与推断性立场仍标为模型；混合引用保留两类来源，PAA 不充当事实证据。",
         "paragraphSources": "来源：",
+        "images": {
+          "title": "配图提示词",
+          "boundary": "本工具不生成图片。提示词为英文（图像模型读英文最准），替代文本为文章语言；把每条提示词交给你自己的图像工具。",
+          "hero": "封面图",
+          "section": "配图 · {id} · {title}",
+          "prompt": "提示词",
+          "alt": "替代文本",
+          "copy": "复制提示词",
+          "copied": "已复制",
+          "copyFailed": "浏览器拒绝了剪贴板访问，请检查权限后重试。",
+          "unavailable": "本次未能生成配图提示词：{reason}。正文不受影响。",
+          "reason": {
+            "insufficient_evidence": "没有成功生成的正文可供配图",
+            "timeout": "预算耗尽",
+            "not_configured": "模型未配置",
+            "provider_error": "上游返回错误",
+            "validation_failed": "模型输出未通过校验",
+            "unsupported_language": "该语言暂不支持"
+          },
+          "markdownHeading": "配图提示词",
+          "markdownNote": "提示词为英文，供图像模型使用；替代文本随图发布。本工具不生成图片。"
+        },
         "collapse": "收起",
         "expand": "展开",
         "collapseSection": "收起章节：{section}",
@@ -4663,7 +4685,7 @@
         "copyJson": "复制初稿 JSON",
         "downloadJson": "下载初稿 JSON",
         "relatedLinks": "相关链接",
-        "exportNote": "Markdown 保留全部 H2、真实生成的 H3 与正文、失败或跳过章节的说明，以及已确认的相关链接，不包含主张注释。JSON 原样保留完整结果与指纹。",
+        "exportNote": "Markdown 保留全部 H2、真实生成的 H3 与正文（含列表）、失败或跳过章节的说明、已确认的相关链接，以及末尾的配图提示词，不包含主张注释。JSON 原样保留完整结果与指纹。",
         "export": {
           "copied": "已复制到剪贴板。",
           "downloaded": "已准备下载。",

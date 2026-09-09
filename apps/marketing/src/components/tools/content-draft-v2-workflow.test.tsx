@@ -30,7 +30,10 @@ const coverageRead = { status: "complete" as const, calls: 1, model_id: "offline
 const noCoverage = { status: "unavailable" as const, reason: "insufficient_evidence" as const, attempted: 0, calls: 0, model_id: null, input_tokens: null, output_tokens: null };
 function exportNotes(locale: "en" | "zh" = "en") {
   const catalog = (locale === "en" ? en : zh).tools.contentDraft;
-  return { failed: (reason: string) => catalog.sectionFail[reason as keyof typeof catalog.sectionFail], skipped: catalog.doc.skippedBody, relatedLinks: locale === "en" ? "Related links" : "相关链接" };
+  return {
+    failed: (reason: string) => catalog.sectionFail[reason as keyof typeof catalog.sectionFail], skipped: catalog.doc.skippedBody, relatedLinks: locale === "en" ? "Related links" : "相关链接",
+    imagePrompts: catalog.v2.images.markdownHeading, imagePromptsNote: catalog.v2.images.markdownNote, imageHero: catalog.v2.images.hero, imagePrompt: catalog.v2.images.prompt, imageAlt: catalog.v2.images.alt,
+  };
 }
 async function confirmedWithLinks(url = "https://owned.test/dates(a)[b]?next=(x)&tag=[v]#section(2)") {
   const original = await confirmedDraftV2Fixture({ action: "update" });
@@ -46,7 +49,7 @@ async function confirmedWithLinks(url = "https://owned.test/dates(a)[b]?next=(x)
   return { confirmed: confirmed.value, url };
 }
 
-async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolean; skipped?: boolean; empty?: boolean; unavailable?: boolean; previous?: DraftResultV2; settings?: DraftV2Settings; cjk?: boolean; claims?: boolean; bullets?: boolean; quality?: "none" | "partial" } = {}) {
+async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolean; skipped?: boolean; empty?: boolean; unavailable?: boolean; previous?: DraftResultV2; settings?: DraftV2Settings; cjk?: boolean; claims?: boolean; bullets?: boolean; images?: "available" | "unavailable"; quality?: "none" | "partial" } = {}) {
   const currentSettings = options.settings ?? settings;
   const sections: DraftV2Section[] = confirmed.outline.map((heading, index) => {
     if ((options.empty || options.skipped) && index === 1) return { ...heading, status: "skipped" };
@@ -71,8 +74,15 @@ async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolea
     if (!body.ok) throw new Error(body.path);
     return { ...heading, status: "ok", body: body.value, llm };
   });
+  const okIds = sections.flatMap((section) => section.status === "ok" ? [section.id] : []);
+  const imageRead = { status: "complete" as const, calls: 1, model_id: "offline-image", temperature_requested: 0, temperature_effective: null, input_tokens: 60, output_tokens: 40 };
   const input: AssembleDraftV2Input = {
     confirmed, settings: currentSettings, sections,
+    ...(options.images === "available" ? { image_prompts: {
+      status: "available" as const, read: imageRead,
+      hero: { prompt: "Wide editorial illustration of a calendar beside a clock, soft daylight, no text.", alt: options.cjk ? "日历旁放着一座时钟。" : "A calendar beside a clock." },
+      sections: okIds.map((id) => ({ section_id: id, prompt: `Flat vector illustration for ${id}, single focal object, no text.`, alt: `An object for ${id}.` })),
+    } } : options.images === "unavailable" ? { image_prompts: { status: "unavailable" as const, reason: "timeout" as const, read: noCoverage } } : {}),
     coverage: { items: options.empty ? null : options.unavailable ? [] : confirmed.brief.generated!.research.questions.map((question, index) => options.quality ? ({ question_id: question.id, status: options.quality === "partial" && index === 0 ? "partial" : "none", covered_in: options.quality === "partial" && index === 0 ? "O1" : null, gap: "Explain the practical reporting checks." }) : ({ question_id: question.id, status: "covered", covered_in: options.failed ? "O2" : confirmed.outline.find((heading) => heading.answers.includes(question.id))!.id, gap: null })), reads: options.empty ? noCoverage : coverageRead },
     run: { run_id: options.previous ? "draft-rerun" : "draft-fixture", collected_at: "2026-08-31T02:00:00.000Z", elapsed_ms: 100, budget_ms: options.previous ? SECTION_ENDPOINT_BUDGET_MS : DRAFT_TOTAL_BUDGET_MS, rerun: options.previous ? { section_id: "O1", previous_run_id: options.previous.run.run_id, previous_fingerprint: options.previous.run.fingerprint } : null },
   };
@@ -296,6 +306,38 @@ describe("Draft v2 truthful results and exact exports", () => {
     expect(lists[0]!.querySelector('[data-claim="bound"]')).not.toBeNull();
     const markdown = contentDraftV2Markdown(result, confirmed, exportNotes());
     expect(markdown).toContain("To create a chart, enter three things.\n\n- Enter the birth date.\n- Enter the birth time.\n\nThen read the notes below the form.");
+  });
+  it.each(["en", "zh"] as const)("shows the image plan as copyable cards and exports it at the end of the Markdown (%s)", async (locale) => {
+    const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed, { images: "available" }); const { host } = await render(confirmed, { locale, result });
+    const section = node(host, "[data-image-prompts]");
+    expect(section.getAttribute("data-status")).toBe("available");
+    expect(section.textContent).toContain(locale === "en" ? "This tool makes no images" : "本工具不生成图片");
+    const cards = Array.from(host.querySelectorAll<HTMLElement>("[data-image-prompt]"), (card) => card.getAttribute("data-image-prompt"));
+    expect(cards).toEqual(["hero", ...confirmed.outline.map((item) => item.id)]);
+    // The prompt is the exact string the owner will paste elsewhere.
+    expect(node(host, '[data-image-prompt="hero"] [data-image-prompt-text]').textContent).toBe("Wide editorial illustration of a calendar beside a clock, soft daylight, no text.");
+    expect(node(host, '[data-image-prompt="hero"] [data-image-prompt-text]').getAttribute("lang")).toBe("en");
+    const writeText = vi.fn().mockResolvedValue(undefined); Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    await click(host, '[data-copy-image-prompt="hero"]');
+    expect(writeText).toHaveBeenCalledWith("Wide editorial illustration of a calendar beside a clock, soft daylight, no text.");
+    expect(node(host, '[data-copy-image-prompt="hero"]').textContent).toBe(locale === "en" ? "Copied" : "已复制");
+    const markdown = contentDraftV2Markdown(result, confirmed, exportNotes(locale));
+    const heading = locale === "en" ? "## Image prompts" : "## 配图提示词";
+    expect(markdown).toContain(heading);
+    expect(markdown.indexOf(heading)).toBeGreaterThan(markdown.lastIndexOf("## " + confirmed.outline.at(-1)!.h2));
+    expect(markdown).toContain(`### ${confirmed.outline[0]!.id} · ${confirmed.outline[0]!.h2}`);
+    expect(markdown).toContain("Flat vector illustration for O1, single focal object, no text.");
+  });
+  it("says why there is no plan without touching the draft, and shows nothing for a draft that never had one", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const unavailable = await resultFor(confirmed, { images: "unavailable" }); const first = await render(confirmed, { result: unavailable });
+    expect(node(first.host, "[data-image-prompts-unavailable]").textContent).toMatch(/budget exhausted/i);
+    expect(first.host.querySelectorAll("[data-image-prompt]")).toHaveLength(0);
+    expect(contentDraftV2Markdown(unavailable, confirmed, exportNotes())).not.toContain("## Image prompts");
+    // A draft assembled before image prompts existed carries no key and renders no section at all.
+    const legacy = await resultFor(confirmed); const second = await render(confirmed, { result: legacy });
+    expect(Object.hasOwn(legacy, "image_prompts")).toBe(false);
+    expect(second.host.querySelector("[data-image-prompts]")).toBeNull();
   });
   it.each(["en", "zh"] as const)("names each paragraph's sources once beneath it without the reader opening annotations (%s)", async (locale) => {
     const confirmed = await confirmedDraftV2Fixture({ action: "update" }); const result = await resultFor(confirmed, { claims: true }); const { host } = await render(confirmed, { locale, result });

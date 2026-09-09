@@ -47,7 +47,10 @@ function markdownLinkLabel(text: string) { return text.replace(/&/gu, "&amp;").r
 function markdownLinkUrl(url: string) { return url.replace(/[()[\]<>\\]/gu, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`).replace(/&/gu, "&amp;"); }
 
 /** Full outline and real prose, with local absence notes and one confirmed related-links block. */
-export function contentDraftV2Markdown(result: DraftResultV2, confirmed: ConfirmedBriefV2, notes: MarkdownNotes & { readonly relatedLinks: string }): string {
+export interface ImagePromptNotes {
+  readonly imagePrompts: string; readonly imagePromptsNote: string; readonly imageHero: string; readonly imagePrompt: string; readonly imageAlt: string;
+}
+export function contentDraftV2Markdown(result: DraftResultV2, confirmed: ConfirmedBriefV2, notes: MarkdownNotes & { readonly relatedLinks: string } & ImagePromptNotes): string {
   const sections = result.sections.map((section) => {
     if (section.status === "failed") return `## ${section.h2}\n\n> ${notes.failed(section.fail_reason)}`;
     if (section.status === "skipped") return `## ${section.h2}\n\n> ${notes.skipped}`;
@@ -60,6 +63,16 @@ export function contentDraftV2Markdown(result: DraftResultV2, confirmed: Confirm
   });
   const links = confirmedRelatedLinks(confirmed);
   if (links.length > 0) sections.push(`## ${notes.relatedLinks}\n\n${links.map((link) => `- [${markdownLinkLabel(link.anchor)}](${markdownLinkUrl(link.url)})`).join("\n")}`);
+  const plan = result.image_prompts;
+  if (plan?.status === "available") {
+    const card = (heading: string, image: { readonly prompt: string; readonly alt: string }) =>
+      `### ${heading}\n\n${notes.imagePrompt}: ${image.prompt}\n\n${notes.imageAlt}: ${image.alt}`;
+    const titled = new Map(result.sections.map((section) => [section.id, section.h2]));
+    sections.push([
+      `## ${notes.imagePrompts}`, notes.imagePromptsNote, card(notes.imageHero, plan.hero),
+      ...plan.sections.map((image) => card(`${image.section_id} · ${titled.get(image.section_id) ?? image.section_id}`, image)),
+    ].join("\n\n"));
+  }
   return sections.join("\n\n");
 }
 
@@ -144,7 +157,29 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
     return entries;
   }
   const relatedLinks = confirmedRelatedLinks(confirmed);
-  const notes = { ...markdownNotes(base), relatedLinks: t("relatedLinks") };
+  const notes = {
+    ...markdownNotes(base), relatedLinks: t("relatedLinks"),
+    imagePrompts: t("images.markdownHeading"), imagePromptsNote: t("images.markdownNote"), imageHero: t("images.hero"), imagePrompt: t("images.prompt"), imageAlt: t("images.alt"),
+  };
+  // Per-card copy receipt; a new result is a new set of cards, so it resets with it.
+  const [copiedImage, setCopiedImage] = useState<string | null>(null);
+  useEffect(() => { setCopiedImage(null); }, [result]);
+  async function copyImagePrompt(id: string, prompt: string) {
+    setCopiedImage(null);
+    try { await navigator.clipboard.writeText(prompt); if (mounted.current) setCopiedImage(id); }
+    catch { if (mounted.current) setCopiedImage(`failed:${id}`); }
+  }
+  const imagePlan = result.image_prompts;
+  const sectionTitle = new Map(result.sections.map((section) => [section.id, section.h2]));
+  function imageCard(id: string, label: string, image: { readonly prompt: string; readonly alt: string }) {
+    return <li key={id} data-image-prompt={id} className={styles.imageCard}>
+      <div className={styles.imageCardHeader}><span className={ID_CHIP}>{label}</span>
+        <button type="button" data-copy-image-prompt={id} className={ACTION_BUTTON} onClick={() => void copyImagePrompt(id, image.prompt)}>{t(copiedImage === id ? "images.copied" : "images.copy")}</button></div>
+      <div className={styles.imageField}><span>{t("images.prompt")}</span><p data-image-prompt-text lang="en">{image.prompt}</p></div>
+      <div className={styles.imageField}><span>{t("images.alt")}</span><p data-image-alt-text>{image.alt}</p></div>
+      {copiedImage === `failed:${id}` ? <p role="alert" className={`mt-2 ${BODY_TEXT} text-brand-error`}>{t("images.copyFailed")}</p> : null}
+    </li>;
+  }
 
   function finishExport(state: ExportState, identity: ExportIdentity, attempt: number) {
     if (mounted.current && sameExportIdentity(liveExportIdentity.current, identity) && exportAttempt.current === attempt) setExportReceipt({ identity, state });
@@ -213,6 +248,17 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
         </section>;
       })}</div>
     </section>
+
+    {imagePlan === undefined ? null : <section data-image-prompts data-status={imagePlan.status} aria-label={t("images.title")}>
+      <h2 className={`${SECTION_TITLE} ${RULE}`}>{t("images.title")}</h2>
+      <p className={`mt-3 ${BODY_TEXT}`}>{t("images.boundary")}</p>
+      {imagePlan.status === "available"
+        ? <ul className={styles.imageCards}>{[
+          imageCard("hero", t("images.hero"), imagePlan.hero),
+          ...imagePlan.sections.map((image) => imageCard(image.section_id, t("images.section", { id: image.section_id, title: sectionTitle.get(image.section_id) ?? image.section_id }), image)),
+        ]}</ul>
+        : <p data-image-prompts-unavailable className={`mt-3 ${BODY_TEXT}`}>{t("images.unavailable", { reason: t(`images.reason.${imagePlan.reason}`) })}</p>}
+    </section>}
 
     {relatedLinks.length > 0 ? <section data-related-links><h2 className={`${SECTION_TITLE} ${RULE}`}>{t("relatedLinks")}</h2><ul className="mt-3 space-y-2">{relatedLinks.map((link) => <li key={link.pageRef}><a data-related-link href={link.url} target="_blank" rel="noopener noreferrer" className="text-[13px] text-brand-accent-text underline underline-offset-2">{link.anchor}</a></li>)}</ul></section> : null}
 
