@@ -50,6 +50,7 @@ import { createGeoKnowledgeResourceReader } from "./kb-enrichment-deps.ts";
 import {
   pageData,
   type GeoKnowledgeEvidenceReadResource,
+  machineResourceAnsweredRequest,
 } from "./kb-knowledge-evidence.ts";
 import { GEO_KNOWLEDGE_LIMITS } from "./kb-knowledge-shape.ts";
 import { geoV2JsonbBytes } from "./kb-v2-json.ts";
@@ -606,10 +607,10 @@ async function recordMachineSignals(input: {
     if (read.kind !== "ok") {
       if (read.reason === "rate_limited") continue;
       status = { kind: "unavailable", reason: storableReason(read.reason) };
-    } else if (read.url !== url || !machineContentTypeMatches(resource.kind, read.contentType)) {
+    } else if (!machineResourceAnsweredRequest(url, read.url) || !machineContentTypeMatches(resource.kind, read.contentType)) {
       /**
        * Two ways a 200 is not this file. The content type catches the SPA shell
-       * served at `/llms.txt`; `read.url !== url` catches the same-host
+       * served at `/llms.txt`; the address check catches the same-host
        * redirect that answered from somewhere else. Both would otherwise be
        * filed as `ok` under the address we asked about -- the ledger saying a
        * site publishes a file at an address where it publishes nothing, which

@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import * as cheerio from "cheerio";
 import { z } from "zod";
 
+import { canonicalCrawlTargetKey } from "../tools/crawl-cache.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import { geoV2JsonbBytes } from "./kb-v2-json.ts";
 
@@ -144,6 +145,39 @@ function walkJsonLd(value: unknown, types: Set<string>, faq: Array<{ question: s
  * answer to this question, and the owner's card and the assembled evidence
  * would disagree about the same bytes.
  */
+/**
+ * Whether a 200 answered the machine resource that was actually asked for.
+ *
+ * A machine resource is an address, not a document: `/robots.txt` means the
+ * file at that path, and a 200 arriving from `/signup` is a site answering a
+ * question nobody asked. Recording that as `robots` would tell the owner they
+ * publish a file where they publish nothing -- the inverse of what these rows
+ * exist to say. So path and query must survive the hop exactly.
+ *
+ * The host may move between an apex and its `www` sibling, and only there. That
+ * hop is the one the transport is documented to permit and the one the crawl
+ * quota already treats as a single target, so `canonicalCrawlTargetKey` is
+ * asked rather than a second copy of the rule being written here. Comparing raw
+ * hrefs instead is what made astrologywiki.com report `invalid_response` for a
+ * robots.txt it serves correctly: the fetch followed the apex to `www`, and the
+ * final URL no longer matched the string that had been requested.
+ *
+ * Everything else still fails: a different site, a different path, a query the
+ * request did not carry, or a URL that does not parse.
+ */
+export function machineResourceAnsweredRequest(requestedUrl: string, finalUrl: string): boolean {
+  let requested: URL, final: URL;
+  try {
+    requested = new URL(requestedUrl);
+    final = new URL(finalUrl);
+  } catch { return false; }
+  const requestedKey = canonicalCrawlTargetKey(requested.href);
+  return requestedKey !== null && requestedKey !== "" &&
+    requestedKey === canonicalCrawlTargetKey(final.href) &&
+    requested.pathname === final.pathname &&
+    requested.search === final.search;
+}
+
 export function pageData(body: string, pageUrl: string): Page & { excerpts: string[] } {
   const page = new URL(pageUrl); const $ = cheerio.load(body); const candidates = new Map<Intent, string>();
   $("a[href]").each((_, element) => { const url = asPublicUrl($(element).attr("href") ?? "", page, true); if (url === null) return; const intent = intentFor(clean($(element).text()), url); if (intent !== null && (candidates.get(intent) === undefined || url < candidates.get(intent)!)) candidates.set(intent, url); });
@@ -213,7 +247,7 @@ export async function collectGeoKnowledgeEvidenceV1(input: { targetUrl: string; 
   for (const [path, kind] of [["robots.txt", "robots"], ["sitemap.xml", "sitemap"], ["llms.txt", "llms"]] as const) {
     const url = new URL(path, target).toString(); if (sources.some((source) => source.kind === kind && source.url === url && source.availability !== "unavailable")) continue; if (!canRead()) { addSource(unavailableSource(kind, url, "timeout")); continue; }
     const result = await dependencies.readResource({ url, expected: kind, timeoutMs: timeout() });
-    if (!responseIsValid(result) || result.url !== url || !expectedContentType(kind, responseIsValid(result) ? result.contentType : "") || responseIsValid(result) && Buffer.byteLength(result.body, "utf8") > GEO_KNOWLEDGE_EVIDENCE_LIMITS.pageBytes) { const reason = result && typeof result === "object" && (result as { kind?: unknown }).kind === "unavailable" ? unavailableReason((result as { reason?: unknown }).reason) : "invalid_response"; addSource(unavailableSource(kind, url, reason)); continue; }
+    if (!responseIsValid(result) || !machineResourceAnsweredRequest(url, result.url) || !expectedContentType(kind, responseIsValid(result) ? result.contentType : "") || responseIsValid(result) && Buffer.byteLength(result.body, "utf8") > GEO_KNOWLEDGE_EVIDENCE_LIMITS.pageBytes) { const reason = result && typeof result === "object" && (result as { kind?: unknown }).kind === "unavailable" ? unavailableReason((result as { reason?: unknown }).reason) : "invalid_response"; addSource(unavailableSource(kind, url, reason)); continue; }
     const lines = result.body.split(/\r?\n/u).map(clean).filter(Boolean);
     if ((kind === "robots" || kind === "llms") && lines.length === 0 || kind === "sitemap" && result.body.trim() === "") { addSource(unavailableSource(kind, url, "not_published")); continue; }
     const validLocations = kind === "sitemap" ? [...new Set([...result.body.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/giu)].map((match) => asPublicUrl(match[1]!, target)).filter((location): location is string => location !== null))] : []; const locations = validLocations.slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.sitemapLocations);

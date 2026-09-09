@@ -801,3 +801,35 @@ describe("GEO knowledge evidence collection", () => {
     expect(() => parseGeoKnowledgeEvidenceV1(rehash(invalidEndpoint))).toThrow(/robots|source/i);
   });
 });
+
+describe("machine resource address check", () => {
+  const check = evidenceModule.machineResourceAnsweredRequest;
+
+  it("accepts the apex/www hop the transport is allowed to follow", () => {
+    // The live case: astrologywiki.com serves robots.txt correctly and 307s to
+    // its www sibling. Comparing hrefs called that `invalid_response` -- the
+    // ledger saying the site publishes nothing at an address it serves.
+    expect(check("https://astrologywiki.com/robots.txt", "https://www.astrologywiki.com/robots.txt")).toBe(true);
+    expect(check("https://www.acme.test/sitemap.xml", "https://acme.test/sitemap.xml")).toBe(true);
+    expect(check("https://acme.test/robots.txt", "https://acme.test/robots.txt")).toBe(true);
+  });
+
+  it("refuses a 200 that came from somewhere else", () => {
+    // The reason the check exists: a site answering every unknown path from one
+    // page would otherwise be recorded as publishing robots.txt.
+    expect(check("https://acme.test/robots.txt", "https://acme.test/signup")).toBe(false);
+    expect(check("https://acme.test/robots.txt", "https://acme.test/robots.txt?ref=x")).toBe(false);
+    expect(check("https://acme.test/robots.txt", "https://other.test/robots.txt")).toBe(false);
+    expect(check("https://acme.test/robots.txt", "https://www.other.test/robots.txt")).toBe(false);
+    // Only one label comes off, so this is a different host, not the sibling.
+    expect(check("https://acme.test/robots.txt", "https://www.www.acme.test/robots.txt")).toBe(false);
+  });
+
+  it("fails closed on anything that does not parse into a host", () => {
+    expect(check("not a URL", "https://acme.test/robots.txt")).toBe(false);
+    expect(check("https://acme.test/robots.txt", "not a URL")).toBe(false);
+    // A host-less scheme normalises to the empty string; two of those must not
+    // compare equal to each other.
+    expect(check("mailto:a@acme.test", "data:text/plain,hi")).toBe(false);
+  });
+});
