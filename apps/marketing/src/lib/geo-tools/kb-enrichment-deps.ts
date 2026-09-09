@@ -108,7 +108,15 @@ function sameHostHttpsPreservingRedirect(fromUrl: string, toUrl: string): boolea
     const fromKey = canonicalCrawlTargetKey(from.href), toKey = canonicalCrawlTargetKey(to.href);
     // `fromKey` must be a real host: a scheme that carries no host (mailto:,
     // data:) normalises to "", and two of those compare equal to each other.
-    return fromKey !== null && fromKey !== "" && fromKey === toKey && !(from.protocol === "https:" && to.protocol !== "https:");
+    //
+    // Port is compared separately because the gate's key does not carry one --
+    // it answers on hostname alone, by design, since an apex and its `www` are
+    // one traffic budget whatever port they serve. Reusing that key as the
+    // whole origin test would let a site redirect this collection onto any
+    // other port it listens on, and the transport's DNS/IP guard cannot object:
+    // the hostname never changed, so it resolves to the same permitted address.
+    return fromKey !== null && fromKey !== "" && fromKey === toKey && from.port === to.port
+      && !(from.protocol === "https:" && to.protocol !== "https:");
   } catch { return false; }
 }
 
