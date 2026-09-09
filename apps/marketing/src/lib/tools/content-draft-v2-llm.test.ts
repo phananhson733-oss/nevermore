@@ -68,8 +68,9 @@ describe("Draft v2 frozen section generation", () => {
     expect(JSON.parse(requests[0]!.user).settings.product_mention).toBe(product_mention);
     expect(requests[0]!.system).toContain("settings.product_mention controls promotion of the target product only");
     expect(requests[0]!.system).toContain("Source attribution is not promotion and must not be removed in none or gap_only mode");
-    expect(requests[0]!.system).toContain("include the exact source_domain value from its supporting page_unit in the same sentence");
-    expect(requests[0]!.system).toContain('"the calculator", "the form" or "supplied instructions" alone are not attribution');
+    expect(requests[0]!.system).toContain("the first sentence of each run of consecutive sentences drawn from one page_unit's page must carry that page's exact source_domain value");
+    expect(requests[0]!.system).toContain("As soon as a sentence draws on a different page, name that new domain again");
+    expect(requests[0]!.system).toContain('bare "the calculator" opening a run is not attribution');
   });
 
   it("derives each private source_domain from the frozen final URL after redirects without changing evidence", async () => {
@@ -466,7 +467,11 @@ describe("Draft v2 frozen section generation", () => {
   });
 
   it("rechecks the exact prompt byte cap on retry without dropping any first-attempt scope", async () => {
-    const facts: ProfileFact[] = Array.from({ length: 32 }, (_, index) => ({ id: `P${index + 1}`, field: `field${index}${"界".repeat(840)}`, text: "Observed date comparison feature.", derivation: "declared", provenance: { method: "observed", origin: "product_profile" } }));
+    // Sized from the live system prompt so an edit to the rules moves the fixture
+    // with the ceiling instead of silently pushing the base case over it.
+    const systemBytes = new TextEncoder().encode(buildDraftV2SectionSystemPrompt()).byteLength;
+    const fieldChars = Math.floor((DRAFT_V2_PROMPT_MAX_BYTES - systemBytes - 12_000) / (32 * 3));
+    const facts: ProfileFact[] = Array.from({ length: 32 }, (_, index) => ({ id: `P${index + 1}`, field: `field${index}${"界".repeat(fieldChars)}`, text: "Observed date comparison feature.", derivation: "declared", provenance: { method: "observed", origin: "product_profile" } }));
     const initial = await confirmed({}, (brief) => withFacts(brief, facts));
     const scope = buildDraftV2SectionScope(initial, "O1", SETTINGS);
     if (!scope.ok) throw new Error(scope.path);
@@ -517,7 +522,10 @@ describe("Draft v2 prompt contract", () => {
       do_not_cover: [{ ...value.brief.generated!.do_not_cover[0], url: "https://owned.example/reporting" }],
       internal_links: [{ ...value.brief.generated!.internal_links[0], url: "https://owned.example/reporting" }],
     });
-    expect(data.section).toEqual(scope.value.section);
+    // The prompt adds where the section sits so the first and last may carry the
+    // article's opening and closing paragraph; nothing else about it changes.
+    expect(data.section).toEqual({ ...scope.value.section, position: "only" });
+    expect(data.outline).toEqual(value.outline.map((item) => item.h2));
     expect(data.questions).toEqual(scope.value.questions);
     expect(data.page_plan.steps).toEqual(scope.value.steps);
     expect(data.page_units.map((unit: { id: string }) => unit.id)).toEqual(["U1"]);

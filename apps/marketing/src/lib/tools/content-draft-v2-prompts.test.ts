@@ -38,8 +38,8 @@ function maximalPages(language: "zh" | "en"): readonly ResearchPage[] {
   });
 }
 
-/** One section whose single question sources every unit: the largest scope a brief can ask for. */
-async function maximalSectionPrompt(language: "zh" | "en") {
+/** A confirmed brief with `sections` H2s, each answering its own question. */
+async function confirmedBrief(language: "zh" | "en", sections: number) {
   const research = buildResearchBundle(maximalPages(language), []);
   if (!research.ok) throw new Error(`bundle ${research.path}`);
   const pageUnits = research.value.units.filter((unit) => unit.kind === "page");
@@ -54,10 +54,18 @@ async function maximalSectionPrompt(language: "zh" | "en") {
     },
     candidates: [],
   };
+  // One section takes every unit so the widest possible scope is exercised; any
+  // further section anchors on its own unit so the outline has real positions.
   const model: ModelBriefV2Output = {
     research: {
-      questions: [{ anchor: pageUnits[0]!.id, q: "Question one?", sources: pageUnits.map((unit) => unit.id) }],
-      outline: [{ h2: "Section one", h3: [], answers: [pageUnits[0]!.id] }],
+      questions: Array.from({ length: sections }, (_unused, index) => ({
+        anchor: pageUnits[index]!.id,
+        q: `Question ${index + 1}?`,
+        sources: index === 0 ? pageUnits.map((unit) => unit.id) : [pageUnits[index]!.id],
+      })),
+      outline: Array.from({ length: sections }, (_unused, index) => ({
+        h2: `Section ${index + 1}`, h3: [], answers: [pageUnits[index]!.id],
+      })),
     },
     intent: { value: "informational", rationale: "Explain." },
     format: { value: "guide", rationale: "Sequence." },
@@ -87,12 +95,25 @@ async function maximalSectionPrompt(language: "zh" | "en") {
     outline: generated.value.research.outline, revision: 1, confirmed_at: collectedAt, resolution: "accept_recommendation",
   });
   if (!confirmed.ok) throw new Error(`confirm ${confirmed.path}`);
-  const scope = buildDraftV2SectionScope(confirmed.value, generated.value.research.outline[0]!.id, settings);
+  return confirmed.value;
+}
+
+function sectionPrompt(confirmed: Awaited<ReturnType<typeof confirmedBrief>>, sectionId: string) {
+  const scope = buildDraftV2SectionScope(confirmed, sectionId, settings);
   if (!scope.ok) throw new Error(`scope ${scope.path}`);
   const system = buildDraftV2SectionSystemPrompt();
-  const user = buildDraftV2SectionUserPrompt({ confirmed: confirmed.value, scope: scope.value, settings });
-  // The seam measures exactly this envelope before sending; measure the same thing.
-  return { bytes: encoder.encode(JSON.stringify({ system, user })).byteLength, units: scope.value.page_units.size };
+  const user = buildDraftV2SectionUserPrompt({ confirmed, scope: scope.value, settings });
+  return {
+    // The seam measures exactly this envelope before sending; measure the same thing.
+    bytes: encoder.encode(JSON.stringify({ system, user })).byteLength,
+    units: scope.value.page_units.size,
+    data: JSON.parse(user) as { section: { position: string }; outline: readonly string[] },
+  };
+}
+
+async function maximalSectionPrompt(language: "zh" | "en") {
+  const confirmed = await confirmedBrief(language, 1);
+  return sectionPrompt(confirmed, confirmed.outline[0]!.id);
 }
 
 describe("Draft v2 section prompt budget", () => {
@@ -115,5 +136,36 @@ describe("Draft v2 section prompt budget", () => {
 
   it("prices the budget below the ceiling it protects", () => {
     expect(SECTION_EVIDENCE_MAX_BYTES).toBeLessThan(DRAFT_V2_PROMPT_MAX_BYTES);
+  });
+});
+
+describe("Draft v2 section position", () => {
+  // Only the ends of the confirmed article may open or close it. A middle section
+  // that writes an introduction produces an article with three of them.
+  it("marks the ends of a multi-section article and nothing between them", async () => {
+    const confirmed = await confirmedBrief("en", 3);
+    const positions = confirmed.outline.map((section) => sectionPrompt(confirmed, section.id).data.section.position);
+    expect(positions).toEqual(["first", "middle", "last"]);
+  });
+
+  it("marks a single-section article as both its opening and its close", async () => {
+    const confirmed = await confirmedBrief("en", 1);
+    expect(sectionPrompt(confirmed, confirmed.outline[0]!.id).data.section.position).toBe("only");
+  });
+
+  // Position is read from the confirmed article, never from the sections the
+  // visitor ticked, so a single-section rerun writes the same shape as the run
+  // that produced it and skipping section one promotes nobody.
+  it("does not move with the section selection", async () => {
+    const confirmed = await confirmedBrief("en", 3);
+    const last = confirmed.outline.at(-1)!.id;
+    expect(sectionPrompt(confirmed, last).data.section.position).toBe("last");
+    expect(sectionPrompt(confirmed, confirmed.outline[1]!.id).data.section.position).toBe("middle");
+  });
+
+  it("shows every confirmed H2 so a section can avoid another's material", async () => {
+    const confirmed = await confirmedBrief("en", 3);
+    expect(sectionPrompt(confirmed, confirmed.outline[1]!.id).data.outline)
+      .toEqual(["Section 1", "Section 2", "Section 3"]);
   });
 });
