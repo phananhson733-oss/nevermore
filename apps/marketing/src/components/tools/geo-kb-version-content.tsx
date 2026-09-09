@@ -11,6 +11,7 @@ import { normalizeAccountWebsiteUrl } from "../../lib/account-websites/contracts
 import { GeoKbInheritedProfile } from "./geo-kb-profile.tsx";
 import { geoKbV2Copy, type GeoKbV2Copy } from "./geo-kb-v2-copy.ts";
 import type { GeoKnowledgePackV1 } from "../../lib/geo-tools/kb-knowledge-pack-contract.ts";
+import type { GeoKnowledgePackV2 } from "../../lib/geo-tools/kb-knowledge-pack-v2-contract.ts";
 import { GeoKnowledgePack } from "./geo-knowledge-pack.tsx";
 
 /** Depth of the panel headings, so each host can keep one unbroken outline. */
@@ -22,7 +23,8 @@ export interface GeoKbVersionContentProps {
   readonly payload: GeoKbPayloadV2;
   readonly questionSet: GeoQuestionSetV2;
   readonly context: GeoSnapshotContextV2;
-  readonly knowledgePack?: GeoKnowledgePackV1 | null;
+  /** v1 for historical versions, v2 once a published version carries decisions. */
+  readonly knowledgePack?: GeoKnowledgePackV1 | GeoKnowledgePackV2 | null;
   readonly locale: string;
 }
 /** The same section card the editor stage draws, at whatever depth the host set. */

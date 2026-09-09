@@ -1,9 +1,28 @@
 // @input -- frozen or draft question text and its owned knowledge-base payload
 // @output -- bounded language/entity issues; never rewritten text or inferred facts
 // @pos -- browser-safe quality checks shared by freezing and Brief generation
-import type { AnyGeoKbPayload } from "./kb-v2-contract.ts";
 import type { GeoQuestion } from "./kb-questions.ts";
 import { isSupportedGeoQuestionLanguage } from "./asset-context.ts";
+
+/**
+ * What a question-quality check needs to know about a knowledge base.
+ *
+ * Structural rather than a payload union: v1 and v2 keep these fields at the
+ * top level and v3 keeps them inside its locked `generationInput`, and this
+ * check has no business knowing which. Widening it here is also what stops a
+ * v3 version from silently skipping the check by failing a version test.
+ */
+export interface GeoQuestionSubject {
+  readonly officialName: string;
+  readonly aliases: readonly string[];
+  readonly categoryTerms: readonly string[];
+  readonly market: { readonly country: string; readonly language: string };
+  readonly competitors: readonly { readonly brandName: string; readonly aliases?: readonly string[] }[];
+  readonly roles: readonly {
+    readonly label: string; readonly segment: string; readonly painPoints: readonly string[];
+    readonly decisionCriteria: readonly string[]; readonly vocabulary: readonly string[];
+  }[];
+}
 
 export interface GeoQuestionQualityIssue {
   readonly code: "category_language_mismatch" | "question_language_mismatch" | "unrelated_required_entities";
@@ -30,11 +49,11 @@ export function geoQuestionLanguageIssue(text: string, language: string, properN
   return [...wording].some((character) => /\p{L}/u.test(character) && !/\p{Script=Latin}/u.test(character));
 }
 
-export function geoQuestionProperNames(payload: AnyGeoKbPayload): readonly string[] {
+export function geoQuestionProperNames(payload: GeoQuestionSubject): readonly string[] {
   return [payload.officialName, ...payload.aliases, ...payload.competitors.flatMap((competitor) => [competitor.brandName, ...(competitor.aliases ?? [])])];
 }
 
-export function assessGeoQuestionQuality(payload: AnyGeoKbPayload, question: Pick<GeoQuestion, "text" | "roleId" | "requiredEntities">, language = payload.market.language): { readonly ok: boolean; readonly issues: readonly GeoQuestionQualityIssue[] } {
+export function assessGeoQuestionQuality(payload: GeoQuestionSubject, question: Pick<GeoQuestion, "text" | "roleId" | "requiredEntities">, language = payload.market.language): { readonly ok: boolean; readonly issues: readonly GeoQuestionQualityIssue[] } {
   const issues: GeoQuestionQualityIssue[] = [];
   const properNames = geoQuestionProperNames(payload);
   const category = payload.categoryTerms[0] ?? "";

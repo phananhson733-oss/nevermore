@@ -69,7 +69,7 @@ function fixture() {
     readReceipt: noCurrentProfile, callRpc: noCurrentProfile };
   const dependencies = { readFrozen: (input: typeof selection | { userId: string; kbId: string; revision: number }) => readVersionedFrozenGeoKb(input, store), readContext: (input: typeof selection) => readVersionedGeoSnapshotContext(input, contextStore),
     readPrepared: vi.fn(async () => ({ kind: "ok" as const, value: candidate })) };
-  const basis = () => sharedGeoBriefBasis({ frozen, context, questionId: questionSet.questions[0]!.id, questionText: "ignored browser words", runEvidence: null, runId: "offline-v2-brief", now: TIME });
+  const basis = () => sharedGeoBriefBasis({ frozen, context, knowledgePack: null, questionId: questionSet.questions[0]!.id, questionText: "ignored browser words", runEvidence: null, runId: "offline-v2-brief", now: TIME });
   return { frozen, context, row, store, contextStore, dependencies, basis };
 }
 
@@ -126,7 +126,7 @@ describe("actual frozen V2 consumers", () => {
   });
   it("does not reinterpret V1 all-role criteria or duplicate entity behavior", () => {
     const frozen = structuredClone(SHARED_FROZEN);
-    const input = { frozen, context: null, questionId: "q1", questionText: "", runEvidence: null, runId: "legacy", now: TIME };
+    const input = { frozen, context: null, knowledgePack: null, questionId: "q1", questionText: "", runEvidence: null, runId: "legacy", now: TIME };
     Object.assign(frozen.payload, { roles: [{ ...frozen.payload.roles[0]!, decisionCriteria: Array.from({ length: 8 }, (_, index) => `Criterion ${index + 1}`) }] });
     expect(() => sharedGeoBriefBasis(input)).toThrow("required_anchor_budget_exceeded");
     Object.assign(frozen.payload, { roles: [] }); Object.assign(frozen.questionSet.questions[0]!, { requiredEntities: ["Fixture", "Fixture"] });

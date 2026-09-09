@@ -47,6 +47,20 @@ describe("role synthesis output authority", () => {
 });
 
 describe("semantic question synthesis authority", () => {
+  it("does not let one currency stand in for another", () => {
+    // The digits match and the units do not. A check that strips the sign
+    // before comparing reads a won price on the page as evidence for a rupee
+    // price in the question -- the model's own number, wearing a citation.
+    const source = QUESTION_SYNTHESIS_INPUT.evidenceSources[0]!;
+    const input = {
+      ...QUESTION_SYNTHESIS_INPUT,
+      evidenceSources: [{ ...source, text: `${source.text} The plan also costs ₩19 per month.` }, QUESTION_SYNTHESIS_INPUT.evidenceSources[1]!],
+    };
+    const value = structuredClone(QUESTION_SYNTHESIS_OUTPUT) as any;
+    value.questions.find((question: any) => question.id === "q-branded").text = "Is Acme ₹19 per month?";
+
+    expect(parseGeoQuestionSynthesis(value, input)).toMatchObject({ ok: false, path: "questions.numeric_claim" });
+  });
   function roleAnchor(kind: "role_pain" | "role_criterion" | "role_alternative", phrase: string, questionText: string) {
     const value = structuredClone(QUESTION_SYNTHESIS_OUTPUT);
     const id = kind === "role_pain" ? "pain" : kind === "role_criterion" ? "criterion" : "alternative";

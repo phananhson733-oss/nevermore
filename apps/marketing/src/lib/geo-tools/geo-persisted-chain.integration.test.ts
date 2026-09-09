@@ -156,7 +156,7 @@ describe("real persisted Visibility → shared Brief authority", () => {
     if (resolved.kind !== "ok") throw new Error(`Actual shared resolver rejected persisted run: ${resolved.kind}`);
     expect(resolved.value.samples).toHaveLength(3);
     expect(resolved.value.samples.every((sample) => sample.status === "answered" && sample.topics.includes("Invoice reminders"))).toBe(true);
-    const basis = sharedGeoBriefBasis({ frozen: value.frozen, context: null, questionId: value.gap.questionId, questionText: "", runEvidence: resolved.value, runId: randomUUID(), now: new Date().toISOString() });
+    const basis = sharedGeoBriefBasis({ frozen: value.frozen, context: null, knowledgePack: null, questionId: value.gap.questionId, questionText: "", runEvidence: resolved.value, runId: randomUUID(), now: new Date().toISOString() });
     const brief = await assembleSharedGeoBrief(basis, { ok: true, outline: [{ id: "O1", h2: "Answer the frozen question", h3: [], answers: basis.must_answer.items.map((item) => item.id), provenance: { method: "model", derived_from: sharedGeoModelSources(basis) } }] });
     expect(brief.geo_origin.gap).toBe("A");
     expect(brief.geo_origin.run_ref).toEqual({ id: value.report.manifest.runId, fingerprint: resolved.value.fingerprint });

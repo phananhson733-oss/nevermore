@@ -22,18 +22,273 @@ import type { GeoKbSourceReportV2 } from "./kb-source-contract.ts";
 import { selectGeoCompetitorEvidence } from "./kb-competitor-evidence.ts";
 import { buildGeoPreparedKnowledgeBase, buildGeoPreparedKnowledgeBaseV2 } from "./kb-preparation.ts";
 import { assertGeoSnapshotContextV2KnownInput, GEO_CONTEXT_EVIDENCE_MAX_BYTES, type GeoSourceReceiptRef, type GeoSourceSummaryV2, type GeoVerifiedFactSupportV2 } from "./snapshot-context-v2.ts";
-import { parseGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidenceSource } from "./kb-knowledge-evidence.ts";
+import { GEO_KNOWLEDGE_EVIDENCE_LIMITS, parseGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidenceSource, type GeoKnowledgeResourceResult } from "./kb-knowledge-evidence.ts";
+import { geoEvidenceTtlMs, isObservationFresh, type GeoEvidenceObservation } from "./kb-evidence-observations.ts";
 import { buildGeoKnowledgeSynthesisInputV1, type GeoKnowledgeSynthesisInputV1 } from "./kb-knowledge-synthesis-contract.ts";
 import { GEO_KNOWLEDGE_SYNTHESIS_PROMPT_VERSION, prepareGeoKnowledgeSynthesis, synthesizeGeoKnowledgeNarrative, type GeoKnowledgeSynthesisDependencies, type GeoKnowledgeSynthesisResult } from "./kb-knowledge-synthesis.ts";
 import { buildGeoKnowledgeGenerationInputManifest } from "./kb-prepared-contract.ts";
 import { buildGeoKnowledgeGenerationResultV1, parseGeoKnowledgeGenerationResultV1, type GeoKnowledgeGenerationResultV1 } from "./kb-knowledge-generation-contract.ts";
 import { buildGeoKnowledgePack } from "./kb-knowledge-pack.ts";
+import type { KeywordLlmUsage } from "../tools/keyword-llm-client.ts";
+import { isGeoKbPayloadV3, parseGeoKbPayloadV3, type GeoKbPayloadV3 } from "./kb-v3-contract.ts";
+import { geoGenerationInputHashV3 } from "./kb-prepared-v3-contract.ts";
+import { GEO_KNOWLEDGE_GENERATION_INPUT_V2_SCHEMA, GEO_KNOWLEDGE_GENERATION_RESULT_V2_SCHEMA, buildGeoKnowledgeGenerationResultV2, buildGeoKnowledgeSynthesisInputV2, type GeoKnowledgeSynthesisInputV2 } from "./kb-knowledge-synthesis-v2-contract.ts";
+import { prepareGeoKnowledgeSynthesisV2, synthesizeGeoKnowledgeNarrativeV2, type GeoKnowledgeSynthesisV2Dependencies, type GeoKnowledgeSynthesisV2Result } from "./kb-knowledge-synthesis-v2.ts";
+
+/** The reader's own vocabulary for "we did not get this page". */
+export type GeoKnowledgeUnavailableReason = Extract<GeoKnowledgeResourceResult, { readonly kind: "unavailable" }>["reason"];
+
+/**
+ * What one target of an update is worth to the model step, given what the
+ * update's own `fetch` operations already put in the observation library.
+ *
+ * This exists because the knowledge collector used to run its own crawl. Every
+ * `knowledge_pack` preparation built a fresh gated reader and re-read the pages
+ * the run had just fetched, plus pages the run never planned -- work that spent
+ * the site's shared hourly crawl allowance a second time and that no ledger row
+ * named. `kb-run-plan.ts` states the rule that broke: every operation in an
+ * update that costs money or spends a shared crawl allowance gets its own
+ * durable row.
+ *
+ * Three answers, because three things can be true of a target and only one of
+ * them is "we know nothing":
+ *
+ *  - `reuse` -- the library holds a live, successful observation of exactly
+ *    this page. It becomes a source the collector takes in place of a fetch,
+ *    carrying the observation's OWN timestamp, body hash and excerpts. Nothing
+ *    is invented: an observation that cannot be expressed as a valid source
+ *    falls through to `fetch` rather than being trimmed into one.
+ *  - `observed_unavailable` -- the update looked inside the TTL and did not get
+ *    the page. Fetching again would be the same page read twice in a day, so
+ *    the reader answers from the observation. The source the collector then
+ *    builds carries `observedAt: null`, exactly as a live failure would,
+ *    because a reused failure is not a fresh measurement of anything.
+ *  - `fetch` -- nothing usable is known. The collector reads the page.
+ *
+ * Freshness is time and only time, the same criterion `planGeoEvidenceReuse`
+ * applies, so this cannot disagree with the executor that wrote the row. An
+ * expired observation is never silently reused, and a future-dated one is not
+ * fresh at all.
+ *
+ * Pure: it reads no store, and no clock beyond the `now` it is handed.
+ */
+export type GeoKnowledgeObservationCredit =
+  | { readonly kind: "reuse"; readonly source: GeoKnowledgeEvidenceSource }
+  | { readonly kind: "observed_unavailable"; readonly reason: GeoKnowledgeUnavailableReason }
+  | { readonly kind: "fetch" };
+
+/*
+ * The controls JSON cannot carry safely, and the exact-URL shape the evidence
+ * contract admits. Both are deliberately re-stated rather than imported: they
+ * are private to `kb-knowledge-evidence.ts`. The only drift they can cause is
+ * THIS side refusing a source that side would have taken, which costs one fetch
+ * and can never produce reuse the collector would reject -- and a reused source
+ * the collector rejects is not a failed fetch, it is a thrown collection and a
+ * knowledge step that never runs. `builds a source the real collector accepts`
+ * is the test that holds the direction.
+ */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u;
+const OBSERVATION_HASH = /^[a-f0-9]{64}$/u;
+
+function usableSourceText(value: string, maximum: number): boolean {
+  return value.trim().length > 0 && Array.from(value).length <= maximum && !CONTROL_CHARACTERS.test(value);
+}
+
+function exactPublicSourceUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return value.length <= 2_048 && url.protocol === "https:" && url.username === "" && url.password === ""
+      && url.port === "" && url.hash === "" && url.toString() === value;
+  } catch { return false; }
+}
+
+/**
+ * The evidence catalogue's own source identity, re-derived.
+ *
+ * `sourceId` is private to `kb-knowledge-evidence.ts`, so this is a second
+ * implementation of one rule. It is pinned by a test that compares this value
+ * with the id the real collector mints for the same `(kind, url)`: an id that
+ * merely looked plausible would put two entries for one page into a catalogue
+ * that dedupes on id before it dedupes on URL.
+ */
+function evidenceCatalogueSourceId(kind: GeoKnowledgeCreditKind, url: string): string {
+  return `${kind}-${createHash("sha256").update(`${kind}:${url}`, "utf8").digest("hex").slice(0, 20)}`;
+}
+
+/**
+ * The kinds a stored observation can be credited as.
+ *
+ * The three machine-readable resources are here because the run's own-page
+ * fetch operation now reads them and files one ledger row each. They are
+ * credited like a page -- same freshness rule, same source shape, same excerpt
+ * admission -- and two things differ: the label is the collector's own
+ * (`label: kind`), so a reused row and a freshly read one are indistinguishable
+ * in the catalogue, and each kind's address must be the one the evidence
+ * contract allows that kind to have (see `exactMachineResourceUrl`).
+ */
+export type GeoKnowledgeCreditKind = "own_page" | "competitor_page" | "robots" | "sitemap" | "llms";
+
+/**
+ * The address shape the evidence contract demands of each machine resource,
+ * restated (`assertEvidenceIntegrity` is private) in the same direction as
+ * every other restatement here: this side may refuse a source that side would
+ * have taken, and must never build one that side throws on. It throws rather
+ * than refuses -- a rejected reused source is not a failed fetch, it is a
+ * collection that dies -- which is why the check is made before the source is
+ * built rather than after.
+ */
+function exactMachineResourceUrl(kind: GeoKnowledgeCreditKind, url: URL): boolean {
+  if (kind === "own_page" || kind === "competitor_page") return true;
+  if (url.search !== "") return false;
+  if (kind === "robots") return url.pathname === "/robots.txt";
+  if (kind === "llms") return url.pathname === "/llms.txt";
+  const path = url.pathname.toLocaleLowerCase("en");
+  return path.includes("sitemap") && path.endsWith(".xml");
+}
+
+export function creditGeoKnowledgeObservation(input: {
+  readonly kind: GeoKnowledgeCreditKind;
+  /** The address the collector will ask for, exactly as it will ask for it. */
+  readonly url: string;
+  readonly competitor: { readonly key: string; readonly name: string; readonly confirmed: true } | null;
+  readonly observation: GeoEvidenceObservation | null;
+  readonly now: Date;
+}): GeoKnowledgeObservationCredit {
+  const observation = input.observation;
+  if (observation === null) return { kind: "fetch" };
+  // The library is keyed by `(kind, url)`; a row answering a different question
+  // is not this target's evidence, however fresh it is.
+  if (observation.kind !== input.kind || observation.url !== input.url) return { kind: "fetch" };
+  if (!isObservationFresh(observation, input.now, geoEvidenceTtlMs(input.kind))) return { kind: "fetch" };
+  if (observation.status.kind === "unavailable") return { kind: "observed_unavailable", reason: observation.status.reason };
+  if (!exactPublicSourceUrl(input.url)) return { kind: "fetch" };
+  if (!exactMachineResourceUrl(input.kind, new URL(input.url))) return { kind: "fetch" };
+  if ((input.kind === "competitor_page") !== (input.competitor !== null)) return { kind: "fetch" };
+  const competitor = input.competitor;
+  if (competitor !== null && (new URL(input.url).host !== competitor.key
+    || !usableSourceText(competitor.key, 128) || !usableSourceText(competitor.name, 200))) return { kind: "fetch" };
+  if (!OBSERVATION_HASH.test(observation.status.bodyHash)) return { kind: "fetch" };
+  const observedAtMs = Date.parse(observation.observedAt);
+  if (!Number.isFinite(observedAtMs)) return { kind: "fetch" };
+  const usable = observation.status.excerpts
+    .filter(excerpt => usableSourceText(excerpt, GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints));
+  const excerpts = usable.slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.maxExcerpts);
+  /**
+   * A robots.txt is not quoted, it is PARSED: the assembler reads per-agent
+   * allow/disallow claims out of these lines, and its only protection against
+   * claiming from a partial file is that a full sample (`excerpts.length >= 8`)
+   * is treated as possibly truncated. Dropping a line here shortens the sample
+   * below that threshold and hands the assembler what looks like a complete
+   * file with one rule silently missing -- turning "this site does not mention
+   * GPTBot" into a sentence about a line we threw away. Every other kind loses
+   * a quote and claims nothing from the gap, so only robots refuses.
+   */
+  if (input.kind === "robots" && usable.length !== observation.status.excerpts.length) return { kind: "fetch" };
+  // A source with no quotable line supports no claim, and `sourceSchema`
+  // refuses one. Reading the page again is the honest answer.
+  if (excerpts.length === 0) return { kind: "fetch" };
+  return { kind: "reuse", source: {
+    id: evidenceCatalogueSourceId(input.kind, input.url), kind: input.kind,
+    label: input.kind === "own_page" ? "Own site page" : input.kind === "competitor_page" ? "Competitor page" : input.kind,
+    url: input.url, competitor,
+    availability: "available", reason: null,
+    /*
+     * The observation's own instant, normalised to the canonical form the
+     * evidence contract demands. Postgres hands back `+00:00` where the
+     * producer wrote `Z`, and `canonicalTimestamp` compares the exact string.
+     */
+    observedAt: new Date(observedAtMs).toISOString(),
+    bodyHash: observation.status.bodyHash, excerpts,
+  } };
+}
+
+/**
+ * What one own-page observation stored ABOUT the page, as the evidence contract
+ * can carry it.
+ *
+ * Three answers per list, and the difference between the last two is the whole
+ * point of reading them here rather than at the call site:
+ *
+ *  - `stored` -- the run recorded this list and every entry fits the evidence
+ *    contract's own text rules, so the bundle can carry it whole.
+ *  - `not_stored` -- the row has no such key. The run either predates the
+ *    change that records it, or dropped it to stay inside the column's byte
+ *    budget. It is NOT an empty list: "we did not keep it" and "the page has
+ *    none" are different sentences and only one of them may be shown.
+ *  - `unreadable` -- the key is there and the contract cannot take it whole:
+ *    a control character, an over-long entry, a duplicate, or more entries than
+ *    the page shape admits. Trimming it to fit would understate the page, so
+ *    the list is refused and the caller withholds whatever rests on it.
+ */
+export type GeoKnowledgeStoredList =
+  | { readonly kind: "stored"; readonly values: readonly string[] }
+  | { readonly kind: "not_stored" }
+  | { readonly kind: "unreadable" };
+
+export interface GeoKnowledgeObservedStructure {
+  /**
+   * Question-and-answer markup the run parsed off the page, bounded twice: the
+   * parser keeps at most 32 pairs and the evidence contract's page shape takes
+   * at most 32. It is a sample of what the page carries and nothing counts it.
+   * A pair the contract cannot carry is left out rather than shortened, because
+   * a truncated answer is a different answer.
+   */
+  readonly faq: readonly { readonly question: string; readonly answer: string }[];
+  readonly jsonLdTypes: GeoKnowledgeStoredList;
+  readonly hreflangLocales: GeoKnowledgeStoredList;
+}
+
+/** The page shape's own caps, restated for the same reason the text rules are. */
+const OBSERVED_PAGE_LIMITS = { faq: 32, jsonLdTypes: 32, hreflangLocales: 64, typeCodePoints: 120, textCodePoints: GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints } as const;
+
+function storedList(values: unknown, maximum: number, codePoints: number): GeoKnowledgeStoredList {
+  if (values === undefined) return { kind: "not_stored" };
+  if (!Array.isArray(values)) return { kind: "unreadable" };
+  const entries = values as readonly unknown[];
+  const usable = entries.every((value) => typeof value === "string" && usableSourceText(value, codePoints));
+  if (!usable || entries.length > maximum) return { kind: "unreadable" };
+  const strings = entries as readonly string[];
+  if (new Set(strings).size !== strings.length) return { kind: "unreadable" };
+  return { kind: "stored", values: strings };
+}
+
+/**
+ * The page structure a stored own-page row is worth, or null when the row is
+ * not a successful reading of that page at all.
+ *
+ * Reads the row and nothing else: no clock, no store, and no second parse of
+ * any body. `pageData` in `kb-knowledge-evidence.ts` is what produced these
+ * lists, and this only decides which of them the evidence contract can carry.
+ */
+export function creditGeoKnowledgeObservedStructure(
+  observation: GeoEvidenceObservation | null,
+): GeoKnowledgeObservedStructure | null {
+  if (observation === null || observation.status.kind !== "ok") return null;
+  const structured = observation.status.structured;
+  const pairs = structured.faqPairs ?? [];
+  return {
+    faq: pairs
+      .filter((pair) => usableSourceText(pair.question, OBSERVED_PAGE_LIMITS.textCodePoints)
+        && usableSourceText(pair.answer, OBSERVED_PAGE_LIMITS.textCodePoints))
+      .slice(0, OBSERVED_PAGE_LIMITS.faq)
+      .map((pair) => ({ question: pair.question, answer: pair.answer })),
+    jsonLdTypes: storedList(structured.jsonLdTypes, OBSERVED_PAGE_LIMITS.jsonLdTypes, OBSERVED_PAGE_LIMITS.typeCodePoints),
+    hreflangLocales: storedList(structured.hreflangLocales, OBSERVED_PAGE_LIMITS.hreflangLocales, OBSERVED_PAGE_LIMITS.typeCodePoints),
+  };
+}
 
 export interface GeoKnowledgeEvidenceCollectionInput {
   readonly userId: string;
   readonly kbId: string;
   readonly targetUrl: string;
-  readonly payload: GeoKbPayloadV2;
+  /**
+   * The saved draft this collection is for. Carried so a collector can scope
+   * itself to the draft rather than to caller-supplied text; the shipped
+   * collector reads only `targetUrl` and `confirmedCompetitors`, which is why a
+   * v3 draft can be handed to it unchanged.
+   */
+  readonly payload: GeoKbPayloadV2 | GeoKbPayloadV3;
   readonly confirmedCompetitors: readonly {
     readonly key: string;
     readonly name: string;
@@ -52,6 +307,8 @@ export interface GeoKbGenerationPreparerDependencies {
   readonly synthesizeRoles?: typeof synthesizeGeoKbRoles;
   readonly synthesizeQuestions?: typeof synthesizeGeoKbQuestions;
   readonly synthesizeKnowledge?: (input: GeoKnowledgeSynthesisInputV1, dependencies?: GeoKnowledgeSynthesisDependencies) => Promise<GeoKnowledgeSynthesisResult>;
+  /** The v3 narrative runner. v1 drafts never reach it; v3 drafts never reach `synthesizeKnowledge`. */
+  readonly synthesizeKnowledgeV2?: (input: GeoKnowledgeSynthesisInputV2, dependencies?: GeoKnowledgeSynthesisV2Dependencies) => Promise<GeoKnowledgeSynthesisV2Result>;
 }
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu;
 const hash = /^[a-f0-9]{64}$/u;
@@ -60,6 +317,33 @@ function modelInput(provider: GeoSynthesisProvider, config: KeywordLlmConfig, ti
   return { modelRequested: provider.modelRequested, authScheme: provider.authScheme, temperature: String(provider.effectiveTemperature),
     maxOutputTokens: provider.maxOutputTokens, timeoutMs, endpointHash: createHash("sha256").update(config.url).digest("hex") };
 }
+/** A check that named itself, e.g. `Invalid role proposal output (english:roles.0.label)`. */
+const NAMED_REJECTION = /\(([a-z_]+:[A-Za-z0-9_.]*)\)$/u;
+/**
+ * A message our own code wrote in full, e.g. `Role proposal exceeds byte
+ * limit`. Deliberately narrow: a schema library's failure dump is JSON, so it
+ * opens with `[` or `{` and carries quotes, braces and newlines, none of which
+ * this admits.
+ */
+const FIXED_REJECTION = /^[A-Za-z][A-Za-z0-9 ._:/-]{0,119}$/u;
+/**
+ * The rejection token we are willing to carry out of a failed assembly.
+ *
+ * The thrown message is the only thing standing between a caller and a black
+ * box, so the check's own name is kept -- and this value now leaves the process
+ * in the generation response, so nothing else may be. Taking the first 120
+ * characters of whatever was thrown does not hold that line: a strict schema
+ * answers an unexpected key with a dump that quotes the model's own key names,
+ * and a rejected enum value quotes the value. An unrecognised message is worth
+ * less than the promise, so it becomes `unknown`.
+ */
+function rejectionOf(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  const named = NAMED_REJECTION.exec(message)?.[1];
+  if (named !== undefined && named !== "") return named.slice(0, 120);
+  return FIXED_REJECTION.test(message) ? message : "unknown";
+}
+
 function invocation<T>(result: GeoSynthesisResult<T>, build: (value: T) => unknown): GeoKbGenerationInvocation {
   const attempt: GeoGenerationAttempt = { attemptedCalls: result.attemptedCalls, delivery: result.delivery, modelRequested: result.provider?.modelRequested ?? null,
     inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, requestCount: result.usage.requestCount };
@@ -68,9 +352,21 @@ function invocation<T>(result: GeoSynthesisResult<T>, build: (value: T) => unkno
     return { ok: false, reason, delivery: result.delivery, attempt };
   }
   try { return { ok: true, value: asValue(build(result.value)), attempt }; }
-  catch { return { ok: false, reason: "invalid_output", delivery: "response_received", attempt }; }
+  catch (error) { return { ok: false, reason: "invalid_output", delivery: "response_received", attempt, rejection: rejectionOf(error) }; }
 }
-function knowledgeInvocation(result: GeoKnowledgeSynthesisResult, build: (value: Extract<GeoKnowledgeSynthesisResult, { readonly ok: true }>["value"]) => unknown): GeoKbGenerationInvocation {
+/**
+ * What a narrative runner answers, without saying which narrative.
+ *
+ * The v1 and v2 runners differ only in the contract they parse; their attempt
+ * accounting -- how many calls were made, whether the outcome is known, what the
+ * provider reported -- is deliberately identical, because that is the one answer
+ * a paid step may never get wrong. Making the invocation generic over the
+ * narrative keeps that accounting in one place instead of two that can drift.
+ */
+type GeoNarrativeResult<T> =
+  | { readonly ok: true; readonly value: T; readonly attemptedCalls: 1; readonly delivery: "response_received"; readonly provider: { readonly modelRequested: string }; readonly usage: KeywordLlmUsage }
+  | { readonly ok: false; readonly reason: string; readonly attemptedCalls: 0 | 1; readonly delivery: "not_attempted" | "response_received" | "outcome_unknown"; readonly provider: { readonly modelRequested: string } | null; readonly usage: KeywordLlmUsage };
+function knowledgeInvocation<T>(result: GeoNarrativeResult<T>, build: (value: T) => unknown): GeoKbGenerationInvocation {
   const attempt: GeoGenerationAttempt = { attemptedCalls: result.attemptedCalls, delivery: result.delivery, modelRequested: result.provider?.modelRequested ?? null,
     inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, requestCount: result.usage.requestCount };
   if (!result.ok) {
@@ -78,7 +374,7 @@ function knowledgeInvocation(result: GeoKnowledgeSynthesisResult, build: (value:
     return { ok: false, reason, delivery: result.delivery, attempt };
   }
   try { return { ok: true, value: asValue(build(result.value)), attempt }; }
-  catch { return { ok: false, reason: "invalid_output", delivery: "response_received", attempt }; }
+  catch (error) { return { ok: false, reason: "invalid_output", delivery: "response_received", attempt, rejection: rejectionOf(error) }; }
 }
 const unknownInvocation = (modelRequested: string): GeoKbGenerationInvocation => ({ ok: false, reason: "outcome_unknown", delivery: "outcome_unknown",
   attempt: { attemptedCalls: 1, delivery: "outcome_unknown", modelRequested, inputTokens: null, outputTokens: null, requestCount: null } });
@@ -285,6 +581,165 @@ export async function validateGeoKbDraftLineage(input: LineageScope & { readonly
   } catch (error) { return error instanceof PreparationFailure && error.kind === "unavailable" ? "unavailable" : "invalid"; }
 }
 
+type GeoKbGenerationRequestInput = Parameters<GeoKbGenerationHandlerDependencies["prepare"]>[0];
+type GeoKbGenerationPreparation = Awaited<ReturnType<GeoKbGenerationHandlerDependencies["prepare"]>>;
+
+/**
+ * What a refused preparation is called on the wire.
+ *
+ * Four adapters answer a preflight refusal -- roles, questions, knowledge v1
+ * and knowledge v2 -- and every one of them can say `input_too_large`: the
+ * payload is well formed and inside its contract, and the prompt it would buy
+ * is bigger than we are willing to pay to send. This function is the only
+ * place that names those reasons, so the four call sites cannot drift.
+ *
+ * `input_too_large` used to fall through to `invalid_input`, which is the same
+ * answer a corrupt payload gets. The two need different actions from an owner
+ * -- one is "fix your draft", the other is "there is more evidence here than
+ * one request can carry" -- and an owner told the wrong one has nothing to do.
+ *
+ * It is deliberately not called `payload_too_large`: that name already means
+ * "the posted HTTP body exceeded the read cap" (`readAccountMutationJson`), and
+ * this refusal is about the prompt, not about what the client sent.
+ *
+ * Everything else stays `invalid_input`. `schema_invalid` and
+ * `insufficient_basis` are both "this input cannot be asked", and neither adds
+ * an action the owner does not already have.
+ */
+function preparationRefusal(reason: string): { readonly kind: "model_unavailable" | "unsupported_language" | "input_too_large" | "invalid_input" } {
+  if (reason === "not_configured") return { kind: "model_unavailable" };
+  if (reason === "unsupported_language") return { kind: "unsupported_language" };
+  if (reason === "input_too_large") return { kind: "input_too_large" };
+  return { kind: "invalid_input" };
+}
+
+/**
+ * Preflight for a v3 draft.
+ *
+ * A v3 draft carries `profileRef` -- an immutable pointer at the confirmed
+ * Profile snapshot plus the 13 fields GEO reads -- where v1/v2 carried a whole
+ * `profileCopy`. Three things move because of that, and one deliberately does
+ * not:
+ *
+ *   The durable input names `generationInputHash` where v1/v2 names
+ *   `profileCopyHash`. That is the whole v3 identity: the hash is locked once,
+ *   right after the roles step, and every record bought under it stays reusable
+ *   through a review that edits the draft around it.
+ *
+ *   That hash is RE-DERIVED here, never minted. `geoGenerationInputHashV3` is
+ *   the single definition, and it has to agree with the value already recorded
+ *   in `runRef` -- the claim refuses an input whose hash is not the draft's own
+ *   (`marketing_geo_generation_input_current`, v3 branch), so a draft whose
+ *   recorded hash has drifted from the input it carries has nothing to buy.
+ *
+ *   Profile currency stays the database's answer. The v1/v2 body asks
+ *   `validateCurrentProfileCopy`; the v3 equivalent compares `profileRef`
+ *   against the website's current confirmed snapshot under the same SHARE lock
+ *   Profile confirmation takes, which is a decision only the transaction that
+ *   holds that lock can make. A second answer here could disagree with the
+ *   authoritative one, and the weaker of two disagreeing answers is worse than
+ *   one answer.
+ *
+ * What does not move is the money rule: nothing below returns `ready` unless a
+ * result of that kind can actually be stored, because `ready` is the
+ * authorization to spend.
+ */
+async function prepareGeoKbV3Generation(
+  request: GeoKbGenerationRequestInput,
+  loaded: { readonly origin: string; readonly draft: { readonly payload: unknown; readonly contentHash: string } },
+  dependencies: GeoKbGenerationPreparerDependencies,
+): Promise<GeoKbGenerationPreparation> {
+  let payload: GeoKbPayloadV3;
+  try {
+    payload = parseGeoKbPayloadV3(loaded.draft.payload);
+    if (geoV2Digest(payload) !== loaded.draft.contentHash
+      || normalizeAccountWebsiteUrl(payload.generationInput.identity.targetUrl)?.host !== normalizeAccountWebsiteUrl(loaded.origin)?.host) return { kind: "unavailable" };
+  } catch { return { kind: "invalid_input" }; }
+  const generationInputHash = geoGenerationInputHashV3(payload);
+  if (generationInputHash !== payload.runRef.generationInputHash) return { kind: "input_stale" };
+  /**
+   * Two request fields a v3 draft cannot honour, refused rather than ignored.
+   *
+   * `sourceReceiptRefs` names v2 source receipts, and a receipt is admitted by
+   * comparing its `profileReference` against the draft's `profileCopy` -- the
+   * field a v3 draft does not have. Accepting the refs and skipping that
+   * comparison would put unverified receipt bytes into a paid input.
+   *
+   * `knowledgeGenerationId` is the v2 candidate binding, which exists because a
+   * v2 questions run mints a candidate that has to name the knowledge it
+   * embedded. A v3 questions run mints no candidate; its knowledge is bound
+   * through `runRef` and read at publish time.
+   */
+  if (request.sourceReceiptRefs.length > 0 || request.knowledgeGenerationId !== undefined) return { kind: "invalid_input" };
+  if (request.kind !== "knowledge_pack") return { kind: "unsupported_draft" };
+
+  const { identity, profileRef, competitors } = payload.generationInput;
+  /*
+   * No language refusal here, deliberately (design decision D8).
+   *
+   * This was the gate that actually stopped a non-English site: it answered
+   * `unsupported_language`, which the generation route turns into 422, so the
+   * knowledge step of a Chinese site's update refused before it reached a
+   * provider. The English registry governs the QUESTION SET, and a v3 run has
+   * no questions step at all -- so the refusal cost the site its knowledge body
+   * to protect a step nobody was going to run. The synthesis prompt now names
+   * the site's own language, and the absent question set is stated at publish
+   * time with the reason that is true for that site.
+   *
+   * The v1 chain beside this one keeps its refusal: that flow really does
+   * dispatch a questions step against the English registry.
+   */
+  let config: KeywordLlmConfig | null;
+  try { const resolved = dependencies.resolveConfig(); config = resolved === null ? null : { ...resolved }; }
+  catch { return { kind: "model_unavailable" }; }
+  if (!isUsableGeoSynthesisConfig(config)) return { kind: "model_unavailable" };
+  const capture = config;
+
+  const confirmedCompetitors = competitors.filter(competitor => competitor.confirmed).map(competitor => ({ key: competitor.domain, name: competitor.brandName, confirmed: true as const }));
+  const targetUrl = new URL(identity.targetUrl).toString();
+  let rawEvidence: unknown;
+  try {
+    rawEvidence = await dependencies.collectKnowledgeEvidence({ userId: request.userId, kbId: request.kbId, targetUrl, payload,
+      confirmedCompetitors,
+      // A v3 draft reuses nothing here. Reuse in v1/v2 means accepted facts and
+      // Search Console queries carried by a source receipt, and this path has
+      // just refused receipts; the knowledge already in `payload.knowledge` is
+      // an output of an earlier run, not observed evidence this one may cite.
+      reusedSources: [] });
+  } catch { return { kind: "unavailable" }; }
+  try {
+    const evidence = parseGeoKnowledgeEvidenceV1(rawEvidence);
+    if (evidence.availability === "unavailable" || evidence.targetUrl !== targetUrl || !same(evidence.confirmedCompetitors, confirmedCompetitors)) return { kind: "invalid_input" };
+    const synthesisInput = buildGeoKnowledgeSynthesisInputV2({ officialName: identity.officialName, aliases: identity.aliases, categoryTerms: identity.categoryTerms,
+      market: identity.market.country, language: identity.market.language, profileRef, generationInputHash }, evidence);
+    const prepared = prepareGeoKnowledgeSynthesisV2(synthesisInput, capture);
+    if (!prepared.ok) return preparationRefusal(prepared.reason);
+    /**
+     * The manifest is assembled here rather than by a builder because
+     * kb-knowledge-synthesis-v2-contract.ts exports the v2 manifest only as the
+     * `manifest` member of a result. Its seven keys are pinned by
+     * `marketing_geo_knowledge_input_valid` (v2 branch) at claim time and by
+     * `parseGeoKnowledgeGenerationResultV2` when the result is built, so a
+     * malformed one is refused before anything is dispatched -- but a v2
+     * `buildGeoKnowledgeGenerationInputManifestV2` would let it be refused
+     * here, one call earlier, and is the seam to close.
+     */
+    const manifest = { schemaVersion: GEO_KNOWLEDGE_GENERATION_INPUT_V2_SCHEMA, kbId: request.kbId, baseDraftVersion: String(request.baseVersion),
+      baseDraftHash: request.draftHash, generationInputHash, sourceReceiptRefs: [], knowledgeSynthesisInput: prepared.value.input };
+    const input = durableInput(manifest);
+    if (geoV2JsonbBytes(input) > GEO_GENERATION_INPUT_BYTES) return { kind: "invalid_input" };
+    return { kind: "ready", input,
+      invoke: async (generationId) => {
+        try {
+          const result = await (dependencies.synthesizeKnowledgeV2 ?? synthesizeGeoKnowledgeNarrativeV2)(prepared.value.input, { config: capture, timeoutMs: prepared.value.timeoutMs });
+          return knowledgeInvocation<Extract<GeoKnowledgeSynthesisV2Result, { readonly ok: true }>["value"]>(result, narrative => buildGeoKnowledgeGenerationResultV2({
+            schemaVersion: GEO_KNOWLEDGE_GENERATION_RESULT_V2_SCHEMA, generationId, kbId: request.kbId, manifest,
+            synthesisInput: prepared.value.input, evidence, narrative, generatedAt: dependencies.now().toISOString() }));
+        } catch { return unknownInvocation(capture.model); }
+      } };
+  } catch (error) { return { kind: error instanceof PreparationFailure ? error.kind : "invalid_input" }; }
+}
+
 export function createGeoKbGenerationPreparer(dependencies: GeoKbGenerationPreparerDependencies): GeoKbGenerationHandlerDependencies["prepare"] {
   return async (request) => {
     if (!uuid.test(request.userId) || !uuid.test(request.kbId) || !Number.isSafeInteger(request.baseVersion) || request.baseVersion < 1 || !hash.test(request.draftHash) || !["roles", "questions", "knowledge_pack"].includes(request.kind)
@@ -296,6 +751,10 @@ export function createGeoKbGenerationPreparer(dependencies: GeoKbGenerationPrepa
     const draft = loaded.value.draft;
     if (draft === null) return { kind: "invalid_input" };
     if (draft.draftVersion !== request.baseVersion || draft.contentHash !== request.draftHash) return { kind: "input_stale" };
+    // Before `parseAnyGeoKbPayload`, which knows only v1 and v2 and answers a v3
+    // draft with `invalid_input` -- the refusal that made every v3 generation
+    // unreachable.
+    if (isGeoKbPayloadV3(draft.payload)) return await prepareGeoKbV3Generation(request, { origin: loaded.value.origin, draft }, dependencies);
     let payload;
     try {
       payload = parseAnyGeoKbPayload(draft.payload);
@@ -321,7 +780,7 @@ export function createGeoKbGenerationPreparer(dependencies: GeoKbGenerationPrepa
         const basis = buildGeoRoleSynthesisBasis(payload, request.displayLocale, receiptSources());
         if (Object.values(basis.availableEvidenceCounts).some((count) => count > 10_000)) invalid();
         const prepared = prepareGeoRoleSynthesis(basis.input, capture);
-        if (!prepared.ok) return { kind: prepared.reason === "not_configured" ? "model_unavailable" : prepared.reason === "unsupported_language" ? "unsupported_language" : "invalid_input" };
+        if (!prepared.ok) return preparationRefusal(prepared.reason);
         const sourceReceiptRefs = receiptRefs();
         return { kind: "ready", input: { ...base, promptHash: geoV2Digest(prepared.value.prompt), promptVersion: prepared.value.promptVersion,
           responseSchemaHash: geoV2Digest(prepared.value.responseJsonSchema), provider: modelInput(prepared.value.provider, capture, prepared.value.timeoutMs), sourceReceiptRefs: sourceReceiptRefs.map((ref) => ({ ...ref })) },
@@ -350,7 +809,7 @@ export function createGeoKbGenerationPreparer(dependencies: GeoKbGenerationPrepa
         const synthesisInput = buildGeoKnowledgeSynthesisInputV1({ officialName: finalPayload.officialName, aliases: finalPayload.aliases, categoryTerms: finalPayload.categoryTerms,
           market: finalPayload.market.country, language: finalPayload.market.language }, evidence);
         const prepared = prepareGeoKnowledgeSynthesis(synthesisInput, capture);
-        if (!prepared.ok) return { kind: prepared.reason === "not_configured" ? "model_unavailable" : prepared.reason === "unsupported_language" ? "unsupported_language" : "invalid_input" };
+        if (!prepared.ok) return preparationRefusal(prepared.reason);
         const manifest = buildGeoKnowledgeGenerationInputManifest({ ...base, sourceReceiptRefs: receiptRefs(), knowledgeSynthesisInput: prepared.value.input });
         const input = durableInput(manifest);
         if (geoV2JsonbBytes(input) > GEO_GENERATION_INPUT_BYTES) return { kind: "invalid_input" };
@@ -358,7 +817,7 @@ export function createGeoKbGenerationPreparer(dependencies: GeoKbGenerationPrepa
           invoke: async (generationId) => {
             try {
               const result = await (dependencies.synthesizeKnowledge ?? synthesizeGeoKnowledgeNarrative)(prepared.value.input, { config: capture, timeoutMs: prepared.value.timeoutMs });
-              return knowledgeInvocation(result, narrative => buildGeoKnowledgeGenerationResultV1({ schemaVersion: "marketing-geo-knowledge-generation-result.v1",
+              return knowledgeInvocation<Extract<GeoKnowledgeSynthesisResult, { readonly ok: true }>["value"]>(result, narrative => buildGeoKnowledgeGenerationResultV1({ schemaVersion: "marketing-geo-knowledge-generation-result.v1",
                 generationId, kbId: request.kbId, manifest, evidence, synthesisInput: prepared.value.input, narrative, generatedAt: dependencies.now().toISOString() }));
             } catch { return unknownInvocation(capture.model); }
           } };
@@ -387,7 +846,7 @@ export function createGeoKbGenerationPreparer(dependencies: GeoKbGenerationPrepa
       const semanticInput: GeoQuestionSynthesisInput = { ...basis.input, evidenceSources: evidenceCatalog };
       const summary = sourceSummary([...receipts.values()], evidenceCatalog, mergeSources(available, basis.input.evidenceSources, declarations));
       const prepared = prepareGeoQuestionSynthesis(semanticInput, capture);
-      if (!prepared.ok) return { kind: prepared.reason === "not_configured" ? "model_unavailable" : prepared.reason === "unsupported_language" ? "unsupported_language" : "invalid_input" };
+      if (!prepared.ok) return preparationRefusal(prepared.reason);
       const sourceReceiptRefs = receiptRefs();
       if (selectedKnowledge !== null && !same(selectedKnowledge.result.manifest.sourceReceiptRefs, sourceReceiptRefs)) invalid();
       const competitorEvidence = selectGeoCompetitorEvidence({ kbId: request.kbId, targetHost: normalizeAccountWebsiteUrl(finalPayload.targetUrl)!.host,

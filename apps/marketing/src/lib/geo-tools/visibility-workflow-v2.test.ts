@@ -5,6 +5,8 @@ import { seal } from "../auth/sealed-cookie.ts";
 import { createGeoProviderClient } from "../agents/geo-provider.ts";
 import { completePayloadV2, questionSetV2, V2_KB_ID, V2_CANDIDATE_ID } from "./kb-v2.test-fixtures.ts";
 import { buildGeoSnapshotContextV2 } from "./snapshot-context-v2.ts";
+import { buildGeoSnapshotContextV3 } from "./snapshot-context-v3.ts";
+import { completePayloadV3, V3_KB_ID } from "./kb-v3.test-fixtures.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
 
 const mocks = vi.hoisted(() => ({ knowledge: vi.fn(), recordVisibilityRunV2: vi.fn(), readPreviousVisibilityRunV2: vi.fn() }));
@@ -73,5 +75,43 @@ describe("versioned visibility workflow", () => {
       expect(prepared.questions[0]?.id).toBe("semantic:finance/invoices"); expect(prepared.questions[0]).not.toHaveProperty("provenance");
       expect(snapshot.questionSet.questions[0]?.provenance.kind).toBe("semantic");
     }
+  });
+});
+
+const V3_SNAPSHOT = "3f2504e0-4f89-41d3-9a0c-0305e82c3401";
+const V3_USER = "3f2504e0-4f89-41d3-9a0c-0305e82c3402";
+
+function v3Input(samplesPerQuestion = 3) {
+  return { inputToken: seal("gg_geo_visibility_input", { sub: V3_USER, kbId: V3_KB_ID, snapshotId: V3_SNAPSHOT, revision: 1,
+    samplesPerQuestion, engines: ["chatgpt", "perplexity"], recordRunId: "3f2504e0-4f89-41d3-9a0c-0305e82c3403",
+    startedAt: new Date().toISOString() }, 3600) };
+}
+
+describe("visibility preparation for a v3 version", () => {
+  it("takes the core features from the v3 Profile reference subset", async () => {
+    vi.stubEnv("TOKEN_ENCRYPTION_KEY", "07".repeat(32));
+    const payload = completePayloadV3(), questionSet = questionSetV2();
+    const context = buildGeoSnapshotContextV3({ kbId: V3_KB_ID, payload, questionSet, evidenceRefs: [] });
+    mocks.knowledge.mockResolvedValue({ kind: "ok", value: { snapshot: { kbId: V3_KB_ID, snapshotId: V3_SNAPSHOT, revision: 1,
+      payload, questionSet, questionSetHash: geoV2Digest(questionSet) }, context } });
+
+    const prepared = await visibilityPrepareStep(v3Input());
+
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") throw new Error("not prepared");
+    expect(prepared.context).toMatchObject({ targetHost: "example.com", language: "en", marketCode: "US" });
+    expect(prepared.priorityHints).toMatchObject({ contextHash: context.contentHash, coreFeatures: ["birth charts"] });
+  });
+
+  it("refuses a version published without questions instead of measuring nothing", async () => {
+    vi.stubEnv("TOKEN_ENCRYPTION_KEY", "07".repeat(32));
+    const payload = completePayloadV3();
+    const context = buildGeoSnapshotContextV3({ kbId: V3_KB_ID, payload, questionSet: null, evidenceRefs: [] });
+    mocks.knowledge.mockResolvedValue({ kind: "ok", value: { snapshot: { kbId: V3_KB_ID, snapshotId: V3_SNAPSHOT, revision: 1,
+      payload, questionSet: null, questionSetHash: null }, context } });
+
+    // Not "ready with an empty plan": a run over zero questions would report
+    // "nothing measured" as a citation rate of zero.
+    expect(await visibilityPrepareStep(v3Input())).toEqual({ status: "failed", code: "no_frozen_version" });
   });
 });

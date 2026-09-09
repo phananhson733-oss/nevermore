@@ -43,7 +43,7 @@ describe("shared GEO outline boundary", () => {
     Object.assign(frozen.payload, { officialName: "星图", aliases: ["StarMap"], competitors: [{ domain: "rival.test", brandName: "小米", aliases: ["Xiaomi"], confirmed: true }] });
     Object.assign(frozen.questionSet.questions[0]!, { text: "What is 星图?", requiredEntities: ["星图"] });
     const assemble = vi.fn<SharedBriefHandlerDependencies["assemble"]>(async brief => ({ ok: true, outline: [{ id: "O1", h2: "Overview", h3: [], answers: brief.must_answer.items.map(item => item.id), provenance: { method: "model", derived_from: ["kb"] } }] }));
-    const deps: SharedBriefHandlerDependencies = { readFrozen: async () => ({ kind: "ok", value: frozen }), readContext: async () => ({ kind: "ok", value: null }), readRunEvidence: async () => ({ kind: "not_eligible" }), configured: () => true, assemble, runId: () => "offline-run" };
+    const deps: SharedBriefHandlerDependencies = { readFrozen: async () => ({ kind: "ok", value: frozen }), readContext: async () => ({ kind: "ok", value: null }), readKnowledgePack: async () => ({ kind: "ok", value: null }), readRunEvidence: async () => ({ kind: "not_eligible" }), configured: () => true, assemble, runId: () => "offline-run" };
     const response = await runSharedBrief("owner", { schema: GEO_CONTENT_BRIEF_SCHEMA, kbId: frozen.kbId, snapshotId: frozen.snapshotId, questionId: "q1", manualQuestion: null, runId: null, gapId: null }, deps, async () => true, () => Date.parse("2026-08-31T00:00:00Z"));
     expect(response.status).toBe(200);
     expect(assemble.mock.calls[0]?.[1]).toEqual({ properNames: geoQuestionProperNames(frozen.payload) });

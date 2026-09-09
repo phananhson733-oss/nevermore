@@ -39,9 +39,13 @@ export function parseGeoRoleProposal(value: unknown): GeoRoleProposal {
   const { contentHash, ...body } = parsed;
   if (geoV2Digest(body) !== contentHash) throw new Error("Role proposal hash mismatch");
   const input = parseGeoRoleSynthesisInput(parsed.input);
-  if (!input.ok) throw new Error("Invalid role proposal input");
+  // Name the check that rejected. `Invalid role proposal output` on its own is
+  // what made a repeated production failure of the roles step undiagnosable:
+  // the parser already knows whether it was the English test, a cluster label,
+  // an unknown evidence ref or an unsupported number, and threw it away.
+  if (!input.ok) throw new Error(`Invalid role proposal input (${input.reason}:${input.path})`);
   const output = parseGeoRoleSynthesis(parsed.output, input.value);
-  if (!output.ok) throw new Error("Invalid role proposal evidence/output");
+  if (!output.ok) throw new Error(`Invalid role proposal output (${output.reason}:${output.path})`);
   for (const kind of ["profile", "gsc", "crawl", "manual"] as const) {
     if (parsed.selectedEvidenceCounts[kind] !== input.value.sources.filter(source => source.kind === kind).length || parsed.availableEvidenceCounts[kind] < parsed.selectedEvidenceCounts[kind]) throw new Error("Invalid source selection counts");
   }

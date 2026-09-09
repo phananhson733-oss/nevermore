@@ -10,6 +10,8 @@ import {
   recordVisibilityRun,
 } from "./visibility-store.ts";
 import { readCompleteGeoKnowledgeBase } from "./kb-complete-read.ts";
+import { geoVersionedPayloadIdentity } from "./kb-versioned-read.ts";
+import { GEO_SNAPSHOT_CONTEXT_SCHEMA_V3 } from "./snapshot-context-v3.ts";
 import { projectFrozenGeoQuestions } from "./kb-consumer-projection.ts";
 import { normalizeGeoHost } from "../agents/geo-url.ts";
 import { isDenseGeoName } from "../agents/geo-alias-match.ts";
@@ -143,9 +145,16 @@ export async function visibilityPrepareStep(
     return { status: "failed", code: "not_found" };
   }
 
-  const payload = frozen.payload;
+  // A version published without a question set cannot be measured: this tool
+  // asks that version's frozen questions and there are none. Refused, rather
+  // than run against zero questions -- an empty run reports a citation rate of
+  // nothing measured as if it were a rate of zero.
+  const questionSet = frozen.questionSet;
+  if (questionSet === null || frozen.questionSetHash === null) return { status: "failed", code: "no_frozen_version" };
+
+  const payload = geoVersionedPayloadIdentity(frozen.payload);
   let questions: readonly GeoQuestion[];
-  try { questions = projectFrozenGeoQuestions(frozen.questionSet); }
+  try { questions = projectFrozenGeoQuestions(questionSet); }
   catch { return { status: "failed", code: "store_unavailable" }; }
   const plan: VisibilitySamplePlanItem[] = [];
   for (const question of questions) {
@@ -169,10 +178,14 @@ export async function visibilityPrepareStep(
   if (request.engines !== undefined && (targetHost === "" || competitors.some((entry) => entry.domain === null))) return { status: "failed", code: "invalid_request" };
   let priorityHints: GeoSitePriorityHints | null = null;
   if (request.engines !== undefined) {
-    if (knowledge.value.context !== null) {
-      const context = knowledge.value.context;
+    const context = knowledge.value.context;
+    if (context !== null) {
       if (context.kbId !== request.kbId || context.targetHost !== targetHost || context.questionSetHash !== frozen.questionSetHash) return { status: "failed", code: "store_unavailable" };
-      if (context.profile !== null) priorityHints = { snapshotId: request.snapshotId, contextHash: context.contentHash, coreFeatures: context.profile.coreFeatures };
+      // v3 keeps the Profile as a reference plus the 13-field subset GEO reads,
+      // so the core features come from the subset rather than from a copied
+      // profile projection the v3 context deliberately does not carry.
+      const coreFeatures = context.schemaVersion === GEO_SNAPSHOT_CONTEXT_SCHEMA_V3 ? context.profileRef.subset.coreFeatures : context.profile?.coreFeatures ?? null;
+      if (coreFeatures !== null) priorityHints = { snapshotId: request.snapshotId, contextHash: context.contentHash, coreFeatures: [...coreFeatures] };
     }
   }
 
@@ -184,7 +197,7 @@ export async function visibilityPrepareStep(
       competitors: request.engines === undefined ? payload.competitors : [...new Map(competitors.map((entry) => [`${entry.domain ?? ""}|${entry.brandName}`, { ...entry, domain: entry.domain ?? "" }])).values()],
       targetHost,
       marketCode: payload.market.country,
-      language: frozen.questionSet.language,
+      language: questionSet.language,
     };
   if (request.engines !== undefined && !visibilityPlanFitsWireBudget({ context, questions, engines: request.engines, samplesPerQuestion: request.samplesPerQuestion })) return { status: "failed", code: "invalid_request" };
   return {

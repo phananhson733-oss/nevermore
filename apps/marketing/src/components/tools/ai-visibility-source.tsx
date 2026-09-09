@@ -119,16 +119,24 @@ function MeasurementInput({ payload }: { readonly payload: AnyGeoKbPayload }) {
 export function AiVisibilitySource({ site, locale, historical = false }: { readonly site: VisibilityWebsiteContext; readonly locale: string; readonly historical?: boolean }) {
   const t = useTranslations("tools.aiVisibility");
   const { currentProfile, frozen, preparation } = site;
-  const measurementDifferences = frozen?.payload.profileCopy === undefined ? [] : geoProfileMeasurementDifferences(frozen.payload.profileCopy.profile, frozen.payload);
+  // `frozen` is a discriminated union: a published version this page can read,
+  // or one it cannot (a v3 payload, or one published with no question set).
+  // Everything below the identity rows needs the readable arm, so narrow once
+  // here rather than at each field -- and keep `frozen` for the three-way
+  // render, because "no version" and "a version this page cannot read" are
+  // different things the visitor must be able to tell apart.
+  const readable = frozen !== null && frozen.kind === "readable" ? frozen : null;
+  const unreadable = frozen !== null && frozen.kind === "unreadable" ? frozen : null;
+  const measurementDifferences = readable?.payload.profileCopy === undefined ? [] : geoProfileMeasurementDifferences(readable.payload.profileCopy.profile, readable.payload);
   const differenceLabels = { officialName: "officialName", categoryTerms: "categoryTerms", market: "market", roles: "roles", competitors: "competitors" } as const;
   return <section data-testid="visibility-source" aria-label={t("source.title")} className="min-w-0 rounded-xl border border-brand-border-card bg-brand-panel px-5 py-5 font-sans sm:px-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0"><h3 className="font-semibold text-text-dark-primary">{t("source.title")}</h3><p className="mt-1 max-w-3xl text-sm leading-relaxed text-text-dark-secondary">{t(historical ? "source.historical" : "source.subtitle")}</p></div>
+      <div className="min-w-0"><h3 className="font-semibold text-text-dark-primary">{t("source.title")}</h3><p className="mt-1 max-w-3xl text-sm leading-relaxed text-text-dark-secondary">{t(historical ? "source.historical" : unreadable !== null ? "source.subtitleUnreadable" : "source.subtitle")}</p></div>
       {!historical && <span className="rounded border border-brand-border-card px-2 py-1 font-mono text-xs text-text-dark-primary">{t(`source.status.${preparation.status}`)}</span>}
     </div>
     {!historical && <div className="my-4 space-y-2 text-sm text-text-dark-secondary">
       <p>{t(`source.sync.${preparation.profileSync}`)}</p>
-      <div className="flex flex-wrap gap-x-5 gap-y-2"><a className={LINK} href={localePath(locale, `/account/websites/${site.website.websiteId}`)}>{t("source.settings")}</a><a className={LINK} href={localePath(locale, `/account/websites/${site.website.websiteId}/geo`)}>{t(frozen === null ? "source.prepare" : "source.review")}</a></div>
+      <div className="flex flex-wrap gap-x-5 gap-y-2"><a className={LINK} href={localePath(locale, `/account/websites/${site.website.websiteId}`)}>{t("source.settings")}</a><a className={LINK} href={localePath(locale, `/account/websites/${site.website.websiteId}/geo`)}>{t(frozen === null ? "source.prepare" : unreadable !== null ? "source.open" : "source.review")}</a></div>
     </div>}
     {measurementDifferences.length > 0 && <p data-source="measurement-differences" className="my-4 border-l-2 border-brand-border-strong pl-3 text-sm leading-relaxed text-text-dark-secondary">{t("source.measurementDifferences", { fields: measurementDifferences.map(field => t(`source.${differenceLabels[field]}`)).join(" · ") })}</p>}
     {preparation.languageWarnings.length > 0 && <ul className="my-4 space-y-1 border-l-2 border-brand-warning pl-3 text-sm text-text-dark-primary">{preparation.languageWarnings.map(warning => <li key={warning}>{t(`source.warnings.${warning}`)}</li>)}</ul>}
@@ -138,30 +146,30 @@ export function AiVisibilitySource({ site, locale, historical = false }: { reado
       <p className="mt-2 text-xs text-text-dark-secondary">{t("source.confirmedAt")}: <Timestamp value={currentProfile.confirmedAt} locale={locale} /></p>
       <ProfileIdentity reference={currentProfile.reference} /><CompleteProfile profile={currentProfile.profile} locale={locale} />
     </details>)}
-    {frozen === null ? <p className="border-t border-brand-border-card py-4 text-sm text-text-dark-secondary">{t("source.emptyFrozen")}</p> : <>
+    {readable !== null ? <>
       <details data-source="frozen" className={DISCLOSURE}>
-        <summary className={SUMMARY}>{t("source.frozenTitle")} <span className="ml-2 font-mono text-xs text-text-dark-secondary">{t("source.frozenVersion", { version: frozen.revision })}</span></summary>
+        <summary className={SUMMARY}>{t("source.frozenTitle")} <span className="ml-2 font-mono text-xs text-text-dark-secondary">{t("source.frozenVersion", { version: readable.revision })}</span></summary>
         <p className="mt-3 text-sm text-text-dark-secondary">{t("source.frozenDescription")}</p>
         <dl className={GRID}>
-          <Row label={t("source.frozenAt")}><Timestamp value={frozen.frozenAt} locale={locale} /></Row><Row label={t("source.snapshotId")} mono>{frozen.snapshotId}</Row>
+          <Row label={t("source.frozenAt")}><Timestamp value={readable.frozenAt} locale={locale} /></Row><Row label={t("source.snapshotId")} mono>{readable.snapshotId}</Row>
           <Row label={t("source.websiteId")} mono>{site.website.websiteId}</Row><Row label={t("source.knowledgeBaseId")} mono><Value value={site.knowledgeBase?.kbId ?? ""} /></Row>
-          <Row label={t("source.contentHash")} mono>{frozen.contentHash}</Row><Row label={t("source.questionSetHash")} mono>{frozen.questionSetHash}</Row>
-          <Row label={t("source.registryVersion")} mono>{frozen.registryVersion}</Row>
+          <Row label={t("source.contentHash")} mono>{readable.contentHash}</Row><Row label={t("source.questionSetHash")} mono>{readable.questionSetHash}</Row>
+          <Row label={t("source.registryVersion")} mono>{readable.registryVersion}</Row>
         </dl>
-        {frozen.payload.profileCopy === undefined ? <p className="mt-5 border-l-2 border-brand-border-strong pl-3 text-sm text-text-dark-secondary">{t("source.legacy")}</p> : <details className={`mt-5 ${DISCLOSURE}`}>
+        {readable.payload.profileCopy === undefined ? <p className="mt-5 border-l-2 border-brand-border-strong pl-3 text-sm text-text-dark-secondary">{t("source.legacy")}</p> : <details className={`mt-5 ${DISCLOSURE}`}>
           <summary className={SUMMARY}>{t("source.profileCopy")}</summary>
-          <p className="mt-3 break-all font-mono text-xs text-text-dark-secondary">{frozen.payload.profileCopy.schemaVersion}</p>
-          {frozen.profileReference !== null && <ProfileIdentity reference={frozen.profileReference} />}
-          <CompleteProfile profile={frozen.payload.profileCopy.profile} locale={locale} />
+          <p className="mt-3 break-all font-mono text-xs text-text-dark-secondary">{readable.payload.profileCopy.schemaVersion}</p>
+          {readable.profileReference !== null && <ProfileIdentity reference={readable.profileReference} />}
+          <CompleteProfile profile={readable.payload.profileCopy.profile} locale={locale} />
         </details>}
-        <MeasurementInput payload={frozen.payload} />
+        <MeasurementInput payload={readable.payload} />
       </details>
       <details data-source="questions" data-testid="frozen-question-preview" className={DISCLOSURE}>
-        <summary className={SUMMARY}>{t("source.questions", { count: frozen.questionCount })}</summary>
+        <summary className={SUMMARY}>{t("source.questions", { count: readable.questionCount })}</summary>
         <p className="mt-3 text-sm text-text-dark-secondary">{t("source.questionNote")}</p>
-        <p className="mt-2 font-mono text-xs text-text-dark-secondary">{t("source.questionCounts", { total: frozen.questionCount, retrieval: frozen.retrievalCount })}</p>
-        {frozen.skippedLayers.length > 0 && <p className="mt-2 text-xs text-text-dark-secondary">{t("source.skippedLayers")}: {frozen.skippedLayers.map(layer => t(`source.layers.${layer}`)).join(" · ")}</p>}
-        <ol className="mt-4 divide-y divide-brand-border-card">{frozen.questions.map((question, index) => <li key={question.id} className="min-w-0 py-4">
+        <p className="mt-2 font-mono text-xs text-text-dark-secondary">{t("source.questionCounts", { total: readable.questionCount, retrieval: readable.retrievalCount })}</p>
+        {readable.skippedLayers.length > 0 && <p className="mt-2 text-xs text-text-dark-secondary">{t("source.skippedLayers")}: {readable.skippedLayers.map(layer => t(`source.layers.${layer}`)).join(" · ")}</p>}
+        <ol className="mt-4 divide-y divide-brand-border-card">{readable.questions.map((question, index) => <li key={question.id} className="min-w-0 py-4">
           <div className="flex gap-3"><span className="shrink-0 font-mono text-xs text-text-dark-secondary">{String(index + 1).padStart(2, "0")}</span><div className="min-w-0"><p className="whitespace-pre-wrap break-words text-sm text-text-dark-primary">{question.text}</p><p className="mt-2 text-xs text-text-dark-secondary">{t(`source.layers.${question.layer}`)} · {t(`source.modes.${question.mode}`)} · {t(question.calibrated ? "source.calibrated" : "source.uncalibrated")}</p></div></div>
           <details className="ml-7 mt-3"><summary className={`${SUMMARY} text-xs`}>{t("source.identity")}</summary><dl className={GRID}>
             <Row label={t("source.questionId")} mono>{question.id}</Row><Row label={t("source.questionTemplate")} mono><Value value={question.templateId ?? ""} /></Row>
@@ -169,6 +177,8 @@ export function AiVisibilitySource({ site, locale, historical = false }: { reado
           </dl></details>
         </li>)}</ol>
       </details>
-    </>}
+
+    </> : unreadable !== null ? <div data-source="frozen-unreadable" className="border-t border-brand-border-card py-4"><p className="text-sm text-text-dark-secondary">{t(`source.unreadable.${unreadable.reason}`)}</p><p className="mt-2 font-mono text-xs text-text-dark-secondary">{t("source.unreadable.identity", { version: unreadable.revision })}</p></div>
+     : <p className="border-t border-brand-border-card py-4 text-sm text-text-dark-secondary">{t("source.emptyFrozen")}</p>}
   </section>;
 }

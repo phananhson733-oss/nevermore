@@ -17,11 +17,49 @@ import { geoKnowledgeSynthesisInputDigest, geoKnowledgeSynthesisSourceCatalogueD
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import { parseGeoKbPayloadV2 } from "./kb-v2-contract.ts";
 import { parseGeoQuestionSetV2 } from "./kb-question-set-v2.ts";
+import { canonicalGeoV2Text } from "./kb-v2-json.ts";
+import { parseGeoKbPayloadV3, type GeoKbPayloadV3 } from "./kb-v3-contract.ts";
+import { buildGeoSnapshotContextV3, GEO_ABSENT_QUESTION_SET_HASH } from "./snapshot-context-v3.ts";
+import { buildGeoKnowledgePackV3 } from "./kb-knowledge-pack-v3.ts";
+import { buildGeoKnowledgePackV2 } from "./kb-knowledge-pack-v2-contract.ts";
+import { createGeoPreparedCandidateV3, geoGenerationInputHashV3, geoReviewHashV3, GEO_PREPARED_CANDIDATE_V3_SCHEMA } from "./kb-prepared-v3-contract.ts";
+import { completePayloadV3, HASH_A, OBSERVED_AT, V3_KB_ID } from "./kb-v3.test-fixtures.ts";
+import type { VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
 
 const profileStore = vi.hoisted(() => ({ read: vi.fn(() => { throw new Error("Profile store must not be read by GEO consumers"); }) }));
 const preparedFallback = vi.hoisted(() => ({ read: vi.fn(async () => ({ kind: "ok" as const, value: null })) }));
 vi.mock("../account-websites/store.ts", () => ({ findAccountWebsiteByUrl: profileStore.read, resolveWebsiteProfileReference: profileStore.read }));
 vi.mock("./kb-prepared-store.ts", () => ({ DEFAULT_GEO_KB_PREPARED_STORE: preparedFallback }));
+/**
+ * The candidate parser, relaxable for the two question-set tests at the end of
+ * this file and strict everywhere else.
+ *
+ * `readCompleteGeoKnowledgeBase` compares the published question set with the
+ * candidate's byte for byte, and that comparison is deliberately redundant with
+ * the hash chain around it: the snapshot's question-set hash, the context's copy
+ * of it and the candidate parser's own binding all have to agree, so a candidate
+ * built through `createGeoPreparedCandidateV3` cannot carry a different set --
+ * an earlier guard refuses first, and no fixture built the ordinary way can ever
+ * reach the byte comparison. Redundant is not the same as unnecessary: the read
+ * must not delegate this to its collaborator. So those two tests hand the read a
+ * candidate the parser did not re-validate, which is the state the comparison
+ * exists to catch, and assert on the read's own answer.
+ */
+const preparedParser = vi.hoisted(() => ({ relaxed: false }));
+vi.mock("./kb-prepared-v3-contract.ts", async importOriginal => {
+  const actual = await importOriginal<typeof import("./kb-prepared-v3-contract.ts")>();
+  // Only the exported binding is replaced: `createGeoPreparedCandidateV3` calls
+  // the module's own parser, so every fixture is still built strictly.
+  return { ...actual, parseGeoPreparedCandidateV3: (value: unknown) => preparedParser.relaxed ? value : actual.parseGeoPreparedCandidateV3(value) };
+});
+/**
+ * The relaxation's own default, read once at module load and therefore before
+ * any test can turn it on. The two tests that do turn it on restore `false` in
+ * a `finally`, so a stuck-open default is invisible to anything that reads the
+ * live flag after them; this constant is what makes it visible from anywhere in
+ * the file.
+ */
+const PARSER_RELAXED_BY_DEFAULT: boolean = preparedParser.relaxed;
 const USER = "11111111-1111-4111-8111-111111111111";
 const SNAPSHOT = "11111111-1111-4111-8111-111111111119";
 const input = { userId: USER, kbId: CONTEXT_KB_ID, snapshotId: SNAPSHOT };
@@ -113,8 +151,10 @@ describe("complete immutable GEO knowledge-base reads", () => {
     const result = await readCompleteGeoKnowledgeBase(input, value.dependencies);
     expect(result).toEqual({ kind: "ok", value: { snapshot: value.snapshot, context: value.context, completeness: "complete", knowledgePack: null } });
     if (result.kind !== "ok") throw new Error("Expected complete GEO read");
-    expect(result.value.snapshot.payload.profileCopy?.profile.buyer).toBe("Finance manager");
-    expect(result.value.snapshot.payload.profileCopy?.profile.indirectAlternatives).toEqual(["Spreadsheets"]);
+    const payload = result.value.snapshot.payload;
+    if (payload.schemaVersion === "marketing-geo-kb.v3") throw new Error("Expected a legacy payload");
+    expect(payload.profileCopy?.profile.buyer).toBe("Finance manager");
+    expect(payload.profileCopy?.profile.indirectAlternatives).toEqual(["Spreadsheets"]);
     expect(profileStore.read).not.toHaveBeenCalled();
   });
 
@@ -250,5 +290,217 @@ describe("prepared knowledge on complete V2 reads", () => {
     else candidate = { ...value.v2, candidateHash: "f".repeat(64) };
     value.dependencies.readPrepared.mockResolvedValue({ kind: "ok", value: candidate as typeof value.v1 });
     expect((await readCompleteGeoKnowledgeBase(value.selection, value.dependencies)).kind).toBe("unavailable");
+  });
+});
+
+const V3_SNAPSHOT = "44444444-4444-8444-8444-444444444441";
+const V3_CANDIDATE = "44444444-4444-8444-8444-444444444442";
+const V3_FROZEN_AT = "2026-09-03T00:00:00.000Z";
+
+function machineSource(id: string, kind: string, path: string, excerpt: string) {
+  return { id, kind, label: id, url: `https://example.com/${path}`, competitor: null, availability: "available",
+    reason: null, observedAt: OBSERVED_AT, bodyHash: HASH_A, excerpts: [excerpt], independence: null };
+}
+
+/** The shared v3 draft, publishable and with its run reference filled in. */
+function v3Payload(): GeoKbPayloadV3 {
+  const value = structuredClone(completePayloadV3()) as unknown as {
+    knowledge: { sourceCatalogue: { id: string }[]; machine: { value: { llms: { sourceRefs: string[] }; sitemap: { sourceRefs: string[] } } } };
+    runRef: { generationInputHash: string };
+  };
+  // Idempotent: the shared fixture may already carry these sources.
+  if (!value.knowledge.sourceCatalogue.some((source) => source.id === "machine:llms")) value.knowledge.sourceCatalogue.push(
+    machineSource("machine:llms", "llms", "llms.txt", "Acme product index."),
+    machineSource("machine:sitemap", "sitemap", "sitemap.xml", "The sitemap lists the product pages."),
+  );
+  value.knowledge.machine.value.llms.sourceRefs = ["machine:llms"];
+  value.knowledge.machine.value.sitemap.sourceRefs = ["machine:sitemap"];
+  const base = parseGeoKbPayloadV3(value);
+  return parseGeoKbPayloadV3({ ...base, runRef: { ...base.runRef, generationInputHash: geoGenerationInputHashV3(base) } });
+}
+
+function completeV3Fixture(withQuestions = true, published: ReturnType<typeof questionSetV2> | null = null) {
+  const payload = v3Payload();
+  const questionSet = withQuestions ? published ?? questionSetV2() : null;
+  const context = buildGeoSnapshotContextV3({ kbId: V3_KB_ID, payload, questionSet, evidenceRefs: [] });
+  const knowledgePack = buildGeoKnowledgePackV3({ generatedAt: V3_FROZEN_AT, payload, questionSet, bulkAcceptedAt: V3_FROZEN_AT });
+  const candidate = createGeoPreparedCandidateV3({
+    schemaVersion: GEO_PREPARED_CANDIDATE_V3_SCHEMA, candidateId: V3_CANDIDATE, kbId: V3_KB_ID,
+    baseDraftVersion: "4", baseDraftHash: geoV2Digest(payload), payload,
+    questionSet: questionSet === null ? { status: "unavailable", reason: "not_attempted", failedGenerationId: null } : { status: "available", value: questionSet },
+    context, knowledgePack, generationInputHash: geoGenerationInputHashV3(payload),
+    reviewHash: geoReviewHashV3(payload), sourceReceiptRefs: [],
+  });
+  const snapshot: VersionedGeoKbFrozenSnapshot = { kbId: V3_KB_ID, snapshotId: V3_SNAPSHOT, revision: 4, contentHash: geoV2Digest(payload),
+    questionSetHash: questionSet === null ? null : geoV2Digest(questionSet), questionCount: questionSet === null ? null : questionSet.questions.length,
+    frozenAt: V3_FROZEN_AT, preparedId: V3_CANDIDATE, payload, questionSet };
+  const dependencies = {
+    readFrozen: vi.fn(async () => ({ kind: "ok" as const, value: snapshot })),
+    readContext: vi.fn(async () => ({ kind: "ok" as const, value: context as unknown })),
+    readPrepared: vi.fn(async () => ({ kind: "ok" as const, value: candidate as unknown })),
+  } as unknown as Parameters<typeof readCompleteGeoKnowledgeBase>[1];
+  const selection = { userId: USER, kbId: V3_KB_ID, snapshotId: V3_SNAPSHOT };
+  return { payload, questionSet, context, knowledgePack, candidate, snapshot, dependencies, selection };
+}
+
+/**
+ * The shared question set with one byte changed: the question's final "?" is a
+ * ".". Ids, entity catalog, provenance and every hash input beside that
+ * character are untouched, so nothing but the text itself can be what a reader
+ * notices.
+ */
+function questionSetOneByteApart() {
+  const published = questionSetV2();
+  return parseGeoQuestionSetV2({
+    ...published,
+    questions: published.questions.map(question => ({ ...question, text: `${question.text.slice(0, -1)}.` })),
+  });
+}
+
+describe("complete immutable GEO reads of a v3 version", () => {
+  it("returns the v3 context and the published knowledge pack as one self-contained version", async () => {
+    const value = completeV3Fixture();
+
+    const result = await readCompleteGeoKnowledgeBase(value.selection, value.dependencies);
+
+    expect(result).toEqual({ kind: "ok", value: { snapshot: value.snapshot, context: value.context, completeness: "complete", knowledgePack: value.knowledgePack } });
+    expect(profileStore.read).not.toHaveBeenCalled();
+  });
+
+  it("accepts a version published with no question set and keeps the absence explicit", async () => {
+    const value = completeV3Fixture(false);
+    expect(value.context.questionSetHash).toBe(GEO_ABSENT_QUESTION_SET_HASH);
+
+    const result = await readCompleteGeoKnowledgeBase(value.selection, value.dependencies);
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error("Expected a complete v3 read");
+    expect(result.value.snapshot.questionSet).toBeNull();
+    expect(result.value.snapshot.questionCount).toBeNull();
+    expect(result.value.knowledgePack?.schemaVersion).toBe("marketing-geo-knowledge-pack.v2");
+  });
+
+  it("refuses a question-set-less version whose context names a question set", async () => {
+    const absent = completeV3Fixture(false);
+    const withQuestions = completeV3Fixture();
+    const dependencies = { ...absent.dependencies, readContext: vi.fn(async () => ({ kind: "ok" as const, value: withQuestions.context as unknown })) } as typeof absent.dependencies;
+
+    expect((await readCompleteGeoKnowledgeBase(absent.selection, dependencies)).kind).toBe("unavailable");
+  });
+
+  it.each(["absent_sentinel_on_a_version_with_questions", "foreign_candidate", "missing_prepared", "legacy_candidate", "missing_context"])("refuses a v3 version with %s", async issue => {
+    const value = completeV3Fixture();
+    const snapshot = { ...value.snapshot } as Record<string, unknown>;
+    let dependencies = value.dependencies;
+    if (issue === "absent_sentinel_on_a_version_with_questions") {
+      const absent = completeV3Fixture(false);
+      dependencies = { ...value.dependencies, readContext: vi.fn(async () => ({ kind: "ok" as const, value: absent.context as unknown })) } as typeof value.dependencies;
+    }
+    if (issue === "foreign_candidate") {
+      const foreign = completeV3Fixture(false);
+      dependencies = { ...value.dependencies, readPrepared: vi.fn(async () => ({ kind: "ok" as const, value: foreign.candidate as unknown })) } as typeof value.dependencies;
+    }
+    if (issue === "missing_prepared") {
+      snapshot.preparedId = null;
+      dependencies = { ...value.dependencies, readFrozen: vi.fn(async () => ({ kind: "ok" as const, value: snapshot as unknown })) } as typeof value.dependencies;
+    }
+    if (issue === "legacy_candidate") {
+      dependencies = { ...value.dependencies, readPrepared: vi.fn(async () => ({ kind: "ok" as const, value: preparedCandidateFixture().v2 as unknown })) } as typeof value.dependencies;
+    }
+    if (issue === "missing_context") {
+      dependencies = { ...value.dependencies, readContext: vi.fn(async () => ({ kind: "ok" as const, value: null })) } as typeof value.dependencies;
+    }
+
+    expect((await readCompleteGeoKnowledgeBase(value.selection, dependencies)).kind).toBe("unavailable");
+  });
+
+  it("refuses a v3 context handed to a v2 version, which keeps its facts in the context", async () => {
+    const legacy = completeV2Fixture();
+    const v3 = completeV3Fixture();
+    const dependencies = { ...legacy.dependencies, readContext: vi.fn(async () => ({ kind: "ok" as const, value: v3.context as unknown })) } as unknown as typeof legacy.dependencies;
+
+    expect((await readCompleteGeoKnowledgeBase(legacy.selection, dependencies)).kind).toBe("unavailable");
+  });
+
+  /**
+   * The relaxation above is a hole cut for the two tests below it, and a hole
+   * nothing measures can be left open: with `relaxed` stuck on, every other
+   * test in this file still passes. This one does not, in two independent ways.
+   *
+   * It hands the read a candidate whose published pack was rewritten -- one
+   * fact now says something the reviewed draft never said -- with the pack's
+   * own digest recomputed, so the pack is internally perfect and its item keys
+   * are unchanged. Nothing else the read compares can see that: the candidate
+   * id, the kb id, the base draft hash, the payload, the question set and the
+   * context are all exactly the published ones, and the pack is the one part
+   * the read hands back without re-deriving it. Only the strict parser's
+   * candidate-wide hash binding refuses it. So the test is red when the
+   * relaxation is left on, and red again when that binding is deleted.
+   *
+   * The first line is what makes that true from anywhere in the file. Read the
+   * live flag and this test guards the relaxation no matter where it sits;
+   * delete that line and it only guards while it runs BEFORE the two tests
+   * below, because they are what turn the relaxation on -- and a guard that
+   * stops guarding when someone reorders a file is a guard nobody can see fail.
+   */
+  it("refuses a candidate whose published pack was rewritten under a recomputed pack digest", async () => {
+    expect(PARSER_RELAXED_BY_DEFAULT).toBe(false);
+    const forgedClaim = "The Pro plan is free forever.";
+    const value = completeV3Fixture();
+    const body = structuredClone(value.knowledgePack) as unknown as { contentHash?: string; facts: { value: { statement: string }[] } };
+    delete body.contentHash;
+    body.facts.value[0]!.statement = forgedClaim;
+    const forgedPack = buildGeoKnowledgePackV2(body);
+    expect(forgedPack.contentHash).not.toBe(value.knowledgePack.contentHash);
+    expect(JSON.stringify(forgedPack)).toContain(forgedClaim);
+    const dependencies = {
+      ...value.dependencies,
+      readPrepared: vi.fn(async () => ({ kind: "ok" as const, value: { ...value.candidate, knowledgePack: forgedPack } as unknown })),
+    } as typeof value.dependencies;
+
+    const result = await readCompleteGeoKnowledgeBase(value.selection, dependencies);
+
+    expect(result.kind).toBe("unavailable");
+    expect(JSON.stringify(result)).not.toContain(forgedClaim);
+  });
+
+  it("refuses a version whose candidate carries a question set one byte from the published one", async () => {
+    const published = completeV3Fixture(true, questionSetOneByteApart());
+    const candidateSet = completeV3Fixture().questionSet;
+    const publishedText = canonicalGeoV2Text(published.questionSet);
+    const candidateText = canonicalGeoV2Text(candidateSet);
+    // Indexed by UTF-16 code unit on both sides, matching `.length`. The two
+    // fixtures are ASCII, so one differing code unit is one differing byte --
+    // the property the name claims. Mixing units here (spreading one side into
+    // code points while measuring the other in code units) could only ever
+    // produce a confusing red on a fixture somebody later writes in CJK.
+    expect(candidateText.length).toBe(publishedText.length);
+    const differing = [...Array(publishedText.length).keys()].filter((index) => publishedText[index] !== candidateText[index]);
+    expect(differing.length).toBe(1);
+    // Everything else the read checks stays exactly as published: the same
+    // snapshot, the same hashes, the same frozen context, the same payload.
+    const dependencies = {
+      ...published.dependencies,
+      readPrepared: vi.fn(async () => ({ kind: "ok" as const, value: { ...published.candidate, questionSet: { status: "available", value: candidateSet } } as unknown })),
+    } as typeof published.dependencies;
+
+    preparedParser.relaxed = true;
+    try {
+      expect((await readCompleteGeoKnowledgeBase(published.selection, dependencies)).kind).toBe("unavailable");
+    } finally {
+      preparedParser.relaxed = false;
+    }
+  });
+
+  it("accepts that same version once the candidate carries the published question set byte for byte", async () => {
+    const published = completeV3Fixture(true, questionSetOneByteApart());
+
+    preparedParser.relaxed = true;
+    try {
+      const result = await readCompleteGeoKnowledgeBase(published.selection, published.dependencies);
+      expect(result).toEqual({ kind: "ok", value: { snapshot: published.snapshot, context: published.context, completeness: "complete", knowledgePack: published.knowledgePack } });
+    } finally {
+      preparedParser.relaxed = false;
+    }
   });
 });

@@ -31,6 +31,8 @@ import type { KeywordLlmUsage } from "../tools/keyword-llm-client.ts";
 import { GEO_CONTENT_BRIEF_SCHEMA } from "@sf/public-tools/content-brief/geo-contract";
 import { runSharedBrief, type SharedBriefHandlerDependencies } from "./brief-shared-handler.ts";
 import { projectBriefFrozenChoice } from "./brief-load-projection.ts";
+import { geoVersionedPayloadIdentity, isGeoKbPayloadV3Value } from "./kb-versioned-read.ts";
+import { GEO_SNAPSHOT_CONTEXT_SCHEMA_V3 } from "./snapshot-context-v3.ts";
 import { geoBriefFactsForSnapshot } from "./brief-facts.ts";
 
 const BODY_LIMIT_BYTES = 8 * 1024;
@@ -164,11 +166,19 @@ export async function handleBriefLoad(
     if (found.kind !== "ok") return privateError("store_unavailable", 503);
     const frozen = found.value;
     if (frozen.kbId !== row.kbId || frozen.snapshotId !== row.snapshotId) return privateError("not_found", 404);
-    const host = normalizeGeoHost(frozen.payload.targetUrl);
+    const host = normalizeGeoHost(geoVersionedPayloadIdentity(frozen.payload).targetUrl);
     if (host === null) return privateError("store_unavailable", 503);
+    const choice = projectBriefFrozenChoice(frozen, host);
+    // Null means the version has no question set, so there is no question to
+    // write a Brief against. Not found is the honest answer to "load this
+    // version for a Brief", and it is the same answer the selector gives by
+    // never listing it.
+    if (choice === null) return privateError("not_found", 404);
+    const questionSet = frozen.questionSet;
+    if (questionSet === null) return privateError("not_found", 404);
     let context: BriefLoadContext | undefined;
     if (handoffLoad && validId(row.questionId) && validId(row.runId) && validId(row.gapId)) {
-      if (!frozen.questionSet.questions.some(question => question.id === row.questionId)) return privateError("not_found", 404);
+      if (!questionSet.questions.some(question => question.id === row.questionId)) return privateError("not_found", 404);
       const resolved = await shared.readRunEvidence({ userId: auth.userId, runId: row.runId, gapId: row.gapId, questionId: row.questionId, frozen });
       if (resolved.kind === "not_eligible") return privateError("gap_not_eligible", 422);
       if (resolved.kind === "not_found") return privateError("not_found", 404);
@@ -181,22 +191,33 @@ export async function handleBriefLoad(
       };
     }
     let evidenceSummary: BriefFrozenChoice["evidenceSummary"];
-    try {
-      const snapshotContext = await shared.readContext({ userId: auth.userId, kbId: row.kbId, snapshotId: row.snapshotId });
-      if (snapshotContext.kind !== "ok") return privateError("store_unavailable", 503);
-      const { factTable, receipts } = geoBriefFactsForSnapshot(frozen, snapshotContext.value);
-      evidenceSummary = {
-        snapshotFacts: frozen.payload.facts.length,
-        contextFacts: snapshotContext.value?.facts.length ?? null,
-        usableFacts: receipts.length,
-        missingFacts: factTable.filter(fact => fact.value === null).length,
-        profileAttached: snapshotContext.value?.profile != null,
-        contextAttached: snapshotContext.value !== null,
-      };
-    } catch {
-      return privateError("store_unavailable", 503);
+    // Deliberately absent for a v3 version. Every field of this summary counts
+    // the v1/v2 fact ledger -- payload fact rows and context fact rows -- and a
+    // v3 version has neither: its facts live in the published knowledge pack,
+    // which this load does not read. Reporting zeroes would state that the
+    // version knows nothing, so the summary is omitted instead.
+    if (!isGeoKbPayloadV3Value(frozen.payload)) {
+      const payload = frozen.payload;
+      try {
+        const snapshotContext = await shared.readContext({ userId: auth.userId, kbId: row.kbId, snapshotId: row.snapshotId });
+        if (snapshotContext.kind !== "ok") return privateError("store_unavailable", 503);
+        // A v3 context beside a v1/v2 payload is a mispaired version, not a
+        // readable one: it carries no facts and no profile projection.
+        if (snapshotContext.value?.schemaVersion === GEO_SNAPSHOT_CONTEXT_SCHEMA_V3) return privateError("store_unavailable", 503);
+        const { factTable, receipts } = geoBriefFactsForSnapshot(frozen, snapshotContext.value, null);
+        evidenceSummary = {
+          snapshotFacts: payload.facts.length,
+          contextFacts: snapshotContext.value?.facts.length ?? null,
+          usableFacts: receipts.length,
+          missingFacts: factTable.filter(fact => fact.value === null).length,
+          profileAttached: snapshotContext.value?.profile != null,
+          contextAttached: snapshotContext.value !== null,
+        };
+      } catch {
+        return privateError("store_unavailable", 503);
+      }
     }
-    return privateJson({ data: { choices: [{ ...projectBriefFrozenChoice(frozen, host), evidenceSummary }], runsPerDay: GEO_BRIEF_RUNS_PER_DAY, providerConfigured: shared.configured(), ...(context === undefined ? {} : { context }) } });
+    return privateJson({ data: { choices: [{ ...choice, ...(evidenceSummary === undefined ? {} : { evidenceSummary }) }], runsPerDay: GEO_BRIEF_RUNS_PER_DAY, providerConfigured: shared.configured(), ...(context === undefined ? {} : { context }) } });
   }
   if (!exactKeys(body.value, [])) return privateError("invalid_request", 400);
 

@@ -9,6 +9,7 @@ import type { GeoKbStoreResult, GeoKbDraftSummary } from "./kb-store.ts";
 import type { VersionedGeoKbDetails } from "./kb-versioned-read.ts";
 import type { GeoProfileCopy } from "./kb-profile-copy.ts";
 import { parseGeoKbPayloadV2, type GeoKbPayloadV2, type AnyGeoKbPayload } from "./kb-v2-contract.ts";
+import { isGeoKbPayloadV3Value } from "./kb-versioned-read.ts";
 import { privateError, privateJson, readAccountMutationJson } from "../account-websites/route-http.ts";
 import { privateGeoEditorJson } from "./kb-editor-response.ts";
 import { z } from "zod";
@@ -96,7 +97,12 @@ export async function handleGeoKbV2Draft(request: Request, dependencies: GeoKbV2
     if (dependencies.generationRunning && await dependencies.generationRunning(scope.userId, scope.kbId).catch(() => "unavailable" as const) === true) return privateError("generation_running", 409);
     const current = await dependencies.validateCurrentCopy({ userId: scope.userId, origin: owned.origin, copy: payload.profileCopy, ...(expectedProfileReference === undefined ? {} : { expectedProfileReference }) });
     if (current !== "current") return privateError(current === "stale" ? "context_stale" : "store_unavailable", current === "stale" ? 409 : 503);
-    const lineage = await dependencies.validateLineage({ ...scope, payload, previousPayload: owned.draft?.payload ?? null });
+    const previousPayload = owned.draft?.payload ?? null;
+    // The v2 editor cannot save over a v3 draft. The two hold different halves
+    // -- a Profile copy versus a locked generation input plus the owner's
+    // review -- and writing a v2 payload here would drop that review.
+    if (previousPayload !== null && isGeoKbPayloadV3Value(previousPayload)) return privateError("context_stale", 409);
+    const lineage = await dependencies.validateLineage({ ...scope, payload, previousPayload });
     if (lineage !== "valid") return privateError(lineage === "invalid" ? "invalid_input" : "store_unavailable", lineage === "invalid" ? 422 : 503);
     const saved = await dependencies.saveDraft({ ...scope, payload, baseVersion: parsed.data.baseVersion });
     if (saved.kind === "missing") return privateError("not_found", 404);

@@ -39,6 +39,20 @@ export function AiVisibilityCheck({
   readonly authentication: "authenticated" | "unauthenticated" | "unavailable";
 }) {
   const t = useTranslations("tools.aiVisibility");
+  /**
+   * A sentence, or a mark naming the sentence that is missing.
+   *
+   * next-intl renders an absent key as the key path, which reads as prose to
+   * everyone who does not know the catalogue -- so a state whose copy has not
+   * landed would look explained rather than unexplained. This says which key is
+   * missing instead. It never stands in for a guard: whether the sentence
+   * exists or not, an unreadable frozen version cannot start a paid run.
+   */
+  const copy = useCallback(
+    (key: string, values?: Record<string, string | number>): string =>
+      t.has(key) ? t(key, values) : `[missing copy: tools/aiVisibility/${key.replaceAll(".", "/")}]`,
+    [t],
+  );
   const [view, setView] = useState<"input" | "result">("input");
   const [choices, setChoices] = useState<LoadedChoices | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -162,8 +176,17 @@ export function AiVisibilityCheck({
     return () => { window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
   }, [load, signedIn]);
   const version = useMemo(() => versions.find(entry => entry.snapshotId === selectedSnapshot) ?? null, [selectedSnapshot, versions]);
-  const sourceMismatch = inputSource.site !== null && (inputSource.site.frozen?.questionCount !== version?.questionCount || inputSource.site.frozen?.retrievalCount !== version?.retrievalCount);
-  const sourceBlocked = refreshing || loadError !== null || inputSource.loading || inputSource.error || sourceMismatch || inputSource.site === null || inputSource.site.preparation.languageWarnings.length > 0;
+  // Two reasons, kept apart. Counts are only comparable against a version this
+  // page could read, so the comparison is made over a readable one; a version
+  // it could not read is not a source whose counts happen to disagree, it is a
+  // source that was never checked. Folding the second into the first left the
+  // paid run gated on `undefined !== 15` -- true by accident, and true only
+  // until someone wrote the comparison the way it reads.
+  const inputFrozen = inputSource.site?.frozen ?? null;
+  const readableInput = inputFrozen !== null && inputFrozen.kind === "readable" ? inputFrozen : null;
+  const sourceMismatch = readableInput !== null && (readableInput.questionCount !== version?.questionCount || readableInput.retrievalCount !== version?.retrievalCount);
+  const sourceUnreadable = inputSource.site !== null && readableInput === null;
+  const sourceBlocked = refreshing || loadError !== null || inputSource.loading || inputSource.error || sourceUnreadable || sourceMismatch || inputSource.site === null || inputSource.site.preparation.languageWarnings.length > 0;
 
 
   const estimate = useMemo(() => {
@@ -263,6 +286,9 @@ export function AiVisibilityCheck({
   );
 
   const start = useCallback(async () => {
+    // One gate, not two. `sourceBlocked` carries the readable-version check
+    // (through `sourceUnreadable`) and is computed in this same render, so a
+    // second copy here could never be reached and could never be tested.
     if (version === null || engines.length === 0 || sourceBlocked || inputSource.site === null) return;
     setRunningInput({ version, site: inputSource.site });
     setSelected(version.snapshotId); setWebsiteId(inputSource.site.website.websiteId);
@@ -375,14 +401,37 @@ export function AiVisibilityCheck({
           <div className="min-w-0 flex-1"><label className="block text-sm text-text-dark-secondary" htmlFor="visibility-website">{t("workbench.website")}</label>
             <select id="visibility-website" className={FIELD} value={selectedSite?.website.websiteId ?? ""} disabled={busy || (context?.websites.length ?? 0) === 0} onChange={event => { setWebsiteId(event.target.value); setSelected(""); }}>
               {(context?.websites.length ?? 0) === 0 && <option value="">{t("workbench.noWebsites")}</option>}
-              {context?.websites.map(site => <option key={site.website.websiteId} value={site.website.websiteId}>{site.website.host} · {t(`workbench.readiness.${site.preparation.status}`)}</option>)}
+              {context?.websites.map(site => <option key={site.website.websiteId} value={site.website.websiteId}>{site.website.host} · {copy(`workbench.readiness.${site.preparation.status}`)}</option>)}
             </select>
           </div>
           <button className={SECONDARY_BUTTON} type="button" disabled={refreshing} onClick={() => { void load(); }}>{t("workbench.refresh")}</button>
         </div>
         {loadError !== null && <p role="alert" className="mt-3 text-sm text-brand-error">{t(`errors.${loadError}`)}</p>}
-        {selectedSite !== null && version === null && <div className="mt-4 rounded-lg border border-brand-border-card p-4"><p className={BODY}>{t("noFrozen.body")}</p><a className="mt-2 inline-block text-sm text-brand-accent-text underline" href={localePath(locale, `/account/websites/${selectedSite.website.websiteId}/geo`)}>{t("workbench.prepare")}</a></div>}
+        {/* Three states, three sentences. A version this page cannot read is
+            not the empty state: telling a visitor who has published one to go
+            and freeze one sends them to do again what they already did. */}
+        {selectedSite?.frozen?.kind === "unreadable" && <div data-testid="visibility-frozen-unreadable" className="mt-4 rounded-lg border border-brand-border-card p-4">
+          <p className={BODY}>{copy(`frozenUnreadable.${selectedSite.frozen.reason}`)}</p>
+          <p className={`mt-2 ${NOTE}`}>{copy("frozenUnreadable.identity", { revision: selectedSite.frozen.revision, time: formatMoment(selectedSite.frozen.frozenAt, locale) })}</p>
+          {/* No exit is offered, for either reason, because neither has one.
+              `unsupported_payload_version` is a knowledge base that is complete
+              and correct: this panel is what cannot read it. And
+              `no_question_set` is not a generation that happened to fail --
+              `runRef.questionsGenerationId` is written null at draft creation
+              (`kb-v3-draft-create.ts:378`) and NO production code ever writes
+              it, so every v3 version this deployment can publish reaches this
+              state and publishing again cannot change it. A link labelled
+              "prepare your knowledge base" would name a step that cannot help,
+              which is the whole defect this notice exists to avoid. The source
+              panel below still links to the knowledge base for navigation. */}
+        </div>}
+        {selectedSite !== null && version === null && selectedSite.frozen?.kind !== "unreadable" && <div className="mt-4 rounded-lg border border-brand-border-card p-4"><p className={BODY}>{t("noFrozen.body")}</p><a className="mt-2 inline-block text-sm text-brand-accent-text underline" href={localePath(locale, `/account/websites/${selectedSite.website.websiteId}/geo`)}>{t("workbench.prepare")}</a></div>}
         {selectedSite === null && <a className="mt-3 inline-block text-sm text-brand-accent-text underline" href={localePath(locale, "/account/websites")}>{t("workbench.addWebsite")}</a>}
+        {/* `ai-visibility-source.tsx` now has the third state, so an unreadable
+            version is passed to it: the panel reads no payload for that arm,
+            and the half that is readable -- the current Profile, the sync line,
+            the links -- is still the visitor's. The notice above says what the
+            state is; this says which inputs it could and could not show. */}
         {sourceForInput !== null ? <AiVisibilitySource site={sourceForInput} locale={locale} /> : selectedSite?.frozen === null ? <AiVisibilitySource site={selectedSite} locale={locale} /> : null}
         {!busy && inputSource.loading && <p className={`mt-3 ${NOTE}`}>{t("workbench.sourceLoading")}</p>}
         {!busy && (inputSource.error || sourceMismatch) && <p className="mt-3 text-sm text-brand-error" role="alert">{t("workbench.sourceUnavailable")}</p>}
@@ -401,7 +450,10 @@ export function AiVisibilityCheck({
               onChange={(event) => setSelected(event.target.value)}
               value={selectedSnapshot}
             >
-              {versions.length === 0 && <option value="">{t("workbench.noFrozen")}</option>}
+              {/* The same lie in a second widget: an account that published a
+                  version this page cannot read has one, and the dropdown saying
+                  it has none is how the state disappears from the form. */}
+              {versions.length === 0 && <option value="">{selectedSite?.frozen?.kind === "unreadable" ? copy("workbench.frozenUnreadableOption") : t("workbench.noFrozen")}</option>}
               {versions.map((entry) => (
                 <option key={entry.snapshotId} value={entry.snapshotId}>
                   {t("form.versionOption", {
@@ -531,9 +583,11 @@ export function AiVisibilityCheck({
       {hasResult && view === "result" && <div id="visibility-result-panel" role="tabpanel" aria-labelledby="visibility-result-tab" tabIndex={-1} ref={resultRef} className="grid gap-6 outline-none">
         {displayedReport !== null && <AiVisibilityReport locale={locale} report={displayedReport} />}
         {savedSummary !== null && <AiVisibilityLegacySummary locale={locale} summary={savedSummary} />}
-        {resultSource.site !== null && <AiVisibilitySource site={resultSource.site} locale={locale} historical />}
+        {resultSource.site !== null && resultSource.site.frozen?.kind !== "unreadable" && <AiVisibilitySource site={resultSource.site} locale={locale} historical />}
         {resultSource.loading && <p className={NOTE}>{t("workbench.sourceLoading")}</p>}
-        {(resultSource.error || (context === null && loadError !== null)) && <p role="status" className={NOTE}>{t("workbench.historicalSourceUnavailable")}</p>}
+        {/* Same seam. The report still carries its own recorded input, which is
+            what this sentence says; it does not say the run was substituted. */}
+        {(resultSource.error || resultSource.site?.frozen?.kind === "unreadable" || (context === null && loadError !== null)) && <p role="status" className={NOTE}>{t("workbench.historicalSourceUnavailable")}</p>}
       </div>}
       <AiVisibilityHistory history={history} locale={locale} disabled={busy} />
       <VisibilityPortableRuns onComparison={setFileComparison} />

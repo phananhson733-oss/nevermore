@@ -5,6 +5,8 @@ import { buildGeoKnowledgeGenerationResultV1, geoKnowledgeGenerationResultHash }
 import { collectGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidenceReadResource } from "./kb-knowledge-evidence.ts";
 import { buildGeoKnowledgeSynthesisInputV1 } from "./kb-knowledge-synthesis-contract.ts";
 import { buildGeoKnowledgeGenerationInputManifest } from "./kb-prepared-contract.ts";
+import { buildGeoKnowledgeGenerationResultV2, buildGeoKnowledgeSynthesisInputV2 } from "./kb-knowledge-synthesis-v2-contract.ts";
+import { geoV2EvidenceFixture, geoV2NarrativeFixture, geoV2ProfileRefFixture } from "./kb-knowledge-synthesis-v2-fixtures.ts";
 const userId = "11111111-1111-4111-8111-111111111111", kbId = "22222222-2222-4222-8222-222222222222", generationId = "33333333-3333-4333-8333-333333333333", token = "44444444-4444-4444-8444-444444444444";
 const input = { userId, kbId, kind: "roles" as const, idempotencyKey: "typed_request_1", input: { kbId, baseDraftVersion: "1", baseDraftHash: "a".repeat(64), profileCopyHash: "b".repeat(64) } };
 const inputHash = geoGenerationInputHash("roles", input.input);
@@ -31,6 +33,24 @@ async function knowledgeFixture() {
   const manifest = buildGeoKnowledgeGenerationInputManifest({ kbId, baseDraftVersion: "2", baseDraftHash: "a".repeat(64), profileCopyHash: "b".repeat(64), sourceReceiptRefs: [], knowledgeSynthesisInput: synthesisInput });
   const result = buildGeoKnowledgeGenerationResultV1({ schemaVersion: "marketing-geo-knowledge-generation-result.v1", generationId, kbId, manifest, evidence, synthesisInput, narrative, generatedAt: "2026-09-04T07:13:00.000Z" });
   return { manifest, result };
+}
+/**
+ * The knowledge result a V3 run produces, built by the shipped V2 builders.
+ *
+ * V3 is the only shape that binds a run to `generationInputHash`; V1 binds to a
+ * `profileCopy` hash, a field a V3 draft does not have. This store used to parse
+ * every knowledge result as V1, so a real V3 result threw on the way in and the
+ * paid narrative was reported as `store_unavailable` and discarded.
+ */
+function knowledgeV2Fixture(generationInputHash = "d".repeat(64)) {
+  const evidence = geoV2EvidenceFixture();
+  const synthesisInput = buildGeoKnowledgeSynthesisInputV2({ officialName: "Pine Cloud", aliases: ["Pine"], categoryTerms: ["Project software"],
+    market: "US", language: "en-US", profileRef: geoV2ProfileRefFixture(), generationInputHash }, evidence);
+  const manifest = { schemaVersion: "marketing-geo-knowledge-generation-input.v2", kbId, baseDraftVersion: "2", baseDraftHash: "a".repeat(64),
+    generationInputHash, sourceReceiptRefs: [], knowledgeSynthesisInput: synthesisInput };
+  const result = buildGeoKnowledgeGenerationResultV2({ schemaVersion: "marketing-geo-knowledge-generation-result.v2", generationId, kbId,
+    manifest, synthesisInput, evidence, narrative: geoV2NarrativeFixture(), generatedAt: "2026-09-04T07:13:00.000Z" });
+  return { manifest, result, inputHash: geoGenerationInputHash("knowledge_pack", JSON.parse(JSON.stringify(manifest))) };
 }
 describe("generation store transport", () => {
   it("returns the exclusive capability only for a matching claimed record", async () => {
@@ -75,6 +95,35 @@ describe("generation store transport", () => {
     callRpc.mockClear();
     expect(await store.finish(scope, { state: "succeeded", result: wrongGeneration, errorReason: null, attempt })).toEqual({ kind: "unavailable" });
     expect(callRpc).not.toHaveBeenCalled();
+  });
+  it("stores a V2 knowledge result instead of throwing the paid narrative away", async () => {
+    const { result, inputHash } = knowledgeV2Fixture();
+    const generation = { generationId, userId, kbId, kind: "knowledge_pack", inputHash, state: "succeeded", result, errorReason: null, attempt };
+    const callRpc = vi.fn(async () => ({ data: [{ outcome: "finished", generation }], error: null }));
+    const store = createGeoKbGenerationStore({ callRpc });
+    expect(await store.finish({ userId, kbId, generationId, claimToken: token }, { state: "succeeded", result: result as any, errorReason: null, attempt })).toEqual({ kind: "ok", generation });
+    // The result reached the database rather than being refused before the call.
+    expect(callRpc).toHaveBeenCalledWith("marketing_geo_finish_generation", expect.objectContaining({ p_state: "succeeded", p_result: result }));
+  });
+  it("reads a stored V2 knowledge record back, and only when its manifest is what was paid for", async () => {
+    const { manifest, result, inputHash } = knowledgeV2Fixture();
+    const generation = { generationId, userId, kbId, kind: "knowledge_pack", inputHash, state: "succeeded", result, errorReason: null, attempt };
+    const store = createGeoKbGenerationStore({ callRpc: async () => ({ data: [{ outcome: "found", generation }], error: null }) });
+    expect(await store.readLatest({ userId, kbId, kind: "knowledge_pack" })).toEqual({ kind: "ok", generation });
+    // The recorded input hash is the hash of the manifest the result carries; a
+    // record claiming a different one names inputs this result was not bought
+    // against, and the V2 manifest has to be hashed exactly as the V1 one is.
+    expect(inputHash).toBe(geoGenerationInputHash("knowledge_pack", JSON.parse(JSON.stringify(manifest))));
+    const drifted = createGeoKbGenerationStore({ callRpc: async () => ({ data: [{ outcome: "found", generation: { ...generation, inputHash: "f".repeat(64) } }], error: null }) });
+    expect(await drifted.readLatest({ userId, kbId, kind: "knowledge_pack" })).toEqual({ kind: "unavailable" });
+  });
+  it("still refuses a V2 knowledge result offered as another kind", async () => {
+    const { result, inputHash } = knowledgeV2Fixture();
+    for (const kind of ["roles", "questions"] as const) {
+      const generation = { generationId, userId, kbId, kind, inputHash, state: "succeeded", result, errorReason: null, attempt };
+      const store = createGeoKbGenerationStore({ callRpc: async () => ({ data: [{ outcome: "found", generation }], error: null }) });
+      expect(await store.readLatest({ userId, kbId, kind })).toEqual({ kind: "unavailable" });
+    }
   });
   it("rejects malformed or wrong-kind succeeded knowledge results", async () => {
     const { manifest, result } = await knowledgeFixture();

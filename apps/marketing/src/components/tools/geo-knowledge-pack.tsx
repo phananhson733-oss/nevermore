@@ -4,7 +4,9 @@ import type { ReactNode } from "react";
 
 import { normalizeAccountWebsiteUrl } from "../../lib/account-websites/contracts.ts";
 import type { GeoKnowledgePackV1 } from "../../lib/geo-tools/kb-knowledge-pack-contract.ts";
+import type { GeoKnowledgePackV2 } from "../../lib/geo-tools/kb-knowledge-pack-v2-contract.ts";
 import { GeoKbSection } from "./geo-kb-section.tsx";
+import { GeoKnowledgePackV2View, type GeoKnowledgeModuleName } from "./geo-knowledge-pack-v2.tsx";
 import { geoKnowledgePackCopy, type GeoKnowledgePackCopy } from "./geo-knowledge-pack-copy.ts";
 
 type Heading = 3 | 4;
@@ -67,7 +69,7 @@ function formatDate(value: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(value));
 }
 
-export function GeoKnowledgePack({ pack, locale, heading = 3 }: { readonly pack: GeoKnowledgePackV1; readonly locale: string; readonly heading?: Heading }) {
+function GeoKnowledgePackV1View({ pack, locale, heading = 3 }: { readonly pack: GeoKnowledgePackV1; readonly locale: string; readonly heading?: Heading }) {
   const copy = geoKnowledgePackCopy(locale);
   const sources = new Map(pack.sourceCatalogue.map((source) => [source.id, source]));
   const entity = pack.entity;
@@ -209,4 +211,30 @@ export function GeoKnowledgePack({ pack, locale, heading = 3 }: { readonly pack:
       </>}
     </ModuleFrame>
   </div>;
+}
+
+/**
+ * The published schema this file dispatches on, declared as the contract's own
+ * literal type. Renaming the schema in the contract fails to compile here
+ * rather than silently routing every v2 pack to the v1 renderer, which would
+ * drop origin, decision and the collected/empty distinction without an error.
+ */
+const PACK_V2_SCHEMA: GeoKnowledgePackV2["schemaVersion"] = "marketing-geo-knowledge-pack.v2";
+
+/**
+ * v1 packs keep the renderer they were written against, byte for byte. They
+ * carry no `origin`, no `decision` and no `collected`, so drawing them through
+ * the v2 renderer would have to invent all three; a historical version is
+ * shown as what it actually recorded.
+ */
+export function GeoKnowledgePack({ pack, locale, heading = 3, modules }: {
+  readonly pack: GeoKnowledgePackV1 | GeoKnowledgePackV2;
+  readonly locale: string;
+  readonly heading?: Heading;
+  /** v2 only: which of the eight modules to draw, so the card can group them. */
+  readonly modules?: readonly GeoKnowledgeModuleName[];
+}) {
+  return pack.schemaVersion === PACK_V2_SCHEMA
+    ? <GeoKnowledgePackV2View pack={pack} locale={locale} heading={heading} modules={modules} />
+    : <GeoKnowledgePackV1View pack={pack} locale={locale} heading={heading} />;
 }

@@ -51,7 +51,13 @@ export async function listFrozenVersions(
 ): Promise<BriefStoreOutcome<readonly BriefFrozenChoice[]>> {
   const list = await readHistory({ userId });
   if (list.kind !== "ok") return { kind: "unavailable", reason: "store unavailable" };
-  return { kind: "ok", value: list.value.map(({ host, snapshot }) => projectBriefFrozenChoice(snapshot, host)) };
+  // A version with no question set projects to null: a Brief is written against
+  // a frozen question and that version has none. It is dropped from the
+  // choices rather than shown with an invented prompt-set reference.
+  return { kind: "ok", value: list.value.flatMap(({ host, snapshot }) => {
+    const choice = projectBriefFrozenChoice(snapshot, host);
+    return choice === null ? [] : [choice];
+  }) };
 }
 
 async function readFrozen(input: {

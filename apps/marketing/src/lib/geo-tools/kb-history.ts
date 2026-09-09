@@ -2,12 +2,20 @@
 // @output -- exact historical versions, or an explicit unreadable/oversized history
 // @pos -- shared Visibility/Brief version selector; never substitutes an empty state for a failed read
 import { createAdminSupabaseClient } from "../supabase/admin.ts";
-import { DEFAULT_GEO_KB_STORE_DEPENDENCIES, type GeoKbStoreResult, type GeoKbTransportOutcome } from "./kb-store.ts";
+import { DEFAULT_GEO_KB_STORE_DEPENDENCIES, GEO_KB_SNAPSHOT_COLUMNS, type GeoKbStoreResult, type GeoKbTransportOutcome } from "./kb-store.ts";
 import { listVersionedGeoKnowledgeBases, readVersionedFrozenGeoKb, type VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
 
 export const GEO_FROZEN_HISTORY_LIMIT = 200;
 const PAGE_SIZE = 25;
-const COLUMNS = "id,user_id,kb_id,revision,schema_version,payload,content_hash,question_set,question_set_hash,frozen_at";
+/**
+ * The exact column list the frozen reader needs, not a second hand-written one.
+ * This page hands its rows straight to `readVersionedFrozenGeoKb`, so a column
+ * omitted here reads as a malformed stored value there -- which is what made
+ * every v2 snapshot (they all carry `prepared_id`) collapse the whole history
+ * into `frozen_history_unavailable`. Exported so a test can prove the reader
+ * works with these columns rather than with a richer hand-written row.
+ */
+export const GEO_HISTORY_SNAPSHOT_COLUMNS = GEO_KB_SNAPSHOT_COLUMNS;
 export interface GeoKbHistoryDependencies {
   readonly listKnowledgeBases: typeof listVersionedGeoKnowledgeBases;
   readonly readPage: (userId: string, offset: number, limit: number) => Promise<GeoKbTransportOutcome>;
@@ -16,7 +24,7 @@ export interface GeoKbHistoricalVersion { readonly host: string; readonly snapsh
 const DEFAULT: GeoKbHistoryDependencies = {
   listKnowledgeBases: listVersionedGeoKnowledgeBases,
   readPage: async (userId, offset, limit) => {
-    const result = await createAdminSupabaseClient().from("marketing_geo_kb_snapshots").select(COLUMNS)
+    const result = await createAdminSupabaseClient().from("marketing_geo_kb_snapshots").select(GEO_HISTORY_SNAPSHOT_COLUMNS)
       .eq("user_id", userId).order("frozen_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + limit - 1);
     return result.error ? { kind: "error", code: result.error.code ?? null } : { kind: "ok", data: result.data };
   },

@@ -76,7 +76,7 @@ describe("shared GEO Brief browser chain", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
   it("uses selection IDs, renders Artifact sections, exports one result and stages the same Brief for Draft", async () => {
-    const basis = sharedGeoBriefBasis({ frozen: SHARED_FROZEN, context: null, questionId: "q1", questionText: "", runEvidence: null, runId: "fixture-brief", now: "2026-08-31T00:00:01Z" });
+    const basis = sharedGeoBriefBasis({ frozen: SHARED_FROZEN, context: null, knowledgePack: null, questionId: "q1", questionText: "", runEvidence: null, runId: "fixture-brief", now: "2026-08-31T00:00:01Z" });
     const brief = await assembleSharedGeoBrief(basis, { ok: true, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: basis.must_answer.items.map(item => item.id), provenance: { method: "model", derived_from: ["kb"] } }] });
     const fetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith("/load")) return Response.json({ data: { choices: [{
@@ -110,7 +110,7 @@ describe("shared GEO Brief browser chain", () => {
     const frozen = { ...SHARED_FROZEN, kbId: "11111111-1111-4111-8111-111111111111", snapshotId: "11111111-1111-4111-8111-111111111112" };
     const pointer = { destination: "geo-brief" as const, kbId: frozen.kbId, snapshotId: frozen.snapshotId, runId: "11111111-1111-4111-8111-111111111113", questionId: "q1", gapId: "gap-q1", pageUrl: null, questionText: null };
     expect(writeGeoGapHandoff(window.sessionStorage, pointer)).toBe(true);
-    const basis = sharedGeoBriefBasis({ frozen, context: null, questionId: "q1", questionText: "", runEvidence: { runId: pointer.runId, fingerprint: "e".repeat(64), gap: "D", siteIndex: [], samples: [{ id: "S1", run_id: pointer.runId, question_id: "q1", engine: "chatgpt", collected_at: "2026-08-31T00:00:00Z", status: "answered", search_enabled: null, excerpt: "Actual fixture answer", topics: ["Pricing"] }] }, runId: "fixture-brief", now: "2026-08-31T00:00:01Z" });
+    const basis = sharedGeoBriefBasis({ frozen, context: null, knowledgePack: null, questionId: "q1", questionText: "", runEvidence: { runId: pointer.runId, fingerprint: "e".repeat(64), gap: "D", siteIndex: [], samples: [{ id: "S1", run_id: pointer.runId, question_id: "q1", engine: "chatgpt", collected_at: "2026-08-31T00:00:00Z", status: "answered", search_enabled: null, excerpt: "Actual fixture answer", topics: ["Pricing"] }] }, runId: "fixture-brief", now: "2026-08-31T00:00:01Z" });
     const brief = await assembleSharedGeoBrief(basis, { ok: true, outline: [{ id: "O1", h2: "Direct answer", h3: [], answers: basis.must_answer.items.map(item => item.id), provenance: { method: "model", derived_from: ["kb", "ai_sample"] } }] });
     const fetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith("/load")) { expect(JSON.parse(String(init?.body))).toEqual({ schema: brief.schema, kbId: frozen.kbId, snapshotId: frozen.snapshotId, questionId: pointer.questionId, runId: pointer.runId, gapId: pointer.gapId }); return Response.json({ data: { context: { gap: "D", runRef: { id: pointer.runId, fingerprint: "e".repeat(64) }, samples: brief.evidence.samples.map(sample => ({ id: sample.id, engine: sample.engine, status: sample.status, collectedAt: sample.collected_at })) }, choices: [{

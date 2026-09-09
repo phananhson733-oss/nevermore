@@ -9,6 +9,7 @@ import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";
 import { findAccountWebsiteByUrl } from "../account-websites/store.ts";
 import { getServerAuthenticatedUser } from "../auth/server-auth-user.ts";
 import { extractClientIp } from "../rate-limit.ts";
+import { canonicalCrawlTargetKey } from "../tools/crawl-cache.ts";
 import { openCrawlGate } from "../tools/crawl-gate.ts";
 import { openGscGate } from "../tools/gsc-gate.ts";
 import { readKeywordIdentity } from "../tools/keyword-workflow-handler.ts";
@@ -98,11 +99,17 @@ export function createGeoKnowledgeResourceReader(clientKey: string, options: {
   // collection once per target host, just as a crawler is gated once before
   // it reads multiple pages; otherwise the gate's per-target run budget would
   // be incorrectly spent once per page.
+  //
+  // Memoised under the gate's OWN target identity, not the raw host. The gate
+  // budgets an apex and its `www` sibling together (`canonicalCrawlTargetKey`),
+  // so keying on the raw host admitted them separately and spent one hourly
+  // allowance twice -- which also made `planGeoEvidenceReuse`'s promise of one
+  // opening per gate key untrue at the only place that opens one.
   const admissions = new Map<string, GeoKnowledgeUnavailableReason | null>();
   return async input => {
     const unavailable = (reason: GeoKnowledgeUnavailableReason): GeoKnowledgeResourceResult => ({ kind: "unavailable", url: input.url, reason });
     let host: string;
-    try { host = new URL(input.url).host; }
+    try { host = canonicalCrawlTargetKey(input.url) ?? new URL(input.url).host; }
     catch { return unavailable("blocked"); }
     let release: (() => void) | null = null;
     if (!admissions.has(host)) {

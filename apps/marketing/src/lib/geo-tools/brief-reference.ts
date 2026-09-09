@@ -4,10 +4,9 @@
 import { canonicalize } from "@sf/public-tools/content-brief/canonical";
 import { parseGeoContentBrief } from "@sf/public-tools/content-brief/parse-geo-brief";
 import type { GeoContentBrief } from "@sf/public-tools/content-brief/geo-contract";
-import { readVersionedFrozenGeoKb } from "./kb-versioned-read.ts";
+import { geoVersionedPayloadIdentity, isGeoKbPayloadV3Value, readVersionedFrozenGeoKb } from "./kb-versioned-read.ts";
 import { readVersionedGeoSnapshotContext } from "./asset-context-store.ts";
-import { readCompleteGeoKnowledgeBase, type CompleteGeoKbDependencies } from "./kb-complete-read.ts";
-import type { AnyGeoSnapshotContext } from "./snapshot-context-v2.ts";
+import { readCompleteGeoKnowledgeBase, type AnyGeoKnowledgePack, type AnyVersionedGeoSnapshotContext, type CompleteGeoKbDependencies } from "./kb-complete-read.ts";
 import { readVisibilityRunV2 } from "./visibility-store-v2.ts";
 import { resolveSharedBriefRunEvidence } from "./brief-shared-deps.ts";
 import { sharedGeoBriefBasis, type SharedBriefRunEvidence } from "./brief-shared.ts";
@@ -42,13 +41,18 @@ export async function verifyOwnedGeoBrief(input: GeoContentBrief, userId: string
   if (frozenRead.kind !== "ok") return false;
   const frozen = frozenRead.value;
   if (frozen.kbId !== reference.kb_id || frozen.snapshotId !== reference.snapshot_id || frozen.revision !== reference.revision || frozen.contentHash !== reference.content_hash) return false;
-  const requiresCompleteContext = "profileCopy" in frozen.payload && frozen.payload.profileCopy !== undefined;
-  let context: AnyGeoSnapshotContext | null;
+  // v3 always goes through the complete read: its facts are in the published
+  // pack, which only the candidate carries, and only the complete read proves
+  // that candidate belongs to this version.
+  const requiresCompleteContext = isGeoKbPayloadV3Value(frozen.payload) || ("profileCopy" in frozen.payload && frozen.payload.profileCopy !== undefined);
+  let context: AnyVersionedGeoSnapshotContext | null;
+  let knowledgePack: AnyGeoKnowledgePack | null = null;
   if (requiresCompleteContext) {
     const complete = await readCompleteGeoKnowledgeBase(selection, dependencies);
     if (complete.kind === "unavailable") throw new GeoReferenceUnavailable();
     if (complete.kind !== "ok") return false;
     context = complete.value.context;
+    knowledgePack = complete.value.knowledgePack;
   } else {
     const contextRead = await dependencies.readContext(selection);
     if (contextRead.kind === "unavailable") throw new GeoReferenceUnavailable();
@@ -74,15 +78,16 @@ export async function verifyOwnedGeoBrief(input: GeoContentBrief, userId: string
   }
   let expected: GeoContentBrief;
   try {
-    expected = sharedGeoBriefBasis({ frozen, context, questionId: brief.geo_origin.question.id, questionText: brief.geo_origin.question.text, runEvidence, runId: brief.run.run_id, now: brief.run.collected_at });
+    expected = sharedGeoBriefBasis({ frozen, context, knowledgePack, questionId: brief.geo_origin.question.id, questionText: brief.geo_origin.question.text, runEvidence, runId: brief.run.run_id, now: brief.run.collected_at });
   } catch { return false; }
   // Model-owned outline words may be edited. Its allowed source set, Q coverage
   // and readiness were already checked by the strict parser above.
   if (brief.run.budget_ms !== expected.run.budget_ms || !protectedKeys.every((key) => canonicalize(brief[key]) === canonicalize(expected[key]))) return false;
-  const selected = frozen.questionSet.questions.find((question) => question.id === brief.geo_origin.question.id);
+  const identity = geoVersionedPayloadIdentity(frozen.payload);
+  const selected = frozen.questionSet?.questions.find((question) => question.id === brief.geo_origin.question.id);
   const questionNeedsReview = selected === undefined
-    ? geoQuestionLanguageIssue(brief.geo_origin.question.text, frozen.payload.market.language, geoQuestionProperNames(frozen.payload))
-    : !assessGeoQuestionQuality(frozen.payload, selected).ok;
+    ? geoQuestionLanguageIssue(brief.geo_origin.question.text, identity.market.language, geoQuestionProperNames(identity))
+    : !assessGeoQuestionQuality(identity, selected).ok;
   if (questionNeedsReview) throw new GeoBriefQuestionNeedsReview();
   return true;
 }

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { readVersionedFrozenGeoKb, readVersionedGeoKnowledgeBase, listVersionedGeoKnowledgeBases } from "./kb-versioned-read.ts";
 import { listFrozenGeoKbVersions } from "./kb-history.ts";
 import { completePayloadV2, questionSetV2, V2_KB_ID, V2_CANDIDATE_ID } from "./kb-v2.test-fixtures.ts";
+import { completePayloadV3, V3_KB_ID } from "./kb-v3.test-fixtures.ts";
+import { GEO_KB_SCHEMA_VERSION_V3 } from "./kb-v3-contract.ts";
 import { contextPayload } from "./snapshot-context.test-fixtures.ts";
 import { buildGeoQuestionSet, geoQuestionSetDigest } from "./kb-questions.ts";
 import { geoKbDigest } from "./kb-digest.ts";
@@ -98,5 +100,79 @@ describe("version-aware exact frozen read", () => {
     if (field === "schema") row.schema_version = "marketing-geo-kb.v1";
     if (field === "question_schema") row.question_set = buildGeoQuestionSet(contextPayload());
     expect((await readVersionedFrozenGeoKb(input, dependencies)).kind).toBe("unavailable");
+  });
+});
+
+const V3_SNAPSHOT = "33333333-3333-8333-8333-333333333331";
+const v3Input = { userId: USER, kbId: V3_KB_ID, snapshotId: V3_SNAPSHOT };
+
+function v3Fixture(withQuestions = true) {
+  const payload = completePayloadV3(), questionSet = withQuestions ? questionSetV2() : null;
+  const row = { id: V3_SNAPSHOT, kb_id: V3_KB_ID, user_id: USER, revision: 1, schema_version: GEO_KB_SCHEMA_VERSION_V3,
+    prepared_id: V2_CANDIDATE_ID, payload, content_hash: geoV2Digest(payload), question_set: questionSet,
+    question_set_hash: questionSet === null ? null : geoV2Digest(questionSet), frozen_at: "2026-09-03T00:00:00.000Z" };
+  const dependencies: GeoKbStoreDependencies = { readList: async () => { throw new Error("No list/source read"); },
+    readDetails: async () => { throw new Error("No current draft/Profile read"); }, callRpc: async () => { throw new Error("No writes"); },
+    readSnapshot: vi.fn(async () => ({ kind: "ok" as const, data: row })) };
+  return { payload, questionSet, row, dependencies };
+}
+
+describe("version-aware exact frozen read of a v3 version", () => {
+  it("reads a v3 version and its frozen question set without a legacy projection", async () => {
+    const { row, payload, questionSet, dependencies } = v3Fixture();
+
+    const result = await readVersionedFrozenGeoKb(v3Input, dependencies);
+
+    expect(result).toMatchObject({ kind: "ok", value: { payload, questionSet, contentHash: row.content_hash,
+      questionSetHash: row.question_set_hash, questionCount: questionSet!.questions.length, preparedId: V2_CANDIDATE_ID } });
+  });
+
+  it("reports a version published without questions as having no count, not a count of zero", async () => {
+    const { dependencies } = v3Fixture(false);
+
+    const result = await readVersionedFrozenGeoKb(v3Input, dependencies);
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error("Expected a readable version");
+    expect(result.value.questionSet).toBeNull();
+    expect(result.value.questionSetHash).toBeNull();
+    // "This version asks nothing" is not "this version asks zero questions".
+    expect(result.value.questionCount).toBeNull();
+    expect(result.value.questionCount).not.toBe(0);
+  });
+
+  it.each(["hash_without_set", "set_without_hash", "payload_hash", "question_hash", "market", "missing_column"])("refuses a v3 row with %s", async issue => {
+    const { row, dependencies } = v3Fixture(issue === "hash_without_set" ? false : true);
+    if (issue === "hash_without_set") row.question_set_hash = "a".repeat(64);
+    if (issue === "set_without_hash") row.question_set_hash = null;
+    if (issue === "payload_hash") row.content_hash = "a".repeat(64);
+    if (issue === "question_hash") row.question_set_hash = "b".repeat(64);
+    // Hash-consistent on purpose: this must fail on the market check, not on the digest.
+    if (issue === "market") { const other = { ...questionSetV2(), country: "GB" }; row.question_set = other; row.question_set_hash = geoV2Digest(other); }
+    if (issue === "missing_column") delete (row as Partial<typeof row>).question_set;
+
+    expect((await readVersionedFrozenGeoKb(v3Input, dependencies)).kind).toBe("unavailable");
+  });
+
+  it("lists a v3 head whose current version has no question set", async () => {
+    const { row } = v3Fixture(false);
+    const bundle = { knowledgeBases: [{ id: V3_KB_ID, user_id: USER, origin: "https://example.com", host: "example.com", canonical_site_key: "example.com", current_frozen_snapshot_id: row.id, created_at: row.frozen_at, updated_at: row.frozen_at }],
+      drafts: [{ kb_id: V3_KB_ID, user_id: USER, schema_version: GEO_KB_SCHEMA_VERSION_V3, draft_version: 2, content_hash: row.content_hash, updated_at: row.frozen_at }],
+      snapshots: [row] };
+    const dependencies = { ...v3Fixture().dependencies, readList: async () => ({ kind: "ok" as const, data: bundle }) };
+
+    const listed = await listVersionedGeoKnowledgeBases({ userId: USER }, dependencies);
+
+    expect(listed).toMatchObject({ kind: "ok", value: [{ kbId: V3_KB_ID, frozen: { snapshotId: row.id, questionSetHash: null } }] });
+  });
+
+  it("still refuses a v1/v2 snapshot row that has lost its question-set hash", async () => {
+    const { row } = fixture();
+    const nulled = { ...row, question_set_hash: null };
+    const bundle = { knowledgeBases: [{ id: V2_KB_ID, user_id: USER, origin: "https://example.com", host: "example.com", canonical_site_key: "example.com", current_frozen_snapshot_id: row.id, created_at: row.frozen_at, updated_at: row.frozen_at }],
+      drafts: [{ kb_id: V2_KB_ID, user_id: USER, schema_version: "marketing-geo-kb.v2", draft_version: 2, content_hash: row.content_hash, updated_at: row.frozen_at }],
+      snapshots: [nulled] };
+
+    expect((await listVersionedGeoKnowledgeBases({ userId: USER }, { ...fixture().dependencies, readList: async () => ({ kind: "ok", data: bundle }) })).kind).toBe("unavailable");
   });
 });
