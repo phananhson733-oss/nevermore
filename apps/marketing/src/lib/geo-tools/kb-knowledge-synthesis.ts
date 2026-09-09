@@ -63,11 +63,23 @@ const yearSchema = {
   maxLength: 4,
   pattern: "^\\d{4}$",
 } as const;
+/*
+ * No `uniqueItems`, here or in the variant list below.
+ *
+ * Structured Outputs rejects the keyword outright -- "'uniqueItems' is not
+ * permitted" -- and it rejects the whole request, so the model never sees the
+ * prompt. The v2 schema carried the same defect and it is what kept the v3
+ * knowledge step from ever reaching a provider.
+ *
+ * Nothing is lost. Duplicates are refused where they were always refused, by
+ * the contract that parses the reply: `refine(unique, "Duplicate source
+ * reference")` (kb-knowledge-synthesis-contract.ts:97) and
+ * `refine(normalizedUnique, "Duplicate variant")` (:103).
+ */
 const sourceRefsSchema = {
   type: "array",
   minItems: 1,
   maxItems: GEO_KNOWLEDGE_SYNTHESIS_LIMITS.sourceRefs,
-  uniqueItems: true,
   items: idSchema,
 } as const;
 const definitionSchema = {
@@ -172,7 +184,6 @@ const qaSchema = {
       type: "array",
       minItems: 0,
       maxItems: GEO_KNOWLEDGE_SYNTHESIS_LIMITS.variants,
-      uniqueItems: true,
       items: textSchema(800),
     },
     directAnswer: textSchema(800),
@@ -277,14 +288,28 @@ const scopeSchema = {
     needsHuman: scopeListSchema,
     misconceptions: scopeListSchema,
   },
-  // The local Zod refinement requires at least one statement across the four
-  // groups. Each branch tightens one already-required array from 0 to 1.
-  anyOf: [
-    { properties: { does: { minItems: 1 } } },
-    { properties: { doesNot: { minItems: 1 } } },
-    { properties: { needsHuman: { minItems: 1 } } },
-    { properties: { misconceptions: { minItems: 1 } } },
-  ],
+  /*
+   * "At least one statement across the four groups" is deliberately not stated
+   * here. It could be: this is a choice about size, not a provider limit.
+   *
+   * It used to be four `anyOf` branches that each tightened one array's
+   * `minItems` from 0 to 1 and named nothing else. Structured Outputs reads
+   * every `anyOf` branch as a schema in its own right and requires each to be
+   * complete -- a `type`, `additionalProperties: false`, and a `required`
+   * naming every property -- so those branches were refused, and the refusal
+   * was the whole request.
+   *
+   * Written properly the union does express the rule, the way
+   * `comparisonRowSchema` above already does, at the cost of repeating all
+   * four scope lists four times. The v2 schema is where that price was
+   * measured -- 8 222 bytes, against a request ceiling that already refuses
+   * real sites -- and v1 follows the same decision.
+   *
+   * So the rule lives in two places instead of three: the prompt states it in
+   * words, and `refine(... "Scope cannot be empty")` in
+   * kb-knowledge-synthesis-contract.ts:107 refuses an empty scope. An empty
+   * scope now costs a rejected reply rather than an unsendable request.
+   */
 } as const;
 
 export const GEO_KNOWLEDGE_SYNTHESIS_RESPONSE_JSON_SCHEMA: GeoResponseJsonSchema =
