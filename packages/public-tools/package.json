@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./contract": "./src/contract.ts",
+    "./crawl-completion": "./src/crawl-completion.ts",
     "./content-brief/contract": "./src/content-brief/contract.ts",
     "./content-brief/geo-contract": "./src/content-brief/geo-contract.ts",
     "./content-brief/parse-geo-brief": "./src/content-brief/parse-geo-brief.ts",
