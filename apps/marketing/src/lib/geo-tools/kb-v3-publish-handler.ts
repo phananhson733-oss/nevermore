@@ -10,7 +10,7 @@
  * set a paid run wrote separately. Publishing binds them together, and the only
  * thing it decides is what to do about items nobody looked at.
  *
- * Those become `accepted_in_bulk`, and they are written *back into the draft*
+ * Those become `accepted`, and they are written *back into the draft*
  * before the version is assembled. That ordering is the point: without it the
  * published version would carry decisions the draft does not have, and the next
  * time the card was opened it would offer to publish the same items again as if

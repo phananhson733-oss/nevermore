@@ -8,11 +8,12 @@
  * Two properties, never collapsed into one.
  *
  * `origin` says where a claim came from. `decision` says what the owner did
- * about it. A model summary that nobody read one by one is `synthesized` +
- * `accepted_in_bulk`, and it is labelled as exactly that: "accepted in bulk,
- * not confirmed one by one". Only a one-by-one acceptance may read as
- * confirmed, because the alternative lets pressing a different button upgrade
- * the same model output.
+ * about it. They stay apart because a model summary the owner accepted is
+ * still a model summary, and the source line must keep saying so.
+ *
+ * `accepted_in_bulk` is a retired decision only older drafts carry; it renders
+ * and behaves exactly as `accepted`, including the accept button's pressed
+ * state, because the Owner's ruling is that a batch acceptance IS one.
  *
  * `cited_and_literals_match` is a third thing again, and is labelled "citation
  * check passed": it proves the cited page exists and that the numbers in the
@@ -133,7 +134,7 @@ function Actions({ actions, decision, corrected, copy, blockedNoteId }: {
     return <Button type="button" variant="outline" size="sm" data-item-action="revert" disabled={disabled} onClick={actions.onRevert}>{copy.item.revert}</Button>;
   }
   return <>
-    <Button type="button" variant="outline" size="sm" data-item-action="accept" aria-pressed={decision === "accepted"} disabled={disabled} onClick={actions.onAccept}>{copy.item.accept}</Button>
+    <Button type="button" variant="outline" size="sm" data-item-action="accept" aria-pressed={decision === "accepted" || decision === "accepted_in_bulk"} disabled={disabled} onClick={actions.onAccept}>{copy.item.accept}</Button>
     <Button type="button" variant="outline" size="sm" data-item-action="correct" disabled={disabled} onClick={actions.onCorrect}>{copy.item.correct}</Button>
     <Button
       type="button"
@@ -193,7 +194,7 @@ export function GeoKbItemRow({
     className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5"
   >
     <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-5 gap-y-3">
-      <div className="min-w-0 flex-1 space-y-3">
+      <div className="min-w-0 flex-1 basis-64 space-y-3">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-2">
           <Chip data-item-type="">{typeLabel}</Chip>
           <div data-knowledge-copy="compact" className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-text-dark-primary [overflow-wrap:anywhere]">{children}</div>

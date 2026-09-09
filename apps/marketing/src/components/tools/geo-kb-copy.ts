@@ -14,11 +14,12 @@
  * through next-intl instead, and this module is the one place that knows which
  * key answers which contract value.
  *
- * Mapping the contract enums here, once, is deliberate. `accepted_in_bulk` has
- * exactly one label, and it is not the label `accepted` has; a component that
+ * Mapping the contract enums here, once, is deliberate: a component that
  * reached for `t("decisions." + decision)` would silently render the key path
  * for a value nobody added a key for, because next-intl does not throw on a
- * missing key.
+ * missing key. `accepted_in_bulk` is the reason the map is not the identity --
+ * it is a retired label that only pre-2026-09-09 drafts carry, and it reads as
+ * `accepted` because that is what the Owner ruled it means.
  */
 import { useTranslations } from "next-intl";
 
@@ -80,7 +81,7 @@ const STATE_KEYS: readonly GeoKbStateKey[] = [
 const DECISION_KEYS: Readonly<Record<GeoDecision, string>> = {
   pending: "pending",
   accepted: "accepted",
-  accepted_in_bulk: "acceptedInBulk",
+  accepted_in_bulk: "accepted",
   excluded: "excluded",
 };
 
@@ -135,8 +136,8 @@ export interface GeoKbCopy {
     /** The previous version records no per-item decisions, so there is no count. */
     readonly changesUncountable: (count: number, version: string) => string;
     readonly firstVersion: (count: number) => string;
+    /** Absent when nothing is pending: a warning with nothing to warn about is noise. */
     readonly pending: (count: number) => string;
-    readonly noPending: string;
   };
   readonly published: {
     readonly headline: (version: string) => string;
@@ -264,7 +265,6 @@ export function useGeoKbCopy(): GeoKbCopy {
       changesUncountable: (count, version) => t("publish.changesUncountable", { count, version }),
       firstVersion: (count) => t("publish.firstVersion", { count }),
       pending: (count) => t("publish.pending", { count }),
-      noPending: t("publish.noPending"),
     },
     published: {
       headline: (version) => t("published.headline", { version }),

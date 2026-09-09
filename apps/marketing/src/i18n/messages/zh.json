@@ -5413,8 +5413,7 @@
           "changes": "与 kb@v{version} 相比有 {count} 项变化",
           "changesUncountable": "kb@v{version} 由上一代知识库格式发布，它没有记录逐条决定，所以无法逐条对比。这一版将发布 {count} 条知识。",
           "firstVersion": "这是第一个发布版本，包含 {count} 条知识。",
-          "pending": "还有 {count} 条未逐条确认，将以「批量接受 · 未逐条确认」发布。",
-          "noPending": "没有未确认的条目。"
+          "pending": "还有 {count} 条你还没决定，发布时按接受处理。"
         },
         "published": {
           "headline": "已发布 kb@v{version}",
@@ -5427,7 +5426,6 @@
         "decisions": {
           "pending": "待你确认",
           "accepted": "已确认",
-          "acceptedInBulk": "批量接受 · 未逐条确认",
           "excluded": "已排除"
         },
         "origins": {
@@ -5554,7 +5552,6 @@
           "running": "更新正在写入这份草稿。你的决定会在更新结束后立即保存。",
           "failed": "上一个决定没有保存成功。再做一次即可重试。",
           "acceptAll": "全部接受（剩余 {count} 条）",
-          "acceptAllNote": "这样接受会记为「批量接受 · 未逐条确认」。",
           "noDecisions": "这一节报告的是观察结果，没有需要你接受、修正或排除的条目。",
           "reviewDue": "有 {count} 条事实已经过了观察时设定的复核日期。系统不会自己重新核对；想重新看一遍就发起一次更新。",
           "measurementEmpty": "这份草稿里没有提问集，所以这里没有内容可展示。",

@@ -127,7 +127,7 @@ describe("handleGeoKbV3Review", () => {
     expect(body.data.restated).toEqual([FACT_KEY_PRO]);
   });
 
-  it("writes accepted_in_bulk for 全部接受 and never accepted", async () => {
+  it("writes accepted for 全部接受, and never the retired accepted_in_bulk", async () => {
     const payload = lockedPayload();
     const { dependencies, saved } = harness({}, payload);
     const response = await handleGeoKbV3Review(request(base({ actions: [{ kind: "accept_all", itemKeys: geoV3ItemKeys(payload.knowledge) }] })), dependencies);
@@ -136,9 +136,9 @@ describe("handleGeoKbV3Review", () => {
     // The route is the second place this could go wrong, so it is asserted
     // here too rather than being taken on trust from the pure layer.
     expect(body.data.review.decisions.map((record: { decision: string }) => record.decision))
-      .toEqual(geoV3ItemKeys(payload.knowledge).map(() => "accepted_in_bulk"));
-    expect(body.data.review.decisions.some((record: { decision: string }) => record.decision === "accepted")).toBe(false);
-    expect(saved.current?.review.decisions.every((record) => record.decision === "accepted_in_bulk")).toBe(true);
+      .toEqual(geoV3ItemKeys(payload.knowledge).map(() => "accepted"));
+    expect(body.data.review.decisions.some((record: { decision: string }) => record.decision === "accepted_in_bulk")).toBe(false);
+    expect(saved.current?.review.decisions.every((record) => record.decision === "accepted")).toBe(true);
   });
 
   it("leaves the locked halves of the draft exactly as they were", async () => {

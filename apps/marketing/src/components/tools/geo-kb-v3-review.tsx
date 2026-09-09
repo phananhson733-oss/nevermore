@@ -26,10 +26,10 @@
  *
  * The "accept all" button lives inside the module it accepts, in
  * `GeoKbModuleSection`'s `action` slot, rather than in a toolbar that has lost
- * track of which module it is pointing at. What it writes is
- * `accepted_in_bulk`, and the note beside it says so: a batch gesture is the
- * weakest consent there is, and it is labelled as exactly that everywhere it
- * appears.
+ * track of which module it is pointing at. It writes `accepted`, the same
+ * label the per-item button writes: the Owner's ruling (2026-09-09) is that a
+ * batch acceptance is an acceptance, so there is no second label to explain
+ * and no note beside the button explaining it.
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
@@ -307,7 +307,6 @@ function AcceptAll({ editor, itemKeys, t }: { readonly editor: Editor; readonly 
   const pending = itemKeys.filter((key) => { const state = editor.decisionFor(key); return state.decision === "pending" && state.override === null; });
   if (pending.length === 0) return null;
   return <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-2">
-    <span className="text-[12px] leading-relaxed text-text-dark-secondary">{t("review.acceptAllNote")}</span>
     <Button
       type="button"
       variant="outline"
@@ -366,8 +365,10 @@ function EntityModule({ knowledge, context, packCopy }: {
  * are real, and `settled` keeps the card open for it separately, because a
  * limitation sentence has nowhere to appear in a folded summary.
  *
- * "Confirmed" counts one-by-one acceptances only. A bulk gesture publishes the
- * item, so it belongs in `facts`, but it is not a confirmation (D12).
+ * "Confirmed" counts every acceptance, however it was made. It used to count
+ * one-by-one acceptances only; the Owner retired that distinction on
+ * 2026-09-09, so a draft carrying the old `accepted_in_bulk` label counts here
+ * too rather than reading as unconfirmed forever.
  */
 function publishedCounts(knowledge: GeoKnowledgeBodyV3, states: ReadonlyMap<string, { readonly decision: string }>) {
   const facts = geoKbModuleValue(knowledge.facts);
@@ -377,7 +378,10 @@ function publishedCounts(knowledge: GeoKnowledgeBodyV3, states: ReadonlyMap<stri
   return {
     facts: facts === null ? null : {
       facts: facts.length,
-      accepted: facts.filter((fact) => states.get(fact.itemKey)?.decision === "accepted").length,
+      accepted: facts.filter((fact) => {
+        const decision = states.get(fact.itemKey)?.decision;
+        return decision === "accepted" || decision === "accepted_in_bulk";
+      }).length,
     },
     qa: qa === null ? null : { qa: qa.length },
     comparisons: comparisons === null ? null : {

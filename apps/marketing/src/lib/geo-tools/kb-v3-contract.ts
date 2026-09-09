@@ -322,10 +322,12 @@ export type GeoKnowledgeBodyV3 = z.infer<typeof geoKnowledgeBodySchema>;
 // ---------------------------------------------------------------------------
 
 /**
- * `accepted_in_bulk` is what every batch gesture writes: the "accept all"
- * button and the fallback at publish time. Pressing a different button must not
- * let the same model output claim a stronger label, so nothing but a one-by-one
- * acceptance may write `accepted`.
+ * `accepted_in_bulk` is RETIRED, and kept only so that drafts written before
+ * 2026-09-09 still parse. Every gesture that accepts -- the per-item button,
+ * "accept all", and the publish-time sweep -- writes `accepted`; the Owner's
+ * ruling is that a batch acceptance IS an acceptance. Removing the member
+ * instead would make every stored draft holding one unreadable, which is a
+ * data loss dressed up as a cleanup. Readers must treat it as `accepted`.
  */
 export const geoDecisionSchema = z.enum(["pending", "accepted", "accepted_in_bulk", "excluded"]);
 export type GeoDecision = z.infer<typeof geoDecisionSchema>;

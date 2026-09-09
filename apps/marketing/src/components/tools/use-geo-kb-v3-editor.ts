@@ -24,9 +24,9 @@
  *  - it does not re-read the draft. A conflict is surfaced with the version that
  *    won and the automatic writes stop; the remedy is to reload, because a run
  *    may have replaced the knowledge under the review.
- *  - it does not upgrade a label. `acceptAll` sends one action, the server
- *    writes `accepted_in_bulk`, and nothing in either path can produce
- *    `accepted` from a batch.
+ *  - it does not decide what an acceptance is called. `acceptAll` sends one
+ *    action and the server writes the decision; since 2026-09-09 that is
+ *    `accepted`, the same label the per-item button produces.
  */
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -488,12 +488,25 @@ export interface GeoKbV3PublishPlan {
    */
   readonly changeCount: number | null;
   readonly itemCount: number;
-  /** Items that would publish as accepted in bulk rather than confirmed. */
+  /** Items nobody has decided, which publishing would accept on the owner's behalf. */
   readonly pendingCount: number;
 }
 
 export interface UseGeoKbV3EditorProps {
   readonly initialView: GeoKbEditorViewV3;
+}
+
+/**
+ * One decision, in the vocabulary the product uses today.
+ *
+ * `accepted_in_bulk` is retired (see `kb-v3-contract.ts`): nothing writes it,
+ * and a stored draft or a published version from before 2026-09-09 that
+ * carries it means `accepted`. Every comparison between a stored decision and
+ * a current one goes through here so the two spellings of one answer never
+ * read as a difference.
+ */
+function settledDecision(decision: GeoDecision): GeoDecision {
+  return decision === "accepted_in_bulk" ? "accepted" : decision;
 }
 
 export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
@@ -687,7 +700,7 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
 
   function enqueue(action: GeoV3ReviewAction): void {
     // A gesture that changes nothing -- accepting an item that is already
-    // accepted in bulk through its module button, say -- is not queued: it
+    // accepted through its module button, say -- is not queued: it
     // would advance the draft version and stale a version about to be published.
     const before = applyGeoV3ReviewActions(
       live.current.saved,
@@ -772,16 +785,22 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
         : String(view.published.revision),
     // Null when the previous version cannot be compared item by item. The card
     // then names the version without claiming a count for it.
+    //
+    // `settledDecision` is why the retired `accepted_in_bulk` cannot inflate
+    // this: a version published before 2026-09-09 records it where a draft now
+    // records `accepted`, and the two mean the same thing. Comparing the raw
+    // strings would report every item of every such version as changed, on a
+    // screen whose whole job is to say what actually differs.
     changeCount: baseline === null ? null : [...states].filter(
       ([itemKey, state]) =>
-        (baseline[itemKey] ?? "pending") !== state.decision,
+        settledDecision(baseline[itemKey] ?? "pending") !== settledDecision(state.decision),
     ).length,
     itemCount: itemKeys.length,
     pendingCount: pendingKeys.length,
   };
 
   /**
-   * Publish: write the remaining pending items back as accepted in bulk, then
+   * Publish: write the remaining pending items back as accepted, then
    * freeze. Unsaved gestures are flushed first, because a version assembled from
    * a draft the owner has since changed would publish decisions nobody made.
    */
@@ -887,9 +906,9 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
     exclude: (itemKey: string) => enqueue({ kind: "exclude", itemKey }),
     revert: (itemKey: string) => enqueue({ kind: "revert", itemKey }),
     /**
-     * The module button. It names the keys of that module only, and the label it
-     * produces is `accepted_in_bulk` -- never `accepted`, which one-by-one
-     * confirmation alone may write.
+     * The module button. It names the keys of that module only, so it can never
+     * reach an item in another module. What it writes is `accepted`, exactly
+     * what the per-item button writes.
      */
     acceptAll: (keys: readonly string[]) => {
       const sweep = keys.filter((key) => {

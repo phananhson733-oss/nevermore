@@ -176,31 +176,33 @@ describe("the four owner gestures", () => {
 });
 
 describe("全部接受 (accept all)", () => {
-  it("writes accepted_in_bulk and never accepted", () => {
+  /**
+   * This pair used to assert the exact opposite: that a batch gesture writes
+   * `accepted_in_bulk` and that no sequence without a per-item 接受 can reach
+   * a bare `accepted`. That was the D12 rule, and the Owner retired it on
+   * 2026-09-09 -- accepting a module is accepting. The assertions are inverted
+   * rather than deleted because the branch they guard is still the one that
+   * decides what a batch writes, and it must now provably write `accepted` and
+   * nothing else. `accepted_in_bulk` may no longer be produced by any sequence.
+   */
+  it("writes accepted and never the retired accepted_in_bulk", () => {
     const swept = save(EMPTY, [{ kind: "accept_all", itemKeys: ITEM_KEYS }]);
     expect(swept.decisions).toHaveLength(ITEM_KEYS.length);
-    // The one assertion this whole surface exists to protect: pressing a
-    // different button must not let the same model output claim the stronger
-    // label. Mutating the branch to write "accepted" turns this red.
     expect(swept.decisions.map((record) => record.decision)).toEqual(
-      ITEM_KEYS.map(() => "accepted_in_bulk"),
+      ITEM_KEYS.map(() => "accepted"),
     );
-    expect(
-      swept.decisions.some((record) => record.decision === "accepted"),
-    ).toBe(false);
   });
 
-  it("cannot produce a bare accepted from any sequence without a one-by-one acceptance", () => {
+  it("cannot produce accepted_in_bulk from any sequence", () => {
     /**
-     * A property, not an example. Two gestures may write `accepted`, and both
-     * are per-item confirmations: pressing 接受 on one row, and 修正, which is
-     * an acceptance of the text the owner just typed. Everything else -- every
-     * batch gesture, in every order and at every prefix -- may not, so an
-     * `accepted` record reached without 接受 must carry an override.
+     * A property, not an example: no order and no prefix of these gestures may
+     * reach the retired label, so a draft written from today on never carries
+     * one and every reader can treat it as legacy.
      */
-    const withoutAccept: readonly GeoV3ReviewAction[] = [
+    const everyGesture: readonly GeoV3ReviewAction[] = [
       { kind: "accept_all", itemKeys: ITEM_KEYS },
       { kind: "exclude", itemKey: QA_KEY },
+      { kind: "accept", itemKey: FACT_KEY_PRO },
       { kind: "accept_all", itemKeys: ITEM_KEYS },
       {
         kind: "correct",
@@ -211,12 +213,12 @@ describe("全部接受 (accept all)", () => {
       { kind: "accept_all", itemKeys: ITEM_KEYS },
       { kind: "exclude", itemKey: QA_KEY },
     ];
-    for (let length = 1; length <= withoutAccept.length; length += 1) {
-      const review = save(EMPTY, withoutAccept.slice(0, length));
-      const bare = review.decisions.filter(
-        (record) => record.decision === "accepted" && record.override === null,
+    for (let length = 1; length <= everyGesture.length; length += 1) {
+      const review = save(EMPTY, everyGesture.slice(0, length));
+      const retired = review.decisions.filter(
+        (record) => record.decision === "accepted_in_bulk",
       );
-      expect(bare.map((record) => record.itemKey)).toEqual([]);
+      expect(retired.map((record) => record.itemKey)).toEqual([]);
     }
   });
 
@@ -235,10 +237,8 @@ describe("全部接受 (accept all)", () => {
     expect(decisionOf(swept, QA_KEY)?.decision).toBe("excluded");
     expect(decisionOf(swept, SCOPE_KEY)?.decision).toBe("accepted");
     expect(decisionOf(swept, SCOPE_KEY)?.override).not.toBeNull();
-    expect(decisionOf(swept, FACT_KEY_TEAM)?.decision).toBe("accepted_in_bulk");
-    expect(decisionOf(swept, ENTITY_NAME_KEY)?.decision).toBe(
-      "accepted_in_bulk",
-    );
+    expect(decisionOf(swept, FACT_KEY_TEAM)?.decision).toBe("accepted");
+    expect(decisionOf(swept, ENTITY_NAME_KEY)?.decision).toBe("accepted");
   });
 
   it("reaches only the keys it names", () => {
@@ -339,14 +339,32 @@ describe("counts and change reporting", () => {
       { kind: "exclude", itemKey: QA_KEY },
       { kind: "accept_all", itemKeys: [FACT_KEY_TEAM] },
     ]);
+    // Two acceptances, one per gesture, and no fourth bucket: a batch is an
+    // acceptance now. `acceptedInBulk` counts the retired label only, which
+    // nothing here can write, so it is zero.
     expect(geoV3ReviewCounts(states(review))).toEqual({
       total: ITEM_KEYS.length,
-      accepted: 1,
-      acceptedInBulk: 1,
+      accepted: 2,
+      acceptedInBulk: 0,
       excluded: 1,
       pending: ITEM_KEYS.length - 3,
       corrected: 0,
     });
+  });
+
+  /**
+   * The other half: a draft written before the ruling still parses, and its
+   * `accepted_in_bulk` rows count as accepted rather than as a fourth state.
+   * `acceptedInBulk` reports how many of those acceptances carry the old
+   * label, which is a SUB-count -- the four buckets still sum to the total.
+   */
+  it("counts a legacy accepted_in_bulk row as an acceptance", () => {
+    const legacy = new Map(states(EMPTY));
+    legacy.set(FACT_KEY_PRO, { decision: "accepted_in_bulk", override: null });
+    const counts = geoV3ReviewCounts(legacy);
+    expect(counts.accepted).toBe(1);
+    expect(counts.acceptedInBulk).toBe(1);
+    expect(counts.accepted + counts.excluded + counts.pending).toBe(counts.total);
   });
 
   it("reports which items one batch of gestures changed", () => {
