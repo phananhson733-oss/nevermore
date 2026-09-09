@@ -25,6 +25,7 @@
 import { z } from "zod";
 
 import {
+  GEO_KB_V3_LIMITS,
   geoOverrideSchema,
   geoReviewSchemaV3,
   type GeoDecision,
@@ -115,6 +116,12 @@ const reviewSaveSchema = z
     contentHash: hash,
     updatedAt: timestamp,
     review: geoReviewSchemaV3,
+    /**
+     * Recomputed against the review this save just wrote, so a row stops
+     * saying "has a new observation" the moment the owner decides again --
+     * the save re-stamps that decision's `baseContentHash`.
+     */
+    restated: z.array(hash).max(GEO_KB_V3_LIMITS.decisions),
     counts: countsSchema,
   })
   .strict();
@@ -177,21 +184,53 @@ export interface GeoKbEditorViewV3 {
   /** The locked generation output plus the review as the server last stored it. */
   readonly payload: GeoKbPayloadV3;
   /**
+   * The decided items whose decision was made against text this update has
+   * since rewritten. Section 4.4 lets such a decision stand rather than
+   * re-asking the owner, and this is the other half of that bargain: the row
+   * says "has a new observation" instead of presenting an approval of a
+   * sentence nobody has read. It is derived server-side because the comparison
+   * needs a digest the browser cannot compute, and it is required rather than
+   * optional because a server that stops sending it should fail loudly, not
+   * quietly stop flagging.
+   */
+  readonly restated: readonly string[];
+  /**
    * The published version this draft would supersede, when there is one.
    *
-   * `decisions` is what the publish box compares against to say "N changes
-   * compared with kb@vN". It has to come from the published version itself: a
-   * count of what changed since the page loaded answers a different question in
-   * the same sentence, and reads as zero for a draft whose every decision
-   * predates this session. A key the published version does not carry reads as
-   * `pending`, so an item that is new since then counts as one change.
+   * Two shapes, because a knowledge base can have published under the contract
+   * this one replaces.
+   *
+   * `comparable` carries `decisions`, which is what the publish box compares
+   * against to say "N changes compared with kb@vN". It has to come from the
+   * published version itself: a count of what changed since the page loaded
+   * answers a different question in the same sentence, and reads as zero for a
+   * draft whose every decision predates this session. A key the published
+   * version does not carry reads as `pending`, so an item that is new since
+   * then counts as one change.
+   *
+   * `opaque` is a v1/v2 version. Those record no per-item decisions at all, so
+   * there is no honest count to give: an empty decision map is not "nothing
+   * changed", it is "this cannot be measured", and reporting it as the former
+   * would announce that every item changed the moment anything was decided.
+   * The version is still named and dated -- it exists, it is what AI Visibility
+   * and Brief are reading right now, and hiding it behind `null` would say this
+   * knowledge base has never published.
    */
-  readonly published: {
-    readonly revision: number;
-    readonly frozenAt: string;
-    readonly contentHash: string;
-    readonly decisions: Readonly<Record<string, GeoDecision>>;
-  } | null;
+  readonly published:
+    | {
+      readonly kind: "comparable";
+      readonly revision: number;
+      readonly frozenAt: string;
+      readonly contentHash: string;
+      readonly decisions: Readonly<Record<string, GeoDecision>>;
+    }
+    | {
+      readonly kind: "opaque";
+      readonly revision: number;
+      readonly frozenAt: string;
+      readonly contentHash: string;
+    }
+    | null;
   /** True while a run holds the draft; every automatic write is held. */
   readonly runInProgress?: boolean;
 }

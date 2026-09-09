@@ -8,7 +8,9 @@ import { createGeoKbEditorLoader, createGeoKbEditorLoaderAny, createGeoKbV3Edito
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import { upgradeGeoKbDraftToV2 } from "./kb-upgrade.ts";
 import type { GeoPreparedCandidateV2 } from "./kb-prepared-contract.ts";
-import { parseGeoKbPayloadV3, type GeoKbPayloadV3 } from "./kb-v3-contract.ts";
+import { geoV3ItemKeys, parseGeoKbPayloadV3, type GeoKbPayloadV3 } from "./kb-v3-contract.ts";
+import { geoV3ItemContentHashes } from "./kb-v3-item-content.ts";
+import { applyGeoV3ReviewAction, geoV3DecisionStates, materializeGeoV3Review } from "./kb-v3-review.ts";
 import type { AnyVersionedGeoKbPayload, VersionedGeoKbDetails } from "./kb-versioned-read.ts";
 import { completePayloadV3, FACT_KEY_PRO, FACT_KEY_TEAM, HASH_A, OBSERVED_AT, QA_KEY, SCOPE_KEY } from "./kb-v3.test-fixtures.ts";
 
@@ -144,12 +146,41 @@ function v3Fixture(details: VersionedGeoKbDetails, frozenPayload?: AnyVersionedG
 const frozenRef = { snapshotId: V3_FROZEN, revision: 4, contentHash: "d".repeat(64), questionSetHash: null, questionCount: null, frozenAt: FROZEN_AT };
 
 describe("v3 draft editor load", () => {
+  /**
+   * The card cannot compute this itself -- comparing a decision against the
+   * text it was made against needs a digest the browser does not have -- so the
+   * loader is the only producer. Without a test here it can quietly answer `[]`
+   * and every card test stays green while the row silently presents an approval
+   * of a sentence nobody read.
+   */
+  it("names the decided items whose text the update has since rewritten", async () => {
+    const base = completePayloadV3();
+    const itemKeys = geoV3ItemKeys(base.knowledge);
+    const decided = parseGeoKbPayloadV3({ ...base, review: materializeGeoV3Review(base.review,
+      applyGeoV3ReviewAction(geoV3DecisionStates(base.review, itemKeys), { kind: "accept", itemKey: FACT_KEY_PRO }),
+      { contentHash: geoV3ItemContentHashes(base.knowledge), decidedAt: AT, baseDraftVersion: "4" }) });
+    // The same page saying the same fact differently: the item key is built
+    // from identity, so it survives and the decision stays filed under it.
+    const knowledge = JSON.parse(JSON.stringify(decided.knowledge)) as { facts: { value: Record<string, unknown>[] } };
+    knowledge.facts.value[0] = { ...knowledge.facts.value[0], statement: "The Pro plan is 9 dollars every month." };
+    const payload = parseGeoKbPayloadV3({ ...decided, knowledge });
+
+    const restated = await createGeoKbV3EditorLoader(v3Fixture(v3Draft(payload)))({ userId: USER, url: "https://www.example.com" });
+    expect(restated).toMatchObject({ kind: "ok", value: { restated: [FACT_KEY_PRO] } });
+
+    const untouched = await createGeoKbV3EditorLoader(v3Fixture(v3Draft(decided)))({ userId: USER, url: "https://www.example.com" });
+    expect(untouched).toMatchObject({ kind: "ok", value: { restated: [] } });
+  });
+
   it("loads a stored v3 draft as the review view, with the transport fields the website route needs", async () => {
     const payload = completePayloadV3();
     const result = await createGeoKbV3EditorLoader(v3Fixture(v3Draft(payload)))({ userId: USER, url: "https://www.example.com" });
     expect(result).toEqual({ kind: "ok", value: {
       schemaVersion: "marketing-geo-kb-editor.v3", kbId: KB, origin: "https://example.com", host: "example.com",
       draftVersion: 5, draftHash: geoV2Digest(payload), payload, published: null,
+      // Empty because this fixture's decisions were all stamped against the
+      // content it still carries; the restated case has its own test below.
+      restated: [],
     } });
     // Never `false`: this loader does not read the run table, and the card asks
     // the run route itself. Saying "no run is in progress" would be a claim.
@@ -236,13 +267,34 @@ describe("v3 draft editor load", () => {
     expect(decisions[FACT_KEY_PRO]).toBe("pending");
   });
 
-  it("refuses rather than inventing a decision baseline for a non-v3 published version", async () => {
+  /**
+   * It used to answer `v3_predecessor_unsupported`, which was a 503 for the
+   * whole knowledge base. Since every owner who has ever published did so under
+   * v1/v2, that made the redesign unreachable for all of them while their
+   * knowledge base was intact. What is actually true is narrower and is what
+   * `opaque` says: the version exists, it is named and dated, and it records no
+   * per-item decisions to diff against.
+   */
+  it("names a non-v3 published version as uncomparable instead of refusing the whole knowledge base", async () => {
     const result = await createGeoKbV3EditorLoader(v3Fixture(v3Draft(completePayloadV3(), { frozen: frozenRef }), upgradeGeoKbDraftToV2(legacy)))({ userId: USER, url: "https://example.com" });
-    // The reason is pinned, not just the kind. Deleting the version check would
-    // still produce `unavailable` -- reading a v2 payload's absent `review`
-    // throws into the catch -- so a test that only asserted "not ok" would pass
-    // over a loader that had stopped checking anything at all.
-    expect(result).toEqual({ kind: "unavailable", reason: "v3_predecessor_unsupported" });
+
+    expect(result).toMatchObject({ kind: "ok", value: { published: {
+      kind: "opaque", revision: frozenRef.revision, frozenAt: frozenRef.frozenAt, contentHash: frozenRef.contentHash,
+    } } });
+    // No decision map at all, rather than an empty one. An empty map reads as
+    // "nothing was decided over there", and the publish box would then count
+    // every decided item as a change against a version that never recorded any.
+    if (result.kind !== "ok" || result.value.published === null) throw new Error("Expected a published block");
+    expect(Object.hasOwn(result.value.published, "decisions")).toBe(false);
+  });
+
+  it("still carries the decision baseline when the published version is v3", async () => {
+    const frozen = completePayloadV3();
+    const result = await createGeoKbV3EditorLoader(v3Fixture(v3Draft(completePayloadV3(), { frozen: frozenRef }), frozen))({ userId: USER, url: "https://example.com" });
+
+    expect(result).toMatchObject({ kind: "ok", value: { published: { kind: "comparable", revision: frozenRef.revision } } });
+    if (result.kind !== "ok" || result.value.published?.kind !== "comparable") throw new Error("Expected a comparable published version");
+    expect(Object.keys(result.value.published.decisions)).toEqual(geoV3ItemKeys(frozen.knowledge));
   });
 });
 

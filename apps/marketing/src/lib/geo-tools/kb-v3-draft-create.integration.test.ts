@@ -593,37 +593,47 @@ async function publishLegacyVersionAndDropTheDraft(f: Fixture): Promise<string> 
 }
 
 describe("creating a v3 draft over a published version", () => {
-  it("refuses, and the same knowledge base without the published version does not", async () => {
+  /*
+   * This used to be a refusal (`published_version_exists`, 409), on the reading
+   * that a v3 draft standing over a v1/v2 version had no honest way to say what
+   * changed. That reading made the redesign reachable only from a knowledge base
+   * nobody had ever published from, which is the opposite of who needs it. The
+   * publish box now says so in words instead, and the create goes through.
+   *
+   * What must still hold is that starting one changes nothing about what is
+   * already published: the snapshot keeps every byte, and the head keeps naming
+   * it, so the live knowledge pack a visitor reads is the same before and after.
+   */
+  it("creates the first v3 draft and leaves the published version byte-identical", async () => {
     const f = await fixture();
     const snapshotId = await publishLegacyVersionAndDropTheDraft(f);
+    const before = await db.query("select to_jsonb(s) as row from public.marketing_geo_kb_snapshots s where id=$1", [snapshotId]);
 
-    const refused = await createDraft(f);
-
-    expect(refused.response.status).toBe(409);
-    // Its own code, and no `draftVersion`: there is no draft, and a number in
-    // that field would read as one.
-    expect(refused.body).toEqual({ error: { code: "published_version_exists" } });
-    // The refusal wrote nothing. Without this the 409 could be reported over a
-    // knowledge base that had already been given the draft that breaks it.
-    expect(await storedDraft(f)).toBeNull();
-
-    /*
-     * The control, and the reason this test is not measuring an earlier gate.
-     *
-     * Everything else about this owner is what the passing create above uses: a
-     * registered website, a confirmed Profile revision, a knowledge base whose
-     * origin matches. Clearing the one pointer -- and only that pointer -- turns
-     * the same request into a created draft, so the 409 above was the published
-     * version and nothing else. The snapshot row itself stays exactly where it
-     * was; only the head stops naming it.
-     */
-    await db.query("update public.marketing_geo_knowledge_bases set current_frozen_snapshot_id=null where id=$1", [f.kbId]);
     const created = await createDraft(f);
 
     expect(created.response.status).toBe(200);
     const stored = await storedDraft(f);
     expect(stored?.schemaVersion).toBe("marketing-geo-kb.v3");
-    // The snapshot was never touched, so what changed was the pointer.
-    expect((await db.query("select count(*)::int as n from public.marketing_geo_kb_snapshots where id=$1", [snapshotId])).rows[0]!.n).toBe(1);
+    // Every column of the published snapshot, not just its presence: a create
+    // that rewrote the payload it stands on would still leave the row counted.
+    expect((await db.query("select to_jsonb(s) as row from public.marketing_geo_kb_snapshots s where id=$1", [snapshotId])).rows[0]!.row)
+      .toEqual(before.rows[0]!.row);
+    // And the head still names it, so the published version stays the one being
+    // served while the draft is worked on.
+    expect((await db.query("select current_frozen_snapshot_id from public.marketing_geo_knowledge_bases where id=$1", [f.kbId])).rows[0]!.current_frozen_snapshot_id)
+      .toBe(snapshotId);
+  });
+
+  it("still refuses a second create, so the published version is not what was gating it", async () => {
+    const f = await fixture();
+    await publishLegacyVersionAndDropTheDraft(f);
+    expect((await createDraft(f)).response.status).toBe(200);
+
+    const again = await createDraft(f);
+
+    // `draft_exists`, not `published_version_exists`: the only thing in the way
+    // is the draft the first create wrote.
+    expect(again.response.status).toBe(409);
+    expect(again.body).toEqual({ error: { code: "draft_exists" }, draftVersion: 1 });
   });
 });

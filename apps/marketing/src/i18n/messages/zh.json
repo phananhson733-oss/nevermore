@@ -5381,13 +5381,18 @@
         "publish": {
           "title": "发布",
           "changes": "与 kb@v{version} 相比有 {count} 项变化",
+          "changesUncountable": "kb@v{version} 由上一代知识库格式发布，它没有记录逐条决定，所以无法逐条对比。这一版将发布 {count} 条知识。",
           "firstVersion": "这是第一个发布版本，包含 {count} 条知识。",
           "pending": "还有 {count} 条未逐条确认，将以「批量接受 · 未逐条确认」发布。",
           "noPending": "没有未确认的条目。"
         },
         "published": {
           "headline": "已发布 kb@v{version}",
-          "counts": "事实 {facts}（已确认 {accepted}）· 问答 {qa} · 对比 {available}/{comparisons} · {date}"
+          "counts": {
+            "facts": "事实 {facts}（已确认 {accepted}）",
+            "qa": "问答 {qa}",
+            "comparisons": "对比 {available}/{comparisons}"
+          }
         },
         "decisions": {
           "pending": "待你确认",
@@ -5520,7 +5525,8 @@
           "failed": "上一个决定没有保存成功。再做一次即可重试。",
           "acceptAll": "全部接受（剩余 {count} 条）",
           "acceptAllNote": "这样接受会记为「批量接受 · 未逐条确认」。",
-          "noDecisions": "这一节没有需要你决定的条目；它的内容不在这里展示。",
+          "noDecisions": "这一节报告的是观察结果，没有需要你接受、修正或排除的条目。",
+          "reviewDue": "有 {count} 条事实已经过了观察时设定的复核日期。系统不会自己重新核对；想重新看一遍就发起一次更新。",
           "measurementEmpty": "这份草稿里没有提问集，所以这里没有内容可展示。",
           "correctionSave": "保存修正",
           "correctionCancel": "取消",
@@ -5994,6 +6000,10 @@
         "regenerate": "重新生成",
         "generateBusy": "正在生成：抓取网站、读取 Search Console、生成角色与提问集，然后冻结。",
         "generateCost": "一次生成会抓取你的网站、读取 Search Console，并发起三次模型调用（计费三次），完成后直接冻结为一个版本。产品档案改了就再点一次。",
+        "upgrade": "改用新版知识库",
+        "upgradeNote": "新版知识库把事实、问答与竞品对比逐条列出，每条带来源，由你逐条确认或修正后再发布。改用会丢弃当前这份草稿：它的事实与角色在新格式里没有位置，下一次更新会重新计费，因为只有一次付费更新才能填满新的知识库。已经发布过的版本原样保留。",
+        "upgradeUnconfirmed": "没能确认这次改用是否完成，所以这个页面说不准现在存的是哪一版。刷新一下，看这个网站当前用的是哪个知识库。",
+        "upgradeFailed": "没有改成。什么都没有变动，可以再试一次。",
         "unsupportedLanguage": "当前 GEO 知识库仅支持英文提问语言；当前 GEO 提问语言是 {language}。本次不会抓取网站、读取 Search Console 或调用模型。若网站实际使用英文，请先在上方产品档案中更正语言并确认；若网站主要语言确为中文，当前版本暂不能生成。",
         "unsupportedLanguageAfterStart": "GEO 知识库无法继续生成，因为已保存的提问语言是 {language}。本次被拒绝的模型步骤没有发起调用，但之前的来源刷新可能已经完成。草稿已保留；再次尝试前请先核对当前已保存状态。",
         "generateEmpty": "还没有生成过 GEO 知识库。点上方按钮，用产品档案和你的网站生成一份。",

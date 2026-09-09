@@ -14,7 +14,7 @@ import { geoKnowledgePackV2Fixture } from "./geo-knowledge-pack-v2.test-fixtures
 import type { GeoKnowledgeModuleName } from "./geo-knowledge-pack-v2.tsx";
 import { buildGeoKnowledgePackV2 } from "../../lib/geo-tools/kb-knowledge-pack-v2-contract.ts";
 import { buildGeoKnowledgePackV3 } from "../../lib/geo-tools/kb-knowledge-pack-v3.ts";
-import { GEO_ENTITY_FIELD_PATHS, type GeoEntityFieldPath } from "../../lib/geo-tools/kb-knowledge-shape.ts";
+import { GEO_ENTITY_FIELD_PATHS } from "../../lib/geo-tools/kb-knowledge-shape.ts";
 import { geoItemKey } from "../../lib/geo-tools/kb-item-key.ts";
 import { completePayloadV3 } from "../../lib/geo-tools/kb-v3.test-fixtures.ts";
 

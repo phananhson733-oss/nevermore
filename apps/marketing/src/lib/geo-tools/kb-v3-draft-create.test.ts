@@ -182,11 +182,20 @@ describe("buildGeoKbV3Identity", () => {
     expect(build.identity.categoryTerms).toEqual(supplied);
   });
 
-  it("reports a language the question step cannot serve as a blocker, not a refusal", () => {
+  /**
+   * D8: the knowledge body follows the site's own language.
+   *
+   * This used to carry an `unsupported_language` blocker, which disabled the
+   * update button. The English registry governs the QUESTION SET, and a v3
+   * draft has none to produce -- so the blocker stopped a German site from the
+   * one thing it could actually do. The absent question set is stated at
+   * publish time instead, with the reason that is true for that site.
+   */
+  it("does not block a site whose language the question registry has no templates for", () => {
     const build = identity({ locale: "de" });
 
     expect(build.kind).toBe("ok");
-    expect(build.blockers).toContain("unsupported_language");
+    expect(build.blockers).toEqual([]);
   });
 
   it("reports a Profile with no usable category term as a blocker", () => {
@@ -419,7 +428,8 @@ describe("handleGeoKbV3DraftCreate", () => {
     const response = await handleGeoKbV3DraftCreate(request(body()), dependencies);
 
     expect(response.status).toBe(200);
-    expect((await response.json()).data.blockers).toEqual(["unsupported_language", "category_terms_missing"]);
+    // German is not a blocker (D8); the empty category list still is.
+    expect((await response.json()).data.blockers).toEqual(["category_terms_missing"]);
   });
 
   it("gives a client no field in which to author the locked half", async () => {
@@ -483,29 +493,26 @@ describe("handleGeoKbV3DraftCreate", () => {
   });
 
   /**
-   * The refusal that used to live only in the browser.
-   *
-   * `geo-knowledge-base-v2.tsx` offers the start gesture on
-   * `draftHash === null && frozen === null`. This route checked only the first
-   * half, so a create carrying a published version and no draft was granted --
-   * and if that version is v1/v2, `kb-editor-loader.ts` then answers
-   * `v3_predecessor_unsupported` for that knowledge base forever, with no
-   * gesture that undoes it.
+   * This used to be refused with `published_version_exists`, for one reason:
+   * `kb-editor-loader.ts` answered `v3_predecessor_unsupported` for a v3 draft
+   * standing over a v1/v2 version, so granting the create left that knowledge
+   * base returning 503 forever, with no gesture that undid it. The loader now
+   * reports such a version as `opaque` -- named, dated, no decision map -- so
+   * the pair is a working state. Keeping the refusal would have left the
+   * redesign reachable only by knowledge bases nobody had ever published from.
    */
-  it("refuses a create for a knowledge base that already has a published version", async () => {
-    const { dependencies, readProfile, saveDraft } = harness({}, null, { frozen: PUBLISHED });
+  it("creates a first v3 draft over a knowledge base that has already published", async () => {
+    const { dependencies, saveDraft } = harness({}, null, { frozen: PUBLISHED });
 
     const response = await handleGeoKbV3DraftCreate(request(body()), dependencies);
 
-    expect(response.status).toBe(409);
-    // Its own code: there is nothing here to load and nothing to convert, and
-    // asking again will not change the answer. And no `draftVersion` -- there
-    // is no draft, and a number in that field would read as one.
-    expect(await response.json()).toEqual({ error: { code: "published_version_exists" } });
-    // Refused before it looked at the owner's Profile and before it wrote
-    // anything, so there is no half-made knowledge base behind this 409.
-    expect(readProfile).not.toHaveBeenCalled();
-    expect(saveDraft).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(saveDraft).toHaveBeenCalledTimes(1);
+    // The published version is not touched by the create: it stays what AI
+    // Visibility and Brief read until a v3 publish supersedes it.
+    const written = saveDraft.mock.calls[0]?.[0]?.payload;
+    expect(written?.knowledge).toBeNull();
+    expect(written?.review).toEqual({ decisions: [], suppressions: [] });
   });
 
   it("still names the draft when a knowledge base has both a draft and a published version", async () => {
@@ -1180,7 +1187,7 @@ describe("handleGeoKbV3DraftCreate: the re-lock", () => {
     const response = await handleGeoKbV3DraftCreate(request(relockBody()), h.dependencies);
 
     expect(response.status).toBe(200);
-    expect((await response.json()).data.blockers).toEqual(["unsupported_language", "category_terms_missing"]);
+    expect((await response.json()).data.blockers).toEqual(["category_terms_missing"]);
   });
 
   it("refuses an unusable Profile with its fields named, and writes nothing", async () => {
@@ -1223,5 +1230,103 @@ describe("handleGeoKbV3DraftCreate: the re-lock", () => {
       expect((await response.json()).error.code).toBe("invalid_request");
     }
     expect(h.saveDraft).not.toHaveBeenCalled();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The v2 -> v3 upgrade                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Section 4.4's blocker table asks for this by name -- "astrologywiki 现有 v2
+ * 草稿升不到 v3；S1 要允许 v2 → v3 升级路径" -- and the database half has been open
+ * since `20260907143000_geo_kb_v3.sql:266`, where `marketing_geo_save_kb_draft`
+ * permits a declared v3 save to drop `profileCopy` precisely because "a declared
+ * V3 save is the intended, one-way upgrade". Nothing on this side ever asked,
+ * so every knowledge base with a v1/v2 draft -- which is every knowledge base
+ * anyone has used -- answered `legacy_draft` forever.
+ */
+describe("handleGeoKbV3DraftCreate: the v2 to v3 upgrade", () => {
+  const LEGACY = { schemaVersion: "marketing-geo-kb.v2" };
+  const LEGACY_HASH = "b".repeat(64);
+  const upgradeBody = (extra: Record<string, unknown> = {}) => ({
+    kbId: KB_ID, intent: "upgrade", baseVersion: 2, draftHash: LEGACY_HASH, ...extra,
+  });
+  const legacyDraft = { draftVersion: 2, payload: LEGACY, contentHash: LEGACY_HASH, updatedAt: NOW };
+
+  it("replaces a v1/v2 draft with a first v3 draft", async () => {
+    const { dependencies, saveDraft, saved } = harness({}, legacyDraft);
+
+    const response = await handleGeoKbV3DraftCreate(request(upgradeBody()), dependencies);
+
+    expect(response.status).toBe(200);
+    expect(saveDraft).toHaveBeenCalledTimes(1);
+    // Built from scratch, not converted: the v1/v2 payload's facts and roles
+    // have no v3 home, and its `profileCopy` is replaced by a `profileRef` to
+    // the confirmed Profile -- the same one a fresh v3 draft gets.
+    expect(saved.current?.schemaVersion).toBe("marketing-geo-kb.v3");
+    expect(saved.current?.knowledge).toBeNull();
+    expect(saved.current?.review).toEqual({ decisions: [], suppressions: [] });
+    expect(Object.hasOwn(saved.current ?? {}, "profileCopy")).toBe(false);
+    expect(saved.current?.generationInput.profileRef.snapshotId).toBe(REFERENCE.snapshotId);
+  });
+
+  it("upgrades a knowledge base that has already published, over that version", async () => {
+    const { dependencies, saveDraft } = harness({}, legacyDraft, { frozen: PUBLISHED });
+
+    const response = await handleGeoKbV3DraftCreate(request(upgradeBody()), dependencies);
+
+    expect(response.status).toBe(200);
+    expect(saveDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses to upgrade a v3 draft, which is the re-lock's own gesture", async () => {
+    const payload = reviewedPayloadV3();
+    const { dependencies, saveDraft } = harness({}, { draftVersion: 4, payload, contentHash: geoV2Digest(payload), updatedAt: NOW });
+
+    const response = await handleGeoKbV3DraftCreate(
+      request(upgradeBody({ baseVersion: 4, draftHash: geoV2Digest(payload) })), dependencies);
+
+    // Never `legacy_draft`: what is here is v3, and answering with the other
+    // refusal would send the owner to convert something already converted.
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: { code: "draft_exists" }, draftVersion: 4 });
+    expect(saveDraft).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the draft moved under the caller, and never writes", async () => {
+    const { dependencies, saveDraft } = harness({}, legacyDraft);
+
+    // The digest is the acknowledgement: a caller cannot produce the hash of
+    // the draft it is about to discard without having been shown that draft.
+    const wrongHash = await handleGeoKbV3DraftCreate(request(upgradeBody({ draftHash: "c".repeat(64) })), dependencies);
+    expect(wrongHash.status).toBe(409);
+    expect(await wrongHash.json()).toEqual({ error: { code: "conflict" }, draftVersion: 2 });
+
+    const wrongVersion = await handleGeoKbV3DraftCreate(request(upgradeBody({ baseVersion: 3 })), dependencies);
+    expect(wrongVersion.status).toBe(409);
+    expect(await wrongVersion.json()).toEqual({ error: { code: "conflict" }, draftVersion: 2 });
+
+    expect(saveDraft).not.toHaveBeenCalled();
+  });
+
+  it("refuses when there is no draft at all", async () => {
+    const { dependencies, saveDraft } = harness({}, null);
+
+    const response = await handleGeoKbV3DraftCreate(request(upgradeBody()), dependencies);
+
+    expect(response.status).toBe(404);
+    expect(saveDraft).not.toHaveBeenCalled();
+  });
+
+  it("still refuses a re-lock over a v1/v2 draft, which is not this gesture", async () => {
+    const { dependencies, saveDraft } = harness({}, legacyDraft);
+
+    const response = await handleGeoKbV3DraftCreate(
+      request({ kbId: KB_ID, intent: "relock", baseVersion: 2, draftHash: LEGACY_HASH }), dependencies);
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: { code: "legacy_draft" }, draftVersion: 2 });
+    expect(saveDraft).not.toHaveBeenCalled();
   });
 });

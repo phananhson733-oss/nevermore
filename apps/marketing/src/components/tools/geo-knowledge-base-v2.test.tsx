@@ -495,15 +495,22 @@ it("starts a v3 knowledge base for one with nothing stored, rather than writing 
   expect(onStarted).toHaveBeenCalledTimes(1);
 });
 
-it("leaves a knowledge base that already has a published version on the card that can read it", async () => {
+/**
+ * This used to stay on the v2 card, because a v3 draft standing over a v1/v2
+ * published version was refused by the loader as `v3_predecessor_unsupported`
+ * -- a permanent 503 for that knowledge base. The loader now reports such a
+ * version as `opaque`, so there is nothing left to protect against, and holding
+ * the line here would have meant only a knowledge base nobody had ever
+ * published from could reach the redesign.
+ */
+it("starts a first v3 draft over a knowledge base that has already published", async () => {
   const base = editorFixture();
-  // No draft, but a frozen v1/v2 version. Starting a v3 draft here is what the
-  // v3 loader refuses as `v3_predecessor_unsupported`, which the website route
-  // turns into 503 -- for good, not for a moment.
   await render(emptyView({ frozen: frozenAt(base, base.draftHash!) }));
 
-  expect(host.querySelector("[data-geo-kb-start]")).toBeNull();
-  expect(host.querySelector("[data-geo-kb-v2]")).not.toBeNull();
+  expect(host.querySelector("[data-geo-kb-start]")).not.toBeNull();
+  expect(host.querySelector("[data-geo-kb-v2]")).toBeNull();
+  // Still nothing sent until the owner presses: the published version is not
+  // touched by rendering a start button over it.
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -511,6 +518,125 @@ it("leaves a knowledge base with a stored draft on the v2 card", async () => {
   await render();
   expect(host.querySelector("[data-geo-kb-start]")).toBeNull();
   expect(host.querySelector("[data-geo-kb-v2]")).not.toBeNull();
+});
+
+/**
+ * The gesture that carries an existing v1/v2 draft across the cut.
+ *
+ * Without it the redesign is reachable only from a knowledge base nobody has
+ * ever built, which is every knowledge base except the ones that matter. The
+ * move is one-way, discards a draft, and makes the next update a paid one, so
+ * each of those three is pinned as a sentence the owner is shown, not just as
+ * behaviour after the press.
+ */
+it("offers the move only where there is a draft to move", async () => {
+  await render(emptyView());
+  expect(host.querySelector("[data-kb-upgrade-v3]")).toBeNull();
+  expect(host.querySelector("[data-upgrade-v3]")).toBeNull();
+});
+
+it.each([
+  ["en", ["discards this draft", "billed again", "stays exactly as it is"]],
+  ["zh", ["丢弃当前这份草稿", "重新计费", "原样保留"]],
+])("says in %s what the move costs, before the button that spends it", async (locale, claims) => {
+  await render(editorFixture(), locale);
+  const panel = host.querySelector("[data-kb-upgrade-v3]");
+
+  expect(panel).not.toBeNull();
+  // The note is above the button in the DOM, which is what puts it in front of
+  // the owner rather than after the press.
+  expect(panel!.querySelector("p")!.compareDocumentPosition(panel!.querySelector("[data-upgrade-v3]")!))
+    .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  for (const claim of claims) expect(renderedText(panel as HTMLElement), claim).toContain(claim);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("acknowledges the exact draft it discards", async () => {
+  const base = editorFixture();
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ data: CREATED }));
+  await render(base);
+  // Rendering the offer is free. Only the press writes.
+  expect(fetch).not.toHaveBeenCalled();
+
+  await click("[data-upgrade-v3]");
+
+  expect(vi.mocked(fetch).mock.calls.map(call => call[0])).toEqual(["/api/tools/geo-knowledge-base/v3/draft"]);
+  // `draftHash` is the acknowledgement the route demands: a press that did not
+  // carry the digest of the draft on screen would be discarding something the
+  // owner was never shown.
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body)))
+    .toEqual({ kbId: base.kbId, intent: "upgrade", baseVersion: base.draftVersion, draftHash: base.draftHash });
+  expect(onStarted).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("sends one upgrade for a double press", async () => {
+  let settle: (value: Response) => void = () => {};
+  vi.mocked(fetch).mockReturnValueOnce(new Promise<Response>(resolve => { settle = resolve; }));
+  await render();
+  const button = host.querySelector<HTMLElement>("[data-upgrade-v3]")!;
+
+  // Two presses before React has re-rendered the disabled state -- the latch,
+  // not the attribute, is what stops the second. A second `intent: "upgrade"`
+  // spends another of the few creates an hour this knowledge base gets.
+  await act(async () => { button.click(); button.click(); });
+
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await act(async () => { settle(Response.json({ data: CREATED })); });
+  expect(onStarted).toHaveBeenCalledTimes(1);
+});
+
+it.each(["draft_exists", "conflict"])("re-reads rather than reporting a failure on %s", async (code) => {
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code }, draftVersion: 7 }, { status: 409 }));
+  await render();
+
+  await click("[data-upgrade-v3]");
+
+  // Another tab moved first, or the draft moved under this one. Either way what
+  // is stored is now worth reading; a failure notice would be describing a
+  // knowledge base that has already crossed.
+  expect(onStarted).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("says nothing was changed only where a retry can still work", async () => {
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "profile_unusable" } }, { status: 422 }));
+  await render();
+
+  await click("[data-upgrade-v3]");
+
+  expect(onStarted).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-kb-upgrade-v3] [role="alert"]')?.textContent).toBe(editor.upgradeFailed);
+  // "you can try again" is a promise about the next press, so the next press is
+  // the test: the latch has to be open again, not stuck on the failed attempt.
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ data: CREATED }));
+  await click("[data-upgrade-v3]");
+  expect(onStarted).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  ["a dropped connection", () => vi.mocked(fetch).mockRejectedValueOnce(new TypeError("network"))],
+  ["a 503 the route can only reach after the write", () =>
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: { code: "store_unavailable" } }, { status: 503 }))],
+  ["a body this client cannot read", () =>
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ data: { nonsense: true } }))],
+])("refuses to promise nothing changed after %s", async (_case, arrange) => {
+  /*
+   * The upgrade discards the v1/v2 draft before these three can happen, so the
+   * client does not know whether the move went through. "Nothing was changed"
+   * would be an assurance nobody verified, about a one-way gesture, in the one
+   * window where being wrong hides that the draft is gone and the next update
+   * bills.
+   */
+  arrange();
+  await render();
+
+  await click("[data-upgrade-v3]");
+
+  const alert = host.querySelector('[data-kb-upgrade-v3] [role="alert"]')?.textContent;
+  expect(alert).toBe(editor.upgradeUnconfirmed);
+  expect(alert).not.toBe(editor.upgradeFailed);
+  expect(onStarted).not.toHaveBeenCalled();
 });
 
 it.each([

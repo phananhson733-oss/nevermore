@@ -8,7 +8,17 @@ import { geoV2Digest } from "./kb-v2-digest.ts";
 import type { GeoKbPayloadV3 } from "./kb-v3-contract.ts";
 import type { VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
 import { parseGeoKbPayloadV3 } from "./kb-v3-contract.ts";
-import { completePayloadV3, conflictingPayloadV3, HASH_A, OBSERVED_AT, V3_KB_ID } from "./kb-v3.test-fixtures.ts";
+import {
+  completePayloadV3,
+  conflictingPayloadV3,
+  ownerDeclaredPayloadV3,
+  HASH_A,
+  OBSERVED_AT,
+  OWNER_DECLARED_AT,
+  OWNER_DECLARED_PRO_PRICE,
+  OWNER_DECLARED_TEAM_PRICE,
+  V3_KB_ID,
+} from "./kb-v3.test-fixtures.ts";
 import { completePayloadV2, questionSetV2, V2_CANDIDATE_ID, V2_KB_ID } from "./kb-v2.test-fixtures.ts";
 
 const SNAPSHOT_ID = "22222222-2222-8222-8222-222222222221";
@@ -160,6 +170,39 @@ describe("Brief facts from a published v3 knowledge pack", () => {
 
     expect(result.receipts[0]).toEqual({ id: "K1", source: "kb", text: "9", observed_at: FROZEN_AT, url: null });
     expect(result.factTable[0]).toMatchObject({ value: "9", evidence_refs: ["K1"] });
+  });
+
+  it("carries a version whose every fact is an owner declaration from publish through to the Brief", () => {
+    // The pack is not hand-built here. It comes out of the publish-side
+    // assembler, from a draft whose facts the owner declared, and is then read
+    // by the projection a Brief uses -- so the two halves of the seam are
+    // exercised against each other rather than each against a fixture of its
+    // own. The test above states what the Brief does with a declared fact; this
+    // one states that publishing still produces one.
+    const { frozen, context, pack } = v3Fixture(publishable(ownerDeclaredPayloadV3()));
+    if (pack.facts.status !== "available") throw new Error("Expected published facts");
+    expect(pack.facts.value.map((fact) => fact.origin)).toEqual(["declared_owner", "declared_owner"]);
+    // No page backs any of it: nothing cited, nothing observed, nothing to crawl.
+    expect(pack.facts.value.flatMap((fact) => fact.sourceRefs)).toEqual([]);
+    expect(pack.facts.value.map((fact) => fact.observedAt)).toEqual([null, null]);
+
+    const result = geoBriefFactsForSnapshot(frozen, context, pack);
+
+    expect(result.factTable).toEqual([
+      { id: "F1", label: "Pro plan monthly price", value: OWNER_DECLARED_PRO_PRICE, reason: null, evidence_refs: ["K1"] },
+      { id: "F2", label: "Team plan monthly price", value: OWNER_DECLARED_TEAM_PRICE, reason: null, evidence_refs: ["K2"] },
+    ]);
+    expect(result.receipts).toEqual([
+      { id: "K1", source: "kb", text: OWNER_DECLARED_PRO_PRICE, observed_at: OWNER_DECLARED_AT, url: null },
+      { id: "K2", source: "kb", text: OWNER_DECLARED_TEAM_PRICE, observed_at: OWNER_DECLARED_AT, url: null },
+    ]);
+    // The crawled prices the owner replaced are gone from the Brief entirely,
+    // and so is the page that carried them -- it survives only as
+    // `priorSourceRefs`, which nothing here reads.
+    expect(result.receipts.map((receipt) => receipt.text)).not.toContain("9");
+    expect(result.receipts.map((receipt) => receipt.url)).toEqual([null, null]);
+    expect(result.receipts.map((receipt) => receipt.observed_at)).not.toContain(FROZEN_AT);
+    expect(result.receipts.map((receipt) => receipt.source)).not.toContain("crawl");
   });
 
   it("refuses an observed claim whose only citation has no page to check", () => {

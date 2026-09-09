@@ -7,8 +7,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
 import { geoV2Digest } from "../../lib/geo-tools/kb-v2-digest.ts";
+import { geoV3ItemContentHashes, geoV3RestatedItemKeys } from "../../lib/geo-tools/kb-v3-item-content.ts";
 import { geoV3ItemKeys } from "../../lib/geo-tools/kb-v3-contract.ts";
-import { completePayloadV3, FACT_KEY_PRO, V3_KB_ID } from "../../lib/geo-tools/kb-v3.test-fixtures.ts";
+import { completePayloadV3, FACT_KEY_PRO, FACT_KEY_TEAM, V3_KB_ID } from "../../lib/geo-tools/kb-v3.test-fixtures.ts";
 import { geoItemKey } from "../../lib/geo-tools/kb-item-key.ts";
 import { parseGeoKbPayloadV3 } from "../../lib/geo-tools/kb-v3-contract.ts";
 import {
@@ -16,6 +17,7 @@ import {
   GEO_ENTITY_REQUIRED_PATHS,
 } from "../../lib/geo-tools/kb-knowledge-shape.ts";
 import type { GeoEntityCorrectablePathV3 } from "../../lib/geo-tools/kb-v3-contract.ts";
+import { geoKbModuleValue } from "./geo-kb-module-section.tsx";
 import { GEO_KB_V3_AUTOSAVE_MS } from "./use-geo-kb-v3-editor.ts";
 import { GEO_KB_RUN_BUSY_BACKOFF_MS, GEO_KB_RUN_ENDPOINT } from "./geo-kb-run-continue.ts";
 import { GEO_KB_RUN_BUSY_VOICE, GEO_KB_RUN_CHECK_MS } from "./geo-kb-v3-review.tsx";
@@ -103,14 +105,17 @@ afterEach(async () => {
 function view(overrides: Partial<GeoKbEditorViewV3> = {}): GeoKbEditorViewV3 {
   return {
     kbId: V3_KB_ID, host: "example.com", draftVersion: 4, draftHash: geoV2Digest(PAYLOAD),
-    payload: PAYLOAD, published: null, ...overrides,
+    payload: PAYLOAD, published: null,
+    // Derived from the payload rather than hardcoded to [], so a test that
+    // builds a restated payload gets the flag the server would have sent.
+    restated: geoV3RestatedItemKeys(PAYLOAD.knowledge, PAYLOAD.review), ...overrides,
   };
 }
 
 async function render(
   locale = "en",
   overrides: Partial<GeoKbEditorViewV3> = {},
-  props: { readonly onReload?: () => void } = {},
+  props: { readonly onReload?: () => void; readonly confirmedProfileRevision?: number } = {},
 ) {
   await act(async () => root.render(
     <NextIntlClientProvider locale={locale} timeZone="UTC" messages={locale === "zh" ? zh : en}>
@@ -368,6 +373,64 @@ async function openCorrection(index: number): Promise<HTMLElement> {
   if (!(form instanceof HTMLElement)) throw new Error("no correction form");
   return form;
 }
+
+/* ------------------------------------------------------------------ */
+/* "Has a new observation" -- section 4.4's third rule at the card      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The merge lets an owner's decision stand when the same page restates the same
+ * item, rather than re-asking them everything on every update. The whole reason
+ * that is acceptable is this chip: without it the row presents an approval of a
+ * sentence nobody has read, and publish ships it as owner-confirmed.
+ *
+ * The row component has always been able to draw the chip. What was missing was
+ * anything passing the flag -- `newObservation` had no caller in the app, and
+ * `baseContentHash`, the field the merge leaves mismatched on purpose, had no
+ * reader either. So these assert the WIRE, from the loader's `restated` to the
+ * rendered chip, not the component in isolation.
+ */
+const flags = () => rows().map((row) => row.querySelector('[data-item-flag="new_observation"]')?.textContent ?? null);
+
+it("says an item has a new observation when the update rewrote text the owner had decided", async () => {
+  const factKey = ITEM_KEYS[1]!;
+  await render("en", { restated: [factKey] });
+
+  const flagged = flags().filter((text) => text !== null);
+  expect(flagged).toEqual([en.tools.geoKnowledgeBase.card.item.newObservation]);
+  expect(flagged[0]).not.toContain("[missing copy:");
+});
+
+/**
+ * Counted rather than positional: the row order is the module walk order, not
+ * the item-key order, so pinning an index would pass while the flag landed on
+ * the wrong row. Each case gets its own render -- the editor hook takes the
+ * view once, the way a page load hands it over, and does not re-read the prop.
+ */
+it.each([
+  ["nothing the server named", [] as readonly string[], 0],
+  ["one named item", [ITEM_KEYS[1]!], 1],
+  ["two named items", [ITEM_KEYS[1]!, ITEM_KEYS[2]!], 2],
+  ["a key this body does not carry", ["f".repeat(64)], 0],
+])("marks the rows for %s", async (_why, restated, expected) => {
+  await render("en", { restated });
+
+  expect(rows().filter((row) => row.querySelector('[data-item-flag="new_observation"]') !== null)).toHaveLength(expected);
+});
+
+it("says nothing of the kind while every decision still stands against what it decided", async () => {
+  await render("en", { restated: [] });
+
+  expect(flags().every((text) => text === null)).toBe(true);
+});
+
+it("says it in the reader's language", async () => {
+  await render("zh", { restated: [ITEM_KEYS[1]!] });
+
+  const flagged = flags().filter((text) => text !== null);
+  expect(flagged).toEqual([zh.tools.geoKnowledgeBase.card.item.newObservation]);
+  expect(flagged[0]).not.toBe(en.tools.geoKnowledgeBase.card.item.newObservation);
+});
 
 async function renderEntity(paths: readonly GeoEntityCorrectablePathV3[], locale = "en") {
   const payload = entityPayload(paths);
@@ -911,12 +974,20 @@ it.each(["en", "zh"])("promises no published view from the sections it does not 
   expect(trust).not.toMatch(/^[\w.]+$/u);
 
   if (locale === "en") {
-    expect(trust).toContain("no decisions");
-    expect(trust).toContain("not shown here");
+    expect(trust).toContain("nothing here for you to accept, correct or exclude");
+    // It used to say the contents were "not shown here", which was true while
+    // the section was empty and became a lie the moment the read-only modules
+    // were drawn into it. A sentence promising a view is caught by
+    // PROMISES_A_VIEW above; this catches the opposite one, denying a view the
+    // owner is looking at.
+    expect(trust).not.toContain("not shown here");
   } else {
-    expect(trust).toContain("没有需要你决定");
-    expect(trust).toContain("不在这里展示");
+    expect(trust).toContain("没有需要你接受、修正或排除的条目");
+    expect(trust).not.toContain("不在这里展示");
   }
+  // And the thing the sentence is about is on the screen underneath it.
+  expect(host.querySelector('[data-kb-section="trust"] [data-geo-kb-module]')).not.toBeNull();
+  expect(host.querySelector('[data-kb-section="reachability"] [data-geo-kb-module]')).not.toBeNull();
 });
 
 /**
@@ -1753,19 +1824,31 @@ it.each([
   expect(button("[data-kb-discard-run]")).toBeNull();
 });
 
-it("names an unsupported question language as its own blocker", async () => {
+/**
+ * D8: the knowledge body follows the site's own language.
+ *
+ * This used to show "the question registry does not support the selected
+ * language" and DISABLE the update button. The English registry governs the
+ * question set, which a v3 draft never has, so the sentence disabled a Chinese
+ * site's only working gesture over a step that was never going to run for
+ * anybody. What the owner is told instead is stated at publish time: this
+ * version has no question set, and why.
+ */
+it("lets a site the question registry has no templates for run its update", async () => {
   await render("en", withIdentity({ market: { country: "CN", language: "zh-cn" } }));
 
-  expect(text('[data-kb-blocker="unsupported_language"]'))
-    .toBe("The question registry does not support the selected language.");
+  expect(host.querySelector('[data-kb-blocker="unsupported_language"]')).toBeNull();
   expect(host.querySelector('[data-kb-blocker="category_terms_missing"]')).toBeNull();
-  expect(button("[data-generate-kb]")?.disabled).toBe(true);
+  expect(button("[data-generate-kb]")?.disabled).toBe(false);
+  // Nothing sent by rendering: the button is enabled, not pressed.
+  expect(calls()).toEqual([]);
 });
 
 it("keeps a published version's line when the draft over it is blocked", async () => {
   await render("en", {
     ...withIdentity({ categoryTerms: [] }),
     published: {
+      kind: "comparable",
       revision: 2,
       frozenAt: "2026-09-01T00:00:00.000Z",
       contentHash: "b".repeat(64),
@@ -1848,6 +1931,7 @@ it("refuses to call the draft a category-less Profile actually produces ready to
     draftVersion: 1,
     draftHash: geoV2Digest(created.payload),
     payload: created.payload,
+    restated: geoV3RestatedItemKeys(created.payload.knowledge, created.payload.review),
     published: null,
   });
   if (parsed === null) throw new Error("the created draft did not survive the wire parser");
@@ -1882,6 +1966,7 @@ it("leaves the same freshly created draft alone when the Profile did give it a c
     draftVersion: 1,
     draftHash: geoV2Digest(created.payload),
     payload: created.payload,
+    restated: geoV3RestatedItemKeys(created.payload.knowledge, created.payload.review),
     published: null,
   });
   if (parsed === null) throw new Error("the created draft did not survive the wire parser");
@@ -1897,4 +1982,293 @@ it("leaves the same freshly created draft alone when the Profile did give it a c
   expect(host.querySelector("[data-kb-recovery]")).toBeNull();
   expect(text("[data-kb-state]")).toBe("A draft is ready for you to publish.");
   expect(button("[data-generate-kb]")?.disabled).toBe(false);
+});
+
+
+/* ---------------------------------------------------------------------------
+ * The three modules nobody reviews
+ *
+ * D3 makes evidence, machine-readable status and coverage read-only, and that
+ * was implemented as not drawing them at all: sections C and D held one
+ * sentence saying there was nothing to decide, and the owner could never see
+ * what the run had observed about their own site. Read-only means shown
+ * without controls, not withheld.
+ * ------------------------------------------------------------------------- */
+
+const groupsIn = (selector: string) => [...host.querySelectorAll(`${selector} [data-geo-kb-group]`)]
+  .map((group) => ({
+    title: group.querySelector("h4, h5")?.textContent ?? "",
+    state: group.getAttribute("data-group-state"),
+  }));
+
+it("shows what the run observed about the site, not just what there is to decide", async () => {
+  await render();
+
+  const trust = host.querySelector('[data-kb-section="trust"]');
+  const reachability = host.querySelector('[data-kb-section="reachability"]');
+  // The read-only note stays -- it explains the missing controls -- but it is
+  // no longer the whole section.
+  expect(trust?.textContent).toContain(card("en").review.noDecisions);
+  expect(trust?.querySelector("[data-geo-kb-module]")).not.toBeNull();
+  // Evidence in C; machine-readable status and coverage in D, which is the
+  // section split the design lays out.
+  expect(trust?.querySelectorAll("[data-geo-kb-module]")).toHaveLength(1);
+  expect(reachability?.querySelectorAll("[data-geo-kb-module]")).toHaveLength(2);
+  // The observations themselves, not just the frames: the fixture's robots
+  // observation says GPTBot is disallowed for training while OAI-SearchBot is
+  // allowed for search, and those are separate permissions.
+  expect(reachability?.querySelector('[data-crawler-use="search"]')?.textContent).toContain("OAI-SearchBot");
+  expect(reachability?.querySelector('[data-crawler-use="training"]')?.textContent).toContain("GPTBot");
+  expect(reachability?.querySelector('[data-machine-field="robots"]')).not.toBeNull();
+  // Coverage rows carry their own status, so "covered" is readable as a word.
+  expect(reachability?.textContent).toContain("Supported content is available.");
+});
+
+it("keeps 'looked and found nothing' apart from 'never looked' on the v3 card", async () => {
+  await render();
+
+  // The fixture collected proof and changelog only. Reading them as one state
+  // would tell an owner their press coverage was searched for.
+  expect(groupsIn('[data-kb-section="trust"]')).toEqual([
+    { title: "Product proof", state: "available" },
+    { title: "Product changes", state: "collected_empty" },
+    { title: "Press coverage", state: "not_collected" },
+    { title: "Third-party profiles", state: "not_collected" },
+    { title: "First-party proof", state: "not_collected" },
+  ]);
+  const notes = [...host.querySelectorAll('[data-kb-section="trust"] [data-group-note]')].map((note) => note.textContent);
+  expect(notes).toEqual(["Collected · nothing found", "Not collected", "Not collected", "Not collected"]);
+});
+
+it("names a boundary group with nothing in it instead of dropping it", async () => {
+  await render();
+
+  // The four groups answer four different questions. Flattened into one list,
+  // the three empty ones vanished, and an owner reading "what it does not do"
+  // as absent cannot tell it from unmeasured.
+  expect(groupsIn('[data-kb-section="identity"]')).toEqual([
+    { title: "What it does", state: "collected_empty" },
+    { title: "What it does not do", state: "available" },
+    { title: "Where people are still needed", state: "collected_empty" },
+    { title: "Common misconceptions", state: "collected_empty" },
+  ]);
+  // And the one populated group still renders its item, with its controls.
+  expect(host.querySelector('[data-kb-section="identity"] [data-geo-kb-group][data-group-state="available"]')?.textContent)
+    .toContain("Acme does not run on Android.");
+});
+
+/**
+ * The whole-DOM sweep the internal-identifier rule needs.
+ *
+ * The rule was one needle -- the Pro fact's item key -- and an audit proved it:
+ * rendering the draft hash and the knowledge base id straight onto the card
+ * root left 192 tests green. Every identifier the card holds is checked here,
+ * against the served HTML rather than against a list of places to look.
+ */
+it("puts no internal identifier in the DOM", async () => {
+  await render();
+
+  const html = host.innerHTML;
+  const identifiers: readonly (readonly [string, string])[] = [
+    ["kbId", V3_KB_ID],
+    ["draftHash", geoV2Digest(PAYLOAD)],
+    ...ITEM_KEYS.map((key) => ["itemKey", key] as const),
+    ...PAYLOAD.knowledge!.sourceCatalogue.map((source) => ["sourceId", source.id] as const),
+  ];
+  for (const [what, value] of identifiers) expect(html, `${what}: ${value}`).not.toContain(value);
+  // A digest is 64 hex characters and a UUID has its own shape. Both are
+  // checked as patterns too, so an identifier this list does not name still
+  // fails rather than passing for being unlisted.
+  expect(html).not.toMatch(/[0-9a-f]{64}/);
+  expect(html).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
+});
+
+
+/* ---------------------------------------------------------------------------
+ * Folding away once there is nothing left to review (§4.1)
+ * ------------------------------------------------------------------------- */
+
+/** The published version this draft IS: the freeze copies the draft's own hash. */
+const publishedAsIs = (overrides: Record<string, unknown> = {}) => ({
+  kind: "comparable" as const,
+  revision: 3,
+  frozenAt: "2026-09-01T00:00:00.000Z",
+  contentHash: geoV2Digest(PAYLOAD),
+  decisions: {},
+  ...overrides,
+});
+
+it("folds to a summary once the draft on screen is the published version", async () => {
+  await render("en", { published: publishedAsIs() });
+
+  expect(host.querySelector("[data-geo-kb-collapsed]")).not.toBeNull();
+  // Written out, not filled from the catalog: filling it compares the render
+  // with the leaf it was rendered from, which passes for any wording.
+  expect(text("[data-kb-published-version]")).toBe("Published kb@v3");
+  // The counts are read off the body that was published, and "confirmed"
+  // counts one-by-one acceptances only.
+  // No comparisons clause: this fixture's module is `unavailable`, and the line
+  // that used to say "Comparisons 0/0" was claiming a comparison nobody ran.
+  expect(text("[data-kb-published-counts]")).toBe("Facts 2 (confirmed 0) · Q&A 1 · Sep 1, 2026");
+  // Folded means folded: no review rows, no publish box, no update button
+  // underneath pretending there is still work here.
+  expect(rows()).toHaveLength(0);
+  expect(host.querySelector("[data-publish-kb]")).toBeNull();
+  // The card still asks the run route whether an update is open -- that is how
+  // it knows it may fold at all -- but it writes nothing.
+  expect(calls()).toEqual([]);
+});
+
+it("counts only one-by-one acceptances as confirmed", async () => {
+  const hashes = geoV3ItemContentHashes(PAYLOAD.knowledge);
+  const decided = (itemKey: string, decision: "accepted" | "accepted_in_bulk") => ({
+    itemKey, decision, override: null,
+    baseContentHash: hashes.get(itemKey)!, decidedAt: "2026-09-01T00:00:00.000Z", baseDraftVersion: "4",
+  });
+  // One fact read and accepted; the other swept up by a batch gesture. D12
+  // reserves "confirmed" for the first kind, and this line is where the
+  // difference reaches a person.
+  const payload = completePayloadV3({ review: {
+    decisions: [decided(FACT_KEY_PRO, "accepted"), decided(FACT_KEY_TEAM, "accepted_in_bulk")],
+    suppressions: [],
+  } });
+  const contentHash = geoV2Digest(payload);
+
+  await render("en", { payload, draftHash: contentHash, published: publishedAsIs({ contentHash }) });
+
+  expect(text("[data-kb-published-counts]")).toBe("Facts 2 (confirmed 1) · Q&A 1 · Sep 1, 2026");
+});
+
+it("opens again on Edit, and stays open", async () => {
+  await render("en", { published: publishedAsIs() });
+
+  await act(async () => host.querySelector<HTMLElement>("[data-kb-edit]")!.click());
+
+  expect(host.querySelector("[data-geo-kb-collapsed]")).toBeNull();
+  expect(rows().length).toBeGreaterThan(0);
+});
+
+it.each([
+  ["an older published version", { published: publishedAsIs({ contentHash: "b".repeat(64) }) }],
+  ["a version published by the previous format", { published: { kind: "opaque" as const, revision: 2, frozenAt: "2026-09-01T00:00:00.000Z", contentHash: "b".repeat(64) } }],
+  ["nothing published yet", { published: null }],
+])("stays open over %s", async (_case, overrides) => {
+  await render("en", overrides);
+
+  // Each of these leaves the owner something to do -- review the changes since
+  // the published version, or publish for the first time. A summary line over
+  // any of them says the opposite.
+  expect(host.querySelector("[data-geo-kb-collapsed]")).toBeNull();
+  expect(rows().length).toBeGreaterThan(0);
+});
+
+
+/**
+ * The three modules the folded sentence counts. A module that was never
+ * measured reads back as an empty list, and every count it feeds renders `0`.
+ */
+/** The fixture's body, non-null: `completePayloadV3` always builds one. */
+const KNOWLEDGE = PAYLOAD.knowledge!;
+
+const unmeasured: readonly (readonly [string, Partial<typeof KNOWLEDGE>, string])[] = [
+  ["facts", { facts: { status: "unavailable", reason: "not_collected" } }, "Facts"],
+  ["Q&A", { qa: { status: "unavailable", reason: "not_collected" } }, "Q&A"],
+  ["comparisons", { comparisons: { status: "unavailable", reason: "not_collected" } }, "Comparisons"],
+];
+
+it.each(unmeasured)("says nothing about the %s module when it was never measured", async (_case, module, word) => {
+  const payload = completePayloadV3({ knowledge: { ...KNOWLEDGE, ...module } });
+  const contentHash = geoV2Digest(payload);
+
+  await render("en", { payload, draftHash: contentHash, published: publishedAsIs({ contentHash }) });
+
+  // It still folds -- an unmeasured module leaves nothing to review -- but the
+  // clause is gone rather than rendered as `0`. "Facts 0 (confirmed 0)" about a
+  // module nobody looked at reads as "we looked and found none", the exact
+  // claim `GeoKbPublishedSummary.counts` refuses to make for off-site sources.
+  expect(host.querySelector("[data-geo-kb-collapsed]")).not.toBeNull();
+  const line = text("[data-kb-published-counts]") ?? "";
+  expect(line).toContain("Sep 1, 2026");
+  // The module is not named at all, so no number is attached to it. A zero
+  // elsewhere on the line is a real one: "confirmed 0" counts decisions about
+  // facts that were measured.
+  expect(line).not.toContain(word);
+  expect(line.length).toBeGreaterThan("Sep 1, 2026".length);
+});
+
+it("stays open while a counted module is only partial", async () => {
+  // `partial` carries a limitation sentence and the folded summary has nowhere
+  // to say it, so the card keeps the section on screen instead.
+  const payload = completePayloadV3({ knowledge: {
+    ...KNOWLEDGE,
+    qa: { status: "partial", limitation: "Only the first page of questions was read.", value: geoKbModuleValue(KNOWLEDGE.qa)! },
+  } });
+  const contentHash = geoV2Digest(payload);
+
+  await render("en", { payload, draftHash: contentHash, published: publishedAsIs({ contentHash }) });
+
+  expect(host.querySelector("[data-geo-kb-collapsed]")).toBeNull();
+});
+
+
+/* ---------------------------------------------------------------------------
+ * Two prompts that act on nothing (§12, D11)
+ * ------------------------------------------------------------------------- */
+
+it("says a published version can be updated when the Profile has moved on", async () => {
+  const locked = Number(PAYLOAD.generationInput.profileRef.snapshotRevision);
+
+  await render("en", { published: publishedAsIs() }, { confirmedProfileRevision: locked + 1 });
+
+  // Written out. The catalog leaf is what is under test.
+  expect(text("[data-kb-state]")?.trim()).toBe("Published kb@v3 · Sep 1, 2026 · the Product Profile has a newer version, so you can update");
+  // Nothing was synced: §12 is explicit that confirming a Profile revision
+  // changes nothing about the published knowledge base.
+  expect(calls()).toEqual([]);
+  // And the card does not fold away over a sentence it then cannot show.
+  expect(host.querySelector("[data-geo-kb-collapsed]")).toBeNull();
+});
+
+/** A published version this draft has since been edited past, so the card stays open. */
+const publishedEarlier = () => publishedAsIs({ revision: 2, contentHash: "b".repeat(64) });
+
+it.each([
+  ["the same revision", 0],
+  ["an older Profile revision than the draft", -1],
+  ["a revision the caller does not know", null],
+])("keeps the plain published line for %s", async (_case, delta) => {
+  const locked = Number(PAYLOAD.generationInput.profileRef.snapshotRevision);
+
+  // An absent number is not a match: a card that guessed would tell every
+  // caller without the revision that their knowledge base is out of date.
+  await render("en", { published: publishedEarlier() }, delta === null ? {} : { confirmedProfileRevision: locked + delta });
+
+  expect(text("[data-kb-state]")?.trim()).toBe("Published kb@v2 · Sep 1, 2026");
+});
+
+it("prompts once a fact passes its review date, and re-checks nothing", async () => {
+  const knowledge = structuredClone(PAYLOAD.knowledge!);
+  // D11: the date is set ninety days out when the fact is observed, and passing
+  // it is a prompt. Two facts, one due, so the count is the due ones and not
+  // the module size.
+  if (knowledge.facts.status === "unavailable") throw new Error("fixture has no facts");
+  knowledge.facts.value[0]!.nextReviewAt = "2026-01-01T00:00:00.000Z";
+  const payload = completePayloadV3({ knowledge });
+
+  await render("en", { payload, draftHash: geoV2Digest(payload), published: publishedAsIs({ contentHash: geoV2Digest(payload) }) });
+
+  expect(text("[data-review-due]")).toBe("1 fact has passed the review date set when they were observed. Nothing is re-checked on its own; run an update when you want them looked at again.");
+  expect(calls()).toEqual([]);
+  expect(runCalls().filter((body) => body.action === undefined)).toHaveLength(0);
+});
+
+it("says nothing while every fact is still inside its review window", async () => {
+  const knowledge = structuredClone(PAYLOAD.knowledge!);
+  if (knowledge.facts.status === "unavailable") throw new Error("fixture has no facts");
+  knowledge.facts.value[0]!.nextReviewAt = "2099-01-01T00:00:00.000Z";
+  const payload = completePayloadV3({ knowledge });
+
+  await render("en", { payload, draftHash: geoV2Digest(payload) });
+
+  expect(host.querySelector("[data-review-due]")).toBeNull();
 });

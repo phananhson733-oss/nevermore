@@ -697,7 +697,7 @@ A7-1..A7-4 四个生产者全部落地，tsc 零错、单测 9802/9802 全绿（
 
 **八个入口全部有了真实生产调用者**——`loadGeoKbEditorAny`、`createGeoKbV3Draft`、`handleGeoKbV3DraftCreate`、`handleGeoKbRun`、`driveGeoKbRun`、`handleGeoKbV3Assemble`、`handleGeoKbV3Review`、`handleGeoKbV3Publish`，逐个 `grep` 验证。`kb-run-seam.integration.test.ts:388` 从建库一路驱动到发布，并从 `marketing_geo_kb_snapshots` 里把 `revision: 1` 读了出来。
 
-**范围裁决（有意，不是缺陷）**：v3 只提供给**既无草稿又无已发布版本**的知识库（`geo-knowledge-base-v2.tsx:90`）。不做任何迁移，现存站点（包括线上样本 astrologywiki.com 的两个 09-04 快照）永远留在 v2 卡片上。**这次改版只对合并之后新建的站点生效。**
+**范围裁决（~~有意，不是缺陷~~ ⚠️ 已作废，见 [16.4](#164-v3-站在旧版本之上业主裁决2026-09-09)）**：~~v3 只提供给**既无草稿又无已发布版本**的知识库（`geo-knowledge-base-v2.tsx:90`）。不做任何迁移，现存站点（包括线上样本 astrologywiki.com 的两个 09-04 快照）永远留在 v2 卡片上。**这次改版只对合并之后新建的站点生效。**~~ —— 这条与本设计稿 §234(c)（「astrologywiki 现有 v2 草稿升不到 v3；S1 要允许 v2 → v3 升级路径」）与 §274 直接矛盾，是我写这条裁决时没有回头核对设计稿造成的。业主 2026-09-09 裁决：v3 必须能站在旧版本之上。
 
 #### 合并前必修四项
 
@@ -1054,3 +1054,146 @@ The whitespace tokenisation is real, but the claim is false as stated: Khmer's n
 
 > **这一节最该记住的**：五条里有四条**推翻或实质修正了设计稿/我自己的表述**（B3 的 R9 骨架不存在、C11 从没上过线、C10 归因错误、#12 的方案不成立）。这不是调查做得好，是**设计稿里积压了一批「写下来时是真的、后来被代码走远了」的陈述**。凡是要据此动代码的条目，先只读核一遍成本极低，收益是避免照着一份过期的地图施工。
 
+
+
+### 16.4 v3 站在旧版本之上（业主裁决，2026-09-09）
+
+**问题**：09-08 的收口把 v3 的入口写成「既无草稿、又无已发布版本」。线上唯一的真实样本 astrologywiki.com **两样都有**，所以业主打开设置 → 网站 → GEO 知识库看到的仍然是 v2 卡片——设计稿全量落地了，可达性是零。这是 [[trace-reachability-from-the-entry-point]] 那条教训的第二次发作：这次不是追错方向，是我自己把一条与设计稿相反的裁决写进了「已裁决不追」清单，并在派复核 agent 时明令他们不要报告它。
+
+**业主裁决**：「让 v3 站在旧版本之上」。
+
+**落地的三件事**
+
+1. **`published` 变成判别联合**（`geo-kb-v3-wire.ts`）。`comparable` 带 `decisions`，发布箱据此说「与 kb@vN 相比有 N 项变化」；`opaque` 是 v1/v2 版本，它**不记录逐条决定**，所以没有诚实的差值可给——空决定表不是「什么都没变」，是「这个测不了」。第三态之外还有 `null`（从没发布过）。
+   - `changeCount: number | null`，`null` 走 `card.publish.changesUncountable`：「kb@v{version} 由上一代知识库格式发布，它不记录逐条决定，因此无法逐条比较。本次将发布 {count} 条知识条目。」
+   - 变异证明：编辑器把 `opaque` 的基线从 `null` 改成 `{}` 时，此前 552 文件全绿——那一轮我差点把 zsh 不做词分割造成的**静默**读成「变异都被抓住了」。现已补测试。
+2. **`kb-editor-loader.ts` 不再拒绝 legacy 上一版**。原来返回 `v3_predecessor_unsupported`，被网站路由翻成 **503**——对每一个发布过的知识库都是永久的「服务不可用」，而他们的数据完好无损。现在报 `opaque`。
+3. **v2 → v3 升级手势**（`geo-knowledge-base-v2.tsx` 的 `[data-kb-upgrade-v3]`）。一份 v1/v2 草稿装着已接受的事实和已复核的角色，v3 的 `generationInput` 没有字段装它们，所以这一步**丢弃草稿**且**下一次更新重新计费**。两件事都写在按钮上方的告知文案里（`editor.upgradeNote`），路由要求把被丢弃草稿的摘要作为确认一起发上来（`intent: "upgrade"` + `draftHash`），因此没看过那份草稿的东西按不下这个按钮。已发布的版本**原样保留**，AI 可见性与 Brief 继续读它，直到一次 v3 发布把它顶掉。
+
+**同时删掉的两处拒绝**：创建路由里的 `published_version_exists`（升级分支与那条已死的 `else if` 各一处）。留了注释说明为什么这里现在是直落。
+
+**护栏**：五条变异（删告知文案、删双击闩锁、发一个业主没看过的摘要、失败后不放开闩锁、清空 en 目录叶子）逐条打红；创建路由的集成测试改成「创建成功且已发布快照逐列字节不变、head 仍指向它」。
+
+
+### 16.5 收口波：读到的东西终于在屏幕上（2026-09-09）
+
+十二路符合性审计（对着原始 spec §11/§13/§14 逐条跑，而不是对着实现）交回 51 DONE / 18 PARTIAL / 12 NOT_DONE / 2 CHANGED。本节记已关掉的，未关掉的在 [16.6](#166-仍未关掉的)。
+
+**D3「机器可读 / 覆盖 / 证据只读」被实现成了「不显示」**。v3 审阅卡的 C、D 两段各只有一句「这一节没有需要你决定的条目；它的内容不在这里展示」，业主在 v3 上**永远看不到**这次运行观察到的自家站结果。已发布知识包的那三个渲染器（`GeoEvidenceModuleView` / `GeoMachineModuleView` / `GeoCoverageModuleView`）改成收模块而不是收整份 pack 并导出，两个界面共用同一份——第二个渲染器正是「空组要说出来」在一个界面上丢掉、另一个界面上留着的成因。那句文案同时改了：它原来说内容不在这里展示，现在展示了。
+
+**§13 缺陷 2 的同形复发**。审阅卡的 `ScopeModule` 把四个边界组 `flatMap` 成一个平表，空组就此从屏幕上消失——「没测量」被画成了「没有可说的」。改成每组一块 `GeoKbEvidenceGroup`，空组按既有三态说话。
+
+**§4.1「发布后整卡折叠成摘要」不可达**。`PublishedSummary` 有完整测试，但没有任何生产路径给它传 `summary`。折叠条件是哈希相等（冻结把草稿自己的 `content_hash` 抄到快照上），不是「刚发布完」：改一条修正、自动保存一落，草稿哈希就变了，卡片自己展开——摘要盖在未发布的编辑上会是一张「你没什么要看的了」的假卡。凡是还有事要办（开着的更新、停住的更新、阻断项、re-lock、未保存的编辑、下面两条提示）一律不折叠。摘要里的「已确认」只数**逐条**接受，批量接受不算（D12）。
+
+**§12 与 D11 的两句提示都没有生产调用者**。`status.publishedUpdatable`（「产品档案已有新版本，可以更新」）全仓零调用；`nextReviewAt` 的 90 天到期没有任何代码比较过。现在 `confirmedProfileRevision` 从外壳传进 v3 卡（它本来就一路传到了 v2 卡），比的是锁定生成输入里的 `profileRef.snapshotRevision`；到期事实数走新键 `card.review.reviewDue`。两条都**只提示**：不发请求、不重跑、不合并档案。
+
+**内部标识符那条规则原来只有一根针**（Pro 事实的 item key）。审计把草稿哈希和知识库 id 直接渲染到卡片根上，192 条测试全绿。现在是整份 DOM 的清扫：kbId、draftHash、每一个 item key、每一个来源 id，外加 64 位十六进制与 UUID 两个形状——没被清单点名的标识符照样打红。顺带修了一个让这类断言恒真/恒假的装置缺陷：`kb-v3.test-fixtures.ts` 的来源 `label` 原来**就等于** `id`，读者该看见的字符串和谁也不能看见的字符串是同一个值。
+
+**折叠摘要把「没测量」写成了 0**。§4.1 的那行统计原来是一句模板：`事实 {facts}（已确认 {accepted}）· 问答 {qa} · 对比 {available}/{comparisons} · {date}`。三个模块任意一个是 `unavailable`，`geoKbModuleValue` 回 `null`、`?? []` 把它变成 `0`，屏幕上就是「对比 0/0」——「我们比过了，没有」，而这正是同一个类型在站外来源那里明文拒绝说的那句话（`GeoKbPublishedSummary.counts` 的注释）。fixture 自己的 `comparisons` 就是 `unavailable`，所以这句谎话一直被一条绿测试钉着。改成一句一模块：`published.counts` 从一条文案拆成 `facts` / `qa` / `comparisons` 三条，没测量的模块整条子句不出现，日期照常收尾。`partial` 不同——它带一句限制说明，折叠后无处可放——所以 `partial` 直接不折叠。四条变异逐条打红：把未测量当 0 数、丢掉日期、`partial` 也折叠、分隔符写错。
+
+**六条变异逐条打红**：不折叠 / 有未发布编辑也折叠 / 把批量接受数进「已确认」/ Edit 不展开 / 档案没动也说可更新 / 到期数改成事实总数。
+
+### 16.6 仍未关掉的
+
+按可达性排，不是按工作量：
+
+1. **站外证据从来没有被采集过**（R6 / D7 / §10 S2）。`kb-v3-assemble-handler.ts` 传 `offsite: null`，`kb-offsite-collect.ts` 那条路没有生产调用者。后果：证据模块在生产上永远只有第一方来源，四个独立性标签里只有 `first_party` 出得来，`sameAs` 候选恒空。**不是谎**（`null` 被渲染成「未采集」而不是「找过没有」），是**整条腿没接上**。**2026-09-09 侦察后裁决：本轮不接**，理由见 [16.9](#169-站外那条腿为什么本轮不接2026-09-09)。
+2. **模型步失败时确定性模块看不见**（§4.2 / §14）——**已关一半，见 [16.8](#168-确定性半张卡2026-09-09)**。采集一结束就写草稿这件事已经做了，业主拿到的是「读了哪些页、原文引用、观察时间」加七行覆盖骨架；§4.2 点名的五样里，机器可读 / FAQ 事实 / 档案声明事实 / 实体链接四样仍然拿不到，成因已查实并写在 16.8。
+3. **D12 三个落点只有一个有标签，另两个一个被线上契约挡死、一个根本是死代码**。UI 上有「批量接受 · 未逐条确认」；Brief 与导出都没有，但两者的成因完全不同，本轮实测查清了：
+   - **Brief 被三道门挡住**，不是两道。`packages/public-tools/src/content-brief/parse-brief-shape.ts` 的 `object()` 既要求声明过的键全部存在、又拒绝任何未声明的自有属性；把 `decision` 写进事实行，`brief-shared-handler.ts:80` 的 `parseGeoContentBriefShape` 会在**模型调用之前**就 422 `brief_unavailable`（这道门原先没人发现），随后还有 `brief-shared.ts` 的组装解析和 `geo-brief-shared-tool.tsx` 的浏览器端复解析。实测：`fact_table[0].decision = "accepted_in_bulk"` → `{"ok":false,"code":"invalid_request","path":"fact_table[0].decision"}`；改成 `null` 同样被拒（是**未知键**不是坏值，`nullable()` 不够）；删掉一个已声明键也被拒（所以新键必须是「缺席即合法」，而 `parse-brief-shape.ts` 现在没有 `optional()` 解码器）。再加上 `brief-reference.ts:31` 把 `fact_table` 放进 `protectedKeys`、:85 逐键比规范化文本，任何在此改动前下载的 Brief 都会在 Draft Writer 的凭据校验上变红——这是一次要带迁移纪律的契约加宽，不是补个字段。
+   - **`brief-export.ts` 是死代码**，把它当落点是本文档先前的错误。`geoBriefMarkdown` 的唯一消费者 `LegacyGeoBriefTool`（`geo-brief.tsx:225`）全仓零导入，路由走的是 `geo-brief.tsx:667` 重导出的 `GeoBriefSharedTool`。行为验证而非 grep：把 `geoBriefMarkdown` 整个换成常量后跑全量 unit（1237 文件 / 20,487 用例），全仓只有它自己的测试红，没有任何组件、页面或集成测试察觉。它读的 `GeoBriefFact` 也和 Brief 那条链的 `GeoFact` 是两个类型、两条管线，`decision` 在这一侧连生产者都没有。
+   - **真正的活落点是 `geo-brief-shared-results.tsx:124-137` 与 `sharedGeoBriefMarkdown`**，二者今天都不提共识强度。所以 D12 在 Brief 侧的残缺是**沉默**，不是谎：没有任何界面把批量接受的事实标成「已确认」。
+4. ~~**D8 语言**~~ ✅ 已关，见 [16.7](#167-d8-语言已落地2026-09-09)。
+5. **采集侧三条**：竞品身份没进 `public_tool_crawl_cache` 的共享命名空间（两个账号盯同一个竞品各爬一次）；SERP 结果没有任何缓存；一次更新对自家站开**两次**闸而不是一次（单次准入是 per-reader 的，而一次运行造两个 reader）。
+6. **实体字段的修正仍然丢**（§4.4 的一角）。`carryForward` 对 facts / qa / scope / comparisons 都能把业主的修正带过去，对 entity 不能：一个实体字段的正文住在模块 `value` 的路径上而不是行里，而 `entitySchema` 要求整份 value 齐全——只把被修正的那一个字段带过去在契约里不可表达，把上一版整份 entity 带过去则会让「这次没观察到，剩下的是业主自己声明的」这句限制说明变成假话（其余字段是上一轮模型写的，不是业主声明的）。**故意保持现状**：`droppedCorrections` 作为绊线报上来，宁可丢一条修正也不发一句假话。绊线本身没有到达业主的通道（运行时只留 `knowledgeGenerationId`），这是这一条真正的缺口。
+
+7. **一句竞品对比答案里，谁的数字是谁的，解析器分不出来**（数值证据检查的一角）。`parseGeoKnowledgeNarrativeV2` 对竞品类问答会把自家页面和被点名竞品的页面合成一个池子，然后只问「这个数字在池子里出现过吗」。这是**有意**的——真实的对比答案本来就要引用双方的数字，只认自家页会把每一条诚实对比都拒掉——但代价是：把竞品的数字说成自家产品的，能通过。实测（`kb-knowledge-synthesis-v2-contract.test.ts` 里已钉成一条 `not.toThrow`）：自家页写「2 人」、竞品页写「5 人」，模型写出「Pine Cloud 也支持 5 人团队，Rival 列的也是 5 人」并同时引用两页，**被接受**。要关掉它需要把数字归到句子里的哪一个主语上，不是把池子调宽或调窄；在那之前这条是已知开口，不是没人想到。旁边那条「不带竞品名的普通答案」不受影响：它不开第二个池子，鲁莽引用竞品页照样被拒（同文件，`Unsupported numeric claim`）。
+
+
+### 16.7 D8 语言（已落地，2026-09-09）
+
+设计稿 D8：**知识包正文跟站点主语言；提问集维持现有 en 限制，非英语站点发布「无提问集」版本并明说**（第 182 行还写死了出口：`questionSet: unavailable(unsupported_language)`）。
+
+**落地前的实际状态**：英文提问集注册表把知识归纳一起闸住了，一个中文站**产不出任何语言的知识包**。三道闸各自独立：
+
+| 位置 | 表现 |
+|---|---|
+| `kb-generation-preparer.ts` v3 分支 | 返回 `unsupported_language` → 生成路由 422，知识步在到达模型之前就被拒 |
+| `kb-knowledge-synthesis-v2.ts` `prepareGeoKnowledgeSynthesisV2` | 同样的拒绝，再挡一次 |
+| `kb-v3-draft-create.ts` + `use-geo-kb-v3-editor.ts` 的 blocker | 卡片上写「提问集注册表不支持所选语言」并**禁用更新按钮** |
+
+三道全部拆掉。它们保护的是一个 **v3 运行根本没有的步骤**——`kb-run-collect.ts` 明写 `roles` 与 `questions` 故意缺席——所以代价是中文站失去唯一能做的事，换来的保护是零。
+
+**换上的三件事**
+
+1. **归纳提示词点名输出语言**，而且点的是**输入自己的 `language` 字段**，不是把标签插进句子。两个理由：指令与模型正在读的数据不可能互相矛盾（一个值，只说一次）；系统提示词保持单一常量，于是每个站点的请求信封大小不变——按站点变化的信封会让「逐字节预测请求大小」这条性质里多出一个变量。协议词（字段名、`schemaVersion`、reason 码、source id）明确留在英文：翻译过的枚举值是无效响应，不是本地化响应。
+2. **发布时给出真正成立的理由**：非英语站点的 `questionSet` 是 `unavailable(unsupported_language)`，其余情况仍是 `not_attempted`。原来一律 `not_attempted`——机制上为真，对站点是误导，读起来像「还没人去做」，而实际上永远不会有人做。这也把设计稿里一直有定义、无生产者的那个 reason 接上了。
+3. **信封常量没有动**：`promptEnvelopeBytes` 保留 14 336，实测信封 13 291 → 13 722，仍在预留之内且余量 614 < 2 048 的上限，所以这**不是**契约变更。变的是测试里那几个逐字节固定值。
+
+**已知未验证**：非英语的模型输出**质量**没有评估过。这次改动让一次**计费**调用在原先免费拒绝的地方成为可能。三条护栏本身是脚本无关的（数值字面量核对、竞品提及判定），只有 `PROPER_SUBJECT_CLAIM` 是英文专用，中文输入下它返回空——是假阴、往安全一侧失败，代价是中文站的问答条目会少。
+
+**变异**：把语言拒绝放回 v3 dispatch / 把提示词的协议留英文那句删掉 / 让所有缺失提问集一律 `not_attempted` / 一律 `unsupported_language`——四条逐条打红。
+
+### 16.8 确定性半张卡（2026-09-09）
+
+**做了什么**。assemble 路由多了一个「没有叙事」的模式：当这个知识库还没有任何 `knowledge_pack` 生成记录（或最新那条失败了）、并且草稿里还没有知识体时，它不再拒绝，而是把网站观察账本里这次运行已经付过钱的行重建成一份 `marketing-geo-knowledge-evidence.v1`，用 `narrative: null` 装配。运行侧在**派发模型步之前**先调一次这个路由，然后重读草稿再派发——所以「采集完成、模型还没跑」这一刻卡上就有东西。
+
+**四条不变量**（改这块之前先读）：
+- `mayAssembleObserved`（草稿已有知识体就拒绝）不是便利判断。去掉它，第二次更新会用一份更小的体覆盖掉业主的接受记录，而 `mergeGeoDraftV3` 把找不到条目的决定记为 `dropped`，随后的叙事装配也救不回来。
+- 观察模式**永不**写 `runRef.knowledgeGenerationId`。第一条非空的 runRef id 会武装保存 RPC 的 `generation_input_locked`；为一份没人付过模型钱的体武装它，就是把输入锁死在一次没发生的运行上。
+- `uncertain` 不进这个模式。那是一笔我们看不见的支出，为它归档一份体，等于把「可能还有答案」报成「它产出了这个」。
+- 传给采集器的 `nowMs: () => 0` 不是装饰：它驱动采集器自己的 70 秒超时，读墙钟会让同一批观察的两次装配对「没采集」和「超时」给出不同答案——时钟漏进内容哈希。
+
+**验收打回后修的四项**（跨模型验收判 REJECT，三条自证的护栏没有断言、还引入了一句假话）：
+- **假话**：观察模式的证据模块把 `collected` 写成 `["proof","changelog"]` 而 `changelog` 恒空，卡片渲染成「已采集 · 未发现内容」——找过了、没有，说的是一个这个模式**结构上填不满**的组（changelog 条目只能来自被解析页面的链接，而全复用的 bundle 里 `pages` 是空的）。改在源头 `geoEvidenceModule`：`changelog` 只有在 `evidence.pages` 非空时才算采集过。付费路径同理受益。
+- **地址全部改从计划里取**。原来自己再拼一遍 `new URL(identity.targetUrl).toString()` 去和 `planGeoRunCollection` 的地址比对；两边归一化只要有一天不一致，症状是整个功能在生产上无声关闭。现在 own 地址直接取自计划，竞品列表也按计划过滤——`www.rival.example` 和 `rival.example` 共用一个闸门键，计划只收第一个，第二个的观察行这次运行没有权利认领。
+- **三条没有断言的护栏补上了测试**：计划外竞品不得认领（且根本不去账本里查它）、时钟不得把「没人问过」变成「超时」、模型记录成功但装配回的是观察体时必须重试而不是记成功（否则 `resultRef` 指向一条不存在的生成记录）。四条变异逐条打红。
+
+**机器可读的采集侧已经补上（2026-09-09 下午）**。自家页那**一次**闸门准入之后，同一个 operation、同一个 reader 顺带读 `/robots.txt`、`/sitemap.xml`、`/llms.txt`（按 origin 取，不是相对草稿路径），各写一行观察（账本早有 `robots`/`sitemap`/`llms` 三个 kind，无需迁移）。核对过 reader 源码：`admissions` 按规范主机记忆，只有第一次读会调 `openCrawlGate`，所以这三次读不花 `CRAWL_TARGET_MAX`(4/小时/目标) 也不花 `CRAWL_IP_MAX`(12/小时/调用方)——这正是它们不能拆成独立 operation 的原因（另一个 operation 会造第二个 reader，再开一次闸）。诚实规则：闸门拒绝(`rate_limited`)不写行；时间预算没够到的资源**一行都不写**（缺席是这个账本里「没看过」唯一的形状）；读失败按真实原因存，因此只有 404/410 和空文件才可能渲染成「没有」；SPA 把 HTML 壳子当 `/llms.txt` 返回按 `invalid_response` 存。自家页的观察行同时补上 `jsonLdTypes` / `hreflangLocales` / `faqPairs`，复用 `kb-knowledge-evidence.ts` 里已有的那个 cheerio 解析器（为此导出），不再写第二个解析器；整个 `structured` 按实测 48 KB 预算裁剪，超了会被列约束判 `invalid` 而这对已付费的抓取是永久失败。sitemap 的 URL 数按**整份文档去重后**计数并以字符串存，`<sitemapindex>` 不存计数（它列的是子 sitemap 不是页面），摘录永远是 8 条样本、永远不是总数。
+
+**跨模型验收判 REJECT，四项已修**：
+- **假发布**：机器文件读取没比对 `read.url` 和请求地址，同主机重定向落到别处也会被当成「这个地址发布了这个文件」记下来——而它自称照抄的那条同胞规则（`kb-knowledge-evidence.ts:216`）正是「内容类型 **且** `result.url !== url`」两条一起判。已补上，并有测试。
+- **时间口径夸大**：`MACHINE_BUDGET_MS` 只在每次**读**之前检查，三次账本写入不在预算内。原注释写成「最多 6 秒封顶」是句不能依赖的数字，已改写成真实口径（6 秒的读 + 各自的写），并顺带说明为什么不去动 `kb-run-advance.ts` 里那个 10 秒估值。
+- **三条只靠注释成立的护栏**（origin 取址、robots 的内容类型闸、机器行写失败不影响 operation 结论）加上「去重计数」，四条全部补了测试并逐条变异打红。其中「写失败不影响结论」那条第一次写的测试是**空的**：`machineSources` 会用自己的 spy 覆盖掉传进去的 `recordObservation`，测试根本没注入成功——变异全绿才发现，已改成直接用 `sources()` 构造并在注释里写明这个装置陷阱。
+- **措辞**：「控制字符会被丢掉」实际是**整行**丢掉；reader 根本不读 `expected` 提示，注释原来写得像它在做事。两处都改成真话。
+
+**采集侧留下的两件事**（消费侧必须按此处理）：机器行**搭自家页的复用决定**——自家页观察还在 24 小时 TTL 内就不发流量，也就**不写**这三行；因此这次改动之前采集过的知识库在其 own_page 行过期前一行都没有。缺席=没采集，必须扣下，**不得**渲染成「没有」或 0。
+
+**消费侧也接上了（同日）**。观察模式现在会去读这次运行自己写的 robots/sitemap/llms 三行，连同自家页存下的结构一起重建 bundle，并**只在每一个信号都有观察行支撑时**才发布机器可读模块；否则整块扣下，而且分两种理由说话：缺行或缺存储键 → `not_collected`（「这部分信息尚未采集」），有行但证据契约装不下 → `insufficient_evidence`（「现有证据还不足以形成这一节」）。两个理由都是既有词表里的，没有往已发布契约里加任何状态。自家 FAQ 标记现在以 `observed_own` 落在 `qa` 模块（不是设计稿说的 `facts`，见下）。日期口径同时扩到机器行——契约拒绝「观察时间晚于采集时间」的来源，漏掉这一步会让整份 bundle 被丢掉。
+
+跨模型验收判 **ACCEPT**，但抓到三处「只测了整体、没测逐个」的覆盖缺口，已补：
+- 「每个信号都要有行支撑」原来只测了**三行全缺**，逐个缺一行没测——把 robots 单独豁免掉，56 个用例全绿，而卡片会对一个没人读过的文件说「无法访问」。现在按三种资源各测一遍。
+- FAQ 的 32 对上限没测。超上限会让 `buildGeoKnowledgeEvidenceV1` 抛错、被 catch 吞成「整个确定性半张卡都没有」——一个 FAQ 多的站点因为一条没人提过的上限丢掉整张卡。
+- **robots 样本被静默截短**（验收标为残余风险，本轮修掉）：`creditGeoKnowledgeObservation` 会把存下的摘录再过一遍可读性过滤，8 行可能变 7 行，而装配器判断「文件可能被截断」的唯一依据就是「样本满 8 行」。robots.txt 是被**解析**的不是被引用的，少一行就可能把「这个站没提 GPTBot」变成一句关于被丢掉那行的话。现在 robots 一旦有任何一行读不回来就整行拒绝复用（其余 kind 只是少一句引用，不据此下判断，所以只有 robots 这么严）。
+
+**这个模块在真实站点上还会经常被扣下**，两条结构性缺口都要采集侧再存一点东西才能关：
+- **sitemap**：账本只存 8 条 `<loc>` 样本 + 一个诚实总数，而证据契约要求 `urlCount === locations.length`。没有办法表达「800 条，这是其中 8 条」，所以凡是 sitemap 超过样本长度的站点一律扣下。要么采集侧把位置列表按契约上限 1000 整存，要么给证据契约做一次带版本纪律的加宽。
+- **hreflang**：账本只存 locale 不存 URL，而契约的页面形状要求每个 locale 配一个同主机 URL 并交叉校验。所以任何真的发了 hreflang 的页面都装不进去，而报「没有」是假话，于是扣下。要采集侧把 URL 一起存。
+
+**仍然拿不到的四样，成因已查实**：
+- ~~**机器可读**~~ ✅ 采集侧与消费侧都已接通（上面两段），但真实站点上仍常被扣下，缺口见上。原始成因记录：`planGeoRunCollection` 只计划自家首页和已确认竞品首页，从来没有人为运行读过 `/robots.txt`、`/sitemap.xml`、`/llms.txt`；而且证据契约的 `MACHINE_STATUSES` 只有 `present|absent|unreachable`，没有「没检查过」，所以 `not_collected` 的来源会被映射成「无法访问」、空 `pages` 会让 JSON-LD 变成「未检测到」。模块因此被整体扣下（`unavailable(not_collected)`），这是当下唯一诚实的写法。要真正关掉：让自家页那**一次**闸门准入顺带读那三个文件（reader 按主机记忆准入，不额外花额度，但今天每个 operation 各造一个 reader，所以必须同一个 operation），观察行补上 `jsonLdTypes`/`hreflangLocales`/`faqPairs`（账本 schema 早就有这些字段，`observedStructure` 只写了 `authorship`），以及一个诚实的 sitemap URL 计数（8 条摘录上限会把 500 条的 sitemap 报成 8）。
+- **FAQ 事实**：`faqItems` 读 `evidence.pages`，而全复用的 bundle 里它是空的。同上，要观察行带上 `faqPairs` 并让复用行也生成 page 条目。
+- **档案声明事实**：查实后是**设计稿与数据的错配**，不只是缺一条分支。`factsModule` 的全部输入是 `narrative.facts`；装配器的输入 `AssembleGeoKnowledgeV3Input` 里根本没有「档案声明的事实」这样东西，v3 的 `generationInput` 只有 identity / profileRef / competitors / roles / evidenceContentHash，`declared_profile` 目前只是实体模块的一个**来源标签**，不是一份数据。要做就得把产品档案的事实塞进 generationInput——那会改 `generationInputHash`，也就是整条锁定与发布链的身份。属于要单独拍板的契约加宽，不在本轮。
+- **实体链接**：`geoEntityModule` 只在 `narrative !== null` 时被调用。就算把 identity 里的 officialName/aliases/categoryTerms 拿来填，`entitySchema` 仍要求整份 value 齐全（definitions 的 w25/w55/w120、audience、links.home），而这些非模型不可——和 [16.6](#166-仍未关掉的) 第 6 条（实体字段修正带不过去）撞的是同一堵墙：**实体模块在契约上是全有或全无**。
+
+### 16.9 站外那条腿为什么本轮不接（2026-09-09）
+
+原以为是「接根线」，一次只读侦察（逐条给了 file:line）证明它是**一个独立切片**，而且卡在一个必须先拍板的设计问题上。
+
+**（1）它需要自家页的正文，而 `serp` 操作拿不到。** `collectGeoOffsiteEvidence` 的必填输入里有 `ownTexts`（自家正文，用于同源改写度量）和 `ownPages`（自家 HTML，用于 R11 第一方证明）。这个系统里**没有任何持久层存正文或 HTML**：观察账本最多存 8 条摘录加 `structured`，证据契约的页面形状不带正文。而 `advanceGeoKbRun` 一次调用只执行**一个**操作，所以 serp 操作跑在自家页抓取之后的另一次 HTTP 调用里，那时 `read.body` 早就丢了。`ownTexts` 为空时 `geoShingleOverlap` 回 `own_corpus_too_short`，独立性判定对**每一页**都回 `undetermined`——**失败方向是对的**（绝不会凭空说 independent），但代价是：付 3 次 SERP + 8 次抓取，买回来一列「无法判定」，`firstPartyProof` 还是空的。两条出路各有代价：把采集并进自家页那个 `fetch` 操作（一行 `fetch:` 账目授权 3 次付费 SERP，破坏账本一行一类工作的纪律，且该操作从 10 秒估值变成 ~40 秒），或让 serp 操作**重新抓一次自家页**（TTL 内对自家主机开第二次闸，正是 `kb-run-collect.ts` 开头那段注释存在的理由）。**这是要 Owner 拍板的，不是实现细节。**
+
+**（2）它需要一次迁移。** 采集结果放不进观察账本：满预算一次采集约 77 KB，超过 `structured` 的 65536 字节上限；账本唯一的读法是按精确 `(kind, url)` 单读，而站外 URL 集合是**买来的**不是推出来的，所以还要一个按 kind 列举的 RPC；最要命的是 `evidence.collected`——那个专门用来把「没找过」和「找过没有」分开的字段——**无法从页面行重建**：零行会把三种不同的运行压成同一种。所以要一张新的 append-only 表加两个 RPC。
+
+**（3）合并会把它悄悄丢掉。** `mergeGeoDraftV3` 第 449 行 `structuredClone(next.knowledge)`：新装配的体整份获胜，而 `geoV3Items` 只覆盖 entity/facts/qa/comparisons/scope——**evidence 模块没有任何保留机制**。所以「先带着站外装配一次，等叙事覆盖」这条路会把工作全丢掉，而且是**静默**的：`outcomes`/`dropped`/`droppedCorrections` 都只数条目。
+
+**（4）三个 `offsite:` 落点，其中一个会拆掉另外两个。** narrative 路径（:857）、observed 路径（:723），以及 `geoObservedOnlyBody`（:406）——最后这个会**丢掉已装配的证据模块并用 `offsite: null` 重建**，同时 `...assembled` 又把付费买来的 `third_party_page` 留在了 sourceCatalogue 里。只改 :723 会产出一份「目录里有付费的第三方来源、证据模块却说这些组从没采集过」的体，而契约只校验「引用的来源都存在」，不校验「目录里的来源都被引用」——所以它能通过校验并发出去。
+
+**（5）爬取额度装不下。** 一次 v3 运行今天最多花 6 次准入（自家 1 + 竞品 5）；满预算站外再加 8 次 = 14，而每个 owner 每小时上限 `CRAWL_IP_MAX = 12`。站外采集可以把业主整小时的额度吃光，或者被自家竞品抓取饿死。要么调小 `landingPages`，要么给它单独一个桶。
+
+**（6）`GEO_RUN_ESTIMATED_MS.serp = 15_000` 不到预算的一半**（`GEO_OFFSITE_BUDGET.totalMs = 30_000`），`planGeoRun` 会在只剩 15 秒时启动一次已经计费的采集，然后被平台掐死在半路。
+
+**（7）还有一句已经写好、等着第一个调用者就变成谎的话**——本轮**已修**：我们自己的闸门拒绝（`rate_limited`）原来被算进「读失败」，卡片会说「N 个站外页面已抓取但读不出来（rate_limited）」。一个字节都没发出去，这是把我们自己的配额算在别人站点头上。现在它算作「没有发出请求的候选」，也不再计入 `pagesUnreadable`。
+
+**（8）已经写好、但接不上的那一块：`kb-offsite-serp-provider.ts`。** 侦察时发现 `readGeoOffsiteSerp` 是照着 `GeoOffsiteSerpFetch` 写的纯读取器，整条站外腿唯一缺的是「真的去调用付费供应商」的那个适配器，于是本轮把它补齐了：`createGeoOffsiteSerpFetch`（87 行，配 81 行测试），按调用逐次构造 DataForSEO 客户端，返回自己的价格或明说不知道，不为供应商结果抛错，也不夹带 `sitelinkCount` / `itemTypes` / AI Overview 这些读取器不读的字段。**它在生产上零调用者**——上面 (1) 到 (6) 六条没有一条被解掉，所以没有任何地方去 `offsite:` 那个位置传它。它随本轮提交进仓，是因为它是一份完整、已测、有据可查的工作，删掉再写一遍是浪费；但**它今天是死代码**，谁接这条腿谁要先读完 (1) 到 (6)，而不是看到有个 provider 就以为接线只剩一行。
+
+**结论**：站外是一个要**迁移 + 一次 Owner 拍板 + 一次额度重新分配**的独立切片，不是本轮的收尾工作。今天不接它是诚实的：卡片会说「本次运行未采集：press、thirdPartyProfiles、firstPartyProof」，这句话是真的。

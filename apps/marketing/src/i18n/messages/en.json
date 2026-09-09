@@ -5381,13 +5381,18 @@
         "publish": {
           "title": "Publish",
           "changes": "{count} changes compared with kb@v{version}",
+          "changesUncountable": "kb@v{version} was published by the previous knowledge base format, which recorded no per-item decisions, so there is nothing to compare item by item. This version publishes {count} knowledge items.",
           "firstVersion": "This is the first published version, with {count} knowledge items.",
           "pending": "{count} items are still unconfirmed and will publish as accepted in bulk, not confirmed one by one.",
           "noPending": "Nothing is left unconfirmed."
         },
         "published": {
           "headline": "Published kb@v{version}",
-          "counts": "Facts {facts} (confirmed {accepted}) · Q&A {qa} · Comparisons {available}/{comparisons} · {date}"
+          "counts": {
+            "facts": "Facts {facts} (confirmed {accepted})",
+            "qa": "Q&A {qa}",
+            "comparisons": "Comparisons {available}/{comparisons}"
+          }
         },
         "decisions": {
           "pending": "Awaiting your confirmation",
@@ -5520,7 +5525,8 @@
           "failed": "Your last decision was not saved. Decide again to retry.",
           "acceptAll": "Accept all {count} remaining",
           "acceptAllNote": "Accepting this way is recorded as accepted in bulk, not confirmed one by one.",
-          "noDecisions": "This section carries no decisions to make. Its contents are not shown here.",
+          "noDecisions": "This section reports what was observed, so there is nothing here for you to accept, correct or exclude.",
+          "reviewDue": "{count, plural, one {# fact has} other {# facts have}} passed the review date set when they were observed. Nothing is re-checked on its own; run an update when you want them looked at again.",
           "measurementEmpty": "This draft carries no question set, so there is nothing to show here.",
           "correctionSave": "Save correction",
           "correctionCancel": "Cancel",
@@ -5994,6 +6000,10 @@
         "regenerate": "Generate again",
         "generateBusy": "Generating: crawling the site, reading Search Console, deriving the roles and the question set, then freezing it.",
         "generateCost": "One run crawls your site, reads Search Console and makes three billed model calls, then freezes the result as a version. Edit the Product Profile and press it again.",
+        "upgrade": "Move to the new knowledge base",
+        "upgradeNote": "The new knowledge base states your facts, answers and comparisons one by one, each with its source, and you accept or correct them before publishing. Moving discards this draft: its facts and roles have no place in the new format, and the next update is billed again because only a paid update can fill the new one. Anything you have already published stays exactly as it is.",
+        "upgradeUnconfirmed": "We could not confirm whether the move went through, so this page cannot tell you what is stored. Reload to see which knowledge base this site is on now.",
+        "upgradeFailed": "The move did not go through. Nothing was changed, so you can try again.",
         "unsupportedLanguage": "GEO Knowledge Base generation currently supports English question languages only; the current GEO question language is {language}. This action will not crawl the website, read Search Console, or call a model. If the site is actually English, correct and confirm its language in the Product Profile above. A genuinely non-English site cannot be generated in this version.",
         "unsupportedLanguageAfterStart": "GEO Knowledge Base generation cannot continue because the saved question language is {language}. The model step was not called, but source refresh may already have completed. Your draft is kept; review the current saved state before trying again.",
         "generateEmpty": "No GEO knowledge base yet. Press the button above to derive one from the Product Profile and your site.",

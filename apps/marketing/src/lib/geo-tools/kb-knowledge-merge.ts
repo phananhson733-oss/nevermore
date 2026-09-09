@@ -40,6 +40,7 @@ import {
   type GeoKbPayloadV3,
   type GeoKnowledgeBodyV3,
   type GeoReviewV3,
+  type GeoOverrideV3,
   type GeoV3Item,
 } from "./kb-v3-contract.ts";
 import { geoSourcePages, type GeoSourceIndex } from "./kb-knowledge-assemble-sources.ts";
@@ -47,6 +48,9 @@ import { geoSourcePages, type GeoSourceIndex } from "./kb-knowledge-assemble-sou
 type DecisionRecord = GeoReviewV3["decisions"][number];
 type Suppression = GeoReviewV3["suppressions"][number];
 type ItemModule = GeoV3Item["module"];
+
+/** `alternateObservationSchema` is capped at four in `kb-v3-contract.ts:194`. */
+const GEO_MAX_ALTERNATE_OBSERVATIONS = 4;
 
 /**
  * What a fact says once two pages disagree about it. Deliberately free of
@@ -86,6 +90,14 @@ export interface GeoDraftMergeV3 {
   readonly outcomes: readonly GeoMergeOutcome[];
   /** Suppressions the contract's ceiling could not keep. Never silent. */
   readonly evictedSuppressions: readonly string[];
+  /**
+   * Owner corrections this merge could not carry into the new body, with the
+   * text that was lost. Section 4.4 says a correction survives its observation,
+   * so reaching this list is a defect somewhere -- but a defect the caller can
+   * see and refuse on beats one that deletes the owner's own words and answers
+   * 200. Today only an entity field can land here.
+   */
+  readonly droppedCorrections: readonly { readonly itemKey: string; readonly override: GeoOverrideV3 }[];
 }
 
 export interface MergeGeoDraftV3Input {
@@ -97,10 +109,50 @@ export interface MergeGeoDraftV3Input {
   readonly previousDraftVersion: string;
 }
 
+/**
+ * One thing one page said, kept apart from the others this item is holding open.
+ *
+ * The union of a conflict's citations is not a page any observation came from,
+ * and comparing against the union is what let a re-observation of ONE of two
+ * disagreeing pages count as "the same page" for the item as a whole -- and so
+ * silently resolve the disagreement in favour of whichever page came back.
+ */
+interface Observation {
+  readonly summary: string;
+  readonly sourceRefs: readonly string[];
+  readonly observedAt: string | null;
+  readonly pages: ReadonlySet<string>;
+}
+
+/**
+ * An item's observations: the ones it is holding open when it has any, and
+ * otherwise the single one it is asserting.
+ */
+function observationsOf(
+  item: GeoV3Item,
+  row: Record<string, unknown> | undefined,
+  index: GeoSourceIndex,
+): readonly Observation[] {
+  const alternates = row?.alternateObservations;
+  if (Array.isArray(alternates) && alternates.length > 0) {
+    return alternates.map((entry) => {
+      const alternate = entry as { summary: string; sourceRefs: string[]; observedAt: string | null };
+      return { ...alternate, pages: geoSourcePages(alternate.sourceRefs, index) };
+    });
+  }
+  return [{
+    summary: item.claims[0]?.text ?? "",
+    sourceRefs: item.sourceRefs,
+    observedAt: row === undefined ? null : observedAtOf(row),
+    pages: geoSourcePages(item.sourceRefs, index),
+  }];
+}
+
 interface SideItem {
   readonly item: GeoV3Item;
   readonly contentHash: string;
   readonly pages: ReadonlySet<string>;
+  readonly observations: readonly Observation[];
 }
 
 function sourceIndex(knowledge: GeoKnowledgeBodyV3 | null): GeoSourceIndex {
@@ -114,10 +166,15 @@ function sideItems(knowledge: GeoKnowledgeBodyV3 | null): ReadonlyMap<string, Si
   // definitions of "the content this was decided on" would make every item look
   // rewritten forever.
   const hashes = geoV3ItemContentHashes(knowledge);
+  const rows = new Map<string, Record<string, unknown>>();
+  for (const list of itemLists(knowledge as unknown as MutableBody ?? { sourceCatalogue: [] })) {
+    for (const row of list.rows) if (typeof row.itemKey === "string") rows.set(row.itemKey, row);
+  }
   return new Map(geoV3Items(knowledge).map((item) => [item.itemKey, {
     item,
     contentHash: hashes.get(item.itemKey) ?? "",
     pages: geoSourcePages(item.sourceRefs, index),
+    observations: observationsOf(item, rows.get(item.itemKey), index),
   }]));
 }
 
@@ -174,14 +231,23 @@ function findSimilar(
 // mutating the assembled body: conflicts and carried-forward corrections
 // ---------------------------------------------------------------------------
 
+type MutableModule<T> = { status?: string; limitation?: string; reason?: string; value?: T };
 type MutableBody = {
-  facts?: { value?: Record<string, unknown>[] };
-  qa?: { value?: Record<string, unknown>[] };
-  scope?: { value?: Record<string, Record<string, unknown>[]> };
-  comparisons?: { value?: { competitor: { key: string }; rows: Record<string, unknown>[] }[] };
-  entity?: { value?: { fields?: Record<string, unknown>[] } };
+  facts?: MutableModule<Record<string, unknown>[]>;
+  qa?: MutableModule<Record<string, unknown>[]>;
+  scope?: MutableModule<Record<string, Record<string, unknown>[]>>;
+  comparisons?: MutableModule<{ competitor: { key: string; name?: string }; rows: Record<string, unknown>[] }[]>;
+  entity?: MutableModule<{ fields?: Record<string, unknown>[] }>;
   sourceCatalogue: GeoKnowledgeSource[];
 };
+
+/**
+ * What a module says when this update found nothing there but the owner's own
+ * declaration is still standing in it. English and unlocalised, like every
+ * other limitation the assembler writes (`kb-knowledge-assemble.ts:220`, `:309`).
+ */
+const GEO_CARRIED_ONLY_LIMITATION =
+  "This update observed nothing for this section. What remains is what the owner declared.";
 
 /** Every mutable item list the merge may write into, with the ceiling that governs it. */
 function itemLists(body: MutableBody): readonly { readonly rows: Record<string, unknown>[]; readonly limit: number; readonly scope: string }[] {
@@ -226,9 +292,8 @@ function adoptSources(body: MutableBody, refs: readonly string[], from: Readonly
 interface ConflictInput {
   readonly body: MutableBody;
   readonly next: SideItem;
-  readonly previous: SideItem;
-  /** When the competing page was read. Carried so both observations keep their own time. */
-  readonly previousObservedAt: string | null;
+  /** The observations this run did not re-observe; each keeps its own time. */
+  readonly unresolved: readonly Observation[];
   readonly previousSources: ReadonlyMap<string, GeoKnowledgeSource>;
 }
 
@@ -240,19 +305,25 @@ interface ConflictInput {
 function applyConflict(input: ConflictInput): boolean {
   const row = findRow(input.body, input.next.item.itemKey);
   if (row === null) return false;
-  const nextSummary = input.next.item.claims[0]?.text ?? "";
-  const previousSummary = input.previous.item.claims[0]?.text ?? "";
-  const merged = [...new Set([...input.next.item.sourceRefs, ...input.previous.item.sourceRefs])];
+  const observations: Observation[] = [
+    { summary: input.next.item.claims[0]?.text ?? "", sourceRefs: input.next.item.sourceRefs, observedAt: observedAtOf(row), pages: input.next.pages },
+    ...input.unresolved,
+  ];
+  // The contract holds four observations at most. Dropping one to fit would
+  // silently discard a page the owner has not ruled on, which is the whole
+  // thing this branch exists to prevent, so the item says it could not be
+  // represented instead.
+  if (observations.length > GEO_MAX_ALTERNATE_OBSERVATIONS) return false;
+  const merged = [...new Set(observations.flatMap((observation) => [...observation.sourceRefs]))];
   if (merged.length > GEO_KNOWLEDGE_LIMITS.sourceRefs) return false;
   // `geoText` bounds an alternate at 800 code points, and a 1 200-point
   // definition cannot be shortened to fit without misquoting it.
-  if ([nextSummary, previousSummary].some((summary) => summary.trim() === "" || Array.from(summary).length > 800)) return false;
-  if (!adoptSources(input.body, input.previous.item.sourceRefs, input.previousSources)) return false;
+  if (observations.some(({ summary }) => summary.trim() === "" || Array.from(summary).length > 800)) return false;
+  for (const observation of input.unresolved) {
+    if (!adoptSources(input.body, observation.sourceRefs, input.previousSources)) return false;
+  }
   row.sourceRefs = merged;
-  row.alternateObservations = [
-    { summary: nextSummary, sourceRefs: [...input.next.item.sourceRefs], observedAt: observedAtOf(row) },
-    { summary: previousSummary, sourceRefs: [...input.previous.item.sourceRefs], observedAt: input.previousObservedAt },
-  ];
+  row.alternateObservations = observations.map(({ summary, sourceRefs, observedAt }) => ({ summary, sourceRefs: [...sourceRefs], observedAt }));
   if (input.next.item.module === "facts") {
     row.value = null;
     row.reason = "conflicting";
@@ -276,18 +347,95 @@ function carryForward(
   previous: MutableBody,
   itemKey: string,
   previousSources: ReadonlyMap<string, GeoKnowledgeSource>,
+  decided: ReadonlySet<string>,
 ): boolean {
   const source = findRow(previous, itemKey);
   const item = geoV3Items(previous as unknown as GeoKnowledgeBodyV3).find((entry) => entry.itemKey === itemKey);
   if (source === null || item === undefined) return false;
   // An entity field's text lives in the module's value, not in its row, so a
-  // revived row would address a field that is no longer there.
+  // revived row would address a field that is no longer there. This is the one
+  // correction that cannot be carried; the caller reports it rather than
+  // dropping it in silence.
   if (item.module === "entity") return false;
-  const target = itemLists(body).find((list) => list.scope === listScope(item));
-  if (target === undefined || target.rows.length >= target.limit) return false;
   if (!adoptSources(body, item.sourceRefs, previousSources)) return false;
+  const target = reopenList(body, item, previous);
+  if (target === null) return false;
+  // At the ceiling, an owner's own words outrank a sentence a model wrote this
+  // morning: drop an undecided generated row to make room. Never a decided one
+  // -- that would trade one owner's answer for another's.
+  if (target.rows.length >= target.limit) {
+    const spare = target.rows.findIndex((row) => typeof row.itemKey === "string" && !decided.has(row.itemKey));
+    if (spare < 0) return false;
+    target.rows.splice(spare, 1);
+  }
   target.rows.push(structuredClone(source));
   return true;
+}
+
+/**
+ * The list a carried item belongs in, re-opening the module when this update
+ * closed it.
+ *
+ * Section 4.4: "key 消失 → `declared_owner` 的修正条目保留（它本来就不依赖观察）".
+ * A correction never rested on the observation, so a run that observed nothing
+ * is not a reason to delete the owner's answer -- and a module holding only
+ * that answer is exactly `partial`, which the contract already has and the card
+ * already draws. Leaving the module `unavailable` is not an option that keeps
+ * the decision either: `assertOverrideTargets` refuses a payload whose decision
+ * names an item the body does not carry.
+ */
+function reopenList(
+  body: MutableBody,
+  item: GeoV3Item,
+  previous: MutableBody,
+): { rows: Record<string, unknown>[]; limit: number } | null {
+  const scope = listScope(item);
+  const existing = itemLists(body).find((list) => list.scope === scope);
+  if (existing !== undefined) return existing;
+
+  // `reason` is deleted rather than set to undefined: the module schemas are
+  // strict, and a present key holding undefined is still a present key.
+  const reopen = <T>(module: MutableModule<T> | undefined, value: T): MutableModule<T> => {
+    const next: MutableModule<T> = { ...(module ?? {}), status: "partial", limitation: GEO_CARRIED_ONLY_LIMITATION, value };
+    delete next.reason;
+    return next;
+  };
+  if (item.module === "facts") { body.facts = reopen(body.facts, []); }
+  else if (item.module === "qa") { body.qa = reopen(body.qa, []); }
+  else if (item.module === "scope") {
+    body.scope = reopen(body.scope, body.scope?.value
+      ?? { does: [], doesNot: [], needsHuman: [], misconceptions: [] });
+  } else if (item.module === "comparisons") {
+    // A comparison row cannot stand without the competitor it compares against,
+    // and that identity lives on the parent entry in the draft being replaced.
+    const key = (item.identity as { competitorKey: string }).competitorKey;
+    const parent = (previous.comparisons?.value ?? []).find((entry) => entry.competitor.key === key);
+    if (parent === undefined) return null;
+    /*
+     * The scope key here is per competitor (`comparisons:<key>`, `listScope`
+     * below), so reaching this line means THIS COMPETITOR is missing -- not
+     * that the module is closed. The other three modules have one scope each,
+     * so for them `existing === undefined` really does mean "this update
+     * observed nothing for this section" and the limitation is true. Saying it
+     * about a comparisons module that came back holding other competitors would
+     * tell the owner a run that did compare their site observed nothing, and
+     * `status: "partial"` also forces the review card out of its folded summary.
+     * So the module is only reopened when it did not survive this update at
+     * all; a surviving module keeps whatever status it earned, and the carried
+     * entry's own rows already say `declared_owner`.
+     */
+    const surviving = body.comparisons?.value !== undefined && body.comparisons.status !== "unavailable";
+    const list = (surviving ? body.comparisons?.value : undefined) ?? [];
+    // Checked before anything is written. The old order left the module
+    // downgraded to "observed nothing" on a refusal that carried nothing.
+    if (list.length >= GEO_KNOWLEDGE_LIMITS.comparisons) return null;
+    if (!surviving) body.comparisons = reopen(body.comparisons, list);
+    else body.comparisons = { ...body.comparisons, value: list };
+    (body.comparisons.value as { competitor: { key: string }; rows: Record<string, unknown>[] }[])
+      .push({ ...structuredClone(parent), rows: [] });
+  } else return null;
+
+  return itemLists(body).find((list) => list.scope === scope) ?? null;
 }
 
 function listScope(item: GeoV3Item): string {
@@ -338,7 +486,7 @@ export function mergeGeoDraftV3(input: MergeGeoDraftV3Input): GeoDraftMergeV3 {
   const revived = new Set<string>();
 
   for (const item of geoV3Items(body)) {
-    const current: SideItem = { item, contentHash: nextHashes.get(item.itemKey) ?? "", pages: new Set() };
+    const current: SideItem = { item, contentHash: nextHashes.get(item.itemKey) ?? "", pages: new Set(), observations: [] };
     const before = previousItems.get(item.itemKey);
     const record = decisions.get(item.itemKey);
     const suppression = suppressions.get(item.itemKey);
@@ -367,18 +515,21 @@ export function mergeGeoDraftV3(input: MergeGeoDraftV3Input): GeoDraftMergeV3 {
       continue;
     }
     const pages = geoSourcePages(item.sourceRefs, nextIndex);
-    const samePage = [...pages].some((page) => before.pages.has(page));
-    if (samePage || mutable === null) {
+    // What this run did NOT re-observe. An item holding two disagreeing pages
+    // is holding a question only the owner can answer, and re-reading one of
+    // those pages answers nothing about the other: overlapping with one cited
+    // page does not establish that the other observation was resolved. Before
+    // this was per-observation it was measured against the union of a
+    // conflict's citations, so re-observing either page made the item look
+    // "same page" as a whole and the raw body -- one price, picked by whichever
+    // page came back -- replaced the withheld value with no owner decision.
+    const unresolved = before.observations.filter((observation) =>
+      ![...pages].some((page) => observation.pages.has(page)));
+    if (unresolved.length === 0 || mutable === null) {
       outcomes.push({ itemKey: item.itemKey, module: item.module, kind: "new_observation", similarTo: null });
       continue;
     }
-    const applied = applyConflict({
-      body: mutable,
-      next: { ...current, pages },
-      previous: before,
-      previousObservedAt: previousBody === undefined ? null : observedAtOf(findRow(previousBody, item.itemKey) ?? {}),
-      previousSources,
-    });
+    const applied = applyConflict({ body: mutable, next: { ...current, pages }, unresolved, previousSources });
     outcomes.push({
       itemKey: item.itemKey,
       module: item.module,
@@ -388,15 +539,21 @@ export function mergeGeoDraftV3(input: MergeGeoDraftV3Input): GeoDraftMergeV3 {
   }
 
   const present = new Set(geoV3Items(body).map((item) => item.itemKey));
+  // Which keys the owner has spoken for, so the ceiling never evicts one of
+  // them to make room for another.
+  const decided = new Set([...decisions.keys(), ...suppressions.keys()]);
+  const droppedCorrections: { itemKey: string; override: GeoOverrideV3 }[] = [];
   for (const record of decisions.values()) {
     if (present.has(record.itemKey)) continue;
     const item = previousItems.get(record.itemKey)?.item;
     const module: ItemModule = item?.module ?? "facts";
-    if (record.override !== null && previousBody !== undefined && mutable !== null && carryForward(mutable, previousBody, record.itemKey, previousSources)) {
+    if (record.override !== null && previousBody !== undefined && mutable !== null
+      && carryForward(mutable, previousBody, record.itemKey, previousSources, decided)) {
       merged.push(record);
       outcomes.push({ itemKey: record.itemKey, module, kind: "carried_declared", similarTo: null });
       continue;
     }
+    if (record.override !== null) droppedCorrections.push({ itemKey: record.itemKey, override: record.override });
     outcomes.push({
       itemKey: record.itemKey,
       module,
@@ -416,7 +573,7 @@ export function mergeGeoDraftV3(input: MergeGeoDraftV3Input): GeoDraftMergeV3 {
   const review = buildReview(settled, [...decisions.values()], suppressions);
   const payload = parseGeoKbPayloadV3({ ...next, knowledge: body, review: review.review });
   assertGeoItemKeyIntegrity(geoV3Items(payload.knowledge));
-  return { payload, outcomes, evictedSuppressions: review.evicted };
+  return { payload, outcomes, evictedSuppressions: review.evicted, droppedCorrections };
 }
 
 /**

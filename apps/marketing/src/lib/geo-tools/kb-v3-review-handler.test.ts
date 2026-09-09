@@ -74,6 +74,59 @@ describe("handleGeoKbV3Review", () => {
     expect(saved.current?.review.decisions[0]?.decision).toBe("accepted");
   });
 
+  /**
+   * The card gets `restated` twice -- once from the loader, and again from
+   * every save, because a save re-stamps the hash of each decision it changed.
+   * Answering `[]` here would clear another item's "has a new observation" chip
+   * the moment the owner decided something unrelated, and no card test can see
+   * it: they render whatever the server said.
+   */
+  it("recomputes which items are restated against the review it just wrote", async () => {
+    // A decision stamped against text this draft no longer carries -- what the
+    // merge leaves behind when the same page restates the same item.
+    const decided = parseGeoKbPayloadV3({ ...lockedPayload(), review: { suppressions: [], decisions: [
+      { itemKey: FACT_KEY_PRO, decision: "accepted", override: null, baseContentHash: "a".repeat(64), decidedAt: NOW.toISOString(), baseDraftVersion: "3" },
+    ] } });
+    const { dependencies } = harness({}, decided);
+
+    const response = await handleGeoKbV3Review(request(base({ actions: [{ kind: "exclude", itemKey: QA_KEY }] })), dependencies);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    // The untouched decision keeps its stale hash and stays named; the item
+    // just decided is stamped against what it says now and is not.
+    expect(body.data.restated).toEqual([FACT_KEY_PRO]);
+    expect(body.data.restated).not.toContain(QA_KEY);
+  });
+
+  it("names nothing when every decision was stamped against the text it still carries", async () => {
+    const { dependencies } = harness();
+    const response = await handleGeoKbV3Review(request(base({ actions: [{ kind: "accept", itemKey: FACT_KEY_PRO }] })), dependencies);
+    const body = await response.json();
+
+    expect(body.data.restated).toEqual([]);
+  });
+
+  /**
+   * The "nothing changed" early return is a second writer of this field, and a
+   * repeated gesture is the common way to reach it -- autosave replays a queued
+   * action after a retry. Answering `[]` there would blank the chip on a save
+   * that wrote nothing at all.
+   */
+  it("still names the restated items on a save that changed nothing", async () => {
+    const decided = parseGeoKbPayloadV3({ ...lockedPayload(), review: { suppressions: [], decisions: [
+      { itemKey: FACT_KEY_PRO, decision: "accepted_in_bulk", override: null, baseContentHash: "a".repeat(64), decidedAt: NOW.toISOString(), baseDraftVersion: "3" },
+    ] } });
+    const { dependencies, saveDraft } = harness({}, decided);
+
+    const response = await handleGeoKbV3Review(request(base({ actions: [{ kind: "accept_all", itemKeys: [FACT_KEY_PRO] }] })), dependencies);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    // The early return: nothing was written, so the draft version did not move.
+    expect(saveDraft).not.toHaveBeenCalled();
+    expect(body.data.draftVersion).toBe(4);
+    expect(body.data.restated).toEqual([FACT_KEY_PRO]);
+  });
+
   it("writes accepted_in_bulk for 全部接受 and never accepted", async () => {
     const payload = lockedPayload();
     const { dependencies, saved } = harness({}, payload);

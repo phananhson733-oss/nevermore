@@ -694,8 +694,8 @@ describe("GEO knowledge synthesis v2 catalogue budget", () => {
     expect((storageOnly.sourceCatalogue as readonly any[])[0]!.excerpts).toHaveLength(2);
     // A request 63 445 bytes past the ceiling: refused as `input_too_large`,
     // and the owner of that site got no knowledge base at all.
-    expect(requestBytes(storageOnly)).toBe(194_517);
-    expect(requestBytes(storageOnly) - GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES).toBe(63_445);
+    expect(requestBytes(storageOnly)).toBe(194_948);
+    expect(requestBytes(storageOnly) - GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES).toBe(63_876);
     expect(prepareGeoKnowledgeSynthesisV2(storageOnly, LLM_CONFIG)).toMatchObject({
       ok: false, reason: "input_too_large", attemptedCalls: 0,
     });
@@ -705,7 +705,7 @@ describe("GEO knowledge synthesis v2 catalogue budget", () => {
     expect(projection.excerptCap).toBe(1);
     expect(projection.fits).toBe(true);
     expect(projection.catalogue.map((entry) => entry.id)).toEqual(sources.map((entry) => entry.id));
-    expect(requestBytes(value)).toBe(108_809);
+    expect(requestBytes(value)).toBe(109_240);
     expect(prepareGeoKnowledgeSynthesisV2(value, LLM_CONFIG)).toMatchObject({ ok: true });
   });
 
@@ -728,7 +728,7 @@ describe("GEO knowledge synthesis v2 catalogue budget", () => {
     expect(projection.cataloguePromptBytes).toBeGreaterThan(projection.promptBudgetBytes);
     expect(projection.fits).toBe(false);
     // And the adapter agrees with the half that refused: 7 916 bytes over.
-    expect(requestBytes(value) - GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES).toBe(7_916);
+    expect(requestBytes(value) - GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES).toBe(8_347);
     expect(prepareGeoKnowledgeSynthesisV2(value, LLM_CONFIG)).toMatchObject({
       ok: false, reason: "input_too_large", attemptedCalls: 0,
     });
@@ -738,7 +738,7 @@ describe("GEO knowledge synthesis v2 catalogue budget", () => {
     // refusal of quote-dense evidence.
     const lighter = synthesisInputWith(heavyProfileRef(8), evidenceValue);
     expect(projectGeoKnowledgeSynthesisV2Catalogue(evidenceValue.sourceCatalogue as never, lighter).fits).toBe(true);
-    expect(GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES - requestBytes(lighter)).toBe(2_184);
+    expect(GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES - requestBytes(lighter)).toBe(1_753);
     expect(prepareGeoKnowledgeSynthesisV2(lighter, LLM_CONFIG)).toMatchObject({ ok: true });
   });
 
@@ -838,7 +838,7 @@ describe("GEO knowledge synthesis v2 catalogue budget", () => {
       prompt: { system: GEO_KNOWLEDGE_SYNTHESIS_V2_SYSTEM_PROMPT, user: "" },
       responseJsonSchema: GEO_KNOWLEDGE_SYNTHESIS_V2_RESPONSE_JSON_SCHEMA,
     })).byteLength - 2;
-    expect(envelope).toBe(13_291);
+    expect(envelope).toBe(13_722);
     // Reserved above the measurement, so rewording the system prompt does not
     // silently start over-spending the ceiling...
     expect(envelope).toBeLessThanOrEqual(GEO_KNOWLEDGE_SYNTHESIS_V2_LIMITS.promptEnvelopeBytes);
@@ -871,7 +871,7 @@ describe("GEO knowledge synthesis v2 catalogue budget", () => {
       synthesisInputWith(productMaximumProfileRef(), maximalEvidence()),
     ]) {
       const escaped = (entry: unknown) => new TextEncoder().encode(JSON.stringify(canonicalGeoV2Text(entry))).byteLength;
-      const predicted = 13_291 + geoKnowledgeSynthesisV2NonCataloguePromptBytes(value) + escaped(value.sourceCatalogue) - 4;
+      const predicted = 13_722 + geoKnowledgeSynthesisV2NonCataloguePromptBytes(value) + escaped(value.sourceCatalogue) - 4;
       expect(predicted).toBe(requestBytes(value));
     }
   });
@@ -943,8 +943,8 @@ describe("GEO knowledge synthesis v2 catalogue budget", () => {
     }
     // The request is 10 780 bytes past the ceiling, which no cap this rule may
     // choose can close.
-    expect(requestBytes(value)).toBe(141_852);
-    expect(requestBytes(value) - GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES).toBe(10_780);
+    expect(requestBytes(value)).toBe(142_283);
+    expect(requestBytes(value) - GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES).toBe(11_211);
     // So the input is still built and still storable -- three states, not two --
     // and the refusal names its size, spends nothing, and attempts nothing.
     expect(geoV2JsonbBytes(value)).toBeLessThanOrEqual(GEO_KNOWLEDGE_SYNTHESIS_V2_LIMITS.inputBytes);
@@ -1033,6 +1033,112 @@ describe("GEO knowledge narrative v2", () => {
     const value: any = narrative();
     mutate(value);
     expect(() => parseGeoKnowledgeNarrativeV2(value, input())).toThrow();
+  });
+
+  /**
+   * Section 2 R4 wants a comparison to name the competitor and carry evidence on
+   * BOTH sides. The numeric check used to read own-site excerpts only, so the
+   * one answer the rule asks for -- "we support 2, Rival lists 5", citing both
+   * pages -- threw `Unsupported numeric claim`, which
+   * `kb-knowledge-synthesis-v2.ts` turns into `schema_invalid` for the WHOLE
+   * generation: every other fact, definition and answer from a paid call, gone.
+   *
+   * The fix separates "must carry own-site evidence" from "where a number may
+   * come from", so the negatives below matter as much as the positive: a number
+   * that only a competitor page the text never names could support, or that
+   * nothing supports, is still refused.
+   */
+  const comparisonQa = (overrides: Record<string, unknown> = {}) => ({
+    id: "qa:vs-rival",
+    intent: "comparison",
+    question: "How does Pine Cloud compare with Rival on team size?",
+    canonicalQuestion: "How does Pine Cloud compare with Rival on team size?",
+    variants: [] as string[],
+    directAnswer: "Pine Cloud is built for teams of 2. Rival lists support for teams of 5.",
+    expansion: null as string | null,
+    sourceRefs: ["source:own", "source:rival"],
+    ...overrides,
+  });
+
+  it("accepts a comparison answer whose competitor number is on the competitor's own cited page", () => {
+    const value: any = narrative();
+    value.qa.push(comparisonQa());
+
+    expect(() => parseGeoKnowledgeNarrativeV2(value, input())).not.toThrow();
+  });
+
+  it("still refuses a comparison answer citing a number no cited page states", () => {
+    const value: any = narrative();
+    // 5 is on the rival's page; 40 is on nobody's.
+    value.qa.push(comparisonQa({ directAnswer: "Pine Cloud is built for teams of 2. Rival lists support for teams of 40." }));
+
+    expect(() => parseGeoKnowledgeNarrativeV2(value, input())).toThrow(/Unsupported numeric claim/u);
+  });
+
+  it("still refuses a competitor number when the answer does not cite that competitor's page", () => {
+    const value: any = narrative();
+    value.qa.push(comparisonQa({ sourceRefs: ["source:own"] }));
+
+    // The identity check fires first: naming Rival without its page is refused
+    // whatever the numbers say, and that gate is unchanged.
+    expect(() => parseGeoKnowledgeNarrativeV2(value, input())).toThrow(/Competitor mention requires matching competitor evidence/u);
+  });
+
+  it("still requires own-site evidence for a comparison answer", () => {
+    const value: any = narrative();
+    // Citing only the rival's page is refused before any number is looked at.
+    // The test used to be named for a guarantee about laundering the rival's
+    // number; it never reached that check, and the check does not hold -- see
+    // the test below, which pins what the parser actually does.
+    value.qa.push(comparisonQa({
+      directAnswer: "Pine Cloud is built for teams of 5 too, and Rival lists support for teams of 5.",
+      sourceRefs: ["source:rival"],
+    }));
+
+    expect(() => parseGeoKnowledgeNarrativeV2(value, input())).toThrow(/Product evidence is required/u);
+  });
+
+  it("cannot tell whose number is whose inside one comparison answer", () => {
+    /*
+     * A KNOWN GAP, pinned so it is visible rather than assumed away.
+     *
+     * The numeric check unions the product's pages with the named competitor's
+     * (kb-knowledge-synthesis-v2-contract.ts, the comparison branch) and asks
+     * only whether each number appears SOMEWHERE in the merged pool. That is
+     * deliberate -- a real comparison answer quotes both sides, and refusing
+     * the rival's figure would refuse every honest comparison -- but it means
+     * an answer that attributes the rival's number to the product passes.
+     *
+     * Here 5 is only on the rival's page (Pine Cloud's own says 2), and the
+     * sentence claims it for Pine Cloud. Closing this needs per-clause
+     * attribution, not a wider or narrower pool. If someone builds that, this
+     * test turns red, and that is the point: it should be changed to a `toThrow`
+     * on purpose, not discovered.
+     */
+    const value: any = narrative();
+    value.qa.push(comparisonQa({
+      directAnswer: "Pine Cloud is built for teams of 5 too, and Rival lists support for teams of 5.",
+      sourceRefs: ["source:own", "source:rival"],
+    }));
+
+    expect(() => parseGeoKnowledgeNarrativeV2(value, input())).not.toThrow();
+  });
+
+  it("keeps a plain answer's numbers on the product's own pages", () => {
+    const value: any = narrative();
+    value.qa.push({
+      id: "qa:plain", intent: "applicability",
+      question: "How many seats does Pine Cloud need?",
+      canonicalQuestion: "How many seats does Pine Cloud need?",
+      variants: [] as string[],
+      // The rival's number, in an answer that names no competitor and so opens
+      // no extra pool -- even though the rival's page is cited.
+      directAnswer: "Pine Cloud is built for teams of 5.",
+      expansion: null as string | null,
+      sourceRefs: ["source:own", "source:rival"],
+    });
+
+    expect(() => parseGeoKnowledgeNarrativeV2(value, input())).toThrow(/Unsupported numeric claim/u);
   });
 
   it("names the failure when a source reference was invented", () => {

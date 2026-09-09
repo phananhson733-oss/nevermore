@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { canonicalProfileJson } from "../account-websites/contracts.ts";
 import type { KeywordLlmConfig } from "../tools/keyword-llm-client.ts";
-import { createGeoKbGenerationPreparer, creditGeoKnowledgeObservation, validateGeoKbDraftLineage, type GeoKbGenerationPreparerDependencies } from "./kb-generation-preparer.ts";
+import { createGeoKbGenerationPreparer, creditGeoKnowledgeObservation, creditGeoKnowledgeObservedStructure, validateGeoKbDraftLineage, type GeoKbGenerationPreparerDependencies } from "./kb-generation-preparer.ts";
 import { completePayloadV2, V2_KB_ID as KB, V2_CANDIDATE_ID as ID } from "./kb-v2.test-fixtures.ts";
 import { createGeoProfileCopy, profileCopyReference } from "./kb-profile-copy.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
@@ -1228,13 +1228,32 @@ describe("GEO v3 generation preflight", () => {
     expect(state.deps.collectKnowledgeEvidence).not.toHaveBeenCalled();
   });
 
-  it("refuses a language the generation contract does not support, before the crawl", async () => {
+  /**
+   * D8: the knowledge body follows the site's own language.
+   *
+   * This used to answer `unsupported_language`, which the generation route
+   * turns into 422 -- so a Chinese site's knowledge step refused before it
+   * reached a provider, to protect a questions step a v3 run does not have.
+   * The site's own language now reaches the model as an instruction, and the
+   * missing question set is named at publish time.
+   */
+  it("prepares a site whose language the question registry has no templates for", async () => {
     const base = completePayloadV3();
-    const generationInput = { ...base.generationInput, identity: { ...base.generationInput.identity, market: { country: "US", language: "xx" } } };
+    const generationInput = { ...base.generationInput, identity: { ...base.generationInput.identity, market: { country: "CN", language: "zh-CN" } } };
     const payload = { ...base, generationInput, runRef: { ...base.runRef, generationInputHash: geoV2Digest(generationInput) } } as GeoKbPayloadV3;
     const state = setupV3({}, payload);
-    expect((await state.prepare(state.request)).kind).toBe("unsupported_language");
-    expect(state.deps.collectKnowledgeEvidence).not.toHaveBeenCalled();
+
+    const prepared = await state.prepare(state.request);
+
+    expect(prepared.kind).toBe("ready");
+    // It really goes and collects, which is the half the refusal used to skip.
+    expect(state.deps.collectKnowledgeEvidence).toHaveBeenCalled();
+    if (prepared.kind !== "ready") throw new Error(prepared.kind);
+    // The site's language reaches the model as a parameter of the run: it is
+    // carried on the synthesis input the prompt is built from, and the durable
+    // manifest is what the claim check and the stored result are held to.
+    expect((prepared.input as { readonly knowledgeSynthesisInput: { readonly language: string } }).knowledgeSynthesisInput.language)
+      .toBe("zh-CN");
   });
 
   it("refuses a draft whose target host is not the knowledge base's own site", async () => {
@@ -1541,6 +1560,56 @@ describe("crediting a stored observation instead of re-reading the page", () => 
     }
   });
 
+  it("mints the identity and the label the collector mints for each machine resource", async () => {
+    // Same comparison as the page above, for the three resources the run's
+    // own-page operation reads beside it. The label matters as much as the id:
+    // a reused row and a freshly read one sit in one catalogue, and the card
+    // shows the label.
+    const collected = await collect(siteReader());
+    for (const [kind, path] of [["robots", "robots.txt"], ["sitemap", "sitemap.xml"], ["llms", "llms.txt"]] as const) {
+      const url = `${HOME}${path}`;
+      const credit = creditGeoKnowledgeObservation({ kind, url, competitor: null,
+        observation: observation({ kind, url, status: { kind: "ok", bodyHash: BODY_HASH, excerpts: ["User-agent: *"], structured: {} } }), now: NOW });
+      if (credit.kind !== "reuse") throw new Error(`Expected a reusable ${kind} source`);
+      const fetched = collected.sourceCatalogue.find(source => source.kind === kind)!;
+      expect(credit.source.id).toBe(fetched.id);
+      expect(credit.source.label).toBe(fetched.label);
+    }
+  });
+
+  it("builds a machine source the real collector takes in place of the fetch", async () => {
+    const url = `${HOME}robots.txt`;
+    const credit = creditGeoKnowledgeObservation({ kind: "robots", url, competitor: null,
+      observation: observation({ kind: "robots", url,
+        status: { kind: "ok", bodyHash: BODY_HASH, excerpts: ["User-agent: *", "Allow: /"], structured: {} } }), now: NOW });
+    if (credit.kind !== "reuse") throw new Error("Expected a reusable source");
+    const reader = siteReader();
+    const evidence = await collect(reader, [credit.source]);
+
+    expect(reader.mock.calls.map(([request]) => request.url)).not.toContain(url);
+    expect(evidence.sourceCatalogue).toContainEqual(credit.source);
+    expect(evidence.machine.robots).toMatchObject({ status: "present", sourceRefs: [credit.source.id] });
+    // The other two were not credited, so they are still read.
+    expect(reader.mock.calls.map(([request]) => request.url)).toContain(`${HOME}sitemap.xml`);
+  });
+
+  it("reads a machine resource again rather than credit it under an address its kind cannot have", () => {
+    // `assertEvidenceIntegrity` pins each machine kind to its own path, and a
+    // reused source it rejects is a thrown collection rather than a missed
+    // reuse -- so the mismatch is refused here, before the source is built.
+    for (const [kind, url] of [
+      ["robots", `${HOME}robots.txt?v=1`],
+      ["robots", `${HOME}llms.txt`],
+      ["llms", `${HOME}robots.txt`],
+      ["sitemap", `${HOME}sitemap`],
+      ["sitemap", `${HOME}pages.xml`],
+    ] as const) {
+      expect(creditGeoKnowledgeObservation({ kind, url, competitor: null,
+        observation: observation({ kind, url, status: { kind: "ok", bodyHash: BODY_HASH, excerpts: ["x"], structured: {} } }), now: NOW }))
+        .toEqual({ kind: "fetch" });
+    }
+  });
+
   it("drops the excerpts a source cannot carry rather than the whole observation", async () => {
     // Nine usable lines, one blank. The cap is the contract's own, so a source
     // built here can never be refused for carrying too many.
@@ -1551,5 +1620,55 @@ describe("crediting a stored observation instead of re-reading the page", () => 
     expect(credit.source.excerpts).toEqual(["Fact 0", "Fact 1", "Fact 2", "Fact 3", "Fact 4", "Fact 5", "Fact 6", "Fact 7"]);
     const evidence = await collect(siteReader(), [credit.source]);
     expect(evidence.sourceCatalogue).toContainEqual(credit.source);
+  });
+});
+
+
+describe("reading what an own-page observation stored about the page", () => {
+  const row = (structured: Record<string, unknown>): GeoEvidenceObservation => ({
+    schemaVersion: GEO_EVIDENCE_OBSERVATION_SCHEMA_VERSION, observationId: ID, websiteId: V3_KB_ID,
+    kind: "own_page", url: "https://example.com/", observedAt: "2026-09-01T23:00:00.000Z", independence: null,
+    status: { kind: "ok", bodyHash: "d".repeat(64), excerpts: ["Acme sells analytics software"], structured },
+  });
+
+  it("tells a list the run stored from one it never stored", () => {
+    // The difference the whole machine module rests on. An empty stored list is
+    // "this page publishes none"; a missing key is "we kept no answer", and the
+    // card may not turn the second into the first.
+    expect(creditGeoKnowledgeObservedStructure(row({ jsonLdTypes: [], hreflangLocales: [] }))).toEqual({
+      faq: [], jsonLdTypes: { kind: "stored", values: [] }, hreflangLocales: { kind: "stored", values: [] },
+    });
+    expect(creditGeoKnowledgeObservedStructure(row({}))).toEqual({
+      faq: [], jsonLdTypes: { kind: "not_stored" }, hreflangLocales: { kind: "not_stored" },
+    });
+  });
+
+  it("refuses a list the page shape cannot carry whole rather than trimming it", () => {
+    // Trimming understates the page, and an understated list published as the
+    // page's own is the failure this refuses. 33 types is one over the cap.
+    const many = Array.from({ length: 33 }, (_value, index) => `Type${index}`);
+    expect(creditGeoKnowledgeObservedStructure(row({ jsonLdTypes: many }))?.jsonLdTypes).toEqual({ kind: "unreadable" });
+    expect(creditGeoKnowledgeObservedStructure(row({ jsonLdTypes: ["Organization", "Organization"] }))?.jsonLdTypes)
+      .toEqual({ kind: "unreadable" });
+    expect(creditGeoKnowledgeObservedStructure(row({ jsonLdTypes: ["Org\u0001anization"] }))?.jsonLdTypes).toEqual({ kind: "unreadable" });
+    expect(creditGeoKnowledgeObservedStructure(row({ hreflangLocales: ["en", "en"] }))?.hreflangLocales).toEqual({ kind: "unreadable" });
+  });
+
+  it("keeps the FAQ pairs it can quote whole and leaves out the ones it cannot", () => {
+    // A truncated answer is a different answer, so an over-long pair is left
+    // out rather than shortened. Nothing counts these: they are a sample.
+    const structure = creditGeoKnowledgeObservedStructure(row({
+      faqPairs: [
+        { question: "Is it audited?", answer: "Yes, by a person." },
+        { question: "How long?", answer: "x".repeat(1_300) },
+        { question: " ", answer: "Nothing was asked." },
+      ],
+    }));
+    expect(structure?.faq).toEqual([{ question: "Is it audited?", answer: "Yes, by a person." }]);
+  });
+
+  it("reads nothing out of a row that is not a successful reading of the page", () => {
+    expect(creditGeoKnowledgeObservedStructure(null)).toBeNull();
+    expect(creditGeoKnowledgeObservedStructure({ ...row({}), status: { kind: "unavailable", reason: "not_found" } })).toBeNull();
   });
 });

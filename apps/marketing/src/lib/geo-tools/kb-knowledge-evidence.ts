@@ -135,7 +135,16 @@ function walkJsonLd(value: unknown, types: Set<string>, faq: Array<{ question: s
   }
   for (const [key, nested] of Object.entries(object)) if (!(isFaqPage && key === "mainEntity")) walkJsonLd(nested, types, faq, depth + 1);
 }
-function pageData(body: string, pageUrl: string): Page & { excerpts: string[] } {
+/**
+ * The one reading of "what does this page carry".
+ *
+ * Exported so the run collector can store the same structure it extracts --
+ * `jsonLdTypes`, `hreflangLocales` and `faq` -- into the observation ledger
+ * instead of parsing the body a second way. A second parser would be a second
+ * answer to this question, and the owner's card and the assembled evidence
+ * would disagree about the same bytes.
+ */
+export function pageData(body: string, pageUrl: string): Page & { excerpts: string[] } {
   const page = new URL(pageUrl); const $ = cheerio.load(body); const candidates = new Map<Intent, string>();
   $("a[href]").each((_, element) => { const url = asPublicUrl($(element).attr("href") ?? "", page, true); if (url === null) return; const intent = intentFor(clean($(element).text()), url); if (intent !== null && (candidates.get(intent) === undefined || url < candidates.get(intent)!)) candidates.set(intent, url); });
   const links = INTENTS.flatMap((intent) => { const url = candidates.get(intent); return url === undefined ? [] : [{ intent, url }]; });

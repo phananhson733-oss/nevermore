@@ -44,8 +44,8 @@ import {
   type GeoV3DecisionStates,
   type GeoV3ReviewAction,
 } from "../../lib/geo-tools/kb-v3-review.ts";
-import { geoGenerationLanguage } from "@sf/public-tools/content-brief/geo-contract";
 import {
+  GEO_KB_V3_LIMITS,
   geoDecisionSchema,
   geoV3ItemKeys,
   parseGeoKbPayloadV3,
@@ -158,14 +158,27 @@ const editorViewV3Schema = z
     draftVersion: z.number().int().positive().refine(Number.isSafeInteger),
     draftHash: v3Hash,
     payload: z.unknown(),
+    /** Section 4.4's "has a new observation" flag; see `GeoKbEditorViewV3`. */
+    restated: z.array(v3Hash).max(GEO_KB_V3_LIMITS.decisions),
     published: z
-      .object({
-        revision: z.number().int().positive().refine(Number.isSafeInteger),
-        frozenAt: z.string().refine((value) => Number.isFinite(Date.parse(value)), "Expected a timestamp"),
-        contentHash: v3Hash,
-        decisions: z.record(v3Hash, geoDecisionSchema),
-      })
-      .strict()
+      .discriminatedUnion("kind", [
+        z.object({
+          kind: z.literal("comparable"),
+          revision: z.number().int().positive().refine(Number.isSafeInteger),
+          frozenAt: z.string().refine((value) => Number.isFinite(Date.parse(value)), "Expected a timestamp"),
+          contentHash: v3Hash,
+          decisions: z.record(v3Hash, geoDecisionSchema),
+        }).strict(),
+        // No `decisions`, and not optional-and-empty: a v1/v2 version records
+        // none, and a field that could be present-and-empty invites a reader to
+        // treat "cannot be measured" as "nothing changed".
+        z.object({
+          kind: z.literal("opaque"),
+          revision: z.number().int().positive().refine(Number.isSafeInteger),
+          frozenAt: z.string().refine((value) => Number.isFinite(Date.parse(value)), "Expected a timestamp"),
+          contentHash: v3Hash,
+        }).strict(),
+      ])
       .nullable(),
     runInProgress: z.boolean().optional(),
   })
@@ -284,7 +297,7 @@ export async function createGeoKbV3Draft(kbId: string): Promise<GeoKbV3DraftCrea
  * bundle, the same reason `draftCreateSchema` above restates the response
  * shape instead of importing the server's schema.
  */
-export const GEO_KB_V3_BLOCKERS = ["unsupported_language", "category_terms_missing"] as const;
+export const GEO_KB_V3_BLOCKERS = ["category_terms_missing"] as const;
 export type GeoKbV3Blocker = (typeof GEO_KB_V3_BLOCKERS)[number];
 
 /**
@@ -303,20 +316,23 @@ export type GeoKbV3Blocker = (typeof GEO_KB_V3_BLOCKERS)[number];
  *    none can never produce a synthesis input, so its billed update throws
  *    before it reaches a provider -- and `categories` is not in
  *    `REQUIRED_PROFILE_FIELDS`, so an ordinary confirmed Profile reaches this.
- *  - `unsupported_language` is the question registry being English-only, which
- *    is `geoGenerationLanguage` and nothing else.
  *
- * The seam: both predicates are written twice now, here and in
- * `buildGeoKbV3Identity`. One client-safe module holding the pair, read by the
- * route and by this file, is the fix; it is reported rather than made here
- * because the route's copy is not this change's to move.
+ * There is deliberately no language blocker. The English registry governs the
+ * QUESTION SET, and a v3 draft has none to produce; D8 puts the knowledge body
+ * in the site's own language, so a non-English site is not stopped here.
+ *
+ * The seam: this predicate is written twice now, here and in
+ * `buildGeoKbV3Identity`. One client-safe module holding it, read by the route
+ * and by this file, is the fix; it is reported rather than made here because
+ * the route's copy is not this change's to move.
  */
 export function geoKbV3DraftBlockers(
   generationInput: GeoGenerationInputV3,
 ): readonly GeoKbV3Blocker[] {
   const blockers: GeoKbV3Blocker[] = [];
-  if (geoGenerationLanguage(generationInput.identity.market.language) === null)
-    blockers.push("unsupported_language");
+  // No language blocker: D8 puts the knowledge body in the site's own language
+  // and holds only the question set to the English registry. See the note on
+  // `GEO_KB_V3_DRAFT_BLOCKERS`.
   if (generationInput.identity.categoryTerms.length === 0)
     blockers.push("category_terms_missing");
   return blockers;
@@ -402,6 +418,42 @@ export type GeoKbV3RelockResult =
  * confirmed one *before* building or writing anything and answers
  * `relocked: false`, having minted no version and discarded nothing.
  */
+/**
+ * Turn a v1/v2 draft into a first v3 draft. One way, and it discards what the
+ * old draft held.
+ *
+ * The same shape as the re-lock below and for the same reason: the intent is
+ * named rather than inferred, and `draftHash` is the acknowledgement -- a
+ * caller cannot produce the digest of the draft it is about to discard without
+ * having been shown that draft.
+ *
+ * Section 4.4's blocker table asks for this path by name ("astrologywiki 现有
+ * v2 草稿升不到 v3；S1 要允许 v2 → v3 升级路径"). The database half has been open
+ * since `20260907143000_geo_kb_v3.sql:266`; this is the side that asks.
+ */
+export async function upgradeGeoKbToV3(input: {
+  readonly kbId: string;
+  readonly baseVersion: number;
+  readonly draftHash: string;
+}): Promise<GeoKbV3DraftCreateResult> {
+  const result = await post("draft", {
+    kbId: input.kbId,
+    intent: "upgrade",
+    baseVersion: input.baseVersion,
+    draftHash: input.draftHash,
+  });
+  if (!result.ok) {
+    return result.draftVersion === undefined
+      ? { ok: false, code: result.code }
+      : { ok: false, code: result.code, draftVersion: result.draftVersion };
+  }
+  const parsed = draftCreateSchema.safeParse(result.data);
+  // Same check, same reason, as the create above: a draft reported under
+  // another knowledge base's id is not this one's.
+  if (!parsed.success || parsed.data.kbId !== input.kbId) return { ok: false, code: "bad_response" };
+  return { ok: true, draft: parsed.data };
+}
+
 export async function relockGeoKbV3Draft(input: {
   readonly kbId: string;
   readonly baseVersion: number;
@@ -430,7 +482,11 @@ export interface GeoKbV3PublishPlan {
   readonly nextVersion: string;
   readonly previousVersion: string | null;
   /** Items whose decision differs from the published version's. */
-  readonly changeCount: number;
+  /**
+   * How many items differ from the published version, or null when that version
+   * records no per-item decisions and the question has no honest answer.
+   */
+  readonly changeCount: number | null;
   readonly itemCount: number;
   /** Items that would publish as accepted in bulk rather than confirmed. */
   readonly pendingCount: number;
@@ -467,8 +523,13 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
    * there for: a gesture made after publishing moves `states`, never
    * `view.published.decisions`, so the count climbs again from zero.
    */
-  const baseline: Readonly<Record<string, GeoDecision>> =
-    view.published?.decisions ?? {};
+  const baseline: Readonly<Record<string, GeoDecision>> | null =
+    view.published === null || view.published === undefined ? {}
+      : view.published.kind === "comparable" ? view.published.decisions
+        // Null, not `{}`. An empty map means "nothing was decided over there",
+        // and a v1/v2 version did not record decisions at all -- counting
+        // against it would report every decided item as a change.
+        : null;
 
   /**
    * Mirrors of the state, read by the timer and the flush. A closure over this
@@ -600,6 +661,10 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
         draftVersion: data.draftVersion,
         draftHash: data.contentHash,
         payload: { ...live.current.view.payload, review: data.review },
+        // Recomputed by the server against the review it just wrote. Keeping
+        // the loaded set here would leave a row saying "has a new observation"
+        // after the owner had looked at it and decided again.
+        restated: data.restated,
       };
       const nextSaved = geoV3DecisionStates(data.review, itemKeys);
       const remaining = live.current.queued.slice(sending.length);
@@ -705,7 +770,9 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
       view.published === null || view.published === undefined
         ? null
         : String(view.published.revision),
-    changeCount: [...states].filter(
+    // Null when the previous version cannot be compared item by item. The card
+    // then names the version without claiming a count for it.
+    changeCount: baseline === null ? null : [...states].filter(
       ([itemKey, state]) =>
         (baseline[itemKey] ?? "pending") !== state.decision,
     ).length,
@@ -771,6 +838,10 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
         draftVersion: data.draftVersion,
         draftHash: data.draftHash,
         published: {
+          // A publish this card performed is a v3 version by construction, so
+          // the draft it leaves behind is comparable item by item again -- even
+          // when the version it superseded was not.
+          kind: "comparable",
           revision: data.revision,
           frozenAt: data.frozenAt,
           contentHash: data.contentHash,

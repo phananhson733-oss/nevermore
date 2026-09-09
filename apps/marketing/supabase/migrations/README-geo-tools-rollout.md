@@ -363,9 +363,20 @@ drop table if exists public.marketing_geo_visibility_runs;
 
 ```bash
 # DATABASE_URL 从 Railway worker 的变量里取，去掉 query string
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
   -f apps/marketing/supabase/migrations/20260907143000_geo_kb_v3.sql
 ```
+
+`--single-transaction` 不是可选项。不带它时 psql 逐条自动提交，而
+`marketing_geo_publish_kb_v3` 是本文件里唯一一个**新建**的 SECURITY DEFINER 函数：
+`create` 提交的那一刻它按 PostgreSQL 默认 ACL 就是 `PUBLIC` 可执行的，回收权限的
+`revoke` 在两百行之后。正常跑完当然没问题（跑完之后 anon/authenticated 都没有
+EXECUTE，见下面「冒烟」那条 ACL 断言），但连接在这两条之间断掉，暴露就留下了。
+包进一个事务，撕裂的应用什么也不会留下。本文件没有 `CONCURRENTLY`、没有 `VACUUM`，
+单事务能整份跑完。
+
+（同样的窗口在 0004/0005/0006/0007 和 20260831034706 里都存在——那是仓库既有的
+部署习惯，不是这份迁移引入的。这里先把新的一份关上。）
 
 全文幂等：每个 `add constraint` 前都有 `drop constraint if exists`，函数一律
 `create or replace`，`drop not null` 对已经可空的列是 no-op。跑两遍和跑一遍结果相同
@@ -594,3 +605,61 @@ drop table if exists public.marketing_website_evidence_observations;
 注意观察库与 run operations 都是 append-only（行级挡 update/delete，语句级挡 truncate），
 所以「清空但保留表」这件事做不到，也不该做：删掉旧观察等于删掉旧版本快照引用的证据，
 删掉 operation 行等于把一次可能已经计费的调用从账上抹掉。
+
+# 知识库与 Website 的外键（迁移 `20260907190000_geo_kb_website_link.sql`）
+
+## 先决条件
+
+`0005_account_websites.sql`（`marketing_websites`）与 `0006_geo_knowledge_base.sql`
+（`marketing_geo_knowledge_bases`）都已应用。这两张表都是既有表，本迁移不新建表。
+
+## 顺序
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
+  -f apps/marketing/supabase/migrations/20260907190000_geo_kb_website_link.sql
+```
+
+它做四件事：给 `marketing_websites` 加一个三列唯一约束当外键目标、给
+`marketing_geo_knowledge_bases` 加 `website_id` 列、按 `(user_id, canonical_site_key)`
+回填、再装一个 `on delete restrict` 的外键（`not valid` 装、单独 `validate`）。
+
+## 两个必须知道的锁事实
+
+- 文件开头 `set lock_timeout = '3s'`。`marketing_websites` 是登录后几乎每个页面都读的
+  Profile 注册表，ACCESS EXCLUSIVE 排在一个未关闭的读事务后面时，**排在它后面的每一条
+  查询也要一起等**。实测：一个 8 秒的读事务能让不带 timeout 的 ALTER 卡 7 秒；带上之后
+  最多等到 `lock_timeout` 的 3 秒就干净失败，`ON_ERROR_STOP` 停住，重跑即可——按 3 秒
+  算你愿意让这张注册表停多久，这是这份文件里唯一由代码定的那个数（两份迁移文件开头都写的
+  `'3s'`）。校验扫描本身不是问题（21 万行的唯一约束 104ms，本产品实际量级是个位数毫秒）。
+- `not valid` + `validate` 拆开只在**逐条提交**（`psql -f` 不带 `--single-transaction`）
+  时才真的缩短独占窗口；整份贴进 Supabase SQL Editor 的话，文件里所有锁都会持有到最后。
+  这份文件很小，两种方式都可以，但别把注释里的保证扩大解释。
+
+## 重跑
+
+可以。文件顶部先 drop 依赖它的外键，再 drop 唯一约束——顺序反了会撞
+`dependent_objects_still_exist`，而 `if exists` **不会**抑制依赖错误。这是全仓 16 份
+迁移里唯一一份曾经不能重放的，已经修好。
+
+## 回滚
+
+```sql
+alter table public.marketing_geo_knowledge_bases drop constraint if exists marketing_geo_kb_website_fk;
+drop index if exists public.marketing_geo_kb_website_idx;
+alter table public.marketing_geo_knowledge_bases drop column if exists website_id;
+alter table public.marketing_websites drop constraint if exists marketing_websites_id_user_site_key;
+```
+
+**然后必须重放 `0006_geo_knowledge_base.sql` 里的 `marketing_geo_upsert_kb`（:138），把它
+还原成不认识 `website_id` 的那一版。** 这份迁移在 :97-153 把那个函数整个换掉了，新函数体
+里 `v_existing.website_id`（:130）、`set website_id = v_website_id`（:132）和插入列表
+`(user_id, canonical_site_key, origin, host, website_id)`（:144-148）都硬引用了这一列。
+只跑上面那四行，列没了、函数还在，`marketing_geo_upsert_kb` 会以
+`column "website_id" ... does not exist` 失败——而它正是产品注册知识库的入口
+（`apps/marketing/src/lib/geo-tools/kb-store.ts:836`）。也就是说：漏掉这一步，用来恢复
+服务的回滚本身会让 GEO 知识库建不出来。上面那份 v2 回滚（:558）已经写着同样形状的一句，
+这里照它办。
+
+`website_id` 是新增列，删掉它不损失任何原有数据；它承载的信息（哪个 Website）在
+`(user_id, canonical_site_key)` 里本来就有，回填就是照着这一对做的。

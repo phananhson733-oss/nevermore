@@ -300,6 +300,22 @@ it.each(["en", "zh"])("says what publishing would change and what is still uncon
   expect(onPublish).toHaveBeenCalledTimes(1);
 });
 
+/**
+ * A v1/v2 predecessor records no per-item decisions, so there is no count to
+ * give. Null is not zero here, and it is not "everything changed" either: the
+ * box names the version and says the comparison cannot be made.
+ */
+it.each(["en", "zh"])("says a previous version cannot be compared item by item, in %s", async (locale) => {
+  await render({ publish: { ...plan, changeCount: null } }, locale);
+
+  const said = host.querySelector("[data-kb-publish-changes]")?.textContent;
+  expect(said).toBe(fill(card(locale).publish.changesUncountable, { count: "30", version: "3" }));
+  // Never the countable sentence, and never a number standing in for the count.
+  expect(said).not.toBe(fill(card(locale).publish.changes, { count: "0", version: "3" }));
+  expect(said).not.toBe(fill(card(locale).publish.changes, { count: "6", version: "3" }));
+  expect(said).not.toContain("[missing copy:");
+});
+
 it("counts a first version instead of comparing it with one that does not exist", async () => {
   await render({ publish: { ...plan, previousVersion: null, pendingCount: 0 } });
 
@@ -430,7 +446,7 @@ it.each(["en", "zh"])("stands still as a published summary once there is a versi
       name: "AstrologyWiki",
       host: "astrologywiki.com",
       publishedAt: "2026-09-07T00:00:00.000Z",
-      counts: { facts: 18, accepted: 6, qa: 12, available: 4, comparisons: 6 },
+      counts: { facts: { facts: 18, accepted: 6 }, qa: { qa: 12 }, comparisons: { available: 4, comparisons: 6 } },
       onEdit,
       onView,
     },
@@ -438,10 +454,12 @@ it.each(["en", "zh"])("stands still as a published summary once there is a versi
 
   expect(host.querySelector("[data-geo-kb-collapsed]")).not.toBeNull();
   expect(host.querySelector("[data-kb-published-version]")?.textContent).toContain(fill(card(locale).published.headline, { version: "4" }));
-  expect(host.querySelector("[data-kb-published-counts]")?.textContent).toBe(fill(card(locale).published.counts, {
-    facts: "18", accepted: "6", qa: "12", available: "4", comparisons: "6",
-    date: locale === "zh" ? "2026年9月7日" : "Sep 7, 2026",
-  }));
+  expect(host.querySelector("[data-kb-published-counts]")?.textContent).toBe([
+    fill(card(locale).published.counts.facts, { facts: "18", accepted: "6" }),
+    fill(card(locale).published.counts.qa, { qa: "12" }),
+    fill(card(locale).published.counts.comparisons, { available: "4", comparisons: "6" }),
+    locale === "zh" ? "2026年9月7日" : "Sep 7, 2026",
+  ].join(" · "));
   /**
    * And it counts no off-site sources. Nothing in this deployment collects
    * any, so the only number this line could ever carry is `0` -- which does
@@ -575,12 +593,12 @@ it("keeps its own data attributes and adds no disclosure widget", async () => {
 /**
  * The counts the published summary can supply, and the whole of them.
  *
- * `GeoKbCopy.published.counts` still declares a `thirdParty` argument this card
- * deliberately does not have. Nothing in this deployment collects off-site
- * evidence, so the only number it could ever carry is `0`, and `0` there reads
- * as "we looked and found none" rather than "we never looked". Dropping the
- * argument belongs in `geo-kb-copy.ts`, which this file does not own; what it
- * can do is close both routes the number would have to travel to reach a
+ * `GeoKbCopy.published.counts` no longer declares a `thirdParty` argument, and
+ * this card holds no off-site count to feed one. Nothing in this deployment
+ * collects off-site evidence, so the only number either could ever carry is
+ * `0`, and `0` there reads as "we looked and found none" rather than "we never
+ * looked". The clause split in `geo-kb-copy.ts` closed that argument; what this
+ * file closes are the two routes a count would still have to travel to reach a
  * screen, so neither can be opened on its own:
  *
  *   - a field added to `GeoKbPublishedSummary["counts"]` fails the exhaustive
@@ -592,17 +610,29 @@ it("keeps its own data attributes and adds no disclosure widget", async () => {
  * the line may only name numbers this card holds.
  */
 const SUMMARY_COUNT_FIELDS = ["facts", "accepted", "qa", "available", "comparisons"] as const;
-type SummaryCountField = keyof GeoKbPublishedSummary["counts"];
+/** The clause keys, which are also the modules the summary may mention at all. */
+const SUMMARY_COUNT_CLAUSES = ["facts", "qa", "comparisons"] as const;
+type SummaryCountClause = keyof GeoKbPublishedSummary["counts"];
+type ClausesAreExhaustive = SummaryCountClause extends (typeof SUMMARY_COUNT_CLAUSES)[number] ? true : never;
+/** Its assertion is the annotation: a new clause makes this `never` and tsc red. */
+const COUNT_CLAUSES_ARE_EXHAUSTIVE: ClausesAreExhaustive = true;
+type SummaryCountField = keyof NonNullable<GeoKbPublishedSummary["counts"]["facts"]>
+  | keyof NonNullable<GeoKbPublishedSummary["counts"]["qa"]>
+  | keyof NonNullable<GeoKbPublishedSummary["counts"]["comparisons"]>;
 type CountFieldsAreExhaustive = SummaryCountField extends (typeof SUMMARY_COUNT_FIELDS)[number] ? true : never;
-/** Its assertion is the annotation: a new count makes this `never` and tsc red. */
 const COUNT_FIELDS_ARE_EXHAUSTIVE: CountFieldsAreExhaustive = true;
 
 it.each(["en", "zh"])("asks the published summary line for no count this card cannot supply, in %s", (locale) => {
   expect(COUNT_FIELDS_ARE_EXHAUSTIVE).toBe(true);
+  expect(COUNT_CLAUSES_ARE_EXHAUSTIVE).toBe(true);
+  // The date is written by the component, not by any clause: a clause that
+  // asked for it would print it once per module.
+  expect(Object.keys(card(locale).published.counts).toSorted()).toEqual([...SUMMARY_COUNT_CLAUSES].toSorted());
 
-  const placeholders = [...card(locale).published.counts.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)/gu)]
+  const placeholders = SUMMARY_COUNT_CLAUSES
+    .flatMap((clause) => [...card(locale).published.counts[clause].matchAll(/\{([A-Za-z][A-Za-z0-9_]*)/gu)])
     .map(([, name]) => name)
     .toSorted();
 
-  expect(placeholders).toEqual([...SUMMARY_COUNT_FIELDS, "date"].toSorted());
+  expect(placeholders).toEqual([...SUMMARY_COUNT_FIELDS].toSorted());
 });

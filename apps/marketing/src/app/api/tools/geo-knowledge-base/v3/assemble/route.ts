@@ -12,6 +12,7 @@
 import { getServerAuthenticatedUser } from "../../../../../../lib/auth/server-auth-user.ts";
 import { consumePublicToolQuota } from "../../../../../../lib/tools/shared-rate-limit.ts";
 import { DEFAULT_GEO_KB_GENERATION_STORE } from "../../../../../../lib/geo-tools/kb-generation-store.ts";
+import { DEFAULT_GEO_RUN_COLLECT_SOURCES } from "../../../../../../lib/geo-tools/kb-run-collect-executor.ts";
 import { readVersionedGeoKnowledgeBase } from "../../../../../../lib/geo-tools/kb-versioned-read.ts";
 import { saveGeoKbDraftV3 } from "../../../../../../lib/geo-tools/kb-v3-store.ts";
 import {
@@ -36,6 +37,16 @@ const DEPENDENCIES: GeoKbV3AssembleDependencies = {
   readDetails: (input) => readVersionedGeoKnowledgeBase(input),
   saveDraft: (input) => saveGeoKbDraftV3(input),
   readLatestGeneration: (input) => DEFAULT_GEO_KB_GENERATION_STORE.readLatest(input),
+  /**
+   * The website evidence observation library, so an owner who assembles after a
+   * failed model step gets the deterministic half rather than a refusal and an
+   * empty card. Same two readers the run's collection half uses.
+   */
+  observations: {
+    resolveWebsiteId: DEFAULT_GEO_RUN_COLLECT_SOURCES.resolveWebsiteId,
+    readLatestObservation: DEFAULT_GEO_RUN_COLLECT_SOURCES.readLatestObservation,
+    now: DEFAULT_GEO_RUN_COLLECT_SOURCES.now,
+  },
   /**
    * One kind failing to read must not mask another kind that is known to be
    * running, so an outage is reported only after every kind has been asked.

@@ -392,9 +392,19 @@ export function geoEvidenceModule(
       "firstPartyProof",
       offsiteItems(offsite?.evidence.firstPartyProof ?? []),
     ),
-    // Own-site collection always looks for both of its groups; the offsite
-    // collector reports for itself which of its three it actually reached.
-    collected: ["proof", "changelog", ...(offsite?.evidence.collected ?? [])],
+    // `proof` is looked for wherever any own page was read at all. `changelog`
+    // is not: a changelog item exists only where a page's own links named one
+    // (`changelogUrls` above), so a bundle in which no page body was parsed --
+    // every source reused from the observation ledger, `pages` empty -- never
+    // looked for one. Listing it as collected there renders on the card as
+    // "Collected · nothing found": we looked and there is none, about a group
+    // nothing could have found. The offsite collector reports for itself which
+    // of its three it actually reached.
+    collected: [
+      "proof",
+      ...(input.evidence.pages.length > 0 ? (["changelog"] as const) : []),
+      ...(offsite?.evidence.collected ?? []),
+    ],
   };
   if (value.proof.length === 0 && value.changelog.length === 0) {
     return {

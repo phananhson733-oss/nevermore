@@ -8,6 +8,7 @@ import { isGeoKbPayloadV3Value, type AnyVersionedGeoKbPayload, type VersionedGeo
 import type { GeoKbEditorViewV3 } from "../../components/tools/geo-kb-v3-wire.ts";
 import { geoV3ItemKeys } from "./kb-v3-contract.ts";
 import { geoV3DecisionStates } from "./kb-v3-review.ts";
+import { geoV3RestatedItemKeys } from "./kb-v3-item-content.ts";
 import type { GeoKbRegistration, GeoKbStoreResult } from "./kb-store.ts";
 import type { GeoKbStoreOutcome } from "./kb-handler.ts";
 import type { GeoKbSourceReportV2 } from "./kb-source-contract.ts";
@@ -175,19 +176,32 @@ export function createGeoKbV3EditorLoader(dependencies: GeoKbV3EditorLoaderDepen
       if (kb.frozen !== null) {
         const frozen = await dependencies.readFrozenPayload({ ...scope, snapshotId: kb.frozen.snapshotId });
         if (frozen.kind !== "ok") return unavailable("v3_published_version_unavailable");
-        // A v3 draft standing over a v1/v2 published version has no honest
-        // `published` block: those versions record no per-item decisions, and
-        // an empty decision map would report every item as changed while the
-        // publish box named a revision produced by a different contract. No
-        // path reaches this today -- the create route refuses to replace a
-        // legacy draft -- so it is refused rather than approximated.
-        if (!isGeoKbPayloadV3Value(frozen.value)) return unavailable("v3_predecessor_unsupported");
-        const decided = geoV3DecisionStates(frozen.value.review, geoV3ItemKeys(frozen.value.knowledge));
-        published = { revision: kb.frozen.revision, frozenAt: kb.frozen.frozenAt, contentHash: kb.frozen.contentHash,
-          decisions: Object.fromEntries([...decided].map(([itemKey, state]) => [itemKey, state.decision])) };
+        const named = { revision: kb.frozen.revision, frozenAt: kb.frozen.frozenAt, contentHash: kb.frozen.contentHash };
+        /**
+         * A v1/v2 published version is reported, not refused.
+         *
+         * It used to answer `v3_predecessor_unsupported`, which was a 503 for
+         * the whole knowledge base -- and since every owner who has ever
+         * published did so under v1/v2, that made the redesign unreachable for
+         * all of them. What is actually true is narrower: those versions record
+         * no per-item decisions, so the publish box has nothing to diff
+         * against. `opaque` says exactly that and nothing more. It still names
+         * and dates the version, because that version exists and is what AI
+         * Visibility and Brief read today.
+         */
+        published = isGeoKbPayloadV3Value(frozen.value)
+          ? {
+            kind: "comparable", ...named,
+            decisions: Object.fromEntries(
+              [...geoV3DecisionStates(frozen.value.review, geoV3ItemKeys(frozen.value.knowledge))]
+                .map(([itemKey, state]) => [itemKey, state.decision]),
+            ),
+          }
+          : { kind: "opaque", ...named };
       }
       return { kind: "ok", value: { schemaVersion: "marketing-geo-kb-editor.v3", kbId: kb.kbId, origin: kb.origin, host: kb.host,
-        draftVersion: draft.draftVersion, draftHash: draft.contentHash, payload, published } };
+        draftVersion: draft.draftVersion, draftHash: draft.contentHash, payload, published,
+        restated: geoV3RestatedItemKeys(payload.knowledge, payload.review) } };
     } catch { return unavailable("v3_editor_unavailable"); }
   };
 }

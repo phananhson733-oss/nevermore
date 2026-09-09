@@ -3,7 +3,14 @@
 // @pos -- test fixture shared by contract, assembler, publish and consumer tests
 import { geoItemKey } from "./kb-item-key.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
-import { parseGeoKbPayloadV3, type GeoKbPayloadV3 } from "./kb-v3-contract.ts";
+import { geoV3ItemContentHashes } from "./kb-v3-item-content.ts";
+import {
+  applyGeoV3ReviewActions,
+  geoV3DecisionStates,
+  materializeGeoV3Review,
+  type GeoV3ReviewAction,
+} from "./kb-v3-review.ts";
+import { geoV3ItemKeys, parseGeoKbPayloadV3, type GeoKbPayloadV3 } from "./kb-v3-contract.ts";
 
 export const V3_KB_ID = "11111111-1111-8111-8111-111111111113";
 export const V3_WEBSITE_ID = "11111111-1111-8111-8111-111111111114";
@@ -18,6 +25,15 @@ export const HASH_A = "a".repeat(64);
 export const HASH_B = "b".repeat(64);
 export const OBSERVED_AT = "2026-09-01T00:00:00.000Z";
 export const GENERATED_AT = "2026-09-02T00:00:00.000Z";
+/**
+ * When the owner declared the prices below. Deliberately none of the other
+ * timestamps a projection could fall back to -- not `OBSERVED_AT`, not the
+ * generation time, and not the freeze time a consumer supplies -- so a reader
+ * that reaches for any of those instead of the declaration cannot pass.
+ */
+export const OWNER_DECLARED_AT = "2026-09-02T12:00:00.000Z";
+export const OWNER_DECLARED_PRO_PRICE = "12";
+export const OWNER_DECLARED_TEAM_PRICE = "35";
 
 const OWN_SOURCE = "own:home";
 const PRICING_SOURCE = "own:pricing";
@@ -36,9 +52,17 @@ export const QA_KEY = geoItemKey({ module: "qa", intent: "price", canonicalQuest
 export const SCOPE_KEY = geoItemKey({ module: "scope", kind: "doesNot", statement: "Acme does not run on Android." });
 export const ENTITY_NAME_KEY = geoItemKey({ module: "entity", field: "name" });
 
-function source(id: string, kind: string, url: string | null, excerpts: readonly string[]) {
+/**
+ * `label` is deliberately unlike `id`.
+ *
+ * They used to be the same string, which made every assertion that a rendered
+ * page carries no internal identifier vacuously true or vacuously false: the
+ * label a reader is meant to see and the id nobody may see were one value, so
+ * a sweep over the DOM could not tell them apart.
+ */
+function source(id: string, kind: string, url: string | null, excerpts: readonly string[], label = `Page ${id.split(":")[1] ?? id}`) {
   return {
-    id, kind, label: id, url,
+    id, kind, label, url,
     competitor: null,
     availability: "available" as const,
     reason: null,
@@ -92,6 +116,57 @@ export function conflictingPayloadV3(): GeoKbPayloadV3 {
   };
   knowledge.sourceCatalogue.push(source(PLANS_SOURCE, "own_page", PLANS_URL, ["The Pro plan costs 19 per month."]));
   return parseGeoKbPayloadV3({ ...base, knowledge });
+}
+
+/**
+ * The same draft after the owner has replaced both prices with figures of their
+ * own: the version whose every fact is an owner declaration, backed by no page.
+ *
+ * It is built as a review rather than as knowledge because that is the only way
+ * this shape can exist. A draft item may not claim `declared_owner` -- the
+ * contract excludes it from `origin` by construction -- so an owner declaration
+ * is a correction in the review, and *publishing* is what turns it into a
+ * declared fact: `sourceRefs` emptied into `priorSourceRefs`, `observedAt`
+ * dropped in favour of `ownerDeclaredAt`, and no URL anywhere. Hand-writing a
+ * pack with those fields set would prove the consumer reads a shape, not that
+ * the publish path still emits it.
+ *
+ * Neither declared number occurs in any source excerpt, so a fact carrying any
+ * `evidenceChecks` other than `owner_declared` would be refused by the pack's
+ * literal check -- publishing succeeding at all is part of what this fixture
+ * states.
+ *
+ * `base` is a parameter so a test that must bind the draft to its own Profile
+ * snapshot can declare over that payload instead of over this one; the review
+ * is keyed by item key, which the knowledge body decides, and the corrections
+ * below reach the same two facts either way.
+ */
+export function ownerDeclaredPayloadV3(base: GeoKbPayloadV3 = completePayloadV3()): GeoKbPayloadV3 {
+  const declare = (itemKey: string, plan: string, price: string): GeoV3ReviewAction => ({
+    kind: "correct",
+    itemKey,
+    override: {
+      module: "facts",
+      statement: `The ${plan} costs ${price} per month.`,
+      label: `${plan} monthly price`,
+      value: price,
+      reason: "",
+    },
+  });
+  const states = applyGeoV3ReviewActions(geoV3DecisionStates(base.review, geoV3ItemKeys(base.knowledge)), [
+    declare(FACT_KEY_PRO, "Pro plan", OWNER_DECLARED_PRO_PRICE),
+    declare(FACT_KEY_TEAM, "Team plan", OWNER_DECLARED_TEAM_PRICE),
+  ]);
+  // The real stamp, not hand-written records: `baseContentHash` is what the
+  // next update compares against to tell an approval of this text from an
+  // approval of text since rewritten, and a fixture carrying a constant there
+  // would let that comparison rot untested.
+  const review = materializeGeoV3Review(base.review, states, {
+    contentHash: geoV3ItemContentHashes(base.knowledge),
+    decidedAt: OWNER_DECLARED_AT,
+    baseDraftVersion: "1",
+  });
+  return parseGeoKbPayloadV3({ ...base, review });
 }
 
 export function completePayloadV3(overrides: Partial<GeoKbPayloadV3> = {}): GeoKbPayloadV3 {

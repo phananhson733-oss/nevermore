@@ -320,6 +320,47 @@ describe("handleGeoKbV3Publish", () => {
     );
   });
 
+  /**
+   * D8's other half, and the reason the language gate could be removed from the
+   * update: a site whose language the question registry has no templates for
+   * publishes its knowledge and says the question set is missing FOR THAT
+   * REASON. `not_attempted` would be true of the mechanics and misleading about
+   * the site -- it reads as "nobody got round to it", when nothing ever will.
+   */
+  it("names the language as the reason a non-English site has no question set", async () => {
+    const base = completePayloadV3();
+    const generationInput = {
+      ...base.generationInput,
+      identity: { ...base.generationInput.identity, market: { country: "CN", language: "zh-CN" } },
+    };
+    // Re-locked against the changed input: `lockedPayload` stamps the digest of
+    // the FIXTURE's input, which a market override no longer matches, and the
+    // publish path answers 409 rather than reaching the question set at all.
+    const payload = parseGeoKbPayloadV3({
+      ...base,
+      generationInput,
+      runRef: { ...base.runRef, generationInputHash: geoV2Digest(generationInput) },
+    });
+    const { dependencies, published } = harness(payload);
+
+    const response = await handleGeoKbV3Publish(request(body({}, payload)), dependencies);
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.questionSet).toEqual({
+      status: "unavailable",
+      reason: "unsupported_language",
+    });
+    expect(published.current?.questionSet).toEqual({
+      status: "unavailable",
+      reason: "unsupported_language",
+      failedGenerationId: null,
+    });
+    // The knowledge itself published: the language is a reason the question set
+    // is absent, never a reason to refuse the version.
+    expect(published.current?.knowledgePack?.facts.status).toBe("available");
+    expect(published.current?.context.questionSetHash).toBe(GEO_ABSENT_QUESTION_SET_HASH);
+  });
+
   it("reports a failed question generation as unavailable and names the record", async () => {
     const payload = lockedPayload({
       runRef: {

@@ -21,7 +21,7 @@
  * provably the item the client rendered.
  */
 import { geoV2Digest } from "./kb-v2-digest.ts";
-import { geoV3Items, type GeoKnowledgeBodyV3 } from "./kb-v3-contract.ts";
+import { geoV3Items, type GeoKnowledgeBodyV3, type GeoReviewV3 } from "./kb-v3-contract.ts";
 
 export function geoV3ItemContentHashes(knowledge: GeoKnowledgeBodyV3 | null): ReadonlyMap<string, string> {
   const hashes = new Map<string, string>();
@@ -33,4 +33,38 @@ export function geoV3ItemContentHashes(knowledge: GeoKnowledgeBodyV3 | null): Re
     }));
   }
   return hashes;
+}
+
+/**
+ * The decided items whose decision was made against text that has since been
+ * rewritten -- section 4.4's third rule, seen from the card's side.
+ *
+ * The merge keeps such a decision standing on purpose: the owner did decide,
+ * and re-asking them everything on every update is the thing section 4.4 exists
+ * to prevent. What it leaves behind is a `baseContentHash` that no longer
+ * matches, and the whole reason that is acceptable is that the row then says
+ * "has a new observation" instead of presenting an approval of a sentence
+ * nobody has read. Nothing else in the product reads `baseContentHash`, so this
+ * function is the only thing standing between "the decision stands" and "the
+ * decision was silently transferred".
+ *
+ * It is derived rather than stored: the two inputs are already in the draft, a
+ * stored flag could disagree with them, and the browser cannot compute the
+ * digest half itself. A save re-stamps the hash of every decision it changed,
+ * so recomputing this over the review a save returns is what makes the row
+ * stop saying it once the owner has looked.
+ */
+export function geoV3RestatedItemKeys(
+  knowledge: GeoKnowledgeBodyV3 | null,
+  review: GeoReviewV3,
+): readonly string[] {
+  const hashes = geoV3ItemContentHashes(knowledge);
+  return review.decisions
+    .filter((record) => {
+      const current = hashes.get(record.itemKey);
+      // An item the body no longer carries is not restated; it is gone, and
+      // the merge has already accounted for it.
+      return current !== undefined && current !== record.baseContentHash;
+    })
+    .map((record) => record.itemKey);
 }

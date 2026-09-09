@@ -13,7 +13,7 @@ import { useGeoKbCopy } from "./geo-kb-copy.ts";
 import { geoKbV2Copy } from "./geo-kb-v2-copy.ts";
 import { geoKbV2EditorCopy } from "./geo-kb-v2-editor-copy.ts";
 import { GeoKnowledgeBaseV3 } from "./geo-kb-v3-review.tsx";
-import { createGeoKbV3Draft } from "./use-geo-kb-v3-editor.ts";
+import { createGeoKbV3Draft, upgradeGeoKbToV3 } from "./use-geo-kb-v3-editor.ts";
 import type { GeoKbEditorViewV3 } from "./geo-kb-v3-wire.ts";
 
 interface GeoKnowledgeBaseShellProps {
@@ -81,11 +81,15 @@ export type GeoKnowledgeBaseV2Props =
  */
 export function GeoKnowledgeBaseV2(props: GeoKnowledgeBaseV2Props) {
   if (props.v3Draft !== undefined) {
-    const { v3Draft, onUpdateV3, onReloadV3, locale, inline = false } = props;
+    const { v3Draft, onUpdateV3, onReloadV3, locale, inline = false, confirmedProfileRevision } = props;
     return <GeoKnowledgeBaseV3
       view={v3Draft}
       locale={locale}
       inline={inline}
+      /* Spread rather than passed as `undefined`: the card treats an absent
+         revision as "nothing to compare", and a caller that does not know the
+         current one must not be able to make it look like a match. */
+      {...(confirmedProfileRevision === undefined ? {} : { confirmedProfileRevision })}
       {...(onUpdateV3 === undefined ? {} : { onUpdate: onUpdateV3 })}
       {...(onReloadV3 === undefined ? {} : { onReload: onReloadV3 })}
     />;
@@ -93,22 +97,24 @@ export function GeoKnowledgeBaseV2(props: GeoKnowledgeBaseV2Props) {
   const { v3Draft: _v3Draft, onUpdateV3: _onUpdateV3, onReloadV3: _onReloadV3, onStarted, ...card } = props;
   // The cut between the two formats, and the only place it is made.
   //
-  // A knowledge base with nothing in it -- no stored draft and no published
-  // version -- is the one that becomes v3. Anything already holding v1/v2 work
-  // keeps the card that can read it: nothing is migrated, nothing is converted,
-  // and no owner loses a draft to a format change they did not ask for.
+  // No stored draft: this knowledge base has no v1/v2 work to lose, so it starts
+  // straight into v3. `draftHash === null` is the wire's own statement that no
+  // draft is stored -- `parseGeoKbEditorViewV2` refuses any view where it
+  // disagrees with `draftVersion === 0`, so the two cannot drift apart here.
   //
-  // `draftHash === null` is the wire's own statement that no draft is stored:
-  // `parseGeoKbEditorViewV2` refuses any view where it disagrees with
-  // `draftVersion === 0`, so the two cannot drift apart here. `frozen === null`
-  // is the other half and is not decoration -- a v3 draft standing over a v1/v2
-  // published version is refused by the v3 loader (`v3_predecessor_unsupported`),
-  // so starting one on top of a published legacy version would answer 503 for
-  // that knowledge base from then on, permanently.
-  if (card.initialView.draftHash === null && card.initialView.frozen === null) {
+  // A published version no longer disqualifies it. That half of the condition
+  // was here because the v3 loader answered `v3_predecessor_unsupported` for a
+  // v3 draft standing over a v1/v2 version, which was a permanent 503 for that
+  // knowledge base. The loader now reports such a version as `opaque` instead,
+  // so the pair is a working state and the published version stays exactly what
+  // AI Visibility and Brief read until a v3 publish supersedes it.
+  if (card.initialView.draftHash === null) {
     return <GeoKbV3StartCard view={card.initialView} locale={card.locale} inline={card.inline ?? false} onStarted={onStarted} />;
   }
-  return <GeoKnowledgeBaseV2Card {...card} />;
+  // A stored v1/v2 draft holds work. It keeps the card that can read it, and the
+  // move to v3 is offered there as a named gesture that says what it discards --
+  // never taken on the owner's behalf by a format change they did not ask for.
+  return <GeoKnowledgeBaseV2Card {...card} onUpgraded={onStarted} />;
 }
 
 /**
@@ -213,6 +219,8 @@ function GeoKbV3StartCard({ view, locale, inline, onStarted }: {
 
 interface GeoKnowledgeBaseV2CardProps extends GeoKnowledgeBaseShellProps {
   readonly initialView: GeoKbEditorViewV2;
+  /** Re-read this knowledge base: the upgrade replaces it with a v3 draft. */
+  readonly onUpgraded: () => void;
 }
 
 /**
@@ -232,8 +240,10 @@ interface GeoKnowledgeBaseV2CardProps extends GeoKnowledgeBaseShellProps {
  * catalog: shipped copy that the catalog does not hold cannot be reviewed, and
  * it left three catalog keys orphaned behind it.
  */
-function GeoKnowledgeBaseV2Card({ inline = false, ...props }: GeoKnowledgeBaseV2CardProps) {
+function GeoKnowledgeBaseV2Card({ inline = false, onUpgraded, ...props }: GeoKnowledgeBaseV2CardProps) {
   const editor = useGeoKbV2Editor(props), { view, payload } = editor;
+  const [upgrade, setUpgrade] = useState<"idle" | "busy" | "error" | "unconfirmed">("idle");
+  const upgrading = useRef(false);
   const t = geoKbV2EditorCopy(props.locale), c = geoKbV2Copy(props.locale), te = useTranslations("tools.geoKnowledgeBase.editor");
   const customer = useGeoKbCopy().state;
   const frozen = view.frozen;
@@ -246,6 +256,52 @@ function GeoKnowledgeBaseV2Card({ inline = false, ...props }: GeoKnowledgeBaseV2
   const stopped = editor.build?.stoppedAt != null || editor.confirm?.stoppedAt != null || editor.status.kind === "error" || generationKinds.some(kind => view.generations[kind]?.state === "failed");
   const state = editor.building || hasRunning ? "running" : hasUnknown ? "pending" : stopped ? "failed" : current ? "current" : frozen === null ? "none" : "stale";
   const statusText = state === "running" ? customer.running : state === "pending" ? customer.pending : state === "failed" ? frozen === null ? customer.failedEmpty : customer.failed : state === "current" ? customer.current : state === "none" ? customer.empty : customer.stale;
+  /**
+   * The one-way move to the redesigned knowledge base.
+   *
+   * It discards this draft -- a v1/v2 draft holds accepted facts and reviewed
+   * roles the v3 generation input has no field for -- and the next update is
+   * billed again, because only a paid run can fill a v3 body. The note beside
+   * the button says both before it is pressed; the route requires this draft's
+   * digest as the acknowledgement, so a press cannot be made by anything that
+   * was not shown the draft it is discarding.
+   */
+  async function startUpgrade() {
+    if (upgrading.current || view.draftHash === null) return;
+    upgrading.current = true;
+    setUpgrade("busy");
+    const result = await upgradeGeoKbToV3({ kbId: view.kbId, baseVersion: view.draftVersion, draftHash: view.draftHash });
+    // `draft_exists` means another tab got there first, and `conflict` means
+    // this draft moved. Both are answered by re-reading, which shows whatever is
+    // actually stored -- not by leaving a button that can only be refused.
+    if (result.ok || result.code === "draft_exists" || result.code === "conflict") {
+      onUpgraded();
+      return;
+    }
+    upgrading.current = false;
+    /*
+     * Two different failures, because they leave the owner in two different
+     * places -- and the list below is an allow-list on purpose.
+     *
+     * These are the refusals `kb-v3-draft-create.ts` decides BEFORE `saveDraft`
+     * runs (:791 through :989, plus :1003's `input_locked`, which is the store
+     * declining to write): nothing was replaced, so "nothing was changed" is a
+     * fact and a retry is a real offer. Everything else falls to `unconfirmed`,
+     * including `store_unavailable` -- which the route also returns from :1015
+     * and :1050, AFTER the write that discards the v1/v2 draft -- `network`,
+     * `bad_response`, and any code nobody has thought of yet. This is a one-way
+     * gesture, so an unrecognised code must not be answered with an assurance:
+     * telling the owner nothing changed when the move did go through hides both
+     * the discarded draft and the fact that the next update is billed.
+     */
+    const nothingWritten = new Set([
+      "invalid_request", "not_found", "legacy_draft", "generation_running",
+      "website_not_found", "profile_not_confirmed", "profile_unusable",
+      "draft_invalid", "input_changed",
+    ]);
+    setUpgrade(nothingWritten.has(result.code) ? "error" : "unconfirmed");
+  }
+
   return <GeoKbCard
     data-geo-kb-v2={true}
     host={view.host}
@@ -261,6 +317,21 @@ function GeoKnowledgeBaseV2Card({ inline = false, ...props }: GeoKnowledgeBaseV2
       ? <span className="block text-[12px] leading-relaxed text-text-dark-secondary">{te("generateCost")}</span>
       : <span data-generation-language-warning role="status" className="block text-[12px] leading-relaxed text-brand-error">{unsupportedLanguage}</span>}
   >
+    <div data-kb-upgrade-v3="" className="min-w-0 space-y-2 rounded-card border border-brand-border-card bg-brand-panel p-4">
+      <p className="text-[13px] leading-relaxed text-text-dark-secondary">{te("upgradeNote")}</p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        data-upgrade-v3=""
+        disabled={upgrade === "busy" || editor.busy || editor.building}
+        onClick={() => void startUpgrade()}
+      >{te("upgrade")}</Button>
+      {upgrade === "error" || upgrade === "unconfirmed"
+        ? <p role="alert" className="text-[13px] leading-relaxed text-brand-error">{te(upgrade === "unconfirmed" ? "upgradeUnconfirmed" : "upgradeFailed")}</p>
+        : null}
+    </div>
+
     {editor.status.kind === "error" ? <p role="alert" className="text-[13px] text-brand-error">{editor.status.code === "invalid_input" ? customer.invalid : editor.status.code === "input_stale" ? customer.sourceChanged : editor.status.code === "generation_running" ? customer.running : editor.status.code === "unsupported_language" ? unsupportedLanguageAfterStart : customer.error}</p> : null}
 
     {editor.copyStale ? <p role="status" className="text-[13px] text-brand-error">{customer.sourceChanged}</p> : null}

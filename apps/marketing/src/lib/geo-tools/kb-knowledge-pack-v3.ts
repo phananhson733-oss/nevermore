@@ -33,7 +33,6 @@ import {
   type GeoPackDecision,
 } from "./kb-knowledge-pack-v2-contract.ts";
 import {
-  GEO_ENTITY_FIELD_PATHS,
   GEO_ENTITY_REMOVABLE_PATHS,
   type GeoEntityRemovablePath,
   GEO_EVIDENCE_GROUPS,

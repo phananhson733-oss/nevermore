@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { geoItemKey } from "./kb-item-key.ts";
-import {
-  assembleGeoKnowledgeBodyV3,
-  GEO_REVIEW_PERIOD_MS,
-} from "./kb-knowledge-assemble.ts";
+import { assembleGeoKnowledgeBodyV3 } from "./kb-knowledge-assemble.ts";
 import {
   assembledPayload,
   assembleFixture,
@@ -95,8 +92,16 @@ describe("assembleGeoKnowledgeBodyV3", () => {
 
   it("dates the next review 90 days after the observation the fact rests on", () => {
     const fact = facts(assembleFixture().knowledge)[0];
-    expect(fact?.observedAt).toBe(V2_AT);
-    expect(fact?.nextReviewAt).toBe(new Date(Date.parse(V2_AT) + GEO_REVIEW_PERIOD_MS).toISOString());
+    if (fact === undefined) throw new Error("expected an assembled fact");
+    // Both dates are literals against a fixed observation time. Deriving the
+    // expected date from GEO_REVIEW_PERIOD_MS would only prove the constant
+    // equals itself, so shortening the period to 30 days would still pass.
+    expect(V2_AT).toBe("2026-09-04T07:11:15.461Z");
+    expect(fact.observedAt).toBe("2026-09-04T07:11:15.461Z");
+    expect(fact.nextReviewAt).toBe("2026-12-03T07:11:15.461Z");
+    // Stated once more as arithmetic, so the interval is pinned as a number of
+    // days and not only as a pair of dates someone could recompute together.
+    expect((Date.parse(fact.nextReviewAt ?? "") - Date.parse(fact.observedAt ?? "")) / 86_400_000).toBe(90);
   });
 
   it("carries the site's own question-and-answer markup as observed items", () => {
@@ -129,9 +134,18 @@ describe("assembleGeoKnowledgeBodyV3", () => {
   it("says which evidence groups were never collected, rather than showing them empty", () => {
     const withoutOffsite = assembleFixture().knowledge.evidence;
     if (withoutOffsite.status === "unavailable") throw new Error("evidence unavailable");
-    expect(withoutOffsite.value.collected).toEqual(["proof", "changelog"]);
+    // No page body was parsed in this bundle, and a changelog item can only come
+    // from a link a page named. "Collected" here would be the card's
+    // "Collected · nothing found" about a group nothing could have found.
+    expect(withoutOffsite.value.collected).toEqual(["proof"]);
     if (withoutOffsite.status !== "partial") throw new Error("evidence should be partial");
     expect(withoutOffsite.limitation).toContain("press");
+
+    // With a page read, its links WERE looked through, so the group is
+    // collected and an empty result is a real finding.
+    const withPage = assembleFixture({ faq: [{ question: "Is it free?", answer: "There is a free tier." }] }).knowledge.evidence;
+    if (withPage.status === "unavailable") throw new Error("evidence unavailable");
+    expect(withPage.value.collected).toContain("changelog");
 
     const withOffsite = assembleFixture({ offsite: assemblyOffsite() }).knowledge.evidence;
     if (withOffsite.status === "unavailable") throw new Error("evidence unavailable");
@@ -153,7 +167,7 @@ describe("assembleGeoKnowledgeBodyV3", () => {
     }).knowledge.evidence;
     if (evidence.status !== "partial") throw new Error("evidence should be partial");
     expect(evidence.value.collected).not.toContain("press");
-    expect(evidence.limitation).toContain("Not collected in this run: press, firstPartyProof.");
+    expect(evidence.limitation).toContain("Not collected in this run: changelog, press, firstPartyProof.");
     expect(evidence.limitation).toContain("2 off-site page(s) were fetched but could not be read (fetch_failed).");
     // Those pages were reached. Reporting them as unreached would name the
     // wrong failure, and the wrong fix.

@@ -374,9 +374,24 @@ export async function collectGeoOffsiteEvidence(
   // overflow used to reach `incomplete`, so a run whose every read failed
   // reported nothing missing and the evidence module stayed `available`.
   const readFailures = new Map<GeoUnavailableReason, number>();
+  /**
+   * Our own crawl allowance refusing is not a page that answered badly.
+   *
+   * `rate_limited` comes from `openCrawlGate` declining before a byte leaves
+   * this process, so the candidate was never reached. Counted with the read
+   * failures it reaches the card as "N off-site page(s) were fetched but could
+   * not be read (rate_limited)" -- a sentence about a fetch that never
+   * happened, blaming the other site for our quota. It belongs with the
+   * candidates no request was sent for.
+   */
+  let refusedByOurQuota = 0;
   for (const entry of fetched) {
     if (entry.source.availability === "available" || entry.source.reason === null) continue;
+    if (entry.source.reason === "rate_limited") { refusedByOurQuota += 1; continue; }
     readFailures.set(entry.source.reason, (readFailures.get(entry.source.reason) ?? 0) + 1);
+  }
+  if (refusedByOurQuota > 0) {
+    incomplete.push({ stage: "landing_pages", reason: "rate_limited", pending: refusedByOurQuota });
   }
   for (const [reason, pending] of [...readFailures]
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "en"))
@@ -432,7 +447,9 @@ export async function collectGeoOffsiteEvidence(
       costUsd: serp.costUsd,
       unpricedSerpQueries: serp.unpricedQueries,
       pagesFetched: readable.length,
-      pagesUnreadable: fetched.length - readable.length,
+      // Gate refusals are not unreadable pages: nothing was sent, so they are
+      // reported as candidates no request was made for (see `refusedByOurQuota`).
+      pagesUnreadable: fetched.length - readable.length - refusedByOurQuota,
       elapsedMs: clock() - startedAt,
     },
   };

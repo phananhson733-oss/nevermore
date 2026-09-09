@@ -836,6 +836,24 @@ interface Claim {
   readonly sourceRefs: readonly string[];
   /** True when the claim is about the product itself and needs own-site evidence. */
   readonly productEvidence: boolean;
+  /**
+   * Cited sources that may back a number in this claim beyond the product's own.
+   *
+   * "Needs product evidence" and "where a number is allowed to come from" are
+   * two different questions, and answering them with one flag is what made a
+   * correct comparison impossible to state. Section 2 R4 requires a comparison
+   * to name the competitor and carry evidence on BOTH sides; a QA that does
+   * exactly that -- "we support teams of 2, Rival lists 5" -- cites the rival's
+   * page for the 5, and checking its numbers against own-site excerpts alone
+   * then rejects the entire model output as `schema_invalid`, discarding every
+   * other fact, definition and answer from a paid call.
+   *
+   * Only the sources whose competitor identity was already checked against a
+   * competitor the text actually names go in here. A cited page for a
+   * competitor the text never mentions stays out: a number that appears only
+   * there is still unsupported.
+   */
+  readonly numericSourceIds: readonly string[];
 }
 
 /**
@@ -861,9 +879,14 @@ function assertNarrativeIntegrity(value: GeoKnowledgeNarrativeV2, input: GeoKnow
   const displayText: string[] = [];
   const itemKeys: string[] = [];
   const claims: Claim[] = [];
-  const add = (item: { id: string; sourceRefs: readonly string[] }, productEvidence: boolean, ...values: (string | null)[]) => {
+  const add = (
+    item: { id: string; sourceRefs: readonly string[] },
+    productEvidence: boolean,
+    numericSourceIds: readonly string[],
+    ...values: (string | null)[]
+  ) => {
     ids.push(item.id);
-    claims.push({ text: values.filter((entry): entry is string => entry !== null), sourceRefs: item.sourceRefs, productEvidence });
+    claims.push({ text: values.filter((entry): entry is string => entry !== null), sourceRefs: item.sourceRefs, productEvidence, numericSourceIds });
   };
   const mentionedCompetitors = (texts: readonly string[]) =>
     input.confirmedCompetitors.filter((competitor) => texts.some((entry) => mentions(entry, competitor)));
@@ -875,7 +898,7 @@ function assertNarrativeIntegrity(value: GeoKnowledgeNarrativeV2, input: GeoKnow
   ].filter((entry): entry is string => entry !== null);
   if (mentionedCompetitors(entityText).length > 0) throw new Error("Competitor mention is not allowed in entity narrative");
   displayText.push(...entityText);
-  claims.push({ text: entityText, sourceRefs: value.entity.sourceRefs, productEvidence: true });
+  claims.push({ text: entityText, sourceRefs: value.entity.sourceRefs, productEvidence: true, numericSourceIds: [] });
 
   for (const fact of value.facts) {
     const factText = [fact.statement, fact.label, fact.value, fact.subject, fact.attribute, ...fact.qualifiers]
@@ -887,7 +910,7 @@ function assertNarrativeIntegrity(value: GeoKnowledgeNarrativeV2, input: GeoKnow
     // set entirely, silently merging a qualified fact with an unqualified one.
     for (const qualifier of fact.qualifiers) assertIdentityPart(qualifier, "fact qualifier");
     itemKeys.push(keyOf({ module: "facts", type: fact.type, subject: fact.subject, attribute: fact.attribute, qualifiers: fact.qualifiers }));
-    add(fact, true, ...factText);
+    add(fact, true, [], ...factText);
     displayText.push(fact.statement);
   }
 
@@ -897,24 +920,31 @@ function assertNarrativeIntegrity(value: GeoKnowledgeNarrativeV2, input: GeoKnow
     // repeat the question verbatim.
     const qaText = [qa.question, qa.canonicalQuestion, ...qa.variants, qa.directAnswer, ...(qa.expansion === null ? [] : [qa.expansion])];
     const named = mentionedCompetitors(qaText);
+    // Built while the identity check runs, so the numbers a comparison is
+    // allowed to cite are exactly the pages this loop just proved belong to a
+    // competitor the text names -- never a wider set, and never a set assembled
+    // somewhere else that could drift from what was checked here.
+    const namedCompetitorSourceIds: string[] = [];
     if (named.length > 0) {
       if (qa.intent !== "comparison" && qa.intent !== "alternative") throw new Error("Competitor mention requires comparison or alternative QA");
       for (const competitor of named) {
-        if (!qa.sourceRefs.some((reference) => {
+        const matching = qa.sourceRefs.filter((reference) => {
           const source = sources.get(reference);
           return source?.kind === "competitor_page" && source.competitor?.key === competitor.key && source.competitor.name === competitor.name;
-        })) throw new Error("Competitor mention requires matching competitor evidence");
+        });
+        if (matching.length === 0) throw new Error("Competitor mention requires matching competitor evidence");
+        namedCompetitorSourceIds.push(...matching);
       }
     }
     assertIdentityPart(qa.canonicalQuestion, "canonical question");
     itemKeys.push(keyOf({ module: "qa", intent: qa.intent, canonicalQuestion: qa.canonicalQuestion }));
-    add(qa, true, ...qaText);
+    add(qa, true, namedCompetitorSourceIds, ...qaText);
     displayText.push(qa.question, ...qa.variants, qa.directAnswer, ...(qa.expansion === null ? [] : [qa.expansion]));
   }
 
   if (!unique(value.comparisons.map((comparison) => comparison.competitor.key))) throw new Error("Duplicate competitor comparison");
   for (const comparison of value.comparisons) {
-    add(comparison, false, comparison.competitor.name, comparison.verdict);
+    add(comparison, false, [], comparison.competitor.name, comparison.verdict);
     displayText.push(comparison.verdict);
     const confirmed = input.confirmedCompetitors.find((candidate) => candidate.key === comparison.competitor.key);
     if (confirmed?.name !== comparison.competitor.name) throw new Error("Unconfirmed or mismatched competitor");
@@ -927,7 +957,7 @@ function assertNarrativeIntegrity(value: GeoKnowledgeNarrativeV2, input: GeoKnow
     for (const row of comparison.rows) {
       assertIdentityPart(row.dimension, "comparison dimension");
       itemKeys.push(keyOf({ module: "comparisons", competitorKey: comparison.competitor.key, dimension: row.dimension }));
-      add(row, false, row.dimension, row.product, row.competitor);
+      add(row, false, [], row.dimension, row.product, row.competitor);
       const rowSources = row.sourceRefs.map((reference) => sources.get(reference));
       if (row.product !== null && !rowSources.some((source) => source?.kind === "own_page")) throw new Error("Unsupported comparison row evidence");
       if (row.competitor !== null && !rowSources.some(matchesCompetitor)) throw new Error("Unsupported comparison row evidence");
@@ -939,7 +969,7 @@ function assertNarrativeIntegrity(value: GeoKnowledgeNarrativeV2, input: GeoKnow
       if (mentionedCompetitors([item.text]).length > 0) throw new Error("Competitor mention is not allowed in scope");
       assertIdentityPart(item.text, "scope statement");
       itemKeys.push(keyOf({ module: "scope", kind, statement: item.text }));
-      add(item, true, item.text);
+      add(item, true, [], item.text);
       displayText.push(item.text);
     }
   }
@@ -969,8 +999,16 @@ function assertNarrativeIntegrity(value: GeoKnowledgeNarrativeV2, input: GeoKnow
     }
     const productSources = present.filter((source) => source.kind === "own_page" || source.kind === "accepted_fact");
     if (claim.productEvidence && productSources.length === 0) throw new Error("Product evidence is required");
-    const excerpts = (claim.productEvidence ? productSources : present).flatMap((source) => source.excerpts);
-    if (!geoLiteralsAllSupported(claim.text, excerpts)) throw new Error("Unsupported numeric claim");
+    // The product's own pages, plus whichever cited pages the claim was allowed
+    // to take a number from -- for a comparison QA, the named competitor's own
+    // page. Everything else stays out: a robots.txt or a sitemap this claim
+    // happens to cite is not where a price comes from.
+    const numericSources = claim.productEvidence
+      ? [...productSources, ...present.filter((source) => claim.numericSourceIds.includes(source.id))]
+      : present;
+    if (!geoLiteralsAllSupported(claim.text, numericSources.flatMap((source) => source.excerpts))) {
+      throw new Error("Unsupported numeric claim");
+    }
   }
 }
 

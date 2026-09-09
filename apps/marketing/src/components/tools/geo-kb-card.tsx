@@ -45,7 +45,12 @@ export interface GeoKbPublishPlan {
   readonly nextVersion: string;
   /** Null for a first publish: there is no previous version to compare with. */
   readonly previousVersion: string | null;
-  readonly changeCount: number;
+  /**
+   * How many items differ from the published version, or null when that version
+   * records no per-item decisions -- a v1/v2 predecessor. Null is not zero: the
+   * card says the count cannot be given rather than giving a wrong one.
+   */
+  readonly changeCount: number | null;
   readonly itemCount: number;
   /** Items still `pending`, which publish as accepted in bulk rather than confirmed. */
   readonly pendingCount: number;
@@ -72,11 +77,19 @@ export interface GeoKbPublishedSummary {
    * one back in is a type error instead of a rendered lie.
    */
   readonly counts: {
-    readonly facts: number;
-    readonly accepted: number;
-    readonly qa: number;
-    readonly available: number;
-    readonly comparisons: number;
+    /**
+     * `null` where the run never measured that module, which is not zero.
+     *
+     * Read through `geoKbModuleValue`, an `unavailable` module hands back an
+     * empty list and every count it feeds becomes `0` -- and "Facts 0" in a
+     * summary reads as "we looked and found none", the same stronger claim the
+     * absent off-site count above refuses to make. `null` drops the clause
+     * instead, and the module's own three-state notice, one Edit away, says
+     * which of the two it is.
+     */
+    readonly facts: { readonly facts: number; readonly accepted: number } | null;
+    readonly qa: { readonly qa: number } | null;
+    readonly comparisons: { readonly available: number; readonly comparisons: number } | null;
   };
   readonly onEdit: () => void;
   readonly onView?: () => void;
@@ -201,7 +214,12 @@ function PublishBox({ plan, copy }: { readonly plan: GeoKbPublishPlan; readonly 
     <span data-kb-publish-changes="" className="block text-[13px] leading-relaxed text-text-dark-secondary">
       {plan.previousVersion === null
         ? copy.publish.firstVersion(plan.itemCount)
-        : copy.publish.changes(plan.changeCount, plan.previousVersion)}
+        // A count of null is not a count of zero. The previous version was made
+        // by the contract this one replaces and records no per-item decisions,
+        // so it is named and dated without a number attached to it.
+        : plan.changeCount === null
+          ? copy.publish.changesUncountable(plan.itemCount, plan.previousVersion)
+          : copy.publish.changes(plan.changeCount, plan.previousVersion)}
     </span>
     <span data-kb-publish-pending="" className="block text-[13px] leading-relaxed text-text-dark-secondary">
       {plan.pendingCount === 0 ? copy.publish.noPending : copy.publish.pending(plan.pendingCount)}
@@ -219,11 +237,6 @@ function PublishedSummary({ summary, locale, copy }: {
   readonly copy: GeoKbCopy;
 }) {
   const id = useId();
-  // Read straight from the catalog rather than through `useGeoKbCopy`, as the
-  // measurement section does above: that object's `published.counts` still
-  // takes a third-party count this card no longer has, and routing through it
-  // would demand a number nothing can supply truthfully.
-  const t = useTranslations("tools.geoKnowledgeBase.card");
   return <div
     role="region"
     aria-labelledby={id}
@@ -246,7 +259,20 @@ function PublishedSummary({ summary, locale, copy }: {
     <h2 id={id} className="min-w-0 break-words text-[20px] font-semibold text-text-dark-primary [overflow-wrap:anywhere]">{summary.name}</h2>
     <span className="block break-all font-mono text-[12px] text-text-dark-secondary">{summary.host}</span>
     <span data-kb-published-counts="" className="block text-[13px] leading-relaxed text-text-dark-secondary">
-      {t("published.counts", { ...summary.counts, date: geoKbFormatDate(summary.publishedAt, locale) })}
+      {/* Through `useGeoKbCopy` like every other string on this card: its
+          `published.counts` asks for exactly the fields this summary holds.
+          Dropping an unmeasured module's clause is decided here, not by the
+          route the string travels -- a clause that is `null` is never built,
+          so no number is invented for a section nobody looked at. Joined
+          rather than templated for that reason; the separator is the one
+          every catalog used inside the single sentence this replaced, and the
+          date closes the line whether or not any clause survived. */}
+      {[
+        summary.counts.facts === null ? null : copy.published.counts.facts(summary.counts.facts),
+        summary.counts.qa === null ? null : copy.published.counts.qa(summary.counts.qa),
+        summary.counts.comparisons === null ? null : copy.published.counts.comparisons(summary.counts.comparisons),
+        geoKbFormatDate(summary.publishedAt, locale),
+      ].filter((clause) => clause !== null).join(" · ")}
     </span>
   </div>;
 }

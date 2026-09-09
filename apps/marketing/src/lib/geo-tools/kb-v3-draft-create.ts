@@ -111,7 +111,6 @@
  */
 import { z } from "zod";
 
-import { geoGenerationLanguage } from "@sf/public-tools/content-brief/geo-contract";
 
 import type { ServerAuthenticatedUser } from "../auth/server-auth-user.ts";
 import {
@@ -142,8 +141,16 @@ import type { GeoKbV3SaveOutcome } from "./kb-v3-store.ts";
  * card has to be able to say before the owner pays for a step that cannot work.
  */
 export const GEO_KB_V3_DRAFT_BLOCKERS = [
-  /** The question step follows the English registry; nothing else can be asked. */
-  "unsupported_language",
+  /*
+   * `unsupported_language` used to be here, and is deliberately gone.
+   *
+   * Design decision D8: the knowledge body follows the site's own language, and
+   * only the QUESTION SET keeps the English registry. A v3 draft has no question
+   * set at all -- no run in this deployment has a questions step -- so a
+   * non-English site was being stopped from the one thing it could actually do.
+   * The absent question set is stated at publish time instead, with the reason
+   * that is true for that site (`kb-v3-publish-handler.ts`).
+   */
   /**
    * The knowledge synthesis input requires at least one category term
    * (`kb-knowledge-synthesis-v2-contract.ts`), and a GEO probe with no category
@@ -303,7 +310,6 @@ export function buildGeoKbV3Identity(seed: GeoKbV3IdentitySeed): GeoKbV3Identity
   if (!identity.success) return { kind: "unusable", fields: refusedFields(identity.error.issues) };
 
   const blockers: GeoKbV3DraftBlocker[] = [];
-  if (geoGenerationLanguage(language) === null) blockers.push("unsupported_language");
   if (categoryTerms.length === 0) blockers.push("category_terms_missing");
   return {
     kind: "ok",
@@ -646,7 +652,33 @@ const relockRequestSchema = z
   })
   .strict();
 
-const requestSchema = z.union([createRequestSchema, relockRequestSchema]);
+/**
+ * The one-way upgrade of a v1/v2 draft, named for the same reason a re-lock is.
+ *
+ * Section 4.4's table at §234(c) asks for this by name -- "astrologywiki 现有
+ * v2 草稿升不到 v3；S1 要允许 v2 → v3 升级路径" -- and the database half has been
+ * open since `20260907143000_geo_kb_v3.sql:266`, where `marketing_geo_save_kb_draft`
+ * permits a declared v3 save to drop `profileCopy` precisely because "a declared
+ * V3 save is the intended, one-way upgrade". Nothing on this side ever asked.
+ *
+ * It discards what the old draft holds. A v1/v2 draft carries accepted facts
+ * and reviewed roles that a v3 `generationInput` has no field for, and the v3
+ * body starts empty because only a paid run can fill it -- so the next update
+ * is billed again. That is why the intent is named and why `draftHash` is
+ * required: a caller cannot produce the digest of the draft it is about to
+ * discard without having been shown that draft, and the card says what is lost
+ * before it offers the gesture.
+ */
+const upgradeRequestSchema = z
+  .object({
+    kbId: z.string().uuid(),
+    intent: z.literal("upgrade"),
+    baseVersion: z.number().int().positive().refine(Number.isSafeInteger),
+    draftHash: z.string().regex(/^[a-f0-9]{64}$/u),
+  })
+  .strict();
+
+const requestSchema = z.union([createRequestSchema, relockRequestSchema, upgradeRequestSchema]);
 
 const responseSchema = z
   .object({
@@ -784,25 +816,61 @@ export async function handleGeoKbV3DraftCreate(
     let target: GeoKbV3RelockTarget | null = null;
     if ("intent" in asked) {
       /**
-       * A re-lock replaces a draft; it never creates one. Three refusals, three
-       * different next steps: there is nothing here to re-lock, what is here is
-       * a v1/v2 draft no upgrade path exists for, or somebody wrote while this
-       * caller was looking at an older version.
+       * Both named intents replace a draft; neither ever creates one. Three
+       * refusals, three different next steps: there is nothing here to act on,
+       * what is here is the wrong schema for the intent that was named, or
+       * somebody wrote while this caller was looking at an older version.
        */
       if (existing === null) return privateError("not_found", 404);
       const stored = existing.payload;
-      if (!isGeoKbPayloadV3Value(stored)) {
-        return privateJson({ error: { code: "legacy_draft" }, draftVersion: existing.draftVersion }, 409);
+      // The compare-and-swap both intents share. Stated once, before either
+      // branch, so neither can be written without it.
+      const stale = existing.draftVersion !== asked.baseVersion || existing.contentHash !== asked.draftHash;
+      if (asked.intent === "upgrade") {
+        // Never over a v3 draft: that would throw away paid knowledge and every
+        // decision the owner made about it, which is the re-lock's own,
+        // separately-worded gesture and not this one.
+        if (isGeoKbPayloadV3Value(stored)) {
+          return privateJson({ error: { code: "draft_exists" }, draftVersion: existing.draftVersion }, 409);
+        }
+        /**
+         * A published version is not a reason to refuse, and used to be.
+         *
+         * The refusal existed because `kb-editor-loader.ts` answered
+         * `v3_predecessor_unsupported` for a v3 draft standing over a v1/v2
+         * version -- a 503 for the whole knowledge base, with no gesture that
+         * undoes it. The loader now reports such a version as `opaque` instead:
+         * named, dated, and carrying no decision map to diff against. Since
+         * every owner who has ever published did so under v1/v2, keeping the
+         * refusal here would have meant the redesign was reachable only by
+         * knowledge bases that had never been used.
+         */
+        if (stale) return privateJson({ error: { code: "conflict" }, draftVersion: existing.draftVersion }, 409);
+        /**
+         * Nothing to carry over, and `target` deliberately stays null.
+         *
+         * The v1/v2 payload's `profileCopy` is replaced by the `profileRef`
+         * built below from the confirmed Profile -- the same one a fresh v3
+         * draft gets -- and its facts and roles have no v3 home. A null target
+         * is what makes the rest of this route build the new draft from
+         * scratch, which is the intent. It also skips the re-lock no-op guard,
+         * correctly: that guard reads `target.payload.generationInput`, and an
+         * upgrade has no stored v3 reference to compare against.
+         */
+      } else {
+        // A re-lock rebuilds a v3 generation input; a v1/v2 payload has no
+        // fields for it to rebuild from.
+        if (!isGeoKbPayloadV3Value(stored)) {
+          return privateJson({ error: { code: "legacy_draft" }, draftVersion: existing.draftVersion }, 409);
+        }
+        if (stale) return privateJson({ error: { code: "conflict" }, draftVersion: existing.draftVersion }, 409);
+        target = {
+          payload: stored,
+          draftVersion: existing.draftVersion,
+          contentHash: existing.contentHash,
+          updatedAt: existing.updatedAt,
+        };
       }
-      if (existing.draftVersion !== asked.baseVersion || existing.contentHash !== asked.draftHash) {
-        return privateJson({ error: { code: "conflict" }, draftVersion: existing.draftVersion }, 409);
-      }
-      target = {
-        payload: stored,
-        draftVersion: existing.draftVersion,
-        contentHash: existing.contentHash,
-        updatedAt: existing.updatedAt,
-      };
     } else if (existing !== null) {
       // Three distinct refusals again, because three different things have to
       // happen next. A v3 draft holds paid knowledge and the owner's decisions;
@@ -824,43 +892,27 @@ export async function handleGeoKbV3DraftCreate(
         },
         409,
       );
-    } else if (owned.frozen !== null) {
-      /**
-       * A published version, and no draft standing over it.
-       *
-       * This is the refusal that was only ever made in the browser.
-       * `geo-knowledge-base-v2.tsx` offers the start gesture on
-       * `draftHash === null && frozen === null`; this route checked only the
-       * first half, so a create arriving with a published version and no draft
-       * was granted. What it grants is not recoverable: if that version is
-       * v1/v2, `kb-editor-loader.ts` refuses the pair with
-       * `v3_predecessor_unsupported` -- a 503 for that knowledge base from then
-       * on, with no gesture that undoes it, because the create path itself is
-       * the only writer and it will answer `draft_exists` forever after.
-       *
-       * Refused for a published version of ANY schema, not just a legacy one,
-       * and that is deliberate rather than lazy. The summary carries no schema
-       * version (`VersionedGeoKbFrozenSummary` is a pointer, a revision, two
-       * hashes and a count), so telling the two apart here would mean reading
-       * the frozen payload -- a dependency this route does not have and that
-       * nothing would supply. The asymmetry decides it: refusing a create over
-       * a v3 published version costs an owner one confusing 409, and granting
-       * one over a legacy version costs them the knowledge base. Nothing
-       * produces the v3 half of that choice today anyway -- `publishGeoKbV3`
-       * leaves the draft in place and no path deletes a draft row, so a
-       * knowledge base with a published version and no draft is not a state
-       * this deployment writes.
-       *
-       * Its own code, because the next step differs from both draft refusals:
-       * there is nothing here to load and nothing to convert, and the answer
-       * will not change by reloading or by asking again.
-       *
-       * No `draftVersion` on the body. The other two refusals carry the version
-       * of the draft they found; there is no draft here, and a number in that
-       * field would read as one.
-       */
-      return privateError("published_version_exists", 409);
     }
+
+    /**
+     * A published version and no draft falls through to the create below, and
+     * used to be refused with `published_version_exists`.
+     *
+     * That refusal existed for one reason: `kb-editor-loader.ts` answered
+     * `v3_predecessor_unsupported` for a v3 draft standing over a v1/v2
+     * version, so granting a create left that knowledge base returning 503 with
+     * no gesture that undid it -- this route is the only writer and would
+     * answer `draft_exists` forever after. The loader now reports such a
+     * version as `opaque`: named, dated, and carrying no decision map to diff
+     * against. The pair is a working state, so this is an ordinary first v3
+     * draft standing over whatever was published before. Since every owner who
+     * has ever published did so under v1/v2, keeping the refusal would have
+     * left the redesign reachable only by knowledge bases nobody had used.
+     *
+     * The published version itself is untouched either way: it stays what AI
+     * Visibility and Brief read until a v3 publish supersedes it.
+     */
+
 
     // A dispatched generation is bound to the hash this call is about to move.
     // Releasing the ids under it would leave a request in flight that no draft

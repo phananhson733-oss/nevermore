@@ -70,6 +70,32 @@ describe("GEO knowledge synthesis prompt v2", () => {
     expect(prompt.user).toBe(canonicalJson(input as unknown as GeoCanonicalValue));
     expect(JSON.parse(prompt.user)).toEqual(input);
   });
+
+  /**
+   * D8: the knowledge body follows the site's own language.
+   *
+   * The instruction has to name the site's tag, because the alternative the
+   * prompt had before was naming no language at all -- and the caller then
+   * refused every non-English site rather than letting the model pick.
+   */
+  it("tells the model to write the reader-facing strings in the site's own language", () => {
+    // Named through the input's own field rather than interpolated, so the
+    // instruction and the data cannot disagree and the request envelope stays
+    // one size for every site.
+    expect(GEO_KNOWLEDGE_SYNTHESIS_V2_SYSTEM_PROMPT)
+      .toContain("Write every reader-facing string in the language named by the input's language field");
+    // Protocol stays English. A translated `schemaVersion` or `reason` code is
+    // an invalid response, not a localised one.
+    expect(GEO_KNOWLEDGE_SYNTHESIS_V2_SYSTEM_PROMPT)
+      .toContain("Field names, schemaVersion, reason codes and source IDs are protocol, not prose: write them exactly as the response schema spells them, in English.");
+    // And numbers are never restated, in any language.
+    expect(GEO_KNOWLEDGE_SYNTHESIS_V2_SYSTEM_PROMPT)
+      .toContain("Do not translate a number, a proper name, or a quoted excerpt.");
+    // The language really is in the user turn, so "the input's language field"
+    // names something the model can read.
+    const input = { ...geoV2SynthesisInputFixture(), language: "zh-CN" };
+    expect(JSON.parse(buildGeoKnowledgeSynthesisV2Prompt(input).user).language).toBe("zh-CN");
+  });
 });
 
 describe("GEO knowledge synthesis response schema v2", () => {

@@ -113,15 +113,17 @@ describe("one runtime entry point for both editor formats", () => {
       questionSet: null, questionSetHash: null, questionCount: null }, context: null, completeness: "complete", knowledgePack: null } });
 
     const value = await runtime.loadEditorAny({ userId: USER, url: "https://example.com" });
-    expect(value).toMatchObject({ kind: "ok", value: { published: { revision: 1, contentHash: snapshot.contentHash } } });
+    expect(value).toMatchObject({ kind: "ok", value: { published: { kind: "comparable", revision: 1, contentHash: snapshot.contentHash } } });
     if (value.kind !== "ok" || !("schemaVersion" in value.value) || value.value.schemaVersion !== "marketing-geo-kb-editor.v3") throw new Error("Expected the v3 review view");
-    expect(value.value.published?.decisions[FACT_KEY_PRO]).toBe("excluded");
+    const published = value.value.published;
+    if (published === null || published.kind !== "comparable") throw new Error("Expected a comparable published version");
+    expect(published.decisions[FACT_KEY_PRO]).toBe("excluded");
     // Only in the published generation: a baseline keyed to the draft loses it.
-    expect(value.value.published?.decisions[FACT_KEY_TEAM]).toBe("accepted_in_bulk");
+    expect(published.decisions[FACT_KEY_TEAM]).toBe("accepted_in_bulk");
     // Only in the draft, and suppressed in the published review because a
     // suppression outlives its item. A baseline keyed to the draft reports it
     // as excluded by a version that never contained it.
-    expect(Object.hasOwn(value.value.published?.decisions ?? {}, SCOPE_KEY)).toBe(false);
+    expect(Object.hasOwn(published.decisions, SCOPE_KEY)).toBe(false);
     expect(dependencies.readComplete).toHaveBeenCalledWith({ userId: USER, kbId: V2_KB_ID, snapshotId: SNAPSHOT });
   });
   it("still answers a v1/v2 knowledge base with the v2 editor view", async () => {

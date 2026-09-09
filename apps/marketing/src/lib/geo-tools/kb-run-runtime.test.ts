@@ -130,6 +130,8 @@ interface Harness {
 
 interface HarnessOptions {
   readonly draft?: GeoRunKnowledgeDraft;
+  /** Successive answers from `readDraft`, for a write that moves the draft. */
+  readonly drafts?: readonly GeoRunKnowledgeDraft[];
   readonly reads?: readonly GeoRunKnowledgeRead[];
   readonly dispatch?: () => Promise<GeoRunKnowledgeDispatch>;
   readonly assembles?: readonly GeoRunAssembleOutcome[];
@@ -140,6 +142,7 @@ function harness(options: HarnessOptions = {}): Harness {
   const calls: string[] = [];
   const reads = [...(options.reads ?? [{ kind: "none" as const }])];
   const assembles = [...(options.assembles ?? [{ kind: "assembled" as const, knowledgeGenerationId: GENERATION }])];
+  const drafts = [...(options.drafts ?? [])];
   const dispatch = vi.fn(async () => {
     calls.push("dispatch");
     return await (options.dispatch ?? (async () => ({
@@ -155,7 +158,11 @@ function harness(options: HarnessOptions = {}): Harness {
     return await (options.bind ?? (async () => "bound" as const))();
   });
   const sources: GeoRunKnowledgeSources = {
-    readDraft: async () => { calls.push("readDraft"); return options.draft ?? READY_DRAFT; },
+    readDraft: async () => {
+      calls.push("readDraft");
+      if (drafts.length === 0) return options.draft ?? READY_DRAFT;
+      return drafts.length > 1 ? drafts.shift()! : drafts[0]!;
+    },
     readGeneration: async () => { calls.push("readGeneration"); return reads.length > 1 ? reads.shift()! : reads[0]!; },
     dispatchGeneration: dispatch as unknown as GeoRunKnowledgeSources["dispatchGeneration"],
     assemble: assemble as unknown as GeoRunKnowledgeSources["assemble"],
@@ -181,13 +188,12 @@ function harness(options: HarnessOptions = {}): Harness {
  */
 describe("buying and filing one run's knowledge", () => {
   it("buys once and files it into the draft", async () => {
-    const h = harness();
+    const h = harness({ assembles: [{ kind: "observed" }, { kind: "assembled", knowledgeGenerationId: GENERATION }] });
     await expect(h.executor.start(operation(), h.context)).resolves.toEqual({
       kind: "succeeded",
       resultRef: GENERATION,
     });
     expect(h.dispatch).toHaveBeenCalledTimes(1);
-    expect(h.assemble).toHaveBeenCalledTimes(1);
     // The run says what its paid generation is pinned to BEFORE it buys one.
     expect(h.calls.indexOf("bind")).toBeLessThan(h.calls.indexOf("dispatch"));
     expect(h.calls.indexOf("readGeneration")).toBeLessThan(h.calls.indexOf("dispatch"));
@@ -198,6 +204,74 @@ describe("buying and filing one run's knowledge", () => {
       baseVersion: READY_DRAFT.draftVersion,
       draftHash: READY_DRAFT.draftHash,
     });
+  });
+
+  it("writes the deterministic half before it dispatches, and the narrative after", async () => {
+    /**
+     * Section 4.2: the modules that need no model are on the draft the moment
+     * collection finishes. Reaching the knowledge step IS that moment -- every
+     * fetch is seeded ahead of `model:knowledge` and `planGeoRun` hands out the
+     * first actionable operation -- so the observed body is written before a
+     * request goes out, not after one comes back. Counting and ordering the
+     * calls is the whole test: an executor that assembled only after the model
+     * answered would satisfy every outcome assertion in this file.
+     */
+    const h = harness({ assembles: [{ kind: "observed" }, { kind: "assembled", knowledgeGenerationId: GENERATION }] });
+    await h.executor.start(operation(), h.context);
+    expect(h.assemble).toHaveBeenCalledTimes(2);
+    expect(h.calls.indexOf("assemble")).toBeLessThan(h.calls.indexOf("dispatch"));
+    expect(h.calls.lastIndexOf("assemble")).toBeGreaterThan(h.calls.indexOf("dispatch"));
+    // And it costs nothing: the run still bought exactly one generation.
+    expect(h.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let the deterministic write decide the model step", async () => {
+    // A knowledge base with no observation fresh enough to rebuild from still
+    // has a narrative worth buying. Failing the operation over a free step
+    // would take that away for nothing.
+    for (const first of [
+      { kind: "refused" as const, reason: "not_found" as const },
+      { kind: "retry" as const, reason: "store_unavailable" as const },
+    ]) {
+      const h = harness({ assembles: [first, { kind: "assembled", knowledgeGenerationId: GENERATION }] });
+      await expect(h.executor.start(operation(), h.context))
+        .resolves.toEqual({ kind: "succeeded", resultRef: GENERATION });
+      expect(h.dispatch).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("re-reads the draft the deterministic write may have moved before binding a charge to it", async () => {
+    // Assembling writes a new draft version, and a dispatch pins the paid
+    // record to the version it names. Buying against the version read before
+    // that write would bind the record to a draft that no longer exists.
+    const h = harness({
+      drafts: [
+        READY_DRAFT,
+        { kind: "ok", draftVersion: 5, draftHash: "c".repeat(64), generationInputHash: READY_DRAFT.generationInputHash },
+      ],
+      assembles: [{ kind: "observed" }, { kind: "assembled", knowledgeGenerationId: GENERATION }],
+    });
+    await expect(h.executor.start(operation(), h.context))
+      .resolves.toEqual({ kind: "succeeded", resultRef: GENERATION });
+    expect(h.dispatch).toHaveBeenCalledWith({
+      userId: USER, kbId: KB,
+      idempotencyKey: geoRunKnowledgeIdempotencyKey(RUN),
+      baseVersion: 5,
+      draftHash: "c".repeat(64),
+    });
+  });
+
+  it("buys nothing when the locked input moved under the deterministic write", async () => {
+    const h = harness({
+      drafts: [
+        READY_DRAFT,
+        { kind: "ok", draftVersion: 5, draftHash: "c".repeat(64), generationInputHash: "d".repeat(64) },
+      ],
+      assembles: [{ kind: "observed" }, { kind: "assembled", knowledgeGenerationId: GENERATION }],
+    });
+    await expect(h.executor.start(operation(), h.context))
+      .resolves.toEqual({ kind: "failed_retryable", reason: "store_unavailable" });
+    expect(h.dispatch).not.toHaveBeenCalled();
   });
 
   it("re-reads instead of re-buying when this run already bought one", async () => {
@@ -212,6 +286,25 @@ describe("buying and filing one run's knowledge", () => {
     expect(h.assemble).toHaveBeenCalledTimes(1);
   });
 
+  it("refuses to file a paid model step against a body no model produced", async () => {
+    /**
+     * The model record says succeeded, and the assembly answers with the
+     * deterministic body instead -- the newest generation the route can see is
+     * not this one. There is no generation id to point at, so the operation
+     * cannot be recorded as succeeded: `resultRef` would name nothing, and the
+     * run's own ledger would carry a finished model step whose result does not
+     * exist. Retry instead, and let the next attempt find the record again.
+     */
+    const h = harness({
+      reads: [{ kind: "record", generationId: GENERATION, state: "succeeded", errorReason: null }],
+      assembles: [{ kind: "observed" }],
+    });
+
+    await expect(h.executor.start(operation(), h.context))
+      .resolves.toEqual({ kind: "failed_retryable", reason: "store_unavailable" });
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
   it("is not succeeded until the assembly lands, and retrying it buys nothing", async () => {
     // A paid narrative that never reached `payload.knowledge` leaves publish
     // refusing exactly as it did before, and nothing else in the run goes back
@@ -221,7 +314,13 @@ describe("buying and filing one run's knowledge", () => {
         { kind: "none" },
         { kind: "record", generationId: GENERATION, state: "succeeded", errorReason: null },
       ],
-      assembles: [{ kind: "retry", reason: "store_unavailable" }, { kind: "assembled", knowledgeGenerationId: GENERATION }],
+      // The deterministic write, then the narrative filing that fails, then the
+      // retry's filing. Only the last two are this operation's verdict.
+      assembles: [
+        { kind: "observed" },
+        { kind: "retry", reason: "store_unavailable" },
+        { kind: "assembled", knowledgeGenerationId: GENERATION },
+      ],
     });
     await expect(h.executor.start(operation(), h.context))
       .resolves.toEqual({ kind: "failed_retryable", reason: "store_unavailable" });
@@ -232,7 +331,7 @@ describe("buying and filing one run's knowledge", () => {
     // The whole reason the first outcome may be retryable: the retry re-read a
     // record it had already paid for instead of buying a second one.
     expect(h.dispatch).toHaveBeenCalledTimes(1);
-    expect(h.assemble).toHaveBeenCalledTimes(2);
+    expect(h.assemble).toHaveBeenCalledTimes(3);
   });
 
   it("points the ledger at the record the assembly actually filed", async () => {
@@ -253,9 +352,15 @@ describe("buying and filing one run's knowledge", () => {
   });
 
   it("calls a dispatch it cannot see the end of unknown, never retryable", async () => {
-    const h = harness({ dispatch: async () => { throw new Error("socket closed"); } });
+    const h = harness({
+      dispatch: async () => { throw new Error("socket closed"); },
+      assembles: [{ kind: "observed" }],
+    });
     await expect(h.executor.start(operation(), h.context)).resolves.toEqual({ kind: "outcome_unknown" });
-    expect(h.assemble).not.toHaveBeenCalled();
+    // The only assembly here is the free deterministic one, written before the
+    // request went out. Nothing filed a result for a charge we cannot see.
+    expect(h.assemble).toHaveBeenCalledTimes(1);
+    expect(h.calls.lastIndexOf("assemble")).toBeLessThan(h.calls.indexOf("dispatch"));
   });
 
   it("passes an unresolved provider answer through as unknown", async () => {
@@ -565,6 +670,23 @@ describe("reading the assemble route's answer", () => {
     // there would point the ledger at a record that does not exist.
     for (const body of [null, {}, { data: {} }, { data: { knowledgeGenerationId: "" } }, { data: { knowledgeGenerationId: 7 } }]) {
       expect(geoRunAssembleOutcome(200, body)).toEqual({ kind: "retry", reason: "store_unavailable" });
+    }
+  });
+
+  it("reads a body assembled from the collection alone as an answer, not a malformed one", () => {
+    expect(geoRunAssembleOutcome(200, { data: { basis: "observed", knowledgeGenerationId: null, changed: true } }))
+      .toEqual({ kind: "observed" });
+    // Both halves of that shape are required. A 200 that omits the id without
+    // saying which half it came from, or claims the observed half while naming
+    // a record, is a route this reader does not recognise -- and inventing an
+    // outcome for it is how a ledger ends up pointing at nothing.
+    for (const data of [
+      { basis: "observed" },
+      { knowledgeGenerationId: null },
+      { basis: "generation", knowledgeGenerationId: null },
+      { basis: "observed", knowledgeGenerationId: undefined },
+    ]) {
+      expect(geoRunAssembleOutcome(200, { data })).toEqual({ kind: "retry", reason: "store_unavailable" });
     }
   });
 

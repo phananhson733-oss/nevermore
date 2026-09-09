@@ -412,8 +412,20 @@ describe("one run, from an unpublishable draft to a published version", () => {
       expect([operation.key, operation.state, operation.reason]).toEqual([operation.key, "succeeded", null]);
     }
     // The pages really were read, through the reader contract the crawl gate
-    // sits behind, and the narrative runner really was called once.
-    expect(f.reads).toHaveBeenCalledTimes(2);
+    // sits behind, and the narrative runner really was called once. The two
+    // page reads are not the whole list: once its own page row is filed, the
+    // own-site operation spends the same admission on the three machine-
+    // readable files at that origin. A competitor operation reads only its
+    // page, so naming every address here is what keeps a fourth read from
+    // being added to a rival's host without this test noticing.
+    const readAddresses = f.reads.mock.calls.map((call) => (call[0] as { readonly url: string }).url);
+    expect(readAddresses).toEqual([
+      "https://product.example/",
+      "https://product.example/robots.txt",
+      "https://product.example/sitemap.xml",
+      "https://product.example/llms.txt",
+      "https://rival.example/",
+    ]);
     expect(f.synthesized).toHaveBeenCalledTimes(1);
     // The run says what its paid generation is pinned to.
     expect(view.run?.generationInputHash).toBe(f.payload.runRef.generationInputHash);

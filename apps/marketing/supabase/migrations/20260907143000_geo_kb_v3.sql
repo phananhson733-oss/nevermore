@@ -15,6 +15,12 @@
 -- ---------------------------------------------------------------------------
 -- 1. Schema version allow-lists (blocker 1 and 2)
 -- ---------------------------------------------------------------------------
+-- Every ALTER below takes ACCESS EXCLUSIVE on a table that already exists in
+-- production. The scans are cheap at this product's scale; what is not cheap is
+-- queueing behind an open reader, because every query arriving after the waiter
+-- queues too. Three seconds, then a clean abort ON_ERROR_STOP halts on.
+set lock_timeout = '3s';
+
 alter table public.marketing_geo_kb_drafts
   drop constraint if exists marketing_geo_kb_drafts_schema_version_check;
 alter table public.marketing_geo_kb_drafts

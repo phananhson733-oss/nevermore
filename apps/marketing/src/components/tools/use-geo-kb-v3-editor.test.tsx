@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { geoV2Digest } from "../../lib/geo-tools/kb-v2-digest.ts";
-import { geoV3ItemContentHashes } from "../../lib/geo-tools/kb-v3-item-content.ts";
+import { geoV3ItemContentHashes, geoV3RestatedItemKeys } from "../../lib/geo-tools/kb-v3-item-content.ts";
 import {
   applyGeoV3ReviewAction,
   applyGeoV3ReviewActions,
@@ -48,7 +48,10 @@ const ITEM_KEYS = geoV3ItemKeys(PAYLOAD.knowledge);
 function view(overrides: Partial<GeoKbEditorViewV3> = {}): GeoKbEditorViewV3 {
   return {
     kbId: V3_KB_ID, host: "example.com", draftVersion: 4, draftHash: geoV2Digest(PAYLOAD),
-    payload: PAYLOAD, published: null, ...overrides,
+    payload: PAYLOAD, published: null,
+    // Derived from the payload rather than hardcoded to [], so a test that
+    // builds a restated payload gets the flag the server would have sent.
+    restated: geoV3RestatedItemKeys(PAYLOAD.knowledge, PAYLOAD.review), ...overrides,
   };
 }
 
@@ -60,6 +63,7 @@ function savedReview(payload: GeoKbPayloadV3, actions: readonly GeoV3ReviewActio
   });
   const next = parseGeoKbPayloadV3({ ...payload, review });
   return { review, data: { draftVersion: draftVersion + 1, contentHash: geoV2Digest(next), updatedAt: NOW, review,
+    restated: geoV3RestatedItemKeys(next.knowledge, review),
     counts: { total: ITEM_KEYS.length, accepted: 0, acceptedInBulk: 0, excluded: 0, pending: 0, corrected: 0 } } };
 }
 
@@ -278,9 +282,27 @@ it("stops counting changes against the version it has just published", async () 
   expect(editor.publishPlan.changeCount).toBe(1);
 });
 
+/**
+ * A v1/v2 predecessor records no per-item decisions. Diffing against an empty
+ * map would report every decided item as a change against a version that never
+ * recorded any -- the exact sentence the publish box must not say -- so there is
+ * no count at all rather than a wrong one.
+ */
+it("gives no change count at all when the published version records no decisions", async () => {
+  await mount(view({ published: { kind: "opaque", revision: 3, frozenAt: NOW, contentHash: "b".repeat(64) } }));
+
+  expect(editor.publishPlan).toMatchObject({ nextVersion: "4", previousVersion: "3", itemCount: ITEM_KEYS.length });
+  expect(editor.publishPlan.changeCount).toBeNull();
+
+  // And it stays null after the owner decides something: deciding cannot make
+  // an uncomparable version comparable.
+  await act(async () => { editor.accept(ITEM_KEYS[0]!); });
+  expect(editor.publishPlan.changeCount).toBeNull();
+});
+
 it("counts the changes against the published version rather than against this session", async () => {
   await mount(view({
-    published: { revision: 3, frozenAt: NOW, contentHash: "b".repeat(64), decisions: Object.fromEntries(ITEM_KEYS.map((key) => [key, "accepted_in_bulk" as const])) },
+    published: { kind: "comparable", revision: 3, frozenAt: NOW, contentHash: "b".repeat(64), decisions: Object.fromEntries(ITEM_KEYS.map((key) => [key, "accepted_in_bulk" as const])) },
   }));
   expect(editor.publishPlan).toMatchObject({ nextVersion: "4", previousVersion: "3", itemCount: ITEM_KEYS.length, pendingCount: ITEM_KEYS.length });
   // Every item is pending in the draft and accepted in the published version,
@@ -332,6 +354,7 @@ const WIRE = {
   schemaVersion: GEO_KB_EDITOR_V3_SCHEMA_VERSION, kbId: V3_KB_ID, origin: "https://example.com",
   host: "example.com", draftVersion: 4, draftHash: geoV2Digest(PAYLOAD),
   payload: JSON.parse(JSON.stringify(PAYLOAD)) as unknown, published: null,
+  restated: geoV3RestatedItemKeys(PAYLOAD.knowledge, PAYLOAD.review),
 };
 
 it("reads a loaded v3 draft off the wire, payload and all", async () => {
@@ -351,10 +374,17 @@ it.each([
 });
 
 it("keeps the published decision baseline it was handed", () => {
-  const parsed = parseGeoKbEditorViewV3({ ...WIRE, published: {
-    revision: 3, frozenAt: NOW, contentHash: "d".repeat(64), decisions: { [FACT_KEY_PRO]: "excluded" },
-  } });
-  expect(parsed?.published).toEqual({ revision: 3, frozenAt: NOW, contentHash: "d".repeat(64), decisions: { [FACT_KEY_PRO]: "excluded" } });
+  const comparable = { kind: "comparable" as const, revision: 3, frozenAt: NOW, contentHash: "d".repeat(64), decisions: { [FACT_KEY_PRO]: "excluded" } };
+  expect(parseGeoKbEditorViewV3({ ...WIRE, published: comparable })?.published).toEqual(comparable);
+
+  // The other half of the union: a v1/v2 predecessor, named and dated with no
+  // decision map. It has to survive the wire, because refusing it here is the
+  // 503 that made the redesign unreachable for every owner who ever published.
+  const opaque = { kind: "opaque" as const, revision: 3, frozenAt: NOW, contentHash: "d".repeat(64) };
+  expect(parseGeoKbEditorViewV3({ ...WIRE, published: opaque })?.published).toEqual(opaque);
+  // Neither shape may borrow the other's fields.
+  expect(parseGeoKbEditorViewV3({ ...WIRE, published: { ...opaque, decisions: {} } })).toBeNull();
+  expect(parseGeoKbEditorViewV3({ ...WIRE, published: { revision: 3, frozenAt: NOW, contentHash: "d".repeat(64), decisions: {} } })).toBeNull();
 });
 
 /* ------------------------------------------------------------------ */
@@ -489,8 +519,11 @@ const lockedInput = (overrides: Partial<GeoKbPayloadV3["generationInput"]["ident
 it.each([
   ["a locked input a run can build from", {}, []],
   ["a Profile that confirmed with no categories", { categoryTerms: [] }, ["category_terms_missing"]],
-  ["a market the question registry has no templates for", { market: { country: "CN", language: "zh-cn" } }, ["unsupported_language"]],
-  ["both at once", { categoryTerms: [], market: { country: "CN", language: "zh-cn" } }, ["unsupported_language", "category_terms_missing"]],
+  // D8 again: a market with no question templates is not a blocker, and the
+  // missing category next to it still is -- so this row also proves the reader
+  // did not simply stop reporting everything.
+  ["a market the question registry has no templates for", { market: { country: "CN", language: "zh-cn" } }, []],
+  ["a missing category in such a market", { categoryTerms: [], market: { country: "CN", language: "zh-cn" } }, ["category_terms_missing"]],
 ])("reads %s off the draft", (_, overrides, expected) => {
   expect(geoKbV3DraftBlockers(lockedInput(overrides))).toEqual(expected);
 });
@@ -531,8 +564,11 @@ function confirmedProfile(overrides: Partial<MarketingWebsiteProfileV1> = {}): M
 it.each([
   ["a Profile with categories and an English locale", {}, []],
   ["a Profile that confirmed with no categories at all", { categories: [] }, ["category_terms_missing"]],
-  ["a Profile in a language the question registry has no templates for", { locale: "zh-CN" }, ["unsupported_language"]],
-  ["a Profile with neither", { categories: [], locale: "zh-CN" }, ["unsupported_language", "category_terms_missing"]],
+  // D8: the knowledge body follows the site's own language, so a locale the
+  // question registry has no templates for is not a blocker. It shows up at
+  // publish time as a version with no question set, and why.
+  ["a Profile in a language the question registry has no templates for", { locale: "zh-CN" }, []],
+  ["a Profile with no categories in such a language", { categories: [], locale: "zh-CN" }, ["category_terms_missing"]],
 ])("agrees with the create route's own blockers for %s", (_, overrides, expected) => {
   const built = buildGeoKbV3Identity({
     targetUrl: "https://example.com/",

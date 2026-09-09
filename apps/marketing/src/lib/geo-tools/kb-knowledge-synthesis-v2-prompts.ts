@@ -50,6 +50,23 @@ export const GEO_KNOWLEDGE_SYNTHESIS_V2_SYSTEM_PROMPT = [
   "Definitions must be at most 25, 55, and 120 words respectively. Do not place URLs or bare domains in generated narrative text.",
   "Bounds: facts 0..64; qualifiers per fact 0..8; Q&A items 0..32; variants per Q&A 0..8; comparisons 0..5; rows per comparison 1..16; each sourceRefs list 1..16; each scope list 0..24.",
   "Use the exact schemaVersion marketing-geo-knowledge-narrative.v2 and exactly the fields required by the response schema. Do not add metadata, evidence timestamps, hashes, review status, item keys, or observations.",
+  /*
+   * Design decision D8: the knowledge body follows the site's own language.
+   *
+   * It names the input's own `language` field rather than interpolating the tag
+   * into the sentence, for two reasons. The instruction cannot then disagree
+   * with the data the model is reading -- one value, stated once. And the system
+   * prompt stays one constant string, so the request envelope every catalogue
+   * budget is measured against does not change size per site; a per-site
+   * envelope would make "predict the request to the byte" a prediction with a
+   * variable in it.
+   *
+   * Before this line the prompt named no output language at all, and the caller
+   * refused every non-English site outright, so a Chinese site could produce no
+   * knowledge body in any language.
+   */
+  "Write every reader-facing string in the language named by the input's language field: definitions, audience, disambiguation, fact labels and statements, questions and answers, comparison verdicts and scope statements. Do not translate a number, a proper name, or a quoted excerpt.",
+  "Field names, schemaVersion, reason codes and source IDs are protocol, not prose: write them exactly as the response schema spells them, in English.",
   "Return JSON only. Do not use Markdown, prose outside JSON, comments, or code fences.",
 ].join("\n");
 

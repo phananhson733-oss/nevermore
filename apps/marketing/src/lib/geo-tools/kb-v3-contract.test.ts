@@ -3,7 +3,7 @@ import {
   assertGeoV3Budgets, GEO_KB_V3_LIMITS, geoEntityCorrectionIssue, geoEntityCorrectionRule, geoOverrideSchema,
   geoReviewSchemaV3, geoV3ItemKeys, geoV3Items, parseGeoKbPayloadV3, type GeoKbPayloadV3,
 } from "./kb-v3-contract.ts";
-import { assertGeoItemKeyIntegrity } from "./kb-item-key.ts";
+import { assertGeoItemKeyIntegrity, geoItemKey } from "./kb-item-key.ts";
 import {
   GEO_ENTITY_CORRECTABLE_PATHS, geoComparisonRowContentShape, geoEntityValueShape, geoFactContentShape,
   geoQaContentShape, geoStatementContentShape,
@@ -584,5 +584,260 @@ describe("what a locked generation input may carry", () => {
     const machine = (payload.knowledge as { machine: { value: Record<string, Record<string, unknown>> } }).machine.value;
     machine.sitemap = { status: "present", urlCount: "42", knowledgePagesListed: true, sourceRefs: ["machine:robots"] };
     expect(() => parseGeoKbPayloadV3(payload)).toThrow(/cannot cite a robots source/iu);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unknown keys
+// ---------------------------------------------------------------------------
+
+/**
+ * Every object in the v3 payload is `.strict()`, and until these cases existed
+ * nothing in the repository proved it: deleting `.strict()` from the top-level
+ * payload and from the fact left the whole marketing suite green. The value of
+ * the rule is that a v2 field cannot ride into a v3 body -- an unknown key is
+ * exactly what that looks like -- so it has to be checked at every level, not
+ * only at the outermost one, and the refusal has to be a refusal. A non-strict
+ * zod object *strips* what it does not know: the payload would then parse, the
+ * caller would hold a value that silently lost a field, and the stored draft
+ * and the parsed draft would disagree with nobody told.
+ *
+ * The paths are written out by hand. Deriving them from the schema would make
+ * the test agree with the schema by construction and prove nothing.
+ */
+const UNKNOWN_KEY = "smuggledV2Field";
+
+const COMPETITOR_KEY = "competitor:astro";
+const COMPETITOR_SOURCE = "competitor:astro-pricing";
+/** The competitor page is appended, so it is the sixth entry of the catalogue. */
+const COMPETITOR_SOURCE_INDEX = 5;
+const COMPARISON_DIMENSION = "Chart drawing";
+const COMPARISON_ROW_KEY = geoItemKey({
+  module: "comparisons", competitorKey: COMPETITOR_KEY, dimension: COMPARISON_DIMENSION,
+});
+
+/**
+ * The complete draft with the review populated, so a decision, its correction
+ * and a suppression are real objects a key can be injected into. The fixture
+ * ships an empty review, and an injection into a list that has no rows tests
+ * nothing at all.
+ */
+function reviewedDraft(): Record<string, unknown> {
+  const payload = raw(completePayloadV3());
+  (payload.review as Record<string, unknown>).decisions = [decision({
+    override: { module: "facts", statement: CORRECTED_TEXT, label: "Pro plan monthly price", value: "9", reason: "" },
+  })];
+  (payload.review as Record<string, unknown>).suppressions = [{ itemKey: "e".repeat(64), suppressedAt: OBSERVED_AT }];
+  return payload;
+}
+
+/** The same draft carrying a correction of `module`, filed against `itemKey`. */
+function draftCorrecting(itemKey: string, override: Record<string, unknown>): () => Record<string, unknown> {
+  return () => {
+    const payload = reviewedDraft();
+    (payload.review as Record<string, unknown>).decisions = [decision({ itemKey, override })];
+    return payload;
+  };
+}
+
+/**
+ * The comparisons module populated. The fixture leaves it `unavailable`, which
+ * is the one module state that carries no rows -- so the comparison, its
+ * competitor identity and its rows have no object to test without this, and
+ * neither does a catalogue entry's `competitor`.
+ */
+function comparingDraft(): Record<string, unknown> {
+  const payload = reviewedDraft();
+  const knowledge = payload.knowledge as Record<string, unknown>;
+  (knowledge.sourceCatalogue as unknown[]).push({
+    id: COMPETITOR_SOURCE, kind: "competitor_page", label: "Astro pricing",
+    url: "https://astro.example/pricing",
+    competitor: { key: COMPETITOR_KEY, name: "Astro", confirmed: true },
+    availability: "available", reason: null, observedAt: OBSERVED_AT,
+    bodyHash: HASH_A, excerpts: ["Astro draws charts."], independence: null,
+  });
+  knowledge.comparisons = {
+    status: "available",
+    value: [{
+      id: "comparison:astro",
+      competitor: { key: COMPETITOR_KEY, name: "Astro", confirmed: true },
+      checkedAt: OBSERVED_AT,
+      rows: [{
+        id: "row:charts", dimension: COMPARISON_DIMENSION,
+        product: "Acme draws charts.", competitor: "Astro draws charts.",
+        availability: "available",
+        itemKey: COMPARISON_ROW_KEY, origin: "observed_competitor",
+        sourceRefs: [COMPETITOR_SOURCE], evidenceChecks: "not_applicable", alternateObservations: [],
+      }],
+      verdict: "Both draw charts.",
+      sourceRefs: [COMPETITOR_SOURCE],
+    }],
+  };
+  return payload;
+}
+
+/** The conflicting draft, the only fixture whose items carry an alternate observation. */
+const conflictingDraft = (): Record<string, unknown> => raw(conflictingPayloadV3());
+
+interface UnknownKeyCase {
+  /** Dot path to the object the key is injected into; "" is the payload itself. */
+  readonly path: string;
+  readonly draft: () => Record<string, unknown>;
+  /** Why this base is used, when it is not the plain reviewed draft. */
+  readonly note?: string;
+}
+
+const at = (path: string, draft: () => Record<string, unknown> = reviewedDraft, note?: string): UnknownKeyCase =>
+  note === undefined ? { path, draft } : { path, draft, note };
+
+/**
+ * One case per distinct `z.object` level the payload reaches. The module
+ * wrappers are covered in all three of their states: `entity` is available,
+ * `evidence` is partial and carries a limitation, `comparisons` is
+ * unavailable and carries a reason -- three different strict objects behind one
+ * discriminated union.
+ */
+const UNKNOWN_KEY_CASES: readonly UnknownKeyCase[] = [
+  at(""),
+  // generationInput -- locked once, so a key smuggled in here would survive
+  // every later edit of the draft.
+  at("generationInput"),
+  at("generationInput.identity"),
+  at("generationInput.identity.market"),
+  at("generationInput.profileRef"),
+  at("generationInput.profileRef.subset"),
+  at("generationInput.profileRef.subset.fieldProvenance.0"),
+  at("generationInput.competitors.0"),
+  at("generationInput.roles.0"),
+  at("generationInput.roles.0.source"),
+  // knowledge -- the body the generation records are bound to by hash.
+  at("knowledge"),
+  at("knowledge.entity"),
+  at("knowledge.entity.value"),
+  at("knowledge.entity.value.categories"),
+  at("knowledge.entity.value.definitions"),
+  at("knowledge.entity.value.audience"),
+  at("knowledge.entity.value.founded"),
+  at("knowledge.entity.value.links"),
+  at("knowledge.entity.value.fields.0"),
+  at("knowledge.facts"),
+  at("knowledge.facts.value.0"),
+  at("knowledge.facts.value.0.alternateObservations.0", conflictingDraft, "only a conflicting fact has one"),
+  at("knowledge.qa"),
+  at("knowledge.qa.value.0"),
+  at("knowledge.comparisons"),
+  at("knowledge.comparisons.value.0", comparingDraft, "the fixture's module is unavailable"),
+  at("knowledge.comparisons.value.0.competitor", comparingDraft, "the fixture's module is unavailable"),
+  at("knowledge.comparisons.value.0.rows.0", comparingDraft, "the fixture's module is unavailable"),
+  at("knowledge.scope"),
+  at("knowledge.scope.value"),
+  at("knowledge.scope.value.doesNot.0"),
+  at("knowledge.evidence"),
+  at("knowledge.evidence.value"),
+  at("knowledge.evidence.value.proof.0"),
+  at("knowledge.machine"),
+  at("knowledge.machine.value"),
+  at("knowledge.machine.value.jsonLd"),
+  at("knowledge.machine.value.llms"),
+  at("knowledge.machine.value.robots"),
+  at("knowledge.machine.value.sitemap"),
+  at("knowledge.machine.value.hreflang"),
+  at("knowledge.machine.value.aiCrawlers"),
+  at("knowledge.machine.value.aiCrawlers.search.0"),
+  at("knowledge.machine.value.aiCrawlers.training.0"),
+  at("knowledge.machine.value.snippets"),
+  at("knowledge.coverage"),
+  at("knowledge.coverage.value.0"),
+  at("knowledge.sourceCatalogue.0"),
+  at(`knowledge.sourceCatalogue.${COMPETITOR_SOURCE_INDEX}.competitor`, comparingDraft, "only a competitor page carries one"),
+  // review -- freely editable, and the one part an owner's own gestures write.
+  at("review"),
+  at("review.decisions.0"),
+  at("review.decisions.0.override"),
+  at("review.suppressions.0"),
+  // Every arm of the override union, not only the one the reviewed draft
+  // happens to carry: they are five separate strict objects.
+  at("review.decisions.0.override", draftCorrecting(QA_KEY, { module: "qa", directAnswer: "Plans start at nine per month.", expansion: null }), "qa correction"),
+  at("review.decisions.0.override", draftCorrecting(SCOPE_KEY, { module: "scope", text: "Acme does not run on Android tablets." }), "scope correction"),
+  at("review.decisions.0.override", draftCorrecting(ENTITY_NAME_KEY, { module: "entity", field: "name", value: "Acme, corrected" }), "entity correction"),
+  at("review.decisions.0.override", () => {
+    const payload = comparingDraft();
+    (payload.review as Record<string, unknown>).decisions = [decision({
+      itemKey: COMPARISON_ROW_KEY,
+      override: { module: "comparisons", product: "Acme draws charts well.", competitor: "Astro draws charts." },
+    })];
+    return payload;
+  }, "comparisons correction"),
+  at("runRef"),
+];
+
+/** Put `UNKNOWN_KEY` on the object at `path`, refusing to no-op silently. */
+function injectUnknownKey(payload: Record<string, unknown>, path: string): void {
+  let node: unknown = payload;
+  for (const segment of path === "" ? [] : path.split(".")) {
+    node = Array.isArray(node)
+      ? node[Number(segment)]
+      : (node === null || typeof node !== "object" ? undefined : (node as Record<string, unknown>)[segment]);
+    if (node === undefined) throw new Error(`Nothing at ${path} (stopped at ${segment})`);
+  }
+  if (node === null || typeof node !== "object" || Array.isArray(node)) throw new Error(`${path} is not an object`);
+  if (UNKNOWN_KEY in (node as Record<string, unknown>)) throw new Error(`${path} already has ${UNKNOWN_KEY}`);
+  (node as Record<string, unknown>)[UNKNOWN_KEY] = "left over from v2";
+}
+
+type ParseOutcome = { readonly refused: true } | { readonly refused: false; readonly unknownKeyKept: boolean };
+
+/**
+ * Refusal and silent stripping are different failures and must not read alike.
+ * `{ refused: false, unknownKeyKept: false }` is the one a dropped `.strict()`
+ * produces: the draft parses, and the field the caller sent is gone.
+ */
+function parseOutcome(payload: Record<string, unknown>): ParseOutcome {
+  let parsed: unknown;
+  try {
+    parsed = parseGeoKbPayloadV3(payload);
+  } catch {
+    return { refused: true };
+  }
+  return { refused: false, unknownKeyKept: JSON.stringify(parsed).includes(UNKNOWN_KEY) };
+}
+
+/** Every object node, array indexes collapsed, so one case covers one level. */
+function objectPaths(node: unknown, path: string, into: Set<string>): void {
+  if (Array.isArray(node)) {
+    for (const entry of node) objectPaths(entry, path === "" ? "0" : `${path}.0`, into);
+    return;
+  }
+  if (node === null || typeof node !== "object") return;
+  into.add(path);
+  for (const [key, value] of Object.entries(node)) objectPaths(value, path === "" ? key : `${path}.${key}`, into);
+}
+
+describe("an unknown key anywhere in a v3 draft", () => {
+  it("parses every base draft these cases start from", () => {
+    // Without this the whole table can pass for the wrong reason: a base that
+    // is already invalid is refused whether or not anything is strict.
+    for (const { path, draft, note } of UNKNOWN_KEY_CASES) {
+      expect([path, note, (() => { parseGeoKbPayloadV3(draft()); return "parses"; })()]).toEqual([path, note, "parses"]);
+    }
+  });
+
+  it("is refused, at every level, and never quietly stripped", () => {
+    for (const { path, draft, note } of UNKNOWN_KEY_CASES) {
+      const payload = draft();
+      injectUnknownKey(payload, path);
+      const label = note === undefined ? path : `${path} (${note})`;
+      expect([label, parseOutcome(payload)]).toEqual([label, { refused: true }]);
+    }
+  });
+
+  it("covers every object the drafts above actually carry", () => {
+    // Derived from the fixtures, not from the schema: a nested object added to
+    // the payload shape reaches a fixture before it reaches a user, and it must
+    // arrive with a case of its own rather than inheriting this test's silence.
+    const covered = new Set(UNKNOWN_KEY_CASES.map((entry) => entry.path.replace(/\.\d+(?=\.|$)/gu, ".0")));
+    const present = new Set<string>();
+    for (const { draft } of UNKNOWN_KEY_CASES) objectPaths(draft(), "", present);
+    expect([...present].filter((path) => !covered.has(path)).sort()).toEqual([]);
   });
 });

@@ -31,7 +31,7 @@ import { geoV2Digest } from "./kb-v2-digest.ts";
 import type { GeoKbStoreResult } from "./kb-store.ts";
 import type { VersionedGeoKbDetails } from "./kb-versioned-read.ts";
 import { isGeoKbPayloadV3Value } from "./kb-versioned-read.ts";
-import { geoV3ItemContentHashes } from "./kb-v3-item-content.ts";
+import { geoV3ItemContentHashes, geoV3RestatedItemKeys } from "./kb-v3-item-content.ts";
 import {
   applyGeoV3ReviewActions,
   geoV3DecisionStates,
@@ -148,6 +148,7 @@ export async function handleGeoKbV3Review(request: Request, dependencies: GeoKbV
       return privateJson({ data: {
         draftVersion: draft.draftVersion, contentHash: draft.contentHash,
         updatedAt: dependencies.now().toISOString(), review: payload.review, counts,
+        restated: geoV3RestatedItemKeys(payload.knowledge, payload.review),
       } });
     }
 
@@ -163,6 +164,7 @@ export async function handleGeoKbV3Review(request: Request, dependencies: GeoKbV
     return privateJson({ data: {
       draftVersion: saved.value.draftVersion, contentHash: saved.value.contentHash,
       updatedAt: saved.value.updatedAt, review: payload.review, counts,
+      restated: geoV3RestatedItemKeys(payload.knowledge, payload.review),
     } });
   } catch { return privateError("store_unavailable", 503); }
 }

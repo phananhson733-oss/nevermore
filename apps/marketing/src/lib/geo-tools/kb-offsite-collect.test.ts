@@ -368,9 +368,14 @@ describe("what a run refuses to claim", () => {
       { stage: "landing_page_reads", reason: "fetch_failed", pending: 2 },
       { stage: "landing_page_reads", reason: "blocked", pending: 1 },
       { stage: "landing_page_reads", reason: "not_found", pending: 1 },
-      { stage: "landing_page_reads", reason: "rate_limited", pending: 1 },
+      { stage: "landing_page_reads", reason: "timeout", pending: 1 },
     ]);
-    expect(collection.spent).toMatchObject({ pagesFetched: 0, pagesUnreadable: 6 });
+    // The sixth is our own crawl allowance refusing before a byte left this
+    // process. Reported as a candidate no request was sent for -- "fetched but
+    // could not be read" would blame the other site for our quota -- and left
+    // out of the unreadable total for the same reason.
+    expect(collection.incomplete).toContainEqual({ stage: "landing_pages", reason: "rate_limited", pending: 1 });
+    expect(collection.spent).toMatchObject({ pagesFetched: 0, pagesUnreadable: 5 });
     expect(collection.evidence.collected).toEqual(["firstPartyProof"]);
   });
 });

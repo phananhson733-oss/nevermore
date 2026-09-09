@@ -38,6 +38,7 @@ import {
   geoKbModuleState,
   geoKbModuleValue,
   type GeoKbHeading,
+  type GeoKbModuleLike,
 } from "./geo-kb-module-section.tsx";
 
 export const GEO_KNOWLEDGE_MODULES = [
@@ -318,9 +319,34 @@ function EvidenceItem({ item, sources, copy, card, locale }: {
   </div>;
 }
 
-function EvidenceModule({ pack, sources, heading, locale, copy, card }: ModuleProps) {
-  const evidence = geoKbModuleValue(pack.evidence);
-  return <GeoKbModuleSection title={copy.sections.evidence} heading={heading} state={geoKbModuleState(pack.evidence)}>
+/**
+ * The three modules nobody reviews.
+ *
+ * Evidence, machine-readable status and coverage are read-only by design
+ * decision D3: they report observations, so there is no decision to record
+ * against them. They are exported taking the module rather than a whole pack
+ * because the v3 review card holds the same three modules in a draft body and
+ * has to draw them from there -- and the draft carries the identical shapes
+ * (`geoEvidenceItemShape`, `geoMachineValueShape`, `geoCoverageItemShape` are
+ * shared by both contracts). Rendering them a second time from a second
+ * renderer is how "an empty group is said out loud" gets lost on one surface
+ * and kept on the other.
+ */
+/** The value a module carries, named without the unavailable arm that has none. */
+type GeoModuleValueOf<M extends GeoKbModuleLike<unknown>> = Extract<M, { readonly status: "available" }>["value"];
+
+export interface GeoReadOnlyModuleProps<T> {
+  readonly module: GeoKbModuleLike<T>;
+  readonly sources: SourceIndex;
+  readonly heading: GeoKbHeading;
+  readonly locale: string;
+  readonly copy: GeoKnowledgePackCopy;
+  readonly card: GeoKbCopy;
+}
+
+export function GeoEvidenceModuleView({ module, sources, heading, locale, copy, card }: GeoReadOnlyModuleProps<GeoModuleValueOf<GeoKnowledgePackV2["evidence"]>>) {
+  const evidence = geoKbModuleValue(module);
+  return <GeoKbModuleSection title={copy.sections.evidence} heading={heading} state={geoKbModuleState(module)}>
     <div className="grid min-w-0 gap-5 sm:grid-cols-2">{EVIDENCE_GROUPS.map((group) => <GeoKbEvidenceGroup
       key={group}
       title={card.groups[group]}
@@ -334,9 +360,9 @@ function EvidenceModule({ pack, sources, heading, locale, copy, card }: ModulePr
   </GeoKbModuleSection>;
 }
 
-function MachineModule({ pack, sources, heading, locale, copy, card }: ModuleProps) {
-  const machine = geoKbModuleValue(pack.machine);
-  return <GeoKbModuleSection title={copy.sections.machine} heading={heading} state={geoKbModuleState(pack.machine)}>
+export function GeoMachineModuleView({ module, sources, heading, locale, copy, card }: GeoReadOnlyModuleProps<GeoModuleValueOf<GeoKnowledgePackV2["machine"]>>) {
+  const machine = geoKbModuleValue(module);
+  return <GeoKbModuleSection title={copy.sections.machine} heading={heading} state={geoKbModuleState(module)}>
     {machine === null ? null : <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {MACHINE_FIELDS.map((kind) => <div key={kind} data-machine-field={kind} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4">
         <span className="block text-[12px] text-text-dark-secondary">{copy.machineFields[kind]}</span>
@@ -373,9 +399,9 @@ function MachineModule({ pack, sources, heading, locale, copy, card }: ModulePro
   </GeoKbModuleSection>;
 }
 
-function CoverageModule({ pack, sources, heading, locale, copy }: ModuleProps) {
-  const coverage = geoKbModuleValue(pack.coverage);
-  return <GeoKbModuleSection title={copy.sections.coverage} heading={heading} state={geoKbModuleState(pack.coverage)}>
+export function GeoCoverageModuleView({ module, sources, heading, locale, copy }: GeoReadOnlyModuleProps<GeoModuleValueOf<GeoKnowledgePackV2["coverage"]>>) {
+  const coverage = geoKbModuleValue(module);
+  return <GeoKbModuleSection title={copy.sections.coverage} heading={heading} state={geoKbModuleState(module)}>
     <div className="space-y-4">{(coverage ?? []).map((item) => <div key={item.id} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5">
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[15px] font-semibold text-text-dark-primary">{item.label}</span>
@@ -394,9 +420,9 @@ const RENDERERS: Readonly<Record<GeoKnowledgeModuleName, (props: ModuleProps) =>
   qa: QaModule,
   comparisons: ComparisonsModule,
   scope: ScopeModule,
-  evidence: EvidenceModule,
-  machine: MachineModule,
-  coverage: CoverageModule,
+  evidence: ({ pack, ...rest }) => <GeoEvidenceModuleView module={pack.evidence} {...rest} />,
+  machine: ({ pack, ...rest }) => <GeoMachineModuleView module={pack.machine} {...rest} />,
+  coverage: ({ pack, ...rest }) => <GeoCoverageModuleView module={pack.coverage} {...rest} />,
 };
 
 export function GeoKnowledgePackV2View({ pack, locale, heading = 3, modules = GEO_KNOWLEDGE_MODULES }: GeoKnowledgePackV2Props) {

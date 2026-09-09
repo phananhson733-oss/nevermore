@@ -37,9 +37,14 @@ import { useTranslations } from "next-intl";
 import { Button } from "../ui/button.tsx";
 import { GeoKbCard, type GeoKbCardSections } from "./geo-kb-card.tsx";
 import { GeoKbItemRow, type GeoKbItemActions } from "./geo-kb-item-row.tsx";
-import { GeoKbModuleSection, geoKbModuleState, geoKbModuleValue } from "./geo-kb-module-section.tsx";
+import { GeoKbEvidenceGroup, GeoKbModuleSection, geoKbModuleState, geoKbModuleValue } from "./geo-kb-module-section.tsx";
 import { geoKbFormatDate, useGeoKbCopy, type GeoKbCopy } from "./geo-kb-copy.ts";
-import { geoKbItemSourceOf } from "./geo-knowledge-pack-v2.tsx";
+import {
+  geoKbItemSourceOf,
+  GeoCoverageModuleView,
+  GeoEvidenceModuleView,
+  GeoMachineModuleView,
+} from "./geo-knowledge-pack-v2.tsx";
 import { geoKnowledgePackCopy } from "./geo-knowledge-pack-copy.ts";
 import {
   geoKbV3DraftBlockers,
@@ -224,6 +229,13 @@ function CorrectionForm({ draft, onChange, onSave, onCancel, t }: {
 interface RowContext {
   readonly editor: Editor;
   readonly sources: SourceIndex;
+  /**
+   * Item keys whose stored decision was made against text this update has since
+   * rewritten. Derived on the server -- the comparison needs a digest the
+   * browser cannot compute -- and recomputed by every save, so a row stops
+   * saying it once the owner has looked and decided again.
+   */
+  readonly restated: ReadonlySet<string>;
   readonly locale: string;
   readonly editing: string | null;
   readonly draft: Draft | null;
@@ -250,7 +262,7 @@ function Item({ item, typeLabel, correction, excludeBlockedReason = null, contex
   readonly context: RowContext;
   readonly children: ReactNode;
 }) {
-  const { editor, sources, locale, editing, draft, open, change, close, t } = context;
+  const { editor, sources, locale, editing, draft, open, change, close, t, restated } = context;
   const state = editor.decisionFor(item.itemKey);
   const editingThis = editing === item.itemKey && draft !== null;
   const actions: GeoKbItemActions = {
@@ -274,6 +286,11 @@ function Item({ item, typeLabel, correction, excludeBlockedReason = null, contex
       nextReviewAt={item.nextReviewAt ?? null}
       priorSource={state.override === null ? null : geoKbItemSourceOf(item, sources)}
       conflict={item.alternateObservations.length > 0}
+      // Section 4.4 lets a decision stand when the same page restates the same
+      // item, instead of re-asking the owner everything on every update. This
+      // is the other half of that: without it the row would present an approval
+      // of a sentence nobody has read, and publish it as owner-confirmed.
+      newObservation={restated.has(item.itemKey)}
       actions={actions}
     >{children}</GeoKbItemRow>
     {editingThis ? <CorrectionForm
@@ -337,6 +354,38 @@ function EntityModule({ knowledge, context, packCopy }: {
   </GeoKbModuleSection>;
 }
 
+/**
+ * The clauses the folded summary may say, and `null` for every module the run
+ * never measured.
+ *
+ * `geoKbModuleValue` hands back `null` for an `unavailable` module, and the
+ * `?? []` this replaces then turned that into a count of `0`: "Facts 0
+ * (confirmed 0)" reads as we looked and found none, which is the stronger claim
+ * `GeoKbPublishedSummary.counts` refuses to make about off-site sources -- made
+ * here about the owner's own sections. `partial` is left countable: its numbers
+ * are real, and `settled` keeps the card open for it separately, because a
+ * limitation sentence has nowhere to appear in a folded summary.
+ *
+ * "Confirmed" counts one-by-one acceptances only. A bulk gesture publishes the
+ * item, so it belongs in `facts`, but it is not a confirmation (D12).
+ */
+function publishedCounts(knowledge: GeoKnowledgeBodyV3, states: ReadonlyMap<string, { readonly decision: string }>) {
+  const facts = geoKbModuleValue(knowledge.facts);
+  const qa = geoKbModuleValue(knowledge.qa);
+  const comparisons = geoKbModuleValue(knowledge.comparisons);
+  const rows = (comparisons ?? []).flatMap((comparison) => comparison.rows);
+  return {
+    facts: facts === null ? null : {
+      facts: facts.length,
+      accepted: facts.filter((fact) => states.get(fact.itemKey)?.decision === "accepted").length,
+    },
+    qa: qa === null ? null : { qa: qa.length },
+    comparisons: comparisons === null ? null : {
+      comparisons: rows.length,
+      available: rows.filter((row) => row.availability === "available").length,
+    },
+  };
+}
 /** The reader-visible text behind one entity field, as a string. */
 function entityValue(entity: Record<string, unknown>, path: string): string {
   let node: unknown = entity;
@@ -454,18 +503,32 @@ function ScopeModule({ knowledge, context, packCopy }: {
     state={geoKbModuleState(knowledge.scope)}
     action={<AcceptAll editor={context.editor} itemKeys={keys} t={context.t} />}
   >
-    <div className="min-w-0 space-y-3">
-      {scope === null ? null : SCOPE_GROUPS.flatMap((group) => scope[group].map((item) => {
-        const current = context.editor.decisionFor(item.itemKey);
-        const override = current.override?.module === "scope" ? current.override.text : null;
-        return <Item
-          key={item.itemKey}
-          item={item}
-          typeLabel={packCopy.scopeGroups[group] ?? group}
-          correction={{ module: "scope", text: override ?? item.text }}
-          context={context}
-        ><Text>{override ?? item.text}</Text></Item>;
-      }))}
+    {/* One block per group, never a flat list.
+        The four groups answer four different questions -- what it does, what it
+        does not, what still needs a person, what people get wrong -- and a
+        group with nothing in it is a finding, not an absence to skip. Flattened
+        into one list, an empty `doesNot` disappeared from the screen entirely,
+        which reads as "we did not measure that" being rendered as "there is
+        nothing to say". */}
+    <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+      {SCOPE_GROUPS.map((group) => <GeoKbEvidenceGroup
+        key={group}
+        title={packCopy.scopeGroups[group] ?? group}
+        collected
+        count={scope === null ? 0 : scope[group].length}
+      >
+        <div className="min-w-0 space-y-3">{(scope === null ? [] : scope[group]).map((item) => {
+          const current = context.editor.decisionFor(item.itemKey);
+          const override = current.override?.module === "scope" ? current.override.text : null;
+          return <Item
+            key={item.itemKey}
+            item={item}
+            typeLabel={packCopy.scopeGroups[group] ?? group}
+            correction={{ module: "scope", text: override ?? item.text }}
+            context={context}
+          ><Text>{override ?? item.text}</Text></Item>;
+        })}</div>
+      </GeoKbEvidenceGroup>)}
     </div>
   </GeoKbModuleSection>;
 }
@@ -858,7 +921,6 @@ function relockFailureText(key: RelockFailureKey, t: ReturnType<typeof useTransl
  */
 function blockerText(blocker: GeoKbV3Blocker, t: ReturnType<typeof useTranslations>): string {
   switch (blocker) {
-    case "unsupported_language": return t("unsupported_language");
     case "category_terms_missing": return t("category_terms_missing");
   }
 }
@@ -1055,6 +1117,17 @@ export interface GeoKnowledgeBaseV3Props {
   readonly locale: string;
   readonly inline?: boolean;
   /**
+   * The Profile revision confirmed right now, which the locked generation input
+   * is compared against.
+   *
+   * Section 12 says the two are never synced automatically: confirming a new
+   * Profile revision changes nothing about a published knowledge base. What it
+   * does do is make an update worth running, and this is how the card knows to
+   * say so. Optional because a caller that does not know the current revision
+   * must say nothing rather than guess -- an absent number is not a match.
+   */
+  readonly confirmedProfileRevision?: number;
+  /**
    * An override for the update gesture.
    *
    * The card now drives the run route itself, so this is no longer what makes
@@ -1074,7 +1147,7 @@ export interface GeoKnowledgeBaseV3Props {
   readonly onReload?: () => void;
 }
 
-export function GeoKnowledgeBaseV3({ view, locale, inline = false, onUpdate, onReload }: GeoKnowledgeBaseV3Props) {
+export function GeoKnowledgeBaseV3({ view, locale, inline = false, confirmedProfileRevision, onUpdate, onReload }: GeoKnowledgeBaseV3Props) {
   const editor = useGeoKbV3Editor({ initialView: view });
   const copy = useGeoKbCopy();
   const t = useTranslations("tools.geoKnowledgeBase.card");
@@ -1344,10 +1417,25 @@ export function GeoKnowledgeBaseV3({ view, locale, inline = false, onUpdate, onR
     }
   }
 
+  /**
+   * Section 4.1: once a version is published and the draft on screen is that
+   * version, the whole card folds to a summary line, mirroring the Product
+   * Profile's confirmed card above it. `Edit` opens it again for the rest of
+   * the session.
+   *
+   * The condition is a hash comparison, not "publish just returned": a freeze
+   * stores the draft's own `content_hash` on the snapshot, so equal hashes mean
+   * the reviewed body and the published body are the same bytes. Autosaving one
+   * correction moves the draft hash and the card opens itself, which is the
+   * behaviour that matters -- a collapsed summary over unpublished edits would
+   * be a card claiming the owner has nothing left to review.
+   */
+  const [expanded, setExpanded] = useState(false);
   const knowledge = editor.payload.knowledge;
   const sources: SourceIndex = new Map((knowledge?.sourceCatalogue ?? []).map((source) => [source.id, source as GeoKnowledgeSourceV2]));
   const context: RowContext = {
     editor, sources, locale, t, card: copy,
+    restated: new Set(editor.view.restated),
     editing: editing?.itemKey ?? null,
     draft: editing?.draft ?? null,
     open: (itemKey, draft) => setEditing({ itemKey, draft }),
@@ -1356,6 +1444,25 @@ export function GeoKnowledgeBaseV3({ view, locale, inline = false, onUpdate, onR
   };
 
   const published = editor.view.published;
+  /**
+   * Two things worth telling a published owner, and neither of them acts.
+   *
+   * Section 12: the Profile and the knowledge base are never synced for you.
+   * Confirming a new Profile revision leaves the published version exactly as
+   * it was; what changes is that an update would now derive from newer inputs.
+   * The sentence for that already existed in the catalog and had no caller, so
+   * an owner who confirmed a Profile change was told nothing at all until they
+   * tried something that failed.
+   *
+   * D11: a fact carries the date it should be looked at again, ninety days out
+   * from when it was observed. Passing that date prompts and nothing more --
+   * re-running is a billed crawl plus a model call, and nothing here may spend
+   * that on its own.
+   */
+  const profileMoved = confirmedProfileRevision !== undefined
+    && Number(editor.payload.generationInput.profileRef.snapshotRevision) < confirmedProfileRevision;
+  const reviewDue = (geoKbModuleValue(knowledge?.facts ?? { status: "unavailable", reason: "not_applicable" }) ?? [])
+    .filter((fact) => fact.nextReviewAt !== null && fact.nextReviewAt <= new Date().toISOString()).length;
   /**
    * Why the update on this draft cannot work, derived from the locked input the
    * card is rendering rather than from the create route's one-shot answer --
@@ -1391,7 +1498,8 @@ export function GeoKnowledgeBaseV3({ view, locale, inline = false, onUpdate, onR
       ? t("review.saving")
       : published === null
         ? blockers.length > 0 ? t("recovery.blockedStatus") : copy.status.draft
-        : copy.status.published(String(published.revision), geoKbFormatDate(published.frozenAt, locale));
+        : (profileMoved ? copy.status.publishedUpdatable : copy.status.published)(
+          String(published.revision), geoKbFormatDate(published.frozenAt, locale));
 
   const sections: GeoKbCardSections | null = knowledge === null || rebuilt ? null : {
     identity: <div className="min-w-0 space-y-6">
@@ -1403,12 +1511,28 @@ export function GeoKnowledgeBaseV3({ view, locale, inline = false, onUpdate, onR
       <QaModule knowledge={knowledge} context={context} packCopy={packCopy} />
       <ComparisonsModule knowledge={knowledge} context={context} packCopy={packCopy} />
     </div>,
-    // Two different absences, so two different sentences. Trust and
-    // reachability hold observations this screen does not draw; the question
-    // set is not in a draft at all. One shared note would collapse "there is
-    // content you cannot see here" into "there is nothing".
-    trust: <Note>{t("review.noDecisions")}</Note>,
-    reachability: <Note>{t("review.noDecisions")}</Note>,
+    /* Read-only, not hidden.
+       D3 makes evidence, machine-readable status and coverage read-only: they
+       report observations, so there is no decision to record against them. That
+       was implemented as not drawing them at all, which is a different thing --
+       an owner on a v3 knowledge base could never see what the run observed
+       about their own site, and the two sections sat permanently empty under a
+       sentence saying there was nothing to decide. The same renderers the
+       published pack uses draw them here, so an uncollected evidence group
+       still says "never looked" rather than vanishing.
+       The note stays above them: it is true, and it is the reason these rows
+       carry no accept/correct/exclude controls. */
+    trust: <div className="min-w-0 space-y-6">
+      <Note>{t("review.noDecisions")}</Note>
+      <GeoEvidenceModuleView module={knowledge.evidence} sources={sources} heading={3} locale={locale} copy={packCopy} card={copy} />
+    </div>,
+    reachability: <div className="min-w-0 space-y-6">
+      <Note>{t("review.noDecisions")}</Note>
+      <GeoMachineModuleView module={knowledge.machine} sources={sources} heading={3} locale={locale} copy={packCopy} card={copy} />
+      <GeoCoverageModuleView module={knowledge.coverage} sources={sources} heading={3} locale={locale} copy={packCopy} card={copy} />
+    </div>,
+    // The question set is a different absence: it is not in a draft at all,
+    // because a set is made for a published version by a paid run.
     measurement: <Note>{t("review.measurementEmpty")}</Note>,
     // A draft has no question set of its own: the set is a paid run's separate
     // output and is bound to the version at publish time. That is an absence,
@@ -1418,8 +1542,44 @@ export function GeoKnowledgeBaseV3({ view, locale, inline = false, onUpdate, onR
   };
 
   const hold = editor.autosaveHold;
+  /**
+   * Nothing is folded away while something still needs the owner: an open
+   * update, a stopped one waiting to be continued, a blocker, a re-lock, or an
+   * unsaved edit all keep the full surface on screen. Collapsing over any of
+   * those hides the only controls that answer them.
+   */
+  const settled = published !== null
+    && knowledge !== null
+    /* A prompt is something to tell them, and the folded summary has nowhere
+       to say it. Section 4.1 folds a card with nothing left on it; these two
+       are exactly the case where there is. */
+    && !profileMoved
+    && reviewDue === 0
+    /* A `partial` module carries a limitation sentence, and the folded summary
+       has nowhere to put it. An `unavailable` one needs no such room: its
+       clause is simply not said (see `publishedCounts`). */
+    && ![knowledge.facts, knowledge.qa, knowledge.comparisons].some((module) => module.status === "partial")
+    && editor.view.draftHash === published.contentHash
+    && !rebuilt
+    && blockers.length === 0
+    && runPhase === "idle"
+    && resume === null
+    && hold === null
+    && editor.status.kind !== "busy";
+  const summary = settled && !expanded
+    ? {
+      version: String(published.revision),
+      name: entityValue(geoKbModuleValue(knowledge.entity) ?? {}, "name") || editor.view.host,
+      host: editor.view.host,
+      publishedAt: published.frozenAt,
+      counts: publishedCounts(knowledge, editor.states),
+      onEdit: () => setExpanded(true),
+    }
+    : null;
   return <GeoKbCard
     data-geo-kb-v3={true}
+    collapsed={summary !== null}
+    summary={summary}
     host={editor.view.host}
     locale={locale}
     inline={inline}
@@ -1463,6 +1623,9 @@ export function GeoKnowledgeBaseV3({ view, locale, inline = false, onUpdate, onR
       onReload={onReload ?? reloadThisPage}
       t={t}
     />
+    {reviewDue === 0 ? null : <p data-review-due="" role="status" className="text-[13px] leading-relaxed text-text-dark-secondary">
+      {t("review.reviewDue", { count: reviewDue })}
+    </p>}
     <span data-review-status="" role="status" className="block text-[13px] leading-relaxed text-text-dark-secondary">
       {hold === "conflict" ? t("review.conflict")
         : hold === "inputChanged" ? t("review.inputChanged")

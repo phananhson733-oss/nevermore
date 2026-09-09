@@ -10,6 +10,7 @@ import { emptyGeoKbPayload } from "../../lib/geo-tools/kb-contract.ts";
 import { completePayloadV2, V2_KB_ID } from "../../lib/geo-tools/kb-v2.test-fixtures.ts";
 import { completePayloadV3, V3_KB_ID } from "../../lib/geo-tools/kb-v3.test-fixtures.ts";
 import { parseGeoKbPayloadV3 } from "../../lib/geo-tools/kb-v3-contract.ts";
+import { geoV3RestatedItemKeys } from "../../lib/geo-tools/kb-v3-item-content.ts";
 import { geoV2Digest } from "../../lib/geo-tools/kb-v2-digest.ts";
 import { WebsiteGeoEditor } from "./website-geo-editor.tsx";
 import { renderedText } from "../tools/rendered-text.test-helper.ts";
@@ -61,7 +62,8 @@ function v3Data(websiteId = WEBSITE_ID) {
   const payload = parseGeoKbPayloadV3({ ...base, generationInput: { ...base.generationInput,
     profileRef: { ...base.generationInput.profileRef, websiteId } } });
   return { ...DATA, knowledgeBase: { schemaVersion: "marketing-geo-kb-editor.v3", kbId: V3_KB_ID,
-    origin: VIEW.origin, host: VIEW.host, draftVersion: 4, draftHash: geoV2Digest(payload), payload, published: null } };
+    origin: VIEW.origin, host: VIEW.host, draftVersion: 4, draftHash: geoV2Digest(payload), payload, published: null,
+    restated: geoV3RestatedItemKeys(payload.knowledge, payload.review) } };
 }
 
 /**

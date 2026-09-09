@@ -37,7 +37,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { connectFreshMarketingSchema } from "../credits/sql-test-harness.ts";
 import { completePayloadV2, questionSetV2 } from "./kb-v2.test-fixtures.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
-import { buildGeoKnowledgeEvidenceV1 } from "./kb-knowledge-evidence.ts";
 import { buildGeoKnowledgeSynthesisInputV1 } from "./kb-knowledge-synthesis-contract.ts";
 import {
   buildGeoKnowledgeGenerationResultV2,
@@ -48,13 +47,19 @@ import {
   geoV2NarrativeFixture,
 } from "./kb-knowledge-synthesis-v2-fixtures.ts";
 import { buildGeoKnowledgePackV3 } from "./kb-knowledge-pack-v3.ts";
+import { parseGeoKnowledgePackV2 } from "./kb-knowledge-pack-v2-contract.ts";
+import { geoBriefFactsForSnapshot } from "./brief-facts.ts";
+import type { VersionedGeoKbFrozenSnapshot } from "./kb-versioned-read.ts";
 import {
   createGeoPreparedCandidateV3,
   geoReviewHashV3,
   type GeoCandidateQuestionSetV3,
   type GeoPreparedCandidateV3,
 } from "./kb-prepared-v3-contract.ts";
-import { buildGeoSnapshotContextV3 } from "./snapshot-context-v3.ts";
+import {
+  buildGeoSnapshotContextV3,
+  parseGeoSnapshotContextV3,
+} from "./snapshot-context-v3.ts";
 import {
   geoV3ItemKeys,
   parseGeoKbPayloadV3,
@@ -68,7 +73,14 @@ import {
   materializeGeoV3Review,
   type GeoV3ReviewAction,
 } from "./kb-v3-review.ts";
-import { FACT_KEY_TEAM, completePayloadV3 } from "./kb-v3.test-fixtures.ts";
+import {
+  FACT_KEY_TEAM,
+  OWNER_DECLARED_AT,
+  OWNER_DECLARED_PRO_PRICE,
+  OWNER_DECLARED_TEAM_PRICE,
+  completePayloadV3,
+  ownerDeclaredPayloadV3,
+} from "./kb-v3.test-fixtures.ts";
 
 const MIGRATION = new URL(
   "../../../supabase/migrations/20260907143000_geo_kb_v3.sql",
@@ -344,9 +356,15 @@ const publishCandidate = (f: Fixture, candidate: GeoPreparedCandidateV3) =>
  */
 async function publishable(
   questionSet: GeoCandidateQuestionSetV3 = UNAVAILABLE_QUESTION_SET,
+  /**
+   * What the owner decided before the sweep. The default decides nothing, which
+   * is the case every test below this one exercises: publishing then accepts
+   * the whole draft in bulk.
+   */
+  decide: (payload: GeoKbPayloadV3) => GeoKbPayloadV3 = (payload) => payload,
 ) {
   const f = await fixture();
-  const seeded = payloadV3(f);
+  const seeded = decide(payloadV3(f));
   expect((await saveDraft(f, seeded, 0)).outcome).toBe("saved");
   const payload = swept(seeded, "1");
   const saved = await saveDraft(f, payload, 1);
@@ -681,6 +699,115 @@ describe("GEO knowledge base V3 SQL", () => {
     // carried it: a stored slot is a value `parseGeoQuestionSetV2` cannot read.
     expect(snapshot.question_set).toEqual(questionSetV2());
     expect(snapshot.question_set_hash).toBe(geoV2Digest(questionSetV2()));
+  });
+
+  it("publishes a version whose every fact is an owner declaration, and the Brief reads it back", async () => {
+    // The one artifact the design names by hand: a draft carrying only facts
+    // the owner declared -- no page, no URL, no observation behind any of them
+    // -- has to publish, and a Brief has to be able to read what was published.
+    //
+    // Both halves run against the real thing. The pack is built by the publish
+    // assembler from a draft whose facts the owner corrected, stored by the
+    // publish RPC, read back out of the table, and handed to the projection a
+    // Brief uses -- so a publish path that stopped emitting URL-less owner
+    // declarations, or a projection that started demanding a URL for them,
+    // breaks this test rather than passing between them.
+    const { f, candidate } = await publishable(
+      UNAVAILABLE_QUESTION_SET,
+      ownerDeclaredPayloadV3,
+    );
+    const published = await publishCandidate(f, candidate);
+    expect(published.outcome).toBe("published");
+
+    const snapshot = (
+      await db.query(
+        "select s.*, c.context from public.marketing_geo_kb_snapshots s join public.marketing_geo_snapshot_contexts c on c.snapshot_id=s.id where s.id=$1",
+        [published.snapshot_id],
+      )
+    ).rows[0];
+    const stored = (
+      await db.query(
+        "select candidate->'knowledgePack' as pack from public.marketing_geo_kb_prepared_candidates where id=$1",
+        [candidate.candidateId],
+      )
+    ).rows[0].pack;
+
+    // Everything from here on comes back out of the tables and through the
+    // parsers a reader uses; nothing is carried over from the objects this test
+    // handed to the RPC.
+    const pack = parseGeoKnowledgePackV2(stored);
+    const context = parseGeoSnapshotContextV3(snapshot.context);
+    const frozen: VersionedGeoKbFrozenSnapshot = {
+      kbId: snapshot.kb_id,
+      snapshotId: snapshot.id,
+      revision: snapshot.revision,
+      contentHash: snapshot.content_hash,
+      questionSetHash: snapshot.question_set_hash,
+      questionCount: null,
+      frozenAt: new Date(snapshot.frozen_at).toISOString(),
+      payload: parseGeoKbPayloadV3(snapshot.payload),
+      questionSet: null,
+    };
+
+    if (pack.facts.status !== "available")
+      throw new Error("Expected published facts");
+    expect(pack.facts.value.map((fact) => fact.origin)).toEqual([
+      "declared_owner",
+      "declared_owner",
+    ]);
+    // Nothing cited, nothing observed: the pages that carried the prices the
+    // owner replaced survive only as `priorSourceRefs`.
+    expect(pack.facts.value.flatMap((fact) => fact.sourceRefs)).toEqual([]);
+    expect(pack.facts.value.map((fact) => fact.observedAt)).toEqual([
+      null,
+      null,
+    ]);
+    expect(pack.facts.value.map((fact) => fact.ownerDeclaredAt)).toEqual([
+      OWNER_DECLARED_AT,
+      OWNER_DECLARED_AT,
+    ]);
+
+    const result = geoBriefFactsForSnapshot(frozen, context, pack);
+
+    expect(result.factTable).toEqual([
+      {
+        id: "F1",
+        label: "Pro plan monthly price",
+        value: OWNER_DECLARED_PRO_PRICE,
+        reason: null,
+        evidence_refs: ["K1"],
+      },
+      {
+        id: "F2",
+        label: "Team plan monthly price",
+        value: OWNER_DECLARED_TEAM_PRICE,
+        reason: null,
+        evidence_refs: ["K2"],
+      },
+    ]);
+    expect(result.receipts).toEqual([
+      {
+        id: "K1",
+        source: "kb",
+        text: OWNER_DECLARED_PRO_PRICE,
+        observed_at: OWNER_DECLARED_AT,
+        url: null,
+      },
+      {
+        id: "K2",
+        source: "kb",
+        text: OWNER_DECLARED_TEAM_PRICE,
+        observed_at: OWNER_DECLARED_AT,
+        url: null,
+      },
+    ]);
+    // The declaration date, not the freeze time it would fall back to.
+    expect(result.receipts.map((receipt) => receipt.observed_at)).not.toContain(
+      frozen.frozenAt,
+    );
+    expect(result.receipts.map((receipt) => receipt.source)).not.toContain(
+      "crawl",
+    );
   });
 
   it("returns the existing version for a byte-identical republish and mints no second candidate", async () => {

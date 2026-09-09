@@ -12,8 +12,14 @@
  *  - collection (`kb-run-collect-executor.ts`): a run observes the site's own
  *    page and each confirmed competitor's, through the website evidence
  *    observation library;
- *  - the knowledge model step (below): the run buys one `knowledge_pack`
- *    generation for the draft and then assembles it into the draft's body.
+ *  - the knowledge model step (below): the run writes the deterministic half of
+ *    the body from what the collection observed, then buys one `knowledge_pack`
+ *    generation for the draft and assembles it into the draft's body.
+ *
+ * The order in that second half is section 4.2's, not an implementation detail.
+ * The deterministic modules go in BEFORE anything is dispatched, so they neither
+ * wait for the model nor die with it; the assemble route builds them from the
+ * observation ledger without a fetch, so this costs nothing and buys nothing.
  *
  * The second half is what closed the chain. Until it existed a v3 run seeded
  * on-site fetches and nothing else, no `knowledge_pack` record was ever created
@@ -136,6 +142,13 @@ export type GeoRunAssembleOutcome =
    * stops being true; making the route take an id is the seam that closes it.
    */
   | { readonly kind: "assembled"; readonly knowledgeGenerationId: string }
+  /**
+   * The deterministic half was written: what the collection observed is on the
+   * draft, and no narrative existed to file beside it. It names no generation
+   * record because none was reused, which is why it is a member of its own
+   * rather than an `assembled` with an empty id.
+   */
+  | { readonly kind: "observed" }
   /** Come back: the draft moved, the store blinked, or a quota said later. */
   | { readonly kind: "retry"; readonly reason: GeoRunOperationReason }
   /** It will answer the same way every time; do not keep asking. */
@@ -223,12 +236,8 @@ export function createGeoRunKnowledgeExecutor(sources: GeoRunKnowledgeSources): 
   const assembleInto = async (
     context: { readonly userId: string; readonly kbId: string },
     draft: Extract<GeoRunKnowledgeDraft, { readonly kind: "ok" }>,
-  ): Promise<
-    | { readonly kind: "succeeded"; readonly resultRef: string }
-    | { readonly kind: "retry"; readonly reason: GeoRunOperationReason }
-    | { readonly kind: "refused"; readonly reason: GeoRunOperationReason }
-  > => {
-    const assembled = await sources
+  ): Promise<GeoRunAssembleOutcome> =>
+    await sources
       .assemble({
         userId: context.userId,
         kbId: context.kbId,
@@ -236,9 +245,26 @@ export function createGeoRunKnowledgeExecutor(sources: GeoRunKnowledgeSources): 
         draftHash: draft.draftHash,
       })
       .catch(() => ({ kind: "retry" as const, reason: "store_unavailable" as const }));
-    return assembled.kind === "assembled"
-      ? { kind: "succeeded", resultRef: assembled.knowledgeGenerationId }
-      : assembled;
+
+  /**
+   * What filing a paid narrative into the draft means for this operation.
+   *
+   * `observed` cannot honestly be a success here. This is only reached with a
+   * succeeded record, so the route was expected to resolve that record's
+   * narrative; an observed body means it filed something this operation did not
+   * buy, and `resultRef` -- which is not optional for a succeeded operation --
+   * would have nothing true to point at. It is reported as an outage so the
+   * next invocation re-reads rather than recorded as the narrative landing.
+   */
+  const filed = (
+    outcome: GeoRunAssembleOutcome,
+  ):
+    | { readonly kind: "succeeded"; readonly resultRef: string }
+    | { readonly kind: "retry"; readonly reason: GeoRunOperationReason }
+    | { readonly kind: "refused"; readonly reason: GeoRunOperationReason } => {
+    if (outcome.kind === "assembled") return { kind: "succeeded", resultRef: outcome.knowledgeGenerationId };
+    if (outcome.kind === "observed") return { kind: "retry", reason: "store_unavailable" };
+    return outcome;
   };
 
   /** What a record means, once we have one. Never dispatches. */
@@ -249,7 +275,7 @@ export function createGeoRunKnowledgeExecutor(sources: GeoRunKnowledgeSources): 
   ): Promise<GeoRunStartOutcome> => {
     switch (record.state) {
       case "succeeded": {
-        const assembled = await assembleInto(context, draft);
+        const assembled = filed(await assembleInto(context, draft));
         if (assembled.kind === "succeeded") return assembled;
         return assembled.kind === "retry"
           ? { kind: "failed_retryable", reason: assembled.reason }
@@ -297,13 +323,55 @@ export function createGeoRunKnowledgeExecutor(sources: GeoRunKnowledgeSources): 
     // Already bought under this run's key. Nothing leaves this process.
     if (existing.kind === "record") return await settle(existing, scope, draft);
 
+    /**
+     * Section 4.2's deterministic half, written before anything is dispatched.
+     *
+     * Reaching this line means the collection is finished -- the seed order in
+     * `kb-run-collect.ts` puts every fetch ahead of `model:knowledge`, and
+     * `planGeoRun` hands out the first actionable operation -- and that nothing
+     * has been bought for this run yet. That is exactly the moment the design
+     * says the modules which need no model become visible: what was observed,
+     * and the coverage table over it. They used to wait for the narrative and
+     * die with it, so an owner whose model step failed was left with a card of
+     * zero sections after the run had already read their site.
+     *
+     * It buys nothing. The assemble route rebuilds its evidence bundle from the
+     * observation ledger through a reader that opens no socket, so no crawl-gate
+     * admission and no request can come out of this call, and it declines
+     * outright on a draft that already carries a body.
+     *
+     * Its answer is deliberately discarded rather than made this operation's.
+     * The operation is the model step; the refusals this call can produce -- a
+     * draft that already has a body, no observation fresh enough to rebuild
+     * from, no observation library wired -- are all states in which there is
+     * still a narrative worth buying, and failing here would take that away for
+     * the sake of a step that costs nothing. Nothing is hidden by discarding it:
+     * the draft either gained the body or did not, and the assembly that follows
+     * a succeeded generation writes the full one either way.
+     */
+    await assembleInto(scope, draft);
+    /**
+     * That write may have minted a new draft version, and a dispatch binds the
+     * paid record to the version it names. So the draft is re-read rather than
+     * the copy from before the write reused; not knowing the current one is a
+     * reason to come back, not a reason to buy against a stale version.
+     */
+    const reread = await sources.readDraft(scope).catch(() => ({ kind: "unavailable" as const }));
+    if (reread.kind !== "ok") return { kind: "failed_retryable", reason: "store_unavailable" };
+    // The observed write never touches `generationInput`, so a hash that moved
+    // is somebody else editing the draft. The bind above spoke for the old one.
+    if (reread.generationInputHash !== draft.generationInputHash) {
+      return { kind: "failed_retryable", reason: "store_unavailable" };
+    }
+    const current = reread;
+
     let dispatched: GeoRunKnowledgeDispatch;
     try {
       dispatched = await sources.dispatchGeneration({
         ...scope,
         idempotencyKey,
-        baseVersion: draft.draftVersion,
-        draftHash: draft.draftHash,
+        baseVersion: current.draftVersion,
+        draftHash: current.draftHash,
       });
     } catch {
       // The request went out. We do not know what came back, and that is
@@ -316,7 +384,7 @@ export function createGeoRunKnowledgeExecutor(sources: GeoRunKnowledgeSources): 
         ? { kind: "failed_permanent", reason: dispatched.reason }
         : { kind: "failed_retryable", reason: dispatched.reason };
     }
-    return await settle(dispatched, scope, draft);
+    return await settle(dispatched, scope, current);
   };
 
   const probe = async (
@@ -343,7 +411,7 @@ export function createGeoRunKnowledgeExecutor(sources: GeoRunKnowledgeSources): 
       case "succeeded": {
         const draft = await sources.readDraft(scope).catch(() => ({ kind: "unavailable" as const }));
         if (draft.kind !== "ok") return { kind: "unresolved" };
-        const assembled = await assembleInto(scope, draft);
+        const assembled = filed(await assembleInto(scope, draft));
         if (assembled.kind === "succeeded") return assembled;
         // A refusal that will not change is reported; anything transient stays
         // unresolved, and the orchestrator's own probe bound ends the loop.
@@ -530,13 +598,16 @@ export function geoRunAssembleOutcome(
 ): GeoRunAssembleOutcome {
   if (status === 200) {
     const data = body?.data;
-    const filed = record(data) ? data.knowledgeGenerationId : undefined;
-    // A 200 that does not name the record it filed is not an assembly the
-    // ledger can point at, and `resultRef` is not optional for a succeeded
+    const named = record(data) ? data.knowledgeGenerationId : undefined;
+    if (typeof named === "string" && named !== "") return { kind: "assembled", knowledgeGenerationId: named };
+    // A body assembled from the collection alone names no generation record,
+    // and says which half it came from. Read together, those two are the one
+    // shape in which a missing id is an answer rather than a malformed one.
+    if (record(data) && data.basis === "observed" && named === null) return { kind: "observed" };
+    // Any other 200 that does not name the record it filed is not an assembly
+    // the ledger can point at, and `resultRef` is not optional for a succeeded
     // operation. Report an outage rather than invent a pointer.
-    return typeof filed === "string" && filed !== ""
-      ? { kind: "assembled", knowledgeGenerationId: filed }
-      : { kind: "retry", reason: "store_unavailable" };
+    return { kind: "retry", reason: "store_unavailable" };
   }
   if (status === 503) return { kind: "retry", reason: "store_unavailable" };
   if (status === 429) return { kind: "retry", reason: "rate_limited" };
@@ -581,6 +652,17 @@ function assembleDependencies(userId: string): GeoKbV3AssembleDependencies {
     readDetails: async (input) => await readVersionedGeoKnowledgeBase(input),
     saveDraft: async (input) => await saveGeoKbDraftV3(input),
     readLatestGeneration: async (input) => await DEFAULT_GEO_KB_GENERATION_STORE.readLatest(input),
+    /**
+     * The same two readers the collection half already uses, so the rows this
+     * route credits are exactly the rows this run's fetch operations wrote.
+     * Taking them from `DEFAULT_GEO_RUN_COLLECT_SOURCES` rather than importing
+     * the stores again keeps that one wiring rather than two that can drift.
+     */
+    observations: {
+      resolveWebsiteId: DEFAULT_GEO_RUN_COLLECT_SOURCES.resolveWebsiteId,
+      readLatestObservation: DEFAULT_GEO_RUN_COLLECT_SOURCES.readLatestObservation,
+      now: DEFAULT_GEO_RUN_COLLECT_SOURCES.now,
+    },
   };
 }
 

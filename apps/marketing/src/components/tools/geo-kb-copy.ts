@@ -132,21 +132,30 @@ export interface GeoKbCopy {
   readonly publish: {
     readonly title: string;
     readonly changes: (count: number, version: string) => string;
+    /** The previous version records no per-item decisions, so there is no count. */
+    readonly changesUncountable: (count: number, version: string) => string;
     readonly firstVersion: (count: number) => string;
     readonly pending: (count: number) => string;
     readonly noPending: string;
   };
   readonly published: {
     readonly headline: (version: string) => string;
-    readonly counts: (values: {
-      readonly facts: number;
-      readonly accepted: number;
-      readonly qa: number;
-      readonly available: number;
-      readonly comparisons: number;
-      readonly thirdParty: number;
-      readonly date: string;
-    }) => string;
+    /**
+     * One clause per module, not one sentence for all of them.
+     *
+     * A module the run never measured reads back as an empty list, and a
+     * single template would render its numbers as `0` -- "we looked and found
+     * none" said about a section nobody looked at. Clause-shaped, the caller
+     * drops the clause instead of inventing a zero, and the summary simply
+     * does not mention that section. There is deliberately no `thirdParty`
+     * clause: nothing in this deployment collects off-site evidence, so the
+     * only number it could carry is that same lie.
+     */
+    readonly counts: {
+      readonly facts: (values: { readonly facts: number; readonly accepted: number }) => string;
+      readonly qa: (values: { readonly qa: number }) => string;
+      readonly comparisons: (values: { readonly available: number; readonly comparisons: number }) => string;
+    };
   };
   readonly decisions: Readonly<Record<GeoDecision, string>>;
   /**
@@ -252,13 +261,18 @@ export function useGeoKbCopy(): GeoKbCopy {
     publish: {
       title: t("publish.title"),
       changes: (count, version) => t("publish.changes", { count, version }),
+      changesUncountable: (count, version) => t("publish.changesUncountable", { count, version }),
       firstVersion: (count) => t("publish.firstVersion", { count }),
       pending: (count) => t("publish.pending", { count }),
       noPending: t("publish.noPending"),
     },
     published: {
       headline: (version) => t("published.headline", { version }),
-      counts: (values) => t("published.counts", { ...values }),
+      counts: {
+        facts: (values) => t("published.counts.facts", { ...values }),
+        qa: (values) => t("published.counts.qa", { ...values }),
+        comparisons: (values) => t("published.counts.comparisons", { ...values }),
+      },
     },
     decisions: record(
       Object.keys(DECISION_KEYS) as readonly GeoDecision[],

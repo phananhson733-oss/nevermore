@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { geoV3ItemContentHashes } from "./kb-v3-item-content.ts";
+import { geoV3ItemContentHashes, geoV3RestatedItemKeys } from "./kb-v3-item-content.ts";
 import { geoItemKey } from "./kb-item-key.ts";
 import {
   GEO_CONFLICTING_FACT_STATEMENT,
@@ -58,6 +58,43 @@ function withReview(payload: GeoKbPayloadV3, review: GeoReviewV3): GeoKbPayloadV
   return parseGeoKbPayloadV3({ ...payload, review });
 }
 
+/** A digit-free unique suffix, so a padding fact makes no numeric claim. */
+function letters(index: number): string {
+  return `${String.fromCharCode(97 + Math.floor(index / 26))}${String.fromCharCode(97 + (index % 26))}`;
+}
+
+/**
+ * The same run padded to a chosen number of facts, so the 64-row ceiling can be
+ * reached on purpose. Fillers carry no digits: a number in one would have to be
+ * supported by an excerpt like every other claim.
+ */
+function filled(count: number, options: { readonly dropTeam?: boolean } = {}): AssemblyFixtureOptions["narrative"] {
+  return (narrative: Narrative) => {
+    const kept = options.dropTeam === true
+      ? narrative.facts.filter((fact) => fact.id !== "fact:team-price")
+      : narrative.facts;
+    return {
+      ...narrative,
+      facts: [
+        ...kept,
+        ...Array.from({ length: count - kept.length }, (_unused, index) => ({
+          ...narrative.facts[0]!, id: `fact:filler-${letters(index)}`, type: "price" as const,
+          statement: `Filler ${letters(index)} pricing stays unpublished.`,
+          label: `Filler ${letters(index)}`, value: null as string | null, reason: "notPublished",
+          attribute: `Filler attribute ${letters(index)}`, qualifiers: [] as string[],
+        })),
+      ],
+    };
+  };
+}
+
+/** Every fact item key in a payload, in walk order. */
+function factKeys(payload: GeoKbPayloadV3): readonly string[] {
+  const module = payload.knowledge?.facts;
+  if (module === undefined || module.status === "unavailable") return [];
+  return module.value.map((fact) => fact.itemKey);
+}
+
 function merge(next: GeoKbPayloadV3, previous: GeoKbPayloadV3 | null) {
   return mergeGeoDraftV3({ next, previous, previousDraftVersion: "1" });
 }
@@ -101,6 +138,7 @@ describe("mergeGeoDraftV3", () => {
     const merged = merge(assembledPayload(), previous);
     expect(outcome(merged.outcomes, PRO_KEY).kind).toBe("unchanged");
     expect(merged.payload.review.decisions).toEqual(previous.review.decisions);
+    expect(geoV3RestatedItemKeys(merged.payload.knowledge, merged.payload.review)).toEqual([]);
   });
 
   it("keeps the decision but leaves the new observation visible when the same page changed", () => {
@@ -115,8 +153,13 @@ describe("mergeGeoDraftV3", () => {
     const kept = merged.payload.review.decisions.find((entry) => entry.itemKey === PRO_KEY);
     expect(kept?.decision).toBe("accepted");
     // The decision still points at the text that was approved, which is how the
-    // card knows to say the item has been re-observed.
+    // card knows to say the item has been re-observed. That last hop is a real
+    // wire, not a comment: `geoV3RestatedItemKeys` is what the loader and the
+    // save route ship, and `geo-kb-v3-review.tsx` turns it into the row's
+    // "has a new observation" chip. Asserting only the hash mismatch here is
+    // what let the chip go unwired while this test stayed green.
     expect(kept?.baseContentHash).not.toBe(contentHash(merged.payload, PRO_KEY));
+    expect(geoV3RestatedItemKeys(merged.payload.knowledge, merged.payload.review)).toEqual([PRO_KEY]);
   });
 
   it("withholds a fact's value when a different page disagrees, instead of picking a winner", () => {
@@ -240,6 +283,88 @@ describe("mergeGeoDraftV3", () => {
     expect(merged.payload.review.decisions.find((entry) => entry.itemKey === TEAM_KEY)?.override).toEqual(override);
   });
 
+  /**
+   * Section 4.4: "key 消失 → `declared_owner` 的修正条目保留（它本来就不依赖观察）".
+   * There is no exception in that sentence for "unless this run observed nothing
+   * at all", and that is exactly the run where the owner's own answer is the
+   * only thing left. The module comes back as `partial` holding the correction,
+   * because a section that holds the owner's declaration is not empty.
+   */
+  it("keeps a corrected fact when the update closed the whole facts module", () => {
+    const previousDraft = assembledPayload();
+    const override: GeoOverrideV3 = {
+      module: "facts", statement: "The Team plan costs $25 per month.", label: "Monthly price", value: "$25", reason: "",
+    };
+    const previous = withReview(previousDraft, {
+      decisions: [decision(TEAM_KEY, { override, baseContentHash: contentHash(previousDraft, TEAM_KEY) })],
+      suppressions: [],
+    });
+    const next = assembledPayload({ narrative: (narrative: Narrative) => ({ ...narrative, facts: [] }) });
+    expect(next.knowledge?.facts.status).toBe("unavailable");
+
+    const merged = merge(next, previous);
+
+    expect(outcome(merged.outcomes, TEAM_KEY).kind).toBe("carried_declared");
+    expect(merged.payload.knowledge?.facts.status).toBe("partial");
+    expect(factRow(merged.payload, TEAM_KEY)?.value).toBe("$19");
+    expect(merged.payload.review.decisions.find((entry) => entry.itemKey === TEAM_KEY)?.override).toEqual(override);
+    expect(merged.droppedCorrections).toEqual([]);
+  });
+
+  it("evicts an undecided generated row rather than the owner's correction when the list is full", () => {
+    const previousDraft = assembledPayload();
+    const override: GeoOverrideV3 = {
+      module: "facts", statement: "The Team plan costs $25 per month.", label: "Monthly price", value: "$25", reason: "",
+    };
+    const previous = withReview(previousDraft, {
+      decisions: [decision(TEAM_KEY, { override, baseContentHash: contentHash(previousDraft, TEAM_KEY) })],
+      suppressions: [],
+    });
+    // The Team fact is gone and the module is at its 64-row ceiling, so there is
+    // no room for the carried row unless something makes way.
+    const next = assembledPayload({ narrative: filled(64, { dropTeam: true }) });
+    expect(next.knowledge?.facts.status === "unavailable" ? 0 : next.knowledge!.facts.value.length).toBe(64);
+
+    const merged = merge(next, previous);
+
+    expect(outcome(merged.outcomes, TEAM_KEY).kind).toBe("carried_declared");
+    expect(factRow(merged.payload, TEAM_KEY)?.value).toBe("$19");
+    expect(merged.droppedCorrections).toEqual([]);
+  });
+
+  it("never evicts one owner decision to carry another", () => {
+    // Every surviving row is one the owner decided, so there is nothing this
+    // merge is allowed to drop. The correction is then REPORTED rather than
+    // deleted in silence, and rather than paid for out of another decision.
+    const previousDraft = assembledPayload({ narrative: filled(64) });
+    const override: GeoOverrideV3 = {
+      module: "facts", statement: "The Team plan costs $25 per month.", label: "Monthly price", value: "$25", reason: "",
+    };
+    const next = assembledPayload({ narrative: filled(64, { dropTeam: true }) });
+    const survivors = factKeys(next).filter((itemKey) => itemKey !== TEAM_KEY);
+    // A decision has to name an item the draft it lives in carries, so the row
+    // that only exists in the new body is spoken for by an exclusion instead --
+    // exclusions outlive their items by design, and the merge treats one as
+    // decided for exactly the reason under test.
+    const carriedOver = new Set(factKeys(previousDraft));
+    const previous = withReview(previousDraft, {
+      decisions: [
+        decision(TEAM_KEY, { override, baseContentHash: contentHash(previousDraft, TEAM_KEY) }),
+        ...survivors.filter((itemKey) => carriedOver.has(itemKey)).map((itemKey) => decision(itemKey)),
+      ],
+      suppressions: survivors.filter((itemKey) => !carriedOver.has(itemKey))
+        .map((itemKey) => ({ itemKey, suppressedAt: DECIDED_AT })),
+    });
+
+    const merged = merge(next, previous);
+
+    expect(factKeys(next)).toHaveLength(64);
+    expect(outcome(merged.outcomes, TEAM_KEY).kind).toBe("dropped_unmergeable");
+    expect(merged.droppedCorrections).toEqual([{ itemKey: TEAM_KEY, override }]);
+    // Nothing was traded away: every other decision is still here.
+    expect(merged.payload.review.decisions.map((entry) => entry.itemKey).sort()).toEqual([...survivors].sort());
+  });
+
   it("remembers an exclusion after the item it applied to disappears", () => {
     const previousDraft = assembledPayload();
     const previous = withReview(previousDraft, {
@@ -269,5 +394,75 @@ describe("mergeGeoDraftV3", () => {
       narrative: restatedPro("The Pro plan costs $19 per month.", "$19", [PLANS_SOURCE]),
     });
     expect(() => parseGeoKbPayloadV3(merge(next, previous).payload)).not.toThrow();
+  });
+
+  /**
+   * The comparisons module's scope key is per competitor, so "this competitor
+   * did not come back" and "this section was never observed" look identical at
+   * the point the carry is decided. They are not the same fact, and the second
+   * one is a sentence the owner reads.
+   *
+   * The second competitor is grafted onto an assembled payload rather than run
+   * through the narrative fixture: the narrative parser refuses a comparison
+   * against a competitor the evidence does not confirm, and widening that
+   * shared fixture would change every assembly test to prove one merge rule.
+   */
+  describe("carrying a competitor the new run did not compare", () => {
+    function withSecondCompetitor(payload: GeoKbPayloadV3): GeoKbPayloadV3 {
+      const comparisons = payload.knowledge?.comparisons;
+      if (comparisons === undefined || comparisons.status === "unavailable") throw new Error("fixture has no comparisons");
+      const first = comparisons.value[0]!;
+      const key = "second.example";
+      return parseGeoKbPayloadV3({
+        ...payload,
+        knowledge: {
+          ...payload.knowledge,
+          comparisons: {
+            ...comparisons,
+            value: [...comparisons.value, {
+              ...structuredClone(first),
+              id: "comparison:second",
+              competitor: { key, name: "Second", confirmed: true },
+              rows: first.rows.map((row) => ({
+                ...structuredClone(row),
+                id: `${row.id}-second`,
+                itemKey: geoItemKey({ module: "comparisons", competitorKey: key, dimension: row.dimension }),
+              })),
+            }],
+          },
+        },
+      });
+    }
+
+    function comparisonsOf(payload: GeoKbPayloadV3) {
+      const module = payload.knowledge?.comparisons;
+      if (module === undefined || module.status === "unavailable") throw new Error("comparisons unavailable");
+      return module;
+    }
+
+    it("keeps the module's own status when other competitors did come back", () => {
+      const previous = withSecondCompetitor(assembledPayload());
+      const carried = comparisonsOf(previous).value.find((entry) => entry.competitor.key === "second.example");
+      const row = carried?.rows[0];
+      if (row === undefined) throw new Error("no second competitor row");
+      // A decision is what makes the row outlive the observation.
+      const decided = withReview(previous, {
+        decisions: [decision(row.itemKey, {
+          override: { module: "comparisons", product: "Teams of 2", competitor: "Teams of 9" },
+        })],
+        suppressions: [],
+      });
+
+      // This update compared only the first competitor.
+      const merged = merge(assembledPayload(), decided);
+      const module = comparisonsOf(merged.payload);
+      // The run DID observe this section. Saying otherwise is the defect, and
+      // `partial` also forces the review card out of its folded summary.
+      expect(module.status).toBe(comparisonsOf(assembledPayload()).status);
+      expect(JSON.stringify(module)).not.toContain("observed nothing for this section");
+      // ...and the carried competitor is still there beside the observed one.
+      expect(module.value.map((entry) => entry.competitor.key).toSorted())
+        .toEqual(["rival.example", "second.example"]);
+    });
   });
 });

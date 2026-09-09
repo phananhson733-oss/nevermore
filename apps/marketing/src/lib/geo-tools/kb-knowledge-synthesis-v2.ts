@@ -34,7 +34,6 @@
  *     only the off-site set changed. Feeding off-site pages in here would
  *     change what the knowledge base claims *and* destroy that reuse property.
  */
-import { geoGenerationLanguage } from "@sf/public-tools/content-brief/geo-contract";
 
 import {
   createKeywordLlmClient,
@@ -106,7 +105,7 @@ interface GeoKnowledgeSynthesisV2AttemptMeta {
 
 /**
  * What a refusal says, for the caller that has to turn it into an owner-visible
- * outcome. The four that are not `KeywordLlmFailureReason`:
+ * outcome. The three that are not `KeywordLlmFailureReason`:
  *
  *   - `invalid_input`     the value is not a synthesis input v2 at all, or its
  *                         own hashes do not agree with its content. A bug or a
@@ -116,10 +115,14 @@ interface GeoKnowledgeSynthesisV2AttemptMeta {
  *                         nothing about it is wrong -- it is too big, and the
  *                         answer is fewer or shorter sources, not a fix.
  *                         Nothing was sent and nothing was spent.
- *   - `unsupported_language`  the input's locale is not English.
  *   - `provider_error`    the client threw something that was not a
  *                         `KeywordLlmError`; the outcome is unknown and the
  *                         call is counted as possibly charged.
+ *
+ * `unsupported_language` used to be here, and is deliberately gone. Design
+ * decision D8: the knowledge body follows the site's own language, so this
+ * adapter accepts any locale. Only the QUESTION SET keeps the English registry
+ * limit, and it refuses there (`kb-synthesis.ts`).
  */
 export type GeoKnowledgeSynthesisV2Failure = GeoKnowledgeSynthesisV2AttemptMeta & {
   readonly ok: false;
@@ -127,7 +130,6 @@ export type GeoKnowledgeSynthesisV2Failure = GeoKnowledgeSynthesisV2AttemptMeta 
     | KeywordLlmFailureReason
     | "invalid_input"
     | "input_too_large"
-    | "unsupported_language"
     | "provider_error";
 };
 
@@ -216,9 +218,16 @@ export function prepareGeoKnowledgeSynthesisV2(
 ): GeoKnowledgeSynthesisV2Preparation {
   const parsed = parsedInput(input);
   if (!parsed.ok) return notAttempted(parsed.reason);
-  if (geoGenerationLanguage(parsed.value.language) === null) {
-    return notAttempted("unsupported_language");
-  }
+  /*
+   * D8: the knowledge body follows the site's own language.
+   *
+   * This used to refuse every non-English input outright, which made the
+   * English question-set registry gate the knowledge pack as well -- a Chinese
+   * site could not produce a knowledge body at all, in any language. The
+   * question set keeps the English limit (`kb-synthesis.ts` still refuses there),
+   * and a version published without one says so rather than pretending to have
+   * measured it.
+   */
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 45_000 || timeoutMs > 120_000) {
     return notAttempted("not_configured");
   }

@@ -112,12 +112,43 @@ function exactPublicSourceUrl(value: string): boolean {
  * merely looked plausible would put two entries for one page into a catalogue
  * that dedupes on id before it dedupes on URL.
  */
-function evidenceCatalogueSourceId(kind: "own_page" | "competitor_page", url: string): string {
+function evidenceCatalogueSourceId(kind: GeoKnowledgeCreditKind, url: string): string {
   return `${kind}-${createHash("sha256").update(`${kind}:${url}`, "utf8").digest("hex").slice(0, 20)}`;
 }
 
+/**
+ * The kinds a stored observation can be credited as.
+ *
+ * The three machine-readable resources are here because the run's own-page
+ * fetch operation now reads them and files one ledger row each. They are
+ * credited like a page -- same freshness rule, same source shape, same excerpt
+ * admission -- and two things differ: the label is the collector's own
+ * (`label: kind`), so a reused row and a freshly read one are indistinguishable
+ * in the catalogue, and each kind's address must be the one the evidence
+ * contract allows that kind to have (see `exactMachineResourceUrl`).
+ */
+export type GeoKnowledgeCreditKind = "own_page" | "competitor_page" | "robots" | "sitemap" | "llms";
+
+/**
+ * The address shape the evidence contract demands of each machine resource,
+ * restated (`assertEvidenceIntegrity` is private) in the same direction as
+ * every other restatement here: this side may refuse a source that side would
+ * have taken, and must never build one that side throws on. It throws rather
+ * than refuses -- a rejected reused source is not a failed fetch, it is a
+ * collection that dies -- which is why the check is made before the source is
+ * built rather than after.
+ */
+function exactMachineResourceUrl(kind: GeoKnowledgeCreditKind, url: URL): boolean {
+  if (kind === "own_page" || kind === "competitor_page") return true;
+  if (url.search !== "") return false;
+  if (kind === "robots") return url.pathname === "/robots.txt";
+  if (kind === "llms") return url.pathname === "/llms.txt";
+  const path = url.pathname.toLocaleLowerCase("en");
+  return path.includes("sitemap") && path.endsWith(".xml");
+}
+
 export function creditGeoKnowledgeObservation(input: {
-  readonly kind: "own_page" | "competitor_page";
+  readonly kind: GeoKnowledgeCreditKind;
   /** The address the collector will ask for, exactly as it will ask for it. */
   readonly url: string;
   readonly competitor: { readonly key: string; readonly name: string; readonly confirmed: true } | null;
@@ -132,6 +163,7 @@ export function creditGeoKnowledgeObservation(input: {
   if (!isObservationFresh(observation, input.now, geoEvidenceTtlMs(input.kind))) return { kind: "fetch" };
   if (observation.status.kind === "unavailable") return { kind: "observed_unavailable", reason: observation.status.reason };
   if (!exactPublicSourceUrl(input.url)) return { kind: "fetch" };
+  if (!exactMachineResourceUrl(input.kind, new URL(input.url))) return { kind: "fetch" };
   if ((input.kind === "competitor_page") !== (input.competitor !== null)) return { kind: "fetch" };
   const competitor = input.competitor;
   if (competitor !== null && (new URL(input.url).host !== competitor.key
@@ -139,15 +171,26 @@ export function creditGeoKnowledgeObservation(input: {
   if (!OBSERVATION_HASH.test(observation.status.bodyHash)) return { kind: "fetch" };
   const observedAtMs = Date.parse(observation.observedAt);
   if (!Number.isFinite(observedAtMs)) return { kind: "fetch" };
-  const excerpts = observation.status.excerpts
-    .filter(excerpt => usableSourceText(excerpt, GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints))
-    .slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.maxExcerpts);
+  const usable = observation.status.excerpts
+    .filter(excerpt => usableSourceText(excerpt, GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints));
+  const excerpts = usable.slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.maxExcerpts);
+  /**
+   * A robots.txt is not quoted, it is PARSED: the assembler reads per-agent
+   * allow/disallow claims out of these lines, and its only protection against
+   * claiming from a partial file is that a full sample (`excerpts.length >= 8`)
+   * is treated as possibly truncated. Dropping a line here shortens the sample
+   * below that threshold and hands the assembler what looks like a complete
+   * file with one rule silently missing -- turning "this site does not mention
+   * GPTBot" into a sentence about a line we threw away. Every other kind loses
+   * a quote and claims nothing from the gap, so only robots refuses.
+   */
+  if (input.kind === "robots" && usable.length !== observation.status.excerpts.length) return { kind: "fetch" };
   // A source with no quotable line supports no claim, and `sourceSchema`
   // refuses one. Reading the page again is the honest answer.
   if (excerpts.length === 0) return { kind: "fetch" };
   return { kind: "reuse", source: {
     id: evidenceCatalogueSourceId(input.kind, input.url), kind: input.kind,
-    label: input.kind === "own_page" ? "Own site page" : "Competitor page",
+    label: input.kind === "own_page" ? "Own site page" : input.kind === "competitor_page" ? "Competitor page" : input.kind,
     url: input.url, competitor,
     availability: "available", reason: null,
     /*
@@ -158,6 +201,81 @@ export function creditGeoKnowledgeObservation(input: {
     observedAt: new Date(observedAtMs).toISOString(),
     bodyHash: observation.status.bodyHash, excerpts,
   } };
+}
+
+/**
+ * What one own-page observation stored ABOUT the page, as the evidence contract
+ * can carry it.
+ *
+ * Three answers per list, and the difference between the last two is the whole
+ * point of reading them here rather than at the call site:
+ *
+ *  - `stored` -- the run recorded this list and every entry fits the evidence
+ *    contract's own text rules, so the bundle can carry it whole.
+ *  - `not_stored` -- the row has no such key. The run either predates the
+ *    change that records it, or dropped it to stay inside the column's byte
+ *    budget. It is NOT an empty list: "we did not keep it" and "the page has
+ *    none" are different sentences and only one of them may be shown.
+ *  - `unreadable` -- the key is there and the contract cannot take it whole:
+ *    a control character, an over-long entry, a duplicate, or more entries than
+ *    the page shape admits. Trimming it to fit would understate the page, so
+ *    the list is refused and the caller withholds whatever rests on it.
+ */
+export type GeoKnowledgeStoredList =
+  | { readonly kind: "stored"; readonly values: readonly string[] }
+  | { readonly kind: "not_stored" }
+  | { readonly kind: "unreadable" };
+
+export interface GeoKnowledgeObservedStructure {
+  /**
+   * Question-and-answer markup the run parsed off the page, bounded twice: the
+   * parser keeps at most 32 pairs and the evidence contract's page shape takes
+   * at most 32. It is a sample of what the page carries and nothing counts it.
+   * A pair the contract cannot carry is left out rather than shortened, because
+   * a truncated answer is a different answer.
+   */
+  readonly faq: readonly { readonly question: string; readonly answer: string }[];
+  readonly jsonLdTypes: GeoKnowledgeStoredList;
+  readonly hreflangLocales: GeoKnowledgeStoredList;
+}
+
+/** The page shape's own caps, restated for the same reason the text rules are. */
+const OBSERVED_PAGE_LIMITS = { faq: 32, jsonLdTypes: 32, hreflangLocales: 64, typeCodePoints: 120, textCodePoints: GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints } as const;
+
+function storedList(values: unknown, maximum: number, codePoints: number): GeoKnowledgeStoredList {
+  if (values === undefined) return { kind: "not_stored" };
+  if (!Array.isArray(values)) return { kind: "unreadable" };
+  const entries = values as readonly unknown[];
+  const usable = entries.every((value) => typeof value === "string" && usableSourceText(value, codePoints));
+  if (!usable || entries.length > maximum) return { kind: "unreadable" };
+  const strings = entries as readonly string[];
+  if (new Set(strings).size !== strings.length) return { kind: "unreadable" };
+  return { kind: "stored", values: strings };
+}
+
+/**
+ * The page structure a stored own-page row is worth, or null when the row is
+ * not a successful reading of that page at all.
+ *
+ * Reads the row and nothing else: no clock, no store, and no second parse of
+ * any body. `pageData` in `kb-knowledge-evidence.ts` is what produced these
+ * lists, and this only decides which of them the evidence contract can carry.
+ */
+export function creditGeoKnowledgeObservedStructure(
+  observation: GeoEvidenceObservation | null,
+): GeoKnowledgeObservedStructure | null {
+  if (observation === null || observation.status.kind !== "ok") return null;
+  const structured = observation.status.structured;
+  const pairs = structured.faqPairs ?? [];
+  return {
+    faq: pairs
+      .filter((pair) => usableSourceText(pair.question, OBSERVED_PAGE_LIMITS.textCodePoints)
+        && usableSourceText(pair.answer, OBSERVED_PAGE_LIMITS.textCodePoints))
+      .slice(0, OBSERVED_PAGE_LIMITS.faq)
+      .map((pair) => ({ question: pair.question, answer: pair.answer })),
+    jsonLdTypes: storedList(structured.jsonLdTypes, OBSERVED_PAGE_LIMITS.jsonLdTypes, OBSERVED_PAGE_LIMITS.typeCodePoints),
+    hreflangLocales: storedList(structured.hreflangLocales, OBSERVED_PAGE_LIMITS.hreflangLocales, OBSERVED_PAGE_LIMITS.typeCodePoints),
+  };
 }
 
 export interface GeoKnowledgeEvidenceCollectionInput {
@@ -556,7 +674,21 @@ async function prepareGeoKbV3Generation(
   if (request.kind !== "knowledge_pack") return { kind: "unsupported_draft" };
 
   const { identity, profileRef, competitors } = payload.generationInput;
-  if (geoGenerationLanguage(identity.market.language) === null) return { kind: "unsupported_language" };
+  /*
+   * No language refusal here, deliberately (design decision D8).
+   *
+   * This was the gate that actually stopped a non-English site: it answered
+   * `unsupported_language`, which the generation route turns into 422, so the
+   * knowledge step of a Chinese site's update refused before it reached a
+   * provider. The English registry governs the QUESTION SET, and a v3 run has
+   * no questions step at all -- so the refusal cost the site its knowledge body
+   * to protect a step nobody was going to run. The synthesis prompt now names
+   * the site's own language, and the absent question set is stated at publish
+   * time with the reason that is true for that site.
+   *
+   * The v1 chain beside this one keeps its refusal: that flow really does
+   * dispatch a questions step against the English registry.
+   */
   let config: KeywordLlmConfig | null;
   try { const resolved = dependencies.resolveConfig(); config = resolved === null ? null : { ...resolved }; }
   catch { return { kind: "model_unavailable" }; }

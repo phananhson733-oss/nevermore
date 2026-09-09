@@ -273,14 +273,35 @@ describe("GEO knowledge synthesis v2 preflight", () => {
     expect(bytes).toBeLessThanOrEqual(32 * 1024);
   });
 
-  it("refuses invalid config, language, timeout and input before dispatch", async () => {
+  /**
+   * D8: a non-English site is prepared, not refused.
+   *
+   * The English registry gates the question set only. It used to gate this too,
+   * so a Chinese site produced no knowledge body in any language -- and the
+   * refusal was free, which is why nothing downstream ever noticed.
+   */
+  it("prepares a non-English site and tells the model which language to write", async () => {
+    const complete = completion(narrative());
+
+    const result = await synthesizeGeoKnowledgeNarrativeV2(
+      inputWithLanguage("zh-CN"), { config: CONFIG, client: { complete } });
+
+    if (!result.ok) throw new Error(`refused: ${result.reason}`);
+    expect(complete).toHaveBeenCalledTimes(1);
+    // The model is told which language to write in, so the site's own language
+    // is a parameter of the run rather than a reason to refuse it.
+    // The language reaches the model as data, on the user turn, and the system
+    // prompt tells it to write in that field's language.
+    expect(JSON.parse(complete.mock.calls[0]![0]!.user).language).toBe("zh-CN");
+  });
+
+  it("refuses invalid config, timeout and input before dispatch", async () => {
     const complete = completion(narrative());
     const cases = [
       [input(), null, undefined, "not_configured"],
       [input(), { ...CONFIG, model: "bad model" }, undefined, "not_configured"],
       [input(), { ...CONFIG, apiKey: " " }, undefined, "not_configured"],
       [input(), { ...CONFIG, url: "http://fixture.example/x" }, undefined, "not_configured"],
-      [inputWithLanguage("zh-CN"), CONFIG, undefined, "unsupported_language"],
       [{ ...input(), contentHash: V2_HASH }, CONFIG, undefined, "invalid_input"],
       [{ ...input(), generationInputHash: undefined }, CONFIG, undefined, "invalid_input"],
       [input(), CONFIG, 44_999, "not_configured"],

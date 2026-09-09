@@ -23,6 +23,21 @@
  * The URL kept is the one the draft names, `www.` included. Normalising it to
  * the apex is the mistake that made every www-only site's diagnostic fail: the
  * canonical host is the gate's budgeting identity, not the address that answers.
+ *
+ * What this plan does NOT list, and why
+ * ------------------------------------
+ * The site's own `/robots.txt`, `/sitemap.xml` and `/llms.txt` are observed by
+ * every update, and no target here names them. They are read INSIDE the own
+ * page's own operation, through the reader that operation already built, and
+ * filed under the `robots` / `sitemap` / `llms` observation kinds -- see
+ * `recordMachineSignals` in `kb-run-collect-executor.ts`.
+ *
+ * Planning them as targets of their own would be the same mistake this file
+ * exists to prevent, one level down: each would become its own operation with
+ * its own reader, and each reader opens the crawl gate afresh, so one update
+ * would spend four of a site's four hourly admissions instead of one. (The
+ * ledger's `kind` column is a CHECK over `fetch|serp|gsc|model` besides, so a
+ * fourth kind would need a migration to say something that is not even true.)
  */
 
 import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";

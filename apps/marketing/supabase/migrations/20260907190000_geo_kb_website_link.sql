@@ -25,6 +25,24 @@
 -- No row is rewritten into failure.
 -- ---------------------------------------------------------------------------
 
+-- An ACCESS EXCLUSIVE lock that has to queue behind an open reader stalls every
+-- query that arrives after it. `marketing_websites` is the Profile registry the
+-- signed-in app reads on nearly every page, so waiting is the risk here, not the
+-- scans -- measured, the validations below are single-digit milliseconds at this
+-- product's scale while an 8s reader made the un-timeout'd ALTER stall 7s and
+-- everything behind it with it. Three seconds, then a clean abort that
+-- ON_ERROR_STOP halts on; every add below is preceded by a drop-if-exists, so
+-- the file is re-runnable from the top.
+set lock_timeout = '3s';
+
+-- The dependent foreign key goes first. It is built on the unique constraint
+-- below, so dropping that one while the FK still stands raises
+-- `dependent_objects_still_exist` -- and `if exists` does not suppress a
+-- dependency error. Ordering it this way is what lets an interrupted apply be
+-- re-run instead of hand-unpicked.
+alter table public.marketing_geo_knowledge_bases
+  drop constraint if exists marketing_geo_kb_website_fk;
+
 -- The FK target. `(id, user_id)` is already unique; adding the site key makes
 -- the reference able to check agreement. `canonical_site_key` is never updated
 -- on this table -- only `is_primary` and `current_confirmed_snapshot_id` are --
@@ -45,11 +63,12 @@ update public.marketing_geo_knowledge_bases as k
    and w.user_id = k.user_id
    and w.canonical_site_key = k.canonical_site_key;
 
--- Installed NOT VALID under a short lock, then validated under a weaker one.
--- The backfill above means validation cannot fail; splitting it keeps the
--- exclusive lock window independent of how many rows exist.
-alter table public.marketing_geo_knowledge_bases
-  drop constraint if exists marketing_geo_kb_website_fk;
+-- Installed NOT VALID, then validated under a weaker lock. The backfill above
+-- means validation cannot fail. This bounds the exclusive window independently
+-- of row count only when the file is applied statement by statement
+-- (`psql -f`, autocommit); pasted whole into the Supabase SQL Editor every lock
+-- in the file is held together until the end of it. The FK was already dropped
+-- at the top of this file, ahead of the unique constraint it depends on.
 alter table public.marketing_geo_knowledge_bases
   add constraint marketing_geo_kb_website_fk
   foreign key (website_id, user_id, canonical_site_key)

@@ -22,6 +22,7 @@
  * What it may never do is upgrade a label. A publish-time sweep is the weakest
  * form of consent there is, and it is recorded as exactly that.
  */
+import { geoGenerationLanguage } from "@sf/public-tools/content-brief/geo-contract";
 import type { ServerAuthenticatedUser } from "../auth/server-auth-user.ts";
 import { privateError, privateJson, readAccountMutationJson } from "../account-websites/route-http.ts";
 import { geoV3PublishRequestSchema } from "../../components/tools/geo-kb-v3-wire.ts";
@@ -102,11 +103,23 @@ async function resolveQuestionSet(
   dependencies: GeoKbV3PublishDependencies,
   scope: { readonly userId: string; readonly kbId: string },
   runRef: GeoKbPayloadV3["runRef"],
+  language: string,
 ): Promise<QuestionSetOutcome> {
   const generationId = runRef.questionsGenerationId;
-  // No question generation was ever recorded. `not_attempted` is the honest
-  // reason; inventing a failure would claim a paid call nobody made.
-  if (generationId === null) return { slot: { status: "unavailable", reason: "not_attempted", failedGenerationId: null }, value: null };
+  if (generationId === null) {
+    /*
+     * No question generation was recorded, and the two ways that happens are
+     * not the same thing to say.
+     *
+     * A non-English site has a reason nothing will change: the question
+     * registry is English-only (D8), so this version publishes without a
+     * question set and names that as the reason. Everywhere else it is simply
+     * `not_attempted` -- inventing a failure would claim a paid call nobody
+     * made, and naming a language limit for an English site would be false.
+     */
+    const reason = geoGenerationLanguage(language) === null ? "unsupported_language" : "not_attempted";
+    return { slot: { status: "unavailable", reason, failedGenerationId: null }, value: null };
+  }
   const read = await dependencies.readGeneration({ ...scope, generationId });
   // The draft names a generation this owner does not have. That is a store
   // inconsistency, not a version without questions.
@@ -192,7 +205,7 @@ export async function handleGeoKbV3Publish(request: Request, dependencies: GeoKb
 
     const knowledgeRefusal = await assertKnowledgeGeneration(dependencies, scope, stored.runRef);
     if (knowledgeRefusal !== null) return knowledgeRefusal;
-    const questions = await resolveQuestionSet(dependencies, scope, stored.runRef);
+    const questions = await resolveQuestionSet(dependencies, scope, stored.runRef, stored.generationInput.identity.market.language);
     if (questions instanceof Response) return questions;
     // Neither half exists: there is nothing a consumer could read, so this would
     // publish a version whose only content is the claim that a version exists.
