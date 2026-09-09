@@ -51,7 +51,11 @@ export interface ImagePromptNotes {
   readonly imagePrompts: string; readonly imagePromptsNote: string; readonly imageHero: string; readonly imagePrompt: string; readonly imageAlt: string;
 }
 export function contentDraftV2Markdown(result: DraftResultV2, confirmed: ConfirmedBriefV2, notes: MarkdownNotes & { readonly relatedLinks: string } & ImagePromptNotes): string {
-  const sections = result.sections.map((section) => {
+  // The one H1, and only when the confirmation recorded one. An export that
+  // invented a heading from the keyword would be putting a promise on the page
+  // that nobody chose and nothing checked.
+  const sections = confirmed.title === undefined ? [] : [`# ${confirmed.title}`];
+  sections.push(...result.sections.map((section) => {
     if (section.status === "failed") return `## ${section.h2}\n\n> ${notes.failed(section.fail_reason)}`;
     if (section.status === "skipped") return `## ${section.h2}\n\n> ${notes.skipped}`;
     return [`## ${section.h2}`, ...section.body.paragraphs.flatMap((paragraph) => [
@@ -60,7 +64,7 @@ export function contentDraftV2Markdown(result: DraftResultV2, confirmed: Confirm
         ? run.items.map(({ sentence }) => `- ${sentence.text}`).join("\n")
         : run.items.map(({ sentence }) => sentence.text).join(" ")),
     ])].join("\n\n");
-  });
+  }));
   const links = confirmedRelatedLinks(confirmed);
   if (links.length > 0) sections.push(`## ${notes.relatedLinks}\n\n${links.map((link) => `- [${markdownLinkLabel(link.anchor)}](${markdownLinkUrl(link.url)})`).join("\n")}`);
   const plan = result.image_prompts;
@@ -226,6 +230,7 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
         {showClaims ? <div data-source-legend className={styles.legend}>{(["first", "third", "model"] as const).map((tier) => <span key={tier} data-tier={tier}><i aria-hidden="true" />{t(`sourceTier.${tier}`)}</span>)}</div> : null}
       </div>
       {showClaims ? <div className={styles.annotationNote}><p>{t("sourceLegend")}</p><p>{t("claimLegend")}</p></div> : null}
+      {confirmed.title === undefined ? null : <h1 data-draft-title className={styles.articleTitle}>{confirmed.title}</h1>}
       <div className={styles.document}>{result.sections.map((section, index) => {
         const isOpen = expanded[section.id] ?? (index < 2 || section.status === "failed");
         const panelId = `${sectionPrefix}-${section.id}`;

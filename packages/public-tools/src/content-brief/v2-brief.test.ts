@@ -147,6 +147,53 @@ describe("whole v2 Brief and exact confirmed revision", () => {
     expect(outline[0]?.h2).toBe("Check the reporting timeline");
   });
 
+  it("records one of the offered titles and refuses any other string", async () => {
+    const input = await sealed();
+    input.generated = { ...input.generated!, planning: { title: {
+      recommended: { value: "Why Reporting Delays Happen", rationale: "Names the reader task the excerpts answer." },
+      alternatives: [{ value: "Reading Delayed Reports", rationale: "Leads with the reporting task." }],
+    } } };
+    input.run = { ...input.run, fingerprint: await brief.fingerprintBriefV2(input) };
+    const edits = { outline: input.generated.research.outline, revision: 1, confirmed_at: input.run.collected_at, resolution: "create_despite_uncertainty" as const };
+    const chosen = await brief.confirmBriefV2(input, { ...edits, title: "Reading Delayed Reports" });
+    expect(chosen).toMatchObject({ ok: true, value: { title: "Reading Delayed Reports" } });
+    if (!chosen.ok) throw new Error(chosen.path);
+    expect(await brief.parseConfirmedBriefV2(chosen.value)).toEqual(chosen);
+    // Selection, not composition. The generation-time checks -- no published
+    // number, no unsupplied acronym -- ran on the strings the model returned,
+    // and a title is the one field in the document no claim rule ever sees, so
+    // anything the operator could type here would reach the page unchecked.
+    for (const title of ["Why Reporting Delays Happen Slowly", "", 7, { value: "Why Reporting Delays Happen" }]) {
+      expect(await brief.confirmBriefV2(input, { ...edits, title })).toMatchObject({ ok: false, path: "title" });
+    }
+    // And a swapped title with the old signature is a tampered document.
+    expect(await brief.parseConfirmedBriefV2({ ...chosen.value, title: "Why Reporting Delays Happen" })).toMatchObject({ ok: false, code: "brief_fingerprint_mismatch" });
+    expect(await brief.parseConfirmedBriefV2({ ...chosen.value, title: "Something Else Entirely" })).toMatchObject({ ok: false, path: "title" });
+  });
+
+  it("leaves the key out when no title was chosen, and signs the same bytes it always did", async () => {
+    const input = await sealed();
+    const edits = { outline: input.generated!.research.outline, revision: 1, confirmed_at: input.run.collected_at, resolution: "create_despite_uncertainty" as const };
+    const bare = await brief.confirmBriefV2(input, edits);
+    const declined = await brief.confirmBriefV2(input, { ...edits, title: undefined });
+    expect(bare.ok && declined.ok).toBe(true);
+    if (!bare.ok || !declined.ok) throw new Error("confirmation failed");
+    // Absent, not null and not empty. A revision confirmed before titles
+    // existed, one whose run produced none, and one whose operator declined
+    // are the same document and keep the fingerprint they always had.
+    expect(Object.hasOwn(bare.value, "title")).toBe(false);
+    expect(Object.hasOwn(declined.value, "title")).toBe(false);
+    expect(declined.value.fingerprint).toBe(bare.value.fingerprint);
+    expect(JSON.stringify(declined.value)).toBe(JSON.stringify(bare.value));
+  });
+
+  it("refuses a title on a run that never offered one", async () => {
+    const input = await sealed();
+    const edits = { outline: input.generated!.research.outline, revision: 1, confirmed_at: input.run.collected_at, resolution: "create_despite_uncertainty" as const };
+    expect(input.generated?.planning).toBeUndefined();
+    expect(await brief.confirmBriefV2(input, { ...edits, title: "Why Reporting Delays Happen" })).toMatchObject({ ok: false, path: "title" });
+  });
+
   it("refuses remapped questions, missing sections, duplicate IDs and blank/over-cap edited text", async () => {
     const input = await sealed();
     const section = input.generated!.research.outline[0]!;

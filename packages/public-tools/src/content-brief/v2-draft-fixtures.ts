@@ -17,6 +17,8 @@ export interface ConfirmedDraftV2FixtureOptions {
   readonly language?: string;
   readonly paaOnly?: boolean;
   readonly reverse?: boolean;
+  /** Offer a planning title and confirm the recommended one, as an English run does. */
+  readonly title?: boolean;
 }
 
 const collectedAt = "2026-08-31T01:00:00.000Z";
@@ -80,6 +82,10 @@ export async function confirmedDraftV2Fixture(options: ConfirmedDraftV2FixtureOp
     },
     gap_angle: options.paaOnly ? null : { value: "Use finalized comparisons", rationale: "Connect the declared feature to the workflow.", fact_refs: ["P1", "P2"], sources: [pageRef("C2")] },
     internal_links: [], do_not_cover: [],
+    ...(options.title === true ? { planning: { title: {
+      recommended: { value: "Why Reporting Lags Behind Collection", rationale: "Names the reader task the retained excerpts answer." },
+      alternatives: [{ value: "Reading Reports That Lag", rationale: "Leads with the reporting task instead of the cause." }],
+    } } } : {}),
   };
   const generated = validateModelBriefV2(model, context);
   if (!generated.ok) throw new Error(generated.path);
@@ -103,6 +109,7 @@ export async function confirmedDraftV2Fixture(options: ConfirmedDraftV2FixtureOp
   const confirmed = await confirmBriefV2(brief, {
     outline: options.reverse ? [...generated.value.research.outline].reverse() : generated.value.research.outline,
     revision: 2, confirmed_at: collectedAt, resolution: action === "undecidable" ? "create_despite_uncertainty" : "accept_recommendation",
+    ...(options.title === true ? { title: model.planning!.title.recommended.value } : {}),
   });
   if (!confirmed.ok) throw new Error(confirmed.path);
   const parsed = await parseConfirmedBriefV2(confirmed.value);

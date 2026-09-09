@@ -423,6 +423,32 @@ describe("Draft v2 truthful results and exact exports", () => {
     const parsed = await confirmBriefV2(brief, { outline: original.outline, revision: original.revision, confirmed_at: original.confirmed_at, resolution: original.resolution }); if (!parsed.ok) throw new Error(parsed.path);
     const result = await resultFor(parsed.value, { claims: true }); const { host } = await render(parsed.value, { result }); expect(node(host, '[data-evidence-ref="U1"]').textContent).toContain("Evidence section heading");
   });
+  it("renders the confirmed title as the one H1 and exports it above every section", async () => {
+    const confirmed = await confirmedDraftV2Fixture({ title: true });
+    const result = await resultFor(confirmed);
+    const { host } = await render(confirmed, { result });
+    expect(node(host, "[data-draft-title]").textContent).toBe("Why Reporting Lags Behind Collection");
+    expect(host.querySelectorAll("[data-draft-title]")).toHaveLength(1);
+    const markdown = contentDraftV2Markdown(result, confirmed, exportNotes());
+    // First block and the only H1: the sections are H2s beneath it, so the
+    // export drops into a CMS as one article rather than a pile of headings.
+    expect(markdown.startsWith("# Why Reporting Lags Behind Collection\n\n## ")).toBe(true);
+    expect(markdown.match(/^# /gmu)).toHaveLength(1);
+  });
+
+  it("invents no heading for a confirmation that recorded no title", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed);
+    const { host } = await render(confirmed, { result });
+    expect(confirmed.title).toBeUndefined();
+    expect(host.querySelector("[data-draft-title]")).toBeNull();
+    // Deriving one from the keyword would put a promise on the page that
+    // nobody chose and nothing checked.
+    const markdown = contentDraftV2Markdown(result, confirmed, exportNotes());
+    expect(markdown.startsWith("## ")).toBe(true);
+    expect(markdown).not.toMatch(/^# /mu);
+  });
+
   it.each(["en", "zh"] as const)("renders real H2/H3, claim annotations, page excerpts and profile evidence (%s)", async (locale) => {
     const confirmed = await confirmedDraftV2Fixture({ action: "update" }); const result = await resultFor(confirmed, { claims: true }); const { host } = await render(confirmed, { locale, result });
     expect(Array.from(host.querySelectorAll("[data-draft-h2]"), (item) => item.textContent)).toEqual(confirmed.outline.map((item) => item.h2)); expect(Array.from(host.querySelectorAll("[data-draft-h3]"), (item) => item.textContent)).toEqual(confirmed.outline.flatMap((item) => item.h3));

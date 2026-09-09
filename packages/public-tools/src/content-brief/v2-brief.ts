@@ -118,6 +118,35 @@ const editShape = object({
 });
 type ConfirmationEdits = Pick<ConfirmedBriefV2, "outline" | "revision" | "confirmed_at" | "resolution">;
 
+/**
+ * The chosen title: one of the strings the run offered, or none.
+ *
+ * Selection, never composition. Every other editable field on this page is
+ * prose the draft writer will hold to its own claim rules; a title is the one
+ * string that reaches the page without passing any, which is why the server
+ * checks the model's titles for a published number and an unsupplied acronym
+ * at generation. A free-text box here would walk straight past that check, so
+ * the only titles a confirmation can carry are the ones already checked.
+ *
+ * Absent is a real answer and the default one. A run that produced no title,
+ * a run in a language never offered one, and an operator who wanted none all
+ * confirm the same document.
+ */
+function validateTitle(brief: ContentBriefV2, title: unknown): Decoded<string | undefined> {
+  if (title === undefined) return ok(undefined);
+  const planning = brief.generated?.planning;
+  if (planning === undefined || typeof title !== "string") return reference("title");
+  const offered = [planning.title.recommended.value, ...planning.title.alternatives.map((option) => option.value)];
+  return offered.includes(title) ? ok(title) : reference("title");
+}
+
+/** The document minus its optional title, so the exact key set below still decides the rest. */
+function withoutTitle(input: unknown): { readonly rest: unknown; readonly title: unknown } {
+  if (!isRecord(input) || !Object.hasOwn(input, "title")) return { rest: input, title: undefined };
+  const { title, ...rest } = input;
+  return { rest, title };
+}
+
 function validateEdits(brief: ContentBriefV2, edits: ConfirmationEdits): Decoded<ConfirmationEdits> {
   const generated = brief.generated;
   if (generated === null || generated.research.outline.length === 0) return reference("generated.research.outline");
@@ -136,12 +165,17 @@ function validateEdits(brief: ContentBriefV2, edits: ConfirmationEdits): Decoded
 export async function confirmBriefV2(input: unknown, edits: unknown): Promise<Decoded<ConfirmedBriefV2>> {
   const brief = await parseContentBriefV2(input);
   if (!brief.ok) return brief;
-  const shape = editShape(edits, "");
+  const offered = withoutTitle(edits);
+  const shape = editShape(offered.rest, "");
   if (!shape.ok) return shape;
   const checked = validateEdits(brief.value, shape.value);
   if (!checked.ok) return checked;
+  const title = validateTitle(brief.value, offered.title);
+  if (!title.ok) return title;
   const schema = brief.value.schema === CONTENT_BRIEF_V3_SCHEMA ? CONFIRMED_BRIEF_V3_SCHEMA : CONFIRMED_BRIEF_V2_SCHEMA;
-  const unsigned = { schema, brief: brief.value, ...checked.value } satisfies Omit<ConfirmedBriefV2, "fingerprint">;
+  // Spread, not `title: undefined`: an absent key is what a confirmation
+  // without a title has always serialized to, and what its fingerprint covers.
+  const unsigned = { schema, brief: brief.value, ...checked.value, ...(title.value === undefined ? {} : { title: title.value }) } satisfies Omit<ConfirmedBriefV2, "fingerprint">;
   const value: ConfirmedBriefV2 = { ...unsigned, fingerprint: await fingerprintCanonical(unsigned) };
   return parseConfirmedBriefV2(value);
 }
@@ -153,16 +187,19 @@ export async function parseConfirmedBriefV2(input: unknown): Promise<Decoded<Con
   const brief = await parseContentBriefV2(input.brief);
   if (!brief.ok) return brief;
   if ((input.schema === CONFIRMED_BRIEF_V3_SCHEMA) !== (brief.value.schema === CONTENT_BRIEF_V3_SCHEMA)) return reference("brief.schema");
+  const carried = withoutTitle(input);
   const shape = object({
     schema: oneOf([CONFIRMED_BRIEF_V2_SCHEMA, CONFIRMED_BRIEF_V3_SCHEMA] as const), brief: () => brief,
     outline: outlineShape, revision: count(1_000_000, 1), confirmed_at: timestamp,
     resolution: oneOf(["accept_recommendation", "create_despite_uncertainty"] as const), fingerprint: hash,
-  })(input, "");
+  })(carried.rest, "");
   if (!shape.ok) return shape;
-  const value = shape.value;
-  const checked = validateEdits(value.brief, value);
+  const checked = validateEdits(shape.value.brief, shape.value);
   if (!checked.ok) return checked;
+  const title = validateTitle(shape.value.brief, carried.title);
+  if (!title.ok) return title;
+  const value: ConfirmedBriefV2 = { ...shape.value, ...(title.value === undefined ? {} : { title: title.value }) };
   const { fingerprint, ...unsigned } = value;
   if (await fingerprintCanonical(unsigned) !== fingerprint) return { ok: false, code: "brief_fingerprint_mismatch", path: "fingerprint" };
-  return shape;
+  return ok(value);
 }

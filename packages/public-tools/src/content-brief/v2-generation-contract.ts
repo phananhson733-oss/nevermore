@@ -157,5 +157,15 @@ export interface ConfirmedBriefV2 {
   readonly outline: readonly ResearchOutlineItem[];
   /** Explicit resolution is required when the generated page action is undecidable. */
   readonly resolution: "accept_recommendation" | "create_despite_uncertainty";
+  /**
+   * The title the operator chose, when the run offered any.
+   *
+   * Absent, never empty: a confirmation made before titles existed, one whose
+   * run produced no title, and one whose operator declined every title are the
+   * same document, and they keep the fingerprint they always had. The value is
+   * one of the strings the model returned and the server checked, not free
+   * text -- a title is the one string in the brief no claim rule ever sees.
+   */
+  readonly title?: string;
   readonly fingerprint: string;
 }

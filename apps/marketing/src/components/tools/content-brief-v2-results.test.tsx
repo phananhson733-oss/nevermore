@@ -51,10 +51,13 @@ describe("Brief v2 recommended title", () => {
   const titled = async (locale: "en" | "zh" = "en") => {
     const brief = await fixture({ locale });
     if (brief.generated === null) throw new Error("fixture");
-    return { ...brief, generated: { ...brief.generated, planning: { title: {
+    const unsigned = { ...brief, generated: { ...brief.generated, planning: { title: {
       recommended: { value: "Why Search Console Reporting Lags", rationale: "Names the reader task the retained excerpts answer." },
       alternatives: [{ value: "Reading Delayed Search Console Reports", rationale: "Leads with the reporting task instead of the cause." }],
     } } } };
+    // Re-signed, because the chooser below confirms this brief for real and the
+    // confirmation verifies the run fingerprint before it reads a title.
+    return { ...unsigned, run: { ...unsigned.run, fingerprint: await confirmation.fingerprintBriefV2(unsigned) } };
   };
 
   it("prints the recommended title, its reason and its alternatives", async () => {
@@ -94,6 +97,47 @@ describe("Brief v2 recommended title", () => {
     expect(absent).toContain("did not pass the checks above");
     expect(absent).toContain("left no room to ask for one");
     expect(host.querySelector("[data-title-value]")).toBeNull();
+  });
+
+  it("confirms the recommendation by default and records exactly the string that was chosen", async () => {
+    const { host, onConfirmed } = await render(await titled());
+    expect(node<HTMLInputElement>(host, '[data-title-option="0"]').checked).toBe(true);
+    await click(host, "[data-confirm-brief]");
+    expect((await confirmedValue(onConfirmed)).title).toBe("Why Search Console Reporting Lags");
+    expect(node(host, "[data-confirmed-title]").textContent).toContain("Why Search Console Reporting Lags");
+  });
+
+  it("records the alternative the operator picked instead", async () => {
+    const { host, onConfirmed } = await render(await titled());
+    await click(host, '[data-title-option="1"]');
+    await click(host, "[data-confirm-brief]");
+    expect((await confirmedValue(onConfirmed)).title).toBe("Reading Delayed Search Console Reports");
+  });
+
+  it("keeps no title as a real answer, not an empty string", async () => {
+    const { host, onConfirmed } = await render(await titled());
+    await click(host, "[data-title-none]");
+    await click(host, "[data-confirm-brief]");
+    const value = await confirmedValue(onConfirmed);
+    expect(Object.hasOwn(value, "title")).toBe(false);
+    expect(node(host, "[data-confirmed-title]").textContent).toContain("No title recorded");
+  });
+
+  it("invalidates a confirmation when the title changes under it", async () => {
+    // The fingerprint covers the title, so a revision confirmed with one title
+    // and handed off with another would be a document nobody approved.
+    const { host, onConfirmed } = await render(await titled());
+    await click(host, "[data-confirm-brief]");
+    await confirmedValue(onConfirmed);
+    await click(host, '[data-title-option="1"]');
+    expect(onConfirmed.mock.calls.at(-1)?.[0]).toBeNull();
+    expect(node<HTMLButtonElement>(host, "[data-confirm-brief]").disabled).toBe(false);
+  });
+
+  it("shows no chooser at all on a run that produced no title", async () => {
+    const { host } = await render(await fixture({ locale: "en" }));
+    expect(host.querySelector("[data-title-choice]")).toBeNull();
+    expect(host.querySelector("[data-confirm-brief]")).not.toBeNull();
   });
 
   it("never offers a title on a run the planning layer was not offered to", async () => {

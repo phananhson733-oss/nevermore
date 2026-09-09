@@ -7,6 +7,7 @@ import {
   measureResearchLength, RESEARCH_HEADING_MAX_CHARS, RESEARCH_SEGMENT_MAX_CHARS, type ResearchPage,
 } from "@sf/public-tools/content-brief/v2-contract";
 import { DRAFT_V2_PROMPT_MAX_BYTES, type DraftV2Settings } from "@sf/public-tools/content-brief/v2-draft-contract";
+import { confirmedDraftV2Fixture } from "@sf/public-tools/content-brief/v2-draft-fixtures";
 import { buildDraftV2SectionScope } from "@sf/public-tools/content-brief/v2-draft-scope";
 import { validateModelBriefV2 } from "@sf/public-tools/content-brief/v2-generation";
 import type { BriefV2Context, ContentBriefV2, ModelBriefV2Output } from "@sf/public-tools/content-brief/v2-generation-contract";
@@ -107,7 +108,8 @@ function sectionPrompt(confirmed: Awaited<ReturnType<typeof confirmedBrief>>, se
     // The seam measures exactly this envelope before sending; measure the same thing.
     bytes: encoder.encode(JSON.stringify({ system, user })).byteLength,
     units: scope.value.page_units.size,
-    data: JSON.parse(user) as { section: { position: string }; outline: readonly string[] },
+    system,
+    data: JSON.parse(user) as { section: { position: string }; outline: readonly string[]; article_title: string | null },
   };
 }
 
@@ -136,6 +138,26 @@ describe("Draft v2 section prompt budget", () => {
 
   it("prices the budget below the ceiling it protects", () => {
     expect(SECTION_EVIDENCE_MAX_BYTES).toBeLessThan(DRAFT_V2_PROMPT_MAX_BYTES);
+  });
+});
+
+describe("Draft v2 article title", () => {
+  it("gives every section the confirmed title, and says it is a promise rather than a source", async () => {
+    const confirmed = await confirmedDraftV2Fixture({ title: true });
+    const prompt = sectionPrompt(confirmed, confirmed.outline[1]!.id);
+    // The section that is not the first one still gets it: the title is what
+    // the whole article promises, and a section written without it can quietly
+    // answer a different question than the page said it would.
+    expect(prompt.data.article_title).toBe("Why Reporting Lags Behind Collection");
+    expect(prompt.system).toContain("article_title is the title the operator confirmed for the whole article");
+    // And it is planning, not evidence: nothing in a title was checked against
+    // a source, so it can never be the reason a sentence claims anything.
+    expect(prompt.system).toContain("never factual evidence, never a source");
+  });
+
+  it("sends null rather than a substitute when the confirmation recorded no title", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    expect(sectionPrompt(confirmed, confirmed.outline[0]!.id).data.article_title).toBeNull();
   });
 });
 
