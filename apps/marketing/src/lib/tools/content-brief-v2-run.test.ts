@@ -139,8 +139,100 @@ describe("runContentBriefV2 admitted generation", () => {
   it("does not classify another URL from the known owned site as competitor evidence", async () => {
     const fixture = seams(model(true), [{ type: "organic", rank_group: 2, domain: "owned.test", title: "Another owned page", url: "https://www.owned.test/other" }]);
     const brief = await runContentBriefV2({ ...REQUEST, gsc: { property: GSC.property!, window: WINDOW, read: async () => ({ gsc: GSC, candidates: CANDIDATES }) } }, fixture.deps);
-    expect(fixture.fetchResource.mock.calls.map((call) => call[0])).toEqual(["https://source.test/reporting", OWNED_URL]);
+    expect(fixture.fetchResource.mock.calls.map((call) => call[0]))
+      .toEqual(["https://source.test/reporting", "https://www.owned.test/other", OWNED_URL]);
     expect(brief.context.research.pages.filter((item) => item.role === "competitor")).toHaveLength(1);
+  });
+
+  it("gives the crawler the run's own keywords, so page excerpts are ranked against them", async () => {
+    // The crawler only ranks excerpts when it is told what the run is about.
+    // Nothing else here inspects the crawl input, so dropping the keywords on
+    // this seam would leave every assertion in this file passing.
+    const fixture = seams();
+    await runContentBriefV2(REQUEST, fixture.deps);
+    expect(fixture.deps.crawl.mock.calls[0]?.[0].keywords).toEqual([KEYWORD.primary, ...KEYWORD.supporting]);
+  });
+
+  it("offers an owned page that already ranks for the keyword ahead of a Search Console candidate", async () => {
+    const ranked = "https://www.owned.test/other";
+    const fixture = seams(model(true), [{ type: "organic", rank_group: 2, domain: "owned.test", title: "Another owned page", url: ranked }]);
+    const brief = await runContentBriefV2({ ...REQUEST, gsc: { property: GSC.property!, window: WINDOW, read: async () => ({ gsc: GSC, candidates: CANDIDATES }) } }, fixture.deps);
+    // Before this, a page of the visitor's own site sitting at rank 2 was dropped on
+    // sight: it could not be competitor evidence, and nothing promoted it to owned.
+    expect(brief.context.candidates.map(({ id, url }) => ({ id, url })))
+      .toEqual([{ id: "T1", url: ranked }, { id: "T2", url: OWNED_URL }]);
+    expect(brief.context.candidates[0]?.match_refs).toEqual([]);
+    expect(brief.context.candidates[1]?.match_refs).toEqual(["G1"]);
+    expect(brief.context.research.pages.filter((item) => item.role === "owned").map((item) => item.url))
+      .toEqual([ranked, OWNED_URL]);
+  });
+
+  it("lets a ranked owned page displace the last Search Console candidate, never widen the set", async () => {
+    const ranked = "https://www.owned.test/ranked";
+    // SERP planning keeps one result per host, so at most one owned page can arrive
+    // this way; the ceiling only binds once Search Console has already filled it.
+    const fixture = seams(model(), [{ type: "organic", rank_group: 2, domain: "owned.test", title: "Ranked owned page", url: ranked }]);
+    const candidates: readonly OwnedCandidate[] = [
+      { id: "T1", url: OWNED_URL, match_refs: ["G1"], read: "unavailable" },
+      { id: "T2", url: "https://owned.test/second", match_refs: [], read: "unavailable" },
+      { id: "T3", url: "https://owned.test/third", match_refs: [], read: "unavailable" },
+    ];
+    const brief = await runContentBriefV2({ ...REQUEST, gsc: { property: GSC.property!, window: WINDOW, read: async () => ({ gsc: GSC, candidates }) } }, fixture.deps);
+    expect(brief.context.candidates.map(({ url }) => url))
+      .toEqual([ranked, OWNED_URL, "https://owned.test/second"]);
+  });
+
+  it("does not report the visitor's own ranking page back to them as a competitor", async () => {
+    const own = "https://www.owned.test/guide";
+    const fixture = seams(model(), [{ type: "organic", rank_group: 2, domain: "owned.test", title: "Own guide", url: own }]);
+    // No Search Console here, so ownership is known only from the confirmed profile.
+    const brief = await runContentBriefV2({ ...REQUEST, profile: { read: async () => ({
+      facts: [], snapshot: null, host: "owned.test",
+      read: { source: "profile" as const, status: "complete" as const, attempted: 0, retained: 0, reason: null },
+    }) } }, fixture.deps);
+    expect(fixture.fetchResource.mock.calls.map((call) => call[0])).toEqual(["https://source.test/reporting"]);
+    expect(brief.context.research.pages.map((item) => item.url)).toEqual(["https://source.test/reporting"]);
+    expect(brief.run.reads).toContainEqual({ source: "competitors", status: "complete", attempted: 1, retained: 1, reason: null });
+  });
+
+  it("still treats a genuine competitor as a competitor when a profile host is known", async () => {
+    const fixture = seams(model(), [{ type: "organic", rank_group: 2, domain: "second.test", title: "Rival", url: "https://second.test/guide" }]);
+    const brief = await runContentBriefV2({ ...REQUEST, profile: { read: async () => ({
+      facts: [], snapshot: null, host: "owned.test",
+      read: { source: "profile" as const, status: "complete" as const, attempted: 0, retained: 0, reason: null },
+    }) } }, fixture.deps);
+    expect(brief.context.research.pages.map((item) => item.url))
+      .toEqual(["https://source.test/reporting", "https://second.test/guide"]);
+  });
+
+  it("does not count a foreign URL redirecting onto the profile's own host as a competitor", async () => {
+    const fixture = seams(model(), [{ type: "organic", rank_group: 2, domain: "second.test", title: "Redirecting source", url: "https://second.test/guide" }]);
+    fixture.fetchResource.mockImplementation(async (url) => url.startsWith("https://second.test/")
+      ? { ...page(url), finalUrl: "https://owned.test/guide", redirectChain: ["https://owned.test/guide"] } : page(url));
+    // No Search Console: the confirmed profile host is the only thing that knows
+    // whose page arrived at the end of the redirect.
+    const brief = await runContentBriefV2({ ...REQUEST, profile: { read: async () => ({
+      facts: [], snapshot: null, host: "owned.test",
+      read: { source: "profile" as const, status: "complete" as const, attempted: 0, retained: 0, reason: null },
+    }) } }, fixture.deps);
+    expect(brief.context.research.pages.map((item) => item.url)).toEqual(["https://source.test/reporting"]);
+    expect(brief.run.reads).toContainEqual({ source: "competitors", status: "partial", attempted: 2, retained: 1, reason: null });
+  });
+
+  it("gives a Search Console candidate that also ranks the first slot rather than its ledger position", async () => {
+    const ranking = "https://owned.test/third";
+    const fixture = seams(model(), [{ type: "organic", rank_group: 2, domain: "owned.test", title: "Ranking own page", url: ranking }]);
+    const candidates: readonly OwnedCandidate[] = [
+      { id: "T1", url: OWNED_URL, match_refs: ["G1"], read: "unavailable" },
+      { id: "T2", url: "https://owned.test/second", match_refs: [], read: "unavailable" },
+      { id: "T3", url: ranking, match_refs: [], read: "unavailable" },
+    ];
+    const brief = await runContentBriefV2({ ...REQUEST, gsc: { property: GSC.property!, window: WINDOW, read: async () => ({ gsc: GSC, candidates }) } }, fixture.deps);
+    // Without this it stayed third and a newly discovered ranked page could push
+    // the page Google actually ranks out of the three-slot set entirely.
+    expect(brief.context.candidates.map(({ url }) => url))
+      .toEqual([ranking, OWNED_URL, "https://owned.test/second"]);
+    expect(brief.context.candidates.filter(({ url }) => url === ranking)).toHaveLength(1);
   });
 
   it("does not count a foreign SERP URL that redirects into the owned site as competitor coverage", async () => {
@@ -300,7 +392,7 @@ describe("runContentBriefV2 admitted generation", () => {
     const fixture = seams({ ...model(), gap_angle: { value: "Show the status check alongside the reporting timeline.", rationale: "The declared capability supports this example.", fact_refs: ["P1"], sources: ["U1"] } });
     const snapshot = { website_id: "website-fixture", revision: 3, hash: "a".repeat(64) };
     const facts = [{ id: "P1", field: "capabilities.0", text: "Provides a reporting status check.", derivation: "declared" as const, provenance: { method: "observed" as const, origin: "product_profile" as const } }];
-    const brief = await runContentBriefV2({ ...REQUEST, profile: { read: async () => ({ facts, snapshot, read: { source: "profile", status: "complete", attempted: 1, retained: 1, reason: null } }) } }, fixture.deps);
+    const brief = await runContentBriefV2({ ...REQUEST, profile: { read: async () => ({ facts, snapshot, host: null, read: { source: "profile", status: "complete", attempted: 1, retained: 1, reason: null } }) } }, fixture.deps);
     expect(brief.context.profile_snapshot).toEqual(snapshot);
     expect(brief.context.facts).toEqual(facts);
     expect(brief.generated?.gap_angle?.fact_refs).toEqual(["P1"]);

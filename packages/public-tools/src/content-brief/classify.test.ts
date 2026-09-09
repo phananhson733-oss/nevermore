@@ -5,6 +5,7 @@ import {
   FORMAT_RULES,
   FORUM_HOSTS,
   INTENT_RULES,
+  ENCYCLOPEDIA_HOSTS,
   NEWS_HOSTS,
   VIDEO_HOSTS,
   classifyIntent,
@@ -35,18 +36,35 @@ function row(
 
 describe("host sets", () => {
   it("pin the spec's host lists", () => {
-    expect([...VIDEO_HOSTS]).toEqual(["youtube.com", "vimeo.com"]);
+    expect([...VIDEO_HOSTS]).toEqual([
+      "youtube.com", "vimeo.com", "tiktok.com", "instagram.com", "bilibili.com", "dailymotion.com",
+    ]);
     expect([...FORUM_HOSTS]).toEqual([
       "reddit.com",
       "quora.com",
       "stackexchange.com",
       "stackoverflow.com",
+      "zhihu.com",
+      "ptt.cc",
+      "dcard.tw",
+      "v2ex.com",
+      "mobile01.com",
     ]);
     expect([...COMMERCE_HOSTS]).toEqual([
       "amazon.com",
       "ebay.com",
       "walmart.com",
       "etsy.com",
+      "shopee.com",
+      "shopee.tw",
+      "taobao.com",
+      "tmall.com",
+      "jd.com",
+      "momoshop.com.tw",
+      "pchome.com.tw",
+      "apps.microsoft.com",
+      "apps.apple.com",
+      "play.google.com",
     ]);
     expect([...NEWS_HOSTS]).toEqual([
       "nytimes.com",
@@ -54,6 +72,100 @@ describe("host sets", () => {
       "reuters.com",
       "theguardian.com",
     ]);
+    expect([...ENCYCLOPEDIA_HOSTS]).toEqual([
+      "wikipedia.org", "wiktionary.org", "baike.baidu.com", "britannica.com", "wikiwand.com",
+    ]);
+  });
+
+  it("reads a page that names itself a calculator as the tool it is", () => {
+    // A live "birth chart" SERP came back seven tenths unknown while pages
+    // titled "Birth Chart Calculator" sat in it: the table read /calculator/ as
+    // a directory and never as the end of a slug, and never read the title at
+    // all. The observed format distribution is only as good as this table.
+    //
+    // Each case can only be decided by the one rule it is here for: a title
+    // case carries a path nothing matches, a slug case carries a title nothing
+    // matches. A table where the title and the slug cover for each other stays
+    // green when either is deleted.
+    const cases: readonly [string, string, string][] = [
+      ["https://x.example/birth-chart", "Birth Chart Calculator | Astrology.com", "tool"],
+      ["https://x.example/birth-chart-calculator", "Untitled", "tool"],
+      ["https://x.example/natal-chart-generator", "Chart Maker", "tool"],
+      ["https://x.example/a", "出生星盘计算器", "tool"],
+      ["https://x.example/a", "線上排盤產生器", "tool"],
+      // A four-digit leading number that is a year is not a count.
+      ["https://x.example/a", "2026 General Schedule (GS) Salary Calculator", "tool"],
+    ];
+    for (const [url, title, expected] of cases) {
+      expect(classifySerpFormat({ domain: "x.example", url, title }).value, title).toBe(expected);
+    }
+  });
+
+  it("leaves an article about a calculator an article, and a machine a machine", () => {
+    // Everything that marks an article about a calculator decides above the
+    // calculator rules, and so does every path that names an article or a
+    // product. Reading any of these as a tool page would trade one wrong
+    // distribution for another.
+    const cases: readonly [string, string, string, string][] = [
+      ["x.example", "https://x.example/blog/birth-chart-calculator", "Free Birth Chart Calculator", "guide"],
+      ["x.example", "https://x.example/guide/birth-chart-calculator", "Birth Chart Calculator Guide", "guide"],
+      ["x.example", "https://x.example/birth-chart", "How to Use a Birth Chart Calculator", "guide"],
+      ["x.example", "https://x.example/birth-chart", "What Is a Birth Chart Calculator?", "guide"],
+      ["x.example", "https://x.example/mortgage-calculator", "Mortgage calculator explained", "guide"],
+      ["x.example", "https://x.example/a", "使用 Python 创建计算器 | Tkinter 教程", "guide"],
+      // A slug is not a path rule: an article's own URL keeps the calculator's
+      // name, so the suffix decides after every title rule, not before them.
+      ["rates.ca", "https://rates.ca/resources/how-to-use-a-mortgage-calculator", "How to Use a Mortgage Calculator", "guide"],
+      ["x.example", "https://x.example/product/scientific-calculator", "Scientific Calculator", "product_page"],
+      ["x.example", "https://x.example/pricing/report-generator", "Report Generator", "product_page"],
+      // The count rule keeps every count that is not a year.
+      ["x.example", "https://x.example/a", "10 Best Mortgage Calculator Sites", "listicle"],
+      ["x.example", "https://x.example/a", "1000 Questions to ask people", "listicle"],
+      // An app marketplace listing for a calculator is a product page.
+      ["apps.microsoft.com", "https://apps.microsoft.com/detail/9wzdncrfhvn5", "Windows Calculator", "product_page"],
+      // A generator is as often a machine as a program and no lexical test
+      // separates them, so there is no English rule: this catalogue stays
+      // unclassified, and so does RANDOM.ORG's "Sequence Generator".
+      ["engines.honda.com", "https://engines.honda.com/models/application/generator", "Generator Engines", "unknown"],
+      ["random.org", "https://www.random.org/sequences/", "RANDOM.ORG - Sequence Generator", "unknown"],
+      // -calculator has to end a segment, or a review of one becomes one.
+      ["x.example", "https://x.example/mortgage-calculator-review", "Our Verdict", "unknown"],
+      // 計算機 is a calculator in Traditional Chinese and also a computer, so
+      // it is left out: this under-matches rather than reading a computer
+      // science text as a tool.
+      ["x.example", "https://x.example/a", "計算機科學導論", "unknown"],
+      ["bmi.tw", "https://bmi.tw/", "BMI計算機", "unknown"],
+      // Knowingly lost by that ordering: "dates" decides first. Putting the
+      // calculator rules above the topic words instead cost two live pages.
+      ["mdcalc.com", "https://www.mdcalc.com/calc/423/pregnancy-due-dates", "Pregnancy Due Dates Calculator", "guide"],
+    ];
+    for (const [domain, url, title, expected] of cases) {
+      expect(classifySerpFormat({ domain, url, title }).value, title).toBe(expected);
+    }
+    // One exception, known and left alone: a /calculator/ directory decides
+    // above every title rule, so a round-up that lives in one still reads as a
+    // tool. That rule predates these and reads a structural claim the site
+    // makes about the directory, not a word in a headline; reordering it would
+    // change classifications this change is not about.
+    expect(classifySerpFormat({ domain: "x.example", url: "https://x.example/mortgage/calculator/", title: "The Best Mortgage Calculators of 2026" }).value).toBe("tool");
+  });
+
+  it("classifies the result shapes a Chinese search returns, instead of calling them unknown", () => {
+    // Every one of these was "unknown" before: a zh run had six of nine results
+    // unclassified, which makes the observed format distribution meaningless.
+    const cases: readonly [string, string, string, string][] = [
+      ["baike.baidu.com", "https://baike.baidu.com/item/水逆", "水逆", "guide"],
+      ["zhihu.com", "https://www.zhihu.com/question/12345", "水逆是什么", "forum"],
+      ["shopee.tw", "https://shopee.tw/product/1/2", "水晶", "product_page"],
+      ["facebook.com", "https://www.facebook.com/page/videos/12345", "水逆影片", "video"],
+      ["example.com", "https://example.com/post", "水逆是什么意思？", "guide"],
+      ["example.com", "https://example.com/post", "如何應對水逆", "guide"],
+      ["example.com", "https://example.com/post", "Mercury retrograde dates for 2026", "guide"],
+      ["example.com", "https://example.com/post", "Mercury retrograde meaning", "guide"],
+    ];
+    for (const [domain, url, title, expected] of cases) {
+      expect(classifySerpFormat({ domain, url, title }).value, title).toBe(expected);
+    }
   });
 });
 
@@ -100,7 +212,7 @@ describe("classifySerpFormat: domain rules", () => {
     });
     expect(classifySerpFormat(serp("example.com", "https://www.youtube.com/watch?v=1"))).toEqual({
       value: "video",
-      rules_hit: ["host:video"],
+      rules_hit: ["host:video", "path:watch"],
     });
     expect(classifySerpFormat(serp("example.com", "https://M.YouTube.com/watch")).value).toBe("video");
   });
@@ -139,6 +251,16 @@ describe("classifySerpFormat: path rules", () => {
         value: format,
         rules_hit: [rule],
       });
+    }
+  });
+
+  it("maps the short-video path patterns to video", () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ["https://x.example/reels/abc", "path:reels"],
+      ["https://x.example/videos/abc", "path:videos"],
+    ];
+    for (const [url, rule] of cases) {
+      expect(classifySerpFormat(serp("x.example", url)), url).toEqual({ value: "video", rules_hit: [rule] });
     }
   });
 
@@ -236,6 +358,31 @@ describe("classifySerpFormat: title rules", () => {
   });
 });
 
+describe("classifySerpFormat: title normalization", () => {
+  it("folds a full-width title to its ASCII form before matching", () => {
+    // Provider titles arrive as the page wrote them, and a CJK-authored page
+    // routinely spells Latin words full-width. Lower-casing alone leaves
+    // U+FF57 as U+FF57, so every rule below misses and the row is "unknown".
+    expect(classifySerpFormat(serp("x.example", null, "\uff37\uff48\uff41\uff54 \uff49\uff53 \uff41 \uff23\uff32\uff2d"))).toEqual({
+      value: "guide", rules_hit: ["title:what_is"],
+    });
+    expect(classifySerpFormat(serp("x.example", null, "\uff34\uff48\uff45 \uff42\uff45\uff53\uff54 \uff23\uff32\uff2d")).value).toBe("listicle");
+  });
+
+  it("maps the remaining explainer and Chinese title patterns to their formats", () => {
+    const cases: readonly (readonly [string, SerpFormat, string])[] = [
+      ["Mercury retrograde explained", "guide", "title:explained"],
+      ["\u6c34\u9006\u65f6\u95f4\u8868", "guide", "title:zh_dates"],
+      ["\u6c34\u9006\u6642\u9593\u8868", "guide", "title:zh_dates"],
+      ["\u6c34\u9006\u6c34\u6676\u63a8\u8350\u6392\u884c", "listicle", "title:zh_best"],
+      ["\u6c34\u9006\u6c34\u6676\u6392\u884c\u699c", "listicle", "title:zh_best"],
+    ];
+    for (const [title, format, rule] of cases) {
+      expect(classifySerpFormat(serp("x.example", null, title)), title).toEqual({ value: format, rules_hit: [rule] });
+    }
+  });
+});
+
 describe("classifySerpFormat: ordering", () => {
   it("takes the first hit as value and records every later hit in rules_hit", () => {
     expect(
@@ -280,6 +427,10 @@ describe("classifySerpFormat: ordering", () => {
       "host:forum",
       "host:commerce",
       "host:news",
+      "host:encyclopedia",
+      "path:videos",
+      "path:watch",
+      "path:reels",
       "path:compare",
       "path:vs",
       "path:-vs-",
@@ -299,6 +450,17 @@ describe("classifySerpFormat: ordering", () => {
       "title:how_to",
       "title:what_is",
       "title:guide",
+      "title:meaning",
+      "title:explained",
+      "title:dates",
+      "title:zh_what_is",
+      "title:zh_how_to",
+      "title:zh_dates",
+      "title:zh_best",
+      "title:calculator",
+      "title:zh_calculator",
+      "path:-calculator",
+      "path:-generator",
     ]);
   });
 });

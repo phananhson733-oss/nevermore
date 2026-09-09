@@ -29,6 +29,8 @@ export const RUN_BUDGET_MS = 45_000; // route maxDuration = 300
 export const ENVELOPE_MS = 5_000; // 组装 + 序列化预留
 export const SERP_DEADLINE_MS = 10_000;
 export const CRAWL_DEADLINE_MS = 15_000; // 全部 URL 的墙钟
+/** 抓取内层墙钟比外层 lane 提前收口的余量；内层必须先返回，否则 lane 超时会丢弃已抓完的页 */
+export const CRAWL_SETTLEMENT_MS = 500;
 export const GSC_DEADLINE_MS = 15_000; // 与 SERP/抓取并行；步骤 5 前必须结束
 export const LLM_DEADLINE_MS = 15_000; // brief 唯一一次 LLM 调用
 
@@ -258,3 +260,71 @@ export const PRESERVED_QUESTION_PREFIXES: readonly string[] = [
   "does",
   "is",
 ];
+
+/**
+ * The scripts that write words without spaces between them, as one class body
+ * every consumer builds its own regex from.
+ *
+ * Three places decide something about language from this list: which text gets
+ * CJK bigrams instead of word tokens, which runs get split into bigrams, and
+ * whether a generated heading came back in the sources' script rather than the
+ * one that was asked for. Written out three times, a script added to one copy
+ * and missed in the others changes what counts as which language in one stage
+ * only, and every test still passes.
+ */
+export const UNSEGMENTED_SCRIPT_CLASS =
+  "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}\\p{Script=Thai}";
+
+/**
+ * How many of the visitor's own pages the brief reads.
+ *
+ * Both lanes that nominate owned pages cut to the same number: the Search
+ * Console projection ranks matched and fallback pages, and the run merges that
+ * with its own ranking. Two separate literals let one lane hand over more
+ * candidates than the other would ever keep.
+ */
+export const BRIEF_V2_OWNED_CANDIDATES_MAX = 3;
+
+/**
+ * The script a brief written in each accepted language must actually contain.
+ *
+ * Mirrors SERP_LANGUAGES in apps/marketing/src/lib/tools/serp-markets.ts, which
+ * this package cannot import: business packages do not depend on apps. A test
+ * over there asserts every accepted language has an entry here, because a
+ * language added to the list and missed here is not an error anywhere -- the
+ * brief just stops being checked, silently.
+ *
+ * The scripts a brief in that language is actually written in today, not the
+ * scripts it has ever been written in. Latin covers every language whose modern
+ * alphabet is Latin, whatever its diacritics. Japanese lists kana alongside Han
+ * because a Japanese heading may be entirely kana; Chinese lists Han alone, so
+ * an all-Hangul brief cannot pass for Chinese by sharing the "unsegmented"
+ * bucket.
+ *
+ * A second script is listed when web pages are actually published in it, not
+ * merely when people type that way. Hindi qualifies: Latin-script Hindi is
+ * ordinary published writing and ranks. Arabizi does not, and neither do
+ * transliterated Russian or Greek -- they are chat, and nobody targets Arabic
+ * search with Latin text. Historical alternatives (Cyrillic Romanian, Jawi
+ * Malay, Arabic-script Turkish) are not listed either. A brief written in one of
+ * the unlisted forms is rejected, which is a deliberate limit written down
+ * rather than implied: this is a script test, and a script test cannot tell a
+ * language from the alphabet it was typed in.
+ */
+export const EXPECTED_BRIEF_SCRIPTS: ReadonlyMap<string, string> = new Map([
+  ["zh", "\\p{Script=Han}"],
+  ["ja", "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}"],
+  ["ko", "\\p{Script=Hangul}"],
+  ["th", "\\p{Script=Thai}"],
+  ["ru", "\\p{Script=Cyrillic}"],
+  ["uk", "\\p{Script=Cyrillic}"],
+  ["ar", "\\p{Script=Arabic}"],
+  ["he", "\\p{Script=Hebrew}"],
+  // Romanized Hindi is ordinary online writing, not a specialist form, so
+  // Devanagari alone would reject a brief that is written the way its
+  // readers write. Accepting both costs a check nobody was getting anyway.
+  ["hi", "\\p{Script=Devanagari}\\p{Script=Latin}"],
+  ["el", "\\p{Script=Greek}"],
+  ...["en", "de", "fr", "es", "it", "pt", "nl", "sv", "no", "da", "fi", "pl",
+    "tr", "vi", "id", "ms", "cs", "hu", "ro"].map((code): readonly [string, string] => [code, "\\p{Script=Latin}"]),
+]);

@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";
 import { hasLoneSurrogate } from "../agents/geo-canonical.ts";
-import { geoLiteralsAllSupported } from "./kb-knowledge-shape.ts";
+import { geoNumericLiterals } from "./geo-numeric-literal.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import { geoV2JsonbBytes } from "./kb-v2-json.ts";
 
@@ -419,8 +419,9 @@ function assertPackIntegrity(body: GeoKnowledgePackBodyV1): void {
     const sources = claim.sourceRefs.map((reference) => sourceById.get(reference));
     if (sources.some((source) => source === undefined)) throw new Error("Unknown source reference");
     if (sources.some((source) => source!.availability === "unavailable")) throw new Error("Unavailable source reference");
-    if (!geoLiteralsAllSupported(claim.text, sources.flatMap((source) => source!.excerpts))) {
-      throw new Error("Unsupported numeric claim");
+    const supported = new Set(sources.flatMap((source) => source!.excerpts.flatMap(geoNumericLiterals)));
+    for (const literal of claim.text.flatMap(geoNumericLiterals)) {
+      if (!supported.has(literal)) throw new Error("Unsupported numeric claim");
     }
   }
 }

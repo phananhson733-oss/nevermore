@@ -1,5 +1,3 @@
-import { performance } from "node:perf_hooks";
-
 import { describe, expect, it } from "vitest";
 
 import {
@@ -21,9 +19,31 @@ import {
 
 const NO_BRAND: readonly string[] = [];
 
-/** Perf gate for clusterHeadings; the naive O(H^2) pairwise scan measured 1843 ms at this size. */
+/**
+ * Scale fixtures for clusterHeadings. They carry no timing budget, on purpose.
+ *
+ * They used to. The gate existed to catch a return to the naive O(H^2) pairwise
+ * scan, which measures about 7x the current cost at CLUSTER_PERF_HEADINGS: 73 ms
+ * against 10 ms at half this size, repeatable to within 5% inside one process.
+ * A millisecond budget could not tell that from a busy machine, so the budget
+ * became a ratio against a reference workload timed in the same process, which
+ * is the shape that should work.
+ *
+ * It does not. Measured across separate runs of this one file, on an idle
+ * machine, with the algorithm unchanged, that ratio came out at 15.5, 15.6,
+ * 45.1, 52.1 and 52.9, and under load at 32.8 and 68.9. The naive scan measures
+ * 109. Any threshold that never fires on the 69 also passes the 109, and any
+ * threshold that catches the 109 fires on an ordinary idle run. Growth between
+ * two input sizes was tried as well and does not separate them either: 3.6x per
+ * doubling with the inverted index, 3.8x without it, because the fixture's
+ * vocabulary is fixed and the candidate set grows quadratically either way.
+ *
+ * So the constant factor is not machine-checked here, and a comment claiming it
+ * was would be the worse outcome. What these fixtures still do is exercise the
+ * two shapes that stress the index -- every heading sharing one token, and every
+ * heading sharing a long prefix -- and assert what comes out of them.
+ */
 const CLUSTER_PERF_HEADINGS = 3000;
-const CLUSTER_PERF_BUDGET_MS = 300;
 const CLUSTER_PERF_VOCABULARY = 200;
 const CLUSTER_PERF_MIN_TOKENS = 2;
 const CLUSTER_PERF_MAX_TOKENS = 6;
@@ -31,7 +51,6 @@ const CLUSTER_PERF_PAGES = 10;
 /** Worst case for the inverted index: every heading shares one token, so every pair is a candidate. */
 const CLUSTER_WORST_CASE_LEVELS = 2;
 const CLUSTER_WORST_CASE_HEADINGS = CRAWL_HEADINGS_PER_PAGE_MAX * CLUSTER_WORST_CASE_LEVELS * CLUSTER_PERF_PAGES;
-const CLUSTER_WORST_CASE_BUDGET_MS = 100;
 
 /** `prefix u0`, `prefix u1`, ... : one shared token per heading, one unique token. */
 function sharedPrefixHeadings(count: number, prefix: string): HeadingInput[] {
@@ -42,7 +61,7 @@ function sharedPrefixHeadings(count: number, prefix: string): HeadingInput[] {
   });
 }
 
-/** Seeded LCG so the perf fixture is the same on every run; no Math.random in tests. */
+/** Seeded LCG so the scale fixtures are the same on every run; no Math.random in tests. */
 function seededRandom(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
@@ -314,34 +333,30 @@ describe("clusterHeadings", () => {
     expect(out.map((c) => c.covered_by)).toEqual([2, 2]);
   });
 
-  it(`clusters ${CLUSTER_PERF_HEADINGS} headings within ${CLUSTER_PERF_BUDGET_MS} ms`, () => {
+  it(`clusters ${CLUSTER_PERF_HEADINGS} headings without dropping or duplicating one`, () => {
     const inputs = pseudoRandomHeadings(CLUSTER_PERF_HEADINGS, 20_260_829);
-    const started = performance.now();
     const out = clusterHeadings(inputs, "en", ["acme"]);
-    const elapsed = performance.now() - started;
     expect(out.length).toBeGreaterThan(0);
-    expect(elapsed).toBeLessThan(CLUSTER_PERF_BUDGET_MS);
+    // Every heading lands in exactly one component, at this size too.
+    const members = out.flatMap((cluster) => cluster.members);
+    expect(members).toHaveLength(CLUSTER_PERF_HEADINGS);
+    expect(out.reduce((total, cluster) => total + cluster.covered_by, 0)).toBeGreaterThanOrEqual(out.length);
   });
 
-  it(`clusters ${CLUSTER_WORST_CASE_HEADINGS} headings that all share one token within ${CLUSTER_WORST_CASE_BUDGET_MS} ms`, () => {
+  it(`keeps ${CLUSTER_WORST_CASE_HEADINGS} headings that all share one token apart`, () => {
     const inputs = sharedPrefixHeadings(CLUSTER_WORST_CASE_HEADINGS, "x");
-    const started = performance.now();
     const out = clusterHeadings(inputs, "en", NO_BRAND);
-    const elapsed = performance.now() - started;
     // Jaccard 1/3 and no containment: nothing merges, every pair was still a candidate.
     expect(out).toHaveLength(CLUSTER_WORST_CASE_HEADINGS);
-    expect(elapsed).toBeLessThan(CLUSTER_WORST_CASE_BUDGET_MS);
   });
 
-  it(`clusters ${CLUSTER_WORST_CASE_HEADINGS} headings that share a long prefix within ${CLUSTER_WORST_CASE_BUDGET_MS} ms`, () => {
+  it(`merges ${CLUSTER_WORST_CASE_HEADINGS} headings that share a long prefix into one component`, () => {
     const inputs = sharedPrefixHeadings(CLUSTER_WORST_CASE_HEADINGS, "how to brew better coffee at home");
-    const started = performance.now();
     const out = clusterHeadings(inputs, "en", NO_BRAND);
-    const elapsed = performance.now() - started;
     // Jaccard 5/7 >= threshold: everything merges into one component of ten pages.
     expect(out).toHaveLength(1);
     expect(out[0]?.covered_by).toBe(CLUSTER_PERF_PAGES);
-    expect(elapsed).toBeLessThan(CLUSTER_WORST_CASE_BUDGET_MS);
+    expect(out[0]?.members).toHaveLength(CLUSTER_WORST_CASE_HEADINGS);
   });
 
   it("does not mutate the input array", () => {

@@ -10,15 +10,42 @@ import type { ClassifiedSerpFormat, SerpFormat } from "./contract.ts";
 /* host sets (suffix match on the registrable host, www. stripped)     */
 /* ------------------------------------------------------------------ */
 
-export const VIDEO_HOSTS: ReadonlySet<string> = new Set(["youtube.com", "vimeo.com"]);
+export const VIDEO_HOSTS: ReadonlySet<string> = new Set([
+  "youtube.com", "vimeo.com", "tiktok.com", "instagram.com", "bilibili.com", "dailymotion.com",
+]);
 export const FORUM_HOSTS: ReadonlySet<string> = new Set([
   "reddit.com",
   "quora.com",
   "stackexchange.com",
   "stackoverflow.com",
+  "zhihu.com",
+  "ptt.cc",
+  "dcard.tw",
+  "v2ex.com",
+  "mobile01.com",
 ]);
-export const COMMERCE_HOSTS: ReadonlySet<string> = new Set(["amazon.com", "ebay.com", "walmart.com", "etsy.com"]);
+export const COMMERCE_HOSTS: ReadonlySet<string> = new Set([
+  "amazon.com", "ebay.com", "walmart.com", "etsy.com",
+  "shopee.com", "shopee.tw", "taobao.com", "tmall.com", "jd.com", "momoshop.com.tw", "pchome.com.tw",
+  // An app marketplace lists software the way a shop lists goods, and its
+  // listing for a calculator is a product page, not the calculator.
+  "apps.microsoft.com", "apps.apple.com", "play.google.com",
+]);
 export const NEWS_HOSTS: ReadonlySet<string> = new Set(["nytimes.com", "bbc.com", "reuters.com", "theguardian.com"]);
+/**
+ * Encyclopedias classify as guides.
+ *
+ * The format vocabulary is closed and has no "reference" value, and adding one
+ * is a contract change. A dictionary or encyclopedia article is an explainer,
+ * which is what "guide" means here, and the rule id the page prints says
+ * exactly what was recognised — so the reader is not told the page is a blog
+ * post. Before this, every Baidu Baike and Wikipedia result was "unknown",
+ * which is how a Chinese run ended up with two thirds of its results
+ * unclassified and the observed format distribution meaningless.
+ */
+export const ENCYCLOPEDIA_HOSTS: ReadonlySet<string> = new Set([
+  "wikipedia.org", "wiktionary.org", "baike.baidu.com", "britannica.com", "wikiwand.com",
+]);
 
 function normalizeHost(domain: string): string {
   return domain.trim().toLowerCase().replace(/\.$/, "").replace(/^www\./, "");
@@ -71,6 +98,10 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   hostRule("host:forum", "forum", FORUM_HOSTS),
   hostRule("host:commerce", "product_page", COMMERCE_HOSTS),
   hostRule("host:news", "news", NEWS_HOSTS),
+  hostRule("host:encyclopedia", "guide", ENCYCLOPEDIA_HOSTS),
+  pathRule("path:videos", "video", "/videos/"),
+  pathRule("path:watch", "video", "/watch/"),
+  pathRule("path:reels", "video", "/reels/"),
   pathRule("path:compare", "comparison", "/compare/"),
   pathRule("path:vs", "comparison", "/vs/"),
   pathRule("path:-vs-", "comparison", "-vs-"),
@@ -83,13 +114,56 @@ const FORMAT_MATCHERS: readonly FormatMatcher[] = [
   pathRule("path:learn", "guide", "/learn/"),
   pathRule("path:product", "product_page", "/product/"),
   pathRule("path:pricing", "product_page", "/pricing"),
-  titleRule("title:leading_number", "listicle", /^\d+ /),
+  // Any leading count except one that reads as a year: "2026 Salary Calculator"
+  // was a list of two thousand items, and capping the digits at three made
+  // "1000 Questions to ask people" stop being a list at all.
+  titleRule("title:leading_number", "listicle", /^(?!(?:19|20)\d{2} )\d+ /),
   titleRule("title:best", "listicle", /\bbest /),
   titleRule("title:top_n", "listicle", /\btop \d+/),
   titleRule("title:vs", "comparison", / vs\.? /),
   titleRule("title:how_to", "guide", /\bhow to /),
   titleRule("title:what_is", "guide", /\bwhat is /),
   titleRule("title:guide", "guide", /guide/),
+  titleRule("title:meaning", "guide", /\bmeaning\b/),
+  titleRule("title:explained", "guide", /\bexplained\b/),
+  titleRule("title:dates", "guide", /\bdates\b/),
+  // No \b here: JavaScript word boundaries are ASCII-based and never fall
+  // between two Han characters, so a boundary would make these never match.
+  titleRule("title:zh_what_is", "guide", /是什么|是什麼|什么意思|什麼意思/u),
+  titleRule("title:zh_how_to", "guide", /怎么|怎麼|如何|教程|攻略/u),
+  titleRule("title:zh_dates", "guide", /时间表|時間表|日期表/u),
+  titleRule("title:zh_best", "listicle", /推荐排行|推薦排行|排行榜/u),
+  // Everything that marks an article ABOUT a calculator decides above these --
+  // how-to, what-is, guide, explained, meaning, a round-up, 教程, 是什么 -- and
+  // so does every path that names an article or a product. What is left is a
+  // page that names a calculator and nothing else, which is the calculator.
+  // Before these rules the table read /calculator/ only as a directory and
+  // never read the title at all, so a live SERP of pages titled "Birth Chart
+  // Calculator" came back seven tenths unclassified.
+  //
+  // Their first home was above the topic words, to keep "Pregnancy Due Dates
+  // Calculator" from reading as a page about dates. That cost more than it
+  // bought: "Mortgage calculator explained" and a Chinese Tkinter 教程 both
+  // became tools. The dates case is the one that loses here.
+  //
+  // There is no English generator rule. A generator is as often a machine as a
+  // program, so "Generator Engines" reads as a tool, and no lexical test
+  // separates it from "Sequence Generator" -- "portable generator" defeats
+  // every one that suggests itself. RANDOM.ORG's sequence generator is
+  // therefore unclassified rather than wrong, and 生成器 / 產生器 carry the
+  // Chinese case, where a physical generator is 發電機.
+  //
+  // 計算機 is left out although Traditional Chinese does use it for a
+  // calculator: it is also the word for a computer, and would read
+  // 計算機科學導論 as a tool. That under-matches BMI計算機, which now shows up
+  // as a page the sample could not classify rather than one it got wrong.
+  titleRule("title:calculator", "tool", /\bcalculator\b/),
+  titleRule("title:zh_calculator", "tool", /计算器|計算器|生成器|產生器/u),
+  // Terminal, and last of all: directoryPath appends a trailing slash, so
+  // "-calculator/" ends a segment and /mortgage-calculator-review stays out,
+  // while /birth-chart-calculator never contained the /calculator/ segment.
+  pathRule("path:-calculator", "tool", "-calculator/"),
+  pathRule("path:-generator", "tool", "-generator/"),
 ];
 
 /** The ordered rule table, id + format only, for the page to print. */
@@ -124,7 +198,8 @@ function normalizeSerpInput(input: SerpFormatInput): NormalizedSerpInput {
   return {
     host: hostOf(input.url, input.domain, parsed),
     path: parsed === null ? null : directoryPath(parsed),
-    title: input.title === null ? null : input.title.toLowerCase(),
+    // NFKC first: a full-width title would otherwise miss every rule below.
+    title: input.title === null ? null : input.title.normalize("NFKC").toLowerCase(),
   };
 }
 

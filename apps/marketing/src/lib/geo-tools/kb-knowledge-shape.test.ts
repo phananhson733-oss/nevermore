@@ -73,13 +73,29 @@ describe("what a checked citation proves", () => {
     },
   );
 
-  it("reads a price the page wrote in fullwidth form", () => {
-    // A Japanese or Chinese page writes the same price as ￥ (U+FFE5) and may
-    // write the digits fullwidth too. Both are the compatibility forms of what
-    // the claim says, so refusing them drops a correctly sourced price.
-    expect(geoLiteralsSupported("Pro costs ¥9,900.", ["Proプランは月額￥9,900です"])).toBe(true);
-    expect(geoLiteralsSupported("Pro costs ¥9,900.", ["月額￥９，９００です"])).toBe(true);
-    expect(geoLiteralsSupported("Growth is up 50%.", ["traffic rose 50％"])).toBe(true);
+  it("refuses a price the page wrote in fullwidth form", () => {
+    /*
+     * A KNOWN false negative, pinned so it is a decision rather than a surprise.
+     *
+     * A Japanese or Chinese page writes the same price as ￥ (U+FFE5) and may
+     * write the digits fullwidth too. These are compatibility spellings of what
+     * the claim says, and NFKC would fold them together -- this branch did that
+     * for a while. It was dropped when the branch met `main`, because NFKC also
+     * expands `½` into `1⁄2` and `²` into `2`, which the tokenizer then reads as
+     * the separate literals 1 and 2: a claim of `½` would start passing on an
+     * excerpt that merely says 1 and 2. Loosening is the one direction this
+     * guard may not move, so the fold went and these three stayed refused.
+     *
+     * The cost lands the safe way: the item is dropped or marked
+     * `not_applicable`, never published wearing a citation it did not earn.
+     * `geo-numeric-literal.ts` carries the same reasoning at the source.
+     */
+    expect(geoLiteralsSupported("Pro costs ¥9,900.", ["Proプランは月額￥9,900です"])).toBe(false);
+    expect(geoLiteralsSupported("Pro costs ¥9,900.", ["月額￥９，９００です"])).toBe(false);
+    expect(geoLiteralsSupported("Growth is up 50%.", ["traffic rose 50％"])).toBe(false);
+    // The same page answered in its own spelling is still supported, which is
+    // what keeps this a spelling limit rather than a CJK one.
+    expect(geoLiteralsSupported("Pro costs ￥9,900.", ["Proプランは月額￥9,900です"])).toBe(true);
   });
 
   it("refuses a unit that appears on only one side, in either direction", () => {

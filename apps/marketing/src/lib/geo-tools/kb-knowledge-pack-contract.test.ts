@@ -197,6 +197,8 @@ describe("GEO customer knowledge pack contract", () => {
     // The digits are in the evidence; the unit is not. A guard that reads only
     // the digits calls a price in won a supported claim about a team count.
     ["numeric claims wearing a currency the evidence never showed", (value: any) => { value.qa.value[0].directAnswer = "Yes. It costs ₩2 per team."; }],
+    ["numeric claims that drop the currency the evidence priced in", (value: any) => { value.sourceCatalogue[0].excerpts = ["Example Cloud is workflow software. It supports teams of 2. A seat costs ₩9,900. A person approves each workflow."]; value.qa.value[0].directAnswer = "Yes. Example Cloud supports teams of 2 and a seat costs 9,900."; }],
+    ["numeric claims that swap the currency the evidence priced in", (value: any) => { value.sourceCatalogue[0].excerpts = ["Example Cloud is workflow software. It supports teams of 2. A seat costs ₩9,900. A person approves each workflow."]; value.qa.value[0].directAnswer = "Yes. Example Cloud supports teams of 2 and a seat costs ¥9,900."; }],
     ["inconsistent customer counts", (value: any) => { value.meta.counts.qa = 7; }],
   ])("rejects %s", (_label, mutate) => {
     const value = body();

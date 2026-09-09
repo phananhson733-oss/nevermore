@@ -15,6 +15,7 @@
  * server, so a shared file that imported one would fail the build's own guard.
  */
 import { z } from "zod";
+import { geoNumbersSupported } from "./geo-numeric-literal.ts";
 
 import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";
 import { hasLoneSurrogate } from "../agents/geo-canonical.ts";
@@ -469,73 +470,30 @@ export const geoCoverageItemShape = {
 } as const;
 
 /**
- * One numeric literal a text asserts, split into the number and the unit sign
- * written against it.
+ * How this module reads a number: it does not. `geo-numeric-literal.ts` is the
+ * single reading, shared with the accepted-fact guard, the pack-integrity
+ * guard, the narrative guard and the role/question guard. These two names stay
+ * because the v3 side has twenty call sites written against them, but they add
+ * no rule of their own -- a second tokenizer here is exactly the thing that
+ * file exists to prevent.
  *
- * They are kept apart so that the sign is compared rather than discarded, but
- * both must match: a claim saying 9,900 is not supported by an excerpt saying
- * 12,000, and a claim saying ₩9,900 is not supported by one saying ₹9,900 --
- * nor by one saying a bare 9,900, because a claim that names a unit the page
- * never showed has invented it. That strictness is not new; it is what the four
- * signs this used to hard-code already did. Generalising it is the point.
- *
- * The known cost, deliberate: a page that writes the unit after the number as a
- * word ("9,900원", "9,900 円", "9,900 dollars") reads as signless here, so a
- * signed claim about it is refused. That is a false negative, and it fails the
- * safe way -- the item is dropped or marked `not_applicable` rather than
- * published with an unearned citation badge. Fixing it properly means teaching
- * the tokenizer to read suffix units, not re-opening the sign to anything.
- */
-export interface GeoLiteralToken {
-  /** The currency sign written against the number, or `null` if none was. */
-  readonly symbol: string | null;
-  /** The number itself: sign and percent kept, currency and spacing removed. */
-  readonly core: string;
-}
-
-/**
- * `\p{Sc}` rather than a hand-written list of signs. Which currencies a guard
- * knows must not depend on which ones somebody remembered to type: the four
- * ASCII-adjacent signs this used to list left ₩, ₹, ₽, ₺ and every other sign
- * silently stripped, so a won price and a rupee price of the same digits were
- * the same literal.
- */
-const GEO_LITERAL_RE = /[+-]?(?:(\p{Sc})\s*)?\p{N}+(?:[.,:/-]\p{N}+)*(?:\s*%)?/gu;
-
-/**
- * Numeric literals a text asserts, read under NFKC.
- *
- * NFKC is what makes a CJK page comparable to the claim written about it: it
- * folds ￥ onto ¥, ％ onto %, and fullwidth digits ９９００ onto 9900, which are
- * compatibility spellings of the same number rather than different numbers.
- * It is applied to a copy for comparison only -- nothing here writes back, and
- * stored excerpts keep the bytes the page actually served.
- *
- * The cost is deliberate and small: NFKC also expands a few compatibility
- * numerals (½ becomes 1⁄2, ² becomes 2), so those compare as their expansions
- * on both sides rather than as single literals.
- */
-export function geoLiteralTokens(value: string): readonly GeoLiteralToken[] {
-  return [...value.normalize("NFKC").matchAll(GEO_LITERAL_RE)].map((match) => ({
-    symbol: match[1] ?? null,
-    core: match[0].replace(/\p{Sc}/gu, "").replace(/\s+/gu, ""),
-  }));
-}
-
-/**
- * Whether the cited excerpts support a claim's numbers. This is the whole
- * content of `cited_and_literals_match`: the claim's numeric literals all occur
- * in text that was actually observed. It says nothing about whether the claim
- * is true, and a claim with no numbers is supported by any non-empty excerpt.
+ * This branch and `main` fixed the hand-written `[$€£¥]` class independently
+ * and landed on different answers. Both widened the sign to `\p{Sc}`; this side
+ * also normalized under NFKC so a page priced `￥9,900` would answer a claim
+ * written `¥9,900`, and `50％` a claim of `50%`. That was dropped in favour of
+ * `main`'s, whose reasoning is written out in `geo-numeric-literal.ts`: NFKC
+ * expands `½` into `1⁄2` and `²` into `2`, which this tokenizer then reads as
+ * the separate literals `1` and `2`, so a claim of `½` would start passing on
+ * an excerpt that merely says 1 and 2. That is a LOOSENING, and a guard whose
+ * job is "this number was actually observed" may not move that way. What was
+ * given up is a false NEGATIVE -- the fullwidth cases above are now refused,
+ * the item is dropped rather than published with a citation it did not earn.
  */
 export function geoLiteralsSupported(claim: string, excerpts: readonly string[]): boolean {
-  return geoLiteralsAllSupported([claim], excerpts);
+  return geoNumbersSupported([claim], excerpts);
 }
 
 /** The same rule over several claim strings that cite the same excerpts. */
 export function geoLiteralsAllSupported(claims: readonly string[], excerpts: readonly string[]): boolean {
-  const observed = excerpts.flatMap((excerpt) => geoLiteralTokens(excerpt));
-  return claims.flatMap((claim) => geoLiteralTokens(claim)).every((literal) => observed.some((seen) => (
-    seen.core === literal.core && seen.symbol === literal.symbol
-  )));
+  return geoNumbersSupported(claims, excerpts);
 }

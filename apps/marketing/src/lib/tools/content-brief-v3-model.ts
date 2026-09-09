@@ -3,7 +3,7 @@
 // @pos -- private v3 model protocol only; historical flat v2 and public contracts are unchanged
 import type { BriefV2Context } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { RESEARCH_OUTLINE_MAX, RESEARCH_QUESTION_MAX } from "@sf/public-tools/content-brief/v2-contract";
-import { validateModelBriefV2 } from "@sf/public-tools/content-brief/v2-generation";
+import { validateModelBriefV2, type ValidateModelBriefV2Options } from "@sf/public-tools/content-brief/v2-generation";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -18,7 +18,11 @@ function invalid(path: string) {
 }
 
 /** Shape conversion only: invalid items are rejected, never removed, filled or repaired. */
-export function validateSectionQuestionsBrief(input: unknown, context: BriefV2Context): ReturnType<typeof validateModelBriefV2> {
+export function validateSectionQuestionsBrief(
+  input: unknown,
+  context: BriefV2Context,
+  options: ValidateModelBriefV2Options = {},
+): ReturnType<typeof validateModelBriefV2> {
   if (!isRecord(input) || !Object.hasOwn(input, "research")) return invalid("research");
   const { research, ...writing } = input;
   if (!isRecord(research) || !exactKeys(research, ["sections"])) return invalid("research");
@@ -41,5 +45,5 @@ export function validateSectionQuestionsBrief(input: unknown, context: BriefV2Co
   }
   // Preserve every remaining field, including unknown top-level keys, for the
   // original validator. It owns total counts, IDs, source roles and page plans.
-  return validateModelBriefV2({ ...writing, research: { questions, outline } }, context);
+  return validateModelBriefV2({ ...writing, research: { questions, outline } }, context, options);
 }

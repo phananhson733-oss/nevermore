@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildResearchBundle, parseResearchBundle } from "@sf/public-tools/content-brief/v2-research";
-import type { ResearchPage } from "@sf/public-tools/content-brief/v2-contract";
+import { RESEARCH_PROMPT_MAX_BYTES, type ResearchPage } from "@sf/public-tools/content-brief/v2-contract";
 import type { BriefV2Context } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { prepareContentBriefV2Prompt } from "./content-brief-v2-prompts.ts";
 import { buildSerpObservations } from "@sf/public-tools/content-brief/assemble";
@@ -108,11 +108,65 @@ describe("Brief v2 assembly prompt", () => {
     expect(system).toContain("do_not_cover.topic must be a topic actually covered by that owned excerpt");
   });
 
+  it("asks for a format and an angle the outline actually carries out, and forbids closing the gap by invention", () => {
+    // A production brief chose the tool format and an angle promising a
+    // calculator paired with plain-language explanation, then wrote three
+    // sections that never reach the calculator. No validator can read that:
+    // the outline is the whole plan on create, and whether it delivers the
+    // angle is a judgment. So the instruction has to be given, and it has to
+    // close the escape route -- a model told to make them agree will otherwise
+    // add the missing section whether the evidence supports it or not.
+    const system = prepareContentBriefV2Prompt(context())!.system;
+    expect(system).toContain("format, gap_angle and the plan have to agree");
+    expect(system).toContain("do not choose a format the outline does not carry out");
+    expect(system).toContain("do not promise work in gap_angle that the plan does not contain");
+    // Without this clause a model told to make them agree closes the gap the
+    // other way, by writing the section the evidence never supported.
+    expect(system).toContain("narrow the angle");
+    expect(system).toContain("never add a section or step the evidence does not support");
+    // An existing page's format is a fact about that page, not about the edits
+    // planned for it, and a crawl that missed the calculator's controls must
+    // not turn an update to a calculator into an update to a guide.
+    expect(system).toContain("On update the format describes the page that already exists, not the edits");
+    expect(system).toContain("and the steps are the plan");
+    // An update can hold nine reader needs and only eight questions. Without
+    // this, the ninth can live in a rewrite step answering nothing, be
+    // promised in the angle, and appear in no section at all -- and an unbound
+    // step reaches every draft section, so no section owns it.
+    expect(system).toContain("a step that answers no selected question does not carry a promise");
+    // Changing the format is a create-only escape: an existing calculator does
+    // not become a guide because the crawl missed its controls.
+    expect(system).toContain("or on create choose the format the outline does carry out");
+    expect(system).toContain("never invent a procedure");
+    // Instructions and excerpts share one 48 KiB budget, and a real run came
+    // within 1.9 KiB of it, so every sentence added here is paid for in
+    // evidence the model never sees. This sits at 10,583 bytes; the ceiling
+    // leaves room for a short rule and stops the next long one.
+    expect(new TextEncoder().encode(system).byteLength).toBeLessThan(11_000);
+  });
+
+  it("names the output language, so the instruction the validator enforces is actually given", () => {
+    // The generated-language check rejects a brief written in the sources'
+    // script. Without this sentence the model is being failed for a rule it was
+    // never told, and the run pays for a repair call to learn it.
+    const english = prepareContentBriefV2Prompt(context())!.system;
+    expect(english).toContain('Write every generated string in English (input.language "en")');
+    expect(english).toContain("Evidence in other languages does not change the output language");
+
+    const input = context();
+    const chinese = prepareContentBriefV2Prompt({ ...input, input: { ...input.input, language: "zh" } })!.system;
+    expect(chinese).toContain('Write every generated string in Chinese (input.language "zh")');
+    // An unlisted code is a worse brief, not a failed run: it passes through.
+    const unlisted = prepareContentBriefV2Prompt({ ...input, input: { ...input.input, language: "gd" } })!.system;
+    expect(unlisted).toContain('Write every generated string in gd (input.language "gd")');
+  });
+
   it("requests distinct reader needs and corroborating sources without forcing mock counts", () => {
     const system = prepareContentBriefV2Prompt(context())!.system;
     expect(system).toContain("Use all relevant corroborating units for each question");
     expect(system).toContain("Do not stop at the definition when the supplied evidence supports other distinct reader needs");
-    expect(system).toContain("do not pad the outline to meet a fixed question count");
+    expect(system).toContain("stopping early is the commoner failure");
+    expect(system).toContain("Never pad: a need with no supporting unit is not a question");
   });
 
   it("retains an evidenced how-to need separately from definition and inputs, with its matching PAA", () => {
@@ -192,6 +246,14 @@ describe("Brief v2 assembly prompt", () => {
     expect(prepareContentBriefV2Prompt(crowded)).toBeNull();
   });
 
+  it("spends the byte budget on evidence, keeping the fixed instructions a small share of it", () => {
+    // prompt_bytes measures system + user against one cap, so every sentence added
+    // to the instructions is a sentence of evidence removed. This bound is what
+    // stops a prompt rewrite from quietly shrinking what the model gets to read.
+    const system = prepareContentBriefV2Prompt(context())!.system;
+    expect(new TextEncoder().encode(system).byteLength).toBeLessThan(RESEARCH_PROMPT_MAX_BYTES / 4);
+  });
+
   it("rejects inconsistent source graphs before rendering source text", () => {
     const input = context();
     expect(prepareContentBriefV2Prompt({ ...input, research: { ...input.research, units: [{ id: "U1", kind: "page", page_ref: "C99", segment_index: 0 }] } })).toBeNull();
@@ -200,7 +262,11 @@ describe("Brief v2 assembly prompt", () => {
   it("retains all available excerpts when the full prompt fits the hard cap, rather than forcing a lossy latency target", () => {
     const pages = [...Array.from({ length: 10 }, (_, i) => page(`C${i + 1}`, false, 12)), page("T1", false, 12)].map(p => ({
       ...p, research: { ...p.research, length: { value: 1000, unit: "words" as const, tokenizer: "whitespace" as const },
-        segments: p.research.segments.map(segment => ({ ...segment, text: "Medical billing software validates insurance claim codes and eligibility before submission. ".repeat(3) })) },
+        // Two sentences, not three: at three this fixture sat within a few hundred
+        // bytes of the cap, so any edit to the instructions changed what it proved
+        // from "retains everything that fits" into "the instructions grew". The
+        // instruction share has its own bound above.
+        segments: p.research.segments.map(segment => ({ ...segment, text: "Medical billing software validates insurance claim codes and eligibility before submission. ".repeat(2) })) },
     }));
     const source = context(pages);
     const input = { ...source, facts: Array.from({ length: 32 }, (_, i) => ({ ...source.facts[0]!, id: `P${i + 1}`, text: `Declared product capability ${i}`, field: `coreFeatures[${i}]` })) };

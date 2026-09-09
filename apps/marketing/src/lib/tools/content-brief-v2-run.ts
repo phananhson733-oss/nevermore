@@ -2,12 +2,15 @@
 // @output -- a self-checked whole v2 brief using the exact model-visible evidence
 // @pos -- Marketing generation orchestration, never authentication or admission
 import { buildSerpObservations, planCrawlTargets } from "@sf/public-tools/content-brief/assemble";
-import { CRAWL_DEADLINE_MS, ENVELOPE_MS, GSC_DEADLINE_MS, RUN_BUDGET_MS, SERP_DEADLINE_MS, SERP_DEPTH } from "@sf/public-tools/content-brief/constants";
+import {
+  BRIEF_V2_OWNED_CANDIDATES_MAX, CRAWL_DEADLINE_MS, ENVELOPE_MS, GSC_DEADLINE_MS,
+  RUN_BUDGET_MS, SERP_DEADLINE_MS, SERP_DEPTH,
+} from "@sf/public-tools/content-brief/constants";
 import type { ProfileFact } from "@sf/public-tools/content-brief/contract";
 import { hostKey } from "@sf/public-tools/content-brief/host";
 import { fingerprintBriefV2, parseContentBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
 import { CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA, type ResearchBundle } from "@sf/public-tools/content-brief/v2-contract";
-import { parseBriefV2Context } from "@sf/public-tools/content-brief/v2-generation";
+import { briefV2PageKey, parseBriefV2Context } from "@sf/public-tools/content-brief/v2-generation";
 import type { BriefV2Context, BriefV2Gsc, BriefV2Input, BriefV2Read, ContentBriefV2, OwnedCandidate } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { buildResearchBundle } from "@sf/public-tools/content-brief/v2-research";
 import { keywordCoverageProperty } from "@sf/public-tools/keyword-opportunity";
@@ -34,6 +37,20 @@ export interface ContentBriefV2ProfileLane {
   readonly facts: readonly ProfileFact[];
   readonly snapshot: BriefV2Context["profile_snapshot"];
   readonly read: BriefV2Read;
+  /**
+   * The confirmed profile's own host, when one was read.
+   *
+   * Ownership is otherwise known only through the Search Console property, so
+   * without Search Console a page of the visitor's own site that ranks for the
+   * keyword was counted as a competitor and the brief reported the visitor's
+   * own coverage back to them as the competition. This is not serialized: it
+   * decides which SERP rows are competitors, nothing else.
+   *
+   * Required and nullable, not optional and nullable: "no profile host" has one
+   * spelling, so a lane that forgot to resolve one cannot pass for a lane that
+   * looked and found none.
+   */
+  readonly host: string | null;
 }
 export interface ContentBriefV2RunInput {
   readonly input: BriefV2Input;
@@ -97,7 +114,7 @@ function unavailable(source: BriefV2Read["source"], reason: NonNullable<BriefV2R
   return { source, status: "unavailable", attempted, retained: null, reason };
 }
 function emptyProfile(reason: NonNullable<BriefV2Read["reason"]>, attempted: number | null): ContentBriefV2ProfileLane {
-  return { facts: [], snapshot: null, read: unavailable("profile", reason, attempted) };
+  return { facts: [], snapshot: null, host: null, read: unavailable("profile", reason, attempted) };
 }
 function emptySerp(reason: Failure, started: boolean): ContentBriefSerpResult {
   return { rows: [], reads: { status: "unavailable", reason, attempted: started ? SERP_DEPTH : 0 }, costUsd: null, itemTypes: null, peopleAlsoAsk: { status: "unavailable", reason } };
@@ -111,6 +128,39 @@ function urlKey(raw: string): string | null {
     return null;
   }
 }
+/**
+ * Why a ranked page outranks a ledger page.
+ *
+ * A page of the visitor's own property that Google already places in this
+ * keyword's top ten is the strongest first-party evidence available: it is the
+ * page competing for this exact query today. Before this merge such a page was
+ * dropped on sight — it could not be a competitor, because it belongs to the
+ * property, and nothing promoted it to an owned candidate — so the brief
+ * advised rewriting some other page while the ranking one went unread.
+ *
+ * The three-slot ceiling belongs to the contract, so a ranked page displaces a
+ * Search Console candidate rather than widening the set.
+ */
+function mergeOwnedCandidates(
+  fromGsc: readonly OwnedCandidate[], ranked: readonly string[], matches: BriefV2Gsc["matches"],
+): OwnedCandidate[] {
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  for (const url of [...ranked, ...fromGsc.map((candidate) => candidate.url)]) {
+    const identity = briefV2PageKey(url);
+    if (identity === null || seen.has(identity)) continue;
+    seen.add(identity);
+    urls.push(url);
+    if (urls.length === BRIEF_V2_OWNED_CANDIDATES_MAX) break;
+  }
+  return urls.map((url, index): OwnedCandidate => ({
+    id: `T${index + 1}`,
+    url,
+    match_refs: matches.filter((match) => briefV2PageKey(match.page) === briefV2PageKey(url)).map((match) => match.id),
+    read: "unavailable",
+  }));
+}
+
 function researchRead(
   source: "competitors" | "owned_pages", targets: readonly ContentBriefV2CrawlTarget[], research: ResearchBundle,
   crawl: ContentBriefV2CrawlResult, upstreamReason: BriefV2Read["reason"],
@@ -167,8 +217,10 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
       gsc.gsc.window?.start !== input.gsc.window.start || gsc.gsc.window.end !== input.gsc.window.end ||
       gsc.gsc.window.lookback_days !== input.gsc.window.lookback_days)) throw new ContentBriefV2RunError();
   const ownUrls = new Set(gsc.candidates.map((candidate) => urlKey(candidate.url)).filter((url): url is string => url !== null));
+  const profileHost = profile.host === null ? null : hostKey(profile.host);
   const plan = planCrawlTargets(buildSerpObservations(serp.rows), hostKey);
   const prefailed: ContentBriefV2CrawlFailure[] = [];
+  const rankedOwned: string[] = [];
   const attemptedCompetitors: ContentBriefV2CrawlTarget[] = [];
   const competitorTargets: ContentBriefV2CrawlTarget[] = [];
   for (const target of plan.targets) {
@@ -179,13 +231,28 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
       prefailed.push({ id: failed.id, url: failed.url, reason: "provider_error" });
       continue;
     }
-    if (ownUrls.has(normalized)) continue;
-    if (input.gsc !== undefined && keywordCoverageProperty(target.url, [input.gsc.property]) === input.gsc.property) continue;
+    // A page that is already a candidate AND ranks for the keyword is the
+    // strongest owned evidence of all, so it joins the ranked list rather than
+    // keeping whatever position the Search Console ledger gave it; the merge
+    // deduplicates, so it does not take two slots.
+    if (ownUrls.has(normalized)) {
+      rankedOwned.push(target.url);
+      continue;
+    }
+    if (input.gsc !== undefined && keywordCoverageProperty(target.url, [input.gsc.property]) === input.gsc.property) {
+      rankedOwned.push(target.url);
+      continue;
+    }
+    // Owned but unrepresentable: a candidate needs a Search Console property to
+    // be scoped against, so this page can be kept out of the competition but not
+    // offered as the visitor's own. Silence beats calling it a competitor.
+    if (profileHost !== null && hostKey(target.url) === profileHost) continue;
     const competitor = { id: target.serp_id.replace(/^S/u, "C"), role: "competitor" as const, url: target.url };
     attemptedCompetitors.push(competitor);
     competitorTargets.push(competitor);
   }
-  const ownedTargets = gsc.candidates.map((candidate) => ({ id: candidate.id, role: "owned" as const, url: candidate.url }));
+  const ownedCandidates = mergeOwnedCandidates(gsc.candidates, rankedOwned, gsc.gsc.matches);
+  const ownedTargets = ownedCandidates.map((candidate) => ({ id: candidate.id, role: "owned" as const, url: candidate.url }));
   const targets: ContentBriefV2CrawlTarget[] = [
     ...attemptedCompetitors,
     ...ownedTargets,
@@ -195,17 +262,23 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
     ...ownedTargets,
   ];
   const fetched = crawlTargets.length === 0 ? { observed: [], failed: [] } : await lane(
-    () => (dependencies.crawl ?? crawlContentBriefV2Targets)({ targets: crawlTargets, language: keyword.language, deadlineAt: clock.deadlineAt }, { now: clock.now }), CRAWL_DEADLINE_MS, clock,
+    () => (dependencies.crawl ?? crawlContentBriefV2Targets)({ targets: crawlTargets, language: keyword.language, keywords: [keyword.primary, ...keyword.supporting], deadlineAt: clock.deadlineAt }, { now: clock.now }), CRAWL_DEADLINE_MS, clock,
     (reason): ContentBriefV2CrawlResult => ({ observed: [], failed: crawlTargets.map((target) => ({ id: target.id, url: target.url, reason })) }),
   );
+  // Redirects are checked again after the fetch, because a foreign URL can
+  // deliver the visitor's own article. The profile host counts here for the
+  // same reason it counts at planning time: without Search Console it is the
+  // only thing that knows whose page this is.
   const redirectedOwned = fetched.observed.filter((page) => page.role === "competitor" &&
-    (ownUrls.has(urlKey(page.final_url) ?? "") || (input.gsc !== undefined && keywordCoverageProperty(page.final_url, [input.gsc.property]) === input.gsc.property)));
+    (ownUrls.has(urlKey(page.final_url) ?? "") ||
+      (input.gsc !== undefined && keywordCoverageProperty(page.final_url, [input.gsc.property]) === input.gsc.property) ||
+      (profileHost !== null && hostKey(page.final_url) === profileHost)));
   const redirectedIds = new Set(redirectedOwned.map((page) => page.id));
   const crawl: ContentBriefV2CrawlResult = {
     observed: fetched.observed.filter((page) => !redirectedIds.has(page.id)),
     failed: [...prefailed, ...fetched.failed, ...redirectedOwned.map((page): ContentBriefV2CrawlFailure => ({ id: page.id, url: page.url, reason: "insufficient_evidence" }))],
   };
-  const candidates = gsc.candidates.map((candidate): OwnedCandidate => ({ ...candidate, read: crawl.observed.some((page) => page.id === candidate.id) ? "observed"
+  const candidates = ownedCandidates.map((candidate): OwnedCandidate => ({ ...candidate, read: crawl.observed.some((page) => page.id === candidate.id) ? "observed"
     : crawl.failed.some((page) => page.id === candidate.id && page.reason === "redirected") ? "redirected" : "unavailable" }));
   const paa = serp.peopleAlsoAsk;
   const research = buildResearchBundle(crawl.observed, paa !== undefined && paa.status !== "unavailable" ? paa.items.map((item, index) => ({ id: `A${index + 1}`, question: item.question, seed_question: item.seedQuestion })) : []);

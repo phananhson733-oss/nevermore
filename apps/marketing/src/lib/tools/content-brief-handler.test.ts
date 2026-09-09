@@ -696,14 +696,82 @@ describe("handleContentBriefRequest v2 admission and evidence", () => {
   it("retains 32 profile facts with actual source counts and the exact selected snapshot", async () => {
     const profile = { ...confirmedProfile(), coreFeatures: Array.from({ length: 32 }, (_, index) => `feature ${index}`) };
     const readWebsite = vi.fn<ContentBriefHandlerDependencies["readWebsite"]>(async () => ({
-      kind: "ok", websiteId: "w-1", snapshotRevision: 9, profileHash: "d".repeat(64), profile,
+      kind: "ok", websiteId: "w-1", host: "site.example", snapshotRevision: 9, profileHash: "d".repeat(64), profile,
     }));
     const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), v2Dependencies({ readWebsite })));
     expect(readWebsite).toHaveBeenCalledWith("user-1", "w-1");
     expect(brief.context.profile_snapshot).toEqual({ website_id: "w-1", revision: 9, hash: "d".repeat(64) });
     expect(brief.context.facts).toHaveLength(32);
-    expect(brief.context.facts[31]).toMatchObject({ id: "P32", text: "feature 29" });
+    // The budget is still spent in full when one array is all the profile has.
+    expect(brief.context.facts.filter((fact) => fact.field.startsWith("coreFeatures"))).toHaveLength(30);
     expect(brief.run.reads.find(({ source }) => source === "profile")).toEqual({ source: "profile", status: "partial", attempted: 34, retained: 32, reason: null });
+  });
+
+  it("does not let one long array push the fields a differentiated angle needs out of the budget", async () => {
+    const profile = {
+      ...confirmedProfile(),
+      coreFeatures: Array.from({ length: 40 }, (_, index) => `feature ${index}`),
+      trustSignals: Array.from({ length: 20 }, (_, index) => `signal ${index}`),
+      valueProposition: "Cafes stop losing roast batches to spreadsheets",
+      jtbd: "Know which roast batch went to which cafe",
+      icpPain: "Batch records live in three different spreadsheets",
+      outcomes: ["Fewer wasted batches", "Faster wholesale invoicing"],
+      useCases: ["Wholesale roasting", "Single-origin release planning"],
+      directCompetitors: ["Cropster", "Artisan"],
+      fieldProvenance: [
+        ...confirmedProfile().fieldProvenance,
+        ...(["valueProposition", "trustSignals", "jtbd", "icpPain", "outcomes", "useCases", "directCompetitors"] as const)
+          .map((path) => ({
+            path: `/${path}` as const, derivation: "declared" as const, confidence: "high" as const,
+            source: "supplied_product_information" as const, limitation: null, observedAt: null, evidenceUrls: [],
+          })),
+      ],
+    };
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), v2Dependencies({
+      readWebsite: async () => ({ kind: "ok", websiteId: "w-1", host: "site.example", snapshotRevision: 9, profileHash: "d".repeat(64), profile }),
+    })));
+    const fields = brief.context.facts.map((fact) => fact.field.replace(/\[\d+\]$/u, ""));
+    // Before this, the first thirty-two facts in contract order were sixteen
+    // core features and trust signals, and every one of these fields was cut.
+    for (const field of ["valueProposition", "jtbd", "icpPain", "outcomes", "useCases", "directCompetitors"]) {
+      expect(fields, field).toContain(field);
+    }
+    expect(fields.filter((field) => field === "coreFeatures").length).toBeLessThanOrEqual(20);
+  });
+
+  it("carries the rejected rule to the run log without letting it reach the brief", async () => {
+    // "validation_failed" alone made every such production run unreproducible.
+    const deps = v2Dependencies({
+      runLlmV2: async ({ context }) => ({
+        context, output: null, prompt_bytes: 2048, validation_path: "research.outline[0].h2",
+        reads: { status: "unavailable", reason: "validation_failed", attempted: 1, calls: 1,
+          model_id: "fixture-model", input_tokens: 1200, output_tokens: 500 },
+      }),
+    });
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), deps));
+    expect(brief.generated).toBeNull();
+    expect(JSON.stringify(brief)).not.toContain("research.outline[0].h2");
+    expect(lastRunLine(deps).validation_path).toBe("research.outline[0].h2");
+    expect(lastRunLine(deps).dropped_paths).toBeNull();
+  });
+
+  it("names the optional fields a reply lost on the way in", async () => {
+    // The brief shows each dropped field's empty state without saying why.
+    const deps = v2Dependencies({
+      runLlmV2: async ({ context }) => ({
+        context, prompt_bytes: 2048, dropped_paths: ["gap_angle.sources", "internal_links"],
+        output: {
+          research: { questions: [], outline: [] }, intent: null, format: null,
+          page_plan: { action: "undecidable", rationale: "The sampled evidence does not resolve a page action.", target_ref: null, steps: [] },
+          gap_angle: null, internal_links: [], do_not_cover: [],
+        },
+        reads: { status: "complete", calls: 1, model_id: "fixture-model", temperature_requested: 0.2, temperature_effective: 1, input_tokens: 123, output_tokens: 45 },
+      }),
+    });
+    const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), deps));
+    expect(brief.generated).not.toBeNull();
+    expect(JSON.stringify(brief)).not.toContain("gap_angle.sources");
+    expect(lastRunLine(deps).dropped_paths).toEqual(["gap_angle.sources", "internal_links"]);
   });
 
   it.each(["missing", "not_confirmed", "error"] as const)("does not turn a %s profile read into an invented one-fact count", async (kind) => {
@@ -715,7 +783,7 @@ describe("handleContentBriefRequest v2 admission and evidence", () => {
 
   it("does not attach facts from a different website than the selected profile", async () => {
     const brief = await briefV2Of(await handleContentBriefRequest(request(v2Body({ website_id: "w-1" })), v2Dependencies({ readWebsite: async () => ({
-      kind: "ok", websiteId: "w-2", snapshotRevision: 9, profileHash: "d".repeat(64), profile: confirmedProfile(),
+      kind: "ok", websiteId: "w-2", host: "site.example", snapshotRevision: 9, profileHash: "d".repeat(64), profile: confirmedProfile(),
     }) })));
     expect(brief.context.facts).toEqual([]);
     expect(brief.context.profile_snapshot).toBeNull();
@@ -770,6 +838,7 @@ describe("handleContentBriefRequest run", () => {
       readWebsite: async (): Promise<ProfileReadResult> => ({
         kind: "ok",
         websiteId: "w-1",
+        host: "site.example",
         snapshotRevision: 7,
         profileHash: "a".repeat(64),
         profile: confirmedProfile(),

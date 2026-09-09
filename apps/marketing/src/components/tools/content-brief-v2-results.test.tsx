@@ -75,6 +75,14 @@ describe("Artifact-aligned Brief v2 result", () => {
     expect(node(host, '[data-field-card="length"] [data-quantile-method]').closest("details")?.open).toBe(false);
     for (const selector of ["[data-length-quantiles]", "[data-length-sample]", "[data-length-boundary]"]) expect(node(host, selector).closest("details")).toBeNull();
     expect(node(host, "[data-length-boundary]").textContent).toMatch(locale === "en" ? /not a writing or ranking target/i : /不是写作或排名目标/);
+    // body_complete means the HTTP body arrived untruncated, and the count is
+    // of text extracted without running scripts. "Fully read competitor pages"
+    // claimed the page had been read whole, which nothing here establishes --
+    // least of all a calculator whose content a script draws.
+    const sample = node(host, "[data-length-sample]").textContent ?? "";
+    expect(sample).toMatch(locale === "en" ? /body arrived untruncated/i : /正文未被截断/);
+    expect(sample).not.toMatch(locale === "en" ? /fully read/i : /完整读取/);
+    expect(node(host, '[data-field-card="length"]').textContent).toMatch(locale === "en" ? /without running page scripts/i : /不执行页面脚本/);
     expect(JSON.stringify(brief)).toBe(before);
   });
   it("keeps collection time and budget visible and separates generation from partial source reads", async () => {
@@ -185,7 +193,15 @@ describe("Artifact-aligned Brief v2 result", () => {
     expect(node(formats, '[data-format-count="guide"]').textContent).toContain("1/3");
     expect(node(formats, '[data-format-count="tool"]').textContent).toContain("1/3");
     expect(node(formats, '[data-format-count="unknown"]').textContent).toContain("1/3");
-    expect(formats.textContent).toContain("No format has a majority");
+    // One of the three is unclassified, so either classified format could still
+    // pass half. The card may not report that as "no majority in this sample".
+    expect(node(formats, "[data-format-majority]").getAttribute("data-format-majority")).toBe("undecided");
+    expect(formats.textContent).toContain("1 of 3 results could not be classified");
+    // The sentence may say a majority cannot be identified, never that one
+    // cannot exist: a single unclassified page necessarily has a majority.
+    expect(formats.textContent).toContain("no majority format can be identified");
+    expect(formats.textContent).not.toMatch(/whether a majority exists|largest classified format/i);
+    expect(formats.textContent).not.toContain("No format has a majority");
     expect(formats.textContent).toContain("Observed candidates: Guide · Tool");
     expect(node(host, '[data-field-card="format"]').textContent).toContain("Model suggestion");
   });
@@ -206,7 +222,19 @@ describe("Artifact-aligned Brief v2 result", () => {
     expect(formats.textContent).toContain("SERP title + URL heuristic");
     expect(formats.textContent).not.toContain("URL-only");
     expect(formats.textContent).toContain("4/10 organic results");
-    expect(formats.textContent).toContain("1 unresolved");
+    // Two different failures, one number each: a URL the provider could not
+    // resolve, and a row this application's rules could not classify. Printed
+    // as a bare "1 unresolved" beside seven unknowns, the first read as if
+    // nothing had failed.
+    expect(formats.textContent).toContain("1 without a usable rank or domain");
+    expect(formats.textContent).toContain("1 unclassified");
+    // A row can carry a URL and still be counted here, so naming it a URL
+    // failure named the wrong one.
+    expect(formats.textContent).not.toMatch(/unresolved URL/i);
+    // Every classified format sits at one of four, so the single unknown can
+    // only ever tie half. This sample really has decided.
+    expect(node(formats, "[data-format-majority]").getAttribute("data-format-majority")).toBe("none");
+    expect(formats.textContent).toContain("No format has a majority here");
     expect(node(formats, '[data-format-count="guide"]').textContent).toContain("1/4");
     expect(node(formats, '[data-format-count="listicle"]').textContent).toContain("1/4");
     expect(node(formats, '[data-format-count="unknown"]').textContent).toContain("1/4");
@@ -529,5 +557,122 @@ describe("Artifact-aligned Brief v2 result", () => {
     expect(bytes(downloaded)).toBeLessThanOrEqual(confirmation.CONFIRMED_BRIEF_V2_MAX_BYTES);
     expect(downloaded === wire).toBe(true);
     expect((await confirmation.parseConfirmedBriefV2(JSON.parse(downloaded))).ok).toBe(true);
+  });
+});
+
+describe("empty recommendation sections", () => {
+  const profileRead = (reason: "not_requested" | "provider_error" | null) => ({
+    source: "profile" as const,
+    status: reason === null ? ("complete" as const) : ("unavailable" as const),
+    attempted: reason === null ? 0 : null, retained: reason === null ? 0 : null, reason,
+  });
+  /** Owned candidates on the fixture's own property, so the states stay ones a run could produce. */
+  const owned = (id: string, read: "observed" | "unavailable") =>
+    ({ id, url: `https://owned.example/${id.toLowerCase()}`, match_refs: [], read });
+  const emptied = (
+    brief: ContentBriefV2,
+    reason: "not_requested" | "provider_error" | null,
+    candidates: readonly { readonly id: string; readonly url: string; readonly match_refs: readonly string[]; readonly read: "observed" | "unavailable" }[],
+    targetRef: string | null = null,
+  ): ContentBriefV2 => ({
+    ...brief,
+    generated: brief.generated === null ? null : {
+      ...brief.generated, gap_angle: null, internal_links: [], do_not_cover: [],
+      page_plan: { ...brief.generated.page_plan, target_ref: targetRef },
+    },
+    context: { ...brief.context, candidates },
+    run: { ...brief.run, reads: [...brief.run.reads.filter((read) => read.source !== "profile"), profileRead(reason)] },
+  });
+  const gapText = (host: HTMLElement) => host.querySelector("[data-gap-empty]")?.textContent ?? "";
+
+  it("says the differentiated angle needs a product profile instead of just 'not used'", async () => {
+    // "Not used" under the section heading left the reader to guess what was not
+    // used, and read the same as a model that looked and found nothing.
+    const { host } = await render(emptied(await fixture(), "not_requested", [owned("T1", "observed")]));
+
+    expect(host.querySelector("[data-gap-empty]")?.getAttribute("data-gap-empty")).toBe("gapNoProfile");
+    expect(gapText(host)).toContain("product profile");
+    expect(gapText(host)).toContain("run again");
+  });
+
+  it("separates a profile that could not be read from a model that proposed nothing", async () => {
+    const failed = await render(emptied(await fixture(), "provider_error", [owned("T1", "observed")]));
+    expect(failed.host.querySelector("[data-gap-empty]")?.getAttribute("data-gap-empty")).toBe("gapProfileUnavailable");
+    expect(gapText(failed.host)).toContain("could not be read");
+
+    const read = await render(emptied(await fixture(), null, [owned("T1", "observed")]));
+    expect(read.host.querySelector("[data-gap-empty]")?.getAttribute("data-gap-empty")).toBe("gapUnavailable");
+    // The three states must not share one sentence, which is what made the old
+    // single string wrong: it explained a prerequisite as an editorial outcome.
+    // Asserting only that this one differs would let an empty string pass.
+    //
+    // This branch is also reached when the model did produce an angle and the
+    // validator dropped it, so the sentence may not say why: an angle rejected
+    // for its language was source-bound, and saying otherwise would be false.
+    expect(gapText(read.host)).toContain("did not produce a usable differentiated angle");
+    expect(gapText(read.host)).not.toContain("source-bound");
+    expect(gapText(read.host)).not.toContain("product profile");
+  });
+
+  it("says whether a link recommendation was possible at all", async () => {
+    // A link may only name an owned page whose body was read. With none, the
+    // list is empty by arithmetic; with some, the model passed on them.
+    const none = await render(emptied(await fixture(), null, [owned("T1", "unavailable")]));
+    const noneCards = none.host.querySelectorAll("[data-links-empty]");
+    expect(noneCards).toHaveLength(2);
+    for (const card of noneCards) {
+      expect(card.getAttribute("data-links-empty")).toBe("no_page_read");
+      expect(card.textContent).toContain("nothing here to recommend");
+    }
+
+    const some = await render(emptied(await fixture(), null, [owned("T1", "observed"), owned("T2", "unavailable")]));
+    const someCards = some.host.querySelectorAll("[data-links-empty]");
+    expect(someCards).toHaveLength(2);
+    for (const card of someCards) {
+      expect(card.getAttribute("data-links-empty")).toBe("none_available_chosen");
+      // One page read, not two: an unread candidate is not a page the model
+      // could have recommended.
+      // The count is of pages that could be named here, not of pages read: it
+      // excludes the rewrite target, so calling it a read count reported two
+      // read pages as one.
+      expect(card.textContent).toContain("1 of your own pages could be named here");
+      // Same reason as the differentiated angle: a recommendation the validator
+      // dropped may have been source-bound, so this may not claim it was not.
+      expect(card.textContent).not.toContain("source-bound");
+      expect(card.textContent).toContain("no usable recommendation");
+    }
+  });
+
+  it("does not blame the model for a list that could only be empty, or deny reading the page it read", async () => {
+    // The one page read is the page being rewritten, and neither list may name
+    // it. Counting it as available reported a model choice that never existed;
+    // then folding this into "no page of your own was read" denied a read the
+    // same screen reports elsewhere.
+    const { host } = await render(emptied(await fixture(), null, [owned("T1", "observed")], "T1"));
+
+    for (const card of host.querySelectorAll("[data-links-empty]")) {
+      expect(card.getAttribute("data-links-empty")).toBe("only_target_read");
+      expect(card.textContent).toContain("is the one this brief rewrites");
+      expect(card.textContent).not.toContain("No page of your own was read");
+    }
+    expect(host.querySelectorAll("[data-links-empty]")).toHaveLength(2);
+  });
+
+  // The result page ships in Chinese first, and every assertion above renders
+  // English: both sentences were once wrong in Chinese with the suite green.
+  it("makes the same claims in Chinese", async () => {
+    const { host } = await render(emptied(await fixture(), null, [owned("T1", "observed"), owned("T2", "observed")], "T1"), "zh");
+    expect(gapText(host)).toContain("本次没有得出可用的差异角度");
+    expect(gapText(host)).not.toContain("有来源依据");
+    for (const card of host.querySelectorAll("[data-links-empty]")) {
+      expect(card.getAttribute("data-links-empty")).toBe("none_available_chosen");
+      expect(card.textContent).toContain("本次有 1 篇本站页面可以在这里出现");
+      expect(card.textContent).not.toContain("有来源依据");
+    }
+
+    const target = await render(emptied(await fixture(), null, [owned("T1", "observed")], "T1"), "zh");
+    for (const card of target.host.querySelectorAll("[data-links-empty]")) {
+      expect(card.textContent).toContain("只有这份 Brief 要改的那一篇");
+    }
   });
 });
