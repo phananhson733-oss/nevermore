@@ -9,7 +9,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { marked } from "marked";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { confirmedDraftV2Fixture } from "../../../../../packages/public-tools/src/content-brief/v2-draft-fixtures.ts";
-import { assembleDraftV2, parseDraftResultV2, type AssembleDraftV2Input } from "@sf/public-tools/content-brief/v2-draft";
+import { assembleDraftV2, fingerprintDraftV2, parseDraftResultV2, type AssembleDraftV2Input } from "@sf/public-tools/content-brief/v2-draft";
 import { buildDraftV2SectionScope } from "@sf/public-tools/content-brief/v2-draft-scope";
 import { validateDraftV2Section } from "@sf/public-tools/content-brief/v2-draft-section";
 import { DRAFT_TOTAL_BUDGET_MS, SECTION_ENDPOINT_BUDGET_MS } from "@sf/public-tools/content-brief/constants";
@@ -50,7 +50,7 @@ async function confirmedWithLinks(url = "https://owned.test/dates(a)[b]?next=(x)
   return { confirmed: confirmed.value, url };
 }
 
-async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolean; skipped?: boolean; empty?: boolean; unavailable?: boolean; previous?: DraftResultV2; settings?: DraftV2Settings; cjk?: boolean; claims?: boolean; bullets?: boolean; images?: "available" | "unavailable"; quality?: "none" | "partial" } = {}) {
+async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolean; skipped?: boolean; empty?: boolean; unavailable?: boolean; previous?: DraftResultV2; settings?: DraftV2Settings; cjk?: boolean; claims?: boolean; bullets?: boolean; images?: "available" | "unavailable"; quality?: "none" | "partial"; writing?: boolean } = {}) {
   const currentSettings = options.settings ?? settings;
   const sections: DraftV2Section[] = confirmed.outline.map((heading, index) => {
     if ((options.empty || options.skipped) && index === 1) return { ...heading, status: "skipped" };
@@ -70,7 +70,9 @@ async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolea
       { text: "The product compares finalized periods.", claim: "bound", evidence_refs: ["P1"] },
       { text: "Confirm the exact reporting interval.", claim: "gap", evidence_refs: [] },
       { text: "Prefer finalized period comparisons.", claim: "stance", evidence_refs: ["P2"] },
-    ]) : [{ text: options.cjk ? "请比较完整周期。" : index === 0 ? "Review the reporting timeline." : "Compare the complete periods.", claim: "no_claim", evidence_refs: [] }];
+    ]) : options.writing && index === 0 ? [
+      { text: "When it comes to reporting, the timeline is what matters.", claim: "no_claim", evidence_refs: [] },
+    ] : [{ text: options.cjk ? "请比较完整周期。" : index === 0 ? "Review the reporting timeline." : "Compare the complete periods.", claim: "no_claim", evidence_refs: [] }];
     const body = validateDraftV2Section({ paragraphs: [{ heading: heading.h3[0] ?? null, sentences }] }, scope.value, confirmed.brief.context.input.language);
     if (!body.ok) throw new Error(body.path);
     return { ...heading, status: "ok", body: body.value, llm };
@@ -554,6 +556,38 @@ describe("Draft v2 truthful results and exact exports", () => {
     const { host } = await render(confirmed, { result });
     expect(host.querySelector("[data-draft-sources]")).toBeNull();
     expect(contentDraftV2Markdown(result, confirmed, exportNotes())).not.toContain("## Sources");
+  });
+
+  it("shows each writing warning against the prose it is about", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed, { writing: true });
+    const { host } = await render(confirmed, { result });
+    const warning = node(host, '[data-writing-warning="filler_phrase"]');
+    expect(warning.textContent).toContain("When it comes to reporting, the timeline is what matters.");
+    expect(warning.textContent).toContain(result.sections[0]!.h2);
+    // A missing message id renders as its own path, so the label is pinned to
+    // the copy rather than merely to being nonempty.
+    expect(warning.textContent).toContain(en.tools.contentDraft.v2.writingCode.filler_phrase);
+    // Advisory only: the warning never becomes a sentence to fact-check.
+    expect(result.verify_before_publish).toEqual([]);
+  });
+
+  it("says the checks ran and found nothing rather than showing an empty list", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed);
+    const { host } = await render(confirmed, { result });
+    expect(result.quality).toEqual({ warnings: [] });
+    expect(node(host, "[data-writing-empty]").textContent).toBe(en.tools.contentDraft.v2.writingEmpty);
+    expect(host.querySelector("[data-writing-warning]")).toBeNull();
+  });
+
+  it("shows no writing section at all for a draft written before the checks existed", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const { quality: _quality, ...older } = await resultFor(confirmed);
+    const result = { ...older, run: { ...older.run, fingerprint: await fingerprintDraftV2(older) } };
+    expect((await parseDraftResultV2(result, confirmed)).ok).toBe(true);
+    const { host } = await render(confirmed, { result });
+    expect(host.querySelector("[data-writing-check]")).toBeNull();
   });
 
   it("invents no heading for a confirmation that recorded no title", async () => {

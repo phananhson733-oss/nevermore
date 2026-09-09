@@ -3,15 +3,21 @@
 // @pos -- separate from the historical v1 Draft contract
 import type { CoverageItem, DraftResult, LlmAggregateMeta, LlmReadMeta, RunMode, SectionFailReason, Unavailable } from "./contract.ts";
 import type { SectionCallMeta } from "./draft-assemble.ts";
-import { DRAFT_RESULT_MAX_BYTES } from "./constants.ts";
+import { DRAFT_RESULT_MAX_BYTES, DRAFT_V2_QUALITY_MAX, QUALITY_WARNING_BYTES } from "./constants.ts";
 import { CONFIRMED_BRIEF_V2_MAX_BYTES } from "./v2-brief.ts";
 import type { ResearchLength } from "./v2-contract.ts";
+import type { DraftV2Warning } from "./v2-draft-prose.ts";
 import type { DraftV2SectionBody } from "./v2-draft-section.ts";
 
 export const DRAFT_V2_SCHEMA = "gengrowth.content_draft/v2";
 export const DRAFT_V2_PROMPT_MAX_BYTES = 96 * 1024;
-/** Adds <=20160 JSON bytes for 7*3*160 H3 characters, plus <12KiB of length/revision metadata. */
-export const DRAFT_V2_MAX_BYTES = DRAFT_RESULT_MAX_BYTES + 32 * 1024;
+/**
+ * Adds <=20160 JSON bytes for 7*3*160 H3 characters, plus <12KiB of
+ * length/revision metadata, plus the writing-warning list. The section endpoint
+ * carries the whole previous result, so a delivery that legitimately fills the
+ * warning list has to stay inside the request limit derived from this.
+ */
+export const DRAFT_V2_MAX_BYTES = DRAFT_RESULT_MAX_BYTES + 32 * 1024 + DRAFT_V2_QUALITY_MAX * QUALITY_WARNING_BYTES;
 export const DRAFT_V2_REQUEST_MAX_BYTES = CONFIRMED_BRIEF_V2_MAX_BYTES + 16 * 1024;
 export const DRAFT_V2_SECTION_REQUEST_MAX_BYTES = CONFIRMED_BRIEF_V2_MAX_BYTES + DRAFT_V2_MAX_BYTES + 16 * 1024;
 
@@ -77,6 +83,10 @@ export interface DraftV2Rerun {
   readonly previous_fingerprint: string;
   readonly section_id: string;
 }
+export interface DraftV2Quality {
+  readonly warnings: readonly DraftV2Warning[];
+}
+
 export interface DraftResultV2 {
   readonly schema: typeof DRAFT_V2_SCHEMA;
   readonly confirmed_ref: {
@@ -100,6 +110,17 @@ export interface DraftResultV2 {
    * unavailable means attempted and not delivered.
    */
   readonly image_prompts?: DraftV2ImagePrompts;
+  /**
+   * The writing warnings derived from this draft's own prose.
+   *
+   * Optional for the same reason image_prompts is: a draft written before these
+   * checks existed carries no such key, and its run fingerprint was computed
+   * without one, so requiring the key would fail a rerun of prose the owner
+   * still has open. Absent therefore means "written before the checks", and
+   * present with an empty list means "checked, nothing to report" -- two
+   * different statements that must not collapse into one.
+   */
+  readonly quality?: DraftV2Quality;
   readonly run: {
     readonly run_id: string;
     readonly collected_at: string;

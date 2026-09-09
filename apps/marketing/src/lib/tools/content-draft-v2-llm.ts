@@ -6,6 +6,7 @@ import type { SectionFailReason } from "@sf/public-tools/content-brief/contract"
 import { parseDraftSettings } from "@sf/public-tools/content-brief/parse-draft";
 import { parseConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
 import { DRAFT_V2_PROMPT_MAX_BYTES, type DraftV2Call, type DraftV2SectionGeneration, type DraftV2Settings } from "@sf/public-tools/content-brief/v2-draft-contract";
+import { checkDraftV2Prose } from "@sf/public-tools/content-brief/v2-draft-prose";
 import { buildDraftV2SectionScope } from "@sf/public-tools/content-brief/v2-draft-scope";
 import { validateDraftV2Section } from "@sf/public-tools/content-brief/v2-draft-section";
 import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
@@ -124,7 +125,16 @@ export async function generateDraftV2Section(input: DraftV2SectionInput, deps: C
     try { raw = JSON.parse(content); }
     catch { rejection = { code: "invalid_json", path: null }; continue; }
     const body = validateDraftV2Section(raw, scope.value, confirmed.value.brief.context.input.language);
-    if (body.ok) return { status: "ok", body: body.value, llm: callReceipt(sent, modelId, config) };
+    if (body.ok) {
+      // Prose rules run only here. The same body has to keep parsing on a
+      // rerun months from now, so a rule that can reject it lives on this side
+      // of the boundary, where the answer is another call rather than a draft
+      // the owner can no longer reopen.
+      const prose = checkDraftV2Prose(body.value, scope.value);
+      if (prose === null) return { status: "ok", body: body.value, llm: callReceipt(sent, modelId, config) };
+      rejection = { code: prose.rule, path: prose.path };
+      continue;
+    }
     rejection = { code: body.code === "brief_reference_invalid" ? "brief_reference_invalid" : "invalid_request", path: repairablePath(body.path) };
   }
   return failure("validation_failed");

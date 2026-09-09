@@ -57,9 +57,13 @@ describe("explicit Brief v3 SERP snapshot and historical v2 compatibility", () =
     expect({ brief: confirmed.brief.run.fingerprint, confirmed: confirmed.fingerprint, draft: draft.run.fingerprint }).toEqual({
       brief: "c799cd52358ec8b01a14ff9829951f77a8c93b37264628b76f12d9af221d07e4",
       confirmed: "b34e25bdb4f0103a0478d5a76c30af31dbda4ba136422e720901d7abb8708488",
-      draft: "a0c34a9a2e17d9827467a1bca678a392cdd7380800b6a2c662285e63e6056bf5",
+      // Moved once, deliberately, when assembly started attaching the writing
+      // warnings: a newly assembled draft carries `quality` and is fingerprinted
+      // with it. A draft written before that key existed still parses and still
+      // verifies, because the key is optional and absent stays absent.
+      draft: "97b8075f810202cad0315f19c18dd9b58e69e00078870879c7ac9814ea3ee433",
     });
-    expect([JSON.stringify(confirmed.brief).length, JSON.stringify(confirmed).length, JSON.stringify(draft).length]).toEqual([4062, 4457, 2386]);
+    expect([JSON.stringify(confirmed.brief).length, JSON.stringify(confirmed).length, JSON.stringify(draft).length]).toEqual([4062, 4457, 2412]);
     expect(await brief.parseContentBriefV2(confirmed.brief)).toEqual({ ok: true, value: confirmed.brief });
     expect(await brief.parseConfirmedBriefV2(confirmed)).toEqual({ ok: true, value: confirmed });
     expect(await parseDraftResultV2(draft, confirmed)).toEqual({ ok: true, value: draft });

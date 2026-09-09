@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 import type { DraftResultV2 } from "@sf/public-tools/content-brief/v2-draft-contract";
+import type { DraftV2QualityLocation } from "@sf/public-tools/content-brief/v2-draft-prose";
 import type { DraftV2Sentence } from "@sf/public-tools/content-brief/v2-draft-section";
 import { ACTION_BUTTON, BODY_TEXT, ID_CHIP, SECTION_TITLE, collectedTime, safePageUrl } from "./content-brief-results-shared";
 import { markdownNotes } from "./content-draft-handoff-bar";
@@ -20,6 +21,33 @@ type ExportState = "copied" | "downloaded" | "failed";
 type ExportIdentity = { readonly result: DraftResultV2; readonly confirmed: ConfirmedBriefV2; readonly locale: string };
 function sameExportIdentity(left: ExportIdentity, right: ExportIdentity): boolean {
   return left.result === right.result && left.confirmed === right.confirmed && left.locale === right.locale;
+}
+
+/**
+ * Each warning's indices resolved to the prose it is about.
+ *
+ * A warning whose location does not resolve is dropped rather than rendered as
+ * a blank row: the list is only useful if every line points at something the
+ * reader can actually look at. The parser already refuses a delivery whose
+ * warnings do not match its own prose, so this drops nothing in practice.
+ */
+function draftV2WritingWarnings(result: DraftResultV2) {
+  const sections = new Map(result.sections.map((section) => [section.id, section]));
+  function resolve(location: DraftV2QualityLocation) {
+    const section = sections.get(location.section_id);
+    if (section === undefined || section.status !== "ok") return null;
+    const paragraph = section.body.paragraphs[location.paragraph];
+    if (paragraph === undefined) return null;
+    if (location.sentence === null) return { h2: section.h2, text: null, sentences: paragraph.sentences.length };
+    const sentence = paragraph.sentences[location.sentence];
+    return sentence === undefined ? null : { h2: section.h2, text: sentence.text, sentences: paragraph.sentences.length };
+  }
+  return (result.quality?.warnings ?? []).flatMap((warning, index) => {
+    const here = resolve(warning.at);
+    if (here === null) return [];
+    const other = warning.other === null ? null : resolve(warning.other);
+    return [{ key: index, code: warning.code, here, other }];
+  });
 }
 
 /** URLs come only from observed candidates in the exact confirmed Brief, never generated prose. */
@@ -242,6 +270,7 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
     catch { if (mounted.current) setCopiedImage(`failed:${id}`); }
   }
   const imagePlan = result.image_prompts;
+  const writingWarnings = draftV2WritingWarnings(result);
   const sectionTitle = new Map(result.sections.map((section) => [section.id, section.h2]));
   function imageCard(id: string, label: string, image: { readonly prompt: string; readonly alt: string }) {
     return <li key={id} data-image-prompt={id} className={styles.imageCard}>
@@ -335,6 +364,8 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
 
     {cited.length > 0 ? <section data-draft-sources><h2 className={`${SECTION_TITLE} ${RULE}`}>{t("sources")}</h2><p className={`mt-3 ${BODY_TEXT}`}>{t("sourcesBoundary")}</p><ul className="mt-3 space-y-2">{cited.map((page) => <li key={page.id} data-source-page={page.id} className="text-[12.5px] leading-[1.6] text-text-dark-primary"><span className="font-semibold">{page.domain}</span> · <a href={page.url} target="_blank" rel="noopener noreferrer" className="break-all text-brand-accent-text underline underline-offset-2">{page.url}</a> <span className="text-text-dark-secondary">· {t("observedAt", { time: collectedTime(page.fetched_at, locale) })}</span></li>)}</ul></section> : null}
     {relatedLinks.length > 0 ? <section data-related-links><h2 className={`${SECTION_TITLE} ${RULE}`}>{t("relatedLinks")}</h2><ul className="mt-3 space-y-2">{relatedLinks.map((link) => <li key={link.pageRef}><a data-related-link href={link.url} target="_blank" rel="noopener noreferrer" className="text-[13px] text-brand-accent-text underline underline-offset-2">{link.anchor}</a></li>)}</ul></section> : null}
+
+    {result.quality === undefined ? null : <section data-writing-check><h2 className={`${SECTION_TITLE} ${RULE}`}>{t("writing")}</h2><p className={`mt-3 ${BODY_TEXT}`}>{t("writingBoundary")}</p>{writingWarnings.length === 0 ? <p data-writing-empty className={`mt-2 ${BODY_TEXT}`}>{t("writingEmpty")}</p> : <ul className="mt-3 space-y-3">{writingWarnings.map((warning) => <li key={warning.key} data-writing-warning={warning.code} className="border-l-2 border-brand-border-card pl-3"><div className="text-[11px] text-text-dark-secondary">{t(`writingCode.${warning.code}`)} · {warning.here.h2}</div><p className="mt-1 text-[12.5px] leading-[1.6] text-text-dark-primary">{warning.here.text ?? t("writingSentences", { count: warning.here.sentences })}</p>{warning.other === null ? null : <div className="mt-1 text-[11px] text-text-dark-secondary">{t("writingAlsoIn", { section: warning.other.h2 })}</div>}</li>)}</ul>}</section>}
 
     <section><h2 className={`${SECTION_TITLE} ${RULE}`}>{base("verify.title")}</h2><p className={`mt-3 ${BODY_TEXT}`}>{t("verifyBoundary")}</p>{result.verify_before_publish.length === 0 ? <p className={`mt-2 ${BODY_TEXT}`}>{t(result.run.reads.sections.ok === 0 ? "noDraftToVerify" : "verifyEmpty")}</p> : <ul className="mt-3 space-y-3">{result.verify_before_publish.map((item, index) => <li key={index} className="border-l-2 border-brand-border-card pl-3"><div className="text-[11px] text-text-dark-secondary">{base(`verifyKind.${item.kind}`)} · {item.section_id}{item.kind === "single_source" ? ` · ${t("supportingPages", { count: item.support_count })}` : ""}</div><p className="mt-1 text-[12.5px] leading-[1.6] text-text-dark-primary">{item.sentence}</p><div className="mt-1 flex gap-2 text-[11px] text-text-dark-secondary">{item.evidence_refs.length === 0 ? base("verify.noRefs") : item.evidence_refs.map((ref) => <a key={ref} href={`#draft-v2-evidence-${ref}`} className="underline">{ref}</a>)}</div></li>)}</ul>}</section>
 

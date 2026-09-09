@@ -4696,6 +4696,12 @@
         "relatedLinks": "Related links",
         "sources": "Sources",
         "sourcesBoundary": "Every page a written sentence actually cited, in the order the article first uses it. A page the brief collected and no sentence cited is not listed: the article does not rest on reading it did not do. The date is the fetch time recorded in the confirmed Brief's observation of that page, in UTC. It is not when the page was published or last changed, and this draft run fetched nothing.",
+        "writing": "Writing check",
+        "writingBoundary": "Patterns worth a second look, matched against the draft's own prose. Each one reports something countable: how many sentences a paragraph holds, a phrase from a fixed list, a run of words that appears in two places. None of them judges whether the writing is good, none is a factual check, and nothing here blocks publishing. The two repetition checks compare whitespace-separated words, so they report nothing for Chinese, Japanese, Korean or Thai.",
+        "writingEmpty": "No pattern matched. That is not a verdict on the writing.",
+        "writingSentences": "{count} sentences",
+        "writingAlsoIn": "First used in {section}",
+        "writingCode": { "paragraph_too_long": "Paragraph runs past four sentences", "filler_phrase": "Phrasing from the filler list", "source_phrase_reused": "Repeats a run of words from a source excerpt", "repeated_across_sections": "Repeats a run of words from an earlier section" },
         "exportNote": "Markdown keeps every H2, the real generated H3s and prose (lists included), notes for failed or skipped sections, the confirmed related links, and the image prompts at the end; claim annotations are not included. JSON keeps the complete result and fingerprint verbatim.",
         "export": {
           "copied": "Copied to clipboard.",

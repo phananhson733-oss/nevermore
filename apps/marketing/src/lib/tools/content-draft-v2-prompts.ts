@@ -3,6 +3,7 @@
 // @pos -- Draft v2 prompt boundary, separate from the legacy prompt contract
 import { SECTION_MAX_SENTENCES, SENTENCE_MAX_CHARS } from "@sf/public-tools/content-brief/constants";
 import type { DraftV2Settings } from "@sf/public-tools/content-brief/v2-draft-contract";
+import type { DraftV2ProseRule } from "@sf/public-tools/content-brief/v2-draft-prose";
 import type { DraftV2SectionScope } from "@sf/public-tools/content-brief/v2-draft-scope";
 import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 import type { ResearchPage } from "@sf/public-tools/content-brief/v2-contract";
@@ -22,7 +23,7 @@ export interface DraftV2SectionPromptInput {
  * is the caller's job, and this module only renders what it is handed.
  */
 export interface DraftV2SectionRejection {
-  readonly code: "invalid_json" | "invalid_request" | "brief_reference_invalid";
+  readonly code: "invalid_json" | "invalid_request" | "brief_reference_invalid" | DraftV2ProseRule;
   readonly path: string | null;
 }
 
@@ -76,7 +77,7 @@ A sentence may set "bullet": true to render as one item of a bulleted list; cons
 EXACT OUTPUT
 {"paragraphs":[{"heading":null,"sentences":[{"text":"one sentence","claim":"bound|gap|no_claim|stance","evidence_refs":["U1"]}]}]}
 A sentence may additionally carry "bullet":true. Omit the key entirely for ordinary prose; never write "bullet":false.
-The example's heading:null is an introductory or continuation paragraph; use the exact confirmed H3 string instead when starting that H3, and include all confirmed H3 entries once in order. Choose one claim enum, not the pipe-separated example. At most ${SECTION_MAX_SENTENCES} sentences total, at most ${SENTENCE_MAX_CHARS} Unicode code points per sentence. Each paragraph and sentence list must be nonempty. Keep references unique and exactly as supplied. If previous_rejection is present, rewrite this section once to correct that closed validation error; do not repeat or quote the rejected response.`;
+The example's heading:null is an introductory or continuation paragraph; use the exact confirmed H3 string instead when starting that H3, and include all confirmed H3 entries once in order. Choose one claim enum, not the pipe-separated example. At most ${SECTION_MAX_SENTENCES} sentences total, at most ${SENTENCE_MAX_CHARS} Unicode code points per sentence. Each paragraph and sentence list must be nonempty. Keep references unique and exactly as supplied. If previous_rejection is present, rewrite this section once to correct that closed validation error; do not repeat or quote the rejected response. Its code is one of exactly five: invalid_json, the reply was not one JSON object; invalid_request, a field broke a shape rule above; brief_reference_invalid, an id or heading was not one this section was given; number_without_source, a sentence stated a figure of two or more digits, or a percentage, that appears in none of the sources that sentence cites -- cite the unit that states it, write the figure exactly as that source writes it, or leave the figure out; chat_residue, a sentence addressed a requester instead of a reader -- write article prose, with no greeting, no offer of further help, no markdown heading and no code fence. previous_rejection.path names the rejected location when the server could show the path to be its own words, and is null otherwise.`;
 }
 
 /**

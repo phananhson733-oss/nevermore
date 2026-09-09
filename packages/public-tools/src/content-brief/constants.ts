@@ -215,6 +215,17 @@ export const DRAFT_RESULT_MAX_BYTES =
   OUTLINE_CAP * SECTION_MAX_SENTENCES * (SENTENCE_MAX_CHARS * JSON_BYTES_PER_CHAR + RECORD_OVERHEAD_BYTES) +
   MUST_ANSWER_CAP * (MODEL_TEXT_MAX_CHARS * JSON_BYTES_PER_CHAR + RECORD_OVERHEAD_BYTES) +
   DRAFT_ENVELOPE_BYTES;
+/**
+ * 一份 draft 最多携带的写作告警条数。
+ *
+ * 告警是给人读的清单，不是逐句报告：超过这个数再列下去没人会看完，
+ * 而每一条都要算进 `SECTION_REQUEST_MAX_BYTES`（section 端点带整份上一次结果）。
+ * 条目只存段落/句子下标，不复制句子本身，所以单条很小。
+ */
+export const DRAFT_V2_QUALITY_MAX = 40;
+/** 一条 quality 告警（两个位置 + 一个枚举码 + 键名）序列化后的余量 */
+export const QUALITY_WARNING_BYTES = 256;
+
 /** brief + section_id + 整份上一次 DraftResult */
 export const SECTION_REQUEST_MAX_BYTES = CONTENT_BRIEF_HANDOFF_MAX_BYTES + DRAFT_RESULT_MAX_BYTES + 16 * 1024;
 

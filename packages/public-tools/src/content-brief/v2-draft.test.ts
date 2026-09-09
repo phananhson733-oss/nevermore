@@ -335,3 +335,49 @@ describe("Draft v2 image prompts", () => {
     if (!reparsed.ok) expect(reparsed.code).toBe("brief_fingerprint_mismatch");
   });
 });
+
+describe("Draft v2 writing warnings on the result", () => {
+  it("attaches an empty list rather than nothing when the prose warrants no warning", async () => {
+    const { result, confirmed } = await fixture();
+    expect(result.quality).toEqual({ warnings: [] });
+    const reparsed = await parseDraftResultV2(JSON.parse(JSON.stringify(result)), confirmed);
+    expect(reparsed.ok).toBe(true);
+    if (!reparsed.ok) throw new Error(reparsed.path);
+    expect(reparsed.value.quality).toEqual({ warnings: [] });
+  });
+
+  it("derives a warning from the prose rather than trusting the delivery", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const sections = sectionsFor(confirmed).map((section, index) => {
+      if (index !== 0 || section.status !== "ok") return section;
+      const scope = buildDraftV2SectionScope(confirmed, section.id, settings);
+      if (!scope.ok) throw new Error(scope.path);
+      const body = validateDraftV2Section({ paragraphs: [{ heading: section.h3[0] ?? null, sentences: [
+        { text: "When it comes to reporting, the timeline is what matters.", claim: "no_claim", evidence_refs: [] },
+      ] }] }, scope.value, confirmed.brief.context.input.language);
+      if (!body.ok) throw new Error(body.path);
+      return { ...section, body: body.value };
+    });
+    const assembled = await assembleDraftV2({ confirmed, settings, sections, coverage: { items: coverageFor(confirmed), reads: coverageRead }, run: initialRun });
+    if (!assembled.ok) throw new Error(assembled.path);
+    expect(assembled.value.quality?.warnings).toEqual([{ code: "filler_phrase", at: { section_id: sections[0]!.id, paragraph: 0, sentence: 0 }, other: null }]);
+
+    const tampered = await seal({ ...assembled.value, quality: { warnings: [] } });
+    const parsed = await parseDraftResultV2(JSON.parse(JSON.stringify(tampered)), confirmed);
+    expect(parsed).toMatchObject({ ok: false, code: "brief_reference_invalid", path: "quality" });
+  });
+
+  // Same rule as image_prompts: the stored fingerprint is recomputed from the
+  // parsed draft on every rerun, so a draft written before these checks existed
+  // must parse to exactly the bytes it was fingerprinted over.
+  it("leaves a draft written before the checks byte-for-byte as it was", async () => {
+    const { result, confirmed } = await fixture();
+    const { quality: _quality, ...withoutQuality } = result;
+    const older = await seal(withoutQuality);
+    const reparsed = await parseDraftResultV2(JSON.parse(JSON.stringify(older)), confirmed);
+    expect(reparsed.ok, !reparsed.ok ? reparsed.path : "").toBe(true);
+    if (!reparsed.ok) throw new Error(reparsed.path);
+    expect(Object.hasOwn(reparsed.value, "quality")).toBe(false);
+    expect(await fingerprintDraftV2(reparsed.value)).toBe(older.run.fingerprint);
+  });
+});
