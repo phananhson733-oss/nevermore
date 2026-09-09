@@ -53,8 +53,49 @@ describe("actual enrichment runtime adapters", () => {
     expect(options).not.toHaveProperty("credentials");
     expect(options.allowRedirect?.("https://example.com/", "https://example.com/about")).toBe(true);
     expect(options.allowRedirect?.("https://example.com/", "http://example.com/about")).toBe(false);
-    expect(options.allowRedirect?.("https://example.com/", "https://www.example.com/about")).toBe(false);
+    // An apex that answers on its `www` sibling is one site, not two. The crawl
+    // gate has always budgeted the pair together, and `canonicalCrawlTargetKey`
+    // says why: "the crawler permits that one entry redirect". Refusing it here
+    // made every apex-registered site whose origin redirects to www read as
+    // `blocked` -- astrologywiki.com lost its homepage, robots.txt, sitemap.xml
+    // and llms.txt in one run, and the empty evidence that produced was then
+    // reported as a model failure.
+    expect(options.allowRedirect?.("https://example.com/", "https://www.example.com/about")).toBe(true);
+    expect(options.allowRedirect?.("https://www.example.com/", "https://example.com/about")).toBe(true);
     expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("admits the apex/www entry redirect without admitting any other host", async () => {
+    const fetchResource = vi.fn(async () => ({ kind: "error" as const, code: "network" as const }));
+    const reader = createGeoKnowledgeResourceReader("owner-1", { openGate: async () => ({ ok: true, kind: "crawl", release: vi.fn() }), fetchResource });
+    await reader({ url: "https://example.com/" });
+    const options = (fetchResource.mock.calls[0] as unknown as [string, { readonly allowRedirect?: (from: string, to: string) => boolean }])[1];
+    const allow = options.allowRedirect;
+    // The one label that is stripped, both ways, and nothing else.
+    expect(allow?.("https://example.com/", "https://www.example.com/")).toBe(true);
+    expect(allow?.("https://www.example.com/", "https://example.com/")).toBe(true);
+    // A second label is not the same site: only one `www.` comes off, so this
+    // stays a different host rather than collapsing into the apex.
+    expect(allow?.("https://example.com/", "https://www.www.example.com/")).toBe(false);
+    // Neighbouring hosts that merely look alike, and an unrelated site reached
+    // through a `www.` of its own.
+    expect(allow?.("https://example.com/", "https://wwwexample.com/")).toBe(false);
+    expect(allow?.("https://example.com/", "https://www.evil.example/")).toBe(false);
+    expect(allow?.("https://www.example.com/", "https://www.evil.example/")).toBe(false);
+    expect(allow?.("https://example.com/", "https://api.example.com/")).toBe(false);
+    // The protocol rule is unchanged: an https origin never follows a downgrade,
+    // apex/www sibling or not.
+    expect(allow?.("https://example.com/", "http://www.example.com/")).toBe(false);
+    // Fail closed on anything that does not parse into a host.
+    expect(allow?.("not a URL", "https://www.example.com/")).toBe(false);
+    expect(allow?.("https://example.com/", "not a URL")).toBe(false);
+    // A scheme that carries no host normalises to the empty string, and two of
+    // those would otherwise compare equal to each other. An http origin does
+    // not reach the protocol rule below, so the emptiness has to be refused
+    // here rather than relied on being caught downstream.
+    expect(allow?.("mailto:a@example.com", "data:text/plain,hi")).toBe(false);
+    expect(allow?.("http://example.com/", "data:text/plain,hi")).toBe(false);
+    expect(allow?.("data:text/plain,hi", "http://example.com/")).toBe(false);
   });
 
   it("rejects malformed and unsafe redirect callback inputs without dispatching another hop", async () => {

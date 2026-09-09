@@ -82,10 +82,33 @@ function knowledgeHttpReason(status: number): GeoKnowledgeUnavailableReason | nu
   return "fetch_failed";
 }
 
+/**
+ * The one hop a knowledge collection may follow: the same site, still on https.
+ *
+ * "The same site" is the crawl gate's own answer, not a string comparison of
+ * hosts. `canonicalCrawlTargetKey` strips a single `www.` label and nothing
+ * else, and the gate has always budgeted an apex and that sibling together
+ * precisely because "the crawler permits that one entry redirect". Comparing
+ * raw hosts here contradicted that: a site registered at its apex that answers
+ * on `www` had its homepage, robots.txt, sitemap.xml and llms.txt all refused
+ * as `cross_origin`, which `knowledgeTransportReason` files as `blocked`. The
+ * collection then held no evidence, the generation refused it as
+ * `invalid_input`, and the run reported `invalid_output` -- a model failure for
+ * a site nobody had managed to read.
+ *
+ * It stays fail-closed everywhere else. A URL without a parsable host answers
+ * null and is refused; only the single conventional label comes off, so
+ * `www.www.example.com`, `wwwexample.com`, `api.example.com` and any unrelated
+ * host reached through a `www.` of its own remain different sites; and an https
+ * origin still never follows a downgrade.
+ */
 function sameHostHttpsPreservingRedirect(fromUrl: string, toUrl: string): boolean {
   try {
     const from = new URL(fromUrl), to = new URL(toUrl);
-    return from.host === to.host && !(from.protocol === "https:" && to.protocol !== "https:");
+    const fromKey = canonicalCrawlTargetKey(from.href), toKey = canonicalCrawlTargetKey(to.href);
+    // `fromKey` must be a real host: a scheme that carries no host (mailto:,
+    // data:) normalises to "", and two of those compare equal to each other.
+    return fromKey !== null && fromKey !== "" && fromKey === toKey && !(from.protocol === "https:" && to.protocol !== "https:");
   } catch { return false; }
 }
 
