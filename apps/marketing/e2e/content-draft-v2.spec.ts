@@ -13,7 +13,6 @@ import { buildDraftV2SectionScope } from "@sf/public-tools/content-brief/v2-draf
 import { validateDraftV2Section } from "@sf/public-tools/content-brief/v2-draft-section";
 import type { DraftResultV2, DraftV2Section, DraftV2Settings } from "@sf/public-tools/content-brief/v2-draft-contract";
 import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
-import { TOOL_HANDOFF_KEY } from "../src/lib/tools/tool-handoff";
 import { THEME_ATTRIBUTE, THEME_STORAGE_KEY } from "../src/lib/theme.ts";
 import { fulfillJson, installDraftApiGuard, necessaryOnly, openConfirmedBriefV2, parseConfirmed } from "./content-draft-e2e-helpers";
 
@@ -450,23 +449,10 @@ test.describe("Draft v2 — API-isolated browser acceptance", () => {
       await generate(page);
       await expect(page.locator("[data-draft-length]")).toContainText("字");
       await expect(page.locator("[data-draft-length]")).not.toContainText("words");
-      await expect(page.locator("[data-published-url]")).toHaveValue("");
+      // The result carries no published-URL exit: this tool publishes nothing and
+      // cannot know where the owner put the article.
+      await expect(page.locator("[data-published-url]")).toHaveCount(0);
       await expect(page.locator("[data-open-on-page]")).toHaveCount(0);
-      const published = "https://published.example/reporting-guide";
-      await page.locator("[data-published-url]").fill(published);
-      const link = page.locator("[data-open-on-page]");
-      await expect(link).toHaveAttribute("target", "_blank");
-      await expect(link).toHaveAttribute("rel", "opener");
-      const [popup] = await Promise.all([page.context().waitForEvent("page"), link.click()]);
-      await popup.waitForURL("**/tools/on-page-seo-check");
-      await expect(popup.locator("#onpage-url")).toHaveValue(published);
-      await expect(popup.locator("#onpage-query")).toHaveValue(confirmed.brief.context.input.primary);
-      await expect(popup.locator("#onpage-country")).toHaveValue(confirmed.brief.context.input.market);
-      await expect(popup.locator("#onpage-language")).toHaveValue("zh");
-      expect(await popup.evaluate((key) => sessionStorage.getItem(key), TOOL_HANDOFF_KEY)).toBeNull();
-      expect(new URL(popup.url()).search).toBe("");
-      expect(popup.url()).not.toContain(published);
-      expect(popup.url()).not.toContain(confirmed.fingerprint);
       expect(guard.runRequests).toHaveLength(1);
       expect(guard.sectionRequests).toHaveLength(0);
       expect(guard.unexpected).toEqual([]);

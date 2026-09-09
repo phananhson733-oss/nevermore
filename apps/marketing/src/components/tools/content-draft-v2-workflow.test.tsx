@@ -141,9 +141,11 @@ describe("Draft v2 exact-revision workflow", () => {
     expect(node(host, '[data-toggle-section="O1"]').getAttribute("aria-expanded")).toBe("false");
     expect(node(host, "[data-quality-status]").textContent).toBe("Coverage checked · review required");
   });
-  it("preserves the published URL across a successful section rerun while settings stay folded", async () => {
-    const confirmed = await confirmedDraftV2Fixture(); const previous = await resultFor(confirmed); const next = await resultFor(confirmed, { previous }); const fetcher = api(previous); const { host } = await render(confirmed); await click(host, "[data-generate-draft]"); await flush(); await act(async () => { const input = node<HTMLInputElement>(host, "[data-published-url]"); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "https://published.test/keep-through-rerun"); input.dispatchEvent(new Event("input", { bubbles: true })); });
-    fetcher.mockImplementation(async (url) => String(url) === "/api/auth/session" ? response({ signedIn: true }) : response(next)); await click(host, '[data-rerun-section="O1"]'); await flush(); expect(node(host, "[data-draft-v2-result]").getAttribute("data-run-id")).toBe(next.run.run_id); expect(node<HTMLElement>(host, "[data-draft-settings-panel]").hidden).toBe(true); expect(node<HTMLInputElement>(host, "[data-published-url]").value).toBe("https://published.test/keep-through-rerun");
+  it("keeps settings folded across a successful section rerun", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const previous = await resultFor(confirmed); const next = await resultFor(confirmed, { previous }); const fetcher = api(previous); const { host } = await render(confirmed); await click(host, "[data-generate-draft]"); await flush();
+    fetcher.mockImplementation(async (url) => String(url) === "/api/auth/session" ? response({ signedIn: true }) : response(next)); await click(host, '[data-rerun-section="O1"]'); await flush(); expect(node(host, "[data-draft-v2-result]").getAttribute("data-run-id")).toBe(next.run.run_id); expect(node<HTMLElement>(host, "[data-draft-settings-panel]").hidden).toBe(true);
+    // This tool publishes nothing and cannot know where a draft went, so the result carries no published-URL exit.
+    expect(host.querySelector("[data-published-url]")).toBeNull();
   });
   it("keeps settings open when a valid returned artifact has no successfully generated section", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed, { empty: true }); api(result); const { host } = await render(confirmed); await click(host, '[data-section-checkbox="O2"]'); await click(host, "[data-generate-draft]"); await flush(); expect(node<HTMLElement>(host, "[data-draft-settings-panel]").hidden).toBe(false); expect(node(host, "[data-draft-v2-result]").getAttribute("data-run-id")).toBe(result.run.run_id);
@@ -259,6 +261,10 @@ describe("Draft v2 truthful results and exact exports", () => {
   });
   it("marks source tiers independently of claim types and keeps every exact evidence link", async () => {
     const confirmed = await confirmedDraftV2Fixture({ action: "update" }); const result = await resultFor(confirmed, { claims: true }); const { host } = await render(confirmed, { result });
+    // Annotations start off so the draft reads as prose; everything below is what
+    // the toggle brings back for anyone actually verifying a sentence.
+    expect(host.querySelector("[data-source-legend]")).toBeNull();
+    await click(host, "[data-toggle-annotations]");
     expect(node(host, "[data-source-legend]").textContent).toMatch(/First.party.*Third.party.*Model/s);
     const sentences = host.querySelectorAll<HTMLElement>("[data-claim]");
     expect(sentences[0]!.getAttribute("data-source-tier")).toBe("mixed");
@@ -271,6 +277,24 @@ describe("Draft v2 truthful results and exact exports", () => {
     const before = JSON.stringify(result); await click(host, "[data-toggle-annotations]");
     expect(node(host, "[data-toggle-annotations]").getAttribute("aria-pressed")).toBe("false");
     expect(host.querySelector("[data-source-legend]")).toBeNull(); expect(JSON.stringify(result)).toBe(before);
+  });
+  it.each(["en", "zh"] as const)("names each paragraph's sources once beneath it without the reader opening annotations (%s)", async (locale) => {
+    const confirmed = await confirmedDraftV2Fixture({ action: "update" }); const result = await resultFor(confirmed, { claims: true }); const { host } = await render(confirmed, { locale, result });
+    expect(node(host, "[data-toggle-annotations]").getAttribute("aria-pressed")).toBe("false");
+    const lines = host.querySelectorAll<HTMLElement>("[data-paragraph-sources]");
+    expect(lines.length).toBeGreaterThan(0);
+    const first = lines[0]!;
+    expect(first.textContent).toContain(locale === "en" ? "Sources:" : "来源：");
+    // A host is named, not a bare U id, and it still resolves to the evidence entry.
+    const links = Array.from(first.querySelectorAll<HTMLAnchorElement>("a"));
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(link.textContent).not.toMatch(/^U\d+$/u);
+      expect(document.getElementById(link.hash.slice(1))).not.toBeNull();
+    }
+    // One entry per distinct source: a paragraph citing one page twice says it once.
+    const labels = links.map((link) => link.textContent);
+    expect(new Set(labels).size).toBe(labels.length);
   });
   it("labels competitor-only support third-party and keeps skipped/failed status visible", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed, { claims: true }); const { host, rerender } = await render(confirmed, { result });
@@ -290,10 +314,10 @@ describe("Draft v2 truthful results and exact exports", () => {
     const result = await resultFor(checked.value, { claims: true }); const { host } = await render(checked.value, { result });
     expect(node(host, '[data-evidence-ref="P1"]').textContent).toContain(derivation === "observed" ? "Observed in profile" : "Computed in profile");
   });
-  it("hides an old export success on rerun while preserving the visitor's published URL", async () => {
+  it("hides an old export success on rerun", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const previous = await resultFor(confirmed); const next = await resultFor(confirmed, { previous }); const { host, rerender } = await render(confirmed, { result: previous }); Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
-    await act(async () => { const input = node<HTMLInputElement>(host, "[data-published-url]"); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "https://published.test/keep-me"); input.dispatchEvent(new Event("input", { bubbles: true })); }); await click(host, "[data-copy-markdown]"); expect(node(host, '[role="status"]').textContent).toBe(en.tools.contentDraft.v2.export.copied);
-    await rerender(confirmed, next); expect(host.querySelector('[role="status"]')).toBeNull(); expect(node<HTMLInputElement>(host, "[data-published-url]").value).toBe("https://published.test/keep-me");
+    await click(host, "[data-copy-markdown]"); expect(node(host, '[role="status"]').textContent).toBe(en.tools.contentDraft.v2.export.copied);
+    await rerender(confirmed, next); expect(host.querySelector('[role="status"]')).toBeNull();
   });
   it("does not attach an old asynchronous clipboard success to the replacement result", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const previous = await resultFor(confirmed); const next = await resultFor(confirmed, { previous }); let resolve!: () => void; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn(() => new Promise<void>((finish) => { resolve = finish; })) } }); const { host, rerender } = await render(confirmed, { result: previous });
@@ -343,6 +367,7 @@ describe("Draft v2 truthful results and exact exports", () => {
     expect(Array.from(host.querySelectorAll("[data-draft-h2]"), (item) => item.textContent)).toEqual(confirmed.outline.map((item) => item.h2)); expect(Array.from(host.querySelectorAll("[data-draft-h3]"), (item) => item.textContent)).toEqual(confirmed.outline.flatMap((item) => item.h3));
     for (const claim of ["bound", "gap", "no_claim", "stance"]) expect(host.querySelector(`[data-claim="${claim}"]`)).not.toBeNull();
     expect(node(host, '[data-evidence-ref="P1"]').textContent).toContain("Compares finalized reporting periods"); expect(node(host, '[data-evidence-ref="U1"]').textContent).toContain("Reporting can lag behind collection.");
+    await click(host, "[data-toggle-annotations]");
     expect(node(host, "[data-support-count]").textContent).toMatch(locale === "en" ? /2 observed supporting pages/i : /2.*已观测支持页面/);
     expect(host.querySelectorAll("details[open]")).toHaveLength(0); expect(JSON.parse(node(host, "[data-run-ledger]").textContent!)).toEqual(result.run);
   });

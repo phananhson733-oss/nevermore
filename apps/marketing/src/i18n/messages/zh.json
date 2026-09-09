@@ -4599,6 +4599,7 @@
         "sourceTier": { "first": "一手资料", "third": "第三方 · 需核实", "model": "模型", "mixed": "一手 + 第三方" },
         "profileDerivation": { "declared": "声明事实", "observed": "档案中的观测事实", "computed": "档案中的计算事实", "inferred": "推断事实；仅用于立场" },
         "sourceLegend": "颜色表示证据层级，不代表事实已核实：自有页面与非推断的档案事实属于一手资料，竞品摘录属于第三方。模型正文与推断性立场仍标为模型；混合引用保留两类来源，PAA 不充当事实证据。",
+        "paragraphSources": "来源：",
         "collapse": "收起",
         "expand": "展开",
         "collapseSection": "收起章节：{section}",

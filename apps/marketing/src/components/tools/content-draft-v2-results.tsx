@@ -8,7 +8,6 @@ import { useTranslations } from "next-intl";
 import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 import type { DraftResultV2 } from "@sf/public-tools/content-brief/v2-draft-contract";
 import { ACTION_BUTTON, BODY_TEXT, ID_CHIP, SECTION_TITLE, collectedTime, safePageUrl } from "./content-brief-results-shared";
-import { ContentDraftV2OnPage } from "./content-draft-v2-onpage";
 import { markdownNotes } from "./content-draft-handoff-bar";
 import type { MarkdownNotes } from "./content-draft-markdown";
 import styles from "./content-draft-v2-presentation.module.css";
@@ -57,7 +56,10 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
 }) {
   const t = useTranslations("tools.contentDraft.v2");
   const base = useTranslations("tools.contentDraft");
-  const [showClaims, setShowClaims] = useState(true);
+  // Off by default: every paragraph prints its sources beneath it, so the
+  // per-sentence chips are a second copy of the same fact and turn the article
+  // into a ledger. The toggle keeps them one click away for anyone verifying.
+  const [showClaims, setShowClaims] = useState(false);
   const [expanded, setExpanded] = useState<Readonly<Record<string, boolean>>>({});
   const sectionPrefix = useId();
   const [exportReceipt, setExportReceipt] = useState<{ readonly identity: ExportIdentity; readonly state: ExportState } | null>(null);
@@ -103,6 +105,29 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
     return page === undefined || excerpt === undefined ? [] : [{ ref: unit.id, page, excerpt }];
   });
   const profileEvidence = confirmed.brief.context.facts.filter((fact) => usedRefs.has(fact.id));
+  /** Distinct sources behind one paragraph, in first-use order; profile facts collapse into one entry. */
+  function paragraphSources(sentences: readonly { readonly evidence_refs: readonly string[] }[]) {
+    const seen = new Set<string>();
+    const entries: { readonly ref: string; readonly label: string }[] = [];
+    for (const sentence of sentences) for (const ref of sentence.evidence_refs) {
+      const fact = facts.get(ref);
+      if (fact !== undefined) {
+        if (seen.has("profile")) continue;
+        seen.add("profile");
+        entries.push({ ref, label: t("profileFact") });
+        continue;
+      }
+      const unit = units.get(ref);
+      const page = unit?.kind === "page" ? pages.get(unit.page_ref) : undefined;
+      if (page === undefined) continue;
+      let host: string;
+      try { host = new URL(page.final_url).hostname; } catch { continue; }
+      if (seen.has(host)) continue;
+      seen.add(host);
+      entries.push({ ref, label: host });
+    }
+    return entries;
+  }
   const relatedLinks = confirmedRelatedLinks(confirmed);
   const notes = { ...markdownNotes(base), relatedLinks: t("relatedLinks") };
 
@@ -163,7 +188,7 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
             {section.status === "ok" ? <div className={styles.prose}>{section.body.paragraphs.map((paragraph, pIndex) => <div key={pIndex}>{paragraph.heading !== null ? <h3 data-draft-h3>{paragraph.heading}</h3> : null}<p>{paragraph.sentences.map((sentence, sIndex) => {
               const tier = sourceTier(sentence.evidence_refs, sentence.claim);
               return <span key={sIndex} data-claim={sentence.claim} data-source-tier={tier} data-marked={showClaims ? "true" : "false"}>{sIndex > 0 ? " " : ""}<span data-sentence-text>{sentence.text}</span>{showClaims ? <span className={styles.claimAnnotation}>[{base(`claims.${sentence.claim}`)} · {t(`sourceTier.${tier}`)}{sentence.evidence_refs.length > 0 ? " · " : ""}{sentence.evidence_refs.map((ref, refIndex) => <span key={ref}>{refIndex > 0 ? ", " : ""}<a href={`#draft-v2-evidence-${ref}`}>{ref}</a></span>)}{sentence.claim === "bound" ? <span data-support-count> · {t("supportingPages", { count: sentence.support_count })}</span> : null}]</span> : null}</span>;
-            })}</p></div>)}</div> : <div className={styles.failure}><strong>{base(section.status === "failed" ? "doc.failed" : "doc.skipped")}</strong><p>{section.status === "failed" ? base(`sectionFail.${section.fail_reason}`) : base("doc.skippedBody")}</p></div>}
+            })}</p>{(() => { const sources = paragraphSources(paragraph.sentences); return sources.length === 0 ? null : <p data-paragraph-sources className={styles.paragraphSources}>{t("paragraphSources")}{sources.map((source, index) => <span key={source.ref}>{index > 0 ? "\u3001" : " "}<a href={`#draft-v2-evidence-${source.ref}`}>{source.label}</a></span>)}</p>; })()}</div>)}</div> : <div className={styles.failure}><strong>{base(section.status === "failed" ? "doc.failed" : "doc.skipped")}</strong><p>{section.status === "failed" ? base(`sectionFail.${section.fail_reason}`) : base("doc.skippedBody")}</p></div>}
           </div>
         </section>;
       })}</div>
@@ -176,7 +201,6 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
     <section><h2 className={`${SECTION_TITLE} ${RULE}`}>{t("evidence")}</h2><p className={`mt-3 ${BODY_TEXT}`}>{t("evidenceBoundary")}</p><div className="mt-3 space-y-3">{pageEvidence.map(({ ref, page, excerpt }) => { const href = safePageUrl(page.final_url); return <details key={ref} id={`draft-v2-evidence-${ref}`} data-evidence-ref={ref} className="rounded-[4px] border border-brand-border-card p-3"><summary className={SUMMARY}>{ref} · {t(page.role === "owned" ? "ownedPage" : "observedPage")} · {page.final_url}</summary>{href !== null ? <a href={href} target="_blank" rel="noopener noreferrer" className="mt-2 block break-all text-[11px] text-brand-accent-text underline">{href}</a> : null}{excerpt.heading !== null ? <div className="mt-2 text-[12px] font-semibold text-text-dark-primary">{excerpt.heading.text}</div> : null}<blockquote className="mt-2 border-l-2 border-brand-border-card pl-3 text-[12px] leading-[1.6] text-text-dark-secondary">{excerpt.text}</blockquote><p className="mt-2 text-[10.5px] text-text-dark-secondary">{t("observedAt", { time: collectedTime(page.fetched_at, locale) })}</p></details>; })}{profileEvidence.map((fact) => <details key={fact.id} id={`draft-v2-evidence-${fact.id}`} data-evidence-ref={fact.id} className="rounded-[4px] border border-brand-border-card p-3"><summary className={SUMMARY}>{fact.id} · {t("profileFact")} · {t(`profileDerivation.${fact.derivation}`)}</summary><p className={`mt-2 ${BODY_TEXT}`}>{fact.text}</p></details>)}</div></section>
 
     <section className="border-t border-brand-border-card pt-4"><div className="flex flex-wrap gap-2"><button type="button" data-copy-markdown className={ACTION_BUTTON} onClick={() => void copy("markdown")}>{base("actions.copyMarkdown")}</button><button type="button" data-download-markdown className={ACTION_BUTTON} onClick={() => download("markdown")}>{t("downloadMarkdown")}</button><button type="button" data-copy-draft-json className={ACTION_BUTTON} onClick={() => void copy("json")}>{t("copyJson")}</button><button type="button" data-download-draft-json className={ACTION_BUTTON} onClick={() => download("json")}>{t("downloadJson")}</button></div><p className="mt-2 text-[11px] leading-[1.5] text-text-dark-secondary">{t("exportNote")}</p>{exportStatus !== null ? <p role="status" className={`mt-2 ${BODY_TEXT}`}>{t(`export.${exportStatus}`)}</p> : null}</section>
-    <ContentDraftV2OnPage key={confirmed.fingerprint} confirmed={confirmed} locale={locale} />
     <details><summary className={SUMMARY}>{t("runReceipt")}</summary><p className={`mt-3 ${BODY_TEXT}`}>{t(result.run.rerun === null ? "initialUsage" : "rerunUsage")}</p><pre data-run-ledger className={CODE}>{JSON.stringify(result.run, null, 2)}</pre><details className="mt-3"><summary className={SUMMARY}>{t("fullJson")}</summary><pre data-draft-json className={CODE}>{JSON.stringify(result)}</pre></details></details>
   </div>;
 }
