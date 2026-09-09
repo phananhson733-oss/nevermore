@@ -354,6 +354,17 @@ describe("Artifact-aligned Brief v2 result", () => {
     expect(node(host, "[data-confirmed-summary]").textContent).toMatch(/your decision/i);
   });
 
+  it("says whose reading the undecidable rationale is, and only when the run declined to place the page", async () => {
+    // The server turns a create this run's evidence cannot carry into
+    // undecidable, keeping the model's words. Under a verdict that declines to
+    // place the page, those words can be an argument for creating one, so the
+    // card says what they are instead of presenting them as the decision.
+    const undecided = await render(await fixture({ action: "undecidable" }));
+    expect(node(undecided.host, "[data-verdict-card]").textContent).toContain("What follows is the model's reading of this sample, not the decision on page ownership.");
+    const updated = await render(await fixture({ action: "update" }));
+    expect(updated.host.querySelector("[data-model-reading]")).toBeNull();
+  });
+
   it("keeps an actual update target and executable rewrite instructions rather than silently creating a page", async () => {
     const { host, onConfirmed } = await render(await fixture({ action: "update" }));
     expect(node(host, "[data-verdict-card]").textContent).toContain("Rewrite the existing page");

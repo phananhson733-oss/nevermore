@@ -115,6 +115,12 @@ function PagePlan({ brief, t }: { readonly brief: ContentBriefV2; readonly t: Tr
     <div className="font-mono text-[10.5px] tracking-[0.1em] uppercase">{t("pageRecommendation")}</div>
     <h3 data-verdict-title className="mt-2 font-semibold tracking-[-0.03em]">{t(`actions.${plan.action}`)}</h3>
     <div className="mt-3"><SourceLayerBadge tone="model" t={baseT} /></div>
+    {/* An undecidable verdict is the run declining to place the page, and the
+        rationale under it is still the model arguing its own reading -- which
+        may be an argument for creating a page, when the server replaced a
+        create the evidence could not carry. Saying so costs one line and stops
+        that paragraph being read as the decision it is not. */}
+    {plan.action === "undecidable" ? <p data-model-reading className="mt-3 text-[11px] text-text-dark-secondary">{t("modelReading")}</p> : null}
     <p className={`mt-3 ${BODY_TEXT}`}>{plan.rationale}</p>
     {target ? <div className="mt-3 space-y-1 text-[12px]"><div className="text-text-dark-secondary">{t("targetPage")} · {t(`readStates.${target.read}`)}</div>{targetHref ? <a data-target-page href={targetHref} target="_blank" rel="noopener noreferrer" className="break-all text-brand-accent-text underline underline-offset-2">{target.url}</a> : <span>{target.url}</span>}</div> : null}
     {plan.steps.length > 0 ? <ol className="mt-4 space-y-3 border-t border-brand-border-card pt-3">{plan.steps.map((step, index) => <li key={index} data-plan-step className="text-[12.5px] text-text-dark-primary"><div className="flex items-start gap-2"><span className={BADGE}>{t(`stepKinds.${step.kind}`)}</span><span>{step.instruction}</span></div><div className="mt-1 text-[10.5px] text-text-dark-secondary">{t("stepEvidence", { answers: step.answers.join(", ") || t("none"), sources: step.sources.join(", ") || t("none") })}</div></li>)}</ol> : null}

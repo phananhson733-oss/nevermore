@@ -4098,6 +4098,7 @@
         "readUnits": { "serp": "results", "paa": "questions", "competitors": "pages", "owned_pages": "pages", "gsc": "matched query-page rows", "profile": "facts" },
         "sources": { "serp": "SERP", "paa": "People Also Ask", "competitors": "Competitor pages", "owned_pages": "Owned pages", "gsc": "Search Console", "profile": "Product profile" },
         "states": { "complete": "Complete", "partial": "Partial", "unavailable": "Unavailable", "notUsed": "Not used" },
+        "modelReading": "What follows is the model's reading of this sample, not the decision on page ownership.",
         "pageRecommendation": "Page recommendation",
         "actions": { "create": "Create a new page", "update": "Rewrite the existing page", "undecidable": "Page action needs your decision" },
         "sampleBoundary": "This recommendation describes the sampled evidence, not all pages on your site. Missing queries and unread pages are not proof of absence.",
