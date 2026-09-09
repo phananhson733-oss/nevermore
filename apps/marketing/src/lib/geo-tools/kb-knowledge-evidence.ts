@@ -13,6 +13,14 @@ export const GEO_KNOWLEDGE_EVIDENCE_LIMITS = {
   pageBytes: 512 * 1024, excerptCodePoints: 1_200, competitors: 5, ownPages: 8, competitorPagesPerIdentity: 2, maxPages: 18, maxSources: 32,
   maxBytes: 1024 * 1024, maxExcerpts: 8, jsonLdScriptBytes: 64 * 1024,
   jsonLdArrayWidth: 128, sitemapLocations: 1_000,
+  /**
+   * The largest `urlCount` this contract will carry, and deliberately not
+   * `sitemapLocations`: the count is the DOCUMENT's size and the locations are
+   * a bounded sample of it. 50 000 is the sitemap protocol's own per-file
+   * ceiling, so a `<urlset>` above it is malformed and the ceiling is the most
+   * this will claim about one rather than refusing the whole bundle over it.
+   */
+  sitemapUrlCount: 50_000,
 } as const;
 
 const INTENTS = ["about", "pricing", "product", "integrations", "docs", "faq", "changelog"] as const;
@@ -50,6 +58,8 @@ type Page = {
   jsonLdTypes: string[]; hreflangLocales: string[]; hreflang: Array<{ locale: string; url: string }>;
   faq: Array<{ question: string; answer: string }>; links: Array<{ intent: Intent; url: string }>;
 };
+/** One page of the bundle, for callers that rebuild one from a stored row. */
+export type GeoKnowledgeEvidencePage = Page;
 type MachineObservation = { status: MachineStatus; sourceRefs: string[] };
 type SitemapObservation = MachineObservation & { urlCount: number | null; knowledgePagesListed: boolean | null; locations?: string[]; truncated?: boolean };
 export type GeoKnowledgeEvidenceV1 = {
@@ -59,7 +69,33 @@ export type GeoKnowledgeEvidenceV1 = {
   sourceCatalogue: GeoKnowledgeEvidenceSource[]; contentHash: string;
 };
 type EvidenceBody = Omit<GeoKnowledgeEvidenceV1, "contentHash">;
-type CollectionDependencies = { readResource: GeoKnowledgeEvidenceReadResource; now: () => Date; nowMs?: () => number; reusedSources?: readonly GeoKnowledgeEvidenceSource[]; reusedEvidence?: GeoKnowledgeEvidenceV1 };
+type CollectionDependencies = {
+  readResource: GeoKnowledgeEvidenceReadResource; now: () => Date; nowMs?: () => number;
+  reusedSources?: readonly GeoKnowledgeEvidenceSource[]; reusedEvidence?: GeoKnowledgeEvidenceV1;
+  /**
+   * Pages a caller rebuilt from rows it credited in `reusedSources`.
+   *
+   * Without this, a credited own page contributes a SOURCE and no PAGE, and
+   * `machine.jsonLd` / `machine.hreflang` -- which are derived from `pages`
+   * alone -- collapse to `absent` while citing the very row that holds the
+   * types. That is what production reported on 2026-09-09 about a home page
+   * whose stored row carried six JSON-LD types.
+   *
+   * A page here is only kept when an available source in the catalogue
+   * addresses it: the collector will not take a caller's word for a reading
+   * whose receipt it cannot see.
+   */
+  reusedPages?: readonly Page[];
+  /**
+   * The reused sitemap row's own count of the document it read.
+   *
+   * The ledger keeps a bounded sample of `<loc>` values plus the total, so a
+   * reused sitemap has eight locations and knows there were 558. Passing the
+   * total lets the bundle say 558 with a sample of eight (`truncated: true`)
+   * instead of publishing the sample size as the total.
+   */
+  reusedSitemapUrlCount?: number;
+};
 
 const HASH = /^[a-f0-9]{64}$/u;
 const ID = /^[A-Za-z0-9][A-Za-z0-9:._/-]{0,127}$/u;
@@ -103,7 +139,7 @@ const pageSchema = z.object({
 const machineObservationSchema = z.object({ status: z.enum(MACHINE_STATUSES), sourceRefs: z.array(id).min(1).refine(unique, "Duplicate source reference") }).strict();
 const machineSchema = z.object({
   jsonLd: z.object({ status: z.enum(["present", "absent"]), types: z.array(text(120)).max(32).refine(unique), sourceRefs: z.array(id).min(1).refine(unique) }).strict(), llms: machineObservationSchema, robots: machineObservationSchema,
-  sitemap: machineObservationSchema.extend({ urlCount: z.number().int().min(0).max(GEO_KNOWLEDGE_EVIDENCE_LIMITS.sitemapLocations).nullable(), knowledgePagesListed: z.boolean().nullable(), locations: z.array(publicUrl).max(GEO_KNOWLEDGE_EVIDENCE_LIMITS.sitemapLocations).refine(unique).optional(), truncated: z.boolean().optional() }).strict(),
+  sitemap: machineObservationSchema.extend({ urlCount: z.number().int().min(0).max(GEO_KNOWLEDGE_EVIDENCE_LIMITS.sitemapUrlCount).nullable(), knowledgePagesListed: z.boolean().nullable(), locations: z.array(publicUrl).max(GEO_KNOWLEDGE_EVIDENCE_LIMITS.sitemapLocations).refine(unique).optional(), truncated: z.boolean().optional() }).strict(),
   hreflang: z.object({ status: z.enum(["present", "absent"]), locales: z.array(text(120)).max(64).refine(unique), sourceRefs: z.array(id).min(1).refine(unique) }).strict(),
 }).strict().superRefine((machine, ctx) => {
   if ((machine.jsonLd.status === "present") !== (machine.jsonLd.types.length > 0)) ctx.addIssue({ code: "custom", message: "JSON-LD status mismatch" });
@@ -111,7 +147,20 @@ const machineSchema = z.object({
   const present = machine.sitemap.status === "present";
   if (present !== (machine.sitemap.urlCount !== null && machine.sitemap.knowledgePagesListed !== null)) ctx.addIssue({ code: "custom", message: "Sitemap status mismatch" });
   if (!present && ((machine.sitemap.locations?.length ?? 0) !== 0 || machine.sitemap.truncated === true)) ctx.addIssue({ code: "custom", message: "Unobserved sitemap locations" });
-  if (present && (machine.sitemap.locations === undefined || machine.sitemap.truncated === undefined || machine.sitemap.urlCount !== machine.sitemap.locations.length)) ctx.addIssue({ code: "custom", message: "Sitemap count mismatch" });
+  /*
+   * `truncated` is what decouples the count from the sample.
+   *
+   * Untruncated, `locations` IS the document and the count must equal it --
+   * the original rule, unchanged. Truncated, `locations` is a bounded sample
+   * and `urlCount` is the document's own total, which is the only number worth
+   * showing an owner: the alternative is publishing "your sitemap lists 8
+   * URLs" about a sitemap listing 558, which is what production said on
+   * 2026-09-09. A truncated count below the sample size is still a mismatch.
+   */
+  if (present && (machine.sitemap.locations === undefined || machine.sitemap.truncated === undefined
+    || (machine.sitemap.truncated
+      ? machine.sitemap.urlCount! < machine.sitemap.locations.length
+      : machine.sitemap.urlCount !== machine.sitemap.locations.length))) ctx.addIssue({ code: "custom", message: "Sitemap count mismatch" });
 });
 const bodySchema = z.object({
   schemaVersion: z.literal("marketing-geo-knowledge-evidence.v1"), collectedAt: z.string().refine(canonicalTimestamp, "Expected canonical collection time"), targetUrl: publicUrl,
@@ -126,6 +175,57 @@ function clean(value: string): string { return value.replace(/\s+/gu, " ").trim(
 function bounded(value: string): string { return Array.from(clean(value)).slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints).join(""); }
 function boundedExact(value: string): string { return Array.from(value).slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints).join(""); }
 function asPublicUrl(value: string, base: URL, permitFragment = false): string | null { try { const url = new URL(value, base); if (!permitFragment && url.hash !== "") return null; url.hash = ""; if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.port !== "" || url.host !== base.host) return null; return url.toString(); } catch { return null; } }
+/**
+ * One `<loc>` value, as this site's own address or not at all.
+ *
+ * The difference from `asPublicUrl` is the host test, and it is the whole
+ * reason this exists: `asPublicUrl` demands `url.host === base.host`, so a
+ * sitemap that lists `https://www.example.com/...` under a target spelled
+ * `https://example.com/` has EVERY location discarded and the site is reported
+ * as listing zero URLs. That is not a hypothetical -- it is what production
+ * reported about a site publishing 558 of them on 2026-09-09.
+ *
+ * The two spellings are one site to everything else in this codebase: the
+ * crawl gate budgets against the apex host (`canonicalCrawlTargetKey`), and
+ * `machineResourceAnsweredRequest` above already accepts the sibling as an
+ * answer to the request. Location extraction is the last place that did not.
+ *
+ * Page links, hreflang alternates and canonical URLs deliberately keep the
+ * strict test: those are claims the PAGE makes about itself, and a page on one
+ * host linking to the other is a fact worth not flattening. A sitemap entry is
+ * an address, and the address is the same address.
+ */
+function sitemapLocation(value: string, base: URL): string | null {
+  try {
+    const url = new URL(value.trim(), base);
+    // A `<loc>` carrying a fragment is not an address of a page the way this
+    // contract means one, and `asPublicUrl` refused it before this helper
+    // existed. Stripping it instead would quietly widen what counts as listed.
+    if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.port !== "" || url.hash !== "") return null;
+    const key = canonicalCrawlTargetKey(url.href);
+    const baseKey = canonicalCrawlTargetKey(base.href);
+    if (key === null || key === "" || baseKey === null || key !== baseKey) return null;
+    const href = url.toString();
+    return strictPublicUrl(href) ? href : null;
+  } catch { return null; }
+}
+
+/**
+ * Whether a sitemap lists a page, comparing addresses rather than strings.
+ *
+ * Same reason as above: `https://example.com/pricing` and
+ * `https://www.example.com/pricing` are one page, and answering "your sitemap
+ * does not list your home page" because the two halves of the site spell the
+ * host differently is a finding about our own string comparison.
+ */
+function addressKey(value: string): string {
+  try { const url = new URL(value); return `${canonicalCrawlTargetKey(url.href) ?? url.host}${url.pathname}${url.search}`; } catch { return value; }
+}
+function listedPage(locations: readonly string[], pageUrl: string): boolean {
+  const key = addressKey(pageUrl);
+  return locations.some((location) => addressKey(location) === key);
+}
+
 function validTarget(value: string): URL { if (!strictPublicUrl(value)) throw new Error("Invalid target URL"); return new URL(value); }
 function unavailableReason(value: unknown): UnavailableReason { return typeof value === "string" && (UNAVAILABLE_REASONS as readonly string[]).includes(value) ? value as UnavailableReason : "invalid_response"; }
 function unavailableSource(kind: SourceKind, url: string, reason: UnavailableReason, competitor: Competitor | null = null): GeoKnowledgeEvidenceSource { return { id: sourceId(kind, url), kind, label: kind === "own_page" ? "Own site page" : kind === "competitor_page" ? "Competitor page" : kind, url, competitor, availability: "unavailable", reason, observedAt: null, bodyHash: null, excerpts: [] }; }
@@ -216,14 +316,32 @@ function machineStatus(source: GeoKnowledgeEvidenceSource): MachineStatus { retu
 function addUnavailableMachineSources(sources: GeoKnowledgeEvidenceSource[], target: URL, reason: UnavailableReason): void { for (const [path, kind] of [["robots.txt", "robots"], ["sitemap.xml", "sitemap"], ["llms.txt", "llms"]] as const) { const url = new URL(path, target).toString(); if (!sources.some((source) => source.kind === kind)) sources.push(unavailableSource(kind, url, reason)); } }
 function sourceForMachine(kind: "robots" | "sitemap" | "llms", sources: readonly GeoKnowledgeEvidenceSource[]): GeoKnowledgeEvidenceSource { const source = sources.find((candidate) => candidate.kind === kind); if (!source) throw new Error(`Missing ${kind} source`); return source; }
 
-function finalize(target: URL, competitors: Competitor[], pages: Page[], sources: GeoKnowledgeEvidenceSource[], now: Date, reusedSitemap?: SitemapObservation): GeoKnowledgeEvidenceV1 {
+function finalize(target: URL, competitors: Competitor[], pages: Page[], sources: GeoKnowledgeEvidenceSource[], now: Date, reusedSitemap?: SitemapObservation, reusedSitemapUrlCount?: number): GeoKnowledgeEvidenceV1 {
   const robots = sourceForMachine("robots", sources); const sitemap = sourceForMachine("sitemap", sources); const llms = sourceForMachine("llms", sources); const ownRefs = sources.filter(({ kind }) => kind === "own_page").map(({ id: source }) => source);
-  const sitemapSource = sitemap as GeoKnowledgeEvidenceSource & { locations?: string[]; truncated?: boolean };
+  const sitemapSource = sitemap as GeoKnowledgeEvidenceSource & { locations?: string[]; truncated?: boolean; total?: number };
   const reusedSitemapMatches = reusedSitemap?.sourceRefs.includes(sitemap.id) ?? false;
-  const locations = sitemap.availability === "unavailable" ? [] : reusedSitemapMatches ? reusedSitemap!.locations ?? [] : sitemapSource.locations ?? sitemap.excerpts.filter((value) => strictPublicUrl(value) && new URL(value).host === target.host);
-  const truncated = sitemap.availability === "unavailable" ? false : reusedSitemapMatches ? reusedSitemap!.truncated ?? false : sitemapSource.truncated ?? false;
+  /*
+   * A source read in THIS collection carries its locations out of band (the
+   * non-enumerable properties set below); a source credited from a stored row
+   * carries the same addresses as excerpts, because that is all the ledger
+   * keeps. `sitemapLocation` reads either, and accepts the site's other
+   * spelling of its own host -- see the helper.
+   */
+  const locations = sitemap.availability === "unavailable" ? [] : reusedSitemapMatches ? reusedSitemap!.locations ?? [] : sitemapSource.locations ?? sitemap.excerpts.flatMap((value) => { const location = sitemapLocation(value, target); return location === null ? [] : [location]; });
+  /*
+   * How many URLs the DOCUMENT holds, which is not how many this bundle
+   * carries. The reader that took the sample is the only thing that ever saw
+   * the whole file, so the total arrives from it (`reusedSitemapUrlCount` for
+   * a credited row, `total` for one read here) and is never inferred from the
+   * sample. Absent a total, the sample is all that was measured and it is both.
+   */
+  const total = sitemap.availability === "unavailable" ? null
+    : reusedSitemapMatches ? reusedSitemap!.urlCount ?? locations.length
+      : sitemapSource.total ?? (sitemapSource.locations === undefined && reusedSitemapUrlCount !== undefined ? reusedSitemapUrlCount : locations.length);
+  const urlCount = total === null ? null : Math.min(Math.max(total, locations.length), GEO_KNOWLEDGE_EVIDENCE_LIMITS.sitemapUrlCount);
+  const truncated = sitemap.availability === "unavailable" ? false : reusedSitemapMatches ? reusedSitemap!.truncated ?? false : urlCount !== null && urlCount > locations.length;
   const hasOwnEvidence = sources.some((source) => source.kind === "own_page" && source.availability !== "unavailable"); const unavailable = sources.some((source) => source.availability === "unavailable"); const availability: GeoKnowledgeEvidenceV1["availability"] = !hasOwnEvidence ? "unavailable" : unavailable ? "partial" : "available";
-  return buildGeoKnowledgeEvidenceV1({ schemaVersion: "marketing-geo-knowledge-evidence.v1", collectedAt: now.toISOString(), targetUrl: target.toString(), confirmedCompetitors: competitors, availability, limitation: availability === "available" ? null : "Some evidence sources were unavailable.", pages, machine: { jsonLd: { status: pages.some((page) => page.jsonLdTypes.length > 0) ? "present" as const : "absent" as const, types: [...new Set(pages.flatMap((page) => page.jsonLdTypes))].sort(), sourceRefs: ownRefs }, robots: { status: machineStatus(robots), sourceRefs: [robots.id] }, sitemap: { status: machineStatus(sitemap), sourceRefs: [sitemap.id], urlCount: sitemap.availability === "unavailable" ? null : locations.length, knowledgePagesListed: sitemap.availability === "unavailable" ? null : pages.some((page) => locations.includes(page.url)), ...(sitemap.availability === "unavailable" ? {} : { locations, truncated }) }, llms: { status: machineStatus(llms), sourceRefs: [llms.id] }, hreflang: { status: pages.some((page) => page.hreflangLocales.length > 0) ? "present" as const : "absent" as const, locales: [...new Set(pages.flatMap((page) => page.hreflangLocales))].sort(), sourceRefs: ownRefs } }, sourceCatalogue: sources });
+  return buildGeoKnowledgeEvidenceV1({ schemaVersion: "marketing-geo-knowledge-evidence.v1", collectedAt: now.toISOString(), targetUrl: target.toString(), confirmedCompetitors: competitors, availability, limitation: availability === "available" ? null : "Some evidence sources were unavailable.", pages, machine: { jsonLd: { status: pages.some((page) => page.jsonLdTypes.length > 0) ? "present" as const : "absent" as const, types: [...new Set(pages.flatMap((page) => page.jsonLdTypes))].sort(), sourceRefs: ownRefs }, robots: { status: machineStatus(robots), sourceRefs: [robots.id] }, sitemap: { status: machineStatus(sitemap), sourceRefs: [sitemap.id], urlCount, knowledgePagesListed: sitemap.availability === "unavailable" ? null : pages.some((page) => listedPage(locations, page.url)), ...(sitemap.availability === "unavailable" ? {} : { locations, truncated }) }, llms: { status: machineStatus(llms), sourceRefs: [llms.id] }, hreflang: { status: pages.some((page) => page.hreflangLocales.length > 0) ? "present" as const : "absent" as const, locales: [...new Set(pages.flatMap((page) => page.hreflangLocales))].sort(), sourceRefs: ownRefs } }, sourceCatalogue: sources });
 }
 
 export async function collectGeoKnowledgeEvidenceV1(input: { targetUrl: string; competitors: Array<{ key: string; name: string; confirmed: boolean }> }, dependencies: CollectionDependencies): Promise<GeoKnowledgeEvidenceV1> {
@@ -236,7 +354,24 @@ export async function collectGeoKnowledgeEvidenceV1(input: { targetUrl: string; 
   const unavailablePublicUrls = new Set(sourceCandidates.flatMap((source) => source.availability === "unavailable" && ["own_page", "competitor_page", "robots", "sitemap", "llms"].includes(source.kind) && source.url !== null ? [source.url] : []));
   const reusableCandidates = sourceCandidates.filter((source) => !(source.availability === "unavailable" && ["own_page", "competitor_page", "robots", "sitemap", "llms"].includes(source.kind)));
   const sources = reusableCandidates.filter((source, index) => reusableCandidates.findIndex((candidate) => candidate.id === source.id || source.url !== null && candidate.url === source.url) === index);
-  const reusedUrls = new Set(sources.flatMap(({ url }) => url === null ? [] : [url])); const pages: Page[] = (reusedEvidence?.pages ?? []).filter((page) => !unavailablePublicUrls.has(page.url)); const seenPageUrls = new Set(pages.map(({ url }) => url)); const seenCanonicalUrls = new Set(pages.flatMap(({ canonicalUrl }) => canonicalUrl === null ? [] : [canonicalUrl])); const startedAt = dependencies.nowMs?.() ?? Date.now(); const nowMs = dependencies.nowMs ?? Date.now; const deadline = startedAt + 70_000;
+  const reusedUrls = new Set(sources.flatMap(({ url }) => url === null ? [] : [url]));
+  /*
+   * Pages this collection did not read, contributed by a caller that credited
+   * the rows they came from.
+   *
+   * Every one is checked against the catalogue that was just built rather than
+   * taken on trust: a page with no available source addressing it would be a
+   * reading with no receipt, and `assertEvidenceIntegrity` refuses those at the
+   * end anyway -- failing here says which page instead of failing there saying
+   * "Invalid or duplicate page URL". `pageSchema` runs for the same reason the
+   * reused sources are parsed: a caller assembles these from stored rows.
+   */
+  const contributed: Page[] = (dependencies.reusedPages ?? []).map((page) => pageSchema.parse(page) as Page).filter((page) => {
+    if (!sources.some((source) => source.kind === "own_page" && source.availability !== "unavailable" && source.url === page.url)) throw new Error("Contributed page without an own-site source");
+    return true;
+  });
+  const pages: Page[] = [...(reusedEvidence?.pages ?? []), ...contributed].filter((page) => !unavailablePublicUrls.has(page.url))
+    .filter((page, index, all) => all.findIndex((candidate) => candidate.url === page.url) === index); const seenPageUrls = new Set(pages.map(({ url }) => url)); const seenCanonicalUrls = new Set(pages.flatMap(({ canonicalUrl }) => canonicalUrl === null ? [] : [canonicalUrl])); const startedAt = dependencies.nowMs?.() ?? Date.now(); const nowMs = dependencies.nowMs ?? Date.now; const deadline = startedAt + 70_000;
   const canRead = () => nowMs() < deadline; const timeout = () => Math.min(8_000, Math.max(0, deadline - nowMs()));
   const addSource = (source: GeoKnowledgeEvidenceSource) => { if (!sources.some(({ id: existing }) => existing === source.id) && !(source.url !== null && sources.some(({ url }) => url === source.url))) sources.push(source); };
   const readPage = async (requestUrl: string, kind: "own_page" | "competitor_page", competitor: Competitor | null = null): Promise<Page | null> => {
@@ -261,14 +396,16 @@ export async function collectGeoKnowledgeEvidenceV1(input: { targetUrl: string; 
     if (!responseIsValid(result) || !machineResourceAnsweredRequest(url, result.url) || !expectedContentType(kind, responseIsValid(result) ? result.contentType : "") || responseIsValid(result) && Buffer.byteLength(result.body, "utf8") > GEO_KNOWLEDGE_EVIDENCE_LIMITS.pageBytes) { const reason = result && typeof result === "object" && (result as { kind?: unknown }).kind === "unavailable" ? unavailableReason((result as { reason?: unknown }).reason) : "invalid_response"; addSource(unavailableSource(kind, url, reason)); continue; }
     const lines = result.body.split(/\r?\n/u).map(clean).filter(Boolean);
     if ((kind === "robots" || kind === "llms") && lines.length === 0 || kind === "sitemap" && result.body.trim() === "") { addSource(unavailableSource(kind, url, "not_published")); continue; }
-    const validLocations = kind === "sitemap" ? [...new Set([...result.body.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/giu)].map((match) => asPublicUrl(match[1]!, target)).filter((location): location is string => location !== null))] : []; const locations = validLocations.slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.sitemapLocations);
+    const validLocations = kind === "sitemap" ? [...new Set([...result.body.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/giu)].map((match) => sitemapLocation(match[1]!, target)).filter((location): location is string => location !== null))] : []; const locations = validLocations.slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.sitemapLocations);
     const source = { id: sourceId(kind, url), kind, label: kind, url, competitor: null, availability: "available" as const, reason: null, observedAt: result.observedAt, bodyHash: sha256(result.body), excerpts: kind === "sitemap" ? locations.length > 0 ? locations.slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.maxExcerpts) : [boundedExact(result.body)] : lines.slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.maxExcerpts) } as GeoKnowledgeEvidenceSource & { locations?: string[]; truncated?: boolean };
-    if (kind === "sitemap") Object.defineProperties(source, { locations: { value: locations, enumerable: false }, truncated: { value: validLocations.length > locations.length, enumerable: false } });
+    // `total` is the document's own count, kept beside the bounded sample so a
+    // sitemap over `sitemapLocations` publishes its real size rather than the cap.
+    if (kind === "sitemap") Object.defineProperties(source, { locations: { value: locations, enumerable: false }, truncated: { value: validLocations.length > locations.length, enumerable: false }, total: { value: validLocations.length, enumerable: false } });
     addSource(source);
   }
   if (hasOwnEvidence) for (const competitor of confirmedCompetitors) { if (sources.filter((source) => source.kind === "competitor_page" && source.competitor?.key === competitor.key).length >= GEO_KNOWLEDGE_EVIDENCE_LIMITS.competitorPagesPerIdentity) continue; let base: URL; try { base = validTarget(`https://${competitor.key}/`); } catch { continue; } const reusedCompetitorHome = pages.find((page) => page.url === base.toString() || page.canonicalUrl === base.toString()); const competitorHome = reusedCompetitorHome ?? await readPage(base.toString(), "competitor_page", competitor); const candidate = competitorHome?.links.find(({ intent }) => intent === "pricing" || intent === "product"); if (candidate && sources.filter((source) => source.kind === "competitor_page" && source.competitor?.key === competitor.key).length < GEO_KNOWLEDGE_EVIDENCE_LIMITS.competitorPagesPerIdentity) await readPage(candidate.url, "competitor_page", competitor); }
   if (!hasOwnEvidence) addUnavailableMachineSources(sources, target, "invalid_response");
-  return finalize(target, confirmedCompetitors, pages, sources, dependencies.now(), reusedEvidence?.machine.sitemap);
+  return finalize(target, confirmedCompetitors, pages, sources, dependencies.now(), reusedEvidence?.machine.sitemap, dependencies.reusedSitemapUrlCount);
 }
 
 function assertEvidenceIntegrity(body: EvidenceBody): void {
@@ -305,7 +442,10 @@ function assertEvidenceIntegrity(body: EvidenceBody): void {
     if (source === undefined || body.machine[key].status !== machineStatus(source)) throw new Error("Machine availability mismatch");
   }
   const sitemapLocations = body.machine.sitemap.locations ?? [];
-  if (body.machine.sitemap.status === "present" && (body.machine.sitemap.urlCount !== sitemapLocations.length || body.machine.sitemap.knowledgePagesListed !== body.pages.some((page) => sitemapLocations.includes(page.url)))) throw new Error("Sitemap machine summary mismatch");
+  const sitemapCounted = body.machine.sitemap.truncated === true
+    ? (body.machine.sitemap.urlCount ?? -1) >= sitemapLocations.length
+    : body.machine.sitemap.urlCount === sitemapLocations.length;
+  if (body.machine.sitemap.status === "present" && (!sitemapCounted || body.machine.sitemap.knowledgePagesListed !== body.pages.some((page) => listedPage(sitemapLocations, page.url)))) throw new Error("Sitemap machine summary mismatch");
   if (body.availability === "available" && body.limitation !== null || body.availability !== "available" && body.limitation === null) throw new Error("Evidence availability mismatch"); if (body.availability !== "unavailable" && !body.sourceCatalogue.some((source) => source.kind === "own_page" && source.availability !== "unavailable")) throw new Error("Missing own-site evidence");
 }
 export function geoKnowledgeEvidenceDigest(body: EvidenceBody): string { return geoV2Digest(body); }

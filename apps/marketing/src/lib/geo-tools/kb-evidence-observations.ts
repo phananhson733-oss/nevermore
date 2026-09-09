@@ -144,6 +144,28 @@ const structuredSchema = z
       .array(z.string().min(1).max(64))
       .max(GEO_EVIDENCE_OBSERVATION_LIMITS.hreflangLocales)
       .optional(),
+    /**
+     * The same alternates as `hreflangLocales`, with the URL each one points
+     * at, because the evidence contract's page shape pairs them and cannot
+     * take a bare locale.
+     *
+     * Written beside the bare list rather than replacing it: rows predating
+     * this key carry only the list, and a reader that demanded pairs would
+     * report every one of them as a page with no alternates. Producers write
+     * both; readers prefer the pairs and fall back to withholding, never to
+     * "absent".
+     */
+    hreflang: z
+      .array(
+        z
+          .object({
+            locale: z.string().min(1).max(64),
+            url: z.string().min(1).max(GEO_EVIDENCE_OBSERVATION_LIMITS.urlChars),
+          })
+          .strict(),
+      )
+      .max(GEO_EVIDENCE_OBSERVATION_LIMITS.hreflangLocales)
+      .optional(),
     robotsRules: z
       .array(z.string().min(1).max(400))
       .max(GEO_EVIDENCE_OBSERVATION_LIMITS.robotsRules)

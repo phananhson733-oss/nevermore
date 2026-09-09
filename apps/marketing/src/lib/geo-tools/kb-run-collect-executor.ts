@@ -34,6 +34,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  GEO_EVIDENCE_OBSERVATION_LIMITS,
   isObservationFresh,
   geoEvidenceTtlMs,
   readLatestObservation,
@@ -323,6 +324,8 @@ function fitObservedStructure(parts: {
   readonly authorship: GeoEvidenceStructured["authorship"] | null;
   readonly jsonLdTypes: readonly string[] | null;
   readonly hreflangLocales: readonly string[] | null;
+  /** The same alternates with their URLs; dropped together with the bare list. */
+  readonly hreflang: readonly { readonly locale: string; readonly url: string }[] | null;
   readonly faqPairs: readonly { readonly question: string; readonly answer: string }[];
 }): GeoEvidenceStructured {
   const build = (
@@ -338,6 +341,9 @@ function fitObservedStructure(parts: {
       : {}),
     ...(withHreflang && parts.hreflangLocales !== null
       ? { hreflangLocales: [...parts.hreflangLocales] }
+      : {}),
+    ...(withHreflang && parts.hreflang !== null
+      ? { hreflang: parts.hreflang.map((entry) => ({ locale: entry.locale, url: entry.url })) }
       : {}),
     ...(faqCount > 0
       ? {
@@ -443,6 +449,16 @@ function observedStructure(
               : [{ question, answer }];
           })
           .slice(0, 64);
+  const hreflangPairs =
+    structure === null
+      ? null
+      : structure.hreflang
+          .flatMap((entry) => {
+            const locale = storableText(entry.locale, 64);
+            const url = storableText(entry.url, GEO_EVIDENCE_OBSERVATION_LIMITS.urlChars);
+            return locale === null || url === null ? [] : [{ locale, url }];
+          })
+          .slice(0, GEO_EVIDENCE_OBSERVATION_LIMITS.hreflangLocales);
   return {
     excerpts,
     structured: fitObservedStructure({
@@ -458,10 +474,20 @@ function observedStructure(
       // carries no JSON-LD and no alternates" about a body we never read.
       jsonLdTypes:
         structure === null ? null : storableList(structure.jsonLdTypes, 200, 64),
-      hreflangLocales:
-        structure === null
-          ? null
-          : storableList(structure.hreflangLocales, 64, 128),
+      /*
+       * The bare list is DERIVED from the pairs rather than stored beside them.
+       *
+       * The evidence contract's page shape refuses a locale without the URL it
+       * points at, so a row holding only locales cannot be rebuilt into a page
+       * and the alternates it did observe end up reported as absent -- which
+       * is why the pairs are stored at all. Deriving the list is what keeps
+       * the two from disagreeing: an entry whose URL will not store would
+       * otherwise survive in the list and vanish from the pairs, and a reader
+       * comparing their lengths could not tell that from a page with an
+       * alternate we chose not to carry.
+       */
+      hreflangLocales: hreflangPairs === null ? null : hreflangPairs.map((entry) => entry.locale),
+      hreflang: hreflangPairs,
       faqPairs,
     }),
   };

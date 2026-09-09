@@ -1635,11 +1635,20 @@ describe("reading what an own-page observation stored about the page", () => {
     // The difference the whole machine module rests on. An empty stored list is
     // "this page publishes none"; a missing key is "we kept no answer", and the
     // card may not turn the second into the first.
-    expect(creditGeoKnowledgeObservedStructure(row({ jsonLdTypes: [], hreflangLocales: [] }))).toEqual({
+    expect(creditGeoKnowledgeObservedStructure(row({ jsonLdTypes: [], hreflangLocales: [], hreflang: [] }))).toEqual({
       faq: [], jsonLdTypes: { kind: "stored", values: [] }, hreflangLocales: { kind: "stored", values: [] },
+      hreflang: { kind: "stored", values: [] },
     });
     expect(creditGeoKnowledgeObservedStructure(row({}))).toEqual({
       faq: [], jsonLdTypes: { kind: "not_stored" }, hreflangLocales: { kind: "not_stored" },
+      hreflang: { kind: "not_stored" },
+    });
+    // A row from before the alternates were stored as pairs: it kept the bare
+    // locale list and no URLs, so the list is `stored` and the pairs are not.
+    // The page cannot be rebuilt from it, which is why that difference exists.
+    expect(creditGeoKnowledgeObservedStructure(row({ jsonLdTypes: [], hreflangLocales: ["en"] }))).toEqual({
+      faq: [], jsonLdTypes: { kind: "stored", values: [] }, hreflangLocales: { kind: "stored", values: ["en"] },
+      hreflang: { kind: "not_stored" },
     });
   });
 

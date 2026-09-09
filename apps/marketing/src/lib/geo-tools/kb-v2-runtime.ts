@@ -18,7 +18,8 @@ import type { GeoKbPreparedHandlerDependencies } from "./kb-prepared-handler.ts"
 import type { GeoKbV2DraftDependencies, GeoKbV2LoadDependencies } from "./kb-v2-draft-handler.ts";
 import { createGeoKbEditorLoader, createGeoKbEditorLoaderAny, createGeoKbV3EditorLoader,
   type GeoKbEditorLoaderDependencies, type GeoKbV3EditorLoaderDependencies } from "./kb-editor-loader.ts";
-import { createGeoKbGenerationPreparer, creditGeoKnowledgeObservation, validateGeoKbDraftLineage,
+import { createGeoKbGenerationPreparer, creditGeoKnowledgeObservation, creditGeoKnowledgeObservedPage,
+  creditGeoKnowledgeObservedStructure, validateGeoKbDraftLineage,
   type GeoKbGenerationPreparerDependencies, type GeoKnowledgeEvidenceCollectionInput, type GeoKnowledgeUnavailableReason } from "./kb-generation-preparer.ts";
 import { readLatestObservation } from "./kb-evidence-observations.ts";
 import { planGeoRunCollection } from "./kb-run-collect.ts";
@@ -28,7 +29,7 @@ import { assertGeoProfileCopyIntegrity } from "./kb-profile-copy-server.ts";
 import { canonicalGeoV2Text } from "./kb-v2-json.ts";
 import { parseGeoKbFrozenKnowledgeWire } from "../../components/tools/geo-kb-v2-wire.ts";
 import { geoGenerationLanguage } from "@sf/public-tools/content-brief/geo-contract";
-import { collectGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidenceReadResource, type GeoKnowledgeEvidenceSource } from "./kb-knowledge-evidence.ts";
+import { collectGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidencePage, type GeoKnowledgeEvidenceReadResource, type GeoKnowledgeEvidenceSource } from "./kb-knowledge-evidence.ts";
 
 export interface GeoKbV2RuntimeDependencies {
   readonly authenticate: typeof getServerAuthenticatedUser;
@@ -203,10 +204,22 @@ export function createGeoKbV2Runtime(overrides: Partial<GeoKbV2RuntimeDependenci
   const creditObservedTargets = async (input: GeoKnowledgeEvidenceCollectionInput): Promise<{
     readonly sources: readonly GeoKnowledgeEvidenceSource[];
     readonly observedUnavailable: ReadonlyMap<string, GeoKnowledgeUnavailableReason>;
+    readonly pages: readonly GeoKnowledgeEvidencePage[];
   }> => {
     const sources: GeoKnowledgeEvidenceSource[] = [];
     const observedUnavailable = new Map<string, GeoKnowledgeUnavailableReason>();
-    const credited = { sources, observedUnavailable };
+    /**
+     * Pages rebuilt from the rows credited below.
+     *
+     * A credited row used to contribute a SOURCE and no PAGE, and
+     * `machine.jsonLd` / `machine.hreflang` are derived from the pages alone
+     * while their citations come from the sources -- so a reused home page made
+     * both read `absent` while pointing at the row that held six JSON-LD types.
+     * That is the defect this list closes; `creditGeoKnowledgeObservedPage`
+     * decides what a row is worth and refuses to guess the rest.
+     */
+    const pages: GeoKnowledgeEvidencePage[] = [];
+    const credited = { sources, observedUnavailable, pages };
     const planned = new Map(planGeoRunCollection({ targetUrl: input.targetUrl,
       competitors: input.confirmedCompetitors.map(competitor => ({ domain: competitor.key, confirmed: true })) })
       .map(target => [target.url, target.kind] as const));
@@ -249,8 +262,21 @@ export function createGeoKbV2Runtime(overrides: Partial<GeoKbV2RuntimeDependenci
         .catch(() => ({ kind: "unavailable" as const }));
       if (read.kind !== "ok") continue;
       const credit = creditGeoKnowledgeObservation({ ...request, observation: read.value, now });
-      if (credit.kind === "reuse") sources.push(credit.source);
-      else if (credit.kind === "observed_unavailable") observedUnavailable.set(request.url, credit.reason);
+      if (credit.kind === "reuse") {
+        sources.push(credit.source);
+        /*
+         * Own pages only. A competitor row would rebuild just as well, but the
+         * two machine summaries cite own-page sources exclusively while being
+         * derived from EVERY page, so contributing a competitor page here would
+         * report its markup as the owner's -- a separate defect, and one this
+         * change must not create while closing the other.
+         */
+        if (request.kind === "own_page") {
+          const structure = creditGeoKnowledgeObservedStructure(read.value);
+          const rebuilt = structure === null ? null : creditGeoKnowledgeObservedPage({ url: request.url, structure });
+          if (rebuilt?.kind === "page") pages.push(rebuilt.page);
+        }
+      } else if (credit.kind === "observed_unavailable") observedUnavailable.set(request.url, credit.reason);
     }
     return credited;
   };
@@ -271,6 +297,7 @@ export function createGeoKbV2Runtime(overrides: Partial<GeoKbV2RuntimeDependenci
       };
       return await dependencies.collectKnowledgeEvidence({ targetUrl: input.targetUrl, competitors: [...input.confirmedCompetitors] }, {
         readResource, reusedSources: [...input.reusedSources, ...credited.sources], now: dependencies.now,
+        reusedPages: credited.pages,
       });
     },
     now: dependencies.now,

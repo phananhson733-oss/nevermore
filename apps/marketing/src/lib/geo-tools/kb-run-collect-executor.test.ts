@@ -1042,10 +1042,13 @@ describe("what the site's own page is recorded as carrying", () => {
     const appended = recordObservation.mock.calls[0]?.[0];
     expect(appended.kind).toBe("own_page");
     if (appended.status.kind !== "ok") throw new Error("expected an observed page");
-    // Both keys present and both empty. `toEqual` rather than two property
+    // All three keys present and all empty. `toEqual` rather than property
     // checks: a key that came back `undefined` would satisfy `toEqual([])`
-    // nowhere, and this is the exact shape the consumer's gate reads.
-    expect(appended.status.structured).toEqual({ jsonLdTypes: [], hreflangLocales: [] });
+    // nowhere, and this is the exact shape the consumer's gate reads. The
+    // alternates are stored twice on purpose -- the bare list for readers that
+    // only count them, the pairs because the evidence contract's page shape
+    // refuses a locale without the URL it points at.
+    expect(appended.status.structured).toEqual({ jsonLdTypes: [], hreflangLocales: [], hreflang: [] });
   });
 
   it("hands the consumer a shape its publish gate can actually accept", async () => {

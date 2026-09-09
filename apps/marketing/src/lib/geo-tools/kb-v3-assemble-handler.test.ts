@@ -787,7 +787,14 @@ describe("assembling the deterministic half from the collection alone", () => {
   const SITEMAP_LOCATIONS = [TARGET_URL, `${TARGET_URL}pricing`];
   const OWN_STRUCTURED = {
     jsonLdTypes: ["Organization", "SoftwareApplication"],
-    hreflangLocales: [],
+    // Both spellings of the alternates, the way the collect executor writes
+    // them: the bare list for anything that counts them, and the pairs because
+    // the evidence contract's page shape refuses a locale with no URL.
+    hreflangLocales: ["en", "zh-Hans"],
+    hreflang: [
+      { locale: "en", url: `${TARGET_URL}en` },
+      { locale: "zh-Hans", url: `${TARGET_URL}zh-hans` },
+    ],
     faqPairs: [{ question: "Does Pine Cloud require human approval?", answer: "Yes, every change waits for a person." }],
   };
 
@@ -1179,7 +1186,11 @@ describe("assembling the deterministic half from the collection alone", () => {
     expect(machine!.llms.status).toBe("absent");
     expect(machine!.sitemap).toMatchObject({ status: "present", urlCount: "2", knowledgePagesListed: true });
     expect(machine!.jsonLd).toMatchObject({ status: "present", types: ["Organization", "SoftwareApplication"] });
-    expect(machine!.hreflang).toMatchObject({ status: "absent", locales: [] });
+    // Reported from the pairs the row stored. This read `absent` for every site
+    // with alternates until 2026-09-09, because the ledger kept the locales
+    // without the URLs the page shape pairs them with and the only honest
+    // reconstruction was an empty list.
+    expect(machine!.hreflang).toMatchObject({ status: "present", locales: ["en", "zh-Hans"] });
     // Read out of the robots file the run stored, by the parser the crawler
     // gates its own fetches on.
     expect(machine!.aiCrawlers.search.map((row) => row.access)).toEqual(["allowed", "allowed", "allowed"]);
@@ -1434,11 +1445,16 @@ describe("assembling the deterministic half from the collection alone", () => {
 
   it("withholds rather than reporting hreflang it cannot carry as absent", async () => {
     /**
-     * The row stores the locales; the evidence contract's page shape pairs every
-     * locale with the URL it points at, and the run stored no URLs. Carrying the
-     * page without them would report `hreflang` absent about a site that
-     * publishes six alternates, so the module is withheld instead -- and this is
-     * the one gap that keeps a multi-locale site's machine module off the card.
+     * A row written before the alternates were stored as PAIRS: it kept the
+     * locale list and no URLs, and the evidence contract's page shape pairs
+     * every locale with the URL it points at. Carrying the page without them
+     * would report `hreflang` absent about a site publishing two alternates,
+     * so the module is withheld instead.
+     *
+     * Every row written from 2026-09-09 on carries `hreflang`, so this is the
+     * legacy shape and it self-heals the next time the page is read -- but for
+     * as long as such a row can be credited, the withholding is what stops it
+     * from becoming a false negative.
      */
     const harness = observedWithMachine({
       structured: { jsonLdTypes: ["Organization"], hreflangLocales: ["en", "zh-Hans"], faqPairs: [] },
