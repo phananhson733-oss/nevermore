@@ -378,8 +378,11 @@ describe("parseContentBriefShape rejects", () => {
 
 describe("recompute: SERP rows are re-classified", () => {
   it("catches a title edited without re-classifying, and an edited value", () => {
-    // S1 keeps `guide` through its path rule; the title rules it now also hits change rules_hit.
-    expectReference(mutated(validContentBrief(), (draft) => { draft.evidence.serp[0].title = "10 best warmup tools"; }), "evidence.serp[0].format.rules_hit");
+    // S1 keeps `guide` and keeps deciding it by the same rule; the title only
+    // adds a later hit, so the array grows and its first entry does not move.
+    expectReference(mutated(validContentBrief(), (draft) => { draft.evidence.serp[0].title = "Email warmup: the complete guide to warmup dates"; }), "evidence.serp[0].format.rules_hit");
+    // A title that changes which rule decides first moves that entry instead.
+    expectReference(mutated(validContentBrief(), (draft) => { draft.evidence.serp[0].title = "How to warm up an email domain"; }), "evidence.serp[0].format.rules_hit[0]");
     // S10 has no path rule, so the new title flips its value from unknown to listicle.
     expectReference(mutated(validContentBrief(), (draft) => { draft.evidence.serp[9].title = "10 best warmup tools"; }), "evidence.serp[9].format.value");
     expectReference(mutated(validContentBrief(), (draft) => { draft.evidence.serp[0].format.value = "listicle"; }), "evidence.serp[0].format.value");

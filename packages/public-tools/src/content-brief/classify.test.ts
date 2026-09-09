@@ -35,45 +35,27 @@ function row(
 }
 
 describe("host sets", () => {
-  it("pin the spec's host lists", () => {
+  it("pins every host list, so a site is added or removed on purpose", () => {
+    // Not a copy of an external list: these are the sites the table has been
+    // given, and the assertion exists so that adding one is a decision someone
+    // made rather than a side effect. A suffix entry covers every subdomain,
+    // which is why MacRumors appears only as its forum.
     expect([...VIDEO_HOSTS]).toEqual([
       "youtube.com", "vimeo.com", "tiktok.com", "instagram.com", "bilibili.com", "dailymotion.com",
     ]);
     expect([...FORUM_HOSTS]).toEqual([
-      "reddit.com",
-      "quora.com",
-      "stackexchange.com",
-      "stackoverflow.com",
-      "zhihu.com",
-      "ptt.cc",
-      "dcard.tw",
-      "v2ex.com",
-      "mobile01.com",
+      "reddit.com", "quora.com", "stackexchange.com", "superuser.com", "serverfault.com", "askubuntu.com",
+      "stackoverflow.com", "forums.macrumors.com", "xda-developers.com",
+      "zhihu.com", "ptt.cc", "dcard.tw", "v2ex.com", "mobile01.com",
     ]);
     expect([...COMMERCE_HOSTS]).toEqual([
-      "amazon.com",
-      "ebay.com",
-      "walmart.com",
-      "etsy.com",
-      "shopee.com",
-      "shopee.tw",
-      "taobao.com",
-      "tmall.com",
-      "jd.com",
-      "momoshop.com.tw",
-      "pchome.com.tw",
-      "apps.microsoft.com",
-      "apps.apple.com",
-      "play.google.com",
+      "amazon.com", "ebay.com", "walmart.com", "etsy.com", "bestbuy.com", "homedepot.com",
+      "shopee.com", "shopee.tw", "taobao.com", "tmall.com", "jd.com", "momoshop.com.tw", "pchome.com.tw",
+      "apps.microsoft.com", "apps.apple.com", "play.google.com",
     ]);
-    expect([...NEWS_HOSTS]).toEqual([
-      "nytimes.com",
-      "bbc.com",
-      "reuters.com",
-      "theguardian.com",
-    ]);
+    expect([...NEWS_HOSTS]).toEqual(["nytimes.com", "bbc.com", "reuters.com", "theguardian.com"]);
     expect([...ENCYCLOPEDIA_HOSTS]).toEqual([
-      "wikipedia.org", "wiktionary.org", "baike.baidu.com", "britannica.com", "wikiwand.com",
+      "wikipedia.org", "wiktionary.org", "baike.baidu.com", "britannica.com", "wikiwand.com", "medlineplus.gov",
     ]);
   });
 
@@ -95,6 +77,22 @@ describe("host sets", () => {
       ["https://x.example/a", "線上排盤產生器", "tool"],
       // A four-digit leading number that is a year is not a count.
       ["https://x.example/a", "2026 General Schedule (GS) Salary Calculator", "tool"],
+      // "dates" names what the page is about; "calculator" names what it is.
+      // timeanddate.com read its own duration calculator as a guide and the
+      // FAQ about that calculator as a tool, exactly inverted.
+      ["https://www.timeanddate.com/date/timeduration.html", "Time Duration Calculator - Count days between dates", "tool"],
+      ["https://www.mdcalc.com/calc/423/pregnancy-due-dates", "Pregnancy Due Dates Calculator", "tool"],
+      ["https://plaincalculators.com/angel-number-calculator/", "Angel Number Calculator - Meaning of Repeating Numbers", "tool"],
+      // What it compares is the calculator's subject. Left above, the whole
+      // rent-vs-buy family read as editorial comparisons and a SERP of nothing
+      // but calculators reported commercial intent instead of a tool one.
+      ["https://www.calculator.net/rent-vs-buy-calculator.html", "Rent vs. Buy Calculator", "tool"],
+      ["https://www.schwab.com/ira/ira-calculators/roth-vs-traditional", "Roth vs. Traditional IRA Calculator | Charles Schwab", "tool"],
+      // A title names the page and then says something about it, so a question
+      // after the calculator's name is its subtitle, not its kind.
+      ["https://astrochart.io/moon-sign", "Free Moon Sign Calculator - What Is My Moon Sign? | AstroChart", "tool"],
+      ["https://astrofox.tw/rising-sign", "上升星座查詢計算器 | 上升星座是什麼？怎麼看？ | 占星狐狸", "tool"],
+      ["https://x.example/a", "Mortgage Calculator: How to Read Your Results", "tool"],
     ];
     for (const [url, title, expected] of cases) {
       expect(classifySerpFormat({ domain: "x.example", url, title }).value, title).toBe(expected);
@@ -108,19 +106,63 @@ describe("host sets", () => {
     // distribution for another.
     const cases: readonly [string, string, string, string][] = [
       ["x.example", "https://x.example/blog/birth-chart-calculator", "Free Birth Chart Calculator", "guide"],
+      // The article paths decide below the round-up titles now, so a blog's own
+      // round-up is a list. A blog post that makes no list of itself still
+      // reaches them, which is what keeps the row above a guide.
+      ["zapier.com", "https://zapier.com/blog/best-project-management-software/", "The 8 best project management software in 2026", "listicle"],
+      ["apptunix.com", "https://www.apptunix.com/blog/top-5-best-astrology-apps/", "Top 10 Best Astrology Apps in 2026 You Can Trust", "listicle"],
+      // A number followed by a unit of time measures something; it does not
+      // count items. Both of these read as lists before.
+      ["whattoexpect.com", "https://www.whattoexpect.com/pregnancy/week-by-week/week-12.aspx", "12 Weeks Pregnant: Symptoms, Baby Development & More", "unknown"],
+      ["10minutemail.com", "https://10minutemail.com/", "10 Minute Mail - Free Anonymous Temporary Email", "unknown"],
+      // The unit has to be the whole word, or a city that starts with one
+      // stops the count: "Dayton" is not a day.
+      ["x.example", "https://x.example/a", "10 Dayton Restaurants to Try", "listicle"],
       ["x.example", "https://x.example/guide/birth-chart-calculator", "Birth Chart Calculator Guide", "guide"],
       ["x.example", "https://x.example/birth-chart", "How to Use a Birth Chart Calculator", "guide"],
       ["x.example", "https://x.example/birth-chart", "What Is a Birth Chart Calculator?", "guide"],
       ["x.example", "https://x.example/mortgage-calculator", "Mortgage calculator explained", "guide"],
+      ["timeanddate.com", "https://www.timeanddate.com/date/timeduration-help.html", "FAQ: Time Duration Calculator", "guide"],
+      // "meaning" moved below the calculator rules with "dates", and for the
+      // same reason. A page about a subject keeps that word; a page that is a
+      // calculator keeps it too, and only one of them is a calculator.
+      ["x.example", "https://x.example/a", "Angel Number 444 Meaning", "guide"],
+      // The question rules keep every title that asks before it names.
+      ["x.example", "https://x.example/a", "What Is a Birth Chart Calculator?", "guide"],
+      ["rates.ca", "https://rates.ca/resources/how-to-use-a-mortgage-calculator", "How to Use a Mortgage Calculator", "guide"],
+      ["x.example", "https://x.example/a", "如何使用星盤計算器", "guide"],
+      // 教程 and 攻略 name a kind of writing, so they hold wherever they sit:
+      // this is why the Chinese question rule could not simply be reordered.
+      ["labex.io", "https://labex.io/zh/tutorials/python-create-a-gui-calculator-with-python-298861", "使用 Python 创建基本图形用户界面计算器 | Tkinter 教程", "guide"],
+      // A comparison with no calculator in it is still a comparison.
+      ["x.example", "https://x.example/rent-vs-buy", "Rent vs Buy: Which Is Better in 2026?", "comparison"],
+      ["x.example", "https://x.example/iphone-vs-android/", "Our Verdict", "comparison"],
+      // A how-to that mentions the best of something is not a round-up.
+      ["x.example", "https://x.example/a", "How to get the best mortgage rate", "guide"],
+      // Past a hundred a leading number is nearly always an identifier. US
+      // finance is full of them and every one read as a list of hundreds.
+      ["investopedia.com", "https://www.investopedia.com/terms/1/529plan.asp", "529 Plan: What It Is, How It Works, Pros and Cons", "unknown"],
+      ["investopedia.com", "https://www.investopedia.com/terms/1/1031exchange.asp", "1031 Exchange Rules: What You Need to Know", "unknown"],
+      // Moving "dates" below the calculator rules costs nothing here: a page
+      // about dates that never claims to be a calculator is still a guide.
+      ["irs.gov", "https://www.irs.gov/filing/important-tax-dates", "Important Tax Filing Dates 2026", "guide"],
       ["x.example", "https://x.example/a", "使用 Python 创建计算器 | Tkinter 教程", "guide"],
       // A slug is not a path rule: an article's own URL keeps the calculator's
       // name, so the suffix decides after every title rule, not before them.
       ["rates.ca", "https://rates.ca/resources/how-to-use-a-mortgage-calculator", "How to Use a Mortgage Calculator", "guide"],
       ["x.example", "https://x.example/product/scientific-calculator", "Scientific Calculator", "product_page"],
       ["x.example", "https://x.example/pricing/report-generator", "Report Generator", "product_page"],
-      // The count rule keeps every count that is not a year.
-      ["x.example", "https://x.example/a", "10 Best Mortgage Calculator Sites", "listicle"],
-      ["x.example", "https://x.example/a", "1000 Questions to ask people", "listicle"],
+      // No "best" here: a broken count rule drops this row to title:calculator
+      // and the format changes. With "best" in it the row is listicle either
+      // way and pins nothing.
+      ["x.example", "https://x.example/a", "10 Mortgage Calculator Sites", "listicle"],
+      // Four digits are a year, a tax form or a count and the title does not
+      // say which. "1040 Tax Calculator" is the case that decided it: reading
+      // the number as a length made it a list of a thousand items.
+      ["dinkytown.net", "https://www.dinkytown.net/java/1040-tax-calculator.html", "1040 Tax Calculator", "tool"],
+      // No "best" in it, so the hundred itself is what makes this a list: the
+      // bound is inclusive, and dropping the hundred drops this row to unknown.
+      ["x.example", "https://x.example/a", "100 Questions to ask your partner", "listicle"],
       // An app marketplace listing for a calculator is a product page.
       ["apps.microsoft.com", "https://apps.microsoft.com/detail/9wzdncrfhvn5", "Windows Calculator", "product_page"],
       // A generator is as often a machine as a program and no lexical test
@@ -130,24 +172,35 @@ describe("host sets", () => {
       ["random.org", "https://www.random.org/sequences/", "RANDOM.ORG - Sequence Generator", "unknown"],
       // -calculator has to end a segment, or a review of one becomes one.
       ["x.example", "https://x.example/mortgage-calculator-review", "Our Verdict", "unknown"],
+      // The bound the count rule really has: a leading number of four digits
+      // or more is not read as a count at all, so a page whose title says
+      // nothing else is reported as unclassified rather than as a list.
+      ["x.example", "https://x.example/a", "1000 Questions to ask people", "unknown"],
       // 計算機 is a calculator in Traditional Chinese and also a computer, so
       // it is left out: this under-matches rather than reading a computer
       // science text as a tool.
       ["x.example", "https://x.example/a", "計算機科學導論", "unknown"],
       ["bmi.tw", "https://bmi.tw/", "BMI計算機", "unknown"],
-      // Knowingly lost by that ordering: "dates" decides first. Putting the
-      // calculator rules above the topic words instead cost two live pages.
-      ["mdcalc.com", "https://www.mdcalc.com/calc/423/pregnancy-due-dates", "Pregnancy Due Dates Calculator", "guide"],
+      // A store sells physical calculators and generators, and neither the
+      // slug nor the Chinese title can tell those from software. The commerce
+      // path is what does. Both of these are live pages that read as tools.
+      ["duromaxpower.com", "https://www.duromaxpower.com/products/duromax-xp13000eh-13000-watt-portable-hybrid-gas-propane-generator", "13,000 Watt Dual Fuel Portable Generator", "product_page"],
+      ["keysight.com", "https://www.keysight.com/tw/zh/products/waveform-and-function-generators.bac.html", "波形和函數產生器 | Keysight", "product_page"],
+      // Accepted, and the same behaviour /product/ singular already had: a
+      // round-up that lives under /products/ reads as a product page.
+      ["x.example", "https://x.example/products/mortgage-picks", "Best Mortgage Tools", "product_page"],
     ];
     for (const [domain, url, title, expected] of cases) {
       expect(classifySerpFormat({ domain, url, title }).value, title).toBe(expected);
     }
-    // One exception, known and left alone: a /calculator/ directory decides
-    // above every title rule, so a round-up that lives in one still reads as a
-    // tool. That rule predates these and reads a structural claim the site
-    // makes about the directory, not a word in a headline; reordering it would
-    // change classifications this change is not about.
+    // One exception, known and left alone: path:calculator decides above every
+    // title rule, so a round-up that lives under one still reads as a tool.
+    // Its needle is "/calculator" with no closing slash, so it is a segment
+    // that STARTS with the word, not a directory named it -- /calculator-review
+    // matches and /mortgage-calculator does not. That rule predates these ones
+    // and reordering it would change classifications this change is not about.
     expect(classifySerpFormat({ domain: "x.example", url: "https://x.example/mortgage/calculator/", title: "The Best Mortgage Calculators of 2026" }).value).toBe("tool");
+    expect(classifySerpFormat({ domain: "x.example", url: "https://x.example/calculator-review", title: "Our Verdict" }).value).toBe("tool");
   });
 
   it("classifies the result shapes a Chinese search returns, instead of calling them unknown", () => {
@@ -212,7 +265,7 @@ describe("classifySerpFormat: domain rules", () => {
     });
     expect(classifySerpFormat(serp("example.com", "https://www.youtube.com/watch?v=1"))).toEqual({
       value: "video",
-      rules_hit: ["host:video", "path:watch"],
+      rules_hit: ["host:video"],
     });
     expect(classifySerpFormat(serp("example.com", "https://M.YouTube.com/watch")).value).toBe("video");
   });
@@ -395,7 +448,7 @@ describe("classifySerpFormat: ordering", () => {
       ),
     ).toEqual({
       value: "video",
-      rules_hit: ["host:video", "path:blog", "title:best", "title:guide"],
+      rules_hit: ["host:video", "title:best", "path:blog", "title:guide"],
     });
   });
 
@@ -426,41 +479,43 @@ describe("classifySerpFormat: ordering", () => {
       "host:video",
       "host:forum",
       "host:commerce",
-      "host:news",
       "host:encyclopedia",
       "path:videos",
-      "path:watch",
       "path:reels",
       "path:compare",
       "path:vs",
-      "path:-vs-",
       "path:tools",
       "path:calculator",
       "path:forum",
       "path:community",
+      "path:product",
+      "path:products",
+      "path:pricing",
+      "title:leading_number",
+      "title:how_to",
+      "title:best",
+      "title:top_n",
       "path:blog",
       "path:guide",
       "path:learn",
-      "path:product",
-      "path:pricing",
-      "title:leading_number",
-      "title:best",
-      "title:top_n",
-      "title:vs",
-      "title:how_to",
       "title:what_is",
       "title:guide",
-      "title:meaning",
       "title:explained",
-      "title:dates",
+      "title:faq",
       "title:zh_what_is",
+      "title:zh_tutorial",
       "title:zh_how_to",
       "title:zh_dates",
       "title:zh_best",
       "title:calculator",
       "title:zh_calculator",
+      "title:dates",
+      "title:meaning",
+      "title:vs",
+      "path:-vs-",
       "path:-calculator",
       "path:-generator",
+      "host:news",
     ]);
   });
 });
@@ -684,5 +739,97 @@ describe("registrableLabel", () => {
   it("returns null when there is no registrable label", () => {
     expect(registrableLabel("localhost")).toBeNull();
     expect(registrableLabel("")).toBeNull();
+  });
+});
+
+describe("classifySerpFormat: host sets", () => {
+  it("reaches the sites a suffix set does not, and stops at the ones it should not", () => {
+    // A sweep over real search results found each of these rows unclassified
+    // or classified as the wrong thing. Every one is decided by a host set, so
+    // each case is a claim about the set and nothing else.
+    const cases: readonly [string, string, string, string][] = [
+      // Stack Exchange's siblings are their own registrable domains, so the
+      // stackexchange.com suffix never reached them.
+      ["superuser.com", "https://superuser.com/questions/tagged/regex", "Newest 'regex' Questions - Super User", "forum"],
+      ["forum.xda-developers.com", "https://forum.xda-developers.com/", "XDA Forums", "forum"],
+      // Only the forum subdomain of MacRumors, which also publishes news: a
+      // suffix entry would turn its reporting into forum threads.
+      ["forums.macrumors.com", "https://forums.macrumors.com/forums/", "Forums | MacRumors Forums", "forum"],
+      ["www.macrumors.com", "https://www.macrumors.com/2026/09/08/apple-event/", "Apple Announces September Event", "unknown"],
+      ["medlineplus.gov", "https://medlineplus.gov/ency/article/007196.htm", "Body mass index (BMI): MedlinePlus Medical Encyclopedia", "guide"],
+      ["www.bestbuy.com", "https://www.bestbuy.com/", "Best Buy | Official Online Store | Shop Now & Save", "product_page"],
+      ["www.homedepot.com", "https://www.homedepot.com/b/Tools/N-5yc1vZc1xy", "Tools - The Home Depot", "product_page"],
+      // The commerce set matches by suffix, so a shop's documentation was a
+      // shop. The exception is checked against that set alone.
+      ["aws.amazon.com", "https://aws.amazon.com/cn/what-is/api/", "什么是 API？ - API 详解 - AWS", "guide"],
+      ["docs.aws.amazon.com", "https://docs.aws.amazon.com/lambda/latest/dg/welcome.html", "What is AWS Lambda? - AWS Lambda", "guide"],
+      ["www.amazon.com", "https://www.amazon.com/dp/B08N5WRWNW", "Echo Dot (4th Gen)", "product_page"],
+      // No /watch/ rule: it reads as video only because YouTube uses that path,
+      // and YouTube is a video host already.
+      ["www.apple.com", "https://www.apple.com/watch/", "Apple Watch - Apple", "unknown"],
+      ["www.youtube.com", "https://www.youtube.com/watch?v=aircAruvnKk", "But what is a neural network? | Chapter 1", "video"],
+    ];
+    for (const [domain, url, title, expected] of cases) {
+      expect(classifySerpFormat({ domain, url, title }).value, title).toBe(expected);
+    }
+  });
+
+  it("reads a Chinese question asked either way round", () => {
+    // 什么是X is the ordinary phrasing and only the postposed X是什么 matched,
+    // so most Chinese explainers were unclassified. Word order still decides
+    // between an article about a calculator and the calculator itself.
+    const cases: readonly [string, string][] = [
+      ["什么是 API？ - API 详解 - AWS", "guide"],
+      ["什麼是上升星座", "guide"],
+      ["上升星座是什麼", "guide"],
+      ["什么是星盘计算器", "guide"],
+      ["星盤計算器是什麼", "tool"],
+    ];
+    for (const [title, expected] of cases) {
+      expect(classifySerpFormat({ domain: "x.example", url: "https://x.example/a", title }).value, title).toBe(expected);
+    }
+  });
+});
+
+describe("classifySerpFormat: a news host is a fallback, not a format", () => {
+  it("lets a title say what a news publisher published", () => {
+    // 67 headlines were fetched from these four hosts and labelled by what the
+    // page is. With the host deciding first, 18 were right; with it deciding
+    // last, 25. Every row below is one of those, verbatim.
+    const cases: readonly [string, string, string][] = [
+      ["https://www.bbc.com/sport/football/articles/c2k7w0k9ky9o", "Bundesliga: What is the 50+1 ownership rule? - BBC Sport", "guide"],
+      ["https://www.bbc.com/sport/formula1/articles/cg4gzvlnpx7o", "Formula 1: What is sandbagging in F1? - BBC Sport", "guide"],
+      ["https://www.bbc.com/travel/article/20260101-the-20-best-places-to-travel-in-2026", "The 20 best places to travel in 2026", "listicle"],
+      ["https://www.bbc.com/travel/article/20260401-how-to-shop-for-perfume-in-paris", "How to shop for perfume in Paris like a Parisian", "guide"],
+      // "vs" in a fight preview, and the page is a reference: the how-to-follow
+      // rule reaches it first, which is the right answer for the right reason.
+      ["https://www.bbc.com/sport/boxing/articles/cy0z5pej8dlo", "Ryan Garcia vs Conor Benn: Date, ringwalk, UK time, undercard, venue, records & how to follow on the BBC - BBC Sport", "guide"],
+    ];
+    for (const [url, title, expected] of cases) {
+      expect(classifySerpFormat({ domain: new URL(url).hostname, url, title }).value, title).toBe(expected);
+    }
+  });
+
+  it("still calls a report on a news host news, and pays for it once", () => {
+    const news: readonly [string, string][] = [
+      ["https://www.bbc.com/news/articles/c8jdev0422jo", "US-Canada tariffs: Canada braces for prolonged trade war as counter-tariffs on US take effect"],
+      ["https://www.bbc.com/news/articles/c780nlgyd79o", "Ukraine's chief prosecutor resigns over call centre corruption scandal"],
+      ["https://www.bbc.com/news/articles/czezydp4l97o", "Indonesia airports reopen after volcano eruption leaves 340,000 stranded"],
+      // A superlative and a number in a dated report; neither rule reads them.
+      ["https://www.bbc.com/news/articles/c5y5kn143d1o", "Singapore: Highest paid world leader Lawrence Wong to get salary increase of $1 million"],
+    ];
+    for (const [url, title] of news) {
+      expect(classifySerpFormat({ domain: new URL(url).hostname, url, title }).value, title).toBe("news");
+    }
+    // The one row of fifteen that the census says this costs: a dated report on
+    // drought damage whose headline is phrased as a how-to. It is recorded
+    // here because the trade was measured, not assumed.
+    expect(
+      classifySerpFormat({
+        domain: "www.bbc.com",
+        url: "https://www.bbc.com/news/articles/cddvy47d253o",
+        title: "Drought devastation: How to save London's parched trees",
+      }).value,
+    ).toBe("guide");
   });
 });
