@@ -134,16 +134,23 @@ const PAGE_TIMEOUT_MS = 8_000;
  * What the three machine-readable files cost, and why they are read here
  * rather than planned as operations of their own.
  *
- * **Crawl allowance: nothing.** `createGeoKnowledgeResourceReader` memoises its
- * admission per canonical host (the `admissions` map in
- * `kb-enrichment-deps.ts`): the first read of a host calls `openCrawlGate`, and
- * every later read from THAT SAME reader instance finds the host already in the
- * map and never calls the gate again. So the second, third and fourth reads
- * spend none of `CRAWL_TARGET_MAX` (4 per hour per target host, shared with the
- * Profile scan, seo-audit and internal-link-audit) and none of `CRAWL_IP_MAX`
- * (12 per hour per caller). They do not even hold the concurrency slot: the
- * first read released it in its own `finally`, because `release` is set only on
- * the call that opened the gate.
+ * **Crawl allowance: one admission for the operation, whoever spends it.**
+ * `createGeoKnowledgeResourceReader` memoises its admission per canonical host
+ * (the `admissions` map in `kb-enrichment-deps.ts`): the first read of a host
+ * calls `openCrawlGate`, and every later read from THAT SAME reader instance
+ * finds the host already in the map and never calls the gate again. So an
+ * operation that reads the page and all three files spends one admission, not
+ * four, of `CRAWL_TARGET_MAX` (4 per hour per target host, shared with the
+ * Profile scan, seo-audit and internal-link-audit) and of `CRAWL_IP_MAX` (12
+ * per hour per caller). The later reads do not even hold the concurrency slot:
+ * the first read released it in its own `finally`, because `release` is set
+ * only on the call that opened the gate.
+ *
+ * Which read is first is not fixed. When the page is fresh enough to reuse,
+ * the operation skips it and `robots.txt` opens the gate instead -- so an
+ * update whose page costs nothing still spends one admission on the three
+ * files, and can be refused. That is the price of the promise the button makes;
+ * the alternative, silently not reading them, is the defect this replaced.
  *
  * That guarantee is per reader instance, and `createGeoRunCollectRuntime`
  * builds one reader per operation. A separate `robots` operation would build a
@@ -152,10 +159,15 @@ const PAGE_TIMEOUT_MS = 8_000;
  * operation, same reader (built once below and passed around), no new ledger
  * operation kinds, and no migration.
  *
- * **Time: `MACHINE_BUDGET_MS` bounds the READS, and nothing else.** The
- * deadline is consulted before each read, so the three reads cost at most 6 s;
- * the ledger writes for whatever was read happen after their own read and are
- * not inside that budget. The own-page operation's worst case is therefore
+ * **Time: `MACHINE_BUDGET_MS` bounds the READS, and nothing else.** What is
+ * carried across the loop is time actually spent reading, so the three reads
+ * cost at most 6 s; the ledger writes for whatever was read happen after their
+ * own read and are not inside that budget. It was a single wall-clock deadline
+ * taken before the loop, which the awaited writes ate into -- a slow write
+ * after `robots` could leave nothing for `llms`, and the sentence you are
+ * reading was already making the promise the code did not keep.
+ *
+ * The own-page operation's worst case is therefore
  * 8 s of page + 6 s of machine reads + up to three ledger writes -- about
  * 14 s plus store latency, not a hard 14 s. Say it that way round: a bound
  * stated as if it covered the writes would be a number nobody can rely on.
@@ -559,20 +571,39 @@ function machineObservation(
 }
 
 /**
+ * The outcome of the machine-readable phase, as far as its caller must act on it.
+ *
+ * `rate_limited` is the one case the operation cannot absorb: nothing reached
+ * the site at all, so the three files this update promised are simply not
+ * there. Everything else is best-effort by design -- see the third rule below.
+ */
+type GeoMachineCollectionOutcome =
+  | { readonly kind: "collected" }
+  | { readonly kind: "rate_limited" };
+
+/**
  * Read and file the site's own robots.txt, sitemap.xml and llms.txt.
  *
- * Called with the reader the own page was just read through, so all of it
- * happens under one crawl-gate admission -- see `MACHINE_TIMEOUT_MS` above for
- * why that is true and what it is worth.
+ * Called with the reader for this operation, so all of it happens under one
+ * crawl-gate admission -- see `MACHINE_TIMEOUT_MS` above for why that is true
+ * and what it is worth.
  *
  * Three rules it holds:
  *
- *  - **A refused gate is never an observation**, exactly as for a page. It
- *    cannot happen after a page read that got through, because the admission
- *    is memoised; if it ever does, nothing is written.
+ *  - **A refused gate is never an observation**, exactly as for a page. This
+ *    used to be unreachable in practice: the page was always read first and
+ *    the admission is memoised, so by the time these ran the gate had already
+ *    said yes. It is reachable now. When the page is fresh enough to reuse,
+ *    these three reads are the whole operation, and the first of them is what
+ *    opens the gate -- so a refusal here is reported to the caller rather than
+ *    stepped over, because stepping over it would report an update that read
+ *    nothing as an update that succeeded.
  *  - **Out of time is not an observation either.** A resource the budget did
  *    not reach gets no row at all. A row would say we looked, and the absence
- *    of a row is the only shape this ledger has for "we did not".
+ *    of a row is the only shape this ledger has for "we did not". The budget
+ *    counts time spent reading and nothing else: a slow ledger write must not
+ *    be able to consume the allowance for the read after it, which is what a
+ *    single wall-clock deadline across the whole loop silently did.
  *  - **A row we cannot file changes nothing about the operation.** The page is
  *    what the operation is for; a failed side-write leaves no row, which reads
  *    downstream as unobserved -- never as absent.
@@ -584,8 +615,14 @@ async function recordMachineSignals(input: {
   readonly userId: string;
   readonly websiteId: string;
   readonly targetUrl: string;
-}): Promise<void> {
-  const deadline = input.now().getTime() + MACHINE_BUDGET_MS;
+  /**
+   * True when a read of this host has already got through on this reader, which
+   * is what makes the ambiguity below decidable.
+   */
+  readonly gateAlreadyOpen: boolean;
+}): Promise<GeoMachineCollectionOutcome> {
+  let readMsSpent = 0;
+  let gateOpen = input.gateAlreadyOpen;
   for (const resource of MACHINE_RESOURCES) {
     let url: string;
     try {
@@ -593,8 +630,9 @@ async function recordMachineSignals(input: {
     } catch {
       continue;
     }
-    const remainingMs = deadline - input.now().getTime();
+    const remainingMs = MACHINE_BUDGET_MS - readMsSpent;
     if (remainingMs <= 0) break;
+    const readStartedAt = input.now().getTime();
     const read = await input
       .read({
         url,
@@ -602,10 +640,32 @@ async function recordMachineSignals(input: {
         timeoutMs: Math.min(MACHINE_TIMEOUT_MS, remainingMs),
       })
       .catch(() => null);
+    readMsSpent += Math.max(0, input.now().getTime() - readStartedAt);
     if (read === null) continue;
     let status: GeoEvidenceObservationAppend["status"];
     if (read.kind !== "ok") {
-      if (read.reason === "rate_limited") continue;
+      if (read.reason === "rate_limited") {
+        /*
+         * `rate_limited` names two different events. Our own crawl gate
+         * refusing admission (`kb-enrichment-deps.ts:45`) and the site itself
+         * answering 429 (`:81`) arrive here as the same value, and the
+         * difference decides whether the next two files are worth trying: a
+         * refused gate will refuse them too, a site's 429 on one path says
+         * nothing about another.
+         *
+         * What separates them is whether anything has got through yet. Nothing
+         * has when the page was reused and this is the first read, and then a
+         * refusal is the whole operation -- reported, not stepped over, because
+         * stepping over it would file an update that read nothing as an update
+         * that succeeded. Once any read has reached the site the admission is
+         * memoised, so this is the site talking, and it is one file's problem.
+         */
+        if (!gateOpen) return { kind: "rate_limited" };
+        continue;
+      }
+      // Reached the host and came back with something, refusal aside: the
+      // admission exists, whatever the answer was.
+      gateOpen = true;
       status = { kind: "unavailable", reason: storableReason(read.reason) };
     } else if (!machineResourceAnsweredRequest(url, read.url) || !machineContentTypeMatches(resource.kind, read.contentType)) {
       /**
@@ -618,8 +678,10 @@ async function recordMachineSignals(input: {
        * in `kb-knowledge-evidence.ts` admits a machine resource on exactly
        * these two tests; copying only the first was a hole.
        */
+      gateOpen = true;
       status = { kind: "unavailable", reason: "invalid_response" };
     } else {
+      gateOpen = true;
       const observed = machineObservation(resource.kind, read.body);
       status =
         observed.kind === "ok"
@@ -643,6 +705,7 @@ async function recordMachineSignals(input: {
       })
       .catch(() => undefined);
   }
+  return { kind: "collected" };
 }
 
 function targetsFor(
@@ -778,17 +841,53 @@ export function createGeoRunCollectRuntime(
     const entry = plan.entries[0];
     if (entry === undefined)
       return { kind: "failed_permanent", reason: "not_found" };
-    // Fresh enough: the library already holds this observation, so the
-    // operation is done without a request leaving this process.
-    if (entry.decision === "reuse" && entry.reused !== null) {
-      return { kind: "succeeded", resultRef: entry.reused.observationId };
+    const reusedPage = entry.decision === "reuse" ? entry.reused : null;
+    // A competitor page is the whole of its operation -- a rival's robots.txt
+    // answers no question the owner's card asks -- so a fresh one finishes here
+    // without a request leaving this process.
+    if (reusedPage !== null && target.scope !== "own") {
+      return { kind: "succeeded", resultRef: reusedPage.observationId };
     }
 
-    // One reader for the whole operation. The own-page read below opens this
-    // host's crawl gate; the machine-readable files at the end reuse that same
-    // admission because they go through this same instance. Re-creating it per
-    // read would spend the hourly allowance once per file.
+    // One reader for the whole operation. Whichever read comes first opens this
+    // host's crawl gate, and every later read through THIS instance rides that
+    // same admission. Re-creating it per read would spend the hourly allowance
+    // once per file.
     const reader = sources.createReader(context.userId);
+
+    /*
+     * A reused own page does not finish the operation.
+     *
+     * "Every update reads your robots.txt, sitemap.xml and llms.txt" is what
+     * this product tells the owner above the button; the page and the
+     * competitor pages are the parts that get a day of reuse. Returning here on
+     * a fresh page -- which is what this did -- meant those three were read
+     * only on the runs where the page happened to be stale. On 2026-09-09 that
+     * pinned one site's robots.txt, sitemap.xml and llms.txt to a single 09:58
+     * reading for the rest of the day: three later updates re-filed the same
+     * verdict without sending a request, and a fix that shipped for exactly
+     * those three reads never once executed.
+     *
+     * The page's own row is still the operation's result. Nothing about it was
+     * re-read, and its `resultRef` is the row that stood before this run.
+     */
+    if (reusedPage !== null) {
+      const machine = await recordMachineSignals({
+        read: reader,
+        record: sources.recordObservation,
+        now: sources.now,
+        userId: context.userId,
+        websiteId,
+        targetUrl: target.url,
+        // Nothing has been read on this reader, so the first of the three
+        // files is what asks the gate.
+        gateAlreadyOpen: false,
+      });
+      if (machine.kind === "rate_limited")
+        return { kind: "failed_retryable", reason: "rate_limited" };
+      return { kind: "succeeded", resultRef: reusedPage.observationId };
+    }
+
     const read = await reader({
       url: target.url,
       expected: "html",
@@ -845,14 +944,21 @@ export function createGeoRunCollectRuntime(
        * allowance.
        */
       if (target.scope === "own") {
-        await recordMachineSignals({
+        const machine = await recordMachineSignals({
           read: reader,
           record: sources.recordObservation,
           now: sources.now,
           userId: context.userId,
           websiteId,
           targetUrl: target.url,
+          // The page read above got through, so the admission is already
+          // memoised and a `rate_limited` here is the site, not the gate.
+          gateAlreadyOpen: true,
         });
+        // Unreachable while that holds. Kept because the branch above decides
+        // it from state rather than from where it was called.
+        if (machine.kind === "rate_limited")
+          return { kind: "failed_retryable", reason: "rate_limited" };
       }
       return { kind: "succeeded", resultRef: written.value.observationId };
     }
