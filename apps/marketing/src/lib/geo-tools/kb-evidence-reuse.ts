@@ -144,7 +144,23 @@ export function planGeoEvidenceReuse(input: {
     }
     requested.add(key);
     const observation = latest.get(key) ?? null;
-    if (observation !== null && isObservationFresh(observation, input.now, ttlOf(target.kind))) {
+    /*
+     * Two questions, and freshness only answers the first.
+     *
+     * "Have we looked recently" is time, and `isObservationFresh` is the whole
+     * of it. "Do we have anything" is the outcome, and a reading that
+     * established nothing answers no -- it is a record that an attempt was
+     * made, not evidence about the site. Reusing one serves the failure for
+     * the rest of its TTL: on 2026-09-09 a redirect bug made four resources
+     * `unavailable`, the fix shipped twenty minutes later, and the next run
+     * fetched nothing at all and failed identically, because those rows were
+     * still fresh. A whole day of retries would have done the same.
+     *
+     * The failed row is not discarded. It rides along as `superseded`, which
+     * is what the previous attempt found and what this run replaces.
+     */
+    const usable = observation !== null && observation.status.kind === "ok";
+    if (usable && isObservationFresh(observation, input.now, ttlOf(target.kind))) {
       entries.push({ target, decision: "reuse", reused: observation, superseded: null, opensGate: false });
       continue;
     }

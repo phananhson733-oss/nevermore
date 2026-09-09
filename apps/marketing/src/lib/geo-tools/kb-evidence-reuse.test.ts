@@ -35,6 +35,29 @@ function observed(
   });
 }
 
+function unavailable(
+  url: string,
+  observedAt: string,
+  reason = "blocked",
+  kind: GeoEvidenceObservation["kind"] = "own_page",
+): GeoEvidenceObservation {
+  nextId += 1;
+  return parseGeoEvidenceObservation({
+    schemaVersion: "marketing-website-evidence-observation.v1",
+    observationId: `44444444-4444-4444-8444-${String(nextId).padStart(12, "0")}`,
+    websiteId: WEBSITE_ID,
+    kind,
+    url,
+    observedAt,
+    status: "unavailable",
+    statusReason: reason,
+    bodyHash: null,
+    excerpts: [],
+    structured: {},
+    independence: kind === "third_party" ? "undetermined" : null,
+  });
+}
+
 function ownPage(path: string): GeoEvidenceTarget {
   return { kind: "own_page", url: `https://acme.test${path}`, gateKey: "acme.test" };
 }
@@ -149,6 +172,46 @@ describe("evidence reuse planning", () => {
       now: NOW,
     });
     expect(plan.entries[0]).toMatchObject({ decision: "fetch" });
+  });
+
+  it("re-fetches after a failed reading rather than serving the failure for a day", () => {
+    // A reading that established nothing is not a reading. On 2026-09-09 a
+    // redirect bug made four resources unavailable; the fix shipped minutes
+    // later and changed nothing, because a fresh `unavailable` row suppressed
+    // every fetch for the rest of its 24h TTL. Freshness answers "have we
+    // looked recently"; it cannot answer "do we have anything", and only the
+    // second question decides whether a fetch is worth spending.
+    const failed = unavailable("https://acme.test/", FRESH);
+    const plan = planGeoEvidenceReuse({ targets: [ownPage("/")], observations: [failed], now: NOW });
+    expect(plan.entries[0]).toMatchObject({ decision: "fetch", reused: null, opensGate: true });
+    // Kept, not discarded: it is what the previous attempt found, and the
+    // caller reports it as the reading this run replaces.
+    expect(plan.entries[0]?.superseded?.observedAt).toBe(FRESH);
+    expect(plan).toMatchObject({ reuseCount: 0, fetchCount: 1 });
+  });
+
+  it("still reuses a successful reading that is newer than a failed one", () => {
+    // Order is decided by time, not by outcome: the newest reading is the one
+    // that answers, and a success that came after a failure is still current.
+    const plan = planGeoEvidenceReuse({
+      targets: [ownPage("/")],
+      observations: [unavailable("https://acme.test/", "2026-09-07T05:00:00.000Z"), observed("https://acme.test/", FRESH)],
+      now: NOW,
+    });
+    expect(plan.entries[0]).toMatchObject({ decision: "reuse", opensGate: false });
+    expect(plan.entries[0]?.reused?.observedAt).toBe(FRESH);
+  });
+
+  it("re-fetches when the newest reading failed even though an older one succeeded", () => {
+    // The mirror of the case above, and the one that matters after an outage:
+    // yesterday's success does not describe the site the run is asking about.
+    const plan = planGeoEvidenceReuse({
+      targets: [ownPage("/")],
+      observations: [observed("https://acme.test/", "2026-09-07T05:00:00.000Z"), unavailable("https://acme.test/", FRESH)],
+      now: NOW,
+    });
+    expect(plan.entries[0]).toMatchObject({ decision: "fetch", reused: null });
+    expect(plan.entries[0]?.superseded?.observedAt).toBe(FRESH);
   });
 
   it("honours an injected TTL", () => {
