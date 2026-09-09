@@ -226,6 +226,31 @@ export type GeoKnowledgeStoredList =
   | { readonly kind: "not_stored" }
   | { readonly kind: "unreadable" };
 
+/**
+ * The robots.txt a row proves it read IN FULL, or null.
+ *
+ * The assembler answers "may GPTBot crawl this site" by parsing rules, and its
+ * only protection against answering from half a file is that a full excerpt
+ * sample (eight lines, the ledger's cap) is treated as possibly truncated. Every
+ * real robots.txt has more than eight lines, so that protection fired for every
+ * site and no owner was ever told anything about AI crawler permissions.
+ *
+ * `robotsRules` is the producer's answer: written only when the whole file fit
+ * the ledger, absent otherwise. Absent here means the excerpt fallback stands
+ * and the assembler keeps saying the file was not read in full -- which is
+ * still true for those rows, and true for every row written before this key
+ * existed.
+ */
+export function creditGeoKnowledgeObservedRobots(
+  observation: GeoEvidenceObservation | null,
+): { readonly text: string } | null {
+  if (observation === null || observation.status.kind !== "ok") return null;
+  const rules = observation.status.structured.robotsRules;
+  if (!Array.isArray(rules) || rules.length === 0) return null;
+  if (!rules.every((rule) => typeof rule === "string" && usableSourceText(rule, 400))) return null;
+  return { text: (rules as readonly string[]).join("\n") };
+}
+
 /** The alternates a row stored, complete enough for the contract's page shape. */
 export type GeoKnowledgeStoredHreflang =
   | { readonly kind: "stored"; readonly values: readonly { readonly locale: string; readonly url: string }[] }

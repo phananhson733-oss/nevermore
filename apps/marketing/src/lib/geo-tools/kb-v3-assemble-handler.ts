@@ -97,6 +97,7 @@ import {
 import {
   creditGeoKnowledgeObservation,
   creditGeoKnowledgeObservedPage,
+  creditGeoKnowledgeObservedRobots,
   creditGeoKnowledgeObservedStructure,
   type GeoKnowledgeRebuiltPage,
   type GeoKnowledgeObservedStructure,
@@ -475,6 +476,43 @@ interface GeoObservedAssembly {
  * and sources it is handed and throws when they disagree, so it is the arbiter
  * of that second pass rather than this code.
  */
+/**
+ * The robots.txt this run proved it read in full, for either assembly branch.
+ *
+ * The narrative branch has an evidence bundle the paid step built and no reason
+ * to touch the ledger -- except this one: the bundle carries the robots SOURCE
+ * (a receipt, and an eight-line sample), never the file. Without the row's own
+ * `robotsRules` the assembler must treat that sample as truncated, and every
+ * owner is told their AI crawler permissions were not determined.
+ *
+ * Addressed exactly as the collection plan addresses it, for the reason spelled
+ * out in `GEO_MACHINE_RESOURCES`: the ledger is keyed by `(kind, url)` and an
+ * address derived a second way finds no row.
+ */
+async function readObservedRobots(
+  dependencies: GeoKbV3AssembleDependencies,
+  scope: { readonly userId: string },
+  generationInput: GeoKbPayloadV3["generationInput"],
+): Promise<{ readonly text: string } | null> {
+  const library = dependencies.observations;
+  if (library === undefined) return null;
+  const own = planGeoRunCollection({
+    targetUrl: generationInput.identity.targetUrl,
+    competitors: generationInput.competitors
+      .filter((competitor) => competitor.confirmed)
+      .map((competitor) => ({ domain: competitor.domain, confirmed: true })),
+  }).find((target) => target.kind === "own_page");
+  if (own === undefined) return null;
+  const website = await library
+    .resolveWebsiteId({ userId: scope.userId, targetUrl: own.url })
+    .catch(() => ({ kind: "unavailable" as const }));
+  if (website.kind !== "ok") return null;
+  const read = await library
+    .readLatestObservation({ userId: scope.userId, websiteId: website.websiteId, kind: "robots", url: new URL("/robots.txt", own.url).toString() })
+    .catch(() => ({ kind: "unavailable" as const }));
+  return read.kind === "ok" ? creditGeoKnowledgeObservedRobots(read.value) : null;
+}
+
 async function geoObservedAssemblyInput(
   dependencies: GeoKbV3AssembleDependencies,
   scope: { readonly userId: string; readonly kbId: string },
@@ -569,6 +607,8 @@ async function geoObservedAssemblyInput(
   const machineUnavailable = new Map<string, GeoKnowledgeUnavailableReason>();
   /** The sitemap's own count of itself, as the run recorded it: a string, and a total. */
   let sitemapUrlCount: string | null = null;
+  /** The robots.txt the run proved it read in full, or null for a sampled one. */
+  let robots: { readonly text: string } | null = null;
   let machineObserved = true;
   for (const resource of GEO_MACHINE_RESOURCES) {
     const url = new URL(resource.path, targetUrl).toString();
@@ -592,6 +632,10 @@ async function geoObservedAssemblyInput(
       const total = read.value.status.structured.sitemapUrlCount;
       sitemapUrlCount = typeof total === "string" ? total : null;
     }
+    // The whole robots.txt, when the run proved it read one. Without it the
+    // assembler answers every AI-crawler question from an eight-line sample it
+    // must treat as truncated, which is to say it answers none of them.
+    if (resource.kind === "robots" && read.kind === "ok") robots = creditGeoKnowledgeObservedRobots(read.value);
     reusedSources.push(credit.source);
     noteObserved(credit.source.observedAt);
   }
@@ -743,7 +787,7 @@ async function geoObservedAssemblyInput(
        * `GEO_NARRATIVE_FAILURE_REASONS` that says so without inventing a cause.
        */
       narrativeFailureReason: "generation_unavailable",
-      robots: null,
+      robots,
       snippetsBlocked: null,
     },
   };
@@ -871,7 +915,7 @@ export async function handleGeoKbV3Assemble(
         synthesisInput: result.synthesisInput,
         narrative: result.narrative,
         narrativeFailureReason: null,
-        robots: null,
+        robots: await readObservedRobots(dependencies, scope, stored.generationInput),
         snippetsBlocked: null,
       };
     } else {

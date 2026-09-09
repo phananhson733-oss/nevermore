@@ -575,9 +575,38 @@ function machineObservation(
       .filter((line) => line !== "");
     // A file served with nothing in it publishes no rules. Same answer the
     // evidence collector gives, and the one case where "absent" is the truth.
-    return lines.length === 0
-      ? { kind: "unavailable", reason: "not_published" }
-      : { kind: "ok", excerpts: boundedExcerpts(lines), structured: {} };
+    if (lines.length === 0) return { kind: "unavailable", reason: "not_published" };
+    /*
+     * robots.txt is PARSED downstream, not quoted, and excerpts are capped at
+     * eight -- so every real robots.txt looked truncated and the assembler,
+     * correctly refusing to answer a permission question from a partial file,
+     * reported "AI crawler permissions were not determined" for every site
+     * there has ever been. `robotsRules` is the whole file, and it exists for
+     * exactly this; it had a schema and a 256-rule cap and no producer.
+     *
+     * Stored only when it is provably COMPLETE. A file over the cap, or one
+     * carrying a line the ledger will not take, stores nothing here: the
+     * assembler then falls back to the excerpt sample and says it was not read
+     * in full, which is true. Half a robots.txt published as a permission is
+     * the failure this whole path exists to avoid.
+     */
+    if (kind === "robots") {
+      const rules = storableList(lines, 400, GEO_EVIDENCE_OBSERVATION_LIMITS.robotsRules);
+      /*
+       * Complete AND storable. 256 rules of 400 characters is 102 KiB, well
+       * over the column's `octet_length(structured::text) <= 65536` check, and
+       * a row that fails it comes back `invalid` -- reported as a permanent
+       * failure of a fetch this operation has already paid for. Measured with
+       * the same function that check measures, and dropped whole rather than
+       * trimmed, because a trimmed robots.txt is the partial file this refuses.
+       */
+      const structured = { robotsRules: [...rules] };
+      const fits = (() => { try { return geoV2JsonbBytes(structured) <= STRUCTURED_BUDGET_BYTES; } catch { return false; } })();
+      if (rules.length === lines.length && fits) {
+        return { kind: "ok", excerpts: boundedExcerpts(lines), structured };
+      }
+    }
+    return { kind: "ok", excerpts: boundedExcerpts(lines), structured: {} };
   }
   if (body.trim() === "")
     return { kind: "unavailable", reason: "not_published" };

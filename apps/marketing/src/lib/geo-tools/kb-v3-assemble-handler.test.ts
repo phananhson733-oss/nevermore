@@ -1372,6 +1372,55 @@ describe("assembling the deterministic half from the collection alone", () => {
     expect(knowledge.machine).toEqual({ status: "unavailable", reason: "not_collected" });
   });
 
+  /**
+   * The production defect of 2026-09-09: EVERY owner was told "AI crawler
+   * permissions were not determined: robots.txt was not read in full".
+   *
+   * The ledger caps excerpts at eight and the assembler correctly refuses to
+   * answer a permission question from a sample it must assume is truncated --
+   * and every real robots.txt has more than eight lines. astrologywiki.com's
+   * has fifty. `robotsRules` existed for exactly this, with a schema and a
+   * 256-rule cap, and had no producer at all.
+   */
+  it("answers crawler permissions from the whole robots.txt the run stored", async () => {
+    const rules = [
+      "User-agent: *", "Allow: /", "Allow: /wiki", "Allow: /wiki/classics",
+      "Allow: /privacy", "Allow: /terms", "Allow: /cookies", "Allow: /about",
+      "User-agent: GPTBot", "Disallow: /",
+    ];
+    const harness = observedWithMachine({
+      robots: { kind: "ok", bodyHash: "1".repeat(64), structured: { robotsRules: rules },
+        excerpts: rules.slice(0, 8) },
+    });
+    const { response } = await assemble(harness);
+
+    expect(response.status).toBe(200);
+    const knowledge = harness.saveDraft.mock.calls[0]![0]!.payload.knowledge!;
+    const machine = knowledge.machine.status === "unavailable" ? null : knowledge.machine.value;
+    // Read past the eighth line: the GPTBot group is the ninth and tenth.
+    const gptbot = machine!.aiCrawlers.training.concat(machine!.aiCrawlers.search)
+      .find((row) => row.agent === "GPTBot");
+    expect(gptbot?.access).toBe("disallowed");
+    expect(machine!.aiCrawlers.search.some((row) => row.access === "allowed")).toBe(true);
+  });
+
+  it("still says nothing about crawlers when the run kept only a sample", async () => {
+    // A row from before `robotsRules` had a producer, or one whose file the
+    // ledger could not take whole. Eight excerpts and no rules is exactly the
+    // truncated sample the refusal exists for, and it must keep refusing.
+    const harness = observedWithMachine({
+      robots: { kind: "ok", bodyHash: "1".repeat(64), structured: {},
+        excerpts: ["User-agent: *", "Allow: /", "Allow: /a", "Allow: /b", "Allow: /c", "Allow: /d", "Allow: /e", "Allow: /f"] },
+    });
+    const { response } = await assemble(harness);
+
+    expect(response.status).toBe(200);
+    const knowledge = harness.saveDraft.mock.calls[0]![0]!.payload.knowledge!;
+    const machine = knowledge.machine.status === "unavailable" ? null : knowledge.machine.value;
+    expect(machine!.aiCrawlers.search).toEqual([]);
+    expect(machine!.aiCrawlers.training).toEqual([]);
+  });
+
   it("keeps the deterministic half for a page with more FAQ pairs than the shape carries", async () => {
     /**
      * The bundle's page shape holds 32 FAQ pairs. Handing it more makes
