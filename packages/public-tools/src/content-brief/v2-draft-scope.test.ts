@@ -135,11 +135,19 @@ describe("Draft v2 exact section scope", () => {
     expect(result.value.allowed_h3).not.toBe(confirmed.outline[0]!.h3);
     expect(result.value.questions.map((question) => question.id)).toEqual(["Q1", "Q4"]);
     expect(result.value.question_unit_refs).toEqual(["U1", "U3", "U10", "U2"]);
-    expect([...result.value.page_units]).toEqual([
+    // The confirmed question-to-source mapping stays exactly as the brief froze it,
+    // and its units still lead the scope; the rest of the crawled corpus follows.
+    expect([...result.value.page_units].slice(0, 3)).toEqual([
       ["U1", { page_ref: "C1", final_url: "https://competitor.test/C1" }],
       ["U3", { page_ref: "T1", final_url: "https://owned.test/T1" }],
       ["U2", { page_ref: "C2", final_url: "https://competitor.test/C2" }],
     ]);
+    // The rest of C1/T1/C2 follows. U4 belongs to T2, which no question sourced,
+    // so a page the brief did not attach to this section still never enters it.
+    expect([...result.value.page_units.keys()]).toEqual(["U1", "U3", "U2", "U5", "U6", "U7", "U8", "U9"]);
+    expect(result.value.page_units.has("U4")).toBe(false);
+    // PAA units are questions, never page evidence, however wide the scope gets.
+    expect([...result.value.page_units.keys()]).not.toContain("U10");
     expect(result.value).toMatchObject({ action: "create", target_ref: null, target_page: null, steps: [], gap_angle: null });
   });
 
@@ -150,6 +158,8 @@ describe("Draft v2 exact section scope", () => {
     expect(result.value.questions).toMatchObject([{ id: "Q3", source_refs: ["U11"], covered_by: 0, paa_refs: ["A2"] }]);
     expect(result.value.question_unit_refs).toEqual(["U11"]);
     expect(result.value).toMatchObject({ allowed_h3: [] });
+    // No question sourced a page here, so the widened scope has nothing to widen
+    // from: a PAA-only section still materializes no page evidence at all.
     expect(result.value.page_units.size).toBe(0);
     expect(validateDraftV2Section({ paragraphs: [{ sentences: [{ text: "A supported reporting fact.", claim: "bound", evidence_refs: ["U11"] }] }] }, result.value, "en").ok).toBe(false);
   });
@@ -162,7 +172,9 @@ describe("Draft v2 exact section scope", () => {
     expect(result.value.action).toBe("update");
     expect(result.value.target_ref).toBe("T1");
     expect(result.value.target_page).toEqual(confirmed.brief.context.research.pages.find((item) => item.id === "T1"));
-    expect([...result.value.page_units.keys()].sort()).toEqual(["U1", "U2", "U3", "U7", "U8", "U9"]);
+    // Every target-page unit (U3/U7/U9 on T1) and every applicable step source stays mandatory.
+    expect([...result.value.page_units.keys()].slice(0, 6)).toEqual(["U1", "U3", "U2", "U7", "U9", "U8"]);
+    expect(["U3", "U7", "U9"].every((ref) => result.value.page_units.has(ref))).toBe(true);
     expect(result.value.steps.map((step) => step.instruction)).toEqual(confirmed.brief.generated!.page_plan.steps.slice(0, 3).map((step) => step.instruction));
     expect(result.value.steps[2]?.answers).toEqual(["Q1"]);
     expect(result.value.question_unit_refs).toEqual(["U1", "U3", "U10", "U2"]);
@@ -172,7 +184,8 @@ describe("Draft v2 exact section scope", () => {
     const result = buildDraftV2SectionScope(await fixture({ action: "update" }), "O3", settings);
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.path);
-    expect([...result.value.page_units.keys()]).toEqual(["U3", "U7", "U9"]);
+    // The frozen target snapshot still leads; the expansion never reorders it.
+    expect([...result.value.page_units.keys()].slice(0, 3)).toEqual(["U3", "U7", "U9"]);
     expect(result.value.steps.map((step) => step.kind)).toEqual(["keep", "rewrite"]);
   });
 
