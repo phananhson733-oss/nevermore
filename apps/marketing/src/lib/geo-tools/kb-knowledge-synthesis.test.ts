@@ -14,6 +14,7 @@ import {
   GEO_KNOWLEDGE_SYNTHESIS_LIMITS,
   geoKnowledgeSynthesisInputDigest,
   geoKnowledgeSynthesisSourceCatalogueDigest,
+  parseGeoKnowledgeNarrativeV1,
 } from "./kb-knowledge-synthesis-contract.ts";
 import { buildGeoKnowledgeEvidenceV1 } from "./kb-knowledge-evidence.ts";
 import {
@@ -407,11 +408,13 @@ describe("evidence-bound GEO knowledge synthesis", () => {
     assertEveryFreeStringIsBounded(root);
     expect(propertySchemas(root, "sourceRefs")).not.toHaveLength(0);
     for (const refs of propertySchemas(root, "sourceRefs")) {
+      // No `uniqueItems`: Structured Outputs refuses the keyword and with it the
+      // whole request. Uniqueness is the contract's job -- see the dedicated
+      // assertion below and `refine(unique, "Duplicate source reference")`.
       expect(refs).toEqual({
         type: "array",
         minItems: 1,
         maxItems: GEO_KNOWLEDGE_SYNTHESIS_LIMITS.sourceRefs,
-        uniqueItems: true,
         items: id,
       });
     }
@@ -446,7 +449,6 @@ describe("evidence-bound GEO knowledge synthesis", () => {
       type: "array",
       minItems: 0,
       maxItems: GEO_KNOWLEDGE_SYNTHESIS_LIMITS.variants,
-      uniqueItems: true,
       items: { type: "string", minLength: 1, maxLength: 800 },
     });
     expect(qa.properties.expansion).toEqual({
@@ -514,7 +516,14 @@ describe("evidence-bound GEO knowledge synthesis", () => {
     });
   });
 
-  it("requires at least one bounded scope statement in the provider schema", () => {
+  // This assertion used to require the opposite: four `anyOf` branches on
+  // `scope`, each naming one group with `minItems: 1`. That encoding pinned a
+  // defect. Structured Outputs treats every `anyOf` branch as a schema in its
+  // own right and rejects one that lacks a `type` and
+  // `additionalProperties: false` -- so the request was refused before the
+  // model ever saw it, and the test proved the refusal was intentional.
+  // "At least one statement" now lives only where it is actually enforceable.
+  it("bounds every scope group in the provider schema and leaves emptiness to the contract", () => {
     const root = GEO_KNOWLEDGE_SYNTHESIS_RESPONSE_JSON_SCHEMA.schema as any;
     const scope = root.properties.scope;
     const groups = ["does", "doesNot", "needsHuman", "misconceptions"];
@@ -531,10 +540,16 @@ describe("evidence-bound GEO knowledge synthesis", () => {
         maxItems: GEO_KNOWLEDGE_SYNTHESIS_LIMITS.scopeItems,
       });
     }
-    expect(scope.anyOf).toHaveLength(groups.length);
-    expect(scope.anyOf.map((branch: any) => branch.properties)).toEqual(
-      groups.map((group) => ({ [group]: { minItems: 1 } })),
-    );
+    expect(scope.anyOf).toBeUndefined();
+    expect(() =>
+      parseGeoKnowledgeNarrativeV1(
+        {
+          ...narrative(),
+          scope: { does: [], doesNot: [], needsHuman: [], misconceptions: [] },
+        },
+        input(),
+      ),
+    ).toThrow(/Scope cannot be empty/);
   });
 
   it("returns a detached secret-free preflight with exact provider metadata", () => {
@@ -622,7 +637,6 @@ describe("evidence-bound GEO knowledge synthesis", () => {
                 },
               },
             },
-            scope: { anyOf: expect.any(Array) },
           },
         },
       },

@@ -90,6 +90,13 @@ describe("GEO knowledge synthesis contracts", () => {
     ["overlong CJK definition", (value: any) => { value.entity.definitions.w25 = "字".repeat(GEO_KNOWLEDGE_SYNTHESIS_LIMITS.definitionCodePoints.w25 + 1); }],
     ["lone surrogate", (value: any) => { value.facts[0].statement = "Pine\ud800"; }],
     ["duplicate source refs", (value: any) => { value.facts[0].sourceRefs = ["source:own", "source:own"]; }],
+    // The three rows below are the only enforcement of invariants the provider
+    // schema used to duplicate. `uniqueItems` and the `scope` `anyOf` branches
+    // were removed from it because strict Structured Outputs refuses both and
+    // rejects the whole request; see provider-json-schema-strict.test.ts.
+    ["an entirely empty scope", (value: any) => { value.scope = { does: [], doesNot: [], needsHuman: [], misconceptions: [] }; }],
+    ["duplicate question variants", (value: any) => { value.qa[0].variants = ["Is it for two?", "Is it for two?"]; }],
+    ["duplicate entity source refs", (value: any) => { value.entity.sourceRefs = ["source:own", "source:own"]; }],
   ])("rejects %s", (_label, mutate) => {
     const value = narrative(); mutate(value);
     expect(() => parseGeoKnowledgeNarrativeV1(value, input())).toThrow();

@@ -24,6 +24,7 @@ export const GEO_KNOWLEDGE_SYNTHESIS_SYSTEM_PROMPT = [
   "If evidence does not support a nullable value, return null. If evidence does not support an item in a collection, omit that item and use an empty array rather than guessing.",
   "Definitions must be at most 25, 55, and 120 words respectively. Do not place URLs or bare domains in generated narrative text.",
   "Bounds: facts 0..64; Q&A items 0..32; variants per Q&A 0..8; comparisons 0..5; rows per comparison 1..16; each sourceRefs list 1..16; each scope list 0..24.",
+  "The four scope lists may each be empty, but not all four at once: at least one does, doesNot, needsHuman, or misconceptions statement is required. Lists must not repeat an entry, and no sourceRefs list may name the same source twice.",
   "Use the exact schemaVersion marketing-geo-knowledge-narrative.v1 and exactly the fields required by the response schema. Do not add metadata, evidence timestamps, hashes, review status, or observations.",
   "Return JSON only. Do not use Markdown, prose outside JSON, comments, or code fences.",
 ].join("\n");

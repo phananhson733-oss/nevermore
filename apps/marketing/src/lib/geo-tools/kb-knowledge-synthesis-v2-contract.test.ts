@@ -692,10 +692,10 @@ describe("GEO knowledge synthesis v2 catalogue budget", () => {
     };
     const storageOnly = { ...storageOnlyBody, contentHash: geoKnowledgeSynthesisInputV2Digest(storageOnlyBody) };
     expect((storageOnly.sourceCatalogue as readonly any[])[0]!.excerpts).toHaveLength(2);
-    // A request 63 445 bytes past the ceiling: refused as `input_too_large`,
+    // A request 63 641 bytes past the ceiling: refused as `input_too_large`,
     // and the owner of that site got no knowledge base at all.
-    expect(requestBytes(storageOnly)).toBe(194_948);
-    expect(requestBytes(storageOnly) - GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES).toBe(63_876);
+    expect(requestBytes(storageOnly)).toBe(194_713);
+    expect(requestBytes(storageOnly) - GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES).toBe(63_641);
     expect(prepareGeoKnowledgeSynthesisV2(storageOnly, LLM_CONFIG)).toMatchObject({
       ok: false, reason: "input_too_large", attemptedCalls: 0,
     });
@@ -705,7 +705,7 @@ describe("GEO knowledge synthesis v2 catalogue budget", () => {
     expect(projection.excerptCap).toBe(1);
     expect(projection.fits).toBe(true);
     expect(projection.catalogue.map((entry) => entry.id)).toEqual(sources.map((entry) => entry.id));
-    expect(requestBytes(value)).toBe(109_240);
+    expect(requestBytes(value)).toBe(109_005);
     expect(prepareGeoKnowledgeSynthesisV2(value, LLM_CONFIG)).toMatchObject({ ok: true });
   });
 
@@ -727,18 +727,18 @@ describe("GEO knowledge synthesis v2 catalogue budget", () => {
     expect(projection.promptBudgetBytes).toBe(84_539);
     expect(projection.cataloguePromptBytes).toBeGreaterThan(projection.promptBudgetBytes);
     expect(projection.fits).toBe(false);
-    // And the adapter agrees with the half that refused: 7 916 bytes over.
-    expect(requestBytes(value) - GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES).toBe(8_347);
+    // And the adapter agrees with the half that refused: 8 112 bytes over.
+    expect(requestBytes(value) - GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES).toBe(8_112);
     expect(prepareGeoKnowledgeSynthesisV2(value, LLM_CONFIG)).toMatchObject({
       ok: false, reason: "input_too_large", attemptedCalls: 0,
     });
 
-    // One list entry lighter and the same catalogue is bought, with 2 184 bytes
+    // One list entry lighter and the same catalogue is bought, with 1 988 bytes
     // to spare -- so this is a boundary the budget tracks, not a blanket
     // refusal of quote-dense evidence.
     const lighter = synthesisInputWith(heavyProfileRef(8), evidenceValue);
     expect(projectGeoKnowledgeSynthesisV2Catalogue(evidenceValue.sourceCatalogue as never, lighter).fits).toBe(true);
-    expect(GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES - requestBytes(lighter)).toBe(1_753);
+    expect(GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES - requestBytes(lighter)).toBe(1_988);
     expect(prepareGeoKnowledgeSynthesisV2(lighter, LLM_CONFIG)).toMatchObject({ ok: true });
   });
 
@@ -838,7 +838,7 @@ describe("GEO knowledge synthesis v2 catalogue budget", () => {
       prompt: { system: GEO_KNOWLEDGE_SYNTHESIS_V2_SYSTEM_PROMPT, user: "" },
       responseJsonSchema: GEO_KNOWLEDGE_SYNTHESIS_V2_RESPONSE_JSON_SCHEMA,
     })).byteLength - 2;
-    expect(envelope).toBe(13_722);
+    expect(envelope).toBe(13_487);
     // Reserved above the measurement, so rewording the system prompt does not
     // silently start over-spending the ceiling...
     expect(envelope).toBeLessThanOrEqual(GEO_KNOWLEDGE_SYNTHESIS_V2_LIMITS.promptEnvelopeBytes);
@@ -871,7 +871,7 @@ describe("GEO knowledge synthesis v2 catalogue budget", () => {
       synthesisInputWith(productMaximumProfileRef(), maximalEvidence()),
     ]) {
       const escaped = (entry: unknown) => new TextEncoder().encode(JSON.stringify(canonicalGeoV2Text(entry))).byteLength;
-      const predicted = 13_722 + geoKnowledgeSynthesisV2NonCataloguePromptBytes(value) + escaped(value.sourceCatalogue) - 4;
+      const predicted = 13_487 + geoKnowledgeSynthesisV2NonCataloguePromptBytes(value) + escaped(value.sourceCatalogue) - 4;
       expect(predicted).toBe(requestBytes(value));
     }
   });
@@ -941,10 +941,10 @@ describe("GEO knowledge synthesis v2 catalogue budget", () => {
     for (const [index, entry] of projection.catalogue.entries()) {
       expect(entry.excerpts).toEqual(evidenceValue.sourceCatalogue[index]!.excerpts.slice(0, entry.excerpts.length));
     }
-    // The request is 10 780 bytes past the ceiling, which no cap this rule may
+    // The request is 10 976 bytes past the ceiling, which no cap this rule may
     // choose can close.
-    expect(requestBytes(value)).toBe(142_283);
-    expect(requestBytes(value) - GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES).toBe(11_211);
+    expect(requestBytes(value)).toBe(142_048);
+    expect(requestBytes(value) - GEO_KNOWLEDGE_SYNTHESIS_V2_PROMPT_BYTES).toBe(10_976);
     // So the input is still built and still storable -- three states, not two --
     // and the refusal names its size, spends nothing, and attempts nothing.
     expect(geoV2JsonbBytes(value)).toBeLessThanOrEqual(GEO_KNOWLEDGE_SYNTHESIS_V2_LIMITS.inputBytes);
@@ -1029,6 +1029,13 @@ describe("GEO knowledge narrative v2", () => {
     ["duplicate content ids", (value: any) => { value.qa[0].id = value.facts[0].id; }],
     ["a mismatched competitor name", (value: any) => { value.comparisons[0].competitor.name = "Other"; }],
     ["a wrong schema version", (value: any) => { value.schemaVersion = "marketing-geo-knowledge-narrative.v1"; }],
+    // The three rows below are the only enforcement of invariants the provider
+    // schema used to duplicate. `uniqueItems` and the `scope` `anyOf` branches
+    // were removed from it because strict Structured Outputs refuses both and
+    // rejects the whole request; see provider-json-schema-strict.test.ts.
+    ["an entirely empty scope", (value: any) => { value.scope = { does: [], doesNot: [], needsHuman: [], misconceptions: [] }; }],
+    ["duplicate question variants", (value: any) => { value.qa[0].variants = ["Is it for two?", "Is it for two?"]; }],
+    ["duplicate entity source refs", (value: any) => { value.entity.sourceRefs = [value.entity.sourceRefs[0], value.entity.sourceRefs[0]]; }],
   ])("rejects %s", (_label, mutate) => {
     const value: any = narrative();
     mutate(value);
