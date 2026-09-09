@@ -6,6 +6,7 @@ import {
   array, byteLength, finite, identifier, invalid, isRecord, literal, llmReadMeta, modelText,
   nullable, object, ok, oneOf, reference, text, timestamp, type Decoded, type Decoder,
 } from "./parse-brief-shape.ts";
+import { BRIEF_MAX_ATTEMPTS } from "./constants.ts";
 import { CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA, RESEARCH_HEADING_MAX_CHARS, RESEARCH_OUTLINE_MAX, RESEARCH_PROMPT_MAX_BYTES } from "./v2-contract.ts";
 import { parseBriefV2Context, parseBriefV2Generated } from "./v2-generation.ts";
 import type { BriefV2Generated, ConfirmedBriefV2, ContentBriefV2 } from "./v2-generation-contract.ts";
@@ -82,9 +83,22 @@ export async function parseContentBriefV2(input: unknown): Promise<Decoded<Conte
       retained.get("gsc") !== brief.context.gsc.matches.length) return reference("run.reads.retained");
   const gscRead = reads.find((read) => read.source === "gsc")!;
   if (gscRead.status !== brief.context.gsc.status || gscRead.reason !== brief.context.gsc.reason) return reference("run.reads.gsc");
-  if ((llm.status === "complete") !== (brief.generated !== null) || llm.calls > 1 ||
-      (llm.status === "complete" && (llm.calls !== 1 || prompt_bytes === 0)) ||
-      (llm.status === "unavailable" && (llm.attempted === null || llm.attempted > 1 || llm.calls > llm.attempted)) ||
+  // A brief is one assembly plus at most one repair of a rejected reply, so the
+  // ceiling here is BRIEF_MAX_ATTEMPTS rather than a literal 1. It stays a
+  // ceiling: a run that reports more calls than the engine can make is
+  // describing something that did not happen, whoever wrote the payload.
+  // Widening a bound needs no schema bump -- every v2 brief ever issued still
+  // decodes -- and the counts reach the page through a plural-aware string.
+  if ((llm.status === "complete") !== (brief.generated !== null) || llm.calls > BRIEF_MAX_ATTEMPTS ||
+      (llm.status === "complete" && (llm.calls < 1 || prompt_bytes === 0)) ||
+      (llm.status === "unavailable" && (llm.attempted === null || llm.attempted > BRIEF_MAX_ATTEMPTS || llm.calls > llm.attempted ||
+        // A second attempt exists for exactly one reason: the first reply was
+        // rejected. So every failed two-attempt run says validation_failed and
+        // has billed both calls -- a transport error or an expired deadline on
+        // the repair still reports the first rejection. The pairs the widening
+        // would otherwise have admitted (2/1, or 2 attempts blamed on the
+        // provider) describe a run the engine cannot have made.
+        (llm.attempted > 1 && (llm.calls !== llm.attempted || llm.reason !== "validation_failed")))) ||
       (llm.calls > 0 && prompt_bytes === 0)) return reference("run.llm");
   if ([llm.input_tokens, llm.output_tokens].some((tokens) => tokens !== null && !Number.isSafeInteger(tokens)) ||
       (llm.status === "complete" && (llm.temperature_requested !== 0.2 ||
