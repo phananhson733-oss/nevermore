@@ -480,13 +480,72 @@ describe("Draft v2 truthful results and exact exports", () => {
     const sources = markdown.slice(markdown.indexOf("## Sources"));
     for (const id of pagesOfCited) {
       const page = confirmed.brief.context.research.pages.find((item) => item.id === id)!;
-      expect(sources).toContain(`- ${new URL(page.final_url).hostname} — ${page.final_url} (Observed ${page.fetched_at.slice(0, 10)})`);
+      expect(sources).toContain(`- ${new URL(page.final_url).hostname} — [${page.final_url}](${page.final_url}) (Observed ${page.fetched_at.slice(0, 10)})`);
     }
     // The article's own end matter: after every section it draws on.
     expect(markdown.indexOf("## Sources")).toBeGreaterThan(markdown.lastIndexOf(`## ${confirmed.outline.at(-1)!.h2}`));
     // A profile fact is not a page and never becomes a line here: section two
     // cites P1 and P2 and contributes no source.
     expect(sources.split("\n- ")).toHaveLength(listed.length + 1);
+  });
+
+  it("survives a cited page whose final URL is not an address, and never prints one twice", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed, { claims: true });
+    // A crawler should never produce these, and the article must not die if one
+    // does: the whole results page, its export controls included, renders from
+    // this derivation. The excerpt is still in the evidence section.
+    const research = confirmed.brief.context.research;
+    const broken = { ...confirmed, brief: { ...confirmed.brief, context: { ...confirmed.brief.context, research: {
+      ...research, pages: research.pages.map((page, index) => index === 0 ? { ...page, final_url: "/relative" } : page),
+    } } } };
+    expect(() => contentDraftV2Markdown(result, broken, exportNotes())).not.toThrow();
+    const { host } = await render(broken, { result });
+    expect(host.querySelector("[data-draft-document]")).not.toBeNull();
+    expect(Array.from(host.querySelectorAll("[data-source-page]"), (item) => item.getAttribute("data-source-page"))).not.toContain(research.pages[0]!.id);
+
+    // Two ids can be two observations of one page -- a Search Console candidate
+    // that also ranks in the SERP. Printing it twice would tell the reader the
+    // article rests on two sources when it rests on one.
+    const unitOf = (pageId: string) => research.units.find((unit) => unit.kind === "page" && unit.page_ref === pageId)!.id;
+    const refs = [unitOf(research.pages[0]!.id), unitOf(research.pages[1]!.id)];
+    expect(refs[0]).not.toBe(refs[1]);
+    const twoPages = { ...result, sections: result.sections.map((section, index) => index !== 0 || section.status !== "ok" ? section : {
+      ...section, body: { ...section.body, paragraphs: [{ heading: null, sentences: refs.map((ref) => ({
+        text: `Cites ${ref}.`, claim: "bound" as const, evidence_refs: [ref], support_count: 1,
+      })) }] },
+    }) };
+    const separate = contentDraftV2Markdown(twoPages, confirmed, exportNotes());
+    expect(separate.slice(separate.indexOf("## Sources")).split("\n- ")).toHaveLength(3);
+    const duplicated = { ...confirmed, brief: { ...confirmed.brief, context: { ...confirmed.brief.context, research: {
+      ...research, pages: research.pages.map((page) => ({ ...page, final_url: research.pages[0]!.final_url })),
+    } } } };
+    const listed = contentDraftV2Markdown(twoPages, duplicated, exportNotes());
+    expect(listed.slice(listed.indexOf("## Sources")).split("\n- ")).toHaveLength(2);
+  });
+
+  it("cannot be made to publish a destination the cited page does not have", async () => {
+    // A final URL is a crawled string. This one is a perfectly valid http URL,
+    // so nothing upstream refuses it, and pasted raw into a list item it would
+    // put an attacker's image request inside the article's own source list.
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed, { claims: true });
+    const research = confirmed.brief.context.research;
+    const hostile = "https://competitor.test/![pixel](https://attacker.test/p.gif)";
+    const attacked = { ...confirmed, brief: { ...confirmed.brief, context: { ...confirmed.brief.context, research: {
+      ...research, pages: research.pages.map((page, index) => index === 0 ? { ...page, final_url: hostile } : page),
+    } } } };
+    const markdown = contentDraftV2Markdown(result, attacked, exportNotes());
+    const view = document.createElement("div");
+    view.innerHTML = await marked.parse(markdown.slice(markdown.indexOf("## Sources")));
+    expect(view.querySelector("img")).toBeNull();
+    const anchors = Array.from(view.querySelectorAll("li a"));
+    expect(anchors.length).toBeGreaterThan(0);
+    // Every link reads as, and goes to, the page that was actually cited. The
+    // destination is percent-encoded where the label is not; decoding it back
+    // is what proves the two are the same address.
+    for (const anchor of anchors) expect(decodeURIComponent(anchor.getAttribute("href")!)).toBe(anchor.textContent);
+    expect(anchors[0]!.textContent).toBe(hostile);
   });
 
   it("lists no sources when no written sentence cited a page", async () => {

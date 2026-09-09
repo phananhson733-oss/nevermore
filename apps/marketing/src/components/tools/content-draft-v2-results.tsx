@@ -39,22 +39,31 @@ function confirmedRelatedLinks(confirmed: ConfirmedBriefV2) {
  * listing it would be the article claiming to rest on reading it did not do.
  * Both the rendered article and the export read this one function, so the
  * published list and the exported list cannot drift apart.
+ *
+ * Identity is the final URL, not the page id. Two ids can be two observations
+ * of one page -- a Search Console candidate that also ranks in the SERP, for
+ * instance -- and printing that page twice would tell the reader the article
+ * rests on two sources when it rests on one. A page whose final URL will not
+ * parse as an ordinary http(s) address is left out rather than named from a
+ * string nobody can resolve; that is a crawler the brief should not have
+ * produced, and the excerpt is still in the evidence section either way.
  */
 export function draftV2CitedPages(result: DraftResultV2, confirmed: ConfirmedBriefV2) {
   const research = confirmed.brief.context.research;
   const units = new Map(research.units.map((unit) => [unit.id, unit]));
   const pages = new Map(research.pages.map((page) => [page.id, page]));
   const seen = new Set<string>();
-  const cited: { readonly id: string; readonly domain: string; readonly url: string | null; readonly fetched_at: string }[] = [];
+  const cited: { readonly id: string; readonly domain: string; readonly url: string; readonly fetched_at: string }[] = [];
   for (const section of result.sections) {
     if (section.status !== "ok") continue;
     for (const paragraph of section.body.paragraphs) for (const sentence of paragraph.sentences) for (const ref of sentence.evidence_refs) {
       const unit = units.get(ref);
       if (unit?.kind !== "page") continue;
       const page = pages.get(unit.page_ref);
-      if (page === undefined || seen.has(page.id)) continue;
-      seen.add(page.id);
-      cited.push({ id: page.id, domain: new URL(page.final_url).hostname, url: safePageUrl(page.final_url), fetched_at: page.fetched_at });
+      const url = page === undefined ? null : safePageUrl(page.final_url);
+      if (page === undefined || url === null || seen.has(url)) continue;
+      seen.add(url);
+      cited.push({ id: page.id, domain: new URL(url).hostname, url, fetched_at: page.fetched_at });
     }
   }
   return cited;
@@ -116,8 +125,12 @@ export function contentDraftV2Markdown(result: DraftResultV2, confirmed: Confirm
     ])].join("\n\n");
   }));
   const cited = draftV2CitedPages(result, confirmed);
+  // The URL is a link with its own text escaped, exactly as the related-links
+  // block does it: a final URL is a crawled string, and one carrying image or
+  // link syntax would otherwise put an attacker's destination inside the
+  // article's own source list.
   if (cited.length > 0) sections.push(`## ${markdownHeading(notes.sources)}\n\n${cited.map((page) =>
-    `- ${page.domain}${page.url === null ? "" : ` — ${page.url}`} (${notes.observedAt(page.fetched_at.slice(0, 10))})`).join("\n")}`);
+    `- ${markdownLinkLabel(page.domain)} — [${markdownLinkLabel(page.url)}](${markdownLinkUrl(page.url)}) (${notes.observedAt(page.fetched_at.slice(0, 10))})`).join("\n")}`);
   const links = confirmedRelatedLinks(confirmed);
   if (links.length > 0) sections.push(`## ${notes.relatedLinks}\n\n${links.map((link) => `- [${markdownLinkLabel(link.anchor)}](${markdownLinkUrl(link.url)})`).join("\n")}`);
   const plan = result.image_prompts;
@@ -320,7 +333,7 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
         : <p data-image-prompts-unavailable className={`mt-3 ${BODY_TEXT}`}>{t("images.unavailable", { reason: t(`images.reason.${imagePlan.reason}`) })}</p>}
     </section>}
 
-    {cited.length > 0 ? <section data-draft-sources><h2 className={`${SECTION_TITLE} ${RULE}`}>{t("sources")}</h2><p className={`mt-3 ${BODY_TEXT}`}>{t("sourcesBoundary")}</p><ul className="mt-3 space-y-2">{cited.map((page) => <li key={page.id} data-source-page={page.id} className="text-[12.5px] leading-[1.6] text-text-dark-primary"><span className="font-semibold">{page.domain}</span>{page.url === null ? null : <> · <a href={page.url} target="_blank" rel="noopener noreferrer" className="break-all text-brand-accent-text underline underline-offset-2">{page.url}</a></>} <span className="text-text-dark-secondary">· {t("observedAt", { time: collectedTime(page.fetched_at, locale) })}</span></li>)}</ul></section> : null}
+    {cited.length > 0 ? <section data-draft-sources><h2 className={`${SECTION_TITLE} ${RULE}`}>{t("sources")}</h2><p className={`mt-3 ${BODY_TEXT}`}>{t("sourcesBoundary")}</p><ul className="mt-3 space-y-2">{cited.map((page) => <li key={page.id} data-source-page={page.id} className="text-[12.5px] leading-[1.6] text-text-dark-primary"><span className="font-semibold">{page.domain}</span> · <a href={page.url} target="_blank" rel="noopener noreferrer" className="break-all text-brand-accent-text underline underline-offset-2">{page.url}</a> <span className="text-text-dark-secondary">· {t("observedAt", { time: collectedTime(page.fetched_at, locale) })}</span></li>)}</ul></section> : null}
     {relatedLinks.length > 0 ? <section data-related-links><h2 className={`${SECTION_TITLE} ${RULE}`}>{t("relatedLinks")}</h2><ul className="mt-3 space-y-2">{relatedLinks.map((link) => <li key={link.pageRef}><a data-related-link href={link.url} target="_blank" rel="noopener noreferrer" className="text-[13px] text-brand-accent-text underline underline-offset-2">{link.anchor}</a></li>)}</ul></section> : null}
 
     <section><h2 className={`${SECTION_TITLE} ${RULE}`}>{base("verify.title")}</h2><p className={`mt-3 ${BODY_TEXT}`}>{t("verifyBoundary")}</p>{result.verify_before_publish.length === 0 ? <p className={`mt-2 ${BODY_TEXT}`}>{t(result.run.reads.sections.ok === 0 ? "noDraftToVerify" : "verifyEmpty")}</p> : <ul className="mt-3 space-y-3">{result.verify_before_publish.map((item, index) => <li key={index} className="border-l-2 border-brand-border-card pl-3"><div className="text-[11px] text-text-dark-secondary">{base(`verifyKind.${item.kind}`)} · {item.section_id}{item.kind === "single_source" ? ` · ${t("supportingPages", { count: item.support_count })}` : ""}</div><p className="mt-1 text-[12.5px] leading-[1.6] text-text-dark-primary">{item.sentence}</p><div className="mt-1 flex gap-2 text-[11px] text-text-dark-secondary">{item.evidence_refs.length === 0 ? base("verify.noRefs") : item.evidence_refs.map((ref) => <a key={ref} href={`#draft-v2-evidence-${ref}`} className="underline">{ref}</a>)}</div></li>)}</ul>}</section>
