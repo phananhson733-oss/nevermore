@@ -728,6 +728,10 @@ describe("observing the site's machine-readable files", () => {
           kind: "unavailable",
           url: "https://example.com/llms.txt",
           reason: "fetch_failed",
+          // The request went out and this is what came back. Without that, the
+          // same `reason` is what our own gate says when it refuses admission,
+          // and a row would then assert something about a site nobody asked.
+          reached: true,
         },
       }) as never,
     });
@@ -900,6 +904,65 @@ describe("observing the site's machine-readable files", () => {
       "https://example.com/sitemap.xml",
       "https://example.com/llms.txt",
     ]);
+    expect(recordObservation.mock.calls.map((call) => call[0].kind)).toEqual([
+      "robots",
+      "sitemap",
+      "llms",
+    ]);
+  });
+
+  /*
+   * The reused-page path put these three in front of the crawl gate, and a gate
+   * refusal wears the same `reason` values a site does -- `blocked` for a 400,
+   * `fetch_failed` when opening it throws. The reader memoises that verdict per
+   * host, so a version that read the refusal as an answer filed three rows
+   * about a site none of the three requests ever left for, and reported the
+   * update as done.
+   */
+  it("writes nothing and does not claim success when the gate refuses the reused page's files", async () => {
+    const { sources: deps, recordObservation } = machineSources({
+      readLatestObservation: async ({ kind }: { readonly kind: string }) =>
+        kind === "own_page"
+          ? { kind: "ok" as const, value: observation({ observedAt: NOW.toISOString() }) }
+          : { kind: "ok" as const, value: null },
+      // What `createGeoKnowledgeResourceReader` returns for a gate that answers
+      // 400: a reason with no `reached`, repeated for every later url.
+      createReader: (() => async ({ url }: { readonly url: string }) => ({
+        kind: "unavailable" as const,
+        url,
+        reason: "blocked" as const,
+      })) as never,
+    });
+    const { executor } = createGeoRunCollectRuntime(deps);
+    await expect(executor.start(operation(), context)).resolves.toEqual({
+      kind: "failed_retryable",
+      reason: "rate_limited",
+    });
+    expect(recordObservation).not.toHaveBeenCalled();
+  });
+
+  it("files the site's own refusal, which is not the gate's", async () => {
+    const { sources: deps, recordObservation } = machineSources({
+      readLatestObservation: async ({ kind }: { readonly kind: string }) =>
+        kind === "own_page"
+          ? { kind: "ok" as const, value: observation({ observedAt: NOW.toISOString() }) }
+          : { kind: "ok" as const, value: null },
+      createReader: siteReader({
+        "https://example.com/robots.txt": {
+          kind: "unavailable",
+          url: "https://example.com/robots.txt",
+          reason: "blocked",
+          reached: true,
+        },
+      }) as never,
+    });
+    const { executor } = createGeoRunCollectRuntime(deps);
+    // Same reason, opposite meaning: the request got out, so the row is a
+    // reading of the site and the other two files still get their turn.
+    await expect(executor.start(operation(), context)).resolves.toEqual({
+      kind: "succeeded",
+      resultRef: OBSERVATION,
+    });
     expect(recordObservation.mock.calls.map((call) => call[0].kind)).toEqual([
       "robots",
       "sitemap",

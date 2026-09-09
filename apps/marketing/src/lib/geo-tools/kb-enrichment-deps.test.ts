@@ -202,7 +202,11 @@ describe("actual enrichment runtime adapters", () => {
   ])("maps public transport outcome %j to %s", async (transport, reason) => {
     const release = vi.fn();
     const reader = createGeoKnowledgeResourceReader("owner-1", { openGate: async () => ({ ok: true, kind: "crawl", release }), fetchResource: async () => transport });
-    await expect(reader({ url: "https://example.com/", expected: "html", timeoutMs: 500 })).resolves.toEqual({ kind: "unavailable", url: "https://example.com/", reason });
+    // `reached` because the gate admitted and the request went out. The same
+    // `reason` values come back from a refused gate, where it is absent, and
+    // that difference is the only thing separating "the site said no" from "we
+    // never asked" -- see the assertions above, which carry no `reached`.
+    await expect(reader({ url: "https://example.com/", expected: "html", timeoutMs: 500 })).resolves.toEqual({ kind: "unavailable", url: "https://example.com/", reason, reached: true });
     expect(release).toHaveBeenCalledOnce();
   });
 
@@ -213,7 +217,7 @@ describe("actual enrichment runtime adapters", () => {
       kind: "ok", requestedUrl: "https://example.com/", finalUrl: "https://example.com/", firstStatus: status, finalStatus: status, contentType: "text/html", xRobotsTag: null,
       body: "error", bytes: 5, bodyComplete: true, redirectChain: [],
     }) });
-    await expect(reader({ url: "https://example.com/", expected: "html" })).resolves.toEqual({ kind: "unavailable", url: "https://example.com/", reason });
+    await expect(reader({ url: "https://example.com/", expected: "html" })).resolves.toEqual({ kind: "unavailable", url: "https://example.com/", reason, reached: true });
   });
 
   it("fails closed on admission refusal, incomplete bodies, missing content type, and thrown transports", async () => {
@@ -228,13 +232,13 @@ describe("actual enrichment runtime adapters", () => {
         kind: "ok", requestedUrl: "https://example.com/", finalUrl: "https://example.com/", firstStatus: 200, finalStatus: 200, contentType, xRobotsTag: null,
         body: "<h1>bounded prefix</h1>", bytes: 23, bodyComplete, redirectChain: [],
       }) });
-      await expect(reader({ url: "https://example.com/" })).resolves.toEqual({ kind: "unavailable", url: "https://example.com/", reason });
+      await expect(reader({ url: "https://example.com/" })).resolves.toEqual({ kind: "unavailable", url: "https://example.com/", reason, reached: true });
       expect(release).toHaveBeenCalledOnce();
     }
 
     const release = vi.fn();
     const thrown = createGeoKnowledgeResourceReader("owner-1", { openGate: async () => ({ ok: true, kind: "crawl", release }), fetchResource: async () => { throw new Error("secret transport detail"); } });
-    await expect(thrown({ url: "https://example.com/" })).resolves.toEqual({ kind: "unavailable", url: "https://example.com/", reason: "fetch_failed" });
+    await expect(thrown({ url: "https://example.com/" })).resolves.toEqual({ kind: "unavailable", url: "https://example.com/", reason: "fetch_failed", reached: true });
     expect(release).toHaveBeenCalledOnce();
   });
 });

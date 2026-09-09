@@ -27,7 +27,18 @@ type Competitor = { key: string; name: string; confirmed: true };
 
 export type GeoKnowledgeResourceResult =
   | { kind: "ok"; url: string; body: string; contentType: string; observedAt: string }
-  | { kind: "unavailable"; url: string; reason: UnavailableReason };
+  /**
+   * `reached` says the request got to the site and this is the site's answer.
+   *
+   * It is absent when the reader gave up before sending anything -- our own
+   * crawl gate refusing admission, or failing to be asked. Those refusals wear
+   * the same `reason` values as real answers (`blocked`, `fetch_failed`,
+   * `rate_limited`), so without this a caller cannot tell "the site says no"
+   * from "we never asked", and a caller that files the first as an observation
+   * files the second as one too: a row asserting something about a site nobody
+   * contacted.
+   */
+  | { kind: "unavailable"; url: string; reason: UnavailableReason; reached?: true };
 export type GeoKnowledgeEvidenceReadResource = (input: { url: string; expected?: "html" | "robots" | "sitemap" | "llms"; timeoutMs?: number }) => Promise<GeoKnowledgeResourceResult>;
 export type GeoKnowledgeEvidenceSource = {
   id: string; kind: SourceKind; label: string; url: string | null; competitor: Competitor | null;
