@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { buildResearchBundle, parseResearchBundle } from "@sf/public-tools/content-brief/v2-research";
 import { RESEARCH_PROMPT_MAX_BYTES, type ResearchPage } from "@sf/public-tools/content-brief/v2-contract";
 import type { BriefV2Context } from "@sf/public-tools/content-brief/v2-generation-contract";
-import { prepareContentBriefV2Prompt } from "./content-brief-v2-prompts.ts";
+import { buildContentBriefV2SystemPrompt, prepareContentBriefV2Prompt } from "./content-brief-v2-prompts.ts";
 import { buildSerpObservations } from "@sf/public-tools/content-brief/assemble";
+import { parseBriefV2Context } from "@sf/public-tools/content-brief/v2-generation";
 
 function page(id: string, chinese = false, segments = 1): ResearchPage {
   const text = chinese ? "文".repeat(300) : "Medical billing software validates insurance claims before submission.";
@@ -30,6 +31,33 @@ function context(pages: ResearchPage[] = [page("C1"), page("T1")]): BriefV2Conte
     gsc: { status: "complete", property: "sc-domain:t1.example", window: { start: "2026-08-01", end: "2026-08-28", lookback_days: 28 }, reason: null, matches: [{ id: "G1", query: "claims software", keyword: "claims software", scope: "supporting", page: "https://t1.example/billing", clicks: 0, impressions: 2, position: 67 }], omitted_matches: 0 },
     candidates: pages.filter((p) => p.role === "owned").map((p) => ({ id: p.id, url: p.url, read: "observed", match_refs: p.id === "T1" ? ["G1"] : [] })),
   };
+}
+
+/**
+ * The widest context whose prompt still fits without the title block.
+ *
+ * Padding goes into profile facts because they are the one part of the document
+ * the descent cannot shrink: excerpts are traded away unit by unit, facts are
+ * not. Each fact's field is capped at 2000 characters by the context contract,
+ * so the padding is chunked and the last chunk trimmed to land eight bytes
+ * under the cap -- less than the title block costs, and more than nothing.
+ */
+function budgetBound(base: BriefV2Context): BriefV2Context {
+  const untitled = buildContentBriefV2SystemPrompt(false, "en", false);
+  const padded = (fields: readonly string[]): BriefV2Context => ({ ...base,
+    profile_snapshot: { website_id: "website-1", revision: 1, hash: "b".repeat(64) },
+    facts: fields.map((field, index) => ({ id: `P${index + 1}`, field, text: "Claim validation",
+      derivation: "declared" as const, provenance: { method: "observed" as const, origin: "product_profile" as const } })) });
+  const measure = (fields: readonly string[]) => {
+    const prepared = prepareContentBriefV2Prompt(padded(fields));
+    return prepared === null ? Number.POSITIVE_INFINITY
+      : new TextEncoder().encode(JSON.stringify({ system: untitled, user: prepared.user })).byteLength;
+  };
+  const target = RESEARCH_PROMPT_MAX_BYTES - 8;
+  const grown = (fields: readonly string[]): readonly string[] => [...fields.slice(0, -1), "f".repeat(2000), "f"];
+  let fields: readonly string[] = ["f"];
+  while (measure(grown(fields)) <= target) fields = grown(fields);
+  return padded([...fields.slice(0, -1), "f".repeat(1 + target - measure(fields))]);
 }
 
 describe("Brief v2 assembly prompt", () => {
@@ -140,15 +168,59 @@ describe("Brief v2 assembly prompt", () => {
     expect(system).toContain("never invent a procedure");
     // Instructions and excerpts share one 48 KiB budget, and a real run came
     // within 1.9 KiB of it, so every sentence added here is paid for in
-    // evidence the model never sees. This sits at 11,141 bytes; the ceiling
-    // leaves room for a short rule and stops the next long one.
+    // evidence the model never sees. The ceiling leaves room for a short rule
+    // and stops the next long one.
     //
-    // It was 10,583 until the REPAIR paragraph below bought the model-only
-    // retry 558 bytes of it. That was the deliberate trade: a run whose
-    // research cites one bad id used to lose the SERP call, the crawls and the
-    // model call together, and the descent pays for those 558 bytes by
-    // dropping at most the lowest-relevance excerpt on the widest runs.
-    expect(new TextEncoder().encode(system).byteLength).toBeLessThan(11_300);
+    // It was 10,583 before two deliberate trades. The REPAIR paragraph bought
+    // the model-only retry 558 bytes: a run whose research cites one bad id
+    // used to lose the SERP call, the crawls and the model call together.
+    // The TITLE block bought the recommended title 608 bytes, and that one was
+    // measured on the real 2026-09-09 `birth chart` run rather than estimated:
+    // page_units_retained went from 58 to 55, so the title costs three of the
+    // widest run's excerpts. Anything longer than a short rule from here on
+    // should raise the unit ceiling instead, which is leaving 382 of 440
+    // observed excerpts unused on that same run.
+    expect(new TextEncoder().encode(system).byteLength).toBeLessThan(12_100);
+  });
+
+  it("asks English runs for a title and never asks anyone else", () => {
+    const english = prepareContentBriefV2Prompt(context())!.system;
+    // Stated because the server checks them: a model failed for a rule it was
+    // never given is the failure this repository keeps rediscovering.
+    expect(english).toContain("carries no digit in any form");
+    expect(english).toContain("names no organisation, standard or acronym the input did not supply");
+    expect(english).toContain('"planning":{"title":{"recommended"');
+    const other = prepareContentBriefV2Prompt({ ...context(), input: { ...context().input, language: "de" } })!.system;
+    // Not a translation gap: the rules are written for English titles, and an
+    // unasked-for planning key is refused exactly as any unknown key is.
+    // "planning context" already appears in the SERP paragraph, so the needle
+    // has to be the field itself, not the word.
+    expect(other).not.toContain("planning.title");
+    expect(other).not.toContain('"planning"');
+    expect(other).not.toContain("\nTITLE\n");
+  });
+
+  it("gives up the title, never the run, when the evidence fills the byte budget", () => {
+    // Both pages carry one excerpt each, so the descent's minimum is every unit
+    // it has and there is nothing left to trade for the title's 608 bytes. Pad
+    // the one part of the document the descent cannot shrink until the prompt
+    // without a title sits eight bytes under the cap.
+    const base = context();
+    const bound = budgetBound(base);
+    expect(parseBriefV2Context(bound).ok).toBe(true);
+    const prepared = prepareContentBriefV2Prompt(bound);
+    // Before the second descent this run produced no prompt and no brief at
+    // all: the SERP read, the crawls and the GSC read were paid for and the
+    // visitor got a failure screen, over a headline.
+    expect(prepared).not.toBeNull();
+    if (prepared === null) return;
+    expect(prepared.planning).toBe(false);
+    expect(prepared.system).not.toContain("\nTITLE\n");
+    expect(prepared.prompt_bytes).toBeLessThanOrEqual(RESEARCH_PROMPT_MAX_BYTES);
+    // The retreat costs the title and nothing else: the same excerpts survive.
+    expect(prepared.context.research.budget.page_units_retained).toBe(base.research.budget.page_units_retained);
+    const asked = new TextEncoder().encode(JSON.stringify({ system: buildContentBriefV2SystemPrompt(false, "en", true), user: prepared.user })).byteLength;
+    expect(asked).toBeGreaterThan(RESEARCH_PROMPT_MAX_BYTES);
   });
 
   it("says what a rejection stub is, so the repair call is answering a rule it was told about", () => {

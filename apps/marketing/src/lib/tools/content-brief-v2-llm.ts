@@ -52,7 +52,9 @@ export interface ContentBriefV2LlmResult {
 
 interface DroppableField {
   readonly name: string;
-  readonly absent: unknown;
+  /** The value that stands for absent, or omit the key entirely when true. */
+  readonly absent?: unknown;
+  readonly omit?: true;
 }
 
 /**
@@ -126,11 +128,27 @@ function downgradedCreatePlan(path: string, reply: unknown, context: BriefV2Cont
  * Structure is deliberately absent from this list. research, page_plan, intent
  * and format are the brief; without them there is nothing to keep, and a reply
  * that breaks one of them still fails whole.
+ *
+ * planning is dropped by omitting the key rather than emptying it, because that
+ * is what its own contract calls absent: a brief issued before the planning
+ * layer existed has no such key, and a title the server refused must leave the
+ * brief in exactly that state rather than in a new third one.
+ *
+ * It is listed here for two rejections, not one. A title that broke a rule is
+ * the obvious case. The second is a title the call never asked for -- a run in
+ * another language, or an English run whose evidence filled the byte budget and
+ * was sent the prompt without the title block -- where the validator refuses
+ * the key exactly as it refuses any unknown key. Dropping it puts that reply in
+ * the state the run should have been in anyway, which is a better answer than
+ * throwing away a paid SERP read, ten crawls and a model call over a field
+ * nobody asked for. Both are recorded in dropped_paths, so the run log tells
+ * the two apart.
  */
 const DROPPABLE_FIELDS: readonly DroppableField[] = [
   { name: "gap_angle", absent: null },
   { name: "internal_links", absent: [] },
   { name: "do_not_cover", absent: [] },
+  { name: "planning", omit: true },
 ];
 
 /** The droppable field a rejection path belongs to, if the reply is still an object we can rebuild. */
@@ -217,7 +235,7 @@ interface ReplyVerdict {
  * validator has not seen. A verdict with a null output is what buys the one
  * repair call above; everything this function can fix is fixed first.
  */
-function interpretReply(content: string, context: BriefV2Context): ReplyVerdict {
+function interpretReply(content: string, context: BriefV2Context, planning: boolean): ReplyVerdict {
   let reply: unknown;
   try { reply = JSON.parse(content); } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;
@@ -226,9 +244,10 @@ function interpretReply(content: string, context: BriefV2Context): ReplyVerdict 
   }
   // Generation is the one place the language rule applies; reading a brief back
   // must not judge it by a rule that did not exist when it was issued.
+  const options = { checkLanguage: true, planning } as const;
   const validate = (value: unknown) => context.serp === undefined
-    ? validateModelBriefV2(value, context, { checkLanguage: true })
-    : validateSectionQuestionsBrief(value, context, { checkLanguage: true });
+    ? validateModelBriefV2(value, context, options)
+    : validateSectionQuestionsBrief(value, context, options);
   let output = validate(reply);
   let downgraded = false;
   if (!output.ok) {
@@ -247,7 +266,8 @@ function interpretReply(content: string, context: BriefV2Context): ReplyVerdict 
     const field = droppableField(output.path, reply);
     if (field === null) break;
     dropped.push(output.path);
-    reply = { ...(reply as Record<string, unknown>), [field.name]: field.absent };
+    const { [field.name]: _removed, ...without } = reply as Record<string, unknown>;
+    reply = field.omit === true ? without : { ...(reply as Record<string, unknown>), [field.name]: field.absent };
     output = validate(reply);
   }
   return output.ok
@@ -342,7 +362,7 @@ async function assembleWithRepair(prepared: ContentBriefV2Prompt, deps: Assembly
     modelId = answered;
     const expired = () => { const current = now(); return !Number.isFinite(current) || current >= attemptDeadline; };
     if (expired()) return abandon("timeout", null);
-    const verdict = interpretReply(completion.content, context);
+    const verdict = interpretReply(completion.content, context, prepared.planning);
     if (expired()) return abandon("timeout", verdict);
     if (verdict.output !== null) return completed(verdict, context, prompt_bytes, usage, answered, config);
     if (rejected === null) rejected = verdict;

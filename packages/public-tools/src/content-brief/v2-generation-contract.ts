@@ -69,6 +69,40 @@ export interface BriefV2PagePlan {
   readonly steps: readonly BriefV2PlanStep[];
 }
 
+/** One title the article could carry, with the one-sentence reason for it. */
+export interface BriefV2TitleOption {
+  readonly value: string;
+  readonly rationale: string;
+}
+
+/**
+ * The article title the brief recommends, plus the other framings it considered.
+ *
+ * A title is the one string in a brief that gets published without passing
+ * through the sentence model, so it carries no evidence_refs and can never be
+ * treated as support for anything. What keeps it honest is subtraction: it may
+ * not introduce a number, and it may not name an authority the excerpts never
+ * supplied. Everything else about it -- length, capitalization, punctuation --
+ * is the writer's judgment, not the server's.
+ */
+export interface BriefV2TitlePlan {
+  readonly recommended: BriefV2TitleOption;
+  readonly alternatives: readonly BriefV2TitleOption[];
+}
+
+/**
+ * Editorial planning the run asked the model for, absent when it did not.
+ *
+ * Planning is guidance about what to write, never a fact: nothing here may be
+ * cited by any sentence, in this brief or in the draft written from it. The key
+ * is optional rather than nullable so a brief issued before planning existed
+ * serializes to the same bytes, and therefore the same fingerprint, as it
+ * always did.
+ */
+export interface BriefV2Planning {
+  readonly title: BriefV2TitlePlan;
+}
+
 export interface BriefV2WritingPlan {
   readonly intent: { readonly value: "informational" | "commercial" | "transactional" | "navigational"; readonly rationale: string } | null;
   readonly format: { readonly value: "guide" | "listicle" | "comparison" | "product_page" | "tool" | "other"; readonly rationale: string } | null;
@@ -76,6 +110,8 @@ export interface BriefV2WritingPlan {
   readonly gap_angle: { readonly value: string; readonly rationale: string; readonly fact_refs: readonly string[]; readonly sources: readonly string[] } | null;
   readonly internal_links: readonly { readonly page_ref: string; readonly anchor: string; readonly why: string }[];
   readonly do_not_cover: readonly { readonly page_ref: string; readonly topic: string; readonly why: string }[];
+  /** Present only on a run that was offered the planning layer and got one. */
+  readonly planning?: BriefV2Planning;
 }
 
 export interface ModelBriefV2Output extends BriefV2WritingPlan {

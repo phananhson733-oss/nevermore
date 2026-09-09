@@ -6,6 +6,7 @@
 import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 import type { BriefV2Read, ConfirmedBriefV2, ContentBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
+import { briefPlanningAvailable } from "@sf/public-tools/content-brief/v2-contract";
 import { ACTION_BUTTON, BODY_TEXT, CARD, SECTION_TITLE, chipTone, collectedTime, number, safePageUrl, seconds } from "./content-brief-results-shared.ts";
 import { buildBriefV2Observations } from "../../lib/tools/content-brief-v2-observations.ts";
 import { SourceLayerBadge } from "./content-brief-source-chip.tsx";
@@ -104,6 +105,32 @@ function OwnedEvidence({ brief, t }: { readonly brief: ContentBriefV2; readonly 
     {brief.context.gsc.omitted_matches > 0 ? <p className={`mt-2 ${BODY_TEXT}`}>{t("omittedGsc", { count: brief.context.gsc.omitted_matches })}</p> : null}
     {brief.context.candidates.length > 0 ? <ul className="mt-3 space-y-2 border-t border-brand-border-card pt-3">{brief.context.candidates.map((candidate) => <li key={candidate.id} data-owned-candidate={candidate.id} className="text-[11.5px] text-text-dark-secondary"><span className="font-mono">{candidate.id} · {t(`readStates.${candidate.read}`)}</span><div><PageLink url={candidate.url} /></div></li>)}</ul> : null}
   </div>;
+}
+
+/**
+ * The article title the brief recommends, when the run produced one.
+ *
+ * Printed above the page decision because it is the first thing a writer takes
+ * away, and labelled as a model judgment for the same reason intent and format
+ * are: no sentence rule ever saw it, so it is a plan, not a finding. A run that
+ * produced none says so rather than rendering nothing, because "no title" and
+ * "a title the server dropped" look identical on an empty page and the second
+ * one is worth knowing about.
+ */
+function RecommendedTitle({ brief, t }: { readonly brief: ContentBriefV2; readonly t: Translate }) {
+  const baseT = useTranslations("tools.contentBrief");
+  const title = brief.generated?.planning?.title;
+  return <section data-recommended-title className={CARD}>
+    <div className="flex flex-wrap items-center gap-2"><h3 className={SECTION_TITLE}>{t("recommendedTitle")}</h3><SourceLayerBadge tone="model" t={baseT} /><span className="text-[10.5px] text-text-dark-secondary">{t("modelJudgment")}</span></div>
+    {title === undefined ? <p data-no-title className={`mt-3 ${BODY_TEXT}`}>{t("noTitle")}</p> : <>
+      <p data-title-value className="mt-3 text-[22px] leading-[1.25] font-semibold tracking-[-0.02em] text-text-dark-primary">{title.recommended.value}</p>
+      <p className={`mt-2 ${BODY_TEXT}`}>{title.recommended.rationale}</p>
+      {title.alternatives.length > 0 ? <details data-title-alternatives className="mt-3"><summary className={SUMMARY}>{t("titleAlternatives", { count: title.alternatives.length })}</summary>
+        <ul className="mt-2 space-y-2">{title.alternatives.map((option, index) => <li key={index} className="border-l border-brand-border-card pl-3"><div className="text-[14px] leading-[1.35] text-text-dark-primary">{option.value}</div><div className={`mt-1 ${BODY_TEXT}`}>{option.rationale}</div></li>)}</ul>
+      </details> : null}
+    </>}
+    <p data-title-boundary className={`mt-3 border-t border-brand-border-card pt-3 ${BODY_TEXT}`}>{t("titleBoundary")}</p>
+  </section>;
 }
 
 function PagePlan({ brief, t }: { readonly brief: ContentBriefV2; readonly t: Translate }) {
@@ -275,6 +302,7 @@ export function ContentBriefV2Results({ brief, locale, onConfirmed, onReturnToSe
       </div>
       <ReadStrip brief={brief} t={t} />
     </div>
+    {brief.generated && briefPlanningAvailable(brief.context.input.language) ? <RecommendedTitle brief={brief} t={t} /> : null}
     {brief.generated ? <PagePlan brief={brief} t={t} /> : <GenerationFailure brief={brief} t={t} onReturnToSettings={onReturnToSettings} />}
     <Fields brief={brief} observations={observations} locale={locale} t={t} />
     {brief.generated ? <Questions brief={brief} denominator={observations.question_coverage_denominator} t={t} /> : <RetainedEvidence brief={brief} t={t} />}
