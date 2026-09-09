@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { canonicalize } from "./canonical.ts";
 import { confirmBriefV2, fingerprintBriefV2, parseConfirmedBriefV2 } from "./v2-brief.ts";
 import { measureResearchLength, type ResearchPage } from "./v2-contract.ts";
 import type { DraftV2Settings } from "./v2-draft-contract.ts";
 import { buildDraftV2SectionScope, planDraftV2Sections } from "./v2-draft-scope.ts";
-import { validateDraftV2Section } from "./v2-draft-section.ts";
+import { parseDraftV2SectionBody, validateDraftV2Section } from "./v2-draft-section.ts";
 import { validateModelBriefV2 } from "./v2-generation.ts";
 import type { BriefV2Context, ConfirmedBriefV2, ContentBriefV2, ModelBriefV2Output } from "./v2-generation-contract.ts";
 import { buildResearchBundle } from "./v2-research.ts";
@@ -135,11 +136,19 @@ describe("Draft v2 exact section scope", () => {
     expect(result.value.allowed_h3).not.toBe(confirmed.outline[0]!.h3);
     expect(result.value.questions.map((question) => question.id)).toEqual(["Q1", "Q4"]);
     expect(result.value.question_unit_refs).toEqual(["U1", "U3", "U10", "U2"]);
-    expect([...result.value.page_units]).toEqual([
+    // The confirmed question-to-source mapping stays exactly as the brief froze it,
+    // and its units still lead the scope; the rest of the crawled corpus follows.
+    expect([...result.value.page_units].slice(0, 3)).toEqual([
       ["U1", { page_ref: "C1", final_url: "https://competitor.test/C1" }],
       ["U3", { page_ref: "T1", final_url: "https://owned.test/T1" }],
       ["U2", { page_ref: "C2", final_url: "https://competitor.test/C2" }],
     ]);
+    // The rest of C1/T1/C2 follows. U4 belongs to T2, which no question sourced,
+    // so a page the brief did not attach to this section still never enters it.
+    expect([...result.value.page_units.keys()]).toEqual(["U1", "U3", "U2", "U5", "U6", "U7", "U8", "U9"]);
+    expect(result.value.page_units.has("U4")).toBe(false);
+    // PAA units are questions, never page evidence, however wide the scope gets.
+    expect([...result.value.page_units.keys()]).not.toContain("U10");
     expect(result.value).toMatchObject({ action: "create", target_ref: null, target_page: null, steps: [], gap_angle: null });
   });
 
@@ -150,6 +159,8 @@ describe("Draft v2 exact section scope", () => {
     expect(result.value.questions).toMatchObject([{ id: "Q3", source_refs: ["U11"], covered_by: 0, paa_refs: ["A2"] }]);
     expect(result.value.question_unit_refs).toEqual(["U11"]);
     expect(result.value).toMatchObject({ allowed_h3: [] });
+    // No question sourced a page here, so the widened scope has nothing to widen
+    // from: a PAA-only section still materializes no page evidence at all.
     expect(result.value.page_units.size).toBe(0);
     expect(validateDraftV2Section({ paragraphs: [{ sentences: [{ text: "A supported reporting fact.", claim: "bound", evidence_refs: ["U11"] }] }] }, result.value, "en").ok).toBe(false);
   });
@@ -162,7 +173,9 @@ describe("Draft v2 exact section scope", () => {
     expect(result.value.action).toBe("update");
     expect(result.value.target_ref).toBe("T1");
     expect(result.value.target_page).toEqual(confirmed.brief.context.research.pages.find((item) => item.id === "T1"));
-    expect([...result.value.page_units.keys()].sort()).toEqual(["U1", "U2", "U3", "U7", "U8", "U9"]);
+    // Every target-page unit (U3/U7/U9 on T1) and every applicable step source stays mandatory.
+    expect([...result.value.page_units.keys()].slice(0, 6)).toEqual(["U1", "U3", "U2", "U7", "U9", "U8"]);
+    expect(["U3", "U7", "U9"].every((ref) => result.value.page_units.has(ref))).toBe(true);
     expect(result.value.steps.map((step) => step.instruction)).toEqual(confirmed.brief.generated!.page_plan.steps.slice(0, 3).map((step) => step.instruction));
     expect(result.value.steps[2]?.answers).toEqual(["Q1"]);
     expect(result.value.question_unit_refs).toEqual(["U1", "U3", "U10", "U2"]);
@@ -172,7 +185,8 @@ describe("Draft v2 exact section scope", () => {
     const result = buildDraftV2SectionScope(await fixture({ action: "update" }), "O3", settings);
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.path);
-    expect([...result.value.page_units.keys()]).toEqual(["U3", "U7", "U9"]);
+    // The frozen target snapshot still leads; the expansion never reorders it.
+    expect([...result.value.page_units.keys()].slice(0, 3)).toEqual(["U3", "U7", "U9"]);
     expect(result.value.steps.map((step) => step.kind)).toEqual(["keep", "rewrite"]);
   });
 
@@ -308,5 +322,69 @@ describe("Draft v2 selected-section planning", () => {
     if (kind === "unconfirmed") Reflect.set(changed, "schema", "gengrowth.content_brief/v2");
     expect(buildDraftV2SectionScope(changed, "O1", settings).ok).toBe(false);
     expect(planDraftV2Sections(changed, ["O1"]).ok).toBe(false);
+  });
+});
+
+describe("Draft v2 list items", () => {
+  const prose = { text: "Reporting can lag behind collection.", claim: "no_claim", evidence_refs: [] };
+  // O1 confirms exactly one H3, and the validator requires it verbatim.
+  const H3 = "Edited Check the collection timeline";
+  const para = (sentences: readonly unknown[]) => ({ paragraphs: [{ heading: H3, sentences }] });
+
+  it("keeps a bulleted sentence and marks it only when the model asked for one", async () => {
+    const scope = buildDraftV2SectionScope(await fixture(), "O1", settings);
+    if (!scope.ok) throw new Error(scope.path);
+    const body = validateDraftV2Section(para([
+      prose,
+      { text: "Enter the birth date.", claim: "bound", evidence_refs: ["U1"], bullet: true },
+    ]), scope.value, "en");
+    expect(body.ok).toBe(true);
+    if (!body.ok) throw new Error(body.path);
+    expect(body.value.paragraphs[0]!.sentences[1]!.bullet).toBe(true);
+    expect(Object.hasOwn(body.value.paragraphs[0]!.sentences[0]!, "bullet")).toBe(false);
+  });
+
+  // A draft written before lists existed has its run fingerprint recomputed from
+  // its parsed body on every rerun. If parsing injected a bullet key, that draft
+  // would fail with brief_fingerprint_mismatch in a tab the owner still has open.
+  it("canonicalizes prose exactly as it did before lists existed", async () => {
+    const scope = buildDraftV2SectionScope(await fixture(), "O1", settings);
+    if (!scope.ok) throw new Error(scope.path);
+    const body = validateDraftV2Section(para([prose]), scope.value, "en");
+    if (!body.ok) throw new Error(body.path);
+    expect(canonicalize(body.value)).toBe(canonicalize({
+      length: body.value.length,
+      paragraphs: [{ heading: H3, sentences: [{ ...prose, support_count: 0 }] }],
+    }));
+    expect(canonicalize(body.value)).not.toContain("bullet");
+  });
+
+  it("accepts an explicit false without storing it, so one sentence has one canonical form", async () => {
+    const scope = buildDraftV2SectionScope(await fixture(), "O1", settings);
+    if (!scope.ok) throw new Error(scope.path);
+    const withFalse = validateDraftV2Section(para([{ ...prose, bullet: false }]), scope.value, "en");
+    const without = validateDraftV2Section(para([prose]), scope.value, "en");
+    if (!withFalse.ok || !without.ok) throw new Error("expected both bodies");
+    expect(canonicalize(withFalse.value)).toBe(canonicalize(without.value));
+  });
+
+  it("round-trips a frozen bulleted body without rewriting it", async () => {
+    const scope = buildDraftV2SectionScope(await fixture(), "O1", settings);
+    if (!scope.ok) throw new Error(scope.path);
+    const body = validateDraftV2Section(para([
+      { text: "Enter the birth date.", claim: "bound", evidence_refs: ["U1"], bullet: true },
+    ]), scope.value, "en");
+    if (!body.ok) throw new Error(body.path);
+    const reparsed = parseDraftV2SectionBody(JSON.parse(JSON.stringify(body.value)), scope.value, "en");
+    expect(reparsed.ok).toBe(true);
+    if (!reparsed.ok) throw new Error(reparsed.path);
+    expect(canonicalize(reparsed.value)).toBe(canonicalize(body.value));
+  });
+
+  it("refuses a non-boolean bullet", async () => {
+    const scope = buildDraftV2SectionScope(await fixture(), "O1", settings);
+    if (!scope.ok) throw new Error(scope.path);
+    const body = validateDraftV2Section(para([{ ...prose, bullet: "yes" }]), scope.value, "en");
+    expect(body.ok).toBe(false);
   });
 });

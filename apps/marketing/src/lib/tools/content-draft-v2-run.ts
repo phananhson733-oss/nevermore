@@ -1,12 +1,13 @@
 // @input -- parsed confirmed Brief v2, exact selected sections/settings and bounded model seams
 // @output -- self-checked Draft v2 with current-request receipts and whole-draft coverage
 // @pos -- server orchestration only; admission and error envelopes remain in content-draft-handler
-import { COVERAGE_TIMEOUT_MS, DRAFT_TOTAL_BUDGET_MS, ENVELOPE_MS, SECTION_ENDPOINT_BUDGET_MS, SECTION_MAX_ATTEMPTS, SECTION_TIMEOUT_MS } from "@sf/public-tools/content-brief/constants";
+import { COVERAGE_TIMEOUT_MS, DRAFT_TOTAL_BUDGET_MS, ENVELOPE_MS, IMAGE_PROMPTS_TIMEOUT_MS, SECTION_ENDPOINT_BUDGET_MS, SECTION_MAX_ATTEMPTS, SECTION_TIMEOUT_MS } from "@sf/public-tools/content-brief/constants";
 import type { ResearchOutlineItem } from "@sf/public-tools/content-brief/v2-contract";
 import { assembleDraftV2, parseDraftResultV2 } from "@sf/public-tools/content-brief/v2-draft";
-import type { DraftResultV2, DraftV2Section, DraftV2Settings } from "@sf/public-tools/content-brief/v2-draft-contract";
+import type { DraftResultV2, DraftV2ImagePrompts, DraftV2Section, DraftV2Settings } from "@sf/public-tools/content-brief/v2-draft-contract";
 import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 import type { DraftCoverageInput, DraftCoverageResult } from "./content-draft-llm.ts";
+import type { DraftV2ImagePromptsInput } from "./content-draft-v2-images.ts";
 import type { DraftV2SectionInput } from "./content-draft-v2-llm.ts";
 import type { DraftV2SectionGeneration } from "@sf/public-tools/content-brief/v2-draft-contract";
 
@@ -18,6 +19,7 @@ const NO_COVERAGE: DraftCoverageResult = { items: null, reads: { status: "unavai
 export interface DraftV2RunDependencies {
   readonly generateSectionV2: (input: DraftV2SectionInput) => Promise<DraftV2SectionGeneration>;
   readonly runCoverageV2: (input: DraftCoverageInput) => Promise<DraftCoverageResult>;
+  readonly runImagePromptsV2: (input: DraftV2ImagePromptsInput) => Promise<DraftV2ImagePrompts>;
   readonly now: () => number;
   readonly runId: () => string;
 }
@@ -51,7 +53,7 @@ function noAttemptTimeout(heading: ResearchOutlineItem): DraftV2Section {
 /** Workers drain their bounded started calls before a missing receipt can escape. */
 async function writeSections(input: DraftV2RunInput, deps: DraftV2RunDependencies): Promise<readonly DraftV2Section[]> {
   const sections = new Map<string, DraftV2Section>();
-  const sectionDeadline = input.deadlineAt - COVERAGE_TIMEOUT_MS - RECEIPT_SETTLEMENT_MS;
+  const sectionDeadline = input.deadlineAt - COVERAGE_TIMEOUT_MS - IMAGE_PROMPTS_TIMEOUT_MS - RECEIPT_SETTLEMENT_MS;
   let next = 0;
   let failed = false;
   let firstFailure: unknown;
@@ -81,7 +83,7 @@ async function writeSections(input: DraftV2RunInput, deps: DraftV2RunDependencie
 async function coverageOf(input: DraftV2RunInput, sections: readonly DraftV2Section[], deps: DraftV2RunDependencies): Promise<DraftCoverageResult> {
   const ok = sections.filter((section) => section.status === "ok");
   if (ok.length === 0) return NO_COVERAGE;
-  const deadlineAt = input.deadlineAt - RECEIPT_SETTLEMENT_MS;
+  const deadlineAt = input.deadlineAt - IMAGE_PROMPTS_TIMEOUT_MS - RECEIPT_SETTLEMENT_MS;
   const availableMs = deadlineAt - deps.now() - ENVELOPE_MS;
   if (availableMs <= 0) return { items: null, reads: { status: "unavailable", reason: "timeout", attempted: 0, calls: 0, model_id: null, input_tokens: null, output_tokens: null } };
   return withReceiptDeadline(() => deps.runCoverageV2({
@@ -97,12 +99,40 @@ async function coverageOf(input: DraftV2RunInput, sections: readonly DraftV2Sect
   }), Math.min(COVERAGE_TIMEOUT_MS, availableMs) + RECEIPT_SETTLEMENT_MS);
 }
 
+/**
+ * Whole-draft like coverage, and re-derived on a rerun for the same reason: the
+ * rerun section's prose changed, so its illustration may no longer fit it.
+ * A draft with no generated prose has nothing to illustrate and records that as
+ * an honest unavailable read rather than skipping the key.
+ */
+function sectionText(section: DraftV2Section & { readonly status: "ok" }): string {
+  return section.body.paragraphs.map((paragraph) => paragraph.sentences.map((sentence) => sentence.text).join(" ")).join(" ");
+}
+async function imagePromptsOf(input: DraftV2RunInput, sections: readonly DraftV2Section[], deps: DraftV2RunDependencies): Promise<DraftV2ImagePrompts> {
+  const ok = sections.flatMap((section) => section.status === "ok" ? [section] : []);
+  const noAttempt = (reason: "insufficient_evidence" | "timeout"): DraftV2ImagePrompts =>
+    ({ status: "unavailable", reason, read: { status: "unavailable", reason, attempted: 0, calls: 0, model_id: null, input_tokens: null, output_tokens: null } });
+  if (ok.length === 0) return noAttempt("insufficient_evidence");
+  const deadlineAt = input.deadlineAt - RECEIPT_SETTLEMENT_MS;
+  const availableMs = deadlineAt - deps.now() - ENVELOPE_MS;
+  if (availableMs <= 0) return noAttempt("timeout");
+  return withReceiptDeadline(() => deps.runImagePromptsV2({
+    primary: input.confirmed.brief.context.input.primary,
+    language: input.confirmed.brief.context.input.language,
+    tone: input.settings.tone,
+    outline: input.confirmed.outline.map(({ id, h2, h3 }) => ({ id, h2, h3 })),
+    sections: ok.map((section) => ({ id: section.id, h2: section.h2, excerpt: sectionText(section) })),
+    deadlineAt,
+  }), Math.min(IMAGE_PROMPTS_TIMEOUT_MS, availableMs) + RECEIPT_SETTLEMENT_MS);
+}
+
 export async function runDraftV2(input: DraftV2RunInput, deps: DraftV2RunDependencies): ReturnType<typeof parseDraftResultV2> {
   const sections = await writeSections(input, deps);
   const coverage = await coverageOf(input, sections, deps);
+  const image_prompts = await imagePromptsOf(input, sections, deps);
   const previous = input.previous;
   const assembled = await assembleDraftV2({
-    confirmed: input.confirmed, settings: input.settings, sections, coverage,
+    confirmed: input.confirmed, settings: input.settings, sections, coverage, image_prompts,
     run: {
       run_id: deps.runId(), collected_at: new Date(input.start).toISOString(), elapsed_ms: Math.max(0, deps.now() - input.start),
       budget_ms: previous === null ? DRAFT_TOTAL_BUDGET_MS : SECTION_ENDPOINT_BUDGET_MS,

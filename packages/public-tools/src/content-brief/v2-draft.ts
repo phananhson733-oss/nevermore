@@ -2,7 +2,7 @@
 // @output -- detached, source-scoped result with recomputed coverage, receipts and checksum
 // @pos -- whole-result boundary; checksums prove content integrity, never source authenticity
 import { canonicalize, fingerprintCanonical } from "./canonical.ts";
-import { DRAFT_TOTAL_BUDGET_MS, MODEL_TEXT_MAX_CHARS, SECTION_ENDPOINT_BUDGET_MS, SECTION_MAX_ATTEMPTS, SECTION_MAX_SENTENCES, SENTENCE_MAX_CHARS } from "./constants.ts";
+import { DRAFT_TOTAL_BUDGET_MS, IMAGE_ALT_MAX_CHARS, IMAGE_PROMPT_MAX_CHARS, MODEL_TEXT_MAX_CHARS, OUTLINE_CAP, SECTION_ENDPOINT_BUDGET_MS, SECTION_MAX_ATTEMPTS, SECTION_MAX_SENTENCES, SENTENCE_MAX_CHARS } from "./constants.ts";
 import type { CoverageItem, LlmAggregateMeta, LlmReadMeta, ModelCoverageOutput } from "./contract.ts";
 import { aggregateSectionLlm, validateCoverageOutput, type SectionCallMeta } from "./draft-assemble.ts";
 import {
@@ -11,7 +11,7 @@ import {
 } from "./parse-brief-shape.ts";
 import { parseConfirmedBriefV2 } from "./v2-brief.ts";
 import { measureResearchLength, RESEARCH_HEADING_MAX_CHARS, RESEARCH_OUTLINE_MAX, RESEARCH_QUESTION_MAX } from "./v2-contract.ts";
-import { DRAFT_V2_MAX_BYTES, DRAFT_V2_SCHEMA, type DraftResultV2, type DraftV2Coverage, type DraftV2Rerun, type DraftV2Section, type DraftV2Settings, type DraftV2VerifyItem } from "./v2-draft-contract.ts";
+import { DRAFT_V2_MAX_BYTES, DRAFT_V2_SCHEMA, type DraftResultV2, type DraftV2Coverage, type DraftV2Rerun, type DraftV2Section, type DraftV2Settings, type DraftV2VerifyItem, type DraftV2ImagePrompts } from "./v2-draft-contract.ts";
 import { buildDraftV2SectionScope } from "./v2-draft-scope.ts";
 import { parseDraftV2SectionBody } from "./v2-draft-section.ts";
 import type { ConfirmedBriefV2 } from "./v2-generation-contract.ts";
@@ -21,6 +21,8 @@ export interface AssembleDraftV2Input {
   readonly settings: DraftV2Settings;
   readonly sections: readonly DraftV2Section[];
   readonly coverage: { readonly items: ModelCoverageOutput["items"] | null; readonly reads: LlmReadMeta };
+  /** Omit entirely when the image plan was never attempted; never pass undefined explicitly. */
+  readonly image_prompts?: DraftV2ImagePrompts;
   readonly run: { readonly run_id: string; readonly collected_at: string; readonly elapsed_ms: number; readonly budget_ms: number; readonly rerun: DraftV2Rerun | null };
 }
 
@@ -84,6 +86,32 @@ const coverageShape: Decoder<DraftV2Coverage> = tagged("status", {
   available: object({ status: literal("available"), items: array(coverageItem, { max: RESEARCH_QUESTION_MAX }), total: count(RESEARCH_QUESTION_MAX), covered: count(RESEARCH_QUESTION_MAX), partial: count(RESEARCH_QUESTION_MAX), none: count(RESEARCH_QUESTION_MAX), method: oneOf(["model", "empty_draft"] as const) }),
   unavailable: object({ ...unavailableShape, attempted: nullable(count(1)) }),
 });
+const imagePrompt = { prompt: modelText(IMAGE_PROMPT_MAX_CHARS), alt: modelText(IMAGE_ALT_MAX_CHARS) };
+const imagePromptsShape: Decoder<DraftV2ImagePrompts> = tagged("status", {
+  available: object({
+    status: literal("available"), hero: object(imagePrompt),
+    sections: array(object({ ...imagePrompt, section_id: id("O") }), { max: OUTLINE_CAP }), read: readShape,
+  }),
+  unavailable: object({ status: literal("unavailable"), reason: unavailableShape.reason, read: readShape }),
+});
+/**
+ * Only an "ok" section has prose to illustrate, so the plan names exactly those
+ * sections in confirmed order. Derivable from `sections`, hence checked here
+ * rather than trusted from the model or a stored draft.
+ */
+function checkImagePrompts(plan: DraftV2ImagePrompts, sections: readonly DraftV2Section[]): boolean {
+  if (plan.status === "unavailable") return plan.read.status === "unavailable";
+  if (plan.read.status !== "complete") return false;
+  const expected = sections.filter((section) => section.status === "ok").map((section) => section.id);
+  return expected.length > 0 && same(plan.sections.map((section) => section.section_id), expected);
+}
+/** Strips the optional key so the strict envelope decoders below never see it. */
+function splitImagePrompts(input: Record<string, unknown>): { readonly rest: Record<string, unknown>; readonly plan: unknown } {
+  if (!Object.hasOwn(input, "image_prompts")) return { rest: input, plan: undefined };
+  const { image_prompts: plan, ...rest } = input;
+  return { rest, plan };
+}
+
 const noCoverage: LlmReadMeta = { status: "unavailable", reason: "insufficient_evidence", attempted: 0, calls: 0, model_id: null, input_tokens: null, output_tokens: null };
 
 function same(left: unknown, right: unknown): boolean { return canonicalize(left) === canonicalize(right); }
@@ -212,17 +240,22 @@ export async function assembleDraftV2(input: AssembleDraftV2Input): Promise<Deco
   const run = object(runInputShape)(input.run, "run");
   if (!run.ok) return run;
   if (!checkRun(run.value, sections.value)) return reference("run");
+  const { rest, plan } = splitImagePrompts(input);
   const envelope = object({
     confirmed: () => confirmed, settings: () => settings, sections: () => sections, run: () => run,
     coverage: object({ items: (value) => ok(value), reads: readShape }),
-  })(input, "");
+  })(rest, "");
   if (!envelope.ok) return envelope;
+  const imagePrompts = plan === undefined ? undefined : imagePromptsShape(plan, "image_prompts");
+  if (imagePrompts !== undefined && !imagePrompts.ok) return imagePrompts;
+  if (imagePrompts !== undefined && !checkImagePrompts(imagePrompts.value, sections.value)) return reference("image_prompts");
   const coverage = deriveCoverage(confirmed.value, sections.value, envelope.value.coverage.items, envelope.value.coverage.reads);
   if (!coverage.ok) return coverage;
   const derived = derive(sections.value, confirmed.value, coverage.value.coverage, run.value.rerun);
   const unsigned: DraftResultV2 = {
     schema: DRAFT_V2_SCHEMA, confirmed_ref: confirmedRef(confirmed.value), settings: settings.value, sections: sections.value,
     coverage: coverage.value.coverage, verify_before_publish: derived.verify, totals: derived.totals,
+    ...(imagePrompts === undefined ? {} : { image_prompts: imagePrompts.value }),
     run: { ...run.value, mode: derived.mode, reads: { sections: derived.reads, llm_sections: derived.llm, llm_coverage: coverage.value.read }, fingerprint: "0".repeat(64) },
   };
   const value = { ...unsigned, run: { ...unsigned.run, fingerprint: await fingerprintDraftV2(unsigned) } };
@@ -235,6 +268,7 @@ async function parseBoundDraft(input: unknown, confirmed: ConfirmedBriefV2): Pro
   if (!isRecord(input) || input.schema !== DRAFT_V2_SCHEMA) return { ok: false, code: "brief_schema_mismatch", path: "schema" };
   const settings = settingsShape(input.settings, "settings");
   if (!settings.ok) return settings;
+  const { rest, plan } = splitImagePrompts(input);
   const shape: Decoder<DraftResultV2> = object({
     schema: literal(DRAFT_V2_SCHEMA), confirmed_ref: object({ schema: literal(confirmed.schema), fingerprint: hash, revision: count(1_000_000, 1), brief_run_id: modelText(128), keyword: modelText(200) }),
     settings: () => settings, sections: sectionsShape(confirmed, settings.value), coverage: coverageShape,
@@ -244,8 +278,12 @@ async function parseBoundDraft(input: unknown, confirmed: ConfirmedBriefV2): Pro
       reads: object({ sections: object({ requested: count(RESEARCH_OUTLINE_MAX), ok: count(RESEARCH_OUTLINE_MAX), failed: count(RESEARCH_OUTLINE_MAX), skipped: count(RESEARCH_OUTLINE_MAX) }), llm_sections: aggregateShape, llm_coverage: readShape }),
     }),
   });
-  const decoded = shape(input, "");
-  if (!decoded.ok) return decoded;
+  const bare = shape(rest, "");
+  if (!bare.ok) return bare;
+  const imagePrompts = plan === undefined ? undefined : imagePromptsShape(plan, "image_prompts");
+  if (imagePrompts !== undefined && !imagePrompts.ok) return imagePrompts;
+  if (imagePrompts !== undefined && !checkImagePrompts(imagePrompts.value, bare.value.sections)) return reference("image_prompts");
+  const decoded: Decoded<DraftResultV2> = ok(imagePrompts === undefined ? bare.value : { ...bare.value, image_prompts: imagePrompts.value });
   const value = decoded.value;
   if (!same(value.confirmed_ref, confirmedRef(confirmed))) return reference("confirmed_ref");
   if (!checkRun(value.run, value.sections)) return reference("run");

@@ -44,6 +44,27 @@ export type DraftV2Coverage =
   }
   | Unavailable;
 
+/** One image the owner still has to make: a prompt for an image model and the alt text to publish with it. */
+export interface DraftV2ImagePrompt {
+  /** Written for an image model; English regardless of article language, which is what those models read best. */
+  readonly prompt: string;
+  /** Written in the article language; describes the picture, not the paragraph. */
+  readonly alt: string;
+}
+/**
+ * The draft's image plan: one hero and one illustration per generated section.
+ * Nothing here is an image -- the tool draws nothing and stores nothing.
+ */
+export type DraftV2ImagePrompts =
+  | {
+    readonly status: "available";
+    readonly hero: DraftV2ImagePrompt;
+    /** Exactly the sections with status "ok", in confirmed order. */
+    readonly sections: readonly (DraftV2ImagePrompt & { readonly section_id: string })[];
+    readonly read: LlmReadMeta;
+  }
+  | { readonly status: "unavailable"; readonly reason: Unavailable["reason"]; readonly read: LlmReadMeta };
+
 export interface DraftV2VerifyItem {
   readonly sentence: string;
   readonly section_id: string;
@@ -70,6 +91,15 @@ export interface DraftResultV2 {
   readonly coverage: DraftV2Coverage;
   readonly verify_before_publish: readonly DraftV2VerifyItem[];
   readonly totals: ResearchLength;
+  /**
+   * Present only on a draft that attempted the image plan. Its own model read
+   * lives inside it rather than in run.reads on purpose: a stored draft's run
+   * fingerprint is recomputed from its parsed body on every rerun, so a key
+   * added anywhere a draft written before image prompts existed would fail that
+   * draft with brief_fingerprint_mismatch. Absent means never attempted;
+   * unavailable means attempted and not delivered.
+   */
+  readonly image_prompts?: DraftV2ImagePrompts;
   readonly run: {
     readonly run_id: string;
     readonly collected_at: string;

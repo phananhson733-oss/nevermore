@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { canonicalize } from "./canonical.ts";
 import { DRAFT_TOTAL_BUDGET_MS, SECTION_ENDPOINT_BUDGET_MS } from "./constants.ts";
 import type { LlmReadMeta, ModelCoverageOutput } from "./contract.ts";
 import { confirmedDraftV2Fixture } from "./v2-draft-fixtures.ts";
-import { DRAFT_V2_MAX_BYTES, type DraftResultV2, type DraftV2Call, type DraftV2Section, type DraftV2Settings } from "./v2-draft-contract.ts";
+import { DRAFT_V2_MAX_BYTES, type DraftResultV2, type DraftV2Call, type DraftV2ImagePrompts, type DraftV2Section, type DraftV2Settings } from "./v2-draft-contract.ts";
 import { validateDraftV2Section } from "./v2-draft-section.ts";
 import { buildDraftV2SectionScope } from "./v2-draft-scope.ts";
 import { assembleDraftV2, fingerprintDraftV2, parseDraftResultV2 } from "./v2-draft.ts";
@@ -251,5 +252,86 @@ describe("strict Draft v2 result assembly", () => {
     const extraCoverage = { ...input, coverage: { ...input.coverage, extra: true } };
     expect(await assembleDraftV2(extraInput)).toMatchObject({ ok: false });
     expect(await assembleDraftV2(extraCoverage)).toMatchObject({ ok: false });
+  });
+});
+
+describe("Draft v2 image prompts", () => {
+  const imageRead: LlmReadMeta = { status: "complete", calls: 1, model_id: "offline-image-model", temperature_requested: 0, temperature_effective: null, input_tokens: 90, output_tokens: 60 };
+  function planFor(confirmed: ConfirmedBriefV2, sections: readonly DraftV2Section[]): Extract<DraftV2ImagePrompts, { status: "available" }> {
+    return {
+      status: "available",
+      hero: { prompt: "Editorial illustration of a calendar and a clock, soft daylight, no text.", alt: "A calendar beside a clock." },
+      sections: sections.filter((section) => section.status === "ok").map((section) => ({ section_id: section.id, prompt: `Illustration for ${section.h2}, flat vector, no text.`, alt: `Illustration for ${section.h2}.` })),
+      read: imageRead,
+    };
+  }
+
+  it("carries an available plan through assembly, fingerprint and parse", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const sections = sectionsFor(confirmed);
+    const assembled = await assembleDraftV2({ confirmed, settings, sections, coverage: { items: coverageFor(confirmed), reads: coverageRead }, image_prompts: planFor(confirmed, sections), run: initialRun });
+    expect(assembled.ok).toBe(true);
+    if (!assembled.ok) throw new Error(assembled.path);
+    expect(assembled.value.image_prompts?.status).toBe("available");
+    const reparsed = await parseDraftResultV2(JSON.parse(JSON.stringify(assembled.value)), confirmed);
+    expect(reparsed.ok).toBe(true);
+    if (!reparsed.ok) throw new Error(reparsed.path);
+    expect(reparsed.value.image_prompts).toEqual(assembled.value.image_prompts);
+  });
+
+  // The stored run fingerprint is recomputed from the parsed draft on every rerun.
+  // A draft made before image prompts existed must parse to the same bytes it
+  // was fingerprinted over, or every open tab fails with brief_fingerprint_mismatch.
+  it("leaves a draft that never attempted the plan byte-for-byte as it was", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const sections = sectionsFor(confirmed);
+    const assembled = await assembleDraftV2({ confirmed, settings, sections, coverage: { items: coverageFor(confirmed), reads: coverageRead }, run: initialRun });
+    if (!assembled.ok) throw new Error(assembled.path);
+    expect(Object.hasOwn(assembled.value, "image_prompts")).toBe(false);
+    expect(canonicalize(assembled.value)).not.toContain("image_prompts");
+    const reparsed = await parseDraftResultV2(JSON.parse(JSON.stringify(assembled.value)), confirmed);
+    expect(reparsed.ok).toBe(true);
+    if (!reparsed.ok) throw new Error(reparsed.path);
+    expect(Object.hasOwn(reparsed.value, "image_prompts")).toBe(false);
+    expect(await fingerprintDraftV2(reparsed.value)).toBe(assembled.value.run.fingerprint);
+  });
+
+  it("records an attempt that delivered nothing as unavailable, not as absence", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const sections = sectionsFor(confirmed);
+    const plan: DraftV2ImagePrompts = { status: "unavailable", reason: "timeout", read: noCoverage };
+    const assembled = await assembleDraftV2({ confirmed, settings, sections, coverage: { items: coverageFor(confirmed), reads: coverageRead }, image_prompts: plan, run: initialRun });
+    expect(assembled.ok).toBe(true);
+    if (!assembled.ok) throw new Error(assembled.path);
+    expect(assembled.value.image_prompts).toEqual(plan);
+  });
+
+  it("refuses a plan whose sections are not exactly the generated ones in order", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const sections = sectionsFor(confirmed);
+    const plan = planFor(confirmed, sections);
+    const reversed = { ...plan, sections: [...plan.sections].reverse() };
+    const missing = { ...plan, sections: plan.sections.slice(1) };
+    const invented = { ...plan, sections: [...plan.sections, { section_id: "O9", prompt: "x", alt: "x" }] };
+    for (const broken of [reversed, missing, invented]) {
+      const assembled = await assembleDraftV2({ confirmed, settings, sections, coverage: { items: coverageFor(confirmed), reads: coverageRead }, image_prompts: broken as DraftV2ImagePrompts, run: initialRun });
+      expect(assembled.ok).toBe(false);
+      if (!assembled.ok) expect(assembled.path).toMatch(/^image_prompts/u);
+    }
+  });
+
+  it("refuses an available plan without a completed read and a stored tampered plan", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const sections = sectionsFor(confirmed);
+    const noRead = { ...planFor(confirmed, sections), read: noCoverage };
+    const assembled = await assembleDraftV2({ confirmed, settings, sections, coverage: { items: coverageFor(confirmed), reads: coverageRead }, image_prompts: noRead, run: initialRun });
+    expect(assembled.ok).toBe(false);
+    const good = await assembleDraftV2({ confirmed, settings, sections, coverage: { items: coverageFor(confirmed), reads: coverageRead }, image_prompts: planFor(confirmed, sections), run: initialRun });
+    if (!good.ok) throw new Error(good.path);
+    const tampered = JSON.parse(JSON.stringify(good.value)) as { image_prompts: { hero: { prompt: string } } };
+    tampered.image_prompts.hero.prompt = "Something else entirely.";
+    const reparsed = await parseDraftResultV2(tampered, confirmed);
+    expect(reparsed.ok).toBe(false);
+    if (!reparsed.ok) expect(reparsed.code).toBe("brief_fingerprint_mismatch");
   });
 });

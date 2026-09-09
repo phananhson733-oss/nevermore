@@ -30,7 +30,10 @@ const coverageRead = { status: "complete" as const, calls: 1, model_id: "offline
 const noCoverage = { status: "unavailable" as const, reason: "insufficient_evidence" as const, attempted: 0, calls: 0, model_id: null, input_tokens: null, output_tokens: null };
 function exportNotes(locale: "en" | "zh" = "en") {
   const catalog = (locale === "en" ? en : zh).tools.contentDraft;
-  return { failed: (reason: string) => catalog.sectionFail[reason as keyof typeof catalog.sectionFail], skipped: catalog.doc.skippedBody, relatedLinks: locale === "en" ? "Related links" : "相关链接" };
+  return {
+    failed: (reason: string) => catalog.sectionFail[reason as keyof typeof catalog.sectionFail], skipped: catalog.doc.skippedBody, relatedLinks: locale === "en" ? "Related links" : "相关链接",
+    imagePrompts: catalog.v2.images.markdownHeading, imagePromptsNote: catalog.v2.images.markdownNote, imageHero: catalog.v2.images.hero, imagePrompt: catalog.v2.images.prompt, imageAlt: catalog.v2.images.alt,
+  };
 }
 async function confirmedWithLinks(url = "https://owned.test/dates(a)[b]?next=(x)&tag=[v]#section(2)") {
   const original = await confirmedDraftV2Fixture({ action: "update" });
@@ -46,7 +49,7 @@ async function confirmedWithLinks(url = "https://owned.test/dates(a)[b]?next=(x)
   return { confirmed: confirmed.value, url };
 }
 
-async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolean; skipped?: boolean; empty?: boolean; unavailable?: boolean; previous?: DraftResultV2; settings?: DraftV2Settings; cjk?: boolean; claims?: boolean; quality?: "none" | "partial" } = {}) {
+async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolean; skipped?: boolean; empty?: boolean; unavailable?: boolean; previous?: DraftResultV2; settings?: DraftV2Settings; cjk?: boolean; claims?: boolean; bullets?: boolean; images?: "available" | "unavailable"; quality?: "none" | "partial" } = {}) {
   const currentSettings = options.settings ?? settings;
   const sections: DraftV2Section[] = confirmed.outline.map((heading, index) => {
     if ((options.empty || options.skipped) && index === 1) return { ...heading, status: "skipped" };
@@ -54,7 +57,12 @@ async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolea
     const scope = buildDraftV2SectionScope(confirmed, heading.id, currentSettings);
     if (!scope.ok) throw new Error(scope.path);
     const pageRefs = [...scope.value.page_units.keys()];
-    const sentences = options.claims ? (index === 0 ? [
+    const sentences = options.bullets && index === 0 ? [
+      { text: "To create a chart, enter three things.", claim: "no_claim", evidence_refs: [] },
+      { text: "Enter the birth date.", claim: "bound", evidence_refs: pageRefs, bullet: true },
+      { text: "Enter the birth time.", claim: "bound", evidence_refs: pageRefs, bullet: true },
+      { text: "Then read the notes below the form.", claim: "no_claim", evidence_refs: [] },
+    ] : options.claims ? (index === 0 ? [
       { text: "Reporting can lag behind collection.", claim: "bound", evidence_refs: pageRefs },
       { text: "Review the reporting timeline.", claim: "no_claim", evidence_refs: [] },
     ] : [
@@ -66,8 +74,15 @@ async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolea
     if (!body.ok) throw new Error(body.path);
     return { ...heading, status: "ok", body: body.value, llm };
   });
+  const okIds = sections.flatMap((section) => section.status === "ok" ? [section.id] : []);
+  const imageRead = { status: "complete" as const, calls: 1, model_id: "offline-image", temperature_requested: 0, temperature_effective: null, input_tokens: 60, output_tokens: 40 };
   const input: AssembleDraftV2Input = {
     confirmed, settings: currentSettings, sections,
+    ...(options.images === "available" ? { image_prompts: {
+      status: "available" as const, read: imageRead,
+      hero: { prompt: "Wide editorial illustration of a calendar beside a clock, soft daylight, no text.", alt: options.cjk ? "日历旁放着一座时钟。" : "A calendar beside a clock." },
+      sections: okIds.map((id) => ({ section_id: id, prompt: `Flat vector illustration for ${id}, single focal object, no text.`, alt: `An object for ${id}.` })),
+    } } : options.images === "unavailable" ? { image_prompts: { status: "unavailable" as const, reason: "timeout" as const, read: noCoverage } } : {}),
     coverage: { items: options.empty ? null : options.unavailable ? [] : confirmed.brief.generated!.research.questions.map((question, index) => options.quality ? ({ question_id: question.id, status: options.quality === "partial" && index === 0 ? "partial" : "none", covered_in: options.quality === "partial" && index === 0 ? "O1" : null, gap: "Explain the practical reporting checks." }) : ({ question_id: question.id, status: "covered", covered_in: options.failed ? "O2" : confirmed.outline.find((heading) => heading.answers.includes(question.id))!.id, gap: null })), reads: options.empty ? noCoverage : coverageRead },
     run: { run_id: options.previous ? "draft-rerun" : "draft-fixture", collected_at: "2026-08-31T02:00:00.000Z", elapsed_ms: 100, budget_ms: options.previous ? SECTION_ENDPOINT_BUDGET_MS : DRAFT_TOTAL_BUDGET_MS, rerun: options.previous ? { section_id: "O1", previous_run_id: options.previous.run.run_id, previous_fingerprint: options.previous.run.fingerprint } : null },
   };
@@ -141,9 +156,11 @@ describe("Draft v2 exact-revision workflow", () => {
     expect(node(host, '[data-toggle-section="O1"]').getAttribute("aria-expanded")).toBe("false");
     expect(node(host, "[data-quality-status]").textContent).toBe("Coverage checked · review required");
   });
-  it("preserves the published URL across a successful section rerun while settings stay folded", async () => {
-    const confirmed = await confirmedDraftV2Fixture(); const previous = await resultFor(confirmed); const next = await resultFor(confirmed, { previous }); const fetcher = api(previous); const { host } = await render(confirmed); await click(host, "[data-generate-draft]"); await flush(); await act(async () => { const input = node<HTMLInputElement>(host, "[data-published-url]"); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "https://published.test/keep-through-rerun"); input.dispatchEvent(new Event("input", { bubbles: true })); });
-    fetcher.mockImplementation(async (url) => String(url) === "/api/auth/session" ? response({ signedIn: true }) : response(next)); await click(host, '[data-rerun-section="O1"]'); await flush(); expect(node(host, "[data-draft-v2-result]").getAttribute("data-run-id")).toBe(next.run.run_id); expect(node<HTMLElement>(host, "[data-draft-settings-panel]").hidden).toBe(true); expect(node<HTMLInputElement>(host, "[data-published-url]").value).toBe("https://published.test/keep-through-rerun");
+  it("keeps settings folded across a successful section rerun", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const previous = await resultFor(confirmed); const next = await resultFor(confirmed, { previous }); const fetcher = api(previous); const { host } = await render(confirmed); await click(host, "[data-generate-draft]"); await flush();
+    fetcher.mockImplementation(async (url) => String(url) === "/api/auth/session" ? response({ signedIn: true }) : response(next)); await click(host, '[data-rerun-section="O1"]'); await flush(); expect(node(host, "[data-draft-v2-result]").getAttribute("data-run-id")).toBe(next.run.run_id); expect(node<HTMLElement>(host, "[data-draft-settings-panel]").hidden).toBe(true);
+    // This tool publishes nothing and cannot know where a draft went, so the result carries no published-URL exit.
+    expect(host.querySelector("[data-published-url]")).toBeNull();
   });
   it("keeps settings open when a valid returned artifact has no successfully generated section", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed, { empty: true }); api(result); const { host } = await render(confirmed); await click(host, '[data-section-checkbox="O2"]'); await click(host, "[data-generate-draft]"); await flush(); expect(node<HTMLElement>(host, "[data-draft-settings-panel]").hidden).toBe(false); expect(node(host, "[data-draft-v2-result]").getAttribute("data-run-id")).toBe(result.run.run_id);
@@ -259,6 +276,10 @@ describe("Draft v2 truthful results and exact exports", () => {
   });
   it("marks source tiers independently of claim types and keeps every exact evidence link", async () => {
     const confirmed = await confirmedDraftV2Fixture({ action: "update" }); const result = await resultFor(confirmed, { claims: true }); const { host } = await render(confirmed, { result });
+    // Annotations start off so the draft reads as prose; everything below is what
+    // the toggle brings back for anyone actually verifying a sentence.
+    expect(host.querySelector("[data-source-legend]")).toBeNull();
+    await click(host, "[data-toggle-annotations]");
     expect(node(host, "[data-source-legend]").textContent).toMatch(/First.party.*Third.party.*Model/s);
     const sentences = host.querySelectorAll<HTMLElement>("[data-claim]");
     expect(sentences[0]!.getAttribute("data-source-tier")).toBe("mixed");
@@ -271,6 +292,70 @@ describe("Draft v2 truthful results and exact exports", () => {
     const before = JSON.stringify(result); await click(host, "[data-toggle-annotations]");
     expect(node(host, "[data-toggle-annotations]").getAttribute("aria-pressed")).toBe("false");
     expect(host.querySelector("[data-source-legend]")).toBeNull(); expect(JSON.stringify(result)).toBe(before);
+  });
+  it("renders consecutive bulleted sentences as one list between the prose and exports them as list lines", async () => {
+    const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed, { bullets: true }); const { host } = await render(confirmed, { result });
+    const section = node(host, '[data-section-body="O1"]');
+    const lists = section.querySelectorAll("[data-draft-list]");
+    expect(lists).toHaveLength(1);
+    expect(Array.from(lists[0]!.querySelectorAll("li [data-sentence-text]"), (item) => item.textContent)).toEqual(["Enter the birth date.", "Enter the birth time."]);
+    // The prose on either side stays in paragraphs, in order, around the list.
+    const blocks = Array.from(section.querySelectorAll("p[data-paragraph-sources], p:not([data-paragraph-sources]), ul"), (item) => item.tagName);
+    expect(blocks.slice(0, 3)).toEqual(["P", "UL", "P"]);
+    // A list item keeps its claim so the toggle can still audit it.
+    expect(lists[0]!.querySelector('[data-claim="bound"]')).not.toBeNull();
+    const markdown = contentDraftV2Markdown(result, confirmed, exportNotes());
+    expect(markdown).toContain("To create a chart, enter three things.\n\n- Enter the birth date.\n- Enter the birth time.\n\nThen read the notes below the form.");
+  });
+  it.each(["en", "zh"] as const)("shows the image plan as copyable cards and exports it at the end of the Markdown (%s)", async (locale) => {
+    const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed, { images: "available" }); const { host } = await render(confirmed, { locale, result });
+    const section = node(host, "[data-image-prompts]");
+    expect(section.getAttribute("data-status")).toBe("available");
+    expect(section.textContent).toContain(locale === "en" ? "This tool makes no images" : "本工具不生成图片");
+    const cards = Array.from(host.querySelectorAll<HTMLElement>("[data-image-prompt]"), (card) => card.getAttribute("data-image-prompt"));
+    expect(cards).toEqual(["hero", ...confirmed.outline.map((item) => item.id)]);
+    // The prompt is the exact string the owner will paste elsewhere.
+    expect(node(host, '[data-image-prompt="hero"] [data-image-prompt-text]').textContent).toBe("Wide editorial illustration of a calendar beside a clock, soft daylight, no text.");
+    expect(node(host, '[data-image-prompt="hero"] [data-image-prompt-text]').getAttribute("lang")).toBe("en");
+    const writeText = vi.fn().mockResolvedValue(undefined); Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    await click(host, '[data-copy-image-prompt="hero"]');
+    expect(writeText).toHaveBeenCalledWith("Wide editorial illustration of a calendar beside a clock, soft daylight, no text.");
+    expect(node(host, '[data-copy-image-prompt="hero"]').textContent).toBe(locale === "en" ? "Copied" : "已复制");
+    const markdown = contentDraftV2Markdown(result, confirmed, exportNotes(locale));
+    const heading = locale === "en" ? "## Image prompts" : "## 配图提示词";
+    expect(markdown).toContain(heading);
+    expect(markdown.indexOf(heading)).toBeGreaterThan(markdown.lastIndexOf("## " + confirmed.outline.at(-1)!.h2));
+    expect(markdown).toContain(`### ${confirmed.outline[0]!.id} · ${confirmed.outline[0]!.h2}`);
+    expect(markdown).toContain("Flat vector illustration for O1, single focal object, no text.");
+  });
+  it("says why there is no plan without touching the draft, and shows nothing for a draft that never had one", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const unavailable = await resultFor(confirmed, { images: "unavailable" }); const first = await render(confirmed, { result: unavailable });
+    expect(node(first.host, "[data-image-prompts-unavailable]").textContent).toMatch(/budget exhausted/i);
+    expect(first.host.querySelectorAll("[data-image-prompt]")).toHaveLength(0);
+    expect(contentDraftV2Markdown(unavailable, confirmed, exportNotes())).not.toContain("## Image prompts");
+    // A draft assembled before image prompts existed carries no key and renders no section at all.
+    const legacy = await resultFor(confirmed); const second = await render(confirmed, { result: legacy });
+    expect(Object.hasOwn(legacy, "image_prompts")).toBe(false);
+    expect(second.host.querySelector("[data-image-prompts]")).toBeNull();
+  });
+  it.each(["en", "zh"] as const)("names each paragraph's sources once beneath it without the reader opening annotations (%s)", async (locale) => {
+    const confirmed = await confirmedDraftV2Fixture({ action: "update" }); const result = await resultFor(confirmed, { claims: true }); const { host } = await render(confirmed, { locale, result });
+    expect(node(host, "[data-toggle-annotations]").getAttribute("aria-pressed")).toBe("false");
+    const lines = host.querySelectorAll<HTMLElement>("[data-paragraph-sources]");
+    expect(lines.length).toBeGreaterThan(0);
+    const first = lines[0]!;
+    expect(first.textContent).toContain(locale === "en" ? "Sources:" : "来源：");
+    // A host is named, not a bare U id, and it still resolves to the evidence entry.
+    const links = Array.from(first.querySelectorAll<HTMLAnchorElement>("a"));
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(link.textContent).not.toMatch(/^U\d+$/u);
+      expect(document.getElementById(link.hash.slice(1))).not.toBeNull();
+    }
+    // One entry per distinct source: a paragraph citing one page twice says it once.
+    const labels = links.map((link) => link.textContent);
+    expect(new Set(labels).size).toBe(labels.length);
   });
   it("labels competitor-only support third-party and keeps skipped/failed status visible", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const result = await resultFor(confirmed, { claims: true }); const { host, rerender } = await render(confirmed, { result });
@@ -290,10 +375,10 @@ describe("Draft v2 truthful results and exact exports", () => {
     const result = await resultFor(checked.value, { claims: true }); const { host } = await render(checked.value, { result });
     expect(node(host, '[data-evidence-ref="P1"]').textContent).toContain(derivation === "observed" ? "Observed in profile" : "Computed in profile");
   });
-  it("hides an old export success on rerun while preserving the visitor's published URL", async () => {
+  it("hides an old export success on rerun", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const previous = await resultFor(confirmed); const next = await resultFor(confirmed, { previous }); const { host, rerender } = await render(confirmed, { result: previous }); Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
-    await act(async () => { const input = node<HTMLInputElement>(host, "[data-published-url]"); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "https://published.test/keep-me"); input.dispatchEvent(new Event("input", { bubbles: true })); }); await click(host, "[data-copy-markdown]"); expect(node(host, '[role="status"]').textContent).toBe(en.tools.contentDraft.v2.export.copied);
-    await rerender(confirmed, next); expect(host.querySelector('[role="status"]')).toBeNull(); expect(node<HTMLInputElement>(host, "[data-published-url]").value).toBe("https://published.test/keep-me");
+    await click(host, "[data-copy-markdown]"); expect(node(host, '[role="status"]').textContent).toBe(en.tools.contentDraft.v2.export.copied);
+    await rerender(confirmed, next); expect(host.querySelector('[role="status"]')).toBeNull();
   });
   it("does not attach an old asynchronous clipboard success to the replacement result", async () => {
     const confirmed = await confirmedDraftV2Fixture(); const previous = await resultFor(confirmed); const next = await resultFor(confirmed, { previous }); let resolve!: () => void; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn(() => new Promise<void>((finish) => { resolve = finish; })) } }); const { host, rerender } = await render(confirmed, { result: previous });
@@ -343,6 +428,7 @@ describe("Draft v2 truthful results and exact exports", () => {
     expect(Array.from(host.querySelectorAll("[data-draft-h2]"), (item) => item.textContent)).toEqual(confirmed.outline.map((item) => item.h2)); expect(Array.from(host.querySelectorAll("[data-draft-h3]"), (item) => item.textContent)).toEqual(confirmed.outline.flatMap((item) => item.h3));
     for (const claim of ["bound", "gap", "no_claim", "stance"]) expect(host.querySelector(`[data-claim="${claim}"]`)).not.toBeNull();
     expect(node(host, '[data-evidence-ref="P1"]').textContent).toContain("Compares finalized reporting periods"); expect(node(host, '[data-evidence-ref="U1"]').textContent).toContain("Reporting can lag behind collection.");
+    await click(host, "[data-toggle-annotations]");
     expect(node(host, "[data-support-count]").textContent).toMatch(locale === "en" ? /2 observed supporting pages/i : /2.*已观测支持页面/);
     expect(host.querySelectorAll("details[open]")).toHaveLength(0); expect(JSON.parse(node(host, "[data-run-ledger]").textContent!)).toEqual(result.run);
   });

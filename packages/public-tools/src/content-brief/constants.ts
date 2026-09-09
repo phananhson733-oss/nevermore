@@ -51,6 +51,12 @@ export const MODEL_TEXT_MAX_CHARS = 2_000;
 export const LLM_MAX_OUTPUT_TOKENS = 4_000; // brief
 export const SECTION_MAX_OUTPUT_TOKENS = 2_500;
 export const COVERAGE_MAX_OUTPUT_TOKENS = 1_500;
+/** hero + 最多 OUTLINE_CAP 节，每条 prompt ≤ IMAGE_PROMPT_MAX_CHARS；按 4 字节/token 留足 */
+export const IMAGE_PROMPTS_MAX_OUTPUT_TOKENS = 2_500;
+/** 图像模型的提示词；写长了模型反而抓不住主体 */
+export const IMAGE_PROMPT_MAX_CHARS = 600;
+/** 替代文本；描述画面而不是复述文章 */
+export const IMAGE_ALT_MAX_CHARS = 200;
 export const MAX_BYTES_PER_TOKEN = 4;
 /** 句级标注（claim / refs / support_count）相对纯文本的膨胀 */
 export const ANNOTATION_OVERHEAD = 2;
@@ -59,6 +65,33 @@ export const SECTION_BODY_MAX_BYTES =
   SECTION_MAX_OUTPUT_TOKENS * MAX_BYTES_PER_TOKEN * ANNOTATION_OVERHEAD;
 export const SECTION_MAX_SENTENCES = 120;
 export const SENTENCE_MAX_CHARS = 600;
+
+/* ------------------------------------------------------------------ */
+/* 每节送进模型的证据面                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 一节可引用的页面单元，其"按 prompt 形状序列化"后的字节上限。
+ *
+ * 为什么需要它。一节的必给证据 = 它所答问题的 source_refs；那通常只有
+ * 三五个单元，模型于是只能写出三五句话。放开到"命中页面的其余单元"能把
+ * 可写内容抬起来，但 DRAFT_V2_PROMPT_MAX_BYTES 是硬失败线：超了整节
+ * validation_failed，用户看到的是"失败"而不是"短"。
+ *
+ * 数字来自实测（10 页 × 6 段的满额 brief，段文 RESEARCH_SEGMENT_MAX_CHARS）：
+ *   单个单元序列化后 英文 ≈ 799 B、中文 ≈ 1724 B；
+ *   60 个单元全给 英文 = 59.7 KB（放得下）、中文 = 115.2 KB（超 17 KB）。
+ * 所以按数量设上限会在中文上炸，必须按字节。
+ *
+ * 预算分配（对着 DRAFT_V2_PROMPT_MAX_BYTES = 96 KiB）：
+ *   system prompt 实测 8.6 KB，留 14 KB 给后续规则增长；
+ *   user 里的非单元部分（候选页、GSC、内链、do_not_cover、改写目标快照、
+ *   PAA、serp_titles、steps）留 20 KB；
+ *   余下 62 KB 给页面单元，取整到 60 KiB。
+ * 中文因此约 35 个单元、英文可覆盖全部 60 个。
+ * v2-draft-scope.test.ts 用满额 brief 断言最终 prompt 真的没越线。
+ */
+export const SECTION_EVIDENCE_MAX_BYTES = 60 * 1024;
 
 /* ------------------------------------------------------------------ */
 /* SERP / 抓取                                                          */
@@ -116,9 +149,11 @@ export const SECTION_TIMEOUT_MS = 20_000;
 export const SECTION_MAX_ATTEMPTS = 2;
 export const DRAFT_TOTAL_BUDGET_MS = 120_000; // route maxDuration = 300
 export const COVERAGE_TIMEOUT_MS = 20_000;
-/** = SECTION_TIMEOUT_MS × SECTION_MAX_ATTEMPTS + COVERAGE_TIMEOUT_MS + ENVELOPE_MS；route maxDuration = 300 */
+/** 配图提示词那一次独立调用的上限；和覆盖度一样在章节之后、整篇为单位 */
+export const IMAGE_PROMPTS_TIMEOUT_MS = 15_000;
+/** = SECTION_TIMEOUT_MS × SECTION_MAX_ATTEMPTS + COVERAGE_TIMEOUT_MS + IMAGE_PROMPTS_TIMEOUT_MS + ENVELOPE_MS；route maxDuration = 300 */
 export const SECTION_ENDPOINT_BUDGET_MS =
-  SECTION_TIMEOUT_MS * SECTION_MAX_ATTEMPTS + COVERAGE_TIMEOUT_MS + ENVELOPE_MS;
+  SECTION_TIMEOUT_MS * SECTION_MAX_ATTEMPTS + COVERAGE_TIMEOUT_MS + IMAGE_PROMPTS_TIMEOUT_MS + ENVELOPE_MS;
 /** 客户端软上限；服务端只认配额 */
 export const SECTION_RERUN_SOFT_MAX = 7;
 

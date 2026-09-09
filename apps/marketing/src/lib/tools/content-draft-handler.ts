@@ -65,6 +65,7 @@ import {
   type DraftSectionInput,
   type DraftSectionResult,
 } from "./content-draft-llm.ts";
+import { runDraftV2ImagePrompts } from "./content-draft-v2-images.ts";
 import { generateDraftV2Section, runDraftV2Coverage } from "./content-draft-v2-llm.ts";
 import { resolveDraftV2Language } from "./content-draft-v2-language.ts";
 import { runDraftV2, type DraftV2RunDependencies } from "./content-draft-v2-run.ts";
@@ -127,6 +128,7 @@ export const CONTENT_DRAFT_HANDLER_DEPENDENCIES: ContentDraftHandlerDependencies
   runCoverage: (input) => runDraftCoverage(input, { config: resolveContentDraftLlmConfig() }),
   generateSectionV2: (input) => generateDraftV2Section(input, { config: resolveContentDraftLlmConfig() }),
   runCoverageV2: (input) => runDraftV2Coverage(input, { config: resolveContentDraftLlmConfig() }),
+  runImagePromptsV2: (input) => runDraftV2ImagePrompts(input, { config: resolveContentDraftLlmConfig() }),
   now: () => Date.now(),
   runId: () => randomUUID(),
   emit: (line) => console.info(line),
@@ -582,7 +584,9 @@ async function handleV2(body: Record<string, unknown>, clock: Clock, dependencie
     dependencies.emit(JSON.stringify({ tool: TOOL, schema: "v2", self_check_failed: result.path, code: result.code }));
     return refuse("draft_unavailable", 503);
   }
-  dependencies.emit(JSON.stringify({ tool: TOOL, schema: "v2", run_id: result.value.run.run_id, mode: result.value.run.mode, elapsed_ms: result.value.run.elapsed_ms, sections: result.value.run.reads.sections, llm_calls: result.value.run.reads.llm_sections.calls + result.value.run.reads.llm_coverage.calls, self_check: "ok" }));
+  // The image plan keeps its own read, so it is counted here explicitly; the log line must not undercount billed calls.
+  const imageCalls = result.value.image_prompts?.read.calls ?? 0;
+  dependencies.emit(JSON.stringify({ tool: TOOL, schema: "v2", run_id: result.value.run.run_id, mode: result.value.run.mode, elapsed_ms: result.value.run.elapsed_ms, sections: result.value.run.reads.sections, llm_calls: result.value.run.reads.llm_sections.calls + result.value.run.reads.llm_coverage.calls + imageCalls, self_check: "ok" }));
   return json(result.value, 200);
 }
 

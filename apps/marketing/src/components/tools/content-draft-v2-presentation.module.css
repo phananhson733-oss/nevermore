@@ -39,6 +39,27 @@
 .prose > div:first-child h3 { margin-top: 0; }
 .prose [data-marked="true"] > [data-sentence-text] { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--tier) 65%, transparent); }
 .prose [data-source-tier="mixed"][data-marked="true"] > [data-sentence-text] { background-image: linear-gradient(to right, var(--sc-source-first) 50%, var(--sc-source-third) 50%); background-size: 100% 2px; background-position: left bottom; background-repeat: no-repeat; }
+.prose ul { margin: 0 0 16px; padding-inline-start: 22px; list-style: disc; }
+.prose li { margin: 0 0 7px; font-family: inherit; font-size: 15.5px; line-height: 1.75; color: inherit; }
+.prose li:last-child { margin-bottom: 0; }
+.prose > div:last-child ul { margin-bottom: 0; }
+
+.imageCards { display: grid; gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
+.imageCard { border: 1px solid var(--sc-border-card); border-radius: 4px; background: var(--sc-panel); padding: 12px 14px; }
+.imageCardHeader { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.imageCardHeader button { padding: 5px 10px; min-height: 32px; font-size: 11px; }
+.imageField { margin-top: 10px; }
+.imageField span { display: block; margin-bottom: 4px; font-family: var(--font-mono), monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--sc-text-secondary); }
+/* A prompt is copied verbatim into another tool, so it is shown as the exact string, wrapped, never truncated. */
+.imageField p { margin: 0; font-size: 13px; line-height: 1.65; color: var(--sc-text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.imageField p[lang="en"] { font-family: var(--font-mono), monospace; font-size: 12px; }
+
+/* With the per-sentence chips off by default this is the only place a reader
+   learns which source backs a paragraph, so it is body-legible, not a footnote. */
+.paragraphSources { margin: -8px 0 16px; font-family: var(--font-sans), sans-serif; font-size: 11.5px; line-height: 1.6; color: var(--sc-text-secondary); }
+.prose > div:last-child .paragraphSources { margin-bottom: 0; }
+.paragraphSources a { color: var(--sc-text-primary); text-decoration: underline; text-underline-offset: 2px; }
+.paragraphSources a:focus-visible { outline: 2px solid var(--sc-source-first); outline-offset: 3px; }
 .claimAnnotation { margin-left: 4px; font-family: var(--font-sans), sans-serif; font-size: 10px; line-height: 1.5; color: var(--sc-text-secondary); }
 .claimAnnotation a { text-decoration: underline; text-underline-offset: 2px; }
 .failure { padding: 16px 20px; background: color-mix(in srgb, var(--sc-source-third) 5%, transparent); color: var(--sc-text-primary); font-size: 13px; }

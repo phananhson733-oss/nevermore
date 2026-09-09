@@ -4599,6 +4599,29 @@
         "sourceTier": { "first": "First-party", "third": "Third-party · verify", "model": "Model", "mixed": "First + third-party" },
         "profileDerivation": { "declared": "Declared", "observed": "Observed in profile", "computed": "Computed in profile", "inferred": "Inferred; stance only" },
         "sourceLegend": "Color shows the evidence tier, not verified truth: owned pages and non-inferred profile facts are first-party; competitor excerpts are third-party. Model prose and inferred positions stay model-labeled. Mixed references retain both tiers; PAA is not factual evidence.",
+        "paragraphSources": "Sources: ",
+        "images": {
+          "title": "Image prompts",
+          "boundary": "This tool makes no images. Prompts are in English, which image models read best; alt text is in the article language. Hand each prompt to your own image tool.",
+          "hero": "Hero image",
+          "section": "Illustration · {id} · {title}",
+          "prompt": "Prompt",
+          "alt": "Alt text",
+          "copy": "Copy prompt",
+          "copied": "Copied",
+          "copyFailed": "The browser refused clipboard access; check permissions and retry.",
+          "unavailable": "No image prompts this run: {reason}. The draft is unaffected.",
+          "reason": {
+            "insufficient_evidence": "no generated prose to illustrate",
+            "timeout": "budget exhausted",
+            "not_configured": "model not configured",
+            "provider_error": "the provider returned an error",
+            "validation_failed": "the model reply failed validation",
+            "unsupported_language": "language not supported"
+          },
+          "markdownHeading": "Image prompts",
+          "markdownNote": "Prompts are in English for an image model; publish the alt text with each image. This tool makes no images."
+        },
         "collapse": "Collapse",
         "expand": "Expand",
         "collapseSection": "Collapse chapter: {section}",
@@ -4662,7 +4685,7 @@
         "copyJson": "Copy draft JSON",
         "downloadJson": "Download draft JSON",
         "relatedLinks": "Related links",
-        "exportNote": "Markdown preserves every H2, real generated H3/prose, failed or skipped section notes, and confirmed related links, without claim annotations. JSON preserves the full result and its fingerprint unchanged.",
+        "exportNote": "Markdown keeps every H2, the real generated H3s and prose (lists included), notes for failed or skipped sections, the confirmed related links, and the image prompts at the end; claim annotations are not included. JSON keeps the complete result and fingerprint verbatim.",
         "export": {
           "copied": "Copied to clipboard.",
           "downloaded": "Download prepared.",

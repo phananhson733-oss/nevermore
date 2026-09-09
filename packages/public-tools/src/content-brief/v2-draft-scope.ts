@@ -1,9 +1,10 @@
 // @input -- one caller-parsed confirmed Brief v2/v3 and explicit section/settings selection
 // @output -- section-local frozen question/evidence and observed rewrite context
 // @pos -- pure Draft v2 scope projection; never reparses or re-fingerprints a confirmed revision
+import { SECTION_EVIDENCE_MAX_BYTES } from "./constants.ts";
 import { invalid, ok, reference, type Decoded } from "./parse-brief-shape.ts";
 import { CONFIRMED_BRIEF_V2_SCHEMA, CONFIRMED_BRIEF_V3_SCHEMA } from "./v2-brief.ts";
-import { CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA, type ResearchOutlineItem, type ResearchPage, type ResearchQuestion } from "./v2-contract.ts";
+import { CONTENT_BRIEF_V2_SCHEMA, CONTENT_BRIEF_V3_SCHEMA, type ResearchOutlineItem, type ResearchPage, type ResearchQuestion, type ResearchUnit } from "./v2-contract.ts";
 import type { DraftV2Settings } from "./v2-draft-contract.ts";
 import type { DraftV2SectionEvidence } from "./v2-draft-section.ts";
 import { sameBriefV2OwnedPage } from "./v2-generation.ts";
@@ -51,6 +52,84 @@ function deliveryPlan(confirmed: ConfirmedBriefV2): Decoded<{
   return ok({ generated, action, target_ref: target.id, target_page: target });
 }
 
+/**
+ * The prompt emits one page unit as `{...unit, role, ...segment, source_domain}`.
+ * `source_domain` is that page's hostname, so measuring with the whole final_url
+ * can only over-count -- the budget is never underestimated by this proxy.
+ */
+function promptUnitBytes(unit: ResearchUnit, page: ResearchPage): number {
+  if (unit.kind !== "page") return 0;
+  const segment = page.research.segments[unit.segment_index];
+  if (segment === undefined) return 0;
+  return new TextEncoder().encode(JSON.stringify({
+    ...unit, role: page.role, ...segment, source_domain: page.final_url,
+  })).byteLength;
+}
+
+/**
+ * Why a section may read more than its own questions' sources, and why the
+ * whole set is priced in bytes.
+ *
+ * A section's mandatory evidence is the union of its mapped questions'
+ * `source_refs` -- often three to five excerpts, which is why sections came out
+ * two sentences long even though the brief had crawled twelve excerpts per page.
+ * This hands the section the *rest of the pages it already cites*, and nothing
+ * else.
+ *
+ * The line is deliberate. The brief decided which pages answer this section's
+ * questions, and that judgment stays: a page no question sourced never enters
+ * this section, so a PAA-only section still materializes no page evidence and
+ * one section's excerpts still never leak into another's prompt. What is dropped
+ * is only the accidental narrowing to the three sentences the brief happened to
+ * quote from a page it had already accepted.
+ *
+ * The cap is bytes, not units, because one excerpt serializes to ~799 B in
+ * English and ~1724 B in Chinese. A unit count safe for one script overruns
+ * DRAFT_V2_PROMPT_MAX_BYTES for the other, and overrunning that ceiling fails
+ * the whole section instead of shortening it -- the reader sees "failed", not
+ * "short". The budget therefore covers the mandatory units too: priority order
+ * means they are spent first and a normal brief never loses one, but a brief
+ * whose own question mapping is wider than the ceiling now returns a shorter
+ * section rather than no section.
+ *
+ * Order is priority, not preference: question sources, then the rewrite target
+ * and its plan steps, then the remaining excerpts of those same pages. Research
+ * order inside each tier keeps the projection deterministic.
+ */
+function budgetedSectionEvidence(
+  research: { readonly units: readonly ResearchUnit[] },
+  pages: ReadonlyMap<string, ResearchPage>,
+  mandatory: readonly string[],
+): Map<string, { readonly page_ref: string; readonly final_url: string }> {
+  const byId = new Map(research.units.map((unit) => [unit.id, unit]));
+  const pageOf = (ref: string): ResearchPage | undefined => {
+    const unit = byId.get(ref);
+    return unit?.kind === "page" ? pages.get(unit.page_ref) : undefined;
+  };
+  const hitPages = new Set(mandatory.flatMap((ref) => {
+    const page = pageOf(ref);
+    return page === undefined ? [] : [page.id];
+  }));
+  const ordered = [
+    ...mandatory,
+    ...research.units
+      .filter((unit) => unit.kind === "page" && !mandatory.includes(unit.id) && hitPages.has(unit.page_ref))
+      .map((unit) => unit.id),
+  ];
+  const selected = new Map<string, { readonly page_ref: string; readonly final_url: string }>();
+  let used = 0;
+  for (const ref of ordered) {
+    const unit = byId.get(ref);
+    const page = pageOf(ref);
+    if (unit === undefined || page === undefined || selected.has(ref)) continue;
+    const bytes = promptUnitBytes(unit, page);
+    if (used + bytes > SECTION_EVIDENCE_MAX_BYTES) continue;
+    used += bytes;
+    selected.set(ref, { page_ref: page.id, final_url: page.final_url });
+  }
+  return selected;
+}
+
 /** The caller validates the confirmed envelope once; this projection does not repeat its hash/graph parse. */
 export function buildDraftV2SectionScope(confirmed: ConfirmedBriefV2, sectionId: string, settings: DraftV2Settings): Decoded<DraftV2SectionScope> {
   const plan = deliveryPlan(confirmed);
@@ -70,14 +149,14 @@ export function buildDraftV2SectionScope(confirmed: ConfirmedBriefV2, sectionId:
   const units = new Map(research.units.map((unit) => [unit.id, unit]));
   const pages = new Map(research.pages.map((page) => [page.id, page]));
   const paaIds = new Set(research.paa.map((question) => question.id));
-  const page_units = new Map<string, { readonly page_ref: string; readonly final_url: string }>();
+  const mandatory: string[] = [];
   function includeUnit(ref: string, allowPaa: boolean): Decoded<null> {
     const unit = units.get(ref);
     if (unit === undefined) return reference("source_refs");
     if (unit.kind === "paa") return allowPaa && paaIds.has(unit.paa_ref) ? ok(null) : reference("source_refs");
     const page = pages.get(unit.page_ref);
     if (page === undefined || page.research.segments[unit.segment_index] === undefined) return reference("source_refs");
-    page_units.set(ref, { page_ref: page.id, final_url: page.final_url });
+    if (!mandatory.includes(ref)) mandatory.push(ref);
     return ok(null);
   }
   for (const ref of question_unit_refs) {
@@ -104,6 +183,7 @@ export function buildDraftV2SectionScope(confirmed: ConfirmedBriefV2, sectionId:
   if (gap_angle !== null && gap_angle.fact_refs.some((ref) => !allFacts.has(ref))) return reference("gap_angle.fact_refs");
   const facts = new Map([...allFacts].filter(([id]) => settings.product_mention === "throughout" ||
     (settings.product_mention === "gap_only" && gap_angle?.fact_refs.includes(id))));
+  const page_units = budgetedSectionEvidence(research, pages, mandatory);
   return ok(structuredClone({
     section, allowed_h3: section.h3, questions, question_unit_refs, action, target_ref, target_page, steps, gap_angle,
     page_units, facts, stance_allowed: gap_angle !== null,
