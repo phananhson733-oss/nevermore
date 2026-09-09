@@ -138,7 +138,11 @@ export function createGeoKnowledgeResourceReader(clientKey: string, options: {
   // opening per gate key untrue at the only place that opens one.
   const admissions = new Map<string, GeoKnowledgeUnavailableReason | null>();
   return async input => {
+    // Two shapes on purpose. `unavailable` is "we never asked"; `answered` is
+    // "we asked and this is what came back". Everything from the admission
+    // check downwards is `answered`, and nothing above it is.
     const unavailable = (reason: GeoKnowledgeUnavailableReason): GeoKnowledgeResourceResult => ({ kind: "unavailable", url: input.url, reason });
+    const answered = (reason: GeoKnowledgeUnavailableReason): GeoKnowledgeResourceResult => ({ kind: "unavailable", url: input.url, reason, reached: true });
     let host: string;
     try { host = canonicalCrawlTargetKey(input.url) ?? new URL(input.url).host; }
     catch { return unavailable("blocked"); }
@@ -167,14 +171,14 @@ export function createGeoKnowledgeResourceReader(clientKey: string, options: {
         timeoutMs, maxBodyBytes: GEO_KNOWLEDGE_EVIDENCE_LIMITS.pageBytes, maxRedirects: 2,
         allowRedirect: sameHostHttpsPreservingRedirect,
       });
-      if (result.kind === "error") return unavailable(knowledgeTransportReason(result.code));
+      if (result.kind === "error") return answered(knowledgeTransportReason(result.code));
       const httpReason = knowledgeHttpReason(result.finalStatus);
-      if (httpReason !== null) return unavailable(httpReason);
-      if (!result.bodyComplete) return unavailable("partial_body");
-      if (result.contentType === null) return unavailable("invalid_response");
+      if (httpReason !== null) return answered(httpReason);
+      if (!result.bodyComplete) return answered("partial_body");
+      if (result.contentType === null) return answered("invalid_response");
       return { kind: "ok", url: result.finalUrl, body: result.body, contentType: result.contentType,
         observedAt: (options.now ?? (() => new Date()))().toISOString() };
-    } catch { return unavailable("fetch_failed"); }
+    } catch { return answered("fetch_failed"); }
     finally { release?.(); }
   };
 }
