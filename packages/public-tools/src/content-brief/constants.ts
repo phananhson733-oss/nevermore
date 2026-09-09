@@ -33,6 +33,24 @@ export const CRAWL_DEADLINE_MS = 15_000; // 全部 URL 的墙钟
 export const CRAWL_SETTLEMENT_MS = 500;
 export const GSC_DEADLINE_MS = 15_000; // 与 SERP/抓取并行；步骤 5 前必须结束
 export const LLM_DEADLINE_MS = 15_000; // brief 唯一一次 LLM 调用
+/**
+ * 组装调用的次数上限：首次 + 一次修复。
+ *
+ * 严格解码器 fail-fast：research 里任意一条引用不合法，整份 brief 作废——
+ * 连同已经付费的 SERP 读取一起丢掉，而界面能给的唯一出路是完整重跑（再花一次钱）。
+ * 2026-09-09 线上第一次真跑就命中：validation_path = research.questions[2].sources[4]，
+ * 模型在第 3 个问题的第 5 条来源上写了一个不是 U id 的引用。
+ * 修复调用复用同一份已冻结、已降采样的 context，不再产生任何外部读取。
+ * draft 侧的 SECTION_MAX_ATTEMPTS 一直是 2，这里只是把同一条韧性补给 brief。
+ */
+export const BRIEF_MAX_ATTEMPTS = 2;
+/**
+ * 低于这个剩余时间就不再买那次修复调用。
+ *
+ * 修复是尽力而为：与其用 500ms 去发一次注定超时的请求，不如把首次那条精确的
+ * validation_path 留给运行日志。（首次调用不受此限，它仍按 min(阶段常量, 剩余) 走。）
+ */
+export const BRIEF_REPAIR_MIN_MS = 5_000;
 
 export const CRAWL_FETCH_TIMEOUT_MS = 8_000; // = fetchPublicResource 默认
 export const CRAWL_CONCURRENCY = 5;

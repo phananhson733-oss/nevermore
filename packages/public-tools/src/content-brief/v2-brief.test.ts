@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as brief from "./v2-brief.ts";
+import { BRIEF_MAX_ATTEMPTS } from "./constants.ts";
 import { buildResearchBundle, validateResearchOutput } from "./v2-research.ts";
 import type { ContentBriefV2 } from "./v2-generation-contract.ts";
 
@@ -75,11 +76,45 @@ describe("whole v2 Brief and exact confirmed revision", () => {
     const value = structuredClone(original);
     if (kind === "reads") value.run = { ...value.run, reads: value.run.reads.filter((read) => read.source !== "paa") };
     if (kind === "coverage") value.generated = { ...value.generated!, research: { ...value.generated!.research, questions: [{ ...value.generated!.research.questions[0]!, covered_by: 3 }] } };
-    if (kind === "calls") value.run = { ...value.run, llm: { ...value.run.llm, calls: 2 } };
+    // One call above the ceiling. Two is a real run now (one assembly plus one
+    // repair), so the forgery has to claim a call the engine could never make.
+    if (kind === "calls") value.run = { ...value.run, llm: { ...value.run.llm, calls: BRIEF_MAX_ATTEMPTS + 1 } };
     if (kind === "prompt") value.run = { ...value.run, prompt_bytes: 49153 };
     const raw = kind === "extra" ? { ...value, unexpected: true } : value;
     value.run = { ...value.run, fingerprint: await brief.fingerprintBriefV2(raw) };
     expect(await brief.parseContentBriefV2(kind === "extra" ? { ...value, unexpected: true } : value)).toMatchObject({ ok: false });
+  });
+
+  it("admits the repair call but never a third, on either branch", async () => {
+    const complete = fixture();
+    complete.run = { ...complete.run, llm: { ...complete.run.llm, calls: BRIEF_MAX_ATTEMPTS } };
+    complete.run = { ...complete.run, fingerprint: await brief.fingerprintBriefV2(complete) };
+    expect(await brief.parseContentBriefV2(complete)).toMatchObject({ ok: true });
+    const failed = fixture();
+    failed.generated = null;
+    // A rejected repair still reports both billed calls; what stays forbidden
+    // is a run counting more calls than attempts, in either direction.
+    failed.run = { ...failed.run, llm: { status: "unavailable", reason: "validation_failed", attempted: BRIEF_MAX_ATTEMPTS, calls: BRIEF_MAX_ATTEMPTS, model_id: "fixture-model", input_tokens: 700, output_tokens: 400 } };
+    failed.run = { ...failed.run, fingerprint: await brief.fingerprintBriefV2(failed) };
+    expect(await brief.parseContentBriefV2(failed)).toMatchObject({ ok: true });
+    const overcounted = structuredClone(failed);
+    overcounted.run = { ...overcounted.run, llm: { status: "unavailable", reason: "validation_failed", attempted: 1, calls: BRIEF_MAX_ATTEMPTS, model_id: "fixture-model", input_tokens: 700, output_tokens: 400 } };
+    overcounted.run = { ...overcounted.run, fingerprint: await brief.fingerprintBriefV2(overcounted) };
+    expect(await brief.parseContentBriefV2(overcounted)).toMatchObject({ ok: false, path: "run.llm" });
+  });
+
+  it.each([
+    // A second attempt is bought only by a first rejection, and both calls are
+    // billed, so these three describe runs the engine cannot have made.
+    ["undercounted calls", { reason: "validation_failed" as const, attempted: 2, calls: 1 }],
+    ["a provider blamed for two attempts", { reason: "provider_error" as const, attempted: 2, calls: 2 }],
+    ["a preflight failure that still attempted twice", { reason: "not_configured" as const, attempted: 2, calls: 0 }],
+  ])("rejects %s even with a matching fingerprint", async (_name, llm) => {
+    const input = fixture();
+    input.generated = null;
+    input.run = { ...input.run, llm: { status: "unavailable", ...llm, model_id: llm.calls === 0 ? null : "fixture-model", input_tokens: llm.calls === 0 ? null : 700, output_tokens: llm.calls === 0 ? null : 400 } };
+    input.run = { ...input.run, fingerprint: await brief.fingerprintBriefV2(input) };
+    expect(await brief.parseContentBriefV2(input)).toMatchObject({ ok: false, path: "run.llm" });
   });
 
   it("preserves generation failure as unavailable, not an empty success", async () => {

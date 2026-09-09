@@ -111,13 +111,19 @@ describe("runContentBriefV2 admitted generation", () => {
     expect(brief.generated?.research.questions[0]?.covered_by).toBe(1);
   });
 
-  it("retains an invalid model result as an unavailable generation without retry", async () => {
+  it("retains an invalid model result as an unavailable generation, and pays only the model for its repair", async () => {
     const fixture = seams({ ...model(), page_plan: { action: "update", rationale: "Invented target", target_ref: "T3", steps: [] } });
     const brief = await runContentBriefV2(REQUEST, fixture.deps);
     expect(brief.generated).toBeNull();
-    expect(brief.run.llm).toMatchObject({ status: "unavailable", reason: "validation_failed", calls: 1 });
+    expect(brief.run.llm).toMatchObject({ status: "unavailable", reason: "validation_failed", attempted: 2, calls: 2 });
     expect(brief.context.research.paa).toHaveLength(1);
-    expect(fixture.complete).toHaveBeenCalledTimes(1);
+    // The stub answers the same way twice, so the repair fails too -- and the
+    // whole point of the repair is that a second reply costs a second model
+    // call and nothing else. The SERP row and the crawl are read exactly once.
+    expect(fixture.complete).toHaveBeenCalledTimes(2);
+    expect(fixture.serpFetch).toHaveBeenCalledTimes(1);
+    expect(fixture.fetchResource).toHaveBeenCalledTimes(1);
+    expect(brief.run.serp_cost_usd).toBe(0.002);
     expect((await parseContentBriefV2(brief)).ok).toBe(true);
   });
 
@@ -318,11 +324,39 @@ describe("runContentBriefV2 admitted generation", () => {
     const pending = runContentBriefV2(REQUEST, { ...fixture.deps, runLlm: async () => new Promise<never>(() => undefined), now: Date.now });
     let settled = false;
     const outcome = pending.then((value) => { settled = true; return { value }; }, (error: unknown) => { settled = true; return { error }; });
-    await vi.advanceTimersByTimeAsync(elapsed === 0 ? 30_000 : 9900);
+    // The watchdog now covers every attempt the runner may make, so what stops
+    // a runner that never answers is the run budget less its 5 s envelope --
+    // the same instant in both cases, whatever was already spent on sources.
+    await vi.advanceTimersByTimeAsync(elapsed === 0 ? 39_900 : 9900);
     expect(settled).toBe(false);
     await vi.advanceTimersByTimeAsync(100);
     expect(await outcome).toEqual({ error: expect.any(ContentBriefV2RunError) });
-    expect(Date.now()).toBe(START + (elapsed === 0 ? 30_100 : 40_000));
+    expect(Date.now()).toBe(START + 40_000);
+  });
+
+  it("keeps the brief when a rejected first reply is repaired past the old one-attempt watchdog", async () => {
+    // The production shape of 2026-09-09, with the timings that used to lose
+    // it: a first reply rejected at 20 s and a repair that lands at 35 s. Both
+    // calls sit inside their own deadlines and inside the 45 s run budget.
+    vi.useFakeTimers();
+    vi.setSystemTime(START);
+    const fixture = seams();
+    let sent = 0;
+    const complete = vi.fn(async (_request: KeywordLlmRequest) => {
+      const index = (sent += 1);
+      await new Promise((resolve) => setTimeout(resolve, index === 1 ? 20_000 : 15_000));
+      return { content: index === 1 ? "not-json" : JSON.stringify(model()), modelId: "fixture-model", usage: { requestCount: 1, retryCount: 0, inputTokens: 350, outputTokens: 200 } };
+    });
+    const pending = runContentBriefV2(REQUEST, { ...fixture.deps, now: Date.now, runLlm: (input) => runContentBriefV2Llm(input, { client: { complete }, config: CONFIG, now: Date.now }) });
+    const outcome = pending.then((value) => ({ value }), (error: unknown) => ({ error }));
+    await vi.advanceTimersByTimeAsync(35_000);
+    expect(await outcome).toMatchObject({ value: { run: { elapsed_ms: 35_000, llm: { status: "complete", calls: 2, input_tokens: 700, output_tokens: 400 } } } });
+    const brief = await pending;
+    expect(brief.generated).not.toBeNull();
+    expect(await parseContentBriefV2(brief)).toEqual({ ok: true, value: brief });
+    expect(complete).toHaveBeenCalledTimes(2);
+    // The second call is bounded by what the run has left, not by a fresh 30 s.
+    expect(complete.mock.calls[1]?.[0].timeoutMs).toBe(19_900);
   });
 
   it("exports a valid full brief when the factory client's single completion takes 20 seconds", async () => {

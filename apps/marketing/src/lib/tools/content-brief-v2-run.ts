@@ -3,7 +3,7 @@
 // @pos -- Marketing generation orchestration, never authentication or admission
 import { buildSerpObservations, planCrawlTargets } from "@sf/public-tools/content-brief/assemble";
 import {
-  BRIEF_V2_OWNED_CANDIDATES_MAX, CRAWL_DEADLINE_MS, ENVELOPE_MS, GSC_DEADLINE_MS,
+  BRIEF_MAX_ATTEMPTS, BRIEF_V2_OWNED_CANDIDATES_MAX, CRAWL_DEADLINE_MS, ENVELOPE_MS, GSC_DEADLINE_MS,
   RUN_BUDGET_MS, SERP_DEADLINE_MS, SERP_DEPTH,
 } from "@sf/public-tools/content-brief/constants";
 import type { ProfileFact } from "@sf/public-tools/content-brief/contract";
@@ -288,12 +288,20 @@ export async function runContentBriefV2(input: ContentBriefV2RunInput, dependenc
     ...(input.responseSchema === CONTENT_BRIEF_V3_SCHEMA ? { serp: { rows: buildSerpObservations(serp.rows), read: serp.reads } } : {}),
   };
   if (!parseBriefV2Context(context).ok) throw new ContentBriefV2RunError();
-  // The runner owns the single provider attempt and its usage. An uncooperative
+  // The runner owns the provider attempts and their usage. An uncooperative
   // injected runner must not hang; without its receipt we cannot invent usage.
   // Leave 100 ms for the client's own timeout receipt to settle before the
-  // outer watchdog. Provider work stays <=30 s and assembly keeps its full 5 s.
+  // outer watchdog. Each provider call stays <=30 s and assembly keeps its
+  // full 5 s, because remaining() clamps this to the run budget either way.
+  //
+  // The ceiling counts every attempt the runner may make, not one. Sized for a
+  // single call it cut the lane at 30.1 s, so a run whose first reply was
+  // rejected at 20 s and repaired at 35 s -- both calls inside their own
+  // deadlines and inside the 45 s budget -- threw the whole run away at 30.1 s
+  // and lost both usage receipts with it. The watchdog is here for a runner
+  // that never answers, not for one that answers twice.
   const settlementMs = 100;
-  const llmBudget = remaining(clock, CONTENT_BRIEF_V2_LLM_DEADLINE_MS + settlementMs);
+  const llmBudget = remaining(clock, BRIEF_MAX_ATTEMPTS * CONTENT_BRIEF_V2_LLM_DEADLINE_MS + settlementMs);
   const llm: ContentBriefV2LlmResult | null = llmBudget <= settlementMs
     ? { context, output: null, reads: { status: "unavailable", reason: "timeout", attempted: 0, calls: 0, model_id: null, input_tokens: null, output_tokens: null }, prompt_bytes: 0 }
     : await lane(() => (dependencies.runLlm ?? runContentBriefV2Llm)({ context, deadlineAt: clock.deadlineAt - settlementMs }, { now: clock.now }), llmBudget, clock, () => null);
