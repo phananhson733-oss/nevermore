@@ -289,19 +289,26 @@ const scopeSchema = {
     misconceptions: scopeListSchema,
   },
   /*
-   * "At least one statement across the four groups" is not expressible here.
+   * "At least one statement across the four groups" is deliberately not stated
+   * here. It could be: this is a choice about size, not a provider limit.
    *
    * It used to be four `anyOf` branches that each tightened one array's
-   * `minItems` from 0 to 1. Structured Outputs reads every `anyOf` branch as a
-   * schema in its own right and requires each to be complete -- a `type`, and
-   * `additionalProperties: false` -- so a branch naming one property and one
-   * bound was refused twice over, and the refusal was the whole request.
+   * `minItems` from 0 to 1 and named nothing else. Structured Outputs reads
+   * every `anyOf` branch as a schema in its own right and requires each to be
+   * complete -- a `type`, `additionalProperties: false`, and a `required`
+   * naming every property -- so those branches were refused, and the refusal
+   * was the whole request.
    *
-   * The rule itself is unaffected: it is enforced where it always actually
-   * was, by `refine(... "Scope cannot be empty")` in
-   * kb-knowledge-synthesis-contract.ts:107, and the prompt states the same
-   * bound in words. An empty scope now comes back as a rejected reply instead
-   * of an unsendable request.
+   * Written properly the union does express the rule, the way
+   * `comparisonRowSchema` above already does, at the cost of repeating all
+   * four scope lists four times. The v2 schema is where that price was
+   * measured -- 8 222 bytes, against a request ceiling that already refuses
+   * real sites -- and v1 follows the same decision.
+   *
+   * So the rule lives in two places instead of three: the prompt states it in
+   * words, and `refine(... "Scope cannot be empty")` in
+   * kb-knowledge-synthesis-contract.ts:107 refuses an empty scope. An empty
+   * scope now costs a rejected reply rather than an unsendable request.
    */
 } as const;
 

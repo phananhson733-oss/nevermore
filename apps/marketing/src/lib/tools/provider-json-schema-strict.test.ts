@@ -103,7 +103,19 @@ describe("provider response schemas under strict Structured Outputs", () => {
       const module: Record<string, unknown> = await import(file);
       const exported = module[name] as { readonly name: string; readonly schema: unknown };
 
+      // Checking the wrapper alone would let the rest of this case run on
+      // nothing: `violations(undefined, ...)` returns `[]` through its
+      // primitive exit, so a schema that went missing would read as a schema
+      // that is clean. The root has to be shown to be a real object schema
+      // before its emptiness means anything.
       expect(exported, `${name} is declared in ${file} but not exported`).toBeDefined();
+      expect(exported.schema, `${name} carries no schema`).toBeTypeOf("object");
+      expect(exported.schema).not.toBeNull();
+      expect(exported.schema, `${name} has no object root`).toMatchObject({
+        type: "object",
+        additionalProperties: false,
+      });
+      expect(Object.keys((exported.schema as Node).properties ?? {}).length).toBeGreaterThan(0);
       expect(violations(exported.schema, exported.name)).toEqual([]);
     });
   }

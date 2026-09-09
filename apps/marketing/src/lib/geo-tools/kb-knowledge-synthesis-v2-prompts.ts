@@ -277,19 +277,28 @@ const scopeSchema = {
     misconceptions: scopeListSchema,
   },
   /*
-   * "At least one statement across the four groups" is not expressible here.
+   * "At least one statement across the four groups" is deliberately not stated
+   * here. It could be: this is a choice about size, not a provider limit.
    *
    * It used to be four `anyOf` branches that each tightened one array's
-   * `minItems` from 0 to 1. Structured Outputs reads every `anyOf` branch as a
-   * schema in its own right and requires each to be complete -- a `type`, and
-   * `additionalProperties: false` -- so a branch naming one property and one
-   * bound was refused twice over, and the refusal was the whole request.
+   * `minItems` from 0 to 1 and named nothing else. Structured Outputs reads
+   * every `anyOf` branch as a schema in its own right and requires each to be
+   * complete -- a `type`, `additionalProperties: false`, and a `required`
+   * naming every property -- so those branches were refused, and the refusal
+   * was the whole request.
    *
-   * The rule itself is unaffected: it is enforced where it always actually
-   * was, by `refine(... "Scope cannot be empty")` in
-   * kb-knowledge-synthesis-v2-contract.ts:807, and the prompt states the same
-   * bound in words. An empty scope now comes back as a rejected reply instead
-   * of an unsendable request.
+   * Written properly the union does express the rule, the way
+   * `comparisonRowSchema` above already does. It was measured rather than
+   * assumed: four complete alternatives, each repeating all four scope lists,
+   * cost 8 222 bytes and take this schema from 9 369 to 17 591. Every request
+   * pays that against a 128 KiB ceiling that already refuses real sites by
+   * ~8 000 bytes, and it would buy a second statement of a rule the contract
+   * enforces anyway.
+   *
+   * So the rule lives in two places instead of three: the prompt states it in
+   * words, and `refine(... "Scope cannot be empty")` in
+   * kb-knowledge-synthesis-v2-contract.ts:807 refuses an empty scope. An empty
+   * scope now costs a rejected reply rather than an unsendable request.
    */
 } as const;
 

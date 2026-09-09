@@ -519,10 +519,12 @@ describe("evidence-bound GEO knowledge synthesis", () => {
   // This assertion used to require the opposite: four `anyOf` branches on
   // `scope`, each naming one group with `minItems: 1`. That encoding pinned a
   // defect. Structured Outputs treats every `anyOf` branch as a schema in its
-  // own right and rejects one that lacks a `type` and
-  // `additionalProperties: false` -- so the request was refused before the
-  // model ever saw it, and the test proved the refusal was intentional.
-  // "At least one statement" now lives only where it is actually enforceable.
+  // own right and rejects one that lacks a `type`, `additionalProperties:
+  // false` and a `required` naming every property -- so the request was
+  // refused before the model ever saw it, and the test proved the refusal was
+  // intentional. Complete branches would express the rule; the schema comment
+  // gives the measured reason they are not worth their bytes. What is asserted
+  // instead is that the contract still refuses an empty scope.
   it("bounds every scope group in the provider schema and leaves emptiness to the contract", () => {
     const root = GEO_KNOWLEDGE_SYNTHESIS_RESPONSE_JSON_SCHEMA.schema as any;
     const scope = root.properties.scope;
