@@ -1462,14 +1462,18 @@ describe("assembling the deterministic half from the collection alone", () => {
     expect(knowledge.machine).toEqual({ status: "unavailable", reason: "not_collected" });
   });
 
-  it("never publishes a sitemap sample as a sitemap total", async () => {
+  it("publishes the sitemap's own total beside the sample, never the sample as the total", async () => {
     /**
      * The ledger keeps at most eight `<loc>` values and the document's own
-     * total beside them; the evidence contract ties the count it publishes to
-     * the list of locations it carries. When the sample is not the document,
-     * publishing would report "2 URLs" about a sitemap of 900, so the module is
-     * withheld -- and with the reason that says the evidence is not sufficient,
-     * not the one that says nobody looked, because somebody did.
+     * total beside them. This used to withhold the whole machine module,
+     * because the evidence contract tied the published count to the list of
+     * locations carried and "2 URLs" about a sitemap of 900 is the sentence
+     * this route exists to refuse -- so a site with a large sitemap lost every
+     * machine signal, not just the count.
+     *
+     * The count and the sample are separate facts now: `truncated` says the
+     * locations are a sample, and the count is the one the run measured off
+     * the whole document.
      */
     const harness = observedWithMachine({
       sitemap: { kind: "ok", bodyHash: "5".repeat(64), excerpts: SITEMAP_LOCATIONS, structured: { sitemapUrlCount: "900" } },
@@ -1478,7 +1482,30 @@ describe("assembling the deterministic half from the collection alone", () => {
 
     expect(response.status).toBe(200);
     const knowledge = harness.saveDraft.mock.calls[0]![0]!.payload.knowledge!;
-    expect(knowledge.machine).toEqual({ status: "unavailable", reason: "insufficient_evidence" });
+    const machine = knowledge.machine.status === "unavailable" ? null : knowledge.machine.value;
+    expect(machine!.sitemap).toMatchObject({ status: "present", urlCount: "900" });
+  });
+
+  /**
+   * The assembler rebuilds `knowledgePagesListed` itself and the contract
+   * recomputes it; if the two disagree the builder throws and the catch around
+   * it returns null -- the whole deterministic half lost, silently. They
+   * disagreed the moment the collector started accepting the site's other
+   * spelling of its own host, because this side still compared raw strings.
+   */
+  it("agrees with the contract about a sitemap that lists the site's www spelling", async () => {
+    const harness = observedWithMachine({
+      sitemap: { kind: "ok", bodyHash: "5".repeat(64),
+        excerpts: [`https://www.product.example/`, `https://www.product.example/pricing`],
+        structured: { sitemapUrlCount: "2" } },
+    });
+    const { response } = await assemble(harness);
+
+    expect(response.status).toBe(200);
+    const knowledge = harness.saveDraft.mock.calls[0]![0]!.payload.knowledge!;
+    const machine = knowledge.machine.status === "unavailable" ? null : knowledge.machine.value;
+    expect(machine).not.toBeNull();
+    expect(machine!.sitemap).toMatchObject({ status: "present", urlCount: "2", knowledgePagesListed: true });
   });
 
   it("withholds rather than reporting a sitemap index as a page count", async () => {

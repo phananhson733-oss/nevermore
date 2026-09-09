@@ -221,6 +221,9 @@ function sitemapLocation(value: string, base: URL): string | null {
 function addressKey(value: string): string {
   try { const url = new URL(value); return `${canonicalCrawlTargetKey(url.href) ?? url.host}${url.pathname}${url.search}`; } catch { return value; }
 }
+export function geoSitemapListsPage(locations: readonly string[], pageUrl: string): boolean {
+  return listedPage(locations, pageUrl);
+}
 function listedPage(locations: readonly string[], pageUrl: string): boolean {
   const key = addressKey(pageUrl);
   return locations.some((location) => addressKey(location) === key);
@@ -335,11 +338,21 @@ function finalize(target: URL, competitors: Competitor[], pages: Page[], sources
    * a credited row, `total` for one read here) and is never inferred from the
    * sample. Absent a total, the sample is all that was measured and it is both.
    */
+  const credited = sitemapSource.locations === undefined;
   const total = sitemap.availability === "unavailable" ? null
     : reusedSitemapMatches ? reusedSitemap!.urlCount ?? locations.length
-      : sitemapSource.total ?? (sitemapSource.locations === undefined && reusedSitemapUrlCount !== undefined ? reusedSitemapUrlCount : locations.length);
+      : sitemapSource.total ?? (credited ? reusedSitemapUrlCount ?? locations.length : locations.length);
   const urlCount = total === null ? null : Math.min(Math.max(total, locations.length), GEO_KNOWLEDGE_EVIDENCE_LIMITS.sitemapUrlCount);
-  const truncated = sitemap.availability === "unavailable" ? false : reusedSitemapMatches ? reusedSitemap!.truncated ?? false : urlCount !== null && urlCount > locations.length;
+  /*
+   * A credited source carries a SAMPLE. The ledger keeps eight `<loc>` values
+   * whatever the document holds, so a credited sitemap is marked truncated even
+   * when no total came with it: `truncated: false` would assert that those
+   * eight ARE the document, which nothing measured. A source read here knows
+   * its own document and answers from the count it took.
+   */
+  const truncated = sitemap.availability === "unavailable" ? false
+    : reusedSitemapMatches ? reusedSitemap!.truncated ?? false
+      : credited || (urlCount !== null && urlCount > locations.length);
   const hasOwnEvidence = sources.some((source) => source.kind === "own_page" && source.availability !== "unavailable"); const unavailable = sources.some((source) => source.availability === "unavailable"); const availability: GeoKnowledgeEvidenceV1["availability"] = !hasOwnEvidence ? "unavailable" : unavailable ? "partial" : "available";
   return buildGeoKnowledgeEvidenceV1({ schemaVersion: "marketing-geo-knowledge-evidence.v1", collectedAt: now.toISOString(), targetUrl: target.toString(), confirmedCompetitors: competitors, availability, limitation: availability === "available" ? null : "Some evidence sources were unavailable.", pages, machine: { jsonLd: { status: pages.some((page) => page.jsonLdTypes.length > 0) ? "present" as const : "absent" as const, types: [...new Set(pages.flatMap((page) => page.jsonLdTypes))].sort(), sourceRefs: ownRefs }, robots: { status: machineStatus(robots), sourceRefs: [robots.id] }, sitemap: { status: machineStatus(sitemap), sourceRefs: [sitemap.id], urlCount, knowledgePagesListed: sitemap.availability === "unavailable" ? null : pages.some((page) => listedPage(locations, page.url)), ...(sitemap.availability === "unavailable" ? {} : { locations, truncated }) }, llms: { status: machineStatus(llms), sourceRefs: [llms.id] }, hreflang: { status: pages.some((page) => page.hreflangLocales.length > 0) ? "present" as const : "absent" as const, locales: [...new Set(pages.flatMap((page) => page.hreflangLocales))].sort(), sourceRefs: ownRefs } }, sourceCatalogue: sources });
 }

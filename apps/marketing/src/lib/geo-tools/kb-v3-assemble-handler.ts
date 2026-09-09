@@ -90,6 +90,7 @@ import { buildGeoSourceCatalogue } from "./kb-knowledge-assemble-sources.ts";
 import {
   buildGeoKnowledgeEvidenceV1,
   collectGeoKnowledgeEvidenceV1,
+  geoSitemapListsPage,
   type GeoKnowledgeEvidenceReadResource,
   type GeoKnowledgeEvidenceSource,
   type GeoKnowledgeEvidenceV1,
@@ -651,6 +652,9 @@ async function geoObservedAssemblyInput(
    */
   const collectedAt: string = observedAt;
   const ownStructure: GeoKnowledgeObservedStructure = structure;
+  /** The stored count as a number, or null when the row recorded none. */
+  const sitemapTotal = sitemapUrlCount === null || !/^\d{1,7}$/u.test(sitemapUrlCount)
+    ? null : Number.parseInt(sitemapUrlCount, 10);
   /**
    * Still no socket, and still no crawl-gate admission: the map holds reasons
    * this update read out of its own ledger, and every address not in it falls
@@ -682,6 +686,15 @@ async function geoObservedAssemblyInput(
          */
         now: () => new Date(collectedAt),
         nowMs: () => 0,
+        /**
+         * The sitemap's own count, from the row that read it.
+         *
+         * Without it the bundle reports the eight sampled locations as the
+         * document's size, the `countable` gate below compares "8" with "558"
+         * and withholds the whole machine module -- so a site with a large
+         * sitemap lost every machine signal, not just the count.
+         */
+        ...(sitemapTotal === null ? {} : { reusedSitemapUrlCount: sitemapTotal }),
       },
     );
     /**
@@ -731,7 +744,13 @@ async function geoObservedAssemblyInput(
           sourceRefs: machine.hreflang.sourceRefs,
         },
         sitemap: machine.sitemap.status === "present"
-          ? { ...machine.sitemap, knowledgePagesListed: locations.includes(page.url) }
+          // The collector's own rule, imported rather than restated: it treats
+          // the site's two spellings of its own host as one address, and
+          // `assertEvidenceIntegrity` recomputes this with the same function.
+          // Exact string equality here made a www sitemap under an apex target
+          // disagree with the validator, which threw and cost the whole
+          // observed assembly.
+          ? { ...machine.sitemap, knowledgePagesListed: geoSitemapListsPage(locations, page.url) }
           : machine.sitemap,
       },
     });

@@ -263,7 +263,6 @@ export function createGeoKbV2Runtime(overrides: Partial<GeoKbV2RuntimeDependenci
       if (read.kind !== "ok") continue;
       const credit = creditGeoKnowledgeObservation({ ...request, observation: read.value, now });
       if (credit.kind === "reuse") {
-        sources.push(credit.source);
         /*
          * Own pages only. A competitor row would rebuild just as well, but the
          * two machine summaries cite own-page sources exclusively while being
@@ -274,8 +273,21 @@ export function createGeoKbV2Runtime(overrides: Partial<GeoKbV2RuntimeDependenci
         if (request.kind === "own_page") {
           const structure = creditGeoKnowledgeObservedStructure(read.value);
           const rebuilt = structure === null ? null : creditGeoKnowledgeObservedPage({ url: request.url, structure });
-          if (rebuilt?.kind === "page") pages.push(rebuilt.page);
+          /*
+           * Crediting the SOURCE without the PAGE is the exact defect this
+           * whole change closes: the collector then reports `jsonLd` and
+           * `hreflang` as `absent` while citing the row, and `reusedUrls` stops
+           * it from reading the page again to find out. So a row that cannot be
+           * rebuilt is not credited at all, and the page is read for real --
+           * the same answer `creditGeoKnowledgeObservation` gives everywhere
+           * else it cannot carry what a row holds. It costs one fetch for a row
+           * written before the alternates were stored as pairs, and the next
+           * row is rebuildable.
+           */
+          if (rebuilt?.kind !== "page") continue;
+          pages.push(rebuilt.page);
         }
+        sources.push(credit.source);
       } else if (credit.kind === "observed_unavailable") observedUnavailable.set(request.url, credit.reason);
     }
     return credited;

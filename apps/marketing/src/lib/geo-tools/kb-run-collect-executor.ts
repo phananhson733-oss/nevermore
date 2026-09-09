@@ -455,8 +455,16 @@ function observedStructure(
       : structure.hreflang
           .flatMap((entry) => {
             const locale = storableText(entry.locale, 64);
-            const url = storableText(entry.url, GEO_EVIDENCE_OBSERVATION_LIMITS.urlChars);
-            return locale === null || url === null ? [] : [{ locale, url }];
+            /*
+             * Refused whole, never bounded. `storableText` TRUNCATES, and a
+             * truncated URL is not a shortened label -- it is a different,
+             * still-valid address, which the reader would carry back into the
+             * page as an alternate the page never declared. Length is checked
+             * before the control-character test rather than by bounding.
+             */
+            const url = entry.url.length > GEO_EVIDENCE_OBSERVATION_LIMITS.urlChars
+              ? null : storableText(entry.url, GEO_EVIDENCE_OBSERVATION_LIMITS.urlChars);
+            return locale === null || url === null || url !== entry.url.trim() ? [] : [{ locale, url }];
           })
           .slice(0, GEO_EVIDENCE_OBSERVATION_LIMITS.hreflangLocales);
   return {
