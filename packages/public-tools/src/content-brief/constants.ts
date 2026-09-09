@@ -223,8 +223,13 @@ export const DRAFT_RESULT_MAX_BYTES =
  * 条目只存段落/句子下标，不复制句子本身，所以单条很小。
  */
 export const DRAFT_V2_QUALITY_MAX = 40;
-/** 一条 quality 告警（两个位置 + 一个枚举码 + 键名）序列化后的余量 */
-export const QUALITY_WARNING_BYTES = 256;
+/**
+ * 一条 quality 告警（两个位置 + 一个枚举码 + 键名）序列化后的余量。
+ *
+ * 按契约上限算而不是按常见值：section_id 走 `id("O")`，即 `modelText(128)`，
+ * 所以两个位置最坏是 2 × 128 字符加上下标与键名，约 420 字节。
+ */
+export const QUALITY_WARNING_BYTES = 512;
 
 /** brief + section_id + 整份上一次 DraftResult */
 export const SECTION_REQUEST_MAX_BYTES = CONTENT_BRIEF_HANDOFF_MAX_BYTES + DRAFT_RESULT_MAX_BYTES + 16 * 1024;

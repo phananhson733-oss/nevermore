@@ -1,8 +1,10 @@
 // @input -- one already validated section body and the server-built evidence scope it was written from
-// @output -- one bounded prose rejection naming a server-built path, or null
+// @output -- one bounded prose rejection naming a server-built path, and the advisory writing warnings
 // @pos -- Draft v2 prose gate; runs only at generation, never when parsing a stored draft
 import { DRAFT_V2_QUALITY_MAX } from "./constants.ts";
+import type { DraftV2SectionScope } from "./v2-draft-scope.ts";
 import type { DraftV2SectionBody, DraftV2SectionEvidence } from "./v2-draft-section.ts";
+import type { ConfirmedBriefV2 } from "./v2-generation-contract.ts";
 
 /** The closed set of prose rules a repair call is allowed to be told it broke. */
 export type DraftV2ProseRule = "number_without_source" | "chat_residue";
@@ -14,12 +16,40 @@ export interface DraftV2ProseRejection {
 }
 
 /**
- * A written number, with its thousands separators removed.
+ * A written number and whether it was written as a proportion.
  *
- * The optional percent sign is captured rather than skipped because it decides
- * whether the number is checked at all: see `checked` below.
+ * The first branch is the only place a comma is a thousands separator: a group
+ * of one to three digits followed by groups of exactly three. Reading commas
+ * greedily instead would fuse "samples 10,20" into 1020 and reject a sentence
+ * whose source says 10 and 20.
+ *
+ * The proportion suffix is part of the number's identity, not decoration. "5%"
+ * and "5" are different claims, and a source that counts five failures does not
+ * support a sentence reporting a five percent failure rate. The word is
+ * accepted alongside the sign so the two spellings are one number.
+ *
+ * Two forms are deliberately outside this: a sign, because "10-12" would then
+ * read as ten and minus twelve and reject prose its source supports, and a
+ * space as a thousands separator, which English does not use.
  */
-const NUMBER = /(\d[\d,]*(?:\.\d+)?)(\s?%)?/gu;
+const NUMBER = /(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?|\.\d+)\s?(%|percent\b|per cent\b)?/giu;
+
+/**
+ * Any Unicode decimal digit as its ASCII counterpart.
+ *
+ * NFKC folds the fullwidth digits but not the Arabic-Indic, Devanagari or Thai
+ * ones, so a figure written in those scripts would otherwise match nothing and
+ * pass the rule unchecked. Every Unicode decimal-digit set is ten contiguous
+ * code points beginning at its own zero, so walking back to the first code
+ * point that is no longer a digit finds that zero and the offset is the value.
+ */
+function asciiDigit(char: string): string {
+  const code = char.codePointAt(0)!;
+  for (let zero = code; zero > code - 10; zero -= 1) {
+    if (!/\p{Nd}/u.test(String.fromCodePoint(zero - 1))) return String(code - zero);
+  }
+  return char;
+}
 
 interface WrittenNumber {
   readonly value: string;
@@ -36,9 +66,16 @@ interface WrittenNumber {
 }
 
 function writtenNumbers(text: string): readonly WrittenNumber[] {
-  return [...text.normalize("NFKC").matchAll(NUMBER)].map((match) => {
-    const value = match[1]!.replace(/,/gu, "");
-    return { value, checked: value.replace(/\D/gu, "").length >= 2 || match[2] !== undefined };
+  const folded = text.normalize("NFKC").replace(/\p{Nd}/gu, asciiDigit);
+  return [...folded.matchAll(NUMBER)].map((match) => {
+    const written = match[1]!;
+    const proportion = match[2] !== undefined;
+    // Compared as a quantity, not as a spelling: "1,200", "1200" and "1200.0"
+    // are one figure, and so are ".5" and "0.5". Both sides of every comparison
+    // go through this, so a loss of precision on an absurd figure still matches
+    // itself.
+    const value = String(Number(written.replace(/,/gu, "")));
+    return { value: proportion ? `${value}%` : value, checked: written.replace(/\D/gu, "").length >= 2 || proportion };
   });
 }
 
@@ -68,7 +105,11 @@ const CHAT_RESIDUE: readonly RegExp[] = [
   /\bi hope (?:this|that) helps\b/iu,
   /\blet me know if\b/iu,
   /\b(?:as requested|per your request)\b/iu,
-  /^(?:sure|great question|good question|happy to help)\b/iu,
+  // "Sure" only as the chat acknowledgement, punctuation and all: "Sure footing
+  // requires checking the window" and "Sure enough, the report arrived" are
+  // prose, and a rejection they repeat costs the whole section.
+  /^sure\s*[,!]/iu,
+  /^(?:great question|good question|happy to help)\b/iu,
   /^here(?:'s| is| are) (?:the|a|an|your) (?:rewritten|revised|updated|requested|corrected|expanded|section|draft|article|response|answer|breakdown|overview|summary)\b/iu,
   /^#{1,6}\s/u,
   /```/u,
@@ -83,7 +124,20 @@ const CHAT_RESIDUE: readonly RegExp[] = [
  * has on screen. These run at generation only, where the answer is a repair
  * call rather than a dead draft.
  */
-export function checkDraftV2Prose(body: DraftV2SectionBody, scope: DraftV2SectionEvidence): DraftV2ProseRejection | null {
+export function checkDraftV2Prose(body: DraftV2SectionBody, scope: DraftV2SectionScope, confirmed: ConfirmedBriefV2): DraftV2ProseRejection | null {
+  // The brief's own text counts as supplied everywhere. The rule is about
+  // invention, not about which supplied place a figure came from: a keyword,
+  // a confirmed heading, a question or a plan step that says "10 tools" makes
+  // "10" a number this draft was handed, and rejecting the writer for repeating
+  // it would be the rule misfiring on the operator's own words.
+  const supplied = numbersOf([
+    confirmed.brief.context.input.primary, ...confirmed.brief.context.input.supporting,
+    ...(confirmed.title === undefined ? [] : [confirmed.title]),
+    scope.section.h2, ...scope.section.h3,
+    ...scope.questions.map((question) => question.q),
+    ...scope.steps.map((step) => step.instruction),
+    ...(scope.gap_angle === null ? [] : [scope.gap_angle.value]),
+  ]);
   const everything = numbersOf([
     ...[...scope.page_units.values()].map((unit) => unit.text),
     ...[...scope.facts.values()].map((fact) => fact.text),
@@ -100,7 +154,7 @@ export function checkDraftV2Prose(body: DraftV2SectionBody, scope: DraftV2Sectio
         ...sentence.evidence_refs.map((ref) => scope.page_units.get(ref)?.text ?? scope.facts.get(ref)?.text ?? ""),
       ]);
       for (const number of writtenNumbers(sentence.text)) {
-        if (number.checked && !allowed.has(number.value)) return { rule: "number_without_source", path };
+        if (number.checked && !allowed.has(number.value) && !supplied.has(number.value)) return { rule: "number_without_source", path };
       }
     }
   }
@@ -164,14 +218,16 @@ const FILLER: readonly RegExp[] = [
 ];
 
 /**
- * Every run of PHRASE_RUN_WORDS words in a text, lowercased and stripped of
- * punctuation.
+ * Every run of PHRASE_RUN_WORDS tokens in a text, where a token is a run of
+ * letters or digits and everything else is a separator.
  *
- * Whitespace-word based, which is what makes it silent rather than wrong for
- * Chinese, Japanese, Korean and Thai: those scripts produce one long token per
- * clause, no run ever reaches eight words, and the two reuse warnings simply
- * never fire. Reporting nothing is the honest outcome there; reporting a
- * character-level overlap would flag ordinary shared vocabulary as copying.
+ * That is a word for scripts that space their words, Korean included, and a
+ * whole clause for an unbroken Chinese, Japanese or Thai one -- which then
+ * yields too few tokens to form a run, and the two reuse warnings stay quiet.
+ * They are not quiet for those scripts in general: a punctuation-separated list
+ * still produces one token per item. Counting characters instead would flag
+ * ordinary shared vocabulary as copying, so this limitation is the price of not
+ * being wrong in the other direction.
  */
 function phraseRuns(text: string): ReadonlySet<string> {
   const words = flatten(text).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word !== "");

@@ -44,7 +44,7 @@ const VALIDATOR_PATH = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*|\[(?:
 const REPAIR_PATH_MAX_CHARS = 120;
 
 /**
- * The rejected location, but only when every word in it is the server's own.
+ * The rejected location, but only in the validator's own vocabulary.
  *
  * A rejection path is not server text by construction: the section shape reports
  * an unknown key as a path ending in that key, so a reply carrying a sentence
@@ -60,6 +60,13 @@ const REPAIR_PATH_MAX_CHARS = 120;
  * emit, and indices must be digits. Nothing else travels: an unrecognized path
  * is sent as null, which still tells the model its previous reply was rejected
  * and costs only the hint's precision.
+ *
+ * What this bounds is the vocabulary, not the provenance. A reply whose unknown
+ * key is itself spelled out of these words -- a root key literally named
+ * "paragraphs[9].sentences[9].text" -- forwards that string, and the hint then
+ * names a place the validator did not choose. That costs the repair call its
+ * accuracy and nothing else: no word reaches the next prompt that this file
+ * does not already write into it.
  *
  * The brief has the same rule over its own reply shape. The two lists stay
  * separate because they are two different vocabularies, not one shared one.
@@ -130,7 +137,7 @@ export async function generateDraftV2Section(input: DraftV2SectionInput, deps: C
       // rerun months from now, so a rule that can reject it lives on this side
       // of the boundary, where the answer is another call rather than a draft
       // the owner can no longer reopen.
-      const prose = checkDraftV2Prose(body.value, scope.value);
+      const prose = checkDraftV2Prose(body.value, scope.value, confirmed.value);
       if (prose === null) return { status: "ok", body: body.value, llm: callReceipt(sent, modelId, config) };
       rejection = { code: prose.rule, path: prose.path };
       continue;

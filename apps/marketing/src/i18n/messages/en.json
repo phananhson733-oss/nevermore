@@ -4697,7 +4697,7 @@
         "sources": "Sources",
         "sourcesBoundary": "Every page a written sentence actually cited, in the order the article first uses it. A page the brief collected and no sentence cited is not listed: the article does not rest on reading it did not do. The date is the fetch time recorded in the confirmed Brief's observation of that page, in UTC. It is not when the page was published or last changed, and this draft run fetched nothing.",
         "writing": "Writing check",
-        "writingBoundary": "Patterns worth a second look, matched against the draft's own prose. Each one reports something countable: how many sentences a paragraph holds, a phrase from a fixed list, a run of words that appears in two places. None of them judges whether the writing is good, none is a factual check, and nothing here blocks publishing. The two repetition checks compare whitespace-separated words, so they report nothing for Chinese, Japanese, Korean or Thai.",
+        "writingBoundary": "Patterns worth a second look, matched against the draft's own prose. Each one reports something countable: how many sentences a paragraph holds, a phrase from a fixed list, a run of words that appears in two places. None of them judges whether the writing is good, none is a factual check, and nothing here blocks publishing. The two repetition checks read runs of eight letter-or-digit tokens, so an unbroken Chinese, Japanese or Thai clause rarely produces enough tokens for them to say anything; a spaced language, Korean included, is checked normally.",
         "writingEmpty": "No pattern matched. That is not a verdict on the writing.",
         "writingSentences": "{count} sentences",
         "writingAlsoIn": "First used in {section}",
