@@ -5,7 +5,7 @@
 import {
   crawlRanToCompletion,
   type CrawlCompletionFacts,
-} from "@sf/public-tools";
+} from "@sf/public-tools/crawl-completion";
 import { createAdminSupabaseClient } from "../supabase/admin.ts";
 
 /**
