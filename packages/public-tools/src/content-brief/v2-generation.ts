@@ -16,12 +16,13 @@ import {
   type Decoded, type Decoder,
 } from "./parse-brief-shape.ts";
 import {
+  BRIEF_TITLE_ALTERNATIVES_MAX, briefPlanningAvailable,
   RESEARCH_HEADING_MAX_CHARS, RESEARCH_OUTLINE_MAX, RESEARCH_PAGE_UNITS_MAX, RESEARCH_PAA_MAX,
   RESEARCH_QUESTION_MAX, RESEARCH_QUESTION_MAX_CHARS, type ModelResearchOutput, type ResearchResult,
 } from "./v2-contract.ts";
 import { parseResearchBundle, parseResearchResult, validateResearchOutput } from "./v2-research.ts";
 import type {
-  BriefV2Context, BriefV2Generated, BriefV2PlanStep, BriefV2WritingPlan, ModelBriefV2Output,
+  BriefV2Context, BriefV2Generated, BriefV2PlanStep, BriefV2Planning, BriefV2WritingPlan, ModelBriefV2Output,
 } from "./v2-generation-contract.ts";
 
 const TEXT_MAX = 400;
@@ -222,20 +223,117 @@ function writingShape(strict: boolean, answerPrefix: "U" | "Q"): Decoder<BriefV2
   });
 }
 
+function planningShape(strict: boolean): Decoder<BriefV2Planning> {
+  const option = object({ value: generatedText(RESEARCH_HEADING_MAX_CHARS, strict), rationale: generatedText(TEXT_MAX, strict) });
+  return object({ title: object({ recommended: option, alternatives: array(option, { max: BRIEF_TITLE_ALTERNATIVES_MAX }) }) });
+}
+
+/**
+ * Every word the run actually put in front of the model, lowercased.
+ *
+ * The title is checked against this and nothing else. Page text and headings
+ * are what the excerpts said; the requested keywords and the Search Console
+ * queries are what the visitor asked about; PAA is what the search engine
+ * reported people ask. A word in none of them was not read anywhere.
+ */
+function suppliedVocabulary(context: BriefV2Context): ReadonlySet<string> {
+  const sources = [
+    context.input.primary, ...context.input.supporting,
+    ...context.facts.map((fact) => fact.text),
+    ...context.gsc.matches.flatMap((match) => [match.query, match.keyword]),
+    ...context.research.paa.flatMap((item) => [item.question, item.seed_question ?? ""]),
+    ...context.research.pages.flatMap((page) => page.research.segments.flatMap((segment) => [segment.text, segment.heading?.text ?? ""])),
+    ...(context.serp === undefined ? [] : context.serp.rows.map((row) => row.title ?? "")),
+  ];
+  const vocabulary = new Set<string>();
+  for (const source of sources) for (const word of words(source)) vocabulary.add(word.toLowerCase());
+  return vocabulary;
+}
+
+/**
+ * One word list, applied to the title and to every supplied string alike.
+ *
+ * Two normalisations, both of which exist because a lookup that misses is a
+ * correct title refused. NFKC because the context's own keyword matching
+ * already treats compatibility spellings as the same word, so a run whose
+ * keyword is written in fullwidth letters supplies GSC and would otherwise
+ * have "GSC" refused as unsupplied. And a full stop between two letters is
+ * dropped, so an initialism written as U.S. is one token on both sides rather
+ * than single letters no acronym rule can see.
+ */
+function words(value: string): readonly string[] {
+  return value.normalize("NFKC").replace(/(\p{L})\.(?=\p{L})/gu, "$1")
+    .split(/[^\p{L}\p{N}]+/u).filter((word) => word !== "");
+}
+
+/** Two letters or more, all of them capitals: the one proper-noun shape Title Case cannot disguise. */
+const ACRONYM = /^\p{Lu}{2,}$/u;
+/**
+ * Every number a reader can see, including the one Unicode does not count.
+ *
+ * U+1F51F KEYCAP TEN is a symbol, not a Number, so \p{N} alone accepts
+ * "\u{1F51F} Reasons Search Console Data Lags" -- a published count with no
+ * evidence behind it, which is the exact string this rule exists to refuse.
+ * The check runs on the title as written, before NFKC: normalising first would
+ * turn a Roman numeral into letters and let it through as an acronym instead.
+ */
+const DIGIT = /[\p{N}\u{1F51F}]/u;
+
+/**
+ * What a title may not do, given that no sentence rule will ever see it.
+ *
+ * Both rules are subtractive and both name a concrete harm. A number in a title
+ * is a published measurement with no evidence_refs behind it and no support
+ * count derived for it -- "3 Reasons", "The 2026 Guide", "the 90% case" -- and
+ * the excerpt that would have justified it is never checked. An all-capital
+ * token is the one proper noun that survives Title Case, which is why a
+ * fabricated authority hides there and nowhere the eye can catch it.
+ *
+ * This is a floor, not entity recognition. An invented ordinary-cased name
+ * still passes, because in Title Case every word is capitalized and the only
+ * table available for telling content words from function words is a
+ * heading-normalisation stopword list -- narrow enough that "what" and "how"
+ * are content words to it, so a provenance rule built on it would drop correct
+ * titles far more often than fabricated ones. The prompt carries that rule as
+ * an instruction instead, and the title stays droppable so a rejection costs
+ * the title rather than the run.
+ */
+function checkTitle(planning: BriefV2Planning, vocabulary: ReadonlySet<string>, path: string): string | null {
+  const options = [{ option: planning.title.recommended, at: `${path}.title.recommended` },
+    ...planning.title.alternatives.map((option, index) => ({ option, at: `${path}.title.alternatives[${index}]` }))];
+  for (const { option, at: where } of options) {
+    if (DIGIT.test(option.value)) return `${where}.value`;
+    for (const word of words(option.value)) {
+      if (ACRONYM.test(word) && !vocabulary.has(word.toLowerCase())) return `${where}.value`;
+    }
+  }
+  const values = options.map(({ option }) => option.value);
+  return new Set(values).size === values.length ? null : `${path}.title.alternatives`;
+}
+
 const modelResearchShape: Decoder<ModelResearchOutput> = object({
   questions: array(object({ anchor: identifier("U"), q: generatedText(RESEARCH_QUESTION_MAX_CHARS, false), sources: array(identifier("U"), { min: 1, max: UNIT_MAX, unique: true }) }), { max: RESEARCH_QUESTION_MAX }),
   outline: array(object({ h2: generatedText(RESEARCH_HEADING_MAX_CHARS, false), h3: array(generatedText(RESEARCH_HEADING_MAX_CHARS, false), { max: 3 }), answers: array(identifier("U"), { min: 1, max: RESEARCH_QUESTION_MAX, unique: true }) }), { max: RESEARCH_OUTLINE_MAX }),
 });
 
-function wholeShape<R>(input: unknown, research: Decoder<R>, strict: boolean, answerPrefix: "U" | "Q"): Decoded<BriefV2WritingPlan & { research: R }> {
+function wholeShape<R>(input: unknown, research: Decoder<R>, strict: boolean, answerPrefix: "U" | "Q", planningAllowed: boolean): Decoded<BriefV2WritingPlan & { research: R }> {
   // Decode the known writing fields without dropping unknown top-level keys.
   if (typeof input !== "object" || input === null || Array.isArray(input)) return invalid("");
   if (!Object.hasOwn(input, "research")) return invalid("research");
-  const { research: rawResearch, ...writing } = input as Record<string, unknown>;
-  const plan = writingShape(strict, answerPrefix)(writing, "");
+  const { research: rawResearch, ...rest } = input as Record<string, unknown>;
+  // Only a run that was offered the planning layer takes the key out before the
+  // strict key set runs. On every other run it stays in, so an unrequested
+  // planning block is refused by the same rule, at the same path, as it was
+  // before the layer existed.
+  const { planning: rawPlanning, ...offered } = rest;
+  const carried = planningAllowed && Object.hasOwn(rest, "planning");
+  const plan = writingShape(strict, answerPrefix)(planningAllowed ? offered : rest, "");
   if (!plan.ok) return plan;
   const result = research(rawResearch, "research");
-  return result.ok ? ok({ ...plan.value, research: result.value }) : result;
+  if (!result.ok) return result;
+  if (!carried) return ok({ ...plan.value, research: result.value });
+  const planning = planningShape(strict)(rawPlanning, "planning");
+  return planning.ok ? ok({ ...plan.value, planning: planning.value, research: result.value }) : planning;
 }
 
 const CJK_LETTER = new RegExp(`[${UNSEGMENTED_SCRIPT_CLASS}]`, "u");
@@ -448,7 +546,18 @@ function checkGeneratedLanguage(value: BriefV2Generated, language: string): Deco
  * default is what keeps a rule from being applied to artifacts that predate
  * it; the two generation call sites ask for it by name.
  */
-export interface ValidateModelBriefV2Options { readonly checkLanguage?: boolean }
+export interface ValidateModelBriefV2Options {
+  readonly checkLanguage?: boolean;
+  /**
+   * Whether the call that produced this reply was asked for a title.
+   *
+   * Defaults to the language gate, which is the answer for every reply already
+   * stored and for every read-back. A caller passes false when it knows the
+   * prompt it actually sent left the title block out, so a title written
+   * without the rules it would have been judged by is refused rather than kept.
+   */
+  readonly planning?: boolean;
+}
 
 /**
  * Whether this run's evidence can carry a "create" recommendation.
@@ -480,7 +589,7 @@ export function validateModelBriefV2(
 ): Decoded<BriefV2Generated> {
   const checked = parseBriefV2Context(context);
   if (!checked.ok) return nested(checked, "context");
-  const decoded = wholeShape(input, modelResearchShape, false, "U");
+  const decoded = wholeShape(input, modelResearchShape, false, "U", options.planning ?? briefPlanningAvailable(checked.value.input.language));
   if (!decoded.ok) return decoded;
   const research = validateResearchOutput(decoded.value.research, checked.value.research);
   if (!research.ok) return nested(research, "research");
@@ -536,6 +645,10 @@ export function validateModelBriefV2(
     const identities = refs.map((ref) => { const candidate = candidates.get(ref); return candidate === undefined ? null : briefV2PageKey(candidate.url); });
     if (new Set(identities).size !== refs.length || refs.some((ref, index) => identities[index] === targetIdentity || candidates.get(ref)?.read !== "observed")) return reference(key);
   }
+  if (decoded.value.planning !== undefined) {
+    const rejected = checkTitle(decoded.value.planning, suppliedVocabulary(checked.value), "planning");
+    if (rejected !== null) return reference(rejected);
+  }
   const value: BriefV2Generated = { ...decoded.value, research: research.value, page_plan: { ...plan, steps } };
   if (options.checkLanguage !== true) return ok(value);
   return checkGeneratedLanguage(value, checked.value.input.language) ?? ok(value);
@@ -545,7 +658,7 @@ export function validateModelBriefV2(
 export function parseBriefV2Generated(input: unknown, context: BriefV2Context): Decoded<BriefV2Generated> {
   const checked = parseBriefV2Context(context);
   if (!checked.ok) return nested(checked, "context");
-  const decoded = wholeShape<ResearchResult>(input, (value, path) => nested(parseResearchResult(value, checked.value.research), path), true, "Q");
+  const decoded = wholeShape<ResearchResult>(input, (value, path) => nested(parseResearchResult(value, checked.value.research), path), true, "Q", briefPlanningAvailable(checked.value.input.language));
   if (!decoded.ok) return decoded;
   const value = decoded.value;
   const anchors = new Map(value.research.questions.map((item) => [item.id, item.anchor]));

@@ -13,6 +13,32 @@ export const RESEARCH_QUESTION_MAX = 8;
 export const RESEARCH_OUTLINE_MAX = 7;
 export const RESEARCH_QUESTION_MAX_CHARS = 400;
 export const RESEARCH_PROMPT_MAX_BYTES = 48 * 1024;
+/** One recommendation plus at most this many other framings for the same evidence. */
+export const BRIEF_TITLE_ALTERNATIVES_MAX = 2;
+
+/**
+ * Whether this run's language is offered the planning layer.
+ *
+ * The planning fields are editorial English: their rules ("no number the
+ * evidence did not supply", "no authority the excerpts never named") are
+ * written for English titles, and their prompt block is English prose that
+ * would have to be re-authored, not translated, for any other language. A run
+ * in another language is therefore never asked for them, and a reply that
+ * volunteers them anyway has that key dropped before the brief is kept.
+ *
+ * Shared by the brief and the draft so one run cannot ask for a title the other
+ * refuses to render. That is why an ill-formed tag is answered false rather
+ * than by its first subtag: "en--US" and "en-US-u" both start with en and both
+ * make the draft writer refuse the language outright, so reading them as
+ * English here would offer a title to a run whose draft can never be written.
+ * Region subtags do not change the language: en-GB is English.
+ */
+export function briefPlanningAvailable(language: string): boolean {
+  try {
+    if (Intl.getCanonicalLocales(language)[0] === undefined) return false;
+  } catch { return false; }
+  return language.toLowerCase().split("-")[0] === "en";
+}
 /** Leaves room in the 256 KiB handoff for the plan, metadata and confirmed edits. */
 export const RESEARCH_BUNDLE_MAX_BYTES = 128 * 1024;
 

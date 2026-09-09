@@ -17,3 +17,15 @@ describe("v2 observed text measurement", () => {
     expect(contract.measureResearchLength(text, language)).toEqual(expected);
   });
 });
+
+describe("the planning-layer language gate", () => {
+  it("offers a title to English runs and to nobody whose tag the draft writer would refuse", () => {
+    for (const tag of ["en", "EN", "en-GB", "en-US"]) expect(contract.briefPlanningAvailable(tag)).toBe(true);
+    for (const tag of ["de", "zh", "zh-CN", "eng"]) expect(contract.briefPlanningAvailable(tag)).toBe(false);
+    // An ill-formed tag starts with en and is not English to anything that has
+    // to resolve it: the draft writer refuses these outright, so a brief that
+    // read the first subtag would offer a title to a run whose draft can never
+    // be written and whose result page would then have nowhere to send it.
+    for (const tag of ["en--US", "en-US-u", "en_US", ""]) expect(contract.briefPlanningAvailable(tag)).toBe(false);
+  });
+});

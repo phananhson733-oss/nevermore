@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { LLM_DEADLINE_MS } from "@sf/public-tools/content-brief/constants";
 import { buildResearchBundle, parseResearchBundle } from "@sf/public-tools/content-brief/v2-research";
-import type { ResearchPage } from "@sf/public-tools/content-brief/v2-contract";
+import { RESEARCH_PROMPT_MAX_BYTES, type ResearchPage } from "@sf/public-tools/content-brief/v2-contract";
 import type { BriefV2Context, ModelBriefV2Output } from "@sf/public-tools/content-brief/v2-generation-contract";
 import { parseBriefV2Context } from "@sf/public-tools/content-brief/v2-generation";
 import { buildSerpObservations } from "@sf/public-tools/content-brief/assemble";
 import { BRIEF_REPLY_FIELDS, runContentBriefV2Llm } from "./content-brief-v2-llm.ts";
+import { buildContentBriefV2SystemPrompt, prepareContentBriefV2Prompt } from "./content-brief-v2-prompts.ts";
 import { createKeywordLlmClient, KeywordLlmError, type KeywordLlmClient, type KeywordLlmConfig, type KeywordLlmFailureReason, type KeywordLlmRequest } from "./keyword-llm-client.ts";
 
 const NOW = 1_800_000_000_000;
@@ -36,6 +37,33 @@ function context(pages: ResearchPage[] = [page()]): BriefV2Context {
     gsc: { status: "complete", property: "sc-domain:owned.example", window: { start: "2026-08-01", end: "2026-08-28", lookback_days: 28 }, reason: null, matches: [], omitted_matches: 0 },
     candidates: [],
   };
+}
+
+/**
+ * The widest context whose prompt still fits without the title block.
+ *
+ * Padding goes into profile facts because they are the one part of the document
+ * the descent cannot shrink: excerpts are traded away unit by unit, facts are
+ * not. Each fact's field is capped at 2000 characters by the context contract,
+ * so the padding is chunked and the last chunk trimmed to land eight bytes
+ * under the cap -- less than the title block costs, and more than nothing.
+ */
+function budgetBound(base: BriefV2Context): BriefV2Context {
+  const untitled = buildContentBriefV2SystemPrompt(false, "en", false);
+  const padded = (fields: readonly string[]): BriefV2Context => ({ ...base,
+    profile_snapshot: { website_id: "website-1", revision: 1, hash: "b".repeat(64) },
+    facts: fields.map((field, index) => ({ id: `P${index + 1}`, field, text: "Claim validation",
+      derivation: "declared" as const, provenance: { method: "observed" as const, origin: "product_profile" as const } })) });
+  const measure = (fields: readonly string[]) => {
+    const prepared = prepareContentBriefV2Prompt(padded(fields));
+    return prepared === null ? Number.POSITIVE_INFINITY
+      : new TextEncoder().encode(JSON.stringify({ system: untitled, user: prepared.user })).byteLength;
+  };
+  const target = RESEARCH_PROMPT_MAX_BYTES - 8;
+  const grown = (fields: readonly string[]): readonly string[] => [...fields.slice(0, -1), "f".repeat(2000), "f"];
+  let fields: readonly string[] = ["f"];
+  while (measure(grown(fields)) <= target) fields = grown(fields);
+  return padded([...fields.slice(0, -1), "f".repeat(1 + target - measure(fields))]);
 }
 
 function recorder(reply: string | Error = RESPONSE) {
@@ -515,6 +543,68 @@ describe("one-call Brief v2 assembly", () => {
     expect(result.output).toBeNull();
     expect(result.validation_path).toBe("research.outline[0].h2");
     expect(JSON.stringify(result)).not.toContain("\u7406\u89e3\u533b\u7597\u8d26\u5355\u8f6f\u4ef6");
+  });
+});
+
+describe("Brief v2 recommended title", () => {
+  const withTitle = (recommended: string) => RESPONSE.replace(
+    '"gap_angle":null',
+    `"planning":{"title":{"recommended":{"value":${JSON.stringify(recommended)},"rationale":"Names the reader task the retained excerpts answer."},"alternatives":[]}},"gap_angle":null`,
+  );
+
+  it("keeps a title the run asked for", async () => {
+    const { result, requests } = await run(withTitle("How Medical Billing Software Validates Claims"));
+    expect(requests).toHaveLength(1);
+    expect(result.output?.planning?.title.recommended.value).toBe("How Medical Billing Software Validates Claims");
+    expect(result.dropped_paths).toBeUndefined();
+  });
+
+  it("removes a title a non-English run never asked for, rather than losing that run", async () => {
+    // The validator refuses the key on a run the planning layer was not offered
+    // to, exactly as it refuses any unknown key. What happens next is the drop
+    // loop, and it is the better outcome: the reply is left in the state that
+    // run should have been in all along, instead of discarding a paid SERP
+    // read, ten crawls and a model call over a field nobody asked for.
+    const chinese = { ...context([page("C1", true)]), input: { ...context().input, primary: "\u533b\u7597\u8d26\u5355\u8f6f\u4ef6", language: "zh" } };
+    const reply = JSON.parse(withTitle("Medical Billing Software Explained")) as Record<string, unknown>;
+    reply["research"] = { questions: [{ anchor: "U1", q: "\u533b\u7597\u8d26\u5355\u8f6f\u4ef6\u5982\u4f55\u6821\u9a8c\u7406\u8d54\uff1f", sources: ["U1"] }], outline: [{ h2: "\u7406\u89e3\u7406\u8d54\u6821\u9a8c", h3: [], answers: ["U1"] }] };
+    reply["intent"] = { value: "informational", rationale: "\u8bfb\u8005\u8981\u4e86\u89e3\u7406\u8d54\u6821\u9a8c\u3002" };
+    reply["format"] = { value: "guide", rationale: "\u9002\u5408\u7528\u6d41\u7a0b\u56de\u7b54\u3002" };
+    reply["page_plan"] = { action: "create", rationale: "\u6837\u672c\u5185\u672a\u89c2\u5bdf\u5230\u5df2\u6709\u9875\u9762\u3002", target_ref: null, steps: [] };
+    const { result, requests } = await run(JSON.stringify(reply), chinese);
+    expect(requests).toHaveLength(1);
+    expect(result.output).not.toBeNull();
+    expect(result.dropped_paths).toEqual(["planning"]);
+    expect(result.output === null || Object.hasOwn(result.output, "planning")).toBe(false);
+  });
+
+  it("removes a title an English run had no bytes left to ask for", async () => {
+    // The language gate says English, but the prompt that was actually sent
+    // carried no title block: the evidence filled the budget and the descent
+    // gave the title up to keep the run. A title returned anyway was written
+    // without the rules it would have been judged by, so it is dropped the same
+    // way -- and the run, which is what the visitor paid for, is kept.
+    const data = budgetBound(context());
+    expect(prepareContentBriefV2Prompt(data)?.planning).toBe(false);
+    const { result, requests } = await run(withTitle("How Medical Billing Software Validates Claims"), data);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.system).not.toContain("\nTITLE\n");
+    expect(result.output).not.toBeNull();
+    expect(result.dropped_paths).toEqual(["planning"]);
+    expect(result.output === null || Object.hasOwn(result.output, "planning")).toBe(false);
+  });
+
+  it("loses the title rather than the brief when the title breaks a rule", async () => {
+    // A digit in a title is a published measurement no sentence rule ever saw.
+    // Dropping it costs the title; failing the run would cost the SERP call,
+    // the crawls and the model call for a string nobody had to publish.
+    const { result, requests } = await run(withTitle("3 Ways Medical Billing Software Validates Claims"));
+    expect(requests).toHaveLength(1);
+    expect(result.output).not.toBeNull();
+    expect(result.dropped_paths).toEqual(["planning.title.recommended.value"]);
+    // Absent, not empty: that is what the contract calls a brief without a title.
+    expect(result.output === null || Object.hasOwn(result.output, "planning")).toBe(false);
+    expect(result.output?.research.questions).toHaveLength(1);
   });
 });
 

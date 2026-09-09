@@ -47,6 +47,63 @@ async function confirmedValue(onConfirmed: ReturnType<typeof vi.fn<(value: Confi
   return value;
 }
 
+describe("Brief v2 recommended title", () => {
+  const titled = async (locale: "en" | "zh" = "en") => {
+    const brief = await fixture({ locale });
+    if (brief.generated === null) throw new Error("fixture");
+    return { ...brief, generated: { ...brief.generated, planning: { title: {
+      recommended: { value: "Why Search Console Reporting Lags", rationale: "Names the reader task the retained excerpts answer." },
+      alternatives: [{ value: "Reading Delayed Search Console Reports", rationale: "Leads with the reporting task instead of the cause." }],
+    } } } };
+  };
+
+  it("prints the recommended title, its reason and its alternatives", async () => {
+    const { host } = await render(await titled());
+    expect(node(host, "[data-title-value]").textContent).toBe("Why Search Console Reporting Lags");
+    expect(node(host, "[data-recommended-title]").textContent).toContain("Names the reader task");
+    const alternatives = node(host, "[data-title-alternatives]");
+    expect(alternatives.textContent).toContain("Reading Delayed Search Console Reports");
+    // The count is in the summary, so a reader knows whether opening it is worth it.
+    expect(alternatives.querySelector("summary")?.textContent).toContain("1");
+  });
+
+  it("says a title is a plan, not a finding", async () => {
+    const { host } = await render(await titled());
+    // Same labelling as intent and format: nothing here passed a claim rule.
+    expect(node(host, "[data-recommended-title]").textContent).toContain("Model suggestion");
+    const boundary = node(host, "[data-title-boundary]").textContent ?? "";
+    expect(boundary).toContain("not a finding");
+    // And it says only what the server does. The two checks are a number in any
+    // form and an all-capital acronym the run never supplied; an invented name
+    // in ordinary Title Case passes them both, so claiming the server refuses
+    // unsupplied organisations would be the interface telling the operator a
+    // guarantee nobody implemented.
+    expect(boundary).toContain("an all-capital acronym the input never supplied");
+    expect(boundary).toContain("not a check the server ran");
+  });
+
+  it("distinguishes a run that produced no title from one that never rendered the card", async () => {
+    const { host } = await render(await fixture({ locale: "en" }));
+    // A dropped title and a title the model never wrote look identical on an
+    // empty page, and only one of them is worth telling the operator about.
+    const absent = node(host, "[data-no-title]").textContent ?? "";
+    expect(absent).toContain("no title");
+    // Three reasons produce the same empty card and the copy names all three,
+    // because asserting the wrong one is worse than naming the set.
+    expect(absent).toContain("the model returned none");
+    expect(absent).toContain("did not pass the checks above");
+    expect(absent).toContain("left no room to ask for one");
+    expect(host.querySelector("[data-title-value]")).toBeNull();
+  });
+
+  it("never offers a title on a run the planning layer was not offered to", async () => {
+    const english = await titled();
+    const other = { ...english, context: { ...english.context, input: { ...english.context.input, language: "de" } } };
+    const { host } = await render(other);
+    expect(host.querySelector("[data-recommended-title]")).toBeNull();
+  });
+});
+
 describe("Artifact-aligned Brief v2 result", () => {
   it.each([{ locale: "en", version: 2 }, { locale: "zh", version: 2 }, { locale: "en", version: 3 }, { locale: "zh", version: 3 }] as const)("states the v$version format heuristic in the default visible summary ($locale)", async ({ locale, version }) => {
     const brief = version === 3 ? (await confirmedDraftV3Fixture()).brief : await fixture({ locale });

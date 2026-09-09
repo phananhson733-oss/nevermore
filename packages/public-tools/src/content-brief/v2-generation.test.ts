@@ -632,3 +632,118 @@ describe("v2 frozen generated result", () => {
     ] as const) expect(generation.parseBriefV2Generated(changed(parsed.value, path, replacement), context()).ok).toBe(false);
   });
 });
+
+
+describe("brief planning layer: the recommended title", () => {
+  const titled = (title: unknown) => ({ ...model(), planning: { title } });
+  const plan = {
+    recommended: { value: "Why Search Console Data Lags Behind", rationale: "Names the reader task the retained excerpts answer." },
+    alternatives: [{ value: "Reading Delayed Search Console Reports", rationale: "Leads with the reporting task instead of the cause." }],
+  };
+
+  it("keeps a title the run asked for, and leaves the key out of one that did not", () => {
+    const kept = generation.validateModelBriefV2(titled(plan), context());
+    expect(kept).toMatchObject({ ok: true });
+    if (!kept.ok) return;
+    expect(kept.value.planning?.title.recommended.value).toBe("Why Search Console Data Lags Behind");
+    expect(kept.value.planning?.title.alternatives).toHaveLength(1);
+    const untitled = generation.validateModelBriefV2(model(), context());
+    expect(untitled).toMatchObject({ ok: true });
+    if (!untitled.ok) return;
+    // Absent, not null and not empty: a brief written before titles existed
+    // must serialize to the same bytes and the same fingerprint it always had.
+    expect(Object.hasOwn(untitled.value, "planning")).toBe(false);
+  });
+
+  it("refuses a planning block on a run the planning layer was never offered to", () => {
+    // The layer is English-only, so a non-English run is not asking for it, and
+    // an unrequested key is exactly what the strict decoder already rejects.
+    const other: BriefV2Context = { ...context(), input: { ...context().input, language: "de" } };
+    expect(generation.validateModelBriefV2(titled(plan), other)).toMatchObject({ ok: false, path: "planning" });
+  });
+
+  it.each([
+    ["a year", "The 2026 Search Console Delay Guide"],
+    ["a count", "3 Reasons Search Console Data Lags"],
+    ["a rate inside a word", "Search Console Delay: The 90% Case"],
+  ])("refuses a title publishing %s the sentence model never checked", (_name, value) => {
+    const reply = titled({ ...plan, recommended: { ...plan.recommended, value } });
+    expect(generation.validateModelBriefV2(reply, context())).toMatchObject({ ok: false, path: "planning.title.recommended.value" });
+  });
+
+  it("refuses a number an alternative smuggles in", () => {
+    const reply = titled({ ...plan, alternatives: [{ value: "Search Console Delay in 7 Steps", rationale: "Frames it as a procedure." }] });
+    expect(generation.validateModelBriefV2(reply, context())).toMatchObject({ ok: false, path: "planning.title.alternatives[0].value" });
+  });
+
+  it("refuses a named authority the evidence never supplied, and keeps one it did", () => {
+    // A fabricated acronym is the fabricated entity a title can carry without
+    // any sentence carrying it. Title Case hides ordinary proper nouns, so this
+    // is a floor, not entity recognition: it checks the shape that Title Case
+    // cannot disguise.
+    const invented = titled({ ...plan, recommended: { ...plan.recommended, value: "Search Console Delays Per NIST Guidance" } });
+    expect(generation.validateModelBriefV2(invented, context())).toMatchObject({ ok: false, path: "planning.title.recommended.value" });
+    const supplied = titled({ ...plan, recommended: { ...plan.recommended, value: "GSC Delay Explained" } });
+    expect(generation.validateModelBriefV2(supplied, context())).toMatchObject({ ok: true });
+  });
+
+  it.each([
+    ["past the ten-letter ceiling the first rule carried", "Search Console Delays Per ABCDEFGHIJK Guidance"],
+    ["written as an initialism with full stops", "Search Console Delays Per X.Y.Z. Guidance"],
+  ])("refuses an unsupplied acronym %s", (_name, value) => {
+    // Both spellings published an authority nothing in the run supplied, and
+    // both walked through the rule that exists to refuse exactly that: one was
+    // a letter too long to match, the other was three single letters after the
+    // full stops split it apart.
+    const reply = titled({ ...plan, recommended: { ...plan.recommended, value } });
+    expect(generation.validateModelBriefV2(reply, context())).toMatchObject({ ok: false, path: "planning.title.recommended.value" });
+  });
+
+  it("refuses a count published as the keycap ten", () => {
+    // U+1F51F is a symbol, not a Number, so the digit rule did not see the one
+    // character in Unicode whose whole job is to say ten.
+    const reply = titled({ ...plan, recommended: { ...plan.recommended, value: "\u{1F51F} Reasons Search Console Data Lags" } });
+    expect(generation.validateModelBriefV2(reply, context())).toMatchObject({ ok: false, path: "planning.title.recommended.value" });
+  });
+
+  it("keeps an acronym the run supplied in a compatibility spelling", () => {
+    // The keyword itself is written in fullwidth letters, and every other stage
+    // already reads that as the same word. A title refused here would be a
+    // correct title lost to a spelling the run chose for it.
+    const base = context();
+    const fullwidth: BriefV2Context = { ...base,
+      input: { ...base.input, primary: "\uff27\uff33\uff23 delay" },
+      gsc: { ...base.gsc, matches: base.gsc.matches.map((match) => match.id === "G1" ? { ...match, keyword: "\uff27\uff33\uff23 delay" } : match) } };
+    const reply = titled({ ...plan, recommended: { ...plan.recommended, value: "GSC Delay Explained" } });
+    expect(generation.validateModelBriefV2(reply, fullwidth)).toMatchObject({ ok: true });
+  });
+
+  it("refuses a title on an English run whose prompt could not ask for one", () => {
+    // The language gate is not the whole answer: an English run whose evidence
+    // fills the byte budget is sent a prompt with no title block at all, and a
+    // title written without the rules it would be judged by is not a title this
+    // brief can show.
+    expect(generation.validateModelBriefV2(titled(plan), context(), { planning: false })).toMatchObject({ ok: false, path: "planning" });
+    expect(generation.validateModelBriefV2(model(), context(), { planning: false })).toMatchObject({ ok: true });
+  });
+
+  it("refuses an alternative that repeats the recommendation", () => {
+    const reply = titled({ ...plan, alternatives: [{ value: plan.recommended.value, rationale: "Same title, different reason." }] });
+    expect(generation.validateModelBriefV2(reply, context())).toMatchObject({ ok: false, path: "planning.title.alternatives" });
+  });
+
+  it("refuses a third alternative", () => {
+    const three = ["A", "B", "C"].map((mark) => ({ value: `Search Console Delay Option ${mark}`, rationale: "One more framing." }));
+    expect(generation.validateModelBriefV2(titled({ ...plan, alternatives: three }), context())).toMatchObject({ ok: false });
+  });
+
+  it("survives the frozen re-read that recomputes the whole graph", () => {
+    const decoded = generation.validateModelBriefV2(titled(plan), context());
+    expect(decoded).toMatchObject({ ok: true });
+    if (!decoded.ok) return;
+    // parseBriefV2Generated rebuilds the model reply from the stored result and
+    // compares canonically, so a planning key that survived generation but not
+    // the rebuild would fail every stored brief that carries one.
+    expect(generation.parseBriefV2Generated(decoded.value, context())).toEqual({ ok: true, value: decoded.value });
+  });
+});
