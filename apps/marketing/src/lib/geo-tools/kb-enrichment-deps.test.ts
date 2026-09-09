@@ -86,6 +86,14 @@ describe("actual enrichment runtime adapters", () => {
     // The protocol rule is unchanged: an https origin never follows a downgrade,
     // apex/www sibling or not.
     expect(allow?.("https://example.com/", "http://www.example.com/")).toBe(false);
+    // Port is part of the origin and the gate's key is not: `canonicalCrawlTargetKey`
+    // answers on hostname alone, so asking it without also comparing ports would
+    // let a site walk this collection onto any other port it listens on. The
+    // transport's DNS/IP guard does not catch that -- the hostname is unchanged,
+    // so it resolves to the same permitted address.
+    expect(allow?.("https://example.com/", "https://example.com:8443/")).toBe(false);
+    expect(allow?.("https://example.com:8443/", "https://example.com/")).toBe(false);
+    expect(allow?.("https://example.com:8443/", "https://www.example.com:8443/")).toBe(true);
     // Fail closed on anything that does not parse into a host.
     expect(allow?.("not a URL", "https://www.example.com/")).toBe(false);
     expect(allow?.("https://example.com/", "not a URL")).toBe(false);
