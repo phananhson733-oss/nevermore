@@ -100,7 +100,7 @@ function budgetedSectionEvidence(
   research: { readonly units: readonly ResearchUnit[] },
   pages: ReadonlyMap<string, ResearchPage>,
   mandatory: readonly string[],
-): Map<string, { readonly page_ref: string; readonly final_url: string }> {
+): Map<string, { readonly page_ref: string; readonly final_url: string; readonly text: string }> {
   const byId = new Map(research.units.map((unit) => [unit.id, unit]));
   const pageOf = (ref: string): ResearchPage | undefined => {
     const unit = byId.get(ref);
@@ -116,7 +116,7 @@ function budgetedSectionEvidence(
       .filter((unit) => unit.kind === "page" && !mandatory.includes(unit.id) && hitPages.has(unit.page_ref))
       .map((unit) => unit.id),
   ];
-  const selected = new Map<string, { readonly page_ref: string; readonly final_url: string }>();
+  const selected = new Map<string, { readonly page_ref: string; readonly final_url: string; readonly text: string }>();
   let used = 0;
   for (const ref of ordered) {
     const unit = byId.get(ref);
@@ -125,7 +125,12 @@ function budgetedSectionEvidence(
     const bytes = promptUnitBytes(unit, page);
     if (used + bytes > SECTION_EVIDENCE_MAX_BYTES) continue;
     used += bytes;
-    selected.set(ref, { page_ref: page.id, final_url: page.final_url });
+    // The excerpt text travels with the unit because two rules downstream are
+    // about what the source actually said, not merely which source it was: a
+    // number in a bound sentence has to appear in supplied text somewhere, and
+    // a sentence that reproduces an excerpt is copying rather than writing.
+    selected.set(ref, { page_ref: page.id, final_url: page.final_url,
+      text: unit.kind === "page" ? page.research.segments[unit.segment_index]?.text ?? "" : "" });
   }
   return selected;
 }

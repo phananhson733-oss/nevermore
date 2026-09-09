@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { ConfirmedBriefV2 } from "@sf/public-tools/content-brief/v2-generation-contract";
 import type { DraftResultV2 } from "@sf/public-tools/content-brief/v2-draft-contract";
+import type { DraftV2QualityLocation } from "@sf/public-tools/content-brief/v2-draft-prose";
 import type { DraftV2Sentence } from "@sf/public-tools/content-brief/v2-draft-section";
 import { ACTION_BUTTON, BODY_TEXT, ID_CHIP, SECTION_TITLE, collectedTime, safePageUrl } from "./content-brief-results-shared";
 import { markdownNotes } from "./content-draft-handoff-bar";
@@ -22,6 +23,33 @@ function sameExportIdentity(left: ExportIdentity, right: ExportIdentity): boolea
   return left.result === right.result && left.confirmed === right.confirmed && left.locale === right.locale;
 }
 
+/**
+ * Each warning's indices resolved to the prose it is about.
+ *
+ * A warning whose location does not resolve is dropped rather than rendered as
+ * a blank row: the list is only useful if every line points at something the
+ * reader can actually look at. The parser already refuses a delivery whose
+ * warnings do not match its own prose, so this drops nothing in practice.
+ */
+function draftV2WritingWarnings(result: DraftResultV2) {
+  const sections = new Map(result.sections.map((section) => [section.id, section]));
+  function resolve(location: DraftV2QualityLocation) {
+    const section = sections.get(location.section_id);
+    if (section === undefined || section.status !== "ok") return null;
+    const paragraph = section.body.paragraphs[location.paragraph];
+    if (paragraph === undefined) return null;
+    if (location.sentence === null) return { h2: section.h2, text: null, sentences: paragraph.sentences.length };
+    const sentence = paragraph.sentences[location.sentence];
+    return sentence === undefined ? null : { h2: section.h2, text: sentence.text, sentences: paragraph.sentences.length };
+  }
+  return (result.quality?.warnings ?? []).flatMap((warning, index) => {
+    const here = resolve(warning.at);
+    if (here === null) return [];
+    const other = warning.other === null ? null : resolve(warning.other);
+    return [{ key: index, code: warning.code, here, other }];
+  });
+}
+
 /** URLs come only from observed candidates in the exact confirmed Brief, never generated prose. */
 function confirmedRelatedLinks(confirmed: ConfirmedBriefV2) {
   return (confirmed.brief.generated?.internal_links ?? []).flatMap((link) => {
@@ -29,6 +57,44 @@ function confirmedRelatedLinks(confirmed: ConfirmedBriefV2) {
     const url = candidate?.read === "observed" ? safePageUrl(candidate.url) : null;
     return url === null ? [] : [{ pageRef: link.page_ref, anchor: link.anchor, url }];
   });
+}
+
+/**
+ * Every page an accepted section actually cited, in the order it was first used.
+ *
+ * Derived from the sentences, not from the research bundle: a page the brief
+ * collected and the draft never cited is not a source of this article, and
+ * listing it would be the article claiming to rest on reading it did not do.
+ * Both the rendered article and the export read this one function, so the
+ * published list and the exported list cannot drift apart.
+ *
+ * Identity is the final URL, not the page id. Two ids can be two observations
+ * of one page -- a Search Console candidate that also ranks in the SERP, for
+ * instance -- and printing that page twice would tell the reader the article
+ * rests on two sources when it rests on one. A page whose final URL will not
+ * parse as an ordinary http(s) address is left out rather than named from a
+ * string nobody can resolve; that is a crawler the brief should not have
+ * produced, and the excerpt is still in the evidence section either way.
+ */
+export function draftV2CitedPages(result: DraftResultV2, confirmed: ConfirmedBriefV2) {
+  const research = confirmed.brief.context.research;
+  const units = new Map(research.units.map((unit) => [unit.id, unit]));
+  const pages = new Map(research.pages.map((page) => [page.id, page]));
+  const seen = new Set<string>();
+  const cited: { readonly id: string; readonly domain: string; readonly url: string; readonly fetched_at: string }[] = [];
+  for (const section of result.sections) {
+    if (section.status !== "ok") continue;
+    for (const paragraph of section.body.paragraphs) for (const sentence of paragraph.sentences) for (const ref of sentence.evidence_refs) {
+      const unit = units.get(ref);
+      if (unit?.kind !== "page") continue;
+      const page = pages.get(unit.page_ref);
+      const url = page === undefined ? null : safePageUrl(page.final_url);
+      if (page === undefined || url === null || seen.has(url)) continue;
+      seen.add(url);
+      cited.push({ id: page.id, domain: new URL(url).hostname, url, fetched_at: page.fetched_at });
+    }
+  }
+  return cited;
 }
 
 /** Consecutive bulleted sentences are one list; everything else stays running prose. */
@@ -44,23 +110,55 @@ export function draftV2Runs(sentences: readonly DraftV2Sentence[]) {
 }
 
 function markdownLinkLabel(text: string) { return text.replace(/&/gu, "&amp;").replace(/[\\`*_{}[\]()<>!#|]/gu, "\\$&"); }
+/**
+ * A heading renders its own text and nothing else.
+ *
+ * Headings are the one place the export interpolates model and operator text
+ * into Markdown syntax. "Reading [Delayed Reports](https://example.com)" is a
+ * legal title -- no number, no unsupplied acronym, nothing the generation
+ * checks refuse -- and pasted into a CMS it becomes a heading that links
+ * somewhere nobody chose. Backslash-escaping the inline constructs keeps the
+ * exported heading the string that was confirmed. The visible text is
+ * unchanged: a CommonMark reader prints the character, not the backslash.
+ *
+ * Parentheses are deliberately left alone. Escaping the bracket already breaks
+ * the link, and escaping the paren that follows a bare URL only lands a visible
+ * backslash inside the autolink GFM makes of it. A bare URL that links to
+ * itself hides nothing; a label pointing somewhere else is the whole risk.
+ */
+function markdownHeading(text: string) { return text.replace(/[\\`*_[\]<>#|~]/gu, "\\$&"); }
 function markdownLinkUrl(url: string) { return url.replace(/[()[\]<>\\]/gu, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`).replace(/&/gu, "&amp;"); }
 
 /** Full outline and real prose, with local absence notes and one confirmed related-links block. */
 export interface ImagePromptNotes {
   readonly imagePrompts: string; readonly imagePromptsNote: string; readonly imageHero: string; readonly imagePrompt: string; readonly imageAlt: string;
 }
-export function contentDraftV2Markdown(result: DraftResultV2, confirmed: ConfirmedBriefV2, notes: MarkdownNotes & { readonly relatedLinks: string } & ImagePromptNotes): string {
-  const sections = result.sections.map((section) => {
-    if (section.status === "failed") return `## ${section.h2}\n\n> ${notes.failed(section.fail_reason)}`;
-    if (section.status === "skipped") return `## ${section.h2}\n\n> ${notes.skipped}`;
-    return [`## ${section.h2}`, ...section.body.paragraphs.flatMap((paragraph) => [
-      ...(paragraph.heading === null ? [] : [`### ${paragraph.heading}`]),
+export interface SourceListNotes {
+  readonly sources: string;
+  readonly observedAt: (time: string) => string;
+}
+export function contentDraftV2Markdown(result: DraftResultV2, confirmed: ConfirmedBriefV2, notes: MarkdownNotes & { readonly relatedLinks: string } & ImagePromptNotes & SourceListNotes): string {
+  // The one H1, and only when the confirmation recorded one. An export that
+  // invented a heading from the keyword would be putting a promise on the page
+  // that nobody chose and nothing checked.
+  const sections = confirmed.title === undefined ? [] : [`# ${markdownHeading(confirmed.title)}`];
+  sections.push(...result.sections.map((section) => {
+    if (section.status === "failed") return `## ${markdownHeading(section.h2)}\n\n> ${notes.failed(section.fail_reason)}`;
+    if (section.status === "skipped") return `## ${markdownHeading(section.h2)}\n\n> ${notes.skipped}`;
+    return [`## ${markdownHeading(section.h2)}`, ...section.body.paragraphs.flatMap((paragraph) => [
+      ...(paragraph.heading === null ? [] : [`### ${markdownHeading(paragraph.heading)}`]),
       ...draftV2Runs(paragraph.sentences).map((run) => run.bullet
         ? run.items.map(({ sentence }) => `- ${sentence.text}`).join("\n")
         : run.items.map(({ sentence }) => sentence.text).join(" ")),
     ])].join("\n\n");
-  });
+  }));
+  const cited = draftV2CitedPages(result, confirmed);
+  // The URL is a link with its own text escaped, exactly as the related-links
+  // block does it: a final URL is a crawled string, and one carrying image or
+  // link syntax would otherwise put an attacker's destination inside the
+  // article's own source list.
+  if (cited.length > 0) sections.push(`## ${markdownHeading(notes.sources)}\n\n${cited.map((page) =>
+    `- ${markdownLinkLabel(page.domain)} — [${markdownLinkLabel(page.url)}](${markdownLinkUrl(page.url)}) (${notes.observedAt(page.fetched_at.slice(0, 10))})`).join("\n")}`);
   const links = confirmedRelatedLinks(confirmed);
   if (links.length > 0) sections.push(`## ${notes.relatedLinks}\n\n${links.map((link) => `- [${markdownLinkLabel(link.anchor)}](${markdownLinkUrl(link.url)})`).join("\n")}`);
   const plan = result.image_prompts;
@@ -157,8 +255,10 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
     return entries;
   }
   const relatedLinks = confirmedRelatedLinks(confirmed);
+  const cited = draftV2CitedPages(result, confirmed);
   const notes = {
     ...markdownNotes(base), relatedLinks: t("relatedLinks"),
+    sources: t("sources"), observedAt: (time: string) => t("observedAt", { time }),
     imagePrompts: t("images.markdownHeading"), imagePromptsNote: t("images.markdownNote"), imageHero: t("images.hero"), imagePrompt: t("images.prompt"), imageAlt: t("images.alt"),
   };
   // Per-card copy receipt; a new result is a new set of cards, so it resets with it.
@@ -170,6 +270,7 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
     catch { if (mounted.current) setCopiedImage(`failed:${id}`); }
   }
   const imagePlan = result.image_prompts;
+  const writingWarnings = draftV2WritingWarnings(result);
   const sectionTitle = new Map(result.sections.map((section) => [section.id, section.h2]));
   function imageCard(id: string, label: string, image: { readonly prompt: string; readonly alt: string }) {
     return <li key={id} data-image-prompt={id} className={styles.imageCard}>
@@ -226,6 +327,7 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
         {showClaims ? <div data-source-legend className={styles.legend}>{(["first", "third", "model"] as const).map((tier) => <span key={tier} data-tier={tier}><i aria-hidden="true" />{t(`sourceTier.${tier}`)}</span>)}</div> : null}
       </div>
       {showClaims ? <div className={styles.annotationNote}><p>{t("sourceLegend")}</p><p>{t("claimLegend")}</p></div> : null}
+      {confirmed.title === undefined ? null : <h1 data-draft-title className={styles.articleTitle}>{confirmed.title}</h1>}
       <div className={styles.document}>{result.sections.map((section, index) => {
         const isOpen = expanded[section.id] ?? (index < 2 || section.status === "failed");
         const panelId = `${sectionPrefix}-${section.id}`;
@@ -260,7 +362,10 @@ export function ContentDraftV2Results({ confirmed, result, locale, rerun }: {
         : <p data-image-prompts-unavailable className={`mt-3 ${BODY_TEXT}`}>{t("images.unavailable", { reason: t(`images.reason.${imagePlan.reason}`) })}</p>}
     </section>}
 
+    {cited.length > 0 ? <section data-draft-sources><h2 className={`${SECTION_TITLE} ${RULE}`}>{t("sources")}</h2><p className={`mt-3 ${BODY_TEXT}`}>{t("sourcesBoundary")}</p><ul className="mt-3 space-y-2">{cited.map((page) => <li key={page.id} data-source-page={page.id} className="text-[12.5px] leading-[1.6] text-text-dark-primary"><span className="font-semibold">{page.domain}</span> · <a href={page.url} target="_blank" rel="noopener noreferrer" className="break-all text-brand-accent-text underline underline-offset-2">{page.url}</a> <span className="text-text-dark-secondary">· {t("observedAt", { time: collectedTime(page.fetched_at, locale) })}</span></li>)}</ul></section> : null}
     {relatedLinks.length > 0 ? <section data-related-links><h2 className={`${SECTION_TITLE} ${RULE}`}>{t("relatedLinks")}</h2><ul className="mt-3 space-y-2">{relatedLinks.map((link) => <li key={link.pageRef}><a data-related-link href={link.url} target="_blank" rel="noopener noreferrer" className="text-[13px] text-brand-accent-text underline underline-offset-2">{link.anchor}</a></li>)}</ul></section> : null}
+
+    {result.quality === undefined ? null : <section data-writing-check><h2 className={`${SECTION_TITLE} ${RULE}`}>{t("writing")}</h2><p className={`mt-3 ${BODY_TEXT}`}>{t("writingBoundary")}</p>{writingWarnings.length === 0 ? <p data-writing-empty className={`mt-2 ${BODY_TEXT}`}>{t("writingEmpty")}</p> : <ul className="mt-3 space-y-3">{writingWarnings.map((warning) => <li key={warning.key} data-writing-warning={warning.code} className="border-l-2 border-brand-border-card pl-3"><div className="text-[11px] text-text-dark-secondary">{t(`writingCode.${warning.code}`)} · {warning.here.h2}</div><p className="mt-1 text-[12.5px] leading-[1.6] text-text-dark-primary">{warning.here.text ?? t("writingSentences", { count: warning.here.sentences })}</p>{warning.other === null ? null : <div className="mt-1 text-[11px] text-text-dark-secondary">{t("writingAlsoIn", { section: warning.other.h2 })}</div>}</li>)}</ul>}</section>}
 
     <section><h2 className={`${SECTION_TITLE} ${RULE}`}>{base("verify.title")}</h2><p className={`mt-3 ${BODY_TEXT}`}>{t("verifyBoundary")}</p>{result.verify_before_publish.length === 0 ? <p className={`mt-2 ${BODY_TEXT}`}>{t(result.run.reads.sections.ok === 0 ? "noDraftToVerify" : "verifyEmpty")}</p> : <ul className="mt-3 space-y-3">{result.verify_before_publish.map((item, index) => <li key={index} className="border-l-2 border-brand-border-card pl-3"><div className="text-[11px] text-text-dark-secondary">{base(`verifyKind.${item.kind}`)} · {item.section_id}{item.kind === "single_source" ? ` · ${t("supportingPages", { count: item.support_count })}` : ""}</div><p className="mt-1 text-[12.5px] leading-[1.6] text-text-dark-primary">{item.sentence}</p><div className="mt-1 flex gap-2 text-[11px] text-text-dark-secondary">{item.evidence_refs.length === 0 ? base("verify.noRefs") : item.evidence_refs.map((ref) => <a key={ref} href={`#draft-v2-evidence-${ref}`} className="underline">{ref}</a>)}</div></li>)}</ul>}</section>
 

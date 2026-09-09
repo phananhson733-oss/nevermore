@@ -98,9 +98,47 @@ export interface BriefV2TitlePlan {
  * is optional rather than nullable so a brief issued before planning existed
  * serializes to the same bytes, and therefore the same fingerprint, as it
  * always did.
+ *
+ * Its own members follow the same rule for the same reason: every layer added
+ * after the first is optional, so a brief issued between two deploys stays
+ * readable instead of failing the exact key set with a field nobody had yet.
+ * title shipped with the key and is the one member always present.
  */
 export interface BriefV2Planning {
   readonly title: BriefV2TitlePlan;
+  readonly sections?: readonly BriefV2SectionPlan[];
+}
+
+/**
+ * One sentence saying what a section is for, bound to the section it plans.
+ *
+ * The reader task the section completes and the supported coverage it uses to
+ * do it, in one sentence -- the sentence an editor would write on the outline
+ * before anyone starts drafting. It exists because six sections written from
+ * six question lists and nothing else read as six answers rather than one
+ * article; the writer of section four has no way to know what section two was
+ * for.
+ *
+ * Bound by the generated section's O id, not by position: the operator may
+ * reorder and rename the outline at confirmation, and the plan has to follow
+ * the section it was written for rather than the slot it happened to sit in.
+ *
+ * It is never published. It reaches the draft's section prompt as writing
+ * instruction, and every sentence written from it still passes the draft's own
+ * claim rules, which is why it carries no evidence reference and needs none.
+ *
+ * purpose is the same judgment as one word: the communication task the section
+ * carries out. It exists because "write about reporting delays" and "explain
+ * what a reporting delay is, and what it is not" produce different prose from
+ * the same excerpts, and the draft prompt can only say what a good section of
+ * each kind does if the brief says which kind this one is.
+ */
+export type BriefV2SectionPurpose = "define" | "procedure" | "interpret" | "compare" | "limits";
+
+export interface BriefV2SectionPlan {
+  readonly section_id: string;
+  readonly purpose: BriefV2SectionPurpose;
+  readonly focus: string;
 }
 
 export interface BriefV2WritingPlan {
@@ -114,8 +152,22 @@ export interface BriefV2WritingPlan {
   readonly planning?: BriefV2Planning;
 }
 
-export interface ModelBriefV2Output extends BriefV2WritingPlan {
+/**
+ * The planning a model reply carries, before the server binds it to sections.
+ *
+ * A reply cannot name an O id: the ids are derived here from the outline it
+ * returned. So the model sends one focus per section in outline order and the
+ * server attaches the id, which is also what makes a mismatched count a
+ * rejection rather than a silent misalignment.
+ */
+export interface ModelBriefV2Planning {
+  readonly title: BriefV2TitlePlan;
+  readonly sections?: readonly { readonly purpose: BriefV2SectionPurpose; readonly focus: string }[];
+}
+
+export interface ModelBriefV2Output extends Omit<BriefV2WritingPlan, "planning"> {
   readonly research: ModelResearchOutput;
+  readonly planning?: ModelBriefV2Planning;
 }
 
 export interface BriefV2Generated extends BriefV2WritingPlan {
@@ -157,5 +209,15 @@ export interface ConfirmedBriefV2 {
   readonly outline: readonly ResearchOutlineItem[];
   /** Explicit resolution is required when the generated page action is undecidable. */
   readonly resolution: "accept_recommendation" | "create_despite_uncertainty";
+  /**
+   * The title the operator chose, when the run offered any.
+   *
+   * Absent, never empty: a confirmation made before titles existed, one whose
+   * run produced no title, and one whose operator declined every title are the
+   * same document, and they keep the fingerprint they always had. The value is
+   * one of the strings the model returned and the server checked, not free
+   * text -- a title is the one string in the brief no claim rule ever sees.
+   */
+  readonly title?: string;
   readonly fingerprint: string;
 }

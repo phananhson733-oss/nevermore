@@ -7,6 +7,7 @@ import {
   measureResearchLength, RESEARCH_HEADING_MAX_CHARS, RESEARCH_SEGMENT_MAX_CHARS, type ResearchPage,
 } from "@sf/public-tools/content-brief/v2-contract";
 import { DRAFT_V2_PROMPT_MAX_BYTES, type DraftV2Settings } from "@sf/public-tools/content-brief/v2-draft-contract";
+import { confirmedDraftV2Fixture } from "@sf/public-tools/content-brief/v2-draft-fixtures";
 import { buildDraftV2SectionScope } from "@sf/public-tools/content-brief/v2-draft-scope";
 import { validateModelBriefV2 } from "@sf/public-tools/content-brief/v2-generation";
 import type { BriefV2Context, ContentBriefV2, ModelBriefV2Output } from "@sf/public-tools/content-brief/v2-generation-contract";
@@ -107,7 +108,12 @@ function sectionPrompt(confirmed: Awaited<ReturnType<typeof confirmedBrief>>, se
     // The seam measures exactly this envelope before sending; measure the same thing.
     bytes: encoder.encode(JSON.stringify({ system, user })).byteLength,
     units: scope.value.page_units.size,
-    data: JSON.parse(user) as { section: { position: string }; outline: readonly string[] },
+    system,
+    data: JSON.parse(user) as {
+      section: { position: string };
+      article_title: string | null;
+      article_map: readonly { id: string; position: number; h2: string; h3: readonly string[]; purpose: string | null; focus: string | null; this_section: boolean; questions: readonly { id: string; q: string | null }[] }[];
+    },
   };
 }
 
@@ -139,6 +145,80 @@ describe("Draft v2 section prompt budget", () => {
   });
 });
 
+describe("Draft v2 article title", () => {
+  it("gives every section the confirmed title, and says it is a promise rather than a source", async () => {
+    const confirmed = await confirmedDraftV2Fixture({ title: true });
+    const prompt = sectionPrompt(confirmed, confirmed.outline[1]!.id);
+    // The section that is not the first one still gets it: the title is what
+    // the whole article promises, and a section written without it can quietly
+    // answer a different question than the page said it would.
+    expect(prompt.data.article_title).toBe("Why Reporting Lags Behind Collection");
+    expect(prompt.system).toContain("article_title is the title the operator confirmed for the whole article");
+    // And it is planning, not evidence: nothing in a title was checked against
+    // a source, so it can never be the reason a sentence claims anything.
+    expect(prompt.system).toContain("never factual evidence, never a source");
+  });
+
+  it("carries every section's planned focus, and says the map is coordination rather than evidence", async () => {
+    const confirmed = await confirmedDraftV2Fixture({ title: true });
+    const prompt = sectionPrompt(confirmed, confirmed.outline[0]!.id);
+    expect(prompt.data.article_map.map((item) => item.focus)).toEqual([
+      "Establish why reporting lags, using the observed collection excerpt, before any comparison advice.",
+      "Turn the finalized-period excerpt into the comparison the reader makes, without redefining the lag.",
+    ]);
+    // Without this line the map is a list of things to write about, and the
+    // other sections' question text reads as material this section may use.
+    expect(prompt.system).toContain("The map is coordination context, never evidence");
+    expect(prompt.system).toContain("adds no U or P id to evidence_refs");
+  });
+
+  it("names each section's communication task and says what carrying it out means", async () => {
+    const confirmed = await confirmedDraftV2Fixture({ title: true });
+    const prompt = sectionPrompt(confirmed, confirmed.outline[0]!.id);
+    expect(prompt.data.article_map.map((item) => item.purpose)).toEqual(["define", "compare"]);
+    // The word alone changes nothing: "define" has to mean something the writer
+    // can carry out, and each one names its own failure -- a definition with no
+    // distinction, a procedure with no inputs, an interpretation with no bound.
+    for (const needle of [
+      "define: say what the subject is, in the reader's terms, and what it is not",
+      "procedure: give the steps in the order they are done",
+      "interpret: say what the supplied observation means for the reader's decision, and equally what it does not mean",
+      "compare: put the named things side by side on the dimensions the evidence actually states",
+      "limits: say what the supplied evidence does not establish",
+    ]) expect(prompt.system).toContain(needle);
+    // And a purpose is a plan, not permission to write past the evidence.
+    expect(prompt.system).toContain("Carry the task out; never name it");
+    expect(prompt.system).toContain("answers its questions and stops");
+  });
+
+  it("asks for an answer, its reason, a concrete detail and its condition, only where evidence supports them", async () => {
+    // The 2026-09-09 run answered six questions in 366 words with 30 reachable
+    // excerpts and cited 14: one sentence per question. Naming the components a
+    // complete answer has is the instruction that "write more" was not.
+    const confirmed = await confirmedDraftV2Fixture({ title: true });
+    const { system } = sectionPrompt(confirmed, confirmed.outline[0]!.id);
+    expect(system).toContain("Organise the prose around the questions this section owns");
+    expect(system).toContain("the answer itself; why it is so or how it works; one concrete detail");
+    expect(system).toContain("the condition under which it holds, or stops holding");
+    // And the same sentence closes the door the instruction opens: four
+    // components is a ceiling set by the evidence, not a shape to fill.
+    expect(system).toContain("A missing component is an absence, not an invitation to invent one");
+    expect(system).toContain("never write them as a fixed four-sentence pattern");
+  });
+
+  it("sends a null focus for a section the planning layer never wrote one for", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const map = sectionPrompt(confirmed, confirmed.outline[0]!.id).data.article_map;
+    expect(map.every((item) => item.focus === null && item.purpose === null)).toBe(true);
+    expect(map).toHaveLength(confirmed.outline.length);
+  });
+
+  it("sends null rather than a substitute when the confirmation recorded no title", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    expect(sectionPrompt(confirmed, confirmed.outline[0]!.id).data.article_title).toBeNull();
+  });
+});
+
 describe("Draft v2 section position", () => {
   // Only the ends of the confirmed article may open or close it. A middle section
   // that writes an introduction produces an article with three of them.
@@ -165,7 +245,14 @@ describe("Draft v2 section position", () => {
 
   it("shows every confirmed H2 so a section can avoid another's material", async () => {
     const confirmed = await confirmedBrief("en", 3);
-    expect(sectionPrompt(confirmed, confirmed.outline[1]!.id).data.outline)
-      .toEqual(["Section 1", "Section 2", "Section 3"]);
+    const map = sectionPrompt(confirmed, confirmed.outline[1]!.id).data.article_map;
+    expect(map.map((item) => item.h2)).toEqual(["Section 1", "Section 2", "Section 3"]);
+    // And which one is being written, so "do not restate another section" names
+    // a set the model can actually tell itself apart from.
+    expect(map.map((item) => item.this_section)).toEqual([false, true, false]);
+    expect(map.map((item) => item.position)).toEqual([1, 2, 3]);
+    // Every section's questions, not only this one's: a writer that cannot see
+    // what section two answers has no way to avoid answering it again.
+    expect(map.every((item) => item.questions.length > 0 && item.questions.every((question) => typeof question.q === "string"))).toBe(true);
   });
 });

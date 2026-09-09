@@ -22,7 +22,7 @@ import {
 } from "./v2-contract.ts";
 import { parseResearchBundle, parseResearchResult, validateResearchOutput } from "./v2-research.ts";
 import type {
-  BriefV2Context, BriefV2Generated, BriefV2PlanStep, BriefV2Planning, BriefV2WritingPlan, ModelBriefV2Output,
+  BriefV2Context, BriefV2Generated, BriefV2PlanStep, BriefV2Planning, BriefV2SectionPlan, BriefV2SectionPurpose, BriefV2WritingPlan, ModelBriefV2Output,
 } from "./v2-generation-contract.ts";
 
 const TEXT_MAX = 400;
@@ -223,9 +223,58 @@ function writingShape(strict: boolean, answerPrefix: "U" | "Q"): Decoder<BriefV2
   });
 }
 
-function planningShape(strict: boolean): Decoder<BriefV2Planning> {
+/**
+ * One planning member is required and the rest are optional, by construction.
+ *
+ * planning is the key this brief grows editorial layers in, and a brief issued
+ * between two deploys has to stay readable rather than fail the exact key set
+ * on a field nobody had written yet. title shipped with the key; every member
+ * added after it is stripped out before the key set runs and decoded on its
+ * own, so an old brief is missing a member rather than carrying an unknown one.
+ *
+ * A model reply sends one focus per section in outline order and no id; the
+ * frozen document that comes back stores the O id the server bound it to. That
+ * is the same distinction `strict` already carries everywhere in this file.
+ */
+type DecodedSectionPlan = { readonly section_id?: string; readonly purpose: BriefV2SectionPurpose; readonly focus: string };
+type DecodedPlanning = { readonly title: BriefV2Planning["title"]; readonly sections?: readonly DecodedSectionPlan[] };
+function planningShape(strict: boolean): Decoder<DecodedPlanning> {
   const option = object({ value: generatedText(RESEARCH_HEADING_MAX_CHARS, strict), rationale: generatedText(TEXT_MAX, strict) });
-  return object({ title: object({ recommended: option, alternatives: array(option, { max: BRIEF_TITLE_ALTERNATIVES_MAX }) }) });
+  const titled = object({ title: object({ recommended: option, alternatives: array(option, { max: BRIEF_TITLE_ALTERNATIVES_MAX }) }) });
+  const purpose = oneOf(["define", "procedure", "interpret", "compare", "limits"] as const);
+  const plan: Decoder<DecodedSectionPlan> = strict
+    ? object({ section_id: identifier("O"), purpose, focus: generatedText(TEXT_MAX, strict) })
+    : object({ purpose, focus: generatedText(TEXT_MAX, strict) });
+  return (input, path) => {
+    if (!isRecord(input)) return invalid(path);
+    const { sections, ...rest } = input;
+    const title = titled(rest, path);
+    if (!title.ok || !Object.hasOwn(input, "sections")) return title;
+    const decoded = array(plan, { max: RESEARCH_OUTLINE_MAX })(sections, at(path, "sections"));
+    return decoded.ok ? ok({ ...title.value, sections: decoded.value }) : decoded;
+  };
+}
+
+/**
+ * Bind each focus to the section it plans, and refuse a plan that cannot be.
+ *
+ * One entry per outline section, in outline order: fewer or more is a reply
+ * that lost track of its own article, and binding it anyway would attach one
+ * section's purpose to another's evidence. On the frozen re-read the stored id
+ * has to be the id this outline derives, so a document whose sections were
+ * renumbered cannot keep its old plan.
+ */
+function bindSectionPlans(planning: DecodedPlanning, outline: ResearchResult["outline"]): Decoded<BriefV2Planning> {
+  const { sections, ...rest } = planning;
+  if (sections === undefined) return ok(rest);
+  if (sections.length !== outline.length) return reference("planning.sections");
+  const bound: BriefV2SectionPlan[] = [];
+  for (const [index, plan] of sections.entries()) {
+    const section_id = outline[index]!.id;
+    if (plan.section_id !== undefined && plan.section_id !== section_id) return reference(`planning.sections[${index}].section_id`);
+    bound.push({ section_id, purpose: plan.purpose, focus: plan.focus });
+  }
+  return ok({ ...rest, sections: bound });
 }
 
 /**
@@ -298,7 +347,7 @@ const DIGIT = /[\p{N}\u{1F51F}]/u;
  * an instruction instead, and the title stays droppable so a rejection costs
  * the title rather than the run.
  */
-function checkTitle(planning: BriefV2Planning, vocabulary: ReadonlySet<string>, path: string): string | null {
+function checkTitle(planning: DecodedPlanning, vocabulary: ReadonlySet<string>, path: string): string | null {
   const options = [{ option: planning.title.recommended, at: `${path}.title.recommended` },
     ...planning.title.alternatives.map((option, index) => ({ option, at: `${path}.title.alternatives[${index}]` }))];
   for (const { option, at: where } of options) {
@@ -316,7 +365,8 @@ const modelResearchShape: Decoder<ModelResearchOutput> = object({
   outline: array(object({ h2: generatedText(RESEARCH_HEADING_MAX_CHARS, false), h3: array(generatedText(RESEARCH_HEADING_MAX_CHARS, false), { max: 3 }), answers: array(identifier("U"), { min: 1, max: RESEARCH_QUESTION_MAX, unique: true }) }), { max: RESEARCH_OUTLINE_MAX }),
 });
 
-function wholeShape<R>(input: unknown, research: Decoder<R>, strict: boolean, answerPrefix: "U" | "Q", planningAllowed: boolean): Decoded<BriefV2WritingPlan & { research: R }> {
+type DecodedWholeShape<R> = Omit<BriefV2WritingPlan, "planning"> & { readonly planning?: DecodedPlanning; readonly research: R };
+function wholeShape<R>(input: unknown, research: Decoder<R>, strict: boolean, answerPrefix: "U" | "Q", planningAllowed: boolean): Decoded<DecodedWholeShape<R>> {
   // Decode the known writing fields without dropping unknown top-level keys.
   if (typeof input !== "object" || input === null || Array.isArray(input)) return invalid("");
   if (!Object.hasOwn(input, "research")) return invalid("research");
@@ -645,11 +695,17 @@ export function validateModelBriefV2(
     const identities = refs.map((ref) => { const candidate = candidates.get(ref); return candidate === undefined ? null : briefV2PageKey(candidate.url); });
     if (new Set(identities).size !== refs.length || refs.some((ref, index) => identities[index] === targetIdentity || candidates.get(ref)?.read !== "observed")) return reference(key);
   }
+  let planning: BriefV2Planning | undefined;
   if (decoded.value.planning !== undefined) {
     const rejected = checkTitle(decoded.value.planning, suppliedVocabulary(checked.value), "planning");
     if (rejected !== null) return reference(rejected);
+    const bound = bindSectionPlans(decoded.value.planning, research.value.outline);
+    if (!bound.ok) return bound;
+    planning = bound.value;
   }
-  const value: BriefV2Generated = { ...decoded.value, research: research.value, page_plan: { ...plan, steps } };
+  const { planning: _decodedPlanning, ...rest } = decoded.value;
+  const value: BriefV2Generated = { ...rest, research: research.value, page_plan: { ...plan, steps },
+    ...(planning === undefined ? {} : { planning }) };
   if (options.checkLanguage !== true) return ok(value);
   return checkGeneratedLanguage(value, checked.value.input.language) ?? ok(value);
 }
@@ -660,10 +716,17 @@ export function parseBriefV2Generated(input: unknown, context: BriefV2Context): 
   if (!checked.ok) return nested(checked, "context");
   const decoded = wholeShape<ResearchResult>(input, (value, path) => nested(parseResearchResult(value, checked.value.research), path), true, "Q", briefPlanningAvailable(checked.value.input.language));
   if (!decoded.ok) return decoded;
-  const value = decoded.value;
+  const { planning: storedPlanning, ...stored } = decoded.value;
+  const bound = storedPlanning === undefined ? null : bindSectionPlans(storedPlanning, stored.research.outline);
+  if (bound !== null && !bound.ok) return bound;
+  const value: BriefV2Generated = { ...stored, ...(bound === null ? {} : { planning: bound.value }) };
   const anchors = new Map(value.research.questions.map((item) => [item.id, item.anchor]));
   const model: ModelBriefV2Output = {
     ...value,
+    // The model form has no O ids: they are derived from the outline it sent,
+    // so the rebuild has to hand back the shape a reply actually has.
+    ...(value.planning === undefined ? {} : { planning: { ...value.planning,
+      ...(value.planning.sections === undefined ? {} : { sections: value.planning.sections.map(({ purpose, focus }) => ({ purpose, focus })) }) } }),
     research: {
       questions: value.research.questions.map((item) => ({ anchor: item.anchor, q: item.q, sources: item.source_refs })),
       outline: value.research.outline.map((item) => ({ h2: item.h2, h3: item.h3, answers: item.answers.map((id) => anchors.get(id) ?? "invalid") })),
@@ -672,5 +735,5 @@ export function parseBriefV2Generated(input: unknown, context: BriefV2Context): 
   };
   const rebuilt = validateModelBriefV2(model, checked.value);
   if (!rebuilt.ok) return rebuilt;
-  return canonicalize(rebuilt.value) === canonicalize(value) ? decoded : reference("generated");
+  return canonicalize(rebuilt.value) === canonicalize(value) ? ok(value) : reference("generated");
 }

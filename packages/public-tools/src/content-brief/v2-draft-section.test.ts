@@ -8,9 +8,9 @@ const facts = new Map<string, ProfileFact>([
 ]);
 const scope = {
   page_units: new Map([
-    ["U1", { page_ref: "C1", final_url: "https://source.test/guide" }],
-    ["U2", { page_ref: "C1", final_url: "https://source.test/guide" }],
-    ["U3", { page_ref: "T1", final_url: "https://owned.test/guide" }],
+    ["U1", { page_ref: "C1", final_url: "https://source.test/guide", text: "Reporting can lag behind collection by up to 48 hours." }],
+    ["U2", { page_ref: "C1", final_url: "https://source.test/guide", text: "Compare finalized periods before drawing a conclusion." }],
+    ["U3", { page_ref: "T1", final_url: "https://owned.test/guide", text: "The current introduction explains the reporting window." }],
   ]),
   facts, stance_allowed: true,
 };

@@ -174,13 +174,20 @@ describe("Brief v2 assembly prompt", () => {
     // It was 10,583 before two deliberate trades. The REPAIR paragraph bought
     // the model-only retry 558 bytes: a run whose research cites one bad id
     // used to lose the SERP call, the crawls and the model call together.
-    // The TITLE block bought the recommended title 608 bytes, and that one was
-    // measured on the real 2026-09-09 `birth chart` run rather than estimated:
-    // page_units_retained went from 58 to 55, so the title costs three of the
-    // widest run's excerpts. Anything longer than a short rule from here on
-    // should raise the unit ceiling instead, which is leaving 382 of 440
-    // observed excerpts unused on that same run.
-    expect(new TextEncoder().encode(system).byteLength).toBeLessThan(12_100);
+    // What every run pays for, in every language, before any optional layer.
+    expect(new TextEncoder().encode(buildContentBriefV2SystemPrompt(false, "en", false)).byteLength).toBeLessThan(11_200);
+  });
+
+  it("prices the planning block against the evidence it displaces", () => {
+    // 1,126 bytes for a recommended title, a section purpose and a section
+    // focus. The title's share was measured on the real 2026-09-09 `birth
+    // chart` run rather than estimated: page_units_retained went from 58 to 55,
+    // so 608 bytes cost three of the widest run's excerpts, and the whole block
+    // costs roughly six. That same run left 382 of 440 observed excerpts unused
+    // behind the unit cap, which is where the next bytes should come from --
+    // the ceiling here is what makes the next layer say so out loud.
+    const bytes = (planning: boolean) => new TextEncoder().encode(buildContentBriefV2SystemPrompt(false, "en", planning)).byteLength;
+    expect(bytes(true) - bytes(false)).toBeLessThan(1_200);
   });
 
   it("asks English runs for a title and never asks anyone else", () => {
@@ -190,6 +197,11 @@ describe("Brief v2 assembly prompt", () => {
     expect(english).toContain("carries no digit in any form");
     expect(english).toContain("names no organisation, standard or acronym the input did not supply");
     expect(english).toContain('"planning":{"title":{"recommended"');
+    // One entry per section and no id: the ids are derived from the outline the
+    // reply itself returns, so a reply cannot name one.
+    expect(english).toContain("one entry per outline section, in order, each with purpose and focus");
+    expect(english).toContain("define, procedure, interpret, compare or limits");
+    expect(english).toContain('"sections":[{"purpose":"define|procedure|interpret|compare|limits","focus"');
     const other = prepareContentBriefV2Prompt({ ...context(), input: { ...context().input, language: "de" } })!.system;
     // Not a translation gap: the rules are written for English titles, and an
     // unasked-for planning key is refused exactly as any unknown key is.
@@ -356,8 +368,17 @@ describe("Brief v2 assembly prompt", () => {
     // prompt_bytes measures system + user against one cap, so every sentence added
     // to the instructions is a sentence of evidence removed. This bound is what
     // stops a prompt rewrite from quietly shrinking what the model gets to read.
-    const system = prepareContentBriefV2Prompt(context())!.system;
-    expect(new TextEncoder().encode(system).byteLength).toBeLessThan(RESEARCH_PROMPT_MAX_BYTES / 4);
+    //
+    // It is measured on the instructions EVERY run pays for. The planning block
+    // is bounded separately below, because one number covering both would let
+    // the optional layer eat the base prompt's headroom without anyone seeing
+    // the trade -- and the base prompt is the one a run in any language, with
+    // any evidence, is charged for.
+    const bytes = (planning: boolean) => new TextEncoder().encode(buildContentBriefV2SystemPrompt(false, "en", planning)).byteLength;
+    expect(bytes(false)).toBeLessThan(RESEARCH_PROMPT_MAX_BYTES / 4);
+    // And the whole thing still has to leave three quarters of the budget for
+    // evidence, block included.
+    expect(bytes(true)).toBeLessThan(RESEARCH_PROMPT_MAX_BYTES * 0.28);
   });
 
   it("rejects inconsistent source graphs before rendering source text", () => {

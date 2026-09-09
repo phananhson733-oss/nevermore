@@ -139,10 +139,13 @@ describe("Draft v2 exact section scope", () => {
     // The confirmed question-to-source mapping stays exactly as the brief froze it,
     // and its units still lead the scope; the rest of the crawled corpus follows.
     expect([...result.value.page_units].slice(0, 3)).toEqual([
-      ["U1", { page_ref: "C1", final_url: "https://competitor.test/C1" }],
-      ["U3", { page_ref: "T1", final_url: "https://owned.test/T1" }],
-      ["U2", { page_ref: "C2", final_url: "https://competitor.test/C2" }],
+      ["U1", { page_ref: "C1", final_url: "https://competitor.test/C1", text: expect.any(String) }],
+      ["U3", { page_ref: "T1", final_url: "https://owned.test/T1", text: expect.any(String) }],
+      ["U2", { page_ref: "C2", final_url: "https://competitor.test/C2", text: expect.any(String) }],
     ]);
+    // Each unit carries the excerpt it stands for, because two section rules
+    // are about what the source said and not only which source it was.
+    for (const [ref, unit] of result.value.page_units) expect(unit.text, ref).not.toBe("");
     // The rest of C1/T1/C2 follows. U4 belongs to T2, which no question sourced,
     // so a page the brief did not attach to this section still never enters it.
     expect([...result.value.page_units.keys()]).toEqual(["U1", "U3", "U2", "U5", "U6", "U7", "U8", "U9"]);

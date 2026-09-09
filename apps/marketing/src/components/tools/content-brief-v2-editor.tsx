@@ -3,7 +3,7 @@
 // @pos -- browser-local confirmation/export and explicit one-time Draft handoff; no provider calls
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { confirmBriefV2 } from "@sf/public-tools/content-brief/v2-brief";
 import { isBoundedModelText } from "@sf/public-tools/content-brief/text";
@@ -46,7 +46,17 @@ export function ContentBriefV2Editor({ brief, locale, onConfirmed, children }: {
   const t = useTranslations("tools.contentBrief.v2");
   const baseT = useTranslations("tools.contentBrief");
   const base = brief.generated!.research.outline;
+  const planning = brief.generated!.planning;
+  // The recommendation first, then the alternatives, in the order the model
+  // ranked them. Absent when the run was never offered a title or lost the one
+  // it wrote, and then the page shows no chooser rather than an empty one.
+  const titles = planning === undefined ? [] : [planning.title.recommended, ...planning.title.alternatives];
+  const titleGroup = useId();
   const [draft, setDraft] = useState(() => draftOf(base));
+  // The recommendation is the default because it is the recommendation. "None"
+  // stays one click away: an article with no title is what every brief shipped
+  // before this existed, and it is still a legitimate answer.
+  const [title, setTitle] = useState<string | null>(() => titles[0]?.value ?? null);
   const [resolved, setResolved] = useState(false);
   const [confirmed, setConfirmed] = useState<ConfirmedBriefV2 | null>(null);
   const [pending, setPending] = useState(false);
@@ -116,7 +126,7 @@ export function ContentBriefV2Editor({ brief, locale, onConfirmed, children }: {
     state.inFlight = true; setPending(true); setError(null);
     const current = () => state.mounted && state.generation === generation;
     try {
-      const result = await confirmBriefV2(brief, { outline, revision: state.revision + 1, confirmed_at: new Date().toISOString(), resolution: needsDecision ? "create_despite_uncertainty" : "accept_recommendation" });
+      const result = await confirmBriefV2(brief, { outline, revision: state.revision + 1, confirmed_at: new Date().toISOString(), resolution: needsDecision ? "create_despite_uncertainty" : "accept_recommendation", title: title ?? undefined });
       if (!current()) return;
       if (!result.ok) { setError(t("confirmationFailed")); return; }
       state.revision = result.value.revision;
@@ -138,6 +148,20 @@ export function ContentBriefV2Editor({ brief, locale, onConfirmed, children }: {
   }
 
   return <>
+    {titles.length === 0 ? null : <section data-title-choice aria-label={t("chooseTitle")} className="mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-border-card pb-2"><h3 className={SECTION_TITLE}>{t("chooseTitle")}</h3><SourceLayerBadge tone="model" t={baseT} /></div>
+      <p className={`mt-2 ${BODY_TEXT}`}>{t("chooseTitleHelp")}</p>
+      <div className="mt-3 space-y-2">
+        {titles.map((option, index) => <label key={option.value} className="flex items-start gap-2 text-[13px] leading-[1.5] text-text-dark-primary">
+          <input type="radio" name={titleGroup} data-title-option={index} checked={title === option.value} onChange={() => { invalidate(); setTitle(option.value); }} className="mt-1 shrink-0 accent-brand-accent" />
+          <span className="min-w-0"><span data-title-option-value={index} className="font-semibold">{option.value}</span><span className={`mt-0.5 block ${BODY_TEXT}`}>{option.rationale}</span></span>
+        </label>)}
+        <label className="flex items-start gap-2 text-[13px] leading-[1.5] text-text-dark-primary">
+          <input type="radio" name={titleGroup} data-title-none checked={title === null} onChange={() => { invalidate(); setTitle(null); }} className="mt-1 shrink-0 accent-brand-accent" />
+          <span>{t("noTitleOption")}</span>
+        </label>
+      </div>
+    </section>}
     <section data-outline aria-label={t("outline")}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-border-card pb-2"><h3 className={SECTION_TITLE}>{t("outline")}</h3><SourceLayerBadge tone="model" t={baseT} /></div>
       <p className={`mt-2 ${BODY_TEXT}`}>{t("outlineHelp")}</p>
@@ -185,6 +209,7 @@ export function ContentBriefV2Editor({ brief, locale, onConfirmed, children }: {
       {confirmed ? <div data-confirmed-summary className="mt-3 border-t border-brand-border-card pt-3">
         <p className="text-[13px] font-semibold text-text-dark-primary">{t("confirmedRevision", { revision: confirmed.revision, count: confirmed.outline.length })}</p>
         <p className={`mt-1 ${BODY_TEXT}`}>{confirmed.resolution === "create_despite_uncertainty" ? t("yourDecision") : t("confirmedAction", { action: t(`actions.${confirmed.brief.generated!.page_plan.action}`) })}</p>
+        {titles.length === 0 ? null : <p data-confirmed-title className={`mt-1 ${BODY_TEXT}`}>{confirmed.title === undefined ? t("confirmedNoTitle") : t("confirmedTitle", { title: confirmed.title })}</p>}
         <details className="mt-2"><summary className="cursor-pointer text-[11.5px] text-text-dark-secondary focus-visible:outline-2 focus-visible:outline-brand-accent">{t("confirmedDetails")}</summary><code data-confirmed-fingerprint className="mt-2 block break-all text-[10.5px]">{confirmed.fingerprint}</code><pre data-confirmed-json className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-[3px] bg-brand-panel-sunken p-3 text-[10.5px]">{JSON.stringify(confirmed, null, 2)}</pre></details>
       </div> : null}
       <p className={`mt-3 ${BODY_TEXT}`}>{t("exportHelp")}</p>

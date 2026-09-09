@@ -9,7 +9,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { marked } from "marked";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { confirmedDraftV2Fixture } from "../../../../../packages/public-tools/src/content-brief/v2-draft-fixtures.ts";
-import { assembleDraftV2, parseDraftResultV2, type AssembleDraftV2Input } from "@sf/public-tools/content-brief/v2-draft";
+import { assembleDraftV2, fingerprintDraftV2, parseDraftResultV2, type AssembleDraftV2Input } from "@sf/public-tools/content-brief/v2-draft";
 import { buildDraftV2SectionScope } from "@sf/public-tools/content-brief/v2-draft-scope";
 import { validateDraftV2Section } from "@sf/public-tools/content-brief/v2-draft-section";
 import { DRAFT_TOTAL_BUDGET_MS, SECTION_ENDPOINT_BUDGET_MS } from "@sf/public-tools/content-brief/constants";
@@ -32,6 +32,7 @@ function exportNotes(locale: "en" | "zh" = "en") {
   const catalog = (locale === "en" ? en : zh).tools.contentDraft;
   return {
     failed: (reason: string) => catalog.sectionFail[reason as keyof typeof catalog.sectionFail], skipped: catalog.doc.skippedBody, relatedLinks: locale === "en" ? "Related links" : "相关链接",
+    sources: catalog.v2.sources, observedAt: (time: string) => catalog.v2.observedAt.replace("{time}", time),
     imagePrompts: catalog.v2.images.markdownHeading, imagePromptsNote: catalog.v2.images.markdownNote, imageHero: catalog.v2.images.hero, imagePrompt: catalog.v2.images.prompt, imageAlt: catalog.v2.images.alt,
   };
 }
@@ -49,7 +50,7 @@ async function confirmedWithLinks(url = "https://owned.test/dates(a)[b]?next=(x)
   return { confirmed: confirmed.value, url };
 }
 
-async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolean; skipped?: boolean; empty?: boolean; unavailable?: boolean; previous?: DraftResultV2; settings?: DraftV2Settings; cjk?: boolean; claims?: boolean; bullets?: boolean; images?: "available" | "unavailable"; quality?: "none" | "partial" } = {}) {
+async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolean; skipped?: boolean; empty?: boolean; unavailable?: boolean; previous?: DraftResultV2; settings?: DraftV2Settings; cjk?: boolean; claims?: boolean; bullets?: boolean; images?: "available" | "unavailable"; quality?: "none" | "partial"; writing?: boolean } = {}) {
   const currentSettings = options.settings ?? settings;
   const sections: DraftV2Section[] = confirmed.outline.map((heading, index) => {
     if ((options.empty || options.skipped) && index === 1) return { ...heading, status: "skipped" };
@@ -69,7 +70,9 @@ async function resultFor(confirmed: ConfirmedBriefV2, options: { failed?: boolea
       { text: "The product compares finalized periods.", claim: "bound", evidence_refs: ["P1"] },
       { text: "Confirm the exact reporting interval.", claim: "gap", evidence_refs: [] },
       { text: "Prefer finalized period comparisons.", claim: "stance", evidence_refs: ["P2"] },
-    ]) : [{ text: options.cjk ? "请比较完整周期。" : index === 0 ? "Review the reporting timeline." : "Compare the complete periods.", claim: "no_claim", evidence_refs: [] }];
+    ]) : options.writing && index === 0 ? [
+      { text: "When it comes to reporting, the timeline is what matters.", claim: "no_claim", evidence_refs: [] },
+    ] : [{ text: options.cjk ? "请比较完整周期。" : index === 0 ? "Review the reporting timeline." : "Compare the complete periods.", claim: "no_claim", evidence_refs: [] }];
     const body = validateDraftV2Section({ paragraphs: [{ heading: heading.h3[0] ?? null, sentences }] }, scope.value, confirmed.brief.context.input.language);
     if (!body.ok) throw new Error(body.path);
     return { ...heading, status: "ok", body: body.value, llm };
@@ -423,6 +426,183 @@ describe("Draft v2 truthful results and exact exports", () => {
     const parsed = await confirmBriefV2(brief, { outline: original.outline, revision: original.revision, confirmed_at: original.confirmed_at, resolution: original.resolution }); if (!parsed.ok) throw new Error(parsed.path);
     const result = await resultFor(parsed.value, { claims: true }); const { host } = await render(parsed.value, { result }); expect(node(host, '[data-evidence-ref="U1"]').textContent).toContain("Evidence section heading");
   });
+  it("renders the confirmed title as the one H1 and exports it above every section", async () => {
+    const confirmed = await confirmedDraftV2Fixture({ title: true });
+    const result = await resultFor(confirmed);
+    const { host } = await render(confirmed, { result });
+    expect(node(host, "[data-draft-title]").textContent).toBe("Why Reporting Lags Behind Collection");
+    expect(host.querySelectorAll("[data-draft-title]")).toHaveLength(1);
+    const markdown = contentDraftV2Markdown(result, confirmed, exportNotes());
+    // First block and the only H1: the sections are H2s beneath it, so the
+    // export drops into a CMS as one article rather than a pile of headings.
+    expect(markdown.startsWith("# Why Reporting Lags Behind Collection\n\n## ")).toBe(true);
+    expect(markdown.match(/^# /gmu)).toHaveLength(1);
+  });
+
+  it("exports a heading as its own text, never as a link the reader never chose", async () => {
+    // A title carrying link syntax passes every generation check -- no number,
+    // no unsupplied acronym -- and pasted into a CMS it would become a heading
+    // that navigates somewhere nobody approved.
+    const original = await confirmedDraftV2Fixture({ title: true });
+    const linked = "Reading [Delayed Reports](https://example.test)";
+    const unsigned = { ...original.brief, generated: { ...original.brief.generated!, planning: { title: {
+      recommended: { value: linked, rationale: "Leads with the reporting task." }, alternatives: [],
+    } } } };
+    const brief = { ...unsigned, run: { ...unsigned.run, fingerprint: await fingerprintBriefV2(unsigned) } };
+    const confirmed = await confirmBriefV2(brief, { outline: original.outline, revision: original.revision, confirmed_at: original.confirmed_at, resolution: original.resolution, title: linked });
+    if (!confirmed.ok) throw new Error(confirmed.path);
+    const result = await resultFor(confirmed.value);
+    const markdown = contentDraftV2Markdown(result, confirmed.value, exportNotes());
+    expect(markdown.split("\n")[0]).toBe("# Reading \\[Delayed Reports\\](https://example.test)");
+    const view = document.createElement("div");
+    view.innerHTML = await marked.parse(markdown);
+    // The heading reads exactly what was confirmed, and no anchor inside it
+    // points anywhere its own text does not say. GFM still autolinks a bare
+    // URL, which hides nothing; a label pointing elsewhere is what this closes.
+    expect(view.querySelector("h1")?.textContent).toBe(linked);
+    for (const anchor of view.querySelectorAll("h1 a")) expect(anchor.getAttribute("href")).toBe(anchor.textContent);
+  });
+
+  it("closes the article with the pages its sentences actually cited", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed, { claims: true });
+    const { host } = await render(confirmed, { result });
+    const listed = Array.from(host.querySelectorAll("[data-source-page]"), (item) => item.getAttribute("data-source-page"));
+    expect(listed.length).toBeGreaterThan(0);
+    // Only what a written sentence cited. A page the brief collected and the
+    // draft never used is not a source of this article, and printing it would
+    // be the article claiming to rest on reading it did not do.
+    const cited = new Set(result.sections.flatMap((section) => section.status !== "ok" ? [] :
+      section.body.paragraphs.flatMap((paragraph) => paragraph.sentences.flatMap((sentence) => sentence.evidence_refs))));
+    const pagesOfCited = new Set(confirmed.brief.context.research.units
+      .filter((unit) => unit.kind === "page" && cited.has(unit.id))
+      .map((unit) => unit.kind === "page" ? unit.page_ref : ""));
+    expect(new Set(listed)).toEqual(pagesOfCited);
+    const markdown = contentDraftV2Markdown(result, confirmed, exportNotes());
+    const sources = markdown.slice(markdown.indexOf("## Sources"));
+    for (const id of pagesOfCited) {
+      const page = confirmed.brief.context.research.pages.find((item) => item.id === id)!;
+      expect(sources).toContain(`- ${new URL(page.final_url).hostname} — [${page.final_url}](${page.final_url}) (Observed ${page.fetched_at.slice(0, 10)})`);
+    }
+    // The article's own end matter: after every section it draws on.
+    expect(markdown.indexOf("## Sources")).toBeGreaterThan(markdown.lastIndexOf(`## ${confirmed.outline.at(-1)!.h2}`));
+    // A profile fact is not a page and never becomes a line here: section two
+    // cites P1 and P2 and contributes no source.
+    expect(sources.split("\n- ")).toHaveLength(listed.length + 1);
+  });
+
+  it("survives a cited page whose final URL is not an address, and never prints one twice", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed, { claims: true });
+    // A crawler should never produce these, and the article must not die if one
+    // does: the whole results page, its export controls included, renders from
+    // this derivation. The excerpt is still in the evidence section.
+    const research = confirmed.brief.context.research;
+    const broken = { ...confirmed, brief: { ...confirmed.brief, context: { ...confirmed.brief.context, research: {
+      ...research, pages: research.pages.map((page, index) => index === 0 ? { ...page, final_url: "/relative" } : page),
+    } } } };
+    expect(() => contentDraftV2Markdown(result, broken, exportNotes())).not.toThrow();
+    const { host } = await render(broken, { result });
+    expect(host.querySelector("[data-draft-document]")).not.toBeNull();
+    expect(Array.from(host.querySelectorAll("[data-source-page]"), (item) => item.getAttribute("data-source-page"))).not.toContain(research.pages[0]!.id);
+
+    // Two ids can be two observations of one page -- a Search Console candidate
+    // that also ranks in the SERP. Printing it twice would tell the reader the
+    // article rests on two sources when it rests on one.
+    const unitOf = (pageId: string) => research.units.find((unit) => unit.kind === "page" && unit.page_ref === pageId)!.id;
+    const refs = [unitOf(research.pages[0]!.id), unitOf(research.pages[1]!.id)];
+    expect(refs[0]).not.toBe(refs[1]);
+    const twoPages = { ...result, sections: result.sections.map((section, index) => index !== 0 || section.status !== "ok" ? section : {
+      ...section, body: { ...section.body, paragraphs: [{ heading: null, sentences: refs.map((ref) => ({
+        text: `Cites ${ref}.`, claim: "bound" as const, evidence_refs: [ref], support_count: 1,
+      })) }] },
+    }) };
+    const separate = contentDraftV2Markdown(twoPages, confirmed, exportNotes());
+    expect(separate.slice(separate.indexOf("## Sources")).split("\n- ")).toHaveLength(3);
+    const duplicated = { ...confirmed, brief: { ...confirmed.brief, context: { ...confirmed.brief.context, research: {
+      ...research, pages: research.pages.map((page) => ({ ...page, final_url: research.pages[0]!.final_url })),
+    } } } };
+    const listed = contentDraftV2Markdown(twoPages, duplicated, exportNotes());
+    expect(listed.slice(listed.indexOf("## Sources")).split("\n- ")).toHaveLength(2);
+  });
+
+  it("cannot be made to publish a destination the cited page does not have", async () => {
+    // A final URL is a crawled string. This one is a perfectly valid http URL,
+    // so nothing upstream refuses it, and pasted raw into a list item it would
+    // put an attacker's image request inside the article's own source list.
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed, { claims: true });
+    const research = confirmed.brief.context.research;
+    const hostile = "https://competitor.test/![pixel](https://attacker.test/p.gif)";
+    const attacked = { ...confirmed, brief: { ...confirmed.brief, context: { ...confirmed.brief.context, research: {
+      ...research, pages: research.pages.map((page, index) => index === 0 ? { ...page, final_url: hostile } : page),
+    } } } };
+    const markdown = contentDraftV2Markdown(result, attacked, exportNotes());
+    const view = document.createElement("div");
+    view.innerHTML = await marked.parse(markdown.slice(markdown.indexOf("## Sources")));
+    expect(view.querySelector("img")).toBeNull();
+    const anchors = Array.from(view.querySelectorAll("li a"));
+    expect(anchors.length).toBeGreaterThan(0);
+    // Every link reads as, and goes to, the page that was actually cited. The
+    // destination is percent-encoded where the label is not; decoding it back
+    // is what proves the two are the same address.
+    for (const anchor of anchors) expect(decodeURIComponent(anchor.getAttribute("href")!)).toBe(anchor.textContent);
+    expect(anchors[0]!.textContent).toBe(hostile);
+  });
+
+  it("lists no sources when no written sentence cited a page", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed);
+    const { host } = await render(confirmed, { result });
+    expect(host.querySelector("[data-draft-sources]")).toBeNull();
+    expect(contentDraftV2Markdown(result, confirmed, exportNotes())).not.toContain("## Sources");
+  });
+
+  it("shows each writing warning against the prose it is about", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed, { writing: true });
+    const { host } = await render(confirmed, { result });
+    const warning = node(host, '[data-writing-warning="filler_phrase"]');
+    expect(warning.textContent).toContain("When it comes to reporting, the timeline is what matters.");
+    expect(warning.textContent).toContain(result.sections[0]!.h2);
+    // A missing message id renders as its own path, so the label is pinned to
+    // the copy rather than merely to being nonempty.
+    expect(warning.textContent).toContain(en.tools.contentDraft.v2.writingCode.filler_phrase);
+    // Advisory only: the warning never becomes a sentence to fact-check.
+    expect(result.verify_before_publish).toEqual([]);
+  });
+
+  it("says the checks ran and found nothing rather than showing an empty list", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed);
+    const { host } = await render(confirmed, { result });
+    expect(result.quality).toEqual({ warnings: [] });
+    expect(node(host, "[data-writing-empty]").textContent).toBe(en.tools.contentDraft.v2.writingEmpty);
+    expect(host.querySelector("[data-writing-warning]")).toBeNull();
+  });
+
+  it("shows no writing section at all for a draft written before the checks existed", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const { quality: _quality, ...older } = await resultFor(confirmed);
+    const result = { ...older, run: { ...older.run, fingerprint: await fingerprintDraftV2(older) } };
+    expect((await parseDraftResultV2(result, confirmed)).ok).toBe(true);
+    const { host } = await render(confirmed, { result });
+    expect(host.querySelector("[data-writing-check]")).toBeNull();
+  });
+
+  it("invents no heading for a confirmation that recorded no title", async () => {
+    const confirmed = await confirmedDraftV2Fixture();
+    const result = await resultFor(confirmed);
+    const { host } = await render(confirmed, { result });
+    expect(confirmed.title).toBeUndefined();
+    expect(host.querySelector("[data-draft-title]")).toBeNull();
+    // Deriving one from the keyword would put a promise on the page that
+    // nobody chose and nothing checked.
+    const markdown = contentDraftV2Markdown(result, confirmed, exportNotes());
+    expect(markdown.startsWith("## ")).toBe(true);
+    expect(markdown).not.toMatch(/^# /mu);
+  });
+
   it.each(["en", "zh"] as const)("renders real H2/H3, claim annotations, page excerpts and profile evidence (%s)", async (locale) => {
     const confirmed = await confirmedDraftV2Fixture({ action: "update" }); const result = await resultFor(confirmed, { claims: true }); const { host } = await render(confirmed, { locale, result });
     expect(Array.from(host.querySelectorAll("[data-draft-h2]"), (item) => item.textContent)).toEqual(confirmed.outline.map((item) => item.h2)); expect(Array.from(host.querySelectorAll("[data-draft-h3]"), (item) => item.textContent)).toEqual(confirmed.outline.flatMap((item) => item.h3));

@@ -36,6 +36,7 @@
     "./content-brief/v2-draft-section": "./src/content-brief/v2-draft-section.ts",
     "./content-brief/v2-draft-contract": "./src/content-brief/v2-draft-contract.ts",
     "./content-brief/v2-draft-scope": "./src/content-brief/v2-draft-scope.ts",
+    "./content-brief/v2-draft-prose": "./src/content-brief/v2-draft-prose.ts",
     "./content-brief/v2-draft": "./src/content-brief/v2-draft.ts",
     "./content-brief/v2-draft-fixtures": "./src/content-brief/v2-draft-fixtures.ts",
     "./agent-audit": "./src/agent-audit/index.ts",

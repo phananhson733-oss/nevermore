@@ -24,6 +24,7 @@
 .legend [data-tier="model"], .prose [data-source-tier="model"] { --tier: var(--sc-source-model); }
 .annotationNote { border-inline: 1px solid var(--sc-border-card); padding: 10px 14px; background: var(--sc-panel); }
 .annotationNote p { margin: 0; font-size: 10.5px; line-height: 1.6; color: var(--sc-text-secondary); }
+.articleTitle { margin: 14px 0 10px; color: var(--sc-text-primary); font-family: var(--font-serif), Georgia, "Songti SC", serif; font-size: 22px; font-weight: 700; line-height: 1.3; letter-spacing: -.015em; text-wrap: balance; }
 .document { border: 1px solid var(--sc-border-card); background: var(--sc-panel); }
 .chapter + .chapter { border-top: 1px solid var(--sc-border-card); }
 .chapterHeader { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 13px 16px; background: var(--sc-panel-sunken); }

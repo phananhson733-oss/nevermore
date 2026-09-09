@@ -13,7 +13,7 @@ import { briefV2PageKey } from "./v2-generation.ts";
 
 /** Built only from an already parsed confirmed Brief, never from a request-provided map. */
 export interface DraftV2SectionEvidence {
-  readonly page_units: ReadonlyMap<string, { readonly page_ref: string; readonly final_url: string }>;
+  readonly page_units: ReadonlyMap<string, { readonly page_ref: string; readonly final_url: string; readonly text: string }>;
   readonly facts: ReadonlyMap<string, ProfileFact>;
   readonly stance_allowed: boolean;
   /** Exact effective confirmed H3 sequence; standalone validation defaults to no H3. */
