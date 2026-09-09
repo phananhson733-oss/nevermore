@@ -13,10 +13,17 @@ export interface DraftV2SectionPromptInput {
   readonly settings: DraftV2Settings;
 }
 
-/** Only server-built closed validator codes/paths, never the rejected model text. */
+/**
+ * Only server-built closed validator codes/paths, never the rejected model text.
+ *
+ * path is null whenever the caller could not show the path to be the
+ * validator's own vocabulary. An unknown key is reported as its own name, so
+ * the path of a rejected reply can be a string the model wrote; deciding that
+ * is the caller's job, and this module only renders what it is handed.
+ */
 export interface DraftV2SectionRejection {
   readonly code: "invalid_json" | "invalid_request" | "brief_reference_invalid";
-  readonly path: string;
+  readonly path: string | null;
 }
 
 export function buildDraftV2SectionSystemPrompt(): string {
