@@ -1,5 +1,5 @@
 // @input  -- every module reachable from a "use client" entry point, with CSS as static leaves
-// @output -- a failing test for package barrels or unparseable non-CSS modules
+// @output -- a failing test for package barrels, unexported subpaths, or unparseable non-CSS modules
 // @pos    -- the one guard for a bundling break that typecheck and the suite both pass
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -165,6 +165,91 @@ function resolveRelative(from: string, specifier: string): string | null {
   return null;
 }
 
+/** A subpath maps either straight to a file or to a set of conditions. */
+type ExportsEntry = string | { readonly [condition: string]: string | null };
+
+/** `pnpm-workspace.yaml` declares both roots; a package lives under one. */
+function workspacePackageDir(pkg: string): string | null {
+  for (const root of ["packages", "apps"]) {
+    const dir = join(REPO_ROOT, root, pkg);
+    try {
+      if (statSync(join(dir, "package.json")).isFile()) return dir;
+    } catch {
+      // Not this root; try the next.
+    }
+  }
+  return null;
+}
+
+/**
+ * The file `exports` maps this subpath to, or null when it maps none.
+ *
+ * Both spellings are in use here: a plain string, and the conditional
+ * `{ types, browser, default }` object `@sf/db` writes for two of its modules.
+ * Read only as a string the conditional form comes back `undefined`, which
+ * reads exactly like a subpath the package never exported.
+ *
+ * `browser` is deliberately not preferred over `default`. The two `@sf/db`
+ * entries set it to `null`, meaning "no browser build of this module" — a real
+ * client-bundle problem, but a different one from the rule here, and one no
+ * import in this closure has today. Resolving through `default` walks the
+ * module the server build uses rather than silently treating the entry as
+ * missing.
+ */
+function exportsTarget(pkg: string, subpath: string): string | null {
+  const dir = workspacePackageDir(pkg);
+  if (dir === null) return null;
+  let entry: ExportsEntry | undefined;
+  try {
+    entry = (
+      JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as {
+        exports?: Record<string, ExportsEntry>;
+      }
+    ).exports?.[`./${subpath}`];
+  } catch {
+    return null;
+  }
+  if (entry === undefined) return null;
+  const target = typeof entry === "string" ? entry : (entry.default ?? entry.types);
+  return typeof target === "string" ? resolve(dir, target) : null;
+}
+
+/**
+ * Why the bundler could not have resolved this specifier, or null when it could.
+ *
+ * Turbopack reads `exports`. This walk used to read the directory layout, and
+ * guessed `packages/<pkg>/src/<subpath>` for anything the map did not answer
+ * for — so `@sf/public-tools/seo-audit/scan`, which is a real file and not an
+ * export, resolved here and failed there. A guard that invents a resolution
+ * the bundler does not have is green for the same reason the build is red.
+ *
+ * A bare barrel is not this rule's business: it resolves fine and is wrong for
+ * another reason, which the barrel check states in its own words.
+ *
+ * Unlike that check there is no `import type` exemption, and the difference is
+ * not an oversight. A type-only import is erased from the bundle but still has
+ * to RESOLVE, under `exports` like every other specifier, or typecheck fails
+ * too. Erasure saves an import from the barrel rule; it saves nothing here.
+ *
+ * Known limit: an entry nesting conditions further (`{ browser: { import } }`)
+ * yields no string and reads as unexported. Nothing writes one today, and the
+ * failure still points at the exports map, which is where such an entry would
+ * need looking at anyway.
+ */
+function unexportedSubpath(specifier: string): string | null {
+  const match = /^@sf\/([^/]+)\/(.+)$/.exec(specifier);
+  if (match === null) return null;
+  const [, pkg, subpath] = match;
+  if (pkg === undefined || subpath === undefined) return null;
+  if (workspacePackageDir(pkg) === null) {
+    return `@sf/${pkg} is not a workspace package`;
+  }
+  if (exportsTarget(pkg, subpath) === null) {
+    return `@sf/${pkg} does not export ./${subpath}`;
+  }
+  return null;
+}
+
 /**
  * Resolve `@sf/<pkg>/<subpath>` into the workspace file it names.
  *
@@ -184,22 +269,15 @@ function workspaceSubpath(specifier: string): string | null {
   if (match === null) return null;
   const [, pkg, subpath] = match;
   if (pkg === undefined || subpath === undefined) return null;
-  const manifest = join(REPO_ROOT, "packages", pkg, "package.json");
-  try {
-    const exports = (
-      JSON.parse(readFileSync(manifest, "utf8")) as {
-        exports?: Record<string, string>;
-      }
-    ).exports;
-    const target = exports?.[`./${subpath}`];
-    if (target !== undefined) {
-      return resolve(join(REPO_ROOT, "packages", pkg), target);
-    }
-  } catch {
-    // Not a workspace package we can follow; the barrel check still applies.
-  }
-  // Not in the exports map, but the source layout is uniform enough to try.
-  return join(REPO_ROOT, "packages", pkg, "src", subpath);
+  const exported = exportsTarget(pkg, subpath);
+  if (exported !== null) return exported;
+  const dir = workspacePackageDir(pkg);
+  if (dir === null) return null;
+  // Unexported — and reported as such by `unexportedSubpath`, so this no
+  // longer hides anything. Following the uniform layout anyway keeps the walk
+  // moving: one unresolvable specifier should not blind the barrel check to
+  // every file underneath it.
+  return join(dir, "src", subpath);
 }
 
 /** Every module a client entry point pulls in, transitively. */
@@ -357,6 +435,66 @@ describe("the reference scanner reads code, not prose", () => {
   });
 });
 
+describe("workspace subpaths resolve the way the bundler resolves them", () => {
+  it("resolves a subpath its package exports", () => {
+    expect(workspaceSubpath("@sf/public-tools/crawl-completion")).toBe(
+      join(REPO_ROOT, "packages/public-tools/src/crawl-completion.ts"),
+    );
+    expect(unexportedSubpath("@sf/public-tools/crawl-completion")).toBeNull();
+  });
+
+  it("reports a subpath the package does not export, even when the file is there", () => {
+    // The whole shape of the false green: `seo-audit/scan.ts` exists on disk at
+    // the guessed path, so the walk resolved it and every assertion downstream
+    // passed -- while Turbopack, which reads `exports` and not the directory
+    // layout, could not resolve the specifier at all.
+    expect(unexportedSubpath("@sf/public-tools/seo-audit/scan")).toMatch(
+      /does not export/,
+    );
+    // Still walked into, so one unresolvable specifier cannot blind the guard
+    // to the barrel imports in the files below it. Asserted through the
+    // resolver the walk actually calls, extension guessing included.
+    expect(
+      resolveRelative(
+        join(SOURCE_ROOT, "lib/tools/crawl-cache.ts"),
+        "@sf/public-tools/seo-audit/scan",
+      ),
+    ).toBe(join(REPO_ROOT, "packages/public-tools/src/seo-audit/scan.ts"));
+  });
+
+  it("reports a subpath that names no file at all", () => {
+    expect(unexportedSubpath("@sf/public-tools/no-such-module")).toMatch(
+      /does not export/,
+    );
+  });
+
+  it("reports a package outside the workspace", () => {
+    expect(unexportedSubpath("@sf/not-a-package/anything")).toMatch(
+      /not a workspace package/,
+    );
+  });
+
+  it("follows an exports entry written in conditional form", () => {
+    // `@sf/db` spells two of its entries as `{ types, browser, default }`. Read
+    // as a string that is `undefined`, and the subpath reads as unexported.
+    expect(
+      workspaceSubpath("@sf/db/keyword-governance-suggestion-scheduler"),
+    ).toBe(
+      join(REPO_ROOT, "packages/db/src/keyword-governance-suggestion-scheduler.ts"),
+    );
+    expect(
+      unexportedSubpath("@sf/db/keyword-governance-suggestion-scheduler"),
+    ).toBeNull();
+  });
+
+  it("leaves bare barrels to the barrel check", () => {
+    // Not "resolves fine" -- a different rule owns it, and reporting it twice
+    // under two names would read as two problems.
+    expect(unexportedSubpath("@sf/public-tools")).toBeNull();
+    expect(workspaceSubpath("@sf/public-tools")).toBeNull();
+  });
+});
+
 describe("modules the browser bundle reaches stay off the package barrels", () => {
   const closure = clientClosure();
 
@@ -365,6 +503,28 @@ describe("modules the browser bundle reaches stay off the package barrels", () =
     expect(closure.size).toBeGreaterThan(40);
     expect([...closure.keys()].some((file) => file.includes("on-page-checker")))
       .toBe(true);
+  });
+
+  it("imports no subpath its package does not export", () => {
+    // A subpath missing from `exports` fails the build exactly like a barrel
+    // import does, and for longer: the walk used to guess
+    // `packages/<pkg>/src/<subpath>` and, whenever that guess happened to be a
+    // real file, call the specifier resolved. Green guard, red `next build`.
+    const offenders: string[] = [];
+    for (const [file, references] of closure) {
+      for (const reference of references) {
+        const reason = unexportedSubpath(reference.specifier);
+        if (reason !== null) {
+          offenders.push(
+            `${file.slice(SOURCE_ROOT.length)} → ${reference.specifier}: ${reason}`,
+          );
+        }
+      }
+    }
+    expect(
+      offenders,
+      `add these to the owning package's exports map:\n${offenders.join("\n")}`,
+    ).toEqual([]);
   });
 
   it("takes no value out of a barrel anywhere in that closure", () => {
