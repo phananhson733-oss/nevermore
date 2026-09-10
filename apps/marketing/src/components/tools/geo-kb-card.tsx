@@ -221,9 +221,12 @@ function PublishBox({ plan, copy }: { readonly plan: GeoKbPublishPlan; readonly 
           ? copy.publish.changesUncountable(plan.itemCount, plan.previousVersion)
           : copy.publish.changes(plan.changeCount, plan.previousVersion)}
     </span>
-    <span data-kb-publish-pending="" className="block text-[13px] leading-relaxed text-text-dark-secondary">
-      {plan.pendingCount === 0 ? copy.publish.noPending : copy.publish.pending(plan.pendingCount)}
-    </span>
+    {/* Only when there IS something pending. "Nothing is left unconfirmed" is a
+        sentence about the absence of a problem, and it occupied a line of the
+        publish box on every draft that had none. */}
+    {plan.pendingCount === 0 ? null : <span data-kb-publish-pending="" className="block text-[13px] leading-relaxed text-text-dark-secondary">
+      {copy.publish.pending(plan.pendingCount)}
+    </span>}
     <div className="flex flex-wrap items-center gap-3">
       <PublishButton data-publish-kb="box" plan={plan} copy={copy} />
       <span className="text-[12px] leading-relaxed text-text-dark-secondary">{copy.publishFree}</span>

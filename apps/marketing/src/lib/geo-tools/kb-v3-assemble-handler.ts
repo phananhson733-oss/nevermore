@@ -90,13 +90,17 @@ import { buildGeoSourceCatalogue } from "./kb-knowledge-assemble-sources.ts";
 import {
   buildGeoKnowledgeEvidenceV1,
   collectGeoKnowledgeEvidenceV1,
+  geoSitemapListsPage,
   type GeoKnowledgeEvidenceReadResource,
   type GeoKnowledgeEvidenceSource,
   type GeoKnowledgeEvidenceV1,
 } from "./kb-knowledge-evidence.ts";
 import {
   creditGeoKnowledgeObservation,
+  creditGeoKnowledgeObservedPage,
+  creditGeoKnowledgeObservedRobots,
   creditGeoKnowledgeObservedStructure,
+  type GeoKnowledgeRebuiltPage,
   type GeoKnowledgeObservedStructure,
   type GeoKnowledgeUnavailableReason,
 } from "./kb-generation-preparer.ts";
@@ -473,6 +477,43 @@ interface GeoObservedAssembly {
  * and sources it is handed and throws when they disagree, so it is the arbiter
  * of that second pass rather than this code.
  */
+/**
+ * The robots.txt this run proved it read in full, for either assembly branch.
+ *
+ * The narrative branch has an evidence bundle the paid step built and no reason
+ * to touch the ledger -- except this one: the bundle carries the robots SOURCE
+ * (a receipt, and an eight-line sample), never the file. Without the row's own
+ * `robotsRules` the assembler must treat that sample as truncated, and every
+ * owner is told their AI crawler permissions were not determined.
+ *
+ * Addressed exactly as the collection plan addresses it, for the reason spelled
+ * out in `GEO_MACHINE_RESOURCES`: the ledger is keyed by `(kind, url)` and an
+ * address derived a second way finds no row.
+ */
+async function readObservedRobots(
+  dependencies: GeoKbV3AssembleDependencies,
+  scope: { readonly userId: string },
+  generationInput: GeoKbPayloadV3["generationInput"],
+): Promise<{ readonly text: string } | null> {
+  const library = dependencies.observations;
+  if (library === undefined) return null;
+  const own = planGeoRunCollection({
+    targetUrl: generationInput.identity.targetUrl,
+    competitors: generationInput.competitors
+      .filter((competitor) => competitor.confirmed)
+      .map((competitor) => ({ domain: competitor.domain, confirmed: true })),
+  }).find((target) => target.kind === "own_page");
+  if (own === undefined) return null;
+  const website = await library
+    .resolveWebsiteId({ userId: scope.userId, targetUrl: own.url })
+    .catch(() => ({ kind: "unavailable" as const }));
+  if (website.kind !== "ok") return null;
+  const read = await library
+    .readLatestObservation({ userId: scope.userId, websiteId: website.websiteId, kind: "robots", url: new URL("/robots.txt", own.url).toString() })
+    .catch(() => ({ kind: "unavailable" as const }));
+  return read.kind === "ok" ? creditGeoKnowledgeObservedRobots(read.value) : null;
+}
+
 async function geoObservedAssemblyInput(
   dependencies: GeoKbV3AssembleDependencies,
   scope: { readonly userId: string; readonly kbId: string },
@@ -567,6 +608,8 @@ async function geoObservedAssemblyInput(
   const machineUnavailable = new Map<string, GeoKnowledgeUnavailableReason>();
   /** The sitemap's own count of itself, as the run recorded it: a string, and a total. */
   let sitemapUrlCount: string | null = null;
+  /** The robots.txt the run proved it read in full, or null for a sampled one. */
+  let robots: { readonly text: string } | null = null;
   let machineObserved = true;
   for (const resource of GEO_MACHINE_RESOURCES) {
     const url = new URL(resource.path, targetUrl).toString();
@@ -590,6 +633,10 @@ async function geoObservedAssemblyInput(
       const total = read.value.status.structured.sitemapUrlCount;
       sitemapUrlCount = typeof total === "string" ? total : null;
     }
+    // The whole robots.txt, when the run proved it read one. Without it the
+    // assembler answers every AI-crawler question from an eight-line sample it
+    // must treat as truncated, which is to say it answers none of them.
+    if (resource.kind === "robots" && read.kind === "ok") robots = creditGeoKnowledgeObservedRobots(read.value);
     reusedSources.push(credit.source);
     noteObserved(credit.source.observedAt);
   }
@@ -605,6 +652,9 @@ async function geoObservedAssemblyInput(
    */
   const collectedAt: string = observedAt;
   const ownStructure: GeoKnowledgeObservedStructure = structure;
+  /** The stored count as a number, or null when the row recorded none. */
+  const sitemapTotal = sitemapUrlCount === null || !/^\d{1,7}$/u.test(sitemapUrlCount)
+    ? null : Number.parseInt(sitemapUrlCount, 10);
   /**
    * Still no socket, and still no crawl-gate admission: the map holds reasons
    * this update read out of its own ledger, and every address not in it falls
@@ -617,6 +667,8 @@ async function geoObservedAssemblyInput(
       : Promise.resolve({ kind: "unavailable" as const, url: request.url, reason });
   };
   let evidence: Awaited<ReturnType<typeof collectGeoKnowledgeEvidenceV1>>;
+  /** Declared out here because the machine gate below reads it. */
+  let rebuilt: GeoKnowledgeRebuiltPage = { kind: "withheld", reason: "not_stored" };
   try {
     evidence = await collectGeoKnowledgeEvidenceV1(
       { targetUrl, competitors: confirmed },
@@ -634,30 +686,37 @@ async function geoObservedAssemblyInput(
          */
         now: () => new Date(collectedAt),
         nowMs: () => 0,
+        /**
+         * The sitemap's own count, from the row that read it.
+         *
+         * Without it the bundle reports the eight sampled locations as the
+         * document's size, the `countable` gate below compares "8" with "558"
+         * and withholds the whole machine module -- so a site with a large
+         * sitemap lost every machine signal, not just the count.
+         */
+        ...(sitemapTotal === null ? {} : { reusedSitemapUrlCount: sitemapTotal }),
       },
     );
     /**
-     * The page itself, rebuilt from what the run stored about it.
+     * The page itself, rebuilt from what the run stored about it, by the same
+     * function the generation path uses -- see `creditGeoKnowledgeObservedPage`
+     * for what it refuses to guess.
      *
-     * The collector's own pages come out of `pageData`; a reused row carries
-     * what that same parser found, so this adds no second reading of anything.
-     * What it cannot add is what the row does not hold: the ledger stores no
-     * canonical URL, no title, no `lang` and no links, and every one of those is
-     * `null`/empty here rather than guessed. `hreflangLocales` is empty for a
-     * harder reason -- the contract's page shape pairs every locale with the URL
-     * it points at, the row stores the locales alone, and inventing the URLs is
-     * not an option -- which is exactly why a row that DOES carry locales
-     * withholds the machine module below instead of reporting hreflang absent.
-     *
-     * The page is carried whenever the own-page row was credited at all, not
-     * only when it is full: `machine.sitemap.knowledgePagesListed` is
-     * `pages.some(...)`, so a bundle with no page reports the site's own page as
-     * missing from a sitemap that may well list it.
+     * The page is carried whenever it can be rebuilt at all, not only when it
+     * is full: `machine.sitemap.knowledgePagesListed` is `pages.some(...)`, so
+     * a bundle with no page reports the site's own page as missing from a
+     * sitemap that may well list it. When it cannot be rebuilt -- a row from
+     * before the alternates were stored as pairs, or a list this contract
+     * cannot carry -- the fallback below keeps the empty page it always used
+     * and the machine gate withholds the module rather than publishing
+     * `absent` about lists nobody read back.
      */
-    const types = ownStructure.jsonLdTypes.kind === "stored" ? [...ownStructure.jsonLdTypes.values] : [];
-    const page = {
+    rebuilt = creditGeoKnowledgeObservedPage({ url: targetUrl, structure: ownStructure });
+    const types = rebuilt.kind === "page" ? rebuilt.page.jsonLdTypes : [];
+    const alternates = rebuilt.kind === "page" ? rebuilt.page.hreflang : [];
+    const page = rebuilt.kind === "page" ? rebuilt.page : {
       url: targetUrl, canonicalUrl: null, title: null, description: null, lang: null,
-      jsonLdTypes: types, hreflangLocales: [], hreflang: [],
+      jsonLdTypes: [], hreflangLocales: [], hreflang: [],
       faq: ownStructure.faq.map((pair) => ({ question: pair.question, answer: pair.answer })),
       links: [],
     };
@@ -679,9 +738,19 @@ async function geoObservedAssemblyInput(
           types: [...new Set(types)].sort(),
           sourceRefs: machine.jsonLd.sourceRefs,
         },
-        hreflang: { status: "absent", locales: [], sourceRefs: machine.hreflang.sourceRefs },
+        hreflang: {
+          status: alternates.length > 0 ? "present" : "absent",
+          locales: [...new Set(alternates.map((entry) => entry.locale))].sort(),
+          sourceRefs: machine.hreflang.sourceRefs,
+        },
         sitemap: machine.sitemap.status === "present"
-          ? { ...machine.sitemap, knowledgePagesListed: locations.includes(page.url) }
+          // The collector's own rule, imported rather than restated: it treats
+          // the site's two spellings of its own host as one address, and
+          // `assertEvidenceIntegrity` recomputes this with the same function.
+          // Exact string equality here made a www sitemap under an apex target
+          // disagree with the validator, which threw and cost the whole
+          // observed assembly.
+          ? { ...machine.sitemap, knowledgePagesListed: geoSitemapListsPage(locations, page.url) }
           : machine.sitemap,
       },
     });
@@ -705,10 +774,17 @@ async function geoObservedAssemblyInput(
   const countable = evidence.machine.sitemap.status !== "present"
     || (sitemapUrlCount !== null && String(evidence.machine.sitemap.urlCount) === sitemapUrlCount);
   const stored = ownStructure.jsonLdTypes.kind !== "not_stored" && ownStructure.hreflangLocales.kind !== "not_stored";
-  const carriable = ownStructure.jsonLdTypes.kind === "stored"
-    && ownStructure.hreflangLocales.kind === "stored"
-    && ownStructure.hreflangLocales.values.length === 0
-    && countable;
+  /*
+   * `rebuilt.kind === "page"` is the JSON-LD and hreflang half: the page was
+   * reconstructed whole, so both summaries above rest on lists this row
+   * actually holds. It used to additionally require that the page declared NO
+   * alternates, because the contract's page shape pairs each locale with its
+   * URL and the ledger stored the locales alone -- so any site with hreflang
+   * lost its whole machine module. The pairs are stored now; a row written
+   * before that answers `not_stored` and still withholds, which is the honest
+   * answer for it and self-heals the next time the page is read.
+   */
+  const carriable = rebuilt.kind === "page" && countable;
   const observedMachine: GeoObservedMachine = machineObserved && stored && carriable
     ? { kind: "publish" }
     : { kind: "withheld", reason: machineObserved && stored ? "insufficient_evidence" : "not_collected" };
@@ -730,7 +806,7 @@ async function geoObservedAssemblyInput(
        * `GEO_NARRATIVE_FAILURE_REASONS` that says so without inventing a cause.
        */
       narrativeFailureReason: "generation_unavailable",
-      robots: null,
+      robots,
       snippetsBlocked: null,
     },
   };
@@ -858,7 +934,7 @@ export async function handleGeoKbV3Assemble(
         synthesisInput: result.synthesisInput,
         narrative: result.narrative,
         narrativeFailureReason: null,
-        robots: null,
+        robots: await readObservedRobots(dependencies, scope, stored.generationInput),
         snippetsBlocked: null,
       };
     } else {

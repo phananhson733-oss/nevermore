@@ -59,16 +59,17 @@ it("draws only the modules the card asked for, in that order", async () => {
 });
 
 /**
- * The integration form of the D12 guard. Ten reviewable items publish here:
- * two were confirmed one by one and eight were accepted in bulk. Relabelling
- * the bulk ones turns this into 0 and 10.
+ * A published pack from before 2026-09-09: ten reviewable items, two accepted
+ * one by one and eight carrying the retired `accepted_in_bulk` label. All ten
+ * read as accepted now -- the Owner retired the distinction, and a version
+ * already frozen cannot be re-decided, so the only alternative would be to
+ * keep showing those eight in a state the screen no longer explains.
  */
-it.each(["en", "zh"])("counts confirmations and bulk acceptances separately in %s", async (locale) => {
+it.each(["en", "zh"])("reads a legacy bulk acceptance as an acceptance in %s", async (locale) => {
   await render(locale);
 
   const copy = card(locale).decisions;
-  expect(chips().filter((text) => text === copy.acceptedInBulk)).toHaveLength(8);
-  expect(chips().filter((text) => text === copy.accepted)).toHaveLength(2);
+  expect(chips().filter((text) => text === copy.accepted)).toHaveLength(10);
   expect(chips()).toHaveLength(10);
 });
 

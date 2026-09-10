@@ -5430,8 +5430,7 @@
           "changes": "{count} changes compared with kb@v{version}",
           "changesUncountable": "kb@v{version} was published by the previous knowledge base format, which recorded no per-item decisions, so there is nothing to compare item by item. This version publishes {count} knowledge items.",
           "firstVersion": "This is the first published version, with {count} knowledge items.",
-          "pending": "{count} items are still unconfirmed and will publish as accepted in bulk, not confirmed one by one.",
-          "noPending": "Nothing is left unconfirmed."
+          "pending": "{count} items are still undecided and will publish as accepted."
         },
         "published": {
           "headline": "Published kb@v{version}",
@@ -5444,7 +5443,6 @@
         "decisions": {
           "pending": "Awaiting your confirmation",
           "accepted": "Confirmed",
-          "acceptedInBulk": "Accepted in bulk · not confirmed one by one",
           "excluded": "Excluded"
         },
         "origins": {
@@ -5571,7 +5569,6 @@
           "running": "An update is writing this draft. Your decisions are saved as soon as it finishes.",
           "failed": "Your last decision was not saved. Decide again to retry.",
           "acceptAll": "Accept all {count} remaining",
-          "acceptAllNote": "Accepting this way is recorded as accepted in bulk, not confirmed one by one.",
           "noDecisions": "This section reports what was observed, so there is nothing here for you to accept, correct or exclude.",
           "reviewDue": "{count, plural, one {# fact has} other {# facts have}} passed the review date set when they were observed. Nothing is re-checked on its own; run an update when you want them looked at again.",
           "measurementEmpty": "This draft carries no question set, so there is nothing to show here.",

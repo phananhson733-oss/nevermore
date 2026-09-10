@@ -22,7 +22,7 @@ import type { GeoKbSourceReportV2 } from "./kb-source-contract.ts";
 import { selectGeoCompetitorEvidence } from "./kb-competitor-evidence.ts";
 import { buildGeoPreparedKnowledgeBase, buildGeoPreparedKnowledgeBaseV2 } from "./kb-preparation.ts";
 import { assertGeoSnapshotContextV2KnownInput, GEO_CONTEXT_EVIDENCE_MAX_BYTES, type GeoSourceReceiptRef, type GeoSourceSummaryV2, type GeoVerifiedFactSupportV2 } from "./snapshot-context-v2.ts";
-import { GEO_KNOWLEDGE_EVIDENCE_LIMITS, parseGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidenceSource, type GeoKnowledgeResourceResult } from "./kb-knowledge-evidence.ts";
+import { GEO_KNOWLEDGE_EVIDENCE_LIMITS, parseGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidencePage, type GeoKnowledgeEvidenceSource, type GeoKnowledgeResourceResult } from "./kb-knowledge-evidence.ts";
 import { geoEvidenceTtlMs, isObservationFresh, type GeoEvidenceObservation } from "./kb-evidence-observations.ts";
 import { buildGeoKnowledgeSynthesisInputV1, type GeoKnowledgeSynthesisInputV1 } from "./kb-knowledge-synthesis-contract.ts";
 import { GEO_KNOWLEDGE_SYNTHESIS_PROMPT_VERSION, prepareGeoKnowledgeSynthesis, synthesizeGeoKnowledgeNarrative, type GeoKnowledgeSynthesisDependencies, type GeoKnowledgeSynthesisResult } from "./kb-knowledge-synthesis.ts";
@@ -226,6 +226,37 @@ export type GeoKnowledgeStoredList =
   | { readonly kind: "not_stored" }
   | { readonly kind: "unreadable" };
 
+/**
+ * The robots.txt a row proves it read IN FULL, or null.
+ *
+ * The assembler answers "may GPTBot crawl this site" by parsing rules, and its
+ * only protection against answering from half a file is that a full excerpt
+ * sample (eight lines, the ledger's cap) is treated as possibly truncated. Every
+ * real robots.txt has more than eight lines, so that protection fired for every
+ * site and no owner was ever told anything about AI crawler permissions.
+ *
+ * `robotsRules` is the producer's answer: written only when the whole file fit
+ * the ledger, absent otherwise. Absent here means the excerpt fallback stands
+ * and the assembler keeps saying the file was not read in full -- which is
+ * still true for those rows, and true for every row written before this key
+ * existed.
+ */
+export function creditGeoKnowledgeObservedRobots(
+  observation: GeoEvidenceObservation | null,
+): { readonly text: string } | null {
+  if (observation === null || observation.status.kind !== "ok") return null;
+  const rules = observation.status.structured.robotsRules;
+  if (!Array.isArray(rules) || rules.length === 0) return null;
+  if (!rules.every((rule) => typeof rule === "string" && usableSourceText(rule, 400))) return null;
+  return { text: (rules as readonly string[]).join("\n") };
+}
+
+/** The alternates a row stored, complete enough for the contract's page shape. */
+export type GeoKnowledgeStoredHreflang =
+  | { readonly kind: "stored"; readonly values: readonly { readonly locale: string; readonly url: string }[] }
+  | { readonly kind: "not_stored" }
+  | { readonly kind: "unreadable" };
+
 export interface GeoKnowledgeObservedStructure {
   /**
    * Question-and-answer markup the run parsed off the page, bounded twice: the
@@ -237,6 +268,17 @@ export interface GeoKnowledgeObservedStructure {
   readonly faq: readonly { readonly question: string; readonly answer: string }[];
   readonly jsonLdTypes: GeoKnowledgeStoredList;
   readonly hreflangLocales: GeoKnowledgeStoredList;
+  /**
+   * The same alternates with the URL each points at.
+   *
+   * `hreflangLocales` alone cannot rebuild a page: the evidence contract pairs
+   * every locale with its URL and refuses a bare locale, so a row that stored
+   * only the list leaves the caller with no honest option but to withhold. A
+   * row written before the pairs were recorded answers `not_stored` here while
+   * `hreflangLocales` answers `stored`, and that difference is the whole point
+   * -- it is "we kept half of it", not "the page has none".
+   */
+  readonly hreflang: GeoKnowledgeStoredHreflang;
 }
 
 /** The page shape's own caps, restated for the same reason the text rules are. */
@@ -251,6 +293,31 @@ function storedList(values: unknown, maximum: number, codePoints: number): GeoKn
   const strings = entries as readonly string[];
   if (new Set(strings).size !== strings.length) return { kind: "unreadable" };
   return { kind: "stored", values: strings };
+}
+
+/**
+ * The alternates a row stored, as the contract's page shape can carry them.
+ *
+ * Refused whole rather than trimmed, for the reason every list here is: a page
+ * declaring eight alternates and a page declaring the three of them that fit
+ * are different pages, and only one of them is the owner's.
+ */
+function storedHreflang(values: unknown): GeoKnowledgeStoredHreflang {
+  if (values === undefined) return { kind: "not_stored" };
+  if (!Array.isArray(values)) return { kind: "unreadable" };
+  const entries = values as readonly unknown[];
+  if (entries.length > OBSERVED_PAGE_LIMITS.hreflangLocales) return { kind: "unreadable" };
+  const pairs: { locale: string; url: string }[] = [];
+  for (const entry of entries) {
+    if (entry === null || typeof entry !== "object") return { kind: "unreadable" };
+    const { locale, url } = entry as { locale?: unknown; url?: unknown };
+    if (typeof locale !== "string" || typeof url !== "string") return { kind: "unreadable" };
+    if (!usableSourceText(locale, OBSERVED_PAGE_LIMITS.typeCodePoints) || !exactPublicSourceUrl(url)) return { kind: "unreadable" };
+    pairs.push({ locale, url });
+  }
+  if (new Set(pairs.map((pair) => pair.locale)).size !== pairs.length
+    || new Set(pairs.map((pair) => pair.url)).size !== pairs.length) return { kind: "unreadable" };
+  return { kind: "stored", values: pairs };
 }
 
 /**
@@ -275,7 +342,50 @@ export function creditGeoKnowledgeObservedStructure(
       .map((pair) => ({ question: pair.question, answer: pair.answer })),
     jsonLdTypes: storedList(structured.jsonLdTypes, OBSERVED_PAGE_LIMITS.jsonLdTypes, OBSERVED_PAGE_LIMITS.typeCodePoints),
     hreflangLocales: storedList(structured.hreflangLocales, OBSERVED_PAGE_LIMITS.hreflangLocales, OBSERVED_PAGE_LIMITS.typeCodePoints),
+    hreflang: storedHreflang(structured.hreflang),
   };
+}
+
+/**
+ * One own-site page, rebuilt from what a run stored ABOUT it, or the reason it
+ * cannot be.
+ *
+ * This exists because `machine.jsonLd` and `machine.hreflang` are derived from
+ * the bundle's PAGES, while their citations come from its SOURCES. A run that
+ * credits a stored own-page row contributes the source and no page, and both
+ * summaries then read `absent` while citing the row that holds the answer --
+ * which is what production reported on 2026-09-09 about a home page carrying
+ * six JSON-LD types and a set of hreflang alternates.
+ *
+ * What it will not do is guess. The ledger stores no canonical URL, no title,
+ * no `lang` and no links, so every one of those is null or empty here rather
+ * than invented; a caller that needs them must read the page again. And when
+ * either list is missing or unreadable the answer is `withheld`, never a page
+ * with an empty list: "we did not keep it" and "the page has none" are
+ * different sentences and only one of them may reach an owner.
+ */
+export type GeoKnowledgeRebuiltPage =
+  | { readonly kind: "page"; readonly page: GeoKnowledgeEvidencePage }
+  | { readonly kind: "withheld"; readonly reason: "not_stored" | "unreadable" };
+
+export function creditGeoKnowledgeObservedPage(input: {
+  readonly url: string;
+  readonly structure: GeoKnowledgeObservedStructure;
+}): GeoKnowledgeRebuiltPage {
+  const { jsonLdTypes, hreflang } = input.structure;
+  if (jsonLdTypes.kind === "not_stored" || hreflang.kind === "not_stored") return { kind: "withheld", reason: "not_stored" };
+  if (jsonLdTypes.kind === "unreadable" || hreflang.kind === "unreadable") return { kind: "withheld", reason: "unreadable" };
+  const alternates = hreflang.values.map((entry) => ({ locale: entry.locale, url: entry.url }));
+  return { kind: "page", page: {
+    url: input.url, canonicalUrl: null, title: null, description: null, lang: null,
+    jsonLdTypes: [...jsonLdTypes.values],
+    // The contract's page shape requires these two to agree entry for entry,
+    // in order, so the list is derived here rather than read separately.
+    hreflangLocales: alternates.map((entry) => entry.locale),
+    hreflang: alternates,
+    faq: input.structure.faq.map((pair) => ({ question: pair.question, answer: pair.answer })),
+    links: [],
+  } };
 }
 
 export interface GeoKnowledgeEvidenceCollectionInput {

@@ -53,28 +53,34 @@ it.each(["en", "zh"])("names the type, the content and the observed page in %s",
 });
 
 /**
- * The mutation guard for D12. Rendering `accepted_in_bulk` with the `accepted`
- * label -- the one change that lets a batch gesture claim a one-by-one
- * confirmation -- fails both assertions here, in both locales.
+ * This assertion used to be the mutation guard for D12: it demanded that
+ * `accepted_in_bulk` render with words of its own, so a batch gesture could
+ * never claim a one-by-one confirmation. The RULE it guarded is what changed
+ * -- the Owner ruled on 2026-09-09 that a batch acceptance is an acceptance --
+ * so the guard is inverted rather than deleted: nothing writes
+ * `accepted_in_bulk` any more, older drafts still carry it, and the one thing
+ * that must stay true is that such a row reads as accepted instead of sitting
+ * in a fourth state the owner has no button for.
+ *
+ * What did NOT change is the other half of D12: `origin` still says the claim
+ * came from the model, and the decision label never overwrites it.
  */
-it.each(["en", "zh"])("never renders a bulk acceptance as a confirmation in %s", async (locale) => {
+it.each(["en", "zh"])("renders a legacy bulk acceptance as an acceptance in %s", async (locale) => {
   await render({ decision: "accepted_in_bulk", source: { origin: "synthesized", evidenceCount: 2 } }, locale);
 
-  expect(chip()).toBe(card(locale).decisions.acceptedInBulk);
-  expect(chip()).not.toBe(card(locale).decisions.accepted);
-  expect(host.textContent).not.toContain(card(locale).decisions.accepted);
+  expect(chip()).toBe(card(locale).decisions.accepted);
   expect(sourceLine()).toContain(card(locale).originDetail.synthesized.replace("{count}", "2"));
 });
 
-it.each(["en", "zh"])("gives each decision its own words in %s", async (locale) => {
+it.each(["en", "zh"])("gives each decision the owner can reach its own words in %s", async (locale) => {
   const labels: string[] = [];
-  for (const decision of ["pending", "accepted", "accepted_in_bulk", "excluded"] as const) {
+  for (const decision of ["pending", "accepted", "excluded"] as const) {
     await render({ decision }, locale);
     labels.push(chip());
   }
   const copy = card(locale).decisions;
-  expect(labels).toEqual([copy.pending, copy.accepted, copy.acceptedInBulk, copy.excluded]);
-  expect(new Set(labels).size).toBe(4);
+  expect(labels).toEqual([copy.pending, copy.accepted, copy.excluded]);
+  expect(new Set(labels).size).toBe(3);
 });
 
 /**

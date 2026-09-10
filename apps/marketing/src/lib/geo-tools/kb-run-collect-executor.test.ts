@@ -1012,6 +1012,45 @@ describe("what the site's own page is recorded as carrying", () => {
     ]);
   });
 
+  it("drops an over-long hreflang alternate rather than storing a shortened address", async () => {
+    /*
+     * `storableText` BOUNDS a string, and a bounded URL is not a shortened
+     * label -- it is a different, still-valid address. Stored, it comes back
+     * through the page rebuild as an alternate the page never declared, filed
+     * as something the run observed. Refused whole instead, and refused from
+     * both spellings so the bare list and the pairs cannot disagree.
+     */
+    const long = `https://example.com/${"a".repeat(2_040)}`;
+    const recordObservation = vi.fn(sources().recordObservation);
+    const { executor } = createGeoRunCollectRuntime(
+      sources({
+        createReader: siteReader({
+          [OWN]: {
+            kind: "ok",
+            url: OWN,
+            body: `<!doctype html><html lang="en"><head><title>Example</title>
+              <link rel="alternate" hreflang="en" href="${OWN}en">
+              <link rel="alternate" hreflang="de" href="${long}"></head>
+              <body><h1>Example</h1><p>The plan costs 19 dollars a month.</p></body></html>`,
+            contentType: "text/html; charset=utf-8",
+            observedAt: NOW.toISOString(),
+          },
+        }) as never,
+        recordObservation: recordObservation as never,
+      }),
+    );
+    await executor.start(operation(), context);
+    const appended = recordObservation.mock.calls[0]?.[0];
+    if (appended.status.kind !== "ok") throw new Error("expected an observed page");
+    const structured = appended.status.structured as {
+      hreflangLocales?: readonly string[];
+      hreflang?: readonly { locale: string; url: string }[];
+    };
+    expect(structured.hreflang).toEqual([{ locale: "en", url: `${OWN}en` }]);
+    expect(structured.hreflangLocales).toEqual(["en"]);
+    expect(JSON.stringify(structured)).not.toContain("aaaa");
+  });
+
   it("stores an empty list for a page that publishes none, not a missing key", async () => {
     /*
      * The single-language site with no JSON-LD: the common case, and the one
@@ -1042,10 +1081,13 @@ describe("what the site's own page is recorded as carrying", () => {
     const appended = recordObservation.mock.calls[0]?.[0];
     expect(appended.kind).toBe("own_page");
     if (appended.status.kind !== "ok") throw new Error("expected an observed page");
-    // Both keys present and both empty. `toEqual` rather than two property
+    // All three keys present and all empty. `toEqual` rather than property
     // checks: a key that came back `undefined` would satisfy `toEqual([])`
-    // nowhere, and this is the exact shape the consumer's gate reads.
-    expect(appended.status.structured).toEqual({ jsonLdTypes: [], hreflangLocales: [] });
+    // nowhere, and this is the exact shape the consumer's gate reads. The
+    // alternates are stored twice on purpose -- the bare list for readers that
+    // only count them, the pairs because the evidence contract's page shape
+    // refuses a locale without the URL it points at.
+    expect(appended.status.structured).toEqual({ jsonLdTypes: [], hreflangLocales: [], hreflang: [] });
   });
 
   it("hands the consumer a shape its publish gate can actually accept", async () => {

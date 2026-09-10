@@ -123,17 +123,17 @@ it("sends the version and the locked input hash, and nothing else about the draf
   expect(bodyOf(0).expectedGenerationInputHash).toBe(PAYLOAD.runRef.generationInputHash);
 });
 
-it("shows accepted_in_bulk for 全部接受 before the server answers, and never accepted", async () => {
+it("shows 全部接受 as accepted before the server answers", async () => {
   const saved = savedReview(PAYLOAD, [{ kind: "accept_all", itemKeys: ITEM_KEYS }], 4);
   (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: saved.data }));
   await mount();
   await act(async () => { editor.acceptAll(ITEM_KEYS); });
   // Optimistic and settled state are produced by the same function, so the row
-  // cannot read as confirmed for 900 ms and then change its mind.
-  expect([...editor.states.values()].map((state) => state.decision)).toEqual(ITEM_KEYS.map(() => "accepted_in_bulk"));
+  // cannot read one way for 900 ms and then change its mind.
+  expect([...editor.states.values()].map((state) => state.decision)).toEqual(ITEM_KEYS.map(() => "accepted"));
   await settle();
   expect(bodyOf(0).actions).toEqual([{ kind: "accept_all", itemKeys: ITEM_KEYS }]);
-  expect([...editor.states.values()].some((state) => state.decision === "accepted")).toBe(false);
+  expect([...editor.states.values()].some((state) => state.decision === "accepted_in_bulk")).toBe(false);
 });
 
 it("does not write when a gesture reaches nothing", async () => {
@@ -234,7 +234,9 @@ it("flushes unsaved gestures before publishing", async () => {
   expect(editor.publishPlan.pendingCount).toBe(0);
   expect([...editor.states].map(([key, state]) => [key, state.decision]))
     .toEqual([...swept].map(([key, state]) => [key, state.decision]));
-  expect([...editor.states.values()].filter((state) => state.decision === "accepted")).toHaveLength(1);
+  // Every item is accepted afterwards: one the owner pressed, the rest swept
+  // by publishing on their behalf.
+  expect([...editor.states.values()].filter((state) => state.decision === "accepted")).toHaveLength(ITEM_KEYS.length);
 });
 
 it("treats a publish that swept a different number of items as a conflict", async () => {
@@ -308,6 +310,10 @@ it("counts the changes against the published version rather than against this se
   // Every item is pending in the draft and accepted in the published version,
   // so every item differs -- and none of that happened in this session.
   expect(editor.publishPlan.changeCount).toBe(ITEM_KEYS.length);
+  // kb@v3 was published with the retired `accepted_in_bulk` label, which means
+  // exactly what `accepted` means. Accepting the module here therefore changes
+  // nothing relative to it; comparing the raw strings would report all five
+  // items as changed and the count would never reach zero for such a version.
   await act(async () => { editor.acceptAll(ITEM_KEYS); });
   expect(editor.publishPlan.changeCount).toBe(0);
 });

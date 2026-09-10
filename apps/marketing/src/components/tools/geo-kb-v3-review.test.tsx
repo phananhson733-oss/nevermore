@@ -222,7 +222,7 @@ it("draws one row per reviewable item, awaiting confirmation", async () => {
   expect(host.innerHTML).not.toContain(FACT_KEY_PRO);
 });
 
-it("puts 全部接受 inside the module it accepts, and labels what it writes", async () => {
+it("puts 全部接受 inside the module it accepts", async () => {
   await render();
   const buttons = [...host.querySelectorAll("[data-accept-all]")];
   // One per reviewable module that still has pending items. The unavailable
@@ -231,23 +231,27 @@ it("puts 全部接受 inside the module it accepts, and labels what it writes", 
   for (const button of buttons) {
     expect(button.closest("[data-geo-kb-module]")).not.toBeNull();
   }
-  expect(host.textContent).toContain(card("en").review.acceptAllNote);
 });
 
-it("sends accept_all and shows accepted in bulk, never confirmed", async () => {
+/**
+ * This used to assert the opposite -- that the batch button may never produce
+ * the `accepted` label. That rule was retired by the Owner on 2026-09-09:
+ * accepting a module IS accepting, and the second label only made the screen
+ * harder to read. What survives is the wire: one `accept_all` action, named
+ * keys, one save.
+ */
+it("sends accept_all and shows the swept rows as accepted", async () => {
   await render();
   const facts = [...host.querySelectorAll("[data-geo-kb-module]")]
     .find((module) => module.querySelector("[data-accept-all]") !== null)!;
   await act(async () => { (facts.querySelector("[data-accept-all]") as HTMLButtonElement).click(); });
-  const swept = chips().filter((label) => label === card("en").decisions.acceptedInBulk);
+  const swept = chips().filter((label) => label === card("en").decisions.accepted);
   expect(swept.length).toBeGreaterThan(0);
-  // The one thing this button may never produce.
-  expect(chips()).not.toContain(card("en").decisions.accepted);
   await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V3_AUTOSAVE_MS); });
   expect(bodyOf(0).actions[0].kind).toBe("accept_all");
 });
 
-it("marks one row confirmed when it is accepted on its own", async () => {
+it("marks one row accepted when it is accepted on its own", async () => {
   await render();
   const first = rows()[0]!;
   await act(async () => { (first.querySelector('[data-item-action="accept"]') as HTMLButtonElement).click(); });
@@ -268,7 +272,7 @@ it("sends a correction as an acceptance of the corrected text", async () => {
   expect(rows()[0]!.getAttribute("data-origin")).toBe("declared_owner");
 });
 
-it("states how many items would publish unconfirmed, and that publishing is free", async () => {
+it("states how many undecided items publishing would accept, and that publishing is free", async () => {
   await render();
   expect(host.querySelector("[data-kb-publish-pending]")?.textContent)
     .toBe(card("en").publish.pending.replace("{count}", String(ITEM_KEYS.length)));
@@ -288,9 +292,7 @@ it("stops offering the gestures once the draft conflicts, and says why", async (
 it("renders in Chinese from the catalog rather than from inline literals", async () => {
   await render("zh");
   expect(new Set(chips())).toEqual(new Set([card("zh").decisions.pending]));
-  expect(host.textContent).toContain(card("zh").review.acceptAllNote);
-  // The one label the whole surface exists to keep separate, in both locales.
-  expect(card("zh").decisions.acceptedInBulk).not.toBe(card("zh").decisions.accepted);
+  expect(host.textContent).toContain(card("zh").review.acceptAll.replace("{count}", "1"));
 });
 
 /**
@@ -2119,15 +2121,16 @@ it("folds to a summary once the draft on screen is the published version", async
   expect(calls()).toEqual([]);
 });
 
-it("counts only one-by-one acceptances as confirmed", async () => {
+it("counts a legacy bulk acceptance as confirmed", async () => {
   const hashes = geoV3ItemContentHashes(PAYLOAD.knowledge);
   const decided = (itemKey: string, decision: "accepted" | "accepted_in_bulk") => ({
     itemKey, decision, override: null,
     baseContentHash: hashes.get(itemKey)!, decidedAt: "2026-09-01T00:00:00.000Z", baseDraftVersion: "4",
   });
-  // One fact read and accepted; the other swept up by a batch gesture. D12
-  // reserves "confirmed" for the first kind, and this line is where the
-  // difference reaches a person.
+  // One fact accepted with today's label, one carrying the retired
+  // `accepted_in_bulk` from a draft written before 2026-09-09. This line used
+  // to read "confirmed 1", which is where D12's distinction reached a person;
+  // the Owner retired it, so both count.
   const payload = completePayloadV3({ review: {
     decisions: [decided(FACT_KEY_PRO, "accepted"), decided(FACT_KEY_TEAM, "accepted_in_bulk")],
     suppressions: [],
@@ -2136,7 +2139,7 @@ it("counts only one-by-one acceptances as confirmed", async () => {
 
   await render("en", { payload, draftHash: contentHash, published: publishedAsIs({ contentHash }) });
 
-  expect(text("[data-kb-published-counts]")).toBe("Facts 2 (confirmed 1) · Q&A 1 · Sep 1, 2026");
+  expect(text("[data-kb-published-counts]")).toBe("Facts 2 (confirmed 2) · Q&A 1 · Sep 1, 2026");
 });
 
 it("opens again on Edit, and stays open", async () => {

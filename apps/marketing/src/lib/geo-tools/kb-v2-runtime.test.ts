@@ -300,10 +300,19 @@ describe("the model step reads nothing the update already read", () => {
   const FRESH = "2026-08-30T23:00:00.000Z";
   const EXPIRED = "2026-08-29T00:00:00.000Z";
 
+  /*
+   * `structured` carries the three keys the collect executor writes for an own
+   * page, because a row the generation step cannot rebuild into a page is not
+   * credited at all -- it is fetched again. That is deliberate: crediting the
+   * source without the page is what made `machine.jsonLd` and
+   * `machine.hreflang` report `absent` while citing the row that held them.
+   * A fixture with a bare `{}` therefore measures the REFETCH path, not reuse.
+   */
   const observed = (kind: "own_page" | "competitor_page", url: string, overrides: Partial<GeoEvidenceObservation> = {}): GeoEvidenceObservation => ({
     schemaVersion: GEO_EVIDENCE_OBSERVATION_SCHEMA_VERSION, observationId: V2_CANDIDATE_ID, websiteId: SNAPSHOT,
     kind, url, observedAt: FRESH, independence: null,
-    status: { kind: "ok", bodyHash: BODY_HASH, excerpts: [`${new URL(url).host} sells analytics software`], structured: {} },
+    status: { kind: "ok", bodyHash: BODY_HASH, excerpts: [`${new URL(url).host} sells analytics software`],
+      structured: { jsonLdTypes: [], hreflangLocales: [], hreflang: [] } },
     ...overrides,
   });
 
@@ -325,6 +334,51 @@ describe("the model step reads nothing the update already read", () => {
 
   const library = (...entries: readonly GeoEvidenceObservation[]) =>
     new Map(entries.map(entry => [`${entry.kind} ${entry.url}`, entry] as const));
+
+  it("carries the structure the row stored into the bundle's machine summaries", async () => {
+    /**
+     * The production defect of 2026-09-09. `machine.jsonLd` and
+     * `machine.hreflang` are derived from the bundle's PAGES and cited against
+     * its SOURCES; a credited row used to contribute the source alone, so both
+     * summaries read `absent` while pointing at the row that held six JSON-LD
+     * types.
+     */
+    const state = v3Fixture(library(observed("own_page", HOME, {
+      status: { kind: "ok", bodyHash: BODY_HASH, excerpts: ["example.com sells analytics software"],
+        structured: {
+          jsonLdTypes: ["FAQPage", "Organization"],
+          hreflangLocales: ["en", "zh-Hans"],
+          hreflang: [{ locale: "en", url: `${HOME}en` }, { locale: "zh-Hans", url: `${HOME}zh-hans` }],
+        } },
+    })));
+
+    expect((await state.prepare()).kind).toBe("ready");
+    const evidence = await state.evidence();
+    expect(evidence.machine.jsonLd).toMatchObject({ status: "present", types: ["FAQPage", "Organization"] });
+    expect(evidence.machine.hreflang).toMatchObject({ status: "present", locales: ["en", "zh-Hans"] });
+    // Still not fetched: the structure came out of the row.
+    expect(state.fetched()).not.toContain(HOME);
+  });
+
+  it("reads the page again rather than crediting a row it cannot rebuild", async () => {
+    /**
+     * A row written before the alternates were stored as pairs. It cannot
+     * become a page (the contract's page shape refuses a locale with no URL),
+     * and crediting its SOURCE without a page is exactly the shape that made
+     * both summaries read `absent` while citing it -- with `reusedUrls` then
+     * stopping the collector from reading the page to find out otherwise.
+     *
+     * So it is not credited at all and the page is fetched. One extra read for
+     * a legacy row, and the row it writes is rebuildable.
+     */
+    const state = v3Fixture(library(observed("own_page", HOME, {
+      status: { kind: "ok", bodyHash: BODY_HASH, excerpts: ["example.com sells analytics software"],
+        structured: { jsonLdTypes: ["Organization"], hreflangLocales: ["en"] } },
+    })));
+
+    expect((await state.prepare()).kind).toBe("ready");
+    expect(state.fetched()).toContain(HOME);
+  });
 
   it("spends no request on a page the update's own fetch operations already filed", async () => {
     const state = v3Fixture(library(observed("own_page", HOME), observed("competitor_page", RIVAL)));

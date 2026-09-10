@@ -3,16 +3,18 @@
 // @pos -- client-safe and pure: no digest, no clock, no store; every timestamp arrives as an argument
 
 /**
- * The four gestures, and the one label none of them may write.
+ * The four gestures, and the one label none of them writes any more.
  *
- * `accepted` means a person read this exact item and said yes to it, one item
- * at a time. `accepted_in_bulk` means a person said yes to a group without
- * reading each member -- the module's "accept all", and the fallback that runs
- * when a draft is published with items still pending. The two are different
- * claims about how much human attention an item received, and the whole point
- * of keeping them apart is that pressing a different button must not let the
- * same model output claim the stronger one. So exactly one code path in this
- * file writes `accepted`, and it is the one that handles a single item key.
+ * `accepted` means the owner said yes to this item. Every gesture that accepts
+ * writes it -- the per-item button, the module's "accept all", and the sweep
+ * that runs when a draft is published with items still pending. There used to
+ * be a second label, `accepted_in_bulk`, on the theory that a batch gesture is
+ * weaker consent than a one-by-one one; the ruling (2026-09-09, Owner) is that
+ * it is the same consent and the distinction only made the screen harder to
+ * read. `accepted_in_bulk` therefore stays in `geoDecisionSchema` because
+ * drafts written before that ruling contain it and must stay readable, and
+ * nothing here produces it. Everything that reads a decision treats it as
+ * `accepted`.
  *
  * Why this is a state machine over a map rather than edits to the record list:
  * the browser has no sha256, so it cannot build a decision record (each one
@@ -121,7 +123,7 @@ export function applyGeoV3ReviewAction(
       // already accepted one by one keeps that label; an excluded or corrected
       // one is a decision this gesture has no business overwriting.
       if (current !== undefined && undecided(current)) {
-        next.set(itemKey, { decision: "accepted_in_bulk", override: null });
+        next.set(itemKey, { decision: "accepted", override: null });
         swept += 1;
       }
     }
@@ -173,7 +175,7 @@ export function applyGeoV3ReviewActions(
   return actions.reduce<GeoV3DecisionStates>(applyGeoV3ReviewAction, states);
 }
 
-/** Item keys that would publish as `accepted_in_bulk` if the draft were published now. */
+/** Item keys the publish sweep would accept if the draft were published now. */
 export function geoV3PendingKeys(
   states: GeoV3DecisionStates,
 ): readonly string[] {
@@ -185,6 +187,14 @@ export function geoV3PendingKeys(
 export interface GeoV3ReviewCounts {
   readonly total: number;
   readonly accepted: number;
+  /**
+   * How many of `accepted` carry the retired `accepted_in_bulk` label, which
+   * only a draft written before 2026-09-09 can. It is a SUB-COUNT of
+   * `accepted`, not a fifth bucket: `accepted + excluded + pending === total`.
+   * It survives because the published pack's frozen contract derives its own
+   * `counts.acceptedInBulk` the same way and a wire field cannot be dropped
+   * without a version bump.
+   */
   readonly acceptedInBulk: number;
   readonly excluded: number;
   readonly pending: number;
@@ -202,8 +212,10 @@ export function geoV3ReviewCounts(
   for (const state of states.values()) {
     if (state.override !== null) corrected += 1;
     if (state.decision === "accepted") accepted += 1;
-    else if (state.decision === "accepted_in_bulk") acceptedInBulk += 1;
-    else if (state.decision === "excluded") excluded += 1;
+    else if (state.decision === "accepted_in_bulk") {
+      accepted += 1;
+      acceptedInBulk += 1;
+    } else if (state.decision === "excluded") excluded += 1;
     else pending += 1;
   }
   return {

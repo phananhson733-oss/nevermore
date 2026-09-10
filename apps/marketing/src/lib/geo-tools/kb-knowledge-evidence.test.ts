@@ -544,7 +544,7 @@ describe("GEO knowledge evidence collection", () => {
     expect((result.pages[0] as { hreflang?: unknown })?.hreflang).toEqual([{ locale: "en", url: "https://example.com/en" }]);
   });
 
-  it("caps sitemap locations at 1000, records truncation, and retains only same-host canonical URLs", async () => {
+  it("caps sitemap locations at 1000 while still reporting the document's own size", async () => {
     const resources = baseResources();
     const locations = [
       ...Array.from({ length: GEO_KNOWLEDGE_EVIDENCE_LIMITS.sitemapLocations + 1 }, (_, index) => `https://example.com/page-${index}`),
@@ -563,9 +563,119 @@ describe("GEO knowledge evidence collection", () => {
     );
     const sitemapSource = result.sourceCatalogue.find(({ kind }) => kind === "sitemap")!;
     expect(sitemapSource.excerpts.length).toBeLessThanOrEqual(GEO_KNOWLEDGE_EVIDENCE_LIMITS.maxExcerpts);
-    expect(result.machine.sitemap).toMatchObject({ status: "present", urlCount: 1000, truncated: true });
+    // 1001 valid locations, of which the bundle carries 1000. The count is the
+    // document's, not the sample's -- reporting 1000 here would be the same
+    // understatement that made a 558-URL sitemap read as "0 URLs listed" in
+    // production, one order of magnitude smaller.
+    expect(result.machine.sitemap).toMatchObject({ status: "present", urlCount: 1001, truncated: true });
     expect((result.machine.sitemap as { locations?: string[] }).locations).toHaveLength(GEO_KNOWLEDGE_EVIDENCE_LIMITS.sitemapLocations);
     expect((result.machine.sitemap as { locations: string[] }).locations.every((url) => url.startsWith("https://example.com/") && !url.includes("#"))).toBe(true);
+  });
+
+  /**
+   * The production defect of 2026-09-09, reproduced.
+   *
+   * astrologywiki.com serves its site at `www.` and publishes a sitemap whose
+   * 558 `<loc>` values all carry that host, while the knowledge base's target
+   * is spelled as the apex. `asPublicUrl` demanded `url.host === base.host`, so
+   * every location was discarded and the owner was told "0 URLs listed" about a
+   * sitemap listing 558 of them. Everything else in this codebase already
+   * treats the two spellings as one site.
+   */
+  it("reads a sitemap that lists the site's other spelling of its own host", async () => {
+    const resources = baseResources();
+    resources["https://example.com/sitemap.xml"] = text(
+      "https://example.com/sitemap.xml",
+      `<urlset>${["https://www.example.com/", "https://www.example.com/pricing", "https://example.com/docs"]
+        .map((url) => `<url><loc>${url}</loc></url>`).join("")}</urlset>`,
+      "application/xml",
+    );
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+    );
+
+    expect(result.machine.sitemap).toMatchObject({ status: "present", urlCount: 3, truncated: false });
+    // And the home page counts as listed even though the sitemap spells its
+    // host the other way: it is the same address.
+    expect(result.machine.sitemap.knowledgePagesListed).toBe(true);
+    // A genuinely foreign host is still refused.
+    expect((result.machine.sitemap as { locations: string[] }).locations.every((url) => url.includes("example.com"))).toBe(true);
+  });
+
+  /**
+   * The other half of the same production report: `jsonLd` and `hreflang` are
+   * derived from the bundle's PAGES and cited against its SOURCES, so a caller
+   * that credits a stored own-page row without contributing the page made both
+   * read `absent` while pointing at the row that held six JSON-LD types.
+   */
+  it("reports the structure of a page contributed from a stored row", async () => {
+    const resources = baseResources();
+    const observedAt = "2026-09-04T06:00:00.000Z";
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      {
+        readResource: reader(resources), now: () => new Date(COLLECTED_AT),
+        reusedSources: [{
+          id: "own_page-contributed", kind: "own_page", label: "Own site page", url: "https://example.com/",
+          competitor: null, availability: "available", reason: null, observedAt,
+          bodyHash: "a".repeat(64), excerpts: ["Example product"],
+        }],
+        reusedPages: [{
+          url: "https://example.com/", canonicalUrl: null, title: null, description: null, lang: null,
+          jsonLdTypes: ["FAQPage", "Organization"],
+          hreflangLocales: ["en", "zh-Hans"],
+          hreflang: [{ locale: "en", url: "https://example.com/en" }, { locale: "zh-Hans", url: "https://example.com/zh-hans" }],
+          faq: [], links: [],
+        }],
+      },
+    );
+
+    expect(result.machine.jsonLd).toMatchObject({ status: "present", types: ["FAQPage", "Organization"] });
+    expect(result.machine.hreflang).toMatchObject({ status: "present", locales: ["en", "zh-Hans"] });
+    // Cited against the row it came from, which is the source that was credited.
+    expect(result.machine.jsonLd.sourceRefs).toEqual(["own_page-contributed"]);
+    // And the page was not read again: the reader only saw the three machine files.
+    expect(result.pages.map((page) => page.url)).toEqual(["https://example.com/"]);
+  });
+
+  it("refuses a contributed page no source in the catalogue addresses", async () => {
+    // A page with no receipt is a reading this collection cannot show anyone.
+    await expect(collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      {
+        readResource: reader(baseResources()), now: () => new Date(COLLECTED_AT),
+        reusedPages: [{
+          url: "https://example.com/orphan", canonicalUrl: null, title: null, description: null, lang: null,
+          jsonLdTypes: [], hreflangLocales: [], hreflang: [], faq: [], links: [],
+        }],
+      },
+    )).rejects.toThrow("Contributed page without an own-site source");
+  });
+
+  /**
+   * A credited sitemap carries eight sample locations and the document's own
+   * total, because that is all the ledger keeps. Publishing the sample size as
+   * the total is the same understatement one order of magnitude smaller.
+   */
+  it("publishes a credited sitemap's own total beside its sample", async () => {
+    const resources = baseResources();
+    const sample = Array.from({ length: 8 }, (_value, index) => `https://example.com/page-${index}`);
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      {
+        readResource: reader(resources), now: () => new Date(COLLECTED_AT),
+        reusedSources: [{
+          id: "sitemap-credited", kind: "sitemap", label: "sitemap", url: "https://example.com/sitemap.xml",
+          competitor: null, availability: "available", reason: null, observedAt: "2026-09-04T06:00:00.000Z",
+          bodyHash: "b".repeat(64), excerpts: sample,
+        }],
+        reusedSitemapUrlCount: 558,
+      },
+    );
+
+    expect(result.machine.sitemap).toMatchObject({ status: "present", urlCount: 558, truncated: true });
+    expect((result.machine.sitemap as { locations: string[] }).locations).toHaveLength(8);
   });
 
   it("uses the remaining monotonic deadline for the next timeout without real sleeping", async () => {

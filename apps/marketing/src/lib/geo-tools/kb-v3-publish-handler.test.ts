@@ -199,7 +199,7 @@ const body = (
 });
 
 describe("handleGeoKbV3Publish", () => {
-  it("writes the remaining pending items back as accepted_in_bulk before freezing", async () => {
+  it("writes the remaining pending items back as accepted before freezing", async () => {
     const payload = lockedPayload();
     const { dependencies, saveDraft, published } = harness(payload);
     const response = await handleGeoKbV3Publish(
@@ -208,40 +208,45 @@ describe("handleGeoKbV3Publish", () => {
     );
     expect(response.status).toBe(200);
     const data = (await response.json()).data;
+    // `bulkAccepted` still counts the sweep -- how many items the owner never
+    // touched -- which is a different question from what they are labelled.
     expect(data.bulkAccepted).toBe(geoV3ItemKeys(payload.knowledge).length);
     expect(data.counts).toMatchObject({
-      accepted: 0,
-      acceptedInBulk: geoV3ItemKeys(payload.knowledge).length,
+      accepted: geoV3ItemKeys(payload.knowledge).length,
+      acceptedInBulk: 0,
       pending: 0,
     });
     // The draft is advanced first, so it agrees with the version afterwards.
     expect(saveDraft).toHaveBeenCalledTimes(1);
     const written = saveDraft.mock.calls[0]![0].payload as GeoKbPayloadV3;
     expect(written.review.decisions.map((record) => record.decision)).toEqual(
-      geoV3ItemKeys(payload.knowledge).map(() => "accepted_in_bulk"),
+      geoV3ItemKeys(payload.knowledge).map(() => "accepted"),
     );
-    // The fallback is the weakest consent there is, and is recorded as that.
+    // The retired label must not come back through the publish-time sweep,
+    // which is the one place that still writes decisions nobody pressed.
     expect(
-      written.review.decisions.some((record) => record.decision === "accepted"),
+      written.review.decisions.some(
+        (record) => record.decision === "accepted_in_bulk",
+      ),
     ).toBe(false);
     expect(data.draftVersion).toBe(5);
     expect(published.current?.baseDraftVersion).toBe("5");
     expect(published.current?.baseDraftHash).toBe(geoV2Digest(written));
   });
 
-  it("publishes the pack the reviewed draft assembles to, with the bulk label carried per item", async () => {
+  it("publishes the pack the reviewed draft assembles to, with the decision carried per item", async () => {
     const payload = lockedPayload();
     const { dependencies, published } = harness(payload);
     await handleGeoKbV3Publish(request(body({}, payload)), dependencies);
     const pack = published.current?.knowledgePack;
     expect(pack?.meta.counts).toMatchObject({
-      accepted: 0,
-      acceptedInBulk: geoV3ItemKeys(payload.knowledge).length,
+      accepted: geoV3ItemKeys(payload.knowledge).length,
+      acceptedInBulk: 0,
     });
     expect(pack?.facts.status).toBe("available");
     const facts = pack?.facts.status === "available" ? pack.facts.value : [];
     expect(facts.map((fact) => fact.decision)).toEqual(
-      [FACT_KEY_PRO, expect.anything()].map(() => "accepted_in_bulk"),
+      [FACT_KEY_PRO, expect.anything()].map(() => "accepted"),
     );
   });
 
@@ -268,10 +273,11 @@ describe("handleGeoKbV3Publish", () => {
     );
     expect(response.status).toBe(200);
     const data = (await response.json()).data;
+    // One item was decided before publishing, so the sweep reaches the rest.
     expect(data.bulkAccepted).toBe(keys.length - 1);
     expect(data.counts).toMatchObject({
-      accepted: 1,
-      acceptedInBulk: keys.length - 1,
+      accepted: keys.length,
+      acceptedInBulk: 0,
     });
     const written = saveDraft.mock.calls[0]![0].payload as GeoKbPayloadV3;
     expect(

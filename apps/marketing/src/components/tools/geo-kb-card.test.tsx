@@ -320,7 +320,9 @@ it("counts a first version instead of comparing it with one that does not exist"
   await render({ publish: { ...plan, previousVersion: null, pendingCount: 0 } });
 
   expect(host.querySelector("[data-kb-publish-changes]")?.textContent).toBe(fill(card("en").publish.firstVersion, { count: "30" }));
-  expect(host.querySelector("[data-kb-publish-pending]")?.textContent).toBe(card("en").publish.noPending);
+  // Nothing pending renders no line at all: a sentence saying there is no
+  // problem is one more thing to read on the screen that always has none.
+  expect(host.querySelector("[data-kb-publish-pending]")).toBeNull();
 });
 
 it.each(["en", "zh"])("groups the modules into the five lettered sections in %s", async (locale) => {
