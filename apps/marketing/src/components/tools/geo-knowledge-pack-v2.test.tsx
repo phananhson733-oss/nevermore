@@ -122,6 +122,257 @@ it.each(["en", "zh"])("reports search-use and training-use crawler rules separat
   expect(host.querySelector('[data-machine-field="snippets"]')?.textContent).toContain(card(locale).machine.snippetStatuses.allowed);
 });
 
+/** The fixture's machine module, which is `available` and must stay that way. */
+function machineOf(pack: ReturnType<typeof geoKnowledgePackV2Fixture>) {
+  if (pack.machine.status !== "available") throw new Error("The machine fixture is no longer available");
+  return pack.machine.value;
+}
+
+/** A fixture with one module rewritten, put back through the real contract. */
+function rebuilt(pack: ReturnType<typeof geoKnowledgePackV2Fixture>) {
+  const { contentHash: _contentHash, ...body } = pack;
+  return buildGeoKnowledgePackV2(body);
+}
+
+/**
+ * What each state must and must not say, written down independently.
+ *
+ * Every assertion below that compares rendered text against `copy.*` is
+ * satisfied by ANY string, because the component reads the same object: a
+ * review replaced `machineSampled` with "We read {count} whole pages in this
+ * run; this signal is absent from your site." and the tests stayed green. So
+ * the meaning is pinned here, as literals, and the copy tables have to agree
+ * with it. `required` is a phrase the string must carry; `forbidden` are the
+ * claims the code cannot support.
+ */
+const WORDING = {
+  sampled: {
+    en: { required: "other pages remain unknown", forbidden: ["your site", "whole page", "read from"] },
+    zh: { required: "其他页面仍然未知", forbidden: ["整站", "全站", "本次读取了"] },
+  },
+  invalidResponse: {
+    en: { required: "could not be validated", forbidden: ["HTML", "404"] },
+    zh: { required: "无法确认", forbidden: ["HTML", "404", "不是这个文件"] },
+  },
+  crawlerNone: {
+    en: { required: "not determined", forbidden: ["No rule was observed", "was read", "contains no"] },
+    zh: { required: "未判定", forbidden: ["没有观察到", "读取了完整", "没有拿到完整"] },
+  },
+  snippetsUnchecked: {
+    en: { required: "this run", forbidden: ["detected", "No snippet permission"] },
+    zh: { required: "本次", forbidden: ["未检测到", "没有检测"] },
+  },
+} as const;
+
+function assertWording(actual: string, spec: { readonly required: string; readonly forbidden: readonly string[] }) {
+  expect(actual).toContain(spec.required);
+  for (const claim of spec.forbidden) expect(actual, claim).not.toContain(claim);
+}
+
+/**
+ * The production complaint of 2026-09-10, in four assertions.
+ *
+ * The owner looked at these cards and asked the one question they could not
+ * answer from them: is this signal genuinely absent from my site, did the fetch
+ * fail, or did nobody check? Every one of these rendered as a bare verdict.
+ */
+it.each(["en", "zh"])("says WHY a machine signal is not present, in %s", async (locale) => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  // astrologywiki.com's actual shape: /llms.txt answers 200 with the site's own
+  // SPA shell. The source reason is `invalid_response`, and the card said
+  // 无法访问 -- which tells the owner to check their network when what they
+  // need to know is that they publish no llms.txt.
+  const withLlmsHtml = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, llms: { status: "unreachable" as const, sourceRefs: ["source:llms"] } } },
+    sourceCatalogue: pack.sourceCatalogue.map((source) => source.id === "source:llms"
+      ? { ...source, availability: "unavailable" as const, reason: "invalid_response" as const, observedAt: null, bodyHash: null, excerpts: [] }
+      : source),
+  };
+  await render(locale, ["machine"], rebuilt(withLlmsHtml));
+
+  const copy = geoKnowledgePackCopy(locale);
+  const llms = host.querySelector('[data-machine-field="llms"]')?.textContent ?? "";
+  expect(llms).toContain(copy.machineStatuses.unreachable);
+  expect(llms).toContain(copy.machineReasons.invalid_response);
+  // The label itself no longer asserts that nobody could reach the address.
+  expect(copy.machineStatuses.unreachable).not.toContain(locale === "zh" ? "无法访问" : "Could not be reached");
+  // `invalid_response` covers a missing Content-Type as well as an HTML body,
+  // so the clause may not name either one.
+  assertWording(copy.machineReasons.invalid_response, WORDING.invalidResponse[locale as "en" | "zh"]);
+});
+
+it.each(["en", "zh"])("scopes a page-level negative to the pages it cites, in %s", async (locale) => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  // astrologywiki.com declares hreflang on /zh/ and not on its home page. This
+  // run cited two own pages against a 558-URL sitemap: "not detected" alone is
+  // a statement about two pages published as a verdict about the site.
+  const second = { ...pack.sourceCatalogue.find((source) => source.id === "source:home")!, id: "source:about", url: "https://example.com/about" };
+  const twoPages = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, hreflang: { status: "absent" as const, locales: [], sourceRefs: ["source:home", "source:about"] } } },
+    sourceCatalogue: [...pack.sourceCatalogue, second],
+  };
+  await render(locale, ["machine"], rebuilt(twoPages));
+
+  const copy = geoKnowledgePackCopy(locale);
+  const hreflang = host.querySelector('[data-machine-field="hreflang"]')?.textContent ?? "";
+  expect(hreflang).toContain(copy.machineStatuses.absent);
+  expect(hreflang).toContain(copy.machineSampled.replace("{count}", "2"));
+  assertWording(copy.machineSampled, WORDING.sampled[locale as "en" | "zh"]);
+});
+
+it("counts addresses, not source records", async () => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  // The final v2 contract accepts two source records for one URL even though
+  // the collector deduplicates. Counting records would say "2 pages" about one.
+  const twice = { ...pack.sourceCatalogue.find((source) => source.id === "source:home")!, id: "source:home-again" };
+  const duplicated = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, hreflang: { status: "absent" as const, locales: [], sourceRefs: ["source:home", "source:home-again"] } } },
+    sourceCatalogue: [...pack.sourceCatalogue, twice],
+  };
+  await render("en", ["machine"], rebuilt(duplicated));
+
+  const copy = geoKnowledgePackCopy("en");
+  expect(host.querySelector('[data-machine-field="hreflang"]')?.textContent).toContain(copy.machineSampled.replace("{count}", "1"));
+});
+
+it("leaves out an address whose evidence is unavailable", async () => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  const home = pack.sourceCatalogue.find((source) => source.id === "source:home")!;
+  // Available home, partial /about, the home cited a second time, and an
+  // address nobody could read. Two addresses carry usable evidence; the
+  // unreadable one is not a page this signal looked at.
+  const mixedSources = [
+    ...pack.sourceCatalogue,
+    { ...home, id: "source:about", url: "https://example.com/about", availability: "partial" as const, reason: "partial_body" as const },
+    { ...home, id: "source:home-again" },
+    { ...home, id: "source:unread", url: "https://example.com/unread", availability: "unavailable" as const, reason: "timeout" as const, observedAt: null, bodyHash: null, excerpts: [] },
+  ];
+  const mixed = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, hreflang: { status: "absent" as const, locales: [],
+      sourceRefs: ["source:home", "source:about", "source:home-again", "source:unread"] } } },
+    sourceCatalogue: mixedSources,
+  };
+  await render("en", ["machine"], rebuilt(mixed));
+
+  const copy = geoKnowledgePackCopy("en");
+  expect(host.querySelector('[data-machine-field="hreflang"]')?.textContent).toContain(copy.machineSampled.replace("{count}", "2"));
+});
+
+it.each(["en", "zh"])("does not call an undetermined crawler analysis an observed absence, in %s", async (locale) => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  // Empty arrays mean the assembly had no verifiable complete rule set, never
+  // that the file was read and carried no rule for that use.
+  const undetermined = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, aiCrawlers: { search: [], training: [], sourceRefs: ["source:robots"] } } },
+  };
+  await render(locale, ["machine"], rebuilt(undetermined));
+
+  const text = host.querySelector('[data-crawler-use="search"]')?.textContent ?? "";
+  expect(text).toContain(card(locale).machine.crawlerNone);
+  assertWording(card(locale).machine.crawlerNone, WORDING.crawlerNone[locale as "en" | "zh"]);
+});
+
+it.each(["en", "zh"])("separates a check nobody ran from a check that found nothing, in %s", async (locale) => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  // Both deployed assembly branches always pass `null` for snippets, so every
+  // owner sees this state. In Chinese it read 未检测 beside cards reading
+  // 未检测到 -- one character apart, and the two mean opposite things.
+  const unchecked = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, snippets: { status: "not_checked" as const, sourceRefs: ["source:home"] } } },
+  };
+  await render(locale, ["machine"], rebuilt(unchecked));
+
+  const copy = geoKnowledgePackCopy(locale);
+  const text = host.querySelector('[data-machine-field="snippets"]')?.textContent ?? "";
+  expect(text).toContain(card(locale).machine.snippetStatuses.not_checked);
+  // The point of the change: it names the RUN, so it cannot be read as a
+  // finding about the site the way the neighbouring `absent` cards are. The
+  // old zh string was 未检测, one character off the 未检测到 beside it.
+  assertWording(card(locale).machine.snippetStatuses.not_checked, WORDING.snippetsUnchecked[locale as "en" | "zh"]);
+  expect(copy.machineStatuses.absent.startsWith(card(locale).machine.snippetStatuses.not_checked)).toBe(false);
+});
+
+it.each(["en", "zh"])("names a coverage row in the reader's language and keeps what the row knows, in %s", async (locale) => {
+  const pack = geoKnowledgePackV2Fixture();
+  // The v3 publisher writes a specific summary and a specific recovery action
+  // for an owner who excluded every item in a section. An earlier draft of this
+  // change replaced both with one localized sentence and cost the owner the
+  // only thing the row knew.
+  const excluded = {
+    ...pack,
+    coverage: { status: "available" as const, value: [{
+      id: "coverage:qa", label: "Q&A", status: "missing" as const,
+      summary: "You excluded every item in this section, so it is not published.",
+      nextAction: "Restore an excluded item to publish this section.",
+      sourceRefs: [],
+    }] },
+  };
+  await render(locale, ["coverage"], rebuilt(excluded));
+
+  const copy = geoKnowledgePackCopy(locale);
+  const text = host.textContent ?? "";
+  expect(text).toContain(copy.coverageLabels.qa);
+  expect(text).toContain("You excluded every item in this section");
+  expect(text).toContain("Restore an excluded item");
+  if (locale === "zh") expect(text).not.toContain("Q&A");
+  // "缺失" reads as a failure. Content the owner deliberately removed is not
+  // missing, and this badge covers both.
+  // Neither a failure ("缺失") nor a claim about generation: this content was
+  // generated and then removed by its owner.
+  expect(copy.coverageStatuses.missing).toBe(locale === "zh" ? "未收录" : "Not included");
+});
+
+it("names the questions row, which has no module of its own", async () => {
+  const pack = geoKnowledgePackV2Fixture();
+  const questions = {
+    ...pack,
+    coverage: { status: "available" as const, value: [{
+      id: "coverage:questions", label: "Question set", status: "missing" as const,
+      summary: "This version has no question set.", nextAction: null, sourceRefs: [],
+    }] },
+  };
+  await render("zh", ["coverage"], rebuilt(questions));
+
+  expect(host.textContent).toContain("问题集");
+  expect(host.textContent).not.toContain("Question set");
+});
+
+it("renders a stored coverage id that names a prototype member", async () => {
+  const pack = geoKnowledgePackV2Fixture();
+  // `coverage:__proto__` passes the contract. A plain dictionary index returns
+  // `Object.prototype`, which React refuses to render -- the whole card, and
+  // everything after it, disappears with "Objects are not valid as a React
+  // child". The stored label is the right answer for an id nobody knows.
+  const hostile = {
+    ...pack,
+    coverage: { status: "available" as const, value: [
+      { id: "coverage:__proto__", label: "Custom coverage", status: "missing" as const, summary: "Unavailable.", nextAction: null, sourceRefs: [] },
+      { id: "coverage:constructor", label: "Another row", status: "missing" as const, summary: "Unavailable.", nextAction: null, sourceRefs: [] },
+      { id: "entity", label: "Bare id", status: "missing" as const, summary: "Unavailable.", nextAction: null, sourceRefs: [] },
+    ] },
+  };
+  await render("zh", ["coverage"], rebuilt(hostile));
+
+  const text = host.textContent ?? "";
+  expect(text).toContain("Custom coverage");
+  expect(text).toContain("Another row");
+  // A bare `entity` is not a coverage key and must not acquire that name.
+  expect(text).toContain("Bare id");
+  expect(text).not.toContain(geoKnowledgePackCopy("zh").coverageLabels.entity);
+});
+
 it("keeps a partial module visible and states its limitation", async () => {
   await render("en", ["qa"]);
 

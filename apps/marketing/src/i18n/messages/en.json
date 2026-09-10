@@ -5497,7 +5497,7 @@
             "generation_unavailable": "Knowledge synthesis was unavailable for this section.",
             "outcome_unknown": "The synthesis outcome is unknown, so no result is shown.",
             "insufficient_evidence": "The available evidence is not sufficient to form this section yet.",
-            "not_applicable": "This section does not apply to the current product.",
+            "not_applicable": "This section does not apply here.",
             "context_stale": "The saved source context changed before this section could be completed.",
             "owner_excluded_all": "You excluded every item in this section, so it is not published.",
             "owner_excluded_required": "You excluded a field this section cannot be published without, so it is not published."
@@ -5517,7 +5517,7 @@
           "snippets": "Snippet permission",
           "crawlerSearch": "Search use",
           "crawlerTraining": "Training use",
-          "crawlerNone": "No rule was observed for this use.",
+          "crawlerNone": "Crawler permissions were not determined in this run.",
           "access": {
             "allowed": "Allowed",
             "disallowed": "Disallowed",
@@ -5526,7 +5526,7 @@
           "snippetStatuses": {
             "allowed": "Allowed",
             "blocked": "Blocked",
-            "not_checked": "Not checked"
+            "not_checked": "Not checked in this run"
           }
         },
         "entityFields": {
