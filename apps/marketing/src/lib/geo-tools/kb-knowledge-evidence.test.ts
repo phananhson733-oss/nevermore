@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import * as evidenceModule from "./kb-knowledge-evidence.ts";
+import { buildGeoKnowledgeSynthesisInputV1 } from "./kb-knowledge-synthesis-contract.ts";
+import { buildGeoKnowledgeSynthesisInputV2 } from "./kb-knowledge-synthesis-v2-contract.ts";
+import { geoV2ProfileRefFixture } from "./kb-knowledge-synthesis-v2-fixtures.ts";
 
 import {
   GEO_KNOWLEDGE_EVIDENCE_LIMITS,
@@ -52,6 +55,41 @@ function baseResources(home = `
     "https://example.com/robots.txt": text("https://example.com/robots.txt", "User-agent: *\nAllow: /\nSitemap: https://example.com/sitemap.xml"),
     "https://example.com/sitemap.xml": text("https://example.com/sitemap.xml", "<?xml version=\"1.0\"?><urlset><url><loc>https://example.com/</loc></url></urlset>", "application/xml"),
     "https://example.com/llms.txt": text("https://example.com/llms.txt", "# Example\nPublic product summary."),
+  };
+}
+
+/**
+ * A site served at `www.` whose apex 307s there -- astrologywiki.com's shape.
+ *
+ * Every entry is keyed by the address the collector REQUESTS and answers with
+ * the address that SERVED it, which is what a followed redirect looks like to
+ * the reader. The markup deliberately mixes relative links with absolute
+ * `www.` ones, and puts the canonical and both hreflang alternates on the
+ * sibling spelling, because those are the four places a strict host test
+ * silently drops content.
+ */
+function wwwAnsweredResources(): Record<string, GeoKnowledgeResourceResult> {
+  return {
+    "https://example.com/": html("https://www.example.com/", `
+      <html lang="en">
+        <head>
+          <title>Example</title>
+          <meta name="description" content="Evidence-backed product description">
+          <link rel="canonical" href="https://www.example.com/">
+          <link rel="alternate" hreflang="en" href="https://www.example.com/">
+          <link rel="alternate" hreflang="de" href="https://www.example.com/de">
+          <script type="application/ld+json">{"@type":"Organization","name":"Example"}</script>
+        </head>
+        <body><h1>Example product</h1><p>Public product evidence.</p>
+          <a href="/pricing">Plans</a><a href="https://www.example.com/about">Company</a>
+        </body>
+      </html>`),
+    "https://example.com/pricing": html("https://www.example.com/pricing", "<h1>Pricing</h1><p>Plans and prices.</p>"),
+    "https://example.com/about": html("https://www.example.com/about", "<h1>About</h1><p>Company facts.</p>"),
+    "https://example.com/robots.txt": text("https://www.example.com/robots.txt", "User-agent: *\nAllow: /"),
+    "https://example.com/sitemap.xml": text("https://www.example.com/sitemap.xml",
+      "<?xml version=\"1.0\"?><urlset><url><loc>https://www.example.com/</loc></url><url><loc>https://www.example.com/pricing</loc></url></urlset>", "application/xml"),
+    "https://example.com/llms.txt": text("https://www.example.com/llms.txt", "# Example\nPublic product summary."),
   };
 }
 
@@ -573,64 +611,131 @@ describe("GEO knowledge evidence collection", () => {
   });
 
   /**
-   * The production defect of 2026-09-10, reproduced.
+   * The production defect of 2026-09-10, reproduced, and followed all the way
+   * to the contract that refused the update.
    *
-   * astrologywiki.com serves at `www.` and 307s its apex there, which is the
-   * ordinary shape of a site with two names. `readPage` compared the answering
-   * address with `asPublicUrl` -- exact host equality -- filed the answer as
-   * `invalid_response`, and the bundle ended up with no own-site evidence at
-   * all: `availability: "unavailable"`, which the knowledge generation refuses
-   * as invalid input. The owner saw the whole update fail.
+   * astrologywiki.com serves at `www.` and 307s its apex there -- the ordinary
+   * shape of a site with two names, and the shape of the target the owner had
+   * saved. `asPublicUrl` demanded `url.host === base.host`, so the answer was
+   * filed as `invalid_response`, no own-site page was ever read, the bundle
+   * came back `unavailable`, and the knowledge generation refused its own
+   * input in 4.2 seconds with no generation record.
    *
-   * It stayed hidden because the home page was always credited from a stored
-   * row instead, so this path was never taken until the reuse rules changed.
+   * It stayed hidden while the home page was credited from a stored row: that
+   * reader has no such check, so the row existed and this path was never
+   * taken. PR #339 stopped crediting rows it could not rebuild, and the very
+   * next production run took it.
+   *
+   * The assertion that matters most is the last one. A first attempt at this
+   * fix filed the answer under `https://www.example.com/`, which satisfied the
+   * collector and was then thrown out by `buildGeoKnowledgeSynthesisInputV2`
+   * as a `Foreign own-site source` -- the same update failing one step later.
+   * Own-site addresses carry ONE spelling, the target's, and this test is what
+   * says so past the collector's own boundary.
    */
-  it("reads a home page answered from the site's other spelling of its host", async () => {
-    const resources = baseResources();
-    resources["https://example.com/"] = {
-      kind: "ok",
-      // The address that ANSWERED, which is what the reader hands back.
-      url: "https://www.example.com/",
-      body: `<html lang="en"><head><title>Example</title>
-        <link rel="canonical" href="https://www.example.com/">
-        <link rel="alternate" hreflang="en" href="https://www.example.com/en">
-        </head><body><h1>Example product</h1><p>Public product evidence.</p>
-        <a href="https://www.example.com/pricing">Pricing</a></body></html>`,
-      contentType: "text/html; charset=utf-8",
-      observedAt: OBSERVED_AT,
-    };
-    resources["https://www.example.com/pricing"] = html("https://www.example.com/pricing",
-      `<html lang="en"><head><title>Pricing</title></head><body><h1>Pricing</h1><p>Plans and prices.</p></body></html>`);
+  it("reads a site whose apex is answered by its www sibling, and files it under the target's spelling", async () => {
+    const resources = wwwAnsweredResources();
+    const readResource = reader(resources);
 
     const result = await collectGeoKnowledgeEvidenceV1(
       { targetUrl: "https://example.com/", competitors: [] },
-      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+      { readResource, now: () => new Date(COLLECTED_AT) },
     );
-
     // The one thing that was broken: there IS own-site evidence.
     expect(result.availability).not.toBe("unavailable");
-    expect(result.pages.map((page) => page.url)).toContain("https://www.example.com/");
-    // Filed under the address that answered, and the integrity checks accept it
-    // as this site's own rather than as a foreign source.
-    const own = result.sourceCatalogue.filter((source) => source.kind === "own_page");
-    expect(own.every((source) => source.availability === "available")).toBe(true);
-    // The page really was parsed: its links were followed and its markup read.
-    expect(result.machine.hreflang).toMatchObject({ status: "present", locales: ["en"] });
-    expect(own.length).toBeGreaterThan(1);
+    // One spelling, everywhere. Not "https://www.example.com/".
+    expect(result.pages.map((page) => page.url)).toEqual([
+      "https://example.com/", "https://example.com/about", "https://example.com/pricing",
+    ]);
+    expect(result.sourceCatalogue.every((source) => source.url === null || source.url.startsWith("https://example.com/"))).toBe(true);
+    expect(result.sourceCatalogue.filter((source) => source.kind === "own_page").every((source) => source.availability === "available")).toBe(true);
+    // The page was really parsed, and the absolute `www.` markup it carries was
+    // read rather than discarded: a strict host test drops both of these.
+    expect(result.pages[0]!.canonicalUrl).toBe("https://example.com/");
+    expect(result.machine.hreflang).toMatchObject({ status: "present", locales: ["de", "en"] });
+    expect(result.machine.jsonLd).toMatchObject({ status: "present", types: ["Organization"] });
+    // Its links were followed, including the one written as an absolute `www.`
+    // address -- that link is how `/about` got read at all.
+    expect(readResource.mock.calls.map(([{ url }]) => url)).toContain("https://example.com/about");
+    // Machine files answered from the sibling too, and the sitemap is quoted
+    // as the document spells it while still being matched to the page.
+    expect(result.machine.sitemap).toMatchObject({ status: "present", urlCount: 2 });
+    expect((result.machine.sitemap as { locations: string[] }).locations).toEqual([
+      "https://www.example.com/", "https://www.example.com/pricing",
+    ]);
+    expect(evidenceModule.geoSitemapListsPage(
+      (result.machine.sitemap as { locations: string[] }).locations, "https://example.com/pricing",
+    )).toBe(true);
   });
 
-  it("still refuses a home page answered from a genuinely different site", async () => {
+  /**
+   * The step that actually refused the owner's update, asserted on its own.
+   *
+   * It is separate from the collection test above on purpose. The first
+   * attempt at this fix filed the answer under `https://www.example.com/`,
+   * which satisfied the collector completely -- every own-site page read, every
+   * machine signal present -- and was then thrown out one call later by
+   * `buildGeoKnowledgeSynthesisInputV2`, whose own-site rule is
+   * `new URL(source.url).host === new URL(body.targetUrl).host`. The V3
+   * preparer calls that builder and turns the exception into `invalid_input`,
+   * so the owner saw the same failure with a different cause. A test that stops
+   * where the collector stops cannot tell those two apart; this one can, and
+   * fails at the builder rather than at an earlier assertion.
+   *
+   * Both contracts, because both carry that rule and either could become the
+   * one a future caller uses.
+   */
+  it("hands a www-answered bundle to both synthesis contracts without a foreign-source refusal", async () => {
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      { readResource: reader(wwwAnsweredResources()), now: () => new Date(COLLECTED_AT) },
+    );
+
+    const profile = { officialName: "Example", aliases: [], categoryTerms: ["Astrology reference"], market: "US", language: "en-US" };
+    expect(() => buildGeoKnowledgeSynthesisInputV2({ ...profile, profileRef: geoV2ProfileRefFixture(), generationInputHash: "a".repeat(64) }, result)).not.toThrow();
+    expect(() => buildGeoKnowledgeSynthesisInputV1(profile, result)).not.toThrow();
+    // Not vacuous: the catalogue the builders accepted really does carry the
+    // site's own pages, rather than being empty enough to have nothing to refuse.
+    expect(buildGeoKnowledgeSynthesisInputV1(profile, result).sourceCatalogue.filter((source) => source.kind === "own_page").length).toBeGreaterThan(1);
+  });
+
+  it("still refuses a page answered from a genuinely different site", async () => {
     const resources = baseResources();
-    resources["https://example.com/"] = {
-      kind: "ok", url: "https://elsewhere.test/", body: "<html><body><h1>Elsewhere</h1><p>Not this site.</p></body></html>",
-      contentType: "text/html; charset=utf-8", observedAt: OBSERVED_AT,
-    };
+    resources["https://example.com/"] = html("https://elsewhere.test/", "<html><body><h1>Elsewhere</h1><p>Not this site.</p></body></html>");
+
     const result = await collectGeoKnowledgeEvidenceV1(
       { targetUrl: "https://example.com/", competitors: [] },
       { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
     );
+
     expect(result.availability).toBe("unavailable");
     expect(result.sourceCatalogue.find((source) => source.kind === "own_page")?.reason).toBe("invalid_response");
+  });
+
+  it("keeps a competitor page under the confirmed competitor's own key when its apex answers from www", async () => {
+    const resources = baseResources(`
+      <html lang="en"><head><title>Example</title></head>
+      <body><h1>Example product</h1><p>Public product evidence.</p></body></html>`);
+    resources["https://rival.test/"] = html("https://www.rival.test/",
+      `<html><head><title>Rival</title></head><body><h1>Rival</h1><p>Rival facts.</p>
+        <a href="https://www.rival.test/pricing">Pricing</a></body></html>`);
+    resources["https://rival.test/pricing"] = html("https://www.rival.test/pricing", "<h1>Rival pricing</h1><p>Rival plans.</p>");
+
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [{ key: "rival.test", name: "Rival", confirmed: true }] },
+      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+    );
+
+    // `competitor.key` is the identity every contract downstream compares the
+    // source URL's host against, so the sibling spelling is folded onto it.
+    expect(result.sourceCatalogue.filter((source) => source.kind === "competitor_page").map((source) => source.url)).toEqual([
+      "https://rival.test/", "https://rival.test/pricing",
+    ]);
+    expect(() => buildGeoKnowledgeSynthesisInputV2({
+      officialName: "Example", aliases: [], categoryTerms: ["Astrology reference"],
+      market: "US", language: "en-US", profileRef: geoV2ProfileRefFixture(),
+      generationInputHash: "a".repeat(64),
+    }, result)).not.toThrow();
   });
 
   /**

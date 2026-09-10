@@ -174,26 +174,69 @@ function sourceId(kind: SourceKind, url: string): string { return `${kind}-${sha
 function clean(value: string): string { return value.replace(/\s+/gu, " ").trim(); }
 function bounded(value: string): string { return Array.from(clean(value)).slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints).join(""); }
 function boundedExact(value: string): string { return Array.from(value).slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints).join(""); }
-function asPublicUrl(value: string, base: URL, permitFragment = false): string | null { try { const url = new URL(value, base); if (!permitFragment && url.hash !== "") return null; url.hash = ""; if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.port !== "" || url.host !== base.host) return null; return url.toString(); } catch { return null; } }
+/**
+ * One address on the base's own site, spelled the way the base is spelled.
+ *
+ * The host test used to be `url.host === base.host`, and that single equality
+ * is what made a site served at `www.` unreadable. A target spelled
+ * `https://example.com/` is answered by `https://www.example.com/`, `readPage`
+ * filed the answer as `invalid_response`, no own-site page was ever collected,
+ * and the knowledge generation refused its own input before reaching the model.
+ * astrologywiki.com hit exactly that on 2026-09-10, in 4.2 seconds, with no
+ * generation record to say why.
+ *
+ * An apex and its `www` sibling are one site everywhere else in this pipeline:
+ * `canonicalCrawlTargetKey` budgets the crawl quota against a single target and
+ * `machineResourceAnsweredRequest` accepts the sibling as an answer to the
+ * request. So the sibling is accepted here too, and RE-SPELLED onto the base's
+ * host.
+ *
+ * Re-spelling rather than accepting both spellings is the whole design. Every
+ * consumer downstream of this collector identifies an own-site source by
+ * `new URL(source.url).host === new URL(targetUrl).host` --
+ * `kb-knowledge-synthesis-v2-contract.ts`, `kb-knowledge-synthesis-contract.ts`,
+ * `kb-knowledge-pack.ts`, `kb-prepared-contract.ts`, `geo-kb-v2-wire.ts` -- and
+ * `assertEvidenceIntegrity` below requires a page's links, canonical and
+ * hreflang to share the page's own host. Filing the answer under `www.` passes
+ * this collector and is then thrown out by the next contract as a foreign
+ * source, which moves the failure instead of fixing it. One target, one
+ * spelling, and the invariant every consumer already assumes stays true.
+ *
+ * The address is re-spelled; nothing quoted is. Sitemap `<loc>` values are
+ * published as excerpts, so `sitemapLocation` below deliberately keeps the
+ * document's own spelling -- a quotation that has been rewritten is not one.
+ *
+ * A genuinely different host still returns null.
+ */
+function asPublicUrl(value: string, base: URL, permitFragment = false): string | null {
+  try {
+    const url = new URL(value, base);
+    if (!permitFragment && url.hash !== "") return null;
+    url.hash = "";
+    if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.port !== "") return null;
+    if (url.host !== base.host) {
+      const key = canonicalCrawlTargetKey(url.href); const baseKey = canonicalCrawlTargetKey(base.href);
+      if (key === null || key === "" || baseKey === null || key !== baseKey) return null;
+      url.host = base.host;
+    }
+    return url.toString();
+  } catch { return null; }
+}
 /**
  * One `<loc>` value, as this site's own address or not at all.
  *
- * The difference from `asPublicUrl` is the host test, and it is the whole
- * reason this exists: `asPublicUrl` demands `url.host === base.host`, so a
- * sitemap that lists `https://www.example.com/...` under a target spelled
- * `https://example.com/` has EVERY location discarded and the site is reported
- * as listing zero URLs. That is not a hypothetical -- it is what production
- * reported about a site publishing 558 of them on 2026-09-09.
+ * Sibling-tolerant like `asPublicUrl` above, and for the same reason: a
+ * sitemap listing `https://www.example.com/...` under a target spelled
+ * `https://example.com/` had EVERY location discarded and the site was
+ * reported as listing zero URLs. That is not a hypothetical -- it is what
+ * production said about a site publishing 558 of them on 2026-09-09.
  *
- * The two spellings are one site to everything else in this codebase: the
- * crawl gate budgets against the apex host (`canonicalCrawlTargetKey`), and
- * `machineResourceAnsweredRequest` above already accepts the sibling as an
- * answer to the request. Location extraction is the last place that did not.
- *
- * Page links, hreflang alternates and canonical URLs deliberately keep the
- * strict test: those are claims the PAGE makes about itself, and a page on one
- * host linking to the other is a fact worth not flattening. A sitemap entry is
- * an address, and the address is the same address.
+ * What it does NOT do is re-spell. A `<loc>` is published as an excerpt of the
+ * sitemap, so the value kept here has to be the value the document carries;
+ * rewriting a quotation to a spelling the document never used would be a
+ * different kind of lie than the one this fixed. `geoSitemapListsPage` below
+ * is what bridges the two spellings when a location is matched to a page, and
+ * it compares addresses rather than strings for exactly that reason.
  */
 function sitemapLocation(value: string, base: URL): string | null {
   try {
@@ -211,55 +254,6 @@ function sitemapLocation(value: string, base: URL): string | null {
 }
 
 /**
- * The address a page request was actually answered from, or null.
- *
- * A site served at `www.` normally 307s its apex there, so asking for
- * `https://example.com/` and being answered by `https://www.example.com/` is
- * the ordinary case, not a redirect off-site. `asPublicUrl` demands
- * `url.host === base.host` and answered null, which `readPage` files as
- * `invalid_response` -- so for every such site the collector could not read the
- * home page AT ALL, the bundle had no own-site evidence, and the knowledge
- * generation refused its own input.
- *
- * That went unseen because the home page was always credited from a stored row
- * instead: the fetch operation's reader has no such check, so the row existed
- * and this path was never taken. It is taken now, and astrologywiki.com found
- * it on the first run.
- *
- * The same rule the rest of this file already uses for one site's two names:
- * `machineResourceAnsweredRequest` above, `sitemapLocation` below, and the
- * crawl gate itself, which budgets against the apex. A genuinely different
- * host is still refused.
- */
-function answeredFrom(finalUrl: string, requestedUrl: string): string | null {
-  try {
-    const url = new URL(finalUrl);
-    const base = new URL(requestedUrl);
-    if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.port !== "" || url.hash !== "") return null;
-    const key = canonicalCrawlTargetKey(url.href);
-    const baseKey = canonicalCrawlTargetKey(base.href);
-    if (key === null || key === "" || baseKey === null || key !== baseKey) return null;
-    const href = url.toString();
-    return strictPublicUrl(href) ? href : null;
-  } catch { return null; }
-}
-
-/**
- * One host as this contract counts hosts for an own-site address.
- *
- * Own-site sources are filed under whichever spelling answered, so the
- * integrity checks compare sites rather than strings. Competitor sources are
- * compared against the confirmed competitor's key the same way, for the same
- * reason: a competitor whose apex redirects to `www.` is that competitor.
- */
-function sameSite(left: string, right: string): boolean {
-  const leftKey = canonicalCrawlTargetKey(left.startsWith("https://") ? left : `https://${left}/`);
-  const rightKey = canonicalCrawlTargetKey(right.startsWith("https://") ? right : `https://${right}/`);
-  return leftKey !== null && leftKey !== "" && leftKey === rightKey;
-}
-
-/**
- * Whether a sitemap lists a page, comparing addresses rather than strings./**
  * Whether a sitemap lists a page, comparing addresses rather than strings.
  *
  * Same reason as above: `https://example.com/pricing` and
@@ -359,7 +353,7 @@ export function pageData(body: string, pageUrl: string): Page & { excerpts: stri
 
 function validateReusedSources(sources: readonly GeoKnowledgeEvidenceSource[], target: URL, competitors: readonly Competitor[]): GeoKnowledgeEvidenceSource[] {
   const seenIds = new Set<string>(); const seenUrls = new Set<string>(); const confirmed = new Map(competitors.map((competitor) => [competitor.key, competitor])); const validated: GeoKnowledgeEvidenceSource[] = [];
-  for (const raw of sources) { const source = sourceSchema.parse(raw); if (seenIds.has(source.id) || source.url !== null && seenUrls.has(source.url)) continue; seenIds.add(source.id); if (source.url !== null) seenUrls.add(source.url); if (["own_page", "robots", "sitemap", "llms"].includes(source.kind) && source.url !== null && !sameSite(source.url, target.href)) throw new Error("Foreign own-site source"); if (source.kind === "competitor_page") { const competitor = source.competitor!; if (confirmed.get(competitor.key)?.name !== competitor.name || source.url === null || !sameSite(source.url, competitor.key)) throw new Error("Unconfirmed or foreign competitor source"); } validated.push(source); }
+  for (const raw of sources) { const source = sourceSchema.parse(raw); if (seenIds.has(source.id) || source.url !== null && seenUrls.has(source.url)) continue; seenIds.add(source.id); if (source.url !== null) seenUrls.add(source.url); if (["own_page", "robots", "sitemap", "llms"].includes(source.kind) && source.url !== null && new URL(source.url).host !== target.host) throw new Error("Foreign own-site source"); if (source.kind === "competitor_page") { const competitor = source.competitor!; if (confirmed.get(competitor.key)?.name !== competitor.name || source.url === null || new URL(source.url).host !== competitor.key) throw new Error("Unconfirmed or foreign competitor source"); } validated.push(source); }
   return validated;
 }
 function responseIsValid(result: unknown): result is Extract<GeoKnowledgeResourceResult, { kind: "ok" }> { if (!result || typeof result !== "object") return false; const value = result as Record<string, unknown>; return value.kind === "ok" && typeof value.url === "string" && typeof value.body === "string" && typeof value.contentType === "string" && typeof value.observedAt === "string" && canonicalTimestamp(value.observedAt); }
@@ -440,7 +434,7 @@ export async function collectGeoKnowledgeEvidenceV1(input: { targetUrl: string; 
     if (reusedUrls.has(requestUrl) || !canRead()) return null;
     const result = await dependencies.readResource({ url: requestUrl, expected: "html", timeoutMs: timeout() });
     if (!responseIsValid(result)) { const reason = result && typeof result === "object" && (result as { kind?: unknown }).kind === "unavailable" ? unavailableReason((result as { reason?: unknown }).reason) : "invalid_response"; addSource(unavailableSource(kind, requestUrl, reason, competitor)); return null; }
-    const finalUrl = answeredFrom(result.url, requestUrl);
+    const finalUrl = asPublicUrl(result.url, new URL(requestUrl));
     if (finalUrl === null || !expectedContentType("html", result.contentType) || Buffer.byteLength(result.body, "utf8") > GEO_KNOWLEDGE_EVIDENCE_LIMITS.pageBytes) { addSource(unavailableSource(kind, requestUrl, "invalid_response", competitor)); return null; }
     const parsed = pageData(result.body, finalUrl); if (parsed.excerpts.length === 0) { addSource(unavailableSource(kind, finalUrl, "insufficient_evidence", competitor)); return null; } if (seenPageUrls.has(finalUrl) || parsed.canonicalUrl !== null && seenCanonicalUrls.has(parsed.canonicalUrl)) return null; seenPageUrls.add(finalUrl); if (parsed.canonicalUrl !== null) seenCanonicalUrls.add(parsed.canonicalUrl);
     addSource({ id: sourceId(kind, finalUrl), kind, label: kind === "own_page" ? "Own site page" : "Competitor page", url: finalUrl, competitor, availability: "available", reason: null, observedAt: result.observedAt, bodyHash: sha256(result.body), excerpts: parsed.excerpts.slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.maxExcerpts) });
@@ -483,14 +477,8 @@ function assertEvidenceIntegrity(body: EvidenceBody): void {
   for (const kind of ["robots", "sitemap", "llms"] as const) if (body.sourceCatalogue.filter((source) => source.kind === kind).length > 1) throw new Error("Machine source limit exceeded");
   for (const source of body.sourceCatalogue) {
     if (source.observedAt !== null && source.observedAt > body.collectedAt) throw new Error("Source observation exceeds collection time");
-    /*
-     * The SITE, not the string. A page answered from `www.` when the target is
-     * the apex is that site's own page -- see `answeredFrom` -- and filing it
-     * under the address that answered is what lets the collector read it at
-     * all. A genuinely foreign host still throws.
-     */
-    if (["own_page", "robots", "sitemap", "llms"].includes(source.kind) && source.url !== null && !sameSite(source.url, target.href)) throw new Error("Foreign own-site source");
-    if (source.kind === "competitor_page" && (source.url === null || source.competitor === null || competitors.get(source.competitor.key)?.name !== source.competitor.name || !sameSite(source.url, source.competitor.key))) throw new Error("Invalid competitor source");
+    if (["own_page", "robots", "sitemap", "llms"].includes(source.kind) && source.url !== null && new URL(source.url).host !== target.host) throw new Error("Foreign own-site source");
+    if (source.kind === "competitor_page" && (source.url === null || source.competitor === null || competitors.get(source.competitor.key)?.name !== source.competitor.name || new URL(source.url).host !== source.competitor.key)) throw new Error("Invalid competitor source");
     if (source.url !== null) { const url = new URL(source.url); if (source.kind === "robots" && (url.pathname !== "/robots.txt" || url.search !== "")) throw new Error("Invalid robots source URL"); if (source.kind === "llms" && (url.pathname !== "/llms.txt" || url.search !== "")) throw new Error("Invalid llms source URL"); if (source.kind === "sitemap" && (url.search !== "" || !url.pathname.toLocaleLowerCase("en").includes("sitemap") || !url.pathname.toLocaleLowerCase("en").endsWith(".xml"))) throw new Error("Invalid sitemap source URL"); }
   }
   const pageUrls = new Set<string>(); const canonicalUrls = new Set<string>();
