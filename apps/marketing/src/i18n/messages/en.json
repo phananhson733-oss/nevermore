@@ -1190,7 +1190,7 @@
         "search_console_window_may_predate_a_recently_published_page": "The Search Console window may predate a recently published page, which would appear here as a page that has never been shown.",
         "robots_rules_read_for_one_search_crawler_token_only": "robots.txt rules were read for a single search-crawler token. A group written for a different crawler is not reflected here.",
         "breadcrumb_markup_presence_only_not_compared_to_visible_trail": "Only whether BreadcrumbList markup exists. Whether it matches the breadcrumb a reader sees is not checked here.",
-        "static_html_img_tags_only_css_and_script_rendered_images_not_seen": "Only <img> tags in the static HTML. Images inserted by CSS or by script are not seen here.",
+        "static_html_img_tags_only_css_and_script_rendered_images_not_seen": "Only '<img>' tags in the static HTML. Images inserted by CSS or by script are not seen here.",
         "format_read_from_the_url_extension_only_not_from_the_response": "Format is read from the URL extension, not from the response. An image served as WebP from an extensionless URL is not counted either way.",
         "static_html_meta_tags_only": "Read from the static HTML meta tags only. Tags added by script after load are not seen.",
         "heading_levels_read_from_static_html_in_document_order": "Heading levels are read from the static HTML in document order, counting from the page's first heading.",
@@ -1448,7 +1448,7 @@
         },
         "image_without_alt_text": {
           "title": "Pages with an image that has no alt attribute",
-          "description": "Collected pages carrying at least one <img> with no alt attribute at all. An empty alt marks a decorative image and counts as covered. Read from static HTML, so images inserted by CSS or script are not seen."
+          "description": "Collected pages carrying at least one '<img>' with no alt attribute at all. An empty alt marks a decorative image and counts as covered. Read from static HTML, so images inserted by CSS or script are not seen."
         },
         "image_in_legacy_format": {
           "title": "Pages serving images in a legacy format",
@@ -4726,7 +4726,7 @@
         "handoffPending": "A brief handed over from the Content Brief Builder is waiting. Sign in and it will be loaded.",
         "handoffKeepFailed": "Signed in. To keep the loaded brief, this page did not refresh. You can generate right away; keep your input before refreshing by hand.",
         "pasteLabel": "Paste the brief JSON",
-        "pastePlaceholder": "{ \"schema\": \"gengrowth.confirmed_brief/v3\", … } (confirmed v2, SEO v1 and shared GEO v1.1 also accepted)",
+        "pastePlaceholder": "'{ \"schema\": \"gengrowth.confirmed_brief/v3\", … }' (confirmed v2, SEO v1 and shared GEO v1.1 also accepted)",
         "load": "Load brief",
         "uploadLabel": "Or upload the exported .json file",
         "invalidJson": "That is not valid JSON, so it was not parsed as a brief.",

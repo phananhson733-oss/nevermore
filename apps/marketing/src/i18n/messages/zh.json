@@ -1190,7 +1190,7 @@
         "search_console_window_may_predate_a_recently_published_page": "Search Console 的统计窗口可能早于新发布的页面，这类页面会在这里显示为从未被展示过。",
         "robots_rules_read_for_one_search_crawler_token_only": "robots.txt 规则只按单一搜索抓取器标记读取。为其他抓取器单独写的分组不体现在这里。",
         "breadcrumb_markup_presence_only_not_compared_to_visible_trail": "只判定 BreadcrumbList 标记是否存在。它与读者实际看到的面包屑是否一致，这里不作检查。",
-        "static_html_img_tags_only_css_and_script_rendered_images_not_seen": "仅统计静态 HTML 中的 <img> 标签。由 CSS 或脚本插入的图片在这里看不到。",
+        "static_html_img_tags_only_css_and_script_rendered_images_not_seen": "仅统计静态 HTML 中的 '<img>' 标签。由 CSS 或脚本插入的图片在这里看不到。",
         "format_read_from_the_url_extension_only_not_from_the_response": "格式依据 URL 扩展名读取，不依据响应内容。以 WebP 提供、但 URL 无扩展名的图片两个方向都不计。",
         "static_html_meta_tags_only": "仅依据静态 HTML 的 meta 标签。加载后由脚本追加的标签在这里看不到。",
         "heading_levels_read_from_static_html_in_document_order": "标题层级依据静态 HTML 按文档顺序读取，从页面的第一个标题开始计。",
@@ -1448,7 +1448,7 @@
         },
         "image_without_alt_text": {
           "title": "存在无 alt 属性图片的页面",
-          "description": "已采集页面中，至少有一张 <img> 完全没有 alt 属性的页面。空 alt 是装饰性图片的标记，计为已覆盖。依据静态 HTML 读取，由 CSS 或脚本插入的图片看不到。"
+          "description": "已采集页面中，至少有一张 '<img>' 完全没有 alt 属性的页面。空 alt 是装饰性图片的标记，计为已覆盖。依据静态 HTML 读取，由 CSS 或脚本插入的图片看不到。"
         },
         "image_in_legacy_format": {
           "title": "以旧格式提供图片的页面",
@@ -4726,7 +4726,7 @@
         "handoffPending": "有一份从 Content Brief Builder 交接过来的 brief 在等待。登录后将载入。",
         "handoffKeepFailed": "登录已成功；为保留已载入的 brief，本页没有刷新。可以直接生成；手动刷新前请保留输入。",
         "pasteLabel": "粘贴 brief JSON",
-        "pastePlaceholder": "{ \"schema\": \"gengrowth.confirmed_brief/v3\", … }（也接受已确认 v2、SEO v1 和共享 GEO v1.1）",
+        "pastePlaceholder": "'{ \"schema\": \"gengrowth.confirmed_brief/v3\", … }'（也接受已确认 v2、SEO v1 和共享 GEO v1.1）",
         "load": "载入 brief",
         "uploadLabel": "或上传导出的 .json 文件",
         "invalidJson": "这不是合法的 JSON，没有按 brief 解析。",

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { IntlErrorCode, createTranslator } from "next-intl";
 import {
   COMPETITOR_KEYWORD_GAP_ERROR_CODES,
   COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS,
@@ -214,10 +215,15 @@ function placeholders(value: string): readonly string[] {
 /**
  * Every string underneath a value, arrays included.
  *
- * `leafMessages` below stops at an array on purpose -- the catalog has none,
- * and treating one as a branch would invent index paths for the parity checks.
- * The tool page's content is the opposite shape: its steps, feature cards and
- * FAQ entries are all arrays, and a walk that stops there reads nothing at all
+ * `leafMessages` below stops at an array on purpose, so that an array does not
+ * become a branch and invent index paths for the parity checks. That used to
+ * be free because the catalog held no arrays; it now holds twelve -- the FAQ
+ * and related-tool lists on five tool pages, and the three pricing feature
+ * lists -- so the two walks no longer read the same strings. The ICU sweep
+ * below therefore uses this function rather than `leafMessages`.
+ *
+ * The tool page's content is the same shape: its steps, feature cards and FAQ
+ * entries are all arrays, and a walk that stops there reads nothing at all
  * while reporting success.
  */
 function leafStrings(value: unknown, prefix = ""): readonly (readonly [string, string])[] {
@@ -246,6 +252,48 @@ function leafMessages(
   );
 }
 
+/**
+ * The message paths whose ICU source next-intl cannot parse.
+ *
+ * Compiled through `createTranslator`, which is the code path the pages
+ * themselves run, rather than through a regex over the source. Braces are
+ * legitimate ICU syntax -- `{count, plural, one {# gap} other {# gaps}}` is a
+ * correct message -- so a pattern that flags them reports mostly noise: one
+ * sweep over this catalog turned up 37 candidates of which exactly one was a
+ * real defect.
+ *
+ * The empty values object is load-bearing. `t(key)` with no second argument
+ * takes a fast path that returns the source string untouched, so a guard
+ * written that way compiles nothing and passes on every catalog it is ever
+ * given. Passing values forces the compile.
+ *
+ * A message that parses but wants values it did not get fails as
+ * FORMATTING_ERROR, which is expected here and not a defect -- INVALID_MESSAGE
+ * is the code that means the source itself is unparseable.
+ */
+function malformedPaths(
+  locale: string,
+  entries: readonly (readonly [string, string])[],
+): readonly string[] {
+  const malformed: string[] = [];
+  let current = "";
+  const t = createTranslator({
+    locale,
+    messages: Object.fromEntries(
+      entries.map(([, message], index) => [String(index), message]),
+    ),
+    onError(error) {
+      if (error.code === IntlErrorCode.INVALID_MESSAGE) malformed.push(current);
+    },
+  });
+
+  entries.forEach(([path], index) => {
+    current = path;
+    t(String(index), {});
+  });
+  return malformed;
+}
+
 describe("message catalogs", () => {
   /**
    * next-intl renders the key path instead of throwing when a key is missing,
@@ -263,6 +311,51 @@ describe("message catalogs", () => {
 
     expect(en.filter((key) => !zh.includes(key))).toEqual([]);
     expect(zh.filter((key) => !en.includes(key))).toEqual([]);
+  });
+
+  /**
+   * A message whose ICU source does not parse fails the same way a missing key
+   * does: next-intl reports the error and renders the key path, so the reader
+   * gets `tools.contentDraft.intake.pastePlaceholder` where the copy should be.
+   * The parity test above cannot see it -- the key IS present in both
+   * catalogs, and both copies are broken in the same way.
+   *
+   * Worth holding even though such a message can look fine in production. The
+   * production build skips the compile for a message that is given no values
+   * and carries no ICU escape, and hands back the source string; the dev build
+   * compiles the same message and shows the key path. So the defect surfaces
+   * on every `pnpm dev` session, and reaches the deployed page the moment the
+   * message takes a value, gains an escape elsewhere in the sentence, or
+   * next-intl changes which messages it compiles -- three edits that have no
+   * reason to look risky to whoever makes them.
+   *
+   * Swept with `leafStrings` rather than `leafMessages` because the catalog now
+   * holds twelve arrays, and a walk that stops at them reads none of the
+   * strings inside while reporting success.
+   */
+  it.each([
+    ["en", enMessages],
+    ["zh", zhMessages],
+  ] as const)("compiles every %s message as valid ICU", (locale, messages) => {
+    expect(malformedPaths(locale, leafStrings(messages))).toEqual([]);
+  });
+
+  /**
+   * Proves the guard above is still live.
+   *
+   * It rests on next-intl compiling the message when values are passed, which
+   * is an implementation detail of a dependency, not a promise -- and the one
+   * thing that keeps the sweep above from depending on which build resolves
+   * here. If a future version stops compiling on this path, the sweep goes
+   * quietly green on every catalog it is ever given and nothing else notices.
+   * This is the string that actually shipped broken -- an unescaped `{`
+   * opening what ICU reads as an argument.
+   */
+  it("still detects a message that ICU cannot parse", () => {
+    const shipped =
+      '{ "schema": "gengrowth.confirmed_brief/v3", … } (confirmed v2)';
+
+    expect(malformedPaths("en", [["canary", shipped]])).toEqual(["canary"]);
   });
 });
 
