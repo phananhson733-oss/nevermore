@@ -50,6 +50,7 @@ import {
   geoKbV3DraftBlockers,
   relockGeoKbV3Draft,
   useGeoKbV3Editor,
+  type GeoKbV3AutosaveHold,
   type GeoKbV3Blocker,
   type GeoKbV3Relocked,
 } from "./use-geo-kb-v3-editor.ts";
@@ -169,11 +170,13 @@ function Field({ label, value, onChange, rows = 1, describedBy = null, invalid =
   </label>;
 }
 
-function CorrectionForm({ draft, onChange, onSave, onCancel, t }: {
+function CorrectionForm({ draft, onChange, onSave, onCancel, held, t }: {
   readonly draft: Draft;
   readonly onChange: (draft: Draft) => void;
   readonly onSave: () => void;
   readonly onCancel: () => void;
+  /** The card cannot save anything; see `decisionsHeld`. */
+  readonly held: boolean;
   readonly t: ReturnType<typeof useTranslations>;
 }) {
   const override = overrideOf(draft);
@@ -217,13 +220,28 @@ function CorrectionForm({ draft, onChange, onSave, onCancel, t }: {
         type="button"
         size="sm"
         data-correction-save=""
-        disabled={override === null}
+        disabled={override === null || held}
         {...(issueId === null ? {} : { "aria-describedby": issueId })}
         onClick={onSave}
       >{t("review.correctionSave")}</Button>
       <Button type="button" size="sm" variant="outline" data-correction-cancel="" onClick={onCancel}>{t("review.correctionCancel")}</Button>
     </div>
   </div>;
+}
+
+/**
+ * Nothing the owner decides from here can be saved.
+ *
+ * Both holds are permanent for the life of the card (see `conflictHold` /
+ * `inputChangedHold` in `use-geo-kb-v3-editor.ts`), so a control that queues a
+ * decision has to be dead rather than accept one and drop it. Every such
+ * control asks this one function: the correction form's save was left off the
+ * list when the gate was spelled out three separate times, and it spent that
+ * whole time closing the form and drawing the row as the owner's own claim
+ * over a queue that never flushed.
+ */
+function decisionsHeld(hold: GeoKbV3AutosaveHold | null): boolean {
+  return hold === "conflict" || hold === "inputChanged";
 }
 
 interface RowContext {
@@ -270,7 +288,7 @@ function Item({ item, typeLabel, correction, excludeBlockedReason = null, contex
     onCorrect: () => { if (correction !== null) open(item.itemKey, correction); },
     onExclude: () => editor.exclude(item.itemKey),
     onRevert: () => editor.revert(item.itemKey),
-    disabled: editor.autosaveHold === "conflict" || editor.autosaveHold === "inputChanged",
+    disabled: decisionsHeld(editor.autosaveHold),
     excludeBlockedReason,
   };
   return <div className="min-w-0 space-y-2">
@@ -298,6 +316,7 @@ function Item({ item, typeLabel, correction, excludeBlockedReason = null, contex
       onChange={change}
       onSave={() => { const override = overrideOf(draft); if (override !== null) { editor.correct(item.itemKey, override); close(); } }}
       onCancel={close}
+      held={decisionsHeld(editor.autosaveHold)}
       t={t}
     /> : null}
   </div>;
@@ -312,7 +331,7 @@ function AcceptAll({ editor, itemKeys, t }: { readonly editor: Editor; readonly 
       variant="outline"
       size="sm"
       data-accept-all=""
-      disabled={editor.autosaveHold === "conflict" || editor.autosaveHold === "inputChanged"}
+      disabled={decisionsHeld(editor.autosaveHold)}
       onClick={() => editor.acceptAll(pending)}
     >{t("review.acceptAll", { count: pending.length })}</Button>
   </div>;
@@ -507,14 +526,16 @@ function ScopeModule({ knowledge, context, packCopy }: {
     state={geoKbModuleState(knowledge.scope)}
     action={<AcceptAll editor={context.editor} itemKeys={keys} t={context.t} />}
   >
-    {/* One block per group, never a flat list.
+    {/* One block per group, stacked, never side by side and never a flat list.
         The four groups answer four different questions -- what it does, what it
         does not, what still needs a person, what people get wrong -- and a
         group with nothing in it is a finding, not an absence to skip. Flattened
         into one list, an empty `doesNot` disappeared from the screen entirely,
         which reads as "we did not measure that" being rendered as "there is
-        nothing to say". */}
-    <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+        nothing to say". Two columns put the third and fourth questions beside
+        the first and second, which reads as two pairs rather than four
+        answers. The comparison module right above it stacks the same way. */}
+    <div className="min-w-0 space-y-5">
       {SCOPE_GROUPS.map((group) => <GeoKbEvidenceGroup
         key={group}
         title={packCopy.scopeGroups[group] ?? group}
@@ -703,7 +724,7 @@ function runTally(operations: readonly GeoKbRunOperationView[]): RunTally {
   return { done, outstanding, unknownOutcome, unsupported, chargeUnresolved, failed };
 }
 
-function RunPanel({ phase, run, resume, recovering, busyStreak, onContinue, t }: {
+function RunPanel({ phase, run, resume, recovering, busyStreak, onContinue, onReload, t }: {
   readonly phase: GeoKbRunPhase;
   readonly run: GeoKbRunView | null;
   /** A run this knowledge base still has open, from the free read on load. */
@@ -736,6 +757,8 @@ function RunPanel({ phase, run, resume, recovering, busyStreak, onContinue, t }:
    */
   readonly busyStreak: number;
   readonly onContinue: () => void;
+  /** Redraw from the server; see `reloadThisPage`. */
+  readonly onReload: () => void;
   readonly t: ReturnType<typeof useTranslations>;
 }) {
   // A sustained refusal outranks the phase. `phase` describes what this tab is
@@ -803,9 +826,19 @@ function RunPanel({ phase, run, resume, recovering, busyStreak, onContinue, t }:
         Gated on a run id rather than on "a call came back": a first call that
         was refused before a run existed wrote nothing, and pointing that owner
         at a reload implies something is waiting there for them. */}
-    {run === null || run.runId === null || phase !== "idle" ? null : <span data-run-reload="" className="block text-[12px] leading-relaxed text-text-dark-secondary">
-      {t("run.notReloaded")}
-    </span>}
+    {run === null || run.runId === null || phase !== "idle" ? null : <div className="min-w-0 space-y-1">
+      <span data-run-reload="" className="block text-[12px] leading-relaxed text-text-dark-secondary">
+        {t("run.notReloaded")}
+      </span>
+      {/* The sentence asks for a reload, so the reload is here. Without it the
+          owner reads "you are looking at the version from before" and carries
+          on deciding on that version -- every one of those decisions is then
+          refused as stale, which is the dead card this button exists to
+          prevent. */}
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Button type="button" variant="outline" size="sm" data-kb-reload="" onClick={onReload}>{t("recovery.reload")}</Button>
+      </div>
+    </div>}
     {next === null ? null : <span data-run-next="" className="block text-[12px] leading-relaxed text-text-dark-secondary">
       {next}
     </span>}
@@ -1603,7 +1636,7 @@ export function GeoKnowledgeBaseV3({ view, locale, inline = false, confirmedProf
     publish={rebuilt ? null : {
       ...editor.publishPlan,
       onPublish: () => void editor.publish(),
-      disabled: hold === "conflict" || hold === "inputChanged",
+      disabled: decisionsHeld(hold),
       busy: editor.busy,
     }}
     sections={sections}
@@ -1615,6 +1648,7 @@ export function GeoKnowledgeBaseV3({ view, locale, inline = false, confirmedProf
       recovering={recovery.kind === "working"}
       busyStreak={busyStreak}
       onContinue={() => void drive(true)}
+      onReload={onReload ?? reloadThisPage}
       t={t}
     />}
     <RecoveryPanel
@@ -1638,6 +1672,17 @@ export function GeoKnowledgeBaseV3({ view, locale, inline = false, confirmedProf
               : editor.status.kind === "busy" ? t("review.saving")
                 : editor.status.kind === "saved" ? t("review.saved") : ""}
     </span>
+    {/* A conflict stops every automatic write for the life of this card, and
+        the buttons in every module go dead with it -- correctly, because
+        nothing decided here can be saved any more. That makes the way out the
+        only thing left on the screen that matters, so it is a control and not
+        just the last clause of a grey sentence.
+
+        Only for `conflict`. `inputChanged` asks for an update, not a reload,
+        and the update button at the head of the card is still live. */}
+    {hold !== "conflict" ? null : <div className="flex flex-wrap gap-2">
+      <Button type="button" variant="outline" size="sm" data-kb-reload="" onClick={onReload ?? reloadThisPage}>{t("recovery.reload")}</Button>
+    </div>}
     {editor.published === null ? null : <span data-publish-outcome="" role="status" className="block text-[13px] leading-relaxed text-text-dark-secondary">
       {editor.published.reusedExisting
         ? t("review.publishReused", { version: String(editor.published.revision) })
