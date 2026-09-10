@@ -122,6 +122,130 @@ it.each(["en", "zh"])("reports search-use and training-use crawler rules separat
   expect(host.querySelector('[data-machine-field="snippets"]')?.textContent).toContain(card(locale).machine.snippetStatuses.allowed);
 });
 
+/** The fixture's machine module, which is `available` and must stay that way. */
+function machineOf(pack: ReturnType<typeof geoKnowledgePackV2Fixture>) {
+  if (pack.machine.status !== "available") throw new Error("The machine fixture is no longer available");
+  return pack.machine.value;
+}
+
+/** A fixture with one module rewritten, put back through the real contract. */
+function rebuilt(pack: ReturnType<typeof geoKnowledgePackV2Fixture>) {
+  const { contentHash: _contentHash, ...body } = pack;
+  return buildGeoKnowledgePackV2(body);
+}
+
+/**
+ * The production complaint of 2026-09-10, in four assertions.
+ *
+ * The owner looked at these cards and asked the one question they could not
+ * answer from them: is this signal genuinely absent from my site, did the fetch
+ * fail, or did nobody check? Every one of these rendered as a bare verdict.
+ */
+it.each(["en", "zh"])("says WHY a machine signal is not present, in %s", async (locale) => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  // astrologywiki.com's actual shape: /llms.txt answers 200 with the site's own
+  // SPA shell. The source reason is `invalid_response`, and the card said
+  // 无法访问 -- which tells the owner to check their network when what they
+  // need to know is that they publish no llms.txt.
+  const withLlmsHtml = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, llms: { status: "unreachable" as const, sourceRefs: ["source:llms"] } } },
+    sourceCatalogue: pack.sourceCatalogue.map((source) => source.id === "source:llms"
+      ? { ...source, availability: "unavailable" as const, reason: "invalid_response" as const, observedAt: null, bodyHash: null, excerpts: [] }
+      : source),
+  };
+  await render(locale, ["machine"], rebuilt(withLlmsHtml));
+
+  const copy = geoKnowledgePackCopy(locale);
+  const llms = host.querySelector('[data-machine-field="llms"]')?.textContent ?? "";
+  expect(llms).toContain(copy.machineStatuses.unreachable);
+  expect(llms).toContain(copy.machineReasons.invalid_response);
+  // The label itself no longer asserts that nobody could reach the address.
+  expect(copy.machineStatuses.unreachable).not.toContain(locale === "zh" ? "无法访问" : "Could not be reached");
+});
+
+it.each(["en", "zh"])("scopes a page-level negative to the pages it read, in %s", async (locale) => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  // astrologywiki.com declares hreflang on /zh/ and not on its home page. This
+  // run read the home page. "Not detected" alone is a statement about one page
+  // published as a verdict about a 558-URL site.
+  const noHreflang = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, hreflang: { status: "absent" as const, locales: [], sourceRefs: ["source:home"] } } },
+  };
+  await render(locale, ["machine"], rebuilt(noHreflang));
+
+  const copy = geoKnowledgePackCopy(locale);
+  const hreflang = host.querySelector('[data-machine-field="hreflang"]')?.textContent ?? "";
+  expect(hreflang).toContain(copy.machineStatuses.absent);
+  expect(hreflang).toContain(copy.machineSampled.replace("{count}", "1"));
+  // The count is the number of own pages actually READ, so it can never claim
+  // more reading than happened.
+  expect(hreflang).toContain("1");
+});
+
+it.each(["en", "zh"])("does not call an undetermined crawler analysis an observed absence, in %s", async (locale) => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  // Empty arrays mean the assembly had no verifiable complete rule set, never
+  // that the file was read and carried no rule for that use.
+  const undetermined = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, aiCrawlers: { search: [], training: [], sourceRefs: ["source:robots"] } } },
+  };
+  await render(locale, ["machine"], rebuilt(undetermined));
+
+  const text = host.querySelector('[data-crawler-use="search"]')?.textContent ?? "";
+  expect(text).toContain(card(locale).machine.crawlerNone);
+  expect(card(locale).machine.crawlerNone).not.toContain(locale === "zh" ? "没有观察到" : "No rule was observed");
+});
+
+it.each(["en", "zh"])("separates a check nobody ran from a check that found nothing, in %s", async (locale) => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  // Both deployed assembly branches always pass `null` for snippets, so every
+  // owner sees this state. In Chinese it read 未检测 beside cards reading
+  // 未检测到 -- one character apart, and the two mean opposite things.
+  const unchecked = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, snippets: { status: "not_checked" as const, sourceRefs: ["source:home"] } } },
+  };
+  await render(locale, ["machine"], rebuilt(unchecked));
+
+  const copy = geoKnowledgePackCopy(locale);
+  const text = host.querySelector('[data-machine-field="snippets"]')?.textContent ?? "";
+  expect(text).toContain(card(locale).machine.snippetStatuses.not_checked);
+  // The point of the change: it can no longer be mistaken for the observed
+  // negative rendered on every neighbouring card.
+  expect(card(locale).machine.snippetStatuses.not_checked).not.toBe(copy.machineStatuses.absent);
+  expect(copy.machineStatuses.absent.startsWith(card(locale).machine.snippetStatuses.not_checked)).toBe(false);
+});
+
+it.each(["en", "zh"])("names a coverage row in the reader's language and does not invent its cause, in %s", async (locale) => {
+  const pack = geoKnowledgePackV2Fixture();
+  // The stored row is the server's English, and the same sentence for every
+  // reason a section produced nothing.
+  const missing = {
+    ...pack,
+    coverage: { status: "available" as const, value: [{
+      id: "coverage:comparisons", label: "Comparisons", status: "missing" as const,
+      summary: "This content is currently unavailable.",
+      nextAction: "Review available evidence before relying on this section.",
+      sourceRefs: [],
+    }] },
+  };
+  await render(locale, ["coverage"], rebuilt(missing));
+
+  const copy = geoKnowledgePackCopy(locale);
+  const text = host.textContent ?? "";
+  expect(text).toContain(copy.coverageLabels.comparisons);
+  expect(text).toContain(copy.coverageMissing);
+  expect(text).not.toContain("This content is currently unavailable.");
+  if (locale === "zh") expect(text).not.toContain("Comparisons");
+});
+
 it("keeps a partial module visible and states its limitation", async () => {
   await render("en", ["qa"]);
 

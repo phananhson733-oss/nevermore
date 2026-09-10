@@ -5497,7 +5497,7 @@
             "generation_unavailable": "这一节的知识归纳未能完成。",
             "outcome_unknown": "归纳结果未知，因此不展示内容。",
             "insufficient_evidence": "现有证据还不足以形成这一节。",
-            "not_applicable": "这一节不适用于当前产品。",
+            "not_applicable": "本次没有确认对比对象，因此没有生成对比知识。",
             "context_stale": "保存的来源上下文在这一节完成前发生了变化。",
             "owner_excluded_all": "这一节的条目已被你全部排除，因此没有发布。",
             "owner_excluded_required": "你排除了这一节不能缺少的字段，因此这一节没有发布。"
@@ -5517,7 +5517,7 @@
           "snippets": "摘要许可",
           "crawlerSearch": "搜索用途",
           "crawlerTraining": "训练用途",
-          "crawlerNone": "没有观察到针对这一用途的规则。",
+          "crawlerNone": "尚无法判定：本次没有拿到完整的 robots.txt 规则。",
           "access": {
             "allowed": "允许",
             "disallowed": "禁止",
@@ -5526,7 +5526,7 @@
           "snippetStatuses": {
             "allowed": "允许",
             "blocked": "禁止",
-            "not_checked": "未检测"
+            "not_checked": "本次未检查"
           }
         },
         "entityFields": {

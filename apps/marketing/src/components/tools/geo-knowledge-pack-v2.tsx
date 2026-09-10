@@ -360,6 +360,45 @@ export function GeoEvidenceModuleView({ module, sources, heading, locale, copy, 
   </GeoKbModuleSection>;
 }
 
+/**
+ * The one clause a card needs when its signal is not `present`.
+ *
+ * Two different sentences, because the states are two different things:
+ *
+ * A RESOURCE signal (llms.txt, robots.txt, sitemap) names one address, and the
+ * reason its source records is why that address did not answer with the file.
+ * The card's own label cannot carry it -- `unreachable` is a timeout, a
+ * refusal, a rate limit and a 200 that returned the wrong document, and
+ * astrologywiki.com is the last of those: it serves its SPA shell at
+ * /llms.txt. `Basis` below drops unavailable sources, so until this existed
+ * the reason was in the data and on no screen.
+ *
+ * A PAGE signal (JSON-LD, hreflang) is a union over the pages this run read,
+ * and `absent` is only ever true OF THOSE PAGES. Two pages read against a
+ * 558-URL sitemap is a sample, and astrologywiki.com does declare hreflang --
+ * on /zh/, which this run never read. So the negative is published with the
+ * number it is true of rather than as a verdict about the site.
+ */
+function MachineNote({ kind, status, refs, sources, copy }: {
+  readonly kind: string;
+  readonly status: string;
+  readonly refs: readonly string[];
+  readonly sources: SourceIndex;
+  readonly copy: GeoKnowledgePackCopy;
+}) {
+  if (status === "present") return null;
+  const cited = refs.flatMap((ref) => { const source = sources.get(ref); return source === undefined ? [] : [source]; });
+  if (kind === "jsonLd" || kind === "hreflang") {
+    // Own pages that were actually read. An unavailable source is an address
+    // nobody read, and counting it would inflate the claim this line makes.
+    const read = cited.filter((source) => source.availability !== "unavailable").length;
+    return <Compact className="mt-2 text-text-dark-secondary">{copy.machineSampled.replace("{count}", String(read))}</Compact>;
+  }
+  const reason = cited.find((source) => source.availability === "unavailable" && source.reason !== null)?.reason ?? null;
+  if (reason === null || copy.machineReasons[reason] === undefined) return null;
+  return <Compact className="mt-2 text-text-dark-secondary">{copy.machineReasons[reason]}</Compact>;
+}
+
 export function GeoMachineModuleView({ module, sources, heading, locale, copy, card }: GeoReadOnlyModuleProps<GeoModuleValueOf<GeoKnowledgePackV2["machine"]>>) {
   const machine = geoKbModuleValue(module);
   return <GeoKbModuleSection title={copy.sections.machine} heading={heading} state={geoKbModuleState(module)}>
@@ -369,6 +408,7 @@ export function GeoMachineModuleView({ module, sources, heading, locale, copy, c
         <Compact className="mt-1 font-medium">{copy.machineStatuses[machine[kind].status]}</Compact>
         {kind === "jsonLd" && machine.jsonLd.types.length > 0 ? <Compact className="mt-2 text-text-dark-secondary">{copy.fields.types}: {machine.jsonLd.types.join(" · ")}</Compact> : null}
         {kind === "hreflang" && machine.hreflang.locales.length > 0 ? <Compact className="mt-2 text-text-dark-secondary">{copy.fields.locales}: {machine.hreflang.locales.join(" · ")}</Compact> : null}
+        <MachineNote kind={kind} status={machine[kind].status} refs={machine[kind].sourceRefs} sources={sources} copy={copy} />
         {kind === "sitemap" && machine.sitemap.status === "present" ? <Compact className="mt-2 text-text-dark-secondary">{copy.fields.sitemapUrls}: {machine.sitemap.urlCount}</Compact> : null}
         <Basis refs={machine[kind].sourceRefs} sources={sources} copy={copy} locale={locale} />
       </div>)}
@@ -399,16 +439,32 @@ export function GeoMachineModuleView({ module, sources, heading, locale, copy, c
   </GeoKbModuleSection>;
 }
 
+/**
+ * A coverage row's section name, in the reader's language.
+ *
+ * The row's `label` is English prose the server wrote into the stored pack, and
+ * rendering it verbatim put "Comparisons" in the middle of a Chinese page. The
+ * id carries the key (`coverage:comparisons`), so the name is looked up; a row
+ * whose key this copy does not know keeps whatever it was stored with.
+ */
+function coverageLabel(id: string, stored: string, copy: GeoKnowledgePackCopy): string {
+  return copy.coverageLabels[id.slice(id.indexOf(":") + 1)] ?? stored;
+}
+
 export function GeoCoverageModuleView({ module, sources, heading, locale, copy }: GeoReadOnlyModuleProps<GeoModuleValueOf<GeoKnowledgePackV2["coverage"]>>) {
   const coverage = geoKbModuleValue(module);
   return <GeoKbModuleSection title={copy.sections.coverage} heading={heading} state={geoKbModuleState(module)}>
     <div className="space-y-4">{(coverage ?? []).map((item) => <div key={item.id} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-[15px] font-semibold text-text-dark-primary">{item.label}</span>
+        <span className="text-[15px] font-semibold text-text-dark-primary">{coverageLabel(item.id, item.label, copy)}</span>
         <span className="inline-flex rounded-full border border-brand-border-card px-2.5 py-1 text-[12px] text-text-dark-secondary">{copy.coverageStatuses[item.status]}</span>
       </div>
-      <Compact className="mt-3">{item.summary}</Compact>
-      {item.nextAction === null ? null : <Compact className="mt-3 text-text-dark-secondary">{copy.fields.nextAction}: {item.nextAction}</Compact>}
+      {/* The stored summary is the server's English, written when the pack was
+          assembled and the same sentence for every reason a section produced
+          nothing. A `missing` row is rendered in the reader's language instead;
+          `partial` keeps its stored limitation, which is specific. */}
+      <Compact className="mt-3">{item.status === "missing" ? copy.coverageMissing : item.summary}</Compact>
+      {item.nextAction === null ? null : <Compact className="mt-3 text-text-dark-secondary">{copy.fields.nextAction}: {copy.coverageNextAction}</Compact>}
       <Basis refs={item.sourceRefs} sources={sources} copy={copy} locale={locale} />
     </div>)}</div>
   </GeoKbModuleSection>;

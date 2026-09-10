@@ -18,7 +18,57 @@ export interface GeoKnowledgePackCopy {
   readonly evidenceGroups: Record<string, string>;
   readonly machineFields: Record<string, string>;
   readonly machineStatuses: Record<string, string>;
+  /**
+   * Why a signal is not `present`, said in one clause beside the card.
+   *
+   * `unavailable` above explains a whole MODULE and is written as a sentence
+   * about this section; these explain ONE signal and are written as a clause
+   * about one address. They are separate because the card's own label cannot
+   * carry the difference: `machineStatuses.unreachable` covers a timeout, a
+   * refusal, a rate limit and a 200 that returned the wrong kind of document,
+   * and until 2026-09-10 it said 无法访问 for all four. astrologywiki.com
+   * serves its SPA shell at /llms.txt, which is a 200 -- calling that
+   * "could not be reached" tells the owner to check their network when what
+   * they need to know is that they do not publish the file.
+   *
+   * Keyed by string, not by `GeoKnowledgeUnavailableReason`: a v2 pack's source
+   * reason is a wider union that also carries `owner_excluded_all` and
+   * `owner_excluded_required`, which are decisions about a MODULE and never
+   * appear on a source. The reader looks the key up and prints nothing when it
+   * is absent, which is the right answer for those two.
+   */
+  readonly machineReasons: Record<string, string>;
+  /**
+   * The scope of a page-level negative, carrying the number it is true of.
+   *
+   * `machine.jsonLd` and `machine.hreflang` are unions over the pages this run
+   * actually read. With two pages read out of a 558-URL sitemap, `absent` is a
+   * statement about two pages published as a statement about the site. `{count}`
+   * is replaced with the number of own-site pages that were read.
+   */
+  readonly machineSampled: string;
   readonly coverageStatuses: Record<string, string>;
+  /**
+   * Section names for the coverage rows, by row key.
+   *
+   * The stored rows carry English labels and English prose, written by the
+   * server when the pack was assembled, and the reader rendered them verbatim
+   * into a Chinese page. The row's id carries its key, so the name is looked up
+   * here instead of trusting the stored string.
+   */
+  readonly coverageLabels: Record<string, string>;
+  /**
+   * What a coverage row says when the section produced nothing.
+   *
+   * Deliberately says only that, and points at the section. The row does not
+   * carry the reason -- the module above does -- and the stored English summary
+   * ("This content is currently unavailable.") is the same sentence for a
+   * section that does not apply, one that timed out, and one the owner
+   * excluded. Repeating a cause the row does not know is how those became
+   * indistinguishable.
+   */
+  readonly coverageMissing: string;
+  readonly coverageNextAction: string;
   readonly comparisonStatuses: Record<string, string>;
   readonly unavailable: Record<GeoKnowledgeUnavailableReason, string>;
   readonly evidenceBasis: string;
@@ -108,10 +158,35 @@ const EN: GeoKnowledgePackCopy = {
   machineStatuses: {
     present: "Present",
     absent: "Not detected",
-    unreachable: "Could not be reached",
-    not_checked: "Not checked",
+    unreachable: "Not confirmed in this run",
+    not_checked: "Not checked in this run",
   },
-  coverageStatuses: { covered: "Covered", partial: "Partly covered", missing: "Missing" },
+  machineReasons: {
+    not_collected: "not checked in this run",
+    not_published: "the address answered, and published nothing",
+    not_found: "the address returned 404",
+    timeout: "the read timed out",
+    fetch_failed: "the read failed",
+    blocked: "the site refused the request",
+    rate_limited: "the site limited how often it could be read",
+    invalid_response: "the address returned something that is not this file",
+    partial_body: "only part of it could be read",
+    unsupported_language: "this language is not supported yet",
+    generation_unavailable: "synthesis was unavailable",
+    outcome_unknown: "the outcome is unknown",
+    insufficient_evidence: "what was read is not enough to tell",
+    not_applicable: "this signal does not apply here",
+    context_stale: "the saved source changed before this finished",
+  },
+  machineSampled: "Read from {count} own-site page(s) in this run; pages that were not read remain unknown.",
+  coverageStatuses: { covered: "Covered", partial: "Partly covered", missing: "Not generated" },
+  coverageLabels: {
+    entity: "Entity definition", facts: "Reliable facts", qa: "Questions and answers",
+    comparisons: "Comparison knowledge", scope: "Scope and boundaries",
+    evidence: "Evidence and trust", machine: "Machine-readable readiness",
+  },
+  coverageMissing: "This section produced nothing in this run. The section above says why.",
+  coverageNextAction: "Review the available evidence before relying on this section.",
   comparisonStatuses: { available: "Compared", partial: "Partial evidence", unavailable: "Not enough evidence" },
   unavailable: {
     not_collected: "This information has not been collected yet.",
@@ -217,10 +292,35 @@ const ZH: GeoKnowledgePackCopy = {
   machineStatuses: {
     present: "已检测到",
     absent: "未检测到",
-    unreachable: "无法访问",
-    not_checked: "尚未检查",
+    unreachable: "本次未能确认",
+    not_checked: "本次未检查",
   },
-  coverageStatuses: { covered: "已覆盖", partial: "部分覆盖", missing: "缺失" },
+  machineReasons: {
+    not_collected: "本次没有检查这一项",
+    not_published: "该地址有响应，但没有发布内容",
+    not_found: "该地址返回 404",
+    timeout: "读取超时",
+    fetch_failed: "读取失败",
+    blocked: "网站拒绝了这次请求",
+    rate_limited: "网站限制了读取频率",
+    invalid_response: "该地址返回的不是这个文件",
+    partial_body: "只读到了一部分",
+    unsupported_language: "当前语言暂不支持",
+    generation_unavailable: "本次没有生成",
+    outcome_unknown: "本次结果未知",
+    insufficient_evidence: "读到的内容不足以判断",
+    not_applicable: "这一项在这里不适用",
+    context_stale: "保存的来源在完成前发生了变化",
+  },
+  machineSampled: "本次读取了 {count} 个自家页面；没有读到的页面仍然未知。",
+  coverageStatuses: { covered: "已覆盖", partial: "部分覆盖", missing: "未生成" },
+  coverageLabels: {
+    entity: "实体定义", facts: "可靠事实", qa: "问答",
+    comparisons: "对比知识", scope: "范围与边界",
+    evidence: "证据与可信度", machine: "机器可读性",
+  },
+  coverageMissing: "这一节本次没有生成内容。上面对应的章节写了原因。",
+  coverageNextAction: "在依赖这一节之前，先看一下现有证据。",
   comparisonStatuses: { available: "已有对比", partial: "证据不完整", unavailable: "证据不足" },
   unavailable: {
     not_collected: "这部分信息尚未采集。",
