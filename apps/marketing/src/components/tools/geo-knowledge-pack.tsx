@@ -3,17 +3,19 @@
 import type { ReactNode } from "react";
 
 import { normalizeAccountWebsiteUrl } from "../../lib/account-websites/contracts.ts";
+import type { GeoLimitationClause } from "../../lib/geo-tools/kb-knowledge-limitation.ts";
 import type { GeoKnowledgePackV1 } from "../../lib/geo-tools/kb-knowledge-pack-contract.ts";
 import type { GeoKnowledgePackV2 } from "../../lib/geo-tools/kb-knowledge-pack-v2-contract.ts";
 import { GeoKbSection } from "./geo-kb-section.tsx";
 import { GeoKnowledgePackV2View, type GeoKnowledgeModuleName } from "./geo-knowledge-pack-v2.tsx";
 import { geoKnowledgePackCopy, type GeoKnowledgePackCopy } from "./geo-knowledge-pack-copy.ts";
+import { useGeoKbCopy, type GeoKbCopy } from "./geo-kb-copy.ts";
 
 type Heading = 3 | 4;
 type Source = GeoKnowledgePackV1["sourceCatalogue"][number];
 
-function Compact({ children, className = "" }: { readonly children: ReactNode; readonly className?: string }) {
-  return <div data-knowledge-copy="compact" className={`min-w-0 whitespace-pre-wrap break-words text-[13px] leading-relaxed [overflow-wrap:anywhere] ${className}`}>{children}</div>;
+function Compact({ children, className = "", ...rest }: { readonly children: ReactNode; readonly className?: string } & Record<`data-${string}`, string | undefined>) {
+  return <div {...rest} data-knowledge-copy="compact" className={`min-w-0 whitespace-pre-wrap break-words text-[13px] leading-relaxed [overflow-wrap:anywhere] ${className}`}>{children}</div>;
 }
 
 function Subheading({ heading, children, className = "" }: { readonly heading: Heading; readonly children: ReactNode; readonly className?: string }) {
@@ -47,8 +49,21 @@ function PublicSources({ refs, sources, copy, locale }: { readonly refs: readonl
   </div>;
 }
 
-function Limitation({ value, copy }: { readonly value: string; readonly copy: GeoKnowledgePackCopy }) {
-  return <Compact className="mb-5 rounded-[10px] border border-brand-border-card bg-brand-bg px-4 py-3 text-text-dark-secondary"><span className="font-medium text-text-dark-primary">{copy.partial}:</span> {value}</Compact>;
+/**
+ * A v1 module's limitation, localized where the pack carries the keys for it.
+ *
+ * v1 packs are old by definition, so most reach this with `limitationKeys`
+ * absent and render the server's English -- which is the only thing they store.
+ * A v1 pack built after 2026-09-10 carries the keys and reads in the reader's
+ * language, the same way the v2/v3 card does.
+ */
+function Limitation({ module, copy, card }: {
+  readonly module: { readonly limitation: string; readonly limitationKeys?: readonly GeoLimitationClause[] };
+  readonly copy: GeoKnowledgePackCopy;
+  readonly card: GeoKbCopy;
+}) {
+  const localized = module.limitationKeys === undefined ? null : card.module.limitation(module.limitationKeys);
+  return <Compact data-module-limitation={localized === null ? "stored" : "localized"} className="mb-5 rounded-[10px] border border-brand-border-card bg-brand-bg px-4 py-3 text-text-dark-secondary"><span className="font-medium text-text-dark-primary">{copy.partial}:</span> {localized ?? module.limitation}</Compact>;
 }
 
 function Unavailable({ reason, copy }: { readonly reason: keyof GeoKnowledgePackCopy["unavailable"]; readonly copy: GeoKnowledgePackCopy }) {
@@ -71,6 +86,7 @@ function formatDate(value: string, locale: string): string {
 
 function GeoKnowledgePackV1View({ pack, locale, heading = 3 }: { readonly pack: GeoKnowledgePackV1; readonly locale: string; readonly heading?: Heading }) {
   const copy = geoKnowledgePackCopy(locale);
+  const card = useGeoKbCopy();
   const sources = new Map(pack.sourceCatalogue.map((source) => [source.id, source]));
   const entity = pack.entity;
   const facts = pack.facts;
@@ -84,7 +100,7 @@ function GeoKnowledgePackV1View({ pack, locale, heading = 3 }: { readonly pack: 
   return <div data-geo-knowledge-pack className="grid min-w-0 gap-6 text-text-dark-primary">
     <ModuleFrame title={copy.sections.entity} heading={heading}>
       {entity.status === "unavailable" ? <Unavailable reason={entity.reason} copy={copy} /> : <>
-        {entity.status === "partial" ? <Limitation value={entity.limitation} copy={copy} /> : null}
+        {entity.status === "partial" ? <Limitation module={entity} copy={copy} card={card} /> : null}
         <Subheading heading={heading} className="text-[17px]">{entity.value.name}</Subheading>
         <div className="mt-5 grid min-w-0 gap-4 lg:grid-cols-3">
           <Definition label={copy.fields.shortDefinition}>{entity.value.definitions.w25}</Definition>
@@ -108,7 +124,7 @@ function GeoKnowledgePackV1View({ pack, locale, heading = 3 }: { readonly pack: 
 
     <ModuleFrame title={copy.sections.facts} heading={heading}>
       {facts.status === "unavailable" ? <Unavailable reason={facts.reason} copy={copy} /> : <>
-        {facts.status === "partial" ? <Limitation value={facts.limitation} copy={copy} /> : null}
+        {facts.status === "partial" ? <Limitation module={facts} copy={copy} card={card} /> : null}
         <div className="space-y-4">{facts.value.map((fact) => <article key={fact.id} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5">
           <span className="inline-flex rounded-full border border-brand-border-card px-2.5 py-1 text-[12px] text-text-dark-secondary">{copy.factTypes[fact.type]}</span>
           <Compact className="mt-3 text-[14px] text-text-dark-primary">{fact.statement}</Compact>
@@ -123,7 +139,7 @@ function GeoKnowledgePackV1View({ pack, locale, heading = 3 }: { readonly pack: 
 
     <ModuleFrame title={copy.sections.qa} heading={heading}>
       {qa.status === "unavailable" ? <Unavailable reason={qa.reason} copy={copy} /> : <>
-        {qa.status === "partial" ? <Limitation value={qa.limitation} copy={copy} /> : null}
+        {qa.status === "partial" ? <Limitation module={qa} copy={copy} card={card} /> : null}
         <div className="space-y-4">{qa.value.map((item) => <article key={item.id} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5">
           <span className="inline-flex rounded-full border border-brand-border-card px-2.5 py-1 text-[12px] text-text-dark-secondary">{copy.intents[item.intent]}</span>
           <Subheading heading={heading} className="mt-3">{item.question}</Subheading>
@@ -139,7 +155,7 @@ function GeoKnowledgePackV1View({ pack, locale, heading = 3 }: { readonly pack: 
 
     <ModuleFrame title={copy.sections.comparisons} heading={heading}>
       {comparisons.status === "unavailable" ? <Unavailable reason={comparisons.reason} copy={copy} /> : <>
-        {comparisons.status === "partial" ? <Limitation value={comparisons.limitation} copy={copy} /> : null}
+        {comparisons.status === "partial" ? <Limitation module={comparisons} copy={copy} card={card} /> : null}
         <div className="space-y-5">{comparisons.value.map((comparison) => <article key={comparison.id} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5">
           <div className="flex flex-wrap items-baseline justify-between gap-2"><Subheading heading={heading}>{comparison.competitor.name}</Subheading><span className="text-[12px] text-text-dark-secondary">{copy.fields.checkedAt}: {formatDate(comparison.checkedAt, locale)}</span></div>
           <table className="mt-4 block w-full table-fixed text-left sm:table"><caption className="sr-only">{copy.sections.comparisons}: {comparison.competitor.name}</caption>
@@ -158,7 +174,7 @@ function GeoKnowledgePackV1View({ pack, locale, heading = 3 }: { readonly pack: 
 
     <ModuleFrame title={copy.sections.scope} heading={heading}>
       {scope.status === "unavailable" ? <Unavailable reason={scope.reason} copy={copy} /> : <>
-        {scope.status === "partial" ? <Limitation value={scope.limitation} copy={copy} /> : null}
+        {scope.status === "partial" ? <Limitation module={scope} copy={copy} card={card} /> : null}
         <div className="grid min-w-0 gap-4 sm:grid-cols-2">{(["does", "doesNot", "needsHuman", "misconceptions"] as const).map((kind) => <section key={kind} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5">
           <Subheading heading={heading}>{copy.scopeGroups[kind]}</Subheading>
           <ul className="mt-3 space-y-3">{scope.value[kind].map((item) => <li key={item.id}><Compact>{item.text}</Compact><PublicSources refs={item.sourceRefs} sources={sources} copy={copy} locale={locale} /></li>)}</ul>
@@ -168,7 +184,7 @@ function GeoKnowledgePackV1View({ pack, locale, heading = 3 }: { readonly pack: 
 
     <ModuleFrame title={copy.sections.evidence} heading={heading}>
       {evidence.status === "unavailable" ? <Unavailable reason={evidence.reason} copy={copy} /> : <>
-        {evidence.status === "partial" ? <Limitation value={evidence.limitation} copy={copy} /> : null}
+        {evidence.status === "partial" ? <Limitation module={evidence} copy={copy} card={card} /> : null}
         <div className="grid min-w-0 gap-5 sm:grid-cols-2">{(["proof", "changelog", "press", "thirdPartyProfiles"] as const).flatMap((kind) => evidence.value[kind].length === 0 ? [] : [<section key={kind} className="min-w-0">
           <Subheading heading={heading}>{copy.evidenceGroups[kind]}</Subheading>
           <ul className="mt-3 space-y-3">{evidence.value[kind].map((item) => <li key={item.id} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4">
@@ -182,7 +198,7 @@ function GeoKnowledgePackV1View({ pack, locale, heading = 3 }: { readonly pack: 
 
     <ModuleFrame title={copy.sections.machine} heading={heading}>
       {machine.status === "unavailable" ? <Unavailable reason={machine.reason} copy={copy} /> : <>
-        {machine.status === "partial" ? <Limitation value={machine.limitation} copy={copy} /> : null}
+        {machine.status === "partial" ? <Limitation module={machine} copy={copy} card={card} /> : null}
         <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {(["jsonLd", "llms", "robots", "sitemap", "hreflang"] as const).map((kind) => {
             const item = machine.value[kind];
@@ -201,7 +217,7 @@ function GeoKnowledgePackV1View({ pack, locale, heading = 3 }: { readonly pack: 
 
     <ModuleFrame title={copy.sections.coverage} heading={heading}>
       {coverage.status === "unavailable" ? <Unavailable reason={coverage.reason} copy={copy} /> : <>
-        {coverage.status === "partial" ? <Limitation value={coverage.limitation} copy={copy} /> : null}
+        {coverage.status === "partial" ? <Limitation module={coverage} copy={copy} card={card} /> : null}
         <div className="space-y-4">{coverage.value.map((item) => <article key={item.id} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5">
           <div className="flex flex-wrap items-center gap-3"><Subheading heading={heading}>{item.label}</Subheading><span className="inline-flex rounded-full border border-brand-border-card px-2.5 py-1 text-[12px] text-text-dark-secondary">{copy.coverageStatuses[item.status]}</span></div>
           <Compact className="mt-3">{item.summary}</Compact>

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";
 import { hasLoneSurrogate } from "../agents/geo-canonical.ts";
 import { geoNumericLiterals } from "./geo-numeric-literal.ts";
+import { geoLimitationKeysSchema } from "./kb-knowledge-shape.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import { geoV2JsonbBytes } from "./kb-v2-json.ts";
 
@@ -88,10 +89,15 @@ export const geoKnowledgeUnavailableReasonSchema = z.enum([
   "context_stale",
 ]);
 
+/**
+ * `limitationKeys` is optional and additive, exactly as in `geoModuleSchema`: a
+ * v1 pack published before 2026-09-10 carries only the English `limitation` and
+ * has to keep rendering, so this is not a version bump.
+ */
 function moduleSchema<T extends z.ZodTypeAny>(value: T) {
   return z.discriminatedUnion("status", [
     z.object({ status: z.literal("available"), value }).strict(),
-    z.object({ status: z.literal("partial"), limitation: text, value }).strict(),
+    z.object({ status: z.literal("partial"), limitation: text, limitationKeys: geoLimitationKeysSchema.optional(), value }).strict(),
     z.object({ status: z.literal("unavailable"), reason: geoKnowledgeUnavailableReasonSchema }).strict(),
   ]);
 }

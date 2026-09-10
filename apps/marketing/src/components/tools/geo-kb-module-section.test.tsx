@@ -154,3 +154,117 @@ it("drops the value and keeps the state, without inventing a reason", () => {
   expect(geoKbModuleValue({ status: "unavailable", reason: "timeout" })).toBeNull();
   expect(geoKbModuleValue({ status: "partial", limitation: "some", value: [1] })).toEqual([1]);
 });
+
+it("carries a limitation's clause keys through with its sentence", () => {
+  const keys = [{ key: "snippets_not_checked" }];
+  expect(geoKbModuleState({ status: "partial", limitation: "some", limitationKeys: keys, value: [1] }))
+    .toEqual({ status: "partial", limitation: "some", limitationKeys: keys });
+});
+
+/**
+ * The production complaint of 2026-09-10.
+ *
+ * The machine-readable card on the Chinese account page said, under a Chinese
+ * 「当前限制:」 label: "Some machine-readable visibility signals were absent or
+ * unavailable. Snippet permission was not checked." Both halves came from the
+ * server as English prose and were rendered verbatim.
+ *
+ * The required phrases are written here rather than read from the catalog: an
+ * assertion against `card(locale).limitations.clause.*` is satisfied by ANY
+ * wording, the English included, which is exactly the bug.
+ */
+const LOCALIZED = {
+  en: { required: ["machine-readable", "Snippet permission"], forbidden: ["limitations.clause", "snippets_not_checked"] },
+  zh: { required: ["机器可读信号", "本次没有检查摘要许可"], forbidden: ["machine-readable", "Snippet permission", "limitations.clause", "snippets_not_checked"] },
+} as const;
+
+it.each(["en", "zh"] as const)("says a limitation's clauses in %s rather than in the server's English", async (locale) => {
+  await renderModule({
+    status: "partial",
+    limitation: "Some machine-readable visibility signals were absent or unavailable. Snippet permission was not checked.",
+    limitationKeys: [{ key: "machine_signals_absent" }, { key: "snippets_not_checked" }],
+  }, locale);
+
+  const note = host.querySelector("[data-module-limitation]");
+  expect(note?.getAttribute("data-module-limitation")).toBe("localized");
+  const text = note?.textContent ?? "";
+  expect(text).toContain(card(locale).module.partial);
+  for (const phrase of LOCALIZED[locale].required) expect(text, phrase).toContain(phrase);
+  for (const phrase of LOCALIZED[locale].forbidden) expect(text, phrase).not.toContain(phrase);
+});
+
+it("fills a clause's numbers and names from its parameters", async () => {
+  await renderModule({
+    status: "partial",
+    limitation: "stored",
+    limitationKeys: [
+      { key: "evidence_groups_not_collected", params: { groups: "press,thirdPartyProfiles" } },
+      { key: "offsite_stage_stopped", params: { stage: "landing_pages", reason: "rate_limited", count: 5 } },
+    ],
+  }, "zh");
+
+  // Literals, not `zh.tools...card.groups.press`: the resolver reads that key,
+  // so an assertion against it passes for whatever the key holds.
+  const text = host.querySelector("[data-module-limitation]")?.textContent ?? "";
+  expect(text).toContain("本次没有采集：媒体报道、第三方档案。");
+  expect(text).toContain("落地页抓取");
+  expect(text).toContain("受到频率限制");
+  expect(text).toContain("5");
+  // No contract token reaches the page, and the stored English is not shown
+  // beside the Chinese it was replaced by.
+  expect(text).not.toContain("thirdPartyProfiles");
+  expect(text).not.toContain("landing_pages");
+  expect(text).not.toContain("rate_limited");
+  expect(text).not.toContain("stored");
+});
+
+/**
+ * A pack published before 2026-09-10 carries only the server's sentence. It is
+ * rendered as it always was: English on a Chinese page is worse than Chinese,
+ * and better than a blank where a limitation used to be.
+ */
+it.each(["en", "zh"])("renders a stored sentence unchanged when the payload carries no keys, in %s", async (locale) => {
+  await renderModule({ status: "partial", limitation: "Only published pages were read." }, locale);
+
+  const note = host.querySelector("[data-module-limitation]");
+  expect(note?.getAttribute("data-module-limitation")).toBe("stored");
+  expect(note?.textContent).toContain("Only published pages were read.");
+});
+
+/**
+ * All-or-nothing, and this is why.
+ *
+ * A payload written by a newer build can carry a clause this build has never
+ * heard of, and a clause whose parameters are not what it needs. Rendering the
+ * clauses this build DOES know would publish a limitation shorter than the one
+ * the payload claims -- the reader told about one problem out of two, with no
+ * way to know a second existed. The stored sentence has both.
+ */
+it.each([
+  ["an unknown key", [{ key: "machine_signals_absent" }, { key: "a_clause_from_next_year" }]],
+  ["a parameter the clause cannot use", [{ key: "evidence_items_unshowable", params: { count: "many" } }]],
+  ["a group name that is not a group", [{ key: "evidence_groups_not_collected", params: { groups: "press,__proto__" } }]],
+  ["a reason that is not a reason", [{ key: "offsite_pages_unread", params: { count: 1, reason: "toString" } }]],
+  // `constructor` and `toString` pass the contract's key rule -- they are
+  // ordinary lowercase words -- and a plain index on the clause table would
+  // reach `Object.prototype` through them and call what it found.
+  ["a key that names a prototype member", [{ key: "constructor" }]],
+  ["a key that names a prototype method", [{ key: "machine_signals_absent" }, { key: "toString" }]],
+  // A known key with an EXTRA parameter is a clause a newer build wrote with
+  // more to say. Rendering this build's parameterless sentence would drop the
+  // reason and the recovery action while still claiming to be the limitation.
+  ["a known key carrying a parameter this build cannot render", [{ key: "snippets_not_checked", params: { reason: "unauthenticated" } }]],
+  ["a known key missing the parameter it needs", [{ key: "evidence_items_unshowable" }]],
+] as const)("falls back to the whole stored sentence for %s", async (_case, limitationKeys) => {
+  await renderModule({
+    status: "partial",
+    limitation: "One clause. And a second clause the reader must not lose.",
+    limitationKeys: [...limitationKeys],
+  }, "zh");
+
+  const note = host.querySelector("[data-module-limitation]");
+  expect(note?.getAttribute("data-module-limitation")).toBe("stored");
+  expect(note?.textContent).toContain("One clause. And a second clause the reader must not lose.");
+  expect(note?.textContent).not.toContain("[object Object]");
+  expect(note?.textContent).not.toContain("limitations.clause");
+});

@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, expect, it } from "vitest";
 
+import en from "../../i18n/messages/en.json";
+import zh from "../../i18n/messages/zh.json";
 import { GeoKnowledgePack } from "./geo-knowledge-pack.tsx";
 import { geoKnowledgePackFixture } from "./geo-knowledge-pack.test-fixtures.ts";
 
@@ -21,8 +24,17 @@ afterEach(async () => {
   host.remove();
 });
 
+/**
+ * The provider is not test scaffolding: both pack views read the shared card
+ * catalog through next-intl, so every place that mounts this component in the
+ * app is already inside one.
+ */
 async function render(locale = "zh", pack = geoKnowledgePackFixture()) {
-  await act(async () => root.render(<GeoKnowledgePack pack={pack} locale={locale} heading={3} />));
+  await act(async () => root.render(
+    <NextIntlClientProvider locale={locale} timeZone="UTC" messages={locale === "zh" ? zh : en}>
+      <GeoKnowledgePack pack={pack} locale={locale} heading={3} />
+    </NextIntlClientProvider>,
+  ));
 }
 
 it("renders all customer knowledge modules in the shared section-card language", async () => {
@@ -82,6 +94,39 @@ it("renders partial and unavailable states honestly without raw reason codes", a
   expect(host.textContent).toContain("读取公开页面超时，暂时无法确认这部分内容");
   expect(host.textContent).not.toContain("insufficient_evidence");
   expect(host.textContent).not.toContain("timeout");
+});
+
+/**
+ * A v1 pack built after 2026-09-10 carries clause keys beside its sentence, and
+ * this view has to read them too.
+ *
+ * v1 is the OLD renderer, which is exactly why it is easy to leave behind: most
+ * v1 packs predate the keys and render the server's English, so a change that
+ * ignored `limitationKeys` here would look right in every fixture that already
+ * existed. The required Chinese is written out rather than read from the
+ * catalog, because an assertion against the catalog passes for the English too.
+ */
+it("says a v1 module's limitation in Chinese when the pack carries its clause keys", async () => {
+  const original = geoKnowledgePackFixture();
+  if (original.qa.status !== "partial") throw new Error("partial qa fixture required");
+  const pack = {
+    ...original,
+    qa: {
+      ...original.qa,
+      limitation: "Model-synthesized questions are missing: this section contains only question-and-answer markup observed on the site.",
+      limitationKeys: [{ key: "qa_without_model" }],
+    },
+  };
+  await render("zh", pack);
+
+  const note = Array.from(host.querySelectorAll("[data-module-limitation]"))
+    .find((node) => node.getAttribute("data-module-limitation") === "localized");
+  expect(note).not.toBeUndefined();
+  expect(note?.textContent).toContain("问答标记");
+  expect(note?.textContent).not.toContain("Model-synthesized questions");
+  // The pack's other partial module has no keys and keeps its stored sentence,
+  // so this is not a renderer that localized everything by accident.
+  expect(host.textContent).toContain("当前限制");
 });
 
 it("keeps every comparison-row evidence state visible on desktop and mobile", async () => {
