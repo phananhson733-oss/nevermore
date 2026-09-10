@@ -135,6 +135,41 @@ function rebuilt(pack: ReturnType<typeof geoKnowledgePackV2Fixture>) {
 }
 
 /**
+ * What each state must and must not say, written down independently.
+ *
+ * Every assertion below that compares rendered text against `copy.*` is
+ * satisfied by ANY string, because the component reads the same object: a
+ * review replaced `machineSampled` with "We read {count} whole pages in this
+ * run; this signal is absent from your site." and the tests stayed green. So
+ * the meaning is pinned here, as literals, and the copy tables have to agree
+ * with it. `required` is a phrase the string must carry; `forbidden` are the
+ * claims the code cannot support.
+ */
+const WORDING = {
+  sampled: {
+    en: { required: "other pages remain unknown", forbidden: ["your site", "whole page", "read from"] },
+    zh: { required: "其他页面仍然未知", forbidden: ["整站", "全站", "本次读取了"] },
+  },
+  invalidResponse: {
+    en: { required: "could not be validated", forbidden: ["HTML", "404"] },
+    zh: { required: "无法确认", forbidden: ["HTML", "404", "不是这个文件"] },
+  },
+  crawlerNone: {
+    en: { required: "not determined", forbidden: ["No rule was observed", "was read", "contains no"] },
+    zh: { required: "未判定", forbidden: ["没有观察到", "读取了完整", "没有拿到完整"] },
+  },
+  snippetsUnchecked: {
+    en: { required: "this run", forbidden: ["detected", "No snippet permission"] },
+    zh: { required: "本次", forbidden: ["未检测到", "没有检测"] },
+  },
+} as const;
+
+function assertWording(actual: string, spec: { readonly required: string; readonly forbidden: readonly string[] }) {
+  expect(actual).toContain(spec.required);
+  for (const claim of spec.forbidden) expect(actual, claim).not.toContain(claim);
+}
+
+/**
  * The production complaint of 2026-09-10, in four assertions.
  *
  * The owner looked at these cards and asked the one question they could not
@@ -163,6 +198,9 @@ it.each(["en", "zh"])("says WHY a machine signal is not present, in %s", async (
   expect(llms).toContain(copy.machineReasons.invalid_response);
   // The label itself no longer asserts that nobody could reach the address.
   expect(copy.machineStatuses.unreachable).not.toContain(locale === "zh" ? "无法访问" : "Could not be reached");
+  // `invalid_response` covers a missing Content-Type as well as an HTML body,
+  // so the clause may not name either one.
+  assertWording(copy.machineReasons.invalid_response, WORDING.invalidResponse[locale as "en" | "zh"]);
 });
 
 it.each(["en", "zh"])("scopes a page-level negative to the pages it cites, in %s", async (locale) => {
@@ -183,6 +221,7 @@ it.each(["en", "zh"])("scopes a page-level negative to the pages it cites, in %s
   const hreflang = host.querySelector('[data-machine-field="hreflang"]')?.textContent ?? "";
   expect(hreflang).toContain(copy.machineStatuses.absent);
   expect(hreflang).toContain(copy.machineSampled.replace("{count}", "2"));
+  assertWording(copy.machineSampled, WORDING.sampled[locale as "en" | "zh"]);
 });
 
 it("counts addresses, not source records", async () => {
@@ -202,6 +241,31 @@ it("counts addresses, not source records", async () => {
   expect(host.querySelector('[data-machine-field="hreflang"]')?.textContent).toContain(copy.machineSampled.replace("{count}", "1"));
 });
 
+it("leaves out an address whose evidence is unavailable", async () => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  const home = pack.sourceCatalogue.find((source) => source.id === "source:home")!;
+  // Available home, partial /about, the home cited a second time, and an
+  // address nobody could read. Two addresses carry usable evidence; the
+  // unreadable one is not a page this signal looked at.
+  const mixedSources = [
+    ...pack.sourceCatalogue,
+    { ...home, id: "source:about", url: "https://example.com/about", availability: "partial" as const, reason: "partial_body" as const },
+    { ...home, id: "source:home-again" },
+    { ...home, id: "source:unread", url: "https://example.com/unread", availability: "unavailable" as const, reason: "timeout" as const, observedAt: null, bodyHash: null, excerpts: [] },
+  ];
+  const mixed = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, hreflang: { status: "absent" as const, locales: [],
+      sourceRefs: ["source:home", "source:about", "source:home-again", "source:unread"] } } },
+    sourceCatalogue: mixedSources,
+  };
+  await render("en", ["machine"], rebuilt(mixed));
+
+  const copy = geoKnowledgePackCopy("en");
+  expect(host.querySelector('[data-machine-field="hreflang"]')?.textContent).toContain(copy.machineSampled.replace("{count}", "2"));
+});
+
 it.each(["en", "zh"])("does not call an undetermined crawler analysis an observed absence, in %s", async (locale) => {
   const pack = geoKnowledgePackV2Fixture();
   const machine = machineOf(pack);
@@ -215,7 +279,7 @@ it.each(["en", "zh"])("does not call an undetermined crawler analysis an observe
 
   const text = host.querySelector('[data-crawler-use="search"]')?.textContent ?? "";
   expect(text).toContain(card(locale).machine.crawlerNone);
-  expect(card(locale).machine.crawlerNone).not.toContain(locale === "zh" ? "没有观察到" : "No rule was observed");
+  assertWording(card(locale).machine.crawlerNone, WORDING.crawlerNone[locale as "en" | "zh"]);
 });
 
 it.each(["en", "zh"])("separates a check nobody ran from a check that found nothing, in %s", async (locale) => {
@@ -236,7 +300,7 @@ it.each(["en", "zh"])("separates a check nobody ran from a check that found noth
   // The point of the change: it names the RUN, so it cannot be read as a
   // finding about the site the way the neighbouring `absent` cards are. The
   // old zh string was 未检测, one character off the 未检测到 beside it.
-  expect(card(locale).machine.snippetStatuses.not_checked).toContain(locale === "zh" ? "本次" : "this run");
+  assertWording(card(locale).machine.snippetStatuses.not_checked, WORDING.snippetsUnchecked[locale as "en" | "zh"]);
   expect(copy.machineStatuses.absent.startsWith(card(locale).machine.snippetStatuses.not_checked)).toBe(false);
 });
 
@@ -265,7 +329,9 @@ it.each(["en", "zh"])("names a coverage row in the reader's language and keeps w
   if (locale === "zh") expect(text).not.toContain("Q&A");
   // "缺失" reads as a failure. Content the owner deliberately removed is not
   // missing, and this badge covers both.
-  expect(copy.coverageStatuses.missing).not.toBe(locale === "zh" ? "缺失" : "Missing");
+  // Neither a failure ("缺失") nor a claim about generation: this content was
+  // generated and then removed by its owner.
+  expect(copy.coverageStatuses.missing).toBe(locale === "zh" ? "未收录" : "Not included");
 });
 
 it("names the questions row, which has no module of its own", async () => {
@@ -279,7 +345,7 @@ it("names the questions row, which has no module of its own", async () => {
   };
   await render("zh", ["coverage"], rebuilt(questions));
 
-  expect(host.textContent).toContain(geoKnowledgePackCopy("zh").coverageQuestions);
+  expect(host.textContent).toContain("问题集");
   expect(host.textContent).not.toContain("Question set");
 });
 
