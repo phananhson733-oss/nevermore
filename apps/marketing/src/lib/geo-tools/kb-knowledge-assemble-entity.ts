@@ -17,6 +17,7 @@
  */
 import { geoItemKey } from "./kb-item-key.ts";
 import type { GeoKnowledgeEvidenceV1 } from "./kb-knowledge-evidence.ts";
+import { geoPartialLimitation } from "./kb-knowledge-limitation.ts";
 import type { GeoKnowledgeNarrativeV2 } from "./kb-knowledge-synthesis-v2-contract.ts";
 import {
   GEO_ENTITY_FIELD_PATHS,
@@ -281,7 +282,7 @@ export function geoEntityModule(input: GeoEntityInput): GeoEntityAssembly {
     ? { status: "available", value: { ...value, fields } }
     : {
         status: "partial",
-        limitation: "Some optional public links were not observed.",
+        ...geoPartialLimitation([{ key: "entity_links_not_observed" }]),
         value: { ...value, fields },
       };
   return { module, dropped };

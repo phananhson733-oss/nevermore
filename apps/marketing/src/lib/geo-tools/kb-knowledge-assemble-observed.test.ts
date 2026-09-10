@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   geoCoverageModule,
   geoEvidenceModule,
-  geoJoinLimitations,
   geoMachineModule,
 } from "./kb-knowledge-assemble-observed.ts";
 import { buildGeoSourceCatalogue } from "./kb-knowledge-assemble-sources.ts";
@@ -15,6 +14,7 @@ import {
 } from "./kb-knowledge-evidence.ts";
 import {
   geoLabel,
+  geoLimitationKeysSchema,
   geoRefList,
   geoText,
   geoUnavailableReasonSchema,
@@ -382,6 +382,7 @@ describe("why AI crawler permission was not determined", () => {
     // Exact: the truncation sentence stands alone, so nothing else is
     // holding this module back.
     expect(undetermined.limitation).toBe("AI crawler permissions were not determined: robots.txt was not read in full.");
+    expect(undetermined.limitationKeys).toEqual([{ key: "robots_not_read_in_full" }]);
 
     // The same fixture with a robots.txt short enough to have been read whole
     // is available -- which is what shows the assertion above is about the
@@ -465,6 +466,7 @@ describe("what was not measured is not a measurement", () => {
     // Exact, not `toContain`: the other two sentences being empty is what
     // shows this fixture reached the snippet gate rather than an earlier one.
     expect(unchecked.limitation).toBe("Snippet permission was not checked.");
+    expect(unchecked.limitationKeys).toEqual([{ key: "snippets_not_checked" }]);
 
     expect(machine({ llmsPresent: true, markup: true }, true).status).toBe("available");
     const blocked = machine({ llmsPresent: true, markup: true }, true);
@@ -587,13 +589,33 @@ describe("evidence groups say what was collected and what was cut", () => {
       { group: "proof", id: `evidence:${PLANS_ID}`, reason: "literals_unsupported" },
     ]);
     expect(assembly.module.limitation).toContain("1 collected item(s) could not be shown with their evidence.");
+    expect(assembly.module.limitationKeys).toContainEqual({ key: "evidence_items_unshowable", params: { count: 1 } });
   });
 
-  it("names the groups this run never looked for", () => {
+  it("names the groups this run never looked for, by the heading the card draws", () => {
     const assembly = evidenceModule();
     if (assembly.module.status !== "partial") throw new Error("evidence should be partial");
-    expect(assembly.module.limitation).toContain("Not collected in this run: press, thirdPartyProfiles, firstPartyProof.");
+    // The sentence used to publish `thirdPartyProfiles`, a contract token that
+    // names the group in no language. It now names the same three groups the
+    // headings below it do.
+    expect(assembly.module.limitation).toContain("Not collected in this run: Press coverage, Third-party profiles, First-party proof.");
+    expect(assembly.module.limitation).not.toContain("thirdPartyProfiles");
     expect(assembly.dropped).toEqual([]);
+  });
+
+  /**
+   * The keys beside the sentence, which is what makes a Chinese page read in
+   * Chinese. Asserted on the producer, because the reader can only localize a
+   * clause the payload actually carries -- and the parameter has to carry the
+   * groups themselves, not a pre-joined English phrase the reader cannot undo.
+   */
+  it("carries the same clauses as keys, with the groups as contract values", () => {
+    const assembly = evidenceModule();
+    if (assembly.module.status !== "partial") throw new Error("evidence should be partial");
+    expect(assembly.module.limitationKeys).toEqual([
+      { key: "evidence_groups_not_collected", params: { groups: "press,thirdPartyProfiles,firstPartyProof" } },
+    ]);
+    expect(geoLimitationKeysSchema.safeParse(assembly.module.limitationKeys).success).toBe(true);
   });
 });
 
@@ -647,35 +669,3 @@ describe("the coverage table", () => {
   });
 });
 
-describe("joining limitation sentences", () => {
-  const A = "A".repeat(500);
-  const B = "B".repeat(400);
-  const C = "C".repeat(100);
-
-  it("keeps whole sentences and stops, rather than cutting one in half", () => {
-    // 500 + 1 + 400 does not fit; the second sentence is dropped whole.
-    expect(geoJoinLimitations([A, B])).toBe(A);
-    // ...and the third is not slipped in behind it: a reader who sees two
-    // sentences must not be missing the one between them.
-    expect(geoJoinLimitations([A, B, C])).toBe(A);
-    expect(geoJoinLimitations([C, A])).toBe(`${C} ${A}`);
-  });
-
-  it("joins everything that fits", () => {
-    expect(geoJoinLimitations([C, C, C])).toBe(`${C} ${C} ${C}`);
-    expect(geoJoinLimitations([])).toBe("");
-  });
-
-  /**
-   * A single sentence too long to fit yields nothing at all, and a `partial`
-   * module with an empty limitation is refused by the payload contract. No
-   * caller can reach it today -- every sentence the assembler produces is a
-   * fixed phrase of well under a hundred characters, and the only variable
-   * parts are group names and small counts -- but a future sentence built
-   * from site content would.
-   */
-  it("returns nothing for a sentence that does not fit, which the contract will refuse", () => {
-    expect(geoJoinLimitations(["D".repeat(900)])).toBe("");
-    expect(geoText.safeParse("").success).toBe(false);
-  });
-});

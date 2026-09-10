@@ -974,8 +974,10 @@ describe("assembling the deterministic half from the collection alone", () => {
     const evidence = knowledge.evidence.status === "unavailable" ? null : knowledge.evidence.value;
     expect(evidence!.collected).toEqual(["proof"]);
     expect(knowledge.evidence.status).toBe("partial");
-    const limitation = knowledge.evidence.status === "partial" ? knowledge.evidence.limitation : "";
-    expect(limitation).toContain("changelog");
+    const groups = knowledge.evidence.status === "partial"
+      ? knowledge.evidence.limitationKeys?.find((clause) => clause.key === "evidence_groups_not_collected")?.params?.groups
+      : undefined;
+    expect(String(groups).split(",")).toContain("changelog");
   });
 
   it("credits no competitor the run had no allowance to fetch", async () => {
@@ -1232,8 +1234,10 @@ describe("assembling the deterministic half from the collection alone", () => {
     const knowledge = harness.saveDraft.mock.calls[0]![0]!.payload.knowledge!;
     const evidence = knowledge.evidence.status === "unavailable" ? null : knowledge.evidence.value;
     expect(evidence!.collected).toEqual(["proof"]);
-    const limitation = knowledge.evidence.status === "partial" ? knowledge.evidence.limitation : "";
-    expect(limitation).toContain("changelog");
+    const groups = knowledge.evidence.status === "partial"
+      ? knowledge.evidence.limitationKeys?.find((clause) => clause.key === "evidence_groups_not_collected")?.params?.groups
+      : undefined;
+    expect(String(groups).split(",")).toContain("changelog");
   });
 
   it("dates the body by the newest row it rests on, machine rows included", async () => {
