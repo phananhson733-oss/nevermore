@@ -51,6 +51,35 @@ it.each(["en", "zh"])("draws all eight modules in the shared section language in
   expect(host.querySelector("[data-pack-version]")?.getAttribute("data-pack-version")).toBe("v2");
 });
 
+/**
+ * A stored field name that is also a member of `Object.prototype`.
+ *
+ * The pack contract types an entity field as bounded SHORT TEXT, not as the
+ * path enum, so `__proto__` is a value it accepts. `copy.entityFields[field]`
+ * with a `??` fallback returns `Object.prototype` for it -- not nullish, so the
+ * fallback never fires -- and React refuses to render an object, taking the
+ * whole account page down rather than one row.
+ */
+it("renders an entity field named after a prototype member instead of taking the page down", async () => {
+  const pack = geoKnowledgePackV2Fixture();
+  if (pack.entity.status === "unavailable") throw new Error("entity fixture required");
+  const hostile = {
+    ...pack,
+    entity: {
+      ...pack.entity,
+      value: {
+        ...pack.entity.value,
+        fields: pack.entity.value.fields.map((field) => ({ ...field, field: "__proto__" })),
+      },
+    },
+  };
+
+  await render("zh", ["entity"], rebuilt(hostile));
+
+  expect(host.querySelector("[data-geo-knowledge-pack]")).not.toBeNull();
+  expect(host.textContent).toContain("__proto__");
+});
+
 it("draws only the modules the card asked for, in that order", async () => {
   await render("en", ["facts", "entity"]);
 

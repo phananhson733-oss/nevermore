@@ -16,6 +16,7 @@
  */
 import { z } from "zod";
 import { geoNumbersSupported } from "./geo-numeric-literal.ts";
+import { GEO_LIMITATION_CLAUSES } from "./kb-knowledge-limitation.ts";
 
 import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";
 import { hasLoneSurrogate } from "../agents/geo-canonical.ts";
@@ -137,11 +138,57 @@ export const geoUnavailableReasonSchema = z.enum([
 ]);
 export type GeoUnavailableReason = z.infer<typeof geoUnavailableReasonSchema>;
 
-/** available / partial(limitation) / unavailable(reason) -- unchanged from v1. */
+/**
+ * What a `partial` module says about itself, as keys a reader can localize.
+ *
+ * `limitation` above is the sentence the server composed, and it stays: every
+ * payload published before 2026-09-10 carries only that, and it is what an
+ * unrecognised key falls back to. `limitationKeys` is the same clauses said
+ * again as data, so the card can render them in the reader's language.
+ *
+ * `key` is bounded TEXT and not an enum on purpose. An enum would make a key
+ * added later reject the whole payload inside a bundle that predates it -- an
+ * already-open tab going blank rather than reading one sentence in English.
+ * Param names deliberately cannot start with `_`, so `__proto__` is unmatchable.
+ */
+const LIMITATION_PARAM_NAME = /^[a-z][a-zA-Z0-9]{0,31}$/u;
+const LIMITATION_KEY = /^[a-z][a-z0-9_]{0,63}$/u;
+
+export const geoLimitationClauseSchema = z.object({
+  key: geoBoundedText(64).regex(LIMITATION_KEY),
+  params: z.record(
+    z.string().regex(LIMITATION_PARAM_NAME),
+    z.union([geoShortText, z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)]),
+  ).optional(),
+}).strict();
+
+export const geoLimitationKeysSchema = z.array(geoLimitationClauseSchema).min(1).max(GEO_LIMITATION_CLAUSES);
+
+/**
+ * available / partial(limitation) / unavailable(reason).
+ *
+ * `limitationKeys` is optional and additive: a stored payload without it is
+ * still valid and still renders, so this does NOT bump `schemaVersion` -- that
+ * constant is compiled into every open tab's bundle, and bumping it for a field
+ * nothing is required to carry would break tabs to no purpose.
+ *
+ * Additive is not the same as invisible, and this is the residual cost. These
+ * module schemas are `.strict()`, and the browser re-parses the editor view
+ * through them (`geo-kb-v2-wire.ts`). A tab loaded from a bundle that PREDATES
+ * this field therefore refuses a payload that carries it -- so an owner who
+ * leaves the account page open across the deployment and then presses Update
+ * gets a refused view until they reload. The draft is written server-side
+ * either way; nothing is lost but that render.
+ *
+ * The window closes if the reader half of this change ships one deployment
+ * before the producer half. Nothing here can close it after the fact: the old
+ * parser is already in the browser, and no field name or version number
+ * reaches it.
+ */
 export function geoModuleSchema<T extends z.ZodTypeAny>(value: T) {
   return z.discriminatedUnion("status", [
     z.object({ status: z.literal("available"), value }).strict(),
-    z.object({ status: z.literal("partial"), limitation: geoText, value }).strict(),
+    z.object({ status: z.literal("partial"), limitation: geoText, limitationKeys: geoLimitationKeysSchema.optional(), value }).strict(),
     z.object({ status: z.literal("unavailable"), reason: geoUnavailableReasonSchema }).strict(),
   ]);
 }

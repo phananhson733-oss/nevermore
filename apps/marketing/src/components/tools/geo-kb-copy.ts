@@ -24,6 +24,15 @@
 import { useTranslations } from "next-intl";
 
 import type { GeoDecision } from "../../lib/geo-tools/kb-v3-contract.ts";
+import {
+  GEO_LIMITATION_EVIDENCE_GROUP_LABELS,
+  GEO_LIMITATION_KEYS,
+  GEO_LIMITATION_REASON_LABELS,
+  GEO_LIMITATION_STAGE_LABELS,
+  type GeoLimitationClause,
+  type GeoLimitationKey,
+  type GeoLimitationParams,
+} from "../../lib/geo-tools/kb-knowledge-limitation.ts";
 import { GEO_ENTITY_FIELD_PATHS } from "../../lib/geo-tools/kb-knowledge-shape.ts";
 import type {
   GeoEntityFieldPath,
@@ -93,6 +102,150 @@ const ORIGINS: readonly GeoItemOrigin[] = [
 const INDEPENDENCE: readonly GeoKbIndependence[] = [
   "first_party", "independent", "self_submitted", "syndicated", "undetermined",
 ];
+
+/**
+ * A `partial` module's limitation, said in the reader's language.
+ *
+ * The producer stores both halves: `limitation`, the English sentence, and
+ * `limitationKeys`, the same clauses as keys. This turns the keys into
+ * sentences -- and returns `null` the moment one clause cannot be turned into
+ * one, so the caller falls back to the stored sentence.
+ *
+ * All-or-nothing is the whole point. Rendering the clauses this build happens
+ * to know and silently dropping the rest would publish a limitation shorter
+ * than the one the payload actually claims: the reader would be told about two
+ * problems out of three and have no way to know a third existed.
+ */
+const LIMITATION_KEY_SET: Readonly<Record<string, true>> = Object.fromEntries(
+  GEO_LIMITATION_KEYS.map((key) => [key, true]),
+);
+
+/** Contract keys a clause parameter may name, with the table that localizes each. */
+const EVIDENCE_GROUP_KEYS = Object.keys(GEO_LIMITATION_EVIDENCE_GROUP_LABELS) as readonly string[];
+const STAGE_KEYS = Object.keys(GEO_LIMITATION_STAGE_LABELS) as readonly string[];
+const REASON_KEYS = Object.keys(GEO_LIMITATION_REASON_LABELS) as readonly string[];
+
+/** Sentences are joined the way the stored English joins them. */
+const LIMITATION_JOIN = " ";
+
+interface LimitationTables {
+  readonly groups: Readonly<Record<string, string>>;
+  readonly stages: Readonly<Record<string, string>>;
+  readonly reasons: Readonly<Record<string, string>>;
+  readonly separator: string;
+}
+
+type LimitationValues = Record<string, string | number>;
+
+/**
+ * Exactly the parameters each clause substitutes.
+ *
+ * Checked as a SET, both ways: a clause carrying a name this build does not
+ * substitute is a clause written by a build that says more than this one can
+ * render. `snippets_not_checked` with a `reason` parameter is the case that
+ * matters -- the stored sentence would carry the reason and a recovery action,
+ * and rendering the parameterless Chinese would drop both while still claiming
+ * to be the whole limitation.
+ */
+const LIMITATION_PARAM_NAMES: Readonly<Record<GeoLimitationKey, readonly string[]>> = {
+  entity_links_not_observed: [],
+  facts_without_model: [],
+  facts_missing_exact_excerpt: [],
+  qa_without_model: [],
+  own_evidence_partial: [],
+  machine_signals_absent: [],
+  robots_not_read_in_full: [],
+  robots_none_published: [],
+  robots_unreadable: [],
+  snippets_not_checked: [],
+  coverage_incomplete: [],
+  carried_owner_declared_only: [],
+  facts_withheld_unsupported: ["count"],
+  evidence_items_unshowable: ["count"],
+  evidence_groups_not_collected: ["groups"],
+  offsite_pages_unread: ["count", "reason"],
+  offsite_stage_stopped: ["count", "reason", "stage"],
+};
+
+/** Own names only: `params` is stored data, and inherited names are not its own. */
+function paramsMatch(key: GeoLimitationKey, params: GeoLimitationParams): boolean {
+  const expected = LIMITATION_PARAM_NAMES[key];
+  const present = Object.getOwnPropertyNames(params);
+  return present.length === expected.length && expected.every((name) => Object.hasOwn(params, name));
+}
+
+// `Object.hasOwn`, not a plain index: `params` is stored data and the contract
+// bounds the NAME but a reader must still never reach `Object.prototype`.
+function readCount(params: GeoLimitationParams, name: string): number | null {
+  const value = Object.hasOwn(params, name) ? params[name] : undefined;
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function readLabel(
+  params: GeoLimitationParams,
+  name: string,
+  known: readonly string[],
+  table: Readonly<Record<string, string>>,
+): string | null {
+  const value = Object.hasOwn(params, name) ? params[name] : undefined;
+  if (typeof value !== "string" || !known.includes(value) || !Object.hasOwn(table, value)) return null;
+  return table[value]!;
+}
+
+function readLabelList(
+  params: GeoLimitationParams,
+  name: string,
+  tables: LimitationTables,
+): string | null {
+  const value = Object.hasOwn(params, name) ? params[name] : undefined;
+  if (typeof value !== "string") return null;
+  const keys = value.split(",");
+  if (keys.length === 0 || keys.some((key) => !EVIDENCE_GROUP_KEYS.includes(key) || !Object.hasOwn(tables.groups, key))) return null;
+  return keys.map((key) => tables.groups[key]!).join(tables.separator);
+}
+
+/**
+ * The values each clause substitutes, or `null` when its parameters are not
+ * what the clause needs. Exhaustive over the key list: a key added without an
+ * entry is a type error, not a sentence that renders its own key path.
+ */
+const LIMITATION_VALUES: Readonly<Record<GeoLimitationKey, (params: GeoLimitationParams, tables: LimitationTables) => LimitationValues | null>> = {
+  entity_links_not_observed: () => ({}),
+  facts_without_model: () => ({}),
+  facts_missing_exact_excerpt: () => ({}),
+  qa_without_model: () => ({}),
+  own_evidence_partial: () => ({}),
+  machine_signals_absent: () => ({}),
+  robots_not_read_in_full: () => ({}),
+  robots_none_published: () => ({}),
+  robots_unreadable: () => ({}),
+  snippets_not_checked: () => ({}),
+  coverage_incomplete: () => ({}),
+  carried_owner_declared_only: () => ({}),
+  facts_withheld_unsupported: (params) => {
+    const count = readCount(params, "count");
+    return count === null ? null : { count };
+  },
+  evidence_items_unshowable: (params) => {
+    const count = readCount(params, "count");
+    return count === null ? null : { count };
+  },
+  evidence_groups_not_collected: (params, tables) => {
+    const groups = readLabelList(params, "groups", tables);
+    return groups === null ? null : { groups };
+  },
+  offsite_pages_unread: (params, tables) => {
+    const count = readCount(params, "count");
+    const reason = readLabel(params, "reason", REASON_KEYS, tables.reasons);
+    return count === null || reason === null ? null : { count, reason };
+  },
+  offsite_stage_stopped: (params, tables) => {
+    const count = readCount(params, "count");
+    const reason = readLabel(params, "reason", REASON_KEYS, tables.reasons);
+    const stage = readLabel(params, "stage", STAGE_KEYS, tables.stages);
+    return count === null || reason === null || stage === null ? null : { count, reason, stage };
+  },
+};
 
 export interface GeoKbSectionCopy {
   readonly title: string;
@@ -190,6 +343,12 @@ export interface GeoKbCopy {
   readonly module: {
     readonly partial: string;
     readonly unavailable: (reason: GeoUnavailableReason) => string;
+    /**
+     * The clauses of one `partial` module, localized -- or `null` when any of
+     * them is a key this build does not know, so the caller renders the stored
+     * English sentence whole rather than a shortened version of it.
+     */
+    readonly limitation: (clauses: readonly GeoLimitationClause[]) => string | null;
   };
   readonly groups: {
     readonly notCollected: string;
@@ -218,9 +377,15 @@ export interface GeoKbCopy {
  * string. The published pack contract types the field as short text rather than
  * as the path enum, so an unrecognised value has to render as *something*, and
  * rendering the value itself is the honest fallback rather than a blank.
+ *
+ * `Object.hasOwn` rather than a plain index with `??`: the pack contract accepts
+ * `field: "__proto__"` -- it is bounded short text with no key rule -- and a
+ * plain index returns `Object.prototype`, which is not nullish, so `??` never
+ * fires and React is handed an object it refuses to render. That takes down the
+ * whole page, not the one row.
  */
 export function geoKbEntityFieldLabel(field: string, copy: GeoKbCopy): string {
-  return copy.entityFields[field as GeoEntityFieldPath] ?? field;
+  return Object.hasOwn(copy.entityFields, field) ? copy.entityFields[field as GeoEntityFieldPath] : field;
 }
 
 function record<K extends string>(keys: readonly K[], read: (key: K) => string): Readonly<Record<K, string>> {
@@ -303,6 +468,26 @@ export function useGeoKbCopy(): GeoKbCopy {
     module: {
       partial: t("module.partial"),
       unavailable: (reason) => t(`module.unavailable.${reason}`),
+      limitation: (clauses) => {
+        if (clauses.length === 0) return null;
+        const tables: LimitationTables = {
+          groups: record(EVIDENCE_GROUP_KEYS, (key) => t(`groups.${key}`)),
+          stages: record(STAGE_KEYS, (key) => t(`limitations.stages.${key}`)),
+          reasons: record(REASON_KEYS, (key) => t(`limitations.reasons.${key}`)),
+          separator: t("limitations.separator"),
+        };
+        const sentences: string[] = [];
+        for (const clause of clauses) {
+          if (!Object.hasOwn(LIMITATION_KEY_SET, clause.key)) return null;
+          const key = clause.key as GeoLimitationKey;
+          const params = clause.params ?? {};
+          if (!paramsMatch(key, params)) return null;
+          const values = LIMITATION_VALUES[key](params, tables);
+          if (values === null) return null;
+          sentences.push(t(`limitations.clause.${key}`, values));
+        }
+        return sentences.join(LIMITATION_JOIN);
+      },
     },
     groups: {
       notCollected: t("groups.notCollected"),

@@ -77,6 +77,7 @@ The isolated Chromium service and enforced Linux runtime live in `apps/marketing
 - `kb-item-identity.ts` — 两套文本归一化，分得很清楚：身份用的那套只折大小写、兼容形、不可见字符和空白，标点符号一律保留；相似度用的那套有损，只决定要不要问 Owner。共用一套会让 Pro 与 Pro+ 变成同一个条目。
 - `kb-item-key.ts` — 条目 key 的 sha256，以及一条服务端完整性断言：存下来的 key 必须真的由该条目内容派生。浏览器侧没有 sha256，所以「解析通过」不等于身份可信。
 - `kb-knowledge-shape.ts` — 草稿 v3 与已发布知识包 v2 共用的一份内容形状、原子和上限。浏览器可安全 import：没有摘要、没有仓储、没有服务端模块。
+- `kb-knowledge-limitation.ts` — 一个 `partial` 模块「当前限制」的共享子句表：键、参数、英文句子和带上限的拼接。生产者同时写入英文 `limitation`（旧 payload 只有它，必须继续可读）和 `limitationKeys`，卡片按键渲染读者自己的语言；键在契约里是有界文本而不是枚举，所以将来新增的键不会让已经打开的标签页拒绝整个 payload。浏览器可安全 import。
 - `kb-v3-contract.ts` — 草稿 payload v3：锁定的生成输入、不可变的知识体、可自由编辑的审阅，两个哈希域互不影响。解析时强制核对引用、数字字面量、修正的落点与条目 key 的唯一性。
 - `kb-v3.test-fixtures.ts` — 一份完整可解析的 v3 草稿，外加一份两页价格互相矛盾的草稿——冲突时事实不给值，不替 Owner 挑赢家。来源的 `label` 与 `id` 故意不同：两者相等会让「渲染页面里不得出现内部标识符」这类断言恒真或恒假。
 - `kb-editor-loader.ts` — 网站 GEO 路由读到的编辑器视图。上一版是 v1/v2 时报 `opaque`（存在、有版本号有日期，但逐条对不上），不是拒绝整个知识库；`restated` 在这里派生，因为比较需要浏览器算不出的摘要。

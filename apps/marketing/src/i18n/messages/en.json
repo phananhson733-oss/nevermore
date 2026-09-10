@@ -5512,6 +5512,53 @@
           "thirdPartyProfiles": "Third-party profiles",
           "firstPartyProof": "First-party proof"
         },
+        "limitations": {
+          "separator": ", ",
+          "stages": {
+            "serp": "search-result collection",
+            "landing_pages": "landing page fetching",
+            "landing_page_reads": "landing page reading",
+            "first_party": "first-party evidence collection"
+          },
+          "reasons": {
+            "not_collected": "not checked in this run",
+            "not_published": "nothing published there",
+            "not_found": "not found",
+            "timeout": "the read timed out",
+            "fetch_failed": "the read failed",
+            "blocked": "blocked or not allowed",
+            "rate_limited": "rate limited",
+            "invalid_response": "the response could not be validated",
+            "partial_body": "only part of it could be read",
+            "unsupported_language": "the language is not supported",
+            "generation_unavailable": "nothing was generated",
+            "outcome_unknown": "the outcome is unknown",
+            "insufficient_evidence": "not enough was read to tell",
+            "not_applicable": "it does not apply here",
+            "context_stale": "the saved source changed first",
+            "owner_excluded_all": "you excluded every item",
+            "owner_excluded_required": "you excluded a required field"
+          },
+          "clause": {
+            "entity_links_not_observed": "Some optional public links were not observed.",
+            "facts_withheld_unsupported": "{count} generated fact(s) were withheld because their evidence did not support them.",
+            "facts_without_model": "Model-synthesized facts are missing: this section contains only profile declarations and observed FAQ answers.",
+            "facts_missing_exact_excerpt": "Some accepted facts lacked an exact cited evidence excerpt.",
+            "qa_without_model": "Model-synthesized questions are missing: this section contains only question-and-answer markup observed on the site.",
+            "evidence_groups_not_collected": "Not collected in this run: {groups}.",
+            "evidence_items_unshowable": "{count} collected item(s) could not be shown with their evidence.",
+            "offsite_pages_unread": "{count} off-site page(s) were fetched but could not be read ({reason}).",
+            "offsite_stage_stopped": "Off-site {stage} stopped early ({reason}), {count} item(s) not reached.",
+            "own_evidence_partial": "Some collected own-site evidence is partial.",
+            "machine_signals_absent": "Some machine-readable visibility signals were absent or unavailable.",
+            "robots_not_read_in_full": "AI crawler permissions were not determined: robots.txt was not read in full.",
+            "robots_none_published": "AI crawler permissions were not determined: this site publishes no robots.txt rules.",
+            "robots_unreadable": "AI crawler permissions were not determined: robots.txt could not be read.",
+            "snippets_not_checked": "Snippet permission was not checked.",
+            "coverage_incomplete": "Some customer knowledge sections are incomplete.",
+            "carried_owner_declared_only": "This update observed nothing for this section. What remains is what the owner declared."
+          }
+        },
         "machine": {
           "aiCrawlers": "AI crawler permissions",
           "snippets": "Snippet permission",

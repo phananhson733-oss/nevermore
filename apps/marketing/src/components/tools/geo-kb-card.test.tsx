@@ -514,6 +514,23 @@ const ORIGIN_LABEL_KEYS: readonly string[] = [
 ];
 
 /**
+ * The two limitation clauses that name off-site work, exempt on the same
+ * grounds as the origin labels above: each is rendered only when a stored
+ * payload's `limitationKeys` carries that clause, which requires an off-site
+ * collection to have happened and reported an incomplete stage. A v3 update
+ * hands the assembler `offsite: null`, so neither can be produced today -- and
+ * neither says anything about what pressing Update does.
+ *
+ * Enumerated and counted, like the list above, so a rename cannot widen the
+ * exemption. If a leaf outside these five ever names off-site collection, it is
+ * a claim about the product and this test is right to fail.
+ */
+const OFFSITE_CLAUSE_KEYS: readonly string[] = [
+  "limitations.clause.offsite_pages_unread",
+  "limitations.clause.offsite_stage_stopped",
+];
+
+/**
  * Neither claim is true of what a v3 update does.
  *
  * `gsc` has no producer and no executor (`kb-run-runtime.ts` routes every kind
@@ -526,11 +543,12 @@ const ORIGIN_LABEL_KEYS: readonly string[] = [
  */
 it.each(["en", "zh"])("claims no Search Console read and no off-site collection anywhere in the card catalog, in %s", (locale) => {
   const all = leaves(card(locale));
-  const exempt = all.filter(([key]) => ORIGIN_LABEL_KEYS.includes(key));
-  expect(exempt).toHaveLength(ORIGIN_LABEL_KEYS.length);
+  const exemptKeys = [...ORIGIN_LABEL_KEYS, ...OFFSITE_CLAUSE_KEYS];
+  const exempt = all.filter(([key]) => exemptKeys.includes(key));
+  expect(exempt).toHaveLength(exemptKeys.length);
 
   const claims = all
-    .filter(([key]) => !ORIGIN_LABEL_KEYS.includes(key))
+    .filter(([key]) => !exemptKeys.includes(key))
     .filter(([, message]) => /search console|off-?site/iu.test(message) || /站外/u.test(message));
 
   expect(claims).toEqual([]);

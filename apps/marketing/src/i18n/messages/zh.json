@@ -5512,6 +5512,53 @@
           "thirdPartyProfiles": "第三方档案",
           "firstPartyProof": "第一方证明"
         },
+        "limitations": {
+          "separator": "、",
+          "stages": {
+            "serp": "搜索结果采集",
+            "landing_pages": "落地页抓取",
+            "landing_page_reads": "落地页读取",
+            "first_party": "第一方证据采集"
+          },
+          "reasons": {
+            "not_collected": "本次未检查",
+            "not_published": "该地址没有发布内容",
+            "not_found": "没有找到",
+            "timeout": "读取超时",
+            "fetch_failed": "读取失败",
+            "blocked": "被拒绝，或不被访问规则允许",
+            "rate_limited": "受到频率限制",
+            "invalid_response": "无法确认返回的内容",
+            "partial_body": "只读到了一部分",
+            "unsupported_language": "语言暂不支持",
+            "generation_unavailable": "本次没有生成",
+            "outcome_unknown": "结果未知",
+            "insufficient_evidence": "读到的内容不足以判断",
+            "not_applicable": "在这里不适用",
+            "context_stale": "保存的来源先发生了变化",
+            "owner_excluded_all": "你排除了全部条目",
+            "owner_excluded_required": "你排除了一个必需字段"
+          },
+          "clause": {
+            "entity_links_not_observed": "部分可选的公开链接本次没有观察到。",
+            "facts_withheld_unsupported": "有 {count} 条模型生成的事实因为证据不支持而没有被采用。",
+            "facts_without_model": "缺少模型归纳的事实：这一节只有画像里的声明，以及站点上观察到的 FAQ 答案。",
+            "facts_missing_exact_excerpt": "部分已确认的事实没有对应的逐字证据摘录。",
+            "qa_without_model": "缺少模型归纳的问题：这一节只有站点上观察到的问答标记。",
+            "evidence_groups_not_collected": "本次没有采集：{groups}。",
+            "evidence_items_unshowable": "有 {count} 条已采集的条目无法连同证据一起展示。",
+            "offsite_pages_unread": "有 {count} 个站外页面已经抓取，但无法读取（{reason}）。",
+            "offsite_stage_stopped": "站外{stage}提前结束（{reason}），还有 {count} 项没有开始。",
+            "own_evidence_partial": "部分已采集的自家页面证据是不完整的。",
+            "machine_signals_absent": "部分机器可读信号缺失，或本次无法确认。",
+            "robots_not_read_in_full": "未能判定 AI 爬虫许可：robots.txt 没有被完整读取。",
+            "robots_none_published": "未能判定 AI 爬虫许可：这个站点没有发布 robots.txt 规则。",
+            "robots_unreadable": "未能判定 AI 爬虫许可：robots.txt 无法读取。",
+            "snippets_not_checked": "本次没有检查摘要许可。",
+            "coverage_incomplete": "部分客户知识板块还不完整。",
+            "carried_owner_declared_only": "这次更新在这一节没有观察到内容；留下来的是你自己声明的内容。"
+          }
+        },
         "machine": {
           "aiCrawlers": "AI 爬虫许可",
           "snippets": "摘要许可",

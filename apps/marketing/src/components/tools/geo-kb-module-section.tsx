@@ -16,22 +16,23 @@
  */
 import { type ReactNode } from "react";
 
+import type { GeoLimitationClause } from "../../lib/geo-tools/kb-knowledge-limitation.ts";
 import type { GeoUnavailableReason } from "../../lib/geo-tools/kb-knowledge-shape.ts";
 import { GeoKbSection } from "./geo-kb-section.tsx";
-import { useGeoKbCopy } from "./geo-kb-copy.ts";
+import { useGeoKbCopy, type GeoKbCopy } from "./geo-kb-copy.ts";
 
 export type GeoKbHeading = 2 | 3 | 4;
 
 /** The module tri-state, without the value it wraps. */
 export type GeoKbModuleState =
   | { readonly status: "available" }
-  | { readonly status: "partial"; readonly limitation: string }
+  | { readonly status: "partial"; readonly limitation: string; readonly limitationKeys?: readonly GeoLimitationClause[] }
   | { readonly status: "unavailable"; readonly reason: GeoUnavailableReason };
 
 /** The shape every knowledge module has, in both the draft and the pack. */
 export type GeoKbModuleLike<T> =
   | { readonly status: "available"; readonly value: T }
-  | { readonly status: "partial"; readonly limitation: string; readonly value: T }
+  | { readonly status: "partial"; readonly limitation: string; readonly limitationKeys?: readonly GeoLimitationClause[]; readonly value: T }
   | { readonly status: "unavailable"; readonly reason: GeoUnavailableReason };
 
 /**
@@ -41,13 +42,37 @@ export type GeoKbModuleLike<T> =
  */
 export function geoKbModuleState<T>(module: GeoKbModuleLike<T>): GeoKbModuleState {
   if (module.status === "unavailable") return { status: "unavailable", reason: module.reason };
-  if (module.status === "partial") return { status: "partial", limitation: module.limitation };
+  if (module.status === "partial") {
+    return module.limitationKeys === undefined
+      ? { status: "partial", limitation: module.limitation }
+      : { status: "partial", limitation: module.limitation, limitationKeys: module.limitationKeys };
+  }
   return { status: "available" };
 }
 
 /** The value a module carries, or null when it carries none. */
 export function geoKbModuleValue<T>(module: GeoKbModuleLike<T>): T | null {
   return module.status === "unavailable" ? null : module.value;
+}
+
+/**
+ * What a `partial` module says, in the reader's language where it can be.
+ *
+ * A payload published before 2026-09-10 carries only the server's English
+ * sentence, and a payload written by a build newer than this one may carry a
+ * clause key this build has never heard of. Both render the stored sentence:
+ * it is the one thing that is always complete. `data-module-limitation` says
+ * which of the two happened, so a test can tell a localized limitation from an
+ * English one that merely happens to be short.
+ */
+function ModuleLimitation({ state, copy }: {
+  readonly state: Extract<GeoKbModuleState, { status: "partial" }>;
+  readonly copy: GeoKbCopy;
+}) {
+  const localized = state.limitationKeys === undefined ? null : copy.module.limitation(state.limitationKeys);
+  return <Note data-module-limitation={localized === null ? "stored" : "localized"}>
+    <span className="font-medium text-text-dark-primary">{copy.module.partial}:</span> {localized ?? state.limitation}
+  </Note>;
 }
 
 function Note({ children, ...rest }: { readonly children: ReactNode } & Record<`data-${string}`, string | undefined>) {
@@ -84,9 +109,7 @@ export function GeoKbModuleSection({
       {state.status === "unavailable"
         ? <Note data-module-unavailable="">{copy.module.unavailable(state.reason)}</Note>
         : <>
-          {state.status === "partial"
-            ? <Note data-module-limitation=""><span className="font-medium text-text-dark-primary">{copy.module.partial}:</span> {state.limitation}</Note>
-            : null}
+          {state.status === "partial" ? <ModuleLimitation state={state} copy={copy} /> : null}
           {action === undefined ? null : <div className="flex flex-wrap justify-end gap-2">{action}</div>}
           {children}
         </>}
