@@ -699,6 +699,37 @@ describe("GEO knowledge evidence collection", () => {
     expect(buildGeoKnowledgeSynthesisInputV1(profile, result).sourceCatalogue.filter((source) => source.kind === "own_page").length).toBeGreaterThan(1);
   });
 
+  /**
+   * A second round over a snapshot the patched collector produced.
+   *
+   * The reuse gates match on the exact target string -- `reusedHome` and
+   * `existingHome` compare against `target.toString()`, and the machine loop
+   * compares against `new URL(path, target)`. Had the fix filed the home under
+   * `https://www.example.com/`, none of those would recognise their own
+   * snapshot: the home would be re-requested, the duplicate check would return
+   * null, `home` would be unseeded, the link loop skipped, `hasOwnEvidence`
+   * false, and a second `robots` source pushed on top of the first until
+   * `Machine source limit exceeded` threw. Re-spelling is what makes the
+   * snapshot recognisable to the gates that read it.
+   */
+  it("recognises its own www-answered snapshot on the next round and re-reads nothing", async () => {
+    const first = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      { readResource: reader(wwwAnsweredResources()), now: () => new Date(COLLECTED_AT) },
+    );
+
+    const readResource = reader(wwwAnsweredResources());
+    const second = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      { readResource, now: () => new Date(COLLECTED_AT), reusedEvidence: first },
+    );
+
+    expect(readResource).not.toHaveBeenCalled();
+    expect(second.pages.map((page) => page.url)).toEqual(first.pages.map((page) => page.url));
+    expect(second.sourceCatalogue.filter((source) => source.kind === "robots")).toHaveLength(1);
+    expect(second.machine.sitemap).toMatchObject({ status: "present", urlCount: 2 });
+  });
+
   it("still refuses a page answered from a genuinely different site", async () => {
     const resources = baseResources();
     resources["https://example.com/"] = html("https://elsewhere.test/", "<html><body><h1>Elsewhere</h1><p>Not this site.</p></body></html>");
