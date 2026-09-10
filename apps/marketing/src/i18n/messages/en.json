@@ -5517,6 +5517,7 @@
           "snippets": "Snippet permission",
           "crawlerSearch": "Search use",
           "crawlerTraining": "Training use",
+          "crawlerScope": "The permissions above are for the site's home address only. robots rules apply per path, so other paths may differ.",
           "crawlerNone": "Crawler permissions were not determined in this run.",
           "access": {
             "allowed": "Allowed",

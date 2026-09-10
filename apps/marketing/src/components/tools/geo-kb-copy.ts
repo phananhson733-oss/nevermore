@@ -205,6 +205,8 @@ export interface GeoKbCopy {
     readonly snippets: string;
     readonly crawlerSearch: string;
     readonly crawlerTraining: string;
+    /** Where the two verdicts above were decided, because robots rules are per-path. */
+    readonly crawlerScope: string;
     readonly crawlerNone: string;
     readonly access: Readonly<Record<GeoKbCrawlerAccess, string>>;
     readonly snippetStatuses: Readonly<Record<GeoKbSnippetStatus, string>>;
@@ -316,6 +318,7 @@ export function useGeoKbCopy(): GeoKbCopy {
       snippets: t("machine.snippets"),
       crawlerSearch: t("machine.crawlerSearch"),
       crawlerTraining: t("machine.crawlerTraining"),
+      crawlerScope: t("machine.crawlerScope"),
       crawlerNone: t("machine.crawlerNone"),
       access: record(["allowed", "disallowed", "unspecified"] as const, (key) => t(`machine.access.${key}`)),
       snippetStatuses: record(["allowed", "blocked", "not_checked"] as const, (key) => t(`machine.snippetStatuses.${key}`)),

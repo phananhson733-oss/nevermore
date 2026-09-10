@@ -38,6 +38,8 @@ export interface GeoKnowledgePackCopy {
    * is absent, which is the right answer for those two.
    */
   readonly machineReasons: Record<string, string>;
+  /** A sitemap that was read but yielded no list of page addresses. */
+  readonly machineNoUrlList: string;
   /**
    * The scope of a page-level negative, carrying the number it is true of.
    *
@@ -180,6 +182,7 @@ const EN: GeoKnowledgePackCopy = {
     not_applicable: "this signal does not apply here",
     context_stale: "the saved source changed before this finished",
   },
+  machineNoUrlList: "This sitemap was read, but no list of URLs was established from it. A sitemap index lists other sitemap files, and this run did not open them.",
   machineSampled: "Based on {count} cited own-site page(s); that evidence may be partial or reused from an earlier run, and other pages remain unknown.",
   coverageStatuses: { covered: "Covered", partial: "Partly covered", missing: "Not included" },
   coverageLabels: {
@@ -313,6 +316,7 @@ const ZH: GeoKnowledgePackCopy = {
     not_applicable: "这一项在这里不适用",
     context_stale: "保存的来源在完成前发生了变化",
   },
+  machineNoUrlList: "读到了这个 sitemap，但没有从中得到网址清单。sitemap 索引列出的是其他 sitemap 文件，本次没有逐个展开。",
   machineSampled: "依据是 {count} 个被引用的自家页面；这些证据可能不完整、也可能复用自更早的一次读取，其他页面仍然未知。",
   coverageStatuses: { covered: "已覆盖", partial: "部分覆盖", missing: "未收录" },
   coverageLabels: {

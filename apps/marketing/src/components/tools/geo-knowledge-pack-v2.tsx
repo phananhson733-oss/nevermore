@@ -398,8 +398,20 @@ function MachineNote({ kind, status, refs, sources, copy }: {
     return <Compact className="mt-2 text-text-dark-secondary">{copy.machineSampled.replace("{count}", String(read))}</Compact>;
   }
   const reason = cited.find((source) => source.availability === "unavailable" && source.reason !== null)?.reason ?? null;
-  if (reason === null || copy.machineReasons[reason] === undefined) return null;
-  return <Compact className="mt-2 text-text-dark-secondary">{copy.machineReasons[reason]}</Compact>;
+  if (reason === null) return null;
+  /*
+   * The shared clause for `insufficient_evidence` is "what was read was not
+   * enough to decide", which is right for a truncated or unquotable read and
+   * wrong for the sitemap that produces this reason: a `<sitemapindex>` is read
+   * completely and is perfectly legible -- it just lists sitemaps rather than
+   * pages, and this run does not follow them. So the sitemap says what it
+   * failed to establish rather than blaming what it read.
+   */
+  const note = kind === "sitemap" && reason === "insufficient_evidence"
+    ? copy.machineNoUrlList
+    : copy.machineReasons[reason];
+  if (note === undefined) return null;
+  return <Compact className="mt-2 text-text-dark-secondary">{note}</Compact>;
 }
 
 export function GeoMachineModuleView({ module, sources, heading, locale, copy, card }: GeoReadOnlyModuleProps<GeoModuleValueOf<GeoKnowledgePackV2["machine"]>>) {
@@ -431,6 +443,20 @@ export function GeoMachineModuleView({ module, sources, heading, locale, copy, c
             ? card.machine.crawlerNone
             : machine.aiCrawlers[use].map((row) => `${row.agent} ${card.machine.access[row.access]}`).join(" · ")}
         </div>)}
+        {/* The verdict above is `matchRobotsRule(groups, agent, "/")` -- the
+            home address, and only that. robots.txt grants and refuses per path,
+            so a site that allows `/` and disallows `/docs/` reads as "Allowed"
+            with nothing on the card saying what was asked.
+
+            Said whenever there is a permission to scope, and not only when the
+            file happens to carry a narrower rule: the reader cannot tell those
+            two apart from the answer, and a qualifier that comes and goes is
+            one the reader learns to stop reading. Withheld when BOTH uses came
+            back empty, because then nothing was determined -- the rows say so
+            themselves, and following that with a sentence about where a verdict
+            was reached asserts the opposite one line later. */}
+        {machine.aiCrawlers.search.length === 0 && machine.aiCrawlers.training.length === 0 ? null
+          : <Compact className="mt-2 text-text-dark-secondary">{card.machine.crawlerScope}</Compact>}
         <Basis refs={machine.aiCrawlers.sourceRefs} sources={sources} copy={copy} locale={locale} />
       </div>
       <div data-machine-field="snippets" className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4">

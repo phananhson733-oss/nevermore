@@ -68,6 +68,7 @@ import type {
   GeoRunProbeOutcome,
   GeoRunStartOutcome,
 } from "./kb-run-advance.ts";
+import { readGeoSitemapDocument } from "./kb-sitemap-document.ts";
 import type { GeoRunOperationSeed } from "./kb-run-ledger.ts";
 import {
   geoRunUpdateSeeds,
@@ -504,8 +505,17 @@ function observedStructure(
 /**
  * The reader's vocabulary, mapped onto the one the library will store.
  *
- * `rate_limited` is absent on purpose and handled before this is reached: it is
- * the one outcome that is about us rather than about the target.
+ * The ledger has no `rate_limited` on purpose: that word is about our own
+ * quota, and a gate refusal is never an observation of the site. Every caller
+ * here has already dropped those -- `reached` is what tells them apart -- so a
+ * `rate_limited` arriving at this function is the SITE answering 429, which is
+ * the site refusing the request. `blocked` is the ledger's word for that, and
+ * it is what the card renders as "the request was refused".
+ *
+ * It used to fall through to `invalid_response`, so the card told the owner we
+ * could not confirm the returned content was this file -- about a response
+ * that carried no content at all, and about a site that had told us plainly
+ * why. Everything genuinely unrecognised still lands on `invalid_response`.
  */
 function storableReason(reason: string): GeoEvidenceUnavailableReason {
   switch (reason) {
@@ -517,6 +527,8 @@ function storableReason(reason: string): GeoEvidenceUnavailableReason {
     case "partial_body":
     case "insufficient_evidence":
       return reason;
+    case "rate_limited":
+      return "blocked";
     default:
       return "invalid_response";
   }
@@ -618,25 +630,20 @@ function machineObservation(
   }
   if (body.trim() === "")
     return { kind: "unavailable", reason: "not_published" };
-  const isUrlSet = /<urlset[\s>]/iu.test(body);
-  const isIndex = /<sitemapindex[\s>]/iu.test(body);
+  // Parsed, not matched: the document's ROOT element decides what it is, and
+  // only the `<loc>` elements owned by a `<url>` are pages. See
+  // `kb-sitemap-document.ts`. `kb-knowledge-evidence.ts` reads the same way.
+  const { root, locations: parsed } = readGeoSitemapDocument(body);
   // XML that is not a sitemap is not evidence about the sitemap. We cannot say
   // the site publishes none -- only that what answered was not one.
-  if (!isUrlSet && !isIndex)
+  if (root === null)
     return { kind: "unavailable", reason: "invalid_response" };
-  // The same expression the evidence collector matches locations with.
-  const locations = [
-    ...new Set(
-      [...body.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/giu)]
-        .map((match) => (match[1] ?? "").trim())
-        .filter((location) => location !== ""),
-    ),
-  ];
+  const locations = [...new Set(parsed)];
   return {
     kind: "ok",
     excerpts: boundedExcerpts(locations),
     structured:
-      isUrlSet && !isIndex ? { sitemapUrlCount: String(locations.length) } : {},
+      root === "urlset" ? { sitemapUrlCount: String(locations.length) } : {},
   };
 }
 
@@ -967,8 +974,23 @@ export function createGeoRunCollectRuntime(
       read.kind === "ok" ? read.observedAt : sources.now().toISOString();
     let status: GeoEvidenceObservationAppend["status"];
     if (read.kind !== "ok") {
-      // Our own gate said no. Nothing about the site was observed, and writing
-      // a row would suppress the real fetch for the rest of the TTL.
+      /*
+       * Our own gate said no. `reached` is what tells that apart from the site
+       * answering -- the reader sets it only below the admission check -- and
+       * this branch used to test the REASON instead, so a gate refusal carrying
+       * 400 or 500 was filed as `blocked` or `fetch_failed` against a site no
+       * request ever left for. Nothing about the site was observed, and the row
+       * would suppress the real fetch for the rest of the TTL.
+       *
+       * The machine-resource loop above has always checked `reached`; this is
+       * the same check, and it is what makes `storableReason` able to say that
+       * a `rate_limited` arriving there is the site's own 429.
+       */
+      if (read.reached !== true)
+        return { kind: "failed_retryable", reason: "rate_limited" };
+      // The site itself asked us to slow down. Retried rather than filed: a
+      // 429 is transient, and an unavailable own-page row is what makes the
+      // whole update refuse its own input.
       if (read.reason === "rate_limited")
         return { kind: "failed_retryable", reason: "rate_limited" };
       status = { kind: "unavailable", reason: storableReason(read.reason) };

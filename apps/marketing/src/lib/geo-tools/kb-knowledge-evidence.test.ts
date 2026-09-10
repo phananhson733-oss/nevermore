@@ -275,6 +275,205 @@ describe("GEO knowledge evidence collection", () => {
     expect(result.machine.sitemap).toMatchObject({ status: "present", urlCount: 2, knowledgePagesListed: true });
   });
 
+  /**
+   * `machine.jsonLd` and `machine.hreflang` are the owner's answer to "does MY
+   * site publish this", and they cite the owner's own pages as their basis. The
+   * union they were built from included every page in the bundle, competitors'
+   * included -- so a rival with Organization markup and a `de` alternate made
+   * the owner's card say the owner publishes both, footnoted to the owner's
+   * home page, which says no such thing.
+   */
+  it("answers the machine-readable summary from the owner's pages, never a competitor's", async () => {
+    const resources = baseResources();
+    resources["https://rival.example/"] = html("https://rival.example/", `
+      <head>
+        <link rel="alternate" hreflang="de" href="https://rival.example/de/">
+        <script type="application/ld+json">{"@type":"Organization","name":"Rival"}</script>
+      </head>
+      <body><h1>Rival</h1><a href="/pricing-a">Pricing A</a></body>
+    `);
+    resources["https://rival.example/pricing-a"] = html("https://rival.example/pricing-a", `
+      <head><script type="application/ld+json">{"@type":"Product","name":"Rival Pro"}</script></head>
+      <body><h1>Rival pricing</h1><p>$25 monthly</p></body>
+    `);
+
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [{ key: "rival.example", name: "Rival", confirmed: true }] },
+      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+    );
+
+    // The rival's markup was read and kept -- it is evidence about the rival.
+    expect(result.pages.find((page) => page.url === "https://rival.example/")?.jsonLdTypes).toEqual(["Organization"]);
+    // It is simply not the owner's.
+    expect(result.machine.jsonLd).toMatchObject({ status: "absent", types: [] });
+    expect(result.machine.hreflang).toMatchObject({ status: "absent", locales: [] });
+  });
+
+  /**
+   * The other half of that fix, and the dangerous half.
+   *
+   * `parseGeoKnowledgeEvidenceV1` runs this integrity check on STORED bundles,
+   * not only on new ones: a published pack is rendered by parsing the evidence
+   * it was built from. Requiring the owner-only derivation on read would make
+   * every bundle stored before 2026-09-10 whose competitor contributed markup
+   * throw, and take its published version down with it.
+   */
+  it("still reads a bundle stored with the old whole-bundle summary", async () => {
+    const resources = baseResources();
+    resources["https://rival.example/"] = html("https://rival.example/", `
+      <head><script type="application/ld+json">{"@type":"Organization","name":"Rival"}</script></head>
+      <body><h1>Rival</h1></body>
+    `);
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [{ key: "rival.example", name: "Rival", confirmed: true }] },
+      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+    );
+    const stored = rehash({ ...result, machine: { ...result.machine, jsonLd: { ...result.machine.jsonLd, status: "present" as const, types: ["Organization"] } } });
+
+    expect(parseGeoKnowledgeEvidenceV1(stored).machine.jsonLd.types).toEqual(["Organization"]);
+    // A summary that is neither derivation is still refused.
+    expect(() => parseGeoKnowledgeEvidenceV1(rehash({ ...stored, machine: { ...stored.machine, jsonLd: { ...stored.machine.jsonLd, types: ["Invented"] } } })))
+      .toThrow(/JSON-LD machine summary mismatch/u);
+  });
+
+  /**
+   * A `<sitemapindex>` lists sitemaps, not pages.
+   *
+   * This collector scraped every `<loc>` out of whatever XML answered, so a
+   * site whose sitemap.xml is an index published "your sitemap lists 3 URLs"
+   * -- the number of child sitemap FILES -- and, because none of those three
+   * addresses is a page, "your knowledge pages are not listed" about a site
+   * that lists all of them one level down. The run collector already refuses
+   * to store a total for an index (`kb-run-collect-executor.ts`); this path
+   * never learned the difference.
+   *
+   * It does not follow the children: that is more requests against the owner's
+   * crawl allowance, and this collector reads three machine files by design.
+   * What it must not do is answer from a document it did not enumerate.
+   */
+  it("does not count a sitemap index's child sitemaps as the site's pages", async () => {
+    const resources = baseResources();
+    resources["https://example.com/sitemap.xml"] = text(
+      "https://example.com/sitemap.xml",
+      `<?xml version="1.0"?><sitemapindex>
+        <sitemap><loc>https://example.com/sitemap-pages.xml</loc></sitemap>
+        <sitemap><loc>https://example.com/sitemap-posts.xml</loc></sitemap>
+        <sitemap><loc>https://example.com/sitemap-tags.xml</loc></sitemap>
+      </sitemapindex>`,
+      "application/xml",
+    );
+
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+    );
+
+    expect(result.machine.sitemap.status).not.toBe("present");
+    expect(result.machine.sitemap.urlCount).toBeNull();
+    expect(result.machine.sitemap.knowledgePagesListed).toBeNull();
+    // Reached and read -- so not `absent`, which is the one status that would
+    // tell the owner they publish no sitemap.
+    expect(result.machine.sitemap.status).toBe("unreachable");
+    expect(result.sourceCatalogue.find(({ kind }) => kind === "sitemap")?.reason).toBe("insufficient_evidence");
+  });
+
+  /**
+   * gpt-6-astra's reproduction of the first attempt at the fix above, which
+   * tested `/<urlset[\s>]/iu` against the whole body.
+   *
+   * A comment mentioning `<urlset>` above a real `<sitemapindex>` rebuilt the
+   * exact defect the fix was for: the child sitemap FILES were published as the
+   * site's pages. And a namespace-prefixed `<sm:urlset>` -- an ordinary sitemap
+   * -- was rejected as not a sitemap at all. Both are decided by the document
+   * ROOT, which is what `readGeoSitemapDocument` reads.
+   */
+  it.each([
+    ["a comment naming urlset above a real index", `<?xml version="1.0"?><!-- <urlset> --><sitemapindex><sitemap><loc>https://example.com/sitemap-a.xml</loc></sitemap></sitemapindex>`, "insufficient_evidence"],
+    ["an error document quoting a whole sitemap in a comment", `<error><!-- <urlset><url><loc>https://example.com/</loc></url></urlset> --></error>`, "invalid_response"],
+    ["a sitemap nested inside an error document", `<error><urlset><url><loc>https://example.com/</loc></url></urlset></error>`, "invalid_response"],
+  ])("reads the document root, not the body: %s", async (_name, body, reason) => {
+    const resources = baseResources();
+    resources["https://example.com/sitemap.xml"] = text("https://example.com/sitemap.xml", body, "application/xml");
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+    );
+    expect(result.sourceCatalogue.find(({ kind }) => kind === "sitemap")?.reason).toBe(reason);
+    expect(result.machine.sitemap.urlCount).toBeNull();
+  });
+
+  /**
+   * gpt-6-astra, against the first attempt at the fix below: accepting any
+   * namespace prefix on `<loc>` counted `<image:loc>` -- the address of a
+   * picture ON a page, from Google's image-sitemap extension -- as another
+   * page, and an empty `<loc>` resolved to the site's home page and was
+   * published as listed.
+   */
+  it.each([
+    ["an image's address", `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"><url><loc>https://example.com/</loc><image:image><image:loc>https://example.com/photo.jpg</image:loc></image:image></url></urlset>`],
+    ["an empty location", `<urlset><url><loc>https://example.com/</loc></url><url><loc></loc></url></urlset>`],
+  ])("counts the site's pages and not %s", async (_name, body) => {
+    const resources = baseResources();
+    resources["https://example.com/sitemap.xml"] = text("https://example.com/sitemap.xml", body, "application/xml");
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+    );
+    expect(result.machine.sitemap.urlCount).toBe(1);
+    expect(result.machine.sitemap.locations).toEqual(["https://example.com/"]);
+  });
+
+  /** The protocol requires this escaping, so the page it names must be recognised. */
+  it("matches a page whose sitemap location escapes its query string", async () => {
+    const resources = baseResources(`
+      <html lang="en"><head><title>Example</title></head>
+      <body><h1>Example product</h1><p>Public product evidence.</p><a href="/product?a=1&amp;b=2">Product</a></body></html>`);
+    resources["https://example.com/product?a=1&b=2"] = html("https://example.com/product?a=1&b=2", "<html><body><h1>Product</h1><p>Public product evidence.</p></body></html>");
+    resources["https://example.com/sitemap.xml"] = text(
+      "https://example.com/sitemap.xml",
+      `<urlset><url><loc>https://example.com/product?a=1&amp;b=2</loc></url></urlset>`,
+      "application/xml",
+    );
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+    );
+
+    // Literal `&amp;` would be a different address, matching no page this run read.
+    expect(result.machine.sitemap.locations).toEqual(["https://example.com/product?a=1&b=2"]);
+    expect(result.machine.sitemap.knowledgePagesListed).toBe(true);
+  });
+
+  it("accepts a namespace-prefixed sitemap, which is an ordinary one", async () => {
+    const resources = baseResources();
+    resources["https://example.com/sitemap.xml"] = text(
+      "https://example.com/sitemap.xml",
+      `<?xml version="1.0"?><sm:urlset xmlns:sm="http://www.sitemaps.org/schemas/sitemap/0.9"><sm:url><sm:loc>https://example.com/</sm:loc></sm:url></sm:urlset>`,
+      "application/xml",
+    );
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+    );
+    expect(result.machine.sitemap.status).toBe("present");
+    expect(result.machine.sitemap.urlCount).toBe(1);
+  });
+
+  /** XML that is neither. The run collector calls this `invalid_response`; so must this. */
+  it("refuses XML that is not a sitemap at all", async () => {
+    const resources = baseResources();
+    resources["https://example.com/sitemap.xml"] = text(
+      "https://example.com/sitemap.xml",
+      `<?xml version="1.0"?><rss><channel><item><loc>https://example.com/a</loc></item></channel></rss>`,
+      "application/xml",
+    );
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+    );
+    expect(result.sourceCatalogue.find(({ kind }) => kind === "sitemap")?.reason).toBe("invalid_response");
+  });
+
   it("fetches only confirmed competitors and caps each at a homepage plus one deterministic product page", async () => {
     const resources = baseResources();
     resources["https://rival.example/"] = html("https://rival.example/", `

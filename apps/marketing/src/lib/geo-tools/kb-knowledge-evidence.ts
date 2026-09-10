@@ -6,6 +6,7 @@ import * as cheerio from "cheerio";
 import { z } from "zod";
 
 import { canonicalCrawlTargetKey } from "../tools/crawl-cache.ts";
+import { readGeoSitemapDocument } from "./kb-sitemap-document.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import { geoV2JsonbBytes } from "./kb-v2-json.ts";
 
@@ -391,6 +392,36 @@ function machineStatus(source: GeoKnowledgeEvidenceSource): MachineStatus { retu
 function addUnavailableMachineSources(sources: GeoKnowledgeEvidenceSource[], target: URL, reason: UnavailableReason): void { for (const [path, kind] of [["robots.txt", "robots"], ["sitemap.xml", "sitemap"], ["llms.txt", "llms"]] as const) { const url = new URL(path, target).toString(); if (!sources.some((source) => source.kind === kind)) sources.push(unavailableSource(kind, url, reason)); } }
 function sourceForMachine(kind: "robots" | "sitemap" | "llms", sources: readonly GeoKnowledgeEvidenceSource[]): GeoKnowledgeEvidenceSource { const source = sources.find((candidate) => candidate.kind === kind); if (!source) throw new Error(`Missing ${kind} source`); return source; }
 
+/**
+ * The owner's own pages, out of every page this bundle carries.
+ *
+ * `pages` holds competitor pages too -- the collector reads a rival's home and
+ * one product page into the same array -- while `machine.jsonLd` and
+ * `machine.hreflang` are answers about the OWNER's site and cite the owner's
+ * own sources as their basis. A union over every page published a rival's
+ * `Organization` markup and a rival's `de` alternate as the owner's, footnoted
+ * to a home page that says neither.
+ *
+ * Membership comes from the source catalogue rather than from the host:
+ * `assertEvidenceIntegrity` already requires every page to have a matching
+ * `own_page` or `competitor_page` source at the same address, so that source's
+ * kind is the answer -- and it stays right for a site whose own pages answer
+ * from the other spelling of its host.
+ */
+function ownPagesOf(pages: readonly Page[], sources: readonly GeoKnowledgeEvidenceSource[]): readonly Page[] {
+  const own = new Set(sources.flatMap((source) => source.kind === "own_page" && source.url !== null ? [source.url] : []));
+  return pages.filter((page) => own.has(page.url));
+}
+
+/** What the owner's own pages were observed to publish, derived in one place. */
+function ownMarkup(pages: readonly Page[], sources: readonly GeoKnowledgeEvidenceSource[]): { readonly jsonLdTypes: string[]; readonly hreflangLocales: string[] } {
+  const own = ownPagesOf(pages, sources);
+  return {
+    jsonLdTypes: [...new Set(own.flatMap((page) => page.jsonLdTypes))].sort(),
+    hreflangLocales: [...new Set(own.flatMap((page) => page.hreflangLocales))].sort(),
+  };
+}
+
 function finalize(target: URL, competitors: Competitor[], pages: Page[], sources: GeoKnowledgeEvidenceSource[], now: Date, reusedSitemap?: SitemapObservation, reusedSitemapUrlCount?: number): GeoKnowledgeEvidenceV1 {
   const robots = sourceForMachine("robots", sources); const sitemap = sourceForMachine("sitemap", sources); const llms = sourceForMachine("llms", sources); const ownRefs = sources.filter(({ kind }) => kind === "own_page").map(({ id: source }) => source);
   const sitemapSource = sitemap as GeoKnowledgeEvidenceSource & { locations?: string[]; truncated?: boolean; total?: number };
@@ -426,7 +457,8 @@ function finalize(target: URL, competitors: Competitor[], pages: Page[], sources
     : reusedSitemapMatches ? reusedSitemap!.truncated ?? false
       : credited || (urlCount !== null && urlCount > locations.length);
   const hasOwnEvidence = sources.some((source) => source.kind === "own_page" && source.availability !== "unavailable"); const unavailable = sources.some((source) => source.availability === "unavailable"); const availability: GeoKnowledgeEvidenceV1["availability"] = !hasOwnEvidence ? "unavailable" : unavailable ? "partial" : "available";
-  return buildGeoKnowledgeEvidenceV1({ schemaVersion: "marketing-geo-knowledge-evidence.v1", collectedAt: now.toISOString(), targetUrl: target.toString(), confirmedCompetitors: competitors, availability, limitation: availability === "available" ? null : "Some evidence sources were unavailable.", pages, machine: { jsonLd: { status: pages.some((page) => page.jsonLdTypes.length > 0) ? "present" as const : "absent" as const, types: [...new Set(pages.flatMap((page) => page.jsonLdTypes))].sort(), sourceRefs: ownRefs }, robots: { status: machineStatus(robots), sourceRefs: [robots.id] }, sitemap: { status: machineStatus(sitemap), sourceRefs: [sitemap.id], urlCount, knowledgePagesListed: sitemap.availability === "unavailable" ? null : pages.some((page) => listedPage(locations, page.url)), ...(sitemap.availability === "unavailable" ? {} : { locations, truncated }) }, llms: { status: machineStatus(llms), sourceRefs: [llms.id] }, hreflang: { status: pages.some((page) => page.hreflangLocales.length > 0) ? "present" as const : "absent" as const, locales: [...new Set(pages.flatMap((page) => page.hreflangLocales))].sort(), sourceRefs: ownRefs } }, sourceCatalogue: sources });
+  const ownPages = ownPagesOf(pages, sources); const markup = ownMarkup(pages, sources);
+  return buildGeoKnowledgeEvidenceV1({ schemaVersion: "marketing-geo-knowledge-evidence.v1", collectedAt: now.toISOString(), targetUrl: target.toString(), confirmedCompetitors: competitors, availability, limitation: availability === "available" ? null : "Some evidence sources were unavailable.", pages, machine: { jsonLd: { status: markup.jsonLdTypes.length > 0 ? "present" as const : "absent" as const, types: markup.jsonLdTypes, sourceRefs: ownRefs }, robots: { status: machineStatus(robots), sourceRefs: [robots.id] }, sitemap: { status: machineStatus(sitemap), sourceRefs: [sitemap.id], urlCount, knowledgePagesListed: sitemap.availability === "unavailable" ? null : ownPages.some((page) => listedPage(locations, page.url)), ...(sitemap.availability === "unavailable" ? {} : { locations, truncated }) }, llms: { status: machineStatus(llms), sourceRefs: [llms.id] }, hreflang: { status: markup.hreflangLocales.length > 0 ? "present" as const : "absent" as const, locales: markup.hreflangLocales, sourceRefs: ownRefs } }, sourceCatalogue: sources });
 }
 
 export async function collectGeoKnowledgeEvidenceV1(input: { targetUrl: string; competitors: Array<{ key: string; name: string; confirmed: boolean }> }, dependencies: CollectionDependencies): Promise<GeoKnowledgeEvidenceV1> {
@@ -481,7 +513,30 @@ export async function collectGeoKnowledgeEvidenceV1(input: { targetUrl: string; 
     if (!responseIsValid(result) || !machineResourceAnsweredRequest(url, result.url) || !expectedContentType(kind, responseIsValid(result) ? result.contentType : "") || responseIsValid(result) && Buffer.byteLength(result.body, "utf8") > GEO_KNOWLEDGE_EVIDENCE_LIMITS.pageBytes) { const reason = result && typeof result === "object" && (result as { kind?: unknown }).kind === "unavailable" ? unavailableReason((result as { reason?: unknown }).reason) : "invalid_response"; addSource(unavailableSource(kind, url, reason)); continue; }
     const lines = result.body.split(/\r?\n/u).map(clean).filter(Boolean);
     if ((kind === "robots" || kind === "llms") && lines.length === 0 || kind === "sitemap" && result.body.trim() === "") { addSource(unavailableSource(kind, url, "not_published")); continue; }
-    const validLocations = kind === "sitemap" ? [...new Set([...result.body.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/giu)].map((match) => sitemapLocation(match[1]!, target)).filter((location): location is string => location !== null))] : []; const locations = validLocations.slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.sitemapLocations);
+    /*
+     * What kind of sitemap document answered, which decides whether its `<loc>`
+     * values are pages at all.
+     *
+     * A `<sitemapindex>` lists sitemaps. Harvesting its locations published the
+     * number of child FILES as "your sitemap lists N URLs", and then, because
+     * none of those addresses is a page, "your knowledge pages are not listed"
+     * about a site that lists every one of them one level down. Following the
+     * children is not the answer here -- this collector reads three machine
+     * files against the owner's crawl allowance by design -- so it says it did
+     * not establish the answer, which is what `insufficient_evidence` means and
+     * what the card renders as "not confirmed in this run".
+     *
+     * XML that is neither is not evidence about the sitemap at all: we cannot
+     * say the site publishes none, only that what answered was not one.
+     *
+     * Parsed rather than matched, and both the kind and the addresses come out
+     * of the same parse -- see `kb-sitemap-document.ts` for the four ways the
+     * regexes that preceded it were wrong. `kb-run-collect-executor.ts` reads
+     * its own sitemap rows through the same function.
+     */
+    const document = kind === "sitemap" ? readGeoSitemapDocument(result.body) : null;
+    if (document !== null && document.root !== "urlset") { addSource(unavailableSource(kind, url, document.root === "sitemapindex" ? "insufficient_evidence" : "invalid_response")); continue; }
+    const validLocations = document === null ? [] : [...new Set(document.locations.map((location) => sitemapLocation(location, target)).filter((location): location is string => location !== null))]; const locations = validLocations.slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.sitemapLocations);
     const source = { id: sourceId(kind, url), kind, label: kind, url, competitor: null, availability: "available" as const, reason: null, observedAt: result.observedAt, bodyHash: sha256(result.body), excerpts: kind === "sitemap" ? locations.length > 0 ? locations.slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.maxExcerpts) : [boundedExact(result.body)] : lines.slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.maxExcerpts) } as GeoKnowledgeEvidenceSource & { locations?: string[]; truncated?: boolean };
     // `total` is the document's own count, kept beside the bounded sample so a
     // sitemap over `sitemapLocations` publishes its real size rather than the cap.
@@ -516,10 +571,24 @@ function assertEvidenceIntegrity(body: EvidenceBody): void {
   for (const key of Object.keys(expectedKinds) as Array<keyof typeof expectedKinds>) if (body.machine[key].sourceRefs.some((reference) => sourceById.get(reference)?.kind !== expectedKinds[key])) throw new Error("Machine source kind mismatch");
   const same = (left: readonly string[], right: readonly string[]) => left.length === right.length && left.every((value, index) => value === right[index]);
   const ownRefs = body.sourceCatalogue.filter(({ kind }) => kind === "own_page").map(({ id: sourceId }) => sourceId);
-  const jsonLdTypes = [...new Set(body.pages.flatMap((page) => page.jsonLdTypes))].sort();
-  const hreflangLocales = [...new Set(body.pages.flatMap((page) => page.hreflangLocales))].sort();
-  if (!same(body.machine.jsonLd.sourceRefs, ownRefs) || !same(body.machine.jsonLd.types, jsonLdTypes) || body.machine.jsonLd.status !== (jsonLdTypes.length > 0 ? "present" : "absent")) throw new Error("JSON-LD machine summary mismatch");
-  if (!same(body.machine.hreflang.sourceRefs, ownRefs) || !same(body.machine.hreflang.locales, hreflangLocales) || body.machine.hreflang.status !== (hreflangLocales.length > 0 ? "present" : "absent")) throw new Error("Hreflang machine summary mismatch");
+  const markup = ownMarkup(body.pages, body.sourceCatalogue);
+  /**
+   * The summary a bundle stored before 2026-09-10 carries, when a competitor
+   * page contributed markup the owner's pages do not.
+   *
+   * This validator runs on stored bundles as well as new ones -- a published
+   * pack is rendered by parsing the evidence it was built from -- so requiring
+   * the owner-only derivation here would make every such bundle throw on read
+   * and take the published version down with it. Accepting the old shape keeps
+   * those readable; it does not make them true, and the next update replaces
+   * them, because `finalize` cannot produce this shape any more.
+   */
+  const legacyTypes = [...new Set(body.pages.flatMap((page) => page.jsonLdTypes))].sort();
+  const legacyLocales = [...new Set(body.pages.flatMap((page) => page.hreflangLocales))].sort();
+  const summarised = (claimed: readonly string[], own: readonly string[], legacy: readonly string[], status: string): boolean =>
+    (same(claimed, own) || same(claimed, legacy)) && status === (claimed.length > 0 ? "present" : "absent");
+  if (!same(body.machine.jsonLd.sourceRefs, ownRefs) || !summarised(body.machine.jsonLd.types, markup.jsonLdTypes, legacyTypes, body.machine.jsonLd.status)) throw new Error("JSON-LD machine summary mismatch");
+  if (!same(body.machine.hreflang.sourceRefs, ownRefs) || !summarised(body.machine.hreflang.locales, markup.hreflangLocales, legacyLocales, body.machine.hreflang.status)) throw new Error("Hreflang machine summary mismatch");
   for (const key of ["robots", "sitemap", "llms"] as const) {
     const references = body.machine[key].sourceRefs;
     if (references.length !== 1) throw new Error("Machine endpoint requires one source");
@@ -530,7 +599,11 @@ function assertEvidenceIntegrity(body: EvidenceBody): void {
   const sitemapCounted = body.machine.sitemap.truncated === true
     ? (body.machine.sitemap.urlCount ?? -1) >= sitemapLocations.length
     : body.machine.sitemap.urlCount === sitemapLocations.length;
-  if (body.machine.sitemap.status === "present" && (!sitemapCounted || body.machine.sitemap.knowledgePagesListed !== body.pages.some((page) => listedPage(sitemapLocations, page.url)))) throw new Error("Sitemap machine summary mismatch");
+  // Own pages only, and the same both-shapes tolerance: "your knowledge pages
+  // are listed" is a claim about the owner's sitemap and the owner's pages.
+  const listedOwn = ownPagesOf(body.pages, body.sourceCatalogue).some((page) => listedPage(sitemapLocations, page.url));
+  const listedAny = body.pages.some((page) => listedPage(sitemapLocations, page.url));
+  if (body.machine.sitemap.status === "present" && (!sitemapCounted || (body.machine.sitemap.knowledgePagesListed !== listedOwn && body.machine.sitemap.knowledgePagesListed !== listedAny))) throw new Error("Sitemap machine summary mismatch");
   if (body.availability === "available" && body.limitation !== null || body.availability !== "available" && body.limitation === null) throw new Error("Evidence availability mismatch"); if (body.availability !== "unavailable" && !body.sourceCatalogue.some((source) => source.kind === "own_page" && source.availability !== "unavailable")) throw new Error("Missing own-site evidence");
 }
 export function geoKnowledgeEvidenceDigest(body: EvidenceBody): string { return geoV2Digest(body); }
