@@ -573,6 +573,67 @@ describe("GEO knowledge evidence collection", () => {
   });
 
   /**
+   * The production defect of 2026-09-10, reproduced.
+   *
+   * astrologywiki.com serves at `www.` and 307s its apex there, which is the
+   * ordinary shape of a site with two names. `readPage` compared the answering
+   * address with `asPublicUrl` -- exact host equality -- filed the answer as
+   * `invalid_response`, and the bundle ended up with no own-site evidence at
+   * all: `availability: "unavailable"`, which the knowledge generation refuses
+   * as invalid input. The owner saw the whole update fail.
+   *
+   * It stayed hidden because the home page was always credited from a stored
+   * row instead, so this path was never taken until the reuse rules changed.
+   */
+  it("reads a home page answered from the site's other spelling of its host", async () => {
+    const resources = baseResources();
+    resources["https://example.com/"] = {
+      kind: "ok",
+      // The address that ANSWERED, which is what the reader hands back.
+      url: "https://www.example.com/",
+      body: `<html lang="en"><head><title>Example</title>
+        <link rel="canonical" href="https://www.example.com/">
+        <link rel="alternate" hreflang="en" href="https://www.example.com/en">
+        </head><body><h1>Example product</h1><p>Public product evidence.</p>
+        <a href="https://www.example.com/pricing">Pricing</a></body></html>`,
+      contentType: "text/html; charset=utf-8",
+      observedAt: OBSERVED_AT,
+    };
+    resources["https://www.example.com/pricing"] = html("https://www.example.com/pricing",
+      `<html lang="en"><head><title>Pricing</title></head><body><h1>Pricing</h1><p>Plans and prices.</p></body></html>`);
+
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+    );
+
+    // The one thing that was broken: there IS own-site evidence.
+    expect(result.availability).not.toBe("unavailable");
+    expect(result.pages.map((page) => page.url)).toContain("https://www.example.com/");
+    // Filed under the address that answered, and the integrity checks accept it
+    // as this site's own rather than as a foreign source.
+    const own = result.sourceCatalogue.filter((source) => source.kind === "own_page");
+    expect(own.every((source) => source.availability === "available")).toBe(true);
+    // The page really was parsed: its links were followed and its markup read.
+    expect(result.machine.hreflang).toMatchObject({ status: "present", locales: ["en"] });
+    expect(own.length).toBeGreaterThan(1);
+  });
+
+  it("still refuses a home page answered from a genuinely different site", async () => {
+    const resources = baseResources();
+    resources["https://example.com/"] = {
+      kind: "ok", url: "https://elsewhere.test/", body: "<html><body><h1>Elsewhere</h1><p>Not this site.</p></body></html>",
+      contentType: "text/html; charset=utf-8", observedAt: OBSERVED_AT,
+    };
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+    );
+    expect(result.availability).toBe("unavailable");
+    expect(result.sourceCatalogue.find((source) => source.kind === "own_page")?.reason).toBe("invalid_response");
+  });
+
+  /**
    * The production defect of 2026-09-09, reproduced.
    *
    * astrologywiki.com serves its site at `www.` and publishes a sitemap whose
