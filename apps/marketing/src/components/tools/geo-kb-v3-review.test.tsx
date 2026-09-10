@@ -251,6 +251,73 @@ it("sends accept_all and shows the swept rows as accepted", async () => {
   expect(bodyOf(0).actions[0].kind).toBe("accept_all");
 });
 
+/**
+ * The Owner's report of 2026-09-10: after 全部接受 in one module, nothing in
+ * the other modules could be clicked.
+ *
+ * The refusal is correct -- nothing decided after a conflict can be saved, so
+ * every button in every module is right to go dead. What was missing is the
+ * way out. The sentence says "reload the page", and until this test there was
+ * no control on the card that does it: a reload button existed only inside the
+ * re-lock panel, which a conflict never opens.
+ */
+it("offers the reload its refusal asks for when a decision is refused as stale", async () => {
+  await render();
+  const modules = [...host.querySelectorAll("[data-geo-kb-module]")]
+    .filter((module) => module.querySelector("[data-accept-all]") !== null);
+  expect(modules.length).toBeGreaterThanOrEqual(2);
+
+  await act(async () => { (modules[0]!.querySelector("[data-accept-all]") as HTMLButtonElement).click(); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V3_AUTOSAVE_MS); });
+
+  expect(text("[data-review-status]")).toBe(card("en").review.conflict);
+  // The reported symptom, and the intended one.
+  const elsewhere = modules[1]!.querySelector('[data-item-action="accept"]') as HTMLButtonElement;
+  expect(elsewhere.disabled).toBe(true);
+  // The part that was missing.
+  const reload = host.querySelector("[data-kb-reload]") as HTMLButtonElement | null;
+  expect(reload).not.toBeNull();
+  expect(reload!.disabled).toBe(false);
+});
+
+/**
+ * The same refusal, reached through the one control that was left out of it.
+ *
+ * gpt-6-astra executed this against the parent commit: with a correction form
+ * already open, its save button stayed live under both holds, closed the form,
+ * and drew the row as `declared_owner` -- the owner's own claim, on screen --
+ * while no request was ever sent and the queue never flushed. The row said the
+ * correction had been made; nothing had been saved and nothing ever would be.
+ */
+it("holds the open correction form's save with everything else", async () => {
+  await render();
+  const form = await openCorrection(0);
+  const save = form.querySelector("[data-correction-save]") as HTMLButtonElement;
+  await typeInto(form.querySelector("textarea"), "Corrected");
+  expect(save.disabled).toBe(false);
+
+  // A decision made elsewhere is refused, which holds the whole card.
+  await act(async () => { (rows()[1]!.querySelector('[data-item-action="accept"]') as HTMLButtonElement).click(); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V3_AUTOSAVE_MS); });
+  expect(text("[data-review-status]")).toBe(card("en").review.conflict);
+
+  expect(save.disabled).toBe(true);
+  // Held, not closed: the text the owner typed is still there, and so is the
+  // way out of the form.
+  expect((form.querySelector("textarea") as HTMLTextAreaElement).value).toBe("Corrected");
+  expect((form.querySelector("[data-correction-cancel]") as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("hands that reload to the caller that owns one", async () => {
+  const onReload = vi.fn();
+  await render("en", {}, { onReload });
+  await click("[data-accept-all]");
+  await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V3_AUTOSAVE_MS); });
+  await click("[data-kb-reload]");
+
+  expect(onReload).toHaveBeenCalledTimes(1);
+});
+
 it("marks one row accepted when it is accepted on its own", async () => {
   await render();
   const first = rows()[0]!;
@@ -547,6 +614,40 @@ it("drives an update and reports the ledger the server described", async () => {
   // the draft it was handed.
   expect(text("[data-run-reload]")).toBe(card("en").run.notReloaded);
   expect(host.querySelector("[data-publish-outcome]")).toBeNull();
+});
+
+/**
+ * The other half of the same report, and the half two executed mutations
+ * proved was uncovered: deleting this button, and dropping the caller's
+ * `onReload` from the run panel, both left all 120 tests in this file and all
+ * 91 in this directory green.
+ *
+ * It matters more than the one beside the refusal, because it comes first. A
+ * completed run has written a new draft; this card is still holding the one it
+ * was handed, and its `draftVersion` is now behind. Every decision made from
+ * here is refused as stale -- which is the dead card the owner reported. This
+ * button is how they get out before that happens rather than after.
+ */
+it("offers the reload beside the sentence that says the card is out of date", async () => {
+  runAdvance = () => Response.json({
+    data: {
+      status: "complete", run: { runId: RUN_ID },
+      operations: [{ key: "fetch:own:https://acme.test/", kind: "fetch", state: "succeeded", reason: null }],
+      waiting: [], skipped: [], remaining: "0",
+    },
+  });
+  const onReload = vi.fn();
+  await render("en", {}, { onReload });
+  await click("[data-generate-kb]");
+
+  const panel = host.querySelector("[data-run-panel]");
+  expect(panel?.querySelector("[data-run-reload]")?.textContent).toBe(card("en").run.notReloaded);
+  const reload = panel?.querySelector("[data-kb-reload]") as HTMLButtonElement | null;
+  expect(reload).not.toBeNull();
+  expect(reload!.textContent).toBe(card("en").recovery.reload);
+
+  await act(async () => { reload!.click(); });
+  expect(onReload).toHaveBeenCalledTimes(1);
 });
 
 it("offers to continue an unfinished run instead of opening a second one", async () => {

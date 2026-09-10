@@ -288,7 +288,9 @@ function ComparisonsModule({ pack, sources, heading, locale, copy }: ModuleProps
 function ScopeModule({ pack, sources, heading, locale, copy }: ModuleProps) {
   const scope = geoKbModuleValue(pack.scope);
   return <GeoKbModuleSection title={copy.sections.scope} heading={heading} state={geoKbModuleState(pack.scope)}>
-    <div className="grid min-w-0 gap-5 sm:grid-cols-2">{SCOPE_GROUPS.map((kind) => <GeoKbEvidenceGroup
+    {/* Stacked, for the reason the draft card stacks it: four separate
+        questions read as four answers going down, and as two pairs across. */}
+    <div className="min-w-0 space-y-5">{SCOPE_GROUPS.map((kind) => <GeoKbEvidenceGroup
       key={kind}
       title={copy.scopeGroups[kind] ?? kind}
       heading={heading}
