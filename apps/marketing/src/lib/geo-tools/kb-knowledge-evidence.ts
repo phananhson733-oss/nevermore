@@ -133,7 +133,17 @@ const pageSchema = z.object({
   faq: z.array(z.object({ question: text(GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints), answer: text(GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints) }).strict()).max(32),
   links: z.array(z.object({ intent: z.enum(INTENTS), url: publicUrl }).strict()).max(INTENTS.length).refine((entries) => unique(entries.map(({ intent }) => intent)), "Duplicate page intent"),
 }).strict().superRefine((page, ctx) => {
-  if (!unique(page.hreflang.map(({ url }) => url))) ctx.addIssue({ code: "custom", message: "Duplicate hreflang URL" });
+  /*
+   * Locales are unique; the ADDRESSES they point at are not required to be.
+   *
+   * This used to demand unique URLs as well, and that rule is simply wrong
+   * about hreflang. Google's own recommended markup pairs `x-default` with a
+   * language alternate at the SAME address, and any site that publishes it
+   * threw `Duplicate hreflang URL` from `collectGeoKnowledgeEvidenceV1` --
+   * not for that page, for the whole collection, so the owner's update died
+   * with no knowledge at all. Two names for one page is what the standard is
+   * for.
+   */
   if (page.hreflangLocales.join("\u0000") !== page.hreflang.map(({ locale }) => locale).join("\u0000")) ctx.addIssue({ code: "custom", message: "Hreflang summary mismatch" });
 });
 const machineObservationSchema = z.object({ status: z.enum(MACHINE_STATUSES), sourceRefs: z.array(id).min(1).refine(unique, "Duplicate source reference") }).strict();
@@ -175,6 +185,68 @@ function clean(value: string): string { return value.replace(/\s+/gu, " ").trim(
 function bounded(value: string): string { return Array.from(clean(value)).slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints).join(""); }
 function boundedExact(value: string): string { return Array.from(value).slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints).join(""); }
 function asPublicUrl(value: string, base: URL, permitFragment = false): string | null { try { const url = new URL(value, base); if (!permitFragment && url.hash !== "") return null; url.hash = ""; if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.port !== "" || url.host !== base.host) return null; return url.toString(); } catch { return null; } }
+/**
+ * The address a page request was answered from, spelled as it was requested.
+ *
+ * `readPage` used `asPublicUrl` for this, and its `url.host === base.host` is
+ * what made a site served at `www.` unreadable. A target spelled
+ * `https://example.com/` is answered by `https://www.example.com/`, the answer
+ * was filed as `invalid_response`, no own-site page was ever collected, the
+ * bundle came back `unavailable`, and the V3 generation refused its own input
+ * before reaching the model. astrologywiki.com hit exactly that on 2026-09-10,
+ * in 4.2 seconds, with no generation record to say why. It stayed hidden while
+ * the home page was credited from a stored row instead -- that reader has no
+ * such check -- until PR #339 stopped crediting rows it cannot rebuild.
+ *
+ * An apex and its `www` sibling answer for one site here the way they already
+ * do for `machineResourceAnsweredRequest`, which is why robots.txt and
+ * sitemap.xml read correctly on the same site that could not read its own home
+ * page. The answer is then RE-SPELLED onto the requested host.
+ *
+ * Re-spelling is what keeps this inside the collector. Every consumer
+ * downstream identifies an own-site source by
+ * `new URL(source.url).host === new URL(targetUrl).host` --
+ * `kb-knowledge-synthesis-v2-contract.ts`, `kb-knowledge-synthesis-contract.ts`,
+ * `kb-knowledge-pack.ts`, `kb-prepared-contract.ts`, `geo-kb-v2-wire.ts` -- and
+ * `assertEvidenceIntegrity` requires a page's links, canonical and hreflang to
+ * share the page's own host. Filing the answer under `www.` passes this
+ * collector and is then thrown out by the next contract as a foreign source,
+ * which moves the failure rather than fixing it. That was this branch's first
+ * attempt, and a review proved it still failed the same update.
+ *
+ * DELIBERATELY NARROW: only the address that ANSWERED, never an address a page
+ * DECLARES. `asPublicUrl` keeps its exact host test for links, canonical and
+ * hreflang alternates, because a link rewritten from the published
+ * `https://www.example.com/pricing` to `https://example.com/pricing` changes
+ * which address is FETCHED. `canonicalCrawlTargetKey` shares a crawl budget
+ * between the siblings and says in its own comment that they may serve
+ * different content, so the rewritten address can 404 -- or answer with
+ * something the page never linked to, which would then be filed as that
+ * link's content.
+ *
+ * Two costs, both known, neither hidden. An ABSOLUTE declaration naming the
+ * sibling is dropped, exactly as on main, so a locale can go unreported. And a
+ * RELATIVE declaration is resolved against the FILED address rather than the
+ * answering one, so `/de` on a document served from `www` is recorded as the
+ * apex `/de`. On a site whose apex redirects to `www` those are one page; on a
+ * site routing the two siblings differently per path they are not. Separating
+ * the answering address from the filed identity is what fixes the second, and
+ * it is a change to this collector's URL handling rather than to a redirect
+ * check. `kb-knowledge-evidence.test.ts` asserts both costs.
+ *
+ * A genuinely different host still returns null.
+ */
+function answeredAs(finalUrl: string, requestedUrl: string): string | null {
+  try {
+    const url = new URL(finalUrl); const base = new URL(requestedUrl);
+    if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.port !== "" || url.hash !== "") return null;
+    const key = canonicalCrawlTargetKey(url.href); const baseKey = canonicalCrawlTargetKey(base.href);
+    if (key === null || key === "" || baseKey === null || key !== baseKey) return null;
+    url.host = base.host;
+    const href = url.toString();
+    return strictPublicUrl(href) ? href : null;
+  } catch { return null; }
+}
 /**
  * One `<loc>` value, as this site's own address or not at all.
  *
@@ -391,7 +463,7 @@ export async function collectGeoKnowledgeEvidenceV1(input: { targetUrl: string; 
     if (reusedUrls.has(requestUrl) || !canRead()) return null;
     const result = await dependencies.readResource({ url: requestUrl, expected: "html", timeoutMs: timeout() });
     if (!responseIsValid(result)) { const reason = result && typeof result === "object" && (result as { kind?: unknown }).kind === "unavailable" ? unavailableReason((result as { reason?: unknown }).reason) : "invalid_response"; addSource(unavailableSource(kind, requestUrl, reason, competitor)); return null; }
-    const finalUrl = asPublicUrl(result.url, new URL(requestUrl));
+    const finalUrl = answeredAs(result.url, requestUrl);
     if (finalUrl === null || !expectedContentType("html", result.contentType) || Buffer.byteLength(result.body, "utf8") > GEO_KNOWLEDGE_EVIDENCE_LIMITS.pageBytes) { addSource(unavailableSource(kind, requestUrl, "invalid_response", competitor)); return null; }
     const parsed = pageData(result.body, finalUrl); if (parsed.excerpts.length === 0) { addSource(unavailableSource(kind, finalUrl, "insufficient_evidence", competitor)); return null; } if (seenPageUrls.has(finalUrl) || parsed.canonicalUrl !== null && seenCanonicalUrls.has(parsed.canonicalUrl)) return null; seenPageUrls.add(finalUrl); if (parsed.canonicalUrl !== null) seenCanonicalUrls.add(parsed.canonicalUrl);
     addSource({ id: sourceId(kind, finalUrl), kind, label: kind === "own_page" ? "Own site page" : "Competitor page", url: finalUrl, competitor, availability: "available", reason: null, observedAt: result.observedAt, bodyHash: sha256(result.body), excerpts: parsed.excerpts.slice(0, GEO_KNOWLEDGE_EVIDENCE_LIMITS.maxExcerpts) });

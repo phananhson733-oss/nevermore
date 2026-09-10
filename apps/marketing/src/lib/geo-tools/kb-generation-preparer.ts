@@ -315,8 +315,18 @@ function storedHreflang(values: unknown): GeoKnowledgeStoredHreflang {
     if (!usableSourceText(locale, OBSERVED_PAGE_LIMITS.typeCodePoints) || !exactPublicSourceUrl(url)) return { kind: "unreadable" };
     pairs.push({ locale, url });
   }
-  if (new Set(pairs.map((pair) => pair.locale)).size !== pairs.length
-    || new Set(pairs.map((pair) => pair.url)).size !== pairs.length) return { kind: "unreadable" };
+  /*
+   * Locales are unique; the ADDRESSES they name are not required to be.
+   *
+   * This is the seam copy of the rule `pageSchema` used to carry, and it is
+   * wrong for the same reason: Google's recommended markup pairs `x-default`
+   * with a language alternate at the SAME address. Refusing the pairs marks
+   * the row `unreadable`, so `creditGeoKnowledgeObservedPage` withholds the
+   * page and the V3 assembly drops the WHOLE machine module -- JSON-LD the
+   * same row stored perfectly well included. Fixing the producer and leaving
+   * this here would have made the collection succeed and the reuse still fail.
+   */
+  if (new Set(pairs.map((pair) => pair.locale)).size !== pairs.length) return { kind: "unreadable" };
   return { kind: "stored", values: pairs };
 }
 
