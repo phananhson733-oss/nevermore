@@ -133,7 +133,17 @@ const pageSchema = z.object({
   faq: z.array(z.object({ question: text(GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints), answer: text(GEO_KNOWLEDGE_EVIDENCE_LIMITS.excerptCodePoints) }).strict()).max(32),
   links: z.array(z.object({ intent: z.enum(INTENTS), url: publicUrl }).strict()).max(INTENTS.length).refine((entries) => unique(entries.map(({ intent }) => intent)), "Duplicate page intent"),
 }).strict().superRefine((page, ctx) => {
-  if (!unique(page.hreflang.map(({ url }) => url))) ctx.addIssue({ code: "custom", message: "Duplicate hreflang URL" });
+  /*
+   * Locales are unique; the ADDRESSES they point at are not required to be.
+   *
+   * This used to demand unique URLs as well, and that rule is simply wrong
+   * about hreflang. Google's own recommended markup pairs `x-default` with a
+   * language alternate at the SAME address, and any site that publishes it
+   * threw `Duplicate hreflang URL` from `collectGeoKnowledgeEvidenceV1` --
+   * not for that page, for the whole collection, so the owner's update died
+   * with no knowledge at all. Two names for one page is what the standard is
+   * for.
+   */
   if (page.hreflangLocales.join("\u0000") !== page.hreflang.map(({ locale }) => locale).join("\u0000")) ctx.addIssue({ code: "custom", message: "Hreflang summary mismatch" });
 });
 const machineObservationSchema = z.object({ status: z.enum(MACHINE_STATUSES), sourceRefs: z.array(id).min(1).refine(unique, "Duplicate source reference") }).strict();

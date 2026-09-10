@@ -647,30 +647,39 @@ describe("GEO knowledge evidence collection", () => {
   });
 
   /**
-   * The boundary of the fix, asserted rather than described.
+   * The boundary of the fix, asserted rather than described -- including the
+   * half of it that is a known limitation.
    *
-   * Only the address that ANSWERED is folded onto the requested spelling. An
-   * address the page DECLARES keeps the exact host test it has on main, and
-   * these two assertions are what say so.
+   * `answeredAs` folds only the address that ANSWERED. An address the page
+   * declares ABSOLUTELY keeps `asPublicUrl`'s exact host test, so the sibling
+   * canonical and the sibling `fr` alternate are dropped and that locale goes
+   * unreported. That is main's behaviour and the deliberate cost of staying
+   * narrow: letting declarations carry the host they were written with changes
+   * what the bundle CLAIMS, and belongs with a decision about how to report it.
    *
-   * The cost is real and is the reason this is a test and not a comment: the
-   * `fr` alternate and the canonical are declared on the sibling host and are
-   * dropped, so a locale goes unreported. Letting declarations carry the host
-   * they were written with is a change to what the bundle CLAIMS, and belongs
-   * with a decision about how to report it -- not inside a redirect fix.
+   * A RELATIVE declaration is a different story and the assertion below says
+   * so plainly. `pageData` is handed the filed address, so `/de` on a document
+   * served from `https://www.example.com/` is recorded as
+   * `https://example.com/de` -- the apex sibling of what it resolves to
+   * against the answering document. For a site whose apex redirects to `www`
+   * those are the same page, which is why this ships; on a site where the two
+   * siblings serve different content at the same path they are not, and this
+   * is the seam where that would show. Fixing it means parsing against the
+   * answering address and carrying the filed identity separately, which is a
+   * change to this collector's URL handling and not to a redirect check.
    */
-  it("keeps a page's own declarations on the host they were declared with", async () => {
+  it("keeps absolute declarations on their own host, and re-bases relative ones onto the filed address", async () => {
     const result = await collectGeoKnowledgeEvidenceV1(
       { targetUrl: "https://example.com/", competitors: [] },
       { readResource: reader(wwwAnsweredResources()), now: () => new Date(COLLECTED_AT) },
     );
 
-    // Declared as `https://www.example.com/` under an apex page: not folded,
-    // and not recorded as an apex canonical the page never claimed.
+    // Declared as `https://www.example.com/` under an apex-filed page: dropped,
+    // not recorded as an apex canonical the page never wrote.
     expect(result.pages[0]!.canonicalUrl).toBeNull();
-    // `/de` resolves against the page; `https://www.example.com/fr` does not.
+    // `https://www.example.com/fr` likewise; `/de` is relative and is re-based.
+    expect(result.pages[0]!.hreflang).toEqual([{ locale: "de", url: "https://example.com/de" }]);
     expect(result.machine.hreflang).toMatchObject({ status: "present", locales: ["de"] });
-    expect(result.pages[0]!.hreflang.map(({ url }) => url)).toEqual(["https://example.com/de"]);
   });
 
   /**
@@ -695,19 +704,22 @@ describe("GEO knowledge evidence collection", () => {
   });
 
   /**
-   * One page's two spellings must not cost the owner the whole update.
+   * One page's alternates must never cost the owner the whole collection.
    *
-   * Folding declared addresses onto the requested host collapses these two
-   * alternates into one URL, and `pageSchema` throws `Duplicate hreflang URL`
-   * -- from `collectGeoKnowledgeEvidenceV1`, so the entire collection is lost
-   * over a single page's markup. This is legal HTML and the first version of
-   * this fix died on it.
+   * `pageSchema` demanded unique hreflang URLs, and that rule is wrong about
+   * hreflang: Google's own recommended markup pairs `x-default` with a
+   * language alternate at the SAME address. Any site publishing it threw
+   * `Duplicate hreflang URL` out of `collectGeoKnowledgeEvidenceV1` -- not for
+   * that page, for the whole collection -- so the update died with no
+   * knowledge at all. That was true on main and had nothing to do with
+   * redirects; folding a sibling host onto the filed address is simply a
+   * second way to reach the same collision, which is how it was found.
    */
-  it("survives a page declaring alternates on both spellings of its own host", async () => {
+  it("collects a page whose x-default and language alternate share one address", async () => {
     const resources = baseResources(`
       <html lang="en"><head><title>Example</title>
         <link rel="alternate" hreflang="en" href="https://example.com/">
-        <link rel="alternate" hreflang="x-default" href="https://www.example.com/">
+        <link rel="alternate" hreflang="x-default" href="https://example.com/">
       </head><body><h1>Example product</h1><p>Public product evidence.</p></body></html>`);
 
     const result = await collectGeoKnowledgeEvidenceV1(
@@ -716,7 +728,36 @@ describe("GEO knowledge evidence collection", () => {
     );
 
     expect(result.availability).not.toBe("unavailable");
-    expect(result.machine.hreflang).toMatchObject({ status: "present", locales: ["en"] });
+    expect(result.machine.hreflang).toMatchObject({ status: "present", locales: ["en", "x-default"] });
+    expect(result.pages[0]!.hreflang).toEqual([
+      { locale: "en", url: "https://example.com/" }, { locale: "x-default", url: "https://example.com/" },
+    ]);
+  });
+
+  /**
+   * The same collision reached the other way, on a www-answered page.
+   *
+   * An absolute apex alternate and a relative one resolve to two different
+   * addresses against the answering document and to ONE after the filed
+   * address is used as the parsing base. With the URL-uniqueness rule gone
+   * this is recorded rather than thrown, so a page's markup can no longer
+   * discard the collection.
+   */
+  it("survives a page declaring one alternate absolutely and another relatively", async () => {
+    const resources = wwwAnsweredResources();
+    resources["https://example.com/"] = html("https://www.example.com/", `
+      <html lang="en"><head><title>Example</title>
+        <link rel="alternate" hreflang="en" href="https://example.com/en">
+        <link rel="alternate" hreflang="x-default" href="/en">
+      </head><body><h1>Example product</h1><p>Public product evidence.</p></body></html>`);
+
+    const result = await collectGeoKnowledgeEvidenceV1(
+      { targetUrl: "https://example.com/", competitors: [] },
+      { readResource: reader(resources), now: () => new Date(COLLECTED_AT) },
+    );
+
+    expect(result.availability).not.toBe("unavailable");
+    expect(result.machine.hreflang).toMatchObject({ status: "present", locales: ["en", "x-default"] });
   });
 
   /**
@@ -780,19 +821,23 @@ describe("GEO knowledge evidence collection", () => {
   });
 
   /**
-   * Why the answer has to be re-spelled, asserted at the contract that says so.
+   * Why the answer has to be filed under the requested spelling, asserted past
+   * the collector.
    *
-   * These two builders are the next step after collection: the V3 preparer
-   * calls `buildGeoKnowledgeSynthesisInputV2` and turns a throw into
-   * `invalid_input`, before a generation record exists. Both refuse an
-   * own-site source whose host is not the target's, so an answer filed under
-   * `www.` would satisfy the collector and fail HERE -- which is what the
-   * first version of this fix did, and what a test stopping at collection
-   * cannot see.
+   * These two builders are the next step: the V3 preparer calls
+   * `buildGeoKnowledgeSynthesisInputV2` and turns a throw into `invalid_input`
+   * before a generation record exists. An answer filed under `www.` satisfies
+   * the collector and fails HERE, which is what this branch's first attempt
+   * did and what a test stopping at collection cannot see.
    *
-   * The first assertion pins the downstream rule directly, on a bundle whose
-   * own-site source has been re-spelled back by hand. The second is the
-   * round-trip: what the collector actually produces is accepted.
+   * What this pins, exactly: BOTH builders reject a sibling-spelled own-site
+   * source, and both accept what the collector actually produces. It does NOT
+   * isolate the builders' own `Foreign own-site source` clauses -- each builder
+   * re-parses the evidence first, so the rejection arrives from the shared
+   * `assertEvidenceIntegrity` reached through the builder. A review mutated
+   * away both builders' own clauses and this test still passed. The invariant
+   * is enforced twice; this proves it holds at the entry point the preparer
+   * uses, not which of the two guards fired.
    */
   it("is refused downstream when an own-site source carries the sibling spelling", async () => {
     const result = await collectGeoKnowledgeEvidenceV1(
