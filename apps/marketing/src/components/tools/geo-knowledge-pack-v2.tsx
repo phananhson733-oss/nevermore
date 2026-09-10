@@ -389,9 +389,10 @@ function MachineNote({ kind, status, refs, sources, copy }: {
   if (status === "present") return null;
   const cited = refs.flatMap((ref) => { const source = sources.get(ref); return source === undefined ? [] : [source]; });
   if (kind === "jsonLd" || kind === "hreflang") {
-    // Own pages that were actually read. An unavailable source is an address
-    // nobody read, and counting it would inflate the claim this line makes.
-    const read = cited.filter((source) => source.availability !== "unavailable").length;
+    // Distinct ADDRESSES with usable evidence. Two source records may cite one
+    // URL -- the final v2 contract permits it even though the collector
+    // deduplicates -- and counting records would say "2 pages" about one page.
+    const read = new Set(cited.filter((source) => source.availability !== "unavailable").map((source) => source.url ?? source.id)).size;
     return <Compact className="mt-2 text-text-dark-secondary">{copy.machineSampled.replace("{count}", String(read))}</Compact>;
   }
   const reason = cited.find((source) => source.availability === "unavailable" && source.reason !== null)?.reason ?? null;
@@ -448,8 +449,16 @@ export function GeoMachineModuleView({ module, sources, heading, locale, copy, c
  * whose key this copy does not know keeps whatever it was stored with.
  */
 function coverageLabel(id: string, stored: string, copy: GeoKnowledgePackCopy): string {
-  return copy.coverageLabels[id.slice(id.indexOf(":") + 1)] ?? stored;
+  // `Object.hasOwn`, and the exact prefix, because the id is stored data. The
+  // contract accepts `coverage:__proto__`, and a plain index on it returns
+  // `Object.prototype` -- which React refuses to render, taking the whole page
+  // down. `coverage:constructor` reaches a function the same way.
+  if (!id.startsWith(PREFIX)) return stored;
+  const key = id.slice(PREFIX.length);
+  if (key === "questions") return copy.coverageQuestions;
+  return Object.hasOwn(copy.coverageLabels, key) ? copy.coverageLabels[key]! : stored;
 }
+const PREFIX = "coverage:";
 
 export function GeoCoverageModuleView({ module, sources, heading, locale, copy }: GeoReadOnlyModuleProps<GeoModuleValueOf<GeoKnowledgePackV2["coverage"]>>) {
   const coverage = geoKbModuleValue(module);
@@ -459,12 +468,18 @@ export function GeoCoverageModuleView({ module, sources, heading, locale, copy }
         <span className="text-[15px] font-semibold text-text-dark-primary">{coverageLabel(item.id, item.label, copy)}</span>
         <span className="inline-flex rounded-full border border-brand-border-card px-2.5 py-1 text-[12px] text-text-dark-secondary">{copy.coverageStatuses[item.status]}</span>
       </div>
-      {/* The stored summary is the server's English, written when the pack was
-          assembled and the same sentence for every reason a section produced
-          nothing. A `missing` row is rendered in the reader's language instead;
-          `partial` keeps its stored limitation, which is specific. */}
-      <Compact className="mt-3">{item.status === "missing" ? copy.coverageMissing : item.summary}</Compact>
-      {item.nextAction === null ? null : <Compact className="mt-3 text-text-dark-secondary">{copy.fields.nextAction}: {copy.coverageNextAction}</Compact>}
+      {/* The stored summary and action stay. An earlier draft of this change
+          replaced them with one localized sentence, on the belief that every
+          unavailable row carried the same server English. The v3 publisher
+          proves otherwise: it writes "you excluded every item in this section",
+          "a required field was excluded" and "this version has no question set,
+          so AI visibility checks cannot run", each with its own recovery
+          action. Replacing those cost the owner the one thing the row knew.
+          They are still English on a Chinese page, which is a producer problem:
+          the fix is for the producer to emit a key, not for the reader to throw
+          the sentence away. */}
+      <Compact className="mt-3">{item.summary}</Compact>
+      {item.nextAction === null ? null : <Compact className="mt-3 text-text-dark-secondary">{copy.fields.nextAction}: {item.nextAction}</Compact>}
       <Basis refs={item.sourceRefs} sources={sources} copy={copy} locale={locale} />
     </div>)}</div>
   </GeoKbModuleSection>;

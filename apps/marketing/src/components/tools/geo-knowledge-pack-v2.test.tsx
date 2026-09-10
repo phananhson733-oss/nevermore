@@ -165,25 +165,41 @@ it.each(["en", "zh"])("says WHY a machine signal is not present, in %s", async (
   expect(copy.machineStatuses.unreachable).not.toContain(locale === "zh" ? "无法访问" : "Could not be reached");
 });
 
-it.each(["en", "zh"])("scopes a page-level negative to the pages it read, in %s", async (locale) => {
+it.each(["en", "zh"])("scopes a page-level negative to the pages it cites, in %s", async (locale) => {
   const pack = geoKnowledgePackV2Fixture();
   const machine = machineOf(pack);
   // astrologywiki.com declares hreflang on /zh/ and not on its home page. This
-  // run read the home page. "Not detected" alone is a statement about one page
-  // published as a verdict about a 558-URL site.
-  const noHreflang = {
+  // run cited two own pages against a 558-URL sitemap: "not detected" alone is
+  // a statement about two pages published as a verdict about the site.
+  const second = { ...pack.sourceCatalogue.find((source) => source.id === "source:home")!, id: "source:about", url: "https://example.com/about" };
+  const twoPages = {
     ...pack,
-    machine: { ...pack.machine, value: { ...machine, hreflang: { status: "absent" as const, locales: [], sourceRefs: ["source:home"] } } },
+    machine: { ...pack.machine, value: { ...machine, hreflang: { status: "absent" as const, locales: [], sourceRefs: ["source:home", "source:about"] } } },
+    sourceCatalogue: [...pack.sourceCatalogue, second],
   };
-  await render(locale, ["machine"], rebuilt(noHreflang));
+  await render(locale, ["machine"], rebuilt(twoPages));
 
   const copy = geoKnowledgePackCopy(locale);
   const hreflang = host.querySelector('[data-machine-field="hreflang"]')?.textContent ?? "";
   expect(hreflang).toContain(copy.machineStatuses.absent);
-  expect(hreflang).toContain(copy.machineSampled.replace("{count}", "1"));
-  // The count is the number of own pages actually READ, so it can never claim
-  // more reading than happened.
-  expect(hreflang).toContain("1");
+  expect(hreflang).toContain(copy.machineSampled.replace("{count}", "2"));
+});
+
+it("counts addresses, not source records", async () => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  // The final v2 contract accepts two source records for one URL even though
+  // the collector deduplicates. Counting records would say "2 pages" about one.
+  const twice = { ...pack.sourceCatalogue.find((source) => source.id === "source:home")!, id: "source:home-again" };
+  const duplicated = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, hreflang: { status: "absent" as const, locales: [], sourceRefs: ["source:home", "source:home-again"] } } },
+    sourceCatalogue: [...pack.sourceCatalogue, twice],
+  };
+  await render("en", ["machine"], rebuilt(duplicated));
+
+  const copy = geoKnowledgePackCopy("en");
+  expect(host.querySelector('[data-machine-field="hreflang"]')?.textContent).toContain(copy.machineSampled.replace("{count}", "1"));
 });
 
 it.each(["en", "zh"])("does not call an undetermined crawler analysis an observed absence, in %s", async (locale) => {
@@ -217,33 +233,78 @@ it.each(["en", "zh"])("separates a check nobody ran from a check that found noth
   const copy = geoKnowledgePackCopy(locale);
   const text = host.querySelector('[data-machine-field="snippets"]')?.textContent ?? "";
   expect(text).toContain(card(locale).machine.snippetStatuses.not_checked);
-  // The point of the change: it can no longer be mistaken for the observed
-  // negative rendered on every neighbouring card.
-  expect(card(locale).machine.snippetStatuses.not_checked).not.toBe(copy.machineStatuses.absent);
+  // The point of the change: it names the RUN, so it cannot be read as a
+  // finding about the site the way the neighbouring `absent` cards are. The
+  // old zh string was 未检测, one character off the 未检测到 beside it.
+  expect(card(locale).machine.snippetStatuses.not_checked).toContain(locale === "zh" ? "本次" : "this run");
   expect(copy.machineStatuses.absent.startsWith(card(locale).machine.snippetStatuses.not_checked)).toBe(false);
 });
 
-it.each(["en", "zh"])("names a coverage row in the reader's language and does not invent its cause, in %s", async (locale) => {
+it.each(["en", "zh"])("names a coverage row in the reader's language and keeps what the row knows, in %s", async (locale) => {
   const pack = geoKnowledgePackV2Fixture();
-  // The stored row is the server's English, and the same sentence for every
-  // reason a section produced nothing.
-  const missing = {
+  // The v3 publisher writes a specific summary and a specific recovery action
+  // for an owner who excluded every item in a section. An earlier draft of this
+  // change replaced both with one localized sentence and cost the owner the
+  // only thing the row knew.
+  const excluded = {
     ...pack,
     coverage: { status: "available" as const, value: [{
-      id: "coverage:comparisons", label: "Comparisons", status: "missing" as const,
-      summary: "This content is currently unavailable.",
-      nextAction: "Review available evidence before relying on this section.",
+      id: "coverage:qa", label: "Q&A", status: "missing" as const,
+      summary: "You excluded every item in this section, so it is not published.",
+      nextAction: "Restore an excluded item to publish this section.",
       sourceRefs: [],
     }] },
   };
-  await render(locale, ["coverage"], rebuilt(missing));
+  await render(locale, ["coverage"], rebuilt(excluded));
 
   const copy = geoKnowledgePackCopy(locale);
   const text = host.textContent ?? "";
-  expect(text).toContain(copy.coverageLabels.comparisons);
-  expect(text).toContain(copy.coverageMissing);
-  expect(text).not.toContain("This content is currently unavailable.");
-  if (locale === "zh") expect(text).not.toContain("Comparisons");
+  expect(text).toContain(copy.coverageLabels.qa);
+  expect(text).toContain("You excluded every item in this section");
+  expect(text).toContain("Restore an excluded item");
+  if (locale === "zh") expect(text).not.toContain("Q&A");
+  // "缺失" reads as a failure. Content the owner deliberately removed is not
+  // missing, and this badge covers both.
+  expect(copy.coverageStatuses.missing).not.toBe(locale === "zh" ? "缺失" : "Missing");
+});
+
+it("names the questions row, which has no module of its own", async () => {
+  const pack = geoKnowledgePackV2Fixture();
+  const questions = {
+    ...pack,
+    coverage: { status: "available" as const, value: [{
+      id: "coverage:questions", label: "Question set", status: "missing" as const,
+      summary: "This version has no question set.", nextAction: null, sourceRefs: [],
+    }] },
+  };
+  await render("zh", ["coverage"], rebuilt(questions));
+
+  expect(host.textContent).toContain(geoKnowledgePackCopy("zh").coverageQuestions);
+  expect(host.textContent).not.toContain("Question set");
+});
+
+it("renders a stored coverage id that names a prototype member", async () => {
+  const pack = geoKnowledgePackV2Fixture();
+  // `coverage:__proto__` passes the contract. A plain dictionary index returns
+  // `Object.prototype`, which React refuses to render -- the whole card, and
+  // everything after it, disappears with "Objects are not valid as a React
+  // child". The stored label is the right answer for an id nobody knows.
+  const hostile = {
+    ...pack,
+    coverage: { status: "available" as const, value: [
+      { id: "coverage:__proto__", label: "Custom coverage", status: "missing" as const, summary: "Unavailable.", nextAction: null, sourceRefs: [] },
+      { id: "coverage:constructor", label: "Another row", status: "missing" as const, summary: "Unavailable.", nextAction: null, sourceRefs: [] },
+      { id: "entity", label: "Bare id", status: "missing" as const, summary: "Unavailable.", nextAction: null, sourceRefs: [] },
+    ] },
+  };
+  await render("zh", ["coverage"], rebuilt(hostile));
+
+  const text = host.textContent ?? "";
+  expect(text).toContain("Custom coverage");
+  expect(text).toContain("Another row");
+  // A bare `entity` is not a coverage key and must not acquire that name.
+  expect(text).toContain("Bare id");
+  expect(text).not.toContain(geoKnowledgePackCopy("zh").coverageLabels.entity);
 });
 
 it("keeps a partial module visible and states its limitation", async () => {
