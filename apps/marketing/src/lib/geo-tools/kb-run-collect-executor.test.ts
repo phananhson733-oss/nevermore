@@ -376,6 +376,11 @@ describe("performing one collection operation", () => {
           kind: "unavailable",
           url: OWN,
           reason: "not_found",
+          // The site answered 404. `reached` is how the real reader says so --
+          // it sets it on everything from the admission check downwards -- and
+          // this fixture used to omit it, which is a shape no 404 can have. It
+          // passed only while the caller did not look.
+          reached: true,
         }),
         recordObservation: recordObservation as never,
       }),
@@ -388,6 +393,33 @@ describe("performing one collection operation", () => {
       kind: "unavailable",
       reason: "not_found",
     });
+  });
+
+  /**
+   * gpt-6-astra's P1 against the parent of this commit.
+   *
+   * Our own gate refuses with an HTTP status, and the reader turns that status
+   * into `blocked` / `rate_limited` / `fetch_failed` -- the same words the SITE
+   * would produce. `reached` is the only thing that separates them, and this
+   * caller tested the reason instead: a gate refusal carrying 400 was filed as
+   * `own_page: unavailable / blocked`, an assertion about a site that no
+   * request ever left for, and it then suppressed the real fetch for the rest
+   * of the row's TTL.
+   */
+  it.each(["blocked", "fetch_failed"] as const)("never files our own gate's %s refusal as a reading of the page", async (reason) => {
+    const recordObservation = vi.fn(sources().recordObservation);
+    const { executor } = createGeoRunCollectRuntime(
+      sources({
+        // No `reached`: the request never left.
+        createReader: () => async () => ({ kind: "unavailable", url: OWN, reason }),
+        recordObservation: recordObservation as never,
+      }),
+    );
+    await expect(executor.start(operation(), context)).resolves.toEqual({
+      kind: "failed_retryable",
+      reason: "rate_limited",
+    });
+    expect(recordObservation).not.toHaveBeenCalled();
   });
 
   it("records a page with nothing quotable as observed but unusable", async () => {
@@ -665,6 +697,54 @@ describe("observing the site's machine-readable files", () => {
     await expect(executor.start(operation(), context)).resolves.toMatchObject({ kind: "succeeded" });
   });
 
+  /**
+   * The document ROOT decides what a sitemap is, not a string in its body.
+   *
+   * gpt-6-astra ran these through the real executor while it tested
+   * `/<urlset[\s>]/iu` against the whole body: a comment naming `<urlset>`
+   * above a genuine `<sitemapindex>` was stored as `ok` with
+   * `sitemapUrlCount: "1"` -- one child sitemap FILE filed as the site's page
+   * count -- and a namespace-prefixed `<sm:urlset>`, an ordinary sitemap, was
+   * refused outright. Both now go through the crawler's own classifier, which
+   * `kb-knowledge-evidence.ts` also asks.
+   */
+  it.each([
+    ["a comment naming urlset above a real index", `<?xml version="1.0"?><!-- <urlset> --><sitemapindex><sitemap><loc>https://example.com/sitemap-a.xml</loc></sitemap></sitemapindex>`, "ok", false],
+    ["a sitemap quoted inside an error document", `<error><!-- <urlset><url><loc>https://example.com/</loc></url></urlset> --></error>`, "unavailable", false],
+  ])("reads the document root, not the body: %s", async (_name, body, kind, counts) => {
+    const { sources: deps, recordObservation } = machineSources({
+      createReader: siteReader({
+        "https://example.com/sitemap.xml": {
+          kind: "ok", url: "https://example.com/sitemap.xml", body,
+          contentType: "application/xml", observedAt: NOW.toISOString(),
+        },
+      }) as never,
+    });
+    const { executor } = createGeoRunCollectRuntime(deps);
+    await executor.start(operation(), context);
+
+    const sitemap = recorded(recordObservation, "sitemap");
+    expect(sitemap.status.kind).toBe(kind);
+    // Whatever it is, it may not publish a page count it did not measure.
+    expect(Object.hasOwn((sitemap.status as { structured?: object }).structured ?? {}, "sitemapUrlCount")).toBe(counts);
+  });
+
+  it("stores a namespace-prefixed sitemap, which is an ordinary one", async () => {
+    const body = `<?xml version="1.0"?><sm:urlset xmlns:sm="http://www.sitemaps.org/schemas/sitemap/0.9"><sm:url><sm:loc>https://example.com/</sm:loc></sm:url><sm:url><sm:loc>https://example.com/a</sm:loc></sm:url></sm:urlset>`;
+    const { sources: deps, recordObservation } = machineSources({
+      createReader: siteReader({
+        "https://example.com/sitemap.xml": {
+          kind: "ok", url: "https://example.com/sitemap.xml", body,
+          contentType: "application/xml", observedAt: NOW.toISOString(),
+        },
+      }) as never,
+    });
+    const { executor } = createGeoRunCollectRuntime(deps);
+    await executor.start(operation(), context);
+
+    expect(recorded(recordObservation, "sitemap").status).toMatchObject({ kind: "ok", structured: { sitemapUrlCount: "2" } });
+  });
+
   it("counts a sitemap's distinct locations, not its repeated ones", async () => {
     // The same URL listed twice is one page. Counting the lines would report a
     // site as covering more of itself than it does.
@@ -782,6 +862,37 @@ describe("observing the site's machine-readable files", () => {
     expect(recorded(recordObservation, "robots").status).toEqual({
       kind: "unavailable",
       reason: "not_published",
+    });
+  });
+
+  /**
+   * The site's own 429 is not our gate's refusal, and it is not a content
+   * problem either.
+   *
+   * The reader answers `rate_limited` for both, and `reached` is what tells
+   * them apart -- the gate's refusal never left for the site, and is dropped
+   * above. What survives to the ledger is the site saying "too many requests",
+   * and the ledger's vocabulary deliberately has no `rate_limited` (it is a
+   * word about our quota), so the fallback filed it as `invalid_response`: the
+   * card then told the owner we could not confirm the returned content was
+   * this file, about a response that carried no content at all.
+   */
+  it("files the site's own throttling as a refusal, not as a content problem", async () => {
+    const { sources: deps, recordObservation } = machineSources({
+      createReader: siteReader({
+        "https://example.com/robots.txt": {
+          kind: "unavailable",
+          url: "https://example.com/robots.txt",
+          reason: "rate_limited",
+          reached: true,
+        },
+      }) as never,
+    });
+    const { executor } = createGeoRunCollectRuntime(deps);
+    await executor.start(operation(), context);
+    expect(recorded(recordObservation, "robots").status).toEqual({
+      kind: "unavailable",
+      reason: "blocked",
     });
   });
 

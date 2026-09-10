@@ -5517,6 +5517,7 @@
           "snippets": "摘要许可",
           "crawlerSearch": "搜索用途",
           "crawlerTraining": "训练用途",
+          "crawlerScope": "上面的许可只针对站点首页地址。robots 规则按路径生效，其他路径可能不同。",
           "crawlerNone": "本次未判定 AI 爬虫许可。",
           "access": {
             "allowed": "允许",

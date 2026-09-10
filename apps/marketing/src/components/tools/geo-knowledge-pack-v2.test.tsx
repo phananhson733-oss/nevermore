@@ -203,6 +203,40 @@ it.each(["en", "zh"])("says WHY a machine signal is not present, in %s", async (
   assertWording(copy.machineReasons.invalid_response, WORDING.invalidResponse[locale as "en" | "zh"]);
 });
 
+/**
+ * The sitemap is the one resource whose `insufficient_evidence` is not about
+ * what was read.
+ *
+ * A `<sitemapindex>` is read whole and is perfectly legible; it simply lists
+ * sitemaps rather than pages, and the collector does not open them (that is
+ * more of the owner's crawl allowance). The shared clause -- "what was read was
+ * not enough to decide" -- would send the owner looking for a broken or
+ * truncated file that does not exist.
+ */
+it.each(["en", "zh"])("says a sitemap yielded no URL list rather than blaming what it read, in %s", async (locale) => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  const indexed = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, sitemap: { status: "unreachable" as const, urlCount: null, knowledgePagesListed: null, sourceRefs: ["source:sitemap"] } } },
+    sourceCatalogue: pack.sourceCatalogue.map((source) => source.id === "source:sitemap"
+      ? { ...source, availability: "unavailable" as const, reason: "insufficient_evidence" as const, observedAt: null, bodyHash: null, excerpts: [] }
+      : source),
+  };
+  await render(locale, ["machine"], rebuilt(indexed));
+
+  const copy = geoKnowledgePackCopy(locale);
+  const sitemap = host.querySelector('[data-machine-field="sitemap"]')?.textContent ?? "";
+  expect(sitemap).toContain(copy.machineNoUrlList);
+  expect(sitemap).not.toContain(copy.machineReasons.insufficient_evidence);
+  // Written out rather than read from the leaf the card renders: the sentence
+  // has to name the index, and may not claim the file was unreadable.
+  expect(copy.machineNoUrlList).toContain(locale === "zh" ? "索引" : "index");
+  for (const forbidden of locale === "zh" ? ["不足", "读不到", "无法读取"] : ["not enough", "could not be read", "unreadable"]) {
+    expect(copy.machineNoUrlList).not.toContain(forbidden);
+  }
+});
+
 it.each(["en", "zh"])("scopes a page-level negative to the pages it cites, in %s", async (locale) => {
   const pack = geoKnowledgePackV2Fixture();
   const machine = machineOf(pack);
@@ -502,4 +536,97 @@ it("labels every entity field path in both languages", async () => {
     expect(chinese[path], path).not.toContain("entityFields");
     expect(chinese[path], path).not.toBe(english[path]);
   }
+});
+
+/**
+ * `crawlerAccess` in `kb-knowledge-assemble-observed.ts` asks
+ * `matchRobotsRule(groups, agent, "/")` -- the home address. The card printed
+ * "GPTBot: Allowed" with nothing saying what was asked, so a site allowing `/`
+ * and disallowing `/docs/` read as an unqualified site-wide permission.
+ *
+ * The needle is written out here rather than filled from the catalog the card
+ * renders from: comparing the render against its own leaf passes for every
+ * possible wording, including a wording that drops the qualification again.
+ */
+it("says where the crawler verdicts were decided", async () => {
+  for (const locale of ["zh", "en"] as const) {
+    await render(locale);
+    const field = host.querySelector('[data-machine-field="aiCrawlers"]')?.textContent ?? "";
+    const needle = locale === "zh" ? "首页" : "home address";
+    expect(field).toContain(needle);
+    // And it says why one address is not the whole site.
+    expect(field).toContain(locale === "zh" ? "按路径" : "per path");
+  }
+});
+
+/**
+ * gpt-6-astra's P3: with both uses empty the rows read "Crawler permissions
+ * were not determined in this run", and the scope sentence followed with a
+ * statement about where a verdict was reached. Empty rows are a real upstream
+ * outcome -- it is what the assembler produces when the full robots rules were
+ * not read -- so the card said, in two consecutive lines, that nothing was
+ * determined and that something was decided at the home address.
+ */
+it.each(["en", "zh"])("does not say where a verdict was reached when there is none, in %s", async (locale) => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  const undetermined = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, aiCrawlers: { search: [], training: [], sourceRefs: ["source:robots"] } } },
+  };
+  await render(locale, ["machine"], rebuilt(undetermined));
+
+  const field = host.querySelector('[data-machine-field="aiCrawlers"]')?.textContent ?? "";
+  // The rows still say what happened...
+  expect(field).toContain(locale === "zh" ? "本次未判定" : "were not determined");
+  // ...and nothing after them claims a verdict was reached anywhere.
+  expect(field).not.toContain(locale === "zh" ? "首页地址" : "home address");
+});
+
+/**
+ * The other mutation gpt-6-astra found alive: `&&` widened to `||`, which drops
+ * the qualifier as soon as EITHER use is empty.
+ *
+ * One use empty and the other populated is the ordinary shape -- a site with no
+ * training-crawler rules still has search ones -- and the permissions that ARE
+ * reported still need their scope said.
+ */
+it.each([
+  ["search", { search: [], training: [{ agent: "GPTBot", access: "allowed" as const }] }],
+  ["training", { search: [{ agent: "OAI-SearchBot", access: "allowed" as const }], training: [] }],
+])("still scopes the permissions it does report when only %s is empty", async (_empty, rows) => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  const mixed = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, aiCrawlers: { ...rows, sourceRefs: ["source:robots"] } } },
+  };
+  await render("zh", ["machine"], rebuilt(mixed));
+
+  const field = host.querySelector('[data-machine-field="aiCrawlers"]')?.textContent ?? "";
+  expect(field).toContain("首页地址");
+});
+
+/**
+ * The mutation gpt-6-astra found alive: dropping `reason === "insufficient_evidence"`
+ * from the sitemap branch left all 4,772 tests green while telling the owner
+ * "This sitemap was read" about a sitemap that was blocked, failed to fetch, or
+ * was never checked at all.
+ */
+it.each(["blocked", "fetch_failed", "not_found"] as const)("keeps the index explanation off a sitemap that was %s", async (reason) => {
+  const pack = geoKnowledgePackV2Fixture();
+  const machine = machineOf(pack);
+  const refused = {
+    ...pack,
+    machine: { ...pack.machine, value: { ...machine, sitemap: { status: "unreachable" as const, urlCount: null, knowledgePagesListed: null, sourceRefs: ["source:sitemap"] } } },
+    sourceCatalogue: pack.sourceCatalogue.map((source) => source.id === "source:sitemap"
+      ? { ...source, availability: "unavailable" as const, reason, observedAt: null, bodyHash: null, excerpts: [] }
+      : source),
+  };
+  await render("zh", ["machine"], rebuilt(refused));
+
+  const copy = geoKnowledgePackCopy("zh");
+  const sitemap = host.querySelector('[data-machine-field="sitemap"]')?.textContent ?? "";
+  expect(sitemap).toContain(copy.machineReasons[reason]);
+  expect(sitemap).not.toContain(copy.machineNoUrlList);
 });
