@@ -54,10 +54,10 @@ import {
 import {
   geoCoverageModule,
   geoEvidenceModule,
-  geoJoinLimitations,
   geoMachineModule,
   type GeoRobotsObservation,
 } from "./kb-knowledge-assemble-observed.ts";
+import { geoPartialLimitation } from "./kb-knowledge-limitation.ts";
 import { geoEntityModule } from "./kb-knowledge-assemble-entity.ts";
 
 type FactsModule = GeoKnowledgeBodyV3["facts"];
@@ -217,7 +217,7 @@ function factsModule(
   const lost = dropped.filter((entry) => entry.module === "facts").length;
   return lost === 0
     ? { status: "available", value }
-    : { status: "partial", limitation: geoJoinLimitations([`${lost} generated fact(s) were withheld because their evidence did not support them.`]), value };
+    : { status: "partial", ...geoPartialLimitation([{ key: "facts_withheld_unsupported", params: { count: lost } }]), value };
 }
 
 /** Question-and-answer markup the site publishes about itself, as observed items. */
@@ -306,7 +306,7 @@ function qaModule(
   if (narrative !== null) return { status: "available", value };
   return {
     status: "partial",
-    limitation: geoJoinLimitations(["Model-synthesized questions are missing: this section contains only question-and-answer markup observed on the site."]),
+    ...geoPartialLimitation([{ key: "qa_without_model" }]),
     value,
   };
 }

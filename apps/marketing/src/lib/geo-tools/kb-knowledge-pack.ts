@@ -4,6 +4,7 @@
 import { normalizeAccountWebsiteUrl } from "../account-websites/contracts.ts";
 import { geoNumbersSupported } from "./geo-numeric-literal.ts";
 import { parseGeoKnowledgeEvidenceV1, type GeoKnowledgeEvidenceV1 } from "./kb-knowledge-evidence.ts";
+import { geoPartialLimitation } from "./kb-knowledge-limitation.ts";
 import { buildGeoKnowledgePackV1, type GeoKnowledgePackV1 } from "./kb-knowledge-pack-contract.ts";
 import { parseGeoKnowledgeNarrativeV1, parseGeoKnowledgeSynthesisInputV1, type GeoKnowledgeNarrativeV1 } from "./kb-knowledge-synthesis-contract.ts";
 import { parseGeoKbPayloadV2, type GeoKbPayloadV2 } from "./kb-v2-contract.ts";
@@ -69,7 +70,7 @@ function links(evidence: GeoKnowledgeEvidenceV1) {
 function entityModule(payload: GeoKbPayloadV2, evidence: GeoKnowledgeEvidenceV1, narrative: GeoKnowledgeNarrativeV1 | null): EntityModule {
   if (narrative === null) return unavailable("generation_unavailable");
   const value: EntityValue = { name: payload.officialName, aliases: [...payload.aliases], categories: { primary: payload.categoryTerms[0]!, secondary: payload.categoryTerms.slice(1) }, definitions: narrative.entity.definitions, audience: narrative.entity.audience, founded: narrative.entity.founded, disambiguation: narrative.entity.disambiguation, links: links(evidence), sameAs: [], sourceRefs: [...narrative.entity.sourceRefs] };
-  return Object.values(value.links).some(link => link === null) ? { status: "partial", limitation: "Some optional public links were not observed.", value } : { status: "available", value };
+  return Object.values(value.links).some(link => link === null) ? { status: "partial", ...geoPartialLimitation([{ key: "entity_links_not_observed" }]), value } : { status: "available", value };
 }
 function factsModule(context: ReturnType<typeof parseGeoSnapshotContextV2>, evidence: GeoKnowledgeEvidenceV1, narrative: GeoKnowledgeNarrativeV1 | null, failure: NarrativeFailureReason): FactsModule {
   const narrativeFacts = narrative?.facts.map(fact => ({ ...fact, observedAt: latestObservation(fact.sourceRefs, evidence), nextReviewAt: null })) ?? [];
@@ -77,7 +78,7 @@ function factsModule(context: ReturnType<typeof parseGeoSnapshotContextV2>, evid
   const exactFacts = accepted.flatMap(fact => { const source = evidence.sourceCatalogue.find(item => item.kind === "accepted_fact" && normalized(item.label) === normalized(fact.key) && item.excerpts.some(excerpt => containsExactFactValue(excerpt, fact.value!))); if (source === undefined) { missing.push(fact.key); return []; } const statement = source.excerpts.find(excerpt => containsExactFactValue(excerpt, fact.value!))!; return [{ id: `fact:accepted-${geoV2Digest({ key: fact.key, source: source.id }).slice(0, 20)}`, type: "other" as const, statement, sourceRefs: [source.id], observedAt: latestObservation([source.id], evidence), nextReviewAt: null }]; });
   const value: FactsValue = [...narrativeFacts, ...exactFacts.filter(item => !narrativeFacts.some(existing => existing.id === item.id || existing.statement === item.statement))];
   if (value.length === 0) return narrative === null ? unavailable(failure) : unavailable("insufficient_evidence");
-  return missing.length > 0 ? { status: "partial", limitation: "Some accepted facts lacked an exact cited evidence excerpt.", value } : { status: "available", value };
+  return missing.length > 0 ? { status: "partial", ...geoPartialLimitation([{ key: "facts_missing_exact_excerpt" }]), value } : { status: "available", value };
 }
 function qaModule(narrative: GeoKnowledgeNarrativeV1 | null): QaModule { if (narrative === null) return unavailable("generation_unavailable"); if (narrative.qa.length === 0) return unavailable("insufficient_evidence"); const value: QaValue = narrative.qa; return { status: "available", value }; }
 function comparisonsModule(evidence: GeoKnowledgeEvidenceV1, narrative: GeoKnowledgeNarrativeV1 | null): ComparisonsModule { if (narrative === null) return unavailable("generation_unavailable"); if (narrative.comparisons.length === 0) return unavailable(evidence.confirmedCompetitors.length === 0 ? "not_applicable" : "insufficient_evidence"); const value: ComparisonsValue = narrative.comparisons.map(comparison => ({ ...comparison, checkedAt: evidence.collectedAt })); return { status: "available", value }; }
@@ -86,11 +87,11 @@ function evidenceModule(evidence: GeoKnowledgeEvidenceV1): EvidenceModule {
   const pages = evidence.sourceCatalogue.filter(source => source.kind === "own_page" && source.availability !== "unavailable"); const changelogUrls = new Set(evidence.pages.flatMap(page => page.links.filter(link => link.intent === "changelog").map(link => link.url)));
   const item = (source: typeof pages[number]) => ({ id: `evidence:${source.id}`, label: source.label, summary: source.excerpts[0]!, url: source.url, sourceRefs: [source.id] });
   const value: EvidenceValue = { proof: pages.filter(source => !changelogUrls.has(source.url!)).map(item), changelog: pages.filter(source => changelogUrls.has(source.url!)).map(item), press: [], thirdPartyProfiles: [] };
-  if (pages.length === 0) return unavailable("insufficient_evidence"); return pages.some(source => source.availability === "partial") ? { status: "partial", limitation: "Some collected own-site evidence is partial.", value } : { status: "available", value };
+  if (pages.length === 0) return unavailable("insufficient_evidence"); return pages.some(source => source.availability === "partial") ? { status: "partial", ...geoPartialLimitation([{ key: "own_evidence_partial" }]), value } : { status: "available", value };
 }
 function machineModule(evidence: GeoKnowledgeEvidenceV1): MachineModule {
   const unavailableOwn = (refs: readonly string[]) => refs.some(ref => evidence.sourceCatalogue.find(source => source.id === ref)?.availability === "unavailable"); const value: MachineValue = { jsonLd: { ...evidence.machine.jsonLd, status: evidence.machine.jsonLd.status === "absent" && unavailableOwn(evidence.machine.jsonLd.sourceRefs) ? "unreachable" : evidence.machine.jsonLd.status }, llms: evidence.machine.llms, robots: evidence.machine.robots, sitemap: { status: evidence.machine.sitemap.status, urlCount: evidence.machine.sitemap.urlCount, knowledgePagesListed: evidence.machine.sitemap.knowledgePagesListed, sourceRefs: evidence.machine.sitemap.sourceRefs }, hreflang: { ...evidence.machine.hreflang, status: evidence.machine.hreflang.status === "absent" && unavailableOwn(evidence.machine.hreflang.sourceRefs) ? "unreachable" : evidence.machine.hreflang.status } };
-  const signals = [value.jsonLd, value.llms, value.robots, value.sitemap, value.hreflang]; return signals.every(signal => signal.status === "present") ? { status: "available", value } : { status: "partial", limitation: "Some machine-readable visibility signals were absent or unavailable.", value };
+  const signals = [value.jsonLd, value.llms, value.robots, value.sitemap, value.hreflang]; return signals.every(signal => signal.status === "present") ? { status: "available", value } : { status: "partial", ...geoPartialLimitation([{ key: "machine_signals_absent" }]), value };
 }
 type ContentModule = EntityModule | FactsModule | QaModule | ComparisonsModule | ScopeModule | EvidenceModule | MachineModule;
 function coverageRow(id: string, label: string, module: ContentModule, sourceRefs: string[]): CoverageValue[number] {
@@ -109,7 +110,7 @@ function coverageModule(modules: { entity: EntityModule; facts: FactsModule; qa:
     coverageRow("coverage:evidence", labels.evidence, modules.evidence, evidenceSourceRefs(modules.evidence, fallback)),
     coverageRow("coverage:machine", labels.machine, modules.machine, machineSourceRefs(modules.machine, fallback)),
   ];
-  return rows.some(row => row.status !== "covered") ? { status: "partial", limitation: "Some customer knowledge sections are incomplete.", value: rows } : { status: "available", value: rows };
+  return rows.some(row => row.status !== "covered") ? { status: "partial", ...geoPartialLimitation([{ key: "coverage_incomplete" }]), value: rows } : { status: "available", value: rows };
 }
 
 export interface BuildGeoKnowledgePackInput { readonly generatedAt: string; readonly payload: unknown; readonly context: unknown; readonly questionSet: unknown; readonly evidence: unknown; readonly synthesisInput: unknown | null; readonly narrative: unknown | null; readonly narrativeFailureReason: NarrativeFailureReason | null; }

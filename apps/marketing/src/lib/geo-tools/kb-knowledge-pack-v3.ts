@@ -50,15 +50,21 @@ import {
   type GeoOverrideV3,
   type GeoReviewV3,
 } from "./kb-v3-contract.ts";
+import {
+  geoLimitationEnglish,
+  geoPartialLimitation,
+  type GeoLimitationClause,
+} from "./kb-knowledge-limitation.ts";
 
 /**
  * Said in the facts section when every model module failed. Without it a short
  * list of declared facts reads as the whole truth about the product.
+ *
+ * The sentence itself now comes from the shared clause table, so the English a
+ * pack stores and the Chinese a reader sees cannot drift apart.
  */
-export const GEO_FACTS_WITHOUT_MODEL_LIMITATION =
-  "Model-synthesized facts are missing: this section contains only profile declarations and observed FAQ answers.";
+export const GEO_FACTS_WITHOUT_MODEL_LIMITATION = geoLimitationEnglish("facts_without_model");
 
-const COVERAGE_INCOMPLETE = "Some customer knowledge sections are incomplete.";
 const COVERAGE_REVIEW_ACTION = "Review available evidence before relying on this section.";
 const COVERAGE_UNAVAILABLE = "This content is currently unavailable.";
 
@@ -87,7 +93,7 @@ const COVERAGE_OWNER_EXCLUDED: Readonly<Partial<Record<GeoUnavailableReason, { r
 
 type ModuleOf<T> =
   | { readonly status: "available"; readonly value: T }
-  | { readonly status: "partial"; readonly limitation: string; readonly value: T }
+  | { readonly status: "partial"; readonly limitation: string; readonly limitationKeys?: GeoLimitationClause[]; readonly value: T }
   | { readonly status: "unavailable"; readonly reason: GeoUnavailableReason };
 
 interface DraftProvenance {
@@ -119,11 +125,21 @@ function unavailable(reason: GeoUnavailableReason): ModuleOf<never> {
   return { status: "unavailable", reason };
 }
 
+/**
+ * Keep a reviewed module's state while replacing what it holds.
+ *
+ * `limitationKeys` travels with `limitation`. Dropping it here would republish
+ * a module whose sentence is English-only, on a pack whose draft could have
+ * been read in Chinese -- the same page, worse, after publishing.
+ */
 function withStatus<T>(
-  module: { readonly status: "available" } | { readonly status: "partial"; readonly limitation: string },
+  module: { readonly status: "available" } | { readonly status: "partial"; readonly limitation: string; readonly limitationKeys?: GeoLimitationClause[] },
   value: T,
 ): ModuleOf<T> {
-  return module.status === "partial" ? { status: "partial", limitation: module.limitation, value } : { status: "available", value };
+  if (module.status !== "partial") return { status: "available", value };
+  return module.limitationKeys === undefined
+    ? { status: "partial", limitation: module.limitation, value }
+    : { status: "partial", limitation: module.limitation, limitationKeys: module.limitationKeys, value };
 }
 
 function canonicalTimestamp(value: string): boolean {
@@ -414,7 +430,7 @@ function factsModule(knowledge: GeoKnowledgeBodyV3, resolve: Resolve): ModuleOf<
   // observed FAQ answers. If a synthesized fact survived from an earlier run
   // the sentence would be false, so it is not claimed.
   if (republished.value.some((fact) => fact.origin === "synthesized")) return republished;
-  return { status: "partial", limitation: GEO_FACTS_WITHOUT_MODEL_LIMITATION, value: republished.value };
+  return { status: "partial", ...geoPartialLimitation([{ key: "facts_without_model" }]), value: republished.value };
 }
 
 // ---------------------------------------------------------------------------
@@ -508,7 +524,7 @@ function coverageModule(reviewed: ReviewedModules, knowledge: GeoKnowledgeBodyV3
     questionsRow(hasQuestionSet),
   ];
   return rows.some((row) => row.status !== "covered")
-    ? { status: "partial", limitation: COVERAGE_INCOMPLETE, value: rows }
+    ? { status: "partial", ...geoPartialLimitation([{ key: "coverage_incomplete" }]), value: rows }
     : { status: "available", value: rows };
 }
 

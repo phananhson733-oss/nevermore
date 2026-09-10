@@ -17,6 +17,11 @@ import { matchRobotsRule, parseRobots, type RobotsGroup } from "@sf/sources/craw
 import { geoBoundText } from "./kb-first-party-proof.ts";
 import type { GeoKnowledgeEvidenceV1 } from "./kb-knowledge-evidence.ts";
 import {
+  geoPartialLimitation,
+  type GeoLimitationKey,
+  type GeoLimitationParams,
+} from "./kb-knowledge-limitation.ts";
+import {
   GEO_EVIDENCE_GROUPS,
   GEO_KNOWLEDGE_LIMITS,
   type GeoEvidenceGroup,
@@ -46,20 +51,11 @@ type AnyModule = {
   readonly limitation?: string;
 };
 
-const LIMITATION_CODE_POINTS = 800;
 const EVIDENCE_LABEL_CODE_POINTS = 120;
 const EVIDENCE_SUMMARY_CODE_POINTS = 800;
 
-/** Sentences, joined while they fit. A truncated sentence would misstate the limit. */
-export function geoJoinLimitations(parts: readonly string[]): string {
-  let joined = "";
-  for (const part of parts) {
-    const candidate = joined === "" ? part : `${joined} ${part}`;
-    if (Array.from(candidate).length > LIMITATION_CODE_POINTS) break;
-    joined = candidate;
-  }
-  return joined;
-}
+/** One clause of a module limitation, before it is composed into a sentence. */
+type Clause = { readonly key: GeoLimitationKey; readonly params?: GeoLimitationParams };
 
 /**
  * The agents whose permission is reported, split by what the permission
@@ -154,14 +150,16 @@ function robotsLines(
  * None of the three infers a permission. An absent robots.txt permits every
  * crawler under the standard, but "nothing was stated" is what was observed and
  * "everything is allowed" is a conclusion this module does not draw.
+ *
+ * Three KEYS, for the same reason there are three sentences: a reader in any
+ * language has to be told which of the three happened, and one key would ask
+ * two thirds of owners to fix something that is not broken.
  */
-function robotsUndeterminedReason(source: GeoKnowledgeSource | undefined): string {
-  if (source !== undefined && source.availability !== "unavailable") {
-    return "AI crawler permissions were not determined: robots.txt was not read in full.";
-  }
+function robotsUndeterminedKey(source: GeoKnowledgeSource | undefined): GeoLimitationKey {
+  if (source !== undefined && source.availability !== "unavailable") return "robots_not_read_in_full";
   return source?.reason === "not_found" || source?.reason === "not_published"
-    ? "AI crawler permissions were not determined: this site publishes no robots.txt rules."
-    : "AI crawler permissions were not determined: robots.txt could not be read.";
+    ? "robots_none_published"
+    : "robots_unreadable";
 }
 
 export interface GeoMachineInput {
@@ -281,16 +279,14 @@ export function geoMachineModule(input: GeoMachineInput): MachineModule {
     groups !== null &&
     value.snippets.status !== "not_checked";
   if (complete) return { status: "available", value };
-  const parts = [
-    signals.some((signal) => signal.status !== "present")
-      ? "Some machine-readable visibility signals were absent or unavailable."
-      : "",
-    groups === null ? robotsUndeterminedReason(robotsSource) : "",
-    value.snippets.status === "not_checked"
-      ? "Snippet permission was not checked."
-      : "",
-  ].filter((part) => part !== "");
-  return { status: "partial", limitation: geoJoinLimitations(parts), value };
+  const clauses: readonly Clause[] = [
+    ...(signals.some((signal) => signal.status !== "present")
+      ? [{ key: "machine_signals_absent" } as const]
+      : []),
+    ...(groups === null ? [{ key: robotsUndeterminedKey(robotsSource) } as const] : []),
+    ...(value.snippets.status === "not_checked" ? [{ key: "snippets_not_checked" } as const] : []),
+  ];
+  return { status: "partial", ...geoPartialLimitation(clauses), value };
 }
 
 export interface GeoEvidenceInput {
@@ -415,27 +411,30 @@ export function geoEvidenceModule(
   const missing = GEO_EVIDENCE_GROUPS.filter(
     (group) => !value.collected.includes(group),
   );
-  const parts = [
-    missing.length > 0
-      ? `Not collected in this run: ${missing.join(", ")}.`
-      : "",
-    dropped.length > 0
-      ? `${dropped.length} collected item(s) could not be shown with their evidence.`
-      : "",
+  const clauses: readonly Clause[] = [
+    // The groups go over as their contract keys, joined; the reader turns each
+    // one into a name in its own language. `missing.join(", ")` used to publish
+    // `thirdPartyProfiles` verbatim, which is a name in no language at all.
+    ...(missing.length > 0
+      ? [{ key: "evidence_groups_not_collected", params: { groups: missing.join(",") } } as const]
+      : []),
+    ...(dropped.length > 0
+      ? [{ key: "evidence_items_unshowable", params: { count: dropped.length } } as const]
+      : []),
     // A page that was fetched and could not be read was reached; saying it was
     // "not reached" would misdescribe the one failure the reader can act on.
-    ...(offsite?.incomplete ?? []).map((entry) =>
+    ...(offsite?.incomplete ?? []).map((entry): Clause =>
       entry.stage === "landing_page_reads"
-        ? `${entry.pending} off-site page(s) were fetched but could not be read (${entry.reason}).`
-        : `Off-site ${entry.stage} stopped early (${entry.reason}), ${entry.pending} item(s) not reached.`,
+        ? { key: "offsite_pages_unread", params: { count: entry.pending, reason: entry.reason } }
+        : { key: "offsite_stage_stopped", params: { stage: entry.stage, reason: entry.reason, count: entry.pending } },
     ),
-  ].filter((part) => part !== "");
-  return parts.length === 0
+  ];
+  return clauses.length === 0
     ? { module: { status: "available", value }, dropped }
     : {
         module: {
           status: "partial",
-          limitation: geoJoinLimitations(parts),
+          ...geoPartialLimitation(clauses),
           value,
         },
         dropped,
@@ -505,7 +504,7 @@ export function geoCoverageModule(
     ? { status: "available", value: rows }
     : {
         status: "partial",
-        limitation: "Some customer knowledge sections are incomplete.",
+        ...geoPartialLimitation([{ key: "coverage_incomplete" }]),
         value: rows,
       };
 }

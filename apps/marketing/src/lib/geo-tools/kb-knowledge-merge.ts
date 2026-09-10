@@ -32,6 +32,7 @@ import {
 import { assertGeoItemKeyIntegrity } from "./kb-item-key.ts";
 import { geoV3ItemContentHashes } from "./kb-v3-item-content.ts";
 import { GEO_KNOWLEDGE_LIMITS, type GeoKnowledgeSource } from "./kb-knowledge-shape.ts";
+import { geoPartialLimitation, type GeoLimitationClause } from "./kb-knowledge-limitation.ts";
 import {
   GEO_KB_V3_LIMITS,
   geoV3Items,
@@ -231,7 +232,7 @@ function findSimilar(
 // mutating the assembled body: conflicts and carried-forward corrections
 // ---------------------------------------------------------------------------
 
-type MutableModule<T> = { status?: string; limitation?: string; reason?: string; value?: T };
+type MutableModule<T> = { status?: string; limitation?: string; limitationKeys?: GeoLimitationClause[]; reason?: string; value?: T };
 type MutableBody = {
   facts?: MutableModule<Record<string, unknown>[]>;
   qa?: MutableModule<Record<string, unknown>[]>;
@@ -243,11 +244,14 @@ type MutableBody = {
 
 /**
  * What a module says when this update found nothing there but the owner's own
- * declaration is still standing in it. English and unlocalised, like every
- * other limitation the assembler writes (`kb-knowledge-assemble.ts:220`, `:309`).
+ * declaration is still standing in it. Composed through the shared clause table,
+ * so it reaches the card as a key the reader can say in its own language.
+ *
+ * A function rather than a constant: the composed value holds an ARRAY, and the
+ * merge writes it into several mutable module objects that are later serialized.
+ * One shared array between them is an aliasing bug waiting for its first caller.
  */
-const GEO_CARRIED_ONLY_LIMITATION =
-  "This update observed nothing for this section. What remains is what the owner declared.";
+const carriedOnlyLimitation = () => geoPartialLimitation([{ key: "carried_owner_declared_only" }]);
 
 /** Every mutable item list the merge may write into, with the ceiling that governs it. */
 function itemLists(body: MutableBody): readonly { readonly rows: Record<string, unknown>[]; readonly limit: number; readonly scope: string }[] {
@@ -396,7 +400,7 @@ function reopenList(
   // `reason` is deleted rather than set to undefined: the module schemas are
   // strict, and a present key holding undefined is still a present key.
   const reopen = <T>(module: MutableModule<T> | undefined, value: T): MutableModule<T> => {
-    const next: MutableModule<T> = { ...(module ?? {}), status: "partial", limitation: GEO_CARRIED_ONLY_LIMITATION, value };
+    const next: MutableModule<T> = { ...(module ?? {}), status: "partial", ...carriedOnlyLimitation(), value };
     delete next.reason;
     return next;
   };

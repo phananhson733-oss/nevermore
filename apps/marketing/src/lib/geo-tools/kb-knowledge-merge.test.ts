@@ -309,6 +309,12 @@ describe("mergeGeoDraftV3", () => {
     expect(factRow(merged.payload, TEAM_KEY)?.value).toBe("$19");
     expect(merged.payload.review.decisions.find((entry) => entry.itemKey === TEAM_KEY)?.override).toEqual(override);
     expect(merged.droppedCorrections).toEqual([]);
+    // The reopened module says WHY it is partial as a clause key, not only as a
+    // sentence: this is the one limitation an owner sees on a run that observed
+    // nothing, and it has to reach them in their own language.
+    const facts = merged.payload.knowledge?.facts;
+    expect(facts?.status === "partial" ? facts.limitationKeys : undefined)
+      .toEqual([{ key: "carried_owner_declared_only" }]);
   });
 
   it("evicts an undecided generated row rather than the owner's correction when the list is full", () => {

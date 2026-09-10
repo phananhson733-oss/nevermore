@@ -685,11 +685,37 @@ describe("module states without a model", () => {
     return value;
   }
 
+  /**
+   * A reviewed module keeps the clause keys the draft gave it.
+   *
+   * `withStatus` rebuilds the module around its republished items, and dropping
+   * `limitationKeys` there would publish an English-only limitation on a pack
+   * whose draft the same owner could read in Chinese -- the same screen getting
+   * worse the moment they press Publish.
+   */
+  it("republishes a reviewed module with the clause keys its draft carried", () => {
+    const value = draft();
+    value.knowledge.scope.status = "partial";
+    value.knowledge.scope.limitation = "This update observed nothing for this section. What remains is what the owner declared.";
+    value.knowledge.scope.limitationKeys = [{ key: "carried_owner_declared_only" }];
+
+    const pack = publish(value);
+
+    expect(pack.scope.status).toBe("partial");
+    expect(pack.scope.limitationKeys).toEqual([{ key: "carried_owner_declared_only" }]);
+    expect(pack.scope.limitation).toContain("the owner declared");
+    // The pack goes back through its own contract, so the field is not merely
+    // copied onto an object nothing would accept.
+    expect(parseGeoKnowledgePackV2(pack).scope).toEqual(pack.scope);
+  });
+
   it("says the facts section is missing the model's contribution", () => {
     const pack = publish(withoutModelOutput());
 
     expect(pack.facts.status).toBe("partial");
     expect(pack.facts.limitation).toBe(GEO_FACTS_WITHOUT_MODEL_LIMITATION);
+    expect(pack.facts.status === "partial" ? pack.facts.limitationKeys : undefined)
+      .toEqual([{ key: "facts_without_model" }]);
     expect(pack.entity).toEqual({
       status: "unavailable",
       reason: "generation_unavailable",

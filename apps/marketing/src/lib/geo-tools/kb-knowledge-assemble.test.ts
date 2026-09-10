@@ -139,7 +139,12 @@ describe("assembleGeoKnowledgeBodyV3", () => {
     // "Collected · nothing found" about a group nothing could have found.
     expect(withoutOffsite.value.collected).toEqual(["proof"]);
     if (withoutOffsite.status !== "partial") throw new Error("evidence should be partial");
-    expect(withoutOffsite.limitation).toContain("press");
+    // The sentence names the group by the heading the card draws; the clause
+    // beside it names it by the contract key, which is what a Chinese reader's
+    // card looks the heading up with.
+    expect(withoutOffsite.limitation).toContain("Press coverage");
+    const groups = withoutOffsite.limitationKeys?.find((clause) => clause.key === "evidence_groups_not_collected")?.params?.groups;
+    expect(String(groups).split(",")).toContain("press");
 
     // With a page read, its links WERE looked through, so the group is
     // collected and an empty result is a real finding.
@@ -167,8 +172,11 @@ describe("assembleGeoKnowledgeBodyV3", () => {
     }).knowledge.evidence;
     if (evidence.status !== "partial") throw new Error("evidence should be partial");
     expect(evidence.value.collected).not.toContain("press");
-    expect(evidence.limitation).toContain("Not collected in this run: changelog, press, firstPartyProof.");
-    expect(evidence.limitation).toContain("2 off-site page(s) were fetched but could not be read (fetch_failed).");
+    expect(evidence.limitation).toContain("Not collected in this run: Product changes, Press coverage, First-party proof.");
+    expect(evidence.limitation).toContain("2 off-site page(s) were fetched but could not be read (the read failed).");
+    // The reason survives as a contract value beside the sentence, so the card
+    // can say "读取失败" without parsing English back out of the prose.
+    expect(evidence.limitationKeys).toContainEqual({ key: "offsite_pages_unread", params: { count: 2, reason: "fetch_failed" } });
     // Those pages were reached. Reporting them as unreached would name the
     // wrong failure, and the wrong fix.
     expect(evidence.limitation).not.toContain("not reached");
