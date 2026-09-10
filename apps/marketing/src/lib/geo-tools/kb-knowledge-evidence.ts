@@ -214,23 +214,25 @@ function asPublicUrl(value: string, base: URL, permitFragment = false): string |
  * which moves the failure rather than fixing it. That was this branch's first
  * attempt, and a review proved it still failed the same update.
  *
- * DELIBERATELY NARROW: only the address that answered, never an address a page
+ * DELIBERATELY NARROW: only the address that ANSWERED, never an address a page
  * DECLARES. `asPublicUrl` keeps its exact host test for links, canonical and
- * hreflang alternates, because those are claims, not answers, and folding the
- * sibling into them breaks in two ways. Two alternates declared on the two
- * spellings collapse to one URL and `pageSchema` throws `Duplicate hreflang
- * URL`, losing the whole collection over one page. And a link rewritten from
- * the published `https://www.example.com/pricing` to `https://example.com/
- * pricing` changes which address is FETCHED -- `canonicalCrawlTargetKey`
- * shares a crawl budget between the siblings and says in its own comment that
- * they may serve different content, so the rewritten address can 404 or answer
- * with something the page never linked to.
+ * hreflang alternates, because a link rewritten from the published
+ * `https://www.example.com/pricing` to `https://example.com/pricing` changes
+ * which address is FETCHED. `canonicalCrawlTargetKey` shares a crawl budget
+ * between the siblings and says in its own comment that they may serve
+ * different content, so the rewritten address can 404 -- or answer with
+ * something the page never linked to, which would then be filed as that
+ * link's content.
  *
- * The cost of staying narrow is that an alternate or canonical declared on the
- * sibling host is still dropped, exactly as on main: a locale can go
- * unreported. Fixing that means letting a page's declarations carry the host
- * they were written with, which is a change to what the bundle claims and not
- * part of this failure.
+ * Two costs, both known, neither hidden. An ABSOLUTE declaration naming the
+ * sibling is dropped, exactly as on main, so a locale can go unreported. And a
+ * RELATIVE declaration is resolved against the FILED address rather than the
+ * answering one, so `/de` on a document served from `www` is recorded as the
+ * apex `/de`. On a site whose apex redirects to `www` those are one page; on a
+ * site routing the two siblings differently per path they are not. Separating
+ * the answering address from the filed identity is what fixes the second, and
+ * it is a change to this collector's URL handling rather than to a redirect
+ * check. `kb-knowledge-evidence.test.ts` asserts both costs.
  *
  * A genuinely different host still returns null.
  */

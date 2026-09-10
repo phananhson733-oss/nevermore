@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { canonicalProfileJson } from "../account-websites/contracts.ts";
 import type { KeywordLlmConfig } from "../tools/keyword-llm-client.ts";
-import { createGeoKbGenerationPreparer, creditGeoKnowledgeObservation, creditGeoKnowledgeObservedStructure, validateGeoKbDraftLineage, type GeoKbGenerationPreparerDependencies } from "./kb-generation-preparer.ts";
+import { createGeoKbGenerationPreparer, creditGeoKnowledgeObservation, creditGeoKnowledgeObservedPage, creditGeoKnowledgeObservedStructure, validateGeoKbDraftLineage, type GeoKbGenerationPreparerDependencies } from "./kb-generation-preparer.ts";
 import { completePayloadV2, V2_KB_ID as KB, V2_CANDIDATE_ID as ID } from "./kb-v2.test-fixtures.ts";
 import { createGeoProfileCopy, profileCopyReference } from "./kb-profile-copy.ts";
 import { geoV2Digest } from "./kb-v2-digest.ts";
@@ -1661,6 +1661,36 @@ describe("reading what an own-page observation stored about the page", () => {
       .toEqual({ kind: "unreadable" });
     expect(creditGeoKnowledgeObservedStructure(row({ jsonLdTypes: ["Org\u0001anization"] }))?.jsonLdTypes).toEqual({ kind: "unreadable" });
     expect(creditGeoKnowledgeObservedStructure(row({ hreflangLocales: ["en", "en"] }))?.hreflangLocales).toEqual({ kind: "unreadable" });
+  });
+
+  /**
+   * The seam copy of a rule that was wrong at the producer too.
+   *
+   * `pageSchema` demanded unique hreflang URLs and threw the WHOLE collection
+   * away for Google's own recommended markup, where `x-default` and a language
+   * alternate name the SAME address. This function carried a second copy of
+   * that rule, so fixing the collector alone would have left the reuse path
+   * refusing the row: `unreadable` pairs mean `creditGeoKnowledgeObservedPage`
+   * withholds the page, and the V3 assembly then drops the whole machine
+   * module -- including the JSON-LD this very row stored perfectly well.
+   *
+   * Locales still have to be unique. Two labels for one address do not.
+   */
+  it("reads alternates whose locales differ and whose address is the same", () => {
+    const shared = [{ locale: "en", url: "https://example.com/" }, { locale: "x-default", url: "https://example.com/" }];
+    const structure = creditGeoKnowledgeObservedStructure(row({ jsonLdTypes: ["Organization"], hreflangLocales: ["en", "x-default"], hreflang: shared }));
+
+    expect(structure?.hreflang).toEqual({ kind: "stored", values: shared });
+    // Two labels for one address is legal; two labels that are the same is not.
+    expect(creditGeoKnowledgeObservedStructure(row({ hreflang: [{ locale: "en", url: "https://example.com/" }, { locale: "en", url: "https://example.com/en" }] }))?.hreflang)
+      .toEqual({ kind: "unreadable" });
+
+    // The consequence the rule actually had: the page rebuilds, so the machine
+    // module keeps the JSON-LD instead of being withheld whole.
+    const rebuilt = creditGeoKnowledgeObservedPage({ url: "https://example.com/", structure: structure! });
+    expect(rebuilt.kind).toBe("page");
+    expect(rebuilt.kind === "page" && rebuilt.page.jsonLdTypes).toEqual(["Organization"]);
+    expect(rebuilt.kind === "page" && rebuilt.page.hreflang).toEqual(shared);
   });
 
   it("keeps the FAQ pairs it can quote whole and leaves out the ones it cannot", () => {

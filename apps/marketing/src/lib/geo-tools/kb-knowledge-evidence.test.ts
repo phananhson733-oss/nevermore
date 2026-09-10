@@ -740,8 +740,14 @@ describe("GEO knowledge evidence collection", () => {
    * An absolute apex alternate and a relative one resolve to two different
    * addresses against the answering document and to ONE after the filed
    * address is used as the parsing base. With the URL-uniqueness rule gone
-   * this is recorded rather than thrown, so a page's markup can no longer
-   * discard the collection.
+   * this is recorded rather than thrown.
+   *
+   * Narrowly: this collision no longer discards the collection. Other
+   * mismatches between what extraction admits and what the contract accepts
+   * still do -- a page declaring 65 alternates, or 33 JSON-LD types, or a
+   * canonical over 2,048 characters, still aborts the whole owner update at
+   * final validation. Those bounds pre-date this branch and are their own
+   * piece of work.
    */
   it("survives a page declaring one alternate absolutely and another relatively", async () => {
     const resources = wwwAnsweredResources();
@@ -758,6 +764,11 @@ describe("GEO knowledge evidence collection", () => {
 
     expect(result.availability).not.toBe("unavailable");
     expect(result.machine.hreflang).toMatchObject({ status: "present", locales: ["en", "x-default"] });
+    // Both addresses as recorded, not just both labels: a mutation that
+    // corrupts one destination while keeping its locale passes without this.
+    expect(result.pages[0]!.hreflang).toEqual([
+      { locale: "en", url: "https://example.com/en" }, { locale: "x-default", url: "https://example.com/en" },
+    ]);
   });
 
   /**
