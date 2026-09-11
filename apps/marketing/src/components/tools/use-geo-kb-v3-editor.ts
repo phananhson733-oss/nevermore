@@ -990,6 +990,13 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
    * draft rather than racing the confirm with the old version. A conflict or
    * a stale-input refusal enters the card's own hold: the server has said this
    * tab is behind, and that is true of every write it might make next.
+   *
+   * A lost answer is neither. The confirm may have committed and moved the
+   * version, and this tab cannot tell, so the autosave is not re-armed on its
+   * own: a decision made meanwhile waits for the owner's next gesture, as it
+   * does after a review write whose answer was lost, and the server's version
+   * check settles it then. A refusal the server did give wrote nothing, so the
+   * queue may drain against the coordinates it already has.
    */
   async function writeCompetitor(gesture: GeoKbV3CompetitorGestureWire): Promise<GeoKbV3CompetitorWriteResult | null> {
     if (lock.current || live.current.queued.length > 0) return null;
@@ -997,6 +1004,7 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
     if (hold !== null && hold !== "failed") return null;
     lock.current = true;
     setStatus({ kind: "busy", operation: "competitor" });
+    let unanswered = false;
     try {
       const base = live.current.view;
       const result = await writeGeoKbV3Competitor({
@@ -1006,6 +1014,7 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
         gesture,
       });
       if (!result.ok) {
+        unanswered = result.code === "network" || result.code === "bad_response";
         fail(result);
         return result;
       }
@@ -1013,10 +1022,12 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
       setStatus({ kind: "idle" });
       return result;
     } catch {
+      unanswered = true;
       setStatus({ kind: "error", code: "bad_response" });
       return { ok: false, code: "bad_response" };
     } finally {
       lock.current = false;
+      if (unanswered) writeFailed.current = true;
       resume();
     }
   }

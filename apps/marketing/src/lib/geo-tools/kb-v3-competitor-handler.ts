@@ -53,12 +53,15 @@ export interface GeoKbV3CompetitorDependencies {
 }
 
 /**
- * The largest legal confirm body, in bytes: a kbId (36), a hash (64), a domain
- * (255), a name (200) and thirty-two aliases (200 each) is under 7,000
- * characters, or under 28 KiB when every one of them is four bytes of UTF-8,
- * plus the JSON around them.
+ * The largest legal confirm body, in bytes, in its longest serialization: a
+ * kbId (36), a hash (64), a domain (255), a name (200) and thirty-two aliases
+ * (200 each) is under 7,000 UTF-16 code units, and a client that writes every
+ * one of them as a `\uXXXX` escape spends six bytes on each -- under 42 KiB,
+ * plus the JSON around them. Counted that way rather than as UTF-8 (four bytes
+ * at most) because the limit is about transport, and two serializations of
+ * one legal object must both be admitted.
  */
-const REQUEST_BYTES = 32_768;
+const REQUEST_BYTES = 49_152;
 
 async function authenticated(authenticate: () => Promise<ServerAuthenticatedUser>): Promise<{ readonly userId: string } | Response> {
   const identity = await authenticate().catch(() => ({ status: "unavailable" as const }));

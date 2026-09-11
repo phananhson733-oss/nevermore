@@ -228,14 +228,20 @@ describe("handleGeoKbV3Competitors", () => {
       expect(saveDraft).not.toHaveBeenCalled();
     });
 
-    /** The longest legal body: a name and thirty-two aliases, each two hundred code units of four-byte characters. */
-    it("admits the largest body the wire allows", async () => {
-      const wide = "\u{1F600}".repeat(100);
-      expect(wide.length).toBe(200);
+    /**
+     * The longest legal body, in its longest serialization: a name and
+     * thirty-two aliases, each two hundred code units, every code unit written
+     * as a six-byte JSON escape rather than as UTF-8. Two serializations of one
+     * object must both be admitted; the byte limit is about transport, not
+     * about which escaping a client chose.
+     */
+    it("admits the largest body the wire allows, however it is escaped", async () => {
+      const wide = "\u4e00".repeat(200);
       const { dependencies, saved } = harness();
       const body = confirm({ brandName: wide, aliases: Array.from({ length: 32 }, (_, index) => `${wide.slice(0, 198)}${index.toString().padStart(2, "0")}`) });
-      expect(new TextEncoder().encode(JSON.stringify(body)).byteLength).toBeGreaterThan(8_192);
-      const response = await handleGeoKbV3Competitors(request(body), dependencies);
+      const escaped = JSON.stringify(body).replace(/[^\x20-\x7e]/gu, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+      expect(escaped.length).toBeGreaterThan(32_768);
+      const response = await handleGeoKbV3Competitors(new Request(ENDPOINT, { method: "POST", headers: { "content-type": "application/json" }, body: escaped }), dependencies);
       expect(response.status).toBe(200);
       expect(saved.current?.generationInput.competitors[0]?.aliases).toHaveLength(12);
     });

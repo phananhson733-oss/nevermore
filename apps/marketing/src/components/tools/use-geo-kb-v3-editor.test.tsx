@@ -785,6 +785,52 @@ it("enters the card's own hold when a competitor write loses a conflict or names
   expect(editor.autosaveHold).toBe("inputChanged");
 });
 
+/**
+ * A lost answer is not a refusal: the confirm may have committed and moved the
+ * version, and this tab cannot tell. A decision made meanwhile must not go
+ * out on its own against coordinates that may be stale; it waits for the
+ * owner's next gesture, exactly as it does after a review write whose answer
+ * was lost, and the server's own check settles it then.
+ */
+it("does not resume the autosave on its own after a competitor write whose answer was lost", async () => {
+  let reject: (error: Error) => void = () => undefined;
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockReturnValueOnce(new Promise<Response>((_resolve, fail) => { reject = fail; }));
+  await mount();
+  let pending: Promise<unknown> = Promise.resolve();
+  await act(async () => { pending = editor.writeCompetitor({ kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: [] }); });
+  await act(async () => { editor.accept(FACT_KEY_PRO); });
+  let result: unknown;
+  await act(async () => { reject(new Error("gone")); result = await pending; });
+  expect(result).toEqual({ ok: false, code: "network" });
+  expect(editor.autosaveHold).toBe("failed");
+  await settle(GEO_KB_V3_AUTOSAVE_MS * 4);
+  expect(calls()).toHaveLength(1);
+  expect(editor.dirty).toBe(true);
+  // The owner's next gesture re-arms it; the server's version check is what decides.
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ error: { code: "conflict" }, draftVersion: 9 }, { status: 409 }));
+  await act(async () => { editor.accept(FACT_KEY_TEAM); });
+  await settle();
+  expect(calls()).toHaveLength(2);
+  expect(editor.autosaveHold).toBe("conflict");
+});
+
+it("lets a decision made during a refused competitor write go out afterwards, since a refusal wrote nothing", async () => {
+  let release: (response: Response) => void = () => undefined;
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockReturnValueOnce(new Promise<Response>((resolve) => { release = resolve; }));
+  await mount();
+  let pending: Promise<unknown> = Promise.resolve();
+  await act(async () => { pending = editor.writeCompetitor({ kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: [] }); });
+  await act(async () => { editor.accept(FACT_KEY_PRO); });
+  const review = savedReview(PAYLOAD, [{ kind: "accept", itemKey: FACT_KEY_PRO }], 4);
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: review.data }));
+  await act(async () => { release(Response.json({ error: { code: "rate_limited" } }, { status: 429 })); await pending; });
+  expect(editor.autosaveHold).toBeNull();
+  await settle();
+  expect(calls()).toHaveLength(2);
+  expect(bodyOf(1)).toMatchObject({ baseVersion: 4, actions: [{ kind: "accept", itemKey: FACT_KEY_PRO }] });
+  expect(editor.dirty).toBe(false);
+});
+
 it("reports any other refusal to the caller without holding the card", async () => {
   (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ error: { code: "rate_limited" } }, { status: 429 }));
   await mount();
