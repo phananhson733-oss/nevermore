@@ -31,7 +31,7 @@ describe("workbench routes", () => {
   });
 
   it("keeps new segments disjoint from legacy ones so legacy pages never highlight a nav item", () => {
-    const legacy = new Set(Object.values(LEGACY_LINKS).flat());
+    const legacy = new Set<string>(Object.values(LEGACY_LINKS).flat());
     expect(legacy.size).toBe(8); // every LegacySegment member is reachable from the table
     for (const id of WORKBENCH_PAGE_IDS) {
       expect(legacy.has(WORKBENCH_SEGMENTS[id]), WORKBENCH_SEGMENTS[id]).toBe(false);
