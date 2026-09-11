@@ -1152,9 +1152,8 @@ export const PERSISTED_VERSION = 1 as const;
 const severity = z.enum(["high", "mid", "low"]);
 const engine = z.enum(["seo", "geo", "both"]);
 const level = z.enum(["high", "mid", "low"]);
-const gscStatus = z.enum(["ranked", "borderline", "gap", "unknown"]);
-const intent = z.enum(["navigational", "informational", "commercial", "transactional"]);
-const stage = z.enum(["TOFU", "MOFU", "BOFU"]);
+// KeywordRow (gscStatus / intent / stage) is derived, never persisted: no schema for it,
+// and eslint's no-unused-vars would reject unused enum consts here.
 const pageType = z.enum([
   "landing", "blog", "comparison", "listicle", "tool", "glossary", "answer-page",
 ]);
