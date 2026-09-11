@@ -3933,7 +3933,7 @@
       "search": "Search / jump",
       "artifacts": "Artifacts {count}",
       "newSite": "New site",
-      "sites": "{count} sites",
+      "sites": "{count, plural, one {# site} other {# sites}}",
       "shortcutHint": "Press ⌘K to jump",
       "sampleData": "Sample data",
       "sampleSite": "Sample site",

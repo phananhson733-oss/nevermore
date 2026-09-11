@@ -3925,7 +3925,7 @@
         "gsc": "GSC",
         "audit": "审计",
         "connected": "已接入",
-        "notConnected": "未接",
+        "notConnected": "未接入",
         "none": "—"
       },
       "openMenu": "打开导航",
