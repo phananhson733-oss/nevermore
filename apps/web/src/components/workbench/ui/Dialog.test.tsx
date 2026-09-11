@@ -48,10 +48,11 @@ afterEach(() => {
 });
 
 /** Returns whether the handler called `preventDefault()`. */
-function keydown(el: HTMLElement, key: string, shiftKey = false): boolean {
+function keydown(el: HTMLElement, key: string, shiftKey = false, isComposing = false): boolean {
   const event = new KeyboardEvent("keydown", {
     key,
     shiftKey,
+    isComposing,
     bubbles: true,
     cancelable: true,
   });
@@ -180,6 +181,20 @@ describe("Dialog", () => {
     keydown(first as HTMLElement, "Escape");
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a composing Escape to the IME instead of closing", () => {
+    const onClose = vi.fn();
+    const view = mount(<Harness open onClose={onClose} />);
+    const first = view.container.querySelector<HTMLElement>("#first");
+
+    // Escape mid-composition cancels the candidate list; the dialog must
+    // neither close nor preventDefault (that would cancel the IME's own
+    // handling too).
+    expect(keydown(first as HTMLElement, "Escape", false, true)).toBe(false);
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(view.container.querySelector('[role="dialog"]')).not.toBeNull();
   });
 
   it("lifts inert and returns focus to returnFocusTo on close", () => {

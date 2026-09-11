@@ -3250,12 +3250,13 @@ git commit -m "feat(i18n): 工作台 chrome 文案（en / zh-CN）"
 - Create: `apps/web/src/components/workbench/ui/cn.ts`
 - Create: `apps/web/src/components/workbench/ui/ids.ts`
 - Create: `apps/web/src/components/workbench/ui/focus-order.ts`
+- Create: `apps/web/src/components/workbench/ui/keyboard.ts`（`isComposingKey`，codex 评审后新增）
 - Create: `apps/web/src/components/workbench/ui/Dialog.tsx`
 - Create: `apps/web/src/components/workbench/ui/PageHead.tsx`
 - Create: `apps/web/src/components/workbench/ui/DemoChip.tsx`
 - Create: `apps/web/src/components/workbench/ui/LegacyLinks.tsx`
 - Create: `apps/web/src/components/workbench/views/placeholder/PlaceholderView.tsx`
-- Test: `apps/web/src/components/workbench/ui/focus-order.test.ts`（纯函数）、`ui/Dialog.test.tsx`（jsdom）、`ui/LegacyLinks.test.ts`（键守卫）
+- Test: `apps/web/src/components/workbench/ui/focus-order.test.ts`（jsdom：纯函数 + `FOCUSABLE` 选择器）、`ui/keyboard.test.ts`（纯函数）、`ui/Dialog.test.tsx`（jsdom）、`ui/LegacyLinks.test.ts`（键守卫）
 
 Tailwind 类直接照 opengengrowth；颜色只用 token（`bg-wb-paper`、`text-wb-seo` 等由 `@theme` 生成）或 Tailwind 内置刻度。**任何组件不得写 `style={{}}`。**
 
@@ -3265,7 +3266,8 @@ Tailwind 类直接照 opengengrowth；颜色只用 token（`bg-wb-paper`、`text
 - `Dialog` 的 `inert` 用模块级引用计数：同时可能开着两个对话框（⌘K 与产物筐互斥是 `ShellChrome` 的约定，`Dialog` 自己不假设），最后一个关闭才摘 `inert`；**设置**无条件执行，**摘除**时重新按 `WB_APP_ROOT_ID` 查一次根而不是复用 effect 闭包里那个 `root`（5508351b），保证即便 `#wb-app` 在对话框开着期间被换掉，设置和摘除也总落在同一个元素上——两处都是纵深防御，注释明说目前 `#wb-app` 并不会在两次打开之间被重新挂载。
 - `Dialog` **不是 portal**：它必须渲染在 `#wb-app` 之外，否则会把自己也 inert 掉。这一点由 `ShellChrome` 的结构保证（两个对话框是 `#wb-app` 的兄弟）。
 - 面板加 `tabIndex={-1}`：里面没有可聚焦元素时（空态抽屉）焦点要有地方落；`onKeyDown` 里 Tab 找不到目标时 `preventDefault` 而不是放行。
-- `FOCUSABLE` 在**每个**分支上都排除 `[tabindex="-1"]`，不只通用分支：命令面板的 `role="option"` 按钮是天生可聚焦元素，它用 `tabIndex={-1}` 退出 Tab 序，焦点圈必须尊重。
+- `FOCUSABLE` 在**每个**分支上都排除 `[tabindex="-1"]`，不只通用分支：命令面板的 `role="option"` 按钮是天生可聚焦元素，它用 `tabIndex={-1}` 退出 Tab 序，焦点圈必须尊重。codex 评审后 `[disabled]` 同样在每个分支排除：`a[href]` 与通用 `[tabindex]` 分支原本不排，一个带显式 `tabindex` 的 disabled 控件会成为焦点圈候选，而对它 `.focus()` 是静默 no-op，Tab 会卡在面板上。`focus-order.test.ts` 因此切到 jsdom，加两条选择器用例（disabled + tabindex 不入选；`tabindex="-1"` 每个分支都排）。
+- **IME 组合中的按键不归我们**（codex 评审）：`ui/keyboard.ts` 的 `isComposingKey(e)` = `e.isComposing === true || e.keyCode === 229`（后者是部分 Chromium / WebKit 在组合首个 keydown 上仍然只给的旧信号）。`Dialog.onKeyDown`、`CommandPalette.onKeyDown`（都查 `event.nativeEvent`）与 `useGlobalShortcut`（原生事件）三层都在 handler 第一行提前返回，**不 `preventDefault`**，输入法保留自己的行为：Escape 取消候选、Enter 上屏、方向键在候选里移动。组合中的 Escape 在 `Dialog` 里有意不 `stopPropagation`——它会冒泡到 window，由 `useGlobalShortcut` 的同一守卫拦住，不会关掉面板。三层各有一条 jsdom 用例（`KeyboardEvent` 的 init 支持 `isComposing`），且经变异验证只被对应用例抓住。
 - 关闭时的焦点归还改成「先 focus 首选目标，再问 `document.activeElement` 是否真的拿到了」。不能用 `offsetParent === null` 判断：固定定位的触发按钮它也是 null，jsdom 下更是恒为 null。
 - 背景遮罩加 `onMouseDown` preventDefault：mousedown 才是移动焦点的事件，不拦住的话面板在 `onClose` 之前就失焦，焦点归还会从 `<body>` 起算。
 - `LEGACY_LABEL_KEY` 从 `LegacyLinks.tsx` 挪到 `lib/workbench/routes.ts`（和 `LEGACY_LINKS` 同源），并补 `LegacyLinks.test.ts`：next-intl 对缺键渲染成 key 路径本身而不抛错，拼错就会把字面量 `nav.growthMap` 发到界面上。
@@ -3303,18 +3305,22 @@ export function nextTrapIndex(
 
 /**
  * Known scope: no contenteditable/summary/iframe, and hidden descendants still
- * match. `tabindex="-1"` is excluded on EVERY branch, not just the generic one:
- * a natively focusable element (the palette's `role="option"` buttons) opts out
- * of the Tab order the same way, and the trap must honour that.
+ * match. `tabindex="-1"` and `[disabled]` are excluded on EVERY branch, not
+ * just the generic one: a natively focusable element (the palette's
+ * `role="option"` buttons) opts out of the Tab order with `tabindex="-1"`, and
+ * a disabled control carrying an explicit `tabindex` would otherwise be a trap
+ * candidate whose `.focus()` silently fails, stranding Tab on the panel.
  */
 export const FOCUSABLE =
-  'a[href]:not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])';
+  'a[href]:not([disabled]):not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), [tabindex]:not([disabled]):not([tabindex="-1"])';
 ```
 
 ```ts
 // apps/web/src/components/workbench/ui/focus-order.test.ts
+/** @vitest-environment jsdom */
+
 import { describe, expect, it } from "vitest";
-import { nextTrapIndex } from "./focus-order.ts";
+import { FOCUSABLE, nextTrapIndex } from "./focus-order.ts";
 
 describe("nextTrapIndex", () => {
   it("wraps forward and backward", () => {
@@ -3330,10 +3336,61 @@ describe("nextTrapIndex", () => {
     expect(nextTrapIndex(0, 0, false)).toBe(-1);
   });
 });
+
+describe("FOCUSABLE", () => {
+  function matches(html: string): readonly string[] {
+    const scope = document.createElement("div");
+    scope.innerHTML = html;
+    return [...scope.querySelectorAll<HTMLElement>(FOCUSABLE)].map((el) => el.id);
+  }
+
+  it("excludes a disabled control even when it carries an explicit tabindex", () => {
+    // The generic `[tabindex]` branch would otherwise admit it, and `.focus()`
+    // on a disabled control is a silent no-op that strands the trap.
+    expect(
+      matches(
+        '<button id="on" type="button">a</button>' +
+          '<button id="off" type="button" disabled tabindex="0">b</button>' +
+          '<div id="generic" tabindex="0"></div>' +
+          '<div id="generic-off" tabindex="0" disabled></div>',
+      ),
+    ).toEqual(["on", "generic"]);
+  });
+
+  it("excludes tabindex=-1 on every branch", () => {
+    expect(
+      matches(
+        '<a id="link" href="#">a</a>' +
+          '<button id="opt" type="button" tabindex="-1">b</button>' +
+          '<input id="field" />' +
+          '<div id="panel" tabindex="-1"></div>',
+      ),
+    ).toEqual(["link", "field"]);
+  });
+});
 ```
 
 Run: `pnpm vitest run --project unit apps/web/src/components/workbench/ui/focus-order.test.ts`
-Expected: 先 FAIL（无模块），实现后 3 passed。
+Expected: 先 FAIL（无模块），实现后 3 passed（codex 评审后 5 passed：加 `FOCUSABLE` 两条）。
+
+```ts
+// apps/web/src/components/workbench/ui/keyboard.ts
+/**
+ * True for a keydown fired while an IME composition is in progress.
+ *
+ * `isComposing` is the spec'd flag; `keyCode === 229` is the legacy signal
+ * browsers still emit for keydowns inside a composition when the flag is
+ * missing or not yet set (the first keydown of a composition in some Chromium
+ * and WebKit builds). Every keydown handler in the workbench (Dialog, the
+ * command palette, the window-level shortcut) returns early on this WITHOUT
+ * `preventDefault`, so the IME keeps its own behaviour: Escape cancels the
+ * candidate list, Enter commits it, the arrows move within it. None of those
+ * keystrokes are for us until the composition has ended.
+ */
+export function isComposingKey(e: { readonly isComposing?: boolean; readonly keyCode?: number }): boolean {
+  return e.isComposing === true || e.keyCode === 229;
+}
+```
 
 - [x] **Step 3: ids.ts + Dialog.tsx**
 
@@ -3351,6 +3408,7 @@ import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject }
 import { cn } from "./cn.ts";
 import { FOCUSABLE, nextTrapIndex } from "./focus-order.ts";
 import { WB_APP_ROOT_ID } from "./ids.ts";
+import { isComposingKey } from "./keyboard.ts";
 
 /** How many Dialogs are open; `#wb-app` is inert while it is > 0. */
 let openDialogs = 0;
@@ -3429,6 +3487,10 @@ export function Dialog({
   }, [open, initialFocus, returnFocusTo]);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    // Mid-composition keys belong to the IME (see `isComposingKey`): a
+    // composing Escape cancels the candidate list, it does not close the
+    // dialog. Not stopped here either; `useGlobalShortcut` has the same guard.
+    if (isComposingKey(event.nativeEvent)) return;
     if (event.key === "Escape") {
       // Suppresses useGlobalShortcut's window-level Escape (bubble phase) so the dialog closes once.
       event.stopPropagation();
@@ -3659,7 +3721,7 @@ export function PlaceholderView({
 - [x] **Step 6: 类型检查**
 
 Run: `pnpm --filter @sf/web typecheck && pnpm vitest run --project unit apps/web/src/components/workbench`
-Expected: 无错误；focus-order 3 passed。
+Expected: 无错误；focus-order 5 passed、keyboard 3 passed。
 
 - [x] **Step 7: Commit**
 
@@ -3668,7 +3730,7 @@ git add apps/web/src/components/workbench
 git commit -m "feat(workbench): Dialog / PageHead / DemoChip / LegacyLinks / 占位视图"
 ```
 
-实际落地：1c3db8f1（原语与占位视图）、381d3fb9（Dialog inert 引用计数、根 id 常量、jsdom 测试、legacy 标签键守卫）、bae6a447（焦点归还判据、`FOCUSABLE` 排除 `tabindex="-1"`、无可聚焦元素时拦 Tab）、09439fdc（`PlaceholderView` 按有无旧页选文案、对比度）、5508351b（cleanup 摘 `inert` 改成重新按 id 查根，不复用闭包里的 `root`）。
+实际落地：1c3db8f1（原语与占位视图）、381d3fb9（Dialog inert 引用计数、根 id 常量、jsdom 测试、legacy 标签键守卫）、bae6a447（焦点归还判据、`FOCUSABLE` 排除 `tabindex="-1"`、无可聚焦元素时拦 Tab）、09439fdc（`PlaceholderView` 按有无旧页选文案、对比度）、5508351b（cleanup 摘 `inert` 改成重新按 id 查根，不复用闭包里的 `root`）、codex 评审修复（`keyboard.ts` IME 守卫三层接入、`FOCUSABLE` 排除 `[disabled]`；与本备注同一 commit）。
 
 ---
 
@@ -3705,6 +3767,7 @@ git commit -m "feat(workbench): Dialog / PageHead / DemoChip / LegacyLinks / 占
 - `CommandPalette` 重开时用「prop 变化时在渲染期调整 state」的模式重置 `query` 与 `activeIndex`（不是 effect），首帧就显示完整列表；`returnFocusTo` 补进解构（原计划漏了，只写在类型里）；`activeEntry` 提出来一次（`noUncheckedIndexedAccess`）。
 - `CommandPalette` 的无障碍：输入框 `role="combobox"` + `aria-expanded` / `aria-autocomplete="list"` / `aria-controls`；选项 `tabIndex={-1}`（靠方向键 + `aria-activedescendant`，不进 Tab 序）；「没有匹配项」段落移到 listbox **外面**（listbox 里只能有 option），并加一个 `sr-only role="status"` 的计数，筛选不再静默——计数前缀改成 `t("shell.palette.title")`（5508351b）：裸数字出了 listbox 上下文没有意义，复用面板自己的标题免得再加一个 catalog key。
 - 面板会滚动（`max-h-80` 装 ~18 条）但方向键只挪 `aria-activedescendant`，焦点始终留在输入框，浏览器无从跟着滚：`activeKey` 变化时 `useEffect` 按 id 找到那个选项调 `scrollIntoView({ block: "nearest" })`（5508351b）；jsdom 不实现该 API，effect 先判 `typeof … === "function"` 再调，测试里手动 stub 并在 `afterEach` 里 `delete` 掉，免得残留 property 让后续用例看到浏览器里不存在的能力。
+- **IME 组合中的按键**（codex 评审）：`CommandPalette.onKeyDown` 与 `useGlobalShortcut` 都在第一行用 `ui/keyboard.ts` 的 `isComposingKey` 提前返回（细节见 Task 9 落地备注）。中文 / 日文输入法候选框开着时，Enter 是上屏、Escape 是取消候选、方向键在候选里走，面板不得抢；window 层不拦的话，`Dialog` 有意放过的组合中 Escape 会冒泡上来把面板关掉。新增 `useGlobalShortcut.test.tsx`（jsdom 2 条：⌘K / Ctrl+K / Escape 正常触发；组合中的 Escape、`keyCode 229`、⌘K 都不触发且不 `preventDefault`），`CommandPalette.test.tsx` 加 1 条（组合中的 ArrowDown / Enter / Escape：高亮不动、不跳转、不关闭）。
 - `CommandPalette` 的 `go()` 先过 `confirmLeave()`：跳转和侧栏链接是同一种导航，Context 有未保存改动时必须问。这个守卫抽成 `shell/useContextNavigationConfirm.ts`（同时导出 `confirmNavigation`），`useProjectShellEffects` 只保留 history 副作用并转出 `confirmNavigation`。
 - `ArtifactDrawer`：重开时清掉悬空的「已复制」；`COPY_FLASH_MS = 1300`，定时器在关闭 / 卸载时清掉。
 - `Topbar`：存储提示的 `role="status"` 容器**始终渲染、且只有一个**（`empty:-mr-3` 抵掉 flex gap）——live region 必须先在无障碍树里存在，文字后到才会被播报，第二个会破坏壳 e2e 那个「唯一 status」的定位器；只有 `volatile` / `quota` 出文字，`ok` 与 `swept` 静默。`lg` 断点以下顶栏放不下整句，改 `max-lg:sr-only lg:max-w-[40vw] lg:truncate`（5508351b）：依旧播报，只是不占版面；`sr-only` 把它挪出 flex 流，所以 `empty:-mr-3` 只需要在 `lg` 起生效。产物筐按钮加 `aria-busy={!ready}`（未 hydrate 时的 0 是暂定值）与 `focus-visible:outline-slate-900`（`.wb-reset` 的焦点圈是 `currentColor`，在反色按钮上是白的）。`GG` 字标 `aria-hidden`。「+ 新建站点」链接接入 `useContextNavigationConfirm` 的 `confirmNavigation`（5508351b，在 `Topbar` 内部调用，不从 `ShellChrome` 往下传）：离开去新建站点和侧栏链接、⌘K 跳转一样会丢弃未保存的 Context 改动，问法必须一致；`current` 传 `false`——这个目的地永远不是当前页。新增 `Topbar.test.tsx`（jsdom 4 条）钉住确认拒绝 / 接受、Context 干净时不问、唯一 live region。
@@ -3977,6 +4040,7 @@ export function useContextNavigationConfirm(): ContextNavigationConfirm {
 "use client";
 
 import { useEffect } from "react";
+import { isComposingKey } from "../ui/keyboard.ts";
 
 /** ⌘K / Ctrl+K toggles the palette; Escape closes whatever is open (jsx L22–29). */
 export function useGlobalShortcut(handlers: {
@@ -3985,6 +4049,9 @@ export function useGlobalShortcut(handlers: {
 }): void {
   useEffect(() => {
     function onKeyDown(event: globalThis.KeyboardEvent): void {
+      // A composing Escape reaches the window because Dialog lets it through
+      // on purpose; it is the IME's, not ours (see `isComposingKey`).
+      if (isComposingKey(event)) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         handlers.onTogglePalette();
@@ -4423,6 +4490,7 @@ import type { ProjectShellOption } from "@/lib/services/project-shell";
 import { workbenchHref } from "@/lib/workbench/routes";
 import { cn } from "../ui/cn.ts";
 import { Dialog } from "../ui/Dialog.tsx";
+import { isComposingKey } from "../ui/keyboard.ts";
 import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
 import { WORKBENCH_NAV } from "./workbench-nav.ts";
 
@@ -4518,6 +4586,9 @@ export function CommandPalette({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    // Mid-composition keys belong to the IME (see `isComposingKey`); no
+    // `preventDefault`, or Enter could no longer commit the candidate.
+    if (isComposingKey(event.nativeEvent)) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setActiveIndex((i) => Math.min(i + 1, entries.length - 1));
@@ -4611,7 +4682,7 @@ export function CommandPalette({
 }
 ```
 
-> 完整实现见 `apps/web/src/components/workbench/shell/CommandPalette.test.tsx`（已落地，jsdom 9 条）：全量列出与筛选、空态在 listbox 外、Enter 跳转并关闭、筛选时高亮回第一条、重开回到空 query、Context 离开确认拒绝时面板不关、接受后跳转、高亮变化时把选项滚入视口（并钉住滚的是哪一个 DOM 节点）、combobox 角色与选项不进 Tab 序。
+> 完整实现见 `apps/web/src/components/workbench/shell/CommandPalette.test.tsx`（已落地，jsdom 10 条）：全量列出与筛选、空态在 listbox 外、Enter 跳转并关闭、筛选时高亮回第一条、重开回到空 query、Context 离开确认拒绝时面板不关、接受后跳转、高亮变化时把选项滚入视口（并钉住滚的是哪一个 DOM 节点）、IME 组合中的按键交给输入法、combobox 角色与选项不进 Tab 序。
 
 - [x] **Step 6: ArtifactDrawer.tsx（jsx L2485–2526）**
 
@@ -5040,7 +5111,7 @@ git add apps/web/src/components/workbench/shell apps/web/src/lib/workbench/downl
 git commit -m "feat(workbench): 侧栏 / 顶栏 / 命令面板 / 产物筐抽屉与壳装配"
 ```
 
-实际落地：8e53425b（`ProjectShellProject.marketCode`）、47dc7d31（壳主体）、4ae34588（`ProjectSwitcher` 浅色、面板 / 抽屉互斥与重置）、bae6a447（侧栏可滚动、面板 combobox、离开确认、焦点圈、存储提示、下载）、09f9bb14（`swept` 态顶栏静默）、5508351b（打印规则挪进 `@layer utilities`、面板高亮滚入视口、「+ 新建站点」接入离开确认、顶栏存储提示合并单一 live region、`ShellChrome` 面板状态合并为单槽位、`download.ts` 的 `try/finally` 与 1000ms revoke、删 `app-shell.module.css` 死规则）。
+实际落地：8e53425b（`ProjectShellProject.marketCode`）、47dc7d31（壳主体）、4ae34588（`ProjectSwitcher` 浅色、面板 / 抽屉互斥与重置）、bae6a447（侧栏可滚动、面板 combobox、离开确认、焦点圈、存储提示、下载）、09f9bb14（`swept` 态顶栏静默）、5508351b（打印规则挪进 `@layer utilities`、面板高亮滚入视口、「+ 新建站点」接入离开确认、顶栏存储提示合并单一 live region、`ShellChrome` 面板状态合并为单槽位、`download.ts` 的 `try/finally` 与 1000ms revoke、删 `app-shell.module.css` 死规则）、codex 评审修复（面板与全局快捷键的 IME 守卫、`useGlobalShortcut.test.tsx`；与本备注同一 commit）。
 
 ---
 

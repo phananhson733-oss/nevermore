@@ -14,6 +14,7 @@ import type { ProjectShellOption } from "@/lib/services/project-shell";
 import { workbenchHref } from "@/lib/workbench/routes";
 import { cn } from "../ui/cn.ts";
 import { Dialog } from "../ui/Dialog.tsx";
+import { isComposingKey } from "../ui/keyboard.ts";
 import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
 import { WORKBENCH_NAV } from "./workbench-nav.ts";
 
@@ -109,6 +110,9 @@ export function CommandPalette({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    // Mid-composition keys belong to the IME (see `isComposingKey`); no
+    // `preventDefault`, or Enter could no longer commit the candidate.
+    if (isComposingKey(event.nativeEvent)) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setActiveIndex((i) => Math.min(i + 1, entries.length - 1));

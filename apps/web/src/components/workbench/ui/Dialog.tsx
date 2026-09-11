@@ -4,6 +4,7 @@ import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject }
 import { cn } from "./cn.ts";
 import { FOCUSABLE, nextTrapIndex } from "./focus-order.ts";
 import { WB_APP_ROOT_ID } from "./ids.ts";
+import { isComposingKey } from "./keyboard.ts";
 
 /** How many Dialogs are open; `#wb-app` is inert while it is > 0. */
 let openDialogs = 0;
@@ -82,6 +83,10 @@ export function Dialog({
   }, [open, initialFocus, returnFocusTo]);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    // Mid-composition keys belong to the IME (see `isComposingKey`): a
+    // composing Escape cancels the candidate list, it does not close the
+    // dialog. Not stopped here either; `useGlobalShortcut` has the same guard.
+    if (isComposingKey(event.nativeEvent)) return;
     if (event.key === "Escape") {
       // Suppresses useGlobalShortcut's window-level Escape (bubble phase) so the dialog closes once.
       event.stopPropagation();

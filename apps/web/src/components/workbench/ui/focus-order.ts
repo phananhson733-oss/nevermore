@@ -12,9 +12,11 @@ export function nextTrapIndex(
 
 /**
  * Known scope: no contenteditable/summary/iframe, and hidden descendants still
- * match. `tabindex="-1"` is excluded on EVERY branch, not just the generic one:
- * a natively focusable element (the palette's `role="option"` buttons) opts out
- * of the Tab order the same way, and the trap must honour that.
+ * match. `tabindex="-1"` and `[disabled]` are excluded on EVERY branch, not
+ * just the generic one: a natively focusable element (the palette's
+ * `role="option"` buttons) opts out of the Tab order with `tabindex="-1"`, and
+ * a disabled control carrying an explicit `tabindex` would otherwise be a trap
+ * candidate whose `.focus()` silently fails, stranding Tab on the panel.
  */
 export const FOCUSABLE =
-  'a[href]:not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])';
+  'a[href]:not([disabled]):not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), [tabindex]:not([disabled]):not([tabindex="-1"])';

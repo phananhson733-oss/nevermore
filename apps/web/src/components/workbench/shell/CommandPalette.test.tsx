@@ -145,10 +145,10 @@ function typeQuery(field: HTMLInputElement, value: string): void {
   });
 }
 
-function press(el: HTMLElement, key: string): void {
+function press(el: HTMLElement, key: string, isComposing = false): void {
   act(() => {
     el.dispatchEvent(
-      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      new KeyboardEvent("keydown", { key, isComposing, bubbles: true, cancelable: true }),
     );
   });
 }
@@ -260,6 +260,23 @@ describe("CommandPalette", () => {
     // `block: "nearest"` on the wrong element would still satisfy the call
     // assertion, so pin which option was scrolled.
     expect(scrollIntoView.mock.contexts.at(-1)).toBe(options(view.container)[1]);
+  });
+
+  it("leaves keys pressed mid-IME-composition to the IME", () => {
+    const view = render();
+    const field = input(view.container);
+
+    // While a CJK candidate list is open, Escape cancels it, Enter commits
+    // it and the arrows move within it; none of them are for the palette.
+    press(field, "ArrowDown", true);
+    press(field, "Enter", true);
+    press(field, "Escape", true);
+
+    expect(options(view.container)[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(options(view.container)[1]?.getAttribute("aria-selected")).toBe("false");
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(view.container.querySelector('[role="dialog"]')).not.toBeNull();
   });
 
   it("exposes the input as a combobox and keeps options out of the Tab order", () => {
