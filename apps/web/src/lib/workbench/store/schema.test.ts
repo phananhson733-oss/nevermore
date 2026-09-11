@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { initialProjectState } from "./reducer.ts";
 import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
+import { populatedProjectState } from "./test-fixtures.ts";
 
 const seed = { url: "https://example.test", brand: "Example", market: "US" };
 
@@ -9,6 +10,13 @@ describe("persisted workbench schema v1", () => {
     const state = initialProjectState(seed);
     const parsed = parsePersistedState({ v: PERSISTED_VERSION, state });
     expect(parsed).toEqual(state);
+  });
+
+  it("round-trips a fully populated state", () => {
+    // The initial state leaves every nested shape null or empty, so it never
+    // reaches the nested strictObjects. This one does.
+    const state = populatedProjectState(seed);
+    expect(parsePersistedState({ v: PERSISTED_VERSION, state })).toEqual(state);
   });
 
   it("rejects a different version", () => {

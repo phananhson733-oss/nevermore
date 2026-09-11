@@ -77,6 +77,9 @@ const visResult = z.strictObject({
   rank: nullableNumber,
   brands: z.array(z.string()),
   domains: z.array(z.string()),
+  // v1 contract: only mock results are persisted. Widening to z.boolean()
+  // rejects nothing old, but ANY narrowing or renaming here needs a
+  // PERSISTED_VERSION bump.
   real: z.literal(false),
 });
 
@@ -199,8 +202,8 @@ const artifact = z.strictObject({
   id: z.string(),
   at: z.string(),
   module: z.enum([
-    "audit", "visibility", "keywords", "competitors", "links",
-    "content", "kb", "answers", "profile", "week",
+    "audit", "visibility", "keywords", "keywordLibrary", "competitors",
+    "links", "content", "kb", "answers", "profile", "week",
   ]),
   type: z.enum(["csv", "prompt", "md", "json"]),
   engine,
@@ -221,6 +224,7 @@ export const projectStateSchema = z.strictObject({
   auditHistory: z.array(auditReport),
   lastAudit: auditReport.nullable(),
   visResults: z.array(visResult),
+  visPartial: z.boolean(),
   visHistory: z.array(visSnapshot),
   lastVis: visSnapshot.nullable(),
   compData: compData.nullable(),
@@ -242,12 +246,19 @@ const persistedSchema = z.strictObject({
   state: projectStateSchema,
 });
 
-// Drift guard, one direction only: what the schema accepts must be a valid
-// domain state (mutable zod arrays assign to the readonly domain arrays; the
-// reverse does not type-check and is not needed).
+// Drift guards. (1) What the schema accepts must be a valid domain state:
+// catches changed field types and required domain fields missing from the
+// schema. (2) The two key sets must match in both directions. (1) alone lets
+// an *optional* domain field slip past, and because the schema is strict, the
+// first persisted write of that field would make every later read fail and
+// silently reset the user's data (design §6.5). Top level only; nested shapes
+// are covered by the filled fixture in schema.test.ts.
 type SchemaState = z.infer<typeof projectStateSchema>;
 const _schemaIsDomainState: WorkbenchProjectState = null as unknown as SchemaState;
 void _schemaIsDomainState;
+type AssertNever<T extends never> = T;
+type _MissingInSchema = AssertNever<Exclude<keyof WorkbenchProjectState, keyof SchemaState>>;
+type _ExtraInSchema = AssertNever<Exclude<keyof SchemaState, keyof WorkbenchProjectState>>;
 
 export function parsePersistedState(raw: unknown): WorkbenchProjectState | null {
   const result = persistedSchema.safeParse(raw);

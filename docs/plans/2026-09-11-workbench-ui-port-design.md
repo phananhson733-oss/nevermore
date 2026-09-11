@@ -146,11 +146,13 @@ built          是否已建关键词矩阵
 saved          词库 [{ q, addedAt, source }]
 audit          当前审计报告 | null；auditHistory ≤ 12；lastAudit | null
 visResults     可见度结果 []；visHistory ≤ 12；lastVis | null
+visPartial     boolean，可见度运行进行中（含已流入的部分结果）；随状态一起持久化，供 hydration 判定（§6.4）
 compData       竞品数据 | null
 plans          答案页方案 []
 targets        外链目标 []
 kb             事实知识库 | null
 artifacts      产物 [{ id, at, module, type, engine, title, content, filename? }]，上限 50
+               module 取 audit / visibility / keywords / keywordLibrary / competitors / links / content / kb / answers / profile / week
 notify         通知偏好 { weekly, drop, mention, gsc }（原 jsx `ws.notify`，本地 mock；默认 { true, true, false, true }）
 demo           boolean，是否已载入示例站点（§6.7）
 ```
@@ -176,12 +178,12 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 - `auditStart`：`audit = null`，`lastAudit` 不变（运行中仍可看上次）。
 - `auditComplete(report)`：若 `lastAudit` 存在则 `auditHistory = [...history, lastAudit].slice(-12)`；`audit = lastAudit = report`。历史不含当前报告（视图的 delta 计算依赖这一点）。
 - `auditCancel`：运行被丢弃（切页 / 切项目 / 重跑）时派发，`audit = lastAudit`（回到上次报告，不留空）。
-- `visStart`：`visResults = []`。
-- `visCancel`：`visResults = lastVis?.results ?? []`。
-- `visProgress(results)`：`visResults = results`，不动 `lastVis` / `visHistory`（jsx 边跑边 push 的中间态）。
-- `visComplete(results, at)`：若 `lastVis` 存在则归档入 `visHistory`（≤ 12）；`visResults = results`；`lastVis = { at, results }`。（jsx 用「从空变非空」判定同一件事；拆成两个 action 后判定不再依赖前态。）
-- 其余：`patchProfile`、`setProfileDoc`、`setConns`、`setGscRows`、`setSeeds`、`setBuilt`、`setSaved`（写 `saved`；按词保留已有 `addedAt` / `source`）、`setCompData`、`setPlans`、`setTargets`、`setKb`、`setNotify`、`addArtifact`（前插，超 50 丢最旧）、`removeArtifact`、`clearArtifacts`、`loadDemo(payload)`——payload 由 PR-2 的 `makeDemoSite` 产出，**逐字段写入**：`conns, gscRows, seeds, built, saved, audit, auditHistory, lastAudit, visResults, visHistory, lastVis, compData, plans, targets, kb, artifacts`，并置 `demo = true`；**不写** `profile`（六个字段全部保留，示例文本里的品牌名用真实 `profile.brand` 生成）、`profileDoc` 只写 `crawl / gsc / third` 三个信号，`ai` 用 `DEMO_AI` 但 `summary / facts` 里的「GenGrowth」由 `makeDemoSite` 替换为真实 brand、`notify` 不动、`clearDemo`（与 `loadDemo` 对称：只把它写过的 16 个字段回初始值并置 `demo = false`，**不动** `profile` 与 `notify`）、`reset`（全量回 §6.7 初始值，只在真实删除项目等场景用）。
-- **hydration 归一化**：运行中刷新 / 切项目会把 `audit = null`、`visResults = []` 持久化下来而没人派发 cancel；provider 读盘后先过 `normalizeInterrupted(state)`：`audit === null && lastAudit` → `audit = lastAudit`；`visResults.length === 0 && lastVis` → `visResults = lastVis.results`。纯函数，有单测。
+- `visStart`：`visResults = []`，`visPartial = true`。
+- `visCancel`：`visResults = lastVis?.results ?? []`，`visPartial = false`。
+- `visProgress(results)`：`visResults = results`，`visPartial = true`，不动 `lastVis` / `visHistory`（jsx 边跑边 push 的中间态）。
+- `visComplete(results, at)`：若 `lastVis` 存在则归档入 `visHistory`（≤ 12）；`visResults = results`；`lastVis = { at, results }`；`visPartial = false`。（jsx 用「从空变非空」判定同一件事；拆成两个 action 后判定不再依赖前态。）
+- 其余：`patchProfile`、`setProfileDoc`、`setConns`、`setGscRows`、`setSeeds`、`setBuilt`、`setSaved`（写 `saved`；按词保留已有 `addedAt` / `source`）、`setCompData`、`setPlans`、`setTargets`、`setKb`、`setNotify`、`addArtifact`（前插，超 50 丢最旧）、`removeArtifact`、`clearArtifacts`、`loadDemo(payload)`——payload 由 PR-2 的 `makeDemoSite` 产出，**逐字段写入**：`conns, gscRows, seeds, built, saved, audit, auditHistory, lastAudit, visResults, visHistory, lastVis, compData, plans, targets, kb, artifacts`，并置 `demo = true`；**不写** `profile`（六个字段全部保留，示例文本里的品牌名用真实 `profile.brand` 生成）、`profileDoc` 只写 `crawl / gsc / third` 三个信号，`ai` 用 `DEMO_AI` 但 `summary / facts` 里的「GenGrowth」由 `makeDemoSite` 替换为真实 brand、`notify` 不动、`clearDemo`（与 `loadDemo` 对称：只把它写过的 17 个字段（含 `profileDoc`）与 `visPartial` 回初始值并置 `demo = false`，**不动** `profile` 与 `notify`）、`reset`（全量回 §6.7 初始值，只在真实删除项目等场景用）。
+- **hydration 归一化**：运行中刷新 / 切项目会把 `audit = null`、`visPartial = true` 持久化下来而没人派发 cancel；provider 读盘后先过 `normalizeInterrupted(state)`：`audit === null && lastAudit` → `audit = lastAudit`；`visPartial` → `visResults = lastVis?.results ?? []` 且 `visPartial = false`。**可见度必须看 `visPartial`，不能看 `visResults` 是否为空**：provider 每次变更都整份写盘、`visProgress` 会把中间结果流进 `visResults`，只判空会让「跑了一半的部分结果」冒充一次完整测量；反过来「跑完但一条都没命中」是合法的完成态，不该被回滚。纯函数，有单测。
 - **运行归属**：每次运行持有 `{ projectId, runToken }`；完成时若 provider 的 projectId 或当前 runToken 已变（切项目、重跑、离开页面），结果丢弃。步骤动画不跨路由存活。
 
 ### 6.5 持久化与 hydration（评审 F6 / F7 / F14）

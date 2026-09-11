@@ -5,6 +5,7 @@
  * mock functions without re-deciding them.
  */
 export type Severity = "high" | "mid" | "low";
+/** The prototype's `engine: ""` (weekly report, misc exports) maps to `"both"`; there is no "no engine" value. */
 export type Engine = "seo" | "geo" | "both";
 export type Level = "high" | "mid" | "low";
 export type GscStatus = "ranked" | "borderline" | "gap" | "unknown";
@@ -45,6 +46,7 @@ export type ModuleId =
   | "audit"
   | "visibility"
   | "keywords"
+  | "keywordLibrary"
   | "competitors"
   | "links"
   | "content"
@@ -306,6 +308,8 @@ export interface WorkbenchProjectState {
   readonly auditHistory: readonly AuditReport[];
   readonly lastAudit: AuditReport | null;
   readonly visResults: readonly VisResult[];
+  /** True while a visibility run is in flight. Persisted, so a reload can tell streamed partial results from a completed run (design §6.4). */
+  readonly visPartial: boolean;
   readonly visHistory: readonly VisSnapshot[];
   readonly lastVis: VisSnapshot | null;
   readonly compData: CompData | null;

@@ -68,6 +68,7 @@ export function initialProjectState(seed: ProjectSeed): WorkbenchProjectState {
     auditHistory: [],
     lastAudit: null,
     visResults: [],
+    visPartial: false,
     visHistory: [],
     lastVis: null,
     compData: null,
@@ -85,13 +86,23 @@ export function withProjectSeed(state: WorkbenchProjectState, seed: ProjectSeed)
   return { ...state, profile: { ...state.profile, url: seed.url, brand: seed.brand, market: seed.market } };
 }
 
-function archive<T>(history: readonly T[], item: T | null): readonly T[] {
-  if (item === null) return history;
+/** Archive the previous entry. `current` keeps a repeated dispatch of the same object out of the history. */
+function archive<T>(history: readonly T[], item: T | null, current: T | null): readonly T[] {
+  if (item === null || item === current) return history;
   return [...history, item].slice(-HISTORY_LIMIT);
 }
 
+/** `setSaved` semantics (design §6.4): incoming entries win, except `addedAt` / `source` of words already saved; duplicates in `next` collapse to the first. */
 function mergeSaved(previous: readonly SavedKeyword[], next: readonly SavedKeyword[]): readonly SavedKeyword[] {
-  return next.map((entry) => previous.find((p) => p.q === entry.q) ?? entry);
+  const seen = new Set<string>();
+  const merged: SavedKeyword[] = [];
+  for (const entry of next) {
+    if (seen.has(entry.q)) continue;
+    seen.add(entry.q);
+    const prev = previous.find((p) => p.q === entry.q);
+    merged.push(prev ? { ...entry, addedAt: prev.addedAt, source: prev.source } : entry);
+  }
+  return merged;
 }
 
 export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): WorkbenchProjectState {
@@ -127,23 +138,25 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
         ...state,
         audit: action.report,
         lastAudit: action.report,
-        auditHistory: archive(state.auditHistory, state.lastAudit),
+        auditHistory: archive(state.auditHistory, state.lastAudit, action.report),
       };
     case "auditCancel":
       return { ...state, audit: state.lastAudit };
     case "visStart":
-      return { ...state, visResults: [] };
+      return { ...state, visResults: [], visPartial: true };
     case "visProgress":
-      return { ...state, visResults: action.results };
+      return { ...state, visResults: action.results, visPartial: true };
     case "visComplete":
       return {
         ...state,
         visResults: action.results,
+        visPartial: false,
         lastVis: { at: action.at, results: action.results },
-        visHistory: archive(state.visHistory, state.lastVis),
+        // The snapshot is built here, so it is never reference-equal to `lastVis`.
+        visHistory: archive(state.visHistory, state.lastVis, null),
       };
     case "visCancel":
-      return { ...state, visResults: state.lastVis?.results ?? [] };
+      return { ...state, visResults: state.lastVis?.results ?? [], visPartial: false };
     case "addArtifact":
       return { ...state, artifacts: [action.artifact, ...state.artifacts].slice(0, ARTIFACT_LIMIT) };
     case "removeArtifact":
@@ -151,10 +164,18 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
     case "clearArtifacts":
       return { ...state, artifacts: [] };
     case "loadDemo":
-      return { ...state, ...action.payload, demo: true };
+      return {
+        ...state,
+        ...action.payload,
+        auditHistory: action.payload.auditHistory.slice(-HISTORY_LIMIT),
+        visHistory: action.payload.visHistory.slice(-HISTORY_LIMIT),
+        artifacts: action.payload.artifacts.slice(0, ARTIFACT_LIMIT),
+        visPartial: false,
+        demo: true,
+      };
     case "clearDemo": {
       const blank = initialProjectState({ url: state.profile.url, brand: state.profile.brand, market: state.profile.market });
-      return { ...state, ...demoFields(blank), demo: false };
+      return { ...state, ...demoFields(blank), visPartial: false, demo: false };
     }
     case "loadPersisted":
       return action.state;
@@ -173,10 +194,17 @@ function demoFields(s: WorkbenchProjectState): DemoPayload {
   };
 }
 
-/** After hydration: an interrupted run persisted `audit = null` / `visResults = []` (design §6.4). */
+/**
+ * After hydration (design §6.4). An interrupted audit run persisted
+ * `audit = null` (the report is all-or-nothing); an interrupted visibility
+ * run persisted `visPartial = true` with whatever results had streamed in.
+ * Both fall back to the last completed snapshot. Note: right after a
+ * completed run `audit === lastAudit` and `visResults === lastVis.results`
+ * by reference; that identity does not survive the JSON round-trip, so
+ * nothing may depend on it.
+ */
 export function normalizeInterrupted(state: WorkbenchProjectState): WorkbenchProjectState {
   const audit = state.audit === null && state.lastAudit ? state.lastAudit : state.audit;
-  const visResults = state.visResults.length === 0 && state.lastVis ? state.lastVis.results : state.visResults;
-  if (audit === state.audit && visResults === state.visResults) return state;
-  return { ...state, audit, visResults };
+  if (!state.visPartial) return audit === state.audit ? state : { ...state, audit };
+  return { ...state, audit, visResults: state.lastVis?.results ?? [], visPartial: false };
 }
