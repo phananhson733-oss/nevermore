@@ -7,7 +7,11 @@ import { E2E_PROJECT_ID, installGrowthVerticalApi } from "./mock-api.ts";
  * that the workbench reset (`.wb-reset`) never reaches legacy pages rendered
  * inside `#main-content`. Width-dependent properties are excluded on purpose:
  * the new shell legitimately changes the content column. Sampling is smoke
- * level: the first match of each selector, light colour scheme only.
+ * level: the first match of each selector (document order, no semantic role
+ * implied), light colour scheme only. The page title's font-size and
+ * letter-spacing come from a `3vw` clamp resolved at the harness's fixed
+ * 1280px viewport (38.4px / -1.344px): changing the viewport is legitimate
+ * drift, not a reset leak.
  *
  * Regenerating the baseline is a deliberate local act:
  *   LEGACY_STYLE_BASELINE=write pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts
