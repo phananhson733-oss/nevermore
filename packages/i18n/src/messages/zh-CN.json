@@ -3941,6 +3941,7 @@
       "legacy": "旧版页面",
       "inProgress": "页面开发中",
       "inProgressDetail": "这个模块在后续批次落地，旧版页面照常可用。",
+      "inProgressNoLegacy": "这个模块在后续批次落地。",
       "footerNote": "标「示例数据」的数字为本地生成。",
       "footerDetail": "真实版本走服务端抓取与 API。",
       "palette": {
@@ -3964,7 +3965,8 @@
       }
     },
     "settings": {
-      "realAction": "真实操作"
+      "realAction": "真实操作",
+      "realActionTitle": "这是真实操作，会删除真实项目，不是示例数据。"
     }
   }
 }

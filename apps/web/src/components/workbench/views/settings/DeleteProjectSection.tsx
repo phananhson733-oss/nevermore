@@ -3,10 +3,12 @@
 import { AlertTriangle, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDeleteProject } from "@/lib/api";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
 import { cn } from "../../ui/cn.ts";
+
+const BUTTON_BASE = "rounded-lg border px-4 py-1.5 text-[13px] font-medium transition-colors";
 
 /**
  * The one real action on the settings page (design §6.6). Moved verbatim in
@@ -21,6 +23,22 @@ export function DeleteProjectSection({ projectId }: { readonly projectId: string
   const { forgetProject } = useWorkbench();
   const deleteProject = useDeleteProject(projectId);
   const [confirming, setConfirming] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
+  const prevConfirming = useRef(confirming);
+
+  /**
+   * The trigger unmounts when the confirmation opens and the whole group
+   * unmounts when it closes, so keyboard focus would otherwise fall to
+   * <body>. Act only on an actual change: a first mount must not steal focus
+   * from wherever the operator already is on the page.
+   */
+  useEffect(() => {
+    if (prevConfirming.current === confirming) return;
+    prevConfirming.current = confirming;
+    if (confirming) confirmRef.current?.focus();
+    else triggerRef.current?.focus();
+  }, [confirming]);
 
   async function confirmDelete(): Promise<void> {
     try {
@@ -33,7 +51,13 @@ export function DeleteProjectSection({ projectId }: { readonly projectId: string
     }
   }
 
-  const button = "rounded-lg border px-4 py-1.5 text-[13px] font-medium transition-colors";
+  /**
+   * `router.replace` is a transition: this tree stays interactive until the new
+   * route commits. Without holding the buttons disabled after success a second
+   * click fires a second DELETE, gets 404, and reports "nothing was changed"
+   * about a project that is already gone.
+   */
+  const busy = deleteProject.isPending || deleteProject.isSuccess;
   return (
     <section
       aria-labelledby="delete-product-title"
@@ -42,18 +66,21 @@ export function DeleteProjectSection({ projectId }: { readonly projectId: string
     >
       <div className="mb-3 flex items-center gap-2">
         <Trash2 size={18} aria-hidden="true" className="text-rose-600" />
-        <span className="rounded border border-rose-200 bg-rose-50 px-2 text-[11px] font-medium text-rose-700">
+        <span
+          title={tWb("realActionTitle")}
+          className="rounded border border-rose-200 bg-rose-50 px-2 text-[11px] font-medium text-rose-700"
+        >
           {tWb("realAction")}
         </span>
-        <span className="text-[11px] font-medium uppercase text-slate-400">
+        <span className="text-[11px] font-medium uppercase text-slate-600">
           {t("dangerZone")}
         </span>
       </div>
       <h2 id="delete-product-title" className="text-[15px] font-semibold">
         {t("delete.title")}
       </h2>
-      <p className="mt-1 text-[13px] text-slate-500">{t("delete.description")}</p>
-      <p className="mt-1 text-[12px] text-slate-400">{t("delete.retention")}</p>
+      <p className="mt-1 text-[13px] text-slate-600">{t("delete.description")}</p>
+      <p className="mt-1 text-[12px] text-slate-600">{t("delete.retention")}</p>
       {deleteProject.isError ? (
         <p role="alert" className="mt-3 text-[13px] text-rose-700">
           {t("delete.error")}
@@ -73,33 +100,38 @@ export function DeleteProjectSection({ projectId }: { readonly projectId: string
           <div className="flex gap-2">
             <button
               type="button"
-              disabled={deleteProject.isPending}
+              disabled={busy}
               onClick={() => {
                 deleteProject.reset();
                 setConfirming(false);
               }}
-              className={cn(button, "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")}
+              className={cn(
+                BUTTON_BASE,
+                "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+              )}
             >
               {t("delete.cancel")}
             </button>
             <button
+              ref={confirmRef}
               type="button"
-              disabled={deleteProject.isPending}
+              disabled={busy}
               onClick={() => void confirmDelete()}
-              className={cn(button, "border-rose-600 bg-rose-600 text-white hover:bg-rose-700")}
+              className={cn(BUTTON_BASE, "border-rose-600 bg-rose-600 text-white hover:bg-rose-700")}
             >
-              {deleteProject.isPending ? t("delete.deleting") : t("delete.confirmAction")}
+              {busy ? t("delete.deleting") : t("delete.confirmAction")}
             </button>
           </div>
         </div>
       ) : (
         <button
+          ref={triggerRef}
           type="button"
           onClick={() => {
             deleteProject.reset();
             setConfirming(true);
           }}
-          className={cn(button, "mt-4 border-rose-200 bg-white text-rose-700 hover:bg-rose-50")}
+          className={cn(BUTTON_BASE, "mt-4 border-rose-200 bg-white text-rose-700 hover:bg-rose-50")}
         >
           {t("delete.action")}
         </button>

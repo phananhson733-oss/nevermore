@@ -3941,6 +3941,7 @@
       "legacy": "Legacy page",
       "inProgress": "Page in progress",
       "inProgressDetail": "This module lands in a later batch. The legacy page keeps working meanwhile.",
+      "inProgressNoLegacy": "This module lands in a later batch.",
       "footerNote": "Numbers marked sample data are generated locally.",
       "footerDetail": "The real version runs server-side crawling and APIs.",
       "palette": {
@@ -3964,7 +3965,8 @@
       }
     },
     "settings": {
-      "realAction": "Real action"
+      "realAction": "Not sample data",
+      "realActionTitle": "This deletes the real project. It is not sample data."
     }
   }
 }

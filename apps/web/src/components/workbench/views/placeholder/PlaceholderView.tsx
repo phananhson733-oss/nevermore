@@ -15,6 +15,10 @@ export function PlaceholderView({
 }) {
   const tNav = useTranslations("workbench.nav.items");
   const tShell = useTranslations("workbench.shell");
+  // Only promise that "the legacy page keeps working" on pages that actually
+  // have one; `LEGACY_LINKS` is empty for week/visibility/links/kb/artifacts.
+  const detailKey =
+    LEGACY_LINKS[page].length === 0 ? "inProgressNoLegacy" : "inProgressDetail";
   return (
     <div className="wb-reset mx-auto min-h-full max-w-5xl p-6 font-sans text-slate-900 md:p-10">
       <PageHead
@@ -28,7 +32,7 @@ export function PlaceholderView({
       />
       <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white text-center">
         <h2 className="mb-2 text-lg font-semibold text-slate-600">{tShell("inProgress")}</h2>
-        <p className="max-w-md text-sm text-slate-400">{tShell("inProgressDetail")}</p>
+        <p className="max-w-md text-sm text-slate-600">{tShell(detailKey)}</p>
       </div>
     </div>
   );
