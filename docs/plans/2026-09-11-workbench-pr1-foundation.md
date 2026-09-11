@@ -2165,6 +2165,59 @@ describe("selectCounts", () => {
     expect(counts.links).toBeNull();
   });
 
+  it("counts competitor gap rows, not competitor domains", () => {
+    let s = reduce(base, {
+      type: "setCompData",
+      data: {
+        domains: [],
+        gap: {
+          comps: ["a.test", "b.test", "c.test"],
+          rows: [
+            { q: "one", volume: 10, kd: 5, cpc: "1.00", aio: false, ranks: [1, null, 3], ours: null, page: "blog" },
+            { q: "two", volume: 20, kd: 6, cpc: "2.00", aio: true, ranks: [2, 4, null], ours: 9, page: "comparison" },
+          ],
+        },
+        at: "t",
+      },
+    });
+    s = reduce(s, {
+      type: "setTargets",
+      targets: [{ type: "dir", site: "Dir", domain: "dir.test", dr: 40, relevance: "high", difficulty: "low", action: "submit", asset: "listing" }],
+    });
+    const counts = selectCounts(s, null);
+    expect(counts.competitors).toBe("2");
+    expect(counts.links).toBe("1");
+  });
+
+  it("shows no badge for a module that ran but produced nothing", () => {
+    let s = reduce(base, { type: "setTargets", targets: [] });
+    s = reduce(s, {
+      type: "setCompData",
+      data: { domains: [], gap: { comps: ["a.test"], rows: [] }, at: "t" },
+    });
+    s = reduce(s, {
+      type: "setKb",
+      kb: { at: "t", entries: [{ id: "1", cat: "faq", statement: "filled", evidence: "", source: "", from: "crawl" }] },
+    });
+    const counts = selectCounts(s, 0);
+    expect(counts.links).toBeNull();
+    expect(counts.competitors).toBeNull();
+    expect(counts.kb).toBeNull();
+    expect(counts.keywords).toBeNull();
+  });
+
+  it("rounds the hit rate to the nearest percent", () => {
+    const s = reduce(base, {
+      type: "visComplete", at: "t",
+      results: [
+        { p: "a", platform: "x", hit: true, rank: 1, brands: [], domains: [], real: false },
+        { p: "b", platform: "x", hit: true, rank: 2, brands: [], domains: [], real: false },
+        { p: "c", platform: "x", hit: false, rank: null, brands: [], domains: [], real: false },
+      ],
+    });
+    expect(selectCounts(s, null).visibility).toBe("67%");
+  });
+
   it("hides the audit badge while a run is in flight", () => {
     let s = reduce(base, {
       type: "auditComplete",
@@ -2185,6 +2238,7 @@ Expected: FAIL。
 
 ```ts
 // apps/web/src/lib/workbench/store/selectors.ts
+/** Derived views over WorkbenchProjectState (design §6.3). Pure: no clock, no id generation. */
 import type { WorkbenchProjectState } from "../types.ts";
 
 export function seedList(state: WorkbenchProjectState): readonly string[] {
@@ -2228,6 +2282,7 @@ export function selectCounts(
     keywordLibrary: countOrNull(state.saved.length),
     competitors: state.compData ? countOrNull(state.compData.gap.rows.length) : null,
     links: state.targets ? countOrNull(state.targets.length) : null,
+    // KB badge = number of gaps (entries with an empty statement), design §4.3.
     kb: state.kb ? countOrNull(state.kb.entries.filter((e) => e.statement.trim() === "").length) : null,
     artifacts: countOrNull(state.artifacts.length),
     dataSources: countOrNull(state.gscRows.length),
@@ -2238,7 +2293,7 @@ export function selectCounts(
 - [ ] **Step 4: 跑测试**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/selectors.test.ts`
-Expected: 5 passed。
+Expected: 8 passed。
 
 - [ ] **Step 5: Commit**
 

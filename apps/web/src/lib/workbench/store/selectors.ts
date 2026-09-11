@@ -1,3 +1,4 @@
+/** Derived views over WorkbenchProjectState (design §6.3). Pure: no clock, no id generation. */
 import type { WorkbenchProjectState } from "../types.ts";
 
 export function seedList(state: WorkbenchProjectState): readonly string[] {
@@ -41,6 +42,7 @@ export function selectCounts(
     keywordLibrary: countOrNull(state.saved.length),
     competitors: state.compData ? countOrNull(state.compData.gap.rows.length) : null,
     links: state.targets ? countOrNull(state.targets.length) : null,
+    // KB badge = number of gaps (entries with an empty statement), design §4.3.
     kb: state.kb ? countOrNull(state.kb.entries.filter((e) => e.statement.trim() === "").length) : null,
     artifacts: countOrNull(state.artifacts.length),
     dataSources: countOrNull(state.gscRows.length),
