@@ -20,9 +20,9 @@ Content Shadow state: **reviewed, not published**
 
 Current v0.4 external-write boundary: **no external writes**
 
-Current authority: **v0.4 complete four-module workbench**
+Current authority: **v0.4 contracts（API / schema / rules 不变）+ 工作台 15 项客户壳（2026-09-11 起，设计见 docs/plans/2026-09-11-workbench-ui-port-design.md；旧四模块页面作为过渡页保留可达）**
 
-“完成”表示 v0.4 的 Growth Audit、四路由客户基线、关键词/竞品治理、Content Shadow、执行状态、durable approval、publication preview authority 与 Measurement Window 已原子进入当前机器面；不表示当前版本已向 GitHub、WordPress、CMS 或客户生产站点执行外部写入，也不表示 preview/Artifact status 可以替代 verified Change Receipt。
+“完成”表示 v0.4 的 Growth Audit、四路由客户基线、关键词/竞品治理、Content Shadow、执行状态、durable approval、publication preview authority 与 Measurement Window 已原子进入当前机器面；不表示当前版本已向 GitHub、WordPress、CMS 或客户生产站点执行外部写入，也不表示 preview/Artifact status 可以替代 verified Change Receipt。客户壳自 2026-09-11 起以工作台 IA 为准，`components/app-shell/nav-model.ts` 的四模块清单仅供保留的旧页与其测试使用。
 
 ### 权威顺序（冲突时不得自行猜测）
 
