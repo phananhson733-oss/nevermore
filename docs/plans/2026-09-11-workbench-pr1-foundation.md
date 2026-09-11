@@ -426,9 +426,23 @@ Expected: lockfile 更新，无 peer 冲突。
   --color-wb-rail-2: #2a2927;
   --color-wb-rail-3: #333230;
   --color-wb-rail-line: #2e2d2b;
-  --color-wb-rail-muted: #737270;
-  --color-wb-rail-dim: #636260;
+  /* Rail text tiers. Rule: every rail text token must clear WCAG AA 4.5:1 on every
+     rail surface it is used on (light-on-dark, so the lightest tier it sits on is the
+     binding one); app/workbench-tokens.test.ts enforces it. All of this text is under
+     18px and carries information the reader loses if it cannot be read — "labels only"
+     was never a reason to sit below AA. Measured (on rail / rail-2 / rail-3):
+       rail-text  #a3a3a3  6.60 / 5.76 / 5.08  nav link text
+       rail-muted #9c9b99  6.00 / 5.23 / 4.61  tagline, group headings, footer, nav badge
+                                                (the badge sits on rail-3 in the active link)
+       rail-label #959492  5.50 / 4.80 /  -    site-card <dt> column on rail-2
+       rail-dim   #8f8e8c  5.09 /  -   /  -    10px footer version line on rail
+     Luminance order rail-text > rail-muted > rail-label > rail-dim keeps the tiers. */
+  --color-wb-rail-muted: #9c9b99;
+  --color-wb-rail-dim: #8f8e8c;
   --color-wb-rail-text: #a3a3a3;
+  --color-wb-rail-label: #959492;
+  /* Near-black action fill on paper (topbar artifact button). */
+  --color-wb-ink: #222222;
   --color-wb-seo: #1a653b;
   --color-wb-seo-dark: #155330;
   --color-wb-geo: #8b5cf6;
@@ -3650,6 +3664,7 @@ git commit -m "feat(workbench): Dialog / PageHead / DemoChip / LegacyLinks / 占
 **落地备注：**
 
 - `SiteCard` 无条件抽成独立文件（不是「超 200 行再抽」）；`#807f7d` 进 `@theme` 成 `--color-wb-rail-label`，`bg-[#222222]` 成 `--color-wb-ink`，组件里没有裸 hex。
+- rail 次级文字 token 全部提到 WCAG AA 4.5:1（Task 12 全量 mock e2e 的 axe 在 `/execution`、`/results` 抓到 `color-contrast` serious）：`rail-muted` #737270→#9c9b99（rail/rail-2/rail-3 = 6.00/5.23/4.61，徽标在活动项里坐在 rail-3 上）、`rail-label` #807f7d→#959492（rail-2 4.80）、`rail-dim` #636260→#8f8e8c（rail 5.09）；品牌标语 `text-zinc-500`（3.45:1）改走 `text-wb-rail-muted`；新增 `app/workbench-tokens.test.ts` 解析 `@theme` 钉住每个 token 在其所用面上的比值，并扫 `Sidebar.tsx` / `SiteCard.tsx` 不得再出现裸 `text-{zinc,slate,neutral,stone,gray}-[3-6]00`（唯一豁免 `text-zinc-300`，站点卡值列，rail-2 上 9.83:1）。原注释「labels only 可以低于 AA」是「色板最暗那档一定会被滥用」的翻版——判据是读不到会不会丢信息。
 - 侧栏 rail 用 `h-dvh` 而不是 `min-h-screen`：固定定位盒子只给最小高度会随内容长高，`overflow-y-auto` 永远没得滚，矮视口下最后几项掉到屏幕外。
 - `useMediaQuery("(width < 48rem)")`（不是 `max-width: 767px`）：要和 rail 的 `md:translate-x-0` 用同一个 Tailwind v4 `md` 断点，px 值在根字号非 16px 时会漂。已知代价：首帧 `matches` 为 false，移动端有一帧侧栏未 inert（hydration 后立即纠正，文件 doc comment 里写明「inert while closed once hydrated」）。
 - 命令面板与产物筐**互斥**：`ShellChrome` 的 `onPalette` / `onDrawer` 是 `useCallback`，各自关掉另一个；⌘K 的 toggle 也关抽屉。两个 `fixed inset-0 z-50` 叠着时，先关上面那个会把焦点还给 `<body>`（持有 opener 的是下面那个）。`Dialog` 的 inert 引用计数作为纵深防御保留。5508351b 把两个 `boolean` state 合并成一个 `panel: "palette" | "drawer" | null`：互斥关系本来就要两个 setter 互相记得关对方，合成一个槽位后这种状态直接**不可表达**，`closeAll` 退化成 `setPanel(null)`，两个 `Dialog` 的 `onClose` 也都是 `() => setPanel(null)`。

@@ -20,13 +20,21 @@
   --color-wb-rail-2: #2a2927;
   --color-wb-rail-3: #333230;
   --color-wb-rail-line: #2e2d2b;
-  /* muted / dim: 2.7:1 and 2.4–2.7:1 on the rail tiers — fine for labels, never the text
-     colour of a focusable control (the currentColor focus ring would fall below 3:1). */
-  --color-wb-rail-muted: #737270;
-  --color-wb-rail-dim: #636260;
+  /* Rail text tiers. Rule: every rail text token must clear WCAG AA 4.5:1 on every
+     rail surface it is used on (light-on-dark, so the lightest tier it sits on is the
+     binding one); app/workbench-tokens.test.ts enforces it. All of this text is under
+     18px and carries information the reader loses if it cannot be read — "labels only"
+     was never a reason to sit below AA. Measured (on rail / rail-2 / rail-3):
+       rail-text  #a3a3a3  6.60 / 5.76 / 5.08  nav link text
+       rail-muted #9c9b99  6.00 / 5.23 / 4.61  tagline, group headings, footer, nav badge
+                                                (the badge sits on rail-3 in the active link)
+       rail-label #959492  5.50 / 4.80 /  -    site-card <dt> column on rail-2
+       rail-dim   #8f8e8c  5.09 /  -   /  -    10px footer version line on rail
+     Luminance order rail-text > rail-muted > rail-label > rail-dim keeps the tiers. */
+  --color-wb-rail-muted: #9c9b99;
+  --color-wb-rail-dim: #8f8e8c;
   --color-wb-rail-text: #a3a3a3;
-  /* Site-card label column in the rail; 3.2:1 on --color-wb-rail-2 (labels only). */
-  --color-wb-rail-label: #807f7d;
+  --color-wb-rail-label: #959492;
   /* Near-black action fill on paper (topbar artifact button). */
   --color-wb-ink: #222222;
   --color-wb-seo: #1a653b;
