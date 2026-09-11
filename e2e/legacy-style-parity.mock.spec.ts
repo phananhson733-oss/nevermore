@@ -7,7 +7,7 @@ import { E2E_PROJECT_ID, installGrowthVerticalApi } from "./mock-api.ts";
  * pages. Width-dependent properties are excluded on purpose: the new shell
  * legitimately changes the content column. Regenerate the baseline ONLY from a
  * commit before the workbench shell landed:
- *   LEGACY_STYLE_BASELINE=write pnpm test:e2e:mock -- e2e/legacy-style-parity.mock.spec.ts
+ *   LEGACY_STYLE_BASELINE=write pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts
  */
 const BASELINE = new URL("./legacy-style-parity.baseline.json", import.meta.url);
 const PROPS = [
