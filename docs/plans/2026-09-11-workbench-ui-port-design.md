@@ -1,7 +1,7 @@
 # app.gengrowth.ai 新工作台 UI 移植设计
 
 日期：2026-09-11
-状态：rev3，已过一轮跨模型评审（gpt-6-astra REVISE 15 条 + 自审 8 条，处置见 §14）；§13 三项已由 Owner 于 2026-09-11 拍板
+状态：rev4，已过跨模型评审（gpt-6-astra REVISE 15 条 + 自审 8 条，处置见 §14）与 spec 一致性审阅（8 条改写残留已修）；§13 三项已由 Owner 于 2026-09-11 拍板
 基线：`origin/main` f28a1900
 
 ## 0. 一句话
@@ -32,7 +32,7 @@
 
 **做**
 
-- 新壳：侧栏（6 组 15 项 + 站点卡 + 徽标）、顶栏（项目切换、市场 / GSC / GA4 pill、⌘K、产物筐、语言、账号）、命令面板、产物筐抽屉、移动端侧栏抽屉。
+- 新壳：侧栏（6 组 15 项 + 站点卡 + 徽标）、顶栏（项目切换、⌘K、「示例数据」chip、产物筐、语言、账号；照 opengengrowth `Header.tsx`，**不放**市场 / GSC / GA4 pill，那些在侧栏站点卡）、命令面板、产物筐抽屉、移动端侧栏抽屉。
 - 15 个页面：概览、本周变化、关键词研究、词库、竞品概览、技术审计、AI 可见度、站点档案、数据源、外链、内容生成、事实知识库、答案页 / 报告、产物中心、设置。
 - mock 域层（纯函数）+ store（reducer + localStorage 持久化）。
 - i18n chrome、单测、mock e2e、生产构建 CSP 冒烟。
@@ -41,7 +41,7 @@
 
 - 开机流程（产品信息 → 数据源 → 建立工作台）：现有 `/new-project` + `/context` + `/setup-sources` 继续用；`/new-project` 因此暂时保留旧 `AppShell` 外观，两套 chrome 在这一页交界（有意，开机流程立项时消除）。
 - 任何页面接真实 API。
-- 删除旧页面、旧 `AppShell`、旧 CSS Modules。
+- 删除旧页面（**`settings` 除外**，见 §4.2）、旧 `AppShell`（`/new-project` 仍用）、旧 CSS Modules。
 - v0.4 范围外的能力（成员 / 席位 / 套餐 / Billing / API key）：设置页不做这些区块（§13 D2）。
 
 ## 4. 壳与路由
@@ -62,8 +62,9 @@ apps/web/src/
     studio/ report/ setup-sources/
                                原地不动
   components/workbench/
-    shell/    WorkbenchShell, Sidebar, Topbar, CommandPalette, ArtifactDrawer,
-              nav-model, useProjectShellEffects
+    shell/    WorkbenchShell, ShellChrome, Sidebar, Topbar, CommandPalette, ArtifactDrawer,
+              workbench-nav（新导航模型；旧 components/app-shell/nav-model.ts 原地保留，
+              旧页与其测试仍用）, useProjectShellEffects
     ui/       PageHead, InPane, OutPane, Field, RunningSteps, DemoChip, Chip,
               Gauge, Tabs, Dialog（焦点管理共用）
     views/<module>/            每模块一目录：主视图 + 输入面板 + 每个报告 tab 各一文件
@@ -82,13 +83,13 @@ apps/web/src/
 |---|---|---|
 | `overview` | 旧概览页（真数据两卡） | 新概览接管；旧页搬到 `legacy/overview`。根 `page.tsx` 重定向仍指 `/overview`，**但在新概览可用（§9 首个生产发布）之前不合入 main** |
 | `sources` | 旧数据源页（真实 GSC OAuth） | **旧页原地不动**。OAuth 回调重定向、`source-connect.ts`、`hooks-sources.ts` 及 ~20 个文件（含需 Postgres 的集成测试）指向它。新数据源页用 `data-sources`；接真时把 OAuth 落点切过来并删旧页 |
-| `settings` | 旧设置页（唯一动作：`useDeleteProject`，117 行） | 新设置页接管，旧页删除。真实删除的合同见 §6.6 |
+| `settings` | 旧设置页（唯一动作：`useDeleteProject`，117 行） | 新设置页接管，旧页删除。PR-1 阶段的新设置页 = 「页面开发中」占位 + §6.6 的真实删除区块；PR-3 补齐通知偏好与数据源区块 |
 
 ### 4.3 壳的行为
 
-- **侧栏**：分组和标签走 `workbench.nav.*`；`aria-current="page"` 标当前项；徽标语义按 opengengrowth（外观权威）：技术审计 = 健康分、AI 可见度 = 提及率 `%`、关键词研究 = 候选数、产物中心 = 产物数，其余项按 jsx `counts`（词库、竞品、外链、知识库缺口、数据源行数）；值来自 §6.3 的 selectors，未运行 / 未 hydrate 时不显示徽标（不显示 0）。
-- **站点卡**（真数据）：域名 = `ProjectShellOption.host`；市场 = 已确认 Product Profile 的 `targetMarkets[0]`，未确认显示「—」；GSC / GA4 = `sources` readiness 的真实连接状态。**真实连接状态与 mock 的 GSC 行数分开标注**（评审 F12）：连接 pill 写「GSC 已接入」，行数徽标带「示例」。
-- **顶栏**：复用现有 `ProjectSwitcher`；「＋ 新建站点」→ `/new-project`；保留 `LocaleSwitch` 与 `signOutAction` 账号菜单；「示例数据」chip；「产物筐 N」开抽屉。
+- **侧栏**：分组和标签走 `workbench.nav.*`；`aria-current="page"` 标当前项；徽标语义按 opengengrowth（外观权威）：技术审计 = 健康分、AI 可见度 = 提及率 `%`、关键词研究 = 候选数、产物中心 = 产物数，其余项按 jsx `counts`（词库、竞品、外链、知识库缺口、数据源行数）；值来自 §6.3 的 selectors；**未 hydrate → 徽标位渲骨架；已 hydrate 但该模块未运行 → 不显示徽标**（不显示 0）；审计运行中（`audit = null`）同样不显示，不回退到 `lastAudit`。
+- **站点卡**（照 opengengrowth `Sidebar.tsx` 的四行：域名 / 市场 / GSC / 审计）：域名 = `ProjectShellProject.host`；市场 = 主站点 `market_codes[0]`（`ProjectShellProject` 增加 `marketCode` 字段，从 `SiteRow` 取，总是真实存在）；GSC = 真实连接状态（`sources` 的 GSC connection 是否已连接；PR-1 先显示「—」，PR-3 数据源批接上）；审计 = store 里 `lastAudit.at`，没有则「—」。**真实连接状态与 mock 的 GSC 行数分开标注**（评审 F12）：站点卡的 GSC 行是真实状态，数据源页里 mock 导入的行数徽标带「示例」。
+- **顶栏**：复用现有 `ProjectSwitcher`；「＋ 新建站点」→ `/new-project`；保留 `LocaleSwitch` 与 `signOutAction` 账号菜单；「示例数据」chip（`demo` 为真时显示「示例站点」并带「清除示例」）；「产物筐 N」开抽屉；storage 不可用时的「本次结果不会保存」提示（§6.5）。
 - **命令面板 / 产物筐抽屉**：都是 `role="dialog" aria-modal="true"`，有 `aria-labelledby`；打开时焦点进入（面板进搜索框、抽屉进关闭按钮），关闭时焦点回到触发按钮；焦点圈在对话框内（Tab 循环）；背景 `inert`；Esc 关闭；⌘K / Ctrl+K 切换面板。面板列表项是 `role="option"` 的按钮，不是可点 div。
 - **移动端侧栏**：`aside` 关闭时 `inert`（不只是 `translate-x`），遮罩可点关闭，开合按钮带 `aria-expanded` / `aria-controls`。
 - **旧壳的副作用必须保留**（自审 M1）：`_nav.tsx` 里两个副作用与视觉无关但旧页依赖——`withProjectHistoryPosition`（Studio 取消 Back/Forward 后回退用）和 `_context-navigation-guard`（Context 未保存离开确认）。抽成 `useProjectShellEffects` hook，在新 Sidebar 挂载；`studio-workspace.mock.spec` 与 `product-profile.mock.spec` 作为回归门。
@@ -125,10 +126,10 @@ apps/web/src/
 ```
 
 - **不引 preflight**。reset 放 `@layer base`，被 `utilities` 层压过（评审 F4）；`box-sizing: border-box` 与 `border-style: solid` 这两条 preflight 默认必须在 reset 里补上，否则 `border` 工具类无效。
-- **reset 作用域不包住 `<main>`**（评审 F4 / 自审）：`wb-reset` 只挂在壳的 chrome（侧栏、顶栏、抽屉、面板）和每个新视图的根 `<div>` 上；旧页在 `<main>` 内不带这个类，CSS Modules 像素不变。mock e2e 对 `growth-map` 与 `context` 各截一张图与 main 基线比对。
+- **reset 作用域不包住 `<main>`**（评审 F4 / 自审）：`wb-reset` 只挂在壳的 chrome（侧栏、顶栏、抽屉、面板）和每个新视图的根 `<div>` 上；旧页在 `<main>` 内不带这个类，CSS Modules 像素不变。验证对象不是全页（新壳本来就不同）而是**旧页根节点**：PR-1 先换壳、不加 `workbench.css`，对 `growth-map` 与 `context` 的 `main > :first-child` 打元素级截图基线；再加 `workbench.css` 后比对同一元素，像素差为零才算过。
 - 字体：`Plus_Jakarta_Sans` 走 `next/font/google`（构建期自托管，满足 `font-src 'self'`），变量 `--font-wb` 在根 layout 注入；`@theme` 把 `--font-sans` 绑到它，`font-sans` 工具类才真正生效。已验证旧 CSS 不使用 `--font-sans` / `--color-*`，无变量冲突。
-- 设计 token 放 `@theme`：`--color-wb-paper #FAF9F6`、`--color-wb-rail #1f1e1c` / `-rail-2 #2a2927` / `-rail-3 #333230`、`--color-wb-seo #1a653b`、`--color-wb-geo #8b5cf6`、`--color-wb-emerald #10b981`、琥珀「示例」。组件里不写裸 hex。
-- **CSP 硬约束**：生产 `style-src 'self' 'nonce-…'`，无 `unsafe-inline`。新代码禁止 `style={{}}` 和 `<style>`；jsx 的 `<style>{CSS}</style>` 与仪表 `style={{width}}` 全部改为编译期 CSS：仪表用 `<progress>`（旧壳 `SidebarProgress` 已有可复用的 CSS 写法），颜色档用 `data-tone="seo|warn|bad"` 属性选择器。**mock e2e 跑的是 dev CSP（有 `unsafe-inline`），看不见违规**（评审 F5）：PR-1 起每个 PR 跑一次 `next build && next start` 的生产模式冒烟，页面 console 无 CSP violation 才算过。
+- 设计 token 放 `@theme`：`--color-wb-paper #FAF9F6`、`--color-wb-rail #1f1e1c` / `-rail-2 #2a2927` / `-rail-3 #333230`、`--color-wb-seo #1a653b`、`--color-wb-geo #8b5cf6`、`--color-wb-emerald #10b981`；「示例」琥珀用 Tailwind 内置 `amber-50/200/700`（原型即如此）。组件里不写裸 hex。新壳固定浅色，不跟随旧 `globals.css` 的 `data-theme="dark"`（opengengrowth 没有深色版）。
+- **CSP 硬约束**：生产 `style-src 'self' 'nonce-…'`，无 `unsafe-inline`。新代码禁止 `style={{}}` 和 `<style>`；jsx 的 `<style>{CSS}</style>` 与仪表 `style={{width}}` 全部改为编译期 CSS：仪表用 `<progress>`，CSS 从旧壳 `SidebarProgress` 的 `.programProgress` 搬到 `ui/Gauge`（PR-1 退役 `SidebarProgress` 时一并搬），颜色档用 `data-tone="seo|warn|bad"` 属性选择器。**mock e2e 跑的是 dev CSP（有 `unsafe-inline`），看不见违规**（评审 F5）：PR-1 起每个 PR 跑一次 `next build && next start` 的生产模式冒烟，页面 console 无 CSP violation 才算过。
 - 不引 recharts / motion。图标用现有 `lucide-react@^1.25`。
 
 ## 6. 状态与 mock 域层
@@ -150,11 +151,13 @@ plans          答案页方案 []
 targets        外链目标 []
 kb             事实知识库 | null
 artifacts      产物 [{ id, at, module, type, engine, title, content, filename? }]，上限 50
+notify         通知偏好 { weekly, drop, mention, gsc }（原 jsx `ws.notify`，本地 mock）
+demo           boolean，是否已载入示例站点（§6.7）
 ```
 
 ### 6.2 工作区状态（评审 F10，§13 D2 已裁决）
 
-jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、非项目级，且成员 / 套餐 / API key / 用量都在仓库 `CLAUDE.md` 的 v0.4 范围外。**不建工作区 store**：设置页裁掉这四块，只保留通知偏好（并入项目状态 `notify`，本地 mock）、数据源（读真实连接状态 + mock 导入）、删除站点（§6.6）。站点列表用真实 `projectOptions`，非当前项目的产物计数显示「—」（其状态不在内存）。侧栏底部 jsx 的「Pro 套餐，N 个站点」改为只显示站点数。
+jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、非项目级，且成员 / 套餐 / API key / 用量都在仓库 `CLAUDE.md` 的 v0.4 范围外。**不建工作区 store**：设置页只有三个区块——通知偏好（并入项目状态 `notify`，本地 mock）、数据源（读真实连接状态 + mock 导入）、删除站点（§6.6）。jsx 设置页的站点列表（含各站产物计数）也裁掉：站点切换只在顶栏 `ProjectSwitcher` 与命令面板。侧栏底部 jsx 的「Pro 套餐，N 个站点」改为只显示站点数（`projectOptions.length`）。
 
 ### 6.3 派生 selectors（评审 F8）
 
@@ -164,7 +167,7 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 - `keywordRows(state)`：`buildRows(seedList, profile, gscRows)`；输入完整列出，`useMemo` 依赖与之一致。
 - `gatedRows(state)`：`built ? keywordRows : []`。概览、本周变化、AI 可见度、关键词研究用 gated；词库、内容生成、竞品用 ungated（照 jsx）。
 - `picked(state)`：`saved.map(x => x.q)`。
-- `counts(state)`：§4.3 的徽标值；`null` 表示不显示，不用 0 顶替。
+- `counts(state, keywordRowCount)`：§4.3 的徽标值；`null` 表示不显示，不用 0 顶替；`audit = null`（未跑或运行中）→ `null`。`keywordRowCount` 由 `keywordRows` 派生，而 `buildRows` 在 PR-2——PR-1 的 `WorkbenchProvider` 接受可选的 `deriveKeywordRows` 注入，PR-2 从 layout 传入真实函数，之前徽标为 `null`。
 
 ### 6.4 reducer 转换（评审 F6 / F9）
 
@@ -173,29 +176,30 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 - `auditStart`：`audit = null`，`lastAudit` 不变（运行中仍可看上次）。
 - `auditComplete(report)`：若 `lastAudit` 存在则 `auditHistory = [...history, lastAudit].slice(-12)`；`audit = lastAudit = report`。历史不含当前报告（视图的 delta 计算依赖这一点）。
 - `visStart`：`visResults = []`。
-- `visComplete(results)`：仅当**从空变非空**且 `lastVis` 存在时归档 `lastVis` 入 `visHistory`（≤ 12）；`visResults = results`；`lastVis = { at, results }`。中间态更新（jsx 边跑边 push）不归档。
-- 其余：`patchProfile`、`setProfileDoc`、`setConns`、`setGscRows`、`setSeeds`、`setBuilt`、`setPicked`（保留已有 `addedAt` / `source`）、`setCompData`、`setPlans`、`setTargets`、`setKb`、`addArtifact`（前插，超 50 丢最旧）、`removeArtifact`、`clearArtifacts`、`reset`。
+- `visProgress(results)`：`visResults = results`，不动 `lastVis` / `visHistory`（jsx 边跑边 push 的中间态）。
+- `visComplete(results, at)`：若 `lastVis` 存在则归档入 `visHistory`（≤ 12）；`visResults = results`；`lastVis = { at, results }`。（jsx 用「从空变非空」判定同一件事；拆成两个 action 后判定不再依赖前态。）
+- 其余：`patchProfile`、`setProfileDoc`、`setConns`、`setGscRows`、`setSeeds`、`setBuilt`、`setSaved`（写 `saved`；按词保留已有 `addedAt` / `source`）、`setCompData`、`setPlans`、`setTargets`、`setKb`、`setNotify`、`addArtifact`（前插，超 50 丢最旧）、`removeArtifact`、`clearArtifacts`、`loadDemo(payload)`（整体覆盖所有模块结果字段并置 `demo = true`，不动 `profile.url / brand / market`）、`reset`（回 §6.7 初始值，`demo = false`）。
 - **运行归属**：每次运行持有 `{ projectId, runToken }`；完成时若 provider 的 projectId 或当前 runToken 已变（切项目、重跑、离开页面），结果丢弃。步骤动画不跨路由存活。
 
 ### 6.5 持久化与 hydration（评审 F6 / F7 / F14）
 
-- `persistence.ts` 接受注入的 `Storage` 接口（单测传假对象）。键：`gg.workbench.v1.<projectId>`、`gg.workbench.v1.workspace`。
+- `persistence.ts` 接受注入的 `Storage` 接口（单测传假对象）。键：`gg.workbench.v1.<projectId>`，只此一种。
 - 读：`try/catch` 包住 `getItem`（隐私模式会抛）；JSON 解析后过 zod schema（`store/schema.ts`），版本不符或形状不对整体丢弃回默认；**storage 不可用时进入 volatile 模式**，内存可用、不写盘，顶栏提示「本次结果不会保存」。
 - 写：`try/catch`；`QuotaExceededError` 时提示并停止写入（不裁剪用户数据）。
 - 时序：`WorkbenchProvider` 以 `key={projectId}` 挂载，切项目必重挂；挂载后读盘 → `ready = true`；**`ready` 之前不写盘、侧栏徽标与视图都渲骨架**。
 - 多标签：监听 `storage` 事件，同键变化时以磁盘为准重载（最后写入者赢，不合并）。
 - 清理：真实删除项目成功后删该键；`signOutAction` 前清 `gg.workbench.*`（同一浏览器换账号不串数据）。
-- 隐私：用户在 mock 页输入的内容（粘贴的 GSC 导出、档案文本、成员邮箱）是用户数据，不因周围是 mock 而降级；只存本地、不上传、登出即清。
+- 隐私：用户在 mock 页输入的内容（粘贴的 GSC 导出、档案文本、种子词）是用户数据，不因周围是 mock 而降级；只存本地、不上传、登出即清。
 
 ### 6.6 真实删除项目（评审 F11）
 
-新设置页的「删除站点」只对**当前项目**生效，绑定 `projectId`，复用现有 `useDeleteProject` 与 `projectSettings.delete.*` 文案（含错误态、确认态）；区块视觉上与 mock 区块区分（无「示例数据」chip，标「真实操作」）；成功后清本地键、`router.replace("/")`、`router.refresh()`（根路由已处理「无项目 → /new-project」）；不从 mock 的成员角色推导权限；jsx 的「只剩一个站点时禁删」不实现（现有产品允许删到零）。
+新设置页的「删除站点」只对**当前项目**生效，绑定 `projectId`，复用现有 `useDeleteProject` 与 `projectSettings.delete.*` 文案（含错误态、确认态）；区块视觉上与 mock 区块区分（无「示例数据」chip，标「真实操作」）；成功后清本地键、`router.replace("/")`、`router.refresh()`（根路由已处理「无项目 → /new-project」）；jsx 的「只剩一个站点时禁删」不实现（现有产品允许删到零）。
 
 ### 6.7 初始值与示例站点（自审 M4，§13 D1 已裁决）
 
-新项目只灌真实字段：`profile.url`（host）、`profile.brand`（clientName）、`profile.market`（已确认 Product Profile 的 `targetMarkets[0]`，否则 `"US"` 并标示例）。`positioning / features / competitors / profileDoc` 一律为空——jsx 的 `DEMO_PROFILE` 描述的是 GenGrowth 自己，灌给别人的项目就是撒谎。空态由各页的 empty 文案承接。
+新项目只灌真实字段：`profile.url`（host）、`profile.brand`（clientName）、`profile.market`（主站点 `market_codes[0]`，创建项目时必填，总是存在）。`positioning / features / competitors / profileDoc` 一律为空——jsx 的 `DEMO_PROFILE` 描述的是 GenGrowth 自己，灌给别人的项目就是撒谎。空态由各页的 empty 文案承接。
 
-**「载入示例站点」**：概览空态处一个显式按钮，调用 jsx 的 `makeDemoSite(profile, level, seeds)` 生成整套演示结果（审计、可见度、关键词、竞品、外链、知识库、产物、历史），一次 `loadDemo` action 写入当前项目状态并置 `demo = true`；`demo` 为真时顶栏「示例数据」chip 变为「示例站点」并带「清除示例」按钮（`reset` 回 §6.7 的真实初始值）。示例结果的 `profile.url / brand` 仍是真实项目的，只有模块结果是演示的；不会无提示自动灌入。
+**「载入示例站点」**：概览空态处一个显式按钮，调用 jsx 的 `makeDemoSite(profile, level, seeds)`——`level` 取 jsx `DEMO_SITES` 里内容最全的那一档，`seeds` 取 jsx 同档的演示种子词——生成整套演示结果（审计、可见度、关键词、竞品、外链、知识库、产物、历史），一次 `loadDemo` action **整体覆盖**当前项目的模块结果字段并置 `demo = true`；若当前状态已有用户输入（`gscRows` / `saved` / `seeds` 非空）先弹确认。`demo` 为真时顶栏「示例数据」chip 变为「示例站点」并带「清除示例」按钮，点击后确认再 `reset`（全量回 §6.7 初始值，会一并清掉用户此前粘贴的 GSC 与词库，确认框要写明）。示例结果的 `profile.url / brand / market` 仍是真实项目的，只有模块结果是演示的；不会无提示自动灌入。
 
 ### 6.8 导出与产物的来源声明（评审 F12）
 
@@ -213,15 +217,15 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 - **枚举不用中文字面量**：严重度 `high | mid | low`、引擎 `seo | geo | both`、GSC 状态 `ranked | borderline | gap | unknown`、产物类型 `csv | prompt | md | json`，显示时查 `workbench.enums.*`。jsx 里 `sev === "高"` 这类比较全部改成 id。
 - 带数字的动态文案走 ICU：`tabs.history: "History ({count})"`；产物标题 `audit.artifactTitle: "Audit report {score}"`。消息里避免裸 `{` `'`（ICU 语法字符）。
 - 英文用户会看到英文 chrome + 中文 mock 内容：「示例数据」chip 的 title 说明「示例内容当前仅中文」。翻译句里不拼中文 mock 片段——mock 自由文本只作为独立块渲染。
-- 除 key parity 外，`workbench-shell.mock.spec` 以 `?locale=en` 跑一遍，断言 chrome 里没有中文字符、没有 `workbench.` 形式的漏译路径（next-intl 缺 key 渲染路径不抛错）。
+- 除 key parity 外，`workbench-shell.mock.spec` 设 `sf_ui_locale=en` cookie（locale 只由这个 cookie 决定，默认 zh-CN）跑一遍，断言 chrome 里没有中文字符、没有 `workbench.` 形式的漏译路径（next-intl 缺 key 渲染路径不抛错）。
 - `projectSettings.delete.*` 两语种保留；`appShell.program*` 两语种删除。
 
 ## 8. 测试
 
 - **单测**（vitest `unit`，node 环境；组件不可渲染）：mock 函数（同 seed 同输出、分数区间、CSV 转义、`parseGSC`、`classify`）；selectors（§6.3 每个）；reducer（§6.4 每个转换：两次连跑、运行中重置、中间态不归档、历史封顶）；persistence（注入假 Storage：回环、版本 / 形状不符丢弃、getItem 抛错 → volatile、setItem 配额 → 停写）；routes / nav-model。
 - **mock e2e**（Playwright，保留项目 id 夹具，dev-only 的 `_e2e-shell.ts` 门不放宽）：
-  - `workbench-shell.mock.spec.ts`：15 项导航可达且 `<h1 data-wb-page-title>` 正确；`aria-current`；⌘K 跳转与焦点回退；抽屉焦点圈与 Esc；移动端侧栏 `inert`；旧版链接落到旧页；`?locale=en` 无中文 chrome。
-  - `workbench-lifecycle.mock.spec.ts`：审计运行 → 报告 → 五个 tab → 存产物 → 徽标变化 → 刷新仍在 → 切项目后状态隔离 → 运行中切页结果被丢弃 → 删除项目后键清除。
+  - `workbench-shell.mock.spec.ts`（PR-1）：15 项导航可达且 `<h1 data-wb-page-title>` 正确；`aria-current`；⌘K 跳转与焦点回退；抽屉焦点圈与 Esc；移动端侧栏 `inert`；旧版链接落到旧页；设 `sf_ui_locale=en` cookie 后 chrome 无中文字符、无 `workbench.` 漏译路径；壳内无 `style` 属性与 `<style>` 元素（CSP 代理断言）；真实删除项目（mock API 兑现 DELETE）后 localStorage 键被清。
+  - `workbench-lifecycle.mock.spec.ts`（PR-4，随审计流落地）：审计运行 → 报告 → 五个 tab → 存产物 → 徽标变化 → 刷新仍在 → 运行中切页结果被丢弃。切项目隔离不做 e2e（`_e2e-shell.ts` 只放行一个保留 id），由 `key={projectId}` 重挂 + persistence 键前缀单测保证。
   - 每批一条模块流。
   - **旧页视觉回归**：`growth-map`、`context` 各一张全页截图与 main 基线比对（reset 是否越界）。
 - **生产模式冒烟**：`pnpm --filter @sf/web build && next start`，用 Playwright 打开壳与一个模块页，断言 console 无 `Content Security Policy` 违规。
@@ -233,9 +237,10 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 
 | PR | 内容 | 合入 |
 |---|---|---|
-| PR-1 地基 | Tailwind + 字体 + token；shell 四件套 + `useProjectShellEffects`；15 条路由（未实现页显示「页面开发中」+ 旧版链接）；overview 搬 legacy；settings 接真删除；i18n chrome；spec 盘点与修复；CLAUDE.md / PROGRESS 更新 | 集成分支 `feat/workbench-ui-port` |
-| PR-2 mock 域层 | `lib/workbench/mock/*` + `store/*` + 单测 | 集成分支（与 PR-1 无文件交集，可并行） |
-| PR-3 | 概览、本周变化、站点档案、数据源、设置 | 集成分支 → **首次合入 main / 上生产** |
+| PR-1 地基 | Tailwind + 字体 + token；**store 全套**（types / schema / reducer / selectors / persistence / provider / hooks + 单测，壳要读它）；shell 四件套 + `useProjectShellEffects`；15 条路由（未实现页显示「页面开发中」+ 旧版链接）；overview 搬 legacy（含 `../` import 修正）；settings = 占位 + 真实删除；`ProjectShellProject.marketCode`；i18n chrome；spec 盘点与修复；`proxy.ts` / `_compatibility-route.ts` 复核；CLAUDE.md / PROGRESS 更新 | 集成分支 `feat/workbench-ui-port` |
+| PR-2 mock 域层 | `lib/workbench/mock/*`（jsx 纯函数移植 + 单测）+ `keywordRows` selector + 把 `deriveKeywordRows` 接进 provider | 集成分支（只与 PR-1 的 `types.ts` 有类型依赖：PR-1 先定类型，PR-2 按类型实现；PR-2 的 provider 接线一行在 PR-1 合入后再补） |
+| PR-3 | 概览（含「载入示例站点」）、本周变化、站点档案、数据源、设置（补齐通知与数据源区块） | 集成分支 |
+| PR-3b | 集成分支 → main（独立 PR，独立评审） | **首次上生产** |
 | PR-4 | 关键词研究、词库、竞品概览、技术审计、AI 可见度 | main |
 | PR-5 | 内容生成、事实知识库、答案页 / 报告、外链、产物中心 | main |
 
@@ -317,5 +322,7 @@ gpt-6-astra（reasoning high，103k token）VERDICT: REVISE，15 条；自审 8 
 | M6 messages JSON 与在建 parity 分支冲突 | 自审 | §11 |
 | M7 `/new-project` 仍是旧壳 | 自审 | §3 写明有意 |
 | M8 v0.4 范围外能力出现在 mock 设置页 | 自审（读仓库 CLAUDE.md） | D2 |
+
+spec 一致性审阅（Claude 子代理，只读设计稿）8 条改写残留：§3/§4.2 删 settings 矛盾、§6.1 漏 `notify`/`demo`、§6.5 残留 workspace 键、§6.2 站点列表归属、截图比对对象、PR-1/PR-2 的 store 依赖与 settings 阶段形态、顶栏 pill 与站点卡重复、未 hydrate 徽标表现——已全部修入 rev4；建议项（成员措辞、Gauge CSS 去向、`setPicked` 改名、`makeDemoSite` 参数、`visProgress` 拆分、lifecycle spec 落点、PR-3b、琥珀色、market 来源、nav-model 命名）亦已采纳。
 
 codex 标为「MISSING」的六项：权威关系（§2.6）、server/client 边界（§4.1）、每批验收案例（§8 每批一条模块流；PR 评审逐条）、`proxy.ts` / `_compatibility-route.ts` / 搬迁 import 的实现检查（PR-1 任务）、settings 文案去留（§7）、索引（无需改，`X-Robots-Tag: noindex` 已全站生效）。
