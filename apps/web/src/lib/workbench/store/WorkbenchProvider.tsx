@@ -28,7 +28,15 @@ import {
   type WorkbenchAction,
 } from "./reducer.ts";
 
-export type StorageMode = "ok" | "volatile" | "quota";
+/**
+ * `volatile` and `quota` are storage FAILURES, and the topbar reports them.
+ * `swept` is not one: the state was discarded on purpose (sign-out sweep or
+ * project deletion), so the write effect must stay armed-off exactly like
+ * `volatile` while the UI says nothing. Reporting it would put a persistent
+ * "results will not be saved in this browser" banner in every other open tab,
+ * blaming the browser for a sign-out.
+ */
+export type StorageMode = "ok" | "volatile" | "quota" | "swept";
 
 export interface WorkbenchContextValue {
   readonly projectId: string;
@@ -117,7 +125,7 @@ export function WorkbenchProvider({
   useEffect(() => {
     if (!ready) return;
     const storage = storageRef.current;
-    // Stop writing entirely once storage is volatile or full (design §6.5).
+    // Stop writing entirely once storage is volatile, full, or swept (design §6.5).
     if (!storage || storageMode !== "ok") return;
     const status: WriteStatus = writeProjectState(storage, projectId, state);
     if (status === "quota") setStorageMode("quota");
@@ -125,17 +133,19 @@ export function WorkbenchProvider({
   }, [state, ready, projectId, storageMode]);
 
   useEffect(() => {
-    // Drop our copy of the project and stop persisting. Going volatile as well
-    // is deliberate: `reset` produces a fresh object, so the write effect would
-    // otherwise re-create `gg.workbench.v1.<id>` holding the seed mirror moments
-    // after sign-out, which design §6.5 says must leave nothing behind. The user
-    // is signed out anyway; a reload re-hydrates normally and clears the latch.
+    // Drop our copy of the project and stop persisting. Latching the storage
+    // mode as well is deliberate: `reset` produces a fresh object, so the write
+    // effect would otherwise re-create `gg.workbench.v1.<id>` holding the seed
+    // mirror moments after sign-out, which design §6.5 says must leave nothing
+    // behind. The user is signed out anyway; a reload re-hydrates normally and
+    // clears the latch. `swept` rather than `volatile` because nothing is wrong
+    // with this browser's storage and the topbar must stay silent about it.
     // The latch precedes the dispatch on purpose: on any path where the two
     // updates are not batched, the write effect would run once with
     // `storageMode === "ok"` and write the reset state back under the key that
     // was just swept.
     function forgetAndFreeze(): void {
-      setStorageMode("volatile");
+      setStorageMode("swept");
       dispatch({ type: "reset", seed });
     }
 
@@ -185,6 +195,12 @@ export function WorkbenchProvider({
       storageMode,
       keywordRowCount: deriveKeywordRowCount ? deriveKeywordRowCount(state) : null,
       forgetProject: () => {
+        // Latch before the removal, same reasoning as `forgetAndFreeze`: any
+        // dispatch between this call and unmount (a cross-tab `storage` event,
+        // say) would otherwise re-create `gg.workbench.v1.<id>` holding the
+        // deleted project's data. No `reset` dispatch here — the caller
+        // navigates away immediately, so there is nothing to re-render.
+        setStorageMode("swept");
         if (storageRef.current) clearProjectState(storageRef.current, projectId);
       },
     }),

@@ -75,12 +75,14 @@ export function Topbar({
         {/* Rendered on every viewport and before it has anything to say: a live
             region has to exist in the accessibility tree BEFORE its text
             changes, or the announcement is lost. `empty:-mr-3` cancels the
-            flex gap this otherwise-invisible element would add. */}
+            flex gap this otherwise-invisible element would add. `swept` is
+            deliberately silent: that state was discarded on purpose, so there
+            is nothing to warn about. */}
         <span
           role="status"
           className="max-w-[40vw] truncate text-xs text-amber-700 empty:-mr-3"
         >
-          {ready && storageMode !== "ok"
+          {ready && storageMode !== "ok" && storageMode !== "swept"
             ? storageMode === "quota"
               ? t("quota")
               : t("volatile")

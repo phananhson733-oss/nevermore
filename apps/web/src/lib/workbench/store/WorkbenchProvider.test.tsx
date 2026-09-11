@@ -185,7 +185,9 @@ describe("WorkbenchProvider", () => {
     crossTabEvent();
 
     expect(view.probe().state).toEqual(initialProjectState(SEED));
-    expect(view.probe().storageMode).toBe("volatile");
+    // `swept`, not `volatile`: the key went away because someone signed out or
+    // deleted the project, which is no reason to warn about this browser.
+    expect(view.probe().storageMode).toBe("swept");
     // The reset must not re-create the key the sign-out sweep just removed.
     expect(window.localStorage.getItem(storageKey(PID))).toBeNull();
     view.unmount();
@@ -221,7 +223,7 @@ describe("WorkbenchProvider", () => {
     window.localStorage.clear();
     act(() => window.dispatchEvent(new Event(WORKBENCH_SWEPT_EVENT)));
 
-    expect(view.probe().storageMode).toBe("volatile");
+    expect(view.probe().storageMode).toBe("swept");
     expect(view.probe().state).toEqual(initialProjectState(SEED));
 
     const setItem = vi.spyOn(Storage.prototype, "setItem");
@@ -256,7 +258,7 @@ describe("WorkbenchProvider", () => {
     view.unmount();
   });
 
-  it("resets and goes volatile when another tab clears the whole store (key === null)", () => {
+  it("resets and goes swept when another tab clears the whole store (key === null)", () => {
     persist(fromDisk);
     const view = mount();
     expect(view.probe().state.seeds).toBe("from disk");
@@ -266,7 +268,7 @@ describe("WorkbenchProvider", () => {
       window.dispatchEvent(new StorageEvent("storage", { key: null, storageArea: window.localStorage }));
     });
 
-    expect(view.probe().storageMode).toBe("volatile");
+    expect(view.probe().storageMode).toBe("swept");
     expect(view.probe().state).toEqual(initialProjectState(SEED));
     view.unmount();
   });
@@ -285,6 +287,25 @@ describe("WorkbenchProvider", () => {
 
     expect(view.probe().storageMode).toBe("volatile");
     expect(view.probe().state.seeds).toBe("from disk");
+    view.unmount();
+  });
+
+  it("freezes writes as well as clearing the key when the project is deleted", () => {
+    persist(fromDisk);
+    const view = mount();
+    expect(view.probe().state.seeds).toBe("from disk");
+
+    act(() => view.probe().forgetProject());
+
+    expect(view.probe().storageMode).toBe("swept");
+    expect(window.localStorage.getItem(storageKey(PID))).toBeNull();
+
+    // Without the latch, any dispatch arriving before the caller's navigation
+    // completes re-creates the deleted project's key from the live state.
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    act(() => view.probe().dispatch({ type: "setSeeds", seeds: "after the delete" }));
+    expect(setItem).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(storageKey(PID))).toBeNull();
     view.unmount();
   });
 });
