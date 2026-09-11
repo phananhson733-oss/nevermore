@@ -5469,7 +5469,16 @@ git commit -m "feat(web): 项目壳切换为工作台，15 条路由占位，旧
 - Create: `e2e/workbench-shell.mock.spec.ts`
 - Modify: `e2e/critical-flows.mock.spec.ts`、`e2e/mobile-shell.mock.spec.ts`、`e2e/overview-read-model.mock.spec.ts`、`e2e/frontend-error-states.mock.spec.ts`，以及盘点出的其他文件
 
-- [ ] **Step 1: 盘点**
+**落地备注：**
+
+- Commit `3784c41a`（18 文件）。基线全量 mock e2e 32 红 = 4 条既有红 + 28 条被壳移植打断；Task 12 之后 6 红 = 4 条既有红 + 2 条 `color-contrast`（`frontend-error-states` 对 `/execution`、`/results` 跑 axe，rail 次级文字 token 低于 AA），后者已在 `77667a5c` 修掉（见 Task 10 落地备注）。
+- 计划清单之外的文件处置：`growth-map`、`audit-technical-vertical`、`content-shadow-vertical`（+ fixture `content-shadow-vertical-fixture.ts` 的 `OVERVIEW_URL` / `NAV_LABEL`）、`action-override`、`cursor-pagination`、`execution-queue-state`、`growth-map-backlinks`、`growth-map-competitor-monitor`、`growth-map-internal-link-map`、`results-measurement`：导航名 `项目分区` / `Project sections` → `工作台导航` / `Workbench sections`，链接计数 4 → 15；`OVERVIEW_URL` 改 `/legacy/overview`；旧四项之间的点击跳转改走 `[data-wb-legacy-link="<segment>"]`，从映射到该旧页的工作台页出发（`content` → `execution`、`audit` → `growth-map`），rail 链接用 `[data-wb-nav="<pageId>"]`；页面内断言不动。
+- 三处 `waitForURL`（`critical-flows` 进 sources、`workbench-shell` 的 growth-map hop 与删除项目后离开 settings）：dev 下客户端跳进旧路由会撞上按需编译，10 s 的 `expect` 不够，改等导航本身（受 test timeout 约束）。
+- `critical-flows` 项目身份改用 `[data-app-shell-topbar] [data-project-identity] strong`（class 名是哈希的）；删掉旧 Overview 的 h1「Where growth should move next」与顶栏 stage pill（Planning / 规划中）两处断言——两者随旧顶栏退出 chrome，本地化保证改钉 rail 导航标签（Overview / 概览）。
+- `mock-api.ts`：`DELETE /api/mvp/projects/:id` 回 204 无 body（Step 3b 原文）。
+- real 套件的 `project-isolation.spec.ts`、`real-vertical-chains.spec.ts` 在 `c0347a9f` 按同样方式改（`/legacy/overview`；`[data-wb-nav="answers"]` → `[data-wb-legacy-link="results"]`，键盘变体两个锚点各 focus + Enter），只跑在 Postgres harness 上，**未本地运行**，只过了 `typecheck:e2e` / `lint:e2e`。
+
+- [x] **Step 1: 盘点**
 
 ```bash
 grep -nE 'data-app-shell|Project sections|program|/overview"|/overview`|"Settings"|getByRole\("link", \{ name: "(Overview|Growth Map|Execution|Results)"' e2e/*.spec.ts 'apps/web/src/app/p/[projectId]/'*.test.ts apps/web/src/app/layout.test.ts apps/web/src/components/app-shell/*.test.ts > "${SCRATCHPAD:-$TMPDIR}/wb-spec-inventory.txt"; wc -l "${SCRATCHPAD:-$TMPDIR}/wb-spec-inventory.txt"
@@ -5490,7 +5499,7 @@ grep -nE 'data-app-shell|Project sections|program|/overview"|/overview`|"Setting
 | `frontend-error-states.mock.spec.ts` L1675 | `Project sections` → `Workbench sections`，若点的是旧四项之一改 `page.goto` |
 | `complete-four-module-workbench.mock.spec.ts` 等按旧导航点击的 | 导航点击改 `page.goto`，页面内断言不动 |
 
-- [ ] **Step 2: critical-flows 导航测试替换稿**
+- [x] **Step 2: critical-flows 导航测试替换稿**
 
 ```ts
 test("workbench navigation exposes all fifteen sections and localizes", async ({ page }) => {
@@ -5517,7 +5526,7 @@ test("workbench navigation exposes all fifteen sections and localizes", async ({
 });
 ```
 
-- [ ] **Step 3: 新壳 spec**
+- [x] **Step 3: 新壳 spec**
 
 ```ts
 // e2e/workbench-shell.mock.spec.ts
@@ -5627,7 +5636,7 @@ test("deleting the project clears its workbench storage key", async ({ page }) =
 });
 ```
 
-- [ ] **Step 3b: mock API 兑现 `DELETE /api/mvp/projects/:id`（必做）**
+- [x] **Step 3b: mock API 兑现 `DELETE /api/mvp/projects/:id`（必做）**
 
 `e2e/mock-api.ts` 目前没有任何 `DELETE` 分支；`installCriticalFlowApi` 对未匹配的 `/api/mvp/**` 回 501 `E2E_ROUTE_MISSING` problem（只有 `results` / `measurement-windows` 才 `route.fallback()`），mutation 报错，`forgetProject()` 不会执行，上面的删除用例必红。在 `installCriticalFlowApi` 的 `page.route("**/api/mvp/**", …)` 处理器里，紧跟 `const path = url.pathname;` 之后加：
 
@@ -5641,17 +5650,17 @@ test("deleting the project clears its workbench storage key", async ({ page }) =
 
 `BASE` 就是 `/api/mvp/projects/${E2E_PROJECT_ID}`，与 `deleteProjectRequest` 发出的 `DELETE /projects/:id` 一致。不加开关：没有别的 spec 会对保留项目发 DELETE。删除后 `router.replace("/")` 在 mock 环境落到 `/login` 或错误页，都不挂 `WorkbenchProvider`，所以 `localStorage` 断言成立；若日后根路由在 mock 下能重定向回 `/p/<id>/overview`，provider 重挂会把键写回来，届时该用例改为断言删除动作本身。
 
-- [ ] **Step 4: 跑受影响 spec + 新 spec**
+- [x] **Step 4: 跑受影响 spec + 新 spec**
 
 Run: `pnpm test:e2e:mock e2e/workbench-shell.mock.spec.ts e2e/critical-flows.mock.spec.ts e2e/mobile-shell.mock.spec.ts e2e/overview-read-model.mock.spec.ts e2e/frontend-error-states.mock.spec.ts e2e/legacy-style-parity.mock.spec.ts e2e/studio-workspace.mock.spec.ts e2e/product-profile.mock.spec.ts`
 Expected: 全绿。`studio-workspace` 与 `product-profile` 是 `useProjectShellEffects` 的回归门，红了先怀疑 hook 抄漏，不要改 spec。
 
-- [ ] **Step 5: 全量 mock e2e（后台跑，直接落文件）**
+- [x] **Step 5: 全量 mock e2e（后台跑，直接落文件）**
 
 Run: `pnpm test:e2e:mock > "${SCRATCHPAD:-$TMPDIR}/wb-e2e-full.txt" 2>&1; tail -20 "${SCRATCHPAD:-$TMPDIR}/wb-e2e-full.txt"`
 Expected: 与 Task 0 记录的既有红一致，无新红。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add e2e
