@@ -246,47 +246,105 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const css = readFileSync(new URL("./workbench.css", import.meta.url), "utf8");
+const globals = readFileSync(new URL("./globals.css", import.meta.url), "utf8");
+const layout = readFileSync(new URL("./layout.tsx", import.meta.url), "utf8");
+
+/** The full text of the top-level `@layer base { … }` block, found by brace depth. */
+function layerBaseBlock(source: string): string {
+  const start = source.search(/@layer base\s*\{/);
+  if (start === -1) return "";
+  let depth = 0;
+  for (let i = source.indexOf("{", start); i < source.length; i += 1) {
+    if (source[i] === "{") depth += 1;
+    if (source[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  return "";
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 describe("workbench.css", () => {
   it("imports theme and utilities as layers and never preflight", () => {
     expect(css).toContain('@import "tailwindcss/theme.css" layer(theme);');
-    expect(css).toContain('@import "tailwindcss/utilities.css" layer(utilities);');
+    expect(css).toContain(
+      '@import "tailwindcss/utilities.css" layer(utilities);',
+    );
     expect(css).not.toContain("tailwindcss/preflight");
     expect(css).not.toMatch(/@import\s+"tailwindcss";/);
   });
 
   it("binds the sans font to the next/font variable so font-sans works", () => {
-    expect(css).toMatch(/--font-sans:\s*var\(--font-wb\)/);
+    expect(css).toMatch(/--font-sans:\s*var\(--font-wb(?:,[^)]*)?\)/);
+  });
+
+  it("does not define --font-display (legacy modules rely on it being unset)", () => {
+    const theme = css.match(/@theme\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(theme.length).toBeGreaterThan(0);
+    expect(theme).not.toContain("--font-display");
   });
 
   it("scopes every reset rule under .wb-reset", () => {
-    const base = css.match(/@layer base\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    const base = layerBaseBlock(css);
     expect(base.length).toBeGreaterThan(0);
-    const selectors = base.match(/^\s*([^{}\n][^{}]*)\{/gm) ?? [];
+    // Exclude the `@layer base {` wrapper line itself — layerBaseBlock() returns the
+    // full block including that opening line, which would otherwise be picked up by
+    // the selector regex below as a (failing) fake selector.
+    const selectors = (base.match(/^\s*([^{}\n][^{}]*)\{/gm) ?? []).filter(
+      (line) => !line.trim().startsWith("@"),
+    );
     expect(selectors.length).toBeGreaterThan(3);
     for (const selector of selectors) {
       expect(selector.trim(), selector).toMatch(/^\.wb-reset/);
     }
   });
+
+  it("keeps pseudo-elements outside :where() so the rules actually match", () => {
+    expect(css).not.toMatch(/:where\([^)]*::/);
+  });
 });
 
 describe("globals.css keeps its unlayered element rules out of the workbench chrome", () => {
-  // Unlayered declarations beat every @layer, so a bare `a {}` / `h1 {}` /
+  // Unlayered declarations beat every @layer, so a bare `* {}` / `a {}` / `h1 {}` /
   // `:focus-visible {}` would override Tailwind utilities inside the new shell.
-  const globals = readFileSync(new URL("./globals.css", import.meta.url), "utf8");
-  it.each(["a", "h1", "h2", "h3", ":focus-visible"])("guards %s with :where(:not(.wb-reset *))", (selector) => {
-    expect(globals).not.toMatch(new RegExp(`^${selector}\\s*[{,]`, "m"));
-    expect(globals).toContain(`${selector}:where(:not(.wb-reset *))`);
+  it.each(["*", "a", "h1", "h2", "h3", ":focus-visible"])(
+    "guards %s with :where(:not(.wb-reset *))",
+    (selector) => {
+      expect(globals).not.toMatch(
+        new RegExp(`^${escapeRegExp(selector)}\\s*[{,]`, "m"),
+      );
+      expect(globals).toContain(`${selector}:where(:not(.wb-reset *))`);
+    },
+  );
+});
+
+describe("layout.tsx", () => {
+  it("imports workbench.css after globals.css and never puts .wb-reset on html or body", () => {
+    const globalsAt = layout.indexOf('import "./globals.css";');
+    const workbenchAt = layout.indexOf('import "./workbench.css";');
+    expect(globalsAt).toBeGreaterThan(-1);
+    expect(workbenchAt).toBeGreaterThan(globalsAt);
+    expect(layout).not.toContain("wb-reset");
   });
 });
 
 describe("postcss.config.mjs", () => {
-  // A postcss config file replaces Next's built-in chain, so the two defaults
+  // A postcss config file replaces Next's built-in webpack chain, so the two defaults
   // must be restated ahead of Tailwind or legacy CSS Modules lose prefixing.
-  const config = readFileSync(new URL("../../postcss.config.mjs", import.meta.url), "utf8");
+  const config = readFileSync(
+    new URL("../../postcss.config.mjs", import.meta.url),
+    "utf8",
+  );
   it("restates Next's default plugins before Tailwind", () => {
-    const order = ["next/dist/compiled/postcss-flexbugs-fixes", "next/dist/compiled/postcss-preset-env", "@tailwindcss/postcss"]
-      .map((name) => config.indexOf(name));
+    const order = [
+      "next/dist/compiled/postcss-flexbugs-fixes",
+      "next/dist/compiled/postcss-preset-env",
+      "@tailwindcss/postcss",
+    ].map((name) => config.indexOf(name));
     expect(order.every((index) => index >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(config).toContain('"custom-properties": false');
@@ -314,12 +372,18 @@ Expected: FAIL，`ENOENT … workbench.css`。
 
 ```js
 // apps/web/postcss.config.mjs
-// Any postcss config file replaces Next's built-in chain (flexbugs fixes +
-// preset-env/autoprefixer), which today prefixes the legacy CSS Modules
-// (backdrop-filter, sticky, appearance, ...). Restate that chain first, using
-// the copies Next ships and its own default browser targets
-// (next/dist/shared/lib/modern-browserslist-target.js), so legacy output stays
-// byte-identical; Tailwind runs last so its output is never re-processed.
+// A postcss config file changes both bundlers' CSS pipelines:
+// - webpack (`next dev --webpack`, used by the mock e2e harness): it REPLACES Next's
+//   built-in chain (flexbugs fixes + preset-env/autoprefixer) that prefixes the legacy
+//   CSS Modules (backdrop-filter, sticky, appearance, ...), so that chain is restated
+//   here first, with Next's own default browser targets
+//   (next/dist/shared/lib/modern-browserslist-target.js), and Tailwind runs last.
+// - Turbopack (`next dev` / `next build`, the shipping path): without a config no postcss
+//   ran at all; with this one the same chain now runs there too. It is additive
+//   (prefixes only), and e2e/legacy-style-parity.mock.spec.ts was run once against a
+//   Turbopack dev server to confirm legacy computed styles do not move.
+// Turbopack resolves the config from the repo root first: a postcss config at the
+// monorepo root would silently shadow this file. Keep the root free of one.
 export default {
   plugins: {
     "next/dist/compiled/postcss-flexbugs-fixes": {},
@@ -343,17 +407,19 @@ Expected: lockfile 更新，无 peer 冲突。
 
 ```css
 /* @input  — tailwindcss theme + utilities（刻意不引 preflight）、tw-animate-css
- * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表与打印规则
+ * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表规则
  * @pos    — app/layout.tsx 在 globals.css 之后引入；旧页面在 <main> 内不带 .wb-reset，不受影响
  * 一旦本文件被更新，务必更新开头注释
  */
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
+/* tw-animate-css 1.4 ships only @property / @theme inline / @utility (no plain rules), so it
+   needs no layer — and @utility cannot live inside @layer anyway. Re-check on upgrade. */
 @import "tw-animate-css";
 
 @theme {
-  --font-sans: var(--font-wb), "PingFang SC", "Hiragino Sans GB",
+  --font-sans: var(--font-wb, ui-sans-serif), "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
   --color-wb-paper: #faf9f6;
   --color-wb-rail: #1f1e1c;
@@ -410,7 +476,7 @@ Expected: lockfile 更新，无 peer 冲突。
     display: block;
     max-width: 100%;
   }
-  .wb-reset :where(input::placeholder, textarea::placeholder) {
+  .wb-reset :where(input, textarea)::placeholder {
     color: var(--color-slate-400);
     opacity: 1;
   }
@@ -443,17 +509,14 @@ Expected: lockfile 更新，无 peer 冲突。
   .wb-reset :where(progress[data-tone="bad"])::-moz-progress-bar {
     background: var(--color-rose-500);
   }
-}
-
-@media print {
-  [data-app-shell-sidebar],
-  [data-app-shell-topbar] {
-    display: none !important;
+  .wb-reset :focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
   }
 }
 ```
 
-注意 `@layer base { … }` 块内每条规则的选择器都以 `.wb-reset` 开头——测试用正则逐条核。`@media print` 在 base 块外。
+注意 `@layer base { … }` 块内每条规则的选择器都以 `.wb-reset` 开头——测试按花括号深度截出整块后逐条核；伪元素必须写在 `:where()` 外面（`:where(input::placeholder)` 是非法选择器，会被静默丢成空 `:where()`）。打印时隐藏侧栏/顶栏的规则 `globals.css` L245 已有，本文件不重复。
 
 - [ ] **Step 5: 根 layout 注入字体并引入 CSS**
 
@@ -480,13 +543,17 @@ const plusJakarta = Plus_Jakarta_Sans({
 - [ ] **Step 6: 跑测试与类型检查**
 
 Run: `pnpm vitest run --project unit apps/web/src/app/workbench-css.test.ts && pnpm --filter @sf/web typecheck`
-Expected: 4 passed / 5 failed——红的是 `globals.css` 守卫那组，Step 6b 后转绿；typecheck 与 Task 0 基线一致。
+Expected: `workbench.css` / `layout.tsx` / `postcss.config.mjs` 三组通过，`globals.css` 守卫那组 6 个用例红，Step 6b 后转绿；typecheck 与 Task 0 基线一致。
 
 - [ ] **Step 6b: globals.css 三条未分层元素规则加守卫**
 
-`globals.css` 里 `h1, h2, h3 {…}`（L172）、`a {…}`（L222）、`:focus-visible {…}`（L226）都不在任何 `@layer` 里；CSS 级联规定未分层声明压过所有分层声明，所以它们会盖掉新壳里的 Tailwind 工具类（侧栏链接变深绿、h1 变 Fraunces/宋体、聚焦圆角变 4px）。改为：
+`globals.css` 里 `* { box-sizing }`（L152）、`h1, h2, h3 {…}`（L172）、`a {…}`（L222）、`:focus-visible {…}`（L226）都不在任何 `@layer` 里；CSS 级联规定未分层声明压过所有分层声明，所以它们会盖掉新壳里的 Tailwind 工具类（侧栏链接变深绿、h1 变 Fraunces/宋体、聚焦圆角变 4px）。改为：
 
 ```css
+*:where(:not(.wb-reset *)) {
+  box-sizing: border-box;
+}
+
 h1:where(:not(.wb-reset *)),
 h2:where(:not(.wb-reset *)),
 h3:where(:not(.wb-reset *)) {
@@ -511,18 +578,27 @@ a:where(:not(.wb-reset *)) {
 
 ```css
   .wb-reset :focus-visible {
-    outline: 2px solid var(--color-wb-seo);
+    outline: 2px solid currentColor;
     outline-offset: 2px;
   }
 ```
 
+（`currentColor` 而不是 `--color-wb-seo`：后者压在深色导轨 `#1f1e1c` 上只有 2.36:1，不达 WCAG 1.4.11 的 3:1；元素自己的文字色对其背景必然可读。）
+
 Run: `pnpm vitest run --project unit apps/web/src/app/workbench-css.test.ts`
 Expected: 全绿（含 `globals.css` 守卫与 `postcss.config.mjs` 顺序两组）。
 
-- [ ] **Step 7: 旧页样式基线仍绿**
+- [ ] **Step 7: 旧页样式基线仍绿（webpack 与 Turbopack 两条路都跑）**
 
 Run: `pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts`
-Expected: 2 passed。若红：先看差异属性，通常是 `border-style` 这类 `.wb-reset *` 漏出——检查 `layout.tsx` 没有把 `wb-reset` 放到 `<body>`。这条基线在 Chromium 上比计算样式，看不到厂商前缀的差异；前缀一致性靠 Step 3 复刻 Next 默认链保证，不靠这条。
+Expected: 2 passed。再对发布用的 Turbopack 跑一次（mock 夹具默认 `--webpack`）：
+
+```bash
+sed -e 's/ --webpack//' -e 's/\.next-e2e-mock"/.next-e2e-mock-turbo"/' playwright.mock.config.ts > playwright.mock-turbo.config.ts
+pnpm exec playwright test --config=playwright.mock-turbo.config.ts e2e/legacy-style-parity.mock.spec.ts
+rm playwright.mock-turbo.config.ts && rm -rf apps/web/.next-e2e-mock-turbo
+```
+Expected: 2 passed（改动前 Turbopack 下旧 CSS 不经 postcss，本任务给它新增了前缀链，这一遍证明旧页计算样式没动）。若红：先看差异属性，通常是 `border-style` 这类 `.wb-reset *` 漏出——检查 `layout.tsx` 没有把 `wb-reset` 放到 `<body>`。这条基线在 Chromium 上比计算样式，看不到厂商前缀的差异；前缀一致性靠 Step 3 复刻 Next 默认链保证，不靠这条。
 
 - [ ] **Step 8: Commit**
 
