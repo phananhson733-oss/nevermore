@@ -20,6 +20,24 @@ describe("workbench routes", () => {
     expect(WORKBENCH_SEGMENTS.keywordLibrary).toBe("keyword-library");
   });
 
+  it("pins every segment (the same table is hand-copied into page dirs and e2e)", () => {
+    expect(WORKBENCH_SEGMENTS).toEqual({
+      overview: "overview", week: "week", keywords: "keywords",
+      keywordLibrary: "keyword-library", competitors: "competitors",
+      audit: "audit", visibility: "visibility", profile: "profile",
+      dataSources: "data-sources", links: "links", content: "content",
+      kb: "kb", answers: "answers", artifacts: "artifacts", settings: "settings",
+    });
+  });
+
+  it("keeps new segments disjoint from legacy ones so legacy pages never highlight a nav item", () => {
+    const legacy = new Set(Object.values(LEGACY_LINKS).flat());
+    expect(legacy.size).toBe(8); // every LegacySegment member is reachable from the table
+    for (const id of WORKBENCH_PAGE_IDS) {
+      expect(legacy.has(WORKBENCH_SEGMENTS[id]), WORKBENCH_SEGMENTS[id]).toBe(false);
+    }
+  });
+
   it("builds project-scoped hrefs", () => {
     expect(workbenchHref(PID, "overview")).toBe(`/p/${PID}/overview`);
     expect(legacyHref(PID, "legacy/overview")).toBe(`/p/${PID}/legacy/overview`);
@@ -32,6 +50,10 @@ describe("workbench routes", () => {
     expect(activeWorkbenchPage(`/p/${PID}/growth-map`, PID)).toBeNull();
     expect(activeWorkbenchPage(`/p/${PID}/legacy/overview`, PID)).toBeNull();
     expect(activeWorkbenchPage(`/p/other/audit`, PID)).toBeNull();
+    expect(activeWorkbenchPage(`/p/${PID}/audit/x`, PID)).toBe("audit"); // nested route keeps the item active
+    expect(activeWorkbenchPage(`/p/${PID}/audit/`, PID)).toBe("audit");
+    expect(activeWorkbenchPage(`/p/${PID}`, PID)).toBeNull();
+    expect(activeWorkbenchPage(`/p/${PID}x/audit`, PID)).toBeNull(); // id that is a prefix of another id
   });
 
   it("maps every overlapping page to its legacy destinations (design §4.3)", () => {
