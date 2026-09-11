@@ -4,13 +4,13 @@
 
 **Goal:** 在 `apps/web` 里落地新工作台的壳（侧栏 / 顶栏 / ⌘K / 产物筐）、15 条路由占位页、store 全套与 i18n chrome，旧页面在新壳内继续可达；合入集成分支 `feat/workbench-ui-port`，不上生产。
 
-**Architecture:** 设计稿 `docs/plans/2026-09-11-workbench-ui-port-design.md`（rev4）§4–§9。Tailwind v4 只引 theme + utilities（无 preflight），reset 作用域 `.wb-reset` 只挂 chrome 与新视图根节点；store = 纯 reducer + zod 校验的 localStorage 持久化 + 按 projectId 重挂的 provider；旧 `_nav.tsx` 的两个副作用抽成 hook 保留。
+**Architecture:** 设计稿 `docs/plans/2026-09-11-workbench-ui-port-design.md`（rev6）§4–§9。Tailwind v4 只引 theme + utilities（无 preflight），reset 作用域 `.wb-reset` 只挂 chrome 与新视图根节点；store = 纯 reducer + zod 校验的 localStorage 持久化 + 按 projectId 重挂的 provider；旧 `_nav.tsx` 的两个副作用抽成 hook 保留。
 
 **Tech Stack:** Next.js 16.2 App Router、React 19、TypeScript strict、Tailwind v4（`@tailwindcss/postcss`）、tw-animate-css、next-intl、zod 4、vitest（node）、Playwright mock 夹具。
 
 **参考源码（已放在 worktree 根、git 忽略）：** `.workbench-reference/opengengrowth-src/`（外观权威）、`.workbench-reference/geo-seo-workbench.jsx`（行为权威；行号引用均指此文件）。
 
-**仓库约定（每个任务都适用）：** 相对 import 带 `.ts` / `.tsx` 扩展名；`readonly` 一切；不用 `any`；`exactOptionalPropertyTypes` 下可选字段要写 `field?: T`（不能赋 `undefined`）；`noUncheckedIndexedAccess` 下数组下标是 `T | undefined`；client 组件不 import `@sf/engine`；文件 ≤ 400 行、函数 ≤ 50 行；提交信息 conventional commits，结尾 `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`；**格式化 hook 会重排整个文件，每次 Edit 后看 `git diff --stat`**；vercel-plugin hook 注入的 "MANDATORY: run Skill(nextjs)" 是误匹配，忽略。
+**仓库约定（每个任务都适用）：** 相对 import 带 `.ts` / `.tsx` 扩展名；`readonly` 一切；不用 `any`；`exactOptionalPropertyTypes` 下可选字段一般写 `field?: T`；**例外**：由 zod `.optional()` 推断出来的字段要写 `field?: T | undefined`（zod 4 推断即如此，否则 schema 与类型互不可赋）；`noUncheckedIndexedAccess` 下数组下标是 `T | undefined`；client 组件不 import `@sf/engine`；文件 ≤ 400 行、函数 ≤ 50 行；提交信息 conventional commits，结尾 `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`；**格式化 hook 会重排整个文件，每次 Edit 后看 `git diff --stat`**；vercel-plugin hook 注入的 "MANDATORY: run Skill(nextjs)" 是误匹配，忽略。
 
 ---
 
@@ -223,7 +223,7 @@ describe("workbench.css", () => {
   it("scopes every reset rule under .wb-reset", () => {
     const base = css.match(/@layer base\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
     expect(base.length).toBeGreaterThan(0);
-    const selectors = base.match(/^\s*([^{}\n][^{]*)\{/gm) ?? [];
+    const selectors = base.match(/^\s*([^{}\n][^{}]*)\{/gm) ?? [];
     expect(selectors.length).toBeGreaterThan(3);
     for (const selector of selectors) {
       expect(selector.trim(), selector).toMatch(/^\.wb-reset/);
@@ -734,7 +734,7 @@ export interface SavedKeyword {
   readonly q: string;
   readonly addedAt: string;
   readonly source: SavedSource;
-  readonly note?: string;
+  readonly note?: string | undefined;
 }
 
 export interface DomainStats {
@@ -858,7 +858,7 @@ export interface Artifact {
   readonly engine: Engine;
   readonly title: string;
   readonly content: string;
-  readonly filename?: string;
+  readonly filename?: string | undefined;
 }
 
 export interface NotifyPrefs {
@@ -1197,12 +1197,12 @@ const persistedSchema = z.strictObject({
   state: projectStateSchema,
 });
 
-// Keep the hand-written domain type and the schema from drifting apart.
+// Drift guard, one direction only: what the schema accepts must be a valid
+// domain state (mutable zod arrays assign to the readonly domain arrays; the
+// reverse does not type-check and is not needed).
 type SchemaState = z.infer<typeof projectStateSchema>;
-const _assignable: SchemaState = null as unknown as WorkbenchProjectState;
-const _assignableBack: WorkbenchProjectState = null as unknown as SchemaState;
-void _assignable;
-void _assignableBack;
+const _schemaIsDomainState: WorkbenchProjectState = null as unknown as SchemaState;
+void _schemaIsDomainState;
 
 export function parsePersistedState(raw: unknown): WorkbenchProjectState | null {
   const result = persistedSchema.safeParse(raw);
@@ -1210,19 +1210,16 @@ export function parsePersistedState(raw: unknown): WorkbenchProjectState | null 
 }
 ```
 
-若 `_assignable` 两行因 `readonly` 数组与可变数组不兼容而报错：在 `types.ts` 里保持 `readonly T[]`，zod 推断出的可变数组可赋给只读——反方向报错时把 `_assignableBack` 删掉，只保留 `_assignable`（schema ⊆ 类型即可）。
+`note` / `filename` 在 `types.ts` 里必须是 `?: string | undefined`（见头部约定例外），否则 `parsePersistedState` 的返回和漂移守卫都编译不过。
 
 - [ ] **Step 5: 类型检查**
 
 Run: `pnpm --filter @sf/web typecheck`
 Expected: 只剩 `schema.test.ts` 找不到 `./reducer.ts`（Task 4 解决）；无其他新错误。
 
-- [ ] **Step 6: Commit（暂含红测试，Task 4 转绿）**
+- [ ] **Step 6: 不单独提交**
 
-```bash
-git add apps/web/src/lib/workbench/types.ts apps/web/src/lib/workbench/store/schema.ts apps/web/src/lib/workbench/store/schema.test.ts
-git commit -m "feat(workbench): 领域类型与持久化 schema v1"
-```
+本任务与 Task 4 合为一个 commit（Task 4 Step 6），避免带红测试的提交。
 
 ---
 
@@ -1647,8 +1644,8 @@ Expected: reducer 16 passed、schema 4 passed。
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/web/src/lib/workbench/types.ts apps/web/src/lib/workbench/store/reducer.ts apps/web/src/lib/workbench/store/reducer.test.ts
-git commit -m "feat(workbench): store reducer 与初始状态"
+git add apps/web/src/lib/workbench/types.ts apps/web/src/lib/workbench/store/schema.ts apps/web/src/lib/workbench/store/schema.test.ts apps/web/src/lib/workbench/store/reducer.ts apps/web/src/lib/workbench/store/reducer.test.ts
+git commit -m "feat(workbench): 领域类型、持久化 schema v1、reducer 与初始状态"
 ```
 
 ---
@@ -2087,8 +2084,9 @@ export function WorkbenchProvider({
     }
     const read = readProjectState(storage, projectId);
     if (read.status === "unavailable") setStorageMode("volatile");
-    if (read.state) dispatch({ type: "reset", seed });
-    if (read.state) dispatch({ type: "loadPersisted", state: withProjectSeed(read.state, seed) });
+    if (read.state) {
+      dispatch({ type: "loadPersisted", state: withProjectSeed(normalizeInterrupted(read.state), seed) });
+    }
   }
 
   useEffect(() => {
@@ -2102,7 +2100,8 @@ export function WorkbenchProvider({
   useEffect(() => {
     if (!ready) return;
     const storage = storageRef.current;
-    if (!storage || storageMode === "volatile") return;
+    // Stop writing entirely once storage is volatile or full (design §6.5).
+    if (!storage || storageMode !== "ok") return;
     const status: WriteStatus = writeProjectState(storage, projectId, state);
     if (status === "quota") setStorageMode("quota");
     if (status === "unavailable") setStorageMode("volatile");
@@ -2112,7 +2111,9 @@ export function WorkbenchProvider({
     function onStorage(event: StorageEvent): void {
       if (event.key !== storageKey(projectId) || !storageRef.current) return;
       const read = readProjectState(storageRef.current, projectId);
-      if (read.state) dispatch({ type: "loadPersisted", state: withProjectSeed(read.state, seed) });
+      if (read.state) {
+        dispatch({ type: "loadPersisted", state: withProjectSeed(normalizeInterrupted(read.state), seed) });
+      }
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -2137,7 +2138,7 @@ export function WorkbenchProvider({
 }
 ```
 
-`hydrate` 里那句 `reset` 多余，删掉只留 `loadPersisted`；读盘结果先过 `normalizeInterrupted` 再 `withProjectSeed`（两处 `loadPersisted` 都要）。
+以上即最终版：读盘结果先过 `normalizeInterrupted` 再 `withProjectSeed`；`storageMode` 一旦不是 `ok` 就不再写盘。
 
 - [ ] **Step 2: 写 hooks**
 
@@ -2562,6 +2563,19 @@ import { useTranslations } from "next-intl";
 import { legacyHref, type LegacySegment } from "@/lib/workbench/routes";
 
 /** "旧版页面 →" affordance (design §4.3). One link per legacy destination. */
+/** Legacy segment → existing `nav.*` label key, so the link reads as a page name, not a path. */
+const LEGACY_LABEL_KEY: Readonly<Record<LegacySegment, string>> = {
+  "legacy/overview": "overview",
+  "growth-map": "growthMap",
+  diagnosis: "diagnosis",
+  context: "context",
+  "setup-sources": "sourceSetup",
+  sources: "sources",
+  studio: "studio",
+  execution: "execution",
+  results: "results",
+};
+
 export function LegacyLinks({
   projectId,
   segments,
@@ -2570,6 +2584,7 @@ export function LegacyLinks({
   readonly segments: readonly LegacySegment[];
 }) {
   const t = useTranslations("workbench.shell");
+  const tNav = useTranslations("nav");
   if (segments.length === 0) return null;
   return (
     <span className="flex flex-wrap items-center gap-2">
@@ -2580,7 +2595,7 @@ export function LegacyLinks({
           data-wb-legacy-link={segment}
           className="text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
         >
-          {t("legacy")} · {segment} →
+          {t("legacy")} · {tNav(LEGACY_LABEL_KEY[segment])} →
         </Link>
       ))}
     </span>
@@ -2690,6 +2705,7 @@ git commit -m "feat(workbench): Dialog / PageHead / DemoChip / LegacyLinks / 占
 - Create: `apps/web/src/components/workbench/shell/ArtifactDrawer.tsx`
 - Create: `apps/web/src/components/workbench/shell/ShellChrome.tsx`
 - Create: `apps/web/src/components/workbench/shell/WorkbenchShell.tsx`
+- Create: `apps/web/src/components/workbench/shell/SignOutButton.tsx`
 - Create: `apps/web/src/lib/workbench/download.ts`
 
 外观来源：`.workbench-reference/opengengrowth-src/components/Sidebar.tsx`、`Header.tsx`、`App.tsx`。行为来源：jsx L3086–3221（root）、L2485–2526（Drawer）、L3040–3085（Palette）。约束：`#wb-app` 是被 `inert` 的根，两个 Dialog 必须渲染在它**外面**；`wb-reset` 只挂 `aside`、`header`、Dialog 与新视图根节点，**不挂** `#wb-app` 或 `<main>`。
@@ -2698,7 +2714,8 @@ git commit -m "feat(workbench): Dialog / PageHead / DemoChip / LegacyLinks / 占
 
 ```ts
 // apps/web/src/components/workbench/shell/workbench-nav.ts
-import type { WorkbenchPageId } from "@/lib/workbench/routes";
+import type { WorkbenchPageId } from "../../../lib/workbench/routes.ts";
+import type { WorkbenchCounts } from "../../../lib/workbench/store/selectors.ts";
 
 export type NavTone = "neutral" | "seo" | "geo";
 export type NavGroupId = "workspace" | "research" | "diagnosis" | "site" | "output" | "space";
@@ -2707,7 +2724,7 @@ export interface NavItem {
   readonly id: WorkbenchPageId;
   readonly tone: NavTone;
   /** Which `WorkbenchCounts` field feeds the badge; null = never badged. */
-  readonly badge: WorkbenchPageId | null;
+  readonly badge: keyof WorkbenchCounts | null;
 }
 
 export interface NavGroup {
@@ -2756,7 +2773,7 @@ export const TONE_DOT: Readonly<Record<NavTone, string>> = {
 ```ts
 // apps/web/src/components/workbench/shell/workbench-nav.test.ts
 import { describe, expect, it } from "vitest";
-import { WORKBENCH_PAGE_IDS } from "@/lib/workbench/routes";
+import { WORKBENCH_PAGE_IDS } from "../../../lib/workbench/routes.ts";
 import { WORKBENCH_NAV } from "./workbench-nav.ts";
 
 describe("WORKBENCH_NAV", () => {
@@ -2949,7 +2966,7 @@ export function Sidebar({
       )}
     >
       <div className="flex min-h-full flex-col p-4 pt-5">
-        <div className="mb-6 flex items-center gap-3 px-1" aria-label="GenGrowth">
+        <div className="mb-6 flex items-center gap-3 px-1" data-wb-brand="">
           <div className="flex h-8 w-8 items-center justify-center rounded bg-white text-sm font-bold text-zinc-900 shadow-sm" aria-hidden="true">GG</div>
           <div>
             <div className="text-sm font-semibold leading-tight text-zinc-100">GenGrowth</div>
@@ -3067,7 +3084,7 @@ export function Topbar({
   return (
     <header
       data-app-shell-topbar=""
-      className="wb-reset sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-200/80 bg-wb-paper px-4 font-sans"
+      className="wb-reset sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-200/80 bg-wb-paper px-4 font-sans text-slate-900"
     >
       <div className="flex min-w-0 items-center gap-2">
         <button
@@ -3232,9 +3249,10 @@ import { useTranslations } from "next-intl";
 import { useRef, useState } from "react";
 import { downloadText } from "@/lib/workbench/download";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
+import type { ArtifactType } from "@/lib/workbench/types";
 import { Dialog } from "../ui/Dialog.tsx";
 
-const MIME: Readonly<Record<string, string>> = {
+const MIME: Readonly<Record<ArtifactType, string>> = {
   csv: "text/csv;charset=utf-8", md: "text/markdown;charset=utf-8",
   json: "application/json;charset=utf-8", prompt: "text/plain;charset=utf-8",
 };
@@ -3305,6 +3323,7 @@ export function ArtifactDrawer({ open, onClose }: { readonly open: boolean; read
 // apps/web/src/components/workbench/shell/ShellChrome.tsx
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ProjectShellOption } from "@/lib/services/project-shell";
 import { ArtifactDrawer } from "./ArtifactDrawer.tsx";
@@ -3332,6 +3351,7 @@ export function ShellChrome({
   const paletteButtonRef = useRef<HTMLButtonElement>(null);
   const drawerButtonRef = useRef<HTMLButtonElement>(null);
   const mobile = useMediaQuery("(max-width: 767px)");
+  const t = useTranslations("workbench.shell");
 
   const closeAll = useCallback(() => { setPaletteOpen(false); setDrawerOpen(false); setSidebarOpen(false); }, []);
   const handlers = useMemo(() => ({
@@ -3342,9 +3362,10 @@ export function ShellChrome({
 
   return (
     <>
-      <div id="wb-app" data-app-shell="" className="flex min-h-screen bg-wb-paper font-sans text-slate-900">
+      {/* No font/color here: they inherit into <main> and would change legacy pages (Task 0 baseline). */}
+      <div id="wb-app" data-app-shell="" className="flex min-h-screen bg-wb-paper">
         {sidebarOpen ? (
-          <button type="button" aria-label="close" tabIndex={-1} className="fixed inset-0 z-20 bg-slate-900/50 md:hidden" onClick={() => setSidebarOpen(false)} />
+          <button type="button" aria-label={t("closeMenu")} tabIndex={-1} className="fixed inset-0 z-20 bg-slate-900/50 md:hidden" onClick={() => setSidebarOpen(false)} />
         ) : null}
         <Sidebar id={SIDEBAR_ID} projectId={projectId} site={site} siteCount={projectOptions.length} open={sidebarOpen} mobile={mobile} />
         <div className="flex min-h-screen min-w-0 flex-1 flex-col md:ml-64">
@@ -3369,7 +3390,7 @@ export function ShellChrome({
 }
 ```
 
-`Dialog` 关闭时把焦点还给 `document.activeElement` 记录的元素——打开面板的按钮就是它，所以 `paletteButtonRef` / `drawerButtonRef` 只用于 `Topbar` 的 ref 转发，不需要在这里手动 focus；若 e2e「焦点回退」红，再在 `onClose` 里显式 `ref.current?.focus()`。
+`Dialog` 会把焦点还给打开时的 `document.activeElement`，但 Next 的 layout-router 在导航后会主动 focus 变更段的 DOM 节点，⌘K 跳转后再开再关时记录的就不是按钮了。所以两个 `onClose` 都显式回焦：`onClose={() => { setPaletteOpen(false); paletteButtonRef.current?.focus(); }}`、`onClose={() => { setDrawerOpen(false); drawerButtonRef.current?.focus(); }}`。
 
 ```tsx
 // apps/web/src/components/workbench/shell/WorkbenchShell.tsx
@@ -3380,6 +3401,7 @@ import { LocaleSwitch } from "@/components/ui";
 import type { ProjectShellProjection } from "@/lib/services/project-shell";
 import { WorkbenchProvider } from "@/lib/workbench/store/WorkbenchProvider";
 import { ShellChrome } from "./ShellChrome.tsx";
+import { SignOutButton } from "./SignOutButton.tsx";
 
 /**
  * Server assembly of the workbench shell (design §4.1). Owns everything that
@@ -3401,12 +3423,7 @@ export async function WorkbenchShell({
   const accountControl = (
     <div className="flex items-center gap-2">
       <LocaleSwitch aria-label={tShell("localeSwitch")} />
-      <form action={signOutAction}>
-        <button type="submit" aria-label={tNav("logout")} title={tNav("logout")}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
-          GG
-        </button>
-      </form>
+      <SignOutButton action={signOutAction} label={tNav("logout")} />
     </div>
   );
   return (
@@ -3434,12 +3451,50 @@ export async function WorkbenchShell({
 
 `project.marketCode` 由 Task 11 加进 `ProjectShellProject`。`LocaleSwitch` 若是 client 组件、且 `@/components/ui` barrel 拉进了 server-only 模块，改为直接 import `@/components/ui/LocaleSwitch`。
 
-- [ ] **Step 8: 类型检查 + 单测**
+- [ ] **Step 8: SignOutButton.tsx（设计 §6.5：登出前清 `gg.workbench.*`）**
+
+```tsx
+// apps/web/src/components/workbench/shell/SignOutButton.tsx
+"use client";
+
+import { clearAllWorkbenchState } from "@/lib/workbench/store/persistence";
+
+/** Server action arrives as a prop (serializable); the storage sweep must run in the browser. */
+export function SignOutButton({
+  action,
+  label,
+}: {
+  readonly action: () => Promise<void>;
+  readonly label: string;
+}) {
+  return (
+    <form
+      action={action}
+      onSubmit={() => {
+        try {
+          clearAllWorkbenchState(window.localStorage);
+        } catch {
+          // Storage unavailable: nothing persisted to clear.
+        }
+      }}
+    >
+      <button type="submit" aria-label={label} title={label}
+        className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
+        GG
+      </button>
+    </form>
+  );
+}
+```
+
+`signOutAction` 的真实签名以 `@/lib/auth/actions` 为准；若它带参数或返回类型不同，按其类型调整 `action` prop。
+
+- [ ] **Step 9: 类型检查 + 单测**
 
 Run: `pnpm --filter @sf/web typecheck && pnpm vitest run --project unit apps/web/src/components/workbench`
 Expected: 仅剩 `marketCode` 不存在于 `ProjectShellProject` 的错误（Task 11 解决）。
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add apps/web/src/components/workbench/shell apps/web/src/lib/workbench/download.ts apps/web/src/app/workbench.css
@@ -3461,10 +3516,10 @@ git commit -m "feat(workbench): 侧栏 / 顶栏 / 命令面板 / 产物筐抽屉
 
 - [ ] **Step 1: `ProjectShellProject.marketCode`**
 
-`project-shell.ts` L19–26 加 `readonly marketCode: string | null;`；L175 `shellProject` 加 `marketCode: site.market_codes[0] ?? null,`；`_e2e-shell-fixture.ts` 的 `currentProject` 加 `marketCode: "US",`。
+`project-shell.ts` L19–26 加 `readonly marketCode: string | null;`；L175 `shellProject` 加 `marketCode: site.market_codes[0] ?? null,`；`_e2e-shell-fixture.ts` 的 `currentProject` 加 `marketCode: "US",`。`apps/web/src/lib/services/__tests__/project-shell.test.ts` 里构造 `ProjectShellProject` 字面量的地方补 `marketCode`，并在「returns accessible project options…」用例里加一条断言：`expect(shell.currentProject.marketCode).toBe(<夹具站点的 market_codes[0]>)`。
 
-Run: `pnpm --filter @sf/web typecheck`
-Expected: Task 10 遗留的 `marketCode` 错误消失。
+Run: `pnpm --filter @sf/web typecheck && pnpm vitest run --project unit apps/web/src/lib/services/__tests__/project-shell.test.ts`
+Expected: Task 10 遗留的 `marketCode` 错误消失；project-shell 单测全绿（含新断言）。
 
 - [ ] **Step 2: 搬 overview 到 legacy**
 
@@ -3660,12 +3715,16 @@ export default async function ProjectLayout({
 }
 ```
 
-然后：删 `_nav.tsx`；`AppShell.tsx` 删 `SidebarProgress` 函数及 `app-shell.module.css` 里的 `.program*` 规则；两份 messages 删 `appShell.programTitle / programDay / programProgress`；根 `layout.tsx` 的 `<html>` 加 `data-theme="light"`（设计 §5 / §11）。
+然后：删 `_nav.tsx`；`AppShell.tsx` 删 `SidebarProgress` 函数、`components/app-shell/index.ts` 的 barrel 里删 `SidebarProgress` 导出、`app-shell.module.css` 里删 `.program*` 规则；两份 messages 删 `appShell.programTitle / programDay / programProgress`；根 `layout.tsx` 的 `<html>` 加 `data-theme="light"`（设计 §5 / §11）。
+
+- [ ] **Step 5b: 复核 `proxy.ts` 与 `_compatibility-route.ts`（设计 §9 PR-1 明列）**
+
+打开 `apps/web/src/proxy.ts`：确认鉴权与 CSP 的 `matcher` / 放行逻辑按前缀（`/api/`、`PUBLIC_PAGES`、`PUBLIC_FILES`）而不是按项目段名枚举——若是枚举，把 15 个新段与 `legacy/overview` 加进去。打开 `apps/web/src/app/p/[projectId]/_compatibility-route.ts`：确认它只做 `plan → execution`、`report → results` 与 `diagnosis` 查询参数翻译，不对 `overview` / `settings` / `diagnosis` 本身做重定向——若有，Task 12 里 `toHaveURL(/diagnosis$/)` 与 `/legacy/overview` 的断言要相应调整。两项结论（含文件行号）写进 PR 描述。
 
 - [ ] **Step 6: 类型、lint、单测、parity**
 
 Run: `pnpm --filter @sf/web typecheck && pnpm --filter @sf/web lint && pnpm vitest run --project unit apps/web packages/i18n`
-Expected: 全绿（`_nav.test.ts` 仍绿——它测的是保留的 `nav-model.ts`）。
+Expected: 全绿。`_nav.test.ts` 仍绿（它测的是保留的 `nav-model.ts`）；`apps/web/src/app/layout.test.ts` 仍绿（它读的是保留的 `AppShell.tsx` 品牌图）；`legacy/overview/page.test.ts` 若按路径断言需改为 legacy 路径。
 
 - [ ] **Step 7: 冒烟：起 dev，肉眼过一遍**
 
@@ -3692,14 +3751,14 @@ git commit -m "feat(web): 项目壳切换为工作台，15 条路由占位，旧
 - [ ] **Step 1: 盘点**
 
 ```bash
-grep -nE 'data-app-shell|Project sections|program|/overview"|/overview`|"Settings"|getByRole\("link", \{ name: "(Overview|Growth Map|Execution|Results)"' e2e/*.spec.ts > /tmp/wb-spec-inventory.txt; wc -l /tmp/wb-spec-inventory.txt
+grep -nE 'data-app-shell|Project sections|program|/overview"|/overview`|"Settings"|getByRole\("link", \{ name: "(Overview|Growth Map|Execution|Results)"' e2e/*.spec.ts 'apps/web/src/app/p/[projectId]/'*.test.ts apps/web/src/app/layout.test.ts apps/web/src/components/app-shell/*.test.ts > /tmp/wb-spec-inventory.txt; wc -l /tmp/wb-spec-inventory.txt
 ```
 
 逐行标处置：`改指向 legacy` / `改选择器` / `删除`。已知处置：
 
 | 文件 | 处置 |
 |---|---|
-| `critical-flows.mock.spec.ts` L137–140 | 不改（新侧栏 brand 有 `aria-label="GenGrowth"` 且带 `data-app-shell-sidebar`） |
+| `critical-flows.mock.spec.ts` L137–140 | 选择器改为 `[data-app-shell-sidebar] [data-wb-brand]`（品牌区不再用 `aria-label`——generic 元素带 aria-label 会被 axe 判 serious） |
 | `critical-flows.mock.spec.ts` L143–197 | 重写：15 项导航 + 语言切换改变导航标签；数据源部分改为 `page.goto(legacy/overview)` 后再点「管理数据连接」 |
 | `critical-flows.mock.spec.ts` L968–969 | 不改（print 隐藏由 `workbench.css` 保证） |
 | `a11y.spec.ts` L262–263 | 不改；axe 若报新壳问题按报告修 |
@@ -3769,7 +3828,11 @@ test("every workbench page renders one data-wb-page-title h1 and its legacy link
 
 test("english chrome carries no chinese and no untranslated key paths", async ({ page }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/audit`);
-  const chrome = await page.locator("[data-app-shell-sidebar], [data-app-shell-topbar]").allInnerTexts();
+  // Workbench-owned chrome only: LocaleSwitch shows "简体中文" by design and the
+  // project switcher echoes fixture names, so both are excluded.
+  const chrome = await page
+    .locator("#wb-sidebar nav, [data-wb-site-card], [data-wb-drawer-button], [data-app-shell-topbar] kbd, h1[data-wb-page-title], [data-wb-legacy-link]")
+    .allInnerTexts();
   const text = chrome.join("\n");
   expect(text).not.toMatch(/[一-鿿]/);
   expect(text).not.toMatch(/workbench\./);
@@ -3873,6 +3936,11 @@ git commit -m "test(e2e): 工作台壳 spec，旧壳相关 spec 改指向 legacy
 
 - [ ] **Step 2: PROGRESS.md** 顶部加一条日期段落，写：PR-1 落地范围、旧页去向、未上生产（集成分支）、下一步 PR-2 / PR-3。
 
+- [ ] **Step 2b: 仓库文档门**
+
+Run: `pnpm verify:docs && pnpm verify:authority && pnpm verify:spec`
+Expected: 全绿（`verify:docs` 核的是 `authority/index.json` 与规格文件，不是 CLAUDE.md 那句话，已确认）。若任一红：先读脚本报的具体断言；只有当它断言的是被本 PR 有意改动的句子时才改脚本期望（同一 commit 内、注明原因），否则回滚文档改动重写。
+
 - [ ] **Step 3: Commit**
 
 ```bash
@@ -3888,6 +3956,7 @@ git commit -m "docs: 客户壳权威改为工作台 IA，记录 PR-1 落地"
 
 ```bash
 pnpm typecheck && pnpm lint && pnpm test && pnpm vitest run --project unit packages/i18n
+pnpm verify:docs && pnpm verify:authority && pnpm verify:spec
 pnpm --filter @sf/web build
 ```
 Expected: 全绿；build 成功（这是唯一能暴露 client 拉到 `node:*` 的检查）。
