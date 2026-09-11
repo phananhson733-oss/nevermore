@@ -4090,7 +4090,7 @@ export function Sidebar({
             <div className="text-sm font-semibold leading-tight text-zinc-100">
               GenGrowth
             </div>
-            <div className="mt-0.5 text-xs text-zinc-500">
+            <div className="mt-0.5 text-xs text-wb-rail-muted">
               {t("shell.tagline")}
             </div>
           </div>
