@@ -111,7 +111,7 @@ Expected: 记下红绿数字（memory 提示 main 上偶有既有红；之后每
 // e2e/legacy-style-parity.mock.spec.ts
 import { readFileSync, writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { E2E_PROJECT_ID, installCriticalFlowApi } from "./mock-api.ts";
+import { E2E_PROJECT_ID, installGrowthVerticalApi } from "./mock-api.ts";
 
 /**
  * Guards the design-doc promise that the workbench reset never reaches legacy
@@ -126,8 +126,11 @@ const PROPS = [
   "background-color", "margin-top", "margin-bottom", "padding-top",
   "padding-left", "border-top-width", "border-top-style", "border-radius",
 ] as const;
-const SCREENS = ["growth-map", "context"] as const;
-const SELECTORS = ["h1", "button", "p", "input, select, textarea", "a"] as const;
+// Both screens are fully served by installGrowthVerticalApi (which installs the
+// critical-flow routes too); an unmocked screen would snapshot a loading/error
+// panel whose element set depends on timing.
+const SCREENS = ["growth-map", "sources"] as const;
+const SELECTORS = ["[data-app-page-title]", "h1", "button", "p", "input, select, textarea", "a"] as const;
 
 async function snapshot(page: Page): Promise<Record<string, Record<string, string>>> {
   return page.evaluate(({ props, selectors }) => {
@@ -148,14 +151,16 @@ test.beforeEach(async ({ page }) => {
   await page.context().addCookies([
     { name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" },
   ]);
-  await installCriticalFlowApi(page);
+  await installGrowthVerticalApi(page);
 });
 
 for (const screen of SCREENS) {
   test(`legacy ${screen} keeps its computed styles`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto(`/p/${E2E_PROJECT_ID}/${screen}`);
-    await expect(page.locator("#main-content h1").first()).toBeVisible();
+    // The page-title element only renders in the loaded state, never in the
+    // loading/error panels, so the snapshot below is of the finished page.
+    await expect(page.locator("#main-content [data-app-page-title]").first()).toBeVisible();
     const current = await snapshot(page);
     if (process.env["LEGACY_STYLE_BASELINE"] === "write") {
       const existing = (() => {
@@ -442,7 +447,7 @@ const plusJakarta = Plus_Jakarta_Sans({
 - [ ] **Step 6: 跑测试与类型检查**
 
 Run: `pnpm vitest run --project unit apps/web/src/app/workbench-css.test.ts && pnpm --filter @sf/web typecheck`
-Expected: 3 passed；typecheck 与 Task 0 基线一致。
+Expected: 4 passed / 5 failed——红的是 `globals.css` 守卫那组，Step 6b 后转绿；typecheck 与 Task 0 基线一致。
 
 - [ ] **Step 6b: globals.css 三条未分层元素规则加守卫**
 
@@ -454,6 +459,8 @@ h2:where(:not(.wb-reset *)),
 h3:where(:not(.wb-reset *)) {
   font-family: var(--sf-font-display);
   letter-spacing: -0.02em;
+  line-height: 1.08;
+  margin: 0;
 }
 
 a:where(:not(.wb-reset *)) {
@@ -467,7 +474,7 @@ a:where(:not(.wb-reset *)) {
 }
 ```
 
-`:where()` 特异度为 0，旧页上这三条规则的特异度与之前完全相同（Task 0 基线因此不动）；`.wb-reset` 只挂在壳与新视图根上（不在 `<main>`），旧页内容没有 `.wb-reset` 祖先。新壳里的 `:focus-visible` 于是回到浏览器默认 outline；在 `workbench.css` 的 `@layer base` 里加一条同样以 `.wb-reset` 开头的规则统一它：
+只改选择器，声明一条不动（`line-height: 1.08; margin: 0;` 都在 Task 0 基线的 `PROPS` 里，漏一条基线就红）。`:where()` 特异度为 0，旧页上这三条规则的特异度与之前完全相同（Task 0 基线因此不动）；`.wb-reset` 只挂在壳与新视图根上（不在 `<main>`），旧页内容没有 `.wb-reset` 祖先。新壳里的 `:focus-visible` 于是回到浏览器默认 outline；在 `workbench.css` 的 `@layer base` 里加一条同样以 `.wb-reset` 开头的规则统一它：
 
 ```css
   .wb-reset :focus-visible {
@@ -2542,6 +2549,7 @@ export function Dialog({
   onClose,
   labelledBy,
   initialFocus,
+  returnFocusTo,
   className,
   children,
 }: {
@@ -2549,6 +2557,8 @@ export function Dialog({
   readonly onClose: () => void;
   readonly labelledBy: string;
   readonly initialFocus?: RefObject<HTMLElement | null>;
+  /** Preferred focus target on close; falls back to whatever was focused on open. */
+  readonly returnFocusTo?: RefObject<HTMLElement | null>;
   readonly className?: string;
   readonly children: ReactNode;
 }) {
@@ -2563,11 +2573,14 @@ export function Dialog({
     const target = initialFocus?.current ?? panelRef.current?.querySelector<HTMLElement>(FOCUSABLE);
     target?.focus();
     return () => {
+      // Order matters: focus() on a node inside an inert subtree is a no-op,
+      // so inert comes off first. Next's layout-router focuses the changed
+      // segment after navigation, so activeElement-on-open is only a fallback.
       root?.removeAttribute("inert");
-      const opener = openerRef.current;
-      if (opener instanceof HTMLElement) opener.focus();
+      const target = returnFocusTo?.current ?? openerRef.current;
+      if (target instanceof HTMLElement) target.focus();
     };
-  }, [open, initialFocus]);
+  }, [open, initialFocus, returnFocusTo]);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
     if (event.key === "Escape") {
@@ -3220,7 +3233,7 @@ export function Topbar({
 
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import type { ProjectShellOption } from "@/lib/services/project-shell";
 import { workbenchHref } from "@/lib/workbench/routes";
 import { cn } from "../ui/cn.ts";
@@ -3242,6 +3255,7 @@ export function CommandPalette({
 }: {
   readonly open: boolean;
   readonly onClose: () => void;
+  readonly returnFocusTo: RefObject<HTMLElement | null>;
   readonly projectId: string;
   readonly projectOptions: readonly ProjectShellOption[];
 }) {
@@ -3277,7 +3291,7 @@ export function CommandPalette({
   }
 
   return (
-    <Dialog open={open} onClose={onClose} labelledBy="wb-palette-title" initialFocus={inputRef}
+    <Dialog open={open} onClose={onClose} labelledBy="wb-palette-title" initialFocus={inputRef} returnFocusTo={returnFocusTo}
       className="left-1/2 top-24 w-[min(560px,92vw)] -translate-x-1/2 overflow-hidden rounded-xl border border-slate-200">
       <h2 id="wb-palette-title" className="sr-only">{t("shell.palette.title")}</h2>
       <input
@@ -3321,7 +3335,7 @@ export function CommandPalette({
 
 import { X } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useRef, useState } from "react";
+import { useRef, useState, type RefObject } from "react";
 import { downloadText } from "@/lib/workbench/download";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
 import type { ArtifactType } from "@/lib/workbench/types";
@@ -3332,7 +3346,15 @@ const MIME: Readonly<Record<ArtifactType, string>> = {
   json: "application/json;charset=utf-8", prompt: "text/plain;charset=utf-8",
 };
 
-export function ArtifactDrawer({ open, onClose }: { readonly open: boolean; readonly onClose: () => void }) {
+export function ArtifactDrawer({
+  open,
+  onClose,
+  returnFocusTo,
+}: {
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly returnFocusTo: RefObject<HTMLElement | null>;
+}) {
   const t = useTranslations("workbench.shell.drawer");
   const { state, dispatch } = useWorkbench();
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -3348,7 +3370,7 @@ export function ArtifactDrawer({ open, onClose }: { readonly open: boolean; read
   }
 
   return (
-    <Dialog open={open} onClose={onClose} labelledBy="wb-drawer-title" initialFocus={closeRef}
+    <Dialog open={open} onClose={onClose} labelledBy="wb-drawer-title" initialFocus={closeRef} returnFocusTo={returnFocusTo}
       className="right-0 top-0 flex h-full w-[min(480px,100vw)] flex-col border-l border-slate-200">
       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
         <h2 id="wb-drawer-title" className="text-sm font-semibold">{t("title")} · {state.artifacts.length}</h2>
@@ -3440,7 +3462,7 @@ export function ShellChrome({
       {/* No font/color here: they inherit into <main> and would change legacy pages (Task 0 baseline). */}
       <div id="wb-app" data-app-shell="" className="flex min-h-screen bg-wb-paper">
         {sidebarOpen ? (
-          <button type="button" aria-label={t("closeMenu")} tabIndex={-1} className="fixed inset-0 z-20 bg-slate-900/50 md:hidden" onClick={() => setSidebarOpen(false)} />
+          <button type="button" aria-label={t("closeMenu")} tabIndex={-1} className="fixed inset-0 z-20 border-0 bg-slate-900/50 md:hidden" onClick={() => setSidebarOpen(false)} />
         ) : null}
         <Sidebar id={SIDEBAR_ID} projectId={projectId} site={site} siteCount={projectOptions.length} open={sidebarOpen} mobile={mobile} />
         <div className="flex min-h-screen min-w-0 flex-1 flex-col md:ml-64">
@@ -3458,14 +3480,14 @@ export function ShellChrome({
           <main id="main-content" className="flex-1">{children}</main>
         </div>
       </div>
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} projectId={projectId} projectOptions={projectOptions} />
-      <ArtifactDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <CommandPalette returnFocusTo={paletteButtonRef} open={paletteOpen} onClose={() => setPaletteOpen(false)} projectId={projectId} projectOptions={projectOptions} />
+      <ArtifactDrawer returnFocusTo={drawerButtonRef} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </>
   );
 }
 ```
 
-`Dialog` 会把焦点还给打开时的 `document.activeElement`，但 Next 的 layout-router 在导航后会主动 focus 变更段的 DOM 节点，⌘K 跳转后再开再关时记录的就不是按钮了。所以两个 `onClose` 都显式回焦：`onClose={() => { setPaletteOpen(false); paletteButtonRef.current?.focus(); }}`、`onClose={() => { setDrawerOpen(false); drawerButtonRef.current?.focus(); }}`。
+焦点回退只能由 `Dialog` 的 effect cleanup 做：`onClose` 里同步调 `ref.current?.focus()` 时 `#wb-app` 还带着 `inert`（cleanup 要到 commit 才摘掉），对 inert 子树 focus 是 no-op。而 Next 的 layout-router 在导航后会主动 focus 变更段的 DOM 节点，⌘K 跳转后再开再关时 `document.activeElement` 记录的就不是按钮了。所以 `ShellChrome` 把两个按钮 ref 作为 `returnFocusTo` 传给 `CommandPalette` / `ArtifactDrawer`（它们原样转给 `Dialog`），`onClose` 保持纯 `setXOpen(false)`。
 
 ```tsx
 // apps/web/src/components/workbench/shell/WorkbenchShell.tsx
@@ -3808,7 +3830,7 @@ Expected: 全绿。`_nav.test.ts` 仍绿（它测的是保留的 `nav-model.ts`�
 - [ ] **Step 7: 冒烟：起 dev，肉眼过一遍**
 
 Run: `SF_E2E_MOCK_API=true pnpm --filter @sf/web dev` 后打开 `http://127.0.0.1:3000/p/00000000-0000-4000-8000-000000000042/overview`
-Expected: 深色侧栏 15 项、站点卡 `example.test / US / — / —`、顶栏项目切换 + ⌘K + 示例数据 + 产物筐 0；点「技术审计」到占位页并有「旧版页面 · diagnosis →」；`/p/…/growth-map` 旧页在新壳内正常；⌘K 打开面板、Esc 关闭、焦点回到按钮。
+Expected: 深色侧栏 15 项、站点卡 `example.test / US / — / —`、顶栏项目切换 + ⌘K + 示例数据 + 产物筐 0；点「技术审计」到占位页并有「旧版页面 · 增长地图 →」（`LEGACY_LINKS.audit` 指 `growth-map`）；`/p/…/growth-map` 旧页在新壳内正常；⌘K 打开面板、Esc 关闭、焦点回到按钮；专门看一眼顶栏里的 `ProjectSwitcher` / `LocaleSwitch`——它们的 CSS Module 只覆盖自己声明过的属性，原生 `<select>` 没显式设 border 的话会被 `.wb-reset *` 的 `border-width: 0` 抹掉边框，需要时在其模块里补 `border`。
 
 - [ ] **Step 8: Commit**
 
@@ -4006,7 +4028,7 @@ Expected: 全绿。`studio-workspace` 与 `product-profile` 是 `useProjectShell
 
 - [ ] **Step 5: 全量 mock e2e（后台跑，直接落文件）**
 
-Run: `pnpm test:e2e:mock > /tmp/wb-e2e-full.txt 2>&1; tail -20 /tmp/wb-e2e-full.txt`
+Run: `pnpm test:e2e:mock > "${SCRATCHPAD:-$TMPDIR}/wb-e2e-full.txt" 2>&1; tail -20 "${SCRATCHPAD:-$TMPDIR}/wb-e2e-full.txt"`
 Expected: 与 Task 0 记录的既有红一致，无新红。
 
 - [ ] **Step 6: Commit**
@@ -4061,12 +4083,14 @@ Expected: 全绿；build 成功（这是唯一能暴露 client 拉到 `node:*` �
 
 - [ ] **Step 2: 覆盖率门**
 
+先在 `feat/workbench-ui-port` 上跑一次同样的命令记下基线（`vitest.config.ts` 注明阈值按 unit+integration 合并统计，只跑 unit 可能本来就不到 80%），再在本分支跑：
+
 Run: `pnpm vitest run --coverage --project unit 2>&1 | tail -15`
-Expected: 四项阈值 ≥ 80%。若因 `components/workbench/**` 无单测而低于阈值：**不改阈值、不加 exclude**，为 `components/workbench/**` 加 jsdom 项目与组件测试（设计 §8），作为本 PR 的追加任务。
+Expected: 四项数值不低于集成分支基线；若基线本身已 ≥ 80% 则四项阈值 ≥ 80%。若因 `components/workbench/**` 无单测而低于阈值：**不改阈值、不加 exclude**，为 `components/workbench/**` 加 jsdom 项目与组件测试（设计 §8），作为本 PR 的追加任务。
 
 - [ ] **Step 3: 生产构建 CSP 冒烟**
 
-`pnpm --filter @sf/web build` 后 `cd apps/web && PORT=3300 pnpm start`（用 Task 0 mock 配置里的占位环境变量），Playwright 打开 `http://localhost:3300/login`，断言 console 无 `Content Security Policy` 字样（登录页已加载 `workbench.css`）。壳本身在生产模式需要真实登录，留到 PR-3b 合 main 前用真实账号做一次。
+`pnpm --filter @sf/web build` 后 `pnpm --filter @sf/web exec next start --port 3300`（`start` 脚本写死了 `--port 3000`，环境变量压不过 CLI 参数；用 Task 0 mock 配置里的占位环境变量），Playwright 打开 `http://localhost:3300/login`，断言 console 无 `Content Security Policy` 字样（登录页已加载 `workbench.css`）。壳本身在生产模式需要真实登录，留到 PR-3b 合 main 前用真实账号做一次。
 
 - [ ] **Step 4: 自审 + 跨模型评审**
 
