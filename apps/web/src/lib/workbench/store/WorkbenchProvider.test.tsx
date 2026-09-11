@@ -255,4 +255,36 @@ describe("WorkbenchProvider", () => {
     expect(view.probe().state.visPartial).toBe(false);
     view.unmount();
   });
+
+  it("resets and goes volatile when another tab clears the whole store (key === null)", () => {
+    persist(fromDisk);
+    const view = mount();
+    expect(view.probe().state.seeds).toBe("from disk");
+
+    act(() => {
+      window.localStorage.removeItem(storageKey(PID));
+      window.dispatchEvent(new StorageEvent("storage", { key: null, storageArea: window.localStorage }));
+    });
+
+    expect(view.probe().storageMode).toBe("volatile");
+    expect(view.probe().state).toEqual(initialProjectState(SEED));
+    view.unmount();
+  });
+
+  it("goes volatile without losing state when the cross-tab re-read finds storage unavailable", () => {
+    persist(fromDisk);
+    const view = mount();
+    expect(view.probe().state.seeds).toBe("from disk");
+
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("denied");
+    });
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: storageKey(PID), storageArea: window.localStorage }));
+    });
+
+    expect(view.probe().storageMode).toBe("volatile");
+    expect(view.probe().state.seeds).toBe("from disk");
+    view.unmount();
+  });
 });

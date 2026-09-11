@@ -164,6 +164,25 @@ describe("saved keywords", () => {
     });
     expect(s.saved).toEqual([{ q: "a", addedAt: "t0", source: "manual" }]);
   });
+
+  it("resolves a word repeated in `previous` to its first copy, and the merged result has no duplicate q", () => {
+    let s = reduce(initialProjectState(seed), {
+      type: "loadPersisted",
+      state: {
+        ...initialProjectState(seed),
+        saved: [
+          { q: "a", addedAt: "t0", source: "manual" },
+          { q: "a", addedAt: "t1", source: "gap" },
+        ],
+      },
+    });
+    s = reduce(s, {
+      type: "setSaved",
+      saved: [{ q: "a", addedAt: "t9", source: "matrix" }],
+    });
+    expect(s.saved).toEqual([{ q: "a", addedAt: "t0", source: "manual" }]);
+    expect(s.saved.filter((k) => k.q === "a")).toHaveLength(1);
+  });
 });
 
 describe("artifacts", () => {
