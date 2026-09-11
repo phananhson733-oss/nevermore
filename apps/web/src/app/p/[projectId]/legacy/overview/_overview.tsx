@@ -47,7 +47,7 @@ import {
   useGrowthMapUrls,
 } from "@/lib/api/hooks-growth-map";
 import { useProjectSources, type SourceState } from "@/lib/api/hooks-sources";
-import { ProblemState } from "../_problem-display";
+import { ProblemState } from "../../_problem-display";
 import {
   buildConfirmedProfileSummary,
   buildOverviewSourceCards,

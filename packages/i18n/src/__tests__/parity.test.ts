@@ -372,8 +372,6 @@ describe("i18n message key parity", () => {
     expect(zhCN.appShell.breadcrumb).toBe("面包屑导航");
     expect(zhCN.appShell).toMatchObject({
       switchProject: "切换项目",
-      programTitle: "90 天计划",
-      programProgress: "90 天计划进度",
       help: "帮助",
       settings: "设置",
       account: "账户",

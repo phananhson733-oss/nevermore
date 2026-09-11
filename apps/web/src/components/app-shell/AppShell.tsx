@@ -281,38 +281,3 @@ export function LockedProjectNavigation({
     </nav>
   );
 }
-
-export function SidebarProgress({
-  title,
-  stage,
-  summary,
-  progressLabel,
-  value,
-  max,
-}: {
-  readonly title: string;
-  readonly stage: string;
-  readonly summary: string;
-  readonly progressLabel: string;
-  readonly value: number;
-  readonly max: number;
-}) {
-  return (
-    <section className={styles.program} aria-label={title}>
-      <div className={styles.programHeader}>
-        <span className={styles.programTitle}>{title}</span>
-        <span className={styles.programStage}>{stage}</span>
-      </div>
-      <strong className={styles.programDay}>{summary}</strong>
-      <progress
-        className={styles.programProgress}
-        aria-label={progressLabel}
-        aria-valuemin={1}
-        aria-valuenow={value}
-        aria-valuemax={max}
-        max={max}
-        value={value}
-      />
-    </section>
-  );
-}

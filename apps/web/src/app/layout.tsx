@@ -61,6 +61,7 @@ export default async function RootLayout({
   return (
     <html
       lang={locale}
+      data-theme="light"
       className={`${fraunces.variable} ${manrope.variable} ${plusJakarta.variable}`}
     >
       <body>
