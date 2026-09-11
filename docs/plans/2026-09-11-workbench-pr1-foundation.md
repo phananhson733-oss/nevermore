@@ -407,8 +407,13 @@ Expected: lockfile 更新，无 peer 冲突。
 
 ```css
 /* @input  — tailwindcss theme + utilities（刻意不引 preflight）、tw-animate-css
- * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表规则
- * @pos    — app/layout.tsx 在 globals.css 之后引入；旧页面在 <main> 内不带 .wb-reset，不受影响
+ * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表规则、
+ *           旧页专用的 #main-content 内边距（components 层，只在 <main> 没有 .wb-reset
+ *           直接子节点时生效，等价于旧壳 app-shell.module.css 的 .main）、
+ *           打印时去掉内容列的侧栏留白（在 utilities 层、且排在 Tailwind utilities 之后，
+ *           否则同特异度下赢不了 md:ml-64）
+ * @pos    — app/layout.tsx 在 globals.css 之后引入；旧页面在 <main> 内不带 .wb-reset，
+ *           reset 不波及它们，而旧壳的内容区留白由上面那条 :has() 规则接管
  * 一旦本文件被更新，务必更新开头注释
  */
 @layer theme, base, components, utilities;
@@ -447,6 +452,31 @@ Expected: lockfile 更新，无 peer 冲突。
   --color-wb-seo-dark: #155330;
   --color-wb-geo: #8b5cf6;
   --color-wb-emerald: #10b981;
+}
+
+/* 打印规则 `[data-wb-content]{margin-left:0}` 在 @layer utilities（见 Task 10 落地备注），此处略。 */
+
+/* 旧页在 <main> 里曾吃到旧壳 `.main` 的留白（app-shell.module.css，现只框 /new-project 的
+   AppShell）；新视图是自带内边距的 .wb-reset 根，所以只在 <main> 没有这种直接子节点时生效。
+   断点照旧规则（960px / 560px），不是 Tailwind 的 md。 */
+@layer components {
+  #main-content:not(:has(> .wb-reset)) {
+    width: 100%;
+    max-width: 1480px;
+    min-width: 0;
+    margin-inline: auto;
+    padding: 40px clamp(24px, 3.3vw, 56px) 30px;
+  }
+  @media (width <= 960px) {
+    #main-content:not(:has(> .wb-reset)) {
+      padding: 28px 20px 36px;
+    }
+  }
+  @media (width <= 560px) {
+    #main-content:not(:has(> .wb-reset)) {
+      padding: 24px 14px 32px;
+    }
+  }
 }
 
 @layer base {
@@ -3775,6 +3805,7 @@ git commit -m "feat(workbench): Dialog / PageHead / DemoChip / LegacyLinks / 占
 - `lib/workbench/download.ts`：锚点要挂进 `<body>`（Firefox 只激活已连接的锚点），加 `rel="noopener"`。`click()` 包进 `try { … } finally { a.remove(); setTimeout(revoke, …) }`（5508351b）：抛出的 `click()` 不能把锚点漏在文档里，或让 blob 漏在 URL store 里，`finally` 两头都管。revoke 的延迟从 `setTimeout(…, 0)` 改成 `1000`：WebKit 在当前任务之后才读 object URL，同一 tick 撤销会让它读到一个已经不可解析的 URL。新增 `download.test.ts`（jsdom 4 条）钉住这条时序。
 - `app-shell.module.css` 给 `ProjectSwitcher` 加 `:global(.wb-reset) .projectSwitcher …` 作用域浅色覆盖：它原本是为深色 rail 设计的，白字白底；`/new-project` 的深色侧栏仍用基础规则。项目名对比度由实测 1.03:1 提到 17.83:1。
 - `app/workbench.css` 新增打印规则 `[data-wb-content]{margin-left:0}`，`ShellChrome` 的内容列因此带 `data-wb-content`。落在 `@layer utilities`、且排在 Tailwind utilities 导入之后（5508351b 从 `@layer components` 挪过来）：`[data-wb-content]` 和 `.md\:ml-64` 同特异度，`@layer components` 在层序上恒输给 utilities 层，打印覆盖在 Letter 宽度（816px ≥ 48rem）下从未生效过；`workbench-css.test.ts` 新增用例钉住层与源码顺序。
+- **旧页丢了旧壳的内容区留白**（PR 前整分支复审）：旧 `AppShell` 的 `<main class={styles.main}>` 带 `max-width: 1480px; margin-inline: auto; padding: 40px clamp(24px, 3.3vw, 56px) 30px`（≤960px 时 `28px 20px 36px`，≤560px 时 `24px 14px 32px`），`ShellChrome` 的 `<main id="main-content" className="flex-1">` 什么都没给，`growth-map` / `sources` / `execution` / `results` / `context` / `legacy/overview` 自己不带水平内边距，贴着 rail 和视口边缘渲染。修法是 `workbench.css` 在 `@layer components` 加 `#main-content:not(:has(> .wb-reset)) { … }` 三条（同样三档断点）：新视图（`PlaceholderView` / `SettingsView`）的根是 `.wb-reset` 且自带 `p-6 md:p-10 max-w-5xl mx-auto`，是 `<main>` 的直接子节点，所以不吃这条；旧页根都是 CSS Modules 的 `div`，没有任何旧页在自己根上挂 `.wb-reset`（`git grep wb-reset` 只命中 Sidebar / Topbar / Dialog / 两个新视图）。`:has()` 在 postcss 目标（chrome/edge/firefox 111、safari 16.4）全部可用。`app-shell.module.css` 的 `.main` 没删——`/new-project` 仍用旧 `AppShell`。钉法：`workbench-css.test.ts` 加一条断言该规则在 `@layer components` 内且带 `max-width: 1480px`（且文件里不得出现无 `:has()` 守卫的裸 `#main-content {`）；`e2e/legacy-style-parity.mock.spec.ts` 加一条**不属于基线采样**的用例，1280×800 下 `growth-map` 的 `#main-content` `padding-left ≥ 24px`（实测 42.24px = 3.3vw）且 `max-width === "1480px"`，`overview`（新占位页）为 `0px`。基线 JSON 不动——它采的是 `<main>` **里面**元素的属性，`<main>` 自己的 padding 不在样本里，2 条基线用例照旧全绿。
 - §4.1 的「函数 ≤ 50 行」对 JSX 渲染体豁免（Sidebar / CommandPalette / ArtifactDrawer 的 return 块）；拆分只会把一棵树切成没有独立语义的碎片。
 
 - [x] **Step 1: 导航模型 + 测试**

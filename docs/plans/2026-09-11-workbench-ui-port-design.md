@@ -269,7 +269,7 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 
 ## 11. 风险
 
-- 旧页面进入新壳后内容区宽度 / 内边距与旧 `AppShell` 不同，观感有轻微变化；可接受，reset 是否越界由计算样式基线把关。
+- 旧页面进入新壳后内容区宽度 / 内边距与旧 `AppShell` 不同，观感有轻微变化；可接受，reset 是否越界由计算样式基线把关。（PR-1 落地更正 2026-09-11：旧壳 `.main` 的留白——`max-width: 1480px` + `padding: 40px clamp(24px, 3.3vw, 56px) 30px` 及两档断点——由 `workbench.css` `@layer components` 的 `#main-content:not(:has(> .wb-reset))` 规则原样保留，只对没有 `.wb-reset` 直接子节点的 `<main>` 生效；新视图根自带 `p-6 md:p-10 max-w-5xl`，不受影响。`legacy-style-parity.mock.spec.ts` 另有一条用例钉住两边的 `padding-left`。）
 - localStorage 只在本浏览器；换设备 mock 结果不同步；隐私模式下退化为 volatile。
 - `fix/i18n-parity-*` 等在建分支同时改 messages JSON；`workbench` 命名空间追加在文件末尾，合并前 rebase。
 - `.wb-reset` 若写宽会波及旧页——计算样式基线把关。

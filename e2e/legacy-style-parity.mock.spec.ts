@@ -95,3 +95,33 @@ for (const screen of SCREENS) {
     expect(current).toEqual(entry);
   });
 }
+
+// Not part of the baseline sampling above (which reads elements *inside* <main>):
+// the old AppShell's `.main` gave every project page `max-width: 1480px` and a
+// `clamp(24px, 3.3vw, 56px)` gutter; ShellChrome's <main> is bare `flex-1`, and
+// workbench.css restores the gutter only when <main> has no `.wb-reset` direct
+// child. At 1280px the clamp resolves to 42.24px; a new placeholder view must stay
+// at 0 because it carries its own `p-6 md:p-10 max-w-5xl` root.
+test("legacy pages keep the old .main gutter and new views do not", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const mainBox = () =>
+    page.evaluate(() => {
+      const main = document.querySelector("#main-content");
+      if (!main) return null;
+      const cs = getComputedStyle(main);
+      return { paddingLeft: cs.paddingLeft, maxWidth: cs.maxWidth };
+    });
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
+  await expect(page.locator("#main-content [data-app-page-title]").first()).toBeVisible();
+  const legacy = await mainBox();
+  expect(legacy, "growth-map: #main-content missing").not.toBeNull();
+  expect(Number.parseFloat(legacy?.paddingLeft ?? "0")).toBeGreaterThanOrEqual(24);
+  expect(legacy?.maxWidth).toBe("1480px");
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
+  await expect(page.locator("#main-content h1[data-wb-page-title]")).toBeVisible();
+  const fresh = await mainBox();
+  expect(fresh, "overview: #main-content missing").not.toBeNull();
+  expect(fresh?.paddingLeft).toBe("0px");
+});

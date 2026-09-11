@@ -1,8 +1,11 @@
 /* @input  — tailwindcss theme + utilities（刻意不引 preflight）、tw-animate-css
  * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表规则、
+ *           旧页专用的 #main-content 内边距（components 层，只在 <main> 没有 .wb-reset
+ *           直接子节点时生效，等价于旧壳 app-shell.module.css 的 .main）、
  *           打印时去掉内容列的侧栏留白（在 utilities 层、且排在 Tailwind utilities 之后，
  *           否则同特异度下赢不了 md:ml-64）
- * @pos    — app/layout.tsx 在 globals.css 之后引入；旧页面在 <main> 内不带 .wb-reset，不受影响
+ * @pos    — app/layout.tsx 在 globals.css 之后引入；旧页面在 <main> 内不带 .wb-reset，
+ *           reset 不波及它们，而旧壳的内容区留白由上面那条 :has() 规则接管
  * 一旦本文件被更新，务必更新开头注释
  */
 @layer theme, base, components, utilities;
@@ -55,6 +58,33 @@
        matching the first time the shell gains a wrapper. */
     [data-wb-content] {
       margin-left: 0;
+    }
+  }
+}
+
+/* Legacy pages rendered inside <main> used to get the old shell's `.main` gutter
+   (app-shell.module.css `.main`, which now only frames /new-project's AppShell —
+   project pages moved to ShellChrome, whose <main> carries just `flex-1`). New
+   views are `.wb-reset` roots with their own `p-6 md:p-10 max-w-5xl mx-auto`, so
+   the gutter applies only when no such root is a direct child. `:has()` is fine
+   for every browser in postcss.config.mjs (chrome/edge/firefox 111, safari 16.4).
+   Breakpoints mirror the old rule (960px / 560px), not Tailwind's `md`. */
+@layer components {
+  #main-content:not(:has(> .wb-reset)) {
+    width: 100%;
+    max-width: 1480px;
+    min-width: 0;
+    margin-inline: auto;
+    padding: 40px clamp(24px, 3.3vw, 56px) 30px;
+  }
+  @media (width <= 960px) {
+    #main-content:not(:has(> .wb-reset)) {
+      padding: 28px 20px 36px;
+    }
+  }
+  @media (width <= 560px) {
+    #main-content:not(:has(> .wb-reset)) {
+      padding: 24px 14px 32px;
     }
   }
 }

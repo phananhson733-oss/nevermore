@@ -85,6 +85,24 @@ describe("workbench.css", () => {
   it("keeps pseudo-elements outside :where() so the rules actually match", () => {
     expect(css).not.toMatch(/:where\([^)]*::/);
   });
+
+  it("gives legacy pages the old .main gutter, keyed on <main> having no .wb-reset child", () => {
+    // ShellChrome's <main> is bare `flex-1`; the old AppShell's `.main` gave every
+    // project page `max-width: 1480px` + a clamp() gutter. New views are `.wb-reset`
+    // roots with their own padding, so the rule must exclude them via `:has()` and
+    // must live in `@layer components` (an unlayered rule would beat every utility).
+    const components = atRuleBlock(css, /@layer components\s*\{/);
+    expect(components.length).toBeGreaterThan(0);
+    const selector = "#main-content:not(:has(> .wb-reset))";
+    const rule = components.match(
+      new RegExp(`${escapeRegExp(selector)}\\s*\\{([^}]*)\\}`),
+    );
+    expect(rule, `${selector} rule inside @layer components`).not.toBeNull();
+    expect(rule?.[1]).toMatch(/max-width:\s*1480px/);
+    expect(rule?.[1]).toMatch(/padding:\s*40px clamp\(24px, 3\.3vw, 56px\) 30px/);
+    // The rule must never be written without the `:has()` guard.
+    expect(css).not.toMatch(/^\s*#main-content\s*\{/m);
+  });
 });
 
 describe("globals.css keeps its unlayered element rules out of the workbench chrome", () => {
