@@ -79,8 +79,9 @@ pnpm vitest run --project unit <path>
 pnpm --filter @sf/web typecheck && pnpm --filter @sf/web lint
 # i18n parity
 pnpm vitest run --project unit packages/i18n
-# mock e2e（自起 dev server，端口 3200）
-pnpm test:e2e:mock -- e2e/<name>.mock.spec.ts
+# mock e2e（自起 dev server，端口 3200）。不要写 `--`：pnpm 10 会把它原样转给 playwright，
+# 文件过滤随之失效，整套 227 个用例跑 10 分钟（Task 0 实测）。
+pnpm test:e2e:mock e2e/<name>.mock.spec.ts
 # 构建（唯一能暴露 client 拉到 node 模块的检查）
 pnpm --filter @sf/web build
 ```
@@ -118,7 +119,7 @@ import { E2E_PROJECT_ID, installGrowthVerticalApi } from "./mock-api.ts";
  * pages. Width-dependent properties are excluded on purpose: the new shell
  * legitimately changes the content column. Regenerate the baseline ONLY from a
  * commit before the workbench shell landed:
- *   LEGACY_STYLE_BASELINE=write pnpm test:e2e:mock -- e2e/legacy-style-parity.mock.spec.ts
+ *   LEGACY_STYLE_BASELINE=write pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts
  */
 const BASELINE = new URL("./legacy-style-parity.baseline.json", import.meta.url);
 const PROPS = [
@@ -180,12 +181,12 @@ for (const screen of SCREENS) {
 
 - [ ] **Step 4: 在改动前生成基线**
 
-Run: `LEGACY_STYLE_BASELINE=write pnpm test:e2e:mock -- e2e/legacy-style-parity.mock.spec.ts`
+Run: `LEGACY_STYLE_BASELINE=write pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts`
 Expected: 2 passed；`e2e/legacy-style-parity.baseline.json` 出现，含 `growth-map` 与 `sources` 两个键（设计稿 §5 写的是 `context`；`context` 页的读接口不在 `installGrowthVerticalApi` 的路由表里，快照会随时序漂，改用被完整服务的 `sources`——设计稿已同步更正），每键 4–6 个选择器。跑两遍确认第二遍与第一遍逐属性相等再提交。
 
 - [ ] **Step 5: 不带写标志再跑一次确认自洽**
 
-Run: `pnpm test:e2e:mock -- e2e/legacy-style-parity.mock.spec.ts`
+Run: `pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts`
 Expected: 2 passed。
 
 - [ ] **Step 6: Commit**
@@ -490,7 +491,7 @@ Expected: 全绿（含 `globals.css` 守卫与 `postcss.config.mjs` 顺序两组
 
 - [ ] **Step 7: 旧页样式基线仍绿**
 
-Run: `pnpm test:e2e:mock -- e2e/legacy-style-parity.mock.spec.ts`
+Run: `pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts`
 Expected: 2 passed。若红：先看差异属性，通常是 `border-style` 这类 `.wb-reset *` 漏出——检查 `layout.tsx` 没有把 `wb-reset` 放到 `<body>`。这条基线在 Chromium 上比计算样式，看不到厂商前缀的差异；前缀一致性靠 Step 3 复刻 Next 默认链保证，不靠这条。
 
 - [ ] **Step 8: Commit**
@@ -3834,7 +3835,7 @@ Expected: 全绿。`_nav.test.ts` 仍绿（它测的是保留的 `nav-model.ts`�
 裸 `SF_E2E_MOCK_API=true` 起不到壳：`shouldUseE2eProjectShell` 还要求 `APP_ORIGIN` 是 loopback，未登录访问 `/p/**` 要 `SF_DEV_AUTH=true`。镜像 `playwright.mock.config.ts` 的 `webServer.env`（DATABASE_URL 用它那个永不连通的 tripwire 值、SUPABASE_* / 各 bucket 用 `e2e-local-only` 占位）：
 
 Run: `APP_ORIGIN=http://127.0.0.1:3000 SF_DEV_AUTH=true SF_E2E_MOCK_API=true DATABASE_URL='postgresql://e2e:e2e@127.0.0.1:1/e2e_never_connect' SUPABASE_URL=http://127.0.0.1:1 SUPABASE_ANON_KEY=e2e-local-only SUPABASE_SERVICE_ROLE_KEY=e2e-local-only CREDENTIAL_ENCRYPTION_KEY=$(head -c 32 /dev/zero | base64) GOOGLE_OAUTH_CLIENT_ID=e2e-local-only GOOGLE_OAUTH_CLIENT_SECRET=e2e-local-only DATAFORSEO_ENABLED=false RAW_IMPORT_BUCKET=e2e-local-only EXPORT_BUCKET=e2e-local-only SF_BLOB_BACKEND=local SF_BLOB_DIR="${SCRATCHPAD:-$TMPDIR}/wb-blobs" pnpm --filter @sf/web dev --webpack` 后打开 `http://127.0.0.1:3000/p/00000000-0000-4000-8000-000000000042/overview`
-Expected: 深色侧栏 15 项、站点卡 `example.test / US / — / —`、顶栏项目切换 + ⌘K + 示例数据 + 产物筐 0；点「技术审计」到占位页并有「旧版页面 · 增长地图 →」（`LEGACY_LINKS.audit` 指 `growth-map`）；旧页在新壳内的样子不在这里看——裸 dev 下 `/api/mvp/**` 没有 Playwright 的 mock 路由，旧页会拿到问题态；用 `pnpm test:e2e:mock -- --headed e2e/legacy-style-parity.mock.spec.ts` 肉眼看 growth-map / sources；⌘K 打开面板、Esc 关闭、焦点回到按钮；专门看一眼顶栏里的 `ProjectSwitcher` / `LocaleSwitch`——它们的 CSS Module 只覆盖自己声明过的属性，原生 `<select>` 没显式设 border 的话会被 `.wb-reset *` 的 `border-width: 0` 抹掉边框，需要时在其模块里补 `border`。
+Expected: 深色侧栏 15 项、站点卡 `example.test / US / — / —`、顶栏项目切换 + ⌘K + 示例数据 + 产物筐 0；点「技术审计」到占位页并有「旧版页面 · 增长地图 →」（`LEGACY_LINKS.audit` 指 `growth-map`）；旧页在新壳内的样子不在这里看——裸 dev 下 `/api/mvp/**` 没有 Playwright 的 mock 路由，旧页会拿到问题态；用 `pnpm test:e2e:mock --headed e2e/legacy-style-parity.mock.spec.ts` 肉眼看 growth-map / sources；⌘K 打开面板、Esc 关闭、焦点回到按钮；专门看一眼顶栏里的 `ProjectSwitcher` / `LocaleSwitch`——它们的 CSS Module 只覆盖自己声明过的属性，原生 `<select>` 没显式设 border 的话会被 `.wb-reset *` 的 `border-width: 0` 抹掉边框，需要时在其模块里补 `border`。
 
 - [ ] **Step 8: Commit**
 
@@ -4027,7 +4028,7 @@ test("deleting the project clears its workbench storage key", async ({ page }) =
 
 - [ ] **Step 4: 跑受影响 spec + 新 spec**
 
-Run: `pnpm test:e2e:mock -- e2e/workbench-shell.mock.spec.ts e2e/critical-flows.mock.spec.ts e2e/mobile-shell.mock.spec.ts e2e/overview-read-model.mock.spec.ts e2e/frontend-error-states.mock.spec.ts e2e/legacy-style-parity.mock.spec.ts e2e/studio-workspace.mock.spec.ts e2e/product-profile.mock.spec.ts`
+Run: `pnpm test:e2e:mock e2e/workbench-shell.mock.spec.ts e2e/critical-flows.mock.spec.ts e2e/mobile-shell.mock.spec.ts e2e/overview-read-model.mock.spec.ts e2e/frontend-error-states.mock.spec.ts e2e/legacy-style-parity.mock.spec.ts e2e/studio-workspace.mock.spec.ts e2e/product-profile.mock.spec.ts`
 Expected: 全绿。`studio-workspace` 与 `product-profile` 是 `useProjectShellEffects` 的回归门，红了先怀疑 hook 抄漏，不要改 spec。
 
 - [ ] **Step 5: 全量 mock e2e（后台跑，直接落文件）**
