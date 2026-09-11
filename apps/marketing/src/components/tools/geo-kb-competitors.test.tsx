@@ -106,6 +106,26 @@ it("offers lookup and confirm on an unconfirmed rival, rename and withdraw on a 
   expect(row("").querySelector("[data-competitor-source]")?.textContent).toBe(copy("en").noDomain);
 });
 
+/**
+ * A homepage's title is often the name plus a tagline. Confirming that and
+ * renaming afterwards is two writes and two released records; editing the
+ * proposal first is one. So an unconfirmed row with a name to show offers the
+ * field too, prefilled with what is shown.
+ */
+it("lets the owner edit a proposed name before confirming it, in one write", async () => {
+  reply = () => Response.json({ data: { kbId: V3_KB_ID, identity: { ...IDENTITY, brandName: "Astro - The Best Charts" } } });
+  write.mockResolvedValue({ ok: true, saved: saved([{ domain: "astro.example", brandName: "Astro", confirmed: true, aliases: ["Astro Charts"] }, ROWS[1]!, ROWS[2]!]) });
+  await render("zh");
+  await click(action(row("astro.example"), "lookup"));
+  expect(actions(row("astro.example"))).toEqual(["lookup", "confirm", "rename"]);
+  await click(action(row("astro.example"), "rename"));
+  const input = row("astro.example").querySelector<HTMLInputElement>("input[data-competitor-name-input]")!;
+  expect(input.value).toBe("Astro - The Best Charts");
+  await type(input, "Astro");
+  await click(action(row("astro.example"), "save"));
+  expect(gestures()).toEqual([{ kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: ["Astro Charts"] }]);
+});
+
 it("counts the confirmed rivals in the section line and says when the Profile names none", async () => {
   await render("zh");
   expect(host.querySelector("[data-kb-section='competitors'] [data-kb-section-items]")?.textContent).toBe(copy("zh").items.replace("{confirmed}", "1").replace("{total}", "3"));
@@ -225,6 +245,37 @@ it("locks the name field while its write is out, so nothing typed meanwhile is s
   expect(row("rival.example").querySelector<HTMLInputElement>("input[data-competitor-name-input]")?.disabled).toBe(true);
   await act(async () => { release({ ok: true, saved: saved([ROWS[0]!, { domain: "rival.example", brandName: "Beta", confirmed: true }, ROWS[2]!]) }); });
   expect(row("rival.example").querySelector("input[data-competitor-name-input]")).toBeNull();
+});
+
+/** While the field is open the name on the row is an unsaved draft, and the source line claims nothing about it. */
+it("says only the host while the name field is open", async () => {
+  reply = () => Response.json({ data: { kbId: V3_KB_ID, identity: IDENTITY } });
+  await render("zh");
+  await click(action(row("astro.example"), "lookup"));
+  await click(action(row("astro.example"), "rename"));
+  expect(row("astro.example").querySelector("[data-competitor-source]")?.textContent).toBe("astro.example");
+  await click(action(row("astro.example"), "cancel"));
+  expect(row("astro.example").querySelector("[data-competitor-source]")?.textContent)
+    .toBe(`astro.example · ${copy("zh").readFrom.replace("{url}", "https://astro.example/")} · ${copy("zh").method.json_ld}`);
+  await click(action(row("rival.example"), "rename"));
+  expect(row("rival.example").querySelector("[data-competitor-source]")?.textContent).toBe("rival.example");
+});
+
+/**
+ * A draft is about the row it was opened against. If the parent redraws that
+ * row under a different stored identity, the draft is stale -- saving it
+ * would overwrite a name nobody on this screen saw -- so the field closes.
+ */
+it("closes an open name field when the row it was opened against is redrawn under another identity", async () => {
+  await render("zh");
+  await click(action(row("rival.example"), "rename"));
+  expect(row("rival.example").querySelector("input[data-competitor-name-input]")).not.toBeNull();
+  // An ordinary redraw of the same identity keeps it.
+  await render("zh", { competitors: [...ROWS] });
+  expect(row("rival.example").querySelector("input[data-competitor-name-input]")).not.toBeNull();
+  await render("zh", { competitors: [ROWS[0]!, { domain: "rival.example", brandName: "Rival Group", confirmed: true }, ROWS[2]!] });
+  expect(row("rival.example").querySelector("input[data-competitor-name-input]")).toBeNull();
+  expect(row("rival.example").querySelector("[data-competitor-name]")?.textContent).toBe("Rival Group");
 });
 
 /** The hook may decline to attempt the write at all; that is not a failure to show. */

@@ -55,8 +55,14 @@ export interface GeoKbCompetitorsProps {
 }
 
 type Busy = { readonly domain: string; readonly kind: "lookup" | "write" };
-type Editing = { readonly domain: string; readonly name: string };
+/** A draft of a name, and the stored row it was opened against; a redraw under another identity makes it stale. */
+type Editing = { readonly domain: string; readonly name: string; readonly against: string };
 type Failure = { readonly domain: string; readonly text: string };
+
+/** What a draft is about: the row as stored. A proposal is not part of it -- it is what the draft replaces. */
+function rowIdentity(row: Competitor): string {
+  return JSON.stringify([row.brandName, row.confirmed, row.aliases ?? null]);
+}
 
 /** What a row shows as its name and aliases: the lookup's proposal while unconfirmed, the stored answer once confirmed. */
 function proposed(row: Competitor, identity: GeoKbCompetitorIdentityV3 | undefined): { readonly name: string; readonly aliases: readonly string[] } {
@@ -81,10 +87,13 @@ function Meta({ parts }: { readonly parts: readonly string[] }) {
  * confirmed name is the owner's -- the confirm was their gesture, whether
  * they took a proposal, edited it or typed it -- so no homepage and no
  * Profile is credited for it. An unconfirmed row with no proposal shows only
- * what is true of it: the Profile named the host.
+ * what is true of it: the Profile named the host. While the field is open the
+ * name on the row is an unsaved draft that nothing has a claim on, so the
+ * line says only the host.
  */
-function sourceParts(row: Competitor, identity: GeoKbCompetitorIdentityV3 | undefined, copy: GeoKbCopy["competitors"]): readonly string[] {
+function sourceParts(row: Competitor, identity: GeoKbCompetitorIdentityV3 | undefined, editing: boolean, copy: GeoKbCopy["competitors"]): readonly string[] {
   if (row.domain === "") return [copy.noDomain];
+  if (editing) return [row.domain];
   if (row.confirmed) return [row.domain, copy.ownerConfirmed];
   if (identity === undefined) return [row.domain, copy.fromProfile];
   if (identity.status === "unavailable") return [row.domain, copy.lookupFailed(copy.reason(identity.reason))];
@@ -160,7 +169,7 @@ function Row({ row, identity, editing, busy, failure, held, copy, on }: {
             : <NameField value={editing.name} onChange={on.edit} label={copy.nameLabel} invalid={error !== null} describedBy={error === null ? null : errorId} locked={writing} />}
         </div>
         <div data-competitor-source="" className="min-w-0 text-[12px] leading-relaxed text-text-dark-secondary">
-          <Meta parts={sourceParts(row, identity, copy)} />
+          <Meta parts={sourceParts(row, identity, editing !== null, copy)} />
         </div>
         {shown.aliases.length === 0 ? null : <div data-competitor-aliases="" className="min-w-0 break-words text-[12px] leading-relaxed text-text-dark-secondary [overflow-wrap:anywhere]">
           {copy.aliases(shown.aliases.join(", "))}
@@ -181,6 +190,10 @@ function Row({ row, identity, editing, busy, failure, held, copy, on }: {
               : <>
                 {button("lookup", lookingUp ? copy.lookupBusy : copy.lookup, on.lookup)}
                 {button("confirm", writing ? copy.saving : copy.confirm, on.confirm)}
+                {/* A homepage's title is often the name plus a tagline; editing
+                    the proposal before confirming is one write, confirming and
+                    renaming is two, each releasing the paid records again. */}
+                {shown.name === "" ? null : button("rename", copy.rename, on.rename)}
               </>}
       </div>
     </div>
@@ -251,7 +264,7 @@ export function GeoKbCompetitors({ kbId, competitors, disabled, write }: GeoKbCo
     // be read is exactly the one the owner has to name by hand.
     if (shown.name.trim() === "") {
       setFailure(null);
-      setEditing({ domain: row.domain, name: "" });
+      setEditing({ domain: row.domain, name: "", against: rowIdentity(row) });
       return;
     }
     void send(row.domain, { kind: "confirm", domain: row.domain, brandName: shown.name, aliases: shown.aliases });
@@ -275,7 +288,7 @@ export function GeoKbCompetitors({ kbId, competitors, disabled, write }: GeoKbCo
           key={row.domain === "" ? `brand:${row.brandName}:${index}` : `domain:${row.domain}`}
           row={row}
           identity={identities[row.domain]}
-          editing={editing?.domain === row.domain ? editing : null}
+          editing={editing?.domain === row.domain && editing.against === rowIdentity(row) ? editing : null}
           busy={busy}
           failure={failure}
           held={held}
@@ -283,9 +296,10 @@ export function GeoKbCompetitors({ kbId, competitors, disabled, write }: GeoKbCo
           on={{
             lookup: () => void lookup(row.domain),
             confirm: () => confirm(row),
-            rename: () => { setFailure(null); setEditing({ domain: row.domain, name: row.brandName }); },
+            // Prefilled with what the row shows: the stored name once confirmed, the proposal before.
+            rename: () => { setFailure(null); setEditing({ domain: row.domain, name: proposed(row, identities[row.domain]).name, against: rowIdentity(row) }); },
             unconfirm: () => void send(row.domain, { kind: "unconfirm", domain: row.domain }),
-            edit: (name) => setEditing((current) => (current?.domain === row.domain ? { domain: row.domain, name } : current)),
+            edit: (name) => setEditing((current) => (current?.domain === row.domain ? { ...current, name } : current)),
             save: () => save(row),
             cancel: () => { setFailure(null); setEditing(null); },
           }}
