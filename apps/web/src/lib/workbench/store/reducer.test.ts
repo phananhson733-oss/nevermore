@@ -202,13 +202,17 @@ describe("demo", () => {
 
   it("loadDemo applies the history and artifact caps", () => {
     const history = Array.from({ length: HISTORY_LIMIT + 1 }, (_, i) => report(`h${i}`));
+    const snapshots = Array.from({ length: HISTORY_LIMIT + 1 }, (_, i) => ({ at: `v${i}`, results: [vis(`q${i}`)] }));
     const many = Array.from({ length: ARTIFACT_LIMIT + 1 }, (_, i) => artifact(`x${i}`));
     const s = reduce(initialProjectState(seed), {
       type: "loadDemo",
-      payload: { ...demoPayload, auditHistory: history, artifacts: many },
+      payload: { ...demoPayload, auditHistory: history, visHistory: snapshots, artifacts: many },
     });
     expect(s.auditHistory).toHaveLength(HISTORY_LIMIT);
     expect(s.auditHistory[0]?.at).toBe("h1");
+    expect(s.visHistory).toHaveLength(HISTORY_LIMIT);
+    expect(s.visHistory[0]?.at).toBe("v1");
+    expect(s.visHistory.at(-1)?.at).toBe(`v${HISTORY_LIMIT}`);
     expect(s.artifacts).toHaveLength(ARTIFACT_LIMIT);
     expect(s.artifacts[0]?.id).toBe("x0");
     expect(s.artifacts.at(-1)?.id).toBe(`x${ARTIFACT_LIMIT - 1}`);
@@ -281,7 +285,7 @@ describe("immutability", () => {
     deepFreeze(populated);
     const before = JSON.stringify(populated);
 
-    const everyAction: readonly WorkbenchAction[] = [
+    const everyAction = [
       { type: "patchProfile", patch: { positioning: "p" } },
       { type: "setProfileDoc", doc: null },
       { type: "setConns", conns: { GSC: true, GA4: false } },
@@ -308,8 +312,16 @@ describe("immutability", () => {
       { type: "clearDemo" },
       { type: "loadPersisted", state: initialProjectState(seed) },
       { type: "reset", seed },
-    ];
-    expect(new Set(everyAction.map((a) => a.type)).size).toBe(26);
+    ] as const satisfies readonly WorkbenchAction[];
+
+    // Compile-time exhaustiveness: adding an action to the reducer without
+    // adding it here makes `Exclude<…>` non-empty, and `AssertNever` then fails
+    // to typecheck. A hand-counted `toBe(26)` only caught the omission if
+    // whoever added the action also remembered to bump the number.
+    type AssertNever<T extends never> = T;
+    type _AllActionsCovered = AssertNever<Exclude<WorkbenchAction["type"], (typeof everyAction)[number]["type"]>>;
+    // Runtime half: proves the list reached the loop below at all.
+    expect(everyAction.length).toBeGreaterThan(0);
 
     for (const action of everyAction) {
       expect(() => reduce(populated, action), action.type).not.toThrow();

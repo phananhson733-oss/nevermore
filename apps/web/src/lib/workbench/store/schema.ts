@@ -257,6 +257,8 @@ type SchemaState = z.infer<typeof projectStateSchema>;
 const _schemaIsDomainState: WorkbenchProjectState = null as unknown as SchemaState;
 void _schemaIsDomainState;
 type AssertNever<T extends never> = T;
+// Intentionally unused type aliases (compile-time guards); would need a
+// void-style escape if noUnusedLocals is ever enabled.
 type _MissingInSchema = AssertNever<Exclude<keyof WorkbenchProjectState, keyof SchemaState>>;
 type _ExtraInSchema = AssertNever<Exclude<keyof SchemaState, keyof WorkbenchProjectState>>;
 

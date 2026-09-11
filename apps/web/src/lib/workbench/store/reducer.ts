@@ -94,12 +94,17 @@ function archive<T>(history: readonly T[], item: T | null, current: T | null): r
 
 /** `setSaved` semantics (design §6.4): incoming entries win, except `addedAt` / `source` of words already saved; duplicates in `next` collapse to the first. */
 function mergeSaved(previous: readonly SavedKeyword[], next: readonly SavedKeyword[]): readonly SavedKeyword[] {
+  // Indexed once; a `find` per incoming entry made the merge O(previous × next).
+  // A repeated `q` in `previous` would resolve to its last copy rather than its
+  // first, but `previous` is always a `mergeSaved` result (directly, or via the
+  // persisted round-trip), and those carry no duplicates.
+  const prevByQ = new Map(previous.map((p) => [p.q, p] as const));
   const seen = new Set<string>();
   const merged: SavedKeyword[] = [];
   for (const entry of next) {
     if (seen.has(entry.q)) continue;
     seen.add(entry.q);
-    const prev = previous.find((p) => p.q === entry.q);
+    const prev = prevByQ.get(entry.q);
     merged.push(prev ? { ...entry, addedAt: prev.addedAt, source: prev.source } : entry);
   }
   return merged;
