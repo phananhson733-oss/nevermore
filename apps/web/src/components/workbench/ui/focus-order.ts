@@ -10,5 +10,6 @@ export function nextTrapIndex(
   return activeIndex === count - 1 ? 0 : activeIndex + 1;
 }
 
+/** Known scope: no contenteditable/summary/iframe, and hidden descendants still match. */
 export const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';

@@ -3,6 +3,10 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { cn } from "./cn.ts";
 import { FOCUSABLE, nextTrapIndex } from "./focus-order.ts";
+import { WB_APP_ROOT_ID } from "./ids.ts";
+
+/** How many Dialogs are open; `#wb-app` is inert while it is > 0. */
+let openDialogs = 0;
 
 /**
  * Accessible modal (design §4.3): role=dialog + aria-modal, focus moves in on
@@ -21,10 +25,14 @@ export function Dialog({
   readonly open: boolean;
   readonly onClose: () => void;
   readonly labelledBy: string;
-  readonly initialFocus?: RefObject<HTMLElement | null>;
-  /** Preferred focus target on close; falls back to whatever was focused on open. */
-  readonly returnFocusTo?: RefObject<HTMLElement | null>;
-  readonly className?: string;
+  /** Must be a stable ref: it is an effect dependency. */
+  readonly initialFocus?: RefObject<HTMLElement | null> | undefined;
+  /**
+   * Preferred focus target on close; falls back to whatever was focused on open.
+   * Must be a stable ref: it is an effect dependency.
+   */
+  readonly returnFocusTo?: RefObject<HTMLElement | null> | undefined;
+  readonly className?: string | undefined;
   readonly children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -33,22 +41,36 @@ export function Dialog({
   useEffect(() => {
     if (!open) return;
     openerRef.current = document.activeElement;
-    const root = document.getElementById("wb-app");
-    root?.setAttribute("inert", "");
-    const target = initialFocus?.current ?? panelRef.current?.querySelector<HTMLElement>(FOCUSABLE);
-    target?.focus();
+    const root = document.getElementById(WB_APP_ROOT_ID);
+    if (process.env.NODE_ENV !== "production" && !root) {
+      console.warn(`Dialog: #${WB_APP_ROOT_ID} not found; the background is not inert`);
+    }
+    // `inert` is one shared attribute for however many dialogs are open, so it
+    // is ref-counted: the first open sets it, only the last close removes it.
+    if (openDialogs === 0) root?.setAttribute("inert", "");
+    openDialogs += 1;
+    const entry =
+      initialFocus?.current ??
+      panelRef.current?.querySelector<HTMLElement>(FOCUSABLE) ??
+      panelRef.current;
+    entry?.focus();
     return () => {
+      openDialogs -= 1;
+      // A dialog closing behind another one must not pull focus out of the one
+      // still on top, nor lift `inert` from the background it still covers.
+      if (openDialogs > 0) return;
       // Order matters: focus() on a node inside an inert subtree is a no-op,
       // so inert comes off first. Next's layout-router focuses the changed
       // segment after navigation, so activeElement-on-open is only a fallback.
       root?.removeAttribute("inert");
-      const target = returnFocusTo?.current ?? openerRef.current;
-      if (target instanceof HTMLElement) target.focus();
+      const exit = returnFocusTo?.current ?? openerRef.current;
+      if (exit instanceof HTMLElement) exit.focus();
     };
   }, [open, initialFocus, returnFocusTo]);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
     if (event.key === "Escape") {
+      // Suppresses useGlobalShortcut's window-level Escape (bubble phase) so the dialog closes once.
       event.stopPropagation();
       onClose();
       return;
@@ -77,6 +99,7 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
+        tabIndex={-1}
         onKeyDown={onKeyDown}
         className={cn("absolute bg-white shadow-xl outline-none", className)}
       >

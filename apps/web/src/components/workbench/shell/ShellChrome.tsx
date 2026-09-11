@@ -3,6 +3,7 @@
 import { useTranslations } from "next-intl";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ProjectShellOption } from "@/lib/services/project-shell";
+import { WB_APP_ROOT_ID } from "../ui/ids.ts";
 import { ArtifactDrawer } from "./ArtifactDrawer.tsx";
 import { CommandPalette } from "./CommandPalette.tsx";
 import { Sidebar, type SidebarSite } from "./Sidebar.tsx";
@@ -56,7 +57,7 @@ export function ShellChrome({
   return (
     <>
       {/* No font/color here: they inherit into <main> and would change legacy pages (Task 0 baseline). */}
-      <div id="wb-app" data-app-shell="" className="flex min-h-screen bg-wb-paper">
+      <div id={WB_APP_ROOT_ID} data-app-shell="" className="flex min-h-screen bg-wb-paper">
         {sidebarOpen ? (
           <button
             type="button"

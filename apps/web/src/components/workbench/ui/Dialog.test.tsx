@@ -1,0 +1,168 @@
+/** @vitest-environment jsdom */
+
+import { act, useRef, type ReactNode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createRoot } from "react-dom/client";
+import { Dialog } from "./Dialog.tsx";
+import { WB_APP_ROOT_ID } from "./ids.ts";
+
+// React only suppresses false-positive concurrent-render warnings when a test
+// harness explicitly declares that state transitions are wrapped in `act`.
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
+  .IS_REACT_ACT_ENVIRONMENT = true;
+
+// jsdom reflects the `inert` attribute without implementing its behaviour, so
+// these tests pin the attribute contract, not real background unreachability.
+function appRoot(): HTMLElement | null {
+  return document.getElementById(WB_APP_ROOT_ID);
+}
+
+let active: { readonly cleanup: () => void } | null = null;
+
+function mount(node: ReactNode) {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  act(() => root.render(node));
+  const view = {
+    container,
+    rerender(next: ReactNode) {
+      act(() => root.render(next));
+    },
+    cleanup() {
+      act(() => root.unmount());
+      container.remove();
+      active = null;
+    },
+  };
+  active = view;
+  return view;
+}
+
+afterEach(() => {
+  // An unmount left behind would leak the shared open-dialog count into the
+  // next test, which is exactly the bug these tests exist to catch.
+  active?.cleanup();
+});
+
+function keydown(el: HTMLElement, key: string, shiftKey = false): void {
+  act(() =>
+    el.dispatchEvent(
+      new KeyboardEvent("keydown", { key, shiftKey, bubbles: true, cancelable: true }),
+    ),
+  );
+}
+
+/** One dialog plus the `#wb-app` root and the button that opened it. */
+function Harness({
+  open,
+  onClose,
+  withRoot = true,
+}: {
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly withRoot?: boolean;
+}) {
+  const openerRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      {withRoot ? (
+        <div id={WB_APP_ROOT_ID}>
+          <button type="button" id="opener" ref={openerRef}>
+            open
+          </button>
+        </div>
+      ) : null}
+      <Dialog open={open} onClose={onClose} labelledBy="dialog-title" returnFocusTo={openerRef}>
+        <h2 id="dialog-title">Title</h2>
+        <button type="button" id="first">
+          first
+        </button>
+        <button type="button" id="last">
+          last
+        </button>
+      </Dialog>
+    </>
+  );
+}
+
+function TwoDialogs({ a, b }: { readonly a: boolean; readonly b: boolean }) {
+  const noop = () => {};
+  return (
+    <>
+      <div id={WB_APP_ROOT_ID} />
+      <Dialog open={a} onClose={noop} labelledBy="a-title">
+        <h2 id="a-title">A</h2>
+      </Dialog>
+      <Dialog open={b} onClose={noop} labelledBy="b-title">
+        <h2 id="b-title">B</h2>
+      </Dialog>
+    </>
+  );
+}
+
+describe("Dialog", () => {
+  it("makes the app root inert and moves focus to the first focusable child", () => {
+    mount(<Harness open onClose={() => {}} />);
+
+    expect(appRoot()?.hasAttribute("inert")).toBe(true);
+    expect(document.activeElement?.id).toBe("first");
+  });
+
+  it("traps Tab and Shift+Tab inside the panel", () => {
+    const view = mount(<Harness open onClose={() => {}} />);
+    const first = view.container.querySelector<HTMLElement>("#first");
+    const last = view.container.querySelector<HTMLElement>("#last");
+    expect(first).not.toBeNull();
+    expect(last).not.toBeNull();
+
+    act(() => last?.focus());
+    keydown(last as HTMLElement, "Tab");
+    expect(document.activeElement?.id).toBe("first");
+
+    keydown(first as HTMLElement, "Tab", true);
+    expect(document.activeElement?.id).toBe("last");
+  });
+
+  it("calls onClose exactly once on Escape", () => {
+    const onClose = vi.fn();
+    const view = mount(<Harness open onClose={onClose} />);
+    const first = view.container.querySelector<HTMLElement>("#first");
+
+    keydown(first as HTMLElement, "Escape");
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("lifts inert and returns focus to returnFocusTo on close", () => {
+    const view = mount(<Harness open onClose={() => {}} />);
+
+    view.rerender(<Harness open={false} onClose={() => {}} />);
+
+    expect(appRoot()?.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement?.id).toBe("opener");
+  });
+
+  it("keeps the app root inert until the last of two dialogs closes", () => {
+    const view = mount(<TwoDialogs a b />);
+    expect(appRoot()?.hasAttribute("inert")).toBe(true);
+
+    view.rerender(<TwoDialogs a={false} b />);
+    expect(appRoot()?.hasAttribute("inert")).toBe(true);
+
+    view.rerender(<TwoDialogs a={false} b={false} />);
+    expect(appRoot()?.hasAttribute("inert")).toBe(false);
+  });
+
+  it("renders and warns once when the app root is missing", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const view = mount(<Harness open onClose={() => {}} withRoot={false} />);
+
+    expect(appRoot()).toBeNull();
+    expect(view.container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain(`#${WB_APP_ROOT_ID}`);
+    warn.mockRestore();
+  });
+});

@@ -11,8 +11,8 @@ export function PageHead({
   aside,
 }: {
   readonly title: string;
-  readonly subtitle?: string;
-  readonly aside?: ReactNode;
+  readonly subtitle?: string | undefined;
+  readonly aside?: ReactNode | undefined;
 }) {
   return (
     <div className="mb-8">

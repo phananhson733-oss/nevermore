@@ -4,9 +4,8 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { legacyHref, type LegacySegment } from "@/lib/workbench/routes";
 
-/** "旧版页面 →" affordance (design §4.3). One link per legacy destination. */
 /** Legacy segment → existing `nav.*` label key, so the link reads as a page name, not a path. */
-const LEGACY_LABEL_KEY: Readonly<Record<LegacySegment, string>> = {
+export const LEGACY_LABEL_KEY: Readonly<Record<LegacySegment, string>> = {
   "legacy/overview": "overview",
   "growth-map": "growthMap",
   context: "context",
@@ -17,6 +16,7 @@ const LEGACY_LABEL_KEY: Readonly<Record<LegacySegment, string>> = {
   results: "results",
 };
 
+/** "旧版页面 →" affordance (design §4.3). One link per legacy destination. */
 export function LegacyLinks({
   projectId,
   segments,
