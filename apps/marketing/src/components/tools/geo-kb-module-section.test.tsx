@@ -12,6 +12,7 @@ import {
   GeoKbModuleSection,
   geoKbModuleState,
   geoKbModuleValue,
+  type GeoKbModulePresentation,
   type GeoKbModuleState,
 } from "./geo-kb-module-section.tsx";
 
@@ -26,10 +27,10 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); })
 
 const card = (locale: string) => (locale === "zh" ? zh : en).tools.geoKnowledgeBase.card;
 
-async function renderModule(state: GeoKbModuleState, locale = "en") {
+async function renderModule(state: GeoKbModuleState, locale = "en", presentation: GeoKbModulePresentation = {}) {
   await act(async () => root.render(
     <NextIntlClientProvider locale={locale} timeZone="UTC" messages={locale === "zh" ? zh : en}>
-      <GeoKbModuleSection title="Reliable facts" state={state}>
+      <GeoKbModuleSection title="Reliable facts" state={state} {...presentation}>
         <span data-module-children="">The module content</span>
       </GeoKbModuleSection>
     </NextIntlClientProvider>,
@@ -267,4 +268,102 @@ it.each([
   expect(note?.textContent).toContain("One clause. And a second clause the reader must not lose.");
   expect(note?.textContent).not.toContain("[object Object]");
   expect(note?.textContent).not.toContain("limitations.clause");
+});
+
+/**
+ * The review card turns the limitation sentence off. Every absence it would
+ * name is already said on the rows underneath -- an uncollected group says
+ * "not collected", an absent signal says "not detected" -- and the Owner read
+ * the sentence above them as one more thing to skip (2026-09-11). The published
+ * pack keeps it: a customer reading one section has no rows to fall back on.
+ * `data-module-status` stays `partial` either way, because the state is a fact
+ * about the module and the sentence was only one way of saying it.
+ */
+it.each(["en", "zh"])("can leave a partial module's limitation unsaid while keeping its state, in %s", async (locale) => {
+  await renderModule({ status: "partial", limitation: "Only published pages were read." }, locale, { limitation: false });
+
+  expect(host.querySelector("[data-geo-kb-module]")?.getAttribute("data-module-status")).toBe("partial");
+  expect(host.querySelector("[data-module-limitation]")).toBeNull();
+  expect(host.textContent).not.toContain("Only published pages were read.");
+  expect(host.querySelector("[data-module-children]")).not.toBeNull();
+});
+
+/**
+ * One module can say why it is unavailable in its own words. The generic
+ * sentence for `not_applicable` is "this section does not apply this time",
+ * which is true of the comparisons module and tells the Owner nothing about
+ * why ("why is comparative knowledge empty?", 2026-09-11). The override is a
+ * sentence, not a reason code: the caller knows which module it is drawing and
+ * what that module's reason means there.
+ */
+it.each(["en", "zh"])("lets the caller replace the unavailable sentence for a reason it understands better, in %s", async (locale) => {
+  await renderModule({ status: "unavailable", reason: "not_applicable" }, locale, { unavailableNote: "No competitor site is confirmed yet." });
+
+  const note = host.querySelector("[data-module-unavailable]")?.textContent ?? "";
+  expect(note).toBe("No competitor site is confirmed yet.");
+  expect(note).not.toContain(card(locale).module.unavailable.not_applicable);
+});
+
+it.each(["en", "zh"])("keeps the generic unavailable sentence when no override is given, in %s", async (locale) => {
+  await renderModule({ status: "unavailable", reason: "not_applicable" }, locale);
+
+  expect(host.querySelector("[data-module-unavailable]")?.textContent).toBe(card(locale).module.unavailable.not_applicable);
+});
+
+/**
+ * The three read-only modules fold to their header on the review card. They
+ * report observations rather than ask for decisions, and drawn open they put
+ * a screen of cards between the Owner and the next thing to decide. Folded is
+ * the resting state; opening is one press on the header; the body is not in
+ * the DOM while folded, so a test that finds a card inside a folded module has
+ * found a bug and not a hidden element.
+ *
+ * A button, not a `details` element: the frozen customer view is
+ * contractually free of disclosure widgets, and only the review card asks for
+ * this. A module that does not ask keeps a plain heading.
+ */
+it.each(["en", "zh"])("folds a collapsible module to its header until opened, in %s", async (locale) => {
+  await renderModule({ status: "available" }, locale, { collapsible: true });
+
+  const toggle = host.querySelector<HTMLButtonElement>("[data-section-toggle]")!;
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(toggle.textContent).toContain("Reliable facts");
+  expect(host.querySelector("[data-module-children]")).toBeNull();
+  expect(host.querySelector("[data-geo-kb-module]")).toBeNull();
+  // No id reference while the body is not in the document: a reference to
+  // nothing is a dangling reference, not a closed disclosure.
+  expect(toggle.hasAttribute("aria-controls")).toBe(false);
+
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(host.querySelector("[data-module-children]")).not.toBeNull();
+  const body = host.querySelector("[data-section-body]")!;
+  expect(body.id).not.toBe("");
+  expect(toggle.getAttribute("aria-controls")).toBe(body.id);
+
+  await act(async () => toggle.click());
+  expect(host.querySelector("[data-module-children]")).toBeNull();
+  expect(toggle.hasAttribute("aria-controls")).toBe(false);
+});
+
+it("draws a plain heading and an open body when nothing asked it to fold", async () => {
+  await renderModule({ status: "available" });
+
+  expect(host.querySelector("[data-section-toggle]")).toBeNull();
+  expect(host.querySelector("button")).toBeNull();
+  expect(host.querySelector("[data-module-children]")).not.toBeNull();
+});
+
+/**
+ * An unavailable module folded away is a module whose one sentence ("not
+ * collected", "this section does not apply") nobody reads. It still folds --
+ * the Owner asked for the resting state to be closed -- but the sentence is
+ * the whole body, so it is drawn as the body the moment the module opens.
+ */
+it("folds an unavailable module the same way and shows its sentence on opening", async () => {
+  await renderModule({ status: "unavailable", reason: "not_collected" }, "en", { collapsible: true });
+
+  expect(host.querySelector("[data-module-unavailable]")).toBeNull();
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-section-toggle]")!.click());
+  expect(host.querySelector("[data-module-unavailable]")?.textContent).toBe(card("en").module.unavailable.not_collected);
 });

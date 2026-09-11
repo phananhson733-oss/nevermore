@@ -31,7 +31,7 @@ import type {
 } from "../../lib/geo-tools/kb-knowledge-pack-v2-contract.ts";
 import { geoKnowledgePackCopy, type GeoKnowledgePackCopy } from "./geo-knowledge-pack-copy.ts";
 import { geoKbEntityFieldLabel, geoKbFormatDate, useGeoKbCopy, type GeoKbCopy } from "./geo-kb-copy.ts";
-import { GeoKbItemRow, geoKbSourceParts, type GeoKbItemSource } from "./geo-kb-item-row.tsx";
+import { GeoKbChip, GeoKbItemRow, geoKbSourceParts, type GeoKbItemSource } from "./geo-kb-item-row.tsx";
 import {
   GeoKbEvidenceGroup,
   GeoKbModuleSection,
@@ -39,6 +39,7 @@ import {
   geoKbModuleValue,
   type GeoKbHeading,
   type GeoKbModuleLike,
+  type GeoKbModulePresentation,
 } from "./geo-kb-module-section.tsx";
 
 export const GEO_KNOWLEDGE_MODULES = [
@@ -58,10 +59,7 @@ interface PackProvenance {
   readonly decision: GeoPackDecision;
   readonly sourceRefs: readonly string[];
   readonly priorSourceRefs: readonly string[];
-  readonly ownerDeclaredAt: string | null;
   readonly evidenceChecks: GeoEvidenceCheck;
-  readonly observedAt?: string | null;
-  readonly nextReviewAt?: string | null;
 }
 
 interface ModuleProps {
@@ -184,10 +182,9 @@ function priorSourceOf(refs: readonly string[], sources: SourceIndex): GeoKbItem
   return describe(originOfKind(cited[0].kind), cited, refs.length);
 }
 
-function Row({ item, sources, locale, typeLabel, children }: {
+function Row({ item, sources, typeLabel, children }: {
   readonly item: PackProvenance;
   readonly sources: SourceIndex;
-  readonly locale: string;
   readonly typeLabel: string;
   readonly children: ReactNode;
 }) {
@@ -196,10 +193,6 @@ function Row({ item, sources, locale, typeLabel, children }: {
     source={geoKbItemSourceOf(item, sources)}
     decision={item.decision}
     evidenceChecks={item.evidenceChecks}
-    locale={locale}
-    observedAt={item.observedAt ?? null}
-    nextReviewAt={item.nextReviewAt ?? null}
-    ownerDeclaredAt={item.ownerDeclaredAt}
     priorSource={priorSourceOf(item.priorSourceRefs, sources)}
   >{children}</GeoKbItemRow>;
 }
@@ -234,7 +227,7 @@ function EntityModule({ pack, sources, heading, locale, copy, card }: ModuleProp
         {entity.fields.map((field) => <div key={field.field} data-entity-field={field.field} className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-[12px] leading-relaxed text-text-dark-secondary">
           <span className="font-medium text-text-dark-primary">{geoKbEntityFieldLabel(field.field, card)}</span>
           <span>{geoKbSourceParts(geoKbItemSourceOf(field, sources), card).join(" · ")}</span>
-          <span data-decision-chip="" data-decision={field.decision} className="inline-flex rounded-full border border-brand-border-card px-2.5 py-1">{card.decisions[field.decision]}</span>
+          <GeoKbChip data-decision-chip="" data-decision={field.decision}>{card.decisions[field.decision]}</GeoKbChip>
         </div>)}
       </div>
       <Basis refs={entity.sourceRefs} sources={sources} copy={copy} locale={locale} />
@@ -242,19 +235,19 @@ function EntityModule({ pack, sources, heading, locale, copy, card }: ModuleProp
   </GeoKbModuleSection>;
 }
 
-function FactsModule({ pack, sources, heading, locale, copy }: ModuleProps) {
+function FactsModule({ pack, sources, heading, copy }: ModuleProps) {
   const facts = geoKbModuleValue(pack.facts);
   return <GeoKbModuleSection title={copy.sections.facts} heading={heading} state={geoKbModuleState(pack.facts)}>
-    <div className="space-y-4">{(facts ?? []).map((fact) => <Row key={fact.id} item={fact} sources={sources} locale={locale} typeLabel={copy.factTypes[fact.type] ?? fact.type}>
+    <div className="space-y-4">{(facts ?? []).map((fact) => <Row key={fact.id} item={fact} sources={sources} typeLabel={copy.factTypes[fact.type] ?? fact.type}>
       {fact.statement}
     </Row>)}</div>
   </GeoKbModuleSection>;
 }
 
-function QaModule({ pack, sources, heading, locale, copy }: ModuleProps) {
+function QaModule({ pack, sources, heading, copy }: ModuleProps) {
   const qa = geoKbModuleValue(pack.qa);
   return <GeoKbModuleSection title={copy.sections.qa} heading={heading} state={geoKbModuleState(pack.qa)}>
-    <div className="space-y-4">{(qa ?? []).map((item) => <Row key={item.id} item={item} sources={sources} locale={locale} typeLabel={copy.intents[item.intent] ?? item.intent}>
+    <div className="space-y-4">{(qa ?? []).map((item) => <Row key={item.id} item={item} sources={sources} typeLabel={copy.intents[item.intent] ?? item.intent}>
       <span className="block font-semibold text-text-dark-primary">{item.question}</span>
       <span className="mt-2 block">{copy.fields.directAnswer}: {item.directAnswer}</span>
       {item.expansion === null ? null : <span className="mt-2 block text-text-dark-secondary">{item.expansion}</span>}
@@ -271,7 +264,7 @@ function ComparisonsModule({ pack, sources, heading, locale, copy }: ModuleProps
         <span className="text-[15px] font-semibold text-text-dark-primary">{comparison.competitor.name}</span>
         <span className="text-[12px] text-text-dark-secondary">{copy.fields.checkedAt}: {geoKbFormatDate(comparison.checkedAt, locale)}</span>
       </div>
-      <div className="space-y-3">{comparison.rows.map((row) => <Row key={row.id} item={row} sources={sources} locale={locale} typeLabel={row.dimension}>
+      <div className="space-y-3">{comparison.rows.map((row) => <Row key={row.id} item={row} sources={sources} typeLabel={row.dimension}>
         <span className="block">{copy.fields.product}: {row.product ?? copy.comparisonStatuses[row.availability]}</span>
         <span className="mt-1 block">{comparison.competitor.name}: {row.competitor ?? copy.comparisonStatuses[row.availability]}</span>
         <span data-comparison-row-status className="mt-1 block text-text-dark-secondary">{copy.comparisonStatuses[row.availability]}</span>
@@ -285,7 +278,7 @@ function ComparisonsModule({ pack, sources, heading, locale, copy }: ModuleProps
   </GeoKbModuleSection>;
 }
 
-function ScopeModule({ pack, sources, heading, locale, copy }: ModuleProps) {
+function ScopeModule({ pack, sources, heading, copy }: ModuleProps) {
   const scope = geoKbModuleValue(pack.scope);
   return <GeoKbModuleSection title={copy.sections.scope} heading={heading} state={geoKbModuleState(pack.scope)}>
     {/* Stacked, for the reason the draft card stacks it: four separate
@@ -297,7 +290,7 @@ function ScopeModule({ pack, sources, heading, locale, copy }: ModuleProps) {
       collected
       count={scope === null ? 0 : scope[kind].length}
     >
-      <div className="space-y-3">{(scope === null ? [] : scope[kind]).map((item) => <Row key={item.id} item={item} sources={sources} locale={locale} typeLabel={copy.scopeGroups[kind] ?? kind}>
+      <div className="space-y-3">{(scope === null ? [] : scope[kind]).map((item) => <Row key={item.id} item={item} sources={sources} typeLabel={copy.scopeGroups[kind] ?? kind}>
         {item.text}
       </Row>)}</div>
     </GeoKbEvidenceGroup>)}</div>
@@ -314,9 +307,7 @@ function EvidenceItem({ item, sources, copy, card, locale }: {
   return <div className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4">
     <Compact className="font-medium">{item.url === null ? item.label : <Link url={item.url}>{item.label}</Link>}</Compact>
     <Compact className="mt-1 text-text-dark-secondary">{item.summary}</Compact>
-    <span data-evidence-independence={item.independence} className="mt-2 inline-flex rounded-full border border-brand-border-card px-2.5 py-1 text-[12px] text-text-dark-secondary">
-      {card.independence[item.independence]}
-    </span>
+    <span className="mt-2 block"><GeoKbChip data-evidence-independence={item.independence}>{card.independence[item.independence]}</GeoKbChip></span>
     <Basis refs={item.sourceRefs} sources={sources} copy={copy} locale={locale} />
   </div>;
 }
@@ -344,12 +335,14 @@ export interface GeoReadOnlyModuleProps<T> {
   readonly locale: string;
   readonly copy: GeoKnowledgePackCopy;
   readonly card: GeoKbCopy;
+  /** How the host wants the module drawn; the published pack passes none. */
+  readonly presentation?: GeoKbModulePresentation;
 }
 
-export function GeoEvidenceModuleView({ module, sources, heading, locale, copy, card }: GeoReadOnlyModuleProps<GeoModuleValueOf<GeoKnowledgePackV2["evidence"]>>) {
+export function GeoEvidenceModuleView({ module, sources, heading, locale, copy, card, presentation = {} }: GeoReadOnlyModuleProps<GeoModuleValueOf<GeoKnowledgePackV2["evidence"]>>) {
   const evidence = geoKbModuleValue(module);
-  return <GeoKbModuleSection title={copy.sections.evidence} heading={heading} state={geoKbModuleState(module)}>
-    <div className="grid min-w-0 gap-5 sm:grid-cols-2">{EVIDENCE_GROUPS.map((group) => <GeoKbEvidenceGroup
+  return <GeoKbModuleSection title={copy.sections.evidence} heading={heading} state={geoKbModuleState(module)} {...presentation}>
+    <div className="min-w-0 space-y-5">{EVIDENCE_GROUPS.map((group) => <GeoKbEvidenceGroup
       key={group}
       title={card.groups[group]}
       heading={heading}
@@ -414,10 +407,10 @@ function MachineNote({ kind, status, refs, sources, copy }: {
   return <Compact className="mt-2 text-text-dark-secondary">{note}</Compact>;
 }
 
-export function GeoMachineModuleView({ module, sources, heading, locale, copy, card }: GeoReadOnlyModuleProps<GeoModuleValueOf<GeoKnowledgePackV2["machine"]>>) {
+export function GeoMachineModuleView({ module, sources, heading, locale, copy, card, presentation = {} }: GeoReadOnlyModuleProps<GeoModuleValueOf<GeoKnowledgePackV2["machine"]>>) {
   const machine = geoKbModuleValue(module);
-  return <GeoKbModuleSection title={copy.sections.machine} heading={heading} state={geoKbModuleState(module)}>
-    {machine === null ? null : <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+  return <GeoKbModuleSection title={copy.sections.machine} heading={heading} state={geoKbModuleState(module)} {...presentation}>
+    {machine === null ? null : <div className="min-w-0 space-y-4">
       {MACHINE_FIELDS.map((kind) => <div key={kind} data-machine-field={kind} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4">
         <span className="block text-[12px] text-text-dark-secondary">{copy.machineFields[kind]}</span>
         <Compact className="mt-1 font-medium">{copy.machineStatuses[machine[kind].status]}</Compact>
@@ -488,13 +481,13 @@ function coverageLabel(id: string, stored: string, copy: GeoKnowledgePackCopy): 
 }
 const PREFIX = "coverage:";
 
-export function GeoCoverageModuleView({ module, sources, heading, locale, copy }: GeoReadOnlyModuleProps<GeoModuleValueOf<GeoKnowledgePackV2["coverage"]>>) {
+export function GeoCoverageModuleView({ module, sources, heading, locale, copy, presentation = {} }: GeoReadOnlyModuleProps<GeoModuleValueOf<GeoKnowledgePackV2["coverage"]>>) {
   const coverage = geoKbModuleValue(module);
-  return <GeoKbModuleSection title={copy.sections.coverage} heading={heading} state={geoKbModuleState(module)}>
+  return <GeoKbModuleSection title={copy.sections.coverage} heading={heading} state={geoKbModuleState(module)} {...presentation}>
     <div className="space-y-4">{(coverage ?? []).map((item) => <div key={item.id} className="min-w-0 rounded-[10px] border border-brand-border-card bg-brand-bg p-4 sm:p-5">
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[15px] font-semibold text-text-dark-primary">{coverageLabel(item.id, item.label, copy)}</span>
-        <span className="inline-flex rounded-full border border-brand-border-card px-2.5 py-1 text-[12px] text-text-dark-secondary">{copy.coverageStatuses[item.status]}</span>
+        <GeoKbChip>{copy.coverageStatuses[item.status]}</GeoKbChip>
       </div>
       {/* The stored summary and action stay. An earlier draft of this change
           replaced them with one localized sentence, on the belief that every

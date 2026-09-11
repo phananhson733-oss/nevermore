@@ -11,7 +11,7 @@ import { geoKnowledgePackCopy } from "./geo-knowledge-pack-copy.ts";
 import { useGeoKbCopy } from "./geo-kb-copy.ts";
 import { geoKnowledgePackFixture } from "./geo-knowledge-pack.test-fixtures.ts";
 import { geoKnowledgePackV2Fixture } from "./geo-knowledge-pack-v2.test-fixtures.ts";
-import type { GeoKnowledgeModuleName } from "./geo-knowledge-pack-v2.tsx";
+import { GeoCoverageModuleView, GeoEvidenceModuleView, GeoMachineModuleView, type GeoKnowledgeModuleName } from "./geo-knowledge-pack-v2.tsx";
 import { buildGeoKnowledgePackV2 } from "../../lib/geo-tools/kb-knowledge-pack-v2-contract.ts";
 import { buildGeoKnowledgePackV3 } from "../../lib/geo-tools/kb-knowledge-pack-v3.ts";
 import { GEO_ENTITY_FIELD_PATHS } from "../../lib/geo-tools/kb-knowledge-shape.ts";
@@ -118,7 +118,97 @@ it("names the off-site domain and its independence verdict on the item that cite
   const offsite = host.querySelector('[data-origin="observed_third_party"] [data-item-source]')?.textContent ?? "";
   expect(offsite).toContain("press.example");
   expect(offsite).toContain(card("en").independence.independent);
-  expect(offsite).toContain(card("en").evidenceChecks.cited_and_literals_match);
+  // The source line names the origin and nothing else; the citation-check
+  // verdict and the dates came off it on 2026-09-11 (see `geo-kb-item-row`).
+  expect(offsite).not.toMatch(/Citation check/u);
+  expect(offsite).not.toMatch(/20\d\d/u);
+});
+
+/**
+ * The machine cards and the evidence groups read downwards, one under the
+ * other, like every other module on the card. They were a two- and
+ * three-column grid; the Owner asked for the same waterfall the scope module
+ * already had (2026-09-11). Pinned on the container's class because layout is
+ * the one thing this component decides that has no other observable.
+ */
+it("lays the machine cards and the evidence groups out one under another", async () => {
+  await render("en", ["machine", "evidence"]);
+
+  // Positive: the containers exist, hold more than one card, and are a
+  // vertical stack; negative: none of the ways of laying them side by side.
+  // A class-string check is all a jsdom test can say about geometry
+  // (gpt-6-astra, 2026-09-11); the browser check is the production pass.
+  const machine = host.querySelector("[data-machine-field]")?.parentElement;
+  expect(machine?.children.length).toBeGreaterThan(1);
+  expect(machine?.className).toMatch(/\bspace-y-\d/u);
+  expect(machine?.className).not.toMatch(/grid-cols|flex-row|columns-|inline/u);
+  const groups = host.querySelector("[data-geo-kb-group]")?.parentElement;
+  expect(groups?.children.length).toBeGreaterThan(1);
+  expect(groups?.className).toMatch(/\bspace-y-\d/u);
+  expect(groups?.className).not.toMatch(/grid-cols|flex-row|columns-|inline/u);
+});
+
+/**
+ * The two surfaces have opposite limitation policies and both are pinned
+ * here on a partial read-only module: the published pack keeps the sentence
+ * (a customer reading one section has no rows to fall back on) and draws no
+ * disclosure widget; a host that asks for `{ collapsible, limitation: false }`
+ * gets the fold AND loses the sentence -- checked after opening, because an
+ * unmounted sentence proves nothing about the policy (gpt-6-astra,
+ * 2026-09-11).
+ */
+const READ_ONLY_MODULES = ["evidence", "machine", "coverage"] as const;
+function partialPack(module: (typeof READ_ONLY_MODULES)[number], limitation: string) {
+  const pack = geoKnowledgePackV2Fixture();
+  const current = pack[module];
+  if (current.status === "unavailable") throw new Error(`fixture ${module} must carry a value`);
+  return { ...pack, [module]: { status: "partial", limitation, value: current.value } } as typeof pack;
+}
+
+it.each(READ_ONLY_MODULES)("publishes the %s module open, unfolded, with its limitation said", async (module) => {
+  const limitation = `Published limitation for ${module}.`;
+  await render("en", [module], partialPack(module, limitation));
+
+  expect(host.querySelector("[data-section-toggle]")).toBeNull();
+  expect(host.querySelectorAll("[data-geo-kb-module]")).toHaveLength(1);
+  expect(host.querySelector("[data-module-limitation]")?.textContent).toContain(limitation);
+});
+
+async function renderReadOnly(module: (typeof READ_ONLY_MODULES)[number], pack: ReturnType<typeof geoKnowledgePackV2Fixture>, presentation: { collapsible?: boolean; limitation?: boolean }) {
+  const sources = new Map(pack.sourceCatalogue.map((source) => [source.id, source]));
+  function Host() {
+    const card = useGeoKbCopy();
+    const shared = { sources, heading: 3 as const, locale: "en", copy: geoKnowledgePackCopy("en"), card, presentation };
+    if (module === "evidence") return <GeoEvidenceModuleView module={pack.evidence} {...shared} />;
+    if (module === "machine") return <GeoMachineModuleView module={pack.machine} {...shared} />;
+    return <GeoCoverageModuleView module={pack.coverage} {...shared} />;
+  }
+  await act(async () => root.render(
+    <NextIntlClientProvider locale="en" timeZone="UTC" messages={en}>
+      <Host />
+    </NextIntlClientProvider>,
+  ));
+}
+
+it.each(READ_ONLY_MODULES)("folds the %s module and drops its limitation when the host asks for both", async (module) => {
+  const limitation = `Host-suppressed limitation for ${module}.`;
+  await renderReadOnly(module, partialPack(module, limitation), { collapsible: true, limitation: false });
+
+  const toggle = host.querySelector<HTMLButtonElement>("[data-section-toggle]")!;
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(host.querySelector("[data-geo-kb-module]")).toBeNull();
+  await act(async () => toggle.click());
+  expect(host.querySelector("[data-geo-kb-module]")?.getAttribute("data-module-status")).toBe("partial");
+  expect(host.querySelector("[data-module-limitation]")).toBeNull();
+  expect(host.textContent).not.toContain(limitation);
+});
+
+it.each(READ_ONLY_MODULES)("keeps the %s module's limitation when the host asks only for the fold", async (module) => {
+  const limitation = `Kept limitation for ${module}.`;
+  await renderReadOnly(module, partialPack(module, limitation), { collapsible: true });
+
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-section-toggle]")!.click());
+  expect(host.querySelector("[data-module-limitation]")?.textContent).toContain(limitation);
 });
 
 /**

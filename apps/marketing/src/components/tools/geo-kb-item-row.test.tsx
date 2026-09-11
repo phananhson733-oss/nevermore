@@ -28,7 +28,6 @@ async function render(overrides: RowOverrides = {}, locale = "en") {
     source: { origin: "observed_own", path: "/en/pricing" },
     decision: "pending",
     evidenceChecks: "not_applicable",
-    locale,
     ...overrides,
   };
   await act(async () => root.render(
@@ -42,14 +41,32 @@ const chip = () => host.querySelector("[data-decision-chip]")?.textContent ?? ""
 const sourceLine = () => host.querySelector("[data-item-source]")?.textContent ?? "";
 
 it.each(["en", "zh"])("names the type, the content and the observed page in %s", async (locale) => {
-  await render({ observedAt: "2026-09-04T00:00:00.000Z", nextReviewAt: "2026-12-03T00:00:00.000Z" }, locale);
+  await render({}, locale);
 
   expect(host.querySelector("[data-item-type]")?.textContent).toBe("Feature");
   expect(host.textContent).toContain("Example Cloud keeps human approval");
   expect(sourceLine()).toContain(card(locale).origins.observed_own);
   expect(sourceLine()).toContain("/en/pricing");
-  expect(sourceLine()).toContain(card(locale).item.review.replace("{date}", locale === "zh" ? "2026年12月3日" : "Dec 3, 2026"));
   expect(chip()).toBe(card(locale).decisions.pending);
+});
+
+/**
+ * The source line says WHERE a claim came from and nothing else. It used to
+ * carry the observation date, a "review by" date ninety days out and the
+ * citation-check verdict as well, and the Owner read the review date as a
+ * mistake ("is 9 December right?") and the rest as noise. The origin word is
+ * the one part that must stay: an accepted model summary is still a model
+ * summary, and this line is the only place that says so.
+ */
+it.each(["en", "zh"])("keeps the origin and drops every date and check from the source line in %s", async (locale) => {
+  // An ACCEPTED model summary: the case the origin word exists for.
+  await render({ source: { origin: "synthesized", evidenceCount: 2 }, decision: "accepted", evidenceChecks: "cited_and_literals_match" }, locale);
+
+  expect(sourceLine()).toBe(card(locale).originDetail.synthesized.replace("{count}", "2"));
+  expect(chip()).toBe(card(locale).decisions.accepted);
+  // The check's old label, in both languages, must not come back by any route.
+  expect(host.textContent).not.toMatch(/引用核对|Citation check/u);
+  expect(host.textContent).not.toMatch(/20\d\d/u);
 });
 
 /**
@@ -85,13 +102,12 @@ it.each(["en", "zh"])("gives each decision the owner can reach its own words in 
 
 /**
  * A passed citation check proves the cited page exists and that the numbers in
- * the claim occur in it. It is not a confirmation, and it must never borrow the
- * word that belongs to one.
+ * the claim occur in it. It is not a confirmation, and the row must never say
+ * "accepted" over a row whose only distinction is that check.
  */
-it.each(["en", "zh"])("calls a passed citation check exactly that in %s", async (locale) => {
+it.each(["en", "zh"])("never reads a citation check as an acceptance in %s", async (locale) => {
   await render({ evidenceChecks: "cited_and_literals_match", decision: "pending" }, locale);
 
-  expect(sourceLine()).toContain(card(locale).evidenceChecks.cited_and_literals_match);
   expect(host.textContent).not.toContain(card(locale).decisions.accepted);
   expect(chip()).toBe(card(locale).decisions.pending);
 });
@@ -110,13 +126,11 @@ it("shows an owner correction as a declaration, with what it replaced and one wa
     source: { origin: "declared_owner" },
     decision: "accepted",
     evidenceChecks: "owner_declared",
-    ownerDeclaredAt: "2026-09-07T00:00:00.000Z",
     priorSource: { origin: "observed_own", path: "/en/pricing" },
-    priorObservedAt: "2026-09-04T00:00:00.000Z",
     actions,
   });
 
-  expect(sourceLine()).toContain(card("en").item.correctedAt.replace("{date}", "Sep 7, 2026"));
+  expect(sourceLine()).toBe(card("en").origins.declared_owner);
   const prior = host.querySelector("[data-item-prior-source]")?.textContent ?? "";
   expect(prior).toContain(card("en").item.priorBasis);
   expect(prior).toContain("/en/pricing");
@@ -160,44 +174,65 @@ it("carries no item key, hash or other internal identity into the DOM", async ()
 
 /**
  * A required entity field cannot be excluded: the assembler withholds the whole
- * identity section rather than publish a field the owner rejected, so the row
- * has to say that before the owner presses it, not after publishing.
+ * identity section rather than publish a field the owner rejected. The first
+ * version of this row kept the button, disabled, with a sentence beside it
+ * saying why. The Owner's ruling: if it cannot be excluded, do not offer the
+ * gesture -- the button goes, and so does the sentence explaining a button that
+ * is not there.
  */
-it.each(["en", "zh"])("blocks and explains an exclusion that would withhold the section in %s", async (locale) => {
-  const actions = {
-    onAccept: vi.fn(), onCorrect: vi.fn(), onExclude: vi.fn(), onRevert: vi.fn(),
-    excludeBlockedReason: card(locale).review.excludeRequired,
-  } satisfies GeoKbItemActions;
+it.each(["en", "zh"])("offers no exclude gesture on a field the section cannot lose, in %s", async (locale) => {
+  const actions = { onAccept: vi.fn(), onCorrect: vi.fn(), onExclude: vi.fn(), onRevert: vi.fn(), required: true } satisfies GeoKbItemActions;
   await render({ actions }, locale);
 
-  const exclude = host.querySelector<HTMLButtonElement>('[data-item-action="exclude"]')!;
-  expect(exclude.disabled).toBe(true);
-  const note = host.querySelector('[data-item-note="exclude-blocked"]')!;
-  expect(note.textContent).toBe(card(locale).review.excludeRequired);
-  // The explanation is a real element the button points at, not a title
-  // attribute: a tooltip is invisible on touch and to a reader that never
-  // hovers, which is every reader who most needs the sentence.
-  expect(exclude.getAttribute("aria-describedby")).toBe(note.id);
-  expect(note.id).not.toBe("");
-
-  await act(async () => exclude.click());
-  expect(actions.onExclude).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-item-action="exclude"]')).toBeNull();
+  expect(host.querySelector("[data-item-note]")).toBeNull();
+  expect(host.textContent).not.toContain(card(locale).item.exclude);
   // The other two gestures are untouched -- the field can still be corrected.
   for (const [selector, spy] of [["accept", actions.onAccept], ["correct", actions.onCorrect]] as const) {
     await act(async () => host.querySelector<HTMLElement>(`[data-item-action="${selector}"]`)!.click());
     expect(spy).toHaveBeenCalledTimes(1);
   }
+  expect(actions.onExclude).not.toHaveBeenCalled();
 });
 
-it("leaves the exclude gesture alone on a field that can be excluded", async () => {
+it("offers the exclude gesture on a field that can be excluded", async () => {
   const actions = { onAccept: vi.fn(), onCorrect: vi.fn(), onExclude: vi.fn(), onRevert: vi.fn() } satisfies GeoKbItemActions;
   await render({ actions });
 
   const exclude = host.querySelector<HTMLButtonElement>('[data-item-action="exclude"]')!;
   expect(exclude.disabled).toBe(false);
-  expect(exclude.getAttribute("aria-describedby")).toBeNull();
-  expect(host.querySelector('[data-item-note="exclude-blocked"]')).toBeNull();
   await act(async () => exclude.click());
   expect(actions.onExclude).toHaveBeenCalledTimes(1);
+});
+
+/**
+ * The chips are labels, not footnotes. Drawn as an outline in secondary grey
+ * they read as part of the source line; the Owner asked for them to stand out
+ * ("tint the background or make them bold"). The two flags a reader must not
+ * miss -- a new observation, a possible conflict -- carry a warning tone on
+ * top of that, because a flag in the same grey as everything else is a flag
+ * nobody sees.
+ */
+it("gives every chip a tone, and the flags a louder one", async () => {
+  await render({ newObservation: true, conflict: true });
+
+  const type = host.querySelector("[data-item-type]")!;
+  const decision = host.querySelector("[data-decision-chip]")!;
+  const flags = [host.querySelector('[data-item-flag="new_observation"]')!, host.querySelector('[data-item-flag="conflict"]')!];
+  expect(type.getAttribute("data-chip-tone")).toBe("label");
+  expect(decision.getAttribute("data-chip-tone")).toBe("label");
+  for (const flag of flags) expect(flag.getAttribute("data-chip-tone")).toBe("flag");
+  // The tone attribute is the contract; the classes are what the Owner sees.
+  // A tinted background and a medium weight on every chip, and the flags in a
+  // palette that is not the label palette (gpt-6-astra, 2026-09-11).
+  for (const chip of [type, decision, ...flags]) {
+    expect(chip.className).toMatch(/\bfont-medium\b/u);
+    expect(chip.className).toMatch(/\bbg-brand-/u);
+  }
+  expect(type.className).toBe(decision.className);
+  for (const flag of flags) {
+    expect(flag.className).toMatch(/brand-warning/u);
+    expect(flag.className).not.toBe(type.className);
+  }
 });
 

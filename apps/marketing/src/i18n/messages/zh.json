@@ -5400,6 +5400,9 @@
         },
         "cost": "每次更新都会读取你网站的 robots.txt、sitemap.xml 和 llms.txt。除此之外会读取你的首页，以及每个已确认竞品站点的首页（最多五个站点）；如果有一天以内的读取结果可以复用就不再读——同一天内的第二次更新只会重新读那三个文件。一条读取结果都用不上时才会改为抓取：你网站最多八个页面（首页，以及首页链接到的最多七个页面），每个已确认竞品站点最多两个页面。然后发起一次模型调用（计费）。更新出的草稿由你决定何时发布。",
         "publishFree": "发布不计费，也不会发起模型调用。",
+        "costSummary": "更新会读取你的网站，并发起一次模型调用（计费）。",
+        "costMore": "具体读什么",
+        "costLess": "收起",
         "sections": {
           "identity": {
             "title": "A 身份",
@@ -5466,18 +5469,12 @@
           "undetermined": "未判定",
           "first_party": "第一方"
         },
-        "evidenceChecks": {
-          "cited_and_literals_match": "引用核对通过",
-          "owner_declared": "Owner 声明"
-        },
         "item": {
           "accept": "接受",
           "correct": "修正",
           "exclude": "排除",
           "revert": "改回",
-          "correctedAt": "已修正 {date}",
           "priorBasis": "修正前依据",
-          "review": "复核 {date}",
           "newObservation": "有新观察",
           "conflict": "与现有事实可能冲突"
         },
@@ -5633,7 +5630,7 @@
           "publishDone": "已发布 kb@v{version}。",
           "publishReused": "这份内容此前已作为 kb@v{version} 发布，因此没有新建版本。",
           "publishNoQuestionSet": "这个版本没有提问集，AI 可见性体检无法针对它运行。",
-          "excludeRequired": "这一节不能缺少这个字段，因此它不能被排除；请改用「修正」。"
+          "comparisonsNoConfirmedCompetitors": "还没有已确认的竞品站点，因此本次没有读取竞品页面，也没有生成对比。"
         },
         "run": {
           "checking": "正在检查是否还有没结束的更新…",
