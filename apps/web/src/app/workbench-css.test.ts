@@ -5,9 +5,9 @@ const css = readFileSync(new URL("./workbench.css", import.meta.url), "utf8");
 const globals = readFileSync(new URL("./globals.css", import.meta.url), "utf8");
 const layout = readFileSync(new URL("./layout.tsx", import.meta.url), "utf8");
 
-/** The full text of the top-level `@layer base { … }` block, found by brace depth. */
-function layerBaseBlock(source: string): string {
-  const start = source.search(/@layer base\s*\{/);
+/** The full text of a top-level at-rule block (`@layer base { … }`, `@theme { … }`), found by brace depth. */
+function atRuleBlock(source: string, opener: RegExp): string {
+  const start = source.search(opener);
   if (start === -1) return "";
   let depth = 0;
   for (let i = source.indexOf("{", start); i < source.length; i += 1) {
@@ -39,15 +39,16 @@ describe("workbench.css", () => {
   });
 
   it("does not define --font-display (legacy modules rely on it being unset)", () => {
-    const theme = css.match(/@theme\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    // Brace depth, not a lazy regex: `@theme` may legitimately nest `@keyframes`.
+    const theme = atRuleBlock(css, /@theme\s*\{/);
     expect(theme.length).toBeGreaterThan(0);
     expect(theme).not.toContain("--font-display");
   });
 
   it("scopes every reset rule under .wb-reset", () => {
-    const base = layerBaseBlock(css);
+    const base = atRuleBlock(css, /@layer base\s*\{/);
     expect(base.length).toBeGreaterThan(0);
-    // Exclude the `@layer base {` wrapper line itself — layerBaseBlock() returns the
+    // Exclude the `@layer base {` wrapper line itself — atRuleBlock() returns the
     // full block including that opening line, which would otherwise be picked up by
     // the selector regex below as a (failing) fake selector.
     const selectors = (base.match(/^\s*([^{}\n][^{}]*)\{/gm) ?? []).filter(
@@ -59,12 +60,22 @@ describe("workbench.css", () => {
     }
   });
 
+  it("has no unlayered top-level rules (everything lives in @import / @layer / @theme)", () => {
+    // A rule appended after the `@layer base` block would escape the scope check above
+    // and, being unlayered, beat every utility — the removed print rule had that shape.
+    const topLevelRules = css.match(/^[^\s@/*}][^{\n]*\{/gm) ?? [];
+    expect(topLevelRules).toEqual([]);
+  });
+
   it("keeps pseudo-elements outside :where() so the rules actually match", () => {
     expect(css).not.toMatch(/:where\([^)]*::/);
   });
 });
 
 describe("globals.css keeps its unlayered element rules out of the workbench chrome", () => {
+  // Deliberate exemption (not listed here): the `*, *::before, *::after` rule inside
+  // `@media (prefers-reduced-motion: reduce)` is indented, so the column-0 regex skips it;
+  // it is an accessibility rule that SHOULD reach into the chrome.
   // Unlayered declarations beat every @layer, so a bare `* {}` / `a {}` / `h1 {}` /
   // `:focus-visible {}` would override Tailwind utilities inside the new shell.
   it.each(["*", "a", "h1", "h2", "h3", ":focus-visible"])(

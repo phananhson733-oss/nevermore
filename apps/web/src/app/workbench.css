@@ -18,6 +18,8 @@
   --color-wb-rail-2: #2a2927;
   --color-wb-rail-3: #333230;
   --color-wb-rail-line: #2e2d2b;
+  /* muted / dim: 2.7:1 and 2.4–2.7:1 on the rail tiers — fine for labels, never the text
+     colour of a focusable control (the currentColor focus ring would fall below 3:1). */
   --color-wb-rail-muted: #737270;
   --color-wb-rail-dim: #636260;
   --color-wb-rail-text: #a3a3a3;
