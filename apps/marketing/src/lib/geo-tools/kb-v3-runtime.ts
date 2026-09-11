@@ -1,5 +1,5 @@
 // @input -- verified Marketing auth and the existing owner-scoped GEO/Profile stores
-// @output -- real dependencies for the three v3 routes: draft creation, review and publish
+// @output -- real dependencies for the four v3 routes: draft creation, review, publish and the competitor gestures
 // @pos -- runtime wiring only; no config reads or network work during import
 import { getServerAuthenticatedUser } from "../auth/server-auth-user.ts";
 import { findAccountWebsiteByUrl } from "../account-websites/store.ts";
@@ -10,6 +10,13 @@ import { publishGeoKbV3, readGeoKbGenerationSummaryV3, saveGeoKbDraftV3 } from "
 import type { GeoKbV3DraftCreateDependencies, GeoKbV3ProfileRead } from "./kb-v3-draft-create.ts";
 import type { GeoKbV3PublishDependencies } from "./kb-v3-publish-handler.ts";
 import type { GeoKbV3ReviewDependencies } from "./kb-v3-review-handler.ts";
+import type { GeoKbV3CompetitorDependencies } from "./kb-v3-competitor-handler.ts";
+import {
+  DEFAULT_GEO_KB_V3_COMPETITOR_IDENTITY_CACHE,
+  identifyGeoKbV3Competitor,
+  type GeoKbV3CompetitorIdentityDependencies,
+} from "./kb-v3-competitor-identity.ts";
+import { createGeoKnowledgeResourceReader } from "./kb-enrichment-deps.ts";
 
 export interface GeoKbV3RuntimeDependencies {
   readonly authenticate: typeof getServerAuthenticatedUser;
@@ -22,6 +29,15 @@ export interface GeoKbV3RuntimeDependencies {
   /** The confirmed Website Profile a new v3 draft references, found by site. */
   readonly readProfile: typeof findAccountWebsiteByUrl;
   readonly newCandidateId: () => string;
+  /**
+   * The gated, SSRF-safe reader the competitor lookup reads a homepage with,
+   * built per owner: the same constructor and the same client key the run's
+   * collect step uses, so the admission it opens is charged to that owner's
+   * own hourly allowance.
+   */
+  readonly createCompetitorReader: typeof createGeoKnowledgeResourceReader;
+  /** The shared 24 h identity cache, so two owners naming one rival read it once. */
+  readonly competitorIdentityCache: Pick<GeoKbV3CompetitorIdentityDependencies, "readCache" | "writeCache">;
   readonly now: () => Date;
 }
 
@@ -35,6 +51,8 @@ const DEFAULT: GeoKbV3RuntimeDependencies = {
   quota: consumePublicToolQuota,
   readProfile: findAccountWebsiteByUrl,
   newCandidateId: () => crypto.randomUUID(),
+  createCompetitorReader: createGeoKnowledgeResourceReader,
+  competitorIdentityCache: DEFAULT_GEO_KB_V3_COMPETITOR_IDENTITY_CACHE,
   now: () => new Date(),
 };
 
@@ -42,6 +60,7 @@ export interface GeoKbV3Runtime {
   readonly draft: GeoKbV3DraftCreateDependencies;
   readonly review: GeoKbV3ReviewDependencies;
   readonly publish: GeoKbV3PublishDependencies;
+  readonly competitors: GeoKbV3CompetitorDependencies;
 }
 
 export function createGeoKbV3Runtime(overrides: Partial<GeoKbV3RuntimeDependencies> = {}): GeoKbV3Runtime {
@@ -139,6 +158,23 @@ export function createGeoKbV3Runtime(overrides: Partial<GeoKbV3RuntimeDependenci
       // Publishing is free but it writes a version and a draft. A person
       // publishes a handful of times an hour; a stuck client does not.
       consumeQuota: (userId, kbId) => bucket([[`geo-kb-v3:publish:owner:${userId}`, 60], [`geo-kb-v3:publish:kb:${kbId}`, 30]]),
+    },
+    competitors: {
+      ...shared,
+      // A reader per read, not per runtime: the reader memoises its crawl
+      // admission per host for its own lifetime, and a long-lived one would
+      // let a second lookup of the same rival ride an admission opened an
+      // hour ago by somebody else's request. Built only when the cache has
+      // not already answered, which is the common case for a shared rival.
+      identify: ({ userId, domain }) => identifyGeoKbV3Competitor(domain, {
+        read: (input) => dependencies.createCompetitorReader(userId)(input),
+        readCache: dependencies.competitorIdentityCache.readCache,
+        writeCache: dependencies.competitorIdentityCache.writeCache,
+        now: dependencies.now,
+      }),
+      // A draft names at most five rivals and a person confirms each once;
+      // the lookups behind the rows are bounded harder by the crawl gate.
+      consumeQuota: (userId, kbId) => bucket([[`geo-kb-v3:competitors:owner:${userId}`, 120], [`geo-kb-v3:competitors:kb:${kbId}`, 60]]),
     },
   };
 }

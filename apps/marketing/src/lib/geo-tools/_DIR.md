@@ -83,6 +83,10 @@ The isolated Chromium service and enforced Linux runtime live in `apps/marketing
 - `kb-editor-loader.ts` — 网站 GEO 路由读到的编辑器视图。上一版是 v1/v2 时报 `opaque`（存在、有版本号有日期，但逐条对不上），不是拒绝整个知识库；`restated` 在这里派生，因为比较需要浏览器算不出的摘要。
 - `kb-knowledge-synthesis-v2-prompts.ts` — 归纳提示词、响应 schema 与目录投影。输出语言点的是输入自己的 `language` 字段而不是插值进句子：指令与数据不会互相矛盾，系统提示词也保持单一常量，于是请求信封每个站点一样大。协议词留英文。
 - `kb-v3-publish-handler.ts` — v3 发布。没有提问集时的理由分两种：非英语站点是 `unsupported_language`（永远不会有），其余是 `not_attempted`（没人去做）。
+- `kb-v3-competitors.ts` — `competitorsFromProfile` 许诺的那个确认手势，纯函数：按域名**精确**匹配锁定输入里的一行，写入确认与名字（别名去重去空、绝不含名字本身），重新计算 `generationInputHash`，并在同一次写入里清空 `runRef` 四个 id（保存 RPC 只在四个 id 同时清空时才放行哈希变更）。**知识体与审阅保留**：确认改变的是下一次更新读什么，不改任何条目的内容，决定挂在条目内容上；这比重建窄得多，重建丢弃是因为档案版本变了。同状态的重复手势 `changed: false`，不铸版本、不释放记录。只有名字的行没有页面可读，一律 `unknown_competitor`。
+- `kb-v3-competitor-identity.ts` — 竞品身份读取（服务端）：先查 `geo-competitor-identity` 共享缓存，未命中才通过 run 采集步同一个 `createGeoKnowledgeResourceReader(userId)` 读对方首页，用 v2 的 `extractCompetitorIdentity`（JSON-LD → og:site_name → title）取名字与别名，成功才写缓存（失败不缓存，一次超时不该把「不可用」记一整天）。闸门拒绝（`reached` 缺席）报 `rate_limited`，与采集步一致。读到的只是**提案**，不写草稿。
+- `kb-v3-competitor-handler.ts` — `POST /v3/competitors` 三种意图：`identify` 只读、不写；`confirm`/`unconfirm` 在 `baseVersion` + `expectedGenerationInputHash` 的 CAS 下写入。域名必须是 Owner 自己草稿里的一行（`unknown_competitor` 422）——这条同时是「identify 不能变成对任意主机的抓取」的护栏。派发中的付费生成会挡住写入（`generation_running`）。
+- `kb-v3-runtime.ts` — 四条 v3 路由的真实接线；竞品那半的 reader 按 Owner 按需构建，缓存命中时一个 reader 都不建。
 - `kb-run-plan.ts` — 一次更新的纯决策核心：每个计费操作该复用、该探查、该开始还是该跳过。派发了但没看到结果的请求只探查、绝不自动重发。
 - `kb-run-ledger.ts` — run 与 operation 记录的解析，以及读写两侧共用的仓储契约。`finishOperation` 与 `probeOperation` 分开不是为了方便：前者报告我们亲眼看到的响应，后者报告我们对一个可能已计费的请求查到了什么，只有前者能写出「可重试」。
 - `kb-run-store.ts` — run 账本的 service-role RPC 传输层。分不清的失败一律 `unavailable`，编排层据此不动手：对一张专门用来拦第二次计费的表，会猜的传输层比会停的更糟。

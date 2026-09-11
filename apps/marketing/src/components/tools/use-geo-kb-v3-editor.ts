@@ -1,7 +1,7 @@
 "use client";
 // @input  -- a v3 draft off the wire, the owner's gestures on it, and the id of a knowledge base with no draft yet
-// @output -- the parsed review view, the decision state to render, a debounced compare-and-swap save, the publish action, the create and re-lock calls, and the blockers read off a locked input
-// @pos    -- the hook can change `review` and nothing else; create writes only where no draft exists, and re-lock is a separate named gesture that replaces one
+// @output -- the parsed review view, the decision state to render, a debounced compare-and-swap save, the publish action, the create, re-lock and competitor calls, and the blockers read off a locked input
+// @pos    -- the hook can change `review` and nothing else on its own; create writes only where no draft exists, re-lock replaces a draft, and a competitor gesture is a named server write the hook only takes the answer of
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 /**
@@ -55,8 +55,12 @@ import {
   type GeoOverrideV3,
 } from "../../lib/geo-tools/kb-v3-contract.ts";
 import {
+  parseGeoKbCompetitorIdentifyV3,
+  parseGeoKbCompetitorsSaveV3,
   parseGeoKbPublishV3,
   parseGeoKbReviewSaveV3,
+  type GeoKbCompetitorIdentityV3,
+  type GeoKbCompetitorsSaveV3,
   type GeoKbEditorViewV3,
   type GeoKbPublishV3,
 } from "./geo-kb-v3-wire.ts";
@@ -476,6 +480,65 @@ export async function relockGeoKbV3Draft(input: {
   // one was. Same check, same reason, as the create above.
   if (!parsed.success || parsed.data.kbId !== input.kbId) return { ok: false, code: "bad_response" };
   return { ok: true, relock: parsed.data };
+}
+
+/* ------------------------------------------------------------------ */
+/* The competitor gestures                                              */
+/* ------------------------------------------------------------------ */
+
+export type GeoKbV3CompetitorGestureWire =
+  | { readonly kind: "confirm"; readonly domain: string; readonly brandName: string; readonly aliases: readonly string[] }
+  | { readonly kind: "unconfirm"; readonly domain: string };
+
+export type GeoKbV3CompetitorLookupResult =
+  | { readonly ok: true; readonly identity: GeoKbCompetitorIdentityV3 }
+  | { readonly ok: false; readonly code: string };
+
+/**
+ * Ask what a rival's own homepage calls it. Reads nothing into the draft: the
+ * answer is a proposal the owner confirms, edits or ignores. It may spend one
+ * of the owner's crawl admissions, so it sits behind a gesture, never a render.
+ */
+export async function lookupGeoKbV3Competitor(input: {
+  readonly kbId: string;
+  readonly domain: string;
+}): Promise<GeoKbV3CompetitorLookupResult> {
+  const result = await post("competitors", { kbId: input.kbId, intent: "identify", domain: input.domain });
+  if (!result.ok) return { ok: false, code: result.code };
+  const parsed = parseGeoKbCompetitorIdentifyV3(result.data);
+  if (parsed === null || parsed.kbId !== input.kbId) return { ok: false, code: "bad_response" };
+  return { ok: true, identity: parsed.identity };
+}
+
+export type GeoKbV3CompetitorWriteResult =
+  | { readonly ok: true; readonly saved: GeoKbCompetitorsSaveV3 }
+  | { readonly ok: false; readonly code: string; readonly draftVersion?: number };
+
+/**
+ * Confirm a rival, or withdraw that. The one write in the product that moves
+ * the locked half of a draft outside a re-lock, and it moves one row of it;
+ * the server decides the payload and re-locks the input, and the hook takes
+ * the answer through `applyCompetitors` so every later write names the new
+ * coordinates.
+ */
+export async function writeGeoKbV3Competitor(input: {
+  readonly kbId: string;
+  readonly baseVersion: number;
+  readonly expectedGenerationInputHash: string;
+  readonly gesture: GeoKbV3CompetitorGestureWire;
+}): Promise<GeoKbV3CompetitorWriteResult> {
+  const scope = { kbId: input.kbId, baseVersion: input.baseVersion, expectedGenerationInputHash: input.expectedGenerationInputHash };
+  const result = await post("competitors", input.gesture.kind === "confirm"
+    ? { ...scope, intent: "confirm", domain: input.gesture.domain, brandName: input.gesture.brandName, aliases: input.gesture.aliases }
+    : { ...scope, intent: "unconfirm", domain: input.gesture.domain });
+  if (!result.ok) {
+    return result.draftVersion === undefined
+      ? { ok: false, code: result.code }
+      : { ok: false, code: result.code, draftVersion: result.draftVersion };
+  }
+  const parsed = parseGeoKbCompetitorsSaveV3(result.data);
+  if (parsed === null || parsed.kbId !== input.kbId) return { ok: false, code: "bad_response" };
+  return { ok: true, saved: parsed };
 }
 
 export interface GeoKbV3PublishPlan {
@@ -923,5 +986,32 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
     },
     save: () => flush(),
     publish,
+    /**
+     * Take a competitor write's answer into the view. The server re-locked the
+     * input and released the generation ids in that write; knowledge and
+     * review are untouched, so nothing about the decision state moves -- only
+     * the coordinates every later write has to name.
+     */
+    applyCompetitors: (saved: GeoKbCompetitorsSaveV3) => {
+      if (!saved.changed) return;
+      const nextView: GeoKbEditorViewV3 = {
+        ...live.current.view,
+        draftVersion: saved.draftVersion,
+        draftHash: saved.contentHash,
+        payload: {
+          ...live.current.view.payload,
+          generationInput: { ...live.current.view.payload.generationInput, competitors: saved.competitors },
+          runRef: {
+            runId: null,
+            generationInputHash: saved.generationInputHash,
+            rolesGenerationId: null,
+            knowledgeGenerationId: null,
+            questionsGenerationId: null,
+          },
+        },
+      };
+      live.current = { ...live.current, view: nextView };
+      setView(nextView);
+    },
   };
 }

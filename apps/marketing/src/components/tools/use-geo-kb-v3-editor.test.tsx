@@ -22,7 +22,8 @@ import {
 } from "../../lib/geo-tools/kb-v3.test-fixtures.ts";
 import type { GeoKbEditorViewV3 } from "./geo-kb-v3-wire.ts";
 import { createGeoKbV3Draft, geoKbV3DraftBlockers, GEO_KB_EDITOR_V3_SCHEMA_VERSION, GEO_KB_V3_AUTOSAVE_MS,
-  GEO_KB_V3_AUTOSAVE_RETRY_MS, parseGeoKbEditorViewV3, relockGeoKbV3Draft, useGeoKbV3Editor } from "./use-geo-kb-v3-editor.ts";
+  GEO_KB_V3_AUTOSAVE_RETRY_MS, lookupGeoKbV3Competitor, parseGeoKbEditorViewV3, relockGeoKbV3Draft, useGeoKbV3Editor,
+  writeGeoKbV3Competitor } from "./use-geo-kb-v3-editor.ts";
 import {
   buildGeoKbV3Identity,
   GEO_ABSENT_EVIDENCE_CONTENT_HASH,
@@ -589,4 +590,112 @@ it.each([
   // anything would agree perfectly, and agreement alone would pass.
   expect([...built.blockers]).toEqual(expected);
   expect(geoKbV3DraftBlockers(locked)).toEqual([...built.blockers]);
+});
+
+/* ------------------------------------------------------------------ */
+/* The competitor gestures                                              */
+/* ------------------------------------------------------------------ */
+
+const COMPETITORS_ENDPOINT = "/api/tools/geo-knowledge-base/v3/competitors";
+const IDENTITY = {
+  status: "available", domain: "astro.example", brandName: "Astro", aliases: ["Astro Charts"],
+  method: "json_ld", sourceUrl: "https://astro.example/", observedAt: NOW, cached: false,
+};
+
+it("looks a rival up by its domain and reads the identity back", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: { kbId: V3_KB_ID, identity: IDENTITY } }));
+  const result = await lookupGeoKbV3Competitor({ kbId: V3_KB_ID, domain: "astro.example" });
+  expect(calls()[0]![0]).toBe(COMPETITORS_ENDPOINT);
+  expect(bodyOf(0)).toEqual({ kbId: V3_KB_ID, intent: "identify", domain: "astro.example" });
+  expect(result).toEqual({ ok: true, identity: IDENTITY });
+});
+
+it("refuses a lookup answered for another knowledge base or in a shape it cannot read", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ data: { kbId: "22222222-2222-8222-8222-222222222222", identity: IDENTITY } }));
+  await expect(lookupGeoKbV3Competitor({ kbId: V3_KB_ID, domain: "astro.example" })).resolves.toEqual({ ok: false, code: "bad_response" });
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ data: { kbId: V3_KB_ID, identity: { status: "available" } } }));
+  await expect(lookupGeoKbV3Competitor({ kbId: V3_KB_ID, domain: "astro.example" })).resolves.toEqual({ ok: false, code: "bad_response" });
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ error: { code: "unknown_competitor" } }, { status: 422 }));
+  await expect(lookupGeoKbV3Competitor({ kbId: V3_KB_ID, domain: "astro.example" })).resolves.toEqual({ ok: false, code: "unknown_competitor" });
+});
+
+function competitorsSaved(overrides: Record<string, unknown> = {}) {
+  const competitors = [{ domain: "astro.example", brandName: "Astro", confirmed: true, aliases: ["Astro Charts"] }];
+  const generationInput = { ...PAYLOAD.generationInput, competitors };
+  const next = parseGeoKbPayloadV3({ ...PAYLOAD, generationInput, runRef: { ...PAYLOAD.runRef, generationInputHash: geoV2Digest(generationInput) } });
+  return {
+    next,
+    data: {
+      kbId: V3_KB_ID, draftVersion: 5, contentHash: geoV2Digest(next), updatedAt: NOW,
+      generationInputHash: next.runRef.generationInputHash, competitors, released: ["knowledgeGenerationId"], changed: true, ...overrides,
+    },
+  };
+}
+
+it("confirms a rival under the locked input the row was drawn against", async () => {
+  const saved = competitorsSaved();
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: saved.data }));
+  const result = await writeGeoKbV3Competitor({
+    kbId: V3_KB_ID, baseVersion: 4, expectedGenerationInputHash: PAYLOAD.runRef.generationInputHash,
+    gesture: { kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: ["Astro Charts"] },
+  });
+  expect(calls()[0]![0]).toBe(COMPETITORS_ENDPOINT);
+  expect(bodyOf(0)).toEqual({
+    kbId: V3_KB_ID, intent: "confirm", baseVersion: 4, expectedGenerationInputHash: PAYLOAD.runRef.generationInputHash,
+    domain: "astro.example", brandName: "Astro", aliases: ["Astro Charts"],
+  });
+  expect(result).toEqual({ ok: true, saved: saved.data });
+});
+
+it("withdraws a confirmation with the same coordinates and no name", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: competitorsSaved().data }));
+  await writeGeoKbV3Competitor({
+    kbId: V3_KB_ID, baseVersion: 4, expectedGenerationInputHash: PAYLOAD.runRef.generationInputHash,
+    gesture: { kind: "unconfirm", domain: "astro.example" },
+  });
+  expect(bodyOf(0)).toEqual({
+    kbId: V3_KB_ID, intent: "unconfirm", baseVersion: 4, expectedGenerationInputHash: PAYLOAD.runRef.generationInputHash, domain: "astro.example",
+  });
+});
+
+it("carries the server's refusal and the version that won a conflict", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ error: { code: "conflict" }, draftVersion: 9 }, { status: 409 }));
+  await expect(writeGeoKbV3Competitor({
+    kbId: V3_KB_ID, baseVersion: 4, expectedGenerationInputHash: PAYLOAD.runRef.generationInputHash,
+    gesture: { kind: "unconfirm", domain: "astro.example" },
+  })).resolves.toEqual({ ok: false, code: "conflict", draftVersion: 9 });
+});
+
+/**
+ * The hook holds the draft's coordinates for every later write. A confirm
+ * moved them -- new version, new hash, a re-locked input -- so the next review
+ * save has to name the new ones, or it is refused as stale.
+ */
+it("takes a competitor save into the view so the next review write names the re-locked input", async () => {
+  const saved = competitorsSaved();
+  await mount();
+  await act(async () => { editor.applyCompetitors(saved.data); });
+  expect(editor.view.draftVersion).toBe(5);
+  expect(editor.view.draftHash).toBe(saved.data.contentHash);
+  expect(editor.payload.generationInput.competitors).toEqual(saved.data.competitors);
+  expect(editor.payload.runRef).toEqual({
+    runId: null, generationInputHash: saved.data.generationInputHash, rolesGenerationId: null, knowledgeGenerationId: null, questionsGenerationId: null,
+  });
+  // Knowledge and review are untouched: nothing about an item changed.
+  expect(editor.payload.knowledge).toEqual(PAYLOAD.knowledge);
+  expect(editor.payload.review).toEqual(PAYLOAD.review);
+
+  const review = savedReview(saved.next, [{ kind: "accept", itemKey: FACT_KEY_PRO }], 5);
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: review.data }));
+  await act(async () => { editor.accept(FACT_KEY_PRO); });
+  await settle();
+  expect(bodyOf(0)).toMatchObject({ baseVersion: 5, expectedGenerationInputHash: saved.data.generationInputHash });
+  expect(editor.view.draftVersion).toBe(6);
+});
+
+it("ignores a competitor save that changed nothing", async () => {
+  await mount();
+  const before = editor.view;
+  await act(async () => { editor.applyCompetitors(competitorsSaved({ changed: false, draftVersion: 4, contentHash: before.draftHash, generationInputHash: PAYLOAD.runRef.generationInputHash }).data); });
+  expect(editor.view).toBe(before);
 });

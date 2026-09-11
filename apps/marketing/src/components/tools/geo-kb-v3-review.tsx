@@ -1,7 +1,7 @@
 "use client";
 // @input  -- one loaded v3 draft, through the review editor hook
-// @output -- the reviewable modules with their four gestures, the free publish action, the update run, and the two exits from a draft that cannot make progress
-// @pos    -- the surface for 接受 / 修正 / 排除 / 全部接受 and 发布, the tab's half of the run protocol, and the rebuild/discard recovery; it names no work a run performs
+// @output -- the reviewable modules with their four gestures, the competitor rows above them, the free publish action, the update run, and the two exits from a draft that cannot make progress
+// @pos    -- the surface for 接受 / 修正 / 排除 / 全部接受 and 发布, the competitor confirmations, the tab's half of the run protocol, and the rebuild/discard recovery; it names no work a run performs
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 /**
@@ -36,6 +36,7 @@ import { useTranslations } from "next-intl";
 
 import { Button } from "../ui/button.tsx";
 import { GeoKbCard, type GeoKbCardSections } from "./geo-kb-card.tsx";
+import { GeoKbCompetitors } from "./geo-kb-competitors.tsx";
 import { GeoKbItemRow, type GeoKbItemActions } from "./geo-kb-item-row.tsx";
 import { GeoKbEvidenceGroup, GeoKbModuleSection, geoKbModuleState, geoKbModuleValue, type GeoKbModulePresentation } from "./geo-kb-module-section.tsx";
 import { geoKbFormatDate, useGeoKbCopy, type GeoKbCopy } from "./geo-kb-copy.ts";
@@ -502,17 +503,21 @@ function ComparisonsModule({ knowledge, context, packCopy }: {
    * the module was empty (2026-09-11).
    *
    * The cause is read off the locked input, not inferred from the reason
-   * code. The card renders a stored payload, and a stored `not_applicable`
-   * over an input that DOES confirm a competitor would make the sentence a
-   * lie about that competitor (gpt-6-astra, 2026-09-11); the generic sentence
-   * is what such a payload gets. Said as the cause and not as an instruction:
-   * nothing in this deployment lets an owner confirm a competitor yet
-   * (`carryCompetitorState` in `kb-v3-draft-create.ts`), so "confirm one in
-   * the Profile" would send them to a gesture that does not exist.
+   * code, because the card renders a STORED payload and the input can have
+   * moved since the body was assembled. Two sentences, one per state:
+   *
+   *   no rival confirmed     say so, and point at the rows above where one is
+   *                          confirmed -- the gesture exists now.
+   *   a rival confirmed      the body predates the confirmation (a confirm
+   *                          keeps the body; see `kb-v3-competitors.ts`), so
+   *                          "none is confirmed" would be a lie about that
+   *                          rival (gpt-6-astra, 2026-09-11). Say when the
+   *                          absence was true and that the next update reads
+   *                          the rival.
    */
   const noneConfirmed = context.editor.payload.generationInput.competitors.every((competitor) => !competitor.confirmed);
-  const unavailableNote = knowledge.comparisons.status === "unavailable" && knowledge.comparisons.reason === "not_applicable" && noneConfirmed
-    ? { unavailableNote: context.t("review.comparisonsNoConfirmedCompetitors") }
+  const unavailableNote = knowledge.comparisons.status === "unavailable" && knowledge.comparisons.reason === "not_applicable"
+    ? { unavailableNote: context.t(noneConfirmed ? "review.comparisonsNoConfirmedCompetitors" : "review.comparisonsAwaitingUpdate") }
     : {};
   return <GeoKbModuleSection
     title={packCopy.sections.comparisons}
@@ -1671,6 +1676,20 @@ export function GeoKnowledgeBaseV3({ view, locale, inline = false, confirmedProf
       disabled: decisionsHeld(hold),
       busy: editor.busy,
     }}
+    /* The competitor rows: the one part of the locked input the owner edits
+       here. Drawn on every draft that has not just been replaced, knowledge
+       or not, because the best moment to confirm a rival is before the first
+       billed update. Held under the same conditions as the recovery gestures
+       plus an unsaved decision: a confirmation moves the draft version, and a
+       review write queued against the old one would be refused as stale. */
+    inputs={rebuilt ? null : <GeoKbCompetitors
+      kbId={kbId}
+      competitors={editor.payload.generationInput.competitors}
+      baseVersion={editor.view.draftVersion}
+      generationInputHash={editor.payload.runRef.generationInputHash}
+      disabled={editor.busy || editor.dirty || runPhase !== "idle" || resume !== null || recovery.kind === "working" || hold === "conflict"}
+      onSaved={(saved) => editor.applyCompetitors(saved)}
+    />}
     sections={sections}
   >
     {rebuilt ? null : <RunPanel

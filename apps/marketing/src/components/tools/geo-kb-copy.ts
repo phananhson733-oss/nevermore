@@ -1,6 +1,6 @@
 // @input  -- the `tools.geoKnowledgeBase.card` catalog, through next-intl
 // @output -- one typed copy object for every GEO knowledge base card component
-// @pos    -- copy only: no fetch, no state, no server module, type imports only
+// @pos    -- copy only: no fetch, no state, no server module; values imported only from the client-safe wire
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 /**
@@ -34,6 +34,12 @@ import {
   type GeoLimitationParams,
 } from "../../lib/geo-tools/kb-knowledge-limitation.ts";
 import { GEO_ENTITY_FIELD_PATHS } from "../../lib/geo-tools/kb-knowledge-shape.ts";
+import {
+  GEO_KB_V3_COMPETITOR_IDENTITY_METHODS,
+  GEO_KB_V3_COMPETITOR_IDENTITY_REASONS,
+  type GeoKbV3CompetitorIdentityMethod,
+  type GeoKbV3CompetitorIdentityReason,
+} from "./geo-kb-v3-wire.ts";
 import type {
   GeoEntityFieldPath,
   GeoItemOrigin,
@@ -126,6 +132,10 @@ const REASON_KEYS = Object.keys(GEO_LIMITATION_REASON_LABELS) as readonly string
 
 /** Sentences are joined the way the stored English joins them. */
 const LIMITATION_JOIN = " ";
+
+const COMPETITOR_REASONS = new Set<string>(GEO_KB_V3_COMPETITOR_IDENTITY_REASONS);
+/** The refusal codes the competitor route sends that have a sentence of their own. */
+const COMPETITOR_FAILURES = new Set<string>(["conflict", "input_changed", "generation_running", "rate_limited", "auth_required"]);
 
 interface LimitationTables {
   readonly groups: Readonly<Record<string, string>>;
@@ -364,6 +374,42 @@ export interface GeoKbCopy {
     readonly thirdPartyProfiles: string;
     readonly firstPartyProof: string;
   };
+  /**
+   * The competitor rows: the one part of the locked input the card lets the
+   * owner touch. Enum-valued fields go through full `Record`s for the reason
+   * every other map here does -- a method or a reason the catalog has no key
+   * for must not render as its own code -- and a reason this build has never
+   * heard of is looked up through `reason(...)`, which answers the generic
+   * sentence rather than the path of a missing key.
+   */
+  readonly competitors: {
+    readonly title: string;
+    readonly items: (confirmed: number, total: number) => string;
+    readonly empty: string;
+    readonly typeLabel: string;
+    readonly unnamed: string;
+    readonly fromProfile: string;
+    readonly readFrom: (url: string) => string;
+    readonly method: Readonly<Record<GeoKbV3CompetitorIdentityMethod, string>>;
+    readonly lookupFailed: (reason: string) => string;
+    readonly reason: (reason: string) => string;
+    readonly noDomain: string;
+    readonly aliases: (aliases: string) => string;
+    readonly confirmed: string;
+    readonly unconfirmed: string;
+    readonly lookup: string;
+    readonly lookupBusy: string;
+    readonly confirm: string;
+    readonly unconfirm: string;
+    readonly rename: string;
+    readonly nameLabel: string;
+    readonly save: string;
+    readonly cancel: string;
+    readonly saving: string;
+    readonly nameRequired: string;
+    /** The route's refusal codes, in the owner's words; anything else is `unknown`. */
+    readonly failed: (code: string) => string;
+  };
   readonly machine: {
     readonly aiCrawlers: string;
     readonly snippets: string;
@@ -502,6 +548,33 @@ export function useGeoKbCopy(): GeoKbCopy {
       press: t("groups.press"),
       thirdPartyProfiles: t("groups.thirdPartyProfiles"),
       firstPartyProof: t("groups.firstPartyProof"),
+    },
+    competitors: {
+      title: t("competitors.title"),
+      items: (confirmed, total) => t("competitors.items", { confirmed, total }),
+      empty: t("competitors.empty"),
+      typeLabel: t("competitors.typeLabel"),
+      unnamed: t("competitors.unnamed"),
+      fromProfile: t("competitors.fromProfile"),
+      readFrom: (url) => t("competitors.readFrom", { url }),
+      method: record(GEO_KB_V3_COMPETITOR_IDENTITY_METHODS, (key) => t(`competitors.method.${key}`)),
+      lookupFailed: (reason) => t("competitors.lookupFailed", { reason }),
+      reason: (reason) => t(`competitors.reasons.${COMPETITOR_REASONS.has(reason) ? (reason as GeoKbV3CompetitorIdentityReason) : "unknown"}`),
+      noDomain: t("competitors.noDomain"),
+      aliases: (aliases) => t("competitors.aliases", { aliases }),
+      confirmed: t("competitors.confirmed"),
+      unconfirmed: t("competitors.unconfirmed"),
+      lookup: t("competitors.lookup"),
+      lookupBusy: t("competitors.lookupBusy"),
+      confirm: t("competitors.confirm"),
+      unconfirm: t("competitors.unconfirm"),
+      rename: t("competitors.rename"),
+      nameLabel: t("competitors.nameLabel"),
+      save: t("competitors.save"),
+      cancel: t("competitors.cancel"),
+      saving: t("competitors.saving"),
+      nameRequired: t("competitors.nameRequired"),
+      failed: (code) => t(`competitors.failed.${COMPETITOR_FAILURES.has(code) ? code : "unknown"}`),
     },
     machine: {
       aiCrawlers: t("machine.aiCrawlers"),

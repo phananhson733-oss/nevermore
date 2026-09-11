@@ -1,4 +1,4 @@
-// @input  -- the request bodies the review card sends and the JSON the two free v3 routes return
+// @input  -- the request bodies the review card sends and the JSON the free v3 routes return: review, publish and the competitor gestures
 // @output -- one schema per direction, shared verbatim by the browser and the handlers
 // @pos    -- client-safe: zod plus the v3 contract; no digest, no store, no server module
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -26,6 +26,7 @@ import { z } from "zod";
 
 import {
   GEO_KB_V3_LIMITS,
+  geoGenerationInputSchema,
   geoOverrideSchema,
   geoReviewSchemaV3,
   type GeoDecision,
@@ -167,6 +168,122 @@ export type GeoKbPublishV3 = z.infer<typeof publishSchema>;
 
 export function parseGeoKbPublishV3(value: unknown): GeoKbPublishV3 | null {
   const parsed = publishSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* The competitor gestures                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The one field a caller authors in the locked half, and the shape it may
+ * take. A domain names a row the owner's own draft already carries -- the
+ * handler refuses any other -- so the caller can neither add a rival nor spend
+ * the crawl allowance on a host of its choosing. The name and aliases are the
+ * owner's answer to "what is this rival called", bounded the way the contract
+ * bounds the row they land in.
+ */
+/**
+ * The vocabulary of a lookup's answer, owned here because both sides need it:
+ * the server-only lookup writes these, and the client-safe copy module maps
+ * each to a sentence without importing the lookup (which would drag cheerio
+ * and the crawl cache into the browser bundle).
+ */
+export const GEO_KB_V3_COMPETITOR_IDENTITY_METHODS = ["json_ld", "og_site_name", "title"] as const;
+export type GeoKbV3CompetitorIdentityMethod = (typeof GEO_KB_V3_COMPETITOR_IDENTITY_METHODS)[number];
+export const GEO_KB_V3_COMPETITOR_IDENTITY_REASONS = [
+  "missing_url",
+  "fetch_failed",
+  "not_found",
+  "target_redirected",
+  "partial_body",
+  "not_html",
+  "invalid_response",
+  "rate_limited",
+  "blocked",
+  "timeout",
+] as const;
+export type GeoKbV3CompetitorIdentityReason = (typeof GEO_KB_V3_COMPETITOR_IDENTITY_REASONS)[number];
+
+const competitorDomain = z.string().min(1).max(255);
+const competitorName = z.string().min(1).max(200);
+const competitorAliases = z.array(z.string().max(200)).max(24);
+
+const competitorScope = {
+  kbId: uuid,
+  baseVersion: version,
+  /** The locked input the row was drawn under; a gesture about a row nobody saw is refused. */
+  expectedGenerationInputHash: hash,
+  domain: competitorDomain,
+};
+
+export const geoV3CompetitorRequestSchema = z.discriminatedUnion("intent", [
+  z.object({ kbId: uuid, intent: z.literal("identify"), domain: competitorDomain }).strict(),
+  z
+    .object({
+      ...competitorScope,
+      intent: z.literal("confirm"),
+      brandName: competitorName,
+      aliases: competitorAliases.optional(),
+    })
+    .strict(),
+  z.object({ ...competitorScope, intent: z.literal("unconfirm") }).strict(),
+]);
+export type GeoV3CompetitorRequest = z.infer<typeof geoV3CompetitorRequestSchema>;
+
+const competitorIdentitySchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("available"),
+      domain: competitorDomain,
+      brandName: competitorName,
+      aliases: z.array(competitorName).max(32),
+      method: z.enum(GEO_KB_V3_COMPETITOR_IDENTITY_METHODS).nullable(),
+      sourceUrl: z.string().min(1).max(2_048),
+      observedAt: timestamp,
+      cached: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("unavailable"),
+      domain: competitorDomain,
+      /** Bounded, not enumerated: an unknown reason renders as "could not read", never as a name. */
+      reason: z.string().min(1).max(64),
+    })
+    .strict(),
+]);
+export type GeoKbCompetitorIdentityV3 = z.infer<typeof competitorIdentitySchema>;
+
+const competitorIdentifySchema = z.object({ kbId: uuid, identity: competitorIdentitySchema }).strict();
+
+export function parseGeoKbCompetitorIdentifyV3(value: unknown): z.infer<typeof competitorIdentifySchema> | null {
+  const parsed = competitorIdentifySchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * What a confirm or unconfirm leaves behind: the draft's new coordinates and
+ * the whole competitor list as the server now holds it, so the card redraws
+ * every row from one answer rather than patching the one it asked about.
+ * `released` names the paid records the next update can no longer reuse.
+ */
+const competitorsSaveSchema = z
+  .object({
+    kbId: uuid,
+    draftVersion: version,
+    contentHash: hash,
+    updatedAt: timestamp,
+    generationInputHash: hash,
+    competitors: geoGenerationInputSchema.shape.competitors,
+    released: z.array(z.string().min(1).max(64)).max(16),
+    changed: z.boolean(),
+  })
+  .strict();
+export type GeoKbCompetitorsSaveV3 = z.infer<typeof competitorsSaveSchema>;
+
+export function parseGeoKbCompetitorsSaveV3(value: unknown): GeoKbCompetitorsSaveV3 | null {
+  const parsed = competitorsSaveSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
 }
 
