@@ -1,30 +1,60 @@
 "use client";
-// @input  -- a section title and its content, at the heading depth the host set
-// @output -- the Profile editor's section card, so both editors read as one asset
+// @input  -- a section title and its content, at the heading depth the host set, and whether it may fold
+// @output -- the Profile editor's section card, so both editors read as one asset; folded to its header when asked
 // @pos    -- layout only; it gates nothing and knows nothing about the draft
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
 
 /**
  * The Profile editor draws every section the same way: a raised header strip
  * carrying an accent rule and the title, then the fields below a divider. GEO
  * is the same kind of thing -- one website's saved settings -- so it is drawn
  * the same way rather than in a second visual language of its own.
+ *
+ * `collapsible` folds the section to its header strip, closed by default, and
+ * the whole strip is the button that opens it. The review card asks for this
+ * on the three modules that report observations rather than ask for
+ * decisions (Owner, 2026-09-11): drawn open they put a screen of cards between
+ * the reviewer and the next thing to decide. It is a button and not a
+ * `details` element because the frozen customer view is contractually free of
+ * disclosure widgets, and that view never asks. The body is not rendered
+ * while folded, so nothing inside a folded module can be found, focused or
+ * read aloud.
  */
-export function GeoKbSection({ title, heading, children }: {
+export function GeoKbSection({ title, heading, collapsible = false, children }: {
   readonly title: string;
   readonly heading: 2 | 3 | 4;
+  readonly collapsible?: boolean;
   readonly children: ReactNode;
 }) {
   const id = useId();
+  const bodyId = `${id}-body`;
+  const [open, setOpen] = useState(false);
   const Heading = (heading === 2 ? "h2" : heading === 3 ? "h3" : "h4") as "h2" | "h3" | "h4";
-  return <section aria-labelledby={id} className="min-w-0 overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel">
-    <div className="border-b border-brand-border-card bg-brand-panel-raised px-5 py-5 sm:px-7">
-      <Heading id={id} className="flex items-center gap-3 text-[17px] font-semibold text-text-dark-primary">
-        <span aria-hidden="true" className="h-5 w-1 shrink-0 rounded-full bg-brand-accent" />
-        {title}
+  const expanded = !collapsible || open;
+  const label = <>
+    <span aria-hidden="true" className="h-5 w-1 shrink-0 rounded-full bg-brand-accent" />
+    <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{title}</span>
+  </>;
+  return <section aria-labelledby={id} data-section-collapsed={collapsible ? String(!open) : undefined} className="min-w-0 overflow-hidden rounded-card border border-brand-border-strong bg-brand-panel">
+    <div className={`bg-brand-panel-raised ${expanded ? "border-b border-brand-border-card" : ""}`}>
+      <Heading id={id} className="text-[17px] font-semibold text-text-dark-primary">
+        {collapsible
+          ? <button
+            type="button"
+            data-section-toggle=""
+            aria-expanded={open}
+            aria-controls={bodyId}
+            onClick={() => setOpen((current) => !current)}
+            className="flex w-full items-center gap-3 px-5 py-5 text-left transition-colors duration-150 hover:bg-brand-panel-sunken focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-accent sm:px-7"
+          >
+            {label}
+            <ChevronDown aria-hidden="true" className={`size-5 shrink-0 text-text-dark-secondary transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+          </button>
+          : <span className="flex items-center gap-3 px-5 py-5 sm:px-7">{label}</span>}
       </Heading>
     </div>
-    <div className="px-5 py-6 sm:px-7">{children}</div>
+    {expanded ? <div id={bodyId} data-section-body="" className="px-5 py-6 sm:px-7">{children}</div> : null}
   </section>;
 }
 

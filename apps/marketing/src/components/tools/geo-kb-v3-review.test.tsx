@@ -34,6 +34,7 @@ import {
   type WebsiteProfileReferenceV1,
 } from "../../lib/account-websites/contracts.ts";
 import { GeoKnowledgeBaseV3 } from "./geo-kb-v3-review.tsx";
+import { geoKnowledgePackCopy as packCopy } from "./geo-knowledge-pack-copy.ts";
 import type { GeoKbEditorViewV3 } from "./geo-kb-v3-wire.ts";
 
 const PAYLOAD = completePayloadV3();
@@ -125,6 +126,16 @@ async function render(
 }
 
 const rows = () => [...host.querySelectorAll("[data-geo-kb-item]")];
+/**
+ * The three read-only modules rest folded (2026-09-11), so a test that reads
+ * what they observed opens them first. Opening is the reader's gesture, not
+ * the card's, which is why it is a helper and not a render option.
+ */
+async function unfold(selector: string) {
+  for (const toggle of host.querySelectorAll<HTMLButtonElement>(`${selector} [data-section-toggle][aria-expanded="false"]`)) {
+    await act(async () => toggle.click());
+  }
+}
 const chips = () => rows().map((row) => row.querySelector("[data-decision-chip]")?.textContent);
 const allCalls = () => (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
 /** Review and publish only: the run and draft routes have their own readers below. */
@@ -213,11 +224,12 @@ it("draws one row per reviewable item, awaiting confirmation", async () => {
   await render();
   expect(rows()).toHaveLength(ITEM_KEYS.length);
   expect(new Set(chips())).toEqual(new Set([card("en").decisions.pending]));
-  // This card passes no `costNote`, so the billing sentence an owner reads
-  // here is the card's own default. That is the seam that made the wrong one
-  // reach only v3: `geo-knowledge-base-v2.tsx` supplies its own. What the
-  // default sentence says is pinned in `geo-kb-card.test.tsx`.
-  expect(host.querySelector("[data-kb-cost]")).not.toBeNull();
+  // This card passes no `costNote`, so the billing line an owner reads here
+  // is the card's own default: one visible sentence, the full account folded
+  // behind it (the Owner read the paragraph as noise, 2026-09-11). What the
+  // two say is pinned in `geo-kb-card.test.tsx`.
+  expect(host.querySelector("[data-kb-cost-summary]")).not.toBeNull();
+  expect(host.querySelector("[data-kb-cost-detail]")).toBeNull();
   // Internal identity never reaches the DOM.
   expect(host.innerHTML).not.toContain(FACT_KEY_PRO);
 });
@@ -366,12 +378,14 @@ it("renders in Chinese from the catalog rather than from inline literals", async
  * The publish assembler withholds the entire identity section rather than
  * publish a required entity field the owner excluded. Offering Exclude there
  * and reporting the consequence only after publishing puts the surprise behind
- * the one action that is hard to take back, so the row refuses it and says why.
+ * the one action that is hard to take back, so the row does not offer it. It
+ * used to offer it disabled with a sentence beside it; the Owner's ruling
+ * (2026-09-11) is that a gesture that cannot be taken is not drawn.
  *
  * Both lists are read from the shape layer, never restated here: a path that
  * changes side must move this test with it rather than leave it passing.
  */
-it("refuses to offer an exclusion that would withhold the identity section", async () => {
+it("does not offer an exclusion that would withhold the identity section", async () => {
   const required = GEO_ENTITY_REQUIRED_PATHS[0]!;
   const removable = GEO_ENTITY_REMOVABLE_PATHS.find((path) => path === "aliases")!;
   const base = completePayloadV3();
@@ -397,15 +411,16 @@ it("refuses to offer an exclusion that would withhold the identity section", asy
   await render("en", { payload, draftHash: geoV2Digest(payload) });
 
   const entityRows = rows().slice(0, 2);
-  const excludeOf = (row: Element) => row.querySelector<HTMLButtonElement>('[data-item-action="exclude"]')!;
-  expect(excludeOf(entityRows[0]!).disabled).toBe(true);
-  expect(entityRows[0]!.querySelector('[data-item-note="exclude-blocked"]')?.textContent)
-    .toBe(card("en").review.excludeRequired);
-  expect(excludeOf(entityRows[1]!).disabled).toBe(false);
-  expect(entityRows[1]!.querySelector('[data-item-note="exclude-blocked"]')).toBeNull();
+  const excludeOf = (row: Element) => row.querySelector<HTMLButtonElement>('[data-item-action="exclude"]');
+  expect(excludeOf(entityRows[0]!)).toBeNull();
+  expect(entityRows[0]!.querySelector("[data-item-note]")).toBeNull();
+  // The required field can still be accepted and corrected.
+  expect(entityRows[0]!.querySelector('[data-item-action="accept"]')).not.toBeNull();
+  expect(entityRows[0]!.querySelector('[data-item-action="correct"]')).not.toBeNull();
+  expect(excludeOf(entityRows[1]!)?.disabled).toBe(false);
 
-  // Blocked means blocked: no decision is written for the required field.
-  await act(async () => excludeOf(entityRows[0]!).click());
+  // Not offered means not offered: nothing on the row can write an exclusion
+  // for the required field.
   await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V3_AUTOSAVE_MS * 2); });
   expect(calls()).toHaveLength(0);
 });
@@ -1088,7 +1103,10 @@ it.each(["en", "zh"])("promises no published view from the sections it does not 
     expect(trust).toContain("没有需要你接受、修正或排除的条目");
     expect(trust).not.toContain("不在这里展示");
   }
-  // And the thing the sentence is about is on the screen underneath it.
+  // And the thing the sentence is about is on the screen underneath it, one
+  // press away: the read-only modules rest folded to their headers.
+  await unfold('[data-kb-section="trust"]');
+  await unfold('[data-kb-section="reachability"]');
   expect(host.querySelector('[data-kb-section="trust"] [data-geo-kb-module]')).not.toBeNull();
   expect(host.querySelector('[data-kb-section="reachability"] [data-geo-kb-module]')).not.toBeNull();
 });
@@ -2106,6 +2124,8 @@ const groupsIn = (selector: string) => [...host.querySelectorAll(`${selector} [d
 
 it("shows what the run observed about the site, not just what there is to decide", async () => {
   await render();
+  await unfold('[data-kb-section="trust"]');
+  await unfold('[data-kb-section="reachability"]');
 
   const trust = host.querySelector('[data-kb-section="trust"]');
   const reachability = host.querySelector('[data-kb-section="reachability"]');
@@ -2129,6 +2149,7 @@ it("shows what the run observed about the site, not just what there is to decide
 
 it("keeps 'looked and found nothing' apart from 'never looked' on the v3 card", async () => {
   await render();
+  await unfold('[data-kb-section="trust"]');
 
   // The fixture collected proof and changelog only. Reading them as one state
   // would tell an owner their press coverage was searched for.
@@ -2375,4 +2396,73 @@ it("says nothing while every fact is still inside its review window", async () =
   await render("en", { payload, draftHash: geoV2Digest(payload) });
 
   expect(host.querySelector("[data-review-due]")).toBeNull();
+});
+
+
+/**
+ * The review card says a partial module's state on its rows and not in a
+ * sentence above them. The entity fixture is `partial` (optional links not
+ * observed); the module still reports `partial`, and nothing on the card
+ * carries the limitation sentence.
+ */
+it("keeps a partial module's state but says no limitation sentence over it", async () => {
+  const base = completePayloadV3();
+  const qa = base.knowledge!.qa;
+  if (qa.status !== "available") throw new Error("fixture qa must be available");
+  const payload = parseGeoKbPayloadV3({
+    ...base,
+    knowledge: { ...base.knowledge!, qa: { status: "partial", limitation: "Only questions supported by the published pages.", value: qa.value } },
+  });
+  await render("en", { payload, draftHash: geoV2Digest(payload) });
+
+  expect(host.querySelector('[data-module-status="partial"]')).not.toBeNull();
+  expect(host.querySelector("[data-module-limitation]")).toBeNull();
+  expect(host.textContent).not.toContain(card("en").module.partial);
+  expect(host.textContent).not.toContain("Only questions supported by the published pages.");
+});
+
+/**
+ * The three modules that report observations rest folded: evidence, machine
+ * status and coverage each fold to their header on the review card and open
+ * on one press. The five modules that ask for decisions stay open -- folding
+ * those would hide the buttons the card exists for.
+ */
+it("folds the three read-only modules and leaves the five reviewable ones open", async () => {
+  await render();
+
+  const toggles = [...host.querySelectorAll<HTMLButtonElement>("[data-section-toggle]")];
+  expect(toggles.map((toggle) => toggle.textContent)).toEqual([
+    packCopy("en").sections.evidence,
+    packCopy("en").sections.machine,
+    packCopy("en").sections.coverage,
+  ]);
+  for (const toggle of toggles) expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(host.querySelector("[data-machine-field]")).toBeNull();
+  expect(host.querySelector('[data-kb-section="trust"] [data-geo-kb-group]')).toBeNull();
+  // The reviewable modules are open: their rows and their boundary groups are
+  // on the screen.
+  expect(rows().length).toBeGreaterThan(0);
+  expect(host.querySelector('[data-kb-section="identity"] [data-geo-kb-group]')).not.toBeNull();
+
+  await act(async () => toggles[1]!.click());
+  expect(host.querySelector("[data-machine-field]")).not.toBeNull();
+});
+
+/**
+ * Nothing in this deployment confirms a competitor: `competitorsFromProfile`
+ * writes `confirmed: false` and is the only producer (see
+ * `kb-v3-draft-create.ts`), the collector reads confirmed competitors only,
+ * and so the comparisons module is `unavailable: not_applicable` on every v3
+ * draft. The generic sentence for that reason -- "this section does not apply
+ * this time" -- told the Owner nothing ("why is comparative knowledge empty?",
+ * 2026-09-11). The module says the actual reason in its own words.
+ */
+it.each(["en", "zh"])("says why there are no comparisons instead of 'not applicable', in %s", async (locale) => {
+  const payload = completePayloadV3();
+  expect(payload.knowledge!.comparisons).toEqual({ status: "unavailable", reason: "not_applicable" });
+  await render(locale, { payload, draftHash: geoV2Digest(payload) });
+
+  const notes = [...host.querySelectorAll("[data-module-unavailable]")].map((node) => node.textContent);
+  expect(notes).toContain(card(locale).review.comparisonsNoConfirmedCompetitors);
+  expect(notes).not.toContain(card(locale).module.unavailable.not_applicable);
 });

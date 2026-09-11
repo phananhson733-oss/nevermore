@@ -128,6 +128,35 @@ function PublishButton({ plan, copy, ...rest }: {
   >{copy.actions.publish(plan.nextVersion)}</Button>;
 }
 
+/**
+ * What one update reads and bills, said once beside the button that bills it.
+ *
+ * One line stays visible: that the update reads the site and makes a billed
+ * model call, which is the one thing an owner must know before pressing a
+ * button that has no confirmation step. The full account -- which files, how
+ * many pages, what a same-day update reuses -- is folded behind it (Owner,
+ * 2026-09-11: the paragraph read as noise). Folded, not cut: the paragraph is
+ * the sentence `kb-v2-runtime.test.ts` checks against what the real collector
+ * fetches, and hiding a claim is not the same as withdrawing it.
+ */
+function CostNote({ copy }: { readonly copy: GeoKbCopy }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return <div data-kb-cost="" className="min-w-0 text-[12px] leading-relaxed text-text-dark-secondary">
+    <span data-kb-cost-summary="">{copy.costSummary}</span>
+    {" "}
+    <button
+      type="button"
+      data-kb-cost-toggle=""
+      aria-expanded={open}
+      aria-controls={id}
+      onClick={() => setOpen((current) => !current)}
+      className="inline underline decoration-brand-border-strong underline-offset-2 transition-colors duration-150 hover:text-text-dark-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+    >{open ? copy.costLess : copy.costMore}</button>
+    {open ? <p id={id} data-kb-cost-detail="" className="mt-2 min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{copy.cost}</p> : null}
+  </div>;
+}
+
 function CardHeader({ host, state, statusText, onUpdate, updateLabel, updateDisabled, costNote, publish, copy }: {
   readonly host: string;
   readonly state: string;
@@ -311,7 +340,7 @@ export function GeoKbCard({
       onUpdate={onUpdate}
       updateLabel={updateLabel ?? copy.actions.update}
       updateDisabled={updateDisabled}
-      costNote={costNote ?? <span data-kb-cost="" className="block text-[12px] leading-relaxed text-text-dark-secondary">{copy.cost}</span>}
+      costNote={costNote ?? <CostNote copy={copy} />}
       publish={publish}
       copy={copy}
     />

@@ -1,6 +1,6 @@
 "use client";
 // @input  -- one reviewable knowledge item: its content, where it came from, what was decided
-// @output -- a row that shows source and decision as two independent facts, plus its actions
+// @output -- a row that shows source and decision as two independent facts, plus its actions; and the tinted chip every GEO surface labels with
 // @pos    -- presentation only; it holds no item key and writes nothing
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -15,21 +15,25 @@
  * and behaves exactly as `accepted`, including the accept button's pressed
  * state, because the Owner's ruling is that a batch acceptance IS one.
  *
- * `cited_and_literals_match` is a third thing again, and is labelled "citation
- * check passed": it proves the cited page exists and that the numbers in the
- * claim occur in it. It does not prove the sentence true, and it is never
- * rendered as confirmation.
+ * The source line says the origin and nothing else. It used to add the
+ * observation date, a "review by" date ninety days out and the citation-check
+ * verdict; the Owner read the review date as an error and the rest as noise
+ * (2026-09-11). The citation check is still carried by every item and still
+ * gates nothing here: it proves a cited page exists and that the claim's
+ * numbers occur in it, which was never a confirmation and is now not drawn
+ * either. The origin word stays because it is the only place that says an
+ * accepted summary is still a summary.
  *
  * The item key stays in the callbacks. It is an internal identity and the
  * frozen-view pruning contract keeps it, and every other internal identity,
  * out of the DOM.
  */
-import { useId, type ReactNode } from "react";
+import { type ReactNode } from "react";
 
 import type { GeoEvidenceCheck } from "../../lib/geo-tools/kb-knowledge-shape.ts";
 import type { GeoDecision } from "../../lib/geo-tools/kb-v3-contract.ts";
 import { Button } from "../ui/button.tsx";
-import { geoKbFormatDate, useGeoKbCopy, type GeoKbCopy, type GeoKbIndependence } from "./geo-kb-copy.ts";
+import { useGeoKbCopy, type GeoKbCopy, type GeoKbIndependence } from "./geo-kb-copy.ts";
 
 /**
  * Where one item came from, in the vocabulary a customer can check. Each
@@ -53,15 +57,16 @@ export interface GeoKbItemActions {
   readonly onRevert: () => void;
   readonly disabled?: boolean;
   /**
-   * Why this particular item cannot be excluded, when it cannot be. The
+   * The section has no shape without this item, so it cannot be excluded. The
    * assembler withholds a whole section rather than publish a required field
-   * the owner rejected, so offering the gesture and letting the owner find out
-   * at publish time hides the consequence behind the one action that is hard to
-   * take back. The button stays visible and disabled, with the reason rendered
-   * beside it rather than in a tooltip: a tooltip is invisible on touch and to
-   * a screen reader that never hovers.
+   * the owner rejected; offering the gesture and letting the owner find out at
+   * publish time would hide the consequence behind the one action that is hard
+   * to take back. The first version kept the button, disabled, with a sentence
+   * explaining why. The Owner's ruling (2026-09-11): a gesture that cannot be
+   * taken is not offered, and a sentence about a button that is not there is
+   * not written.
    */
-  readonly excludeBlockedReason?: string | null;
+  readonly required?: boolean;
 }
 
 export interface GeoKbItemRowProps {
@@ -70,15 +75,10 @@ export interface GeoKbItemRowProps {
   readonly children: ReactNode;
   readonly source: GeoKbItemSource;
   readonly decision: GeoDecision;
+  /** Carried by every item; see the file comment for why it is not drawn. */
   readonly evidenceChecks: GeoEvidenceCheck;
-  readonly locale: string;
-  readonly observedAt?: string | null;
-  readonly nextReviewAt?: string | null;
-  /** Set on an owner correction only; it is what "corrected on" reads from. */
-  readonly ownerDeclaredAt?: string | null;
   /** What the correction replaced. Displayed, and never counted as support. */
   readonly priorSource?: GeoKbItemSource | null;
-  readonly priorObservedAt?: string | null;
   /** The same key was seen again on the same page, with different content. */
   readonly newObservation?: boolean;
   /** The same key arrived from a different page, so both now exist. */
@@ -111,10 +111,30 @@ export function geoKbSourceParts(source: GeoKbItemSource, copy: GeoKbCopy): read
   }
 }
 
-function Chip({ children, ...rest }: { readonly children: ReactNode } & Record<`data-${string}`, string | undefined>) {
+/**
+ * A chip is a label, not a footnote. Drawn as a grey outline it read as part
+ * of the source line under it, and the Owner asked for the labels to stand out
+ * (2026-09-11: "tint the background or make them bold"). `label` is the
+ * ordinary tone -- the kind of item, the decision -- on the sunken panel tint
+ * this app uses for status strips. `flag` is for the two things a reviewer
+ * must not miss, a new observation and a possible conflict, in the warning
+ * tone `limitation-hint` already uses for the same job.
+ */
+export type GeoKbChipTone = "label" | "flag";
+
+const CHIP_TONE: Readonly<Record<GeoKbChipTone, string>> = {
+  label: "border-brand-border-strong bg-brand-panel-sunken text-text-dark-primary",
+  flag: "border-brand-warning/55 bg-brand-warning/10 text-brand-warning",
+};
+
+export function GeoKbChip({ tone = "label", children, ...rest }: {
+  readonly tone?: GeoKbChipTone;
+  readonly children: ReactNode;
+} & Record<`data-${string}`, string | undefined>) {
   return <span
     {...rest}
-    className="inline-flex rounded-full border border-brand-border-card px-2.5 py-1 text-[12px] leading-relaxed text-text-dark-secondary"
+    data-chip-tone={tone}
+    className={`inline-flex rounded-full border px-2.5 py-1 text-[12px] font-medium leading-relaxed ${CHIP_TONE[tone]}`}
   >{children}</span>;
 }
 
@@ -122,12 +142,11 @@ function Meta({ parts }: { readonly parts: readonly string[] }) {
   return <>{parts.map((part, index) => <span key={index} className="min-w-0 break-words [overflow-wrap:anywhere]">{index === 0 ? "" : " · "}{part}</span>)}</>;
 }
 
-function Actions({ actions, decision, corrected, copy, blockedNoteId }: {
+function Actions({ actions, decision, corrected, copy }: {
   readonly actions: GeoKbItemActions;
   readonly decision: GeoDecision;
   readonly corrected: boolean;
   readonly copy: GeoKbCopy;
-  readonly blockedNoteId: string | null;
 }) {
   const disabled = actions.disabled === true;
   if (corrected) {
@@ -136,17 +155,15 @@ function Actions({ actions, decision, corrected, copy, blockedNoteId }: {
   return <>
     <Button type="button" variant="outline" size="sm" data-item-action="accept" aria-pressed={decision === "accepted" || decision === "accepted_in_bulk"} disabled={disabled} onClick={actions.onAccept}>{copy.item.accept}</Button>
     <Button type="button" variant="outline" size="sm" data-item-action="correct" disabled={disabled} onClick={actions.onCorrect}>{copy.item.correct}</Button>
-    <Button
+    {actions.required === true ? null : <Button
       type="button"
       variant="outline"
       size="sm"
       data-item-action="exclude"
-      data-exclude-blocked={blockedNoteId === null ? undefined : ""}
       aria-pressed={decision === "excluded"}
-      disabled={disabled || blockedNoteId !== null}
-      {...(blockedNoteId === null ? {} : { "aria-describedby": blockedNoteId })}
+      disabled={disabled}
       onClick={actions.onExclude}
-    >{copy.item.exclude}</Button>
+    >{copy.item.exclude}</Button>}
   </>;
 }
 
@@ -155,38 +172,15 @@ export function GeoKbItemRow({
   children,
   source,
   decision,
-  evidenceChecks,
-  locale,
-  observedAt = null,
-  nextReviewAt = null,
-  ownerDeclaredAt = null,
   priorSource = null,
-  priorObservedAt = null,
   newObservation = false,
   conflict = false,
   actions,
 }: GeoKbItemRowProps) {
   const copy = useGeoKbCopy();
-  const generatedId = useId();
   const corrected = source.origin === "declared_owner";
-  // A correction replaces the value in place, so the reason to block an
-  // exclusion does not apply while the row is showing one -- and `Actions`
-  // renders only Revert then anyway.
-  const blockedReason = corrected ? null : actions?.excludeBlockedReason ?? null;
-  const blockedNoteId = blockedReason === null ? null : `${generatedId}-exclude-blocked`;
-  const check = copy.evidenceChecks(evidenceChecks);
-  const parts = [
-    ...geoKbSourceParts(source, copy),
-    ...(observedAt === null ? [] : [geoKbFormatDate(observedAt, locale)]),
-    ...(nextReviewAt === null ? [] : [copy.item.review(geoKbFormatDate(nextReviewAt, locale))]),
-    ...(corrected && ownerDeclaredAt !== null ? [copy.item.correctedAt(geoKbFormatDate(ownerDeclaredAt, locale))] : []),
-    ...(check === null ? [] : [check]),
-  ];
-  const prior = priorSource === null ? [] : [
-    copy.item.priorBasis,
-    ...geoKbSourceParts(priorSource, copy),
-    ...(priorObservedAt === null ? [] : [geoKbFormatDate(priorObservedAt, locale)]),
-  ];
+  const parts = geoKbSourceParts(source, copy);
+  const prior = priorSource === null ? [] : [copy.item.priorBasis, ...geoKbSourceParts(priorSource, copy)];
   return <article
     data-geo-kb-item=""
     data-decision={decision}
@@ -196,7 +190,7 @@ export function GeoKbItemRow({
     <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-5 gap-y-3">
       <div className="min-w-0 flex-1 basis-64 space-y-3">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-2">
-          <Chip data-item-type="">{typeLabel}</Chip>
+          <GeoKbChip data-item-type="">{typeLabel}</GeoKbChip>
           <div data-knowledge-copy="compact" className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-text-dark-primary [overflow-wrap:anywhere]">{children}</div>
         </div>
         <div data-item-source="" className="min-w-0 text-[12px] leading-relaxed text-text-dark-secondary">
@@ -205,19 +199,14 @@ export function GeoKbItemRow({
         {prior.length === 0 ? null : <div data-item-prior-source="" className="min-w-0 text-[12px] leading-relaxed text-text-dark-secondary">
           <Meta parts={prior} />
         </div>}
-        {blockedReason === null ? null : <p
-          id={blockedNoteId ?? undefined}
-          data-item-note="exclude-blocked"
-          className="min-w-0 text-[12px] leading-relaxed text-text-dark-secondary"
-        >{blockedReason}</p>}
         {newObservation || conflict ? <div className="flex flex-wrap gap-2">
-          {newObservation ? <Chip data-item-flag="new_observation">{copy.item.newObservation}</Chip> : null}
-          {conflict ? <Chip data-item-flag="conflict">{copy.item.conflict}</Chip> : null}
+          {newObservation ? <GeoKbChip tone="flag" data-item-flag="new_observation">{copy.item.newObservation}</GeoKbChip> : null}
+          {conflict ? <GeoKbChip tone="flag" data-item-flag="conflict">{copy.item.conflict}</GeoKbChip> : null}
         </div> : null}
       </div>
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-        <Chip data-decision-chip="">{copy.decisions[decision]}</Chip>
-        {actions === undefined ? null : <Actions actions={actions} decision={decision} corrected={corrected} copy={copy} blockedNoteId={blockedNoteId} />}
+        <GeoKbChip data-decision-chip="">{copy.decisions[decision]}</GeoKbChip>
+        {actions === undefined ? null : <Actions actions={actions} decision={decision} corrected={corrected} copy={copy} />}
       </div>
     </div>
   </article>;

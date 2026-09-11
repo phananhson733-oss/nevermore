@@ -37,7 +37,7 @@ import { useTranslations } from "next-intl";
 import { Button } from "../ui/button.tsx";
 import { GeoKbCard, type GeoKbCardSections } from "./geo-kb-card.tsx";
 import { GeoKbItemRow, type GeoKbItemActions } from "./geo-kb-item-row.tsx";
-import { GeoKbEvidenceGroup, GeoKbModuleSection, geoKbModuleState, geoKbModuleValue } from "./geo-kb-module-section.tsx";
+import { GeoKbEvidenceGroup, GeoKbModuleSection, geoKbModuleState, geoKbModuleValue, type GeoKbModulePresentation } from "./geo-kb-module-section.tsx";
 import { geoKbFormatDate, useGeoKbCopy, type GeoKbCopy } from "./geo-kb-copy.ts";
 import {
   geoKbItemSourceOf,
@@ -79,9 +79,20 @@ const CORRECTABLE = new Set<string>(GEO_ENTITY_CORRECTABLE_PATHS);
 /**
  * Entity fields the published entity has no shape for without a value. The
  * assembler withholds the whole identity section rather than publish one the
- * owner excluded, so the row says so instead of offering the gesture.
+ * owner excluded, so the row does not offer the gesture.
  */
 const REQUIRED_ENTITY = new Set<string>(GEO_ENTITY_REQUIRED_PATHS);
+
+/**
+ * How every module on this card is drawn. The limitation sentence is off:
+ * each absence it would name is already said on the rows beneath it, and the
+ * Owner read the sentence as one more line to skip (2026-09-11). The three
+ * modules that report observations rather than ask for decisions fold to
+ * their header as well; the five that carry buttons stay open, because a
+ * folded module hides the very controls this card exists for.
+ */
+const REVIEWABLE: GeoKbModulePresentation = { limitation: false };
+const READ_ONLY: GeoKbModulePresentation = { limitation: false, collapsible: true };
 
 /** One item's provenance, in the shape both the draft and the pack express it. */
 interface DraftProvenance {
@@ -90,8 +101,6 @@ interface DraftProvenance {
   readonly sourceRefs: readonly string[];
   readonly evidenceChecks: Parameters<typeof GeoKbItemRow>[0]["evidenceChecks"];
   readonly alternateObservations: readonly unknown[];
-  readonly observedAt?: string | null;
-  readonly nextReviewAt?: string | null;
 }
 
 /**
@@ -254,7 +263,6 @@ interface RowContext {
    * saying it once the owner has looked and decided again.
    */
   readonly restated: ReadonlySet<string>;
-  readonly locale: string;
   readonly editing: string | null;
   readonly draft: Draft | null;
   readonly open: (itemKey: string, draft: Draft) => void;
@@ -270,17 +278,17 @@ interface RowContext {
   readonly card: GeoKbCopy;
 }
 
-function Item({ item, typeLabel, correction, excludeBlockedReason = null, context, children }: {
+function Item({ item, typeLabel, correction, required = false, context, children }: {
   readonly item: DraftProvenance;
   readonly typeLabel: string;
   /** Null when this item's module or field cannot be rewritten in place. */
   readonly correction: Draft | null;
   /** Set when excluding this item would withhold its whole section. */
-  readonly excludeBlockedReason?: string | null;
+  readonly required?: boolean;
   readonly context: RowContext;
   readonly children: ReactNode;
 }) {
-  const { editor, sources, locale, editing, draft, open, change, close, t, restated } = context;
+  const { editor, sources, editing, draft, open, change, close, t, restated } = context;
   const state = editor.decisionFor(item.itemKey);
   const editingThis = editing === item.itemKey && draft !== null;
   const actions: GeoKbItemActions = {
@@ -289,7 +297,7 @@ function Item({ item, typeLabel, correction, excludeBlockedReason = null, contex
     onExclude: () => editor.exclude(item.itemKey),
     onRevert: () => editor.revert(item.itemKey),
     disabled: decisionsHeld(editor.autosaveHold),
-    excludeBlockedReason,
+    required,
   };
   return <div className="min-w-0 space-y-2">
     <GeoKbItemRow
@@ -299,9 +307,6 @@ function Item({ item, typeLabel, correction, excludeBlockedReason = null, contex
       source={state.override === null ? geoKbItemSourceOf(item, sources) : { origin: "declared_owner" }}
       decision={state.decision}
       evidenceChecks={state.override === null ? item.evidenceChecks : "owner_declared"}
-      locale={locale}
-      observedAt={state.override === null ? item.observedAt ?? null : null}
-      nextReviewAt={item.nextReviewAt ?? null}
       priorSource={state.override === null ? null : geoKbItemSourceOf(item, sources)}
       conflict={item.alternateObservations.length > 0}
       // Section 4.4 lets a decision stand when the same page restates the same
@@ -351,6 +356,7 @@ function EntityModule({ knowledge, context, packCopy }: {
   return <GeoKbModuleSection
     title={packCopy.sections.entity}
     state={geoKbModuleState(knowledge.entity)}
+    {...REVIEWABLE}
     action={<AcceptAll editor={context.editor} itemKeys={fields.map((field) => field.itemKey)} t={context.t} />}
   >
     <div className="min-w-0 space-y-3">
@@ -361,7 +367,7 @@ function EntityModule({ knowledge, context, packCopy }: {
           key={field.itemKey}
           item={field}
           typeLabel={context.card.entityFields[field.field]}
-          excludeBlockedReason={REQUIRED_ENTITY.has(field.field) ? context.t("review.excludeRequired") : null}
+          required={REQUIRED_ENTITY.has(field.field)}
           correction={CORRECTABLE.has(field.field)
             ? { module: "entity", field: field.field as Correctable, value: override ?? entityValue(entity!, field.field) }
             : null}
@@ -430,6 +436,7 @@ function FactsModule({ knowledge, context, packCopy }: {
   return <GeoKbModuleSection
     title={packCopy.sections.facts}
     state={geoKbModuleState(knowledge.facts)}
+    {...REVIEWABLE}
     action={<AcceptAll editor={context.editor} itemKeys={facts.map((fact) => fact.itemKey)} t={context.t} />}
   >
     <div className="min-w-0 space-y-3">
@@ -457,6 +464,7 @@ function QaModule({ knowledge, context, packCopy }: {
   return <GeoKbModuleSection
     title={packCopy.sections.qa}
     state={geoKbModuleState(knowledge.qa)}
+    {...REVIEWABLE}
     action={<AcceptAll editor={context.editor} itemKeys={items.map((item) => item.itemKey)} t={context.t} />}
   >
     <div className="min-w-0 space-y-3">
@@ -485,9 +493,25 @@ function ComparisonsModule({ knowledge, context, packCopy }: {
 }) {
   const comparisons = geoKbModuleValue(knowledge.comparisons) ?? [];
   const rows = comparisons.flatMap((comparison) => comparison.rows);
+  /*
+   * `not_applicable` here has exactly one cause: no competitor was confirmed,
+   * so the run read no competitor page and had nothing to compare
+   * (`comparisonsModule` in `kb-knowledge-assemble.ts`). The generic sentence
+   * for the reason -- "this section does not apply this time" -- is true and
+   * says nothing; the Owner asked why the module was empty (2026-09-11). Said
+   * as the cause, and not as an instruction: nothing in this deployment lets
+   * an owner confirm a competitor yet (`carryCompetitorState` in
+   * `kb-v3-draft-create.ts`), so "confirm one in the Profile" would send them
+   * to a gesture that does not exist.
+   */
+  const unavailableNote = knowledge.comparisons.status === "unavailable" && knowledge.comparisons.reason === "not_applicable"
+    ? { unavailableNote: context.t("review.comparisonsNoConfirmedCompetitors") }
+    : {};
   return <GeoKbModuleSection
     title={packCopy.sections.comparisons}
     state={geoKbModuleState(knowledge.comparisons)}
+    {...REVIEWABLE}
+    {...unavailableNote}
     action={<AcceptAll editor={context.editor} itemKeys={rows.map((row) => row.itemKey)} t={context.t} />}
   >
     <div className="min-w-0 space-y-5">
@@ -524,6 +548,7 @@ function ScopeModule({ knowledge, context, packCopy }: {
   return <GeoKbModuleSection
     title={packCopy.sections.scope}
     state={geoKbModuleState(knowledge.scope)}
+    {...REVIEWABLE}
     action={<AcceptAll editor={context.editor} itemKeys={keys} t={context.t} />}
   >
     {/* One block per group, stacked, never side by side and never a flat list.
@@ -1471,7 +1496,7 @@ export function GeoKnowledgeBaseV3({ view, locale, inline = false, confirmedProf
   const knowledge = editor.payload.knowledge;
   const sources: SourceIndex = new Map((knowledge?.sourceCatalogue ?? []).map((source) => [source.id, source as GeoKnowledgeSourceV2]));
   const context: RowContext = {
-    editor, sources, locale, t, card: copy,
+    editor, sources, t, card: copy,
     restated: new Set(editor.view.restated),
     editing: editing?.itemKey ?? null,
     draft: editing?.draft ?? null,
@@ -1561,12 +1586,12 @@ export function GeoKnowledgeBaseV3({ view, locale, inline = false, confirmedProf
        carry no accept/correct/exclude controls. */
     trust: <div className="min-w-0 space-y-6">
       <Note>{t("review.noDecisions")}</Note>
-      <GeoEvidenceModuleView module={knowledge.evidence} sources={sources} heading={3} locale={locale} copy={packCopy} card={copy} />
+      <GeoEvidenceModuleView module={knowledge.evidence} sources={sources} heading={3} locale={locale} copy={packCopy} card={copy} presentation={READ_ONLY} />
     </div>,
     reachability: <div className="min-w-0 space-y-6">
       <Note>{t("review.noDecisions")}</Note>
-      <GeoMachineModuleView module={knowledge.machine} sources={sources} heading={3} locale={locale} copy={packCopy} card={copy} />
-      <GeoCoverageModuleView module={knowledge.coverage} sources={sources} heading={3} locale={locale} copy={packCopy} card={copy} />
+      <GeoMachineModuleView module={knowledge.machine} sources={sources} heading={3} locale={locale} copy={packCopy} card={copy} presentation={READ_ONLY} />
+      <GeoCoverageModuleView module={knowledge.coverage} sources={sources} heading={3} locale={locale} copy={packCopy} card={copy} presentation={READ_ONLY} />
     </div>,
     // The question set is a different absence: it is not in a draft at all,
     // because a set is made for a published version by a paid run.

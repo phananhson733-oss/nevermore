@@ -36,7 +36,6 @@ import {
 import { GEO_ENTITY_FIELD_PATHS } from "../../lib/geo-tools/kb-knowledge-shape.ts";
 import type {
   GeoEntityFieldPath,
-  GeoEvidenceCheck,
   GeoItemOrigin,
   GeoUnavailableReason,
 } from "../../lib/geo-tools/kb-knowledge-shape.ts";
@@ -269,7 +268,17 @@ export interface GeoKbCopy {
     readonly view: string;
     readonly edit: string;
   };
+  /**
+   * The full account of what one update reads and bills. Folded behind
+   * `costSummary` on the card since 2026-09-11 -- the Owner read the paragraph
+   * as noise -- but still the sentence `kb-v2-runtime.test.ts` holds against
+   * the real collector, because a fold hides a claim without changing it.
+   */
   readonly cost: string;
+  /** The one line that stays visible beside the billed button. */
+  readonly costSummary: string;
+  readonly costMore: string;
+  readonly costLess: string;
   readonly publishFree: string;
   readonly sections: {
     readonly identity: GeoKbSectionCopy;
@@ -327,16 +336,12 @@ export interface GeoKbCopy {
     readonly synthesized: (count: number) => string;
   };
   readonly independence: Readonly<Record<GeoKbIndependence, string>>;
-  /** `not_applicable` deliberately has no label: there is nothing to say. */
-  readonly evidenceChecks: (check: GeoEvidenceCheck) => string | null;
   readonly item: {
     readonly accept: string;
     readonly correct: string;
     readonly exclude: string;
     readonly revert: string;
-    readonly correctedAt: (date: string) => string;
     readonly priorBasis: string;
-    readonly review: (date: string) => string;
     readonly newObservation: string;
     readonly conflict: string;
   };
@@ -413,6 +418,9 @@ export function useGeoKbCopy(): GeoKbCopy {
       edit: t("actions.edit"),
     },
     cost: t("cost"),
+    costSummary: t("costSummary"),
+    costMore: t("costMore"),
+    costLess: t("costLess"),
     publishFree: t("publishFree"),
     sections: {
       identity: { title: t("sections.identity.title"), items: t("sections.identity.items") },
@@ -453,15 +461,12 @@ export function useGeoKbCopy(): GeoKbCopy {
       synthesized: (count) => t("originDetail.synthesized", { count }),
     },
     independence: record(INDEPENDENCE, (value) => t(`independence.${value}`)),
-    evidenceChecks: (check) => (check === "not_applicable" ? null : t(`evidenceChecks.${check}`)),
     item: {
       accept: t("item.accept"),
       correct: t("item.correct"),
       exclude: t("item.exclude"),
       revert: t("item.revert"),
-      correctedAt: (date) => t("item.correctedAt", { date }),
       priorBasis: t("item.priorBasis"),
-      review: (date) => t("item.review", { date }),
       newObservation: t("item.newObservation"),
       conflict: t("item.conflict"),
     },

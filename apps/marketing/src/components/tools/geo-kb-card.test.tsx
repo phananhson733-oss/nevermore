@@ -245,10 +245,28 @@ const COST_REQUIRED: Readonly<Record<string, readonly RegExp[]>> = {
   ],
 };
 
+/**
+ * Folded behind one line since 2026-09-11. The line that stays visible has to
+ * say the two things an owner must know before a button with no confirmation
+ * step: it reads the site, and it bills a model call. The paragraph opens on
+ * one press and is the exact text the runtime test holds against the
+ * collector; folded is the resting state, so the default render must not
+ * carry it.
+ */
 it.each(["en", "zh"])("says what one update actually does and costs, in %s", async (locale) => {
   await render({}, locale);
 
-  const note = host.querySelector("[data-kb-cost]")?.textContent;
+  const summary = host.querySelector("[data-kb-cost-summary]")?.textContent ?? "";
+  expect(summary).toBe(card(locale).costSummary);
+  expect(summary).toMatch(locale === "zh" ? /计费/u : /billed/iu);
+  expect(summary).toMatch(locale === "zh" ? /模型调用/u : /model call/iu);
+  expect(host.querySelector("[data-kb-cost-detail]")).toBeNull();
+
+  const toggle = host.querySelector<HTMLButtonElement>("[data-kb-cost-toggle]")!;
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  const note = host.querySelector("[data-kb-cost-detail]")?.textContent;
   expect(note).toBe(COST_LINE[locale]);
   for (const claim of COST_FORBIDDEN[locale]!) expect(note).not.toMatch(claim);
   for (const named of COST_NAMES) expect(note).toContain(named);

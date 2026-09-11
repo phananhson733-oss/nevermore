@@ -5400,6 +5400,9 @@
         },
         "cost": "One update reads your site's robots.txt, sitemap.xml and llms.txt every time. Beyond those it reads your home page and the home page of each confirmed competitor site (up to five sites), unless a reading less than a day old can be reused — a second update on the same day re-reads only the three files. When no reading can be reused it crawls instead: up to eight pages of your website (the home page and up to seven pages linked from it) and up to two pages of each confirmed competitor site. Then it makes one billed model call. The draft it produces is yours to publish.",
         "publishFree": "Publishing is free and makes no model call.",
+        "costSummary": "An update reads your site and makes one billed model call.",
+        "costMore": "What it reads",
+        "costLess": "Hide",
         "sections": {
           "identity": {
             "title": "A Identity",
@@ -5466,18 +5469,12 @@
           "undetermined": "Undetermined",
           "first_party": "First-party"
         },
-        "evidenceChecks": {
-          "cited_and_literals_match": "Citation check passed",
-          "owner_declared": "Owner declaration"
-        },
         "item": {
           "accept": "Accept",
           "correct": "Correct",
           "exclude": "Exclude",
           "revert": "Undo the correction",
-          "correctedAt": "Corrected {date}",
           "priorBasis": "What this replaced",
-          "review": "Review by {date}",
           "newObservation": "New observation",
           "conflict": "May conflict with an existing fact"
         },
@@ -5633,7 +5630,7 @@
           "publishDone": "Published kb@v{version}.",
           "publishReused": "This content was already published as kb@v{version}, so no new version was made.",
           "publishNoQuestionSet": "This version has no question set, so the AI visibility check cannot run against it.",
-          "excludeRequired": "This section cannot be published without this field, so it cannot be excluded. Correct it instead."
+          "comparisonsNoConfirmedCompetitors": "No competitor site is confirmed yet, so this update read no competitor page and made no comparison."
         },
         "run": {
           "checking": "Checking whether an earlier update is still open…",

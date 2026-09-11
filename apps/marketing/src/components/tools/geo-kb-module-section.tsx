@@ -84,6 +84,31 @@ function Note({ children, ...rest }: { readonly children: ReactNode } & Record<`
 }
 
 /**
+ * How one surface asks a module to be drawn. The module's STATE is the same on
+ * every surface; these decide only how much of it is said, and where.
+ *
+ * The review card sets all three. The published pack sets none: a customer
+ * reading one section has no rows to fall back on for the limitation, and the
+ * frozen view is contractually free of disclosure widgets.
+ */
+export interface GeoKbModulePresentation {
+  /** Fold the module to its header strip, closed until opened. */
+  readonly collapsible?: boolean;
+  /**
+   * Draw a `partial` module's limitation sentence. Off on the review card,
+   * where every absence the sentence would name is already said on the rows
+   * beneath it and the Owner read it as one more line to skip (2026-09-11).
+   */
+  readonly limitation?: boolean;
+  /**
+   * The caller's own sentence for an `unavailable` module, replacing the
+   * generic one for its reason. A sentence rather than a reason code: only
+   * the caller knows what `not_applicable` means for the module it is drawing.
+   */
+  readonly unavailableNote?: string;
+}
+
+/**
  * One knowledge module drawn in the shared section card.
  *
  * `action` is where a module-level gesture goes -- "accept all" belongs beside
@@ -95,8 +120,11 @@ export function GeoKbModuleSection({
   heading = 3,
   state,
   action,
+  collapsible = false,
+  limitation = true,
+  unavailableNote,
   children,
-}: {
+}: GeoKbModulePresentation & {
   readonly title: string;
   readonly heading?: GeoKbHeading;
   readonly state: GeoKbModuleState;
@@ -104,12 +132,12 @@ export function GeoKbModuleSection({
   readonly children: ReactNode;
 }) {
   const copy = useGeoKbCopy();
-  return <GeoKbSection title={title} heading={heading}>
+  return <GeoKbSection title={title} heading={heading} collapsible={collapsible}>
     <div data-geo-kb-module="" data-module-status={state.status} className="min-w-0 space-y-4">
       {state.status === "unavailable"
-        ? <Note data-module-unavailable="">{copy.module.unavailable(state.reason)}</Note>
+        ? <Note data-module-unavailable="">{unavailableNote ?? copy.module.unavailable(state.reason)}</Note>
         : <>
-          {state.status === "partial" ? <ModuleLimitation state={state} copy={copy} /> : null}
+          {state.status === "partial" && limitation ? <ModuleLimitation state={state} copy={copy} /> : null}
           {action === undefined ? null : <div className="flex flex-wrap justify-end gap-2">{action}</div>}
           {children}
         </>}

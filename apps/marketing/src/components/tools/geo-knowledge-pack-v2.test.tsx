@@ -11,7 +11,7 @@ import { geoKnowledgePackCopy } from "./geo-knowledge-pack-copy.ts";
 import { useGeoKbCopy } from "./geo-kb-copy.ts";
 import { geoKnowledgePackFixture } from "./geo-knowledge-pack.test-fixtures.ts";
 import { geoKnowledgePackV2Fixture } from "./geo-knowledge-pack-v2.test-fixtures.ts";
-import type { GeoKnowledgeModuleName } from "./geo-knowledge-pack-v2.tsx";
+import { GeoCoverageModuleView, GeoEvidenceModuleView, GeoMachineModuleView, type GeoKnowledgeModuleName } from "./geo-knowledge-pack-v2.tsx";
 import { buildGeoKnowledgePackV2 } from "../../lib/geo-tools/kb-knowledge-pack-v2-contract.ts";
 import { buildGeoKnowledgePackV3 } from "../../lib/geo-tools/kb-knowledge-pack-v3.ts";
 import { GEO_ENTITY_FIELD_PATHS } from "../../lib/geo-tools/kb-knowledge-shape.ts";
@@ -118,7 +118,62 @@ it("names the off-site domain and its independence verdict on the item that cite
   const offsite = host.querySelector('[data-origin="observed_third_party"] [data-item-source]')?.textContent ?? "";
   expect(offsite).toContain("press.example");
   expect(offsite).toContain(card("en").independence.independent);
-  expect(offsite).toContain(card("en").evidenceChecks.cited_and_literals_match);
+  // The source line names the origin and nothing else; the citation-check
+  // verdict and the dates came off it on 2026-09-11 (see `geo-kb-item-row`).
+  expect(offsite).not.toMatch(/Citation check/u);
+  expect(offsite).not.toMatch(/20\d\d/u);
+});
+
+/**
+ * The machine cards and the evidence groups read downwards, one under the
+ * other, like every other module on the card. They were a two- and
+ * three-column grid; the Owner asked for the same waterfall the scope module
+ * already had (2026-09-11). Pinned on the container's class because layout is
+ * the one thing this component decides that has no other observable.
+ */
+it("lays the machine cards and the evidence groups out one under another", async () => {
+  await render("en", ["machine", "evidence"]);
+
+  const machine = host.querySelector("[data-machine-field]")?.parentElement?.className ?? "";
+  expect(machine).not.toMatch(/grid-cols/u);
+  const groups = host.querySelector("[data-geo-kb-group]")?.parentElement?.className ?? "";
+  expect(groups).not.toMatch(/grid-cols/u);
+});
+
+/**
+ * The published pack keeps the plain heading and the limitation sentence, and
+ * the three read-only module views pass a presentation through untouched when
+ * a host asks for one. Without the pass-through the review card could ask for
+ * a fold and get a heading, with nothing failing.
+ */
+it("draws the read-only modules open and unfolded unless a host asks otherwise", async () => {
+  await render("en", ["evidence", "machine", "coverage"]);
+
+  expect(host.querySelector("[data-section-toggle]")).toBeNull();
+  expect(host.querySelectorAll("[data-geo-kb-module]")).toHaveLength(3);
+});
+
+it.each(["evidence", "machine", "coverage"] as const)("folds the %s module when the host asks for it", async (module) => {
+  const pack = geoKnowledgePackV2Fixture();
+  const sources = new Map(pack.sourceCatalogue.map((source) => [source.id, source]));
+  function Host() {
+    const card = useGeoKbCopy();
+    const shared = { sources, heading: 3 as const, locale: "en", copy: geoKnowledgePackCopy("en"), card, presentation: { collapsible: true } };
+    if (module === "evidence") return <GeoEvidenceModuleView module={pack.evidence} {...shared} />;
+    if (module === "machine") return <GeoMachineModuleView module={pack.machine} {...shared} />;
+    return <GeoCoverageModuleView module={pack.coverage} {...shared} />;
+  }
+  await act(async () => root.render(
+    <NextIntlClientProvider locale="en" timeZone="UTC" messages={en}>
+      <Host />
+    </NextIntlClientProvider>,
+  ));
+
+  const toggle = host.querySelector<HTMLButtonElement>("[data-section-toggle]")!;
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(host.querySelector("[data-geo-kb-module]")).toBeNull();
+  await act(async () => toggle.click());
+  expect(host.querySelector("[data-geo-kb-module]")).not.toBeNull();
 });
 
 /**
