@@ -169,9 +169,9 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-h1,
-h2,
-h3 {
+h1:where(:not(.wb-reset *)),
+h2:where(:not(.wb-reset *)),
+h3:where(:not(.wb-reset *)) {
   font-family: var(--sf-font-display);
   letter-spacing: -0.02em;
   line-height: 1.08;
@@ -219,11 +219,11 @@ h3 {
   color: var(--sf-cobalt-text);
 }
 
-a {
+a:where(:not(.wb-reset *)) {
   color: var(--sf-cobalt-text);
 }
 
-:focus-visible {
+:focus-visible:where(:not(.wb-reset *)) {
   outline: none;
   box-shadow: var(--sf-focus-ring);
   border-radius: 4px;

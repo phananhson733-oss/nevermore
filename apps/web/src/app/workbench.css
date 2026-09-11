@@ -1,0 +1,113 @@
+/* @input  — tailwindcss theme + utilities（刻意不引 preflight）、tw-animate-css
+ * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表与打印规则
+ * @pos    — app/layout.tsx 在 globals.css 之后引入；旧页面在 <main> 内不带 .wb-reset，不受影响
+ * 一旦本文件被更新，务必更新开头注释
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+
+@theme {
+  --font-sans: var(--font-wb), "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  --color-wb-paper: #faf9f6;
+  --color-wb-rail: #1f1e1c;
+  --color-wb-rail-2: #2a2927;
+  --color-wb-rail-3: #333230;
+  --color-wb-rail-line: #2e2d2b;
+  --color-wb-rail-muted: #737270;
+  --color-wb-rail-dim: #636260;
+  --color-wb-rail-text: #a3a3a3;
+  --color-wb-seo: #1a653b;
+  --color-wb-seo-dark: #155330;
+  --color-wb-geo: #8b5cf6;
+  --color-wb-emerald: #10b981;
+}
+
+@layer base {
+  .wb-reset,
+  .wb-reset *,
+  .wb-reset ::before,
+  .wb-reset ::after {
+    box-sizing: border-box;
+    border-width: 0;
+    border-style: solid;
+    border-color: var(--color-slate-200);
+  }
+  .wb-reset :where(h1, h2, h3, h4, p, ul, ol, dl, dd, figure) {
+    margin: 0;
+  }
+  .wb-reset :where(button, input, select, textarea) {
+    font: inherit;
+    color: inherit;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    letter-spacing: inherit;
+  }
+  .wb-reset :where(button) {
+    cursor: pointer;
+    text-align: inherit;
+  }
+  .wb-reset :where(button:disabled) {
+    cursor: not-allowed;
+  }
+  .wb-reset :where(ul, ol) {
+    list-style: none;
+    padding: 0;
+  }
+  .wb-reset :where(a) {
+    color: inherit;
+    text-decoration: inherit;
+  }
+  .wb-reset :where(img, svg, video) {
+    display: block;
+    max-width: 100%;
+  }
+  .wb-reset :where(input::placeholder, textarea::placeholder) {
+    color: var(--color-slate-400);
+    opacity: 1;
+  }
+  .wb-reset :where(progress) {
+    appearance: none;
+    height: 6px;
+    width: 100%;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--color-slate-200);
+  }
+  .wb-reset :where(progress)::-webkit-progress-bar {
+    background: var(--color-slate-200);
+  }
+  .wb-reset :where(progress)::-webkit-progress-value {
+    background: var(--color-wb-seo);
+  }
+  .wb-reset :where(progress)::-moz-progress-bar {
+    background: var(--color-wb-seo);
+  }
+  .wb-reset :where(progress[data-tone="warn"])::-webkit-progress-value {
+    background: var(--color-amber-500);
+  }
+  .wb-reset :where(progress[data-tone="warn"])::-moz-progress-bar {
+    background: var(--color-amber-500);
+  }
+  .wb-reset :where(progress[data-tone="bad"])::-webkit-progress-value {
+    background: var(--color-rose-500);
+  }
+  .wb-reset :where(progress[data-tone="bad"])::-moz-progress-bar {
+    background: var(--color-rose-500);
+  }
+  .wb-reset :focus-visible {
+    outline: 2px solid var(--color-wb-seo);
+    outline-offset: 2px;
+  }
+}
+
+@media print {
+  [data-app-shell-sidebar],
+  [data-app-shell-topbar] {
+    display: none !important;
+  }
+}
