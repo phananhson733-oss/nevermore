@@ -55,9 +55,14 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
   const requestsA = projectApiRequests(pageA);
   const requestsB = projectApiRequests(pageB);
 
+  // `/overview` is the workbench page since the 2026-09-11 shell port; the
+  // `[data-overview-page]` hero this test scopes its identity assertions to is
+  // the retained legacy Overview at `/legacy/overview`. The project switcher
+  // and `[data-project-identity]` live in the workbench topbar, which frames
+  // legacy pages too, so the switcher assertions below are unchanged.
   await Promise.all([
-    pageA.goto(`/p/${projectA.projectId}/overview`),
-    pageB.goto(`/p/${projectB.projectId}/overview`),
+    pageA.goto(`/p/${projectA.projectId}/legacy/overview`),
+    pageB.goto(`/p/${projectB.projectId}/legacy/overview`),
   ]);
 
   const switcherA = pageA.getByRole("combobox", { name: "Switch project" });
