@@ -1,11 +1,11 @@
 /** @vitest-environment jsdom */
 
 import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VisResult, WorkbenchProjectState } from "../types.ts";
 import { useWorkbench } from "./hooks.ts";
-import { storageKey } from "./persistence.ts";
+import { storageKey, WORKBENCH_SWEPT_EVENT } from "./persistence.ts";
 import { initialProjectState, type ProjectSeed } from "./reducer.ts";
 import { PERSISTED_VERSION } from "./schema.ts";
 import { populatedProjectState } from "./test-fixtures.ts";
@@ -30,28 +30,45 @@ function persist(state: WorkbenchProjectState): void {
   window.localStorage.setItem(storageKey(PID), JSON.stringify({ v: PERSISTED_VERSION, state }));
 }
 
-function mount(seed: ProjectSeed = SEED, pid: string = PID) {
+interface Mounted {
+  readonly root: Root;
+  readonly container: HTMLElement;
+}
+
+/** Roots still mounted, so `afterEach` tears down even when a test throws midway. */
+const active: Mounted[] = [];
+
+function mount(seed: ProjectSeed = SEED) {
   const holder: Holder = { current: null };
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  act(() => {
-    root.render(
-      <WorkbenchProvider projectId={pid} seed={seed}>
-        <Probe holder={holder} />
-      </WorkbenchProvider>,
-    );
-  });
-  return {
+  const entry: Mounted = { root, container };
+  active.push(entry);
+  const view = {
+    /** Renders into the SAME root, which is how the remount guard gets exercised. */
+    render(projectId: string): void {
+      act(() => {
+        root.render(
+          <WorkbenchProvider projectId={projectId} seed={seed}>
+            <Probe holder={holder} />
+          </WorkbenchProvider>,
+        );
+      });
+    },
     probe(): WorkbenchContextValue {
       if (!holder.current) throw new Error("provider never rendered its children");
       return holder.current;
     },
-    unmount() {
+    unmount(): void {
+      const at = active.indexOf(entry);
+      if (at >= 0) active.splice(at, 1);
       act(() => root.unmount());
       container.remove();
     },
   };
+  view.render(PID);
+  return view;
 }
 
 /** Fires the cross-tab notification; the provider re-reads storage itself. */
@@ -69,7 +86,18 @@ const fromDisk: WorkbenchProjectState = {
 
 describe("WorkbenchProvider", () => {
   beforeEach(() => window.localStorage.clear());
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    for (let entry = active.pop(); entry !== undefined; entry = active.pop()) {
+      try {
+        act(() => entry.root.unmount());
+      } catch {
+        // A test that deliberately made the provider throw leaves React unable
+        // to unmount cleanly; the container still has to leave the document.
+      }
+      entry.container.remove();
+    }
+    vi.restoreAllMocks();
+  });
 
   it("hydrates from storage and re-applies the project seed", () => {
     persist(fromDisk);
@@ -129,7 +157,11 @@ describe("WorkbenchProvider", () => {
       expect(view.probe().ready).toBe(true);
       view.unmount();
     } finally {
+      // jsdom defines `localStorage` on `window` itself, but do not assume it:
+      // without a descriptor to put back, the throwing stub has to be deleted
+      // or every later test in the file would see storage as unavailable.
       if (descriptor) Object.defineProperty(window, "localStorage", descriptor);
+      else Reflect.deleteProperty(window, "localStorage");
     }
   });
 
@@ -157,6 +189,57 @@ describe("WorkbenchProvider", () => {
     // The reset must not re-create the key the sign-out sweep just removed.
     expect(window.localStorage.getItem(storageKey(PID))).toBeNull();
     view.unmount();
+  });
+
+  it("mirrors another tab's in-flight run instead of rolling it back", () => {
+    const view = mount();
+    const populated = populatedProjectState(SEED);
+    const partial: VisResult = {
+      p: "partial probe", platform: "Perplexity", hit: false, rank: null,
+      brands: [], domains: [], real: false,
+    };
+    // Written after mount so hydration cannot normalise it away first.
+    persist({ ...populated, visPartial: true, visResults: [partial] });
+    crossTabEvent();
+
+    // The same bytes are rolled back to `lastVis` on hydrate (test below); on
+    // the cross-tab path they must survive, or this tab would echo the rollback
+    // to disk and kill the other tab's running probe set.
+    expect(view.probe().state.visPartial).toBe(true);
+    expect(view.probe().state.visResults).toEqual([partial]);
+    expect(populated.lastVis?.results).not.toEqual([partial]);
+    view.unmount();
+  });
+
+  it("forgets and freezes when this tab itself sweeps storage", () => {
+    persist(fromDisk);
+    const view = mount();
+    expect(view.probe().state.seeds).toBe("from disk");
+
+    // What `SignOutButton` does: wipe, then announce (no `storage` event fires
+    // in the document that made the change).
+    window.localStorage.clear();
+    act(() => window.dispatchEvent(new Event(WORKBENCH_SWEPT_EVENT)));
+
+    expect(view.probe().storageMode).toBe("volatile");
+    expect(view.probe().state).toEqual(initialProjectState(SEED));
+
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    act(() => view.probe().dispatch({ type: "setSeeds", seeds: "after the sweep" }));
+    expect(setItem).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(storageKey(PID))).toBeNull();
+    view.unmount();
+  });
+
+  it("throws rather than switching projects in place", () => {
+    const view = mount();
+    // React logs uncaught render errors itself; the throw is the assertion.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(() => view.render("other")).toThrow(/must be remounted/);
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it("normalises an interrupted visibility run on hydrate", () => {

@@ -66,6 +66,14 @@ export function clearProjectState(storage: Storage, projectId: string): void {
   }
 }
 
+/**
+ * Dispatched on `window` by the tab that just ran `clearAllWorkbenchState`.
+ * The DOM `storage` event only reaches OTHER documents, so the sweeping tab has
+ * to announce itself or its own provider would keep (and re-persist) the state
+ * that was just wiped.
+ */
+export const WORKBENCH_SWEPT_EVENT = "gg.workbench.swept";
+
 export function clearAllWorkbenchState(storage: Storage): void {
   const keys: string[] = [];
   try {

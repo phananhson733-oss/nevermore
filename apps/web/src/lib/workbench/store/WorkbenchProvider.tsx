@@ -15,6 +15,7 @@ import {
   clearProjectState,
   readProjectState,
   storageKey,
+  WORKBENCH_SWEPT_EVENT,
   writeProjectState,
   type WriteStatus,
 } from "./persistence.ts";
@@ -124,26 +125,55 @@ export function WorkbenchProvider({
   }, [state, ready, projectId, storageMode]);
 
   useEffect(() => {
+    // Drop our copy of the project and stop persisting. Going volatile as well
+    // is deliberate: `reset` produces a fresh object, so the write effect would
+    // otherwise re-create `gg.workbench.v1.<id>` holding the seed mirror moments
+    // after sign-out, which design §6.5 says must leave nothing behind. The user
+    // is signed out anyway; a reload re-hydrates normally and clears the latch.
+    // The latch precedes the dispatch on purpose: on any path where the two
+    // updates are not batched, the write effect would run once with
+    // `storageMode === "ok"` and write the reset state back under the key that
+    // was just swept.
+    function forgetAndFreeze(): void {
+      setStorageMode("volatile");
+      dispatch({ type: "reset", seed });
+    }
+
     function onStorage(event: StorageEvent): void {
-      if (event.key !== storageKey(projectId) || !storageRef.current) return;
+      // `key === null` means the whole store was cleared (`localStorage.clear()`,
+      // e.g. a sweep in another tab); the re-read below then reports `empty`.
+      if ((event.key !== null && event.key !== storageKey(projectId)) || !storageRef.current) return;
       const read = readProjectState(storageRef.current, projectId);
       if (read.state) {
-        dispatch({ type: "loadPersisted", state: withProjectSeed(normalizeInterrupted(read.state), seed) });
+        // Deliberately NOT `normalizeInterrupted`: the writing tab may be
+        // mid-run, and normalising here would roll its streamed partial results
+        // back to `lastVis` and echo that rollback to disk, clobbering a run
+        // that was never interrupted. Interrupted runs are settled once, on
+        // first hydration, when nothing can be in flight.
+        dispatch({ type: "loadPersisted", state: withProjectSeed(read.state, seed) });
       } else if (read.status === "empty") {
         // Another tab removed the key (sign-out sweep / project deletion).
-        // Drop our copy too, otherwise the next state change would write the
-        // user's data straight back. Going volatile as well is deliberate:
-        // `reset` produces a fresh object, so the write effect would otherwise
-        // re-create `gg.workbench.v1.<id>` holding the seed mirror moments
-        // after sign-out, which design §6.5 says must leave nothing behind.
-        // The user is signed out anyway; a reload re-hydrates normally and
-        // clears the latch.
+        forgetAndFreeze();
+      } else if (read.status === "unavailable") {
+        // Storage became unreachable between the event and the re-read; same
+        // treatment as in `hydrate`. (`invalid` is ignored, as before: a shape
+        // we cannot parse is no reason to throw our own state away.)
         setStorageMode("volatile");
-        dispatch({ type: "reset", seed });
       }
     }
+
+    // The sweeping document never receives its own `storage` event, so
+    // `SignOutButton` announces the sweep with this synthetic one.
+    function onSwept(): void {
+      forgetAndFreeze();
+    }
+
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    window.addEventListener(WORKBENCH_SWEPT_EVENT, onSwept);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(WORKBENCH_SWEPT_EVENT, onSwept);
+    };
   }, [projectId, seed]);
 
   const value = useMemo<WorkbenchContextValue>(
