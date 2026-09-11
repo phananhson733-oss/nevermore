@@ -264,9 +264,14 @@ it.each(["en", "zh"])("says what one update actually does and costs, in %s", asy
 
   const toggle = host.querySelector<HTMLButtonElement>("[data-kb-cost-toggle]")!;
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(toggle.hasAttribute("aria-controls")).toBe(false);
+  expect(toggle.textContent).toBe(card(locale).costMore);
   await act(async () => toggle.click());
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  const note = host.querySelector("[data-kb-cost-detail]")?.textContent;
+  expect(toggle.textContent).toBe(card(locale).costLess);
+  const detail = host.querySelector("[data-kb-cost-detail]")!;
+  expect(toggle.getAttribute("aria-controls")).toBe(detail.id);
+  const note = detail.textContent;
   expect(note).toBe(COST_LINE[locale]);
   for (const claim of COST_FORBIDDEN[locale]!) expect(note).not.toMatch(claim);
   for (const named of COST_NAMES) expect(note).toContain(named);

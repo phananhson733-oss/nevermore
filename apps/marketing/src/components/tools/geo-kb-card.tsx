@@ -149,7 +149,7 @@ function CostNote({ copy }: { readonly copy: GeoKbCopy }) {
       type="button"
       data-kb-cost-toggle=""
       aria-expanded={open}
-      aria-controls={id}
+      aria-controls={open ? id : undefined}
       onClick={() => setOpen((current) => !current)}
       className="inline underline decoration-brand-border-strong underline-offset-2 transition-colors duration-150 hover:text-text-dark-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
     >{open ? copy.costLess : copy.costMore}</button>

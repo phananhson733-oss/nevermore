@@ -134,31 +134,51 @@ it("names the off-site domain and its independence verdict on the item that cite
 it("lays the machine cards and the evidence groups out one under another", async () => {
   await render("en", ["machine", "evidence"]);
 
-  const machine = host.querySelector("[data-machine-field]")?.parentElement?.className ?? "";
-  expect(machine).not.toMatch(/grid-cols/u);
-  const groups = host.querySelector("[data-geo-kb-group]")?.parentElement?.className ?? "";
-  expect(groups).not.toMatch(/grid-cols/u);
+  // Positive: the containers exist, hold more than one card, and are a
+  // vertical stack; negative: none of the ways of laying them side by side.
+  // A class-string check is all a jsdom test can say about geometry
+  // (gpt-6-astra, 2026-09-11); the browser check is the production pass.
+  const machine = host.querySelector("[data-machine-field]")?.parentElement;
+  expect(machine?.children.length).toBeGreaterThan(1);
+  expect(machine?.className).toMatch(/\bspace-y-\d/u);
+  expect(machine?.className).not.toMatch(/grid-cols|flex-row|columns-|inline/u);
+  const groups = host.querySelector("[data-geo-kb-group]")?.parentElement;
+  expect(groups?.children.length).toBeGreaterThan(1);
+  expect(groups?.className).toMatch(/\bspace-y-\d/u);
+  expect(groups?.className).not.toMatch(/grid-cols|flex-row|columns-|inline/u);
 });
 
 /**
- * The published pack keeps the plain heading and the limitation sentence, and
- * the three read-only module views pass a presentation through untouched when
- * a host asks for one. Without the pass-through the review card could ask for
- * a fold and get a heading, with nothing failing.
+ * The two surfaces have opposite limitation policies and both are pinned
+ * here on a partial read-only module: the published pack keeps the sentence
+ * (a customer reading one section has no rows to fall back on) and draws no
+ * disclosure widget; a host that asks for `{ collapsible, limitation: false }`
+ * gets the fold AND loses the sentence -- checked after opening, because an
+ * unmounted sentence proves nothing about the policy (gpt-6-astra,
+ * 2026-09-11).
  */
-it("draws the read-only modules open and unfolded unless a host asks otherwise", async () => {
-  await render("en", ["evidence", "machine", "coverage"]);
+const READ_ONLY_MODULES = ["evidence", "machine", "coverage"] as const;
+function partialPack(module: (typeof READ_ONLY_MODULES)[number], limitation: string) {
+  const pack = geoKnowledgePackV2Fixture();
+  const current = pack[module];
+  if (current.status === "unavailable") throw new Error(`fixture ${module} must carry a value`);
+  return { ...pack, [module]: { status: "partial", limitation, value: current.value } } as typeof pack;
+}
+
+it.each(READ_ONLY_MODULES)("publishes the %s module open, unfolded, with its limitation said", async (module) => {
+  const limitation = `Published limitation for ${module}.`;
+  await render("en", [module], partialPack(module, limitation));
 
   expect(host.querySelector("[data-section-toggle]")).toBeNull();
-  expect(host.querySelectorAll("[data-geo-kb-module]")).toHaveLength(3);
+  expect(host.querySelectorAll("[data-geo-kb-module]")).toHaveLength(1);
+  expect(host.querySelector("[data-module-limitation]")?.textContent).toContain(limitation);
 });
 
-it.each(["evidence", "machine", "coverage"] as const)("folds the %s module when the host asks for it", async (module) => {
-  const pack = geoKnowledgePackV2Fixture();
+async function renderReadOnly(module: (typeof READ_ONLY_MODULES)[number], pack: ReturnType<typeof geoKnowledgePackV2Fixture>, presentation: { collapsible?: boolean; limitation?: boolean }) {
   const sources = new Map(pack.sourceCatalogue.map((source) => [source.id, source]));
   function Host() {
     const card = useGeoKbCopy();
-    const shared = { sources, heading: 3 as const, locale: "en", copy: geoKnowledgePackCopy("en"), card, presentation: { collapsible: true } };
+    const shared = { sources, heading: 3 as const, locale: "en", copy: geoKnowledgePackCopy("en"), card, presentation };
     if (module === "evidence") return <GeoEvidenceModuleView module={pack.evidence} {...shared} />;
     if (module === "machine") return <GeoMachineModuleView module={pack.machine} {...shared} />;
     return <GeoCoverageModuleView module={pack.coverage} {...shared} />;
@@ -168,12 +188,27 @@ it.each(["evidence", "machine", "coverage"] as const)("folds the %s module when 
       <Host />
     </NextIntlClientProvider>,
   ));
+}
+
+it.each(READ_ONLY_MODULES)("folds the %s module and drops its limitation when the host asks for both", async (module) => {
+  const limitation = `Host-suppressed limitation for ${module}.`;
+  await renderReadOnly(module, partialPack(module, limitation), { collapsible: true, limitation: false });
 
   const toggle = host.querySelector<HTMLButtonElement>("[data-section-toggle]")!;
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(host.querySelector("[data-geo-kb-module]")).toBeNull();
   await act(async () => toggle.click());
-  expect(host.querySelector("[data-geo-kb-module]")).not.toBeNull();
+  expect(host.querySelector("[data-geo-kb-module]")?.getAttribute("data-module-status")).toBe("partial");
+  expect(host.querySelector("[data-module-limitation]")).toBeNull();
+  expect(host.textContent).not.toContain(limitation);
+});
+
+it.each(READ_ONLY_MODULES)("keeps the %s module's limitation when the host asks only for the fold", async (module) => {
+  const limitation = `Kept limitation for ${module}.`;
+  await renderReadOnly(module, partialPack(module, limitation), { collapsible: true });
+
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-section-toggle]")!.click());
+  expect(host.querySelector("[data-module-limitation]")?.textContent).toContain(limitation);
 });
 
 /**

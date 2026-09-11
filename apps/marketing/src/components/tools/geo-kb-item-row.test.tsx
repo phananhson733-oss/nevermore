@@ -59,9 +59,11 @@ it.each(["en", "zh"])("names the type, the content and the observed page in %s",
  * summary, and this line is the only place that says so.
  */
 it.each(["en", "zh"])("keeps the origin and drops every date and check from the source line in %s", async (locale) => {
-  await render({ source: { origin: "synthesized", evidenceCount: 2 }, evidenceChecks: "cited_and_literals_match" }, locale);
+  // An ACCEPTED model summary: the case the origin word exists for.
+  await render({ source: { origin: "synthesized", evidenceCount: 2 }, decision: "accepted", evidenceChecks: "cited_and_literals_match" }, locale);
 
   expect(sourceLine()).toBe(card(locale).originDetail.synthesized.replace("{count}", "2"));
+  expect(chip()).toBe(card(locale).decisions.accepted);
   // The check's old label, in both languages, must not come back by any route.
   expect(host.textContent).not.toMatch(/引用核对|Citation check/u);
   expect(host.textContent).not.toMatch(/20\d\d/u);
@@ -214,9 +216,23 @@ it("offers the exclude gesture on a field that can be excluded", async () => {
 it("gives every chip a tone, and the flags a louder one", async () => {
   await render({ newObservation: true, conflict: true });
 
-  expect(host.querySelector("[data-item-type]")?.getAttribute("data-chip-tone")).toBe("label");
-  expect(host.querySelector("[data-decision-chip]")?.getAttribute("data-chip-tone")).toBe("label");
-  expect(host.querySelector('[data-item-flag="new_observation"]')?.getAttribute("data-chip-tone")).toBe("flag");
-  expect(host.querySelector('[data-item-flag="conflict"]')?.getAttribute("data-chip-tone")).toBe("flag");
+  const type = host.querySelector("[data-item-type]")!;
+  const decision = host.querySelector("[data-decision-chip]")!;
+  const flags = [host.querySelector('[data-item-flag="new_observation"]')!, host.querySelector('[data-item-flag="conflict"]')!];
+  expect(type.getAttribute("data-chip-tone")).toBe("label");
+  expect(decision.getAttribute("data-chip-tone")).toBe("label");
+  for (const flag of flags) expect(flag.getAttribute("data-chip-tone")).toBe("flag");
+  // The tone attribute is the contract; the classes are what the Owner sees.
+  // A tinted background and a medium weight on every chip, and the flags in a
+  // palette that is not the label palette (gpt-6-astra, 2026-09-11).
+  for (const chip of [type, decision, ...flags]) {
+    expect(chip.className).toMatch(/\bfont-medium\b/u);
+    expect(chip.className).toMatch(/\bbg-brand-/u);
+  }
+  expect(type.className).toBe(decision.className);
+  for (const flag of flags) {
+    expect(flag.className).toMatch(/brand-warning/u);
+    expect(flag.className).not.toBe(type.className);
+  }
 });
 

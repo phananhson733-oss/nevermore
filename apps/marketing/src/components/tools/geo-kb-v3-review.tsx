@@ -494,17 +494,24 @@ function ComparisonsModule({ knowledge, context, packCopy }: {
   const comparisons = geoKbModuleValue(knowledge.comparisons) ?? [];
   const rows = comparisons.flatMap((comparison) => comparison.rows);
   /*
-   * `not_applicable` here has exactly one cause: no competitor was confirmed,
-   * so the run read no competitor page and had nothing to compare
-   * (`comparisonsModule` in `kb-knowledge-assemble.ts`). The generic sentence
-   * for the reason -- "this section does not apply this time" -- is true and
-   * says nothing; the Owner asked why the module was empty (2026-09-11). Said
-   * as the cause, and not as an instruction: nothing in this deployment lets
-   * an owner confirm a competitor yet (`carryCompetitorState` in
-   * `kb-v3-draft-create.ts`), so "confirm one in the Profile" would send them
-   * to a gesture that does not exist.
+   * The assembler writes `not_applicable` here when the narrative had no
+   * comparisons and no competitor was confirmed (`comparisonsModule` in
+   * `kb-knowledge-assemble.ts`): the run read no competitor page and had
+   * nothing to compare. The generic sentence for the reason -- "this section
+   * does not apply this time" -- is true and says nothing; the Owner asked why
+   * the module was empty (2026-09-11).
+   *
+   * The cause is read off the locked input, not inferred from the reason
+   * code. The card renders a stored payload, and a stored `not_applicable`
+   * over an input that DOES confirm a competitor would make the sentence a
+   * lie about that competitor (gpt-6-astra, 2026-09-11); the generic sentence
+   * is what such a payload gets. Said as the cause and not as an instruction:
+   * nothing in this deployment lets an owner confirm a competitor yet
+   * (`carryCompetitorState` in `kb-v3-draft-create.ts`), so "confirm one in
+   * the Profile" would send them to a gesture that does not exist.
    */
-  const unavailableNote = knowledge.comparisons.status === "unavailable" && knowledge.comparisons.reason === "not_applicable"
+  const noneConfirmed = context.editor.payload.generationInput.competitors.every((competitor) => !competitor.confirmed);
+  const unavailableNote = knowledge.comparisons.status === "unavailable" && knowledge.comparisons.reason === "not_applicable" && noneConfirmed
     ? { unavailableNote: context.t("review.comparisonsNoConfirmedCompetitors") }
     : {};
   return <GeoKbModuleSection

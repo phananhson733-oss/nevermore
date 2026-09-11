@@ -330,14 +330,20 @@ it.each(["en", "zh"])("folds a collapsible module to its header until opened, in
   expect(toggle.textContent).toContain("Reliable facts");
   expect(host.querySelector("[data-module-children]")).toBeNull();
   expect(host.querySelector("[data-geo-kb-module]")).toBeNull();
+  // No id reference while the body is not in the document: a reference to
+  // nothing is a dangling reference, not a closed disclosure.
+  expect(toggle.hasAttribute("aria-controls")).toBe(false);
 
   await act(async () => toggle.click());
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
   expect(host.querySelector("[data-module-children]")).not.toBeNull();
-  expect(toggle.getAttribute("aria-controls")).toBe(host.querySelector("[data-section-body]")?.id);
+  const body = host.querySelector("[data-section-body]")!;
+  expect(body.id).not.toBe("");
+  expect(toggle.getAttribute("aria-controls")).toBe(body.id);
 
   await act(async () => toggle.click());
   expect(host.querySelector("[data-module-children]")).toBeNull();
+  expect(toggle.hasAttribute("aria-controls")).toBe(false);
 });
 
 it("draws a plain heading and an open body when nothing asked it to fold", async () => {

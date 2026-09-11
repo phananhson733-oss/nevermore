@@ -385,8 +385,7 @@ it("renders in Chinese from the catalog rather than from inline literals", async
  * Both lists are read from the shape layer, never restated here: a path that
  * changes side must move this test with it rather than leave it passing.
  */
-it("does not offer an exclusion that would withhold the identity section", async () => {
-  const required = GEO_ENTITY_REQUIRED_PATHS[0]!;
+it.each(GEO_ENTITY_REQUIRED_PATHS)("does not offer an exclusion that would withhold the identity section: %s", async (required) => {
   const removable = GEO_ENTITY_REMOVABLE_PATHS.find((path) => path === "aliases")!;
   const base = completePayloadV3();
   const entity = base.knowledge!.entity;
@@ -420,9 +419,13 @@ it("does not offer an exclusion that would withhold the identity section", async
   expect(excludeOf(entityRows[1]!)?.disabled).toBe(false);
 
   // Not offered means not offered: nothing on the row can write an exclusion
-  // for the required field.
+  // for the required field -- and the gesture that IS offered writes what it
+  // says. Accept on the required row sends an acceptance, not an exclusion.
   await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V3_AUTOSAVE_MS * 2); });
   expect(calls()).toHaveLength(0);
+  await act(async () => entityRows[0]!.querySelector<HTMLButtonElement>('[data-item-action="accept"]')!.click());
+  await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V3_AUTOSAVE_MS); });
+  expect(bodyOf(0).actions.map((action: { kind: string }) => action.kind)).toEqual(["accept"]);
 });
 
 /* ---------------------------------------------------------------------------
@@ -2405,20 +2408,46 @@ it("says nothing while every fact is still inside its review window", async () =
  * observed); the module still reports `partial`, and nothing on the card
  * carries the limitation sentence.
  */
-it("keeps a partial module's state but says no limitation sentence over it", async () => {
+/**
+ * Every module that can be partial, made partial with a sentence of its own,
+ * and the read-only ones opened first -- a limitation inside a folded module
+ * is not "unsaid", it is merely not mounted yet, and a test that never opens
+ * the fold proves nothing about the policy (gpt-6-astra, 2026-09-11). The
+ * comparisons module starts unavailable in the fixture, so it is given a
+ * value to be partial over.
+ */
+const PARTIAL_MODULES = ["entity", "facts", "qa", "comparisons", "scope", "evidence", "machine", "coverage"] as const;
+/** One comparison over the fixture's own pricing page: the contract wants at least one row. */
+const ONE_COMPARISON = [{
+  id: "cmp:astro", competitor: { key: "astro.example", name: "Astro", confirmed: true as const }, checkedAt: "2026-09-01T00:00:00.000Z",
+  rows: [{
+    id: "cmp:astro:price", dimension: "Price", product: "9 per month", competitor: "19 per month", availability: "available" as const,
+    itemKey: geoItemKey({ module: "comparisons", competitorKey: "astro.example", dimension: "Price" }),
+    origin: "synthesized" as const, sourceRefs: ["own:pricing"], evidenceChecks: "not_applicable" as const, alternateObservations: [],
+  }],
+  verdict: "Acme is cheaper.", sourceRefs: ["own:pricing"],
+}];
+function withPartial(module: (typeof PARTIAL_MODULES)[number], limitation: string) {
   const base = completePayloadV3();
-  const qa = base.knowledge!.qa;
-  if (qa.status !== "available") throw new Error("fixture qa must be available");
-  const payload = parseGeoKbPayloadV3({
+  const current = base.knowledge![module];
+  const value = current.status === "unavailable" ? ONE_COMPARISON : current.value;
+  return parseGeoKbPayloadV3({
     ...base,
-    knowledge: { ...base.knowledge!, qa: { status: "partial", limitation: "Only questions supported by the published pages.", value: qa.value } },
+    knowledge: { ...base.knowledge!, [module]: { status: "partial", limitation, value } },
   });
+}
+
+it.each(PARTIAL_MODULES)("keeps the %s module's partial state but says no limitation sentence over it", async (module) => {
+  const limitation = `Limitation sentence for ${module} that must stay unsaid here.`;
+  const payload = withPartial(module, limitation);
   await render("en", { payload, draftHash: geoV2Digest(payload) });
+  await unfold('[data-kb-section="trust"]');
+  await unfold('[data-kb-section="reachability"]');
 
   expect(host.querySelector('[data-module-status="partial"]')).not.toBeNull();
   expect(host.querySelector("[data-module-limitation]")).toBeNull();
   expect(host.textContent).not.toContain(card("en").module.partial);
-  expect(host.textContent).not.toContain("Only questions supported by the published pages.");
+  expect(host.textContent).not.toContain(limitation);
 });
 
 /**
@@ -2456,13 +2485,41 @@ it("folds the three read-only modules and leaves the five reviewable ones open",
  * draft. The generic sentence for that reason -- "this section does not apply
  * this time" -- told the Owner nothing ("why is comparative knowledge empty?",
  * 2026-09-11). The module says the actual reason in its own words.
+ *
+ * The reason is read off the locked input, not off the reason code alone.
+ * The fixture confirms a competitor, which is exactly the payload the sentence
+ * must NOT be said over: a stored `not_applicable` beside a confirmed rival
+ * would make "no competitor is confirmed" a lie about that rival
+ * (gpt-6-astra, 2026-09-11).
  */
+function withComparisons(reason: "not_applicable" | "insufficient_evidence", confirmed: boolean) {
+  const base = completePayloadV3();
+  return parseGeoKbPayloadV3({
+    ...base,
+    generationInput: {
+      ...base.generationInput,
+      competitors: base.generationInput.competitors.map((competitor) => ({ ...competitor, confirmed })),
+    },
+    knowledge: { ...base.knowledge!, comparisons: { status: "unavailable", reason } },
+  });
+}
+const unavailableNotes = () => [...host.querySelectorAll("[data-module-unavailable]")].map((node) => node.textContent);
+
 it.each(["en", "zh"])("says why there are no comparisons instead of 'not applicable', in %s", async (locale) => {
-  const payload = completePayloadV3();
-  expect(payload.knowledge!.comparisons).toEqual({ status: "unavailable", reason: "not_applicable" });
+  const payload = withComparisons("not_applicable", false);
   await render(locale, { payload, draftHash: geoV2Digest(payload) });
 
-  const notes = [...host.querySelectorAll("[data-module-unavailable]")].map((node) => node.textContent);
-  expect(notes).toContain(card(locale).review.comparisonsNoConfirmedCompetitors);
-  expect(notes).not.toContain(card(locale).module.unavailable.not_applicable);
+  expect(unavailableNotes()).toContain(card(locale).review.comparisonsNoConfirmedCompetitors);
+  expect(unavailableNotes()).not.toContain(card(locale).module.unavailable.not_applicable);
+});
+
+it.each([
+  ["a confirmed competitor sits in the locked input", "not_applicable", true, "not_applicable"],
+  ["the reason is something else", "insufficient_evidence", false, "insufficient_evidence"],
+] as const)("keeps the generic sentence when %s", async (_name, reason, confirmed, expected) => {
+  const payload = withComparisons(reason, confirmed);
+  await render("en", { payload, draftHash: geoV2Digest(payload) });
+
+  expect(unavailableNotes()).toContain(card("en").module.unavailable[expected]);
+  expect(unavailableNotes()).not.toContain(card("en").review.comparisonsNoConfirmedCompetitors);
 });

@@ -44,7 +44,9 @@ export function GeoKbSection({ title, heading, collapsible = false, children }: 
             type="button"
             data-section-toggle=""
             aria-expanded={open}
-            aria-controls={bodyId}
+            // Only while the body is in the DOM: an id reference to nothing is
+            // a dangling reference, not a closed disclosure.
+            aria-controls={open ? bodyId : undefined}
             onClick={() => setOpen((current) => !current)}
             className="flex w-full items-center gap-3 px-5 py-5 text-left transition-colors duration-150 hover:bg-brand-panel-sunken focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-accent sm:px-7"
           >
