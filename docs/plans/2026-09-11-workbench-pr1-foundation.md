@@ -3215,7 +3215,7 @@ Tailwind 类直接照 opengengrowth；颜色只用 token（`bg-wb-paper`、`text
 **落地备注：**
 
 - `#wb-app` 这个 id 抽成 `ui/ids.ts` 的 `WB_APP_ROOT_ID`，`ShellChrome` 渲染它、`Dialog` 查找它，两边不再各写一次字面量。
-- `Dialog` 的 `inert` 用模块级引用计数：同时可能开着两个对话框（⌘K 与产物筐互斥是 `ShellChrome` 的约定，`Dialog` 自己不假设），最后一个关闭才摘 `inert`；而**设置**是无条件的——路由切换会换掉 `#wb-app` 元素，计数 > 0 时新根就会没有这个属性。
+- `Dialog` 的 `inert` 用模块级引用计数：同时可能开着两个对话框（⌘K 与产物筐互斥是 `ShellChrome` 的约定，`Dialog` 自己不假设），最后一个关闭才摘 `inert`；**设置**无条件执行，**摘除**时重新按 `WB_APP_ROOT_ID` 查一次根而不是复用 effect 闭包里那个 `root`（5508351b），保证即便 `#wb-app` 在对话框开着期间被换掉，设置和摘除也总落在同一个元素上——两处都是纵深防御，注释明说目前 `#wb-app` 并不会在两次打开之间被重新挂载。
 - `Dialog` **不是 portal**：它必须渲染在 `#wb-app` 之外，否则会把自己也 inert 掉。这一点由 `ShellChrome` 的结构保证（两个对话框是 `#wb-app` 的兄弟）。
 - 面板加 `tabIndex={-1}`：里面没有可聚焦元素时（空态抽屉）焦点要有地方落；`onKeyDown` 里 Tab 找不到目标时 `preventDefault` 而不是放行。
 - `FOCUSABLE` 在**每个**分支上都排除 `[tabindex="-1"]`，不只通用分支：命令面板的 `role="option"` 按钮是天生可聚焦元素，它用 `tabIndex={-1}` 退出 Tab 序，焦点圈必须尊重。
@@ -3347,9 +3347,10 @@ export function Dialog({
     }
     // `inert` is one shared attribute for however many dialogs are open, so it
     // is ref-counted on the way out: only the last close removes it. Setting it
-    // is unconditional, because the root element can be replaced (a route
-    // change re-renders `#wb-app`) while a dialog is open — a count > 0 would
-    // then leave the new root without the attribute.
+    // is unconditional, and the cleanup looks the root up again instead of
+    // reusing this node, so the two always touch the same element even if
+    // `#wb-app` were replaced under an open dialog. Both are defensive; the root
+    // is not currently remounted between opens.
     root?.setAttribute("inert", "");
     openDialogs += 1;
     const entry =
@@ -3365,7 +3366,7 @@ export function Dialog({
       // Order matters: focus() on a node inside an inert subtree is a no-op,
       // so inert comes off first. Next's layout-router focuses the changed
       // segment after navigation, so activeElement-on-open is only a fallback.
-      root?.removeAttribute("inert");
+      document.getElementById(WB_APP_ROOT_ID)?.removeAttribute("inert");
       // The preferred target can be hidden by a responsive utility (the palette
       // and drawer openers are `md:`-only), and `focus()` on a hidden element
       // is a no-op that would silently leave focus on <body>. Try it, then
@@ -3620,7 +3621,7 @@ git add apps/web/src/components/workbench
 git commit -m "feat(workbench): Dialog / PageHead / DemoChip / LegacyLinks / 占位视图"
 ```
 
-实际落地：1c3db8f1（原语与占位视图）、381d3fb9（Dialog inert 引用计数、根 id 常量、jsdom 测试、legacy 标签键守卫）、bae6a447（焦点归还判据、`FOCUSABLE` 排除 `tabindex="-1"`、无可聚焦元素时拦 Tab）、09439fdc（`PlaceholderView` 按有无旧页选文案、对比度）。
+实际落地：1c3db8f1（原语与占位视图）、381d3fb9（Dialog inert 引用计数、根 id 常量、jsdom 测试、legacy 标签键守卫）、bae6a447（焦点归还判据、`FOCUSABLE` 排除 `tabindex="-1"`、无可聚焦元素时拦 Tab）、09439fdc（`PlaceholderView` 按有无旧页选文案、对比度）、5508351b（cleanup 摘 `inert` 改成重新按 id 查根，不复用闭包里的 `root`）。
 
 ---
 
@@ -3651,16 +3652,18 @@ git commit -m "feat(workbench): Dialog / PageHead / DemoChip / LegacyLinks / 占
 - `SiteCard` 无条件抽成独立文件（不是「超 200 行再抽」）；`#807f7d` 进 `@theme` 成 `--color-wb-rail-label`，`bg-[#222222]` 成 `--color-wb-ink`，组件里没有裸 hex。
 - 侧栏 rail 用 `h-dvh` 而不是 `min-h-screen`：固定定位盒子只给最小高度会随内容长高，`overflow-y-auto` 永远没得滚，矮视口下最后几项掉到屏幕外。
 - `useMediaQuery("(width < 48rem)")`（不是 `max-width: 767px`）：要和 rail 的 `md:translate-x-0` 用同一个 Tailwind v4 `md` 断点，px 值在根字号非 16px 时会漂。已知代价：首帧 `matches` 为 false，移动端有一帧侧栏未 inert（hydration 后立即纠正，文件 doc comment 里写明「inert while closed once hydrated」）。
-- 命令面板与产物筐**互斥**：`ShellChrome` 的 `onPalette` / `onDrawer` 是 `useCallback`，各自关掉另一个；⌘K 的 toggle 也关抽屉。两个 `fixed inset-0 z-50` 叠着时，先关上面那个会把焦点还给 `<body>`（持有 opener 的是下面那个）。`Dialog` 的 inert 引用计数作为纵深防御保留。
+- 命令面板与产物筐**互斥**：`ShellChrome` 的 `onPalette` / `onDrawer` 是 `useCallback`，各自关掉另一个；⌘K 的 toggle 也关抽屉。两个 `fixed inset-0 z-50` 叠着时，先关上面那个会把焦点还给 `<body>`（持有 opener 的是下面那个）。`Dialog` 的 inert 引用计数作为纵深防御保留。5508351b 把两个 `boolean` state 合并成一个 `panel: "palette" | "drawer" | null`：互斥关系本来就要两个 setter 互相记得关对方，合成一个槽位后这种状态直接**不可表达**，`closeAll` 退化成 `setPanel(null)`，两个 `Dialog` 的 `onClose` 也都是 `() => setPanel(null)`。
+- `app-shell.module.css` 顺手删掉 `.projectIdentity strong` 的死规则（5508351b）：它和上面的 `.projectIdentity` 选择器写的是同一条 `color: var(--color-slate-900, …)`，`strong` 从未比父选择器多覆盖任何东西。
 - `CommandPalette` 重开时用「prop 变化时在渲染期调整 state」的模式重置 `query` 与 `activeIndex`（不是 effect），首帧就显示完整列表；`returnFocusTo` 补进解构（原计划漏了，只写在类型里）；`activeEntry` 提出来一次（`noUncheckedIndexedAccess`）。
-- `CommandPalette` 的无障碍：输入框 `role="combobox"` + `aria-expanded` / `aria-autocomplete="list"` / `aria-controls`；选项 `tabIndex={-1}`（靠方向键 + `aria-activedescendant`，不进 Tab 序）；「没有匹配项」段落移到 listbox **外面**（listbox 里只能有 option），并加一个 `sr-only role="status"` 的计数，筛选不再静默。
+- `CommandPalette` 的无障碍：输入框 `role="combobox"` + `aria-expanded` / `aria-autocomplete="list"` / `aria-controls`；选项 `tabIndex={-1}`（靠方向键 + `aria-activedescendant`，不进 Tab 序）；「没有匹配项」段落移到 listbox **外面**（listbox 里只能有 option），并加一个 `sr-only role="status"` 的计数，筛选不再静默——计数前缀改成 `t("shell.palette.title")`（5508351b）：裸数字出了 listbox 上下文没有意义，复用面板自己的标题免得再加一个 catalog key。
+- 面板会滚动（`max-h-80` 装 ~18 条）但方向键只挪 `aria-activedescendant`，焦点始终留在输入框，浏览器无从跟着滚：`activeKey` 变化时 `useEffect` 按 id 找到那个选项调 `scrollIntoView({ block: "nearest" })`（5508351b）；jsdom 不实现该 API，effect 先判 `typeof … === "function"` 再调，测试里手动 stub 并在 `afterEach` 里 `delete` 掉，免得残留 property 让后续用例看到浏览器里不存在的能力。
 - `CommandPalette` 的 `go()` 先过 `confirmLeave()`：跳转和侧栏链接是同一种导航，Context 有未保存改动时必须问。这个守卫抽成 `shell/useContextNavigationConfirm.ts`（同时导出 `confirmNavigation`），`useProjectShellEffects` 只保留 history 副作用并转出 `confirmNavigation`。
 - `ArtifactDrawer`：重开时清掉悬空的「已复制」；`COPY_FLASH_MS = 1300`，定时器在关闭 / 卸载时清掉。
-- `Topbar`：存储提示的 `role="status"` 容器**始终渲染**（`empty:-mr-3` 抵掉 flex gap）——live region 必须先在无障碍树里存在，文字后到才会被播报；只有 `volatile` / `quota` 出文字，`ok` 与 `swept` 静默。产物筐按钮加 `aria-busy={!ready}`（未 hydrate 时的 0 是暂定值）与 `focus-visible:outline-slate-900`（`.wb-reset` 的焦点圈是 `currentColor`，在反色按钮上是白的）。`GG` 字标 `aria-hidden`。
+- `Topbar`：存储提示的 `role="status"` 容器**始终渲染、且只有一个**（`empty:-mr-3` 抵掉 flex gap）——live region 必须先在无障碍树里存在，文字后到才会被播报，第二个会破坏壳 e2e 那个「唯一 status」的定位器；只有 `volatile` / `quota` 出文字，`ok` 与 `swept` 静默。`lg` 断点以下顶栏放不下整句，改 `max-lg:sr-only lg:max-w-[40vw] lg:truncate`（5508351b）：依旧播报，只是不占版面；`sr-only` 把它挪出 flex 流，所以 `empty:-mr-3` 只需要在 `lg` 起生效。产物筐按钮加 `aria-busy={!ready}`（未 hydrate 时的 0 是暂定值）与 `focus-visible:outline-slate-900`（`.wb-reset` 的焦点圈是 `currentColor`，在反色按钮上是白的）。`GG` 字标 `aria-hidden`。「+ 新建站点」链接接入 `useContextNavigationConfirm` 的 `confirmNavigation`（5508351b，在 `Topbar` 内部调用，不从 `ShellChrome` 往下传）：离开去新建站点和侧栏链接、⌘K 跳转一样会丢弃未保存的 Context 改动，问法必须一致；`current` 传 `false`——这个目的地永远不是当前页。新增 `Topbar.test.tsx`（jsdom 4 条）钉住确认拒绝 / 接受、Context 干净时不问、唯一 live region。
 - `SignOutButton`：清扫后派发 `WORKBENCH_SWEPT_EVENT`（同文档不会收到自己写入触发的 `storage` 事件）；同样补 `focus-visible:outline-slate-900`，字标 `aria-hidden`，名字由 `aria-label` 承担。
-- `lib/workbench/download.ts`：锚点要挂进 `<body>`（Firefox 只激活已连接的锚点），加 `rel="noopener"`，`revokeObjectURL` 放到 `setTimeout(…, 0)`（立即 revoke 会让下载来不及开始）。
+- `lib/workbench/download.ts`：锚点要挂进 `<body>`（Firefox 只激活已连接的锚点），加 `rel="noopener"`。`click()` 包进 `try { … } finally { a.remove(); setTimeout(revoke, …) }`（5508351b）：抛出的 `click()` 不能把锚点漏在文档里，或让 blob 漏在 URL store 里，`finally` 两头都管。revoke 的延迟从 `setTimeout(…, 0)` 改成 `1000`：WebKit 在当前任务之后才读 object URL，同一 tick 撤销会让它读到一个已经不可解析的 URL。新增 `download.test.ts`（jsdom 4 条）钉住这条时序。
 - `app-shell.module.css` 给 `ProjectSwitcher` 加 `:global(.wb-reset) .projectSwitcher …` 作用域浅色覆盖：它原本是为深色 rail 设计的，白字白底；`/new-project` 的深色侧栏仍用基础规则。项目名对比度由实测 1.03:1 提到 17.83:1。
-- `app/workbench.css` 新增 `@layer components` 里的打印规则 `[data-wb-content]{margin-left:0}`，`ShellChrome` 的内容列因此带 `data-wb-content`。
+- `app/workbench.css` 新增打印规则 `[data-wb-content]{margin-left:0}`，`ShellChrome` 的内容列因此带 `data-wb-content`。落在 `@layer utilities`、且排在 Tailwind utilities 导入之后（5508351b 从 `@layer components` 挪过来）：`[data-wb-content]` 和 `.md\:ml-64` 同特异度，`@layer components` 在层序上恒输给 utilities 层，打印覆盖在 Letter 宽度（816px ≥ 48rem）下从未生效过；`workbench-css.test.ts` 新增用例钉住层与源码顺序。
 - §4.1 的「函数 ≤ 50 行」对 JSX 渲染体豁免（Sidebar / CommandPalette / ArtifactDrawer 的 return 块）；拆分只会把一棵树切成没有独立语义的碎片。
 
 - [x] **Step 1: 导航模型 + 测试**
@@ -3983,14 +3986,23 @@ export function downloadText(
   // reference is worthless to us either way.
   a.rel = "noopener";
   // Firefox only activates a connected anchor, and the object URL has to stay
-  // alive until the download has actually started — hence the next-task revoke
+  // alive until the download has actually started — hence the deferred revoke
   // rather than revoking inline.
   document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  try {
+    a.click();
+  } finally {
+    // A throwing click() must not leak the anchor into the document or the blob
+    // into the URL store; the finally covers both.
+    a.remove();
+    // Not 0ms: WebKit reads the object URL after the current task, and a same-tick
+    // revoke has it fetch a URL that no longer resolves.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
 ```
+
+> 完整实现见 `apps/web/src/lib/workbench/download.test.ts`（已落地，jsdom 4 条）：点击已连接的下载锚点并随后摘除、`mime` 参数原样传给 `Blob`、`click()` 抛出时 `finally` 仍摘除锚点并安排 revoke、object URL 活过当前 tick（不在同步阶段就被 revoke）。
 
 - [x] **Step 3: Sidebar.tsx + SiteCard.tsx（照 opengengrowth Sidebar.tsx L86–142）**
 
@@ -4228,6 +4240,7 @@ import {
   useWorkbenchArtifacts,
 } from "@/lib/workbench/store/hooks";
 import { DemoChip } from "../ui/DemoChip.tsx";
+import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
 
 /** The workbench topbar (opengengrowth `Header.tsx`). */
 export function Topbar({
@@ -4254,6 +4267,10 @@ export function Topbar({
   const t = useTranslations("workbench.shell");
   const { state, storageMode, ready } = useWorkbench();
   const artifacts = useWorkbenchArtifacts();
+  // Called here rather than threaded down from ShellChrome: the topbar owns the
+  // only link it guards, and the hook is already used the same way one level
+  // over in CommandPalette — both sit in the same client tree.
+  const { confirmNavigation } = useContextNavigationConfirm();
   return (
     <header
       data-app-shell-topbar=""
@@ -4273,6 +4290,10 @@ export function Topbar({
         {projectControl}
         <Link
           href="/new-project"
+          // Leaving for a new site discards a dirty Context editor exactly like
+          // a rail link or a palette jump does, so it asks the same question.
+          // `current` is false: this destination is never the current page.
+          onClick={(event) => confirmNavigation(event, false)}
           className="hidden text-xs font-medium text-slate-500 hover:text-slate-900 sm:inline"
         >
           + {t("newSite")}
@@ -4291,15 +4312,18 @@ export function Topbar({
         </button>
       </div>
       <div className="flex items-center gap-3">
-        {/* Rendered on every viewport and before it has anything to say: a live
-            region has to exist in the accessibility tree BEFORE its text
-            changes, or the announcement is lost. `empty:-mr-3` cancels the
-            flex gap this otherwise-invisible element would add. `swept` is
-            deliberately silent: that state was discarded on purpose, so there
-            is nothing to warn about. */}
+        {/* Exactly one status element, rendered on every viewport and before it
+            has anything to say: a live region has to exist in the accessibility
+            tree BEFORE its text changes, or the announcement is lost (and a
+            second one would break the shell e2e's single-status locator).
+            Below `lg` the topbar has no room for the sentence, so it is
+            `sr-only` there — still announced, just not painted; `sr-only`
+            takes it out of the flex flow, so it adds no gap and `empty:-mr-3`
+            only has to cancel one from `lg` up. `swept` is deliberately
+            silent: that state was discarded on purpose. */}
         <span
           role="status"
-          className="max-w-[40vw] truncate text-xs text-amber-700 empty:-mr-3"
+          className="max-lg:sr-only text-xs text-amber-700 empty:-mr-3 lg:max-w-[40vw] lg:truncate"
         >
           {ready && storageMode !== "ok" && storageMode !== "swept"
             ? storageMode === "quota"
@@ -4329,6 +4353,8 @@ export function Topbar({
 }
 ```
 
+> 完整实现见 `apps/web/src/components/workbench/shell/Topbar.test.tsx`（已落地，jsdom 4 条）：Context 有未保存改动时「+ 新建站点」被拒绝、接受后放行、Context 干净时不问、唯一 `role="status"` 且存储健康时为空。
+
 - [x] **Step 5: CommandPalette.tsx（jsx L3040–3085）**
 
 ```tsx
@@ -4338,6 +4364,7 @@ export function Topbar({
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -4419,6 +4446,18 @@ export function CommandPalette({
   }, [query, projectId, projectOptions, t]);
 
   const activeEntry = entries[activeIndex];
+  const activeKey = activeEntry?.key;
+
+  // The listbox scrolls (`max-h-80` over ~18 entries) but the arrow keys only
+  // move `aria-activedescendant`: focus never leaves the input, so the browser
+  // scrolls nothing and the highlight walks off the bottom unseen.
+  useEffect(() => {
+    if (!activeKey) return;
+    const option = document.getElementById(`wb-palette-${activeKey}`);
+    // jsdom implements no scroll API; guard rather than stub it everywhere.
+    if (typeof option?.scrollIntoView !== "function") return;
+    option.scrollIntoView({ block: "nearest" });
+  }, [activeKey]);
 
   function go(entry: PaletteEntry | undefined): void {
     if (!entry) return;
@@ -4513,17 +4552,18 @@ export function CommandPalette({
           {t("shell.palette.empty")}
         </p>
       ) : null}
-      {/* Filtering changes the list silently otherwise. The bare number needs
-          no new catalog key, and the visible empty state carries the words. */}
+      {/* Filtering changes the list silently otherwise. Reusing the palette's own
+          title names what the number counts — a bare "3" is meaningless out of
+          context — without adding a catalog key. */}
       <span role="status" className="sr-only">
-        {entries.length}
+        {t("shell.palette.title")}: {entries.length}
       </span>
     </Dialog>
   );
 }
 ```
 
-> 完整实现见 `apps/web/src/components/workbench/shell/CommandPalette.test.tsx`（已落地，jsdom 8 条）：全量列出与筛选、空态在 listbox 外、Enter 跳转并关闭、筛选时高亮回第一条、重开回到空 query、Context 离开确认拒绝时面板不关、接受后跳转、combobox 角色与选项不进 Tab 序。
+> 完整实现见 `apps/web/src/components/workbench/shell/CommandPalette.test.tsx`（已落地，jsdom 9 条）：全量列出与筛选、空态在 listbox 外、Enter 跳转并关闭、筛选时高亮回第一条、重开回到空 query、Context 离开确认拒绝时面板不关、接受后跳转、高亮变化时把选项滚入视口（并钉住滚的是哪一个 DOM 节点）、combobox 角色与选项不进 Tab 序。
 
 - [x] **Step 6: ArtifactDrawer.tsx（jsx L2485–2526）**
 
@@ -4690,7 +4730,7 @@ export function ArtifactDrawer({
 
 产物内容的「示例数据」来源声明由生产者（PR-3+ 的 `addArtifact` 调用方）写进 `content` 顶部（§6.8），抽屉只展示。
 
-> 完整实现见 `apps/web/src/components/workbench/shell/ArtifactDrawer.test.tsx`（已落地，jsdom 4 条）：空态、「已复制」自动回落、重开清掉悬空的「已复制」、删掉最后一条回空态。
+> 完整实现见 `apps/web/src/components/workbench/shell/ArtifactDrawer.test.tsx`（已落地，jsdom 5 条）：空态、「已复制」自动回落、关闭后残留的定时器不会截断下一次重开的「已复制」（5508351b 把「重开清掉悬空计时器」换成这条更严格的时序用例）、第二次复制重启闪烁而不是继承第一个计时器（5508351b 新增）、删掉最后一条回空态。
 
 - [x] **Step 7: ShellChrome.tsx + WorkbenchShell.tsx**
 
@@ -4731,8 +4771,14 @@ export function ShellChrome({
   readonly children: ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Only one of the two dialogs may be open at a time: stacked `fixed inset-0
+  // z-50` wrappers overlap, and closing the top one first returns focus to
+  // `<body>` because the dialog underneath is the one holding the opener. One
+  // slot makes that unrepresentable rather than something two setters have to
+  // keep agreeing on. The `Dialog` inert ref-count stays as defence in depth.
+  const [panel, setPanel] = useState<"palette" | "drawer" | null>(null);
+  const paletteOpen = panel === "palette";
+  const drawerOpen = panel === "drawer";
   const paletteButtonRef = useRef<HTMLButtonElement>(null);
   const drawerButtonRef = useRef<HTMLButtonElement>(null);
   // Must match Tailwind v4's `md` (48rem), which the rail's `md:translate-x-0`
@@ -4741,28 +4787,15 @@ export function ShellChrome({
   const t = useTranslations("workbench.shell");
 
   const closeAll = useCallback(() => {
-    setPaletteOpen(false);
-    setDrawerOpen(false);
+    setPanel(null);
     setSidebarOpen(false);
   }, []);
-  // Only one of the two dialogs may be open at a time: stacked `fixed inset-0
-  // z-50` wrappers overlap, and closing the top one first returns focus to
-  // `<body>` because the dialog underneath is the one holding the opener. The
-  // `Dialog` inert ref-count stays as defence in depth.
-  const openPalette = useCallback((): void => {
-    setPaletteOpen(true);
-    setDrawerOpen(false);
-  }, []);
-  const openDrawer = useCallback((): void => {
-    setDrawerOpen(true);
-    setPaletteOpen(false);
-  }, []);
+  const openPalette = useCallback((): void => setPanel("palette"), []);
+  const openDrawer = useCallback((): void => setPanel("drawer"), []);
   const handlers = useMemo(
     () => ({
-      onTogglePalette: () => {
-        setPaletteOpen((p) => !p);
-        setDrawerOpen(false);
-      },
+      onTogglePalette: () =>
+        setPanel((current) => (current === "palette" ? null : "palette")),
       onEscape: closeAll,
     }),
     [closeAll],
@@ -4813,21 +4846,21 @@ export function ShellChrome({
       <CommandPalette
         returnFocusTo={paletteButtonRef}
         open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
+        onClose={() => setPanel(null)}
         projectId={projectId}
         projectOptions={projectOptions}
       />
       <ArtifactDrawer
         returnFocusTo={drawerButtonRef}
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => setPanel(null)}
       />
     </>
   );
 }
 ```
 
-焦点回退只能由 `Dialog` 的 effect cleanup 做：`onClose` 里同步调 `ref.current?.focus()` 时 `#wb-app` 还带着 `inert`（cleanup 要到 commit 才摘掉），对 inert 子树 focus 是 no-op。而 Next 的 layout-router 在导航后会主动 focus 变更段的 DOM 节点，⌘K 跳转后再开再关时 `document.activeElement` 记录的就不是按钮了。所以 `ShellChrome` 把两个按钮 ref 作为 `returnFocusTo` 传给 `CommandPalette` / `ArtifactDrawer`（它们原样转给 `Dialog`），`onClose` 保持纯 `setXOpen(false)`。
+焦点回退只能由 `Dialog` 的 effect cleanup 做：`onClose` 里同步调 `ref.current?.focus()` 时 `#wb-app` 还带着 `inert`（cleanup 要到 commit 才摘掉），对 inert 子树 focus 是 no-op。而 Next 的 layout-router 在导航后会主动 focus 变更段的 DOM 节点，⌘K 跳转后再开再关时 `document.activeElement` 记录的就不是按钮了。所以 `ShellChrome` 把两个按钮 ref 作为 `returnFocusTo` 传给 `CommandPalette` / `ArtifactDrawer`（它们原样转给 `Dialog`），`onClose` 保持纯 `setPanel(null)`（5508351b 前是各自的 `setXOpen(false)`；合并成单槽位状态后两个对话框的 `onClose` 变成同一行代码）。
 
 ```tsx
 // apps/web/src/components/workbench/shell/WorkbenchShell.tsx
@@ -4959,7 +4992,7 @@ git add apps/web/src/components/workbench/shell apps/web/src/lib/workbench/downl
 git commit -m "feat(workbench): 侧栏 / 顶栏 / 命令面板 / 产物筐抽屉与壳装配"
 ```
 
-实际落地：8e53425b（`ProjectShellProject.marketCode`）、47dc7d31（壳主体）、4ae34588（`ProjectSwitcher` 浅色、面板 / 抽屉互斥与重置）、bae6a447（侧栏可滚动、面板 combobox、离开确认、焦点圈、存储提示、下载）、09f9bb14（`swept` 态顶栏静默）。
+实际落地：8e53425b（`ProjectShellProject.marketCode`）、47dc7d31（壳主体）、4ae34588（`ProjectSwitcher` 浅色、面板 / 抽屉互斥与重置）、bae6a447（侧栏可滚动、面板 combobox、离开确认、焦点圈、存储提示、下载）、09f9bb14（`swept` 态顶栏静默）、5508351b（打印规则挪进 `@layer utilities`、面板高亮滚入视口、「+ 新建站点」接入离开确认、顶栏存储提示合并单一 live region、`ShellChrome` 面板状态合并为单槽位、`download.ts` 的 `try/finally` 与 1000ms revoke、删 `app-shell.module.css` 死规则）。
 
 ---
 
@@ -4985,6 +5018,7 @@ git commit -m "feat(workbench): 侧栏 / 顶栏 / 命令面板 / 产物筐抽屉
 - `DeleteProjectSection`（09439fdc）：`busy = isPending || isSuccess` 同时禁用两个按钮并把「删除中」保持到导航窗口结束（`router.replace` 是 transition，成功后这棵树还活着，再点一次会发第二个 DELETE 拿 404）；确认区出现时焦点移到确认按钮、取消时移回触发按钮（`prevConfirming` ref，首次挂载不抢焦点）；`BUTTON_BASE` 提到模块作用域；11/12px 的说明行改 `text-slate-600`；「真实操作」chip 加 `title`（`workbench.settings.realActionTitle`）。
 - `routes.fs.test.ts`（09f9bb14 加强）不只检查段名有没有 `page.tsx`，还钉住每个占位页传给视图的 `page="<id>"`——从兄弟段复制过来忘了改 id 的文件，会在这个 URL 下渲染另一页的标题、徽标和「旧版页面 →」，其他测试全都只读表不读树，谁也发现不了。另加一条反向清扫：目录里存在但表里没人指的路由即失败，重定向专用段用 `COMPATIBILITY_ONLY = ["diagnosis", "plan", "report"]` 显式豁免。
 - 冒烟（Step 7）实际跑在 3005：3001 被一个陈旧进程占着。仅记录，不改流程。
+- `_project-switcher.tsx` 的离开确认改接 Task 10 的 `shell/useContextNavigationConfirm.ts`（5508351b），删掉自己那份内联的 `shouldConfirmContextNavigation` + `window.confirm` 拼接：两处各写一份同样的守卫迟早会走漂，`Topbar` 一侧改了文案或判据这边不会跟着变。就 import 方向而言，这是本 PR 里第一处从 `app/p/[projectId]/`（旧壳）引用 `components/workbench/shell/`（新壳）的代码——此前都是新壳单向引用旧壳保留下来的东西（如 `_context-navigation-guard`），这次反过来了，值得留意但本轮不判断是否需要改成别的抽法。
 
 - [x] **Step 1: `ProjectShellProject.marketCode`**
 
@@ -5410,7 +5444,7 @@ git commit -m "feat(web): 项目壳切换为工作台，15 条路由占位，旧
 
 （`git add -A` 只限这几个路径；提交前 `git status` 确认没有带进 `.workbench-reference/`——它在 exclude 里，正常不会出现。）
 
-实际落地：3d09c9c1（路由、layout、legacy 搬迁、设置页）、09439fdc（设置页质量修复与孤儿记录）、09f9bb14（`routes.fs.test.ts` 的 id 接线与反向清扫）。
+实际落地：3d09c9c1（路由、layout、legacy 搬迁、设置页）、09439fdc（设置页质量修复与孤儿记录）、09f9bb14（`routes.fs.test.ts` 的 id 接线与反向清扫）、5508351b（`_project-switcher.tsx` 改接共享的 `useContextNavigationConfirm`，删自带的离开确认拼接）。
 
 ---
 
