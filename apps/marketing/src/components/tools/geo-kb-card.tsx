@@ -1,5 +1,5 @@
 "use client";
-// @input  -- one website's GEO knowledge base state, its two actions and its five section slots
+// @input  -- one website's GEO knowledge base state, its two actions, the input block and its five section slots
 // @output -- the Profile-shaped card: status line, billed/free actions, sections, publish box, published summary
 // @pos    -- shell only: it fetches nothing, decides no state and holds no draft
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -107,6 +107,13 @@ export interface GeoKbCardProps {
   /** Replaces the standard billing sentence, e.g. with a language refusal. */
   readonly costNote?: ReactNode;
   readonly publish?: GeoKbPublishPlan | null;
+  /**
+   * The owner-editable part of the locked input, drawn between the notices
+   * and the knowledge sections whether or not there is knowledge yet. It is
+   * not a section: sections are what an update produced, and this is what the
+   * next one reads.
+   */
+  readonly inputs?: ReactNode;
   readonly sections?: GeoKbCardSections | null;
   readonly summary?: GeoKbPublishedSummary | null;
   readonly collapsed?: boolean;
@@ -185,7 +192,13 @@ function CardHeader({ host, state, statusText, onUpdate, updateLabel, updateDisa
   </div>;
 }
 
-function SectionFrame({ name, title, items, children }: {
+/**
+ * The heading strip every lettered group on this card sits under. Exported so
+ * the one block drawn ABOVE the groups -- the competitor rows, which are an
+ * input to the update rather than a part of what it produced -- is framed the
+ * same way rather than by a copy of these classes.
+ */
+export function GeoKbSectionFrame({ name, title, items, children }: {
   readonly name: string;
   readonly title: string;
   readonly items: string;
@@ -195,7 +208,7 @@ function SectionFrame({ name, title, items, children }: {
   return <section data-kb-section={name} aria-labelledby={id} className="min-w-0 space-y-4">
     <div className="min-w-0">
       <h3 id={id} className="text-[15px] font-semibold text-text-dark-primary">{title}</h3>
-      <span className="mt-1 block text-[12px] leading-relaxed text-text-dark-secondary">{items}</span>
+      <span data-kb-section-items="" className="mt-1 block text-[12px] leading-relaxed text-text-dark-secondary">{items}</span>
     </div>
     {children}
   </section>;
@@ -319,6 +332,7 @@ export function GeoKbCard({
   updateDisabled = false,
   costNote,
   publish = null,
+  inputs = null,
   sections = null,
   summary = null,
   collapsed = false,
@@ -345,11 +359,12 @@ export function GeoKbCard({
       copy={copy}
     />
     {children}
+    {inputs === null ? null : <div data-kb-inputs="" className="min-w-0 space-y-8">{inputs}</div>}
     {sections === null ? null : <div className="min-w-0 space-y-8">
-      <SectionFrame name="identity" title={copy.sections.identity.title} items={copy.sections.identity.items}>{sections.identity}</SectionFrame>
-      <SectionFrame name="facts" title={copy.sections.facts.title} items={copy.sections.facts.items}>{sections.facts}</SectionFrame>
-      <SectionFrame name="trust" title={copy.sections.trust.title} items={copy.sections.trust.items}>{sections.trust}</SectionFrame>
-      <SectionFrame name="reachability" title={copy.sections.reachability.title} items={copy.sections.reachability.items}>{sections.reachability}</SectionFrame>
+      <GeoKbSectionFrame name="identity" title={copy.sections.identity.title} items={copy.sections.identity.items}>{sections.identity}</GeoKbSectionFrame>
+      <GeoKbSectionFrame name="facts" title={copy.sections.facts.title} items={copy.sections.facts.items}>{sections.facts}</GeoKbSectionFrame>
+      <GeoKbSectionFrame name="trust" title={copy.sections.trust.title} items={copy.sections.trust.items}>{sections.trust}</GeoKbSectionFrame>
+      <GeoKbSectionFrame name="reachability" title={copy.sections.reachability.title} items={copy.sections.reachability.items}>{sections.reachability}</GeoKbSectionFrame>
       <MeasurementSection count={sections.measurementCount} copy={copy}>{sections.measurement}</MeasurementSection>
     </div>}
     {publish === null ? null : <PublishBox plan={publish} copy={copy} />}

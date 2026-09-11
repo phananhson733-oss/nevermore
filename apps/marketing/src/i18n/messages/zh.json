@@ -5630,7 +5630,8 @@
           "publishDone": "已发布 kb@v{version}。",
           "publishReused": "这份内容此前已作为 kb@v{version} 发布，因此没有新建版本。",
           "publishNoQuestionSet": "这个版本没有提问集，AI 可见性体检无法针对它运行。",
-          "comparisonsNoConfirmedCompetitors": "还没有已确认的竞品站点，因此本次没有读取竞品页面，也没有生成对比。"
+          "comparisonsNoConfirmedCompetitors": "还没有已确认的竞品站点，因此本次没有读取竞品页面，也没有生成对比。请在上方「竞品站点」里确认。",
+          "comparisonsAwaitingUpdate": "本次更新时还没有已确认的竞品。已确认的竞品会在下次更新时读取其页面并生成对比。"
         },
         "run": {
           "checking": "正在检查是否还有没结束的更新…",
@@ -5696,6 +5697,57 @@
           "discardGone": "已经没有可丢弃的停下的更新了，现在可以开始新的更新。",
           "discardBusy": "还有东西正在处理这次更新，因此没有丢弃。请稍后再试。",
           "discardFailed": "这次已停下的更新没能丢弃。请重新加载页面，确认它是否还开着。"
+        },
+        "competitors": {
+          "title": "竞品站点",
+          "items": "来自产品档案的直接竞品 · 已确认 {confirmed} / {total}",
+          "empty": "产品档案里还没有直接竞品。在产品档案里添加并确认后，重建这份草稿，竞品就会出现在这里。",
+          "typeLabel": "竞品",
+          "unnamed": "尚未命名",
+          "fromProfile": "域名来自产品档案",
+          "ownerConfirmed": "名称由你确认",
+          "readFrom": "读取自 {url}",
+          "method": {
+            "json_ld": "结构化数据",
+            "og_site_name": "og:site_name",
+            "title": "页面标题"
+          },
+          "lookupFailed": "无法读取名称：{reason}",
+          "reasons": {
+            "missing_url": "没有可读取的网址",
+            "fetch_failed": "访问失败",
+            "not_found": "页面上没有声明名称",
+            "target_redirected": "跳转到了别的站点",
+            "partial_body": "页面没有读完",
+            "not_html": "不是网页",
+            "invalid_response": "响应无效",
+            "rate_limited": "抓取额度已用完，请稍后再试",
+            "blocked": "对方拒绝访问",
+            "timeout": "超时",
+            "unknown": "原因未知"
+          },
+          "noDomain": "产品档案里只有名称，没有网址，无法读取页面，也不会参与对比。",
+          "aliases": "别名：{aliases}",
+          "confirmed": "已确认",
+          "unconfirmed": "未确认",
+          "lookup": "读取名称",
+          "lookupBusy": "读取中…",
+          "confirm": "确认",
+          "unconfirm": "取消确认",
+          "rename": "修改名称",
+          "nameLabel": "品牌名称",
+          "save": "确认",
+          "cancel": "取消",
+          "saving": "保存中…",
+          "nameRequired": "请填写这家竞品的名称。",
+          "failed": {
+            "conflict": "这个知识库在别处被改过了。请重新加载页面后再试。",
+            "input_changed": "这份草稿的输入已经变了。请重新加载页面后再试。",
+            "generation_running": "这份草稿已经付费的某项工作还在进行中。请等它结束后再试。",
+            "rate_limited": "操作过于频繁，请稍后再试。",
+            "auth_required": "你当前未登录。请重新登录后再试。",
+            "unknown": "没有保存成功。请再试一次。"
+          }
         }
       },
       "enrichment": {

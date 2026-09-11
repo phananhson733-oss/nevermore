@@ -2513,13 +2513,141 @@ it.each(["en", "zh"])("says why there are no comparisons instead of 'not applica
   expect(unavailableNotes()).not.toContain(card(locale).module.unavailable.not_applicable);
 });
 
-it.each([
-  ["a confirmed competitor sits in the locked input", "not_applicable", true, "not_applicable"],
-  ["the reason is something else", "insufficient_evidence", false, "insufficient_evidence"],
-] as const)("keeps the generic sentence when %s", async (_name, reason, confirmed, expected) => {
-  const payload = withComparisons(reason, confirmed);
+/**
+ * A confirmed rival beside a stored `not_applicable` is the state a
+ * confirmation leaves behind -- the body was assembled before the rival was
+ * confirmed -- so the sentence says when the absence was true and what the
+ * next update does about it, rather than that no rival is confirmed.
+ */
+it.each(["en", "zh"])("says the comparison waits for the next update once a rival is confirmed, in %s", async (locale) => {
+  const payload = withComparisons("not_applicable", true);
+  await render(locale, { payload, draftHash: geoV2Digest(payload) });
+
+  expect(unavailableNotes()).toContain(card(locale).review.comparisonsAwaitingUpdate);
+  expect(unavailableNotes()).not.toContain(card(locale).review.comparisonsNoConfirmedCompetitors);
+  expect(unavailableNotes()).not.toContain(card(locale).module.unavailable.not_applicable);
+});
+
+it("keeps the generic sentence when the reason is something else", async () => {
+  const payload = withComparisons("insufficient_evidence", false);
   await render("en", { payload, draftHash: geoV2Digest(payload) });
 
-  expect(unavailableNotes()).toContain(card("en").module.unavailable[expected]);
+  expect(unavailableNotes()).toContain(card("en").module.unavailable.insufficient_evidence);
   expect(unavailableNotes()).not.toContain(card("en").review.comparisonsNoConfirmedCompetitors);
+  expect(unavailableNotes()).not.toContain(card("en").review.comparisonsAwaitingUpdate);
+});
+
+/* ------------------------------------------------------------------ */
+/* The competitor rows                                                  */
+/* ------------------------------------------------------------------ */
+
+const COMPETITORS_ENDPOINT = "/api/tools/geo-knowledge-base/v3/competitors";
+const competitorRows = () => [...host.querySelectorAll<HTMLElement>("[data-geo-kb-competitor]")];
+const competitorAction = (domain: string, kind: string) =>
+  host.querySelector<HTMLButtonElement>(`[data-geo-kb-competitor][data-domain="${domain}"] [data-competitor-action="${kind}"]`);
+
+/**
+ * The rows are drawn from the locked input, above every knowledge section --
+ * they are what the next update reads, not what the last one produced -- and
+ * on a draft with no knowledge at all, which is the moment to confirm one:
+ * before the first billed update rather than after it.
+ */
+it("draws the competitor rows from the locked input, above section A", async () => {
+  await render("zh");
+  expect(competitorRows().map((row) => row.dataset["domain"])).toEqual(["astro.example"]);
+  expect(competitorRows()[0]?.dataset["confirmed"]).toBe("true");
+  const competitors = host.querySelector("[data-kb-section='competitors']")!;
+  const identity = host.querySelector("[data-kb-section='identity']")!;
+  expect(competitors.compareDocumentPosition(identity) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("draws the competitor rows on a draft that has no knowledge yet", async () => {
+  const created = createdDraft({}).payload;
+  await render("zh", { payload: created, draftHash: geoV2Digest(created), restated: [] });
+  expect(host.querySelector("[data-kb-section='identity']")).toBeNull();
+  expect(competitorRows().map((row) => [row.dataset["domain"], row.dataset["confirmed"]])).toEqual([["astro.example", "false"]]);
+});
+
+/**
+ * A confirmation moves the draft's coordinates. The card takes the answer in
+ * so the next review write names the new version and the re-locked input;
+ * without that, every decision after a confirmation would be refused as
+ * stale, and the comparisons note keeps saying "none confirmed" over a row
+ * that just said otherwise.
+ */
+it("takes a confirmation into the draft it is reviewing", async () => {
+  const before = withComparisons("not_applicable", false);
+  const competitors = [{ domain: "astro.example", brandName: "Astro", confirmed: true }];
+  const generationInput = { ...before.generationInput, competitors };
+  const after = parseGeoKbPayloadV3({ ...before, generationInput, runRef: { ...before.runRef, generationInputHash: geoV2Digest(generationInput) } });
+  const saved = {
+    kbId: V3_KB_ID, draftVersion: 5, contentHash: geoV2Digest(after), updatedAt: "2026-09-11T08:00:00.000Z",
+    generationInputHash: after.runRef.generationInputHash, competitors, released: [], changed: true,
+  };
+  v3Reply = (body) => body.intent === "confirm"
+    ? Response.json({ data: saved })
+    : Response.json({ data: {
+      draftVersion: 6, contentHash: "f".repeat(64), updatedAt: "2026-09-11T08:00:01.000Z", review: after.review,
+      restated: [], counts: { total: ITEM_KEYS.length, accepted: 1, acceptedInBulk: 0, excluded: 0, pending: ITEM_KEYS.length - 1, corrected: 0 },
+    } });
+  await render("zh", { payload: before, draftHash: geoV2Digest(before) });
+  expect(unavailableNotes()).toContain(card("zh").review.comparisonsNoConfirmedCompetitors);
+
+  await act(async () => competitorAction("astro.example", "confirm")!.click());
+  const confirmCall = allCalls().find((call) => String(call[0]) === COMPETITORS_ENDPOINT)!;
+  expect(JSON.parse(String((confirmCall[1] as RequestInit).body))).toEqual({
+    kbId: V3_KB_ID, intent: "confirm", baseVersion: 4, expectedGenerationInputHash: before.runRef.generationInputHash,
+    domain: "astro.example", brandName: "Astro", aliases: [],
+  });
+  expect(competitorRows()[0]?.dataset["confirmed"]).toBe("true");
+  expect(unavailableNotes()).toContain(card("zh").review.comparisonsAwaitingUpdate);
+  // The knowledge and the decisions on it are still on screen: nothing about them moved.
+  expect(rows().length).toBe(ITEM_KEYS.length);
+
+  await act(async () => rows()[0]!.querySelector<HTMLButtonElement>("[data-item-action='accept']")!.click());
+  await act(async () => { await vi.advanceTimersByTimeAsync(GEO_KB_V3_AUTOSAVE_MS); });
+  const reviewCall = allCalls().findLast((call) => String(call[0]) === "/api/tools/geo-knowledge-base/v3/review")!;
+  expect(JSON.parse(String((reviewCall[1] as RequestInit).body))).toMatchObject({ baseVersion: 5, expectedGenerationInputHash: after.runRef.generationInputHash });
+});
+
+/**
+ * A refused competitor write says the same thing about this tab that a refused
+ * review write does: its coordinates are behind. So it enters the same hold --
+ * the status line says so, the decision buttons go dead with it, and the
+ * competitor buttons stay dead too -- rather than leaving the row with an
+ * error and the rest of the card free to make the next stale write.
+ */
+it("holds the whole card when a competitor write loses a conflict", async () => {
+  v3Reply = () => Response.json({ error: { code: "conflict" }, draftVersion: 9 }, { status: 409 });
+  await render("en");
+  await act(async () => competitorAction("astro.example", "unconfirm")!.click());
+  expect(text("[data-geo-kb-competitor][data-domain='astro.example'] [data-competitor-error]")).toBe(card("en").competitors.failed.conflict);
+  expect(text("[data-review-status]")).toBe(card("en").review.conflict);
+  expect((rows()[0]!.querySelector('[data-item-action="accept"]') as HTMLButtonElement).disabled).toBe(true);
+  expect(competitorAction("astro.example", "unconfirm")?.disabled).toBe(true);
+  expect(competitorAction("astro.example", "rename")?.disabled).toBe(true);
+});
+
+it("holds the competitor gestures under a moved-input hold, with nothing left unsaved to hold them otherwise", async () => {
+  v3Reply = () => Response.json({ error: { code: "input_changed" } }, { status: 409 });
+  await render("en");
+  await act(async () => competitorAction("astro.example", "unconfirm")!.click());
+  expect(text("[data-review-status]")).toBe(card("en").review.inputChanged);
+  expect(competitorAction("astro.example", "unconfirm")?.disabled).toBe(true);
+  expect(competitorAction("astro.example", "rename")?.disabled).toBe(true);
+});
+
+it("holds the competitor gestures while the loaded draft says a run has it", async () => {
+  await render("en", { runInProgress: true });
+  expect(text("[data-review-status]")).toBe(card("en").review.running);
+  expect(competitorAction("astro.example", "unconfirm")?.disabled).toBe(true);
+});
+
+/** The gestures are held for the same reasons the recovery gestures are: nothing may move the draft under an open run. */
+it("holds the competitor gestures while an update is open", async () => {
+  runRead = () => Response.json({ data: { status: "resumable", run: { runId: RUN_ID }, operations: [] } });
+  await render("zh");
+  expect(host.querySelector("[data-run-continue]")).not.toBeNull();
+  expect(competitorAction("astro.example", "unconfirm")?.disabled).toBe(true);
+  expect(competitorAction("astro.example", "rename")?.disabled).toBe(true);
 });

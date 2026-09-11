@@ -22,7 +22,8 @@ import {
 } from "../../lib/geo-tools/kb-v3.test-fixtures.ts";
 import type { GeoKbEditorViewV3 } from "./geo-kb-v3-wire.ts";
 import { createGeoKbV3Draft, geoKbV3DraftBlockers, GEO_KB_EDITOR_V3_SCHEMA_VERSION, GEO_KB_V3_AUTOSAVE_MS,
-  GEO_KB_V3_AUTOSAVE_RETRY_MS, parseGeoKbEditorViewV3, relockGeoKbV3Draft, useGeoKbV3Editor } from "./use-geo-kb-v3-editor.ts";
+  GEO_KB_V3_AUTOSAVE_RETRY_MS, lookupGeoKbV3Competitor, parseGeoKbEditorViewV3, relockGeoKbV3Draft, useGeoKbV3Editor,
+  writeGeoKbV3Competitor } from "./use-geo-kb-v3-editor.ts";
 import {
   buildGeoKbV3Identity,
   GEO_ABSENT_EVIDENCE_CONTENT_HASH,
@@ -589,4 +590,253 @@ it.each([
   // anything would agree perfectly, and agreement alone would pass.
   expect([...built.blockers]).toEqual(expected);
   expect(geoKbV3DraftBlockers(locked)).toEqual([...built.blockers]);
+});
+
+/* ------------------------------------------------------------------ */
+/* The competitor gestures                                              */
+/* ------------------------------------------------------------------ */
+
+const COMPETITORS_ENDPOINT = "/api/tools/geo-knowledge-base/v3/competitors";
+const IDENTITY = {
+  status: "available", domain: "astro.example", brandName: "Astro", aliases: ["Astro Charts"],
+  method: "json_ld", sourceUrl: "https://astro.example/", observedAt: NOW, cached: false,
+};
+
+it("looks a rival up by its domain and reads the identity back", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: { kbId: V3_KB_ID, identity: IDENTITY } }));
+  const result = await lookupGeoKbV3Competitor({ kbId: V3_KB_ID, domain: "astro.example" });
+  expect(calls()[0]![0]).toBe(COMPETITORS_ENDPOINT);
+  expect(bodyOf(0)).toEqual({ kbId: V3_KB_ID, intent: "identify", domain: "astro.example" });
+  expect(result).toEqual({ ok: true, identity: IDENTITY });
+});
+
+it("refuses a lookup answered for another knowledge base or in a shape it cannot read", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ data: { kbId: "22222222-2222-8222-8222-222222222222", identity: IDENTITY } }));
+  await expect(lookupGeoKbV3Competitor({ kbId: V3_KB_ID, domain: "astro.example" })).resolves.toEqual({ ok: false, code: "bad_response" });
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ data: { kbId: V3_KB_ID, identity: { status: "available" } } }));
+  await expect(lookupGeoKbV3Competitor({ kbId: V3_KB_ID, domain: "astro.example" })).resolves.toEqual({ ok: false, code: "bad_response" });
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ error: { code: "unknown_competitor" } }, { status: 422 }));
+  await expect(lookupGeoKbV3Competitor({ kbId: V3_KB_ID, domain: "astro.example" })).resolves.toEqual({ ok: false, code: "unknown_competitor" });
+});
+
+function competitorsSaved(overrides: Record<string, unknown> = {}) {
+  const competitors = [{ domain: "astro.example", brandName: "Astro", confirmed: true, aliases: ["Astro Charts"] }];
+  const generationInput = { ...PAYLOAD.generationInput, competitors };
+  const next = parseGeoKbPayloadV3({ ...PAYLOAD, generationInput, runRef: { ...PAYLOAD.runRef, generationInputHash: geoV2Digest(generationInput) } });
+  return {
+    next,
+    data: {
+      kbId: V3_KB_ID, draftVersion: 5, contentHash: geoV2Digest(next), updatedAt: NOW,
+      generationInputHash: next.runRef.generationInputHash, competitors, released: ["knowledgeGenerationId"], changed: true, ...overrides,
+    },
+  };
+}
+
+it("confirms a rival under the locked input the row was drawn against", async () => {
+  const saved = competitorsSaved();
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: saved.data }));
+  const result = await writeGeoKbV3Competitor({
+    kbId: V3_KB_ID, baseVersion: 4, expectedGenerationInputHash: PAYLOAD.runRef.generationInputHash,
+    gesture: { kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: ["Astro Charts"] },
+  });
+  expect(calls()[0]![0]).toBe(COMPETITORS_ENDPOINT);
+  expect(bodyOf(0)).toEqual({
+    kbId: V3_KB_ID, intent: "confirm", baseVersion: 4, expectedGenerationInputHash: PAYLOAD.runRef.generationInputHash,
+    domain: "astro.example", brandName: "Astro", aliases: ["Astro Charts"],
+  });
+  expect(result).toEqual({ ok: true, saved: saved.data });
+});
+
+it("withdraws a confirmation with the same coordinates and no name", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: competitorsSaved().data }));
+  await writeGeoKbV3Competitor({
+    kbId: V3_KB_ID, baseVersion: 4, expectedGenerationInputHash: PAYLOAD.runRef.generationInputHash,
+    gesture: { kind: "unconfirm", domain: "astro.example" },
+  });
+  expect(bodyOf(0)).toEqual({
+    kbId: V3_KB_ID, intent: "unconfirm", baseVersion: 4, expectedGenerationInputHash: PAYLOAD.runRef.generationInputHash, domain: "astro.example",
+  });
+});
+
+it("carries the server's refusal and the version that won a conflict", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ error: { code: "conflict" }, draftVersion: 9 }, { status: 409 }));
+  await expect(writeGeoKbV3Competitor({
+    kbId: V3_KB_ID, baseVersion: 4, expectedGenerationInputHash: PAYLOAD.runRef.generationInputHash,
+    gesture: { kind: "unconfirm", domain: "astro.example" },
+  })).resolves.toEqual({ ok: false, code: "conflict", draftVersion: 9 });
+});
+
+/**
+ * The hook makes the write itself, under the same lock as a flush and a
+ * publish, and names the coordinates it holds -- never ones a component
+ * captured a render ago. A confirm moves them (new version, new hash, a
+ * re-locked input), so the next review save has to name the new ones or it is
+ * refused as stale.
+ */
+it("writes a competitor gesture from the coordinates it holds and takes the answer into the view", async () => {
+  const saved = competitorsSaved();
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ data: saved.data }));
+  await mount();
+  let result: unknown;
+  await act(async () => { result = await editor.writeCompetitor({ kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: ["Astro Charts"] }); });
+  expect(result).toEqual({ ok: true, saved: saved.data });
+  expect(bodyOf(0)).toEqual({
+    kbId: V3_KB_ID, intent: "confirm", baseVersion: 4, expectedGenerationInputHash: PAYLOAD.runRef.generationInputHash,
+    domain: "astro.example", brandName: "Astro", aliases: ["Astro Charts"],
+  });
+  expect(editor.view.draftVersion).toBe(5);
+  expect(editor.view.draftHash).toBe(saved.data.contentHash);
+  expect(editor.payload.generationInput.competitors).toEqual(saved.data.competitors);
+  expect(editor.payload.runRef).toEqual({
+    runId: null, generationInputHash: saved.data.generationInputHash, rolesGenerationId: null, knowledgeGenerationId: null, questionsGenerationId: null,
+  });
+  // Knowledge and review are untouched: nothing about an item changed.
+  expect(editor.payload.knowledge).toEqual(PAYLOAD.knowledge);
+  expect(editor.payload.review).toEqual(PAYLOAD.review);
+  expect(editor.busy).toBe(false);
+  expect(editor.status).toEqual({ kind: "idle" });
+
+  const review = savedReview(saved.next, [{ kind: "accept", itemKey: FACT_KEY_PRO }], 5);
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: review.data }));
+  await act(async () => { editor.accept(FACT_KEY_PRO); });
+  await settle();
+  expect(bodyOf(1)).toMatchObject({ baseVersion: 5, expectedGenerationInputHash: saved.data.generationInputHash });
+  expect(editor.view.draftVersion).toBe(6);
+});
+
+it("keeps the view where it was after a competitor write that changed nothing", async () => {
+  await mount();
+  const before = editor.view;
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({
+    data: competitorsSaved({ changed: false, draftVersion: 4, contentHash: before.draftHash, generationInputHash: PAYLOAD.runRef.generationInputHash }).data,
+  }));
+  await act(async () => { await editor.writeCompetitor({ kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: [] }); });
+  expect(editor.view).toBe(before);
+});
+
+/**
+ * A decision made while the confirm is out must go to the server under the
+ * version the confirm produced, not the one the tab had when the owner
+ * clicked. The write holds the autosave the way a flush holds a second flush;
+ * the queue survives and drains once the new coordinates are in.
+ */
+it("holds a decision made during a competitor write and sends it against the re-locked draft", async () => {
+  const saved = competitorsSaved();
+  let release: (response: Response) => void = () => undefined;
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockReturnValueOnce(new Promise<Response>((resolve) => { release = resolve; }));
+  await mount();
+  let pending: Promise<unknown> = Promise.resolve();
+  await act(async () => { pending = editor.writeCompetitor({ kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: [] }); });
+  expect(editor.busy).toBe(true);
+  expect(editor.autosaveHold).toBe("busy");
+  await act(async () => { editor.accept(FACT_KEY_PRO); });
+  await settle(GEO_KB_V3_AUTOSAVE_MS * 2);
+  // Nothing but the confirm has gone out: the decision waits.
+  expect(calls()).toHaveLength(1);
+  expect(editor.dirty).toBe(true);
+
+  const review = savedReview(saved.next, [{ kind: "accept", itemKey: FACT_KEY_PRO }], 5);
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: review.data }));
+  await act(async () => { release(Response.json({ data: saved.data })); await pending; });
+  await settle();
+  expect(calls()).toHaveLength(2);
+  expect(bodyOf(1)).toMatchObject({ baseVersion: 5, expectedGenerationInputHash: saved.data.generationInputHash, actions: [{ kind: "accept", itemKey: FACT_KEY_PRO }] });
+  expect(editor.view.draftVersion).toBe(6);
+  expect(editor.dirty).toBe(false);
+});
+
+it("refuses a competitor write while a flush is out, while decisions wait, or under a hold, attempting nothing", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ error: { code: "conflict" }, draftVersion: 9 }, { status: 409 }));
+  await mount();
+  await act(async () => { editor.accept(FACT_KEY_PRO); });
+  // Decisions are waiting: the gesture would move the version they are about to name.
+  let result: unknown = "unset";
+  await act(async () => { result = await editor.writeCompetitor({ kind: "unconfirm", domain: "astro.example" }); });
+  expect(result).toBeNull();
+  expect(calls()).toHaveLength(0);
+  await settle();
+  // The flush lost a conflict: the card is held, and the gesture is refused with it.
+  expect(editor.autosaveHold).toBe("conflict");
+  await act(async () => { result = await editor.writeCompetitor({ kind: "unconfirm", domain: "astro.example" }); });
+  expect(result).toBeNull();
+  expect(calls()).toHaveLength(1);
+});
+
+it("enters the card's own hold when a competitor write loses a conflict or names a stale input", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ error: { code: "conflict" }, draftVersion: 9 }, { status: 409 }));
+  await mount();
+  let result: unknown;
+  await act(async () => { result = await editor.writeCompetitor({ kind: "unconfirm", domain: "astro.example" }); });
+  expect(result).toEqual({ ok: false, code: "conflict", draftVersion: 9 });
+  expect(editor.autosaveHold).toBe("conflict");
+  expect(editor.conflictVersion).toBe(9);
+  expect(editor.busy).toBe(false);
+  // Held: a decision made now is not written, because the server already said this tab is behind.
+  await act(async () => { editor.accept(FACT_KEY_PRO); });
+  await settle(GEO_KB_V3_AUTOSAVE_MS * 4);
+  expect(calls()).toHaveLength(1);
+
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ error: { code: "input_changed" } }, { status: 409 }));
+  await mount();
+  await act(async () => { result = await editor.writeCompetitor({ kind: "unconfirm", domain: "astro.example" }); });
+  expect(result).toEqual({ ok: false, code: "input_changed" });
+  expect(editor.autosaveHold).toBe("inputChanged");
+});
+
+/**
+ * A lost answer is not a refusal: the confirm may have committed and moved the
+ * version, and this tab cannot tell. A decision made meanwhile must not go
+ * out on its own against coordinates that may be stale; it waits for the
+ * owner's next gesture, exactly as it does after a review write whose answer
+ * was lost, and the server's own check settles it then.
+ */
+it("does not resume the autosave on its own after a competitor write whose answer was lost", async () => {
+  let reject: (error: Error) => void = () => undefined;
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockReturnValueOnce(new Promise<Response>((_resolve, fail) => { reject = fail; }));
+  await mount();
+  let pending: Promise<unknown> = Promise.resolve();
+  await act(async () => { pending = editor.writeCompetitor({ kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: [] }); });
+  await act(async () => { editor.accept(FACT_KEY_PRO); });
+  let result: unknown;
+  await act(async () => { reject(new Error("gone")); result = await pending; });
+  expect(result).toEqual({ ok: false, code: "network" });
+  expect(editor.autosaveHold).toBe("failed");
+  await settle(GEO_KB_V3_AUTOSAVE_MS * 4);
+  expect(calls()).toHaveLength(1);
+  expect(editor.dirty).toBe(true);
+  // The owner's next gesture re-arms it; the server's version check is what decides.
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ error: { code: "conflict" }, draftVersion: 9 }, { status: 409 }));
+  await act(async () => { editor.accept(FACT_KEY_TEAM); });
+  await settle();
+  expect(calls()).toHaveLength(2);
+  expect(editor.autosaveHold).toBe("conflict");
+});
+
+it("lets a decision made during a refused competitor write go out afterwards, since a refusal wrote nothing", async () => {
+  let release: (response: Response) => void = () => undefined;
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockReturnValueOnce(new Promise<Response>((resolve) => { release = resolve; }));
+  await mount();
+  let pending: Promise<unknown> = Promise.resolve();
+  await act(async () => { pending = editor.writeCompetitor({ kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: [] }); });
+  await act(async () => { editor.accept(FACT_KEY_PRO); });
+  const review = savedReview(PAYLOAD, [{ kind: "accept", itemKey: FACT_KEY_PRO }], 4);
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: review.data }));
+  await act(async () => { release(Response.json({ error: { code: "rate_limited" } }, { status: 429 })); await pending; });
+  expect(editor.autosaveHold).toBeNull();
+  await settle();
+  expect(calls()).toHaveLength(2);
+  expect(bodyOf(1)).toMatchObject({ baseVersion: 4, actions: [{ kind: "accept", itemKey: FACT_KEY_PRO }] });
+  expect(editor.dirty).toBe(false);
+});
+
+it("reports any other refusal to the caller without holding the card", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ error: { code: "rate_limited" } }, { status: 429 }));
+  await mount();
+  let result: unknown;
+  await act(async () => { result = await editor.writeCompetitor({ kind: "unconfirm", domain: "astro.example" }); });
+  expect(result).toEqual({ ok: false, code: "rate_limited" });
+  expect(editor.autosaveHold).toBeNull();
+  expect(editor.busy).toBe(false);
 });

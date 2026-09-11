@@ -5630,7 +5630,8 @@
           "publishDone": "Published kb@v{version}.",
           "publishReused": "This content was already published as kb@v{version}, so no new version was made.",
           "publishNoQuestionSet": "This version has no question set, so the AI visibility check cannot run against it.",
-          "comparisonsNoConfirmedCompetitors": "No competitor site is confirmed yet, so this update read no competitor page and made no comparison."
+          "comparisonsNoConfirmedCompetitors": "No competitor site is confirmed yet, so this update read no competitor page and made no comparison. Confirm one under Competitor sites above.",
+          "comparisonsAwaitingUpdate": "No competitor was confirmed when this update ran. A confirmed competitor is read, and compared against, on the next update."
         },
         "run": {
           "checking": "Checking whether an earlier update is still open…",
@@ -5696,6 +5697,57 @@
           "discardGone": "There is no stopped update left to discard. You can start a new one.",
           "discardBusy": "Something is still working on this update, so it was not discarded. Try again in a moment.",
           "discardFailed": "The stopped update could not be discarded. Reload the page to see whether it is still open."
+        },
+        "competitors": {
+          "title": "Competitor sites",
+          "items": "Direct competitors from the Product Profile · {confirmed} of {total} confirmed",
+          "empty": "The Product Profile names no direct competitor yet. Add and confirm one there, then rebuild this draft, and it appears here.",
+          "typeLabel": "Competitor",
+          "unnamed": "Not named yet",
+          "fromProfile": "Domain from the Product Profile",
+          "ownerConfirmed": "Name confirmed by you",
+          "readFrom": "Read from {url}",
+          "method": {
+            "json_ld": "structured data",
+            "og_site_name": "og:site_name",
+            "title": "page title"
+          },
+          "lookupFailed": "Could not read a name: {reason}",
+          "reasons": {
+            "missing_url": "no address to read",
+            "fetch_failed": "the request failed",
+            "not_found": "the page declares no name",
+            "target_redirected": "it redirected to another site",
+            "partial_body": "the page was not read in full",
+            "not_html": "not a web page",
+            "invalid_response": "the response was invalid",
+            "rate_limited": "the crawl allowance is used up, try again later",
+            "blocked": "the site refused",
+            "timeout": "it timed out",
+            "unknown": "reason unknown"
+          },
+          "noDomain": "The Product Profile gives a name but no address, so there is no page to read and nothing to compare against.",
+          "aliases": "Also known as: {aliases}",
+          "confirmed": "Confirmed",
+          "unconfirmed": "Not confirmed",
+          "lookup": "Read name",
+          "lookupBusy": "Reading…",
+          "confirm": "Confirm",
+          "unconfirm": "Withdraw",
+          "rename": "Change name",
+          "nameLabel": "Brand name",
+          "save": "Confirm",
+          "cancel": "Cancel",
+          "saving": "Saving…",
+          "nameRequired": "Give this competitor a name.",
+          "failed": {
+            "conflict": "This knowledge base changed somewhere else. Reload the page and try again.",
+            "input_changed": "The inputs of this draft changed. Reload the page and try again.",
+            "generation_running": "Paid work on this draft is still in progress. Wait for it to finish and try again.",
+            "rate_limited": "Too many requests. Try again later.",
+            "auth_required": "You are not signed in. Sign in again and try once more.",
+            "unknown": "This was not saved. Try again."
+          }
         }
       },
       "enrichment": {
