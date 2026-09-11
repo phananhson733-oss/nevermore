@@ -2086,7 +2086,7 @@ Expected: reducer 23 passed、schema 5 passed。
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/web/src/lib/workbench/types.ts apps/web/src/lib/workbench/store/schema.ts apps/web/src/lib/workbench/store/schema.test.ts apps/web/src/lib/workbench/store/reducer.ts apps/web/src/lib/workbench/store/reducer.test.ts
+git add apps/web/src/lib/workbench/types.ts apps/web/src/lib/workbench/store/schema.ts apps/web/src/lib/workbench/store/schema.test.ts apps/web/src/lib/workbench/store/test-fixtures.ts apps/web/src/lib/workbench/store/reducer.ts apps/web/src/lib/workbench/store/reducer.test.ts
 git commit -m "feat(workbench): 领域类型、持久化 schema v1、reducer 与初始状态"
 ```
 
@@ -2309,13 +2309,139 @@ git commit -m "feat(workbench): 侧栏徽标与种子词 selectors"
 **Files:**
 - Create: `apps/web/src/lib/workbench/store/persistence.ts`
 - Test: `apps/web/src/lib/workbench/store/persistence.test.ts`
+- Test fixture: `apps/web/src/lib/workbench/store/test-fixtures.ts`（Task 3 已建，代码块在下面 Step 1）
 
 - [ ] **Step 1: 写测试**
+
+共用夹具（Task 3 的 `schema.test.ts` 与本任务的 `persistence.test.ts` 都 import 它）。初始状态的每个嵌套形状都是 `null` 或空数组，只有填满的状态才走得到嵌套 `strictObject`；测试之间不得互相 import，所以它是独立模块而不是某个 `*.test.ts` 的导出：
+
+```ts
+// apps/web/src/lib/workbench/store/test-fixtures.ts
+/**
+ * Test-only fixtures. `populatedProjectState` fills every nullable and gives
+ * every array an element, which is the only way the nested `strictObject`s in
+ * `schema.ts` are exercised: the initial state leaves them all null or empty.
+ * Shared by `schema.test.ts` and `persistence.test.ts`.
+ */
+import type {
+  AnswerPlan, Artifact, AuditReport, CompData, CrawlSignals, GscRow,
+  KnowledgeBase, LinkTarget, ProfileDoc, SavedKeyword, VisResult, VisSnapshot,
+  WorkbenchProjectState,
+} from "../types.ts";
+import type { ProjectSeed } from "./reducer.ts";
+
+const gscRow: GscRow = { query: "example brand", clicks: 12, impressions: 340, ctr: 0.035, position: 8.4 };
+
+const crawl: CrawlSignals = {
+  pages: 42, lang: "en", stack: "Next.js", h1: "Example", hasPricing: true,
+  hasDocs: true, hasBlog: true, indexed: 40, traffic: 1200, dr: 31, refdomains: 88,
+};
+
+const report: AuditReport = {
+  at: "2026-09-11 10:00",
+  score: 56,
+  findings: [{
+    id: "f1", cat: "tech", t: "Missing canonical", sev: "high", eng: "seo",
+    found: "none", expect: "one", fix: "add one", w: 8, page: "/pricing",
+  }],
+  crawl: { pages: 42, indexable: 40, blocked: 2, orphan: 1, lcp: "2.4", schema: 12, llmReadable: 61 },
+  pageRows: [{ url: "/pricing", status: 200, h1: 1, hasSchema: true, lcp: "2.4", issues: 3 }],
+};
+
+const visResult: VisResult = {
+  p: "best analytics tool", platform: "ChatGPT", hit: true, rank: 2,
+  brands: ["Example"], domains: ["example.test"], real: false,
+};
+
+const snapshot: VisSnapshot = { at: "2026-09-11 11:00", results: [visResult] };
+
+const compData: CompData = {
+  domains: [{
+    domain: "rival.test", traffic: 9000, kws: 1400, dr: 62, refdomains: 310,
+    topPages: [{ path: "/compare", share: 0.18 }],
+  }],
+  gap: {
+    comps: ["rival.test"],
+    rows: [{
+      q: "rival alternative", volume: 480, kd: 21, cpc: "3.20", aio: true,
+      ranks: [4, null], ours: 14, page: "comparison",
+    }],
+  },
+  at: "2026-09-11 12:00",
+};
+
+const plan: AnswerPlan = {
+  url: "/answers/what-is-geo", h1: "What is GEO?", lead: "A short answer.",
+  subq: ["How is it measured?"], facts: ["Cited by three engines."],
+  dims: ["coverage"], faq: ["Is it the same as SEO?"],
+  internal: ["/pricing"], schema: "FAQPage", beat: "weekly",
+};
+
+const target: LinkTarget = {
+  type: "dir", site: "Example Directory", domain: "dir.test", dr: 55,
+  relevance: "high", difficulty: "mid", action: "submit", asset: "listing",
+};
+
+const kb: KnowledgeBase = {
+  entries: [{ id: "k1", cat: "pricing", statement: "Plans start at $49.", evidence: "/pricing", source: "crawl", from: "crawl" }],
+  at: "2026-09-11 13:00",
+};
+
+const saved: SavedKeyword = { q: "geo audit", addedAt: "2026-09-11 09:00", source: "matrix", note: "brief written" };
+
+const artifact: Artifact = {
+  id: "a1", at: "2026-09-11 14:00", module: "keywordLibrary", type: "csv",
+  engine: "both", title: "Keyword library", content: "q\ngeo audit\n", filename: "keywords.csv",
+};
+
+const profileDoc: ProfileDoc = {
+  crawl,
+  gsc: { total: 900, brandQueries: 120, brandClicks: 80, nonBrandClicks: 240, top: [gscRow], near: 14 },
+  third: crawl,
+  ai: {
+    summary: "Example sells analytics.",
+    icp: [{ seg: "SMB", role: "Head of Growth", pain: "no attribution", trigger: "new funding", objection: "price" }],
+    value_props: ["fast setup"], diff: ["no agent needed"], pillars: ["attribution"],
+    facts: ["Founded 2021."], tone: "plain",
+  },
+  at: "2026-09-11 15:00",
+};
+
+/** Every nullable non-null and every array non-empty, so the nested strict shapes are covered. */
+export function populatedProjectState(seed: ProjectSeed): WorkbenchProjectState {
+  return {
+    profile: { url: seed.url, brand: seed.brand, market: seed.market, positioning: "analytics for SMBs", features: "dashboards, alerts", competitors: "rival.test" },
+    profileDoc,
+    conns: { GSC: true, GA4: true },
+    gscRows: [gscRow],
+    seeds: "geo audit\nseo audit",
+    built: true,
+    saved: [saved],
+    audit: report,
+    auditHistory: [report],
+    lastAudit: report,
+    visResults: [visResult],
+    visPartial: false,
+    visHistory: [snapshot],
+    lastVis: snapshot,
+    compData,
+    plans: { "/answers/what-is-geo": plan },
+    targets: [target],
+    kb,
+    artifacts: [artifact],
+    notify: { weekly: true, drop: false, mention: true, gsc: false },
+    demo: true,
+  };
+}
+```
 
 ```ts
 // apps/web/src/lib/workbench/store/persistence.test.ts
 import { describe, expect, it } from "vitest";
+import type { WorkbenchProjectState } from "../types.ts";
 import { initialProjectState } from "./reducer.ts";
+import { PERSISTED_VERSION } from "./schema.ts";
+import { populatedProjectState } from "./test-fixtures.ts";
 import {
   clearAllWorkbenchState,
   clearProjectState,
@@ -2340,9 +2466,19 @@ function fakeStorage(initial: Record<string, string> = {}): Storage & { readonly
   };
 }
 
+/**
+ * A real `Storage` with some members replaced — no cast, so a wrong member
+ * signature is a type error. Descriptors are copied rather than spread, or a
+ * throwing `length` getter would fire here instead of inside the call under test.
+ */
+function withOverrides(overrides: Partial<Storage>): Storage {
+  return Object.defineProperties(fakeStorage(), Object.getOwnPropertyDescriptors(overrides));
+}
+
 describe("persistence", () => {
   it("uses a versioned, project-scoped key", () => {
     expect(storageKey(PID)).toBe(`gg.workbench.v1.${PID}`);
+    expect(storageKey(PID)).toContain(`.v${PERSISTED_VERSION}.`);
   });
 
   it("round-trips a state", () => {
@@ -2352,43 +2488,112 @@ describe("persistence", () => {
     expect(readProjectState(storage, PID)).toEqual({ status: "ok", state });
   });
 
+  it("round-trips a populated state through JSON", () => {
+    const storage = fakeStorage();
+    const state = populatedProjectState(seed);
+    expect(writeProjectState(storage, PID, state)).toBe("ok");
+    expect(readProjectState(storage, PID)).toEqual({ status: "ok", state });
+  });
+
   it("reports empty when nothing is stored", () => {
     expect(readProjectState(fakeStorage(), PID)).toEqual({ status: "empty", state: null });
   });
 
   it("discards invalid JSON, wrong version and wrong shape", () => {
+    const wrongVersion = JSON.stringify({ v: PERSISTED_VERSION + 1, state: initialProjectState(seed) });
+    const wrongShape = JSON.stringify({ v: PERSISTED_VERSION, state: { demo: true } });
     expect(readProjectState(fakeStorage({ [storageKey(PID)]: "{nope" }), PID).status).toBe("invalid");
-    expect(readProjectState(fakeStorage({ [storageKey(PID)]: JSON.stringify({ v: 9, state: {} }) }), PID).status).toBe("invalid");
-    expect(readProjectState(fakeStorage({ [storageKey(PID)]: JSON.stringify({ v: 1, state: { demo: true } }) }), PID).status).toBe("invalid");
+    expect(readProjectState(fakeStorage({ [storageKey(PID)]: wrongVersion }), PID).status).toBe("invalid");
+    expect(readProjectState(fakeStorage({ [storageKey(PID)]: wrongShape }), PID).status).toBe("invalid");
+  });
+
+  it("a non-finite number makes the write unreadable (JSON turns it into null)", () => {
+    const storage = fakeStorage();
+    const state: WorkbenchProjectState = {
+      ...initialProjectState(seed),
+      audit: {
+        at: "t", score: Number.NaN, findings: [],
+        crawl: { pages: 1, indexable: 1, blocked: 0, orphan: 0, lcp: "1", schema: 1, llmReadable: 1 },
+        pageRows: [],
+      },
+    };
+    expect(writeProjectState(storage, PID, state)).toBe("ok");
+    expect(readProjectState(storage, PID).status).toBe("invalid");
   });
 
   it("reports unavailable when storage throws on read or write", () => {
-    const throwing = {
-      ...fakeStorage(),
+    const throwing = withOverrides({
       getItem: () => { throw new Error("SecurityError"); },
       setItem: () => { throw new Error("SecurityError"); },
-    } as unknown as Storage;
+    });
     expect(readProjectState(throwing, PID).status).toBe("unavailable");
     expect(writeProjectState(throwing, PID, initialProjectState(seed))).toBe("unavailable");
   });
 
-  it("reports quota when setItem throws a QuotaExceededError", () => {
-    const quota = {
-      ...fakeStorage(),
-      setItem: () => { const e = new Error("full"); e.name = "QuotaExceededError"; throw e; },
-    } as unknown as Storage;
-    expect(writeProjectState(quota, PID, initialProjectState(seed))).toBe("quota");
+  it("reports quota for every spelling browsers use", () => {
+    const thrown = (error: unknown) =>
+      writeProjectState(withOverrides({ setItem: () => { throw error; } }), PID, initialProjectState(seed));
+    expect(thrown(new DOMException("full", "QuotaExceededError"))).toBe("quota");
+    expect(thrown({ name: "NS_ERROR_DOM_QUOTA_REACHED" })).toBe("quota");
+    expect(thrown({ code: 1014 })).toBe("quota");
+    expect(thrown({ code: 22 })).toBe("quota");
   });
 
-  it("clears one project or every workbench key, leaving other keys alone", () => {
+  it("reports unavailable for a failure that is not a quota error", () => {
+    const boom = withOverrides({ setItem: () => { throw new Error("boom"); } });
+    expect(writeProjectState(boom, PID, initialProjectState(seed))).toBe("unavailable");
+  });
+
+  it("clearProjectState removes one project and leaves its siblings", () => {
     const storage = fakeStorage({ other: "1" });
     writeProjectState(storage, PID, initialProjectState(seed));
     writeProjectState(storage, "p2", initialProjectState(seed));
     clearProjectState(storage, PID);
     expect(storage.map.has(storageKey(PID))).toBe(false);
     expect(storage.map.has(storageKey("p2"))).toBe(true);
+    expect(storage.map.has("other")).toBe(true);
+  });
+
+  it("clearAllWorkbenchState sweeps every version and adjacent key, and nothing else", () => {
+    const storage = fakeStorage({
+      other: "1",
+      [storageKey("a")]: "a",
+      [storageKey("b")]: "b",
+      [storageKey("c")]: "c",
+      [`gg.workbench.v0.${PID}`]: "old",
+      "gg.other.v1.x": "x",
+    });
     clearAllWorkbenchState(storage);
-    expect([...storage.map.keys()]).toEqual(["other"]);
+    expect([...storage.map.keys()]).toEqual(["other", "gg.other.v1.x"]);
+  });
+
+  it("clearAllWorkbenchState removes the rest when one key refuses to go", () => {
+    const stubborn = storageKey("b");
+    const base = fakeStorage({
+      [storageKey("a")]: "a",
+      [stubborn]: "b",
+      [storageKey("c")]: "c",
+    });
+    const storage = withOverrides({
+      removeItem: (k) => {
+        if (k === stubborn) throw new Error("locked");
+        base.map.delete(k);
+      },
+      get length() { return base.length; },
+      key: (i) => base.key(i),
+    });
+    expect(() => { clearAllWorkbenchState(storage); }).not.toThrow();
+    expect([...base.map.keys()]).toEqual([stubborn]);
+  });
+
+  it("clearAllWorkbenchState does not throw when the length getter throws", () => {
+    const storage = withOverrides({ get length(): number { throw new Error("SecurityError"); } });
+    expect(() => { clearAllWorkbenchState(storage); }).not.toThrow();
+  });
+
+  it("clearProjectState does not throw when removeItem throws", () => {
+    const storage = withOverrides({ removeItem: () => { throw new Error("SecurityError"); } });
+    expect(() => { clearProjectState(storage, PID); }).not.toThrow();
   });
 });
 ```
@@ -2409,19 +2614,22 @@ import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
  * localStorage boundary (design §6.5). Storage is injected so the node unit
  * suite can drive it; the provider passes `window.localStorage`.
  */
-const PREFIX = `gg.workbench.v${PERSISTED_VERSION}.`;
+/** Sign-out must not leave an older version's user data behind (design §6.5), so the sweep is version-agnostic. */
+const ALL_VERSIONS_PREFIX = "gg.workbench.";
+const PREFIX = `${ALL_VERSIONS_PREFIX}v${PERSISTED_VERSION}.`;
 
 export function storageKey(projectId: string): string {
   return `${PREFIX}${projectId}`;
 }
 
-export type ReadStatus = "ok" | "empty" | "invalid" | "unavailable";
+export type ReadResult =
+  | { readonly status: "ok"; readonly state: WorkbenchProjectState }
+  | { readonly status: "empty" | "invalid" | "unavailable"; readonly state: null };
+
+export type ReadStatus = ReadResult["status"];
 export type WriteStatus = "ok" | "quota" | "unavailable";
 
-export function readProjectState(
-  storage: Storage,
-  projectId: string,
-): { readonly status: ReadStatus; readonly state: WorkbenchProjectState | null } {
+export function readProjectState(storage: Storage, projectId: string): ReadResult {
   let raw: string | null;
   try {
     raw = storage.getItem(storageKey(projectId));
@@ -2439,6 +2647,13 @@ export function readProjectState(
   return state ? { status: "ok", state } : { status: "invalid", state: null };
 }
 
+/** Chrome/Safari/spec name, Firefox name, then the legacy numeric codes (WebKit 22, Firefox 1014). */
+function isQuotaError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { name, code } = error as { readonly name?: unknown; readonly code?: unknown };
+  return name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED" || code === 22 || code === 1014;
+}
+
 export function writeProjectState(
   storage: Storage,
   projectId: string,
@@ -2448,7 +2663,7 @@ export function writeProjectState(
     storage.setItem(storageKey(projectId), JSON.stringify({ v: PERSISTED_VERSION, state }));
     return "ok";
   } catch (error) {
-    return error instanceof Error && error.name === "QuotaExceededError" ? "quota" : "unavailable";
+    return isQuotaError(error) ? "quota" : "unavailable";
   }
 }
 
@@ -2461,15 +2676,22 @@ export function clearProjectState(storage: Storage, projectId: string): void {
 }
 
 export function clearAllWorkbenchState(storage: Storage): void {
+  const keys: string[] = [];
   try {
-    const keys: string[] = [];
+    // Collect first, remove after: removing inside the loop shifts every later index.
     for (let i = 0; i < storage.length; i += 1) {
       const key = storage.key(i);
-      if (key !== null && key.startsWith(PREFIX)) keys.push(key);
+      if (key !== null && key.startsWith(ALL_VERSIONS_PREFIX)) keys.push(key);
     }
-    for (const key of keys) storage.removeItem(key);
   } catch {
     // Storage unavailable: there is nothing persisted to clear.
+  }
+  for (const key of keys) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // Best effort: one key refusing to go must not strand the others.
+    }
   }
 }
 ```
@@ -2477,7 +2699,7 @@ export function clearAllWorkbenchState(storage: Storage): void {
 - [ ] **Step 4: 跑测试**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/persistence.test.ts`
-Expected: 7 passed。
+Expected: 14 passed。
 
 - [ ] **Step 5: Commit**
 

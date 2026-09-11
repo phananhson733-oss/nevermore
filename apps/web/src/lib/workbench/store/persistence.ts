@@ -5,19 +5,22 @@ import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
  * localStorage boundary (design §6.5). Storage is injected so the node unit
  * suite can drive it; the provider passes `window.localStorage`.
  */
-const PREFIX = `gg.workbench.v${PERSISTED_VERSION}.`;
+/** Sign-out must not leave an older version's user data behind (design §6.5), so the sweep is version-agnostic. */
+const ALL_VERSIONS_PREFIX = "gg.workbench.";
+const PREFIX = `${ALL_VERSIONS_PREFIX}v${PERSISTED_VERSION}.`;
 
 export function storageKey(projectId: string): string {
   return `${PREFIX}${projectId}`;
 }
 
-export type ReadStatus = "ok" | "empty" | "invalid" | "unavailable";
+export type ReadResult =
+  | { readonly status: "ok"; readonly state: WorkbenchProjectState }
+  | { readonly status: "empty" | "invalid" | "unavailable"; readonly state: null };
+
+export type ReadStatus = ReadResult["status"];
 export type WriteStatus = "ok" | "quota" | "unavailable";
 
-export function readProjectState(
-  storage: Storage,
-  projectId: string,
-): { readonly status: ReadStatus; readonly state: WorkbenchProjectState | null } {
+export function readProjectState(storage: Storage, projectId: string): ReadResult {
   let raw: string | null;
   try {
     raw = storage.getItem(storageKey(projectId));
@@ -35,6 +38,13 @@ export function readProjectState(
   return state ? { status: "ok", state } : { status: "invalid", state: null };
 }
 
+/** Chrome/Safari/spec name, Firefox name, then the legacy numeric codes (WebKit 22, Firefox 1014). */
+function isQuotaError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { name, code } = error as { readonly name?: unknown; readonly code?: unknown };
+  return name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED" || code === 22 || code === 1014;
+}
+
 export function writeProjectState(
   storage: Storage,
   projectId: string,
@@ -44,7 +54,7 @@ export function writeProjectState(
     storage.setItem(storageKey(projectId), JSON.stringify({ v: PERSISTED_VERSION, state }));
     return "ok";
   } catch (error) {
-    return error instanceof Error && error.name === "QuotaExceededError" ? "quota" : "unavailable";
+    return isQuotaError(error) ? "quota" : "unavailable";
   }
 }
 
@@ -57,14 +67,21 @@ export function clearProjectState(storage: Storage, projectId: string): void {
 }
 
 export function clearAllWorkbenchState(storage: Storage): void {
+  const keys: string[] = [];
   try {
-    const keys: string[] = [];
+    // Collect first, remove after: removing inside the loop shifts every later index.
     for (let i = 0; i < storage.length; i += 1) {
       const key = storage.key(i);
-      if (key !== null && key.startsWith(PREFIX)) keys.push(key);
+      if (key !== null && key.startsWith(ALL_VERSIONS_PREFIX)) keys.push(key);
     }
-    for (const key of keys) storage.removeItem(key);
   } catch {
     // Storage unavailable: there is nothing persisted to clear.
+  }
+  for (const key of keys) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // Best effort: one key refusing to go must not strand the others.
+    }
   }
 }
