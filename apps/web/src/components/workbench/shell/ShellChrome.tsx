@@ -45,9 +45,24 @@ export function ShellChrome({
     setDrawerOpen(false);
     setSidebarOpen(false);
   }, []);
+  // Only one of the two dialogs may be open at a time: stacked `fixed inset-0
+  // z-50` wrappers overlap, and closing the top one first returns focus to
+  // `<body>` because the dialog underneath is the one holding the opener. The
+  // `Dialog` inert ref-count stays as defence in depth.
+  const openPalette = useCallback((): void => {
+    setPaletteOpen(true);
+    setDrawerOpen(false);
+  }, []);
+  const openDrawer = useCallback((): void => {
+    setDrawerOpen(true);
+    setPaletteOpen(false);
+  }, []);
   const handlers = useMemo(
     () => ({
-      onTogglePalette: () => setPaletteOpen((p) => !p),
+      onTogglePalette: () => {
+        setPaletteOpen((p) => !p);
+        setDrawerOpen(false);
+      },
       onEscape: closeAll,
     }),
     [closeAll],
@@ -80,8 +95,8 @@ export function ShellChrome({
             projectControl={projectControl}
             accountControl={accountControl}
             onMenu={() => setSidebarOpen((o) => !o)}
-            onPalette={() => setPaletteOpen(true)}
-            onDrawer={() => setDrawerOpen(true)}
+            onPalette={openPalette}
+            onDrawer={openDrawer}
             paletteButtonRef={paletteButtonRef}
             drawerButtonRef={drawerButtonRef}
             sidebarId={SIDEBAR_ID}

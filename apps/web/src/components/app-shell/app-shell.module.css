@@ -188,6 +188,40 @@
   color: var(--sf-white);
   background: var(--sf-ink-900);
 }
+/* Workbench topbar (light chrome): the switcher was designed for the dark rail,
+ * where every colour here is white-on-translucent. `NewProductControl` still
+ * uses the same classes on the dark `/new-project` sidebar, so the light values
+ * are scoped to the workbench chrome instead of replacing the base rules. */
+:global(.wb-reset) .projectSwitcher {
+  background: #fff;
+  border-color: var(--color-slate-200, #e2e8f0);
+}
+:global(.wb-reset) .projectSwitcher:hover,
+:global(.wb-reset) .projectSwitcher:focus-within {
+  background: var(--color-slate-50, #f8fafc);
+  border-color: var(--color-slate-300, #cbd5e1);
+}
+:global(.wb-reset) .projectIdentity {
+  color: var(--color-slate-900, #0f172a);
+}
+:global(.wb-reset) .projectIdentity strong {
+  color: var(--color-slate-900, #0f172a);
+}
+:global(.wb-reset) .projectIdentity span {
+  color: var(--color-slate-500, #64748b);
+}
+:global(.wb-reset) .projectChevron {
+  color: var(--color-slate-400, #94a3b8);
+}
+/* The transparent overlay still renders the native dropdown, which follows
+ * `color-scheme` and the option colours below. */
+:global(.wb-reset) .projectSelect {
+  color-scheme: light;
+}
+:global(.wb-reset) .projectSelect option {
+  color: var(--color-slate-900, #0f172a);
+  background: #fff;
+}
 .newProjectLink {
   display: flex;
   align-items: center;

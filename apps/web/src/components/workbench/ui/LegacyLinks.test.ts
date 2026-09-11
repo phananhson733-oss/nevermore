@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getMessages } from "@sf/i18n";
-import { LEGACY_LINKS, type LegacySegment } from "@/lib/workbench/routes";
-import { LEGACY_LABEL_KEY } from "./LegacyLinks.tsx";
+import { LEGACY_LABEL_KEY, LEGACY_LINKS } from "@/lib/workbench/routes";
 
 /**
  * `LegacyLinks` renders `tNav(LEGACY_LABEL_KEY[segment])`. next-intl renders a
@@ -28,14 +27,5 @@ describe("LEGACY_LABEL_KEY", () => {
     const linked = new Set<string>(Object.values(LEGACY_LINKS).flat());
     const labelled = new Set<string>(Object.keys(LEGACY_LABEL_KEY));
     expect([...labelled].sort()).toEqual([...linked].sort());
-  });
-
-  it("accepts every LegacySegment as a lookup key", () => {
-    const segments: readonly LegacySegment[] = Object.keys(
-      LEGACY_LABEL_KEY,
-    ) as readonly LegacySegment[];
-    for (const segment of segments) {
-      expect(typeof LEGACY_LABEL_KEY[segment]).toBe("string");
-    }
   });
 });

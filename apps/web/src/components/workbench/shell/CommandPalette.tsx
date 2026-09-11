@@ -41,6 +41,18 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  // "Adjusting state when a prop changes" (React docs): the jsx prototype
+  // mounted the palette conditionally, so it always opened on an empty query.
+  // Done during render rather than in an effect so the first painted frame
+  // already shows the full list instead of the previous search.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setQuery("");
+      setActiveIndex(0);
+    }
+  }
 
   const entries = useMemo<readonly PaletteEntry[]>(() => {
     const sections = WORKBENCH_NAV.flatMap((g) => g.items).map((item) => ({

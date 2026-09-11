@@ -46,8 +46,11 @@ export function Dialog({
       console.warn(`Dialog: #${WB_APP_ROOT_ID} not found; the background is not inert`);
     }
     // `inert` is one shared attribute for however many dialogs are open, so it
-    // is ref-counted: the first open sets it, only the last close removes it.
-    if (openDialogs === 0) root?.setAttribute("inert", "");
+    // is ref-counted on the way out: only the last close removes it. Setting it
+    // is unconditional, because the root element can be replaced (a route
+    // change re-renders `#wb-app`) while a dialog is open — a count > 0 would
+    // then leave the new root without the attribute.
+    root?.setAttribute("inert", "");
     openDialogs += 1;
     const entry =
       initialFocus?.current ??
@@ -79,7 +82,12 @@ export function Dialog({
     const items = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
     const active = items.indexOf(document.activeElement as HTMLElement);
     const next = nextTrapIndex(items.length, active, event.shiftKey);
-    if (next === -1) return;
+    if (next === -1) {
+      // Nothing focusable inside: keep focus on the panel rather than letting
+      // Tab escape into the (inert, but not in every browser) background.
+      event.preventDefault();
+      return;
+    }
     event.preventDefault();
     items[next]?.focus();
   }

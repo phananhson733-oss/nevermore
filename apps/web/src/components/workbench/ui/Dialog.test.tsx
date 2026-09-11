@@ -43,14 +43,22 @@ afterEach(() => {
   // An unmount left behind would leak the shared open-dialog count into the
   // next test, which is exactly the bug these tests exist to catch.
   active?.cleanup();
+  // A spy left installed by a failing test would silence the next one's console.
+  vi.restoreAllMocks();
 });
 
-function keydown(el: HTMLElement, key: string, shiftKey = false): void {
-  act(() =>
-    el.dispatchEvent(
-      new KeyboardEvent("keydown", { key, shiftKey, bubbles: true, cancelable: true }),
-    ),
-  );
+/** Returns whether the handler called `preventDefault()`. */
+function keydown(el: HTMLElement, key: string, shiftKey = false): boolean {
+  const event = new KeyboardEvent("keydown", {
+    key,
+    shiftKey,
+    bubbles: true,
+    cancelable: true,
+  });
+  act(() => {
+    el.dispatchEvent(event);
+  });
+  return event.defaultPrevented;
 }
 
 /** One dialog plus the `#wb-app` root and the button that opened it. */
@@ -96,6 +104,18 @@ function TwoDialogs({ a, b }: { readonly a: boolean; readonly b: boolean }) {
       </Dialog>
       <Dialog open={b} onClose={noop} labelledBy="b-title">
         <h2 id="b-title">B</h2>
+      </Dialog>
+    </>
+  );
+}
+
+/** A panel with no focusable descendant at all. */
+function EmptyDialog({ open }: { readonly open: boolean }) {
+  return (
+    <>
+      <div id={WB_APP_ROOT_ID} />
+      <Dialog open={open} onClose={() => {}} labelledBy="empty-title">
+        <h2 id="empty-title">Empty</h2>
       </Dialog>
     </>
   );
@@ -163,6 +183,16 @@ describe("Dialog", () => {
     expect(view.container.querySelector('[role="dialog"]')).not.toBeNull();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toContain(`#${WB_APP_ROOT_ID}`);
-    warn.mockRestore();
+  });
+
+  it("keeps focus on the panel when Tab finds nothing focusable inside", () => {
+    const view = mount(<EmptyDialog open />);
+    const panel = view.container.querySelector<HTMLElement>('[role="dialog"]');
+    expect(panel).not.toBeNull();
+    expect(document.activeElement).toBe(panel);
+
+    expect(keydown(panel as HTMLElement, "Tab")).toBe(true);
+
+    expect(document.activeElement).toBe(panel);
   });
 });

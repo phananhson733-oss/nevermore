@@ -70,6 +70,22 @@ export const LEGACY_LINKS: Readonly<Record<WorkbenchPageId, readonly LegacySegme
   settings: [],
 };
 
+/**
+ * Legacy segment → existing `nav.*` label key, so the link reads as a page name,
+ * not a path. Data, not markup: it lives here with the rest of the route table
+ * so a test can pin it without importing `next/link`.
+ */
+export const LEGACY_LABEL_KEY: Readonly<Record<LegacySegment, string>> = {
+  "legacy/overview": "overview",
+  "growth-map": "growthMap",
+  context: "context",
+  "setup-sources": "sourceSetup",
+  sources: "sources",
+  studio: "studio",
+  execution: "execution",
+  results: "results",
+};
+
 export function workbenchHref(projectId: string, id: WorkbenchPageId): string {
   return `/p/${projectId}/${WORKBENCH_SEGMENTS[id]}`;
 }

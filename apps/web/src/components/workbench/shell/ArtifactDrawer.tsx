@@ -32,6 +32,13 @@ export function ArtifactDrawer({
   const { state, dispatch } = useWorkbench();
   const closeRef = useRef<HTMLButtonElement>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // Same "adjusting state when a prop changes" pattern as the palette: a stale
+  // "Copied" label must not greet the next open of the drawer.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setCopied(null);
+  }
 
   async function copy(id: string, content: string): Promise<void> {
     try {
