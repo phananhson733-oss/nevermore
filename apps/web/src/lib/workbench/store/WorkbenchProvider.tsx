@@ -51,9 +51,18 @@ function localStorageOrNull(): Storage | null {
 }
 
 /**
- * Per-project mock state (design §6.5). Mount with `key={projectId}` so a
- * project switch remounts and re-hydrates; writes are suppressed until the
- * first read completes so an SSR-shaped initial state never overwrites disk.
+ * Per-project mock state (design §6.5). Mount with `key={projectId}`.
+ *
+ * The remount is load-bearing for correctness, not merely a way to re-hydrate:
+ * without it a `projectId` change would re-run the write effect with the
+ * PREVIOUS render's `state` closure under the NEW key, copying one project's
+ * data over another's, and `ready` / `storageMode` (including the quota and
+ * volatile latches) would carry over from the project that set them. The guard
+ * in the component body turns that misuse into a loud error instead of silent
+ * cross-project data loss.
+ *
+ * Writes are suppressed until the first read completes so an SSR-shaped initial
+ * state never overwrites disk.
  */
 export function WorkbenchProvider({
   projectId,
@@ -66,6 +75,11 @@ export function WorkbenchProvider({
   readonly deriveKeywordRowCount?: (state: WorkbenchProjectState) => number | null;
   readonly children: ReactNode;
 }) {
+  const mountedFor = useRef(projectId);
+  if (mountedFor.current !== projectId) {
+    throw new Error("WorkbenchProvider must be remounted with key={projectId}; it cannot switch projects in place");
+  }
+
   const [state, dispatch] = useReducer(reduce, seed, initialProjectState);
   const [ready, setReady] = useState(false);
   const [storageMode, setStorageMode] = useState<StorageMode>("ok");
@@ -93,6 +107,12 @@ export function WorkbenchProvider({
     // would fail lint with "Definition for rule ... was not found".)
   }, [projectId]);
 
+  // Echo write. A cross-tab `storage` event dispatches `loadPersisted` with a
+  // fresh object, so this effect immediately writes the very same bytes back.
+  // That terminates only because `setItem` with an identical value fires no
+  // `storage` event in the other tabs. The persisted envelope must therefore
+  // stay deterministic (no `savedAt`, no nonce, no re-ordered keys) or two open
+  // tabs would write to each other forever.
   useEffect(() => {
     if (!ready) return;
     const storage = storageRef.current;
@@ -109,6 +129,17 @@ export function WorkbenchProvider({
       const read = readProjectState(storageRef.current, projectId);
       if (read.state) {
         dispatch({ type: "loadPersisted", state: withProjectSeed(normalizeInterrupted(read.state), seed) });
+      } else if (read.status === "empty") {
+        // Another tab removed the key (sign-out sweep / project deletion).
+        // Drop our copy too, otherwise the next state change would write the
+        // user's data straight back. Going volatile as well is deliberate:
+        // `reset` produces a fresh object, so the write effect would otherwise
+        // re-create `gg.workbench.v1.<id>` holding the seed mirror moments
+        // after sign-out, which design §6.5 says must leave nothing behind.
+        // The user is signed out anyway; a reload re-hydrates normally and
+        // clears the latch.
+        setStorageMode("volatile");
+        dispatch({ type: "reset", seed });
       }
     }
     window.addEventListener("storage", onStorage);
