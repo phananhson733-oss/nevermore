@@ -47,9 +47,10 @@ export function Dialog({
     }
     // `inert` is one shared attribute for however many dialogs are open, so it
     // is ref-counted on the way out: only the last close removes it. Setting it
-    // is unconditional, because the root element can be replaced (a route
-    // change re-renders `#wb-app`) while a dialog is open — a count > 0 would
-    // then leave the new root without the attribute.
+    // is unconditional, and the cleanup looks the root up again instead of
+    // reusing this node, so the two always touch the same element even if
+    // `#wb-app` were replaced under an open dialog. Both are defensive; the root
+    // is not currently remounted between opens.
     root?.setAttribute("inert", "");
     openDialogs += 1;
     const entry =
@@ -65,7 +66,7 @@ export function Dialog({
       // Order matters: focus() on a node inside an inert subtree is a no-op,
       // so inert comes off first. Next's layout-router focuses the changed
       // segment after navigation, so activeElement-on-open is only a fallback.
-      root?.removeAttribute("inert");
+      document.getElementById(WB_APP_ROOT_ID)?.removeAttribute("inert");
       // The preferred target can be hidden by a responsive utility (the palette
       // and drawer openers are `md:`-only), and `focus()` on a hidden element
       // is a no-op that would silently leave focus on <body>. Try it, then

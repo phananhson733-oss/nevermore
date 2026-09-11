@@ -33,8 +33,14 @@ export function ShellChrome({
   readonly children: ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Only one of the two dialogs may be open at a time: stacked `fixed inset-0
+  // z-50` wrappers overlap, and closing the top one first returns focus to
+  // `<body>` because the dialog underneath is the one holding the opener. One
+  // slot makes that unrepresentable rather than something two setters have to
+  // keep agreeing on. The `Dialog` inert ref-count stays as defence in depth.
+  const [panel, setPanel] = useState<"palette" | "drawer" | null>(null);
+  const paletteOpen = panel === "palette";
+  const drawerOpen = panel === "drawer";
   const paletteButtonRef = useRef<HTMLButtonElement>(null);
   const drawerButtonRef = useRef<HTMLButtonElement>(null);
   // Must match Tailwind v4's `md` (48rem), which the rail's `md:translate-x-0`
@@ -43,28 +49,15 @@ export function ShellChrome({
   const t = useTranslations("workbench.shell");
 
   const closeAll = useCallback(() => {
-    setPaletteOpen(false);
-    setDrawerOpen(false);
+    setPanel(null);
     setSidebarOpen(false);
   }, []);
-  // Only one of the two dialogs may be open at a time: stacked `fixed inset-0
-  // z-50` wrappers overlap, and closing the top one first returns focus to
-  // `<body>` because the dialog underneath is the one holding the opener. The
-  // `Dialog` inert ref-count stays as defence in depth.
-  const openPalette = useCallback((): void => {
-    setPaletteOpen(true);
-    setDrawerOpen(false);
-  }, []);
-  const openDrawer = useCallback((): void => {
-    setDrawerOpen(true);
-    setPaletteOpen(false);
-  }, []);
+  const openPalette = useCallback((): void => setPanel("palette"), []);
+  const openDrawer = useCallback((): void => setPanel("drawer"), []);
   const handlers = useMemo(
     () => ({
-      onTogglePalette: () => {
-        setPaletteOpen((p) => !p);
-        setDrawerOpen(false);
-      },
+      onTogglePalette: () =>
+        setPanel((current) => (current === "palette" ? null : "palette")),
       onEscape: closeAll,
     }),
     [closeAll],
@@ -115,14 +108,14 @@ export function ShellChrome({
       <CommandPalette
         returnFocusTo={paletteButtonRef}
         open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
+        onClose={() => setPanel(null)}
         projectId={projectId}
         projectOptions={projectOptions}
       />
       <ArtifactDrawer
         returnFocusTo={drawerButtonRef}
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => setPanel(null)}
       />
     </>
   );

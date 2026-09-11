@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -84,6 +85,18 @@ export function CommandPalette({
   }, [query, projectId, projectOptions, t]);
 
   const activeEntry = entries[activeIndex];
+  const activeKey = activeEntry?.key;
+
+  // The listbox scrolls (`max-h-80` over ~18 entries) but the arrow keys only
+  // move `aria-activedescendant`: focus never leaves the input, so the browser
+  // scrolls nothing and the highlight walks off the bottom unseen.
+  useEffect(() => {
+    if (!activeKey) return;
+    const option = document.getElementById(`wb-palette-${activeKey}`);
+    // jsdom implements no scroll API; guard rather than stub it everywhere.
+    if (typeof option?.scrollIntoView !== "function") return;
+    option.scrollIntoView({ block: "nearest" });
+  }, [activeKey]);
 
   function go(entry: PaletteEntry | undefined): void {
     if (!entry) return;
@@ -178,10 +191,11 @@ export function CommandPalette({
           {t("shell.palette.empty")}
         </p>
       ) : null}
-      {/* Filtering changes the list silently otherwise. The bare number needs
-          no new catalog key, and the visible empty state carries the words. */}
+      {/* Filtering changes the list silently otherwise. Reusing the palette's own
+          title names what the number counts — a bare "3" is meaningless out of
+          context — without adding a catalog key. */}
       <span role="status" className="sr-only">
-        {entries.length}
+        {t("shell.palette.title")}: {entries.length}
       </span>
     </Dialog>
   );

@@ -204,9 +204,6 @@
 :global(.wb-reset) .projectIdentity {
   color: var(--color-slate-900, #0f172a);
 }
-:global(.wb-reset) .projectIdentity strong {
-  color: var(--color-slate-900, #0f172a);
-}
 :global(.wb-reset) .projectIdentity span {
   color: var(--color-slate-500, #64748b);
 }

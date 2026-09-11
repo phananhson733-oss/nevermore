@@ -1,5 +1,7 @@
 /* @input  — tailwindcss theme + utilities（刻意不引 preflight）、tw-animate-css
- * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表规则、打印时去掉内容列的侧栏留白
+ * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表规则、
+ *           打印时去掉内容列的侧栏留白（在 utilities 层、且排在 Tailwind utilities 之后，
+ *           否则同特异度下赢不了 md:ml-64）
  * @pos    — app/layout.tsx 在 globals.css 之后引入；旧页面在 <main> 内不带 .wb-reset，不受影响
  * 一旦本文件被更新，务必更新开头注释
  */
@@ -33,7 +35,11 @@
   --color-wb-emerald: #10b981;
 }
 
-@layer components {
+/* Same layer as the Tailwind utilities imported above, and after them in source
+   order: `[data-wb-content]` and `.md\:ml-64` have the same specificity, so the
+   later rule wins. In `@layer components` it lost to that utility unconditionally
+   and the print override never applied at Letter width (816px >= 48rem). */
+@layer utilities {
   @media print {
     /* The rail is not printed, so the content column must not keep the space it
        reserves for it. Targets the attribute ShellChrome puts on that column,

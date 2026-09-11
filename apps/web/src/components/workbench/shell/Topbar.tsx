@@ -9,6 +9,7 @@ import {
   useWorkbenchArtifacts,
 } from "@/lib/workbench/store/hooks";
 import { DemoChip } from "../ui/DemoChip.tsx";
+import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
 
 /** The workbench topbar (opengengrowth `Header.tsx`). */
 export function Topbar({
@@ -35,6 +36,10 @@ export function Topbar({
   const t = useTranslations("workbench.shell");
   const { state, storageMode, ready } = useWorkbench();
   const artifacts = useWorkbenchArtifacts();
+  // Called here rather than threaded down from ShellChrome: the topbar owns the
+  // only link it guards, and the hook is already used the same way one level
+  // over in CommandPalette — both sit in the same client tree.
+  const { confirmNavigation } = useContextNavigationConfirm();
   return (
     <header
       data-app-shell-topbar=""
@@ -54,6 +59,10 @@ export function Topbar({
         {projectControl}
         <Link
           href="/new-project"
+          // Leaving for a new site discards a dirty Context editor exactly like
+          // a rail link or a palette jump does, so it asks the same question.
+          // `current` is false: this destination is never the current page.
+          onClick={(event) => confirmNavigation(event, false)}
           className="hidden text-xs font-medium text-slate-500 hover:text-slate-900 sm:inline"
         >
           + {t("newSite")}
@@ -72,15 +81,18 @@ export function Topbar({
         </button>
       </div>
       <div className="flex items-center gap-3">
-        {/* Rendered on every viewport and before it has anything to say: a live
-            region has to exist in the accessibility tree BEFORE its text
-            changes, or the announcement is lost. `empty:-mr-3` cancels the
-            flex gap this otherwise-invisible element would add. `swept` is
-            deliberately silent: that state was discarded on purpose, so there
-            is nothing to warn about. */}
+        {/* Exactly one status element, rendered on every viewport and before it
+            has anything to say: a live region has to exist in the accessibility
+            tree BEFORE its text changes, or the announcement is lost (and a
+            second one would break the shell e2e's single-status locator).
+            Below `lg` the topbar has no room for the sentence, so it is
+            `sr-only` there — still announced, just not painted; `sr-only`
+            takes it out of the flex flow, so it adds no gap and `empty:-mr-3`
+            only has to cancel one from `lg` up. `swept` is deliberately
+            silent: that state was discarded on purpose. */}
         <span
           role="status"
-          className="max-w-[40vw] truncate text-xs text-amber-700 empty:-mr-3"
+          className="max-lg:sr-only text-xs text-amber-700 empty:-mr-3 lg:max-w-[40vw] lg:truncate"
         >
           {ready && storageMode !== "ok" && storageMode !== "swept"
             ? storageMode === "quota"

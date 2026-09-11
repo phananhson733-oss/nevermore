@@ -110,6 +110,10 @@ afterEach(() => {
   cleanup?.();
   cleanup = null;
   vi.restoreAllMocks();
+  // jsdom implements no scroll API, so the stub below is an added property that
+  // `restoreAllMocks` knows nothing about; leaving it would let a later test
+  // pass against an API no browser-less environment actually has.
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
 });
 
 beforeEach(() => {
@@ -172,7 +176,7 @@ describe("CommandPalette", () => {
     expect(view.container.textContent).toContain("No matches");
     expect(
       view.container.querySelector('[role="status"]')?.textContent,
-    ).toBe("0");
+    ).toBe("Search and jump: 0");
   });
 
   it("navigates to the highlighted entry on Enter and closes", () => {
@@ -235,6 +239,27 @@ describe("CommandPalette", () => {
       `/p/${PROJECT_ID}/overview`,
     );
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("scrolls the newly highlighted entry into view", () => {
+    // The listbox is `max-h-80` over 18 entries and focus stays in the input, so
+    // nothing scrolls on its own: without this the highlight leaves the viewport
+    // after a few ArrowDowns and `aria-activedescendant` points off-screen.
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      value: scrollIntoView,
+      configurable: true,
+      writable: true,
+    });
+    const view = render();
+    scrollIntoView.mockClear();
+
+    press(input(view.container), "ArrowDown");
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+    // `block: "nearest"` on the wrong element would still satisfy the call
+    // assertion, so pin which option was scrolled.
+    expect(scrollIntoView.mock.contexts.at(-1)).toBe(options(view.container)[1]);
   });
 
   it("exposes the input as a combobox and keeps options out of the Tab order", () => {

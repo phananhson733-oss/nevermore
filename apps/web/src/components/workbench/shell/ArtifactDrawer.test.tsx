@@ -167,7 +167,7 @@ describe("ArtifactDrawer", () => {
     expect(buttonWith(view.container, COPY.copy)).toBeDefined();
   });
 
-  it("clears a pending Copied when the drawer is reopened", async () => {
+  it("does not let a timer from a closed drawer cut the next Copied short", async () => {
     vi.useFakeTimers();
     const view = render();
     addArtifact();
@@ -176,13 +176,59 @@ describe("ArtifactDrawer", () => {
     });
     expect(buttonWith(view.container, COPY.copied)).toBeDefined();
 
+    // Close well before the first flash would have expired, then start a second
+    // one: an uncleared timer is now due sooner than the new flash is.
+    const EARLY = 300;
+    act(() => {
+      vi.advanceTimersByTime(EARLY);
+    });
     view.open(false);
     view.open(true);
-
     expect(buttonWith(view.container, COPY.copy)).toBeDefined();
-    // The timer from the first copy must not fire into the reopened drawer.
+    await act(async () => {
+      buttonWith(view.container, COPY.copy).click();
+    });
+    expect(buttonWith(view.container, COPY.copied)).toBeDefined();
+
+    // A surviving first timer is due FLASH_MS - EARLY from here, so it would have
+    // cut this flash short well before the second timer is due.
     act(() => {
-      vi.advanceTimersByTime(FLASH_MS);
+      vi.advanceTimersByTime(FLASH_MS - 1);
+    });
+    expect(buttonWith(view.container, COPY.copied)).toBeDefined();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(buttonWith(view.container, COPY.copy)).toBeDefined();
+  });
+
+  it("restarts the flash on a second copy instead of inheriting the first timer", async () => {
+    // Without a close in between, `copy()`'s own clear is the only thing standing
+    // between the second flash and the first copy's timer. (The close-path clear
+    // alone cannot be observed from the UI: every path that starts a new flash
+    // also clears, so it is defence in depth, not the mechanism.)
+    vi.useFakeTimers();
+    const view = render();
+    addArtifact();
+    await act(async () => {
+      buttonWith(view.container, COPY.copy).click();
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(buttonWith(view.container, COPY.copied)).toBeDefined();
+
+    await act(async () => {
+      buttonWith(view.container, COPY.copied).click();
+    });
+    act(() => {
+      vi.advanceTimersByTime(FLASH_MS - 1);
+    });
+
+    expect(buttonWith(view.container, COPY.copied)).toBeDefined();
+    act(() => {
+      vi.advanceTimersByTime(1);
     });
     expect(buttonWith(view.container, COPY.copy)).toBeDefined();
   });

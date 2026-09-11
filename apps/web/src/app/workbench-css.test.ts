@@ -67,6 +67,21 @@ describe("workbench.css", () => {
     expect(topLevelRules).toEqual([]);
   });
 
+  it("keeps the print override in @layer utilities, after the Tailwind import", () => {
+    // `[data-wb-content]` and `.md\:ml-64` have the same specificity, so the layer
+    // decides: in `@layer components` the print rule lost to that utility at every
+    // print width >= 48rem (Letter is 816px) and the sidebar gutter was printed blank.
+    const utilities = atRuleBlock(css, /@layer utilities\s*\{/);
+    expect(utilities.length).toBeGreaterThan(0);
+    expect(utilities).toMatch(/@media print\s*\{[\s\S]*\[data-wb-content\]/);
+    // Same layer AND same specificity: only source order breaks the tie.
+    const importAt = css.indexOf(
+      '@import "tailwindcss/utilities.css" layer(utilities);',
+    );
+    expect(importAt).toBeGreaterThan(-1);
+    expect(css.search(/@layer utilities\s*\{/)).toBeGreaterThan(importAt);
+  });
+
   it("keeps pseudo-elements outside :where() so the rules actually match", () => {
     expect(css).not.toMatch(/:where\([^)]*::/);
   });
