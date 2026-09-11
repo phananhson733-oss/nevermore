@@ -100,7 +100,7 @@ apps/web/src/
 |---|---|
 | 概览 | `legacy/overview` |
 | 关键词研究 / 词库 / 竞品概览 | `growth-map` |
-| 技术审计 | `diagnosis` |
+| 技术审计 | `growth-map`（`diagnosis/page.tsx` 只是到 growth-map 的兼容重定向，不是可渲染旧页，不单列；2026-09-11 计划审阅第二轮更正） |
 | 站点档案 | `context`、`setup-sources` |
 | 数据源 | `sources` |
 | 内容生成 | `studio`、`execution`（`plan` 会 308 到 execution，不单列） |

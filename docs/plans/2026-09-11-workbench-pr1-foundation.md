@@ -196,6 +196,7 @@ git commit -m "test(e2e): 旧页计算样式基线，守护工作台 reset 不�
 - Modify: `apps/web/package.json`
 - Create: `apps/web/postcss.config.mjs`
 - Create: `apps/web/src/app/workbench.css`
+- Modify: `apps/web/src/app/globals.css`（三条未分层元素规则加 `:where(:not(.wb-reset *))` 守卫）
 - Modify: `apps/web/src/app/layout.tsx`
 - Test: `apps/web/src/app/workbench-css.test.ts`
 
@@ -230,6 +231,30 @@ describe("workbench.css", () => {
     }
   });
 });
+
+describe("globals.css keeps its unlayered element rules out of the workbench chrome", () => {
+  // Unlayered declarations beat every @layer, so a bare `a {}` / `h1 {}` /
+  // `:focus-visible {}` would override Tailwind utilities inside the new shell.
+  const globals = readFileSync(new URL("./globals.css", import.meta.url), "utf8");
+  it.each(["a", "h1", "h2", "h3", ":focus-visible"])("guards %s with :where(:not(.wb-reset *))", (selector) => {
+    expect(globals).not.toMatch(new RegExp(`^${selector}\\s*[{,]`, "m"));
+    expect(globals).toContain(`${selector}:where(:not(.wb-reset *))`);
+  });
+});
+
+describe("postcss.config.mjs", () => {
+  // A postcss config file replaces Next's built-in chain, so the two defaults
+  // must be restated ahead of Tailwind or legacy CSS Modules lose prefixing.
+  const config = readFileSync(new URL("../../postcss.config.mjs", import.meta.url), "utf8");
+  it("restates Next's default plugins before Tailwind", () => {
+    const order = ["next/dist/compiled/postcss-flexbugs-fixes", "next/dist/compiled/postcss-preset-env", "@tailwindcss/postcss"]
+      .map((name) => config.indexOf(name));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(config).toContain('"custom-properties": false');
+    expect(config).toContain('"safari 16.4"');
+  });
+});
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -251,12 +276,27 @@ Expected: FAIL，`ENOENT … workbench.css`。
 
 ```js
 // apps/web/postcss.config.mjs
+// Any postcss config file replaces Next's built-in chain (flexbugs fixes +
+// preset-env/autoprefixer), which today prefixes the legacy CSS Modules
+// (backdrop-filter, sticky, appearance, ...). Restate that chain first, using
+// the copies Next ships and its own default browser targets
+// (next/dist/shared/lib/modern-browserslist-target.js), so legacy output stays
+// byte-identical; Tailwind runs last so its output is never re-processed.
 export default {
   plugins: {
+    "next/dist/compiled/postcss-flexbugs-fixes": {},
+    "next/dist/compiled/postcss-preset-env": {
+      browsers: ["chrome 111", "edge 111", "firefox 111", "safari 16.4"],
+      autoprefixer: { flexbox: "no-2009" },
+      stage: 3,
+      features: { "custom-properties": false },
+    },
     "@tailwindcss/postcss": {},
   },
 };
 ```
+
+`next/dist/compiled/*` 从 `apps/web` 可 `require.resolve`（已验证），不需要新依赖；Next 升级若挪走它们，构建会当场报 `Cannot find module`，不会静默退化。默认链的定义在 `node_modules/next/dist/build/webpack/config/blocks/css/plugins.js` 的 `getDefaultPlugins`，改配置前先对一眼。
 
 Run: `pnpm install`
 Expected: lockfile 更新，无 peer 冲突。
@@ -391,7 +431,7 @@ import "./workbench.css";
 // above; Chinese glyphs fall back to the system stack declared in workbench.css.
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
+  weight: "variable", // Plus Jakarta Sans is a variable face (wght 200-800): one file instead of five
   variable: "--font-wb",
   display: "swap",
 });
@@ -404,15 +444,50 @@ const plusJakarta = Plus_Jakarta_Sans({
 Run: `pnpm vitest run --project unit apps/web/src/app/workbench-css.test.ts && pnpm --filter @sf/web typecheck`
 Expected: 3 passed；typecheck 与 Task 0 基线一致。
 
-- [ ] **Step 7: 旧页样式基线仍绿（CSS 引入本身不能改变旧页）**
+- [ ] **Step 6b: globals.css 三条未分层元素规则加守卫**
+
+`globals.css` 里 `h1, h2, h3 {…}`（L172）、`a {…}`（L222）、`:focus-visible {…}`（L226）都不在任何 `@layer` 里；CSS 级联规定未分层声明压过所有分层声明，所以它们会盖掉新壳里的 Tailwind 工具类（侧栏链接变深绿、h1 变 Fraunces/宋体、聚焦圆角变 4px）。改为：
+
+```css
+h1:where(:not(.wb-reset *)),
+h2:where(:not(.wb-reset *)),
+h3:where(:not(.wb-reset *)) {
+  font-family: var(--sf-font-display);
+  letter-spacing: -0.02em;
+}
+
+a:where(:not(.wb-reset *)) {
+  color: var(--sf-cobalt-text);
+}
+
+:focus-visible:where(:not(.wb-reset *)) {
+  outline: none;
+  box-shadow: var(--sf-focus-ring);
+  border-radius: 4px;
+}
+```
+
+`:where()` 特异度为 0，旧页上这三条规则的特异度与之前完全相同（Task 0 基线因此不动）；`.wb-reset` 只挂在壳与新视图根上（不在 `<main>`），旧页内容没有 `.wb-reset` 祖先。新壳里的 `:focus-visible` 于是回到浏览器默认 outline；在 `workbench.css` 的 `@layer base` 里加一条同样以 `.wb-reset` 开头的规则统一它：
+
+```css
+  .wb-reset :focus-visible {
+    outline: 2px solid var(--color-wb-seo);
+    outline-offset: 2px;
+  }
+```
+
+Run: `pnpm vitest run --project unit apps/web/src/app/workbench-css.test.ts`
+Expected: 全绿（含 `globals.css` 守卫与 `postcss.config.mjs` 顺序两组）。
+
+- [ ] **Step 7: 旧页样式基线仍绿**
 
 Run: `pnpm test:e2e:mock -- e2e/legacy-style-parity.mock.spec.ts`
-Expected: 2 passed。若红：先看差异属性，通常是 `border-style` 这类 `.wb-reset *` 漏出——检查 `layout.tsx` 没有把 `wb-reset` 放到 `<body>`。
+Expected: 2 passed。若红：先看差异属性，通常是 `border-style` 这类 `.wb-reset *` 漏出——检查 `layout.tsx` 没有把 `wb-reset` 放到 `<body>`。这条基线在 Chromium 上比计算样式，看不到厂商前缀的差异；前缀一致性靠 Step 3 复刻 Next 默认链保证，不靠这条。
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add apps/web/package.json pnpm-lock.yaml apps/web/postcss.config.mjs apps/web/src/app/workbench.css apps/web/src/app/workbench-css.test.ts apps/web/src/app/layout.tsx
+git add apps/web/package.json pnpm-lock.yaml apps/web/postcss.config.mjs apps/web/src/app/workbench.css apps/web/src/app/globals.css apps/web/src/app/workbench-css.test.ts apps/web/src/app/layout.tsx
 git commit -m "feat(web): Tailwind v4 无 preflight 地基与工作台 token"
 ```
 
@@ -469,7 +544,7 @@ describe("workbench routes", () => {
     expect(LEGACY_LINKS.keywords).toEqual(["growth-map"]);
     expect(LEGACY_LINKS.keywordLibrary).toEqual(["growth-map"]);
     expect(LEGACY_LINKS.competitors).toEqual(["growth-map"]);
-    expect(LEGACY_LINKS.audit).toEqual(["diagnosis"]);
+    expect(LEGACY_LINKS.audit).toEqual(["growth-map"]); // diagnosis/ only redirects to growth-map
     expect(LEGACY_LINKS.profile).toEqual(["context", "setup-sources"]);
     expect(LEGACY_LINKS.dataSources).toEqual(["sources"]);
     expect(LEGACY_LINKS.content).toEqual(["studio", "execution"]); // plan 308s to execution
@@ -536,7 +611,6 @@ export const WORKBENCH_SEGMENTS: Readonly<Record<WorkbenchPageId, string>> = {
 export type LegacySegment =
   | "legacy/overview"
   | "growth-map"
-  | "diagnosis"
   | "context"
   | "setup-sources"
   | "sources"
@@ -551,7 +625,7 @@ export const LEGACY_LINKS: Readonly<Record<WorkbenchPageId, readonly LegacySegme
   keywords: ["growth-map"],
   keywordLibrary: ["growth-map"],
   competitors: ["growth-map"],
-  audit: ["diagnosis"],
+  audit: ["growth-map"], // diagnosis/page.tsx is a redirect into growth-map (design §4.3 row corrected)
   visibility: [],
   profile: ["context", "setup-sources"],
   dataSources: ["sources"],
@@ -2094,7 +2168,8 @@ export function WorkbenchProvider({
     hydrate();
     setReady(true);
     // The seed is a server-rendered mirror; it cannot change without remount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // (No react-hooks eslint plugin in this repo, so no disable comment: one
+    // would fail lint with "Definition for rule ... was not found".)
   }, [projectId]);
 
   useEffect(() => {
@@ -2380,6 +2455,7 @@ git commit -m "feat(i18n): 工作台 chrome 文案（en / zh-CN）"
 
 **Files:**
 - Create: `apps/web/src/components/workbench/ui/cn.ts`
+- Create: `apps/web/src/components/workbench/ui/focus-order.ts`
 - Create: `apps/web/src/components/workbench/ui/Dialog.tsx`
 - Create: `apps/web/src/components/workbench/ui/PageHead.tsx`
 - Create: `apps/web/src/components/workbench/ui/DemoChip.tsx`
@@ -2567,7 +2643,6 @@ import { legacyHref, type LegacySegment } from "@/lib/workbench/routes";
 const LEGACY_LABEL_KEY: Readonly<Record<LegacySegment, string>> = {
   "legacy/overview": "overview",
   "growth-map": "growthMap",
-  diagnosis: "diagnosis",
   context: "context",
   "setup-sources": "sourceSetup",
   sources: "sources",
@@ -3526,10 +3601,10 @@ Expected: Task 10 遗留的 `marketCode` 错误消失；project-shell 单测全�
 ```bash
 cd apps/web/src/app/p/\[projectId\]
 mkdir -p legacy && git mv overview legacy/overview
-grep -rn 'from "\.\./_' legacy/overview
+grep -rn '"\.\./_' legacy/overview
 ```
 
-把打印出的两处 `from "../_e2e-shell"`、`from "../_problem-display"` 改为 `"../../_e2e-shell"`、`"../../_problem-display"`。`page-title-typography.test.ts` 清单里 `./overview/_overview.tsx` → `./legacy/overview/_overview.tsx`，删掉 `./settings/_settings.tsx` 一行。
+把打印出的三处改为再向上一级：`from "../_e2e-shell"` → `"../../_e2e-shell"`、`from "../_problem-display"` → `"../../_problem-display"`，以及 `page.test.ts` L21 的 `vi.mock("../_e2e-shell", …)` → `vi.mock("../../_e2e-shell", …)`（它不是 `from`，漏改后 mock 指向不存在的模块，真实 `shouldUseE2eProjectShell` 会跑，「preserves the browser-backed database-free E2E harness」用例红）。`page-title-typography.test.ts` 清单里 `./overview/_overview.tsx` → `./legacy/overview/_overview.tsx`，删掉 `./settings/_settings.tsx` 一行。
 
 Run: `pnpm vitest run --project unit "apps/web/src/app/p/\[projectId\]/legacy" "apps/web/src/app/p/\[projectId\]/page-title-typography.test.ts"`
 Expected: 全绿。
@@ -3719,7 +3794,11 @@ export default async function ProjectLayout({
 
 - [ ] **Step 5b: 复核 `proxy.ts` 与 `_compatibility-route.ts`（设计 §9 PR-1 明列）**
 
-打开 `apps/web/src/proxy.ts`：确认鉴权与 CSP 的 `matcher` / 放行逻辑按前缀（`/api/`、`PUBLIC_PAGES`、`PUBLIC_FILES`）而不是按项目段名枚举——若是枚举，把 15 个新段与 `legacy/overview` 加进去。打开 `apps/web/src/app/p/[projectId]/_compatibility-route.ts`：确认它只做 `plan → execution`、`report → results` 与 `diagnosis` 查询参数翻译，不对 `overview` / `settings` / `diagnosis` 本身做重定向——若有，Task 12 里 `toHaveURL(/diagnosis$/)` 与 `/legacy/overview` 的断言要相应调整。两项结论（含文件行号）写进 PR 描述。
+已核实的事实（实施时再对一眼行号，写进 PR 描述）：
+
+- `apps/web/src/proxy.ts`：鉴权与 CSP 按前缀放行（`/api/`、`PUBLIC_PAGES`、`PUBLIC_FILES`），不枚举项目段名——15 个新段与 `legacy/overview` 不需要登记。
+- `apps/web/src/app/p/[projectId]/_compatibility-route.ts`：只做 `plan → execution`、`report → results`、`diagnosis → growth-map` 的查询参数翻译；不碰 `overview` / `settings`。
+- `diagnosis/page.tsx` **不是可渲染旧页**：它无条件 `redirect(growthMapCompatibilityRoute(...))`。设计稿 §4.3 表把「技术审计 → diagnosis」当成旧页是事实错误，Task 2 已把 `LEGACY_LINKS.audit` 定为 `["growth-map"]`，`LegacySegment` 不含 `"diagnosis"`；设计稿该行同步改为 `growth-map`，并在 PR 描述「相对设计稿的偏离」里写明。
 
 - [ ] **Step 6: 类型、lint、单测、parity**
 
@@ -3751,8 +3830,10 @@ git commit -m "feat(web): 项目壳切换为工作台，15 条路由占位，旧
 - [ ] **Step 1: 盘点**
 
 ```bash
-grep -nE 'data-app-shell|Project sections|program|/overview"|/overview`|"Settings"|getByRole\("link", \{ name: "(Overview|Growth Map|Execution|Results)"' e2e/*.spec.ts 'apps/web/src/app/p/[projectId]/'*.test.ts apps/web/src/app/layout.test.ts apps/web/src/components/app-shell/*.test.ts > /tmp/wb-spec-inventory.txt; wc -l /tmp/wb-spec-inventory.txt
+grep -nE 'data-app-shell|Project sections|program|/overview"|/overview`|"Settings"|getByRole\("link", \{ name: "(Overview|Growth Map|Execution|Results)"' e2e/*.spec.ts 'apps/web/src/app/p/[projectId]/'*.test.ts apps/web/src/app/layout.test.ts apps/web/src/components/app-shell/*.test.ts > "${SCRATCHPAD:-$TMPDIR}/wb-spec-inventory.txt"; wc -l "${SCRATCHPAD:-$TMPDIR}/wb-spec-inventory.txt"
 ```
+
+（`SCRATCHPAD` 设为会话 scratchpad 目录；盘点结果不进仓库。）
 
 逐行标处置：`改指向 legacy` / `改选择器` / `删除`。已知处置：
 
@@ -3815,6 +3896,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("every workbench page renders one data-wb-page-title h1 and its legacy links", async ({ page }) => {
+  test.slow(); // 15 navigations under dev on-demand compilation; the 45 s mock timeout is too tight
   for (const [segment, title] of PAGES) {
     await page.goto(`/p/${E2E_PROJECT_ID}/${segment}`);
     await expect(page.locator("h1[data-wb-page-title]")).toHaveCount(1);
@@ -3822,8 +3904,8 @@ test("every workbench page renders one data-wb-page-title h1 and its legacy link
     await expect(page.locator(`[data-wb-nav="${segment === "keyword-library" ? "keywordLibrary" : segment === "data-sources" ? "dataSources" : segment}"]`)).toHaveAttribute("aria-current", "page");
   }
   await page.goto(`/p/${E2E_PROJECT_ID}/audit`);
-  await page.locator('[data-wb-legacy-link="diagnosis"]').click();
-  await expect(page).toHaveURL(new RegExp(`/p/${E2E_PROJECT_ID}/diagnosis$`));
+  await page.locator('[data-wb-legacy-link="growth-map"]').click();
+  await expect(page).toHaveURL(new RegExp(`/p/${E2E_PROJECT_ID}/growth-map`));
 });
 
 test("english chrome carries no chinese and no untranslated key paths", async ({ page }) => {
@@ -3881,11 +3963,15 @@ test("mobile sidebar is inert while closed and opens from the menu button", asyn
   await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
   const sidebar = page.locator("#wb-sidebar");
   await expect(sidebar).toHaveAttribute("inert", "");
-  const menu = page.getByRole("button", { name: "Open navigation" });
+  // Locate the toggle by its aria-controls: once open, the backdrop button carries
+  // the same "Close navigation" name and a role query would hit strict mode.
+  const menu = page.locator('button[aria-controls="wb-sidebar"]');
+  await expect(menu).toHaveAccessibleName("Open navigation");
   await expect(menu).toHaveAttribute("aria-expanded", "false");
   await menu.click();
   await expect(sidebar).not.toHaveAttribute("inert", "");
-  await expect(page.getByRole("button", { name: "Close navigation" })).toHaveAttribute("aria-expanded", "true");
+  await expect(menu).toHaveAttribute("aria-expanded", "true");
+  await expect(menu).toHaveAccessibleName("Close navigation");
 });
 
 test("deleting the project clears its workbench storage key", async ({ page }) => {
@@ -3899,7 +3985,19 @@ test("deleting the project clears its workbench storage key", async ({ page }) =
 });
 ```
 
-「删除项目」用例依赖 `installCriticalFlowApi` 兑现 `DELETE /api/mvp/projects/:id`——查 `e2e/mock-api.ts` 是否已有；没有则在 `CriticalFlowApiOptions` 加一个开关按现有模式兑现 204。若 mock 无法兑现则把该用例改为断言点击后出现确认组，并在 PR 描述里写明。
+- [ ] **Step 3b: mock API 兑现 `DELETE /api/mvp/projects/:id`（必做）**
+
+`e2e/mock-api.ts` 目前没有任何 `DELETE` 分支；未匹配的 `/api/mvp/**` 走 `route.fallback()` 打到真服务端再撞 DB tripwire，mutation 报错，`forgetProject()` 不会执行，上面的删除用例必红。在 `installCriticalFlowApi` 的 `page.route("**/api/mvp/**", …)` 处理器里，紧跟 `const path = url.pathname;` 之后加：
+
+```ts
+    // Real project deletion (settings page): 204 with no body, like the API.
+    if (method === "DELETE" && path === BASE) {
+      await route.fulfill({ status: 204 });
+      return;
+    }
+```
+
+`BASE` 就是 `/api/mvp/projects/${E2E_PROJECT_ID}`，与 `deleteProjectRequest` 发出的 `DELETE /projects/:id` 一致。不加开关：没有别的 spec 会对保留项目发 DELETE。
 
 - [ ] **Step 4: 跑受影响 spec + 新 spec**
 
@@ -3939,7 +4037,7 @@ git commit -m "test(e2e): 工作台壳 spec，旧壳相关 spec 改指向 legacy
 - [ ] **Step 2b: 仓库文档门**
 
 Run: `pnpm verify:docs && pnpm verify:authority && pnpm verify:spec`
-Expected: 全绿（`verify:docs` 核的是 `authority/index.json` 与规格文件，不是 CLAUDE.md 那句话，已确认）。若任一红：先读脚本报的具体断言；只有当它断言的是被本 PR 有意改动的句子时才改脚本期望（同一 commit 内、注明原因），否则回滚文档改动重写。
+Expected: 全绿。**硬约束**：`scripts/verify-docs-consistency.test.mjs` L114–124 会对 `CLAUDE.md` 断言 `/authority\/implementation-spec-v0\.4|active v0\.4|Current authority: \*\*v0\.4/`，Step 1 的新句子必须保留 `Current authority: **v0.4` 这个前缀原文，否则 `verify:docs` 红。若任一红：先读脚本报的具体断言；只有当它断言的是被本 PR 有意改动的句子时才改脚本期望（同一 commit 内、注明原因），否则回滚文档改动重写。
 
 - [ ] **Step 3: Commit**
 
@@ -3981,4 +4079,4 @@ git push -u origin feat/workbench-pr1-foundation
 gh pr create --base feat/workbench-ui-port --title "feat(workbench): PR-1 地基——新壳、15 条路由、store、i18n" --body-file .review-tmp/pr1-body.md
 ```
 
-PR 描述含：设计稿链接、任务清单勾选状态、验证命令与结果、评审处置、已知未做（GSC 站点卡行、覆盖率补测若有）。**不合 main**（D3）。
+PR 描述含：设计稿链接、任务清单勾选状态、验证命令与结果、评审处置、已知未做（GSC 站点卡行、覆盖率补测若有）、**相对设计稿的偏离**（`audit` 的旧页链接指 `growth-map` 而非 `diagnosis`；`globals.css` 三条元素规则加了 `:where(:not(.wb-reset *))` 守卫；`postcss.config.mjs` 复刻 Next 默认链）与 Task 11 Step 5b 的两条复核结论。**不合 main**（D3）。
