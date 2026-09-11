@@ -62,17 +62,19 @@ apps/web/src/
     studio/ report/ setup-sources/
                                原地不动
   components/workbench/
-    shell/    WorkbenchShell, ShellChrome, Sidebar, Topbar, CommandPalette, ArtifactDrawer,
+    shell/    WorkbenchShell, ShellChrome, Sidebar, SiteCard, Topbar, CommandPalette,
+              ArtifactDrawer, SignOutButton,
               workbench-nav（新导航模型；旧 components/app-shell/nav-model.ts 原地保留，
-              旧页与其测试仍用）, useProjectShellEffects
+              旧页与其测试仍用）, useProjectShellEffects, useContextNavigationConfirm,
+              useGlobalShortcut, useMediaQuery
     ui/       PageHead, InPane, OutPane, Field, RunningSteps, DemoChip, Chip,
-              Gauge, Tabs, Dialog（焦点管理共用）
+              Gauge, Tabs, Dialog（焦点管理共用）, cn, ids, focus-order, LegacyLinks
     views/<module>/            每模块一目录：主视图 + 输入面板 + 每个报告 tab 各一文件
   lib/workbench/
     mock/     rng, gsc-parse, audit, visibility, keywords, competitors, links, kb,
               content, answers, builders（jsx 的 B.*）, csv, demo
     store/    types, schema（zod）, reducer, selectors, persistence, WorkbenchProvider, hooks
-    routes.ts 段名表 + 「旧版页面」映射表
+    routes.ts 段名表 + 「旧版页面」映射表 + 旧版段名的 nav 标签键表（LEGACY_LABEL_KEY）
 ```
 
 约束：视图文件 ≤ 400 行、函数 ≤ 50 行、嵌套 ≤ 4 层；相对 import 带 `.ts` 扩展名；`lib/workbench/mock` 不 import React、不 import `@sf/engine`（客户端不能拉 barrel）；strict TS（`exactOptionalPropertyTypes` / `noUncheckedIndexedAccess`）下移植 jsx 的松散对象要逐个补类型，不用 `any`。
@@ -81,7 +83,7 @@ apps/web/src/
 
 | 段 | 现状 | 处理 |
 |---|---|---|
-| `overview` | 旧概览页（真数据两卡） | 新概览接管；旧页搬到 `legacy/overview`。根 `page.tsx` 重定向仍指 `/overview`，**但在新概览可用（§9 首个生产发布）之前不合入 main** |
+| `overview` | 旧概览页（真数据两卡） | 新概览接管；旧页搬到 `legacy/overview`。根 `page.tsx` 重定向仍指 `/overview`，**但在新概览可用（§9 首个生产发布）之前不合入 main**。PR-1 阶段 `/overview` 渲染的是占位视图（新概览在 PR-3 落地），这条闸门因此是硬性的 |
 | `sources` | 旧数据源页（真实 GSC OAuth） | **旧页原地不动**。OAuth 回调重定向、`source-connect.ts`、`hooks-sources.ts` 及 ~20 个文件（含需 Postgres 的集成测试）指向它。新数据源页用 `data-sources`；接真时把 OAuth 落点切过来并删旧页 |
 | `settings` | 旧设置页（唯一动作：`useDeleteProject`，117 行） | 新设置页接管，旧页删除。PR-1 阶段的新设置页 = 「页面开发中」占位 + §6.6 的真实删除区块；PR-3 补齐通知偏好与数据源区块 |
 
@@ -89,10 +91,10 @@ apps/web/src/
 
 - **侧栏**：分组和标签走 `workbench.nav.*`；`aria-current="page"` 标当前项；徽标语义按 opengengrowth（外观权威）：技术审计 = 健康分、AI 可见度 = 提及率 `%`、关键词研究 = 候选数、产物中心 = 产物数，其余项按 jsx `counts`（词库、竞品、外链、知识库缺口、数据源行数）；值来自 §6.3 的 selectors；**未 hydrate → 徽标位渲骨架；已 hydrate 但该模块未运行 → 不显示徽标**（不显示 0）；审计运行中（`audit = null`）同样不显示，不回退到 `lastAudit`。侧栏底部 jsx 的「Pro 套餐，N 个站点」改为只显示站点数（`projectOptions.length`）。
 - **站点卡**（照 opengengrowth `Sidebar.tsx` 的四行：域名 / 市场 / GSC / 审计）：域名 = `ProjectShellProject.host`；市场 = 主站点 `market_codes[0]`（`ProjectShellProject` 增加 `marketCode` 字段，从 `SiteRow` 取，总是真实存在）；GSC = 真实连接状态（`sources` 的 GSC connection 是否已连接；PR-1 先显示「—」，PR-3 数据源批接上）；审计 = store 里 `lastAudit.at`（本地 mock 结果），有值时紧跟一个「示例」小标，没有则「—」；站点卡不放 GA4 行（照 opengengrowth 四行）。**真实与 mock 分开标注**（评审 F12）：前三行是真数据不标，第四行标「示例」；数据源页里 mock 导入的行数徽标同样带「示例」。
-- **顶栏**：复用现有 `ProjectSwitcher`；「＋ 新建站点」→ `/new-project`；「搜索 / 跳转 ⌘K」按钮（打开命令面板，关闭后焦点回到它）；保留 `LocaleSwitch` 与 `signOutAction` 账号菜单；「示例数据」chip（`demo` 为真时显示「示例站点」并带「清除示例」）；「产物筐 N」开抽屉；storage 不可用时的「本次结果不会保存」提示（§6.5）。
+- **顶栏**：复用现有 `ProjectSwitcher`；「＋ 新建站点」→ `/new-project`；「搜索 / 跳转 ⌘K」按钮（打开命令面板，关闭后焦点回到它）；保留 `LocaleSwitch` 与 `signOutAction` 账号菜单；「示例数据」chip（`demo` 为真时显示「示例站点」并带「清除示例」）；「产物筐 N」开抽屉；storage 不可用时的「本次结果不会保存」提示（§6.5；`swept` 态静默，容器始终渲染以保住 live region）。
 - **命令面板 / 产物筐抽屉**：都是 `role="dialog" aria-modal="true"`，有 `aria-labelledby`；打开时焦点进入（面板进搜索框、抽屉进关闭按钮），关闭时焦点回到触发按钮；焦点圈在对话框内（Tab 循环）；背景 `inert`；Esc 关闭；⌘K / Ctrl+K 切换面板。面板列表项是 `role="option"` 的按钮，不是可点 div。
-- **移动端侧栏**：`aside` 关闭时 `inert`（不只是 `translate-x`），遮罩可点关闭，开合按钮带 `aria-expanded` / `aria-controls`。
-- **旧壳的副作用必须保留**（自审 M1）：`_nav.tsx` 里两个副作用与视觉无关但旧页依赖——`withProjectHistoryPosition`（Studio 取消 Back/Forward 后回退用）和 `_context-navigation-guard`（Context 未保存离开确认）。抽成 `useProjectShellEffects` hook，在新 Sidebar 挂载；`studio-workspace.mock.spec` 与 `product-profile.mock.spec` 作为回归门。
+- **移动端侧栏**：`aside` 关闭时 `inert`（不只是 `translate-x`），遮罩可点关闭，开合按钮带 `aria-expanded` / `aria-controls`。断点判定用 `useMediaQuery("(width < 48rem)")`（与 rail 的 `md:` 同一个 Tailwind v4 断点，px 值会随根字号漂）；代价是首帧 `matches` 为 false，移动端有一帧侧栏尚未 `inert`，hydration 后立即纠正。
+- **旧壳的副作用必须保留**（自审 M1）：`_nav.tsx` 里两个副作用与视觉无关但旧页依赖——`withProjectHistoryPosition`（Studio 取消 Back/Forward 后回退用）和 `_context-navigation-guard`（Context 未保存离开确认）。history 副作用留在 `useProjectShellEffects`（在新 Sidebar 挂载），离开确认单独抽成 `useContextNavigationConfirm`（同时导出链接用的 `confirmNavigation` 与命令面板用的 `confirmLeave`）——面板跳转是同一种导航，不过守卫就会「侧栏问、面板不问」；`studio-workspace.mock.spec` 与 `product-profile.mock.spec` 作为回归门。
 - **90 天 program 进度**（`SidebarProgress` / `program day`）：**明确退役**，不进新壳；`mobile-shell.mock.spec` 相应断言删除；`appShell.program*` 文案键随之删除（en / zh-CN 同删）。
 - **「旧版页面 →」**：与旧页重叠的新页面在 `PageHead` 右侧放链接，可多个。完整映射：
 
@@ -148,8 +150,8 @@ audit          当前审计报告 | null；auditHistory ≤ 12；lastAudit | nul
 visResults     可见度结果 []；visHistory ≤ 12；lastVis | null
 visPartial     boolean，可见度运行进行中（含已流入的部分结果）；随状态一起持久化，供 hydration 判定（§6.4）
 compData       竞品数据 | null
-plans          答案页方案 []
-targets        外链目标 []
+plans          答案页方案，按 key 索引的 map（初始 `{}`）
+targets        外链目标 [] | null（初始 `null` = 未跑过）
 kb             事实知识库 | null
 artifacts      产物 [{ id, at, module, type, engine, title, content, filename? }]，上限 50
                module 取 audit / visibility / keywords / keywordLibrary / competitors / links / content / kb / answers / profile / week
@@ -168,8 +170,8 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 - `seedList(state)`：`seeds` 按换行 / 逗号切分去空。
 - `keywordRows(state)`：`buildRows(seedList, profile, gscRows)`；输入完整列出，`useMemo` 依赖与之一致。
 - `gatedRows(state)`：`built ? keywordRows : []`。概览、本周变化、AI 可见度、关键词研究用 gated；词库、内容生成、竞品用 ungated（照 jsx）。
-- `picked(state)`：`saved.map(x => x.q)`。
-- `counts(state, keywordRowCount)`：§4.3 的徽标值；`null` 表示不显示，不用 0 顶替；`audit = null`（未跑或运行中）→ `null`。`keywordRowCount` = `built ? gatedRows.length : null`（gate 在注入函数内做），而 `buildRows` / `keywordRows` / `gatedRows` 都在 PR-2——PR-1 的 `WorkbenchProvider` 接受可选的 `deriveKeywordRowCount(state): number | null`；PR-2 在 **client 模块**（`ShellChrome` 或 provider 自身）import 真实函数传入——server `layout.tsx` 不能给 client 组件传函数 prop；之前徽标为 `null`。AI 可见度徽标读 `visResults`（同 jsx `counts`）：`visStart` 清空后徽标消失、`visProgress` 中间态随之变化，运行中不回退到 `lastVis`，与审计一致。
+- `savedQueries(state)`（原名 `picked`）：`saved.map(x => x.q)`。
+- `selectCounts(state, keywordRowCount)`（原名 `counts`）：§4.3 的徽标值；`null` 表示不显示，不用 0 顶替；`audit = null`（未跑或运行中）→ `null`。`keywordRowCount` = `built ? gatedRows.length : null`（gate 在注入函数内做），而 `buildRows` / `keywordRows` / `gatedRows` 都在 PR-2——PR-1 的 `WorkbenchProvider` 接受可选的 `deriveKeywordRowCount(state): number | null`；PR-2 在 **client 模块**（`ShellChrome` 或 provider 自身）import 真实函数传入——server `layout.tsx` 不能给 client 组件传函数 prop；之前徽标为 `null`。AI 可见度徽标读 `visResults`（同 jsx `counts`）：`visStart` 清空后徽标消失、`visProgress` 中间态随之变化，运行中不回退到 `lastVis`，与审计一致。
 
 ### 6.4 reducer 转换（评审 F6 / F9）
 
@@ -182,7 +184,7 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 - `visCancel`：`visResults = lastVis?.results ?? []`，`visPartial = false`。
 - `visProgress(results)`：`visResults = results`，`visPartial = true`，不动 `lastVis` / `visHistory`（jsx 边跑边 push 的中间态）。
 - `visComplete(results, at)`：若 `lastVis` 存在则归档入 `visHistory`（≤ 12）；`visResults = results`；`lastVis = { at, results }`；`visPartial = false`。（jsx 用「从空变非空」判定同一件事；拆成两个 action 后判定不再依赖前态。）
-- 其余：`patchProfile`、`setProfileDoc`、`setConns`、`setGscRows`、`setSeeds`、`setBuilt`、`setSaved`（写 `saved`；按词保留已有 `addedAt` / `source`）、`setCompData`、`setPlans`、`setTargets`、`setKb`、`setNotify`、`addArtifact`（前插，超 50 丢最旧）、`removeArtifact`、`clearArtifacts`、`loadDemo(payload)`——payload 由 PR-2 的 `makeDemoSite` 产出，**逐字段写入**：`conns, gscRows, seeds, built, saved, audit, auditHistory, lastAudit, visResults, visHistory, lastVis, compData, plans, targets, kb, artifacts`，并置 `demo = true`；**不写** `profile`（六个字段全部保留，示例文本里的品牌名用真实 `profile.brand` 生成）、`profileDoc` 只写 `crawl / gsc / third` 三个信号，`ai` 用 `DEMO_AI` 但 `summary / facts` 里的「GenGrowth」由 `makeDemoSite` 替换为真实 brand、`notify` 不动、`clearDemo`（与 `loadDemo` 对称：只把它写过的 17 个字段（含 `profileDoc`）与 `visPartial` 回初始值并置 `demo = false`，**不动** `profile` 与 `notify`）、`reset`（全量回 §6.7 初始值，只在真实删除项目等场景用）。
+- 其余：`patchProfile`、`setProfileDoc`、`setConns`、`setGscRows`、`setSeeds`、`setBuilt`、`setSaved`（写 `saved`；按词保留已有 `addedAt` / `source`）、`setCompData`、`setPlans`、`setTargets`、`setKb`、`setNotify`、`addArtifact`（前插，超 50 丢最旧）、`removeArtifact`、`clearArtifacts`、`loadDemo(payload)`——payload 由 PR-2 的 `makeDemoSite` 产出，**逐字段写入**：`conns, gscRows, seeds, built, saved, audit, auditHistory, lastAudit, visResults, visHistory, lastVis, compData, plans, targets, kb, artifacts, profileDoc`（共 17 个，与 `clearDemo` 对称；落地即 `store/reducer.ts` 的 `DemoPayload` 与 `demoFields`），并置 `demo = true`、`visPartial = false`；**不写** `profile`（六个字段全部保留，示例文本里的品牌名用真实 `profile.brand` 生成）、`profileDoc` 内部只写 `crawl / gsc / third` 三个信号，`ai` 用 `DEMO_AI` 但 `summary / facts` 里的「GenGrowth」由 `makeDemoSite` 替换为真实 brand、`notify` 不动、`clearDemo`（与 `loadDemo` 对称：只把它写过的 17 个字段（含 `profileDoc`）与 `visPartial` 回初始值并置 `demo = false`，**不动** `profile` 与 `notify`）、`reset`（全量回 §6.7 初始值，只在真实删除项目等场景用）。
 - **hydration 归一化**：运行中刷新 / 切项目会把 `audit = null`、`visPartial = true` 持久化下来而没人派发 cancel；provider 读盘后先过 `normalizeInterrupted(state)`：`audit === null && lastAudit` → `audit = lastAudit`；`visPartial` → `visResults = lastVis?.results ?? []` 且 `visPartial = false`。**可见度必须看 `visPartial`，不能看 `visResults` 是否为空**：provider 每次变更都整份写盘、`visProgress` 会把中间结果流进 `visResults`，只判空会让「跑了一半的部分结果」冒充一次完整测量；反过来「跑完但一条都没命中」是合法的完成态，不该被回滚。纯函数，有单测。
 - **运行归属**：每次运行持有 `{ projectId, runToken }`；完成时若 provider 的 projectId 或当前 runToken 已变（切项目、重跑、离开页面），结果丢弃。步骤动画不跨路由存活。
 
@@ -192,8 +194,9 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 - 读：`try/catch` 包住 `getItem`（隐私模式会抛）；JSON 解析后过 zod schema（`store/schema.ts`），版本不符或形状不对整体丢弃回默认；**storage 不可用时进入 volatile 模式**，内存可用、不写盘，顶栏提示「本次结果不会保存」。
 - 写：`try/catch`；`QuotaExceededError` 时提示并停止写入（不裁剪用户数据）。
 - 时序：`WorkbenchProvider` 以 `key={projectId}` 挂载，切项目必重挂；挂载后读盘 → `ready = true`；**`ready` 之前不写盘、侧栏徽标与视图都渲骨架**。
-- 多标签：监听 `storage` 事件，同键变化时以磁盘为准重载（最后写入者赢，不合并）。
-- 清理：真实删除项目成功后删该键；`signOutAction` 前清 `gg.workbench.*`（同一浏览器换账号不串数据）。
+- 多标签：监听 `storage` 事件，同键变化时以磁盘为准重载（最后写入者赢，不合并）。**重载不跑 `normalizeInterrupted`**：写盘的那个标签可能正在跑，归一化会把它流进来的部分结果回滚到 `lastVis` 并把回滚回声写回磁盘；中断态只在首次 hydration 结算一次。`event.key === null`（另一标签 `localStorage.clear()`）与重读到空同样按「已被清扫」处理。
+- 清理：真实删除项目成功后删该键；`signOutAction` 前清 `gg.workbench.*`（同一浏览器换账号不串数据）。`storage` 事件只发给同源的**其他**文档，清扫的这个文档收不到自己的，所以 `SignOutButton` 清扫后同步派发 `WORKBENCH_SWEPT_EVENT`（`store/persistence.ts` 导出的常量），本标签的 provider 靠它同步进入清扫态。
+- `storageMode` 四档：`ok` / `volatile` / `quota` / `swept`。`volatile` 与 `quota` 是存储故障，顶栏出提示；`swept` 是有意丢弃（登出清扫、删项目），同样停止写盘但 UI 不出声——否则一次登出会在其他标签留下一条指责浏览器的常驻横幅。停止写盘是必须的：`reset` 产生新对象，写盘 effect 会在清扫后几毫秒内把种子镜像重新写回 `gg.workbench.v1.<id>`。
 - 隐私：用户在 mock 页输入的内容（粘贴的 GSC 导出、档案文本、种子词）是用户数据，不因周围是 mock 而降级；只存本地、不上传、登出即清。
 
 ### 6.6 真实删除项目（评审 F11）
