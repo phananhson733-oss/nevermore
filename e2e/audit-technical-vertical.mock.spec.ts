@@ -30,8 +30,9 @@ import {
  */
 
 const BASE = `/api/mvp/projects/${E2E_PROJECT_ID}`;
-const OVERVIEW_URL = `/p/${E2E_PROJECT_ID}/overview`;
-const NAV_LABEL = "Project sections";
+/** The retained legacy Overview; `/overview` is the workbench page now. */
+const OVERVIEW_URL = `/p/${E2E_PROJECT_ID}/legacy/overview`;
+const NAV_LABEL = "Workbench sections";
 const auditEvidencePanel = '[data-detail-panel="audit-evidence"]';
 const opportunityReviewPanel = '[data-detail-panel="opportunity-review"]';
 
@@ -47,8 +48,9 @@ function projectNav(page: Page): Locator {
   return page.getByRole("navigation", { name: NAV_LABEL });
 }
 
-function navLink(page: Page, index: number): Locator {
-  return projectNav(page).getByRole("link").nth(index);
+/** A retained legacy screen; the workbench rail no longer links to these. */
+function gotoLegacy(page: Page, segment: string): Promise<unknown> {
+  return page.goto(`/p/${E2E_PROJECT_ID}/${segment}`);
 }
 
 async function apiFetch(
@@ -97,23 +99,16 @@ test("proves the technical opportunity vertical without any lift claim", async (
   // ---- URL + ICP: land Overview with a confirmed ICP and audit identity ----
   await page.goto(OVERVIEW_URL);
 
+  // The four legacy section links left the shell with the workbench port: the
+  // rail lists the fifteen workbench sections, and the retained legacy screens
+  // are reached from each page's own "legacy page" affordance. The chain below
+  // therefore moves between legacy screens by URL; what proves the links is the
+  // per-segment identity assertion on each screen, which is unchanged.
   const navLinks = projectNav(page).getByRole("link");
-  await expect(navLinks).toHaveCount(4);
+  await expect(navLinks).toHaveCount(15);
   await expect(navLinks.nth(0)).toHaveAttribute(
     "href",
     `/p/${E2E_PROJECT_ID}/overview`,
-  );
-  await expect(navLinks.nth(1)).toHaveAttribute(
-    "href",
-    `/p/${E2E_PROJECT_ID}/growth-map`,
-  );
-  await expect(navLinks.nth(2)).toHaveAttribute(
-    "href",
-    `/p/${E2E_PROJECT_ID}/execution`,
-  );
-  await expect(navLinks.nth(3)).toHaveAttribute(
-    "href",
-    `/p/${E2E_PROJECT_ID}/results`,
   );
 
   // ---- createGrowthAuditRun: the frozen URL + confirmed ICP start a run ----
@@ -216,7 +211,7 @@ test("proves the technical opportunity vertical without any lift claim", async (
   // which is strictly stronger: a second Technical ticket filed under some
   // other section used to be invisible here, and now turns this red. The type
   // is still asserted, off each row's own `data-studio-artifact-type`.
-  await navLink(page, 2).click();
+  await gotoLegacy(page, "execution");
   const queue = page.locator("[data-studio-queue]");
   const ticketRows = queue.locator(
     '[data-studio-artifact-id][data-studio-artifact-type="technical_ticket"]',

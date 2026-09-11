@@ -66,8 +66,9 @@ function projectNav(page: Page): Locator {
   return page.getByRole("navigation", { name: NAV_LABEL });
 }
 
-function navLink(page: Page, index: number): Locator {
-  return projectNav(page).getByRole("link").nth(index);
+/** A retained legacy screen; the workbench rail no longer links to these. */
+function gotoLegacy(page: Page, segment: string): Promise<unknown> {
+  return page.goto(`/p/${E2E_PROJECT_ID}/${segment}`);
 }
 
 let api: ContentVerticalState;
@@ -90,12 +91,12 @@ test("proves the content vertical from URL + ICP to a reviewed revision, publish
   // ================= 1. URL + ICP ==========================================
   await page.goto(OVERVIEW_URL);
 
-  const navLinks = projectNav(page).getByRole("link");
-  await expect(navLinks).toHaveCount(4);
-  await expect(navLinks.nth(2)).toHaveAttribute(
-    "href",
-    `/p/${E2E_PROJECT_ID}/execution`,
-  );
+  // The four legacy section links left the shell with the workbench port: the
+  // rail lists the fifteen workbench sections, and the retained legacy pages
+  // are reached from each page's own "legacy page" affordance. The chain below
+  // therefore moves between the legacy screens by URL; what proves the links is
+  // the per-segment identity assertion on each screen, which is unchanged.
+  await expect(projectNav(page).getByRole("link")).toHaveCount(15);
 
   const runAudit = page.getByRole("button", { name: "Run growth audit" });
   await expect(runAudit).toBeVisible();
@@ -109,7 +110,7 @@ test("proves the content vertical from URL + ICP to a reviewed revision, publish
   expect(apiWrites(api)).toEqual([`POST ${BASE}/audit-runs`]);
 
   // ================= 2. ONE measured content Finding =======================
-  await navLink(page, 1).click();
+  await gotoLegacy(page, "growth-map");
   await expect(page.locator("[data-growth-map-page]")).toBeVisible();
   await page
     .locator(
@@ -180,7 +181,7 @@ test("proves the content vertical from URL + ICP to a reviewed revision, publish
   expect(contentAction?.title).toBe(CONTENT_ACTION_TITLE);
 
   // ================= 4. ONE content_brief ===================================
-  await navLink(page, 2).click();
+  await gotoLegacy(page, "execution");
   // Re-aimed for the unified queue, not loosened. The queue is one list ordered
   // by type rather than a stack of per-type `<section>`s, so the region this
   // used to scope to is gone. "Exactly one content_brief" is now counted across

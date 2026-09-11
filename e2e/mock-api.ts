@@ -515,6 +515,12 @@ export async function installCriticalFlowApi(
     const url = new URL(request.url());
     const path = url.pathname;
 
+    // Real project deletion (settings page): 204 with no body, like the API.
+    if (method === "DELETE" && path === BASE) {
+      await route.fulfill({ status: 204 });
+      return;
+    }
+
     if (method === "GET" && path === `${BASE}/workspace`) {
       await json(route, {
         data: overviewWorkspaceFixture(),

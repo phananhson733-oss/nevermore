@@ -594,14 +594,15 @@ test("keeps two Competitors isolated inside the existing four-module Growth Map 
     `/p/${E2E_PROJECT_ID}/growth-map?object=competitors&selectedCompetitorId=${COMPETITOR_A_ID}`,
   );
 
+  // 旧版「项目分区」四项导航已被工作台侧栏取代（15 项，`workbench-nav.ts`）。
   const workspaceNavigation = page.getByRole("navigation", {
-    name: "项目分区",
+    name: "工作台导航",
   });
-  await expect(workspaceNavigation.getByRole("link")).toHaveCount(4);
+  await expect(workspaceNavigation.getByRole("link")).toHaveCount(15);
   await expect(workspaceNavigation).toContainText("概览");
-  await expect(workspaceNavigation).toContainText("增长地图");
-  await expect(workspaceNavigation).toContainText("执行中心");
-  await expect(workspaceNavigation).toContainText("效果追踪");
+  await expect(workspaceNavigation).toContainText("技术审计");
+  await expect(workspaceNavigation).toContainText("内容生成");
+  await expect(workspaceNavigation).toContainText("产物中心");
 
   const objectNavigation = page.getByRole("navigation", {
     name: "增长地图对象",

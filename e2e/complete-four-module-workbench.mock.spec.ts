@@ -1450,13 +1450,15 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
   const artifactApi = await installArtifactApi(page);
 
   await test.step("概览：四模块外壳与客户当前优先事项", async () => {
-    await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
-    const navigation = page.getByRole("navigation", { name: "项目分区" });
-    await expect(navigation.getByRole("link")).toHaveCount(4);
+    // 客户概览是保留下来的旧版页面；`/overview` 现在是工作台页面，
+    // 旧版「项目分区」四项导航也已被工作台侧栏（15 项）取代。
+    await page.goto(`/p/${E2E_PROJECT_ID}/legacy/overview`);
+    const navigation = page.getByRole("navigation", { name: "工作台导航" });
+    await expect(navigation.getByRole("link")).toHaveCount(15);
     await expect(navigation).toContainText("概览");
-    await expect(navigation).toContainText("增长地图");
-    await expect(navigation).toContainText("执行中心");
-    await expect(navigation).toContainText("效果追踪");
+    await expect(navigation).toContainText("技术审计");
+    await expect(navigation).toContainText("内容生成");
+    await expect(navigation).toContainText("产物中心");
     await expect(page.locator("[data-overview-page]")).toBeVisible();
     await expect(
       page.getByText("客户入职页面的 canonical URL 存在冲突。"),

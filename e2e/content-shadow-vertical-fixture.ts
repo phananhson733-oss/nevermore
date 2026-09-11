@@ -33,8 +33,9 @@ import {
  */
 
 export const BASE = `/api/mvp/projects/${E2E_PROJECT_ID}`;
-export const OVERVIEW_URL = `/p/${E2E_PROJECT_ID}/overview`;
-export const NAV_LABEL = "Project sections";
+/** The retained legacy Overview; `/overview` is the workbench page now. */
+export const OVERVIEW_URL = `/p/${E2E_PROJECT_ID}/legacy/overview`;
+export const NAV_LABEL = "Workbench sections";
 export const opportunityReviewPanel =
   '[data-detail-panel="opportunity-review"]';
 

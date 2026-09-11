@@ -361,8 +361,12 @@ test("Studio protects unsaved content and notes from editor transitions", async 
     await json(route, listEnvelope([firstArtifact, secondArtifact], null));
   });
 
-  await page.goto(`/p/${E2E_PROJECT_ID}/results`);
-  await page.getByRole("link", { name: "Execution", exact: true }).click();
+  // The workbench rail replaced the four legacy section links, so the guarded
+  // client-side pair is now Content generation (rail) <-> legacy Execution
+  // (the "legacy page" affordance on the Content page). Still real in-app
+  // anchors, which is what the document-level unsaved guard listens to.
+  await page.goto(`/p/${E2E_PROJECT_ID}/content`);
+  await page.locator('[data-wb-legacy-link="execution"]').click();
   await expect(page).toHaveURL(onProjectScreen("execution"));
 
   const firstView = page
@@ -432,7 +436,7 @@ test("Studio protects unsaved content and notes from editor transitions", async 
 
   await content.fill("Dirty before link navigation");
   dialogPromise = page.waitForEvent("dialog");
-  transitionPromise = page.getByRole("link", { name: "Results" }).click();
+  transitionPromise = page.locator('[data-wb-nav="content"]').click();
   dialog = await dialogPromise;
   await dialog.dismiss();
   await transitionPromise;
@@ -454,21 +458,21 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   const priorExecutionPosition = await readHistoryPosition();
 
   dialogPromise = page.waitForEvent("dialog");
-  transitionPromise = page.getByRole("link", { name: "Results" }).click();
+  transitionPromise = page.locator('[data-wb-nav="content"]').click();
   dialog = await dialogPromise;
   await dialog.accept();
   await transitionPromise;
-  await expect(page).toHaveURL(onProjectScreen("results"));
+  await expect(page).toHaveURL(onProjectScreen("content"));
   await expect.poll(readHistoryPosition).not.toBe(priorExecutionPosition);
   const resultsPosition = await readHistoryPosition();
   expect(resultsPosition).toBeGreaterThanOrEqual(0);
 
-  await page.getByRole("link", { name: "Execution", exact: true }).click();
+  await page.locator('[data-wb-legacy-link="execution"]').click();
   await expect(page).toHaveURL(onProjectScreen("execution"));
   await expect.poll(readHistoryPosition).toBeGreaterThan(resultsPosition);
   const executionPosition = await readHistoryPosition();
   await page.goBack();
-  await expect(page).toHaveURL(onProjectScreen("results"));
+  await expect(page).toHaveURL(onProjectScreen("content"));
   await expect.poll(readHistoryPosition).toBe(resultsPosition);
   await page.goForward();
   await expect(page).toHaveURL(onProjectScreen("execution"));
@@ -493,7 +497,7 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   await page.evaluate(() => window.setTimeout(() => history.back(), 0));
   dialog = await dialogPromise;
   await dialog.accept();
-  await expect(page).toHaveURL(onProjectScreen("results"));
+  await expect(page).toHaveURL(onProjectScreen("content"));
 
   await page.goForward();
   await expect(page).toHaveURL(onProjectScreen("execution"));
@@ -502,7 +506,7 @@ test("Studio protects unsaved content and notes from editor transitions", async 
     await editMarkdown.click();
   }
   await expect(content).toHaveValue("Artifact page 1");
-  await page.getByRole("link", { name: "Overview" }).click();
+  await page.locator('[data-wb-nav="overview"]').click();
   await expect(page).toHaveURL(onProjectScreen("overview"));
   await page.goBack();
   await expect(page).toHaveURL(onProjectScreen("execution"));

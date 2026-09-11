@@ -25,8 +25,9 @@ import {
  * one template-fixed technical ticket.
  */
 
-const OVERVIEW_URL = `/p/${E2E_PROJECT_ID}/overview`;
-const NAV_LABEL = "Project sections";
+/** The retained legacy Overview; `/overview` is the workbench page now. */
+const OVERVIEW_URL = `/p/${E2E_PROJECT_ID}/legacy/overview`;
+const NAV_LABEL = "Workbench sections";
 const fullEvidencePanel = '[data-detail-panel="full-evidence-and-review"]';
 
 async function useEnglishUi(page: Page): Promise<void> {
@@ -42,8 +43,9 @@ function projectNav(page: Page): Locator {
 }
 
 /** Nav links carry a review/artifact badge, so match by position, not text. */
-function navLink(page: Page, index: number): Locator {
-  return projectNav(page).getByRole("link").nth(index);
+/** A retained legacy screen; the workbench rail no longer links to these. */
+function gotoLegacy(page: Page, segment: string): Promise<unknown> {
+  return page.goto(`/p/${E2E_PROJECT_ID}/${segment}`);
 }
 
 async function overflowDiagnostics(page: Page): Promise<string> {
@@ -109,7 +111,7 @@ async function blockingAxeViolations(
 }
 
 async function openOnboardingDetail(page: Page): Promise<void> {
-  await navLink(page, 1).click();
+  await gotoLegacy(page, "growth-map");
   await expect(page.locator("[data-growth-map-page]")).toBeVisible();
   await page
     .locator(
@@ -787,26 +789,15 @@ test("reviews only the canonical Opportunity and delivers one technical ticket",
 }) => {
   await page.goto(OVERVIEW_URL);
 
-  // Exactly four primary entries, in order, routing to the canonical segments.
+  // The rail lists the fifteen workbench sections; the retained legacy screens
+  // this walkthrough uses are reached by URL, so the chain below navigates
+  // directly and each segment still asserts the identity it received.
   const navLinks = projectNav(page).getByRole("link");
-  await expect(navLinks).toHaveCount(4);
+  await expect(navLinks).toHaveCount(15);
   await expect(navLinks.nth(0)).toHaveAttribute(
     "href",
     `/p/${E2E_PROJECT_ID}/overview`,
   );
-  await expect(navLinks.nth(1)).toHaveAttribute(
-    "href",
-    `/p/${E2E_PROJECT_ID}/growth-map`,
-  );
-  await expect(navLinks.nth(2)).toHaveAttribute(
-    "href",
-    `/p/${E2E_PROJECT_ID}/execution`,
-  );
-  await expect(navLinks.nth(3)).toHaveAttribute(
-    "href",
-    `/p/${E2E_PROJECT_ID}/results`,
-  );
-  await expect(navLinks.nth(1)).toContainText("Growth Map");
 
   // Open Growth Map and drill from the canonical Opportunity into the exact
   // multi-Finding onboarding URL. The drill-down pins the primary Finding, so
@@ -884,7 +875,7 @@ test("reviews only the canonical Opportunity and delivers one technical ticket",
   // so a second ticket rendered anywhere else on Execution stayed invisible to
   // it; the new one is taken over the WHOLE queue. The type is read off each
   // row's own `data-studio-artifact-type` rather than off a text label.
-  await navLink(page, 2).click();
+  await gotoLegacy(page, "execution");
   const queue = page.locator("[data-studio-queue]");
   await expect(queue).toBeVisible();
   const ticketRows = queue.locator(

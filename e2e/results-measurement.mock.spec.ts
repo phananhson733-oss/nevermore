@@ -48,8 +48,9 @@ test("效果追踪按 URL 独立切换真实改前改后与 UTM 记录", async (
 }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/results`);
 
-  const navigation = page.getByRole("navigation", { name: "项目分区" });
-  await expect(navigation.getByRole("link")).toHaveCount(4);
+  // 旧版「项目分区」四项导航已被工作台侧栏取代（15 项，`workbench-nav.ts`）。
+  const navigation = page.getByRole("navigation", { name: "工作台导航" });
+  await expect(navigation.getByRole("link")).toHaveCount(15);
 
   const panel = page.getByRole("region", {
     name: "URL 效果与 UTM 审计",
