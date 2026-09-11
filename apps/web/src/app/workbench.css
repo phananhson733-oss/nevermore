@@ -23,6 +23,10 @@
   --color-wb-rail-muted: #737270;
   --color-wb-rail-dim: #636260;
   --color-wb-rail-text: #a3a3a3;
+  /* Site-card label column in the rail; 3.2:1 on --color-wb-rail-2 (labels only). */
+  --color-wb-rail-label: #807f7d;
+  /* Near-black action fill on paper (topbar artifact button). */
+  --color-wb-ink: #222222;
   --color-wb-seo: #1a653b;
   --color-wb-seo-dark: #155330;
   --color-wb-geo: #8b5cf6;
