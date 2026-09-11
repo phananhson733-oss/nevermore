@@ -50,7 +50,7 @@ const COPY = {
   cancel: "Keep product",
   confirm: "Confirm deletion",
   deleting: "Deleting…",
-  error: "The product could not be deleted. Nothing was changed; please try again.",
+  error: "We couldn't confirm whether the product was deleted. Refresh the project list to check, then try again if it is still there.",
   realAction: "Not sample data",
   realActionTitle: "This deletes the real project. It is not sample data.",
 } as const;

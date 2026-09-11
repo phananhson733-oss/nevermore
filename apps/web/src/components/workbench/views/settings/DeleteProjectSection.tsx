@@ -54,8 +54,10 @@ export function DeleteProjectSection({ projectId }: { readonly projectId: string
   /**
    * `router.replace` is a transition: this tree stays interactive until the new
    * route commits. Without holding the buttons disabled after success a second
-   * click fires a second DELETE, gets 404, and reports "nothing was changed"
-   * about a project that is already gone.
+   * click fires a second DELETE, gets 404, and shows the delete-failure copy
+   * for a project that is already gone. (That copy is outcome-neutral on
+   * purpose: a rejected mutation does not prove the server did not delete,
+   * since the response can be lost after the commit.)
    */
   const busy = deleteProject.isPending || deleteProject.isSuccess;
   return (
