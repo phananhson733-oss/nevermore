@@ -1,16 +1,12 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useTranslations } from "next-intl";
 import { useEffect, useRef, type MouseEvent } from "react";
-import {
-  hasUnsavedContextChanges,
-  shouldConfirmContextNavigation,
-} from "@/app/p/[projectId]/_context-navigation-guard";
 import {
   projectHistoryPosition,
   withProjectHistoryPosition,
 } from "@/app/p/[projectId]/_project-history-position";
+import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
 
 /**
  * The two behaviours the retired `_nav.tsx` carried besides rendering
@@ -24,7 +20,9 @@ export function useProjectShellEffects(): {
     current: boolean,
   ) => void;
 } {
-  const tContext = useTranslations("context");
+  // The confirm itself lives in its own hook because the command palette needs
+  // the same guard without a link click.
+  const { confirmNavigation } = useContextNavigationConfirm();
   const pathname = usePathname();
   const historyPositionRef = useRef<number | null>(null);
   const historyPathRef = useRef<string | null>(null);
@@ -55,26 +53,6 @@ export function useProjectShellEffects(): {
     historyPositionRef.current = next;
     historyPathRef.current = pathname;
   }, [pathname]);
-
-  function confirmNavigation(
-    event: MouseEvent<HTMLAnchorElement>,
-    current: boolean,
-  ): void {
-    const modified =
-      event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
-    const dirty = hasUnsavedContextChanges();
-    if (
-      !shouldConfirmContextNavigation({
-        dirty,
-        current,
-        button: event.button,
-        modified,
-      })
-    ) {
-      return;
-    }
-    if (!window.confirm(tContext("leaveWarning"))) event.preventDefault();
-  }
 
   return { confirmNavigation };
 }

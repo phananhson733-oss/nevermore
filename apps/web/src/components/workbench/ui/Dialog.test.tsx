@@ -109,6 +109,34 @@ function TwoDialogs({ a, b }: { readonly a: boolean; readonly b: boolean }) {
   );
 }
 
+/** The return target is present but cannot take focus (hidden below `md`). */
+function HiddenReturnHarness({ open }: { readonly open: boolean }) {
+  const returnRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <div id={WB_APP_ROOT_ID}>
+        <button type="button" id="opener">
+          open
+        </button>
+        <button type="button" id="hidden-return" ref={returnRef}>
+          return
+        </button>
+      </div>
+      <Dialog
+        open={open}
+        onClose={() => {}}
+        labelledBy="hidden-title"
+        returnFocusTo={returnRef}
+      >
+        <h2 id="hidden-title">Hidden</h2>
+        <button type="button" id="first">
+          first
+        </button>
+      </Dialog>
+    </>
+  );
+}
+
 /** A panel with no focusable descendant at all. */
 function EmptyDialog({ open }: { readonly open: boolean }) {
   return (
@@ -183,6 +211,22 @@ describe("Dialog", () => {
     expect(view.container.querySelector('[role="dialog"]')).not.toBeNull();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toContain(`#${WB_APP_ROOT_ID}`);
+  });
+
+  it("returns focus to the opener when returnFocusTo cannot take focus", () => {
+    const view = mount(<HiddenReturnHarness open={false} />);
+    const opener = view.container.querySelector<HTMLElement>("#opener");
+    act(() => opener?.focus());
+    view.rerender(<HiddenReturnHarness open />);
+    const hidden = view.container.querySelector<HTMLElement>("#hidden-return");
+    expect(hidden).not.toBeNull();
+    // jsdom has no layout, so "hidden" is modelled the way the browser behaves:
+    // focus() on a display:none element does nothing.
+    vi.spyOn(hidden as HTMLElement, "focus").mockImplementation(() => {});
+
+    view.rerender(<HiddenReturnHarness open={false} />);
+
+    expect(document.activeElement?.id).toBe("opener");
   });
 
   it("keeps focus on the panel when Tab finds nothing focusable inside", () => {

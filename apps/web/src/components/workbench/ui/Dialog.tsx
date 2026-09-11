@@ -66,8 +66,17 @@ export function Dialog({
       // so inert comes off first. Next's layout-router focuses the changed
       // segment after navigation, so activeElement-on-open is only a fallback.
       root?.removeAttribute("inert");
-      const exit = returnFocusTo?.current ?? openerRef.current;
-      if (exit instanceof HTMLElement) exit.focus();
+      // The preferred target can be hidden by a responsive utility (the palette
+      // and drawer openers are `md:`-only), and `focus()` on a hidden element
+      // is a no-op that would silently leave focus on <body>. Try it, then
+      // check: `offsetParent === null` would misjudge fixed-position openers
+      // and is null for everything under jsdom, so ask the document instead.
+      const preferred = returnFocusTo?.current ?? null;
+      preferred?.focus();
+      if (document.activeElement !== preferred) {
+        const opener = openerRef.current;
+        if (opener instanceof HTMLElement) opener.focus();
+      }
     };
   }, [open, initialFocus, returnFocusTo]);
 
@@ -100,6 +109,10 @@ export function Dialog({
         aria-hidden="true"
         tabIndex={-1}
         className="absolute inset-0 bg-slate-900/50"
+        // mousedown is what moves focus; without this a click on the backdrop
+        // blurs the panel before `onClose` runs, so the close handler returns
+        // focus from <body> instead of from inside the trap.
+        onMouseDown={(event) => event.preventDefault()}
         onClick={onClose}
       />
       <div

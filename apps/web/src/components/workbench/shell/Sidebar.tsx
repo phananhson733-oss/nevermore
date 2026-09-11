@@ -14,8 +14,9 @@ export type { SidebarSite };
 
 /**
  * The workbench rail (opengengrowth `Sidebar.tsx` L86–142). Off-canvas below
- * `md`, where it is also `inert` while closed so the background nav is
- * unreachable by keyboard and AT.
+ * `md`, where it is also `inert` while closed once hydrated — the media query
+ * only resolves after mount — so the background nav is unreachable by keyboard
+ * and AT.
  */
 export function Sidebar({
   projectId,
@@ -45,7 +46,10 @@ export function Sidebar({
       data-app-shell-sidebar=""
       inert={mobile && !open}
       className={cn(
-        "wb-reset fixed left-0 top-0 z-30 flex min-h-screen w-64 flex-col overflow-y-auto border-r border-wb-rail-line bg-wb-rail font-sans text-wb-rail-text transition-transform duration-300 ease-in-out md:translate-x-0",
+        // `h-dvh`, not `min-h-screen`: a fixed box with only a minimum height
+        // grows to fit its content, so `overflow-y-auto` never has anything to
+        // scroll and the last nav items fall below the fold on short viewports.
+        "wb-reset fixed left-0 top-0 z-30 flex h-dvh w-64 flex-col overflow-y-auto border-r border-wb-rail-line bg-wb-rail font-sans text-wb-rail-text transition-transform duration-300 ease-in-out md:translate-x-0",
         open ? "translate-x-0" : "-translate-x-full",
       )}
     >

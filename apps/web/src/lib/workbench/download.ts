@@ -8,6 +8,14 @@ export function downloadText(
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
+  // Belt and braces: a `download` anchor never opens a window, but the opener
+  // reference is worthless to us either way.
+  a.rel = "noopener";
+  // Firefox only activates a connected anchor, and the object URL has to stay
+  // alive until the download has actually started — hence the next-task revoke
+  // rather than revoking inline.
+  document.body.append(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

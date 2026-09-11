@@ -72,18 +72,32 @@ export function Topbar({
         </button>
       </div>
       <div className="flex items-center gap-3">
-        {ready && storageMode !== "ok" ? (
-          <span role="status" className="hidden text-xs text-amber-700 lg:inline">
-            {storageMode === "quota" ? t("quota") : t("volatile")}
-          </span>
-        ) : null}
+        {/* Rendered on every viewport and before it has anything to say: a live
+            region has to exist in the accessibility tree BEFORE its text
+            changes, or the announcement is lost. `empty:-mr-3` cancels the
+            flex gap this otherwise-invisible element would add. */}
+        <span
+          role="status"
+          className="max-w-[40vw] truncate text-xs text-amber-700 empty:-mr-3"
+        >
+          {ready && storageMode !== "ok"
+            ? storageMode === "quota"
+              ? t("quota")
+              : t("volatile")
+            : null}
+        </span>
         <DemoChip demo={ready && state.demo} />
         <button
           ref={drawerButtonRef}
           type="button"
           onClick={onDrawer}
           data-wb-drawer-button=""
-          className="h-[26px] rounded bg-wb-ink px-3 text-xs font-medium text-white shadow-sm transition-colors hover:bg-black"
+          // The count is 0 until the store has read storage; `aria-busy` says
+          // the value is provisional instead of asserting an empty basket.
+          aria-busy={!ready}
+          // `.wb-reset :focus-visible` draws the ring in `currentColor`, which
+          // is white on this inverted button and invisible on the cream topbar.
+          className="h-[26px] rounded bg-wb-ink px-3 text-xs font-medium text-white shadow-sm transition-colors hover:bg-black focus-visible:outline-slate-900"
         >
           {t("artifacts", { count: ready ? artifacts.length : 0 })}
         </button>

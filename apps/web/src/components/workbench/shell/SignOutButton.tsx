@@ -28,9 +28,12 @@ export function SignOutButton({
         type="submit"
         aria-label={label}
         title={label}
-        className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white"
+        // Inverted fill: the default `currentColor` focus ring would be white
+        // on the cream topbar. The monogram itself is decoration; `aria-label`
+        // carries the accessible name.
+        className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white focus-visible:outline-slate-900"
       >
-        GG
+        <span aria-hidden="true">GG</span>
       </button>
     </form>
   );

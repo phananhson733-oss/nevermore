@@ -1,5 +1,5 @@
 /* @input  — tailwindcss theme + utilities（刻意不引 preflight）、tw-animate-css
- * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表规则
+ * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表规则、打印时去掉内容列的侧栏留白
  * @pos    — app/layout.tsx 在 globals.css 之后引入；旧页面在 <main> 内不带 .wb-reset，不受影响
  * 一旦本文件被更新，务必更新开头注释
  */
@@ -31,6 +31,18 @@
   --color-wb-seo-dark: #155330;
   --color-wb-geo: #8b5cf6;
   --color-wb-emerald: #10b981;
+}
+
+@layer components {
+  @media print {
+    /* The rail is not printed, so the content column must not keep the space it
+       reserves for it. Targets the attribute ShellChrome puts on that column,
+       not its position in the tree: a structural selector would silently stop
+       matching the first time the shell gains a wrapper. */
+    [data-wb-content] {
+      margin-left: 0;
+    }
+  }
 }
 
 @layer base {

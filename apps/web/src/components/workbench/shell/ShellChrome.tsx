@@ -37,7 +37,9 @@ export function ShellChrome({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const paletteButtonRef = useRef<HTMLButtonElement>(null);
   const drawerButtonRef = useRef<HTMLButtonElement>(null);
-  const mobile = useMediaQuery("(max-width: 767px)");
+  // Must match Tailwind v4's `md` (48rem), which the rail's `md:translate-x-0`
+  // uses: a px value drifts from it as soon as the root font size is not 16px.
+  const mobile = useMediaQuery("(width < 48rem)");
   const t = useTranslations("workbench.shell");
 
   const closeAll = useCallback(() => {
@@ -90,7 +92,10 @@ export function ShellChrome({
           open={sidebarOpen}
           mobile={mobile}
         />
-        <div className="flex min-h-screen min-w-0 flex-1 flex-col md:ml-64">
+        <div
+          data-wb-content=""
+          className="flex min-h-screen min-w-0 flex-1 flex-col md:ml-64"
+        >
           <Topbar
             projectControl={projectControl}
             accountControl={accountControl}

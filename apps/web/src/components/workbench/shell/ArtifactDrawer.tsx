@@ -2,11 +2,14 @@
 
 import { X } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { downloadText } from "@/lib/workbench/download";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
 import type { ArtifactType } from "@/lib/workbench/types";
 import { Dialog } from "../ui/Dialog.tsx";
+
+/** How long the "Copied" label stays up (jsx `flash()`). */
+const COPY_FLASH_MS = 1300;
 
 const MIME: Readonly<Record<ArtifactType, string>> = {
   csv: "text/csv;charset=utf-8",
@@ -32,6 +35,7 @@ export function ArtifactDrawer({
   const { state, dispatch } = useWorkbench();
   const closeRef = useRef<HTMLButtonElement>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Same "adjusting state when a prop changes" pattern as the palette: a stale
   // "Copied" label must not greet the next open of the drawer.
   const [wasOpen, setWasOpen] = useState(open);
@@ -40,10 +44,25 @@ export function ArtifactDrawer({
     if (open) setCopied(null);
   }
 
+  function clearFlash(): void {
+    if (flashTimer.current === null) return;
+    clearTimeout(flashTimer.current);
+    flashTimer.current = null;
+  }
+
+  // Drop a pending flash whenever the drawer closes (or unmounts): a timer that
+  // fires into a closed drawer is a setState on a component nobody is reading.
+  useEffect(() => clearFlash, [open]);
+
   async function copy(id: string, content: string): Promise<void> {
     try {
       await navigator.clipboard.writeText(content);
       setCopied(id);
+      clearFlash();
+      flashTimer.current = setTimeout(() => {
+        flashTimer.current = null;
+        setCopied(null);
+      }, COPY_FLASH_MS);
     } catch {
       window.prompt(t("copy"), content);
     }

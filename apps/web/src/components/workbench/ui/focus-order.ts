@@ -10,6 +10,11 @@ export function nextTrapIndex(
   return activeIndex === count - 1 ? 0 : activeIndex + 1;
 }
 
-/** Known scope: no contenteditable/summary/iframe, and hidden descendants still match. */
+/**
+ * Known scope: no contenteditable/summary/iframe, and hidden descendants still
+ * match. `tabindex="-1"` is excluded on EVERY branch, not just the generic one:
+ * a natively focusable element (the palette's `role="option"` buttons) opts out
+ * of the Tab order the same way, and the trap must honour that.
+ */
 export const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'a[href]:not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])';

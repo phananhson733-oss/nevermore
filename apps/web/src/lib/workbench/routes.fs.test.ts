@@ -33,6 +33,10 @@ describe("workbench route table matches the App Router tree", () => {
       const directory = resolve(PROJECT_ROUTES, segment);
       expect(existsSync(directory), directory).toBe(true);
       expect(statSync(directory).isDirectory(), directory).toBe(true);
+      // A directory alone is not a route: a segment left with only `_*.tsx`
+      // helpers after a move would still pass the check above and 404 in the UI.
+      const page = resolve(directory, "page.tsx");
+      expect(existsSync(page), page).toBe(true);
     }
   });
 });

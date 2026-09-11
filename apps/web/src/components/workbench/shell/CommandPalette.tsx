@@ -13,6 +13,7 @@ import type { ProjectShellOption } from "@/lib/services/project-shell";
 import { workbenchHref } from "@/lib/workbench/routes";
 import { cn } from "../ui/cn.ts";
 import { Dialog } from "../ui/Dialog.tsx";
+import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
 import { WORKBENCH_NAV } from "./workbench-nav.ts";
 
 interface PaletteEntry {
@@ -38,6 +39,7 @@ export function CommandPalette({
 }) {
   const t = useTranslations("workbench");
   const router = useRouter();
+  const { confirmLeave } = useContextNavigationConfirm();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -85,6 +87,10 @@ export function CommandPalette({
 
   function go(entry: PaletteEntry | undefined): void {
     if (!entry) return;
+    // The rail links ask before leaving a dirty Context editor; a palette jump
+    // is the same navigation. Declining keeps the palette open so the operator
+    // can pick a different destination or dismiss it.
+    if (!confirmLeave()) return;
     onClose();
     router.push(entry.href);
   }
@@ -125,6 +131,9 @@ export function CommandPalette({
         }}
         onKeyDown={onKeyDown}
         placeholder={t("shell.palette.placeholder")}
+        role="combobox"
+        aria-expanded="true"
+        aria-autocomplete="list"
         aria-controls="wb-palette-list"
         aria-activedescendant={
           activeEntry ? `wb-palette-${activeEntry.key}` : undefined
@@ -137,17 +146,16 @@ export function CommandPalette({
         aria-label={t("shell.palette.title")}
         className="max-h-80 overflow-y-auto py-1"
       >
-        {entries.length === 0 ? (
-          <p className="px-4 py-3 text-sm text-slate-500">
-            {t("shell.palette.empty")}
-          </p>
-        ) : null}
         {entries.map((entry, index) => (
           <button
             key={entry.key}
             id={`wb-palette-${entry.key}`}
             type="button"
             role="option"
+            // Options are reached with the arrow keys from the input, which
+            // keeps the `aria-activedescendant` contract; they must therefore
+            // stay out of the Tab order (and out of the dialog's focus trap).
+            tabIndex={-1}
             aria-selected={index === activeIndex}
             onMouseEnter={() => setActiveIndex(index)}
             onClick={() => go(entry)}
@@ -163,6 +171,18 @@ export function CommandPalette({
           </button>
         ))}
       </div>
+      {/* Outside the listbox: a paragraph is not an option, and a listbox with
+          one non-option child is malformed for AT. */}
+      {entries.length === 0 ? (
+        <p className="px-4 py-3 text-sm text-slate-500">
+          {t("shell.palette.empty")}
+        </p>
+      ) : null}
+      {/* Filtering changes the list silently otherwise. The bare number needs
+          no new catalog key, and the visible empty state carries the words. */}
+      <span role="status" className="sr-only">
+        {entries.length}
+      </span>
     </Dialog>
   );
 }
