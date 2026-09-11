@@ -106,6 +106,26 @@ it("offers lookup and confirm on an unconfirmed rival, rename and withdraw on a 
   expect(row("").querySelector("[data-competitor-source]")?.textContent).toBe(copy("en").noDomain);
 });
 
+/**
+ * A homepage's title is often the name plus a tagline. Confirming that and
+ * renaming afterwards is two writes and two released records; editing the
+ * proposal first is one. So an unconfirmed row with a name to show offers the
+ * field too, prefilled with what is shown.
+ */
+it("lets the owner edit a proposed name before confirming it, in one write", async () => {
+  reply = () => Response.json({ data: { kbId: V3_KB_ID, identity: { ...IDENTITY, brandName: "Astro - The Best Charts" } } });
+  write.mockResolvedValue({ ok: true, saved: saved([{ domain: "astro.example", brandName: "Astro", confirmed: true, aliases: ["Astro Charts"] }, ROWS[1]!, ROWS[2]!]) });
+  await render("zh");
+  await click(action(row("astro.example"), "lookup"));
+  expect(actions(row("astro.example"))).toEqual(["lookup", "confirm", "rename"]);
+  await click(action(row("astro.example"), "rename"));
+  const input = row("astro.example").querySelector<HTMLInputElement>("input[data-competitor-name-input]")!;
+  expect(input.value).toBe("Astro - The Best Charts");
+  await type(input, "Astro");
+  await click(action(row("astro.example"), "save"));
+  expect(gestures()).toEqual([{ kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: ["Astro Charts"] }]);
+});
+
 it("counts the confirmed rivals in the section line and says when the Profile names none", async () => {
   await render("zh");
   expect(host.querySelector("[data-kb-section='competitors'] [data-kb-section-items]")?.textContent).toBe(copy("zh").items.replace("{confirmed}", "1").replace("{total}", "3"));

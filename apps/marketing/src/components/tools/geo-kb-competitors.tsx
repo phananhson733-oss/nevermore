@@ -181,6 +181,10 @@ function Row({ row, identity, editing, busy, failure, held, copy, on }: {
               : <>
                 {button("lookup", lookingUp ? copy.lookupBusy : copy.lookup, on.lookup)}
                 {button("confirm", writing ? copy.saving : copy.confirm, on.confirm)}
+                {/* A homepage's title is often the name plus a tagline; editing
+                    the proposal before confirming is one write, confirming and
+                    renaming is two, each releasing the paid records again. */}
+                {shown.name === "" ? null : button("rename", copy.rename, on.rename)}
               </>}
       </div>
     </div>
@@ -283,7 +287,8 @@ export function GeoKbCompetitors({ kbId, competitors, disabled, write }: GeoKbCo
           on={{
             lookup: () => void lookup(row.domain),
             confirm: () => confirm(row),
-            rename: () => { setFailure(null); setEditing({ domain: row.domain, name: row.brandName }); },
+            // Prefilled with what the row shows: the stored name once confirmed, the proposal before.
+            rename: () => { setFailure(null); setEditing({ domain: row.domain, name: proposed(row, identities[row.domain]).name }); },
             unconfirm: () => void send(row.domain, { kind: "unconfirm", domain: row.domain }),
             edit: (name) => setEditing((current) => (current?.domain === row.domain ? { domain: row.domain, name } : current)),
             save: () => save(row),
