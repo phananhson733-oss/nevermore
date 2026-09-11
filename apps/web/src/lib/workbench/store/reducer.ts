@@ -182,6 +182,7 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
       return { ...state, ...demoFields(blank), visPartial: false, demo: false };
     }
     case "loadPersisted":
+      // By identity, never a spread: the provider recognises "this state came from storage" as `state === remoteStateRef.current` and skips the write-back.
       return action.state;
     case "reset":
       return initialProjectState(action.seed);

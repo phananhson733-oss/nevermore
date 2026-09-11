@@ -2733,11 +2733,13 @@ git commit -m "feat(workbench): 注入式 localStorage 持久化"
 
 **落地备注：**
 
-- 计划原文「node 单测渲染不了组件；行为由 Task 12 的 e2e 覆盖」是错的。unit project 默认 node 环境，但可以用 `/** @vitest-environment jsdom */` 文件级 pragma 逐文件切到 jsdom（先例：`apps/web/src/components/ui/LimitationHint.test.tsx`）。provider 因此补了 `WorkbenchProvider.test.tsx`（jsdom，14 条用例），行为不再只靠 e2e。
+- 计划原文「node 单测渲染不了组件；行为由 Task 12 的 e2e 覆盖」是错的。unit project 默认 node 环境，但可以用 `/** @vitest-environment jsdom */` 文件级 pragma 逐文件切到 jsdom（先例：`apps/web/src/components/ui/LimitationHint.test.tsx`）。provider 因此补了 `WorkbenchProvider.test.tsx`（jsdom，19 条用例），行为不再只靠 e2e。
 - `key={projectId}` 从「重新 hydrate 的手段」升级成正确性要求：组件体里加了 `mountedFor` 守卫，原地换 `projectId` 直接抛错。不抛的话，写盘 effect 会带着上一次渲染的 `state` 闭包写进新键（一个项目的数据盖掉另一个），而 `ready` / `storageMode`（含配额与 volatile 闩锁）会从设置它们的那个项目带过来。
 - 跨标签 `storage` 路径**不跑** `normalizeInterrupted`：写盘的那个标签可能正在跑，归一化会把它流进来的部分结果回滚到 `lastVis`，并把这个回滚回声写回磁盘，毁掉一次根本没被中断的运行。中断态只在首次 hydration、没有任何运行在飞的时候结算一次。
-- 跨标签重读到 `empty`（另一标签删键或 `localStorage.clear()`）与同标签的 `WORKBENCH_SWEPT_EVENT` 都走 `forgetAndFreeze()`：先 `setStorageMode("swept")` 再 `dispatch reset`——顺序是有意的，两次更新未被批处理时写盘 effect 会以 `ok` 跑一次，把 reset 后的状态写回刚被清掉的键。重读到 `unavailable` → volatile（`invalid` 仍然忽略）；`event.key === null` 单独处理。
-- 回声写会终止，只是因为 `setItem` 写入完全相同的值不再在其他标签触发 `storage` 事件。持久化信封因此必须保持确定性（不能加 `savedAt` / nonce，不能重排键），否则两个开着的标签会互相写到天荒地老。
+- 跨标签删键（`event.newValue === null`）、整库清空（`event.key === null`）与同标签的 `WORKBENCH_SWEPT_EVENT` 都走 `forgetAndFreeze()`：先置 `writesBlockedRef` 再 `setStorageMode("swept")` 再 `dispatch reset`。写事件（`newValue` 非空）才重读磁盘：重读到 `unavailable` → volatile，`invalid` 忽略，`empty` 也忽略（键在事件排队后又没了，随后那条删除事件才负责清扫）。
+- **来自存储的状态绝不回写**（codex 评审 A）：`remoteStateRef` 按引用持有最近一次从磁盘取来的状态（首次 hydration 与跨标签路径都经 `loadFromStorage()`），reducer 的 `loadPersisted` 原样返回 `action.state`（有一行注释说明为什么必须是同一引用），写盘 effect 见 `state === remoteStateRef.current` 就直接返回。这才是多标签收敛的真正机制：两个标签的服务端种子不一致时（一个标签开着，项目被改了名），`withProjectSeed` 会在各自那边重盖 `profile.url/brand/market`，旧版靠「`setItem` 写相同值不触发 `storage` 事件」终止回声，种子一不同就互相覆盖到天荒地老；同时新开标签在 hydrate 时跑的 `normalizeInterrupted` 回滚也不再被当作权威广播出去，砸掉另一标签正在飞的运行。持久化信封仍然是确定性的，但已没有任何东西依赖这一点。**PR-2 残留**：本标签一旦有本地改动，就会把自己归一化过的副本写盘，另一标签在飞的运行仍会被这第一笔本地改动砸掉；真正的保护要等可见性视图落地时做运行归属 / 租约。
+- **删除事件按自身证据清扫**（codex 评审 B）：旧版监听器重读键、只在重读到 `empty` 时清扫；若本标签的写盘 effect 正好在事件送达窗口里把键重建了，重读会读到自己的写入，登出就永久漏掉。现在 `event.storageArea` 不是我们这个 `localStorage` 就忽略（`sessionStorage` 会发同一种事件），`event.key === null` 或 `event.newValue === null` 直接 `forgetAndFreeze()` + `clearProjectState()`（幂等，顺手删掉本标签复活的那份），只有 `newValue` 非空才走重读 + `loadPersisted`。
+- **同步写盘闸**（codex 评审 C）：`setStorageMode("swept")` 拦不住同一 commit 里已经排好的 passive 写盘 effect——state setter 改不了一个已经捕获的 effect 闭包，ref 可以。`writesBlockedRef` 在 `forgetAndFreeze()` 和 `forgetProject()` 的第一行同步置 true（先于 `clearProjectState` / `reset`），写盘 effect 第一件事就查它；`storageMode` 只留给 UI。
 - `StorageMode` 增加第四档 `swept`（09f9bb14）：和 `volatile` 一样关掉写盘 effect，但 UI 完全不提示——那是有意丢弃（登出清扫 / 删项目），不是这台浏览器的存储出了问题。`forgetProject` 同样先闩 `swept` 再 `clearProjectState`。
 
 - [x] **Step 1: 写 provider**
@@ -2839,6 +2841,21 @@ export function WorkbenchProvider({
   const [ready, setReady] = useState(false);
   const [storageMode, setStorageMode] = useState<StorageMode>("ok");
   const storageRef = useRef<Storage | null>(null);
+  // The state object most recently taken FROM storage (first hydration or a
+  // cross-tab `storage` event), held by identity. The reducer's `loadPersisted`
+  // returns it unchanged, so `state === remoteStateRef.current` is exactly
+  // "nothing local has happened since we last read disk".
+  const remoteStateRef = useRef<WorkbenchProjectState | null>(null);
+  // Synchronous write gate. `setStorageMode("swept")` alone cannot stop a
+  // passive write effect that is already scheduled in the same commit: the
+  // state setter does not change an already-captured effect closure; the ref
+  // does. `storageMode` stays for the UI.
+  const writesBlockedRef = useRef(false);
+
+  function loadFromStorage(next: WorkbenchProjectState): void {
+    remoteStateRef.current = next;
+    dispatch({ type: "loadPersisted", state: next });
+  }
 
   function hydrate(): void {
     const storage = storageRef.current;
@@ -2848,9 +2865,7 @@ export function WorkbenchProvider({
     }
     const read = readProjectState(storage, projectId);
     if (read.status === "unavailable") setStorageMode("volatile");
-    if (read.state) {
-      dispatch({ type: "loadPersisted", state: withProjectSeed(normalizeInterrupted(read.state), seed) });
-    }
+    if (read.state) loadFromStorage(withProjectSeed(normalizeInterrupted(read.state), seed));
   }
 
   useEffect(() => {
@@ -2862,14 +2877,21 @@ export function WorkbenchProvider({
     // would fail lint with "Definition for rule ... was not found".)
   }, [projectId]);
 
-  // Echo write. A cross-tab `storage` event dispatches `loadPersisted` with a
-  // fresh object, so this effect immediately writes the very same bytes back.
-  // That terminates only because `setItem` with an identical value fires no
-  // `storage` event in the other tabs. The persisted envelope must therefore
-  // stay deterministic (no `savedAt`, no nonce, no re-ordered keys) or two open
-  // tabs would write to each other forever.
   useEffect(() => {
-    if (!ready) return;
+    if (writesBlockedRef.current || !ready) return;
+    // States that came from storage are never echoed back. This is what makes
+    // cross-tab sync converge even when two tabs disagree about the seed (a
+    // project renamed while one tab is stale): `withProjectSeed` re-stamps
+    // `profile.url/brand/market` on each side, and echoing that would make the
+    // two tabs overwrite each other forever. It also keeps a freshly opened
+    // tab's hydration rollback (`normalizeInterrupted`) from being broadcast as
+    // authoritative over another tab's in-flight run. The persisted envelope
+    // stays deterministic, but nothing relies on that any more.
+    // Residual (PR-2): after a LOCAL change this tab persists its normalised
+    // copy, so a rolled-back run in another tab is still clobbered by the first
+    // local edit here; true protection needs run ownership / a lease once the
+    // visibility view lands.
+    if (state === remoteStateRef.current) return;
     const storage = storageRef.current;
     // Stop writing entirely once storage is volatile, full, or swept (design §6.5).
     if (!storage || storageMode !== "ok") return;
@@ -2886,34 +2908,43 @@ export function WorkbenchProvider({
     // behind. The user is signed out anyway; a reload re-hydrates normally and
     // clears the latch. `swept` rather than `volatile` because nothing is wrong
     // with this browser's storage and the topbar must stay silent about it.
-    // The latch precedes the dispatch on purpose: on any path where the two
-    // updates are not batched, the write effect would run once with
-    // `storageMode === "ok"` and write the reset state back under the key that
-    // was just swept.
+    // The ref gate is flipped first: a write effect already scheduled in this
+    // commit still sees the old `storageMode`, and only the ref reaches it.
     function forgetAndFreeze(): void {
+      writesBlockedRef.current = true;
       setStorageMode("swept");
       dispatch({ type: "reset", seed });
     }
 
     function onStorage(event: StorageEvent): void {
-      // `key === null` means the whole store was cleared (`localStorage.clear()`,
-      // e.g. a sweep in another tab); the re-read below then reports `empty`.
-      if ((event.key !== null && event.key !== storageKey(projectId)) || !storageRef.current) return;
-      const read = readProjectState(storageRef.current, projectId);
+      const storage = storageRef.current;
+      if (!storage) return;
+      // `sessionStorage` fires the same event type; only our store matters.
+      if (event.storageArea && event.storageArea !== storage) return;
+      if (event.key !== null && event.key !== storageKey(projectId)) return;
+      if (event.key === null || event.newValue === null) {
+        // A removal (`key === null` is a whole-store clear) is a sweep by the
+        // event's own evidence, NOT by re-reading the key: if this tab's write
+        // effect re-created the key inside the delivery window, a re-read finds
+        // our own write and the sign-out is missed for good. `clearProjectState`
+        // is idempotent and removes whatever this tab resurrected.
+        forgetAndFreeze();
+        clearProjectState(storage, projectId);
+        return;
+      }
+      const read = readProjectState(storage, projectId);
       if (read.state) {
         // Deliberately NOT `normalizeInterrupted`: the writing tab may be
         // mid-run, and normalising here would roll its streamed partial results
-        // back to `lastVis` and echo that rollback to disk, clobbering a run
-        // that was never interrupted. Interrupted runs are settled once, on
-        // first hydration, when nothing can be in flight.
-        dispatch({ type: "loadPersisted", state: withProjectSeed(read.state, seed) });
-      } else if (read.status === "empty") {
-        // Another tab removed the key (sign-out sweep / project deletion).
-        forgetAndFreeze();
+        // back to `lastVis`. Interrupted runs are settled once, on first
+        // hydration, when nothing can be in flight.
+        loadFromStorage(withProjectSeed(read.state, seed));
       } else if (read.status === "unavailable") {
         // Storage became unreachable between the event and the re-read; same
         // treatment as in `hydrate`. (`invalid` is ignored, as before: a shape
-        // we cannot parse is no reason to throw our own state away.)
+        // we cannot parse is no reason to throw our own state away. `empty`
+        // means the key vanished after this event was queued; the removal
+        // event that follows is what sweeps.)
         setStorageMode("volatile");
       }
     }
@@ -2941,11 +2972,13 @@ export function WorkbenchProvider({
       storageMode,
       keywordRowCount: deriveKeywordRowCount ? deriveKeywordRowCount(state) : null,
       forgetProject: () => {
-        // Latch before the removal, same reasoning as `forgetAndFreeze`: any
-        // dispatch between this call and unmount (a cross-tab `storage` event,
-        // say) would otherwise re-create `gg.workbench.v1.<id>` holding the
-        // deleted project's data. No `reset` dispatch here — the caller
-        // navigates away immediately, so there is nothing to re-render.
+        // Gate before the removal, same reasoning as `forgetAndFreeze`: a write
+        // effect already scheduled in this commit, or any dispatch between this
+        // call and unmount (a cross-tab `storage` event, say), would otherwise
+        // re-create `gg.workbench.v1.<id>` holding the deleted project's data.
+        // No `reset` dispatch here — the caller navigates away immediately, so
+        // there is nothing to re-render.
+        writesBlockedRef.current = true;
         setStorageMode("swept");
         if (storageRef.current) clearProjectState(storageRef.current, projectId);
       },
@@ -2990,9 +3023,9 @@ export function useWorkbenchArtifacts(): readonly Artifact[] {
 - [x] **Step 3: 类型检查 + 测试**
 
 Run: `pnpm --filter @sf/web typecheck && pnpm vitest run --project unit apps/web/src/lib/workbench`
-Expected: 无新错误；全部通过（含 `WorkbenchProvider.test.tsx` 的 14 条 jsdom 用例）。
+Expected: 无新错误；全部通过（含 `WorkbenchProvider.test.tsx` 的 19 条 jsdom 用例）。
 
-> 完整实现见 `apps/web/src/lib/workbench/store/WorkbenchProvider.test.tsx`（已落地）：覆盖 hydrate、hydrate 前不写盘、配额闩锁、storage 抛错转 volatile、跨标签重载 / 删键 / `key === null` / 不回滚在飞运行、同标签清扫、原地换项目抛错、删项目冻结写盘。
+> 完整实现见 `apps/web/src/lib/workbench/store/WorkbenchProvider.test.tsx`（已落地）：覆盖 hydrate、hydrate 前不写盘（首笔写是首个本地改动）、配额闩锁、storage 抛错转 volatile、跨标签重载 / 删键 / `key === null` / 不回滚在飞运行、同标签清扫、原地换项目抛错、删项目冻结写盘；codex 评审后新增 5 条：两标签种子不一致时不回写（本地 overlay 仍作用于 UI）、hydrate 回滚不落盘直到首个本地改动、键已被本标签重建时删除事件仍清扫且键最终为空、`sessionStorage` 事件忽略、子组件 effect 在 `ready` 翻转那个 commit 里调 `forgetProject()` 时已排好的写盘 effect 被 ref 闸拦住。合成的 `storage` 事件必须带 `newValue`（写事件非空、删除事件为 `null`），jsdom 默认的 `null` 会被读成删除。
 
 - [x] **Step 4: Commit**
 
@@ -3001,7 +3034,7 @@ git add apps/web/src/lib/workbench/store
 git commit -m "feat(workbench): WorkbenchProvider 与 hooks（按项目重挂、hydrate 后写盘）"
 ```
 
-实际落地：63662b59（provider + hooks）、f1b72784（跨标签清除同步 + jsdom 单测）、4a6d10a4（跨标签不回滚运行态、同标签登出清扫、守卫测试）、9713160c（`onStorage` 防御分支补测）、09f9bb14（`swept` 档 + `forgetProject` 冻结写盘）。
+实际落地：63662b59（provider + hooks）、f1b72784（跨标签清除同步 + jsdom 单测）、4a6d10a4（跨标签不回滚运行态、同标签登出清扫、守卫测试）、9713160c（`onStorage` 防御分支补测）、09f9bb14（`swept` 档 + `forgetProject` 冻结写盘）、codex 评审修复 A/B/C（来自存储的状态不回写、删除事件按 `newValue === null` 清扫、同步写盘闸；与本备注同一 commit）。
 
 ---
 

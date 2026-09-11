@@ -93,6 +93,21 @@ export function WorkbenchProvider({
   const [ready, setReady] = useState(false);
   const [storageMode, setStorageMode] = useState<StorageMode>("ok");
   const storageRef = useRef<Storage | null>(null);
+  // The state object most recently taken FROM storage (first hydration or a
+  // cross-tab `storage` event), held by identity. The reducer's `loadPersisted`
+  // returns it unchanged, so `state === remoteStateRef.current` is exactly
+  // "nothing local has happened since we last read disk".
+  const remoteStateRef = useRef<WorkbenchProjectState | null>(null);
+  // Synchronous write gate. `setStorageMode("swept")` alone cannot stop a
+  // passive write effect that is already scheduled in the same commit: the
+  // state setter does not change an already-captured effect closure; the ref
+  // does. `storageMode` stays for the UI.
+  const writesBlockedRef = useRef(false);
+
+  function loadFromStorage(next: WorkbenchProjectState): void {
+    remoteStateRef.current = next;
+    dispatch({ type: "loadPersisted", state: next });
+  }
 
   function hydrate(): void {
     const storage = storageRef.current;
@@ -102,9 +117,7 @@ export function WorkbenchProvider({
     }
     const read = readProjectState(storage, projectId);
     if (read.status === "unavailable") setStorageMode("volatile");
-    if (read.state) {
-      dispatch({ type: "loadPersisted", state: withProjectSeed(normalizeInterrupted(read.state), seed) });
-    }
+    if (read.state) loadFromStorage(withProjectSeed(normalizeInterrupted(read.state), seed));
   }
 
   useEffect(() => {
@@ -116,14 +129,21 @@ export function WorkbenchProvider({
     // would fail lint with "Definition for rule ... was not found".)
   }, [projectId]);
 
-  // Echo write. A cross-tab `storage` event dispatches `loadPersisted` with a
-  // fresh object, so this effect immediately writes the very same bytes back.
-  // That terminates only because `setItem` with an identical value fires no
-  // `storage` event in the other tabs. The persisted envelope must therefore
-  // stay deterministic (no `savedAt`, no nonce, no re-ordered keys) or two open
-  // tabs would write to each other forever.
   useEffect(() => {
-    if (!ready) return;
+    if (writesBlockedRef.current || !ready) return;
+    // States that came from storage are never echoed back. This is what makes
+    // cross-tab sync converge even when two tabs disagree about the seed (a
+    // project renamed while one tab is stale): `withProjectSeed` re-stamps
+    // `profile.url/brand/market` on each side, and echoing that would make the
+    // two tabs overwrite each other forever. It also keeps a freshly opened
+    // tab's hydration rollback (`normalizeInterrupted`) from being broadcast as
+    // authoritative over another tab's in-flight run. The persisted envelope
+    // stays deterministic, but nothing relies on that any more.
+    // Residual (PR-2): after a LOCAL change this tab persists its normalised
+    // copy, so a rolled-back run in another tab is still clobbered by the first
+    // local edit here; true protection needs run ownership / a lease once the
+    // visibility view lands.
+    if (state === remoteStateRef.current) return;
     const storage = storageRef.current;
     // Stop writing entirely once storage is volatile, full, or swept (design §6.5).
     if (!storage || storageMode !== "ok") return;
@@ -140,34 +160,43 @@ export function WorkbenchProvider({
     // behind. The user is signed out anyway; a reload re-hydrates normally and
     // clears the latch. `swept` rather than `volatile` because nothing is wrong
     // with this browser's storage and the topbar must stay silent about it.
-    // The latch precedes the dispatch on purpose: on any path where the two
-    // updates are not batched, the write effect would run once with
-    // `storageMode === "ok"` and write the reset state back under the key that
-    // was just swept.
+    // The ref gate is flipped first: a write effect already scheduled in this
+    // commit still sees the old `storageMode`, and only the ref reaches it.
     function forgetAndFreeze(): void {
+      writesBlockedRef.current = true;
       setStorageMode("swept");
       dispatch({ type: "reset", seed });
     }
 
     function onStorage(event: StorageEvent): void {
-      // `key === null` means the whole store was cleared (`localStorage.clear()`,
-      // e.g. a sweep in another tab); the re-read below then reports `empty`.
-      if ((event.key !== null && event.key !== storageKey(projectId)) || !storageRef.current) return;
-      const read = readProjectState(storageRef.current, projectId);
+      const storage = storageRef.current;
+      if (!storage) return;
+      // `sessionStorage` fires the same event type; only our store matters.
+      if (event.storageArea && event.storageArea !== storage) return;
+      if (event.key !== null && event.key !== storageKey(projectId)) return;
+      if (event.key === null || event.newValue === null) {
+        // A removal (`key === null` is a whole-store clear) is a sweep by the
+        // event's own evidence, NOT by re-reading the key: if this tab's write
+        // effect re-created the key inside the delivery window, a re-read finds
+        // our own write and the sign-out is missed for good. `clearProjectState`
+        // is idempotent and removes whatever this tab resurrected.
+        forgetAndFreeze();
+        clearProjectState(storage, projectId);
+        return;
+      }
+      const read = readProjectState(storage, projectId);
       if (read.state) {
         // Deliberately NOT `normalizeInterrupted`: the writing tab may be
         // mid-run, and normalising here would roll its streamed partial results
-        // back to `lastVis` and echo that rollback to disk, clobbering a run
-        // that was never interrupted. Interrupted runs are settled once, on
-        // first hydration, when nothing can be in flight.
-        dispatch({ type: "loadPersisted", state: withProjectSeed(read.state, seed) });
-      } else if (read.status === "empty") {
-        // Another tab removed the key (sign-out sweep / project deletion).
-        forgetAndFreeze();
+        // back to `lastVis`. Interrupted runs are settled once, on first
+        // hydration, when nothing can be in flight.
+        loadFromStorage(withProjectSeed(read.state, seed));
       } else if (read.status === "unavailable") {
         // Storage became unreachable between the event and the re-read; same
         // treatment as in `hydrate`. (`invalid` is ignored, as before: a shape
-        // we cannot parse is no reason to throw our own state away.)
+        // we cannot parse is no reason to throw our own state away. `empty`
+        // means the key vanished after this event was queued; the removal
+        // event that follows is what sweeps.)
         setStorageMode("volatile");
       }
     }
@@ -195,11 +224,13 @@ export function WorkbenchProvider({
       storageMode,
       keywordRowCount: deriveKeywordRowCount ? deriveKeywordRowCount(state) : null,
       forgetProject: () => {
-        // Latch before the removal, same reasoning as `forgetAndFreeze`: any
-        // dispatch between this call and unmount (a cross-tab `storage` event,
-        // say) would otherwise re-create `gg.workbench.v1.<id>` holding the
-        // deleted project's data. No `reset` dispatch here — the caller
-        // navigates away immediately, so there is nothing to re-render.
+        // Gate before the removal, same reasoning as `forgetAndFreeze`: a write
+        // effect already scheduled in this commit, or any dispatch between this
+        // call and unmount (a cross-tab `storage` event, say), would otherwise
+        // re-create `gg.workbench.v1.<id>` holding the deleted project's data.
+        // No `reset` dispatch here — the caller navigates away immediately, so
+        // there is nothing to re-render.
+        writesBlockedRef.current = true;
         setStorageMode("swept");
         if (storageRef.current) clearProjectState(storageRef.current, projectId);
       },

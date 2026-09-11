@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act } from "react";
+import { act, useEffect, useRef, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VisResult, WorkbenchProjectState } from "../types.ts";
@@ -30,6 +30,13 @@ function persist(state: WorkbenchProjectState): void {
   window.localStorage.setItem(storageKey(PID), JSON.stringify({ v: PERSISTED_VERSION, state }));
 }
 
+/** What is on disk right now, parsed; throws when the key is absent. */
+function stored(): WorkbenchProjectState {
+  const raw = window.localStorage.getItem(storageKey(PID));
+  if (raw === null) throw new Error("nothing persisted");
+  return (JSON.parse(raw) as { readonly state: WorkbenchProjectState }).state;
+}
+
 interface Mounted {
   readonly root: Root;
   readonly container: HTMLElement;
@@ -38,7 +45,7 @@ interface Mounted {
 /** Roots still mounted, so `afterEach` tears down even when a test throws midway. */
 const active: Mounted[] = [];
 
-function mount(seed: ProjectSeed = SEED) {
+function mount(seed: ProjectSeed = SEED, extra: ReactNode = null) {
   const holder: Holder = { current: null };
   const container = document.createElement("div");
   document.body.append(container);
@@ -52,6 +59,7 @@ function mount(seed: ProjectSeed = SEED) {
         root.render(
           <WorkbenchProvider projectId={projectId} seed={seed}>
             <Probe holder={holder} />
+            {extra}
           </WorkbenchProvider>,
         );
       });
@@ -71,11 +79,46 @@ function mount(seed: ProjectSeed = SEED) {
   return view;
 }
 
-/** Fires the cross-tab notification; the provider re-reads storage itself. */
+/**
+ * What another tab's write delivers here: the key and its new value. The
+ * provider re-reads storage itself; `newValue` only has to be non-null, since
+ * a null one is the shape of a removal (see `crossTabRemoval`).
+ */
 function crossTabEvent(): void {
   act(() => {
-    window.dispatchEvent(new StorageEvent("storage", { key: storageKey(PID) }));
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: storageKey(PID),
+        newValue: window.localStorage.getItem(storageKey(PID)),
+        storageArea: window.localStorage,
+      }),
+    );
   });
+}
+
+/** What another tab's `removeItem` (`key`) or `clear()` (`key === null`) delivers here. */
+function crossTabRemoval(key: string | null = storageKey(PID)): void {
+  act(() => {
+    window.dispatchEvent(
+      new StorageEvent("storage", { key, oldValue: "{}", newValue: null, storageArea: window.localStorage }),
+    );
+  });
+}
+
+/**
+ * Calls `forgetProject()` from a child effect. React runs a child's passive
+ * effects BEFORE the parent's in the same commit, so this lands in the commit
+ * where `ready` flips true, ahead of the provider's own write effect.
+ */
+function ForgetOnReady() {
+  const { ready, forgetProject } = useWorkbench();
+  const done = useRef(false);
+  useEffect(() => {
+    if (!ready || done.current) return;
+    done.current = true;
+    forgetProject();
+  }, [ready, forgetProject]);
+  return null;
 }
 
 const fromDisk: WorkbenchProjectState = {
@@ -115,7 +158,12 @@ describe("WorkbenchProvider", () => {
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     const view = mount();
 
-    expect(setItem).toHaveBeenCalled();
+    // Hydration itself writes nothing (the state came from disk); the first
+    // write is the first local change, and it carries the hydrated state,
+    // never the SSR-shaped initial one.
+    expect(setItem).not.toHaveBeenCalled();
+    act(() => view.probe().dispatch({ type: "setBuilt", built: true }));
+    expect(setItem).toHaveBeenCalledTimes(1);
     for (const [, value] of setItem.mock.calls) expect(String(value)).toContain("from disk");
     view.unmount();
   });
@@ -182,7 +230,7 @@ describe("WorkbenchProvider", () => {
     expect(view.probe().state.seeds).toBe("from disk");
 
     window.localStorage.removeItem(storageKey(PID));
-    crossTabEvent();
+    crossTabRemoval();
 
     expect(view.probe().state).toEqual(initialProjectState(SEED));
     // `swept`, not `volatile`: the key went away because someone signed out or
@@ -263,10 +311,8 @@ describe("WorkbenchProvider", () => {
     const view = mount();
     expect(view.probe().state.seeds).toBe("from disk");
 
-    act(() => {
-      window.localStorage.removeItem(storageKey(PID));
-      window.dispatchEvent(new StorageEvent("storage", { key: null, storageArea: window.localStorage }));
-    });
+    window.localStorage.removeItem(storageKey(PID));
+    crossTabRemoval(null);
 
     expect(view.probe().storageMode).toBe("swept");
     expect(view.probe().state).toEqual(initialProjectState(SEED));
@@ -282,7 +328,11 @@ describe("WorkbenchProvider", () => {
       throw new Error("denied");
     });
     act(() => {
-      window.dispatchEvent(new StorageEvent("storage", { key: storageKey(PID), storageArea: window.localStorage }));
+      // Write-shaped (non-null `newValue`): the provider re-reads rather than
+      // trusting the payload, and that re-read is what throws here.
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: storageKey(PID), newValue: "{}", storageArea: window.localStorage }),
+      );
     });
 
     expect(view.probe().storageMode).toBe("volatile");
@@ -304,6 +354,104 @@ describe("WorkbenchProvider", () => {
     // completes re-creates the deleted project's key from the live state.
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     act(() => view.probe().dispatch({ type: "setSeeds", seeds: "after the delete" }));
+    expect(setItem).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(storageKey(PID))).toBeNull();
+    view.unmount();
+  });
+
+  it("never echoes a state that came from another tab, even when the two seeds disagree", () => {
+    persist(fromDisk);
+    const view = mount();
+
+    // The other tab was opened from a stale server mirror (the project was
+    // renamed since), so its copy is stamped with a different brand.
+    persist({ ...fromDisk, seeds: "stamped elsewhere", profile: { ...fromDisk.profile, brand: "Renamed" } });
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    crossTabEvent();
+
+    expect(view.probe().state.seeds).toBe("stamped elsewhere");
+    // This tab's seed still overlays the UI ...
+    expect(view.probe().state.profile.brand).toBe(SEED.brand);
+    // ... but is never written back: that echo, re-stamped on each side by
+    // `withProjectSeed`, is what made two tabs overwrite each other forever.
+    expect(setItem).not.toHaveBeenCalled();
+    expect(stored().profile.brand).toBe("Renamed");
+    view.unmount();
+  });
+
+  it("keeps the hydration rollback off disk until the first local change", () => {
+    const populated = populatedProjectState(SEED);
+    persist({ ...populated, visPartial: true });
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    const view = mount();
+
+    expect(view.probe().state.visPartial).toBe(false);
+    // Another tab may still be streaming that run; broadcasting this tab's
+    // rollback as authoritative would kill it.
+    expect(setItem).not.toHaveBeenCalled();
+    expect(stored().visPartial).toBe(true);
+
+    act(() => view.probe().dispatch({ type: "setSeeds", seeds: "local edit" }));
+
+    expect(stored().visPartial).toBe(false);
+    expect(stored().seeds).toBe("local edit");
+    view.unmount();
+  });
+
+  it("sweeps on a removal event even after this tab's own write re-created the key", () => {
+    persist(fromDisk);
+    const view = mount();
+    expect(view.probe().state.seeds).toBe("from disk");
+
+    act(() => {
+      // Another tab removed the key, and this tab's pending write put it back
+      // before the event was delivered: a re-read would find our own bytes and
+      // conclude nothing was removed.
+      window.localStorage.removeItem(storageKey(PID));
+      persist({ ...fromDisk, seeds: "resurrected by our own write" });
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: storageKey(PID),
+          oldValue: "{}",
+          newValue: null,
+          storageArea: window.localStorage,
+        }),
+      );
+    });
+
+    expect(view.probe().storageMode).toBe("swept");
+    expect(view.probe().state).toEqual(initialProjectState(SEED));
+    expect(window.localStorage.getItem(storageKey(PID))).toBeNull();
+    view.unmount();
+  });
+
+  it("ignores storage events from sessionStorage", () => {
+    persist(fromDisk);
+    const view = mount();
+
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: storageKey(PID), newValue: null, storageArea: window.sessionStorage }),
+      );
+    });
+
+    expect(view.probe().storageMode).toBe("ok");
+    expect(view.probe().state.seeds).toBe("from disk");
+    expect(window.localStorage.getItem(storageKey(PID))).toContain("from disk");
+    view.unmount();
+  });
+
+  it("blocks a write effect already scheduled in the commit that forgets the project", () => {
+    // Empty storage on purpose: the commit where `ready` flips true is exactly
+    // the one whose write effect would persist the seed mirror, and the child
+    // effect calls `forgetProject()` earlier in that same commit. A state
+    // setter cannot reach an effect closure that is already captured; only the
+    // synchronous ref gate can.
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    const view = mount(SEED, <ForgetOnReady />);
+
+    expect(view.probe().ready).toBe(true);
+    expect(view.probe().storageMode).toBe("swept");
     expect(setItem).not.toHaveBeenCalled();
     expect(window.localStorage.getItem(storageKey(PID))).toBeNull();
     view.unmount();

@@ -194,9 +194,9 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 - 读：`try/catch` 包住 `getItem`（隐私模式会抛）；JSON 解析后过 zod schema（`store/schema.ts`），版本不符或形状不对整体丢弃回默认；**storage 不可用时进入 volatile 模式**，内存可用、不写盘，顶栏提示「本次结果不会保存」。
 - 写：`try/catch`；`QuotaExceededError` 时提示并停止写入（不裁剪用户数据）。
 - 时序：`WorkbenchProvider` 以 `key={projectId}` 挂载，切项目必重挂；挂载后读盘 → `ready = true`；**`ready` 之前不写盘、侧栏徽标与视图都渲骨架**。
-- 多标签：监听 `storage` 事件，同键变化时以磁盘为准重载（最后写入者赢，不合并）。**重载不跑 `normalizeInterrupted`**：写盘的那个标签可能正在跑，归一化会把它流进来的部分结果回滚到 `lastVis` 并把回滚回声写回磁盘；中断态只在首次 hydration 结算一次。`event.key === null`（另一标签 `localStorage.clear()`）与重读到空同样按「已被清扫」处理。
+- 多标签：监听 `storage` 事件（`event.storageArea` 不是本 `localStorage` 的忽略），同键写入（`event.newValue` 非空）时以磁盘为准重载（最后写入者赢，不合并）。**来自存储的状态绝不回写**：无论首次 hydration 还是跨标签重载，provider 按引用记住那份状态，写盘 effect 对它直接跳过；只有本地 dispatch 产生的新状态才落盘。这是两个标签服务端种子不一致时（项目改名而一个标签还开着）仍能收敛的原因——`withProjectSeed` 各自重盖 `profile.url/brand/market`，回声写会让两边互相覆盖到天荒地老；它也让新开标签的 hydration 回滚不被广播成权威。**重载不跑 `normalizeInterrupted`**：写盘的那个标签可能正在跑，归一化会把它流进来的部分结果回滚到 `lastVis`；中断态只在首次 hydration 结算一次。**删除按事件自身证据判定**：`event.key === null`（另一标签 `localStorage.clear()`）或 `event.newValue === null`（另一标签删键）直接进入清扫态并再删一次本键（幂等），不重读磁盘——本标签的写盘 effect 可能恰在送达窗口里把键重建了，重读会看到自己的写入而漏掉登出。已知残留（PR-2）：本标签一有本地改动就会把自己归一化过的副本写盘，另一标签在飞的运行仍会被砸；真正的保护要等可见性视图落地时做运行归属 / 租约。
 - 清理：真实删除项目成功后删该键；`signOutAction` 前清 `gg.workbench.*`（同一浏览器换账号不串数据）。`storage` 事件只发给同源的**其他**文档，清扫的这个文档收不到自己的，所以 `SignOutButton` 清扫后同步派发 `WORKBENCH_SWEPT_EVENT`（`store/persistence.ts` 导出的常量），本标签的 provider 靠它同步进入清扫态。
-- `storageMode` 四档：`ok` / `volatile` / `quota` / `swept`。`volatile` 与 `quota` 是存储故障，顶栏出提示；`swept` 是有意丢弃（登出清扫、删项目），同样停止写盘但 UI 不出声——否则一次登出会在其他标签留下一条指责浏览器的常驻横幅。停止写盘是必须的：`reset` 产生新对象，写盘 effect 会在清扫后几毫秒内把种子镜像重新写回 `gg.workbench.v1.<id>`。
+- `storageMode` 四档：`ok` / `volatile` / `quota` / `swept`。`volatile` 与 `quota` 是存储故障，顶栏出提示；`swept` 是有意丢弃（登出清扫、删项目），同样停止写盘但 UI 不出声——否则一次登出会在其他标签留下一条指责浏览器的常驻横幅。停止写盘是必须的：`reset` 产生新对象，写盘 effect 会在清扫后几毫秒内把种子镜像重新写回 `gg.workbench.v1.<id>`。闸门是一个同步 ref（`writesBlockedRef`），在清扫 / 删项目的第一行置位：`setStorageMode("swept")` 改不了同一 commit 里已经排好的 passive effect 闭包，ref 可以；`storageMode` 只服务 UI。
 - 隐私：用户在 mock 页输入的内容（粘贴的 GSC 导出、档案文本、种子词）是用户数据，不因周围是 mock 而降级；只存本地、不上传、登出即清。
 
 ### 6.6 真实删除项目（评审 F11）
