@@ -2610,6 +2610,39 @@ it("takes a confirmation into the draft it is reviewing", async () => {
   expect(JSON.parse(String((reviewCall[1] as RequestInit).body))).toMatchObject({ baseVersion: 5, expectedGenerationInputHash: after.runRef.generationInputHash });
 });
 
+/**
+ * A refused competitor write says the same thing about this tab that a refused
+ * review write does: its coordinates are behind. So it enters the same hold --
+ * the status line says so, the decision buttons go dead with it, and the
+ * competitor buttons stay dead too -- rather than leaving the row with an
+ * error and the rest of the card free to make the next stale write.
+ */
+it("holds the whole card when a competitor write loses a conflict", async () => {
+  v3Reply = () => Response.json({ error: { code: "conflict" }, draftVersion: 9 }, { status: 409 });
+  await render("en");
+  await act(async () => competitorAction("astro.example", "unconfirm")!.click());
+  expect(text("[data-geo-kb-competitor][data-domain='astro.example'] [data-competitor-error]")).toBe(card("en").competitors.failed.conflict);
+  expect(text("[data-review-status]")).toBe(card("en").review.conflict);
+  expect((rows()[0]!.querySelector('[data-item-action="accept"]') as HTMLButtonElement).disabled).toBe(true);
+  expect(competitorAction("astro.example", "unconfirm")?.disabled).toBe(true);
+  expect(competitorAction("astro.example", "rename")?.disabled).toBe(true);
+});
+
+it("holds the competitor gestures under a moved-input hold, with nothing left unsaved to hold them otherwise", async () => {
+  v3Reply = () => Response.json({ error: { code: "input_changed" } }, { status: 409 });
+  await render("en");
+  await act(async () => competitorAction("astro.example", "unconfirm")!.click());
+  expect(text("[data-review-status]")).toBe(card("en").review.inputChanged);
+  expect(competitorAction("astro.example", "unconfirm")?.disabled).toBe(true);
+  expect(competitorAction("astro.example", "rename")?.disabled).toBe(true);
+});
+
+it("holds the competitor gestures while the loaded draft says a run has it", async () => {
+  await render("en", { runInProgress: true });
+  expect(text("[data-review-status]")).toBe(card("en").review.running);
+  expect(competitorAction("astro.example", "unconfirm")?.disabled).toBe(true);
+});
+
 /** The gestures are held for the same reasons the recovery gestures are: nothing may move the draft under an open run. */
 it("holds the competitor gestures while an update is open", async () => {
   runRead = () => Response.json({ data: { status: "resumable", run: { runId: RUN_ID }, operations: [] } });

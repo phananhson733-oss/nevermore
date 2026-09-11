@@ -1681,14 +1681,17 @@ export function GeoKnowledgeBaseV3({ view, locale, inline = false, confirmedProf
        or not, because the best moment to confirm a rival is before the first
        billed update. Held under the same conditions as the recovery gestures
        plus an unsaved decision: a confirmation moves the draft version, and a
-       review write queued against the old one would be refused as stale. */
+       review write queued against the old one would be refused as stale. Held
+       under every hold that says this tab's coordinates are behind (a conflict,
+       a moved input) or that a run has the draft, because the write would be
+       refused for the same reason a decision is. The write itself is the
+       hook's, under the hook's lock, so a decision made while it is out waits
+       for the re-locked version rather than racing it. */
     inputs={rebuilt ? null : <GeoKbCompetitors
       kbId={kbId}
       competitors={editor.payload.generationInput.competitors}
-      baseVersion={editor.view.draftVersion}
-      generationInputHash={editor.payload.runRef.generationInputHash}
-      disabled={editor.busy || editor.dirty || runPhase !== "idle" || resume !== null || recovery.kind === "working" || hold === "conflict"}
-      onSaved={(saved) => editor.applyCompetitors(saved)}
+      disabled={editor.busy || editor.dirty || runPhase !== "idle" || resume !== null || recovery.kind === "working" || decisionsHeld(hold) || hold === "running"}
+      write={editor.writeCompetitor}
     />}
     sections={sections}
   >

@@ -207,7 +207,13 @@ export type GeoKbV3CompetitorIdentityReason = (typeof GEO_KB_V3_COMPETITOR_IDENT
 
 const competitorDomain = z.string().min(1).max(255);
 const competitorName = z.string().min(1).max(200);
-const competitorAliases = z.array(z.string().max(200)).max(24);
+/**
+ * One bound for both directions: what a lookup may propose and what a confirm
+ * may carry back. A proposal the confirm could not hold would be a name the
+ * owner can see but not keep. The gesture itself keeps at most twelve.
+ */
+export const GEO_KB_V3_COMPETITOR_ALIASES_WIRE_LIMIT = 32;
+const competitorAliases = z.array(z.string().max(200)).max(GEO_KB_V3_COMPETITOR_ALIASES_WIRE_LIMIT);
 
 const competitorScope = {
   kbId: uuid,
@@ -237,7 +243,7 @@ const competitorIdentitySchema = z.discriminatedUnion("status", [
       status: z.literal("available"),
       domain: competitorDomain,
       brandName: competitorName,
-      aliases: z.array(competitorName).max(32),
+      aliases: z.array(competitorName).max(GEO_KB_V3_COMPETITOR_ALIASES_WIRE_LIMIT),
       method: z.enum(GEO_KB_V3_COMPETITOR_IDENTITY_METHODS).nullable(),
       sourceUrl: z.string().min(1).max(2_048),
       observedAt: timestamp,

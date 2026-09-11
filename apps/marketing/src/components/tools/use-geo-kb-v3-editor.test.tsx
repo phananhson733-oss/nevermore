@@ -667,14 +667,23 @@ it("carries the server's refusal and the version that won a conflict", async () 
 });
 
 /**
- * The hook holds the draft's coordinates for every later write. A confirm
- * moved them -- new version, new hash, a re-locked input -- so the next review
- * save has to name the new ones, or it is refused as stale.
+ * The hook makes the write itself, under the same lock as a flush and a
+ * publish, and names the coordinates it holds -- never ones a component
+ * captured a render ago. A confirm moves them (new version, new hash, a
+ * re-locked input), so the next review save has to name the new ones or it is
+ * refused as stale.
  */
-it("takes a competitor save into the view so the next review write names the re-locked input", async () => {
+it("writes a competitor gesture from the coordinates it holds and takes the answer into the view", async () => {
   const saved = competitorsSaved();
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ data: saved.data }));
   await mount();
-  await act(async () => { editor.applyCompetitors(saved.data); });
+  let result: unknown;
+  await act(async () => { result = await editor.writeCompetitor({ kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: ["Astro Charts"] }); });
+  expect(result).toEqual({ ok: true, saved: saved.data });
+  expect(bodyOf(0)).toEqual({
+    kbId: V3_KB_ID, intent: "confirm", baseVersion: 4, expectedGenerationInputHash: PAYLOAD.runRef.generationInputHash,
+    domain: "astro.example", brandName: "Astro", aliases: ["Astro Charts"],
+  });
   expect(editor.view.draftVersion).toBe(5);
   expect(editor.view.draftHash).toBe(saved.data.contentHash);
   expect(editor.payload.generationInput.competitors).toEqual(saved.data.competitors);
@@ -684,18 +693,104 @@ it("takes a competitor save into the view so the next review write names the re-
   // Knowledge and review are untouched: nothing about an item changed.
   expect(editor.payload.knowledge).toEqual(PAYLOAD.knowledge);
   expect(editor.payload.review).toEqual(PAYLOAD.review);
+  expect(editor.busy).toBe(false);
+  expect(editor.status).toEqual({ kind: "idle" });
 
   const review = savedReview(saved.next, [{ kind: "accept", itemKey: FACT_KEY_PRO }], 5);
   (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: review.data }));
   await act(async () => { editor.accept(FACT_KEY_PRO); });
   await settle();
-  expect(bodyOf(0)).toMatchObject({ baseVersion: 5, expectedGenerationInputHash: saved.data.generationInputHash });
+  expect(bodyOf(1)).toMatchObject({ baseVersion: 5, expectedGenerationInputHash: saved.data.generationInputHash });
   expect(editor.view.draftVersion).toBe(6);
 });
 
-it("ignores a competitor save that changed nothing", async () => {
+it("keeps the view where it was after a competitor write that changed nothing", async () => {
   await mount();
   const before = editor.view;
-  await act(async () => { editor.applyCompetitors(competitorsSaved({ changed: false, draftVersion: 4, contentHash: before.draftHash, generationInputHash: PAYLOAD.runRef.generationInputHash }).data); });
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({
+    data: competitorsSaved({ changed: false, draftVersion: 4, contentHash: before.draftHash, generationInputHash: PAYLOAD.runRef.generationInputHash }).data,
+  }));
+  await act(async () => { await editor.writeCompetitor({ kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: [] }); });
   expect(editor.view).toBe(before);
+});
+
+/**
+ * A decision made while the confirm is out must go to the server under the
+ * version the confirm produced, not the one the tab had when the owner
+ * clicked. The write holds the autosave the way a flush holds a second flush;
+ * the queue survives and drains once the new coordinates are in.
+ */
+it("holds a decision made during a competitor write and sends it against the re-locked draft", async () => {
+  const saved = competitorsSaved();
+  let release: (response: Response) => void = () => undefined;
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockReturnValueOnce(new Promise<Response>((resolve) => { release = resolve; }));
+  await mount();
+  let pending: Promise<unknown> = Promise.resolve();
+  await act(async () => { pending = editor.writeCompetitor({ kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: [] }); });
+  expect(editor.busy).toBe(true);
+  expect(editor.autosaveHold).toBe("busy");
+  await act(async () => { editor.accept(FACT_KEY_PRO); });
+  await settle(GEO_KB_V3_AUTOSAVE_MS * 2);
+  // Nothing but the confirm has gone out: the decision waits.
+  expect(calls()).toHaveLength(1);
+  expect(editor.dirty).toBe(true);
+
+  const review = savedReview(saved.next, [{ kind: "accept", itemKey: FACT_KEY_PRO }], 5);
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ data: review.data }));
+  await act(async () => { release(Response.json({ data: saved.data })); await pending; });
+  await settle();
+  expect(calls()).toHaveLength(2);
+  expect(bodyOf(1)).toMatchObject({ baseVersion: 5, expectedGenerationInputHash: saved.data.generationInputHash, actions: [{ kind: "accept", itemKey: FACT_KEY_PRO }] });
+  expect(editor.view.draftVersion).toBe(6);
+  expect(editor.dirty).toBe(false);
+});
+
+it("refuses a competitor write while a flush is out, while decisions wait, or under a hold, attempting nothing", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(Response.json({ error: { code: "conflict" }, draftVersion: 9 }, { status: 409 }));
+  await mount();
+  await act(async () => { editor.accept(FACT_KEY_PRO); });
+  // Decisions are waiting: the gesture would move the version they are about to name.
+  let result: unknown = "unset";
+  await act(async () => { result = await editor.writeCompetitor({ kind: "unconfirm", domain: "astro.example" }); });
+  expect(result).toBeNull();
+  expect(calls()).toHaveLength(0);
+  await settle();
+  // The flush lost a conflict: the card is held, and the gesture is refused with it.
+  expect(editor.autosaveHold).toBe("conflict");
+  await act(async () => { result = await editor.writeCompetitor({ kind: "unconfirm", domain: "astro.example" }); });
+  expect(result).toBeNull();
+  expect(calls()).toHaveLength(1);
+});
+
+it("enters the card's own hold when a competitor write loses a conflict or names a stale input", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ error: { code: "conflict" }, draftVersion: 9 }, { status: 409 }));
+  await mount();
+  let result: unknown;
+  await act(async () => { result = await editor.writeCompetitor({ kind: "unconfirm", domain: "astro.example" }); });
+  expect(result).toEqual({ ok: false, code: "conflict", draftVersion: 9 });
+  expect(editor.autosaveHold).toBe("conflict");
+  expect(editor.conflictVersion).toBe(9);
+  expect(editor.busy).toBe(false);
+  // Held: a decision made now is not written, because the server already said this tab is behind.
+  await act(async () => { editor.accept(FACT_KEY_PRO); });
+  await settle(GEO_KB_V3_AUTOSAVE_MS * 4);
+  expect(calls()).toHaveLength(1);
+
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ error: { code: "input_changed" } }, { status: 409 }));
+  await mount();
+  await act(async () => { result = await editor.writeCompetitor({ kind: "unconfirm", domain: "astro.example" }); });
+  expect(result).toEqual({ ok: false, code: "input_changed" });
+  expect(editor.autosaveHold).toBe("inputChanged");
+});
+
+it("reports any other refusal to the caller without holding the card", async () => {
+  (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(Response.json({ error: { code: "rate_limited" } }, { status: 429 }));
+  await mount();
+  let result: unknown;
+  await act(async () => { result = await editor.writeCompetitor({ kind: "unconfirm", domain: "astro.example" }); });
+  expect(result).toEqual({ ok: false, code: "rate_limited" });
+  expect(editor.autosaveHold).toBeNull();
+  expect(editor.busy).toBe(false);
 });

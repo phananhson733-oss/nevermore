@@ -40,14 +40,25 @@ export interface GeoKbV3CompetitorDependencies {
   readonly saveDraft: (input: { readonly userId: string; readonly kbId: string; readonly payload: GeoKbPayloadV3; readonly baseVersion: number }) => Promise<GeoKbV3SaveOutcome>;
   /** The lookup, built for the owner that asked so the crawl admission is theirs. */
   readonly identify: (input: { readonly userId: string; readonly domain: string }) => Promise<GeoKbV3CompetitorIdentity>;
-  /** Fails open on "unavailable" for the reason the review route does: the version check still refuses a stale write. */
+  /**
+   * Whether a paid generation, or the run that would claim one, is bound to
+   * the hash a changed gesture is about to move. Unlike the review route this
+   * one does NOT fail open on "unavailable": a review write leaves the hash
+   * alone, so a stale answer there costs nothing, while a hash moved under a
+   * dispatched request leaves a paid record no draft can ever admit.
+   */
   readonly generationRunning?: (userId: string, kbId: string) => Promise<boolean | "unavailable">;
   readonly consumeQuota?: (userId: string, kbId: string) => Promise<"allowed" | "limited" | "unavailable">;
   readonly now: () => Date;
 }
 
-/** Bounded well above the largest body: a name, two dozen aliases and three ids. */
-const REQUEST_BYTES = 8_192;
+/**
+ * The largest legal confirm body, in bytes: a kbId (36), a hash (64), a domain
+ * (255), a name (200) and thirty-two aliases (200 each) is under 7,000
+ * characters, or under 28 KiB when every one of them is four bytes of UTF-8,
+ * plus the JSON around them.
+ */
+const REQUEST_BYTES = 32_768;
 
 async function authenticated(authenticate: () => Promise<ServerAuthenticatedUser>): Promise<{ readonly userId: string } | Response> {
   const identity = await authenticate().catch(() => ({ status: "unavailable" as const }));
@@ -97,11 +108,6 @@ export async function handleGeoKbV3Competitors(request: Request, dependencies: G
     if (draft.draftVersion !== asked.baseVersion) return privateJson({ error: { code: "conflict" }, draftVersion: draft.draftVersion }, 409);
     if (asked.expectedGenerationInputHash !== draft.payload.runRef.generationInputHash) return privateError("input_changed", 409);
 
-    if (dependencies.generationRunning) {
-      const running = await dependencies.generationRunning(scope.userId, scope.kbId).catch(() => "unavailable" as const);
-      if (running === true) return privateError("generation_running", 409);
-    }
-
     const outcome = applyGeoKbV3CompetitorGesture(
       draft.payload,
       asked.intent === "confirm"
@@ -124,6 +130,15 @@ export async function handleGeoKbV3Competitors(request: Request, dependencies: G
     // A repeated gesture writes nothing: the version does not move and no
     // record is released for a row that already said this.
     if (!outcome.changed) return answer(draft.draftVersion, draft.contentHash, dependencies.now().toISOString());
+
+    // Only a write that moves the hash needs to know, and it needs to KNOW: a
+    // dispatched generation, or an open run about to claim one, is bound to
+    // the hash this save would replace. "Cannot tell" is an outage, not a yes.
+    if (dependencies.generationRunning) {
+      const running = await dependencies.generationRunning(scope.userId, scope.kbId).catch(() => "unavailable" as const);
+      if (running === true) return privateError("generation_running", 409);
+      if (running !== false) return privateError("store_unavailable", 503);
+    }
 
     const saved = await dependencies.saveDraft({ ...scope, payload: outcome.payload, baseVersion: asked.baseVersion });
     if (saved.kind === "input_locked") return privateError("input_changed", 409);

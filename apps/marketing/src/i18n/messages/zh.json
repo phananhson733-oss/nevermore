@@ -5704,7 +5704,8 @@
           "empty": "产品档案里还没有直接竞品。在产品档案里添加并确认后，重建这份草稿，竞品就会出现在这里。",
           "typeLabel": "竞品",
           "unnamed": "尚未命名",
-          "fromProfile": "来自产品档案",
+          "fromProfile": "域名来自产品档案",
+          "ownerConfirmed": "名称由你确认",
           "readFrom": "读取自 {url}",
           "method": {
             "json_ld": "结构化数据",

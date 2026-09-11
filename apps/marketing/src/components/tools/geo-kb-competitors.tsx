@@ -1,7 +1,7 @@
 "use client";
-// @input  -- the competitor rows of one v3 draft's locked input, and the coordinates a gesture about them must name
+// @input  -- the competitor rows of one v3 draft's locked input, and the editor hook's write for a gesture about them
 // @output -- one row per rival with its name, where the name came from and whether it is confirmed; the lookup, confirm, rename and withdraw gestures
-// @pos    -- the only surface that changes the locked half of a draft outside a re-lock; it holds lookup answers for the session and writes through the competitor route
+// @pos    -- the only surface that changes the locked half of a draft outside a re-lock; it holds lookup answers for the session and hands every write to the hook
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 /**
@@ -21,22 +21,26 @@
  * A lookup is a proposal. It reads the rival's own homepage through the same
  * gated reader the run uses and shows what that page calls itself; it writes
  * nothing. Only "confirm" writes, and it writes the name on screen at the
- * moment it is pressed -- read, edited or typed. The rows themselves are
- * drawn from the props: a save's answer goes to the parent, which redraws the
- * draft, so this block never holds a second copy of what the server stores.
+ * moment it is pressed -- read, edited or typed. The write itself belongs to
+ * the editor hook: it names the draft coordinates the hook holds, under the
+ * hook's own lock, so a decision made while the confirm is out waits for the
+ * re-locked version instead of racing it. The rows are drawn from the props,
+ * so this block never holds a second copy of what the server stores. A
+ * proposal is forgotten the moment a write about its row succeeds: what the
+ * owner wrote supersedes what a page once said.
  */
-import { useId, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 
 import type { GeoGenerationInputV3 } from "../../lib/geo-tools/kb-v3-contract.ts";
 import { Button } from "../ui/button.tsx";
 import { GeoKbSectionFrame } from "./geo-kb-card.tsx";
 import { useGeoKbCopy, type GeoKbCopy } from "./geo-kb-copy.ts";
 import { GeoKbChip } from "./geo-kb-item-row.tsx";
-import type { GeoKbCompetitorIdentityV3, GeoKbCompetitorsSaveV3 } from "./geo-kb-v3-wire.ts";
+import type { GeoKbCompetitorIdentityV3 } from "./geo-kb-v3-wire.ts";
 import {
   lookupGeoKbV3Competitor,
-  writeGeoKbV3Competitor,
   type GeoKbV3CompetitorGestureWire,
+  type GeoKbV3CompetitorWriteResult,
 } from "./use-geo-kb-v3-editor.ts";
 
 type Competitor = GeoGenerationInputV3["competitors"][number];
@@ -44,12 +48,10 @@ type Competitor = GeoGenerationInputV3["competitors"][number];
 export interface GeoKbCompetitorsProps {
   readonly kbId: string;
   readonly competitors: readonly Competitor[];
-  /** The draft version and locked input the rows were drawn under; every write names both. */
-  readonly baseVersion: number;
-  readonly generationInputHash: string;
-  /** The card has a reason no gesture may land right now: a run is open, a save is in flight. */
+  /** The card has a reason no gesture may land right now: a run is open, a save is in flight, the card is held. */
   readonly disabled: boolean;
-  readonly onSaved: (saved: GeoKbCompetitorsSaveV3) => void;
+  /** The editor hook's write. Null is "not attempted" -- the hook was busy or held -- and is not an error to show. */
+  readonly write: (gesture: GeoKbV3CompetitorGestureWire) => Promise<GeoKbV3CompetitorWriteResult | null>;
 }
 
 type Busy = { readonly domain: string; readonly kind: "lookup" | "write" };
@@ -74,20 +76,29 @@ function Meta({ parts }: { readonly parts: readonly string[] }) {
   return <>{parts.map((part, index) => <span key={index} className="min-w-0 break-words [overflow-wrap:anywhere]">{index === 0 ? "" : " · "}{part}</span>)}</>;
 }
 
-/** The source line: the host, then where the name on the row came from. */
+/**
+ * The source line: the host, then where the name on the row came from. A
+ * confirmed name is the owner's -- the confirm was their gesture, whether
+ * they took a proposal, edited it or typed it -- so no homepage and no
+ * Profile is credited for it. An unconfirmed row with no proposal shows only
+ * what is true of it: the Profile named the host.
+ */
 function sourceParts(row: Competitor, identity: GeoKbCompetitorIdentityV3 | undefined, copy: GeoKbCopy["competitors"]): readonly string[] {
   if (row.domain === "") return [copy.noDomain];
+  if (row.confirmed) return [row.domain, copy.ownerConfirmed];
   if (identity === undefined) return [row.domain, copy.fromProfile];
   if (identity.status === "unavailable") return [row.domain, copy.lookupFailed(copy.reason(identity.reason))];
   return [row.domain, copy.readFrom(identity.sourceUrl), ...(identity.method === null ? [] : [copy.method[identity.method]])];
 }
 
-function NameField({ value, onChange, label, invalid, describedBy }: {
+function NameField({ value, onChange, label, invalid, describedBy, locked }: {
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly label: string;
   readonly invalid: boolean;
   readonly describedBy: string | null;
+  /** Its write is out: what it holds is what was sent, and nothing typed now would be. */
+  readonly locked: boolean;
 }) {
   return <label className="block min-w-0 flex-1 basis-64 space-y-1">
     <span className="block text-[12px] text-text-dark-secondary">{label}</span>
@@ -95,6 +106,7 @@ function NameField({ value, onChange, label, invalid, describedBy }: {
       type="text"
       data-competitor-name-input=""
       value={value}
+      disabled={locked}
       onChange={(event) => onChange(event.target.value)}
       aria-invalid={invalid ? true : undefined}
       {...(describedBy === null ? {} : { "aria-describedby": describedBy })}
@@ -145,7 +157,7 @@ function Row({ row, identity, editing, busy, failure, held, copy, on }: {
             ? <div data-competitor-name="" className="min-w-0 flex-1 break-words text-[13px] leading-relaxed text-text-dark-primary [overflow-wrap:anywhere]">
               {shown.name === "" ? copy.unnamed : shown.name}
             </div>
-            : <NameField value={editing.name} onChange={on.edit} label={copy.nameLabel} invalid={error !== null} describedBy={error === null ? null : errorId} />}
+            : <NameField value={editing.name} onChange={on.edit} label={copy.nameLabel} invalid={error !== null} describedBy={error === null ? null : errorId} locked={writing} />}
         </div>
         <div data-competitor-source="" className="min-w-0 text-[12px] leading-relaxed text-text-dark-secondary">
           <Meta parts={sourceParts(row, identity, copy)} />
@@ -175,17 +187,24 @@ function Row({ row, identity, editing, busy, failure, held, copy, on }: {
   </article>;
 }
 
-export function GeoKbCompetitors({ kbId, competitors, baseVersion, generationInputHash, disabled, onSaved }: GeoKbCompetitorsProps) {
+export function GeoKbCompetitors({ kbId, competitors, disabled, write }: GeoKbCompetitorsProps) {
   const copy = useGeoKbCopy().competitors;
   const [identities, setIdentities] = useState<Readonly<Record<string, GeoKbCompetitorIdentityV3>>>({});
   const [editing, setEditing] = useState<Editing | null>(null);
   const [busy, setBusy] = useState<Busy | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
+  /**
+   * The latch is a ref, not the `busy` state: two clicks in one task see the
+   * same render, and a guard read off that render lets the second through
+   * before the first has painted its disabled buttons.
+   */
+  const inFlight = useRef(false);
   const held = disabled || busy !== null;
   const confirmedCount = competitors.filter((row) => row.confirmed).length;
 
   async function lookup(domain: string): Promise<void> {
-    if (held) return;
+    if (held || inFlight.current) return;
+    inFlight.current = true;
     setBusy({ domain, kind: "lookup" });
     setFailure(null);
     try {
@@ -193,23 +212,34 @@ export function GeoKbCompetitors({ kbId, competitors, baseVersion, generationInp
       if (result.ok) setIdentities((current) => ({ ...current, [domain]: result.identity }));
       else setFailure({ domain, text: copy.failed(result.code) });
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
 
-  async function write(domain: string, gesture: GeoKbV3CompetitorGestureWire): Promise<void> {
-    if (held) return;
+  async function send(domain: string, gesture: GeoKbV3CompetitorGestureWire): Promise<void> {
+    if (held || inFlight.current) return;
+    inFlight.current = true;
     setBusy({ domain, kind: "write" });
     setFailure(null);
     try {
-      const result = await writeGeoKbV3Competitor({ kbId, baseVersion, expectedGenerationInputHash: generationInputHash, gesture });
+      const result = await write(gesture);
+      if (result === null) return;
       if (!result.ok) {
         setFailure({ domain, text: copy.failed(result.code) });
         return;
       }
       setEditing((current) => (current?.domain === domain ? null : current));
-      onSaved(result.saved);
+      // What was written supersedes what was proposed: the row now shows the
+      // stored name, and a later withdrawal shows it too rather than reviving
+      // a proposal the owner had already replaced.
+      setIdentities((current) => {
+        if (!(domain in current)) return current;
+        const { [domain]: _dropped, ...rest } = current;
+        return rest;
+      });
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
@@ -224,7 +254,7 @@ export function GeoKbCompetitors({ kbId, competitors, baseVersion, generationInp
       setEditing({ domain: row.domain, name: "" });
       return;
     }
-    void write(row.domain, { kind: "confirm", domain: row.domain, brandName: shown.name, aliases: shown.aliases });
+    void send(row.domain, { kind: "confirm", domain: row.domain, brandName: shown.name, aliases: shown.aliases });
   }
 
   function save(row: Competitor): void {
@@ -234,7 +264,7 @@ export function GeoKbCompetitors({ kbId, competitors, baseVersion, generationInp
       setFailure({ domain: row.domain, text: copy.nameRequired });
       return;
     }
-    void write(row.domain, { kind: "confirm", domain: row.domain, brandName: name, aliases: proposed(row, identities[row.domain]).aliases });
+    void send(row.domain, { kind: "confirm", domain: row.domain, brandName: name, aliases: proposed(row, identities[row.domain]).aliases });
   }
 
   return <GeoKbSectionFrame name="competitors" title={copy.title} items={copy.items(confirmedCount, competitors.length)}>
@@ -254,7 +284,7 @@ export function GeoKbCompetitors({ kbId, competitors, baseVersion, generationInp
             lookup: () => void lookup(row.domain),
             confirm: () => confirm(row),
             rename: () => { setFailure(null); setEditing({ domain: row.domain, name: row.brandName }); },
-            unconfirm: () => void write(row.domain, { kind: "unconfirm", domain: row.domain }),
+            unconfirm: () => void send(row.domain, { kind: "unconfirm", domain: row.domain }),
             edit: (name) => setEditing((current) => (current?.domain === row.domain ? { domain: row.domain, name } : current)),
             save: () => save(row),
             cancel: () => { setFailure(null); setEditing(null); },

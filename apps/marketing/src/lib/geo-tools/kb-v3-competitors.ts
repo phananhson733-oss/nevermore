@@ -28,7 +28,7 @@
  */
 import { geoV2Digest } from "./kb-v2-digest.ts";
 import { GEO_KB_V3_RELEASED_REFS, type GeoKbV3ReleasedRef } from "./kb-v3-draft-create.ts";
-import { parseGeoKbPayloadV3, type GeoGenerationInputV3, type GeoKbPayloadV3 } from "./kb-v3-contract.ts";
+import { geoGenerationInputSchema, parseGeoKbPayloadV3, type GeoGenerationInputV3, type GeoKbPayloadV3 } from "./kb-v3-contract.ts";
 
 export type GeoKbV3CompetitorGesture =
   | {
@@ -50,12 +50,20 @@ export type GeoKbV3CompetitorGestureOutcome =
     }
   /** No domain-keyed rival of that exact spelling is in the locked input. */
   | { readonly kind: "unknown_competitor" }
-  /** The contract cannot hold what was asked: a confirmation with no name. */
+  /** The contract cannot hold what was asked: no name, or a value outside the row's bounds. */
   | { readonly kind: "invalid" };
 
 type Competitor = GeoGenerationInputV3["competitors"][number];
 
 const ALIAS_LIMIT = 12;
+/**
+ * The row as the contract stores it. The wire bounds what was typed and this
+ * bounds what is kept, and NFC can lengthen a string between the two (a run
+ * of combining marks composes into more code units, not fewer), so a row is
+ * checked here by name rather than left to throw out of the payload parse as
+ * if the store had failed.
+ */
+const competitorRowSchema = geoGenerationInputSchema.shape.competitors.element;
 
 function cleanText(value: string): string {
   return value.normalize("NFC").replace(/\s+/gu, " ").trim();
@@ -80,12 +88,13 @@ function nextRow(row: Competitor, gesture: GeoKbV3CompetitorGesture): Competitor
   const brandName = cleanText(gesture.brandName);
   if (brandName === "") return "invalid";
   const aliases = cleanAliases(gesture.aliases, brandName);
-  return {
+  const candidate = competitorRowSchema.safeParse({
     domain: row.domain,
     brandName,
     confirmed: true,
     ...(aliases.length === 0 ? {} : { aliases }),
-  };
+  });
+  return candidate.success ? candidate.data : "invalid";
 }
 
 function sameRow(left: Competitor, right: Competitor): boolean {

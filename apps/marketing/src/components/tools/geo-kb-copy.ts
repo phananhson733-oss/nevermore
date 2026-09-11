@@ -388,7 +388,10 @@ export interface GeoKbCopy {
     readonly empty: string;
     readonly typeLabel: string;
     readonly unnamed: string;
+    /** About the host: the Profile named it. Never about a name, which the Profile does not hold. */
     readonly fromProfile: string;
+    /** A confirmed row's name is the owner's, whatever a lookup once proposed. */
+    readonly ownerConfirmed: string;
     readonly readFrom: (url: string) => string;
     readonly method: Readonly<Record<GeoKbV3CompetitorIdentityMethod, string>>;
     readonly lookupFailed: (reason: string) => string;
@@ -556,6 +559,7 @@ export function useGeoKbCopy(): GeoKbCopy {
       typeLabel: t("competitors.typeLabel"),
       unnamed: t("competitors.unnamed"),
       fromProfile: t("competitors.fromProfile"),
+      ownerConfirmed: t("competitors.ownerConfirmed"),
       readFrom: (url) => t("competitors.readFrom", { url }),
       method: record(GEO_KB_V3_COMPETITOR_IDENTITY_METHODS, (key) => t(`competitors.method.${key}`)),
       lookupFailed: (reason) => t("competitors.lookupFailed", { reason }),

@@ -80,7 +80,7 @@ export type GeoKbV3AutosaveHold =
 
 export type GeoKbV3Status =
   | { readonly kind: "idle" | "saved" }
-  | { readonly kind: "busy"; readonly operation: "save" | "publish" }
+  | { readonly kind: "busy"; readonly operation: "save" | "publish" | "competitor" }
   | { readonly kind: "error"; readonly code: string };
 
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -517,9 +517,9 @@ export type GeoKbV3CompetitorWriteResult =
 /**
  * Confirm a rival, or withdraw that. The one write in the product that moves
  * the locked half of a draft outside a re-lock, and it moves one row of it;
- * the server decides the payload and re-locks the input, and the hook takes
- * the answer through `applyCompetitors` so every later write names the new
- * coordinates.
+ * the server decides the payload and re-locks the input. The hook's own
+ * `writeCompetitor` is the caller: it names the coordinates the hook holds and
+ * takes the answer in, so every later write names the new ones.
  */
 export async function writeGeoKbV3Competitor(input: {
   readonly kbId: string;
@@ -947,6 +947,80 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
     }
   }
 
+  /**
+   * Take a competitor write's answer into the view. The server re-locked the
+   * input and released the generation ids in that write; knowledge and review
+   * are untouched, so nothing about the decision state moves -- only the
+   * coordinates every later write has to name.
+   */
+  function takeCompetitors(saved: GeoKbCompetitorsSaveV3): void {
+    if (!saved.changed) return;
+    const nextView: GeoKbEditorViewV3 = {
+      ...live.current.view,
+      draftVersion: saved.draftVersion,
+      draftHash: saved.contentHash,
+      payload: {
+        ...live.current.view.payload,
+        generationInput: { ...live.current.view.payload.generationInput, competitors: saved.competitors },
+        runRef: {
+          runId: null,
+          generationInputHash: saved.generationInputHash,
+          rolesGenerationId: null,
+          knowledgeGenerationId: null,
+          questionsGenerationId: null,
+        },
+      },
+    };
+    live.current = { ...live.current, view: nextView };
+    setView(nextView);
+  }
+
+  /**
+   * Confirm a rival, or withdraw that, under the same lock as a flush and a
+   * publish, from the coordinates this hook holds.
+   *
+   * Null is "not attempted", and it is the answer whenever the write could
+   * land on the wrong version: a flush or publish is out; decisions are
+   * waiting for the autosave (they would be sent against the version this
+   * write is about to replace); or the card is already held. Unlike a
+   * decision, a gesture about the locked input has no queue to wait in.
+   *
+   * While it is out the autosave holds, exactly as it does for a flush, so a
+   * decision made in the meantime is sent afterwards against the re-locked
+   * draft rather than racing the confirm with the old version. A conflict or
+   * a stale-input refusal enters the card's own hold: the server has said this
+   * tab is behind, and that is true of every write it might make next.
+   */
+  async function writeCompetitor(gesture: GeoKbV3CompetitorGestureWire): Promise<GeoKbV3CompetitorWriteResult | null> {
+    if (lock.current || live.current.queued.length > 0) return null;
+    const hold = holdNow();
+    if (hold !== null && hold !== "failed") return null;
+    lock.current = true;
+    setStatus({ kind: "busy", operation: "competitor" });
+    try {
+      const base = live.current.view;
+      const result = await writeGeoKbV3Competitor({
+        kbId: base.kbId,
+        baseVersion: base.draftVersion,
+        expectedGenerationInputHash: base.payload.runRef.generationInputHash,
+        gesture,
+      });
+      if (!result.ok) {
+        fail(result);
+        return result;
+      }
+      takeCompetitors(result.saved);
+      setStatus({ kind: "idle" });
+      return result;
+    } catch {
+      setStatus({ kind: "error", code: "bad_response" });
+      return { ok: false, code: "bad_response" };
+    } finally {
+      lock.current = false;
+      resume();
+    }
+  }
+
   return {
     view,
     payload: view.payload,
@@ -986,32 +1060,6 @@ export function useGeoKbV3Editor({ initialView }: UseGeoKbV3EditorProps) {
     },
     save: () => flush(),
     publish,
-    /**
-     * Take a competitor write's answer into the view. The server re-locked the
-     * input and released the generation ids in that write; knowledge and
-     * review are untouched, so nothing about the decision state moves -- only
-     * the coordinates every later write has to name.
-     */
-    applyCompetitors: (saved: GeoKbCompetitorsSaveV3) => {
-      if (!saved.changed) return;
-      const nextView: GeoKbEditorViewV3 = {
-        ...live.current.view,
-        draftVersion: saved.draftVersion,
-        draftHash: saved.contentHash,
-        payload: {
-          ...live.current.view.payload,
-          generationInput: { ...live.current.view.payload.generationInput, competitors: saved.competitors },
-          runRef: {
-            runId: null,
-            generationInputHash: saved.generationInputHash,
-            rolesGenerationId: null,
-            knowledgeGenerationId: null,
-            questionsGenerationId: null,
-          },
-        },
-      };
-      live.current = { ...live.current, view: nextView };
-      setView(nextView);
-    },
+    writeCompetitor,
   };
 }

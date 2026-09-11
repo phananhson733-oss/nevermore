@@ -142,6 +142,20 @@ describe("applyGeoKbV3CompetitorGesture", () => {
     expect(result.payload.generationInput.competitors[0]).toEqual({ domain: "astro.example", brandName: "Astro", confirmed: true, aliases: ["Astro Charts"] });
   });
 
+  /**
+   * The wire bounds what was typed; the contract bounds what is stored, and
+   * NFC can lengthen a string between the two. A value the row cannot hold is
+   * refused here, by name, rather than thrown out of the parse as an outage.
+   */
+  it("refuses a name or alias the contract cannot hold once normalized, rather than throwing", () => {
+    const expanding = "\u0344".repeat(101);
+    expect(expanding.length).toBeLessThanOrEqual(200);
+    expect(expanding.normalize("NFC").length).toBeGreaterThan(200);
+    expect(applyGeoKbV3CompetitorGesture(stored(), { kind: "confirm", domain: "astro.example", brandName: expanding, aliases: [] })).toEqual({ kind: "invalid" });
+    expect(applyGeoKbV3CompetitorGesture(stored(), { kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: [expanding] })).toEqual({ kind: "invalid" });
+    expect(applyGeoKbV3CompetitorGesture(stored(), { kind: "confirm", domain: "astro.example", brandName: "Astro\u0000", aliases: [] })).toEqual({ kind: "invalid" });
+  });
+
   it("writes no aliases key at all when none survive", () => {
     const result = applyGeoKbV3CompetitorGesture(stored(), { kind: "confirm", domain: "astro.example", brandName: "Astro", aliases: [] });
     if (result.kind !== "ok") throw new Error(result.kind);

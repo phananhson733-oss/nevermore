@@ -5704,7 +5704,8 @@
           "empty": "The Product Profile names no direct competitor yet. Add and confirm one there, then rebuild this draft, and it appears here.",
           "typeLabel": "Competitor",
           "unnamed": "Not named yet",
-          "fromProfile": "From the Product Profile",
+          "fromProfile": "Domain from the Product Profile",
+          "ownerConfirmed": "Name confirmed by you",
           "readFrom": "Read from {url}",
           "method": {
             "json_ld": "structured data",

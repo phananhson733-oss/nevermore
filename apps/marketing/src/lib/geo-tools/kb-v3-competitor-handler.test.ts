@@ -203,10 +203,50 @@ describe("handleGeoKbV3Competitors", () => {
       expect(saveDraft).not.toHaveBeenCalled();
     });
 
-    it("fails open when the generation read cannot answer", async () => {
-      const { dependencies } = harness({ generationRunning: async () => "unavailable" });
-      const response = await handleGeoKbV3Competitors(request(confirm()), dependencies);
+    /**
+     * Unlike a review write, this one moves the hash a dispatched generation is
+     * bound to, so "cannot tell" is not good enough to write on: a request paid
+     * for under the old hash would be left with no draft that can admit it.
+     */
+    it("refuses to move the hash when the generation read cannot answer", async () => {
+      for (const generationRunning of [async () => "unavailable" as const, async () => { throw new Error("down"); }]) {
+        const { dependencies, saveDraft } = harness({ generationRunning });
+        const response = await handleGeoKbV3Competitors(request(confirm()), dependencies);
+        expect(response.status).toBe(503);
+        await expect(response.json()).resolves.toEqual({ error: { code: "store_unavailable" } });
+        expect(saveDraft).not.toHaveBeenCalled();
+      }
+    });
+
+    it("still answers a repeated gesture while that read is down, because it writes nothing", async () => {
+      const { dependencies, saveDraft } = harness({ generationRunning: async () => "unavailable" });
+      const response = await handleGeoKbV3Competitors(request({
+        kbId: V3_KB_ID, intent: "confirm", baseVersion: 4, expectedGenerationInputHash: locked(), domain: "rival.example", brandName: "Rival",
+      }), dependencies);
       expect(response.status).toBe(200);
+      expect((await response.json()).data.changed).toBe(false);
+      expect(saveDraft).not.toHaveBeenCalled();
+    });
+
+    /** The longest legal body: a name and thirty-two aliases, each two hundred code units of four-byte characters. */
+    it("admits the largest body the wire allows", async () => {
+      const wide = "\u{1F600}".repeat(100);
+      expect(wide.length).toBe(200);
+      const { dependencies, saved } = harness();
+      const body = confirm({ brandName: wide, aliases: Array.from({ length: 32 }, (_, index) => `${wide.slice(0, 198)}${index.toString().padStart(2, "0")}`) });
+      expect(new TextEncoder().encode(JSON.stringify(body)).byteLength).toBeGreaterThan(8_192);
+      const response = await handleGeoKbV3Competitors(request(body), dependencies);
+      expect(response.status).toBe(200);
+      expect(saved.current?.generationInput.competitors[0]?.aliases).toHaveLength(12);
+    });
+
+    /** NFC can lengthen a string past the stored bound; that is a refusal, not an outage. */
+    it("answers invalid_competitor, not an outage, for a name the contract cannot hold once normalized", async () => {
+      const { dependencies, saveDraft } = harness();
+      const response = await handleGeoKbV3Competitors(request(confirm({ brandName: "\u0344".repeat(101) })), dependencies);
+      expect(response.status).toBe(422);
+      await expect(response.json()).resolves.toEqual({ error: { code: "invalid_competitor" } });
+      expect(saveDraft).not.toHaveBeenCalled();
     });
 
     it("passes the store's own refusals through by their status", async () => {
