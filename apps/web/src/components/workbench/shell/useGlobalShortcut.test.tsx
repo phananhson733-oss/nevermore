@@ -66,4 +66,26 @@ describe("useGlobalShortcut", () => {
     expect(handlers.onEscape).not.toHaveBeenCalled();
     expect(handlers.onTogglePalette).not.toHaveBeenCalled();
   });
+
+  it("leaves every other key alone, a bare k included", () => {
+    // Typing into any field on the page passes through this listener, so a
+    // plain "k" must neither open the palette nor be swallowed.
+    expect(pressAtWindow({ key: "k" })).toBe(false);
+    expect(pressAtWindow({ key: "Enter" })).toBe(false);
+    expect(pressAtWindow({ key: "j", metaKey: true })).toBe(false);
+
+    expect(handlers.onTogglePalette).not.toHaveBeenCalled();
+    expect(handlers.onEscape).not.toHaveBeenCalled();
+  });
+
+  it("stops listening once the host unmounts", () => {
+    act(() => root?.unmount());
+    root = null;
+
+    pressAtWindow({ key: "k", metaKey: true });
+    pressAtWindow({ key: "Escape" });
+
+    expect(handlers.onTogglePalette).not.toHaveBeenCalled();
+    expect(handlers.onEscape).not.toHaveBeenCalled();
+  });
 });
