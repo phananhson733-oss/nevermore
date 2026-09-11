@@ -158,9 +158,11 @@ for (const screen of SCREENS) {
   test(`legacy ${screen} keeps its computed styles`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto(`/p/${E2E_PROJECT_ID}/${screen}`);
-    // The page-title element only renders in the loaded state, never in the
-    // loading/error panels, so the snapshot below is of the finished page.
+    // The hero (page title) renders before the queries settle, but the first
+    // <a> / <input> matches live in query-driven regions; wait for the mock
+    // routes (millisecond responses) to finish so the element set is stable.
     await expect(page.locator("#main-content [data-app-page-title]").first()).toBeVisible();
+    await page.waitForLoadState("networkidle");
     const current = await snapshot(page);
     if (process.env["LEGACY_STYLE_BASELINE"] === "write") {
       const existing = (() => {
@@ -179,7 +181,7 @@ for (const screen of SCREENS) {
 - [ ] **Step 4: 在改动前生成基线**
 
 Run: `LEGACY_STYLE_BASELINE=write pnpm test:e2e:mock -- e2e/legacy-style-parity.mock.spec.ts`
-Expected: 2 passed；`e2e/legacy-style-parity.baseline.json` 出现，含 `growth-map` 与 `context` 两个键，每键 3–5 个选择器。
+Expected: 2 passed；`e2e/legacy-style-parity.baseline.json` 出现，含 `growth-map` 与 `sources` 两个键（设计稿 §5 写的是 `context`；`context` 页的读接口不在 `installGrowthVerticalApi` 的路由表里，快照会随时序漂，改用被完整服务的 `sources`——设计稿已同步更正），每键 4–6 个选择器。跑两遍确认第二遍与第一遍逐属性相等再提交。
 
 - [ ] **Step 5: 不带写标志再跑一次确认自洽**
 
@@ -3829,8 +3831,10 @@ Expected: 全绿。`_nav.test.ts` 仍绿（它测的是保留的 `nav-model.ts`�
 
 - [ ] **Step 7: 冒烟：起 dev，肉眼过一遍**
 
-Run: `SF_E2E_MOCK_API=true pnpm --filter @sf/web dev` 后打开 `http://127.0.0.1:3000/p/00000000-0000-4000-8000-000000000042/overview`
-Expected: 深色侧栏 15 项、站点卡 `example.test / US / — / —`、顶栏项目切换 + ⌘K + 示例数据 + 产物筐 0；点「技术审计」到占位页并有「旧版页面 · 增长地图 →」（`LEGACY_LINKS.audit` 指 `growth-map`）；`/p/…/growth-map` 旧页在新壳内正常；⌘K 打开面板、Esc 关闭、焦点回到按钮；专门看一眼顶栏里的 `ProjectSwitcher` / `LocaleSwitch`——它们的 CSS Module 只覆盖自己声明过的属性，原生 `<select>` 没显式设 border 的话会被 `.wb-reset *` 的 `border-width: 0` 抹掉边框，需要时在其模块里补 `border`。
+裸 `SF_E2E_MOCK_API=true` 起不到壳：`shouldUseE2eProjectShell` 还要求 `APP_ORIGIN` 是 loopback，未登录访问 `/p/**` 要 `SF_DEV_AUTH=true`。镜像 `playwright.mock.config.ts` 的 `webServer.env`（DATABASE_URL 用它那个永不连通的 tripwire 值、SUPABASE_* / 各 bucket 用 `e2e-local-only` 占位）：
+
+Run: `APP_ORIGIN=http://127.0.0.1:3000 SF_DEV_AUTH=true SF_E2E_MOCK_API=true DATABASE_URL='postgresql://e2e:e2e@127.0.0.1:1/e2e_never_connect' SUPABASE_URL=http://127.0.0.1:1 SUPABASE_ANON_KEY=e2e-local-only SUPABASE_SERVICE_ROLE_KEY=e2e-local-only CREDENTIAL_ENCRYPTION_KEY=$(head -c 32 /dev/zero | base64) GOOGLE_OAUTH_CLIENT_ID=e2e-local-only GOOGLE_OAUTH_CLIENT_SECRET=e2e-local-only DATAFORSEO_ENABLED=false RAW_IMPORT_BUCKET=e2e-local-only EXPORT_BUCKET=e2e-local-only SF_BLOB_BACKEND=local SF_BLOB_DIR="${SCRATCHPAD:-$TMPDIR}/wb-blobs" pnpm --filter @sf/web dev --webpack` 后打开 `http://127.0.0.1:3000/p/00000000-0000-4000-8000-000000000042/overview`
+Expected: 深色侧栏 15 项、站点卡 `example.test / US / — / —`、顶栏项目切换 + ⌘K + 示例数据 + 产物筐 0；点「技术审计」到占位页并有「旧版页面 · 增长地图 →」（`LEGACY_LINKS.audit` 指 `growth-map`）；旧页在新壳内的样子不在这里看——裸 dev 下 `/api/mvp/**` 没有 Playwright 的 mock 路由，旧页会拿到问题态；用 `pnpm test:e2e:mock -- --headed e2e/legacy-style-parity.mock.spec.ts` 肉眼看 growth-map / sources；⌘K 打开面板、Esc 关闭、焦点回到按钮；专门看一眼顶栏里的 `ProjectSwitcher` / `LocaleSwitch`——它们的 CSS Module 只覆盖自己声明过的属性，原生 `<select>` 没显式设 border 的话会被 `.wb-reset *` 的 `border-width: 0` 抹掉边框，需要时在其模块里补 `border`。
 
 - [ ] **Step 8: Commit**
 
@@ -4009,7 +4013,7 @@ test("deleting the project clears its workbench storage key", async ({ page }) =
 
 - [ ] **Step 3b: mock API 兑现 `DELETE /api/mvp/projects/:id`（必做）**
 
-`e2e/mock-api.ts` 目前没有任何 `DELETE` 分支；未匹配的 `/api/mvp/**` 走 `route.fallback()` 打到真服务端再撞 DB tripwire，mutation 报错，`forgetProject()` 不会执行，上面的删除用例必红。在 `installCriticalFlowApi` 的 `page.route("**/api/mvp/**", …)` 处理器里，紧跟 `const path = url.pathname;` 之后加：
+`e2e/mock-api.ts` 目前没有任何 `DELETE` 分支；`installCriticalFlowApi` 对未匹配的 `/api/mvp/**` 回 501 `E2E_ROUTE_MISSING` problem（只有 `results` / `measurement-windows` 才 `route.fallback()`），mutation 报错，`forgetProject()` 不会执行，上面的删除用例必红。在 `installCriticalFlowApi` 的 `page.route("**/api/mvp/**", …)` 处理器里，紧跟 `const path = url.pathname;` 之后加：
 
 ```ts
     // Real project deletion (settings page): 204 with no body, like the API.
@@ -4019,7 +4023,7 @@ test("deleting the project clears its workbench storage key", async ({ page }) =
     }
 ```
 
-`BASE` 就是 `/api/mvp/projects/${E2E_PROJECT_ID}`，与 `deleteProjectRequest` 发出的 `DELETE /projects/:id` 一致。不加开关：没有别的 spec 会对保留项目发 DELETE。
+`BASE` 就是 `/api/mvp/projects/${E2E_PROJECT_ID}`，与 `deleteProjectRequest` 发出的 `DELETE /projects/:id` 一致。不加开关：没有别的 spec 会对保留项目发 DELETE。删除后 `router.replace("/")` 在 mock 环境落到 `/login` 或错误页，都不挂 `WorkbenchProvider`，所以 `localStorage` 断言成立；若日后根路由在 mock 下能重定向回 `/p/<id>/overview`，provider 重挂会把键写回来，届时该用例改为断言删除动作本身。
 
 - [ ] **Step 4: 跑受影响 spec + 新 spec**
 
@@ -4103,4 +4107,4 @@ git push -u origin feat/workbench-pr1-foundation
 gh pr create --base feat/workbench-ui-port --title "feat(workbench): PR-1 地基——新壳、15 条路由、store、i18n" --body-file .review-tmp/pr1-body.md
 ```
 
-PR 描述含：设计稿链接、任务清单勾选状态、验证命令与结果、评审处置、已知未做（GSC 站点卡行、覆盖率补测若有）、**相对设计稿的偏离**（`audit` 的旧页链接指 `growth-map` 而非 `diagnosis`；`globals.css` 三条元素规则加了 `:where(:not(.wb-reset *))` 守卫；`postcss.config.mjs` 复刻 Next 默认链）与 Task 11 Step 5b 的两条复核结论。**不合 main**（D3）。
+PR 描述含：设计稿链接、任务清单勾选状态、验证命令与结果、评审处置、已知未做（GSC 站点卡行、覆盖率补测若有）、**相对设计稿的偏离**（`audit` 的旧页链接指 `growth-map` 而非 `diagnosis`；样式基线屏从 `context` 换成 `sources`；`globals.css` 三条元素规则加了 `:where(:not(.wb-reset *))` 守卫；`postcss.config.mjs` 复刻 Next 默认链）与 Task 11 Step 5b 的两条复核结论。**不合 main**（D3）。
