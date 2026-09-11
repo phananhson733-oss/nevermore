@@ -149,7 +149,7 @@
   --sf-violet-text: #c0afff;
 }
 
-* {
+*:where(:not(.wb-reset *)) {
   box-sizing: border-box;
 }
 
