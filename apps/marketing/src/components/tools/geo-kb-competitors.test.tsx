@@ -247,6 +247,37 @@ it("locks the name field while its write is out, so nothing typed meanwhile is s
   expect(row("rival.example").querySelector("input[data-competitor-name-input]")).toBeNull();
 });
 
+/** While the field is open the name on the row is an unsaved draft, and the source line claims nothing about it. */
+it("says only the host while the name field is open", async () => {
+  reply = () => Response.json({ data: { kbId: V3_KB_ID, identity: IDENTITY } });
+  await render("zh");
+  await click(action(row("astro.example"), "lookup"));
+  await click(action(row("astro.example"), "rename"));
+  expect(row("astro.example").querySelector("[data-competitor-source]")?.textContent).toBe("astro.example");
+  await click(action(row("astro.example"), "cancel"));
+  expect(row("astro.example").querySelector("[data-competitor-source]")?.textContent)
+    .toBe(`astro.example · ${copy("zh").readFrom.replace("{url}", "https://astro.example/")} · ${copy("zh").method.json_ld}`);
+  await click(action(row("rival.example"), "rename"));
+  expect(row("rival.example").querySelector("[data-competitor-source]")?.textContent).toBe("rival.example");
+});
+
+/**
+ * A draft is about the row it was opened against. If the parent redraws that
+ * row under a different stored identity, the draft is stale -- saving it
+ * would overwrite a name nobody on this screen saw -- so the field closes.
+ */
+it("closes an open name field when the row it was opened against is redrawn under another identity", async () => {
+  await render("zh");
+  await click(action(row("rival.example"), "rename"));
+  expect(row("rival.example").querySelector("input[data-competitor-name-input]")).not.toBeNull();
+  // An ordinary redraw of the same identity keeps it.
+  await render("zh", { competitors: [...ROWS] });
+  expect(row("rival.example").querySelector("input[data-competitor-name-input]")).not.toBeNull();
+  await render("zh", { competitors: [ROWS[0]!, { domain: "rival.example", brandName: "Rival Group", confirmed: true }, ROWS[2]!] });
+  expect(row("rival.example").querySelector("input[data-competitor-name-input]")).toBeNull();
+  expect(row("rival.example").querySelector("[data-competitor-name]")?.textContent).toBe("Rival Group");
+});
+
 /** The hook may decline to attempt the write at all; that is not a failure to show. */
 it("shows nothing and keeps the field when the hook did not attempt the write", async () => {
   write.mockResolvedValueOnce(null);
