@@ -1,7 +1,7 @@
 # app.gengrowth.ai 新工作台 UI 移植设计
 
 日期：2026-09-11
-状态：rev6，已过跨模型评审（gpt-6-astra REVISE 15 条 + 自审 8 条，处置见 §14）与三轮 spec 一致性审阅（第三轮 Approved；其建议已采纳）；§13 三项已由 Owner 于 2026-09-11 拍板
+状态：rev6（PR-1 落地同步 2026-09-11：§4.1/§4.3/§6.5/§6.7/§11 按实现更新），已过跨模型评审（gpt-6-astra REVISE 15 条 + 自审 8 条，处置见 §14）与三轮 spec 一致性审阅（第三轮 Approved；其建议已采纳）；§13 三项已由 Owner 于 2026-09-11 拍板
 基线：`origin/main` f28a1900
 
 ## 0. 一句话
@@ -68,12 +68,14 @@ apps/web/src/
               旧页与其测试仍用）, useProjectShellEffects, useContextNavigationConfirm,
               useGlobalShortcut, useMediaQuery
     ui/       PageHead, InPane, OutPane, Field, RunningSteps, DemoChip, Chip,
-              Gauge, Tabs, Dialog（焦点管理共用）, cn, ids, focus-order, LegacyLinks
+              Gauge, Tabs, Dialog（焦点管理共用）, cn, ids, focus-order, LegacyLinks,
+              keyboard（`isComposingKey`：IME 组合中的按键，面板 / 对话框 / 全局快捷键共用）
     views/<module>/            每模块一目录：主视图 + 输入面板 + 每个报告 tab 各一文件
   lib/workbench/
     mock/     rng, gsc-parse, audit, visibility, keywords, competitors, links, kb,
               content, answers, builders（jsx 的 B.*）, csv, demo
     store/    types, schema（zod）, reducer, selectors, persistence, WorkbenchProvider, hooks
+    download.ts  产物筐 / 导出共用的 Blob 下载（锚点挂 body、rel=noopener、try/finally 回收）
     routes.ts 段名表 + 「旧版页面」映射表 + 旧版段名的 nav 标签键表（LEGACY_LABEL_KEY）
 ```
 
@@ -90,8 +92,8 @@ apps/web/src/
 ### 4.3 壳的行为
 
 - **侧栏**：分组和标签走 `workbench.nav.*`；`aria-current="page"` 标当前项；徽标语义按 opengengrowth（外观权威）：技术审计 = 健康分、AI 可见度 = 提及率 `%`、关键词研究 = 候选数、产物中心 = 产物数，其余项按 jsx `counts`（词库、竞品、外链、知识库缺口、数据源行数）；值来自 §6.3 的 selectors；**未 hydrate → 徽标位渲骨架；已 hydrate 但该模块未运行 → 不显示徽标**（不显示 0）；审计运行中（`audit = null`）同样不显示，不回退到 `lastAudit`。侧栏底部 jsx 的「Pro 套餐，N 个站点」改为只显示站点数（`projectOptions.length`）。
-- **站点卡**（照 opengengrowth `Sidebar.tsx` 的四行：域名 / 市场 / GSC / 审计）：域名 = `ProjectShellProject.host`；市场 = 主站点 `market_codes[0]`（`ProjectShellProject` 增加 `marketCode` 字段，从 `SiteRow` 取，总是真实存在）；GSC = 真实连接状态（`sources` 的 GSC connection 是否已连接；PR-1 先显示「—」，PR-3 数据源批接上）；审计 = store 里 `lastAudit.at`（本地 mock 结果），有值时紧跟一个「示例」小标，没有则「—」；站点卡不放 GA4 行（照 opengengrowth 四行）。**真实与 mock 分开标注**（评审 F12）：前三行是真数据不标，第四行标「示例」；数据源页里 mock 导入的行数徽标同样带「示例」。
-- **顶栏**：复用现有 `ProjectSwitcher`；「＋ 新建站点」→ `/new-project`（这个链接也过 Context 离开确认，见下一条）；「搜索 / 跳转 ⌘K」按钮（打开命令面板，关闭后焦点回到它）；保留 `LocaleSwitch` 与 `signOutAction` 账号菜单；「示例数据」chip（`demo` 为真时显示「示例站点」并带「清除示例」）；「产物筐 N」开抽屉；storage 不可用时的「本次结果不会保存」提示（§6.5；`swept` 态静默）。这条提示只有**一个** `role="status"` 容器，始终渲染以保住 live region；`lg` 断点以下顶栏放不下整句时它是 `sr-only`（照样播报，只是不占版面），`lg` 起才可见并截断。
+- **站点卡**（照 opengengrowth `Sidebar.tsx` 的四行：域名 / 市场 / GSC / 审计）：域名 = `ProjectShellProject.host`；市场 = 主站点 `market_codes[0]`（`ProjectShellProject` 增加 `marketCode` 字段，从 `SiteRow` 取，总是真实存在）；GSC = 真实连接状态（`sources` 的 GSC connection 是否已连接；**PR-1 落地：`WorkbenchShell` 固定传 `gscConnected: null`，站点卡显示「—」；接真实状态是 PR-3 数据源批的事**，`SiteCard` 已按 `true / false / null` 三态渲染并有单测）；审计 = store 里 `lastAudit.at`（本地 mock 结果），有值时紧跟一个「示例」小标，没有则「—」；站点卡不放 GA4 行（照 opengengrowth 四行）。**真实与 mock 分开标注**（评审 F12）：前三行是真数据不标，第四行标「示例」；数据源页里 mock 导入的行数徽标同样带「示例」。
+- **顶栏**：复用现有 `ProjectSwitcher`；「＋ 新建站点」→ `/new-project`（这个链接也过 Context 离开确认，见下一条）；「搜索 / 跳转 ⌘K」按钮（打开命令面板，关闭后焦点回到它）；保留 `LocaleSwitch` 与 `signOutAction` 账号菜单；「示例数据」chip（`demo` 为真时显示「示例站点」并带「清除示例」——**PR-1 只落了 chip 的两种文案，「清除示例」按钮随 `loadDemo` 入口一起在 PR-3 落地**，见 §6.7）；「产物筐 N」开抽屉；storage 不可用时的「本次结果不会保存」提示（§6.5；`swept` 态静默）。这条提示只有**一个** `role="status"` 容器，始终渲染以保住 live region；`lg` 断点以下顶栏放不下整句时它是 `sr-only`（照样播报，只是不占版面），`lg` 起才可见并截断。
 - **命令面板 / 产物筐抽屉**：都是 `role="dialog" aria-modal="true"`，有 `aria-labelledby`；打开时焦点进入（面板进搜索框、抽屉进关闭按钮），关闭时焦点回到触发按钮；焦点圈在对话框内（Tab 循环）；背景 `inert`；Esc 关闭；⌘K / Ctrl+K 切换面板。面板列表项是 `role="option"` 的按钮，不是可点 div。
 - **移动端侧栏**：`aside` 关闭时 `inert`（不只是 `translate-x`），遮罩可点关闭，开合按钮带 `aria-expanded` / `aria-controls`。断点判定用 `useMediaQuery("(width < 48rem)")`（与 rail 的 `md:` 同一个 Tailwind v4 断点，px 值会随根字号漂）；代价是首帧 `matches` 为 false，移动端有一帧侧栏尚未 `inert`，hydration 后立即纠正。
 - **旧壳的副作用必须保留**（自审 M1）：`_nav.tsx` 里两个副作用与视觉无关但旧页依赖——`withProjectHistoryPosition`（Studio 取消 Back/Forward 后回退用）和 `_context-navigation-guard`（Context 未保存离开确认）。history 副作用留在 `useProjectShellEffects`（在新 Sidebar 挂载），离开确认单独抽成 `useContextNavigationConfirm`（同时导出链接用的 `confirmNavigation` 与命令面板用的 `confirmLeave`）——面板跳转是同一种导航，不过守卫就会「侧栏问、面板不问」；`studio-workspace.mock.spec` 与 `product-profile.mock.spec` 作为回归门。旧壳自己的 `app/p/[projectId]/_project-switcher.tsx` 后来也改接这同一个 `useContextNavigationConfirm`（原先是内联拼一份等价判断 + `window.confirm`），三处导航入口——侧栏链接、命令面板、项目切换器——因此共用一套问法，不会有第四种版本悄悄走漂。
@@ -207,7 +209,7 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 
 新项目只灌真实字段：`profile.url`（host）、`profile.brand`（clientName）、`profile.market`（主站点 `market_codes[0]`，创建项目时必填，总是存在）。这三项是真实项目的镜像：provider 每次挂载都用 `ProjectShellProject` 覆盖它们（持久化里的旧值不算数），站点档案页对这三项只读，只允许编辑 `positioning / features / competitors`。`positioning / features / competitors / profileDoc` 一律为空——jsx 的 `DEMO_PROFILE` 描述的是 GenGrowth 自己，灌给别人的项目就是撒谎。空态由各页的 empty 文案承接。
 
-**「载入示例站点」**：概览空态处一个显式按钮，调用 jsx 的 `makeDemoSite(profile, level, seeds)`——`level = "full"`、`seeds` = jsx `DEMO_SITES` 第一档的四个演示种子词（这两个常量抽到 `mock/demo.ts` 作 `DEMO_LEVEL` / `DEMO_SEEDS`，`DEMO_SITES` 本身不移植）——生成整套演示结果（审计、可见度、关键词、竞品、外链、知识库、产物、历史），一次 `loadDemo` action **整体覆盖**当前项目的模块结果字段并置 `demo = true`；若当前状态已有用户输入（`gscRows` / `saved` / `seeds` 非空）先弹确认。`demo` 为真时顶栏「示例数据」chip 变为「示例站点」并带「清除示例」按钮，点击后确认再 `clearDemo`（只清示例写过的模块结果与 `gscRows / seeds / saved / conns`，确认框写明「会清掉当前的 GSC 行与词库」；用户的档案编辑与通知偏好保留）。示例结果的 `profile.url / brand / market` 仍是真实项目的，只有模块结果是演示的；不会无提示自动灌入。
+**「载入示例站点」**：概览空态处一个显式按钮，调用 jsx 的 `makeDemoSite(profile, level, seeds)`——`level = "full"`、`seeds` = jsx `DEMO_SITES` 第一档的四个演示种子词（这两个常量抽到 `mock/demo.ts` 作 `DEMO_LEVEL` / `DEMO_SEEDS`，`DEMO_SITES` 本身不移植）——生成整套演示结果（审计、可见度、关键词、竞品、外链、知识库、产物、历史），一次 `loadDemo` action **整体覆盖**当前项目的模块结果字段并置 `demo = true`；若当前状态已有用户输入（`gscRows` / `saved` / `seeds` 非空）先弹确认。`demo` 为真时顶栏「示例数据」chip 变为「示例站点」并带「清除示例」按钮（**PR-3**：与「载入示例站点」同批——PR-1 的 store 已有 `loadDemo` / `clearDemo` 两个 action 与单测，但没有任何 UI 入口触发它们，顶栏也还没有这个按钮），点击后确认再 `clearDemo`（只清示例写过的模块结果与 `gscRows / seeds / saved / conns`，确认框写明「会清掉当前的 GSC 行与词库」；用户的档案编辑与通知偏好保留）。示例结果的 `profile.url / brand / market` 仍是真实项目的，只有模块结果是演示的；不会无提示自动灌入。
 
 ### 6.8 导出与产物的来源声明（评审 F12）
 

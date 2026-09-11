@@ -14,6 +14,8 @@ const pageType = z.enum([
   "landing", "blog", "comparison", "listicle", "tool", "glossary", "answer-page",
 ]);
 const nullableNumber = z.number().nullable();
+/** `AuditReport.at` contract (types.ts): `"YYYY-MM-DD HH:mm"`, the slice(5) the site card shows. */
+const auditStamp = z.string().regex(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
 
 const profile = z.strictObject({
   url: z.string(),
@@ -46,7 +48,7 @@ const finding = z.strictObject({
 });
 
 const auditReport = z.strictObject({
-  at: z.string(),
+  at: auditStamp,
   score: z.number(),
   findings: z.array(finding),
   crawl: z.strictObject({

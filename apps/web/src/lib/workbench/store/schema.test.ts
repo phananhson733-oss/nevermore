@@ -35,6 +35,23 @@ describe("persisted workbench schema v1", () => {
     ).toBeNull();
   });
 
+  it("rejects an audit stamp that is not \"YYYY-MM-DD HH:mm\" (SiteCard slices it as MM-DD HH:mm)", () => {
+    const state = populatedProjectState(seed);
+    const audit = state.audit;
+    if (!audit || !state.lastAudit) throw new Error("fixture must carry an audit report");
+    expect(audit.at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    for (const bad of ["2026-09-11T10:00:00.000Z", "2026-09-11", "10:00", "t", ""]) {
+      expect(
+        parsePersistedState({ v: 1, state: { ...state, audit: { ...audit, at: bad } } }),
+        bad,
+      ).toBeNull();
+      expect(
+        parsePersistedState({ v: 1, state: { ...state, lastAudit: { ...state.lastAudit, at: bad } } }),
+        bad,
+      ).toBeNull();
+    }
+  });
+
   it("rejects garbage", () => {
     expect(parsePersistedState(null)).toBeNull();
     expect(parsePersistedState("{}")).toBeNull();

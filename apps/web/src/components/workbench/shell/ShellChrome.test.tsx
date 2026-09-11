@@ -196,6 +196,20 @@ describe("ShellChrome layout", () => {
 
     expect(sidebar(scope).textContent).toContain("1 site");
   });
+
+  it("keeps .wb-reset off #wb-app and #main-content so legacy pages stay untouched", () => {
+    // Design §5: the reset is scoped to the rail, topbar, dialogs and the new
+    // view roots. On the app root or <main> it would reach every legacy page,
+    // and on <main> it would also match the legacy-gutter rule's `:has()` guard
+    // the wrong way round (workbench.css `#main-content:not(:has(> .wb-reset))`).
+    render();
+    const root = appRoot();
+    const main = root.querySelector("main#main-content");
+
+    expect(main).not.toBeNull();
+    expect(root.classList.contains("wb-reset")).toBe(false);
+    expect(main?.classList.contains("wb-reset")).toBe(false);
+  });
 });
 
 describe("ShellChrome dialogs", () => {

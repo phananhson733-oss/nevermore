@@ -105,6 +105,11 @@ export interface AuditPageRow {
 }
 
 export interface AuditReport {
+  /**
+   * Local wall-clock stamp in the prototype's `"YYYY-MM-DD HH:mm"` form (jsx
+   * `now()`), never ISO 8601: `SiteCard` renders `at.slice(5)` as `MM-DD HH:mm`,
+   * so any other shape shows garbage. `store/schema.ts` pins it with a regex.
+   */
   readonly at: string;
   readonly score: number;
   readonly findings: readonly Finding[];

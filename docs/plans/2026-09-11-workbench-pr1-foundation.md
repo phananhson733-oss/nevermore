@@ -96,17 +96,17 @@ pnpm --filter @sf/web build
 
 设计稿 §5 要求验证 `.wb-reset` 没有漏到旧页。全页截图会因新壳而必然不同，所以改为记录旧页根节点内若干元素的**计算样式**（与宽度无关的属性），在改动前生成基线，改动后比对。
 
-- [ ] **Step 1: 确认起点并切工作分支**
+- [x] **Step 1: 确认起点并切工作分支**
 
 Run: `git -C /Users/wzb/Code/nevermore/workbench-ui-port-20260911 status --short | wc -l && git branch --show-current && git switch -c feat/workbench-pr1-foundation`
 Expected: `0`、当前分支 `feat/workbench-ui-port`（集成分支），然后位于新分支 `feat/workbench-pr1-foundation`。之后所有提交都在这个分支，PR 以 `feat/workbench-ui-port` 为 base（Task 14）。
 
-- [ ] **Step 2: 记录基线检查结果**
+- [x] **Step 2: 记录基线检查结果**
 
 Run: `pnpm --filter @sf/web typecheck; pnpm vitest run --project unit apps/web 2>&1 | tail -3`
 Expected: 记下红绿数字（memory 提示 main 上偶有既有红；之后每次只比较差异，不追既有红）。
 
-- [ ] **Step 3: 写样式基线 spec**
+- [x] **Step 3: 写样式基线 spec**
 
 ```ts
 // e2e/legacy-style-parity.mock.spec.ts（落地版：含质量审阅要求的写模式守卫 / 下限断言 / 可执行报错）
@@ -209,17 +209,17 @@ for (const screen of SCREENS) {
 }
 ```
 
-- [ ] **Step 4: 在改动前生成基线**
+- [x] **Step 4: 在改动前生成基线**
 
 Run: `LEGACY_STYLE_BASELINE=write pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts`
 Expected: 2 passed；`e2e/legacy-style-parity.baseline.json` 出现，含 `growth-map` 与 `sources` 两个键（设计稿 §5 写的是 `context`；`context` 页的读接口不在 `installGrowthVerticalApi` 的路由表里，快照会随时序漂，改用被完整服务的 `sources`——设计稿已同步更正），`growth-map` 6 个选择器、`sources` 5 个（首屏无表单控件），`MIN_SAMPLED = 5` 为下限。跑两遍确认第二遍与第一遍逐属性相等再提交。
 
-- [ ] **Step 5: 不带写标志再跑一次确认自洽**
+- [x] **Step 5: 不带写标志再跑一次确认自洽**
 
 Run: `pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts`
 Expected: 2 passed。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add e2e/legacy-style-parity.mock.spec.ts e2e/legacy-style-parity.baseline.json
@@ -234,11 +234,11 @@ git commit -m "test(e2e): 旧页计算样式基线，守护工作台 reset 不�
 - Modify: `apps/web/package.json`
 - Create: `apps/web/postcss.config.mjs`
 - Create: `apps/web/src/app/workbench.css`
-- Modify: `apps/web/src/app/globals.css`（三条未分层元素规则加 `:where(:not(.wb-reset *))` 守卫）
+- Modify: `apps/web/src/app/globals.css`（四条未分层元素规则加 `:where(:not(.wb-reset *))` 守卫）
 - Modify: `apps/web/src/app/layout.tsx`
 - Test: `apps/web/src/app/workbench-css.test.ts`
 
-- [ ] **Step 1: 写静态守卫测试**
+- [x] **Step 1: 写静态守卫测试**
 
 ```ts
 // apps/web/src/app/workbench-css.test.ts
@@ -353,12 +353,12 @@ describe("postcss.config.mjs", () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `pnpm vitest run --project unit apps/web/src/app/workbench-css.test.ts`
 Expected: FAIL，`ENOENT … workbench.css`。
 
-- [ ] **Step 3: 加依赖与 postcss**
+- [x] **Step 3: 加依赖与 postcss**
 
 `apps/web/package.json` 的 `dependencies` 加（版本与 apps/marketing 一致）：
 
@@ -403,7 +403,7 @@ export default {
 Run: `pnpm install`
 Expected: lockfile 更新，无 peer 冲突。
 
-- [ ] **Step 4: 写 workbench.css**
+- [x] **Step 4: 写 workbench.css**
 
 ```css
 /* @input  — tailwindcss theme + utilities（刻意不引 preflight）、tw-animate-css
@@ -562,7 +562,7 @@ Expected: lockfile 更新，无 peer 冲突。
 
 注意 `@layer base { … }` 块内每条规则的选择器都以 `.wb-reset` 开头——测试按花括号深度截出整块后逐条核；伪元素必须写在 `:where()` 外面（`:where(input::placeholder)` 是非法选择器，会被静默丢成空 `:where()`）。打印时隐藏侧栏/顶栏的规则 `globals.css` L245 已有，本文件不重复。
 
-- [ ] **Step 5: 根 layout 注入字体并引入 CSS**
+- [x] **Step 5: 根 layout 注入字体并引入 CSS**
 
 `apps/web/src/app/layout.tsx`：
 
@@ -584,12 +584,12 @@ const plusJakarta = Plus_Jakarta_Sans({
 
 `<html … className={`${fraunces.variable} ${manrope.variable} ${plusJakarta.variable}`}>`。
 
-- [ ] **Step 6: 跑测试与类型检查**
+- [x] **Step 6: 跑测试与类型检查**
 
 Run: `pnpm vitest run --project unit apps/web/src/app/workbench-css.test.ts && pnpm --filter @sf/web typecheck`
 Expected: `workbench.css` / `layout.tsx` / `postcss.config.mjs` 三组通过，`globals.css` 守卫那组 6 个用例红，Step 6b 后转绿；typecheck 与 Task 0 基线一致。
 
-- [ ] **Step 6b: globals.css 三条未分层元素规则加守卫**
+- [x] **Step 6b: globals.css 四条未分层元素规则加守卫**
 
 `globals.css` 里 `* { box-sizing }`（L152）、`h1, h2, h3 {…}`（L172）、`a {…}`（L222）、`:focus-visible {…}`（L226）都不在任何 `@layer` 里；CSS 级联规定未分层声明压过所有分层声明，所以它们会盖掉新壳里的 Tailwind 工具类（侧栏链接变深绿、h1 变 Fraunces/宋体、聚焦圆角变 4px）。改为：
 
@@ -632,7 +632,7 @@ a:where(:not(.wb-reset *)) {
 Run: `pnpm vitest run --project unit apps/web/src/app/workbench-css.test.ts`
 Expected: 全绿（含 `globals.css` 守卫与 `postcss.config.mjs` 顺序两组）。
 
-- [ ] **Step 7: 旧页样式基线仍绿（webpack 与 Turbopack 两条路都跑）**
+- [x] **Step 7: 旧页样式基线仍绿（webpack 与 Turbopack 两条路都跑）**
 
 Run: `pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts`
 Expected: 2 passed。再对发布用的 Turbopack 跑一次（mock 夹具默认 `--webpack`）：
@@ -644,7 +644,7 @@ rm playwright.mock-turbo.config.ts && rm -rf apps/web/.next-e2e-mock-turbo
 ```
 Expected: 2 passed（改动前 Turbopack 下旧 CSS 不经 postcss，本任务给它新增了前缀链，这一遍证明旧页计算样式没动）。若红：先看差异属性，通常是 `border-style` 这类 `.wb-reset *` 漏出——检查 `layout.tsx` 没有把 `wb-reset` 放到 `<body>`。这条基线在 Chromium 上比计算样式，看不到厂商前缀的差异；前缀一致性靠 Step 3 复刻 Next 默认链保证，不靠这条。
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add apps/web/package.json pnpm-lock.yaml apps/web/postcss.config.mjs apps/web/src/app/workbench.css apps/web/src/app/globals.css apps/web/src/app/workbench-css.test.ts apps/web/src/app/layout.tsx
@@ -659,7 +659,7 @@ git commit -m "feat(web): Tailwind v4 无 preflight 地基与工作台 token"
 - Create: `apps/web/src/lib/workbench/routes.ts`
 - Test: `apps/web/src/lib/workbench/routes.test.ts`
 
-- [ ] **Step 1: 写测试**
+- [x] **Step 1: 写测试**
 
 ```ts
 // apps/web/src/lib/workbench/routes.test.ts
@@ -716,12 +716,12 @@ describe("workbench routes", () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/routes.test.ts`
 Expected: FAIL，找不到模块。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```ts
 // apps/web/src/lib/workbench/routes.ts
@@ -819,12 +819,12 @@ export function activeWorkbenchPage(
 }
 ```
 
-- [ ] **Step 4: 跑测试**
+- [x] **Step 4: 跑测试**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/routes.test.ts`
 Expected: 4 passed。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/lib/workbench/routes.ts apps/web/src/lib/workbench/routes.test.ts
@@ -843,7 +843,7 @@ git commit -m "feat(workbench): 15 条路由段名与旧版页面映射表"
 
 类型来自 jsx 的结果形状（`runAudit` L479、`mockVisibility` L514、`buildRows` L589、`domainStats`/`keywordGap` L2529、`fallbackPlan` L2231、`mockLinks` L543、`seedKB` L2084、`crawlSignals`/`gscSignals` L1142、`DEMO_AI` L2705、`blankSite` L2678）。**中文枚举一律改 id**（设计 §7）；PR-2 按这些类型实现 mock。
 
-- [ ] **Step 1: 写 types.ts**
+- [x] **Step 1: 写 types.ts**
 
 ```ts
 // apps/web/src/lib/workbench/types.ts
@@ -1196,7 +1196,7 @@ export type DemoPayload = Pick<
 >;
 ```
 
-- [ ] **Step 2: 写 schema 测试**
+- [x] **Step 2: 写 schema 测试**
 
 ```ts
 // apps/web/src/lib/workbench/store/schema.test.ts
@@ -1245,12 +1245,12 @@ describe("persisted workbench schema v1", () => {
 });
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/schema.test.ts`
 Expected: FAIL，找不到 `./reducer.ts` / `./schema.ts`。（reducer 在 Task 4 实现；本任务先让 schema 存在，Task 4 结束时本测试才全绿。）
 
-- [ ] **Step 4: 写 schema.ts（zod 4）**
+- [x] **Step 4: 写 schema.ts（zod 4）**
 
 ```ts
 // apps/web/src/lib/workbench/store/schema.ts
@@ -1524,12 +1524,12 @@ export function parsePersistedState(raw: unknown): WorkbenchProjectState | null 
 
 `note` / `filename` 在 `types.ts` 里必须是 `?: string | undefined`（见头部约定例外），否则 `parsePersistedState` 的返回和漂移守卫都编译不过。
 
-- [ ] **Step 5: 类型检查**
+- [x] **Step 5: 类型检查**
 
 Run: `pnpm --filter @sf/web typecheck`
 Expected: 只剩 `schema.test.ts` 找不到 `./reducer.ts`（Task 4 解决）；无其他新错误。
 
-- [ ] **Step 6: 不单独提交**
+- [x] **Step 6: 不单独提交**
 
 本任务与 Task 4 合为一个 commit（Task 4 Step 6），避免带红测试的提交。
 
@@ -1544,7 +1544,7 @@ Expected: 只剩 `schema.test.ts` 找不到 `./reducer.ts`（Task 4 解决）；
 
 设计 §6.4：时钟与 id 由 action 携带；`auditComplete` 把上一份 `lastAudit` 归档、历史不含当前；`visProgress` 不归档、`visComplete` 归档；`auditCancel` / `visCancel` 回到上次；`loadDemo` 逐字段写入且不碰 `profile` / `notify`；`reset` 回初始值。`visStart` / `visProgress` 置 `visPartial = true`，`visComplete` / `visCancel` 置 false——hydration 靠这个持久化标志识别「被打断的可见度运行」，不能靠 `visResults` 是否为空（流式中间结果会让部分结果冒充完成态）。
 
-- [ ] **Step 1: 在 types.ts 末尾追加 DemoPayload**
+- [x] **Step 1: 在 types.ts 末尾追加 DemoPayload**
 
 本任务的改动（Task 3 的 types.ts 代码块镜像落地文件，末尾已含下面这段）：
 
@@ -1574,7 +1574,7 @@ export type DemoPayload = Pick<
 
 `visPartial` **不进** `DemoPayload`：示例数据从来不是「运行中」的（`loadDemo` 显式把它置 false）。
 
-- [ ] **Step 2: 写测试**
+- [x] **Step 2: 写测试**
 
 ```ts
 // apps/web/src/lib/workbench/store/reducer.test.ts
@@ -1899,12 +1899,12 @@ describe("immutability", () => {
 });
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/reducer.test.ts`
 Expected: FAIL，找不到 `./reducer.ts`。
 
-- [ ] **Step 4: 实现 reducer.ts**
+- [x] **Step 4: 实现 reducer.ts**
 
 ```ts
 // apps/web/src/lib/workbench/store/reducer.ts
@@ -2122,12 +2122,12 @@ export function normalizeInterrupted(state: WorkbenchProjectState): WorkbenchPro
 
 `reduce` 超过 50 行是 switch 的固有形态；若 lint 有函数长度规则则把 audit / vis 两组抽成 `reduceAudit` / `reduceVis`。
 
-- [ ] **Step 5: 跑 reducer 与 schema 测试**
+- [x] **Step 5: 跑 reducer 与 schema 测试**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store`
 Expected: reducer 23 passed、schema 5 passed。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/web/src/lib/workbench/types.ts apps/web/src/lib/workbench/store/schema.ts apps/web/src/lib/workbench/store/schema.test.ts apps/web/src/lib/workbench/store/test-fixtures.ts apps/web/src/lib/workbench/store/reducer.ts apps/web/src/lib/workbench/store/reducer.test.ts
@@ -2144,7 +2144,7 @@ git commit -m "feat(workbench): 领域类型、持久化 schema v1、reducer 与
 
 `keywordRows` / `gatedRows` 需要 `buildRows`，落 PR-2；本任务只做不依赖 mock 的派生。
 
-- [ ] **Step 1: 写测试**
+- [x] **Step 1: 写测试**
 
 ```ts
 // apps/web/src/lib/workbench/store/selectors.test.ts
@@ -2273,12 +2273,12 @@ describe("selectCounts", () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/selectors.test.ts`
 Expected: FAIL。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```ts
 // apps/web/src/lib/workbench/store/selectors.ts
@@ -2334,12 +2334,12 @@ export function selectCounts(
 }
 ```
 
-- [ ] **Step 4: 跑测试**
+- [x] **Step 4: 跑测试**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/selectors.test.ts`
 Expected: 8 passed。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/lib/workbench/store/selectors.ts apps/web/src/lib/workbench/store/selectors.test.ts
@@ -2355,7 +2355,7 @@ git commit -m "feat(workbench): 侧栏徽标与种子词 selectors"
 - Test: `apps/web/src/lib/workbench/store/persistence.test.ts`
 - Test fixture: `apps/web/src/lib/workbench/store/test-fixtures.ts`（Task 3 已建，代码块在下面 Step 1）
 
-- [ ] **Step 1: 写测试**
+- [x] **Step 1: 写测试**
 
 共用夹具（Task 3 的 `schema.test.ts` 与本任务的 `persistence.test.ts` 都 import 它）。初始状态的每个嵌套形状都是 `null` 或空数组，只有填满的状态才走得到嵌套 `strictObject`；测试之间不得互相 import，所以它是独立模块而不是某个 `*.test.ts` 的导出：
 
@@ -2642,12 +2642,12 @@ describe("persistence", () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/persistence.test.ts`
 Expected: FAIL。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```ts
 // apps/web/src/lib/workbench/store/persistence.ts
@@ -2740,12 +2740,12 @@ export function clearAllWorkbenchState(storage: Storage): void {
 }
 ```
 
-- [ ] **Step 4: 跑测试**
+- [x] **Step 4: 跑测试**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/persistence.test.ts`
 Expected: 14 passed。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/lib/workbench/store/persistence.ts apps/web/src/lib/workbench/store/persistence.test.ts
@@ -3792,7 +3792,7 @@ git commit -m "feat(workbench): Dialog / PageHead / DemoChip / LegacyLinks / 占
 - rail 次级文字 token 全部提到 WCAG AA 4.5:1（Task 12 全量 mock e2e 的 axe 在 `/execution`、`/results` 抓到 `color-contrast` serious）：`rail-muted` #737270→#9c9b99（rail/rail-2/rail-3 = 6.00/5.23/4.61，徽标在活动项里坐在 rail-3 上）、`rail-label` #807f7d→#959492（rail-2 4.80）、`rail-dim` #636260→#8f8e8c（rail 5.09）；品牌标语 `text-zinc-500`（3.45:1）改走 `text-wb-rail-muted`；新增 `app/workbench-tokens.test.ts` 解析 `@theme` 钉住每个 token 在其所用面上的比值，并扫 `Sidebar.tsx` / `SiteCard.tsx` 不得再出现裸 `text-{zinc,slate,neutral,stone,gray}-[3-6]00`（唯一豁免 `text-zinc-300`，站点卡值列，rail-2 上 9.83:1）。原注释「labels only 可以低于 AA」是「色板最暗那档一定会被滥用」的翻版——判据是读不到会不会丢信息。
 - 侧栏 rail 用 `h-dvh` 而不是 `min-h-screen`：固定定位盒子只给最小高度会随内容长高，`overflow-y-auto` 永远没得滚，矮视口下最后几项掉到屏幕外。
 - `useMediaQuery("(width < 48rem)")`（不是 `max-width: 767px`）：要和 rail 的 `md:translate-x-0` 用同一个 Tailwind v4 `md` 断点，px 值在根字号非 16px 时会漂。已知代价：首帧 `matches` 为 false，移动端有一帧侧栏未 inert（hydration 后立即纠正，文件 doc comment 里写明「inert while closed once hydrated」）。
-- 命令面板与产物筐**互斥**：`ShellChrome` 的 `onPalette` / `onDrawer` 是 `useCallback`，各自关掉另一个；⌘K 的 toggle 也关抽屉。两个 `fixed inset-0 z-50` 叠着时，先关上面那个会把焦点还给 `<body>`（持有 opener 的是下面那个）。`Dialog` 的 inert 引用计数作为纵深防御保留。5508351b 把两个 `boolean` state 合并成一个 `panel: "palette" | "drawer" | null`：互斥关系本来就要两个 setter 互相记得关对方，合成一个槽位后这种状态直接**不可表达**，`closeAll` 退化成 `setPanel(null)`，两个 `Dialog` 的 `onClose` 也都是 `() => setPanel(null)`。
+- 命令面板与产物筐**互斥**：`ShellChrome` 的 `onPalette` / `onDrawer` 是 `useCallback`，各自关掉另一个；⌘K 的 toggle 也关抽屉（这句已被 5508351b 的单一 `panel` 槽位取代——见本条末尾，现在没有「关掉另一个」的代码，只有 `setPanel("palette" | "drawer" | null)`）。两个 `fixed inset-0 z-50` 叠着时，先关上面那个会把焦点还给 `<body>`（持有 opener 的是下面那个）。`Dialog` 的 inert 引用计数作为纵深防御保留。5508351b 把两个 `boolean` state 合并成一个 `panel: "palette" | "drawer" | null`：互斥关系本来就要两个 setter 互相记得关对方，合成一个槽位后这种状态直接**不可表达**，`closeAll` 退化成 `setPanel(null)`，两个 `Dialog` 的 `onClose` 也都是 `() => setPanel(null)`。
 - `app-shell.module.css` 顺手删掉 `.projectIdentity strong` 的死规则（5508351b）：它和上面的 `.projectIdentity` 选择器写的是同一条 `color: var(--color-slate-900, …)`，`strong` 从未比父选择器多覆盖任何东西。
 - `CommandPalette` 重开时用「prop 变化时在渲染期调整 state」的模式重置 `query` 与 `activeIndex`（不是 effect），首帧就显示完整列表；`returnFocusTo` 补进解构（原计划漏了，只写在类型里）；`activeEntry` 提出来一次（`noUncheckedIndexedAccess`）。
 - `CommandPalette` 的无障碍：输入框 `role="combobox"` + `aria-expanded` / `aria-autocomplete="list"` / `aria-controls`；选项 `tabIndex={-1}`（靠方向键 + `aria-activedescendant`，不进 Tab 序）；「没有匹配项」段落移到 listbox **外面**（listbox 里只能有 option），并加一个 `sr-only role="status"` 的计数，筛选不再静默——计数前缀改成 `t("shell.palette.title")`（5508351b）：裸数字出了 listbox 上下文没有意义，复用面板自己的标题免得再加一个 catalog key。
@@ -5812,7 +5812,12 @@ git commit -m "test(e2e): 工作台壳 spec，旧壳相关 spec 改指向 legacy
 - Modify: `CLAUDE.md`（L23）
 - Modify: `docs/PROGRESS.md`
 
-- [ ] **Step 1: CLAUDE.md**
+**落地备注：**
+
+- 落在 59a8e785（`docs: 客户壳权威改为工作台 IA，记录 PR-1 落地`）：`CLAUDE.md` 的 `Current authority: **v0.4` 前缀原文保留，`verify:docs` 14/14 绿。
+- Step 2b 的 `verify:spec` 第一次跑是红的，但不是本 PR 的锅：`scripts/spec-v0.4-lock.json` 管着 `CLAUDE.md` / `docs/PROGRESS.md` / `docs/DEPLOYMENT.md` 的哈希，`origin/main` 上的 18e41646 改了 `CLAUDE.md` 没刷锁，基线本来就漂；本分支 59a8e785 又改了受管的 `docs/PROGRESS.md`。两项在 447ade7a 用 `node scripts/generate-spec-v0.4-lock.mjs` 一次刷新（diff 只动这两条哈希，其余条目不变），之后 `verify:docs && verify:authority && verify:spec` 全绿。后续每次改 `docs/PROGRESS.md` 都要重刷锁并把锁放进同一 commit。
+
+- [x] **Step 1: CLAUDE.md**
 
 把 `Current authority: **v0.4 complete four-module workbench**` 改为：
 
@@ -5820,14 +5825,14 @@ git commit -m "test(e2e): 工作台壳 spec，旧壳相关 spec 改指向 legacy
 
 并在下一段「“完成”表示…」后加一句：「客户壳自 2026-09-11 起以工作台 IA 为准，`components/app-shell/nav-model.ts` 的四模块清单仅供保留的旧页与其测试使用。」
 
-- [ ] **Step 2: PROGRESS.md** 顶部加一条日期段落，写：PR-1 落地范围、旧页去向、未上生产（集成分支）、下一步 PR-2 / PR-3。
+- [x] **Step 2: PROGRESS.md** 顶部加一条日期段落，写：PR-1 落地范围、旧页去向、未上生产（集成分支）、下一步 PR-2 / PR-3。
 
-- [ ] **Step 2b: 仓库文档门**
+- [x] **Step 2b: 仓库文档门**
 
 Run: `pnpm verify:docs && pnpm verify:authority && pnpm verify:spec`
 Expected: 全绿。**硬约束**：`scripts/verify-docs-consistency.test.mjs` L114–124 会对 `CLAUDE.md` 断言 `/authority\/implementation-spec-v0\.4|active v0\.4|Current authority: \*\*v0\.4/`，Step 1 的新句子必须保留 `Current authority: **v0.4` 这个前缀原文，否则 `verify:docs` 红。若任一红：先读脚本报的具体断言；只有当它断言的是被本 PR 有意改动的句子时才改脚本期望（同一 commit 内、注明原因），否则回滚文档改动重写。
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add CLAUDE.md docs/PROGRESS.md
@@ -5838,7 +5843,15 @@ git commit -m "docs: 客户壳权威改为工作台 IA，记录 PR-1 落地"
 
 ### Task 14: 全量验证、评审、交付
 
-- [ ] **Step 1: 本地全套**
+**落地备注（HEAD 2a5cf4a5 那轮，证据在会话 scratchpad 的 `t14-*.txt`）：**
+
+- Step 1：`pnpm typecheck`（e2e + 13 个 workspace 项目）与 `pnpm lint` 都 EXIT 0；`pnpm test` 21213 / 21217，4 条红全部在 `apps/marketing/e2e/geo-kb-v2-fixtures.test.ts`（`store_unavailable` / `Visibility cannot run before exact freeze`），在基线 commit 的干净 checkout 上同样 4 红——既有，与本 PR 无关；`pnpm vitest run --project unit packages/i18n` 15/15；`verify:docs` 14/14、`verify:authority` 绿、`verify:spec` 先红后绿（原因与处置见 Task 13 备注，锁在 447ade7a 刷新）；`pnpm --filter @sf/web build` EXIT 0。
+- Step 2（有偏离）：没有做「集成分支整套 vs 本分支整套」的四项比较，而是把范围收到本 PR 新增的 `components/workbench/**` + `lib/workbench/**`：2a5cf4a5 时 77.26 / 72.9 / 67.74 / 77.93（stmts / branch / funcs / lines；`lib/workbench` 97.01 / 89.68 / 97.78 / 99.05，`components/workbench/shell` 只有 51.7，`ShellChrome` / `Sidebar` / `SiteCard` / `WorkbenchShell` / `PlaceholderView` / `SettingsView` 都是 0）。按计划的处置——不改阈值、不加 exclude——4a6ccf12 补了壳与占位视图的 jsdom 行为测试：`components/workbench/**` 范围从 66.24 / 65.74 / 56.25 / 65.46 提到 94.90 / 92.81 / 90.00 / 94.96，四项都过 80%。
+- Step 3（有偏离）：`next build` 后 `next start --port 3300`（`start` 脚本的 `--port 3000` 被后面的 CLI 参数覆盖），用 mock 配置的占位环境变量。没有起 Playwright 读 console，而是 `curl -i /login` 看响应头 + 扫 HTML：`content-security-policy` 为 `style-src 'self' 'nonce-…'`、`script-src 'self' 'nonce-…' 'strict-dynamic'`，无 `unsafe-inline`；HTML 里没有 `style=` 属性也没有 `<style>` 标签；构建产物 CSS 里 `@media print{[data-wb-content]{margin-left:0}}` 确认落在 utilities 层块内（`.md\:p-10` 之后、`@property` 之前）。壳本身在生产模式需要真实登录，仍留到 PR-3b 合 main 前用真实账号做一次。
+- Step 4：自审后按 CLAUDE.md 约束跑 codex（攻击面拆两次），6 条发现全部修掉：a5fd7090（provider 不回写来自存储的状态、清键事件按 `newValue` 判定、同步写盘闸）、604f8816（IME 组合中的按键不触发面板 / 对话框 / 全局快捷键，焦点候选排除 disabled）、05fb60f6（删除失败文案不再声称「未做任何改动」）。
+- Step 5 未做——PR 待开；PR 前整分支复审又补了 e3e5bc48（旧页 `<main>` 内边距，见 Task 10 备注）。
+
+- [x] **Step 1: 本地全套**
 
 ```bash
 pnpm typecheck && pnpm lint && pnpm test && pnpm vitest run --project unit packages/i18n
@@ -5847,18 +5860,18 @@ pnpm --filter @sf/web build
 ```
 Expected: 全绿；build 成功（这是唯一能暴露 client 拉到 `node:*` 的检查）。
 
-- [ ] **Step 2: 覆盖率门**
+- [x] **Step 2: 覆盖率门**
 
 先在 `feat/workbench-ui-port` 上跑一次同样的命令记下基线（`vitest.config.ts` 注明阈值按 unit+integration 合并统计，只跑 unit 可能本来就不到 80%），再在本分支跑：
 
 Run: `pnpm vitest run --coverage --project unit 2>&1 | tail -15`
 Expected: 四项数值不低于集成分支基线；若基线本身已 ≥ 80% 则四项阈值 ≥ 80%。若因 `components/workbench/**` 无单测而低于阈值：**不改阈值、不加 exclude**，为 `components/workbench/**` 加 jsdom 项目与组件测试（设计 §8），作为本 PR 的追加任务。
 
-- [ ] **Step 3: 生产构建 CSP 冒烟**
+- [x] **Step 3: 生产构建 CSP 冒烟**
 
 `pnpm --filter @sf/web build` 后 `pnpm --filter @sf/web exec next start --port 3300`（`start` 脚本写死了 `--port 3000`，环境变量压不过 CLI 参数；用 Task 0 mock 配置里的占位环境变量），Playwright 打开 `http://localhost:3300/login`，断言 console 无 `Content Security Policy` 字样（登录页已加载 `workbench.css`）。壳本身在生产模式需要真实登录，留到 PR-3b 合 main 前用真实账号做一次。
 
-- [ ] **Step 4: 自审 + 跨模型评审**
+- [x] **Step 4: 自审 + 跨模型评审**
 
 先 `superpowers:requesting-code-review`（对照本计划与设计稿 §4–§8），修完后按 `CLAUDE.md` 的 codex 约束跑一轮：`git diff feat/workbench-ui-port...HEAD > .review-tmp/pr1.diff`，prompt 限定「只读 diff + 设计稿 §4–§6 + `_nav.tsx` 原文 + `security-headers.ts`」，攻击面分两次：(a) 壳与 a11y / CSP；(b) store 与持久化。有 verdict 行才算跑成。
 
@@ -5869,4 +5882,4 @@ git push -u origin feat/workbench-pr1-foundation
 gh pr create --base feat/workbench-ui-port --title "feat(workbench): PR-1 地基——新壳、15 条路由、store、i18n" --body-file .review-tmp/pr1-body.md
 ```
 
-PR 描述含：设计稿链接、任务清单勾选状态、验证命令与结果、评审处置、已知未做（GSC 站点卡行、覆盖率补测若有）、**相对设计稿的偏离**（`audit` 的旧页链接指 `growth-map` 而非 `diagnosis`；样式基线屏从 `context` 换成 `sources`；`globals.css` 三条元素规则加了 `:where(:not(.wb-reset *))` 守卫；`postcss.config.mjs` 复刻 Next 默认链）与 Task 11 Step 5b 的两条复核结论。**不合 main**（D3）。
+PR 描述含：设计稿链接、任务清单勾选状态、验证命令与结果、评审处置、已知未做（GSC 站点卡行、覆盖率补测若有）、**相对设计稿的偏离**（`audit` 的旧页链接指 `growth-map` 而非 `diagnosis`；样式基线屏从 `context` 换成 `sources`；`globals.css` 四条元素规则（`*`、`h1/h2/h3`、`a`、`:focus-visible`）加了 `:where(:not(.wb-reset *))` 守卫；`postcss.config.mjs` 复刻 Next 默认链）与 Task 11 Step 5b 的两条复核结论。**不合 main**（D3）。

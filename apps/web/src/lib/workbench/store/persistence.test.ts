@@ -73,7 +73,7 @@ describe("persistence", () => {
     const state: WorkbenchProjectState = {
       ...initialProjectState(seed),
       audit: {
-        at: "t", score: Number.NaN, findings: [],
+        at: "2026-09-11 10:00", score: Number.NaN, findings: [],
         crawl: { pages: 1, indexable: 1, blocked: 0, orphan: 0, lcp: "1", schema: 1, llmReadable: 1 },
         pageRows: [],
       },

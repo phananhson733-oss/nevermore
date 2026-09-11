@@ -23,7 +23,9 @@ legacy-style parity spec together with `e2e/workbench-shell.mock.spec.ts`.
 旧页去向: the old overview now lives at `/p/<id>/legacy/overview`;
 `growth-map`, `context`, `setup-sources`, `sources`, `studio`, `execution`,
 and `results` keep their existing paths but now render inside the new
-chrome, and each new page carries a 「旧版页面 →」 link back to it;
+chrome, and 9 of the 15 new pages carry a 「旧版页面 →」 link back to the
+one(s) they replace (`LEGACY_LINKS` in `apps/web/src/lib/workbench/routes.ts`;
+week / visibility / links / kb / artifacts / settings have no legacy page);
 `diagnosis`, `plan`, and `report` remain redirecting compatibility aliases,
 unchanged.
 
@@ -35,9 +37,17 @@ are guarded with `:where(:not(.wb-reset *))` so they do not leak into the new
 chrome; and `postcss.config.mjs` restates Next's default plugin chain ahead
 of `@tailwindcss/postcss` rather than relying on implicit ordering.
 
-下一步: PR-2 builds the mock domain layer (`makeDemoSite`, `buildRows`, and
-their views); PR-3 wires the per-module flows onto that layer. Per 决策 D3,
-this integration branch merges to `main` only after PR-3 lands, not before.
+下一步 (design §9): PR-2 is the pure mock domain layer — `lib/workbench/mock/*`
+(`makeDemoSite`, `buildRows`, … ported from the jsx as pure functions with unit
+tests) plus the `keywordRows` / `gatedRows` selectors and the one-line
+`deriveKeywordRowCount` provider wiring; no views. PR-3 is the first five named
+pages (overview with 「载入示例站点」, this week, site profile, data sources,
+settings with its notification + data-source blocks); PR-3b merges the
+integration branch to `main` (first production release). PR-4 / PR-5 then
+carry the per-module flows (keywords / keyword library / competitors / audit /
+AI visibility; content / knowledge base / answers / backlinks / artifacts) on
+`main`. Per 决策 D3, this integration branch merges to `main` only after
+PR-3 lands, not before.
 
 ## Active identity and authority
 

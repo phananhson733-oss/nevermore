@@ -49,7 +49,7 @@
     "scripts/verify-docs-consistency.test.mjs": "48364ade28536ba06700bd87fb732cf760c3e119fb9d8879a9c80744091ba853",
     "README.md": "ba5ba999cb26bb0213f351ee96045e0fbba1adf7296206fba1a2e2962dc91800",
     "CLAUDE.md": "f7ac7150afdd770471820656ded69b3cdf052b6be9bbdd73e0d58bb4ed4b710b",
-    "docs/PROGRESS.md": "22966d2a1fb5ca47f0ef9e9755c3ac769aa18a316a5914c54dce37878f8e4cd1",
+    "docs/PROGRESS.md": "eca68a4e5dcba7e42c14b78b64625bff96e84c7f99f15e4f5d244da4fda479cb",
     "docs/DEPLOYMENT.md": "03f3047fdf7ac8a0e4360a874ac8af6402acd1240e84e9794db104d7ea839377"
   },
   "apiOperations": [
