@@ -95,10 +95,10 @@ pnpm --filter @sf/web build
 
 设计稿 §5 要求验证 `.wb-reset` 没有漏到旧页。全页截图会因新壳而必然不同，所以改为记录旧页根节点内若干元素的**计算样式**（与宽度无关的属性），在改动前生成基线，改动后比对。
 
-- [ ] **Step 1: 确认起点**
+- [ ] **Step 1: 确认起点并切工作分支**
 
-Run: `git -C /Users/wzb/Code/nevermore/workbench-ui-port-20260911 status --short | wc -l && git log --oneline -1`
-Expected: `0` 与 `0d69129c docs(workbench): 设计稿 rev4…`（或其后的提交）。
+Run: `git -C /Users/wzb/Code/nevermore/workbench-ui-port-20260911 status --short | wc -l && git branch --show-current && git switch -c feat/workbench-pr1-foundation`
+Expected: `0`、当前分支 `feat/workbench-ui-port`（集成分支），然后位于新分支 `feat/workbench-pr1-foundation`。之后所有提交都在这个分支，PR 以 `feat/workbench-ui-port` 为 base（Task 14）。
 
 - [ ] **Step 2: 记录基线检查结果**
 
@@ -3445,3 +3445,471 @@ Expected: 仅剩 `marketCode` 不存在于 `ProjectShellProject` 的错误（Tas
 git add apps/web/src/components/workbench/shell apps/web/src/lib/workbench/download.ts apps/web/src/app/workbench.css
 git commit -m "feat(workbench): 侧栏 / 顶栏 / 命令面板 / 产物筐抽屉与壳装配"
 ```
+
+---
+
+### Task 11: 路由与 layout 切换
+
+**Files:**
+- Modify: `apps/web/src/lib/services/project-shell.ts`
+- Modify: `apps/web/src/app/p/[projectId]/_e2e-shell-fixture.ts`
+- Move: `apps/web/src/app/p/[projectId]/overview/**` → `apps/web/src/app/p/[projectId]/legacy/overview/**`
+- Create: 15 个 `apps/web/src/app/p/[projectId]/<segment>/page.tsx`
+- Create: `apps/web/src/components/workbench/views/settings/DeleteProjectSection.tsx`、`SettingsView.tsx`
+- Delete: `apps/web/src/app/p/[projectId]/settings/{_settings.tsx,_settings.test.ts,settings.module.css}`、`apps/web/src/app/p/[projectId]/_nav.tsx`
+- Modify: `apps/web/src/app/p/[projectId]/layout.tsx`、`apps/web/src/app/layout.tsx`、`apps/web/src/components/app-shell/AppShell.tsx`、`apps/web/src/app/p/[projectId]/page-title-typography.test.ts`、两份 messages
+
+- [ ] **Step 1: `ProjectShellProject.marketCode`**
+
+`project-shell.ts` L19–26 加 `readonly marketCode: string | null;`；L175 `shellProject` 加 `marketCode: site.market_codes[0] ?? null,`；`_e2e-shell-fixture.ts` 的 `currentProject` 加 `marketCode: "US",`。
+
+Run: `pnpm --filter @sf/web typecheck`
+Expected: Task 10 遗留的 `marketCode` 错误消失。
+
+- [ ] **Step 2: 搬 overview 到 legacy**
+
+```bash
+cd apps/web/src/app/p/\[projectId\]
+mkdir -p legacy && git mv overview legacy/overview
+grep -rn 'from "\.\./_' legacy/overview
+```
+
+把打印出的两处 `from "../_e2e-shell"`、`from "../_problem-display"` 改为 `"../../_e2e-shell"`、`"../../_problem-display"`。`page-title-typography.test.ts` 清单里 `./overview/_overview.tsx` → `./legacy/overview/_overview.tsx`，删掉 `./settings/_settings.tsx` 一行。
+
+Run: `pnpm vitest run --project unit "apps/web/src/app/p/\[projectId\]/legacy" "apps/web/src/app/p/\[projectId\]/page-title-typography.test.ts"`
+Expected: 全绿。
+
+- [ ] **Step 3: 15 个页面文件**
+
+每个段一份，只换 `page` 与函数名（`overview` 也用占位，PR-3 替换）：
+
+```tsx
+// apps/web/src/app/p/[projectId]/audit/page.tsx
+import { PlaceholderView } from "@/components/workbench/views/placeholder/PlaceholderView";
+
+export default async function AuditPage({
+  params,
+}: {
+  readonly params: Promise<{ readonly projectId: string }>;
+}) {
+  const { projectId } = await params;
+  return <PlaceholderView projectId={projectId} page="audit" />;
+}
+```
+
+段名 ↔ page：`overview/overview`、`week/week`、`keywords/keywords`、`keyword-library/keywordLibrary`、`competitors/competitors`、`audit/audit`、`visibility/visibility`、`profile/profile`、`data-sources/dataSources`、`links/links`、`content/content`、`kb/kb`、`answers/answers`、`artifacts/artifacts`。`settings` 见下一步。
+
+- [ ] **Step 4: 设置页 = 占位 + 真实删除**
+
+删除旧三文件后：
+
+```tsx
+// apps/web/src/components/workbench/views/settings/DeleteProjectSection.tsx
+"use client";
+
+import { AlertTriangle, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { useState } from "react";
+import { useDeleteProject } from "@/lib/api";
+import { useWorkbench } from "@/lib/workbench/store/hooks";
+import { cn } from "../../ui/cn.ts";
+
+/**
+ * The one real action on the settings page (design §6.6). Moved verbatim in
+ * behaviour from the retired `settings/_settings.tsx`: two explicit steps,
+ * localized copy only, replace to "/" and refresh on success. Adds: clears the
+ * project's workbench localStorage key.
+ */
+export function DeleteProjectSection({ projectId }: { readonly projectId: string }) {
+  const t = useTranslations("projectSettings");
+  const tWb = useTranslations("workbench.settings");
+  const router = useRouter();
+  const { forgetProject } = useWorkbench();
+  const deleteProject = useDeleteProject(projectId);
+  const [confirming, setConfirming] = useState(false);
+
+  async function confirmDelete(): Promise<void> {
+    try {
+      await deleteProject.mutateAsync();
+      forgetProject();
+      router.replace("/");
+      router.refresh();
+    } catch {
+      // The mutation keeps its typed error; only localized copy is shown.
+    }
+  }
+
+  const button = "rounded-lg border px-4 py-1.5 text-[13px] font-medium transition-colors";
+  return (
+    <section aria-labelledby="delete-product-title" className="rounded-xl border border-rose-200 bg-white p-6 shadow-sm" data-wb-real-action="">
+      <div className="mb-3 flex items-center gap-2">
+        <Trash2 size={18} aria-hidden="true" className="text-rose-600" />
+        <span className="rounded border border-rose-200 bg-rose-50 px-2 text-[11px] font-medium text-rose-700">{tWb("realAction")}</span>
+        <span className="text-[11px] font-medium uppercase text-slate-400">{t("dangerZone")}</span>
+      </div>
+      <h2 id="delete-product-title" className="text-[15px] font-semibold">{t("delete.title")}</h2>
+      <p className="mt-1 text-[13px] text-slate-500">{t("delete.description")}</p>
+      <p className="mt-1 text-[12px] text-slate-400">{t("delete.retention")}</p>
+      {deleteProject.isError ? <p role="alert" className="mt-3 text-[13px] text-rose-700">{t("delete.error")}</p> : null}
+      {confirming ? (
+        <div role="group" aria-label={t("delete.confirmTitle")} className="mt-4 flex flex-wrap items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 p-4">
+          <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 text-rose-600" />
+          <div className="flex-1">
+            <strong className="text-[13px]">{t("delete.confirmTitle")}</strong>
+            <p className="text-[12px] text-slate-600">{t("delete.confirmDescription")}</p>
+          </div>
+          <div className="flex gap-2">
+            <button type="button" disabled={deleteProject.isPending} onClick={() => { deleteProject.reset(); setConfirming(false); }} className={cn(button, "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")}>{t("delete.cancel")}</button>
+            <button type="button" disabled={deleteProject.isPending} onClick={() => void confirmDelete()} className={cn(button, "border-rose-600 bg-rose-600 text-white hover:bg-rose-700")}>{deleteProject.isPending ? t("delete.deleting") : t("delete.confirmAction")}</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => { deleteProject.reset(); setConfirming(true); }} className={cn(button, "mt-4 border-rose-200 bg-white text-rose-700 hover:bg-rose-50")}>{t("delete.action")}</button>
+      )}
+    </section>
+  );
+}
+```
+
+```tsx
+// apps/web/src/components/workbench/views/settings/SettingsView.tsx
+"use client";
+
+import { useTranslations } from "next-intl";
+import { DemoChip } from "../../ui/DemoChip.tsx";
+import { PageHead } from "../../ui/PageHead.tsx";
+import { DeleteProjectSection } from "./DeleteProjectSection.tsx";
+
+/** PR-1 form (design §4.2): placeholder note + the real delete block. PR-3 adds notify + data sources. */
+export function SettingsView({ projectId }: { readonly projectId: string }) {
+  const tNav = useTranslations("workbench.nav.items");
+  const tShell = useTranslations("workbench.shell");
+  return (
+    <div className="wb-reset mx-auto min-h-full max-w-5xl p-6 font-sans text-slate-900 md:p-10">
+      <PageHead title={tNav("settings")} aside={<DemoChip />} />
+      <p className="mb-6 text-[13px] text-slate-500">{tShell("inProgressDetail")}</p>
+      <DeleteProjectSection projectId={projectId} />
+    </div>
+  );
+}
+```
+
+```tsx
+// apps/web/src/app/p/[projectId]/settings/page.tsx
+import { SettingsView } from "@/components/workbench/views/settings/SettingsView";
+
+export default async function SettingsPage({
+  params,
+}: {
+  readonly params: Promise<{ readonly projectId: string }>;
+}) {
+  const { projectId } = await params;
+  return <SettingsView projectId={projectId} />;
+}
+```
+
+旧 `_settings.test.ts` 的三条断言（两步删除、仅活跃项目暴露设置、双语保留说明）：第一条由 Task 12 的 e2e 覆盖；第二条随旧壳退役；第三条 parity 已守。删除即可。
+
+- [ ] **Step 5: 项目 layout 换壳**
+
+```tsx
+// apps/web/src/app/p/[projectId]/layout.tsx
+import type { ReactNode } from "react";
+import { notFound } from "next/navigation";
+import { WorkbenchShell } from "@/components/workbench/shell/WorkbenchShell";
+import { getOperatorContext } from "@/lib/auth/session";
+import { getProjectShell, type ProjectShellProjection } from "@/lib/services/project-shell";
+import { ProjectSwitcher } from "./_project-switcher.tsx";
+
+/**
+ * Project shell (design §4.1). Server component: resolves the operator + project
+ * (404, never 403, for a foreign or absent project so existence never leaks),
+ * then frames every project page — new workbench pages and the retained legacy
+ * pages alike — with the workbench chrome.
+ */
+export default async function ProjectLayout({
+  children,
+  params,
+}: {
+  children: ReactNode;
+  params: Promise<{ projectId: string }>;
+}) {
+  const { projectId } = await params;
+
+  let shell: ProjectShellProjection | null = null;
+  if (process.env.NODE_ENV === "development") {
+    const { loadE2eProjectShell } = await import("./_e2e-shell.ts");
+    shell = await loadE2eProjectShell(process.env, projectId);
+  }
+  if (!shell) {
+    const operator = await getOperatorContext();
+    if (!operator) notFound();
+    shell = await getProjectShell({ workspaceId: operator.workspaceId }, projectId);
+  }
+  if (!shell) notFound();
+
+  return (
+    <WorkbenchShell
+      shell={shell}
+      projectControl={<ProjectSwitcher projectId={shell.currentProject.id} options={shell.projectOptions} />}
+    >
+      {children}
+    </WorkbenchShell>
+  );
+}
+```
+
+然后：删 `_nav.tsx`；`AppShell.tsx` 删 `SidebarProgress` 函数及 `app-shell.module.css` 里的 `.program*` 规则；两份 messages 删 `appShell.programTitle / programDay / programProgress`；根 `layout.tsx` 的 `<html>` 加 `data-theme="light"`（设计 §5 / §11）。
+
+- [ ] **Step 6: 类型、lint、单测、parity**
+
+Run: `pnpm --filter @sf/web typecheck && pnpm --filter @sf/web lint && pnpm vitest run --project unit apps/web packages/i18n`
+Expected: 全绿（`_nav.test.ts` 仍绿——它测的是保留的 `nav-model.ts`）。
+
+- [ ] **Step 7: 冒烟：起 dev，肉眼过一遍**
+
+Run: `SF_E2E_MOCK_API=true pnpm --filter @sf/web dev` 后打开 `http://127.0.0.1:3000/p/00000000-0000-4000-8000-000000000042/overview`
+Expected: 深色侧栏 15 项、站点卡 `example.test / US / — / —`、顶栏项目切换 + ⌘K + 示例数据 + 产物筐 0；点「技术审计」到占位页并有「旧版页面 · diagnosis →」；`/p/…/growth-map` 旧页在新壳内正常；⌘K 打开面板、Esc 关闭、焦点回到按钮。
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -A apps/web/src/app apps/web/src/components apps/web/src/lib/services/project-shell.ts packages/i18n
+git commit -m "feat(web): 项目壳切换为工作台，15 条路由占位，旧概览搬 legacy，设置页接真实删除"
+```
+
+（`git add -A` 只限这几个路径；提交前 `git status` 确认没有带进 `.workbench-reference/`——它在 exclude 里，正常不会出现。）
+
+---
+
+### Task 12: spec 盘点、修复与新壳 spec
+
+**Files:**
+- Create: `e2e/workbench-shell.mock.spec.ts`
+- Modify: `e2e/critical-flows.mock.spec.ts`、`e2e/mobile-shell.mock.spec.ts`、`e2e/overview-read-model.mock.spec.ts`、`e2e/frontend-error-states.mock.spec.ts`，以及盘点出的其他文件
+
+- [ ] **Step 1: 盘点**
+
+```bash
+grep -nE 'data-app-shell|Project sections|program|/overview"|/overview`|"Settings"|getByRole\("link", \{ name: "(Overview|Growth Map|Execution|Results)"' e2e/*.spec.ts > /tmp/wb-spec-inventory.txt; wc -l /tmp/wb-spec-inventory.txt
+```
+
+逐行标处置：`改指向 legacy` / `改选择器` / `删除`。已知处置：
+
+| 文件 | 处置 |
+|---|---|
+| `critical-flows.mock.spec.ts` L137–140 | 不改（新侧栏 brand 有 `aria-label="GenGrowth"` 且带 `data-app-shell-sidebar`） |
+| `critical-flows.mock.spec.ts` L143–197 | 重写：15 项导航 + 语言切换改变导航标签；数据源部分改为 `page.goto(legacy/overview)` 后再点「管理数据连接」 |
+| `critical-flows.mock.spec.ts` L968–969 | 不改（print 隐藏由 `workbench.css` 保证） |
+| `a11y.spec.ts` L262–263 | 不改；axe 若报新壳问题按报告修 |
+| `mobile-shell.mock.spec.ts` | 重写：390px 下 `aside` 有 `inert`、菜单按钮 `aria-expanded` 切换、program 进度断言删除、Settings 链接为 `data-wb-nav="settings"` |
+| `overview-read-model.mock.spec.ts` | `openOverview` 的 `goto` 改 `/legacy/overview`；chrome 本地化断言若指向旧顶栏则改为侧栏导航标签 |
+| `frontend-error-states.mock.spec.ts` L1675 | `Project sections` → `Workbench sections`，若点的是旧四项之一改 `page.goto` |
+| `complete-four-module-workbench.mock.spec.ts` 等按旧导航点击的 | 导航点击改 `page.goto`，页面内断言不动 |
+
+- [ ] **Step 2: critical-flows 导航测试替换稿**
+
+```ts
+test("workbench navigation exposes all fifteen sections and localizes", async ({ page }) => {
+  await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
+  const nav = page.getByRole("navigation", { name: "Workbench sections" });
+  const segments = [
+    "overview", "week", "keywords", "keyword-library", "competitors", "audit", "visibility",
+    "profile", "data-sources", "links", "content", "kb", "answers", "artifacts", "settings",
+  ];
+  await expect(nav.getByRole("link")).toHaveCount(segments.length);
+  for (const segment of segments) {
+    await expect(nav.locator(`a[href="/p/${E2E_PROJECT_ID}/${segment}"]`)).toHaveCount(1);
+  }
+  await expect(nav.getByRole("link", { name: "Overview", exact: true })).toHaveAttribute("aria-current", "page");
+
+  const urlBefore = page.url();
+  await page.getByRole("button", { name: "简体中文" }).click();
+  await expect(page.getByRole("navigation", { name: "工作台导航" }).getByRole("link", { name: "概览", exact: true })).toBeVisible();
+  expect(page.url()).toBe(urlBefore);
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/legacy/overview`);
+  await page.getByRole("link", { name: "管理数据连接" }).click();
+  await expect(page.getByRole("heading", { name: "数据来源" })).toBeVisible();
+});
+```
+
+- [ ] **Step 3: 新壳 spec**
+
+```ts
+// e2e/workbench-shell.mock.spec.ts
+import { expect, test } from "@playwright/test";
+import { E2E_PROJECT_ID, installCriticalFlowApi } from "./mock-api.ts";
+
+const PAGES: readonly (readonly [string, string])[] = [
+  ["overview", "Overview"], ["week", "This week"], ["keywords", "Keyword research"],
+  ["keyword-library", "Keyword library"], ["competitors", "Competitor overview"], ["audit", "Technical audit"],
+  ["visibility", "AI visibility"], ["profile", "Site profile"], ["data-sources", "Data sources"],
+  ["links", "Backlinks"], ["content", "Content generation"], ["kb", "Fact knowledge base"],
+  ["answers", "Answer pages / reports"], ["artifacts", "Artifact center"], ["settings", "Settings"],
+];
+
+test.beforeEach(async ({ page }) => {
+  await page.context().addCookies([{ name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" }]);
+  await installCriticalFlowApi(page);
+});
+
+test("every workbench page renders one data-wb-page-title h1 and its legacy links", async ({ page }) => {
+  for (const [segment, title] of PAGES) {
+    await page.goto(`/p/${E2E_PROJECT_ID}/${segment}`);
+    await expect(page.locator("h1[data-wb-page-title]")).toHaveCount(1);
+    await expect(page.locator("h1[data-wb-page-title]")).toHaveText(title);
+    await expect(page.locator(`[data-wb-nav="${segment === "keyword-library" ? "keywordLibrary" : segment === "data-sources" ? "dataSources" : segment}"]`)).toHaveAttribute("aria-current", "page");
+  }
+  await page.goto(`/p/${E2E_PROJECT_ID}/audit`);
+  await page.locator('[data-wb-legacy-link="diagnosis"]').click();
+  await expect(page).toHaveURL(new RegExp(`/p/${E2E_PROJECT_ID}/diagnosis$`));
+});
+
+test("english chrome carries no chinese and no untranslated key paths", async ({ page }) => {
+  await page.goto(`/p/${E2E_PROJECT_ID}/audit`);
+  const chrome = await page.locator("[data-app-shell-sidebar], [data-app-shell-topbar]").allInnerTexts();
+  const text = chrome.join("\n");
+  expect(text).not.toMatch(/[一-鿿]/);
+  expect(text).not.toMatch(/workbench\./);
+});
+
+test("shell markup carries no inline styles (production CSP has no unsafe-inline)", async ({ page }) => {
+  await page.goto(`/p/${E2E_PROJECT_ID}/audit`);
+  await expect(page.locator("[data-app-shell] [style]")).toHaveCount(0);
+  await expect(page.locator("[data-app-shell] style")).toHaveCount(0);
+});
+
+test("command palette: ⌘K opens, arrows + enter navigate, focus returns to the opener", async ({ page }) => {
+  await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
+  const opener = page.getByRole("button", { name: /Search \/ jump/ });
+  await opener.focus();
+  await page.keyboard.press("ControlOrMeta+k");
+  const dialog = page.getByRole("dialog", { name: "Search and jump" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("textbox")).toBeFocused();
+  await dialog.getByRole("textbox").fill("audit");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(new RegExp("/audit$"));
+  await page.keyboard.press("ControlOrMeta+k");
+  await expect(page.getByRole("dialog", { name: "Search and jump" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(opener).toBeFocused();
+});
+
+test("artifact drawer traps focus and closes on Escape", async ({ page }) => {
+  await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
+  await page.locator("[data-wb-drawer-button]").click();
+  const dialog = page.getByRole("dialog", { name: /Artifacts/ });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Close" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "Close" })).toBeFocused(); // only focusable → wraps to itself
+  await expect(page.locator("#wb-app")).toHaveAttribute("inert", "");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator("#wb-app")).not.toHaveAttribute("inert", "");
+});
+
+test("mobile sidebar is inert while closed and opens from the menu button", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
+  const sidebar = page.locator("#wb-sidebar");
+  await expect(sidebar).toHaveAttribute("inert", "");
+  const menu = page.getByRole("button", { name: "Open navigation" });
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+  await menu.click();
+  await expect(sidebar).not.toHaveAttribute("inert", "");
+  await expect(page.getByRole("button", { name: "Close navigation" })).toHaveAttribute("aria-expanded", "true");
+});
+
+test("deleting the project clears its workbench storage key", async ({ page }) => {
+  await page.goto(`/p/${E2E_PROJECT_ID}/settings`);
+  const key = `gg.workbench.v1.${E2E_PROJECT_ID}`;
+  await expect.poll(() => page.evaluate((k) => localStorage.getItem(k) !== null, key)).toBe(true);
+  await page.getByRole("button", { name: "Delete product" }).click();
+  await page.getByRole("button", { name: "Confirm deletion" }).click();
+  await expect(page).not.toHaveURL(/\/settings$/);
+  expect(await page.evaluate((k) => localStorage.getItem(k), key)).toBeNull();
+});
+```
+
+「删除项目」用例依赖 `installCriticalFlowApi` 兑现 `DELETE /api/mvp/projects/:id`——查 `e2e/mock-api.ts` 是否已有；没有则在 `CriticalFlowApiOptions` 加一个开关按现有模式兑现 204。若 mock 无法兑现则把该用例改为断言点击后出现确认组，并在 PR 描述里写明。
+
+- [ ] **Step 4: 跑受影响 spec + 新 spec**
+
+Run: `pnpm test:e2e:mock -- e2e/workbench-shell.mock.spec.ts e2e/critical-flows.mock.spec.ts e2e/mobile-shell.mock.spec.ts e2e/overview-read-model.mock.spec.ts e2e/frontend-error-states.mock.spec.ts e2e/legacy-style-parity.mock.spec.ts e2e/studio-workspace.mock.spec.ts e2e/product-profile.mock.spec.ts`
+Expected: 全绿。`studio-workspace` 与 `product-profile` 是 `useProjectShellEffects` 的回归门，红了先怀疑 hook 抄漏，不要改 spec。
+
+- [ ] **Step 5: 全量 mock e2e（后台跑，直接落文件）**
+
+Run: `pnpm test:e2e:mock > /tmp/wb-e2e-full.txt 2>&1; tail -20 /tmp/wb-e2e-full.txt`
+Expected: 与 Task 0 记录的既有红一致，无新红。
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add e2e
+git commit -m "test(e2e): 工作台壳 spec，旧壳相关 spec 改指向 legacy / 新选择器"
+```
+
+---
+
+### Task 13: 文档与权威声明
+
+**Files:**
+- Modify: `CLAUDE.md`（L23）
+- Modify: `docs/PROGRESS.md`
+
+- [ ] **Step 1: CLAUDE.md**
+
+把 `Current authority: **v0.4 complete four-module workbench**` 改为：
+
+`Current authority: **v0.4 contracts（API / schema / rules 不变）+ 工作台 15 项客户壳（2026-09-11 起，设计见 docs/plans/2026-09-11-workbench-ui-port-design.md；旧四模块页面作为过渡页保留可达）**`
+
+并在下一段「“完成”表示…」后加一句：「客户壳自 2026-09-11 起以工作台 IA 为准，`components/app-shell/nav-model.ts` 的四模块清单仅供保留的旧页与其测试使用。」
+
+- [ ] **Step 2: PROGRESS.md** 顶部加一条日期段落，写：PR-1 落地范围、旧页去向、未上生产（集成分支）、下一步 PR-2 / PR-3。
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add CLAUDE.md docs/PROGRESS.md
+git commit -m "docs: 客户壳权威改为工作台 IA，记录 PR-1 落地"
+```
+
+---
+
+### Task 14: 全量验证、评审、交付
+
+- [ ] **Step 1: 本地全套**
+
+```bash
+pnpm typecheck && pnpm lint && pnpm test && pnpm vitest run --project unit packages/i18n
+pnpm --filter @sf/web build
+```
+Expected: 全绿；build 成功（这是唯一能暴露 client 拉到 `node:*` 的检查）。
+
+- [ ] **Step 2: 覆盖率门**
+
+Run: `pnpm vitest run --coverage --project unit 2>&1 | tail -15`
+Expected: 四项阈值 ≥ 80%。若因 `components/workbench/**` 无单测而低于阈值：**不改阈值、不加 exclude**，为 `components/workbench/**` 加 jsdom 项目与组件测试（设计 §8），作为本 PR 的追加任务。
+
+- [ ] **Step 3: 生产构建 CSP 冒烟**
+
+`pnpm --filter @sf/web build` 后 `cd apps/web && PORT=3300 pnpm start`（用 Task 0 mock 配置里的占位环境变量），Playwright 打开 `http://localhost:3300/login`，断言 console 无 `Content Security Policy` 字样（登录页已加载 `workbench.css`）。壳本身在生产模式需要真实登录，留到 PR-3b 合 main 前用真实账号做一次。
+
+- [ ] **Step 4: 自审 + 跨模型评审**
+
+先 `superpowers:requesting-code-review`（对照本计划与设计稿 §4–§8），修完后按 `CLAUDE.md` 的 codex 约束跑一轮：`git diff feat/workbench-ui-port...HEAD > .review-tmp/pr1.diff`，prompt 限定「只读 diff + 设计稿 §4–§6 + `_nav.tsx` 原文 + `security-headers.ts`」，攻击面分两次：(a) 壳与 a11y / CSP；(b) store 与持久化。有 verdict 行才算跑成。
+
+- [ ] **Step 5: 开 PR 到集成分支**
+
+```bash
+git push -u origin feat/workbench-pr1-foundation
+gh pr create --base feat/workbench-ui-port --title "feat(workbench): PR-1 地基——新壳、15 条路由、store、i18n" --body-file .review-tmp/pr1-body.md
+```
+
+PR 描述含：设计稿链接、任务清单勾选状态、验证命令与结果、评审处置、已知未做（GSC 站点卡行、覆盖率补测若有）。**不合 main**（D3）。
