@@ -4,8 +4,9 @@ import { X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { downloadText } from "@/lib/workbench/download";
+import { truncateUtf16 } from "@/lib/workbench/truncate";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
-import type { ArtifactType } from "@/lib/workbench/types";
+import type { Artifact, ArtifactType } from "@/lib/workbench/types";
 import { Dialog } from "../ui/Dialog.tsx";
 
 /** How long the "Copied" label stays up (jsx `flash()`). */
@@ -17,6 +18,42 @@ const MIME: Readonly<Record<ArtifactType, string>> = {
   json: "application/json;charset=utf-8",
   prompt: "text/plain;charset=utf-8",
 };
+
+/** The extension always follows `type`, never whatever the stored name ends in. */
+const EXT: Readonly<Record<ArtifactType, string>> = {
+  csv: "csv",
+  md: "md",
+  json: "json",
+  prompt: "txt",
+};
+
+/** Longest stem the download name keeps; the schema already caps a stored `filename` at 120. */
+const STEM_MAX = 100;
+
+/**
+ * The name the browser is handed for a download. The stored `filename` (or the
+ * title) is only a suggestion: everything outside `[\p{L}\p{N}_ .()-]` (the
+ * same class as `ARTIFACT_FILENAME_PATTERN`, so a Chinese title survives)
+ * becomes `_`, so no path separator or control character reaches the save
+ * dialog, the stem is cut at `STEM_MAX`, and a text extension it carried is
+ * replaced by the one the artifact `type` dictates — a `.md` artifact named
+ * `report.csv` is `report.md`. Only the known text extensions are stripped, so
+ * a title such as `Release 1.2` keeps its `.2`. Leading dots go too: `.env`
+ * would otherwise be handed over as the hidden file `.env.md`, and `..` as
+ * `...md`. A stem that sanitises to nothing falls back to `artifact` so the
+ * file never ends up as a bare, hidden `.csv`.
+ */
+export function downloadName(artifact: Artifact): string {
+  const stem = truncateUtf16(
+    (artifact.filename ?? artifact.title)
+      .replace(/[^\p{L}\p{N}_ .()-]/gu, "_")
+      .replace(/\.(?:csv|md|markdown|json|txt|prompt)$/i, "")
+      .trim()
+      .replace(/^[. ]+/, ""),
+    STEM_MAX,
+  );
+  return `${stem === "" ? "artifact" : stem}.${EXT[artifact.type]}`;
+}
 
 /**
  * The artifact basket (jsx L2485–2526). Producers write the "sample data"
@@ -106,7 +143,7 @@ export function ArtifactDrawer({
         {state.artifacts.length === 0 ? (
           <div className="p-6 text-center">
             <p className="text-sm font-medium text-slate-600">{t("empty")}</p>
-            <p className="mt-1 text-xs text-slate-500">{t("emptyDetail")}</p>
+            <p className="mt-1 text-sm text-slate-500">{t("emptyDetail")}</p>
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">
@@ -129,11 +166,7 @@ export function ArtifactDrawer({
                   <button
                     type="button"
                     onClick={() =>
-                      downloadText(
-                        a.filename ?? `${a.title}.txt`,
-                        a.content,
-                        MIME[a.type],
-                      )
+                      downloadText(downloadName(a), a.content, MIME[a.type])
                     }
                     className="text-slate-600 hover:text-slate-900"
                   >

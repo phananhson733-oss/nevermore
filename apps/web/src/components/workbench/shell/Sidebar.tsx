@@ -75,10 +75,23 @@ export function Sidebar({
 
         <nav aria-label={t("nav.label")} className="flex-1 space-y-5 pb-6">
           {WORKBENCH_NAV.map((group) => (
-            <div key={group.id}>
-              <h4 className="mb-1.5 px-2.5 text-[11px] font-medium text-wb-rail-muted">
+            // A labelled group, not an `<h4>`: the rail sits beside pages whose
+            // own outline starts at `<h1>`, so a heading here broke the
+            // document's heading order (axe `heading-order`) and offered AT a
+            // level-4 section that belongs to no level-3 one. `role="group"`
+            // with `aria-labelledby` keeps the group name in the accessibility
+            // tree without claiming a place in the page outline.
+            <div
+              key={group.id}
+              role="group"
+              aria-labelledby={`wb-nav-group-${group.id}`}
+            >
+              <div
+                id={`wb-nav-group-${group.id}`}
+                className="mb-1.5 px-2.5 text-[11px] font-medium text-wb-rail-muted"
+              >
                 {t(`nav.groups.${group.id}`)}
-              </h4>
+              </div>
               <div className="space-y-0.5">
                 {group.items.map((item) => {
                   const isActive = active === item.id;

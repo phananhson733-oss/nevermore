@@ -5,7 +5,13 @@
  * where the highlight lands, what Enter navigates to, and whether a dirty
  * Context editor can be abandoned without a confirm. None of that is reachable
  * from static markup, so the real component is driven through `createRoot` with
- * only the router and the unsaved-changes probe stubbed.
+ * only the unsaved-changes probe stubbed.
+ *
+ * Navigation is a real click on a real anchor (so document-level link guards
+ * such as the Studio editor's see it), never a router push. Without an app
+ * router context `next/link` calls the `onClick` prop and stops, so the
+ * observable outcome here is the click reaching `<body>` uncancelled, exactly
+ * what `Sidebar.test.tsx` checks for the rail links.
  */
 
 import { act, useRef } from "react";
@@ -19,11 +25,9 @@ import { WB_APP_ROOT_ID } from "../ui/ids.ts";
 const en = getMessages("en");
 
 const mocks = vi.hoisted(() => ({
-  push: vi.fn(),
   hasUnsavedContextChanges: vi.fn<() => boolean>(),
 }));
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("@/app/p/[projectId]/_context-navigation-guard", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   hasUnsavedContextChanges: mocks.hasUnsavedContextChanges,
@@ -117,7 +121,6 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  mocks.push.mockReset();
   onClose.mockReset();
   mocks.hasUnsavedContextChanges.mockReset();
   mocks.hasUnsavedContextChanges.mockReturnValue(false);
@@ -153,6 +156,37 @@ function press(el: HTMLElement, key: string, isComposing = false): void {
   });
 }
 
+interface ObservedClick {
+  /** The anchor the click was dispatched on, or null when nothing was clicked. */
+  readonly target: HTMLAnchorElement | null;
+  /** Whether the click reached `<body>` already cancelled, the way `Link` sees it. */
+  readonly cancelled: boolean;
+}
+
+/**
+ * Runs `interact` while watching `<body>` for the option click it may cause.
+ * React 19 delegates to the root container, which sits below `<body>`, so this
+ * observer runs after the component's handler. It cancels the event itself too,
+ * which keeps jsdom from trying to follow the href (it cannot navigate) without
+ * hiding whether the component had already cancelled it.
+ */
+function observeClick(interact: () => void): ObservedClick {
+  const seen: ObservedClick[] = [];
+  const observe = (event: Event): void => {
+    const target = event.target instanceof HTMLAnchorElement ? event.target : null;
+    seen.push({ target, cancelled: event.defaultPrevented });
+    event.preventDefault();
+  };
+  document.body.addEventListener("click", observe);
+  try {
+    interact();
+  } finally {
+    document.body.removeEventListener("click", observe);
+  }
+  if (seen.length > 1) throw new Error(`expected at most one click, saw ${seen.length}`);
+  return seen[0] ?? { target: null, cancelled: false };
+}
+
 describe("CommandPalette", () => {
   it("lists every destination and narrows to the matching ones", () => {
     const view = render();
@@ -179,16 +213,72 @@ describe("CommandPalette", () => {
     ).toBe("Search and jump: 0");
   });
 
-  it("navigates to the highlighted entry on Enter and closes", () => {
+  it("renders every option as an anchor inside the listbox", () => {
+    // Anchors, not buttons: the Studio editor guard fences `a[href]` clicks
+    // from a document-level capture listener, and a button-driven router push
+    // would have bypassed it (dirty edits silently discarded on a palette jump).
+    const view = render();
+
+    for (const option of options(view.container)) {
+      expect(option).toBeInstanceOf(HTMLAnchorElement);
+      expect(option.closest('[role="listbox"]')).not.toBeNull();
+    }
+    expect(options(view.container)[1]?.getAttribute("href")).toBe(`/p/${PROJECT_ID}/week`);
+  });
+
+  it("clicks the highlighted entry's anchor on Enter and closes", () => {
     const view = render();
     press(input(view.container), "ArrowDown");
+    const highlighted = options(view.container)[1];
+    expect(highlighted?.getAttribute("aria-selected")).toBe("true");
 
-    expect(options(view.container)[1]?.getAttribute("aria-selected")).toBe("true");
+    const click = observeClick(() => press(input(view.container), "Enter"));
 
-    press(input(view.container), "Enter");
-
-    expect(mocks.push).toHaveBeenCalledExactlyOnceWith(`/p/${PROJECT_ID}/week`);
+    expect(click.target).toBe(highlighted);
+    expect(click.target?.getAttribute("href")).toBe(`/p/${PROJECT_ID}/week`);
+    expect(click.cancelled).toBe(false);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a pointer click on an option through and closes", () => {
+    const view = render();
+    const target = options(view.container)[2];
+    if (!target) throw new Error("the palette has no third option");
+
+    const click = observeClick(() => act(() => target.click()));
+
+    expect(click.target).toBe(target);
+    expect(click.cancelled).toBe(false);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays open and does not close when a document-level guard has already cancelled the click", () => {
+    // The Studio guard cancels in the capture phase at `document`, before any
+    // React handler runs; the palette must then neither close nor navigate.
+    const view = render();
+    const target = options(view.container)[0];
+    if (!target) throw new Error("the palette has no options");
+    const cancelUpstream = (event: Event): void => event.preventDefault();
+    document.addEventListener("click", cancelUpstream, true);
+    try {
+      const click = observeClick(() => act(() => target.click()));
+      expect(click.cancelled).toBe(true);
+    } finally {
+      document.removeEventListener("click", cancelUpstream, true);
+    }
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(options(view.container)).toHaveLength(TOTAL_ENTRIES);
+  });
+
+  it("does nothing on Enter when no entry matches", () => {
+    const view = render();
+    typeQuery(input(view.container), "nothing matches this");
+
+    const click = observeClick(() => press(input(view.container), "Enter"));
+
+    expect(click.target).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("moves the highlight back to the first entry as the query changes", () => {
@@ -220,10 +310,12 @@ describe("CommandPalette", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const view = render();
 
-    press(input(view.container), "Enter");
+    const click = observeClick(() => press(input(view.container), "Enter"));
 
     expect(confirm).toHaveBeenCalledTimes(1);
-    expect(mocks.push).not.toHaveBeenCalled();
+    // Cancelled by the palette itself: `Link` never navigates a cancelled click.
+    expect(click.target).toBe(options(view.container)[0]);
+    expect(click.cancelled).toBe(true);
     expect(onClose).not.toHaveBeenCalled();
     expect(options(view.container)).toHaveLength(TOTAL_ENTRIES);
   });
@@ -233,11 +325,10 @@ describe("CommandPalette", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const view = render();
 
-    press(input(view.container), "Enter");
+    const click = observeClick(() => press(input(view.container), "Enter"));
 
-    expect(mocks.push).toHaveBeenCalledExactlyOnceWith(
-      `/p/${PROJECT_ID}/overview`,
-    );
+    expect(click.target?.getAttribute("href")).toBe(`/p/${PROJECT_ID}/overview`);
+    expect(click.cancelled).toBe(false);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -269,12 +360,13 @@ describe("CommandPalette", () => {
     // While a CJK candidate list is open, Escape cancels it, Enter commits
     // it and the arrows move within it; none of them are for the palette.
     press(field, "ArrowDown", true);
-    press(field, "Enter", true);
+    const click = observeClick(() => press(field, "Enter", true));
     press(field, "Escape", true);
+
+    expect(click.target).toBeNull();
 
     expect(options(view.container)[0]?.getAttribute("aria-selected")).toBe("true");
     expect(options(view.container)[1]?.getAttribute("aria-selected")).toBe("false");
-    expect(mocks.push).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     expect(view.container.querySelector('[role="dialog"]')).not.toBeNull();
   });

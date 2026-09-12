@@ -20,8 +20,8 @@ export function useProjectShellEffects(): {
     current: boolean,
   ) => void;
 } {
-  // The confirm itself lives in its own hook because the command palette needs
-  // the same guard without a link click.
+  // The confirm itself lives in its own hook because the command palette, the
+  // topbar and the legacy project switcher need the same guard on their links.
   const { confirmNavigation } = useContextNavigationConfirm();
   const pathname = usePathname();
   const historyPositionRef = useRef<number | null>(null);

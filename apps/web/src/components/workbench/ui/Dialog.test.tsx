@@ -138,6 +138,46 @@ function HiddenReturnHarness({ open }: { readonly open: boolean }) {
   );
 }
 
+/** The return target sits inside a subtree another modal has fenced off. */
+function FencedReturnHarness({
+  open,
+  fence,
+}: {
+  readonly open: boolean;
+  readonly fence: "inert" | "aria-hidden";
+}) {
+  const returnRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <div id={WB_APP_ROOT_ID}>
+        <button type="button" id="opener">
+          open
+        </button>
+      </div>
+      <div
+        id="fenced"
+        inert={fence === "inert" ? true : undefined}
+        aria-hidden={fence === "aria-hidden" ? "true" : undefined}
+      >
+        <button type="button" id="fenced-return" ref={returnRef}>
+          return
+        </button>
+      </div>
+      <Dialog
+        open={open}
+        onClose={() => {}}
+        labelledBy="fenced-title"
+        returnFocusTo={returnRef}
+      >
+        <h2 id="fenced-title">Fenced</h2>
+        <button type="button" id="first">
+          first
+        </button>
+      </Dialog>
+    </>
+  );
+}
+
 /** A panel with no focusable descendant at all. */
 function EmptyDialog({ open }: { readonly open: boolean }) {
   return (
@@ -206,6 +246,35 @@ describe("Dialog", () => {
     expect(document.activeElement?.id).toBe("opener");
   });
 
+  it("leaves an inert it did not set on the app root after closing", () => {
+    // The legacy modals mark every `document.body` child inert and restore
+    // only what they themselves added. A Dialog opened and closed meanwhile
+    // must hand the root back exactly as it found it, or their background
+    // wakes up under their scrim.
+    const view = mount(<Harness open={false} onClose={() => {}} />);
+    act(() => appRoot()?.setAttribute("inert", ""));
+
+    view.rerender(<Harness open onClose={() => {}} />);
+    expect(appRoot()?.hasAttribute("inert")).toBe(true);
+    view.rerender(<Harness open={false} onClose={() => {}} />);
+
+    expect(appRoot()?.hasAttribute("inert")).toBe(true);
+  });
+
+  it("snapshots the pre-existing inert once for a whole stack of dialogs", () => {
+    // Taken at 0→1 only: a second dialog opening on top must not mistake the
+    // first dialog's own inert for someone else's and strand it on the root.
+    const view = mount(<TwoDialogs a={false} b={false} />);
+    expect(appRoot()?.hasAttribute("inert")).toBe(false);
+
+    view.rerender(<TwoDialogs a b={false} />);
+    view.rerender(<TwoDialogs a b />);
+    view.rerender(<TwoDialogs a={false} b />);
+    view.rerender(<TwoDialogs a={false} b={false} />);
+
+    expect(appRoot()?.hasAttribute("inert")).toBe(false);
+  });
+
   it("keeps the app root inert until the last of two dialogs closes", () => {
     const view = mount(<TwoDialogs a b />);
     expect(appRoot()?.hasAttribute("inert")).toBe(true);
@@ -242,6 +311,44 @@ describe("Dialog", () => {
     view.rerender(<HiddenReturnHarness open={false} />);
 
     expect(document.activeElement?.id).toBe("opener");
+  });
+
+  it.each(["inert", "aria-hidden"] as const)(
+    "does not return focus into a subtree fenced off by %s; the opener gets it instead",
+    (fence) => {
+      // jsdom does not implement `inert`, so without the guard `focus()` on
+      // the fenced target would succeed here and the test would pass for the
+      // wrong reason: the assertion is that the guard never tries.
+      const view = mount(<FencedReturnHarness open={false} fence={fence} />);
+      const opener = view.container.querySelector<HTMLElement>("#opener");
+      act(() => opener?.focus());
+      view.rerender(<FencedReturnHarness open fence={fence} />);
+      const fenced = view.container.querySelector<HTMLElement>("#fenced-return");
+      expect(fenced).not.toBeNull();
+      const focus = vi.spyOn(fenced as HTMLElement, "focus");
+
+      view.rerender(<FencedReturnHarness open={false} fence={fence} />);
+
+      expect(focus).not.toHaveBeenCalled();
+      expect(document.activeElement?.id).toBe("opener");
+    },
+  );
+
+  it("does not fall back onto an opener that was fenced off while the dialog was open", () => {
+    const view = mount(<FencedReturnHarness open={false} fence="aria-hidden" />);
+    const opener = view.container.querySelector<HTMLElement>("#opener");
+    act(() => opener?.focus());
+    view.rerender(<FencedReturnHarness open fence="aria-hidden" />);
+    // Another modal fences the opener's subtree (aria-hidden does not stop
+    // `focus()` in a browser, so the guard has to refuse on its own).
+    act(() => appRoot()?.setAttribute("aria-hidden", "true"));
+    const focus = vi.spyOn(opener as HTMLElement, "focus");
+
+    view.rerender(<FencedReturnHarness open={false} fence="aria-hidden" />);
+
+    expect(focus).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(document.body);
+    act(() => appRoot()?.removeAttribute("aria-hidden"));
   });
 
   it("keeps focus on the panel when Tab finds nothing focusable inside", () => {

@@ -82,6 +82,23 @@ test("shell markup carries no inline styles (production CSP has no unsafe-inline
   await page.goto(`/p/${E2E_PROJECT_ID}/audit`);
   await expect(page.locator("[data-app-shell] [style]")).toHaveCount(0);
   await expect(page.locator("[data-app-shell] style")).toHaveCount(0);
+  // The palette and the drawer render as siblings OUTSIDE #wb-app and return
+  // null while closed, so the root-scoped scan above never sees their markup.
+  // Scope to the Dialog root (`.wb-reset.fixed.inset-0.z-50`, the parent of the
+  // backdrop + panel; the rail is `fixed` too but not `inset-0`): <body> also
+  // carries Next's own elements (route announcer, dev portal) that set `style`
+  // from script, which CSP does not block.
+  const dialogRoot = page.locator(".wb-reset.fixed.inset-0.z-50");
+  await page.keyboard.press("ControlOrMeta+k");
+  await expect(page.getByRole("dialog", { name: "Search and jump" })).toBeVisible();
+  await expect(dialogRoot).toHaveCount(1);
+  await expect(dialogRoot.locator("[style], style")).toHaveCount(0);
+  await expect(dialogRoot).not.toHaveAttribute("style", /./);
+  await page.keyboard.press("Escape");
+  await page.locator("[data-wb-drawer-button]").click();
+  await expect(page.getByRole("dialog", { name: /Artifacts/ })).toBeVisible();
+  await expect(dialogRoot).toHaveCount(1);
+  await expect(dialogRoot.locator("[style], style")).toHaveCount(0);
 });
 
 test("command palette: ⌘K opens, filter + enter navigate, focus returns to the opener", async ({

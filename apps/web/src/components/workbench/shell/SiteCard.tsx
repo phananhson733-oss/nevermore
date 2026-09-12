@@ -26,11 +26,15 @@ export function SiteCard({
   const t = useTranslations("workbench.shell");
   return (
     <div
-      className="mb-6 rounded-xl border border-wb-rail-3/50 bg-wb-rail-2 p-3.5 text-sm"
+      className="mb-6 min-w-0 rounded-xl border border-wb-rail-3/50 bg-wb-rail-2 p-3.5 text-sm"
       data-wb-site-card=""
     >
-      <div className="mb-3 text-xs font-medium text-zinc-200">{site.host}</div>
-      <dl className="grid grid-cols-[40px_1fr] gap-y-1.5 text-xs">
+      {/* A host is one unbreakable token; without truncate a long one widens the rail. */}
+      <div className="mb-3 truncate text-xs font-medium text-zinc-200" title={site.host}>
+        {site.host}
+      </div>
+      {/* `auto`, not a fixed 40px: the zh-CN labels are wider and were wrapping. */}
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
         <dt className="text-wb-rail-label">{t("siteCard.market")}</dt>
         <dd className="text-zinc-300">
           {site.marketCode ?? t("siteCard.none")}

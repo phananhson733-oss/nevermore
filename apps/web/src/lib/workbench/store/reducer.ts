@@ -1,5 +1,8 @@
 import {
+  ARTIFACT_CONTENT_MAX,
+  ARTIFACT_FILENAME_PATTERN,
   ARTIFACT_LIMIT,
+  ARTIFACT_TITLE_MAX,
   HISTORY_LIMIT,
   type Artifact,
   type AuditReport,
@@ -17,6 +20,7 @@ import {
   type CompData,
   type AnswerPlan,
 } from "../types.ts";
+import { truncateUtf16 } from "../truncate.ts";
 
 /** Fields mirrored from the real project (design §6.7). Never edited by mock pages. */
 export interface ProjectSeed {
@@ -84,6 +88,27 @@ export function initialProjectState(seed: ProjectSeed): WorkbenchProjectState {
 /** Re-apply the real project mirror after hydration (design §6.7). */
 export function withProjectSeed(state: WorkbenchProjectState, seed: ProjectSeed): WorkbenchProjectState {
   return { ...state, profile: { ...state.profile, url: seed.url, brand: seed.brand, market: seed.market } };
+}
+
+/**
+ * Clamp an incoming artifact to the persisted bounds (types.ts). The schema
+ * rejects a stored envelope that exceeds them, and a rejected envelope resets
+ * the whole project on the next load — so an oversized producer must be cut
+ * down here, on the way in, never let through to be discarded later. Content
+ * and title are truncated; a filename that is not a bare, short file name is
+ * dropped (the drawer then names the download after the title).
+ */
+function boundArtifact(artifact: Artifact): Artifact {
+  const filename =
+    artifact.filename !== undefined && ARTIFACT_FILENAME_PATTERN.test(artifact.filename)
+      ? artifact.filename
+      : undefined;
+  return {
+    ...artifact,
+    title: truncateUtf16(artifact.title, ARTIFACT_TITLE_MAX),
+    content: truncateUtf16(artifact.content, ARTIFACT_CONTENT_MAX),
+    filename,
+  };
 }
 
 /** Archive the previous entry. `current` keeps a repeated dispatch of the same object out of the history. */
@@ -162,7 +187,10 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
     case "visCancel":
       return { ...state, visResults: state.lastVis?.results ?? [], visPartial: false };
     case "addArtifact":
-      return { ...state, artifacts: [action.artifact, ...state.artifacts].slice(0, ARTIFACT_LIMIT) };
+      return {
+        ...state,
+        artifacts: [boundArtifact(action.artifact), ...state.artifacts].slice(0, ARTIFACT_LIMIT),
+      };
     case "removeArtifact":
       return { ...state, artifacts: state.artifacts.filter((a) => a.id !== action.id) };
     case "clearArtifacts":
@@ -173,7 +201,7 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
         ...action.payload,
         auditHistory: action.payload.auditHistory.slice(-HISTORY_LIMIT),
         visHistory: action.payload.visHistory.slice(-HISTORY_LIMIT),
-        artifacts: action.payload.artifacts.slice(0, ARTIFACT_LIMIT),
+        artifacts: action.payload.artifacts.slice(0, ARTIFACT_LIMIT).map(boundArtifact),
         visPartial: false,
         demo: true,
       };

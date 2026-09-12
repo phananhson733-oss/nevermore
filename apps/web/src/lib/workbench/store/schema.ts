@@ -1,5 +1,12 @@
 import { z } from "zod";
-import type { WorkbenchProjectState } from "../types.ts";
+import {
+  ARTIFACT_CONTENT_MAX,
+  ARTIFACT_FILENAME_PATTERN,
+  ARTIFACT_LIMIT,
+  ARTIFACT_TITLE_MAX,
+  HISTORY_LIMIT,
+  type WorkbenchProjectState,
+} from "../types.ts";
 
 /**
  * Boundary validation for localStorage (design §6.5). Strict objects: a stale
@@ -209,9 +216,12 @@ const artifact = z.strictObject({
   ]),
   type: z.enum(["csv", "prompt", "md", "json"]),
   engine,
-  title: z.string(),
-  content: z.string(),
-  filename: z.string().optional(),
+  // Bounds mirror the reducer's clamps (types.ts): a stored envelope is the
+  // reducer's output, so a larger value here is tampering or another origin's
+  // data, and the whole envelope is discarded rather than partially trusted.
+  title: z.string().max(ARTIFACT_TITLE_MAX),
+  content: z.string().max(ARTIFACT_CONTENT_MAX),
+  filename: z.string().regex(ARTIFACT_FILENAME_PATTERN).optional(),
 });
 
 export const projectStateSchema = z.strictObject({
@@ -223,17 +233,17 @@ export const projectStateSchema = z.strictObject({
   built: z.boolean(),
   saved: z.array(savedKeyword),
   audit: auditReport.nullable(),
-  auditHistory: z.array(auditReport),
+  auditHistory: z.array(auditReport).max(HISTORY_LIMIT),
   lastAudit: auditReport.nullable(),
   visResults: z.array(visResult),
   visPartial: z.boolean(),
-  visHistory: z.array(visSnapshot),
+  visHistory: z.array(visSnapshot).max(HISTORY_LIMIT),
   lastVis: visSnapshot.nullable(),
   compData: compData.nullable(),
   plans: z.record(z.string(), answerPlan),
   targets: z.array(linkTarget).nullable(),
   kb: z.strictObject({ entries: z.array(kbEntry), at: z.string() }).nullable(),
-  artifacts: z.array(artifact),
+  artifacts: z.array(artifact).max(ARTIFACT_LIMIT),
   notify: z.strictObject({
     weekly: z.boolean(),
     drop: z.boolean(),

@@ -213,7 +213,9 @@ export function WorkbenchProvider({
       window.removeEventListener("storage", onStorage);
       window.removeEventListener(WORKBENCH_SWEPT_EVENT, onSwept);
     };
-  }, [projectId, seed]);
+    // Primitive deps: `WorkbenchShell` builds `seed` as a fresh object literal on
+    // every RSC render, and re-subscribing on identity alone buys nothing.
+  }, [projectId, seed.url, seed.brand, seed.market]);
 
   const value = useMemo<WorkbenchContextValue>(
     () => ({

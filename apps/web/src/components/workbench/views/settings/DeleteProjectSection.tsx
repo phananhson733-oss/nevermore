@@ -54,10 +54,11 @@ export function DeleteProjectSection({ projectId }: { readonly projectId: string
   /**
    * `router.replace` is a transition: this tree stays interactive until the new
    * route commits. Without holding the buttons disabled after success a second
-   * click fires a second DELETE, gets 404, and shows the delete-failure copy
-   * for a project that is already gone. (That copy is outcome-neutral on
-   * purpose: a rejected mutation does not prove the server did not delete,
-   * since the response can be lost after the commit.)
+   * click fires a second DELETE for a project that is already gone: the handler
+   * archives idempotently (204 again), so the success path would run twice; a
+   * transport failure on that retry would show the delete-failure copy. (That
+   * copy is outcome-neutral on purpose: a rejected mutation does not prove the
+   * server did not delete, since the response can be lost after the commit.)
    */
   const busy = deleteProject.isPending || deleteProject.isSuccess;
   return (
@@ -81,10 +82,11 @@ export function DeleteProjectSection({ projectId }: { readonly projectId: string
       <h2 id="delete-product-title" className="text-[15px] font-semibold">
         {t("delete.title")}
       </h2>
-      <p className="mt-1 text-[13px] text-slate-600">{t("delete.description")}</p>
-      <p className="mt-1 text-[12px] text-slate-600">{t("delete.retention")}</p>
+      {/* Body copy is never below 14px (`text-sm`); only labels and badges are. */}
+      <p className="mt-1 text-sm text-slate-600">{t("delete.description")}</p>
+      <p className="mt-1 text-sm text-slate-600">{t("delete.retention")}</p>
       {deleteProject.isError ? (
-        <p role="alert" className="mt-3 text-[13px] text-rose-700">
+        <p role="alert" className="mt-3 text-sm text-rose-700">
           {t("delete.error")}
         </p>
       ) : null}
@@ -97,7 +99,7 @@ export function DeleteProjectSection({ projectId }: { readonly projectId: string
           <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 text-rose-600" />
           <div className="flex-1">
             <strong className="text-[13px]">{t("delete.confirmTitle")}</strong>
-            <p className="text-[12px] text-slate-600">{t("delete.confirmDescription")}</p>
+            <p className="text-sm text-slate-600">{t("delete.confirmDescription")}</p>
           </div>
           <div className="flex gap-2">
             <button
@@ -119,7 +121,12 @@ export function DeleteProjectSection({ projectId }: { readonly projectId: string
               type="button"
               disabled={busy}
               onClick={() => void confirmDelete()}
-              className={cn(BUTTON_BASE, "border-rose-600 bg-rose-600 text-white hover:bg-rose-700")}
+              className={cn(
+                BUTTON_BASE,
+                // The base focus ring is `currentColor` (white here), invisible on the
+                // rose-50 group behind the button; focus lands here programmatically.
+                "border-rose-600 bg-rose-600 text-white hover:bg-rose-700 focus-visible:outline-slate-900",
+              )}
             >
               {busy ? t("delete.deleting") : t("delete.confirmAction")}
             </button>

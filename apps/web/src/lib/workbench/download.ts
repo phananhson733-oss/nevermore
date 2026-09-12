@@ -1,4 +1,9 @@
 /** Blob download for artifacts (jsx L326). Client only. */
+
+// Not 0ms: WebKit reads the object URL after the current task, and a same-tick
+// revoke has it fetch a URL that no longer resolves.
+const REVOKE_DELAY_MS = 1000;
+
 export function downloadText(
   name: string,
   text: string,
@@ -21,8 +26,6 @@ export function downloadText(
     // A throwing click() must not leak the anchor into the document or the blob
     // into the URL store; the finally covers both.
     a.remove();
-    // Not 0ms: WebKit reads the object URL after the current task, and a same-tick
-    // revoke has it fetch a URL that no longer resolves.
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
   }
 }

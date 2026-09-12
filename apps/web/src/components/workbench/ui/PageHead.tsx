@@ -22,7 +22,7 @@ export function PageHead({
         </h1>
         {aside ? <div className="flex items-center gap-2">{aside}</div> : null}
       </div>
-      {subtitle ? <p className="max-w-3xl text-[13px] text-slate-500">{subtitle}</p> : null}
+      {subtitle ? <p className="max-w-3xl text-sm text-slate-500">{subtitle}</p> : null}
     </div>
   );
 }

@@ -16,7 +16,7 @@ export function SettingsView({ projectId }: { readonly projectId: string }) {
   return (
     <div className="wb-reset mx-auto min-h-full max-w-5xl p-6 font-sans text-slate-900 md:p-10">
       <PageHead title={tNav("settings")} />
-      <p className="mb-6 text-[13px] text-slate-500">{tShell("inProgressNoLegacy")}</p>
+      <p className="mb-6 text-sm text-slate-500">{tShell("inProgressNoLegacy")}</p>
       <DeleteProjectSection projectId={projectId} />
     </div>
   );

@@ -8,6 +8,18 @@ import { isComposingKey } from "./keyboard.ts";
 
 /** How many Dialogs are open; `#wb-app` is inert while it is > 0. */
 let openDialogs = 0;
+/**
+ * Whether `#wb-app` was already inert when the first of the open dialogs
+ * opened. The legacy modals (Product Profile editor, action override) make
+ * every `document.body` child inert and restore only what they set; an inert
+ * they own must survive our last close, or their background wakes up under
+ * them. Snapshotted at 0→1 and consulted at 1→0 only. That is enough because
+ * the two kinds of modal cannot interleave: while one of ours is open the
+ * legacy page is inert and cannot open its modal, and while a legacy modal is
+ * open `ShellChrome` refuses to open ours — so the only reachable orders are
+ * strictly nested, and a boolean covers them.
+ */
+let rootHadInert = false;
 
 /**
  * Accessible modal (design §4.3): role=dialog + aria-modal, focus moves in on
@@ -47,11 +59,12 @@ export function Dialog({
       console.warn(`Dialog: #${WB_APP_ROOT_ID} not found; the background is not inert`);
     }
     // `inert` is one shared attribute for however many dialogs are open, so it
-    // is ref-counted on the way out: only the last close removes it. Setting it
-    // is unconditional, and the cleanup looks the root up again instead of
-    // reusing this node, so the two always touch the same element even if
-    // `#wb-app` were replaced under an open dialog. Both are defensive; the root
-    // is not currently remounted between opens.
+    // is ref-counted on the way out: only the last close removes it, and only
+    // if it was ours to set. Setting it is unconditional, and the cleanup looks
+    // the root up again instead of reusing this node, so the two always touch
+    // the same element even if `#wb-app` were replaced under an open dialog.
+    // Both are defensive; the root is not currently remounted between opens.
+    if (openDialogs === 0) rootHadInert = root?.hasAttribute("inert") ?? false;
     root?.setAttribute("inert", "");
     openDialogs += 1;
     const entry =
@@ -67,17 +80,31 @@ export function Dialog({
       // Order matters: focus() on a node inside an inert subtree is a no-op,
       // so inert comes off first. Next's layout-router focuses the changed
       // segment after navigation, so activeElement-on-open is only a fallback.
-      document.getElementById(WB_APP_ROOT_ID)?.removeAttribute("inert");
+      if (!rootHadInert) {
+        document.getElementById(WB_APP_ROOT_ID)?.removeAttribute("inert");
+      }
       // The preferred target can be hidden by a responsive utility (the palette
       // and drawer openers are `md:`-only), and `focus()` on a hidden element
       // is a no-op that would silently leave focus on <body>. Try it, then
       // check: `offsetParent === null` would misjudge fixed-position openers
       // and is null for everything under jsdom, so ask the document instead.
+      // A target under someone else's `inert` / `aria-hidden` is skipped
+      // outright: focusing into a subtree another modal has fenced off would
+      // put the caret behind its scrim (the browser refuses, jsdom would not).
       const preferred = returnFocusTo?.current ?? null;
-      preferred?.focus();
+      if (preferred?.closest("[inert], [aria-hidden='true']") === null) {
+        preferred.focus();
+      }
       if (document.activeElement !== preferred) {
+        // Same fence for the fallback: the opener can have been hidden behind
+        // another modal's `aria-hidden` while this dialog was open.
         const opener = openerRef.current;
-        if (opener instanceof HTMLElement) opener.focus();
+        if (
+          opener instanceof HTMLElement &&
+          opener.closest("[inert], [aria-hidden='true']") === null
+        ) {
+          opener.focus();
+        }
       }
     };
   }, [open, initialFocus, returnFocusTo]);

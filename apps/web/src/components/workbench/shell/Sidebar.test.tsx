@@ -189,8 +189,27 @@ describe("Sidebar navigation", () => {
     );
     expect(links.map((a) => a.textContent)).toEqual(NAV_ITEMS.map((item) => en.workbench.nav.items[item.id]));
 
-    const groups = [...view.container.querySelectorAll("nav h4")].map((node) => node.textContent);
-    expect(groups).toEqual(WORKBENCH_NAV.map((group) => en.workbench.nav.groups[group.id]));
+    // Groups are labelled `role="group"` containers, not headings: the rail
+    // must not add `<h4>`s to a page whose outline starts at `<h1>`.
+    const groups = [...view.container.querySelectorAll('nav [role="group"]')];
+    expect(groups.map((node) => node.getAttribute("aria-labelledby"))).toEqual(
+      WORKBENCH_NAV.map((group) => `wb-nav-group-${group.id}`),
+    );
+    expect(
+      groups.map((node) => {
+        const label = node.getAttribute("aria-labelledby");
+        return label === null ? null : document.getElementById(label)?.textContent;
+      }),
+    ).toEqual(WORKBENCH_NAV.map((group) => en.workbench.nav.groups[group.id]));
+    // Every link sits inside the group its table row belongs to.
+    for (const group of WORKBENCH_NAV) {
+      const container = document.getElementById(`wb-nav-group-${group.id}`)?.closest('[role="group"]');
+      expect(container).not.toBeNull();
+      expect(
+        [...(container?.querySelectorAll("a[data-wb-nav]") ?? [])].map((a) => a.getAttribute("data-wb-nav")),
+      ).toEqual(group.items.map((item) => item.id));
+    }
+    expect(view.container.querySelectorAll("nav h1, nav h2, nav h3, nav h4, nav h5, nav h6")).toHaveLength(0);
     expect(view.container.querySelector("nav")?.getAttribute("aria-label")).toBe(en.workbench.nav.label);
   });
 

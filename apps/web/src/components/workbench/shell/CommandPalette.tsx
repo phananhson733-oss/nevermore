@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   useEffect,
@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent,
   type RefObject,
 } from "react";
 import type { ProjectShellOption } from "@/lib/services/project-shell";
@@ -40,8 +41,7 @@ export function CommandPalette({
   readonly projectOptions: readonly ProjectShellOption[];
 }) {
   const t = useTranslations("workbench");
-  const router = useRouter();
-  const { confirmLeave } = useContextNavigationConfirm();
+  const { confirmNavigation } = useContextNavigationConfirm();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -99,14 +99,22 @@ export function CommandPalette({
     option.scrollIntoView({ block: "nearest" });
   }, [activeKey]);
 
-  function go(entry: PaletteEntry | undefined): void {
-    if (!entry) return;
-    // The rail links ask before leaving a dirty Context editor; a palette jump
-    // is the same navigation. Declining keeps the palette open so the operator
-    // can pick a different destination or dismiss it.
-    if (!confirmLeave()) return;
+  /**
+   * Every option is a real anchor and every jump is a real click on it, so the
+   * guards that watch the document for link clicks see a palette jump exactly
+   * as they see a rail link: the Studio editor guard
+   * (`app/p/[projectId]/_unsaved-navigation-guard.ts`) fences `a[href]` from a
+   * capture-phase click listener and cancels the event when the operator
+   * declines; a `router.push` from a button would have walked straight past
+   * it. The Context guard runs here, in the anchor's own handler, and cancels
+   * the same way. A cancelled click never reaches `Link`'s navigation, and the
+   * palette stays open so the operator can pick another destination.
+   */
+  function onOptionClick(event: MouseEvent<HTMLAnchorElement>): void {
+    if (event.defaultPrevented) return;
+    confirmNavigation(event, false);
+    if (event.defaultPrevented) return;
     onClose();
-    router.push(entry.href);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
@@ -121,9 +129,10 @@ export function CommandPalette({
       event.preventDefault();
       setActiveIndex((i) => Math.max(i - 1, 0));
     }
-    if (event.key === "Enter") {
+    if (event.key === "Enter" && activeEntry) {
       event.preventDefault();
-      go(activeEntry);
+      // A synthetic click on the anchor, not a router push: see `onOptionClick`.
+      document.getElementById(`wb-palette-${activeEntry.key}`)?.click();
     }
   }
 
@@ -148,6 +157,7 @@ export function CommandPalette({
         }}
         onKeyDown={onKeyDown}
         placeholder={t("shell.palette.placeholder")}
+        aria-label={t("shell.palette.title")}
         role="combobox"
         aria-expanded="true"
         aria-autocomplete="list"
@@ -155,7 +165,9 @@ export function CommandPalette({
         aria-activedescendant={
           activeEntry ? `wb-palette-${activeEntry.key}` : undefined
         }
-        className="w-full border-b border-slate-200 px-4 py-3 text-sm outline-none"
+        // Inset ring: the panel is `overflow-hidden`, so an offset outline
+        // would be clipped on three sides.
+        className="w-full border-b border-slate-200 px-4 py-3 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-slate-900"
       />
       <div
         id="wb-palette-list"
@@ -164,28 +176,31 @@ export function CommandPalette({
         className="max-h-80 overflow-y-auto py-1"
       >
         {entries.map((entry, index) => (
-          <button
+          <Link
             key={entry.key}
             id={`wb-palette-${entry.key}`}
-            type="button"
+            href={entry.href}
             role="option"
             // Options are reached with the arrow keys from the input, which
             // keeps the `aria-activedescendant` contract; they must therefore
             // stay out of the Tab order (and out of the dialog's focus trap).
             tabIndex={-1}
             aria-selected={index === activeIndex}
-            onMouseEnter={() => setActiveIndex(index)}
-            onClick={() => go(entry)}
+            // Pointer MOVE, not enter: ArrowDown scrolls the listbox and the
+            // browser then synthesises enter/leave for whatever slides under a
+            // stationary pointer, which would hijack the keyboard selection.
+            onPointerMove={() => setActiveIndex(index)}
+            onClick={onOptionClick}
             className={cn(
               "flex w-full items-center justify-between px-4 py-2 text-left text-sm",
               index === activeIndex ? "bg-slate-100" : "hover:bg-slate-50",
             )}
           >
             <span>{entry.label}</span>
-            <span className="text-[11px] text-slate-500">
+            <span className="text-[11px] text-slate-600">
               {t(`shell.palette.${entry.group}`)}
             </span>
-          </button>
+          </Link>
         ))}
       </div>
       {/* Outside the listbox: a paragraph is not an option, and a listbox with

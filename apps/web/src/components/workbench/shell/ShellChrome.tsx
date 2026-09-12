@@ -13,6 +13,23 @@ import { useMediaQuery } from "./useMediaQuery.ts";
 
 const SIDEBAR_ID = "wb-sidebar";
 
+type Panel = "palette" | "drawer" | null;
+
+/**
+ * The legacy modals (Product Profile editor, action override) mark every
+ * `document.body` child `inert` — `#wb-app` included — and sit at z-index 1200.
+ * The root being inert while no workbench panel is open therefore means
+ * someone else owns the page: a palette or drawer opened now (z-50) would mount
+ * beneath that scrim and steal its focus. Read at call time, not from state:
+ * those modals never tell the shell they opened.
+ */
+function pageOwnedElsewhere(panel: Panel): boolean {
+  return (
+    panel === null &&
+    (document.getElementById(WB_APP_ROOT_ID)?.hasAttribute("inert") ?? false)
+  );
+}
+
 /**
  * Client half of the shell (design §4.1). `#wb-app` is the root the two
  * dialogs make `inert`, so both of them render outside it.
@@ -38,7 +55,7 @@ export function ShellChrome({
   // `<body>` because the dialog underneath is the one holding the opener. One
   // slot makes that unrepresentable rather than something two setters have to
   // keep agreeing on. The `Dialog` inert ref-count stays as defence in depth.
-  const [panel, setPanel] = useState<"palette" | "drawer" | null>(null);
+  const [panel, setPanel] = useState<Panel>(null);
   const paletteOpen = panel === "palette";
   const drawerOpen = panel === "drawer";
   const paletteButtonRef = useRef<HTMLButtonElement>(null);
@@ -52,12 +69,25 @@ export function ShellChrome({
     setPanel(null);
     setSidebarOpen(false);
   }, []);
-  const openPalette = useCallback((): void => setPanel("palette"), []);
-  const openDrawer = useCallback((): void => setPanel("drawer"), []);
+  // Every opener goes through the updater form so the ownership check reads
+  // the slot as it is when the shortcut or click lands, not a stale closure.
+  const openPalette = useCallback(
+    (): void =>
+      setPanel((current) => (pageOwnedElsewhere(current) ? current : "palette")),
+    [],
+  );
+  const openDrawer = useCallback(
+    (): void =>
+      setPanel((current) => (pageOwnedElsewhere(current) ? current : "drawer")),
+    [],
+  );
   const handlers = useMemo(
     () => ({
       onTogglePalette: () =>
-        setPanel((current) => (current === "palette" ? null : "palette")),
+        setPanel((current) => {
+          if (pageOwnedElsewhere(current)) return current;
+          return current === "palette" ? null : "palette";
+        }),
       onEscape: closeAll,
     }),
     [closeAll],

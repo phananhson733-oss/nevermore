@@ -6,7 +6,7 @@
 
 **Architecture:** 设计稿 `docs/plans/2026-09-11-workbench-ui-port-design.md`（rev6）§4–§9。Tailwind v4 只引 theme + utilities（无 preflight），reset 作用域 `.wb-reset` 只挂 chrome 与新视图根节点；store = 纯 reducer + zod 校验的 localStorage 持久化 + 按 projectId 重挂的 provider；旧 `_nav.tsx` 的两个副作用抽成 hook 保留。
 
-**Tech Stack:** Next.js 16.2 App Router、React 19、TypeScript strict、Tailwind v4（`@tailwindcss/postcss`）、tw-animate-css、next-intl、zod 4、vitest（node）、Playwright mock 夹具。
+**Tech Stack:** Next.js 16.2 App Router、React 19、TypeScript strict、Tailwind v4（`@tailwindcss/postcss`）、next-intl、zod 4、vitest（node）、Playwright mock 夹具。
 
 **参考源码（已放在 worktree 根、git 忽略）：** `.workbench-reference/opengengrowth-src/`（外观权威）、`.workbench-reference/geo-seo-workbench.jsx`（行为权威；行号引用均指此文件）。
 
@@ -19,7 +19,7 @@
 ```
 apps/web/
   postcss.config.mjs                                   新：@tailwindcss/postcss
-  package.json                                         改：+tailwindcss +@tailwindcss/postcss +tw-animate-css +clsx +tailwind-merge
+  package.json                                         改：+tailwindcss +@tailwindcss/postcss +clsx +tailwind-merge
   src/app/workbench.css                                新：layers / theme / token / .wb-reset / 仪表 / print
   src/app/workbench-css.test.ts                        新：静态守卫（无 preflight、reset 有作用域）
   src/app/layout.tsx                                   改：Plus_Jakarta_Sans → --font-wb；import workbench.css
@@ -367,7 +367,6 @@ Expected: FAIL，`ENOENT … workbench.css`。
 "clsx": "^2.1.1",
 "tailwind-merge": "^3.5.0",
 "tailwindcss": "^4.1.18",
-"tw-animate-css": "^1.4.0",
 ```
 
 ```js
@@ -406,7 +405,7 @@ Expected: lockfile 更新，无 peer 冲突。
 - [x] **Step 4: 写 workbench.css**
 
 ```css
-/* @input  — tailwindcss theme + utilities（刻意不引 preflight）、tw-animate-css
+/* @input  — tailwindcss theme + utilities（刻意不引 preflight）
  * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表规则、
  *           旧页专用的 #main-content 内边距（components 层，只在 <main> 没有 .wb-reset
  *           直接子节点时生效，等价于旧壳 app-shell.module.css 的 .main）、
@@ -419,9 +418,9 @@ Expected: lockfile 更新，无 peer 冲突。
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
-/* tw-animate-css 1.4 ships only @property / @theme inline / @utility (no plain rules), so it
-   needs no layer — and @utility cannot live inside @layer anyway. Re-check on upgrade. */
-@import "tw-animate-css";
+/* No tw-animate-css: nothing in PR-1 uses an `animate-in` utility. The PR that
+   first needs one adds the dependency back with `@import "tw-animate-css";`
+   here (no layer — it ships only @property / @theme inline / @utility). */
 
 @theme {
   --font-sans: var(--font-wb, ui-sans-serif), "PingFang SC", "Hiragino Sans GB",
@@ -437,7 +436,7 @@ Expected: lockfile 更新，无 peer 冲突。
      18px and carries information the reader loses if it cannot be read — "labels only"
      was never a reason to sit below AA. Measured (on rail / rail-2 / rail-3):
        rail-text  #a3a3a3  6.60 / 5.76 / 5.08  nav link text
-       rail-muted #9c9b99  6.00 / 5.23 / 4.61  tagline, group headings, footer, nav badge
+       rail-muted #9c9b99  6.00 / 5.23 / 4.61  tagline, group labels, footer, nav badge
                                                 (the badge sits on rail-3 in the active link)
        rail-label #959492  5.50 / 4.80 /  -    site-card <dt> column on rail-2
        rail-dim   #8f8e8c  5.09 /  -   /  -    10px footer version line on rail
@@ -448,10 +447,11 @@ Expected: lockfile 更新，无 peer 冲突。
   --color-wb-rail-label: #959492;
   /* Near-black action fill on paper (topbar artifact button). */
   --color-wb-ink: #222222;
+  /* SEO green: the default <progress> fill below. The nav tone dots and the GEO
+     accent use Tailwind built-ins (emerald-500 / fuchsia-500, amber-* for the
+     sample-data marker) exactly as the opengengrowth prototype does, so there
+     is no `-geo` / `-emerald` / `-seo-dark` token here. */
   --color-wb-seo: #1a653b;
-  --color-wb-seo-dark: #155330;
-  --color-wb-geo: #8b5cf6;
-  --color-wb-emerald: #10b981;
 }
 
 /* 打印规则 `[data-wb-content]{margin-left:0}` 在 @layer utilities（见 Task 10 落地备注），此处略。 */
@@ -650,6 +650,12 @@ Expected: 2 passed（改动前 Turbopack 下旧 CSS 不经 postcss，本任务�
 git add apps/web/package.json pnpm-lock.yaml apps/web/postcss.config.mjs apps/web/src/app/workbench.css apps/web/src/app/globals.css apps/web/src/app/workbench-css.test.ts apps/web/src/app/layout.tsx
 git commit -m "feat(web): Tailwind v4 无 preflight 地基与工作台 token"
 ```
+
+**落地备注：**
+
+- **`tw-animate-css` 在验收时移除**（PR-1 验收 C12）：PR-1 没有任何 `animate-in` / `animate-out` 类工具的消费者（`grep -rn "animate-in\|tw-animate-css" apps/web/src` 只剩 `workbench.css` 里的说明注释），依赖从 `apps/web/package.json` 删掉、`@import "tw-animate-css";` 连同它的分层说明从 `workbench.css` 删掉，`pnpm install --offline` 后 `pnpm-lock.yaml` 只少了 `apps/web` importer 下的那一条（`apps/marketing` 仍在用，`packages` 段的 `tw-animate-css@1.4.0` 条目保留）。第一个用到它的 PR 把依赖与 `@import` 一起加回来（无 layer——它只发 `@property` / `@theme inline` / `@utility`，且 `@utility` 不能放进 `@layer`）；上面 Step 3 / Step 4 的摘录与文首技术栈、文件结构两处已同步删去。
+- **三个从未有消费者的 token 删除**（验收 C11）：`--color-wb-seo-dark` / `--color-wb-geo` / `--color-wb-emerald` 落地后 `apps/web/src` 里零引用——导航 tone 圆点与 GEO 强调色一直用 Tailwind 内置 `emerald-500` / `fuchsia-500`，「示例」琥珀用 `amber-50/200/700`，与 opengengrowth 原型一致。`@theme` 只保留 `--color-wb-seo`（`<progress>` 默认填充）并在其上方注明为何没有这三个；`workbench-css.test.ts` / `workbench-tokens.test.ts` 都不枚举这三个名字，不需要改。设计文档 §5 的 token 清单同步改写为实际存在的那一组（含四档导轨文字与 `-rail-line` / `-ink`）。
+- **占位符文字色 `slate-400` → `slate-500`**（验收 B8）：`.wb-reset :where(input, textarea)::placeholder` 原用 slate-400（白底 2.63:1）；占位符是文字，WCAG 1.4.3 没有豁免。`workbench-tokens.test.ts` 新增一组：从安装的 `tailwindcss/theme.css` 读出该 token 的 `oklch()` 值、经 OKLab→线性 sRGB 算相对亮度，钉住白底 ≥ 4.5:1（slate-500 = 4.77:1），并用 Tailwind 文档的 `#62748e` 做换算锚点、同时断言 slate-400 低于 AA（防止换算本身恒真）。说明注释写在规则块**里面**：`workbench-css.test.ts` 的选择器扫描会把紧挨选择器前面的注释读成选择器的一部分。
 
 ---
 
@@ -1532,6 +1538,11 @@ Expected: 只剩 `schema.test.ts` 找不到 `./reducer.ts`（Task 4 解决）；
 - [x] **Step 6: 不单独提交**
 
 本任务与 Task 4 合为一个 commit（Task 4 Step 6），避免带红测试的提交。
+
+**落地备注：**
+
+- **持久化边界**（PR-1 验收 B5）：`types.ts` 在既有 `ARTIFACT_LIMIT` / `HISTORY_LIMIT` 旁新增 `ARTIFACT_CONTENT_MAX = 200_000`、`ARTIFACT_TITLE_MAX = 200`、`ARTIFACT_FILENAME_PATTERN = /^[\p{L}\p{N}_ .()-]{1,120}$/u`；`schema.ts` 从 `../types.ts` 导入这五个常量（原本只 `import type`；无环——`types.ts` 不依赖 store 目录），`artifacts: z.array(artifact).max(ARTIFACT_LIMIT)`、`auditHistory` / `visHistory` `.max(HISTORY_LIMIT)`、`title.max(ARTIFACT_TITLE_MAX)`、`content.max(ARTIFACT_CONTENT_MAX)`、`filename.regex(ARTIFACT_FILENAME_PATTERN).optional()`。这两个上限只封单个产物（一份被篡改或超大的信封不能独自撑爆解析或配额），不承诺整篮子装得下——localStorage 每源约 5 MB，50 × 200 KB 超过它，装不下是 `quota` 存储态的事；超界的信封整份丢弃而不是部分信任（strict 对象的既定策略）。`filename` 只允许裸文件名（任何文字的字母数字、下划线、空格、点、括号、连字符），路径分隔符 / 控制字符 / 其他标点都拒——mock 内容是中文，产物标题多半也是中文，所以不能只放 ASCII `\w`（首版这么写过，中文标题会下载成 `____.csv`）；下载名的扩展名由抽屉按 `type` 强制，见 Task 10 落地备注。
+- **reducer 侧同步夹紧**（Task 4 的 `reducer.ts`）：schema 拒绝的信封在下次加载时会把整个项目重置，所以超界的生产者必须在**进来时**被裁掉，不能放进去等着被丢——`addArtifact` 与 `loadDemo` 都经 `boundArtifact()`：`title` / `content` 按上限截断（`lib/workbench/truncate.ts` 的 `truncateUtf16`：切点落在代理对中间时退一位——`.slice` 按 UTF-16 单元数，切开 `𠮷` 会留一个孤高代理，JSON 能存、`Blob` 下载会变 U+FFFD；gpt-6-astra 复审 P2），`filename` 不匹配模式则丢弃为 `undefined`（抽屉随后按标题命名）。`reducer.test.ts` +3（超界产物裁到边界后 `parsePersistedState` 能原样解析回来；裸文件名保留；demo payload 同样夹紧），`schema.test.ts` +2（三个数组到上限可解析、超一条为 null；title / content 到上限可解析、超一字符为 null；7 个坏文件名逐个为 null）。
 
 ---
 
@@ -2752,6 +2763,10 @@ git add apps/web/src/lib/workbench/store/persistence.ts apps/web/src/lib/workben
 git commit -m "feat(workbench): 注入式 localStorage 持久化"
 ```
 
+**落地备注：**
+
+- 持久化层本身在验收轮没改；PR-1 验收 B5 的存储边界落在 Task 3 的 schema（读盘时拒）与 Task 4 的 reducer（写盘前裁），见 Task 3 落地备注。`clearAllWorkbenchState` / `WORKBENCH_SWEPT_EVENT` 多了一个消费者：登录页的 `app/login/_workbench-sweep.tsx`（验收 B4，见 Task 11 落地备注）——它清的是同一组 `gg.workbench.*` 键、派发的是同一个事件，provider 侧不需要新分支。
+
 ---
 
 ### Task 7: WorkbenchProvider 与 hooks
@@ -3303,6 +3318,7 @@ Tailwind 类直接照 opengengrowth；颜色只用 token（`bg-wb-paper`、`text
 - `LEGACY_LABEL_KEY` 从 `LegacyLinks.tsx` 挪到 `lib/workbench/routes.ts`（和 `LEGACY_LINKS` 同源），并补 `LegacyLinks.test.ts`：next-intl 对缺键渲染成 key 路径本身而不抛错，拼错就会把字面量 `nav.growthMap` 发到界面上。
 - 可选 props 一律显式写成 `| undefined`（`exactOptionalPropertyTypes`）。
 - 多处 `slate-400` 提到 `slate-500` / `slate-600`（对比度），`PlaceholderView` 的说明段落即其一。
+- **`Dialog` 只摘自己设的 `inert`**（PR-1 验收红队 A3）：旧页的 Product Profile 编辑器（`context/_product-profile.tsx`）与 action override（`execution/_action-override.tsx`）会把 `document.body` 的每个子节点（含 `#wb-app`）设成 `inert`、只还原自己加的那份；此前 `Dialog` 回到 0 个时无条件 `removeAttribute("inert")`，会把它们的背景在遮罩底下唤醒。现在模块级 `rootHadInert` 在引用计数 0→1 时快照根上**已有**的 `inert`，回到 0 时仅当 `!rootHadInert` 才摘；只在 0→1 取一次，叠开的第二个对话框不会把第一个对话框自己设的 `inert` 误认成别人的。关闭时的焦点归还也跳过 `preferred.closest("[inert], [aria-hidden='true']")` 非空的目标（浏览器会拒绝、jsdom 不会，所以断言的是「根本不去试」），落到下一个候选（opener）——opener 兜底走同一道围栏检查（gpt-6-astra 复审 P2：opener 在对话框开着期间被别的模态 `aria-hidden` 时，浏览器并不拒绝 `focus()`，此前会把焦点塞进被围子树）。布尔快照够用的前提是两类模态不会交错（我们的开着时旧页 inert 开不出它的模态；旧页模态开着时 `ShellChrome` 拒绝开我们的），复审提出的交错序列（P1「先开我们的再开旧页模态」、P2「抽屉开着时旧页模态再开」）都不可达，记录不修，前提写进 `Dialog.tsx` 注释。`Dialog.test.tsx` +5（预置 inert 开关后仍在；一叠两个对话框全关后根不残留 inert；`inert` / `aria-hidden` 两种围栏下不对被围目标调 `focus()`、焦点回到 opener；opener 自己被围时不回焦、焦点留在 body）。
 
 - [x] **Step 1: cn.ts**
 
@@ -3807,6 +3823,13 @@ git commit -m "feat(workbench): Dialog / PageHead / DemoChip / LegacyLinks / 占
 - `app/workbench.css` 新增打印规则 `[data-wb-content]{margin-left:0}`，`ShellChrome` 的内容列因此带 `data-wb-content`。落在 `@layer utilities`、且排在 Tailwind utilities 导入之后（5508351b 从 `@layer components` 挪过来）：`[data-wb-content]` 和 `.md\:ml-64` 同特异度，`@layer components` 在层序上恒输给 utilities 层，打印覆盖在 Letter 宽度（816px ≥ 48rem）下从未生效过；`workbench-css.test.ts` 新增用例钉住层与源码顺序。
 - **旧页丢了旧壳的内容区留白**（PR 前整分支复审）：旧 `AppShell` 的 `<main class={styles.main}>` 带 `max-width: 1480px; margin-inline: auto; padding: 40px clamp(24px, 3.3vw, 56px) 30px`（≤960px 时 `28px 20px 36px`，≤560px 时 `24px 14px 32px`），`ShellChrome` 的 `<main id="main-content" className="flex-1">` 什么都没给，`growth-map` / `sources` / `execution` / `results` / `context` / `legacy/overview` 自己不带水平内边距，贴着 rail 和视口边缘渲染。修法是 `workbench.css` 在 `@layer components` 加 `#main-content:not(:has(> .wb-reset)) { … }` 三条（同样三档断点）：新视图（`PlaceholderView` / `SettingsView`）的根是 `.wb-reset` 且自带 `p-6 md:p-10 max-w-5xl mx-auto`，是 `<main>` 的直接子节点，所以不吃这条；旧页根都是 CSS Modules 的 `div`，没有任何旧页在自己根上挂 `.wb-reset`（`git grep wb-reset` 只命中 Sidebar / Topbar / Dialog / 两个新视图）。`:has()` 在 postcss 目标（chrome/edge/firefox 111、safari 16.4）全部可用。`app-shell.module.css` 的 `.main` 没删——`/new-project` 仍用旧 `AppShell`。钉法：`workbench-css.test.ts` 加一条断言该规则在 `@layer components` 内且带 `max-width: 1480px`（且文件里不得出现无 `:has()` 守卫的裸 `#main-content {`）；`e2e/legacy-style-parity.mock.spec.ts` 加一条**不属于基线采样**的用例，1280×800 下 `growth-map` 的 `#main-content` `padding-left ≥ 24px`（实测 42.24px = 3.3vw）且 `max-width === "1480px"`，`overview`（新占位页）为 `0px`。基线 JSON 不动——它采的是 `<main>` **里面**元素的属性，`<main>` 自己的 padding 不在样本里，2 条基线用例照旧全绿。
 - §4.1 的「函数 ≤ 50 行」对 JSX 渲染体豁免（Sidebar / CommandPalette / ArtifactDrawer 的 return 块）；拆分只会把一棵树切成没有独立语义的碎片。
+- **命令面板选项改成锚点、Enter 等价一次真实点击**（PR-1 验收红队 A1）：Studio 编辑器的未保存守卫（`app/p/[projectId]/_unsaved-navigation-guard.ts` 的 `document.addEventListener("click", …, true)`）只拦 `a[href]` 的点击；面板原本是 `<button>` + `router.push`，从它旁边走过去、脏编辑静默丢掉。现在每个选项是 Next `<Link href role="option" id tabIndex={-1} aria-selected>`，Enter 走 `document.getElementById(\`wb-palette-${activeEntry.key}\`)?.click()`，面板**不再调 `router.push`**（`useRouter` 删除）。Context 离开确认在锚点自己的 `onClick` 里走 `confirmNavigation(event, false)`（它取消时自己 `preventDefault`；handler 先后各查一次 `event.defaultPrevented`——上游捕获阶段已取消的、和它刚取消的，都不 `onClose`），被取消的点击 `Link` 不导航、面板保持打开。上面 `go()` / `confirmLeave()` 那条备注随之作废：`useContextNavigationConfirm` 现只导出 `confirmNavigation`，`confirmLeave` 没有消费者已删（`useProjectShellEffects` 的注释同步）。`CommandPalette.test.tsx` 重写导航断言：不再 mock `next/navigation`，在 `<body>` 上观察点击（React 19 委托在根容器上、位于 body 之下，所以观察者跑在组件 handler 之后）并断言目标锚点、`href`、`defaultPrevented` 与 `onClose`；`next/link` 在没有 app router 上下文时调完 `onClick` 即停，不需要 mock `next/link`。+4 条（每个选项都是 listbox 内的锚点；指针点击放行并关闭；上游捕获阶段已取消 → 不关闭不导航；无匹配时 Enter 无事发生），原「拒绝确认 → 不跳转、保持打开」两条改为断言锚点点击已被取消。`e2e/studio-workspace.mock.spec.ts` +2：弄脏 Markdown 编辑器后 ⌘K → 输入 Settings → Enter，`dialog` 事件恰一次；dismiss 则 URL 不变、面板仍开、编辑器内容原样；accept 则 URL 变到 `/settings`。
+- **⌘K / 顶栏 opener 在别的模态拥有页面时拒绝打开**（红队 A2）：旧页两个模态把 `#wb-app` 设成 `inert` 并压在 z-index 1200，面板（z-50）会挂到遮罩底下抢焦点。`ShellChrome` 抽出 `pageOwnedElsewhere(panel)` = `panel === null && #wb-app.hasAttribute("inert")`（根 inert 而没有工作台面板开着 ⇒ 页面归别人），三个 setter（`onTogglePalette` / `openPalette` / `openDrawer`）都改成 updater 形式在落点时读这个判定，不用陈旧闭包；面板开着时那个 inert 是自己设的，toggle 关闭照常。`ShellChrome.test.tsx` +3（预置 inert：⌘K / Ctrl+K 不开、摘掉后能开；顶栏两个按钮同样拒绝；自己开的面板 toggle 仍能关且 inert 随之摘掉）。
+- 面板输入框的焦点指示（验收 B6）：`outline-none` → `focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-slate-900`，内缩是因为面板 `overflow-hidden` 会把外缩的 outline 裁掉三边。同轮：输入框补 `aria-label`（面板标题）、分组小标 `slate-500` → `slate-600`、`onMouseEnter` → `onPointerMove`（ArrowDown 滚动列表时浏览器会给静止指针下滑过的项合成 enter/leave，会劫持键盘高亮）。
+- 侧栏分组标题改成带标签的分组（验收 B7）：`<h4>` 在以 `<h1>` 开头的页面里破坏标题层级（axe `heading-order`），并给 AT 一个不属于任何 h3 的四级节。现在每组是 `<div role="group" aria-labelledby="wb-nav-group-<id>">`，标签是同 class 的 `<div id=…>`；`Sidebar.test.tsx` 改为按 `[role="group"]` + `aria-labelledby` 取标签文字、逐组核对链接归属、并断言 `nav` 内没有任何 h1–h6。数链接的 e2e（`critical-flows` 用 `nav.getByRole("link")`，`workbench-shell` / `mobile-shell` 用 `[data-wb-nav]`）都不碰标题，不受影响。
+- `SiteCard` 标签列 `grid-cols-[40px_1fr]` → `grid-cols-[auto_1fr] gap-x-3`（验收 B10）：zh-CN 标签比 40px 宽会折行；域名行加 `truncate` + `title`，卡片 `min-w-0`，长域名不再撑宽导轨。
+- `ArtifactDrawer` 下载名（验收 B5）：`downloadName(a)` 导出并单测——`(filename ?? title)` 中 `[^\p{L}\p{N}_ .()-]`（与 `ARTIFACT_FILENAME_PATTERN` 同一字符类，中文标题原样保留）全部换成 `_`、剥掉已有的文本扩展名（csv/md/markdown/json/txt/prompt）、去掉开头的点和空格（`.env` 会变成隐藏文件 `.env.md`、`..` 会变成 `...md`；gpt-6-astra 复审 P2）、词干按 `truncateUtf16` 截到 100、扩展名一律按 `EXT[type]`（`prompt` → `.txt`），词干清空时回落到 `artifact`。`ArtifactDrawer.test.tsx` +4 块（存储的文件名 + 类型扩展名 + MIME；reducer 丢掉带路径的文件名后按标题命名；越过 reducer 的敌意名字仍被清洗；9 个命名用例的 `it.each`）；`downloadText` 经 `vi.mock("@/lib/workbench/download")` 桩掉（jsdom 没有 object URL）。空态第二段 `text-xs` → `text-sm`（验收 B9，见 Task 11 落地备注）。
+- 与本任务相关的 token / 依赖清理（验收 C11 / C12）见 Task 1 落地备注：`@theme` 删去 `-seo-dark` / `-geo` / `-emerald` 三个无消费者 token；`tw-animate-css` 依赖与 `@import` 移除。
 
 - [x] **Step 1: 导航模型 + 测试**
 
@@ -5168,6 +5191,8 @@ git commit -m "feat(workbench): 侧栏 / 顶栏 / 命令面板 / 产物筐抽屉
 - `DeleteProjectSection`（09439fdc）：`busy = isPending || isSuccess` 同时禁用两个按钮并把「删除中」保持到导航窗口结束（`router.replace` 是 transition，成功后这棵树还活着，再点一次会发第二个 DELETE 拿 404）；确认区出现时焦点移到确认按钮、取消时移回触发按钮（`prevConfirming` ref，首次挂载不抢焦点）；`BUTTON_BASE` 提到模块作用域；11/12px 的说明行改 `text-slate-600`；「真实操作」chip 加 `title`（`workbench.settings.realActionTitle`）。
 - `routes.fs.test.ts`（09f9bb14 加强）不只检查段名有没有 `page.tsx`，还钉住每个占位页传给视图的 `page="<id>"`——从兄弟段复制过来忘了改 id 的文件，会在这个 URL 下渲染另一页的标题、徽标和「旧版页面 →」，其他测试全都只读表不读树，谁也发现不了。另加一条反向清扫：目录里存在但表里没人指的路由即失败，重定向专用段用 `COMPATIBILITY_ONLY = ["diagnosis", "plan", "report"]` 显式豁免。
 - 冒烟（Step 7）实际跑在 3005：3001 被一个陈旧进程占着。仅记录，不改流程。
+- **登录页清扫 `gg.workbench.*`**（PR-1 验收 B4）：`SignOutButton` 只覆盖工作台顶栏那一条登出路径；旧壳 `/new-project` 用的是裸 server-action 表单、跑不了客户端清扫，会话过期更不经过任何登出——但这些路径全都落到 `/login`。新增 `app/login/_workbench-sweep.tsx`（`"use client"`，渲染 `null`）：挂载时 `clearAllWorkbenchState(window.localStorage)` 并派发 `WORKBENCH_SWEPT_EVENT`，整段 `try/catch`（存储不可用时什么也没存、页面照常渲染）；`login/page.tsx` 在 `<main>` 第一个子节点渲染它——但只在请求没有会话时：`lib/auth/session.ts` 新增 `hasAuthSession()`（dev auth 恒 true；否则只问 Supabase 有没有 user，不查 operator、不碰数据库；`session.test.ts` +3），已登录的 operator 登录后按返回键或从旧标签回到 `/login` 时不渲染清扫组件，本地工作台状态不丢（proxy 对已登录用户访问 `/login` 不重定向，所以这道闸只能在页面上做；首版无条件清扫是个会丢数据的坑）。`SignOutButton` 自己的清扫保留（它让本标签还开着的 provider 立刻停写）。`_workbench-sweep.test.tsx`（jsdom，2 条）：预置 `gg.workbench.v1.a` + `gg.workbench.v0.b` + 无关键 `gg.locale`，挂载后前两个消失、无关键保留、事件恰一次、不渲染任何节点；`localStorage` getter 抛 `SecurityError` 时挂载不抛且不发事件。e2e 里 `page.goto("/login")` 的只有 `critical-flows`（登录流程本身），没有任何 spec 在 `/login` 之后依赖工作台存储；`workbench-shell` 的「删除项目清键」用例落到 `/`（mock 下即登录或错误页），清扫只会让它更绿。设计 §6.5 同步补「清扫的汇合点是登录页」。
+- 正文字号不低于 14px（验收 B9）：`DeleteProjectSection` 的说明 / 保留期 / 错误 / 确认说明四段 `text-[13px]` / `text-[12px]` → `text-sm`，`PageHead` 副标题、`SettingsView` 引言 `text-[13px]` → `text-sm`，`ArtifactDrawer` 空态第二段 `text-xs` → `text-sm`；标签与徽标（`text-[11px]`、确认框的 `<strong>` 13px、`h2` 15px）不动。同轮 `DeleteProjectSection` 的确认按钮补 `focus-visible:outline-slate-900`（基础焦点圈是 `currentColor`，白字在 rose-50 上看不见，而焦点是程序化落上去的）。
 - `_project-switcher.tsx` 的离开确认改接 Task 10 的 `shell/useContextNavigationConfirm.ts`（5508351b），删掉自己那份内联的 `shouldConfirmContextNavigation` + `window.confirm` 拼接：两处各写一份同样的守卫迟早会走漂，`Topbar` 一侧改了文案或判据这边不会跟着变。就 import 方向而言，这是本 PR 里第一处从 `app/p/[projectId]/`（旧壳）引用 `components/workbench/shell/`（新壳）的代码——此前都是新壳单向引用旧壳保留下来的东西（如 `_context-navigation-guard`），这次反过来了，值得留意但本轮不判断是否需要改成别的抽法。
 
 - [x] **Step 1: `ProjectShellProject.marketCode`**

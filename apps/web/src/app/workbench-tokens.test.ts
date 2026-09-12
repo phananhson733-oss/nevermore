@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -9,8 +10,9 @@ import { describe, expect, it } from "vitest";
  * the binding one. The pairs below are the usage map, read off the components:
  *
  *   rail-text   nav link text on rail (hover moves the text itself to zinc-200)
- *   rail-muted  tagline, group <h4>, footer on rail; the nav badge inside the
- *               link, whose background is rail-2 on hover and rail-3 when active
+ *   rail-muted  tagline, group labels, footer on rail; the nav badge inside
+ *               the link, whose background is rail-2 on hover and rail-3 when
+ *               active
  *   rail-label  SiteCard <dt> column on rail-2
  *   rail-dim    10px footer version line on rail
  *   rail-line   a border, never text — deliberately not listed
@@ -58,16 +60,54 @@ function luminance(hex: string): number {
   const linear = channels.map((channel) =>
     channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
   );
+  return relativeLuminance(linear);
+}
+
+function relativeLuminance(linear: readonly number[]): number {
   return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!;
 }
 
+function contrastOfLuminance(left: number, right: number): number {
+  return (Math.max(left, right) + 0.05) / (Math.min(left, right) + 0.05);
+}
+
 function contrast(left: string, right: string): number {
-  const leftLuminance = luminance(left);
-  const rightLuminance = luminance(right);
-  return (
-    (Math.max(leftLuminance, rightLuminance) + 0.05) /
-    (Math.min(leftLuminance, rightLuminance) + 0.05)
-  );
+  return contrastOfLuminance(luminance(left), luminance(right));
+}
+
+/**
+ * Tailwind v4 writes its palette in `oklch()`, so a token read from its theme
+ * has to come back to linear sRGB before WCAG luminance means anything.
+ * Björn Ottosson's reference matrices (OKLab → LMS → linear sRGB); the result
+ * is what `contrast()` above computes from a hex, minus the gamma round trip.
+ */
+function oklchLuminance(value: string): number {
+  const match = /^oklch\(\s*([\d.]+)%\s+([\d.]+)\s+([\d.]+)\s*\)$/u.exec(value);
+  if (!match) throw new Error(`Expected an oklch() literal, received ${value}`);
+  const lightness = Number(match[1]) / 100;
+  const chroma = Number(match[2]);
+  const hue = (Number(match[3]) * Math.PI) / 180;
+  const a = chroma * Math.cos(hue);
+  const b = chroma * Math.sin(hue);
+  const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return relativeLuminance([
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ]);
+}
+
+/** Tailwind's own palette, read from the installed theme rather than copied. */
+const tailwindTheme = declarations(
+  readFileSync(createRequire(import.meta.url).resolve("tailwindcss/theme.css"), "utf8"),
+);
+
+function tailwindLuminance(token: string): number {
+  const value = tailwindTheme.get(`--color-${token}`);
+  if (value === undefined) throw new Error(`Missing Tailwind token: --color-${token}`);
+  return oklchLuminance(value);
 }
 
 const theme = declarations(atRuleBody(css, /@theme\s*\{/u));
@@ -108,6 +148,36 @@ describe("workbench.css rail text tokens", () => {
     expect(text).toBeGreaterThan(muted!);
     expect(muted).toBeGreaterThanOrEqual(label!);
     expect(label).toBeGreaterThan(dim!);
+  });
+});
+
+describe("workbench.css placeholder colour", () => {
+  // Placeholder text is text: WCAG 1.4.3 grants it no exemption, and the
+  // palette input and every future form field in the new views inherit this
+  // rule. slate-400 sat at 2.63:1 on white before this test existed.
+  const WHITE = 1;
+
+  it("uses a Tailwind slate token that clears 4.5:1 on white", () => {
+    const rule = css.match(
+      /\.wb-reset :where\(input, textarea\)::placeholder\s*\{([^}]*)\}/u,
+    );
+    expect(rule, "placeholder rule under .wb-reset").not.toBeNull();
+    const token = /color:\s*var\(--color-(slate-\d{3})\)/u.exec(rule![1]!)?.[1];
+    expect(token, "placeholder colour is a var(--color-slate-*)").toBeDefined();
+    expect(
+      contrastOfLuminance(tailwindLuminance(token!), WHITE),
+      `${token} on white`,
+    ).toBeGreaterThanOrEqual(AA_TEXT);
+  });
+
+  it("measures Tailwind's palette the way the browser renders it", () => {
+    // Sanity anchor for the oklch conversion: Tailwind documents slate-500 as
+    // #62748e, and the ratio must come out the same from either form.
+    expect(contrastOfLuminance(tailwindLuminance("slate-500"), WHITE)).toBeCloseTo(
+      contrast("#62748e", "#ffffff"),
+      1,
+    );
+    expect(contrastOfLuminance(tailwindLuminance("slate-400"), WHITE)).toBeLessThan(AA_TEXT);
   });
 });
 

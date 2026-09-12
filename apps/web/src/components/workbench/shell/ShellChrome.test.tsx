@@ -314,6 +314,64 @@ describe("ShellChrome dialogs", () => {
   });
 });
 
+describe("ShellChrome while another modal owns the page", () => {
+  // The legacy Product Profile editor and action override mark every
+  // `document.body` child inert (`#wb-app` included) and sit at z-index 1200.
+  // `inert` on the root with no workbench panel open is that signature; the
+  // shell must not mount a z-50 dialog beneath their scrim and take their focus.
+  function letAnotherModalOwnThePage(): void {
+    act(() => appRoot().setAttribute("inert", ""));
+  }
+
+  function releaseThePage(): void {
+    act(() => appRoot().removeAttribute("inert"));
+  }
+
+  it("refuses Cmd/Ctrl+K until the page is released, then opens again", () => {
+    render();
+    letAnotherModalOwnThePage();
+
+    pressAtWindow({ key: "k", metaKey: true });
+    expect(openDialogs()).toEqual([]);
+    pressAtWindow({ key: "K", ctrlKey: true });
+    expect(openDialogs()).toEqual([]);
+
+    releaseThePage();
+    pressAtWindow({ key: "k", metaKey: true });
+
+    expect(openDialogs()).toEqual([PALETTE_TITLE_ID]);
+  });
+
+  it("refuses the topbar openers as well", () => {
+    // A real pointer cannot reach an inert topbar, but nothing stops a script
+    // or a stale event from calling the same setter; the rule must hold there.
+    const scope = render();
+    letAnotherModalOwnThePage();
+
+    clickButton(paletteButton(scope));
+    expect(openDialogs()).toEqual([]);
+    clickButton(drawerButton(scope));
+    expect(openDialogs()).toEqual([]);
+
+    releaseThePage();
+    clickButton(drawerButton(scope));
+
+    expect(openDialogs()).toEqual([DRAWER_TITLE_ID]);
+  });
+
+  it("still toggles its own palette closed: that inert is the shell's, not theirs", () => {
+    render();
+    pressAtWindow({ key: "k", metaKey: true });
+    expect(openDialogs()).toEqual([PALETTE_TITLE_ID]);
+    expect(appRoot().hasAttribute("inert")).toBe(true);
+
+    pressAtWindow({ key: "k", metaKey: true });
+
+    expect(openDialogs()).toEqual([]);
+    expect(appRoot().hasAttribute("inert")).toBe(false);
+  });
+});
+
 describe("ShellChrome mobile rail", () => {
   it("keeps the rail inert until the menu button opens it", () => {
     mocks.mobile = true;

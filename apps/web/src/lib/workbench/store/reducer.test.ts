@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Artifact, AuditReport, DemoPayload, VisResult } from "../types.ts";
-import { ARTIFACT_LIMIT, HISTORY_LIMIT } from "../types.ts";
+import {
+  ARTIFACT_CONTENT_MAX,
+  ARTIFACT_LIMIT,
+  ARTIFACT_TITLE_MAX,
+  HISTORY_LIMIT,
+} from "../types.ts";
+import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
 import type { WorkbenchAction } from "./reducer.ts";
 import { initialProjectState, normalizeInterrupted, reduce, withProjectSeed } from "./reducer.ts";
 
@@ -194,6 +200,46 @@ describe("artifacts", () => {
     expect(s.artifacts).toHaveLength(ARTIFACT_LIMIT);
     expect(s.artifacts[0]?.id).toBe(`a${ARTIFACT_LIMIT + 1}`);
     expect(s.artifacts.at(-1)?.id).toBe("a2");
+  });
+
+  it("clamps an oversized artifact to the persisted bounds instead of storing it whole", () => {
+    // The schema rejects any stored envelope over these bounds, and a rejected
+    // envelope resets the project on the next load, so the reducer must cut a
+    // producer down on the way in; parsing what it stored must then succeed.
+    const oversized: Artifact = {
+      ...artifact("big"),
+      title: "t".repeat(ARTIFACT_TITLE_MAX + 1),
+      content: "c".repeat(ARTIFACT_CONTENT_MAX + 1),
+      filename: "../escape/../report.csv",
+    };
+    const s = reduce(initialProjectState(seed), { type: "addArtifact", artifact: oversized });
+
+    const stored = s.artifacts[0];
+    expect(stored?.title).toHaveLength(ARTIFACT_TITLE_MAX);
+    expect(stored?.content).toHaveLength(ARTIFACT_CONTENT_MAX);
+    expect(stored?.filename).toBeUndefined();
+    expect(parsePersistedState({ v: PERSISTED_VERSION, state: s })).toEqual(s);
+  });
+
+  it("keeps a filename that is a bare short file name", () => {
+    const s = reduce(initialProjectState(seed), {
+      type: "addArtifact",
+      artifact: { ...artifact("named"), filename: "Keyword library (2026-09).csv" },
+    });
+
+    expect(s.artifacts[0]?.filename).toBe("Keyword library (2026-09).csv");
+  });
+
+  it("applies the same bounds to a demo payload", () => {
+    const s = reduce(initialProjectState(seed), {
+      type: "loadDemo",
+      payload: {
+        ...demoPayload,
+        artifacts: [{ ...artifact("demo"), content: "c".repeat(ARTIFACT_CONTENT_MAX + 5) }],
+      },
+    });
+
+    expect(s.artifacts[0]?.content).toHaveLength(ARTIFACT_CONTENT_MAX);
   });
 
   it("removes one and clears all", () => {

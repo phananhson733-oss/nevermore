@@ -13,18 +13,16 @@ export interface ContextNavigationConfirm {
     event: MouseEvent<HTMLAnchorElement>,
     current: boolean,
   ) => void;
-  /**
-   * The same guard for navigations that are not a link click (the command
-   * palette pushes through the router). Returns false when the operator chose
-   * to stay, so the caller can abort.
-   */
-  readonly confirmLeave: () => boolean;
 }
 
 /**
  * The Context unsaved-changes confirm (design §4.3), shared by every navigation
  * affordance the workbench shell owns. Every route out of a dirty Context
  * editor has to ask, or the rail asks and the palette silently discards.
+ *
+ * Link clicks only: the command palette used to carry a second, click-less
+ * variant for its router push, but its options are anchors now (so the Studio
+ * editor guard sees them too) and they go through this same handler.
  */
 export function useContextNavigationConfirm(): ContextNavigationConfirm {
   const tContext = useTranslations("context");
@@ -49,21 +47,5 @@ export function useContextNavigationConfirm(): ContextNavigationConfirm {
     if (!window.confirm(tContext("leaveWarning"))) event.preventDefault();
   }
 
-  function confirmLeave(): boolean {
-    // A palette jump is always an ordinary primary navigation away from the
-    // current page, hence the fixed `current` / `button` / `modified` values.
-    if (
-      !shouldConfirmContextNavigation({
-        dirty: hasUnsavedContextChanges(),
-        current: false,
-        button: 0,
-        modified: false,
-      })
-    ) {
-      return true;
-    }
-    return window.confirm(tContext("leaveWarning"));
-  }
-
-  return { confirmNavigation, confirmLeave };
+  return { confirmNavigation };
 }

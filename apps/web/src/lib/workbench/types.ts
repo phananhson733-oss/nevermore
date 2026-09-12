@@ -328,6 +328,26 @@ export interface WorkbenchProjectState {
 
 export const ARTIFACT_LIMIT = 50;
 export const HISTORY_LIMIT = 12;
+/**
+ * Per-artifact bounds. They cap what one stored artifact may hold so a single
+ * oversized or tampered envelope cannot blow up parsing or the quota on its
+ * own; they are not a guarantee that a full basket fits (localStorage is
+ * ~5 MB per origin and 50 × 200 KB is more than that — running out is the
+ * `quota` storage mode's job). The reducer clamps on the way in and the
+ * persisted-state schema rejects anything larger on the way out, so the two
+ * never disagree about what a stored artifact may hold.
+ */
+export const ARTIFACT_CONTENT_MAX = 200_000;
+export const ARTIFACT_TITLE_MAX = 200;
+/**
+ * A bare file name for the download: letters and digits of any script (the
+ * mock content is Chinese, so most titles are), underscores, spaces, dots,
+ * brackets and dashes only — no path separators, no control characters, no
+ * other punctuation — and short. The drawer forces the extension from `type`,
+ * so the stored value is the stem at most; anything that fails this is dropped
+ * and the title is used instead.
+ */
+export const ARTIFACT_FILENAME_PATTERN = /^[\p{L}\p{N}_ .()-]{1,120}$/u;
 
 /** What `makeDemoSite` (PR-2) produces and `loadDemo` writes — never `profile` or `notify` (design §6.4). */
 export type DemoPayload = Pick<
