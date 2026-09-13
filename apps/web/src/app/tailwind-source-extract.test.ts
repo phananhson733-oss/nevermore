@@ -17,6 +17,9 @@ const SRC_DIR = resolve(APP_DIR, "..");
 const CSS_PATH = join(APP_DIR, "workbench.css");
 const SLOW = { timeout: 60_000 };
 const CSS_MODULE = 'import styles from "./fixture.module.css";';
+// The app's joiner, as the reader must find it: through its module, not its spelling.
+const CX_MODULE = { "components/ui/cx.ts": "export function cx(...values: readonly unknown[]): string { return String(values); }" };
+const CX_IMPORT = 'import { cx } from "@/components/ui/cx";';
 
 let checks: Promise<Checks> | undefined;
 function setup(): Promise<Checks> {
@@ -45,6 +48,7 @@ describe("class values the reader follows", () => {
   it("through conditionals, clsx keys and same-file constants", SLOW, async () => {
     const { utilities } = await outside([
       CSS_MODULE,
+      'import { clsx } from "clsx";',
       'const tone = "hidden";',
       "export const A = ({ on }: { on: boolean }) => (",
       '  <div className={on ? "flex gap-2" : styles.card}>',
@@ -96,9 +100,11 @@ describe("class values the reader follows", () => {
 
   it("reading only the member a sink names, and only the value side of && (round 2 F6)", SLOW, async () => {
     const files = {
+      ...CX_MODULE,
       "lib/flags.ts": "export const isActive = true;",
       "legacy/A.tsx": [
         CSS_MODULE,
+        CX_IMPORT,
         'import { isActive } from "@/lib/flags";',
         "const state = { tone: styles.a, percent: `${10}%` };",
         'export const A = () => <><div className={cx(styles.a, isActive && "is-active")} /><p className={state.tone} /></>;',
@@ -108,8 +114,10 @@ describe("class values the reader follows", () => {
   });
 
   it("keeps CSS Module lookups, props passthrough, props rest spreads and next/font classes quiet", SLOW, async () => {
-    const { utilities, unresolved } = await outside([
+    const { utilities, unresolved } = await read({ ...CX_MODULE, "legacy/A.tsx": [
       CSS_MODULE,
+      CX_IMPORT,
+      'import { cx as joinClasses } from "@/components/ui";',
       'import { Plus_Jakarta_Sans } from "next/font/google";',
       'const face = Plus_Jakarta_Sans({ variable: "--font-wb" });',
       "export function A({ className, ...rest }: { className?: string }) {",
@@ -117,7 +125,8 @@ describe("class values the reader follows", () => {
       "}",
       "export const B = (props: { className: string }) => <i className={cx(styles.hidden, props.className)} />;",
       "export const C = ({ n }: { n: string }) => <b className={styles[`status${n}`]} />;",
-    ].join("\n"));
+      'export const D = () => <u className={[styles.a, joinClasses(styles.b)].filter(Boolean).join(" ")} />;',
+    ].join("\n"), "components/ui/index.ts": 'export { cx } from "./cx.ts";' }, "legacy/A.tsx");
     expect(utilities).toEqual([]);
     expect(unresolved).toEqual([]);
   });
@@ -202,6 +211,74 @@ describe("class values the reader reports instead of reading as empty", () => {
       'imported class value y from "@/components/workbench/barrel", defined outside the roots',
       'imported class value SHELL from package "@sf/ui"',
     ]);
+  });
+});
+
+describe("round 3 (gpt-6-astra): shapes that read as empty before", () => {
+  it("reads computed literal keys, rewrites, props defaults, overload bodies, local look-alike joiners and space joins", SLOW, async () => {
+    const { utilities, unresolved } = await outside([
+      'const state = { ["tone"]: "collapse" };',
+      'const pair = { tone: "", mode: "lowercase" };',
+      'export function B({ className = "" }: { className?: string }) { className = "grow"; return <div className={className} />; }',
+      'export function C(props = { className: "shrink" }) { return <div {...props} />; }',
+      'export function D({ className } = { className: "contents" }) { return <div className={className} />; }',
+      "function tone(): string;",
+      'function tone() { return "italic"; }',
+      'function cn() { return "underline"; }',
+      "export const A = (n: number) => (",
+      '  <><div className={state.tone} /><i {...{ ["className"]: "uppercase" }} /><p className={tone()} /><b className={cn()} />',
+      '  <u className={["truncate"].join(" ")} /><s {...{ [`data-${n}`]: "" }} /><em className={pair["tone"]} /></>',
+      ");",
+    ].join("\n"));
+    expect(utilities).toEqual(["collapse", "contents", "grow", "italic", "shrink", "truncate", "underline", "uppercase"]);
+    expect(unresolved).toEqual([]);
+  });
+
+  it("reports an object written through a member, a dynamic computed key and a join that glues", SLOW, async () => {
+    const { unresolved } = await outside([
+      'const props = { className: "" };',
+      'props.className = "collapse";',
+      'export const A = (k: string) => <><div {...props} /><p {...{ [k]: "grow" }} /><i className={["col", "lapse"].join("")} /></>;',
+    ].join("\n"));
+    expect(unresolved).toEqual([
+      "class value from JSX spread: props",
+      'class value behind a computed key: [k]: "grow"',
+      'class value from join: ["col", "lapse"].join("")',
+    ]);
+  });
+
+  it("follows a root file that only re-labels an outside value: default export, alias, namespace member", SLOW, async () => {
+    const files = {
+      "legacy/classes.ts": 'export const x = "collapse";',
+      "components/workbench/barrel.ts": 'import { x } from "../../legacy/classes";\nexport default x;\nexport const y = x;\nexport { x };',
+      "components/workbench/tokens.ts": 'import styles from "./tokens.module.css";\nexport const TONE = { ok: styles.ok, warn: "text-amber-700" };',
+      "legacy/A.tsx": [
+        'import value, { y, TONE } from "@/components/workbench/barrel";',
+        'import * as palette from "@/components/workbench/barrel";',
+        'import { TONE as tones } from "@/components/workbench/tokens";',
+        "export const A = () => <><div className={value} /><p className={y} /><i className={palette.x} /><b className={tones.warn} /></>;",
+      ].join("\n"),
+    };
+    expect((await read(files, "legacy/A.tsx")).unresolved).toEqual([
+      'imported class value value from "@/components/workbench/barrel", defined outside the roots',
+      'imported class value y from "@/components/workbench/barrel", defined outside the roots',
+      'imported class value palette.x from "@/components/workbench/barrel", defined outside the roots',
+    ]);
+  });
+
+  it("reads stylesheets: classes composed from global, Tailwind directives outside the entry, --name in style queries", SLOW, async () => {
+    const module = await read({
+      "legacy/A.module.css": [
+        ".box { composes: collapse from global; }",
+        ".card { @apply rounded-lg; }",
+        "@container card style(--color-slate-400) { .box { --local-gap: 4px; } }",
+      ].join("\n"),
+    }, "legacy/A.module.css");
+    expect(module.utilities).toEqual(["collapse"]);
+    expect(module.unresolved).toEqual(["Tailwind directive @apply in a stylesheet Tailwind does not compile"]);
+    expect(module.facts.propertyReads).toEqual(["--color-slate-400"]);
+    const entry = await read({ "app/entry.css": '@import "tailwindcss/utilities.css";\n@utility wb-x { color: red; }' }, "app/entry.css");
+    expect(entry.unresolved).toEqual([]);
   });
 });
 

@@ -1,27 +1,24 @@
 /* @input  — the expressions a class sink reads (a class-like JSX attribute, a
- *           JSX spread, classList.* / setAttribute("class", …) arguments) and a
- *           TypeScript checker over the walked files
+ *           JSX spread, classList.* / setAttribute("class", …) arguments), a
+ *           TypeScript checker over the walked files, and a test for which
+ *           imports are the class joiners
  * @output — the strings those expressions can produce, the imports they read,
  *           and every place the value leaves static sight: a literal glued onto
  *           something else, a parameter, a call, a member of an object it cannot
- *           see. Fail closed: a shape it does not model is reported, never read
- *           as empty
+ *           see, a computed key, a name written after its declaration. Fail
+ *           closed: a shape it does not model is reported, never read as empty
  * @pos    — test support for app/tailwind-source-extract.ts only; the static
  *           lookups it leans on live in tailwind-source-bindings.ts
  * 一旦本文件被更新，务必更新开头注释
  */
 import ts from "typescript";
 import {
-  ASSIGNMENTS, declarationsOf, importBinding, isCssImport, isInert,
-  isNextFontVariable, isPropsObject, localFunction, objectLiterals, returnedExpressions,
-  staticKey, staticText, unwrap, assignmentIndex, type ImportRead, type Scope,
+  ASSIGNMENTS, assignmentsTo, computedKeyPrefix, declarationsOf, importBinding, isCssImport, isInert, isMutated,
+  isNextFontVariable, isPropsObject, localFunction, objectLiterals, parameterDefaults,
+  returnedExpressions, staticKey, staticText, unwrap, writeIndex, type ImportRead, type Scope,
 } from "./tailwind-source-bindings.ts";
 
 export const CLASS_NAME = /^(?:class|className|[A-Za-z]+ClassName)$/u;
-
-// The joiners this app uses (components/workbench/ui/cn.ts, components/ui/cx.ts)
-// and the libraries they wrap: their arguments are the classes.
-const COMBINATORS: ReadonlySet<string> = new Set(["cn", "cx", "clsx", "classNames", "twMerge"]);
 
 const K = ts.SyntaxKind;
 
@@ -34,6 +31,9 @@ const NON_STRING: ReadonlySet<ts.SyntaxKind> = new Set([
   K.AmpersandToken, K.BarToken, K.CaretToken, K.LessThanLessThanToken,
   K.GreaterThanGreaterThanToken, K.GreaterThanGreaterThanGreaterThanToken,
 ]);
+
+/** Whether an import (specifier, name in its module) is a class joiner whose arguments are the classes. */
+export type CombinatorCheck = (specifier: string, importedName: string) => boolean;
 
 export interface Sink {
   readonly kind: "value" | "spread";
@@ -53,6 +53,7 @@ export interface ValueReader {
 }
 
 interface Ctx extends Scope {
+  readonly isCombinator: CombinatorCheck;
   readonly followed: Set<ts.Node>;
   readonly strings: string[];
   readonly imports: ImportRead[];
@@ -128,16 +129,32 @@ function visitClassObject(ctx: Ctx, node: ts.ObjectLiteralExpression): void {
   }
 }
 
+/** Bound to an import that really is a joiner: a local `cn` is just a function. */
+function isCombinatorCall(ctx: Ctx, callee: ts.Expression): boolean {
+  if (!ts.isIdentifier(callee)) return false;
+  const bindings = declarationsOf(ctx, callee).flatMap((declaration) => {
+    const binding = importBinding(declaration);
+    return binding === null ? [] : [binding];
+  });
+  return bindings.length > 0 && bindings.every((b) => ctx.isCombinator(b.specifier, b.importedName));
+}
+
 function visitCall(ctx: Ctx, node: ts.CallExpression): void {
   const callee = unwrap(node.expression);
-  if (ts.isIdentifier(callee) && COMBINATORS.has(callee.text)) {
+  if (isCombinatorCall(ctx, callee)) {
     for (const argument of node.arguments) {
       visitValue(ctx, ts.isSpreadElement(argument) ? argument.expression : argument);
     }
     return;
   }
-  if (ts.isPropertyAccessExpression(callee) && callee.name.text === "join") {
-    return visitValue(ctx, callee.expression);
+  const method = ts.isPropertyAccessExpression(callee) ? callee.name.text : null;
+  if (ts.isPropertyAccessExpression(callee) && method === "filter") return visitValue(ctx, callee.expression);
+  if (ts.isPropertyAccessExpression(callee) && method === "join") {
+    // Only a whitespace separator keeps every element a whole token.
+    const [separator, ...extra] = node.arguments;
+    const text = separator === undefined || extra.length > 0 ? null : staticText(ctx, separator);
+    if (text !== null && /^\s+$/u.test(text)) return visitValue(ctx, callee.expression);
+    return report(ctx, node, "class value from join");
   }
   const fn = ts.isIdentifier(callee) ? localFunction(ctx, callee) : null;
   if (fn === null) return report(ctx, node, "class value from call");
@@ -156,42 +173,76 @@ function visitProperty(ctx: Ctx, literal: ts.ObjectLiteralExpression, name: stri
       const spread = objectLiterals(ctx, property.expression);
       if (spread === null) report(ctx, property, "class value from object spread");
       else spread.forEach((inner) => visitProperty(ctx, inner, name));
-    } else if (staticKey(property.name) === name) {
-      visitPropertyValue(ctx, property);
+      continue;
     }
+    const key = staticKey(property.name);
+    if (key === null && name.startsWith(computedKeyPrefix(property.name))) report(ctx, property, "class value behind a computed key");
+    else if (key === name) visitPropertyValue(ctx, property);
   }
 }
 
-function readImport(ctx: Ctx, node: ts.Expression): boolean {
+function readImport(ctx: Ctx, node: ts.Expression, member: string | null): boolean {
   if (!ts.isIdentifier(node)) return false;
   const bindings = declarationsOf(ctx, node).flatMap((d) => {
     const binding = importBinding(d);
     return binding === null ? [] : [binding];
   });
-  bindings.forEach((binding) => ctx.imports.push({ name: node.text, ...binding }));
+  for (const binding of bindings) {
+    const throughNamespace = binding.importedName === "*" && member !== null;
+    ctx.imports.push({
+      name: member === null ? node.text : `${node.text}.${member}`,
+      specifier: binding.specifier,
+      importedName: throughNamespace ? member : binding.importedName,
+    });
+  }
   return bindings.length > 0;
+}
+
+/** A props object read here: its callers are checked, but not its defaults or a rewrite of it. */
+function visitProps(ctx: Ctx, props: ts.Identifier, read: (literal: ts.ObjectLiteralExpression) => void): void {
+  if (assignmentsTo(ctx, props).length > 0 || isMutated(ctx, props)) {
+    return report(ctx, props, "class value from rewritten props");
+  }
+  for (const fallback of parameterDefaults(ctx, props)) {
+    const literals = objectLiterals(ctx, fallback);
+    if (literals === null) report(ctx, fallback, "class value from props default");
+    else literals.forEach(read);
+  }
 }
 
 function visitMember(ctx: Ctx, node: ts.PropertyAccessExpression): void {
   const object = unwrap(node.expression);
   const property = node.name.text;
   if (isCssImport(ctx, object) || isNextFontVariable(ctx, object, property)) return;
-  if (readImport(ctx, object)) return;
+  if (readImport(ctx, object, property)) return;
   const literals = objectLiterals(ctx, object);
   if (literals !== null) return literals.forEach((literal) => visitProperty(ctx, literal, property));
-  if (CLASS_NAME.test(property) && isPropsObject(ctx, object)) return;
+  if (CLASS_NAME.test(property) && isPropsObject(ctx, object)) {
+    return visitProps(ctx, object, (literal) => visitProperty(ctx, literal, property));
+  }
   report(ctx, node, "class value from member");
 }
 
 function visitElement(ctx: Ctx, node: ts.ElementAccessExpression): void {
   const object = unwrap(node.expression);
-  if (isCssImport(ctx, object) || readImport(ctx, object)) return;
+  if (isCssImport(ctx, object)) return;
+  const key = staticText(ctx, node.argumentExpression);
+  if (readImport(ctx, object, key)) return;
   const literals = objectLiterals(ctx, object);
   if (literals === null) return report(ctx, node, "class value from element");
+  if (key !== null) return literals.forEach((literal) => visitProperty(ctx, literal, key));
   literals.forEach((literal) => literal.properties.forEach((property) => {
     if (ts.isSpreadAssignment(property)) report(ctx, property, "class value from object spread");
     else visitPropertyValue(ctx, property);
   }));
+}
+
+function visitParameterDefault(ctx: Ctx, parameter: ts.ParameterDeclaration, key: string): void {
+  const fallback = parameter.initializer;
+  if (fallback === undefined) return;
+  const literals = objectLiterals(ctx, fallback);
+  if (literals === null) return report(ctx, fallback, "class value from parameter default");
+  literals.forEach((literal) => visitProperty(ctx, literal, key));
 }
 
 function visitBinding(ctx: Ctx, element: ts.BindingElement): void {
@@ -203,9 +254,10 @@ function visitBinding(ctx: Ctx, element: ts.BindingElement): void {
     if (element.dotDotDotToken === undefined && (key === null || !CLASS_NAME.test(key))) {
       return report(ctx, element, "class value from destructured parameter");
     }
-    // A class-named prop is checked where the props are written; its default is written here.
+    // A class-named prop is checked where the props are written; its defaults are written here.
     const fallback = element.initializer;
     if (fallback !== undefined) visitValue(ctx, fallback);
+    if (element.dotDotDotToken === undefined && key !== null) visitParameterDefault(ctx, root, key);
     return;
   }
   const literals = ts.isVariableDeclaration(root) && root.initializer !== undefined && ts.isObjectBindingPattern(pattern)
@@ -218,16 +270,15 @@ function visitBinding(ctx: Ctx, element: ts.BindingElement): void {
 function visitIdentifier(ctx: Ctx, node: ts.Identifier): void {
   const declarations = declarationsOf(ctx, node);
   if (declarations.length === 0) return report(ctx, node, "class value from an undeclared name");
+  if (isMutated(ctx, node)) report(ctx, node, "class value written through a member or destructuring");
+  const assigned = assignmentsTo(ctx, node);
   for (const declaration of declarations) {
     const binding = importBinding(declaration);
     if (binding !== null) {
       if (!binding.specifier.endsWith(".css")) ctx.imports.push({ name: node.text, ...binding });
     } else if (ts.isVariableDeclaration(declaration)) {
-      const symbol = ctx.checker.getSymbolAtLocation(declaration.name);
-      const assigned = symbol === undefined ? [] : (ctx.assignments.get(symbol) ?? []);
       if (declaration.initializer === undefined && assigned.length === 0) report(ctx, declaration, "class value never assigned");
       if (declaration.initializer !== undefined) visitValue(ctx, declaration.initializer);
-      assigned.forEach((value) => visitValue(ctx, value));
     } else if (ts.isBindingElement(declaration)) {
       visitBinding(ctx, declaration);
     } else if (ts.isParameter(declaration) && CLASS_NAME.test(node.text)) {
@@ -237,6 +288,7 @@ function visitIdentifier(ctx: Ctx, node: ts.Identifier): void {
       report(ctx, declaration, ts.isParameter(declaration) ? "class value from parameter" : "class value from declaration");
     }
   }
+  assigned.forEach((value) => visitValue(ctx, value));
 }
 
 function visitValue(ctx: Ctx, node: ts.Expression): void {
@@ -263,24 +315,32 @@ function visitValue(ctx: Ctx, node: ts.Expression): void {
   report(ctx, inner, "class value of an unmodelled shape");
 }
 
-/** A JSX spread: only class-named keys become classes. */
-function visitSpread(ctx: Ctx, node: ts.Expression): void {
-  const inner = unwrap(node);
-  if (isPropsObject(ctx, inner)) return;
-  const literals = objectLiterals(ctx, inner);
-  if (literals === null) return report(ctx, inner, "class value from JSX spread");
-  for (const literal of literals) {
-    for (const property of literal.properties) {
-      if (ts.isSpreadAssignment(property)) visitSpread(ctx, property.expression);
-      else if (CLASS_NAME.test(staticKey(property.name) ?? "")) visitPropertyValue(ctx, property);
+/** Class-named keys of a spread object literal become classes. */
+function visitSpreadLiteral(ctx: Ctx, literal: ts.ObjectLiteralExpression): void {
+  for (const property of literal.properties) {
+    if (ts.isSpreadAssignment(property)) {
+      visitSpread(ctx, property.expression);
+      continue;
     }
+    const key = staticKey(property.name);
+    // Class-named keys are letters only: a computed key starting `data-` can never be one.
+    if (key === null && /^[A-Za-z]*$/u.test(computedKeyPrefix(property.name))) report(ctx, property, "class value behind a computed key");
+    else if (key !== null && CLASS_NAME.test(key)) visitPropertyValue(ctx, property);
   }
 }
 
-export function valueReader(source: ts.SourceFile, checker: ts.TypeChecker): ValueReader {
-  const assignments = assignmentIndex(source, checker);
+function visitSpread(ctx: Ctx, node: ts.Expression): void {
+  const inner = unwrap(node);
+  if (isPropsObject(ctx, inner)) return visitProps(ctx, inner, (literal) => visitSpreadLiteral(ctx, literal));
+  const literals = objectLiterals(ctx, inner);
+  if (literals === null) return report(ctx, inner, "class value from JSX spread");
+  literals.forEach((literal) => visitSpreadLiteral(ctx, literal));
+}
+
+export function valueReader(source: ts.SourceFile, checker: ts.TypeChecker, isCombinator: CombinatorCheck): ValueReader {
+  const writes = writeIndex(source, checker);
   const fresh = (): Ctx => ({
-    source, checker, assignments, followed: new Set(), strings: [], imports: [], glued: [], opaque: [],
+    ...writes, source, checker, isCombinator, followed: new Set(), strings: [], imports: [], glued: [], opaque: [],
   });
   return {
     read: (sinks) => {

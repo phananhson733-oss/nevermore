@@ -1,17 +1,21 @@
 /* @input  — the text of .ts / .tsx / .css files
- * @output — what each file feeds Tailwind: strings that reach a class sink,
- *           every other literal, the imports class values read (with where each
- *           is really defined), the class inputs out of static sight, and the
- *           custom properties it reads (var(), getPropertyValue())
+ * @output — what each file feeds Tailwind: strings that reach a class sink
+ *           (in a stylesheet, `composes: … from global`), every other literal,
+ *           the imports class values read (with where each is really defined),
+ *           the class inputs out of static sight (in a stylesheet, Tailwind
+ *           directives outside the Tailwind entry), and the custom properties
+ *           it reads (var(), getPropertyValue(), any --name a stylesheet uses)
  * @pos    — test support for app/tailwind-source-scan.ts only; nothing in the
  *           app imports it (it loads typescript). Value tracing lives in
  *           tailwind-source-values.ts, export chains in tailwind-source-exports.ts
  * 一旦本文件被更新，务必更新开头注释
  */
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import ts from "typescript";
 import { definitionOf, type Definition, type ModuleGraph } from "./tailwind-source-exports.ts";
-import { CLASS_NAME, valueReader, type Sink, type ValueReader } from "./tailwind-source-values.ts";
+import {
+  CLASS_NAME, valueReader, type CombinatorCheck, type Sink, type ValueReader,
+} from "./tailwind-source-values.ts";
 
 export interface ImportedValue {
   readonly name: string;
@@ -38,6 +42,18 @@ export interface ModuleFacts {
 
 const CLASS_LIST_METHODS: ReadonlySet<string> = new Set(["add", "remove", "toggle", "replace"]);
 const SCRIPT = /\.tsx?$/u;
+// The class joiners: the two this app defines and the packages they wrap.
+const COMBINATOR_MODULES = [join("components", "workbench", "ui", "cn.ts"), join("components", "ui", "cx.ts")];
+const COMBINATOR_PACKAGES: ReadonlyMap<string, readonly string[]> = new Map([
+  ["clsx", ["clsx", "default"]],
+  ["classnames", ["default"]],
+  ["tailwind-merge", ["twMerge"]],
+]);
+const TAILWIND_ENTRY = /@import\s+["']tailwindcss/u;
+// Tailwind at-rules and functions: a stylesheet Tailwind does not compile leaves them unexpanded.
+const TAILWIND_DIRECTIVES =
+  /@(?:apply|reference|variant|custom-variant|utility|source|plugin|config|tailwind)\b|(?<![\w-])(?:--)?theme\(/gu;
+const COMMENT = /\/\*[\s\S]*?\*\//gu;
 
 function literalText(node: ts.Node): string | null {
   const plain = ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
@@ -52,7 +68,7 @@ function walk(node: ts.Node, visit: (node: ts.Node) => void): void {
 
 /** Custom properties read through var(). Block comments are dropped: a var() there reads nothing. */
 export function variablesReadIn(text: string): readonly string[] {
-  const code = text.replace(/\/\*[\s\S]*?\*\//gu, "");
+  const code = text.replace(COMMENT, "");
   const names = [...code.matchAll(/var\(\s*(--[\w-]+)/gu)].map((match) => match[1] ?? "");
   return [...new Set(names)].filter((name) => name !== "").sort();
 }
@@ -146,7 +162,7 @@ function programFor(scripts: ReadonlyMap<string, string>): ts.Program {
 }
 
 function scriptFacts(path: string, source: ts.SourceFile, checker: ts.TypeChecker, graph: ModuleGraph): ModuleFacts {
-  const reader = valueReader(source, checker);
+  const reader = valueReader(source, checker, combinatorCheck(graph, path));
   const reading = reader.read(classSinks(source));
   return {
     classStrings: reading.strings,
@@ -162,7 +178,36 @@ function scriptFacts(path: string, source: ts.SourceFile, checker: ts.TypeChecke
   };
 }
 
-const NO_SCRIPT_FACTS = { classStrings: [], literals: [], importedValues: [], gluedPieces: [], opaqueValues: [] };
+/**
+ * A stylesheet's facts. Every `--name` it uses that is not a declaration counts
+ * as a read (var(), `@container style(--x)`, …). Classes composed from global
+ * reach the DOM through the CSS Module, so they are class strings.
+ */
+function stylesheetFacts(text: string): ModuleFacts {
+  const code = text.replace(COMMENT, "");
+  const composed = [...code.matchAll(/composes\s*:\s*([^;}]+?)\s+from\s+global\b/gu)].map((match) => match[1] ?? "");
+  const directives = TAILWIND_ENTRY.test(code)
+    ? []
+    : [...code.matchAll(TAILWIND_DIRECTIVES)].map((match) => `Tailwind directive ${match[0]} in a stylesheet Tailwind does not compile`);
+  const reads = [...code.matchAll(/(?<![\w-])--[A-Za-z_][\w-]*(?![\w-]|\s*:)/gu)].map((match) => match[0]);
+  return {
+    classStrings: composed,
+    literals: [],
+    importedValues: [],
+    gluedPieces: [],
+    opaqueValues: directives,
+    propertyReads: [...new Set(reads)].sort(),
+    dynamicPropertyReads: [],
+  };
+}
+
+function combinatorCheck(graph: ModuleGraph, path: string): CombinatorCheck {
+  return (specifier, importedName) => {
+    const definition = definitionOf(graph, path, specifier, importedName);
+    if (definition.kind === "package") return COMBINATOR_PACKAGES.get(specifier)?.includes(importedName) === true;
+    return definition.kind === "file" && COMBINATOR_MODULES.some((module) => definition.path === join(graph.srcDir, module));
+  };
+}
 
 /** Facts for every file, keyed by the absolute path given; `srcDir` is what `@/` names. */
 export function factsForFiles(
@@ -177,9 +222,7 @@ export function factsForFiles(
     sourceOf: (path) => (scripts.has(path) ? program.getSourceFile(path) : undefined),
   };
   const entries = [...texts].map(([path, text]): readonly [string, ModuleFacts] => {
-    if (!SCRIPT.test(path)) {
-      return [path, { ...NO_SCRIPT_FACTS, propertyReads: variablesReadIn(text), dynamicPropertyReads: [] }];
-    }
+    if (!SCRIPT.test(path)) return [path, stylesheetFacts(text)];
     const source = program.getSourceFile(path);
     if (source === undefined) throw new Error(`not loaded into the program: ${path}`);
     return [path, scriptFacts(path, source, checker, graph)];
