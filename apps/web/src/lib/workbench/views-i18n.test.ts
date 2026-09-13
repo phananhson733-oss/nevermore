@@ -2,6 +2,7 @@ import { createTranslator } from "next-intl";
 import { describe, expect, it } from "vitest";
 import en from "../../../../../packages/i18n/src/messages/en.json";
 import zh from "../../../../../packages/i18n/src/messages/zh-CN.json";
+import { ARTIFACT_ACTION_LABEL_KEYS } from "@/components/workbench/ui/ArtifactActions";
 
 /**
  * Gate for the copy of the first five workbench views (PR-3 Task 1).
@@ -743,6 +744,22 @@ describe.each(LOCALE_KEYS)("workbench view messages (%s)", (locale) => {
         );
         seen.set(text, key);
       }
+    }
+  });
+
+  it("holds the artifact-action messages to exactly the component's label fields", () => {
+    // The component side of this binding is `satisfies` in ArtifactActions.tsx;
+    // this is the catalogue side. `OWNED_SUBTREES` cannot stand in for it: it
+    // compares the catalogue with `CASES`, both of which list what the catalogue
+    // HAS, so a label the row reads with no message behind it passes there.
+    const subtree = node(locale, "artifactActions");
+    if (subtree === null || typeof subtree !== "object") {
+      throw new Error(`${locale}: workbench.artifactActions is not a subtree`);
+    }
+    const fields = Object.keys(ARTIFACT_ACTION_LABEL_KEYS);
+    expect(Object.keys(subtree).sort()).toEqual([...fields].sort());
+    for (const field of fields) {
+      expect(rawMessage(locale, `artifactActions.${field}`).trim(), field).not.toBe("");
     }
   });
 

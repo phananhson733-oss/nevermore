@@ -13,7 +13,7 @@
  * width hand-written in this file would sit outside every gate we have.
  */
 
-import { act, type ReactElement } from "react";
+import { act, useState, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SWITCH_TRACK } from "./panel.ts";
@@ -51,6 +51,18 @@ function switchOf(scope: HTMLElement): HTMLInputElement {
   return found;
 }
 
+/** The shape a settings row uses: the parent owns the state and feeds it back in. */
+function Switchable({ initial }: { readonly initial: boolean }) {
+  const [checked, setChecked] = useState(initial);
+  return <Toggle checked={checked} label={LABEL} onChange={setChecked} />;
+}
+
+/** What assistive technology can read off the control: the native state and any ARIA override. */
+function stateOf(scope: HTMLElement): readonly [boolean, string | null] {
+  const control = switchOf(scope);
+  return [control.checked, control.getAttribute("aria-checked")];
+}
+
 afterEach(() => {
   cleanup?.();
   cleanup = null;
@@ -67,17 +79,36 @@ describe("Toggle", () => {
     expect(control.disabled).toBe(false);
   });
 
+  /*
+   * The checked state has exactly one source, and both states are pinned on it.
+   * `aria-checked` is pinned ABSENT in both rather than equal to the state:
+   * `Toggle` writes none on purpose, because on a native checkbox the platform
+   * derives the switch's announced state from `.checked`, and ARIA in HTML says
+   * not to set `aria-checked` there. A hardcoded `aria-checked` of either value
+   * is a second source that is wrong in one of the two states — and the old
+   * one-sided `not.toBe("false")` let `aria-checked="true"` through in both.
+   */
   it("mirrors the checked prop in both directions of state", () => {
     const on = render(<Toggle checked label={LABEL} onChange={vi.fn()} />);
-    expect(switchOf(on).checked).toBe(true);
-    expect(switchOf(on).getAttribute("aria-checked")).not.toBe("false");
+    expect(stateOf(on)).toEqual([true, null]);
     cleanup?.();
     cleanup = null;
 
     const off = render(
       <Toggle checked={false} label={LABEL} onChange={vi.fn()} />,
     );
-    expect(switchOf(off).checked).toBe(false);
+    expect(stateOf(off)).toEqual([false, null]);
+  });
+
+  it("follows its state through a toggle and back, with no second source appearing", () => {
+    const scope = render(<Switchable initial={false} />);
+    expect(stateOf(scope)).toEqual([false, null]);
+
+    act(() => switchOf(scope).click());
+    expect(stateOf(scope)).toEqual([true, null]);
+
+    act(() => switchOf(scope).click());
+    expect(stateOf(scope)).toEqual([false, null]);
   });
 
   it("reports the value it is being switched to", () => {

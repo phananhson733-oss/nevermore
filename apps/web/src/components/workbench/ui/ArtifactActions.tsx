@@ -56,6 +56,26 @@ export interface ArtifactActionLabels {
   readonly tooLarge: string;
 }
 
+/**
+ * The `workbench.artifactActions` message keys, one per label field. The
+ * `satisfies` binds this table to `ArtifactActionLabels` in both directions —
+ * a field renamed, added or removed on the component side without this table
+ * following is a compile error (a missing key, or an excess one) — and
+ * `views-i18n.test.ts` holds the table equal to that subtree in both locales.
+ * Together they stop a label the row reads from having no message behind it,
+ * which next-intl would render as the key path in every artifact footer.
+ */
+export const ARTIFACT_ACTION_LABEL_KEYS = {
+  copy: true,
+  copied: true,
+  copyFailed: true,
+  copyForAi: true,
+  exportFile: true,
+  save: true,
+  saved: true,
+  tooLarge: true,
+} as const satisfies Record<keyof ArtifactActionLabels, true>;
+
 export function ArtifactActions({
   prepared,
   labels,
