@@ -187,3 +187,43 @@ describe("DataSourcesPanel: failures are judged by problem code (Q4)", () => {
     expect(scope.querySelector('[data-wb-sources-notice="needProfile"]')?.textContent).toContain("产品画像");
   });
 });
+
+describe("DataSourcesPanel: an unreadable snapshot is unknown, not absent (codex S10b)", () => {
+  it.each(["en", "zh-CN"] as const)(
+    "prints a dash for capture time and row count and never says there is no snapshot (%s)",
+    async (locale) => {
+      answerWith([
+        sourceSlot("gsc", "available", {
+          latestSnapshot: snapshot({ capturedAt: "yesterday-ish", rowCount: "12" as never }),
+        }),
+        sourceSlot("ga4", "connected", { latestSnapshot: 42 as never }),
+      ]);
+      const scope = await render(locale);
+      const copy = DS_MESSAGES[locale].workbench.dataSources.real;
+      for (const provider of ["gsc", "ga4"] as const) {
+        const found = card(scope, provider);
+        expect(found.textContent, provider).toContain(copy.lastCollected);
+        expect(found.textContent, provider).toContain(copy.rows);
+        expect(fact(found, "lastCollected"), provider).toBe("—");
+        expect(fact(found, "rows"), provider).toBe("—");
+        expect(found.querySelector("[data-wb-no-snapshot]"), provider).toBeNull();
+        expect(found.textContent, provider).not.toContain(copy.noSnapshot);
+      }
+    },
+  );
+});
+
+describe("DataSourcesPanel: a card offers nothing to click, whatever its status (codex S10b)", () => {
+  const INTERACTIVE = "a, button, input, select, textarea, [role=button]";
+
+  it("has no link, button or control on a not-connected card, or on the connected one beside it", async () => {
+    answerWith([sourceSlot("gsc", "available", { latestSnapshot: snapshot() }), sourceSlot("ga4", "disconnected")]);
+    const scope = await render();
+    expect(card(scope, "gsc").getAttribute("data-wb-status")).toBe("connected");
+    expect(card(scope, "ga4").getAttribute("data-wb-status")).toBe("notConnected");
+    for (const provider of ["gsc", "ga4"] as const) {
+      expect(card(scope, provider).querySelectorAll(INTERACTIVE), provider).toHaveLength(0);
+    }
+    expect(scope.querySelectorAll(INTERACTIVE)).toHaveLength(0);
+  });
+});
