@@ -19,14 +19,25 @@ import zh from "../../../../../packages/i18n/src/messages/zh-CN.json";
  *    only in front of `{`, `}`, `#` or `|`, so `won't` and `site's` are legal
  *    copy and would false-positive. Quoting mistakes are caught instead on the
  *    RAW message by `opensIcuQuote`.
+ *
+ * On length: this is over the repo's 400-line guidance because Task 1 requires
+ * the key list to live in the test file as a literal (splitting `CASES` into a
+ * second module would put it out of sight of the assertions that consume it,
+ * and Task 1 owns exactly three files). ~200 of the lines below are that list.
  */
 
 const LOCALES = { en, "zh-CN": zh } as const;
 type LocaleKey = keyof typeof LOCALES;
 const LOCALE_KEYS = Object.keys(LOCALES) as readonly LocaleKey[];
 
-const TEXT_SENTINEL = "SENTINEL-TEXT";
-const NUMBER_SENTINEL = 7;
+/**
+ * One sentinel per argument NAME, so a message that drops one of several
+ * placeholders fails instead of matching a shared value. Numbers stay in the
+ * hundreds: below 1000 so ICU `#` renders them without a grouping separator,
+ * and away from the literals the copy itself contains (`11-30`, `≤10`, `GA4`).
+ */
+const textSentinel = (name: string): string => `SENTINEL-${name}`;
+const numberSentinel = (index: number): number => 401 + index;
 const BRACE_RESIDUE = /[{}]/;
 const HAN = /\p{Script=Han}/u;
 
@@ -39,7 +50,17 @@ const FORBIDDEN: Readonly<Record<LocaleKey, readonly string[]>> = {
   en: ["guarantee", "will rank", "not ranking", "we fixed", "page one within"],
 };
 
-/** Disclosures that must survive a copy edit (Q4 / Q6 / Q12 / Q24). */
+/**
+ * Disclosures that must survive a copy edit (Q4 / Q6 / Q12 / Q16 / Q17 / Q24).
+ *
+ * `FORBIDDEN` is a blacklist and can only catch a lie being added; this table
+ * is the only thing that catches a true sentence being deleted or watered
+ * down, so every message that is the ONLY place a hedge is stated belongs
+ * here. Pins are the load-bearing clause, not the whole sentence, so the
+ * wording can still be improved — and they are checked on the FORMATTED text
+ * of every plural branch, because a pin on the raw message is satisfied by one
+ * branch keeping the hedge while the branch that actually renders drops it.
+ */
 const REQUIRED: Readonly<
   Record<string, Readonly<Record<LocaleKey, readonly string[]>>>
 > = {
@@ -51,9 +72,27 @@ const REQUIRED: Readonly<
     "zh-CN": ["GSC", "词库", "产物筐", "站点档案"],
     en: ["GSC", "keyword library", "artifacts", "site profile"],
   },
+  // Q11 raises this dialog for any non-empty field, so the four named
+  // categories are not enough: the catch-all is what keeps it honest.
   "overview.loadDemo.confirmBody": {
-    "zh-CN": ["GSC", "词库", "产物筐", "站点档案"],
-    en: ["GSC", "keyword library", "artifacts", "site profile"],
+    "zh-CN": [
+      "GSC",
+      "词库",
+      "产物筐",
+      "站点档案",
+      "已有的运行结果",
+      "审计",
+      "可见度",
+    ],
+    en: [
+      "GSC",
+      "keyword library",
+      "artifacts",
+      "site profile",
+      "every result already there",
+      "audit",
+      "visibility",
+    ],
   },
   "dataSources.table.unknownRank": {
     "zh-CN": ["排名未知"],
@@ -64,6 +103,37 @@ const REQUIRED: Readonly<
     en: ["browser"],
   },
   "shell.siteCard.unknownHint": {
+    "zh-CN": ["未知", "不等于未接入"],
+    en: ["Unknown", "not the same as not connected"],
+  },
+  // Q16: the only sentence telling the reader the crawl never happened.
+  "profile.subtitle": {
+    "zh-CN": ["本地生成", "不是对你站点的真实抓取"],
+    en: ["generated locally", "not a real crawl"],
+  },
+  "profile.run.note": {
+    "zh-CN": ["不抓取你的站点", "不调用外部服务"],
+    en: ["does not crawl your site", "no external service"],
+  },
+  // Q17: the whole justification for showing a list instead of rank movement.
+  "week.borderlineList.detail": {
+    "zh-CN": ["不是排名变化", "工作台目前不保存"],
+    en: ["not rank movement", "does not keep"],
+  },
+  // Q6: the sample-provenance footnote. The "no sample label" check on the
+  // import block runs the other way round and cannot catch this one.
+  "overview.gscFoot.sample": {
+    "zh-CN": ["示例数据"],
+    en: ["sample data"],
+  },
+  // Q4: a failure we cannot attribute must not name a cause.
+  "dataSources.real.otherError": {
+    "zh-CN": ["读不到连接状态"],
+    en: ["could not be read"],
+  },
+  // Pinned on its own: being byte-identical to shell.siteCard.unknownHint is
+  // not protection, and this is the one page showing all three states at once.
+  "dataSources.real.unknownHint": {
     "zh-CN": ["未知", "不等于未接入"],
     en: ["Unknown", "not the same as not connected"],
   },
@@ -260,6 +330,7 @@ const CASES: readonly string[] = [
   "dataSources.table.query",
   "dataSources.table.clicks",
   "dataSources.table.impressions",
+  "dataSources.table.ctr",
   "dataSources.table.position",
   "dataSources.table.status",
   "dataSources.table.legend",
@@ -288,23 +359,41 @@ const CASES: readonly string[] = [
   "shell.siteCard.unknownHint",
 ];
 
+type Values = Readonly<Record<string, string | number>>;
+
 interface MessageCase {
   readonly key: string;
-  readonly values: Readonly<Record<string, string | number>>;
+  readonly values: Values;
+  /**
+   * Every values object the key must format under. Numeric arguments get a
+   * second pass at 1, so an ICU plural whose `one` branch is broken or has
+   * lost the disclosure cannot hide behind the `other` branch.
+   */
+  readonly variants: readonly Values[];
 }
 
 function parseCase(spec: string): MessageCase {
   const [rawKey = "", rawArgs = ""] = spec.split("|");
   const names = rawArgs.trim().split(/\s+/u).filter(Boolean);
+  const values = names.reduce<Values>(
+    (acc, name, index) =>
+      name.startsWith("#")
+        ? { ...acc, [name.slice(1)]: numberSentinel(index) }
+        : { ...acc, [name]: textSentinel(name) },
+    {},
+  );
+  const singular = Object.fromEntries(
+    Object.entries(values).map(([name, value]) => [
+      name,
+      typeof value === "number" ? 1 : value,
+    ]),
+  );
   return {
     key: rawKey.trim(),
-    values: names.reduce<Readonly<Record<string, string | number>>>(
-      (acc, name) =>
-        name.startsWith("#")
-          ? { ...acc, [name.slice(1)]: NUMBER_SENTINEL }
-          : { ...acc, [name]: TEXT_SENTINEL },
-      {},
-    ),
+    values,
+    variants: names.some((name) => name.startsWith("#"))
+      ? [values, singular]
+      : [values],
   };
 }
 
@@ -367,16 +456,19 @@ function opensIcuQuote(raw: string): boolean {
 
 describe.each(LOCALE_KEYS)("workbench view messages (%s)", (locale) => {
   it("compiles every listed key and inserts every argument", () => {
-    for (const { key, values } of PARSED) {
-      const text = formatStrict(locale, key, values);
-      expect(text.trim(), key).not.toBe("");
-      expect(text, key).not.toBe(key);
-      expect(text, key).not.toBe(`workbench.${key}`);
-      expect(text, key).not.toMatch(BRACE_RESIDUE);
-      for (const value of Object.values(values)) {
-        expect(text, `${key} must insert ${String(value)}`).toContain(
-          String(value),
-        );
+    for (const { key, variants } of PARSED) {
+      for (const values of variants) {
+        const text = formatStrict(locale, key, values);
+        expect(text.trim(), key).not.toBe("");
+        expect(text, key).not.toBe(key);
+        expect(text, key).not.toBe(`workbench.${key}`);
+        expect(text, key).not.toMatch(BRACE_RESIDUE);
+        for (const value of Object.values(values)) {
+          if (value === 1) continue; // too weak to assert containment on
+          expect(text, `${key} must insert ${String(value)}`).toContain(
+            String(value),
+          );
+        }
       }
     }
   });
@@ -419,9 +511,13 @@ describe.each(LOCALE_KEYS)("workbench view messages (%s)", (locale) => {
 
   it("carries the disclosures that must survive a copy edit", () => {
     for (const [key, byLocale] of Object.entries(REQUIRED)) {
-      const raw = rawMessage(locale, key);
-      for (const phrase of byLocale[locale]) {
-        expect(raw, `${key} must still say "${phrase}"`).toContain(phrase);
+      const listed = PARSED.find((entry) => entry.key === key);
+      expect(listed, `${key} must also be listed in CASES`).toBeDefined();
+      for (const values of listed?.variants ?? []) {
+        const text = formatStrict(locale, key, values);
+        for (const phrase of byLocale[locale]) {
+          expect(text, `${key} must still say "${phrase}"`).toContain(phrase);
+        }
       }
     }
   });

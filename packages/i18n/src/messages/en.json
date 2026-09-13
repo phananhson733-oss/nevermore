@@ -4161,7 +4161,7 @@
         "button": "Load sample site",
         "busy": "Loading",
         "confirmTitle": "Replace the current content with sample data?",
-        "confirmBody": "This overwrites the site's GSC rows, keyword library, saved artifacts and site profile in this browser.",
+        "confirmBody": "This overwrites the site's GSC rows, keyword library, saved artifacts and site profile in this browser, along with every result already there: audit, visibility, knowledge base, competitor data, answer plans and link targets.",
         "confirmOk": "Load sample",
         "cancel": "Cancel"
       },
@@ -4314,7 +4314,7 @@
       },
       "artifactTitle": {
         "doc": "{brand} site profile",
-        "json": "{brand} profile JSON",
+        "json": "{brand} site profile JSON",
         "ctx": "{brand} context block"
       },
       "legacyCta": "Edit the real product profile"
@@ -4360,6 +4360,7 @@
         "query": "Query",
         "clicks": "Clicks",
         "impressions": "Impressions",
+        "ctr": "CTR",
         "position": "Position",
         "status": "Status",
         "legend": "Ranking ≤10 · Near page one 11-30 · Gap >30",

@@ -4161,7 +4161,7 @@
         "button": "载入示例站点",
         "busy": "载入中",
         "confirmTitle": "用示例数据覆盖当前内容？",
-        "confirmBody": "会覆盖这个站点在本浏览器里的 GSC 行、词库、产物筐与站点档案。",
+        "confirmBody": "会覆盖这个站点在本浏览器里的 GSC 行、词库、产物筐与站点档案，以及所有已有的运行结果：审计、可见度、知识库、竞品数据、答案页方案与外链目标。",
         "confirmOk": "载入示例",
         "cancel": "取消"
       },
@@ -4266,7 +4266,7 @@
         "ctx": "AI 上下文块"
       },
       "doc": {
-        "stamp": "产品档案 · {at}",
+        "stamp": "站点档案 · {at}",
         "crawl": "站点抓取",
         "gsc": "GSC 信号",
         "third": "第三方指标",
@@ -4313,8 +4313,8 @@
         "detail": "生成后这里会出现站点抓取、GSC 信号与产品描述。"
       },
       "artifactTitle": {
-        "doc": "{brand} 产品档案",
-        "json": "{brand} 档案 JSON",
+        "doc": "{brand} 站点档案",
+        "json": "{brand} 站点档案 JSON",
         "ctx": "{brand} 上下文块"
       },
       "legacyCta": "去编辑真实产品档案"
@@ -4360,6 +4360,7 @@
         "query": "查询",
         "clicks": "点击",
         "impressions": "展示",
+        "ctr": "点击率",
         "position": "排名",
         "status": "状态",
         "legend": "已排名 ≤10 · 临界 11-30 · 缺口 >30",
