@@ -25,9 +25,10 @@ import { BUTTON_SECONDARY } from "../../ui/panel.ts";
  *   there mean it was refused (they are, by then, not the snapshot): the box
  *   opens again over what is there now, focus on Cancel, instead of closing as
  *   if it had cleared. Nothing is reported upward: the pane drops its last
- *   result when the saved rows go from some to none, whichever write emptied
- *   them (`use-gsc-import.ts`), so a confirmed clear and another tab's clear
- *   cannot disagree about it.
+ *   result when a render shows the saved rows gone from some to none, whichever
+ *   write emptied them (`use-gsc-import.ts`, which also says what a clear no
+ *   render shows leaves alone), so a confirmed clear, which always renders, and
+ *   another tab's rendered clear cannot disagree about it.
  * - Rows gone while the box is open (another tab cleared them) close it, reset
  *   during render so no frame commits a box asking about nothing; the "asked" is
  *   dropped, not parked, or it would reopen unasked when rows come back.

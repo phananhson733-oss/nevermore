@@ -24,9 +24,10 @@ import { useGscImport } from "./use-gsc-import.ts";
  *   drawn with `focus-within:` on the label. The input is emptied after each
  *   pick, so the same file can be chosen again after editing it.
  * - Clear: `ClearGscRowsButton` (confirmation bound to what was on screen).
- *   The last result goes whenever the saved rows go from some to none, by that
- *   button or by any other write (`use-gsc-import.ts`), since it no longer
- *   describes them.
+ *   The last result goes whenever a render shows the saved rows gone from some
+ *   to none, by that button or by any other write, since it no longer describes
+ *   them; a clear folded into a batch that no render shows is not seen
+ *   (`use-gsc-import.ts`).
  * - The size limit is formatted once and handed to both sentences that name it.
  *
  * The whole pane is framework copy (Q30) except the textarea's value, which is
