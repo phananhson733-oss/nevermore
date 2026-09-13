@@ -33,8 +33,10 @@
  * - `snapshot: null` only when the slot says `latestSnapshot: null` (no
  *   snapshot). Anything else that is not a readable object becomes facts that
  *   are all `null` — unreadable is unknown, not absent. Each fact is `null`
- *   unless it reads cleanly: a listed availability, an ISO timestamp, a
- *   non-negative safe integer (0 stays 0), a non-blank limitation.
+ *   unless it reads cleanly: a listed availability, an ISO timestamp with an
+ *   offset whose date is on the calendar and whose clock fields are in range
+ *   (`Date.parse` rolls 2026-02-30 over into March, so it cannot be the judge),
+ *   a non-negative safe integer (0 stays 0), a non-blank limitation.
  *
  * 一旦本文件被更新，务必更新开头注释
  */
@@ -98,7 +100,7 @@ const SOURCE_STATES: Readonly<Record<SourceState, true>> = {
 const AVAILABILITIES: Readonly<Record<Availability, true>> = { available: true, partial: true, unavailable: true };
 
 /** An offset or `Z` is required: a bare date string would be read in whatever zone the browser is in. */
-const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+const ISO_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-](\d{2}):(\d{2}))$/;
 
 type UnvalidatedSlot = Readonly<Record<string, unknown>>;
 
@@ -124,8 +126,24 @@ function statusOf(slot: UnvalidatedSlot): ConnectionStatus {
   return verdict ? "connected" : "notConnected";
 }
 
+/** Day 0 of the next month is the last day of this one; `setUTCFullYear` keeps years below 100 as written. */
+function daysInMonth(year: number, month: number): number {
+  const date = new Date(0);
+  date.setUTCFullYear(year, month, 0);
+  return date.getUTCDate();
+}
+
 function timestamp(value: unknown): string | null {
-  return typeof value === "string" && ISO_TIMESTAMP.test(value) && !Number.isNaN(Date.parse(value)) ? value : null;
+  if (typeof value !== "string") return null;
+  const match = ISO_TIMESTAMP.exec(value);
+  if (match === null) return null;
+  // Absent seconds and a `Z` offset read as 0.
+  const field = (index: number): number => Number(match[index] ?? "0");
+  const month = field(2);
+  const day = field(3);
+  const onCalendar = month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth(field(1), month);
+  const onClock = field(4) <= 23 && field(5) <= 59 && field(6) <= 59 && field(7) <= 23 && field(8) <= 59;
+  return onCalendar && onClock ? value : null;
 }
 
 function count(value: unknown): number | null {

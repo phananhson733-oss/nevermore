@@ -245,3 +245,30 @@ describe("realConnectionsView: latest snapshot facts", () => {
     expect(view.gsc.slot?.snapshot?.rowCount).toBe(7);
   });
 });
+
+describe("realConnectionsView: a capture time is a real date and a real clock time (codex S10b)", () => {
+  it.each([
+    "2026-02-29T08:30:00Z",
+    "2026-02-30T08:30:00Z",
+    "2026-04-31T08:30:00Z",
+    "2026-13-01T08:30:00Z",
+    "2026-00-10T08:30:00Z",
+    "2026-09-00T08:30:00Z",
+    "2026-09-10T24:00:00Z",
+    "2026-09-10T08:60:00Z",
+    "2026-09-10T08:30:60Z",
+    "2026-09-10T08:30:00+24:00",
+    "2026-09-10T08:30:00+05:60",
+  ])("does not read %s as a capture time", (capturedAt) => {
+    const view = ready([slot("gsc", "available", { latestSnapshot: snapshot({ capturedAt }) })]);
+    expect(view.gsc.slot?.snapshot?.capturedAt).toBeNull();
+  });
+
+  it.each(["2028-02-29T08:30:00Z", "2026-04-30T23:59:59.999+14:00", "2026-12-31T00:00-05:30", "2000-02-29T00:00Z"])(
+    "reads %s as written",
+    (capturedAt) => {
+      const view = ready([slot("gsc", "available", { latestSnapshot: snapshot({ capturedAt }) })]);
+      expect(view.gsc.slot?.snapshot?.capturedAt).toBe(capturedAt);
+    },
+  );
+});
