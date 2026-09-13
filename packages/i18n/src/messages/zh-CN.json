@@ -4207,7 +4207,9 @@
       "summaryRow": {
         "artifacts": "本周新增 {count} 件产物",
         "answerGaps": "{count} 个提问至少有一个平台没提到你",
-        "kbGaps": "知识库有 {count} 条还没写结论句"
+        "kbGaps": "知识库有 {count} 条还没写结论句",
+        "answerGapsUnknown": "至少有一个平台没提到你的提问：{value}",
+        "kbGapsUnknown": "知识库还没写结论句的条目：{value}"
       },
       "feed": {
         "title": "本周事件",

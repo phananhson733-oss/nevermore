@@ -4207,7 +4207,9 @@
       "summaryRow": {
         "artifacts": "{count, plural, one {# artifact} other {# artifacts}} added this week",
         "answerGaps": "{count, plural, one {# prompt} other {# prompts}} where at least one platform did not mention you",
-        "kbGaps": "{count, plural, one {# knowledge base entry} other {# knowledge base entries}} still without a statement"
+        "kbGaps": "{count, plural, one {# knowledge base entry} other {# knowledge base entries}} still without a statement",
+        "answerGapsUnknown": "Prompts where at least one platform did not mention you: {value}",
+        "kbGapsUnknown": "Knowledge base entries still without a statement: {value}"
       },
       "feed": {
         "title": "This week",

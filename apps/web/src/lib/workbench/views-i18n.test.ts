@@ -444,6 +444,11 @@ const CASES: readonly string[] = [
   "week.summaryRow.artifacts | #count",
   "week.summaryRow.answerGaps | #count",
   "week.summaryRow.kbGaps | #count",
+  // The same two counts when they are not known (no completed visibility run,
+  // no knowledge base). A plural cannot carry "—": `#` prints nothing for a
+  // non-number, so the unknown case is its own sentence with the dash as text.
+  "week.summaryRow.answerGapsUnknown | value",
+  "week.summaryRow.kbGapsUnknown | value",
   "week.feed.title",
   "week.feed.count | #count",
   "week.feed.empty",
