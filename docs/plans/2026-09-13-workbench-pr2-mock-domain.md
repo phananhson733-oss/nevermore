@@ -1007,4 +1007,11 @@ export function classifyPersistedState(raw: unknown): PersistedParse {
 | 步骤文案、`COST`、`TYPE_LABEL`、`ASSET_NAME` 显示名、`LINK_TYPES` 说明、`PROMPT_KINDS` 说明 | 各视图 PR 的 i18n |
 | R17 列出的六项 | PR-4 / PR-5 |
 | PR-1 遗留非 store 项（字体与 workbench.css 挂根 layout、触控目标、⌘K 提示、Tailwind `source(none)`、`AppShell` 死变体、`useGlobalShortcut` 重订阅） | PR-3（首次上生产前的收尾批） |
+| 可见度（Task 7）只去掉与品牌同名的竞品，不去与本站域名同名的竞品（`mockVisibility` 的 profile 不含 url）；竞品模块（Task 8）两者都去 | 记入 PR 描述，接真实可见度数据时统一 |
+| 竞品域名总览 CSV 表头 `domain`（jsx:2613）会把「Rival Corp」这类公司名标成域名 | PR-3 改列名 |
+| 缺口表 `ours === null` 要渲染「—/未知」，不能用原型 jsx:2655 的「无」（那是在声称我们没有排名） | PR-3 |
+| 外链 `dr`/`difficulty` 为 null 的渲染：难度 chip 计数（jsx:2460-2462）不计 null 或加「未知」、DR 单元格「—」、chip 的 null 样式 | PR-5 |
+| `answerPlanPrompt` 固定句「缺口来自示例数据，建页前逐平台复核」、`（示例数据）`/`sampleData: true` 标签：`VisGap`/`gscRows` 没有 real/sample 标记，接入真实可见度数据或真实 GSC 导入时这些标签要变成条件 | PR-4 |
+| 选择器 `keywordRows(state)` / `gatedRows(state)` 每次调用重算，不走 provider 的 memo（已加 JSDoc）；视图读 `useWorkbench().keywordRows` | 各视图 PR |
+| 下载文档里值内的行内 Markdown 仍会渲染（`**粗体**` 变粗体、用户输入的反斜杠被吞：`\# x` 显示成 `# x`）；`docText` 只防块级结构且只为 `- ` / `> ` 行首设计，不是表格单元格或行中文本的通用转义 | 记入 PR 描述；视图若把文档渲染成 HTML（PR-5 预览）再评估 |
 | 持久化 `plans`（`z.record`）读回时静默丢掉键 `__proto__`（Task 10 探针实测：`classifyPersistedState` 返回 ok，键没了，不污染原型）；只影响字面查询 `__proto__` 的答案页方案。修法需改持久化形状（如条目数组），属于要升 `PERSISTED_VERSION` 的改动 | 记入 PR 描述，随下一次持久化形状变更处理 |
