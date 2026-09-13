@@ -193,11 +193,14 @@
  * uses the same classes on the dark `/new-project` sidebar, so the light values
  * are scoped to the workbench chrome instead of replacing the base rules. */
 :global(.wb-reset) .projectSwitcher {
-  /* The workbench topbar's only shrinkable control: the (max-width: 960px)
+  /* The workbench topbar's shrinkable control (from 1280px up the storage
+   * sentence gives way before it): the (max-width: 960px)
    * rule's 128px floor left no room for the menu button beside the account
-   * group at 360-414px. The clip keeps a narrow box from painting the avatar
-   * and chevron over its neighbours; the full name stays in the select. */
-  min-width: 0;
+   * group at 360-414px. 64px is its own floor: the avatar (28-34px) with its
+   * padding stays whole and the box stays a usable target; the name is
+   * ellipsised before that. The clip keeps a narrow box from painting the
+   * chevron over its neighbours; the full name stays in the select. */
+  min-width: 64px;
   overflow: hidden;
   /* The base rule's 58px min-height is taller than the 56px topbar row it sits
    * in above 960px (1px out at each edge). The content is 54px there and 40px
@@ -205,6 +208,14 @@
   min-height: 0;
   background: #fff;
   border-color: var(--color-slate-200, #e2e8f0);
+}
+/* Below 768px the switcher is a touch target. The select that takes the tap
+ * fills the box inside its 1px border, so the box is 46px for a 44px target;
+ * the (max-width: 960px) rule's 40px stays as it is on /new-project. */
+@media (max-width: 767px) {
+  :global(.wb-reset) .projectSwitcher {
+    min-height: 46px;
+  }
 }
 :global(.wb-reset) .projectSwitcher:hover,
 :global(.wb-reset) .projectSwitcher:focus-within {

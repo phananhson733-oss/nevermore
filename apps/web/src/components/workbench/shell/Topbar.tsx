@@ -1,6 +1,6 @@
 "use client";
 
-import { Eraser, Menu, Search } from "lucide-react";
+import { AlertTriangle, Eraser, Menu, Search } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import type { ReactNode, RefObject } from "react";
@@ -85,13 +85,21 @@ export function Topbar({
       // which control sits on which row never depends on the text: row 1 is
       // menu, switcher, "+ New site", search and the sample chip; row 2 is
       // clear, artifacts and the account group. Visual order is DOM order and
-      // Tab order in both layouts, and from `xl` up both rows are
-      // `display: contents`, so the one-row header is today's markup and
-      // geometry. The switcher is the only control that shrinks.
+      // Tab order in both layouts. From `xl` up only the first row is
+      // `display: contents`; the second stays a flex group and keeps the gap
+      // to the chip with the header's gap-2 plus its own `xl:ml-1`, so the
+      // one-row header keeps today's order and geometry. Below `xl` the
+      // switcher is the only control that shrinks; from `xl` up the storage
+      // sentence gives way first (truncated, whole in its `title`) and the
+      // switcher stops at its 64px floor.
       className="wb-reset sticky top-0 z-10 flex shrink-0 flex-col border-b border-slate-200/80 bg-wb-paper px-4 font-sans text-slate-900 xl:h-14 xl:flex-row xl:items-center xl:gap-2"
     >
       <div data-wb-topbar-row="1" className="flex h-14 min-w-0 items-center gap-2 xl:contents">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+        {/* No `min-w-0`: the group's automatic minimum is its content with
+            the switcher at its floor, so when the one-row header runs out of
+            room (a storage sentence at 1280) the status group gives way, not
+            the switcher and the fixed controls beside it. */}
+        <div className="flex flex-1 items-center gap-2">
           <button
             type="button"
             onClick={onMenu}
@@ -141,7 +149,9 @@ export function Topbar({
             </kbd>
           </button>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
+        {/* Shrinks: from `xl` up the status sentence is the one thing here
+            that can give way (truncated below); the chip keeps its text. */}
+        <div className="flex min-w-0 items-center gap-3">
           {/* Exactly one status element, rendered on every viewport and before it
               has anything to say: a live region has to exist in the accessibility
               tree BEFORE its text changes, or the announcement is lost (and a
@@ -155,7 +165,10 @@ export function Topbar({
               does will be saved (R14). */}
           <span
             role="status"
-            className="max-xl:sr-only text-xs text-amber-700 empty:-mr-3 xl:max-w-[40vw] xl:truncate"
+            // The live region reads the whole sentence; `title` is how a
+            // sighted user reads it once `truncate` has cut it.
+            title={storageNotice ? t(storageNotice) : undefined}
+            className="max-xl:sr-only text-xs text-amber-700 empty:-mr-3 xl:min-w-0 xl:max-w-[40vw] xl:truncate"
           >
             {storageNotice ? t(storageNotice) : null}
           </span>
@@ -169,9 +182,15 @@ export function Topbar({
               aria-hidden="true"
               data-wb-storage-compact=""
               title={t(storageNotice)}
-              className="shrink-0 whitespace-nowrap rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200 xl:hidden"
+              // An icon from 768px to 1023px and the words elsewhere: with the
+              // rail and the search box on that band, "Not saved" left the
+              // switcher 34px (en, measured). Both are presentation only: this
+              // element is aria-hidden, the status above announces the sentence,
+              // and the title shows it on hover.
+              className="inline-flex shrink-0 items-center whitespace-nowrap rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200 xl:hidden"
             >
-              {t("notSavingShort")}
+              <AlertTriangle aria-hidden="true" className="hidden h-4 w-4 md:max-lg:block" />
+              <span className="md:max-lg:hidden">{t("notSavingShort")}</span>
             </span>
           ) : null}
           <DemoChip demo={sampleLoaded} />
@@ -179,8 +198,12 @@ export function Topbar({
       </div>
       {/* Row 2, right-aligned below `xl`. From `xl` up it is the tail of the
           one-row header: header gap-2 plus ml-1 is the gap-3 the chip had to
-          the next control when these sat in one group. */}
-      <div data-wb-topbar-row="2" className="flex items-center justify-end gap-3 pb-2 xl:ml-1 xl:pb-0">
+          the next control when these sat in one group. `shrink-0`: every
+          control here is fixed, but the group's min-content counts "Clear
+          sample" and "Log out" as wrappable, so without it the group gave way
+          beside a storage sentence at 1280 and, being `justify-end`, spilled
+          left over the chip (en, measured). The sentence gives way instead. */}
+      <div data-wb-topbar-row="2" className="flex shrink-0 items-center justify-end gap-3 pb-2 xl:ml-1 xl:pb-0">
         {sampleLoaded ? (
           <button
             ref={clear.attachButton}
