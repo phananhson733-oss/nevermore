@@ -32,6 +32,10 @@
  *   followed. The walk does not skip it: every one reachable over static and
  *   dynamic edges is listed by a test that fails while the list is not empty
  *   (none today, 2026-09-14).
+ * - Apart from the entries: no non-test module under `components/workbench/ui/`
+ *   makes a static or dynamic edge into `components/workbench/shell/` (Q35).
+ *   The shell composes the shared ui pieces, never the reverse. Direct edges
+ *   only.
  *
  * Blind spots:
  * - the walk stops at package boundaries, so a workspace package that newly
@@ -41,11 +45,13 @@
  *   sample site from any other client module, even one that runs at module top
  *   level, is not seen;
  * - loaders that are neither `import()` nor `require()`, such as
- *   `new Worker(new URL("./x.ts", import.meta.url))`, are not read.
+ *   `new Worker(new URL("./x.ts", import.meta.url))`, are not read;
+ * - the `ui/` gate reads direct edges only, so a `ui/` module that reaches the
+ *   shell through a module outside both directories is not seen.
  */
-import { readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { builtinModules } from "node:module";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -79,6 +85,14 @@ const DYNAMIC_FIXTURE = resolve(
   STORE_DIR,
   "__fixtures__/view-with-dynamic-imports.tsx",
 );
+const UI_DIR = resolve(SRC_DIR, "components/workbench/ui");
+const SHELL_DIR = resolve(SRC_DIR, "components/workbench/shell");
+const UI_FIXTURE = resolve(STORE_DIR, "__fixtures__/ui-with-shell-import.tsx");
+/**
+ * 22 non-test modules under ui/ on 2026-09-14. The floor sits below that, so a
+ * moved directory fails here instead of passing on an empty walk.
+ */
+const MIN_UI_MODULES = 18;
 
 /** Which edges a walk follows into local modules. */
 type Follow = "static" | "static-and-dynamic";
@@ -398,6 +412,53 @@ function nonLiteralLoads(parents: Parents): readonly string[] {
   );
 }
 
+/** Every non-test script module under `directory`, nested directories included. */
+function scriptModulesUnder(directory: string): readonly string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) return scriptModulesUnder(path);
+    return SCRIPT.test(entry.name) && !entry.name.includes(".test.")
+      ? [path]
+      : [];
+  });
+}
+
+function isInside(directory: string, file: string): boolean {
+  const path = relative(directory, file);
+  return (
+    path !== "" &&
+    path !== ".." &&
+    !path.startsWith(`..${sep}`) &&
+    !isAbsolute(path)
+  );
+}
+
+interface DirectEdge {
+  readonly target: string;
+  /** `file -> target`, or `file ~> target` for a dynamic edge. */
+  readonly line: string;
+}
+
+/** Every local edge, static or dynamic, out of `files`, resolved; no walk past them. */
+function directLocalEdges(files: readonly string[]): readonly DirectEdge[] {
+  return files.flatMap((file) =>
+    importsOf(file)
+      .edges.filter((found) => isLocal(found.spec))
+      .map((found) => {
+        const target = resolveSpecifier(file, found.spec);
+        const arrow = found.kind === "static" ? "->" : "~>";
+        return { target, line: `${srcPath(file)} ${arrow} ${srcPath(target)}` };
+      }),
+  );
+}
+
+/** The direct edges out of `files` whose target sits under `components/workbench/shell/` (Q35). */
+function edgesIntoShell(files: readonly string[]): readonly string[] {
+  return directLocalEdges(files)
+    .filter(({ target }) => isInside(SHELL_DIR, target))
+    .map(({ line }) => line);
+}
+
 describe("import clause reader", () => {
   it("reads value imports and re-exports, and skips type-only clauses and dynamic imports", () => {
     const source = [
@@ -653,5 +714,34 @@ describe("client import graph of the workbench views and shell", () => {
       kind: "dynamic",
       syntax: "import()",
     });
+  });
+});
+
+// Q35: the shell composes the shared ui pieces; a ui piece importing the shell
+// turns that dependency around.
+describe("components/workbench/ui imports nothing from shell (Q35)", () => {
+  const uiModules = scriptModulesUnder(UI_DIR);
+
+  it("reads every non-test module under ui/ and the edges out of them", () => {
+    expect(uiModules.length).toBeGreaterThanOrEqual(MIN_UI_MODULES);
+    expect(uiModules.map(srcPath)).toContain(
+      "components/workbench/ui/ConfirmDialog.tsx",
+    );
+    // A real edge between two ui modules, so an empty edge list cannot pass the gate below.
+    expect(directLocalEdges(uiModules).map(({ line }) => line)).toContain(
+      "components/workbench/ui/ConfirmDialog.tsx -> components/workbench/ui/Dialog.tsx",
+    );
+  });
+
+  it("catches a ui-shaped module that imports the shell, statically or dynamically (control)", () => {
+    const fixture = srcPath(UI_FIXTURE);
+    expect(edgesIntoShell([UI_FIXTURE])).toEqual([
+      `${fixture} -> components/workbench/shell/workbench-nav.ts`,
+      `${fixture} ~> components/workbench/shell/CommandPalette.tsx`,
+    ]);
+  });
+
+  it("has no static or dynamic edge from a ui/ module into shell/", () => {
+    expect(edgesIntoShell(uiModules)).toEqual([]);
   });
 });
