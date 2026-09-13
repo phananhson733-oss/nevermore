@@ -218,9 +218,12 @@ const FORBIDDEN_BY_KEY: Readonly<
     "zh-CN": ["本周", "这周"],
     en: ["this week"],
   },
+  // Week audit #1: the feed lists audits, visibility runs, profiles, the
+  // knowledge base and artifacts, never a GSC import, so an empty feed on a page
+  // with imported rows is not "nothing happened".
   "week.feed.empty": {
-    "zh-CN": ["本周", "这周"],
-    en: ["this week"],
+    "zh-CN": ["本周", "这周", "没有动作", "没有发生", "什么都没"],
+    en: ["this week", "nothing has happened", "nothing happened", "no activity"],
   },
   // T18: the empty state and the disabled report both show when `isEmpty` finds
   // six stores empty. That reads no dates, and it also holds after "clear
@@ -229,6 +232,12 @@ const FORBIDDEN_BY_KEY: Readonly<
   // word-bounded so they cannot hit "range" or another word.
   "week.empty.title": NOTHING_TO_SHOW_NOW,
   "week.report.disabled": NOTHING_TO_SHOW_NOW,
+  // Week audit #3: the empty state names the six stores `isEmpty` reads and no
+  // other module, and those stores carry no dates.
+  "week.empty.detail": {
+    "zh-CN": [...NOTHING_TO_SHOW_NOW["zh-CN"], "出现在这里", "跑过的模块"],
+    en: [...NOTHING_TO_SHOW_NOW.en, "shows up here", "whatever you run"],
+  },
   // The toggle names the page by its title (「本周变化」 / "This week"), so only
   // the period the report covers is held to the seven dates.
   "settings.notify.weekly.description": {
@@ -238,7 +247,12 @@ const FORBIDDEN_BY_KEY: Readonly<
   "overview.next.step.borderline": BAND_AS_WHOLE_RANKS,
   "week.cards.borderline.label": BAND_AS_WHOLE_RANKS,
   "week.borderlineList.title": BAND_AS_WHOLE_RANKS,
-  "week.borderlineList.detail": BAND_AS_WHOLE_RANKS,
+  // Week audit #4: the sentence renders with no GSC row at all, so it names no
+  // import.
+  "week.borderlineList.detail": {
+    "zh-CN": [...BAND_AS_WHOLE_RANKS["zh-CN"], "最近一次导入"],
+    en: [...BAND_AS_WHOLE_RANKS.en, "latest import"],
+  },
   "week.next.step.borderline": BAND_AS_WHOLE_RANKS,
   "profile.doc.gscNear": BAND_AS_WHOLE_RANKS,
   "dataSources.table.legend": BAND_AS_WHOLE_RANKS,
@@ -453,8 +467,8 @@ const REQUIRED: Readonly<
   },
   // Q17: the whole justification for showing a list instead of rank movement.
   "week.borderlineList.detail": {
-    "zh-CN": ["排名 >10 且 ≤30", "不是排名变化", "工作台目前不保存"],
-    en: ["positions >10 to ≤30", "not rank movement", "does not keep"],
+    "zh-CN": ["有可用的 GSC 排名时", "排名 >10 且 ≤30", "不是排名变化", "工作台不保存多次导入的历史"],
+    en: ["When GSC positions are available", "positions >10 to ≤30", "not rank movement", "does not keep history across imports"],
   },
   // codex S7a #11: the step counts the prompts the summary row counts, so it
   // keeps the row's qualifier; without it a prompt one platform did mention
@@ -494,8 +508,13 @@ const REQUIRED: Readonly<
     en: ["in the last 7 days"],
   },
   "week.feed.empty": {
-    "zh-CN": ["近 7 天"],
-    en: ["in the last 7 days"],
+    "zh-CN": ["近 7 天", "事件记录"],
+    en: ["in the last 7 days", "recorded events"],
+  },
+  // Week audit #3: the six stores `isEmpty` reads, by their nav names.
+  "week.empty.detail": {
+    "zh-CN": ["技术审计", "AI 可见度", "站点档案", "事实知识库", "产物", "GSC 行", "这个浏览器"],
+    en: ["technical audit", "AI visibility", "site profile", "fact knowledge base", "artifacts", "GSC rows", "this browser"],
   },
   // Q6: the sample-provenance footnote. Pinned as the whole clause INCLUDING
   // its verb, because pinning the noun alone is satisfied by its own negation

@@ -4218,13 +4218,13 @@
       "feed": {
         "title": "Events in the last 7 days",
         "count": "{count, plural, one {# item} other {# items}}",
-        "empty": "Nothing has happened in the last 7 days",
+        "empty": "No recorded events in the last 7 days",
         "view": "View"
       },
       "borderlineList": {
         "title": "Queries at positions >10 to ≤30",
         "empty": "No queries in that range",
-        "detail": "These are the queries at positions >10 to ≤30 in the latest import. They are not rank movement: that would need history across several imports, which the workbench does not keep."
+        "detail": "When GSC positions are available, this lists the queries at positions >10 to ≤30. It is not rank movement: the workbench does not keep history across imports."
       },
       "borderlineUnknown": "{count, plural, one {# more query has} other {# more queries have}} no known position",
       "next": {
@@ -4246,7 +4246,7 @@
       "artifactTitle": "{brand} weekly report",
       "empty": {
         "title": "No results to show",
-        "detail": "Whatever you run is kept in this browser and shows up here."
+        "detail": "This page summarizes the technical audit, AI visibility, the site profile, the fact knowledge base, artifacts and GSC rows, all kept in this browser."
       }
     },
     "profile": {
