@@ -447,11 +447,25 @@ docs/PROGRESS.md                   T18
 - [ ] **Step 3: 覆盖率** — **`pnpm vitest run --project unit --coverage`**（不带 `--project` 会连 integration 一起跑，无可丢弃 loopback `DATABASE_URL` 时 fail-fast；全局 80% 门属 CI 的 database job）。**先独立断言本 PR 每个生产文件都出现在覆盖率报告里**（vitest 4 只统计被加载的文件，没被任何测试加载的新视图会整个缺席、低覆盖清单发现不了），再按文件读 `lib/workbench/**` 与 `components/workbench/**` 的数字。`scripts/report-unit-coverage-gaps.mjs` 的 include 不含 `.tsx`，那份报告不能当新视图的覆盖证据。
 - [ ] **Step 4: 构建与纯度** — `pnpm --filter @sf/web build`；grep `lib/workbench/mock` 无 `Date.now` / `Math.random` / React / next-intl / `@sf/*`；grep `components/workbench` 无 `style={{` 与 `<style`；grep 无裸 hex。
 - [ ] **Step 4b: 扫描未被整体关掉（T14 Step 3 的落点）** — 对构建产物 CSS grep `text-wb-rail-dim`（src 里只出现在 `components/workbench/shell/Sidebar.tsx`；备选 `bg-wb-rail-3`、`text-wb-rail-label`），必须命中；再确认 `:root` 仍含 `app-shell.module.css` 经 `var()` 读取的 `--color-slate-400`（T14 发现单一 `@source` 会丢它，已加第二个 `@source`）。
-- [ ] **Step 5: mock e2e** — `workbench-pr3-flow`、`workbench-shell`、`legacy-style-parity`、`mobile-shell`、`critical-flows`、`frontend-error-states`、`growth-map-run`、`new-project-shell` 全绿。
+- [ ] **Step 5: mock e2e** — `workbench-pr3-flow`、`workbench-pr3-views`、`workbench-pr3-a11y`（后两者为 T17 新增）、`workbench-shell`、`legacy-style-parity`、`mobile-shell`、`critical-flows`、`frontend-error-states`、`growth-map-run`、`new-project-shell` 全绿。
 - [ ] **Step 6: 生产冒烟（范围要如实写）** — `pnpm --filter @sf/web build` 后 `pnpm --filter @sf/web exec next start --port 3300`（占位环境变量，生产模式 `SUPABASE_URL` 必须 https），打开 `/login`：CSP 头无 `unsafe-inline`、脚本与样式带 nonce、console 无 CSP 违规。**已认证的工作台页在生产模式下没有 fixture（e2e 旁路是 dev-only），因此不在冒烟覆盖范围内——这是已知缺口，不得写成「工作台页 CSP 已验证」**（codex #15）。改用构建产物断言覆盖另两件事：①`mock/demo.ts` 在独立 chunk 里、不在概览首屏 JS；②`/login` **与 `/new-project`** 的 client-reference-manifest 不引用工作台 CSS 与字体（T12 审阅：它的全部 e2e 都跑在 `next dev --webpack` 上，生产分块会不会把 `workbench.css` 带进这两页从没验证过；软导航残留已知且无害，这里只管硬加载）；③T14 的扫描范围（grep 构建 CSS 里只属于 `components/workbench` 的 utility）。
 - [ ] **Step 7: 跨模型评审** — gpt-6-astra reasoning high，按面拆（每面一个攻击面 + ≤4 个上下文文件，diff 落成文件，明令不要广泛 grep；被调函数的定义文件必须在清单里）。三面：①诚实性（概览 / 本周 / 档案的文案与空态）②真实与示例的分区（站点卡三态、数据源、`gscRowsSource` 与快照 `gscSource` 的**所有**读点）③a11y 与 CSP（原语焦点/aria、portal 确认框、触控、无 inline style）。判据是 verdict 行；必须读它标 unresolved 的段落。逐条裁决并回写设计稿 §14。
-- [ ] **Step 7b: 首次推送前整理历史**：分支尚未推送，可以改写。`3d4be133` 标题被 zsh heredoc 吞掉（不是合格的 conventional commit 标题）。`b7cba98b` 是中间红提交：它改了 i18n 键名，但 WeekCards 要到 `2f5b836b` 才跟上，单独检出会有测试失败。用非交互 rebase 处理：`GIT_SEQUENCE_EDITOR` 脚本把前者改成 reword、把后两者合并。之后对**改写后的 HEAD** 重跑 Step 1-5，Step 8 的验证数字只取改写后的结果。开始前 `git worktree list` 确认没有其他 worktree 或 agent 挂在这个分支上。
-- [ ] **Step 8: 交付** — `git branch --show-current` = `feat/workbench-pr3-first-views`；`git push -u origin feat/workbench-pr3-first-views:feat/workbench-pr3-first-views`；`git rev-parse origin/...` == HEAD；`gh pr create --base feat/workbench-ui-port`，描述含范围、Q1-Q32 摘要、验证数字（在最终 HEAD 上跑的）、遗留六项的关闭证据与变异验证、生产冒烟的**范围与已知缺口**、评审处置、残留表；结尾 `🤖 Generated with [Claude Code](https://claude.com/claude-code)`。
+- [ ] **Step 7b: 不改写历史，在 PR 描述里列出「不能单独检出变绿」的提交**（2026-09-14 main 裁决，替代原「首次推送前 rebase」方案）。
+  - **不改写的理由**：
+    - 集成分支用 merge commit 合入（`3893da73`、`423ebfaf` 都有两个父提交），本分支的 sha 会原样留在集成分支历史里；
+    - 计划、设计稿、`docs/PROGRESS.md` 在最终 HEAD 上一共引用了约 95 个不同的 8 位 sha；
+    - 最早的候选 `3d4be133` 是 198 个提交中的第 76 个，从它开始 rebase 会让之后的引用全部悬空，追溯性的损失大于二分查找的收益。
+  - **要列进 PR 描述的提交**：
+    - `3d4be133`：标题被 zsh heredoc 吞掉，不是合格的 conventional commit 标题，照录原样；
+    - 共享 i18n 协议要求 JSON 单独提交，因此以下几对单独检出前一个时，相关测试是红的：
+      - `b7cba98b` 到 `2f5b836b` 之间；
+      - `23c0fe53` 到 `fae6e640`；
+      - `db074fd0` 到 `ac74b802`；
+      - `a8c89b6e` 到 `60acf7a0`。
+  - **核实方法**：在分离 worktree 里检出前一个提交，跑受影响的测试文件，记下实际红的条数。
+    - node_modules 要逐个软链，并确认 `@sf/i18n` 解析到该 worktree 自己的 `packages/i18n`，否则读到的是主工作区的 JSON，结果不作数；
+    - 核实结果不是红的，就从清单里删掉。
+- [ ] **Step 8: 交付** — `git branch --show-current` = `feat/workbench-pr3-first-views`；`git push -u origin feat/workbench-pr3-first-views:feat/workbench-pr3-first-views`；`git rev-parse origin/...` == HEAD；`gh pr create --base feat/workbench-ui-port`，描述含范围、Q1-Q37 摘要、验证数字（在最终 HEAD 上跑的）、Step 7b 的「不能单独检出变绿」清单、待 Owner 裁决项、遗留六项的关闭证据与变异验证、生产冒烟的**范围与已知缺口**、评审处置、残留表；结尾 `🤖 Generated with [Claude Code](https://claude.com/claude-code)`。
 
 ---
 
