@@ -1,4 +1,5 @@
 import type { DemoPayload, WorkbenchProjectState } from "../types.ts";
+import { sameContent } from "./same-content.ts";
 
 /**
  * The fields "load sample" overwrites and "clear sample" wipes: exactly what
@@ -35,7 +36,7 @@ export function demoFields(s: DemoFields): DemoFields {
  *
  * A field is the same when it is the same reference, the cheap path and the
  * common one (the reducer keeps every reference an action does not write), or
- * else when both sides encode to the same JSON (codex S6r3 #2). Reference
+ * else when both sides encode to the same JSON (`sameContent`, codex S6r3 #2). Reference
  * alone was too strict: another tab that changed only `notify` persists the
  * whole state, the `storage` event re-parses it, and every field here comes
  * back as a new reference with the same content, so the confirmation was
@@ -51,7 +52,5 @@ export function demoFields(s: DemoFields): DemoFields {
 export function sameDemoFields(a: DemoFields, b: DemoFields): boolean {
   const left = demoFields(a);
   const right = demoFields(b);
-  return (Object.keys(left) as (keyof DemoFields)[]).every(
-    (key) => left[key] === right[key] || JSON.stringify(left[key]) === JSON.stringify(right[key]),
-  );
+  return (Object.keys(left) as (keyof DemoFields)[]).every((key) => sameContent(left[key], right[key]));
 }

@@ -9,9 +9,9 @@
  * hands back the same state object, which is how the caller tells the clear was
  * refused.
  *
- * Equality is by reference for now (the coordinator's call); these cases avoid
- * pinning "equal content re-parsed from storage is refused", because the guarded
- * actions are about to be relaxed to reference-or-serialised equality.
+ * Equality is `sameContent`: the same reference, or equal once JSON-encoded.
+ * Rows re-parsed from storage with the same content are accepted, which
+ * `reducer.test.ts` pins; every case here changes content, so each holds either way.
  */
 import { describe, expect, it } from "vitest";
 import type { GscRow, GscRowsSource } from "../types.ts";

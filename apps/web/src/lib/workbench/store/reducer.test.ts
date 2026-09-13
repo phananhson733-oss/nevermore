@@ -432,6 +432,39 @@ describe("demo: a confirmation covers the content it was given for", () => {
   });
 });
 
+/**
+ * `clearGscRows` compares with `sameContent`, as the demo snapshot does: the
+ * cases on stale rows live in `reducer-clear-gsc.test.ts`; these two pin the
+ * round-trip and one content change against it.
+ */
+describe("clearGscRows: the same rows after a JSON round-trip", () => {
+  const rows = [{ query: "acme seo", clicks: 3, impressions: 90, ctr: 3.3, position: 7.5 }] as const;
+
+  it("clears rows re-parsed with the same content", () => {
+    const shown = reduce(initialProjectState(seed), { type: "setGscRows", rows, source: "user" });
+    const expected = { rows: shown.gscRows, source: shown.gscRowsSource };
+    const reparsed = JSON.parse(JSON.stringify(shown)) as WorkbenchProjectState;
+    expect(reparsed.gscRows).not.toBe(shown.gscRows);
+
+    const cleared = reduce(reparsed, { type: "clearGscRows", expected });
+
+    expect(cleared).not.toBe(reparsed);
+    expect(cleared.gscRows).toEqual([]);
+    expect(cleared.gscRowsSource).toBeNull();
+  });
+
+  it("refuses rows with other content, returning the very same state", () => {
+    const shown = reduce(initialProjectState(seed), { type: "setGscRows", rows, source: "user" });
+    const expected = { rows: shown.gscRows, source: shown.gscRowsSource };
+    const other = reduce(
+      JSON.parse(JSON.stringify(shown)) as WorkbenchProjectState,
+      { type: "setGscRows", rows: [{ ...rows[0], clicks: 4 }], source: "user" },
+    );
+
+    expect(reduce(other, { type: "clearGscRows", expected })).toBe(other);
+  });
+});
+
 describe("normalizeInterrupted", () => {
   it("restores the last audit and discards streamed partial visibility results", () => {
     let s = reduce(initialProjectState(seed), { type: "auditComplete", report: report("a") });

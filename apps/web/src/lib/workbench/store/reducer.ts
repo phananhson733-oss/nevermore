@@ -23,6 +23,7 @@ import {
 } from "../types.ts";
 import { truncateUtf16 } from "../truncate.ts";
 import { demoFields, sameDemoFields, type DemoFields } from "./demo-fields.ts";
+import { sameContent } from "./same-content.ts";
 
 /** Fields mirrored from the real project (design §6.7). Never edited by mock pages. */
 export interface ProjectSeed {
@@ -33,7 +34,8 @@ export interface ProjectSeed {
 
 /**
  * What a "clear GSC rows" confirmation was raised over (codex S6r3): the rows
- * array the screen rendered, by reference, and its provenance.
+ * the screen rendered and their provenance, compared with `sameContent` (the
+ * same reference, or equal once JSON-encoded).
  */
 export interface ClearGscRowsExpected {
   readonly rows: readonly GscRow[];
@@ -276,9 +278,16 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
       // While the confirmation was open another tab may have imported other
       // rows, or an update of ours may be queued behind the render the operator
       // clicked in; the component cannot see the second. Clear only the rows and
-      // provenance that were confirmed, compared by reference; otherwise the
-      // same object back, so the caller can tell the clear was refused.
-      if (state.gscRows !== action.expected.rows || state.gscRowsSource !== action.expected.source) return state;
+      // provenance that were confirmed, compared with `sameContent` as the demo
+      // snapshot is: rows that another tab's unrelated write re-parsed are still
+      // the rows on screen. Otherwise the same object back, so the caller can
+      // tell the clear was refused.
+      if (
+        !sameContent(state.gscRows, action.expected.rows) ||
+        !sameContent(state.gscRowsSource, action.expected.source)
+      ) {
+        return state;
+      }
       return { ...state, gscRows: [], gscRowsSource: sourceFor([], "user") };
     case "loadPersisted":
       // By identity, never a spread: the provider recognises "this state came from storage" as `state === remoteStateRef.current` and skips the write-back.
