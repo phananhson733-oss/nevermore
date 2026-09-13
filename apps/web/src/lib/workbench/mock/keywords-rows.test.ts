@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { GscRow, KeywordRow, Profile } from "../types.ts";
-import { gscStatus } from "./gsc.ts";
 import {
   AI_PATTERNS,
   PATTERNS,
@@ -29,10 +28,8 @@ const gsc = (query: string, overrides: Partial<GscRow> = {}): GscRow => ({
   ...overrides,
 });
 
-const byQuery = (
-  rows: readonly KeywordRow[],
-  query: string,
-): readonly KeywordRow[] => rows.filter((row) => normQ(row.q) === normQ(query));
+const byQuery = (rows: readonly KeywordRow[], query: string): readonly KeywordRow[] =>
+  rows.filter((row) => normQ(row.q) === normQ(query));
 
 describe("buildRows: sources and keys", () => {
   it("returns nothing for no seeds and no GSC rows", () => {
@@ -42,12 +39,7 @@ describe("buildRows: sources and keys", () => {
 
   it("turns a GSC row into a gsc-sourced row with its four GSC keys", () => {
     const [row] = buildRows([], PROFILE, [
-      gsc("acme pricing", {
-        clicks: 5,
-        impressions: 12_345,
-        ctr: 0.04,
-        position: 12,
-      }),
+      gsc("acme pricing", { clicks: 5, impressions: 12_345, ctr: 0.04, position: 12 }),
     ]);
     expect(row).toMatchObject({
       q: "acme pricing",
@@ -63,21 +55,23 @@ describe("buildRows: sources and keys", () => {
       gscStatus: "borderline",
       volume: 12_350,
     });
-    for (const key of GSC_KEYS)
-      expect(Object.hasOwn(row ?? {}, key)).toBe(true);
+    for (const key of GSC_KEYS) expect(Object.hasOwn(row ?? {}, key)).toBe(true);
   });
 
   it("keeps null GSC values as own keys and falls back to the estimate for volume", () => {
     const [row] = buildRows([], PROFILE, [gsc("llm seo checklist")]);
-    expect(row).toMatchObject({
-      clicks: null,
-      impressions: null,
-      position: null,
-      gscStatus: "unknown",
-    });
-    for (const key of GSC_KEYS)
-      expect(Object.hasOwn(row ?? {}, key)).toBe(true);
+    expect(row).toMatchObject({ clicks: null, impressions: null, position: null, gscStatus: "unknown" });
+    for (const key of GSC_KEYS) expect(Object.hasOwn(row ?? {}, key)).toBe(true);
     expect(row?.volume).toBe(kwMetrics("llm seo checklist").volume);
+  });
+
+  it("nulls a position that is not a real rank, so 0 cannot sort ahead of rank 1", () => {
+    for (const position of [0, -3, Number.NaN]) {
+      const [row] = buildRows([], PROFILE, [gsc("llm seo checklist", { position })]);
+      expect(row?.position).toBeNull();
+      expect(row?.gscStatus).toBe("unknown");
+    }
+    expect(buildRows([], PROFILE, [gsc("llm seo checklist", { position: 1 })])[0]?.position).toBe(1);
   });
 
   it("uses the larger of the estimate and impressions rounded up to tens", () => {
@@ -106,9 +100,7 @@ describe("buildRows: sources and keys", () => {
   });
 
   it("scores each row with opportunity and carries the estimated metrics", () => {
-    const rows = buildRows(["seo"], PROFILE, [
-      gsc("geo optimization tool", { impressions: 1580, position: 22.8 }),
-    ]);
+    const rows = buildRows(["seo"], PROFILE, [gsc("geo optimization tool", { impressions: 1580, position: 22.8 })]);
     for (const row of rows) {
       expect(row.score).toBe(opportunity(row));
       const { volume: _volume, ...metrics } = kwMetrics(row.q);
@@ -121,16 +113,8 @@ describe("buildRows: sources and keys", () => {
       gsc("how to rank in chatgpt", { position: 31.5 }),
       gsc("best geo tools 2026", { position: 8 }),
     ]);
-    expect(byQuery(rows, "how to rank in chatgpt")[0]).toMatchObject({
-      intent: "informational",
-      stage: "TOFU",
-      gscStatus: "gap",
-    });
-    expect(byQuery(rows, "best geo tools 2026")[0]).toMatchObject({
-      intent: "commercial",
-      page: "comparison",
-      gscStatus: gscStatus({ position: 8 }),
-    });
+    expect(byQuery(rows, "how to rank in chatgpt")[0]).toMatchObject({ intent: "informational", stage: "TOFU", gscStatus: "gap" });
+    expect(byQuery(rows, "best geo tools 2026")[0]).toMatchObject({ intent: "commercial", page: "comparison", gscStatus: "ranked" });
   });
 });
 
@@ -138,35 +122,23 @@ describe("buildRows: templates", () => {
   it("emits every pattern and AI template per seed with their own fields", () => {
     const rows = buildRows(["crm"], PROFILE, []);
     expect(rows).toHaveLength(ROWS_PER_SEED_WITHOUT_VS + 1);
-    expect(byQuery(rows, "best crm tools")[0]).toMatchObject({
-      seed: "crm",
-      intent: "commercial",
-      stage: "MOFU",
-      page: "listicle",
-      engine: "both",
-    });
-    expect(byQuery(rows, "is Acme good for crm?")[0]).toMatchObject({
-      seed: "crm",
-      intent: "commercial",
-      stage: "MOFU",
-      page: "answer-page",
-      engine: "geo",
-    });
+    expect(byQuery(rows, "best crm tools")[0]).toMatchObject({ seed: "crm", intent: "commercial", stage: "MOFU", page: "listicle", engine: "both" });
+    expect(byQuery(rows, "is Acme good for crm?")[0]).toMatchObject({ seed: "crm", intent: "commercial", stage: "MOFU", page: "answer-page", engine: "geo" });
+  });
+
+  it("trims padded seeds before building queries", () => {
+    // No competitors, so no vs row: every row comes from the seed.
+    const rows = buildRows([" seo "], { brand: "Acme", competitors: "" }, []);
+    expect(rows.map((row) => row.q)).toContain("best seo tools");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row.seed).toBe("seo");
   });
 
   it("builds the vs row from the brand and the first real competitor, once, with no seed", () => {
     const rows = buildRows(["seo", "crm"], PROFILE, []);
     const vsRows = rows.filter((row) => row.q.includes(" vs "));
     expect(vsRows).toHaveLength(1);
-    expect(vsRows[0]).toMatchObject({
-      q: "Acme vs Rival",
-      seed: "",
-      intent: "commercial",
-      stage: "BOFU",
-      page: "comparison",
-      engine: "both",
-      source: "generated",
-    });
+    expect(vsRows[0]).toMatchObject({ q: "Acme vs Rival", seed: "", intent: "commercial", stage: "BOFU", page: "comparison", engine: "both", source: "generated" });
     expect(rows).toHaveLength(2 * ROWS_PER_SEED_WITHOUT_VS + 1);
     expect(rows.some((row) => row.q.endsWith(" vs"))).toBe(false);
   });
@@ -185,14 +157,8 @@ describe("buildRows: templates", () => {
   });
 
   it("skips a competitor that is the brand itself", () => {
-    const rows = buildRows(
-      ["seo"],
-      { brand: "Acme", competitors: "acme, Rival" },
-      [],
-    );
-    expect(
-      rows.filter((row) => row.q.includes(" vs ")).map((row) => row.q),
-    ).toEqual(["Acme vs Rival"]);
+    const rows = buildRows(["seo"], { brand: "Acme", competitors: "acme, Rival" }, []);
+    expect(rows.filter((row) => row.q.includes(" vs ")).map((row) => row.q)).toEqual(["Acme vs Rival"]);
   });
 
   it("drops the brand-naming AI template when there is no brand", () => {
@@ -203,8 +169,7 @@ describe("buildRows: templates", () => {
 
   it("builds slugs from the page type", () => {
     const rows = buildRows(["seo"], PROFILE, [gsc("llm seo checklist")]);
-    const slugOf = (query: string): string | undefined =>
-      byQuery(rows, query)[0]?.slug;
+    const slugOf = (query: string): string | undefined => byQuery(rows, query)[0]?.slug;
     expect(slugOf("llm seo checklist")).toBe("/blog/llm-seo-checklist");
     expect(slugOf("how to seo")).toBe("/blog/how-to-seo");
     expect(slugOf("free seo tool")).toBe("/tools/free-seo-tool");
@@ -213,24 +178,16 @@ describe("buildRows: templates", () => {
     expect(slugOf("what is seo")).toBe("/what-is-seo");
     expect(slugOf("seo pricing")).toBe("/seo-pricing");
     expect(slugOf("Acme vs Rival")).toBe("/acme-vs-rival");
-    expect(slugOf("which seo tool works best for a small team?")).toBe(
-      "/which-seo-tool-works-best-for-a-small-team",
-    );
+    expect(slugOf("which seo tool works best for a small team?")).toBe("/which-seo-tool-works-best-for-a-small-team");
   });
 });
 
 describe("buildRows: dedupe and order", () => {
   it("dedupes by normQ with the first spelling winning, GSC before seeds", () => {
-    const rows = buildRows(["seo"], PROFILE, [
-      gsc("Best SEO  Tools", { position: 4 }),
-    ]);
+    const rows = buildRows(["seo"], PROFILE, [gsc("Best SEO  Tools", { position: 4 })]);
     const matches = byQuery(rows, "best seo tools");
     expect(matches).toHaveLength(1);
-    expect(matches[0]).toMatchObject({
-      q: "Best SEO  Tools",
-      source: "gsc",
-      seed: "",
-    });
+    expect(matches[0]).toMatchObject({ q: "Best SEO  Tools", source: "gsc", seed: "" });
     expect(rows).toHaveLength(ROWS_PER_SEED_WITHOUT_VS + 1);
   });
 
@@ -242,32 +199,20 @@ describe("buildRows: dedupe and order", () => {
   });
 
   it("collapses whitespace and case in GSC queries", () => {
-    const rows = buildRows([], PROFILE, [
-      gsc("best  seo tools"),
-      gsc("Best SEO Tools"),
-    ]);
+    const rows = buildRows([], PROFILE, [gsc("best  seo tools"), gsc("Best SEO Tools")]);
     expect(rows.map((row) => row.q)).toEqual(["best  seo tools"]);
   });
 
   it("sorts by score descending", () => {
-    const rows = buildRows(["seo", "crm"], PROFILE, [
-      gsc("geo optimization tool", { position: 22.8 }),
-    ]);
+    const rows = buildRows(["seo", "crm"], PROFILE, [gsc("geo optimization tool", { position: 22.8 })]);
     const scores = rows.map((row) => row.score);
     expect(scores).toEqual(scores.toSorted((a, b) => b - a));
   });
 
   it("keeps insertion order among equal scores, not alphabetical order", () => {
     // Reverse-alphabetical input: alphabetical tie-breaking would flip every tie group.
-    const queries = Array.from(
-      { length: 80 },
-      (_, index) => `tie probe ${String(79 - index).padStart(2, "0")}`,
-    );
-    const rows = buildRows(
-      [],
-      PROFILE,
-      queries.map((query) => gsc(query)),
-    );
+    const queries = Array.from({ length: 80 }, (_, index) => `tie probe ${String(79 - index).padStart(2, "0")}`);
+    const rows = buildRows([], PROFILE, queries.map((query) => gsc(query)));
     const scores = [...new Set(rows.map((row) => row.score))];
     const tied = scores
       .map((score) => rows.filter((row) => row.score === score))
@@ -283,33 +228,48 @@ describe("buildRows: dedupe and order", () => {
 });
 
 describe("buildRows: inputs", () => {
-  it("reads only brand and competitors from the profile", () => {
+  it("reads only brand and competitors from the profile, directly or through a spread or `in`", () => {
+    const ALLOWED: readonly PropertyKey[] = ["brand", "competitors"];
     const touched = new Set<PropertyKey>();
-    const profile = new Proxy(
-      { brand: "Acme", competitors: "Rival" },
-      {
-        get(target, key, receiver) {
-          touched.add(key);
-          if (key !== "brand" && key !== "competitors")
-            throw new Error(`read profile.${String(key)}`);
-          return Reflect.get(target, key, receiver);
-        },
+    const full: Profile = {
+      url: "https://acme.io",
+      brand: "Acme",
+      positioning: "rank tracking",
+      features: "Rank Tracker",
+      competitors: "Rival",
+      market: "US",
+    };
+    const refuse = (key: PropertyKey): never => {
+      throw new Error(`read profile.${String(key)}`);
+    };
+    const profile = new Proxy(full, {
+      get(target, key, receiver) {
+        touched.add(key);
+        return ALLOWED.includes(key) ? Reflect.get(target, key, receiver) : refuse(key);
       },
-    );
-    expect(
-      buildRows(["seo"], profile, [gsc("acme login")]).length,
-    ).toBeGreaterThan(0);
+      has(target, key) {
+        return ALLOWED.includes(key) ? Reflect.has(target, key) : refuse(key);
+      },
+      ownKeys() {
+        return refuse("ownKeys");
+      },
+      getOwnPropertyDescriptor(_target, key) {
+        return refuse(key);
+      },
+    });
+    // The traps themselves work: an indirect read of any other field throws.
+    expect(() => ({ ...profile }).features).toThrow();
+    expect(() => "url" in profile).toThrow();
+    expect(() => Object.keys(profile)).toThrow();
+    touched.clear();
+    expect(buildRows(["seo"], profile, [gsc("acme login")]).length).toBeGreaterThan(0);
     expect([...touched].toSorted()).toEqual(["brand", "competitors"]);
   });
 
   it("does not mutate its inputs and is deterministic", () => {
     const seeds = Object.freeze(["seo", "crm"]);
     const profile = Object.freeze({ ...PROFILE });
-    const gscRows = Object.freeze([
-      Object.freeze(
-        gsc("llm seo checklist", { impressions: 3120, position: 8.4 }),
-      ),
-    ]);
+    const gscRows = Object.freeze([Object.freeze(gsc("llm seo checklist", { impressions: 3120, position: 8.4 }))]);
     const first = buildRows(seeds, profile, gscRows);
     expect(buildRows(seeds, profile, gscRows)).toEqual(first);
     expect(seeds).toEqual(["seo", "crm"]);
@@ -317,10 +277,7 @@ describe("buildRows: inputs", () => {
 });
 
 describe("findRow", () => {
-  const rows = buildRows([], PROFILE, [
-    gsc("Best SEO Tools"),
-    gsc("llm seo checklist"),
-  ]);
+  const rows = buildRows([], PROFILE, [gsc("Best SEO Tools"), gsc("llm seo checklist")]);
 
   it("matches by normQ", () => {
     expect(findRow(rows, "BEST SEO TOOLS")?.q).toBe("Best SEO Tools");

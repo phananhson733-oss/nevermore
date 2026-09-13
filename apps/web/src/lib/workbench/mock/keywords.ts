@@ -31,56 +31,31 @@ export type { KeywordPattern };
 
 type Classification = Pick<KeywordRow, "intent" | "stage" | "page">;
 
-const NAVIGATIONAL: Classification = {
-  intent: "navigational",
-  stage: "BOFU",
-  page: "landing",
-};
-const TOFU: Classification = {
-  intent: "informational",
-  stage: "TOFU",
-  page: "blog",
-};
-const COMMERCIAL: Classification = {
-  intent: "commercial",
-  stage: "BOFU",
-  page: "comparison",
-};
-const TRANSACTIONAL: Classification = {
-  intent: "transactional",
-  stage: "BOFU",
-  page: "landing",
-};
-const INFORMATIONAL: Classification = {
-  intent: "informational",
-  stage: "MOFU",
-  page: "blog",
-};
+const NAVIGATIONAL: Classification = { intent: "navigational", stage: "BOFU", page: "landing" };
+const TOFU: Classification = { intent: "informational", stage: "TOFU", page: "blog" };
+const COMMERCIAL: Classification = { intent: "commercial", stage: "BOFU", page: "comparison" };
+const TRANSACTIONAL: Classification = { intent: "transactional", stage: "BOFU", page: "landing" };
+const INFORMATIONAL: Classification = { intent: "informational", stage: "MOFU", page: "blog" };
 
 /**
  * Word edges for the English rules. `\b` would be wrong twice: it sees "ä" as a
  * non-word character ("bestätigen" matches "best") and it is what lets an
  * English word touch Chinese ("2026年best seo工具"). So a word character is any
- * letter, mark, number or `_`, except the space-less CJK scripts.
+ * letter, mark, number or `_`, except the space-less CJK scripts. Script
+ * extensions, not Script: the prolonged sound mark ー is Script=Common
+ * ("スーパーbest crm").
  */
-const CJK =
-  "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}";
+const CJK = "\\p{scx=Han}\\p{scx=Hira}\\p{scx=Kana}\\p{scx=Hang}";
 const WORD_START = `(?<=^|[^\\p{L}\\p{M}\\p{N}_]|[${CJK}])`;
 const WORD_END = `(?=$|[^\\p{L}\\p{M}\\p{N}_]|[${CJK}])`;
 const wholeWords = (alternatives: string): RegExp =>
   new RegExp(`${WORD_START}(?:${alternatives})${WORD_END}`, "u");
 
-const TOFU_START = new RegExp(
-  `^(?:how|what|why|when|which|who)${WORD_END}|^(?:怎么|如何|什么)`,
-  "u",
-);
-const COMMERCIAL_TERMS = wholeWords(
-  "vs\\.?|versus|alternatives?|best|top \\d+|reviews?|compare|comparison",
-);
+const TOFU_START = new RegExp(`^(?:how|what|why|when|which|who)${WORD_END}|^(?:怎么|如何|什么)`, "u");
+/** Singular and plural only; other inflections (compared, buying) stay at the default. */
+const COMMERCIAL_TERMS = wholeWords("vs\\.?|versus|alternatives?|best|top \\d+|reviews?|compare|comparisons?");
 const COMMERCIAL_ZH = /对比|替代/u;
-const TRANSACTIONAL_TERMS = wholeWords(
-  "pric(?:e|es|ing)|cost|buy|free trial|download|trial",
-);
+const TRANSACTIONAL_TERMS = wholeWords("pric(?:e|es|ing)|costs?|buy|downloads?|trials?");
 const TRANSACTIONAL_ZH = /价格|多少钱/u;
 
 /** Rules in the prototype's order: brand, question start, commercial, transactional, else informational / MOFU. */
@@ -88,31 +63,28 @@ export function classify(query: string, brand: string): Classification {
   if (matchesBrand(query, brand)) return NAVIGATIONAL;
   const text = normQ(query);
   if (TOFU_START.test(text)) return TOFU;
-  if (COMMERCIAL_TERMS.test(text) || COMMERCIAL_ZH.test(text))
-    return COMMERCIAL;
-  if (TRANSACTIONAL_TERMS.test(text) || TRANSACTIONAL_ZH.test(text))
-    return TRANSACTIONAL;
+  if (COMMERCIAL_TERMS.test(text) || COMMERCIAL_ZH.test(text)) return COMMERCIAL;
+  if (TRANSACTIONAL_TERMS.test(text) || TRANSACTIONAL_ZH.test(text)) return TRANSACTIONAL;
   return INFORMATIONAL;
 }
 
 /* ---------------- estimates ---------------- */
 
-const HAN_CHARACTER = /\p{Script=Han}/gu;
-const LATIN_WORD =
-  /[\p{Script=Latin}\p{N}]+(?:['’-][\p{Script=Latin}\p{N}]+)*/gu;
+/** Han and kana are written without spaces: two characters count as one word. */
+const HALF_WORD_CHARACTER = /[\p{scx=Han}\p{scx=Hira}\p{scx=Kana}]/gu;
+/** A run of letters, marks or numbers in any other script (Latin, Hangul, Cyrillic, Greek...) is one word. */
+const SPACED_WORD =
+  /(?:(?![\p{scx=Han}\p{scx=Hira}\p{scx=Kana}])[\p{L}\p{M}\p{N}])+(?:['’-](?:(?![\p{scx=Han}\p{scx=Hira}\p{scx=Kana}])[\p{L}\p{M}\p{N}])+)*/gu;
 const LONG_TAIL_MIN_WORDS = 5;
 
-/** Two Han characters count as one word; the prototype split on spaces, which counts a Chinese sentence as one word. */
 function wordCount(text: string): number {
-  const han = text.match(HAN_CHARACTER)?.length ?? 0;
-  const latin = text.match(LATIN_WORD)?.length ?? 0;
-  return han / 2 + latin;
+  const halfWords = text.match(HALF_WORD_CHARACTER)?.length ?? 0;
+  const spacedWords = text.match(SPACED_WORD)?.length ?? 0;
+  return halfWords / 2 + spacedWords;
 }
 
 /** Mock search metrics keyed by `normQ`, so spellings that dedupe to one row share one estimate. */
-export function kwMetrics(
-  query: string,
-): Pick<KeywordRow, "volume" | "kd" | "cpc" | "aio"> {
+export function kwMetrics(query: string): Pick<KeywordRow, "volume" | "kd" | "cpc" | "aio"> {
   const key = normQ(query);
   const next = rngOf(hashOf(key));
   const longTail = wordCount(key) > LONG_TAIL_MIN_WORDS;
@@ -132,11 +104,7 @@ export function serpTop(query: string): readonly string[] {
 
 /* ---------------- opportunity ---------------- */
 
-const STAGE_WEIGHT: Readonly<Record<Stage, number>> = {
-  BOFU: 3,
-  MOFU: 2,
-  TOFU: 1,
-};
+const STAGE_WEIGHT: Readonly<Record<Stage, number>> = { BOFU: 3, MOFU: 2, TOFU: 1 };
 const VOLUME_TERM_CAP = 30;
 const KD_MAX = 100;
 
@@ -158,12 +126,12 @@ function statusTerm(status: GscStatus | undefined): number {
   return 0;
 }
 
-/** Integer in [0, 100]. No `aio` input: the prototype added a random +6 for it. */
+/**
+ * Integer in [0, 100]. No `aio` input: the prototype added a random +6 for it.
+ * Only the top needs clamping: the lowest raw score is TOFU 8 + seo 4 − ranked 6 = 6.
+ */
 export function opportunity(
-  row: Pick<
-    KeywordRow,
-    "stage" | "engine" | "volume" | "kd" | "source" | "gscStatus"
-  >,
+  row: Pick<KeywordRow, "stage" | "engine" | "volume" | "kd" | "source" | "gscStatus">,
 ): number {
   const raw =
     STAGE_WEIGHT[row.stage] * 8 +
@@ -172,28 +140,26 @@ export function opportunity(
     difficultyTerm(row.kd) +
     (row.source === "gsc" ? 12 : 0) +
     statusTerm(row.gscStatus);
-  return Math.min(100, Math.max(0, Math.round(raw)));
+  return Math.min(100, Math.round(raw));
 }
 
 /* ---------------- rows ---------------- */
 
 type DraftRow = Omit<KeywordRow, "score" | "slug">;
 
-const SLUG_PREFIX: Readonly<Partial<Record<PageType, string>>> = {
-  blog: "blog/",
-  tool: "tools/",
-};
+const SLUG_PREFIX: Readonly<Partial<Record<PageType, string>>> = { blog: "blog/", tool: "tools/" };
 /** Two different probes: a template whose output changes between them names the brand. */
 const BRAND_PROBES = ["\u0001", "\u0002"] as const;
 
 function impressionVolume(impressions: number | null): number {
-  if (impressions === null || !Number.isFinite(impressions) || impressions <= 0)
-    return 0;
+  if (impressions === null || !Number.isFinite(impressions) || impressions <= 0) return 0;
   return Math.ceil(impressions / 10) * 10;
 }
 
+/** A position that is not a real rank (≤ 0, NaN) becomes null: 0 would sort ahead of every real rank. */
 function gscDraft(row: GscRow, brand: string): DraftRow {
   const metrics = kwMetrics(row.query);
+  const status = gscStatus(row);
   return {
     q: row.query,
     seed: "",
@@ -202,8 +168,8 @@ function gscDraft(row: GscRow, brand: string): DraftRow {
     source: "gsc",
     clicks: row.clicks,
     impressions: row.impressions,
-    position: row.position,
-    gscStatus: gscStatus(row),
+    position: status === "unknown" ? null : row.position,
+    gscStatus: status,
     ...metrics,
     volume: Math.max(metrics.volume, impressionVolume(row.impressions)),
   };
@@ -237,8 +203,7 @@ function aiDraft(
   seed: string,
   brand: string,
 ): readonly DraftRow[] {
-  const namesBrand =
-    make(seed, BRAND_PROBES[0]) !== make(seed, BRAND_PROBES[1]);
+  const namesBrand = make(seed, BRAND_PROBES[0]) !== make(seed, BRAND_PROBES[1]);
   if (brand === "" && namesBrand) return [];
   const q = make(seed, brand);
   return [
@@ -255,11 +220,7 @@ function aiDraft(
   ];
 }
 
-function seedDrafts(
-  seed: string,
-  brand: string,
-  rival: string | undefined,
-): readonly DraftRow[] {
+function seedDrafts(seed: string, brand: string, rival: string | undefined): readonly DraftRow[] {
   return [
     ...PATTERNS.flatMap((pattern) => patternDraft(pattern, seed, brand, rival)),
     ...AI_PATTERNS.flatMap((make) => aiDraft(make, seed, brand)),
@@ -269,12 +230,8 @@ function seedDrafts(
 /** First spelling of each `normQ` key wins. */
 function dedupeByQuery(drafts: readonly DraftRow[]): readonly DraftRow[] {
   const keys = drafts.map((draft) => normQ(draft.q));
-  const firstIndex = new Map(
-    keys.map((key, index) => [key, index] as const).toReversed(),
-  );
-  return drafts.filter(
-    (_, index) => firstIndex.get(keys[index] ?? "") === index,
-  );
+  const firstIndex = new Map(keys.map((key, index) => [key, index] as const).toReversed());
+  return drafts.filter((_, index) => firstIndex.get(keys[index] ?? "") === index);
 }
 
 function toRow(draft: DraftRow): KeywordRow {
@@ -299,9 +256,7 @@ export function buildRows(
 ): readonly KeywordRow[] {
   const brand = profile.brand.trim();
   const brandKey = normQ(brand);
-  const rival = splitList(profile.competitors).find(
-    (name) => normQ(name) !== brandKey,
-  );
+  const rival = splitList(profile.competitors).find((name) => normQ(name) !== brandKey);
   const drafts = [
     ...gscRows
       .filter((row) => normQ(row.query) !== "")
@@ -317,10 +272,7 @@ export function buildRows(
 }
 
 /** A blank query finds nothing because buildRows never emits a blank row. */
-export function findRow(
-  rows: readonly KeywordRow[],
-  query: string,
-): KeywordRow | undefined {
+export function findRow(rows: readonly KeywordRow[], query: string): KeywordRow | undefined {
   const key = normQ(query);
   return rows.find((row) => normQ(row.q) === key);
 }

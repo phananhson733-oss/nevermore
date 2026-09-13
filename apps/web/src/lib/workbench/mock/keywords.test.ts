@@ -1,21 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { KeywordRow } from "../types.ts";
-import {
-  AI_PATTERNS,
-  PATTERNS,
-  SERP_POOL,
-  classify,
-  kwMetrics,
-  opportunity,
-  serpTop,
-} from "./keywords.ts";
+import { AI_PATTERNS, PATTERNS, classify, opportunity } from "./keywords.ts";
 
-/** Pattern, classifier, metric and score pins. Row assembly lives in keywords-rows.test.ts. */
+/** Pattern, classifier and score pins. Estimates live in keywords-metrics.test.ts, row assembly in keywords-rows.test.ts. */
 
 const DEFAULT = { intent: "informational", stage: "MOFU", page: "blog" };
 const TOFU = { intent: "informational", stage: "TOFU", page: "blog" };
 const COMMERCIAL = { intent: "commercial", stage: "BOFU", page: "comparison" };
-const TRANSACTIONAL = { intent: "transactional", stage: "BOFU", page: "landing" };
+const TRANSACTIONAL = {
+  intent: "transactional",
+  stage: "BOFU",
+  page: "landing",
+};
 const NAVIGATIONAL = { intent: "navigational", stage: "BOFU", page: "landing" };
 
 describe("PATTERNS and AI_PATTERNS", () => {
@@ -23,18 +19,81 @@ describe("PATTERNS and AI_PATTERNS", () => {
     expect(
       PATTERNS.map(({ make, ...fields }) => ({ q: make("x"), ...fields })),
     ).toEqual([
-      { q: "best x tools", intent: "commercial", stage: "MOFU", page: "listicle", engine: "both" },
-      { q: "x alternatives", intent: "commercial", stage: "BOFU", page: "comparison", engine: "both" },
-      { q: "free x tool", intent: "transactional", stage: "BOFU", page: "tool", engine: "seo" },
-      { q: "x template", intent: "informational", stage: "MOFU", page: "tool", engine: "seo" },
-      { q: "how to x", intent: "informational", stage: "TOFU", page: "blog", engine: "both" },
-      { q: "what is x", intent: "informational", stage: "TOFU", page: "glossary", engine: "geo" },
-      { q: "x checklist", intent: "informational", stage: "MOFU", page: "blog", engine: "seo" },
-      { q: "x for startups", intent: "commercial", stage: "MOFU", page: "landing", engine: "seo" },
-      { q: "x pricing", intent: "transactional", stage: "BOFU", page: "landing", engine: "seo" },
-      { q: "x vs", intent: "commercial", stage: "BOFU", page: "comparison", engine: "both", vs: true },
+      {
+        q: "best x tools",
+        intent: "commercial",
+        stage: "MOFU",
+        page: "listicle",
+        engine: "both",
+      },
+      {
+        q: "x alternatives",
+        intent: "commercial",
+        stage: "BOFU",
+        page: "comparison",
+        engine: "both",
+      },
+      {
+        q: "free x tool",
+        intent: "transactional",
+        stage: "BOFU",
+        page: "tool",
+        engine: "seo",
+      },
+      {
+        q: "x template",
+        intent: "informational",
+        stage: "MOFU",
+        page: "tool",
+        engine: "seo",
+      },
+      {
+        q: "how to x",
+        intent: "informational",
+        stage: "TOFU",
+        page: "blog",
+        engine: "both",
+      },
+      {
+        q: "what is x",
+        intent: "informational",
+        stage: "TOFU",
+        page: "glossary",
+        engine: "geo",
+      },
+      {
+        q: "x checklist",
+        intent: "informational",
+        stage: "MOFU",
+        page: "blog",
+        engine: "seo",
+      },
+      {
+        q: "x for startups",
+        intent: "commercial",
+        stage: "MOFU",
+        page: "landing",
+        engine: "seo",
+      },
+      {
+        q: "x pricing",
+        intent: "transactional",
+        stage: "BOFU",
+        page: "landing",
+        engine: "seo",
+      },
+      {
+        q: "x vs",
+        intent: "commercial",
+        stage: "BOFU",
+        page: "comparison",
+        engine: "both",
+        vs: true,
+      },
     ]);
-    expect(PATTERNS.filter((pattern) => Object.hasOwn(pattern, "vs"))).toHaveLength(1);
+    expect(
+      PATTERNS.filter((pattern) => Object.hasOwn(pattern, "vs")),
+    ).toHaveLength(1);
   });
 
   it("port the AI prompt templates, the third one naming the brand", () => {
@@ -59,18 +118,29 @@ describe("classify", () => {
     ["crm reviews", COMMERCIAL],
     ["compare crm tools", COMMERCIAL],
     ["crm comparison", COMMERCIAL],
+    ["crm comparisons", COMMERCIAL],
+    ["comparisons of crm", COMMERCIAL],
     ["对比 两个工具", COMMERCIAL],
+    ["crm 工具对比", COMMERCIAL],
     ["hubspot 替代", COMMERCIAL],
     ["ｂｅｓｔ crm", COMMERCIAL],
     ["2026年best seo工具", COMMERCIAL],
+    ["crm best推荐", COMMERCIAL],
+    ["スーパーbest crm", COMMERCIAL],
+    ["best crm pricing", COMMERCIAL],
+    ["价格对比", COMMERCIAL],
     ["crm pricing", TRANSACTIONAL],
     ["crm price", TRANSACTIONAL],
     ["crm prices", TRANSACTIONAL],
     ["crm cost", TRANSACTIONAL],
+    ["crm costs", TRANSACTIONAL],
     ["buy crm", TRANSACTIONAL],
     ["free trial crm", TRANSACTIONAL],
+    ["free trials crm", TRANSACTIONAL],
     ["crm trial", TRANSACTIONAL],
+    ["crm trials", TRANSACTIONAL],
     ["download crm", TRANSACTIONAL],
+    ["crm downloads", TRANSACTIONAL],
     ["crm 价格", TRANSACTIONAL],
     ["crm 多少钱", TRANSACTIONAL],
     ["how to rank", TOFU],
@@ -99,6 +169,8 @@ describe("classify", () => {
     "caprice",
     "pricey",
     "costco",
+    "costume ideas",
+    "downloadable templates",
     "buyer persona",
     "whatsapp marketing",
     "howdy partner",
@@ -119,98 +191,19 @@ describe("classify", () => {
   });
 });
 
-describe("kwMetrics", () => {
-  const LATIN_WORDS = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf"];
-  const HAN = "搜索引擎优化工具选择适合中小企业团队的内容营销方案对比价格和效果评估指南";
-  const samples = (count: number, make: (index: number) => string): readonly string[] =>
-    Array.from({ length: count }, (_, index) => make(index));
-  const words = (count: number, offset: number): string =>
-    samples(count, (index) => `${LATIN_WORDS[(index + offset) % LATIN_WORDS.length] ?? ""}${offset}`).join(" ");
-  const han = (count: number, offset: number): string =>
-    Array.from(HAN).slice(offset, offset + count).join("");
-  const volumes = (queries: readonly string[]): readonly number[] =>
-    queries.map((query) => kwMetrics(query).volume);
-
-  it("is deterministic and keyed by the normalized query", () => {
-    expect(kwMetrics("best seo tools")).toEqual(kwMetrics("best seo tools"));
-    expect(kwMetrics("Best SEO  Tools")).toEqual(kwMetrics("best seo tools"));
-    expect(kwMetrics("best seo tools")).not.toEqual(kwMetrics("best crm tools"));
-  });
-
-  it("keeps every field in its range and shape", () => {
-    for (const query of samples(200, (index) => `metric probe ${index}`)) {
-      const { volume, kd, cpc, aio } = kwMetrics(query);
-      expect(Number.isInteger(volume / 10)).toBe(true);
-      expect(volume).toBeGreaterThanOrEqual(40);
-      expect(volume).toBeLessThanOrEqual(4400);
-      expect(Number.isInteger(kd)).toBe(true);
-      expect(kd).toBeGreaterThanOrEqual(8);
-      expect(kd).toBeLessThanOrEqual(78);
-      expect(cpc).toMatch(/^\d+\.\d{2}$/);
-      expect(Number(cpc)).toBeGreaterThanOrEqual(0.6);
-      expect(Number(cpc)).toBeLessThanOrEqual(9.6);
-      expect(typeof aio).toBe("boolean");
-    }
-  });
-
-  // Head terms draw from [200, 4400] and long tails from [40, 360]: 20 queries per side
-  // cannot all land in the other side's band by chance, so each list pins the classification.
-  it("treats more than five Latin words as long tail, five as head", () => {
-    for (const volume of volumes(samples(20, (offset) => words(6, offset)))) {
-      expect(volume).toBeLessThanOrEqual(360);
-    }
-    for (const volume of volumes(samples(20, (offset) => words(5, offset)))) {
-      expect(volume).toBeGreaterThanOrEqual(200);
-    }
-  });
-
-  it("counts two Han characters as one word", () => {
-    for (const volume of volumes(samples(20, (offset) => han(11, offset)))) {
-      expect(volume).toBeLessThanOrEqual(360);
-    }
-    for (const volume of volumes(samples(20, (offset) => han(10, offset)))) {
-      expect(volume).toBeGreaterThanOrEqual(200);
-    }
-    for (const volume of volumes(samples(20, (offset) => `${han(4, offset)} ${words(4, offset)}`))) {
-      expect(volume).toBeLessThanOrEqual(360);
-    }
-    for (const volume of volumes(samples(20, (offset) => `${han(9, offset)} ${words(1, offset)}`))) {
-      expect(volume).toBeLessThanOrEqual(360);
-    }
-    for (const volume of volumes(samples(20, (offset) => `${han(2, offset)} ${words(4, offset)}`))) {
-      expect(volume).toBeGreaterThanOrEqual(200);
-    }
-  });
-
-  it("gives a long Chinese sentence a long-tail volume", () => {
-    const { volume } = kwMetrics("中小企业怎么选择适合自己团队的搜索引擎优化工具");
-    expect(volume).toBeGreaterThanOrEqual(40);
-    expect(volume).toBeLessThanOrEqual(360);
-  });
-});
-
-describe("serpTop", () => {
-  it("pins the shared generic pool", () => {
-    expect(SERP_POOL).toEqual(["g2.com", "reddit.com", "capterra.com", "medium.com", "producthunt.com"]);
-  });
-
-  it("samples three distinct pool domains, deterministically", () => {
-    const tops = Array.from({ length: 50 }, (_, index) => serpTop(`serp probe ${index}`));
-    for (const top of tops) {
-      expect(top).toHaveLength(3);
-      expect(new Set(top).size).toBe(3);
-      for (const domain of top) expect(SERP_POOL).toContain(domain);
-    }
-    expect(serpTop("best seo tools")).toEqual(serpTop("Best  SEO tools"));
-    expect(new Set(tops.map((top) => top.join(","))).size).toBeGreaterThan(1);
-  });
-});
-
 describe("opportunity", () => {
   type ScoreInput = Parameters<typeof opportunity>[0];
   /** MOFU 16 + seo 4 + min(30, log10(1001) * 9) = 27.0039 + (100 - 48) * 0.25 = 13 → 60.0039. */
-  const BASE: ScoreInput = { stage: "MOFU", engine: "seo", volume: 1000, kd: 48, source: "generated", gscStatus: "unknown" };
-  const score = (overrides: Partial<ScoreInput>): number => opportunity({ ...BASE, ...overrides });
+  const BASE: ScoreInput = {
+    stage: "MOFU",
+    engine: "seo",
+    volume: 1000,
+    kd: 48,
+    source: "generated",
+    gscStatus: "unknown",
+  };
+  const score = (overrides: Partial<ScoreInput>): number =>
+    opportunity({ ...BASE, ...overrides });
 
   it("pins the baseline as a whole value, far enough from both clamp ends", () => {
     expect(opportunity(BASE)).toBe(60);
@@ -254,15 +247,44 @@ describe("opportunity", () => {
     expect(score({ volume: Number.NaN, kd: Number.NaN })).toBe(20);
   });
 
-  it("clamps to an integer in [0, 100]", () => {
+  it("clamps to an integer in [0, 100], the lowest possible score being 6", () => {
     expect(
-      score({ stage: "BOFU", engine: "both", volume: 1_000_000_000, kd: 0, source: "gsc", gscStatus: "borderline" }),
+      score({
+        stage: "BOFU",
+        engine: "both",
+        volume: 1_000_000_000,
+        kd: 0,
+        source: "gsc",
+        gscStatus: "borderline",
+      }),
     ).toBe(100);
+    expect(
+      score({
+        stage: "TOFU",
+        engine: "seo",
+        volume: Number.NaN,
+        kd: Number.NaN,
+        source: "generated",
+        gscStatus: "ranked",
+      }),
+    ).toBe(6);
     for (const stage of ["TOFU", "MOFU", "BOFU"] as const) {
-      for (const gscStatus of ["ranked", "borderline", "gap", "unknown"] as const) {
+      for (const gscStatus of [
+        "ranked",
+        "borderline",
+        "gap",
+        "unknown",
+      ] as const) {
         for (const volume of [Number.NaN, -1, 0, 10, 5000, 1e12]) {
           for (const kd of [Number.NaN, 0, 50, 100, 101]) {
-            const value = score({ stage, gscStatus, volume, kd, source: "gsc", engine: "both" });
+            const value = score({
+              stage,
+              gscStatus,
+              volume,
+              kd,
+              source: "gsc",
+              engine: "both",
+            });
             expect(Number.isInteger(value)).toBe(true);
             expect(value).toBeGreaterThanOrEqual(0);
             expect(value).toBeLessThanOrEqual(100);
@@ -274,8 +296,19 @@ describe("opportunity", () => {
 
   it("ignores the AI Overview flag", () => {
     const row: KeywordRow = {
-      q: "seo", seed: "seo", intent: "informational", stage: "MOFU", page: "blog", engine: "seo",
-      source: "generated", volume: 1000, kd: 48, cpc: "1.00", aio: false, score: 0, slug: "/blog/seo",
+      q: "seo",
+      seed: "seo",
+      intent: "informational",
+      stage: "MOFU",
+      page: "blog",
+      engine: "seo",
+      source: "generated",
+      volume: 1000,
+      kd: 48,
+      cpc: "1.00",
+      aio: false,
+      score: 0,
+      slug: "/blog/seo",
     };
     const withAio: KeywordRow = { ...row, aio: true };
     expect(opportunity(withAio)).toBe(opportunity(row));
