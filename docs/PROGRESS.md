@@ -14,12 +14,17 @@ integration branch `feat/workbench-ui-port`. The branch has **not been pushed**
 and no PR exists yet; nothing reaches production before PR-3b (integration
 branch → `main`). Plan and rulings Q1-Q37:
 `docs/plans/2026-09-13-workbench-pr3-first-views.md`; design doc rev8 carries
-them back. Code base for this entry: `23c0fe53`. The copy rulings of
-2026-09-14 are in: the sample-data chip title now says module results are
-samples and imported GSC rows are not, the imported-rows footnote adds "not a
-sample", three week / settings sentences say "近 7 天", the borderline band is
-written ">10 且 ≤30" instead of "11-30", exported documents print `n/a` for
-unavailable values, and two dead i18n keys are gone (`d6d3764c`, `23c0fe53`).
+them back. Code base for this entry: `a8c89b6e`. The copy rulings of
+2026-09-14 are in (`d6d3764c`, `23c0fe53`, `fae6e640`, `db074fd0`,
+`ac74b802`, `a8c89b6e`):
+- the sample-data chip title now says module results are samples and imported
+  GSC rows are not, and the imported-rows footnote adds "not a sample";
+- the weekly-report notification description says "近 7 天";
+- the week page's empty title and the disabled-report hint describe the current
+  state without a date range, because emptiness is judged on the whole store;
+- the borderline band is written ">10 且 ≤30" instead of "11-30";
+- exported documents print `n/a` for unavailable values;
+- two dead i18n keys are gone.
 
 Done on the branch (each task: one implementation agent plus a Claude review
 with mutations in a detached worktree, and gpt-6-astra surfaces per the plan's
