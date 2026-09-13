@@ -82,6 +82,8 @@ const METRIC_LABELS: Readonly<Record<Metric, readonly string[]>> = {
 };
 /** Every supported label: a first record is a header only when one of its cells is one of these. */
 const HEADER_LABELS: ReadonlySet<string> = new Set([...QUERY_LABELS, ...Object.values(METRIC_LABELS).flat()]);
+/** Every metric label: a first cell spelled like one, with no query label anywhere, is a query (`isHeader`). */
+const METRIC_LABEL_SET: ReadonlySet<string> = new Set(Object.values(METRIC_LABELS).flat());
 const RANKED_MAX_POSITION = 10;
 const BORDERLINE_MAX_POSITION = 30;
 const DEMO_BRAND_KEY = "gengrowth";
@@ -286,10 +288,16 @@ function parsePosition(cell: string | undefined): number | null {
  * Only the first record can be a header: no digit anywhere, and at least one
  * cell that is a supported label. Digit-free cells alone are not enough:
  * `shoes - - - -` is a row with nothing available, and `Query,Position` is a
- * header with two columns.
+ * header with two columns. Nor is a label alone: with no cell naming the query,
+ * a metric label in the first cell sits where `headerColumns` reads the query
+ * from, so the record is a query spelled like a metric (`position - - - -`),
+ * and taking it as a header would read every following query as that metric
+ * (codex S10a #1).
  */
 function isHeader(cells: readonly string[]): boolean {
-  return !cells.some((cell) => HAS_DIGIT.test(cell)) && cells.some((cell) => HEADER_LABELS.has(normQ(cell)));
+  const labels = cells.map(normQ);
+  if (cells.some((cell) => HAS_DIGIT.test(cell)) || !labels.some((label) => HEADER_LABELS.has(label))) return false;
+  return !(labelIndex(labels, QUERY_LABELS) === null && METRIC_LABEL_SET.has(labels[POSITIONAL.query] ?? ""));
 }
 
 function labelIndex(labels: readonly string[], names: readonly string[]): number | null {
@@ -314,7 +322,7 @@ function headerColumns(header: readonly string[]): HeaderMapping {
   const labels = header.map(normQ);
   const metric = (name: Metric): number | null => labelIndex(labels, METRIC_LABELS[name]);
   const mapped: Columns = {
-    query: labelIndex(labels, QUERY_LABELS) ?? 0,
+    query: labelIndex(labels, QUERY_LABELS) ?? POSITIONAL.query,
     clicks: metric("clicks"),
     impressions: metric("impressions"),
     ctr: metric("ctr"),
