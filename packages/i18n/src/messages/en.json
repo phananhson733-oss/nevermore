@@ -4281,7 +4281,8 @@
           "gsc": "Summarizing the GSC rows in this browser",
           "third": "Composing sample third-party metrics",
           "compose": "Assembling the profile"
-        }
+        },
+        "stale": "The data changed while this profile was being generated, so this result was not saved. You can generate it again."
       },
       "tabs": {
         "doc": "Profile",

@@ -384,6 +384,12 @@ const REQUIRED: Readonly<
     "zh-CN": ["不抓取你的站点", "不调用外部服务"],
     en: ["does not crawl your site", "no external service"],
   },
+  // T9 review #1: a run refused by the reducer leaves the stored profile as it
+  // was, so the notice must say nothing was written and that a rerun is the way on.
+  "profile.run.stale": {
+    "zh-CN": ["没有写入", "重新生成"],
+    en: ["not saved", "generate it again"],
+  },
   // Q17: the whole justification for showing a list instead of rank movement.
   "week.borderlineList.detail": {
     "zh-CN": ["不是排名变化", "工作台目前不保存"],
@@ -668,6 +674,7 @@ const CASES: readonly string[] = [
   "profile.run.steps.gsc",
   "profile.run.steps.third",
   "profile.run.steps.compose",
+  "profile.run.stale",
   "profile.tabs.doc",
   "profile.tabs.json",
   "profile.tabs.ctx",
