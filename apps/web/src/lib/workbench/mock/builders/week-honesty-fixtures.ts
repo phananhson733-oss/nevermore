@@ -13,7 +13,9 @@
  * - promises, superlatives and unmeasured causes (jsx W8-W10);
  * - "last week" framing (Q20): the previous run may be a day or months old;
  * - rank movement in any spelling (Q17): the store keeps no keyword history,
- *   so any number moving from one position to another is invented.
+ *   so any number moving from one position to another is invented;
+ * - "nothing to do" (codex S7b #2): with a count unknown the report cannot know
+ *   that, and with repair tasks in the basket it would contradict them.
  *
  * `PROVENANCE_HEADS` is the opening words of the two localised declarations
  * (`workbench.provenance.artifact`). The builder must contain neither: the
@@ -49,6 +51,9 @@ export const WEEK_FORBIDDEN_PHRASES: readonly string[] = [
   "所以",
   // the previous run is not "last week"
   "上周",
+  // an unknown count is not "nothing to do"
+  "暂无待办",
+  "没有待办",
   // rank movement vocabulary
   "排名变动",
   "排名变化",

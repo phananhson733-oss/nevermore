@@ -27,6 +27,11 @@
  *   delta. `week-summary.ts` decides both; this file prints what it is given.
  * - 「较上周」 (Q20). The previous run may be a day or months old; its stamp is
  *   printed instead.
+ * - 「暂无待办」 (codex S7b #2). With a count unknown the tasks section cannot
+ *   know there is nothing to do, so it says the numbers above are not all known
+ *   yet; only with every count behind it known and zero does it say these
+ *   checks produced no suggestion. Neither sentence speaks for the repair tasks
+ *   the basket holds, which have their own section.
  * - The prototype's promises and superlatives (「通常就能进前十」,
  *   「被引用率最高」, 「先做被问最多的」) and its unconditional 「修复任务已经在
  *   产物里」: repair tasks get their own section only when the basket holds one,
@@ -243,12 +248,26 @@ function taskLines(input: WeeklyReportInput): readonly string[] {
   ].filter((line): line is string => line !== null);
 }
 
+/** Every count a task is drawn from is known; a borderline count over only some rows is not. */
+function taskCountsKnown(input: WeeklyReportInput): boolean {
+  return (
+    input.highFindings !== null &&
+    input.answerGaps !== null &&
+    input.borderline !== null &&
+    input.borderlineUnknown === 0 &&
+    input.kbGaps !== null
+  );
+}
+
 function tasksSection(input: WeeklyReportInput): string {
   const lines = taskLines(input);
+  const none = taskCountsKnown(input)
+    ? "- 这几项检查没有产生待办建议。"
+    : "- 上面有还不知道的数字（标为「—」或「排名未知」），暂时给不出下周建议。";
   return [
     "## 下周待办",
     "下面列的是要做的事，不是已经得到的结果。",
-    ...(lines.length === 0 ? ["- 暂无待办。"] : lines),
+    ...(lines.length === 0 ? [none] : lines),
   ].join("\n");
 }
 

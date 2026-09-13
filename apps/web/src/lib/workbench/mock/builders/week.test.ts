@@ -152,10 +152,19 @@ const EMPTY_TEXT = `# Acme 周报（2026-09-06 至 2026-09-13）
 
 ## 下周待办
 下面列的是要做的事，不是已经得到的结果。
-- 暂无待办。`;
+- 上面有还不知道的数字（标为「—」或「排名未知」），暂时给不出下周建议。`;
+
+const UNKNOWN_TASKS = "- 上面有还不知道的数字（标为「—」或「排名未知」），暂时给不出下周建议。";
+const NO_TASKS = "- 这几项检查没有产生待办建议。";
 
 function lineStarting(text: string, prefix: string): string | undefined {
   return text.split("\n").find((line) => line.startsWith(prefix));
+}
+
+/** The lines under 「下周待办」 after its fixed sentence. */
+function taskSectionLines(text: string): readonly string[] {
+  const section = text.split("\n\n").find((part) => part.startsWith("## 下周待办\n")) ?? "";
+  return section.split("\n").slice(2);
 }
 
 describe("weeklyReportMarkdown", () => {
@@ -189,7 +198,28 @@ describe("weeklyReportMarkdown", () => {
     expect(lineStarting(text, "- 临界词")).toBe("- 临界词（11-30 名）：0 条");
     expect(lineStarting(text, "- 至少一个平台")).toBe("- 至少一个平台没提到品牌的提问：0 个");
     expect(lineStarting(text, "- 知识库")).toBe("- 知识库还没写结论句的条目：0 条");
-    expect(text).toContain("## 下周待办\n下面列的是要做的事，不是已经得到的结果。\n- 暂无待办。");
+    expect(taskSectionLines(text)).toEqual([NO_TASKS]);
+  });
+
+  // codex S7b #2: every count unknown, and the report said there was nothing to do.
+  it.each<[string, Partial<WeeklyReportInput>]>([
+    ["every count unknown", {}],
+    ["one count unknown", { borderline: 0, answerGaps: 0, kbGaps: null, highFindings: 0 }],
+    [
+      "a borderline count taken over only some rows",
+      { borderline: 0, borderlineUnknown: 2, answerGaps: 0, kbGaps: 0, highFindings: 0 },
+    ],
+  ])("says it cannot suggest next steps yet with %s", (_label, counts) => {
+    expect(taskSectionLines(weeklyReportMarkdown({ ...EMPTY, ...counts }))).toEqual([UNKNOWN_TASKS]);
+  });
+
+  it("does not speak for the repair tasks the basket holds, in either sentence", () => {
+    const known = { borderline: 0, answerGaps: 0, kbGaps: 0, highFindings: 0 };
+    for (const counts of [{}, known]) {
+      const text = weeklyReportMarkdown({ ...EMPTY, ...counts, auditTaskTitles: ["技术审计修复任务：检查页面 A"] });
+      expect(text).toContain("## 修复任务（任务，不是结果）\n");
+      expect(text).not.toMatch(/暂无|没有待办/u);
+    }
   });
 
   it("says a single check has nothing to compare with, instead of an empty diff", () => {
@@ -350,6 +380,8 @@ describe("weekly report honesty", () => {
     "本周 +3 名",
     "升到第 8",
     "因为还没跑检查",
+    "- 暂无待办。",
+    "这周没有待办",
   ])("the checker flags %s", (sentence) => {
     expect(honestyViolations(sentence)).not.toEqual([]);
   });
@@ -361,6 +393,8 @@ describe("weekly report honesty", () => {
     "较上次（2026-09-05 10:00）+7",
     "较上次（2026-09-05 11:00，29%）+6pt",
     "- 处理 3 个高危问题",
+    NO_TASKS,
+    UNKNOWN_TASKS,
   ])("the checker leaves %s alone", (sentence) => {
     expect(honestyViolations(sentence)).toEqual([]);
   });
