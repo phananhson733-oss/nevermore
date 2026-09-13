@@ -89,3 +89,63 @@ export function gscExport(rows: number): string {
   );
   return ["Top queries\tClicks\tImpressions\tCTR\tPosition", ...lines].join("\n");
 }
+
+export type UiLocale = "en" | "zh-CN";
+export type StorageFailure = "quota" | "volatile";
+
+/** The topbar's status sentence for each storage failure, as served. */
+export const STORAGE_SENTENCE: Readonly<Record<StorageFailure, Readonly<Record<UiLocale, string>>>> = {
+  quota: { en: "Browser storage is full; new results are not being saved", "zh-CN": "浏览器存储已满，新结果不再保存" },
+  volatile: { en: "Results will not be saved in this browser", "zh-CN": "本次结果不会保存在此浏览器" },
+};
+
+/** The compact label shown below `xl` (words outside 768-1023px). */
+export const NOT_SAVED_SHORT: Readonly<Record<UiLocale, string>> = { en: "Not saved", "zh-CN": "未保存" };
+
+const SAMPLE_BUTTON: Readonly<Record<UiLocale, string>> = { en: "Load sample site", "zh-CN": "载入示例站点" };
+const CLEAR_BUTTON: Readonly<Record<UiLocale, string>> = { en: "Clear sample", "zh-CN": "清除示例" };
+
+/**
+ * The sample loaded in `locale` with browser storage failing, confirmed by the
+ * topbar's status sentence before returning, so a caller never measures the
+ * normal topbar by mistake.
+ * - `volatile`: localStorage throws from the first script; the sample lives in
+ *   memory and the page stays on the overview.
+ * - `quota`: the sample is stored first, then every write to a workbench key
+ *   throws QuotaExceededError, and a notification switch on /settings makes
+ *   the write that latches quota mode.
+ */
+export async function openWithFailingStorage(page: Page, locale: UiLocale, failure: StorageFailure): Promise<void> {
+  await page.context().addCookies([{ name: "sf_ui_locale", value: locale, domain: "localhost", path: "/" }]);
+  await installCriticalFlowApi(page);
+  await page.setViewportSize({ width: 1280, height: 844 });
+  if (failure === "volatile") {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "localStorage", {
+        configurable: true,
+        get() {
+          throw new DOMException("e2e storage denied", "SecurityError");
+        },
+      });
+    });
+  }
+  await openView(page, "overview");
+  await page.getByRole("button", { name: SAMPLE_BUTTON[locale], exact: true }).click();
+  const topbar = page.locator("[data-app-shell-topbar]");
+  await expect(topbar.getByRole("button", { name: CLEAR_BUTTON[locale], exact: true })).toHaveCount(1);
+  if (failure === "quota") {
+    await expect
+      .poll(() => page.evaluate(() => Object.keys(window.localStorage).some((key) => key.startsWith("gg.workbench."))))
+      .toBe(true);
+    await page.addInitScript(() => {
+      const setItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function quotaFull(key: string, value: string): void {
+        if (key.startsWith("gg.workbench.")) throw new DOMException("e2e quota", "QuotaExceededError");
+        setItem.call(this, key, value);
+      };
+    });
+    await openView(page, "settings");
+    await page.locator('[data-wb-notify] input[role="switch"]').first().click();
+  }
+  await expect(topbar.locator('[role="status"]')).toHaveText(STORAGE_SENTENCE[failure][locale]);
+}
