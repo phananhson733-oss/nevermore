@@ -302,6 +302,45 @@ describe("demo", () => {
     expect(s.demo).toBe(false);
   });
 
+  it("clearDemo does nothing once the state is not the sample: a queued stale confirm cannot wipe real rows", () => {
+    // The interleaving codex S5 found: this tab's confirm box opened over the
+    // sample, another tab wrote real data, the `storage` door queued
+    // `loadPersisted` for it, and the old screen's callback then dispatched
+    // `clearDemo`. React reduces them in exactly that order.
+    const gscRow = { query: "acme seo", clicks: 3, impressions: 90, ctr: 3.3, position: 7.5 } as const;
+    const sample = reduce(initialProjectState(seed), { type: "loadDemo", payload: demoPayload });
+    const real = reduce(
+      reduce(initialProjectState(seed), { type: "setGscRows", rows: [gscRow], source: "user" }),
+      { type: "addArtifact", artifact: artifact("mine") },
+    );
+    expect(sample.demo).toBe(true);
+    expect(real.demo).toBe(false);
+
+    let s = reduce(sample, { type: "loadPersisted", state: real });
+    s = reduce(s, { type: "clearDemo" });
+
+    // The same reference, so the provider's write-back effect is not triggered.
+    expect(s).toBe(real);
+    expect(s.gscRows).toEqual([gscRow]);
+    expect(s.gscRowsSource).toBe("user");
+    expect(s.artifacts.map((a) => a.id)).toEqual(["mine"]);
+  });
+
+  it("clearDemo still clears while the sample is loaded, rows added on top of it included", () => {
+    const gscRow = { query: "acme seo", clicks: 3, impressions: 90, ctr: 3.3, position: 7.5 } as const;
+    let s = reduce(initialProjectState(seed), { type: "loadDemo", payload: demoPayload });
+    s = reduce(s, { type: "setGscRows", rows: [gscRow], source: "user" });
+    expect(s.demo).toBe(true);
+
+    const cleared = reduce(s, { type: "clearDemo" });
+
+    expect(cleared).not.toBe(s);
+    expect(cleared.demo).toBe(false);
+    expect(cleared.gscRows).toEqual([]);
+    expect(cleared.gscRowsSource).toBeNull();
+    expect(cleared.artifacts).toEqual([]);
+  });
+
   it("reset returns to the initial state for the same seed", () => {
     let s = reduce(initialProjectState(seed), { type: "loadDemo", payload: demoPayload });
     s = reduce(s, { type: "reset", seed });
