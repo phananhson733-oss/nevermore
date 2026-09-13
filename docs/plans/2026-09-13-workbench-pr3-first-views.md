@@ -222,6 +222,27 @@ docs/PROGRESS.md                   T18
   - **执行后修正（T5 交接，我原话判偏了两处）**：①「按 `code` 分支不按状态码分支」在**本任务里是空的**——站点卡的每一种失败都映射成 `null`，写出来的守卫两条臂都返回 `null`，正是恒真守卫那个形状。这条指令真正的落点是 **T10 的 `real-connections.ts`**（不同失败要出不同文案），别因为这里没写就在那里放松。T5 改为在接缝钉住：`ShellChrome.test.tsx` 只桩 `fetch`，让真实的 problem+json 走真实的 `ApiError` 与真实 `QueryClient`，断言格子读作「—」且**不是**「未接入」。②「error 分支返回 `false` 必须红」只有**一条**测试能抓到——新鲜失败时 `data === undefined`，两种写法行为相同，唯一可观测的差别是**失败的后台刷新仍持有旧列表**。那条用例是必需的，不是补充的。③`SiteCard` 的 `title` 提示对 `SiteCard.test.tsx` 的 `rows()`（读 `textContent`）不可见，所以门放在 `ShellChrome.test.tsx`，并另断言市场行与审计行**不带**这个提示（它点名一种具体成因，对那两种「没有」是假的）。
 - [ ] **Step 6: 提交** — `feat(workbench): 侧栏站点卡接真实 GSC 连接状态（未知不等于未接入）`。
 
+## W3 开工前已核实的接缝事实（2026-09-13，执行期不必重推）
+
+**T6 概览**
+- `DEMO_LEVEL`（`"full"`）与 `DEMO_SEEDS` 在 **`mock/demo-constants.ts`**——该文件不 import 任何东西，专为让客户端静态拿常量而不牵出 `demo.ts`；`demo.ts:45` 只是重导出。**视图必须从 `demo-constants.ts` 静态导入常量，`makeDemoSite` 只能经 `await import("@/lib/workbench/mock/demo.ts")` 拿**；从 `demo.ts` 静态导入常量会让 Q13 的动态导入白做。
+- **波次缺口**：导入图护栏今天只覆盖 store（`store/client-import-graph.test.ts:119-129` 禁止客户端到达 `mock/demo.ts`），扩到组件是 **T16（W4）**。所以 W3 期间视图静态导入 `demo.ts` 没有任何东西会报——T6 必须自带一条检查（`LoadDemoButton.tsx` 的静态 import 不含 `mock/demo.ts`），不能指望 T16 兜。
+- `makeDemoSite(profile, level, seedQueries, deps)`（`demo.ts:241`），`DemoDeps = { now: Date; provenanceLine: (at: string) => string }`——**`provenanceLine` 是函数**，按每件产物的 `at` 生成声明，不是一个字符串。
+- **`keywordRowCount` 不是函数**，是 `selectCounts(state, keywordRowCount)` 的参数；唯一生产者是 `WorkbenchProvider.tsx:290` 的 `state.built ? rows.length : null`，经 `useWorkbench()` 暴露。候选数卡**从 `useWorkbench()` 读**，不许在视图里再算 `buildRows`（否则与侧栏徽标口径分叉，R15），未建词表时是 `null` 不是 0。
+- `AuditReport.score: number`（`types.ts:118`）；`hasDemoOverwrite`（`selectors.ts:145`）、`formatShare`（`:73`）均已导出。
+- `routes.fs.test.ts:55-72`：页面用 `PlaceholderView` 时 `page="…"` 必须恰为本页 id，否则必须**零个**——换成 `OverviewView` 后源码里不得残留任何 `page="…"`。
+- ICU 实际文案：`overview.subtitle` en `{domain} ({brand}) · Target market {market}` / zh `{domain}（{brand}）· 目标市场 {market}`；`overview.cards.mention.foot` en `Mentioned in {hits} of {total} answers` / zh **`{total} 次问答里有 {hits} 次提到你`**——两语种语序相反，印证 Step 5b 只能在消费端钉。
+
+**T7 清除示例**
+- `shell.clearSample`（按钮）与 `shell.clearSampleConfirm.{title,body,ok}` **均已存在**，body 两语种都点名 GSC 行 / 词库 / 产物筐 / 站点档案四项——本任务不需要补键。
+- `Topbar.tsx:129` 是现有唯一的 `role="status"`；`:149` 为 `<DemoChip demo={ready && state.demo} />`，按钮挂它旁边。
+
+**T8 本周**
+- Step 3 的产出文件是 **`lib/workbench/mock/builders/week.ts`**（Q33，Files 清单为准），Step 3 标题里的 `weekly-report.ts` 是 rev 遗留错名。
+- 已存在可直接用：`withinDays(at, days, now)`（`mock/time.ts:44`）、`kbGapCount(kb): number | null`（`mock/kb.ts:120`，**可空**，按 unavailable 处理不得当 0）、`docText`（`mock/builders/compose.ts:33`）。`artifactsWithinDays` **不存在**，按 Step 1 在 `week-feed.ts` 里实现。
+- 状态字段名：`lastAudit` / `lastVis` / `profileDoc` / `kb` / `artifacts` / `visResults`（`types.ts:325-365`）。
+- ICU：`week.subtitle` `{from} {to}`、`week.cards.health.foot` `{fixed} {added}`、`week.cards.mention.foot` 与概览同形（zh 语序相反）；`week.report.{title,save,export,disabled}` 已存在。
+
 ## Task 6: 概览视图 + 载入示例站点
 
 **依赖：** T1、T2、T3（ConfirmDialog）、T4
