@@ -52,7 +52,10 @@
 | Q30 | **`data-wb-frame` 由视图任务负责写入**：五个视图的框架容器（标题区、空态、区块标题、按钮行）带 `data-wb-frame`；en-locale 断言**先正向断言每个视图 `count >= 1` 且合并文本非空**，再断言无中文 / 无 `workbench.` 路径，并加「往框架文案插中文必须红」的变异。没有这条正向断言，0 命中会让整条门恒绿 | Claude #8、codex #14 |
 | Q31 | **`conns` 是死字段**：Q5 删掉假授权后没有任何 UI 写它、没有任何视图读它（全仓非测试引用只有 reducer 的 action/demoFields 与 `mock/demo.ts` 的示例载入）。裁决：**不渲染、除 `loadDemo`/`clearDemo` 外不写**；保留为死字段（删除要升 `PERSISTED_VERSION`），在字段上写注释说明原因，T18 回写设计 §6.1。否则下一个实现者会把它当「GSC 已导入」的真值渲染——而示例载入后它是 true、用户真导入后仍是 false，任何渲染都会说反话 | Claude #21 |
 | Q33 | **周报 builder 放 mock 层**：`weeklyReportMarkdown` 落在 `lib/workbench/mock/builders/week.ts`（纯函数、不读时钟、中文正文），不放 `views/week/`——视图层不许写中文字面量，而产物正文是中文 mock 内容（设计 §7）。小节标题（含 Q16 的「检查结果变化」）与其他 builder 一样硬写在 mock 层，**不进 i18n**（现有 builder 如 `mock/builders/audit.ts` 的 `"## 站点"` 即此先例；T1 报告里「标题在 `labels-zh.ts`」的说法经复核不成立）。视图只负责取数、调 builder、交给 `useAddArtifact` 盖章 | T1 审阅 P2-6 复核结论、设计 §7 |
+| Q34 | **`aria-controls` 只在面板真的在 DOM 里时出现**：`Tabs.tsx:98` 给每个 tab 都挂 `aria-controls`，而唯一的生产消费者 `OutPane` 只渲当前那一个 tabpanel——未选中的 tab 指向不存在的 id。`Tabs.test.tsx:116-119` 那条「逐个 tab 解析到真面板」之所以绿，是因为**它的 fixture 把所有面板都渲染了**：门和消费者各自自洽，接缝没人看守（记忆 self-consistent-halves-hide-seam-mismatches）。裁决：`Tabs` 增加一个「哪些面板已渲染」的显式入参，只给已渲染的 tab 挂 `aria-controls`；**门要挪到接缝上**——在 `OutPane.test.tsx` 断言「渲染出的每一个 `aria-controls` 都解析得到元素」，并在 `Tabs.test.tsx` 加一条「面板不在 DOM 时该 tab 没有 `aria-controls`」。不采用「全部面板都渲染再 hidden」：视图得为未选中的 tab 预先造出正文（档案 JSON、周报正文），既浪费也可能根本还不存在 | T3 交接 #6 + 我核实 `Tabs.test.tsx:116` |
+| Q35 | **`ui/` 不得反向依赖 `shell/`**：计划里「导出走 `download.ts`，扩展名按 `type`」是错的——`download.ts` 只有哑接收器 `downloadText`，文件名消毒 `downloadName` 与 `MIME`/`EXT` 表都在 `shell/ArtifactDrawer.tsx:15-55`。T3 临时从 shell import 以避免消毒逻辑出现第二份（判断正确）。裁决：由拥有该文件的 **T13** 把 `downloadName` + `MIME`/`EXT` 移到 `lib/workbench/artifact-file.ts`，抽屉与 `ArtifactActions` 都从那里取；移动后 `ui → shell` 这条边必须消失，并在导入图护栏（T16）里钉住「`ui/` 不得 import `shell/`」 | T3 交接 #3 + 我核实 `ArtifactDrawer.tsx:46` |
 | Q32 | **`ConfirmDialog` 必须 portal 到 `document.body`**：`ui/Dialog.tsx` 是就地渲染并对 `#wb-app` 无条件 `inert`（`ShellChrome` 因此把命令面板与抽屉放在 `#wb-app` 之外）。视图与 `Topbar` 都在 `#wb-app` 内，确认框就地渲染会落进 inert 子树——初始焦点 no-op、按钮不响应、读屏器看不到，而「Dialog 根恰好 1 个」的 e2e 仍然满足，失败只表现为「点了确认没反应」。配两条测试：①对话框根不是 `#wb-app` 的后代；②点「确认」真的调到 `onConfirm`（去掉 portal 必须红） | Claude #4 |
+| Q32 补正 | T3 实测：去掉 `createPortal` 后**只有①红**，②以及其余 7 条行为断言照绿——jsdom 只反射 `inert` 属性，不执行它。所以这条裁决在 jsdom 里唯一守得住的是**结构断言**，「点了确认没反应」这个真实症状只有真浏览器能复现。不要因为②绿就以为 portal 还在；行为侧的证据归 T17 的 mock e2e | T3 变异 M3 |
 
 ---
 
@@ -137,6 +140,16 @@ docs/PROGRESS.md                   T18
 - [ ] **Step 6: 提交** — `feat(i18n): 工作台五个视图的文案键与 ICU 门禁`。
 - [ ] **Step 7: 补键出口** — 后续任务确需补键时，由该任务单独提交一次 i18n addendum（只加键、两语种同时）；**不得两个任务并行改 JSON**。
 
+## Task 1b: 原语标签的键（走 Task 1 Step 7 的补键出口）
+
+**Files:** Modify `packages/i18n/src/messages/{en,zh-CN}.json`、`apps/web/src/lib/workbench/views-i18n.test.ts`
+**起因：** T2/T3 把原语的所有可见文案做成**必填 props**（与 `Field`/`Chip`/`EmptyState` 一致），而 T1 的键清单只覆盖了视图自己的文案。已核实全仓 `workbench.*` 下**没有** `artifactActions` 与 `panes` 子树，现有的 `shell.drawer.{copy,copied,download}` 是抽屉私有、`week.report.{save,export}` 是周报私有——复用它们会让两处文案从此不能各自演进。不补键，T8/T9/T10 无法调用 `ArtifactActions`。
+
+- [ ] **Step 1** — 加 `artifactActions.{copy,copied,copyFailed,copyForAi,export,save,saved}` 与 `panes.{in,out}`（`PANEL_TAG` 的「输入」/「输出」）。`copyFailed` 是**兜底提示**：按 Q4 的同一口径**不得点名成因**（剪贴板可能因权限、焦点丢失、浏览器策略失败，点名就有假话），写成「没能复制，请手动选中正文复制」这类给出下一步的句子。
+- [ ] **Step 2** — 把这 9 个键加进 `views-i18n.test.ts` 的字面数组；`copyFailed` 追加进 `FORBIDDEN_BY_KEY`（禁因果连词与具名成因，同 T1 第三提交的机制）。
+- [ ] **Step 3** — 变异：把 `copyFailed` 改成「剪贴板权限被拒绝，请手动复制」必须红；删 zh-CN 任一新键 parity 必须红。
+- [ ] **Step 4: 提交** — `feat(i18n): 产物动作与面板标签的文案键`。
+
 ## Task 2: ui 原语 A（展示类）
 
 **Files:** Create `ui/{panel.ts,stat-format.ts,Field.tsx,Chip.tsx,Tabs.tsx,Delta.tsx,StatCard.tsx,EmptyState.tsx}` + 每个 `.test.tsx`（`panel.ts` / `stat-format.ts` 用 `.test.ts`）
@@ -160,6 +173,13 @@ docs/PROGRESS.md                   T18
 - [ ] **Step 5: `Toggle`** — 真 checkbox 或 `role="switch" aria-checked`；命中区 ≥24px。
 - [ ] **Step 6: jsdom 测试 + 变异** — `OutPane` 三态；**`ArtifactActions`：断言 AI 包装里的 payload 与另外三个动作的文本逐字相同、且 canonical 文本恰好一处来源声明**（把某个动作改成用未包装/未盖章文本必须红）；`ConfirmDialog`：①根不是 `#wb-app` 后代（去掉 portal 必须红）②点确认调到 `onConfirm` ③Esc / 取消；`Toggle` 的 `aria-checked` 与键盘。
 - [ ] **Step 7: 提交** — `feat(workbench): ui 面板与交互原语`。
+
+**T3 交接给视图任务（T6-T11 照此接线，已随 `a5d686c7` 落地）：**
+
+- `ArtifactActions` 的入参是整个 `PreparedArtifact`（不是正文加几个散字段），四条路因此不可能分叉。**必须在「跑完」的事件 handler 里调 `useAddArtifact()(draft)`**，结果放进 state 再交给它；在 render 期调会每帧换 uuid 并在渲染期读时钟（违反 Q22）。
+- `ConfirmDialog` 不自己关：`onConfirm` 原样透传（好让慢动作期间对话框还在），调用方必须把 `open` 置回 `false`，否则 `#wb-app` 一直是 inert。
+- `data-wb-frame`（Q30）由视图自己套一层容器：`InPane`/`OutPane` 的标题区在组件内部，原语不产出这个标记，也不加只为它存在的 prop。
+- 命中区尺寸一律从 `panel.ts` 取常量（如 `SWITCH_TRACK`）。**注意 `panel.test.ts` 的清扫是 `Object.entries(panel)`，只看得见 panel.ts 模块的导出**——写在组件里的 `min-h-[18px]` 它完全看不见（T3 变异 M8 实测：该文件 11 条全绿）。所以「尺寸放进 panel.ts」不是风格偏好，是让它落进清扫范围的唯一办法。
 
 ## Task 4: store 与 mock 共享件
 
@@ -288,6 +308,7 @@ docs/PROGRESS.md                   T18
 - [ ] **Step 3: ⌘K** — `useShortcutLabel()` 用 `useSyncExternalStore`（server snapshot 固定 `⌘K`）；平台判定**要自己写窄的局部结构类型**（`navigator.userAgentData` 不在标准 DOM typings 里，全仓也没有扩展——已核实 0 命中），保留 `navigator.platform` 兜底，不用 `any`。`shortcutHint` 改 ICU `{key}` **与两个消费点（`Topbar.tsx:93-95` 的 `<kbd>`、`Sidebar.tsx:151`）同一提交落地**，并同步改 `Sidebar.test.tsx:232`（它断言的是原始消息串）。
 - [ ] **Step 4: 测试 + 变异** — 两条 jsdom（伪造 mac / 非 mac，**钉整句**插值结果）；label 改回硬编码必须红；删掉某按钮的 `-m-1 p-1` 必须让 Step 2 的 e2e 红。
 - [ ] **Step 5: 提交** — 两个提交：`fix(workbench): 抽屉与裸链接的触控目标`、`fix(workbench): 快捷键提示按平台显示`。
+- [ ] **Step 6: Q35 的文件搬家**（第三个提交）— 把 `ArtifactDrawer.tsx:15-55` 的 `downloadName` 与 `MIME`/`EXT` 表移到 `lib/workbench/artifact-file.ts`（连同它的测试），抽屉与 `ui/ArtifactActions.tsx` 都改从那里 import，删掉 `ArtifactActions.tsx` 里临时复制的 4 行 mime 表与那条 `ui → shell` 的 import。两张表都是按 `ArtifactType` 穷举的 `Readonly<Record<…>>`，加第五种产物类型会同时编译失败——搬家后这个性质要保住。提交：`refactor(workbench): 产物文件名与 MIME 归入 lib`。
 
 ## Task 14: PR-1 遗留 D（Tailwind `source(none)`）
 
@@ -326,6 +347,8 @@ docs/PROGRESS.md                   T18
 - [ ] **Step 2: 降级门**（Claude #7）— 新增一条：`page.route("**/sources", r => r.fulfill({status: 500}))` 后站点卡显示「—」、页面无 error boundary、console 无未捕获异常。rev1 以为 `legacy-style-parity` 不装 mock API 所以「天然覆盖」，实际它装了（`:66`），这条门原本不存在。
 - [ ] **Step 3: Q30 的框架断言** — 先正向断言五个视图各有 `[data-wb-frame]` 且合并文本非空，再断言 en 下无中文、无 `workbench.` 路径；加「往框架文案插中文必须红」的变异。
 - [ ] **Step 4: 逐条核对既有断言**（清单见 research-seams §5.3，已逐条核实属实）— h1 文本严格相等；`/overview` 的 `[data-wb-badge]` 计数 0；顶栏唯一 `role="status"`；`[data-app-shell]` 内 0 个 `[style]`；Dialog 根恰好 1；`/settings` 的 `[data-wb-real-action]` 恰好 1；`mobile-shell` 390px 无横向溢出 + `progressbar` 计数 0；`frontend-error-states:226` 与 `growth-map-run:910-916` 的 `/sources` 精确计数。
+- [ ] **Step 4b: 视图内的触控目标**（T3 交接）— T13 Step 2 的 `boundingBox()` 清扫只覆盖壳；视图里的按钮、tab、开关一个都没量过，而 jsdom 那条「穿着 panel.ts 常量」的钉子只是代理（清扫看不见组件内写死的尺寸）。把同一套遍历扩到五个视图，豁免同样写成带计数的具名清单。
+- [ ] **Step 4c: Q34 的接缝**（T3 交接）— 在跑起来的页面上断言：每个 `[aria-controls]` 的值都能 `document.getElementById` 到元素。jsdom 侧的门在 `OutPane.test.tsx`，这里是真浏览器的复核。
 - [ ] **Step 5: parity 覆盖五个段名**（Claude #22）— `legacy-style-parity.mock.spec.ts:105-127` 现在只钉 `/overview` 的 `paddingLeft === "0px"`，改成对五个段名循环（不动基线 JSON）。
 - [ ] **Step 6: 跑法** — `pnpm test:e2e:mock e2e/<file>`（不带 `--`）；端口 3200 固定、`reuseExistingServer: false`；并行另跑一套用 `E2E_MOCK_PORT=3201`。
 - [ ] **Step 7: 提交** — `test(workbench): PR-3 模块流、降级门与受影响 spec`。
