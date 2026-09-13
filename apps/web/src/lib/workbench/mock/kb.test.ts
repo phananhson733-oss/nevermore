@@ -6,19 +6,20 @@ import { fillFirstKbGap, kbGapCount, seedKb } from "./kb.ts";
 import { demoAiDoc } from "./profile.ts";
 import { splitList } from "./text.ts";
 
-type SeedProfile = Pick<Profile, "brand" | "positioning" | "features" | "competitors">;
+type SeedProfile = Pick<Profile, "url" | "brand" | "positioning" | "features" | "competitors">;
 
 const AT = "2026-09-13 10:00";
 const EVIDENCE = "来自站点档案字段";
 /** Not GenGrowth, so a borrowed prototype fact cannot hide behind the brand. */
-const EMPTY: SeedProfile = { brand: "Acme", positioning: "", features: "", competitors: "" };
+const EMPTY: SeedProfile = { url: "acme.io", brand: "Acme", positioning: "", features: "", competitors: "" };
 const FULL: SeedProfile = {
+  url: "https://www.widgets.co.uk",
   brand: "Widgets",
   positioning: "inventory software for small warehouses",
   features: "barcode scanning, stock alerts, supplier portal",
   competitors: "Sortly, inFlow, Zoho Inventory, Fishbowl, Cin7",
 };
-const ONE: SeedProfile = { brand: "", positioning: "  a shelf planner ", features: "shelf maps", competitors: "Sortly" };
+const ONE: SeedProfile = { url: "", brand: "", positioning: "  a shelf planner ", features: "shelf maps", competitors: "Sortly" };
 const FOUR_RIVALS: SeedProfile = { ...EMPTY, competitors: "Sortly, inFlow, Zoho Inventory, Fishbowl" };
 
 function docWith(facts: readonly string[]): ProfileDoc {
@@ -99,6 +100,16 @@ describe("seedKb", () => {
     expect(count(FOUR_RIVALS)).toBe(3);
     expect(count(FULL)).toBe(3);
     expect(count({ ...EMPTY, competitors: "Sortly, sortly, SORTLY, inFlow" })).toBe(2);
+  });
+
+  it("opens comparison gaps only for compared competitors, never the brand or the own site", () => {
+    const tricky: SeedProfile = { ...EMPTY, url: "https://acme.io", competitors: "acme, ACME.io, www.acme.io, Rival" };
+    const comparisons = (profile: SeedProfile): readonly KbEntry[] => seedKb(profile, null).filter((entry) => entry.cat === "comparison");
+    expect(comparisons(tricky)).toEqual([gap("kb-04", "comparison")]);
+    expect(seedKb(tricky, null)).toEqual(seedKb({ ...tricky, competitors: "Rival" }, null));
+    for (const competitors of ["ACME", "acme.io", "ACME, www.acme.io"]) {
+      expect(comparisons({ ...tricky, competitors }), competitors).toEqual([]);
+    }
   });
 
   it("adds no data entries without facts, and skips blank facts", () => {
@@ -182,7 +193,7 @@ describe("fillFirstKbGap", () => {
   });
 
   it("does not overwrite a pending placeholder: only blank statements are filled", () => {
-    const pending = draft("kb-01", "pricing", "[示例] Acme 的免费档与付费档分别包含什么（待补定价页原句）");
+    const pending = draft("kb-01", "pricing", "[示例] Acme 的定价方式与各档分别包含什么（待补定价页原句）");
     const entries = deepFreeze([pending, gap("kb-02", "pricing")]);
     expect(fillFirstKbGap(entries, "pricing", PATCH, "kb-new")).toEqual([pending, { id: "kb-02", cat: "pricing", ...PATCH }]);
   });
@@ -221,7 +232,7 @@ describe("kbGapCount", () => {
 
   it("also counts pending placeholders (待补 / 需补) as gaps", () => {
     const entries = [
-      draft("kb-01", "pricing", "[示例] Acme 的免费档与付费档分别包含什么（待补定价页原句）"),
+      draft("kb-01", "pricing", "[示例] Acme 的定价方式与各档分别包含什么（待补定价页原句）"),
       draft("kb-02", "data", "[示例事实：Acme 提供 x，需补证据与核对日期]"),
       manual("kb-03", "capability", "Acme 提供 待办清单"),
     ];

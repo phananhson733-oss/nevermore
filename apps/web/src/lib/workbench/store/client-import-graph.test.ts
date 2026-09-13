@@ -75,7 +75,12 @@ function chainTo(parents: ReadonlyMap<string, string | null>, file: string): str
 
 function isClientForbidden(file: string): boolean {
   const path = workbenchPath(file);
-  return path === "mock/find-lib.ts" || path === "mock/demo-ai-leak-phrases.ts" || path.startsWith("mock/builders/");
+  return (
+    path === "mock/find-lib.ts" ||
+    path === "mock/demo-ai-leak-phrases.ts" ||
+    path === "mock/demo.ts" ||
+    path.startsWith("mock/builders/")
+  );
 }
 
 describe("client import graph of the workbench store", () => {
@@ -111,9 +116,16 @@ describe("client import graph of the workbench store", () => {
     );
   });
 
-  it("never reaches the audit rule library, the leak-phrase table, or the artifact builders", () => {
+  it("never reaches the audit rule library, the leak-phrase table, the artifact builders, or the demo site", () => {
     const parents = reachableFrom(CLIENT_ENTRIES);
     const offenders = [...parents.keys()].filter(isClientForbidden).map((file) => chainTo(parents, file));
     expect(offenders).toEqual([]);
+  });
+
+  it("offers the demo constants without the demo site: demo-constants.ts imports nothing", () => {
+    const source = readFileSync(resolve(WORKBENCH_DIR, "mock/demo-constants.ts"), "utf8");
+    expect(source).not.toMatch(/^[ \t]*import\b/m);
+    expect(source).not.toMatch(/\bfrom[ \t]*["']/);
+    expect(isClientForbidden(resolve(WORKBENCH_DIR, "mock/demo.ts"))).toBe(true);
   });
 });

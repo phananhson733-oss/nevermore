@@ -1,5 +1,5 @@
 /** Shared inputs for demo.test.ts and demo-honesty.test.ts (not a test file itself). */
-import type { DemoPayload, Profile } from "../types.ts";
+import type { Artifact, DemoPayload, KbEntry, Profile } from "../types.ts";
 import type { DemoDeps } from "./demo.ts";
 
 /** A brand and nothing else: every placeholder path. Must never be GenGrowth, or the leak scan passes vacuously. */
@@ -20,6 +20,16 @@ export const FULL_PROFILE: Profile = {
   features: "barcode scanning, stock alerts, supplier portal",
   competitors: "Sortly, inFlow, Zoho Inventory, Fishbowl, Cin7, Katana, Odoo, Unleashed",
   market: "GB",
+};
+
+/** Competitors that spell the brand or the own site before the one real rival. */
+export const TRICKY_PROFILE: Profile = {
+  url: "https://acme.io",
+  brand: "Acme",
+  positioning: "",
+  features: "",
+  competitors: "acme, ACME.io, www.acme.io, Rival",
+  market: "US",
 };
 
 export const PROFILES: readonly (readonly [name: string, profile: Profile])[] = [
@@ -57,6 +67,22 @@ export function provenanceLine(at: string): string {
 /** Create the Date inside the test when the timezone matters: `new Date(y, m, d)` reads TZ at call time. */
 export function testDeps(now: Date = new Date(2026, 8, 13, 12, 0)): DemoDeps {
   return { now, provenanceLine };
+}
+
+export function required<T>(value: T | null | undefined, label: string): T {
+  if (value === null || value === undefined) throw new Error(`${label} is missing`);
+  return value;
+}
+
+export function sampleFills(entries: readonly KbEntry[]): readonly KbEntry[] {
+  return entries.filter((entry) => entry.evidence === SAMPLE_FILL_EVIDENCE);
+}
+
+export function artifactById(payload: DemoPayload, id: string): Artifact {
+  return required(
+    payload.artifacts.find((artifact) => artifact.id === id),
+    `artifact ${id}`,
+  );
 }
 
 /** Every stamp field of a payload, labelled for failure messages. */

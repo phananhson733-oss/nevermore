@@ -20,7 +20,8 @@ const WIDGETS: Profile = {
 const NO_BRAND: Profile = { ...WIDGETS, brand: "", url: "", market: "cn" };
 const PROFILES = [ACME, WIDGETS, NO_BRAND] as const;
 const VARIANTS = ["crawl", "third"] as const;
-const STACKS = ["Next.js", "Webflow", "Astro", "WordPress"];
+/** The sample does not know the site's framework, so it never guesses one. */
+const UNKNOWN_STACK = "[未知：先识别仓库框架]";
 const CRAWL_KEYS = [
   "dr", "h1", "hasBlog", "hasDocs", "hasPricing", "indexed", "lang", "pages", "refdomains", "stack", "traffic",
 ];
@@ -29,8 +30,8 @@ function row(query: string, clicks: number | null, position: number | null): Gsc
   return { query, clicks, impressions: 100, ctr: 1, position };
 }
 
-function pageRow(url: string): AuditPageRow {
-  return { url, status: 200, h1: 1, hasSchema: false, lcp: "2.0", issues: 0 };
+function pageRow(url: string, status = 200): AuditPageRow {
+  return { url, status, h1: 1, hasSchema: false, lcp: "2.0", issues: 0 };
 }
 
 /** Built literally rather than with runAudit, so these tests do not move when the audit mock does. */
@@ -41,7 +42,7 @@ function observedAudit(
 ): Pick<AuditReport, "crawl" | "pageRows"> {
   return {
     crawl: { pages, indexable, blocked: pages - indexable, orphan: 1, lcp: "2.8", schema: 40, llmReadable: 60 },
-    pageRows: urls.map(pageRow),
+    pageRows: urls.map((url) => pageRow(url)),
   };
 }
 
@@ -95,7 +96,7 @@ describe("crawlSignals", () => {
       const signals = crawlSignals(profile, variant);
       const floor = sitePages(profile).length;
       expect(Object.keys(signals).sort()).toEqual(CRAWL_KEYS);
-      expect(STACKS).toContain(signals.stack);
+      expect(signals.stack).toBe(UNKNOWN_STACK);
       expect(signals.pages).toBeGreaterThanOrEqual(floor);
       expect(signals.pages).toBeLessThan(floor + 40);
       expect(signals.indexed).toBeGreaterThanOrEqual(1);
@@ -128,8 +129,30 @@ describe("crawlSignals", () => {
   });
 
   it("reads paths from relative rows, ignoring a query string and a trailing slash", () => {
-    const audit = { ...LOOKALIKES, pageRows: ["/pricing/", "https://acme.io/docs?ref=nav", "/blog/"].map(pageRow) };
+    const audit = { ...LOOKALIKES, pageRows: ["/pricing/", "https://acme.io/docs?ref=nav", "/blog/"].map((url) => pageRow(url)) };
     expect(crawlSignals(WIDGETS, "crawl", audit)).toMatchObject({ hasPricing: true, hasDocs: true, hasBlog: true });
+  });
+
+  it("counts a page only when its row answered 2xx", () => {
+    const audit = {
+      ...PRICING_AND_POST,
+      pageRows: [pageRow("https://acme.io/"), pageRow("https://acme.io/pricing", 301), pageRow("https://acme.io/blog/guide")],
+    };
+    for (const variant of VARIANTS) {
+      expect(crawlSignals(ACME, variant, audit)).toMatchObject({ hasPricing: false, hasDocs: false, hasBlog: true });
+    }
+    const hasDocsAt = (status: number): boolean =>
+      crawlSignals(ACME, "crawl", { ...audit, pageRows: [pageRow("https://acme.io/docs", status)] }).hasDocs;
+    expect([199, 200, 204, 299, 300, 301, 404, 500].map(hasDocsAt)).toEqual([false, true, true, true, false, false, false, false]);
+  });
+
+  it("never guesses the stack, with or without an audit", () => {
+    for (const profile of PROFILES) {
+      for (const variant of VARIANTS) {
+        expect(crawlSignals(profile, variant).stack).toBe(UNKNOWN_STACK);
+        expect(crawlSignals(profile, variant, DOCS_AND_BLOG).stack).toBe(UNKNOWN_STACK);
+      }
+    }
   });
 
   it("draws the same stack, traffic, DR and referring domains with or without an audit", () => {

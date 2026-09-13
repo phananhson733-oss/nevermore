@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MODULE_IDS } from "../enums.ts";
 import { initialProjectState } from "../store/reducer.ts";
-import { ARTIFACT_FILENAME_PATTERN, type DemoPayload, type KbEntry, type Profile } from "../types.ts";
+import { ARTIFACT_FILENAME_PATTERN, type Artifact, type DemoPayload, type GapRow, type Profile } from "../types.ts";
 import { plansFor } from "./answers.ts";
 import { runAudit } from "./audit.ts";
 import { fixTaskPrompt } from "./builders/audit.ts";
@@ -9,16 +9,19 @@ import { llmsTxt } from "./builders/kb.ts";
 import { contentBriefPrompt, keywordCsv } from "./builders/keywords.ts";
 import { visibilityCsv } from "./builders/visibility.ts";
 import { buildCompData, keywordGap } from "./competitors.ts";
-import { DEMO_LEVEL, DEMO_SEEDS, makeDemoSite, type DemoLevel } from "./demo.ts";
+import { DEMO_LEVEL, DEMO_SEEDS, firstUnsavedGapRow, gapSavedEntry, makeDemoSite, type DemoLevel } from "./demo.ts";
 import {
   DEMO_PAYLOAD_KEYS,
   EMPTY_PROFILE,
   FULL_PROFILE,
   LOCAL_STAMP,
   PROFILES,
-  SAMPLE_FILL_EVIDENCE,
+  TRICKY_PROFILE,
+  artifactById,
   payloadStamps,
   provenanceLine,
+  required,
+  sampleFills,
   testDeps,
 } from "./demo-test-fixtures.ts";
 import { demoGscRows } from "./gsc.ts";
@@ -27,7 +30,7 @@ import { DEFAULT_LINK_TYPES, mockLinks } from "./links.ts";
 import { crawlSignals, demoAiDoc, gscSignals } from "./profile.ts";
 import { stampArtifact } from "./provenance.ts";
 import { normQ } from "./text.ts";
-import { daysAgo } from "./time.ts";
+import { daysAgo, parseLocalStamp, withinDays } from "./time.ts";
 import { VIS_PROMPT_LIMIT, localPromptSet, missedPrompts, mockVisibility } from "./visibility.ts";
 
 const ORIGINAL_TZ = process.env.TZ;
@@ -40,30 +43,27 @@ afterEach(() => {
 
 const LEVELS: readonly DemoLevel[] = ["full", "basic"];
 const MODULE_KEYS = [
-  "auditHistory",
-  "visResults",
-  "visHistory",
-  "lastVis",
-  "compData",
-  "plans",
-  "targets",
-  "kb",
-  "artifacts",
-  "profileDoc",
+  "auditHistory", "visResults", "visHistory", "lastVis", "compData", "plans", "targets", "kb", "artifacts", "profileDoc",
 ] as const satisfies readonly (keyof DemoPayload)[];
 const SHARED_KEYS = ["conns", "gscRows", "seeds", "built", "saved", "audit", "lastAudit"] as const satisfies readonly (keyof DemoPayload)[];
+const AT = "2026-09-12 10:12";
 
-function demo(profile: Profile, level: DemoLevel = DEMO_LEVEL): DemoPayload {
-  return makeDemoSite(profile, level, DEMO_SEEDS, testDeps());
+function demo(profile: Profile, level: DemoLevel = DEMO_LEVEL, seeds: readonly string[] = DEMO_SEEDS, now?: Date): DemoPayload {
+  return makeDemoSite(profile, level, seeds, testDeps(now));
 }
 
-function required<T>(value: T | null | undefined, label: string): T {
-  if (value === null || value === undefined) throw new Error(`${label} is missing`);
-  return value;
+function gapRow(q: string, ranks: readonly (number | null)[]): GapRow {
+  return { q, volume: 100, kd: 10, cpc: "1.00", aio: false, ranks, ours: null, page: "blog" };
 }
 
-function sampleFills(entries: readonly KbEntry[]): readonly KbEntry[] {
-  return entries.filter((entry) => entry.evidence === SAMPLE_FILL_EVIDENCE);
+function expectStamped(artifact: Artifact, expected: Omit<Artifact, "content">, body: string): void {
+  expect(artifact).toStrictEqual({ ...expected, content: stampArtifact(expected.type, body, provenanceLine(expected.at)) });
+}
+
+function expectNotAfter(payload: DemoPayload, now: Date): void {
+  for (const [label, at] of payloadStamps(payload)) {
+    expect(required(parseLocalStamp(at), label).getTime(), `${label} ${at}`).toBeLessThanOrEqual(now.getTime());
+  }
 }
 
 describe("makeDemoSite shape", () => {
@@ -82,15 +82,13 @@ describe("makeDemoSite shape", () => {
 
   it("stores the seeds joined verbatim", () => {
     const seeds = ["  spaced seed ", "second"];
-    expect(makeDemoSite(FULL_PROFILE, "basic", seeds, testDeps()).seeds).toBe(seeds.join("\n"));
+    expect(demo(FULL_PROFILE, "basic", seeds).seeds).toBe(seeds.join("\n"));
   });
 });
 
 describe("determinism", () => {
   it("returns deep-equal output for the same inputs", () => {
-    for (const [, profile] of PROFILES) {
-      expect(demo(profile)).toStrictEqual(demo(profile));
-    }
+    for (const [, profile] of PROFILES) expect(demo(profile)).toStrictEqual(demo(profile));
   });
 
   it("reads neither the system clock nor Math.random", () => {
@@ -102,18 +100,18 @@ describe("determinism", () => {
     vi.setSystemTime(new Date(2001, 0, 1));
     const first = makeDemoSite(FULL_PROFILE, "full", DEMO_SEEDS, deps);
     vi.setSystemTime(new Date(2039, 6, 1));
-    const second = makeDemoSite(FULL_PROFILE, "full", DEMO_SEEDS, deps);
-    expect(second).toStrictEqual(first);
+    expect(makeDemoSite(FULL_PROFILE, "full", DEMO_SEEDS, deps)).toStrictEqual(first);
     expect(random).not.toHaveBeenCalled();
   });
 });
 
 describe("stamps", () => {
-  it("every stamp field is a local YYYY-MM-DD HH:mm", () => {
+  it("every stamp field is a local YYYY-MM-DD HH:mm, never after now", () => {
     for (const [, profile] of PROFILES) {
-      const stamps = payloadStamps(demo(profile));
-      expect(stamps.length).toBeGreaterThan(10);
-      for (const [label, at] of stamps) expect(at, label).toMatch(LOCAL_STAMP);
+      const payload = demo(profile);
+      expect(payloadStamps(payload).length).toBeGreaterThan(10);
+      for (const [label, at] of payloadStamps(payload)) expect(at, label).toMatch(LOCAL_STAMP);
+      expectNotAfter(payload, testDeps().now);
     }
   });
 
@@ -128,11 +126,27 @@ describe("stamps", () => {
     expect(payload.profileDoc?.at).toBe(at(3, 15));
     expect(payload.kb?.at).toBe(at(2, 16));
     expect(payload.compData?.at).toBe(at(2, 14));
-    expect(payload.artifacts.map((artifact) => artifact.at)).toEqual([at(0, 9), at(1, 14), at(2, 16), at(0, 11), at(4, 10)]);
+    expect(Object.fromEntries(payload.artifacts.map((artifact) => [artifact.id, artifact.at]))).toEqual({
+      "demo-audit": at(0, 9), "demo-keywords": at(1, 14), "demo-kb": at(2, 16), "demo-visibility": at(0, 11), "demo-content": at(4, 10),
+    });
+  });
+
+  it("clamps today's sample hours to now before the first of them has passed", () => {
+    const now = new Date(2026, 8, 13, 0, 30);
+    for (const [, profile] of PROFILES) {
+      for (const level of LEVELS) {
+        const payload = demo(profile, level, DEMO_SEEDS, now);
+        expectNotAfter(payload, now);
+        expect(withinDays(required(payload.audit, "audit").at, 7, now)).toBe(true);
+      }
+    }
+    const full = demo(FULL_PROFILE, "full", DEMO_SEEDS, now);
+    expect([full.audit?.at, full.lastVis?.at]).toEqual(["2026-09-13 00:30", "2026-09-13 00:30"]);
+    expect(full.auditHistory.map((report) => report.at)).toEqual([daysAgo(now, 14, 10), daysAgo(now, 7, 10)]);
   });
 
   const CASES = [
-    ["Asia/Shanghai", "2026-09-14 09:05"],
+    ["Asia/Shanghai", "2026-09-14 04:30"],
     ["America/Los_Angeles", "2026-09-13 09:05"],
   ] as const;
   for (const [tz, auditAt] of CASES) {
@@ -141,7 +155,7 @@ describe("stamps", () => {
       const now = new Date(Date.UTC(2026, 8, 13, 20, 30));
       const payload = makeDemoSite(FULL_PROFILE, "full", DEMO_SEEDS, testDeps(now));
       expect(payload.audit?.at).toBe(auditAt);
-      expect(payload.audit?.at).toBe(daysAgo(now, 0, 9));
+      expectNotAfter(payload, now);
       for (const [label, stamp] of payloadStamps(payload)) expect(stamp, label).toMatch(LOCAL_STAMP);
     });
   }
@@ -156,9 +170,8 @@ describe("demo GSC rows", () => {
       expect(gscRows.slice(0, demoGscRows(profile).length).map((row) => row.query)).toEqual(demoGscRows(profile).map((row) => row.query));
       const expected = DEMO_SEEDS.flatMap((seed) => PATTERNS.slice(0, 7).map((pattern) => normQ(pattern.make(seed))));
       for (const key of expected) expect(keys, key).toContain(key);
-      const brand = normQ(profile.brand);
-      expect(keys).toContain(`${brand} login`);
-      expect(keys).toContain(`${brand} pricing`);
+      expect(keys).toContain(`${normQ(profile.brand)} login`);
+      expect(keys).toContain(`${normQ(profile.brand)} pricing`);
       for (const row of gscRows) expect(row.position === null || row.position > 0, row.query).toBe(true);
     });
   }
@@ -191,24 +204,36 @@ describe("saved keywords", () => {
     it(`${name}: four borderline matrix rows, then the first gap row not already saved`, () => {
       const deps = testDeps();
       const payload = makeDemoSite(profile, "full", DEMO_SEEDS, deps);
-      const rows = buildRows(DEMO_SEEDS, profile, payload.gscRows);
-      const matrix = rows.filter((row) => row.gscStatus === "borderline").slice(0, 4);
+      const matrix = buildRows(DEMO_SEEDS, profile, payload.gscRows).filter((row) => row.gscStatus === "borderline").slice(0, 4);
       expect(matrix).toHaveLength(4);
       expect(payload.saved.slice(0, 4)).toStrictEqual(
         matrix.map((row, i) => ({ q: row.q, addedAt: daysAgo(deps.now, 3 + i, 15), source: "matrix" })),
       );
       const matrixKeys = new Set(matrix.map((row) => normQ(row.q)));
-      const gap = required(
-        keywordGap(profile, DEMO_SEEDS, payload.gscRows).rows.find((row) => !matrixKeys.has(normQ(row.q))),
-        "gap row",
-      );
+      const gap = required(keywordGap(profile, DEMO_SEEDS, payload.gscRows).rows.find((row) => !matrixKeys.has(normQ(row.q))), "gap row");
       const inTopTen = gap.ranks.filter((rank) => rank !== null && rank <= 10).length;
+      expect(inTopTen).toBeGreaterThan(0);
       const base = { q: gap.q, addedAt: daysAgo(deps.now, 1, 10), source: "gap" };
-      expect(payload.saved.slice(4)).toStrictEqual([inTopTen > 0 ? { ...base, note: `竞品 ${inTopTen} 家在前 10` } : base]);
+      // EMPTY compares placeholders: their sample ranks are no claim about real competitors.
+      expect(payload.saved.slice(4)).toStrictEqual([name === "FULL" ? { ...base, note: `竞品 ${inTopTen} 家在前 10` } : base]);
       const keys = payload.saved.map((entry) => normQ(entry.q));
       expect(new Set(keys).size).toBe(keys.length);
     });
   }
+
+  it("skips a gap row already saved under another spelling", () => {
+    const saved = [{ q: "Best  SEO tools", addedAt: AT, source: "matrix" as const }];
+    expect(firstUnsavedGapRow([gapRow("best seo tools", [1]), gapRow("seo checklist", [2])], saved)?.q).toBe("seo checklist");
+    expect(firstUnsavedGapRow([gapRow("BEST SEO TOOLS", [1])], saved)).toBeUndefined();
+  });
+
+  it("omits the note without a competitor in the top ten, or without real competitors", () => {
+    const outside = gapSavedEntry(gapRow("q", [11, null, 12]), AT, true);
+    expect(Object.hasOwn(outside, "note")).toBe(false);
+    expect(outside).toStrictEqual({ q: "q", addedAt: AT, source: "gap" });
+    expect(gapSavedEntry(gapRow("q", [3, null, 10, 11]), AT, true).note).toBe("竞品 2 家在前 10");
+    expect(Object.hasOwn(gapSavedEntry(gapRow("q", [3, 1]), AT, false), "note")).toBe(false);
+  });
 });
 
 describe("artifacts", () => {
@@ -222,37 +247,71 @@ describe("artifacts", () => {
       const lastVis = required(payload.lastVis, "lastVis");
       const hits = payload.visResults.filter((result) => result.hit).length;
       const target = "llm seo checklist";
-      const stamp = (type: "csv" | "md" | "prompt", body: string, at: string): string => stampArtifact(type, body, provenanceLine(at));
-      const [auditArt, keywordsArt, kbArt, visArt, contentArt] = payload.artifacts;
+      const keywordsAt = daysAgo(deps.now, 1, 14);
+      const briefAt = daysAgo(deps.now, 4, 10);
       expect(payload.artifacts).toHaveLength(5);
-      expect(auditArt).toStrictEqual({
-        id: "demo-audit", module: "audit", type: "prompt", engine: "seo", title: "修复任务（给 Code Agent）", at: audit.at,
-        content: stamp("prompt", fixTaskPrompt({ report: audit, profile, stack: "[未知：先识别仓库框架]" }), audit.at),
-      });
-      expect(keywordsArt).toStrictEqual({
-        id: "demo-keywords", module: "keywords", type: "csv", engine: "seo", title: `关键词矩阵 ${Math.min(rows.length, 40)} 条`,
-        filename: "keyword-matrix.csv", at: daysAgo(deps.now, 1, 14), content: stamp("csv", keywordCsv(rows.slice(0, 40)), daysAgo(deps.now, 1, 14)),
-      });
-      expect(kbArt).toStrictEqual({
-        id: "demo-kb", module: "kb", type: "md", engine: "geo", title: "llms.txt", filename: "llms.txt", at: kb.at,
-        content: stamp("md", llmsTxt({ profile, entries: kb.entries }), kb.at),
-      });
-      expect(visArt).toStrictEqual({
-        id: "demo-visibility", module: "visibility", type: "csv", engine: "geo", title: `可见度矩阵 ${hits}/${payload.visResults.length}`,
-        filename: "ai-visibility.csv", at: lastVis.at, content: stamp("csv", visibilityCsv({ results: payload.visResults, checkedAt: lastVis.at }), lastVis.at),
-      });
-      expect(contentArt).toStrictEqual({
-        id: "demo-content", module: "content", type: "prompt", engine: "seo", title: `博客文章 brief：${target}`, at: daysAgo(deps.now, 4, 10),
-        content: stamp("prompt", contentBriefPrompt({ asset: "blog", target, profile, hit: findRow(rows, target), outline: "", extra: "" }), daysAgo(deps.now, 4, 10)),
-      });
+      expectStamped(
+        artifactById(payload, "demo-audit"),
+        { id: "demo-audit", module: "audit", type: "prompt", engine: "seo", title: "修复任务（给 Code Agent）", at: audit.at },
+        fixTaskPrompt({ report: audit, profile, stack: "[未知：先识别仓库框架]" }),
+      );
+      expectStamped(
+        artifactById(payload, "demo-keywords"),
+        { id: "demo-keywords", module: "keywords", type: "csv", engine: "seo", title: `关键词矩阵 ${Math.min(rows.length, 40)} 条`, filename: "keyword-matrix.csv", at: keywordsAt },
+        keywordCsv(rows.slice(0, 40)),
+      );
+      expectStamped(
+        artifactById(payload, "demo-kb"),
+        { id: "demo-kb", module: "kb", type: "md", engine: "geo", title: "llms.txt", filename: "llms.txt", at: kb.at },
+        llmsTxt({ profile, entries: kb.entries }),
+      );
+      expectStamped(
+        artifactById(payload, "demo-visibility"),
+        { id: "demo-visibility", module: "visibility", type: "csv", engine: "geo", title: `可见度矩阵 ${hits}/${payload.visResults.length}`, filename: "ai-visibility.csv", at: lastVis.at },
+        visibilityCsv({ results: payload.visResults, checkedAt: lastVis.at }),
+      );
+      expectStamped(
+        artifactById(payload, "demo-content"),
+        { id: "demo-content", module: "content", type: "prompt", engine: "seo", title: `博客文章 brief：${target}`, at: briefAt },
+        contentBriefPrompt({ asset: "blog", target, profile, hit: findRow(rows, target), outline: "", extra: "" }),
+      );
       for (const artifact of payload.artifacts) {
         expect(MODULE_IDS).toContain(artifact.module);
         if (artifact.filename !== undefined) expect(artifact.filename).toMatch(ARTIFACT_FILENAME_PATTERN);
       }
-      expect(Object.hasOwn(required(auditArt, "audit artifact"), "filename")).toBe(false);
-      expect(Object.hasOwn(required(contentArt, "content artifact"), "filename")).toBe(false);
     });
   }
+
+  it("lists the artifacts newest first, keeping build order on equal stamps", () => {
+    const ids = (now: Date): readonly string[] => demo(FULL_PROFILE, "full", DEMO_SEEDS, now).artifacts.map((artifact) => artifact.id);
+    expect(ids(new Date(2026, 8, 13, 12, 0))).toEqual(["demo-visibility", "demo-audit", "demo-keywords", "demo-kb", "demo-content"]);
+    expect(ids(new Date(2026, 8, 13, 0, 30))).toEqual(["demo-audit", "demo-visibility", "demo-keywords", "demo-kb", "demo-content"]);
+    for (const [, profile] of PROFILES) {
+      const stamps = demo(profile).artifacts.map((artifact) => artifact.at);
+      expect(stamps).toEqual(stamps.toSorted().toReversed());
+    }
+  });
+});
+
+describe("brief target", () => {
+  const briefTitle = (seeds: readonly string[]): string => artifactById(demo(FULL_PROFILE, "full", seeds), "demo-content").title;
+
+  it("prefers the sample checklist query when the seeds make it", () => {
+    expect(briefTitle(DEMO_SEEDS)).toBe("博客文章 brief：llm seo checklist");
+  });
+
+  it("otherwise takes the first matrix row made from the seeds, never a query only the sample paste has", () => {
+    const seeds = ["barcode scanning"];
+    const madeFromSeeds = new Set(buildRows(seeds, FULL_PROFILE, []).filter((row) => row.seed === seeds[0]).map((row) => normQ(row.q)));
+    const first = required(buildRows(seeds, FULL_PROFILE, demo(FULL_PROFILE, "full", seeds).gscRows).find((row) => madeFromSeeds.has(normQ(row.q))), "row");
+    expect(briefTitle(seeds)).toBe(`博客文章 brief：${first.q}`);
+    expect(briefTitle(seeds)).not.toContain("llm seo checklist");
+  });
+
+  it("falls back to the first demo seed without seeds", () => {
+    expect(briefTitle([])).toBe(`博客文章 brief：${DEMO_SEEDS[0]}`);
+    expect(briefTitle(["  "])).toBe(`博客文章 brief：${DEMO_SEEDS[0]}`);
+  });
 });
 
 describe("levels", () => {
@@ -300,31 +359,39 @@ describe("levels", () => {
 
 describe("sample KB fills", () => {
   it("fill pricing, boundary and comparison gaps in place with the brand placeholder for a blank brand", () => {
-    const kb = required(demo({ ...FULL_PROFILE, brand: "   ", competitors: "Rival" }).kb, "kb");
-    const fills = sampleFills(kb.entries);
+    const fills = sampleFills(required(demo({ ...FULL_PROFILE, brand: "   ", competitors: "Rival" }).kb, "kb").entries);
     expect(fills.map((entry) => entry.cat)).toEqual(["boundary", "pricing", "comparison"]);
     for (const entry of fills) {
-      expect(entry.statement).toContain("[示例]");
+      expect(entry.statement).toContain("[示例] ");
       expect(entry.statement).toContain("[品牌]");
       expect(entry.statement).not.toMatch(/\s{2}/);
-      expect(entry.source).toBe("");
-      expect(entry.from).toBe("aiDraft");
+      expect([entry.source, entry.from]).toEqual(["", "aiDraft"]);
       expect(entry.id).toMatch(/^kb-\d{2}$/);
     }
     expect(fills.find((entry) => entry.cat === "comparison")?.statement).toContain("Rival");
   });
 
-  it("names the first compared competitor, never the brand itself", () => {
-    const kb = required(demo({ ...FULL_PROFILE, competitors: "widgets, Sortly" }).kb, "kb");
-    const comparison = sampleFills(kb.entries).filter((entry) => entry.cat === "comparison");
-    expect(comparison).toHaveLength(1);
-    expect(comparison[0]?.statement).toContain("与 Sortly 相比，Widgets 的差别");
+  it("asks about pricing without presupposing a free tier", () => {
+    const pricing = sampleFills(required(demo(EMPTY_PROFILE).kb, "kb").entries).filter((entry) => entry.cat === "pricing");
+    expect(pricing.map((entry) => entry.statement)).toEqual(["[示例] Acme 的定价方式与各档分别包含什么（待补定价页原句）"]);
   });
 
-  for (const competitors of ["", " , ", "Acme"]) {
-    it(`opens no comparison fill without a real competitor (${JSON.stringify(competitors)})`, () => {
+  it("names the first compared competitor, never the brand or the own site", () => {
+    const widgets = required(demo({ ...FULL_PROFILE, competitors: "widgets, Sortly" }).kb, "kb");
+    expect(sampleFills(widgets.entries).filter((entry) => entry.cat === "comparison").map((entry) => entry.statement)).toEqual([
+      "[示例] 与 Sortly 相比，Widgets 的差别（待补对比页原句）",
+    ]);
+    const tricky = required(demo(TRICKY_PROFILE).kb, "kb");
+    expect(tricky.entries.filter((entry) => entry.cat === "comparison").map((entry) => entry.statement)).toEqual([
+      "[示例] 与 Rival 相比，Acme 的差别（待补对比页原句）",
+    ]);
+  });
+
+  for (const competitors of ["", " , ", "Acme", "ACME, acme.io"]) {
+    it(`opens no comparison entry without a real competitor (${JSON.stringify(competitors)})`, () => {
       const kb = required(demo({ ...EMPTY_PROFILE, competitors }).kb, "kb");
       expect(sampleFills(kb.entries).map((entry) => entry.cat)).toEqual(["boundary", "pricing"]);
+      expect(kb.entries.filter((entry) => entry.cat === "comparison")).toEqual([]);
       expect(JSON.stringify(kb)).not.toContain("[竞品");
     });
   }

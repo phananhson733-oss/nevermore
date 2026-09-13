@@ -7,12 +7,13 @@
  * `DEMO_AI` (GenGrowth's own facts, R8): the summary is made of profile values
  * and every other field is a pending bracket placeholder.
  */
-import type { AiDoc, AuditReport, CrawlSignals, GscRow, GscSignals, IcpSegment, Profile } from "../types.ts";
+import type { AiDoc, AuditPageRow, AuditReport, CrawlSignals, GscRow, GscSignals, IcpSegment, Profile } from "../types.ts";
 import { sitePages } from "./audit.ts";
 import { brandOrPlaceholder } from "./brand.ts";
 import { gscStatus } from "./gsc.ts";
+import { enteredComparedCompetitors } from "./kb.ts";
 import { marketLanguage } from "./market.ts";
-import { pick, rngOf, seedKey } from "./rng.ts";
+import { rngOf, seedKey } from "./rng.ts";
 import { domainOf, matchesBrand, splitList } from "./text.ts";
 
 export type CrawlVariant = "crawl" | "third";
@@ -22,7 +23,10 @@ export type ObservedAudit = Pick<AuditReport, "crawl" | "pageRows">;
 // Moved to brand.ts so kb.ts (and through it the client store) can use them without this
 // module's audit imports; re-exported so existing importers of profile.ts are unchanged.
 export { BRAND_PLACEHOLDER, brandOrPlaceholder } from "./brand.ts";
-const STACKS = ["Next.js", "Webflow", "Astro", "WordPress"] as const;
+/** The sample does not know the site's framework, so it never guesses one; the fix-task artifact says the same. */
+export const UNKNOWN_STACK = "[未知：先识别仓库框架]";
+/** What the sample differentiator compares against when no real competitor was entered: not a name. */
+const NEUTRAL_RIVAL = "同类产品";
 const TOP_QUERY_LIMIT = 5;
 const ICP_SEGMENT_COUNT = 3;
 const PILLAR_MIN = 2;
@@ -32,7 +36,6 @@ type SiteShape = Pick<CrawlSignals, "pages" | "indexed" | "hasPricing" | "hasDoc
 
 interface CrawlDraws {
   readonly pages: number;
-  readonly stack: string;
   readonly pricing: number;
   readonly docs: number;
   readonly blog: number;
@@ -47,7 +50,6 @@ function drawCrawl(seed: number): CrawlDraws {
   const next = rngOf(seed);
   return {
     pages: next(),
-    stack: pick(STACKS, next),
     pricing: next(),
     docs: next(),
     blog: next(),
@@ -81,8 +83,13 @@ function rowPath(url: string): string {
   return path.replace(/\/+$/, "") || "/";
 }
 
+/** A redirect or an error is not the page: only a row that answered 2xx counts. */
+function isReachable(row: AuditPageRow): boolean {
+  return row.status >= 200 && row.status < 300;
+}
+
 function observedSite(audit: ObservedAudit): SiteShape {
-  const paths = audit.pageRows.map((row) => rowPath(row.url));
+  const paths = audit.pageRows.filter(isReachable).map((row) => rowPath(row.url));
   return {
     pages: audit.crawl.pages,
     indexed: audit.crawl.indexable,
@@ -95,8 +102,9 @@ function observedSite(audit: ObservedAudit): SiteShape {
 /**
  * A generated crawl (`crawl`) or third-party estimate (`third`) for the site.
  * With `observed`, pages, indexed and the pricing / docs / blog flags come from
- * that audit instead; stack, traffic, DR and referring domains stay generated
- * and identical, because every draw is taken either way.
+ * that audit instead, counting a page only when its row answered 2xx; traffic,
+ * DR and referring domains stay generated and identical, because every draw is
+ * taken either way. The stack is never guessed.
  */
 export function crawlSignals(
   profile: Pick<Profile, "url" | "brand" | "market" | "features" | "competitors">,
@@ -108,7 +116,7 @@ export function crawlSignals(
   return {
     pages: site.pages,
     lang: marketLanguage(profile.market),
-    stack: draws.stack,
+    stack: UNKNOWN_STACK,
     h1: `[示例] ${brandOrPlaceholder(profile.brand)} 的首页 H1（未抓取）`,
     hasPricing: site.hasPricing,
     hasDocs: site.hasDocs,
@@ -198,7 +206,7 @@ function pillarPlaceholders(brand: string, features: readonly string[]): readonl
 export function demoAiDoc(profile: Profile): AiDoc {
   const brand = brandOrPlaceholder(profile.brand);
   const features = splitList(profile.features);
-  const rival = splitList(profile.competitors)[0] ?? "同类产品";
+  const rival = enteredComparedCompetitors(profile)[0] ?? NEUTRAL_RIVAL;
   const positioning = profile.positioning.trim() === "" ? "[一句话定位待补]" : profile.positioning;
   return {
     summary: `[示例] ${brand}：${positioning}`,

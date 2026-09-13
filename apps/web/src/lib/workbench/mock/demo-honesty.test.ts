@@ -4,22 +4,21 @@ import { PERSISTED_VERSION, parsePersistedState } from "../store/schema.ts";
 import type { DemoPayload, GscRow, Profile, VisResult } from "../types.ts";
 import { comparedCompetitors } from "./competitors.ts";
 import { DEMO_AI_LEAK_PHRASES } from "./demo-ai-leak-phrases.ts";
-import { DEMO_SEEDS, makeDemoSite } from "./demo.ts";
-import { PROFILES, SAMPLE_FILL_EVIDENCE, provenanceLine, testDeps } from "./demo-test-fixtures.ts";
+import { DEMO_SEEDS, makeDemoSite, type DemoLevel } from "./demo.ts";
+import { PROFILES, SAMPLE_FILL_EVIDENCE, provenanceLine, required, testDeps } from "./demo-test-fixtures.ts";
 import { SERP_POOL } from "./keywords.ts";
 import { DEFAULT_LINK_TYPES } from "./links.ts";
 import { SAMPLE_CSV_MARKER } from "./provenance.ts";
 import { competitorNames, domainOf, normQ, splitList } from "./text.ts";
 
-/** Invariants the sample site must hold for any profile (plan Task 13 checks 1-12). */
+/** Invariants the sample site must hold for any profile (plan Task 13 checks 1-12, plus review checks). */
 
 const LEAK = /GenGrowth|gengrowth|\$29|Ahrefs|Semrush|独立开发者|一人公司|solo founder|核对日期：|2026-09-01 核对/;
 const OVERCLAIMS = ["实测", "已修复", "已核实"] as const;
-
-function required<T>(value: T | null | undefined, label: string): T {
-  if (value === null || value === undefined) throw new Error(`${label} is missing`);
-  return value;
-}
+const LEVELS: readonly DemoLevel[] = ["full", "basic"];
+/** `demoAiDoc`'s neutral stand-in when no real competitor was entered: not a name. */
+const NEUTRAL_RIVAL = "同类产品";
+const NAMED_RIVAL = /与 (.+?) 相比/gu;
 
 function pathOf(url: string): string {
   return new URL(url).pathname.replace(/\/+$/, "") || "/";
@@ -47,13 +46,16 @@ for (const [name, profile] of PROFILES) {
       return cached;
     };
 
-    it("1. survives the persisted-state round trip without being clamped", () => {
+    it("1. survives the persisted-state round trip without being clamped, at both levels", () => {
       const seed = { url: profile.url, brand: profile.brand, market: profile.market };
-      const state = reduce(initialProjectState(seed), { type: "loadDemo", payload: payload() });
-      expect(parsePersistedState(JSON.parse(JSON.stringify({ v: PERSISTED_VERSION, state })))).not.toBeNull();
-      expect(state.artifacts.map((artifact) => [artifact.title, artifact.content, artifact.filename])).toEqual(
-        payload().artifacts.map((artifact) => [artifact.title, artifact.content, artifact.filename]),
-      );
+      for (const level of LEVELS) {
+        const demo = makeDemoSite(profile, level, DEMO_SEEDS, testDeps());
+        const state = reduce(initialProjectState(seed), { type: "loadDemo", payload: demo });
+        expect(parsePersistedState(JSON.parse(JSON.stringify({ v: PERSISTED_VERSION, state }))), level).not.toBeNull();
+        expect(state.artifacts.map((artifact) => [artifact.title, artifact.content, artifact.filename]), level).toEqual(
+          demo.artifacts.map((artifact) => [artifact.title, artifact.content, artifact.filename]),
+        );
+      }
     });
 
     it("2a. matches none of the known GenGrowth leak patterns", () => {
@@ -138,10 +140,10 @@ for (const [name, profile] of PROFILES) {
       expect(payload().conns).toStrictEqual({ GSC: true, GA4: false });
     });
 
-    it("11. the profile crawl agrees with the sample audit", () => {
+    it("11. the profile crawl agrees with the sample audit's reachable pages", () => {
       const crawl = required(required(payload().profileDoc, "profileDoc").crawl, "profileDoc.crawl");
       const audit = required(payload().audit, "audit");
-      const paths = audit.pageRows.map((row) => pathOf(row.url));
+      const paths = audit.pageRows.filter((row) => row.status >= 200 && row.status < 300).map((row) => pathOf(row.url));
       expect(crawl.pages).toBe(audit.crawl.pages);
       expect(crawl.indexed).toBe(audit.crawl.indexable);
       expect(crawl.hasPricing).toBe(paths.includes("/pricing"));
@@ -158,6 +160,16 @@ for (const [name, profile] of PROFILES) {
       }
       // Vacuous for dir / agg / comm, which all have domains: changing the defaults must bring someone here.
       expect(DEFAULT_LINK_TYPES).toEqual(["dir", "agg", "comm"]);
+    });
+
+    it("13. the AI differentiator and KB comparisons name only compared competitors", () => {
+      const doc = required(payload().profileDoc, "profileDoc");
+      const texts = [...doc.ai.diff, ...required(payload().kb, "kb").entries.map((entry) => entry.statement)];
+      const named = texts.flatMap((text) => [...text.matchAll(NAMED_RIVAL)].map((match) => match[1] ?? ""));
+      expect(named.length).toBeGreaterThan(0);
+      const compared = comparedCompetitors(profile);
+      for (const rival of named.filter((value) => value !== NEUTRAL_RIVAL)) expect(compared, rival).toContain(rival);
+      expect(named.map(normQ)).not.toContain(normQ(profile.brand));
     });
   });
 }

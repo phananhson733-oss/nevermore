@@ -7,7 +7,8 @@
  */
 import type { KbCategory, KbEntry, KnowledgeBase, Profile, ProfileDoc } from "../types.ts";
 import { brandOrPlaceholder } from "./brand.ts";
-import { competitorNames, splitList } from "./text.ts";
+import { comparedCompetitors } from "./competitors.ts";
+import { splitList } from "./text.ts";
 
 export const KB_PROFILE_EVIDENCE = "来自站点档案字段";
 const COMPARISON_GAP_LIMIT = 3;
@@ -37,14 +38,19 @@ function aiDraft(statement: string): KbDraft {
   return { cat: "data", statement, evidence: "", source: "", from: "aiDraft" };
 }
 
-/** Competitors the user named, deduped by `normQ`; the R9 placeholders never open a comparison slot. */
-function namedCompetitors(profile: Pick<Profile, "competitors">): readonly string[] {
-  return splitList(profile.competitors).length === 0 ? [] : competitorNames(profile);
+/**
+ * The competitors a comparison may name: `comparedCompetitors` (never the brand
+ * or the own site, at most three), and none when nothing was entered, so the R9
+ * placeholders never become a name. The KB comparison slots, the sample AI
+ * differentiator and the demo site all use this one rule.
+ */
+export function enteredComparedCompetitors(profile: Pick<Profile, "url" | "brand" | "competitors">): readonly string[] {
+  return splitList(profile.competitors).length === 0 ? [] : comparedCompetitors(profile);
 }
 
 /** Ids `kb-01`, `kb-02`, … in order: definition, capabilities, boundary, pricing, comparisons, data. */
 export function seedKb(
-  profile: Pick<Profile, "brand" | "positioning" | "features" | "competitors">,
+  profile: Pick<Profile, "url" | "brand" | "positioning" | "features" | "competitors">,
   doc: ProfileDoc | null,
 ): readonly KbEntry[] {
   const brand = brandOrPlaceholder(profile.brand);
@@ -55,7 +61,7 @@ export function seedKb(
     ...splitList(profile.features).map((feature) => profileDraft("capability", `${brand} 提供 ${feature}`)),
     gapDraft("boundary"),
     gapDraft("pricing"),
-    ...namedCompetitors(profile).slice(0, COMPARISON_GAP_LIMIT).map(() => gapDraft("comparison")),
+    ...enteredComparedCompetitors(profile).slice(0, COMPARISON_GAP_LIMIT).map(() => gapDraft("comparison")),
     ...(doc?.ai.facts ?? []).filter((fact) => !isBlank(fact)).map(aiDraft),
   ];
   return drafts.map((draft, index) => ({ id: kbId(index), ...draft }));

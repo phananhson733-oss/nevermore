@@ -92,6 +92,14 @@ describe("demoAiDoc", () => {
     ]);
   });
 
+  it("names only a compared competitor in the differentiator, never the brand or the own site", () => {
+    const firstDiff = (competitors: string): string | undefined => demoAiDoc({ ...ACME, url: "https://acme.io", competitors }).diff[0];
+    expect(firstDiff("acme, ACME.io, www.acme.io, Rival")).toBe("[差异点 1：Acme 与 Rival 相比的不同（待补对比依据）]");
+    for (const competitors of ["ACME", "acme.io", "", " , "]) {
+      expect(firstDiff(competitors), competitors).toBe("[差异点 1：Acme 与 同类产品 相比的不同（待补对比依据）]");
+    }
+  });
+
   it("builds pillars from the features first, then the brand", () => {
     expect(demoAiDoc(WIDGETS).pillars).toEqual([
       "[内容支柱 1：围绕 barcode scanning 的主题（待补）]",

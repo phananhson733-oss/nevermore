@@ -3,15 +3,16 @@
  * connected (GA4 never: the sample has no analytics), sample GSC rows, the
  * keyword matrix, saved keywords and the current audit. `full` adds every other
  * module on top of that same data. Nothing here reads the clock: `deps.now` is
- * the only time source and every id is fixed. The payload is a fresh literal
- * with exactly the `DemoPayload` keys, so `loadDemo` can never write `profile`,
- * `notify` or anything else.
+ * the only time source, every id is fixed, and no stamp lands after `now`. The
+ * payload is a fresh literal with exactly the `DemoPayload` keys, so `loadDemo`
+ * can never write `profile`, `notify` or anything else.
  *
  * Honesty rules the sample keeps (demo-honesty.test.ts): the AI profile and
  * knowledge-base fills are bracketed placeholders built from the profile, never
  * GenGrowth's own facts; a fill is an unchecked AI draft, not a manual entry;
- * competitors are the names entered, never invented domains; the profile crawl
- * is the sample audit's; and with GSC connected, our gap rank is GSC's or null.
+ * competitors are the names entered, never invented domains, the brand or the
+ * own site; the profile crawl is the sample audit's; and with GSC connected, our
+ * gap rank is GSC's or null.
  */
 import type {
   AuditReport,
@@ -29,29 +30,28 @@ import type {
 } from "../types.ts";
 import { plansFor } from "./answers.ts";
 import { runAudit } from "./audit.ts";
-import { buildCompData, comparedCompetitors, keywordGap } from "./competitors.ts";
+import { buildCompData, keywordGap } from "./competitors.ts";
 import { demoArtifacts } from "./demo-artifacts.ts";
+import type { DemoLevel } from "./demo-constants.ts";
 import { demoGsc } from "./demo-gsc.ts";
 import { buildRows } from "./keywords.ts";
-import { fillFirstKbGap, seedKb } from "./kb.ts";
+import { enteredComparedCompetitors, fillFirstKbGap, seedKb } from "./kb.ts";
 import { DEFAULT_LINK_TYPES, mockLinks } from "./links.ts";
 import { brandOrPlaceholder, crawlSignals, demoAiDoc, gscSignals } from "./profile.ts";
-import { normQ, splitList } from "./text.ts";
-import { daysAgo } from "./time.ts";
+import { normQ } from "./text.ts";
+import { daysAgo, formatLocalStamp, parseLocalStamp } from "./time.ts";
 import { VIS_PROMPT_LIMIT, localPromptSet, missedPrompts, mockVisibility } from "./visibility.ts";
 
-export const DEMO_LEVEL = "full" as const;
-/** Non-empty tuple: `DEMO_SEEDS[0]` stays a `string` under `noUncheckedIndexedAccess`. */
-export const DEMO_SEEDS = ["ai visibility", "geo optimization", "content brief", "llm seo"] as const satisfies readonly [
-  string,
-  ...string[],
-];
-export type DemoLevel = "full" | "basic";
+export { DEMO_LEVEL, DEMO_SEEDS, type DemoLevel } from "./demo-constants.ts";
+
 export interface DemoDeps {
   readonly now: Date;
   /** Localised provenance line for an artifact stamped at `at` (the caller owns next-intl). */
   readonly provenanceLine: (at: string) => string;
 }
+
+/** `daysBack` days before now at `hour`, never after now. */
+type StampAt = (daysBack: number, hour: number) => string;
 
 type ModuleFields = Pick<
   DemoPayload,
@@ -77,34 +77,68 @@ const TOP_TEN = 10;
 const PLAN_LIMIT = 2;
 const SAMPLE_FILL_EVIDENCE = "示例，未核对";
 
-/* ---------------- shared ---------------- */
+/* ---------------- stamps ---------------- */
 
-function gapSaved(row: GapRow, now: Date): SavedKeyword {
-  const inTopTen = row.ranks.filter((rank) => rank !== null && rank <= TOP_TEN).length;
-  const entry: SavedKeyword = { q: row.q, addedAt: daysAgo(now, 1, 10), source: "gap" };
-  return inTopTen > 0 ? { ...entry, note: `竞品 ${inTopTen} 家在前 10` } : entry;
+/**
+ * `daysAgo`, clamped to now. Before today's sample hour has passed (09:05 for
+ * the audit, 11:05 for visibility), `daysAgo(now, 0, hour)` is later today, and
+ * a future stamp falls outside every `withinDays` window.
+ */
+function stamperFor(now: Date): StampAt {
+  const nowStamp = formatLocalStamp(now);
+  const latest = parseLocalStamp(nowStamp);
+  return (daysBack, hour) => {
+    const stamp = daysAgo(now, daysBack, hour);
+    const parsed = parseLocalStamp(stamp);
+    const afterNow = latest !== null && (parsed === null || parsed.getTime() > latest.getTime());
+    return afterNow ? nowStamp : stamp;
+  };
 }
 
-/** The first four borderline matrix rows, then the first gap row not already saved (unique by `normQ`). */
-function savedKeywords(profile: Profile, seedQueries: readonly string[], shared: Pick<SharedInit, "rows" | "gscRows">, now: Date): readonly SavedKeyword[] {
+/* ---------------- shared ---------------- */
+
+/** The first gap row whose query is not already saved under any spelling (`normQ`). */
+export function firstUnsavedGapRow(rows: readonly GapRow[], saved: readonly Pick<SavedKeyword, "q">[]): GapRow | undefined {
+  const taken = new Set(saved.map((entry) => normQ(entry.q)));
+  return rows.find((row) => !taken.has(normQ(row.q)));
+}
+
+/**
+ * A saved gap row. The note counts competitors ranked in the top ten, and only
+ * when real competitors were entered: a placeholder's sample rank is no claim
+ * about anyone. Without a count the note key is absent, not empty.
+ */
+export function gapSavedEntry(row: GapRow, addedAt: string, namesRealCompetitors: boolean): SavedKeyword {
+  const inTopTen = row.ranks.filter((rank) => rank !== null && rank <= TOP_TEN).length;
+  const entry: SavedKeyword = { q: row.q, addedAt, source: "gap" };
+  return namesRealCompetitors && inTopTen > 0 ? { ...entry, note: `竞品 ${inTopTen} 家在前 10` } : entry;
+}
+
+/** The first four borderline matrix rows, then the first gap row not already saved. */
+function savedKeywords(
+  profile: Profile,
+  seedQueries: readonly string[],
+  shared: Pick<SharedInit, "rows" | "gscRows">,
+  at: StampAt,
+): readonly SavedKeyword[] {
   const matrix = shared.rows
     .filter((row) => row.gscStatus === "borderline")
     .slice(0, MATRIX_SAVED_LIMIT)
-    .map((row, i): SavedKeyword => ({ q: row.q, addedAt: daysAgo(now, 3 + i, 15), source: "matrix" }));
-  const taken = new Set(matrix.map((entry) => normQ(entry.q)));
-  const gap = keywordGap(profile, seedQueries, shared.gscRows).rows.find((row) => !taken.has(normQ(row.q)));
-  return gap === undefined ? matrix : [...matrix, gapSaved(gap, now)];
+    .map((row, i): SavedKeyword => ({ q: row.q, addedAt: at(3 + i, 15), source: "matrix" }));
+  const gap = firstUnsavedGapRow(keywordGap(profile, seedQueries, shared.gscRows).rows, matrix);
+  if (gap === undefined) return matrix;
+  return [...matrix, gapSavedEntry(gap, at(1, 10), enteredComparedCompetitors(profile).length > 0)];
 }
 
-function sharedInit(profile: Profile, seedQueries: readonly string[], now: Date): SharedInit {
+function sharedInit(profile: Profile, seedQueries: readonly string[], at: StampAt): SharedInit {
   const gscRows = demoGsc(profile, seedQueries);
   const rows = buildRows(seedQueries, profile, gscRows);
   return {
     conns: { GSC: true, GA4: false },
     gscRows,
     rows,
-    saved: savedKeywords(profile, seedQueries, { rows, gscRows }, now),
-    audit: runAudit(profile, { at: daysAgo(now, 0, 9), salt: "demo-cur" }),
+    saved: savedKeywords(profile, seedQueries, { rows, gscRows }, at),
+    audit: runAudit(profile, { at: at(0, 9), salt: "demo-cur" }),
   };
 }
 
@@ -126,34 +160,29 @@ function basicModules(): ModuleFields {
 
 /* ---------------- full ---------------- */
 
-function demoVisibility(profile: Profile, rows: readonly KeywordRow[], now: Date): DemoVisibility {
+function demoVisibility(profile: Profile, rows: readonly KeywordRow[], at: StampAt): DemoVisibility {
   const prompts = localPromptSet(profile, rows)
     .map((seed) => seed.q)
     .slice(0, VIS_PROMPT_LIMIT);
   return {
-    lastVis: { at: daysAgo(now, 0, 11), results: mockVisibility(profile, prompts, "demo-cur") },
-    history: [{ at: daysAgo(now, 7, 11), results: mockVisibility(profile, prompts, "demo-prev") }],
+    lastVis: { at: at(0, 11), results: mockVisibility(profile, prompts, "demo-cur") },
+    history: [{ at: at(7, 11), results: mockVisibility(profile, prompts, "demo-prev") }],
   };
 }
 
 /** The crawl takes the sample audit, so pages, indexed and page flags agree with it; the third-party estimate stays generated. */
-function demoProfileDoc(profile: Profile, shared: SharedInit, now: Date): ProfileDoc {
+function demoProfileDoc(profile: Profile, shared: SharedInit, at: StampAt): ProfileDoc {
   return {
     crawl: crawlSignals(profile, "crawl", shared.audit),
     gsc: gscSignals(profile, shared.gscRows),
     third: crawlSignals(profile, "third"),
     ai: demoAiDoc(profile),
-    at: daysAgo(now, 3, 15),
+    at: at(3, 15),
   };
 }
 
 function sampleFill(statement: string): KbPatch {
   return { statement, evidence: SAMPLE_FILL_EVIDENCE, source: "", from: "aiDraft" };
-}
-
-/** A competitor the user entered that is not the brand or the own site; never a placeholder. */
-function comparisonRival(profile: Profile): string | undefined {
-  return splitList(profile.competitors).length === 0 ? undefined : comparedCompetitors(profile)[0];
 }
 
 /** `seedKb`, then unchecked sample drafts in the pricing, boundary and (with a real competitor) comparison gaps. */
@@ -162,11 +191,11 @@ function demoKb(profile: Profile, doc: ProfileDoc, at: string): KnowledgeBase {
   const priced = fillFirstKbGap(
     seedKb(profile, doc),
     "pricing",
-    sampleFill(`[示例] ${brand} 的免费档与付费档分别包含什么（待补定价页原句）`),
+    sampleFill(`[示例] ${brand} 的定价方式与各档分别包含什么（待补定价页原句）`),
     "kb-demo-pricing",
   );
   const bounded = fillFirstKbGap(priced, "boundary", sampleFill(`[示例] 不适合 ${brand} 的团队或场景（待补）`), "kb-demo-boundary");
-  const rival = comparisonRival(profile);
+  const rival = enteredComparedCompetitors(profile)[0];
   const entries =
     rival === undefined
       ? bounded
@@ -174,25 +203,33 @@ function demoKb(profile: Profile, doc: ProfileDoc, at: string): KnowledgeBase {
   return { entries, at };
 }
 
-function fullModules(profile: Profile, seedQueries: readonly string[], shared: SharedInit, deps: DemoDeps): ModuleFields {
-  const { now } = deps;
-  const visibility = demoVisibility(profile, shared.rows, now);
-  const profileDoc = demoProfileDoc(profile, shared, now);
-  const kb = demoKb(profile, profileDoc, daysAgo(now, 2, 16));
-  const { lastVis } = visibility;
+function fullModules(profile: Profile, seedQueries: readonly string[], shared: SharedInit, deps: DemoDeps, at: StampAt): ModuleFields {
+  const { lastVis, history } = demoVisibility(profile, shared.rows, at);
+  const profileDoc = demoProfileDoc(profile, shared, at);
+  const kb = demoKb(profile, profileDoc, at(2, 16));
   return {
     auditHistory: [
-      runAudit(profile, { at: daysAgo(now, 14, 10), salt: "demo-prev2" }),
-      runAudit(profile, { at: daysAgo(now, 7, 10), salt: "demo-prev" }),
+      runAudit(profile, { at: at(14, 10), salt: "demo-prev2" }),
+      runAudit(profile, { at: at(7, 10), salt: "demo-prev" }),
     ],
     visResults: lastVis.results,
-    visHistory: visibility.history,
+    visHistory: history,
     lastVis,
-    compData: buildCompData(profile, seedQueries, shared.gscRows, daysAgo(now, 2, 14)),
+    compData: buildCompData(profile, seedQueries, shared.gscRows, at(2, 14)),
     plans: plansFor(missedPrompts(lastVis.results).slice(0, PLAN_LIMIT), profile),
     targets: mockLinks(profile, DEFAULT_LINK_TYPES),
     kb,
-    artifacts: demoArtifacts({ profile, rows: shared.rows, audit: shared.audit, kb, lastVis, fallbackTarget: DEMO_SEEDS[0], deps }),
+    artifacts: demoArtifacts({
+      profile,
+      seedQueries,
+      rows: shared.rows,
+      audit: shared.audit,
+      kb,
+      lastVis,
+      keywordsAt: at(1, 14),
+      briefAt: at(4, 10),
+      provenanceLine: deps.provenanceLine,
+    }),
     profileDoc,
   };
 }
@@ -200,8 +237,9 @@ function fullModules(profile: Profile, seedQueries: readonly string[], shared: S
 /* ---------------- payload ---------------- */
 
 export function makeDemoSite(profile: Profile, level: DemoLevel, seedQueries: readonly string[], deps: DemoDeps): DemoPayload {
-  const shared = sharedInit(profile, seedQueries, deps.now);
-  const modules = level === "full" ? fullModules(profile, seedQueries, shared, deps) : basicModules();
+  const at = stamperFor(deps.now);
+  const shared = sharedInit(profile, seedQueries, at);
+  const modules = level === "full" ? fullModules(profile, seedQueries, shared, deps, at) : basicModules();
   const seedText = seedQueries.join("\n");
   return {
     conns: shared.conns,
