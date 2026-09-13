@@ -616,6 +616,9 @@ describe("Topbar", () => {
       expect(clearButton(header)).toBeNull();
       expect(mocks.dispatched).toEqual([]);
       expect(store.current?.state.artifacts).toHaveLength(1);
+      // The button that asked left with the sample in the same commit, so, as on
+      // confirm, focus goes to the next control in the row rather than <body>.
+      expect(document.activeElement).toBe(header.querySelector("[data-wb-drawer-button]"));
 
       // Nor does an old "asked" come back with the sample: nobody asked again.
       anotherTabWrites(projectBytes(true));

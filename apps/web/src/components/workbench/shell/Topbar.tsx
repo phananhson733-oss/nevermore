@@ -67,19 +67,23 @@ export function Topbar({
   // Before storage is read `state.demo` is the seed's `false`, not an answer.
   const sampleLoaded = ready && state.demo;
   const [clearAsked, setClearAsked] = useState(false);
+  const clearButtonRef = useRef<HTMLButtonElement>(null);
+  // Where focus goes when the box closes. Cancel returns it to the button that
+  // asked. Confirm, and the cross-tab close below, remove that button in the
+  // same commit, so each points it at the next control in the row instead, or
+  // focus would drop to <body>. Dialog reads the ref when it closes, which is
+  // why a handler or the render-time reset can re-point it.
+  const clearReturnFocusRef = useRef<HTMLElement | null>(null);
   // Another tab can replace the whole project while the box is open (a
   // `storage` event loads its state). Once the sample is gone, confirming would
   // run `clearDemo` over the operator's own data, so the box closes — and the
   // old "asked" is dropped rather than parked, or the box would pop back up
   // unasked if the sample returned. Reset during render, not in an effect, so
   // no frame commits with the box open over real data.
-  if (clearAsked && !sampleLoaded) setClearAsked(false);
-  const clearButtonRef = useRef<HTMLButtonElement>(null);
-  // Where focus goes when the box closes. Cancel returns it to the button that
-  // asked. Confirm removes that button in the same commit, so it is pointed at
-  // the next control in the row instead, or focus would drop to <body>. Dialog
-  // reads the ref when it closes, which is why a handler can re-point it.
-  const clearReturnFocusRef = useRef<HTMLElement | null>(null);
+  if (clearAsked && !sampleLoaded) {
+    clearReturnFocusRef.current = drawerButtonRef.current;
+    setClearAsked(false);
+  }
 
   function askToClear(): void {
     clearReturnFocusRef.current = clearButtonRef.current;
