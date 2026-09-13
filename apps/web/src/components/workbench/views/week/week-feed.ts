@@ -61,6 +61,11 @@ export interface WeekWindow {
   readonly first: string;
   /** The last stamp in the range: the minute `now` falls in. */
   readonly last: string;
+  /**
+   * `now` as an instant, epoch milliseconds. In an hour a daylight-saving
+   * change repeats, `last` names two instants; `rangePlacement` needs the one.
+   */
+  readonly nowTime: number;
 }
 
 export type WeekFeedState = Pick<
@@ -71,7 +76,7 @@ export type WeekFeedState = Pick<
 export function weekWindow(now: Date): WeekWindow {
   const from = stampDate(daysAgo(now, WEEK_WINDOW_DAYS - 1));
   const last = formatLocalStamp(now);
-  return { from, to: stampDate(last), first: `${from} 00:00`, last };
+  return { from, to: stampDate(last), first: `${from} 00:00`, last, nowTime: now.getTime() };
 }
 
 export function inWeekWindow(at: string, range: WeekWindow): boolean {
@@ -79,16 +84,53 @@ export function inWeekWindow(at: string, range: WeekWindow): boolean {
 }
 
 /**
- * Where a stamp stands against the range: `outside` is before its first minute
- * or after `now`; `unknown` is a stamp that does not parse, which
- * `inWeekWindow` leaves out of every count and which cannot be placed either
- * way.
+ * Where a stamp stands against the range, for the sentence a card prints under
+ * it: `outside` is before the range's first minute or after `now`; `unknown`
+ * is a stamp that cannot be placed. Unlike `inWeekWindow`, which decides the
+ * counts and compares strings, this compares instants and says `unknown`
+ * wherever the stamp does not pin one down (codex S8r3):
+ * - it does not parse;
+ * - it falls in a daylight-saving gap, a local time that never happens, which
+ *   `Date` quietly moves to another time (America/Los_Angeles reads
+ *   2026-03-08 02:30 as 03:30);
+ * - it falls in a repeated hour and its two readings, before and after the
+ *   change, land on different sides of the range's ends.
+ * The counts keep such a stamp as they did; only the card declines to say.
  */
 export type RangePlacement = "inside" | "outside" | "unknown";
 
+const DAY_MS = 86_400_000;
+const MINUTE_MS = 60_000;
+
+/**
+ * Each instant a parsed stamp can mean: its own, and in an hour a
+ * daylight-saving change repeats, the one on the other side of the change.
+ * The change is found from the UTC offsets a day either side; two changes
+ * within two days of each other are not looked for.
+ */
+function stampReadings(date: Date): readonly number[] {
+  const time = date.getTime();
+  const before = new Date(time - DAY_MS).getTimezoneOffset();
+  const after = new Date(time + DAY_MS).getTimezoneOffset();
+  const shift = Math.abs(before - after) * MINUTE_MS;
+  if (shift === 0) return [time];
+  const stamp = formatLocalStamp(date);
+  return [time - shift, time, time + shift].filter((reading) => formatLocalStamp(new Date(reading)) === stamp);
+}
+
 export function rangePlacement(at: string, range: WeekWindow): RangePlacement {
-  if (parseLocalStamp(at) === null) return "unknown";
-  return inWeekWindow(at, range) ? "inside" : "outside";
+  const date = parseLocalStamp(at);
+  const first = parseLocalStamp(range.first);
+  if (date === null || first === null) return "unknown";
+  // A daylight-saving gap: `Date` moved the stamp to a time it does not say.
+  if (formatLocalStamp(date) !== at) return "unknown";
+  const places = new Set(
+    stampReadings(date).map((reading) =>
+      reading >= first.getTime() && reading <= range.nowTime ? "inside" : "outside",
+    ),
+  );
+  const [only] = places;
+  return places.size === 1 && only !== undefined ? only : "unknown";
 }
 
 export function artifactsInWeek(artifacts: readonly Artifact[], range: WeekWindow): readonly Artifact[] {

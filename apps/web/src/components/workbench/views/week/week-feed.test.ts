@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { formatLocalStamp } from "@/lib/workbench/mock/time";
 import { initialProjectState, reduce, type ProjectSeed } from "@/lib/workbench/store/reducer";
 import { populatedProjectState } from "@/lib/workbench/store/test-fixtures";
 import type { Artifact, AuditReport, VisSnapshot, WorkbenchProjectState } from "@/lib/workbench/types";
-import { WEEK_WINDOW_DAYS, artifactsInWeek, inWeekWindow, weekFeed, weekWindow } from "./week-feed.ts";
+import { WEEK_WINDOW_DAYS, artifactsInWeek, inWeekWindow, rangePlacement, weekFeed, weekWindow } from "./week-feed.ts";
 
 /**
  * The week window (Q20, jsx W3/W5/W19; codex S7a #5 / #9, S7r2 #6). It is the
@@ -45,6 +46,7 @@ describe("weekWindow", () => {
       to: "2026-09-13",
       first: FIRST_MINUTE,
       last: "2026-09-13 10:30",
+      nowTime: NOW.getTime(),
     });
   });
 
@@ -226,5 +228,58 @@ describe("weekFeed", () => {
     const frozen = structuredClone(FULL);
     weekFeed(FULL, NOW);
     expect(FULL).toEqual(frozen);
+  });
+});
+
+describe("rangePlacement", () => {
+  it("places ordinary stamps the way the counts do", () => {
+    const range = weekWindow(new Date(2026, 8, 14, 12, 0, 30));
+    expect(rangePlacement("2026-09-08 00:00", range)).toBe("inside");
+    expect(rangePlacement("2026-09-07 23:59", range)).toBe("outside");
+    expect(rangePlacement("2026-09-14 12:00", range)).toBe("inside");
+    expect(rangePlacement("2026-09-14 12:01", range)).toBe("outside");
+    expect(rangePlacement("2026-02-30 10:00", range)).toBe("unknown");
+  });
+
+  // codex S8r3: a stamp carries no offset, so next to a daylight-saving change
+  // it can name no instant or two. The zone is pinned for this block with
+  // `vi.stubEnv`, whichever TZ the run was started in. Vitest's default `forks`
+  // pool (this config sets no other) never runs two files at once in one
+  // process, and `vi.unstubAllEnvs` puts the zone back after each test.
+  describe("in America/Los_Angeles, across a daylight-saving change", () => {
+    beforeEach(() => {
+      vi.stubEnv("TZ", "America/Los_Angeles");
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("runs in the zone it pins", () => {
+      expect(new Date(2026, 2, 8, 2, 30).getHours()).toBe(3);
+      expect(new Date(2026, 10, 1, 12, 0).getTimezoneOffset()).toBe(480);
+    });
+
+    // 02:00-02:59 on 2026-03-08 never happens there; `Date` reads 02:30 as 03:30.
+    it("cannot place a stamp the spring-forward gap skips, though the counts keep it", () => {
+      const range = weekWindow(new Date(2026, 2, 8, 3, 0));
+      expect(inWeekWindow("2026-03-08 02:30", range)).toBe(true);
+      expect(rangePlacement("2026-03-08 02:30", range)).toBe("unknown");
+      expect(rangePlacement("2026-03-08 01:30", range)).toBe("inside");
+      expect(rangePlacement("2026-03-08 03:00", range)).toBe("inside");
+      expect(rangePlacement("2026-03-08 03:01", range)).toBe("outside");
+    });
+
+    // 01:00-01:59 on 2026-11-01 happens twice there, first in PDT and then in PST.
+    it("cannot place a stamp in the repeated hour when its two readings fall on either side of now", () => {
+      const firstPass = new Date(2026, 10, 1, 1, 30);
+      const now = new Date(firstPass.getTime() + 45 * 60_000);
+      expect(formatLocalStamp(now)).toBe("2026-11-01 01:15");
+      const range = weekWindow(now);
+      expect(rangePlacement("2026-11-01 01:30", range)).toBe("unknown");
+      expect(rangePlacement("2026-11-01 01:10", range)).toBe("inside");
+      expect(rangePlacement("2026-11-01 00:59", range)).toBe("inside");
+      expect(rangePlacement("2026-11-01 02:00", range)).toBe("outside");
+    });
   });
 });

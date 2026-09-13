@@ -118,6 +118,7 @@ describe("week cards: when their check ran", () => {
     ["zh-CN", "无法确认这次检查是否在上面的日期范围内。"],
     ["en", "It can't be confirmed whether this check falls within the date range above."],
   ])("say it cannot be confirmed when the check's stamp does not parse (%s)", (locale, sentence) => {
+    const outside = locale === "en" ? "This check falls outside the date range above" : "这次检查不在上面的日期范围内";
     const scope = show(
       { ...BLANK_WEEK, lastAudit: report("2026-02-30 10:00", 80, []), lastVis: { at: "2026-09-14 9:00", results: hits(1, 2) } },
       locale,
@@ -126,6 +127,9 @@ describe("week cards: when their check ran", () => {
       const card = one(scope, `[data-wb-week-card='${name}']`);
       expect(text(card, "[data-wb-foot='rangeUnknown']"), name).toBe(sentence);
       expect(card.querySelector("[data-wb-foot='outside']"), name).toBeNull();
+      // By text, not by marker (codex S8r3): the outside sentence in an element
+      // without the marker would read beside this one and pass the line above.
+      expect(card.textContent, name).not.toContain(outside);
     }
   });
 
