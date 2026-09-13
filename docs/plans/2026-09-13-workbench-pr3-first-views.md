@@ -267,7 +267,7 @@ docs/PROGRESS.md                   T18
 - [ ] **Step 2: 输入面板** — `url / brand / market` 只读文本；`positioning / features / competitors` 受控 + `patchProfile`；三个来源开关（**删掉 `ai` 开关**，`ProfileDoc.ai` 非空且没有 LLM）；步骤文案明说本地生成（Q16），逻辑不绑下标。
 - [ ] **Step 3: 运行归属与不清空** — 生成时不动 `profileDoc`，完成时一次性写（Q14）；runToken + projectId 归属。
 - [ ] **Step 4: 三个 tab + 动作** — `profileDocMarkdown`（传快照 `gscSource`）/ `profileJson` / `profileContextPrompt`；四个动作走 `ArtifactActions`（Q23）。
-- [ ] **Step 4b: `profileContextPrompt` 的 `sampleData` 要跟着来源**（T4 交接的已知缺口）— 它现在写死 `sampleData: true`，用户自己导入的真实行在 AI 上下文块里被宣告成示例。改为读快照的 `gscSource`（与 `profileDocMarkdown` 同一来源，不新增参数、不让调用方传可能矛盾的值）；prompt 的数据契约随之更新，配「user 来源不宣告示例」「sample 来源仍宣告」两条用例与一次变异（写死 true 必须红）。方向保守不等于不是假话——Q6 管的是「关于用户数据的陈述」。
+- [ ] **Step 4b: `profileContextPrompt` 的 `sampleData` 要跟着来源**（T4 交接的已知缺口）— 它现在写死 `sampleData: true`，用户自己导入的真实行在 AI 上下文块里被宣告成示例。改为读快照的 `gscSource`（与 `profileDocMarkdown` 同一来源，不新增参数、不让调用方传可能矛盾的值）；prompt 的数据契约随之更新，配「user 来源不宣告示例」「sample 来源仍宣告」两条用例与一次变异（写死 true 必须红）。方向保守不等于不是假话——Q6 管的是「关于用户数据的陈述」。**codex S1 补充（采纳）**：`gscSource` 是三值，映射也必须是三值——`sample → true`、`user → false`、`null → null`。**不要写成 `doc.gscSource === "sample"`**，那会把「来源未知」压成 `false`，也就是宣告「这不是示例」，与 unavailable 不是 0 同一个错。加第三条用例（`null` 来源 → `sampleData: null`）与反向变异（`null` 映射成 `false` 必须红）。
 - [ ] **Step 5: 空值与文案** — `GscSignals` 计数可空：用 `countText` 口径显示「—」，**不得渲染出「 / 」半句**；「可收录约」「样本页」（P5/P6）；删「AI 归纳失败」橙框（Q15）与无条件结论句（Q16）；框架容器 `data-wb-frame`。
 - [ ] **Step 6: jsdom 测试 + 变异** — 三个开关各自关闭 → 对应字段 `null` 且该列整块缺席（**从开关状态走到文档构造与渲染**，不许手写文档）；只读三项不可编辑；生成中旧档案仍在；示例来源与用户来源的 GSC 小节标注差异。变异：把某个开关改成无条件调 builder 必须红；把「完成时一次性写」改回「开跑先清空」必须红。
 - [ ] **Step 7: 提交** — `feat(workbench): 站点档案视图`。
