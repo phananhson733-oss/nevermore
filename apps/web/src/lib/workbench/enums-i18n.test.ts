@@ -1,9 +1,34 @@
+import { createTranslator } from "next-intl";
 import { describe, expect, it } from "vitest";
 import en from "../../../../../packages/i18n/src/messages/en.json";
 import zh from "../../../../../packages/i18n/src/messages/zh-CN.json";
 import { ENUM_GROUPS } from "./enums.ts";
 
 const LOCALES = { en, "zh-CN": zh } as const;
+const SENTINEL = "SENTINEL-2026-09-13 08:30";
+const ICU_RESIDUE = /[{}']/;
+
+/**
+ * Formats a `workbench.*` message the way the app would, but throws on every
+ * next-intl error: the default handler renders the key path instead, which
+ * would let a missing key or broken ICU pass. Always pass a values object —
+ * `t(key)` without one returns the raw string and never compiles it.
+ */
+function formatStrict(
+  locale: keyof typeof LOCALES,
+  key: string,
+  values: Record<string, string>,
+): string {
+  const t = createTranslator({
+    locale,
+    messages: LOCALES[locale],
+    namespace: "workbench",
+    onError: (error) => {
+      throw error;
+    },
+  });
+  return t(key as never, values as never);
+}
 
 describe("workbench.enums labels", () => {
   for (const [locale, messages] of Object.entries(LOCALES)) {
@@ -20,7 +45,7 @@ describe("workbench.enums labels", () => {
           expect(typeof value === "string" && value.trim().length > 0).toBe(
             true,
           );
-          expect(String(value)).not.toMatch(/[{}']/);
+          expect(String(value)).not.toMatch(ICU_RESIDUE);
         }
       });
     }
@@ -36,14 +61,6 @@ describe("workbench.enums labels", () => {
     }
   });
 
-  it("has the provenance line with an {at} argument in both locales", () => {
-    for (const messages of Object.values(LOCALES)) {
-      const line = (messages.workbench as { provenance: { artifact: string } })
-        .provenance.artifact;
-      expect(line).toContain("{at}");
-    }
-  });
-
   it("labels each module exactly as the workbench navigation does", () => {
     for (const messages of Object.values(LOCALES)) {
       const workbench = messages.workbench as {
@@ -55,4 +72,28 @@ describe("workbench.enums labels", () => {
       }
     }
   });
+});
+
+describe("workbench messages compile and format", () => {
+  for (const locale of Object.keys(LOCALES) as (keyof typeof LOCALES)[]) {
+    it(`${locale} provenance.artifact inserts the {at} argument`, () => {
+      const line = formatStrict(locale, "provenance.artifact", {
+        at: SENTINEL,
+      });
+      expect(line).toContain(SENTINEL);
+      expect(line).not.toMatch(ICU_RESIDUE);
+    });
+
+    it(`${locale} provenance.artifact fails without the {at} argument`, () => {
+      expect(() => formatStrict(locale, "provenance.artifact", {})).toThrow();
+    });
+
+    it(`${locale} shell.readonly formats to real copy`, () => {
+      const text = formatStrict(locale, "shell.readonly", {});
+      expect(text.trim().length).toBeGreaterThan(0);
+      expect(text).not.toBe("workbench.shell.readonly");
+      expect(text).not.toBe("shell.readonly");
+      expect(text).not.toMatch(ICU_RESIDUE);
+    });
+  }
 });
