@@ -18,9 +18,10 @@ import { WORKBENCH_PAGE_IDS, WORKBENCH_SEGMENTS, type WorkbenchPageId } from "@/
 import { useWorkbench } from "@/lib/workbench/store/hooks";
 import {
   WorkbenchProvider,
+  type PublicWorkbenchAction,
   type WorkbenchContextValue,
 } from "@/lib/workbench/store/WorkbenchProvider";
-import type { ProjectSeed, WorkbenchAction } from "@/lib/workbench/store/reducer";
+import type { ProjectSeed } from "@/lib/workbench/store/reducer";
 import type { AuditReport, SavedKeyword } from "@/lib/workbench/types";
 import { WORKBENCH_NAV } from "./workbench-nav.ts";
 
@@ -108,7 +109,7 @@ function render(props: Parameters<typeof Harness>[0] = {}, pathname = `/p/${PROJ
   return view;
 }
 
-function dispatch(action: WorkbenchAction): void {
+function dispatch(action: PublicWorkbenchAction): void {
   const send = store.current?.dispatch;
   if (!send) throw new Error("the provider never rendered");
   act(() => send(action));

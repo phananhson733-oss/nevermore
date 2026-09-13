@@ -6,10 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkbenchProjectState } from "../types.ts";
 import { useWorkbench } from "./hooks.ts";
 import { storageKey } from "./persistence.ts";
-import { initialProjectState, type ProjectSeed, type WorkbenchAction } from "./reducer.ts";
+import { initialProjectState, type ProjectSeed } from "./reducer.ts";
 import { PERSISTED_VERSION } from "./schema.ts";
 import { populatedProjectState } from "./test-fixtures.ts";
-import { WorkbenchProvider, type WorkbenchContextValue } from "./WorkbenchProvider.tsx";
+import {
+  WorkbenchProvider,
+  type PublicWorkbenchAction,
+  type WorkbenchContextValue,
+} from "./WorkbenchProvider.tsx";
 
 // Split from WorkbenchProvider.test.tsx (already past the 400-line file limit):
 // the write boundary only. A newer build's write can land before its `storage`
@@ -53,7 +57,7 @@ function ctx(holder: Holder): WorkbenchContextValue {
   return holder.current;
 }
 
-function send(holder: Holder, action: WorkbenchAction): void {
+function send(holder: Holder, action: PublicWorkbenchAction): void {
   act(() => ctx(holder).dispatch(action));
 }
 

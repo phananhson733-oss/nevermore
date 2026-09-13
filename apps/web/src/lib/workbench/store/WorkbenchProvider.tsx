@@ -45,10 +45,22 @@ import { splitSeeds } from "./selectors.ts";
  */
 export type StorageMode = "ok" | "volatile" | "quota" | "swept" | "readonly";
 
+/**
+ * What a component may dispatch: every action except `loadPersisted`. That one
+ * replaces the whole state and belongs to the Provider. Its only dispatch site,
+ * `loadFromStorage`, is fed by the two storage doors (hydration and the
+ * `storage` event), both through `classifyPersistedState`, and records the same
+ * object in `remoteStateRef` first so the write-back effect does not echo it. A
+ * component dispatching it would skip both, and could write an orphaned GSC
+ * source straight back to disk. Normalising inside the reducer instead would
+ * hand back a new object and break that identity check.
+ */
+export type PublicWorkbenchAction = Exclude<WorkbenchAction, { readonly type: "loadPersisted" }>;
+
 export interface WorkbenchContextValue {
   readonly projectId: string;
   readonly state: WorkbenchProjectState;
-  readonly dispatch: Dispatch<WorkbenchAction>;
+  readonly dispatch: Dispatch<PublicWorkbenchAction>;
   /** False until localStorage has been read; views render skeletons meanwhile. */
   readonly ready: boolean;
   readonly storageMode: StorageMode;
@@ -232,8 +244,10 @@ export function WorkbenchProvider({
       if (read.state) {
         // Deliberately NOT `normalizeInterrupted`: the writing tab may be
         // mid-run, and normalising here would roll its streamed partial results
-        // back to `lastVis`. Interrupted runs are settled once, on first
-        // hydration, when nothing can be in flight. The GSC-source rule is not
+        // back to `lastVis`. First hydration does settle runs, but all it knows
+        // is that THIS tab has started nothing yet — the envelope carries no run
+        // owner, so another tab may well be mid-run (the residual above the
+        // write effect covers what that costs). The GSC-source rule is not
         // skipped with it: `readProjectState` returns an already-normalised
         // state (`classifyPersistedState`), on this path as on the first.
         loadFromStorage(withProjectSeed(read.state, seed));
