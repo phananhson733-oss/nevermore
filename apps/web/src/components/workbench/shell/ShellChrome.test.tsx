@@ -570,7 +570,7 @@ describe("ShellChrome site card GSC row", () => {
     expect(gscCell(scope).getAttribute("title")).toBeNull();
   });
 
-  it("shows a slot that never connected as not connected", async () => {
+  it("shows an explicitly disconnected slot as not connected", async () => {
     answer = () => Promise.resolve(sourcesOk([gscSource("disconnected", null)]));
     const scope = render();
 
@@ -624,7 +624,7 @@ describe("ShellChrome site card GSC row", () => {
     expect(gscCell(scope).getAttribute("title")).toBe(SHELL.siteCard.unknownHint);
   });
 
-  it("shows unknown, with the hint, while the read is still in flight", () => {
+  it("shows unknown, with the hint, while the first read is still in flight", () => {
     const scope = render();
 
     expect(gscCell(scope).textContent).toBe(SHELL.siteCard.none);

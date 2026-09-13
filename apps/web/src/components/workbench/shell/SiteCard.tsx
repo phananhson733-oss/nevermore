@@ -7,9 +7,11 @@ export interface SidebarSite {
   readonly host: string;
   readonly marketCode: string | null;
   /**
-   * `null` is "we could not read it" — in flight, or a failed sources read —
-   * and is rendered as the not-known dash, never as "not connected" (Q4).
-   * `ShellChrome` derives it; see `gsc-connection.ts` for the criterion.
+   * `null` is "this could not be settled" — the first read, a failed read, no
+   * gsc slot, or a state that is not a finished connection — and is rendered
+   * as the not-known dash, never as "not connected" (Q4). A background refetch
+   * keeps the previous reading. `ShellChrome` derives it; `gsc-connection.ts`
+   * states exactly what maps where.
    */
   readonly gscConnected: boolean | null;
 }
