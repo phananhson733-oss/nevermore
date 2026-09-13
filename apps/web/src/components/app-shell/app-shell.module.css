@@ -199,6 +199,10 @@
    * and chevron over its neighbours; the full name stays in the select. */
   min-width: 0;
   overflow: hidden;
+  /* The base rule's 58px min-height is taller than the 56px topbar row it sits
+   * in above 960px (1px out at each edge). The content is 54px there and 40px
+   * at 960px and below, the same as the media rule's floor. */
+  min-height: 0;
   background: #fff;
   border-color: var(--color-slate-200, #e2e8f0);
 }

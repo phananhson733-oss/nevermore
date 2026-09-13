@@ -549,3 +549,46 @@ test("deleting the project clears its workbench storage key", async ({
   await page.waitForURL((url) => !/\/settings$/.test(url.pathname));
   expect(await page.evaluate((k) => localStorage.getItem(k), key)).toBeNull();
 });
+
+test("the project switcher stays inside its topbar row and shows a keyboard focus ring", async ({
+  page,
+}) => {
+  await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
+  const topbar = page.locator("[data-app-shell-topbar]");
+  const select = topbar.locator("select");
+  // Above 960px the base switcher rule asked for 58px in a 56px row (1px out at
+  // each edge). Below `xl` the row is the first row container; from `xl` up that
+  // container is `display: contents` and the header itself is the row.
+  for (const width of [1024, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect(select).toBeVisible();
+    const edges = await select.evaluate((node) => {
+      const box = node.parentElement?.getBoundingClientRect();
+      const row = node.closest('[data-wb-topbar-row="1"]');
+      const container =
+        row !== null && row.getClientRects().length > 0
+          ? row
+          : node.closest("[data-app-shell-topbar]");
+      const outer = container?.getBoundingClientRect();
+      return box && outer
+        ? { top: box.top, bottom: box.bottom, height: box.height, rowTop: outer.top, rowBottom: outer.bottom }
+        : null;
+    });
+    expect(edges, `${width}px: switcher and row boxes`).not.toBeNull();
+    if (edges === null) continue;
+    expect(edges.height, `${width}px: switcher height`).toBeGreaterThan(0);
+    expect(edges.top, `${width}px: switcher top inside the row`).toBeGreaterThanOrEqual(edges.rowTop - 0.5);
+    expect(edges.bottom, `${width}px: switcher bottom inside the row`).toBeLessThanOrEqual(edges.rowBottom + 0.5);
+  }
+
+  // The select is the control but sits at opacity 0.001, so the ring is drawn
+  // on the switcher box; with no rule for it, keyboard focus showed nothing.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const ring = () => select.evaluate((node) => getComputedStyle(node.parentElement ?? node).boxShadow);
+  expect(await ring(), "no ring before focus").toBe("none");
+  await topbar.locator('a[href="/new-project"]').focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(select).toBeFocused();
+  expect(await select.evaluate((node) => node.matches(":focus-visible"))).toBe(true);
+  await expect.poll(ring, "ring on keyboard focus").not.toBe("none");
+});
