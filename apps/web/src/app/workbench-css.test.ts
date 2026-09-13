@@ -57,7 +57,7 @@ describe("workbench.css", () => {
   it("imports theme and utilities as layers and never preflight", () => {
     expect(css).toContain('@import "tailwindcss/theme.css" layer(theme);');
     expect(css).toContain(
-      '@import "tailwindcss/utilities.css" layer(utilities);',
+      '@import "tailwindcss/utilities.css" layer(utilities) source(none);',
     );
     expect(css).not.toContain("tailwindcss/preflight");
     expect(css).not.toMatch(/@import\s+"tailwindcss";/);
@@ -159,7 +159,7 @@ describe("workbench.css", () => {
     expect(utilities).toMatch(/@media print\s*\{[\s\S]*\[data-wb-content\]/);
     // Same layer AND same specificity: only source order breaks the tie.
     const importAt = css.indexOf(
-      '@import "tailwindcss/utilities.css" layer(utilities);',
+      '@import "tailwindcss/utilities.css" layer(utilities) source(none);',
     );
     expect(importAt).toBeGreaterThan(-1);
     expect(css.search(/@layer utilities\s*\{/)).toBeGreaterThan(importAt);
