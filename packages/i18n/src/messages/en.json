@@ -4250,6 +4250,7 @@
     },
     "profile": {
       "subtitle": "The crawl signals and third-party metrics in this profile are sample data generated locally, not a real crawl of your site.",
+      "inputTitle": "Basics",
       "fields": {
         "url": "Site URL",
         "brand": "Brand name",
@@ -4273,6 +4274,7 @@
       "run": {
         "button": "Generate the full profile",
         "rerun": "Regenerate the profile",
+        "busy": "Generating…",
         "note": "Everything is generated locally in this browser. It does not crawl your site and it calls no external service.",
         "steps": {
           "crawl": "Composing sample crawl signals",
@@ -4284,7 +4286,8 @@
       "tabs": {
         "doc": "Profile",
         "json": "JSON",
-        "ctx": "AI context block"
+        "ctx": "AI context block",
+        "label": "Profile views"
       },
       "doc": {
         "stamp": "Site profile · {at}",
@@ -4319,7 +4322,8 @@
         "icpPain": "Pain",
         "icpTrigger": "Trigger",
         "icpObjection": "Objection",
-        "placeholderNote": "This section holds sample placeholders for you to replace."
+        "placeholderNote": "This section holds sample placeholders for you to replace.",
+        "gscSourceUnknown": "Source unknown"
       },
       "metrics": {
         "pages": "Sample pages",

@@ -173,6 +173,12 @@ const FORBIDDEN_BY_KEY: Readonly<
     "zh-CN": ["所以", "因为", "由于", "网络", "离线", "版本"],
     en: ["because", "network", "offline", "version", "connection", "internet", "wifi", "server"],
   },
+  // Unknown provenance names neither source: saying "sample" or "imported" here
+  // collapses three values into two (Q6), the way 0 would stand in for null.
+  "profile.doc.gscSourceUnknown": {
+    "zh-CN": ["示例", "导入", "你的"],
+    en: ["sample", "import", "your"],
+  },
   "artifactActions.copyFailed": {
     "zh-CN": [
       "所以",
@@ -410,6 +416,13 @@ const REQUIRED: Readonly<
     "zh-CN": ["产品画像"],
     en: ["product profile"],
   },
+  // Q6: the third of the three provenance renderings of the profile's GSC
+  // section (sample chip / no label / this). The only place the page says the
+  // numbers' source is not known.
+  "profile.doc.gscSourceUnknown": {
+    "zh-CN": ["来源未知"],
+    en: ["Source unknown"],
+  },
   // Q4 bans the cause, which leaves "没能复制" — a dead end unless the sentence
   // also says what to do instead. The pin is on that clause, not on the half
   // that reports the failure: an instruction cannot become untrue later, so
@@ -616,6 +629,10 @@ const CASES: readonly string[] = [
   "profile.artifactTitle.json | brand",
   "profile.artifactTitle.ctx | brand",
   "profile.legacyCta",
+  "profile.inputTitle",
+  "profile.tabs.label",
+  "profile.run.busy",
+  "profile.doc.gscSourceUnknown",
   "dataSources.subtitle",
   "dataSources.real.title",
   "dataSources.real.gsc",

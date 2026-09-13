@@ -4250,6 +4250,7 @@
     },
     "profile": {
       "subtitle": "档案里的抓取信号与第三方指标是本地生成的示例，不是对你站点的真实抓取。",
+      "inputTitle": "基础信息",
       "fields": {
         "url": "站点地址",
         "brand": "品牌名",
@@ -4273,6 +4274,7 @@
       "run": {
         "button": "生成完整档案",
         "rerun": "重新生成档案",
+        "busy": "生成中…",
         "note": "全部在这个浏览器里本地生成：不抓取你的站点，也不调用外部服务。",
         "steps": {
           "crawl": "生成站点抓取示例信号",
@@ -4284,7 +4286,8 @@
       "tabs": {
         "doc": "档案",
         "json": "JSON",
-        "ctx": "AI 上下文块"
+        "ctx": "AI 上下文块",
+        "label": "档案视图"
       },
       "doc": {
         "stamp": "站点档案 · {at}",
@@ -4319,7 +4322,8 @@
         "icpPain": "痛点",
         "icpTrigger": "触发事件",
         "icpObjection": "顾虑",
-        "placeholderNote": "这一段是示例占位，需要你自己替换。"
+        "placeholderNote": "这一段是示例占位，需要你自己替换。",
+        "gscSourceUnknown": "来源未知"
       },
       "metrics": {
         "pages": "样本页",
