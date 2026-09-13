@@ -2,7 +2,8 @@
  * Chinese labels for mock artifact bodies (design §7, ruling R2). The UI reads
  * `workbench.enums.*`; mock content is Chinese-only, so it keys on the same ids
  * but keeps its own copy here. Every string is a label or an instruction to the
- * reader, never an observation or a claim about what gets cited (R10).
+ * reader, never an observation or a claim about what gets cited (R10). The jsx
+ * reference is git-ignored, so `labels-zh.test.ts` pins the literal values.
  */
 import type { ContentAsset } from "../enums.ts";
 import type {
@@ -39,13 +40,17 @@ export const LEVEL_ZH = {
   low: "低",
 } as const satisfies Readonly<Record<Level, string>>;
 
-/** Type names only (jsx:2411-2416); the prototype's per-type effect notes are claims and are not ported. */
+/**
+ * Type names only, worded as zh-CN `workbench.enums.linkType` so artifacts and
+ * the UI agree; the prototype's per-type effect notes (jsx:2411-2416) are
+ * claims and are not ported.
+ */
 export const LINK_TYPE_ZH = {
   dir: "工具目录站",
   agg: "同类工具聚合页",
   comm: "社区问答",
   rev: "评测与对比站",
-  media: "行业媒体 / newsletter",
+  media: "行业媒体与 newsletter",
   swap: "互换与联合内容",
 } as const satisfies Readonly<Record<LinkType, string>>;
 

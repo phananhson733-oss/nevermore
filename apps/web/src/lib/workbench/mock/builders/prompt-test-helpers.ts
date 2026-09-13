@@ -1,7 +1,10 @@
 /**
- * Test-only: split a prompt into fenced blocks and the text outside them
- * (CommonMark backtick fences). Not a `*.test.ts` file so every builder test
- * can share it; its own tests live in `../fence.test.ts`.
+ * Test-only: split a prompt into fenced blocks and the text outside them,
+ * following CommonMark's backtick-fence rules closely enough that a block this
+ * helper reports closed is also closed for a real renderer. Not a `*.test.ts`
+ * file so every builder test can share it; its own tests live in
+ * `../fence.test.ts`. Body lines are not de-indented for an indented opener
+ * (the generators never indent a fence).
  */
 export interface PromptBlock {
   readonly info: string;
@@ -29,11 +32,26 @@ interface ScanState {
   readonly open: OpenBlock | null;
 }
 
-/** Three or more backticks, then an info string that has no backtick. */
-const OPENING_FENCE = /^(`{3,})([^`]*)$/;
-const BACKTICKS_ONLY = /^`+$/;
+/** CommonMark line endings: CRLF, lone CR, or LF. */
+const LINE_BREAK = /\r\n|\r|\n/;
+/** Up to three spaces, three or more backticks, then an info string that has no backtick. */
+const OPENING_FENCE = /^ {0,3}(`{3,})([^`]*)$/;
+/** Up to three spaces, a backtick run, then nothing but spaces or tabs. */
+const CLOSING_FENCE = /^ {0,3}(`{3,})[ \t]*$/;
+/** The generators never emit tilde fences, so one outside a block means this split cannot be trusted. */
+const TILDE_FENCE = /^ {0,3}~{3,}/;
+
+function closes(line: string, open: OpenBlock): boolean {
+  const run = CLOSING_FENCE.exec(line)?.[1];
+  return run !== undefined && run.length >= open.fence;
+}
 
 function scanOutside(state: ScanState, line: string): ScanState {
+  if (TILDE_FENCE.test(line)) {
+    throw new Error(
+      `splitFences: tilde fence outside a block: ${JSON.stringify(line)}`,
+    );
+  }
   const match = OPENING_FENCE.exec(line);
   const fence = match?.[1];
   if (match === null || fence === undefined) {
@@ -49,7 +67,7 @@ function scanOutside(state: ScanState, line: string): ScanState {
 }
 
 function scanInside(state: ScanState, open: OpenBlock, line: string): ScanState {
-  if (BACKTICKS_ONLY.test(line) && line.length >= open.fence) {
+  if (closes(line, open)) {
     const block: PromptBlock = {
       info: open.info,
       body: open.lines.join("\n"),
@@ -60,11 +78,11 @@ function scanInside(state: ScanState, open: OpenBlock, line: string): ScanState 
   return { ...state, open: { ...open, lines: [...open.lines, line] } };
 }
 
-/** Throws on an unclosed fence: a prompt with one is a failing builder. */
+/** Throws on an unclosed fence or a tilde fence outside a block: either is a failing builder. */
 export function splitFences(prompt: string): PromptParts {
   const initial: ScanState = { blocks: [], pending: [], open: null };
   const end = prompt
-    .split("\n")
+    .split(LINE_BREAK)
     .reduce<ScanState>(
       (state, line) =>
         state.open === null

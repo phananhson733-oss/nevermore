@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ARTIFACT_TYPES } from "../enums.ts";
 import { SAMPLE_CSV_MARKER, stampArtifact } from "./provenance.ts";
 
 const LINE = "Sample data: generated locally at 2026-09-13 10:00";
@@ -61,6 +62,13 @@ describe("stampArtifact", () => {
     expect(out).not.toContain("Verified production result");
   });
 
+  it("json: integer-like top-level keys still come first, and the notice is still there", () => {
+    const parsed = parseObject(stampArtifact("json", '{"a":1,"10":"x"}', LINE));
+    expect(Object.keys(parsed)).toEqual(["10", "_sampleData", "a"]);
+    expect(parsed["_sampleData"]).toBe(LINE);
+    expect(parsed["10"]).toBe("x");
+  });
+
   it("json: keeps a __proto__ key as plain data", () => {
     const out = stampArtifact("json", '{"__proto__":{"x":1},"a":1}', LINE);
     const parsed = parseObject(out);
@@ -77,6 +85,16 @@ describe("stampArtifact", () => {
   it("json: rejects text that is not JSON", () => {
     expect(() => stampArtifact("json", "not json", LINE)).toThrow();
   });
+
+  for (const type of ARTIFACT_TYPES) {
+    it(`${type}: refuses a notice that folds to nothing`, () => {
+      for (const line of ["", "   ", "\n\r\n", " \t "]) {
+        expect(() => stampArtifact(type, "{}", line)).toThrow(
+          "stampArtifact: provenance line is empty",
+        );
+      }
+    });
+  }
 
   it("folds a multi-line notice onto one line", () => {
     const line = "  first\nsecond\r\nthird  ";

@@ -4,9 +4,11 @@ export const SAMPLE_CSV_MARKER = "# sample-data";
 
 /**
  * Stamps the §6.8 provenance onto an artifact body (R5). `line` is already
- * localised by the caller. For json, `_sampleData` is the first key unless the
- * body has integer-like top-level keys: `JSON.stringify` always lists those
- * first. No builder emits such a key.
+ * localised by the caller; one that folds to nothing throws rather than ship an
+ * artifact without its declaration. For json, `JSON.stringify` always lists
+ * integer-like keys first, so such a top-level key lands ahead of
+ * `_sampleData` (pinned by the "integer-like top-level keys" case in
+ * `provenance.test.ts`).
  */
 export function stampArtifact(
   type: ArtifactType,
@@ -14,6 +16,9 @@ export function stampArtifact(
   line: string,
 ): string {
   const notice = line.replace(/[\r\n]+/g, " ").trim();
+  if (notice === "") {
+    throw new Error("stampArtifact: provenance line is empty");
+  }
   switch (type) {
     case "csv":
       return `${SAMPLE_CSV_MARKER}\n# ${notice}\n${body}`;
