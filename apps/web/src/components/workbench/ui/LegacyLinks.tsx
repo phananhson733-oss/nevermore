@@ -26,7 +26,11 @@ export function LegacyLinks({
           key={segment}
           href={legacyHref(projectId, segment)}
           data-wb-legacy-link={segment}
-          className="text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
+          // `-my-1 py-1`: a `text-xs` link is a 16px line box, under the 24px
+          // WCAG 2.5.8 minimum. The margin box keeps its old height, so the
+          // header row this sits in does not move. Vertical only — every label
+          // here is a page name, far wider than 24px.
+          className="-my-1 py-1 text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
         >
           {t("legacy")} · {tNav(LEGACY_LABEL_KEY[segment])} →
         </Link>

@@ -123,7 +123,12 @@ export function ArtifactDrawer({
             <button
               type="button"
               onClick={() => dispatch({ type: "clearArtifacts" })}
-              className="text-xs text-slate-600 hover:text-slate-900"
+              // `-my-1 py-1` raises the 16px line box of `text-xs` to the 24px
+              // WCAG 2.5.8 minimum without moving anything: the margin box is
+              // the size it was. Vertical only — every label here is already
+              // wider than 24px, and `-mx-1` would leave the hit areas of
+              // neighbouring buttons 4px apart instead of the visible 12.
+              className="-my-1 py-1 text-xs text-slate-600 hover:text-slate-900"
             >
               {t("clear")}
             </button>
@@ -133,7 +138,9 @@ export function ArtifactDrawer({
             type="button"
             onClick={onClose}
             aria-label={t("close")}
-            className="rounded p-1 hover:bg-slate-100"
+            // p-1.5, not p-1: a 16px icon plus p-1 lands exactly on the 24px
+            // minimum, with nothing left for a rounding difference.
+            className="rounded p-1.5 hover:bg-slate-100"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -155,11 +162,14 @@ export function ArtifactDrawer({
                     {a.at}
                   </span>
                 </div>
+                {/* Same `-my-1 py-1` as the header's "clear": 24px tall hit
+                    areas, unchanged layout, and the visible 12px gap between
+                    them left alone. */}
                 <div className="mt-2 flex gap-3 text-xs">
                   <button
                     type="button"
                     onClick={() => void copy(a.id, a.content)}
-                    className="text-slate-600 hover:text-slate-900"
+                    className="-my-1 py-1 text-slate-600 hover:text-slate-900"
                   >
                     {copied === a.id ? t("copied") : t("copy")}
                   </button>
@@ -168,14 +178,16 @@ export function ArtifactDrawer({
                     onClick={() =>
                       downloadText(downloadName(a), a.content, MIME[a.type])
                     }
-                    className="text-slate-600 hover:text-slate-900"
+                    className="-my-1 py-1 text-slate-600 hover:text-slate-900"
                   >
                     {t("download")}
                   </button>
                   <button
                     type="button"
-                    onClick={() => dispatch({ type: "removeArtifact", id: a.id })}
-                    className="text-rose-600 hover:text-rose-800"
+                    onClick={() =>
+                      dispatch({ type: "removeArtifact", id: a.id })
+                    }
+                    className="-my-1 py-1 text-rose-600 hover:text-rose-800"
                   >
                     {t("remove")}
                   </button>

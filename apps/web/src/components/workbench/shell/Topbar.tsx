@@ -17,7 +17,9 @@ import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
  * makes a new mode a type error here rather than a silent fallthrough to some
  * other sentence. `swept` says nothing: that state was discarded on purpose.
  */
-const STORAGE_NOTICE: Readonly<Record<StorageMode, "volatile" | "quota" | "readonly" | null>> = {
+const STORAGE_NOTICE: Readonly<
+  Record<StorageMode, "volatile" | "quota" | "readonly" | null>
+> = {
   ok: null,
   volatile: "volatile",
   quota: "quota",
@@ -67,7 +69,16 @@ export function Topbar({
           aria-label={sidebarOpen ? t("closeMenu") : t("openMenu")}
           aria-expanded={sidebarOpen}
           aria-controls={sidebarId}
-          className="mr-1 rounded-md p-1.5 text-slate-500 hover:bg-slate-200/50 hover:text-slate-700 md:hidden"
+          // `md:hidden`, so this control only ever exists on a touch viewport:
+          // 44px (the iOS/Material figure), not the 24px WCAG 2.5.8 floor.
+          // A flex box rather than padding around the icon, so the size is the
+          // button's own and does not move when the icon does.
+          // `shrink-0` is load bearing here and was not needed before: the
+          // topbar row is tight at 390px, and the old `p-1.5` held 32px only
+          // because padding does not shrink. With the size on the button and an
+          // svg the reset gives `max-width: 100%`, min-content is zero, and
+          // flex squeezed the only way into the navigation to 0x44 (measured).
+          className="mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-200/50 hover:text-slate-700 md:hidden"
         >
           <Menu className="h-5 w-5" aria-hidden="true" />
         </button>
@@ -78,7 +89,11 @@ export function Topbar({
           // a rail link or a palette jump does, so it asks the same question.
           // `current` is false: this destination is never the current page.
           onClick={(event) => confirmNavigation(event, false)}
-          className="hidden text-xs font-medium text-slate-500 hover:text-slate-900 sm:inline"
+          // A bare `text-xs` link is a 16px line box, which is under the 24px
+          // WCAG 2.5.8 minimum: `-my-1 py-1` gets there without changing the
+          // margin box, so nothing in the topbar moves. Vertical only — the
+          // label is already wider than 24px.
+          className="-my-1 hidden py-1 text-xs font-medium text-slate-500 hover:text-slate-900 sm:inline"
         >
           + {t("newSite")}
         </Link>
@@ -139,7 +154,10 @@ export function Topbar({
           aria-busy={!ready}
           // `.wb-reset :focus-visible` draws the ring in `currentColor`, which
           // is white on this inverted button and invisible on the cream topbar.
-          className="h-[26px] rounded bg-wb-ink px-3 text-xs font-medium text-white shadow-sm transition-colors hover:bg-black focus-visible:outline-slate-900"
+          // 44px below `md`, where this is a touch target, and the prototype's
+          // 26px pill from `md` up, where it is not: the rail is permanent
+          // there and the topbar keeps the density the design asks for.
+          className="h-11 rounded bg-wb-ink px-3 text-xs font-medium text-white shadow-sm transition-colors hover:bg-black focus-visible:outline-slate-900 md:h-[26px]"
         >
           {t("artifacts", { count: ready ? artifacts.length : 0 })}
         </button>
