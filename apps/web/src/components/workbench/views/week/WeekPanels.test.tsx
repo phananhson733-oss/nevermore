@@ -146,3 +146,22 @@ describe("the borderline list with some positions unknown", () => {
     expect(panel.querySelector("[data-wb-borderline-unknown-rows]")).toBeNull();
   });
 });
+
+// Delivery review F1: the header's sample chip speaks for module results, and
+// whose GSC rows these are was only in its hover title, out of reach on touch.
+// The footnote follows `gscRowsSource`, never `state.demo`: every case sets
+// `demo` to the opposite of what the rows' source would suggest.
+describe("the borderline panel's GSC footnote", () => {
+  it.each<[WeekLocale, WorkbenchProjectState["gscRowsSource"], boolean, string | null]>([
+    ["en", "user", true, "These GSC rows come from data you imported, not from a sample"],
+    ["en", "sample", false, "These GSC rows come from sample data"],
+    ["en", null, true, null],
+    ["zh-CN", "user", true, "这些 GSC 行来自你导入的数据，不是示例"],
+    ["zh-CN", "sample", false, "这些 GSC 行来自示例数据"],
+    ["zh-CN", null, true, null],
+  ])("(%s) rows from %j with demo %j: %j", (locale, gscRowsSource, demo, sentence) => {
+    const scope = show({ ...BLANK_WEEK, demo, gscRows: [gsc("mid", 14)], gscRowsSource }, locale);
+    const foot = one(scope, "[data-wb-week-borderline]").querySelector("[data-wb-gsc-foot]");
+    expect(foot?.textContent ?? null).toBe(sentence);
+  });
+});

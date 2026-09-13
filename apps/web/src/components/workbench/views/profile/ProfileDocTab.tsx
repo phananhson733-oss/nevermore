@@ -31,8 +31,11 @@ import { UNKNOWN_TEXT, statValue } from "../../ui/stat-format.ts";
  *   engine nobody asked.
  * - Crawl and third-party numbers are always generated, so both carry the
  *   sample chip. The GSC section's label comes from the snapshot's frozen
- *   `gscSource`, in three renderings (Q6): the sample chip, nothing for the
- *   operator's own rows, and "source unknown" — never a guess at either.
+ *   `gscSource`, in three renderings (Q6): the sample chip, no chip for the
+ *   operator's own rows, and "source unknown" — never a guess at either. The
+ *   operator's rows also get the overview's visible footnote, read from the
+ *   same snapshot field and never from the project's current rows: the chip's
+ *   hover title is out of reach on touch (delivery review F1).
  * - No conclusion sentence (the prototype's "a high brand share means…", jsx
  *   P8 / Q16) and no "AI summary failed" box (Q15): there is no model, only
  *   placeholders, and the product section says so.
@@ -185,6 +188,16 @@ function TopQueries({ rows }: { readonly rows: readonly GscRow[] }) {
   );
 }
 
+/** Whose rows these are, in visible text: the overview's footnote, for the snapshot's own rows. */
+function GscUserFoot() {
+  const t = useTranslations("workbench.overview.gscFoot");
+  return (
+    <p data-wb-frame="" data-wb-gsc-foot="" className="text-xs text-slate-500">
+      {t("user")}
+    </p>
+  );
+}
+
 function GscSection({ gsc, source }: { readonly gsc: GscSignals; readonly source: GscRowsSource | null }) {
   const t = useTranslations("workbench.profile.doc");
   const counts: readonly FactRow[] = [
@@ -202,6 +215,7 @@ function GscSection({ gsc, source }: { readonly gsc: GscSignals; readonly source
       <p data-wb-frame="" className="text-xs text-slate-500">
         {t("gscNote")}
       </p>
+      {source === "user" ? <GscUserFoot /> : null}
     </Section>
   );
 }

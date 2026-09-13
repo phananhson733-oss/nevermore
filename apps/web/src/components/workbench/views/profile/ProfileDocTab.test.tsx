@@ -9,7 +9,8 @@
  *   the brand / non-brand clicks are two rows, so no "63 / " half-sentence can
  *   appear (jsx P7).
  * - The GSC section's provenance label has three renderings (Q6): the sample
- *   chip, nothing for the operator's own rows, and "source unknown". Each is
+ *   chip, nothing beside the title for the operator's own rows (they get a
+ *   visible footnote, from the snapshot), and "source unknown". Each is
  *   asserted on the visible text, not on an attribute derived from the same
  *   variable as the label.
  * - A section whose signals are `null` is absent entirely, metrics included.
@@ -27,7 +28,7 @@ import { getMessages } from "@sf/i18n";
 import { afterEach, describe, expect, it } from "vitest";
 import { FIXTURE_DOC } from "@/lib/workbench/mock/builders/builder-fixtures";
 import type { GscSignals, ProfileDoc } from "@/lib/workbench/types";
-import { HAN, must } from "./profile-view-test-harness.tsx";
+import { BLANK_PROFILE, HAN, must, renderProfile, type ProfileLocale } from "./profile-view-test-harness.tsx";
 import { ProfileDocTab } from "./ProfileDocTab.tsx";
 
 const en = getMessages("en").workbench;
@@ -233,5 +234,40 @@ describe("ProfileDocTab frame", () => {
 
   it("renders no inline style", () => {
     expect(render(FIXTURE_DOC).querySelector("[style]")).toBeNull();
+  });
+});
+
+// Delivery review F1: the operator's own rows had no visible provenance, only the
+// header chip's hover title. The footnote follows the snapshot's frozen
+// `gscSource`; every case sets the project's current `gscRowsSource` to something
+// else, so a section that read the current rows would show the wrong thing.
+describe("ProfileDocTab GSC footnote, from the snapshot", () => {
+  it.each<[ProfileLocale, ProfileDoc["gscSource"], ProfileDoc["gscSource"], string | null, "sampleData" | "gscSourceUnknown" | null]>([
+    ["en", "user", "sample", "These GSC rows come from data you imported, not from a sample", null],
+    ["en", "sample", "user", null, "sampleData"],
+    ["en", null, "user", null, "gscSourceUnknown"],
+    ["zh-CN", "user", "sample", "这些 GSC 行来自你导入的数据，不是示例", null],
+    ["zh-CN", "sample", "user", null, "sampleData"],
+    ["zh-CN", null, "user", null, "gscSourceUnknown"],
+  ])("(%s) a %j snapshot with %j rows in the project now: footnote %j", (locale, gscSource, gscRowsSource, sentence, label) => {
+    const rendered = renderProfile(
+      {
+        ...BLANK_PROFILE,
+        profileDoc: { ...FIXTURE_DOC, gscSource },
+        gscRows: [{ query: "acme seo", clicks: 3, impressions: 90, ctr: 0.03, position: 14 }],
+        gscRowsSource,
+      },
+      { locale },
+    );
+    cleanup = rendered.unmount;
+    const gsc = section(rendered.container, "gsc");
+    expect(gsc.querySelector("[data-wb-gsc-foot]")?.textContent ?? null).toBe(sentence);
+    const messages = getMessages(locale).workbench;
+    const labels = { sampleData: messages.shell.sampleData, gscSourceUnknown: messages.profile.doc.gscSourceUnknown };
+    // The chip and the unknown label stay as they were: only the snapshot's own label is there.
+    for (const [name, value] of Object.entries(labels)) {
+      if (name === label) expect(gsc.textContent ?? "", name).toContain(value);
+      else expect(gsc.textContent ?? "", name).not.toContain(value);
+    }
   });
 });

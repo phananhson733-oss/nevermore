@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import type { WeekEvent } from "@/lib/workbench/mock/builders/week";
 import { workbenchHref, type WorkbenchPageId } from "@/lib/workbench/routes";
+import type { GscRowsSource } from "@/lib/workbench/types";
 import {
   BUTTON_MINI,
   BUTTON_SECONDARY,
@@ -31,6 +32,11 @@ import { weekNextSteps, type BorderlineQuery, type WeekSummary } from "./week-su
  *   known ones and names how many rows have none: "no queries in that range" is
  *   a claim about every row, so it appears only when every position is known
  *   (codex S7a #4).
+ * - The borderline panel says whose GSC rows it read, with the overview's own
+ *   footnote, by `gscRowsSource` and never by `state.demo`: the header chip
+ *   speaks for module results, its hover title is out of reach on touch, and
+ *   rows imported after loading the sample are the operator's (delivery review
+ *   F1). `null` shows neither sentence, because neither is known to be true.
  * - Every "go" is a `<Link>` (Q21), so the Studio unsaved-changes guard sees it.
  */
 
@@ -160,7 +166,20 @@ function BorderlineBody({ borderline, unknownRows }: BorderlineProps) {
   );
 }
 
-function BorderlinePanel({ borderline, unknownRows }: BorderlineProps) {
+function GscFoot({ source }: { readonly source: GscRowsSource | null }) {
+  const t = useTranslations("workbench.overview.gscFoot");
+  return source === null ? null : (
+    <p data-wb-frame="" data-wb-gsc-foot="" className="mt-4 text-xs text-slate-500">
+      {t(source)}
+    </p>
+  );
+}
+
+function BorderlinePanel({
+  borderline,
+  unknownRows,
+  gscRowsSource,
+}: BorderlineProps & { readonly gscRowsSource: GscRowsSource | null }) {
   const t = useTranslations("workbench.week.borderlineList");
   return (
     <section data-wb-week-borderline="" className={`${PANEL_SHELL} h-fit`}>
@@ -172,6 +191,7 @@ function BorderlinePanel({ borderline, unknownRows }: BorderlineProps) {
           {t("detail")}
         </p>
         <BorderlineBody borderline={borderline} unknownRows={unknownRows} />
+        <GscFoot source={gscRowsSource} />
       </div>
     </section>
   );
@@ -207,16 +227,23 @@ function NextSteps({ summary, projectId }: { readonly summary: WeekSummary; read
 export function WeekPanels({
   summary,
   projectId,
+  gscRowsSource,
 }: {
   readonly summary: WeekSummary;
   readonly projectId: string;
+  /** The source of the rows `summary.borderline` was read from. */
+  readonly gscRowsSource: GscRowsSource | null;
 }) {
   return (
     <>
       <SummaryRow summary={summary} />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_400px]">
         <FeedPanel events={summary.events} projectId={projectId} />
-        <BorderlinePanel borderline={summary.borderline} unknownRows={summary.borderlineUnknownRows} />
+        <BorderlinePanel
+          borderline={summary.borderline}
+          unknownRows={summary.borderlineUnknownRows}
+          gscRowsSource={gscRowsSource}
+        />
       </div>
       <NextSteps summary={summary} projectId={projectId} />
     </>

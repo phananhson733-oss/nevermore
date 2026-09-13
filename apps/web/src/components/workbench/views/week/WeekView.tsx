@@ -74,7 +74,7 @@ export function WeekView() {
       ) : (
         <>
           <WeekCards summary={summary} projectId={projectId} />
-          <WeekPanels summary={summary} projectId={projectId} />
+          <WeekPanels summary={summary} projectId={projectId} gscRowsSource={state.gscRowsSource} />
         </>
       )}
       <WeekReport
