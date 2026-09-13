@@ -167,6 +167,9 @@ describe("ConfirmDialog", () => {
     act(() => buttonWith(COPY.confirmLabel).click());
 
     expect(handlers.onConfirm).toHaveBeenCalledTimes(1);
+    // It does not close itself: the caller owns `open`, so a slow action can
+    // keep the box up until it is done.
+    expect(handlers.onClose).not.toHaveBeenCalled();
   });
 
   it("closes on cancel without confirming", () => {

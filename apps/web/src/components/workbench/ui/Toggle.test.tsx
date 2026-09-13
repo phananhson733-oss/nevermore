@@ -169,13 +169,14 @@ describe("Toggle", () => {
     expect(onChange.mock.calls).toEqual([[true]]);
   });
 
-  it("takes its hit area from the swept panel constant, which clears the 24px floor", () => {
+  it("takes its hit area from the swept panel constant alone, which clears the 24px floor", () => {
     const scope = render(<Toggle checked label={LABEL} onChange={vi.fn()} />);
     const control = switchOf(scope);
 
-    for (const name of SWITCH_TRACK.split(/\s+/u).filter(Boolean)) {
-      expect(control.classList.contains(name), name).toBe(true);
-    }
+    // Exactly the constant, not "has every class of it": an extra class such as
+    // `max-w-[16px]` shrinks the target while every constant class is still
+    // there, and the sweep in panel.test.ts never sees this component.
+    expect(control.className).toBe(SWITCH_TRACK);
     const heights = [...SWITCH_TRACK.matchAll(/min-h-\[(\d+)px\]/gu)].map(
       (found) => Number(found[1]),
     );
