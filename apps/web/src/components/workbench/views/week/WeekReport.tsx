@@ -1,16 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   WEEKLY_REPORT_META,
   weeklyReportMarkdown,
 } from "@/lib/workbench/mock/builders/week";
-import {
-  useAddArtifact,
-  type ArtifactDraft,
-  type PreparedArtifact,
-} from "../../hooks/useAddArtifact.ts";
+import { usePreparedArtifact } from "../../hooks/usePreparedArtifact.ts";
 import {
   ARTIFACT_ACTION_LABEL_KEYS,
   ArtifactActions,
@@ -26,22 +21,10 @@ import { weeklyReportInput, type WeekSummary } from "./week-summary.ts";
  * `useAddArtifact`; copy, export, save and "copy for an AI" all hand over that
  * one prepared text (`ArtifactActions`).
  *
- * Prepared in an effect, keyed by what the draft says, so the same
- * `PreparedArtifact` object survives every re-render until the report's content
- * changes. Preparing during render would mint a new id and read the clock on
- * every pass; one object per content keeps whatever the shared row ties to the
- * object it is handed out of this view's concern.
- *
- * Only a prepared report whose key matches the current draft is handed on
- * (codex S7b #3), and only while the store can take a save at all (codex S7r2
- * #2). In the render after the content changes and before the effect prepares
- * the new text, the previous object would otherwise reach the row, and a click
- * in that window would copy, export or save last render's report; the row shows
- * its skeleton for that render instead. When `useAddArtifact` answers `null`
- * the effect prepares nothing and keeps the old slot, so the key alone would
- * go on handing that object out for as long as the content stays the same. Whatever the row was showing
- * for the previous report (a "Saved" flash, a refusal) goes with it, which is
- * the price of never offering text the page no longer says.
+ * Prepared by the shared `hooks/usePreparedArtifact.ts` (T9 review P3-5): one
+ * object per report content, and nothing while the report's current text is not
+ * prepared yet or the store cannot take a save (codex S7b #3, S7r2 #2); the row
+ * shows its skeleton then.
  *
  * Labels are the shared `artifactActions` messages, generated from
  * `ARTIFACT_ACTION_LABEL_KEYS` so a label the row gains is picked up here
@@ -51,32 +34,6 @@ import { weeklyReportInput, type WeekSummary } from "./week-summary.ts";
  * An empty project's report is disabled, with the sentence saying why
  * (W18): a report of dashes is not something to hand anyone.
  */
-
-interface PreparedSlot {
-  readonly key: string;
-  readonly prepared: PreparedArtifact;
-}
-
-function usePreparedArtifact(draft: ArtifactDraft): PreparedArtifact | null {
-  const prepare = useAddArtifact();
-  const key = JSON.stringify([
-    draft.module,
-    draft.type,
-    draft.engine,
-    draft.title,
-    draft.filename ?? null,
-    draft.body,
-  ]);
-  const [slot, setSlot] = useState<PreparedSlot | null>(null);
-  const canPrepare = prepare !== null;
-  useEffect(() => {
-    if (prepare === null) return;
-    setSlot({ key, prepared: prepare(draft) });
-    // `prepare` and `draft` are new objects on every render; `key` is what they
-    // carry and `canPrepare` is whether the store can take a save at all.
-  }, [key, canPrepare]);
-  return canPrepare && slot?.key === key ? slot.prepared : null;
-}
 
 type LabelField = keyof typeof ARTIFACT_ACTION_LABEL_KEYS;
 

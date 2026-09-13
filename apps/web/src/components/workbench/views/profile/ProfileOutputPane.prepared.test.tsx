@@ -2,8 +2,9 @@
 
 /**
  * The profile actions never hand over text prepared for another tab or another
- * snapshot (the week page's codex S7b #3, repeated here because the profile
- * page keeps its own copy of the hook). Every render's `prepared` is recorded,
+ * snapshot (codex S7b #3), through the `hooks/usePreparedArtifact.ts` the
+ * week report shares; the store-cannot-save case is pinned in
+ * `WeekReport.test.tsx`. Every render's `prepared` is recorded,
  * so the render between a tab switch and the effect that prepares the new text
  * is seen directly, not through a click racing it.
  *

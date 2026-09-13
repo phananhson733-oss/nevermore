@@ -22,7 +22,7 @@ import {
   type ProfileTab,
 } from "./profile-artifact.ts";
 import type { ProfileRunProgress } from "./useProfileRun.ts";
-import { usePreparedArtifact } from "./usePreparedArtifact.ts";
+import { usePreparedArtifact } from "../../hooks/usePreparedArtifact.ts";
 
 /**
  * The profile page's output pane (plan Task 9 Step 4; outward form
