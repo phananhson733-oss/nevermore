@@ -182,13 +182,13 @@ function projectBytes(demo: boolean): string {
   return JSON.stringify({ v: PERSISTED_VERSION, state: { ...populatedProjectState(SEED), demo } });
 }
 
-/** The visible short label shown below `lg`, where the live region is not painted. */
+/** The visible short label shown below `xl`, where the live region is not painted. */
 function compactNotice(scope: ParentNode): HTMLElement | null {
   return scope.querySelector<HTMLElement>("[data-wb-storage-compact]");
 }
 
 /**
- * The compact label is painted only below `lg`, hidden from assistive tech (the
+ * The compact label is painted only below `xl`, hidden from assistive tech (the
  * live region already announces the sentence), and never a second status.
  */
 function expectCompactNotice(container: HTMLElement, text: string): void {
@@ -196,7 +196,7 @@ function expectCompactNotice(container: HTMLElement, text: string): void {
   if (!compact) throw new Error("no compact storage notice rendered");
   expect(compact.textContent).toBe(text);
   expect(compact.getAttribute("aria-hidden")).toBe("true");
-  expect(compact.classList.contains("lg:hidden")).toBe(true);
+  expect(compact.classList.contains("xl:hidden")).toBe(true);
   expect(compact.closest('[role="status"]')).toBeNull();
   expect(compact.querySelector('[role="status"]')).toBeNull();
   expect(container.querySelectorAll('[role="status"]')).toHaveLength(1);
@@ -289,6 +289,23 @@ function boxButton(box: HTMLElement, label: string): HTMLButtonElement {
 function sampleChip(header: HTMLElement, locale: keyof typeof CLEAR_COPY): HTMLElement | null {
   const title = locale === "en" ? en.workbench.shell.sampleTitle : zhCN.workbench.shell.sampleTitle;
   return header.querySelector<HTMLElement>(`span[title="${title}"]`);
+}
+
+/**
+ * `button` follows `chip` in document order with no focusable control between
+ * them. They are not siblings: the chip ends the topbar's first row and the
+ * button starts the second (T17), and document order is what Tab and a screen
+ * reader follow.
+ */
+function expectRightAfterChip(button: HTMLElement, chip: HTMLElement | null): void {
+  if (!chip) throw new Error("no sample chip rendered");
+  const follows = (a: Node, b: Node): boolean =>
+    (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  expect(follows(chip, button)).toBe(true);
+  const between = Array.from(
+    document.querySelectorAll<HTMLElement>("button, a[href], input, select, textarea, [tabindex]"),
+  ).filter((node) => node !== button && follows(chip, node) && follows(node, button));
+  expect(between).toEqual([]);
 }
 
 function press(button: HTMLButtonElement): void {
@@ -439,7 +456,7 @@ describe("Topbar", () => {
     expect(compactNotice(container)).toBeNull();
   });
 
-  describe("visible notice below lg, where the sentence is screen-reader only", () => {
+  describe("visible notice below xl, where the sentence is screen-reader only", () => {
     it("shows it in read-only mode, in both languages", () => {
       window.localStorage.setItem(storageKey(PROJECT_ID), newerBuildBytes());
       const container = render();
@@ -496,19 +513,19 @@ describe("Topbar", () => {
       expect(clearButton(header)).toBeNull();
     });
 
-    it("sits right after the sample chip once the sample is loaded, in both languages", () => {
+    it("comes right after the sample chip in document order once the sample is loaded, in both languages", () => {
       window.localStorage.setItem(storageKey(PROJECT_ID), projectBytes(true));
       const button = requireClearButton(topbar(render()));
       expect(button.type).toBe("button");
-      expect(button.previousElementSibling).toBe(sampleChip(topbar(document), "en"));
-      expect(button.previousElementSibling?.textContent).toBe(CLEAR_COPY.en.chip);
+      expectRightAfterChip(button, sampleChip(topbar(document), "en"));
+      expect(sampleChip(topbar(document), "en")?.textContent).toBe(CLEAR_COPY.en.chip);
       cleanup?.();
 
       window.localStorage.setItem(storageKey(PROJECT_ID), projectBytes(true));
       const header = topbar(render("zh-CN"));
       const zhButton = requireClearButton(header, CLEAR_COPY["zh-CN"].button);
-      expect(zhButton.previousElementSibling).toBe(sampleChip(header, "zh-CN"));
-      expect(zhButton.previousElementSibling?.textContent).toBe(CLEAR_COPY["zh-CN"].chip);
+      expectRightAfterChip(zhButton, sampleChip(header, "zh-CN"));
+      expect(sampleChip(header, "zh-CN")?.textContent).toBe(CLEAR_COPY["zh-CN"].chip);
     });
 
     it("sizes itself explicitly: 44x44 below md, where it is a touch target", () => {

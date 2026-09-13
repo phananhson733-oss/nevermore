@@ -193,6 +193,12 @@
  * uses the same classes on the dark `/new-project` sidebar, so the light values
  * are scoped to the workbench chrome instead of replacing the base rules. */
 :global(.wb-reset) .projectSwitcher {
+  /* The workbench topbar's only shrinkable control: the (max-width: 960px)
+   * rule's 128px floor left no room for the menu button beside the account
+   * group at 360-414px. The clip keeps a narrow box from painting the avatar
+   * and chevron over its neighbours; the full name stays in the select. */
+  min-width: 0;
+  overflow: hidden;
   background: #fff;
   border-color: var(--color-slate-200, #e2e8f0);
 }
@@ -214,6 +220,12 @@
  * `color-scheme` and the option colours below. */
 :global(.wb-reset) .projectSelect {
   color-scheme: light;
+}
+/* Keyboard focus on the switcher. The select is the real control but sits at
+ * `opacity: 0.001`, so `.wb-reset :focus-visible`'s outline on it never showed;
+ * the ring goes on the box instead, inset so the overflow above cannot clip it. */
+:global(.wb-reset) .projectSwitcher:has(.projectSelect:focus-visible) {
+  box-shadow: inset 0 0 0 2px var(--color-slate-900, #0f172a);
 }
 :global(.wb-reset) .projectSelect option {
   color: var(--color-slate-900, #0f172a);
