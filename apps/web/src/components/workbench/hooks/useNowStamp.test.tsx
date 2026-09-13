@@ -18,7 +18,7 @@ import {
   WorkbenchContext,
   type WorkbenchContextValue,
 } from "@/lib/workbench/store/WorkbenchProvider";
-import { useNowStamp, type NowStamp } from "./useNowStamp.ts";
+import { NOW_STAMP_REFRESH_MS, useNowStamp, type NowStamp } from "./useNowStamp.ts";
 
 // React only suppresses false-positive concurrent-render warnings when a test
 // harness explicitly declares that state transitions are wrapped in `act`.
@@ -47,7 +47,22 @@ afterEach(() => {
   cleanup?.();
   cleanup = null;
   vi.useRealTimers();
+  Reflect.deleteProperty(document, "visibilityState");
 });
+
+/** Fakes the clock and the interval the hook ticks on; timeouts stay real. */
+function fakeClockAndInterval(at: Date): void {
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  vi.setSystemTime(at);
+}
+
+/** What a tab switch does: the document's visibility changes, then the event fires. */
+function setVisibility(state: DocumentVisibilityState): void {
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+  act(() => {
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+}
 
 interface Mounted {
   /** What the hook returned on each render pass, oldest first. */
@@ -104,7 +119,7 @@ describe("useNowStamp", () => {
     expect(value.stamp).toBe(formatLocalStamp(value.now));
   });
 
-  it("keeps the first reading across later renders", () => {
+  it("does not re-read the clock on a rerender alone", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(AT);
     const mounted = mount(true);
@@ -129,5 +144,60 @@ describe("useNowStamp", () => {
     );
     expect(html).toContain("skeleton");
     expect(html).not.toContain("2026-09-13");
+  });
+});
+
+// Week audit #2: a page left open past midnight kept yesterday's seven dates.
+describe("useNowStamp while mounted", () => {
+  it("re-reads the clock once a minute", () => {
+    fakeClockAndInterval(AT);
+    const { seen } = mount(true);
+    expect(seen.at(-1)?.stamp).toBe("2026-09-13 10:30");
+    act(() => {
+      vi.advanceTimersByTime(NOW_STAMP_REFRESH_MS);
+    });
+    expect(seen.at(-1)?.stamp).toBe("2026-09-13 10:31");
+  });
+
+  it("re-reads the clock as soon as the tab is visible again, and not when it is hidden", () => {
+    fakeClockAndInterval(AT);
+    const { seen } = mount(true);
+    vi.setSystemTime(new Date(2026, 8, 13, 16, 5, 0));
+    setVisibility("hidden");
+    expect(seen.at(-1)?.stamp).toBe("2026-09-13 10:30");
+    setVisibility("visible");
+    expect(seen.at(-1)?.stamp).toBe("2026-09-13 16:05");
+  });
+
+  it("renders nothing new when the minute has not changed", () => {
+    fakeClockAndInterval(new Date(2026, 8, 13, 10, 30, 0));
+    const { seen } = mount(true);
+    const before = seen.length;
+    const reading = seen.at(-1);
+    vi.setSystemTime(new Date(2026, 8, 13, 10, 30, 50));
+    setVisibility("visible");
+    expect(seen).toHaveLength(before);
+    expect(seen.at(-1)).toBe(reading);
+  });
+
+  it("clears its interval and its visibility listener when unmounted", () => {
+    fakeClockAndInterval(AT);
+    const added = vi.spyOn(document, "addEventListener");
+    const removed = vi.spyOn(document, "removeEventListener");
+    const { seen } = mount(true);
+    const listener = added.mock.calls.find(([type]) => type === "visibilitychange")?.[1];
+    expect(listener).toBeDefined();
+    expect(vi.getTimerCount()).toBe(1);
+    cleanup?.();
+    cleanup = null;
+    const after = seen.length;
+    expect(vi.getTimerCount()).toBe(0);
+    expect(removed).toHaveBeenCalledWith("visibilitychange", listener);
+    vi.setSystemTime(new Date(2026, 8, 14, 9, 0, 0));
+    vi.advanceTimersByTime(10 * NOW_STAMP_REFRESH_MS);
+    setVisibility("visible");
+    expect(seen).toHaveLength(after);
+    added.mockRestore();
+    removed.mockRestore();
   });
 });
