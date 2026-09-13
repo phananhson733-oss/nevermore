@@ -153,7 +153,8 @@ const FULL: WorkbenchProjectState = {
   ],
   lastVis: { at: "2026-09-12 11:00", results: hits(14, 40) },
   visResults: hits(14, 40),
-  visHistory: [{ at: "2026-09-05 11:00", results: hits(29, 100) }],
+  // Same 40 prompts as `lastVis`: a run over another set is not compared (codex S7a #1).
+  visHistory: [{ at: "2026-09-05 11:00", results: hits(12, 40) }],
   gscRows: [
     gsc("thirty", 30),
     gsc("eleven", 11),
@@ -345,7 +346,7 @@ describe("WeekView with a week of results", () => {
     const scope = render(FULL);
     const card = one(scope, "[data-wb-week-card='mention']");
     expect(
-      card.textContent?.startsWith(`35%+6pt${en.week.cards.mention.label}`),
+      card.textContent?.startsWith(`35%+5pt${en.week.cards.mention.label}`),
     ).toBe(true);
     expect(text(card, "[data-wb-foot='share']")).toBe(
       "Mentioned in 14 of 40 answers",

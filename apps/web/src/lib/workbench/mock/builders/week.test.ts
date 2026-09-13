@@ -41,7 +41,7 @@ const HEALTH_PREVIOUS: NonNullable<WeekHealth["previous"]> = {
   newly: ["缺少 meta description"],
 };
 
-const HEALTH: WeekHealth = { at: "2026-09-12 10:00", score: 56, previous: HEALTH_PREVIOUS };
+const HEALTH: WeekHealth = { at: "2026-09-12 10:00", score: 56, previous: HEALTH_PREVIOUS, incomparableAt: null };
 
 const MENTION: WeekMention = {
   at: "2026-09-12 11:00",
@@ -52,6 +52,15 @@ const MENTION: WeekMention = {
 };
 
 const MENTION_PREVIOUS: NonNullable<WeekMention["previous"]> = { at: "2026-09-05 11:00", share: "29%", deltaPt: 6 };
+
+/** Both shares are `<1%`: comparable runs, but no whole-point difference to print (codex S7a #7). */
+const BAND_MENTION: WeekMention = {
+  ...MENTION,
+  share: "<1%",
+  hits: 2,
+  total: 201,
+  previous: { ...MENTION_PREVIOUS, share: "<1%", deltaPt: null },
+};
 
 const FULL: WeeklyReportInput = {
   brand: "Acme",
@@ -177,6 +186,20 @@ describe("weeklyReportMarkdown", () => {
     expect(text).not.toContain("###");
   });
 
+  // codex S7a #2: there were two checks, so "only one check" would be false.
+  it("says an earlier check over other pages was not compared, not that there was only one", () => {
+    const text = weeklyReportMarkdown({
+      ...EMPTY,
+      health: { ...HEALTH, previous: null, incomparableAt: "2026-09-05 10:00" },
+    });
+    expect(lineStarting(text, "- 技术健康分")).toBe("- 技术健康分：56（检查于 2026-09-12 10:00）");
+    expect(text).toContain(
+      "- 上一次检查（2026-09-05 10:00）查过的页面不能确认和最近一次（2026-09-12 10:00）相同，这里不做对比。",
+    );
+    expect(text).not.toContain("只有一次检查结果");
+    expect(text).not.toContain("###");
+  });
+
   it("lists an unchanged pair of checks as none on both sides", () => {
     const text = weeklyReportMarkdown({
       ...EMPTY,
@@ -192,6 +215,13 @@ describe("weeklyReportMarkdown", () => {
     const text = weeklyReportMarkdown({ ...EMPTY, mention: { ...MENTION, previous: null } });
     expect(lineStarting(text, "- AI 提及率")).toBe(
       "- AI 提及率：35%（40 次问答里有 14 次提到品牌，检查于 2026-09-12 11:00）",
+    );
+  });
+
+  it("names the earlier run but prints no points when a share is a band", () => {
+    const text = weeklyReportMarkdown({ ...EMPTY, mention: BAND_MENTION });
+    expect(lineStarting(text, "- AI 提及率")).toBe(
+      "- AI 提及率：<1%（201 次问答里有 2 次提到品牌，检查于 2026-09-12 11:00；较上次（2026-09-05 11:00，<1%））",
     );
   });
 
@@ -229,8 +259,9 @@ describe("weekly report honesty", () => {
     { ...HEALTH, previous: null },
     { ...HEALTH, previous: { ...HEALTH_PREVIOUS, scoreDelta: -2, noLonger: [], newly: [] } },
     HEALTH,
+    { ...HEALTH, previous: null, incomparableAt: "2026-09-05 10:00" },
   ];
-  const mentions: readonly (WeekMention | null)[] = [null, { ...MENTION, previous: null }, MENTION];
+  const mentions: readonly (WeekMention | null)[] = [null, { ...MENTION, previous: null }, MENTION, BAND_MENTION];
   const counts: readonly Pick<
     WeeklyReportInput,
     "artifactsThisWeek" | "borderline" | "answerGaps" | "kbGaps" | "highFindings"
@@ -242,7 +273,7 @@ describe("weekly report honesty", () => {
   const taskTitles: readonly (readonly string[])[] = [[], FULL.auditTaskTitles];
   const eventLists: readonly (readonly WeekEvent[])[] = [[], EVENTS];
 
-  // 4 × 3 × 3 × 2 × 2 = 144: every branch of every section, in every pairing.
+  // 5 × 4 × 3 × 2 × 2 = 240: every branch of every section, in every pairing.
   const matrix: readonly WeeklyReportInput[] = healths.flatMap((health) =>
     mentions.flatMap((mention) =>
       counts.flatMap((count) =>
@@ -254,7 +285,7 @@ describe("weekly report honesty", () => {
   );
 
   it("covers the whole matrix", () => {
-    expect(matrix).toHaveLength(144);
+    expect(matrix).toHaveLength(240);
   });
 
   it("claims no repair, no promise, no cause and no rank movement in any branch", () => {

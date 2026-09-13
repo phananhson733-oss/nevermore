@@ -19,6 +19,10 @@
  *   did not.
  * - Rank movement (Q17). There is no keyword position history, so no number
  *   here ever moves from one position to another.
+ * - A change between two checks of different things (codex S7a #1 / #2 / #7).
+ *   An earlier audit over other pages is named and not compared, instead of
+ *   「只有一次检查结果」, and a mention share printed as a band carries no point
+ *   delta. `week-summary.ts` decides both; this file prints what it is given.
  * - 「较上周」 (Q20). The previous run may be a day or months old; its stamp is
  *   printed instead.
  * - The prototype's promises and superlatives (「通常就能进前十」,
@@ -57,7 +61,13 @@ export interface WeekAuditComparison {
 export interface WeekHealth {
   readonly at: string;
   readonly score: number;
+  /** `null` with no archived check, or with one that is not comparable to the latest. */
   readonly previous: WeekAuditComparison | null;
+  /**
+   * The archived check's stamp when there is one but it did not list the same
+   * checked pages as the latest, so it was not compared; `null` otherwise.
+   */
+  readonly incomparableAt: string | null;
 }
 
 export interface WeekMention {
@@ -69,7 +79,8 @@ export interface WeekMention {
   readonly previous: {
     readonly at: string;
     readonly share: string;
-    readonly deltaPt: number;
+    /** `null` when either share prints as a band (`<1%` / `>99%`): there is no whole-point difference. */
+    readonly deltaPt: number | null;
   } | null;
 }
 
@@ -142,7 +153,7 @@ function mentionLine(mention: WeekMention | null): string {
   const since =
     previous === null
       ? ""
-      : `；较上次（${previous.at}，${previous.share}）${signed(previous.deltaPt)}pt`;
+      : `；较上次（${previous.at}，${previous.share}）${previous.deltaPt === null ? "" : `${signed(previous.deltaPt)}pt`}`;
   return `- AI 提及率：${mention.share}（${mention.total} 次问答里有 ${mention.hits} 次提到品牌，检查于 ${mention.at}${since}）`;
 }
 
@@ -170,6 +181,12 @@ function changesSection(health: WeekHealth | null): string {
   ];
   if (health === null) return [...head, "- 没有检查结果。"].join("\n");
   const { previous } = health;
+  if (previous === null && health.incomparableAt !== null) {
+    return [
+      ...head,
+      `- 上一次检查（${health.incomparableAt}）查过的页面不能确认和最近一次（${health.at}）相同，这里不做对比。`,
+    ].join("\n");
+  }
   if (previous === null) {
     return [...head, `- 只有一次检查结果（${health.at}），没有可对比的上一次。`].join("\n");
   }

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { DEMO_SEEDS, makeDemoSite } from "@/lib/workbench/mock/demo";
+import { FULL_PROFILE, testDeps } from "@/lib/workbench/mock/demo-test-fixtures";
 import { initialProjectState, type ProjectSeed } from "@/lib/workbench/store/reducer";
 import { populatedProjectState } from "@/lib/workbench/store/test-fixtures";
 import type {
@@ -43,6 +45,11 @@ function report(at: string, score: number, findings: readonly Finding[]): AuditR
   return { ...must(POPULATED.lastAudit), at, score, findings };
 }
 
+function pages(...urls: readonly string[]): AuditReport["pageRows"] {
+  const row = must(POPULATED.lastAudit?.pageRows[0]);
+  return urls.map((url) => ({ ...row, url }));
+}
+
 function result(p: string, platform: string, hit: boolean): VisResult {
   return { ...must(POPULATED.lastVis?.results[0]), p, platform, hit };
 }
@@ -80,7 +87,7 @@ describe("weekSummary: technical health", () => {
 
   it("has no comparison when there is no earlier report", () => {
     const state = blank({ lastAudit: report("2026-09-12 10:00", 56, []) });
-    expect(weekSummary(state, NOW).health).toEqual({ at: "2026-09-12 10:00", score: 56, previous: null });
+    expect(weekSummary(state, NOW).health).toEqual({ at: "2026-09-12 10:00", score: 56, previous: null, incomparableAt: null });
   });
 
   it("compares with the last archived report, by finding title", () => {
@@ -95,7 +102,40 @@ describe("weekSummary: technical health", () => {
       at: "2026-09-12 10:00",
       score: 56,
       previous: { at: "2026-09-05 10:00", scoreDelta: 7, noLonger: ["gone-1", "gone-2"], newly: ["new"] },
+      incomparableAt: null,
     });
+  });
+
+  // codex S7a #2: the earlier check found a high-severity issue on /b and the
+  // latest never looked at /b. That page is unchecked, not better.
+  it("has no comparison when the two checks looked at different pages", () => {
+    const state = blank({
+      lastAudit: { ...report("2026-09-12 10:00", 100, []), pageRows: pages("/a") },
+      auditHistory: [{ ...report("2026-09-05 10:00", 80, [finding("Missing title", "high")]), pageRows: pages("/a", "/b") }],
+    });
+    expect(weekSummary(state, NOW).health).toEqual({
+      at: "2026-09-12 10:00",
+      score: 100,
+      previous: null,
+      incomparableAt: "2026-09-05 10:00",
+    });
+  });
+
+  it("has no comparison when neither check lists the pages it looked at", () => {
+    const state = blank({
+      lastAudit: { ...report("2026-09-12 10:00", 100, []), pageRows: [] },
+      auditHistory: [{ ...report("2026-09-05 10:00", 80, []), pageRows: [] }],
+    });
+    expect(weekSummary(state, NOW).health?.previous).toBeNull();
+    expect(weekSummary(state, NOW).health?.incomparableAt).toBe("2026-09-05 10:00");
+  });
+
+  it("compares two checks over the same pages listed in another order", () => {
+    const state = blank({
+      lastAudit: { ...report("2026-09-12 10:00", 90, []), pageRows: pages("/b", "/a") },
+      auditHistory: [{ ...report("2026-09-05 10:00", 80, []), pageRows: pages("/a", "/b") }],
+    });
+    expect(weekSummary(state, NOW).health?.previous?.scoreDelta).toBe(10);
   });
 
   it("counts high-severity findings in the latest report, and knows zero", () => {
@@ -136,10 +176,10 @@ describe("weekSummary: AI mention rate", () => {
       lastVis: { at: "2026-09-12 11:00", results: hits(14, 40) },
       visHistory: [
         { at: "2026-08-01 11:00", results: hits(1, 40) },
-        { at: "2026-09-05 11:00", results: hits(29, 100) },
+        { at: "2026-09-05 11:00", results: hits(12, 40) },
       ],
     });
-    expect(weekSummary(state, NOW).mention?.previous).toEqual({ at: "2026-09-05 11:00", share: "29%", deltaPt: 6 });
+    expect(weekSummary(state, NOW).mention?.previous).toEqual({ at: "2026-09-05 11:00", share: "30%", deltaPt: 5 });
   });
 
   it("has no comparison when the archived run returned nothing", () => {
@@ -148,6 +188,61 @@ describe("weekSummary: AI mention rate", () => {
       visHistory: [{ at: "2026-09-05 11:00", results: [] }],
     });
     expect(weekSummary(state, NOW).mention?.previous).toBeNull();
+  });
+
+  // codex S7a #1: neither platform did better; the miss was simply not asked again.
+  it("has no comparison when the earlier run asked another set of platforms", () => {
+    const state = blank({
+      lastVis: { at: "2026-09-12 11:00", results: [result("p1", "ChatGPT", true)] },
+      visHistory: [
+        { at: "2026-09-05 11:00", results: [result("p1", "ChatGPT", true), result("p1", "Perplexity", false)] },
+      ],
+    });
+    expect(weekSummary(state, NOW).mention).toEqual({
+      at: "2026-09-12 11:00",
+      share: "100%",
+      hits: 1,
+      total: 1,
+      previous: null,
+    });
+  });
+
+  it("has no comparison when the prompts changed, even at the same total", () => {
+    const state = blank({
+      lastVis: { at: "2026-09-12 11:00", results: [result("p3", "ChatGPT", true), result("p4", "ChatGPT", true)] },
+      visHistory: [
+        { at: "2026-09-05 11:00", results: [result("p1", "ChatGPT", true), result("p2", "ChatGPT", false)] },
+      ],
+    });
+    expect(weekSummary(state, NOW).mention?.previous).toBeNull();
+  });
+
+  it("compares the same prompts and platforms listed in another order", () => {
+    const state = blank({
+      lastVis: { at: "2026-09-12 11:00", results: [result("p2", "ChatGPT", true), result("p1", "ChatGPT", true)] },
+      visHistory: [
+        { at: "2026-09-05 11:00", results: [result("p1", "ChatGPT", true), result("p2", "ChatGPT", false)] },
+      ],
+    });
+    expect(weekSummary(state, NOW).mention?.previous).toEqual({ at: "2026-09-05 11:00", share: "50%", deltaPt: 50 });
+  });
+
+  // codex S7a #7: `<1%` and `>99%` are bands, so no whole-point difference exists between them.
+  it.each<[string, number, number, string]>([
+    ["both shares are below 1%", 2, 1, "<1%"],
+    ["both shares are above 99%", 200, 199, ">99%"],
+    ["only the earlier share is a band", 3, 1, "<1%"],
+    ["only the latest share is a band", 1, 3, "1%"],
+  ])("keeps the earlier run but gives no point delta when %s", (_label, latestHits, earlierHits, earlierShare) => {
+    const state = blank({
+      lastVis: { at: "2026-09-12 11:00", results: hits(latestHits, 201) },
+      visHistory: [{ at: "2026-09-05 11:00", results: hits(earlierHits, 201) }],
+    });
+    expect(weekSummary(state, NOW).mention?.previous).toEqual({
+      at: "2026-09-05 11:00",
+      share: earlierShare,
+      deltaPt: null,
+    });
   });
 
   it("counts prompts that at least one platform missed, once each", () => {
@@ -300,5 +395,21 @@ describe("weeklyReportInput", () => {
 
   it("keeps an unknown borderline count unknown", () => {
     expect(weeklyReportInput(weekSummary(blank(), NOW), "Example", NOW).borderline).toBeNull();
+  });
+});
+
+describe("weekSummary on the sample site", () => {
+  // The comparability rules must not quietly drop the sample site's own
+  // comparisons: its audits share one page list and its runs one prompt set.
+  it("still compares its audits and its visibility runs", () => {
+    const now = new Date(2026, 8, 13, 12, 0);
+    const state: WorkbenchProjectState = {
+      ...initialProjectState(SEED),
+      ...makeDemoSite(FULL_PROFILE, "full", DEMO_SEEDS, testDeps(now)),
+    };
+    const summary = weekSummary(state, now);
+    expect(summary.health?.previous).not.toBeNull();
+    expect(summary.health?.incomparableAt).toBeNull();
+    expect(summary.mention?.previous).not.toBeNull();
   });
 });

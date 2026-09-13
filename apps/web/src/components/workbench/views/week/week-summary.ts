@@ -15,9 +15,20 @@
  * stamp travels with it, because it may be a day or months old and the page
  * says 「较上次（{at}）」, not "last week".
  *
- * The mention-rate delta is in rounded points: the difference of the two shares
+ * A change is only given between two measurements of the same thing (codex
+ * S7a #1 / #2); the latest value is shown either way. Two audits are compared
+ * only when they list the same checked pages (`pageRows` URLs; an audit that
+ * lists none cannot be shown to match), so a page the latest check never looked
+ * at is not counted as better, and the report names the earlier check it did
+ * not compare (`incomparableAt`). Two visibility runs are compared only when
+ * they asked the same prompts on the same platforms, repeats counted, so
+ * dropping a platform that missed does not read as a rise.
+ *
+ * The mention-rate delta is in whole points: the difference of the two shares
  * as `formatShare` rounds them, so `+6pt` next to 35% reads against the 29% the
- * report prints for the earlier run.
+ * report prints for the earlier run. When either share prints as a band
+ * (`<1%` / `>99%`) there is no whole-point difference to give: the earlier run
+ * keeps its stamp and share, and `deltaPt` is `null` (codex S7a #7).
  *
  * Borderline queries are GSC rows at positions 11-30, by `gscStatus` and with
  * `nearCount`'s unknown rule (`mock/profile.ts`), read from the imported rows
@@ -26,6 +37,7 @@
  */
 import { countBySeverity, diffAudits } from "@/lib/workbench/mock/audit";
 import type {
+  WeekAuditComparison,
   WeekEvent,
   WeekHealth,
   WeekMention,
@@ -38,6 +50,7 @@ import { missedPrompts } from "@/lib/workbench/mock/visibility";
 import type { WorkbenchPageId } from "@/lib/workbench/routes";
 import { formatShare } from "@/lib/workbench/store/selectors";
 import type {
+  AuditReport,
   GscRow,
   VisResult,
   VisSnapshot,
@@ -92,23 +105,46 @@ export function weekRange(now: Date): { readonly from: string; readonly to: stri
   };
 }
 
+/** Code-unit order, not `localeCompare`: whether two runs match must not depend on the browser's locale. */
+function sortedKeys(keys: readonly string[]): readonly string[] {
+  return keys.toSorted();
+}
+
+/** Same keys, each as many times: two `sortedKeys` lists compared position by position. */
+function sameKeys(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((key, index) => key === b[index]);
+}
+
+function checkedPages(report: AuditReport): readonly string[] {
+  return sortedKeys(report.pageRows.map((row) => row.url));
+}
+
+function comparableAudits(latest: AuditReport, earlier: AuditReport): boolean {
+  const pages = checkedPages(latest);
+  return pages.length > 0 && sameKeys(pages, checkedPages(earlier));
+}
+
+function auditComparison(latest: AuditReport, earlier: AuditReport): WeekAuditComparison | null {
+  const delta = comparableAudits(latest, earlier) ? diffAudits(latest, earlier) : null;
+  if (delta === null) return null;
+  return {
+    at: earlier.at,
+    scoreDelta: delta.score,
+    noLonger: delta.fixed.map((finding) => finding.t),
+    newly: delta.added.map((finding) => finding.t),
+  };
+}
+
 function health(state: WeekSummaryState): WeekHealth | null {
   const latest = state.lastAudit;
   if (latest === null) return null;
   const earlier = state.auditHistory.at(-1) ?? null;
-  const delta = diffAudits(latest, earlier);
+  const previous = earlier === null ? null : auditComparison(latest, earlier);
   return {
     at: latest.at,
     score: latest.score,
-    previous:
-      delta === null || earlier === null
-        ? null
-        : {
-            at: earlier.at,
-            scoreDelta: delta.score,
-            noLonger: delta.fixed.map((finding) => finding.t),
-            newly: delta.added.map((finding) => finding.t),
-          },
+    previous,
+    incomparableAt: earlier !== null && previous === null ? earlier.at : null,
   };
 }
 
@@ -120,15 +156,27 @@ function roundedShare(results: readonly VisResult[]): number {
   return Math.round((hitCount(results) * 100) / results.length);
 }
 
+/** Each result's prompt and platform, as JSON so no separator lets two different pairs collide. */
+function askedProbes(results: readonly VisResult[]): readonly string[] {
+  return sortedKeys(results.map((result) => JSON.stringify([result.p, result.platform])));
+}
+
+/** A share `formatShare` prints as a whole percentage, not as the `<1%` / `>99%` band. */
+const WHOLE_SHARE = /^\d+%$/u;
+
 function previousMention(
   latest: readonly VisResult[],
+  latestShare: string,
   earlier: VisSnapshot | null,
 ): WeekMention["previous"] {
-  if (earlier === null || earlier.results.length === 0) return null;
+  // An earlier run that returned nothing asked nothing, so it never matches a latest run that did.
+  if (earlier === null || !sameKeys(askedProbes(latest), askedProbes(earlier.results))) return null;
+  const share = formatShare(hitCount(earlier.results), earlier.results.length);
+  const whole = WHOLE_SHARE.test(share) && WHOLE_SHARE.test(latestShare);
   return {
     at: earlier.at,
-    share: formatShare(hitCount(earlier.results), earlier.results.length),
-    deltaPt: roundedShare(latest) - roundedShare(earlier.results),
+    share,
+    deltaPt: whole ? roundedShare(latest) - roundedShare(earlier.results) : null,
   };
 }
 
@@ -137,12 +185,13 @@ function mention(state: WeekSummaryState): WeekMention | null {
   if (latest === null || latest.results.length === 0) return null;
   const hits = hitCount(latest.results);
   const total = latest.results.length;
+  const share = formatShare(hits, total);
   return {
     at: latest.at,
-    share: formatShare(hits, total),
+    share,
     hits,
     total,
-    previous: previousMention(latest.results, state.visHistory.at(-1) ?? null),
+    previous: previousMention(latest.results, share, state.visHistory.at(-1) ?? null),
   };
 }
 
