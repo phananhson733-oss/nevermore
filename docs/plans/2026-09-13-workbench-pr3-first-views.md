@@ -384,7 +384,7 @@ docs/PROGRESS.md                   T18
 
 **Files:** Create `e2e/workbench-pr3-flow.mock.spec.ts`；Modify `e2e/workbench-shell.mock.spec.ts`、`e2e/legacy-style-parity.mock.spec.ts`、`e2e/mobile-shell.mock.spec.ts`（如需）
 
-- [ ] **Step 1: 模块流** — 载入示例站点 →（视条件确认）→ 概览四卡非空且带「示例」→ 顶栏「清除示例」→ 确认 → 回空态。顺带量一次「清除示例」按钮的 `boundingBox()`（T7 的 44px 只有这里能测到）。
+- [ ] **Step 1: 模块流** — 载入示例站点 →（视条件确认）→ 概览四卡非空且带「示例」→ 顶栏「清除示例」→ 确认 → 回空态。顺带量一次「清除示例」按钮的 `boundingBox()`（T7 的 44px 只有这里能测到）。**T7 交接（`3f058f8c`，宽度是它的估算不是测量，它明确说不能断言不挤压）**：新按钮 `h-11 w-11 shrink-0` 只在示例态出现，给右组多加约 56px；右组没有 `min-w-0`，flex 会先压左组唯一可压的 ProjectSwitcher，再让 DemoChip 与产物筐文字折行；左组若被压到窄于汉堡的 48px，`shrink-0` 的汉堡会溢出组框与右组重叠。所以在 `demo=true` 下量：390px 新按钮与汉堡都是 44×44、ProjectSwitcher 宽 > 0、壳内目标两两无正面积相交、无横向溢出；640–767 与 768–1023 两段也量（`md` 起新按钮变 26px 文字按钮、`w-64` 搜索框出现）。新按钮在清扫里的名字是 `button:Clear sample`（文字来自 sr-only span），示例态清扫要把它加进 `TOUCH_44_AT_MOBILE`；今天 `/profile` fixture 的 `demo` 为 false，现有清单不受影响。
 - [ ] **Step 2: 降级门**（Claude #7）— 新增一条：`page.route("**/sources", r => r.fulfill({status: 500}))` 后站点卡显示「—」、页面无 error boundary、console 无未捕获异常。rev1 以为 `legacy-style-parity` 不装 mock API 所以「天然覆盖」，实际它装了（`:66`），这条门原本不存在。
 - [ ] **Step 3: Q30 的框架断言** — 先正向断言五个视图各有 `[data-wb-frame]` 且合并文本非空，再断言 en 下无中文、无 `workbench.` 路径；加「往框架文案插中文必须红」的变异。
 - [ ] **Step 4: 逐条核对既有断言**（清单见 research-seams §5.3，已逐条核实属实）— h1 文本严格相等；`/overview` 的 `[data-wb-badge]` 计数 0；顶栏唯一 `role="status"`；`[data-app-shell]` 内 0 个 `[style]`；Dialog 根恰好 1；`/settings` 的 `[data-wb-real-action]` 恰好 1；`mobile-shell` 390px 无横向溢出 + `progressbar` 计数 0；`frontend-error-states:226` 与 `growth-map-run:910-916` 的 `/sources` 精确计数。
