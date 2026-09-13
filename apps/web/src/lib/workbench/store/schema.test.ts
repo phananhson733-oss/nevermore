@@ -159,6 +159,29 @@ describe("classifyPersistedState (R14: data from a newer build is incompatible, 
     expect(classifyPersistedState({ v: 1, state, futureEnvelopeField: 1 })).toEqual({ kind: "incompatible" });
   });
 
+  it("does not read a profile crawl saved under the pre-rename key indexed", () => {
+    // A rename is a removed key plus a missing one. The missing indexable is a
+    // real defect, so the envelope is invalid (discarded), not incompatible: the
+    // bump rule exists for this, and the pre-ship exemption on crawlSignals in
+    // schema.ts accepts it only because no such envelope ever shipped.
+    const doc = state.profileDoc;
+    if (!doc) throw new Error("fixture must carry a profile document");
+    const preRename = {
+      pages: 42, lang: "en", stack: "Next.js", h1: "Example", hasPricing: true,
+      hasDocs: true, hasBlog: true, indexed: 40, traffic: 1200, dr: 31, refdomains: 88,
+    };
+    const old = { ...state, profileDoc: { ...doc, crawl: preRename } };
+    const issues = projectStateSchema.safeParse(old).error?.issues ?? [];
+    expect(issues).toHaveLength(2);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "unrecognized_keys", keys: ["indexed"], path: ["profileDoc", "crawl"] }),
+        expect.objectContaining({ code: "invalid_type", path: ["profileDoc", "crawl", "indexable"] }),
+      ]),
+    );
+    expect(classifyPersistedState({ v: PERSISTED_VERSION, state: old })).toEqual({ kind: "invalid" });
+  });
+
   it("is invalid for every other failure, including an extra key next to a real defect", () => {
     // `v: 2` is safe to discard: the storage key carries the version, so an
     // older build never reads a newer version's envelope.

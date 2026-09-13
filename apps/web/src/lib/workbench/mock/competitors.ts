@@ -1,7 +1,8 @@
 /**
  * Competitor overview and keyword gap (jsx:2529-2550, 2594-2599). A competitor
  * is the name the project entered, never `slugify(name) + ".com"` (R9); the
- * brand itself and the project's own domain are not competitors. Ranks inside
+ * brand itself, the project's own domain and a typed-in placeholder are not
+ * competitors (`isRealCompetitor`). Ranks inside
  * one gap row are distinct and 1-based. Once any GSC data is present, our rank
  * is only ever GSC's: a query GSC does not list, or lists without a usable
  * position, has no rank (null), never a sample one. Without GSC rows our rank
@@ -19,6 +20,7 @@ import type {
 import { PATTERNS, kwMetrics } from "./keywords.ts";
 import { pick, rngOf, seedKey } from "./rng.ts";
 import {
+  COMPETITOR_PLACEHOLDERS,
   competitorNames,
   domainOf,
   normQ,
@@ -96,17 +98,41 @@ export function domainStats(
   };
 }
 
+/** `normQ` keys of the R9 placeholders: typed in by hand, they still name nobody. */
+const PLACEHOLDER_KEYS: ReadonlySet<string> = new Set(
+  COMPETITOR_PLACEHOLDERS.map((name) => normQ(name)),
+);
+
 /**
- * Up to three competitors, skipping the brand itself and the project's own
- * domain; placeholders only when nothing is filled in. A list that names only
- * the brand or the own domain compares nobody.
+ * Whether an entered competitor name names someone else: not the brand itself
+ * (`normQ`), not the project's own domain in any spelling (`domainOf`), and not
+ * an R9 placeholder typed in literally. Every module that names a competitor
+ * (comparisons, the KB, visibility prompts and answers) applies this one rule.
+ */
+export function isRealCompetitor(
+  profile: Pick<Profile, "url" | "brand">,
+  name: string,
+): boolean {
+  const key = normQ(name);
+  const ownDomain = domainOf(profile.url);
+  return (
+    key !== normQ(profile.brand) &&
+    (ownDomain === "" || domainOf(name) !== ownDomain) &&
+    !PLACEHOLDER_KEYS.has(key)
+  );
+}
+
+/**
+ * Up to three entered competitors that `isRealCompetitor` accepts; the
+ * placeholders only when nothing is filled in. A list that names only the
+ * brand, the own domain or a placeholder compares nobody.
  */
 export function comparedCompetitors(profile: GapProfile): readonly string[] {
-  const brandKey = normQ(profile.brand);
-  const ownDomain = domainOf(profile.url);
+  if (splitList(profile.competitors).length === 0) {
+    return COMPETITOR_PLACEHOLDERS;
+  }
   return competitorNames(profile)
-    .filter((name) => normQ(name) !== brandKey)
-    .filter((name) => ownDomain === "" || domainOf(name) !== ownDomain)
+    .filter((name) => isRealCompetitor(profile, name))
     .slice(0, COMPARED_COMPETITORS);
 }
 

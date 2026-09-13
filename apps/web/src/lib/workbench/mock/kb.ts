@@ -2,7 +2,8 @@
  * Fact knowledge base seeding (jsx:2084-2097, R8/R10). Every entry says where
  * it came from. `manual` only marks statements built from a profile field that
  * contain its raw value; `gap` is an empty slot; `aiDraft` is a fact from the
- * profile document's AI section. Nothing here was crawled, so nothing is
+ * profile document's AI section, with the evidence its caller vouches for.
+ * Nothing here was crawled, so nothing is
  * `crawl`, and a sample fill passes its own `from` through unchanged.
  */
 import type { KbCategory, KbEntry, KnowledgeBase, Profile, ProfileDoc } from "../types.ts";
@@ -12,8 +13,23 @@ import { splitList } from "./text.ts";
 
 export const KB_PROFILE_EVIDENCE = "来自站点档案字段";
 const COMPARISON_GAP_LIMIT = 3;
-/** Wording the sample content uses for unfinished statements (`demoAiDoc` facts, demo KB fills). */
-const PENDING_MARKER = /待补|需补/u;
+/**
+ * The pending placeholders this codebase generates, matched whole (both ends
+ * anchored): the demo site's KB fills `[示例] …（待补…）` and `demoAiDoc`'s facts
+ * `[示例事实：…待补]` and `[示例事实：…，需补证据与核对日期]`. Real text that merely
+ * contains 待补 or 需补 (无需补充, 待补货提醒) is not one.
+ */
+const GENERATED_PLACEHOLDER = /^\[示例\] .*（待补[^（）]*）$|^\[示例事实：.*(?:待补|，需补证据与核对日期)\]$/su;
+
+/** How the caller vouches for the entries `seedKb` makes from AI output. */
+export interface SeedKbOptions {
+  /**
+   * Evidence on every entry made from the document's AI facts, with no default.
+   * The demo passes its sample evidence ("示例，未核对"); a future real AI
+   * producer must pass its own, never inherit the sample's or an empty one.
+   */
+  readonly aiEvidence: string;
+}
 
 type KbDraft = Omit<KbEntry, "id">;
 type KbPatch = Pick<KbEntry, "statement" | "evidence" | "source" | "from">;
@@ -34,8 +50,8 @@ function profileDraft(cat: KbCategory, statement: string): KbDraft {
   return { cat, statement, evidence: KB_PROFILE_EVIDENCE, source: "", from: "manual" };
 }
 
-function aiDraft(statement: string): KbDraft {
-  return { cat: "data", statement, evidence: "", source: "", from: "aiDraft" };
+function aiDraft(statement: string, evidence: string): KbDraft {
+  return { cat: "data", statement, evidence, source: "", from: "aiDraft" };
 }
 
 /**
@@ -52,6 +68,7 @@ export function enteredComparedCompetitors(profile: Pick<Profile, "url" | "brand
 export function seedKb(
   profile: Pick<Profile, "url" | "brand" | "positioning" | "features" | "competitors">,
   doc: ProfileDoc | null,
+  options: SeedKbOptions,
 ): readonly KbEntry[] {
   const brand = brandOrPlaceholder(profile.brand);
   const drafts: readonly KbDraft[] = [
@@ -62,7 +79,7 @@ export function seedKb(
     gapDraft("boundary"),
     gapDraft("pricing"),
     ...enteredComparedCompetitors(profile).slice(0, COMPARISON_GAP_LIMIT).map(() => gapDraft("comparison")),
-    ...(doc?.ai.facts ?? []).filter((fact) => !isBlank(fact)).map(aiDraft),
+    ...(doc?.ai.facts ?? []).filter((fact) => !isBlank(fact)).map((fact) => aiDraft(fact, options.aiEvidence)),
   ];
   return drafts.map((draft, index) => ({ id: kbId(index), ...draft }));
 }
@@ -88,9 +105,15 @@ export function fillFirstKbGap(
   return entries.map((entry, at) => (at === index ? entryOf(entry.id, entry.cat, patch) : entry));
 }
 
-/** Blank statements and pending placeholders (待补 / 需补) are both still gaps. */
+/**
+ * A blank statement is a gap whatever its origin. A written manual entry never
+ * is, whatever its wording; any other written entry is a gap only while it is a
+ * generated placeholder.
+ */
 function isGap(entry: KbEntry): boolean {
-  return isBlank(entry.statement) || PENDING_MARKER.test(entry.statement);
+  if (isBlank(entry.statement)) return true;
+  if (entry.from === "manual") return false;
+  return GENERATED_PLACEHOLDER.test(entry.statement);
 }
 
 /** Entries still to be written; `null` when there is no knowledge base yet. */

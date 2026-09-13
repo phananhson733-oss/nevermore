@@ -125,7 +125,7 @@ const EXPECTED_DOC = `# Acme 产品档案
 
 ## 站点现状（示例数据）
 - 技术栈（推测）：Next.js｜语言：en-US
-- 抓到页面 42，收录约 37
+- 抓到页面 42，可收录约 37
 - 关键页：定价、博客
 
 ## 第三方估算（示例数据）
@@ -247,6 +247,12 @@ describe("profileDocMarkdown", () => {
 
   it("never says 实测", () => {
     expect(profileDocMarkdown(BASE)).not.toContain("实测");
+  });
+
+  it("calls the audit's count indexable (可收录), never indexed (收录)", () => {
+    const doc = profileDocMarkdown(BASE);
+    expect(doc).toContain("- 抓到页面 42，可收录约 37");
+    expect(doc).not.toMatch(/(?<!可)收录/u);
   });
 
   it("keeps a hostile brand from opening a heading line", () => {

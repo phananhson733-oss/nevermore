@@ -192,7 +192,13 @@ const crawlSignals = z.strictObject({
   hasPricing: z.boolean(),
   hasDocs: z.boolean(),
   hasBlog: z.boolean(),
-  indexed: z.number(),
+  // Pre-ship exemption from the bump rule above: renamed from `indexed` (the
+  // count is the audit's indexable pages, not pages a search engine indexed)
+  // before the first release. PR-1 never shipped, so no reader of the old shape
+  // exists and PERSISTED_VERSION stays 1. An envelope with the old key is
+  // `invalid`, not `incompatible`: the missing `indexable` is a real defect.
+  // Once released, a change like this needs a bump.
+  indexable: z.number(),
   traffic: z.number(),
   dr: z.number(),
   refdomains: z.number(),

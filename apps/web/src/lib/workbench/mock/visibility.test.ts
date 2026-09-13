@@ -8,7 +8,7 @@ import { PLATFORMS, mockVisibility } from "./visibility.ts";
 
 /** mockVisibility: every result stays self-consistent across a salt sweep and names no invented third party. */
 
-type VisProfile = Pick<Profile, "brand" | "competitors">;
+type VisProfile = Pick<Profile, "url" | "brand" | "competitors">;
 
 const BRAND = "Acme";
 const MAX_BRANDS = 5;
@@ -41,8 +41,11 @@ const ALL_CASES = [
   "rivals-all",
 ] as const;
 
-const profileOf = (competitors: string, brand = BRAND): VisProfile =>
-  Object.freeze({ brand, competitors });
+const profileOf = (
+  competitors: string,
+  brand = BRAND,
+  url = "",
+): VisProfile => Object.freeze({ url, brand, competitors });
 
 const sweep = (profile: VisProfile): readonly VisResult[] =>
   SWEEP_SALTS.flatMap((salt) => mockVisibility(profile, SWEEP_PROMPTS, salt));
@@ -137,6 +140,16 @@ const SWEEP_CASES: readonly {
     profile: profileOf(" acme , Rival, Other"),
     pool: ["Rival", "Other"],
   },
+  {
+    name: "the own site in several spellings and a typed placeholder as competitors",
+    brand: BRAND,
+    profile: profileOf(
+      "acme.example, Rival, www.ACME.example, [竞品 A], Other",
+      BRAND,
+      "https://acme.example",
+    ),
+    pool: ["Rival", "Other"],
+  },
 ];
 
 describe.each(SWEEP_CASES)("mockVisibility sweep: $name", ({ brand, profile, pool }) => {
@@ -165,6 +178,22 @@ describe.each(SWEEP_CASES)("mockVisibility sweep: $name", ({ brand, profile, poo
     expect(projectStateSchema.shape.visResults.safeParse(results).success).toBe(
       true,
     );
+  });
+});
+
+describe("mockVisibility: the customer's own site is never a rival", () => {
+  it("names only the brand when every competitor spells the own site or the brand", () => {
+    for (const competitors of [
+      "acme.example",
+      "www.ACME.example",
+      " Acme ",
+      "acme.example, www.ACME.example,  Acme ",
+    ]) {
+      const profile = profileOf(competitors, BRAND, "https://acme.example");
+      const named = sweep(profile).flatMap((r) => r.brands);
+      expect(named.length, competitors).toBeGreaterThan(0);
+      expect(new Set(named), competitors).toEqual(new Set([BRAND]));
+    }
   });
 });
 
@@ -309,7 +338,7 @@ describe("mockVisibility: determinism", () => {
   it("does not mutate its inputs", () => {
     const prompts = Object.freeze(["a", "b"]);
     expect(() => mockVisibility(profile, prompts, "demo-cur")).not.toThrow();
-    expect(profile).toEqual({ brand: BRAND, competitors: "Rival, Other" });
+    expect(profile).toEqual({ url: "", brand: BRAND, competitors: "Rival, Other" });
     expect(prompts).toEqual(["a", "b"]);
   });
 });

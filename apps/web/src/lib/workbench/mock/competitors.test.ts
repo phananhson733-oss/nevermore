@@ -3,7 +3,7 @@ import { LINK_TYPES } from "../enums.ts";
 import { PERSISTED_VERSION, parsePersistedState } from "../store/schema.ts";
 import { populatedProjectState } from "../store/test-fixtures.ts";
 import type { CompData, DomainStats, Profile } from "../types.ts";
-import { buildCompData, domainStats } from "./competitors.ts";
+import { buildCompData, domainStats, isRealCompetitor } from "./competitors.ts";
 import { mockLinks } from "./links.ts";
 import { COMPETITOR_PLACEHOLDERS } from "./text.ts";
 
@@ -91,6 +91,35 @@ describe("domainStats", () => {
   });
 });
 
+describe("isRealCompetitor", () => {
+  const own = { url: "https://www.Acme.io/pricing", brand: "Acme" };
+
+  it("rejects the brand, the own domain in any spelling and a typed R9 placeholder", () => {
+    const names = [
+      "Acme",
+      " acme ",
+      "ＡＣＭＥ",
+      "acme.io",
+      "www.ACME.io",
+      "https://acme.io/blog",
+      ...COMPETITOR_PLACEHOLDERS,
+      " [竞品 b] ",
+    ];
+    for (const name of names) expect(isRealCompetitor(own, name), name).toBe(false);
+  });
+
+  it("accepts anyone else, including look-alike domains and near-placeholders", () => {
+    for (const name of ["Rival", "acme.io.example", "notacme.io", "Acme Corp", "[竞品 D]", "竞品 A"]) {
+      expect(isRealCompetitor(own, name), name).toBe(true);
+    }
+  });
+
+  it("keeps any domain when the project has no url, and any name when it has no brand", () => {
+    expect(isRealCompetitor({ url: "", brand: "Acme" }, "acme.io")).toBe(true);
+    expect(isRealCompetitor({ url: "", brand: "" }, "Acme")).toBe(true);
+  });
+});
+
 describe("buildCompData", () => {
   it("starts with the project's own domain, then the raw competitor names", () => {
     const data = build({});
@@ -143,6 +172,13 @@ describe("buildCompData", () => {
     const data = build({ competitors: "acme, Acme" });
     expect(subjects(data)).toEqual(["acme.io"]);
     expect(data.gap).toEqual({ comps: [], rows: [] });
+  });
+
+  it("compares nobody for a placeholder typed as a competitor, and skips it before a real one", () => {
+    const data = build({ competitors: "[竞品 A], [竞品 b]" });
+    expect(subjects(data)).toEqual(["acme.io"]);
+    expect(data.gap).toEqual({ comps: [], rows: [] });
+    expect(compNames(build({ competitors: "[竞品 C], Rival" }))).toEqual(["Rival"]);
   });
 
   it("has no own entry when the url is empty, so no stats are made up for a site that does not exist", () => {

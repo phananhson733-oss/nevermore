@@ -32,14 +32,14 @@ const ICP_SEGMENT_COUNT = 3;
 const PILLAR_MIN = 2;
 const PILLAR_MAX = 3;
 
-type SiteShape = Pick<CrawlSignals, "pages" | "indexed" | "hasPricing" | "hasDocs" | "hasBlog">;
+type SiteShape = Pick<CrawlSignals, "pages" | "indexable" | "hasPricing" | "hasDocs" | "hasBlog">;
 
 interface CrawlDraws {
   readonly pages: number;
   readonly pricing: number;
   readonly docs: number;
   readonly blog: number;
-  readonly indexed: number;
+  readonly indexable: number;
   readonly traffic: number;
   readonly dr: number;
   readonly refdomains: number;
@@ -53,19 +53,19 @@ function drawCrawl(seed: number): CrawlDraws {
     pricing: next(),
     docs: next(),
     blog: next(),
-    indexed: next(),
+    indexable: next(),
     traffic: next(),
     dr: next(),
     refdomains: next(),
   };
 }
 
-/** `indexed` never exceeds `pages`: the profile document prints both on one line ("抓到页面 N，收录约 M"). */
+/** `indexable` never exceeds `pages`: the profile document prints both on one line ("抓到页面 N，可收录约 M"). */
 function generatedSite(profile: Pick<Profile, "url" | "brand" | "features" | "competitors">, draws: CrawlDraws): SiteShape {
   const pages = sitePages(profile).length + Math.floor(draws.pages * 40);
   return {
     pages,
-    indexed: Math.max(1, Math.round(pages * (0.6 + draws.indexed * 0.4))),
+    indexable: Math.max(1, Math.round(pages * (0.6 + draws.indexable * 0.4))),
     hasPricing: draws.pricing > 0.25,
     hasDocs: draws.docs > 0.45,
     hasBlog: draws.blog > 0.2,
@@ -92,7 +92,7 @@ function observedSite(audit: ObservedAudit): SiteShape {
   const paths = audit.pageRows.filter(isReachable).map((row) => rowPath(row.url));
   return {
     pages: audit.crawl.pages,
-    indexed: audit.crawl.indexable,
+    indexable: audit.crawl.indexable,
     hasPricing: paths.includes("/pricing"),
     hasDocs: paths.includes("/docs"),
     hasBlog: paths.some((path) => path === "/blog" || path.startsWith("/blog/")),
@@ -101,10 +101,11 @@ function observedSite(audit: ObservedAudit): SiteShape {
 
 /**
  * A generated crawl (`crawl`) or third-party estimate (`third`) for the site.
- * With `observed`, pages, indexed and the pricing / docs / blog flags come from
+ * With `observed`, pages, indexable and the pricing / docs / blog flags come from
  * that audit instead, counting a page only when its row answered 2xx; traffic,
  * DR and referring domains stay generated and identical, because every draw is
- * taken either way. The stack is never guessed.
+ * taken either way. The stack is never guessed. `indexable` is the audit's
+ * indexable count, never a count of pages a search engine has indexed.
  */
 export function crawlSignals(
   profile: Pick<Profile, "url" | "brand" | "market" | "features" | "competitors">,
@@ -121,7 +122,7 @@ export function crawlSignals(
     hasPricing: site.hasPricing,
     hasDocs: site.hasDocs,
     hasBlog: site.hasBlog,
-    indexed: site.indexed,
+    indexable: site.indexable,
     traffic: Math.round((300 + draws.traffic * 5200) / 10) * 10,
     dr: Math.floor(8 + draws.dr * 45),
     refdomains: Math.floor(15 + draws.refdomains * 260),

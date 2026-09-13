@@ -59,7 +59,7 @@ function crawlSection(crawl: CrawlSignals | null): string {
   return [
     `## 站点现状${SAMPLE_SUFFIX}`,
     `- 技术栈（推测）：${oneLine(crawl.stack)}｜语言：${oneLine(crawl.lang)}`,
-    `- 抓到页面 ${countText(crawl.pages)}，收录约 ${countText(crawl.indexed)}`,
+    `- 抓到页面 ${countText(crawl.pages)}，可收录约 ${countText(crawl.indexable)}`,
     `- 关键页：${keyPages.join("、") || "缺失"}`,
   ].join("\n");
 }

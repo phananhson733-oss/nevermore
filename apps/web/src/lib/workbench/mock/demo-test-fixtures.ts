@@ -74,8 +74,9 @@ export function required<T>(value: T | null | undefined, label: string): T {
   return value;
 }
 
+/** The demo's gap fills. The AI profile's data facts carry the same sample evidence, so they are left out by category. */
 export function sampleFills(entries: readonly KbEntry[]): readonly KbEntry[] {
-  return entries.filter((entry) => entry.evidence === SAMPLE_FILL_EVIDENCE);
+  return entries.filter((entry) => entry.evidence === SAMPLE_FILL_EVIDENCE && entry.cat !== "data");
 }
 
 export function artifactById(payload: DemoPayload, id: string): Artifact {

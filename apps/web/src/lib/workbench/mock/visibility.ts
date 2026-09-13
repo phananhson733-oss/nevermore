@@ -6,6 +6,7 @@
  * `Math.random`, and no third-party name or domain is invented (R9).
  */
 import type { KeywordRow, Profile, PromptKind, VisResult } from "../types.ts";
+import { isRealCompetitor } from "./competitors.ts";
 import { AI_PATTERNS, PATTERNS, SERP_POOL } from "./keywords.ts";
 import { rngOf, sampleDistinct, seedKey } from "./rng.ts";
 import { competitorNames, normQ, splitList } from "./text.ts";
@@ -77,14 +78,18 @@ const phraseOf = (value: string): string =>
 
 /* ---------------- mockVisibility ---------------- */
 
-/** Competitors deduped by `normQ` (placeholders when none), cleaned, without the brand itself. */
+/**
+ * Competitors deduped by `normQ` and cleaned: the entered names
+ * `isRealCompetitor` accepts (never the brand, the own site or a typed-in
+ * placeholder), or the placeholders when none was entered.
+ */
 function rivalPool(
-  profile: Pick<Profile, "competitors">,
-  brandKey: string,
+  profile: Pick<Profile, "url" | "brand" | "competitors">,
 ): readonly string[] {
+  const entered = splitList(profile.competitors).length > 0;
   return competitorNames(profile)
     .map(clean)
-    .filter((name) => normQ(name) !== brandKey)
+    .filter((name) => !entered || isRealCompetitor(profile, name))
     .slice(0, MAX_RIVALS);
 }
 
@@ -123,12 +128,12 @@ function answerOf(
  * Domains come only from `SERP_POOL`, drawn without replacement.
  */
 export function mockVisibility(
-  profile: Pick<Profile, "brand" | "competitors">,
+  profile: Pick<Profile, "url" | "brand" | "competitors">,
   prompts: readonly string[],
   salt: string,
 ): readonly VisResult[] {
   const brand = clean(profile.brand);
-  const pool = rivalPool(profile, normQ(brand));
+  const pool = rivalPool(profile);
   return prompts.flatMap((p) =>
     PLATFORMS.map((platform) => answerOf(p, platform, brand, pool, salt)),
   );
@@ -142,7 +147,7 @@ interface PromptContext {
   readonly topic: string;
   readonly f0: string | undefined;
   readonly f1: string | undefined;
-  /** Real competitors only: placeholders never become prompts sent to an AI. */
+  /** Entered names `isRealCompetitor` accepts: a placeholder, the brand or the own site never becomes a prompt. */
   readonly rivals: readonly string[];
 }
 
@@ -161,7 +166,10 @@ function topicOf(positioning: string, brandKey: string): string {
 }
 
 function contextOf(
-  profile: Pick<Profile, "brand" | "positioning" | "features" | "competitors">,
+  profile: Pick<
+    Profile,
+    "url" | "brand" | "positioning" | "features" | "competitors"
+  >,
 ): PromptContext {
   const brand = clean(profile.brand);
   const brandKey = normQ(brand);
@@ -172,7 +180,7 @@ function contextOf(
   const rivals = named
     ? competitorNames(profile)
         .map(clean)
-        .filter((name) => normQ(name) !== brandKey)
+        .filter((name) => isRealCompetitor(profile, name))
     : [];
   return {
     brand,
@@ -263,7 +271,10 @@ function geoKind(row: KeywordRow, brand: string): PromptKind {
  * first spelling wins.
  */
 export function localPromptSet(
-  profile: Pick<Profile, "brand" | "positioning" | "features" | "competitors">,
+  profile: Pick<
+    Profile,
+    "url" | "brand" | "positioning" | "features" | "competitors"
+  >,
   rows: readonly KeywordRow[],
 ): readonly PromptSeed[] {
   const c = contextOf(profile);

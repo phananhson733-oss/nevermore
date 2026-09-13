@@ -17,11 +17,12 @@ import {
 
 type PromptProfile = Pick<
   Profile,
-  "brand" | "positioning" | "features" | "competitors"
+  "url" | "brand" | "positioning" | "features" | "competitors"
 >;
 
 const profileOf = (fields: Partial<PromptProfile>): PromptProfile =>
   Object.freeze({
+    url: "",
     brand: "",
     positioning: "",
     features: "",
@@ -135,6 +136,43 @@ describe("localPromptSet: templates", () => {
     );
     expect(questions(seeds)).toContain("Acme vs Rival");
     expect(questions(seeds).join("\n")).not.toMatch(/acme vs acme/i);
+  });
+
+  it("never compares the brand with its own site or a placeholder typed as a competitor", () => {
+    const own = { brand: "Acme", url: "https://acme.example" };
+    const brandOnly = [
+      "best tools like Acme",
+      "is Acme worth using?",
+      "Acme alternatives",
+    ];
+    for (const competitors of [
+      "acme.example",
+      "www.ACME.example",
+      " Acme ",
+      "[竞品 A]",
+      "acme.example, www.ACME.example,  Acme , [竞品 b]",
+    ]) {
+      const seeds = localPromptSet(profileOf({ ...own, competitors }), []);
+      expect(questions(seeds), competitors).toEqual(brandOnly);
+    }
+    const mixed = questions(
+      localPromptSet(
+        profileOf({
+          ...own,
+          features: "seo audit",
+          competitors: "www.ACME.example, [竞品 B], Rival, acme.example, Other",
+        }),
+        [],
+      ),
+    );
+    expect(mixed).toEqual(
+      expect.arrayContaining([
+        "Acme vs Rival",
+        "is Other the best option for seo audit?",
+        "Rival alternatives",
+      ]),
+    );
+    expect(mixed.join("\n")).not.toMatch(/acme\.example|\[竞品/i);
   });
 
   it("keeps every prompt on one line, so the list survives a textarea round trip", () => {
@@ -293,7 +331,7 @@ describe("visibilityGaps", () => {
   });
 
   it("agrees with missedPrompts and accounts for every miss of a real mock run", () => {
-    const profile = { brand: "Acme", competitors: "Rival, Other" };
+    const profile = { url: "", brand: "Acme", competitors: "Rival, Other" };
     const prompts = ["a", "b", "c", "d", "e", "f"];
     for (const salt of ["demo-cur", "demo-prev", "demo-prev2"]) {
       const results = mockVisibility(profile, prompts, salt);

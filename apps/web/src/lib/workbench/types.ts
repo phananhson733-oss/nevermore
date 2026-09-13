@@ -243,7 +243,8 @@ export interface CrawlSignals {
   readonly hasPricing: boolean;
   readonly hasDocs: boolean;
   readonly hasBlog: boolean;
-  readonly indexed: number;
+  /** Pages the audit found indexable, never a count of pages a search engine has indexed. */
+  readonly indexable: number;
   readonly traffic: number;
   readonly dr: number;
   readonly refdomains: number;

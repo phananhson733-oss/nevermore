@@ -23,7 +23,7 @@ const VARIANTS = ["crawl", "third"] as const;
 /** The sample does not know the site's framework, so it never guesses one. */
 const UNKNOWN_STACK = "[未知：先识别仓库框架]";
 const CRAWL_KEYS = [
-  "dr", "h1", "hasBlog", "hasDocs", "hasPricing", "indexed", "lang", "pages", "refdomains", "stack", "traffic",
+  "dr", "h1", "hasBlog", "hasDocs", "hasPricing", "indexable", "lang", "pages", "refdomains", "stack", "traffic",
 ];
 
 function row(query: string, clicks: number | null, position: number | null): GscRow {
@@ -90,7 +90,7 @@ describe("crawlSignals", () => {
     expect(crawlSignals({ ...ACME, url: "https://www.ACME.io/pricing" }, "third")).toEqual(crawlSignals(ACME, "third"));
   });
 
-  it("stays inside the prototype's ranges and never reports more indexed pages than crawled ones", () => {
+  it("stays inside the prototype's ranges and never reports more indexable pages than crawled ones", () => {
     const cases = PROFILES.flatMap((profile) => VARIANTS.map((variant) => ({ profile, variant })));
     for (const { profile, variant } of cases) {
       const signals = crawlSignals(profile, variant);
@@ -99,8 +99,8 @@ describe("crawlSignals", () => {
       expect(signals.stack).toBe(UNKNOWN_STACK);
       expect(signals.pages).toBeGreaterThanOrEqual(floor);
       expect(signals.pages).toBeLessThan(floor + 40);
-      expect(signals.indexed).toBeGreaterThanOrEqual(1);
-      expect(signals.indexed).toBeLessThanOrEqual(signals.pages);
+      expect(signals.indexable).toBeGreaterThanOrEqual(1);
+      expect(signals.indexable).toBeLessThanOrEqual(signals.pages);
       expect(signals.traffic % 10).toBe(0);
       expect(signals.traffic).toBeGreaterThanOrEqual(300);
       expect(signals.traffic).toBeLessThanOrEqual(5500);
@@ -108,22 +108,22 @@ describe("crawlSignals", () => {
       expect(signals.dr).toBeLessThan(53);
       expect(signals.refdomains).toBeGreaterThanOrEqual(15);
       expect(signals.refdomains).toBeLessThan(275);
-      const counts = [signals.pages, signals.indexed, signals.traffic, signals.dr, signals.refdomains];
+      const counts = [signals.pages, signals.indexable, signals.traffic, signals.dr, signals.refdomains];
       expect(counts.every((value) => Number.isInteger(value))).toBe(true);
       expect([signals.hasPricing, signals.hasDocs, signals.hasBlog].every((flag) => typeof flag === "boolean")).toBe(true);
     }
   });
 
-  it("takes pages, indexed and the page flags from a supplied audit", () => {
+  it("takes pages, indexable and the page flags from a supplied audit", () => {
     for (const variant of VARIANTS) {
       expect(crawlSignals(ACME, variant, PRICING_AND_POST)).toMatchObject({
-        pages: 64, indexed: 59, hasPricing: true, hasDocs: false, hasBlog: true,
+        pages: 64, indexable: 59, hasPricing: true, hasDocs: false, hasBlog: true,
       });
       expect(crawlSignals(ACME, variant, DOCS_AND_BLOG)).toMatchObject({
-        pages: 12, indexed: 12, hasPricing: false, hasDocs: true, hasBlog: true,
+        pages: 12, indexable: 12, hasPricing: false, hasDocs: true, hasBlog: true,
       });
       expect(crawlSignals(ACME, variant, LOOKALIKES)).toMatchObject({
-        pages: 30, indexed: 25, hasPricing: false, hasDocs: false, hasBlog: false,
+        pages: 30, indexable: 25, hasPricing: false, hasDocs: false, hasBlog: false,
       });
     }
   });

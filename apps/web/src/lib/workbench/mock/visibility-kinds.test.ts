@@ -7,11 +7,12 @@ import { localPromptSet } from "./visibility.ts";
 
 type PromptProfile = Pick<
   Profile,
-  "brand" | "positioning" | "features" | "competitors"
+  "url" | "brand" | "positioning" | "features" | "competitors"
 >;
 
 const profileOf = (fields: Partial<PromptProfile>): PromptProfile =>
   Object.freeze({
+    url: "",
     brand: "",
     positioning: "",
     features: "",

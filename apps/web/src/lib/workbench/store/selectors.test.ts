@@ -212,14 +212,15 @@ describe("selectCounts visibility badge (R15)", () => {
 });
 
 describe("selectCounts kb badge", () => {
-  it("counts pending placeholders (待补 / 需补) as gaps, alongside blank statements", () => {
+  it("counts generated placeholders as gaps, alongside blank statements, but not text that merely says 待补 / 需补", () => {
     const s = reduce(base, {
       type: "setKb",
       kb: { at: "t", entries: [
-        { id: "1", cat: "pricing", statement: "定价：待补", evidence: "示例，未核对", source: "", from: "aiDraft" },
-        { id: "2", cat: "faq", statement: "常见问题需补充", evidence: "", source: "", from: "aiDraft" },
+        { id: "1", cat: "pricing", statement: "[示例] Acme 的定价方式与各档分别包含什么（待补定价页原句）", evidence: "示例，未核对", source: "", from: "aiDraft" },
+        { id: "2", cat: "data", statement: "[示例事实：Acme 的核心能力待补]", evidence: "示例，未核对", source: "", from: "aiDraft" },
         { id: "3", cat: "capability", statement: "   ", evidence: "", source: "", from: "gap" },
         { id: "4", cat: "capability", statement: "Exports CSV.", evidence: "", source: "", from: "crawl" },
+        { id: "5", cat: "faq", statement: "常见问题需补充", evidence: "", source: "", from: "aiDraft" },
       ] },
     });
     expect(selectCounts(s, null).kb).toBe("3");

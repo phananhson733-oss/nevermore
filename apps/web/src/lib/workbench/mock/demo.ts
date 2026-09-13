@@ -170,7 +170,7 @@ function demoVisibility(profile: Profile, rows: readonly KeywordRow[], at: Stamp
   };
 }
 
-/** The crawl takes the sample audit, so pages, indexed and page flags agree with it; the third-party estimate stays generated. */
+/** The crawl takes the sample audit, so pages, indexable and page flags agree with it; the third-party estimate stays generated. */
 function demoProfileDoc(profile: Profile, shared: SharedInit, at: StampAt): ProfileDoc {
   return {
     crawl: crawlSignals(profile, "crawl", shared.audit),
@@ -185,11 +185,11 @@ function sampleFill(statement: string): KbPatch {
   return { statement, evidence: SAMPLE_FILL_EVIDENCE, source: "", from: "aiDraft" };
 }
 
-/** `seedKb`, then unchecked sample drafts in the pricing, boundary and (with a real competitor) comparison gaps. */
+/** `seedKb` (its AI facts as unchecked sample drafts), then unchecked sample drafts in the pricing, boundary and (with a real competitor) comparison gaps. */
 function demoKb(profile: Profile, doc: ProfileDoc, at: string): KnowledgeBase {
   const brand = brandOrPlaceholder(profile.brand);
   const priced = fillFirstKbGap(
-    seedKb(profile, doc),
+    seedKb(profile, doc, { aiEvidence: SAMPLE_FILL_EVIDENCE }),
     "pricing",
     sampleFill(`[示例] ${brand} 的定价方式与各档分别包含什么（待补定价页原句）`),
     "kb-demo-pricing",
