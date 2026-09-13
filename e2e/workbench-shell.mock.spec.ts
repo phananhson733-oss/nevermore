@@ -82,7 +82,7 @@ test.beforeEach(async ({ page }) => {
  */
 const SHELL_TARGETS = [
   "#wb-sidebar :is(button, a[href])",
-  "[data-app-shell-topbar] :is(button, a[href])",
+  "[data-app-shell-topbar] :is(button, a[href], select)",
   "a[href][data-wb-legacy-link]",
 ].join(", ");
 
@@ -150,8 +150,8 @@ async function railSettled(page: Page): Promise<void> {
  * sweep and leaves it green on nothing at all — the failure mode this
  * repository keeps paying for (enumerated-guards / partial-measurement).
  *
- * 15 rail links (WORKBENCH_NAV), 7 topbar controls, 2 legacy links
- * (LEGACY_LINKS.profile) = 24.
+ * 15 rail links (WORKBENCH_NAV), 8 topbar controls (the project switcher's
+ * select among them), 2 legacy links (LEGACY_LINKS.profile) = 25.
  */
 const SHELL_TARGET_NAMES: readonly string[] = [
   "rail:overview",
@@ -170,6 +170,7 @@ const SHELL_TARGET_NAMES: readonly string[] = [
   "rail:artifacts",
   "rail:settings",
   "button:Open navigation",
+  "select:Switch project",
   "a:+ New site",
   "button:Search / jump",
   "topbar:artifacts",
@@ -194,11 +195,13 @@ const RAIL_TARGET_NAMES = SHELL_TARGET_NAMES.filter((name) =>
 const INLINE_EXCEPTIONS: readonly string[] = [];
 
 /**
- * The two controls a phone user reaches for first are held to 44px rather than
- * the 24px floor, at every width below `md` where they exist.
+ * The controls a phone user reaches for first are held to 44px rather than the
+ * 24px floor, at every width below `md` where they exist. The project switcher
+ * is one of them in the workbench only: /new-project keeps its 40px.
  */
 const TOUCH_44_BELOW_MD: readonly string[] = [
   "button:Open navigation",
+  "select:Switch project",
   "topbar:artifacts",
 ];
 
