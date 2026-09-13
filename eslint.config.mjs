@@ -12,7 +12,7 @@ export default tseslint.config(
       "**/dist/**",
       "**/.next/**",
       "**/.next-*/**",
-      "**/.next-e2e-mock/**",
+      "**/.next-e2e-mock*/**",
       "**/.next-e2e-real/**",
       "**/node_modules/**",
       "**/coverage/**",

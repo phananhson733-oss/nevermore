@@ -102,6 +102,9 @@ export default defineConfig({
             "**/*.integration.test.ts",
             "**/*.integration.vitest.ts",
             "**/.next/**",
+            // Harness dist dirs (.next-e2e-mock-<port>, .next-e2e-real-*, ...)
+            // live under apps/ and would otherwise match apps/**/*.test.ts.
+            "**/.next-*/**",
           ],
           environment: "node",
           // next-intl's ESM build imports the bare specifier "next/server",
@@ -124,6 +127,7 @@ export default defineConfig({
           exclude: [
             "**/node_modules/**",
             "**/.next/**",
+            "**/.next-*/**",
             // apps/marketing persists to a DIFFERENT Postgres (its own Supabase
             // project, `public` schema) than DATABASE_URL, and this setup file
             // applies the 53 product migrations. Marketing SQL gets its own
