@@ -8,7 +8,6 @@ import {
   Settings,
   Wrench,
 } from "lucide-react";
-import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { signOutAction } from "@/lib/auth/actions";
 import { withBasePath } from "@/lib/base-path";
@@ -39,32 +38,27 @@ interface AppShellCommonProps {
   readonly statusLabel: ReactNode;
 }
 
-export type AppShellProps = AppShellCommonProps &
-  (
-    | {
-        readonly state: "project";
-        readonly sidebarPanel: ReactNode;
-        readonly settingsHref: string;
-      }
-    | {
-        readonly state: "empty-project";
-        readonly sidebarPanel?: never;
-        readonly settingsHref?: never;
-      }
-  );
+/**
+ * `state` has one value today. It stays a prop because it is rendered as
+ * `data-app-shell-state`, which the zero-project e2e asserts. The project routes
+ * render ShellChrome, not this component, so the former "project" variant (with
+ * its sidebar panel and settings link) had no caller and was removed.
+ */
+export type AppShellProps = AppShellCommonProps & {
+  readonly state: "empty-project";
+};
 
 /**
- * The one customer-visible GenGrowth chrome. Project routes and the zero-project
- * entry route only supply truthful stateful slots; sidebar, topbar, language,
- * account, utilities, and responsive behavior stay in one implementation.
+ * The legacy GenGrowth chrome, now rendered only by the zero-project entry route
+ * (`/new-project`); project routes moved to the workbench ShellChrome. The route
+ * supplies the stateful slots; sidebar, topbar, language, account, utilities,
+ * and responsive behavior stay in this one implementation.
  */
 export async function AppShell({
   children,
   state,
   projectControl,
   navigation,
-  sidebarPanel,
-  settingsHref,
   breadcrumbRoot,
   breadcrumbCurrent,
   statusLabel,
@@ -108,27 +102,19 @@ export async function AppShell({
 
         {projectControl}
         {navigation}
-        {sidebarPanel}
 
         <div
           className={styles.sidebarUtilities}
           role="group"
           aria-label={tShell("productTools")}
         >
-          {state === "empty-project" ? (
-            <span
-              className={cx(styles.newProjectLink, styles.newProjectLinkActive)}
-              aria-current="page"
-            >
-              <Plus aria-hidden="true" size={17} strokeWidth={1.8} />
-              <span>{tNav("newProject")}</span>
-            </span>
-          ) : (
-            <Link href="/new-project" className={styles.newProjectLink}>
-              <Plus aria-hidden="true" size={17} strokeWidth={1.8} />
-              <span>{tNav("newProject")}</span>
-            </Link>
-          )}
+          <span
+            className={cx(styles.newProjectLink, styles.newProjectLinkActive)}
+            aria-current="page"
+          >
+            <Plus aria-hidden="true" size={17} strokeWidth={1.8} />
+            <span>{tNav("newProject")}</span>
+          </span>
           <button
             type="button"
             className={styles.sidebarUtility}
@@ -139,27 +125,16 @@ export async function AppShell({
             <CircleHelp aria-hidden="true" size={17} strokeWidth={1.8} />
             <span>{tShell("help")}</span>
           </button>
-          {state === "project" ? (
-            <Link
-              href={settingsHref}
-              className={styles.sidebarUtility}
-              aria-label={tShell("settings")}
-            >
-              <Settings aria-hidden="true" size={17} strokeWidth={1.8} />
-              <span>{tShell("settings")}</span>
-            </Link>
-          ) : (
-            <button
-              type="button"
-              className={styles.sidebarUtility}
-              aria-label={tShell("settings")}
-              title={`${tShell("settings")} — ${tShell("comingSoon")}`}
-              disabled
-            >
-              <Settings aria-hidden="true" size={17} strokeWidth={1.8} />
-              <span>{tShell("settings")}</span>
-            </button>
-          )}
+          <button
+            type="button"
+            className={styles.sidebarUtility}
+            aria-label={tShell("settings")}
+            title={`${tShell("settings")} — ${tShell("comingSoon")}`}
+            disabled
+          >
+            <Settings aria-hidden="true" size={17} strokeWidth={1.8} />
+            <span>{tShell("settings")}</span>
+          </button>
         </div>
       </aside>
 
