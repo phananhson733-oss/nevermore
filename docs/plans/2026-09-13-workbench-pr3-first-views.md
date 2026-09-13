@@ -51,6 +51,7 @@
 | Q29 | **PR-1 遗留六项在本 PR 关闭**，每项都要有钉住它的测试并做「把修法改回去必须红」的变异验证。其中**三项现有的门是空洞的**，要先修门再改实现：字体那条只断言 `--font-sans: var(--font-wb…)` 的字面存在（对 `@theme` vs `@theme inline` 不敏感）、触控那条 axe 只跑到 `wcag21aa` 而 `target-size` 属 `wcag22aa`、快捷键那条用模块级常量对象绕过了 memo 契约 | PR-2 残留 :1009 |
 | Q30 | **`data-wb-frame` 由视图任务负责写入**：五个视图的框架容器（标题区、空态、区块标题、按钮行）带 `data-wb-frame`；en-locale 断言**先正向断言每个视图 `count >= 1` 且合并文本非空**，再断言无中文 / 无 `workbench.` 路径，并加「往框架文案插中文必须红」的变异。没有这条正向断言，0 命中会让整条门恒绿 | Claude #8、codex #14 |
 | Q31 | **`conns` 是死字段**：Q5 删掉假授权后没有任何 UI 写它、没有任何视图读它（全仓非测试引用只有 reducer 的 action/demoFields 与 `mock/demo.ts` 的示例载入）。裁决：**不渲染、除 `loadDemo`/`clearDemo` 外不写**；保留为死字段（删除要升 `PERSISTED_VERSION`），在字段上写注释说明原因，T18 回写设计 §6.1。否则下一个实现者会把它当「GSC 已导入」的真值渲染——而示例载入后它是 true、用户真导入后仍是 false，任何渲染都会说反话 | Claude #21 |
+| Q33 | **周报 builder 放 mock 层**：`weeklyReportMarkdown` 落在 `lib/workbench/mock/builders/week.ts`（纯函数、不读时钟、中文正文），不放 `views/week/`——视图层不许写中文字面量，而产物正文是中文 mock 内容（设计 §7）。小节标题（含 Q16 的「检查结果变化」）与其他 builder 一样硬写在 mock 层，**不进 i18n**（现有 builder 如 `mock/builders/audit.ts` 的 `"## 站点"` 即此先例；T1 报告里「标题在 `labels-zh.ts`」的说法经复核不成立）。视图只负责取数、调 builder、交给 `useAddArtifact` 盖章 | T1 审阅 P2-6 复核结论、设计 §7 |
 | Q32 | **`ConfirmDialog` 必须 portal 到 `document.body`**：`ui/Dialog.tsx` 是就地渲染并对 `#wb-app` 无条件 `inert`（`ShellChrome` 因此把命令面板与抽屉放在 `#wb-app` 之外）。视图与 `Topbar` 都在 `#wb-app` 内，确认框就地渲染会落进 inert 子树——初始焦点 no-op、按钮不响应、读屏器看不到，而「Dialog 根恰好 1 个」的 e2e 仍然满足，失败只表现为「点了确认没反应」。配两条测试：①对话框根不是 `#wb-app` 的后代；②点「确认」真的调到 `onConfirm`（去掉 portal 必须红） | Claude #4 |
 
 ---
@@ -71,7 +72,7 @@ apps/web/src/components/workbench/
     gsc-connection.ts (+ .test.ts) 纯函数：sources + query 状态 → true | false | null
   views/
     overview/OverviewView.tsx  next-steps.ts  LoadDemoButton.tsx  (+ tests)
-    week/WeekView.tsx  week-feed.ts  weekly-report.ts  (+ tests)
+    week/WeekView.tsx  week-feed.ts  (+ tests)   ← 周报 builder 在 mock 层（Q33）
     profile/ProfileView.tsx  ProfileInputPane.tsx  ProfileDocTab.tsx  ProfileJsonTab.tsx
              ProfileContextTab.tsx  build-profile-doc.ts  (+ tests)
     data-sources/DataSourcesView.tsx  DataSourcesPanel.tsx  GscImportPane.tsx
@@ -214,7 +215,7 @@ docs/PROGRESS.md                   T18
 ## Task 8: 本周变化视图
 
 **依赖：** T1-T4
-**Files:** Create `views/week/{WeekView.tsx,week-feed.ts,weekly-report.ts}` + tests；Modify `app/p/[projectId]/week/page.tsx`
+**Files:** Create `views/week/{WeekView.tsx,week-feed.ts}` + tests；Create `lib/workbench/mock/builders/week.ts` + `week.test.ts`（周报 builder 在 mock 层，Q33）；Modify `app/p/[projectId]/week/page.tsx`
 
 - [ ] **Step 1: `week-feed.ts` 测试先行** — `weekFeed(state, now)`：事件来自 `lastAudit` / `lastVis` / `profileDoc` / `kb` / 每件 artifact，过 `withinDays(at, 7, now)`，按 `at` 倒序；`artifactsWithinDays` 在此实现；提及率与事件从 `lastVis.results`（Q20）；KB 缺口用 `kbGapCount`；「较上次（{at}）」带出 `prev.at`。
 - [ ] **Step 2: 三卡 + 摘要行 + 临界词清单** — 卡按 Q18；三项挪进摘要行（`week.summaryRow.*`）；右栏按 Q17 是临界词清单 + 明确空态，**不得出现任何「排名变动」数字**。
