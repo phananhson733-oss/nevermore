@@ -14,6 +14,7 @@ import {
   under,
   type SweptTarget,
 } from "./workbench-targets.ts";
+import { clearSampleButton, loadSample } from "./workbench-e2e.ts";
 
 /**
  * The workbench shell (design §4.1–§4.3). Everything here is chrome the shell
@@ -594,4 +595,45 @@ test("the project switcher stays inside its topbar row and shows a keyboard focu
   await expect(select).toBeFocused();
   expect(await select.evaluate((node) => node.matches(":focus-visible"))).toBe(true);
   await expect.poll(ring, "ring on keyboard focus").not.toBe("none");
+});
+
+test("clearing the sample by keyboard hands focus to the artifacts button, and a focused <main> draws no ring", async ({
+  page,
+}) => {
+  await loadSample(page);
+  const topbar = page.locator("[data-app-shell-topbar]");
+  const clear = clearSampleButton(page);
+
+  // Every step is a key press, so the browser's focus-visible heuristic sees a
+  // keyboard user throughout.
+  await topbar.getByRole("button", { name: /Search \/ jump/ }).focus();
+  for (let step = 0; step < 10; step += 1) {
+    if (await clear.evaluate((node) => node === document.activeElement)) break;
+    await page.keyboard.press("Tab");
+  }
+  await expect(clear).toBeFocused();
+  await page.keyboard.press("Enter");
+  const box = page.getByRole("dialog", { name: "Clear the sample data?" });
+  await expect(box.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(box.getByRole("button", { name: "Clear sample", exact: true })).toBeFocused();
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(clear).toHaveCount(0);
+  // The button that asked left with the sample; the confirmation points focus
+  // at the next control in the row (useClearSample), and that one takes it.
+  await expect(topbar.locator("[data-wb-drawer-button]")).toBeFocused();
+
+  // `<main>` is Dialog's last fallback. Focused by script right after key
+  // presses it matches :focus-visible, which is when globals.css's unlayered
+  // ring would frame the whole content column.
+  const main = page.locator("main[data-wb-main]");
+  await main.evaluate((node) => (node as HTMLElement).focus());
+  await expect(main).toBeFocused();
+  expect(
+    await main.evaluate((node) => node.matches(":focus-visible")),
+    "the scripted focus on <main> counts as keyboard focus",
+  ).toBe(true);
+  expect(await main.evaluate((node) => getComputedStyle(node).boxShadow)).toBe("none");
 });
