@@ -679,6 +679,35 @@ const REQUIRED: Readonly<
 };
 
 /**
+ * Whole-string pins for a few ruled honesty sentences that take no ICU argument
+ * and render exactly as stored. `REQUIRED` is containment, so a correct sentence
+ * followed by its opposite (「……，不是示例；这些行全是系统生成的示例数据。」) keeps every
+ * pin, and `FORBIDDEN_BY_KEY` only lists the contradictions someone thought of
+ * (codex copy review P3). Only for argument-free sentences whose wording has been
+ * ruled: changing one of them means changing it here too, on purpose. Their
+ * `REQUIRED` and `FORBIDDEN_BY_KEY` entries stay, so the reason for each clause
+ * is still written down.
+ */
+const EXACT_BY_KEY: Readonly<Record<string, Readonly<Record<LocaleKey, string>>>> = {
+  "overview.gscFoot.user": {
+    "zh-CN": "这些 GSC 行来自你导入的数据，不是示例",
+    en: "These GSC rows come from data you imported, not from a sample",
+  },
+  "shell.sampleTitle": {
+    "zh-CN": "审计、可见度等模块结果是本地生成的示例，不包括你自己导入的 GSC 行。示例内容目前仅有中文。",
+    en: "Module results such as the audit and visibility are generated locally as samples; GSC rows you import yourself are not. Sample content is currently in Chinese only.",
+  },
+  "week.empty.title": {
+    "zh-CN": "暂无可显示的结果",
+    en: "No results to show",
+  },
+  "week.report.disabled": {
+    "zh-CN": "暂无可写进周报的结果",
+    en: "Nothing to put in a report",
+  },
+};
+
+/**
  * Subtrees this task owns end to end. Every leaf under them must be listed in
  * `CASES`, so a misspelt key cannot sit in both locales unnoticed (locale
  * parity alone is blind to a key no view ever reads).
@@ -1162,6 +1191,16 @@ describe.each(LOCALE_KEYS)("workbench view messages (%s)", (locale) => {
           expect(text, `${key} must still say "${phrase}"`).toContain(phrase);
         }
       }
+    }
+  });
+
+  it("holds the ruled argument-free honesty sentences to their exact wording", () => {
+    for (const [key, byLocale] of Object.entries(EXACT_BY_KEY)) {
+      const listed = PARSED.find((entry) => entry.key === key);
+      expect(listed, `${key} must also be listed in CASES`).toBeDefined();
+      expect(listed?.variants, `${key} must take no argument`).toEqual([{}]);
+      expect(rawMessage(locale, key), `${key} as stored`).toBe(byLocale[locale]);
+      expect(formatStrict(locale, key, {}), `${key} as rendered`).toBe(byLocale[locale]);
     }
   });
 });
