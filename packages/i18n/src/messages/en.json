@@ -3968,7 +3968,7 @@
       },
       "clearSampleConfirm": {
         "title": "Clear the sample data?",
-        "body": "This clears the site's GSC rows, keyword library, saved artifacts and site profile in this browser, including anything you added after loading the sample.",
+        "body": "This clears the site's GSC rows, keyword seeds, keyword library, saved artifacts and site profile in this browser, along with every result already there (audit, visibility, knowledge base, competitor data, answer plans and link targets), including anything you added after loading the sample.",
         "ok": "Clear sample"
       }
     },

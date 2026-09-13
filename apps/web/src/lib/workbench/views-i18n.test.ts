@@ -199,24 +199,40 @@ const REQUIRED: Readonly<
     "zh-CN": ["这个浏览器", "不会发送"],
     en: ["browser", "nothing is sent"],
   },
-  // `clearDemo` rolls back the same 17 fields as `loadDemo`, so the trailing
-  // clause — the one covering what the user produced after loading the sample —
-  // is pinned too, not only the four categories Q12 names.
+  // `clearDemo` rolls back every field `loadDemo` writes (`demoFields`), so the
+  // body has to name all of them: the stores, the results already there, and the
+  // trailing clause covering what the user produced after loading the sample. A
+  // body that names only the four stores reads as if audit and visibility
+  // results survive the clear.
   "shell.clearSampleConfirm.body": {
     "zh-CN": [
       "GSC",
+      "关键词种子",
       "词库",
       "产物筐",
       "站点档案",
+      "审计",
+      "可见度",
+      "知识库",
+      "竞品数据",
+      "答案页方案",
+      "外链目标",
       "载入示例之后",
       "你自己加的内容",
     ],
     en: [
       "GSC",
+      "keyword seeds",
       "keyword library",
-      "artifacts",
+      "saved artifacts",
       "site profile",
-      "anything you added",
+      "audit",
+      "visibility",
+      "knowledge base",
+      "competitor data",
+      "answer plans",
+      "link targets",
+      "after loading the sample",
     ],
   },
   // Q11 raises this dialog for any non-empty field, so the four named
