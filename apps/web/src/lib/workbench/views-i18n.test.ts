@@ -48,7 +48,7 @@ const LOCALE_KEYS = Object.keys(LOCALES) as readonly LocaleKey[];
  * One sentinel per argument NAME, so a message that drops one of several
  * placeholders fails instead of matching a shared value. Numbers stay in the
  * hundreds: below 1000 so ICU `#` renders them without a grouping separator,
- * and away from the literals the copy itself contains (`11-30`, `≤10`, `GA4`).
+ * and away from the literals the copy itself contains (`>10`, `≤30`, `GA4`).
  */
 const textSentinel = (name: string): string => `SENTINEL-${name}`;
 const numberSentinel = (index: number): number => 401 + index;
@@ -62,6 +62,17 @@ const HAN = /\p{Script=Han}/u;
 const FORBIDDEN: Readonly<Record<LocaleKey, readonly string[]>> = {
   "zh-CN": ["进前十", "保证", "一定能", "已修复", "无排名", "被引用率最高"],
   en: ["guarantee", "will rank", "not ranking", "we fixed", "page one within"],
+};
+
+/**
+ * The borderline band is `10 < position <= 30` (`gscStatus`), and a GSC
+ * position is an average that can be fractional (14.2), so 10.4 is inside it.
+ * "11-30" reads as whole ranks and leaves 10.x out, which is why the copy
+ * writes the comparison (T18). This is the old spelling, in any dash or word.
+ */
+const BAND_AS_WHOLE_RANKS: Readonly<Record<LocaleKey, readonly Phrase[]>> = {
+  "zh-CN": [/11\s*[-–—~至到]\s*30/u],
+  en: [/11\s*(?:[-–—~]|to)\s*30/u],
 };
 
 /**
@@ -96,6 +107,12 @@ const FORBIDDEN_BY_KEY: Readonly<
   "overview.gscFoot.sample": {
     "zh-CN": ["不是示例", "并非示例", "不来自示例", "不是来自示例"],
     en: ["not come from sample", "no longer", "not sample data"],
+  },
+  // The mirror of the sample footnote: keeping the words and negating whose
+  // rows they are is the rewrite that matters.
+  "overview.gscFoot.user": {
+    "zh-CN": ["不是来自你导入", "并非来自你导入", "不来自你导入", "不是你导入"],
+    en: ["not come from data you imported", "not from data you imported", "not imported"],
   },
   // `isOverviewEmpty` reads audit / lastVis / built / artifacts only: a profile
   // document, knowledge base, competitor data or plans can already exist, and a
@@ -199,8 +216,30 @@ const FORBIDDEN_BY_KEY: Readonly<
     "zh-CN": ["本周", "这周"],
     en: ["this week"],
   },
+  // T18: the page range is the seven dates ending today, not a calendar week.
+  "week.empty.title": {
+    "zh-CN": ["本周", "这周"],
+    en: ["this week"],
+  },
+  "week.report.disabled": {
+    "zh-CN": ["本周", "这周"],
+    en: ["this week"],
+  },
+  // The toggle names the page by its title (「本周变化」 / "This week"), so only
+  // the period the report covers is held to the seven dates.
+  "settings.notify.weekly.description": {
+    "zh-CN": ["本周产物", "这周"],
+    en: ["that week", "this week's"],
+  },
+  "overview.next.step.borderline": BAND_AS_WHOLE_RANKS,
+  "week.cards.borderline.label": BAND_AS_WHOLE_RANKS,
+  "week.borderlineList.title": BAND_AS_WHOLE_RANKS,
+  "week.borderlineList.detail": BAND_AS_WHOLE_RANKS,
+  "week.next.step.borderline": BAND_AS_WHOLE_RANKS,
+  "profile.doc.gscNear": BAND_AS_WHOLE_RANKS,
+  "dataSources.table.legend": BAND_AS_WHOLE_RANKS,
   // Unknown is not none: a row with no usable position may sit anywhere,
-  // positions 11-30 included.
+  // positions >10 to ≤30 included.
   "week.borderlineUnknown": {
     "zh-CN": ["没有临界词", "没有排名", "不在"],
     en: ["no queries", "not ranking", "unranked", "outside"],
@@ -410,8 +449,8 @@ const REQUIRED: Readonly<
   },
   // Q17: the whole justification for showing a list instead of rank movement.
   "week.borderlineList.detail": {
-    "zh-CN": ["不是排名变化", "工作台目前不保存"],
-    en: ["not rank movement", "does not keep"],
+    "zh-CN": ["排名 >10 且 ≤30", "不是排名变化", "工作台目前不保存"],
+    en: ["positions >10 to ≤30", "not rank movement", "does not keep"],
   },
   // codex S7a #11: the step counts the prompts the summary row counts, so it
   // keeps the row's qualifier; without it a prompt one platform did mention
@@ -462,6 +501,12 @@ const REQUIRED: Readonly<
   "overview.gscFoot.sample": {
     "zh-CN": ["来自示例数据"],
     en: ["come from sample data"],
+  },
+  // Q6 for the operator's own rows (T18): whose rows they are, and that they are
+  // not the sample. The second clause is the one a trim would take.
+  "overview.gscFoot.user": {
+    "zh-CN": ["来自你导入的数据", "不是示例"],
+    en: ["come from data you imported", "not from a sample"],
   },
   // Step 1b: repeated queries are disclosed, not silently dropped, and the
   // sentence says which row survived — the only thing the operator can check
@@ -578,6 +623,49 @@ const REQUIRED: Readonly<
     "zh-CN": ["来源未知", "不是真实测量"],
     en: ["unknown source", "not measured"],
   },
+  // T18: the sample chip's title is the one place the shell says what the
+  // sample covers, and that GSC rows the operator imported are not part of it.
+  "shell.sampleTitle": {
+    "zh-CN": ["本地生成的示例", "不包括你自己导入的 GSC 行", "仅有中文"],
+    en: ["generated locally as samples", "GSC rows you import yourself are not", "in Chinese only"],
+  },
+  // T18: the band is written as the comparison `gscStatus` makes, and each pin
+  // carries the words around it, so a "30" elsewhere cannot satisfy it.
+  "overview.next.step.borderline": {
+    "zh-CN": ["临界词（排名 >10 且 ≤30）"],
+    en: ["at positions >10 to ≤30"],
+  },
+  "week.cards.borderline.label": {
+    "zh-CN": ["临界词（排名 >10 且 ≤30）"],
+    en: ["Queries at positions >10 to ≤30"],
+  },
+  "week.borderlineList.title": {
+    "zh-CN": ["临界词（排名 >10 且 ≤30）"],
+    en: ["Queries at positions >10 to ≤30"],
+  },
+  "week.next.step.borderline": {
+    "zh-CN": ["临界词（排名 >10 且 ≤30）"],
+    en: ["at positions >10 to ≤30"],
+  },
+  "profile.doc.gscNear": {
+    "zh-CN": ["排名 >10 且 ≤30"],
+    en: ["Positions >10 to ≤30"],
+  },
+  "dataSources.table.legend": {
+    "zh-CN": ["临界 >10 且 ≤30"],
+    en: ["Near page one >10 to ≤30"],
+  },
+  // T18: the page counts the seven dates ending today (codex S7r2 #6). Not
+  // `week.empty.title`: `isEmpty` reads whole stores, not dates, so a pin on its
+  // seven days would mandate a scope the predicate does not have.
+  "week.report.disabled": {
+    "zh-CN": ["近 7 天"],
+    en: ["the last 7 days"],
+  },
+  "settings.notify.weekly.description": {
+    "zh-CN": ["近 7 天"],
+    en: ["the last 7 days"],
+  },
 };
 
 /**
@@ -635,7 +723,6 @@ const CASES: readonly string[] = [
   "overview.next.step.answerGaps | #count",
   "overview.next.step.borderline | #count",
   "overview.next.step.matrix",
-  "overview.next.step.importGsc",
   "overview.next.step.content",
   "overview.empty.title",
   "overview.empty.detail",
@@ -683,7 +770,6 @@ const CASES: readonly string[] = [
   "week.next.step.borderline | #count",
   "week.next.step.kbGaps | #count",
   "week.next.step.keepGoing",
-  "week.report.title",
   "week.report.save",
   "week.report.export",
   "week.report.disabled",
@@ -838,6 +924,7 @@ const CASES: readonly string[] = [
   "shell.clearSampleConfirm.title",
   "shell.clearSampleConfirm.body",
   "shell.clearSampleConfirm.ok",
+  "shell.sampleTitle",
   "shell.siteCard.unknownHint",
   // The ui primitives' own labels (Task 1b). They belong to no single view:
   // `ArtifactActionLabels` and the `tag` of `InPane`/`OutPane` are required

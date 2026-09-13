@@ -3936,7 +3936,7 @@
       "sampleData": "Sample data",
       "sampleSite": "Sample site",
       "clearSample": "Clear sample",
-      "sampleTitle": "Sample content is currently Chinese-only",
+      "sampleTitle": "Module results such as the audit and visibility are generated locally as samples; GSC rows you import yourself are not. Sample content is currently in Chinese only.",
       "volatile": "Results will not be saved in this browser",
       "quota": "Browser storage is full; new results are not being saved",
       "readonly": "This browser holds data saved by a newer version. Results from this session will not be saved",
@@ -3980,7 +3980,7 @@
         "note": "These preferences are stored only in this browser, and nothing is sent right now.",
         "weekly": {
           "label": "Weekly report",
-          "description": "Covers the This week page and the artifacts from that week."
+          "description": "Covers the This week page (the last 7 days) and the artifacts from that period."
         },
         "drop": {
           "label": "Health score or mention rate drops",
@@ -4154,7 +4154,7 @@
       },
       "gscFoot": {
         "sample": "These GSC rows come from sample data",
-        "user": "These GSC rows come from data you imported"
+        "user": "These GSC rows come from data you imported, not from a sample"
       },
       "next": {
         "title": "What to do next",
@@ -4164,9 +4164,8 @@
           "fixHigh": "Start with {count, plural, one {# high-severity issue} other {# high-severity issues}}",
           "visibility": "Run an AI visibility check",
           "answerGaps": "Write answer pages for {count, plural, one {# gap} other {# gaps}}",
-          "borderline": "Work on {count, plural, one {# query} other {# queries}} sitting at positions 11-30",
+          "borderline": "Work on {count, plural, one {# query} other {# queries}} at positions >10 to ≤30",
           "matrix": "Build the keyword matrix",
-          "importGsc": "Import a GSC export",
           "content": "Keep producing content"
         }
       },
@@ -4201,7 +4200,7 @@
           "foot": "Mentioned in {hits} of {total} answers"
         },
         "borderline": {
-          "label": "Queries at positions 11-30",
+          "label": "Queries at positions >10 to ≤30",
           "foot": "Based on positions in the latest GSC import"
         }
       },
@@ -4223,9 +4222,9 @@
         "view": "View"
       },
       "borderlineList": {
-        "title": "Queries at positions 11-30",
+        "title": "Queries at positions >10 to ≤30",
         "empty": "No queries in that range",
-        "detail": "These are the queries sitting at positions 11-30 in the latest import. They are not rank movement: that would need history across several imports, which the workbench does not keep."
+        "detail": "These are the queries at positions >10 to ≤30 in the latest import. They are not rank movement: that would need history across several imports, which the workbench does not keep."
       },
       "borderlineUnknown": "{count, plural, one {# more query has} other {# more queries have}} no known position",
       "next": {
@@ -4234,20 +4233,19 @@
         "step": {
           "fixHigh": "Work through {count, plural, one {# high-severity issue} other {# high-severity issues}}",
           "answerGaps": "Write answer pages for {count, plural, one {# prompt} other {# prompts}} where at least one platform did not mention you",
-          "borderline": "Work on {count, plural, one {# query} other {# queries}} sitting at positions 11-30",
+          "borderline": "Work on {count, plural, one {# query} other {# queries}} at positions >10 to ≤30",
           "kbGaps": "Write {count, plural, one {# missing statement} other {# missing statements}} in the knowledge base",
           "keepGoing": "Keep producing content"
         }
       },
       "report": {
-        "title": "Changes in check results",
         "save": "Save the weekly report",
         "export": "Export .md",
-        "disabled": "There's nothing from this week to put in a report"
+        "disabled": "Nothing from the last 7 days to put in a report"
       },
       "artifactTitle": "{brand} weekly report",
       "empty": {
-        "title": "Nothing has run this week",
+        "title": "Nothing has run in the last 7 days",
         "detail": "Whatever you run is kept in this browser and shows up here."
       }
     },
@@ -4312,7 +4310,7 @@
         "gscBrand": "Brand queries",
         "gscBrandClicks": "Brand clicks",
         "gscNonBrandClicks": "Non-brand clicks",
-        "gscNear": "Positions 11-30",
+        "gscNear": "Positions >10 to ≤30",
         "gscTop": "Top queries by clicks",
         "gscNote": "Brand and non-brand queries are split by matching the brand name, the same way the keyword matrix splits them.",
         "summary": "Summary",
@@ -4404,7 +4402,7 @@
         "ctr": "CTR",
         "position": "Position",
         "status": "Status",
-        "legend": "Ranking ≤10 · Near page one 11-30 · Gap >30",
+        "legend": "Ranking ≤10 · Near page one >10 to ≤30 · Gap >30",
         "showing": "Showing the first {shown} of {total} rows",
         "unknownRank": "{count, plural, one {# row with an unknown position} other {# rows with an unknown position}}",
         "toKeywords": "Open the keyword matrix"

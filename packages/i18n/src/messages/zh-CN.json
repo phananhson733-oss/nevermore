@@ -3936,7 +3936,7 @@
       "sampleData": "示例数据",
       "sampleSite": "示例站点",
       "clearSample": "清除示例",
-      "sampleTitle": "示例内容目前仅有中文",
+      "sampleTitle": "审计、可见度等模块结果是本地生成的示例，不包括你自己导入的 GSC 行。示例内容目前仅有中文。",
       "volatile": "本次结果不会保存在此浏览器",
       "quota": "浏览器存储已满，新结果不再保存",
       "readonly": "这个浏览器里保存的是更新版本的数据，本次结果不会保存",
@@ -3980,7 +3980,7 @@
         "note": "偏好只保存在这个浏览器，当前不会发送任何通知。",
         "weekly": {
           "label": "每周周报",
-          "description": "范围是「本周变化」页的内容与本周产物清单。"
+          "description": "范围是「本周变化」页（近 7 天）的内容与这段时间的产物。"
         },
         "drop": {
           "label": "健康分或提及率下跌",
@@ -4154,7 +4154,7 @@
       },
       "gscFoot": {
         "sample": "这些 GSC 行来自示例数据",
-        "user": "这些 GSC 行来自你导入的数据"
+        "user": "这些 GSC 行来自你导入的数据，不是示例"
       },
       "next": {
         "title": "接下来做什么",
@@ -4164,9 +4164,8 @@
           "fixHigh": "先处理 {count} 个高危问题",
           "visibility": "跑一次 AI 可见度诊断",
           "answerGaps": "补 {count} 个答案页缺口",
-          "borderline": "推进 {count} 条临界词（11-30 名）",
+          "borderline": "推进 {count} 条临界词（排名 >10 且 ≤30）",
           "matrix": "建一次关键词矩阵",
-          "importGsc": "导入一份 GSC 导出",
           "content": "继续产出内容"
         }
       },
@@ -4201,7 +4200,7 @@
           "foot": "{total} 次问答里有 {hits} 次提到你"
         },
         "borderline": {
-          "label": "临界词（11-30 名）",
+          "label": "临界词（排名 >10 且 ≤30）",
           "foot": "按最近一次导入的 GSC 排名计算"
         }
       },
@@ -4223,9 +4222,9 @@
         "view": "查看"
       },
       "borderlineList": {
-        "title": "临界词（11-30 名）",
+        "title": "临界词（排名 >10 且 ≤30）",
         "empty": "还没有临界词",
-        "detail": "这是最近一次导入里排在 11-30 名的查询，不是排名变化。排名变化要靠多次导入的历史，工作台目前不保存。"
+        "detail": "这是最近一次导入里排名 >10 且 ≤30 的查询，不是排名变化。排名变化要靠多次导入的历史，工作台目前不保存。"
       },
       "borderlineUnknown": "另有 {count} 条排名未知",
       "next": {
@@ -4234,20 +4233,19 @@
         "step": {
           "fixHigh": "处理 {count} 个高危问题",
           "answerGaps": "给 {count} 个仍有平台没提到你的提问写答案页",
-          "borderline": "推进 {count} 条临界词（11-30 名）",
+          "borderline": "推进 {count} 条临界词（排名 >10 且 ≤30）",
           "kbGaps": "补 {count} 条知识库结论句",
           "keepGoing": "继续产出内容"
         }
       },
       "report": {
-        "title": "检查结果变化",
         "save": "存周报到产物筐",
         "export": "导出 md",
-        "disabled": "这周没有可写进周报的结果"
+        "disabled": "近 7 天没有可写进周报的结果"
       },
       "artifactTitle": "{brand} 周报",
       "empty": {
-        "title": "这周还没有结果",
+        "title": "近 7 天还没有结果",
         "detail": "跑过的模块会把结果留在这个浏览器里，出现在这里。"
       }
     },
@@ -4312,7 +4310,7 @@
         "gscBrand": "品牌词",
         "gscBrandClicks": "品牌词点击",
         "gscNonBrandClicks": "非品牌词点击",
-        "gscNear": "11-30 名",
+        "gscNear": "排名 >10 且 ≤30",
         "gscTop": "点击最高的查询",
         "gscNote": "品牌词与非品牌词按品牌名匹配拆分，口径与关键词矩阵一致。",
         "summary": "一句话总结",
@@ -4404,7 +4402,7 @@
         "ctr": "点击率",
         "position": "排名",
         "status": "状态",
-        "legend": "已排名 ≤10 · 临界 11-30 · 缺口 >30",
+        "legend": "已排名 ≤10 · 临界 >10 且 ≤30 · 缺口 >30",
         "showing": "显示前 {shown} 行，共 {total} 行",
         "unknownRank": "{count} 条排名未知",
         "toKeywords": "进关键词矩阵"
