@@ -75,15 +75,19 @@ export function Tabs({
   readonly renderedIds: readonly string[];
 }) {
   const listRef = useRef<HTMLDivElement | null>(null);
-  // The tab the group shows as selected: `value` while it is one of the tabs,
-  // else the first tab left. A value can outlive its tab when the list changes
-  // under it; with no tab selected the roving tabindex leaves no stop, and the
-  // whole group drops out of the Tab order. `onChange` is not called for this:
-  // the value is the caller's to change.
-  const selectedId = tabs.some(([id]) => id === value) ? value : tabs[0]?.[0];
+  // The tab that holds the roving tabindex and that the arrow keys start from:
+  // `value` while it is one of the tabs, else the first tab left. A value can
+  // outlive its tab when the list changes under it, and with no stop at all the
+  // whole group would drop out of the Tab order. Selection is NOT moved with
+  // it: the caller still renders the old value's panel (or none), so marking
+  // the first tab `aria-selected` and filling it would announce a panel that is
+  // not there. No tab is marked selected until the caller's value catches up,
+  // which an arrow key does by calling `onChange`. `onChange` is never called
+  // on render: the value is the caller's to change.
+  const entryId = tabs.some(([id]) => id === value) ? value : tabs[0]?.[0];
 
   function move(delta: number): void {
-    const from = tabs.findIndex(([id]) => id === selectedId);
+    const from = tabs.findIndex(([id]) => id === entryId);
     if (from < 0) return;
     const to = (from + delta + tabs.length) % tabs.length;
     const next = tabs[to];
@@ -108,7 +112,7 @@ export function Tabs({
       className="inline-flex flex-wrap items-center gap-1"
     >
       {tabs.map(([id, text]) => {
-        const selected = id === selectedId;
+        const selected = id === value;
         // An `aria-controls` pointing at an id that is not in the document is a
         // broken promise to assistive technology, not a harmless extra.
         const panelRendered = renderedIds.includes(id);
@@ -120,7 +124,7 @@ export function Tabs({
             id={tabButtonId(idPrefix, id)}
             {...(panelRendered ? { "aria-controls": tabPanelId(idPrefix, id) } : {})}
             aria-selected={selected}
-            tabIndex={selected ? 0 : -1}
+            tabIndex={id === entryId ? 0 : -1}
             onClick={() => onChange(id)}
             className={cn(TAB_BASE, selected ? TAB_ON : TAB_OFF)}
           >

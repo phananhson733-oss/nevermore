@@ -215,19 +215,21 @@ describe("Tabs", () => {
     expect(prevented).toBe(false);
   });
 
-  it("selects the first tab when the selected id is not one of the tabs, without calling onChange", () => {
-    // A value can outlive its tab. With no tab selected the roving tabindex
-    // leaves no stop, and the whole group drops out of the Tab order; the value
-    // itself stays the caller's to change.
+  it("marks no tab selected when the selected id is not one of the tabs, and keeps the first as the Tab stop", () => {
+    // A value can outlive its tab. The caller still renders the old value's
+    // panel (or none), so a selected first tab would announce a panel that is
+    // not there; with no stop at all the group would drop out of the Tab order.
+    // The value stays the caller's to change.
     const onChange = vi.fn<(id: string) => void>();
     const scope = renderTabs("gone", onChange);
 
     expect(tabsOf(scope).map((t) => t.getAttribute("aria-selected"))).toEqual([
-      "true",
+      "false",
       "false",
       "false",
     ]);
     expect(tabsOf(scope).map((t) => t.tabIndex)).toEqual([0, -1, -1]);
+    expect(tabsOf(scope).some((t) => t.className.includes("bg-wb-ink"))).toBe(false);
     expect(onChange).not.toHaveBeenCalled();
   });
 
