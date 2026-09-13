@@ -3938,6 +3938,8 @@
       "sampleTitle": "示例内容目前仅有中文",
       "volatile": "本次结果不会保存在此浏览器",
       "quota": "浏览器存储已满，新结果不再保存",
+      "readonly": "这个浏览器里保存的是更新版本的数据，本次结果不会保存",
+      "notSavingShort": "未保存",
       "legacy": "旧版页面",
       "inProgress": "页面开发中",
       "inProgressDetail": "这个模块在后续批次落地，旧版页面照常可用。",
@@ -3967,6 +3969,118 @@
     "settings": {
       "realAction": "真实操作",
       "realActionTitle": "这是真实操作，会删除真实项目，不是示例数据。"
+    },
+    "enums": {
+      "severity": {
+        "high": "高",
+        "mid": "中",
+        "low": "低"
+      },
+      "engine": {
+        "seo": "SEO",
+        "geo": "GEO",
+        "both": "SEO + GEO"
+      },
+      "level": {
+        "high": "高",
+        "mid": "中",
+        "low": "低"
+      },
+      "gscStatus": {
+        "ranked": "已排名",
+        "borderline": "临界",
+        "gap": "缺口",
+        "unknown": "未知"
+      },
+      "intent": {
+        "navigational": "导航型",
+        "informational": "信息型",
+        "commercial": "商业调研型",
+        "transactional": "交易型"
+      },
+      "stage": {
+        "TOFU": "认知阶段",
+        "MOFU": "考虑阶段",
+        "BOFU": "决策阶段"
+      },
+      "pageType": {
+        "landing": "落地页",
+        "blog": "博客文章",
+        "comparison": "对比页",
+        "listicle": "清单文章",
+        "tool": "工具页",
+        "glossary": "术语页",
+        "answer-page": "答案页"
+      },
+      "keywordSource": {
+        "gsc": "GSC 现有查询",
+        "generated": "生成"
+      },
+      "savedSource": {
+        "matrix": "关键词矩阵",
+        "manual": "手动添加",
+        "gap": "竞品缺口"
+      },
+      "promptKind": {
+        "discover": "发现型",
+        "compare": "比较型",
+        "verify": "验证型",
+        "alternative": "替代型",
+        "scenario": "场景型"
+      },
+      "kbCategory": {
+        "definition": "定义",
+        "capability": "能力",
+        "boundary": "边界",
+        "pricing": "定价",
+        "comparison": "对比",
+        "data": "数据",
+        "faq": "FAQ"
+      },
+      "kbOrigin": {
+        "crawl": "站内抓取",
+        "gap": "缺口",
+        "aiDraft": "AI 草稿",
+        "manual": "手填"
+      },
+      "linkType": {
+        "dir": "工具目录站",
+        "agg": "同类工具聚合页",
+        "comm": "社区问答",
+        "rev": "评测与对比站",
+        "media": "行业媒体与 newsletter",
+        "swap": "互换与联合内容"
+      },
+      "artifactType": {
+        "csv": "CSV",
+        "prompt": "提示词",
+        "md": "Markdown",
+        "json": "JSON"
+      },
+      "module": {
+        "audit": "技术审计",
+        "visibility": "AI 可见度",
+        "keywords": "关键词研究",
+        "keywordLibrary": "词库",
+        "competitors": "竞品概览",
+        "links": "外链",
+        "content": "内容生成",
+        "kb": "事实知识库",
+        "answers": "答案页 / 报告",
+        "profile": "站点档案",
+        "week": "本周变化"
+      },
+      "contentAsset": {
+        "blog": "博客文章",
+        "landing": "落地页",
+        "tool": "免费工具页",
+        "comparison": "对比页",
+        "image": "配图",
+        "video": "短视频脚本"
+      }
+    },
+    "provenance": {
+      "artifact": "示例数据：本地生成的演示结果，不是真实测量；生成于 {at}"
     }
   }
 }

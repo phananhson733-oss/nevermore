@@ -1,0 +1,103 @@
+/** Shared inputs for demo.test.ts and demo-honesty.test.ts (not a test file itself). */
+import type { Artifact, DemoPayload, KbEntry, Profile } from "../types.ts";
+import type { DemoDeps } from "./demo.ts";
+
+/** A brand and nothing else: every placeholder path. Must never be GenGrowth, or the leak scan passes vacuously. */
+export const EMPTY_PROFILE: Profile = {
+  url: "acme.io",
+  brand: "Acme",
+  positioning: "",
+  features: "",
+  competitors: "",
+  market: "US",
+};
+
+/** Every field filled, more competitors than any module compares. */
+export const FULL_PROFILE: Profile = {
+  url: "https://www.widgets.co.uk",
+  brand: "Widgets",
+  positioning: "inventory software for small warehouses",
+  features: "barcode scanning, stock alerts, supplier portal",
+  competitors: "Sortly, inFlow, Zoho Inventory, Fishbowl, Cin7, Katana, Odoo, Unleashed",
+  market: "GB",
+};
+
+/** Competitors that spell the brand or the own site before the one real rival. */
+export const TRICKY_PROFILE: Profile = {
+  url: "https://acme.io",
+  brand: "Acme",
+  positioning: "",
+  features: "",
+  competitors: "acme, ACME.io, www.acme.io, Rival",
+  market: "US",
+};
+
+export const PROFILES: readonly (readonly [name: string, profile: Profile])[] = [
+  ["EMPTY", EMPTY_PROFILE],
+  ["FULL", FULL_PROFILE],
+];
+
+export const DEMO_PAYLOAD_KEYS: readonly (keyof DemoPayload)[] = [
+  "artifacts",
+  "audit",
+  "auditHistory",
+  "built",
+  "compData",
+  "conns",
+  "gscRows",
+  "kb",
+  "lastAudit",
+  "lastVis",
+  "plans",
+  "profileDoc",
+  "saved",
+  "seeds",
+  "targets",
+  "visHistory",
+  "visResults",
+];
+
+export const LOCAL_STAMP = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
+export const SAMPLE_FILL_EVIDENCE = "示例，未核对";
+
+export function provenanceLine(at: string): string {
+  return `PROVENANCE ${at}`;
+}
+
+/** Create the Date inside the test when the timezone matters: `new Date(y, m, d)` reads TZ at call time. */
+export function testDeps(now: Date = new Date(2026, 8, 13, 12, 0)): DemoDeps {
+  return { now, provenanceLine };
+}
+
+export function required<T>(value: T | null | undefined, label: string): T {
+  if (value === null || value === undefined) throw new Error(`${label} is missing`);
+  return value;
+}
+
+/** The demo's gap fills. The AI profile's data facts carry the same sample evidence, so they are left out by category. */
+export function sampleFills(entries: readonly KbEntry[]): readonly KbEntry[] {
+  return entries.filter((entry) => entry.evidence === SAMPLE_FILL_EVIDENCE && entry.cat !== "data");
+}
+
+export function artifactById(payload: DemoPayload, id: string): Artifact {
+  return required(
+    payload.artifacts.find((artifact) => artifact.id === id),
+    `artifact ${id}`,
+  );
+}
+
+/** Every stamp field of a payload, labelled for failure messages. */
+export function payloadStamps(payload: DemoPayload): readonly (readonly [label: string, at: string])[] {
+  return [
+    ...(payload.audit === null ? [] : [["audit.at", payload.audit.at] as const]),
+    ...(payload.lastAudit === null ? [] : [["lastAudit.at", payload.lastAudit.at] as const]),
+    ...payload.auditHistory.map((report, i) => [`auditHistory[${i}].at`, report.at] as const),
+    ...(payload.lastVis === null ? [] : [["lastVis.at", payload.lastVis.at] as const]),
+    ...payload.visHistory.map((snapshot, i) => [`visHistory[${i}].at`, snapshot.at] as const),
+    ...(payload.kb === null ? [] : [["kb.at", payload.kb.at] as const]),
+    ...(payload.profileDoc === null ? [] : [["profileDoc.at", payload.profileDoc.at] as const]),
+    ...(payload.compData === null ? [] : [["compData.at", payload.compData.at] as const]),
+    ...payload.saved.map((entry, i) => [`saved[${i}].addedAt`, entry.addedAt] as const),
+    ...payload.artifacts.map((artifact) => [`artifacts[${artifact.id}].at`, artifact.at] as const),
+  ];
+}

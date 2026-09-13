@@ -9,8 +9,25 @@ import {
 } from "../types.ts";
 
 /**
- * Boundary validation for localStorage (design §6.5). Strict objects: a stale
- * shape from an older dev build is discarded, never partially trusted.
+ * Boundary validation for localStorage (design §6.5). Strict objects: a shape
+ * this build cannot fully account for is never partially trusted.
+ *
+ * Evolution discipline (R14). An envelope whose only problem is keys this
+ * build does not know (a newer build's addition, or a field this build
+ * removed) is `incompatible`: the session stays read-only and never writes
+ * over that data. Anything else this build cannot parse is `invalid` and gets
+ * discarded and overwritten. Therefore:
+ * - Adding an enum member, widening a type (including raising a `.max()`
+ *   limit), narrowing one, renaming a field, or removing a field: bump
+ *   `PERSISTED_VERSION`. The storage key carries the version, so the new
+ *   envelope lands under a key older builds never read. Without the bump an
+ *   older build reads a new enum member as `invalid` and overwrites it, and a
+ *   build that removed a field leaves every existing project read-only for good.
+ * - Adding a field: first ship, on its own, a reader that accepts it, and only
+ *   write it in a later release. An older build that still meets the new field
+ *   goes read-only rather than overwriting it, but it cannot save anything.
+ * The domain side of this contract is `types.ts`: every type reachable from
+ * `WorkbenchProjectState` is persisted through this schema.
  */
 export const PERSISTED_VERSION = 1 as const;
 
@@ -86,9 +103,11 @@ const visResult = z.strictObject({
   rank: nullableNumber,
   brands: z.array(z.string()),
   domains: z.array(z.string()),
-  // v1 contract: only mock results are persisted. Widening to z.boolean()
-  // rejects nothing old, but ANY narrowing or renaming here needs a
-  // PERSISTED_VERSION bump.
+  // v1 contract: only mock results are persisted. Widening this to
+  // z.boolean() needs a PERSISTED_VERSION bump, like any narrowing or renaming:
+  // this build would still parse the new data, but an older build reads
+  // `real: true` as `invalid` (not `incompatible`), discards it and writes over
+  // it. New fields follow the reader-first rule in the file header.
   real: z.literal(false),
 });
 
@@ -144,9 +163,14 @@ const linkTarget = z.strictObject({
   type: z.enum(["dir", "agg", "comm", "rev", "media", "swap"]),
   site: z.string(),
   domain: z.string(),
-  dr: z.number(),
+  // Pre-ship exemption from the bump rule above: dr and difficulty were widened
+  // to nullable (a channel with no domain has no DR; unavailable is null, never
+  // 0) before the first release. PR-1 never shipped, so no reader of the old
+  // shape exists and PERSISTED_VERSION stays 1. Once released, a change like
+  // this needs a bump.
+  dr: nullableNumber,
   relevance: level,
-  difficulty: level,
+  difficulty: level.nullable(),
   action: z.string(),
   asset: z.string(),
 });
@@ -168,7 +192,13 @@ const crawlSignals = z.strictObject({
   hasPricing: z.boolean(),
   hasDocs: z.boolean(),
   hasBlog: z.boolean(),
-  indexed: z.number(),
+  // Pre-ship exemption from the bump rule above: renamed from `indexed` (the
+  // count is the audit's indexable pages, not pages a search engine indexed)
+  // before the first release. PR-1 never shipped, so no reader of the old shape
+  // exists and PERSISTED_VERSION stays 1. An envelope with the old key is
+  // `invalid`, not `incompatible`: the missing `indexable` is a real defect.
+  // Once released, a change like this needs a bump.
+  indexable: z.number(),
   traffic: z.number(),
   dr: z.number(),
   refdomains: z.number(),
@@ -179,11 +209,15 @@ const profileDoc = z.strictObject({
   gsc: z
     .strictObject({
       total: z.number(),
-      brandQueries: z.number(),
-      brandClicks: z.number(),
-      nonBrandClicks: z.number(),
+      // Pre-ship exemption from the bump rule above: these four were widened to
+      // nullable (unavailable is null, never 0) before the first release. PR-1
+      // never shipped, so no reader of the old all-number shape exists and
+      // PERSISTED_VERSION stays 1. Once released, a change like this needs a bump.
+      brandQueries: nullableNumber,
+      brandClicks: nullableNumber,
+      nonBrandClicks: nullableNumber,
       top: z.array(gscRow),
-      near: z.number(),
+      near: nullableNumber,
     })
     .nullable(),
   third: crawlSignals.nullable(),
@@ -274,7 +308,25 @@ type AssertNever<T extends never> = T;
 type _MissingInSchema = AssertNever<Exclude<keyof WorkbenchProjectState, keyof SchemaState>>;
 type _ExtraInSchema = AssertNever<Exclude<keyof SchemaState, keyof WorkbenchProjectState>>;
 
-export function parsePersistedState(raw: unknown): WorkbenchProjectState | null {
+export type PersistedParse =
+  | { readonly kind: "ok"; readonly state: WorkbenchProjectState }
+  | { readonly kind: "incompatible" | "invalid" };
+
+/**
+ * `incompatible`: every issue, at any depth, is a key this build does not know
+ * (a newer build's addition, or a field this build removed). Callers must not
+ * write over it. `invalid`: anything else, including an unknown key next to a
+ * real defect.
+ */
+export function classifyPersistedState(raw: unknown): PersistedParse {
   const result = persistedSchema.safeParse(raw);
-  return result.success ? result.data.state : null;
+  if (result.success) return { kind: "ok", state: result.data.state };
+  const { issues } = result.error;
+  const onlyUnknownKeys = issues.length > 0 && issues.every((issue) => issue.code === "unrecognized_keys");
+  return { kind: onlyUnknownKeys ? "incompatible" : "invalid" };
+}
+
+export function parsePersistedState(raw: unknown): WorkbenchProjectState | null {
+  const parsed = classifyPersistedState(raw);
+  return parsed.kind === "ok" ? parsed.state : null;
 }

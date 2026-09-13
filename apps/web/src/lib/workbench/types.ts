@@ -3,6 +3,10 @@
  * copy: labels come from `workbench.enums.*`. Shapes mirror the behavioural
  * prototype (.workbench-reference/geo-seo-workbench.jsx) so PR-2 can port the
  * mock functions without re-deciding them.
+ *
+ * Every type reachable from `WorkbenchProjectState` is persisted, so adding an
+ * enum member, or widening, removing or renaming a field, follows the rules in
+ * `store/schema.ts` (R14).
  */
 export type Severity = "high" | "mid" | "low";
 /** The prototype's `engine: ""` (weekly report, misc exports) maps to `"both"`; there is no "no engine" value. */
@@ -208,9 +212,11 @@ export interface LinkTarget {
   readonly type: LinkType;
   readonly site: string;
   readonly domain: string;
-  readonly dr: number;
+  /** null for a channel that is not one site (domain ""): unavailable, never an invented number. */
+  readonly dr: number | null;
   readonly relevance: Level;
-  readonly difficulty: Level;
+  /** Derived from `dr`; null exactly when `dr` is null. */
+  readonly difficulty: Level | null;
   readonly action: string;
   readonly asset: string;
 }
@@ -237,19 +243,29 @@ export interface CrawlSignals {
   readonly hasPricing: boolean;
   readonly hasDocs: boolean;
   readonly hasBlog: boolean;
-  readonly indexed: number;
+  /** Pages the audit found indexable, never a count of pages a search engine has indexed. */
+  readonly indexable: number;
   readonly traffic: number;
   readonly dr: number;
   readonly refdomains: number;
 }
 
+/** Unavailable is `null`, never 0 (store/schema.ts carries the same nullability). */
 export interface GscSignals {
   readonly total: number;
-  readonly brandQueries: number;
-  readonly brandClicks: number;
-  readonly nonBrandClicks: number;
+  /** `null` when the brand is blank: the brand split is unknowable. */
+  readonly brandQueries: number | null;
+  /**
+   * Sum of the available clicks over queries that mention the brand: 0 when
+   * none do, `null` without a brand or when every matching row's clicks are
+   * unavailable. When only some are available, the sum is a lower bound.
+   */
+  readonly brandClicks: number | null;
+  /** Same rules as `brandClicks`, over the queries that do not mention the brand. */
+  readonly nonBrandClicks: number | null;
   readonly top: readonly GscRow[];
-  readonly near: number;
+  /** Borderline rows; `null` when rows exist but none has an available position. */
+  readonly near: number | null;
 }
 
 export interface IcpSegment {

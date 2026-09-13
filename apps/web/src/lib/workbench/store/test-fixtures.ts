@@ -15,7 +15,7 @@ const gscRow: GscRow = { query: "example brand", clicks: 12, impressions: 340, c
 
 const crawl: CrawlSignals = {
   pages: 42, lang: "en", stack: "Next.js", h1: "Example", hasPricing: true,
-  hasDocs: true, hasBlog: true, indexed: 40, traffic: 1200, dr: 31, refdomains: 88,
+  hasDocs: true, hasBlog: true, indexable: 40, traffic: 1200, dr: 31, refdomains: 88,
 };
 
 const report: AuditReport = {

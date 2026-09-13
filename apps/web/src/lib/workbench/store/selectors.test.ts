@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { buildRows } from "../mock/keywords.ts";
+import type { VisResult, WorkbenchProjectState } from "../types.ts";
 import { initialProjectState, reduce } from "./reducer.ts";
-import { savedQueries, seedList, selectCounts } from "./selectors.ts";
+import { gatedRows, keywordRows, savedQueries, seedList, selectCounts, splitSeeds } from "./selectors.ts";
 
 const seed = { url: "https://example.test", brand: "Example", market: "US" };
 const base = initialProjectState(seed);
@@ -9,6 +11,52 @@ describe("seedList", () => {
   it("splits on newlines and commas, trims, drops blanks", () => {
     expect(seedList({ ...base, seeds: " a ,b\n\nc,\n" })).toEqual(["a", "b", "c"]);
     expect(seedList(base)).toEqual([]);
+  });
+
+  it("is splitSeeds over state.seeds, and reads nothing else", () => {
+    for (const seeds of ["", " a ,b\n\nc,\n", "seo audit\r\ngeo", " , \n "]) {
+      expect(seedList({ ...base, seeds })).toEqual(splitSeeds(seeds));
+    }
+  });
+});
+
+describe("splitSeeds", () => {
+  it("splits on commas and newlines, trims each entry, drops blank entries", () => {
+    expect(splitSeeds("seo audit,geo")).toEqual(["seo audit", "geo"]);
+    expect(splitSeeds("seo audit\ngeo")).toEqual(["seo audit", "geo"]);
+    expect(splitSeeds(" a ,b\n\nc,\n")).toEqual(["a", "b", "c"]);
+    // The \r left behind by a CRLF split is trimmed away.
+    expect(splitSeeds("a\r\nb")).toEqual(["a", "b"]);
+  });
+
+  it("returns no entries for empty or separator-only text", () => {
+    expect(splitSeeds("")).toEqual([]);
+    expect(splitSeeds(" , \n ,, ")).toEqual([]);
+  });
+});
+
+const ROWS_STATE: WorkbenchProjectState = {
+  ...base,
+  seeds: "seo audit, geo\n",
+  profile: { ...base.profile, competitors: "Rival" },
+  gscRows: [{ query: "example pricing plans", clicks: 4, impressions: 120, ctr: 3.3, position: 6.1 }],
+};
+
+describe("keywordRows / gatedRows", () => {
+  it("builds rows from the seeds, the brand and competitors, and the GSC rows", () => {
+    const rows = keywordRows(ROWS_STATE);
+    expect(rows).toEqual(buildRows(seedList(ROWS_STATE), ROWS_STATE.profile, ROWS_STATE.gscRows));
+    // Each input visibly reaches the output, so the equality above is not two empty lists.
+    expect(rows.some((row) => row.q === "example pricing plans")).toBe(true);
+    expect(rows.some((row) => row.q === "Example vs Rival")).toBe(true);
+    expect(new Set(rows.map((row) => row.seed).filter((s) => s !== ""))).toEqual(new Set(["seo audit", "geo"]));
+  });
+
+  it("gates on built: empty before the matrix is built, the ungated rows after", () => {
+    expect(gatedRows({ ...ROWS_STATE, built: false })).toEqual([]);
+    const built = { ...ROWS_STATE, built: true };
+    expect(gatedRows(built).length).toBeGreaterThan(0);
+    expect(gatedRows(built)).toEqual(keywordRows(built));
   });
 });
 
@@ -119,5 +167,66 @@ describe("selectCounts", () => {
     });
     s = reduce(s, { type: "auditStart" });
     expect(selectCounts(s, null).audit).toBeNull();
+  });
+});
+
+/** `hits` hits among `total` real VisResult probes. */
+function probes(hits: number, total: number): readonly VisResult[] {
+  return Array.from({ length: total }, (_, i): VisResult => ({
+    p: `prompt ${i}`, platform: "ChatGPT", hit: i < hits, rank: i < hits ? 1 : null,
+    brands: [], domains: [], real: false,
+  }));
+}
+
+function visibilityBadge(hits: number, total: number): string | null {
+  const s = reduce(base, { type: "visComplete", at: "t", results: probes(hits, total) });
+  return selectCounts(s, null).visibility;
+}
+
+describe("selectCounts visibility badge (R15)", () => {
+  it("shows 0% for a run with zero hits: that is a real result, not a missing one", () => {
+    expect(visibilityBadge(0, 3)).toBe("0%");
+  });
+
+  it("never rounds a non-zero share down to 0%", () => {
+    expect(visibilityBadge(1, 300)).toBe("<1%");
+    expect(visibilityBadge(1, 100)).toBe("1%");
+  });
+
+  it("never rounds a share with misses up to 100%", () => {
+    expect(visibilityBadge(299, 300)).toBe(">99%");
+    expect(visibilityBadge(99, 100)).toBe("99%");
+    expect(visibilityBadge(3, 3)).toBe("100%");
+  });
+
+  it("rounds everything else to the nearest percent, halves up, from the exact share", () => {
+    expect(visibilityBadge(1, 3)).toBe("33%");
+    // 23/40 is exactly 57.5%; (23 / 40) * 100 is 57.49999999999999 in floating point.
+    expect(visibilityBadge(23, 40)).toBe("58%");
+  });
+
+  it("shows no badge when nothing was probed", () => {
+    expect(visibilityBadge(0, 0)).toBeNull();
+    expect(selectCounts(base, null).visibility).toBeNull();
+  });
+});
+
+describe("selectCounts kb badge", () => {
+  it("counts generated placeholders as gaps, alongside blank statements, but not text that merely says 待补 / 需补", () => {
+    const s = reduce(base, {
+      type: "setKb",
+      kb: { at: "t", entries: [
+        { id: "1", cat: "pricing", statement: "[示例] Acme 的定价方式与各档分别包含什么（待补定价页原句）", evidence: "示例，未核对", source: "", from: "aiDraft" },
+        { id: "2", cat: "data", statement: "[示例事实：Acme 的核心能力待补]", evidence: "示例，未核对", source: "", from: "aiDraft" },
+        { id: "3", cat: "capability", statement: "   ", evidence: "", source: "", from: "gap" },
+        { id: "4", cat: "capability", statement: "Exports CSV.", evidence: "", source: "", from: "crawl" },
+        { id: "5", cat: "faq", statement: "常见问题需补充", evidence: "", source: "", from: "aiDraft" },
+      ] },
+    });
+    expect(selectCounts(s, null).kb).toBe("3");
+  });
+
+  it("shows no badge without a knowledge base", () => {
+    expect(selectCounts(reduce(base, { type: "setKb", kb: null }), null).kb).toBeNull();
   });
 });

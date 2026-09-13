@@ -8,8 +8,22 @@ import {
   useWorkbench,
   useWorkbenchArtifacts,
 } from "@/lib/workbench/store/hooks";
+import type { StorageMode } from "@/lib/workbench/store/WorkbenchProvider";
 import { DemoChip } from "../ui/DemoChip.tsx";
 import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
+
+/**
+ * What the topbar's single live region says in each storage mode. A `Record`
+ * makes a new mode a type error here rather than a silent fallthrough to some
+ * other sentence. `swept` says nothing: that state was discarded on purpose.
+ */
+const STORAGE_NOTICE: Readonly<Record<StorageMode, "volatile" | "quota" | "readonly" | null>> = {
+  ok: null,
+  volatile: "volatile",
+  quota: "quota",
+  readonly: "readonly",
+  swept: null,
+};
 
 /** The workbench topbar (opengengrowth `Header.tsx`). */
 export function Topbar({
@@ -35,6 +49,7 @@ export function Topbar({
 }) {
   const t = useTranslations("workbench.shell");
   const { state, storageMode, ready } = useWorkbench();
+  const storageNotice = ready ? STORAGE_NOTICE[storageMode] : null;
   const artifacts = useWorkbenchArtifacts();
   // Called here rather than threaded down from ShellChrome: the topbar owns the
   // only link it guards, and the hook is already used the same way one level
@@ -86,20 +101,33 @@ export function Topbar({
             tree BEFORE its text changes, or the announcement is lost (and a
             second one would break the shell e2e's single-status locator).
             Below `lg` the topbar has no room for the sentence, so it is
-            `sr-only` there — still announced, just not painted; `sr-only`
-            takes it out of the flex flow, so it adds no gap and `empty:-mr-3`
-            only has to cancel one from `lg` up. `swept` is deliberately
-            silent: that state was discarded on purpose. */}
+            `sr-only` there — still announced, just not painted (the compact
+            label below is what sighted users see); `sr-only` takes it out of
+            the flex flow, so it adds no gap and `empty:-mr-3` only has to
+            cancel one from `lg` up. `swept` is deliberately silent: that state
+            was discarded on purpose. `readonly` is not: nothing this session
+            does will be saved (R14). */}
         <span
           role="status"
           className="max-lg:sr-only text-xs text-amber-700 empty:-mr-3 lg:max-w-[40vw] lg:truncate"
         >
-          {ready && storageMode !== "ok" && storageMode !== "swept"
-            ? storageMode === "quota"
-              ? t("quota")
-              : t("volatile")
-            : null}
+          {storageNotice ? t(storageNotice) : null}
         </span>
+        {/* The visible counterpart below `lg`, for every mode with a notice.
+            `aria-hidden`: the live region above already announces the full
+            sentence, so this is not read twice and is never a second status.
+            Absent (not merely hidden) when there is nothing to say, so it adds
+            no flex gap; `lg:hidden` is display:none, which adds none either. */}
+        {storageNotice ? (
+          <span
+            aria-hidden="true"
+            data-wb-storage-compact=""
+            title={t(storageNotice)}
+            className="shrink-0 whitespace-nowrap rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200 lg:hidden"
+          >
+            {t("notSavingShort")}
+          </span>
+        ) : null}
         <DemoChip demo={ready && state.demo} />
         <button
           ref={drawerButtonRef}

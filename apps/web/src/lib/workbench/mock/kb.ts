@@ -1,0 +1,122 @@
+/**
+ * Fact knowledge base seeding (jsx:2084-2097, R8/R10). Every entry says where
+ * it came from. `manual` only marks statements built from a profile field that
+ * contain its raw value; `gap` is an empty slot; `aiDraft` is a fact from the
+ * profile document's AI section, with the evidence its caller vouches for.
+ * Nothing here was crawled, so nothing is
+ * `crawl`, and a sample fill passes its own `from` through unchanged.
+ */
+import type { KbCategory, KbEntry, KnowledgeBase, Profile, ProfileDoc } from "../types.ts";
+import { brandOrPlaceholder } from "./brand.ts";
+import { comparedCompetitors } from "./competitors.ts";
+import { splitList } from "./text.ts";
+
+export const KB_PROFILE_EVIDENCE = "来自站点档案字段";
+const COMPARISON_GAP_LIMIT = 3;
+/**
+ * The pending placeholders this codebase generates, matched whole (both ends
+ * anchored): the demo site's KB fills `[示例] …（待补…）` and `demoAiDoc`'s facts
+ * `[示例事实：…待补]` and `[示例事实：…，需补证据与核对日期]`. Real text that merely
+ * contains 待补 or 需补 (无需补充, 待补货提醒) is not one.
+ */
+const GENERATED_PLACEHOLDER = /^\[示例\] .*（待补[^（）]*）$|^\[示例事实：.*(?:待补|，需补证据与核对日期)\]$/su;
+
+/** How the caller vouches for the entries `seedKb` makes from AI output. */
+export interface SeedKbOptions {
+  /**
+   * Evidence on every entry made from the document's AI facts, with no default.
+   * The demo passes its sample evidence ("示例，未核对"); a future real AI
+   * producer must pass its own, never inherit the sample's or an empty one.
+   */
+  readonly aiEvidence: string;
+}
+
+type KbDraft = Omit<KbEntry, "id">;
+type KbPatch = Pick<KbEntry, "statement" | "evidence" | "source" | "from">;
+
+function isBlank(text: string): boolean {
+  return text.trim() === "";
+}
+
+function kbId(index: number): string {
+  return `kb-${String(index + 1).padStart(2, "0")}`;
+}
+
+function gapDraft(cat: KbCategory): KbDraft {
+  return { cat, statement: "", evidence: "", source: "", from: "gap" };
+}
+
+function profileDraft(cat: KbCategory, statement: string): KbDraft {
+  return { cat, statement, evidence: KB_PROFILE_EVIDENCE, source: "", from: "manual" };
+}
+
+function aiDraft(statement: string, evidence: string): KbDraft {
+  return { cat: "data", statement, evidence, source: "", from: "aiDraft" };
+}
+
+/**
+ * The competitors a comparison may name: `comparedCompetitors` (never the brand
+ * or the own site, at most three), and none when nothing was entered, so the R9
+ * placeholders never become a name. The KB comparison slots, the sample AI
+ * differentiator and the demo site all use this one rule.
+ */
+export function enteredComparedCompetitors(profile: Pick<Profile, "url" | "brand" | "competitors">): readonly string[] {
+  return splitList(profile.competitors).length === 0 ? [] : comparedCompetitors(profile);
+}
+
+/** Ids `kb-01`, `kb-02`, … in order: definition, capabilities, boundary, pricing, comparisons, data. */
+export function seedKb(
+  profile: Pick<Profile, "url" | "brand" | "positioning" | "features" | "competitors">,
+  doc: ProfileDoc | null,
+  options: SeedKbOptions,
+): readonly KbEntry[] {
+  const brand = brandOrPlaceholder(profile.brand);
+  const drafts: readonly KbDraft[] = [
+    isBlank(profile.positioning)
+      ? gapDraft("definition")
+      : profileDraft("definition", `${brand} 是${profile.positioning}`),
+    ...splitList(profile.features).map((feature) => profileDraft("capability", `${brand} 提供 ${feature}`)),
+    gapDraft("boundary"),
+    gapDraft("pricing"),
+    ...enteredComparedCompetitors(profile).slice(0, COMPARISON_GAP_LIMIT).map(() => gapDraft("comparison")),
+    ...(doc?.ai.facts ?? []).filter((fact) => !isBlank(fact)).map((fact) => aiDraft(fact, options.aiEvidence)),
+  ];
+  return drafts.map((draft, index) => ({ id: kbId(index), ...draft }));
+}
+
+/** Field by field, so extra keys on a patch never reach the strict persisted schema. */
+function entryOf(id: string, cat: KbCategory, patch: KbPatch): KbEntry {
+  return { id, cat, statement: patch.statement, evidence: patch.evidence, source: patch.source, from: patch.from };
+}
+
+/**
+ * Fills the first blank entry of `category`, whatever its origin (keeping its
+ * id), or appends `newId` when there is none. A pending placeholder is not
+ * blank, so it is never overwritten. Never mutates.
+ */
+export function fillFirstKbGap(
+  entries: readonly KbEntry[],
+  category: KbCategory,
+  patch: KbPatch,
+  newId: string,
+): readonly KbEntry[] {
+  const index = entries.findIndex((entry) => entry.cat === category && isBlank(entry.statement));
+  if (index < 0) return [...entries, entryOf(newId, category, patch)];
+  return entries.map((entry, at) => (at === index ? entryOf(entry.id, entry.cat, patch) : entry));
+}
+
+/**
+ * A blank statement is a gap whatever its origin. A written manual entry never
+ * is, whatever its wording; any other written entry is a gap only while it is a
+ * generated placeholder.
+ */
+function isGap(entry: KbEntry): boolean {
+  if (isBlank(entry.statement)) return true;
+  if (entry.from === "manual") return false;
+  return GENERATED_PLACEHOLDER.test(entry.statement);
+}
+
+/** Entries still to be written; `null` when there is no knowledge base yet. */
+export function kbGapCount(kb: KnowledgeBase | null): number | null {
+  return kb === null ? null : kb.entries.filter(isGap).length;
+}
