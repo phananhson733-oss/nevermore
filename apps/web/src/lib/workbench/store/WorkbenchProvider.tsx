@@ -10,7 +10,8 @@ import {
   type Dispatch,
   type ReactNode,
 } from "react";
-import type { WorkbenchProjectState } from "../types.ts";
+import { buildRows } from "../mock/keywords.ts";
+import type { KeywordRow, WorkbenchProjectState } from "../types.ts";
 import {
   classifyStoredValue,
   clearProjectState,
@@ -28,6 +29,7 @@ import {
   type ProjectSeed,
   type WorkbenchAction,
 } from "./reducer.ts";
+import { splitSeeds } from "./selectors.ts";
 
 /**
  * `volatile` and `quota` are storage FAILURES, and the topbar reports them.
@@ -50,6 +52,13 @@ export interface WorkbenchContextValue {
   /** False until localStorage has been read; views render skeletons meanwhile. */
   readonly ready: boolean;
   readonly storageMode: StorageMode;
+  /**
+   * Keyword matrix rows, ungated (R13): present before the matrix is built, so
+   * a view gates on `state.built` itself. The reference only changes when the
+   * seeds, brand, competitors or GSC rows do.
+   */
+  readonly keywordRows: readonly KeywordRow[];
+  /** `keywordRows.length` once the matrix is built; `null` (no badge) before. */
   readonly keywordRowCount: number | null;
   readonly forgetProject: () => void;
 }
@@ -81,12 +90,10 @@ function localStorageOrNull(): Storage | null {
 export function WorkbenchProvider({
   projectId,
   seed,
-  deriveKeywordRowCount,
   children,
 }: {
   readonly projectId: string;
   readonly seed: ProjectSeed;
-  readonly deriveKeywordRowCount?: (state: WorkbenchProjectState) => number | null;
   readonly children: ReactNode;
 }) {
   const mountedFor = useRef(projectId);
@@ -249,6 +256,18 @@ export function WorkbenchProvider({
     // every RSC render, and re-subscribing on identity alone buys nothing.
   }, [projectId, seed.url, seed.brand, seed.market]);
 
+  // R13: the provider owns the keyword matrix, because neither the server
+  // `WorkbenchShell` nor `ShellChrome` (a child of this provider) can hand it a
+  // function. `buildRows` reads only `brand` and `competitors` from the profile
+  // (its `Pick` signature pins that), and both `withProjectSeed` on every
+  // hydration and `patchProfile` on every edit re-create `profile`, so the deps
+  // are those two fields, not the object. A run streaming `visProgress` keeps
+  // the same rows reference.
+  const rows = useMemo(
+    () => buildRows(splitSeeds(state.seeds), state.profile, state.gscRows),
+    [state.seeds, state.profile.brand, state.profile.competitors, state.gscRows],
+  );
+
   const value = useMemo<WorkbenchContextValue>(
     () => ({
       projectId,
@@ -256,7 +275,8 @@ export function WorkbenchProvider({
       dispatch,
       ready,
       storageMode,
-      keywordRowCount: deriveKeywordRowCount ? deriveKeywordRowCount(state) : null,
+      keywordRows: rows,
+      keywordRowCount: state.built ? rows.length : null,
       forgetProject: () => {
         // Gate before the removal, same reasoning as `forgetAndFreeze`: a write
         // effect already scheduled in this commit, or any dispatch between this
@@ -269,7 +289,7 @@ export function WorkbenchProvider({
         if (storageRef.current) clearProjectState(storageRef.current, projectId);
       },
     }),
-    [projectId, state, ready, storageMode, deriveKeywordRowCount],
+    [projectId, state, ready, storageMode, rows],
   );
 
   return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
