@@ -3932,7 +3932,7 @@
       "artifacts": "Artifacts {count}",
       "newSite": "New site",
       "sites": "{count, plural, one {# site} other {# sites}}",
-      "shortcutHint": "Press ⌘K to jump",
+      "shortcutHint": "Press {key} to jump",
       "sampleData": "Sample data",
       "sampleSite": "Sample site",
       "clearSample": "Clear sample",

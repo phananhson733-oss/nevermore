@@ -164,9 +164,50 @@ afterEach(() => {
   cleanup?.();
   cleanup = null;
   vi.restoreAllMocks();
+  Reflect.deleteProperty(window.navigator, "platform");
 });
 
+/**
+ * jsdom reports `navigator.platform` as "" and ships no `userAgentData`, so the
+ * topbar would otherwise always render the non-Mac spelling. The own property is
+ * deleted in `afterEach`, which puts the prototype's answer back.
+ */
+function fakePlatform(platform: string): void {
+  Object.defineProperty(window.navigator, "platform", {
+    value: platform,
+    configurable: true,
+  });
+}
+
+function shortcutKbd(scope: ParentNode): HTMLElement {
+  const found = scope.querySelector<HTMLElement>("kbd");
+  if (!found) throw new Error("the topbar renders no shortcut hint");
+  return found;
+}
+
 describe("Topbar", () => {
+  // The palette opener says which chord opens it, and on a PC "⌘K" is a
+  // chord that does not exist. Pinned at both spellings and in both locales:
+  // the key names are not translated, and a locale that hardcoded one would
+  // only show up here.
+  it("spells the palette shortcut ⌘K for a Mac reader", () => {
+    fakePlatform("MacIntel");
+
+    expect(shortcutKbd(render()).textContent).toBe("⌘K");
+  });
+
+  it("spells the palette shortcut Ctrl+K off a Mac", () => {
+    fakePlatform("Win32");
+
+    expect(shortcutKbd(render()).textContent).toBe("Ctrl+K");
+  });
+
+  it("leaves the key names alone in zh-CN", () => {
+    fakePlatform("Win32");
+
+    expect(shortcutKbd(render("zh-CN")).textContent).toBe("Ctrl+K");
+  });
+
   it("cancels the new-site navigation when the Context leave-confirm is declined", () => {
     mocks.hasUnsavedContextChanges.mockReturnValue(true);
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);

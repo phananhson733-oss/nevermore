@@ -3932,7 +3932,7 @@
       "artifacts": "产物筐 {count}",
       "newSite": "新建站点",
       "sites": "{count} 个站点",
-      "shortcutHint": "按 ⌘K 快速跳转",
+      "shortcutHint": "按 {key} 快速跳转",
       "sampleData": "示例数据",
       "sampleSite": "示例站点",
       "clearSample": "清除示例",

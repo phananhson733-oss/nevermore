@@ -9,6 +9,7 @@ import {
   useWorkbenchArtifacts,
 } from "@/lib/workbench/store/hooks";
 import type { StorageMode } from "@/lib/workbench/store/WorkbenchProvider";
+import { useShortcutLabel } from "../hooks/useShortcutLabel.ts";
 import { DemoChip } from "../ui/DemoChip.tsx";
 import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
 
@@ -57,6 +58,8 @@ export function Topbar({
   // only link it guards, and the hook is already used the same way one level
   // over in CommandPalette — both sit in the same client tree.
   const { confirmNavigation } = useContextNavigationConfirm();
+  // ⌘K only on a Mac: on a PC it names a chord that does not exist.
+  const shortcutKey = useShortcutLabel();
   return (
     <header
       data-app-shell-topbar=""
@@ -106,7 +109,7 @@ export function Topbar({
           <Search className="h-4 w-4" aria-hidden="true" />
           <span className="flex-1 text-left">{t("search")}</span>
           <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 text-[10px] font-medium text-slate-500">
-            ⌘K
+            {shortcutKey}
           </kbd>
         </button>
       </div>
