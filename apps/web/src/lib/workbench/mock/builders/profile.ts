@@ -28,6 +28,8 @@ import {
 export interface ProfileJsonInput {
   readonly profile: Profile;
   readonly ai?: AiDoc;
+  /** When the snapshot `ai` comes from was generated (`ProfileDoc.at`). */
+  readonly snapshotAt?: string;
 }
 
 export interface ProfileDocInput {
@@ -50,8 +52,10 @@ const SAMPLE_SUFFIX = "（示例数据）";
 /** A GSC snapshot whose numbers exist but whose source was never recorded (only a tampered envelope today). */
 const UNKNOWN_SOURCE_SUFFIX = "（来源未知）";
 
-export function profileJson({ profile, ai }: ProfileJsonInput): string {
+export function profileJson({ profile, ai, snapshotAt }: ProfileJsonInput): string {
+  // Leads, so a JSON copied out on its own says which snapshot its AI part is (T9 review P3-6).
   const base = {
+    ...(snapshotAt === undefined ? {} : { snapshotAt }),
     brand: profile.brand,
     url: profile.url,
     domain: domainOf(profile.url),
@@ -65,7 +69,9 @@ export function profileJson({ profile, ai }: ProfileJsonInput): string {
 }
 
 function crawlSection(crawl: CrawlSignals | null): string {
-  if (crawl === null) return "## 站点现状\n- 未抓取";
+  // No crawl signals has more than one cause (the switch was off when the
+  // profile was generated, among others): the line names none of them.
+  if (crawl === null) return "## 站点现状\n- 本次档案未包含站点抓取信号";
   const keyPages = [
     crawl.hasPricing ? "定价" : "",
     crawl.hasDocs ? "文档" : "",
@@ -204,6 +210,8 @@ function sampleDataFor(source: GscRowsSource | null): boolean | null {
 function contextData({ profile, doc }: ProfileDocInput): unknown {
   const { ai, gsc } = doc;
   return {
+    // When the snapshot was generated, first, so the reader dates what follows (T9 review P3-6).
+    snapshotAt: doc.at,
     product: {
       brand: profile.brand,
       url: profile.url,

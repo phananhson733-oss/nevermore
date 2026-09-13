@@ -17,7 +17,7 @@
  *
  * The documents here are written by hand on purpose: this file is about how a
  * given snapshot renders. That the source switches produce these snapshots is
- * pinned from the switches down in `ProfileView.test.tsx`.
+ * pinned from the switches down in `ProfileView.run.test.tsx`.
  */
 
 import { act } from "react";
@@ -143,6 +143,17 @@ describe("ProfileDocTab GSC counts", () => {
     expect(gsc.textContent).not.toMatch(/\b0\b/u);
   });
 
+  // T9 review D5: the dash is explained on hover by the one "unknown" label.
+  it("titles every dash with the unknown label", () => {
+    const gsc = section(
+      render(withGsc({ brandQueries: null, brandClicks: null, nonBrandClicks: null, near: null })),
+      "gsc",
+    );
+    // Four counts, and the clicks of the fixture's second top query.
+    const dashes = [...gsc.querySelectorAll("dd span[title]")].map((span) => [span.textContent, span.getAttribute("title")]);
+    expect(dashes).toEqual(Array.from({ length: 5 }, () => ["—", en.profile.unknown]));
+  });
+
   it("keeps a real zero a zero", () => {
     const gsc = section(render(withGsc({ brandClicks: 0, near: 0 })), "gsc");
     expect(fact(gsc, en.profile.doc.gscBrandClicks)).toBe("0");
@@ -180,6 +191,17 @@ describe("ProfileDocTab GSC provenance (Q6)", () => {
     const text = section(render({ ...FIXTURE_DOC, gscSource: null }), "gsc").textContent ?? "";
     expect(text).toContain(unknown);
     expect(text).not.toContain(sample);
+  });
+
+  // T9 review D3b: text alone cannot tell "no label" from a label that says
+  // something else, so count what stands beside the section title.
+  it.each<[ProfileDoc["gscSource"], number]>([
+    ["sample", 2],
+    ["user", 1],
+    [null, 2],
+  ])("gives a %j snapshot's GSC title row %i element(s): the heading, and a label unless the rows are the operator's", (gscSource, count) => {
+    const heading = must(section(render({ ...FIXTURE_DOC, gscSource }), "gsc").querySelector("h3"));
+    expect(must(heading.parentElement).children).toHaveLength(count);
   });
 
   it("has no GSC section at all without GSC signals", () => {

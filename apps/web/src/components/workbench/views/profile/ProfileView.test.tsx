@@ -18,6 +18,7 @@
 import { act } from "react";
 import { getMessages } from "@sf/i18n";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { downloadText } from "@/lib/workbench/download";
 import type { PublicWorkbenchAction } from "@/lib/workbench/store/WorkbenchProvider";
 import { populatedProjectState } from "@/lib/workbench/store/test-fixtures";
 import type { Artifact, WorkbenchProjectState } from "@/lib/workbench/types";
@@ -28,9 +29,14 @@ import {
   PROFILE_SEED,
   type RenderedProfile,
   button,
+  inputLabelled,
   must,
   renderProfile,
+  typeInto,
 } from "./profile-view-test-harness.tsx";
+
+// Export would reach for `URL.createObjectURL`, which jsdom lacks; the tests read what it was handed.
+vi.mock("@/lib/workbench/download", () => ({ downloadText: vi.fn() }));
 
 const en = getMessages("en").workbench;
 const NOW = new Date(2026, 8, 13, 10, 30, 0);
@@ -165,6 +171,51 @@ describe("ProfileView actions", () => {
     expect(artifact).toMatchObject({ module: "profile", type: "prompt", title: "Example context block" });
     expect(Object.hasOwn(artifact, "filename")).toBe(false);
     expect(artifact.content).toContain('"sampleData": true');
+  });
+});
+
+describe("ProfileView actions per tab and per action", () => {
+  it("saves the JSON tab under its own title and file name (O2b)", () => {
+    const scope = show(POPULATED);
+    act(() => tab(scope, en.profile.tabs.json).click());
+    act(() => button(scope, en.artifactActions.save).click());
+    expect(must(saved()[0])).toMatchObject({
+      module: "profile",
+      type: "json",
+      title: en.profile.artifactTitle.json.replace("{brand}", "Example"),
+      filename: "profile.json",
+    });
+  });
+
+  it("copies and exports the stamped text: the provenance line first, then the document (O3b)", async () => {
+    const writeText = vi.fn(async (_text: string): Promise<void> => {});
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const scope = show(POPULATED);
+    await act(async () => {
+      button(scope, en.artifactActions.copy).click();
+    });
+    act(() => button(scope, en.artifactActions.exportFile).click());
+    const copied = must(writeText.mock.calls[0])[0];
+    const [name, exported] = must(vi.mocked(downloadText).mock.calls.at(-1));
+    expect(name).toBe("product-profile.md");
+    for (const text of [copied, exported]) {
+      expect(text.startsWith(en.provenance.artifact.replace("{at}", STAMP))).toBe(true);
+      expect(text).toContain("\n# Example 产品档案\n");
+    }
+  });
+});
+
+describe("ProfileView editable fields (I2)", () => {
+  it("sends each edit as a patchProfile carrying only that field, and nothing else", () => {
+    const scope = show(POPULATED);
+    typeInto(inputLabelled(scope, en.profile.fields.positioning), "new line");
+    typeInto(inputLabelled(scope, en.profile.fields.features), "a, b");
+    typeInto(inputLabelled(scope, en.profile.fields.competitors), "c.test");
+    expect(must(rendered).actions()).toEqual([
+      { type: "patchProfile", patch: { positioning: "new line" } },
+      { type: "patchProfile", patch: { features: "a, b" } },
+      { type: "patchProfile", patch: { competitors: "c.test" } },
+    ]);
   });
 });
 

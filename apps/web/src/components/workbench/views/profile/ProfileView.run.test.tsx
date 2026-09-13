@@ -133,6 +133,10 @@ describe("a profile run", () => {
     expect(writes()).toHaveLength(1);
   });
 
+  // The real page never sees this: `WorkbenchShell.tsx` renders the provider
+  // with `key={project.id}`, so a project change remounts the view. This pins
+  // the defensive path (the effect cleanup keyed on `projectId`) in case that
+  // key ever goes.
   it("writes nothing and stops once the project changes mid-run", () => {
     const scope = show(WITH_ROWS);
     act(() => button(scope, en.profile.run.button).click());
@@ -188,5 +192,46 @@ describe("from the source switches to the page (Step 6)", () => {
     expect(must(writes()[0]).gscSource).toBe(source);
     const gsc = must(scope.querySelector('[data-wb-profile-section="gsc"]')).textContent ?? "";
     expect(gsc.includes(en.shell.sampleData)).toBe(labelled);
+  });
+});
+
+describe("what a run freezes, and what its actions hand out", () => {
+  it("builds from the profile as it was when the run started (U2)", () => {
+    const start: WorkbenchProjectState = { ...WITH_ROWS, profile: { ...WITH_ROWS.profile, positioning: "起始定位" } };
+    const scope = show(start);
+    act(() => button(scope, en.profile.run.button).click());
+    tick();
+    must(rendered).rerender({ state: { ...start, profile: { ...start.profile, positioning: "后来改的定位" } } });
+    tick(4);
+    const summary = must(writes()[0]).ai.summary;
+    expect(summary).toContain("起始定位");
+    expect(summary).not.toContain("后来改的定位");
+  });
+
+  it("keeps the rows and their provenance from the same moment (U2b)", () => {
+    const start: WorkbenchProjectState = { ...WITH_ROWS, gscRowsSource: "sample" };
+    const scope = show(start);
+    act(() => button(scope, en.profile.run.button).click());
+    tick();
+    must(rendered).rerender({ state: { ...start, gscRows: [must(ROWS[0])], gscRowsSource: "user" } });
+    tick(4);
+    const doc = must(writes()[0]);
+    expect(doc.gscSource).toBe("sample");
+    expect(must(doc.gsc).top.map((row) => row.query)).toContain("seo checklist");
+  });
+
+  it("saves the document the run just wrote, not the one it replaced (O1)", () => {
+    const scope = show(POPULATED, { stateful: true });
+    act(() => button(scope, en.profile.run.rerun).click());
+    tick(4);
+    act(() => button(scope, en.artifactActions.save).click());
+    const contents = must(rendered)
+      .actions()
+      .filter((action): action is Extract<PublicWorkbenchAction, { type: "addArtifact" }> => action.type === "addArtifact")
+      .map((action) => action.artifact.content);
+    expect(contents).toHaveLength(1);
+    // The generation line, not the bare minute: the provenance line carries the save's minute too.
+    expect(contents[0]).toContain("生成时间：2026-09-13 10:30");
+    expect(contents[0]).not.toContain("生成时间：2026-09-11 15:00");
   });
 });

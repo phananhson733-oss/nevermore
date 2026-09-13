@@ -44,7 +44,7 @@ export function profileArtifactBody(tab: ProfileTab, profile: Profile, doc: Prof
     case "doc":
       return profileDocMarkdown({ profile, doc });
     case "json":
-      return profileJson({ profile, ai: doc.ai });
+      return profileJson({ profile, ai: doc.ai, snapshotAt: doc.at });
     case "ctx":
       return profileContextPrompt({ profile, doc });
   }

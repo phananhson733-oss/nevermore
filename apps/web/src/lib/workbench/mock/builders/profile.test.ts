@@ -183,6 +183,16 @@ describe("profileJson", () => {
     ) as object;
     expect(Object.hasOwn(parsed, "ai")).toBe(false);
     expect(Object.hasOwn(parsed, "summary")).toBe(false);
+    expect(Object.hasOwn(parsed, "snapshotAt")).toBe(false);
+  });
+
+  // T9 review P3-6: a JSON copied out on its own still says which snapshot its AI part is.
+  it("leads with the snapshot's time when one is given", () => {
+    const parsed = JSON.parse(
+      profileJson({ profile: FIXTURE_PROFILE, ai: FIXTURE_AI, snapshotAt: FIXTURE_DOC.at }),
+    ) as Record<string, unknown>;
+    expect(Object.keys(parsed)[0]).toBe("snapshotAt");
+    expect(parsed.snapshotAt).toBe("2026-09-13 10:30");
   });
 
   it.each(HOSTILE_VALUES)("round-trips a hostile brand: $name", ({ value }) => {
@@ -201,8 +211,11 @@ describe("profileDocMarkdown", () => {
       ...BASE,
       doc: { ...FIXTURE_DOC, crawl: null, third: null, gsc: null },
     });
-    expect(doc).toContain("## 站点现状\n- 未抓取");
-    expect(doc).toContain("## 搜索表现\n- 本次档案未包含 GSC 信号");
+    // Whole sections, not substrings: a cause appended to either line would be a claim (T9 review M1b, P3-7).
+    const sections = doc.split("\n\n");
+    expect(sections).toContain("## 站点现状\n- 本次档案未包含站点抓取信号");
+    expect(sections).toContain("## 搜索表现\n- 本次档案未包含 GSC 信号");
+    expect(doc).not.toContain("未抓取");
     expect(doc).not.toContain("未接入");
     expect(doc).not.toContain("第三方估算");
     expect(doc).not.toContain("示例数据");
@@ -268,7 +281,7 @@ describe("profileDocMarkdown", () => {
   it("says the snapshot carries no GSC signals, naming no cause, whatever the source", () => {
     for (const gscSource of ["sample", "user", null] as const) {
       const doc = profileDocMarkdown({ ...BASE, doc: { ...FIXTURE_DOC, gsc: null, gscSource } });
-      expect(doc, String(gscSource)).toContain("## 搜索表现\n- 本次档案未包含 GSC 信号");
+      expect(doc.split("\n\n"), String(gscSource)).toContain("## 搜索表现\n- 本次档案未包含 GSC 信号");
       expect(doc, String(gscSource)).not.toContain("未接入");
       expect(doc, String(gscSource)).not.toContain("来源未知");
     }
@@ -346,7 +359,11 @@ describe("profileContextPrompt", () => {
       product: unknown;
       ai: unknown;
       search: Record<string, unknown>;
+      snapshotAt: unknown;
     };
+    // T9 review P3-6: when the snapshot was generated leads the data block.
+    expect(Object.keys(data)).toEqual(["snapshotAt", "product", "ai", "search"]);
+    expect(data.snapshotAt).toBe(FIXTURE_DOC.at);
     expect(data.product).toEqual({
       brand: "Acme",
       url: "https://acme.io",

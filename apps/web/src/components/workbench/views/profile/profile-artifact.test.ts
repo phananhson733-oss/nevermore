@@ -31,8 +31,9 @@ describe("profileArtifactDraft", () => {
   it("json tab: the profile JSON with the AI document as a sub-object", () => {
     const draft = profileArtifactDraft("json", FIXTURE_PROFILE, FIXTURE_DOC, "Acme site profile JSON");
     expect(draft).toMatchObject({ module: "profile", type: "json", engine: "both", filename: "profile.json" });
-    const parsed = JSON.parse(draft.body) as { brand: string; ai: { summary: string } };
+    const parsed = JSON.parse(draft.body) as { brand: string; snapshotAt: string; ai: { summary: string } };
     expect(parsed.brand).toBe("Acme");
+    expect(parsed.snapshotAt).toBe(FIXTURE_DOC.at);
     expect(parsed.ai.summary).toBe("[示例] Acme：给小团队用的 SEO 检查工具");
   });
 
@@ -41,6 +42,7 @@ describe("profileArtifactDraft", () => {
     expect(draft).toMatchObject({ module: "profile", type: "prompt", engine: "both" });
     expect(Object.hasOwn(draft, "filename")).toBe(false);
     expect(draft.body.startsWith("# 产品背景\n")).toBe(true);
+    expect(draft.body).toContain(`"snapshotAt": "${FIXTURE_DOC.at}"`);
   });
 
   it("ctx tab: user rows are not announced as sample data", () => {
