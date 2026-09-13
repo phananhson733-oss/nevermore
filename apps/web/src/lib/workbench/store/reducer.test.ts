@@ -387,7 +387,7 @@ describe("demo: a confirmation covers the content it was given for", () => {
     expect(cleared.artifacts).toEqual([]);
   });
 
-  it.each(FIELDS)("refuses a load once %s is another reference, returning the very same state", (key) => {
+  it.each(FIELDS)("refuses a load once %s holds other content, returning the very same state", (key) => {
     const own = ownData();
     const expected = demoFields(own);
     const moved = { ...own, [key]: otherThan(own[key]) } as WorkbenchProjectState;
@@ -395,7 +395,7 @@ describe("demo: a confirmation covers the content it was given for", () => {
     expect(reduce(moved, { type: "loadDemo", payload: demoPayload, expected })).toBe(moved);
   });
 
-  it.each(FIELDS)("refuses a clear once %s is another reference, returning the very same state", (key) => {
+  it.each(FIELDS)("refuses a clear once %s holds other content, returning the very same state", (key) => {
     const sample = populatedProjectState(seed);
     expect(sample.demo).toBe(true);
     const expected = demoFields(sample);

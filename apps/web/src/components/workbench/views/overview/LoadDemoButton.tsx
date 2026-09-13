@@ -35,8 +35,9 @@ import { BUTTON_PRIMARY } from "../../ui/panel.ts";
  * - What is authorised is content, not a bare yes (codex S6r2 #1). The click on
  *   a project with nothing to lose, or the confirm on one with something, takes
  *   a `demoFields` snapshot of the render it happened in, and `loadDemo`
- *   carries it: the reducer loads only while those fields are still the same
- *   references. The dispatch comes after an `await import`, and the provider
+ *   carries it: the reducer loads only while those fields still hold the same
+ *   content (`sameDemoFields`: the same reference, or equal once JSON-encoded,
+ *   codex S6r3 #2). The dispatch comes after an `await import`, and the provider
  *   outlives this button (it sits in the project layout), so another tab's
  *   rows can land in between — rendered by then, or still queued behind the
  *   render the loader last saw, which no check in here can see.

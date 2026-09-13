@@ -136,10 +136,15 @@ export function clearDemoOver(state: WorkbenchProjectState): WorkbenchProjectSta
   return reduce(state, { type: "clearDemo", expected: demoFields(state) });
 }
 
-/** A value of the same shape that is not `===` to `value`: a new array or object, or a different primitive. */
+/**
+ * A value of the same shape with other content: an array with one more element,
+ * an object with one more key, a different string or boolean. Neither `===` to
+ * `value` nor equal to it once JSON-encoded, which is what `sameDemoFields`
+ * falls back to (codex S6r3 #2): a bare copy would now compare as unchanged.
+ */
 export function otherThan(value: unknown): unknown {
-  if (Array.isArray(value)) return [...value];
-  if (value !== null && typeof value === "object") return { ...value };
+  if (Array.isArray(value)) return [...value, { otherThan: true }];
+  if (value !== null && typeof value === "object") return { ...value, otherThan: true };
   if (typeof value === "string") return `${value} changed`;
   if (typeof value === "boolean") return !value;
   return { replaced: true };
