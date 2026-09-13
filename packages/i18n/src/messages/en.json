@@ -4169,7 +4169,7 @@
         }
       },
       "empty": {
-        "title": "Nothing has run for this site yet",
+        "title": "Nothing to show on the overview yet",
         "detail": "Whatever you run is kept in this browser. You can also load a sample site to see what each module produces."
       },
       "loadDemo": {
@@ -4182,7 +4182,7 @@
         "failed": "The sample site did not load. Try again."
       },
       "noGsc": {
-        "title": "No search data imported yet",
+        "title": "No search data here right now",
         "detail": "Search signals for keywords and the site profile need a GSC export.",
         "cta": "Import data"
       }

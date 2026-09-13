@@ -70,6 +70,21 @@ const FORBIDDEN: Readonly<Record<LocaleKey, readonly string[]>> = {
  * - Negation of a pinned assertion. `overview.gscFoot.sample` is Q6's sample
  *   footnote; keeping the words and inverting the claim is the one rewrite that
  *   matters, so the negators are banned outright for that key.
+ * - Scope limiters on a destructive confirmation. `REQUIRED` pins what the two
+ *   overwrite / clear bodies name by PRESENCE, and a negator or limiter sits
+ *   outside every pinned substring: 「不包括载入示例之后你自己加的内容」,
+ *   「但保留所有已有的运行结果」 and an added 「只会影响示例站点」 each kept every pin
+ *   and turned the warning into a promise that the operator's data survives —
+ *   with `Topbar.test.tsx`'s literal updated to match, all three gates stayed
+ *   green. Neither body needs any `SCOPE_LIMITERS` word to say what it says,
+ *   so they are banned outright. The check is a substring match: en "only"
+ *   would also hit "commonly", and "except" "exception"; neither body uses
+ *   such a word today, so the plain list stands.
+ * - Past-tense or whole-site claims a present-state test cannot back. The
+ *   overview's empty title is chosen by `isOverviewEmpty`, which reads four
+ *   result fields and nothing else, and the no-GSC title by
+ *   `gscRows.length === 0`, which also holds after "clear sample" removed
+ *   rows that were imported.
  * - Q4's "an unattributable failure must not name a cause". The neutral
  *   messages may not carry a causal connective or a named cause.
  *   `dataSources.real.needProfile` is deliberately NOT in here: an incomplete
@@ -80,6 +95,11 @@ const FORBIDDEN: Readonly<Record<LocaleKey, readonly string[]>> = {
  *   indistinguishable inside it — so naming any one of them is a coin flip
  *   presented as a diagnosis.
  */
+const SCOPE_LIMITERS: Readonly<Record<LocaleKey, readonly string[]>> = {
+  "zh-CN": ["不包括", "不含", "除了", "保留", "不会清", "不会覆盖", "不影响", "只会", "仅"],
+  en: ["excluding", "except", "keeps", "not including", "won't", "only"],
+};
+
 const FORBIDDEN_BY_KEY: Readonly<
   Record<string, Readonly<Record<LocaleKey, readonly string[]>>>
 > = {
@@ -87,6 +107,22 @@ const FORBIDDEN_BY_KEY: Readonly<
     "zh-CN": ["不是示例", "并非示例", "不来自示例", "不是来自示例"],
     en: ["not come from sample", "no longer", "not sample data"],
   },
+  // `isOverviewEmpty` reads audit / lastVis / built / artifacts only: a profile
+  // document, knowledge base, competitor data or plans can already exist, and a
+  // first visibility run can be streaming. The overview has nothing to show;
+  // the site is not known to have no result, nor to have never run.
+  "overview.empty.title": {
+    "zh-CN": ["还没有结果", "没有运行", "没跑过"],
+    en: ["Nothing has run", "has run", "never run"],
+  },
+  // Shown for `gscRows.length === 0`, including after "clear sample" removed
+  // rows that had been imported: a statement about now, never about history.
+  "overview.noGsc.title": {
+    "zh-CN": ["还没有导入", "没导入过"],
+    en: ["imported yet", "never imported"],
+  },
+  "shell.clearSampleConfirm.body": SCOPE_LIMITERS,
+  "overview.loadDemo.confirmBody": SCOPE_LIMITERS,
   "dataSources.real.otherError": {
     "zh-CN": ["所以", "因为", "由于", "过期", "权限", "配额", "授权"],
     en: [
@@ -127,7 +163,7 @@ const FORBIDDEN_BY_KEY: Readonly<
   // a sample builder that threw, so the message may name neither (Q4's rule).
   "overview.loadDemo.failed": {
     "zh-CN": ["所以", "因为", "由于", "网络", "离线", "版本"],
-    en: ["because", "network", "offline", "version", "connection"],
+    en: ["because", "network", "offline", "version", "connection", "internet", "wifi", "server"],
   },
   "artifactActions.copyFailed": {
     "zh-CN": [

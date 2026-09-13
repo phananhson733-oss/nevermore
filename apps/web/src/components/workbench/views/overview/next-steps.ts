@@ -77,9 +77,13 @@ export function overviewNextSteps(input: NextStepsInput): readonly NextStep[] {
 }
 
 /**
- * Q10's "nothing has run": no audit, no completed visibility run, no built
- * matrix, no artifact. Imported GSC rows and typed seeds do not count — they
- * are inputs, not results, and the page still has nothing to report on.
+ * Q10's empty overview: no audit, no completed visibility run, no built
+ * matrix, no artifact — nothing THIS page reports on. Imported GSC rows and
+ * typed seeds do not count (inputs, not results), and neither do the fields
+ * this test does not read: a profile document, knowledge base, competitor data
+ * or plans may already exist, and a first visibility run may be streaming. So
+ * the empty title may say the overview has nothing to show, never that the
+ * site has no result or that nothing has run (`views-i18n.test.ts` bans both).
  */
 export function isOverviewEmpty(
   state: Pick<WorkbenchProjectState, "audit" | "lastVis" | "built" | "artifacts">,
