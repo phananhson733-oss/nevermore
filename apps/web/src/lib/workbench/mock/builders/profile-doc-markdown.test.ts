@@ -10,6 +10,7 @@ import {
   type Token,
   type Tokens,
   lexer,
+  marked,
   walkTokens,
 } from "marked";
 import { describe, expect, it } from "vitest";
@@ -194,6 +195,34 @@ describe("profileDocMarkdown H1", () => {
       doc: FIXTURE_DOC,
     });
     expect(headingTexts(md, 1)).toEqual(["Acme # 伪标题 产品档案"]);
+  });
+});
+
+function withSegmentName(seg: string): ProfileDoc {
+  const [first, ...rest] = FIXTURE_DOC.ai.icp;
+  if (first === undefined) throw new Error("fixture has no ICP segment");
+  return { ...FIXTURE_DOC, ai: { ...FIXTURE_DOC.ai, icp: [{ ...first, seg }, ...rest] } };
+}
+
+/** What a reader shows for each heading of `depth`: its inline tokens rendered as text, escapes resolved. */
+function shownHeadings(markdown: string, depth: number, gfm: boolean): readonly string[] {
+  let found: readonly string[] = [];
+  walkTokens(lexer(markdown, { gfm }), (token) => {
+    if (isHeading(token) && token.depth === depth) {
+      found = [...found, new Parser().parseInline(token.tokens, new TextRenderer())];
+    }
+  });
+  return found;
+}
+
+// codex S9r2b: `### 1. Acme ###` rendered `1. Acme`, the trailing run taken for the heading's closing sequence.
+describe("profileDocMarkdown ICP segment headings", () => {
+  it.each(["Acme ###", "###", "# #", "a #b#"])("keeps a segment named %j whole in its H3, in both marked modes", (seg) => {
+    const md = profileDocMarkdown({ profile: FIXTURE_PROFILE, doc: withSegmentName(seg) });
+    for (const gfm of [true, false]) {
+      expect(shownHeadings(md, 3, gfm), `gfm ${String(gfm)}`).toEqual([`1. ${seg}`]);
+      expect(marked.parse(md, { gfm, async: false }), `gfm ${String(gfm)}`).toContain(`<h3>1. ${seg}</h3>\n`);
+    }
   });
 });
 

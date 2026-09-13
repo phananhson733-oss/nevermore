@@ -1,10 +1,11 @@
-import { type Token, Parser, lexer, walkTokens } from "marked";
+import { type Token, type Tokens, Parser, TextRenderer, lexer, marked, walkTokens } from "marked";
 import { describe, expect, it } from "vitest";
 import {
   bulletLines,
   countText,
   docSection,
   docText,
+  headingText,
   joinParts,
 } from "./compose.ts";
 
@@ -235,6 +236,48 @@ describe("docText: what encoding without context costs", () => {
         expect(ofType(bullet(value), gfm, "html"), `${value} (gfm ${String(gfm)})`).toEqual([]);
       }
     }
+  });
+});
+
+/** What a reader shows for a heading: its inline tokens rendered as text, escapes resolved. */
+function headingShows(heading: Tokens.Heading): string {
+  return new Parser().parseInline(heading.tokens, new TextRenderer());
+}
+
+/** The one H3 `markdown` holds in one marked mode; throws when it holds anything else. */
+function onlyH3(markdown: string, gfm: boolean): Tokens.Heading {
+  const [token, ...rest] = lexer(markdown, { gfm });
+  const heading = token as Tokens.Heading | undefined;
+  if (heading?.type !== "heading" || heading.depth !== 3 || rest.length > 0) {
+    throw new Error(`expected one H3 in ${JSON.stringify(markdown)} (gfm ${String(gfm)})`);
+  }
+  return heading;
+}
+
+// codex S9r2b: a `#` run ending a heading's value was read as the heading's closing sequence and dropped.
+describe("headingText", () => {
+  it.each(["Acme ###", "###", "# #", "a #b#", "C#"])("keeps %j whole at the end of an H3, in both marked modes", (value) => {
+    const markdown = `### 1. ${headingText(value)}`;
+    for (const gfm of GFM_MODES) {
+      expect(headingShows(onlyH3(markdown, gfm)), `gfm ${String(gfm)}`).toBe(`1. ${value}`);
+      expect(marked.parse(markdown, { gfm, async: false }), `gfm ${String(gfm)}`).toBe(`<h3>1. ${value}</h3>\n`);
+    }
+  });
+
+  it("escapes only a run standing alone at the end, so a bare URL ending in `#` keeps its target", () => {
+    expect(headingText("Acme ###")).toBe("Acme \\#\\#\\#");
+    expect(headingText("###")).toBe("\\#\\#\\#");
+    expect(headingText("# #")).toBe("# \\#");
+    expect(headingText("a\t##")).toBe("a\t\\#\\#");
+    for (const value of ["a #b#", "C#", "a \\#", "#hashtag", "see https://a.b/#", ""]) {
+      expect(headingText(value)).toBe(value);
+    }
+    const markdown = `### 1. ${headingText("see https://a.b/#")}`;
+    expect(marked.parse(markdown, { gfm: true, async: false })).toContain('<a href="https://a.b/#">https://a.b/#</a>');
+  });
+
+  it("folds the value and encodes its HTML the way inlineText does", () => {
+    expect(headingText("a\n<b> ##")).toBe("a &lt;b> \\#\\#");
   });
 });
 

@@ -2,7 +2,8 @@
  * Profile artifacts (plan Task 11; jsx:622-690). Bodies are unstamped: the
  * provenance line is added by `stampArtifact` (R5). `profileDocMarkdown` is a
  * document, so user and AI text is folded onto one line with its tag-shaped `<`
- * encoded instead of fenced (`inlineText` inside a line, `docText` at its start);
+ * encoded instead of fenced (`inlineText` inside a line, `docText` at its start,
+ * `headingText` at the end of a heading);
  * `profileContextPrompt` is a prompt, so every user or AI field sits in one
  * announced data block (R6).
  */
@@ -21,6 +22,7 @@ import {
   bulletLines,
   countText,
   docSection,
+  headingText,
   inlineText,
   joinParts,
 } from "./compose.ts";
@@ -142,7 +144,7 @@ function icpSection(ai: AiDoc): string | null {
   if (ai.icp.length === 0) return null;
   const segments = ai.icp.map((segment, index) =>
     [
-      `### ${index + 1}. ${inlineText(segment.seg)}`,
+      `### ${index + 1}. ${headingText(segment.seg)}`,
       `- 角色：${inlineText(segment.role)}`,
       `- 核心痛点：${inlineText(segment.pain)}`,
       `- 会搜：${inlineText(segment.trigger)}`,

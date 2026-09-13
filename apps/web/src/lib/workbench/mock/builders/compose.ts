@@ -70,6 +70,31 @@ export function inlineText(value: string): string {
   return escapeRawHtml(oneLine(value));
 }
 
+/** A run of `#` that ends the value and either starts it or follows a space or tab. */
+const CLOSING_HASHES = /(^|[ \t])(#+)$/u;
+
+/**
+ * User or AI text that ends an ATX heading line after a space (`### 1. ${seg}`,
+ * `# ${host}`): `inlineText`, then each `#` of a run the reader would take for
+ * the heading's optional closing sequence written `\#`. Unescaped, that run is
+ * dropped: a segment named `Acme ###` rendered `1. Acme`, and one named `###`
+ * rendered `1.` (codex S9r2b).
+ *
+ * Only that run. CommonMark closes a heading with `#`s that stand alone after a
+ * space or tab, or that make up the whole value (the template puts a space
+ * before it). `C#`, `a #b#` and a typed `\#` already render as typed, and
+ * escaping them would cost something: under GFM a bare `https://a.b/#` would
+ * link to `https://a.b/%5C#` (marked 17, checked 2026-09-14). Not covered: a
+ * pedantic or original-Markdown reader strips a trailing `#` run even after a
+ * backslash.
+ */
+export function headingText(value: string): string {
+  return inlineText(value).replace(
+    CLOSING_HASHES,
+    (_match, before: string, run: string) => `${before}${"\\#".repeat(run.length)}`,
+  );
+}
+
 /**
  * User or AI text for a document bullet: folded onto one line by `oneLine`,
  * every `<` that would open raw HTML encoded as `&lt;` (`escapeRawHtml`), then

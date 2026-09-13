@@ -12,7 +12,7 @@ import { KB_CATEGORIES } from "../../enums.ts";
 import type { KbCategory, KbEntry, Profile } from "../../types.ts";
 import { KB_SECTION_TITLE_ZH } from "../labels-zh.ts";
 import { domainOf, oneLine } from "../text.ts";
-import { docText, inlineText, joinParts } from "./compose.ts";
+import { docText, headingText, inlineText, joinParts } from "./compose.ts";
 
 export interface KbInput {
   readonly profile: Profile;
@@ -97,7 +97,8 @@ export function llmsTxt({ profile, entries }: KbInput): string {
   const url = docText(profile.url);
   const brand = docText(profile.brand) || BRAND_PLACEHOLDER;
   return joinParts([
-    `# ${domain || "[站点域名]"}`,
+    // The host ends the heading line: a `#` run closing it must stay text.
+    `# ${headingText(domainOf(profile.url)) || "[站点域名]"}`,
     summary === "" ? null : `> ${summary}`,
     llmsSection("About", entries, "definition", `- ${brand} 是[补定义]`),
     llmsSection("Capabilities", entries, "capability", "- [补功能]"),
