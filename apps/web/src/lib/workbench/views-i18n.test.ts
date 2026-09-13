@@ -123,6 +123,12 @@ const FORBIDDEN_BY_KEY: Readonly<
       "authoriz",
     ],
   },
+  // The loader's one `catch` cannot tell a chunk that failed to download from
+  // a sample builder that threw, so the message may name neither (Q4's rule).
+  "overview.loadDemo.failed": {
+    "zh-CN": ["所以", "因为", "由于", "网络", "离线", "版本"],
+    en: ["because", "network", "offline", "version", "connection"],
+  },
   "artifactActions.copyFailed": {
     "zh-CN": [
       "所以",
@@ -391,6 +397,7 @@ const CASES: readonly string[] = [
   "overview.loadDemo.confirmBody",
   "overview.loadDemo.confirmOk",
   "overview.loadDemo.cancel",
+  "overview.loadDemo.failed",
   "overview.noGsc.title",
   "overview.noGsc.detail",
   "overview.noGsc.cta",
