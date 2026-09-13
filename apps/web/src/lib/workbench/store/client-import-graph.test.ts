@@ -32,13 +32,10 @@
  *   followed. The walk does not skip it: every one reachable over static and
  *   dynamic edges is listed by a test that fails while the list is not empty
  *   (none today, 2026-09-14).
- * - Apart from the entries: no non-test module under `components/workbench/ui/`
- *   makes a static or dynamic edge into `components/workbench/shell/` (Q35).
- *   The shell composes the shared ui pieces, never the reverse. Direct edges
- *   only. An `import()` or `require()` there whose argument is not a literal
- *   fails the gate too: its target cannot be read, which is not the same as no
- *   edge. A test module is told by its suffix (`.test.ts`, `.test.tsx`), so a
- *   module named like `Probe.test.helpers.ts` is production code and is read.
+ * - `components/workbench/ui/` imports nothing from `components/workbench/shell/`
+ *   (Q35): pinned in `ui-shell-import-gate.test.ts`, with its own blind spots.
+ *
+ * The reader and the walk are `import-graph-walker.ts`, shared with that file.
  *
  * Blind spots:
  * - the walk stops at package boundaries, so a workspace package that newly
@@ -48,30 +45,29 @@
  *   sample site from any other client module, even one that runs at module top
  *   level, is not seen;
  * - loaders that are neither `import()` nor `require()`, such as
- *   `new Worker(new URL("./x.ts", import.meta.url))`, are not read;
- * - the `ui/` gate reads direct edges only, so a `ui/` module that reaches the
- *   shell through a module outside both directories is not seen.
+ *   `new Worker(new URL("./x.ts", import.meta.url))`, are not read.
  */
-import {
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { readFileSync } from "node:fs";
 import { builtinModules } from "node:module";
-import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import {
+  chainTo,
+  type Follow,
+  importsOf,
+  isLocal,
+  nonLiteralLoads,
+  type Parents,
+  reachableFrom,
+  readImports,
+  SRC_DIR,
+  srcPath,
+  WORKBENCH_DIR,
+  workbenchPath,
+} from "./import-graph-walker.ts";
 
 const STORE_DIR = dirname(fileURLToPath(import.meta.url));
-const WORKBENCH_DIR = resolve(STORE_DIR, "..");
-/** `@/` in apps/web resolves to apps/web/src. */
-const SRC_DIR = resolve(WORKBENCH_DIR, "../..");
 const STORE_ENTRIES = ["selectors.ts", "WorkbenchProvider.tsx", "hooks.ts"].map(
   (file) => resolve(STORE_DIR, file),
 );
@@ -97,17 +93,6 @@ const DYNAMIC_FIXTURE = resolve(
   STORE_DIR,
   "__fixtures__/view-with-dynamic-imports.tsx",
 );
-const UI_DIR = resolve(SRC_DIR, "components/workbench/ui");
-const SHELL_DIR = resolve(SRC_DIR, "components/workbench/shell");
-const UI_FIXTURE = resolve(STORE_DIR, "__fixtures__/ui-with-shell-import.tsx");
-/**
- * 22 non-test modules under ui/ on 2026-09-14. The floor sits below that, so a
- * moved directory fails here instead of passing on an empty walk.
- */
-const MIN_UI_MODULES = 18;
-
-/** Which edges a walk follows into local modules. */
-type Follow = "static" | "static-and-dynamic";
 
 const STORE_GATE_EDGES: Follow = "static";
 const SAMPLE_GATE_EDGES: Follow = "static";
@@ -163,128 +148,6 @@ const NODE_ONLY_PACKAGES = [
   "undici",
 ] as const;
 
-const SCRIPT = /\.[cm]?[jt]sx?$/;
-/** A test module, told by its suffix only: `Probe.test.helpers.ts` is production code. */
-const TEST_MODULE = /\.test\.tsx?$/;
-
-type EdgeKind = "static" | "dynamic";
-
-interface ImportEdge {
-  readonly spec: string;
-  readonly kind: EdgeKind;
-  readonly syntax:
-    | "import"
-    | "export"
-    | "import-equals"
-    | "import()"
-    | "require()";
-}
-
-interface ModuleImports {
-  readonly edges: readonly ImportEdge[];
-  /** `line:column text` of each `import()` / `require()` whose argument is not a literal. */
-  readonly nonLiteral: readonly string[];
-}
-
-function isLocal(spec: string): boolean {
-  return spec.startsWith(".") || spec.startsWith("@/");
-}
-
-/** A string literal or a template literal without substitutions. */
-function literalText(node: ts.Expression | undefined): string | null {
-  if (node === undefined) return null;
-  const literal =
-    ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
-  return literal ? node.text : null;
-}
-
-function edge(
-  node: ts.Expression | undefined,
-  syntax: ImportEdge["syntax"],
-): ImportEdge | null {
-  const spec = literalText(node);
-  const kind =
-    syntax === "import()" || syntax === "require()" ? "dynamic" : "static";
-  return spec === null ? null : { spec, kind, syntax };
-}
-
-/**
- * The static edge a declaration makes, or null. `import { type A } from` still
- * counts: with `verbatimModuleSyntax` only a clause-level `type` is erased.
- */
-function staticEdge(node: ts.Node): ImportEdge | null {
-  if (ts.isImportDeclaration(node)) {
-    const typeOnly =
-      node.importClause?.phaseModifier === ts.SyntaxKind.TypeKeyword;
-    return typeOnly ? null : edge(node.moduleSpecifier, "import");
-  }
-  if (ts.isExportDeclaration(node)) {
-    return node.isTypeOnly ? null : edge(node.moduleSpecifier, "export");
-  }
-  if (
-    ts.isImportEqualsDeclaration(node) &&
-    !node.isTypeOnly &&
-    ts.isExternalModuleReference(node.moduleReference)
-  ) {
-    return edge(node.moduleReference.expression, "import-equals");
-  }
-  return null;
-}
-
-/** `import()` or `require()` for a call that loads a module, null for any other call. */
-function loaderSyntax(node: ts.CallExpression): ImportEdge["syntax"] | null {
-  if (node.expression.kind === ts.SyntaxKind.ImportKeyword) return "import()";
-  const callee = node.expression;
-  return ts.isIdentifier(callee) && callee.text === "require"
-    ? "require()"
-    : null;
-}
-
-/** Every import edge in `text`, and every loader call it cannot follow. */
-function readImports(text: string, fileName: string): ModuleImports {
-  const scriptKind = /x$/.test(fileName) ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  const source = ts.createSourceFile(
-    fileName,
-    text,
-    ts.ScriptTarget.Latest,
-    true,
-    scriptKind,
-  );
-  const edges: ImportEdge[] = [];
-  const nonLiteral: string[] = [];
-  const visit = (node: ts.Node): void => {
-    const declared = staticEdge(node);
-    if (declared !== null) edges.push(declared);
-    const syntax = ts.isCallExpression(node) ? loaderSyntax(node) : null;
-    if (ts.isCallExpression(node) && syntax !== null) {
-      const loaded = edge(node.arguments[0], syntax);
-      if (loaded !== null) edges.push(loaded);
-      else nonLiteral.push(where(source, node));
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-  return { edges, nonLiteral };
-}
-
-function where(source: ts.SourceFile, node: ts.Node): string {
-  const start = source.getLineAndCharacterOfPosition(node.getStart(source));
-  return `${start.line + 1}:${start.character + 1} ${node.getText(source)}`;
-}
-
-/** Parsed once per file per run; the files do not change while the tests read them. */
-const parsed = new Map<string, ModuleImports>();
-
-/** Throws on a file that is not a script: its imports would otherwise read as none. */
-function importsOf(file: string): ModuleImports {
-  const cached = parsed.get(file);
-  if (cached !== undefined) return cached;
-  if (!SCRIPT.test(file)) throw new Error(`not a script module: ${file}`);
-  const read = readImports(readFileSync(file, "utf8"), file);
-  parsed.set(file, read);
-  return read;
-}
-
 function staticSpecifiers(source: string): readonly string[] {
   return readImports(source, "reader-input.ts")
     .edges.filter((found) => found.kind === "static")
@@ -298,81 +161,6 @@ function valueSpecifiers(source: string): readonly string[] {
 
 function bareValueSpecifiers(source: string): readonly string[] {
   return staticSpecifiers(source).filter((spec) => !isLocal(spec));
-}
-
-function isFile(path: string): boolean {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Throws on a local specifier it cannot resolve: a walker that skips those would
- * report a clean graph. Extensionless specifiers are tried as `.ts`, `.tsx` and
- * `index.*`, the bundler resolution tsconfig uses; 76 reachable imports rely on
- * it today (mostly `@/lib/workbench/...`, and `./client` inside `lib/api`).
- */
-function resolveSpecifier(fromFile: string, spec: string): string {
-  const base = spec.startsWith("@/")
-    ? resolve(SRC_DIR, spec.slice(2))
-    : resolve(dirname(fromFile), spec);
-  const found = [
-    base,
-    `${base}.ts`,
-    `${base}.tsx`,
-    `${base}/index.ts`,
-    `${base}/index.tsx`,
-  ].find(isFile);
-  if (found === undefined)
-    throw new Error(`cannot resolve "${spec}" imported by ${fromFile}`);
-  return found;
-}
-
-interface Parent {
-  readonly file: string;
-  readonly kind: EdgeKind;
-}
-
-type Parents = ReadonlyMap<string, Parent | null>;
-
-/** Every file reachable over `follow` edges, mapped to the file (and edge) that first reached it; `null` for entries. */
-function reachableFrom(entries: readonly string[], follow: Follow): Parents {
-  const parents = new Map<string, Parent | null>(
-    entries.map((entry) => [entry, null]),
-  );
-  const queue = [...entries];
-  for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
-    for (const found of importsOf(file).edges) {
-      if (!isLocal(found.spec)) continue;
-      if (follow === "static" && found.kind === "dynamic") continue;
-      const target = resolveSpecifier(file, found.spec);
-      if (parents.has(target)) continue;
-      parents.set(target, { file, kind: found.kind });
-      queue.push(target);
-    }
-  }
-  return parents;
-}
-
-function workbenchPath(file: string): string {
-  return relative(WORKBENCH_DIR, file);
-}
-
-function srcPath(file: string): string {
-  return relative(SRC_DIR, file);
-}
-
-/**
- * `lib/workbench/store/selectors.ts -> lib/workbench/mock/kb.ts -> ...`, for a
- * readable failure. `->` is a static edge, `~>` a dynamic one.
- */
-function chainTo(parents: Parents, file: string): string {
-  const up = parents.get(file);
-  if (up === null || up === undefined) return srcPath(file);
-  const arrow = up.kind === "static" ? "->" : "~>";
-  return `${chainTo(parents, up.file)} ${arrow} ${srcPath(file)}`;
 }
 
 /** The store list. */
@@ -417,77 +205,6 @@ function nodeOnlyImports(parents: Parents): readonly string[] {
         return `${chainTo(parents, file)} ${verb} "${found.spec}"`;
       }),
   );
-}
-
-/** `path:line:column text` for every loader call in the graph's files whose argument is not a literal. */
-function nonLiteralLoads(parents: Parents): readonly string[] {
-  return nonLiteralLoadsIn([...parents.keys()]);
-}
-
-/** `path:line:column text` for every loader call in `files` whose argument is not a literal. */
-function nonLiteralLoadsIn(files: readonly string[]): readonly string[] {
-  return files.flatMap((file) =>
-    importsOf(file).nonLiteral.map((at) => `${srcPath(file)}:${at}`),
-  );
-}
-
-/** Every non-test script module under `directory`, nested directories included. */
-function scriptModulesUnder(directory: string): readonly string[] {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const path = resolve(directory, entry.name);
-    if (entry.isDirectory()) return scriptModulesUnder(path);
-    return SCRIPT.test(entry.name) && !TEST_MODULE.test(entry.name)
-      ? [path]
-      : [];
-  });
-}
-
-function isInside(directory: string, file: string): boolean {
-  const path = relative(directory, file);
-  return (
-    path !== "" &&
-    path !== ".." &&
-    !path.startsWith(`..${sep}`) &&
-    !isAbsolute(path)
-  );
-}
-
-interface DirectEdge {
-  readonly target: string;
-  /** `file -> target`, or `file ~> target` for a dynamic edge. */
-  readonly line: string;
-}
-
-/** Every local edge, static or dynamic, out of `files`, resolved; no walk past them. */
-function directLocalEdges(files: readonly string[]): readonly DirectEdge[] {
-  return files.flatMap((file) =>
-    importsOf(file)
-      .edges.filter((found) => isLocal(found.spec))
-      .map((found) => {
-        const target = resolveSpecifier(file, found.spec);
-        const arrow = found.kind === "static" ? "->" : "~>";
-        return { target, line: `${srcPath(file)} ${arrow} ${srcPath(target)}` };
-      }),
-  );
-}
-
-/** The direct edges out of `files` whose target sits under `components/workbench/shell/` (Q35). */
-function edgesIntoShell(files: readonly string[]): readonly string[] {
-  return directLocalEdges(files)
-    .filter(({ target }) => isInside(SHELL_DIR, target))
-    .map(({ line }) => line);
-}
-
-/**
- * Everything in `files` that breaks Q35: each direct edge into shell/, and each
- * `import()` / `require()` whose argument is not a literal. The walk cannot say
- * where such a call points, so it fails instead of counting as no edge.
- */
-function shellGateViolations(files: readonly string[]): readonly string[] {
-  return [
-    ...edgesIntoShell(files),
-    ...nonLiteralLoadsIn(files).map((at) => `${at} (target is not a literal)`),
-  ];
 }
 
 describe("import clause reader", () => {
@@ -744,115 +461,6 @@ describe("client import graph of the workbench views and shell", () => {
       spec: DEMO_SITE_SPECIFIER,
       kind: "dynamic",
       syntax: "import()",
-    });
-  });
-});
-
-// Q35: the shell composes the shared ui pieces; a ui piece importing the shell
-// turns that dependency around.
-describe("components/workbench/ui imports nothing from shell (Q35)", () => {
-  const uiModules = scriptModulesUnder(UI_DIR);
-
-  it("reads every non-test module under ui/ and the edges out of them", () => {
-    expect(uiModules.length).toBeGreaterThanOrEqual(MIN_UI_MODULES);
-    expect(uiModules.map(srcPath)).toContain(
-      "components/workbench/ui/ConfirmDialog.tsx",
-    );
-    // A real edge between two ui modules, so an empty edge list cannot pass the gate below.
-    expect(directLocalEdges(uiModules).map(({ line }) => line)).toContain(
-      "components/workbench/ui/ConfirmDialog.tsx -> components/workbench/ui/Dialog.tsx",
-    );
-  });
-
-  it("catches a ui-shaped module that imports the shell, statically or dynamically (control)", () => {
-    const fixture = srcPath(UI_FIXTURE);
-    expect(shellGateViolations([UI_FIXTURE])).toEqual([
-      `${fixture} -> components/workbench/shell/workbench-nav.ts`,
-      `${fixture} ~> components/workbench/shell/CommandPalette.tsx`,
-    ]);
-  });
-
-  it("has no static or dynamic edge from a ui/ module into shell/, and no loader whose target cannot be read", () => {
-    expect(shellGateViolations(uiModules)).toEqual([]);
-  });
-
-  // A tree made on disk per run and walked by the real `scriptModulesUnder`: a
-  // committed `X.test.ts` would be collected by vitest as a suite with no tests.
-  // The shell imports use the `@/` alias, which resolves to the real shell/ from
-  // any directory, so nothing in the walk takes a parameter for the test.
-  describe("over a directory tree the gate has to walk (control)", () => {
-    const TREE: Readonly<Record<string, string>> = {
-      "top.ts": "export const top = 1;\n",
-      "notes.md": 'import "@/components/workbench/shell/Sidebar.tsx";\n',
-      "X.test.ts": 'import "@/components/workbench/shell/Sidebar.tsx";\n',
-      "Y.test.helpers.ts":
-        'export { WORKBENCH_NAV } from "@/components/workbench/shell/workbench-nav.ts";\n',
-      "nested/Panel.tsx": [
-        'import { top } from "../top.ts";',
-        'import { WORKBENCH_NAV } from "@/components/workbench/shell/workbench-nav.ts";',
-        "export const panel = [top, WORKBENCH_NAV];",
-        "",
-      ].join("\n"),
-      "nested/deeper/Concat.ts":
-        'export const load = () => import("@/components/workbench/shell/" + "workbench-nav.ts");\n',
-      "nested/deeper/Template.ts":
-        "export const load = (name: string) => import(`@/components/workbench/shell/${name}.ts`);\n",
-    };
-    let root = "";
-    /** How the gate names a file of the tree: relative to src/, like every other file. */
-    const shown = (path: string): string => srcPath(join(root, path));
-
-    beforeAll(() => {
-      root = mkdtempSync(join(tmpdir(), "q35-ui-gate-"));
-      for (const [path, text] of Object.entries(TREE)) {
-        mkdirSync(dirname(join(root, path)), { recursive: true });
-        writeFileSync(join(root, path), text);
-      }
-    });
-
-    afterAll(() => {
-      rmSync(root, { recursive: true, force: true });
-    });
-
-    it("enumerates top-level and nested scripts, keeps a .test.helpers.ts module, and leaves out the test module and the non-script", () => {
-      const found = scriptModulesUnder(root).map((file) => relative(root, file));
-      expect(found.toSorted()).toEqual([
-        "Y.test.helpers.ts",
-        join("nested", "Panel.tsx"),
-        join("nested", "deeper", "Concat.ts"),
-        join("nested", "deeper", "Template.ts"),
-        "top.ts",
-      ]);
-    });
-
-    it("reports the nested and the helper shell edges and both unreadable loaders, and nothing from the test module", () => {
-      expect(shellGateViolations(scriptModulesUnder(root)).toSorted()).toEqual(
-        [
-          `${shown("Y.test.helpers.ts")} -> components/workbench/shell/workbench-nav.ts`,
-          `${shown("nested/Panel.tsx")} -> components/workbench/shell/workbench-nav.ts`,
-          `${shown("nested/deeper/Concat.ts")}:1:27 import("@/components/workbench/shell/" + "workbench-nav.ts") (target is not a literal)`,
-          `${shown("nested/deeper/Template.ts")}:1:39 import(\`@/components/workbench/shell/\${name}.ts\`) (target is not a literal)`,
-        ].toSorted(),
-      );
-    });
-
-    it.each([
-      [
-        "string concatenation",
-        "nested/deeper/Concat.ts",
-        '1:27 import("@/components/workbench/shell/" + "workbench-nav.ts")',
-      ],
-      [
-        "an interpolated template",
-        "nested/deeper/Template.ts",
-        "1:39 import(`@/components/workbench/shell/${name}.ts`)",
-      ],
-    ])("fails on an import() built by %s instead of reading it as no edge", (_how, path, call) => {
-      const file = join(root, path);
-      expect(edgesIntoShell([file])).toEqual([]);
-      expect(shellGateViolations([file])).toEqual([
-        `${shown(path)}:${call} (target is not a literal)`,
-      ]);
     });
   });
 });

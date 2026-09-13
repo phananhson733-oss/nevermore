@@ -1,5 +1,5 @@
 /**
- * Control fixture for `store/client-import-graph.test.ts` (Q35). Nothing in the
+ * Control fixture for `store/ui-shell-import-gate.test.ts` (Q35). Nothing in the
  * app imports it; the test reads it as if it sat under `components/workbench/ui/`.
  *
  * It makes the two edges the `ui/` gate exists to catch: a static import of a
