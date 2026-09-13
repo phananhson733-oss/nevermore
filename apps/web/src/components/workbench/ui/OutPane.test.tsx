@@ -12,7 +12,7 @@
  * because two hand-built halves of the same id is how that pointer goes stale.
  */
 
-import { act, type ReactElement } from "react";
+import { act, useState, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OutPane, type OutPaneTabs } from "./OutPane.tsx";
@@ -20,14 +20,18 @@ import { PANEL_FOOT, PANEL_HEAD, PANEL_SHELL } from "./panel.ts";
 
 // React only suppresses false-positive concurrent-render warnings when a test
 // harness explicitly declares that state transitions are wrapped in `act`.
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
-  .IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const PREFIX = "wb-profile-output";
 const EMPTY = <p>Nothing generated yet</p>;
 const CONTENT = <p>the report</p>;
 
-function tabsProp(value: string, onChange = vi.fn<(id: string) => void>()): OutPaneTabs {
+function tabsProp(
+  value: string,
+  onChange: (id: string) => void = vi.fn<(id: string) => void>(),
+): OutPaneTabs {
   return {
     items: [
       ["doc", "Profile"],
@@ -38,6 +42,21 @@ function tabsProp(value: string, onChange = vi.fn<(id: string) => void>()): OutP
     label: "Output view",
     idPrefix: PREFIX,
   };
+}
+
+/** A pane whose tab really changes, the way a view drives it. */
+function Controlled() {
+  const [value, setValue] = useState("doc");
+  return (
+    <OutPane
+      title="Profile"
+      hasContent
+      empty={EMPTY}
+      tabs={tabsProp(value, setValue)}
+    >
+      <p>{`the ${value} report`}</p>
+    </OutPane>
+  );
 }
 
 let cleanup: (() => void) | null = null;
@@ -52,6 +71,32 @@ function render(element: ReactElement): HTMLElement {
     container.remove();
   };
   return container;
+}
+
+function tabWith(scope: HTMLElement, label: string): HTMLButtonElement {
+  const found = [
+    ...scope.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+  ].find((node) => node.textContent === label);
+  if (found === undefined) throw new Error(`no tab labelled ${label}`);
+  return found;
+}
+
+/**
+ * Every `aria-controls` in the pane resolves to a tabpanel, and the only tab
+ * carrying one is the selected one. The cardinality half matters: an
+ * implementation that wrote the attribute nowhere would satisfy "nothing
+ * dangles" by pointing at nothing at all.
+ */
+function expectLivePointers(scope: HTMLElement, selectedLabel: string): void {
+  const pointers = [...scope.querySelectorAll("[aria-controls]")];
+
+  expect(pointers.map((node) => node.textContent)).toEqual([selectedLabel]);
+  for (const node of pointers) {
+    const id = node.getAttribute("aria-controls") ?? "";
+    const panel = document.getElementById(id);
+    expect(panel, `aria-controls ${id} resolves to nothing`).not.toBeNull();
+    expect(panel?.getAttribute("role")).toBe("tabpanel");
+  }
 }
 
 function wears(element: Element | null, constant: string): boolean {
@@ -70,14 +115,24 @@ afterEach(() => {
 describe("OutPane", () => {
   it("wears the shared shell, header and footer classes", () => {
     const scope = render(
-      <OutPane title="Profile" tag="Output" hasContent empty={EMPTY} footer={<span>foot</span>}>
+      <OutPane
+        title="Profile"
+        tag="Output"
+        hasContent
+        empty={EMPTY}
+        footer={<span>foot</span>}
+      >
         {CONTENT}
       </OutPane>,
     );
 
     expect(wears(scope.querySelector("section"), PANEL_SHELL)).toBe(true);
-    expect(wears(scope.querySelector("[data-wb-pane-head]"), PANEL_HEAD)).toBe(true);
-    expect(wears(scope.querySelector("[data-wb-pane-foot]"), PANEL_FOOT)).toBe(true);
+    expect(wears(scope.querySelector("[data-wb-pane-head]"), PANEL_HEAD)).toBe(
+      true,
+    );
+    expect(wears(scope.querySelector("[data-wb-pane-foot]"), PANEL_FOOT)).toBe(
+      true,
+    );
     expect(scope.querySelector("h2")?.textContent).toBe("Profile");
   });
 
@@ -161,15 +216,35 @@ describe("OutPane", () => {
     expect(panel?.textContent).toContain("the report");
   });
 
+  it("points aria-controls only at a panel that is in the DOM, before and after a tab change", () => {
+    // 裁决 Q34, and the seam this whole file is about: `Tabs` writes the
+    // pointer, `OutPane` renders (only) the selected panel, and the id in
+    // between is real only if the two agree about which panels exist. The
+    // equivalent loop in Tabs.test.tsx cannot see this — its fixture renders
+    // every panel, so nothing there ever dangles.
+    const scope = render(<Controlled />);
+
+    expectLivePointers(scope, "Profile");
+    act(() => tabWith(scope, "JSON").click());
+    expectLivePointers(scope, "JSON");
+  });
+
   it("passes the tab change straight through", () => {
     const onChange = vi.fn<(id: string) => void>();
     const scope = render(
-      <OutPane title="Profile" hasContent empty={EMPTY} tabs={tabsProp("doc", onChange)}>
+      <OutPane
+        title="Profile"
+        hasContent
+        empty={EMPTY}
+        tabs={tabsProp("doc", onChange)}
+      >
         {CONTENT}
       </OutPane>,
     );
 
-    act(() => scope.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1]?.click());
+    act(() =>
+      scope.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1]?.click(),
+    );
 
     expect(onChange.mock.calls).toEqual([["json"]]);
   });

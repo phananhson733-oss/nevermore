@@ -44,12 +44,31 @@ function render(element: ReactElement): HTMLElement {
   return container;
 }
 
-/** Tabs plus the panels a caller renders for them, as OutPane will. */
-function renderTabs(value: string, onChange: (id: string) => void = vi.fn()): HTMLElement {
+const ALL_IDS = TABS.map(([id]) => id);
+
+/**
+ * Tabs plus the panels a caller renders for them. `renderedIds` is BOTH what
+ * the component is told and what this fixture actually puts in the DOM, so the
+ * two cannot disagree here — which is also why nothing in this file can catch a
+ * caller that renders fewer panels than it declares. That gate is at the seam,
+ * in OutPane.test.tsx (裁决 Q34).
+ */
+function renderTabs(
+  value: string,
+  onChange: (id: string) => void = vi.fn(),
+  renderedIds: readonly string[] = ALL_IDS,
+): HTMLElement {
   return render(
     <>
-      <Tabs tabs={TABS} value={value} onChange={onChange} label="Output view" idPrefix={PREFIX} />
-      {TABS.map(([id, text]) => (
+      <Tabs
+        tabs={TABS}
+        value={value}
+        onChange={onChange}
+        label="Output view"
+        idPrefix={PREFIX}
+        renderedIds={renderedIds}
+      />
+      {TABS.filter(([id]) => renderedIds.includes(id)).map(([id, text]) => (
         <div
           key={id}
           id={tabPanelId(PREFIX, id)}
@@ -112,7 +131,10 @@ describe("Tabs", () => {
     // helper would never notice.
     const scope = renderTabs("json");
 
-    for (const tab of tabsOf(scope)) {
+    const pointing = tabsOf(scope).filter((tab) => tab.hasAttribute("aria-controls"));
+    // Every panel is in the DOM in this fixture, so every tab must point.
+    expect(pointing).toHaveLength(TABS.length);
+    for (const tab of pointing) {
       const controls = tab.getAttribute("aria-controls") ?? "";
       const panel = document.getElementById(controls);
 
@@ -126,6 +148,18 @@ describe("Tabs", () => {
     const ids = tabsOf(scope).map((t) => t.id);
     expect(ids.every((id) => id.startsWith(PREFIX))).toBe(true);
     expect(new Set(ids).size).toBe(TABS.length);
+  });
+
+  it("points at no panel that the caller has not rendered", () => {
+    // 裁决 Q34: OutPane renders one panel at a time, so the other tabs must
+    // carry no pointer at all rather than one aimed at an absent id.
+    const scope = renderTabs("json", vi.fn(), ["json"]);
+
+    const pointing = tabsOf(scope).filter((tab) => tab.hasAttribute("aria-controls"));
+    expect(pointing.map((tab) => tab.textContent)).toEqual(["JSON"]);
+    expect(document.getElementById(pointing[0]?.getAttribute("aria-controls") ?? "")).not.toBeNull();
+    // The tabs themselves stay whole: same count, same roles, same labels.
+    expect(tabsOf(scope)).toHaveLength(TABS.length);
   });
 
   it("selects a tab on click", () => {

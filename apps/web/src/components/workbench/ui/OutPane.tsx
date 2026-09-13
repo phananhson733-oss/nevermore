@@ -82,6 +82,9 @@ export function OutPane({
             onChange={tabs.onChange}
             label={tabs.label}
             idPrefix={tabs.idPrefix}
+            // Exactly one panel is in the DOM: the selected one, rendered below
+            // (裁决 Q34). Passing every id would aim the other tabs at nothing.
+            renderedIds={[tabs.value]}
           />
         ) : null}
       </div>

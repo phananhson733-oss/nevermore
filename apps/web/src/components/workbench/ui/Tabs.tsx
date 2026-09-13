@@ -15,13 +15,20 @@ import { isComposingKey } from "./keyboard.ts";
  * to switching), which is why the arrow handler calls `onChange` and then moves
  * focus to the tab that will be selected.
  *
- * Each tab also carries an `id` and points at its panel with `aria-controls`;
- * WAI-ARIA APG requires that wiring and axe does not flag its absence, so the
- * only thing that catches a missing or mismatched pointer is the round-trip
- * assertion in Tabs.test.tsx. The panel is rendered by the caller, which builds
- * the two ids with the exported helpers rather than re-spelling the shape — two
- * hand-written halves are exactly how this pointer goes stale. Home/End are not
- * implemented (APG lists them as optional).
+ * Each tab carries an `id`, and a tab whose panel is in the DOM also points at
+ * it with `aria-controls`. `renderedIds` is required for that reason (裁决
+ * Q34): the only production caller, `OutPane`, renders the SELECTED panel and
+ * nothing else, so writing the pointer on every tab left the others aimed at an
+ * id that does not exist. It is a prop rather than a guess because this
+ * component cannot see the caller's DOM, and it has no default because a
+ * forgotten one would silently bring the dangling pointers back.
+ *
+ * The panel itself is the caller's, built with the two exported id helpers
+ * rather than by re-spelling the shape — two hand-written halves are exactly how
+ * this pointer goes stale. Note that the round-trip assertion in Tabs.test.tsx
+ * cannot catch a dangling pointer: its fixture renders every panel, so the gate
+ * for that lives at the seam, in OutPane.test.tsx. Home/End are not implemented
+ * (APG lists them as optional).
  *
  * Mid-composition arrows belong to the IME's candidate list, not to us — same
  * guard, same reason, as Dialog.tsx and useGlobalShortcut.
@@ -53,12 +60,18 @@ export function Tabs({
   onChange,
   label,
   idPrefix,
+  renderedIds,
 }: {
   readonly tabs: readonly TabItem[];
   readonly value: string;
   readonly onChange: (id: string) => void;
   readonly label: string;
   readonly idPrefix: string;
+  /**
+   * The ids whose panels the caller has actually put in the DOM. Only those tabs
+   * get an `aria-controls`; pass `[value]` when one panel is rendered at a time.
+   */
+  readonly renderedIds: readonly string[];
 }) {
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -89,13 +102,16 @@ export function Tabs({
     >
       {tabs.map(([id, text]) => {
         const selected = id === value;
+        // An `aria-controls` pointing at an id that is not in the document is a
+        // broken promise to assistive technology, not a harmless extra.
+        const panelRendered = renderedIds.includes(id);
         return (
           <button
             key={id}
             type="button"
             role="tab"
             id={tabButtonId(idPrefix, id)}
-            aria-controls={tabPanelId(idPrefix, id)}
+            {...(panelRendered ? { "aria-controls": tabPanelId(idPrefix, id) } : {})}
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(id)}
