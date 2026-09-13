@@ -162,6 +162,24 @@ export function profileDocMarkdown({ profile, doc }: ProfileDocInput): string {
   ]);
 }
 
+/**
+ * Whether the prompt announces the GSC numbers as sample data, read from the
+ * provenance frozen in the snapshot — the same field `gscSourceSuffix` labels
+ * the document's section from, so the two artifacts cannot disagree (Q6). Three
+ * values in, three out: `null` (source not recorded) is announced as `null`,
+ * never `false`, which would state "these are not examples" on no evidence.
+ */
+function sampleDataFor(source: GscRowsSource | null): boolean | null {
+  switch (source) {
+    case "sample":
+      return true;
+    case "user":
+      return false;
+    case null:
+      return null;
+  }
+}
+
 function contextData({ profile, doc }: ProfileDocInput): unknown {
   const { ai, gsc } = doc;
   return {
@@ -187,17 +205,14 @@ function contextData({ profile, doc }: ProfileDocInput): unknown {
       pillars: ai.pillars,
       tone: ai.tone,
     },
-    // sampleData leads so a reader sees these numbers are examples before reading them.
-    // Known gap (PR-3 scope, Q6 covers the document only): this flag is fixed,
-    // so rows the user imported are also announced as examples. That is the
-    // conservative direction — sample numbers are never announced as measured —
-    // and fixing it properly means renaming the key to carry the source, which
-    // changes this prompt's data contract. Recorded for the residual list.
+    // sampleData leads so a reader knows what the numbers are before reading
+    // them: true for the sample's rows, false for rows the operator imported,
+    // null when the snapshot never recorded which (plan Task 9 Step 4b).
     search:
       gsc === null
         ? null
         : {
-            sampleData: true,
+            sampleData: sampleDataFor(doc.gscSource),
             brandClicks: gsc.brandClicks,
             nonBrandClicks: gsc.nonBrandClicks,
             near: gsc.near,

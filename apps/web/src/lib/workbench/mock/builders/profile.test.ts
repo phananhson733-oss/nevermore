@@ -415,6 +415,27 @@ describe("profileContextPrompt", () => {
     });
   });
 
+  // Plan Task 9 Step 4b (Q6, codex S1): the flag follows the provenance frozen
+  // in the snapshot, the same field `profileDocMarkdown` labels the GSC section
+  // from. Three values, three answers: an unknown source is `null`, not `false`
+  // — `false` would announce "these are not examples", which nobody recorded.
+  function searchOf(gscSource: ProfileDoc["gscSource"]): unknown {
+    const out = profileContextPrompt({ ...BASE, doc: { ...FIXTURE_DOC, gscSource } });
+    return (JSON.parse(splitFences(out).blocks[0]?.body ?? "") as { search: unknown }).search;
+  }
+
+  it("still announces sample rows as sample data", () => {
+    expect(searchOf("sample")).toStrictEqual({ sampleData: true, brandClicks: 120, nonBrandClicks: 45, near: 2 });
+  });
+
+  it("does not announce the user's own imported rows as sample data", () => {
+    expect(searchOf("user")).toStrictEqual({ sampleData: false, brandClicks: 120, nonBrandClicks: 45, near: 2 });
+  });
+
+  it("announces an unknown source as null, never as either answer", () => {
+    expect(searchOf(null)).toStrictEqual({ sampleData: null, brandClicks: 120, nonBrandClicks: 45, near: 2 });
+  });
+
   describe.each(CONTEXT_FIELDS)("hostile $field", ({ apply }) => {
     it.each(HOSTILE_VALUES)("$name stays inside the data block", (hostile) => {
       const input = apply(BASE, hostile.value);
