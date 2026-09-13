@@ -108,3 +108,45 @@ describe("SiteCard", () => {
     expect(rows(render({}, "zh-CN"))[1]).toBe("已接入");
   });
 });
+
+/**
+ * The unknown row's `title` is the only place the card can say which kind of
+ * "—" it means, and Q4 exists to stop that cell claiming "not connected". The
+ * seam test in `ShellChrome.test.tsx` compares the title to the catalogue's own
+ * value, so a rewrite of the sentence moves both ends at once. These pins are
+ * literals, per locale, and have two halves:
+ *
+ * - the claim: the sentence must still say unknown is not the same as not
+ *   connected;
+ * - the negation: outside that one licensed clause, the words for "not
+ *   connected" must not appear. A positive pin alone is satisfied by
+ *   "未知不等于未接入，也就是未接入". The negation cannot be a plain
+ *   `not.toContain(notConnected)` either: the correct zh-CN sentence contains
+ *   「未接入」 inside the very clause that denies it, and the en sentence says
+ *   "not connected" in lower case where the label says "Not connected".
+ */
+describe("SiteCard unknown GSC hint", () => {
+  /** The GSC row's `<dd>` (row order: market, GSC, audit). */
+  function gscTitle(scope: ParentNode): string {
+    const cell = scope.querySelectorAll("[data-wb-site-card] dd")[1];
+    const title = cell?.getAttribute("title");
+    if (title === null || title === undefined) throw new Error("the unknown GSC row has no title");
+    return title;
+  }
+
+  it("says in zh-CN that unknown is not the same as not connected, and nothing more", () => {
+    const title = gscTitle(render({ site: { ...SITE, gscConnected: null } }, "zh-CN"));
+    const claim = "未知不等于未接入";
+
+    expect(title).toContain(claim);
+    expect(title.replace(claim, "")).not.toContain("未接入");
+  });
+
+  it("says in en that unknown is not the same as not connected, and nothing more", () => {
+    const title = gscTitle(render({ site: { ...SITE, gscConnected: null } }, "en"));
+    const claim = "Unknown is not the same as not connected";
+
+    expect(title).toContain(claim);
+    expect(title.replace(claim, "").toLowerCase()).not.toContain("not connected");
+  });
+});
