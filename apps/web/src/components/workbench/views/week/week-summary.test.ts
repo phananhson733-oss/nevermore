@@ -411,22 +411,41 @@ describe("weekSummary: whether the checks on the cards are inside the range", ()
     const summary = weekSummary(state, now);
     expect(summary.health?.score).toBe(80);
     expect(summary.mention?.share).toBe("50%");
-    expect(summary.healthInWindow).toBe(false);
-    expect(summary.mentionInWindow).toBe(false);
+    expect(summary.healthPlacement).toBe("outside");
+    expect(summary.mentionPlacement).toBe("outside");
   });
+
+  // codex S7r2 #3: a stamp after now is outside the range too.
+  it("places checks stamped after now outside the range", () => {
+    const state = blank({
+      lastAudit: report("2026-09-14 12:01", 80, []),
+      lastVis: { at: "2026-09-15 00:00", results: hits(1, 2) },
+    });
+    expect(weekSummary(state, now)).toMatchObject({ healthPlacement: "outside", mentionPlacement: "outside" });
+  });
+
+  // A stamp that does not parse is neither in nor out: the range test drops it,
+  // and the card can only say that it cannot tell.
+  it.each(["2026-02-30 10:00", "2026-09-14 9:00", "2026-09-14T10:00"])(
+    "cannot place a check stamped %j",
+    (stamp) => {
+      const state = blank({ lastAudit: report(stamp, 80, []), lastVis: { at: stamp, results: hits(1, 2) } });
+      expect(weekSummary(state, now)).toMatchObject({ healthPlacement: "unknown", mentionPlacement: "unknown" });
+    },
+  );
 
   it("marks checks inside the range, from its first minute to now", () => {
     const state = blank({
       lastAudit: report("2026-09-08 00:00", 80, []),
       lastVis: { at: "2026-09-14 12:00", results: hits(1, 2) },
     });
-    expect(weekSummary(state, now)).toMatchObject({ healthInWindow: true, mentionInWindow: true });
+    expect(weekSummary(state, now)).toMatchObject({ healthPlacement: "inside", mentionPlacement: "inside" });
   });
 
-  it("is false when a card has no measurement to date", () => {
-    expect(weekSummary(blank(), now)).toMatchObject({ healthInWindow: false, mentionInWindow: false });
+  it("has no placement when a card has no measurement to date", () => {
+    expect(weekSummary(blank(), now)).toMatchObject({ healthPlacement: null, mentionPlacement: null });
     const emptyRun = blank({ lastVis: { at: "2026-09-13 11:00", results: [] } });
-    expect(weekSummary(emptyRun, now).mentionInWindow).toBe(false);
+    expect(weekSummary(emptyRun, now).mentionPlacement).toBeNull();
   });
 
   // codex S7a #5: the page's 「本周事件 N 条」 is this list's length.

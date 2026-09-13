@@ -10,10 +10,15 @@
  * cannot drift (jsx W16).
  *
  * Completed runs only: `lastAudit` / `lastVis`, never the in-flight `audit` /
- * `visResults` (Q20, jsx W3/W5). "Previous" is the last archived entry, which
- * the reducer never makes equal to the latest (`archive` in reducer.ts); its
+ * `visResults` (Q20, jsx W3/W5). "Previous" is the last archived entry; its
  * stamp travels with it, because it may be a day or months old and the page
- * says 「较上次（{at}）」, not "last week".
+ * says 「较上次（{at}）」, not "last week". That it is a different object from
+ * the latest is `auditComplete`'s doing (`archive` in reducer.ts never
+ * archives the report it completes), not a property of every state:
+ * `loadPersisted` hands in a whole state that never passes through `archive`,
+ * and that state can carry shared references too (hydration's
+ * `normalizeInterrupted` makes `audit` the `lastAudit` object). Reference
+ * identity is not something that holds only in memory.
  *
  * A change is only given between two measurements of the same thing (codex
  * S7a #1 / #2); the latest value is shown either way. Two audits are compared
@@ -35,9 +40,10 @@
  *
  * The date range is `weekWindow` (`week-feed.ts`), the same one the subtitle,
  * the artifact count and the feed use (codex S7a #9). The cards show the latest
- * check however old, so `healthInWindow` / `mentionInWindow` say whether that
- * check's stamp is inside the range; the cards print its stamp and, when it is
- * not, that this check is outside the range (S7a #6). Not that the range holds
+ * check however old, so `healthPlacement` / `mentionPlacement` say where that
+ * check's stamp stands against the range (`rangePlacement`); the cards print
+ * its stamp and, when it is outside, that this check is outside the range (S7a
+ * #6), or, when the stamp does not parse, that this cannot be confirmed. Not that the range holds
  * no check: the stamp may be in the future, and an archived check inside the
  * range may be among the events (codex S7r2 #3).
  *
@@ -70,7 +76,7 @@ import type {
   VisSnapshot,
   WorkbenchProjectState,
 } from "@/lib/workbench/types";
-import { artifactsInWeek, inWeekWindow, weekFeed, weekWindow } from "./week-feed.ts";
+import { artifactsInWeek, type RangePlacement, rangePlacement, weekFeed, weekWindow } from "./week-feed.ts";
 
 export interface BorderlineQuery {
   readonly query: string;
@@ -81,11 +87,11 @@ export interface WeekSummary {
   /** Nothing to show at all: the page renders its empty state and the report cannot be saved. */
   readonly empty: boolean;
   readonly health: WeekHealth | null;
-  /** The audit behind `health` ran inside the date range; `false` when there is none. */
-  readonly healthInWindow: boolean;
+  /** Where the audit behind `health` stands against the date range; `null` when there is none. */
+  readonly healthPlacement: RangePlacement | null;
   readonly mention: WeekMention | null;
-  /** The visibility run behind `mention` ran inside the date range; `false` when there is none. */
-  readonly mentionInWindow: boolean;
+  /** Where the visibility run behind `mention` stands against the date range; `null` when there is none. */
+  readonly mentionPlacement: RangePlacement | null;
   readonly borderline: readonly BorderlineQuery[] | null;
   /** GSC rows with no usable position: beside a known `borderline`, the rows it could not count. */
   readonly borderlineUnknownRows: number;
@@ -260,9 +266,9 @@ export function weekSummary(state: WeekSummaryState, now: Date): WeekSummary {
   return {
     empty: isEmpty(state),
     health: latestHealth,
-    healthInWindow: latestHealth !== null && inWeekWindow(latestHealth.at, range),
+    healthPlacement: latestHealth === null ? null : rangePlacement(latestHealth.at, range),
     mention: latestMention,
-    mentionInWindow: latestMention !== null && inWeekWindow(latestMention.at, range),
+    mentionPlacement: latestMention === null ? null : rangePlacement(latestMention.at, range),
     borderline: borderline(state.gscRows),
     borderlineUnknownRows: state.gscRows.filter((row) => gscStatus(row) === "unknown").length,
     artifactsThisWeek: artifactsInWeek(state.artifacts, range).length,

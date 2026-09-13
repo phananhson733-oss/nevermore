@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { workbenchHref } from "@/lib/workbench/routes";
 import { StatCard } from "../../ui/StatCard.tsx";
 import { statValue } from "../../ui/stat-format.ts";
+import type { RangePlacement } from "./week-feed.ts";
 import type { WeekSummary } from "./week-summary.ts";
 
 /**
@@ -16,10 +17,11 @@ import type { WeekSummary } from "./week-summary.ts";
  *   when that stamp is outside the page's date range, adds 「这次检查不在上面的
  *   日期范围内」: the card shows the latest check however old, and under the
  *   page's dates an undated score reads as theirs (codex S7a #6). The sentence
- *   is about this check only. Outside the range covers before it, after it (a
- *   stamp in the future) and a stamp that does not parse, so it cannot say the
- *   range holds no check: an archived one inside it may be on the feed below
- *   (codex S7r2 #3).
+ *   is about this check only. Outside covers a stamp before the range and one
+ *   after it (in the future), so it cannot say the range holds no check: an
+ *   archived one inside it may be on the feed below (codex S7r2 #3). A stamp
+ *   that does not parse is neither inside nor outside; the card says 「无法确认
+ *   这次检查是否在上面的日期范围内。」 and names no cause, which it cannot know.
  * - The comparison lines name the previous run's stamp — 「较上次（{at}）」,
  *   never "last week" (Q20) — and exist only when `week-summary.ts` found a
  *   previous run comparable with the latest (S7a #1 / #2). A card with no
@@ -36,35 +38,45 @@ import type { WeekSummary } from "./week-summary.ts";
 
 const FOOT_LINE = "block";
 
-function CheckedFoot({ at, inWindow }: { readonly at: string; readonly inWindow: boolean }) {
+function RangeFoot({ placement }: { readonly placement: RangePlacement | null }) {
+  const t = useTranslations("workbench.week");
+  if (placement === null || placement === "inside") return null;
+  return placement === "outside" ? (
+    <span data-wb-foot="outside" className={FOOT_LINE}>
+      {t("checkOutsideRange")}
+    </span>
+  ) : (
+    <span data-wb-foot="rangeUnknown" className={FOOT_LINE}>
+      {t("checkRangeUnknown")}
+    </span>
+  );
+}
+
+function CheckedFoot({ at, placement }: { readonly at: string; readonly placement: RangePlacement | null }) {
   const t = useTranslations("workbench.week");
   return (
     <>
       <span data-wb-foot="at" className={FOOT_LINE}>
         {t("checkedAt", { at })}
       </span>
-      {inWindow ? null : (
-        <span data-wb-foot="outside" className={FOOT_LINE}>
-          {t("checkOutsideRange")}
-        </span>
-      )}
+      <RangeFoot placement={placement} />
     </>
   );
 }
 
 function HealthFoot({
   health,
-  inWindow,
+  placement,
 }: {
   readonly health: WeekSummary["health"];
-  readonly inWindow: boolean;
+  readonly placement: RangePlacement | null;
 }) {
   const t = useTranslations("workbench.week");
   if (health === null) return null;
   const { previous } = health;
   return (
     <>
-      <CheckedFoot at={health.at} inWindow={inWindow} />
+      <CheckedFoot at={health.at} placement={placement} />
       {previous === null ? null : (
         <>
           <span data-wb-foot="diff" className={FOOT_LINE}>
@@ -81,16 +93,16 @@ function HealthFoot({
 
 function MentionFoot({
   mention,
-  inWindow,
+  placement,
 }: {
   readonly mention: WeekSummary["mention"];
-  readonly inWindow: boolean;
+  readonly placement: RangePlacement | null;
 }) {
   const t = useTranslations("workbench.week");
   if (mention === null) return null;
   return (
     <>
-      <CheckedFoot at={mention.at} inWindow={inWindow} />
+      <CheckedFoot at={mention.at} placement={placement} />
       <span data-wb-foot="share" className={FOOT_LINE}>
         {t("cards.mention.foot", { hits: mention.hits, total: mention.total })}
       </span>
@@ -142,7 +154,7 @@ export function WeekCards({
           value={statValue(health?.score)}
           delta={health?.previous?.scoreDelta ?? null}
           label={t("cards.health.label")}
-          foot={<HealthFoot health={health} inWindow={summary.healthInWindow} />}
+          foot={<HealthFoot health={health} placement={summary.healthPlacement} />}
           href={workbenchHref(projectId, "audit")}
         />
       </div>
@@ -153,7 +165,7 @@ export function WeekCards({
           deltaUnit="pt"
           accent="fuchsia"
           label={t("cards.mention.label")}
-          foot={<MentionFoot mention={mention} inWindow={summary.mentionInWindow} />}
+          foot={<MentionFoot mention={mention} placement={summary.mentionPlacement} />}
           href={workbenchHref(projectId, "visibility")}
         />
       </div>

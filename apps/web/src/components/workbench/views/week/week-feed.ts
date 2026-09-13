@@ -28,9 +28,14 @@
  * `lastAudit` and an `auditHistory` entry when a report is dispatched again
  * after a later one (`archive` in reducer.ts). Two runs stamped with the same
  * minute are two events, whatever they hold (codex S7r2 #4): a stamp is not a
- * run's identity, and the store keeps no run id. Object identity does not
- * survive the JSON round-trip, so after a reload that repeated report is listed
- * twice (a known limit). `audit` and `visResults` are
+ * run's identity, and the store keeps no run id. The rule does not assume a
+ * shared reference exists only in memory: `loadPersisted` hands the store a
+ * whole state that never passes through `archive`, and that state can carry
+ * shared references too (hydration's `normalizeInterrupted` makes `audit` the
+ * `lastAudit` object). One object counts once, however it arrived; a repeat
+ * that arrives as two copies counts twice. The report the reducer shares comes
+ * back from localStorage as two separate objects (measured: JSON.parse and the
+ * schema build each anew), so after a reload it is listed twice (a known limit). `audit` and `visResults` are
  * deliberately not read: while a run is in flight they are empty or partial,
  * and an event built from them either vanishes mid-run or presents a partial
  * result as a measurement (Q20).
@@ -71,6 +76,19 @@ export function weekWindow(now: Date): WeekWindow {
 
 export function inWeekWindow(at: string, range: WeekWindow): boolean {
   return parseLocalStamp(at) !== null && at >= range.first && at <= range.last;
+}
+
+/**
+ * Where a stamp stands against the range: `outside` is before its first minute
+ * or after `now`; `unknown` is a stamp that does not parse, which
+ * `inWeekWindow` leaves out of every count and which cannot be placed either
+ * way.
+ */
+export type RangePlacement = "inside" | "outside" | "unknown";
+
+export function rangePlacement(at: string, range: WeekWindow): RangePlacement {
+  if (parseLocalStamp(at) === null) return "unknown";
+  return inWeekWindow(at, range) ? "inside" : "outside";
 }
 
 export function artifactsInWeek(artifacts: readonly Artifact[], range: WeekWindow): readonly Artifact[] {

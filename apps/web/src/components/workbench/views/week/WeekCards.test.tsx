@@ -68,6 +68,7 @@ describe("week cards: when their check ran", () => {
     expect(text(health, "[data-wb-foot='at']")).toBe("Checked 2026-09-13 10:00");
     expect(text(mention, "[data-wb-foot='at']")).toBe("Checked 2026-09-13 11:00");
     expect(scope.querySelector("[data-wb-foot='outside']")).toBeNull();
+    expect(scope.querySelector("[data-wb-foot='rangeUnknown']")).toBeNull();
   });
 
   it("say the check is outside the range when the latest is older than it (zh)", () => {
@@ -82,6 +83,7 @@ describe("week cards: when their check ran", () => {
     expect(mention.textContent?.startsWith(`50%${zh.week.cards.mention.label}`)).toBe(true);
     expect(text(mention, "[data-wb-foot='at']")).toBe("检查于 2026-08-25 11:00");
     expect(text(mention, "[data-wb-foot='outside']")).toBe("这次检查不在上面的日期范围内");
+    expect(scope.querySelector("[data-wb-foot='rangeUnknown']")).toBeNull();
   });
 
   it("say the same in en", () => {
@@ -110,10 +112,28 @@ describe("week cards: when their check ran", () => {
     expect(stamps).toEqual(["2026-09-14 10:00"]);
   });
 
+  // The stamp does not parse, so the page cannot tell whether the check is in the
+  // range; the card says exactly that and names no cause.
+  it.each<[WeekLocale, string]>([
+    ["zh-CN", "无法确认这次检查是否在上面的日期范围内。"],
+    ["en", "It can't be confirmed whether this check falls within the date range above."],
+  ])("say it cannot be confirmed when the check's stamp does not parse (%s)", (locale, sentence) => {
+    const scope = show(
+      { ...BLANK_WEEK, lastAudit: report("2026-02-30 10:00", 80, []), lastVis: { at: "2026-09-14 9:00", results: hits(1, 2) } },
+      locale,
+    );
+    for (const name of ["health", "mention"]) {
+      const card = one(scope, `[data-wb-week-card='${name}']`);
+      expect(text(card, "[data-wb-foot='rangeUnknown']"), name).toBe(sentence);
+      expect(card.querySelector("[data-wb-foot='outside']"), name).toBeNull();
+    }
+  });
+
   it("have no stamp and no range sentence when nothing was checked", () => {
     const scope = show({ ...BLANK_WEEK, gscRows: [gsc("a", 50)], gscRowsSource: "user" });
     expect(scope.querySelector("[data-wb-foot='at']")).toBeNull();
     expect(scope.querySelector("[data-wb-foot='outside']")).toBeNull();
+    expect(scope.querySelector("[data-wb-foot='rangeUnknown']")).toBeNull();
   });
 });
 
