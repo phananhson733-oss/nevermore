@@ -16,8 +16,9 @@ const lines = (...parts: readonly string[]): string => parts.join("\n");
 
 /**
  * `rows` and `skipped` only. The header metadata `parseGsc` also returns (Q7)
- * has its own cases in `gsc-columns.test.ts`, so leaving it out here keeps each
- * of these assertions about the records it is named for.
+ * has its own cases in the `header recognition metadata` describe below, so
+ * leaving it out here keeps each of these assertions about the records it is
+ * named for.
  */
 function rowsAndSkipped(text: string): Pick<ParsedGsc, "rows" | "skipped"> {
   const { rows, skipped } = parseGsc(text);
@@ -209,9 +210,21 @@ describe("parseGsc: German headers", () => {
  * not infer "this column was not recognised" from "every row's value is null":
  * a recognised column whose cells are all blank looks exactly the same that way,
  * and naming it as unrecognised would send the user to fix a header that is fine.
+ *
+ * `recognized: null` pins the other direction. With no recognised header there
+ * is no recognition to report, and the positional layout is an assumption, not
+ * a reading: a two-column paste would otherwise be told all four metrics have
+ * a column.
  */
 describe("parseGsc: header recognition metadata (Q7)", () => {
   const ALL_MAPPED = { clicks: true, impressions: true, ctr: true, position: true } as const;
+
+  /** The report, for the pastes that do have a recognised header; a null here is the failure, not a skip. */
+  function mapped(parsed: ParsedGsc): NonNullable<ParsedGsc["recognized"]> {
+    const { recognized } = parsed;
+    if (recognized === null) throw new Error("expected a recognised header");
+    return recognized;
+  }
 
   it("names the metrics a recognised header mapped, and the ones it did not", () => {
     const parsed = parseGsc(lines("Top queries\tClicks\tPosition", "ai seo\t5\t3.2"));
@@ -227,12 +240,12 @@ describe("parseGsc: header recognition metadata (Q7)", () => {
     const noColumn = parseGsc(lines("Top queries\tPosition", "ai seo\t3.2", "geo\t8.1"));
     expect(blankCells.rows.map((r) => r.clicks)).toEqual([null, null]);
     expect(noColumn.rows.map((r) => r.clicks)).toEqual([null, null]);
-    expect(blankCells.recognized.clicks).toBe(true);
-    expect(noColumn.recognized.clicks).toBe(false);
+    expect(mapped(blankCells).clicks).toBe(true);
+    expect(mapped(noColumn).clicks).toBe(false);
     // Same for a column that was mapped but whose cells are unreadable.
     const unreadable = parseGsc(lines("Top queries\tClicks\tPosition", "ai seo\tn/a\t3.2", "geo\t—\t8.1"));
     expect(unreadable.rows.map((r) => r.clicks)).toEqual([null, null]);
-    expect(unreadable.recognized.clicks).toBe(true);
+    expect(mapped(unreadable).clicks).toBe(true);
   });
 
   it("maps every metric under a recognised full header, in any language or order", () => {
@@ -247,37 +260,63 @@ describe("parseGsc: header recognition metadata (Q7)", () => {
     }
   });
 
-  it("reports no recognised header for a bare paste, while still mapping the export's column order", () => {
+  it("claims no recognised column for a bare paste, even one laid out exactly like the export", () => {
     const parsed = parseGsc(lines("ai seo\t5\t60\t8.3%\t3.2", "geo\t1\t2\t3%\t4"));
     expect(parsed.headerDetected).toBe(false);
-    // Positional fallback: the four metrics do have columns, they were just never
-    // named. `headerDetected` is what tells a reader the mapping was assumed.
-    expect(parsed.recognized).toEqual(ALL_MAPPED);
+    // The positional fallback did read all five columns here, and that is still
+    // an assumption about an unnamed layout rather than a recognised header.
+    // The rows are read either way; only the claim about columns is withheld.
+    expect(parsed.recognized).toBeNull();
     expect(parsed.rows).toHaveLength(2);
   });
 
-  it("reports no recognised header when the first record names the query but no metric", () => {
+  it("claims no recognised column for a headerless two-column paste that only has clicks", () => {
+    // The paste the all-true report got most wrong: it announced impressions,
+    // CTR and position for a paste that has neither those columns nor a header
+    // naming them, so a view following Q7 had nothing to warn about.
+    const parsed = parseGsc(lines("ai seo\t5", "geo audit\t2"));
+    expect(parsed.headerDetected).toBe(false);
+    expect(parsed.recognized).toBeNull();
+    expect(parsed.rows).toEqual([
+      row("ai seo", 5, null, null, null),
+      row("geo audit", 2, null, null, null),
+    ]);
+  });
+
+  it("claims no recognised column for records narrower than the assumed layout", () => {
+    for (const text of ["ai seo\t5\t60", "ai seo\t5\t60\t8.3%"]) {
+      const parsed = parseGsc(text);
+      expect(parsed.headerDetected, text).toBe(false);
+      expect(parsed.recognized, text).toBeNull();
+      // The assumption's rightmost columns have no cell at all, so the metrics
+      // the report would have claimed are exactly the ones that are unavailable.
+      expect(parsed.rows.at(0)?.position, text).toBeNull();
+      expect(parsed.rows.length, text).toBe(1);
+    }
+  });
+
+  it("claims no recognised column when the first record names the query but no metric", () => {
     const text = lines("Query\tTotal clicks\tTotal impressions\tClick rate\tAvg. position", "ai seo\t5\t60\t8,3 %\t3,2");
     const parsed = parseGsc(text);
     expect(parsed.headerDetected).toBe(false);
-    expect(parsed.recognized).toEqual(ALL_MAPPED);
+    expect(parsed.recognized).toBeNull();
     // The record was still taken for a header: it is not a row and not a skip.
     expect(parsed.rows).toEqual([row("ai seo", 5, 60, 8.3, 3.2)]);
     expect(parsed.skipped).toBe(0);
   });
 
-  it("reports no recognised header when no label is known, and counts that record as skipped", () => {
+  it("claims no recognised column when no label is known, and counts that record as skipped", () => {
     const parsed = parseGsc(lines("Zoekterm\tKlikken\tWeergaven\tRatio\tPlaats", "ai seo\t5\t60\t8,3 %\t3,2"));
     expect(parsed.headerDetected).toBe(false);
-    expect(parsed.recognized).toEqual(ALL_MAPPED);
+    expect(parsed.recognized).toBeNull();
     expect(parsed.skipped).toBe(1);
   });
 
-  it("reports the same metadata for an empty paste as for a bare one: nothing was recognised", () => {
+  it("reports the same metadata for an empty paste as for a bare one: no header, so nothing to report", () => {
     for (const text of ["", "\n\r\n", "\uFEFF"]) {
       const parsed = parseGsc(text);
       expect(parsed.headerDetected, JSON.stringify(text)).toBe(false);
-      expect(parsed.recognized, JSON.stringify(text)).toEqual(ALL_MAPPED);
+      expect(parsed.recognized, JSON.stringify(text)).toBeNull();
       expect(parsed.rows, JSON.stringify(text)).toEqual([]);
     }
   });

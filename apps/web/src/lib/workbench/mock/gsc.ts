@@ -22,12 +22,20 @@ export interface ParsedGsc {
    */
   readonly headerDetected: boolean;
   /**
-   * Which metrics this parse has a column for (Q7). A view names the missing ones
-   * from here and never infers them from the rows: a mapped column whose cells
-   * are all blank or unreadable yields the same nulls as a column no header
-   * named. With `headerDetected` false these are the positional assumption.
+   * Which metrics this parse has a column for (Q7), or `null` when no header was
+   * recognised. A view names the missing ones from here and never infers them
+   * from the rows: a mapped column whose cells are all blank or unreadable
+   * yields the same nulls as a column no header named.
+   *
+   * `null` rather than the positional assumption's four `true`s, which is this
+   * repository's "unavailable is never 0" rule in its boolean form: with no
+   * header there is no such thing as "which columns were recognised", and
+   * answering `true` for the five-column export layout when the paste has two
+   * columns is the same mistake as writing a missing number down as 0. A view
+   * that has this cannot say which columns are missing and must say the mapping
+   * was assumed instead.
    */
-  readonly recognized: Readonly<Record<GscMetric, boolean>>;
+  readonly recognized: Readonly<Record<GscMetric, boolean>> | null;
 }
 
 type Delimiter = "\t" | "," | ";";
@@ -356,7 +364,7 @@ export function parseGsc(text: string): ParsedGsc {
     rows,
     skipped: data.length - rows.length,
     headerDetected: mapping.fromLabels,
-    recognized: recognizedColumns(mapping.columns),
+    recognized: mapping.fromLabels ? recognizedColumns(mapping.columns) : null,
   };
 }
 
