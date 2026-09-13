@@ -147,6 +147,36 @@ describe("weekSummary: technical health", () => {
     expect(weekSummary(state, NOW).health?.previous?.scoreDelta).toBe(10);
   });
 
+  // codex S7r2 #5: the same page with its host name in capitals lost the +20.
+  it.each<[string, readonly string[], readonly string[]]>([
+    ["host name case", ["https://EXAMPLE.com/a"], ["https://example.com/a"]],
+    ["a default port", ["https://example.com:443/a"], ["https://example.com/a"]],
+    ["a page listed twice", ["/a"], ["/a", "/a"]],
+  ])("compares two checks whose page lists differ only by %s", (_label, latest, earlier) => {
+    const state = blank({
+      lastAudit: { ...report("2026-09-14 10:00", 80, []), pageRows: pages(...latest) },
+      auditHistory: [{ ...report("2026-09-13 10:00", 60, []), pageRows: pages(...earlier) }],
+    });
+    expect(weekSummary(state, NOW).health).toMatchObject({
+      previous: { at: "2026-09-13 10:00", scoreDelta: 20 },
+      incomparableAt: null,
+    });
+  });
+
+  // Not the same resource on every site, so not the same page here.
+  it.each<[string, string, string]>([
+    ["a trailing slash", "/a", "/a/"],
+    ["a trailing slash on a full URL", "https://example.com/a", "https://example.com/a/"],
+    ["a query string", "https://example.com/a", "https://example.com/a?utm=x"],
+    ["a www host", "https://example.com/a", "https://www.example.com/a"],
+  ])("does not compare two checks whose pages differ by %s", (_label, latest, earlier) => {
+    const state = blank({
+      lastAudit: { ...report("2026-09-14 10:00", 80, []), pageRows: pages(latest) },
+      auditHistory: [{ ...report("2026-09-13 10:00", 60, []), pageRows: pages(earlier) }],
+    });
+    expect(weekSummary(state, NOW).health).toMatchObject({ previous: null, incomparableAt: "2026-09-13 10:00" });
+  });
+
   it("counts high-severity findings in the latest report, and knows zero", () => {
     const state = blank({ lastAudit: report("2026-09-12 10:00", 56, [finding("a", "high"), finding("b", "mid")]) });
     expect(weekSummary(state, NOW).highFindings).toBe(1);

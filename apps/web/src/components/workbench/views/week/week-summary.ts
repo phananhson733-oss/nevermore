@@ -17,10 +17,13 @@
  *
  * A change is only given between two measurements of the same thing (codex
  * S7a #1 / #2); the latest value is shown either way. Two audits are compared
- * only when they list the same checked pages (`pageRows` URLs; an audit that
- * lists none cannot be shown to match), so a page the latest check never looked
- * at is not counted as better, and the report names the earlier check it did
- * not compare (`incomparableAt`). Two visibility runs are compared only when
+ * only when they list the same set of checked pages (`pageRows` URLs; an audit
+ * that lists none cannot be shown to match), so a page the latest check never
+ * looked at is not counted as better, and the report names the earlier check it
+ * did not compare (`incomparableAt`). Each URL is compared in its WHATWG form
+ * (codex S7r2 #5: host name case, a default port), and nothing further: a
+ * trailing slash, a query string or `www.` can name another resource on some
+ * site. Two visibility runs are compared only when
  * they asked the same prompts on the same platforms, repeats counted, so
  * dropping a platform that missed does not read as a rise.
  *
@@ -129,8 +132,14 @@ function sameKeys(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((key, index) => key === b[index]);
 }
 
+/** A URL as `URL.href` writes it; a path, or anything else that does not parse on its own, as written. */
+function pageKey(url: string): string {
+  return URL.canParse(url) ? new URL(url).href : url;
+}
+
+/** The set of pages a check looked at: a page listed twice was still looked at once. */
 function checkedPages(report: AuditReport): readonly string[] {
-  return sortedKeys(report.pageRows.map((row) => row.url));
+  return sortedKeys([...new Set(report.pageRows.map((row) => pageKey(row.url)))]);
 }
 
 function comparableAudits(latest: AuditReport, earlier: AuditReport): boolean {
