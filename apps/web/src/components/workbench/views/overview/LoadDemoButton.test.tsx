@@ -5,21 +5,22 @@
  * so the two ways it can go wrong are both about when that dispatch happens:
  * asking for confirmation on a project that holds nothing (Q11 — the check is
  * by value, and a hydrated blank project must not prompt), and dispatching
- * twice for one intent (a double click, a double confirm). Both are counted
- * against a context whose `dispatch` is a spy, because the real reducer makes a
- * second identical `loadDemo` invisible.
+ * twice for one intent (a double click, a double confirm). Both are counted by a
+ * spy in front of a real reducer: the reducer alone would make a second load
+ * invisible, and a spy alone changes nothing — the loader reads the store back
+ * to learn whether its dispatch landed, and would take every load as refused.
  *
  * `mock/demo.ts` is wrapped, not replaced: the payload is the real one, and the
  * wrapper only lets one case make the sample builder throw.
  */
 
-import { act } from "react";
+import { act, useMemo, useReducer, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "@sf/i18n";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEMO_LEVEL, DEMO_SEEDS } from "@/lib/workbench/mock/demo-constants";
-import { initialProjectState, type ProjectSeed } from "@/lib/workbench/store/reducer";
+import { initialProjectState, reduce, type ProjectSeed } from "@/lib/workbench/store/reducer";
 import {
   WorkbenchContext,
   type PublicWorkbenchAction,
@@ -43,6 +44,36 @@ const COPY = en.workbench.overview.loadDemo;
 const PID = "00000000-0000-4000-8000-000000000042";
 const SEED: ProjectSeed = { url: "https://example.test", brand: "Example", market: "US" };
 
+/** The context a view sees: each dispatch is recorded by `spy`, then applied by the real reducer. */
+function Host({
+  initial,
+  spy,
+  children,
+}: {
+  readonly initial: WorkbenchProjectState;
+  readonly spy: (action: PublicWorkbenchAction) => void;
+  readonly children: ReactNode;
+}) {
+  const [state, apply] = useReducer(reduce, initial);
+  const value = useMemo<WorkbenchContextValue>(
+    () => ({
+      projectId: PID,
+      state,
+      dispatch: (action) => {
+        spy(action);
+        apply(action);
+      },
+      ready: true,
+      storageMode: "ok",
+      keywordRows: [],
+      keywordRowCount: null,
+      forgetProject: () => {},
+    }),
+    [state, spy],
+  );
+  return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
+}
+
 let cleanup: (() => void) | null = null;
 
 interface Rendered {
@@ -53,27 +84,17 @@ interface Rendered {
 
 function render(state: WorkbenchProjectState): Rendered {
   const dispatch = vi.fn<(action: PublicWorkbenchAction) => void>();
-  const value: WorkbenchContextValue = {
-    projectId: PID,
-    state,
-    dispatch,
-    ready: true,
-    storageMode: "ok",
-    keywordRows: [],
-    keywordRowCount: null,
-    forgetProject: vi.fn(),
-  };
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   act(() =>
     root.render(
       <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
-        <WorkbenchContext.Provider value={value}>
+        <Host initial={state} spy={dispatch}>
           <div id="wb-app">
             <LoadDemoButton />
           </div>
-        </WorkbenchContext.Provider>
+        </Host>
       </NextIntlClientProvider>,
     ),
   );

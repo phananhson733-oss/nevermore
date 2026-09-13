@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { Artifact, AuditReport, DemoPayload, VisResult } from "../types.ts";
+import type { Artifact, AuditReport, DemoPayload, VisResult, WorkbenchProjectState } from "../types.ts";
 import {
   ARTIFACT_CONTENT_MAX,
   ARTIFACT_LIMIT,
   ARTIFACT_TITLE_MAX,
   HISTORY_LIMIT,
 } from "../types.ts";
+import { demoFields, type DemoFields } from "./demo-fields.ts";
 import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
 import type { WorkbenchAction } from "./reducer.ts";
 import { DEFAULT_NOTIFY, initialProjectState, normalizeInterrupted, reduce, withProjectSeed } from "./reducer.ts";
+import { clearDemoOver, loadDemoOver, otherThan, populatedProjectState } from "./test-fixtures.ts";
 
 const seed = { url: "https://example.test", brand: "Example", market: "US" };
 
@@ -256,12 +258,9 @@ describe("artifacts", () => {
   });
 
   it("applies the same bounds to a demo payload", () => {
-    const s = reduce(initialProjectState(seed), {
-      type: "loadDemo",
-      payload: {
-        ...demoPayload,
-        artifacts: [{ ...artifact("demo"), content: "c".repeat(ARTIFACT_CONTENT_MAX + 5) }],
-      },
+    const s = loadDemoOver(initialProjectState(seed), {
+      ...demoPayload,
+      artifacts: [{ ...artifact("demo"), content: "c".repeat(ARTIFACT_CONTENT_MAX + 5) }],
     });
 
     expect(s.artifacts[0]?.content).toHaveLength(ARTIFACT_CONTENT_MAX);
@@ -281,7 +280,7 @@ describe("demo", () => {
       type: "patchProfile", patch: { positioning: "mine" },
     });
     s = reduce(s, { type: "setNotify", notify: { weekly: false, drop: false, mention: false, gsc: false } });
-    s = reduce(s, { type: "loadDemo", payload: demoPayload });
+    s = loadDemoOver(s, demoPayload);
     expect(s.demo).toBe(true);
     expect(s.seeds).toBe("a\nb");
     expect(s.audit?.at).toBe("d");
@@ -294,9 +293,8 @@ describe("demo", () => {
     const history = Array.from({ length: HISTORY_LIMIT + 1 }, (_, i) => report(`h${i}`));
     const snapshots = Array.from({ length: HISTORY_LIMIT + 1 }, (_, i) => ({ at: `v${i}`, results: [vis(`q${i}`)] }));
     const many = Array.from({ length: ARTIFACT_LIMIT + 1 }, (_, i) => artifact(`x${i}`));
-    const s = reduce(initialProjectState(seed), {
-      type: "loadDemo",
-      payload: { ...demoPayload, auditHistory: history, visHistory: snapshots, artifacts: many },
+    const s = loadDemoOver(initialProjectState(seed), {
+      ...demoPayload, auditHistory: history, visHistory: snapshots, artifacts: many,
     });
     expect(s.auditHistory).toHaveLength(HISTORY_LIMIT);
     expect(s.auditHistory[0]?.at).toBe("h1");
@@ -310,8 +308,8 @@ describe("demo", () => {
 
   it("clearDemo is symmetric to loadDemo and keeps profile edits and notify", () => {
     let s = reduce(initialProjectState(seed), { type: "patchProfile", patch: { features: "a, b" } });
-    s = reduce(s, { type: "loadDemo", payload: demoPayload });
-    s = reduce(s, { type: "clearDemo" });
+    s = loadDemoOver(s, demoPayload);
+    s = clearDemoOver(s);
     expect(s).toEqual({ ...initialProjectState(seed), profile: { ...initialProjectState(seed).profile, features: "a, b" } });
     expect(s.demo).toBe(false);
   });
@@ -322,7 +320,7 @@ describe("demo", () => {
     // `loadPersisted` for it, and the old screen's callback then dispatched
     // `clearDemo`. React reduces them in exactly that order.
     const gscRow = { query: "acme seo", clicks: 3, impressions: 90, ctr: 3.3, position: 7.5 } as const;
-    const sample = reduce(initialProjectState(seed), { type: "loadDemo", payload: demoPayload });
+    const sample = loadDemoOver(initialProjectState(seed), demoPayload);
     const real = reduce(
       reduce(initialProjectState(seed), { type: "setGscRows", rows: [gscRow], source: "user" }),
       { type: "addArtifact", artifact: artifact("mine") },
@@ -331,7 +329,8 @@ describe("demo", () => {
     expect(real.demo).toBe(false);
 
     let s = reduce(sample, { type: "loadPersisted", state: real });
-    s = reduce(s, { type: "clearDemo" });
+    // The confirm was raised over the sample, so that is what it carries.
+    s = reduce(s, { type: "clearDemo", expected: demoFields(sample) });
 
     // The same reference: no new reducer state is produced.
     expect(s).toBe(real);
@@ -342,11 +341,11 @@ describe("demo", () => {
 
   it("clearDemo still clears while the sample is loaded, rows added on top of it included", () => {
     const gscRow = { query: "acme seo", clicks: 3, impressions: 90, ctr: 3.3, position: 7.5 } as const;
-    let s = reduce(initialProjectState(seed), { type: "loadDemo", payload: demoPayload });
+    let s = loadDemoOver(initialProjectState(seed), demoPayload);
     s = reduce(s, { type: "setGscRows", rows: [gscRow], source: "user" });
     expect(s.demo).toBe(true);
 
-    const cleared = reduce(s, { type: "clearDemo" });
+    const cleared = clearDemoOver(s);
 
     expect(cleared).not.toBe(s);
     expect(cleared.demo).toBe(false);
@@ -356,7 +355,7 @@ describe("demo", () => {
   });
 
   it("reset returns to the initial state for the same seed", () => {
-    let s = reduce(initialProjectState(seed), { type: "loadDemo", payload: demoPayload });
+    let s = loadDemoOver(initialProjectState(seed), demoPayload);
     s = reduce(s, { type: "reset", seed });
     expect(s).toEqual(initialProjectState(seed));
   });
@@ -364,6 +363,72 @@ describe("demo", () => {
   it("loadPersisted replaces the whole state", () => {
     const other = { ...initialProjectState(seed), seeds: "persisted" };
     expect(reduce(initialProjectState(seed), { type: "loadPersisted", state: other })).toBe(other);
+  });
+});
+
+/**
+ * The confirmation snapshot (codex S6r2 #1 #2). A load or a clear carries the
+ * overwritable fields as the operator saw them, and the reducer is the last
+ * place that can tell they moved: a component cannot see an update queued
+ * behind the render it was clicked in.
+ */
+describe("demo: a confirmation covers the content it was given for", () => {
+  const FIELDS = Object.keys(demoFields(populatedProjectState(seed))) as (keyof DemoFields)[];
+  const ownData = (): WorkbenchProjectState => ({ ...populatedProjectState(seed), demo: false });
+
+  it("loads and clears while nothing has moved", () => {
+    const own = ownData();
+    const loaded = reduce(own, { type: "loadDemo", payload: demoPayload, expected: demoFields(own) });
+    expect(loaded.demo).toBe(true);
+    expect(loaded.seeds).toBe(demoPayload.seeds);
+
+    const cleared = reduce(loaded, { type: "clearDemo", expected: demoFields(loaded) });
+    expect(cleared.demo).toBe(false);
+    expect(cleared.artifacts).toEqual([]);
+  });
+
+  it.each(FIELDS)("refuses a load once %s is another reference, returning the very same state", (key) => {
+    const own = ownData();
+    const expected = demoFields(own);
+    const moved = { ...own, [key]: otherThan(own[key]) } as WorkbenchProjectState;
+
+    expect(reduce(moved, { type: "loadDemo", payload: demoPayload, expected })).toBe(moved);
+  });
+
+  it.each(FIELDS)("refuses a clear once %s is another reference, returning the very same state", (key) => {
+    const sample = populatedProjectState(seed);
+    expect(sample.demo).toBe(true);
+    const expected = demoFields(sample);
+    const moved = { ...sample, [key]: otherThan(sample[key]) } as WorkbenchProjectState;
+
+    expect(reduce(moved, { type: "clearDemo", expected })).toBe(moved);
+  });
+
+  it("refuses a clear over a newer sample with the operator's additions, though it is still sample mode", () => {
+    const first = loadDemoOver(initialProjectState(seed), demoPayload);
+    const expected = demoFields(first);
+    const second = reduce(first, { type: "loadPersisted", state: { ...first, seeds: "sample two\nmy own seed" } });
+    expect(second.demo).toBe(true);
+
+    expect(reduce(second, { type: "clearDemo", expected })).toBe(second);
+  });
+
+  it("stays valid across changes outside those fields", () => {
+    const toggles = { weekly: false, drop: false, mention: true, gsc: false } as const;
+    const sample = loadDemoOver(initialProjectState(seed), demoPayload);
+    const sampleExpected = demoFields(sample);
+    let s = reduce(sample, { type: "setNotify", notify: toggles });
+    s = reduce(s, { type: "patchProfile", patch: { positioning: "mine" } });
+
+    const cleared = reduce(s, { type: "clearDemo", expected: sampleExpected });
+    expect(cleared.demo).toBe(false);
+    expect(cleared.seeds).toBe("");
+    expect(cleared.notify).toBe(toggles);
+
+    const own = reduce(initialProjectState(seed), { type: "setSeeds", seeds: "geo audit" });
+    const ownExpected = demoFields(own);
+    const toggled = reduce(own, { type: "setNotify", notify: toggles });
+    expect(reduce(toggled, { type: "loadDemo", payload: demoPayload, expected: ownExpected }).demo).toBe(true);
   });
 });
 
@@ -437,8 +502,8 @@ describe("immutability", () => {
       { type: "addArtifact", artifact: artifact("z") },
       { type: "removeArtifact", id: "a1" },
       { type: "clearArtifacts" },
-      { type: "loadDemo", payload: demoPayload },
-      { type: "clearDemo" },
+      { type: "loadDemo", payload: demoPayload, expected: demoFields(populated) },
+      { type: "clearDemo", expected: demoFields(populated) },
       { type: "loadPersisted", state: initialProjectState(seed) },
       { type: "reset", seed },
     ] as const satisfies readonly WorkbenchAction[];

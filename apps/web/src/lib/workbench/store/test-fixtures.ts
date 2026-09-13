@@ -2,14 +2,16 @@
  * Test-only fixtures. `populatedProjectState` fills every nullable and gives
  * every array an element, which is the only way the nested `strictObject`s in
  * `schema.ts` are exercised: the initial state leaves them all null or empty.
- * Shared by `schema.test.ts` and `persistence.test.ts`.
+ * Shared by `schema.test.ts` and `persistence.test.ts`; the demo helpers at
+ * the end by the reducer, selector and view tests that load or clear the sample.
  */
 import type {
-  AnswerPlan, Artifact, AuditReport, CompData, CrawlSignals, GscRow,
+  AnswerPlan, Artifact, AuditReport, CompData, CrawlSignals, DemoPayload, GscRow,
   KnowledgeBase, LinkTarget, ProfileDoc, SavedKeyword, VisResult, VisSnapshot,
   WorkbenchProjectState,
 } from "../types.ts";
-import type { ProjectSeed } from "./reducer.ts";
+import { demoFields } from "./demo-fields.ts";
+import { reduce, type ProjectSeed } from "./reducer.ts";
 
 const gscRow: GscRow = { query: "example brand", clicks: 12, impressions: 340, ctr: 0.035, position: 8.4 };
 
@@ -119,4 +121,26 @@ export function populatedProjectState(seed: ProjectSeed): WorkbenchProjectState 
     notify: { weekly: true, drop: false, mention: true, gsc: false },
     demo: true,
   };
+}
+
+/**
+ * `loadDemo` / `clearDemo` as a component sends them: authorised against the
+ * very state they are applied to (`demoFields`), so the reducer's snapshot
+ * check passes. A test about that check builds its own `expected` instead.
+ */
+export function loadDemoOver(state: WorkbenchProjectState, payload: DemoPayload): WorkbenchProjectState {
+  return reduce(state, { type: "loadDemo", payload, expected: demoFields(state) });
+}
+
+export function clearDemoOver(state: WorkbenchProjectState): WorkbenchProjectState {
+  return reduce(state, { type: "clearDemo", expected: demoFields(state) });
+}
+
+/** A value of the same shape that is not `===` to `value`: a new array or object, or a different primitive. */
+export function otherThan(value: unknown): unknown {
+  if (Array.isArray(value)) return [...value];
+  if (value !== null && typeof value === "object") return { ...value };
+  if (typeof value === "string") return `${value} changed`;
+  if (typeof value === "boolean") return !value;
+  return { replaced: true };
 }

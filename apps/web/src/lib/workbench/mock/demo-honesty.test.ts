@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { demoFields } from "../store/demo-fields.ts";
 import { initialProjectState, reduce } from "../store/reducer.ts";
 import { PERSISTED_VERSION, parsePersistedState } from "../store/schema.ts";
 import type { DemoPayload, GscRow, Profile, VisResult } from "../types.ts";
@@ -90,7 +91,8 @@ for (const [name, profile] of PROFILES) {
       const seed = { url: profile.url, brand: profile.brand, market: profile.market };
       for (const level of LEVELS) {
         const demo = makeDemoSite(profile, level, DEMO_SEEDS, testDeps());
-        const state = reduce(initialProjectState(seed), { type: "loadDemo", payload: demo });
+        const blank = initialProjectState(seed);
+        const state = reduce(blank, { type: "loadDemo", payload: demo, expected: demoFields(blank) });
         expect(parsePersistedState(JSON.parse(JSON.stringify({ v: PERSISTED_VERSION, state }))), level).not.toBeNull();
         expect(state.artifacts.map((artifact) => [artifact.title, artifact.content, artifact.filename]), level).toEqual(
           demo.artifacts.map((artifact) => [artifact.title, artifact.content, artifact.filename]),

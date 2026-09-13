@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { Artifact, AuditReport, DemoPayload, VisResult, WorkbenchProjectState } from "../types.ts";
 import { initialProjectState, normalizeInterrupted, reduce } from "./reducer.ts";
 import { classifyPersistedState, parsePersistedState, PERSISTED_VERSION } from "./schema.ts";
+import { clearDemoOver, loadDemoOver } from "./test-fixtures.ts";
 
 const seed = { url: "https://example.test", brand: "Example", market: "US" };
 
@@ -60,16 +61,16 @@ describe("gsc rows carry their provenance (Q6)", () => {
   });
 
   it("loadDemo marks the rows as the sample's, and clearDemo takes the mark away with them", () => {
-    let s = reduce(initialProjectState(seed), { type: "loadDemo", payload: { ...demoPayload, gscRows: [gscRow] } });
+    let s = loadDemoOver(initialProjectState(seed), { ...demoPayload, gscRows: [gscRow] });
     expect(s.gscRows).toEqual([gscRow]);
     expect(s.gscRowsSource).toBe("sample");
-    s = reduce(s, { type: "clearDemo" });
+    s = clearDemoOver(s);
     expect(s.gscRows).toEqual([]);
     expect(s.gscRowsSource).toBeNull();
   });
 
   it("does not claim a source when the sample payload carries no rows", () => {
-    const s = reduce(initialProjectState(seed), { type: "loadDemo", payload: demoPayload });
+    const s = loadDemoOver(initialProjectState(seed), demoPayload);
     expect(s.gscRows).toEqual([]);
     expect(s.gscRowsSource).toBeNull();
   });
@@ -77,10 +78,10 @@ describe("gsc rows carry their provenance (Q6)", () => {
   it("keeps the user's own rows marked as theirs after a clearDemo", () => {
     // clearDemo rolls back 17 fields, the user's own rows among them (design
     // §6.7), so the mark must go with the rows rather than linger as "sample".
-    let s = reduce(initialProjectState(seed), { type: "loadDemo", payload: { ...demoPayload, gscRows: [gscRow] } });
+    let s = loadDemoOver(initialProjectState(seed), { ...demoPayload, gscRows: [gscRow] });
     s = reduce(s, { type: "setGscRows", rows: [gscRow], source: "user" });
     expect(s.gscRowsSource).toBe("user");
-    s = reduce(s, { type: "clearDemo" });
+    s = clearDemoOver(s);
     expect(s.gscRowsSource).toBeNull();
   });
 });

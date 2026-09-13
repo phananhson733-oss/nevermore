@@ -22,6 +22,7 @@ import {
   type AnswerPlan,
 } from "../types.ts";
 import { truncateUtf16 } from "../truncate.ts";
+import { demoFields, sameDemoFields, type DemoFields } from "./demo-fields.ts";
 
 /** Fields mirrored from the real project (design §6.7). Never edited by mock pages. */
 export interface ProjectSeed {
@@ -56,8 +57,11 @@ export type WorkbenchAction =
   | { readonly type: "addArtifact"; readonly artifact: Artifact }
   | { readonly type: "removeArtifact"; readonly id: string }
   | { readonly type: "clearArtifacts" }
-  | { readonly type: "loadDemo"; readonly payload: DemoPayload }
-  | { readonly type: "clearDemo" }
+  // `expected` is the overwritable content the operator authorised, as the
+  // screen showed it when they clicked (`demoFields`). Required: an action that
+  // cannot say what it was confirmed against would overwrite whatever is there.
+  | { readonly type: "loadDemo"; readonly payload: DemoPayload; readonly expected: DemoFields }
+  | { readonly type: "clearDemo"; readonly expected: DemoFields }
   | { readonly type: "loadPersisted"; readonly state: WorkbenchProjectState }
   | { readonly type: "reset"; readonly seed: ProjectSeed };
 
@@ -222,6 +226,12 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
     case "clearArtifacts":
       return { ...state, artifacts: [] };
     case "loadDemo":
+      // The last line of the confirmation (codex S6r2 #1): the operator agreed to
+      // replace what `expected` holds. Another tab's write, or one of ours queued
+      // behind the render they clicked in, makes it something else, and the
+      // component cannot see a queued update; this reducer runs after it. Same
+      // object back, so the caller can tell the load was refused.
+      if (!sameDemoFields(state, action.expected)) return state;
       return {
         ...state,
         ...action.payload,
@@ -240,9 +250,12 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
       // `loadPersisted` queued ahead of the click, on a screen not yet
       // re-rendered), and clearing then would wipe the user's own GSC rows. The
       // component's render-time reset cannot recall an action already sent, so
-      // the precondition lives here. Same object back: no new reducer state is
-      // produced.
-      if (!state.demo) return state;
+      // the precondition lives here. Still sample mode is not enough either
+      // (codex S6r2 #2): another sample with the operator's own additions can
+      // have replaced the one they confirmed over, so the content must also be
+      // what `expected` holds. Same object back: no new reducer state is
+      // produced, and the caller can tell the clear was refused.
+      if (!state.demo || !sameDemoFields(state, action.expected)) return state;
       const blank = initialProjectState({ url: state.profile.url, brand: state.profile.brand, market: state.profile.market });
       return { ...state, ...demoFields(blank), visPartial: false, demo: false };
     }
@@ -252,23 +265,6 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
     case "reset":
       return initialProjectState(action.seed);
   }
-}
-
-/**
- * The exact field set `loadDemo` writes, so `clearDemo` can undo it
- * symmetrically. `gscRowsSource` rides along although it is not part of
- * `DemoPayload` (the mock layer never sets it): it belongs to `gscRows`, and
- * clearing the rows while leaving "sample" behind would give any reader that
- * looks at the source with no rows a provenance for data that is gone. (It
- * would not reach the next paste: `setGscRows` always rewrites the source.)
- */
-function demoFields(s: WorkbenchProjectState): DemoPayload & Pick<WorkbenchProjectState, "gscRowsSource"> {
-  return {
-    conns: s.conns, gscRows: s.gscRows, gscRowsSource: s.gscRowsSource, seeds: s.seeds, built: s.built, saved: s.saved,
-    audit: s.audit, auditHistory: s.auditHistory, lastAudit: s.lastAudit,
-    visResults: s.visResults, visHistory: s.visHistory, lastVis: s.lastVis,
-    compData: s.compData, plans: s.plans, targets: s.targets, kb: s.kb, artifacts: s.artifacts, profileDoc: s.profileDoc,
-  };
 }
 
 /**

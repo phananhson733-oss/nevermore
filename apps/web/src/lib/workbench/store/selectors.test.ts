@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildRows } from "../mock/keywords.ts";
 import type { DemoPayload, VisResult, WorkbenchProjectState } from "../types.ts";
+import { demoFields } from "./demo-fields.ts";
 import { initialProjectState, reduce } from "./reducer.ts";
 import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
 import { formatShare, gatedRows, hasDemoOverwrite, keywordRows, savedQueries, seedList, selectCounts, splitSeeds } from "./selectors.ts";
@@ -342,6 +343,7 @@ describe("hasDemoOverwrite (Q11: by value, never by reference)", () => {
     expect(hasDemoOverwrite(FILLED)).toBe(true);
     const demo = reduce(base, {
       type: "loadDemo",
+      expected: demoFields(base),
       payload: {
         conns: FILLED.conns, gscRows: FILLED.gscRows, seeds: FILLED.seeds, built: FILLED.built,
         saved: FILLED.saved, audit: FILLED.audit, auditHistory: FILLED.auditHistory, lastAudit: FILLED.lastAudit,

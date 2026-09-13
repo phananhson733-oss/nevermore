@@ -13,6 +13,7 @@ import { createRoot } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "@sf/i18n";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { demoFields } from "@/lib/workbench/store/demo-fields";
 import type * as HooksModule from "@/lib/workbench/store/hooks";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
 import { storageKey, WORKBENCH_SWEPT_EVENT } from "@/lib/workbench/store/persistence";
@@ -576,10 +577,13 @@ describe("Topbar", () => {
 
     it("clears exactly once on confirm, then hands focus to the next control in the row", () => {
       const { header } = askToClear();
+      const shown = store.current?.state;
+      if (!shown) throw new Error("the store never rendered");
 
       press(boxButton(requireBox(), CLEAR_COPY.en.confirm));
 
-      expect(mocks.dispatched).toEqual([{ type: "clearDemo" }]);
+      // Authorised against the render the confirm was pressed in.
+      expect(mocks.dispatched).toEqual([{ type: "clearDemo", expected: demoFields(shown) }]);
       expect(store.current?.state.demo).toBe(false);
       expect(store.current?.state.artifacts).toEqual([]);
       expect(openBox()).toBeNull();
@@ -626,6 +630,56 @@ describe("Topbar", () => {
       expect(store.current?.state.demo).toBe(true);
       expect(openBox()).toBeNull();
       expect(mocks.dispatched).toEqual([]);
+    });
+
+    it("clears the sample on screen when confirm is pressed, though it replaced the one the box opened over", () => {
+      // The yes is given at the press, to what that render shows (codex S6r2
+      // #2): another tab's second sample, with the operator's own seed on top,
+      // arrived and rendered while the box was open, and the box said so.
+      const { header } = askToClear();
+      const second = { ...populatedProjectState(SEED), seeds: "sample two\nmy own seed", demo: true };
+      anotherTabWrites(JSON.stringify({ v: PERSISTED_VERSION, state: second }));
+      expect(store.current?.state.seeds).toBe("sample two\nmy own seed");
+      expect(openBox()).not.toBeNull();
+
+      press(boxButton(requireBox(), CLEAR_COPY.en.confirm));
+
+      expect(store.current?.state.demo).toBe(false);
+      expect(store.current?.state.seeds).toBe("");
+      expect(store.current?.state.artifacts).toEqual([]);
+      expect(openBox()).toBeNull();
+      expect(clearButton(header)).toBeNull();
+    });
+
+    it("refuses a clear over content queued behind the render it was confirmed in, and asks again", () => {
+      const { header } = askToClear();
+      const confirm = boxButton(requireBox(), CLEAR_COPY.en.confirm);
+
+      act(() => {
+        // Queued, not rendered: the handler below still runs with the render
+        // before it, which is all the confirm could have been given for.
+        store.current?.dispatch({ type: "setSeeds", seeds: "my own seed" });
+        confirm.click();
+      });
+
+      expect(mocks.dispatched.map((action) => (action as { readonly type: string }).type)).toEqual([
+        "setSeeds",
+        "clearDemo",
+      ]);
+      expect(store.current?.state.demo).toBe(true);
+      expect(store.current?.state.seeds).toBe("my own seed");
+      expect(store.current?.state.artifacts).toHaveLength(1);
+      expect(clearButton(header)).not.toBeNull();
+      // Asked again rather than closed as if it had cleared: focus is on Cancel,
+      // where every fresh open puts it.
+      const box = requireBox();
+      expect(document.activeElement).toBe(boxButton(box, CLEAR_COPY.en.cancel));
+
+      // Confirmed over what is there now, it goes.
+      press(boxButton(box, CLEAR_COPY.en.confirm));
+      expect(store.current?.state.demo).toBe(false);
+      expect(store.current?.state.seeds).toBe("");
+      expect(openBox()).toBeNull();
     });
 
     it("adds no second live region, with the control shown and the box open", () => {

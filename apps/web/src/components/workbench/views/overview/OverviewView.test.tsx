@@ -25,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEMO_LEVEL, DEMO_SEEDS } from "@/lib/workbench/mock/demo-constants";
 import { makeDemoSite } from "@/lib/workbench/mock/demo";
 import { testDeps } from "@/lib/workbench/mock/demo-test-fixtures";
+import { demoFields } from "@/lib/workbench/store/demo-fields";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
 import type { ProjectSeed } from "@/lib/workbench/store/reducer";
 import { populatedProjectState } from "@/lib/workbench/store/test-fixtures";
@@ -170,7 +171,7 @@ function runEverything(view: Mounted): void {
 
 function loadSample(view: Mounted): void {
   const payload = makeDemoSite(view.store().state.profile, DEMO_LEVEL, [...DEMO_SEEDS], testDeps());
-  view.dispatch({ type: "loadDemo", payload });
+  view.dispatch({ type: "loadDemo", payload, expected: demoFields(view.store().state) });
 }
 
 beforeEach(() => {

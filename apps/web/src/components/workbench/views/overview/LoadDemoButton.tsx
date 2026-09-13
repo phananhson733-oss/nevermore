@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useTranslations } from "next-intl";
 import { DEMO_LEVEL, DEMO_SEEDS } from "@/lib/workbench/mock/demo-constants";
+import { demoFields, type DemoFields } from "@/lib/workbench/store/demo-fields";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
 import { hasDemoOverwrite } from "@/lib/workbench/store/selectors";
+import type { DemoPayload } from "@/lib/workbench/types";
 import { ConfirmDialog } from "../../ui/ConfirmDialog.tsx";
 import { BUTTON_PRIMARY } from "../../ui/panel.ts";
 
@@ -28,16 +31,29 @@ import { BUTTON_PRIMARY } from "../../ui/panel.ts";
  *   `LoadDemoButton.provenance.test.tsx` is what holds the two together.
  * - One load per intent: a ref, not state, is the gate, because two clicks in
  *   one event loop turn both run against the same render. The clock is read
- *   in the handler, which is the moment the sample is made.
- * - The click is judged against the render it happened in, but the dispatch
- *   comes after an `await`, and the provider outlives this button (it sits in
- *   the project layout). So the loader looks again once the import is back:
- *   unmounted → abandon, with no dispatch and no state update; the project now
- *   holds something `hasDemoOverwrite` would lose and nobody confirmed → open
- *   the confirmation instead of loading. A confirmed load does not ask twice.
- *   `stateRef` is written on every render, so that second look and the profile
- *   the sample is built from read the latest render, not the click's closure
- *   (`LoadDemoButton.stale.test.tsx`, against the real provider).
+ *   after the import, which is the moment the sample is made.
+ * - What is authorised is content, not a bare yes (codex S6r2 #1). The click on
+ *   a project with nothing to lose, or the confirm on one with something, takes
+ *   a `demoFields` snapshot of the render it happened in, and `loadDemo`
+ *   carries it: the reducer loads only while those fields are still the same
+ *   references. The dispatch comes after an `await import`, and the provider
+ *   outlives this button (it sits in the project layout), so another tab's
+ *   rows can land in between — rendered by then, or still queued behind the
+ *   render the loader last saw, which no check in here can see.
+ * - The loader does not guess which; it asks the store. The dispatch runs in
+ *   `flushSync`, which renders it together with every update queued ahead of
+ *   it, so `stateRef` is current afterwards, and "the sample's rows array is in
+ *   the store" is whether the reducer took it. Refused → judged again on what
+ *   is there now: something to lose opens the confirmation (a confirmed load
+ *   asks again rather than spend the old yes on new content); nothing to lose
+ *   loads against a fresh snapshot, and a second refusal says the load did not
+ *   go through. Unmounted before the import settles → abandon, with no
+ *   dispatch and no state update. `LoadDemoButton.stale.test.tsx` runs these
+ *   against the real provider.
+ * - The confirmation closes by itself once nothing is left to overwrite (the
+ *   operator emptied the field, another tab cleared it): a box over a blank
+ *   project would ask about nothing. Reset during render, so no frame commits
+ *   it open.
  * - A failed load (a chunk that did not download, a builder that threw — one
  *   `catch` cannot tell them apart) says so without naming a cause and leaves
  *   the button usable.
@@ -53,7 +69,8 @@ export function LoadDemoButton() {
   const [failed, setFailed] = useState(false);
   const pending = useRef(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  // The latest render's state, for the continuation after `await import`.
+  // The latest render's state: read after `await import`, and after each
+  // `flushSync` to see what the reducer did with the dispatch.
   const stateRef = useRef(state);
   stateRef.current = state;
   const alive = useRef(true);
@@ -64,25 +81,37 @@ export function LoadDemoButton() {
     };
   }, []);
 
-  async function load(confirmed: boolean): Promise<void> {
+  if (confirming && !hasDemoOverwrite(state)) setConfirming(false);
+
+  /** Dispatches `payload` authorised against `expected`; true when the reducer took it. */
+  function commit(payload: DemoPayload, expected: DemoFields): boolean {
+    flushSync(() => dispatch({ type: "loadDemo", payload, expected }));
+    // `loadDemo` stores the payload's rows array as is, so only a load that
+    // landed puts this very array in the store.
+    return stateRef.current.gscRows === payload.gscRows;
+  }
+
+  async function load(expected: DemoFields): Promise<void> {
     if (pending.current) return;
     pending.current = true;
     setBusy(true);
     setFailed(false);
     try {
       const { makeDemoSite } = await import("@/lib/workbench/mock/demo.ts");
-      // Judged again after the await (header): gone, or no longer blank.
       if (!alive.current) return;
-      const current = stateRef.current;
-      if (!confirmed && hasDemoOverwrite(current)) {
+      const sample = (): DemoPayload =>
+        makeDemoSite(stateRef.current.profile, DEMO_LEVEL, [...DEMO_SEEDS], {
+          now: new Date(),
+          provenanceLine: (at: string) => tProvenance("artifact", { at }),
+        });
+      if (commit(sample(), expected)) return;
+      // Refused (header): the project is no longer what was authorised.
+      const latest = stateRef.current;
+      if (hasDemoOverwrite(latest)) {
         setConfirming(true);
         return;
       }
-      const payload = makeDemoSite(current.profile, DEMO_LEVEL, [...DEMO_SEEDS], {
-        now: new Date(),
-        provenanceLine: (at: string) => tProvenance("artifact", { at }),
-      });
-      dispatch({ type: "loadDemo", payload });
+      if (!commit(sample(), demoFields(latest))) setFailed(true);
     } catch {
       if (alive.current) setFailed(true);
     } finally {
@@ -97,13 +126,15 @@ export function LoadDemoButton() {
       setConfirming(true);
       return;
     }
-    void load(false);
+    // Nothing to lose in the render that was clicked: that is what the load covers.
+    void load(demoFields(state));
   }
 
   function confirm(): void {
     // ConfirmDialog never closes itself; an open box keeps #wb-app inert.
     setConfirming(false);
-    void load(true);
+    // The yes covers what this render shows, not what is there once the import is back.
+    void load(demoFields(state));
   }
 
   return (

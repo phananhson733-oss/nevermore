@@ -3,7 +3,7 @@
 import { Eraser, Menu, Search } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { useRef, useState, type ReactNode, type RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import {
   useWorkbench,
   useWorkbenchArtifacts,
@@ -12,6 +12,7 @@ import type { StorageMode } from "@/lib/workbench/store/WorkbenchProvider";
 import { useShortcutLabel } from "../hooks/useShortcutLabel.ts";
 import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { DemoChip } from "../ui/DemoChip.tsx";
+import { useClearSample } from "./useClearSample.ts";
 import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
 
 /**
@@ -29,7 +30,11 @@ const STORAGE_NOTICE: Readonly<
   swept: null,
 };
 
-/** The workbench topbar (opengengrowth `Header.tsx`). */
+/**
+ * The workbench topbar (opengengrowth `Header.tsx`). "Clear sample" and its
+ * confirmation live in `useClearSample`: what the yes covers, and where focus
+ * goes when the control disappears under it.
+ */
 export function Topbar({
   projectControl,
   accountControl,
@@ -66,35 +71,7 @@ export function Topbar({
   const shortcutKey = useShortcutLabel();
   // Before storage is read `state.demo` is the seed's `false`, not an answer.
   const sampleLoaded = ready && state.demo;
-  const [clearAsked, setClearAsked] = useState(false);
-  const clearButtonRef = useRef<HTMLButtonElement>(null);
-  // Where focus goes when the box closes. Cancel returns it to the button that
-  // asked. Confirm, and the cross-tab close below, remove that button in the
-  // same commit, so each points it at the next control in the row instead, or
-  // focus would drop to <body>. Dialog reads the ref when it closes, which is
-  // why a handler or the render-time reset can re-point it.
-  const clearReturnFocusRef = useRef<HTMLElement | null>(null);
-  // Another tab can replace the whole project while the box is open (a
-  // `storage` event loads its state). Once the sample is gone, confirming would
-  // run `clearDemo` over the operator's own data, so the box closes — and the
-  // old "asked" is dropped rather than parked, or the box would pop back up
-  // unasked if the sample returned. Reset during render, not in an effect, so
-  // no frame commits with the box open over real data.
-  if (clearAsked && !sampleLoaded) {
-    clearReturnFocusRef.current = drawerButtonRef.current;
-    setClearAsked(false);
-  }
-
-  function askToClear(): void {
-    clearReturnFocusRef.current = clearButtonRef.current;
-    setClearAsked(true);
-  }
-
-  function confirmClear(): void {
-    clearReturnFocusRef.current = drawerButtonRef.current;
-    setClearAsked(false);
-    dispatch({ type: "clearDemo" });
-  }
+  const clear = useClearSample({ state, sampleLoaded, dispatch, drawerButtonRef });
 
   return (
     <header
@@ -185,9 +162,9 @@ export function Topbar({
         <DemoChip demo={sampleLoaded} />
         {sampleLoaded ? (
           <button
-            ref={clearButtonRef}
+            ref={clear.attachButton}
             type="button"
-            onClick={askToClear}
+            onClick={clear.ask}
             // Only while the project holds the sample; absent otherwise, so it
             // adds no flex gap. Below `md` it is a touch target: 44x44 of its
             // own (a size on the button, not padding round a label) with an
@@ -203,14 +180,14 @@ export function Topbar({
         {/* Renders nothing while closed and portals out when open (Q32), so it
             is never a flex item here. */}
         <ConfirmDialog
-          open={clearAsked && sampleLoaded}
-          onClose={() => setClearAsked(false)}
-          onConfirm={confirmClear}
+          open={clear.boxOpen}
+          onClose={clear.cancel}
+          onConfirm={clear.confirm}
           title={t("clearSampleConfirm.title")}
           body={t("clearSampleConfirm.body")}
           confirmLabel={t("clearSampleConfirm.ok")}
           cancelLabel={tCommon("cancel")}
-          returnFocusTo={clearReturnFocusRef}
+          returnFocusTo={clear.returnFocusRef}
         />
         <button
           ref={drawerButtonRef}
