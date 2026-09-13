@@ -200,10 +200,11 @@ const FORBIDDEN_BY_KEY: Readonly<
   },
   // Nothing was stored, and nothing was pushed out. A rewrite that says the
   // save went through, or that an older artifact made way for it, describes the
-  // silent eviction this refusal replaced.
+  // silent eviction this refusal replaced. Matched case-insensitively, so
+  // "saved" also stands for "Saved".
   "artifactActions.basketFull": {
-    "zh-CN": ["已存入", "已保存", "替换", "覆盖", "最早", "挤掉"],
-    en: ["saved", "replac", "oldest", "overwr", "evict"],
+    "zh-CN": ["已存入", "已保存", "存好了", "替换", "覆盖", "最早", "挤掉"],
+    en: ["saved", "stored", "replac", "oldest", "overwr", "evict"],
   },
 };
 
@@ -394,12 +395,13 @@ const REQUIRED: Readonly<
     en: ["Too large to save", "export it or copy it"],
   },
   // The one cause is known and named (the basket is full), and so is the way
-  // out. Each clause is pinned: the cause alone is a dead end, the way out alone
-  // does not say why nothing was stored, and "copy or export" is the part that
-  // stops the reader thinking the text is lost.
+  // out. Each clause is pinned: the refusal ("没能存入" / "Could not save") is
+  // the only word saying nothing went in, the cause alone is a dead end, "remove
+  // a few" without "save again" leaves the reader thinking the text is lost or
+  // already kept, and "copy or export" says what still works meanwhile.
   "artifactActions.basketFull": {
-    "zh-CN": ["产物筐已满", "删掉几件", "复制和导出"],
-    en: ["Artifacts is full", "Remove a few", "copy or export"],
+    "zh-CN": ["没能存入", "产物筐已满", "删掉几件", "再存", "复制和导出"],
+    en: ["Could not save", "Artifacts is full", "Remove a few", "save again", "copy or export"],
   },
 };
 
