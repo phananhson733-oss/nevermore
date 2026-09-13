@@ -22,7 +22,7 @@ import type { WorkbenchProjectState } from "@/lib/workbench/types";
  *   the operator pressed it in, and `clearDemo` carries it: the reducer clears
  *   only while the project is still the sample AND those fields still hold the
  *   same content (codex S6r2 #2; `sameDemoFields`: the same reference, or equal
- *   once JSON-encoded, codex S6r3 #2). Sample mode alone is not enough — another
+ *   as key-sorted JSON, codex S6r3 #2). Sample mode alone is not enough — another
  *   tab can load a second sample and add to it while the box is open. What was
  *   on screen when confirm was pressed is what was agreed to, so a newer sample
  *   that had rendered by then is cleared; content still queued behind that

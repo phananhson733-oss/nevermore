@@ -36,15 +36,15 @@ export function demoFields(s: DemoFields): DemoFields {
  *
  * A field is the same when it is the same reference, the cheap path and the
  * common one (the reducer keeps every reference an action does not write), or
- * else when both sides encode to the same JSON (`sameContent`, codex S6r3 #2). Reference
+ * else when both sides encode to the same canonical JSON (`sameContent`, codex S6r3 #2). Reference
  * alone was too strict: another tab that changed only `notify` persists the
  * whole state, the `storage` event re-parses it, and every field here comes
  * back as a new reference with the same content, so the confirmation was
  * refused and the same box opened again with nothing to say why. The store
  * persists through JSON, so equal under JSON is all the store itself can tell
- * apart: the same content is the same authorisation. The encoding keeps key
- * order, so the same content written with its keys in another order compares
- * unequal; that only asks the operator again, the safe direction.
+ * apart: the same content is the same authorisation. Key order is not part of
+ * it: `sameContent` sorts object keys, because the schema rebuilds re-parsed
+ * objects in its own key order (S6r3 C). Array order is.
  *
  * The key list is `demoFields`' own literal, so the compared set and the
  * cleared set cannot drift apart.

@@ -35,7 +35,7 @@ export interface ProjectSeed {
 /**
  * What a "clear GSC rows" confirmation was raised over (codex S6r3): the rows
  * the screen rendered and their provenance, compared with `sameContent` (the
- * same reference, or equal once JSON-encoded).
+ * same reference, or equal as JSON with object keys sorted).
  */
 export interface ClearGscRowsExpected {
   readonly rows: readonly GscRow[];

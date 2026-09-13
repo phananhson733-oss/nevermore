@@ -9,7 +9,7 @@
  * hands back the same state object, which is how the caller tells the clear was
  * refused.
  *
- * Equality is `sameContent`: the same reference, or equal once JSON-encoded.
+ * Equality is `sameContent`: the same reference, or equal as key-sorted JSON.
  * Rows re-parsed from storage with the same content are accepted, which
  * `reducer.test.ts` pins; every case here changes content, so each holds either way.
  */
