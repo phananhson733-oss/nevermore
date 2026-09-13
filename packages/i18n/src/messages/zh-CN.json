@@ -4204,6 +4204,8 @@
         }
       },
       "sinceLast": "较上次（{at}）",
+      "checkedAt": "检查于 {at}",
+      "noNewCheck": "这段日期内没有新的检查",
       "summaryRow": {
         "artifacts": "本周新增 {count} 件产物",
         "answerGaps": "{count} 个提问至少有一个平台没提到你",
@@ -4222,12 +4224,13 @@
         "empty": "还没有临界词",
         "detail": "这是最近一次导入里排在 11-30 名的查询，不是排名变化。排名变化要靠多次导入的历史，工作台目前不保存。"
       },
+      "borderlineUnknown": "另有 {count} 条排名未知",
       "next": {
         "title": "下周先做",
         "cta": "去做",
         "step": {
           "fixHigh": "处理 {count} 个高危问题",
-          "answerGaps": "给 {count} 个没被提到的提问写答案页",
+          "answerGaps": "给 {count} 个仍有平台没提到你的提问写答案页",
           "borderline": "推进 {count} 条临界词（11-30 名）",
           "kbGaps": "补 {count} 条知识库结论句",
           "keepGoing": "继续产出内容"

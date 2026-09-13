@@ -4204,6 +4204,8 @@
         }
       },
       "sinceLast": "vs. the previous run ({at})",
+      "checkedAt": "Checked {at}",
+      "noNewCheck": "No new check in this date range",
       "summaryRow": {
         "artifacts": "{count, plural, one {# artifact} other {# artifacts}} added this week",
         "answerGaps": "{count, plural, one {# prompt} other {# prompts}} where at least one platform did not mention you",
@@ -4222,12 +4224,13 @@
         "empty": "No queries in that range",
         "detail": "These are the queries sitting at positions 11-30 in the latest import. They are not rank movement: that would need history across several imports, which the workbench does not keep."
       },
+      "borderlineUnknown": "{count, plural, one {# more query has} other {# more queries have}} no known position",
       "next": {
         "title": "Start with this next week",
         "cta": "Go",
         "step": {
           "fixHigh": "Work through {count, plural, one {# high-severity issue} other {# high-severity issues}}",
-          "answerGaps": "Write answer pages for {count, plural, one {# unmentioned prompt} other {# unmentioned prompts}}",
+          "answerGaps": "Write answer pages for {count, plural, one {# prompt} other {# prompts}} where at least one platform did not mention you",
           "borderline": "Work on {count, plural, one {# query} other {# queries}} sitting at positions 11-30",
           "kbGaps": "Write {count, plural, one {# missing statement} other {# missing statements}} in the knowledge base",
           "keepGoing": "Keep producing content"

@@ -159,6 +159,23 @@ const FORBIDDEN_BY_KEY: Readonly<
       "authoriz",
     ],
   },
+  // The range holds no newer check; why is not known (Q4), and the earlier
+  // run is not "last week" (Q20).
+  "week.noNewCheck": {
+    "zh-CN": ["所以", "因为", "由于", "没跑", "失败", "上周"],
+    en: ["because", "failed", "last week"],
+  },
+  // Unknown is not none: a row with no usable position may sit anywhere,
+  // positions 11-30 included.
+  "week.borderlineUnknown": {
+    "zh-CN": ["没有临界词", "没有排名", "不在"],
+    en: ["no queries", "not ranking", "unranked", "outside"],
+  },
+  // The qualifier-less wording this step had before codex S7a #11.
+  "week.next.step.answerGaps": {
+    "zh-CN": ["没被提到的提问"],
+    en: ["unmentioned"],
+  },
   // The loader's one `catch` cannot tell a chunk that failed to download from
   // a sample builder that threw, so the message may name neither (Q4's rule).
   "overview.loadDemo.failed": {
@@ -339,6 +356,29 @@ const REQUIRED: Readonly<
     "zh-CN": ["不是排名变化", "工作台目前不保存"],
     en: ["not rank movement", "does not keep"],
   },
+  // codex S7a #11: the step counts the prompts the summary row counts, so it
+  // keeps the row's qualifier; without it a prompt one platform did mention
+  // reads as unmentioned.
+  "week.next.step.answerGaps": {
+    "zh-CN": ["仍有平台没提到你"],
+    en: ["at least one platform"],
+  },
+  // codex S7a #4: the rows with no usable position are named, so the known
+  // count beside them is not read as the whole import.
+  "week.borderlineUnknown": {
+    "zh-CN": ["另有", "排名未知"],
+    en: ["more", "no known position"],
+  },
+  // codex S7a #6: a card under this week's dates carries its own check's stamp,
+  // and says so when that check is older than the range.
+  "week.checkedAt": {
+    "zh-CN": ["检查于"],
+    en: ["Checked"],
+  },
+  "week.noNewCheck": {
+    "zh-CN": ["没有新的检查"],
+    en: ["No new check"],
+  },
   // Q6: the sample-provenance footnote. Pinned as the whole clause INCLUDING
   // its verb, because pinning the noun alone is satisfied by its own negation
   // ("这些 GSC 行不是示例数据"); `FORBIDDEN_BY_KEY` bans the negators as well.
@@ -481,6 +521,8 @@ const CASES: readonly string[] = [
   "week.cards.borderline.label",
   "week.cards.borderline.foot",
   "week.sinceLast | at",
+  "week.checkedAt | at",
+  "week.noNewCheck",
   "week.summaryRow.artifacts | #count",
   "week.summaryRow.answerGaps | #count",
   "week.summaryRow.kbGaps | #count",
@@ -496,6 +538,7 @@ const CASES: readonly string[] = [
   "week.borderlineList.title",
   "week.borderlineList.empty",
   "week.borderlineList.detail",
+  "week.borderlineUnknown | #count",
   "week.next.title",
   "week.next.cta",
   "week.next.step.fixHigh | #count",
