@@ -5,7 +5,7 @@ import { ARTIFACT_MIME, downloadName } from "@/lib/workbench/artifact-file";
 import { downloadText } from "@/lib/workbench/download";
 import { agentTaskWrapper } from "@/lib/workbench/mock/builders/agent-task";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
-import { ARTIFACT_LIMIT, type ArtifactType } from "@/lib/workbench/types";
+import { ARTIFACT_LIMIT } from "@/lib/workbench/types";
 import type { PreparedArtifact, SaveResult } from "../hooks/useAddArtifact.ts";
 import { BUTTON_MINI } from "./panel.ts";
 
@@ -90,7 +90,6 @@ export const ARTIFACT_ACTION_LABEL_KEYS = {
 /** A save the basket turned down, and the text it turned down. */
 interface Refusal {
   readonly reason: Exclude<SaveResult, "saved">;
-  readonly type: ArtifactType;
   readonly content: string;
 }
 
@@ -109,14 +108,13 @@ export function ArtifactActions({
   // Keyed on the TEXT a save was refused for, not on the object. A view that
   // prepares the same draft on every render hands over a new `PreparedArtifact`
   // (with a new id) each time, and a notice keyed on identity would vanish on
-  // the next parent render while the refusal is still true. Type and content are
-  // what the refusal is about; a different text drops the notice, with no
-  // effect to keep in sync.
+  // the next parent render while the refusal is still true. Only the content is
+  // compared: "too large" is decided by its length and "full" by the basket's
+  // count, neither by `type`, and md and prompt stamp a body to the very same
+  // text. A different text drops the notice, with no effect to keep in sync.
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const refusedFor =
-    refusal !== null &&
-    refusal.type === prepared.artifact.type &&
-    refusal.content === prepared.content
+    refusal !== null && refusal.content === prepared.content
       ? refusal.reason
       : null;
   // "Full" describes the basket, not this text: once the drawer has room the
@@ -192,11 +190,7 @@ export function ArtifactActions({
           onClick={() => {
             const result = prepared.save();
             if (result !== "saved") {
-              setRefusal({
-                reason: result,
-                type: prepared.artifact.type,
-                content: prepared.content,
-              });
+              setRefusal({ reason: result, content: prepared.content });
               return;
             }
             setRefusal(null);
