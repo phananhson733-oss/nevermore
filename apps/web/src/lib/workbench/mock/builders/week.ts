@@ -10,7 +10,9 @@
  * The input is facts the week view has already derived from the store, not the
  * store itself, so every number here has exactly one producer (the view's
  * `week-summary.ts`) and the report cannot disagree with the cards beside it.
- * `null` is "not known" and prints an em dash, never 0.
+ * `null` is "not known" and prints an em dash, never 0. A borderline count taken
+ * over only the rows with a position names the rows without one beside it
+ * (「另有 N 条排名未知」, codex S7a #4).
  *
  * What it will not write, and why:
  * - The prototype's 「修掉了什么」 (Q16). The store holds reports, their history
@@ -94,6 +96,8 @@ export interface WeeklyReportInput {
   readonly mention: WeekMention | null;
   readonly artifactsThisWeek: number;
   readonly borderline: number | null;
+  /** GSC rows with no usable position; printed beside a known `borderline`. */
+  readonly borderlineUnknown: number;
   /** Prompts at least one platform did not answer with the brand in it. */
   readonly answerGaps: number | null;
   readonly kbGaps: number | null;
@@ -157,13 +161,20 @@ function mentionLine(mention: WeekMention | null): string {
   return `- AI 提及率：${mention.share}（${mention.total} 次问答里有 ${mention.hits} 次提到品牌，检查于 ${mention.at}${since}）`;
 }
 
+function borderlineAmount(input: WeeklyReportInput): string {
+  const known = amount(input.borderline, "条");
+  return input.borderline !== null && input.borderlineUnknown > 0
+    ? `${known}（另有 ${input.borderlineUnknown} 条排名未知）`
+    : known;
+}
+
 function numbersSection(input: WeeklyReportInput): string {
   return [
     "## 数字",
     healthLine(input.health),
     mentionLine(input.mention),
     `- 本周新增产物：${input.artifactsThisWeek} 件`,
-    `- 临界词（11-30 名）：${amount(input.borderline, "条")}`,
+    `- 临界词（11-30 名）：${borderlineAmount(input)}`,
     `- 至少一个平台没提到品牌的提问：${amount(input.answerGaps, "个")}`,
     `- 知识库还没写结论句的条目：${amount(input.kbGaps, "条")}`,
   ].join("\n");

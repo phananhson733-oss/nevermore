@@ -298,6 +298,24 @@ describe("weekSummary: borderline queries", () => {
       { query: "thirty", position: 30 },
     ]);
   });
+
+  // codex S7a #4: one known position outside 11-30 and one unknown row read "0, no borderline queries".
+  it("counts the rows with no usable position beside the known list", () => {
+    const state = blank({
+      gscRows: [gsc("known", 5), gsc("unknown", null), gsc("zero", 0), gsc("mid", 14)],
+      gscRowsSource: "user",
+    });
+    expect(weekSummary(state, NOW)).toMatchObject({
+      borderline: [{ query: "mid", position: 14 }],
+      borderlineUnknownRows: 2,
+    });
+  });
+
+  it("has no unknown rows without GSC rows, and counts every row when none is usable", () => {
+    expect(weekSummary(blank(), NOW).borderlineUnknownRows).toBe(0);
+    const state = blank({ gscRows: [gsc("a", null), gsc("b", 0)], gscRowsSource: "user" });
+    expect(weekSummary(state, NOW)).toMatchObject({ borderline: null, borderlineUnknownRows: 2 });
+  });
 });
 
 describe("weekSummary: the rest", () => {
@@ -435,11 +453,20 @@ describe("weeklyReportInput", () => {
       mention: null,
       artifactsThisWeek: 1,
       borderline: 1,
+      borderlineUnknown: 0,
       answerGaps: null,
       kbGaps: null,
       highFindings: 1,
       auditTaskTitles: ["修复任务 A"],
       events: summary.events,
+    });
+  });
+
+  it("hands over how many rows had no usable position", () => {
+    const state = blank({ gscRows: [gsc("mid", 14), gsc("unknown", null)], gscRowsSource: "user" });
+    expect(weeklyReportInput(weekSummary(state, NOW), "Example", NOW)).toMatchObject({
+      borderline: 1,
+      borderlineUnknown: 1,
     });
   });
 

@@ -70,6 +70,7 @@ const FULL: WeeklyReportInput = {
   mention: MENTION,
   artifactsThisWeek: 3,
   borderline: 5,
+  borderlineUnknown: 0,
   answerGaps: 4,
   kbGaps: 2,
   highFindings: 3,
@@ -85,6 +86,7 @@ const EMPTY: WeeklyReportInput = {
   mention: null,
   artifactsThisWeek: 0,
   borderline: null,
+  borderlineUnknown: 0,
   answerGaps: null,
   kbGaps: null,
   highFindings: null,
@@ -163,6 +165,17 @@ describe("weeklyReportMarkdown", () => {
 
   it("writes an em dash, never a zero, for every number it does not have", () => {
     expect(weeklyReportMarkdown(EMPTY)).toBe(EMPTY_TEXT);
+  });
+
+  // codex S7a #4: a known zero beside rows with no position is not "no borderline query".
+  it("names the rows with no position beside a borderline count taken over the rest", () => {
+    const text = weeklyReportMarkdown({ ...EMPTY, borderline: 0, borderlineUnknown: 2 });
+    expect(lineStarting(text, "- 临界词")).toBe("- 临界词（11-30 名）：0 条（另有 2 条排名未知）");
+  });
+
+  it("keeps a dash with nothing beside it when no row has a position", () => {
+    const text = weeklyReportMarkdown({ ...EMPTY, borderline: null, borderlineUnknown: 3 });
+    expect(lineStarting(text, "- 临界词")).toBe("- 临界词（11-30 名）：—");
   });
 
   it("keeps a measured zero as zero and has nothing to do", () => {
@@ -264,16 +277,17 @@ describe("weekly report honesty", () => {
   const mentions: readonly (WeekMention | null)[] = [null, { ...MENTION, previous: null }, MENTION, BAND_MENTION];
   const counts: readonly Pick<
     WeeklyReportInput,
-    "artifactsThisWeek" | "borderline" | "answerGaps" | "kbGaps" | "highFindings"
+    "artifactsThisWeek" | "borderline" | "borderlineUnknown" | "answerGaps" | "kbGaps" | "highFindings"
   >[] = [
-    { artifactsThisWeek: 0, borderline: null, answerGaps: null, kbGaps: null, highFindings: null },
-    { artifactsThisWeek: 0, borderline: 0, answerGaps: 0, kbGaps: 0, highFindings: 0 },
-    { artifactsThisWeek: 3, borderline: 5, answerGaps: 4, kbGaps: 2, highFindings: 3 },
+    { artifactsThisWeek: 0, borderline: null, borderlineUnknown: 0, answerGaps: null, kbGaps: null, highFindings: null },
+    { artifactsThisWeek: 0, borderline: 0, borderlineUnknown: 0, answerGaps: 0, kbGaps: 0, highFindings: 0 },
+    { artifactsThisWeek: 3, borderline: 5, borderlineUnknown: 0, answerGaps: 4, kbGaps: 2, highFindings: 3 },
+    { artifactsThisWeek: 1, borderline: 0, borderlineUnknown: 2, answerGaps: 0, kbGaps: 0, highFindings: 0 },
   ];
   const taskTitles: readonly (readonly string[])[] = [[], FULL.auditTaskTitles];
   const eventLists: readonly (readonly WeekEvent[])[] = [[], EVENTS];
 
-  // 5 × 4 × 3 × 2 × 2 = 240: every branch of every section, in every pairing.
+  // 5 × 4 × 4 × 2 × 2 = 320: every branch of every section, in every pairing.
   const matrix: readonly WeeklyReportInput[] = healths.flatMap((health) =>
     mentions.flatMap((mention) =>
       counts.flatMap((count) =>
@@ -285,7 +299,7 @@ describe("weekly report honesty", () => {
   );
 
   it("covers the whole matrix", () => {
-    expect(matrix).toHaveLength(240);
+    expect(matrix).toHaveLength(320);
   });
 
   it("claims no repair, no promise, no cause and no rank movement in any branch", () => {
@@ -329,6 +343,7 @@ describe("weekly report honesty", () => {
 
   it.each([
     "临界词（11-30 名）：5 条",
+    "临界词（11-30 名）：0 条（另有 2 条排名未知）",
     "# Acme 周报（2026-09-06 至 2026-09-13）",
     "较上次（2026-09-05 10:00）+7",
     "较上次（2026-09-05 11:00，29%）+6pt",

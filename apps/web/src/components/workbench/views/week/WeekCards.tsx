@@ -22,6 +22,9 @@ import type { WeekSummary } from "./week-summary.ts";
  *   comparison has no delta and no comparison sentence, rather than a "+0" or a
  *   "0 no longer reported" that was never measured; a mention share printed as
  *   a band keeps the comparison sentence and draws no delta (S7a #7).
+ * - The borderline card counts the rows whose position is known and names the
+ *   rows with none beside it (「另有 N 条排名未知」, S7a #4); with no position
+ *   known at all it is a dash with no footnote.
  *
  * Each sentence is its own element so the view test can pin the ICU argument
  * order whole (Q4b).
@@ -96,6 +99,29 @@ function MentionFoot({
   );
 }
 
+function BorderlineFoot({
+  borderline,
+  unknownRows,
+}: {
+  readonly borderline: WeekSummary["borderline"];
+  readonly unknownRows: number;
+}) {
+  const t = useTranslations("workbench.week");
+  if (borderline === null) return null;
+  return (
+    <>
+      <span data-wb-foot="basis" className={FOOT_LINE}>
+        {t("cards.borderline.foot")}
+      </span>
+      {unknownRows === 0 ? null : (
+        <span data-wb-foot="unknownRows" className={FOOT_LINE}>
+          {t("borderlineUnknown", { count: unknownRows })}
+        </span>
+      )}
+    </>
+  );
+}
+
 export function WeekCards({
   summary,
   projectId,
@@ -132,13 +158,7 @@ export function WeekCards({
           value={statValue(borderline === null ? null : borderline.length)}
           accent="amber"
           label={t("cards.borderline.label")}
-          foot={
-            borderline === null ? null : (
-              <span data-wb-foot="basis" className={FOOT_LINE}>
-                {t("cards.borderline.foot")}
-              </span>
-            )
-          }
+          foot={<BorderlineFoot borderline={borderline} unknownRows={summary.borderlineUnknownRows} />}
           href={workbenchHref(projectId, "keywords")}
         />
       </div>

@@ -40,6 +40,10 @@
  * `nearCount`'s unknown rule (`mock/profile.ts`), read from the imported rows
  * themselves: the card's footnote says "positions in the latest GSC import".
  * They are a list, not a movement (Q17) — the store keeps no position history.
+ * A row with no usable position is unknown. With some positions known the list
+ * holds the known ones and `borderlineUnknownRows` counts the rest, so the page
+ * never reads a partly known import as one with no borderline query (codex S7a
+ * #4); with none known the list is `null`.
  */
 import { countBySeverity, diffAudits } from "@/lib/workbench/mock/audit";
 import type {
@@ -78,6 +82,8 @@ export interface WeekSummary {
   /** The visibility run behind `mention` ran inside the date range; `false` when there is none. */
   readonly mentionInWindow: boolean;
   readonly borderline: readonly BorderlineQuery[] | null;
+  /** GSC rows with no usable position: beside a known `borderline`, the rows it could not count. */
+  readonly borderlineUnknownRows: number;
   readonly artifactsThisWeek: number;
   readonly answerGaps: number | null;
   readonly kbGaps: number | null;
@@ -242,6 +248,7 @@ export function weekSummary(state: WeekSummaryState, now: Date): WeekSummary {
     mention: latestMention,
     mentionInWindow: latestMention !== null && inWeekWindow(latestMention.at, range),
     borderline: borderline(state.gscRows),
+    borderlineUnknownRows: state.gscRows.filter((row) => gscStatus(row) === "unknown").length,
     artifactsThisWeek: artifactsInWeek(state.artifacts, range).length,
     answerGaps: answerGaps(state.lastVis),
     kbGaps: kbGapCount(state.kb),
@@ -289,6 +296,7 @@ export function weeklyReportInput(
     mention: summary.mention,
     artifactsThisWeek: summary.artifactsThisWeek,
     borderline: borderlineCount(summary),
+    borderlineUnknown: summary.borderlineUnknownRows,
     answerGaps: summary.answerGaps,
     kbGaps: summary.kbGaps,
     highFindings: summary.highFindings,

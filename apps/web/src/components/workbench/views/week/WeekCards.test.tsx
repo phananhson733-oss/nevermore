@@ -110,3 +110,33 @@ describe("week cards: a mention share printed as a band", () => {
     expect(text(card, "[data-wb-foot='since']")).toBe("vs. the previous run (2026-09-08 11:00)");
   });
 });
+
+describe("week cards: borderline queries with some positions unknown", () => {
+  // codex S7a #4: a known 5 and an unknown row printed "0" over "no queries in that range".
+  it.each<[WeekLocale, string]>([
+    ["zh-CN", "另有 1 条排名未知"],
+    ["en", "1 more query has no known position"],
+  ])("counts the known positions and names the unknown rows (%s)", (locale, sentence) => {
+    const scope = show(
+      { ...BLANK_WEEK, gscRows: [gsc("known", 5), gsc("unknown", null)], gscRowsSource: "user" },
+      locale,
+    );
+    const card = one(scope, "[data-wb-week-card='borderline']");
+    expect(card.textContent?.startsWith("0")).toBe(true);
+    expect(text(card, "[data-wb-foot='unknownRows']")).toBe(sentence);
+  });
+
+  it("adds nothing when every position is known", () => {
+    const scope = show({ ...BLANK_WEEK, gscRows: [gsc("a", 5), gsc("b", 12)], gscRowsSource: "user" });
+    const card = one(scope, "[data-wb-week-card='borderline']");
+    expect(card.textContent?.startsWith("1")).toBe(true);
+    expect(card.querySelector("[data-wb-foot='unknownRows']")).toBeNull();
+  });
+
+  it("stays a dash with no footnote when no position is known", () => {
+    const scope = show({ ...BLANK_WEEK, gscRows: [gsc("x", null), gsc("y", null)], gscRowsSource: "user" });
+    const card = one(scope, "[data-wb-week-card='borderline']");
+    expect(card.textContent?.startsWith("—")).toBe(true);
+    expect(card.querySelector("[data-wb-foot]")).toBeNull();
+  });
+});

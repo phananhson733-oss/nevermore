@@ -7,6 +7,7 @@
  * answer-page step keeps the summary row's qualifier.
  */
 
+import { getMessages } from "@sf/i18n";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkbenchProjectState } from "@/lib/workbench/types";
 import {
@@ -14,6 +15,8 @@ import {
   type RenderedWeek,
   type WeekLocale,
   artifact,
+  gsc,
+  one,
   renderWeek,
   report,
   result,
@@ -91,5 +94,36 @@ describe("the next steps", () => {
   ])("keep the summary row's qualifier on the answer-page step (%s)", (locale, sentence) => {
     const scope = show(ONE_PLATFORM_MISSED, locale);
     expect(text(scope, "[data-wb-step='answerGaps'] span")).toBe(sentence);
+  });
+});
+
+describe("the borderline list with some positions unknown", () => {
+  const en = getMessages("en").workbench;
+  const zh = getMessages("zh-CN").workbench;
+
+  // codex S7a #4: 「还没有临界词」 was shown while one row's position was unknown.
+  it("does not say there are no borderline queries, and names the unknown rows (zh)", () => {
+    const scope = show(
+      { ...BLANK_WEEK, gscRows: [gsc("known", 5), gsc("unknown", null), gsc("zero", 0)], gscRowsSource: "user" },
+      "zh-CN",
+    );
+    const panel = one(scope, "[data-wb-week-borderline]");
+    expect(panel.textContent).not.toContain(zh.week.borderlineList.empty);
+    expect(text(panel, "[data-wb-borderline-unknown-rows]")).toBe("另有 2 条排名未知");
+    expect(panel.querySelector("[data-wb-borderline-unknown]")).toBeNull();
+  });
+
+  it("lists the known ones and names the unknown rows beneath them (en)", () => {
+    const scope = show({ ...BLANK_WEEK, gscRows: [gsc("mid", 14), gsc("unknown", null)], gscRowsSource: "user" });
+    const panel = one(scope, "[data-wb-week-borderline]");
+    expect([...panel.querySelectorAll("[data-wb-borderline]")].map((row) => row.textContent)).toEqual(["mid14"]);
+    expect(text(panel, "[data-wb-borderline-unknown-rows]")).toBe("1 more query has no known position");
+  });
+
+  it("says there are no borderline queries only when every position is known", () => {
+    const scope = show({ ...BLANK_WEEK, gscRows: [gsc("a", 5), gsc("b", 45)], gscRowsSource: "user" });
+    const panel = one(scope, "[data-wb-week-borderline]");
+    expect(panel.textContent).toContain(en.week.borderlineList.empty);
+    expect(panel.querySelector("[data-wb-borderline-unknown-rows]")).toBeNull();
   });
 });

@@ -27,7 +27,10 @@ import { weekNextSteps, type BorderlineQuery, type WeekSummary } from "./week-su
  * - The borderline panel lists positions from the latest import and nothing
  *   else: no before/after, no arrow, no signed number (Q17). With no usable
  *   position it shows a dash, not "no queries in that range" — that sentence is
- *   a measurement and there was none.
+ *   a measurement and there was none. With some positions unknown it lists the
+ *   known ones and names how many rows have none: "no queries in that range" is
+ *   a claim about every row, so it appears only when every position is known
+ *   (codex S7a #4).
  * - Every "go" is a `<Link>` (Q21), so the Studio unsaved-changes guard sees it.
  */
 
@@ -120,7 +123,44 @@ function BorderlineRows({ rows }: { readonly rows: readonly BorderlineQuery[] })
   );
 }
 
-function BorderlinePanel({ borderline }: { readonly borderline: WeekSummary["borderline"] }) {
+interface BorderlineProps {
+  readonly borderline: WeekSummary["borderline"];
+  readonly unknownRows: number;
+}
+
+function BorderlineBody({ borderline, unknownRows }: BorderlineProps) {
+  const t = useTranslations("workbench.week");
+  if (borderline === null) {
+    return (
+      <p data-wb-borderline-unknown="" className="mt-4 text-sm text-slate-500">
+        {UNKNOWN_TEXT}
+      </p>
+    );
+  }
+  const unknownLine =
+    unknownRows === 0 ? null : (
+      <p data-wb-frame="" data-wb-borderline-unknown-rows="" className="mt-4 text-sm text-slate-500">
+        {t("borderlineUnknown", { count: unknownRows })}
+      </p>
+    );
+  if (borderline.length > 0) {
+    return (
+      <>
+        <BorderlineRows rows={borderline} />
+        {unknownLine}
+      </>
+    );
+  }
+  return (
+    unknownLine ?? (
+      <p data-wb-frame="" className="mt-4 text-sm text-slate-500">
+        {t("borderlineList.empty")}
+      </p>
+    )
+  );
+}
+
+function BorderlinePanel({ borderline, unknownRows }: BorderlineProps) {
   const t = useTranslations("workbench.week.borderlineList");
   return (
     <section data-wb-week-borderline="" className={`${PANEL_SHELL} h-fit`}>
@@ -131,17 +171,7 @@ function BorderlinePanel({ borderline }: { readonly borderline: WeekSummary["bor
         <p data-wb-frame="" className="text-sm text-slate-500">
           {t("detail")}
         </p>
-        {borderline === null ? (
-          <p data-wb-borderline-unknown="" className="mt-4 text-sm text-slate-500">
-            {UNKNOWN_TEXT}
-          </p>
-        ) : borderline.length === 0 ? (
-          <p data-wb-frame="" className="mt-4 text-sm text-slate-500">
-            {t("empty")}
-          </p>
-        ) : (
-          <BorderlineRows rows={borderline} />
-        )}
+        <BorderlineBody borderline={borderline} unknownRows={unknownRows} />
       </div>
     </section>
   );
@@ -186,7 +216,7 @@ export function WeekPanels({
       <SummaryRow summary={summary} />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_400px]">
         <FeedPanel events={summary.events} projectId={projectId} />
-        <BorderlinePanel borderline={summary.borderline} />
+        <BorderlinePanel borderline={summary.borderline} unknownRows={summary.borderlineUnknownRows} />
       </div>
       <NextSteps summary={summary} projectId={projectId} />
     </>
