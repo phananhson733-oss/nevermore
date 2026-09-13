@@ -346,6 +346,9 @@ describe("ShellChrome layout", () => {
     const main = appRoot().querySelector<HTMLElement>(`main#${WB_MAIN_ID}`);
 
     expect(main?.getAttribute("tabindex")).toBe("-1");
+    // The hook globals.css uses to keep the focus ring off it (checked in
+    // workbench-shell.mock.spec.ts, where computed styles exist).
+    expect(main?.hasAttribute("data-wb-main")).toBe(true);
     act(() => main?.focus());
     expect(document.activeElement).toBe(main);
   });

@@ -148,8 +148,9 @@ export function ShellChrome({
             sidebarOpen={sidebarOpen}
           />
           {/* `tabIndex={-1}`: Dialog's last focus fallback and the skip link's
-              target take focus by script only; it is never a Tab stop. */}
-          <main id={WB_MAIN_ID} tabIndex={-1} className="flex-1">
+              target take focus by script only; it is never a Tab stop.
+              `data-wb-main` lifts the global focus ring off it (globals.css). */}
+          <main id={WB_MAIN_ID} data-wb-main="" tabIndex={-1} className="flex-1">
             {children}
           </main>
         </div>
