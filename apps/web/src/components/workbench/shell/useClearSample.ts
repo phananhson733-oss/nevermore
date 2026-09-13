@@ -28,8 +28,13 @@ import type { WorkbenchProjectState } from "@/lib/workbench/types";
  *   that had rendered by then is cleared; content still queued behind that
  *   render is not.
  * - Whether it went. The dispatch runs in `flushSync`, which renders it with
- *   every update queued ahead of it, so `stateRef` says afterwards what the
- *   reducer did. A clear that landed leaves sample mode; still in it means it
+ *   the updates queued ahead of it in the sync lanes (Sync, InputContinuous,
+ *   Default), which is every store write the workbench makes today, so
+ *   `stateRef` says afterwards what the reducer did. A write queued in a
+ *   Transition would be skipped by that render and replayed after the
+ *   read-back, undoing its answer (codex S6r3 #3), so no store write may be
+ *   wrapped in one (`lib/workbench/no-transition-store-writes.test.ts` is the
+ *   gate). A clear that landed leaves sample mode; still in it means it
  *   was refused, and the box opens again over what is there now (focus on
  *   Cancel, as on any open) instead of closing as if it had cleared.
  * - Another tab replacing the sample while the box is open closes it: confirming

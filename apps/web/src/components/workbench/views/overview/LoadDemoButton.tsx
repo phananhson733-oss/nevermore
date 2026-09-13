@@ -42,9 +42,14 @@ import { BUTTON_PRIMARY } from "../../ui/panel.ts";
  *   rows can land in between — rendered by then, or still queued behind the
  *   render the loader last saw, which no check in here can see.
  * - The loader does not guess which; it asks the store. The dispatch runs in
- *   `flushSync`, which renders it together with every update queued ahead of
- *   it, so `stateRef` is current afterwards, and "the sample's rows array is in
- *   the store" is whether the reducer took it. Refused → judged again on what
+ *   `flushSync`, which renders it together with the updates queued ahead of it
+ *   in the sync lanes (Sync, InputContinuous, Default), which is every store
+ *   write the workbench makes today, so `stateRef` is current afterwards, and
+ *   "the sample's rows array is in the store" is whether the reducer took it.
+ *   A write queued in a Transition would be skipped by that render and replayed
+ *   after the read-back, undoing its answer (codex S6r3 #3), so no store write
+ *   may be wrapped in one (`lib/workbench/no-transition-store-writes.test.ts`
+ *   is the gate). Refused → judged again on what
  *   is there now: something to lose opens the confirmation (a confirmed load
  *   asks again rather than spend the old yes on new content); nothing to lose
  *   loads against a fresh snapshot, and a second refusal says the load did not
