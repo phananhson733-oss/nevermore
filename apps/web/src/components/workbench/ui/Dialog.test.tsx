@@ -191,6 +191,48 @@ function EmptyDialog({ open }: { readonly open: boolean }) {
 }
 
 /**
+ * Three stops, A, B and C, where B is `hidden` unless told otherwise; the
+ * initial focus can be pointed at B.
+ */
+function StopsHarness({
+  initialOnB = false,
+  bHidden = true,
+}: {
+  readonly initialOnB?: boolean;
+  readonly bHidden?: boolean;
+}) {
+  const bRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <div id={WB_APP_ROOT_ID} />
+      <Dialog
+        open
+        onClose={() => {}}
+        labelledBy="stops-title"
+        initialFocus={initialOnB ? bRef : undefined}
+      >
+        <h2 id="stops-title">Stops</h2>
+        <button type="button" id="a">
+          a
+        </button>
+        <button type="button" id="b" ref={bRef} hidden={bHidden}>
+          b
+        </button>
+        <button type="button" id="c">
+          c
+        </button>
+      </Dialog>
+    </>
+  );
+}
+
+function byId(view: ReturnType<typeof mount>, id: string): HTMLElement {
+  const el = view.container.querySelector<HTMLElement>(`#${id}`);
+  if (el === null) throw new Error(`no #${id} rendered`);
+  return el;
+}
+
+/**
  * The confirm removes the button that opened the dialog in the same commit, as
  * "clear sample" and "clear GSC rows" do, and no `returnFocusTo` is given.
  */
@@ -438,5 +480,64 @@ describe("Dialog", () => {
     confirmRemovingOpener(view);
 
     expect(document.activeElement?.id).toBe("fallback");
+  });
+
+  it("passes over a hidden control on Tab and Shift+Tab", () => {
+    const view = mount(<StopsHarness />);
+    expect(document.activeElement?.id).toBe("a");
+
+    keydown(byId(view, "a"), "Tab");
+    expect(document.activeElement?.id).toBe("c");
+
+    keydown(byId(view, "c"), "Tab", true);
+    expect(document.activeElement?.id).toBe("a");
+  });
+
+  it("puts initial focus on the first stop that can take it when initialFocus is hidden", () => {
+    mount(<StopsHarness initialOnB />);
+
+    expect(document.activeElement?.id).toBe("a");
+  });
+
+  it("passes over a control with no box once the panel is laid out", () => {
+    // A laid-out document where A is `display: none` by a class: the panel has
+    // a box and so do B and C; A does not.
+    vi.spyOn(Element.prototype, "getClientRects").mockImplementation(function (this: Element) {
+      return (this.id === "a" ? [] : [{}]) as unknown as DOMRectList;
+    });
+
+    const view = mount(<StopsHarness bHidden={false} />);
+    expect(document.activeElement?.id).toBe("b");
+
+    // From C, Tab wraps past A to B.
+    act(() => byId(view, "c").focus());
+    keydown(byId(view, "c"), "Tab");
+    expect(document.activeElement?.id).toBe("b");
+  });
+
+  it("passes over a stop whose focus() does not take", () => {
+    const view = mount(<StopsHarness bHidden={false} />);
+    vi.spyOn(byId(view, "b"), "focus").mockImplementation(() => {});
+
+    keydown(byId(view, "a"), "Tab");
+
+    expect(document.activeElement?.id).toBe("c");
+  });
+
+  it("puts focus on the panel when no stop takes it", () => {
+    // Focus is on B, which is hidden after it took focus (a control can be
+    // hidden while the dialog is open), and A and C refuse focus. Staying on B
+    // would leave focus on a control no one can see.
+    const view = mount(<StopsHarness bHidden={false} />);
+    const panel = view.container.querySelector<HTMLElement>('[role="dialog"]');
+    const b = byId(view, "b");
+    act(() => b.focus());
+    act(() => b.setAttribute("hidden", ""));
+    vi.spyOn(byId(view, "a"), "focus").mockImplementation(() => {});
+    vi.spyOn(byId(view, "c"), "focus").mockImplementation(() => {});
+
+    expect(keydown(b, "Tab")).toBe(true);
+
+    expect(document.activeElement).toBe(panel);
   });
 });

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { cn } from "./cn.ts";
-import { FOCUSABLE, nextTrapIndex } from "./focus-order.ts";
+import { focusCandidates, hasLayout, isFocusCandidate, nextTrapIndex } from "./focus-order.ts";
 import { WB_APP_ROOT_ID, WB_MAIN_ID } from "./ids.ts";
 import { isComposingKey } from "./keyboard.ts";
 
@@ -43,6 +43,41 @@ function handFocusBack(target: Element | null | undefined): boolean {
   if (target.closest(FENCED) !== null) return false;
   target.focus();
   return document.activeElement === target;
+}
+
+/** Focuses `el` and says whether it took: `focus()` fails silently. */
+function tookFocus(el: HTMLElement): boolean {
+  el.focus();
+  return document.activeElement === el;
+}
+
+/**
+ * Initial focus: the caller's `initialFocus` if it can take focus, else the
+ * first Tab stop that does, else the panel. The stops are the same live list
+ * the trap walks (`focusCandidates`), so a hidden first control is passed over
+ * here as it is there.
+ */
+function focusInto(panel: HTMLElement, preferred: HTMLElement | null): void {
+  const usable = preferred !== null && isFocusCandidate(preferred, hasLayout(panel));
+  const order = [...(usable ? [preferred] : []), ...focusCandidates(panel)];
+  if (!order.some((el) => tookFocus(el))) panel.focus();
+}
+
+/**
+ * One Tab inside the trap. The stops are read at the key press, so a control
+ * hidden or disabled since the dialog opened is not one. A stop whose `focus()`
+ * does not take is passed over for the next; when none takes, or there is none,
+ * focus goes to the panel rather than staying wherever it was.
+ */
+function moveTrappedFocus(panel: HTMLElement, backwards: boolean): void {
+  const stops = focusCandidates(panel);
+  let index = stops.indexOf(document.activeElement as HTMLElement);
+  for (let tried = 0; tried < stops.length; tried += 1) {
+    index = nextTrapIndex(stops.length, index, backwards);
+    const stop = stops[index];
+    if (stop !== undefined && tookFocus(stop)) return;
+  }
+  panel.focus();
 }
 
 /**
@@ -100,11 +135,8 @@ export function Dialog({
     if (openDialogs === 0) rootHadInert = root?.hasAttribute("inert") ?? false;
     root?.setAttribute("inert", "");
     openDialogs += 1;
-    const entry =
-      initialFocus?.current ??
-      panelRef.current?.querySelector<HTMLElement>(FOCUSABLE) ??
-      panelRef.current;
-    entry?.focus();
+    const panel = panelRef.current;
+    if (panel !== null) focusInto(panel, initialFocus?.current ?? null);
     return () => {
       openDialogs -= 1;
       // A dialog closing behind another one must not pull focus out of the one
@@ -145,18 +177,12 @@ export function Dialog({
       onClose();
       return;
     }
-    if (event.key !== "Tab" || !panelRef.current) return;
-    const items = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
-    const active = items.indexOf(document.activeElement as HTMLElement);
-    const next = nextTrapIndex(items.length, active, event.shiftKey);
-    if (next === -1) {
-      // Nothing focusable inside: keep focus on the panel rather than letting
-      // Tab escape into the (inert, but not in every browser) background.
-      event.preventDefault();
-      return;
-    }
+    const panel = panelRef.current;
+    if (event.key !== "Tab" || panel === null) return;
+    // Tab never leaves the panel, whatever the stops turn out to be: the
+    // background is inert, but not in every browser.
     event.preventDefault();
-    items[next]?.focus();
+    moveTrappedFocus(panel, event.shiftKey);
   }
 
   if (!open) return null;

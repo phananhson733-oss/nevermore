@@ -1,7 +1,11 @@
 /** @vitest-environment jsdom */
 
-import { describe, expect, it } from "vitest";
-import { FOCUSABLE, nextTrapIndex } from "./focus-order.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { FOCUSABLE, focusCandidates, nextTrapIndex } from "./focus-order.ts";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("nextTrapIndex", () => {
   it("wraps forward and backward", () => {
@@ -47,5 +51,49 @@ describe("FOCUSABLE", () => {
           '<div id="panel" tabindex="-1"></div>',
       ),
     ).toEqual(["link", "field"]);
+  });
+});
+
+describe("focusCandidates", () => {
+  function scopeOf(html: string): HTMLElement {
+    const scope = document.createElement("div");
+    scope.innerHTML = html;
+    return scope;
+  }
+
+  function ids(elements: readonly HTMLElement[]): readonly string[] {
+    return elements.map((el) => el.id);
+  }
+
+  it("leaves out a control under hidden, under inert, or in a disabled fieldset", () => {
+    expect(
+      ids(
+        focusCandidates(
+          scopeOf(
+            '<button id="on" type="button">a</button>' +
+              '<button id="hidden" type="button" hidden>b</button>' +
+              '<div hidden><button id="under-hidden" type="button">c</button></div>' +
+              '<div inert><button id="under-inert" type="button">d</button></div>' +
+              '<fieldset disabled><button id="in-fieldset" type="button">e</button></fieldset>' +
+              '<a id="link" href="#">f</a>',
+          ),
+        ),
+      ),
+    ).toEqual(["on", "link"]);
+  });
+
+  it("asks for a box only when the scope itself has one", () => {
+    const scope = scopeOf(
+      '<button id="boxed" type="button">a</button><button id="boxless" type="button">b</button>',
+    );
+    // jsdom: no element has a box, the scope included, so boxes are not asked.
+    expect(ids(focusCandidates(scope))).toEqual(["boxed", "boxless"]);
+
+    // A laid-out document: the scope has a box, and so does all but one control.
+    vi.spyOn(Element.prototype, "getClientRects").mockImplementation(function (this: Element) {
+      return (this.id === "boxless" ? [] : [{}]) as unknown as DOMRectList;
+    });
+
+    expect(ids(focusCandidates(scope))).toEqual(["boxed"]);
   });
 });
