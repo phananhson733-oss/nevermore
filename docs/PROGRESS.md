@@ -7,6 +7,44 @@ repository and its customer-facing GenGrowth product. It replaces the retired
 v0.2 progress narrative. It deliberately separates commands rerun on the current
 convergence worktree from older evidence recorded in checked-in stop gates.
 
+## 2026-09-13: workbench UI port PR-2 mock domain layer (integration branch, not in production)
+
+PR-2「mock 域层」is on branch `feat/workbench-pr2-mock-domain`, targeting the
+integration branch `feat/workbench-ui-port` (not `main`; nothing reaches
+production before PR-3b). It adds no views. Scope: the jsx prototype's pure
+functions ported to `apps/web/src/lib/workbench/mock/` (deterministic rng,
+text, local wall-clock stamps, market language; CSV, fenced data blocks and
+the provenance stamp; GSC paste parsing; keyword matrix; audit; AI visibility;
+competitors and backlinks; site profile and knowledge base; content outlines
+and answer plans; the demo site generator `makeDemoSite`, still in progress
+when this section was written) plus the artifact builders in `mock/builders/`;
+enum id arrays in `lib/workbench/enums.ts` with `workbench.enums.*` labels; the
+`keywordRows` / `gatedRows` selectors and their provider wiring; and a
+read-only persistence mode. Rulings R1-R17 live in
+`docs/plans/2026-09-13-workbench-pr2-mock-domain.md`; design doc rev7 carries
+them back.
+
+Changed from the PR-1 plan: the `deriveKeywordRowCount` prop is gone (R13).
+The provider imports `buildRows` itself, memoizes on seeds / brand /
+competitors / GSC rows, and exposes `keywordRows` and `keywordRowCount`. The
+visibility badge rounds the exact share (R15). Storage written by a newer build
+(only unknown keys) now makes the tab read-only instead of being overwritten
+with the initial state (R14); two pre-ship nullable widenings (`GscSignals`
+counts, `LinkTarget.dr` / `difficulty`) keep `PERSISTED_VERSION` at 1. Sample
+content no longer borrows GenGrowth's own facts (R8), invents competitor
+domains (R9), or presents generated signals as observations (R10). Prompt
+builders put user fields only in fenced data blocks (R6), and CSV cells are
+formula-neutralized (R7). `mock/brand.ts` keeps the audit rule library out of
+the client bundle, pinned by `store/client-import-graph.test.ts`. Deferred to
+later PRs (R17): `llms.txt` downloading as `llms.md` (PR-5); CSV BOM, keyword
+CSV row cap, audit report builder, `visPartial` export timestamp and run leases
+(PR-4).
+
+Verification (Task 17 backfills, run on the delivered HEAD): typecheck ___;
+lint ___; unit ___ files / ___ tests; `lib/workbench/**` coverage ___%;
+`@sf/web` build ___; mock e2e ___; production CSP smoke ___; `verify:docs` /
+`verify:spec` ___; cross-model review ___.
+
 ## 2026-09-11: workbench UI port PR-1 foundation (integration branch, not in production)
 
 PR-1「工作台地基」landed on integration branch `feat/workbench-ui-port` (PR
@@ -39,8 +77,9 @@ of `@tailwindcss/postcss` rather than relying on implicit ordering.
 
 下一步 (design §9): PR-2 is the pure mock domain layer — `lib/workbench/mock/*`
 (`makeDemoSite`, `buildRows`, … ported from the jsx as pure functions with unit
-tests) plus the `keywordRows` / `gatedRows` selectors and the one-line
-`deriveKeywordRowCount` provider wiring; no views. PR-3 is the first five named
+tests) plus the `keywordRows` / `gatedRows` selectors and their provider
+wiring (PR-2 dropped the planned `deriveKeywordRowCount` prop, see above); no
+views. PR-3 is the first five named
 pages (overview with 「载入示例站点」, this week, site profile, data sources,
 settings with its notification + data-source blocks); PR-3b merges the
 integration branch to `main` (first production release). PR-4 / PR-5 then
