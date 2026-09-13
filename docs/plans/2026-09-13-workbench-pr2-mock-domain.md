@@ -649,7 +649,7 @@ export function visibilityGaps(results: readonly VisResult[], brand: string): re
   - 语义：`comps = competitorNames(profile).filter(c => normQ(c) !== normQ(brand)).slice(0, 4)`；每个 prompt×平台 `rng = rngOf(seedKey(p, platform, brand, salt))`；`hit = r() > 0.62`；`rivals = comps.filter(() => r() > 0.45)`；命中时 brand 插入 `floor(r() * (rivals.length + 1))` 位置（不可变拼接）；`rank = hit ? index+1 : null`。
   - `localPromptSet`：
     - 空档案（brand `Acme`，其余空）不出现叠词 `tools tools`、不出现 `solo founder`、不出现 `[核心功能] tools`；品牌为空时不出现任何含两个连续空格或以 ` vs ` 开头的句子。
-    - kind 用 id；来自 `rows` 的 geo 行按 `AI_PATTERNS` 模板下标映射（0→compare、1→discover、2→verify）——实现方式：`buildRows` 不记录模板下标，所以这里对每条 geo 行重新用 `AI_PATTERNS[i](seed, brand)` 比对 `normQ` 找下标，找不到记 `scenario`。
+    - kind 用 id；来自 `rows` 的 geo 行按 `AI_PATTERNS` 模板下标映射（0→compare、1→discover、2→verify）——实现方式：`buildRows` 不记录模板下标，所以这里对每条 geo 行重新用 `AI_PATTERNS[i](seed, brand)` 比对 `normQ` 找下标，找不到记 `scenario`；例外（执行期评审裁决）：与 `PATTERNS` 里唯一的纯 geo 模板 `what is ${seed}`（下标 5，同样按 seed 重建后 `normQ` 比对，不做 `startsWith` 文本嗅探）一致的行记 `discover`——它是定义类问题，不是场景。
     - 场景句：`I have a small team and no SEO budget, how do I get started with ${f0}?`（f0 为占位时整条跳过）。
     - `normQ` 去重。
     - 具体模板以 jsx:1613-1629 为底，占位规则：`f0 = splitList(features)[0]`，没有则跳过依赖 f0 的句子，改出 `best tools like ${brand}`（brand 非空时；kind 为 `alternative`，它问的是替代品而不是发现新工具——执行期评审裁决）。
@@ -892,9 +892,11 @@ export function keywordRows(state: WorkbenchProjectState): readonly KeywordRow[]
 export function gatedRows(state: WorkbenchProjectState): readonly KeywordRow[] {
   return state.built ? keywordRows(state) : [];
 }
-function formatShare(rate: number, hits: number, total: number): string {
+// 执行期偏离（Task 14 实测）：阈值与取整用精确份额 hits*100/total，不用 rate*100——
+// 后者在 2000 以内有 80 个半百分点被错舍（23/40 = 57.5% 出 "57%"）；mentionRate 仍决定是否出徽标。
+function formatShare(hits: number, total: number): string {
   if (hits === 0) return "0%";
-  const pct = rate * 100;
+  const pct = (hits * 100) / total;
   if (pct < 1) return "<1%";
   if (hits < total && pct > 99) return ">99%";
   return `${Math.round(pct)}%`;
