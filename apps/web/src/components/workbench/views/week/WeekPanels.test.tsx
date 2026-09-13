@@ -48,19 +48,38 @@ afterEach(() => {
 });
 
 describe("the week's range", () => {
-  // codex S7a #9: the page printed 2026-09-07 and 「本周新增 0 件产物」 for this artifact.
-  it.each<[WeekLocale, string, string, string]>([
-    ["zh-CN", "2026-09-07 至 2026-09-14", "本周新增 1 件产物", "1 条"],
-    ["en", "2026-09-07 to 2026-09-14", "1 artifact added this week", "1 item"],
-  ])("counts what the subtitle's first date holds (%s)", (locale, range, artifacts, count) => {
+  // codex S7a #9: the page printed a first date and 「本周新增 0 件产物」 for an
+  // artifact on it. codex S7r2 #6: the range is seven dates (Monday 2026-09-14
+  // back to 2026-09-08), and the counts under it are not called 「本周」.
+  it.each<[WeekLocale, string, string, string, string]>([
+    ["zh-CN", "2026-09-08 至 2026-09-14", "近 7 天新增 1 件产物", "近 7 天的事件", "1 条"],
+    ["en", "2026-09-08 to 2026-09-14", "1 artifact added in the last 7 days", "Events in the last 7 days", "1 item"],
+  ])("counts what the subtitle's first date holds and nothing before it (%s)", (locale, range, artifacts, feedTitle, count) => {
     const scope = show(
-      { ...BLANK_WEEK, artifacts: [artifact("first-date", "2026-09-07 09:00", { title: "首日产物" })] },
+      {
+        ...BLANK_WEEK,
+        artifacts: [
+          artifact("first-minute", "2026-09-08 00:00", { title: "首日产物" }),
+          artifact("day-before", "2026-09-07 23:59", { title: "前一天产物" }),
+        ],
+      },
       locale,
     );
     expect(scope.textContent).toContain(range);
     expect(text(scope, "[data-wb-summary='artifacts']")).toBe(artifacts);
+    expect(text(scope, "[data-wb-week-feed] h2")).toBe(feedTitle);
     expect(text(scope, "[data-wb-week-feed] h2 + span")).toBe(count);
-    expect(eventStamps(scope)).toEqual(["2026-09-07 09:00"]);
+    expect(eventStamps(scope)).toEqual(["2026-09-08 00:00"]);
+    const counted = `${text(scope, "[data-wb-week-summary]")} ${text(scope, "[data-wb-week-feed]")}`;
+    expect(counted).not.toMatch(/本周|这周|this week/iu);
+  });
+
+  it.each<[WeekLocale, string]>([
+    ["zh-CN", "近 7 天还没有动作"],
+    ["en", "Nothing has happened in the last 7 days"],
+  ])("says the seven dates hold no event when the feed is empty (%s)", (locale, sentence) => {
+    const scope = show({ ...BLANK_WEEK, gscRows: [gsc("a", 50)], gscRowsSource: "user" }, locale);
+    expect(text(scope, "[data-wb-week-feed] p")).toBe(sentence);
   });
 
   // codex S7a #5: two audits in the range, and the feed said 「1 条」.

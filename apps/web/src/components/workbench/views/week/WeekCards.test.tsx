@@ -52,7 +52,7 @@ const THIS_WEEK: WorkbenchProjectState = {
   lastVis: { at: "2026-09-13 11:00", results: hits(14, 40) },
 };
 
-// codex S7a #6's state: both checks ran on 2026-08-25, under a 2026-09-07 to 2026-09-14 range.
+// codex S7a #6's state: both checks ran on 2026-08-25, under a 2026-09-08 to 2026-09-14 range.
 const OLD: WorkbenchProjectState = {
   ...BLANK_WEEK,
   lastAudit: report("2026-08-25 10:00", 80, []),
@@ -72,7 +72,7 @@ describe("week cards: when their check ran", () => {
 
   it("say the check is outside the range when the latest is older than it (zh)", () => {
     const scope = show(OLD, "zh-CN");
-    expect(scope.textContent).toContain("2026-09-07 至 2026-09-14");
+    expect(scope.textContent).toContain("2026-09-08 至 2026-09-14");
     const health = one(scope, "[data-wb-week-card='health']");
     expect(health.textContent?.startsWith(`80+20${zh.week.cards.health.label}`)).toBe(true);
     expect(text(health, "[data-wb-foot='at']")).toBe("检查于 2026-08-25 10:00");

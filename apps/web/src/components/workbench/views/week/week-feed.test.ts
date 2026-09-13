@@ -5,9 +5,9 @@ import type { Artifact, AuditReport, VisSnapshot, WorkbenchProjectState } from "
 import { WEEK_WINDOW_DAYS, artifactsInWeek, inWeekWindow, weekFeed, weekWindow } from "./week-feed.ts";
 
 /**
- * The week window (Q20, jsx W3/W5/W19; codex S7a #5 / #9). It is the local
- * calendar range the subtitle prints: from 00:00 on the date seven days before
- * today up to `now`, both ends in. Stamps have minute precision, so the edges
+ * The week window (Q20, jsx W3/W5/W19; codex S7a #5 / #9, S7r2 #6). It is the
+ * local calendar range the subtitle prints, seven dates ending today: from 00:00
+ * on the date six days before today up to `now`, both ends in. Stamps have minute precision, so the edges
  * are pinned on stamps: the first minute of the first date is in and the minute
  * before it is out; the minute `now` falls in is in, a second later too, and the
  * next minute is out. A future stamp is outside every window.
@@ -16,8 +16,8 @@ import { WEEK_WINDOW_DAYS, artifactsInWeek, inWeekWindow, weekFeed, weekWindow }
 const SEED: ProjectSeed = { url: "https://example.test", brand: "Example", market: "US" };
 const NOW = new Date(2026, 8, 13, 10, 30, 0);
 const ONE_SECOND_LATER = new Date(2026, 8, 13, 10, 30, 1);
-const FIRST_MINUTE = "2026-09-06 00:00";
-const DAY_BEFORE = "2026-09-05 23:59";
+const FIRST_MINUTE = "2026-09-07 00:00";
+const DAY_BEFORE = "2026-09-06 23:59";
 
 const POPULATED = populatedProjectState(SEED);
 
@@ -38,10 +38,10 @@ function blank(overrides: Partial<WorkbenchProjectState> = {}): WorkbenchProject
 }
 
 describe("weekWindow", () => {
-  it("runs from the first minute of the date seven days back to now", () => {
+  it("runs over seven dates, from the first minute of the date six days back to now", () => {
     expect(WEEK_WINDOW_DAYS).toBe(7);
     expect(weekWindow(NOW)).toEqual({
-      from: "2026-09-06",
+      from: "2026-09-07",
       to: "2026-09-13",
       first: FIRST_MINUTE,
       last: "2026-09-13 10:30",
@@ -49,7 +49,7 @@ describe("weekWindow", () => {
   });
 
   it("crosses a month boundary", () => {
-    expect(weekWindow(new Date(2026, 9, 3, 0, 5))).toMatchObject({ from: "2026-09-26", to: "2026-10-03" });
+    expect(weekWindow(new Date(2026, 9, 3, 0, 5))).toMatchObject({ from: "2026-09-27", to: "2026-10-03" });
   });
 });
 
@@ -79,19 +79,24 @@ describe("inWeekWindow", () => {
     expect(inWeekWindow("2026-09-12T10:00:00Z", range)).toBe(false);
   });
 
-  // codex S7a #9: the subtitle printed 2026-09-07 while this artifact, 171 hours
-  // old, fell outside a 168-hour window and the page said nothing had happened.
-  it("counts every stamp on the subtitle's first date, however many hours back", () => {
-    const now = new Date(2026, 8, 14, 12, 0);
-    expect(weekWindow(now)).toMatchObject({ from: "2026-09-07", to: "2026-09-14" });
-    expect(inWeekWindow("2026-09-07 09:00", weekWindow(now))).toBe(true);
+  // codex S7a #9: the subtitle printed a first date whose morning fell outside a
+  // 168-hour window. codex S7r2 #6: and it printed eight dates under 「本周」;
+  // the range is today and the six dates before it.
+  it("keeps the whole sixth date back and nothing before it, on a Monday", () => {
+    const monday = new Date(2026, 8, 14, 12, 0);
+    expect(monday.getDay()).toBe(1);
+    expect(weekWindow(monday)).toMatchObject({ from: "2026-09-08", to: "2026-09-14" });
+    expect(inWeekWindow("2026-09-08 00:00", weekWindow(monday))).toBe(true);
+    expect(inWeekWindow("2026-09-08 09:00", weekWindow(monday))).toBe(true);
+    expect(inWeekWindow("2026-09-07 23:59", weekWindow(monday))).toBe(false);
   });
 
-  // In America/Los_Angeles this span holds a fall-back hour (169 hours); in Asia/Shanghai it is 168.
+  // In America/Los_Angeles this span holds a fall-back hour (157 hours); in Asia/Shanghai it is 156.
   it("takes the first date by the calendar across a daylight-saving change", () => {
     const now = new Date(2026, 10, 3, 12, 0);
-    expect(weekWindow(now)).toMatchObject({ from: "2026-10-27", to: "2026-11-03" });
-    expect(inWeekWindow("2026-10-27 12:00", weekWindow(now))).toBe(true);
+    expect(weekWindow(now)).toMatchObject({ from: "2026-10-28", to: "2026-11-03" });
+    expect(inWeekWindow("2026-10-28 00:00", weekWindow(now))).toBe(true);
+    expect(inWeekWindow("2026-10-27 23:59", weekWindow(now))).toBe(false);
   });
 });
 

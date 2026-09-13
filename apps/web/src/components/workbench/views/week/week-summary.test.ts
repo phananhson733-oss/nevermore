@@ -71,21 +71,24 @@ function entry(id: string, statement: string): KbEntry {
 }
 
 describe("weekRange", () => {
-  it("spans the seven days before now, as local dates", () => {
-    expect(weekRange(NOW)).toEqual({ from: "2026-09-06", to: "2026-09-13" });
+  it("spans seven local dates, today and the six before it", () => {
+    expect(weekRange(NOW)).toEqual({ from: "2026-09-07", to: "2026-09-13" });
   });
 
   it("crosses a month boundary", () => {
-    expect(weekRange(new Date(2026, 9, 3, 0, 5))).toEqual({ from: "2026-09-26", to: "2026-10-03" });
+    expect(weekRange(new Date(2026, 9, 3, 0, 5))).toEqual({ from: "2026-09-27", to: "2026-10-03" });
   });
 
-  // codex S7a #9: the subtitle printed 2026-09-07 and the counts left this artifact out.
-  it("counts what the subtitle's first date holds, with the same boundary for artifacts and events", () => {
+  // codex S7a #9: the subtitle printed a first date and the counts left part of it out.
+  // codex S7r2 #6: on Monday 2026-09-14 the range is 2026-09-08 to 2026-09-14, seven dates.
+  it("counts what the subtitle's first date holds and nothing before it, for artifacts and events alike", () => {
     const now = new Date(2026, 8, 14, 12, 0);
-    const state = blank({ artifacts: [artifact("first-date", "2026-09-07 09:00")] });
-    expect(weekRange(now)).toEqual({ from: "2026-09-07", to: "2026-09-14" });
+    const state = blank({
+      artifacts: [artifact("first-minute", "2026-09-08 00:00"), artifact("day-before", "2026-09-07 23:59")],
+    });
+    expect(weekRange(now)).toEqual({ from: "2026-09-08", to: "2026-09-14" });
     expect(weekSummary(state, now).artifactsThisWeek).toBe(1);
-    expect(weekSummary(state, now).events.map((event) => event.at)).toEqual(["2026-09-07 09:00"]);
+    expect(weekSummary(state, now).events.map((event) => event.at)).toEqual(["2026-09-08 00:00"]);
   });
 });
 
@@ -414,7 +417,7 @@ describe("weekSummary: whether the checks on the cards are inside the range", ()
 
   it("marks checks inside the range, from its first minute to now", () => {
     const state = blank({
-      lastAudit: report("2026-09-07 00:00", 80, []),
+      lastAudit: report("2026-09-08 00:00", 80, []),
       lastVis: { at: "2026-09-14 12:00", results: hits(1, 2) },
     });
     expect(weekSummary(state, now)).toMatchObject({ healthInWindow: true, mentionInWindow: true });
@@ -477,7 +480,7 @@ describe("weeklyReportInput", () => {
     const summary = weekSummary(state, NOW);
     expect(weeklyReportInput(summary, "Example", NOW)).toEqual({
       brand: "Example",
-      from: "2026-09-06",
+      from: "2026-09-07",
       to: "2026-09-13",
       health: summary.health,
       mention: null,

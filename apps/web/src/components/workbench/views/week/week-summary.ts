@@ -118,7 +118,12 @@ export interface WeekNextStep {
   readonly target: WorkbenchPageId;
 }
 
-/** The subtitle's and the report title's dates: `weekWindow`, the range every count here uses. */
+/**
+ * The subtitle's and the report title's dates: `weekWindow`. The date range,
+ * the artifact count, the event feed and the cards' in-range marks share it;
+ * the GSC, knowledge base, high-severity and latest-measurement numbers are
+ * read from the current state and are not windowed.
+ */
 export function weekRange(now: Date): { readonly from: string; readonly to: string } {
   const { from, to } = weekWindow(now);
   return { from, to };

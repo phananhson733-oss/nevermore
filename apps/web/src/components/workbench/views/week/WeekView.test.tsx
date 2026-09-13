@@ -305,15 +305,15 @@ describe("WeekView for an empty project", () => {
 });
 
 describe("WeekView with a week of results", () => {
-  it("titles the range from seven days ago to today (en)", () => {
+  it("titles the range from six days before today to today (en)", () => {
     const scope = render(FULL);
     expect(text(scope, "[data-wb-page-title]")).toBe(en.nav.items.week);
-    expect(scope.textContent).toContain("2026-09-06 to 2026-09-13");
+    expect(scope.textContent).toContain("2026-09-07 to 2026-09-13");
   });
 
-  it("titles the range from seven days ago to today (zh)", () => {
+  it("titles the range from six days before today to today (zh)", () => {
     const scope = render(FULL, { locale: "zh-CN" });
-    expect(scope.textContent).toContain("2026-09-06 至 2026-09-13");
+    expect(scope.textContent).toContain("2026-09-07 至 2026-09-13");
   });
 
   it("shows the latest health score against the last archived report, sentence by sentence (en)", () => {
@@ -406,7 +406,7 @@ describe("WeekView with a week of results", () => {
       `Knowledge base entries still without a statement: ${UNKNOWN_TEXT}`,
     );
     expect(text(scope, "[data-wb-summary='artifacts']")).toBe(
-      "1 artifact added this week",
+      "1 artifact added in the last 7 days",
     );
     expect(text(scope, "[data-wb-summary='answerGaps']")).toBe(
       "26 prompts where at least one platform did not mention you",
@@ -507,7 +507,7 @@ describe("WeekView weekly report", () => {
     expect(honestyViolations(bodyOf(saved.content))).toEqual([]);
     expect(
       bodyOf(saved.content).startsWith(
-        "# Example 周报（2026-09-06 至 2026-09-13）",
+        "# Example 周报（2026-09-07 至 2026-09-13）",
       ),
     ).toBe(true);
     expect(saved.content).toContain("\n## 检查结果变化\n");

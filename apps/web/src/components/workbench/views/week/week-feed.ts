@@ -2,9 +2,12 @@
  * The week page's date range and event feed (plan Task 8 Step 1; jsx:2788-2794,
  * defects W3 / W5 / W19; codex S7a #5 / #9).
  *
- * The range is the local calendar range the subtitle prints (`weekWindow`): from
- * 00:00 on the date `WEEK_WINDOW_DAYS` days before today up to `now`, both ends
- * in. It is calendar dates, not a rolling 168 hours, because the subtitle shows
+ * The range is the local calendar range the subtitle prints (`weekWindow`): the
+ * `WEEK_WINDOW_DAYS` dates ending today, from 00:00 on the date six days back up
+ * to `now`, both ends in. Seven dates, not the eight it spanned before (codex
+ * S7r2 #6), and not a calendar week either, so what is counted over it is
+ * labelled 「近 7 天」 / "the last 7 days"; the page title keeps the design's
+ * 「本周变化」. It is calendar dates, not a rolling 168 hours, because the subtitle shows
  * dates and nothing else: the rolling window this replaced left stamps on the
  * first printed date outside the counts beneath it (a 2026-09-07 09:00 artifact
  * under 「2026-09-07 至 2026-09-14」 at 12:00 was 171 hours old and not counted).
@@ -41,6 +44,7 @@ import type { WeekEvent, WeekEventKind } from "@/lib/workbench/mock/builders/wee
 import { daysAgo, formatLocalStamp, parseLocalStamp, stampDate } from "@/lib/workbench/mock/time";
 import type { Artifact, ModuleId, WorkbenchProjectState } from "@/lib/workbench/types";
 
+/** How many local dates the range holds, today included. */
 export const WEEK_WINDOW_DAYS = 7;
 
 export interface WeekWindow {
@@ -60,7 +64,7 @@ export type WeekFeedState = Pick<
 >;
 
 export function weekWindow(now: Date): WeekWindow {
-  const from = stampDate(daysAgo(now, WEEK_WINDOW_DAYS));
+  const from = stampDate(daysAgo(now, WEEK_WINDOW_DAYS - 1));
   const last = formatLocalStamp(now);
   return { from, to: stampDate(last), first: `${from} 00:00`, last };
 }

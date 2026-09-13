@@ -99,7 +99,7 @@ const FULL_TEXT = `# Acme 周报（2026-09-06 至 2026-09-13）
 ## 数字
 - 技术健康分：56（检查于 2026-09-12 10:00；较上次（2026-09-05 10:00）+7）
 - AI 提及率：35%（40 次问答里有 14 次提到品牌，检查于 2026-09-12 11:00；较上次（2026-09-05 11:00，29%）+6pt）
-- 本周新增产物：3 件
+- 近 7 天新增产物：3 件
 - 临界词（11-30 名）：5 条
 - 至少一个平台没提到品牌的提问：4 个
 - 知识库还没写结论句的条目：2 条
@@ -115,7 +115,7 @@ const FULL_TEXT = `# Acme 周报（2026-09-06 至 2026-09-13）
 ### 最近一次新列出（1 条）
 - 缺少 meta description
 
-## 本周事件
+## 近 7 天的事件
 - 2026-09-12 10:00｜技术审计
 - 2026-09-12 11:00｜AI 可见度检查
 - 2026-09-11 14:00｜产物：词库导出
@@ -138,7 +138,7 @@ const EMPTY_TEXT = `# Acme 周报（2026-09-06 至 2026-09-13）
 ## 数字
 - 技术健康分：—
 - AI 提及率：—
-- 本周新增产物：0 件
+- 近 7 天新增产物：0 件
 - 临界词（11-30 名）：—
 - 至少一个平台没提到品牌的提问：—
 - 知识库还没写结论句的条目：—
@@ -147,7 +147,7 @@ const EMPTY_TEXT = `# Acme 周报（2026-09-06 至 2026-09-13）
 这里只对比两次检查各自列出的问题标题，不判断差异从何而来。
 - 没有检查结果。
 
-## 本周事件
+## 近 7 天的事件
 - 这段时间没有事件。
 
 ## 下周待办
@@ -453,5 +453,17 @@ describe("WEEKLY_REPORT_META", () => {
       engine: "both",
       filename: "weekly.md",
     });
+  });
+});
+
+describe("weeklyReportMarkdown: the range's name", () => {
+  // codex S7r2 #6: the range is the seven dates ending today, not a calendar week.
+  it("says 「近 7 天」 for the counted artifacts and the events, never 「本周」", () => {
+    for (const input of [FULL, EMPTY]) {
+      const text = weeklyReportMarkdown(input);
+      expect(lineStarting(text, "- 近 7 天新增产物：")).toBeDefined();
+      expect(text).toContain("\n## 近 7 天的事件\n");
+      expect(text).not.toMatch(/本周新增|本周事件/u);
+    }
   });
 });

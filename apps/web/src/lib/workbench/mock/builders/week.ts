@@ -27,6 +27,9 @@
  *   delta. `week-summary.ts` decides both; this file prints what it is given.
  * - 「较上周」 (Q20). The previous run may be a day or months old; its stamp is
  *   printed instead.
+ * - 「本周」 for what is counted over the range (codex S7r2 #6). The range is the
+ *   seven dates ending today, printed in the title; the artifact count and the
+ *   events say 「近 7 天」.
  * - 「暂无待办」 (codex S7b #2). With a count unknown the tasks section cannot
  *   know there is nothing to do, so it says the numbers above are not all known
  *   yet; only with every count behind it known and zero does it say these
@@ -182,7 +185,7 @@ function numbersSection(input: WeeklyReportInput): string {
     "## 数字",
     healthLine(input.health),
     mentionLine(input.mention),
-    `- 本周新增产物：${input.artifactsThisWeek} 件`,
+    `- 近 7 天新增产物：${input.artifactsThisWeek} 件`,
     `- 临界词（11-30 名）：${borderlineAmount(input)}`,
     `- 至少一个平台没提到品牌的提问：${amount(input.answerGaps, "个")}`,
     `- 知识库还没写结论句的条目：${amount(input.kbGaps, "条")}`,
@@ -232,7 +235,7 @@ function eventLine(event: WeekEvent): string {
 
 function eventsSection(events: readonly WeekEvent[]): string {
   const lines = events.map(eventLine);
-  return ["## 本周事件", ...(lines.length === 0 ? ["- 这段时间没有事件。"] : lines)].join("\n");
+  return ["## 近 7 天的事件", ...(lines.length === 0 ? ["- 这段时间没有事件。"] : lines)].join("\n");
 }
 
 function taskLines(input: WeeklyReportInput): readonly string[] {
