@@ -83,7 +83,7 @@ test("week health card places its check against the page's dates (T8 1077d94a / 
 const STALE =
   "The data changed while this profile was being generated, so this result was not saved. You can generate it again.";
 
-test("a profile run whose data changed in another tab says nothing was saved (T9 3b859133)", async ({
+test("a profile run whose data changed in another tab writes nothing, and the next run's document lands (T9 3b859133)", async ({
   page,
 }) => {
   await loadSample(page);
@@ -104,6 +104,12 @@ test("a profile run whose data changed in another tab says nothing was saved (T9
   const title = page.locator("[data-wb-pane-head] h2").last();
   await expect(title).toHaveText(new RegExp(`^Site profile · ${STAMP}$`, "u"));
   const before = await title.textContent();
+  // The persisted document as bytes. Only `profileDoc`: the other tab's clear
+  // changes the rows, which is the point, so the rest of the store moves.
+  const storedDoc = async (): Promise<string> =>
+    JSON.stringify((await readStored(page))?.state.profileDoc ?? null);
+  const docBefore = await storedDoc();
+  expect(docBefore, "the sample stores a profile document").not.toBe("null");
   const run = page.getByRole("button", {
     name: "Regenerate the profile",
     exact: true,
@@ -125,14 +131,26 @@ test("a profile run whose data changed in another tab says nothing was saved (T9
     run.boundingBox(),
   ]);
   expect(alertBox?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(runBox?.y ?? 0);
-  // Nothing was written: the pane still names the profile it held (Q14).
+  // Nothing was written: the stored document is byte for byte the one from
+  // before the run, and the pane still names it (Q14). A title check alone
+  // would pass a write that kept the old stamp.
+  expect(await storedDoc(), "stored profileDoc after the refused run").toBe(docBefore);
   await expect(title).toHaveText(before ?? "");
 
-  // The next start takes the alert away, and that run's document lands.
+  // The next start takes the alert away, and that run's document lands. A
+  // marker in the positioning field tells the new document from the old one.
+  const marker = "e2e marker for the retried profile run";
+  await page.getByLabel("Positioning in one line").fill(marker);
   await run.click();
   await expect(alert).toHaveCount(0);
   await expect(run).toBeEnabled();
   await expect(alert).toHaveCount(0);
+  await expect.poll(storedDoc, "stored profileDoc after the retry").not.toBe(docBefore);
+  const landed = await storedDoc();
+  expect(landed, "the retried document carries this tab's input").toContain(marker);
+  await page.reload();
+  await expect(title).toHaveText(new RegExp(`^Site profile · ${STAMP}$`, "u"));
+  expect(await storedDoc(), "the retried document survives a reload").toBe(landed);
   await other.close();
 });
 
@@ -161,6 +179,9 @@ test("the import result goes when another tab clears the saved rows (T10 a47ec61
   await expect(page.locator("[data-wb-gsc-table]")).toContainText(
     "No GSC rows yet",
   );
+  // The section wraps both the empty state and the table, so the rows
+  // themselves have to be gone too (three were counted above).
+  await expect(page.locator("[data-wb-gsc-row]")).toHaveCount(0);
   // ... and the result that described them went with them, with no navigation.
   await expect(notice.locator("[data-wb-result]")).toHaveCount(0);
   await expect(notice).toHaveText("");
