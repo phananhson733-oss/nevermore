@@ -532,6 +532,13 @@ export function demoGscRows(profile: Pick<Profile, "brand">): readonly GscRow[]
   - 表头：**仅第一条记录**，当 `cells.length >= 3` 且 `cells[1]`、`cells[2]` 解析都为 `null` 且二者非空 → 视为表头。
   - 记录少于 2 格或 query trim 后为空 → `skipped + 1`。query 取 trim 后原文（不 normQ）。
   - `demoGscRows`：`parseGsc(DEMO_GSC_TEXT).rows` 过滤 `normQ(query).startsWith("gengrowth")` 的行，除非 `normQ(brand) === "gengrowth"`。
+  - **Task 4 评审补充（执行中裁决）**：
+    - 识别出表头时按标签映射列（不区分大小写；query：`top queries|queries|query|热门查询|查询`；clicks：`clicks|点击次数`；impressions：`impressions|展示次数`；ctr：`ctr|点击率`；position：`position|排名`）。GSC 网页表格的列随指标开关变化，按位置读会把排名读进 CTR。没映射到的指标为 null；有表头但一个指标标签都没映射上时回落按位置。
+    - 表头单元格不得含数字（`\p{Nd}`），否则一行数据会被当表头吞掉。
+    - 千位分组额外接受瑞士 `1’234` / `1'234` 与印度 `1,23,456`。
+    - ctr 与 position 小数优先（单个分隔符一律是小数点，不做千位分组）。
+    - 分隔符按前 5 条非空记录打分（列数一致优先，其次 1-4 列可解析为数字的个数）。
+    - 同时含换行与分隔符的引号值按普通文本处理（GSC 查询不含换行）。
 - [ ] **Step 3:** 测试绿；typecheck、lint。
 - [ ] **Step 4: Commit** `feat(workbench): GSC 粘贴解析（RFC 4180、区域小数、表头判定）与示例 GSC`
 
