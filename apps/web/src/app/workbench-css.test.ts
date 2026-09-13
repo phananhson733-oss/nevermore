@@ -14,25 +14,76 @@ const projectLayout = readFileSync(
   "utf8",
 );
 
-/**
- * Compiles the shipped workbench.css with the installed Tailwind and returns the
- * CSS emitted for `candidates`.
- *
- * Source text cannot tell `@theme` from `@theme inline`: both spell
- * `--font-sans: var(--font-wb, …)` and both emit that same declaration into
- * `:root`. The difference shows up only in what the *utility* declares.
- */
-async function buildUtilities(candidates: readonly string[]): Promise<string> {
+async function compileWorkbench(): Promise<Awaited<ReturnType<typeof compile>>> {
   const resolve = createRequire(import.meta.url).resolve;
-  const compiler = await compile(css, {
+  return compile(css, {
     base: dirname(fileURLToPath(cssUrl)),
     loadStylesheet: async (id: string) => {
       const path = resolve(id);
       return { path, base: dirname(path), content: readFileSync(path, "utf8") };
     },
   });
-  return compiler.build([...candidates]);
 }
+
+/**
+ * Compiles the shipped workbench.css with the installed Tailwind and returns the
+ * CSS emitted for `candidates`.
+ *
+ * Source text cannot tell `@theme` from `@theme inline`: both spell
+ * `--font-sans: var(--font-wb, …)`. The difference shows up in what the compiled
+ * *utility* declares.
+ */
+async function buildUtilities(candidates: readonly string[]): Promise<string> {
+  return (await compileWorkbench()).build([...candidates]);
+}
+
+/** The part of @tailwindcss/oxide's API this file calls. */
+interface OxideModule {
+  readonly Scanner: new (options: {
+    readonly sources: readonly { base: string; pattern: string; negated: boolean }[];
+  }) => { scan(): string[]; readonly files: string[] };
+}
+
+/**
+ * workbench.css compiled the way the build compiles it: over the candidates
+ * Tailwind's own file scanner finds, not over a list a test picks. Same scanner
+ * (@tailwindcss/oxide, resolved through @tailwindcss/postcss so it is the copy
+ * the build loads) and the same source list @tailwindcss/postcss derives from
+ * `compiler.root` and `compiler.sources`, so it sees every class string,
+ * arbitrary value and bare custom-property name under the @source roots.
+ * Returns the joined bodies of the emitted `:root, :host` rules.
+ */
+async function buildScanned(extra: readonly string[] = []): Promise<{
+  readonly files: number;
+  readonly candidates: number;
+  readonly root: string;
+}> {
+  const compiler = await compileWorkbench();
+  if (compiler.root === null) {
+    // Automatic detection scans from PostCSS's `base` (process.cwd() in the
+    // build), which a test cannot reproduce faithfully.
+    throw new Error("workbench.css no longer sets source(none); see app/tailwind-source-scope.test.ts");
+  }
+  const sources = [
+    ...(compiler.root === "none" ? [] : [{ ...compiler.root, negated: false }]),
+    ...compiler.sources,
+  ];
+  const postcssEntry = createRequire(import.meta.url).resolve("@tailwindcss/postcss");
+  const { Scanner } = createRequire(postcssEntry)("@tailwindcss/oxide") as OxideModule;
+  const scanner = new Scanner({ sources });
+  const candidates = scanner.scan();
+  const compiled = compiler.build([...candidates, ...extra]);
+  const root = [...compiled.matchAll(/(?:^|[\n}])\s*:root,\s*:host\s*\{([^}]*)\}/gu)]
+    .map((match) => match[1]!)
+    .join("\n");
+  return { files: scanner.files.length, candidates: candidates.length, root };
+}
+
+// Floors, not counts (measured 2026-09-14: 101 files, 3256 candidates). A scanner
+// handed the wrong roots finds nothing, and "nothing declares --font-sans" holds.
+const MIN_SCANNED_FILES = 80;
+const MIN_SCANNED_CANDIDATES = 2000;
+const FONT_SANS_DECLARATION = /(?:^|[\s;])--font-sans\s*:/u;
 
 /** The full text of a top-level at-rule block (`@layer base { … }`, `@theme { … }`), found by brace depth. */
 function atRuleBlock(source: string, opener: RegExp): string {
@@ -90,13 +141,38 @@ describe("workbench.css", () => {
     expect(rule?.[1]).not.toMatch(/var\(--font-sans\)/u);
   });
 
+  it("emits no --font-sans to :root for anything under the @source roots", async () => {
+    // `@theme inline` fixes `.font-sans`, not every reader of the variable. Any
+    // rule or candidate that reads it through var() (an arbitrary value such as
+    // `[font-family:var(--font-sans)]` on a heading, or the bare custom-property
+    // name in a scanned file, tests and prose included) makes Tailwind declare
+    // `--font-sans: var(--font-wb, …)` in :root. `--font-wb` is undefined there,
+    // so that element computes to the fallback stack with no error. The gates
+    // above only ask for `font-sans`, and the e2e sweep only reads `.font-sans`
+    // elements; this one builds from what the scanner actually finds.
+    const scanned = await buildScanned();
+    expect(scanned.files, "files scanned under the @source roots").toBeGreaterThanOrEqual(MIN_SCANNED_FILES);
+    expect(scanned.candidates, "candidates found there").toBeGreaterThanOrEqual(MIN_SCANNED_CANDIDATES);
+    expect(scanned.root, ":root, :host rule in the compiled stylesheet").not.toBe("");
+    expect(scanned.root).not.toMatch(FONT_SANS_DECLARATION);
+    // Positive control, same pipeline: one scanned reader is enough to emit it.
+    const control = await buildScanned(["[font-family:var(--font-sans)]"]);
+    expect(control.root).toMatch(FONT_SANS_DECLARATION);
+  });
+
   it("still emits to :root every --color-wb-* token this stylesheet reads through var()", async () => {
-    // Under `@theme inline` a token reaches :root only while something reads it
-    // through var(); every utility gets the literal value instead. A new rule here
-    // written as var(--color-wb-rail) would get nothing, silently (a declaration
-    // whose var() resolves to nothing is invalid at computed-value time and falls
-    // back to the inherited or initial value). Candidates are irrelevant: the
-    // references below live in @layer base, which is always emitted.
+    // Under `@theme inline` a token reaches :root only while Tailwind sees
+    // something read it through var(); every utility gets the literal value
+    // instead. A rule in this stylesheet is such a read: add one written as
+    // var(--color-wb-rail) and Tailwind emits --color-wb-rail with it (measured
+    // 2026-09-14), as it does today for --color-wb-seo. What gets nothing,
+    // silently, is a read of a name @theme does not declare (a typo, a renamed or
+    // removed token), which this test catches here, or a read Tailwind never
+    // compiles or scans, such as a stylesheet outside the @source roots (none
+    // today; app/tailwind-source-scope.test.ts fails for one). Either way that
+    // var() resolves to nothing, the declaration is invalid at computed-value time
+    // and falls back to the inherited or initial value. Candidates are irrelevant
+    // here: the references below live in @layer base, which is always emitted.
     // `var(\s*`: `var( --x)` is valid CSS and must not slip past the extraction.
     const referenced = [
       ...new Set(

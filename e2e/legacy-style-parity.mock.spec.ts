@@ -190,6 +190,8 @@ test("the workbench face reaches every font-sans element in the shell", async ({
 
   const probe = await page.evaluate(() => ({
     onHtml: getComputedStyle(document.documentElement).getPropertyValue("--font-wb").trim(),
+    // Untrimmed on purpose: "" is exactly "declared nowhere from :root down".
+    fontSansOnHtml: getComputedStyle(document.documentElement).getPropertyValue("--font-sans"),
     onRoot: (() => {
       const root = document.getElementById("wb-root");
       return root ? getComputedStyle(root).getPropertyValue("--font-wb").trim() : null;
@@ -198,6 +200,15 @@ test("the workbench face reaches every font-sans element in the shell", async ({
   // The scenario this test exists for: the variable is scoped below <html>.
   expect(probe.onHtml, "--font-wb must not be defined on <html>").toBe("");
   expect(probe.onRoot, "#wb-root carries the next/font variable").toMatch(/Plus Jakarta Sans/u);
+  // `.font-sans` carries its value inline under `@theme inline`, but any other
+  // reader of var(--font-sans) that Tailwind finds in a scanned file (say an
+  // arbitrary `[font-family:var(--font-sans)]` on a heading) makes it declare
+  // `--font-sans` on :root, where `--font-wb` is undefined. That element falls
+  // back while every `.font-sans` element swept below stays right, so this reads
+  // the declaration itself: which element uses it, and whether it carries
+  // `.font-sans`, does not matter. Needs a fresh dev server and dist directory to
+  // mean anything after a change: the dev build keeps the candidates it has seen.
+  expect(probe.fontSansOnHtml, "--font-sans must not be declared on :root").toBe("");
   // Sidebar, topbar and the view root at least; a sweep, not a list.
   const closed = await fontSansSweep(page);
   expect(closed.length).toBeGreaterThanOrEqual(3);
@@ -219,10 +230,16 @@ test("the workbench face reaches every font-sans element in the shell", async ({
 // ConfirmDialog portals into #wb-root instead of <body> so that it inherits
 // --font-wb. Two things jsdom cannot see follow from that. (1) `position: fixed`
 // is relative to the viewport only while no ancestor establishes a containing
-// block for it: transform, and the standalone translate / rotate / scale that
-// Tailwind v4 compiles translate-* / rotate-* / scale-* to, perspective, filter,
-// backdrop-filter, contain, will-change and container-type all do, and <body>
-// never had such ancestors.
+// block for it, and <body> never had such ancestors. Many properties establish
+// one: transform, the standalone translate / rotate / scale that Tailwind v4
+// compiles translate-* / rotate-* / scale-* to, perspective, transform-style:
+// preserve-3d, filter, backdrop-filter, contain, will-change, container-type,
+// and whatever comes next. The property list below is a diagnostic, not the gate:
+// it once lacked transform-style and stayed green while a fixed probe sat 53px
+// off. The gate is geometric. #wb-root already fills the viewport from (0, 0), so
+// a probe positioned against it and one positioned against the viewport land in
+// the same box; the test moves #wb-root down first, and a probe that stays at
+// y = 0 is positioned against the viewport whatever the reason.
 // (2) The face has to actually reach the portalled root. No view opens a
 // ConfirmDialog yet (T7 wires the first; the real-dialog check belongs in T17),
 // so this puts an element carrying the Dialog root classes, read from
@@ -238,6 +255,9 @@ const DIALOG_ROOT_CLASS = (() => {
   return match[1]!;
 })();
 
+/** How far the test moves #wb-root down: any non-zero offset; 53px is the miss above. */
+const WB_ROOT_SHIFT = 53;
+
 test("a dialog root placed where ConfirmDialog portals covers the viewport in the workbench face", async ({ page }) => {
   expect(DIALOG_ROOT_CLASS).toMatch(/(?:^|\s)fixed(?:\s|$)/u);
   expect(DIALOG_ROOT_CLASS).toMatch(/(?:^|\s)inset-0(?:\s|$)/u);
@@ -245,7 +265,7 @@ test("a dialog root placed where ConfirmDialog portals covers the viewport in th
   await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
   await expect(page.locator("#main-content h1[data-wb-page-title]")).toBeVisible();
 
-  const result = await page.evaluate((className) => {
+  const result = await page.evaluate(({ className, shift }) => {
     const root = document.getElementById("wb-root");
     if (!root) return null;
     const chain: { el: string; offending: Record<string, string> }[] = [];
@@ -257,6 +277,7 @@ test("a dialog root placed where ConfirmDialog portals covers the viewport in th
         rotate: cs.rotate,
         scale: cs.scale,
         perspective: cs.perspective,
+        transformStyle: cs.transformStyle,
         filter: cs.filter,
         backdropFilter: cs.backdropFilter,
         contain: cs.contain,
@@ -266,34 +287,54 @@ test("a dialog root placed where ConfirmDialog portals covers the viewport in th
       chain.push({
         el: node.tagName.toLowerCase() + (node.id ? "#" + node.id : ""),
         offending: Object.fromEntries(
-          Object.entries(props).filter(([, value]) => !["none", "normal", "auto", ""].includes(value)),
+          Object.entries(props).filter(([, value]) => !["none", "normal", "auto", "flat", ""].includes(value)),
         ),
       });
     }
     const probe = document.createElement("div");
     probe.className = className;
+    // Exactly where the portal puts ConfirmDialog's root.
     root.append(probe);
-    const box = probe.getBoundingClientRect();
+    const box = () => {
+      const rect = probe.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    };
+    window.scrollTo(0, 0);
+    // margin-top moves #wb-root without making it a containing block for fixed
+    // descendants (position: relative + top would not either; transform would).
+    // Set through CSSOM rather than a style attribute, which CSP would govern.
+    root.style.marginTop = `${shift}px`;
+    const rootY = root.getBoundingClientRect().y;
+    const shifted = box();
+    const viewport = {
+      width: document.documentElement.clientWidth,
+      height: document.documentElement.clientHeight,
+    };
+    // Control: a containing block that is really on #wb-root must carry the probe
+    // down with it, or y === 0 above would prove nothing about this page.
+    root.style.transform = "translateZ(0)";
+    const contained = box();
+    root.style.removeProperty("transform");
+    root.style.removeProperty("margin-top");
     const fontFamily = getComputedStyle(probe).fontFamily;
     probe.remove();
-    return {
-      chain,
-      box: { x: box.x, y: box.y, width: box.width, height: box.height },
-      viewport: {
-        width: document.documentElement.clientWidth,
-        height: document.documentElement.clientHeight,
-      },
-      fontFamily,
-    };
-  }, DIALOG_ROOT_CLASS);
+    return { chain, rootY, shifted, viewport, contained, fontFamily };
+  }, { className: DIALOG_ROOT_CLASS, shift: WB_ROOT_SHIFT });
 
   expect(result, "#wb-root").not.toBeNull();
   expect(result!.chain[0]!.el).toBe("div#wb-root");
   expect(result!.chain.at(-1)!.el).toBe("html");
+  expect(result!.rootY, "#wb-root moved down").toBe(WB_ROOT_SHIFT);
+  expect(result!.contained.y, "control: a containing block on #wb-root carries the probe").toBe(WB_ROOT_SHIFT);
+  // The gate: before the property list, so a property the list lacks fails here.
+  expect(result!.shifted, "fixed probe under the portal target, #wb-root moved down").toEqual({
+    x: 0,
+    y: 0,
+    ...result!.viewport,
+  });
   for (const { el, offending } of result!.chain) {
     expect(offending, el + " establishes a containing block for fixed descendants").toEqual({});
   }
-  expect(result!.box).toEqual({ x: 0, y: 0, ...result!.viewport });
   expect(result!.fontFamily).toMatch(/Plus Jakarta Sans/u);
 });
 

@@ -40,10 +40,17 @@
    resolves --font-sans at :root, where --font-wb does not exist, and every
    `font-sans` element silently falls back to the system stack. `inline` writes
    the value into the utility, so var(--font-wb) resolves where it is used.
-   Side effect: Tailwind now emits a token to :root only while something reads it
-   through var() (today only --color-wb-seo, from the <progress> rules below).
-   Referencing any other token as var(--color-wb-*) outside a utility gets
-   nothing; workbench-css.test.ts compiles this file and fails if that happens here. */
+   Side effect: Tailwind now emits a token to :root only while something it
+   compiles or scans reads it through var(): a rule in this file (today only
+   --color-wb-seo, from the <progress> rules below), or an arbitrary value or the
+   bare variable name in a file under the @source roots. Such a read does get its
+   token. What gets nothing, with no error, is a read of a name @theme does not
+   declare (workbench-css.test.ts fails for one in this file) or a read Tailwind
+   never compiles or scans, such as a stylesheet outside the @source roots (none
+   today; app/tailwind-source-scope.test.ts fails for one). The same rule works
+   against the font: any such read of --font-sans emits it to :root, where
+   --font-wb is undefined, and that element falls back. workbench-css.test.ts and
+   e2e/legacy-style-parity.mock.spec.ts fail when --font-sans reaches :root. */
 @theme inline {
   --font-sans: var(--font-wb, ui-sans-serif), "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
