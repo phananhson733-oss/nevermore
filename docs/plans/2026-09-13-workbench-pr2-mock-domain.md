@@ -1007,7 +1007,7 @@ export function classifyPersistedState(raw: unknown): PersistedParse {
 | 步骤文案、`COST`、`TYPE_LABEL`、`ASSET_NAME` 显示名、`LINK_TYPES` 说明、`PROMPT_KINDS` 说明 | 各视图 PR 的 i18n |
 | R17 列出的六项 | PR-4 / PR-5 |
 | PR-1 遗留非 store 项（字体与 workbench.css 挂根 layout、触控目标、⌘K 提示、Tailwind `source(none)`、`AppShell` 死变体、`useGlobalShortcut` 重订阅） | PR-3（首次上生产前的收尾批） |
-| 可见度（Task 7）只去掉与品牌同名的竞品，不去与本站域名同名的竞品（`mockVisibility` 的 profile 不含 url）；竞品模块（Task 8）两者都去 | 记入 PR 描述，接真实可见度数据时统一 |
+| 档案爬取信号字段 `indexed` 改名 `indexable`（「可收录」不是「已收录」，跨模型评审诚实性面）按第三项发布前豁免处理、不升 `PERSISTED_VERSION`：带旧字段的信封同时有未知键与缺失键，按 R14 判 `invalid` 被丢弃而不是只读——只影响开发期本地数据（PR-1 未上线） | 接受；上线后同类改名必须升版本 |
 | 竞品域名总览 CSV 表头 `domain`（jsx:2613）会把「Rival Corp」这类公司名标成域名 | PR-3 改列名 |
 | 缺口表 `ours === null` 要渲染「—/未知」，不能用原型 jsx:2655 的「无」（那是在声称我们没有排名） | PR-3 |
 | 外链 `dr`/`difficulty` 为 null 的渲染：难度 chip 计数（jsx:2460-2462）不计 null 或加「未知」、DR 单元格「—」、chip 的 null 样式 | PR-5 |
