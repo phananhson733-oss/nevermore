@@ -16,8 +16,8 @@ functions ported to `apps/web/src/lib/workbench/mock/` (deterministic rng,
 text, local wall-clock stamps, market language; CSV, fenced data blocks and
 the provenance stamp; GSC paste parsing; keyword matrix; audit; AI visibility;
 competitors and backlinks; site profile and knowledge base; content outlines
-and answer plans; the demo site generator `makeDemoSite`, still in progress
-when this section was written) plus the artifact builders in `mock/builders/`;
+and answer plans; the demo site generator `makeDemoSite`) plus the artifact
+builders in `mock/builders/`;
 enum id arrays in `lib/workbench/enums.ts` with `workbench.enums.*` labels; the
 `keywordRows` / `gatedRows` selectors and their provider wiring; and a
 read-only persistence mode. Rulings R1-R17 live in
@@ -29,21 +29,38 @@ The provider imports `buildRows` itself, memoizes on seeds / brand /
 competitors / GSC rows, and exposes `keywordRows` and `keywordRowCount`. The
 visibility badge rounds the exact share (R15). Storage written by a newer build
 (only unknown keys) now makes the tab read-only instead of being overwritten
-with the initial state (R14); two pre-ship nullable widenings (`GscSignals`
-counts, `LinkTarget.dr` / `difficulty`) keep `PERSISTED_VERSION` at 1. Sample
-content no longer borrows GenGrowth's own facts (R8), invents competitor
-domains (R9), or presents generated signals as observations (R10). Prompt
-builders put user fields only in fenced data blocks (R6), and CSV cells are
-formula-neutralized (R7). `mock/brand.ts` keeps the audit rule library out of
-the client bundle, pinned by `store/client-import-graph.test.ts`. Deferred to
-later PRs (R17): `llms.txt` downloading as `llms.md` (PR-5); CSV BOM, keyword
-CSV row cap, audit report builder, `visPartial` export timestamp and run leases
-(PR-4).
+with the initial state (R14), and every write re-reads and classifies the
+stored value first so an older tab cannot overwrite newer data before the
+`storage` event arrives. Three pre-ship exemptions keep `PERSISTED_VERSION` at
+1: `GscSignals` counts and `LinkTarget.dr` / `difficulty` became nullable, and
+the crawl signal `indexed` was renamed `indexable` (the audit only knows
+"indexable"). Sample content no longer borrows GenGrowth's own facts (R8),
+invents competitor domains (R9), presents generated signals as observations
+(R10), compares the brand or its own domain with itself, or stamps the demo in
+the future. Prompt builders put user fields only in fenced data blocks (R6),
+document values are escaped against block-level Markdown (`docText`, checked
+with the `marked` lexer), JSON artifacts escape `<` / U+2028 / U+2029, and CSV
+cells are formula-neutralized (R7). `mock/brand.ts` keeps the audit rule
+library out of the client bundle, pinned by
+`store/client-import-graph.test.ts`. Deferred to later PRs (R17 plus the
+residual table at the end of the PR-2 plan): `llms.txt` downloading as
+`llms.md` (PR-5); CSV BOM, keyword CSV row cap, audit report builder,
+`visPartial` export timestamp, run leases and non-English/German GSC header
+labels (PR-4); sample badges, dynamic import of `mock/demo.ts` and the
+null-rank / null-DR renderings (PR-3 / PR-5).
 
-Verification (Task 17 backfills, run on the delivered HEAD): typecheck ___;
-lint ___; unit ___ files / ___ tests; `lib/workbench/**` coverage ___%;
-`@sf/web` build ___; mock e2e ___; production CSP smoke ___; `verify:docs` /
-`verify:spec` ___; cross-model review ___.
+Verification on code HEAD `04f8ae22`: `pnpm typecheck` / `lint` /
+`typecheck:e2e` / `lint:e2e` exit 0; `pnpm test` 1331 files / 23642 tests with
+only the 4 pre-existing `apps/marketing/e2e/geo-kb-v2-fixtures.test.ts`
+failures; `lib/workbench/**` coverage 99.49% statements / 96.89% branches /
+99.83% lines (only the unchanged PR-1 `store/hooks.ts` is below 80%);
+`@sf/web` build exit 0; mock e2e (workbench-shell, legacy-style-parity,
+critical-flows, frontend-error-states) 56 passed; production CSP smoke on
+`next start` `/login`: no `unsafe-inline`, 0 inline scripts or style
+attributes without a nonce, no CSP console errors; mock purity grep clean;
+`verify:docs` / `verify:spec` pass after the lock refresh. Cross-model review
+(gpt-6-astra, three surfaces): honesty 4, parsing 6, state 2 findings, all
+fixed (dispositions in design doc §14).
 
 ## 2026-09-11: workbench UI port PR-1 foundation (integration branch, not in production)
 
