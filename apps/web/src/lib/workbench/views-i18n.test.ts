@@ -162,6 +162,13 @@ const FORBIDDEN_BY_KEY: Readonly<
     "zh-CN": ["已存入", "已保存", "截断", "部分", "前面"],
     en: ["saved", "truncat", "partial", "first part"],
   },
+  // Nothing was stored, and nothing was pushed out. A rewrite that says the
+  // save went through, or that an older artifact made way for it, describes the
+  // silent eviction this refusal replaced.
+  "artifactActions.basketFull": {
+    "zh-CN": ["已存入", "已保存", "替换", "覆盖", "最早", "挤掉"],
+    en: ["saved", "replac", "oldest", "overwr", "evict"],
+  },
 };
 
 /**
@@ -347,6 +354,14 @@ const REQUIRED: Readonly<
   "artifactActions.tooLarge": {
     "zh-CN": ["存不进产物筐", "导出或复制"],
     en: ["Too large to save", "export it or copy it"],
+  },
+  // The one cause is known and named (the basket is full), and so is the way
+  // out. Each clause is pinned: the cause alone is a dead end, the way out alone
+  // does not say why nothing was stored, and "copy or export" is the part that
+  // stops the reader thinking the text is lost.
+  "artifactActions.basketFull": {
+    "zh-CN": ["产物筐已满", "删掉几件", "复制和导出"],
+    en: ["Artifacts is full", "Remove a few", "copy or export"],
   },
 };
 
@@ -584,7 +599,7 @@ const CASES: readonly string[] = [
   "shell.siteCard.unknownHint",
   // The ui primitives' own labels (Task 1b). They belong to no single view:
   // `ArtifactActionLabels` and the `tag` of `InPane`/`OutPane` are required
-  // props, so every view that mounts one reads these same ten. Spelling is the
+  // props, so every view that mounts one reads these same eleven. Spelling is the
   // component's (`exportFile`, not `export`) so a view can hand the object over
   // field for field. Not reusing `shell.drawer.*` or `week.report.*` is the
   // point: those are the drawer's and the weekly report's own words and must
@@ -597,6 +612,7 @@ const CASES: readonly string[] = [
   "artifactActions.save",
   "artifactActions.saved",
   "artifactActions.tooLarge",
+  "artifactActions.basketFull",
   "panes.in",
   "panes.out",
 ];

@@ -4122,7 +4122,8 @@
       "exportFile": "Export",
       "save": "Save to artifacts",
       "saved": "Saved",
-      "tooLarge": "Too large to save to artifacts. You can still export it or copy it."
+      "tooLarge": "Too large to save to artifacts. You can still export it or copy it.",
+      "basketFull": "Could not save: Artifacts is full. Remove a few there, then save again. You can still copy or export this."
     },
     "panes": {
       "in": "Input",
