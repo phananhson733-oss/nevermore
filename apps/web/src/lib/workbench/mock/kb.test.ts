@@ -1,0 +1,202 @@
+import { describe, expect, it } from "vitest";
+import { PERSISTED_VERSION, parsePersistedState } from "../store/schema.ts";
+import { populatedProjectState } from "../store/test-fixtures.ts";
+import type { KbEntry, Profile, ProfileDoc } from "../types.ts";
+import { fillFirstKbGap, kbGapCount, seedKb } from "./kb.ts";
+import { demoAiDoc } from "./profile.ts";
+import { splitList } from "./text.ts";
+
+type SeedProfile = Pick<Profile, "brand" | "positioning" | "features" | "competitors">;
+
+const EVIDENCE = "来自站点档案字段";
+/** Not GenGrowth, so a borrowed prototype fact cannot hide behind the brand. */
+const EMPTY: SeedProfile = { brand: "Acme", positioning: "", features: "", competitors: "" };
+const FULL: SeedProfile = {
+  brand: "Widgets",
+  positioning: "inventory software for small warehouses",
+  features: "barcode scanning, stock alerts, supplier portal",
+  competitors: "Sortly, inFlow, Zoho Inventory, Fishbowl, Cin7",
+};
+const ONE: SeedProfile = { brand: "", positioning: "  a shelf planner ", features: "shelf maps", competitors: "Sortly" };
+const FOUR_RIVALS: SeedProfile = { ...EMPTY, competitors: "Sortly, inFlow, Zoho Inventory, Fishbowl" };
+
+function docWith(facts: readonly string[]): ProfileDoc {
+  return { crawl: null, gsc: null, third: null, ai: { ...demoAiDoc({ ...EMPTY, url: "", market: "" }), facts }, at: "2026-09-13 10:00" };
+}
+
+function gap(id: string, cat: KbEntry["cat"]): KbEntry {
+  return { id, cat, statement: "", evidence: "", source: "", from: "gap" };
+}
+
+function manual(id: string, cat: KbEntry["cat"], statement: string): KbEntry {
+  return { id, cat, statement, evidence: EVIDENCE, source: "", from: "manual" };
+}
+
+function deepFreeze(entries: readonly KbEntry[]): readonly KbEntry[] {
+  return Object.freeze(entries.map((entry) => Object.freeze({ ...entry })));
+}
+
+const CASES: readonly (readonly [SeedProfile, ProfileDoc | null])[] = [
+  [EMPTY, null],
+  [FULL, docWith(["Widgets ships from Leeds", "Widgets has a public API"])],
+  [ONE, null],
+  [FOUR_RIVALS, docWith([])],
+  [FULL, { ...docWith([]), ai: demoAiDoc({ ...FULL, url: "widgets.co.uk", market: "GB" }) }],
+];
+
+describe("seedKb", () => {
+  it("seeds only gaps for an empty profile and no document", () => {
+    expect(seedKb(EMPTY, null)).toEqual([gap("kb-01", "definition"), gap("kb-02", "boundary"), gap("kb-03", "pricing")]);
+  });
+
+  it("derives manual entries from profile fields, gaps for rivals, AI drafts from facts", () => {
+    const doc = docWith(["Widgets ships from Leeds", "Widgets has a public API"]);
+    expect(seedKb(FULL, doc)).toEqual([
+      manual("kb-01", "definition", "Widgets 是inventory software for small warehouses"),
+      manual("kb-02", "capability", "Widgets 提供 barcode scanning"),
+      manual("kb-03", "capability", "Widgets 提供 stock alerts"),
+      manual("kb-04", "capability", "Widgets 提供 supplier portal"),
+      gap("kb-05", "boundary"),
+      gap("kb-06", "pricing"),
+      gap("kb-07", "comparison"),
+      gap("kb-08", "comparison"),
+      gap("kb-09", "comparison"),
+      { id: "kb-10", cat: "data", statement: "Widgets ships from Leeds", evidence: "", source: "", from: "aiDraft" },
+      { id: "kb-11", cat: "data", statement: "Widgets has a public API", evidence: "", source: "", from: "aiDraft" },
+    ]);
+  });
+
+  it("uses the brand placeholder and keeps the raw positioning in the statement", () => {
+    expect(seedKb(ONE, null)).toEqual([
+      manual("kb-01", "definition", "[品牌] 是  a shelf planner "),
+      manual("kb-02", "capability", "[品牌] 提供 shelf maps"),
+      gap("kb-03", "boundary"),
+      gap("kb-04", "pricing"),
+      gap("kb-05", "comparison"),
+    ]);
+  });
+
+  it("treats a whitespace-only positioning as a definition gap", () => {
+    expect(seedKb({ ...FULL, positioning: "   " }, null)[0]).toEqual(gap("kb-01", "definition"));
+  });
+
+  it("opens a comparison gap for the first three real competitors only", () => {
+    const count = (profile: SeedProfile): number =>
+      seedKb(profile, null).filter((entry) => entry.cat === "comparison").length;
+    expect(count(EMPTY)).toBe(0);
+    expect(count({ ...EMPTY, competitors: " , ," })).toBe(0);
+    expect(count({ ...EMPTY, competitors: "Sortly" })).toBe(1);
+    expect(count(FOUR_RIVALS)).toBe(3);
+    expect(count(FULL)).toBe(3);
+    expect(count({ ...EMPTY, competitors: "Sortly, sortly, SORTLY, inFlow" })).toBe(2);
+  });
+
+  it("adds no data entries without facts, and skips blank facts", () => {
+    const cats = (doc: ProfileDoc | null): readonly string[] => seedKb(FULL, doc).map((entry) => entry.cat);
+    expect(cats(null)).not.toContain("data");
+    expect(cats(docWith([]))).not.toContain("data");
+    expect(seedKb(EMPTY, docWith(["", "  ", "Acme is open source"])).filter((entry) => entry.cat === "data")).toEqual([
+      { id: "kb-04", cat: "data", statement: "Acme is open source", evidence: "", source: "", from: "aiDraft" },
+    ]);
+  });
+
+  it("files the demo AI document's facts as AI drafts, never as manual", () => {
+    const profile = { ...FULL, url: "widgets.co.uk", market: "GB" };
+    const doc = { ...docWith([]), ai: demoAiDoc(profile) };
+    const data = seedKb(FULL, doc).filter((entry) => entry.cat === "data");
+    expect(data).toHaveLength(splitList(FULL.features).length);
+    expect(data.every((entry) => entry.from === "aiDraft")).toBe(true);
+  });
+
+  it("holds the provenance invariants for every fixture", () => {
+    for (const [profile, doc] of CASES) {
+      const entries = seedKb(profile, doc);
+      const rawValues = [profile.positioning, ...splitList(profile.features)].filter((value) => value.trim() !== "");
+      expect(entries.map((entry) => entry.id)).toEqual(
+        entries.map((_, index) => `kb-${String(index + 1).padStart(2, "0")}`),
+      );
+      for (const entry of entries) {
+        expect(entry.from).not.toBe("crawl");
+        expect(Object.keys(entry).sort()).toEqual(["cat", "evidence", "from", "id", "source", "statement"]);
+        if (entry.from === "manual") {
+          expect(entry.source).toBe("");
+          expect(entry.evidence).toBe(EVIDENCE);
+          expect(rawValues.some((value) => entry.statement.includes(value))).toBe(true);
+        }
+        if (entry.from === "gap") expect(entry).toEqual(gap(entry.id, entry.cat));
+        if (entry.from === "aiDraft") expect(doc?.ai.facts).toContain(entry.statement);
+      }
+    }
+  });
+
+  it("round-trips through the strict persisted-state schema", () => {
+    for (const [profile, doc] of CASES) {
+      const kb = { entries: seedKb(profile, doc), at: "2026-09-13 10:00" };
+      const state = { ...populatedProjectState({ url: "acme.io", brand: profile.brand, market: "US" }), kb };
+      const raw: unknown = JSON.parse(JSON.stringify({ v: PERSISTED_VERSION, state }));
+      expect(parsePersistedState(raw)?.kb).toEqual(kb);
+    }
+  });
+});
+
+describe("fillFirstKbGap", () => {
+  const PATCH = { statement: "[示例] 定价待补", evidence: "示例，未核对", source: "", from: "aiDraft" } as const;
+
+  it("fills the first empty entry of the category in place of the gap, keeping its id", () => {
+    const entries = deepFreeze(seedKb(FULL, null));
+    const snapshot = structuredClone(entries);
+    const filled = fillFirstKbGap(entries, "comparison", PATCH, "kb-new");
+    expect(filled).not.toBe(entries);
+    expect(filled).toHaveLength(entries.length);
+    expect(filled[6]).toEqual({ id: "kb-07", cat: "comparison", ...PATCH });
+    expect(filled[7]).toEqual(gap("kb-08", "comparison"));
+    expect(filled.filter((_, index) => index !== 6)).toEqual(entries.filter((_, index) => index !== 6));
+    expect(filled[0]).toBe(entries[0]);
+    expect(entries).toEqual(snapshot);
+  });
+
+  it("keeps the patch's origin instead of stamping the fill as manual", () => {
+    const filled = fillFirstKbGap(deepFreeze(seedKb(EMPTY, null)), "pricing", PATCH, "kb-new");
+    expect(filled.find((entry) => entry.cat === "pricing")?.from).toBe("aiDraft");
+    expect(filled.some((entry) => entry.from === "manual")).toBe(false);
+  });
+
+  it("treats a whitespace-only statement as a gap", () => {
+    const entries = deepFreeze([{ ...gap("kb-01", "boundary"), statement: "  \n" }]);
+    expect(fillFirstKbGap(entries, "boundary", PATCH, "kb-new")).toEqual([{ id: "kb-01", cat: "boundary", ...PATCH }]);
+  });
+
+  it("appends a new entry when the category has no gap left", () => {
+    const entries = deepFreeze(seedKb(FULL, null));
+    const filled = fillFirstKbGap(entries, "capability", PATCH, "kb-demo-capability");
+    expect(filled.slice(0, entries.length)).toEqual(entries);
+    expect(filled.at(-1)).toEqual({ id: "kb-demo-capability", cat: "capability", ...PATCH });
+    expect(fillFirstKbGap(deepFreeze([]), "faq", PATCH, "kb-x")).toEqual([{ id: "kb-x", cat: "faq", ...PATCH }]);
+  });
+
+  it("copies only the entry fields from the patch", () => {
+    const patch = { ...PATCH, extra: "leak", id: "kb-99", cat: "faq" };
+    for (const entries of [deepFreeze(seedKb(EMPTY, null)), deepFreeze([])]) {
+      const filled = fillFirstKbGap(entries, "definition", patch, "kb-new");
+      const entry = filled.find((candidate) => candidate.statement === PATCH.statement);
+      expect(Object.keys(entry ?? {}).sort()).toEqual(["cat", "evidence", "from", "id", "source", "statement"]);
+      expect(entry?.cat).toBe("definition");
+      expect(entry?.id).not.toBe("kb-99");
+    }
+  });
+});
+
+describe("kbGapCount", () => {
+  it("is null without a knowledge base", () => {
+    expect(kbGapCount(null)).toBeNull();
+  });
+
+  it("counts entries whose statement is blank", () => {
+    const at = "2026-09-13 10:00";
+    expect(kbGapCount({ entries: [], at })).toBe(0);
+    expect(
+      kbGapCount({ entries: [gap("kb-01", "pricing"), { ...gap("kb-02", "faq"), statement: " " }, manual("kb-03", "definition", "x")], at }),
+    ).toBe(2);
+    expect(kbGapCount({ entries: seedKb(FULL, null), at })).toBe(5);
+  });
+});
