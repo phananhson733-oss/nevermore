@@ -2,7 +2,7 @@
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { useGlobalShortcut } from "./useGlobalShortcut.ts";
 
 // React only suppresses false-positive concurrent-render warnings when a test
@@ -10,7 +10,9 @@ import { useGlobalShortcut } from "./useGlobalShortcut.ts";
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
 
-// One stable object: the hook re-subscribes whenever `handlers` changes identity.
+// A module-level object for the key-semantics tests below. Its identity never
+// changes, so these tests cannot see whether the hook re-subscribes: the
+// "handler identity" describe at the bottom is the one that carries that contract.
 const handlers = { onTogglePalette: vi.fn(), onEscape: vi.fn() };
 
 function Host() {
@@ -27,7 +29,6 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  act(() => root?.render(<Host />));
 });
 
 afterEach(() => {
@@ -47,6 +48,10 @@ function pressAtWindow(init: KeyboardEventInit): boolean {
 }
 
 describe("useGlobalShortcut", () => {
+  beforeEach(() => {
+    act(() => root?.render(<Host />));
+  });
+
   it("toggles the palette on Cmd/Ctrl+K and closes on Escape", () => {
     expect(pressAtWindow({ key: "k", metaKey: true })).toBe(true);
     expect(pressAtWindow({ key: "K", ctrlKey: true })).toBe(true);
@@ -87,5 +92,72 @@ describe("useGlobalShortcut", () => {
 
     expect(handlers.onTogglePalette).not.toHaveBeenCalled();
     expect(handlers.onEscape).not.toHaveBeenCalled();
+  });
+});
+
+type ShortcutHandlers = Parameters<typeof useGlobalShortcut>[0];
+
+function spyHandlers() {
+  return { onTogglePalette: vi.fn(), onEscape: vi.fn() };
+}
+
+/**
+ * Renders a host that builds its handlers object inline, so every render hands
+ * the hook a fresh identity with fresh functions: the shape a caller gets when
+ * it forgets (or does not bother) to memoize. Renders three times (a tuple, so
+ * each generation is statically present) and returns one spy pair per render,
+ * the keydown subscriptions made on `window`, and how many renders happened.
+ */
+function renderInlineHandlersRepeatedly() {
+  const addListener = vi.spyOn(window, "addEventListener");
+  onTestFinished(() => addListener.mockRestore());
+
+  let renders = 0;
+  function InlineHost({ onTogglePalette, onEscape }: ShortcutHandlers) {
+    renders += 1;
+    useGlobalShortcut({ onTogglePalette, onEscape });
+    return null;
+  }
+
+  const generations = [spyHandlers(), spyHandlers(), spyHandlers()] as const;
+  for (const generation of generations) {
+    act(() =>
+      root?.render(
+        <InlineHost
+          onTogglePalette={generation.onTogglePalette}
+          onEscape={generation.onEscape}
+        />,
+      ),
+    );
+  }
+
+  const keydownSubscriptions = addListener.mock.calls.filter(
+    ([type]) => type === "keydown",
+  );
+  return { generations, keydownSubscriptions, renders: () => renders };
+}
+
+describe("useGlobalShortcut handler identity", () => {
+  it("subscribes to window keydown once across re-renders with new handler identities", () => {
+    const { keydownSubscriptions, renders } = renderInlineHandlersRepeatedly();
+
+    // Without this the next line could pass on a host that rendered only once.
+    expect(renders()).toBe(3);
+    expect(keydownSubscriptions).toHaveLength(1);
+  });
+
+  it("delivers keys to the handlers from the latest render, not earlier ones", () => {
+    const { generations } = renderInlineHandlersRepeatedly();
+    const [first, second, latest] = generations;
+
+    pressAtWindow({ key: "k", metaKey: true });
+    pressAtWindow({ key: "Escape" });
+
+    expect(latest.onTogglePalette).toHaveBeenCalledTimes(1);
+    expect(latest.onEscape).toHaveBeenCalledTimes(1);
+    for (const stale of [first, second]) {
+      expect(stale.onTogglePalette).not.toHaveBeenCalled();
+      expect(stale.onEscape).not.toHaveBeenCalled();
+    }
   });
 });
