@@ -65,7 +65,7 @@ function docField(field: string, patch: (doc: ProfileDoc, value: string) => Prof
   return { field: `doc.${field}`, apply: (input, value) => ({ ...input, doc: patch(input.doc, value) }) };
 }
 
-function crawlField(key: "stack" | "lang"): FieldCase<ProfileInput> {
+function crawlField(key: "stack" | "lang" | "h1"): FieldCase<ProfileInput> {
   return docField(`crawl.${key}`, (doc, value) => ({
     ...doc,
     crawl: doc.crawl === null ? null : { ...doc.crawl, [key]: value },
@@ -84,6 +84,7 @@ const PROFILE_CASES: readonly FieldCase<ProfileInput>[] = [
   docField("at", (doc, value) => ({ ...doc, at: value })),
   crawlField("stack"),
   crawlField("lang"),
+  crawlField("h1"),
   docField("gsc.top[0].query", (doc, value) => ({
     ...doc,
     gsc:

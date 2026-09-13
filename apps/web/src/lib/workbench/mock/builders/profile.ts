@@ -35,11 +35,20 @@ export interface ProfileDocInput {
   readonly doc: ProfileDoc;
 }
 
+/**
+ * What the document reads besides the snapshot: the site it is about. The rest
+ * comes from `doc`, so a profile edited after generation cannot put words in a
+ * document written earlier (T9 review #2).
+ */
+export interface ProfileDocMarkdownInput {
+  readonly profile: Pick<Profile, "brand" | "url" | "market">;
+  readonly doc: ProfileDoc;
+}
+
 /** Every number under these section titles comes from generated signals in this PR. */
 const SAMPLE_SUFFIX = "（示例数据）";
 /** A GSC snapshot whose numbers exist but whose source was never recorded (only a tampered envelope today). */
 const UNKNOWN_SOURCE_SUFFIX = "（来源未知）";
-const UNFILLED_LINE = "- [未填]";
 
 export function profileJson({ profile, ai }: ProfileJsonInput): string {
   const base = {
@@ -55,10 +64,6 @@ export function profileJson({ profile, ai }: ProfileJsonInput): string {
   return JSON.stringify(ai === undefined ? base : { ...base, ai }, null, 2);
 }
 
-function orUnfilled(lines: readonly string[]): readonly string[] {
-  return lines.length === 0 ? [UNFILLED_LINE] : lines;
-}
-
 function crawlSection(crawl: CrawlSignals | null): string {
   if (crawl === null) return "## 站点现状\n- 未抓取";
   const keyPages = [
@@ -70,6 +75,7 @@ function crawlSection(crawl: CrawlSignals | null): string {
     `## 站点现状${SAMPLE_SUFFIX}`,
     `- 技术栈（推测）：${inlineText(crawl.stack)}｜语言：${inlineText(crawl.lang)}`,
     `- 抓到页面 ${countText(crawl.pages)}，可收录约 ${countText(crawl.indexable)}`,
+    `- 首页 H1：${inlineText(crawl.h1)}`,
     `- 关键页：${keyPages.join("、") || "缺失"}`,
   ].join("\n");
 }
@@ -119,6 +125,7 @@ function gscSection(gsc: GscSignals | null, source: GscRowsSource | null): strin
   const top = gsc.top.map(topQuery);
   return [
     `## 搜索表现${gscSourceSuffix(source)}`,
+    `- 查询 ${countText(gsc.total)} 条，其中品牌词 ${countText(gsc.brandQueries)} 条`,
     `- 品牌词点击 ${countText(gsc.brandClicks)}，非品牌词点击 ${countText(gsc.nonBrandClicks)}`,
     `- 临界词（11-30 名）${countText(gsc.near)} 条`,
     ...(top.length === 0 ? [] : [`- 点击最多：${top.join("；")}`]),
@@ -153,21 +160,26 @@ function aiSections(ai: AiDoc): readonly (string | null)[] {
   ];
 }
 
-export function profileDocMarkdown({ profile, doc }: ProfileDocInput): string {
+/**
+ * The doc tab's fields, read from the same snapshot (T9 review #2), so what the
+ * page shows is what a copy, an export or a save says. The header's brand, URL
+ * and market are the site the project is about, shown read-only beside the
+ * document. Positioning, features and competitors are not in the snapshot, so
+ * the document does not print them from the current profile; the summary
+ * carries the positioning it was generated from.
+ */
+export function profileDocMarkdown({ profile, doc }: ProfileDocMarkdownInput): string {
   const header = [
     `# ${inlineText(profile.brand) || "[品牌]"} 产品档案`,
     `生成时间：${inlineText(doc.at)}｜站点：${inlineText(profile.url)}｜市场：${inlineText(profile.market)}`,
   ].join("\n");
   return joinParts([
     header,
-    docSection("一句话定位", orUnfilled(bulletLines([profile.positioning]))),
     docSection("产品描述", bulletLines([doc.ai.summary])),
-    docSection("核心功能", orUnfilled(bulletLines(splitList(profile.features)))),
     crawlSection(doc.crawl),
     thirdSection(doc.third),
     gscSection(doc.gsc, doc.gscSource),
     ...aiSections(doc.ai),
-    docSection("竞品", orUnfilled(bulletLines(splitList(profile.competitors)))),
   ]);
 }
 

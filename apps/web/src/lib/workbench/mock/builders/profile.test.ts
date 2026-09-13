@@ -73,6 +73,9 @@ const PROFILE_FIELDS = (
   ["url", "brand", "positioning", "features", "competitors", "market"] as const
 ).map(profileField);
 
+/** The only profile fields the document reads: the site it is about (T9 review #2). */
+const SITE_FIELDS = (["url", "brand", "market"] as const).map(profileField);
+
 const AI_FIELDS: readonly FieldCase<Input>[] = [
   aiField("summary", (ai, value) => ({ ...ai, summary: value })),
   ...(["seg", "role", "pain", "trigger", "objection"] as const).map(icpField),
@@ -93,6 +96,10 @@ const DOC_ONLY_FIELDS: readonly FieldCase<Input>[] = [
     ...doc,
     crawl: doc.crawl === null ? null : { ...doc.crawl, lang: value },
   })),
+  docField("crawl.h1", (doc, value) => ({
+    ...doc,
+    crawl: doc.crawl === null ? null : { ...doc.crawl, h1: value },
+  })),
   docField("gsc.top[0].query", (doc, value) => ({
     ...doc,
     gsc:
@@ -108,30 +115,25 @@ const DOC_ONLY_FIELDS: readonly FieldCase<Input>[] = [
 ];
 
 const CONTEXT_FIELDS = [...PROFILE_FIELDS, ...AI_FIELDS];
-const DOC_FIELDS = [...PROFILE_FIELDS, ...AI_FIELDS, ...DOC_ONLY_FIELDS];
+const DOC_FIELDS = [...SITE_FIELDS, ...AI_FIELDS, ...DOC_ONLY_FIELDS];
 
 const EXPECTED_DOC = `# Acme 产品档案
 生成时间：2026-09-13 10:30｜站点：https://acme.io｜市场：US
 
-## 一句话定位
-- 给小团队用的 SEO 检查工具
-
 ## 产品描述
 - [示例] Acme：给小团队用的 SEO 检查工具
-
-## 核心功能
-- 站点审计
-- 关键词矩阵
 
 ## 站点现状（示例数据）
 - 技术栈（推测）：Next.js｜语言：en-US
 - 抓到页面 42，可收录约 37
+- 首页 H1：[示例] Acme 的首页 H1（未抓取）
 - 关键页：定价、博客
 
 ## 第三方估算（示例数据）
 - 自然流量 ≈1500/月，DR 29，引用域名 77（估算值，需核实）
 
 ## 搜索表现（示例数据）
+- 查询 3 条，其中品牌词 1 条
 - 品牌词点击 120，非品牌词点击 45
 - 临界词（11-30 名）2 条
 - 点击最多：acme seo（120 次，排名 1.2）；seo checklist（n/a 次，排名 n/a）
@@ -156,11 +158,7 @@ const EXPECTED_DOC = `# Acme 产品档案
 - [示例事实：Acme 提供 站点审计，需补证据与核对日期]｜[补证据与核对日期]
 
 ## 语气规范
-- [语气待定：先给结论再给理由]
-
-## 竞品
-- Rival
-- Other`;
+- [语气待定：先给结论再给理由]`;
 
 describe("profileJson", () => {
   it("lists the profile with split lists and the AI doc as a sub-object", () => {
@@ -210,7 +208,7 @@ describe("profileDocMarkdown", () => {
     expect(doc).not.toContain("示例数据");
   });
 
-  it("omits empty AI sections and fills empty profile fields", () => {
+  it("omits empty AI sections and falls back to [品牌] for a blank brand", () => {
     const ai: AiDoc = {
       summary: " ",
       icp: [],
@@ -223,26 +221,16 @@ describe("profileDocMarkdown", () => {
     const gsc =
       FIXTURE_DOC.gsc === null ? null : { ...FIXTURE_DOC.gsc, top: [] };
     const doc = profileDocMarkdown({
-      profile: {
-        ...FIXTURE_PROFILE,
-        brand: "",
-        positioning: "",
-        features: "",
-        competitors: " , ",
-      },
+      profile: { ...FIXTURE_PROFILE, brand: "" },
       doc: { ...FIXTURE_DOC, ai, gsc },
     });
     expect(headingLines(doc)).toEqual([
       "# [品牌] 产品档案",
-      "## 一句话定位",
-      "## 核心功能",
       "## 站点现状（示例数据）",
       "## 第三方估算（示例数据）",
       "## 搜索表现（示例数据）",
-      "## 竞品",
     ]);
-    expect(doc).toContain("## 一句话定位\n- [未填]");
-    expect(doc).toContain("## 竞品\n- [未填]");
+    expect(doc).not.toContain("[未填]");
     expect(doc).not.toContain("点击最多");
   });
 
