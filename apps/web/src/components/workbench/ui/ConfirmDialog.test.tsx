@@ -70,7 +70,8 @@ function Harness({ open, handlers }: { readonly open: boolean; readonly handlers
   );
 }
 
-function render(element: ReactElement, into: HTMLElement = document.body): HTMLElement {
+/** Mounts `element`; the returned function re-renders the same root. */
+function render(element: ReactElement, into: HTMLElement = document.body): (next: ReactElement) => void {
   const container = document.createElement("div");
   into.append(container);
   const root = createRoot(container);
@@ -79,15 +80,25 @@ function render(element: ReactElement, into: HTMLElement = document.body): HTMLE
     act(() => root.unmount());
     container.remove();
   };
-  return container;
+  return (next) => act(() => root.render(next));
 }
 
+/**
+ * Mounts the harness closed, then opens it: the order a user produces. The
+ * portal target is looked up while the open box renders. Had the first frame
+ * been the open one, `#wb-app` would not be in the document yet, so a target
+ * that preferred `#wb-app` (the inert subtree) would find nothing there, fall
+ * through to the right element, and every assertion about where the box went
+ * would pass against exactly the bug they exist for.
+ */
 function open(handlers: Partial<Handlers> = {}, into?: HTMLElement): Handlers {
   const full: Handlers = {
     onClose: handlers.onClose ?? vi.fn(),
     onConfirm: handlers.onConfirm ?? vi.fn(),
   };
-  render(<Harness open handlers={full} />, into);
+  const rerender = render(<Harness open={false} handlers={full} />, into);
+  expect(document.getElementById(WB_APP_ROOT_ID), "#wb-app mounted before opening").not.toBeNull();
+  rerender(<Harness open handlers={full} />);
   return full;
 }
 
@@ -144,11 +155,18 @@ describe("ConfirmDialog", () => {
     // inert fence asserted above is untouched.
     const root = mountLayoutRoot();
     open({}, root);
+    const app = document.getElementById(WB_APP_ROOT_ID);
 
+    // The production shape: #wb-app sits inside #wb-root and is inert while the
+    // box is open, so a target that picked the nearest workbench element would
+    // pick #wb-app and still be "under #wb-root".
+    expect(root.contains(app)).toBe(true);
+    expect(app?.hasAttribute("inert")).toBe(true);
     // Direct parent, not "somewhere under": the view itself is under #wb-root.
     expect(portalRoot().parentElement).toBe(root);
-    expect(document.getElementById(WB_APP_ROOT_ID)?.contains(portalRoot())).toBe(false);
-    expect(dialog().closest("[inert]")).toBeNull();
+    expect(portalRoot().parentElement).not.toBe(app);
+    expect(app?.contains(portalRoot())).toBe(false);
+    expect(portalRoot().closest("[inert]")).toBeNull();
   });
 
   it("falls back to document.body when there is no layout root around it", () => {
