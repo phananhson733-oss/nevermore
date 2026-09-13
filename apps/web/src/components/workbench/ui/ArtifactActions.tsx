@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ARTIFACT_MIME, downloadName } from "@/lib/workbench/artifact-file";
 import { downloadText } from "@/lib/workbench/download";
 import { agentTaskWrapper } from "@/lib/workbench/mock/builders/agent-task";
-import type { ArtifactType } from "@/lib/workbench/types";
 import type { PreparedArtifact } from "../hooks/useAddArtifact.ts";
-import { downloadName } from "../shell/ArtifactDrawer.tsx";
 import { BUTTON_MINI } from "./panel.ts";
 
 /**
@@ -31,18 +30,6 @@ import { BUTTON_MINI } from "./panel.ts";
 
 /** How long a flash stays up (jsx `flash()`). */
 const FLASH_MS = 1300;
-
-/**
- * Same table as `ArtifactDrawer.tsx`, and deliberately typed
- * `Record<ArtifactType, …>` in both places: a fifth artifact type is a compile
- * error here as well as there, so the two cannot silently cover different sets.
- */
-const MIME: Readonly<Record<ArtifactType, string>> = {
-  csv: "text/csv;charset=utf-8",
-  md: "text/markdown;charset=utf-8",
-  json: "application/json;charset=utf-8",
-  prompt: "text/plain;charset=utf-8",
-};
 
 export interface ArtifactActionLabels {
   readonly copy: string;
@@ -124,7 +111,7 @@ export function ArtifactActions({
             downloadText(
               downloadName(prepared.artifact),
               prepared.content,
-              MIME[prepared.artifact.type],
+              ARTIFACT_MIME[prepared.artifact.type],
             )
           }
           className={BUTTON_MINI}
