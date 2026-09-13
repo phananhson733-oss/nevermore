@@ -13,9 +13,10 @@ import { Toggle } from "../../ui/Toggle.tsx";
  * browser's workbench store. Nothing reads them to send anything, which the
  * block says in so many words (`settings.notify.note`). No sample-data chip
  * (codex S11 #1): the switches read and write the operator's own preferences,
- * so "Sample data" would be false after a flip, and the chip's title ("sample
- * content is Chinese-only") has nothing to do with them. There is no save
- * button: a flip is the write.
+ * so "Sample data" would be false after a flip, and the chip's title (module
+ * results are generated locally as samples, GSC rows the operator imports are
+ * not, sample content is in Chinese only) says nothing about them. There is no
+ * save button: a flip is the write.
  *
  * A flip dispatches `setNotify` with that switch's key and value, and the
  * reducer merges it into the `notify` it holds when the action runs (codex S11
