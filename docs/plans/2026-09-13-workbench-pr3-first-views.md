@@ -426,7 +426,7 @@ docs/PROGRESS.md                   T18
 - **已裁决并已实现**（main 2026-09-14，T18 方案【1】【2】【3】【4】【5】【7】；实现提交 `d6d3764c`（导出文档的区间写法与周报 `n/a`）+ `23c0fe53`（i18n 与 `views-i18n.test.ts` 钉子）；T18 在 HEAD 上核实过新文案、两个死键已删、消息目录与 builder 里不再有「11-30」）：
   - 【1】chip title 补范围句，概览脚注 `gscFoot.user` 补「不是示例」；
   - 【2】【7】删 `week.report.title` 与 `overview.next.step.importGsc`；
-  - 【3】页名与 h1 保留「本周变化」，`artifactsThisWeek` 不改名。`settings.notify.weekly.description` 改说「近 7 天」（`23c0fe53`）；`week.empty.title` 与 `week.report.disabled` 先改成「近 7 天」（`23c0fe53`），随后又改为只描述当前状态、不带时间范围：「暂无可显示的结果」「暂无可写进周报的结果」（`db074fd0`、`ac74b802`、`a8c89b6e`）。原因是空态判定看整个 store，不看日期范围。
+  - 【3】页名与 h1 保留「本周变化」，`artifactsThisWeek` 不改名。`settings.notify.weekly.description` 改说「近 7 天」（`23c0fe53`）；`week.empty.title` 与 `week.report.disabled` 先改成「近 7 天」（`23c0fe53`），随后又改为只描述当前状态、不带时间范围：「暂无可显示的结果」「暂无可写进周报的结果」（`db074fd0`、`ac74b802`、`a8c89b6e`、`60acf7a0`）。原因是两者的判据都是 `isEmpty(state)`，与 7 天窗口无关，所以不写时间范围，也不写「跑过」；只有通知说明描述的是页面范围，保留「（近 7 天）」。
   - 【4】「11-30」改区间写法「排名 >10 且 ≤30」；
   - 【5】界面不可用值用「—」，导出文档统一 `n/a`（`week.ts` 的 `UNKNOWN`，连带 `tasksSection` 里「标为「—」」那句）。
   - 设计稿对应句（§4.3 chip、§7、rev8 状态行）已按实现回写。

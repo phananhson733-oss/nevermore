@@ -14,9 +14,9 @@ integration branch `feat/workbench-ui-port`. The branch has **not been pushed**
 and no PR exists yet; nothing reaches production before PR-3b (integration
 branch → `main`). Plan and rulings Q1-Q37:
 `docs/plans/2026-09-13-workbench-pr3-first-views.md`; design doc rev8 carries
-them back. Code base for this entry: `a8c89b6e`. The copy rulings of
+them back. Code base for this entry: `60acf7a0`. The copy rulings of
 2026-09-14 are in (`d6d3764c`, `23c0fe53`, `fae6e640`, `db074fd0`,
-`ac74b802`, `a8c89b6e`):
+`ac74b802`, `a8c89b6e`, `60acf7a0`):
 - the sample-data chip title now says module results are samples and imported
   GSC rows are not, and the imported-rows footnote adds "not a sample";
 - the weekly-report notification description says "近 7 天";
