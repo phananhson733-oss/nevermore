@@ -146,6 +146,33 @@ describe("WorkbenchProvider keywordRows (R13)", () => {
     expect(after).toEqual(rowsFor(ctx(rec).state));
   });
 
+  it("rebuilds when only profile.brand changes (no stale vs row after a rename)", () => {
+    const rec = mount();
+    send(rec, { type: "setSeeds", seeds: "seo" });
+    send(rec, { type: "patchProfile", patch: { competitors: "Rival" } });
+    const before = ctx(rec).state;
+    const rowsBefore = ctx(rec).keywordRows;
+    expect(rowsBefore.some((row) => row.q === "Example vs Rival")).toBe(true);
+
+    // A rename reaches a mounted provider: WorkbenchShell keys it on the project
+    // id only, so a refreshed seed re-stamps the brand on the next load from
+    // storage. Every real path that does that also brings a new gscRows array,
+    // which would hide a missing brand dependency, so this load keeps the same
+    // gscRows, seeds and competitors and changes nothing but the brand.
+    send(rec, {
+      type: "loadPersisted",
+      state: { ...before, profile: { ...before.profile, brand: "Renamed", competitors: "Rival" } },
+    });
+    expect(ctx(rec).state.gscRows).toBe(before.gscRows);
+    expect(ctx(rec).state.seeds).toBe(before.seeds);
+
+    const after = ctx(rec).keywordRows;
+    expect(after).not.toBe(rowsBefore);
+    expect(after.some((row) => row.q === "Renamed vs Rival")).toBe(true);
+    expect(after.some((row) => row.q === "Example vs Rival")).toBe(false);
+    expect(after).toEqual(rowsFor(ctx(rec).state));
+  });
+
   it("rebuilds when the GSC rows change", () => {
     const rec = mount();
     send(rec, { type: "setSeeds", seeds: "seo" });
@@ -161,7 +188,7 @@ describe("WorkbenchProvider keywordRows (R13)", () => {
     expect(after).toEqual(rowsFor(ctx(rec).state));
   });
 
-  it("builds from hydrated state, with the brand re-stamped from the project seed", () => {
+  it("builds from hydrated state, naming the vs row after the seed's brand rather than the stored one", () => {
     const onDisk: WorkbenchProjectState = {
       ...initialProjectState(SEED),
       seeds: "geo, seo audit",
@@ -171,6 +198,10 @@ describe("WorkbenchProvider keywordRows (R13)", () => {
     window.localStorage.setItem(storageKey(PID), JSON.stringify({ v: PERSISTED_VERSION, state: onDisk }));
     const rec = mount();
 
+    // The rows rebuild here because seeds, competitors and gscRows came from
+    // disk. The brand in state is the seed's "Example" both before and after
+    // hydration, so this test does not exercise the brand dependency; the
+    // rename test above does.
     const rows = ctx(rec).keywordRows;
     expect(rows.some((row) => row.q === "Example vs Rival")).toBe(true);
     expect(rows.some((row) => row.q.startsWith("Stale"))).toBe(false);

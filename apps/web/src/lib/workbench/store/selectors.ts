@@ -17,14 +17,24 @@ export function seedList(state: WorkbenchProjectState): readonly string[] {
 }
 
 /**
- * Keyword matrix rows, ungated (R13). `WorkbenchProvider` memoizes the same
- * call on its four inputs and exposes it as `keywordRows`; views read that.
+ * Keyword matrix rows, ungated (R13).
+ *
+ * Not for render paths: this rebuilds the whole matrix on every call and
+ * returns a new array each time. Components read `useWorkbench().keywordRows`
+ * (memoized by `WorkbenchProvider` on its four inputs) and gate on
+ * `state.built` themselves. This is for tests and non-render code.
  */
 export function keywordRows(state: WorkbenchProjectState): readonly KeywordRow[] {
   return buildRows(seedList(state), state.profile, state.gscRows);
 }
 
-/** The rows a view may show: none until the matrix has been built. */
+/**
+ * The rows a view may show: none until the matrix has been built.
+ *
+ * Not for render paths, for the same reason as `keywordRows`: it rebuilds on
+ * every call. Components read `useWorkbench().keywordRows` and gate on
+ * `state.built`.
+ */
 export function gatedRows(state: WorkbenchProjectState): readonly KeywordRow[] {
   return state.built ? keywordRows(state) : [];
 }

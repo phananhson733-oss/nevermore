@@ -6,7 +6,7 @@
  * `crawl`, and a sample fill passes its own `from` through unchanged.
  */
 import type { KbCategory, KbEntry, KnowledgeBase, Profile, ProfileDoc } from "../types.ts";
-import { brandOrPlaceholder } from "./profile.ts";
+import { brandOrPlaceholder } from "./brand.ts";
 import { competitorNames, splitList } from "./text.ts";
 
 export const KB_PROFILE_EVIDENCE = "来自站点档案字段";

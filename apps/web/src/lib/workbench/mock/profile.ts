@@ -9,6 +9,7 @@
  */
 import type { AiDoc, AuditReport, CrawlSignals, GscRow, GscSignals, IcpSegment, Profile } from "../types.ts";
 import { sitePages } from "./audit.ts";
+import { brandOrPlaceholder } from "./brand.ts";
 import { gscStatus } from "./gsc.ts";
 import { marketLanguage } from "./market.ts";
 import { pick, rngOf, seedKey } from "./rng.ts";
@@ -18,7 +19,9 @@ export type CrawlVariant = "crawl" | "third";
 /** The parts of an audit report that can stand in for generated site shape. */
 export type ObservedAudit = Pick<AuditReport, "crawl" | "pageRows">;
 
-export const BRAND_PLACEHOLDER = "[品牌]";
+// Moved to brand.ts so kb.ts (and through it the client store) can use them without this
+// module's audit imports; re-exported so existing importers of profile.ts are unchanged.
+export { BRAND_PLACEHOLDER, brandOrPlaceholder } from "./brand.ts";
 const STACKS = ["Next.js", "Webflow", "Astro", "WordPress"] as const;
 const TOP_QUERY_LIMIT = 5;
 const ICP_SEGMENT_COUNT = 3;
@@ -37,11 +40,6 @@ interface CrawlDraws {
   readonly traffic: number;
   readonly dr: number;
   readonly refdomains: number;
-}
-
-/** The brand as typed, or `[品牌]` when it is blank. */
-export function brandOrPlaceholder(brand: string): string {
-  return brand.trim() === "" ? BRAND_PLACEHOLDER : brand;
 }
 
 /** Every draw in the prototype's order, taken whether or not an audit replaces some of them. */
