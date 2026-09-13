@@ -20,8 +20,14 @@
  *
  * Events come from completed runs only — every audit and visibility run the
  * store still holds (`auditHistory` and `lastAudit`, `visHistory` and
- * `lastVis`), `profileDoc`, `kb` — and from every artifact in the basket. Runs
- * of one kind with the same stamp are one event. `audit` and `visResults` are
+ * `lastVis`), `profileDoc`, `kb` — and from every artifact in the basket. A
+ * snapshot object held twice is one event: the reducer keeps one report as both
+ * `lastAudit` and an `auditHistory` entry when a report is dispatched again
+ * after a later one (`archive` in reducer.ts). Two runs stamped with the same
+ * minute are two events, whatever they hold (codex S7r2 #4): a stamp is not a
+ * run's identity, and the store keeps no run id. Object identity does not
+ * survive the JSON round-trip, so after a reload that repeated report is listed
+ * twice (a known limit). `audit` and `visResults` are
  * deliberately not read: while a run is in flight they are empty or partial,
  * and an event built from them either vanishes mid-run or presents a partial
  * result as a measurement (Q20).
@@ -71,23 +77,20 @@ function runEvent(kind: Exclude<WeekEventKind, "artifact">, module: ModuleId, at
   return { kind, at, module, title: null };
 }
 
+/** Each object once, by identity: the same snapshot held twice, not two snapshots that look alike. */
+function eachObjectOnce<T extends object>(items: readonly T[]): readonly T[] {
+  return items.filter((item, index) => items.indexOf(item) === index);
+}
+
 function runEvents(state: WeekFeedState): readonly WeekEvent[] {
-  const audits = [...state.auditHistory, ...(state.lastAudit === null ? [] : [state.lastAudit])];
-  const runs = [...state.visHistory, ...(state.lastVis === null ? [] : [state.lastVis])];
+  const audits = eachObjectOnce([...state.auditHistory, ...(state.lastAudit === null ? [] : [state.lastAudit])]);
+  const runs = eachObjectOnce([...state.visHistory, ...(state.lastVis === null ? [] : [state.lastVis])]);
   return [
     ...audits.map((report) => runEvent("audit", "audit", report.at)),
     ...runs.map((snapshot) => runEvent("visibility", "visibility", snapshot.at)),
     ...(state.profileDoc === null ? [] : [runEvent("profile", "profile", state.profileDoc.at)]),
     ...(state.kb === null ? [] : [runEvent("kb", "kb", state.kb.at)]),
   ];
-}
-
-/** The first event of each kind and stamp: a run listed twice, or two runs of one kind in one minute, is one event. */
-function oncePerKindAndStamp(events: readonly WeekEvent[]): readonly WeekEvent[] {
-  return events.filter(
-    (event, index) =>
-      events.findIndex((other) => other.kind === event.kind && other.at === event.at) === index,
-  );
 }
 
 function artifactEvent(artifact: Artifact): WeekEvent {
@@ -101,6 +104,6 @@ function newestFirst(a: WeekEvent, b: WeekEvent): number {
 
 export function weekFeed(state: WeekFeedState, now: Date): readonly WeekEvent[] {
   const range = weekWindow(now);
-  const runs = oncePerKindAndStamp(runEvents(state)).filter((event) => inWeekWindow(event.at, range));
+  const runs = runEvents(state).filter((event) => inWeekWindow(event.at, range));
   return [...runs, ...artifactsInWeek(state.artifacts, range).map(artifactEvent)].toSorted(newestFirst);
 }

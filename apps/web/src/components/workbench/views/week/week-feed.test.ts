@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialProjectState, type ProjectSeed } from "@/lib/workbench/store/reducer";
+import { initialProjectState, reduce, type ProjectSeed } from "@/lib/workbench/store/reducer";
 import { populatedProjectState } from "@/lib/workbench/store/test-fixtures";
 import type { Artifact, AuditReport, VisSnapshot, WorkbenchProjectState } from "@/lib/workbench/types";
 import { WEEK_WINDOW_DAYS, artifactsInWeek, inWeekWindow, weekFeed, weekWindow } from "./week-feed.ts";
@@ -161,15 +161,40 @@ describe("weekFeed", () => {
     ]);
   });
 
-  it("lists a run once when the history holds one of the same kind and stamp", () => {
+  // codex S7r2 #4: four different runs finished in one minute, and the feed
+  // said two. A stamp has minute precision; it is not a run's identity.
+  it("lists every run of one minute, however many there were", () => {
+    const row = must(REPORT.pageRows[0] ?? null);
+    const asked = must(SNAPSHOT.results[0] ?? null);
     const state = blank({
-      auditHistory: [{ ...REPORT, at: "2026-09-12 10:00" }],
-      lastAudit: { ...REPORT, at: "2026-09-12 10:00", score: 1 },
-      visHistory: [{ ...SNAPSHOT, at: "2026-09-12 10:00" }],
+      auditHistory: [{ ...REPORT, at: "2026-09-12 10:00", pageRows: [{ ...row, url: "/a" }] }],
+      lastAudit: { ...REPORT, at: "2026-09-12 10:00", pageRows: [{ ...row, url: "/b" }] },
+      visHistory: [{ at: "2026-09-12 10:00", results: [{ ...asked, p: "Q" }] }],
+      lastVis: { at: "2026-09-12 10:00", results: [{ ...asked, p: "R" }] },
     });
     expect(weekFeed(state, NOW)).toEqual([
       { kind: "audit", at: "2026-09-12 10:00", module: "audit", title: null },
+      { kind: "audit", at: "2026-09-12 10:00", module: "audit", title: null },
       { kind: "visibility", at: "2026-09-12 10:00", module: "visibility", title: null },
+      { kind: "visibility", at: "2026-09-12 10:00", module: "visibility", title: null },
+    ]);
+  });
+
+  // The reducer puts one report object in both places when a report completes,
+  // another completes after it, and the first is dispatched again: that is one
+  // run held twice, not two.
+  it("lists a report once when the reducer holds the same object as latest and archived", () => {
+    const early = { ...REPORT, at: "2026-09-12 09:00" };
+    const late = { ...REPORT, at: "2026-09-12 10:00" };
+    const state = [early, late, early].reduce(
+      (current, report) => reduce(current, { type: "auditComplete", report }),
+      blank(),
+    );
+    expect(state.lastAudit).toBe(early);
+    expect(state.auditHistory).toContain(early);
+    expect(weekFeed(state, NOW)).toEqual([
+      { kind: "audit", at: "2026-09-12 10:00", module: "audit", title: null },
+      { kind: "audit", at: "2026-09-12 09:00", module: "audit", title: null },
     ]);
   });
 
