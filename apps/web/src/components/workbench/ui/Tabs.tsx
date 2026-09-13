@@ -11,9 +11,10 @@ import { isComposingKey } from "./keyboard.ts";
  * are how a screen-reader user changes tabs; without them the group is an
  * unreachable set of buttons for them).
  *
- * Activation follows focus (the panels are already rendered, so there is no cost
- * to switching), which is why the arrow handler calls `onChange` and then moves
- * focus to the tab that will be selected.
+ * Activation follows focus: the arrow handler calls `onChange` and then moves
+ * focus to the tab that will be selected. Mounting the panels is the caller's
+ * job, not this component's, and `renderedIds` must list exactly the panels
+ * that are in the DOM at that moment.
  *
  * Each tab carries an `id`, and a tab whose panel is in the DOM also points at
  * it with `aria-controls`. `renderedIds` is required for that reason (裁决
