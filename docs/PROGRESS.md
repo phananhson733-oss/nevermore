@@ -7,6 +7,72 @@ repository and its customer-facing GenGrowth product. It replaces the retired
 v0.2 progress narrative. It deliberately separates commands rerun on the current
 convergence worktree from older evidence recorded in checked-in stop gates.
 
+## 2026-09-14: workbench UI port PR-3 first five views (in progress; unpushed branch, not in production)
+
+PR-3「首批五页」is on branch `feat/workbench-pr3-first-views`, targeting the
+integration branch `feat/workbench-ui-port`. The branch has **not been pushed**
+and no PR exists yet; nothing reaches production before PR-3b (integration
+branch → `main`). Plan and rulings Q1-Q37:
+`docs/plans/2026-09-13-workbench-pr3-first-views.md`; design doc rev8 carries
+them back. Code base for this entry: `d5909ada`.
+
+Done on the branch (each task: one implementation agent plus a Claude review
+with mutations in a detached worktree, and gpt-6-astra surfaces per the plan's
+review section):
+
+- Views: overview with「载入示例站点」(`6ec05d23`), week covering today and the
+  previous 6 local dates with a weekly-report artifact (`dd01a8cc`, window
+  `0796e043`), site profile (`188d248b`), data sources — real GSC / GA4
+  connection read-only plus a local GSC import (`98895420`), settings —
+  notification preferences and a sources summary next to the unchanged real
+  delete (`96057413`). The other ten segments still render the placeholder.
+- Shell: the site card's GSC row reads the real connection state on the client,
+  and unknown is never shown as "not connected" (`e048be6a`); topbar「清除示例」
+  with a confirmation (`3f058f8c`).
+- UI primitives and the artifact pipeline (`2ccb6c69`, `a5d686c7`,
+  `4dbbeb96`): one stamping point (`useAddArtifact`); the provenance sentence
+  follows the GSC source of each artifact's own body, in three versions (Q36:
+  `b2c7a015`, `aa89896b`, `f4fb8ad2`, `d5909ada`); an artifact over the size cap
+  or into a full basket is refused and explained, never truncated or evicting
+  the oldest (Q37, `76f6aaa8`, `65462c15`).
+- Store: `gscRowsSource` and `ProfileDoc.gscSource` (pre-ship exemptions 4 and
+  5, `PERSISTED_VERSION` stays 1), `hasDemoOverwrite` by value, confirmations
+  bound to the content they showed (`11c5abb8`, `0143d341`, `79268c3a`);
+  `parseGsc` reports header recognition (`29c2b654`); GSC import dedupes by
+  query and caps at 2 MB / 5000 rows (`fb2adde3`).
+- PR-1 leftovers A-F: font and `workbench.css` mounted by the project layout
+  with `@theme inline` (`0c278c60`); drawer and bare-link touch targets
+  (`02a0ed03`); ⌘K hint by platform (`b0931ba4`); Tailwind `source(none)` plus
+  a value-flow scan-scope guard (`407d291d` and follow-ups); dead `AppShell`
+  project variant removed (`b40804e5`); `useGlobalShortcut` latest-ref
+  (`51682fad`, `0a5e10ce`, `736f2b78`). The mutation evidence for each goes into
+  the PR description at delivery.
+- Client import-graph guard extended to the view entries (`08e96d53`,
+  `9cb0e217`).
+- T18 docs sync: design doc rev8, the PR-2 plan residual table, the PR-3 plan
+  residual table.
+
+Still open:
+
+- Copy rulings made on 2026-09-14 and not yet implemented: the sample-data chip
+  title and the "your imported data" footnote, "近 7 天" wording in three
+  week / settings sentences, the borderline band written as ">10 且 ≤30"
+  instead of "11-30", `n/a` for unavailable values in exported documents, and
+  two dead i18n keys. The design doc still describes the code as of
+  `d5909ada` in those places.
+- Owner decision pending: the artifact basket's「清空」and per-item「删除」have
+  no confirmation and no undo (plan residual table).
+- T17 mock e2e (module flow, `/sources` 500 degradation gate, axe
+  `color-contrast` as the workbench's main contrast gate, touch-target sweeps
+  over the views, soft-navigation CSS regression): in progress.
+- T19 verification and delivery: typecheck / lint / unit / coverage / build,
+  the mock e2e list, the production CSP smoke, cross-model review surfaces, the
+  history cleanup before the first push, and the PR. **No PR-3 verification
+  numbers are recorded here yet**; T19 records them on the final HEAD. Known
+  gap to state as such: authenticated workbench pages have no production-mode
+  fixture, so the production smoke covers `/login` only and does not verify the
+  workbench pages' CSP.
+
 ## 2026-09-13: workbench UI port PR-2 mock domain layer (integration branch, not in production)
 
 PR-2「mock 域层」is on branch `feat/workbench-pr2-mock-domain`, targeting the
