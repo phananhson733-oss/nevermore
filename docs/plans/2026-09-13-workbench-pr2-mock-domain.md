@@ -670,7 +670,8 @@ export function visibilityGaps(results: readonly VisResult[], brand: string): re
 export function domainStats(subject: string, profile: Pick<Profile, "url" | "features">): DomainStats
 export function keywordGap(profile: Pick<Profile, "competitors">, seeds: readonly string[], gscRows: readonly GscRow[]): CompData["gap"]
 export function buildCompData(profile: Profile, seeds: readonly string[], gscRows: readonly GscRow[], at: string): CompData
-export const LINK_POOL: Readonly<Record<LinkType, readonly (readonly [site: string, domain: string, dr: number])[]>>
+export const LINK_POOL: Readonly<Record<LinkType, readonly (readonly [site: string, domain: string, dr: number | null])[]>>  // 执行期：无域名渠道 dr 为 null
+export function comparedCompetitors(profile: Pick<Profile, "url" | "brand" | "competitors">): readonly string[]  // 执行期新增
 export const DEFAULT_LINK_TYPES: readonly LinkType[]   // ["dir","agg","comm"]
 export function mockLinks(profile: Pick<Profile, "brand">, types: readonly LinkType[]): readonly LinkTarget[]
 ```
