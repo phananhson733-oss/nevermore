@@ -45,9 +45,17 @@ export type StampedText = string & { readonly [stampedBrand]: true };
 
 /**
  * A body that has not been stamped. Every plain `string` is one — a builder's
- * return value, a template literal, a user's paste — and `StampedText` is not,
- * so stamping stamped text twice is a compile error instead of two declarations
- * in one artifact.
+ * return value, a template literal, a user's paste — and a value still typed
+ * `StampedText` is not, so handing stamped text straight back to be stamped is a
+ * compile error instead of two declarations in one artifact.
+ *
+ * That direct hand-back is all it blocks. The brand exists only on the type, and
+ * every ordinary string operation drops it: `${stamped}`, `.trim()`, `.slice()`,
+ * `String(stamped)`, `concat`, or a detour through a variable typed `string` all
+ * yield a plain `string` that this type accepts, with no cast. Nothing at runtime
+ * looks for a declaration either (S2 #2), so text that went through any of those
+ * — or came back out of the basket, where `state.artifacts` holds plain strings —
+ * can still be stamped a second time.
  *
  * Measured with `tsc`, not assumed: this optional-`never` brand intersected with
  * `string` still accepts a plain string (weak-type detection does not fire on

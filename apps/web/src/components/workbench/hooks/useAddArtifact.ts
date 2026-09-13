@@ -23,9 +23,11 @@ export interface ArtifactDraft {
   readonly title: string;
   /**
    * The builder's output, unstamped: builders produce bodies only (design §6.8).
-   * Any plain string fits. `prepared.content` and `prepared.artifact.content` do
-   * NOT (S2 #2): feeding a prepared artifact back in would stamp it twice, and
-   * that is a compile error rather than a runtime check.
+   * Any plain string fits. `prepared.content` or `prepared.artifact.content`
+   * passed back exactly as they are does NOT (S2 #2): that would stamp the text
+   * twice, and it is a compile error. Only that direct hand-back is caught — a
+   * template literal, `.trim()`, `.slice()` or a detour through a `string`
+   * variable drops the brand and compiles (see `UnstampedBody`).
    */
   readonly body: UnstampedBody;
   /** A bare file name for the download; the drawer forces the extension from `type`. */
@@ -35,7 +37,12 @@ export interface ArtifactDraft {
 /** What `save()` did: stored the text (now or on an earlier call), or refused it as too large. */
 export type SaveResult = "saved" | "tooLarge";
 
-/** An artifact whose content carries the stamp brand, so it cannot be re-stamped either. */
+/**
+ * An artifact whose `content` carries the stamp brand, so that field handed
+ * straight back to `prepare` is refused the same way `prepared.content` is. The
+ * same limit applies: any string operation on it, or reading it back out of the
+ * basket, yields a plain `string` that compiles.
+ */
 export type StampedArtifact = Artifact & { readonly content: StampedText };
 
 /**
