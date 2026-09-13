@@ -46,15 +46,25 @@ export interface PreparedArtifact {
  * The clock is read when the operator clicks, not during render: this runs in an
  * event handler, so there is no SSR/CSR mismatch to avoid here (that is what
  * `useNowStamp` is for), and the stamp is the time the artifact was made.
+ *
+ * `null` until the project is hydrated, the same shape as `useNowStamp` (Q22), so
+ * the caller renders a skeleton instead of an action it cannot honour. Not
+ * defensive programming: before `ready` a `save()` is discarded twice over. The
+ * provider's persistence effect returns early while `ready` is false, so nothing
+ * reaches storage, and the `loadPersisted` that hydration dispatches replaces the
+ * state by identity rather than merging into it (`reducer.ts`), so the artifact in
+ * memory goes too. The basket would be empty under a row that just said "saved".
  */
-export function useAddArtifact(): (draft: ArtifactDraft) => PreparedArtifact {
-  const { dispatch } = useWorkbench();
+export function useAddArtifact():
+  | ((draft: ArtifactDraft) => PreparedArtifact)
+  | null {
+  const { dispatch, ready } = useWorkbench();
   const tProvenance = useTranslations("workbench.provenance");
 
   // Not memoised on purpose: it reads no state, and a `useCallback` would need
   // `tProvenance` in its dependency list — a wrong list there is how a handler
   // ends up stamping with a translation from the render before last.
-  return (draft) => {
+  function prepare(draft: ArtifactDraft): PreparedArtifact {
     const at = formatLocalStamp(new Date());
     const content = stampArtifact(
       draft.type,
@@ -82,5 +92,7 @@ export function useAddArtifact(): (draft: ArtifactDraft) => PreparedArtifact {
         dispatch({ type: "addArtifact", artifact });
       },
     };
-  };
+  }
+
+  return ready ? prepare : null;
 }

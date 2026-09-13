@@ -15,7 +15,7 @@
  * use. A hand-written expectation could only re-state the implementation.
  */
 
-import { act, useState, type ReactElement } from "react";
+import { act, useEffect, useState, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "@sf/i18n";
@@ -102,7 +102,10 @@ let cleanup: (() => void) | null = null;
 
 /**
  * Prepares the artifact once and hands the row the result, which is how a view
- * uses it: the clock is read when the run finishes, not on every render.
+ * uses it: the clock is read when the run finishes, not on every render. The
+ * hook hands out nothing until the project is hydrated, so the preparation waits
+ * for it and the row is not rendered before then — a view does the same with a
+ * skeleton.
  */
 function Probe({
   draft,
@@ -112,9 +115,16 @@ function Probe({
   readonly disabled: boolean;
 }) {
   const prepare = useAddArtifact();
-  const [prepared] = useState(() => prepare(draft));
-  captured.prepared = prepared;
+  const [prepared, setPrepared] = useState<PreparedArtifact | null>(null);
   captured.store = useWorkbench();
+  useEffect(() => {
+    if (prepare === null) return;
+    // Latched: `prepare` is a new function each render on purpose, and one
+    // artifact must not turn into a new id and stamp on every pass.
+    setPrepared((current) => current ?? prepare(draft));
+  }, [prepare, draft]);
+  captured.prepared = prepared;
+  if (prepared === null) return null;
   return (
     <ArtifactActions prepared={prepared} labels={LABELS} disabled={disabled} />
   );

@@ -7,6 +7,12 @@
  * even if the hook stamped with the wrong key, or with the key path next-intl
  * renders when a message is missing. The store is the real provider, so `save()`
  * is checked by what ends up in the basket.
+ *
+ * The `ready` gate needs the other kind of store. Whether the hook hands out a
+ * maker at all is a question about render passes, not about settled DOM, so the
+ * two cases that turn on it render against a context value whose `ready` is
+ * fixed, and the real provider is used to pin that its first pass is one of the
+ * blocked ones.
  */
 
 import { act } from "react";
@@ -15,9 +21,13 @@ import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "@sf/i18n";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SAMPLE_CSV_MARKER } from "@/lib/workbench/mock/provenance";
-import type { ProjectSeed } from "@/lib/workbench/store/reducer";
+import {
+  initialProjectState,
+  type ProjectSeed,
+} from "@/lib/workbench/store/reducer";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
 import {
+  WorkbenchContext,
   WorkbenchProvider,
   type WorkbenchContextValue,
 } from "@/lib/workbench/store/WorkbenchProvider";
@@ -54,21 +64,64 @@ const MD_DRAFT: ArtifactDraft = {
   body: "# 修复任务\n- 给 /pricing 补 canonical",
 };
 
+type Prepare = (draft: ArtifactDraft) => PreparedArtifact;
+
 interface Harness {
-  readonly prepare: (draft: ArtifactDraft) => PreparedArtifact;
+  readonly prepare: Prepare;
   readonly store: WorkbenchContextValue;
 }
 
-const captured: { prepare: Harness["prepare"] | null; store: WorkbenchContextValue | null } = {
+const captured: { prepare: Prepare | null; store: WorkbenchContextValue | null } = {
   prepare: null,
   store: null,
 };
+/** What the hook returned on each render pass, oldest first. */
+let frames: (Prepare | null)[] = [];
 let cleanup: (() => void) | null = null;
 
 function Probe() {
-  captured.prepare = useAddArtifact();
+  const prepare = useAddArtifact();
+  frames.push(prepare);
+  captured.prepare = prepare;
   captured.store = useWorkbench();
   return null;
+}
+
+/** A store stuck at one `ready`, so the gate can be read without racing hydration. */
+function context(ready: boolean): WorkbenchContextValue {
+  return {
+    projectId: PROJECT_ID,
+    state: initialProjectState(SEED),
+    dispatch: () => {},
+    ready,
+    storageMode: "ok",
+    keywordRows: [],
+    keywordRowCount: null,
+    forgetProject: () => {},
+  };
+}
+
+/** Renders twice against that store and returns what the hook gave each time. */
+function mountStub(ready: boolean): readonly (Prepare | null)[] {
+  // A fresh element each pass: re-rendering the identical one is a bail-out, and
+  // a single recorded frame would make "every frame" vacuous.
+  const tree = () => (
+    <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+      <WorkbenchContext.Provider value={context(ready)}>
+        <Probe />
+      </WorkbenchContext.Provider>
+    </NextIntlClientProvider>
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  act(() => root.render(tree()));
+  act(() => root.render(tree()));
+  cleanup = () => {
+    act(() => root.unmount());
+    container.remove();
+  };
+  return frames;
 }
 
 function mount(): Harness {
@@ -102,6 +155,7 @@ function artifacts(): WorkbenchContextValue["state"]["artifacts"] {
 
 beforeEach(() => {
   window.localStorage.clear();
+  frames = [];
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(AT);
 });
@@ -116,6 +170,29 @@ afterEach(() => {
 });
 
 describe("useAddArtifact", () => {
+  it("hands out nothing while the project is not hydrated, however many times it renders", () => {
+    const seen = mountStub(false);
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.every((value) => value === null)).toBe(true);
+  });
+
+  it("hands out the maker once the store says the project is ready", () => {
+    const seen = mountStub(true);
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.every((value) => value !== null)).toBe(true);
+  });
+
+  it("blocks the provider's own pre-hydration passes, where a save would be discarded twice", () => {
+    // Both halves of that discard are in the store: the persistence effect
+    // returns early while `ready` is false, and the `loadPersisted` that follows
+    // replaces the state wholesale (reducer.ts). A row that called `save()` on
+    // this pass would flash "saved" over an empty basket.
+    mount();
+    expect(frames.length).toBeGreaterThan(1);
+    expect(frames[0]).toBeNull();
+    expect(frames.at(-1)).not.toBeNull();
+  });
+
   it("stamps a document with the localised provenance line above the body", () => {
     const prepared = mount().prepare(MD_DRAFT);
     expect(prepared.content).toBe(`${LINE}\n\n${MD_DRAFT.body}`);
