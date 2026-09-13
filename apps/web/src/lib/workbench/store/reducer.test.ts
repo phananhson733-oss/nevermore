@@ -292,6 +292,23 @@ describe("artifacts", () => {
 });
 
 describe("demo", () => {
+  it("loadDemo writes only the declared payload keys, even when handed a wider object", () => {
+    const own = initialProjectState(seed);
+    // Type-checks: `DemoPayload` is a `Pick`, and only a fresh literal gets the excess-key check.
+    const wider = {
+      ...demoPayload,
+      profile: { ...own.profile, positioning: "from the payload" },
+      notify: { weekly: false, drop: false, mention: true, gsc: false },
+    };
+
+    const loaded = reduce(own, { type: "loadDemo", payload: wider, expected: demoFields(own) });
+
+    expect(loaded.demo).toBe(true);
+    expect(loaded.seeds).toBe(demoPayload.seeds);
+    expect(loaded.profile).toBe(own.profile);
+    expect(loaded.notify).toBe(own.notify);
+  });
+
   it("loadDemo writes the payload fields, flags demo, and never touches profile or notify", () => {
     let s = reduce(initialProjectState(seed), {
       type: "patchProfile", patch: { positioning: "mine" },

@@ -251,23 +251,54 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
       if (!state.artifacts.some((a) => shown.has(a.id))) return state;
       return { ...state, artifacts: state.artifacts.filter((a) => !shown.has(a.id)) };
     }
-    case "loadDemo":
+    case "loadDemo": {
       // The last line of the confirmation (codex S6r2 #1): the operator agreed to
       // replace what `expected` holds. Another tab's write, or one of ours queued
       // behind the render they clicked in, makes it something else, and the
-      // component cannot see a queued update; this reducer runs after it. Same
-      // object back, so the caller can tell the load was refused.
+      // component cannot see a queued update. The reducer can, for an update
+      // queued ahead of this action in a sync lane (Sync, InputContinuous,
+      // Default: every store write the workbench makes today), which the demo
+      // buttons' `flushSync` applies first. An update in a Transition lane is
+      // skipped by that render and replayed with this action afterwards, which
+      // can flip the answer the caller already read back (codex S6r3 #3), so no
+      // store write may be wrapped in one
+      // (`lib/workbench/no-transition-store-writes.test.ts`). Same object back,
+      // so the caller can tell the load was refused.
       if (!sameDemoFields(state, action.expected)) return state;
+      // Each key named, not a spread of the payload: `DemoPayload` is a `Pick`,
+      // so a structurally wider object type-checks, and a spread would write its
+      // extra keys (`profile`, `notify`) into the project. `makeDemoSite` returns
+      // an exact literal, so nothing wider reaches this today; this is
+      // hardening, not a fix. `satisfies` keeps the list complete when
+      // `DemoPayload` gains a key.
+      const payload = action.payload;
+      const written = {
+        conns: payload.conns,
+        gscRows: payload.gscRows,
+        seeds: payload.seeds,
+        built: payload.built,
+        saved: payload.saved,
+        audit: payload.audit,
+        auditHistory: payload.auditHistory.slice(-HISTORY_LIMIT),
+        lastAudit: payload.lastAudit,
+        visResults: payload.visResults,
+        visHistory: payload.visHistory.slice(-HISTORY_LIMIT),
+        lastVis: payload.lastVis,
+        compData: payload.compData,
+        plans: payload.plans,
+        targets: payload.targets,
+        kb: payload.kb,
+        artifacts: payload.artifacts.slice(0, ARTIFACT_LIMIT).map(boundArtifact),
+        profileDoc: payload.profileDoc,
+      } satisfies DemoPayload;
       return {
         ...state,
-        ...action.payload,
-        auditHistory: action.payload.auditHistory.slice(-HISTORY_LIMIT),
-        visHistory: action.payload.visHistory.slice(-HISTORY_LIMIT),
-        artifacts: action.payload.artifacts.slice(0, ARTIFACT_LIMIT).map(boundArtifact),
-        gscRowsSource: sourceFor(action.payload.gscRows, "sample"),
+        ...written,
+        gscRowsSource: sourceFor(payload.gscRows, "sample"),
         visPartial: false,
         demo: true,
       };
+    }
     case "clearDemo": {
       // Runs the announced wholesale clear only while the state is still in
       // sample mode; `demo` is a mode flag, not field-by-field proof of where
