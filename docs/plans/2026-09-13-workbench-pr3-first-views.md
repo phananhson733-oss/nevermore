@@ -376,6 +376,7 @@ docs/PROGRESS.md                   T18
 **Files:** Modify `apps/web/src/lib/workbench/store/client-import-graph.test.ts`
 
 - [ ] **Step 1: 扩入口** — `CLIENT_ENTRIES` 加入五个视图根 + `ShellChrome`（walker 支持 `@/` 与 `.tsx`；对无法解析的本地 specifier 会抛错，加入前确认相对 import 都带扩展名）。
+- [ ] **Step 1b: T6 交接（`6ec05d23`）** — T6 自带了 `components/workbench/views/overview/overview-import-graph.test.ts`（W3 期间没有别的门）。本任务接管或删掉它，但**保留「loader 里确有动态 import」那条正向断言**（否则把 `await import` 改成不加载也照绿）。另：`ui/ArtifactActions.tsx` 静态导入 `mock/builders/agent-task.ts`，T8–T10 的视图都会碰 `mock/builders/`——禁用清单只禁 `mock/demo.ts` 及其独占依赖，别把整个 `mock/builders/` 列进去，否则门一上就红。
 - [ ] **Step 2: 控制用例只用 fixture 形式** — 建一个形如视图的临时文件静态 `import` `@/lib/workbench/mock/demo.ts`，走同一套 `reachableFrom` + `isClientForbidden` 断言它被抓到。**不要**用「直接断言 `isClientForbidden("mock/demo.ts")`」——`:130` 已有这条，它与「视图入口是否真的被 walk」无关，是恒真的派生式护栏。
 - [ ] **Step 3: 变异** — 把 T6 的动态 import 临时改成静态必须红，改回。
 - [ ] **Step 4: 提交** — `test(workbench): 客户端导入图护栏覆盖视图入口`。
@@ -386,7 +387,7 @@ docs/PROGRESS.md                   T18
 
 - [ ] **Step 1: 模块流** — 载入示例站点 →（视条件确认）→ 概览四卡非空且带「示例」→ 顶栏「清除示例」→ 确认 → 回空态。顺带量一次「清除示例」按钮的 `boundingBox()`（T7 的 44px 只有这里能测到）。**T7 交接（`3f058f8c`，宽度是它的估算不是测量，它明确说不能断言不挤压）**：新按钮 `h-11 w-11 shrink-0` 只在示例态出现，给右组多加约 56px；右组没有 `min-w-0`，flex 会先压左组唯一可压的 ProjectSwitcher，再让 DemoChip 与产物筐文字折行；左组若被压到窄于汉堡的 48px，`shrink-0` 的汉堡会溢出组框与右组重叠。所以在 `demo=true` 下量：390px 新按钮与汉堡都是 44×44、ProjectSwitcher 宽 > 0、壳内目标两两无正面积相交、无横向溢出；640–767 与 768–1023 两段也量（`md` 起新按钮变 26px 文字按钮、`w-64` 搜索框出现）。新按钮在清扫里的名字是 `button:Clear sample`（文字来自 sr-only span），示例态清扫要把它加进 `TOUCH_44_AT_MOBILE`；今天 `/profile` fixture 的 `demo` 为 false，现有清单不受影响。
 - [ ] **Step 2: 降级门**（Claude #7）— 新增一条：`page.route("**/sources", r => r.fulfill({status: 500}))` 后站点卡显示「—」、页面无 error boundary、console 无未捕获异常。rev1 以为 `legacy-style-parity` 不装 mock API 所以「天然覆盖」，实际它装了（`:66`），这条门原本不存在。
-- [ ] **Step 3: Q30 的框架断言** — 先正向断言五个视图各有 `[data-wb-frame]` 且合并文本非空，再断言 en 下无中文、无 `workbench.` 路径；加「往框架文案插中文必须红」的变异。
+- [ ] **Step 3: Q30 的框架断言**（T6 交接：概览标题区 `data-wb-frame` 含项目自己的 domain / brand，e2e fixture 若用中文品牌，en 下「无中文」会误红——fixture 用 ASCII 品牌，或把副标题排除在框架文本之外并注明原因） — 先正向断言五个视图各有 `[data-wb-frame]` 且合并文本非空，再断言 en 下无中文、无 `workbench.` 路径；加「往框架文案插中文必须红」的变异。
 - [ ] **Step 4: 逐条核对既有断言**（清单见 research-seams §5.3，已逐条核实属实）— h1 文本严格相等；`/overview` 的 `[data-wb-badge]` 计数 0；顶栏唯一 `role="status"`；`[data-app-shell]` 内 0 个 `[style]`；Dialog 根恰好 1；`/settings` 的 `[data-wb-real-action]` 恰好 1；`mobile-shell` 390px 无横向溢出 + `progressbar` 计数 0；`frontend-error-states:226` 与 `growth-map-run:910-916` 的 `/sources` 精确计数。
 - [ ] **Step 4b: 视图内的触控目标**（T3 交接）— T13 Step 2 的 `boundingBox()` 清扫只覆盖壳；视图里的按钮、tab、开关一个都没量过，而 jsdom 那条「穿着 panel.ts 常量」的钉子只是代理（清扫看不见组件内写死的尺寸）。把同一套遍历扩到五个视图，豁免同样写成带计数的具名清单。
 - [ ] **Step 4c: Q34 的接缝**（T3 交接）— 在跑起来的页面上断言：每个 `[aria-controls]` 的值都能 `document.getElementById` 到元素。jsdom 侧的门在 `OutPane.test.tsx`，这里是真浏览器的复核。
@@ -406,7 +407,7 @@ docs/PROGRESS.md                   T18
 
 **Files:** Modify `docs/plans/2026-09-11-workbench-ui-port-design.md`、`docs/plans/2026-09-13-workbench-pr2-mock-domain.md`（只改残留表归属）、`docs/PROGRESS.md`、本计划残留表
 
-- [ ] **Step 1: 设计稿逐条修订**（codex #19：rev1 漏了 §5 与 §6.7，会让下一个工程师把修法改回去）— §4.1 原语清单补五个新原语 + `hooks/`；**§5 改掉「根 layout import workbench.css」与 `@theme` 的写法**（Q29-A / T12）；§6.1 补 `gscRowsSource`、`ProfileDoc.gscSource` 与 `conns` 死字段裁决（Q31）；§6.5 补第四、第五项发布前豁免；**§6.7 更新示例站点条目**（覆盖确认按 `hasDemoOverwrite` 的按值判据、清除确认文案四项、`demo.ts` 动态 import）；§10 补 Q19 与「入场动画不移植」；§12 补 Q5/Q6/Q17/Q18；§14 追加 PR-3 评审处置段（含计划评审 45 条）。
+- [ ] **Step 1: 设计稿逐条修订**（codex #19：rev1 漏了 §5 与 §6.7，会让下一个工程师把修法改回去）— §4.1 原语清单补五个新原语 + `hooks/`；**§5 改掉「根 layout import workbench.css」与 `@theme` 的写法**（Q29-A / T12）；§6.1 补 `gscRowsSource`、`ProfileDoc.gscSource` 与 `conns` 死字段裁决（Q31）；§6.5 补第四、第五项发布前豁免；**§6.7 更新示例站点条目**（覆盖确认按 `hasDemoOverwrite` 的按值判据、清除与载入两个确认文案**如实点名被写/被清的全部范围**——含种子词与全部运行结果（`cc2d311d`；原裁决「四项」是当时目录里有的，不是全集，T7 自报）、`demo.ts` 动态 import）；§6.8 写明盖章把整份输出规范成 LF 无结尾换行、CSV 引号单元格内 CR 一并改写（T3 偏离 1）；**概览的提及率 / 答案页缺口 / 空态读 `lastVis`，运行中侧栏徽标读 `visResults`，两者暂时不同**（T6，PR-4 接 `visPartial` 时统一）；`next.step.importGsc` 键未被使用（T6 改用 `noGsc` 提示块，判据 `gscRows.length === 0`），删或留在此裁决；§10 补 Q19 与「入场动画不移植」；§12 补 Q5/Q6/Q17/Q18；§14 追加 PR-3 评审处置段（含计划评审 45 条）。
 - [ ] **Step 2: PR-2 计划残留表** — :1011/:1012 归 PR-4（Q28）；:1020 按 Q27 关闭并写依据；:1017/:1018/:1019/:1023 标「PR-3 已处理」。
 - [ ] **Step 3: PROGRESS.md** — PR-3 段：范围、五视图、遗留六项已关闭、验证数字（T19 回填）、未上生产。
 - [ ] **Step 4: 提交** — `docs(workbench): 设计稿与进度同步 PR-3 裁决`。
