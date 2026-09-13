@@ -110,7 +110,8 @@ pnpm --filter @sf/web build
 
 ```ts
 const ORIGINAL_TZ = process.env.TZ;
-afterEach(() => { process.env.TZ = ORIGINAL_TZ; });
+// TZ is usually unset: assigning undefined stores the string "undefined" (= UTC) and leaks into later tests.
+afterEach(() => { if (ORIGINAL_TZ === undefined) delete process.env.TZ; else process.env.TZ = ORIGINAL_TZ; });
 for (const tz of ["Asia/Shanghai", "America/Los_Angeles"]) {
   it(`... in ${tz}`, () => { process.env.TZ = tz; /* 在 it 内部 new Date(...) */ });
 }
@@ -316,7 +317,7 @@ export function competitorNames(profile: Pick<Profile, "competitors">): readonly
 export const COMPETITOR_PLACEHOLDERS: readonly ["[竞品 A]", "[竞品 B]", "[竞品 C]"]
 ```
 
-- `slugify`：`value.normalize("NFKD").replace(/(?<=[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}])\p{M}+/gu, "").normalize("NFC").toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, "-").replace(/^-+|-+$/g, "")`。只去掉拉丁 / 希腊 / 西里尔字母上的附加符号，再合回 NFC（全部剥掉会把韩文拆成字母、把 グーグル 变成 クークル）；允许集合必须含 `\p{M}`，否则德文那加利的元音符号会被当成分隔符。再按**码点**截到 60（`Array.from(s).slice(0, 60).join("")`，截后再去尾部 `-`）；结果为空 → `` `q-${hashOf(value).toString(36)}` ``。
+- `slugify`：`value.normalize("NFKD").replace(/(?<=[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}])\p{M}+/gu, "").normalize("NFC").replace(/(?<![\p{L}\p{N}\p{M}])\p{M}+/gu, "").toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, "-").replace(/^-+|-+$/g, "")`。只去掉拉丁 / 希腊 / 西里尔字母上的附加符号，再合回 NFC（全部剥掉会把韩文拆成字母、把 グーグル 变成 クークル）；允许集合必须含 `\p{M}`，否则德文那加利的元音符号会被当成分隔符。再按**码点**截到 60（`Array.from(s).slice(0, 60).join("")`，截后再去尾部 `-`）；NFC 之后去掉孤立组合符号（前面不是字母 / 数字 / 组合符号的 `\p{M}`，例如 emoji 的 U+FE0F 变体选择符，Task 2 评审发现 `"❤️"` 会变成不可见 slug）；结果为空**或不含任何字母数字** → `` `q-${hashOf(value).toString(36)}` ``。
 - `domainOf`：`trim()`；已有 `^[a-z][a-z0-9+.-]*://`（不分大小写）则直接 `new URL`，否则前补 `https://`；取 `hostname`，去 `^www\.`、去结尾 `.`；`new URL` 抛错时回落：去协议前缀、去 `www.`、取第一个 `/` 之前。空串 → 空串。
 - `splitList`：按 `,` 切、trim、去空。
 - `normQ`：`value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase()`。
