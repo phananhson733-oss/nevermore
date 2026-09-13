@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act } from "react";
+import { act, startTransition, Suspense, use } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { useGlobalShortcut } from "./useGlobalShortcut.ts";
@@ -159,5 +159,76 @@ describe("useGlobalShortcut handler identity", () => {
       expect(stale.onTogglePalette).not.toHaveBeenCalled();
       expect(stale.onEscape).not.toHaveBeenCalled();
     }
+  });
+});
+
+/** Never settles, so a render that reads it with `use` stays suspended. */
+const NEVER_SETTLES: Promise<never> = new Promise<never>(() => {});
+
+/**
+ * A host inside a Suspense boundary whose render can suspend right after the
+ * hook has run. `suspendedRenders()` counts the suspending renders React began,
+ * which is how a test knows such a render really handed the hook its handlers.
+ */
+function suspendableHost() {
+  let suspendedRenders = 0;
+  function SuspendableHost(props: {
+    readonly label: string;
+    readonly handlers: ShortcutHandlers;
+    readonly suspend: boolean;
+  }) {
+    useGlobalShortcut(props.handlers);
+    if (props.suspend) {
+      suspendedRenders += 1;
+      use(NEVER_SETTLES);
+    }
+    return props.label;
+  }
+  function tree(label: string, shortcutHandlers: ShortcutHandlers, suspend: boolean) {
+    return (
+      <Suspense fallback="fallback">
+        <SuspendableHost label={label} handlers={shortcutHandlers} suspend={suspend} />
+      </Suspense>
+    );
+  }
+  return { tree, suspendedRenders: () => suspendedRenders };
+}
+
+function pressBothShortcuts(): void {
+  pressAtWindow({ key: "k", metaKey: true });
+  pressAtWindow({ key: "Escape" });
+}
+
+function expectCalls(spies: ReturnType<typeof spyHandlers>, times: number): void {
+  expect(spies.onTogglePalette).toHaveBeenCalledTimes(times);
+  expect(spies.onEscape).toHaveBeenCalledTimes(times);
+}
+
+describe("useGlobalShortcut committed handlers", () => {
+  it("keeps delivering keys to the committed handlers while a newer render is suspended in a Transition", async () => {
+    const { tree, suspendedRenders } = suspendableHost();
+    const [committed, suspended, next] = [spyHandlers(), spyHandlers(), spyHandlers()] as const;
+
+    act(() => root?.render(tree("committed", committed, false)));
+    await act(async () => {
+      startTransition(() => root?.render(tree("suspended", suspended, true)));
+    });
+    // The Transition render called the hook with `suspended` and then
+    // suspended; React kept the committed tree on screen, neither committing
+    // the new one nor falling back.
+    expect(suspendedRenders()).toBeGreaterThan(0);
+    expect(container?.textContent).toBe("committed");
+
+    pressBothShortcuts();
+    expectCalls(committed, 1);
+    expectCalls(suspended, 0);
+
+    act(() => root?.render(tree("next", next, false)));
+    expect(container?.textContent).toBe("next");
+
+    pressBothShortcuts();
+    expectCalls(next, 1);
+    expectCalls(committed, 1);
+    expectCalls(suspended, 0);
   });
 });
