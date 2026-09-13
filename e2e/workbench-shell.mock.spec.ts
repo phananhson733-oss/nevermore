@@ -1,8 +1,19 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { initialProjectState } from "../apps/web/src/lib/workbench/store/reducer.ts";
 import { storageKey } from "../apps/web/src/lib/workbench/store/persistence.ts";
 import { PERSISTED_VERSION } from "../apps/web/src/lib/workbench/store/schema.ts";
 import { E2E_PROJECT_ID, installCriticalFlowApi } from "./mock-api.ts";
+import {
+  MIN_TARGET_PX,
+  TOUCH_TARGET_PX,
+  absent,
+  names,
+  operableFailures,
+  overlaps,
+  sweep,
+  under,
+  type SweptTarget,
+} from "./workbench-targets.ts";
 
 /**
  * The workbench shell (design §4.1–§4.3). Everything here is chrome the shell
@@ -50,112 +61,87 @@ test.beforeEach(async ({ page }) => {
  * Every axe run in this repository stops at `wcag21aa`, and axe tags
  * `target-size` `wcag22aa` — so no scan here has ever evaluated this rule and
  * the "touch targets are covered by axe" belief was empty (裁决 Q29). This
- * sweep is the check.
+ * sweep is the check (the views' own sweep and a `wcag22aa` axe run live in
+ * workbench-pr3-a11y.mock.spec.ts).
  *
  * Scope is the shell's own chrome (rail + topbar + the artifact drawer) plus
  * `[data-wb-legacy-link]`, the one shared affordance the shell owns that
- * renders inside a view. `<main>` is deliberately NOT swept: view bodies are
- * each view task's own gate, and a sweep reaching into them would police work
- * this file does not own.
+ * renders inside a view. `<main>` is deliberately NOT swept here.
+ *
+ * A box that clears 24px is not yet a target (T17 Step 4d, codex S4): each
+ * sample also asks Playwright whether the target is really clickable
+ * (`pointer-events: none`, a clip, a neighbour on top all fail it) and holds
+ * every pair of reachable targets to no shared area. The helpers are in
+ * workbench-targets.ts.
  * ------------------------------------------------------------------ */
-
-const MIN_TARGET_PX = 24;
-
-/** Comfortable touch size (iOS HIG / Material). Held only where noted below. */
-const TOUCH_TARGET_PX = 44;
 
 /**
  * One selector, not a hand-written element list: the sweep has to find a button
- * somebody adds tomorrow by itself. The counted assertions below are what stops
- * it from silently matching nothing.
+ * somebody adds tomorrow by itself. Nothing is filtered out here, `[hidden]`
+ * included; what may be skipped is decided per element below and then checked.
  */
 const SHELL_TARGETS = [
-  "#wb-sidebar :is(button, a[href]):not([hidden])",
-  "[data-app-shell-topbar] :is(button, a[href]):not([hidden])",
+  "#wb-sidebar :is(button, a[href])",
+  "[data-app-shell-topbar] :is(button, a[href])",
   "a[href][data-wb-legacy-link]",
 ].join(", ");
 
+const RAIL_TARGETS = "#wb-sidebar :is(button, a[href])";
+
 /**
- * `:not([hidden])` above drops exactly one kind of element, and this is it:
- * `ProjectSwitcher` keeps a `hidden aria-hidden tabIndex={-1}` <Link> per other
- * project and clicks it from the <select>'s onChange so the unsaved-editor
- * guards still see a real navigation. Not perceivable, not focusable, not in
- * the accessibility tree — WCAG 2.5.8 has nothing to say about it. Counted, not
- * quietly filtered: one proxy per non-current project, and the mock fixture
- * ships two projects.
+ * The one kind of element the sweep skips. `ProjectSwitcher` keeps a `<Link>`
+ * per other project beside its `<select>` and clicks it from the select's
+ * onChange, so the unsaved-editor guards see a real navigation. It is found by
+ * that structure (an anchor sharing its parent with the select), not by the
+ * attributes that make it skippable, and then every one found must carry all
+ * of them: `hidden`, `aria-hidden="true"`, `tabIndex -1`, and no box. One per
+ * non-current project; the mock fixture ships two projects. Every other
+ * `[hidden]` target in scope is asserted to be an empty list.
+ *
+ * The plan asked for a `data-wb-nav-proxy` marker on the component; finding the
+ * proxy by structure needs no production hook, and a stray `class="block"` on
+ * it still fails the no-box check.
  */
-const HIDDEN_PROXY_LINKS = 1;
+const SWITCHER_PROXIES = 1;
 
 const DRAWER_TARGETS = '[role="dialog"] :is(button, a[href])';
 
-interface SweptTarget {
-  readonly name: string;
-  /** `null` when the element has no box at this viewport (`display:none`). */
-  readonly box: { readonly width: number; readonly height: number } | null;
+async function shellSweep(page: Page): Promise<readonly SweptTarget[]> {
+  const all = await sweep(page, SHELL_TARGETS);
+  const proxies = all.filter((target) => target.switcherProxy);
+  expect(
+    proxies.map(({ underHidden, ariaHidden, tabIndex, box }) => ({
+      underHidden,
+      ariaHidden,
+      tabIndex,
+      box,
+    })),
+    "project switcher navigation proxies",
+  ).toEqual(
+    Array.from({ length: SWITCHER_PROXIES }, () => ({
+      underHidden: true,
+      ariaHidden: "true",
+      tabIndex: -1,
+      box: null,
+    })),
+  );
+  const targets = all.filter((target) => !target.switcherProxy);
+  expect(
+    targets.filter((target) => target.underHidden).map((target) => target.name),
+    "[hidden] targets other than the switcher proxy",
+  ).toEqual([]);
+  return targets;
 }
 
-/**
- * A stable name for one target. Data hooks first, then the accessible name,
- * then the text. A `<kbd>` shortcut hint is stripped: it is not part of the
- * control's name, and after the ⌘K work it reads differently per platform, so
- * leaving it in would make this sweep's expectations host-dependent.
- */
-async function targetName(target: Locator): Promise<string> {
-  return target.evaluate((node) => {
-    const rail = node.getAttribute("data-wb-nav");
-    if (rail !== null) return `rail:${rail}`;
-    const legacy = node.getAttribute("data-wb-legacy-link");
-    if (legacy !== null) return `legacy:${legacy}`;
-    if (node.hasAttribute("data-wb-drawer-button")) return "topbar:artifacts";
-    const ariaLabel = node.getAttribute("aria-label");
-    if (ariaLabel !== null) return `${node.tagName.toLowerCase()}:${ariaLabel}`;
-    const clone = node.cloneNode(true) as Element;
-    for (const kbd of clone.querySelectorAll("kbd")) kbd.remove();
-    const text = (clone.textContent ?? "").replace(/\s+/gu, " ").trim();
-    return `${node.tagName.toLowerCase()}:${text.slice(0, 32)}`;
-  });
-}
-
-async function sweep(
-  page: Page,
-  selector: string,
-): Promise<readonly SweptTarget[]> {
-  const found = await page.locator(selector).all();
-  const swept: SweptTarget[] = [];
-  for (const target of found) {
-    const [name, box] = await Promise.all([
-      targetName(target),
-      target.boundingBox(),
-    ]);
-    swept.push({
-      name,
-      box: box === null ? null : { width: box.width, height: box.height },
-    });
-  }
-  return swept;
-}
-
-/** `name WxH` for every target that has a box smaller than `min` on either axis. */
-function under(
-  swept: readonly SweptTarget[],
-  min: number,
-  only?: readonly string[],
-): readonly string[] {
-  return swept
-    .filter((t) => only === undefined || only.includes(t.name))
-    .flatMap((t) =>
-      t.box !== null && (t.box.width < min || t.box.height < min)
-        ? [`${t.name} ${t.box.width}x${t.box.height}`]
-        : [],
-    );
-}
-
-function absent(swept: readonly SweptTarget[]): readonly string[] {
-  return swept.flatMap((t) => (t.box === null ? [t.name] : [])).sort();
-}
-
-function names(swept: readonly SweptTarget[]): readonly string[] {
-  return swept.map((t) => t.name).sort();
+/** Waits for the rail's slide transition, which a viewport change can start. */
+async function railSettled(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page
+        .locator("#wb-sidebar")
+        .evaluate((node) => node.getAnimations().length),
+    )
+    .toBe(0);
 }
 
 /**
@@ -194,130 +180,200 @@ const SHELL_TARGET_NAMES: readonly string[] = [
   "legacy:setup-sources",
 ].sort();
 
-/**
- * Targets whose display utility removes them entirely at one viewport, so
- * `boundingBox()` is `null` and there is nothing to measure. The WCAG 2.5.8
- * exceptions are listed with them, each with its reason:
- *
- * - "inline" (a target inside a sentence, sized by the line height): 0 in
- *   scope. Every link here is a standalone control in a flex row, so none of
- *   them earns that exception; the empty list is asserted, so the first one
- *   somebody adds has to be argued for here rather than slipping through.
- * - "equivalent", "user agent control", "essential": 0 in scope.
- */
-const ABSENT_AT: Readonly<Record<"desktop" | "mobile", readonly string[]>> = {
-  // `md:hidden`: from `md` up the rail is permanent, so its toggle is gone.
-  desktop: ["button:Open navigation"],
-  // `hidden sm:inline` and `hidden md:flex`.
-  mobile: ["a:+ New site", "button:Search / jump"],
-};
+const RAIL_TARGET_NAMES = SHELL_TARGET_NAMES.filter((name) =>
+  name.startsWith("rail:"),
+);
 
-/** WCAG 2.5.8 "inline" exception holders in scope. Deliberately none. */
+/**
+ * WCAG 2.5.8 "inline" exception holders in scope (a target inside a sentence,
+ * sized by the line height). Deliberately none: every link here is a
+ * standalone control in a flex row, so the first one somebody adds has to be
+ * argued for here rather than slipping through. "equivalent", "user agent
+ * control", "essential": 0 in scope.
+ */
 const INLINE_EXCEPTIONS: readonly string[] = [];
 
 /**
  * The two controls a phone user reaches for first are held to 44px rather than
- * the 24px floor. Both are topbar controls that are only ever touched below
- * `md`; the desktop rendering keeps its original density.
+ * the 24px floor, at every width below `md` where they exist.
  */
-const TOUCH_44_AT_MOBILE: readonly string[] = [
+const TOUCH_44_BELOW_MD: readonly string[] = [
   "button:Open navigation",
   "topbar:artifacts",
 ];
 
-test("shell chrome clears WCAG 2.5.8's 24px target minimum on desktop and mobile", async ({
+/**
+ * One sample on each side of both breakpoints the topbar changes at, plus the
+ * phone and desktop widths the sweep started with. 640–767 is its own band:
+ * "+ New site" is shown (`sm:inline`) while the menu button still is too.
+ * Each band names what its display utilities remove (box `null`).
+ */
+const SAMPLES: readonly {
+  readonly width: number;
+  readonly absent: readonly string[];
+  readonly belowMd: boolean;
+}[] = [
+  // `md:hidden`: from `md` up the rail is permanent, so its toggle is gone.
+  { width: 1280, absent: ["button:Open navigation"], belowMd: false },
+  { width: 768, absent: ["button:Open navigation"], belowMd: false },
+  // `hidden md:flex`.
+  { width: 767, absent: ["button:Search / jump"], belowMd: true },
+  { width: 640, absent: ["button:Search / jump"], belowMd: true },
+  // ... and `hidden sm:inline`.
+  { width: 639, absent: ["a:+ New site", "button:Search / jump"], belowMd: true },
+  { width: 390, absent: ["a:+ New site", "button:Search / jump"], belowMd: true },
+];
+
+test("shell chrome targets clear 24px, stay clickable and apart at every layout band", async ({
   page,
 }) => {
+  test.slow(); // six widths, each with a trial click per target
   // `/profile` is the page with two legacy links (LEGACY_LINKS.profile), so one
   // navigation covers the shared affordance as well as the shell's own chrome.
   await page.goto(`/p/${E2E_PROJECT_ID}/profile`);
   await expect(page.locator("h1[data-wb-page-title]")).toHaveCount(1);
-  await expect(
-    page.locator("[data-app-shell-topbar] a[href][hidden]"),
-  ).toHaveCount(HIDDEN_PROXY_LINKS);
 
-  for (const [viewport, size] of [
-    ["desktop", { width: 1280, height: 800 }],
-    ["mobile", { width: 390, height: 844 }],
-  ] as const) {
+  for (const sample of SAMPLES) {
+    const at = `${sample.width}px`;
+    await page.setViewportSize({ width: sample.width, height: 844 });
+    await railSettled(page);
+    const swept = await shellSweep(page);
+    expect(names(swept), `${at}: swept target set`).toEqual(SHELL_TARGET_NAMES);
+    expect(absent(swept), `${at}: targets with no box`).toEqual(
+      [...sample.absent].sort(),
+    );
+    expect(under(swept, MIN_TARGET_PX), `${at}: targets under ${MIN_TARGET_PX}px`).toEqual(
+      INLINE_EXCEPTIONS,
+    );
+    if (sample.belowMd) {
+      expect(
+        under(swept, TOUCH_TARGET_PX, TOUCH_44_BELOW_MD),
+        `${at}: controls held to ${TOUCH_TARGET_PX}px`,
+      ).toEqual([]);
+    }
+    // Below `md` the closed rail is inert and off canvas: its links have a box
+    // but no user can reach them, so they are not "reachable" here; the open
+    // rail is measured in its own test below.
+    const rail = swept.filter((target) => target.name.startsWith("rail:"));
+    expect(
+      rail.filter((target) => target.underInert !== sample.belowMd).map((t) => t.name),
+      `${at}: rail links whose inert state does not match the band`,
+    ).toEqual([]);
+    const reachable = swept.filter(
+      (target) => target.box !== null && !target.underInert,
+    );
+    expect(overlaps(reachable), `${at}: reachable targets sharing area`).toEqual([]);
+    expect(
+      await operableFailures(page, SHELL_TARGETS, reachable),
+      `${at}: targets Playwright could not click`,
+    ).toEqual([]);
+    if (sample.width === 390) {
+      // The closed rail really is out of reach, not just marked inert.
+      const overview = rail.filter((target) => target.name === "rail:overview");
+      expect(
+        await operableFailures(page, SHELL_TARGETS, overview, 1_000),
+        "390px: a closed rail link is not clickable",
+      ).toEqual(["rail:overview"]);
+    }
+  }
+});
+
+test("the mobile rail's links are measured open, where a finger reaches them", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/p/${E2E_PROJECT_ID}/profile`);
+  const sidebar = page.locator("#wb-sidebar");
+  await expect(sidebar).toHaveAttribute("inert", "");
+  await page.locator('button[aria-controls="wb-sidebar"]').click();
+  await expect(sidebar).not.toHaveAttribute("inert", "");
+  await railSettled(page);
+  await expect
+    .poll(() => sidebar.evaluate((node) => node.getBoundingClientRect().x))
+    .toBe(0);
+
+  const rail = await sweep(page, RAIL_TARGETS);
+  expect(names(rail), "open rail target set").toEqual(RAIL_TARGET_NAMES);
+  expect(absent(rail), "open rail targets with no box").toEqual([]);
+  expect(
+    rail.filter((target) => target.underInert).map((target) => target.name),
+    "open rail targets still under [inert]",
+  ).toEqual([]);
+  expect(under(rail, MIN_TARGET_PX), `open rail targets under ${MIN_TARGET_PX}px`).toEqual([]);
+  expect(overlaps(rail), "open rail targets sharing area").toEqual([]);
+  expect(
+    await operableFailures(page, RAIL_TARGETS, rail),
+    "open rail targets Playwright could not click",
+  ).toEqual([]);
+});
+
+for (const [viewport, size] of [
+  ["desktop", { width: 1280, height: 800 }],
+  ["mobile", { width: 390, height: 844 }],
+] as const) {
+  test(`artifact drawer rows clear the 24px target minimum (${viewport})`, async ({
+    page,
+  }) => {
     await page.setViewportSize(size);
-    const swept = await sweep(page, SHELL_TARGETS);
-    expect(names(swept), `${viewport}: swept target set`).toEqual(
-      SHELL_TARGET_NAMES,
+    await page.addInitScript(
+      ([key, value]) => {
+        window.localStorage.setItem(key, value);
+      },
+      [
+        storageKey(E2E_PROJECT_ID),
+        JSON.stringify({
+          v: PERSISTED_VERSION,
+          state: {
+            ...initialProjectState({
+              url: "example.test",
+              brand: "Example",
+              market: "US",
+            }),
+            artifacts: [
+              {
+                id: "seeded",
+                at: "2026-09-13 10:00",
+                module: "audit",
+                type: "md",
+                engine: "seo",
+                title: "Seeded report",
+                content: "# Seeded\n",
+              },
+            ],
+          },
+        }),
+      ] as const,
     );
-    expect(absent(swept), `${viewport}: targets with no box`).toEqual(
-      [...ABSENT_AT[viewport]].sort(),
+    await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
+    await page.locator("[data-wb-drawer-button]").click();
+    const dialog = page.getByRole("dialog", { name: /Artifacts/ });
+    await expect(dialog).toBeVisible();
+    // The seed has to have survived hydration, or the three row buttons below
+    // would not exist and the sweep would measure an empty drawer.
+    await expect(dialog.locator("[data-wb-artifact]")).toHaveCount(1);
+
+    const swept = await sweep(page, DRAWER_TARGETS);
+    expect(names(swept), "drawer target set").toEqual(
+      [
+        "button:Clear all",
+        "button:Close",
+        "button:Copy",
+        "button:Download",
+        "button:Remove",
+      ].sort(),
     );
+    expect(absent(swept), "drawer targets with no box").toEqual([]);
     expect(
       under(swept, MIN_TARGET_PX),
-      `${viewport}: targets under ${MIN_TARGET_PX}px`,
-    ).toEqual(INLINE_EXCEPTIONS);
-  }
-
-  expect(
-    under(
-      await sweep(page, SHELL_TARGETS),
-      TOUCH_TARGET_PX,
-      TOUCH_44_AT_MOBILE,
-    ),
-    `mobile: controls held to ${TOUCH_TARGET_PX}px`,
-  ).toEqual([]);
-});
-
-test("artifact drawer rows clear the 24px target minimum", async ({ page }) => {
-  await page.addInitScript(
-    ([key, value]) => {
-      window.localStorage.setItem(key, value);
-    },
-    [
-      storageKey(E2E_PROJECT_ID),
-      JSON.stringify({
-        v: PERSISTED_VERSION,
-        state: {
-          ...initialProjectState({
-            url: "example.test",
-            brand: "Example",
-            market: "US",
-          }),
-          artifacts: [
-            {
-              id: "seeded",
-              at: "2026-09-13 10:00",
-              module: "audit",
-              type: "md",
-              engine: "seo",
-              title: "Seeded report",
-              content: "# Seeded\n",
-            },
-          ],
-        },
-      }),
-    ] as const,
-  );
-  await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
-  await page.locator("[data-wb-drawer-button]").click();
-  const dialog = page.getByRole("dialog", { name: /Artifacts/ });
-  await expect(dialog).toBeVisible();
-  // The seed has to have survived hydration, or the three row buttons below
-  // would not exist and the sweep would measure an empty drawer.
-  await expect(dialog.locator("[data-wb-artifact]")).toHaveCount(1);
-
-  const swept = await sweep(page, DRAWER_TARGETS);
-  expect(names(swept), "drawer target set").toEqual(
-    [
-      "button:Clear all",
-      "button:Close",
-      "button:Copy",
-      "button:Download",
-      "button:Remove",
-    ].sort(),
-  );
-  expect(absent(swept), "drawer targets with no box").toEqual([]);
-  expect(
-    under(swept, MIN_TARGET_PX),
-    `drawer targets under ${MIN_TARGET_PX}px`,
-  ).toEqual([]);
-});
+      `drawer targets under ${MIN_TARGET_PX}px`,
+    ).toEqual([]);
+    expect(overlaps(swept), "drawer targets sharing area").toEqual([]);
+    expect(
+      await operableFailures(page, DRAWER_TARGETS, swept),
+      "drawer targets Playwright could not click",
+    ).toEqual([]);
+  });
+}
 
 test("every workbench page renders one data-wb-page-title h1 and its legacy links", async ({
   page,
@@ -480,8 +536,9 @@ test("deleting the project clears its workbench storage key", async ({
   await expect
     .poll(() => page.evaluate((k) => localStorage.getItem(k) !== null, key))
     .toBe(true);
-  // The only real action on the page; nothing else consumes this attribute, so
-  // this spec is what pins it.
+  // The only real action on the page. SettingsView.test.tsx pins the same count
+  // in jsdom; this pins it on the page as served, with the notification and
+  // data-sources blocks (T11) mounted beside it.
   const realAction = page.locator("[data-wb-real-action]");
   await expect(realAction).toHaveCount(1);
   await realAction.getByRole("button", { name: "Delete product" }).click();
