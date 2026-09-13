@@ -332,7 +332,12 @@ export interface WorkbenchProjectState {
    */
   readonly conns: Connections;
   readonly gscRows: readonly GscRow[];
-  /** Provenance of `gscRows` (Q6). Non-null exactly when rows exist: written and cleared with them. */
+  /**
+   * Provenance of `gscRows` (Q6). Non-null exactly when rows exist: written and
+   * cleared with them. The reducer keeps that true; a persisted envelope can
+   * still arrive with a source and no rows, so `normalizeInterrupted` drops the
+   * mark on the way in rather than rejecting the envelope.
+   */
   readonly gscRowsSource: GscRowsSource | null;
   readonly seeds: string;
   readonly built: boolean;
