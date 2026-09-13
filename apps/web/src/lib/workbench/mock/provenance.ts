@@ -1,6 +1,39 @@
-import type { ArtifactType } from "../types.ts";
+import type { ArtifactType, GscRowsSource } from "../types.ts";
 
-export const SAMPLE_CSV_MARKER = "# sample-data";
+/**
+ * The first line of every csv artifact (Q36). Neutral on purpose: all three
+ * versions of the declaration sit under it, including the two that carry the
+ * operator's own or unrecorded GSC rows, so it must not say "sample". A json
+ * artifact's declaration key, `_provenance`, is neutral for the same reason.
+ */
+export const PROVENANCE_CSV_MARKER = "# provenance";
+
+/**
+ * Where an artifact's GSC-derived content came from (Q36), which picks its
+ * provenance declaration: `none` (it shows no GSC data) and `sample` share the
+ * sample sentence, `user` and `unknown` each have their own.
+ */
+export type ArtifactGscData = "none" | "sample" | "user" | "unknown";
+
+/**
+ * `present` is whether the artifact shows any GSC-derived data; `source` is the
+ * provenance of the rows that data came from. Rows whose source was never
+ * recorded are `unknown`, never guessed as `sample` or `user` (Q6).
+ */
+export function artifactGscData(
+  present: boolean,
+  source: GscRowsSource | null,
+): ArtifactGscData {
+  if (!present) return "none";
+  switch (source) {
+    case "sample":
+      return "sample";
+    case "user":
+      return "user";
+    case null:
+      return "unknown";
+  }
+}
 
 const LINE_FEED = 10;
 
@@ -71,7 +104,7 @@ export type UnstampedBody = string & { readonly [stampedBrand]?: never };
  * artifact without its declaration. Every result is in the canonical shape
  * above: json by re-serialisation, the other three by `canonicalText`. For json,
  * `JSON.stringify` always lists integer-like keys first, so such a top-level key
- * lands ahead of `_sampleData` (pinned by the "integer-like top-level keys" case
+ * lands ahead of `_provenance` (pinned by the "integer-like top-level keys" case
  * in `provenance.test.ts`).
  */
 export function stampArtifact(
@@ -90,7 +123,7 @@ function stampText(type: ArtifactType, body: string, line: string): string {
   }
   switch (type) {
     case "csv":
-      return canonicalText(`${SAMPLE_CSV_MARKER}\n# ${notice}\n${body}`);
+      return canonicalText(`${PROVENANCE_CSV_MARKER}\n# ${notice}\n${body}`);
     case "json": {
       const parsed: unknown = JSON.parse(body);
       if (
@@ -100,15 +133,17 @@ function stampText(type: ArtifactType, body: string, line: string): string {
       ) {
         throw new Error("stampArtifact: json artifacts must be a JSON object");
       }
-      // A body key named _sampleData must not overwrite the declaration, so drop it before spreading.
-      const { _sampleData: _ignored, ...rest } = parsed as Record<
+      // A body key named _provenance must not overwrite the declaration, and one
+      // named _sampleData (the key before Q36) must not sit beside it as a second,
+      // older declaration, so both are dropped before spreading.
+      const { _provenance: _ignored, _sampleData: _legacy, ...rest } = parsed as Record<
         string,
         unknown
       >;
       // `<`, U+2028 and U+2029 can only occur inside JSON strings, so escaping them keeps the parsed value
       // identical while the text stays safe to paste into <script type="application/ld+json">. This is the
       // one place every json artifact's final text is produced; a builder cannot do it (this re-serializes).
-      return JSON.stringify({ _sampleData: notice, ...rest }, null, 2)
+      return JSON.stringify({ _provenance: notice, ...rest }, null, 2)
         .replace(/</g, "\\u003c")
         .replace(/\u2028/g, "\\u2028")
         .replace(/\u2029/g, "\\u2029");

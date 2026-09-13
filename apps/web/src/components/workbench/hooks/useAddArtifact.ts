@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef } from "react";
 import { flushSync } from "react-dom";
 import { useTranslations } from "next-intl";
 import {
+  type ArtifactGscData,
   stampArtifact,
   type StampedText,
   type UnstampedBody,
@@ -32,6 +33,13 @@ export interface ArtifactDraft {
    * variable drops the brand and compiles (see `UnstampedBody`).
    */
   readonly body: UnstampedBody;
+  /**
+   * Where the GSC data the body shows came from (Q36); it picks the provenance
+   * declaration stamped above the body. Required, with no default: a producer
+   * that left it out would ship the operator's own rows under "sample data".
+   * `none` when the body shows no GSC-derived data at all.
+   */
+  readonly gscData: ArtifactGscData;
   /** A bare file name for the download; the drawer forces the extension from `type`. */
   readonly filename?: string;
 }
@@ -94,6 +102,20 @@ export interface PreparedArtifact {
 }
 
 /**
+ * The declaration each GSC source is stamped with (Q36). `none` and `sample`
+ * share the sample sentence: with no GSC data, or only the sample's, everything
+ * in the artifact is a local demonstration. The other two name where the rows
+ * came from and still say the rest is not a measurement (in PR-3, audit and
+ * visibility results are always local simulations).
+ */
+const PROVENANCE_KEY = {
+  none: "artifact",
+  sample: "artifact",
+  user: "artifactWithUserGsc",
+  unknown: "artifactWithUnknownGsc",
+} as const satisfies Readonly<Record<ArtifactGscData, string>>;
+
+/**
  * The one place an artifact is stamped (Q23, R5): `stampArtifact` folds the
  * localised §6.8 provenance line into the body, and the same text is what every
  * action hands out. Builders never stamp, and no view may call `stampArtifact`
@@ -134,7 +156,7 @@ export function useAddArtifact():
     const content = stampArtifact(
       draft.type,
       draft.body,
-      tProvenance("artifact", { at }),
+      tProvenance(PROVENANCE_KEY[draft.gscData], { at }),
     );
     const base = {
       id: crypto.randomUUID(),

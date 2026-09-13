@@ -5,6 +5,8 @@ import {
   WEEKLY_REPORT_META,
   weeklyReportMarkdown,
 } from "@/lib/workbench/mock/builders/week";
+import { artifactGscData } from "@/lib/workbench/mock/provenance";
+import type { GscRowsSource } from "@/lib/workbench/types";
 import { usePreparedArtifact } from "../../hooks/usePreparedArtifact.ts";
 import {
   ARTIFACT_ACTION_LABEL_KEYS,
@@ -20,6 +22,11 @@ import { weeklyReportInput, type WeekSummary } from "./week-summary.ts";
  * The body comes from the mock-layer builder and is stamped once, by
  * `useAddArtifact`; copy, export, save and "copy for an AI" all hand over that
  * one prepared text (`ArtifactActions`).
+ *
+ * The declaration stamped above it follows the GSC rows' source (Q36). The
+ * report's only GSC-derived lines are the borderline count and its unknown-rank
+ * aside, both printed only when `summary.borderline` is known; otherwise the
+ * report shows no GSC data and carries the sample sentence.
  *
  * Prepared by the shared `hooks/usePreparedArtifact.ts` (T9 review P3-5): one
  * object per report content, and nothing while the report's current text is not
@@ -51,17 +58,21 @@ function actionLabels(
 export function WeekReport({
   summary,
   brand,
+  gscRowsSource,
   now,
 }: {
   readonly summary: WeekSummary;
   readonly brand: string;
+  /** The source of the rows `summary.borderline` was counted from. */
+  readonly gscRowsSource: GscRowsSource | null;
   readonly now: Date;
 }) {
   const t = useTranslations("workbench.week");
   const tActions = useTranslations("workbench.artifactActions");
   const title = t("artifactTitle", { brand });
   const body = weeklyReportMarkdown(weeklyReportInput(summary, brand, now));
-  const prepared = usePreparedArtifact({ ...WEEKLY_REPORT_META, title, body });
+  const gscData = artifactGscData(summary.borderline !== null, gscRowsSource);
+  const prepared = usePreparedArtifact({ ...WEEKLY_REPORT_META, title, body, gscData });
   const labels = actionLabels((field) => tActions(field), {
     save: t("report.save"),
     exportFile: t("report.export"),

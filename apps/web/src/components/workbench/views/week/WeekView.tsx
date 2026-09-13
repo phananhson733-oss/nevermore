@@ -77,7 +77,12 @@ export function WeekView() {
           <WeekPanels summary={summary} projectId={projectId} />
         </>
       )}
-      <WeekReport summary={summary} brand={state.profile.brand} now={clock.now} />
+      <WeekReport
+        summary={summary}
+        brand={state.profile.brand}
+        gscRowsSource={state.gscRowsSource}
+        now={clock.now}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import {
   profileDocMarkdown,
   profileJson,
 } from "@/lib/workbench/mock/builders/profile";
+import { artifactGscData } from "@/lib/workbench/mock/provenance";
 import type { ArtifactType, Profile, ProfileDoc } from "@/lib/workbench/types";
 import type { ArtifactDraft } from "../../hooks/useAddArtifact.ts";
 
@@ -13,7 +14,11 @@ import type { ArtifactDraft } from "../../hooks/useAddArtifact.ts";
  * The body is the mock-layer builder's output, unstamped (Q23): the pane shows
  * it and the actions stamp it once. Every builder reads the snapshot's own
  * `gscSource` (Q6), so nothing here passes a provenance of its own — a second
- * argument would be a second, possibly contradicting, answer.
+ * argument would be a second, possibly contradicting, answer. The draft's
+ * `gscData` (Q36) reads that same frozen `gscSource`, never the project's
+ * current `gscRowsSource`: rows imported after generation must not relabel the
+ * declaration of a profile already written. All three tabs carry the same one,
+ * the JSON tab included, although its body has no GSC fields (Q36 ruling).
  *
  * `module: "profile"`, `engine: "both"` (the prototype's `""`, R2). File names
  * are the prototype's; the drawer forces the extension from `type` anyway.
@@ -63,6 +68,7 @@ export function profileArtifactDraft(
     engine: "both",
     title,
     body: profileArtifactBody(tab, profile, doc),
+    gscData: artifactGscData(doc.gsc !== null, doc.gscSource),
   } as const;
   return filename === undefined ? base : { ...base, filename };
 }

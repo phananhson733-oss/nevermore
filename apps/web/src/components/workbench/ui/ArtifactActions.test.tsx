@@ -74,6 +74,7 @@ const MD_DRAFT: ArtifactDraft = {
   engine: "seo",
   title: "修复任务",
   body: BODY,
+  gscData: "sample",
 };
 const LABELS: ArtifactActionLabels = {
   copy: "Copy",

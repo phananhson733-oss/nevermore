@@ -31,12 +31,13 @@ const SRC_DIR = resolve(MOCK_DIR, "../../..");
  * second wording:
  * - `mock/provenance.ts` declares it.
  * - `hooks/useAddArtifact.ts` is the one stamping site (Q23). Its line comes from
- *   `workbench.provenance.artifact`.
+ *   `workbench.provenance.*`, the key picked by the draft's `gscData` (Q36).
  * - `mock/demo-artifacts.ts` seeds the sample site's basket, which is not one of
  *   the four artifact actions. It does not spell a line either: `DemoDeps.
- *   provenanceLine` is injected by the caller and must keep coming from that same
- *   `workbench.provenance.artifact` key, so the demo artifacts and the operator's
- *   own carry identical wording.
+ *   provenanceLine` is injected by the caller and must keep coming from
+ *   `workbench.provenance.artifact`, the key the hook stamps sample data with, so
+ *   the demo artifacts and an operator's sample-data artifact carry identical
+ *   wording.
  *
  * A fourth entry here is a decision, not a formality: adding one means two places
  * can word the declaration, and the reason has to be written down beside it.

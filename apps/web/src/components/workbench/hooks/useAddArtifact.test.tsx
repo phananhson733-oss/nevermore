@@ -22,7 +22,7 @@ import { getMessages } from "@sf/i18n";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { agentTaskWrapper } from "@/lib/workbench/mock/builders/agent-task";
 import { splitFences } from "@/lib/workbench/mock/builders/prompt-test-helpers";
-import { SAMPLE_CSV_MARKER } from "@/lib/workbench/mock/provenance";
+import { PROVENANCE_CSV_MARKER } from "@/lib/workbench/mock/provenance";
 import {
   initialProjectState,
   type ProjectSeed,
@@ -59,6 +59,10 @@ const AT = new Date(2026, 8, 13, 10, 30, 45);
 const STAMP = "2026-09-13 10:30";
 /** `workbench.provenance.artifact` in en, with the stamp filled in. */
 const LINE = `Sample data: generated locally for demonstration, not measured. Generated ${STAMP}`;
+/** `workbench.provenance.artifactWithUserGsc` in en, with the stamp filled in. */
+const USER_LINE = `Includes GSC data you imported; the rest was generated locally for demonstration, not measured. Generated ${STAMP}`;
+/** `workbench.provenance.artifactWithUnknownGsc` in en, with the stamp filled in. */
+const UNKNOWN_LINE = `Includes GSC data of unknown source; the rest was generated locally for demonstration, not measured. Generated ${STAMP}`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 const MD_DRAFT: ArtifactDraft = {
@@ -67,6 +71,7 @@ const MD_DRAFT: ArtifactDraft = {
   engine: "seo",
   title: "修复任务",
   body: "# 修复任务\n- 给 /pricing 补 canonical",
+  gscData: "sample",
 };
 
 type Prepare = (draft: ArtifactDraft) => PreparedArtifact;
@@ -288,16 +293,28 @@ describe("useAddArtifact", () => {
     expect(prepared.content).not.toContain("workbench.provenance");
   });
 
-  it("stamps a csv with the sample marker and a comment line, and a json with the declaration first", () => {
+  it("stamps a csv with the provenance marker and a comment line, and a json with the declaration first", () => {
     const { prepare } = mount();
     const csv = prepare({ ...MD_DRAFT, type: "csv", body: "q\nai seo\n" });
     // Canonical shape: the builder's trailing newline does not survive stamping.
-    expect(csv.content).toBe(`${SAMPLE_CSV_MARKER}\n# ${LINE}\nq\nai seo`);
+    expect(csv.content).toBe(`${PROVENANCE_CSV_MARKER}\n# ${LINE}\nq\nai seo`);
 
     const json = prepare({ ...MD_DRAFT, type: "json", body: '{"a":1}' });
     const parsed = JSON.parse(json.content) as Record<string, unknown>;
-    expect(Object.keys(parsed)).toEqual(["_sampleData", "a"]);
-    expect(parsed._sampleData).toBe(LINE);
+    expect(Object.keys(parsed)).toEqual(["_provenance", "a"]);
+    expect(parsed._provenance).toBe(LINE);
+  });
+
+  it("stamps the declaration the draft's GSC source picks, under the same neutral markers for every version (Q36)", () => {
+    const { prepare } = mount();
+    const lines = { none: LINE, sample: LINE, user: USER_LINE, unknown: UNKNOWN_LINE } as const;
+    for (const gscData of ["none", "sample", "user", "unknown"] as const) {
+      const line = lines[gscData];
+      expect(prepare({ ...MD_DRAFT, gscData }).content, gscData).toBe(`${line}\n\n${MD_DRAFT.body}`);
+      expect(prepare({ ...MD_DRAFT, gscData, type: "csv", body: "q" }).content, gscData).toBe(`# provenance\n# ${line}\nq`);
+      const json = prepare({ ...MD_DRAFT, gscData, type: "json", body: '{"a":1}' });
+      expect(JSON.parse(json.content), gscData).toEqual({ _provenance: line, a: 1 });
+    }
   });
 
   it("gives each artifact a fresh uuid", () => {

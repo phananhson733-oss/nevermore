@@ -93,8 +93,8 @@ function mount(locale: Locale): {
 /** The declaration part of a stamped text, by the shape `stampArtifact` gives each type. */
 function declaration(type: ArtifactType, content: string): string {
   if (type === "json") {
-    const parsed = JSON.parse(content) as { readonly _sampleData?: unknown };
-    return typeof parsed._sampleData === "string" ? parsed._sampleData : "";
+    const parsed = JSON.parse(content) as { readonly _provenance?: unknown };
+    return typeof parsed._provenance === "string" ? parsed._provenance : "";
   }
   const lines = content.split("\n");
   return type === "csv" ? lines.slice(0, 2).join("\n") : (lines[0] ?? "");
@@ -153,6 +153,9 @@ describe.each(["en", "zh-CN"] as const)(
           engine: artifact.engine,
           title: artifact.title,
           body: artifact.type === "json" ? "{}" : "body",
+          // The sample site's rows are the sample's, so it is the sample
+          // sentence the loader has to agree with.
+          gscData: "sample",
         });
 
         // Same minute, or the comparison below would be between two stamps.

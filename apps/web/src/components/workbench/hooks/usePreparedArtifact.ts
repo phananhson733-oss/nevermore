@@ -34,7 +34,12 @@ interface PreparedSlot {
   readonly prepared: PreparedArtifact;
 }
 
-/** Everything the draft says: two drafts with the same key prepare the same text. */
+/**
+ * Everything the draft says: two drafts with the same key prepare the same
+ * text. That includes `gscData` (Q36), which the body does not show: the weekly
+ * report's text can stay the same while its rows' source changes, and the
+ * declaration stamped above it has to change with it.
+ */
 function draftKey(draft: ArtifactDraft): string {
   return JSON.stringify([
     draft.module,
@@ -42,6 +47,7 @@ function draftKey(draft: ArtifactDraft): string {
     draft.engine,
     draft.title,
     draft.filename ?? null,
+    draft.gscData,
     draft.body,
   ]);
 }
