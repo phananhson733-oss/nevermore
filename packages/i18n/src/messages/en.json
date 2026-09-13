@@ -4245,7 +4245,7 @@
       },
       "artifactTitle": "{brand} weekly report",
       "empty": {
-        "title": "Nothing has run in the last 7 days",
+        "title": "No results to show",
         "detail": "Whatever you run is kept in this browser and shows up here."
       }
     },

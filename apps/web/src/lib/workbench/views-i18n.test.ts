@@ -216,11 +216,16 @@ const FORBIDDEN_BY_KEY: Readonly<
     "zh-CN": ["本周", "这周"],
     en: ["this week"],
   },
-  // T18: the page range is the seven dates ending today, not a calendar week.
+  // T18: the empty state shows when `isEmpty` finds six stores empty. That reads
+  // no dates, and it also holds after "clear sample" removed results that did
+  // run, so the title says what is on screen now: no range and no past event
+  // ("yet" asserts one too). "ran" and "yet" are word-bounded so they cannot
+  // hit "range" or another word.
   "week.empty.title": {
-    "zh-CN": ["本周", "这周"],
-    en: ["this week"],
+    "zh-CN": ["近 7 天", "这周", "本周", "跑过", "运行过"],
+    en: ["last 7 days", "this week", "has run", /\bran\b/iu, /\byet\b/iu],
   },
+  // T18: the page range is the seven dates ending today, not a calendar week.
   "week.report.disabled": {
     "zh-CN": ["本周", "这周"],
     en: ["this week"],
@@ -655,9 +660,16 @@ const REQUIRED: Readonly<
     "zh-CN": ["临界 >10 且 ≤30"],
     en: ["Near page one >10 to ≤30"],
   },
-  // T18: the page counts the seven dates ending today (codex S7r2 #6). Not
-  // `week.empty.title`: `isEmpty` reads whole stores, not dates, so a pin on its
-  // seven days would mandate a scope the predicate does not have.
+  // T18: the empty state's title is pinned whole. It shows under `isEmpty`,
+  // which reads no dates, so a rewrite that adds a range or a past event is a
+  // new claim the predicate does not back.
+  "week.empty.title": {
+    "zh-CN": ["暂无可显示的结果"],
+    en: ["No results to show"],
+  },
+  // T18: the page counts the seven dates ending today (codex S7r2 #6).
+  // `week.report.disabled` renders under the same `summary.empty` as the empty
+  // title, which reads no dates; that mismatch is reported, not yet ruled on.
   "week.report.disabled": {
     "zh-CN": ["近 7 天"],
     en: ["the last 7 days"],
