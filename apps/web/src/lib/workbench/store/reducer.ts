@@ -9,6 +9,7 @@ import {
   type Connections,
   type DemoPayload,
   type GscRow,
+  type GscRowsSource,
   type KnowledgeBase,
   type LinkTarget,
   type NotifyPrefs,
@@ -33,7 +34,10 @@ export type WorkbenchAction =
   | { readonly type: "patchProfile"; readonly patch: Partial<Pick<Profile, "positioning" | "features" | "competitors">> }
   | { readonly type: "setProfileDoc"; readonly doc: ProfileDoc | null }
   | { readonly type: "setConns"; readonly conns: Connections }
-  | { readonly type: "setGscRows"; readonly rows: readonly GscRow[] }
+  // `source` is required, not optional (Q6): a caller that forgets where the
+  // rows came from would otherwise leave the label from the previous import in
+  // place, which is exactly the flip the snapshot field exists to prevent.
+  | { readonly type: "setGscRows"; readonly rows: readonly GscRow[]; readonly source: GscRowsSource }
   | { readonly type: "setSeeds"; readonly seeds: string }
   | { readonly type: "setBuilt"; readonly built: boolean }
   | { readonly type: "setSaved"; readonly saved: readonly SavedKeyword[] }
@@ -57,7 +61,17 @@ export type WorkbenchAction =
   | { readonly type: "loadPersisted"; readonly state: WorkbenchProjectState }
   | { readonly type: "reset"; readonly seed: ProjectSeed };
 
-const DEFAULT_NOTIFY: NotifyPrefs = { weekly: true, drop: true, mention: false, gsc: true };
+/** Exported for the settings page: it renders these when `notify` is untouched. */
+export const DEFAULT_NOTIFY: NotifyPrefs = { weekly: true, drop: true, mention: false, gsc: true };
+
+/**
+ * Rows and their provenance move together (Q6): no rows, no source. Written in
+ * one place so `setGscRows` and `loadDemo` cannot disagree, and so no surface
+ * can read a source that belongs to rows that are gone.
+ */
+function sourceFor(rows: readonly GscRow[], source: GscRowsSource): GscRowsSource | null {
+  return rows.length === 0 ? null : source;
+}
 
 export function initialProjectState(seed: ProjectSeed): WorkbenchProjectState {
   return {
@@ -65,6 +79,7 @@ export function initialProjectState(seed: ProjectSeed): WorkbenchProjectState {
     profileDoc: null,
     conns: { GSC: false, GA4: false },
     gscRows: [],
+    gscRowsSource: null,
     seeds: "",
     built: false,
     saved: [],
@@ -143,7 +158,7 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
     case "setConns":
       return { ...state, conns: action.conns };
     case "setGscRows":
-      return { ...state, gscRows: action.rows };
+      return { ...state, gscRows: action.rows, gscRowsSource: sourceFor(action.rows, action.source) };
     case "setSeeds":
       return { ...state, seeds: action.seeds };
     case "setBuilt":
@@ -202,6 +217,7 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
         auditHistory: action.payload.auditHistory.slice(-HISTORY_LIMIT),
         visHistory: action.payload.visHistory.slice(-HISTORY_LIMIT),
         artifacts: action.payload.artifacts.slice(0, ARTIFACT_LIMIT).map(boundArtifact),
+        gscRowsSource: sourceFor(action.payload.gscRows, "sample"),
         visPartial: false,
         demo: true,
       };
@@ -217,10 +233,16 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
   }
 }
 
-/** The exact field set `loadDemo` writes, so `clearDemo` can undo it symmetrically. */
-function demoFields(s: WorkbenchProjectState): DemoPayload {
+/**
+ * The exact field set `loadDemo` writes, so `clearDemo` can undo it
+ * symmetrically. `gscRowsSource` rides along although it is not part of
+ * `DemoPayload` (the mock layer never sets it): it belongs to `gscRows`, and
+ * clearing the rows while leaving "sample" behind would relabel whatever the
+ * user pastes next.
+ */
+function demoFields(s: WorkbenchProjectState): DemoPayload & Pick<WorkbenchProjectState, "gscRowsSource"> {
   return {
-    conns: s.conns, gscRows: s.gscRows, seeds: s.seeds, built: s.built, saved: s.saved,
+    conns: s.conns, gscRows: s.gscRows, gscRowsSource: s.gscRowsSource, seeds: s.seeds, built: s.built, saved: s.saved,
     audit: s.audit, auditHistory: s.auditHistory, lastAudit: s.lastAudit,
     visResults: s.visResults, visHistory: s.visHistory, lastVis: s.lastVis,
     compData: s.compData, plans: s.plans, targets: s.targets, kb: s.kb, artifacts: s.artifacts, profileDoc: s.profileDoc,

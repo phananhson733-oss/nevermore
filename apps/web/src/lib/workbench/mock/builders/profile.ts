@@ -9,6 +9,7 @@ import type {
   AiDoc,
   CrawlSignals,
   GscRow,
+  GscRowsSource,
   GscSignals,
   Profile,
   ProfileDoc,
@@ -76,11 +77,19 @@ function topQuery(row: GscRow): string {
   return `${oneLine(row.query)}（${countText(row.clicks)} 次，排名 ${countText(row.position)}）`;
 }
 
-function gscSection(gsc: GscSignals | null): string {
+/**
+ * The one section whose numbers can be the user's own: they come from the rows
+ * that were in play when the snapshot was generated, so the sample label follows
+ * the provenance the snapshot froze (Q6) rather than being fixed like the crawl
+ * and third-party sections, whose numbers are always generated. Read from `doc`,
+ * not from the project's current rows: a document generated from the sample and
+ * then left alone must keep saying so after the user imports real rows.
+ */
+function gscSection(gsc: GscSignals | null, source: GscRowsSource | null): string {
   if (gsc === null) return "## 搜索表现\n- 未接入 GSC";
   const top = gsc.top.map(topQuery);
   return [
-    `## 搜索表现${SAMPLE_SUFFIX}`,
+    `## 搜索表现${source === "sample" ? SAMPLE_SUFFIX : ""}`,
     `- 品牌词点击 ${countText(gsc.brandClicks)}，非品牌词点击 ${countText(gsc.nonBrandClicks)}`,
     `- 临界词（11-30 名）${countText(gsc.near)} 条`,
     ...(top.length === 0 ? [] : [`- 点击最多：${top.join("；")}`]),
@@ -127,7 +136,7 @@ export function profileDocMarkdown({ profile, doc }: ProfileDocInput): string {
     docSection("核心功能", orUnfilled(bulletLines(splitList(profile.features)))),
     crawlSection(doc.crawl),
     thirdSection(doc.third),
-    gscSection(doc.gsc),
+    gscSection(doc.gsc, doc.gscSource),
     ...aiSections(doc.ai),
     docSection("竞品", orUnfilled(bulletLines(splitList(profile.competitors)))),
   ]);
@@ -159,6 +168,11 @@ function contextData({ profile, doc }: ProfileDocInput): unknown {
       tone: ai.tone,
     },
     // sampleData leads so a reader sees these numbers are examples before reading them.
+    // Known gap (PR-3 scope, Q6 covers the document only): this flag is fixed,
+    // so rows the user imported are also announced as examples. That is the
+    // conservative direction — sample numbers are never announced as measured —
+    // and fixing it properly means renaming the key to carry the source, which
+    // changes this prompt's data contract. Recorded for the residual list.
     search:
       gsc === null
         ? null

@@ -78,6 +78,11 @@ const artifact: Artifact = {
 const profileDoc: ProfileDoc = {
   crawl,
   gsc: { total: 900, brandQueries: 120, brandClicks: 80, nonBrandClicks: 240, top: [gscRow], near: 14 },
+  // Deliberately not the state's `gscRowsSource` below: this snapshot was
+  // generated while the rows were the sample's, and the project has imported
+  // real ones since (Q6). Every test that reads one of the two must therefore
+  // fail if it reads the other.
+  gscSource: "sample",
   third: crawl,
   ai: {
     summary: "Example sells analytics.",
@@ -95,6 +100,7 @@ export function populatedProjectState(seed: ProjectSeed): WorkbenchProjectState 
     profileDoc,
     conns: { GSC: true, GA4: true },
     gscRows: [gscRow],
+    gscRowsSource: "user",
     seeds: "geo audit\nseo audit",
     built: true,
     saved: [saved],

@@ -112,6 +112,34 @@ describe("persisted workbench schema v1", () => {
     }
   });
 
+  it("round-trips the GSC row provenance and the frozen one in the profile snapshot (Q6)", () => {
+    const state = populatedProjectState(seed);
+    const doc = state.profileDoc;
+    if (!doc) throw new Error("fixture must carry a profile document");
+    // The fixture deliberately disagrees with itself: rows the user imported,
+    // over a snapshot generated back when the rows were the sample's. That is
+    // the case the snapshot field exists for, so both must survive separately.
+    expect(state.gscRowsSource).toBe("user");
+    expect(doc.gscSource).toBe("sample");
+    for (const source of ["sample", "user", null] as const) {
+      const next = { ...state, gscRowsSource: source, profileDoc: { ...doc, gscSource: source } };
+      expect(parsePersistedState({ v: PERSISTED_VERSION, state: next }), String(source)).toEqual(next);
+    }
+  });
+
+  it("rejects a provenance value outside the two sources", () => {
+    const state = populatedProjectState(seed);
+    const doc = state.profileDoc;
+    if (!doc) throw new Error("fixture must carry a profile document");
+    for (const bad of ["demo", "gsc", "", "SAMPLE", true, 1]) {
+      expect(parsePersistedState({ v: 1, state: { ...state, gscRowsSource: bad } }), JSON.stringify(bad)).toBeNull();
+      expect(
+        parsePersistedState({ v: 1, state: { ...state, profileDoc: { ...doc, gscSource: bad } } }),
+        JSON.stringify(bad),
+      ).toBeNull();
+    }
+  });
+
   it("rejects garbage", () => {
     expect(parsePersistedState(null)).toBeNull();
     expect(parsePersistedState("{}")).toBeNull();
@@ -180,6 +208,20 @@ describe("classifyPersistedState (R14: data from a newer build is incompatible, 
       ]),
     );
     expect(classifyPersistedState({ v: PERSISTED_VERSION, state: old })).toEqual({ kind: "invalid" });
+  });
+
+  it("does not read an envelope saved before the GSC provenance fields existed", () => {
+    // A missing field is a real defect, not an unknown key: the envelope is
+    // invalid (discarded and overwritten), not incompatible. The pre-ship
+    // exemption in schema.ts accepts that only because PR-1/PR-2 never shipped.
+    const doc = state.profileDoc;
+    if (!doc) throw new Error("fixture must carry a profile document");
+    const { gscRowsSource: _source, ...withoutSource } = state;
+    const { gscSource: _docSource, ...docWithoutSource } = doc;
+    expect(classifyPersistedState({ v: PERSISTED_VERSION, state: withoutSource })).toEqual({ kind: "invalid" });
+    expect(
+      classifyPersistedState({ v: PERSISTED_VERSION, state: { ...state, profileDoc: docWithoutSource } }),
+    ).toEqual({ kind: "invalid" });
   });
 
   it("is invalid for every other failure, including an extra key next to a real defect", () => {

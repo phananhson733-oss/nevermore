@@ -8,7 +8,7 @@ import {
 } from "../types.ts";
 import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
 import type { WorkbenchAction } from "./reducer.ts";
-import { initialProjectState, normalizeInterrupted, reduce, withProjectSeed } from "./reducer.ts";
+import { DEFAULT_NOTIFY, initialProjectState, normalizeInterrupted, reduce, withProjectSeed } from "./reducer.ts";
 
 const seed = { url: "https://example.test", brand: "Example", market: "US" };
 
@@ -41,7 +41,10 @@ describe("initialProjectState", () => {
     expect(s.artifacts).toEqual([]);
     expect(s.demo).toBe(false);
     expect(s.visPartial).toBe(false);
-    expect(s.notify).toEqual({ weekly: true, drop: true, mention: false, gsc: true });
+    expect(s.gscRowsSource).toBeNull();
+    // DEFAULT_NOTIFY is exported for the settings page; its literal is pinned here.
+    expect(s.notify).toEqual(DEFAULT_NOTIFY);
+    expect(DEFAULT_NOTIFY).toEqual({ weekly: true, drop: true, mention: false, gsc: true });
   });
 });
 
@@ -354,7 +357,7 @@ describe("immutability", () => {
       { type: "patchProfile", patch: { positioning: "p" } },
       { type: "setProfileDoc", doc: null },
       { type: "setConns", conns: { GSC: true, GA4: false } },
-      { type: "setGscRows", rows: [] },
+      { type: "setGscRows", rows: [], source: "user" },
       { type: "setSeeds", seeds: "s" },
       { type: "setBuilt", built: true },
       { type: "setSaved", saved: [{ q: "k", addedAt: "t1", source: "gap" }] },

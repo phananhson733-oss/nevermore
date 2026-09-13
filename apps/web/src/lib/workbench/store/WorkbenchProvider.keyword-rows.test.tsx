@@ -181,6 +181,7 @@ describe("WorkbenchProvider keywordRows (R13)", () => {
     send(rec, {
       type: "setGscRows",
       rows: [{ query: "example pricing plans", clicks: 4, impressions: 120, ctr: 3.3, position: 6.1 }],
+      source: "user",
     });
     const after = ctx(rec).keywordRows;
     expect(after).not.toBe(before);

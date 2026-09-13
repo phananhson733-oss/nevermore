@@ -245,6 +245,32 @@ describe("profileDocMarkdown", () => {
     expect(doc).not.toContain("点击最多");
   });
 
+  it("drops the GSC sample label for rows the user imported, and keeps the generated sections labelled", () => {
+    const doc = profileDocMarkdown({ ...BASE, doc: { ...FIXTURE_DOC, gscSource: "user" } });
+    expect(headingLines(doc)).toContain("## 搜索表现");
+    expect(doc).not.toContain("## 搜索表现（示例数据）");
+    // Crawl and third-party numbers are generated whatever the rows are.
+    expect(headingLines(doc)).toContain("## 站点现状（示例数据）");
+    expect(headingLines(doc)).toContain("## 第三方估算（示例数据）");
+    // Only the heading changes: the numbers under it are the same ones.
+    expect(doc).toContain("- 品牌词点击 120，非品牌词点击 45");
+  });
+
+  it("says nothing about the source when the snapshot did not record one", () => {
+    const doc = profileDocMarkdown({ ...BASE, doc: { ...FIXTURE_DOC, gscSource: null } });
+    expect(headingLines(doc)).toContain("## 搜索表现");
+    expect(doc).not.toContain("## 搜索表现（示例数据）");
+  });
+
+  it("reads the label off the snapshot, so a later import cannot relabel a written document", () => {
+    // Same rows, two snapshots: what the document says is decided by the value
+    // frozen in it, and nothing else is passed in (Q6).
+    const sample = profileDocMarkdown({ ...BASE, doc: { ...FIXTURE_DOC, gscSource: "sample" } });
+    const user = profileDocMarkdown({ ...BASE, doc: { ...FIXTURE_DOC, gscSource: "user" } });
+    expect(sample).not.toBe(user);
+    expect(sample.replace("## 搜索表现（示例数据）", "## 搜索表现")).toBe(user);
+  });
+
   it("never says 实测", () => {
     expect(profileDocMarkdown(BASE)).not.toContain("实测");
   });

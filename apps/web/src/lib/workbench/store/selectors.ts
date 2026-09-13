@@ -2,7 +2,7 @@
 import { kbGapCount } from "../mock/kb.ts";
 import { buildRows } from "../mock/keywords.ts";
 import { mentionRate } from "../mock/visibility.ts";
-import type { KeywordRow, KnowledgeBase, VisResult, WorkbenchProjectState } from "../types.ts";
+import type { DemoPayload, KeywordRow, KnowledgeBase, VisResult, WorkbenchProjectState } from "../types.ts";
 
 /** Seed text as typed: comma- or newline-separated, each entry trimmed, blank entries dropped. */
 export function splitSeeds(seeds: string): readonly string[] {
@@ -61,12 +61,16 @@ function countOrNull(n: number): string | null {
 }
 
 /**
- * R15. Zero hits is a measured result, so it shows "0%". A non-zero share never
+ * R15, and the one share every surface prints (Q9): the sidebar badge, the
+ * overview mention-rate card and the week tile all call this, so they cannot
+ * round the same run differently.
+ *
+ * Zero hits is a measured result, so it shows "0%". A non-zero share never
  * reads "0%" and a share with misses never reads "100%". Both the thresholds
  * and the rounding use the exact share `hits * 100 / total`: going through the
  * rate loses halves, `(23 / 40) * 100` is 57.49999999999999.
  */
-function formatShare(hits: number, total: number): string {
+export function formatShare(hits: number, total: number): string {
   if (hits === 0) return "0%";
   if (hits * 100 < total) return "<1%";
   if (hits < total && hits * 100 > total * 99) return ">99%";
@@ -100,4 +104,44 @@ export function selectCounts(
     artifacts: countOrNull(state.artifacts.length),
     dataSources: countOrNull(state.gscRows.length),
   };
+}
+
+/**
+ * Whether loading the sample site would overwrite something (design §6.7, Q11).
+ *
+ * BY VALUE, never by reference: `initialProjectState` builds a new `[]` / `{}`
+ * on every call and hydration replaces every object with one JSON.parse made,
+ * so `state.gscRows !== blank.gscRows` is true for every project that ever
+ * existed — a reference comparison would make an untouched project prompt for
+ * confirmation while still passing every "one field changed" case.
+ *
+ * One predicate per field `loadDemo` writes, in a `Record` keyed by
+ * `keyof DemoPayload`: a field added to the payload without a predicate here is
+ * a compile error rather than a silent hole in the confirm dialog. `profile` and
+ * `notify` are not payload fields (the sample never writes them), and
+ * `gscRowsSource` is not user content on its own — it is non-null only when
+ * `gscRows` is non-empty, which this table already asks about.
+ */
+const DEMO_FIELD_IS_BLANK: Readonly<Record<keyof DemoPayload, (state: WorkbenchProjectState) => boolean>> = {
+  conns: (s) => s.conns.GSC === false && s.conns.GA4 === false,
+  gscRows: (s) => s.gscRows.length === 0,
+  seeds: (s) => s.seeds.trim() === "",
+  built: (s) => s.built === false,
+  saved: (s) => s.saved.length === 0,
+  audit: (s) => s.audit === null,
+  auditHistory: (s) => s.auditHistory.length === 0,
+  lastAudit: (s) => s.lastAudit === null,
+  visResults: (s) => s.visResults.length === 0,
+  visHistory: (s) => s.visHistory.length === 0,
+  lastVis: (s) => s.lastVis === null,
+  compData: (s) => s.compData === null,
+  plans: (s) => Object.keys(s.plans).length === 0,
+  targets: (s) => s.targets === null,
+  kb: (s) => s.kb === null,
+  artifacts: (s) => s.artifacts.length === 0,
+  profileDoc: (s) => s.profileDoc === null,
+};
+
+export function hasDemoOverwrite(state: WorkbenchProjectState): boolean {
+  return Object.values(DEMO_FIELD_IS_BLANK).some((isBlank) => !isBlank(state));
 }

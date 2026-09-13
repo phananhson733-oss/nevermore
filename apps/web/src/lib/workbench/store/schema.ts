@@ -204,6 +204,12 @@ const crawlSignals = z.strictObject({
   refdomains: z.number(),
 });
 
+/**
+ * `GscRowsSource | null` (types.ts), used twice: the project's current rows and
+ * the provenance a profile snapshot froze when it was generated.
+ */
+const gscRowsSource = z.enum(["sample", "user"]).nullable();
+
 const profileDoc = z.strictObject({
   crawl: crawlSignals.nullable(),
   gsc: z
@@ -220,6 +226,15 @@ const profileDoc = z.strictObject({
       near: nullableNumber,
     })
     .nullable(),
+  // Pre-ship exemption 5, and the reason it is worth a field at all (Q6): a
+  // document generated from the sample rows and then left alone while the user
+  // imports real ones must keep saying "sample", and the reverse must not start
+  // saying it. Only the value frozen here can answer that, so it is persisted
+  // with the document. Adding a field otherwise follows the reader-first rule in
+  // the file header; PR-1/PR-2 never shipped, so no envelope without this key
+  // exists outside a developer's browser and PERSISTED_VERSION stays 1. After
+  // release, a change like this needs the reader-first release or a bump.
+  gscSource: gscRowsSource,
   third: crawlSignals.nullable(),
   ai: z.strictObject({
     summary: z.string(),
@@ -263,6 +278,11 @@ export const projectStateSchema = z.strictObject({
   profileDoc: profileDoc.nullable(),
   conns: z.strictObject({ GSC: z.boolean(), GA4: z.boolean() }),
   gscRows: z.array(gscRow),
+  // Pre-ship exemption 4: same reasoning as the `profileDoc.gscSource` note
+  // above. An envelope written before this field existed is `invalid` (the
+  // missing key is a real defect, not an unknown one), so it is discarded and
+  // overwritten rather than freezing the project read-only.
+  gscRowsSource,
   seeds: z.string(),
   built: z.boolean(),
   saved: z.array(savedKeyword),
