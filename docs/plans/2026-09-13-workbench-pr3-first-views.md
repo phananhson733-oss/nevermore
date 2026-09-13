@@ -208,6 +208,7 @@ docs/PROGRESS.md                   T18
   - 已核实（2026-09-13，不必重推）：`ShellChrome.tsx:1` 是 `"use client"`，`WorkbenchShell.tsx` 是 server 组件且 `:54` 写死 `gscConnected: null`；`SiteCard.tsx:10` 的 `gscConnected: boolean | null` 三态分支已存在（`:44-46`）；`SourceConnection.id` 是 `string | null`、`state` 是 `SourceState`（`hooks-sources.ts:156-161`），Q3 判据可表达；`ApiError.code` 存在（`lib/api/client.ts:28`），Q4 按 `code` 分支可实现；`useProjectSources` 无自设 `staleTime`，吃 `app/providers.tsx:17` 的默认 `staleTime: 30_000`。
 - [ ] **Step 4: 回归清单**（每项都跑）— `e2e/workbench-shell.mock.spec.ts`、`e2e/legacy-style-parity.mock.spec.ts`（**它装了 mock API**：`:66 installGrowthVerticalApi`，内含 `/sources` fixture——rev1 把它写成「不装」是错的）、`e2e/frontend-error-states.mock.spec.ts:226`（`expect.poll(() => sourceReads).toBe(3)` 精确计数）、`e2e/growth-map-run.mock.spec.ts:910-916`（`sourceReads.length` 恰好 +1）。后两条因为 `ShellChrome` 在每个项目页都订阅 `["sources", projectId]` 而可能变化（同 key + `staleTime: 30_000` 大概率去重，但未核实）→ 实测后如实记录。
 - [ ] **Step 5: 变异** — `permission_denied` 挪到 `false` 必须红；error 分支返回 `false` 必须红。
+  - **执行后修正（T5 交接，我原话判偏了两处）**：①「按 `code` 分支不按状态码分支」在**本任务里是空的**——站点卡的每一种失败都映射成 `null`，写出来的守卫两条臂都返回 `null`，正是恒真守卫那个形状。这条指令真正的落点是 **T10 的 `real-connections.ts`**（不同失败要出不同文案），别因为这里没写就在那里放松。T5 改为在接缝钉住：`ShellChrome.test.tsx` 只桩 `fetch`，让真实的 problem+json 走真实的 `ApiError` 与真实 `QueryClient`，断言格子读作「—」且**不是**「未接入」。②「error 分支返回 `false` 必须红」只有**一条**测试能抓到——新鲜失败时 `data === undefined`，两种写法行为相同，唯一可观测的差别是**失败的后台刷新仍持有旧列表**。那条用例是必需的，不是补充的。③`SiteCard` 的 `title` 提示对 `SiteCard.test.tsx` 的 `rows()`（读 `textContent`）不可见，所以门放在 `ShellChrome.test.tsx`，并另断言市场行与审计行**不带**这个提示（它点名一种具体成因，对那两种「没有」是假的）。
 - [ ] **Step 6: 提交** — `feat(workbench): 侧栏站点卡接真实 GSC 连接状态（未知不等于未接入）`。
 
 ## Task 6: 概览视图 + 载入示例站点
@@ -311,6 +312,12 @@ docs/PROGRESS.md                   T18
 - [ ] **Step 5: 提交** — 两个提交：`fix(workbench): 抽屉与裸链接的触控目标`、`fix(workbench): 快捷键提示按平台显示`。
 - [ ] **Step 6: Q35 的文件搬家**（第三个提交）— 把 `ArtifactDrawer.tsx:15-55` 的 `downloadName` 与 `MIME`/`EXT` 表移到 `lib/workbench/artifact-file.ts`（连同它的测试），抽屉与 `ui/ArtifactActions.tsx` 都改从那里 import，删掉 `ArtifactActions.tsx` 里临时复制的 4 行 mime 表与那条 `ui → shell` 的 import。两张表都是按 `ArtifactType` 穷举的 `Readonly<Record<…>>`，加第五种产物类型会同时编译失败——搬家后这个性质要保住。提交：`refactor(workbench): 产物文件名与 MIME 归入 lib`。
 
+**T13 交接（执行后修正，三条）：**
+
+- **Q29 点名的第三个空洞门不是 T13 的**：「快捷键那条用模块级常量对象绕过 memo 契约」指的是 `shell/useGlobalShortcut.test.tsx:14`（`handlers` 在模块作用域，从不以新身份重渲），那是 PR-1 遗留 **F** = **T15 Step 2**，其 Files 已含这两个文件。遗留 C（⌘K 提示）原本**根本没有门**，不是门空洞。T15 接手时要知道这条；把门和 latest-ref 实现分开做会让它的变异无法验证。
+- **触控目标用 `-my-1 py-1` 不用 `-m-1 p-1`**：实测每个不合格目标的宽度都已 ≥31px，只有 16px 的高度不合格；`-mx-1` 会把相邻命中区之间肉眼可见的 12px 间隙压到 4px，对 WCAG 没有任何收益。纵向扩张保持外边距盒不变，版面不动。
+- **命中区清扫抓到一个枚举式修法抓不到的**：抽屉头部的「清除全部」（`44.7x16`）不在计划点名的 `:159-181` / `:136-139` 两段里，但同样不合格。这就是 Q29 要求「清扫而不是列清单」的理由。
+
 ## Task 14: PR-1 遗留 D（Tailwind `source(none)`）
 
 **依赖：** T12（**必须在 T12 之后**：T12 给项目 layout 加的类名会被 `source(none)` 静默丢掉）
@@ -351,7 +358,8 @@ docs/PROGRESS.md                   T18
 - [ ] **Step 4b: 视图内的触控目标**（T3 交接）— T13 Step 2 的 `boundingBox()` 清扫只覆盖壳；视图里的按钮、tab、开关一个都没量过，而 jsdom 那条「穿着 panel.ts 常量」的钉子只是代理（清扫看不见组件内写死的尺寸）。把同一套遍历扩到五个视图，豁免同样写成带计数的具名清单。
 - [ ] **Step 4c: Q34 的接缝**（T3 交接）— 在跑起来的页面上断言：每个 `[aria-controls]` 的值都能 `document.getElementById` 到元素。jsdom 侧的门在 `OutPane.test.tsx`，这里是真浏览器的复核。
 - [ ] **Step 5: parity 覆盖五个段名**（Claude #22）— `legacy-style-parity.mock.spec.ts:105-127` 现在只钉 `/overview` 的 `paddingLeft === "0px"`，改成对五个段名循环（不动基线 JSON）。
-- [ ] **Step 6: 跑法** — `pnpm test:e2e:mock e2e/<file>`（不带 `--`）；端口 3200 固定、`reuseExistingServer: false`；并行另跑一套用 `E2E_MOCK_PORT=3201`。
+- [ ] **Step 6: 跑法** — `pnpm test:e2e:mock e2e/<file>`（不带 `--`）；端口 3200 固定、`reuseExistingServer: false`。**「并行另跑一套用 `E2E_MOCK_PORT=3201`」是错的**（T5 与 T13 各自撞了一次，症状是 `ERR_EMPTY_RESPONSE` / `ECONNREFUSED` 与 `.next-e2e-mock` 里 `Cannot find module './vendor-chunks/…'`）：`playwright.mock.config.ts` 把 `NEXT_DIST_DIR` 硬写成 `.next-e2e-mock`，换端口不换 dist 目录，两次并行跑会互相毁掉构建产物。**本任务顺手修掉它**：`NEXT_DIST_DIR` 按端口派生（`.next-e2e-mock-${PORT}`），让并行 lane 真的成立；在此之前只能串行跑，或像 T13 那样在 scratchpad 里放一份自带端口与 dist 目录的配置副本。
+- [ ] **Step 6b: 合并后重跑**（T5 交接）— T5 的隔离 worktree 停在 `a2f26e60`，**没有跑过 T13 后加进 `workbench-shell.mock.spec.ts` 的两条**；反过来 T13 的清扫是在 T5 的 `ShellChrome`/`SiteCard` 已在树上时量的。两边各自绿不等于合起来绿，本任务必须在合并后的树上把四条 spec 整体重跑一遍。
 - [ ] **Step 7: 提交** — `test(workbench): PR-3 模块流、降级门与受影响 spec`。
 
 ## Task 18: 文档同步
@@ -393,4 +401,5 @@ docs/PROGRESS.md                   T18
 | 示例 GSC 词表对任何行业都一样 | 按行业派生另议；本 PR 用来源标记如实标注 |
 | `ArtifactType` 缺 `txt`、CSV 下载 BOM、关键词 CSV 行数上限 | PR-4 / PR-5（PR-2 R17） |
 | 集成分支合 main 前要 rebase | PR-3b |
+| **顶栏左侧在 390px 下装不下**（T13 实测）：汉堡按钮改用 `h-11 w-11` 后量出 **0x44**——`.wb-reset` 的 `svg { max-width: 100% }` 让按钮的 min-content 宽度为 0，flex 把唯一能压的那一项压到了零。`shrink-0` 修掉了症状，**溢出本身还在**，占地的是项目切换器。注意 `mobile-shell` 那条「390px 无横向溢出」正是**靠把一个控件压成零宽**才满足的——门通过了，理由是错的；现在 T13 的命中区清扫（宽高都 ≥24）会抓住同类复发 | PR-4（布局），判据与证据在此交接 |
 | **营销站的 `copyFailed` 与本仓 Q4 口径相反**：`apps/marketing/src/i18n/content-draft-messages.test.tsx:106-109` 用整句 `toBe` 钉死「浏览器拒绝了剪贴板访问，请检查权限后重试。」/ "The browser refused clipboard access…"。同一个 catch 也会在非安全上下文、文档失焦、策略拦截、手势过期时触发，所以那句在多数成因下是假话；而它是**必需型 pin**，任何改诚实的改写都会红（记忆 required-pins-can-mandate-a-lie）。修法要连 pin 的形状一起改：钉指令半句 + 成因词黑名单 | 另一个面、另一批用户，单开一条，不塞进 PR-3（T1b 发现） |
