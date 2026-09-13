@@ -4205,18 +4205,18 @@
       },
       "sinceLast": "较上次（{at}）",
       "checkedAt": "检查于 {at}",
-      "noNewCheck": "这段日期内没有新的检查",
+      "checkOutsideRange": "这次检查不在上面的日期范围内",
       "summaryRow": {
-        "artifacts": "本周新增 {count} 件产物",
+        "artifacts": "近 7 天新增 {count} 件产物",
         "answerGaps": "{count} 个提问至少有一个平台没提到你",
         "kbGaps": "知识库有 {count} 条还没写结论句",
         "answerGapsUnknown": "至少有一个平台没提到你的提问：{value}",
         "kbGapsUnknown": "知识库还没写结论句的条目：{value}"
       },
       "feed": {
-        "title": "本周事件",
+        "title": "近 7 天的事件",
         "count": "{count} 条",
-        "empty": "这周还没有动作",
+        "empty": "近 7 天还没有动作",
         "view": "查看"
       },
       "borderlineList": {

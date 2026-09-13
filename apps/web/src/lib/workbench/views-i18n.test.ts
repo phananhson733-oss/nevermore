@@ -164,11 +164,26 @@ const FORBIDDEN_BY_KEY: Readonly<
       "authoriz",
     ],
   },
-  // The range holds no newer check; why is not known (Q4), and the earlier
-  // run is not "last week" (Q20).
-  "week.noNewCheck": {
-    "zh-CN": ["所以", "因为", "由于", "没跑", "失败", "上周"],
-    en: ["because", "failed", "last week"],
+  // This check is outside the range; why is not known (Q4), the earlier run is
+  // not "last week" (Q20), and nothing is said about the rest of the range: an
+  // archived check inside it contradicts "no new check" (codex S7r2 #3).
+  "week.checkOutsideRange": {
+    "zh-CN": ["所以", "因为", "由于", "没跑", "失败", "上周", "没有新的检查", "没有检查", "没有更新"],
+    en: ["because", "failed", "last week", "no new check", "no check", "no newer"],
+  },
+  // codex S7r2 #6: the range is the seven dates ending today, not a calendar
+  // week, so what is counted over it is not called "this week".
+  "week.summaryRow.artifacts": {
+    "zh-CN": ["本周", "这周"],
+    en: ["this week"],
+  },
+  "week.feed.title": {
+    "zh-CN": ["本周", "这周"],
+    en: ["this week"],
+  },
+  "week.feed.empty": {
+    "zh-CN": ["本周", "这周"],
+    en: ["this week"],
   },
   // Unknown is not none: a row with no usable position may sit anywhere,
   // positions 11-30 included.
@@ -380,15 +395,29 @@ const REQUIRED: Readonly<
     "zh-CN": ["另有", "排名未知"],
     en: ["more", "no known position"],
   },
-  // codex S7a #6: a card under this week's dates carries its own check's stamp,
-  // and says so when that check is older than the range.
+  // codex S7a #6: a card under the page's dates carries its own check's stamp,
+  // and says so when that check is outside the range — of that check alone
+  // (codex S7r2 #3).
   "week.checkedAt": {
     "zh-CN": ["检查于"],
     en: ["Checked"],
   },
-  "week.noNewCheck": {
-    "zh-CN": ["没有新的检查"],
-    en: ["No new check"],
+  "week.checkOutsideRange": {
+    "zh-CN": ["这次检查", "不在上面的日期范围内"],
+    en: ["This check", "outside the date range above"],
+  },
+  // codex S7r2 #6: the counts are over the seven dates the subtitle prints.
+  "week.summaryRow.artifacts": {
+    "zh-CN": ["近 7 天新增"],
+    en: ["added in the last 7 days"],
+  },
+  "week.feed.title": {
+    "zh-CN": ["近 7 天的事件"],
+    en: ["in the last 7 days"],
+  },
+  "week.feed.empty": {
+    "zh-CN": ["近 7 天"],
+    en: ["in the last 7 days"],
   },
   // Q6: the sample-provenance footnote. Pinned as the whole clause INCLUDING
   // its verb, because pinning the noun alone is satisfied by its own negation
@@ -570,7 +599,7 @@ const CASES: readonly string[] = [
   "week.cards.borderline.foot",
   "week.sinceLast | at",
   "week.checkedAt | at",
-  "week.noNewCheck",
+  "week.checkOutsideRange",
   "week.summaryRow.artifacts | #count",
   "week.summaryRow.answerGaps | #count",
   "week.summaryRow.kbGaps | #count",

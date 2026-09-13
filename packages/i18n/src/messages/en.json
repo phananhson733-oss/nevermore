@@ -4205,18 +4205,18 @@
       },
       "sinceLast": "vs. the previous run ({at})",
       "checkedAt": "Checked {at}",
-      "noNewCheck": "No new check in this date range",
+      "checkOutsideRange": "This check falls outside the date range above",
       "summaryRow": {
-        "artifacts": "{count, plural, one {# artifact} other {# artifacts}} added this week",
+        "artifacts": "{count, plural, one {# artifact} other {# artifacts}} added in the last 7 days",
         "answerGaps": "{count, plural, one {# prompt} other {# prompts}} where at least one platform did not mention you",
         "kbGaps": "{count, plural, one {# knowledge base entry} other {# knowledge base entries}} still without a statement",
         "answerGapsUnknown": "Prompts where at least one platform did not mention you: {value}",
         "kbGapsUnknown": "Knowledge base entries still without a statement: {value}"
       },
       "feed": {
-        "title": "This week",
+        "title": "Events in the last 7 days",
         "count": "{count, plural, one {# item} other {# items}}",
-        "empty": "Nothing has happened this week yet",
+        "empty": "Nothing has happened in the last 7 days",
         "view": "View"
       },
       "borderlineList": {
