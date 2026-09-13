@@ -8,14 +8,30 @@
 import type { GscRow, GscStatus, Profile } from "../types.ts";
 import { normQ } from "./text.ts";
 
+export type GscMetric = "clicks" | "impressions" | "ctr" | "position";
+
 export interface ParsedGsc {
   readonly rows: readonly GscRow[];
   /** Non-blank records that are neither the header nor a row: no query, or no metric that parses. */
   readonly skipped: number;
+  /**
+   * True when the columns were read from a recognised header's labels. False for
+   * both "no header record" and "a header whose only known label is the query",
+   * where the export's positional layout is assumed; that record is still
+   * consumed as a header, so it is neither a row nor a skip.
+   */
+  readonly headerDetected: boolean;
+  /**
+   * Which metrics this parse has a column for (Q7). A view names the missing ones
+   * from here and never infers them from the rows: a mapped column whose cells
+   * are all blank or unreadable yields the same nulls as a column no header
+   * named. With `headerDetected` false these are the positional assumption.
+   */
+  readonly recognized: Readonly<Record<GscMetric, boolean>>;
 }
 
 type Delimiter = "\t" | "," | ";";
-type Metric = "clicks" | "impressions" | "ctr" | "position";
+type Metric = GscMetric;
 
 interface Columns {
   readonly query: number;
@@ -273,12 +289,20 @@ function labelIndex(labels: readonly string[], names: readonly string[]): number
   return index >= 0 ? index : null;
 }
 
+interface HeaderMapping {
+  readonly columns: Columns;
+  /** False when the positional layout was assumed rather than read from labels. */
+  readonly fromLabels: boolean;
+}
+
+const POSITIONAL_MAPPING: HeaderMapping = { columns: POSITIONAL, fromLabels: false };
+
 /**
  * The GSC web table's columns follow its metric toggles, so a header is read by
  * label; a metric without a column is null. A header whose only known label is
  * the query falls back to the export's positional layout.
  */
-function headerColumns(header: readonly string[]): Columns {
+function headerColumns(header: readonly string[]): HeaderMapping {
   const labels = header.map(normQ);
   const metric = (name: Metric): number | null => labelIndex(labels, METRIC_LABELS[name]);
   const mapped: Columns = {
@@ -289,7 +313,17 @@ function headerColumns(header: readonly string[]): Columns {
     position: metric("position"),
   };
   const namesMetric = mapped.clicks !== null || mapped.impressions !== null || mapped.ctr !== null || mapped.position !== null;
-  return namesMetric ? mapped : POSITIONAL;
+  return namesMetric ? { columns: mapped, fromLabels: true } : POSITIONAL_MAPPING;
+}
+
+/** Derived from the mapping the rows were read with, so the two cannot disagree. */
+function recognizedColumns(columns: Columns): Readonly<Record<GscMetric, boolean>> {
+  return {
+    clicks: columns.clicks !== null,
+    impressions: columns.impressions !== null,
+    ctr: columns.ctr !== null,
+    position: columns.position !== null,
+  };
 }
 
 /** Null when the record has no query or not one metric that parses (a lone query, a repeated header). */
@@ -313,12 +347,17 @@ export function parseGsc(text: string): ParsedGsc {
   const [first, ...rest] = records;
   const header = first !== undefined && isHeader(first) ? first : null;
   const data = header === null ? records : rest;
-  const columns = header === null ? POSITIONAL : headerColumns(header);
+  const mapping = header === null ? POSITIONAL_MAPPING : headerColumns(header);
   const rows = data.flatMap((cells) => {
-    const parsed = toRow(cells, columns);
+    const parsed = toRow(cells, mapping.columns);
     return parsed === null ? [] : [parsed];
   });
-  return { rows, skipped: data.length - rows.length };
+  return {
+    rows,
+    skipped: data.length - rows.length,
+    headerDetected: mapping.fromLabels,
+    recognized: recognizedColumns(mapping.columns),
+  };
 }
 
 /* ---------------- status ---------------- */

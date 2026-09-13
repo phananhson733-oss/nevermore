@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GscRow } from "../types.ts";
+import type { ParsedGsc } from "./gsc.ts";
 import {
   DEMO_GSC_TEXT,
   countByGscStatus,
@@ -18,16 +19,26 @@ const row = (
 
 const lines = (...parts: readonly string[]): string => parts.join("\n");
 
+/**
+ * `rows` and `skipped` only. The header metadata `parseGsc` also returns (Q7)
+ * has its own cases in `gsc-columns.test.ts`, so leaving it out here keeps each
+ * of these assertions about the records it is named for.
+ */
+function rowsAndSkipped(text: string): Pick<ParsedGsc, "rows" | "skipped"> {
+  const { rows, skipped } = parseGsc(text);
+  return { rows, skipped };
+}
+
 describe("parseGsc: pinned corpus", () => {
   it("keeps a quoted delimiter inside the query and reads a quoted thousands separator", () => {
-    expect(parseGsc(`"best seo, geo tools",10,"1,234",0.8%,12.3`)).toEqual({
+    expect(rowsAndSkipped(`"best seo, geo tools",10,"1,234",0.8%,12.3`)).toEqual({
       rows: [row("best seo, geo tools", 10, 1234, 0.8, 12.3)],
       skipped: 0,
     });
   });
 
   it("reads European separators in a tab paste: 1.234 is thousands, 1,3% and 4,5 are decimals", () => {
-    expect(parseGsc("foo\t1\t1.234\t1,3%\t4,5")).toEqual({
+    expect(rowsAndSkipped("foo\t1\t1.234\t1,3%\t4,5")).toEqual({
       rows: [row("foo", 1, 1234, 1.3, 4.5)],
       skipped: 0,
     });
@@ -38,7 +49,7 @@ describe("parseGsc: pinned corpus", () => {
       "热门查询,点击次数,展示次数,点击率,排名",
       "geo tool,3,120,2.5%,9.1",
     );
-    expect(parseGsc(text)).toEqual({
+    expect(rowsAndSkipped(text)).toEqual({
       rows: [row("geo tool", 3, 120, 2.5, 9.1)],
       skipped: 0,
     });
@@ -49,7 +60,7 @@ describe("parseGsc: pinned corpus", () => {
       "Top queries\tClicks\tImpressions\tCTR\tPosition",
       "geo tool\t3\t120\t2.5%\t9.1",
     );
-    expect(parseGsc(text)).toEqual({
+    expect(rowsAndSkipped(text)).toEqual({
       rows: [row("geo tool", 3, 120, 2.5, 9.1)],
       skipped: 0,
     });
@@ -60,7 +71,7 @@ describe("parseGsc: pinned corpus", () => {
       "llm seo checklist\t41\t3120\t1.3%\t8.4",
       "geo tool\t3\t120\t2.5%\t9.1",
     );
-    expect(parseGsc(text)).toEqual({
+    expect(rowsAndSkipped(text)).toEqual({
       rows: [
         row("llm seo checklist", 41, 3120, 1.3, 8.4),
         row("geo tool", 3, 120, 2.5, 9.1),
@@ -72,7 +83,7 @@ describe("parseGsc: pinned corpus", () => {
   it("strips a BOM and reads CRLF line endings", () => {
     const text =
       "\uFEFFTop queries\tClicks\tImpressions\tCTR\tPosition\r\nai seo\t5\t60\t8.3%\t3.2\r\nbest geo\t1\t10\t10%\t7\r\n";
-    expect(parseGsc(text)).toEqual({
+    expect(rowsAndSkipped(text)).toEqual({
       rows: [row("ai seo", 5, 60, 8.3, 3.2), row("best geo", 1, 10, 10, 7)],
       skipped: 0,
     });
@@ -85,51 +96,51 @@ describe("parseGsc: pinned corpus", () => {
   });
 
   it("unescapes doubled quotes", () => {
-    expect(parseGsc(`"say ""hi""",1,2,3%,4`)).toEqual({
+    expect(rowsAndSkipped(`"say ""hi""",1,2,3%,4`)).toEqual({
       rows: [row(`say "hi"`, 1, 2, 3, 4)],
       skipped: 0,
     });
   });
 
   it("counts a single-column row as skipped", () => {
-    expect(parseGsc(lines("justaquery", "ok,1,2,3%,4"))).toEqual({
+    expect(rowsAndSkipped(lines("justaquery", "ok,1,2,3%,4"))).toEqual({
       rows: [row("ok", 1, 2, 3, 4)],
       skipped: 1,
     });
   });
 
   it("counts an empty query as skipped", () => {
-    expect(parseGsc(lines(",1,2,3,4", "   ,1,2,3,4", "ok,1,2,3%,4"))).toEqual({
+    expect(rowsAndSkipped(lines(",1,2,3,4", "   ,1,2,3,4", "ok,1,2,3%,4"))).toEqual({
       rows: [row("ok", 1, 2, 3, 4)],
       skipped: 2,
     });
   });
 
   it("turns a non-finite number into null, not 0", () => {
-    expect(parseGsc("q,1e999,2,3,4")).toEqual({
+    expect(rowsAndSkipped("q,1e999,2,3,4")).toEqual({
       rows: [row("q", null, 2, 3, 4)],
       skipped: 0,
     });
   });
 
   it("splits on semicolons when there is no comma", () => {
-    expect(parseGsc("q;1;2;3%;4")).toEqual({
+    expect(rowsAndSkipped("q;1;2;3%;4")).toEqual({
       rows: [row("q", 1, 2, 3, 4)],
       skipped: 0,
     });
   });
 
   it("returns nothing and skips nothing for empty or blank text", () => {
-    expect(parseGsc("")).toEqual({ rows: [], skipped: 0 });
-    expect(parseGsc("\n\r\n\n")).toEqual({ rows: [], skipped: 0 });
-    expect(parseGsc("\uFEFF")).toEqual({ rows: [], skipped: 0 });
+    expect(rowsAndSkipped("")).toEqual({ rows: [], skipped: 0 });
+    expect(rowsAndSkipped("\n\r\n\n")).toEqual({ rows: [], skipped: 0 });
+    expect(rowsAndSkipped("\uFEFF")).toEqual({ rows: [], skipped: 0 });
   });
 });
 
 describe("parseGsc: RFC 4180 structure", () => {
   it("keeps a quoted field with a newline as one record", () => {
     const text = lines(`"multi`, `line query",1,2,3%,4`, "next,5,6,7%,8");
-    expect(parseGsc(text)).toEqual({
+    expect(rowsAndSkipped(text)).toEqual({
       rows: [row("multi\nline query", 1, 2, 3, 4), row("next", 5, 6, 7, 8)],
       skipped: 0,
     });
@@ -137,14 +148,14 @@ describe("parseGsc: RFC 4180 structure", () => {
 
   it("keeps a well-formed quoted value holding both a newline and the delimiter as one field, as RFC 4180 does", () => {
     const text = `"hello\t1\t2\t3%\t4\nworld"\t5\t6\t7%\t8`;
-    expect(parseGsc(text)).toEqual({
+    expect(rowsAndSkipped(text)).toEqual({
       rows: [row("hello\t1\t2\t3%\t4\nworld", 5, 6, 7, 8)],
       skipped: 0,
     });
   });
 
   it("keeps a row whose only readable metric is the CTR", () => {
-    expect(parseGsc(lines("a,1,2,3%,4", "q,,,1%,"))).toEqual({
+    expect(rowsAndSkipped(lines("a,1,2,3%,4", "q,,,1%,"))).toEqual({
       rows: [row("a", 1, 2, 3, 4), row("q", null, null, 1, null)],
       skipped: 0,
     });
@@ -157,11 +168,11 @@ describe("parseGsc: RFC 4180 structure", () => {
   });
 
   it("does not add a row or a skip for a trailing newline", () => {
-    expect(parseGsc("q,1,2,3%,4\n")).toEqual({
+    expect(rowsAndSkipped("q,1,2,3%,4\n")).toEqual({
       rows: [row("q", 1, 2, 3, 4)],
       skipped: 0,
     });
-    expect(parseGsc("q,1,2,3%,4\r\n\r\n")).toEqual({
+    expect(rowsAndSkipped("q,1,2,3%,4\r\n\r\n")).toEqual({
       rows: [row("q", 1, 2, 3, 4)],
       skipped: 0,
     });
@@ -177,7 +188,7 @@ describe("parseGsc: RFC 4180 structure", () => {
       "b\t5\t6\t7%\t8",
       "",
     );
-    expect(parseGsc(text)).toEqual({
+    expect(rowsAndSkipped(text)).toEqual({
       rows: [row("a", 1, 2, 3, 4), row("b", 5, 6, 7, 8)],
       skipped: 0,
     });
@@ -198,7 +209,7 @@ describe("parseGsc: RFC 4180 structure", () => {
 
   it("treats a quote inside an unquoted field as a literal character", () => {
     const text = lines(`27" monitor\t1\t2\t3%\t4`, "next\t5\t6\t7%\t8");
-    expect(parseGsc(text)).toEqual({
+    expect(rowsAndSkipped(text)).toEqual({
       rows: [row(`27" monitor`, 1, 2, 3, 4), row("next", 5, 6, 7, 8)],
       skipped: 0,
     });
@@ -216,7 +227,7 @@ describe("parseGsc: RFC 4180 structure", () => {
       "next\t5\t6\t7%\t8",
       "last\t9\t10\t11%\t12",
     );
-    expect(parseGsc(text)).toEqual({
+    expect(rowsAndSkipped(text)).toEqual({
       rows: [
         row(`"hello world`, 1, 2, 3, 4),
         row("next", 5, 6, 7, 8),
@@ -228,7 +239,7 @@ describe("parseGsc: RFC 4180 structure", () => {
 
   it("does not merge two lines whose stray leading quotes happen to pair up", () => {
     const text = lines(`"hello\t1\t2\t3%\t4`, `"world\t5\t6\t7%\t8`);
-    expect(parseGsc(text)).toEqual({
+    expect(rowsAndSkipped(text)).toEqual({
       rows: [row(`"hello`, 1, 2, 3, 4), row(`"world`, 5, 6, 7, 8)],
       skipped: 0,
     });
