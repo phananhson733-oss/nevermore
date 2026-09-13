@@ -191,6 +191,43 @@ function EmptyDialog({ open }: { readonly open: boolean }) {
 }
 
 /**
+ * Opened by a state update while nothing has focus, so the opener Dialog
+ * records is `<body>`; no `returnFocusTo`.
+ */
+function BodyOpenerHarness({
+  open,
+  withFallback = false,
+}: {
+  readonly open: boolean;
+  readonly withFallback?: boolean;
+}) {
+  const fallbackRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <div id={WB_APP_ROOT_ID}>
+        <button type="button" id="fallback" ref={fallbackRef}>
+          fallback
+        </button>
+        <main id={WB_MAIN_ID} tabIndex={-1}>
+          page
+        </main>
+      </div>
+      <Dialog
+        open={open}
+        onClose={() => {}}
+        labelledBy="body-title"
+        fallbackFocus={withFallback ? fallbackRef : undefined}
+      >
+        <h2 id="body-title">Body</h2>
+        <button type="button" id="inside">
+          inside
+        </button>
+      </Dialog>
+    </>
+  );
+}
+
+/**
  * Three stops, A, B and C, where B is `hidden` unless told otherwise; the
  * initial focus can be pointed at B.
  */
@@ -481,6 +518,23 @@ describe("Dialog", () => {
 
     expect(document.activeElement?.id).toBe("fallback");
   });
+
+  it.each([
+    ["<main>", false, WB_MAIN_ID],
+    ["fallbackFocus", true, "fallback"],
+  ] as const)(
+    "does not return focus to <body> when the dialog opened with nothing focused; %s gets it",
+    (_name, withFallback, expected) => {
+      const view = mount(<BodyOpenerHarness open={false} withFallback={withFallback} />);
+      expect(document.activeElement).toBe(document.body);
+
+      view.rerender(<BodyOpenerHarness open withFallback={withFallback} />);
+      expect(document.activeElement?.id).toBe("inside");
+      view.rerender(<BodyOpenerHarness open={false} withFallback={withFallback} />);
+
+      expect(document.activeElement?.id).toBe(expected);
+    },
+  );
 
   it("passes over a hidden control on Tab and Shift+Tab", () => {
     const view = mount(<StopsHarness />);

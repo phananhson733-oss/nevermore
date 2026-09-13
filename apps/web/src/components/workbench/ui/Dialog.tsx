@@ -27,6 +27,11 @@ const FENCED = "[inert], [aria-hidden='true']";
 /**
  * Hands focus to `target` if it can take it, and says whether it did.
  *
+ * - Not tried when it is `<body>` or `<html>`. The opener is whatever had focus
+ *   when the dialog opened; opened by a state update with nothing focused, that
+ *   is `<body>`. Once the panel is gone focus is back on `<body>` by itself, so
+ *   the read-back below would report success and end the chain before the
+ *   caller's fallback and `<main>` are tried.
  * - Not tried once it has left the document: the button that opened a confirm
  *   can be removed by that confirm, and `focus()` on a detached node does
  *   nothing.
@@ -40,6 +45,7 @@ const FENCED = "[inert], [aria-hidden='true']";
  */
 function handFocusBack(target: Element | null | undefined): boolean {
   if (!(target instanceof HTMLElement) || !target.isConnected) return false;
+  if (target === document.body || target === document.documentElement) return false;
   if (target.closest(FENCED) !== null) return false;
   target.focus();
   return document.activeElement === target;
