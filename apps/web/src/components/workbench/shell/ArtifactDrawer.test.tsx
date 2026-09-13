@@ -295,4 +295,26 @@ describe("ArtifactDrawer", () => {
     expect(view.container.querySelectorAll("[data-wb-artifact]")).toHaveLength(0);
     expect(view.container.textContent).toContain(COPY.empty);
   });
+
+  it("clears the artifacts it rendered and keeps one queued behind that render (codex S6r3 #1)", () => {
+    const view = render();
+    addArtifact({ ...ARTIFACT, id: "a1" });
+    addArtifact({ ...ARTIFACT, id: "a2" });
+    const rendered = [...view.container.querySelectorAll<HTMLElement>("[data-wb-artifact]")].map(
+      (node) => node.dataset["wbArtifact"],
+    );
+    expect(rendered).toEqual(["a2", "a1"]);
+    const clear = buttonWith(view.container, en.workbench.shell.drawer.clear);
+    const dispatch = store.current?.dispatch;
+    if (!dispatch) throw new Error("the provider never rendered");
+
+    act(() => {
+      // Queued, not rendered: the click below still runs in the render that
+      // showed a2 and a1, so those are the ids it can dispatch.
+      dispatch({ type: "addArtifact", artifact: { ...ARTIFACT, id: "a3" } });
+      clear.click();
+    });
+
+    expect(store.current?.state.artifacts.map((a) => a.id)).toEqual(["a3"]);
+  });
 });

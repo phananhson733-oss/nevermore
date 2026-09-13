@@ -78,7 +78,9 @@ export function ArtifactDrawer({
           {state.artifacts.length > 0 ? (
             <button
               type="button"
-              onClick={() => dispatch({ type: "clearArtifacts" })}
+              // The ids this render shows: the click covers those, not an
+              // artifact queued behind it (codex S6r3 #1).
+              onClick={() => dispatch({ type: "clearArtifacts", ids: state.artifacts.map((a) => a.id) })}
               // `-my-1 py-1` raises the 16px line box of `text-xs` to the 24px
               // WCAG 2.5.8 minimum without moving anything: the margin box is
               // the size it was. Vertical only — every label here is already

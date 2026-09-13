@@ -270,7 +270,24 @@ describe("artifacts", () => {
     let s = reduce(initialProjectState(seed), { type: "addArtifact", artifact: artifact("a") });
     s = reduce(s, { type: "addArtifact", artifact: artifact("b") });
     expect(reduce(s, { type: "removeArtifact", id: "a" }).artifacts.map((x) => x.id)).toEqual(["b"]);
-    expect(reduce(s, { type: "clearArtifacts" }).artifacts).toEqual([]);
+    expect(reduce(s, { type: "clearArtifacts", ids: ["b", "a"] }).artifacts).toEqual([]);
+  });
+
+  // codex S6r3 #1: the drawer's clear covers the artifacts it rendered, by id.
+  it("clears only the ids it was given, keeping one added after the drawer rendered", () => {
+    const shown = reduce(initialProjectState(seed), { type: "addArtifact", artifact: artifact("a") });
+    const ids = shown.artifacts.map((x) => x.id);
+    const queued = reduce(shown, { type: "addArtifact", artifact: artifact("b") });
+
+    expect(reduce(queued, { type: "clearArtifacts", ids }).artifacts.map((x) => x.id)).toEqual(["b"]);
+  });
+
+  it("returns the very same state when none of the ids is in the basket", () => {
+    const s = reduce(initialProjectState(seed), { type: "addArtifact", artifact: artifact("b") });
+    expect(reduce(s, { type: "clearArtifacts", ids: ["a"] })).toBe(s);
+
+    const empty = initialProjectState(seed);
+    expect(reduce(empty, { type: "clearArtifacts", ids: [] })).toBe(empty);
   });
 });
 
@@ -534,7 +551,7 @@ describe("immutability", () => {
       { type: "visCancel" },
       { type: "addArtifact", artifact: artifact("z") },
       { type: "removeArtifact", id: "a1" },
-      { type: "clearArtifacts" },
+      { type: "clearArtifacts", ids: ["a1"] },
       { type: "loadDemo", payload: demoPayload, expected: demoFields(populated) },
       { type: "clearDemo", expected: demoFields(populated) },
       { type: "clearGscRows", expected: { rows: populated.gscRows, source: populated.gscRowsSource } },

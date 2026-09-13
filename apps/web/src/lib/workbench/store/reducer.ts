@@ -67,7 +67,9 @@ export type WorkbenchAction =
   | { readonly type: "visCancel" }
   | { readonly type: "addArtifact"; readonly artifact: Artifact }
   | { readonly type: "removeArtifact"; readonly id: string }
-  | { readonly type: "clearArtifacts" }
+  // `ids` are the artifacts the drawer rendered when clear was clicked: the
+  // click covers those, not whatever the basket holds by the time it lands.
+  | { readonly type: "clearArtifacts"; readonly ids: readonly string[] }
   // `expected` is the overwritable content the operator authorised, as the
   // screen showed it when they clicked (`demoFields`). Required: an action that
   // cannot say what it was confirmed against would overwrite whatever is there.
@@ -238,8 +240,17 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
       };
     case "removeArtifact":
       return { ...state, artifacts: state.artifacts.filter((a) => a.id !== action.id) };
-    case "clearArtifacts":
-      return { ...state, artifacts: [] };
+    case "clearArtifacts": {
+      // The click authorises the artifacts that were on screen, by id (codex
+      // S6r3 #1). One queued ahead of it and not yet rendered (another tab's
+      // `loadPersisted`, or a save of ours queued behind that render) was never
+      // seen, so it stays. The same id is the same artifact: `addArtifact`
+      // refuses an id already in the basket. When none of the ids is left, the
+      // same object back: no new reducer state.
+      const shown = new Set(action.ids);
+      if (!state.artifacts.some((a) => shown.has(a.id))) return state;
+      return { ...state, artifacts: state.artifacts.filter((a) => !shown.has(a.id)) };
+    }
     case "loadDemo":
       // The last line of the confirmation (codex S6r2 #1): the operator agreed to
       // replace what `expected` holds. Another tab's write, or one of ours queued

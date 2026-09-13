@@ -479,7 +479,7 @@ describe("useAddArtifact", () => {
     const prepared = prepare(MD_DRAFT);
     expect(saveInAct(prepared)).toBe("saved");
 
-    act(() => store.dispatch({ type: "clearArtifacts" }));
+    act(() => store.dispatch({ type: "clearArtifacts", ids: artifacts().map((a) => a.id) }));
     expect(artifacts()).toHaveLength(0);
 
     expect(saveInAct(prepared)).toBe("saved");
