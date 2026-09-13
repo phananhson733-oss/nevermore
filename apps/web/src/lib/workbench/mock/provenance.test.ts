@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ARTIFACT_TYPES } from "../enums.ts";
+import { agentTaskWrapper } from "./builders/agent-task.ts";
+import { splitFences } from "./builders/prompt-test-helpers.ts";
 import { SAMPLE_CSV_MARKER, stampArtifact } from "./provenance.ts";
 
 const LINE = "Sample data: generated locally at 2026-09-13 10:00";
@@ -128,5 +130,69 @@ describe("stampArtifact", () => {
     expect(parseObject(stampArtifact("json", "{}", line))["_sampleData"]).toBe(
       folded,
     );
+  });
+
+  /**
+   * One canonical text shape for every stamped artifact: LF line endings and no
+   * trailing newline (design §6.8 says this of csv; the AI wrapper needs it of
+   * all four types). `fenceBlock` rewrites CR and absorbs a final LF, so any
+   * other shape reaches the AI with different bytes from the ones copy and
+   * export hand out — and "x" and "x\n" wrap to the same prompt.
+   */
+  const HOSTILE_BODIES: readonly (readonly [string, string])[] = [
+    ["CRLF", "a\r\nb"],
+    ["a lone CR", "a\rb"],
+    ["one trailing LF", "a\nb\n"],
+    ["several trailing LFs", "a\nb\n\n\n"],
+    ["a trailing CRLF pair", "a\r\n\r\n"],
+    ["U+2028", "a\u2028b"],
+    ["nothing", ""],
+    ["line endings only", "\n\r\n\r"],
+  ];
+
+  for (const type of ["md", "prompt", "csv"] as const) {
+    for (const [name, body] of HOSTILE_BODIES) {
+      it(`${type}: a body with ${name} is stamped canonical and survives the AI wrapper`, () => {
+        const out = stampArtifact(type, body, LINE);
+        expect(out).not.toMatch(/\r/u);
+        expect(out.endsWith("\n")).toBe(false);
+        const { blocks } = splitFences(agentTaskWrapper(out));
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0]?.body).toBe(out);
+      });
+    }
+  }
+
+  it("json: the re-serialised text is already canonical and survives the AI wrapper", () => {
+    const out = stampArtifact("json", '{"a":"x\\r\\ny\\n"}', LINE);
+    expect(out).not.toMatch(/\r/u);
+    expect(out.endsWith("\n")).toBe(false);
+    expect(splitFences(agentTaskWrapper(out)).blocks[0]?.body).toBe(out);
+  });
+
+  it("turns line endings into LF and drops trailing newlines, and changes nothing else", () => {
+    // Pinned exactly: a normaliser that deleted CRs instead of turning them into
+    // LFs, or that trimmed trailing spaces as well, would pass the shape checks.
+    expect(stampArtifact("md", "a\r\nb\rc  \n\n", LINE)).toBe(
+      `${LINE}\n\na\nb\nc  `,
+    );
+    expect(stampArtifact("csv", "q\r\nai seo\r\n", LINE)).toBe(
+      `${SAMPLE_CSV_MARKER}\n# ${LINE}\nq\nai seo`,
+    );
+    // U+2028 is content, not a line ending, in Markdown and CSV alike.
+    expect(stampArtifact("prompt", "a\u2028b", LINE)).toBe(
+      `${LINE}\n\na\u2028b`,
+    );
+  });
+
+  it("strips a long run of newlines in linear time", () => {
+    // `/\n+$/` would re-scan the run from every start position: 100k newlines
+    // before one letter is ~5e9 steps, far past the test timeout, while a
+    // linear strip is a few milliseconds. The margin is orders of magnitude,
+    // not a threshold that noise can cross.
+    const body = `${"\n".repeat(100_000)}x${"\n".repeat(100_000)}`;
+    const out = stampArtifact("md", body, LINE);
+    expect(out.endsWith("x")).toBe(true);
+    expect(out).toHaveLength(LINE.length + 2 + 100_001);
   });
 });

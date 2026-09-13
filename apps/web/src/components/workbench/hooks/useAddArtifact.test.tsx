@@ -20,6 +20,8 @@ import { createRoot } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "@sf/i18n";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { agentTaskWrapper } from "@/lib/workbench/mock/builders/agent-task";
+import { splitFences } from "@/lib/workbench/mock/builders/prompt-test-helpers";
 import { SAMPLE_CSV_MARKER } from "@/lib/workbench/mock/provenance";
 import {
   initialProjectState,
@@ -205,7 +207,8 @@ describe("useAddArtifact", () => {
   it("stamps a csv with the sample marker and a comment line, and a json with the declaration first", () => {
     const { prepare } = mount();
     const csv = prepare({ ...MD_DRAFT, type: "csv", body: "q\nai seo\n" });
-    expect(csv.content).toBe(`${SAMPLE_CSV_MARKER}\n# ${LINE}\nq\nai seo\n`);
+    // Canonical shape: the builder's trailing newline does not survive stamping.
+    expect(csv.content).toBe(`${SAMPLE_CSV_MARKER}\n# ${LINE}\nq\nai seo`);
 
     const json = prepare({ ...MD_DRAFT, type: "json", body: '{"a":1}' });
     const parsed = JSON.parse(json.content) as Record<string, unknown>;
@@ -260,5 +263,28 @@ describe("useAddArtifact", () => {
     expect(() => prepare({ ...MD_DRAFT, type: "json", body: "[1,2]" })).toThrow(
       /json artifacts must be a JSON object/,
     );
+  });
+
+  it("hands out text whose AI payload is byte for byte the text itself, whatever the body's line endings", () => {
+    // Q23 at the hook: `prepared.content` is what copy, export and save hand
+    // over, and the AI wrapper must carry exactly that. Every body below is one
+    // `fenceBlock` would otherwise rewrite (CR) or fold into its closing fence
+    // (a trailing LF); U+2028 is here to show content is NOT normalised.
+    const { prepare } = mount();
+    const bodies: readonly (readonly [string, string])[] = [
+      ["CRLF", "# 任务\r\n- 补 canonical"],
+      ["a lone CR", "# 任务\r- 补 canonical"],
+      ["one trailing LF", "# 任务\n- 补 canonical\n"],
+      ["several trailing LFs", "# 任务\n- 补 canonical\n\n\n"],
+      ["U+2028", "# 任务\u2028- 补 canonical"],
+    ];
+    for (const type of ["md", "prompt", "csv"] as const) {
+      for (const [name, body] of bodies) {
+        const prepared = prepare({ ...MD_DRAFT, type, body });
+        const { blocks } = splitFences(agentTaskWrapper(prepared.content));
+        expect(blocks, `${type} / ${name}`).toHaveLength(1);
+        expect(blocks[0]?.body, `${type} / ${name}`).toBe(prepared.content);
+      }
+    }
   });
 });

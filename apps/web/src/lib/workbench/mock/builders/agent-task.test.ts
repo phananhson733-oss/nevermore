@@ -90,13 +90,15 @@ describe("agentTaskWrapper", () => {
     expect(block(agentTaskWrapper(stamped)).body).toBe(stamped);
   });
 
-  it("loses the last byte of a body that ends in a newline, which is why toCsv must not end in one", () => {
-    // `toCsv` ends without a trailing newline by design (§6.8), which is the only
-    // reason the csv case above holds. Should it ever grow one, "the same text"
-    // becomes false by exactly this much rather than by a failing test elsewhere.
+  it("carries a stamped csv whose body ended in a newline through byte for byte", () => {
+    // This case used to pin the defect as expected behaviour: `fenceBlock`
+    // absorbs a final LF, so a body ending in one reached the AI a byte short.
+    // `stampArtifact` now emits one canonical shape (LF, no trailing newline)
+    // for every type, on which both of `fenceBlock`'s rewrites are no-ops. The
+    // full hostile set is in `provenance.test.ts`.
     const stamped = stampArtifact("csv", "query\nai seo\n", LINE);
-    expect(stamped.endsWith("\n")).toBe(true);
-    expect(block(agentTaskWrapper(stamped)).body).toBe(stamped.slice(0, -1));
+    expect(stamped.endsWith("\n")).toBe(false);
+    expect(block(agentTaskWrapper(stamped)).body).toBe(stamped);
   });
 
   it("is deterministic", () => {

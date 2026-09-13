@@ -10,13 +10,17 @@ import { BUTTON_MINI } from "./panel.ts";
 /**
  * The four things an operator can do with a finished artifact (`jsx:946` foot).
  *
- * One text, four actions (裁决 Q23). `prepared` is a whole `PreparedArtifact`
- * rather than a body plus a few loose fields, so the four cannot drift apart:
- * copy, export and "save to the basket" all hand over `prepared.content`
- * verbatim, and "copy for an AI" wraps that same string — `agentTaskWrapper`
- * puts it inside an announced fenced block and adds nothing of the artifact's to
- * the sentences around it. The provenance declaration was folded in once, by
- * `useAddArtifact`; nothing here stamps, re-stamps or trims it.
+ * One text, four actions (裁决 Q23). Copy and export hand over
+ * `prepared.content` verbatim, "save to the basket" dispatches
+ * `prepared.artifact`, whose `content` is that same string, and "copy for an AI"
+ * passes the string to `agentTaskWrapper`. What comes out of that block equals
+ * `prepared.content` because `stampArtifact` emits the canonical shape (LF, no
+ * trailing newline) on which `fenceBlock`'s two rewrites do nothing — not
+ * because this component takes one object: a whole `PreparedArtifact` gives the
+ * four actions one source to read, it does not by itself make them agree.
+ * `agentTaskWrapper` adds nothing of the artifact's to the sentences around the
+ * block. The provenance declaration was folded in once, by `useAddArtifact`;
+ * nothing here stamps, re-stamps or trims it.
  *
  * The flash is `useState` plus one timer, and the timer is cleared on unmount:
  * a "Copied" that fires into an unmounted pane is a setState nobody reads.

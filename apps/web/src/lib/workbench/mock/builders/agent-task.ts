@@ -1,12 +1,17 @@
 /**
- * The "copy for an AI agent" wrapper (Q23, R6). One artifact's canonical text
- * goes in and a prompt comes out with that text appearing exactly once, inside
- * the announced fenced block, byte for byte apart from what `fenceBlock` cannot
- * keep: it rewrites CRLF to LF, and a newline the body itself ends with is
- * folded into the one before the closing fence and is gone. So this action and
- * the other three (copy, export, save) carry the same payload as long as the
- * builders produce bodies that do not end in a newline — `toCsv` is specified
- * that way (design §6.8), and `agent-task.test.ts` pins both directions.
+ * The "copy for an AI agent" wrapper (Q23, R6). Text goes in and a prompt comes
+ * out with that text inside one announced fenced block.
+ *
+ * Byte for byte ONLY for canonical input. `fenceBlock` rewrites every CR (CRLF
+ * or a lone CR) to LF, and absorbs a final LF of the body into the line before
+ * the closing fence, so "x" and "x\n" wrap to the same prompt; any text with a
+ * CR or a trailing newline comes back out of the block different. The Q23 claim
+ * — this action carries the same text as copy, export and save — is made true
+ * upstream: `stampArtifact` emits every artifact in the canonical shape (LF line
+ * endings, no trailing newline), on which both rewrites are no-ops. A string
+ * that did not come from `stampArtifact` gets no such guarantee here.
+ * `provenance.test.ts` runs the hostile set (CRLF, lone CR, trailing LFs,
+ * U+2028) through both functions.
  *
  * Every sentence around the block is fixed. Nothing from the artifact — not its
  * title, type or module, let alone its body — is interpolated into them, so no
