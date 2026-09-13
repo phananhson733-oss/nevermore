@@ -4206,6 +4206,7 @@
       "sinceLast": "vs. the previous run ({at})",
       "checkedAt": "Checked {at}",
       "checkOutsideRange": "This check falls outside the date range above",
+      "checkRangeUnknown": "It can't be confirmed whether this check falls within the date range above.",
       "summaryRow": {
         "artifacts": "{count, plural, one {# artifact} other {# artifacts}} added in the last 7 days",
         "answerGaps": "{count, plural, one {# prompt} other {# prompts}} where at least one platform did not mention you",

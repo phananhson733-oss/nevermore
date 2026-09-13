@@ -4206,6 +4206,7 @@
       "sinceLast": "较上次（{at}）",
       "checkedAt": "检查于 {at}",
       "checkOutsideRange": "这次检查不在上面的日期范围内",
+      "checkRangeUnknown": "无法确认这次检查是否在上面的日期范围内。",
       "summaryRow": {
         "artifacts": "近 7 天新增 {count} 件产物",
         "answerGaps": "{count} 个提问至少有一个平台没提到你",

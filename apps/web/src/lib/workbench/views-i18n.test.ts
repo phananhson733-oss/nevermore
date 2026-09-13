@@ -178,6 +178,13 @@ const FORBIDDEN_BY_KEY: Readonly<
     "zh-CN": ["所以", "因为", "由于", "没跑", "失败", "上周", "没有新的检查", "没有检查", "没有更新"],
     en: ["because", "failed", "last week", "no new check", "no check", "no newer"],
   },
+  // The stamp does not parse, so the check is neither inside nor outside the
+  // range. The sentence says only that this cannot be confirmed: it names no
+  // cause (one branch, several possible causes) and does not settle the answer.
+  "week.checkRangeUnknown": {
+    "zh-CN": ["所以", "因为", "由于", "格式", "无效", "损坏", "解析", "不在", "没有"],
+    en: ["because", "format", "invalid", "corrupt", "parse", "outside", "not in", "no check"],
+  },
   // codex S7r2 #6: the range is the seven dates ending today, not a calendar
   // week, so what is counted over it is not called "this week".
   "week.summaryRow.artifacts": {
@@ -419,6 +426,10 @@ const REQUIRED: Readonly<
     "zh-CN": ["这次检查", "不在上面的日期范围内"],
     en: ["This check", "outside the date range above"],
   },
+  "week.checkRangeUnknown": {
+    "zh-CN": ["无法确认", "这次检查是否在上面的日期范围内"],
+    en: ["can't be confirmed", "whether this check falls within the date range above"],
+  },
   // codex S7r2 #6: the counts are over the seven dates the subtitle prints.
   "week.summaryRow.artifacts": {
     "zh-CN": ["近 7 天新增"],
@@ -620,6 +631,7 @@ const CASES: readonly string[] = [
   "week.sinceLast | at",
   "week.checkedAt | at",
   "week.checkOutsideRange",
+  "week.checkRangeUnknown",
   "week.summaryRow.artifacts | #count",
   "week.summaryRow.answerGaps | #count",
   "week.summaryRow.kbGaps | #count",
