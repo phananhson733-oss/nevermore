@@ -274,7 +274,7 @@ docs/PROGRESS.md                   T18
 **依赖：** T1-T4
 **Files:** Create `views/week/{WeekView.tsx,week-feed.ts}` + tests；Create `lib/workbench/mock/builders/week.ts` + `week.test.ts`（周报 builder 在 mock 层，Q33）；Modify `app/p/[projectId]/week/page.tsx`
 
-- [ ] **Step 1: `week-feed.ts` 测试先行** — `weekFeed(state, now)`：事件来自 `lastAudit` / `lastVis` / `profileDoc` / `kb` / 每件 artifact，过 `withinDays(at, 7, now)`，按 `at` 倒序；`artifactsWithinDays` 在此实现；提及率与事件从 `lastVis.results`（Q20）；KB 缺口用 `kbGapCount`；「较上次（{at}）」带出 `prev.at`。
+- [ ] **Step 1: `week-feed.ts` 测试先行** — `weekFeed(state, now)`：事件来自 `lastAudit` / `lastVis` / `profileDoc` / `kb` / 每件 artifact，过 `weekWindow(now)`（**T8 修复批 `85418522` 改为本地日历日**：副标题首日 00:00 到 now 两端含，副标题 / 产物计数 / 事件流共用这一个边界；事件流另纳入 `auditHistory` / `visHistory` 按 `kind + at` 去重），按 `at` 倒序；提及率与事件从 `lastVis.results`（Q20）；KB 缺口用 `kbGapCount`；「较上次（{at}）」带出 `prev.at`。
 - [ ] **Step 2: 三卡 + 摘要行 + 临界词清单** — 卡按 Q18（提及率卡的 delta 带单位：`deltaUnit="pt"`，`StatCard` 已在 T2 审阅后补上这个口，不要绕过原语自己渲 `Delta`）；三项挪进摘要行（`week.summaryRow.*`）；右栏按 Q17 是临界词清单 + 明确空态，**不得出现任何「排名变动」数字**。
 - [ ] **Step 3: `weekly-report.ts`** — **只产正文，不盖章**（盖章在 `useAddArtifact`，Q23）；标题「检查结果变化」不是「修掉了什么」（Q16）；生成的修复任务另起一段标明是任务；行首插值过 `docText`；`module: "week"`、`engine: "both"`、`filename: "weekly.md"`；删掉 jsx 的排名承诺与「被引用率最高」，「修复任务已经在产物里」改按 `artifacts.some(...)` 分支，「N 个提问没提到你」改按平台口径。
 - [ ] **Step 4: 页面级空态** — 全空时不渲六个 0，**禁用「存周报」**。
