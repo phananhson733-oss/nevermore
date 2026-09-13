@@ -1,15 +1,16 @@
 "use client";
 
-import { Menu, Search } from "lucide-react";
+import { Eraser, Menu, Search } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import type { ReactNode, RefObject } from "react";
+import { useRef, useState, type ReactNode, type RefObject } from "react";
 import {
   useWorkbench,
   useWorkbenchArtifacts,
 } from "@/lib/workbench/store/hooks";
 import type { StorageMode } from "@/lib/workbench/store/WorkbenchProvider";
 import { useShortcutLabel } from "../hooks/useShortcutLabel.ts";
+import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { DemoChip } from "../ui/DemoChip.tsx";
 import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
 
@@ -51,7 +52,10 @@ export function Topbar({
   readonly sidebarOpen: boolean;
 }) {
   const t = useTranslations("workbench.shell");
-  const { state, storageMode, ready } = useWorkbench();
+  // `clearSampleConfirm` carries a title, a body and the action; cancel is the
+  // app-wide word.
+  const tCommon = useTranslations("common");
+  const { state, storageMode, ready, dispatch } = useWorkbench();
   const storageNotice = ready ? STORAGE_NOTICE[storageMode] : null;
   const artifacts = useWorkbenchArtifacts();
   // Called here rather than threaded down from ShellChrome: the topbar owns the
@@ -60,6 +64,34 @@ export function Topbar({
   const { confirmNavigation } = useContextNavigationConfirm();
   // ⌘K only on a Mac: on a PC it names a chord that does not exist.
   const shortcutKey = useShortcutLabel();
+  // Before storage is read `state.demo` is the seed's `false`, not an answer.
+  const sampleLoaded = ready && state.demo;
+  const [clearAsked, setClearAsked] = useState(false);
+  // Another tab can replace the whole project while the box is open (a
+  // `storage` event loads its state). Once the sample is gone, confirming would
+  // run `clearDemo` over the operator's own data, so the box closes — and the
+  // old "asked" is dropped rather than parked, or the box would pop back up
+  // unasked if the sample returned. Reset during render, not in an effect, so
+  // no frame commits with the box open over real data.
+  if (clearAsked && !sampleLoaded) setClearAsked(false);
+  const clearButtonRef = useRef<HTMLButtonElement>(null);
+  // Where focus goes when the box closes. Cancel returns it to the button that
+  // asked. Confirm removes that button in the same commit, so it is pointed at
+  // the next control in the row instead, or focus would drop to <body>. Dialog
+  // reads the ref when it closes, which is why a handler can re-point it.
+  const clearReturnFocusRef = useRef<HTMLElement | null>(null);
+
+  function askToClear(): void {
+    clearReturnFocusRef.current = clearButtonRef.current;
+    setClearAsked(true);
+  }
+
+  function confirmClear(): void {
+    clearReturnFocusRef.current = drawerButtonRef.current;
+    setClearAsked(false);
+    dispatch({ type: "clearDemo" });
+  }
+
   return (
     <header
       data-app-shell-topbar=""
@@ -146,7 +178,36 @@ export function Topbar({
             {t("notSavingShort")}
           </span>
         ) : null}
-        <DemoChip demo={ready && state.demo} />
+        <DemoChip demo={sampleLoaded} />
+        {sampleLoaded ? (
+          <button
+            ref={clearButtonRef}
+            type="button"
+            onClick={askToClear}
+            // Only while the project holds the sample; absent otherwise, so it
+            // adds no flex gap. Below `md` it is a touch target: 44x44 of its
+            // own (a size on the button, not padding round a label) with an
+            // icon, the label kept for assistive tech, and `shrink-0` so the
+            // tight 390px row cannot squeeze it the way it squeezed the menu
+            // button to 0x44. From `md` up it is text at the chip's 26px.
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-amber-200/60 bg-white text-amber-800 hover:bg-amber-50 md:h-[26px] md:w-auto md:px-2 md:text-xs md:font-medium"
+          >
+            <Eraser className="h-4 w-4 md:hidden" aria-hidden="true" />
+            <span className="sr-only md:not-sr-only">{t("clearSample")}</span>
+          </button>
+        ) : null}
+        {/* Renders nothing while closed and portals out when open (Q32), so it
+            is never a flex item here. */}
+        <ConfirmDialog
+          open={clearAsked && sampleLoaded}
+          onClose={() => setClearAsked(false)}
+          onConfirm={confirmClear}
+          title={t("clearSampleConfirm.title")}
+          body={t("clearSampleConfirm.body")}
+          confirmLabel={t("clearSampleConfirm.ok")}
+          cancelLabel={tCommon("cancel")}
+          returnFocusTo={clearReturnFocusRef}
+        />
         <button
           ref={drawerButtonRef}
           type="button"
