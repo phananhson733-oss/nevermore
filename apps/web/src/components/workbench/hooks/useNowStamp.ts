@@ -34,10 +34,11 @@ function readClock(): NowStamp {
  * while the view is mounted (week audit #2): the week page's range, counts and
  * feed are "the last 7 days", and a tab left open past midnight must not keep
  * yesterday's dates. It re-reads once a minute, and as soon as the tab is visible
- * again because a background tab's timers can be held back. A reading only
- * becomes new state when its minute differs, so an idle page does not re-render
- * on every tick. Artifacts do not use it — `useAddArtifact` reads the clock when
- * the operator clicks, which is the time that belongs on an artifact.
+ * again because a background tab's timers can be held back. A refresh within the
+ * minute already shown (a repeated visibility event, say) does not update state;
+ * in normal running the state updates once a minute. Artifacts do not use it —
+ * `useAddArtifact` reads the clock when the operator clicks, which is the time
+ * that belongs on an artifact.
  */
 export function useNowStamp(): NowStamp | null {
   const { ready } = useWorkbench();
