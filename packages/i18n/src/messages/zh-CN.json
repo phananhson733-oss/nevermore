@@ -4114,6 +4114,19 @@
     "provenance": {
       "artifact": "示例数据：本地生成的演示结果，不是真实测量；生成于 {at}"
     },
+    "artifactActions": {
+      "copy": "复制",
+      "copied": "已复制",
+      "copyFailed": "没能复制。请手动选中正文复制。",
+      "copyForAi": "复制给 AI",
+      "exportFile": "导出",
+      "save": "存入产物筐",
+      "saved": "已存入"
+    },
+    "panes": {
+      "in": "输入",
+      "out": "输出"
+    },
     "overview": {
       "subtitle": "{domain}（{brand}）· 目标市场 {market}",
       "cards": {

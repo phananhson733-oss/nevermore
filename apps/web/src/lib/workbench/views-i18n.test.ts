@@ -73,6 +73,11 @@ const FORBIDDEN: Readonly<Record<LocaleKey, readonly string[]>> = {
  *   messages may not carry a causal connective or a named cause.
  *   `dataSources.real.needProfile` is deliberately NOT in here: an incomplete
  *   product profile is the one cause we can actually attribute.
+ *   `artifactActions.copyFailed` is the same rule on a different subsystem: a
+ *   refused clipboard reaches the component as one bare `catch`, and a denied
+ *   permission, a lost focus, a browser policy and a non-secure context are
+ *   indistinguishable inside it — so naming any one of them is a coin flip
+ *   presented as a diagnosis.
  */
 const FORBIDDEN_BY_KEY: Readonly<
   Record<string, Readonly<Record<LocaleKey, readonly string[]>>>
@@ -115,6 +120,33 @@ const FORBIDDEN_BY_KEY: Readonly<
       "permission",
       "quota",
       "authoriz",
+    ],
+  },
+  "artifactActions.copyFailed": {
+    "zh-CN": [
+      "所以",
+      "因为",
+      "由于",
+      "权限",
+      "拒绝",
+      "禁止",
+      "授权",
+      "策略",
+      "焦点",
+      "安全上下文",
+      "不支持",
+    ],
+    en: [
+      "because",
+      "denied",
+      "refused",
+      "blocked",
+      "permission",
+      "policy",
+      "insecure",
+      "not supported",
+      "unsupported",
+      "focus",
     ],
   },
 };
@@ -271,6 +303,14 @@ const REQUIRED: Readonly<
     "zh-CN": ["产品画像"],
     en: ["product profile"],
   },
+  // Q4 bans the cause, which leaves "没能复制" — a dead end unless the sentence
+  // also says what to do instead. The pin is on that clause, not on the half
+  // that reports the failure: an instruction cannot become untrue later, so
+  // pinning it cannot mandate a lie the way pinning a claim about state can.
+  "artifactActions.copyFailed": {
+    "zh-CN": ["手动选中"],
+    en: ["copy it yourself"],
+  },
 };
 
 /**
@@ -286,7 +326,20 @@ const OWNED_SUBTREES = [
   "settings.notify",
   "settings.sources",
   "shell.clearSampleConfirm",
+  "artifactActions",
+  "panes",
 ] as const;
+
+/**
+ * Subtrees whose members are rendered TOGETHER, so two of them sharing a
+ * spelling is a defect no other rule here can see. `ArtifactActions` puts four
+ * buttons in one footer row and flashes `copied` / `saved` into one shared
+ * `role="status"`; `InPane` / `OutPane` tag the two halves of one screen. A
+ * `copyForAi` shortened back to "复制" / "Copy" leaves two adjacent buttons that
+ * read the same and do different things — every other check in this file stays
+ * green for it, because each message on its own is still fine.
+ */
+const DISTINCT_LABEL_SETS = ["artifactActions", "panes"] as const;
 
 /**
  * `key | arg arg` — each arg gets a text sentinel, `#arg` a numeric one. Keys
@@ -491,6 +544,22 @@ const CASES: readonly string[] = [
   "shell.clearSampleConfirm.body",
   "shell.clearSampleConfirm.ok",
   "shell.siteCard.unknownHint",
+  // The ui primitives' own labels (Task 1b). They belong to no single view:
+  // `ArtifactActionLabels` and the `tag` of `InPane`/`OutPane` are required
+  // props, so every view that mounts one reads these same nine. Spelling is the
+  // component's (`exportFile`, not `export`) so a view can hand the object over
+  // field for field. Not reusing `shell.drawer.*` or `week.report.*` is the
+  // point: those are the drawer's and the weekly report's own words and must
+  // stay free to change without dragging every artifact footer with them.
+  "artifactActions.copy",
+  "artifactActions.copied",
+  "artifactActions.copyFailed",
+  "artifactActions.copyForAi",
+  "artifactActions.exportFile",
+  "artifactActions.save",
+  "artifactActions.saved",
+  "panes.in",
+  "panes.out",
 ];
 
 type Values = Readonly<Record<string, string | number>>;
@@ -645,6 +714,20 @@ describe.each(LOCALE_KEYS)("workbench view messages (%s)", (locale) => {
             phrase.toLowerCase(),
           );
         }
+      }
+    }
+  });
+
+  it("spells every co-rendered primitive label differently", () => {
+    for (const subtree of DISTINCT_LABEL_SETS) {
+      const seen = new Map<string, string>();
+      for (const key of leafPaths(node(locale, subtree), subtree)) {
+        const text = rawMessage(locale, key);
+        const twin = seen.get(text);
+        expect(twin, `${key} reads exactly like ${twin ?? ""}: "${text}"`).toBe(
+          undefined,
+        );
+        seen.set(text, key);
       }
     }
   });

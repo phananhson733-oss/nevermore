@@ -4114,6 +4114,19 @@
     "provenance": {
       "artifact": "Sample data: generated locally for demonstration, not measured. Generated {at}"
     },
+    "artifactActions": {
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyFailed": "Copying did not go through. Select the text and copy it yourself.",
+      "copyForAi": "Copy for AI",
+      "exportFile": "Export",
+      "save": "Save to artifacts",
+      "saved": "Saved"
+    },
+    "panes": {
+      "in": "Input",
+      "out": "Output"
+    },
     "overview": {
       "subtitle": "{domain} ({brand}) · Target market {market}",
       "cards": {
