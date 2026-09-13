@@ -31,6 +31,15 @@ export interface ProjectSeed {
   readonly market: string;
 }
 
+/**
+ * What a "clear GSC rows" confirmation was raised over (codex S6r3): the rows
+ * array the screen rendered, by reference, and its provenance.
+ */
+export interface ClearGscRowsExpected {
+  readonly rows: readonly GscRow[];
+  readonly source: GscRowsSource | null;
+}
+
 export type WorkbenchAction =
   | { readonly type: "patchProfile"; readonly patch: Partial<Pick<Profile, "positioning" | "features" | "competitors">> }
   | { readonly type: "setProfileDoc"; readonly doc: ProfileDoc | null }
@@ -62,6 +71,10 @@ export type WorkbenchAction =
   // cannot say what it was confirmed against would overwrite whatever is there.
   | { readonly type: "loadDemo"; readonly payload: DemoPayload; readonly expected: DemoFields }
   | { readonly type: "clearDemo"; readonly expected: DemoFields }
+  // The data-sources page's confirmed clear. `expected` is required for the
+  // same reason as above; a bare `setGscRows([])` would delete rows the operator
+  // never saw.
+  | { readonly type: "clearGscRows"; readonly expected: ClearGscRowsExpected }
   | { readonly type: "loadPersisted"; readonly state: WorkbenchProjectState }
   | { readonly type: "reset"; readonly seed: ProjectSeed };
 
@@ -259,6 +272,14 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
       const blank = initialProjectState({ url: state.profile.url, brand: state.profile.brand, market: state.profile.market });
       return { ...state, ...demoFields(blank), visPartial: false, demo: false };
     }
+    case "clearGscRows":
+      // While the confirmation was open another tab may have imported other
+      // rows, or an update of ours may be queued behind the render the operator
+      // clicked in; the component cannot see the second. Clear only the rows and
+      // provenance that were confirmed, compared by reference; otherwise the
+      // same object back, so the caller can tell the clear was refused.
+      if (state.gscRows !== action.expected.rows || state.gscRowsSource !== action.expected.source) return state;
+      return { ...state, gscRows: [], gscRowsSource: sourceFor([], "user") };
     case "loadPersisted":
       // By identity, never a spread: the provider recognises "this state came from storage" as `state === remoteStateRef.current` and skips the write-back.
       return action.state;

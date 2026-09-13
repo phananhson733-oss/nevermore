@@ -504,6 +504,7 @@ describe("immutability", () => {
       { type: "clearArtifacts" },
       { type: "loadDemo", payload: demoPayload, expected: demoFields(populated) },
       { type: "clearDemo", expected: demoFields(populated) },
+      { type: "clearGscRows", expected: { rows: populated.gscRows, source: populated.gscRowsSource } },
       { type: "loadPersisted", state: initialProjectState(seed) },
       { type: "reset", seed },
     ] as const satisfies readonly WorkbenchAction[];
