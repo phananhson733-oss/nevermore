@@ -204,7 +204,8 @@ describe("profileDocMarkdown", () => {
       doc: { ...FIXTURE_DOC, crawl: null, third: null, gsc: null },
     });
     expect(doc).toContain("## 站点现状\n- 未抓取");
-    expect(doc).toContain("## 搜索表现\n- 未接入 GSC");
+    expect(doc).toContain("## 搜索表现\n- 本次档案未包含 GSC 信号");
+    expect(doc).not.toContain("未接入");
     expect(doc).not.toContain("第三方估算");
     expect(doc).not.toContain("示例数据");
   });
@@ -272,10 +273,15 @@ describe("profileDocMarkdown", () => {
     expect(unknown.replace("## 搜索表现（来源未知）", "## 搜索表现")).toBe(user);
   });
 
-  it("keeps saying GSC is not connected when the snapshot has no GSC numbers, whatever the source", () => {
+  // No GSC numbers has several causes — the switch was off when the profile was
+  // generated, no rows were imported in this browser, or the real Search Console
+  // is connected and nothing was imported here — so the line names none of them
+  // (plan Task 9: the view's source switch makes the first cause reachable).
+  it("says the snapshot carries no GSC signals, naming no cause, whatever the source", () => {
     for (const gscSource of ["sample", "user", null] as const) {
       const doc = profileDocMarkdown({ ...BASE, doc: { ...FIXTURE_DOC, gsc: null, gscSource } });
-      expect(doc, String(gscSource)).toContain("## 搜索表现\n- 未接入 GSC");
+      expect(doc, String(gscSource)).toContain("## 搜索表现\n- 本次档案未包含 GSC 信号");
+      expect(doc, String(gscSource)).not.toContain("未接入");
       expect(doc, String(gscSource)).not.toContain("来源未知");
     }
   });

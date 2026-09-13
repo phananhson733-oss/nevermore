@@ -106,7 +106,9 @@ function gscSourceSuffix(source: GscRowsSource | null): string {
 }
 
 function gscSection(gsc: GscSignals | null, source: GscRowsSource | null): string {
-  if (gsc === null) return "## 搜索表现\n- 未接入 GSC";
+  // No numbers has several causes (switch off, nothing imported here, a real
+  // Search Console connected elsewhere): the line names none of them.
+  if (gsc === null) return "## 搜索表现\n- 本次档案未包含 GSC 信号";
   const top = gsc.top.map(topQuery);
   return [
     `## 搜索表现${gscSourceSuffix(source)}`,
