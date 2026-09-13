@@ -117,8 +117,14 @@ const DOC_ONLY_FIELDS: readonly FieldCase<Input>[] = [
 const CONTEXT_FIELDS = [...PROFILE_FIELDS, ...AI_FIELDS];
 const DOC_FIELDS = [...SITE_FIELDS, ...AI_FIELDS, ...DOC_ONLY_FIELDS];
 
+/** The note under every profile document's header, pinned as the whole sentence. */
+const SNAPSHOT_NOTE =
+  "标题中的品牌与上方的站点、市场为当前项目信息；以下正文为生成时的快照，生成之后的修改不会写进正文。";
+
 const EXPECTED_DOC = `# Acme 产品档案
 生成时间：2026-09-13 10:30｜站点：https://acme.io｜市场：US
+
+${SNAPSHOT_NOTE}
 
 ## 产品描述
 - [示例] Acme：给小团队用的 SEO 检查工具
@@ -204,6 +210,19 @@ describe("profileJson", () => {
 describe("profileDocMarkdown", () => {
   it("renders the full document for the fixture", () => {
     expect(profileDocMarkdown(BASE)).toBe(EXPECTED_DOC);
+  });
+
+  // The title and header line follow the current profile (ProfileDoc freezes
+  // none of them); the body is the snapshot. The note says which is which under
+  // every header, without checking whether anything changed or saying what did.
+  it("says under the header that the title is current and the body a snapshot, also once the brand changed", () => {
+    const renamed = profileDocMarkdown({ ...BASE, profile: { ...FIXTURE_PROFILE, brand: "NewCo" } });
+    const [header, note] = renamed.split("\n\n");
+    expect(header?.split("\n")[0]).toBe("# NewCo 产品档案");
+    expect(note).toBe(SNAPSHOT_NOTE);
+    // The body still carries the brand it was generated with.
+    expect(renamed).toContain("\n- [示例] Acme：给小团队用的 SEO 检查工具\n");
+    expect(profileDocMarkdown(BASE).split("\n\n")[1]).toBe(SNAPSHOT_NOTE);
   });
 
   it("marks missing crawl and GSC plainly and drops the sample suffix with them", () => {

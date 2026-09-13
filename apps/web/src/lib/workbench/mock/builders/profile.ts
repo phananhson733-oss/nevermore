@@ -40,9 +40,12 @@ export interface ProfileDocInput {
 }
 
 /**
- * What the document reads besides the snapshot: the site it is about. The rest
- * comes from `doc`, so a profile edited after generation cannot put words in a
- * document written earlier (T9 review #2).
+ * What the document reads besides the snapshot: the site it is about, for the
+ * title and the header line under it. The body comes from `doc`, so a profile
+ * edited after generation cannot put words in the body of a document written
+ * earlier (T9 review #2). The title and header line are not frozen: they follow
+ * the current brand, URL and market (`ProfileDoc` keeps none of them), which is
+ * why `SNAPSHOT_NOTE` sits under the header.
  */
 export interface ProfileDocMarkdownInput {
   readonly profile: Pick<Profile, "brand" | "url" | "market">;
@@ -53,6 +56,13 @@ export interface ProfileDocMarkdownInput {
 const SAMPLE_SUFFIX = "（示例数据）";
 /** A GSC snapshot whose numbers exist but whose source was never recorded (only a tampered envelope today). */
 const UNKNOWN_SOURCE_SUFFIX = "（来源未知）";
+/**
+ * Under every profile document's header: the title and header line are the
+ * project's current site, the body is the snapshot. Printed unconditionally,
+ * whether or not a site field changed since generation, and naming no change.
+ */
+const SNAPSHOT_NOTE =
+  "标题中的品牌与上方的站点、市场为当前项目信息；以下正文为生成时的快照，生成之后的修改不会写进正文。";
 
 export function profileJson({ profile, ai, snapshotAt }: ProfileJsonInput): string {
   // Leads, so a JSON copied out on its own says which snapshot its AI part is (T9 review P3-6).
@@ -170,9 +180,11 @@ function aiSections(ai: AiDoc): readonly (string | null)[] {
 
 /**
  * The doc tab's fields, read from the same snapshot (T9 review #2), so what the
- * page shows is what a copy, an export or a save says. The header's brand, URL
- * and market are the site the project is about, shown read-only beside the
- * document. Positioning, features and competitors are not in the snapshot, so
+ * page shows is what a copy, an export or a save says. The title's brand and
+ * the header's URL and market are the site the project is about, read from the
+ * current profile and shown read-only beside the document; `SNAPSHOT_NOTE` tells
+ * a reader of the exported text that only the body below it is the snapshot.
+ * Positioning, features and competitors are not in the snapshot, so
  * the document does not print them from the current profile; the summary
  * carries the positioning it was generated from.
  */
@@ -183,6 +195,7 @@ export function profileDocMarkdown({ profile, doc }: ProfileDocMarkdownInput): s
   ].join("\n");
   return joinParts([
     header,
+    SNAPSHOT_NOTE,
     docSection("产品描述", bulletLines([doc.ai.summary])),
     crawlSection(doc.crawl),
     thirdSection(doc.third),
