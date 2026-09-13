@@ -30,9 +30,14 @@ export const PANEL_SHELL =
 export const PANEL_HEAD =
   "flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4 md:px-6";
 
-/** The small "input" / "output" tag that opens a panel header. */
+/**
+ * The small "input" / "output" tag that opens a panel header. slate-600, not
+ * slate-500: on slate-100 that pair is 4.35:1, under AA for 12px text, and this
+ * tag is the only text in the file that sits on a tinted fill. color-pairs.test.ts
+ * measures it (6.90:1 as written) instead of trusting this sentence.
+ */
 export const PANEL_TAG =
-  "inline-flex items-center rounded border border-slate-200/60 bg-slate-100 px-2 py-1 text-xs font-medium text-slate-500";
+  "inline-flex items-center rounded border border-slate-200/60 bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600";
 
 /** Panel and block headings (15px: above the 14px body floor, below the 24px h1). */
 export const PANEL_TITLE = "text-[15px] font-semibold text-slate-900";
@@ -45,7 +50,8 @@ export const PANEL_FOOT =
   "flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 p-4 md:px-6";
 
 /** Plain card shell (no header fill, no clipping). */
-export const CARD_SHELL = "rounded-xl border border-slate-200 bg-white shadow-sm";
+export const CARD_SHELL =
+  "rounded-xl border border-slate-200 bg-white shadow-sm";
 
 /** Roomy padding for a card that carries a block of its own, e.g. "what next". */
 export const CARD_PAD = "p-6 md:p-8";
@@ -55,7 +61,8 @@ export const STAT_CARD_SHELL =
   "flex min-h-[140px] flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm";
 
 /** Footnote under a metric or a card body: pushed down, above its own rule. */
-export const FOOT_NOTE = "mt-auto border-t border-slate-100 pt-3 text-xs text-slate-500";
+export const FOOT_NOTE =
+  "mt-auto border-t border-slate-100 pt-3 text-xs text-slate-500";
 
 /** A horizontal rule between blocks. `<hr>` has no line of its own here. */
 export const SECTION_RULE = "border-t border-slate-100";
@@ -67,10 +74,12 @@ export const ROW_RULE = "border-t border-slate-100";
 export const TABLE_SHELL = "w-full border-collapse text-left";
 
 /** `<thead>` row. Column heads may sit below the body floor. */
-export const TABLE_HEAD_ROW = "border-b border-slate-100 text-xs font-medium text-slate-500";
+export const TABLE_HEAD_ROW =
+  "border-b border-slate-100 text-xs font-medium text-slate-500";
 
 /** `<tbody>` row. */
-export const TABLE_ROW = "border-b border-slate-100 text-sm text-slate-700 hover:bg-slate-50";
+export const TABLE_ROW =
+  "border-b border-slate-100 text-sm text-slate-700 hover:bg-slate-50";
 
 /** Primary action. Inverted, so it carries its own focus ring (see header). */
 export const BUTTON_PRIMARY =

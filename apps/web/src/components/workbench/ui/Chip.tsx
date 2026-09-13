@@ -12,7 +12,9 @@ import { cn } from "./cn.ts";
  * `bad` rose (rose, not red: the destructive colour in DeleteProjectSection is
  * rose and two near-identical reds read as two meanings). Every text/background
  * pair clears WCAG AA 4.5:1, which 12px text needs: amber-800 on amber-50 and
- * rose-700 on rose-50 rather than the prototype's lighter pairs.
+ * rose-700 on rose-50 rather than the prototype's lighter pairs. That claim is
+ * not prose: color-pairs.test.ts computes each pair from the Tailwind theme and
+ * fails on any tone added without a measured row (5.17-6.89:1 as written).
  *
  * Borders are explicit: `.wb-reset` zeroes border widths, so a chip without a
  * `border` class has no outline at all.

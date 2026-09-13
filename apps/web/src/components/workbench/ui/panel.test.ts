@@ -66,7 +66,9 @@ describe("panel class constants", () => {
   it("gives every inverted control its own focus ring", () => {
     // `.wb-reset :focus-visible` draws the ring in currentColor; on a
     // `text-white` fill that ring is invisible on the cream shell.
-    const inverted = ENTRIES.filter(([, value]) => String(value).includes("text-white"));
+    const inverted = ENTRIES.filter(([, value]) =>
+      String(value).includes("text-white"),
+    );
     expect(inverted.length).toBeGreaterThanOrEqual(1);
     for (const [name, value] of inverted) {
       expect(String(value), name).toMatch(/focus-visible:outline-/);
@@ -82,11 +84,32 @@ describe("panel class constants", () => {
     expect(panel.BUTTON_PRIMARY).toContain("bg-wb-ink");
   });
 
-  it("keeps every action button above the 24px target floor", () => {
-    for (const [name, value] of ENTRIES.filter(([key]) => key.startsWith("BUTTON_"))) {
-      const found = /min-h-\[(\d+)px\]/.exec(String(value));
-      expect(found, name).not.toBeNull();
-      expect(Number(found?.[1] ?? 0), name).toBeGreaterThanOrEqual(24);
+  it("keeps every declared hit area above the 24px target floor", () => {
+    // Keyed on the CONTENT, not on a `BUTTON_` name: a clickable constant named
+    // anything else used to sit outside this gate entirely, so renaming one and
+    // shrinking it to 18px stayed green (memory:
+    // enumerated-guards-are-only-as-good-as-the-sweep).
+    const heights = ENTRIES.flatMap(([name, value]) =>
+      [...String(value).matchAll(/min-h-\[(\d+)px\]/gu)].map((found) => ({
+        name,
+        px: Number(found[1] ?? 0),
+      })),
+    );
+
+    // Without this the sweep goes green the day the last min-h is dropped.
+    expect(heights.length).toBeGreaterThanOrEqual(3);
+    for (const { name, px } of heights) {
+      expect(px, name).toBeGreaterThanOrEqual(24);
+    }
+  });
+
+  it("declares a hit area on every action constant", () => {
+    // The companion to the sweep above: the sweep polices the numbers it finds,
+    // this one polices that an action constant declares a number at all.
+    for (const [name, value] of ENTRIES.filter(([key]) =>
+      key.startsWith("BUTTON_"),
+    )) {
+      expect(String(value), name).toMatch(/min-h-\[\d+px\]/);
     }
   });
 });
