@@ -18,6 +18,20 @@ import {
 } from "./week-view-test-harness.tsx";
 
 const recorded = vi.hoisted(() => ({ prepared: [] as unknown[] }));
+const store = vi.hoisted(() => ({ canSave: true }));
+
+// `canSave: false` stands for the hook answering `null` (a project not yet
+// hydrated) while the view stays mounted, which the week harness cannot reach.
+vi.mock("../../hooks/useAddArtifact.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../hooks/useAddArtifact.ts")>();
+  return {
+    ...actual,
+    useAddArtifact: () => {
+      const prepare = actual.useAddArtifact();
+      return store.canSave ? prepare : null;
+    },
+  };
+});
 
 vi.mock("../../ui/ArtifactActions.tsx", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../ui/ArtifactActions.tsx")>();
@@ -44,6 +58,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
   recorded.prepared = [];
+  store.canSave = true;
 });
 
 afterEach(() => {
@@ -63,6 +78,21 @@ describe("the weekly report row", () => {
     expect(after.length).toBeGreaterThan(0);
     expect(after).not.toContain(before);
     expect(after.every((prepared) => contentOf(prepared).includes("- 技术健康分：40（"))).toBe(true);
+  });
+
+  // codex S7r2 #2: with nothing able to prepare a save, the report prepared
+  // before kept reaching the row, and stayed there after the effect ran.
+  it("hands the actions nothing once the store cannot take a save, content unchanged", () => {
+    rendered = renderWeek(A);
+    expect(recorded.prepared.length).toBeGreaterThan(0);
+    const seen = recorded.prepared.length;
+    store.canSave = false;
+    rendered.rerender({ ...A });
+    rendered.rerender(structuredClone(A));
+    expect(recorded.prepared.length - seen).toBe(0);
+    const row = rendered.container.querySelector("[data-wb-week-report]");
+    expect(row?.querySelector("[data-wb-skeleton]")).not.toBeNull();
+    expect(row?.querySelector("button")).toBeNull();
   });
 
   it("keeps handing the one report while the content stays the same", () => {

@@ -33,10 +33,13 @@ import { weeklyReportInput, type WeekSummary } from "./week-summary.ts";
  * object it is handed out of this view's concern.
  *
  * Only a prepared report whose key matches the current draft is handed on
- * (codex S7b #3). In the render after the content changes and before the effect
- * prepares the new text, the previous object would otherwise reach the row, and
- * a click in that window would copy, export or save last render's report; the
- * row shows its skeleton for that render instead. Whatever the row was showing
+ * (codex S7b #3), and only while the store can take a save at all (codex S7r2
+ * #2). In the render after the content changes and before the effect prepares
+ * the new text, the previous object would otherwise reach the row, and a click
+ * in that window would copy, export or save last render's report; the row shows
+ * its skeleton for that render instead. When `useAddArtifact` answers `null`
+ * the effect prepares nothing and keeps the old slot, so the key alone would
+ * go on handing that object out for as long as the content stays the same. Whatever the row was showing
  * for the previous report (a "Saved" flash, a refusal) goes with it, which is
  * the price of never offering text the page no longer says.
  *
@@ -72,7 +75,7 @@ function usePreparedArtifact(draft: ArtifactDraft): PreparedArtifact | null {
     // `prepare` and `draft` are new objects on every render; `key` is what they
     // carry and `canPrepare` is whether the store can take a save at all.
   }, [key, canPrepare]);
-  return slot?.key === key ? slot.prepared : null;
+  return canPrepare && slot?.key === key ? slot.prepared : null;
 }
 
 type LabelField = keyof typeof ARTIFACT_ACTION_LABEL_KEYS;
