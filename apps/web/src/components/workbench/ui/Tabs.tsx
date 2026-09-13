@@ -74,9 +74,15 @@ export function Tabs({
   readonly renderedIds: readonly string[];
 }) {
   const listRef = useRef<HTMLDivElement | null>(null);
+  // The tab the group shows as selected: `value` while it is one of the tabs,
+  // else the first tab left. A value can outlive its tab when the list changes
+  // under it; with no tab selected the roving tabindex leaves no stop, and the
+  // whole group drops out of the Tab order. `onChange` is not called for this:
+  // the value is the caller's to change.
+  const selectedId = tabs.some(([id]) => id === value) ? value : tabs[0]?.[0];
 
   function move(delta: number): void {
-    const from = tabs.findIndex(([id]) => id === value);
+    const from = tabs.findIndex(([id]) => id === selectedId);
     if (from < 0) return;
     const to = (from + delta + tabs.length) % tabs.length;
     const next = tabs[to];
@@ -101,7 +107,7 @@ export function Tabs({
       className="inline-flex flex-wrap items-center gap-1"
     >
       {tabs.map(([id, text]) => {
-        const selected = id === value;
+        const selected = id === selectedId;
         // An `aria-controls` pointing at an id that is not in the document is a
         // broken promise to assistive technology, not a harmless extra.
         const panelRendered = renderedIds.includes(id);
