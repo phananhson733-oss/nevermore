@@ -1,10 +1,5 @@
-import { PlaceholderView } from "@/components/workbench/views/placeholder/PlaceholderView";
+import { ProfileView } from "@/components/workbench/views/profile/ProfileView";
 
-export default async function ProfilePage({
-  params,
-}: {
-  readonly params: Promise<{ readonly projectId: string }>;
-}) {
-  const { projectId } = await params;
-  return <PlaceholderView projectId={projectId} page="profile" />;
+export default function ProfilePage() {
+  return <ProfileView />;
 }
