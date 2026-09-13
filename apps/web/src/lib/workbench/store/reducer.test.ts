@@ -206,11 +206,25 @@ describe("artifacts", () => {
     const full = s;
     const after = reduce(full, { type: "addArtifact", artifact: artifact("late") });
 
-    // The same object back: nothing re-renders, nothing is written, and every
+    // The same object back, so no new reducer state is produced, and every
     // earlier artifact is still there — the oldest included.
     expect(after).toBe(full);
     expect(after.artifacts.map((a) => a.id)).not.toContain("late");
     expect(after.artifacts.at(-1)?.id).toBe("a0");
+  });
+
+  it("ignores an artifact whose id is already in the basket, wherever it sits: same state back, one copy", () => {
+    // A save retried after its answer could not be read back (useAddArtifact)
+    // dispatches the same id again. Not at the head, so a check that only looks
+    // at the newest entry would still let a second copy in.
+    let s = reduce(initialProjectState(seed), { type: "addArtifact", artifact: artifact("a") });
+    s = reduce(s, { type: "addArtifact", artifact: artifact("b") });
+
+    const again = reduce(s, { type: "addArtifact", artifact: { ...artifact("a"), content: "another" } });
+
+    expect(again).toBe(s);
+    expect(again.artifacts.map((x) => x.id)).toEqual(["b", "a"]);
+    expect(again.artifacts[1]?.content).toBe("x");
   });
 
   it("clamps an oversized artifact to the persisted bounds instead of storing it whole", () => {
@@ -319,7 +333,7 @@ describe("demo", () => {
     let s = reduce(sample, { type: "loadPersisted", state: real });
     s = reduce(s, { type: "clearDemo" });
 
-    // The same reference, so the provider's write-back effect is not triggered.
+    // The same reference: no new reducer state is produced.
     expect(s).toBe(real);
     expect(s.gscRows).toEqual([gscRow]);
     expect(s.gscRowsSource).toBe("user");

@@ -205,9 +205,14 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
       // Full means refused, never "evict the oldest": nothing in the design, the
       // plan or the copy lets a save silently delete an earlier artifact, and the
       // row that dispatched it would still say "saved". The same state object
-      // comes back, so nothing re-renders and nothing is written;
-      // `useAddArtifact` reads that outcome back and the row says why.
+      // comes back, so no new reducer state is produced; `useAddArtifact` reads
+      // that outcome back and the row says why.
       if (state.artifacts.length >= ARTIFACT_LIMIT) return state;
+      // An id already in the basket is that artifact saved again: a double click,
+      // or a retry after a save whose answer could not be read back
+      // (`useAddArtifact`). The same state comes back, so one artifact never
+      // becomes two rows sharing an id.
+      if (state.artifacts.some((a) => a.id === action.artifact.id)) return state;
       return {
         ...state,
         artifacts: [boundArtifact(action.artifact), ...state.artifacts].slice(0, ARTIFACT_LIMIT),
@@ -228,13 +233,15 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
         demo: true,
       };
     case "clearDemo": {
-      // Only the sample is ever cleared. A confirm raised over the sample can
+      // Runs the announced wholesale clear only while the state is still in
+      // sample mode; `demo` is a mode flag, not field-by-field proof of where
+      // each value came from. A confirm raised over the sample can
       // still dispatch after another tab's real state has replaced it (a
       // `loadPersisted` queued ahead of the click, on a screen not yet
       // re-rendered), and clearing then would wipe the user's own GSC rows. The
       // component's render-time reset cannot recall an action already sent, so
-      // the precondition lives here. Same object back: the write-back effect
-      // sees no change and writes nothing.
+      // the precondition lives here. Same object back: no new reducer state is
+      // produced.
       if (!state.demo) return state;
       const blank = initialProjectState({ url: state.profile.url, brand: state.profile.brand, market: state.profile.market });
       return { ...state, ...demoFields(blank), visPartial: false, demo: false };
