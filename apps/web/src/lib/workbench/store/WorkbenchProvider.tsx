@@ -111,8 +111,11 @@ export function WorkbenchProvider({
 
   // A newer build's data is on disk (R14). Gate first, as in `forgetAndFreeze`:
   // only the ref reaches a write effect already captured in the current commit.
-  // Unlike a sweep, the in-memory state is left alone.
+  // Unlike a sweep, the in-memory state is left alone. A gate that is already
+  // shut (swept, or read-only already) keeps its mode: a signed-out tab must
+  // not start showing the read-only notice.
   function lockReadonly(): void {
+    if (writesBlockedRef.current) return;
     writesBlockedRef.current = true;
     setStorageMode("readonly");
   }
@@ -221,8 +224,9 @@ export function WorkbenchProvider({
         // treatment as in `hydrate`. (`invalid` is ignored, as before: a shape
         // we cannot parse is no reason to throw our own state away. `empty`
         // means the key vanished after this event was queued; the removal
-        // event that follows is what sweeps.)
-        setStorageMode("volatile");
+        // event that follows is what sweeps.) Once writes are blocked, swept or
+        // read-only, that mode already says why nothing is saved and stays.
+        if (!writesBlockedRef.current) setStorageMode("volatile");
       } else if (read.status === "incompatible") {
         // The event carried readable data, but a newer build has written since.
         lockReadonly();

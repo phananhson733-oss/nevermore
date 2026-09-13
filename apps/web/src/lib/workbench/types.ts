@@ -3,6 +3,10 @@
  * copy: labels come from `workbench.enums.*`. Shapes mirror the behavioural
  * prototype (.workbench-reference/geo-seo-workbench.jsx) so PR-2 can port the
  * mock functions without re-deciding them.
+ *
+ * Every type reachable from `WorkbenchProjectState` is persisted, so adding an
+ * enum member, or widening, removing or renaming a field, follows the rules in
+ * `store/schema.ts` (R14).
  */
 export type Severity = "high" | "mid" | "low";
 /** The prototype's `engine: ""` (weekly report, misc exports) maps to `"both"`; there is no "no engine" value. */

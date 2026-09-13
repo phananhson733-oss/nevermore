@@ -12,16 +12,22 @@ import {
  * Boundary validation for localStorage (design §6.5). Strict objects: a shape
  * this build cannot fully account for is never partially trusted.
  *
- * Evolution discipline (R14). A build that reads keys it does not know
- * classifies the envelope `incompatible` and stays read-only for the session,
- * so it never writes over that data; anything else it cannot parse is
- * `invalid` and gets discarded and overwritten. Therefore:
- * - Widening a type (including raising a `.max()` limit), narrowing one, or
- *   renaming a field: bump `PERSISTED_VERSION`. The storage key carries the
- *   version, so the new envelope lands under a key older builds never read.
+ * Evolution discipline (R14). An envelope whose only problem is keys this
+ * build does not know (a newer build's addition, or a field this build
+ * removed) is `incompatible`: the session stays read-only and never writes
+ * over that data. Anything else this build cannot parse is `invalid` and gets
+ * discarded and overwritten. Therefore:
+ * - Adding an enum member, widening a type (including raising a `.max()`
+ *   limit), narrowing one, renaming a field, or removing a field: bump
+ *   `PERSISTED_VERSION`. The storage key carries the version, so the new
+ *   envelope lands under a key older builds never read. Without the bump an
+ *   older build reads a new enum member as `invalid` and overwrites it, and a
+ *   build that removed a field leaves every existing project read-only for good.
  * - Adding a field: first ship, on its own, a reader that accepts it, and only
  *   write it in a later release. An older build that still meets the new field
  *   goes read-only rather than overwriting it, but it cannot save anything.
+ * The domain side of this contract is `types.ts`: every type reachable from
+ * `WorkbenchProjectState` is persisted through this schema.
  */
 export const PERSISTED_VERSION = 1 as const;
 
@@ -292,9 +298,10 @@ export type PersistedParse =
   | { readonly kind: "incompatible" | "invalid" };
 
 /**
- * `incompatible`: a newer build wrote fields this build does not know — every
- * issue, at any depth, is an unrecognized key. Callers must not write over it.
- * `invalid`: anything else, including an unknown key next to a real defect.
+ * `incompatible`: every issue, at any depth, is a key this build does not know
+ * (a newer build's addition, or a field this build removed). Callers must not
+ * write over it. `invalid`: anything else, including an unknown key next to a
+ * real defect.
  */
 export function classifyPersistedState(raw: unknown): PersistedParse {
   const result = persistedSchema.safeParse(raw);

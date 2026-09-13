@@ -617,5 +617,57 @@ describe("WorkbenchProvider", () => {
       expect(view.probe().state.seeds).toBe("kept");
       view.unmount();
     });
+
+    it("ignores a newer build's bytes under another project's key or an unrelated key", () => {
+      const OTHER_PROJECT_ID = "00000000-0000-4000-8000-000000000043";
+      persist(fromDisk);
+      const view = mount();
+      const bytes = newerBuildBytes();
+      // The key filter is the only thing between another key's newer-build
+      // bytes and a session-long read-only lock on this project.
+      for (const key of [storageKey(OTHER_PROJECT_ID), "unrelated.app.key"]) {
+        act(() => {
+          window.dispatchEvent(new StorageEvent("storage", { key, newValue: bytes, storageArea: window.localStorage }));
+        });
+        expect(view.probe().storageMode, key).toBe("ok");
+      }
+
+      act(() => view.probe().dispatch({ type: "setSeeds", seeds: "still writing" }));
+      expect(stored().seeds).toBe("still writing");
+      view.unmount();
+    });
+
+    it("stays read-only, not volatile, when a later cross-tab re-read throws", () => {
+      persist(fromDisk);
+      const view = mount();
+      crossTabWrite(newerBuildBytes());
+      expect(view.probe().storageMode).toBe("readonly");
+
+      vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+        throw new Error("denied");
+      });
+      // A readable payload, so the provider re-reads, and that re-read throws.
+      crossTabWrite(JSON.stringify({ v: PERSISTED_VERSION, state: fromDisk }));
+
+      expect(view.probe().storageMode).toBe("readonly");
+      view.unmount();
+    });
+
+    it("stays swept, with no read-only notice, when a newer build writes after a sign-out", () => {
+      persist(fromDisk);
+      const view = mount();
+      act(() => window.dispatchEvent(new Event(WORKBENCH_SWEPT_EVENT)));
+      expect(view.probe().storageMode).toBe("swept");
+
+      const bytes = newerBuildBytes();
+      window.localStorage.setItem(storageKey(PID), bytes);
+      // Judged by the payload ...
+      crossTabWrite(bytes);
+      expect(view.probe().storageMode).toBe("swept");
+      // ... and by the re-read behind a readable payload.
+      crossTabWrite(JSON.stringify({ v: PERSISTED_VERSION, state: fromDisk }));
+      expect(view.probe().storageMode).toBe("swept");
+      view.unmount();
+    });
   });
 });
