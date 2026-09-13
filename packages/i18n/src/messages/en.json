@@ -3938,6 +3938,7 @@
       "sampleTitle": "Sample content is currently Chinese-only",
       "volatile": "Results will not be saved in this browser",
       "quota": "Browser storage is full; new results are not being saved",
+      "readonly": "This browser holds data saved by a newer version. Results from this session will not be saved",
       "legacy": "Legacy page",
       "inProgress": "Page in progress",
       "inProgressDetail": "This module lands in a later batch. The legacy page keeps working meanwhile.",
@@ -3967,6 +3968,118 @@
     "settings": {
       "realAction": "Not sample data",
       "realActionTitle": "This deletes the real project. It is not sample data."
+    },
+    "enums": {
+      "severity": {
+        "high": "High",
+        "mid": "Medium",
+        "low": "Low"
+      },
+      "engine": {
+        "seo": "SEO",
+        "geo": "GEO",
+        "both": "SEO + GEO"
+      },
+      "level": {
+        "high": "High",
+        "mid": "Medium",
+        "low": "Low"
+      },
+      "gscStatus": {
+        "ranked": "Ranking",
+        "borderline": "Near page one",
+        "gap": "Gap",
+        "unknown": "Unknown"
+      },
+      "intent": {
+        "navigational": "Navigational",
+        "informational": "Informational",
+        "commercial": "Commercial",
+        "transactional": "Transactional"
+      },
+      "stage": {
+        "TOFU": "Awareness",
+        "MOFU": "Consideration",
+        "BOFU": "Decision"
+      },
+      "pageType": {
+        "landing": "Landing page",
+        "blog": "Blog post",
+        "comparison": "Comparison page",
+        "listicle": "Listicle",
+        "tool": "Tool page",
+        "glossary": "Glossary page",
+        "answer-page": "Answer page"
+      },
+      "keywordSource": {
+        "gsc": "Existing GSC query",
+        "generated": "Generated"
+      },
+      "savedSource": {
+        "matrix": "Keyword matrix",
+        "manual": "Added manually",
+        "gap": "Competitor gap"
+      },
+      "promptKind": {
+        "discover": "Discovery",
+        "compare": "Comparison",
+        "verify": "Verification",
+        "alternative": "Alternatives",
+        "scenario": "Scenario"
+      },
+      "kbCategory": {
+        "definition": "Definition",
+        "capability": "Capabilities",
+        "boundary": "Limits",
+        "pricing": "Pricing",
+        "comparison": "Comparison",
+        "data": "Data",
+        "faq": "FAQ"
+      },
+      "kbOrigin": {
+        "crawl": "Crawled from site",
+        "gap": "Gap",
+        "aiDraft": "AI draft",
+        "manual": "Entered manually"
+      },
+      "linkType": {
+        "dir": "Tool directories",
+        "agg": "Tool roundups",
+        "comm": "Community Q and A",
+        "rev": "Review sites",
+        "media": "Industry media and newsletters",
+        "swap": "Link swaps and co-created content"
+      },
+      "artifactType": {
+        "csv": "CSV",
+        "prompt": "Prompt",
+        "md": "Markdown",
+        "json": "JSON"
+      },
+      "module": {
+        "audit": "Technical audit",
+        "visibility": "AI visibility",
+        "keywords": "Keyword research",
+        "keywordLibrary": "Keyword library",
+        "competitors": "Competitor overview",
+        "links": "Backlinks",
+        "content": "Content generation",
+        "kb": "Fact knowledge base",
+        "answers": "Answer pages / reports",
+        "profile": "Site profile",
+        "week": "This week"
+      },
+      "contentAsset": {
+        "blog": "Blog post",
+        "landing": "Landing page",
+        "tool": "Free tool page",
+        "comparison": "Comparison page",
+        "image": "Images",
+        "video": "Short video script"
+      }
+    },
+    "provenance": {
+      "artifact": "Sample data: generated locally for demonstration, not measured. Generated {at}"
     }
   }
 }
