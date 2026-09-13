@@ -987,3 +987,4 @@ export function classifyPersistedState(raw: unknown): PersistedParse {
 | 步骤文案、`COST`、`TYPE_LABEL`、`ASSET_NAME` 显示名、`LINK_TYPES` 说明、`PROMPT_KINDS` 说明 | 各视图 PR 的 i18n |
 | R17 列出的六项 | PR-4 / PR-5 |
 | PR-1 遗留非 store 项（字体与 workbench.css 挂根 layout、触控目标、⌘K 提示、Tailwind `source(none)`、`AppShell` 死变体、`useGlobalShortcut` 重订阅） | PR-3（首次上生产前的收尾批） |
+| 持久化 `plans`（`z.record`）读回时静默丢掉键 `__proto__`（Task 10 探针实测：`classifyPersistedState` 返回 ok，键没了，不污染原型）；只影响字面查询 `__proto__` 的答案页方案。修法需改持久化形状（如条目数组），属于要升 `PERSISTED_VERSION` 的改动 | 记入 PR 描述，随下一次持久化形状变更处理 |
