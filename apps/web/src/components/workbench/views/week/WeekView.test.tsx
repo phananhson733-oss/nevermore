@@ -289,6 +289,20 @@ describe("WeekView for an empty project", () => {
     expect(scope.querySelector("[data-wb-week-feed]")).toBeNull();
   });
 
+  // T18: `isEmpty` reads six stores and no dates, and it also holds after "clear
+  // sample" removed results that did run. The title is the one line here that
+  // makes a claim, so it is pinned whole in each shipped locale.
+  it.each([
+    ["en", "No results to show"],
+    ["zh-CN", "暂无可显示的结果"],
+  ] as const)("titles the empty state with what is on screen now (%s)", (locale, title) => {
+    const scope = render(BLANK, { locale });
+    const lines = [...one(scope, "[data-wb-week-empty]").querySelectorAll("p")].map(
+      (line) => line.textContent,
+    );
+    expect(lines).toEqual([title, (locale === "en" ? en : zh).week.empty.detail]);
+  });
+
   it("cannot save or hand over a report, and says so", () => {
     const scope = render(BLANK);
     const actions = [
