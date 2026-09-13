@@ -6,12 +6,12 @@ import { FIXTURE_PROFILE } from "./builder-fixtures.ts";
 import {
   FIXTURE_KB_ENTRIES,
   KB_DOC_HOSTILE_VALUES,
-  blockMarkerLines,
-  markdownViolations,
   withEntry,
 } from "./builder-fixtures-kb.ts";
 import {
   type FieldCase,
+  blockTokenCounts,
+  docViolations,
   headingLines,
   withEveryField,
 } from "./hostile-fixtures.ts";
@@ -141,10 +141,16 @@ describe("kbMarkdown", () => {
       }),
     });
     expect(headingLines(doc)).toEqual(headingLines(EXPECTED));
-    expect(blockMarkerLines(doc)).toHaveLength(
-      blockMarkerLines(EXPECTED).length,
-    );
+    expect(blockTokenCounts(doc)).toEqual(blockTokenCounts(EXPECTED));
     expect(doc).toContain("\n- 安全 # 伪标题｜证据：来自站点档案字段\n");
+  });
+
+  it("escapes a statement that would open a block at the start of its bullet", () => {
+    const doc = kbMarkdown({
+      ...BASE,
+      entries: withEntry(FIXTURE_KB_ENTRIES, 0, { statement: "# 伪标题" }),
+    });
+    expect(doc).toContain("\n- \\# 伪标题｜证据：来自站点档案字段\n");
   });
 
   it("does not change its input and gives the same text twice", () => {
@@ -160,7 +166,7 @@ describe("kbMarkdown", () => {
   describe.each(CASES)("hostile $field", ({ apply }) => {
     it.each(KB_DOC_HOSTILE_VALUES)("$name stays on its line", (hostile) => {
       const doc = kbMarkdown(apply(BASE, hostile.value));
-      expect(markdownViolations(doc, EXPECTED, hostile)).toEqual([]);
+      expect(docViolations(doc, EXPECTED, hostile)).toEqual([]);
     });
   });
 
@@ -168,7 +174,7 @@ describe("kbMarkdown", () => {
     "every field hostile at once: $name",
     (hostile) => {
       const doc = kbMarkdown(withEveryField(BASE, CASES, hostile.value));
-      expect(markdownViolations(doc, EXPECTED, hostile)).toEqual([]);
+      expect(docViolations(doc, EXPECTED, hostile)).toEqual([]);
     },
   );
 });

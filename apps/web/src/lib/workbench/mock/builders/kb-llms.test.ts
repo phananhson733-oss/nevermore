@@ -4,10 +4,13 @@ import { FIXTURE_PROFILE } from "./builder-fixtures.ts";
 import {
   FIXTURE_KB_ENTRIES,
   KB_DOC_HOSTILE_VALUES,
-  markdownViolations,
   withEntry,
 } from "./builder-fixtures-kb.ts";
-import { type FieldCase, withEveryField } from "./hostile-fixtures.ts";
+import {
+  type FieldCase,
+  docViolations,
+  withEveryField,
+} from "./hostile-fixtures.ts";
 import { llmsTxt } from "./kb.ts";
 
 interface Input {
@@ -115,6 +118,25 @@ describe("llmsTxt", () => {
     ).toBe(true);
   });
 
+  it("escapes values that would open a block where they start a line's content", () => {
+    const withProfile = (patch: Partial<Profile>, input: Input): string =>
+      llmsTxt({ ...input, profile: { ...FIXTURE_PROFILE, ...patch } });
+    expect(withProfile({ positioning: "# x" }, BASE)).toContain(
+      "\n\n> \\# x\n\n",
+    );
+    expect(withProfile({ brand: "# x" }, NO_DEFINITION)).toContain(
+      "\n## About\n- \\# x 是[补定义]\n",
+    );
+    expect(
+      withProfile({ url: "# x" }, BASE).endsWith("\n## Contact\n- \\# x"),
+    ).toBe(true);
+    const statement = llmsTxt({
+      ...BASE,
+      entries: withEntry(FIXTURE_KB_ENTRIES, 0, { statement: "# x" }),
+    });
+    expect(statement).toContain("\n## About\n- \\# x\n");
+  });
+
   it("writes placeholders for sections without written statements", () => {
     expect(llmsTxt(NO_DEFINITION)).toContain("## About\n- Acme 是[补定义]\n\n");
     const blankBrand = llmsTxt({
@@ -199,7 +221,7 @@ describe("llmsTxt", () => {
   describe.each(CASES)("hostile $field", ({ apply }) => {
     it.each(KB_DOC_HOSTILE_VALUES)("$name stays on its line", (hostile) => {
       const text = llmsTxt(apply(BASE, hostile.value));
-      expect(markdownViolations(text, EXPECTED, hostile)).toEqual([]);
+      expect(docViolations(text, EXPECTED, hostile)).toEqual([]);
     });
   });
 
@@ -210,7 +232,7 @@ describe("llmsTxt", () => {
       const text = llmsTxt(
         profileField("brand").apply(NO_DEFINITION, hostile.value),
       );
-      expect(markdownViolations(text, baseline, hostile)).toEqual([]);
+      expect(docViolations(text, baseline, hostile)).toEqual([]);
     },
   );
 
@@ -218,7 +240,7 @@ describe("llmsTxt", () => {
     "every field hostile at once: $name",
     (hostile) => {
       const text = llmsTxt(withEveryField(BASE, CASES, hostile.value));
-      expect(markdownViolations(text, EXPECTED, hostile)).toEqual([]);
+      expect(docViolations(text, EXPECTED, hostile)).toEqual([]);
     },
   );
 });

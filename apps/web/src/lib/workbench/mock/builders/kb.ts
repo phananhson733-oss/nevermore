@@ -1,8 +1,9 @@
 /**
  * Knowledge-base artifacts (plan Task 12; jsx:776-845). Bodies are unstamped
  * (R5). `kbMarkdown` and `llmsTxt` are documents, not prompts: every user or AI
- * value is folded with `oneLine` and follows fixed text on its line, so a
- * newline in a statement cannot start a heading, fence or list item (R6).
+ * value is folded onto one line; a value that starts a line's content (right
+ * after `- ` or `> `) also goes through `docText`, so it cannot open a heading,
+ * fence, quote, list, rule, HTML block, link definition or task box there (R6).
  * `llmsTxt` names no page it has not seen: the home page plus a placeholder
  * (R10). `kbJsonLd` is JSON, so `JSON.stringify` does the escaping.
  */
@@ -10,7 +11,7 @@ import { KB_CATEGORIES } from "../../enums.ts";
 import type { KbCategory, KbEntry, Profile } from "../../types.ts";
 import { KB_SECTION_TITLE_ZH } from "../labels-zh.ts";
 import { domainOf, oneLine } from "../text.ts";
-import { joinParts } from "./compose.ts";
+import { docText, joinParts } from "./compose.ts";
 
 export interface KbInput {
   readonly profile: Profile;
@@ -40,7 +41,7 @@ function kbLine(entry: KbEntry): string {
   const evidence = oneLine(entry.evidence);
   const source = oneLine(entry.source);
   return [
-    `- ${oneLine(entry.statement)}`,
+    `- ${docText(entry.statement)}`,
     evidence === "" ? "｜[待补证据]" : `｜证据：${evidence}`,
     source === "" ? "" : `｜来源：${source}`,
   ].join("");
@@ -82,7 +83,7 @@ function llmsSection(
   fallback: string,
 ): string {
   const lines = writtenOf(entries, cat).map(
-    (entry) => `- ${oneLine(entry.statement)}`,
+    (entry) => `- ${docText(entry.statement)}`,
   );
   return [`## ${title}`, ...(lines.length === 0 ? [fallback] : lines)].join(
     "\n",
@@ -91,9 +92,9 @@ function llmsSection(
 
 export function llmsTxt({ profile, entries }: KbInput): string {
   const domain = oneLine(domainOf(profile.url));
-  const summary = oneLine(profile.positioning);
-  const url = oneLine(profile.url);
-  const brand = brandText(profile.brand);
+  const summary = docText(profile.positioning);
+  const url = docText(profile.url);
+  const brand = docText(profile.brand) || BRAND_PLACEHOLDER;
   return joinParts([
     `# ${domain || "[站点域名]"}`,
     summary === "" ? null : `> ${summary}`,

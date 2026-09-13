@@ -1,16 +1,13 @@
 /**
- * Test-only literals and checkers for the Task 12 builder tests (knowledge
- * base, visibility, links). Hand-built like `builder-fixtures.ts`: the builders
- * must not depend on what `seedKb` / `mockVisibility` / `mockLinks` happen to
- * produce, so nothing here calls them.
+ * Test-only literals for the Task 12 builder tests (knowledge base, visibility,
+ * links). Hand-built like `builder-fixtures.ts`: the builders must not depend
+ * on what `seedKb` / `mockVisibility` / `mockLinks` happen to produce, so
+ * nothing here calls them. Documents are checked with the shared
+ * `docViolations` in `hostile-fixtures.ts`.
  */
 import type { KbEntry, LinkTarget, VisResult } from "../../types.ts";
 import type { VisGap } from "../visibility.ts";
-import {
-  DOC_HOSTILE_VALUES,
-  type HostileValue,
-  docViolations,
-} from "./hostile-fixtures.ts";
+import { DOC_HOSTILE_VALUES, type HostileValue } from "./hostile-fixtures.ts";
 
 /** Two definitions, written and blank slots, blank-looking evidence, and FAQ entries with and without a usable `→`. */
 export const FIXTURE_KB_ENTRIES: readonly KbEntry[] = [
@@ -177,22 +174,3 @@ export const KB_DOC_HOSTILE_VALUES: readonly HostileValue[] = [
     markers: [],
   },
 ];
-
-/** A line-start bullet, ordered-list number or blockquote marker. */
-const BLOCK_MARKER = /^ {0,3}(?:[-*+]|\d{1,9}[.)]|>)(?:[ \t]|$)/;
-
-export function blockMarkerLines(doc: string): readonly string[] {
-  return doc.split(/\r\n|\r|\n/).filter((line) => BLOCK_MARKER.test(line));
-}
-
-/** `docViolations` plus: the hostile document has as many line-start list / quote markers as the baseline. */
-export function markdownViolations(
-  doc: string,
-  baseline: string,
-  hostile: HostileValue,
-): readonly string[] {
-  const got = blockMarkerLines(doc).length;
-  const want = blockMarkerLines(baseline).length;
-  const markers = got === want ? [] : [`block marker lines ${want} -> ${got}`];
-  return [...docViolations(doc, baseline, hostile), ...markers];
-}
