@@ -20,7 +20,8 @@ export type ReadResult =
   // caller must go read-only instead of writing over it (R14).
   | { readonly status: "empty" | "invalid" | "incompatible" | "unavailable"; readonly state: null };
 
-export type WriteStatus = "ok" | "quota" | "unavailable";
+/** `incompatible`: nothing was written, because the key holds a newer build's data (R14). */
+export type WriteStatus = "ok" | "quota" | "unavailable" | "incompatible";
 
 /**
  * Classifies stored bytes; unparseable JSON is `invalid`. Also used by the
@@ -56,13 +57,34 @@ function isQuotaError(error: unknown): boolean {
   return name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED" || code === 22 || code === 1014;
 }
 
+/**
+ * Writes the envelope unless the key already holds a newer build's data (R14).
+ *
+ * The stored value is classified immediately before `setItem`, because another
+ * tab's newer build can write between this tab's reads and its `storage` event
+ * arriving here (and a tab never receives events for its own writes). On
+ * `incompatible` nothing is written and the caller must go read-only. Empty,
+ * readable and corrupt (`invalid`) values are written over as before: corrupt
+ * bytes are not a newer build, and locking on them would strand the project.
+ * A read that throws is `unavailable`, and nothing is written.
+ *
+ * Residual: the read and the `setItem` are two calls, not a cross-tab
+ * transaction; a newer build's write landing between them is replaced once.
+ *
+ * Cost: one extra read and parse per write, measured at about the cost of the
+ * `JSON.stringify` the write already pays (about 1.4 ms for a 4.4 MB envelope,
+ * near the storage quota; well under 1 ms at typical sizes).
+ */
 export function writeProjectState(
   storage: Storage,
   projectId: string,
   state: WorkbenchProjectState,
 ): WriteStatus {
+  const key = storageKey(projectId);
   try {
-    storage.setItem(storageKey(projectId), JSON.stringify({ v: PERSISTED_VERSION, state }));
+    const stored = storage.getItem(key);
+    if (stored !== null && classifyStoredValue(stored).kind === "incompatible") return "incompatible";
+    storage.setItem(key, JSON.stringify({ v: PERSISTED_VERSION, state }));
     return "ok";
   } catch (error) {
     return isQuotaError(error) ? "quota" : "unavailable";

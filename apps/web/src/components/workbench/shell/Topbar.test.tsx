@@ -12,13 +12,15 @@ import { createRoot } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "@sf/i18n";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useWorkbench } from "@/lib/workbench/store/hooks";
 import { storageKey, WORKBENCH_SWEPT_EVENT } from "@/lib/workbench/store/persistence";
-import { WorkbenchProvider } from "@/lib/workbench/store/WorkbenchProvider";
+import { WorkbenchProvider, type WorkbenchContextValue } from "@/lib/workbench/store/WorkbenchProvider";
 import { initialProjectState, type ProjectSeed } from "@/lib/workbench/store/reducer";
 import { PERSISTED_VERSION } from "@/lib/workbench/store/schema";
 import { WB_APP_ROOT_ID } from "../ui/ids.ts";
 
 const en = getMessages("en");
+const zhCN = getMessages("zh-CN");
 
 const mocks = vi.hoisted(() => ({
   hasUnsavedContextChanges: vi.fn<() => boolean>(),
@@ -44,12 +46,21 @@ const SEED: ProjectSeed = {
   market: "US",
 };
 
-function Harness() {
+/** The store as the topbar sees it, so a test can dispatch into the real provider. */
+const store: { current: WorkbenchContextValue | null } = { current: null };
+
+function StoreProbe() {
+  store.current = useWorkbench();
+  return null;
+}
+
+function Harness({ locale }: { readonly locale: "en" | "zh-CN" }) {
   const paletteButtonRef = useRef<HTMLButtonElement>(null);
   const drawerButtonRef = useRef<HTMLButtonElement>(null);
   return (
-    <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+    <NextIntlClientProvider locale={locale} messages={locale === "en" ? en : zhCN} timeZone="UTC">
       <WorkbenchProvider projectId={PROJECT_ID} seed={SEED}>
+        <StoreProbe />
         <div id={WB_APP_ROOT_ID}>
           <Topbar
             projectControl={null}
@@ -70,11 +81,11 @@ function Harness() {
 
 let cleanup: (() => void) | null = null;
 
-function render() {
+function render(locale: "en" | "zh-CN" = "en") {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  act(() => root.render(<Harness />));
+  act(() => root.render(<Harness locale={locale} />));
   cleanup = () => {
     act(() => root.unmount());
     container.remove();
@@ -114,8 +125,37 @@ function click(target: HTMLElement): boolean {
   return cancelled;
 }
 
+function newerBuildBytes(): string {
+  return JSON.stringify({ v: PERSISTED_VERSION, state: { ...initialProjectState(SEED), futureField: 1 } });
+}
+
+/** The visible short label shown below `lg`, where the live region is not painted. */
+function compactNotice(scope: ParentNode): HTMLElement | null {
+  return scope.querySelector<HTMLElement>("[data-wb-storage-compact]");
+}
+
+/**
+ * The compact label is painted only below `lg`, hidden from assistive tech (the
+ * live region already announces the sentence), and never a second status.
+ */
+function expectCompactNotice(container: HTMLElement, text: string): void {
+  const compact = compactNotice(container);
+  if (!compact) throw new Error("no compact storage notice rendered");
+  expect(compact.textContent).toBe(text);
+  expect(compact.getAttribute("aria-hidden")).toBe("true");
+  expect(compact.classList.contains("lg:hidden")).toBe(true);
+  expect(compact.closest('[role="status"]')).toBeNull();
+  expect(compact.querySelector('[role="status"]')).toBeNull();
+  expect(container.querySelectorAll('[role="status"]')).toHaveLength(1);
+}
+
+function statusText(container: HTMLElement): string | null | undefined {
+  return container.querySelector('[role="status"]')?.textContent;
+}
+
 beforeEach(() => {
   window.localStorage.clear();
+  store.current = null;
   mocks.hasUnsavedContextChanges.mockReset();
   mocks.hasUnsavedContextChanges.mockReturnValue(false);
 });
@@ -162,13 +202,11 @@ describe("Topbar", () => {
 
     expect(statuses).toHaveLength(1);
     expect(statuses[0]?.textContent).toBe("");
+    expect(compactNotice(container)).toBeNull();
   });
 
   it("says results will not be saved, in that one live region, when storage holds a newer build's data", () => {
-    window.localStorage.setItem(
-      storageKey(PROJECT_ID),
-      JSON.stringify({ v: PERSISTED_VERSION, state: { ...initialProjectState(SEED), futureField: 1 } }),
-    );
+    window.localStorage.setItem(storageKey(PROJECT_ID), newerBuildBytes());
     const container = render();
     const statuses = container.querySelectorAll('[role="status"]');
 
@@ -187,5 +225,50 @@ describe("Topbar", () => {
 
     expect(statuses).toHaveLength(1);
     expect(statuses[0]?.textContent).toBe("");
+    expect(compactNotice(container)).toBeNull();
+  });
+
+  describe("visible notice below lg, where the sentence is screen-reader only", () => {
+    it("shows it in read-only mode, in both languages", () => {
+      window.localStorage.setItem(storageKey(PROJECT_ID), newerBuildBytes());
+      const container = render();
+      expect(store.current?.storageMode).toBe("readonly");
+      expectCompactNotice(container, "Not saved");
+      cleanup?.();
+
+      window.localStorage.setItem(storageKey(PROJECT_ID), newerBuildBytes());
+      expectCompactNotice(render("zh-CN"), "未保存");
+    });
+
+    it("shows it when storage is unavailable (volatile)", () => {
+      const descriptor = Object.getOwnPropertyDescriptor(window, "localStorage");
+      Object.defineProperty(window, "localStorage", {
+        get() { throw new Error("denied"); },
+        configurable: true,
+      });
+      try {
+        const container = render();
+        expect(store.current?.storageMode).toBe("volatile");
+        expect(statusText(container)).toBe("Results will not be saved in this browser");
+        expectCompactNotice(container, "Not saved");
+      } finally {
+        if (descriptor) Object.defineProperty(window, "localStorage", descriptor);
+        else Reflect.deleteProperty(window, "localStorage");
+      }
+    });
+
+    it("shows it once a write hits the storage quota", () => {
+      const container = render();
+      expect(compactNotice(container)).toBeNull();
+      vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new DOMException("full", "QuotaExceededError");
+      });
+
+      act(() => store.current?.dispatch({ type: "setSeeds", seeds: "does not fit" }));
+
+      expect(store.current?.storageMode).toBe("quota");
+      expect(statusText(container)).toBe("Browser storage is full; new results are not being saved");
+      expectCompactNotice(container, "Not saved");
+    });
   });
 });

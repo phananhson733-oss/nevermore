@@ -3939,6 +3939,7 @@
       "volatile": "本次结果不会保存在此浏览器",
       "quota": "浏览器存储已满，新结果不再保存",
       "readonly": "这个浏览器里保存的是更新版本的数据，本次结果不会保存",
+      "notSavingShort": "未保存",
       "legacy": "旧版页面",
       "inProgress": "页面开发中",
       "inProgressDetail": "这个模块在后续批次落地，旧版页面照常可用。",

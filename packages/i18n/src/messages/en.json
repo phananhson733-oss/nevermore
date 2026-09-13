@@ -3939,6 +3939,7 @@
       "volatile": "Results will not be saved in this browser",
       "quota": "Browser storage is full; new results are not being saved",
       "readonly": "This browser holds data saved by a newer version. Results from this session will not be saved",
+      "notSavingShort": "Not saved",
       "legacy": "Legacy page",
       "inProgress": "Page in progress",
       "inProgressDetail": "This module lands in a later batch. The legacy page keeps working meanwhile.",

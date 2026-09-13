@@ -172,6 +172,10 @@ export function WorkbenchProvider({
     // Stop writing entirely once storage is volatile, full, swept, or read-only (design §6.5).
     if (!storage || storageMode !== "ok") return;
     const status: WriteStatus = writeProjectState(storage, projectId, state);
+    // `incompatible`: a newer build wrote the key since this tab last read it,
+    // and the write left it alone. Its `storage` event may not have arrived yet,
+    // so this tab locks now instead of waiting for it (R14).
+    if (status === "incompatible") lockReadonly();
     if (status === "quota") setStorageMode("quota");
     if (status === "unavailable") setStorageMode("volatile");
   }, [state, ready, projectId, storageMode]);
@@ -209,12 +213,17 @@ export function WorkbenchProvider({
         return;
       }
       // A newer build's write is judged by the event's own payload, never by a
-      // re-read (R14): by delivery this tab's write effect may already have put
-      // readable bytes back, and a re-read would load those and miss the lock.
-      // Residual (R14): the lock lands on delivery, so a write this tab already
-      // had in flight between the newer tab's write and that delivery replaces
-      // the newer data once; the newer tab's next local change writes it back.
-      // Same class as the run-lease residual in the write effect.
+      // re-read (R14): a re-read can find readable bytes written over the newer
+      // data in the residual window below, load those, and miss the lock.
+      // The event is not the only guard. `writeProjectState` classifies the
+      // stored value immediately before every `setItem` and never replaces a
+      // newer build's data, so a local edit made here between that tab's write
+      // and this event's delivery leaves the data intact and locks this tab
+      // itself.
+      // Residual (R14): that read and the `setItem` are two calls, not a
+      // cross-tab transaction. A newer build's write that lands between them is
+      // replaced once, and comes back only if the newer tab writes again; this
+      // event still locks this tab when it arrives.
       if (classifyStoredValue(event.newValue).kind === "incompatible") {
         lockReadonly();
         return;
