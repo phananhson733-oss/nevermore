@@ -11,10 +11,15 @@
  * 1. `PAIRS` is written out here, in the test, with the size it is rendered at
  *    and the threshold that size implies. Each row is measured against the
  *    Tailwind theme as installed (values are `oklch()`; workbench tokens are hex).
- * 2. The class strings of the thirteen primitive sources are parsed, and the pairs
- *    found there must be exactly the rows in `PAIRS` — no missing row (a new tone
- *    cannot slip in unmeasured) and no stale row (a row cannot be added to
- *    silence the gate without the source actually using it).
+ * 2. The class strings of every non-test .ts / .tsx module under ui/ are parsed
+ *    (walked, not listed), and the pairs found there must be exactly the rows in
+ *    `PAIRS` — no missing row (a new tone or a new file cannot slip in
+ *    unmeasured) and no stale row (a row cannot be added to silence the gate
+ *    without the source actually using it). The walk replaced a hand-kept list
+ *    of thirteen files: a new ui file writing slate-400 body copy passed 33/33,
+ *    and four primitives already outside the list (DemoChip, Dialog, PageHead,
+ *    LegacyLinks) rendered one pair nobody had measured (amber-700 on amber-50)
+ *    and one fill the parser cannot read (the Dialog scrim, see `EXEMPT`).
  *
  * Thresholds are WCAG 1.4.3: 4.5:1 for body text, 3:1 only for large text
  * (>= 24px, or >= 18.66px bold). A `text-*` class with no `bg-*` in the same
@@ -22,14 +27,35 @@
  * `bg-white`) and `wb-paper` (the `#wb-app` page ground, ShellChrome.tsx:100),
  * because a view may place a primitive on either.
  *
+ * Scope is ui/, not all of components/workbench: shell/ puts the dark rail
+ * ground on ancestor elements (Sidebar, SiteCard), so reading pairs one class
+ * string at a time measures rail text against white. Walking the whole tree on
+ * 2026-09-14 gave 30 unmeasured pairs and 3 unreadable tokens from files outside
+ * ui/, most of them that artefact. The rail tiers are measured in
+ * app/workbench-tokens.test.ts; nothing outside ui/ is checked here.
+ *
+ * Known blind spot, the same artefact inside ui/: a text colour and the fill it
+ * really sits on, written on different elements (a `bg-amber-50` wrapper around
+ * a `text-amber-700` child), is measured against white and wb-paper instead of
+ * that fill, so a 3.075:1 combination written that way passes every case here.
+ * Zero places in ui/ do that today. Counted 2026-09-14 over the non-test ui/
+ * modules: 17 class strings carry a fill other than white / wb-paper (variant
+ * fills included). 13 name their text colour in the same string, and every use
+ * site inside ui/ gives that element plain text only (Chip children and
+ * TABLE_ROW cells come from views, outside this walk); the other 4 render no
+ * text (SWITCH_TRACK, the two RunningSteps dots, the Dialog scrim). There is no
+ * parser for this on purpose: re-count when a filled element gains nested text.
+ *
  * Mechanism (theme reading, oklch → linear sRGB, WCAG luminance) is copied from
  * app/workbench-tokens.test.ts rather than imported: that file is a test suite.
  *
  * 一旦本文件被更新，务必更新开头注释
  */
 
-import { readFileSync } from "node:fs";
+import { globSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const AA_TEXT = 4.5;
@@ -62,6 +88,8 @@ const PAIRS: readonly (readonly [string, string, number, number])[] = [
   ["fuchsia-700", "fuchsia-50", 12, AA_TEXT],
   ["amber-800", "amber-50", 12, AA_TEXT],
   ["rose-700", "rose-50", 12, AA_TEXT],
+  // DemoChip.tsx, the sample-data marker
+  ["amber-700", "amber-50", 12, AA_TEXT],
   // Delta.tsx
   ["emerald-700", "white", 14, AA_TEXT],
   ["emerald-700", "wb-paper", 14, AA_TEXT],
@@ -77,21 +105,28 @@ const PAIRS: readonly (readonly [string, string, number, number])[] = [
   ["amber-600", "wb-paper", 36, AA_LARGE],
 ];
 
-const SOURCES = [
-  "panel.ts",
-  "Chip.tsx",
-  "Delta.tsx",
-  "StatCard.tsx",
-  "Field.tsx",
-  "Tabs.tsx",
-  "EmptyState.tsx",
-  "InPane.tsx",
-  "OutPane.tsx",
-  "RunningSteps.tsx",
-  "ArtifactActions.tsx",
-  "ConfirmDialog.tsx",
-  "Toggle.tsx",
-] as const;
+const UI_DIR = fileURLToPath(new URL(".", import.meta.url));
+/** Every non-test module under ui/, relative to it. */
+const SOURCES = globSync("**/*.{ts,tsx}", { cwd: UI_DIR })
+  .filter((path) => !/\.test\.tsx?$/u.test(path))
+  .sort();
+/**
+ * Floor, not a count: `globSync` returns [] for a missing directory instead of
+ * throwing, and a walk that finds nothing makes both directions of the table
+ * check trivially true. Measured 2026-09-14: 22 modules.
+ */
+const MIN_SOURCES = 20;
+
+/**
+ * Tokens under ui/ that start `bg-` / `text-` but name nothing this file can
+ * measure, left out on purpose, by file. Deliberate exemptions: 1.
+ * - Dialog.tsx `bg-slate-900/50`: the scrim, an empty aria-hidden button behind
+ *   the panel. No text is drawn on it; the panel over it is `bg-white`.
+ */
+const EXEMPT: Readonly<Record<string, readonly string[]>> = {
+  "Dialog.tsx": ["bg-slate-900/50"],
+};
+const EXEMPT_COUNT = 1;
 
 /** `text-*` utilities that are not colours. Anything else must resolve to one. */
 const TEXT_NOT_COLOUR =
@@ -181,8 +216,10 @@ type Use = { readonly kind: "text" | "bg"; readonly colour: string; readonly bas
 
 /** Class-string tokens that start `text-`/`bg-` but resolve to no known colour. */
 const unclassified: string[] = [];
+/** `file: token` for each exempted token actually met, so a stale exemption shows. */
+const exemptSeen: string[] = [];
 
-function parseToken(token: string): Use | null {
+function parseToken(file: string, token: string): Use | null {
   const found = /^((?:[a-z0-9-]+:)*)(text|bg)-(.+)$/u.exec(token);
   if (found === null) return null;
   const kind = found[2] === "bg" ? "bg" : "text";
@@ -192,7 +229,8 @@ function parseToken(token: string): Use | null {
   // An opacity modifier (`bg-slate-50/50`) cannot be measured against a token,
   // so it is reported rather than skipped.
   if (!COLOUR.test(rest)) {
-    unclassified.push(token);
+    if (EXEMPT[file]?.includes(token) === true) exemptSeen.push(`${file}: ${token}`);
+    else unclassified.push(`${file}: ${token}`);
     return null;
   }
   return { kind, colour: rest, base: (found[1] ?? "") === "" };
@@ -204,11 +242,11 @@ function classStrings(source: string): readonly string[] {
   return [...code.matchAll(/["`]([^"`\n]*)["`]/gu)].flatMap((match) => match[1] ?? []);
 }
 
-function pairsIn(literal: string): readonly string[] {
+function pairsIn(file: string, literal: string): readonly string[] {
   const uses = literal
     .split(/\s+/u)
     .filter(Boolean)
-    .flatMap((token) => parseToken(token) ?? []);
+    .flatMap((token) => parseToken(file, token) ?? []);
   const foregrounds = uses.filter((use) => use.kind === "text").map((use) => use.colour);
   const fills = uses.filter((use) => use.kind === "bg");
   const base = fills.filter((use) => use.base).map((use) => use.colour);
@@ -219,7 +257,7 @@ function pairsIn(literal: string): readonly string[] {
 
 const rendered = new Set(
   SOURCES.flatMap((file) =>
-    classStrings(readFileSync(new URL(`./${file}`, import.meta.url), "utf8")).flatMap(pairsIn),
+    classStrings(readFileSync(join(UI_DIR, file), "utf8")).flatMap((literal) => pairsIn(file, literal)),
   ),
 );
 const measured = new Set(PAIRS.map(([foreground, background]) => `${foreground} on ${background}`));
@@ -252,15 +290,26 @@ describe("ui colour pairs clear WCAG 1.4.3", () => {
 
 describe("the table covers exactly what the primitives render", () => {
   it("reads colour pairs out of the primitives at all", () => {
-    // Cardinality guard: an extraction that silently stops matching would
-    // otherwise make both directions below trivially true.
+    // Cardinality guards: a walk that finds no file, or an extraction that
+    // silently stops matching, would otherwise make both directions below
+    // trivially true.
+    expect(SOURCES.length, "non-test modules walked under ui/").toBeGreaterThanOrEqual(MIN_SOURCES);
     expect(rendered.size).toBeGreaterThanOrEqual(20);
   });
 
   it("understands every text-/bg- class in the sources", () => {
     // Fail closed: an opacity-modified or unknown colour must be added to the
-    // table (or to the not-a-colour lists) rather than silently skipped.
+    // table (or to the not-a-colour lists, or to EXEMPT with its reason) rather
+    // than silently skipped.
     expect([...new Set(unclassified)]).toEqual([]);
+  });
+
+  it("exempts exactly the listed tokens, and each one is still in the sources", () => {
+    const listed = Object.entries(EXEMPT).flatMap(([file, tokens]) =>
+      tokens.map((token) => `${file}: ${token}`),
+    );
+    expect(listed).toHaveLength(EXEMPT_COUNT);
+    expect([...new Set(exemptSeen)].sort()).toEqual([...listed].sort());
   });
 
   it("measures every pair the primitives render", () => {
