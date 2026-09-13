@@ -1,9 +1,9 @@
 /**
  * Pasted Search Console performance data (R12): an RFC 4180 record scanner with
- * a detected delimiter, locale-aware numbers, a header recognised by its
- * non-numeric cells, and an honest count of every record that did not become a
- * row. `ctr` stays a percent (0.7 means 0.7%). A number that is missing or
- * cannot be read is `null`, never 0.
+ * a scored delimiter, locale-aware numbers, a header recognised by its
+ * digit-free cells and read by label, and an honest count of every record that
+ * did not become a row. `ctr` stays a percent (0.7 means 0.7%). A number that is
+ * missing or cannot be read is `null`, never 0.
  */
 import type { GscRow, GscStatus, Profile } from "../types.ts";
 import { normQ } from "./text.ts";
@@ -15,15 +15,45 @@ export interface ParsedGsc {
 }
 
 type Delimiter = "\t" | "," | ";";
+type Metric = "clicks" | "impressions" | "ctr" | "position";
 
+interface Columns {
+  readonly query: number;
+  readonly clicks: number | null;
+  readonly impressions: number | null;
+  readonly ctr: number | null;
+  readonly position: number | null;
+}
+
+interface DelimiterScore {
+  readonly consistent: boolean;
+  readonly numericCells: number;
+}
+
+/** Candidate order is the tie-break. */
+const DELIMITERS: readonly Delimiter[] = ["\t", ",", ";"];
+const DELIMITER_SAMPLE_RECORDS = 5;
 const QUOTE = '"';
 const INLINE_SPACE = /[^\S\r\n]/;
+const LINE_BREAK = /[\r\n]/;
 const BOM = "\uFEFF";
+const HAS_DIGIT = /\p{Nd}/u;
 const DIGITS = /^\d+$/;
 const DOT_GROUPED = /^[1-9]\d{0,2}(?:\.\d{3})+$/;
 const COMMA_GROUPED = /^[1-9]\d{0,2}(?:,\d{3})+$/;
+const LAKH_GROUPED = /^\d{1,2}(?:,\d{2})*,\d{3}$/;
+const APOSTROPHE_GROUPED = /^\d{1,3}(?:['\u2019]\d{3})+$/;
 const LONE_DECIMAL = /^\d+[.,]\d+$/;
 const NUMBER_NOISE = /[%\s]/g;
+const POSITIONAL: Columns = { query: 0, clicks: 1, impressions: 2, ctr: 3, position: 4 };
+/** Compared against `normQ(label)`: lowercase, trimmed, spaces collapsed. */
+const QUERY_LABELS: readonly string[] = ["top queries", "queries", "query", "热门查询", "查询"];
+const METRIC_LABELS: Readonly<Record<Metric, readonly string[]>> = {
+  clicks: ["clicks", "点击次数"],
+  impressions: ["impressions", "展示次数"],
+  ctr: ["ctr", "点击率"],
+  position: ["position", "排名"],
+};
 const RANKED_MAX_POSITION = 10;
 const BORDERLINE_MAX_POSITION = 30;
 const DEMO_BRAND_KEY = "gengrowth";
@@ -48,6 +78,8 @@ function isFieldEnd(text: string, at: number, delimiter: Delimiter): boolean {
  * well-formed quoted field — closed, then only spaces before the field ends —
  * so the caller treats a stray quote (a query like `"hello` or `"best seo" tools`)
  * as text instead of letting it swallow the following lines into one record.
+ * A value holding both a line break and the delimiter is also text: GSC queries
+ * never contain line breaks, so that is two stray quotes pairing up across records.
  */
 function readQuoted(text: string, openAt: number, delimiter: Delimiter): { readonly value: string; readonly end: number } | null {
   let value = "";
@@ -62,7 +94,8 @@ function readQuoted(text: string, openAt: number, delimiter: Delimiter): { reado
       i += 2;
     } else {
       const end = skipPadding(text, i + 1, delimiter);
-      return isFieldEnd(text, end, delimiter) ? { value, end } : null;
+      const spansRecords = LINE_BREAK.test(value) && value.includes(delimiter);
+      return isFieldEnd(text, end, delimiter) && !spansRecords ? { value, end } : null;
     }
   }
   return null;
@@ -74,7 +107,7 @@ function readQuoted(text: string, openAt: number, delimiter: Delimiter): { reado
  * `""`; `\r\n`, `\n` and `\r` all end a record; empty lines yield nothing. A
  * quote opens a quoted field only at the start of a field (spaces allowed).
  */
-function* records(text: string, delimiter: Delimiter): Generator<readonly string[]> {
+function* scanRecords(text: string, delimiter: Delimiter): Generator<readonly string[]> {
   let record: readonly string[] = [];
   let field = "";
   let i = 0;
@@ -105,21 +138,45 @@ function isBlank(cells: readonly string[]): boolean {
   return cells.every((cell) => cell.trim() === "");
 }
 
-function firstRecordWidth(text: string, delimiter: Delimiter): number {
-  for (const cells of records(text, delimiter)) {
-    if (!isBlank(cells)) return cells.length;
+/** Records with at least one non-blank cell; whitespace- and delimiter-only lines carry nothing and are not counted. */
+function* nonBlankRecords(text: string, delimiter: Delimiter): Generator<readonly string[]> {
+  for (const cells of scanRecords(text, delimiter)) {
+    if (!isBlank(cells)) yield cells;
   }
-  return 0;
+}
+
+function* take<T>(source: Iterable<T>, limit: number): Generator<T> {
+  let taken = 0;
+  for (const item of source) {
+    yield item;
+    taken += 1;
+    if (taken >= limit) return;
+  }
+}
+
+function scoreDelimiter(text: string, delimiter: Delimiter): DelimiterScore {
+  const sample = Array.from(take(nonBlankRecords(text, delimiter), DELIMITER_SAMPLE_RECORDS));
+  const width = sample[0]?.length ?? 0;
+  const numericCells = sample.reduce(
+    (sum, cells) => sum + cells.slice(1, 5).filter((cell) => parseCount(cell) !== null).length,
+    0,
+  );
+  return { consistent: width > 1 && sample.every((cells) => cells.length === width), numericCells };
+}
+
+function outranks(challenger: DelimiterScore, incumbent: DelimiterScore): boolean {
+  if (challenger.consistent !== incumbent.consistent) return challenger.consistent;
+  return challenger.numericCells > incumbent.numericCells;
 }
 
 /**
- * Tab when the first record splits on tabs; otherwise whichever of `;` and `,`
- * splits it into more cells, commas on a tie. Counting cells rather than asking
- * "is there a comma" keeps a semicolon export with comma decimals (`0,8%`) intact.
+ * Scores each candidate over the first five non-blank records: a consistent
+ * width of two or more cells first, then how many of cells 1-4 read as numbers.
+ * Commas inside a query or in `0,8%` then cannot outvote a semicolon export.
  */
 function detectDelimiter(text: string): Delimiter {
-  if (firstRecordWidth(text, "\t") > 1) return "\t";
-  return firstRecordWidth(text, ";") > firstRecordWidth(text, ",") ? ";" : ",";
+  const scored = DELIMITERS.map((delimiter) => ({ delimiter, score: scoreDelimiter(text, delimiter) }));
+  return scored.reduce((best, next) => (outranks(next.score, best.score) ? next : best)).delimiter;
 }
 
 /* ---------------- numbers ---------------- */
@@ -128,66 +185,108 @@ function finiteOrNull(value: number): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+function compactCell(cell: string | undefined): string {
+  return (cell ?? "").replace(NUMBER_NOISE, "");
+}
+
+function isCommaGrouped(value: string): boolean {
+  return COMMA_GROUPED.test(value) || LAKH_GROUPED.test(value);
+}
+
+function parsePlain(compact: string): number | null {
+  return DIGITS.test(compact) ? finiteOrNull(Number(compact)) : null;
+}
+
+function parseLoneDecimal(compact: string): number | null {
+  return LONE_DECIMAL.test(compact) ? finiteOrNull(Number(compact.replace(",", "."))) : null;
+}
+
 /** Both `.` and `,` present: the last one is the decimal point and the other must group thousands. */
 function parseMixed(compact: string): number | null {
   const decimal = compact.lastIndexOf(".") > compact.lastIndexOf(",") ? "." : ",";
   const at = compact.lastIndexOf(decimal);
   const whole = compact.slice(0, at);
   const fraction = compact.slice(at + 1);
-  const grouped = decimal === "." ? COMMA_GROUPED : DOT_GROUPED;
-  if (!grouped.test(whole) || !DIGITS.test(fraction)) return null;
+  const grouped = decimal === "." ? isCommaGrouped(whole) : DOT_GROUPED.test(whole);
+  if (!grouped || !DIGITS.test(fraction)) return null;
   return finiteOrNull(Number(`${whole.replace(/[.,]/g, "")}.${fraction}`));
 }
 
 /**
- * One kind of separator: valid thousands grouping (`1,234`, `1.234.567`; never a
- * leading `0` group) is thousands, a single separator otherwise is the decimal
- * point (`0,8`, `0.123`, `1234,567`), and anything else is unreadable.
+ * Clicks and impressions: valid grouping is thousands (`1,234`, `1.234.567`,
+ * lakh `1,23,456`, Swiss `1'234` with an ASCII or U+2019 apostrophe; never a leading `0` group for `.`/`,`), a
+ * single separator otherwise is the decimal point, anything else is unreadable.
+ * Signs and exponents are not GSC numbers.
  */
-function parseSingleSeparator(compact: string): number | null {
-  if (DOT_GROUPED.test(compact) || COMMA_GROUPED.test(compact)) {
-    return finiteOrNull(Number(compact.replace(/[.,]/g, "")));
-  }
-  return LONE_DECIMAL.test(compact) ? finiteOrNull(Number(compact.replace(",", "."))) : null;
-}
-
-/** A plain non-negative GSC number in any common locale spelling; `%` and spaces are ignored. Signs and exponents are not GSC numbers. */
-function parseNumber(cell: string | undefined): number | null {
-  const compact = (cell ?? "").replace(NUMBER_NOISE, "");
-  if (compact === "") return null;
+function parseCount(cell: string | undefined): number | null {
+  const compact = compactCell(cell);
+  if (APOSTROPHE_GROUPED.test(compact)) return finiteOrNull(Number(compact.replace(/['\u2019]/g, "")));
   const hasDot = compact.includes(".");
   const hasComma = compact.includes(",");
   if (hasDot && hasComma) return parseMixed(compact);
-  if (hasDot || hasComma) return parseSingleSeparator(compact);
-  return DIGITS.test(compact) ? finiteOrNull(Number(compact)) : null;
+  if (DOT_GROUPED.test(compact) || isCommaGrouped(compact)) {
+    return finiteOrNull(Number(compact.replace(/[.,]/g, "")));
+  }
+  return hasDot || hasComma ? parseLoneDecimal(compact) : parsePlain(compact);
+}
+
+/** CTR and position never reach 1,000, so a lone separator is always the decimal point (`1.125` is 1.125) and grouping is unreadable. */
+function parseDecimal(cell: string | undefined): number | null {
+  const compact = compactCell(cell);
+  return parsePlain(compact) ?? parseLoneDecimal(compact);
 }
 
 /** Ranks start at 1: a position of 0 or below is not a rank, so it is unavailable. */
 function parsePosition(cell: string | undefined): number | null {
-  const position = parseNumber(cell);
+  const position = parseDecimal(cell);
   return position !== null && position > 0 ? position : null;
 }
 
 /* ---------------- rows ---------------- */
 
-function isTextCell(cell: string | undefined): boolean {
-  return cell !== undefined && cell.trim() !== "" && parseNumber(cell) === null;
+function isLabelCell(cell: string | undefined): boolean {
+  return cell !== undefined && cell.trim() !== "";
 }
 
-/** Only the first record can be a header: at least 3 cells, and both the clicks and impressions cells are non-empty text. */
+/** Only the first record can be a header: non-empty clicks and impressions cells, and no digit anywhere in the record. */
 function isHeader(cells: readonly string[]): boolean {
-  return cells.length >= 3 && isTextCell(cells[1]) && isTextCell(cells[2]);
+  return isLabelCell(cells[1]) && isLabelCell(cells[2]) && !cells.some((cell) => HAS_DIGIT.test(cell));
+}
+
+function labelIndex(labels: readonly string[], names: readonly string[]): number | null {
+  const index = labels.findIndex((label) => names.includes(label));
+  return index >= 0 ? index : null;
+}
+
+/**
+ * The GSC web table's columns follow its metric toggles, so a header is read by
+ * label; a metric without a column is null. A header none of whose labels names
+ * a metric (another language) falls back to the export's positional layout.
+ */
+function headerColumns(header: readonly string[]): Columns {
+  const labels = header.map(normQ);
+  const metric = (name: Metric): number | null => labelIndex(labels, METRIC_LABELS[name]);
+  const mapped: Columns = {
+    query: labelIndex(labels, QUERY_LABELS) ?? 0,
+    clicks: metric("clicks"),
+    impressions: metric("impressions"),
+    ctr: metric("ctr"),
+    position: metric("position"),
+  };
+  const namesMetric = mapped.clicks !== null || mapped.impressions !== null || mapped.ctr !== null || mapped.position !== null;
+  return namesMetric ? mapped : POSITIONAL;
 }
 
 /** Null when the record has no query or not one metric that parses (a lone query, a repeated header). */
-function toRow(cells: readonly string[]): GscRow | null {
-  const query = (cells[0] ?? "").trim();
+function toRow(cells: readonly string[], columns: Columns): GscRow | null {
+  const cellAt = (index: number | null): string | undefined => (index === null ? undefined : cells[index]);
+  const query = (cellAt(columns.query) ?? "").trim();
   const row: GscRow = {
     query,
-    clicks: parseNumber(cells[1]),
-    impressions: parseNumber(cells[2]),
-    ctr: parseNumber(cells[3]),
-    position: parsePosition(cells[4]),
+    clicks: parseCount(cellAt(columns.clicks)),
+    impressions: parseCount(cellAt(columns.impressions)),
+    ctr: parseDecimal(cellAt(columns.ctr)),
+    position: parsePosition(cellAt(columns.position)),
   };
   const hasMetric = row.clicks !== null || row.impressions !== null || row.ctr !== null || row.position !== null;
   return query !== "" && hasMetric ? row : null;
@@ -195,12 +294,13 @@ function toRow(cells: readonly string[]): GscRow | null {
 
 export function parseGsc(text: string): ParsedGsc {
   const body = text.startsWith(BOM) ? text.slice(BOM.length) : text;
-  const delimiter = detectDelimiter(body);
-  const nonBlank = Array.from(records(body, delimiter)).filter((cells) => !isBlank(cells));
-  const [first, ...rest] = nonBlank;
-  const data = first !== undefined && isHeader(first) ? rest : nonBlank;
+  const records = Array.from(nonBlankRecords(body, detectDelimiter(body)));
+  const [first, ...rest] = records;
+  const header = first !== undefined && isHeader(first) ? first : null;
+  const data = header === null ? records : rest;
+  const columns = header === null ? POSITIONAL : headerColumns(header);
   const rows = data.flatMap((cells) => {
-    const parsed = toRow(cells);
+    const parsed = toRow(cells, columns);
     return parsed === null ? [] : [parsed];
   });
   return { rows, skipped: data.length - rows.length };

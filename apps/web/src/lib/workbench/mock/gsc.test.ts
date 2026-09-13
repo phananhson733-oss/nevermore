@@ -127,10 +127,25 @@ describe("parseGsc: pinned corpus", () => {
 });
 
 describe("parseGsc: RFC 4180 structure", () => {
-  it("keeps a quoted field with a newline and a delimiter as one record", () => {
-    const text = lines(`"multi`, `line, query",1,2,3%,4`, "next,5,6,7%,8");
+  it("keeps a quoted field with a newline as one record", () => {
+    const text = lines(`"multi`, `line query",1,2,3%,4`, "next,5,6,7%,8");
     expect(parseGsc(text)).toEqual({
-      rows: [row("multi\nline, query", 1, 2, 3, 4), row("next", 5, 6, 7, 8)],
+      rows: [row("multi\nline query", 1, 2, 3, 4), row("next", 5, 6, 7, 8)],
+      skipped: 0,
+    });
+  });
+
+  it("treats a quoted value holding both a newline and the delimiter as text, not one merged record", () => {
+    const text = `"hello\t1\t2\t3%\t4\nworld"\t5\t6\t7%\t8`;
+    expect(parseGsc(text)).toEqual({
+      rows: [row(`"hello`, 1, 2, 3, 4), row(`world"`, 5, 6, 7, 8)],
+      skipped: 0,
+    });
+  });
+
+  it("keeps a row whose only readable metric is the CTR", () => {
+    expect(parseGsc(lines("a,1,2,3%,4", "q,,,1%,"))).toEqual({
+      rows: [row("a", 1, 2, 3, 4), row("q", null, null, 1, null)],
       skipped: 0,
     });
   });
