@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { DEMO_LEVEL, DEMO_SEEDS } from "@/lib/workbench/mock/demo-constants";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
@@ -29,6 +29,15 @@ import { BUTTON_PRIMARY } from "../../ui/panel.ts";
  * - One load per intent: a ref, not state, is the gate, because two clicks in
  *   one event loop turn both run against the same render. The clock is read
  *   in the handler, which is the moment the sample is made.
+ * - The click is judged against the render it happened in, but the dispatch
+ *   comes after an `await`, and the provider outlives this button (it sits in
+ *   the project layout). So the loader looks again once the import is back:
+ *   unmounted → abandon, with no dispatch and no state update; the project now
+ *   holds something `hasDemoOverwrite` would lose and nobody confirmed → open
+ *   the confirmation instead of loading. A confirmed load does not ask twice.
+ *   `stateRef` is written on every render, so that second look and the profile
+ *   the sample is built from read the latest render, not the click's closure
+ *   (`LoadDemoButton.stale.test.tsx`, against the real provider).
  * - A failed load (a chunk that did not download, a builder that threw — one
  *   `catch` cannot tell them apart) says so without naming a cause and leaves
  *   the button usable.
@@ -44,24 +53,41 @@ export function LoadDemoButton() {
   const [failed, setFailed] = useState(false);
   const pending = useRef(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  // The latest render's state, for the continuation after `await import`.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
-  async function load(): Promise<void> {
+  async function load(confirmed: boolean): Promise<void> {
     if (pending.current) return;
     pending.current = true;
     setBusy(true);
     setFailed(false);
     try {
       const { makeDemoSite } = await import("@/lib/workbench/mock/demo.ts");
-      const payload = makeDemoSite(state.profile, DEMO_LEVEL, [...DEMO_SEEDS], {
+      // Judged again after the await (header): gone, or no longer blank.
+      if (!alive.current) return;
+      const current = stateRef.current;
+      if (!confirmed && hasDemoOverwrite(current)) {
+        setConfirming(true);
+        return;
+      }
+      const payload = makeDemoSite(current.profile, DEMO_LEVEL, [...DEMO_SEEDS], {
         now: new Date(),
         provenanceLine: (at: string) => tProvenance("artifact", { at }),
       });
       dispatch({ type: "loadDemo", payload });
     } catch {
-      setFailed(true);
+      if (alive.current) setFailed(true);
     } finally {
       pending.current = false;
-      setBusy(false);
+      if (alive.current) setBusy(false);
     }
   }
 
@@ -71,13 +97,13 @@ export function LoadDemoButton() {
       setConfirming(true);
       return;
     }
-    void load();
+    void load(false);
   }
 
   function confirm(): void {
     // ConfirmDialog never closes itself; an open box keeps #wb-app inert.
     setConfirming(false);
-    void load();
+    void load(true);
   }
 
   return (
