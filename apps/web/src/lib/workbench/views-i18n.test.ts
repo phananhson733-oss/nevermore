@@ -724,6 +724,20 @@ const EXACT_BY_KEY: Readonly<Record<string, Readonly<Record<LocaleKey, string>>>
     "zh-CN": "暂无可写进周报的结果",
     en: "Nothing to put in a report",
   },
+  // Delivery review of the week audit fixes: a sentence appended to any of these
+  // three (「此外，竞品概览与外链也必定展示。」) kept every pin above.
+  "week.feed.empty": {
+    "zh-CN": "近 7 天暂无事件记录",
+    en: "No recorded events in the last 7 days",
+  },
+  "week.empty.detail": {
+    "zh-CN": "这一页汇总技术审计、AI 可见度、站点档案、事实知识库、产物和 GSC 行，这些结果都保存在这个浏览器里。",
+    en: "This page summarizes the technical audit, AI visibility, the site profile, the fact knowledge base, artifacts and GSC rows, all kept in this browser.",
+  },
+  "week.borderlineList.detail": {
+    "zh-CN": "有可用的 GSC 排名时，这里列出排名 >10 且 ≤30 的查询。这不是排名变化：工作台不保存多次导入的历史。",
+    en: "When GSC positions are available, this lists the queries at positions >10 to ≤30. It is not rank movement: the workbench does not keep history across imports.",
+  },
 };
 
 /**
