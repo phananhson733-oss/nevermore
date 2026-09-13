@@ -1,4 +1,4 @@
-import { type Token, lexer, walkTokens } from "marked";
+import { type Token, Parser, lexer, walkTokens } from "marked";
 import { describe, expect, it } from "vitest";
 import {
   bulletLines,
@@ -56,20 +56,14 @@ describe("docText", () => {
   });
 
   // codex S7b #1: only the start of the line was escaped, so HTML later in it reached the reader.
-  it("escapes every `<` that would open raw HTML, not only a leading one", () => {
+  it("encodes every `<` that would open raw HTML, not only a leading one", () => {
     expect(docText("普通标题 <h1>本站检查全部通过</h1><br>示例数据：y")).toBe(
-      "普通标题 \\<h1>本站检查全部通过\\</h1>\\<br>示例数据：y",
+      "普通标题 &lt;h1>本站检查全部通过&lt;/h1>&lt;br>示例数据：y",
     );
     expect(docText("a <!-- c --> <?x ?> <!DOCTYPE html> <![CDATA[x]]> <https://x.example>")).toBe(
-      "a \\<!-- c --> \\<?x ?> \\<!DOCTYPE html> \\<![CDATA[x]]> <https://x.example>",
+      "a &lt;!-- c --> &lt;?x ?> &lt;!DOCTYPE html> &lt;![CDATA[x]]> &lt;https://x.example>",
     );
-    expect(docText("<div>")).toBe("\\<div>");
-  });
-
-  it("leaves an escaped `<` alone and escapes one behind an escaped backslash", () => {
-    expect(docText("a \\<b>")).toBe("a \\<b>");
-    expect(docText("a \\\\<b>")).toBe("a \\\\\\<b>");
-    expect(docText("a \\\\\\<b>")).toBe("a \\\\\\<b>");
+    expect(docText("<div>")).toBe("&lt;div>");
   });
 
   it("folds whitespace and line breaks alone to nothing", () => {
@@ -98,54 +92,100 @@ function bullet(value: string): string {
   return `- ${docText(value)}`;
 }
 
-// codex S7r2 #1: escaping every `<` rewrote a link's target to `%3Chttps://…%3E`,
-// turned an autolink into text and put a backslash inside a code span.
-describe("docText: only a `<` that opens raw HTML is escaped", () => {
-  it.each(GFM_MODES)("keeps an angle-bracket link destination as the link's own target (gfm %s)", (gfm) => {
-    const value = "示例 [来源](<https://example.com/a>)";
-    expect(docText(value)).toBe(value);
-    expect(ofType(bullet(value), gfm, "link").map((link) => link.href)).toEqual(["https://example.com/a"]);
+/** Each of `markdown` direct and as a bullet, in both marked modes, that holds an html token. */
+function htmlLeaks(written: string): readonly string[] {
+  return GFM_MODES.flatMap((gfm) =>
+    [written, `- ${written}`]
+      .filter((markdown) => ofType(markdown, gfm, "html").length > 0)
+      .map((markdown) => `${JSON.stringify(markdown)} (gfm ${String(gfm)})`),
+  );
+}
+
+const PREFIXES = ["", "www.example.com/", "https://example.com/", "```", "``", "`", "[x](", "[x](<", "\\", "- ", "# "];
+const PAYLOADS = ["<b>x</b>", "<img src=x>", "<!-- c -->", "<?x?>", "</p>", "<a href=y>"];
+const SUFFIXES = ["", "```", "`", ")", ">)", " tail"];
+
+// codex S7r3: a scanner that let a `<` through inside a code span or a link
+// destination was beaten twice by constructed input (a block-start backslash
+// moved the code span; a GFM bare link swallowed the link text). Every
+// tag-shaped `<` is now an entity, whatever stands around it.
+describe("docText: no Markdown around a tag gets it to a reader as raw HTML (codex S7r3)", () => {
+  it.each(PREFIXES)("after %j, for every payload and suffix", (prefix) => {
+    const leaks = PAYLOADS.flatMap((payload) =>
+      SUFFIXES.flatMap((suffix) => htmlLeaks(docText(`${prefix}${payload}${suffix}`))),
+    );
+    expect(leaks).toEqual([]);
   });
 
-  it.each(GFM_MODES)("keeps a destination that is not an autolink too (gfm %s)", (gfm) => {
-    const value = "见 [说明](</guide/a b>) 与 [另一处](<docs/b>)";
-    expect(docText(value)).toBe(value);
-    expect(ofType(bullet(value), gfm, "link").map((link) => link.href)).toEqual(["/guide/a b", "docs/b"]);
+  // The html-token check runs on what docText wrote before the spelling is
+  // pinned, so a regression shows as a leak rather than only a changed string.
+  it.each<[string, string]>([
+    ["```<b>x</b>```", "\\```&lt;b>x&lt;/b>```"],
+    ["www.example.com/[x](<b>)", "www.example.com/[x](&lt;b>)"],
+    ["www.example.com/<b>", "www.example.com/&lt;b>"],
+  ])("closes codex's repro %j (written %j)", (value, written) => {
+    const actual = docText(value);
+    expect(htmlLeaks(actual)).toEqual([]);
+    expect(actual).toBe(written);
   });
 
-  it.each(GFM_MODES)("keeps an autolink a link (gfm %s)", (gfm) => {
-    const value = "查看 <https://example.com> 或写信 <team@example.com>";
-    expect(docText(value)).toBe(value);
-    expect(ofType(bullet(value), gfm, "link").map((link) => link.href)).toEqual([
-      "https://example.com",
-      "mailto:team@example.com",
-    ]);
+  it.each(["a<b", "<3", "Array<string>", "A <B> C", "x </ y"])("reads %j back as typed once rendered", (value) => {
+    for (const gfm of GFM_MODES) {
+      expect(visibleText(new Parser().parse(lexer(docText(value), { gfm }))), `gfm ${String(gfm)}`).toBe(value);
+    }
+  });
+});
+
+const ENTITIES: Readonly<Record<string, string>> = { lt: "<", gt: ">", amp: "&", quot: '"', "#39": "'" };
+
+/** The text a reader shows for marked's HTML: tags dropped, the entities marked writes decoded. */
+function visibleText(html: string): string {
+  return html
+    .replace(/<[^>]*>/gu, "")
+    .replace(/&(lt|gt|amp|quot|#39);/gu, (_match, name: string) => ENTITIES[name] ?? "")
+    .trim();
+}
+
+// The costs of the S7r3 ruling, written down so a change to them is a
+// decision. Before it (codex S7r2 #1) these kept their link target, autolink
+// and code span text; now the `<` in them is an entity like any other.
+describe("docText: what encoding without context costs", () => {
+  it.each(GFM_MODES)("gives an angle-bracket destination `&lt;` in its target (gfm %s)", (gfm) => {
+    const value = "示例 [来源](<https://example.com/a>) 见 [另一处](<docs/b>)";
+    const written = docText(value);
+    expect(written).toBe("示例 [来源](&lt;https://example.com/a>) 见 [另一处](&lt;docs/b>)");
+    expect(ofType(`- ${written}`, gfm, "html")).toEqual([]);
   });
 
-  it.each(GFM_MODES)("leaves a code span's text without a backslash (gfm %s)", (gfm) => {
-    const value = "代码 `<title>` 与 ``a ` </p>``";
-    expect(docText(value)).toBe(value);
-    expect(ofType(bullet(value), gfm, "codespan").map((code) => code.text)).toEqual(["<title>", "a ` </p>"]);
+  it("turns an autolink into text; with GFM on, the bare address inside is still linked", () => {
+    const written = docText("查看 <https://example.com> 或写信 <team@example.com>");
+    expect(written).toBe("查看 &lt;https://example.com> 或写信 &lt;team@example.com>");
+    expect(ofType(`- ${written}`, false, "link")).toEqual([]);
+    expect(ofType(`- ${written}`, true, "link")).toHaveLength(2);
+    expect(htmlLeaks(written)).toEqual([]);
   });
 
-  it.each<[number, number]>([
-    [0, 1],
-    [1, 1],
-    [2, 3],
-    [3, 3],
-    [4, 5],
-    [5, 5],
-    [6, 7],
-  ])("gives %i backslashes before a tag %i, so the `<` stays text", (typed, written) => {
-    expect(docText(`a ${"\\".repeat(typed)}<b>x`)).toBe(`a ${"\\".repeat(written)}<b>x`);
+  it.each(GFM_MODES)("shows a tag in a code span as `&lt;` (gfm %s)", (gfm) => {
+    const written = docText("代码 `<title>` 与 ``a ` </p>``");
+    expect(ofType(`- ${written}`, gfm, "codespan").map((code) => code.text)).toEqual(["&lt;title>", "a ` &lt;/p>"]);
+  });
+
+  // An odd count now escapes the `&`, so the reader shows `&lt;b>`; an even one reads `<b>`. Neither is a tag.
+  it.each([0, 1, 2, 3, 4, 5, 6])("encodes the `<` behind %i typed backslashes", (typed) => {
+    const written = docText(`a ${"\\".repeat(typed)}<b>x`);
+    expect(written).toBe(`a ${"\\".repeat(typed)}&lt;b>x`);
+    expect(htmlLeaks(written)).toEqual([]);
   });
 
   it.each<[string, string]>([
-    ["普通标题 <h1>本站检查全部通过</h1><br>示例数据：y", "普通标题 \\<h1>本站检查全部通过\\</h1>\\<br>示例数据：y"],
-    ["a <!-- c --> b", "a \\<!-- c --> b"],
-    ["a <?pi?> b", "a \\<?pi?> b"],
-    ["a </h1> b", "a \\</h1> b"],
-    ["A <B>", "A \\<B>"],
+    ["a <!-- c --> b", "a &lt;!-- c --> b"],
+    ["a <?pi?> b", "a &lt;?pi?> b"],
+    ["a </h1> b", "a &lt;/h1> b"],
+    ["A <B>", "A &lt;B>"],
+    ["[y [x](<a b>)](/u)", "[y [x](&lt;a b>)](/u)"],
+    ["<https://a b>", "&lt;https://a b>"],
+    ["<ab:c d>", "&lt;ab:c d>"],
+    // Not tag-shaped, or not a `<` at all: left as typed. A typed entity renders as the character it names.
     ["&lt;h1&gt;", "&lt;h1&gt;"],
     ["＜h1＞", "＜h1＞"],
     ["<1%", "<1%"],
@@ -153,35 +193,20 @@ describe("docText: only a `<` that opens raw HTML is escaped", () => {
     expect(docText(value)).toBe(written);
   });
 
-  // Each of these only looks like a code span or a link destination. Written
-  // as typed, marked reads a raw HTML token in it, in both modes.
+  // Each of these is raw HTML in marked as typed, in both modes.
   it.each<[string, string]>([
-    ["`<b> 没有闭合", "`\\<b> 没有闭合"],
-    ["``<b>` 长度不同", "``\\<b>` 长度不同"],
-    ["x](<img src=x onerror=alert(1)>)", "x](\\<img src=x onerror=alert(1)>)"],
-    ["[a](<b c> 没有右括号", "[a](\\<b c> 没有右括号"],
-    ["\\[x](<a b>)", "\\[x](\\<a b>)"],
-    ["[x](/u \"[\")](<a b>)", "[x](/u \"[\")](\\<a b>)"],
-    ["[a]b](<c d>)", "[a]b](\\<c d>)"],
-  ])("still escapes %j, which is raw HTML as typed", (value, written) => {
+    ["`<b> 没有闭合", "`&lt;b> 没有闭合"],
+    ["``<b>` 长度不同", "``&lt;b>` 长度不同"],
+    ["x](<img src=x onerror=alert(1)>)", "x](&lt;img src=x onerror=alert(1)>)"],
+    ["[a](<b c> 没有右括号", "[a](&lt;b c> 没有右括号"],
+    ["\\[x](<a b>)", "\\[x](&lt;a b>)"],
+    ["[x](/u \"[\")](<a b>)", "[x](/u \"[\")](&lt;a b>)"],
+    ["[a]b](<c d>)", "[a]b](&lt;c d>)"],
+  ])("encodes %j, which is raw HTML as typed", (value, written) => {
     expect(docText(value)).toBe(written);
     for (const gfm of GFM_MODES) {
       expect(ofType(`- ${value}`, gfm, "html").length, `gfm ${String(gfm)}`).toBeGreaterThan(0);
     }
-  });
-
-  // Not raw HTML in marked as typed, and escaped all the same: a destination
-  // inside other brackets is a link the scanner does not vouch for across
-  // readers, and a `<scheme:` with whitespace is not an autolink. The cost is
-  // the link target or a visible backslash, never a tag let through.
-  it.each<[string, string]>([
-    ["[y [x](<a b>)](/u)", "[y [x](\\<a b>)](/u)"],
-    ["[[x](<a b>)](/u)", "[[x](\\<a b>)](/u)"],
-    ["[y `]` [x](<a b>)](/u)", "[y `]` [x](\\<a b>)](/u)"],
-    ["<https://a b>", "\\<https://a b>"],
-    ["<ab:c d>", "\\<ab:c d>"],
-  ])("escapes %j too, by caution", (value, written) => {
-    expect(docText(value)).toBe(written);
   });
 
   it("lets no case above reach a reader as raw HTML, in either marked mode", () => {
@@ -190,7 +215,6 @@ describe("docText: only a `<` that opens raw HTML is escaped", () => {
       "见 [说明](</guide/a b>) 与 [另一处](<docs/b>)",
       "查看 <https://example.com> 或写信 <team@example.com>",
       "代码 `<title>` 与 ``a ` </p>``",
-      ...[0, 1, 2, 3, 4, 5, 6].map((typed) => `a ${"\\".repeat(typed)}<b>x`),
       "普通标题 <h1>本站检查全部通过</h1><br>示例数据：y",
       "a <!-- c --> <?pi?> </h1> <!DOCTYPE html> <![CDATA[x]]> A <B>",
       "`<b> 没有闭合 ``<b>` 长度不同",
@@ -223,10 +247,10 @@ describe("bulletLines", () => {
     ]);
   });
 
-  it("leaves no unescaped `<h1` or `<br` in a title that carries them mid-line", () => {
+  it("leaves no `<h1` or `<br` in a title that carries them mid-line", () => {
     const [line] = bulletLines(["普通标题 <h1>x</h1><br>示例数据：y"]);
-    expect(line).toBe("- 普通标题 \\<h1>x\\</h1>\\<br>示例数据：y");
-    expect(line).not.toMatch(/(?<!\\)<(?:h1|\/h1|br)/u);
+    expect(line).toBe("- 普通标题 &lt;h1>x&lt;/h1>&lt;br>示例数据：y");
+    expect(line).not.toMatch(/<(?:h1|\/h1|br)/u);
   });
 });
 

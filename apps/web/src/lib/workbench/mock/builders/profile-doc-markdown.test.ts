@@ -134,13 +134,22 @@ function nestedBlocks(item: Tokens.ListItem): readonly string[] {
   return found;
 }
 
-/** The text a renderer shows for an item holding only inline content (backslash escapes resolved); null otherwise. */
+const ENTITIES: Readonly<Record<string, string>> = { lt: "<", gt: ">", amp: "&", quot: '"', "#39": "'" };
+
+/**
+ * The text a reader shows for an item holding only inline content; null
+ * otherwise. Backslash escapes are resolved by the renderer, and the entities
+ * it leaves for the browser are decoded: docText writes a tag-shaped `<` as
+ * `&lt;` (codex S7r3), which a reader shows as `<`.
+ */
 function itemText(item: Tokens.ListItem): string | null {
   const [only, ...rest] = item.tokens;
   if (item.task || only === undefined || rest.length > 0) return null;
   if (only.type !== "text") return null;
   const inline = (only as Tokens.Text).tokens ?? [];
-  return new Parser().parseInline(inline, new TextRenderer());
+  return new Parser()
+    .parseInline(inline, new TextRenderer())
+    .replace(/&(lt|gt|amp|quot|#39);/gu, (_match, name: string) => ENTITIES[name] ?? "");
 }
 
 describe("profileDocMarkdown numbers", () => {

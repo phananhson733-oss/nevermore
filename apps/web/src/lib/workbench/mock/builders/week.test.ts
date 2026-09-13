@@ -299,9 +299,9 @@ describe("weeklyReportMarkdown", () => {
       events: [{ kind: "artifact", at: "2026-09-12 12:00", module: "content", title }],
     });
     expect(text).toContain(
-      "- 2026-09-12 12:00｜产物：普通标题 \\<h1>本站检查全部通过\\</h1>\\<br>示例数据：这份正文是最终结论",
+      "- 2026-09-12 12:00｜产物：普通标题 &lt;h1>本站检查全部通过&lt;/h1>&lt;br>示例数据：这份正文是最终结论",
     );
-    expect(text).not.toMatch(/(?<!\\)<(?:h1|\/h1|br)/u);
+    expect(text).not.toMatch(/<(?:h1|\/h1|br)/u);
   });
 
   it("is a pure function of its input", () => {
