@@ -292,7 +292,7 @@ export interface AiDoc {
 export interface ProfileDoc {
   readonly crawl: CrawlSignals | null;
   readonly gsc: GscSignals | null;
-  /** Provenance of the rows behind `gsc`, frozen at generation (Q6) so a later import cannot relabel a written document; `null` when there were none. */
+  /** Provenance of the rows behind `gsc`, frozen at generation (Q6) so a later import cannot relabel a written document; `null` when there were none, or when `gsc` has numbers but the source is unknown (only a tampered envelope), which renders as 来源未知. */
   readonly gscSource: GscRowsSource | null;
   readonly third: CrawlSignals | null;
   readonly ai: AiDoc;
@@ -333,10 +333,15 @@ export interface WorkbenchProjectState {
   readonly conns: Connections;
   readonly gscRows: readonly GscRow[];
   /**
-   * Provenance of `gscRows` (Q6). Non-null exactly when rows exist: written and
-   * cleared with them. The reducer keeps that true; a persisted envelope can
-   * still arrive with a source and no rows, so `normalizeInterrupted` drops the
-   * mark on the way in rather than rejecting the envelope.
+   * Provenance of `gscRows` (Q6). Enforced in one direction: no rows, no source.
+   * The reducer writes the two together (`sourceFor`); a stored envelope with a
+   * source and no rows is normalised to `null` where persisted state is parsed
+   * (`classifyPersistedState`), which both load paths go through.
+   * The other direction is not enforced: rows with a `null` source can exist
+   * (only a tampered envelope makes them). No rule can tell sample rows from the
+   * user's, so neither a guessed source nor `state.demo` nor dropping the rows is
+   * honest. Readers render `null` as unknown provenance, never as either source;
+   * a profile snapshot frozen from it says 「（来源未知）」 (`profileDocMarkdown`).
    */
   readonly gscRowsSource: GscRowsSource | null;
   readonly seeds: string;

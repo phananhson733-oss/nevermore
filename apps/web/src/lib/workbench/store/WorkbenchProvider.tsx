@@ -233,7 +233,9 @@ export function WorkbenchProvider({
         // Deliberately NOT `normalizeInterrupted`: the writing tab may be
         // mid-run, and normalising here would roll its streamed partial results
         // back to `lastVis`. Interrupted runs are settled once, on first
-        // hydration, when nothing can be in flight.
+        // hydration, when nothing can be in flight. The GSC-source rule is not
+        // skipped with it: `readProjectState` returns an already-normalised
+        // state (`classifyPersistedState`), on this path as on the first.
         loadFromStorage(withProjectSeed(read.state, seed));
       } else if (read.status === "unavailable") {
         // Storage became unreachable between the event and the re-read; same

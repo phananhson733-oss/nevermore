@@ -6,9 +6,9 @@
  * after a sample load it is true even for rows the user pasted afterwards.
  */
 import { describe, expect, it } from "vitest";
-import type { Artifact, AuditReport, DemoPayload, VisResult } from "../types.ts";
+import type { Artifact, AuditReport, DemoPayload, VisResult, WorkbenchProjectState } from "../types.ts";
 import { initialProjectState, normalizeInterrupted, reduce } from "./reducer.ts";
-import { classifyPersistedState, PERSISTED_VERSION } from "./schema.ts";
+import { classifyPersistedState, parsePersistedState, PERSISTED_VERSION } from "./schema.ts";
 
 const seed = { url: "https://example.test", brand: "Example", market: "US" };
 
@@ -88,45 +88,54 @@ describe("gsc rows carry their provenance (Q6)", () => {
 /**
  * `sourceFor` keeps "no rows, no source" true for everything the reducer writes,
  * but stored bytes do not come from the reducer: localStorage is a boundary
- * (design §6.5), and it holds whatever a previous build, another tab or the
+ * (design §6.5), and it holds whatever an older build, another tab or the
  * browser's dev tools left there. The schema checks each field on its own, so
- * `{gscRows: [], gscRowsSource: "sample"}` is a well-formed envelope and parses.
- * Hydration is where the invariant is re-applied.
+ * `{gscRows: [], gscRowsSource: "sample"}` is a well-formed envelope.
+ *
+ * The parse exit is where the invariant is re-applied, so that every door the
+ * provider loads through gets a normalised object without having to remember to
+ * ask for one (the doors themselves are driven in
+ * `WorkbenchProvider.gsc-source.test.tsx`).
  */
-describe("a stale source cannot survive hydration (Q6)", () => {
-  function tampered(): unknown {
-    return {
-      v: PERSISTED_VERSION,
-      state: { ...initialProjectState(seed), gscRows: [], gscRowsSource: "sample" },
-    };
+describe("a stale source cannot come out of a successful parse (Q6)", () => {
+  function envelope(state: WorkbenchProjectState): unknown {
+    return { v: PERSISTED_VERSION, state };
   }
 
-  function parsed(raw: unknown): ReturnType<typeof initialProjectState> {
+  function parsed(raw: unknown): WorkbenchProjectState {
     const result = classifyPersistedState(raw);
     if (result.kind !== "ok") throw new Error(`expected a readable envelope, got ${result.kind}`);
     return result.state;
   }
+
+  const tampered = envelope({ ...initialProjectState(seed), seeds: "kept", gscRows: [], gscRowsSource: "sample" });
 
   it("still reads the envelope: one inconsistent field is not another version of the format", () => {
     // Deliberately NOT `invalid`. A missing key means the envelope was written by
     // a build that did not have the field, and discarding it is right. This one
     // has every key, so condemning it would throw away the basket, the profile
     // snapshot and the seed words over a label on rows that are not there.
-    expect(classifyPersistedState(tampered()).kind).toBe("ok");
-    expect(parsed(tampered()).gscRowsSource).toBe("sample");
+    expect(classifyPersistedState(tampered).kind).toBe("ok");
   });
 
-  it("drops the mark on the way in, leaving the rest of the project alone", () => {
-    const state = normalizeInterrupted(parsed(tampered()));
+  it("drops the mark on the way out of the parse, leaving the rest of the project alone", () => {
+    const state = parsed(tampered);
     expect(state.gscRows).toEqual([]);
     expect(state.gscRowsSource).toBeNull();
-    expect(state.seeds).toBe(initialProjectState(seed).seeds);
+    expect(state.seeds).toBe("kept");
+    expect(parsePersistedState(tampered)?.gscRowsSource).toBeNull();
   });
 
   it("leaves a mark that does have rows under it exactly as stored", () => {
     for (const source of ["user", "sample"] as const) {
-      const raw = { v: PERSISTED_VERSION, state: { ...initialProjectState(seed), gscRows: [gscRow], gscRowsSource: source } };
-      expect(normalizeInterrupted(parsed(raw)).gscRowsSource, source).toBe(source);
+      const state = parsed(envelope({ ...initialProjectState(seed), gscRows: [gscRow], gscRowsSource: source }));
+      expect(state.gscRowsSource, source).toBe(source);
     }
+  });
+
+  it("does not settle interrupted runs: that stays first hydration's job alone", () => {
+    const partial = { ...initialProjectState(seed), visPartial: true, visResults: [vis("q")] };
+    expect(parsed(envelope(partial)).visPartial).toBe(true);
+    expect(normalizeInterrupted(parsed(envelope(partial))).visPartial).toBe(false);
   });
 });

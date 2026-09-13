@@ -237,8 +237,9 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
  * The exact field set `loadDemo` writes, so `clearDemo` can undo it
  * symmetrically. `gscRowsSource` rides along although it is not part of
  * `DemoPayload` (the mock layer never sets it): it belongs to `gscRows`, and
- * clearing the rows while leaving "sample" behind would relabel whatever the
- * user pastes next.
+ * clearing the rows while leaving "sample" behind would give any reader that
+ * looks at the source with no rows a provenance for data that is gone. (It
+ * would not reach the next paste: `setGscRows` always rewrites the source.)
  */
 function demoFields(s: WorkbenchProjectState): DemoPayload & Pick<WorkbenchProjectState, "gscRowsSource"> {
   return {
@@ -250,43 +251,21 @@ function demoFields(s: WorkbenchProjectState): DemoPayload & Pick<WorkbenchProje
 }
 
 /**
- * An interrupted audit run persisted `audit = null` (the report is
- * all-or-nothing); an interrupted visibility run persisted `visPartial = true`
- * with whatever results had streamed in. Both fall back to the last completed
- * snapshot. Note: right after a completed run `audit === lastAudit` and
- * `visResults === lastVis.results` by reference; that identity does not survive
- * the JSON round-trip, so nothing may depend on it.
+ * After first hydration (design §6.4). An interrupted audit run persisted
+ * `audit = null` (the report is all-or-nothing); an interrupted visibility
+ * run persisted `visPartial = true` with whatever results had streamed in.
+ * Both fall back to the last completed snapshot. Note: right after a
+ * completed run `audit === lastAudit` and `visResults === lastVis.results`
+ * by reference; that identity does not survive the JSON round-trip, so
+ * nothing may depend on it.
+ *
+ * First hydration only: the cross-tab `storage` path must not settle runs
+ * (another tab may be mid-run). The GSC-source rule is deliberately not here
+ * for that reason — it has to reach both load paths, so it is applied where
+ * persisted state is parsed (`classifyPersistedState` in schema.ts).
  */
-function settleRuns(state: WorkbenchProjectState): WorkbenchProjectState {
+export function normalizeInterrupted(state: WorkbenchProjectState): WorkbenchProjectState {
   const audit = state.audit === null && state.lastAudit ? state.lastAudit : state.audit;
   if (!state.visPartial) return audit === state.audit ? state : { ...state, audit };
   return { ...state, audit, visResults: state.lastVis?.results ?? [], visPartial: false };
-}
-
-/**
- * After hydration (design §6.4), and the one place the stored envelope is made
- * to obey the invariants the reducer keeps.
- *
- * `sourceFor` holds "no rows, no source" (Q6) for everything this file writes,
- * but localStorage is a boundary: the bytes can have been written by an older
- * build, another tab or the dev tools. `projectStateSchema` checks each field on
- * its own, so `{gscRows: [], gscRowsSource: "sample"}` is a well-formed envelope,
- * and the mark would then sit there through every action that does not touch the
- * rows, ready to label whatever is pasted next.
- *
- * Normalised, not rejected: the failure radius has to match where the failure is.
- * A MISSING key is `invalid` and the envelope goes, because it was written by a
- * build without the field; an envelope that has every key but disagrees with
- * itself in one of them is not another version of the format, and condemning it
- * would take the basket, the profile snapshot and the seed words with it over a
- * label on rows that are not there.
- *
- * Hydration is the only door this can come through. The cross-tab `storage`
- * path deliberately skips this function (`WorkbenchProvider.tsx`), and what it
- * carries is another tab's reducer output, which already holds the invariant.
- */
-export function normalizeInterrupted(state: WorkbenchProjectState): WorkbenchProjectState {
-  const settled = settleRuns(state);
-  if (settled.gscRows.length > 0 || settled.gscRowsSource === null) return settled;
-  return { ...settled, gscRowsSource: null };
 }
