@@ -28,12 +28,17 @@ import { weeklyReportInput, type WeekSummary } from "./week-summary.ts";
  *
  * Prepared in an effect, keyed by what the draft says, so the same
  * `PreparedArtifact` object survives every re-render until the report's content
- * changes. Preparing during render would mint a new id, read the clock and
- * build a new frozen object each pass — and `ArtifactActions` keys its
- * too-large notice (and `save()` its once-only guard) to that object, so a
- * parent re-render would silently reset both. While a new report is being
- * prepared the previous one stays mounted for that commit, so a "Saved" flash
- * is not torn down by the very save that changed the week's artifact count.
+ * changes. Preparing during render would mint a new id and read the clock on
+ * every pass; one object per content keeps whatever the shared row ties to the
+ * object it is handed out of this view's concern.
+ *
+ * Only a prepared report whose key matches the current draft is handed on
+ * (codex S7b #3). In the render after the content changes and before the effect
+ * prepares the new text, the previous object would otherwise reach the row, and
+ * a click in that window would copy, export or save last render's report; the
+ * row shows its skeleton for that render instead. Whatever the row was showing
+ * for the previous report (a "Saved" flash, a refusal) goes with it, which is
+ * the price of never offering text the page no longer says.
  *
  * Labels are the shared `artifactActions` messages, generated from
  * `ARTIFACT_ACTION_LABEL_KEYS` so a label the row gains is picked up here
@@ -67,7 +72,7 @@ function usePreparedArtifact(draft: ArtifactDraft): PreparedArtifact | null {
     // `prepare` and `draft` are new objects on every render; `key` is what they
     // carry and `canPrepare` is whether the store can take a save at all.
   }, [key, canPrepare]);
-  return slot?.prepared ?? null;
+  return slot?.key === key ? slot.prepared : null;
 }
 
 type LabelField = keyof typeof ARTIFACT_ACTION_LABEL_KEYS;
