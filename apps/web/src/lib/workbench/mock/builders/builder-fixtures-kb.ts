@@ -110,7 +110,7 @@ export const FIXTURE_GAPS: readonly VisGap[] = [
   { p: "acme vs rival", missedPlatforms: ["Claude"], rivals: [] },
 ];
 
-/** A repeated type and a channel without a domain. */
+/** A repeated type, and a channel without a domain, which therefore has no DR and no difficulty. */
 export const FIXTURE_TARGETS: readonly LinkTarget[] = [
   {
     type: "dir",
@@ -136,9 +136,9 @@ export const FIXTURE_TARGETS: readonly LinkTarget[] = [
     type: "media",
     site: "行业播客",
     domain: "",
-    dr: 58,
+    dr: null,
     relevance: "mid",
-    difficulty: "low",
+    difficulty: null,
     action: "联系主持人提选题",
     asset: "可分享的使用数据",
   },

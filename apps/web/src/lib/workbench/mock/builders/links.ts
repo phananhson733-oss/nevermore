@@ -60,23 +60,14 @@ function productData(profile: Profile): unknown {
   };
 }
 
-/** Written so it compiles whether `LinkTarget.dr` is `number` or `number | null`. */
-function knownDr(dr: LinkTarget["dr"]): number | null {
-  return typeof dr === "number" && Number.isFinite(dr) ? dr : null;
-}
-
-/** Written so it compiles whether `LinkTarget.difficulty` is `Level` or `Level | null`. */
-function difficultyLabel(difficulty: LinkTarget["difficulty"]): string | null {
-  return difficulty === null ? null : LEVEL_ZH[difficulty];
-}
-
+/** A channel without a domain has no DR and no difficulty; both stay `null` in the JSON, never 0 or a label. */
 function candidateData(target: LinkTarget): unknown {
   return {
     type: LINK_TYPE_ZH[target.type],
     site: target.site,
     domain: target.domain === "" ? null : target.domain,
-    dr: knownDr(target.dr),
-    difficulty: difficultyLabel(target.difficulty),
+    dr: target.dr,
+    difficulty: target.difficulty === null ? null : LEVEL_ZH[target.difficulty],
     action: target.action,
     assetToOffer: target.asset,
   };
@@ -141,7 +132,9 @@ export function reportTaskPrompt({ profile, angle }: ReportTaskInput): string {
     "# 任务：做一份可被引用的原创数据报告",
     "## 产品资料",
     dataSection(fenceJson(data)),
-    trimmed === "" ? "切入角度待定，先帮我提 3 个。" : "切入角度按资料里的 angle。",
+    trimmed === ""
+      ? "切入角度待定，先帮我提 3 个。"
+      : "切入角度按资料里的 angle。",
     "目标：产出别人写文章时会引用的数字资产。",
     [
       "1. 提出 3 个能用我们自有数据回答的问题",

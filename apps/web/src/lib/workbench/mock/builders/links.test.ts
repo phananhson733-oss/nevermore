@@ -16,6 +16,11 @@ import { splitFences } from "./prompt-test-helpers.ts";
 
 const HEADER =
   "type,site,domain,dr,relevance,difficulty,action,asset_to_offer,contact";
+const CHANNEL_LINE =
+  "media,行业播客,,,mid,,联系主持人提选题,可分享的使用数据,";
+
+/** The fixture's channel entries: no domain, so no DR and no difficulty (Task 8 ruling). */
+const CHANNELS = FIXTURE_TARGETS.filter((target) => target.domain === "");
 
 describe("linkCsv", () => {
   it("writes the exact header and id-valued type and level columns, contact empty", () => {
@@ -23,11 +28,11 @@ describe("linkCsv", () => {
       HEADER,
       "dir,Product Hunt,producthunt.com,91,high,high,提交产品页,产品截图与一句话介绍,",
       "dir,SaaSHub,saashub.com,72,mid,low,提交收录申请,产品描述与分类,",
-      "media,行业播客,,58,mid,low,联系主持人提选题,可分享的使用数据,",
+      CHANNEL_LINE,
     ]);
   });
 
-  it("outputs ids only in the type, relevance and difficulty columns", () => {
+  it("outputs ids only in the type and relevance columns, and an id or nothing for difficulty", () => {
     const rows = linkCsv(FIXTURE_TARGETS)
       .split("\n")
       .slice(1)
@@ -35,20 +40,17 @@ describe("linkCsv", () => {
     const types: readonly (string | undefined)[] = LINK_TYPES;
     const levels: readonly (string | undefined)[] = LEVELS;
     expect(rows.every((cells) => types.includes(cells[0]))).toBe(true);
+    expect(rows.every((cells) => levels.includes(cells[4]))).toBe(true);
     expect(
-      rows.every(
-        (cells) => levels.includes(cells[4]) && levels.includes(cells[5]),
-      ),
+      rows.every((cells) => levels.includes(cells[5]) || cells[5] === ""),
     ).toBe(true);
   });
 
-  it("leaves dr empty when it is not a finite number", () => {
-    const line = linkCsv(
-      withTarget(FIXTURE_TARGETS, 0, { dr: Number.NaN }),
-    ).split("\n")[1];
-    expect(line).toBe(
-      "dir,Product Hunt,producthunt.com,,high,high,提交产品页,产品截图与一句话介绍,",
-    );
+  it("leaves dr and difficulty empty for a channel without a domain", () => {
+    expect(CHANNELS.map((target) => [target.dr, target.difficulty])).toEqual([
+      [null, null],
+    ]);
+    expect(linkCsv(CHANNELS)).toBe(`${HEADER}\n${CHANNEL_LINE}`);
   });
 
   it("neutralises formula-leading cells", () => {
@@ -104,8 +106,8 @@ const CANDIDATES = [
     type: "行业媒体与 newsletter",
     site: "行业播客",
     domain: null,
-    dr: 58,
-    difficulty: "低",
+    dr: null,
+    difficulty: null,
     action: "联系主持人提选题",
     assetToOffer: "可分享的使用数据",
   },
@@ -185,25 +187,20 @@ describe("linkTaskPrompt", () => {
         block.before.trimEnd().endsWith(DATA_BLOCK_NOTICE),
       ),
     ).toBe(true);
-    for (const value of [
-      "Acme",
-      "acme.io",
-      "Product Hunt",
-      "producthunt.com",
-      "null",
-    ]) {
+    for (const value of ["Acme", "acme.io", "Product Hunt", "producthunt.com"]) {
       expect(outside).not.toContain(value);
     }
   });
 
-  it("sends null for a non-finite DR and a missing domain", () => {
-    const out = linkTaskPrompt({
-      ...BASE,
-      targets: withTarget(FIXTURE_TARGETS, 0, { dr: Number.NaN, domain: "" }),
-    });
-    const [first] = blockData(out, 1) as readonly Record<string, unknown>[];
-    expect(first?.["dr"]).toBeNull();
-    expect(first?.["domain"]).toBeNull();
+  it("keeps a channel's missing DR, difficulty and domain as null inside the block only", () => {
+    const out = linkTaskPrompt({ ...BASE, targets: CHANNELS });
+    const { blocks, outside } = splitFences(out);
+    const body = blocks[1]?.body ?? "";
+    expect(body).toContain('"domain": null');
+    expect(body).toContain('"dr": null');
+    expect(body).toContain('"difficulty": null');
+    expect(outside).not.toContain("null");
+    expect(outside).toContain("难度未知的排最后");
   });
 
   it("never says 实测", () => {
@@ -257,6 +254,13 @@ describe("outreachPrompt", () => {
       "工具目录站",
       "社区问答",
     ]);
+  });
+
+  it("names a channel's type without printing its missing DR or difficulty anywhere", () => {
+    const out = outreachPrompt({ ...BASE, targets: CHANNELS });
+    const data = blockData(out, 0) as { recipientTypes: unknown };
+    expect(data.recipientTypes).toEqual(["行业媒体与 newsletter"]);
+    expect(out).not.toContain("null");
   });
 
   it("does not read the candidate sites", () => {
