@@ -198,6 +198,7 @@ docs/PROGRESS.md                   T18
 - [ ] **Step 3: 空态与骨架** — Q10 两档；空态里放 `LoadDemoButton`；框架容器带 `data-wb-frame`（Q30）。
 - [ ] **Step 4: `LoadDemoButton`** — `hasDemoOverwrite(state)` 为真先开 `ConfirmDialog`（Q11）→ `await import("@/lib/workbench/mock/demo.ts")`（Q13）→ `makeDemoSite(profile, DEMO_LEVEL, [...DEMO_SEEDS], { now, provenanceLine })` → `dispatch(loadDemo)`。pending 闸防连点。
 - [ ] **Step 5: 页面接线** — 渲染 `OverviewView`，**不得残留 `page="..."`**（`routes.fs.test.ts:62-71` 文本断言）；视图根按 Q26。
+- [ ] **Step 5b: 钉住 ICU 参数顺序**（T1 交接）— 参数互换在消息目录里不可见（哨兵仍然都在，且两语种语序本就不同），必须在消费端断言渲染出的整句：`overview.subtitle`（`{domain} {brand} {market}`）与 `overview.cards.mention.foot`（`{hits} {total}`，互换会渲成「提及次数多于问答次数」）。用可区分的值，不要用相同数字。
 - [ ] **Step 6: jsdom 测试** — 四卡四种状态（骨架 / 未跑 / 跑过 / 示例）；产物 0 件显示「0」；`next-steps` 每条分支；空项目**不弹**确认、有覆盖时弹、确认后 dispatch 一次（连点两次仍一次）；示例载入后再 `setGscRows(..., "user")` 时脚注**不带**示例标（Q6 的接缝钉子）；无 `style` 属性。
 - [ ] **Step 7: 变异** — 产物计数改走 `selectCounts` 必须红；脚注改读 `state.demo` 必须红。
 - [ ] **Step 8: 提交** — `feat(workbench): 概览视图与载入示例站点`。
@@ -218,9 +219,10 @@ docs/PROGRESS.md                   T18
 **Files:** Create `views/week/{WeekView.tsx,week-feed.ts}` + tests；Create `lib/workbench/mock/builders/week.ts` + `week.test.ts`（周报 builder 在 mock 层，Q33）；Modify `app/p/[projectId]/week/page.tsx`
 
 - [ ] **Step 1: `week-feed.ts` 测试先行** — `weekFeed(state, now)`：事件来自 `lastAudit` / `lastVis` / `profileDoc` / `kb` / 每件 artifact，过 `withinDays(at, 7, now)`，按 `at` 倒序；`artifactsWithinDays` 在此实现；提及率与事件从 `lastVis.results`（Q20）；KB 缺口用 `kbGapCount`；「较上次（{at}）」带出 `prev.at`。
-- [ ] **Step 2: 三卡 + 摘要行 + 临界词清单** — 卡按 Q18；三项挪进摘要行（`week.summaryRow.*`）；右栏按 Q17 是临界词清单 + 明确空态，**不得出现任何「排名变动」数字**。
+- [ ] **Step 2: 三卡 + 摘要行 + 临界词清单** — 卡按 Q18（提及率卡的 delta 带单位：`deltaUnit="pt"`，`StatCard` 已在 T2 审阅后补上这个口，不要绕过原语自己渲 `Delta`）；三项挪进摘要行（`week.summaryRow.*`）；右栏按 Q17 是临界词清单 + 明确空态，**不得出现任何「排名变动」数字**。
 - [ ] **Step 3: `weekly-report.ts`** — **只产正文，不盖章**（盖章在 `useAddArtifact`，Q23）；标题「检查结果变化」不是「修掉了什么」（Q16）；生成的修复任务另起一段标明是任务；行首插值过 `docText`；`module: "week"`、`engine: "both"`、`filename: "weekly.md"`；删掉 jsx 的排名承诺与「被引用率最高」，「修复任务已经在产物里」改按 `artifacts.some(...)` 分支，「N 个提问没提到你」改按平台口径。
 - [ ] **Step 4: 页面级空态** — 全空时不渲六个 0，**禁用「存周报」**。
+- [ ] **Step 4b: 钉住 ICU 参数顺序**（T1 交接）— 在消费端断言整句：`week.subtitle`（`{from} {to}`）、`week.cards.health.foot`（`{fixed} {added}`）、`week.cards.mention.foot`（`{hits} {total}`）。用可区分的值。
 - [ ] **Step 5: jsdom 测试 + 变异** — feed 窗口边界（恰好 7 天、未来时间被排除）；全空空态；最终产物文本恰好一处来源声明。**变异方式是往生成结果里逐条插入禁用句（「实测」「已修复」「进前十」等），每插一条未改动的测试必须红**——rev1 写的「删掉断言必须红」在方法上不成立（删断言只会让测试更弱且照样绿）。
 - [ ] **Step 6: 提交** — `feat(workbench): 本周变化视图与周报产物`。
 
@@ -233,6 +235,7 @@ docs/PROGRESS.md                   T18
 - [ ] **Step 2: 输入面板** — `url / brand / market` 只读文本；`positioning / features / competitors` 受控 + `patchProfile`；三个来源开关（**删掉 `ai` 开关**，`ProfileDoc.ai` 非空且没有 LLM）；步骤文案明说本地生成（Q16），逻辑不绑下标。
 - [ ] **Step 3: 运行归属与不清空** — 生成时不动 `profileDoc`，完成时一次性写（Q14）；runToken + projectId 归属。
 - [ ] **Step 4: 三个 tab + 动作** — `profileDocMarkdown`（传快照 `gscSource`）/ `profileJson` / `profileContextPrompt`；四个动作走 `ArtifactActions`（Q23）。
+- [ ] **Step 4b: `profileContextPrompt` 的 `sampleData` 要跟着来源**（T4 交接的已知缺口）— 它现在写死 `sampleData: true`，用户自己导入的真实行在 AI 上下文块里被宣告成示例。改为读快照的 `gscSource`（与 `profileDocMarkdown` 同一来源，不新增参数、不让调用方传可能矛盾的值）；prompt 的数据契约随之更新，配「user 来源不宣告示例」「sample 来源仍宣告」两条用例与一次变异（写死 true 必须红）。方向保守不等于不是假话——Q6 管的是「关于用户数据的陈述」。
 - [ ] **Step 5: 空值与文案** — `GscSignals` 计数可空：用 `countText` 口径显示「—」，**不得渲染出「 / 」半句**；「可收录约」「样本页」（P5/P6）；删「AI 归纳失败」橙框（Q15）与无条件结论句（Q16）；框架容器 `data-wb-frame`。
 - [ ] **Step 6: jsdom 测试 + 变异** — 三个开关各自关闭 → 对应字段 `null` 且该列整块缺席（**从开关状态走到文档构造与渲染**，不许手写文档）；只读三项不可编辑；生成中旧档案仍在；示例来源与用户来源的 GSC 小节标注差异。变异：把某个开关改成无条件调 builder 必须红；把「完成时一次性写」改回「开跑先清空」必须红。
 - [ ] **Step 7: 提交** — `feat(workbench): 站点档案视图`。
@@ -246,6 +249,7 @@ docs/PROGRESS.md                   T18
 - [ ] **Step 2: 真实与本地两区** — 上区「真实连接」（只读 + 指向旧页 `sources` 的链接）；下区**「GSC 导入（保存在这个浏览器）」**——rev1 把它叫「示例导入」并挂无条件 `DemoChip`，而这一区唯一的动作是导入用户自己的数据，是无条件的假标注（codex #4）。示例标注只跟着 `gscRowsSource === "sample"` 出现。删「每日 06:00 同步」与 GA4 403 红框（Q15）；GA4 区块明说当前没有模块使用 GA4 数据。
 - [ ] **Step 3: 导入面板** — 粘贴 + 上传（无假授权、无「填入示例」，Q5）；`parseGsc` → `setGscRows(rows, "user")`；结果显示「解析 N 条 / 跳过 M 条」+ **按 `recognized` 点名未识别的列**（Q7，不从行值反推）；上传上限（Q8）；「清空」要确认。
 - [ ] **Step 4: 行表** — 前 60 行 + 「显示前 60 / 共 N」；空值「—」；状态 chip 查 `workbench.enums.gscStatus`，`unknown` 用中性 chip，摘要写**「N 条排名未知」**（不是「N 条无排名」——那是把缺证据说成观测到的负结果，codex #5）。
+- [ ] **Step 4b: 钉住 ICU 参数顺序**（T1 交接）— 在消费端断言整句：`dataSources.import.truncated`（`{kept} {total}`）、`dataSources.table.showing`（`{shown} {total}`，互换会渲成「显示前 402 条，共 401 条」）。用可区分的值。
 - [ ] **Step 5: `DataSourcesPanel`** — 数据源页与设置页共用的只读摘要块（T11 消费）。
 - [ ] **Step 6: jsdom 测试 + 变异** — skipped 三条（0 / 有 / 部分识别点名列）；**「列可识别但单元格全空」不得报成未识别**；超大文件与超行数；用户导入后区块标题与周边标注**不含**示例字样（Q6 接缝）；框架容器 `data-wb-frame`。变异：把 `gscRowsSource` 判定改成恒 `sample` 必须红；把 422 分支改成只看状态码必须红。
 - [ ] **Step 7: 提交** — `feat(workbench): 数据源视图（真实连接只读 + 本地导入）`。
