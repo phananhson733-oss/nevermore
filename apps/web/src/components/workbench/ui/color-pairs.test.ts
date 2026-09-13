@@ -11,7 +11,7 @@
  * 1. `PAIRS` is written out here, in the test, with the size it is rendered at
  *    and the threshold that size implies. Each row is measured against the
  *    Tailwind theme as installed (values are `oklch()`; workbench tokens are hex).
- * 2. The class strings of the seven primitive sources are parsed, and the pairs
+ * 2. The class strings of the thirteen primitive sources are parsed, and the pairs
  *    found there must be exactly the rows in `PAIRS` — no missing row (a new tone
  *    cannot slip in unmeasured) and no stale row (a row cannot be added to
  *    silence the gate without the source actually using it).
@@ -85,6 +85,12 @@ const SOURCES = [
   "Field.tsx",
   "Tabs.tsx",
   "EmptyState.tsx",
+  "InPane.tsx",
+  "OutPane.tsx",
+  "RunningSteps.tsx",
+  "ArtifactActions.tsx",
+  "ConfirmDialog.tsx",
+  "Toggle.tsx",
 ] as const;
 
 /** `text-*` utilities that are not colours. Anything else must resolve to one. */

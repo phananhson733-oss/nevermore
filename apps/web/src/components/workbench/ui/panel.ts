@@ -5,7 +5,7 @@
  * that in props costs more than it saves (design §4.1); what must not differ is
  * the surface itself, which the prototype hand-copied per view.
  *
- * Two rules are encoded here, and both fail silently when a diff drops them:
+ * Three rules are encoded here, and all three fail silently when a diff drops them:
  *
  * - Tailwind runs with NO preflight and `.wb-reset` sets `border-width: 0`
  *   (app/workbench.css), so every rule line is an explicit `border*` utility
@@ -14,6 +14,10 @@
  * - `.wb-reset :focus-visible` draws the ring in `currentColor`, which is
  *   invisible on an inverted (`text-white`) fill, so every inverted control
  *   names its own `focus-visible:outline-*` (Topbar.tsx:140 has the same note).
+ * - Every clickable surface declares its hit area HERE, as a `min-h-[…px]`:
+ *   panel.test.ts sweeps this module's exports for those numbers and holds them
+ *   above 24px. A size written in a component file is covered by nothing, which
+ *   is why `SWITCH_TRACK` (an input, not a button) lives here too.
  *
  * Colours are Tailwind built-ins or the `--color-wb-*` tokens; no raw hex, and
  * no 11–13px body text (PR-1 lifted body copy to 14px and left the smaller
@@ -88,6 +92,21 @@ export const BUTTON_PRIMARY =
 /** Secondary action on paper. */
 export const BUTTON_SECONDARY =
   "inline-flex min-h-[36px] items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
+
+/**
+ * The switch in `Toggle.tsx`: the real `<input type="checkbox">`, sized and
+ * painted here rather than in the component. `appearance-none` is required —
+ * the `.wb-reset` block styles `progress` but leaves native checkboxes alone —
+ * and the knob is an `after:` pseudo-element so nothing needs an inline style.
+ *
+ * The size lives in this module on purpose: the hit-area sweep in
+ * `panel.test.ts` iterates this module's exports, so a `min-h` written in a
+ * component file sits outside it. 24x44 clears WCAG 2.5.8's 24px floor in both
+ * dimensions, and the input itself is the target (a visually-hidden input with a
+ * big label would measure 1px).
+ */
+export const SWITCH_TRACK =
+  "relative inline-flex min-h-[24px] w-[44px] shrink-0 cursor-pointer appearance-none rounded-full border border-slate-300 bg-slate-200 transition-colors after:absolute after:left-[3px] after:top-[3px] after:h-[18px] after:w-[18px] after:rounded-full after:bg-white after:shadow-sm after:transition-transform checked:border-wb-ink checked:bg-wb-ink checked:after:translate-x-[20px] disabled:cursor-not-allowed disabled:opacity-60";
 
 /** Compact action for a panel footer. 28px tall, above the 24px target floor. */
 export const BUTTON_MINI =
