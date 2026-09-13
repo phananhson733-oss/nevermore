@@ -42,9 +42,40 @@ export interface ClearGscRowsExpected {
   readonly source: GscRowsSource | null;
 }
 
+/**
+ * What a profile run read when it started (T9 review #1): the GSC rows, their
+ * provenance, the last audit, and the document then stored. `setProfileDoc`
+ * writes only over the same content (`sameContent`). The profile's editable
+ * fields are left out: the document does not print them.
+ */
+export interface ProfileDocBasis {
+  readonly gscRows: readonly GscRow[];
+  readonly gscRowsSource: GscRowsSource | null;
+  readonly lastAudit: AuditReport | null;
+  readonly profileDoc: ProfileDoc | null;
+}
+
+/** The basis of a run started over `state`: the same references, so a field nobody touched is still `===`. */
+export function profileDocBasis(state: WorkbenchProjectState): ProfileDocBasis {
+  return {
+    gscRows: state.gscRows,
+    gscRowsSource: state.gscRowsSource,
+    lastAudit: state.lastAudit,
+    profileDoc: state.profileDoc,
+  };
+}
+
+function sameProfileDocBasis(state: WorkbenchProjectState, basis: ProfileDocBasis): boolean {
+  const current = profileDocBasis(state);
+  return (Object.keys(current) as (keyof ProfileDocBasis)[]).every((key) => sameContent(current[key], basis[key]));
+}
+
 export type WorkbenchAction =
   | { readonly type: "patchProfile"; readonly patch: Partial<Pick<Profile, "positioning" | "features" | "competitors">> }
-  | { readonly type: "setProfileDoc"; readonly doc: ProfileDoc | null }
+  // `basis` is what the run read when it started (`profileDocBasis`). Required:
+  // a document that cannot say what it was built from would land over a sample
+  // loaded or cleared while it was being generated.
+  | { readonly type: "setProfileDoc"; readonly doc: ProfileDoc | null; readonly basis: ProfileDocBasis }
   | { readonly type: "setConns"; readonly conns: Connections }
   // `source` is required, not optional (Q6): a caller that forgets where the
   // rows came from would otherwise leave the label from the previous import in
@@ -175,6 +206,12 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
     case "patchProfile":
       return { ...state, profile: { ...state.profile, ...action.patch } };
     case "setProfileDoc":
+      // Built from the state the run read at its start. If the rows, their
+      // provenance, the audit or the stored document changed since (a sample
+      // loaded or cleared, rows imported, another run's document), it describes
+      // data the project no longer holds: the same object back, so the run can
+      // tell it was refused.
+      if (!sameProfileDocBasis(state, action.basis)) return state;
       return { ...state, profileDoc: action.doc };
     case "setConns":
       return { ...state, conns: action.conns };

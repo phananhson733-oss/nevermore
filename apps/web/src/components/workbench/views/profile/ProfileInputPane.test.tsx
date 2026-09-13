@@ -60,6 +60,7 @@ function render(patch: Partial<ProfileInputPaneProps> = {}): {
     profile: PROFILE,
     srcs: ALL_ON,
     running: false,
+    stale: false,
     hasDoc: false,
     onRun: vi.fn(),
     onPatch: vi.fn(),

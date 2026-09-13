@@ -9,7 +9,7 @@ import {
 import { demoFields, type DemoFields } from "./demo-fields.ts";
 import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
 import type { WorkbenchAction } from "./reducer.ts";
-import { DEFAULT_NOTIFY, initialProjectState, normalizeInterrupted, reduce, withProjectSeed } from "./reducer.ts";
+import { profileDocBasis, DEFAULT_NOTIFY, initialProjectState, normalizeInterrupted, reduce, withProjectSeed } from "./reducer.ts";
 import { clearDemoOver, loadDemoOver, otherThan, populatedProjectState } from "./test-fixtures.ts";
 
 const seed = { url: "https://example.test", brand: "Example", market: "US" };
@@ -548,7 +548,7 @@ describe("immutability", () => {
 
     const everyAction = [
       { type: "patchProfile", patch: { positioning: "p" } },
-      { type: "setProfileDoc", doc: null },
+      { type: "setProfileDoc", doc: null, basis: profileDocBasis(populated) },
       { type: "setConns", conns: { GSC: true, GA4: false } },
       { type: "setGscRows", rows: [], source: "user" },
       { type: "setSeeds", seeds: "s" },

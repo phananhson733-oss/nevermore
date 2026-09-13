@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
+import { profileDocBasis } from "@/lib/workbench/store/reducer";
 import { buildProfileDoc, type ProfileSources } from "./build-profile-doc.ts";
 
 /**
@@ -26,14 +28,20 @@ import { buildProfileDoc, type ProfileSources } from "./build-profile-doc.ts";
  *   project cannot write its document into another, and a page left mid-run
  *   writes nothing. Timers are left to fire and do nothing: the token check is
  *   the single gate, so there is no second mechanism for a test to miss.
+ * - A run writes only over what it read (T9 review #1). The rows, their
+ *   provenance, the last audit and the stored document are its basis; the
+ *   reducer refuses the document when any of them changed meanwhile (a sample
+ *   loaded or cleared, rows imported), and the run reads the committed document
+ *   back after a synchronous dispatch (the `useAddArtifact` pattern) and says
+ *   through `refused` that nothing was saved, until the next run starts.
  *
  * The inputs are frozen when the run starts — rows and their provenance are
  * read together, so the snapshot's `gscSource` always describes the rows it
  * summarises (Q6). The clock is read when the run finishes, inside the timer
  * callback, never during render (Q22): the stamp is when the profile was made.
  *
- * Known residue (PR-4, with visibility run leases): another tab replacing this
- * project's state mid-run is not detected; the write still lands last.
+ * Known residue (PR-4, with visibility run leases): the refusal sees only
+ * changes that reached this store before the run writes.
  */
 
 export const PROFILE_STEP_MS = 400;
@@ -55,10 +63,19 @@ export function profileRunSteps(srcs: ProfileSources): readonly ProfileStepId[] 
 export function useProfileRun(): {
   readonly progress: ProfileRunProgress | null;
   readonly start: (srcs: ProfileSources) => void;
+  /** The last run's document was refused because the data changed while it ran. */
+  readonly refused: boolean;
 } {
   const { state, dispatch, projectId } = useWorkbench();
   const [progress, setProgress] = useState<ProfileRunProgress | null>(null);
+  const [refused, setRefused] = useState(false);
   const token = useRef<symbol | null>(null);
+  // The stored document as last COMMITTED, so a run can read back whether its
+  // write landed: a refused write leaves the reducer's state as it was.
+  const committedDoc = useRef(state.profileDoc);
+  useLayoutEffect(() => {
+    committedDoc.current = state.profileDoc;
+  }, [state.profileDoc]);
 
   useEffect(
     () => () => {
@@ -66,6 +83,7 @@ export function useProfileRun(): {
       // no longer this page's to finish.
       token.current = null;
       setProgress(null);
+      setRefused(false);
     },
     [projectId],
   );
@@ -73,6 +91,8 @@ export function useProfileRun(): {
   function start(srcs: ProfileSources): void {
     const mine = Symbol("profile-run");
     token.current = mine;
+    setRefused(false);
+    const basis = profileDocBasis(state);
     const frozen = {
       profile: state.profile,
       gscRows: state.gscRows,
@@ -90,10 +110,12 @@ export function useProfileRun(): {
       }
       token.current = null;
       setProgress(null);
-      dispatch({ type: "setProfileDoc", doc: buildProfileDoc({ ...frozen, now: new Date() }) });
+      const doc = buildProfileDoc({ ...frozen, now: new Date() });
+      flushSync(() => dispatch({ type: "setProfileDoc", doc, basis }));
+      setRefused(committedDoc.current !== doc);
     };
     advance(0);
   }
 
-  return { progress, start };
+  return { progress, start, refused };
 }

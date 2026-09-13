@@ -13,7 +13,7 @@
  *
  * The caller fakes the clock and timers it needs and unmounts what it rendered.
  */
-import { act, useReducer, type ReactNode } from "react";
+import { act, useLayoutEffect, useReducer, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "@sf/i18n";
@@ -57,7 +57,21 @@ export interface RenderedProfile {
   readonly actions: () => readonly PublicWorkbenchAction[];
   /** New props for the fake store (ignored for `state` when stateful). */
   readonly rerender: (patch: Partial<Frame>) => void;
+  /**
+   * Stateful only: an action from outside the view (another control on the
+   * page, another tab's write) run through the store's reducer. Not recorded on
+   * `actions`, which stays what the view itself dispatched.
+   */
+  readonly dispatch: (action: PublicWorkbenchAction) => void;
+  /** The store's state as last committed; the frame's state when not stateful. */
+  readonly state: () => WorkbenchProjectState;
   readonly unmount: () => void;
+}
+
+/** Where a stateful store publishes its reducer's dispatch and committed state for the test. */
+interface StoreLink {
+  send: ((action: PublicWorkbenchAction) => void) | null;
+  state: WorkbenchProjectState | null;
 }
 
 function contextValue(frame: Frame, dispatch: (action: PublicWorkbenchAction) => void): WorkbenchContextValue {
@@ -76,13 +90,21 @@ function contextValue(frame: Frame, dispatch: (action: PublicWorkbenchAction) =>
 function StatefulStore({
   frame,
   record,
+  link,
   children,
 }: {
   readonly frame: Frame;
   readonly record: (action: PublicWorkbenchAction) => void;
+  readonly link: StoreLink;
   readonly children: ReactNode;
 }) {
   const [state, dispatch] = useReducer(reduce, frame.state);
+  // Test plumbing, written after each commit: the link is the test's window
+  // onto this store, not state any component reads.
+  useLayoutEffect(() => {
+    link.send = dispatch;
+    link.state = state;
+  });
   const send = (action: PublicWorkbenchAction): void => {
     record(action);
     dispatch(action);
@@ -107,12 +129,13 @@ export function renderProfile(
     recorded = [...recorded, action];
   };
   let frame: Frame = { state, ready: options.ready ?? true, projectId: options.projectId ?? PROFILE_PROJECT_ID };
+  const link: StoreLink = { send: null, state: null };
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   const store = (current: Frame) =>
     options.stateful === true ? (
-      <StatefulStore frame={current} record={record}>
+      <StatefulStore frame={current} record={record} link={link}>
         <ProfileView />
       </StatefulStore>
     ) : (
@@ -133,6 +156,12 @@ export function renderProfile(
       frame = { ...frame, ...patch };
       act(() => root.render(tree(frame)));
     },
+    dispatch: (action) => {
+      const send = link.send;
+      if (send === null) throw new Error("dispatch needs a stateful store");
+      act(() => send(action));
+    },
+    state: () => link.state ?? frame.state,
     unmount: () => {
       act(() => root.unmount());
       container.remove();

@@ -29,6 +29,9 @@ import type { ProfileSources } from "./build-profile-doc.ts";
  *   §12): creating a site is the top bar's job.
  * - The run button says what it will do, and while a run is in flight it says
  *   so and is disabled; the run itself is `useProfileRun`'s.
+ * - When the last run's document was refused because the data changed while
+ *   it ran, a standing alert says nothing was saved and that it can be
+ *   generated again (T9 review #1). It names no cause beyond the change.
  *
  * The whole pane is framework copy (`data-wb-frame`, Q30): the profile's values
  * live in input `value`s, which are not text content; the only value printed
@@ -43,6 +46,8 @@ export interface ProfileInputPaneProps {
   readonly srcs: ProfileSources;
   readonly running: boolean;
   readonly hasDoc: boolean;
+  /** The last run's document was refused (`useProfileRun`'s `refused`). */
+  readonly stale: boolean;
   readonly onRun: () => void;
   readonly onPatch: (patch: ProfilePatch) => void;
   readonly onSrcsChange: (next: ProfileSources) => void;
@@ -151,7 +156,7 @@ function runLabel(running: boolean, hasDoc: boolean): "run.busy" | "run.rerun" |
 }
 
 export function ProfileInputPane(props: ProfileInputPaneProps) {
-  const { projectId, profile, srcs, running, hasDoc, onRun, onPatch, onSrcsChange } = props;
+  const { projectId, profile, srcs, running, hasDoc, stale, onRun, onPatch, onSrcsChange } = props;
   const t = useTranslations("workbench.profile");
   const tPanes = useTranslations("workbench.panes");
   const footer = (
@@ -171,6 +176,11 @@ export function ProfileInputPane(props: ProfileInputPaneProps) {
           <ReadonlyFields profile={profile} />
           <EditableFields profile={profile} onPatch={onPatch} />
           <SourceSwitches srcs={srcs} onChange={onSrcsChange} />
+          {stale ? (
+            <p role="alert" data-wb-profile-stale="" className="text-sm text-slate-700">
+              {t("run.stale")}
+            </p>
+          ) : null}
         </div>
       </InPane>
     </div>

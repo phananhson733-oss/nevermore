@@ -46,7 +46,7 @@ function ProfileWorkspace() {
   const { state, dispatch, projectId } = useWorkbench();
   const [srcs, setSrcs] = useState<ProfileSources>(ALL_SOURCES);
   const [tab, setTab] = useState<ProfileTab>("doc");
-  const { progress, start } = useProfileRun();
+  const { progress, start, refused } = useProfileRun();
   return (
     <div className={GRID}>
       <ProfileInputPane
@@ -54,6 +54,7 @@ function ProfileWorkspace() {
         profile={state.profile}
         srcs={srcs}
         running={progress !== null}
+        stale={refused}
         hasDoc={state.profileDoc !== null}
         onRun={() => start(srcs)}
         onPatch={(patch) => dispatch({ type: "patchProfile", patch })}
