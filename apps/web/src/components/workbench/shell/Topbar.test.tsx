@@ -682,6 +682,33 @@ describe("Topbar", () => {
       expect(openBox()).toBeNull();
     });
 
+    it("hands focus to the next control when another tab removes the clear button while it holds focus", () => {
+      window.localStorage.setItem(storageKey(PROJECT_ID), projectBytes(true));
+      const header = topbar(render());
+      const button = requireClearButton(header);
+      act(() => button.focus());
+      expect(document.activeElement).toBe(button);
+
+      anotherTabWrites(projectBytes(false));
+
+      expect(clearButton(header)).toBeNull();
+      expect(openBox()).toBeNull();
+      expect(document.activeElement).toBe(header.querySelector("[data-wb-drawer-button]"));
+    });
+
+    it("leaves focus where it is when the clear button goes away without holding it", () => {
+      window.localStorage.setItem(storageKey(PROJECT_ID), projectBytes(true));
+      const container = render();
+      const link = newSiteLink(container);
+      act(() => link.focus());
+      expect(document.activeElement).toBe(link);
+
+      anotherTabWrites(projectBytes(false));
+
+      expect(clearButton(topbar(container))).toBeNull();
+      expect(document.activeElement).toBe(link);
+    });
+
     it("adds no second live region, with the control shown and the box open", () => {
       askToClear();
 

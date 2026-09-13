@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useLayoutEffect,
   useRef,
   useState,
   type Dispatch,
@@ -39,7 +40,11 @@ import type { WorkbenchProjectState } from "@/lib/workbench/types";
  *   close, remove the button in the same commit, so each points the box at the
  *   next control in the row instead, or focus would drop to <body>. Dialog
  *   reads the ref when it closes, which is why a handler or the render-time
- *   reset can re-point it.
+ *   reset can re-point it. With no box open the button itself can hold focus
+ *   when another tab removes it (codex S6r2 #4): its ref cleanup, which runs
+ *   while the node is still in the document, records that, and a layout effect
+ *   hands focus to the same next control — only then, never on every exit from
+ *   sample mode.
  */
 export interface ClearSample {
   /** Whether the confirmation is open. */
@@ -69,6 +74,7 @@ export function useClearSample({
   const [asked, setAsked] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const buttonHadFocusRef = useRef(false);
   // The latest render's state, read right after the `flushSync` in `confirm`.
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -78,8 +84,20 @@ export function useClearSample({
     setAsked(false);
   }
 
+  useLayoutEffect(() => {
+    if (sampleLoaded || !buttonHadFocusRef.current) return;
+    buttonHadFocusRef.current = false;
+    const next = drawerButtonRef.current;
+    if (next?.isConnected && next.closest("[inert]") === null) next.focus();
+  }, [sampleLoaded, drawerButtonRef]);
+
   const attachButton = useCallback((node: HTMLButtonElement | null) => {
     buttonRef.current = node;
+    if (node === null) return undefined;
+    return () => {
+      buttonHadFocusRef.current = node.ownerDocument.activeElement === node;
+      buttonRef.current = null;
+    };
   }, []);
 
   function ask(): void {
