@@ -12,9 +12,11 @@ import type { ArtifactDraft } from "../../hooks/useAddArtifact.ts";
  * Step 4; research §3.3; jsx:1204-1208).
  *
  * The body is the mock-layer builder's output, unstamped (Q23): the pane shows
- * it and the actions stamp it once. Every builder reads the snapshot's own
+ * it and the actions stamp it once. The builders whose body carries GSC-derived
+ * content (the Markdown document and the AI context) read the snapshot's own
  * `gscSource` (Q6), so nothing here passes a provenance of its own — a second
- * argument would be a second, possibly contradicting, answer.
+ * argument would be a second, possibly contradicting, answer. The JSON builder
+ * reads no GSC data at all, and its declaration is always `none` (below).
  *
  * Each tab's provenance declaration speaks for its own body (Q36): a tab whose
  * body carries GSC-derived content maps the snapshot's frozen `gscSource`,

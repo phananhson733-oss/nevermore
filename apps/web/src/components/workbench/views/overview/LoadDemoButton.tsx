@@ -22,13 +22,17 @@ import { BUTTON_PRIMARY } from "../../ui/panel.ts";
  *   file's static imports until T16 extends the store gate to components.
  * - The confirmation is asked only when `hasDemoOverwrite` says, BY VALUE, that
  *   something would be lost (Q11); a blank project loads straight away.
- * - The provenance line injected into `DemoDeps` is `workbench.provenance.artifact`
- *   formatted with the artifact's own stamp — the expression `useAddArtifact`
- *   stamps the operator's artifacts with, so the sample basket and the
- *   operator's basket carry one wording (Step 3b). `mock/provenance.ts` has no
- *   function that produces that line; the sweep in `provenance.fs.test.ts`
- *   checks the name `stampArtifact`, not the words, so the behavioural test in
- *   `LoadDemoButton.provenance.test.tsx` is what holds the two together.
+ * - The provenance line injected into `DemoDeps` is always `workbench.provenance.artifact`,
+ *   formatted with the artifact's own stamp. `useAddArtifact` picks one of three
+ *   keys from a draft's `gscData` (Q36) and stamps this same expression only for
+ *   `none` and `sample`, so the sample basket shares one wording with the
+ *   operator's artifacts that carry no GSC data or the sample's (Step 3b), not
+ *   with ones carrying imported or unrecorded rows. Always `artifact` is right
+ *   here: the sample site's GSC rows are the sample's own data.
+ *   `mock/provenance.ts` has no function that produces that line; the sweep in
+ *   `provenance.fs.test.ts` checks the name `stampArtifact`, not the words, so
+ *   the behavioural test in `LoadDemoButton.provenance.test.tsx` is what holds
+ *   the two together.
  * - One load per intent: a ref, not state, is the gate, because two clicks in
  *   one event loop turn both run against the same render. The clock is read
  *   after the import, which is the moment the sample is made.
