@@ -130,7 +130,7 @@ describe("WorkbenchProvider keywordRows (R13)", () => {
     const rendersBefore = rec.renders;
 
     for (const n of [1, 2, 3, 4, 5]) send(rec, { type: "visProgress", results: partialRun(n) });
-    send(rec, { type: "setNotify", notify: { weekly: true, drop: true, mention: false, gsc: true } });
+    send(rec, { type: "setNotify", key: "mention", value: true });
 
     // Six re-renders really happened, so one reference is not "the probe never ran".
     expect(rec.renders - rendersBefore).toBeGreaterThanOrEqual(6);

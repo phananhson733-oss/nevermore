@@ -17,9 +17,11 @@ import { Toggle } from "../../ui/Toggle.tsx";
  * content is Chinese-only") has nothing to do with them. There is no save
  * button: a flip is the write.
  *
- * Every write hands `setNotify` the whole object (`{...notify, key: next}`);
- * the reducer replaces `notify` wholesale, so a one-field write would leave the
- * other three undefined and their switches off.
+ * A flip dispatches `setNotify` with that switch's key and value, and the
+ * reducer merges it into the `notify` it holds when the action runs (codex S11
+ * #2). Not a whole object built from the `notify` this render showed: two flips
+ * in one frame, or a flip landing after another tab's write, would put the
+ * other switches back to what this render showed.
  *
  * Before the store has read storage the switches are a skeleton, not the seed's
  * values and not "all off" (Q10): either would state preferences the operator
@@ -57,7 +59,7 @@ export function NotifyBlock() {
       {ready ? (
         <NotifyToggles
           notify={state.notify}
-          onChange={(notify) => dispatch({ type: "setNotify", notify })}
+          onChange={(key, value) => dispatch({ type: "setNotify", key, value })}
         />
       ) : (
         <NotifySkeleton />
@@ -88,7 +90,7 @@ function NotifyToggles({
   onChange,
 }: {
   readonly notify: NotifyPrefs;
-  readonly onChange: (next: NotifyPrefs) => void;
+  readonly onChange: (key: keyof NotifyPrefs, value: boolean) => void;
 }) {
   const t = useTranslations("workbench.settings.notify");
   return (
@@ -99,7 +101,7 @@ function NotifyToggles({
           checked={notify[row.key]}
           label={t(row.label)}
           description={t(row.description)}
-          onChange={(next) => onChange({ ...notify, [row.key]: next })}
+          onChange={(next) => onChange(row.key, next)}
         />
       ))}
     </div>

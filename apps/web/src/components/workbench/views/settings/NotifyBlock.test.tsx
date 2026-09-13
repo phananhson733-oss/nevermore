@@ -4,10 +4,10 @@
  * The notification preferences block (T11 Step 2), driven through the real
  * `WorkbenchProvider` so a flip goes through the real reducer.
  *
- * - Every write carries the whole preference object (`{...notify, key: next}`).
- *   A write of one field would leave the other three undefined, which the
- *   switches then render as off: the start state below is not the default, so a
- *   write that fell back to `DEFAULT_NOTIFY` does not pass either.
+ * - A flip writes its own switch only, merged by the reducer into the notify it
+ *   holds then (codex S11 #2). The start state below is not the default, so a
+ *   write that fell back to `DEFAULT_NOTIFY` fails; and a second flip running a
+ *   handler from the render before the first must not put the first back.
  * - The sentence saying nothing is sent is a promise about the product; it is
  *   pinned on its load-bearing clause in both locales, not only on "equals the
  *   catalogue", so a catalogue edit that drops the clause fails here too.
@@ -56,7 +56,9 @@ async function renderBlock(locale: DsLocale = "en"): Promise<MountedStore> {
   const view = mountWithStore(<NotifyBlock />, locale);
   cleanup = view.unmount;
   await settle();
-  view.dispatch({ type: "setNotify", notify: START });
+  for (const [key, value] of Object.entries(START) as [keyof typeof START, boolean][]) {
+    view.dispatch({ type: "setNotify", key, value });
+  }
   return view;
 }
 
@@ -114,7 +116,7 @@ describe("NotifyBlock: once the store is read", () => {
     ]);
   });
 
-  it("writes the whole preference object when one switch flips", async () => {
+  it("a flip changes its own switch and leaves the others as they are", async () => {
     const view = await renderBlock();
     const mention = switches(view.app)[2];
     expect(mention?.checked).toBe(true);
@@ -146,7 +148,67 @@ describe("NotifyBlock: once the store is read", () => {
       false,
     ]);
   });
+
+  it("keeps both flips when the second runs a handler from the render before the first", async () => {
+    const view = await renderBlock();
+    const [weekly, , , gsc] = switches(view.app);
+    expect(weekly?.checked).toBe(false);
+    expect(gsc?.checked).toBe(false);
+
+    // Two flips in one frame. jsdom cannot hold React between two clicks: each
+    // click is a discrete event, flushed before the next one starts, so two
+    // `click()` calls never share a render (checked: that version passed against
+    // the whole-object write). A queued second event runs the handler of the
+    // render it was queued in, so this takes the one React attached to the gsc
+    // switch now, lets the weekly flip commit, and then calls it. A write built
+    // from the notify that render showed puts weekly back to off.
+    const staleGscChange = reactChangeHandler(gsc);
+    act(() => weekly?.click());
+    expect(view.store().state.notify.weekly).toBe(true);
+    act(() => staleGscChange({ currentTarget: { checked: true } }));
+
+    expect(view.store().state.notify).toEqual({
+      weekly: true,
+      drop: true,
+      mention: true,
+      gsc: true,
+    });
+    expect(switches(view.app).map((input) => input.checked)).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
+  });
 });
+
+interface CheckedEvent {
+  readonly currentTarget: { readonly checked: boolean };
+}
+
+/**
+ * The `onChange` React attached to this input in the render that produced it,
+ * read off React DOM's private props key. Throws when the key or the handler is
+ * missing, so a React upgrade that moves it fails loudly instead of letting the
+ * test call nothing and pass.
+ */
+function reactChangeHandler(
+  input: HTMLInputElement | undefined,
+): (event: CheckedEvent) => void {
+  if (input === undefined) throw new Error("no input to read a handler from");
+  const key = Object.keys(input).find((name) =>
+    name.startsWith("__reactProps$"),
+  );
+  if (key === undefined)
+    throw new Error("React props key not found on the input");
+  const props = (
+    input as unknown as Record<string, { readonly onChange?: unknown }>
+  )[key];
+  const handler = props?.onChange;
+  if (typeof handler !== "function")
+    throw new Error("the input has no onChange");
+  return handler as (event: CheckedEvent) => void;
+}
 
 describe("NotifyBlock: what it says about itself", () => {
   it("says the preferences stay in this browser and nothing is sent (en)", async () => {

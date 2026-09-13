@@ -313,7 +313,8 @@ describe("demo", () => {
     let s = reduce(initialProjectState(seed), {
       type: "patchProfile", patch: { positioning: "mine" },
     });
-    s = reduce(s, { type: "setNotify", notify: { weekly: false, drop: false, mention: false, gsc: false } });
+    for (const key of ["weekly", "drop", "gsc"] as const) s = reduce(s, { type: "setNotify", key, value: false });
+    expect(s.notify).toEqual({ weekly: false, drop: false, mention: false, gsc: false });
     s = loadDemoOver(s, demoPayload);
     expect(s.demo).toBe(true);
     expect(s.seeds).toBe("a\nb");
@@ -451,17 +452,23 @@ describe("demo: a confirmation covers the content it was given for", () => {
     const toggles = { weekly: false, drop: false, mention: true, gsc: false } as const;
     const sample = loadDemoOver(initialProjectState(seed), demoPayload);
     const sampleExpected = demoFields(sample);
-    let s = reduce(sample, { type: "setNotify", notify: toggles });
+    let s = sample;
+    for (const [key, value] of Object.entries(toggles) as [keyof typeof toggles, boolean][]) {
+      s = reduce(s, { type: "setNotify", key, value });
+    }
+    expect(s.notify).toEqual(toggles);
     s = reduce(s, { type: "patchProfile", patch: { positioning: "mine" } });
 
+    const notifyBeforeClear = s.notify;
     const cleared = reduce(s, { type: "clearDemo", expected: sampleExpected });
     expect(cleared.demo).toBe(false);
     expect(cleared.seeds).toBe("");
-    expect(cleared.notify).toBe(toggles);
+    expect(cleared.notify).toBe(notifyBeforeClear);
 
     const own = reduce(initialProjectState(seed), { type: "setSeeds", seeds: "geo audit" });
     const ownExpected = demoFields(own);
-    const toggled = reduce(own, { type: "setNotify", notify: toggles });
+    const toggled = reduce(own, { type: "setNotify", key: "mention", value: true });
+    expect(toggled).not.toBe(own);
     expect(reduce(toggled, { type: "loadDemo", payload: demoPayload, expected: ownExpected }).demo).toBe(true);
   });
 });
@@ -558,7 +565,7 @@ describe("immutability", () => {
       { type: "setPlans", plans: {} },
       { type: "setTargets", targets: [] },
       { type: "setKb", kb: null },
-      { type: "setNotify", notify: { weekly: false, drop: false, mention: false, gsc: false } },
+      { type: "setNotify", key: "weekly", value: false },
       { type: "auditStart" },
       { type: "auditComplete", report: report("z") },
       { type: "auditCancel" },

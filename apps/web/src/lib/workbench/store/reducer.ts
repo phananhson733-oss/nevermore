@@ -88,7 +88,10 @@ export type WorkbenchAction =
   | { readonly type: "setPlans"; readonly plans: Readonly<Record<string, AnswerPlan>> }
   | { readonly type: "setTargets"; readonly targets: readonly LinkTarget[] | null }
   | { readonly type: "setKb"; readonly kb: KnowledgeBase | null }
-  | { readonly type: "setNotify"; readonly notify: NotifyPrefs }
+  // One switch, merged into the `notify` the reducer holds when the action runs
+  // (codex S11 #2). A whole object built from the rendered `notify` would write
+  // the sibling switches back to what that render showed.
+  | { readonly type: "setNotify"; readonly key: keyof NotifyPrefs; readonly value: boolean }
   | { readonly type: "auditStart" }
   | { readonly type: "auditComplete"; readonly report: AuditReport }
   | { readonly type: "auditCancel" }
@@ -232,7 +235,12 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
     case "setKb":
       return { ...state, kb: action.kb };
     case "setNotify":
-      return { ...state, notify: action.notify };
+      // Into the current `notify`, not the one the switch rendered from: two
+      // flips in one frame, or a flip landing after another tab's
+      // `loadPersisted`, keep every other switch as it is now. The same value
+      // hands back the same state.
+      if (state.notify[action.key] === action.value) return state;
+      return { ...state, notify: { ...state.notify, [action.key]: action.value } };
     case "auditStart":
       return { ...state, audit: null };
     case "auditComplete":
