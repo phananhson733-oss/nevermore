@@ -841,7 +841,7 @@ export function makeDemoSite(profile: Profile, level: DemoLevel, seeds: readonly
     - `prompts = localPromptSet(profile, rows).map(x => x.q).slice(0, VIS_PROMPT_LIMIT)`；`visResults = mockVisibility(profile, prompts, "demo-cur")`；`visHistory = [{ at: daysAgo(now,7,11), results: mockVisibility(profile, prompts, "demo-prev") }]`；`lastVis = { at: daysAgo(now,0,11), results: visResults }`。
     - `profileDoc = { crawl: crawlSignals(profile,"crawl", audit), gsc: gscSignals(profile, gscRows), third: crawlSignals(profile,"third"), ai: demoAiDoc(profile), at: daysAgo(now,3,15) }`（`crawl` 传入审计，使页数、收录数与页面标志与同一份示例审计一致；Task 9 评审）。
     - KB 填充句里的品牌一律用 `brandOrPlaceholder(profile)`（从 `profile.ts` 导入），不写 `brand || "[品牌]"`，避免只有空白的品牌名输出空格。
-    - `kb`：`seedKb(profile, profileDoc)` → `fillFirstKbGap(…, "pricing", { statement: \`[示例] ${brand || "[品牌]"} 的免费档与付费档分别包含什么（待补定价页原句）\`, evidence: "示例，未核对", source: "", from: "aiDraft" }, "kb-demo-pricing")` → 同理 `boundary`（`[示例] 不适合 ${brand || "[品牌]"} 的团队或场景（待补）`，id `kb-demo-boundary`）→ 真实竞品非空时 `comparison`（`[示例] 与 ${第一个竞品} 相比，${brand} 的差别（待补对比页原句）`，id `kb-demo-comparison`）；`at: daysAgo(now,2,16)`。
+    - `kb`：`seedKb(profile, profileDoc)` → `fillFirstKbGap(…, "pricing", { statement: \`[示例] ${brandOrPlaceholder(profile.brand)} 的定价方式与各档分别包含什么（待补定价页原句）\`（执行期评审：原句预设了有免费档）, evidence: "示例，未核对", source: "", from: "aiDraft" }, "kb-demo-pricing")` → 同理 `boundary`（`[示例] 不适合 ${brand || "[品牌]"} 的团队或场景（待补）`，id `kb-demo-boundary`）→ 真实竞品非空时 `comparison`（`[示例] 与 ${第一个竞品} 相比，${brand} 的差别（待补对比页原句）`，id `kb-demo-comparison`）；`at: daysAgo(now,2,16)`。
     - `plans = plansFor(missedPrompts(visResults).slice(0,2), profile)`。
     - `targets = mockLinks(profile, DEFAULT_LINK_TYPES)`。
     - `compData = buildCompData(profile, seedQueries, gscRows, daysAgo(now,2,14))`。
@@ -1014,4 +1014,10 @@ export function classifyPersistedState(raw: unknown): PersistedParse {
 | `answerPlanPrompt` 固定句「缺口来自示例数据，建页前逐平台复核」、`（示例数据）`/`sampleData: true` 标签：`VisGap`/`gscRows` 没有 real/sample 标记，接入真实可见度数据或真实 GSC 导入时这些标签要变成条件 | PR-4 |
 | 选择器 `keywordRows(state)` / `gatedRows(state)` 每次调用重算，不走 provider 的 memo（已加 JSDoc）；视图读 `useWorkbench().keywordRows` | 各视图 PR |
 | 下载文档里值内的行内 Markdown 仍会渲染（`**粗体**` 变粗体、用户输入的反斜杠被吞：`\# x` 显示成 `# x`）；`docText` 只防块级结构且只为 `- ` / `> ` 行首设计，不是表格单元格或行中文本的通用转义 | 记入 PR 描述；视图若把文档渲染成 HTML（PR-5 预览）再评估 |
+| 示例 GSC 粘贴文本 `DEMO_GSC_TEXT` 与 `DEMO_SEEDS` 是原型的 GEO/SEO 词表（`llm seo checklist`、`how to rank in chatgpt` 等），对任何行业的客户都一样；`gscRows` 本身不带示例标记，只有 `state.demo` 标示（Task 13 评审 F5，brief 目标已改为取自种子派生行） | PR-3 视图对示例状态显示徽标；词表按行业派生另议 |
+| 「载入示例站点」按钮必须在点击处理里 `await import(".../mock/demo.ts")`（demo 静态可达审计规则库与五个 builder，约 47KB 压缩；导入图护栏只从 store 入口走，不覆盖组件） | PR-3 |
+| 示例档案爬取页数（如 96）与同一份审计 `pageRows` 样本行数（如 6）不同：pageRows 是抽样行不是全量 | 视图文案标明「样本页」 |
+| 品牌为空时示例可见度标题「可见度矩阵 0/30」像结果（品牌为空就不可能被提及） | PR-3（品牌为空时禁用或改文案） |
+| 写盘前复核已存数据与 `setItem` 不是跨标签原子操作：两个标签页在同一毫秒级窗口内交错仍可能覆盖（gpt-6-astra 面 3 #1 修复后的剩余窗口） | 接受风险，记入设计稿 §6.5 |
+| `csvCell` 不给「前导换行/空格 + 公式」加前缀；`slugify` 60 字符截断会碰撞（gpt-6-astra 面 2 unresolved） | 接受风险（主流表格软件不对其求值；slug 只作建议路径） |
 | 持久化 `plans`（`z.record`）读回时静默丢掉键 `__proto__`（Task 10 探针实测：`classifyPersistedState` 返回 ok，键没了，不污染原型）；只影响字面查询 `__proto__` 的答案页方案。修法需改持久化形状（如条目数组），属于要升 `PERSISTED_VERSION` 的改动 | 记入 PR 描述，随下一次持久化形状变更处理 |
