@@ -20,10 +20,22 @@ import zh from "../../../../../packages/i18n/src/messages/zh-CN.json";
  *    copy and would false-positive. Quoting mistakes are caught instead on the
  *    RAW message by `opensIcuQuote`.
  *
- * On length: this is over the repo's 400-line guidance because Task 1 requires
- * the key list to live in the test file as a literal (splitting `CASES` into a
- * second module would put it out of sight of the assertions that consume it,
- * and Task 1 owns exactly three files). ~200 of the lines below are that list.
+ * What this gate does and does not prove. It proves each listed key exists in
+ * both locales, compiles, inserts every argument it is given, and still
+ * CONTAINS the pinned words of a disclosure — so it catches the realistic
+ * drift: a hedge deleted, or a clause shortened away. It does NOT prove the
+ * copy is honest. `toContain` cannot tell "the sentence contains this word"
+ * from "the sentence asserts it", so a rewrite that keeps the pinned words and
+ * negates around them ("这些 GSC 行不是示例数据") survives unless that key also
+ * carries a `FORBIDDEN_BY_KEY` rule. It also cannot see two arguments SWAPPED,
+ * because en and zh legitimately order them differently; the keys that matters
+ * for are listed in `SWAP_PRONE_KEYS`, whose order belongs to the consuming
+ * view's own test. A green run here means the catalogue is well formed, not
+ * that a human has read it.
+ *
+ * On length: over the repo's 400-line guidance, because the literal key list
+ * belongs next to the assertions that consume it. ~200 of the lines below are
+ * that list; splitting it out is recorded in the PR-3 residual table.
  */
 
 const LOCALES = { en, "zh-CN": zh } as const;
@@ -51,6 +63,80 @@ const FORBIDDEN: Readonly<Record<LocaleKey, readonly string[]>> = {
 };
 
 /**
+ * Rules a required substring cannot express, because they are about what the
+ * sentence must NOT do. Two shapes live here:
+ *
+ * - Negation of a pinned assertion. `overview.gscFoot.sample` is Q6's sample
+ *   footnote; keeping the words and inverting the claim is the one rewrite that
+ *   matters, so the negators are banned outright for that key.
+ * - Q4's "an unattributable failure must not name a cause". The neutral
+ *   messages may not carry a causal connective or a named cause.
+ *   `dataSources.real.needProfile` is deliberately NOT in here: an incomplete
+ *   product profile is the one cause we can actually attribute.
+ */
+const FORBIDDEN_BY_KEY: Readonly<
+  Record<string, Readonly<Record<LocaleKey, readonly string[]>>>
+> = {
+  "overview.gscFoot.sample": {
+    "zh-CN": ["不是示例", "并非示例", "不来自示例", "不是来自示例"],
+    en: ["not come from sample", "no longer", "not sample data"],
+  },
+  "dataSources.real.otherError": {
+    "zh-CN": ["所以", "因为", "由于", "过期", "权限", "配额", "授权"],
+    en: [
+      "because",
+      "expired",
+      "denied",
+      "insufficient",
+      "permission",
+      "quota",
+      "authoriz",
+    ],
+  },
+  "dataSources.real.unknownHint": {
+    "zh-CN": ["所以", "因为", "由于", "过期", "权限", "配额", "授权"],
+    en: [
+      "because",
+      "expired",
+      "denied",
+      "insufficient",
+      "permission",
+      "quota",
+      "authoriz",
+    ],
+  },
+  "shell.siteCard.unknownHint": {
+    "zh-CN": ["所以", "因为", "由于", "过期", "权限", "配额", "授权"],
+    en: [
+      "because",
+      "expired",
+      "denied",
+      "insufficient",
+      "permission",
+      "quota",
+      "authoriz",
+    ],
+  },
+};
+
+/**
+ * Keys whose arguments this layer cannot pin the ORDER of: every argument is
+ * present, so a swap renders a wrong sentence with no missing sentinel (e.g.
+ * "402 次问答里有 401 次提到你" — more mentions than answers). en and zh order
+ * them differently by design, so the assertion belongs in the view test that
+ * renders the sentence with distinguishable values.
+ */
+const SWAP_PRONE_KEYS = [
+  "overview.subtitle",
+  "overview.cards.mention.foot",
+  "week.subtitle",
+  "week.cards.health.foot",
+  "week.cards.mention.foot",
+  "dataSources.import.truncated",
+  "dataSources.table.showing",
+] as const;
+
+/**
  * Disclosures that must survive a copy edit (Q4 / Q6 / Q12 / Q16 / Q17 / Q24).
  *
  * `FORBIDDEN` is a blacklist and can only catch a lie being added; this table
@@ -68,12 +154,29 @@ const REQUIRED: Readonly<
     "zh-CN": ["这个浏览器", "不会发送"],
     en: ["browser", "nothing is sent"],
   },
+  // `clearDemo` rolls back the same 17 fields as `loadDemo`, so the trailing
+  // clause — the one covering what the user produced after loading the sample —
+  // is pinned too, not only the four categories Q12 names.
   "shell.clearSampleConfirm.body": {
-    "zh-CN": ["GSC", "词库", "产物筐", "站点档案"],
-    en: ["GSC", "keyword library", "artifacts", "site profile"],
+    "zh-CN": [
+      "GSC",
+      "词库",
+      "产物筐",
+      "站点档案",
+      "载入示例之后",
+      "你自己加的内容",
+    ],
+    en: [
+      "GSC",
+      "keyword library",
+      "artifacts",
+      "site profile",
+      "anything you added",
+    ],
   },
   // Q11 raises this dialog for any non-empty field, so the four named
-  // categories are not enough: the catch-all is what keeps it honest.
+  // categories are not enough: EVERY category the catch-all names is pinned,
+  // or the clause can be trimmed back to two of six and stay green.
   "overview.loadDemo.confirmBody": {
     "zh-CN": [
       "GSC",
@@ -83,6 +186,10 @@ const REQUIRED: Readonly<
       "已有的运行结果",
       "审计",
       "可见度",
+      "知识库",
+      "竞品数据",
+      "答案页方案",
+      "外链目标",
     ],
     en: [
       "GSC",
@@ -91,6 +198,10 @@ const REQUIRED: Readonly<
       "site profile",
       "every result already there",
       "audit",
+      "knowledge base",
+      "competitor data",
+      "answer plans",
+      "link targets",
       "visibility",
     ],
   },
@@ -120,11 +231,14 @@ const REQUIRED: Readonly<
     "zh-CN": ["不是排名变化", "工作台目前不保存"],
     en: ["not rank movement", "does not keep"],
   },
-  // Q6: the sample-provenance footnote. The "no sample label" check on the
-  // import block runs the other way round and cannot catch this one.
+  // Q6: the sample-provenance footnote. Pinned as the whole clause INCLUDING
+  // its verb, because pinning the noun alone is satisfied by its own negation
+  // ("这些 GSC 行不是示例数据"); `FORBIDDEN_BY_KEY` bans the negators as well.
+  // The "no sample label" check on the import block runs the other way round
+  // and cannot catch either shape.
   "overview.gscFoot.sample": {
-    "zh-CN": ["示例数据"],
-    en: ["sample data"],
+    "zh-CN": ["来自示例数据"],
+    en: ["come from sample data"],
   },
   // Q4: a failure we cannot attribute must not name a cause.
   "dataSources.real.otherError": {
@@ -136,6 +250,26 @@ const REQUIRED: Readonly<
   "dataSources.real.unknownHint": {
     "zh-CN": ["未知", "不等于未接入"],
     en: ["Unknown", "not the same as not connected"],
+  },
+  // The real, server-side record must be called what its own page calls
+  // itself: /context reads `productProfile.*`, whose heroEyebrow is
+  // 「产品画像 · ICP」 / "PRODUCT PROFILE · ICP". A CTA naming the destination
+  // anything else sends the reader looking for a page that does not exist.
+  "profile.legacyCta": {
+    "zh-CN": ["产品画像"],
+    en: ["product profile"],
+  },
+  "dataSources.real.needProfile": {
+    "zh-CN": ["产品画像"],
+    en: ["product profile"],
+  },
+  "dataSources.real.needProfileCta": {
+    "zh-CN": ["产品画像"],
+    en: ["product profile"],
+  },
+  "profile.readonlyNote": {
+    "zh-CN": ["产品画像"],
+    en: ["product profile"],
   },
 };
 
@@ -500,6 +634,21 @@ describe.each(LOCALE_KEYS)("workbench view messages (%s)", (locale) => {
     }
   });
 
+  it("keeps the per-key rules a required substring cannot express", () => {
+    for (const [key, byLocale] of Object.entries(FORBIDDEN_BY_KEY)) {
+      const listed = PARSED.find((entry) => entry.key === key);
+      expect(listed, `${key} must also be listed in CASES`).toBeDefined();
+      for (const values of listed?.variants ?? []) {
+        const text = formatStrict(locale, key, values).toLowerCase();
+        for (const phrase of byLocale[locale]) {
+          expect(text, `${key} must not say "${phrase}"`).not.toContain(
+            phrase.toLowerCase(),
+          );
+        }
+      }
+    }
+  });
+
   it("keeps the GSC import block free of sample labels", () => {
     for (const { key } of PARSED) {
       if (!key.startsWith("dataSources.import.")) continue;
@@ -520,6 +669,15 @@ describe.each(LOCALE_KEYS)("workbench view messages (%s)", (locale) => {
         }
       }
     }
+  });
+});
+
+describe("workbench view message arguments", () => {
+  it("hands every multi-argument key to the consuming view to pin", () => {
+    const multiArg = PARSED.filter(
+      (entry) => Object.keys(entry.values).length > 1,
+    ).map((entry) => entry.key);
+    expect([...multiArg].sort()).toEqual([...SWAP_PRONE_KEYS].sort());
   });
 });
 

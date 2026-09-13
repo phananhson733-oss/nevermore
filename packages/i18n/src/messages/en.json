@@ -4242,7 +4242,7 @@
         "charCount": "{count, plural, one {# character} other {# characters}}",
         "itemCount": "{count, plural, one {# item} other {# items}}"
       },
-      "readonlyNote": "Site URL, brand name and target market come from the real project profile and are read-only here.",
+      "readonlyNote": "Site URL, brand name and target market come from the real product profile and are read-only here.",
       "sources": {
         "title": "Signals to include",
         "crawl": "Site crawl",

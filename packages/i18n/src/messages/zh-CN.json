@@ -4242,7 +4242,7 @@
         "charCount": "{count} 字",
         "itemCount": "{count} 项"
       },
-      "readonlyNote": "站点地址、品牌名与目标市场来自真实项目档案，这里只读。",
+      "readonlyNote": "站点地址、品牌名与目标市场来自真实产品画像，这里只读。",
       "sources": {
         "title": "生成来源",
         "crawl": "站点抓取",
@@ -4317,7 +4317,7 @@
         "json": "{brand} 站点档案 JSON",
         "ctx": "{brand} 上下文块"
       },
-      "legacyCta": "去编辑真实产品档案"
+      "legacyCta": "去编辑真实产品画像"
     },
     "dataSources": {
       "subtitle": "上面是真实连接状态，只读。下面的 GSC 导入只保存在这个浏览器。",
@@ -4329,8 +4329,8 @@
         "notConnected": "未接入",
         "unknown": "未知",
         "unknownHint": "现在读不到连接状态。未知不等于未接入。",
-        "needProfile": "需要先确认产品档案，才能读取连接状态。",
-        "needProfileCta": "去确认产品档案",
+        "needProfile": "需要先确认产品画像，才能读取连接状态。",
+        "needProfileCta": "去确认产品画像",
         "otherError": "现在读不到连接状态。",
         "manageLegacy": "在旧版页面连接或断开",
         "ga4NoConsumer": "当前没有模块使用 GA4 数据。"
