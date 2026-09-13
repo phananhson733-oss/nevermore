@@ -60,6 +60,17 @@ function escapeRawHtml(text: string): string {
 }
 
 /**
+ * User, AI or imported text placed inside a line a builder has already opened
+ * (after a fixed label such as `- 角色：`, inside a heading): folded by
+ * `oneLine`, every tag-shaped `<` encoded (`escapeRawHtml`), and no block-start
+ * escape, because it never starts the line's content. A value that does start
+ * one goes through `docText`.
+ */
+export function inlineText(value: string): string {
+  return escapeRawHtml(oneLine(value));
+}
+
+/**
  * User or AI text for a document bullet: folded onto one line by `oneLine`,
  * every `<` that would open raw HTML encoded as `&lt;` (`escapeRawHtml`), then
  * one backslash where the line would open a block, so it renders as the
@@ -73,7 +84,7 @@ function escapeRawHtml(text: string): string {
  * tag-shaped `<` now escapes the entity's `&`, so that reader shows `&lt;`.
  */
 export function docText(value: string): string {
-  const folded = escapeRawHtml(oneLine(value));
+  const folded = inlineText(value);
   if (LEADS_ORDERED.test(folded)) {
     return folded.replace(LEADS_ORDERED, "$1\\$2");
   }

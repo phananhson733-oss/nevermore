@@ -1,7 +1,8 @@
 /**
  * Knowledge-base artifacts (plan Task 12; jsx:776-845). Bodies are unstamped
  * (R5). `kbMarkdown` and `llmsTxt` are documents, not prompts: every user or AI
- * value is folded onto one line; a value that starts a line's content (right
+ * value is folded onto one line with its tag-shaped `<` encoded (`inlineText`);
+ * a value that starts a line's content (right
  * after `- ` or `> `) also goes through `docText`, so it cannot open a heading,
  * fence, quote, list, rule, HTML block, link definition or task box there (R6).
  * `llmsTxt` names no page it has not seen: the home page plus a placeholder
@@ -11,7 +12,7 @@ import { KB_CATEGORIES } from "../../enums.ts";
 import type { KbCategory, KbEntry, Profile } from "../../types.ts";
 import { KB_SECTION_TITLE_ZH } from "../labels-zh.ts";
 import { domainOf, oneLine } from "../text.ts";
-import { docText, joinParts } from "./compose.ts";
+import { docText, inlineText, joinParts } from "./compose.ts";
 
 export interface KbInput {
   readonly profile: Profile;
@@ -22,7 +23,7 @@ const BRAND_PLACEHOLDER = "[品牌]";
 const FAQ_SEPARATOR = "→";
 
 function brandText(brand: string): string {
-  return oneLine(brand) || BRAND_PLACEHOLDER;
+  return inlineText(brand) || BRAND_PLACEHOLDER;
 }
 
 function isWritten(entry: KbEntry): boolean {
@@ -38,8 +39,8 @@ function writtenOf(
 }
 
 function kbLine(entry: KbEntry): string {
-  const evidence = oneLine(entry.evidence);
-  const source = oneLine(entry.source);
+  const evidence = inlineText(entry.evidence);
+  const source = inlineText(entry.source);
   return [
     `- ${docText(entry.statement)}`,
     evidence === "" ? "｜[待补证据]" : `｜证据：${evidence}`,
@@ -68,7 +69,7 @@ export function kbMarkdown({ profile, entries }: KbInput): string {
     `# ${brandText(profile.brand)} 事实知识库`,
     [
       "> 每条都是可被模型整段摘走的句子。改完同步到 /llms.txt、About、定价页与 FAQ。",
-      `> 站点：${oneLine(profile.url)}｜市场：${oneLine(profile.market)}｜条目 ${entries.length} 条，已写 ${written} 条`,
+      `> 站点：${inlineText(profile.url)}｜市场：${inlineText(profile.market)}｜条目 ${entries.length} 条，已写 ${written} 条`,
     ].join("\n"),
     ...KB_CATEGORIES.map((cat) => kbSection(entries, cat)),
     MAINTENANCE_RULES,
@@ -91,7 +92,7 @@ function llmsSection(
 }
 
 export function llmsTxt({ profile, entries }: KbInput): string {
-  const domain = oneLine(domainOf(profile.url));
+  const domain = inlineText(domainOf(profile.url));
   const summary = docText(profile.positioning);
   const url = docText(profile.url);
   const brand = docText(profile.brand) || BRAND_PLACEHOLDER;

@@ -1,7 +1,8 @@
 /**
  * Profile artifacts (plan Task 11; jsx:622-690). Bodies are unstamped: the
  * provenance line is added by `stampArtifact` (R5). `profileDocMarkdown` is a
- * document, so user and AI text is folded with `oneLine` instead of fenced;
+ * document, so user and AI text is folded onto one line with its tag-shaped `<`
+ * encoded instead of fenced (`inlineText` inside a line, `docText` at its start);
  * `profileContextPrompt` is a prompt, so every user or AI field sits in one
  * announced data block (R6).
  */
@@ -15,8 +16,14 @@ import type {
   ProfileDoc,
 } from "../../types.ts";
 import { dataSection, fenceJson } from "../fence.ts";
-import { domainOf, oneLine, splitList } from "../text.ts";
-import { bulletLines, countText, docSection, joinParts } from "./compose.ts";
+import { domainOf, splitList } from "../text.ts";
+import {
+  bulletLines,
+  countText,
+  docSection,
+  inlineText,
+  joinParts,
+} from "./compose.ts";
 
 export interface ProfileJsonInput {
   readonly profile: Profile;
@@ -61,7 +68,7 @@ function crawlSection(crawl: CrawlSignals | null): string {
   ].filter((name) => name !== "");
   return [
     `## 站点现状${SAMPLE_SUFFIX}`,
-    `- 技术栈（推测）：${oneLine(crawl.stack)}｜语言：${oneLine(crawl.lang)}`,
+    `- 技术栈（推测）：${inlineText(crawl.stack)}｜语言：${inlineText(crawl.lang)}`,
     `- 抓到页面 ${countText(crawl.pages)}，可收录约 ${countText(crawl.indexable)}`,
     `- 关键页：${keyPages.join("、") || "缺失"}`,
   ].join("\n");
@@ -76,7 +83,7 @@ function thirdSection(third: CrawlSignals | null): string | null {
 }
 
 function topQuery(row: GscRow): string {
-  return `${oneLine(row.query)}（${countText(row.clicks)} 次，排名 ${countText(row.position)}）`;
+  return `${inlineText(row.query)}（${countText(row.clicks)} 次，排名 ${countText(row.position)}）`;
 }
 
 /**
@@ -122,11 +129,11 @@ function icpSection(ai: AiDoc): string | null {
   if (ai.icp.length === 0) return null;
   const segments = ai.icp.map((segment, index) =>
     [
-      `### ${index + 1}. ${oneLine(segment.seg)}`,
-      `- 角色：${oneLine(segment.role)}`,
-      `- 核心痛点：${oneLine(segment.pain)}`,
-      `- 会搜：${oneLine(segment.trigger)}`,
-      `- 最常见顾虑：${oneLine(segment.objection)}`,
+      `### ${index + 1}. ${inlineText(segment.seg)}`,
+      `- 角色：${inlineText(segment.role)}`,
+      `- 核心痛点：${inlineText(segment.pain)}`,
+      `- 会搜：${inlineText(segment.trigger)}`,
+      `- 最常见顾虑：${inlineText(segment.objection)}`,
     ].join("\n"),
   );
   return `## ICP\n${segments.join("\n\n")}`;
@@ -148,8 +155,8 @@ function aiSections(ai: AiDoc): readonly (string | null)[] {
 
 export function profileDocMarkdown({ profile, doc }: ProfileDocInput): string {
   const header = [
-    `# ${oneLine(profile.brand) || "[品牌]"} 产品档案`,
-    `生成时间：${oneLine(doc.at)}｜站点：${oneLine(profile.url)}｜市场：${oneLine(profile.market)}`,
+    `# ${inlineText(profile.brand) || "[品牌]"} 产品档案`,
+    `生成时间：${inlineText(doc.at)}｜站点：${inlineText(profile.url)}｜市场：${inlineText(profile.market)}`,
   ].join("\n");
   return joinParts([
     header,
