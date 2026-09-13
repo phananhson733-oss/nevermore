@@ -135,10 +135,10 @@ describe("parseGsc: RFC 4180 structure", () => {
     });
   });
 
-  it("treats a quoted value holding both a newline and the delimiter as text, not one merged record", () => {
+  it("keeps a well-formed quoted value holding both a newline and the delimiter as one field, as RFC 4180 does", () => {
     const text = `"hello\t1\t2\t3%\t4\nworld"\t5\t6\t7%\t8`;
     expect(parseGsc(text)).toEqual({
-      rows: [row(`"hello`, 1, 2, 3, 4), row(`world"`, 5, 6, 7, 8)],
+      rows: [row("hello\t1\t2\t3%\t4\nworld", 5, 6, 7, 8)],
       skipped: 0,
     });
   });

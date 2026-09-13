@@ -32,8 +32,24 @@ describe("parseGsc: header detection", () => {
     ]);
   });
 
-  it("does not take a two-cell first line for a header", () => {
+  it("takes a two-column first record with known labels for a header: its labels say what the second column is", () => {
+    expect(parseGsc(lines("Query,Position", "shoes,7"))).toEqual({
+      rows: [row("shoes", null, null, null, 7)],
+      skipped: 0,
+    });
+    expect(parseGsc(lines("Query,Clicks", "shoes,7"))).toEqual({
+      rows: [row("shoes", 7, null, null, null)],
+      skipped: 0,
+    });
     expect(parseGsc(lines("Query,Clicks", "a,1,2,3%,4"))).toEqual({
+      rows: [row("a", 1, null, null, null)],
+      skipped: 0,
+    });
+  });
+
+  it("does not take a digit-free first record without a known label for a header: it is a row with nothing available, counted as skipped", () => {
+    expect(parseGsc("shoes\t-\t-\t-\t-")).toEqual({ rows: [], skipped: 1 });
+    expect(parseGsc(lines("shoes\t-\t-\t-\t-", "a\t1\t2\t3%\t4"))).toEqual({
       rows: [row("a", 1, 2, 3, 4)],
       skipped: 1,
     });
@@ -51,7 +67,7 @@ describe("parseGsc: header detection", () => {
       rows: [row("new query", null, null, 1, 3)],
       skipped: 0,
     });
-    // No digit anywhere, so only the non-empty rule stops this lone query from being eaten as a header.
+    // No digit anywhere, but no cell is a known label either, so this lone query is a record, not a header.
     expect(parseGsc(lines("lonely,,,n/a,—", "a,1,2,3%,4"))).toEqual({
       rows: [row("a", 1, 2, 3, 4)],
       skipped: 1,
@@ -123,7 +139,7 @@ describe("parseGsc: columns follow the header labels", () => {
   });
 
   it("finds the query column under every query label", () => {
-    const labels = ["Top queries", "Queries", "query", "热门查询", "查询"];
+    const labels = ["Top queries", "Queries", "query", "热门查询", "查询", "Häufigste Suchanfragen", "Suchanfragen", "Suchanfrage"];
     expect(
       labels.map((label) => parseGsc(lines(`Clicks\t${label}\tImpressions`, "1\tai seo\t2")).rows),
     ).toEqual(labels.map(() => [row("ai seo", 1, 2, null, null)]));
@@ -134,10 +150,44 @@ describe("parseGsc: columns follow the header labels", () => {
     expect(parseGsc(text).rows).toEqual([row("ai seo", 5, 60, null, null)]);
   });
 
-  it("reads by position when a header is recognised but none of its labels names a metric", () => {
-    const text = lines("Suchanfrage\tKlicks\tImpressionen\tCTR-Wert\tPos.", "ai seo\t5\t60\t8,3 %\t3,2");
+  it("reads by position when the header names the query but no metric", () => {
+    const text = lines("Query\tTotal clicks\tTotal impressions\tClick rate\tAvg. position", "ai seo\t5\t60\t8,3 %\t3,2");
     expect(parseGsc(text)).toEqual({
       rows: [row("ai seo", 5, 60, 8.3, 3.2)],
+      skipped: 0,
+    });
+  });
+
+  it("counts a first record whose labels no alias set knows as skipped and reads the rest by position", () => {
+    const text = lines("Zoekterm\tKlikken\tWeergaven\tRatio\tPlaats", "ai seo\t5\t60\t8,3 %\t3,2");
+    expect(parseGsc(text)).toEqual({
+      rows: [row("ai seo", 5, 60, 8.3, 3.2)],
+      skipped: 1,
+    });
+  });
+});
+
+describe("parseGsc: German headers", () => {
+  it("reads a German semicolon export by label", () => {
+    const text = lines("Häufigste Suchanfragen;Klicks;Impressionen;CTR;Position", "schuhe;5;100;5%;2,5");
+    expect(parseGsc(text)).toEqual({
+      rows: [row("schuhe", 5, 100, 5, 2.5)],
+      skipped: 0,
+    });
+  });
+
+  it("reads reordered German columns under the alternative German labels", () => {
+    const text = lines("Durchschnittliche Position;Klickrate;Impressionen;Klicks;Suchanfrage", "2,5;5%;100;5;schuhe");
+    expect(parseGsc(text)).toEqual({
+      rows: [row("schuhe", 5, 100, 5, 2.5)],
+      skipped: 0,
+    });
+  });
+
+  it("matches a German label in capitals and with a decomposed umlaut", () => {
+    const text = lines("POSITION\tHA\u0308UFIGSTE SUCHANFRAGEN\tKLICKS", "2,5\tschuhe\t5");
+    expect(parseGsc(text)).toEqual({
+      rows: [row("schuhe", 5, null, null, 2.5)],
       skipped: 0,
     });
   });

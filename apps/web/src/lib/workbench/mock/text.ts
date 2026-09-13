@@ -96,9 +96,18 @@ export function matchesBrand(text: string, brand: string): boolean {
  * field cannot open a new heading. Besides CR and LF it folds NEL, U+2028 and
  * U+2029: a JavaScript regex `.` stops at the last two, which makes a Markdown
  * renderer such as marked drop a heading that holds one.
+ *
+ * Linear: each maximal run of whitespace and breaks is read once and becomes
+ * one space only if it holds a break. `\s*` on both sides of the breaks
+ * backtracked quadratically (100,000 spaces took 4 s). NEL is listed in the
+ * run because `\s` does not cover it.
  */
 export function oneLine(value: string): string {
-  return value.replace(/\s*[\r\n\u0085\u2028\u2029]+\s*/g, " ").trim();
+  return value
+    .replace(/[\s\u0085]+/g, (run) =>
+      /[\r\n\u0085\u2028\u2029]/.test(run) ? " " : run,
+    )
+    .trim();
 }
 
 /** The project's competitors, deduped by `normQ` keeping the first spelling; placeholders when none are filled in (R9). */

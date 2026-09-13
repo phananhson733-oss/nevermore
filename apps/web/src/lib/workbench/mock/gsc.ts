@@ -1,7 +1,7 @@
 /**
  * Pasted Search Console performance data (R12): an RFC 4180 record scanner with
- * a scored delimiter, locale-aware numbers, a header recognised by its
- * digit-free cells and read by label, and an honest count of every record that
+ * a scored delimiter, locale-aware numbers, a header recognised and read by
+ * its supported labels, and an honest count of every record that
  * did not become a row. `ctr` stays a percent (0.7 means 0.7%). A number that is
  * missing or cannot be read is `null`, never 0.
  */
@@ -35,25 +35,29 @@ const DELIMITERS: readonly Delimiter[] = ["\t", ",", ";"];
 const DELIMITER_SAMPLE_RECORDS = 5;
 const QUOTE = '"';
 const INLINE_SPACE = /[^\S\r\n]/;
-const LINE_BREAK = /[\r\n]/;
 const BOM = "\uFEFF";
 const HAS_DIGIT = /\p{Nd}/u;
 const DIGITS = /^\d+$/;
 const DOT_GROUPED = /^[1-9]\d{0,2}(?:\.\d{3})+$/;
 const COMMA_GROUPED = /^[1-9]\d{0,2}(?:,\d{3})+$/;
-const LAKH_GROUPED = /^\d{1,2}(?:,\d{2})*,\d{3}$/;
+const LAKH_GROUPED = /^[1-9]\d?(?:,\d{2})*,\d{3}$/;
 const APOSTROPHE_GROUPED = /^\d{1,3}(?:['\u2019]\d{3})+$/;
 const LONE_DECIMAL = /^\d+[.,]\d+$/;
-const NUMBER_NOISE = /[%\s]/g;
+const WHITESPACE = /\s/g;
+const PERCENT = "%";
 const POSITIONAL: Columns = { query: 0, clicks: 1, impressions: 2, ctr: 3, position: 4 };
-/** Compared against `normQ(label)`: lowercase, trimmed, spaces collapsed. */
-const QUERY_LABELS: readonly string[] = ["top queries", "queries", "query", "热门查询", "查询"];
+/** Compared against `normQ(label)` (NFKC, lowercase, trimmed, spaces collapsed), so each label is written in that form: `ä` precomposed. */
+const QUERY_LABELS: readonly string[] = [
+  "top queries", "queries", "query", "热门查询", "查询", "häufigste suchanfragen", "suchanfragen", "suchanfrage",
+];
 const METRIC_LABELS: Readonly<Record<Metric, readonly string[]>> = {
-  clicks: ["clicks", "点击次数"],
-  impressions: ["impressions", "展示次数"],
-  ctr: ["ctr", "点击率"],
-  position: ["position", "排名"],
+  clicks: ["clicks", "点击次数", "klicks"],
+  impressions: ["impressions", "展示次数", "impressionen"],
+  ctr: ["ctr", "点击率", "klickrate"],
+  position: ["position", "排名", "durchschnittliche position"],
 };
+/** Every supported label: a first record is a header only when one of its cells is one of these. */
+const HEADER_LABELS: ReadonlySet<string> = new Set([...QUERY_LABELS, ...Object.values(METRIC_LABELS).flat()]);
 const RANKED_MAX_POSITION = 10;
 const BORDERLINE_MAX_POSITION = 30;
 const DEMO_BRAND_KEY = "gengrowth";
@@ -78,8 +82,8 @@ function isFieldEnd(text: string, at: number, delimiter: Delimiter): boolean {
  * well-formed quoted field — closed, then only spaces before the field ends —
  * so the caller treats a stray quote (a query like `"hello` or `"best seo" tools`)
  * as text instead of letting it swallow the following lines into one record.
- * A value holding both a line break and the delimiter is also text: GSC queries
- * never contain line breaks, so that is two stray quotes pairing up across records.
+ * A well-formed field is kept whatever it holds, delimiters and line breaks
+ * included, as RFC 4180 and `packages/sources/src/csv/parse.ts` keep it.
  */
 function readQuoted(text: string, openAt: number, delimiter: Delimiter): { readonly value: string; readonly end: number } | null {
   let value = "";
@@ -94,8 +98,7 @@ function readQuoted(text: string, openAt: number, delimiter: Delimiter): { reado
       i += 2;
     } else {
       const end = skipPadding(text, i + 1, delimiter);
-      const spansRecords = LINE_BREAK.test(value) && value.includes(delimiter);
-      return isFieldEnd(text, end, delimiter) && !spansRecords ? { value, end } : null;
+      return isFieldEnd(text, end, delimiter) ? { value, end } : null;
     }
   }
   return null;
@@ -154,11 +157,16 @@ function* take<T>(source: Iterable<T>, limit: number): Generator<T> {
   }
 }
 
+/** A count, or a CTR with its trailing `%`. */
+function readsAsNumber(cell: string): boolean {
+  return parseCount(cell) !== null || parseCtr(cell) !== null;
+}
+
 function scoreDelimiter(text: string, delimiter: Delimiter): DelimiterScore {
   const sample = Array.from(take(nonBlankRecords(text, delimiter), DELIMITER_SAMPLE_RECORDS));
   const width = sample[0]?.length ?? 0;
   const numericCells = sample.reduce(
-    (sum, cells) => sum + cells.slice(1, 5).filter((cell) => parseCount(cell) !== null).length,
+    (sum, cells) => sum + cells.slice(1, 5).filter(readsAsNumber).length,
     0,
   );
   return { consistent: width > 1 && sample.every((cells) => cells.length === width), numericCells };
@@ -185,8 +193,9 @@ function finiteOrNull(value: number): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+/** Drops every space, so `1 234` and `0,8 %` read; a `%` stays, and only `parseCtr` accepts one. */
 function compactCell(cell: string | undefined): string {
-  return (cell ?? "").replace(NUMBER_NOISE, "");
+  return (cell ?? "").replace(WHITESPACE, "");
 }
 
 function isCommaGrouped(value: string): boolean {
@@ -216,7 +225,7 @@ function parseMixed(compact: string): number | null {
  * Clicks and impressions: valid grouping is thousands (`1,234`, `1.234.567`,
  * lakh `1,23,456`, Swiss `1'234` with an ASCII or U+2019 apostrophe; never a leading `0` group for `.`/`,`), a
  * single separator otherwise is the decimal point, anything else is unreadable.
- * Signs and exponents are not GSC numbers.
+ * Signs, exponents and `%` are not GSC counts.
  */
 function parseCount(cell: string | undefined): number | null {
   const compact = compactCell(cell);
@@ -231,26 +240,32 @@ function parseCount(cell: string | undefined): number | null {
 }
 
 /** CTR and position never reach 1,000, so a lone separator is always the decimal point (`1.125` is 1.125) and grouping is unreadable. */
-function parseDecimal(cell: string | undefined): number | null {
-  const compact = compactCell(cell);
+function parseDecimal(compact: string): number | null {
   return parsePlain(compact) ?? parseLoneDecimal(compact);
+}
+
+/** CTR is a percent: one trailing `%` is allowed (`0,8 %`); a `%` anywhere else, or a second one, is unreadable. */
+function parseCtr(cell: string | undefined): number | null {
+  const compact = compactCell(cell);
+  return parseDecimal(compact.endsWith(PERCENT) ? compact.slice(0, -PERCENT.length) : compact);
 }
 
 /** Ranks start at 1: a position of 0 or below is not a rank, so it is unavailable. */
 function parsePosition(cell: string | undefined): number | null {
-  const position = parseDecimal(cell);
+  const position = parseDecimal(compactCell(cell));
   return position !== null && position > 0 ? position : null;
 }
 
 /* ---------------- rows ---------------- */
 
-function isLabelCell(cell: string | undefined): boolean {
-  return cell !== undefined && cell.trim() !== "";
-}
-
-/** Only the first record can be a header: non-empty clicks and impressions cells, and no digit anywhere in the record. */
+/**
+ * Only the first record can be a header: no digit anywhere, and at least one
+ * cell that is a supported label. Digit-free cells alone are not enough:
+ * `shoes - - - -` is a row with nothing available, and `Query,Position` is a
+ * header with two columns.
+ */
 function isHeader(cells: readonly string[]): boolean {
-  return isLabelCell(cells[1]) && isLabelCell(cells[2]) && !cells.some((cell) => HAS_DIGIT.test(cell));
+  return !cells.some((cell) => HAS_DIGIT.test(cell)) && cells.some((cell) => HEADER_LABELS.has(normQ(cell)));
 }
 
 function labelIndex(labels: readonly string[], names: readonly string[]): number | null {
@@ -260,8 +275,8 @@ function labelIndex(labels: readonly string[], names: readonly string[]): number
 
 /**
  * The GSC web table's columns follow its metric toggles, so a header is read by
- * label; a metric without a column is null. A header none of whose labels names
- * a metric (another language) falls back to the export's positional layout.
+ * label; a metric without a column is null. A header whose only known label is
+ * the query falls back to the export's positional layout.
  */
 function headerColumns(header: readonly string[]): Columns {
   const labels = header.map(normQ);
@@ -285,7 +300,7 @@ function toRow(cells: readonly string[], columns: Columns): GscRow | null {
     query,
     clicks: parseCount(cellAt(columns.clicks)),
     impressions: parseCount(cellAt(columns.impressions)),
-    ctr: parseDecimal(cellAt(columns.ctr)),
+    ctr: parseCtr(cellAt(columns.ctr)),
     position: parsePosition(cellAt(columns.position)),
   };
   const hasMetric = row.clicks !== null || row.impressions !== null || row.ctr !== null || row.position !== null;

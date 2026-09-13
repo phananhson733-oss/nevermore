@@ -156,6 +156,90 @@ describe("oneLine", () => {
   });
 });
 
+/** The implementation before the linear rewrite, kept only as a reference: its leading `\s*` backtracks quadratically on a long run without a break. */
+const legacyOneLine = (value: string): string =>
+  value.replace(/\s*[\r\n\u0085\u2028\u2029]+\s*/g, " ").trim();
+
+describe("oneLine: same output as the previous regex", () => {
+  const cases: readonly (readonly [input: string, expected: string])[] = [
+    ["a\n b", "a b"],
+    [" a \r\n\r\n b ", "a b"],
+    ["a b", "a b"],
+    ["a  b", "a  b"],
+    ["a\t\nb", "a b"],
+    ["\n", ""],
+    ["", ""],
+    ["a   \n b", "a b"],
+    ["  \n  ", ""],
+    ["a\n\n\nb", "a b"],
+    ["a \n \n b", "a b"],
+    ["a\u0085b", "a b"],
+    ["a \t\u0085 b", "a b"],
+    ["\u0085a\u0085", "a"],
+    ["a\u2028b", "a b"],
+    ["a \u2028 \n b", "a b"],
+    ["a\u2029\u2029b", "a b"],
+    ["a\r\n\u2029\tb", "a b"],
+    ["a\u00A0\nb", "a b"],
+    ["a\n\u00A0b", "a b"],
+    ["a\u00A0b", "a\u00A0b"],
+    ["a\t\tb", "a\t\tb"],
+    ["\t\t", ""],
+  ];
+
+  it.each(cases)("oneLine(%j) is %j", (input, expected) => {
+    expect(oneLine(input)).toBe(expected);
+    expect(legacyOneLine(input)).toBe(expected);
+  });
+
+  it("matches the previous regex on every string up to 5 characters, except runs holding two or more NELs", () => {
+    const alphabet = [
+      "a",
+      " ",
+      "\t",
+      "\r",
+      "\n",
+      "\u0085",
+      "\u2028",
+      "\u2029",
+      "\u00A0",
+    ];
+    const stringsOf = (length: number): readonly string[] =>
+      length === 0
+        ? [""]
+        : stringsOf(length - 1).flatMap((prefix) =>
+            alphabet.map((char) => prefix + char),
+          );
+    const all = [0, 1, 2, 3, 4, 5].flatMap(stringsOf);
+    const differing = all.filter(
+      (value) => oneLine(value) !== legacyOneLine(value),
+    );
+    expect(all.length).toBe(66_430);
+    expect(differing.length).toBeGreaterThan(0);
+    expect(
+      differing.filter((value) => value.split("\u0085").length < 3),
+    ).toEqual([]);
+  });
+
+  // NEL is not `\s`, so the old trailing `\s*` stopped at the second NEL and each NEL got its own space.
+  it("folds a run holding two NELs split by a space into one space, where the previous regex left two", () => {
+    expect(oneLine("a\u0085 \u0085b")).toBe("a b");
+    expect(legacyOneLine("a\u0085 \u0085b")).toBe("a  b");
+  });
+});
+
+describe("oneLine: linear time", () => {
+  // The previous regex took about 4 s on 100,000 spaces and grows quadratically, so a million takes minutes: 1 s is a loose bound, not a timing gate.
+  it("returns a million spaces without a line break in under a second", () => {
+    const value = `x${" ".repeat(1_000_000)}x`;
+    const started = performance.now();
+    const folded = oneLine(value);
+    const elapsed = performance.now() - started;
+    expect(folded).toBe(value);
+    expect(elapsed).toBeLessThan(1000);
+  });
+});
+
 describe("competitorNames", () => {
   it("uses the placeholders when no competitor is filled in", () => {
     expect(COMPETITOR_PLACEHOLDERS).toEqual([

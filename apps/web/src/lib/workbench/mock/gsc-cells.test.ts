@@ -87,6 +87,16 @@ describe("parseGsc: counts are quantities, not spellings", () => {
     ]).toEqual([123456, 1234567, 10000000]);
   });
 
+  it("reads a leading-zero comma as the decimal point, as it reads 0,5, never as lakh grouping", () => {
+    expect([impressionsOf("0,5"), impressionsOf("0,123"), impressionsOf("0,005")]).toEqual([0.5, 0.123, 0.005]);
+    expect([impressionsOf("0,12,345"), impressionsOf("0,123.5")]).toEqual([null, null]);
+    expect([impressionsOf("1,23,456"), impressionsOf("10,00,000")]).toEqual([123456, 1000000]);
+    expect(parseGsc(lines("Query;Clicks;Impressions;CTR;Position", "shoes;0,005;0,123;5%;7"))).toEqual({
+      rows: [row("shoes", 0.005, 0.123, 5, 7)],
+      skipped: 0,
+    });
+  });
+
   it("takes the last of mixed separators as the decimal point", () => {
     expect([
       impressionsOf("1,234.5"),
@@ -147,6 +157,30 @@ describe("parseGsc: ctr and position are decimal-first", () => {
       positionOf("1'234"),
       ctrOf("1,234,567%"),
     ]).toEqual([null, null, null, null]);
+  });
+});
+
+describe("parseGsc: percent signs", () => {
+  const ctrOf = (cell: string): number | null => parseGsc(`q\t1\t2\t${cell}\t4`).rows[0]?.ctr ?? null;
+
+  it("does not stitch digits together across a stray or repeated percent sign", () => {
+    expect(parseGsc("x;1%2;100;5%%;0%5")).toEqual({ rows: [row("x", null, 100, null, null)], skipped: 0 });
+    expect(parseGsc(lines("Query;Clicks;Impressions;CTR;Position", "x;1%2;100;5%%;0%5"))).toEqual({
+      rows: [row("x", null, 100, null, null)],
+      skipped: 0,
+    });
+  });
+
+  it("accepts one trailing percent sign on the CTR, spaces allowed", () => {
+    expect([ctrOf("5%"), ctrOf("5,5 %"), ctrOf("0.05"), ctrOf(" 5 % ")]).toEqual([5, 5.5, 0.05, 5]);
+  });
+
+  it("returns null for a CTR with a leading, internal or second percent sign", () => {
+    expect([ctrOf("%5"), ctrOf("0%5"), ctrOf("5%%"), ctrOf("5 % %"), ctrOf("%")]).toEqual([null, null, null, null, null]);
+  });
+
+  it("returns null for a percent sign in clicks, impressions or position", () => {
+    expect(parseGsc("q\t5%\t60%\t3%\t4%")).toEqual({ rows: [row("q", null, null, 3, null)], skipped: 0 });
   });
 });
 
