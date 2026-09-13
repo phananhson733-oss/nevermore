@@ -3,32 +3,51 @@
  * tree-shaking is not a boundary: `mock/find-lib.ts` reads `FIND_LIB.length` at
  * module top level, so importing any helper from a module that imports it drags
  * the whole audit rule library in. tsc and the unit tests are indifferent to how
- * a module is imported; only a build notices. This walks the static import graph
- * the way the bundler sees it (type-only clauses are erased, `await import(...)`
- * is a separate chunk) and pins what must stay out of the client.
+ * a module is imported; only a build notices. This parses every module it walks
+ * with the TypeScript parser and reads its import edges the way the bundler sees
+ * them. Type-only clauses are erased. `import`/`export ... from` and
+ * `import x = require()` are static edges. `import("...")` and `require("...")`
+ * with a literal argument are dynamic edges: a separate chunk, still shipped to
+ * the browser.
  *
- * Two entry groups, two lists:
+ * Entry groups, what each keeps out, and over which edges:
  * - The store (`hooks.ts`, `WorkbenchProvider.tsx`, and `selectors.ts`, imported
  *   by both) keeps out the rule library, the leak-phrase table, the artifact
- *   builders and the sample site.
+ *   builders and the sample site. Static edges only.
  * - The five view roots and `ShellChrome` keep out only the sample site and the
  *   two modules nothing but it imports. The week and profile views reach the
  *   rule library and the builders on purpose today (`week-summary.ts ->
  *   mock/audit.ts`, `ui/ArtifactActions.tsx -> mock/builders/agent-task.ts`), so
- *   the store list would be red from the start. `mock/demo.ts` must arrive only
- *   through the `await import` in `LoadDemoButton.tsx`; the last test pins that
- *   the dynamic import is really there (T6 handover, Q13).
- * - Every entry keeps out Node-only bare specifiers (below).
+ *   the store list would be red from the start. Static edges only, on purpose:
+ *   `mock/demo.ts` must arrive through the `await import` in
+ *   `LoadDemoButton.tsx` (T6 handover, Q13), so a walk over dynamic edges reaches
+ *   it by design. The last test pins that `LoadDemoButton.tsx` holds an
+ *   `import()` call whose argument is exactly `@/lib/workbench/mock/demo.ts`. It
+ *   proves the call is in the code rather than in a comment; it does not prove
+ *   the call runs only on click.
+ * - Every entry keeps out Node-only bare specifiers (below), over static and
+ *   dynamic edges, following dynamic edges into local modules as well: a lazily
+ *   loaded chunk that reaches `node:fs` breaks the client build all the same.
+ * - An `import()` or `require()` whose argument is not a literal cannot be
+ *   followed. The walk does not skip it: every one reachable over static and
+ *   dynamic edges is listed by a test that fails while the list is not empty
+ *   (none today, 2026-09-14).
  *
- * Blind spots: the walk stops at package boundaries, so a workspace package that
- * newly reaches Node through its own imports is not seen (`@sf/contracts` and
- * `@sf/i18n` are reached today and are not followed); `require()` and
- * `import x = require()` are not read.
+ * Blind spots:
+ * - the walk stops at package boundaries, so a workspace package that newly
+ *   reaches Node through its own imports is not seen (`@sf/contracts` and
+ *   `@sf/i18n` are reached today and are not followed);
+ * - the sample-site gate ignores dynamic edges, so a second `import()` of the
+ *   sample site from any other client module, even one that runs at module top
+ *   level, is not seen;
+ * - loaders that are neither `import()` nor `require()`, such as
+ *   `new Worker(new URL("./x.ts", import.meta.url))`, are not read.
  */
 import { readFileSync, statSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const STORE_DIR = dirname(fileURLToPath(import.meta.url));
@@ -51,10 +70,22 @@ const DEMO_LOADER = resolve(
   SRC_DIR,
   "components/workbench/views/overview/LoadDemoButton.tsx",
 );
+const DEMO_SITE_SPECIFIER = "@/lib/workbench/mock/demo.ts";
 const FIXTURE = resolve(
   STORE_DIR,
   "__fixtures__/view-with-static-demo-import.tsx",
 );
+const DYNAMIC_FIXTURE = resolve(
+  STORE_DIR,
+  "__fixtures__/view-with-dynamic-imports.tsx",
+);
+
+/** Which edges a walk follows into local modules. */
+type Follow = "static" | "static-and-dynamic";
+
+const STORE_GATE_EDGES: Follow = "static";
+const SAMPLE_GATE_EDGES: Follow = "static";
+const NODE_GATE_EDGES: Follow = "static-and-dynamic";
 
 /**
  * For each view entry, a file at least two imports below it (checked
@@ -106,35 +137,139 @@ const NODE_ONLY_PACKAGES = [
   "undici",
 ] as const;
 
-/** An `import`/`export ... from` clause. Group 1 is `type ` on a type-only clause; group 2 is the specifier. */
-const FROM_CLAUSE =
-  /^[ \t]*(?:import|export)[ \t]+(type[ \t]+)?(?:[\w$]+[ \t]*,?[ \t]*)?(?:\{[^}]*\}|\*(?:[ \t]+as[ \t]+[\w$]+)?)?[ \t]*from[ \t]*["']([^"']+)["']/gm;
-const SIDE_EFFECT_IMPORT = /^[ \t]*import[ \t]*["']([^"']+)["']/gm;
-const DYNAMIC_DEMO_IMPORT =
-  /await import\(\s*["']@\/lib\/workbench\/mock\/demo\.ts["']\s*\)/;
+const SCRIPT = /\.[cm]?[jt]sx?$/;
+
+type EdgeKind = "static" | "dynamic";
+
+interface ImportEdge {
+  readonly spec: string;
+  readonly kind: EdgeKind;
+  readonly syntax:
+    | "import"
+    | "export"
+    | "import-equals"
+    | "import()"
+    | "require()";
+}
+
+interface ModuleImports {
+  readonly edges: readonly ImportEdge[];
+  /** `line:column text` of each `import()` / `require()` whose argument is not a literal. */
+  readonly nonLiteral: readonly string[];
+}
 
 function isLocal(spec: string): boolean {
   return spec.startsWith(".") || spec.startsWith("@/");
 }
 
-/** Every specifier of the value imports and re-exports in `source`, local or bare. */
-function allValueSpecifiers(source: string): readonly string[] {
-  const fromClauses = [...source.matchAll(FROM_CLAUSE)]
-    .filter((match) => match[1] === undefined)
-    .map((match) => match[2] ?? "");
-  const sideEffects = [...source.matchAll(SIDE_EFFECT_IMPORT)].map(
-    (match) => match[1] ?? "",
-  );
-  return [...fromClauses, ...sideEffects];
+/** A string literal or a template literal without substitutions. */
+function literalText(node: ts.Expression | undefined): string | null {
+  if (node === undefined) return null;
+  const literal =
+    ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
+  return literal ? node.text : null;
 }
 
-/** Local specifiers (relative or `@/`) of the value imports and re-exports in `source`. */
+function edge(
+  node: ts.Expression | undefined,
+  syntax: ImportEdge["syntax"],
+): ImportEdge | null {
+  const spec = literalText(node);
+  const kind =
+    syntax === "import()" || syntax === "require()" ? "dynamic" : "static";
+  return spec === null ? null : { spec, kind, syntax };
+}
+
+/**
+ * The static edge a declaration makes, or null. `import { type A } from` still
+ * counts: with `verbatimModuleSyntax` only a clause-level `type` is erased.
+ */
+function staticEdge(node: ts.Node): ImportEdge | null {
+  if (ts.isImportDeclaration(node)) {
+    const typeOnly =
+      node.importClause?.phaseModifier === ts.SyntaxKind.TypeKeyword;
+    return typeOnly ? null : edge(node.moduleSpecifier, "import");
+  }
+  if (ts.isExportDeclaration(node)) {
+    return node.isTypeOnly ? null : edge(node.moduleSpecifier, "export");
+  }
+  if (
+    ts.isImportEqualsDeclaration(node) &&
+    !node.isTypeOnly &&
+    ts.isExternalModuleReference(node.moduleReference)
+  ) {
+    return edge(node.moduleReference.expression, "import-equals");
+  }
+  return null;
+}
+
+/** `import()` or `require()` for a call that loads a module, null for any other call. */
+function loaderSyntax(node: ts.CallExpression): ImportEdge["syntax"] | null {
+  if (node.expression.kind === ts.SyntaxKind.ImportKeyword) return "import()";
+  const callee = node.expression;
+  return ts.isIdentifier(callee) && callee.text === "require"
+    ? "require()"
+    : null;
+}
+
+/** Every import edge in `text`, and every loader call it cannot follow. */
+function readImports(text: string, fileName: string): ModuleImports {
+  const scriptKind = /x$/.test(fileName) ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const source = ts.createSourceFile(
+    fileName,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKind,
+  );
+  const edges: ImportEdge[] = [];
+  const nonLiteral: string[] = [];
+  const visit = (node: ts.Node): void => {
+    const declared = staticEdge(node);
+    if (declared !== null) edges.push(declared);
+    const syntax = ts.isCallExpression(node) ? loaderSyntax(node) : null;
+    if (ts.isCallExpression(node) && syntax !== null) {
+      const loaded = edge(node.arguments[0], syntax);
+      if (loaded !== null) edges.push(loaded);
+      else nonLiteral.push(where(source, node));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return { edges, nonLiteral };
+}
+
+function where(source: ts.SourceFile, node: ts.Node): string {
+  const start = source.getLineAndCharacterOfPosition(node.getStart(source));
+  return `${start.line + 1}:${start.character + 1} ${node.getText(source)}`;
+}
+
+/** Parsed once per file per run; the files do not change while the tests read them. */
+const parsed = new Map<string, ModuleImports>();
+
+/** Throws on a file that is not a script: its imports would otherwise read as none. */
+function importsOf(file: string): ModuleImports {
+  const cached = parsed.get(file);
+  if (cached !== undefined) return cached;
+  if (!SCRIPT.test(file)) throw new Error(`not a script module: ${file}`);
+  const read = readImports(readFileSync(file, "utf8"), file);
+  parsed.set(file, read);
+  return read;
+}
+
+function staticSpecifiers(source: string): readonly string[] {
+  return readImports(source, "reader-input.ts")
+    .edges.filter((found) => found.kind === "static")
+    .map((found) => found.spec);
+}
+
+/** Local specifiers (relative or `@/`) of the static value imports and re-exports in `source`. */
 function valueSpecifiers(source: string): readonly string[] {
-  return allValueSpecifiers(source).filter(isLocal);
+  return staticSpecifiers(source).filter(isLocal);
 }
 
 function bareValueSpecifiers(source: string): readonly string[] {
-  return allValueSpecifiers(source).filter((spec) => !isLocal(spec));
+  return staticSpecifiers(source).filter((spec) => !isLocal(spec));
 }
 
 function isFile(path: string): boolean {
@@ -167,19 +302,26 @@ function resolveSpecifier(fromFile: string, spec: string): string {
   return found;
 }
 
-/** Every file reachable by value imports, mapped to the file that first imported it (`null` for entries). */
-function reachableFrom(
-  entries: readonly string[],
-): ReadonlyMap<string, string | null> {
-  const parents = new Map<string, string | null>(
+interface Parent {
+  readonly file: string;
+  readonly kind: EdgeKind;
+}
+
+type Parents = ReadonlyMap<string, Parent | null>;
+
+/** Every file reachable over `follow` edges, mapped to the file (and edge) that first reached it; `null` for entries. */
+function reachableFrom(entries: readonly string[], follow: Follow): Parents {
+  const parents = new Map<string, Parent | null>(
     entries.map((entry) => [entry, null]),
   );
   const queue = [...entries];
   for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
-    for (const spec of valueSpecifiers(readFileSync(file, "utf8"))) {
-      const target = resolveSpecifier(file, spec);
+    for (const found of importsOf(file).edges) {
+      if (!isLocal(found.spec)) continue;
+      if (follow === "static" && found.kind === "dynamic") continue;
+      const target = resolveSpecifier(file, found.spec);
       if (parents.has(target)) continue;
-      parents.set(target, file);
+      parents.set(target, { file, kind: found.kind });
       queue.push(target);
     }
   }
@@ -194,15 +336,15 @@ function srcPath(file: string): string {
   return relative(SRC_DIR, file);
 }
 
-/** `lib/workbench/store/selectors.ts -> lib/workbench/mock/kb.ts -> ...`, for a readable failure. */
-function chainTo(
-  parents: ReadonlyMap<string, string | null>,
-  file: string,
-): string {
+/**
+ * `lib/workbench/store/selectors.ts -> lib/workbench/mock/kb.ts -> ...`, for a
+ * readable failure. `->` is a static edge, `~>` a dynamic one.
+ */
+function chainTo(parents: Parents, file: string): string {
   const up = parents.get(file);
-  return up === null || up === undefined
-    ? srcPath(file)
-    : `${chainTo(parents, up)} -> ${srcPath(file)}`;
+  if (up === null || up === undefined) return srcPath(file);
+  const arrow = up.kind === "static" ? "->" : "~>";
+  return `${chainTo(parents, up.file)} ${arrow} ${srcPath(file)}`;
 }
 
 /** The store list. */
@@ -236,14 +378,23 @@ function isNodeOnly(spec: string): boolean {
   );
 }
 
-/** `chain imports "spec"` for every Node-only bare import in the graph. */
-function nodeOnlyImports(
-  parents: ReadonlyMap<string, string | null>,
-): readonly string[] {
+/** `chain imports "spec"` for every Node-only bare specifier, static or dynamic, in the graph's files. */
+function nodeOnlyImports(parents: Parents): readonly string[] {
   return [...parents.keys()].flatMap((file) =>
-    bareValueSpecifiers(readFileSync(file, "utf8"))
-      .filter(isNodeOnly)
-      .map((spec) => `${chainTo(parents, file)} imports "${spec}"`),
+    importsOf(file)
+      .edges.filter((found) => !isLocal(found.spec) && isNodeOnly(found.spec))
+      .map((found) => {
+        const verb =
+          found.kind === "static" ? "imports" : "dynamically imports";
+        return `${chainTo(parents, file)} ${verb} "${found.spec}"`;
+      }),
+  );
+}
+
+/** `path:line:column text` for every loader call in the graph's files whose argument is not a literal. */
+function nonLiteralLoads(parents: Parents): readonly string[] {
+  return [...parents.keys()].flatMap((file) =>
+    importsOf(file).nonLiteral.map((at) => `${srcPath(file)}:${at}`),
   );
 }
 
@@ -280,6 +431,74 @@ describe("import clause reader", () => {
     );
   });
 
+  it("reads clauses with no spaces, `from` on the next line, a directive before them, or a comment inside", () => {
+    const sources = [
+      'import{readFileSync}from"node:fs";',
+      'import {readFileSync}\nfrom "node:fs";',
+      '"use client"; import {readFileSync} from "node:fs";',
+      'import /* runtime */ {readFileSync} from "node:fs";',
+    ];
+    expect(sources.map(bareValueSpecifiers)).toEqual(
+      sources.map(() => ["node:fs"]),
+    );
+  });
+
+  it("reads nothing from import text inside comments or a template literal", () => {
+    const source = [
+      "/*",
+      'import { x } from "./in-block-comment.ts";',
+      "*/",
+      "const text = `",
+      'import { y } from "./in-template.ts";',
+      'import "node:fs";',
+      "`;",
+      '// import { z } from "./in-line-comment.ts";',
+    ].join("\n");
+    expect(readImports(source, "reader-input.ts")).toEqual({
+      edges: [],
+      nonLiteral: [],
+    });
+  });
+
+  it("reads import() and require() as dynamic edges and import = require() as a static one, skipping type positions", () => {
+    const source = [
+      'export const load = () => import("node:fs");',
+      'export const lazy = () => import("./lazy.ts");',
+      "export const tpl = () => import(`./template-literal.ts`);",
+      'const cjs = require("node:fs");',
+      'import path = require("node:path");',
+      'import type T = require("./type-only-equals.ts");',
+      'type Mod = typeof import("./type-position.ts");',
+    ].join("\n");
+    expect(readImports(source, "reader-input.ts")).toEqual({
+      edges: [
+        { spec: "node:fs", kind: "dynamic", syntax: "import()" },
+        { spec: "./lazy.ts", kind: "dynamic", syntax: "import()" },
+        { spec: "./template-literal.ts", kind: "dynamic", syntax: "import()" },
+        { spec: "node:fs", kind: "dynamic", syntax: "require()" },
+        { spec: "node:path", kind: "static", syntax: "import-equals" },
+      ],
+      nonLiteral: [],
+    });
+  });
+
+  it("lists an import() or require() whose argument is not a literal, with its position", () => {
+    const source = [
+      'const name = "node:fs";',
+      "export const byName = () => import(name);",
+      "export const byLang = (lang: string) => import(`./messages/${lang}.ts`);",
+      "export const cjs = require(name);",
+    ].join("\n");
+    expect(readImports(source, "reader-input.ts")).toEqual({
+      edges: [],
+      nonLiteral: [
+        "2:29 import(name)",
+        "3:41 import(`./messages/${lang}.ts`)",
+        "4:20 require(name)",
+      ],
+    });
+  });
+
   it("classifies Node builtins and Node-only packages, and leaves client packages alone", () => {
     expect(
       ["node:assert", "fs", "@sf/engine", "@sf/sources/crawl", "undici"].filter(
@@ -300,16 +519,19 @@ describe("import clause reader", () => {
 
 describe("client import graph of the workbench store", () => {
   it("walks from the store entries into the mock layer", () => {
-    const reachable = [...reachableFrom(STORE_ENTRIES).keys()].map(
-      workbenchPath,
-    );
+    const reachable = [
+      ...reachableFrom(STORE_ENTRIES, STORE_GATE_EDGES).keys(),
+    ].map(workbenchPath);
     expect(reachable.length).toBeGreaterThan(STORE_ENTRIES.length);
     expect(reachable).toContain("mock/keywords.ts");
     expect(reachable).toContain("mock/kb.ts");
   });
 
   it("sees the audit rule library behind mock/profile.ts (positive control)", () => {
-    const parents = reachableFrom([resolve(WORKBENCH_DIR, "mock/profile.ts")]);
+    const parents = reachableFrom(
+      [resolve(WORKBENCH_DIR, "mock/profile.ts")],
+      STORE_GATE_EDGES,
+    );
     expect(
       [...parents.keys()]
         .filter(isClientForbidden)
@@ -320,7 +542,7 @@ describe("client import graph of the workbench store", () => {
   });
 
   it("never reaches the audit rule library, the leak-phrase table, the artifact builders, or the demo site", () => {
-    const parents = reachableFrom(STORE_ENTRIES);
+    const parents = reachableFrom(STORE_ENTRIES, STORE_GATE_EDGES);
     const offenders = [...parents.keys()]
       .filter(isClientForbidden)
       .map((file) => chainTo(parents, file));
@@ -341,14 +563,16 @@ describe("client import graph of the workbench store", () => {
 });
 
 describe("client import graph of the workbench views and shell", () => {
-  const walked = reachableFrom(CLIENT_ENTRIES);
+  const walked = reachableFrom(CLIENT_ENTRIES, SAMPLE_GATE_EDGES);
+  const walkedWithDynamic = reachableFrom(CLIENT_ENTRIES, NODE_GATE_EDGES);
+  const dynamicView = srcPath(DYNAMIC_FIXTURE);
 
   it.each(DEEP_REACH)("walks %s down to %s", (entry, deep) => {
     // A root of the walk the gates below use, not just a file on disk.
     expect(walked.get(resolve(SRC_DIR, entry))).toBeNull();
-    const own = [...reachableFrom([resolve(SRC_DIR, entry)]).keys()].map(
-      srcPath,
-    );
+    const own = [
+      ...reachableFrom([resolve(SRC_DIR, entry)], SAMPLE_GATE_EDGES).keys(),
+    ].map(srcPath);
     expect(own).toContain(deep);
     expect(walked.has(resolve(SRC_DIR, deep))).toBe(true);
   });
@@ -360,7 +584,7 @@ describe("client import graph of the workbench views and shell", () => {
   });
 
   it("catches a view-shaped module that imports the sample site statically (control)", () => {
-    const parents = reachableFrom([FIXTURE]);
+    const parents = reachableFrom([FIXTURE], SAMPLE_GATE_EDGES);
     const offenders = [...parents.keys()]
       .filter(isSampleSite)
       .map((file) => chainTo(parents, file));
@@ -373,6 +597,11 @@ describe("client import graph of the workbench views and shell", () => {
     ]);
   });
 
+  it("keeps dynamic edges out of the walk the sample-site gate uses (control)", () => {
+    const parents = reachableFrom([DYNAMIC_FIXTURE], SAMPLE_GATE_EDGES);
+    expect([...parents.keys()].map(srcPath)).toEqual([dynamicView]);
+  });
+
   it("never reaches the sample site statically", () => {
     const offenders = [...walked.keys()]
       .filter(isSampleSite)
@@ -381,17 +610,48 @@ describe("client import graph of the workbench views and shell", () => {
   });
 
   it("catches a Node-only import in a view-shaped module (control)", () => {
-    expect(nodeOnlyImports(reachableFrom([FIXTURE]))).toContain(
+    expect(
+      nodeOnlyImports(reachableFrom([FIXTURE], NODE_GATE_EDGES)),
+    ).toContain(
       'lib/workbench/store/__fixtures__/view-with-static-demo-import.tsx imports "node:assert"',
     );
   });
 
-  it("never reaches a Node builtin or a Node-only package from any client entry", () => {
-    expect(nodeOnlyImports(walked)).toEqual([]);
+  it("catches a Node-only module loaded dynamically, directly or through a local module (control)", () => {
+    const parents = reachableFrom([DYNAMIC_FIXTURE], NODE_GATE_EDGES);
+    expect(nodeOnlyImports(parents).toSorted()).toEqual([
+      `${dynamicView} dynamically imports "node:fs"`,
+      `${dynamicView} ~> lib/workbench/store/__fixtures__/lazy-node-import.tsx imports "node:fs"`,
+    ]);
   });
 
-  it("loads the sample site through a dynamic import in the loader", () => {
+  it("follows the loader's dynamic import into the sample site in the Node-only walk (control)", () => {
+    const demo = resolve(SRC_DIR, "lib/workbench/mock/demo.ts");
+    expect(chainTo(walkedWithDynamic, demo)).toMatch(
+      /components\/workbench\/views\/overview\/LoadDemoButton\.tsx ~> lib\/workbench\/mock\/demo\.ts$/,
+    );
+  });
+
+  it("never reaches a Node builtin or a Node-only package from any client entry, over static or dynamic edges", () => {
+    expect(nodeOnlyImports(walkedWithDynamic)).toEqual([]);
+  });
+
+  it("lists a loader call whose argument is not a literal (control)", () => {
+    expect(
+      nonLiteralLoads(reachableFrom([DYNAMIC_FIXTURE], NODE_GATE_EDGES)),
+    ).toEqual([`${dynamicView}:20:45 import(name)`]);
+  });
+
+  it("finds a literal argument in every import() and require() reachable from a client entry", () => {
+    expect(nonLiteralLoads(walkedWithDynamic)).toEqual([]);
+  });
+
+  it("loads the sample site through an import() call in the loader", () => {
     expect(walked.has(DEMO_LOADER)).toBe(true);
-    expect(readFileSync(DEMO_LOADER, "utf8")).toMatch(DYNAMIC_DEMO_IMPORT);
+    expect(importsOf(DEMO_LOADER).edges).toContainEqual({
+      spec: DEMO_SITE_SPECIFIER,
+      kind: "dynamic",
+      syntax: "import()",
+    });
   });
 });
