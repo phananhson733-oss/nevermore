@@ -233,6 +233,7 @@ const REQUIRED: Readonly<
       "answer plans",
       "link targets",
       "after loading the sample",
+      "anything you added",
     ],
   },
   // Q11 raises this dialog for any non-empty field, so the four named
