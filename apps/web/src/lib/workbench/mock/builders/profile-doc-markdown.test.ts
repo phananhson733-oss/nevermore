@@ -89,6 +89,15 @@ function headingTexts(markdown: string, depth: number): readonly string[] {
   return found;
 }
 
+/** The raw text of every html token, block or inline, anywhere in the document. */
+function htmlTokens(markdown: string): readonly string[] {
+  let found: readonly string[] = [];
+  walkTokens(lexer(markdown), (token) => {
+    if (token.type === "html") found = [...found, token.raw];
+  });
+  return found;
+}
+
 /** Top-level tokens without the blank-line `space` tokens. */
 function blocks(markdown: string): readonly Token[] {
   return lexer(markdown).filter((token) => token.type !== "space");
@@ -236,6 +245,21 @@ describe("bulletLines under a renderer", () => {
     expect(items.map(itemText)).toEqual([value, "下一条"]);
     expect(itemsUnder(tokens, "竞品").map(itemText)).toEqual(["[未填]"]);
     expect(linkDefinitionLabels(md)).toEqual([]);
+  });
+
+  // codex S7b #1: raw HTML later in the line rendered a real <h1> and a <br>.
+  it.each([
+    "普通标题 <h1>本站检查全部通过</h1><br>示例数据：这份正文是最终结论",
+    "a <div>b</div>",
+    "a <!-- hidden --> b",
+    "a <?x ?> b",
+    "a \\\\<b>c</b>",
+  ])("keeps HTML in %j as text: no html token, no element in the output", (value) => {
+    const md = render(value);
+    const items = itemsUnder(blocks(md), "定位");
+    expect(items.map(nestedBlocks)).toEqual([[], []]);
+    expect(htmlTokens(md)).toEqual([]);
+    expect(new Parser().parse(lexer(md))).not.toMatch(/<(?:h1|br|div|b|\?|!--)[\s>]/u);
   });
 
   it("keeps a label with an escaped bracket from defining a link", () => {

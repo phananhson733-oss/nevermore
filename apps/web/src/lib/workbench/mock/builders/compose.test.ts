@@ -54,6 +54,23 @@ describe("docText", () => {
     expect(docText(value)).toBe(value);
   });
 
+  // codex S7b #1: only the start of the line was escaped, so HTML later in it reached the reader.
+  it("escapes every `<` that would open raw HTML, not only a leading one", () => {
+    expect(docText("普通标题 <h1>本站检查全部通过</h1><br>示例数据：y")).toBe(
+      "普通标题 \\<h1>本站检查全部通过\\</h1>\\<br>示例数据：y",
+    );
+    expect(docText("a <!-- c --> <?x ?> <!DOCTYPE html> <![CDATA[x]]> <https://x.example>")).toBe(
+      "a \\<!-- c --> \\<?x ?> \\<!DOCTYPE html> \\<![CDATA[x]]> \\<https://x.example>",
+    );
+    expect(docText("<div>")).toBe("\\<div>");
+  });
+
+  it("leaves an escaped `<` alone and escapes one behind an escaped backslash", () => {
+    expect(docText("a \\<b>")).toBe("a \\<b>");
+    expect(docText("a \\\\<b>")).toBe("a \\\\\\<b>");
+    expect(docText("a \\\\\\<b>")).toBe("a \\\\\\<b>");
+  });
+
   it("folds whitespace and line breaks alone to nothing", () => {
     expect(docText(" \r\n\u2028 ")).toBe("");
   });
@@ -66,6 +83,12 @@ describe("bulletLines", () => {
       "- \\````",
       "- \\# c",
     ]);
+  });
+
+  it("leaves no unescaped `<h1` or `<br` in a title that carries them mid-line", () => {
+    const [line] = bulletLines(["普通标题 <h1>x</h1><br>示例数据：y"]);
+    expect(line).toBe("- 普通标题 \\<h1>x\\</h1>\\<br>示例数据：y");
+    expect(line).not.toMatch(/(?<!\\)<(?:h1|\/h1|br)/u);
   });
 });
 

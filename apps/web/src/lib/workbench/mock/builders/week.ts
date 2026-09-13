@@ -33,7 +33,11 @@
  *   and that section says they are tasks.
  *
  * Every user- or AI-controlled string (brand, finding titles, artifact titles)
- * goes through `docText`, so none can open a heading, list or fence.
+ * goes through `docText`, so none can open a heading, list or fence at the
+ * start of its line, and none carries raw HTML anywhere in it (codex S7b #1:
+ * `x <h1>…</h1><br>…` in an artifact title rendered a heading and a line of its
+ * own). That keeps a title on its bullet; it does not stop a title that is
+ * itself a sentence from reading as one.
  */
 import type { ArtifactType, Engine, ModuleId } from "../../types.ts";
 import { bulletLines, docText, joinParts } from "./compose.ts";
