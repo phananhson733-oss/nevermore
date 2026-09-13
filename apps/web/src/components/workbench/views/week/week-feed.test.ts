@@ -2,19 +2,22 @@ import { describe, expect, it } from "vitest";
 import { initialProjectState, type ProjectSeed } from "@/lib/workbench/store/reducer";
 import { populatedProjectState } from "@/lib/workbench/store/test-fixtures";
 import type { Artifact, AuditReport, VisSnapshot, WorkbenchProjectState } from "@/lib/workbench/types";
-import { WEEK_WINDOW_DAYS, artifactsWithinDays, weekFeed } from "./week-feed.ts";
+import { WEEK_WINDOW_DAYS, artifactsInWeek, inWeekWindow, weekFeed, weekWindow } from "./week-feed.ts";
 
 /**
- * The seven-day window (Q20, jsx W3/W5/W19). The edges are pinned with the
- * clock, not the stamp: stamps have minute precision, so "exactly seven days"
- * is `now` on the minute and "seven days and a second" is the same stamp read
- * one second later. A future stamp is outside every window.
+ * The week window (Q20, jsx W3/W5/W19; codex S7a #5 / #9). It is the local
+ * calendar range the subtitle prints: from 00:00 on the date seven days before
+ * today up to `now`, both ends in. Stamps have minute precision, so the edges
+ * are pinned on stamps: the first minute of the first date is in and the minute
+ * before it is out; the minute `now` falls in is in, a second later too, and the
+ * next minute is out. A future stamp is outside every window.
  */
 
 const SEED: ProjectSeed = { url: "https://example.test", brand: "Example", market: "US" };
 const NOW = new Date(2026, 8, 13, 10, 30, 0);
 const ONE_SECOND_LATER = new Date(2026, 8, 13, 10, 30, 1);
-const SEVEN_DAYS = "2026-09-06 10:30";
+const FIRST_MINUTE = "2026-09-06 00:00";
+const DAY_BEFORE = "2026-09-05 23:59";
 
 const POPULATED = populatedProjectState(SEED);
 
@@ -34,33 +37,74 @@ function blank(overrides: Partial<WorkbenchProjectState> = {}): WorkbenchProject
   return { ...initialProjectState(SEED), ...overrides };
 }
 
-describe("artifactsWithinDays", () => {
-  it("is a seven-day window", () => {
+describe("weekWindow", () => {
+  it("runs from the first minute of the date seven days back to now", () => {
     expect(WEEK_WINDOW_DAYS).toBe(7);
+    expect(weekWindow(NOW)).toEqual({
+      from: "2026-09-06",
+      to: "2026-09-13",
+      first: FIRST_MINUTE,
+      last: "2026-09-13 10:30",
+    });
   });
 
-  it("keeps an artifact exactly seven days old", () => {
-    const kept = artifactsWithinDays([artifact("a", SEVEN_DAYS)], WEEK_WINDOW_DAYS, NOW);
-    expect(kept.map((a) => a.id)).toEqual(["a"]);
+  it("crosses a month boundary", () => {
+    expect(weekWindow(new Date(2026, 9, 3, 0, 5))).toMatchObject({ from: "2026-09-26", to: "2026-10-03" });
+  });
+});
+
+describe("inWeekWindow", () => {
+  const range = weekWindow(NOW);
+
+  it("keeps the first minute of the first date and drops the minute before it", () => {
+    expect(inWeekWindow(FIRST_MINUTE, range)).toBe(true);
+    expect(inWeekWindow(DAY_BEFORE, range)).toBe(false);
   });
 
-  it("drops the same artifact one second later", () => {
-    expect(artifactsWithinDays([artifact("a", SEVEN_DAYS)], WEEK_WINDOW_DAYS, ONE_SECOND_LATER)).toEqual([]);
+  it("keeps the minute now falls in, a second later too, and drops the next minute", () => {
+    expect(inWeekWindow("2026-09-13 10:30", weekWindow(ONE_SECOND_LATER))).toBe(true);
+    expect(inWeekWindow("2026-09-13 10:31", weekWindow(ONE_SECOND_LATER))).toBe(false);
+    expect(inWeekWindow("2026-09-14 09:00", range)).toBe(false);
   });
 
-  it("keeps one made this very minute", () => {
-    const kept = artifactsWithinDays([artifact("a", "2026-09-13 10:30")], WEEK_WINDOW_DAYS, ONE_SECOND_LATER);
-    expect(kept.map((a) => a.id)).toEqual(["a"]);
+  // Each of these sorts between the two ends as a string; only parsing keeps it out.
+  it.each(["2026-09-10 24:00", "2026-09-10 09:60", "2026-02-30 10:00", "2026-09-10 9:00", "2026-09-10 10:00 "])(
+    "excludes %j, which does not parse",
+    (stamp) => {
+      expect(inWeekWindow(stamp, weekWindow(new Date(2026, 8, 13, 10, 30)))).toBe(false);
+    },
+  );
+
+  it("excludes an ISO stamp", () => {
+    expect(inWeekWindow("2026-09-12T10:00:00Z", range)).toBe(false);
   });
 
-  it("excludes a stamp in the future and one that does not parse", () => {
+  // codex S7a #9: the subtitle printed 2026-09-07 while this artifact, 171 hours
+  // old, fell outside a 168-hour window and the page said nothing had happened.
+  it("counts every stamp on the subtitle's first date, however many hours back", () => {
+    const now = new Date(2026, 8, 14, 12, 0);
+    expect(weekWindow(now)).toMatchObject({ from: "2026-09-07", to: "2026-09-14" });
+    expect(inWeekWindow("2026-09-07 09:00", weekWindow(now))).toBe(true);
+  });
+
+  // In America/Los_Angeles this span holds a fall-back hour (169 hours); in Asia/Shanghai it is 168.
+  it("takes the first date by the calendar across a daylight-saving change", () => {
+    const now = new Date(2026, 10, 3, 12, 0);
+    expect(weekWindow(now)).toMatchObject({ from: "2026-10-27", to: "2026-11-03" });
+    expect(inWeekWindow("2026-10-27 12:00", weekWindow(now))).toBe(true);
+  });
+});
+
+describe("artifactsInWeek", () => {
+  it("keeps the artifacts stamped inside the window, in their order", () => {
     const artifacts = [
+      artifact("now", "2026-09-13 10:30"),
+      artifact("day-before", DAY_BEFORE),
+      artifact("first-minute", FIRST_MINUTE),
       artifact("next-minute", "2026-09-13 10:31"),
-      artifact("tomorrow", "2026-09-14 09:00"),
       artifact("feb-30", "2026-02-30 10:00"),
-      artifact("iso", "2026-09-12T10:00:00Z"),
     ];
-    expect(artifactsWithinDays(artifacts, WEEK_WINDOW_DAYS, NOW)).toEqual([]);
+    expect(artifactsInWeek(artifacts, weekWindow(ONE_SECOND_LATER)).map((a) => a.id)).toEqual(["now", "first-minute"]);
   });
 });
 
@@ -100,14 +144,44 @@ describe("weekFeed", () => {
     expect(weekFeed(running, NOW)).toEqual([]);
   });
 
-  it("applies the same edges to runs as to artifacts", () => {
+  // codex S7a #5: two audits this week, and the feed listed only the latest
+  // while the health card quoted the other one as "the previous run".
+  it("lists every archived run still in the window, newest first", () => {
     const state = blank({
-      lastAudit: { ...REPORT, at: SEVEN_DAYS },
-      lastVis: { ...SNAPSHOT, at: "2026-09-13 10:31" },
-      kb: { ...must(POPULATED.kb), at: "2026-09-06 10:29" },
+      auditHistory: [{ ...REPORT, at: "2026-08-01 10:00" }, { ...REPORT, at: "2026-09-12 09:00" }],
+      lastAudit: { ...REPORT, at: "2026-09-13 09:00" },
+      visHistory: [{ ...SNAPSHOT, at: "2026-09-11 11:00" }],
+      lastVis: { ...SNAPSHOT, at: "2026-09-12 11:00" },
     });
-    expect(weekFeed(state, NOW).map((event) => event.kind)).toEqual(["audit"]);
-    expect(weekFeed(state, ONE_SECOND_LATER)).toEqual([]);
+    expect(weekFeed(state, NOW)).toEqual([
+      { kind: "audit", at: "2026-09-13 09:00", module: "audit", title: null },
+      { kind: "visibility", at: "2026-09-12 11:00", module: "visibility", title: null },
+      { kind: "audit", at: "2026-09-12 09:00", module: "audit", title: null },
+      { kind: "visibility", at: "2026-09-11 11:00", module: "visibility", title: null },
+    ]);
+  });
+
+  it("lists a run once when the history holds one of the same kind and stamp", () => {
+    const state = blank({
+      auditHistory: [{ ...REPORT, at: "2026-09-12 10:00" }],
+      lastAudit: { ...REPORT, at: "2026-09-12 10:00", score: 1 },
+      visHistory: [{ ...SNAPSHOT, at: "2026-09-12 10:00" }],
+    });
+    expect(weekFeed(state, NOW)).toEqual([
+      { kind: "audit", at: "2026-09-12 10:00", module: "audit", title: null },
+      { kind: "visibility", at: "2026-09-12 10:00", module: "visibility", title: null },
+    ]);
+  });
+
+  it("applies the same edges to runs as to artifacts, and moves them at midnight", () => {
+    const state = blank({
+      auditHistory: [{ ...REPORT, at: DAY_BEFORE }],
+      lastAudit: { ...REPORT, at: FIRST_MINUTE },
+      lastVis: { ...SNAPSHOT, at: "2026-09-13 10:31" },
+      kb: { ...must(POPULATED.kb), at: DAY_BEFORE },
+    });
+    expect(weekFeed(state, ONE_SECOND_LATER).map((event) => event.kind)).toEqual(["audit"]);
+    expect(weekFeed(state, new Date(2026, 8, 14, 0, 0)).map((event) => event.kind)).toEqual(["visibility"]);
   });
 
   it("keeps runs ahead of artifacts when they share a minute", () => {

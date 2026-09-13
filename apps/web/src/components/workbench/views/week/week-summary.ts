@@ -30,6 +30,12 @@
  * (`<1%` / `>99%`) there is no whole-point difference to give: the earlier run
  * keeps its stamp and share, and `deltaPt` is `null` (codex S7a #7).
  *
+ * The date range is `weekWindow` (`week-feed.ts`), the same one the subtitle,
+ * the artifact count and the feed use (codex S7a #9). The cards show the latest
+ * check however old, so `healthInWindow` / `mentionInWindow` say whether that
+ * check ran inside the range; the cards print its stamp and, when it did not,
+ * that the range holds no newer check (S7a #6).
+ *
  * Borderline queries are GSC rows at positions 11-30, by `gscStatus` and with
  * `nearCount`'s unknown rule (`mock/profile.ts`), read from the imported rows
  * themselves: the card's footnote says "positions in the latest GSC import".
@@ -45,7 +51,6 @@ import type {
 } from "@/lib/workbench/mock/builders/week";
 import { gscStatus } from "@/lib/workbench/mock/gsc";
 import { kbGapCount } from "@/lib/workbench/mock/kb";
-import { daysAgo, formatLocalStamp, stampDate } from "@/lib/workbench/mock/time";
 import { missedPrompts } from "@/lib/workbench/mock/visibility";
 import type { WorkbenchPageId } from "@/lib/workbench/routes";
 import { formatShare } from "@/lib/workbench/store/selectors";
@@ -56,7 +61,7 @@ import type {
   VisSnapshot,
   WorkbenchProjectState,
 } from "@/lib/workbench/types";
-import { WEEK_WINDOW_DAYS, artifactsWithinDays, weekFeed } from "./week-feed.ts";
+import { artifactsInWeek, inWeekWindow, weekFeed, weekWindow } from "./week-feed.ts";
 
 export interface BorderlineQuery {
   readonly query: string;
@@ -67,7 +72,11 @@ export interface WeekSummary {
   /** Nothing to show at all: the page renders its empty state and the report cannot be saved. */
   readonly empty: boolean;
   readonly health: WeekHealth | null;
+  /** The audit behind `health` ran inside the date range; `false` when there is none. */
+  readonly healthInWindow: boolean;
   readonly mention: WeekMention | null;
+  /** The visibility run behind `mention` ran inside the date range; `false` when there is none. */
+  readonly mentionInWindow: boolean;
   readonly borderline: readonly BorderlineQuery[] | null;
   readonly artifactsThisWeek: number;
   readonly answerGaps: number | null;
@@ -98,11 +107,10 @@ export interface WeekNextStep {
   readonly target: WorkbenchPageId;
 }
 
+/** The subtitle's and the report title's dates: `weekWindow`, the range every count here uses. */
 export function weekRange(now: Date): { readonly from: string; readonly to: string } {
-  return {
-    from: stampDate(daysAgo(now, WEEK_WINDOW_DAYS)),
-    to: stampDate(formatLocalStamp(now)),
-  };
+  const { from, to } = weekWindow(now);
+  return { from, to };
 }
 
 /** Code-unit order, not `localeCompare`: whether two runs match must not depend on the browser's locale. */
@@ -224,12 +232,17 @@ function isEmpty(state: WeekSummaryState): boolean {
 }
 
 export function weekSummary(state: WeekSummaryState, now: Date): WeekSummary {
+  const range = weekWindow(now);
+  const latestHealth = health(state);
+  const latestMention = mention(state);
   return {
     empty: isEmpty(state),
-    health: health(state),
-    mention: mention(state),
+    health: latestHealth,
+    healthInWindow: latestHealth !== null && inWeekWindow(latestHealth.at, range),
+    mention: latestMention,
+    mentionInWindow: latestMention !== null && inWeekWindow(latestMention.at, range),
     borderline: borderline(state.gscRows),
-    artifactsThisWeek: artifactsWithinDays(state.artifacts, WEEK_WINDOW_DAYS, now).length,
+    artifactsThisWeek: artifactsInWeek(state.artifacts, range).length,
     answerGaps: answerGaps(state.lastVis),
     kbGaps: kbGapCount(state.kb),
     highFindings:

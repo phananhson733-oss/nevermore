@@ -78,6 +78,15 @@ describe("weekRange", () => {
   it("crosses a month boundary", () => {
     expect(weekRange(new Date(2026, 9, 3, 0, 5))).toEqual({ from: "2026-09-26", to: "2026-10-03" });
   });
+
+  // codex S7a #9: the subtitle printed 2026-09-07 and the counts left this artifact out.
+  it("counts what the subtitle's first date holds, with the same boundary for artifacts and events", () => {
+    const now = new Date(2026, 8, 14, 12, 0);
+    const state = blank({ artifacts: [artifact("first-date", "2026-09-07 09:00")] });
+    expect(weekRange(now)).toEqual({ from: "2026-09-07", to: "2026-09-14" });
+    expect(weekSummary(state, now).artifactsThisWeek).toBe(1);
+    expect(weekSummary(state, now).events.map((event) => event.at)).toEqual(["2026-09-07 09:00"]);
+  });
 });
 
 describe("weekSummary: technical health", () => {
@@ -335,6 +344,47 @@ describe("weekSummary: the rest", () => {
     ["GSC rows", { gscRows: [gsc("a", 50)], gscRowsSource: "user" }],
   ])("is not empty with %s", (_label, overrides) => {
     expect(weekSummary(blank(overrides), NOW).empty).toBe(false);
+  });
+});
+
+describe("weekSummary: whether the checks on the cards are inside the range", () => {
+  const now = new Date(2026, 8, 14, 12, 0);
+
+  // codex S7a #6: a 20-day-old score and share under this week's dates, with no date of their own.
+  it("says so when the latest audit and visibility run are older than the range", () => {
+    const state = blank({
+      lastAudit: report("2026-08-25 10:00", 80, []),
+      auditHistory: [report("2026-08-24 10:00", 60, [])],
+      lastVis: { at: "2026-08-25 11:00", results: hits(1, 2) },
+    });
+    const summary = weekSummary(state, now);
+    expect(summary.health?.score).toBe(80);
+    expect(summary.mention?.share).toBe("50%");
+    expect(summary.healthInWindow).toBe(false);
+    expect(summary.mentionInWindow).toBe(false);
+  });
+
+  it("marks checks inside the range, from its first minute to now", () => {
+    const state = blank({
+      lastAudit: report("2026-09-07 00:00", 80, []),
+      lastVis: { at: "2026-09-14 12:00", results: hits(1, 2) },
+    });
+    expect(weekSummary(state, now)).toMatchObject({ healthInWindow: true, mentionInWindow: true });
+  });
+
+  it("is false when a card has no measurement to date", () => {
+    expect(weekSummary(blank(), now)).toMatchObject({ healthInWindow: false, mentionInWindow: false });
+    const emptyRun = blank({ lastVis: { at: "2026-09-13 11:00", results: [] } });
+    expect(weekSummary(emptyRun, now).mentionInWindow).toBe(false);
+  });
+
+  // codex S7a #5: the page's 「本周事件 N 条」 is this list's length.
+  it("lists both audits of the week among its events, not only the latest", () => {
+    const state = blank({
+      auditHistory: [report("2026-09-12 09:00", 50, [])],
+      lastAudit: report("2026-09-13 09:00", 60, []),
+    });
+    expect(weekSummary(state, now).events.map((event) => event.at)).toEqual(["2026-09-13 09:00", "2026-09-12 09:00"]);
   });
 });
 
