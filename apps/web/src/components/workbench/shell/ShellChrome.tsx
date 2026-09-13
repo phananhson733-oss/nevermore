@@ -2,10 +2,12 @@
 
 import { useTranslations } from "next-intl";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { useProjectSources } from "@/lib/api/hooks-sources";
 import type { ProjectShellOption } from "@/lib/services/project-shell";
 import { WB_APP_ROOT_ID } from "../ui/ids.ts";
 import { ArtifactDrawer } from "./ArtifactDrawer.tsx";
 import { CommandPalette } from "./CommandPalette.tsx";
+import { gscConnectionState } from "./gsc-connection.ts";
 import { Sidebar, type SidebarSite } from "./Sidebar.tsx";
 import { Topbar } from "./Topbar.tsx";
 import { useGlobalShortcut } from "./useGlobalShortcut.ts";
@@ -43,7 +45,14 @@ export function ShellChrome({
   children,
 }: {
   readonly projectId: string;
-  readonly site: SidebarSite;
+  /**
+   * Everything about the site the server already knows. `gscConnected` is
+   * deliberately not part of it: the layout is a server component, a real
+   * sources read there would need its own e2e bypass and up to nine serial
+   * queries, and server state belongs to TanStack Query (Q2). This component
+   * reads it below and hands the card the whole shape.
+   */
+  readonly site: Omit<SidebarSite, "gscConnected">;
   readonly projectOptions: readonly ProjectShellOption[];
   readonly projectControl: ReactNode;
   readonly accountControl: ReactNode;
@@ -64,6 +73,14 @@ export function ShellChrome({
   // uses: a px value drifts from it as soon as the root font size is not 16px.
   const mobile = useMediaQuery("(width < 48rem)");
   const t = useTranslations("workbench.shell");
+  // The rail's one server read. Same query key and staleTime as the sources
+  // page, so a project page that already reads sources shares this fetch.
+  const sources = useProjectSources(projectId);
+  const gscConnected = gscConnectionState({
+    sources: sources.data,
+    isLoading: sources.isLoading,
+    isError: sources.isError,
+  });
 
   const closeAll = useCallback(() => {
     setPanel(null);
@@ -110,7 +127,7 @@ export function ShellChrome({
         <Sidebar
           id={SIDEBAR_ID}
           projectId={projectId}
-          site={site}
+          site={{ ...site, gscConnected }}
           siteCount={projectOptions.length}
           open={sidebarOpen}
           mobile={mobile}

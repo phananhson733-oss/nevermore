@@ -8,13 +8,21 @@
  * ArtifactDrawer and Dialog reacting to it. So the whole client shell runs
  * against the real provider, with the router, the unsaved-changes probe and
  * the viewport query stubbed.
+ *
+ * It also owns the one server read the shell makes for itself: the project's
+ * sources, whose gsc slot becomes the rail site card's GSC row. That half runs
+ * against the real `useProjectSources`, the real `ApiError` parsing and a real
+ * QueryClient, with only `fetch` stubbed — a hand-written boolean handed to the
+ * card would prove nothing about what a real problem+json response does to it.
  */
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { getMessages } from "@sf/i18n";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SourceConnection, SourceState } from "@/lib/api/hooks-sources";
 import type { ProjectShellOption } from "@/lib/services/project-shell";
 import { WorkbenchProvider } from "@/lib/workbench/store/WorkbenchProvider";
 import type { ProjectSeed } from "@/lib/workbench/store/reducer";
@@ -49,7 +57,10 @@ const { ShellChrome } = await import("./ShellChrome.tsx");
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000042";
 const SEED: ProjectSeed = { url: "https://example.test", brand: "Example", market: "US" };
-const SITE = { host: "example.test", marketCode: "US", gscConnected: null } as const;
+// No `gscConnected`: the server half of the shell cannot know it, and
+// `ShellChrome`'s prop type is `Omit<SidebarSite, "gscConnected">` for that
+// reason. The value below the card renders comes from the sources read.
+const SITE = { host: "example.test", marketCode: "US" } as const;
 const OPTIONS: readonly ProjectShellOption[] = [
   {
     id: PROJECT_ID,
@@ -64,36 +75,144 @@ const SHELL = en.workbench.shell;
 const PALETTE_TITLE_ID = "wb-palette-title";
 const DRAWER_TITLE_ID = "wb-drawer-title";
 
-function Harness() {
+const SOURCES_PATH = `/api/mvp/projects/${PROJECT_ID}/sources`;
+
+/** Requested URLs, so a test can show the shell really asked for sources. */
+const requested: string[] = [];
+/** What the stubbed `fetch` answers with. Default: a read still in flight. */
+let answer: () => Promise<Response> = () => new Promise<Response>(() => {});
+
+/**
+ * The four members of `Response` the api client touches. A literal keeps the
+ * test independent of whether the jsdom environment exposes a global one.
+ */
+function response(status: number, contentType: string, body: string): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 200 ? "OK" : "Error",
+    headers: { get: (name: string) => (name.toLowerCase() === "content-type" ? contentType : null) },
+    text: () => Promise.resolve(body),
+  } as unknown as Response;
+}
+
+function sourcesOk(sources: readonly SourceConnection[]): Response {
+  return response(200, "application/json", JSON.stringify({ data: sources }));
+}
+
+/** A real problem+json body, so a real `ApiError` with a real `code` is thrown. */
+function sourcesProblem(status: number, code: string): Response {
+  return response(
+    status,
+    "application/problem+json",
+    JSON.stringify({
+      type: "about:blank",
+      title: "Request failed",
+      status,
+      code,
+      detail: "Request failed.",
+      requestId: "req-test",
+    }),
+  );
+}
+
+function gscSource(state: SourceState, id: string | null): SourceConnection {
+  return {
+    id,
+    projectId: PROJECT_ID,
+    provider: "gsc",
+    connectionType: "oauth",
+    state,
+    externalRef: null,
+    scopes: [],
+    connectedAt: null,
+    latestSnapshot: null,
+    latestMetricSummary: null,
+    activeRun: null,
+    limitation: "",
+    featureEnabled: true,
+    updatedAt: "2026-09-13T00:00:00.000Z",
+  };
+}
+
+function Harness({ client }: { readonly client: QueryClient }) {
   return (
-    <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
-      <WorkbenchProvider projectId={PROJECT_ID} seed={SEED}>
-        <ShellChrome
-          projectId={PROJECT_ID}
-          site={SITE}
-          projectOptions={OPTIONS}
-          projectControl={<span data-test-project-control="" />}
-          accountControl={<span data-test-account-control="" />}
-        >
-          <p data-test-page="">page body</p>
-        </ShellChrome>
-      </WorkbenchProvider>
-    </NextIntlClientProvider>
+    <QueryClientProvider client={client}>
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <WorkbenchProvider projectId={PROJECT_ID} seed={SEED}>
+          <ShellChrome
+            projectId={PROJECT_ID}
+            site={SITE}
+            projectOptions={OPTIONS}
+            projectControl={<span data-test-project-control="" />}
+            accountControl={<span data-test-account-control="" />}
+          >
+            <p data-test-page="">page body</p>
+          </ShellChrome>
+        </WorkbenchProvider>
+      </NextIntlClientProvider>
+    </QueryClientProvider>
   );
 }
 
 let cleanup: (() => void) | null = null;
+/** The QueryClient of the most recent render, for `settle` to poll. */
+let rendered: QueryClient | null = null;
 
 function render(): HTMLElement {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  act(() => root.render(<Harness />));
+  // `retry: false` only so a 5xx settles inside the test; the shipped client
+  // keeps `shouldRetryApiQuery`, which already treats 4xx as terminal.
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  rendered = client;
+  act(() => root.render(<Harness client={client} />));
   cleanup = () => {
     act(() => root.unmount());
     container.remove();
+    client.clear();
+    rendered = null;
   };
   return container;
+}
+
+/** One macrotask, with every React update it releases flushed inside `act`. */
+async function tick(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+/**
+ * Wait for the sources read to reach a terminal state and for the render it
+ * causes to land. Polling the cache rather than counting ticks: the number of
+ * turns between a resolved fetch and a committed render is a scheduling
+ * detail, and a fixed count makes the test flaky instead of wrong.
+ *
+ * The literal key is also the pin that the shell subscribes to the same
+ * `["sources", projectId]` the sources page uses, which is what lets the two
+ * share one request.
+ */
+async function settle(): Promise<void> {
+  const client = rendered;
+  if (!client) throw new Error("nothing is rendered");
+  for (let turn = 0; turn < 100; turn += 1) {
+    await tick();
+    const state = client.getQueryState(["sources", PROJECT_ID]);
+    if (state && state.fetchStatus === "idle" && state.status !== "pending") {
+      await tick();
+      return;
+    }
+  }
+  throw new Error("the sources read never settled");
+}
+
+/** The site card's GSC value cell (row order: market, GSC, audit). */
+function gscCell(scope: ParentNode): HTMLElement {
+  const cell = [...scope.querySelectorAll("[data-wb-site-card] dd")][1];
+  if (!(cell instanceof HTMLElement)) throw new Error("No GSC row");
+  return cell;
 }
 
 function appRoot(): HTMLElement {
@@ -166,11 +285,20 @@ beforeEach(() => {
   mocks.push.mockReset();
   mocks.hasUnsavedContextChanges.mockReset();
   mocks.hasUnsavedContextChanges.mockReturnValue(false);
+  requested.length = 0;
+  // Never-settling by default: every test that is not about the site card
+  // stays on the in-flight branch and performs no post-mount state update.
+  answer = () => new Promise<Response>(() => {});
+  vi.stubGlobal("fetch", (input: unknown) => {
+    requested.push(String(input));
+    return answer();
+  });
 });
 
 afterEach(() => {
   cleanup?.();
   cleanup = null;
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -427,5 +555,92 @@ describe("ShellChrome mobile rail", () => {
     const scope = render();
 
     expect(sidebar(scope).hasAttribute("inert")).toBe(false);
+  });
+});
+
+describe("ShellChrome site card GSC row", () => {
+  it("asks for this project's sources and shows a connected slot as connected", async () => {
+    answer = () => Promise.resolve(sourcesOk([gscSource("connected", "src-1")]));
+    const scope = render();
+
+    await settle();
+
+    expect(requested).toContain(SOURCES_PATH);
+    expect(gscCell(scope).textContent).toBe(SHELL.siteCard.connected);
+    expect(gscCell(scope).getAttribute("title")).toBeNull();
+  });
+
+  it("shows a slot that never connected as not connected", async () => {
+    answer = () => Promise.resolve(sourcesOk([gscSource("disconnected", null)]));
+    const scope = render();
+
+    await settle();
+
+    expect(gscCell(scope).textContent).toBe(SHELL.siteCard.notConnected);
+  });
+
+  it("keeps a permission_denied slot connected: the rail is not the place to say 'reconnect'", async () => {
+    answer = () => Promise.resolve(sourcesOk([gscSource("permission_denied", "src-1")]));
+    const scope = render();
+
+    await settle();
+
+    expect(gscCell(scope).textContent).toBe(SHELL.siteCard.connected);
+  });
+
+  it("renders a 422 CONTEXT_INCOMPLETE as unknown, never as not connected", async () => {
+    // Q4, and the whole reason this test drives a real problem+json body: a
+    // failed read is not a fact about the customer's Search Console. A branch
+    // written on the status code instead of `ApiError.code` would fold every
+    // other 422 into the same sentence; here neither one may become `false`.
+    answer = () => Promise.resolve(sourcesProblem(422, "CONTEXT_INCOMPLETE"));
+    const scope = render();
+
+    await settle();
+
+    expect(gscCell(scope).textContent).toBe(SHELL.siteCard.none);
+    expect(gscCell(scope).textContent).not.toBe(SHELL.siteCard.notConnected);
+    expect(gscCell(scope).getAttribute("title")).toBe(SHELL.siteCard.unknownHint);
+  });
+
+  it("renders a 500 as unknown as well", async () => {
+    answer = () => Promise.resolve(sourcesProblem(500, "INTERNAL_ERROR"));
+    const scope = render();
+
+    await settle();
+
+    expect(gscCell(scope).textContent).toBe(SHELL.siteCard.none);
+    expect(gscCell(scope).getAttribute("title")).toBe(SHELL.siteCard.unknownHint);
+  });
+
+  it("renders a response with no gsc slot as unknown", async () => {
+    const ga4: SourceConnection = { ...gscSource("connected", "src-2"), provider: "ga4" };
+    answer = () => Promise.resolve(sourcesOk([ga4]));
+    const scope = render();
+
+    await settle();
+
+    expect(gscCell(scope).textContent).toBe(SHELL.siteCard.none);
+    expect(gscCell(scope).getAttribute("title")).toBe(SHELL.siteCard.unknownHint);
+  });
+
+  it("shows unknown, with the hint, while the read is still in flight", () => {
+    const scope = render();
+
+    expect(gscCell(scope).textContent).toBe(SHELL.siteCard.none);
+    expect(gscCell(scope).getAttribute("title")).toBe(SHELL.siteCard.unknownHint);
+  });
+
+  it("leaves the market and audit rows without the GSC hint", async () => {
+    // The hint explains one row. On a row whose "—" means "no market recorded"
+    // or "no audit yet" it would be a different, false explanation.
+    answer = () => Promise.resolve(sourcesProblem(500, "INTERNAL_ERROR"));
+    const scope = render();
+
+    await settle();
+
+    const cells = [...scope.querySelectorAll("[data-wb-site-card] dd")];
+    expect(cells[0]?.getAttribute("title")).toBeNull();
+    expect(cells[2]?.getAttribute("title")).toBeNull();
   });
 });
