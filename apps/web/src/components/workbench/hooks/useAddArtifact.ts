@@ -37,8 +37,9 @@ export interface ArtifactDraft {
 }
 
 /**
- * What `save()` did: stored the text (now or on an earlier call), refused it as
- * too large to store whole, or refused it because the basket was already full.
+ * What `save()` answers: the text is in the basket after the call (put there
+ * now, or still there from an earlier call), it was refused as too large to
+ * store whole (nothing dispatched), or the basket was full and did not take it.
  */
 export type SaveResult = "saved" | "tooLarge" | "full";
 
@@ -66,20 +67,27 @@ export interface PreparedArtifact {
    */
   readonly content: StampedText;
   /**
-   * Puts it in the basket and says whether it did. Over `ARTIFACT_CONTENT_MAX`
-   * UTF-16 units it dispatches nothing and returns `"tooLarge"` (Q37): the
-   * reducer would otherwise cut the text short on its way in, and the basket
-   * would hold a different text from the one just copied or exported, under a
-   * row that said "saved". With `ARTIFACT_LIMIT` artifacts already in the
-   * basket it returns `"full"`: nothing is stored, and nothing is evicted to make
-   * room. Otherwise calling it twice saves once and both calls return `"saved"`.
-   * A refused call is not remembered, so the same artifact saves once there is
-   * room.
+   * Puts it in the basket and says whether it is there. Over
+   * `ARTIFACT_CONTENT_MAX` UTF-16 units it dispatches nothing and returns
+   * `"tooLarge"` (Q37): the reducer would otherwise cut the text short on its
+   * way in, and the basket would hold a different text from the one just copied
+   * or exported, under a row that said "saved". With `ARTIFACT_LIMIT` artifacts
+   * already in the basket it returns `"full"`: nothing is stored, and nothing is
+   * evicted to make room. Otherwise it returns `"saved"`.
+   *
+   * Nothing is remembered between calls; the basket is the only record. Called
+   * again while this artifact is still in the basket, it stores nothing new (the
+   * reducer ignores an id it already holds) and returns `"saved"`. Called after
+   * the artifact was removed or the basket cleared, it stores it again. A
+   * refused call saves once there is room.
    *
    * Call it from an event handler while the component that called
    * `useAddArtifact` is still mounted. The answer is read back from the basket
    * as that component last committed it, and is only right under those two
-   * conditions.
+   * conditions. In particular, while that component sits in a Suspense boundary
+   * showing its fallback, or is unmounting, the answer can be `"full"` for an
+   * artifact that did go in; a retry is then harmless, because the reducer will
+   * not add a second copy of the same id.
    */
   readonly save: () => SaveResult;
 }
@@ -146,23 +154,26 @@ export function useAddArtifact():
     // truncation stays as the last defence; this check keeps it from ever firing
     // on a text the operator was just shown whole.
     const tooLarge = content.length > ARTIFACT_CONTENT_MAX;
-    let saved = false;
     return Object.freeze({
       artifact,
       content,
       save: (): SaveResult => {
         if (tooLarge) return "tooLarge";
-        if (saved) return "saved";
-        // The reducer is the one judge of "full", and refuses by handing back the
-        // same state. `flushSync` commits the dispatch, and this hook's layout
-        // effect with it, before returning, so the committed basket says whether
-        // this artifact went in — judged at write time, after every earlier save.
+        // Always written first, then read back; never answered from the basket
+        // as it stood before this call. Asked beforehand, "already in?" and
+        // "full?" both read the last commit, which misses a dispatch the same
+        // handler queued just before (a removal, another save) and answers for a
+        // basket about to change. Writing an id the basket already holds is safe:
+        // the reducer, the one judge of both questions, hands back the same state.
+        //
+        // In a normal commit `flushSync` runs this hook's layout effect before
+        // returning, so the committed basket says whether this artifact is in —
+        // judged at write time, after every earlier save. Not under a Suspense
+        // fallback or during unmount; see `PreparedArtifact.save`.
         flushSync(() => dispatch({ type: "addArtifact", artifact }));
-        if (!committedArtifacts.current.some((entry) => entry.id === artifact.id)) {
-          return "full";
-        }
-        saved = true;
-        return "saved";
+        return committedArtifacts.current.some((entry) => entry.id === artifact.id)
+          ? "saved"
+          : "full";
       },
     });
   }

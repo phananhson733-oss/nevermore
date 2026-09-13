@@ -15,7 +15,7 @@
  * blocked ones.
  */
 
-import { act } from "react";
+import { act, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "@sf/i18n";
@@ -31,6 +31,7 @@ import { useWorkbench } from "@/lib/workbench/store/hooks";
 import {
   WorkbenchContext,
   WorkbenchProvider,
+  type PublicWorkbenchAction,
   type WorkbenchContextValue,
 } from "@/lib/workbench/store/WorkbenchProvider";
 import { ARTIFACT_CONTENT_MAX, ARTIFACT_LIMIT } from "@/lib/workbench/types";
@@ -82,6 +83,12 @@ const captured: { prepare: Prepare | null; store: WorkbenchContextValue | null }
 /** What the hook returned on each render pass, oldest first. */
 let frames: (Prepare | null)[] = [];
 let cleanup: (() => void) | null = null;
+/** What the button's click handler dispatches first, what it saves, and what the save answered. */
+const clickPlan: {
+  before: PublicWorkbenchAction | null;
+  prepared: PreparedArtifact | null;
+  result: SaveResult | null;
+} = { before: null, prepared: null, result: null };
 
 function Probe() {
   const prepare = useAddArtifact();
@@ -89,6 +96,33 @@ function Probe() {
   captured.prepare = prepare;
   captured.store = useWorkbench();
   return null;
+}
+
+/**
+ * A real button whose click handler dispatches `before` and then calls `save()`,
+ * in that order, inside ONE handler. Both land in the same discrete event, so
+ * when `save()` runs the first dispatch is queued but not committed: only a save
+ * that judges after its own flush sees it, and one that reads the committed
+ * basket before writing judges the basket as it was before the click.
+ */
+function ClickProbe() {
+  const prepare = useAddArtifact();
+  const store = useWorkbench();
+  captured.prepare = prepare;
+  captured.store = store;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        const { before, prepared } = clickPlan;
+        if (before === null || prepared === null) throw new Error("set the click plan first");
+        store.dispatch(before);
+        clickPlan.result = prepared.save();
+      }}
+    >
+      save
+    </button>
+  );
 }
 
 /** A store stuck at one `ready`, so the gate can be read without racing hydration. */
@@ -128,7 +162,7 @@ function mountStub(ready: boolean): readonly (Prepare | null)[] {
   return frames;
 }
 
-function mount(): Harness {
+function mount(probe: ReactElement = <Probe />): Harness {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -136,7 +170,7 @@ function mount(): Harness {
     root.render(
       <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
         <WorkbenchProvider projectId={PROJECT_ID} seed={SEED}>
-          <Probe />
+          {probe}
         </WorkbenchProvider>
       </NextIntlClientProvider>,
     ),
@@ -180,6 +214,18 @@ function basketIds(): readonly string[] {
   return artifacts().map((artifact) => artifact.id);
 }
 
+/** Clicks the `ClickProbe` button: its handler dispatches `before`, then saves `prepared`. */
+function clickSave(before: PublicWorkbenchAction, prepared: PreparedArtifact): SaveResult {
+  const button = document.querySelector("button");
+  if (button === null) throw new Error("mount the click probe first");
+  clickPlan.before = before;
+  clickPlan.prepared = prepared;
+  clickPlan.result = null;
+  act(() => button.click());
+  if (clickPlan.result === null) throw new Error("the click handler must have saved");
+  return clickPlan.result;
+}
+
 /** Calls `save()` inside `act`, so a dispatch it makes is committed before the basket is read. */
 function saveInAct(prepared: PreparedArtifact): SaveResult {
   let result: SaveResult | undefined;
@@ -202,6 +248,9 @@ afterEach(() => {
   cleanup = null;
   captured.prepare = null;
   captured.store = null;
+  clickPlan.before = null;
+  clickPlan.prepared = null;
+  clickPlan.result = null;
   vi.useRealTimers();
   window.localStorage.clear();
 });
@@ -411,6 +460,71 @@ describe("useAddArtifact", () => {
     expect(saveInAct(prepared)).toBe("saved");
     expect(artifacts()).toHaveLength(ARTIFACT_LIMIT);
     expect(artifacts()[0]?.id).toBe(prepared.artifact.id);
+  });
+
+  it("reads 'saved' off the basket, not from memory: removed after saving, the same artifact saves again", () => {
+    const { prepare, store } = mount();
+    const prepared = prepare(MD_DRAFT);
+    expect(saveInAct(prepared)).toBe("saved");
+
+    act(() => store.dispatch({ type: "removeArtifact", id: prepared.artifact.id }));
+    expect(artifacts()).toHaveLength(0);
+
+    expect(saveInAct(prepared)).toBe("saved");
+    expect(basketIds()).toEqual([prepared.artifact.id]);
+  });
+
+  it("saves again after the basket is cleared, rather than answering 'saved' over an empty basket", () => {
+    const { prepare, store } = mount();
+    const prepared = prepare(MD_DRAFT);
+    expect(saveInAct(prepared)).toBe("saved");
+
+    act(() => store.dispatch({ type: "clearArtifacts" }));
+    expect(artifacts()).toHaveLength(0);
+
+    expect(saveInAct(prepared)).toBe("saved");
+    expect(basketIds()).toEqual([prepared.artifact.id]);
+  });
+
+  it("judges after its own write when the same click first frees a slot in a full basket", () => {
+    const { prepare } = mount(<ClickProbe />);
+    fillBasket(ARTIFACT_LIMIT);
+    const prepared = prepare(MD_DRAFT);
+
+    const result = clickSave({ type: "removeArtifact", id: "f0" }, prepared);
+
+    expect(result).toBe("saved");
+    expect(basketIds()).toHaveLength(ARTIFACT_LIMIT);
+    expect(basketIds()[0]).toBe(prepared.artifact.id);
+    expect(basketIds()).not.toContain("f0");
+  });
+
+  it("judges after its own write when the same click first takes the last free slot", () => {
+    const { prepare } = mount(<ClickProbe />);
+    fillBasket(ARTIFACT_LIMIT - 1);
+    const prepared = prepare(MD_DRAFT);
+    const late = { id: "late", at: STAMP, module: "audit", type: "md", engine: "seo", title: "late", content: "late" } as const;
+
+    const result = clickSave({ type: "addArtifact", artifact: late }, prepared);
+
+    expect(result).toBe("full");
+    expect(basketIds()).toHaveLength(ARTIFACT_LIMIT);
+    expect(basketIds()[0]).toBe("late");
+    expect(basketIds()).not.toContain(prepared.artifact.id);
+  });
+
+  it("stores it again when the same click first removes this very artifact from the basket", () => {
+    // The "already saved?" question has the same trap as "full?": asked of the
+    // committed basket before writing, it sees this artifact still there, skips
+    // the write and answers "saved" — and the removal then commits.
+    const { prepare } = mount(<ClickProbe />);
+    const prepared = prepare(MD_DRAFT);
+    expect(saveInAct(prepared)).toBe("saved");
+
+    const result = clickSave({ type: "removeArtifact", id: prepared.artifact.id }, prepared);
+
+    expect(result).toBe("saved");
+    expect(basketIds()).toEqual([prepared.artifact.id]);
   });
 });
 
