@@ -138,6 +138,20 @@ const FORBIDDEN_BY_KEY: Readonly<
       "authoriz",
     ],
   },
+  // Step 1b ruling: a repeated query keeps its first row and nothing is added
+  // together. A rewrite that says the rows were merged, summed or weighted
+  // describes the import this ruling rejected (two pastes of one export would
+  // double every click).
+  "dataSources.result.duplicates": {
+    "zh-CN": ["合并", "相加", "求和", "加权", "汇总", "累加"],
+    en: ["merged", "summed", "combined", "added up", "weighted", "totalled"],
+  },
+  // One `catch` around `file.text()` cannot tell an encoding problem from a
+  // permission or a disk error, so the message may name none of them (Q4).
+  "dataSources.import.readFailed": {
+    "zh-CN": ["所以", "因为", "由于", "编码", "权限", "格式", "损坏", "太大"],
+    en: ["because", "encoding", "permission", "format", "corrupt", "too large", "denied"],
+  },
   "shell.siteCard.unknownHint": {
     "zh-CN": ["所以", "因为", "由于", "过期", "权限", "配额", "授权"],
     en: [
@@ -384,6 +398,36 @@ const REQUIRED: Readonly<
   "overview.gscFoot.sample": {
     "zh-CN": ["来自示例数据"],
     en: ["come from sample data"],
+  },
+  // Step 1b: repeated queries are disclosed, not silently dropped, and the
+  // sentence says which row survived — the only thing the operator can check
+  // against their own export.
+  "dataSources.result.duplicates": {
+    "zh-CN": ["重复的查询", "第一次出现"],
+    en: ["repeated", "first occurrence"],
+  },
+  // A parse that finds no row dispatches nothing; without this clause a
+  // "0 rows parsed" line reads as if the saved rows were wiped.
+  "dataSources.result.nothingImported": {
+    "zh-CN": ["没有改动"],
+    en: ["left unchanged"],
+  },
+  // A successful parse replaces the saved rows without a confirmation; this
+  // sentence is the only place that says so before the click.
+  "dataSources.import.replaceNote": {
+    "zh-CN": ["替换"],
+    en: ["replace"],
+  },
+  // Q4 bans the cause, so the way out is what the sentence must keep.
+  "dataSources.import.readFailed": {
+    "zh-CN": ["粘贴"],
+    en: ["paste"],
+  },
+  // `recognized === null` covers both "no header" and "a header naming only the
+  // query"; the clause that stays true in both is how the columns were read.
+  "dataSources.result.noHeader": {
+    "zh-CN": ["按列的位置"],
+    en: ["by position"],
   },
   // Q4: a failure we cannot attribute must not name a cause.
   "dataSources.real.otherError": {
@@ -646,6 +690,12 @@ const CASES: readonly string[] = [
   "dataSources.real.otherError",
   "dataSources.real.manageLegacy",
   "dataSources.real.ga4NoConsumer",
+  "dataSources.real.state",
+  "dataSources.real.lastCollected",
+  "dataSources.real.availability",
+  "dataSources.real.rows",
+  "dataSources.real.limitation",
+  "dataSources.real.noSnapshot",
   "dataSources.import.title",
   "dataSources.import.localNote",
   "dataSources.import.placeholder",
@@ -657,10 +707,16 @@ const CASES: readonly string[] = [
   "dataSources.import.uploadHint | limit",
   "dataSources.import.tooLarge | limit",
   "dataSources.import.truncated | #kept #total",
+  "dataSources.import.pasteLabel",
+  "dataSources.import.replaceNote",
+  "dataSources.import.readFailed",
+  "dataSources.import.cancel",
   "dataSources.result.parsed | #count",
   "dataSources.result.skipped | #count",
   "dataSources.result.noHeader",
   "dataSources.result.unrecognizedColumns | columns",
+  "dataSources.result.duplicates | #count",
+  "dataSources.result.nothingImported",
   "dataSources.table.title",
   "dataSources.table.count | #count",
   "dataSources.table.query",

@@ -4358,7 +4358,13 @@
         "needProfileCta": "去确认产品画像",
         "otherError": "现在读不到连接状态。",
         "manageLegacy": "在旧版页面连接或断开",
-        "ga4NoConsumer": "当前没有模块使用 GA4 数据。"
+        "ga4NoConsumer": "当前没有模块使用 GA4 数据。",
+        "state": "连接状态",
+        "lastCollected": "最近采集",
+        "availability": "可用性",
+        "rows": "行数",
+        "limitation": "限制说明",
+        "noSnapshot": "暂无数据快照"
       },
       "import": {
         "title": "GSC 导入",
@@ -4371,13 +4377,19 @@
         "upload": "上传 CSV",
         "uploadHint": "支持 Tab 或逗号分隔，表头会自动跳过；单个文件最大 {limit}。",
         "tooLarge": "这个文件超过 {limit}，没有读取。",
-        "truncated": "只保留了前 {kept} 行，文件里共 {total} 行。"
+        "truncated": "只保留了前 {kept} 条，共解析出 {total} 条。",
+        "pasteLabel": "粘贴 GSC 导出",
+        "replaceNote": "解析出行后，会替换现在保存的 GSC 行。",
+        "readFailed": "没能读取这个文件，可以改为把内容粘贴进来。",
+        "cancel": "取消"
       },
       "result": {
         "parsed": "解析 {count} 条",
         "skipped": "跳过 {count} 条",
-        "noHeader": "没认出表头，按列的位置读取。",
-        "unrecognizedColumns": "这些列没认出来：{columns}"
+        "noHeader": "没有认出带指标列名的表头，按列的位置读取。",
+        "unrecognizedColumns": "这些列没认出来：{columns}",
+        "duplicates": "其中 {count} 条是重复的查询，保留了第一次出现的那条。",
+        "nothingImported": "没有可导入的行，现在保存的 GSC 行没有改动。"
       },
       "table": {
         "title": "GSC 查询",

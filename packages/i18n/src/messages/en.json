@@ -4358,7 +4358,13 @@
         "needProfileCta": "Confirm the product profile",
         "otherError": "The connection status could not be read right now.",
         "manageLegacy": "Connect or disconnect on the legacy page",
-        "ga4NoConsumer": "No module uses GA4 data yet."
+        "ga4NoConsumer": "No module uses GA4 data yet.",
+        "state": "Connection state",
+        "lastCollected": "Last collected",
+        "availability": "Availability",
+        "rows": "Rows",
+        "limitation": "Limitation",
+        "noSnapshot": "No data snapshot"
       },
       "import": {
         "title": "GSC import",
@@ -4371,13 +4377,19 @@
         "upload": "Upload a CSV",
         "uploadHint": "Tab- or comma-separated. A header row is skipped. Up to {limit} per file.",
         "tooLarge": "This file is larger than {limit}, so it was not read.",
-        "truncated": "Kept the first {kept} rows of the {total} in the file."
+        "truncated": "Kept the first {kept} of the {total} parsed rows.",
+        "pasteLabel": "Paste a GSC export",
+        "replaceNote": "When a parse finds rows, they replace the GSC rows saved now.",
+        "readFailed": "This file could not be read. You can paste its contents instead.",
+        "cancel": "Cancel"
       },
       "result": {
         "parsed": "{count, plural, one {# row parsed} other {# rows parsed}}",
         "skipped": "{count, plural, one {# row skipped} other {# rows skipped}}",
-        "noHeader": "No header row recognized, so the columns were read by position.",
-        "unrecognizedColumns": "These columns were not recognized: {columns}"
+        "noHeader": "No header naming a metric column was recognized, so the columns were read by position.",
+        "unrecognizedColumns": "These columns were not recognized: {columns}",
+        "duplicates": "{count, plural, one {Of these, # was a repeated query; its first occurrence was kept.} other {Of these, # were repeated queries; the first occurrence of each was kept.}}",
+        "nothingImported": "No rows to import, so the saved GSC rows were left unchanged."
       },
       "table": {
         "title": "GSC queries",
