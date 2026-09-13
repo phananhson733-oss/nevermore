@@ -13,7 +13,7 @@
  *    theme the build compiles: a `--color-*` declared in the `@theme` blocks of
  *    app/workbench.css wins over Tailwind's theme as installed, as it does in
  *    the compiled utility (Tailwind values are `oklch()`; workbench tokens are
- *    hex).
+ *    hex). Only the conversion's calibration reads Tailwind's theme on its own.
  * 2. The string literals of every non-test .ts / .tsx module under ui/ are
  *    parsed (walked, not listed): double- or single-quoted, and template
  *    literals, which may span lines. A template with a `${…}` interpolation and
@@ -232,7 +232,9 @@ function atRuleBodies(source: string, opener: RegExp): readonly string[] {
   return [source.slice(open + 1, close), ...atRuleBodies(source.slice(close + 1), opener)];
 }
 
-const tailwindTheme = declarations(
+type Theme = ReadonlyMap<string, string>;
+
+const tailwindTheme: Theme = declarations(
   readFileSync(createRequire(import.meta.url).resolve("tailwindcss/theme.css"), "utf8"),
 );
 const workbenchThemeBodies = atRuleBodies(
@@ -240,19 +242,38 @@ const workbenchThemeBodies = atRuleBodies(
   /@theme(?:\s+inline)?\s*\{/u,
 );
 if (workbenchThemeBodies.length === 0) throw new Error("Missing @theme block in app/workbench.css");
-/** Joined in source order, so a later block's declaration wins, as in the compiled CSS. */
-const workbenchTheme = declarations(workbenchThemeBodies.join("\n"));
+/**
+ * Parsed block by block, each body closed with a `;` so a last declaration
+ * written without one (valid CSS) is not swallowed by the next block's first,
+ * then merged in source order: a later block's declaration wins, as in the
+ * compiled CSS.
+ */
+const workbenchTheme: Theme = new Map(workbenchThemeBodies.flatMap((body) => [...declarations(`${body};`)]));
 
-function luminance(token: string): number {
-  // workbench.css declares its theme after importing Tailwind's, so for a name
-  // both declare, the workbench value is the one the compiled utility carries.
-  const value = workbenchTheme.get(`--color-${token}`) ?? tailwindTheme.get(`--color-${token}`);
-  if (value === undefined) throw new Error(`No --color-${token} in the workbench or Tailwind theme`);
+/**
+ * The theme the build compiles, which `PAIRS` is measured in: workbench.css
+ * declares its theme after importing Tailwind's, so for a name both declare,
+ * the workbench value is the one the compiled utility carries.
+ */
+const COMPILED: readonly Theme[] = [workbenchTheme, tailwindTheme];
+/**
+ * Tailwind's theme as installed, alone. Only the conversion's calibration reads
+ * it: those expected ratios are facts about Tailwind's palette, and a workbench
+ * override that legitimately changes one of those colours must not fail them.
+ */
+const INSTALLED: readonly Theme[] = [tailwindTheme];
+
+function luminance(token: string, themes: readonly Theme[]): number {
+  const name = `--color-${token}`;
+  const value = themes.map((theme) => theme.get(name)).find((found) => found !== undefined);
+  if (value === undefined) {
+    throw new Error(`No ${name} in the ${themes === INSTALLED ? "Tailwind" : "workbench or Tailwind"} theme`);
+  }
   return value.startsWith("#") ? hexLuminance(value) : oklchLuminance(value);
 }
 
-function ratio(foreground: string, background: string): number {
-  const [a, b] = [luminance(foreground), luminance(background)];
+function ratio(foreground: string, background: string, themes: readonly Theme[] = COMPILED): number {
+  const [a, b] = [luminance(foreground, themes), luminance(background, themes)];
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
@@ -358,12 +379,16 @@ describe("ui colour pairs clear WCAG 1.4.3", () => {
   });
 
   it("measures the palette the way the browser renders it", () => {
-    // Anchor for the oklch conversion: workbench.css:135-140 documents
-    // slate-500 on white as 4.77:1 and rejects slate-400 for the same rule.
-    expect(ratio("slate-500", "white")).toBeCloseTo(4.77, 1);
-    expect(ratio("slate-400", "white")).toBeLessThan(AA_TEXT);
-    // The pair this gate was written for: it must still read as a failure.
-    expect(ratio("slate-500", "slate-100")).toBeLessThan(AA_TEXT);
+    // Calibration of the oklch conversion, against Tailwind's palette as
+    // installed (`INSTALLED`), never the compiled theme: a workbench override
+    // may change these colours, and the PAIRS rows above measure it where it
+    // does. Nothing here requires a pair to fail in the compiled theme.
+    // workbench.css documents slate-500 on white as 4.77:1 and slate-400 as
+    // 2.63:1, both read out of Tailwind's palette.
+    expect(ratio("slate-500", "white", INSTALLED)).toBeCloseTo(4.77, 1);
+    expect(ratio("slate-400", "white", INSTALLED)).toBeLessThan(AA_TEXT);
+    // The pair this gate was written for reads as a failure in that palette.
+    expect(ratio("slate-500", "slate-100", INSTALLED)).toBeLessThan(AA_TEXT);
   });
 });
 
