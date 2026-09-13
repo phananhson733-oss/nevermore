@@ -15,11 +15,13 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { WorkbenchProjectState } from "../types.ts";
+import { profileDocMarkdown } from "../mock/builders/profile.ts";
+import type { ProfileDoc, WorkbenchProjectState } from "../types.ts";
 import { useWorkbench } from "./hooks.ts";
 import { storageKey } from "./persistence.ts";
 import { initialProjectState, type ProjectSeed } from "./reducer.ts";
 import { PERSISTED_VERSION } from "./schema.ts";
+import { populatedProjectState } from "./test-fixtures.ts";
 import { WorkbenchProvider, type WorkbenchContextValue } from "./WorkbenchProvider.tsx";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -128,5 +130,49 @@ describe("a GSC mark with no rows cannot come in through either door (Q6)", () =
     expect(probe().state.visPartial).toBe(true);
     expect(probe().state.visResults).toEqual(results);
     expect(probe().state.gscRowsSource).toBeNull();
+  });
+});
+
+/**
+ * The other direction (裁决 C): rows whose source is `null`. Only a tampered
+ * envelope makes them, and nothing is enforced here on purpose — the rows cannot
+ * say whether they are the sample or the user's, `state.demo` is not an answer
+ * (it is `true` in this fixture and must not turn into "sample"), and deleting
+ * the user's rows to keep the pair tidy would be worse than the lie it prevents.
+ * What is enforced is at the reader: unknown provenance is said as unknown.
+ */
+describe("rows with an unknown source stay unknown through either door, and read as unknown (Q6)", () => {
+  function unknownSource(seeds: string): WorkbenchProjectState {
+    const base = populatedProjectState(SEED);
+    const doc = base.profileDoc;
+    if (doc === null || doc.gsc === null) throw new Error("fixture must carry a GSC snapshot");
+    const snapshot: ProfileDoc = { ...doc, gscSource: null };
+    return { ...base, seeds, gscRowsSource: null, profileDoc: snapshot };
+  }
+
+  function assertUnknown(state: WorkbenchProjectState, door: string): void {
+    expect(state.gscRows.length, door).toBe(1);
+    expect(state.gscRowsSource, door).toBeNull();
+    expect(state.demo, door).toBe(true);
+    const doc = state.profileDoc;
+    if (doc === null) throw new Error(`${door}: the snapshot must have survived`);
+    const markdown = profileDocMarkdown({ profile: state.profile, doc });
+    expect(markdown, door).toContain("## 搜索表现（来源未知）");
+    expect(markdown, door).not.toContain("## 搜索表现（示例数据）");
+    expect(markdown.split("\n"), door).not.toContain("## 搜索表现");
+  }
+
+  it("first hydration neither invents a source nor drops the rows", () => {
+    window.localStorage.setItem(storageKey(PID), bytes(unknownSource("from disk")));
+    const probe = mount();
+    expect(probe().state.seeds).toBe("from disk");
+    assertUnknown(probe().state, "hydration");
+  });
+
+  it("a cross-tab write neither invents a source nor drops the rows", () => {
+    const probe = mount();
+    crossTabWrite(unknownSource("from another tab"));
+    expect(probe().state.seeds).toBe("from another tab");
+    assertUnknown(probe().state, "cross-tab");
   });
 });
