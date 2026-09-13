@@ -9,3 +9,10 @@ export const WB_APP_ROOT_ID = "wb-app";
  * no error of any kind. It is never made inert (`Dialog` marks `#wb-app`).
  */
 export const WB_ROOT_ID = "wb-root";
+
+/**
+ * `<main>` in `ShellChrome`, and the last place `Dialog` sends focus on close
+ * when none of its own targets can take it. It carries `tabIndex={-1}` there:
+ * focusable by script (and by the skip link), never a Tab stop.
+ */
+export const WB_MAIN_ID = "main-content";

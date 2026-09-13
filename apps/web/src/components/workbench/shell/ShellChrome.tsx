@@ -4,7 +4,7 @@ import { useTranslations } from "next-intl";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { useProjectSources } from "@/lib/api/hooks-sources";
 import type { ProjectShellOption } from "@/lib/services/project-shell";
-import { WB_APP_ROOT_ID } from "../ui/ids.ts";
+import { WB_APP_ROOT_ID, WB_MAIN_ID } from "../ui/ids.ts";
 import { ArtifactDrawer } from "./ArtifactDrawer.tsx";
 import { CommandPalette } from "./CommandPalette.tsx";
 import { gscConnectionState } from "./gsc-connection.ts";
@@ -147,7 +147,9 @@ export function ShellChrome({
             sidebarId={SIDEBAR_ID}
             sidebarOpen={sidebarOpen}
           />
-          <main id="main-content" className="flex-1">
+          {/* `tabIndex={-1}`: Dialog's last focus fallback and the skip link's
+              target take focus by script only; it is never a Tab stop. */}
+          <main id={WB_MAIN_ID} tabIndex={-1} className="flex-1">
             {children}
           </main>
         </div>

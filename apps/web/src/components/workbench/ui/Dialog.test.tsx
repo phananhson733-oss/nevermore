@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { act, useRef, type ReactNode } from "react";
+import { act, useRef, useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { Dialog } from "./Dialog.tsx";
-import { WB_APP_ROOT_ID } from "./ids.ts";
+import { WB_APP_ROOT_ID, WB_MAIN_ID } from "./ids.ts";
 
 // React only suppresses false-positive concurrent-render warnings when a test
 // harness explicitly declares that state transitions are wrapped in `act`.
@@ -190,6 +190,68 @@ function EmptyDialog({ open }: { readonly open: boolean }) {
   );
 }
 
+/**
+ * The confirm removes the button that opened the dialog in the same commit, as
+ * "clear sample" and "clear GSC rows" do, and no `returnFocusTo` is given.
+ */
+function RemovedOpenerHarness({ withFallback = false }: { readonly withFallback?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [openerPresent, setOpenerPresent] = useState(true);
+  const fallbackRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <div id={WB_APP_ROOT_ID}>
+        {openerPresent ? (
+          <button type="button" id="opener" onClick={() => setOpen(true)}>
+            open
+          </button>
+        ) : null}
+        <button type="button" id="fallback" ref={fallbackRef}>
+          fallback
+        </button>
+        <main id={WB_MAIN_ID} tabIndex={-1}>
+          page
+        </main>
+      </div>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        labelledBy="removed-title"
+        fallbackFocus={withFallback ? fallbackRef : undefined}
+      >
+        <h2 id="removed-title">Removed</h2>
+        <button
+          type="button"
+          id="confirm"
+          onClick={() => {
+            setOpenerPresent(false);
+            setOpen(false);
+          }}
+        >
+          confirm
+        </button>
+      </Dialog>
+    </>
+  );
+}
+
+/** Opens the harness from its opener, then confirms; returns the removed opener. */
+function confirmRemovingOpener(view: ReturnType<typeof mount>): HTMLElement {
+  const opener = view.container.querySelector<HTMLElement>("#opener");
+  if (opener === null) throw new Error("no opener rendered");
+  act(() => opener.focus());
+  act(() => opener.click());
+  expect(document.activeElement?.id).toBe("confirm");
+  const focus = vi.spyOn(opener, "focus");
+
+  act(() => view.container.querySelector<HTMLElement>("#confirm")?.click());
+
+  expect(opener.isConnected).toBe(false);
+  // A node that has left the document is not tried at all.
+  expect(focus).not.toHaveBeenCalled();
+  return opener;
+}
+
 describe("Dialog", () => {
   it("makes the app root inert and moves focus to the first focusable child", () => {
     mount(<Harness open onClose={() => {}} />);
@@ -360,5 +422,21 @@ describe("Dialog", () => {
     expect(keydown(panel as HTMLElement, "Tab")).toBe(true);
 
     expect(document.activeElement).toBe(panel);
+  });
+
+  it("sends focus to <main> when the confirm removed the opener, not to <body>", () => {
+    const view = mount(<RemovedOpenerHarness />);
+
+    confirmRemovingOpener(view);
+
+    expect(document.activeElement).toBe(view.container.querySelector(`#${WB_MAIN_ID}`));
+  });
+
+  it("prefers the caller's fallbackFocus to <main> when the opener is gone", () => {
+    const view = mount(<RemovedOpenerHarness withFallback />);
+
+    confirmRemovingOpener(view);
+
+    expect(document.activeElement?.id).toBe("fallback");
   });
 });

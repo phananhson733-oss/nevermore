@@ -3,7 +3,7 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { cn } from "./cn.ts";
 import { FOCUSABLE, nextTrapIndex } from "./focus-order.ts";
-import { WB_APP_ROOT_ID } from "./ids.ts";
+import { WB_APP_ROOT_ID, WB_MAIN_ID } from "./ids.ts";
 import { isComposingKey } from "./keyboard.ts";
 
 /** How many Dialogs are open; `#wb-app` is inert while it is > 0. */
@@ -21,10 +21,35 @@ let openDialogs = 0;
  */
 let rootHadInert = false;
 
+/** A subtree another modal has fenced off. */
+const FENCED = "[inert], [aria-hidden='true']";
+
+/**
+ * Hands focus to `target` if it can take it, and says whether it did.
+ *
+ * - Not tried once it has left the document: the button that opened a confirm
+ *   can be removed by that confirm, and `focus()` on a detached node does
+ *   nothing.
+ * - Not tried under someone else's `inert` / `aria-hidden`: focusing into a
+ *   subtree another modal has fenced off would put the caret behind its scrim
+ *   (the browser refuses for `inert`, jsdom would not, and `aria-hidden` stops
+ *   neither).
+ * - Otherwise tried, then read back from the document: `focus()` is a silent
+ *   no-op on a hidden or disabled element. `offsetParent === null` would
+ *   misjudge fixed-position targets and is null for everything under jsdom.
+ */
+function handFocusBack(target: Element | null | undefined): boolean {
+  if (!(target instanceof HTMLElement) || !target.isConnected) return false;
+  if (target.closest(FENCED) !== null) return false;
+  target.focus();
+  return document.activeElement === target;
+}
+
 /**
  * Accessible modal (design §4.3): role=dialog + aria-modal, focus moves in on
- * open, is trapped while open, and returns to the opener on close. The app root
- * (`#wb-app`) is made inert so the background is unreachable by keyboard and AT.
+ * open, is trapped while open, and on close goes to the first target that can
+ * take it (listed in the close path). The app root (`#wb-app`) is made inert so
+ * the background is unreachable by keyboard and AT.
  */
 export function Dialog({
   open,
@@ -32,6 +57,7 @@ export function Dialog({
   labelledBy,
   initialFocus,
   returnFocusTo,
+  fallbackFocus,
   className,
   children,
 }: {
@@ -45,6 +71,13 @@ export function Dialog({
    * Must be a stable ref: it is an effect dependency.
    */
   readonly returnFocusTo?: RefObject<HTMLElement | null> | undefined;
+  /**
+   * Where focus goes on close when neither `returnFocusTo` nor the opener can
+   * take it, e.g. because the confirm removed the button that opened the
+   * dialog. `<main>` (`WB_MAIN_ID`) is tried after it either way. Must be a
+   * stable ref: it is an effect dependency.
+   */
+  readonly fallbackFocus?: RefObject<HTMLElement | null> | undefined;
   readonly className?: string | undefined;
   readonly children: ReactNode;
 }) {
@@ -83,31 +116,23 @@ export function Dialog({
       if (!rootHadInert) {
         document.getElementById(WB_APP_ROOT_ID)?.removeAttribute("inert");
       }
-      // The preferred target can be hidden by a responsive utility (the palette
-      // and drawer openers are `md:`-only), and `focus()` on a hidden element
-      // is a no-op that would silently leave focus on <body>. Try it, then
-      // check: `offsetParent === null` would misjudge fixed-position openers
-      // and is null for everything under jsdom, so ask the document instead.
-      // A target under someone else's `inert` / `aria-hidden` is skipped
-      // outright: focusing into a subtree another modal has fenced off would
-      // put the caret behind its scrim (the browser refuses, jsdom would not).
-      const preferred = returnFocusTo?.current ?? null;
-      if (preferred?.closest("[inert], [aria-hidden='true']") === null) {
-        preferred.focus();
-      }
-      if (document.activeElement !== preferred) {
-        // Same fence for the fallback: the opener can have been hidden behind
-        // another modal's `aria-hidden` while this dialog was open.
-        const opener = openerRef.current;
-        if (
-          opener instanceof HTMLElement &&
-          opener.closest("[inert], [aria-hidden='true']") === null
-        ) {
-          opener.focus();
-        }
+      // The first of these that takes focus gets it: the preferred target, the
+      // opener, the caller's fallback, then `<main>`. Any of them can fail: the
+      // preferred target can be hidden by a responsive utility, the opener can
+      // be the button a confirm removed in the same commit, and either can
+      // have ended up under another modal's `inert` / `aria-hidden` while this
+      // dialog was open. With none left, focus stays where the browser put it.
+      const targets = [
+        returnFocusTo?.current,
+        openerRef.current,
+        fallbackFocus?.current,
+        document.getElementById(WB_MAIN_ID),
+      ];
+      for (const target of targets) {
+        if (handFocusBack(target)) break;
       }
     };
-  }, [open, initialFocus, returnFocusTo]);
+  }, [open, initialFocus, returnFocusTo, fallbackFocus]);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
     // Mid-composition keys belong to the IME (see `isComposingKey`): a

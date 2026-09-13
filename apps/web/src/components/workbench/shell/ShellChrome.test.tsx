@@ -26,7 +26,7 @@ import type { SourceConnection, SourceState } from "@/lib/api/hooks-sources";
 import type { ProjectShellOption } from "@/lib/services/project-shell";
 import { WorkbenchProvider } from "@/lib/workbench/store/WorkbenchProvider";
 import type { ProjectSeed } from "@/lib/workbench/store/reducer";
-import { WB_APP_ROOT_ID } from "../ui/ids.ts";
+import { WB_APP_ROOT_ID, WB_MAIN_ID } from "../ui/ids.ts";
 
 const en = getMessages("en");
 
@@ -337,6 +337,17 @@ describe("ShellChrome layout", () => {
     expect(main).not.toBeNull();
     expect(root.classList.contains("wb-reset")).toBe(false);
     expect(main?.classList.contains("wb-reset")).toBe(false);
+  });
+
+  it("lets <main> take focus from a script, as Dialog's last focus fallback", () => {
+    // A <main> without a tabindex ignores focus(), so the fallback would leave
+    // focus on <body> exactly when it is needed.
+    render();
+    const main = appRoot().querySelector<HTMLElement>(`main#${WB_MAIN_ID}`);
+
+    expect(main?.getAttribute("tabindex")).toBe("-1");
+    act(() => main?.focus());
+    expect(document.activeElement).toBe(main);
   });
 });
 
