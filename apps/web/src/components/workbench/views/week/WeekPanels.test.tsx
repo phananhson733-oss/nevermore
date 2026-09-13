@@ -75,9 +75,9 @@ describe("the week's range", () => {
   });
 
   it.each<[WeekLocale, string]>([
-    ["zh-CN", "近 7 天还没有动作"],
-    ["en", "Nothing has happened in the last 7 days"],
-  ])("says the seven dates hold no event when the feed is empty (%s)", (locale, sentence) => {
+    ["zh-CN", "近 7 天暂无事件记录"],
+    ["en", "No recorded events in the last 7 days"],
+  ])("says no event was recorded, not that nothing happened, when only GSC rows are there (%s)", (locale, sentence) => {
     const scope = show({ ...BLANK_WEEK, gscRows: [gsc("a", 50)], gscRowsSource: "user" }, locale);
     expect(text(scope, "[data-wb-week-feed] p")).toBe(sentence);
   });
