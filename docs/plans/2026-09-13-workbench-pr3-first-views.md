@@ -457,14 +457,11 @@ docs/PROGRESS.md                   T18
     - 最早的候选 `3d4be133` 是 198 个提交中的第 76 个，从它开始 rebase 会让之后的引用全部悬空，追溯性的损失大于二分查找的收益。
   - **要列进 PR 描述的提交**：
     - `3d4be133`：标题被 zsh heredoc 吞掉，不是合格的 conventional commit 标题，照录原样；
-    - 共享 i18n 协议要求 JSON 单独提交，因此以下几对单独检出前一个时，相关测试是红的：
-      - `b7cba98b` 到 `2f5b836b` 之间；
-      - `23c0fe53` 到 `fae6e640`；
-      - `db074fd0` 到 `ac74b802`；
-      - `a8c89b6e` 到 `60acf7a0`。
-  - **核实方法**：在分离 worktree 里检出前一个提交，跑受影响的测试文件，记下实际红的条数。
-    - node_modules 要逐个软链，并确认 `@sf/i18n` 解析到该 worktree 自己的 `packages/i18n`，否则读到的是主工作区的 JSON，结果不作数；
-    - 核实结果不是红的，就从清单里删掉。
+    - 共享 i18n 协议要求 JSON 单独提交，以下两个提交单独检出时有测试是红的（2026-09-14 已在分离 worktree 实跑核实，`@sf/i18n` 解析到该 worktree 自己的 `packages/i18n`；后一个提交用同一跑法作对照，为绿）：
+      - `b7cba98b`：`WeekCards.test.tsx` 2 条红（zh / en 检查卡范围说明），到 `2f5b836b` 恢复 11/11；
+      - `23c0fe53`：`OverviewView.test.tsx` 1 条红（下一步整句），到 `fae6e640` 恢复 39/39。
+    - 另两对候选 `db074fd0`、`a8c89b6e` 单独检出时，后续提交所改的 `WeekView.test.tsx` 分别是 22/22、24/24 绿，不列入清单。这里只跑了后续提交改动的测试文件，不代表这两个提交上全量单测是绿的。
+  - **核实方法**（已执行，脚本见 scratchpad `pr3/verify-7b.sh`）：在分离 worktree 里检出前一个提交，跑受影响的测试文件，记下实际红的条数。node_modules 逐个软链，`@sf/*` 指回该 worktree 的 `packages/`，否则读到的是主工作区的 JSON，结果不作数。
 - [ ] **Step 8: 交付** — `git branch --show-current` = `feat/workbench-pr3-first-views`；`git push -u origin feat/workbench-pr3-first-views:feat/workbench-pr3-first-views`；`git rev-parse origin/...` == HEAD；`gh pr create --base feat/workbench-ui-port`，描述含范围、Q1-Q37 摘要、验证数字（在最终 HEAD 上跑的）、Step 7b 的「不能单独检出变绿」清单、待 Owner 裁决项、遗留六项的关闭证据与变异验证、生产冒烟的**范围与已知缺口**、评审处置、残留表；结尾 `🤖 Generated with [Claude Code](https://claude.com/claude-code)`。
 
 ---
