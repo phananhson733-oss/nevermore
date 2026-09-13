@@ -314,6 +314,53 @@ describe("OverviewView: sample site (Q6)", () => {
     expect(foot).toContain(EN.gscFoot.user);
     expect(foot).not.toContain(EN.gscFoot.sample);
   });
+
+  it("names no provenance once the rows are gone but the matrix is still built", () => {
+    const view = mount();
+    loadSample(view);
+    view.dispatch({ type: "setGscRows", rows: [], source: "user" });
+
+    // Not vacuous: the matrix stays built, so the footnote still renders, and
+    // the store holds the one state (`sourceFor([])`) where neither label is true.
+    expect(view.store().state.built).toBe(true);
+    expect(view.store().state.gscRowsSource).toBeNull();
+    const foot = card(view.scope, EN.cards.keywords.label).foot;
+    expect(foot).not.toBe(EN.cards.unknown);
+    expect(foot).toContain("0 rows from GSC");
+    expect(foot).not.toContain(EN.gscFoot.sample);
+    expect(foot).not.toContain(EN.gscFoot.user);
+  });
+});
+
+describe("OverviewView: numbers that are not their inputs", () => {
+  it("prints the mention rate as unknown after a completed run with no answers, not 0%", () => {
+    const view = mount();
+    view.dispatch({ type: "visComplete", results: [], at: "2026-09-13 11:00" });
+
+    // A completed run exists, so a check on `lastVis` alone would print a rate.
+    expect(view.store().state.lastVis).toEqual({ at: "2026-09-13 11:00", results: [] });
+    expect(card(view.scope, EN.cards.mention.label)).toEqual({ value: "—", foot: EN.cards.unknown });
+  });
+
+  it("counts keyword rows from GSC, not the imported rows behind them", () => {
+    const view = mount();
+    // Two spellings of one query collapse into one keyword row (`buildRows`
+    // dedupes by `normQ`), and a blank query yields none.
+    const rows: readonly GscRow[] = [
+      { query: "Example GEO audit", clicks: 5, impressions: 120, ctr: 0.04, position: 14.2 },
+      { query: "example  geo audit", clicks: 2, impressions: 40, ctr: 0.05, position: 18 },
+      { query: "   ", clicks: 1, impressions: 10, ctr: 0.1, position: 30 },
+    ];
+    view.dispatch({ type: "setGscRows", rows, source: "user" });
+    view.dispatch({ type: "setBuilt", built: true });
+
+    const { state, keywordRows } = view.store();
+    expect(state.gscRows).toHaveLength(3);
+    expect(keywordRows.filter((row) => row.source === "gsc")).toHaveLength(1);
+    const foot = card(view.scope, EN.cards.keywords.label).foot;
+    expect(foot).toContain("1 row from GSC");
+    expect(foot).not.toContain("3 rows from GSC");
+  });
 });
 
 describe("OverviewView: ICU argument order at the consumer (Step 5b)", () => {
