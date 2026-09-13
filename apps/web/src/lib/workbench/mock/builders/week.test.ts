@@ -100,7 +100,7 @@ const FULL_TEXT = `# Acme 周报（2026-09-06 至 2026-09-13）
 - 技术健康分：56（检查于 2026-09-12 10:00；较上次（2026-09-05 10:00）+7）
 - AI 提及率：35%（40 次问答里有 14 次提到品牌，检查于 2026-09-12 11:00；较上次（2026-09-05 11:00，29%）+6pt）
 - 近 7 天新增产物：3 件
-- 临界词（11-30 名）：5 条
+- 临界词（排名 >10 且 ≤30）：5 条
 - 至少一个平台没提到品牌的提问：4 个
 - 知识库还没写结论句的条目：2 条
 
@@ -126,7 +126,7 @@ const FULL_TEXT = `# Acme 周报（2026-09-06 至 2026-09-13）
 下面列的是要做的事，不是已经得到的结果。
 - 处理 3 个高危问题
 - 给 4 个至少一个平台没提到品牌的提问写答案页
-- 推进 5 条临界词（11-30 名）
+- 推进 5 条临界词（排名 >10 且 ≤30）
 - 补 2 条知识库结论句
 
 ## 修复任务（任务，不是结果）
@@ -136,12 +136,12 @@ const FULL_TEXT = `# Acme 周报（2026-09-06 至 2026-09-13）
 const EMPTY_TEXT = `# Acme 周报（2026-09-06 至 2026-09-13）
 
 ## 数字
-- 技术健康分：—
-- AI 提及率：—
+- 技术健康分：n/a
+- AI 提及率：n/a
 - 近 7 天新增产物：0 件
-- 临界词（11-30 名）：—
-- 至少一个平台没提到品牌的提问：—
-- 知识库还没写结论句的条目：—
+- 临界词（排名 >10 且 ≤30）：n/a
+- 至少一个平台没提到品牌的提问：n/a
+- 知识库还没写结论句的条目：n/a
 
 ## 检查结果变化
 这里只对比两次检查各自列出的问题标题，不判断差异从何而来。
@@ -152,9 +152,9 @@ const EMPTY_TEXT = `# Acme 周报（2026-09-06 至 2026-09-13）
 
 ## 下周待办
 下面列的是要做的事，不是已经得到的结果。
-- 上面有还不知道的数字（标为「—」或「排名未知」），暂时给不出下周建议。`;
+- 上面有还不知道的数字（标为「n/a」或「排名未知」），暂时给不出下周建议。`;
 
-const UNKNOWN_TASKS = "- 上面有还不知道的数字（标为「—」或「排名未知」），暂时给不出下周建议。";
+const UNKNOWN_TASKS = "- 上面有还不知道的数字（标为「n/a」或「排名未知」），暂时给不出下周建议。";
 const NO_TASKS = "- 这几项检查没有产生待办建议。";
 
 function lineStarting(text: string, prefix: string): string | undefined {
@@ -172,19 +172,19 @@ describe("weeklyReportMarkdown", () => {
     expect(weeklyReportMarkdown(FULL)).toBe(FULL_TEXT);
   });
 
-  it("writes an em dash, never a zero, for every number it does not have", () => {
+  it("writes n/a, never a zero, for every number it does not have", () => {
     expect(weeklyReportMarkdown(EMPTY)).toBe(EMPTY_TEXT);
   });
 
   // codex S7a #4: a known zero beside rows with no position is not "no borderline query".
   it("names the rows with no position beside a borderline count taken over the rest", () => {
     const text = weeklyReportMarkdown({ ...EMPTY, borderline: 0, borderlineUnknown: 2 });
-    expect(lineStarting(text, "- 临界词")).toBe("- 临界词（11-30 名）：0 条（另有 2 条排名未知）");
+    expect(lineStarting(text, "- 临界词")).toBe("- 临界词（排名 >10 且 ≤30）：0 条（另有 2 条排名未知）");
   });
 
-  it("keeps a dash with nothing beside it when no row has a position", () => {
+  it("keeps n/a with nothing beside it when no row has a position", () => {
     const text = weeklyReportMarkdown({ ...EMPTY, borderline: null, borderlineUnknown: 3 });
-    expect(lineStarting(text, "- 临界词")).toBe("- 临界词（11-30 名）：—");
+    expect(lineStarting(text, "- 临界词")).toBe("- 临界词（排名 >10 且 ≤30）：n/a");
   });
 
   it("keeps a measured zero as zero and has nothing to do", () => {
@@ -195,7 +195,7 @@ describe("weeklyReportMarkdown", () => {
       kbGaps: 0,
       highFindings: 0,
     });
-    expect(lineStarting(text, "- 临界词")).toBe("- 临界词（11-30 名）：0 条");
+    expect(lineStarting(text, "- 临界词")).toBe("- 临界词（排名 >10 且 ≤30）：0 条");
     expect(lineStarting(text, "- 至少一个平台")).toBe("- 至少一个平台没提到品牌的提问：0 个");
     expect(lineStarting(text, "- 知识库")).toBe("- 知识库还没写结论句的条目：0 条");
     expect(taskSectionLines(text)).toEqual([NO_TASKS]);
@@ -387,8 +387,8 @@ describe("weekly report honesty", () => {
   });
 
   it.each([
-    "临界词（11-30 名）：5 条",
-    "临界词（11-30 名）：0 条（另有 2 条排名未知）",
+    "临界词（排名 >10 且 ≤30）：5 条",
+    "临界词（排名 >10 且 ≤30）：0 条（另有 2 条排名未知）",
     "# Acme 周报（2026-09-06 至 2026-09-13）",
     "较上次（2026-09-05 10:00）+7",
     "较上次（2026-09-05 11:00，29%）+6pt",

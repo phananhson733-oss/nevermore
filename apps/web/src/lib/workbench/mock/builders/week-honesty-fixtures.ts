@@ -75,8 +75,7 @@ export const WEEK_FORBIDDEN_PHRASES: readonly string[] = [
 
 /**
  * Rank movement written with numbers. Deliberately not matched: a date range
- * (`2026-09-06 至 2026-09-13`), the `11-30 名` band (the sign is preceded by a
- * digit), and a score or share delta (`+7`, `+6pt`), which carry no 名/位.
+ * (`2026-09-06 至 2026-09-13`), the `排名 >10 且 ≤30` band (no sign in it), and a score or share delta (`+7`, `+6pt`), which carry no 名/位.
  */
 export const WEEK_RANK_MOVEMENT: readonly RegExp[] = [
   /\d(?:\.\d+)?\s*(?:→|->|=>|⇒|➜|➔|⟶)\s*(?:第\s*)?\d/u,

@@ -145,7 +145,7 @@ function gscSection(gsc: GscSignals | null, source: GscRowsSource | null): strin
     `## 搜索表现${gscSourceSuffix(source)}`,
     `- 查询 ${countText(gsc.total)} 条，其中品牌词 ${countText(gsc.brandQueries)} 条`,
     `- 品牌词点击 ${countText(gsc.brandClicks)}，非品牌词点击 ${countText(gsc.nonBrandClicks)}`,
-    `- 临界词（11-30 名）${countText(gsc.near)} 条`,
+    `- 临界词（排名 >10 且 ≤30）${countText(gsc.near)} 条`,
     ...(top.length === 0 ? [] : [`- 点击最多：${top.join("；")}`]),
   ].join("\n");
 }

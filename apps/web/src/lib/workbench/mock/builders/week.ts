@@ -10,7 +10,8 @@
  * The input is facts the week view has already derived from the store, not the
  * store itself, so every number here has exactly one producer (the view's
  * `week-summary.ts`) and the report cannot disagree with the cards beside it.
- * `null` is "not known" and prints an em dash, never 0. A borderline count taken
+ * `null` is "not known" and prints `n/a`, never 0 (the exported documents'
+ * one spelling for an unavailable value; the page itself shows 「—」). A borderline count taken
  * over only the rows with a position names the rows without one beside it
  * (「另有 N 条排名未知」, codex S7a #4).
  *
@@ -133,7 +134,7 @@ export const WEEKLY_REPORT_META = {
   readonly filename: string;
 };
 
-const UNKNOWN = "—";
+const UNKNOWN = "n/a";
 
 const EVENT_LABEL = {
   audit: "技术审计",
@@ -186,7 +187,7 @@ function numbersSection(input: WeeklyReportInput): string {
     healthLine(input.health),
     mentionLine(input.mention),
     `- 近 7 天新增产物：${input.artifactsThisWeek} 件`,
-    `- 临界词（11-30 名）：${borderlineAmount(input)}`,
+    `- 临界词（排名 >10 且 ≤30）：${borderlineAmount(input)}`,
     `- 至少一个平台没提到品牌的提问：${amount(input.answerGaps, "个")}`,
     `- 知识库还没写结论句的条目：${amount(input.kbGaps, "条")}`,
   ].join("\n");
@@ -246,7 +247,7 @@ function taskLines(input: WeeklyReportInput): readonly string[] {
   return [
     high === null ? null : `- 处理 ${high} 个高危问题`,
     answers === null ? null : `- 给 ${answers} 个至少一个平台没提到品牌的提问写答案页`,
-    borderline === null ? null : `- 推进 ${borderline} 条临界词（11-30 名）`,
+    borderline === null ? null : `- 推进 ${borderline} 条临界词（排名 >10 且 ≤30）`,
     kb === null ? null : `- 补 ${kb} 条知识库结论句`,
   ].filter((line): line is string => line !== null);
 }
@@ -266,7 +267,7 @@ function tasksSection(input: WeeklyReportInput): string {
   const lines = taskLines(input);
   const none = taskCountsKnown(input)
     ? "- 这几项检查没有产生待办建议。"
-    : "- 上面有还不知道的数字（标为「—」或「排名未知」），暂时给不出下周建议。";
+    : "- 上面有还不知道的数字（标为「n/a」或「排名未知」），暂时给不出下周建议。";
   return [
     "## 下周待办",
     "下面列的是要做的事，不是已经得到的结果。",
