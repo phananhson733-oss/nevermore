@@ -6,7 +6,7 @@
  * `Math.random`, and no third-party name or domain is invented (R9).
  */
 import type { KeywordRow, Profile, PromptKind, VisResult } from "../types.ts";
-import { AI_PATTERNS, SERP_POOL } from "./keywords.ts";
+import { AI_PATTERNS, PATTERNS, SERP_POOL } from "./keywords.ts";
 import { rngOf, sampleDistinct, seedKey } from "./rng.ts";
 import { competitorNames, normQ, splitList } from "./text.ts";
 
@@ -40,9 +40,15 @@ const MAX_RIVALS = 4;
 const DOMAIN_COUNT = 3;
 /** Kind of each `AI_PATTERNS` template, by index. */
 const TEMPLATE_KINDS: readonly PromptKind[] = ["compare", "discover", "verify"];
+/** PATTERNS[5], `what is ${seed}`: the only geo-only keyword template, a definition question. */
+const DEFINITION_PATTERN = PATTERNS.find((pattern) => pattern.engine === "geo");
 const GEO_ROW_LIMIT = 2;
 const LINE_BREAK = /\r\n|\r|\n/;
-const ENDS_WITH_TOOL_WORD = /(?:^|\s)tools?$/i;
+/** "SEO tools", "rank tool", "dev-tools": the template must not add another "tools". */
+const ENDS_WITH_TOOL_WORD = /(?:^|[\s-])tools?$/i;
+/** A full stop or question mark a user typed at the end, with any space before it: it would land before the template's own "?". */
+const TRAILING_SENTENCE_PUNCTUATION = /(?:\s*[.。!?！？])+$/u;
+const SENTENCE_PUNCTUATION = /[.。!?！？;；]/u;
 
 /* ---------------- shared helpers ---------------- */
 
@@ -65,14 +71,19 @@ const identity = (value: string): string => value;
 /** One line, single spaces: a user field can neither break the prompt list nor leave a double space. */
 const clean = (value: string): string => value.replace(/\s+/g, " ").trim();
 
+/** A cleaned field that is spliced mid-sentence, without the punctuation that ended it. */
+const phraseOf = (value: string): string =>
+  clean(value).replace(TRAILING_SENTENCE_PUNCTUATION, "");
+
 /* ---------------- mockVisibility ---------------- */
 
-/** Competitors deduped by `normQ` (placeholders when none), without the brand itself. */
+/** Competitors deduped by `normQ` (placeholders when none), cleaned, without the brand itself. */
 function rivalPool(
   profile: Pick<Profile, "competitors">,
   brandKey: string,
 ): readonly string[] {
   return competitorNames(profile)
+    .map(clean)
     .filter((name) => normQ(name) !== brandKey)
     .slice(0, MAX_RIVALS);
 }
@@ -85,7 +96,8 @@ function answerOf(
   salt: string,
 ): VisResult {
   const next = rngOf(seedKey(p, platform, brand, salt));
-  // A blank brand cannot be mentioned: the draw is still taken, the hit is not.
+  // A blank brand cannot be mentioned. The hit draw is still taken, so the
+  // rival and domain draws sit at the same stream positions as on a named brand's miss.
   const hit = next() > HIT_THRESHOLD && brand !== "";
   const named = pool.filter(() => next() > RIVAL_THRESHOLD);
   const at = hit ? Math.floor(next() * (named.length + 1)) : -1;
@@ -107,14 +119,15 @@ function answerOf(
  * One answer per prompt per platform. `hit` decides whether the brand is
  * inserted into `brands`, and `rank` is where it was inserted, so
  * `hit ⇔ brands contains brand` and `brands[rank - 1] === brand` hold by
- * construction. Domains come only from `SERP_POOL`, drawn without replacement.
+ * construction. Brand and competitor names are cleaned as in `localPromptSet`.
+ * Domains come only from `SERP_POOL`, drawn without replacement.
  */
 export function mockVisibility(
   profile: Pick<Profile, "brand" | "competitors">,
   prompts: readonly string[],
   salt: string,
 ): readonly VisResult[] {
-  const brand = profile.brand.trim();
+  const brand = clean(profile.brand);
   const pool = rivalPool(profile, normQ(brand));
   return prompts.flatMap((p) =>
     PLATFORMS.map((platform) => answerOf(p, platform, brand, pool, salt)),
@@ -125,11 +138,26 @@ export function mockVisibility(
 
 interface PromptContext {
   readonly brand: string;
-  readonly positioning: string;
+  /** The positioning when it reads as a topic; "" when it is a sentence. */
+  readonly topic: string;
   readonly f0: string | undefined;
   readonly f1: string | undefined;
   /** Real competitors only: placeholders never become prompts sent to an AI. */
   readonly rivals: readonly string[];
+}
+
+/**
+ * "what tools help with Acme helps teams get cited" is nonsense: a positioning
+ * that names the brand first, or still holds sentence punctuation once the
+ * trailing mark is gone, is not a topic.
+ */
+function topicOf(positioning: string, brandKey: string): string {
+  const key = normQ(positioning);
+  const namesBrand =
+    brandKey !== "" && (key === brandKey || key.startsWith(`${brandKey} `));
+  return namesBrand || SENTENCE_PUNCTUATION.test(positioning)
+    ? ""
+    : positioning;
 }
 
 function contextOf(
@@ -137,7 +165,9 @@ function contextOf(
 ): PromptContext {
   const brand = clean(profile.brand);
   const brandKey = normQ(brand);
-  const features = splitList(profile.features).map(clean);
+  const features = splitList(profile.features)
+    .map(phraseOf)
+    .filter((feature) => feature !== "");
   const named = splitList(profile.competitors).length > 0;
   const rivals = named
     ? competitorNames(profile)
@@ -146,7 +176,7 @@ function contextOf(
     : [];
   return {
     brand,
-    positioning: clean(profile.positioning),
+    topic: topicOf(phraseOf(profile.positioning), brandKey),
     f0: features[0],
     f1: features[1] ?? features[0],
     rivals,
@@ -159,16 +189,16 @@ const toolsOf = (feature: string): string =>
 const toolOf = (feature: string): string =>
   ENDS_WITH_TOOL_WORD.test(feature) ? feature : `${feature} tool`;
 
-/** Without a feature, the "best tools" question is asked about the brand instead. */
+/** Without a feature, the "best tools" question asks for tools like the brand: an alternatives question. */
 function bestSeed(c: PromptContext): PromptSeed | null {
   if (c.f0 !== undefined)
     return seedOf(`best ${toolsOf(c.f0)} for startups`, "discover");
-  if (c.brand !== "") return seedOf(`best tools like ${c.brand}`, "discover");
+  if (c.brand !== "") return seedOf(`best tools like ${c.brand}`, "alternative");
   return null;
 }
 
 function discoverSeeds(c: PromptContext): readonly (PromptSeed | null)[] {
-  const topic = c.positioning || c.f0;
+  const topic = c.topic || c.f0;
   const help = topic
     ? seedOf(`what tools help with ${topic}`, "discover")
     : null;
@@ -211,23 +241,26 @@ function laterSeeds(c: PromptContext): readonly (PromptSeed | null)[] {
 }
 
 /**
- * `buildRows` does not record which AI template made a geo row, so the row is
- * re-made from each template and compared by `normQ`. Rows built for another
- * brand match nothing and fall back to `scenario`.
+ * `buildRows` does not record which template made a geo row, so the row is
+ * re-made from the definition template and each AI template and compared by
+ * `normQ`. The definition question names no brand; an AI row built for
+ * another brand matches nothing and falls back to `scenario`.
  */
 function geoKind(row: KeywordRow, brand: string): PromptKind {
   const key = normQ(row.q);
-  const index = AI_PATTERNS.findIndex(
-    (make) => normQ(make(row.seed, brand)) === key,
-  );
+  const remade = (q: string): boolean => normQ(q) === key;
+  if (DEFINITION_PATTERN !== undefined && remade(DEFINITION_PATTERN.make(row.seed)))
+    return "discover";
+  const index = AI_PATTERNS.findIndex((make) => remade(make(row.seed, brand)));
   return TEMPLATE_KINDS[index] ?? "scenario";
 }
 
 /**
  * The prototype's seven questions with its filler removed: a template whose
  * feature, competitor or brand is missing is skipped rather than padded with
- * "tools", "growth" or an empty slot. Then the first two geo rows; deduped by
- * `normQ`, first spelling wins.
+ * "tools", "growth" or an empty slot, and a sentence-shaped positioning gives
+ * way to the first feature. Then the first two geo rows; deduped by `normQ`,
+ * first spelling wins.
  */
 export function localPromptSet(
   profile: Pick<Profile, "brand" | "positioning" | "features" | "competitors">,

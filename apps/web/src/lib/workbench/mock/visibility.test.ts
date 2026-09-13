@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { projectStateSchema } from "../store/schema.ts";
 import type { Profile, VisResult } from "../types.ts";
 import { SERP_POOL } from "./keywords.ts";
+import { rngOf, sampleDistinct, seedKey } from "./rng.ts";
 import { COMPETITOR_PLACEHOLDERS, normQ } from "./text.ts";
 import { PLATFORMS, mockVisibility } from "./visibility.ts";
 
@@ -11,6 +13,7 @@ type VisProfile = Pick<Profile, "brand" | "competitors">;
 const BRAND = "Acme";
 const MAX_BRANDS = 5;
 const DOMAIN_COUNT = 3;
+const RIVAL_THRESHOLD = 0.45;
 const SWEEP_SALTS: readonly string[] = Array.from(
   { length: 150 },
   (_, i) => `sweep-${i}`,
@@ -94,46 +97,74 @@ function casesOf(
 
 const SWEEP_CASES: readonly {
   readonly name: string;
+  readonly brand: string;
   readonly profile: VisProfile;
   readonly pool: readonly string[];
 }[] = [
   {
     name: "case-variant duplicates and the brand listed as a competitor",
+    brand: BRAND,
     profile: profileOf("Rival, Other, acme, OTHER"),
     pool: ["Rival", "Other"],
   },
   {
     name: "eight competitors (only the first four can be named)",
+    brand: BRAND,
     profile: profileOf("C1, C2, C3, C4, C5, C6, C7, C8"),
     pool: ["C1", "C2", "C3", "C4"],
   },
   {
     name: "no competitors (placeholders, never Ahrefs or Semrush)",
+    brand: BRAND,
     profile: profileOf(""),
     pool: [...COMPETITOR_PLACEHOLDERS],
   },
+  {
+    name: "a brand made of regex metacharacters",
+    brand: "C++ (beta)*$",
+    profile: profileOf("Rival, Other", "C++ (beta)*$"),
+    pool: ["Rival", "Other"],
+  },
+  {
+    name: "a full-width brand with its ASCII spelling listed as a competitor",
+    brand: "Ａｃｍｅ",
+    profile: profileOf("Acme, Rival, Other", "Ａｃｍｅ"),
+    pool: ["Rival", "Other"],
+  },
+  {
+    name: "a padded competitor equal to the brand",
+    brand: BRAND,
+    profile: profileOf(" acme , Rival, Other"),
+    pool: ["Rival", "Other"],
+  },
 ];
 
-describe.each(SWEEP_CASES)("mockVisibility sweep: $name", ({ profile, pool }) => {
+describe.each(SWEEP_CASES)("mockVisibility sweep: $name", ({ brand, profile, pool }) => {
   const results = sweep(profile);
 
   it("exercises every branch, so the invariants below are not vacuous", () => {
-    expect(casesOf(results, BRAND, pool.length)).toEqual(new Set(ALL_CASES));
+    expect(casesOf(results, brand, pool.length)).toEqual(new Set(ALL_CASES));
   });
 
   it("keeps hit, rank and brands consistent in every result", () => {
-    expect(results.flatMap((r) => violations(r, BRAND))).toEqual([]);
+    expect(results.flatMap((r) => violations(r, brand))).toEqual([]);
   });
 
   it("names only the brand or the expected competitors", () => {
     const strangers = results
       .flatMap((r) => r.brands)
-      .filter((b) => b !== BRAND && !pool.includes(b));
+      .filter((b) => b !== brand && !pool.includes(b));
     expect(strangers).toEqual([]);
   });
 
   it("never names Ahrefs or Semrush", () => {
     expect(JSON.stringify(results)).not.toMatch(/ahrefs|semrush/i);
+  });
+
+  it("parses as the persisted visResults", () => {
+    expect(projectStateSchema.shape.visResults.safeParse(results).success).toBe(
+      true,
+    );
   });
 });
 
@@ -207,6 +238,54 @@ describe("mockVisibility: shape", () => {
       mockVisibility(profileOf("Rival"), ["q"], "s"),
     );
   });
+
+  it("collapses whitespace inside brand and competitor names, as localPromptSet does", () => {
+    const results = SWEEP_SALTS.slice(0, 40).flatMap((salt) =>
+      mockVisibility(profileOf("Ri  val", "Ac  me"), SWEEP_PROMPTS, salt),
+    );
+    expect(new Set(results.flatMap((r) => r.brands))).toEqual(
+      new Set(["Ac me", "Ri val"]),
+    );
+    expect(results.flatMap((r) => violations(r, "Ac me"))).toEqual([]);
+  });
+});
+
+/** Rivals and domains a miss shows when the hit draw came first: one draw skipped, one per rival, then the domains. */
+function missAfterHitDraw(
+  result: VisResult,
+  brand: string,
+  pool: readonly string[],
+  salt: string,
+) {
+  const next = rngOf(seedKey(result.p, result.platform, brand, salt));
+  next();
+  const brands = pool.filter(() => next() > RIVAL_THRESHOLD);
+  return { brands, domains: sampleDistinct(SERP_POOL, DOMAIN_COUNT, next) };
+}
+
+describe("mockVisibility: draw order", () => {
+  const POOL = ["Rival", "Other"];
+
+  it.each([
+    ["a blank brand", "   ", ""],
+    ["a named brand's miss", BRAND, BRAND],
+  ])(
+    "takes the hit draw first for %s, so rival and domain draws sit at the same stream positions",
+    (_, brand, seedBrand) => {
+      const pairs = SWEEP_SALTS.slice(0, 40).flatMap((salt) =>
+        mockVisibility(profileOf("Rival, Other", brand), ["q"], salt)
+          .filter((r) => !r.hit)
+          .map((r) => [
+            { brands: r.brands, domains: r.domains },
+            missAfterHitDraw(r, seedBrand, POOL, salt),
+          ]),
+      );
+      expect(pairs.length).toBeGreaterThan(50);
+      expect(pairs.map(([actual]) => actual)).toEqual(
+        pairs.map(([, expected]) => expected),
+      );
+    },
+  );
 });
 
 describe("mockVisibility: determinism", () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PROMPT_KINDS } from "../enums.ts";
-import type { KeywordRow, Profile, PromptKind, VisResult } from "../types.ts";
-import { AI_PATTERNS, buildRows } from "./keywords.ts";
+import type { Profile, VisResult } from "../types.ts";
+import { buildRows } from "./keywords.ts";
 import {
   PLATFORMS,
   VIS_PROMPT_LIMIT,
@@ -13,7 +13,7 @@ import {
   visibilityGaps,
 } from "./visibility.ts";
 
-/** Prompt seeds, prompt-list parsing and the derivations over results. */
+/** Prompt seeds, prompt-list parsing and the derivations over results. Geo row kinds: visibility-kinds.test.ts; messy profile text: visibility-text.test.ts. */
 
 type PromptProfile = Pick<
   Profile,
@@ -32,17 +32,11 @@ const profileOf = (fields: Partial<PromptProfile>): PromptProfile =>
 const questions = (seeds: readonly { readonly q: string }[]) =>
   seeds.map((s) => s.q);
 
-function geoRowOf(rows: readonly KeywordRow[], q: string): KeywordRow {
-  const row = rows.find((r) => r.engine === "geo" && r.q === q);
-  if (row === undefined) throw new Error(`no geo row "${q}"`);
-  return row;
-}
-
 describe("localPromptSet: templates", () => {
   it("asks only brand questions for a brand-only profile, with no filler words", () => {
     const seeds = localPromptSet(profileOf({ brand: "Acme" }), []);
     expect(seeds).toEqual([
-      { q: "best tools like Acme", kind: "discover" },
+      { q: "best tools like Acme", kind: "alternative" },
       { q: "is Acme worth using?", kind: "verify" },
       { q: "Acme alternatives", kind: "alternative" },
     ]);
@@ -67,6 +61,43 @@ describe("localPromptSet: templates", () => {
       { q: "Rival alternatives", kind: "alternative" },
       {
         q: "I have a small team and no SEO budget, how do I get started with keyword research?",
+        kind: "scenario",
+      },
+    ]);
+  });
+
+  it("asks the feature comparison and which-tool questions from a single feature", () => {
+    expect(
+      localPromptSet(profileOf({ brand: "Acme", features: "seo audit" }), []),
+    ).toEqual([
+      { q: "best seo audit tools for startups", kind: "discover" },
+      { q: "what tools help with seo audit", kind: "discover" },
+      { q: "seo audit tools compared", kind: "compare" },
+      { q: "which seo audit tool should I pick?", kind: "compare" },
+      { q: "is Acme worth using?", kind: "verify" },
+      { q: "Acme alternatives", kind: "alternative" },
+      {
+        q: "I have a small team and no SEO budget, how do I get started with seo audit?",
+        kind: "scenario",
+      },
+    ]);
+  });
+
+  it("compares with the one named competitor and still asks which tool to pick", () => {
+    const profile = profileOf({
+      brand: "Acme",
+      features: "seo audit",
+      competitors: "Rival",
+    });
+    expect(localPromptSet(profile, [])).toEqual([
+      { q: "best seo audit tools for startups", kind: "discover" },
+      { q: "what tools help with seo audit", kind: "discover" },
+      { q: "Acme vs Rival", kind: "compare" },
+      { q: "which seo audit tool should I pick?", kind: "compare" },
+      { q: "is Acme worth using?", kind: "verify" },
+      { q: "Rival alternatives", kind: "alternative" },
+      {
+        q: "I have a small team and no SEO budget, how do I get started with seo audit?",
         kind: "scenario",
       },
     ]);
@@ -133,84 +164,6 @@ describe("localPromptSet: templates", () => {
     for (const seed of localPromptSet(profile, rows)) {
       expect(kinds).toContain(seed.kind);
     }
-  });
-});
-
-describe("localPromptSet: geo rows", () => {
-  const ROWS = Object.freeze(
-    buildRows(["seo"], { brand: "Acme", competitors: "" }, []),
-  );
-  const BY_TEMPLATE: ReadonlyMap<string, PromptKind> = new Map([
-    ["which seo tool works best for a small team?", "compare"],
-    ["what should I look for in a seo tool?", "discover"],
-    ["is Acme good for seo?", "verify"],
-  ]);
-  /** `what is ${seed}` is a PATTERNS row with engine geo: no AI template makes it. */
-  const EVERY_GEO_ROW: ReadonlyMap<string, PromptKind> = new Map([
-    ...BY_TEMPLATE,
-    ["what is seo", "scenario"],
-  ]);
-
-  it("has one kind per AI template (a new template needs a kind)", () => {
-    expect(AI_PATTERNS).toHaveLength(BY_TEMPLATE.size);
-  });
-
-  it("knows every geo row buildRows makes for one seed", () => {
-    const geo = ROWS.filter((r) => r.engine === "geo").map((r) => r.q);
-    expect(new Set(geo)).toEqual(new Set(EVERY_GEO_ROW.keys()));
-  });
-
-  it.each([...EVERY_GEO_ROW])("maps %s to %s", (q, kind) => {
-    const seeds = localPromptSet(profileOf({ brand: "Acme" }), [
-      geoRowOf(ROWS, q),
-    ]);
-    expect(seeds.at(-1)).toEqual({ q, kind });
-  });
-
-  it("maps by template, not by the row's position in score order, and takes the first two geo rows", () => {
-    const firstTwo = ROWS.filter((r) => r.engine === "geo")
-      .slice(0, 2)
-      .map((r) => r.q);
-    const seeds = localPromptSet(profileOf({ brand: "Acme" }), ROWS);
-    expect(seeds.slice(-2)).toEqual(
-      firstTwo.map((q) => ({ q, kind: EVERY_GEO_ROW.get(q) })),
-    );
-  });
-
-  it("maps the AI templates buildRows keeps for a blank brand", () => {
-    const rows = buildRows(["seo"], { brand: "", competitors: "" }, []);
-    const aiRows = rows.filter(
-      (r) => r.engine === "geo" && r.q !== "what is seo",
-    );
-    expect(aiRows).toHaveLength(2);
-    const seeds = localPromptSet(profileOf({}), aiRows);
-    expect(new Map(seeds.map((s) => [s.q, s.kind]))).toEqual(
-      new Map([
-        ["which seo tool works best for a small team?", "compare"],
-        ["what should I look for in a seo tool?", "discover"],
-      ]),
-    );
-  });
-
-  it("falls back to scenario for a row no template reproduces (stale brand)", () => {
-    const stale = buildRows(["seo"], { brand: "Old", competitors: "" }, []);
-    const seeds = localPromptSet(profileOf({ brand: "Acme" }), [
-      geoRowOf(stale, "is Old good for seo?"),
-    ]);
-    expect(seeds.at(-1)).toEqual({
-      q: "is Old good for seo?",
-      kind: "scenario",
-    });
-  });
-
-  it("dedupes by normQ, keeping the first spelling", () => {
-    const upper = buildRows(["SEO"], { brand: "Acme", competitors: "" }, []);
-    const seeds = localPromptSet(profileOf({ brand: "Acme" }), [
-      geoRowOf(upper, "which SEO tool works best for a small team?"),
-      geoRowOf(ROWS, "which seo tool works best for a small team?"),
-    ]);
-    const matching = questions(seeds).filter((q) => /which seo tool/i.test(q));
-    expect(matching).toEqual(["which SEO tool works best for a small team?"]);
   });
 
   it("caps the prompt run at six", () => {
@@ -309,6 +262,13 @@ describe("visibilityGaps", () => {
         missedPlatforms: ["ChatGPT", "Claude"],
         rivals: ["Rival", "Other", "Third"],
       },
+    ]);
+  });
+
+  it("never lists a blank name as a rival", () => {
+    const results = [miss("q", "ChatGPT", ["", "Rival", "  "])];
+    expect(visibilityGaps(results, "Acme")).toEqual([
+      { p: "q", missedPlatforms: ["ChatGPT"], rivals: ["Rival"] },
     ]);
   });
 
