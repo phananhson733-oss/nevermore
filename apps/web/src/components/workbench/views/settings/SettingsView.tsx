@@ -3,20 +3,35 @@
 import { useTranslations } from "next-intl";
 import { PageHead } from "../../ui/PageHead.tsx";
 import { DeleteProjectSection } from "./DeleteProjectSection.tsx";
+import { NotifyBlock } from "./NotifyBlock.tsx";
+import { SourcesSummaryBlock } from "./SourcesSummaryBlock.tsx";
 
 /**
- * PR-1 form (design §4.2): in-progress note + the real delete block. PR-3 adds
- * notify + data sources. No `DemoChip`: the page carries no mock content, and
- * `inProgressNoLegacy` is used unconditionally because the legacy settings page
- * was deleted, so there is nothing that "keeps working meanwhile".
+ * Settings (design §6.2, T11): three blocks and no save button (Q24).
+ *
+ * 1. `NotifyBlock` — local notification preferences, marked as sample data and
+ *    stating nothing is sent.
+ * 2. `SourcesSummaryBlock` — read-only connection status and links out.
+ * 3. `DeleteProjectSection` — the page's one real action
+ *    (`[data-wb-real-action]`, pinned to exactly one by the e2e spec); no sample
+ *    marker may sit inside it.
+ *
+ * The PR-1 "lands in a later batch" sentence is gone: the page is complete.
+ * There is no legacy settings link, because that page was deleted. The root is
+ * `<main>`'s direct child with its own padding and `.wb-reset`, overview width
+ * (Q26); frame copy carries `data-wb-frame` (Q30).
+ *
+ * 一旦本文件被更新，务必更新开头注释
  */
 export function SettingsView({ projectId }: { readonly projectId: string }) {
   const tNav = useTranslations("workbench.nav.items");
-  const tShell = useTranslations("workbench.shell");
   return (
     <div className="wb-reset mx-auto min-h-full max-w-5xl p-6 font-sans text-slate-900 md:p-10">
-      <PageHead title={tNav("settings")} />
-      <p className="mb-6 text-sm text-slate-500">{tShell("inProgressNoLegacy")}</p>
+      <div data-wb-frame="">
+        <PageHead title={tNav("settings")} />
+      </div>
+      <NotifyBlock />
+      <SourcesSummaryBlock projectId={projectId} />
       <DeleteProjectSection projectId={projectId} />
     </div>
   );
