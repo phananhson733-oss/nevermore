@@ -1,12 +1,14 @@
 /** @vitest-environment jsdom */
 
 /**
- * The profile's three tabs carry the declaration for the SNAPSHOT's GSC source
- * (Q36, read the way Q6 reads it): `doc.gscSource`, frozen when the profile was
- * generated, never the project's current `gscRowsSource`. Every fixture below
- * gives the two different values, so reading the wrong one changes the answer.
- * A snapshot without GSC signals shows no GSC data on any tab and carries the
- * sample sentence. All three tabs agree, the JSON tab included (Q36 ruling).
+ * Each profile tab's declaration speaks for its own body (Q36). The document and
+ * the AI context carry GSC-derived content, so they declare the SNAPSHOT's
+ * source (read the way Q6 reads it): `doc.gscSource`, frozen when the profile
+ * was generated, never the project's current `gscRowsSource`. Every fixture
+ * below gives the two different values, so reading the wrong one changes the
+ * answer. A snapshot without GSC signals shows no GSC data and carries the
+ * sample sentence. The JSON tab holds no GSC field at all, so it carries the
+ * sample sentence whatever the snapshot's source.
  *
  * Declarations are the shipped sentences written out in both locales, read from
  * the final text each tab hands its actions: an md or prompt artifact's first
@@ -84,6 +86,7 @@ function declarationOf(tab: ProfileTab, content: string): string {
 
 /** What each tab hands its actions, in tab order, clicking through them. */
 function declarationsShown(state: WorkbenchProjectState, locale: ProfileLocale): readonly string[] {
+  rendered?.unmount();
   const current = renderProfile(state, { locale });
   rendered = current;
   const labels = getMessages(locale).workbench.profile.tabs;
@@ -112,22 +115,30 @@ afterEach(() => {
 
 describe.each(["en", "zh-CN"] as const)("the profile tabs' declaration (%s)", (locale) => {
   const line = DECLARATION[locale];
-  const onEveryTab = (text: string): readonly string[] => PROFILE_TABS.map(() => text);
+  /** `text` on the document and context tabs; the sample sentence on the JSON tab, which carries no GSC field. */
+  const byTab = (text: string): readonly string[] =>
+    PROFILE_TABS.map((tab) => (tab === "json" ? line.sample : text));
+  const JSON_TAB = PROFILE_TABS.indexOf("json");
 
   it("is the sample sentence on every tab when the snapshot has no GSC signals, whatever the rows are now", () => {
-    expect(declarationsShown(project(false, null, "user"), locale)).toEqual(onEveryTab(line.sample));
+    expect(declarationsShown(project(false, null, "user"), locale)).toEqual(byTab(line.sample));
   });
 
-  it("is the sample sentence on every tab for a snapshot of the sample's rows, though real rows were imported since", () => {
-    expect(declarationsShown(project(true, "sample", "user"), locale)).toEqual(onEveryTab(line.sample));
+  it("is the sample sentence on the document and context tabs for a snapshot of the sample's rows, though real rows were imported since", () => {
+    expect(declarationsShown(project(true, "sample", "user"), locale)).toEqual(byTab(line.sample));
   });
 
-  it("names the operator's own rows on every tab for a snapshot of imported rows, though the sample's are loaded now", () => {
-    expect(declarationsShown(project(true, "user", "sample"), locale)).toEqual(onEveryTab(line.user));
+  it("names the operator's own rows on the document and context tabs for a snapshot of imported rows, though the sample's are loaded now", () => {
+    expect(declarationsShown(project(true, "user", "sample"), locale)).toEqual(byTab(line.user));
   });
 
-  it("says the source is unknown on every tab for a snapshot that recorded none, though the rows now have one", () => {
-    expect(declarationsShown(project(true, null, "user"), locale)).toEqual(onEveryTab(line.unknown));
+  it("says the source is unknown on the document and context tabs for a snapshot that recorded none, though the rows now have one", () => {
+    expect(declarationsShown(project(true, null, "user"), locale)).toEqual(byTab(line.unknown));
+  });
+
+  it("is the sample sentence on the JSON tab for imported and for unrecorded rows, because its body has no GSC field", () => {
+    expect(declarationsShown(project(true, "user", "user"), locale)[JSON_TAB]).toBe(line.sample);
+    expect(declarationsShown(project(true, null, null), locale)[JSON_TAB]).toBe(line.sample);
   });
 });
 

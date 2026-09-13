@@ -14,11 +14,13 @@ import type { ArtifactDraft } from "../../hooks/useAddArtifact.ts";
  * The body is the mock-layer builder's output, unstamped (Q23): the pane shows
  * it and the actions stamp it once. Every builder reads the snapshot's own
  * `gscSource` (Q6), so nothing here passes a provenance of its own — a second
- * argument would be a second, possibly contradicting, answer. The draft's
- * `gscData` (Q36) reads that same frozen `gscSource`, never the project's
- * current `gscRowsSource`: rows imported after generation must not relabel the
- * declaration of a profile already written. All three tabs carry the same one,
- * the JSON tab included, although its body has no GSC fields (Q36 ruling).
+ * argument would be a second, possibly contradicting, answer.
+ *
+ * Each tab's provenance declaration speaks for its own body (Q36): a tab whose
+ * body carries GSC-derived content maps the snapshot's frozen `gscSource`,
+ * never the project's current `gscRowsSource`, so rows imported after
+ * generation cannot relabel a profile already written; a tab whose body
+ * carries none is `none`, whatever the snapshot holds.
  *
  * `module: "profile"`, `engine: "both"` (the prototype's `""`, R2). File names
  * are the prototype's; the drawer forces the extension from `type` anyway.
@@ -35,12 +37,21 @@ export function isProfileTab(id: string): id is ProfileTab {
 interface TabMeta {
   readonly type: ArtifactType;
   readonly filename?: string;
+  /**
+   * Whether the body carries GSC-derived content when the snapshot has GSC
+   * signals (Q36). `doc`: the search section's counts, which `gscSection` prints
+   * only for a non-null `doc.gsc`. `ctx`: the context data's `search` object,
+   * which `contextData` builds from `doc.gsc` only when it is not null. `json`:
+   * `profileJson` holds the profile's own fields and the AI document, and the AI
+   * document (`demoAiDoc(profile)`) takes no GSC input, so never.
+   */
+  readonly carriesGsc: boolean;
 }
 
 const TAB_META: Readonly<Record<ProfileTab, TabMeta>> = {
-  doc: { type: "md", filename: "product-profile.md" },
-  json: { type: "json", filename: "profile.json" },
-  ctx: { type: "prompt" },
+  doc: { type: "md", filename: "product-profile.md", carriesGsc: true },
+  json: { type: "json", filename: "profile.json", carriesGsc: false },
+  ctx: { type: "prompt", carriesGsc: true },
 };
 
 /** The text a tab shows, which is also the body its artifact is stamped from. */
@@ -61,14 +72,14 @@ export function profileArtifactDraft(
   doc: ProfileDoc,
   title: string,
 ): ArtifactDraft {
-  const { type, filename } = TAB_META[tab];
+  const { type, filename, carriesGsc } = TAB_META[tab];
   const base = {
     module: "profile",
     type,
     engine: "both",
     title,
     body: profileArtifactBody(tab, profile, doc),
-    gscData: artifactGscData(doc.gsc !== null, doc.gscSource),
+    gscData: artifactGscData(carriesGsc && doc.gsc !== null, doc.gscSource),
   } as const;
   return filename === undefined ? base : { ...base, filename };
 }
