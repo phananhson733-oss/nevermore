@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { ARTIFACT_MIME, downloadName } from "@/lib/workbench/artifact-file";
 import { downloadText } from "@/lib/workbench/download";
 import { agentTaskWrapper } from "@/lib/workbench/mock/builders/agent-task";
-import type { PreparedArtifact } from "../hooks/useAddArtifact.ts";
+import type { ArtifactType } from "@/lib/workbench/types";
+import type { PreparedArtifact, SaveResult } from "../hooks/useAddArtifact.ts";
 import { BUTTON_MINI } from "./panel.ts";
 
 /**
@@ -76,6 +77,13 @@ export const ARTIFACT_ACTION_LABEL_KEYS = {
   tooLarge: true,
 } as const satisfies Record<keyof ArtifactActionLabels, true>;
 
+/** A save the basket turned down, and the text it turned down. */
+interface Refusal {
+  readonly reason: Exclude<SaveResult, "saved">;
+  readonly type: ArtifactType;
+  readonly content: string;
+}
+
 export function ArtifactActions({
   prepared,
   labels,
@@ -88,9 +96,19 @@ export function ArtifactActions({
   readonly disabled?: boolean | undefined;
 }) {
   const [flash, setFlash] = useState<string | null>(null);
-  // The artifact a save was refused for, compared by identity at render: a view
-  // that hands over a different artifact drops the notice with no effect to sync.
-  const [refused, setRefused] = useState<PreparedArtifact | null>(null);
+  // Keyed on the TEXT a save was refused for, not on the object. A view that
+  // prepares the same draft on every render hands over a new `PreparedArtifact`
+  // (with a new id) each time, and a notice keyed on identity would vanish on
+  // the next parent render while the refusal is still true. Type and content are
+  // what the refusal is about; a different text drops the notice, with no
+  // effect to keep in sync.
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
+  const refusedFor =
+    refusal !== null &&
+    refusal.type === prepared.artifact.type &&
+    refusal.content === prepared.content
+      ? refusal.reason
+      : null;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -158,10 +176,16 @@ export function ArtifactActions({
           type="button"
           disabled={off}
           onClick={() => {
-            if (prepared.save() === "tooLarge") {
-              setRefused(prepared);
+            const result = prepared.save();
+            if (result !== "saved") {
+              setRefusal({
+                reason: result,
+                type: prepared.artifact.type,
+                content: prepared.content,
+              });
               return;
             }
+            setRefusal(null);
             show(labels.saved);
           }}
           className={BUTTON_MINI}
@@ -172,7 +196,7 @@ export function ArtifactActions({
       <span role="status" className="text-xs text-slate-500">
         {flash ?? ""}
       </span>
-      {refused === prepared ? (
+      {refusedFor === "tooLarge" ? (
         <p role="alert" className="text-xs text-slate-700">
           {labels.tooLarge}
         </p>

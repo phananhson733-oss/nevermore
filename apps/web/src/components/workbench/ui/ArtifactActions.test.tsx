@@ -132,6 +132,33 @@ function Probe({
   );
 }
 
+const reprepared: { setDraft: ((next: ArtifactDraft) => void) | null } = {
+  setDraft: null,
+};
+
+/**
+ * A parent that prepares on EVERY render, as a view that does not latch does:
+ * each pass hands the row a new `PreparedArtifact`, new id and all, for the same
+ * text while the draft's content is unchanged.
+ */
+function Reprepared({ initial }: { readonly initial: ArtifactDraft }) {
+  const prepare = useAddArtifact();
+  const [draft, setDraft] = useState(initial);
+  captured.store = useWorkbench();
+  reprepared.setDraft = setDraft;
+  if (prepare === null) return null;
+  const prepared = prepare(draft);
+  captured.prepared = prepared;
+  return <ArtifactActions prepared={prepared} labels={LABELS} />;
+}
+
+/** Hands the re-preparing parent a new draft object, which re-renders it. */
+function redraft(next: ArtifactDraft): void {
+  const { setDraft } = reprepared;
+  if (setDraft === null) throw new Error("the re-preparing parent must have rendered");
+  act(() => setDraft(next));
+}
+
 function render(element: ReactElement): void {
   const container = document.createElement("div");
   document.body.append(container);
@@ -228,6 +255,7 @@ afterEach(() => {
   cleanup = null;
   captured.prepared = null;
   captured.store = null;
+  reprepared.setDraft = null;
   vi.useRealTimers();
   vi.restoreAllMocks();
   window.localStorage.clear();
@@ -438,5 +466,33 @@ describe("ArtifactActions", () => {
     // A standing fact about this text, not a flash: copying does not clear it.
     expect(alertText()).toBe(LABELS.tooLarge);
     expect(basket()).toHaveLength(0);
+  });
+
+  it("keeps a refusal up when the parent re-renders with a new object for the same text, and drops it for another text", () => {
+    const over: ArtifactDraft = {
+      ...MD_DRAFT,
+      body: `${mdBodyFor(ARTIFACT_CONTENT_MAX)}a`,
+    };
+    render(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <WorkbenchProvider projectId={PROJECT_ID} seed={SEED}>
+          <Reprepared initial={over} />
+        </WorkbenchProvider>
+      </NextIntlClientProvider>,
+    );
+    const first = captured.prepared;
+
+    click(LABELS.save);
+    expect(alertText()).toBe(LABELS.tooLarge);
+
+    redraft({ ...over });
+    // Really a new object for the same text: otherwise this proves nothing.
+    expect(captured.prepared).not.toBe(first);
+    expect(captured.prepared?.artifact.id).not.toBe(first?.artifact.id);
+    expect(captured.prepared?.content).toBe(first?.content);
+    expect(alertText()).toBe(LABELS.tooLarge);
+
+    redraft({ ...over, body: `${mdBodyFor(ARTIFACT_CONTENT_MAX)}b` });
+    expect(alertText()).toBeNull();
   });
 });
