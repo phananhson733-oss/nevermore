@@ -316,6 +316,16 @@ describe("WeekView for an empty project", () => {
     act(() => button(scope, en.week.report.save).click());
     expect(dispatch).not.toHaveBeenCalled();
   });
+
+  // T18: shown under the same `isEmpty` as the empty title, which reads no
+  // dates, so the sentence is pinned whole in each shipped locale.
+  it.each([
+    ["en", "Nothing to put in a report"],
+    ["zh-CN", "暂无可写进周报的结果"],
+  ] as const)("says the report is disabled with no range and no past event (%s)", (locale, sentence) => {
+    const scope = render(BLANK, { locale });
+    expect(text(scope, "[data-wb-report-disabled]")).toBe(sentence);
+  });
 });
 
 describe("WeekView with a week of results", () => {
