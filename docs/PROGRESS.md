@@ -14,7 +14,12 @@ integration branch `feat/workbench-ui-port`. The branch has **not been pushed**
 and no PR exists yet; nothing reaches production before PR-3b (integration
 branch → `main`). Plan and rulings Q1-Q37:
 `docs/plans/2026-09-13-workbench-pr3-first-views.md`; design doc rev8 carries
-them back. Code base for this entry: `d5909ada`.
+them back. Code base for this entry: `23c0fe53`. The copy rulings of
+2026-09-14 are in: the sample-data chip title now says module results are
+samples and imported GSC rows are not, the imported-rows footnote adds "not a
+sample", three week / settings sentences say "近 7 天", the borderline band is
+written ">10 且 ≤30" instead of "11-30", exported documents print `n/a` for
+unavailable values, and two dead i18n keys are gone (`d6d3764c`, `23c0fe53`).
 
 Done on the branch (each task: one implementation agent plus a Claude review
 with mutations in a detached worktree, and gpt-6-astra surfaces per the plan's
@@ -54,12 +59,6 @@ review section):
 
 Still open:
 
-- Copy rulings made on 2026-09-14 and not yet implemented: the sample-data chip
-  title and the "your imported data" footnote, "近 7 天" wording in three
-  week / settings sentences, the borderline band written as ">10 且 ≤30"
-  instead of "11-30", `n/a` for unavailable values in exported documents, and
-  two dead i18n keys. The design doc still describes the code as of
-  `d5909ada` in those places.
 - Owner decision pending: the artifact basket's「清空」and per-item「删除」have
   no confirmation and no undo (plan residual table).
 - T17 mock e2e (module flow, `/sources` 500 degradation gate, axe
