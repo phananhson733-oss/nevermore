@@ -212,9 +212,11 @@ export interface LinkTarget {
   readonly type: LinkType;
   readonly site: string;
   readonly domain: string;
-  readonly dr: number;
+  /** null for a channel that is not one site (domain ""): unavailable, never an invented number. */
+  readonly dr: number | null;
   readonly relevance: Level;
-  readonly difficulty: Level;
+  /** Derived from `dr`; null exactly when `dr` is null. */
+  readonly difficulty: Level | null;
   readonly action: string;
   readonly asset: string;
 }

@@ -163,9 +163,14 @@ const linkTarget = z.strictObject({
   type: z.enum(["dir", "agg", "comm", "rev", "media", "swap"]),
   site: z.string(),
   domain: z.string(),
-  dr: z.number(),
+  // Pre-ship exemption from the bump rule above: dr and difficulty were widened
+  // to nullable (a channel with no domain has no DR; unavailable is null, never
+  // 0) before the first release. PR-1 never shipped, so no reader of the old
+  // shape exists and PERSISTED_VERSION stays 1. Once released, a change like
+  // this needs a bump.
+  dr: nullableNumber,
   relevance: level,
-  difficulty: level,
+  difficulty: level.nullable(),
   action: z.string(),
   asset: z.string(),
 });

@@ -5,7 +5,7 @@ import { populatedProjectState } from "../store/test-fixtures.ts";
 import type { CompData, DomainStats, Profile } from "../types.ts";
 import { buildCompData, domainStats } from "./competitors.ts";
 import { mockLinks } from "./links.ts";
-import { COMPETITOR_PLACEHOLDERS, slugify } from "./text.ts";
+import { COMPETITOR_PLACEHOLDERS } from "./text.ts";
 
 /** Domain overview and the assembled CompData; the gap rows themselves are in competitors-gap.test.ts. */
 
@@ -26,15 +26,21 @@ const profileWith = (overrides: Partial<Profile> = {}): Profile => ({
 const paths = (stats: DomainStats): readonly string[] =>
   stats.topPages.map((page) => page.path);
 
-const compNames = (data: CompData): readonly string[] =>
-  data.domains.slice(1).map((stats) => stats.domain);
+const subjects = (data: CompData): readonly string[] =>
+  data.domains.map((stats) => stats.domain);
+
+/** Competitor entries of a CompData built from a profile with a non-empty url. */
+const compNames = (data: CompData): readonly string[] => subjects(data).slice(1);
+
+const build = (overrides: Partial<Profile>): CompData =>
+  buildCompData(profileWith(overrides), SEEDS, [], AT);
 
 describe("domainStats", () => {
   it("uses the first feature for the project's own blog page", () => {
     const stats = domainStats("acme.io", profileWith());
     expect(stats.domain).toBe("acme.io");
     expect(paths(stats)).toEqual([
-      `/blog/${slugify("Rank Tracking")}-guide`,
+      "/blog/rank-tracking-guide",
       "/pricing",
       "/compare",
     ]);
@@ -59,9 +65,9 @@ describe("domainStats", () => {
   });
 
   it("produces finite integers with dr in [0, 92] for own and other subjects", () => {
-    const subjects = Array.from({ length: 300 }, (_, i) => `site-${i}.io`);
+    const names = Array.from({ length: 300 }, (_, i) => `site-${i}.io`);
     const profile = profileWith({ url: "site-7.io", features: "" });
-    for (const subject of subjects) {
+    for (const subject of names) {
       const stats = domainStats(subject, profile);
       const numbers = [
         stats.traffic,
@@ -87,51 +93,40 @@ describe("domainStats", () => {
 
 describe("buildCompData", () => {
   it("starts with the project's own domain, then the raw competitor names", () => {
-    const data = buildCompData(profileWith(), SEEDS, [], AT);
-    expect(data.domains.map((stats) => stats.domain)).toEqual([
-      "acme.io",
-      "Rival Corp",
-      "other.io",
-    ]);
+    const data = build({});
+    expect(subjects(data)).toEqual(["acme.io", "Rival Corp", "other.io"]);
     expect(data.gap.comps).toEqual(["Rival Corp", "other.io"]);
     expect(data.at).toBe(AT);
   });
 
   it("never turns a competitor name into an invented .com domain (R9)", () => {
-    const profile = profileWith({ competitors: "Rival Corp, Beta, 竞品丙" });
-    const data = buildCompData(profile, SEEDS, [], AT);
+    const data = build({ competitors: "Rival Corp, Beta, 竞品丙" });
     expect(compNames(data)).toEqual(["Rival Corp", "Beta", "竞品丙"]);
     expect(JSON.stringify(data.domains)).not.toMatch(/\.com/);
     expect(JSON.stringify(data.gap.comps)).not.toMatch(/\.com/);
   });
 
   it("keeps a domain the user typed exactly as typed", () => {
-    const data = buildCompData(profileWith({ competitors: "rival.com" }), SEEDS, [], AT);
-    expect(compNames(data)).toEqual(["rival.com"]);
+    expect(compNames(build({ competitors: "rival.com" }))).toEqual(["rival.com"]);
   });
 
   it("uses the placeholder names when no competitor is filled in", () => {
     for (const competitors of ["", " , "]) {
-      const data = buildCompData(profileWith({ competitors }), SEEDS, [], AT);
+      const data = build({ competitors });
       expect(compNames(data)).toEqual([...COMPETITOR_PLACEHOLDERS]);
       expect(data.gap.comps).toEqual([...COMPETITOR_PLACEHOLDERS]);
     }
   });
 
   it("compares one competitor when one is filled in", () => {
-    const data = buildCompData(profileWith({ competitors: "Rival" }), SEEDS, [], AT);
+    const data = build({ competitors: "Rival" });
     expect(compNames(data)).toEqual(["Rival"]);
     expect(data.gap.rows.length).toBeGreaterThan(0);
     for (const row of data.gap.rows) expect(row.ranks).toHaveLength(1);
   });
 
   it("compares only the first three of four or more competitors", () => {
-    const data = buildCompData(
-      profileWith({ competitors: "A1, B2, C3, D4, E5" }),
-      SEEDS,
-      [],
-      AT,
-    );
+    const data = build({ competitors: "A1, B2, C3, D4, E5" });
     expect(compNames(data)).toEqual(["A1", "B2", "C3"]);
     expect(data.gap.comps).toEqual(["A1", "B2", "C3"]);
     expect(data.gap.rows.length).toBeGreaterThan(0);
@@ -139,24 +134,34 @@ describe("buildCompData", () => {
   });
 
   it("drops a competitor that is the brand itself or the project's own domain", () => {
-    const profile = profileWith({
-      competitors: "ACME, Rival, www.acme.io, Other, Third",
-    });
-    const data = buildCompData(profile, SEEDS, [], AT);
+    const data = build({ competitors: "ACME, Rival, www.acme.io, Other, Third" });
     expect(compNames(data)).toEqual(["Rival", "Other", "Third"]);
     expect(data.gap.comps).toEqual(["Rival", "Other", "Third"]);
   });
 
   it("compares nobody when every competitor is the brand itself", () => {
-    const data = buildCompData(profileWith({ competitors: "acme, Acme" }), SEEDS, [], AT);
-    expect(data.domains.map((stats) => stats.domain)).toEqual(["acme.io"]);
+    const data = build({ competitors: "acme, Acme" });
+    expect(subjects(data)).toEqual(["acme.io"]);
     expect(data.gap).toEqual({ comps: [], rows: [] });
   });
 
-  it("keeps an empty own domain when the url is empty", () => {
-    const data = buildCompData(profileWith({ url: "" }), SEEDS, [], AT);
-    expect(data.domains[0]?.domain).toBe("");
-    expect(compNames(data)).toEqual(["Rival Corp", "other.io"]);
+  it("has no own entry when the url is empty, so no stats are made up for a site that does not exist", () => {
+    for (const url of ["", "   "]) {
+      const data = build({ url });
+      expect(subjects(data)).toEqual(["Rival Corp", "other.io"]);
+      expect(data.gap.comps).toEqual(subjects(data));
+    }
+    const nobody = build({ url: "", competitors: "Acme" });
+    expect(nobody.domains).toEqual([]);
+    expect(nobody.gap.comps).toEqual([]);
+  });
+
+  it("lists exactly gap.comps after the own domain when the url is non-empty", () => {
+    for (const competitors of ["Rival Corp, other.io", "", "A1, B2, C3, D4"]) {
+      const data = build({ competitors });
+      expect(subjects(data)[0]).toBe("acme.io");
+      expect(data.gap.comps).toEqual(compNames(data));
+    }
   });
 
   it("is deterministic and does not modify its inputs", () => {
@@ -177,6 +182,7 @@ describe("schema round trip", () => {
       profileWith(),
       profileWith({ competitors: "", features: "" }),
       profileWith({ competitors: "acme" }),
+      profileWith({ url: "" }),
     ];
     for (const profile of profiles) {
       const compData = buildCompData(profile, SEEDS, [], AT);

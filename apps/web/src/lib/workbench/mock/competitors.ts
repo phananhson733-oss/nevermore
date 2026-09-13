@@ -2,9 +2,11 @@
  * Competitor overview and keyword gap (jsx:2529-2550, 2594-2599). A competitor
  * is the name the project entered, never `slugify(name) + ".com"` (R9); the
  * brand itself and the project's own domain are not competitors. Ranks inside
- * one gap row are distinct and 1-based; our rank comes from a matching GSC row
- * when that row has a usable position. Every number is mock data; nothing here
- * reads the clock or `Math.random`.
+ * one gap row are distinct and 1-based. Once any GSC data is present, our rank
+ * is only ever GSC's: a query GSC does not list, or lists without a usable
+ * position, has no rank (null), never a sample one. Without GSC rows our rank
+ * is a sample. Every other number is mock data; nothing here reads the clock
+ * or `Math.random`.
  */
 import type {
   CompData,
@@ -24,7 +26,6 @@ import {
   splitList,
 } from "./text.ts";
 
-const DR_MAX = 92;
 const COMPARED_COMPETITORS = 3;
 const GAP_TEMPLATE_COUNT = 8;
 const GAP_ROW_LIMIT = 30;
@@ -46,6 +47,14 @@ type GapProfile = Pick<Profile, "brand" | "url" | "competitors">;
 interface GapCandidate {
   readonly q: string;
   readonly page: PageType;
+}
+
+/** What one gap row needs besides its candidate. */
+interface GapContext {
+  readonly competitorCount: number;
+  /** Whether any GSC row has a non-blank query: then our rank comes from GSC or is null. */
+  readonly hasGsc: boolean;
+  readonly gscRanks: ReadonlyMap<string, number>;
 }
 
 /* ---------------- domains ---------------- */
@@ -77,7 +86,8 @@ export function domainStats(
     domain: subject,
     traffic: Math.round(((400 + next() * 1800) * scale) / 10) * 10,
     kws: Math.round((80 + next() * 300) * scale),
-    dr: Math.min(DR_MAX, Math.round((own ? 18 : 35) + next() * 45)),
+    // At most 35 + 45 = 80, inside the [0, 92] range the overview allows.
+    dr: Math.round((own ? 18 : 35) + next() * 45),
     refdomains: Math.round((30 + next() * 400) * Math.sqrt(scale)),
     topPages: paths.map((path, i) => ({
       path,
@@ -86,8 +96,12 @@ export function domainStats(
   };
 }
 
-/** Up to three competitors, skipping the brand itself and the project's own domain; placeholders when none are filled in. */
-function comparedCompetitors(profile: GapProfile): readonly string[] {
+/**
+ * Up to three competitors, skipping the brand itself and the project's own
+ * domain; placeholders only when nothing is filled in. A list that names only
+ * the brand or the own domain compares nobody.
+ */
+export function comparedCompetitors(profile: GapProfile): readonly string[] {
   const brandKey = normQ(profile.brand);
   const ownDomain = domainOf(profile.url);
   return competitorNames(profile)
@@ -98,9 +112,8 @@ function comparedCompetitors(profile: GapProfile): readonly string[] {
 
 /* ---------------- gap ---------------- */
 
-const GAP_TEMPLATES = PATTERNS.slice(0, GAP_TEMPLATE_COUNT).filter(
-  (pattern) => pattern.vs !== true,
-);
+/** The vs template sits after these eight in PATTERNS (pinned by a test), so it never becomes a gap query. */
+const GAP_TEMPLATES = PATTERNS.slice(0, GAP_TEMPLATE_COUNT);
 
 /** Each trimmed seed through the first eight templates; the first spelling of each `normQ` key wins. */
 function gapCandidates(seeds: readonly string[]): readonly GapCandidate[] {
@@ -156,20 +169,16 @@ function drawRanks(
   }, initial).ranks;
 }
 
-function gapRow(
-  candidate: GapCandidate,
-  competitorCount: number,
-  gscRanks: ReadonlyMap<string, number>,
-): GapRow {
+function gapRow(candidate: GapCandidate, context: GapContext): GapRow {
   const key = normQ(candidate.q);
   const next = rngOf(seedKey("gap", key));
-  const ranks = drawRanks(competitorCount, next);
+  const ranks = drawRanks(context.competitorCount, next);
   const drawnOurs = next() > WE_RANK_ABOVE ? Math.round(5 + next() * 50) : null;
   return {
     q: candidate.q,
     ...kwMetrics(candidate.q),
     ranks,
-    ours: gscRanks.get(key) ?? drawnOurs,
+    ours: context.hasGsc ? (context.gscRanks.get(key) ?? null) : drawnOurs,
     page: candidate.page,
   };
 }
@@ -184,7 +193,7 @@ function isGap(row: GapRow): boolean {
 /**
  * Queries where at least one competitor ranks and we do not rank in the top
  * 20: every seed through the first eight keyword templates, our rank from GSC
- * when it has one, sorted by volume descending, at most 30 rows.
+ * whenever GSC rows are present, sorted by volume descending, at most 30 rows.
  */
 export function keywordGap(
   profile: GapProfile,
@@ -192,27 +201,38 @@ export function keywordGap(
   gscRows: readonly GscRow[],
 ): CompData["gap"] {
   const comps = comparedCompetitors(profile);
-  const gscRanks = gscRankIndex(gscRows);
+  const context: GapContext = {
+    competitorCount: comps.length,
+    hasGsc: gscRows.some((row) => normQ(row.query) !== ""),
+    gscRanks: gscRankIndex(gscRows),
+  };
   const rows = gapCandidates(seeds)
-    .map((candidate) => gapRow(candidate, comps.length, gscRanks))
+    .map((candidate) => gapRow(candidate, context))
     .filter(isGap)
     .toSorted((a, b) => b.volume - a.volume)
     .slice(0, GAP_ROW_LIMIT);
   return { comps, rows };
 }
 
-/** Own domain first, then the compared competitors in the same order as `gap.comps`. */
+/**
+ * The project's own domain first when the url names one, then the compared
+ * competitors in the same order as `gap.comps`. With an empty url there is no
+ * own site, so no stats are made up for it.
+ */
 export function buildCompData(
   profile: Profile,
   seeds: readonly string[],
   gscRows: readonly GscRow[],
   at: string,
 ): CompData {
-  const gap = keywordGap(profile, seeds, gscRows);
-  const subjects = [domainOf(profile.url), ...gap.comps];
+  const ownDomain = domainOf(profile.url);
+  const subjects = [
+    ...(ownDomain === "" ? [] : [ownDomain]),
+    ...comparedCompetitors(profile),
+  ];
   return {
     domains: subjects.map((subject) => domainStats(subject, profile)),
-    gap,
+    gap: keywordGap(profile, seeds, gscRows),
     at,
   };
 }

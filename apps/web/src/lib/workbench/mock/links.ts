@@ -1,14 +1,16 @@
 /**
  * Link-building targets (jsx:535-558). The pool keeps the prototype's sites; a
- * channel that is not one site has domain "" (the prototype wrote "—"). DR
- * values are sample numbers. Action and asset copy is a plain instruction and
- * says nothing about what a listing brings. Types and levels are ids.
+ * channel that is not one site has domain "" (the prototype wrote "—") and a
+ * null DR, so its difficulty is null too: there is no site to rate, and
+ * unavailable is null, never an invented number. The other DR values are
+ * sample numbers. Action and asset copy is a plain instruction and says
+ * nothing about what a listing brings. Types and levels are ids.
  */
 import type { Level, LinkTarget, LinkType, Profile } from "../types.ts";
 import { pick, rngOf, seedKey } from "./rng.ts";
 import { normQ } from "./text.ts";
 
-type PoolEntry = readonly [site: string, domain: string, dr: number];
+type PoolEntry = readonly [site: string, domain: string, dr: number | null];
 
 export const LINK_POOL: Readonly<Record<LinkType, readonly PoolEntry[]>> = {
   dir: [
@@ -35,13 +37,13 @@ export const LINK_POOL: Readonly<Record<LinkType, readonly PoolEntry[]>> = {
     ["GetApp", "getapp.com", 84],
   ],
   media: [
-    ["Growth newsletter（垂直）", "", 65],
-    ["行业播客", "", 58],
+    ["Growth newsletter（垂直）", "", null],
+    ["行业播客", "", null],
     ["Substack 专栏", "substack.com", 90],
   ],
   swap: [
-    ["同规模 SaaS 联名文章", "", 45],
-    ["工具互推目录", "", 40],
+    ["同规模 SaaS 联名文章", "", null],
+    ["工具互推目录", "", null],
   ],
 };
 
@@ -97,7 +99,7 @@ export function mockLinks(
       domain,
       dr,
       relevance: pick(RELEVANCE_DRAWS, rngOf(seedKey("link", site, brandKey))),
-      difficulty: levelForDr(dr),
+      difficulty: dr === null ? null : levelForDr(dr),
       action: ACTION[type],
       asset: ASSET[type],
     })),
