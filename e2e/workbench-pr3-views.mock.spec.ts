@@ -104,12 +104,19 @@ test("a profile run whose data changed in another tab writes nothing, and the ne
   const title = page.locator("[data-wb-pane-head] h2").last();
   await expect(title).toHaveText(new RegExp(`^Site profile · ${STAMP}$`, "u"));
   const before = await title.textContent();
+  // The refused run reads an input the stored document does not carry, so a
+  // write that slipped through would change the bytes even if it kept the old
+  // stamp: the same inputs rebuild the same body, which no comparison can see.
+  const positioning = page.getByLabel("Positioning in one line");
+  const refusedMarker = "e2e marker for the refused profile run";
+  await positioning.fill(refusedMarker);
   // The persisted document as bytes. Only `profileDoc`: the other tab's clear
   // changes the rows, which is the point, so the rest of the store moves.
   const storedDoc = async (): Promise<string> =>
     JSON.stringify((await readStored(page))?.state.profileDoc ?? null);
   const docBefore = await storedDoc();
   expect(docBefore, "the sample stores a profile document").not.toBe("null");
+  expect(docBefore, "the stored document predates the marker").not.toContain(refusedMarker);
   const run = page.getByRole("button", {
     name: "Regenerate the profile",
     exact: true,
@@ -140,7 +147,7 @@ test("a profile run whose data changed in another tab writes nothing, and the ne
   // The next start takes the alert away, and that run's document lands. A
   // marker in the positioning field tells the new document from the old one.
   const marker = "e2e marker for the retried profile run";
-  await page.getByLabel("Positioning in one line").fill(marker);
+  await positioning.fill(marker);
   await run.click();
   await expect(alert).toHaveCount(0);
   await expect(run).toBeEnabled();
