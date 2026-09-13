@@ -380,7 +380,7 @@ describe("WeekView with a week of results", () => {
       (row) => row.textContent,
     );
     expect(rows).toEqual(["eleven11", "mid14.2", "thirty30"]);
-    // A signed number not preceded by a digit: "11-30" in the detail sentence is a band, not a move.
+    // A signed number not preceded by a digit: a band such as "11-30" is not a move.
     expect(panel.textContent).not.toMatch(/→|->|(?<!\d)[+\-−]\s*\d/u);
   });
 

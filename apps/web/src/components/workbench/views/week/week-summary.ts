@@ -47,7 +47,7 @@
  * no check: the stamp may be in the future, and an archived check inside the
  * range may be among the events (codex S7r2 #3).
  *
- * Borderline queries are GSC rows at positions 11-30, by `gscStatus` and with
+ * Borderline queries are GSC rows at positions >10 to ≤30, by `gscStatus` and with
  * `nearCount`'s unknown rule (`mock/profile.ts`), read from the imported rows
  * themselves: the card's footnote says "positions in the latest GSC import".
  * They are a list, not a movement (Q17) — the store keeps no position history.

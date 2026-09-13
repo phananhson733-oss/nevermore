@@ -282,7 +282,7 @@ describe("OverviewView: after runs", () => {
     expect(fixHigh?.querySelector("a")?.getAttribute("href")).toBe(`/p/${PID}/audit`);
     expect(answerGaps?.textContent).toContain("Write answer pages for 4 gaps");
     expect(answerGaps?.querySelector("a")?.getAttribute("href")).toBe(`/p/${PID}/answers`);
-    expect(borderline?.textContent).toContain("Work on 1 query sitting at positions 11-30");
+    expect(borderline?.textContent).toContain("Work on 1 query at positions >10 to ≤30");
     expect(borderline?.querySelector("a")?.getAttribute("href")).toBe(`/p/${PID}/keywords`);
     expect(scope.textContent).not.toContain(EN.noGsc.title);
     expect(scope.querySelectorAll("[style]")).toHaveLength(0);
