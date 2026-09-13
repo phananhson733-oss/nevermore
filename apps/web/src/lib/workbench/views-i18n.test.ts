@@ -142,6 +142,13 @@ const FORBIDDEN_BY_KEY: Readonly<
   // together. A rewrite that says the rows were merged, summed or weighted
   // describes the import this ruling rejected (two pastes of one export would
   // double every click).
+  // Sample rows hold nothing the operator pasted, and "including the ones you
+  // pasted yourself" over user rows implies other rows exist: false either way
+  // (codex T10 review). The body describes the rows, not who put them there.
+  "dataSources.import.clearConfirmBody": {
+    "zh-CN": ["你自己粘", "粘进来", "你粘的"],
+    en: ["pasted yourself", "you pasted", "yourself"],
+  },
   "dataSources.result.duplicates": {
     "zh-CN": ["合并", "相加", "求和", "加权", "汇总", "累加"],
     en: ["merged", "summed", "combined", "added up", "weighted", "totalled"],
@@ -441,11 +448,18 @@ const REQUIRED: Readonly<
     "zh-CN": ["没有改动"],
     en: ["left unchanged"],
   },
-  // A successful parse replaces the saved rows without a confirmation; this
-  // sentence is the only place that says so before the click.
+  // A successful import replaces the saved rows without a confirmation; this
+  // sentence is the only place that says so before the click, and it must cover
+  // both ways in (codex T10 review: it named the parse and not the upload).
   "dataSources.import.replaceNote": {
-    "zh-CN": ["替换"],
-    en: ["replace"],
+    "zh-CN": ["粘贴", "上传", "替换"],
+    en: ["paste", "upload", "replace"],
+  },
+  // The clear removes every saved row whatever their source; the body says so
+  // and names where they are kept.
+  "dataSources.import.clearConfirmBody": {
+    "zh-CN": ["全部 GSC 行", "这个浏览器"],
+    en: ["all GSC rows", "this browser"],
   },
   // Q4 bans the cause, so the way out is what the sentence must keep.
   "dataSources.import.readFailed": {
