@@ -33,9 +33,18 @@ const LEADS_ORDERED = /^(\d{1,9})([.)])(?=[ \t]|$)/;
 const TAG_OPENER = /<(?=[A-Za-z!?/])/gu;
 
 /**
- * Encodes every tag-shaped `<` as `&lt;`, wherever it stands, without reading
- * the Markdown around it (codex S7r3, the second round in which a scanner that
- * skipped code spans and link destinations was beaten by constructed input).
+ * The contract for a value these builders write into a document: it keeps its
+ * inline Markdown (links, emphasis, code spans, backslash escapes and entities
+ * render the way Markdown renders them), and only raw HTML and block structure
+ * (headings, lists, quotes, fences, link definitions) are neutralised; a
+ * single-line field is also folded onto one line. Values are not entity-encoded
+ * character by character because an llms.txt and the text copied to an AI are
+ * read as plain text, and they have to stay readable.
+ *
+ * This is the HTML half: every tag-shaped `<` is encoded as `&lt;`, wherever it
+ * stands, without reading the Markdown around it (codex S7r3, the second round
+ * in which a scanner that skipped code spans and link destinations was beaten
+ * by constructed input).
  *
  * Why an entity and not a backslash: under GFM an extended autolink
  * (`www.example.com/<b>`) swallows the backslash into its href, and the `<`
@@ -49,11 +58,19 @@ const TAG_OPENER = /<(?=[A-Za-z!?/])/gu;
  * such inputs (``` ```<b>x</b>``` ```, `www.example.com/[x](<b>)`) are what this
  * ruling ends; structure in an exported `.md` wins over fidelity.
  *
- * Known costs, accepted: a tag-shaped `<` inside a code span or an angle-bracket
- * link destination shows as `&lt;`; an angle-bracket autolink `<https://…>` is
- * no longer an autolink (with GFM on, the bare URL inside is still linked). An
- * entity the user typed themselves (`&lt;h1&gt;`) is left as typed and renders
- * as the character it names — not in this batch's scope.
+ * Known costs, accepted (marked 17, checked 2026-09-14):
+ * - In a code span the reader shows the literal `&lt;`: a code span does not
+ *   decode entities.
+ * - An angle-bracket link destination still makes a link, but not to the
+ *   address typed: `[x](<https://a.b>)` is written `[x](&lt;https://a.b>)` and
+ *   its href becomes `&lt;https://a.b%3E`. The reader sees only the link text,
+ *   so nothing on the page shows the change.
+ * - An angle-bracket autolink `<https://a.b>` is no longer an autolink. With GFM
+ *   off it is plain text; with GFM on the address inside is linked as a bare URL
+ *   that takes the closing `>` with it, so the href ends in `%3E` and the link
+ *   text in `>`.
+ * - An entity the user typed themselves (`&lt;h1&gt;`) is left as typed and
+ *   renders as the character it names — not in this batch's scope.
  */
 function escapeRawHtml(text: string): string {
   return text.replace(TAG_OPENER, "&lt;");
