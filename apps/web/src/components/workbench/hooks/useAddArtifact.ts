@@ -72,14 +72,15 @@ export interface PreparedArtifact {
    * `"tooLarge"` (Q37): the reducer would otherwise cut the text short on its
    * way in, and the basket would hold a different text from the one just copied
    * or exported, under a row that said "saved". With `ARTIFACT_LIMIT` artifacts
-   * already in the basket it returns `"full"`: nothing is stored, and nothing is
-   * evicted to make room. Otherwise it returns `"saved"`.
+   * already in the basket and this one not among them it returns `"full"`:
+   * nothing is stored, and nothing is evicted to make room. Otherwise it returns
+   * `"saved"`.
    *
    * Nothing is remembered between calls; the basket is the only record. Called
    * again while this artifact is still in the basket, it stores nothing new (the
    * reducer ignores an id it already holds) and returns `"saved"`. Called after
-   * the artifact was removed or the basket cleared, it stores it again. A
-   * refused call saves once there is room.
+   * the artifact was removed or the basket cleared, it stores it again. A call
+   * refused as `"full"` saves once there is room; `"tooLarge"` never does.
    *
    * Call it from an event handler while the component that called
    * `useAddArtifact` is still mounted. The answer is read back from the basket

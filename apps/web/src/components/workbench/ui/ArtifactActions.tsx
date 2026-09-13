@@ -109,18 +109,22 @@ export function ArtifactActions({
   // prepares the same draft on every render hands over a new `PreparedArtifact`
   // (with a new id) each time, and a notice keyed on identity would vanish on
   // the next parent render while the refusal is still true. Only the content is
-  // compared: "too large" is decided by its length and "full" by the basket's
-  // count, neither by `type`, and md and prompt stamp a body to the very same
-  // text. A different text drops the notice, with no effect to keep in sync.
+  // compared: "too large" is decided by its length, and md and prompt stamp a
+  // body to the very same text. A different text drops the notice, with no
+  // effect to keep in sync.
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const refusedFor =
     refusal !== null && refusal.content === prepared.content
       ? refusal.reason
       : null;
-  // "Full" describes the basket, not this text: once the drawer has room the
-  // notice would be false, so it is shown only while the basket still is full.
-  const basketStillFull =
-    useWorkbench().state.artifacts.length >= ARTIFACT_LIMIT;
+  // "Full" is about the basket and this artifact's place in it, not the text:
+  // once the drawer has room, or this very artifact is already in it (saving it
+  // again answers "saved"), the notice would be false. Two prepared artifacts
+  // can share a text under different ids, so the text alone cannot decide it.
+  const { artifacts } = useWorkbench().state;
+  const fullStillRefuses =
+    artifacts.length >= ARTIFACT_LIMIT &&
+    !artifacts.some((entry) => entry.id === prepared.artifact.id);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -137,6 +141,12 @@ export function ArtifactActions({
       timer.current = null;
       setFlash(null);
     }, FLASH_MS);
+  }
+
+  function clearFlash(): void {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+    setFlash(null);
   }
 
   async function copy(text: string): Promise<void> {
@@ -190,6 +200,8 @@ export function ArtifactActions({
           onClick={() => {
             const result = prepared.save();
             if (result !== "saved") {
+              // The latest answer replaces an earlier "saved" still flashing.
+              clearFlash();
               setRefusal({ reason: result, content: prepared.content });
               return;
             }
@@ -209,7 +221,7 @@ export function ArtifactActions({
           {labels.tooLarge}
         </p>
       ) : null}
-      {refusedFor === "full" && basketStillFull ? (
+      {refusedFor === "full" && fullStillRefuses ? (
         <p role="alert" className="text-xs text-slate-700">
           {labels.basketFull}
         </p>

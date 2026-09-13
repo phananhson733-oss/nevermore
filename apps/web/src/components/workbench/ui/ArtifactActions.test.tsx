@@ -259,6 +259,54 @@ function alertText(): string | null {
   return document.querySelector('[role="alert"]')?.textContent ?? null;
 }
 
+const switcher: {
+  pick: ((which: "a" | "b") => void) | null;
+  a: PreparedArtifact | null;
+  b: PreparedArtifact | null;
+} = { pick: null, a: null, b: null };
+
+/**
+ * A parent that holds two prepared artifacts at once and hands the row one of
+ * them: the same body as md and as prompt, which stamp to the very same text
+ * under two different ids.
+ */
+function Switcher() {
+  const prepare = useAddArtifact();
+  const [pair, setPair] = useState<{
+    readonly a: PreparedArtifact;
+    readonly b: PreparedArtifact;
+  } | null>(null);
+  const [which, setWhich] = useState<"a" | "b">("a");
+  captured.store = useWorkbench();
+  switcher.pick = setWhich;
+  useEffect(() => {
+    if (prepare === null) return;
+    setPair(
+      (current) =>
+        current ?? {
+          a: prepare(MD_DRAFT),
+          b: prepare({ ...MD_DRAFT, type: "prompt" }),
+        },
+    );
+  }, [prepare]);
+  if (pair === null) return null;
+  switcher.a = pair.a;
+  switcher.b = pair.b;
+  return (
+    <ArtifactActions prepared={which === "a" ? pair.a : pair.b} labels={LABELS} />
+  );
+}
+
+function pick(which: "a" | "b"): void {
+  const { pick: set } = switcher;
+  if (set === null) throw new Error("the switcher must have rendered");
+  act(() => set(which));
+}
+
+function statusText(): string | null {
+  return document.querySelector('[role="status"]')?.textContent ?? null;
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
@@ -280,6 +328,9 @@ afterEach(() => {
   captured.prepared = null;
   captured.store = null;
   reprepared.setDraft = null;
+  switcher.pick = null;
+  switcher.a = null;
+  switcher.b = null;
   vi.useRealTimers();
   vi.restoreAllMocks();
   window.localStorage.clear();
@@ -572,5 +623,53 @@ describe("ArtifactActions", () => {
     redraft({ ...MD_DRAFT });
 
     expect(alertText()).toBe(LABELS.basketFull);
+  });
+
+  it("drops the full-basket notice for an artifact that is itself already in the basket", () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <WorkbenchProvider projectId={PROJECT_ID} seed={SEED}>
+          <Switcher />
+        </WorkbenchProvider>
+      </NextIntlClientProvider>,
+    );
+    const { a, b } = switcher;
+    if (a === null || b === null) throw new Error("the switcher must have prepared both");
+    // Really one text under two ids: otherwise this proves nothing.
+    expect(b.content).toBe(a.content);
+    expect(b.artifact.id).not.toBe(a.artifact.id);
+
+    click(LABELS.save);
+    fillBasket(ARTIFACT_LIMIT - 1);
+    expect(basket()).toHaveLength(ARTIFACT_LIMIT);
+    pick("b");
+    click(LABELS.save);
+    expect(alertText()).toBe(LABELS.basketFull);
+
+    pick("a");
+    expect(alertText()).toBeNull();
+    click(LABELS.save);
+    expect(statusText()).toBe(LABELS.saved);
+    expect(basket()).toHaveLength(ARTIFACT_LIMIT);
+  });
+
+  it("replaces a saved flash with the refusal when the next save is refused", () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <WorkbenchProvider projectId={PROJECT_ID} seed={SEED}>
+          <Reprepared initial={MD_DRAFT} />
+        </WorkbenchProvider>
+      </NextIntlClientProvider>,
+    );
+    fillBasket(ARTIFACT_LIMIT - 1);
+    click(LABELS.save);
+    expect(statusText()).toBe(LABELS.saved);
+    expect(basket()).toHaveLength(ARTIFACT_LIMIT);
+
+    redraft({ ...MD_DRAFT, body: `${BODY}\n- 另一件` });
+    click(LABELS.save);
+
+    expect(alertText()).toBe(LABELS.basketFull);
+    expect(statusText()).toBe("");
   });
 });
