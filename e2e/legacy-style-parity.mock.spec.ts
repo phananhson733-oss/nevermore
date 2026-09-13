@@ -233,13 +233,23 @@ test("the workbench face reaches every font-sans element in the shell", async ({
 // block for it, and <body> never had such ancestors. Many properties establish
 // one: transform, the standalone translate / rotate / scale that Tailwind v4
 // compiles translate-* / rotate-* / scale-* to, perspective, transform-style:
-// preserve-3d, filter, backdrop-filter, contain, will-change, container-type,
-// and whatever comes next. The property list below is a diagnostic, not the gate:
-// it once lacked transform-style and stayed green while a fixed probe sat 53px
-// off. The gate is geometric. #wb-root already fills the viewport from (0, 0), so
-// a probe positioned against it and one positioned against the viewport land in
-// the same box; the test moves #wb-root down first, and a probe that stays at
-// y = 0 is positioned against the viewport whatever the reason.
+// preserve-3d, filter, backdrop-filter, contain, content-visibility (any value
+// but `visible` turns on containment without changing the computed `contain`),
+// will-change, container-type, and whatever comes next. Three hard checks, each
+// covering what the others cannot:
+// - Geometry on #wb-root. #wb-root already fills the viewport from (0, 0), so a
+//   probe positioned against it and one positioned against the viewport land in
+//   the same box; the test moves #wb-root down first, and a probe that stays at
+//   y = 0 is not positioned against #wb-root itself, whatever the property. That
+//   says nothing about an ancestor that was not moved and has the viewport's box
+//   (a wrapper at (0, 0), 100vh tall): the probe sits in the same place.
+// - The property list, from #wb-root up to <html>: a listed property on any of
+//   them fails. It once lacked transform-style and stayed green while a fixed
+//   probe sat 53px off, so it is not enough on its own.
+// - Document scroll, for the unmoved ancestor. The fixture appends a spacer so
+//   the document really scrolls, then scrolls it by DOCUMENT_SCROLL. A containing
+//   block on an ancestor in normal flow scrolls with the document and takes the
+//   probe with it; against the viewport the probe stays at y = 0.
 // (2) The face has to actually reach the portalled root. No view opens a
 // ConfirmDialog yet (T7 wires the first; the real-dialog check belongs in T17),
 // so this puts an element carrying the Dialog root classes, read from
@@ -257,6 +267,8 @@ const DIALOG_ROOT_CLASS = (() => {
 
 /** How far the test moves #wb-root down: any non-zero offset; 53px is the miss above. */
 const WB_ROOT_SHIFT = 53;
+/** How far the test scrolls the document: any non-zero offset. */
+const DOCUMENT_SCROLL = 100;
 
 test("a dialog root placed where ConfirmDialog portals covers the viewport in the workbench face", async ({ page }) => {
   expect(DIALOG_ROOT_CLASS).toMatch(/(?:^|\s)fixed(?:\s|$)/u);
@@ -265,7 +277,7 @@ test("a dialog root placed where ConfirmDialog portals covers the viewport in th
   await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
   await expect(page.locator("#main-content h1[data-wb-page-title]")).toBeVisible();
 
-  const result = await page.evaluate(({ className, shift }) => {
+  const result = await page.evaluate(({ className, shift, scroll }) => {
     const root = document.getElementById("wb-root");
     if (!root) return null;
     const chain: { el: string; offending: Record<string, string> }[] = [];
@@ -284,11 +296,15 @@ test("a dialog root placed where ConfirmDialog portals covers the viewport in th
         willChange: cs.willChange,
         containerType: cs.containerType,
       };
+      const offending = Object.fromEntries(
+        Object.entries(props).filter(([, value]) => !["none", "normal", "auto", "flat", ""].includes(value)),
+      );
+      // Not in `props`: `auto` is a default above but not here, where the initial
+      // value is `visible` and anything else, `auto` included, turns on containment.
+      const contentVisibility = cs.getPropertyValue("content-visibility");
       chain.push({
         el: node.tagName.toLowerCase() + (node.id ? "#" + node.id : ""),
-        offending: Object.fromEntries(
-          Object.entries(props).filter(([, value]) => !["none", "normal", "auto", "flat", ""].includes(value)),
-        ),
+        offending: contentVisibility === "visible" ? offending : { ...offending, contentVisibility },
       });
     }
     const probe = document.createElement("div");
@@ -316,21 +332,49 @@ test("a dialog root placed where ConfirmDialog portals covers the viewport in th
     const contained = box();
     root.style.removeProperty("transform");
     root.style.removeProperty("margin-top");
+    // Document scroll, #wb-root back in place. The spacer goes after everything,
+    // so the document scrolls whatever the page's own height; both are undone.
+    const spacer = document.createElement("div");
+    spacer.style.height = `${3 * window.innerHeight}px`;
+    document.body.append(spacer);
+    window.scrollTo({ top: scroll, behavior: "instant" });
+    const scrollY = window.scrollY;
+    const scrolled = box();
+    const scrolledViewport = {
+      width: document.documentElement.clientWidth,
+      height: document.documentElement.clientHeight,
+    };
+    // Control: a containing block on an element in normal flow scrolls away.
+    root.style.transform = "translateZ(0)";
+    const scrolledContained = box();
+    root.style.removeProperty("transform");
+    window.scrollTo({ top: 0, behavior: "instant" });
+    spacer.remove();
     const fontFamily = getComputedStyle(probe).fontFamily;
     probe.remove();
-    return { chain, rootY, shifted, viewport, contained, fontFamily };
-  }, { className: DIALOG_ROOT_CLASS, shift: WB_ROOT_SHIFT });
+    return { chain, rootY, shifted, viewport, contained, scrollY, scrolled, scrolledViewport, scrolledContained, fontFamily };
+  }, { className: DIALOG_ROOT_CLASS, shift: WB_ROOT_SHIFT, scroll: DOCUMENT_SCROLL });
 
   expect(result, "#wb-root").not.toBeNull();
   expect(result!.chain[0]!.el).toBe("div#wb-root");
   expect(result!.chain.at(-1)!.el).toBe("html");
   expect(result!.rootY, "#wb-root moved down").toBe(WB_ROOT_SHIFT);
   expect(result!.contained.y, "control: a containing block on #wb-root carries the probe").toBe(WB_ROOT_SHIFT);
-  // The gate: before the property list, so a property the list lacks fails here.
+  // Geometry before the property list, so a property the list lacks fails here
+  // when it is on #wb-root.
   expect(result!.shifted, "fixed probe under the portal target, #wb-root moved down").toEqual({
     x: 0,
     y: 0,
     ...result!.viewport,
+  });
+  expect(result!.scrollY, "fixture: the document scrolled").toBe(DOCUMENT_SCROLL);
+  expect(result!.scrolledContained.y, "control: a containing block on #wb-root scrolls away").toBe(-DOCUMENT_SCROLL);
+  // Also before the list: an unmoved ancestor in normal flow with a property the
+  // list lacks fails here.
+  expect(result!.scrolled, "fixed probe under the portal target, document scrolled").toEqual({
+    x: 0,
+    y: 0,
+    ...result!.scrolledViewport,
   });
   for (const { el, offending } of result!.chain) {
     expect(offending, el + " establishes a containing block for fixed descendants").toEqual({});
