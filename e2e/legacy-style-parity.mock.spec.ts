@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_PROJECT_ID, installGrowthVerticalApi } from "./mock-api.ts";
+import { PR3_VIEWS } from "./workbench-e2e.ts";
 
 /**
  * Guards the promise in docs/plans/2026-09-11-workbench-ui-port-design.md §5
@@ -100,8 +101,11 @@ for (const screen of SCREENS) {
 // the old AppShell's `.main` gave every project page `max-width: 1480px` and a
 // `clamp(24px, 3.3vw, 56px)` gutter; ShellChrome's <main> is bare `flex-1`, and
 // workbench.css restores the gutter only when <main> has no `.wb-reset` direct
-// child. At 1280px the clamp resolves to 42.24px; a new placeholder view must stay
-// at 0 because it carries its own `p-6 md:p-10 max-w-5xl` root.
+// child. At 1280px the clamp resolves to 42.24px; a view must stay at 0 because it
+// carries its own padded root (Q26). All five PR-3 views are pinned, not just the
+// overview: the gutter rule keys on the root's position and class, and a view
+// whose root is wrapped (or lacks `.wb-reset`) would get the legacy gutter on top
+// of its own padding.
 test("legacy pages keep the old .main gutter and new views do not", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   const mainBox = () =>
@@ -109,7 +113,13 @@ test("legacy pages keep the old .main gutter and new views do not", async ({ pag
       const main = document.querySelector("#main-content");
       if (!main) return null;
       const cs = getComputedStyle(main);
-      return { paddingLeft: cs.paddingLeft, maxWidth: cs.maxWidth };
+      const root = main.querySelector(":scope > .wb-reset");
+      return {
+        paddingLeft: cs.paddingLeft,
+        maxWidth: cs.maxWidth,
+        viewRoots: main.querySelectorAll(":scope > .wb-reset").length,
+        viewRootPaddingLeft: root ? getComputedStyle(root).paddingLeft : null,
+      };
     });
 
   await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
@@ -118,12 +128,19 @@ test("legacy pages keep the old .main gutter and new views do not", async ({ pag
   expect(legacy, "growth-map: #main-content missing").not.toBeNull();
   expect(Number.parseFloat(legacy?.paddingLeft ?? "0")).toBeGreaterThanOrEqual(24);
   expect(legacy?.maxWidth).toBe("1480px");
+  expect(legacy?.viewRoots, "growth-map: no workbench view root").toBe(0);
 
-  await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
-  await expect(page.locator("#main-content h1[data-wb-page-title]")).toBeVisible();
-  const fresh = await mainBox();
-  expect(fresh, "overview: #main-content missing").not.toBeNull();
-  expect(fresh?.paddingLeft).toBe("0px");
+  for (const segment of PR3_VIEWS) {
+    await page.goto(`/p/${E2E_PROJECT_ID}/${segment}`);
+    await expect(page.locator("#main-content h1[data-wb-page-title]")).toBeVisible();
+    const fresh = await mainBox();
+    expect(fresh, `${segment}: #main-content missing`).not.toBeNull();
+    expect(fresh?.paddingLeft, `${segment}: legacy gutter on a view`).toBe("0px");
+    // The root that makes the gutter step aside: one `.wb-reset` directly under
+    // <main>, carrying its own padding (md:p-10 at this width).
+    expect(fresh?.viewRoots, `${segment}: .wb-reset view roots under <main>`).toBe(1);
+    expect(fresh?.viewRootPaddingLeft, `${segment}: view root padding`).toBe("40px");
+  }
 });
 
 // ---------------------------------------------------------------------------
