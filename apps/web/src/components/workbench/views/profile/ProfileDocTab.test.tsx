@@ -240,19 +240,24 @@ describe("ProfileDocTab frame", () => {
 // Delivery review F1: the operator's own rows had no visible provenance, only the
 // header chip's hover title. The footnote follows the snapshot's frozen
 // `gscSource`; every case sets the project's current `gscRowsSource` to something
-// else, so a section that read the current rows would show the wrong thing.
+// else, so a section that read the current rows would show the wrong thing, and
+// sets `demo` against the snapshot's source (a user snapshot on a demo project,
+// a sample snapshot on a project that is not), so one that read `demo` would too.
 describe("ProfileDocTab GSC footnote, from the snapshot", () => {
-  it.each<[ProfileLocale, ProfileDoc["gscSource"], ProfileDoc["gscSource"], string | null, "sampleData" | "gscSourceUnknown" | null]>([
-    ["en", "user", "sample", "These GSC rows come from data you imported, not from a sample", null],
-    ["en", "sample", "user", null, "sampleData"],
-    ["en", null, "user", null, "gscSourceUnknown"],
-    ["zh-CN", "user", "sample", "这些 GSC 行来自你导入的数据，不是示例", null],
-    ["zh-CN", "sample", "user", null, "sampleData"],
-    ["zh-CN", null, "user", null, "gscSourceUnknown"],
-  ])("(%s) a %j snapshot with %j rows in the project now: footnote %j", (locale, gscSource, gscRowsSource, sentence, label) => {
+  it.each<[ProfileLocale, ProfileDoc["gscSource"], ProfileDoc["gscSource"], boolean, string | null, "sampleData" | "gscSourceUnknown" | null]>([
+    ["en", "user", "sample", true, "These GSC rows come from data you imported, not from a sample", null],
+    ["en", "sample", "user", false, null, "sampleData"],
+    ["en", null, "user", true, null, "gscSourceUnknown"],
+    ["en", null, "sample", false, null, "gscSourceUnknown"],
+    ["zh-CN", "user", "sample", true, "这些 GSC 行来自你导入的数据，不是示例", null],
+    ["zh-CN", "sample", "user", false, null, "sampleData"],
+    ["zh-CN", null, "user", true, null, "gscSourceUnknown"],
+    ["zh-CN", null, "sample", false, null, "gscSourceUnknown"],
+  ])("(%s) a %j snapshot with %j rows in the project now and demo %j: footnote %j", (locale, gscSource, gscRowsSource, demo, sentence, label) => {
     const rendered = renderProfile(
       {
         ...BLANK_PROFILE,
+        demo,
         profileDoc: { ...FIXTURE_DOC, gscSource },
         gscRows: [{ query: "acme seo", clicks: 3, impressions: 90, ctr: 0.03, position: 14 }],
         gscRowsSource,
