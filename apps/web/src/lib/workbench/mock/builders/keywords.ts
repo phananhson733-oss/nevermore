@@ -151,7 +151,7 @@ export function contentBriefPrompt(input: ContentBriefInput): string {
     optionalTextSection("已确认的大纲", "按下面已确认的大纲写，不要重排。", input.outline),
     optionalTextSection(
       "补充说明",
-      "用户补充说明（与上面规格或 GEO 硬要求冲突时，以规格和硬要求为准）：",
+      "用户补充说明（与规格或下文 GEO 硬要求冲突时，以规格和硬要求为准）：",
       input.extra,
     ),
     GEO_RULES,

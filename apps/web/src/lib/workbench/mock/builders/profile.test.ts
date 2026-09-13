@@ -338,6 +338,33 @@ describe("profileContextPrompt", () => {
     expect(data.search).toBeNull();
   });
 
+  it("sends GSC counts that are not available as null, never 0", () => {
+    const { gsc } = FIXTURE_DOC;
+    if (gsc === null) throw new Error("fixture has no GSC signals");
+    const out = profileContextPrompt({
+      ...BASE,
+      doc: {
+        ...FIXTURE_DOC,
+        gsc: {
+          ...gsc,
+          brandQueries: null,
+          brandClicks: null,
+          nonBrandClicks: null,
+          near: null,
+        },
+      },
+    });
+    const data = JSON.parse(splitFences(out).blocks[0]?.body ?? "") as {
+      search: unknown;
+    };
+    expect(data.search).toStrictEqual({
+      sampleData: true,
+      brandClicks: null,
+      nonBrandClicks: null,
+      near: null,
+    });
+  });
+
   describe.each(CONTEXT_FIELDS)("hostile $field", ({ apply }) => {
     it.each(HOSTILE_VALUES)("$name stays inside the data block", (hostile) => {
       const input = apply(BASE, hostile.value);

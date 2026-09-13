@@ -82,7 +82,8 @@ describe("fixTaskPrompt", () => {
     expect(splitFences(prompt).outside).not.toContain("acme.io");
   });
 
-  it("never says 实测, even when finding text does", () => {
+  // No fixture finding contains 实测: that FIND_LIB never says it is pinned in ../find-lib.test.ts.
+  it("never says 实测 in its fixed text", () => {
     expect(prompt).not.toContain("实测");
     expect(prompt).toContain("sampleObservation");
   });

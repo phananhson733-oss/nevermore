@@ -5,6 +5,7 @@
  * `*.test.ts` file so the builder tests can share it; its own tests live in
  * `hostile-fixtures.test.ts`.
  */
+import { lexer, walkTokens } from "marked";
 import { DATA_BLOCK_NOTICE } from "../labels-zh.ts";
 import { oneLine } from "../text.ts";
 import { type PromptParts, splitFences } from "./prompt-test-helpers.ts";
@@ -133,9 +134,82 @@ export function headingLines(doc: string): readonly string[] {
 }
 
 /**
- * A document built with a hostile value must have the same headings as the
- * benign baseline, open no fenced block, keep no CR, and show the value folded
- * onto one line.
+ * Block tokens a value must not add to a document. `checkbox` is a GFM task
+ * marker: `- [ ] x` renders a box in place of the value's `[ ]`.
+ */
+export const BLOCK_TOKEN_TYPES = [
+  "heading",
+  "code",
+  "blockquote",
+  "html",
+  "hr",
+  "table",
+  "list",
+  "checkbox",
+] as const;
+
+export type BlockTokenType = (typeof BLOCK_TOKEN_TYPES)[number];
+
+const NO_BLOCK_TOKENS: Readonly<Record<BlockTokenType, number>> = {
+  heading: 0,
+  code: 0,
+  blockquote: 0,
+  html: 0,
+  hr: 0,
+  table: 0,
+  list: 0,
+  checkbox: 0,
+};
+
+function isBlockTokenType(type: string): type is BlockTokenType {
+  return (BLOCK_TOKEN_TYPES as readonly string[]).includes(type);
+}
+
+/**
+ * How many block tokens of each type `marked` (CommonMark + GFM, the studio
+ * preview's renderer) finds, nested ones included: `- # x` holds a heading
+ * although no line starts with `#`.
+ */
+export function blockTokenCounts(
+  markdown: string,
+): Readonly<Record<BlockTokenType, number>> {
+  // walkTokens only takes a callback, so the tally is a local rebound to a new object.
+  let counts = NO_BLOCK_TOKENS;
+  walkTokens(lexer(markdown), (token) => {
+    const { type } = token;
+    if (isBlockTokenType(type)) {
+      counts = { ...counts, [type]: counts[type] + 1 };
+    }
+  });
+  return counts;
+}
+
+/** Link reference definitions `marked` registers; one can turn a fixed `[未填]` elsewhere into a link. */
+export function linkDefinitionLabels(markdown: string): readonly string[] {
+  return Object.keys(lexer(markdown).links);
+}
+
+function blockViolations(doc: string, baseline: string): readonly string[] {
+  const got = blockTokenCounts(doc);
+  const want = blockTokenCounts(baseline);
+  const blocks = BLOCK_TOKEN_TYPES.filter(
+    (type) => got[type] !== want[type],
+  ).map((type) => `${type} tokens ${want[type]} -> ${got[type]}`);
+  const gotLinks = linkDefinitionLabels(doc).length;
+  const wantLinks = linkDefinitionLabels(baseline).length;
+  const links =
+    gotLinks === wantLinks
+      ? []
+      : [`link definitions ${wantLinks} -> ${gotLinks}`];
+  return [...blocks, ...links];
+}
+
+/**
+ * A document built with a hostile value must keep the benign baseline's block
+ * structure as `marked` parses it (the counts above plus link definitions),
+ * keep no CR, and show the value folded onto one line. The line scans for
+ * fences and heading lines stay as a floor, so nothing the earlier line-only
+ * checker rejected passes now.
  */
 export function docViolations(
   doc: string,
@@ -159,5 +233,11 @@ export function docViolations(
   const folded = doc.includes(oneLine(hostile.value))
     ? []
     : [`${hostile.name}: folded value not rendered`];
-  return [...fences, ...headings, ...carriage, ...folded];
+  return [
+    ...fences,
+    ...blockViolations(doc, baseline),
+    ...headings,
+    ...carriage,
+    ...folded,
+  ];
 }

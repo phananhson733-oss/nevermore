@@ -142,6 +142,18 @@ describe("oneLine", () => {
     expect(oneLine("# 标题\n正文")).toBe("# 标题 正文");
     expect(oneLine("a  \r\n\r\n  b\rc\n")).toBe("a b c");
   });
+
+  // A JavaScript regex `.` does not match U+2028 / U+2029, so marked drops a heading that holds one. NEL is folded with them.
+  it("folds NEL, LINE SEPARATOR and PARAGRAPH SEPARATOR like a newline", () => {
+    expect(oneLine("Acme\u0085# 伪标题")).toBe("Acme # 伪标题");
+    expect(oneLine("Acme \u2028 # 伪标题")).toBe("Acme # 伪标题");
+    expect(oneLine("a\u2029\u2029b\u2028")).toBe("a b");
+    expect(oneLine("a\r\n\u2028\u0085b")).toBe("a b");
+  });
+
+  it("keeps other whitespace between words as it is", () => {
+    expect(oneLine("  a\t b c  ")).toBe("a\t b c");
+  });
 });
 
 describe("competitorNames", () => {

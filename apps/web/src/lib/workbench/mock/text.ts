@@ -91,9 +91,14 @@ export function matchesBrand(text: string, brand: string): boolean {
   return wholeWord.test(haystack);
 }
 
-/** Folds line breaks (and the whitespace around them) into one space, so a user field cannot open a new heading. */
+/**
+ * Folds line breaks (and the whitespace around them) into one space, so a user
+ * field cannot open a new heading. Besides CR and LF it folds NEL, U+2028 and
+ * U+2029: a JavaScript regex `.` stops at the last two, which makes a Markdown
+ * renderer such as marked drop a heading that holds one.
+ */
 export function oneLine(value: string): string {
-  return value.replace(/\s*[\r\n]+\s*/g, " ").trim();
+  return value.replace(/\s*[\r\n\u0085\u2028\u2029]+\s*/g, " ").trim();
 }
 
 /** The project's competitors, deduped by `normQ` keeping the first spelling; placeholders when none are filled in (R9). */
