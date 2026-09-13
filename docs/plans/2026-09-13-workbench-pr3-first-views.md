@@ -184,6 +184,7 @@ docs/PROGRESS.md                   T18
 - [ ] **Step 1: 纯函数先行** — `gscConnectionState({ sources, isLoading, isError })` → `true | false | null`，判据 Q3/Q4。测试覆盖 9 个 `SourceState` **逐个列出**、`id === null`、无 gsc 槽位、loading、error。
 - [ ] **Step 2: 跑红再实现**。
 - [ ] **Step 3: 接线** — `ShellChrome` 用 `useProjectSources(projectId)`（直接 import `@/lib/api/hooks-sources`，未从 barrel 导出）；`ShellChrome.test.tsx` 套 `QueryClientProvider`。
+  - 已核实（2026-09-13，不必重推）：`ShellChrome.tsx:1` 是 `"use client"`，`WorkbenchShell.tsx` 是 server 组件且 `:54` 写死 `gscConnected: null`；`SiteCard.tsx:10` 的 `gscConnected: boolean | null` 三态分支已存在（`:44-46`）；`SourceConnection.id` 是 `string | null`、`state` 是 `SourceState`（`hooks-sources.ts:156-161`），Q3 判据可表达；`ApiError.code` 存在（`lib/api/client.ts:28`），Q4 按 `code` 分支可实现；`useProjectSources` 无自设 `staleTime`，吃 `app/providers.tsx:17` 的默认 `staleTime: 30_000`。
 - [ ] **Step 4: 回归清单**（每项都跑）— `e2e/workbench-shell.mock.spec.ts`、`e2e/legacy-style-parity.mock.spec.ts`（**它装了 mock API**：`:66 installGrowthVerticalApi`，内含 `/sources` fixture——rev1 把它写成「不装」是错的）、`e2e/frontend-error-states.mock.spec.ts:226`（`expect.poll(() => sourceReads).toBe(3)` 精确计数）、`e2e/growth-map-run.mock.spec.ts:910-916`（`sourceReads.length` 恰好 +1）。后两条因为 `ShellChrome` 在每个项目页都订阅 `["sources", projectId]` 而可能变化（同 key + `staleTime: 30_000` 大概率去重，但未核实）→ 实测后如实记录。
 - [ ] **Step 5: 变异** — `permission_denied` 挪到 `false` 必须红；error 分支返回 `false` 必须红。
 - [ ] **Step 6: 提交** — `feat(workbench): 侧栏站点卡接真实 GSC 连接状态（未知不等于未接入）`。
