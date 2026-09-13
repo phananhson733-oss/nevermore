@@ -1,11 +1,12 @@
 /* @input  — the shipped workbench.css, the installed Tailwind compiler, and
- *           every production .ts / .tsx / .css file under a source root
+ *           every production .ts / .tsx / .css file under apps/web/src and
+ *           packages/*\/src
  * @output — what Tailwind would scan and emit, and which walked files depend on
- *           it: utilities in class strings, class inputs the scan cannot see
- *           through, theme variables read through var() / getPropertyValue()
- * @pos    — test support for app/tailwind-source-scope.test.ts only. Nothing in
- *           the app imports it (it loads the Tailwind compiler); reading the
- *           modules (one TypeScript program over all of them) lives in
+ *           it: utilities in class strings, class inputs out of static sight,
+ *           theme variables read through var() / getPropertyValue()
+ * @pos    — test support for app/tailwind-source-scope.test.ts and
+ *           app/tailwind-source-extract.test.ts only. Nothing in the app imports
+ *           it (it loads the Tailwind compiler); reading the files lives in
  *           tailwind-source-extract.ts
  * 一旦本文件被更新，务必更新开头注释
  */
@@ -13,11 +14,7 @@ import { globSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { compile } from "tailwindcss";
-import {
-  factsForFiles,
-  moduleFacts,
-  type ModuleFacts,
-} from "./tailwind-source-extract.ts";
+import { factsForFiles, type ModuleFacts } from "./tailwind-source-extract.ts";
 
 type Compiler = Awaited<ReturnType<typeof compile>>;
 export type Check = (candidate: string) => boolean;
@@ -25,10 +22,13 @@ export type Check = (candidate: string) => boolean;
 // A glob or negated @source needs a real matcher; guessing its coverage would
 // make the scope test lie. `[projectId]` counts: Tailwind reads brackets as a glob.
 const GLOB_CHARS = /[*?{}[\]!]/u;
-// Spelled like a class: lowercase class characters only. Lets a literal that
-// mixes custom classes with utilities ("legacy-card top-100") count.
+// Spelled like a class list: lowercase class characters only.
 const CLASS_TOKEN = /^[a-z0-9!:[\]()/.,%_#-]+$/u;
 const SPELLED_UTILITY = /[-:[]/u;
+// Spelled like a class name rather than an English word: `legacy-card`, not `please`.
+const SPELLED_CLASS = /[-_:[]/u;
+// Generated from the OpenAPI contract and a DataForSEO location dump: data, no markup.
+const GENERATED = /(?:^|\/)generated\//u;
 
 export async function compileStylesheet(cssPath: string): Promise<Compiler> {
   const resolveId = createRequire(import.meta.url).resolve;
@@ -66,9 +66,7 @@ function utilityCheck(compiler: Compiler): Check {
 /** Custom properties declared in the compiled `:root, :host` rule. */
 export function rootVariables(css: string): ReadonlySet<string> {
   const bodies = [...css.matchAll(/:root,\s*:host\s*\{([^}]*)\}/gu)];
-  const declarations = bodies.flatMap((body) => [
-    ...(body[1] ?? "").matchAll(/(--[\w-]+)\s*:/gu),
-  ]);
+  const declarations = bodies.flatMap((body) => [...(body[1] ?? "").matchAll(/(--[\w-]+)\s*:/gu)]);
   return new Set(declarations.map((match) => match[1] ?? ""));
 }
 
@@ -89,10 +87,7 @@ function themeVariableCheck(compiler: Compiler): Check {
 }
 
 /** Theme variables in :root when the compiler sees exactly `candidates`. */
-export async function emittedVariables(
-  cssPath: string,
-  candidates: readonly string[],
-): Promise<ReadonlySet<string>> {
+export async function emittedVariables(cssPath: string, candidates: readonly string[]): Promise<ReadonlySet<string>> {
   const compiler = await compileStylesheet(cssPath);
   return rootVariables(compiler.build([...candidates]));
 }
@@ -106,13 +101,28 @@ function scanRoots(compiler: Compiler): readonly string[] {
   });
 }
 
+export interface Checks {
+  readonly roots: readonly string[];
+  readonly isUtility: Check;
+  readonly isThemeVariable: Check;
+}
+
+export async function checksFor(cssPath: string): Promise<Checks> {
+  const utilityCompiler = await compileStylesheet(cssPath);
+  return {
+    roots: scanRoots(utilityCompiler),
+    isUtility: utilityCheck(utilityCompiler),
+    isThemeVariable: themeVariableCheck(await compileStylesheet(cssPath)),
+  };
+}
+
 export function isCovered(roots: readonly string[], file: string): boolean {
   return roots.some((root) => file === root || file.startsWith(root + sep));
 }
 
 /** `globSync` returns [] for a missing root instead of throwing: callers need floors. */
-function productionFiles(root: string): readonly string[] {
-  return globSync("**/*.{ts,tsx,css}", { cwd: root })
+function walkFiles(root: string, pattern: string): readonly string[] {
+  return globSync(pattern, { cwd: root })
     .filter((path) => !/\.test\.tsx?$/u.test(path) && !path.endsWith(".d.ts"))
     .map((path) => join(root, path))
     .sort();
@@ -125,69 +135,45 @@ function tokens(text: string): readonly string[] {
 /**
  * Utilities in a literal not known to reach a class sink. One token counts when
  * it is a utility spelled with `-`, `:` or `[` (a bare `flex` or `table` is
- * English); several count when all are utilities, or when every token is
- * spelled like a class and the spelled-out utilities among them are reported.
+ * English); several count when all are utilities, or when every token is a
+ * utility or spelled like a class name ("legacy-card top-100", not
+ * "please use top-100 carefully").
  */
 function literalUtilities(text: string, isUtility: Check): readonly string[] {
   const parts = tokens(text);
   const [first, ...rest] = parts;
   if (first === undefined) return [];
-  if (rest.length === 0) {
-    return SPELLED_UTILITY.test(first) && isUtility(first) ? parts : [];
-  }
-  if (parts.every(isUtility)) return parts;
+  if (rest.length === 0) return SPELLED_UTILITY.test(first) && isUtility(first) ? parts : [];
   if (!parts.every((part) => CLASS_TOKEN.test(part))) return [];
-  return parts.filter((part) => SPELLED_UTILITY.test(part) && isUtility(part));
+  if (!parts.every((part) => isUtility(part) || SPELLED_CLASS.test(part))) return [];
+  return parts.filter(isUtility);
 }
 
-export function utilitiesIn(
-  facts: ModuleFacts,
-  isUtility: Check,
-): readonly string[] {
+export function utilitiesIn(facts: ModuleFacts, isUtility: Check): readonly string[] {
   const fromSinks = facts.classStrings.flatMap(tokens).filter(isUtility);
-  const fromLiterals = facts.literals.flatMap((literal) =>
-    literalUtilities(literal, isUtility),
-  );
+  const fromLiterals = facts.literals.flatMap((literal) => literalUtilities(literal, isUtility));
   return [...new Set([...fromSinks, ...fromLiterals])].sort();
-}
-
-export function utilitiesInText(
-  file: string,
-  text: string,
-  isUtility: Check,
-): readonly string[] {
-  return utilitiesIn(moduleFacts(file, text), isUtility);
-}
-
-/** Where an import points: a src path for `@/` and relative specifiers, null for a package. */
-function importTarget(srcDir: string, file: string, specifier: string): string | null {
-  if (specifier.startsWith("@/")) return join(srcDir, specifier.slice(2));
-  if (specifier.startsWith(".")) return resolve(dirname(file), specifier);
-  return null;
 }
 
 /**
  * Class inputs whose text the scan cannot see, reported instead of read as
- * empty: an imported value from outside the roots (its module's strings are
- * never scanned, and a bare `collapse` there would not look like a class), a
- * literal glued onto a value (Tailwind cannot see `top-${n}` either), and a
+ * empty: an imported value defined outside the roots (or in a package, or
+ * nowhere walked), a literal glued onto something (Tailwind cannot see
+ * `top-${n}` either), a value the reader could not follow, and a
  * getPropertyValue() whose name is computed.
  */
-export function unresolvedInputs(
-  srcDir: string,
-  roots: readonly string[],
-  file: string,
-  facts: ModuleFacts,
-): readonly string[] {
-  const outsideImports = facts.importedValues.filter(({ specifier }) => {
-    const target = importTarget(srcDir, file, specifier);
-    return target === null || !isCovered(roots, target);
+export function unresolvedInputs(roots: readonly string[], facts: ModuleFacts): readonly string[] {
+  const imports = facts.importedValues.flatMap(({ name, specifier, definition }) => {
+    if (definition.kind === "file") {
+      return isCovered(roots, definition.path) ? [] : [`imported class value ${name} from "${specifier}", defined outside the roots`];
+    }
+    if (definition.kind === "package") return [`imported class value ${name} from package "${specifier}"`];
+    return [`imported class value ${name} from "${specifier}": ${definition.reason}`];
   });
   return [
-    ...outsideImports.map(
-      ({ name, specifier }) => `imported class value ${name} from "${specifier}"`,
-    ),
+    ...imports,
     ...facts.gluedPieces.map((piece) => `glued class piece ${piece}`),
+    ...facts.opaqueValues,
     ...facts.dynamicPropertyReads.map((call) => `computed property name ${call}`),
   ];
 }
@@ -197,82 +183,80 @@ function variableTokensIn(text: string): readonly string[] {
   return [...new Set(text.match(/--[A-Za-z0-9][\w-]*/gu) ?? [])];
 }
 
-export interface Scan {
+export interface ScanInput {
+  readonly srcDir: string;
+  readonly packagesDir: string;
+  readonly cssPath: string;
+}
+
+export interface Scan extends Checks {
   readonly compilerRoot: Compiler["root"];
-  readonly roots: readonly string[];
+  /** Walked files, labelled src-relative or `packages/…`. */
   readonly files: readonly string[];
+  /** Generated files left out of the walk, labelled the same way. */
+  readonly skipped: readonly string[];
   readonly coveredUtilities: ReadonlySet<string>;
-  /** src-relative path → utilities, for files outside the roots that have any. */
+  /** label → utilities, for files outside the roots that have any. */
   readonly outsideUtilities: Readonly<Record<string, readonly string[]>>;
-  /** src-relative path → class inputs the scan cannot see through. */
+  /** label → class inputs the scan cannot see through. */
   readonly unresolved: Readonly<Record<string, readonly string[]>>;
-  /** Imported values read by class sinks anywhere, resolved or not. */
+  /** Imports read by class values anywhere, resolved or not. */
   readonly importedValueCount: number;
-  /** src-relative path → Tailwind theme variables the file reads. */
+  /** label → Tailwind theme variables the file reads. */
   readonly themeReads: Readonly<Record<string, readonly string[]>>;
   /** :root variables given only what the roots supply (their utilities and variable tokens). */
   readonly emitted: ReadonlySet<string>;
-  readonly isUtility: Check;
-  readonly isThemeVariable: Check;
 }
 
 interface WalkedFile {
-  readonly path: string;
+  readonly label: string;
   readonly text: string;
   readonly covered: boolean;
   readonly facts: ModuleFacts;
   readonly utilities: readonly string[];
 }
 
-function byPath(
-  srcDir: string,
+function byLabel(
   files: readonly WalkedFile[],
   pick: (file: WalkedFile) => readonly string[],
 ): Readonly<Record<string, readonly string[]>> {
-  const entries = files
-    .map((file) => [relative(srcDir, file.path), pick(file)] as const)
-    .filter(([, values]) => values.length > 0);
+  const entries = files.map((file) => [file.label, pick(file)] as const).filter(([, values]) => values.length > 0);
   return Object.fromEntries(entries);
 }
 
-export async function scanTailwindSources(
-  srcDir: string,
-  cssPath: string,
-): Promise<Scan> {
-  const utilityCompiler = await compileStylesheet(cssPath);
-  const roots = scanRoots(utilityCompiler);
-  const isUtility = utilityCheck(utilityCompiler);
-  const isThemeVariable = themeVariableCheck(await compileStylesheet(cssPath));
-  const texts = new Map(
-    productionFiles(srcDir).map((path) => [path, readFileSync(path, "utf8")] as const),
-  );
-  const factsByPath = factsForFiles(texts);
-  const files: readonly WalkedFile[] = [...texts].map(([path, text]) => {
+function walkedFiles(input: ScanInput, checks: Checks): { readonly files: readonly WalkedFile[]; readonly skipped: readonly string[] } {
+  const label = (path: string): string =>
+    path.startsWith(input.srcDir + sep) ? relative(input.srcDir, path) : join("packages", relative(input.packagesDir, path));
+  const packages = walkFiles(input.packagesDir, "*/src/**/*.{ts,tsx,css}");
+  const paths = [...walkFiles(input.srcDir, "**/*.{ts,tsx,css}"), ...packages.filter((p) => !GENERATED.test(p))];
+  const texts = new Map(paths.map((path) => [path, readFileSync(path, "utf8")] as const));
+  const factsByPath = factsForFiles(texts, input.srcDir);
+  const files = [...texts].map(([path, text]) => {
     const facts = factsByPath.get(path);
     if (facts === undefined) throw new Error(`no facts for ${path}`);
-    const utilities = utilitiesIn(facts, isUtility);
-    return { path, text, covered: isCovered(roots, path), facts, utilities };
+    const utilities = utilitiesIn(facts, checks.isUtility);
+    return { label: label(path), text, covered: isCovered(checks.roots, path), facts, utilities };
   });
+  return { files, skipped: packages.filter((p) => GENERATED.test(p)).map(label) };
+}
+
+export async function scanTailwindSources(input: ScanInput): Promise<Scan> {
+  const checks = await checksFor(input.cssPath);
+  const compilerRoot = (await compileStylesheet(input.cssPath)).root;
+  const { files, skipped } = walkedFiles(input, checks);
   const covered = files.filter((file) => file.covered);
   const coveredUtilities = new Set(covered.flatMap((file) => file.utilities));
   const supplied = covered.flatMap((file) => variableTokensIn(file.text));
   return {
-    compilerRoot: utilityCompiler.root,
-    roots,
-    files: files.map((file) => file.path),
+    ...checks,
+    compilerRoot,
+    files: files.map((file) => file.label),
+    skipped,
     coveredUtilities,
-    outsideUtilities: byPath(srcDir, files, (file) =>
-      file.covered ? [] : file.utilities,
-    ),
-    unresolved: byPath(srcDir, files, (file) =>
-      unresolvedInputs(srcDir, roots, file.path, file.facts),
-    ),
+    outsideUtilities: byLabel(files, (file) => (file.covered ? [] : file.utilities)),
+    unresolved: byLabel(files, (file) => unresolvedInputs(checks.roots, file.facts)),
     importedValueCount: files.flatMap((file) => file.facts.importedValues).length,
-    themeReads: byPath(srcDir, files, (file) =>
-      file.facts.propertyReads.filter(isThemeVariable),
-    ),
-    emitted: await emittedVariables(cssPath, [...coveredUtilities, ...supplied]),
-    isUtility,
-    isThemeVariable,
+    themeReads: byLabel(files, (file) => file.facts.propertyReads.filter(checks.isThemeVariable)),
+    emitted: await emittedVariables(input.cssPath, [...coveredUtilities, ...supplied]),
   };
 }

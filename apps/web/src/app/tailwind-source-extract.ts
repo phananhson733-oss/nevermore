@@ -1,37 +1,41 @@
-/* @input  — the text of .ts / .tsx modules (or a stylesheet's text)
- * @output — what each module feeds Tailwind: strings that reach a class sink,
- *           every other literal, the class inputs it cannot see through
- *           (imported values, literals glued onto an interpolation, computed
- *           property names), and the custom properties it reads. Names are
- *           resolved by scope through a TypeScript checker, not by spelling
+/* @input  — the text of .ts / .tsx / .css files
+ * @output — what each file feeds Tailwind: strings that reach a class sink,
+ *           every other literal, the imports class values read (with where each
+ *           is really defined), the class inputs out of static sight, and the
+ *           custom properties it reads (var(), getPropertyValue())
  * @pos    — test support for app/tailwind-source-scan.ts only; nothing in the
- *           app imports it (it loads typescript)
+ *           app imports it (it loads typescript). Value tracing lives in
+ *           tailwind-source-values.ts, export chains in tailwind-source-exports.ts
  * 一旦本文件被更新，务必更新开头注释
  */
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import ts from "typescript";
+import { definitionOf, type Definition, type ModuleGraph } from "./tailwind-source-exports.ts";
+import { CLASS_NAME, valueReader, type Sink, type ValueReader } from "./tailwind-source-values.ts";
 
 export interface ImportedValue {
   readonly name: string;
   readonly specifier: string;
+  readonly definition: Definition;
 }
 
 export interface ModuleFacts {
-  /** Strings that reach a class sink: class-like JSX attributes, classList.*, setAttribute("class", …). */
+  /** Strings that can reach a class sink. */
   readonly classStrings: readonly string[];
   /** Every literal except module specifiers. */
   readonly literals: readonly string[];
-  /** Imported bindings a class sink reads as a value (not a call): their strings live in another module. */
+  /** Imports a class value reads, resolved to where they are defined. */
   readonly importedValues: readonly ImportedValue[];
-  /** Class-sink code that glues a literal onto a value: `top-${n}`, "top-" + n. */
+  /** Class-sink code that glues a literal onto something: `top-${n}`, "top-" + n. */
   readonly gluedPieces: readonly string[];
-  /** Custom properties read through var() or getPropertyValue("--x"). */
+  /** Class-sink values the reader could not follow (parameters, calls, members, …). */
+  readonly opaqueValues: readonly string[];
+  /** Custom properties read through var() or getPropertyValue(). */
   readonly propertyReads: readonly string[];
-  /** getPropertyValue(…) calls whose argument is not a literal. */
+  /** getPropertyValue(…) calls whose name is not static. */
   readonly dynamicPropertyReads: readonly string[];
 }
 
-const CLASS_ATTRIBUTE = /^(?:class|className|[A-Za-z]+ClassName)$/u;
 const CLASS_LIST_METHODS: ReadonlySet<string> = new Set(["add", "remove", "toggle", "replace"]);
 const SCRIPT = /\.tsx?$/u;
 
@@ -53,7 +57,7 @@ export function variablesReadIn(text: string): readonly string[] {
   return [...new Set(names)].filter((name) => name !== "").sort();
 }
 
-function classSinkArguments(node: ts.CallExpression): readonly ts.Node[] {
+function classSinkArguments(node: ts.CallExpression): readonly ts.Expression[] {
   const callee = node.expression;
   if (!ts.isPropertyAccessExpression(callee)) return [];
   const receiver = callee.expression;
@@ -66,100 +70,19 @@ function classSinkArguments(node: ts.CallExpression): readonly ts.Node[] {
 }
 
 /** Expressions whose value becomes a class. */
-function classSinks(source: ts.SourceFile): readonly ts.Node[] {
-  const sinks: ts.Node[] = [];
+function classSinks(source: ts.SourceFile): readonly Sink[] {
+  const sinks: Sink[] = [];
   walk(source, (node) => {
-    if (ts.isJsxAttribute(node) && node.initializer && CLASS_ATTRIBUTE.test(node.name.getText(source))) {
-      sinks.push(node.initializer);
+    if (ts.isJsxSpreadAttribute(node)) sinks.push({ kind: "spread", node: node.expression });
+    if (ts.isJsxAttribute(node) && node.initializer && CLASS_NAME.test(node.name.getText(source))) {
+      const value = ts.isJsxExpression(node.initializer) ? node.initializer.expression : node.initializer;
+      if (value !== undefined) sinks.push({ kind: "value", node: value });
     }
-    if (ts.isCallExpression(node)) sinks.push(...classSinkArguments(node));
+    if (ts.isCallExpression(node)) {
+      classSinkArguments(node).forEach((argument) => sinks.push({ kind: "value", node: argument }));
+    }
   });
   return sinks;
-}
-
-/** `top-${n}` or "top-" + n: a literal glued onto a value the scan cannot read. */
-function gluesPieces(node: ts.Node): boolean {
-  if (ts.isTemplateExpression(node)) {
-    const pieces = [node.head.text, ...node.templateSpans.map((span) => span.literal.text)];
-    const last = pieces.length - 1;
-    return pieces.some(
-      (piece, index) => (index < last && /\S$/u.test(piece)) || (index > 0 && /^\S/u.test(piece)),
-    );
-  }
-  if (!ts.isBinaryExpression(node) || node.operatorToken.kind !== ts.SyntaxKind.PlusToken) return false;
-  const left = literalText(node.left);
-  const right = literalText(node.right);
-  const leftGlues = left === null || /\S$/u.test(left);
-  const rightGlues = right === null || /^\S/u.test(right);
-  return (left !== null || right !== null) && leftGlues && rightGlues;
-}
-
-/** The module an import declaration names, walking up from one of its bindings. */
-function importSpecifier(declaration: ts.Node): string | null {
-  for (let node: ts.Node = declaration; !ts.isSourceFile(node); node = node.parent) {
-    if (ts.isImportDeclaration(node)) return literalText(node.moduleSpecifier);
-  }
-  return null;
-}
-
-function symbolOf(checker: ts.TypeChecker, node: ts.Identifier): ts.Symbol | undefined {
-  const parent = node.parent;
-  if (ts.isShorthandPropertyAssignment(parent) && parent.name === node) {
-    return checker.getShorthandAssignmentValueSymbol(parent);
-  }
-  return checker.getSymbolAtLocation(node);
-}
-
-interface SinkReading {
-  readonly strings: readonly string[];
-  readonly importedValues: readonly ImportedValue[];
-  readonly gluedPieces: readonly string[];
-}
-
-function readSinks(source: ts.SourceFile, checker: ts.TypeChecker): SinkReading {
-  const strings: string[] = [];
-  const importedValues: ImportedValue[] = [];
-  const gluedPieces: string[] = [];
-  const followed = new Set<ts.Node>();
-
-  // By scope, not by spelling: a same-name local in another function is not
-  // what this sink reads (following names made unrelated templates look like
-  // glued classes), and a shadowing local cannot hide the one it does read.
-  function readIdentifier(node: ts.Identifier): void {
-    for (const declaration of symbolOf(checker, node)?.declarations ?? []) {
-      const specifier = importSpecifier(declaration);
-      if (specifier !== null && !specifier.endsWith(".css")) {
-        importedValues.push({ name: node.text, specifier });
-      }
-      if (!ts.isVariableDeclaration(declaration) || declaration.initializer === undefined) continue;
-      if (followed.has(declaration.initializer)) continue;
-      followed.add(declaration.initializer);
-      visit(declaration.initializer);
-    }
-  }
-
-  function visit(node: ts.Node): void {
-    const text = literalText(node);
-    if (text !== null) strings.push(text);
-    if (gluesPieces(node)) gluedPieces.push(node.getText(source));
-    // `styles[`status${x}`]` is a CSS Module key, `styles.card` a lookup: only the object is a value.
-    if (ts.isElementAccessExpression(node) || ts.isPropertyAccessExpression(node)) {
-      visit(node.expression);
-      return;
-    }
-    // `cn(…)`: the callee joins, the arguments are the classes.
-    if (ts.isCallExpression(node)) {
-      node.arguments.forEach(visit);
-      return;
-    }
-    const keyed = ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node);
-    if (keyed && ts.isIdentifier(node.name)) strings.push(node.name.text);
-    if (ts.isIdentifier(node)) readIdentifier(node);
-    ts.forEachChild(node, visit);
-  }
-
-  classSinks(source).forEach(visit);
-  return { strings, importedValues, gluedPieces };
 }
 
 /** Every literal except module specifiers: a class list kept in a constant, even in a `.ts` file. */
@@ -177,6 +100,7 @@ function allLiterals(source: ts.SourceFile): readonly string[] {
 
 function propertyReads(
   source: ts.SourceFile,
+  reader: ValueReader,
 ): Pick<ModuleFacts, "propertyReads" | "dynamicPropertyReads"> {
   const reads: string[] = [...variablesReadIn(source.text)];
   const dynamic: string[] = [];
@@ -184,7 +108,7 @@ function propertyReads(
     if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return;
     if (node.expression.name.text !== "getPropertyValue") return;
     const first = node.arguments[0];
-    const name = first === undefined ? null : literalText(first);
+    const name = first === undefined ? null : reader.staticText(first);
     if (name === null) dynamic.push(node.getText(source));
     else if (name.startsWith("--")) reads.push(name);
   });
@@ -194,7 +118,7 @@ function propertyReads(
 /**
  * One program over every script, served from memory: no lib, no module
  * resolution. The checker then binds each file's own scopes, which is all the
- * name lookups above need.
+ * lookups need; cross-module links are followed by tailwind-source-exports.ts.
  */
 function programFor(scripts: ReadonlyMap<string, string>): ts.Program {
   const options: ts.CompilerOptions = {
@@ -221,39 +145,52 @@ function programFor(scripts: ReadonlyMap<string, string>): ts.Program {
   return ts.createProgram({ rootNames: [...scripts.keys()], options, host });
 }
 
-function scriptFacts(source: ts.SourceFile, checker: ts.TypeChecker): ModuleFacts {
-  const sinks = readSinks(source, checker);
+function scriptFacts(path: string, source: ts.SourceFile, checker: ts.TypeChecker, graph: ModuleGraph): ModuleFacts {
+  const reader = valueReader(source, checker);
+  const reading = reader.read(classSinks(source));
   return {
-    classStrings: sinks.strings,
+    classStrings: reading.strings,
     literals: allLiterals(source),
-    importedValues: sinks.importedValues,
-    gluedPieces: sinks.gluedPieces,
-    ...propertyReads(source),
+    importedValues: reading.imports.map((read) => ({
+      name: read.name,
+      specifier: read.specifier,
+      definition: definitionOf(graph, path, read.specifier, read.importedName),
+    })),
+    gluedPieces: reading.glued,
+    opaqueValues: reading.opaque,
+    ...propertyReads(source, reader),
   };
 }
 
-/** Facts for every file, keyed by the absolute path given. Throws if a script did not load. */
+const NO_SCRIPT_FACTS = { classStrings: [], literals: [], importedValues: [], gluedPieces: [], opaqueValues: [] };
+
+/** Facts for every file, keyed by the absolute path given; `srcDir` is what `@/` names. */
 export function factsForFiles(
   texts: ReadonlyMap<string, string>,
+  srcDir: string,
 ): ReadonlyMap<string, ModuleFacts> {
   const scripts = new Map([...texts].filter(([path]) => SCRIPT.test(path)));
   const program = programFor(scripts);
   const checker = program.getTypeChecker();
+  const graph: ModuleGraph = {
+    srcDir,
+    sourceOf: (path) => (scripts.has(path) ? program.getSourceFile(path) : undefined),
+  };
   const entries = [...texts].map(([path, text]): readonly [string, ModuleFacts] => {
     if (!SCRIPT.test(path)) {
-      const none = { classStrings: [], literals: [], importedValues: [], gluedPieces: [] };
-      return [path, { ...none, propertyReads: variablesReadIn(text), dynamicPropertyReads: [] }];
+      return [path, { ...NO_SCRIPT_FACTS, propertyReads: variablesReadIn(text), dynamicPropertyReads: [] }];
     }
     const source = program.getSourceFile(path);
     if (source === undefined) throw new Error(`not loaded into the program: ${path}`);
-    return [path, scriptFacts(source, checker)];
+    return [path, scriptFacts(path, source, checker, graph)];
   });
   return new Map(entries);
 }
 
+/** Facts for one file on its own: its imports resolve to nothing walked. */
 export function moduleFacts(file: string, text: string): ModuleFacts {
   const path = resolve(file);
-  const facts = factsForFiles(new Map([[path, text]])).get(path);
+  const facts = factsForFiles(new Map([[path, text]]), dirname(path)).get(path);
   if (facts === undefined) throw new Error(`no facts for ${path}`);
   return facts;
 }
