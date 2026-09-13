@@ -4,6 +4,7 @@ import {
   clearSampleButton,
   loadSample,
   openView,
+  openWithFailingStorage,
   prepareEnglishPage,
   PR3_VIEWS,
   readStored,
@@ -149,6 +150,63 @@ test("the confirmation and the open mobile rail have no contrast violations", as
     .poll(() => sidebar.evaluate((node) => node.getAnimations().length))
     .toBe(0);
   expect(await contrastViolations(page), "mobile rail open").toEqual([]);
+});
+
+/**
+ * WCAG 1.4.11: from 768px to 1023px the storage notice is an icon alone, so the
+ * icon is the information and needs 3:1 against the chip it sits on. Colours
+ * are read computed and resolved to sRGB through a canvas (the theme's colours
+ * are oklch), the chip composited over the topbar in case it is translucent.
+ */
+test("the tablet storage icon is at least 16px with 3:1 against its background", async ({ page }) => {
+  await openWithFailingStorage(page, "en", "quota");
+  await page.setViewportSize({ width: 768, height: 844 });
+  const compact = page.locator("[data-app-shell-topbar] [data-wb-storage-compact]");
+  const icon = compact.locator("svg");
+  await expect(icon).toBeVisible();
+  const box = await icon.boundingBox();
+  expect(box === null ? null : [box.width >= 16, box.height >= 16], "icon size").toEqual([true, true]);
+  const ratio = await compact.evaluate((node) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (context === null) return null;
+    const rgba = (css: string): readonly [number, number, number, number] => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = "#000";
+      context.fillStyle = css;
+      context.fillRect(0, 0, 1, 1);
+      const [r = 0, g = 0, b = 0, a = 0] = context.getImageData(0, 0, 1, 1).data;
+      return [r, g, b, a / 255];
+    };
+    const over = (
+      top: readonly [number, number, number, number],
+      bottom: readonly [number, number, number, number],
+    ): readonly [number, number, number, number] => [
+      top[0] * top[3] + bottom[0] * (1 - top[3]),
+      top[1] * top[3] + bottom[1] * (1 - top[3]),
+      top[2] * top[3] + bottom[2] * (1 - top[3]),
+      1,
+    ];
+    const luminance = ([r, g, b]: readonly [number, number, number, number]): number => {
+      const [lr = 0, lg = 0, lb = 0] = [r, g, b].map((value) => {
+        const channel = value / 255;
+        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+    };
+    const svg = node.querySelector("svg");
+    const topbar = node.closest("[data-app-shell-topbar]");
+    if (svg === null || topbar === null) return null;
+    const ground = over(rgba(getComputedStyle(topbar).backgroundColor), [255, 255, 255, 1]);
+    const background = over(rgba(getComputedStyle(node).backgroundColor), ground);
+    const foreground = over(rgba(getComputedStyle(svg).color), background);
+    const [light, dark] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+    return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05);
+  });
+  expect(ratio, "icon against its background").not.toBeNull();
+  expect(ratio ?? 0, "icon against its background").toBeGreaterThanOrEqual(3);
 });
 
 const BASKET_FULL =
