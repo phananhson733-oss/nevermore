@@ -4121,7 +4121,8 @@
       "copyForAi": "Copy for AI",
       "exportFile": "Export",
       "save": "Save to artifacts",
-      "saved": "Saved"
+      "saved": "Saved",
+      "tooLarge": "Too large to save to artifacts. You can still export it or copy it."
     },
     "panes": {
       "in": "Input",

@@ -149,6 +149,12 @@ const FORBIDDEN_BY_KEY: Readonly<
       "focus",
     ],
   },
+  // Q37: nothing was stored. Softening the refusal into a partial save ("saved
+  // the first part") would describe exactly the silent truncation Q37 removed.
+  "artifactActions.tooLarge": {
+    "zh-CN": ["已存入", "已保存", "截断", "部分", "前面"],
+    en: ["saved", "truncat", "partial", "first part"],
+  },
 };
 
 /**
@@ -310,6 +316,13 @@ const REQUIRED: Readonly<
   "artifactActions.copyFailed": {
     "zh-CN": ["手动选中"],
     en: ["copy it yourself"],
+  },
+  // Q37: the only sentence telling the operator the basket did NOT take the
+  // text, and the only place the way out is named. Both clauses are pinned: the
+  // refusal alone is a dead end, the way out alone reads like a tip.
+  "artifactActions.tooLarge": {
+    "zh-CN": ["存不进产物筐", "导出或复制"],
+    en: ["Too large to save", "export it or copy it"],
   },
 };
 
@@ -546,7 +559,7 @@ const CASES: readonly string[] = [
   "shell.siteCard.unknownHint",
   // The ui primitives' own labels (Task 1b). They belong to no single view:
   // `ArtifactActionLabels` and the `tag` of `InPane`/`OutPane` are required
-  // props, so every view that mounts one reads these same nine. Spelling is the
+  // props, so every view that mounts one reads these same ten. Spelling is the
   // component's (`exportFile`, not `export`) so a view can hand the object over
   // field for field. Not reusing `shell.drawer.*` or `week.report.*` is the
   // point: those are the drawer's and the weekly report's own words and must
@@ -558,6 +571,7 @@ const CASES: readonly string[] = [
   "artifactActions.exportFile",
   "artifactActions.save",
   "artifactActions.saved",
+  "artifactActions.tooLarge",
   "panes.in",
   "panes.out",
 ];
