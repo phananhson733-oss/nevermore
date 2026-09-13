@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import en from "../../../../../packages/i18n/src/messages/en.json";
 import zh from "../../../../../packages/i18n/src/messages/zh-CN.json";
 import { ARTIFACT_ACTION_LABEL_KEYS } from "@/components/workbench/ui/ArtifactActions";
+import { phraseHits, SCOPE_LIMITERS, type Phrase } from "./views-i18n-limiters.ts";
 
 /**
  * Gate for the copy of the first five workbench views (PR-3 Task 1).
@@ -71,15 +72,9 @@ const FORBIDDEN: Readonly<Record<LocaleKey, readonly string[]>> = {
  *   footnote; keeping the words and inverting the claim is the one rewrite that
  *   matters, so the negators are banned outright for that key.
  * - Scope limiters on a destructive confirmation. `REQUIRED` pins what the two
- *   overwrite / clear bodies name by PRESENCE, and a negator or limiter sits
- *   outside every pinned substring: 「不包括载入示例之后你自己加的内容」,
- *   「但保留所有已有的运行结果」 and an added 「只会影响示例站点」 each kept every pin
- *   and turned the warning into a promise that the operator's data survives —
- *   with `Topbar.test.tsx`'s literal updated to match, all three gates stayed
- *   green. Neither body needs any `SCOPE_LIMITERS` word to say what it says,
- *   so they are banned outright. The check is a substring match: en "only"
- *   would also hit "commonly", and "except" "exception"; neither body uses
- *   such a word today, so the plain list stands.
+ *   overwrite / clear bodies name by presence; a limiter sits outside every
+ *   pin. The list, its history and its matching rules live in
+ *   `views-i18n-limiters.ts`, whose test pins both directions.
  * - Past-tense or whole-site claims a present-state test cannot back. The
  *   overview's empty title is chosen by `isOverviewEmpty`, which reads four
  *   result fields and nothing else, and the no-GSC title by
@@ -95,13 +90,8 @@ const FORBIDDEN: Readonly<Record<LocaleKey, readonly string[]>> = {
  *   indistinguishable inside it — so naming any one of them is a coin flip
  *   presented as a diagnosis.
  */
-const SCOPE_LIMITERS: Readonly<Record<LocaleKey, readonly string[]>> = {
-  "zh-CN": ["不包括", "不含", "除了", "保留", "不会清", "不会覆盖", "不影响", "只会", "仅"],
-  en: ["excluding", "except", "keeps", "not including", "won't", "only"],
-};
-
 const FORBIDDEN_BY_KEY: Readonly<
-  Record<string, Readonly<Record<LocaleKey, readonly string[]>>>
+  Record<string, Readonly<Record<LocaleKey, readonly Phrase[]>>>
 > = {
   "overview.gscFoot.sample": {
     "zh-CN": ["不是示例", "并非示例", "不来自示例", "不是来自示例"],
@@ -111,15 +101,16 @@ const FORBIDDEN_BY_KEY: Readonly<
   // document, knowledge base, competitor data or plans can already exist, and a
   // first visibility run can be streaming. The overview has nothing to show;
   // the site is not known to have no result, nor to have never run.
+  // "No results for this site" / 「这个站点暂无结果」 is the whole-site form (codex S6r2 #5).
   "overview.empty.title": {
-    "zh-CN": ["还没有结果", "没有运行", "没跑过"],
-    en: ["Nothing has run", "has run", "never run"],
+    "zh-CN": ["还没有结果", "暂无结果", "没有运行", "没跑过"],
+    en: ["Nothing has run", "has run", "never run", "no results"],
   },
   // Shown for `gscRows.length === 0`, including after "clear sample" removed
   // rows that had been imported: a statement about now, never about history.
   "overview.noGsc.title": {
-    "zh-CN": ["还没有导入", "没导入过"],
-    en: ["imported yet", "never imported"],
+    "zh-CN": ["还没有导入", "没导入过", "从未", "未曾"],
+    en: ["imported yet", "never imported", "haven't imported", "hasn't imported"],
   },
   "shell.clearSampleConfirm.body": SCOPE_LIMITERS,
   "overview.loadDemo.confirmBody": SCOPE_LIMITERS,
@@ -851,12 +842,8 @@ describe.each(LOCALE_KEYS)("workbench view messages (%s)", (locale) => {
       const listed = PARSED.find((entry) => entry.key === key);
       expect(listed, `${key} must also be listed in CASES`).toBeDefined();
       for (const values of listed?.variants ?? []) {
-        const text = formatStrict(locale, key, values).toLowerCase();
-        for (const phrase of byLocale[locale]) {
-          expect(text, `${key} must not say "${phrase}"`).not.toContain(
-            phrase.toLowerCase(),
-          );
-        }
+        const text = formatStrict(locale, key, values);
+        expect(phraseHits(text, byLocale[locale]), `${key} must not say these`).toEqual([]);
       }
     }
   });
