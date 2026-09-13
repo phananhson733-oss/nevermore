@@ -32,6 +32,31 @@ function canonicalText(text: string): string {
   return unified.slice(0, end);
 }
 
+declare const stampedBrand: unique symbol;
+
+/**
+ * Text that came out of `stampArtifact`, and therefore already carries its one
+ * provenance declaration. Compile-time only: nothing at runtime tells it apart
+ * from any other string, and nothing should try (S2 #2) — a user's own paste can
+ * contain the declaration sentence word for word, and treating that as "already
+ * stamped" would throw inside a view.
+ */
+export type StampedText = string & { readonly [stampedBrand]: true };
+
+/**
+ * A body that has not been stamped. Every plain `string` is one — a builder's
+ * return value, a template literal, a user's paste — and `StampedText` is not,
+ * so stamping stamped text twice is a compile error instead of two declarations
+ * in one artifact.
+ *
+ * Measured with `tsc`, not assumed: this optional-`never` brand intersected with
+ * `string` still accepts a plain string (weak-type detection does not fire on
+ * the `string & {…}` form), and rejects `StampedText` in a direct assignment, an
+ * object-literal property and a spread alike. `useAddArtifact.test.tsx` holds
+ * both directions under `tsc --noEmit`.
+ */
+export type UnstampedBody = string & { readonly [stampedBrand]?: never };
+
 /**
  * Stamps the §6.8 provenance onto an artifact body (R5). `line` is already
  * localised by the caller; one that folds to nothing throws rather than ship an
@@ -43,9 +68,14 @@ function canonicalText(text: string): string {
  */
 export function stampArtifact(
   type: ArtifactType,
-  body: string,
+  body: UnstampedBody,
   line: string,
-): string {
+): StampedText {
+  // The one place the brand is conferred: everything `stampText` returns is stamped.
+  return stampText(type, body, line) as StampedText;
+}
+
+function stampText(type: ArtifactType, body: string, line: string): string {
   const notice = line.replace(/[\r\n]+/g, " ").trim();
   if (notice === "") {
     throw new Error("stampArtifact: provenance line is empty");

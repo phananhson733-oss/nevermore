@@ -1,7 +1,11 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { stampArtifact } from "@/lib/workbench/mock/provenance";
+import {
+  stampArtifact,
+  type StampedText,
+  type UnstampedBody,
+} from "@/lib/workbench/mock/provenance";
 import { formatLocalStamp } from "@/lib/workbench/mock/time";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
 import type {
@@ -16,14 +20,27 @@ export interface ArtifactDraft {
   readonly type: ArtifactType;
   readonly engine: Engine;
   readonly title: string;
-  /** The builder's output, unstamped: builders produce bodies only (design §6.8). */
-  readonly body: string;
+  /**
+   * The builder's output, unstamped: builders produce bodies only (design §6.8).
+   * Any plain string fits. `prepared.content` and `prepared.artifact.content` do
+   * NOT (S2 #2): feeding a prepared artifact back in would stamp it twice, and
+   * that is a compile error rather than a runtime check.
+   */
+  readonly body: UnstampedBody;
   /** A bare file name for the download; the drawer forces the extension from `type`. */
   readonly filename?: string;
 }
 
+/** An artifact whose content carries the stamp brand, so it cannot be re-stamped either. */
+export type StampedArtifact = Artifact & { readonly content: StampedText };
+
+/**
+ * Frozen, and so is `artifact` (S2 #3). `readonly` and `as const` vanish at
+ * runtime; without the freeze, `Object.assign(prepared.artifact, { content })`
+ * would make `save()` put text in the basket that copy and export never saw.
+ */
 export interface PreparedArtifact {
-  readonly artifact: Artifact;
+  readonly artifact: StampedArtifact;
   /**
    * The canonical text (Q23). Copy, export, "save to basket" and the AI wrapper
    * all use this exact string, so the four actions cannot disagree about what the
@@ -31,7 +48,7 @@ export interface PreparedArtifact {
    * on its way into the basket (types.ts); what is returned here is the whole
    * text the operator asked for.
    */
-  readonly content: string;
+  readonly content: StampedText;
   /** Puts it in the basket. Calling it twice saves once. */
   readonly save: () => void;
 }
@@ -80,10 +97,13 @@ export function useAddArtifact():
       title: draft.title,
       content,
     } as const;
-    const artifact: Artifact =
-      draft.filename === undefined ? base : { ...base, filename: draft.filename };
+    // Both layers frozen (S2 #3): `save()` dispatches this exact snapshot, and a
+    // caller can neither rewrite its `content` nor swap the object it points at.
+    const artifact: StampedArtifact = Object.freeze(
+      draft.filename === undefined ? base : { ...base, filename: draft.filename },
+    );
     let saved = false;
-    return {
+    return Object.freeze({
       artifact,
       content,
       save: () => {
@@ -91,7 +111,7 @@ export function useAddArtifact():
         saved = true;
         dispatch({ type: "addArtifact", artifact });
       },
-    };
+    });
   }
 
   return ready ? prepare : null;

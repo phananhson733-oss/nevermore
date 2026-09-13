@@ -287,4 +287,44 @@ describe("useAddArtifact", () => {
       }
     }
   });
+
+  it("freezes what it hands out, so save cannot put text in the basket that copy and export never saw", () => {
+    const { prepare } = mount();
+    const prepared = prepare(MD_DRAFT);
+
+    expect(Object.isFrozen(prepared)).toBe(true);
+    expect(Object.isFrozen(prepared.artifact)).toBe(true);
+    // `Object.assign` writes with throw-on-failure in sloppy and strict code
+    // alike, so against a frozen object the rewrite is refused, not ignored.
+    expect(() =>
+      Object.assign(prepared.artifact, { content: "another, unstamped body" }),
+    ).toThrow(TypeError);
+    expect(() =>
+      Object.assign(prepared, { content: "another, unstamped body" }),
+    ).toThrow(TypeError);
+
+    act(() => prepared.save());
+    expect(artifacts()[0]?.content).toBe(prepared.content);
+  });
 });
+
+/**
+ * Compile-time contract (S2 #2), checked by `tsc --noEmit` and never called.
+ * Each `@ts-expect-error` line must FAIL to type-check: if the brand is removed
+ * the directive becomes unused (TS2578) and tsc goes red. The last two lines
+ * must PASS: a builder's plain string is exactly what `body` is for, and weak-type
+ * detection rejecting it would break every producer at once.
+ */
+function _stampedTextCannotBeStampedAgain(
+  prepare: Prepare,
+  prepared: PreparedArtifact,
+): void {
+  // @ts-expect-error — already-stamped text fed straight back in
+  prepare({ ...MD_DRAFT, body: prepared.content });
+  // @ts-expect-error — the artifact's own content carries the same brand
+  prepare({ ...MD_DRAFT, body: prepared.artifact.content });
+  // @ts-expect-error — nor can it be smuggled through an annotated draft first
+  const _smuggled: ArtifactDraft = { ...MD_DRAFT, body: prepared.content };
+  prepare({ ...MD_DRAFT, body: agentTaskWrapper("a builder's plain string") });
+  prepare({ ...MD_DRAFT, body: `${MD_DRAFT.title} as a template literal` });
+}

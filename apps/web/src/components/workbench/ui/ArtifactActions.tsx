@@ -12,7 +12,8 @@ import { BUTTON_MINI } from "./panel.ts";
  *
  * One text, four actions (裁决 Q23). Copy and export hand over
  * `prepared.content` verbatim, "save to the basket" dispatches
- * `prepared.artifact`, whose `content` is that same string, and "copy for an AI"
+ * `prepared.artifact` — frozen when it was prepared, so its `content` is still
+ * that same string — and "copy for an AI"
  * passes the string to `agentTaskWrapper`. What comes out of that block equals
  * `prepared.content` because `stampArtifact` emits the canonical shape (LF, no
  * trailing newline) on which `fenceBlock`'s two rewrites do nothing — not
