@@ -10,16 +10,23 @@
  *
  * 1. `PAIRS` is written out here, in the test, with the size it is rendered at
  *    and the threshold that size implies. Each row is measured against the
- *    Tailwind theme as installed (values are `oklch()`; workbench tokens are hex).
- * 2. The class strings of every non-test .ts / .tsx module under ui/ are parsed
- *    (walked, not listed), and the pairs found there must be exactly the rows in
- *    `PAIRS` — no missing row (a new tone or a new file cannot slip in
- *    unmeasured) and no stale row (a row cannot be added to silence the gate
- *    without the source actually using it). The walk replaced a hand-kept list
- *    of thirteen files: a new ui file writing slate-400 body copy passed 33/33,
- *    and four primitives already outside the list (DemoChip, Dialog, PageHead,
- *    LegacyLinks) rendered one pair nobody had measured (amber-700 on amber-50)
- *    and one fill the parser cannot read (the Dialog scrim, see `EXEMPT`).
+ *    theme the build compiles: a `--color-*` declared in the `@theme` blocks of
+ *    app/workbench.css wins over Tailwind's theme as installed, as it does in
+ *    the compiled utility (Tailwind values are `oklch()`; workbench tokens are
+ *    hex).
+ * 2. The string literals of every non-test .ts / .tsx module under ui/ are
+ *    parsed (walked, not listed): double- or single-quoted, and template
+ *    literals, which may span lines. A template with a `${…}` interpolation and
+ *    a `text-` / `bg-` class anywhere in it cannot be read statically, so it is
+ *    reported and fails the gate rather than being skipped. The pairs found must
+ *    be exactly the rows in `PAIRS`: no missing row (a text colour and a fill
+ *    written in one literal cannot go unmeasured) and no stale row (a row cannot
+ *    be added to silence the gate without the source actually using it). The
+ *    walk replaced a hand-kept list of thirteen files: a new ui file writing
+ *    slate-400 body copy passed 33/33, and four primitives already outside the
+ *    list (DemoChip, Dialog, PageHead, LegacyLinks) rendered one pair nobody had
+ *    measured (amber-700 on amber-50) and one fill the parser cannot read (the
+ *    Dialog scrim, see `EXEMPT`).
  *
  * Thresholds are WCAG 1.4.3: 4.5:1 for body text, 3:1 only for large text
  * (>= 24px, or >= 18.66px bold). A `text-*` class with no `bg-*` in the same
@@ -34,17 +41,39 @@
  * ui/, most of them that artefact. The rail tiers are measured in
  * app/workbench-tokens.test.ts; nothing outside ui/ is checked here.
  *
- * Known blind spot, the same artefact inside ui/: a text colour and the fill it
- * really sits on, written on different elements (a `bg-amber-50` wrapper around
- * a `text-amber-700` child), is measured against white and wb-paper instead of
- * that fill, so a 3.075:1 combination written that way passes every case here.
- * Zero places in ui/ do that today. Counted 2026-09-14 over the non-test ui/
- * modules: 17 class strings carry a fill other than white / wb-paper (variant
- * fills included). 13 name their text colour in the same string, and every use
- * site inside ui/ gives that element plain text only (Chip children and
- * TABLE_ROW cells come from views, outside this walk); the other 4 render no
- * text (SWITCH_TRACK, the two RunningSteps dots, the Dialog scrim). There is no
- * parser for this on purpose: re-count when a filled element gains nested text.
+ * What this file is not: a measurement of what renders. It reads literals. The
+ * real contrast gate is T17's e2e, which runs axe `color-contrast` over rendered
+ * pages and so sees theme overrides, composition and opacity. Known blind spots
+ * here, left open on purpose rather than chased with a parser:
+ *
+ * - Text colour and fill on different elements. A `bg-amber-50` wrapper around
+ *   a `text-amber-700` child is measured against white and wb-paper instead of
+ *   that fill, so a 3.075:1 combination written that way passes every case
+ *   here. Zero places in ui/ do that today. Counted 2026-09-14 over the non-test
+ *   ui/ modules: 17 class strings carry a fill other than white / wb-paper
+ *   (variant fills included). 13 name their text colour in the same string, and
+ *   every use site inside ui/ gives that element plain text only (Chip children
+ *   and TABLE_ROW cells come from views, outside this walk); the other 4 render
+ *   no text (SWITCH_TRACK, the two RunningSteps dots, the Dialog scrim).
+ *   Re-count when a filled element gains nested text.
+ * - Text colour and fill on the same element, in different literals. Joined
+ *   through `cn(...)`, a constant (`cn(FG, BG)`) or a conditional, each literal
+ *   is measured on its own: the text on white and wb-paper, the fill with no
+ *   text, never the two together.
+ * - Font size. A pair carries no size from the source: the large-text threshold
+ *   is granted by the `px` written in `PAIRS`, so small text reusing a colour
+ *   that has a 36px row (`text-xs text-amber-600`) is measured as that row and
+ *   passes.
+ * - A standalone `opacity-*` on the element is not composited into either
+ *   colour (an opacity modifier on the token itself, `bg-slate-50/50`, is
+ *   reported).
+ * - A token behind a bracketed arbitrary variant (`[&]:text-slate-400`) does not
+ *   parse as a `text-` / `bg-` class and is skipped, not reported.
+ * - `EXEMPT` is checked by occurrence count and by the absence of a text colour
+ *   in the same literal, not by what the element renders: the scrim gaining
+ *   text children with no text colour class would not show here.
+ * - Theme: only single `--color-<name>` declarations are read from `@theme`; a
+ *   namespace reset such as `--color-*: initial` is not modelled.
  *
  * Mechanism (theme reading, oklch → linear sRGB, WCAG luminance) is copied from
  * app/workbench-tokens.test.ts rather than imported: that file is a test suite.
@@ -95,8 +124,8 @@ const PAIRS: readonly (readonly [string, string, number, number])[] = [
   ["emerald-700", "wb-paper", 14, AA_TEXT],
   ["rose-700", "white", 14, AA_TEXT],
   ["rose-700", "wb-paper", 14, AA_TEXT],
-  // StatCard.tsx accents: 36px semibold, so the large-text threshold applies and
-  // none of these may be reused for body copy.
+  // StatCard.tsx accents: 36px semibold, so the large-text threshold applies.
+  // Small text reusing one of these colours is not detected here (see the header).
   ["fuchsia-500", "white", 36, AA_LARGE],
   ["fuchsia-500", "wb-paper", 36, AA_LARGE],
   ["emerald-600", "white", 36, AA_LARGE],
@@ -122,6 +151,9 @@ const MIN_SOURCES = 20;
  * measure, left out on purpose, by file. Deliberate exemptions: 1.
  * - Dialog.tsx `bg-slate-900/50`: the scrim, an empty aria-hidden button behind
  *   the panel. No text is drawn on it; the panel over it is `bg-white`.
+ * Each listed token must occur exactly once in its file, in a literal with no
+ * text colour: a second element reusing the fill, or the scrim's own literal
+ * gaining a text colour, is not covered by the exemption and fails.
  */
 const EXEMPT: Readonly<Record<string, readonly string[]>> = {
   "Dialog.tsx": ["bg-slate-900/50"],
@@ -178,32 +210,44 @@ function declarations(block: string): Map<string, string> {
   return values;
 }
 
-/** The body of a top-level at-rule block, found by brace depth. */
-function atRuleBody(source: string, opener: RegExp): string {
-  const start = source.search(opener);
-  if (start === -1) throw new Error(`Missing CSS block: ${opener}`);
-  const open = source.indexOf("{", start);
+/** The index of the `}` that closes the `{` at `open`, found by brace depth. */
+function closingBrace(source: string, open: number): number {
   let depth = 0;
   for (let i = open; i < source.length; i += 1) {
     if (source[i] === "{") depth += 1;
     if (source[i] === "}") {
       depth -= 1;
-      if (depth === 0) return source.slice(open + 1, i);
+      if (depth === 0) return i;
     }
   }
-  throw new Error(`Unterminated CSS block: ${opener}`);
+  throw new Error(`Unterminated CSS block at offset ${open}`);
+}
+
+/** The bodies of every top-level block `opener` starts, in source order. */
+function atRuleBodies(source: string, opener: RegExp): readonly string[] {
+  const start = source.search(opener);
+  if (start === -1) return [];
+  const open = source.indexOf("{", start);
+  const close = closingBrace(source, open);
+  return [source.slice(open + 1, close), ...atRuleBodies(source.slice(close + 1), opener)];
 }
 
 const tailwindTheme = declarations(
   readFileSync(createRequire(import.meta.url).resolve("tailwindcss/theme.css"), "utf8"),
 );
-const workbenchTheme = declarations(
-  atRuleBody(readFileSync(new URL("../../../app/workbench.css", import.meta.url), "utf8"), /@theme(?:\s+inline)?\s*\{/u),
+const workbenchThemeBodies = atRuleBodies(
+  readFileSync(new URL("../../../app/workbench.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//gu, ""),
+  /@theme(?:\s+inline)?\s*\{/u,
 );
+if (workbenchThemeBodies.length === 0) throw new Error("Missing @theme block in app/workbench.css");
+/** Joined in source order, so a later block's declaration wins, as in the compiled CSS. */
+const workbenchTheme = declarations(workbenchThemeBodies.join("\n"));
 
 function luminance(token: string): number {
-  const value = tailwindTheme.get(`--color-${token}`) ?? workbenchTheme.get(`--color-${token}`);
-  if (value === undefined) throw new Error(`No --color-${token} in the Tailwind or workbench theme`);
+  // workbench.css declares its theme after importing Tailwind's, so for a name
+  // both declare, the workbench value is the one the compiled utility carries.
+  const value = workbenchTheme.get(`--color-${token}`) ?? tailwindTheme.get(`--color-${token}`);
+  if (value === undefined) throw new Error(`No --color-${token} in the workbench or Tailwind theme`);
   return value.startsWith("#") ? hexLuminance(value) : oklchLuminance(value);
 }
 
@@ -214,12 +258,18 @@ function ratio(foreground: string, background: string): number {
 
 type Use = { readonly kind: "text" | "bg"; readonly colour: string; readonly base: boolean };
 
-/** Class-string tokens that start `text-`/`bg-` but resolve to no known colour. */
+/**
+ * Class-string tokens that start `text-`/`bg-` but resolve to no known colour,
+ * and templates this file cannot read.
+ */
 const unclassified: string[] = [];
-/** `file: token` for each exempted token actually met, so a stale exemption shows. */
-const exemptSeen: string[] = [];
+/**
+ * Every occurrence of an exempted token, one entry per occurrence (not a set),
+ * with the literal it sits in, so a stale, repeated or text-carrying exemption shows.
+ */
+const exemptHits: { readonly where: string; readonly literal: string }[] = [];
 
-function parseToken(file: string, token: string): Use | null {
+function parseToken(file: string, literal: string, token: string): Use | null {
   const found = /^((?:[a-z0-9-]+:)*)(text|bg)-(.+)$/u.exec(token);
   if (found === null) return null;
   const kind = found[2] === "bg" ? "bg" : "text";
@@ -229,24 +279,52 @@ function parseToken(file: string, token: string): Use | null {
   // An opacity modifier (`bg-slate-50/50`) cannot be measured against a token,
   // so it is reported rather than skipped.
   if (!COLOUR.test(rest)) {
-    if (EXEMPT[file]?.includes(token) === true) exemptSeen.push(`${file}: ${token}`);
+    if (EXEMPT[file]?.includes(token) === true) exemptHits.push({ where: `${file}: ${token}`, literal });
     else unclassified.push(`${file}: ${token}`);
     return null;
   }
   return { kind, colour: rest, base: (found[1] ?? "") === "" };
 }
 
-/** Class strings, quoted or templated; comments are stripped so prose cannot leak in. */
-function classStrings(source: string): readonly string[] {
+/** A `text-` / `bg-` class start anywhere in a literal: at the start, or after a quote, space or variant colon. */
+const COLOUR_CLASS_START = /(?:^|[^a-z0-9-])(?:text|bg)-/u;
+
+/**
+ * String literals: double- or single-quoted on one line, or template literals,
+ * which may span lines. Comments are stripped first so prose cannot leak in. A
+ * template with a `${…}` interpolation is not parsed: when a `text-` / `bg-`
+ * class appears anywhere in it (static text, or a string inside the
+ * interpolation) it is reported as unreadable, because the part this file cannot
+ * evaluate may carry the colour. An interpolated template with no such class
+ * (an id such as `${idPrefix}-tab-${id}`) is skipped. A template nested inside
+ * an interpolation is not delimited correctly; none exists under ui/.
+ */
+function classStrings(file: string, source: string): readonly string[] {
   const code = source.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
-  return [...code.matchAll(/["`]([^"`\n]*)["`]/gu)].flatMap((match) => match[1] ?? []);
+  return [...code.matchAll(/"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/gu)].flatMap((match) => {
+    const template = match[3];
+    if (template === undefined) return [match[1] ?? match[2] ?? ""];
+    if (!/\$\{/u.test(template)) return [template];
+    if (COLOUR_CLASS_START.test(template)) {
+      unclassified.push(`${file}: interpolated template cannot be read statically: \`${template.trim()}\``);
+    }
+    return [];
+  });
+}
+
+/** The text-colour tokens of a literal: each `text-*` class (any variant) that is not a size, alignment or wrap utility. */
+function textColours(literal: string): readonly string[] {
+  return literal.split(/\s+/u).filter((token) => {
+    const found = /^(?:.*:)?!?text-(.+)$/u.exec(token);
+    return found !== null && !TEXT_NOT_COLOUR.test(found[1] ?? "");
+  });
 }
 
 function pairsIn(file: string, literal: string): readonly string[] {
   const uses = literal
     .split(/\s+/u)
     .filter(Boolean)
-    .flatMap((token) => parseToken(file, token) ?? []);
+    .flatMap((token) => parseToken(file, literal, token) ?? []);
   const foregrounds = uses.filter((use) => use.kind === "text").map((use) => use.colour);
   const fills = uses.filter((use) => use.kind === "bg");
   const base = fills.filter((use) => use.base).map((use) => use.colour);
@@ -257,7 +335,7 @@ function pairsIn(file: string, literal: string): readonly string[] {
 
 const rendered = new Set(
   SOURCES.flatMap((file) =>
-    classStrings(readFileSync(join(UI_DIR, file), "utf8")).flatMap((literal) => pairsIn(file, literal)),
+    classStrings(file, readFileSync(join(UI_DIR, file), "utf8")).flatMap((literal) => pairsIn(file, literal)),
   ),
 );
 const measured = new Set(PAIRS.map(([foreground, background]) => `${foreground} on ${background}`));
@@ -270,7 +348,8 @@ describe("ui colour pairs clear WCAG 1.4.3", () => {
     ).toBeGreaterThanOrEqual(threshold);
   });
 
-  it("only grants the large-text threshold to large text", () => {
+  it("grants the large-text threshold only to rows written at a large size", () => {
+    // The px in the table, not in the source: see the header's blind spots.
     for (const [foreground, background, px, threshold] of PAIRS) {
       const where = `${foreground} on ${background} at ${px}px`;
       if (threshold === AA_LARGE) expect(px, where).toBeGreaterThanOrEqual(LARGE_PX);
@@ -300,16 +379,22 @@ describe("the table covers exactly what the primitives render", () => {
   it("understands every text-/bg- class in the sources", () => {
     // Fail closed: an opacity-modified or unknown colour must be added to the
     // table (or to the not-a-colour lists, or to EXEMPT with its reason) rather
-    // than silently skipped.
+    // than silently skipped, and an interpolated template carrying a colour
+    // class must be rewritten as literals this file can read.
     expect([...new Set(unclassified)]).toEqual([]);
   });
 
-  it("exempts exactly the listed tokens, and each one is still in the sources", () => {
+  it("exempts exactly the listed tokens, each once, in a literal with no text colour", () => {
     const listed = Object.entries(EXEMPT).flatMap(([file, tokens]) =>
       tokens.map((token) => `${file}: ${token}`),
     );
     expect(listed).toHaveLength(EXEMPT_COUNT);
-    expect([...new Set(exemptSeen)].sort()).toEqual([...listed].sort());
+    // Occurrences, not a set: a second element in the same file reusing the
+    // fill would otherwise ride on the first one's exemption, unmeasured.
+    expect(exemptHits.map((hit) => hit.where).sort()).toEqual([...listed].sort());
+    for (const hit of exemptHits) {
+      expect(textColours(hit.literal), `${hit.where}: text colour in the exempted literal`).toEqual([]);
+    }
   });
 
   it("measures every pair the primitives render", () => {
