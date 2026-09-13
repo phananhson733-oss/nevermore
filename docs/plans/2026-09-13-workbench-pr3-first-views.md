@@ -444,7 +444,7 @@ docs/PROGRESS.md                   T18
 
 - [ ] **Step 1: 静态四项** — `pnpm typecheck`、`pnpm lint`、`pnpm typecheck:e2e`、`pnpm lint:e2e`。
 - [ ] **Step 2: 全量单测** — `pnpm test`（= `vitest run --project unit`）；只允许 `apps/marketing/e2e/geo-kb-v2-fixtures.test.ts` 的 4 个基线失败。
-- [ ] **Step 3: 覆盖率** — **`pnpm vitest run --project unit --coverage`**（不带 `--project` 会连 integration 一起跑，无可丢弃 loopback `DATABASE_URL` 时 fail-fast；全局 80% 门属 CI 的 database job）。**先独立断言本 PR 每个生产文件都出现在覆盖率报告里**（vitest 4 只统计被加载的文件，没被任何测试加载的新视图会整个缺席、低覆盖清单发现不了），再按文件读 `lib/workbench/**` 与 `components/workbench/**` 的数字。`scripts/report-unit-coverage-gaps.mjs` 的 include 不含 `.tsx`，那份报告不能当新视图的覆盖证据。
+- [ ] **Step 3: 覆盖率** — **`pnpm vitest run --project unit --coverage`**（不带 `--project` 会连 integration 一起跑，无可丢弃 loopback `DATABASE_URL` 时 fail-fast；全局 80% 门属 CI 的 database job）。**先独立断言本 PR 每个生产文件都出现在覆盖率报告里**（vitest 4 只统计被加载的文件，没被任何测试加载的新视图会整个缺席、低覆盖清单发现不了），再按文件读 `lib/workbench/**` 与 `components/workbench/**` 的数字。`scripts/report-unit-coverage-gaps.mjs` 的 include 不含 `.tsx`，那份报告不能当新视图的覆盖证据。有基线失败时 vitest 4 默认不写覆盖率报告，要加 `--coverage.reportOnFailure=true`；`pnpm -C <wt> vitest` 不会启动 vitest，要写 `pnpm -C <wt> exec vitest`（T19 实测）。
 - [ ] **Step 4: 构建与纯度** — `pnpm --filter @sf/web build`；grep `lib/workbench/mock` 无 `Date.now` / `Math.random` / React / next-intl / `@sf/*`；grep `components/workbench` 无 `style={{` 与 `<style`；grep 无裸 hex。
 - [ ] **Step 4b: 扫描未被整体关掉（T14 Step 3 的落点）** — 对构建产物 CSS grep `text-wb-rail-dim`（src 里只出现在 `components/workbench/shell/Sidebar.tsx`；备选 `bg-wb-rail-3`、`text-wb-rail-label`），必须命中；再确认 `:root` 仍含 `app-shell.module.css` 经 `var()` 读取的 `--color-slate-400`（T14 发现单一 `@source` 会丢它，已加第二个 `@source`）。
 - [ ] **Step 5: mock e2e** — `workbench-pr3-flow`、`workbench-pr3-views`、`workbench-pr3-a11y`（后两者为 T17 新增）、`workbench-shell`、`legacy-style-parity`、`mobile-shell`、`critical-flows`、`frontend-error-states`、`growth-map-run`、`new-project-shell` 全绿。
@@ -453,7 +453,7 @@ docs/PROGRESS.md                   T18
 - [ ] **Step 7b: 不改写历史，在 PR 描述里列出「不能单独检出变绿」的提交**（2026-09-14 main 裁决，替代原「首次推送前 rebase」方案）。
   - **不改写的理由**：
     - 集成分支用 merge commit 合入（`3893da73`、`423ebfaf` 都有两个父提交），本分支的 sha 会原样留在集成分支历史里；
-    - 计划、设计稿、`docs/PROGRESS.md` 在最终 HEAD 上一共引用了约 95 个不同的 8 位 sha；
+    - 计划、设计稿、`docs/PROGRESS.md` 在 `27c7798a` 上一共引用了 117 个不同的 8 位 sha，其中 114 个属于本分支（与 `423ebfaf..HEAD` 求交集）；
     - 最早的候选 `3d4be133` 是 198 个提交中的第 76 个，从它开始 rebase 会让之后的引用全部悬空，追溯性的损失大于二分查找的收益。
   - **要列进 PR 描述的提交**：
     - `3d4be133`：标题被 zsh heredoc 吞掉，不是合格的 conventional commit 标题，照录原样；
@@ -480,6 +480,9 @@ docs/PROGRESS.md                   T18
 | 运行租约 / 跨标签运行归属（写盘边界的毫秒级窗口已接受风险） | PR-4 |
 | 真实 OAuth 连接 / 断开仍在旧页 `sources`（回调重定向硬编码 `/p/{id}/sources`） | 接真实数据的批次 |
 | 生产模式下已认证工作台页的 CSP / 字体 / 动态 chunk 运行时验证（缺生产 fixture） | 需要时另立项（Q19 Step 6 已如实记录为缺口） |
+| 生产构建下 `/login` 与 `/new-project` 仍预加载工作台字体 Plus Jakarta（T19 Step 6：Turbopack 把 `@font-face` 合进共享 CSS chunk，font manifest 30 个入口中 28 个预加载其 27 KB woff2）。候选 `preload: false`：两页不再下载，代价是工作台页冷加载先显示回退字体；Turbopack 下效果未验证 | PR-3b 合 main 前裁决；先在临时构建上验证 manifest 与 `/login` 响应头 |
+| `components/workbench/shell/WorkbenchShell.tsx` 没有任何单测加载（T19 Step 3：两个目录 130 个非测试文件中唯一缺席）。只做组装的 async 服务端组件、无分支，由每个工作台 mock e2e 渲染；生产模式装配无测试执行 | 接受；生产 fixture 立项时一并覆盖 |
+| `/login` 首屏加载 zod，`script-src` 拦下 zod v4 的 `Function("")` 探测（被 zod 自己吞掉，无上报端点）。基点已有同一引用链（`_workbench-sweep.tsx` → `persistence.ts` → `schema.ts`） | 可选 `z.config({ jitless: true })` 或把 sweep 与 schema 解耦；不阻塞 |
 | 示例 GSC 词表对任何行业都一样 | 按行业派生另议；本 PR 用来源标记如实标注 |
 | `ArtifactType` 缺 `txt`、CSV 下载 BOM、关键词 CSV 行数上限 | PR-4 / PR-5（PR-2 R17） |
 | 集成分支合 main 前要 rebase | PR-3b |
