@@ -1021,4 +1021,5 @@ export function classifyPersistedState(raw: unknown): PersistedParse {
 | 写盘前复核已存数据与 `setItem` 不是跨标签原子操作：两个标签页在同一毫秒级窗口内交错仍可能覆盖（gpt-6-astra 面 3 #1 修复后的剩余窗口） | 接受风险，记入设计稿 §6.5 |
 | `csvCell` 不给「前导换行/空格 + 公式」加前缀；`slugify` 60 字符截断会碰撞（gpt-6-astra 面 2 unresolved） | 接受风险（主流表格软件不对其求值；slug 只作建议路径） |
 | GSC 粘贴解析只认英文、中文、德文表头标签：法 / 西 / 葡 / 意 / 日文导出因 `CTR` 列能匹配而进入「部分识别」，未识别的点击 / 展示列给 `null` 且不计入 `skipped`（诚实但静默丢数据）；首条无表头记录的查询恰好等于某个标签（如 `position`）且无数字时会被当成表头（跨模型评审修复 7e5a3426 后的剩余） | PR-4 GSC 导入视图：补语种标签，部分识别时向用户提示未识别的列 |
+| 持久化 schema 不校验 `artifacts[].at` 是否符合本地 stamp 格式（Task 13 修复时的变异实测：错格式 `at` 能回环通过）；示例站点的页面标志在 EMPTY / FULL 下恒为真（样本页都是 200），假分支只在 `profile.test.ts` 里直接覆盖 | 下一次持久化形状变更时收紧（收紧校验要升 `PERSISTED_VERSION`，见 R14） |
 | 持久化 `plans`（`z.record`）读回时静默丢掉键 `__proto__`（Task 10 探针实测：`classifyPersistedState` 返回 ok，键没了，不污染原型）；只影响字面查询 `__proto__` 的答案页方案。修法需改持久化形状（如条目数组），属于要升 `PERSISTED_VERSION` 的改动 | 记入 PR 描述，随下一次持久化形状变更处理 |
