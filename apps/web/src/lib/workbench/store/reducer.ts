@@ -281,9 +281,23 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
       // The click authorises the artifacts that were on screen, by id (codex
       // S6r3 #1). One queued ahead of it and not yet rendered (another tab's
       // `loadPersisted`, or a save of ours queued behind that render) was never
-      // seen, so it stays. The same id is the same artifact: `addArtifact`
-      // refuses an id already in the basket. When none of the ids is left, the
-      // same object back: no new reducer state.
+      // seen, so it stays.
+      //
+      // An id stands in for the content it was shown with only where the id
+      // cannot come to name other content (codex S6r4 F1). That holds for an
+      // artifact the operator saved: `useAddArtifact`'s `prepare()` mints its id
+      // with `crypto.randomUUID()` in the same step that stamps the content, and
+      // freezes both into one object, so no other content ever carries that id.
+      // (`addArtifact` refusing an id already in the basket is not the reason: it
+      // keeps one id from becoming two rows, not one id from naming two texts.)
+      // It does not hold for the sample site's artifacts: `demo-artifacts.ts`
+      // gives them fixed ids (`demo-audit`, `demo-keywords`, `demo-kb`,
+      // `demo-visibility`, `demo-content`) and builds their content again on
+      // every load, so a sample cleared and loaded again in another tab, landing
+      // after the render the click was made in, can put different content under
+      // an id on screen, and this clear removes it.
+      //
+      // When none of the ids is left, the same object back: no new reducer state.
       const shown = new Set(action.ids);
       if (!state.artifacts.some((a) => shown.has(a.id))) return state;
       return { ...state, artifacts: state.artifacts.filter((a) => !shown.has(a.id)) };
