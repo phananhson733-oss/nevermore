@@ -1,4 +1,4 @@
-import { PlaceholderView } from "@/components/workbench/views/placeholder/PlaceholderView";
+import { OverviewView } from "@/components/workbench/views/overview/OverviewView";
 
 export default async function OverviewPage({
   params,
@@ -6,5 +6,5 @@ export default async function OverviewPage({
   readonly params: Promise<{ readonly projectId: string }>;
 }) {
   const { projectId } = await params;
-  return <PlaceholderView projectId={projectId} page="overview" />;
+  return <OverviewView projectId={projectId} />;
 }
