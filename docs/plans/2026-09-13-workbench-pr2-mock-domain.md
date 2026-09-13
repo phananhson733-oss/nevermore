@@ -704,7 +704,8 @@ export function kbGapCount(kb: KnowledgeBase | null): number | null
   - `demoAiDoc`：对 `{brand:"Acme", positioning:"", features:"", competitors:"", market:"US", url:"acme.io"}` 的 `JSON.stringify` 不含 `/GenGrowth|gengrowth|独立开发者|一人公司|solo founder|Ahrefs|Semrush|GSC 与 GA4|\$\d/`；每个数组字段非空；`summary` 含 `Acme`；positioning 非空时 summary 含 positioning 原文；两次调用返回不同引用（不共享常量）。
   - `seedKb`：id 为 `kb-01`… 连续；positioning 非空 → 一条 `definition`，statement 逐字为 `${brand || "[品牌]"} 是${positioning}`，`from: "manual"`、`source: ""`、`evidence: "来自站点档案字段"`；为空 → 一条 statement 为空的 `definition` 缺口（`from: "gap"`）；每个 feature 一条 `capability`（manual），statement 逐字为 `${brand || "[品牌]"} 提供 ${feature}`；固定一条 `boundary` 缺口、一条 `pricing` 缺口（`source: ""`）；**真实**竞品（`splitList`，不用占位）前 3 个各一条 `comparison` 缺口；`doc.ai.facts` 每条一个 `data`，`from: "aiDraft"`。任何条目都不是 `from: "crawl"`。
   - `fillFirstKbGap`：填第一个同类空条目（保留其 id）；没有空位时追加 `{ id: newId, cat, ...patch }`；不改入参（`Object.freeze`）。
-  - `kbGapCount(null)` = null；两条空一条非空 → 2。
+  - `kbGapCount(null)` = null；两条空一条非空 → 2；statement 含「待补」或「需补」的占位条目也算缺口（Task 9 评审裁决：示例占位明确是未完成的）；`fillFirstKbGap` 仍只填空白条目。
+  - **Task 9 评审补充（执行中裁决）**：`GscSignals.brandQueries / brandClicks / nonBrandClicks / near` 放宽为 `number | null`（品牌为空 → 三个品牌字段 null；子集点击全为 null → null；空子集 → 0；有行但没有可用 position → `near` null）。PR-1 从未上线，属上线前豁免不升 `PERSISTED_VERSION`，写进 PR 描述。`crawlSignals(profile, variant, observed?)`：给了审计时 `pages / indexed / hasPricing / hasDocs / hasBlog` 从审计派生，随机抽取次数不变。`top` 中 null 点击排在真实 0 之后。泄漏短语表 `mock/demo-ai-leak-phrases.ts` 供 Task 9 与 Task 13 共用。
 - [ ] **Step 2:** 实现（jsx:1142-1169、2084-2097；`demoAiDoc` 按 R8 重写：summary `[示例] ${brand}：${positioning || "[一句话定位待补]"}`；`icp` 三段 `{ seg: "[目标人群 N]", role: "[角色待补]", pain: "[痛点待补]", trigger: "[触发搜索的查询待补]", objection: "[常见顾虑待补]" }`；`value_props` / `diff` / `pillars` 各给 2-3 条以 brand / feature 为主语的方括号占位；`facts` 每个 feature 一条 `[示例事实：${brand} 提供 ${feature}，需补证据与核对日期]`，无 feature 时一条 `[示例事实：${brand} 的核心能力待补]`；`tone` = `[语气待定：先给结论再给理由]`）。
 - [ ] **Step 3:** 测试、typecheck、lint。
 - [ ] **Step 4: Commit** `feat(workbench): 站点档案与知识库 mock（来源如实标注、示例 AI 档案不借用 GenGrowth 事实）`
@@ -834,7 +835,8 @@ export function makeDemoSite(profile: Profile, level: DemoLevel, seeds: readonly
   - **`level === "full"`** 在共享初始化之上再算以下字段（用上面的 `audit` / `rows` / `gscRows`，不重算）：
     - `auditHistory = [runAudit(…,{at: daysAgo(now,14,10), salt:"demo-prev2"}), runAudit(…,{at: daysAgo(now,7,10), salt:"demo-prev"})]`（分数不覆写）。
     - `prompts = localPromptSet(profile, rows).map(x => x.q).slice(0, VIS_PROMPT_LIMIT)`；`visResults = mockVisibility(profile, prompts, "demo-cur")`；`visHistory = [{ at: daysAgo(now,7,11), results: mockVisibility(profile, prompts, "demo-prev") }]`；`lastVis = { at: daysAgo(now,0,11), results: visResults }`。
-    - `profileDoc = { crawl: crawlSignals(profile,"crawl"), gsc: gscSignals(profile, gscRows), third: crawlSignals(profile,"third"), ai: demoAiDoc(profile), at: daysAgo(now,3,15) }`。
+    - `profileDoc = { crawl: crawlSignals(profile,"crawl", audit), gsc: gscSignals(profile, gscRows), third: crawlSignals(profile,"third"), ai: demoAiDoc(profile), at: daysAgo(now,3,15) }`（`crawl` 传入审计，使页数、收录数与页面标志与同一份示例审计一致；Task 9 评审）。
+    - KB 填充句里的品牌一律用 `brandOrPlaceholder(profile)`（从 `profile.ts` 导入），不写 `brand || "[品牌]"`，避免只有空白的品牌名输出空格。
     - `kb`：`seedKb(profile, profileDoc)` → `fillFirstKbGap(…, "pricing", { statement: \`[示例] ${brand || "[品牌]"} 的免费档与付费档分别包含什么（待补定价页原句）\`, evidence: "示例，未核对", source: "", from: "aiDraft" }, "kb-demo-pricing")` → 同理 `boundary`（`[示例] 不适合 ${brand || "[品牌]"} 的团队或场景（待补）`，id `kb-demo-boundary`）→ 真实竞品非空时 `comparison`（`[示例] 与 ${第一个竞品} 相比，${brand} 的差别（待补对比页原句）`，id `kb-demo-comparison`）；`at: daysAgo(now,2,16)`。
     - `plans = plansFor(missedPrompts(visResults).slice(0,2), profile)`。
     - `targets = mockLinks(profile, DEFAULT_LINK_TYPES)`。
@@ -854,8 +856,9 @@ export function makeDemoSite(profile: Profile, level: DemoLevel, seeds: readonly
   - `payload.seeds` 是字符串且等于 `seeds.join("\n")`。
 - [ ] **Step 3: `demo-honesty.test.ts`（先红）**，对两个 profile 跑 `full`：`EMPTY = { url: "acme.io", brand: "Acme", positioning: "", features: "", competitors: "", market: "US" }`、`FULL = { url: "https://www.widgets.co.uk", brand: "Widgets", positioning: "inventory software for small warehouses", features: "barcode scanning, stock alerts, supplier portal", competitors: "Sortly, inFlow, Zoho Inventory, Fishbowl, Cin7, Katana, Odoo, Unleashed", market: "GB" }`：
   1. **schema 回环**：`parsePersistedState(JSON.parse(JSON.stringify({ v: 1, state: reduce(initialProjectState(seed), { type: "loadDemo", payload }) })))` 非 null。
-  2. **泄漏扫描**：`JSON.stringify(payload)` 不匹配 `/GenGrowth|gengrowth|\$29|Ahrefs|Semrush|独立开发者|一人公司|solo founder|核对日期：|2026-09-01 核对/`（fixture 不得用 GenGrowth，否则扫描假绿）。
-  3. **KB 来源**：示例 KB 没有 `from === "crawl"`；所有 `from === "manual"` 的条目，其 statement **包含** `profile.positioning` 或 `splitList(profile.features)` 中某一项的原值（EMPTY 下没有 manual 条目）；`id` 以 `kb-demo-` 开头的条目 `from === "aiDraft"`。
+  2. **泄漏扫描**：`JSON.stringify(payload)` 不匹配 `/GenGrowth|gengrowth|\$29|Ahrefs|Semrush|独立开发者|一人公司|solo founder|核对日期：|2026-09-01 核对/`（fixture 不得用 GenGrowth，否则扫描假绿），**且**不包含 `DEMO_AI_LEAK_PHRASES`（`mock/demo-ai-leak-phrases.ts`）中任何一条——Task 9 评审实测上面的正则漏掉原型 DEMO_AI 31 句中的 23 句。
+  3. **KB 来源**：示例 KB 没有 `from === "crawl"`；所有 `from === "manual"` 的条目，其 statement **包含** `profile.positioning` 或 `splitList(profile.features)` 中某一项的原值（EMPTY 下没有 manual 条目）；示例填充条目按 `evidence === "示例，未核对"` 识别（填充总是落在 `seedKb` 已有的缺口上、保留 `kb-0N` id，按 `kb-demo-` 前缀识别永远选不中——Task 9 评审实测），先断言 `fills.length >= 2`，再断言它们全部 `from === "aiDraft"`。
+  11. **档案与审计一致**：`profileDoc.crawl.pages === audit.crawl.pages`、`profileDoc.crawl.indexed === audit.crawl.indexable`，`hasPricing / hasDocs / hasBlog` 与 `audit.pageRows` 是否含对应路径一致。
   4. **措辞**：所有 artifact content 不含「实测」「已修复」「已核实」。
   5. **盖章**：csv 类首行是 `# sample-data`，其余类首行是 `provenanceLine(at)` 的返回值（测试注入 `at => \`PROVENANCE ${at}\``）。
   6. **可见度自洽**：`visResults` 与 `visHistory` 每条满足 `hit ⇔ brands 含 brand` 且 `rank <= brands.length`。
