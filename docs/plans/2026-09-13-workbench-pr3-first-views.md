@@ -408,6 +408,7 @@ docs/PROGRESS.md                   T18
 **Files:** Modify `docs/plans/2026-09-11-workbench-ui-port-design.md`、`docs/plans/2026-09-13-workbench-pr2-mock-domain.md`（只改残留表归属）、`docs/PROGRESS.md`、本计划残留表
 
 - [ ] **Step 1: 设计稿逐条修订**（codex #19：rev1 漏了 §5 与 §6.7，会让下一个工程师把修法改回去）— §4.1 原语清单补五个新原语 + `hooks/`；**§5 改掉「根 layout import workbench.css」与 `@theme` 的写法**（Q29-A / T12）；§6.1 补 `gscRowsSource`、`ProfileDoc.gscSource` 与 `conns` 死字段裁决（Q31）；§6.5 补第四、第五项发布前豁免；**§6.7 更新示例站点条目**（覆盖确认按 `hasDemoOverwrite` 的按值判据、清除与载入两个确认文案**如实点名被写/被清的全部范围**——含种子词与全部运行结果（`cc2d311d`；原裁决「四项」是当时目录里有的，不是全集，T7 自报）、`demo.ts` 动态 import）；§6.8 写明盖章把整份输出规范成 LF 无结尾换行、CSV 引号单元格内 CR 一并改写（T3 偏离 1）；**概览的提及率 / 答案页缺口 / 空态读 `lastVis`，运行中侧栏徽标读 `visResults`，两者暂时不同**（T6，PR-4 接 `visPartial` 时统一）；`next.step.importGsc` 键未被使用（T6 改用 `noGsc` 提示块，判据 `gscRows.length === 0`），删或留在此裁决；§10 补 Q19 与「入场动画不移植」；§12 补 Q5/Q6/Q17/Q18；§14 追加 PR-3 评审处置段（含计划评审 45 条）。
+- [ ] **Step 1b: 「示例数据」chip 的含义**（codex S6 #1 降级转交）— 顶栏与概览页头无条件显示「示例数据」，依据是审计 / 可见度 / 产物无论 `demo` 与否都是本地模拟结果；但 `shell.sampleTitle` 只说「示例内容目前仅有中文」，没说「示例」覆盖的是模块结果而不是用户自己导入的 GSC 行。设计稿 §3.5 与 §6.8 写明 chip 的范围，并裁决它与「来自你导入的数据」脚注同屏时的措辞（改 title 或加限定），两个语种同改。
 - [ ] **Step 2: PR-2 计划残留表** — :1011/:1012 归 PR-4（Q28）；:1020 按 Q27 关闭并写依据；:1017/:1018/:1019/:1023 标「PR-3 已处理」。
 - [ ] **Step 3: PROGRESS.md** — PR-3 段：范围、五视图、遗留六项已关闭、验证数字（T19 回填）、未上生产。
 - [ ] **Step 4: 提交** — `docs(workbench): 设计稿与进度同步 PR-3 裁决`。
