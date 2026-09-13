@@ -30,6 +30,8 @@ export interface ProfileDocInput {
 
 /** Every number under these section titles comes from generated signals in this PR. */
 const SAMPLE_SUFFIX = "（示例数据）";
+/** A GSC snapshot whose numbers exist but whose source was never recorded (only a tampered envelope today). */
+const UNKNOWN_SOURCE_SUFFIX = "（来源未知）";
 const UNFILLED_LINE = "- [未填]";
 
 export function profileJson({ profile, ai }: ProfileJsonInput): string {
@@ -85,11 +87,29 @@ function topQuery(row: GscRow): string {
  * not from the project's current rows: a document generated from the sample and
  * then left alone must keep saying so after the user imports real rows.
  */
+/**
+ * Three sources, three headings, and none of them a default (Q6). A two-way
+ * `source === "sample" ? label : ""` gives an unknown source the user's heading,
+ * so sample numbers would print with no label at all; picking the sample heading
+ * instead would call real numbers generated. Unknown is said out loud, the way a
+ * missing number is `null` and never 0.
+ */
+function gscSourceSuffix(source: GscRowsSource | null): string {
+  switch (source) {
+    case "sample":
+      return SAMPLE_SUFFIX;
+    case "user":
+      return "";
+    case null:
+      return UNKNOWN_SOURCE_SUFFIX;
+  }
+}
+
 function gscSection(gsc: GscSignals | null, source: GscRowsSource | null): string {
   if (gsc === null) return "## 搜索表现\n- 未接入 GSC";
   const top = gsc.top.map(topQuery);
   return [
-    `## 搜索表现${source === "sample" ? SAMPLE_SUFFIX : ""}`,
+    `## 搜索表现${gscSourceSuffix(source)}`,
     `- 品牌词点击 ${countText(gsc.brandClicks)}，非品牌词点击 ${countText(gsc.nonBrandClicks)}`,
     `- 临界词（11-30 名）${countText(gsc.near)} 条`,
     ...(top.length === 0 ? [] : [`- 点击最多：${top.join("；")}`]),

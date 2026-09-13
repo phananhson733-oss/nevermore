@@ -256,10 +256,28 @@ describe("profileDocMarkdown", () => {
     expect(doc).toContain("- 品牌词点击 120，非品牌词点击 45");
   });
 
-  it("says nothing about the source when the snapshot did not record one", () => {
-    const doc = profileDocMarkdown({ ...BASE, doc: { ...FIXTURE_DOC, gscSource: null } });
-    expect(headingLines(doc)).toContain("## 搜索表现");
-    expect(doc).not.toContain("## 搜索表现（示例数据）");
+  it("says the source is unknown when the snapshot has numbers but no recorded source, and never picks a side", () => {
+    // Only a tampered envelope reaches this today, and it is the string form of
+    // "unavailable is not 0": the two known sources each have a heading, and an
+    // unknown one borrowing either would state something nobody recorded.
+    const unknown = profileDocMarkdown({ ...BASE, doc: { ...FIXTURE_DOC, gscSource: null } });
+    const sample = profileDocMarkdown({ ...BASE, doc: { ...FIXTURE_DOC, gscSource: "sample" } });
+    const user = profileDocMarkdown({ ...BASE, doc: { ...FIXTURE_DOC, gscSource: "user" } });
+    expect(headingLines(unknown)).toContain("## 搜索表现（来源未知）");
+    expect(headingLines(unknown)).not.toContain("## 搜索表现");
+    expect(headingLines(unknown)).not.toContain("## 搜索表现（示例数据）");
+    expect(unknown).not.toBe(sample);
+    expect(unknown).not.toBe(user);
+    // Only the heading differs: the numbers are still shown, under the caveat.
+    expect(unknown.replace("## 搜索表现（来源未知）", "## 搜索表现")).toBe(user);
+  });
+
+  it("keeps saying GSC is not connected when the snapshot has no GSC numbers, whatever the source", () => {
+    for (const gscSource of ["sample", "user", null] as const) {
+      const doc = profileDocMarkdown({ ...BASE, doc: { ...FIXTURE_DOC, gsc: null, gscSource } });
+      expect(doc, String(gscSource)).toContain("## 搜索表现\n- 未接入 GSC");
+      expect(doc, String(gscSource)).not.toContain("来源未知");
+    }
   });
 
   it("reads the label off the snapshot, so a later import cannot relabel a written document", () => {
