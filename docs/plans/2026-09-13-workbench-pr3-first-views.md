@@ -302,6 +302,7 @@ docs/PROGRESS.md                   T18
 **Files:** Create `views/data-sources/{DataSourcesView.tsx,DataSourcesPanel.tsx,GscImportPane.tsx,GscRowsTable.tsx,real-connections.ts}` + tests；Modify `app/p/[projectId]/data-sources/page.tsx`
 
 - [ ] **Step 1: `real-connections.ts` 测试先行** — 把 `useProjectSources` 的响应映射成只读展示模型（GSC / GA4 各自 `connected | notConnected | unknown` + `state` + 最新 snapshot 的 `availability / capturedAt / rowCount / limitation`）。失败态**按 `ApiError.code` 判别**：`CONTEXT_INCOMPLETE` → 「需先确认产品档案」+ `/context`；其他失败 → 中性文案不点名成因（Q4）。无 connect/disconnect 动作。
+- [ ] **Step 1b: 导入是否按 query 去重**（codex S7a #3 转交）— `parseGsc` 每条记录一行、不去重；Queries 导出天然每词一行，但拼接或重复导出时同一 query 会有多行，本周页与概览会把它计成多个临界词（`GscRow` 没有页面 / 国家维度可区分）。在导入边界裁决：按 `normQ` 合并（点击 / 曝光求和、均位按曝光加权——见记忆「均位按曝光加权」），或拒收并提示重复；不要让下游各视图各自去重。
 - [ ] **Step 2: 真实与本地两区** — 上区「真实连接」（只读 + 指向旧页 `sources` 的链接）；下区**「GSC 导入（保存在这个浏览器）」**——rev1 把它叫「示例导入」并挂无条件 `DemoChip`，而这一区唯一的动作是导入用户自己的数据，是无条件的假标注（codex #4）。示例标注只跟着 `gscRowsSource === "sample"` 出现。删「每日 06:00 同步」与 GA4 403 红框（Q15）；GA4 区块明说当前没有模块使用 GA4 数据。
 - [ ] **Step 3: 导入面板** — 粘贴 + 上传（无假授权、无「填入示例」，Q5）；`parseGsc` → `setGscRows(rows, "user")`；结果显示「解析 N 条 / 跳过 M 条」+ **按 `recognized` 点名未识别的列**（Q7，不从行值反推）；上传上限（Q8）；「清空」要确认。
 - [ ] **Step 4: 行表** — 前 60 行 + 「显示前 60 / 共 N」；空值「—」；状态 chip 查 `workbench.enums.gscStatus`，`unknown` 用中性 chip，摘要写**「N 条排名未知」**（不是「N 条无排名」——那是把缺证据说成观测到的负结果，codex #5）。
@@ -448,5 +449,8 @@ docs/PROGRESS.md                   T18
 | **顶栏左侧在 390px 下装不下**（T13 实测）：汉堡按钮改用 `h-11 w-11` 后量出 **0x44**——`.wb-reset` 的 `svg { max-width: 100% }` 让按钮的 min-content 宽度为 0，flex 把唯一能压的那一项压到了零。`shrink-0` 修掉了症状，**溢出本身还在**，占地的是项目切换器。注意 `mobile-shell` 那条「390px 无横向溢出」正是**靠把一个控件压成零宽**才满足的——门通过了，理由是错的；现在 T13 的命中区清扫（宽高都 ≥24）会抓住同类复发 | PR-4（布局），判据与证据在此交接 |
 | **Q37 的兄弟仍是静默的**（T3 发现）：`reducer.ts` 的 `boundArtifact` 除了正文上限（已由 `save()` 事前拒存）之外，还会**截断标题**到 `ARTIFACT_TITLE_MAX`、**丢弃非法文件名**，都不留痕迹也不告知。今天 builder 产出的标题与文件名都在界内，不可达；接入用户可编辑标题/文件名时必须按 Q37 同样事前拒绝并说明 | 用户可编辑产物标题的批次（PR-5 产物中心） |
 | **存入闩锁在跨标签替换后说「已存入」**（T3 发现）：标签页就绪后，另一标签页的 `storage` 事件触发 `loadPersisted` 整体替换状态；若这把产物冲掉了，同一个 `prepared` 再点「存入」返回 `"saved"` 却不再派发。窄窗口、需两标签并发编辑，归整状态 LWW 设计残余 | PR-4（与运行租约 / 跨标签归属同批） |
+| **跨标签并发写入整份覆盖**（codex S2r3 #1）：两个标签页各存一件产物，后写者的快照经 `storage` 事件整份替换先写者，先存的那件消失而界面仍「已存入」；同理任何两标签并发编辑都会丢一边。设计稿 §6.5「最后写入者赢，不合并」的已知代价，但设计稿没有对用户披露，也没写到产物成功回执 | T18 写进 §6.5 披露；写盘边界串行化 / 回执来自持久化边界归 PR-4（与运行租约同批） |
+| **临界词区间的文字定义**（codex S7a #8）：`gscStatus` 判 `10 < position <= 30`，文案全模块写「11-30 名」，均位 10.5 会出现在「11-30 名」清单里 | T18 统一措辞（概览 / 本周 / 关键词同改），不在单个视图里改判据 |
+| **本地分钟时间串遇夏令时回拨有歧义**（codex S7a #10）：`at` 为无时区 `YYYY-MM-DD HH:mm`（schema 正则钉死），回拨那一小时的事件解析成早一小时，7 天窗口会漏计、同小时内排序会颠倒 | T18 设计稿披露为已知限制；改存储格式要升 `PERSISTED_VERSION`，归下一次持久化形状变更 |
 | **CSV 引号单元格内的 CR 会被规范成 LF**（T3 偏离 1 的副作用）：为了让「AI 载荷与原文逐字相同」由构造保证，`stampArtifact` 把整份输出规范成 LF、无结尾换行，引号内的 CR 一并改写。设计稿 §6.8 要把这写成通则，而不是只说「`toCsv` 不以换行结尾」 | T18（设计稿 §6.8） |
 | **营销站的 `copyFailed` 与本仓 Q4 口径相反**：`apps/marketing/src/i18n/content-draft-messages.test.tsx:106-109` 用整句 `toBe` 钉死「浏览器拒绝了剪贴板访问，请检查权限后重试。」/ "The browser refused clipboard access…"。同一个 catch 也会在非安全上下文、文档失焦、策略拦截、手势过期时触发，所以那句在多数成因下是假话；而它是**必需型 pin**，任何改诚实的改写都会红（记忆 required-pins-can-mandate-a-lie）。修法要连 pin 的形状一起改：钉指令半句 + 成因词黑名单 | 另一个面、另一批用户，单开一条，不塞进 PR-3（T1b 发现） |
