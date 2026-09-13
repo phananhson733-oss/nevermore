@@ -195,14 +195,22 @@ describe("saved keywords", () => {
 });
 
 describe("artifacts", () => {
-  it("prepends and caps at ARTIFACT_LIMIT", () => {
+  it("prepends, and refuses an artifact once the basket is full instead of evicting the oldest", () => {
     let s = initialProjectState(seed);
-    for (let i = 0; i < ARTIFACT_LIMIT + 2; i += 1) {
+    for (let i = 0; i < ARTIFACT_LIMIT; i += 1) {
       s = reduce(s, { type: "addArtifact", artifact: artifact(`a${i}`) });
     }
     expect(s.artifacts).toHaveLength(ARTIFACT_LIMIT);
-    expect(s.artifacts[0]?.id).toBe(`a${ARTIFACT_LIMIT + 1}`);
-    expect(s.artifacts.at(-1)?.id).toBe("a2");
+    expect(s.artifacts[0]?.id).toBe(`a${ARTIFACT_LIMIT - 1}`);
+
+    const full = s;
+    const after = reduce(full, { type: "addArtifact", artifact: artifact("late") });
+
+    // The same object back: nothing re-renders, nothing is written, and every
+    // earlier artifact is still there — the oldest included.
+    expect(after).toBe(full);
+    expect(after.artifacts.map((a) => a.id)).not.toContain("late");
+    expect(after.artifacts.at(-1)?.id).toBe("a0");
   });
 
   it("clamps an oversized artifact to the persisted bounds instead of storing it whole", () => {

@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { ARTIFACT_MIME, downloadName } from "@/lib/workbench/artifact-file";
 import { downloadText } from "@/lib/workbench/download";
 import { agentTaskWrapper } from "@/lib/workbench/mock/builders/agent-task";
-import type { ArtifactType } from "@/lib/workbench/types";
+import { useWorkbench } from "@/lib/workbench/store/hooks";
+import { ARTIFACT_LIMIT, type ArtifactType } from "@/lib/workbench/types";
 import type { PreparedArtifact, SaveResult } from "../hooks/useAddArtifact.ts";
 import { BUTTON_MINI } from "./panel.ts";
 
@@ -29,6 +30,12 @@ import { BUTTON_MINI } from "./panel.ts";
  * notice rather than a flash, because the refusal stays true for as long as
  * this artifact is on screen; the notice names the ways out, and copy and export
  * still hand over the whole text.
+ *
+ * A full basket refuses too, rather than silently evicting the oldest artifact
+ * to make room. That notice names its cause (there is exactly one) and the way
+ * out: remove a few in the basket, then save again. Fullness belongs to the
+ * basket rather than to this text, so the notice stays only while the basket is
+ * still full, and the same artifact saves once there is room.
  *
  * The flash is `useState` plus one timer, and the timer is cleared on unmount:
  * a "Copied" that fires into an unmounted pane is a setState nobody reads.
@@ -55,6 +62,8 @@ export interface ArtifactActionLabels {
   readonly saved: string;
   /** Says the text is too large for the basket, and that export and copy still work. */
   readonly tooLarge: string;
+  /** Says the basket is full and the way out: remove a few there, then save again. */
+  readonly basketFull: string;
 }
 
 /**
@@ -75,6 +84,7 @@ export const ARTIFACT_ACTION_LABEL_KEYS = {
   save: true,
   saved: true,
   tooLarge: true,
+  basketFull: true,
 } as const satisfies Record<keyof ArtifactActionLabels, true>;
 
 /** A save the basket turned down, and the text it turned down. */
@@ -109,6 +119,10 @@ export function ArtifactActions({
     refusal.content === prepared.content
       ? refusal.reason
       : null;
+  // "Full" describes the basket, not this text: once the drawer has room the
+  // notice would be false, so it is shown only while the basket still is full.
+  const basketStillFull =
+    useWorkbench().state.artifacts.length >= ARTIFACT_LIMIT;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -199,6 +213,11 @@ export function ArtifactActions({
       {refusedFor === "tooLarge" ? (
         <p role="alert" className="text-xs text-slate-700">
           {labels.tooLarge}
+        </p>
+      ) : null}
+      {refusedFor === "full" && basketStillFull ? (
+        <p role="alert" className="text-xs text-slate-700">
+          {labels.basketFull}
         </p>
       ) : null}
     </>

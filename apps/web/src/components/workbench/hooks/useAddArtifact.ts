@@ -1,5 +1,7 @@
 "use client";
 
+import { useLayoutEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import { useTranslations } from "next-intl";
 import {
   stampArtifact,
@@ -34,8 +36,11 @@ export interface ArtifactDraft {
   readonly filename?: string;
 }
 
-/** What `save()` did: stored the text (now or on an earlier call), or refused it as too large. */
-export type SaveResult = "saved" | "tooLarge";
+/**
+ * What `save()` did: stored the text (now or on an earlier call), refused it as
+ * too large to store whole, or refused it because the basket was already full.
+ */
+export type SaveResult = "saved" | "tooLarge" | "full";
 
 /**
  * An artifact whose `content` carries the stamp brand, so that field handed
@@ -65,8 +70,16 @@ export interface PreparedArtifact {
    * UTF-16 units it dispatches nothing and returns `"tooLarge"` (Q37): the
    * reducer would otherwise cut the text short on its way in, and the basket
    * would hold a different text from the one just copied or exported, under a
-   * row that said "saved". Within the limit, calling it twice saves once and
-   * both calls return `"saved"`.
+   * row that said "saved". With `ARTIFACT_LIMIT` artifacts already in the
+   * basket it returns `"full"`: nothing is stored, and nothing is evicted to make
+   * room. Otherwise calling it twice saves once and both calls return `"saved"`.
+   * A refused call is not remembered, so the same artifact saves once there is
+   * room.
+   *
+   * Call it from an event handler while the component that called
+   * `useAddArtifact` is still mounted. The answer is read back from the basket
+   * as that component last committed it, and is only right under those two
+   * conditions.
    */
   readonly save: () => SaveResult;
 }
@@ -93,8 +106,16 @@ export interface PreparedArtifact {
 export function useAddArtifact():
   | ((draft: ArtifactDraft) => PreparedArtifact)
   | null {
-  const { dispatch, ready } = useWorkbench();
+  const { dispatch, ready, state } = useWorkbench();
   const tProvenance = useTranslations("workbench.provenance");
+  // The basket as last COMMITTED, so `save()` can read its own outcome back.
+  // Not `state.artifacts` captured at render or at `prepare()`: a view keeps a
+  // prepared artifact across renders, and two saves in one tick (a double
+  // click, or two views) would each see the count from before the other's.
+  const committedArtifacts = useRef(state.artifacts);
+  useLayoutEffect(() => {
+    committedArtifacts.current = state.artifacts;
+  }, [state.artifacts]);
 
   // Not memoised on purpose: it reads no state, and a `useCallback` would need
   // `tProvenance` in its dependency list — a wrong list there is how a handler
@@ -131,10 +152,16 @@ export function useAddArtifact():
       content,
       save: (): SaveResult => {
         if (tooLarge) return "tooLarge";
-        if (!saved) {
-          saved = true;
-          dispatch({ type: "addArtifact", artifact });
+        if (saved) return "saved";
+        // The reducer is the one judge of "full", and refuses by handing back the
+        // same state. `flushSync` commits the dispatch, and this hook's layout
+        // effect with it, before returning, so the committed basket says whether
+        // this artifact went in — judged at write time, after every earlier save.
+        flushSync(() => dispatch({ type: "addArtifact", artifact }));
+        if (!committedArtifacts.current.some((entry) => entry.id === artifact.id)) {
+          return "full";
         }
+        saved = true;
         return "saved";
       },
     });

@@ -202,6 +202,12 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
     case "visCancel":
       return { ...state, visResults: state.lastVis?.results ?? [], visPartial: false };
     case "addArtifact":
+      // Full means refused, never "evict the oldest": nothing in the design, the
+      // plan or the copy lets a save silently delete an earlier artifact, and the
+      // row that dispatched it would still say "saved". The same state object
+      // comes back, so nothing re-renders and nothing is written;
+      // `useAddArtifact` reads that outcome back and the row says why.
+      if (state.artifacts.length >= ARTIFACT_LIMIT) return state;
       return {
         ...state,
         artifacts: [boundArtifact(action.artifact), ...state.artifacts].slice(0, ARTIFACT_LIMIT),

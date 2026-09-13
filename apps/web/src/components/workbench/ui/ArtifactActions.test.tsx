@@ -27,7 +27,7 @@ import {
   WorkbenchProvider,
   type WorkbenchContextValue,
 } from "@/lib/workbench/store/WorkbenchProvider";
-import { ARTIFACT_CONTENT_MAX } from "@/lib/workbench/types";
+import { ARTIFACT_CONTENT_MAX, ARTIFACT_LIMIT } from "@/lib/workbench/types";
 import {
   useAddArtifact,
   type ArtifactDraft,
@@ -84,6 +84,7 @@ const LABELS: ArtifactActionLabels = {
   save: "Save to the basket",
   saved: "Saved",
   tooLarge: "Too large to save. Export it or copy it instead.",
+  basketFull: "Could not save: the basket is full. Remove a few there, then save again.",
 };
 /** How long a flash stays up. */
 const FLASH_MS = 1300;
@@ -229,6 +230,29 @@ function payloadOf(prompt: string): string {
 /** An md body that `useAddArtifact` stamps to exactly `units` UTF-16 units. */
 function mdBodyFor(units: number): string {
   return "a".repeat(units - `${LINE}\n\n`.length);
+}
+
+/** Puts `count` plain artifacts in the basket through the real store, and returns their ids. */
+function fillBasket(count: number): readonly string[] {
+  const { store } = captured;
+  if (!store) throw new Error("the probe must have rendered");
+  act(() => {
+    for (let i = 0; i < count; i += 1) {
+      store.dispatch({
+        type: "addArtifact",
+        artifact: {
+          id: `f${i}`,
+          at: "2026-09-13 10:30",
+          module: "audit",
+          type: "md",
+          engine: "seo",
+          title: `f${i}`,
+          content: `f${i}`,
+        },
+      });
+    }
+  });
+  return basket().map((artifact) => artifact.id);
 }
 
 function alertText(): string | null {
@@ -494,5 +518,59 @@ describe("ArtifactActions", () => {
 
     redraft({ ...over, body: `${mdBodyFor(ARTIFACT_CONTENT_MAX)}b` });
     expect(alertText()).toBeNull();
+  });
+
+  it("refuses to save into a full basket, says why and what to do, and keeps every artifact already there", async () => {
+    const { prepared } = mount();
+    const before = fillBasket(ARTIFACT_LIMIT);
+
+    click(LABELS.save);
+
+    expect(basket().map((artifact) => artifact.id)).toEqual(before);
+    expect(alertText()).toBe(LABELS.basketFull);
+    expect(document.querySelector('[role="status"]')?.textContent).not.toBe(
+      LABELS.saved,
+    );
+
+    click(LABELS.copy);
+    await settle();
+    click(LABELS.exportFile);
+    expect(writeText.mock.calls[0]?.[0]).toBe(prepared.content);
+    expect(mocks.downloadText.mock.calls[0]?.[1]).toBe(prepared.content);
+  });
+
+  it("drops the full-basket notice once there is room, and the same artifact then saves", () => {
+    const { prepared } = mount();
+    fillBasket(ARTIFACT_LIMIT);
+    click(LABELS.save);
+    expect(alertText()).toBe(LABELS.basketFull);
+
+    act(() => captured.store?.dispatch({ type: "removeArtifact", id: "f0" }));
+    expect(alertText()).toBeNull();
+
+    click(LABELS.save);
+    expect(basket()[0]?.id).toBe(prepared.artifact.id);
+    expect(basket()).toHaveLength(ARTIFACT_LIMIT);
+    expect(document.querySelector('[role="status"]')?.textContent).toBe(
+      LABELS.saved,
+    );
+    expect(alertText()).toBeNull();
+  });
+
+  it("keeps the full-basket notice when the parent re-renders with a new object for the same text", () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en} timeZone="UTC">
+        <WorkbenchProvider projectId={PROJECT_ID} seed={SEED}>
+          <Reprepared initial={MD_DRAFT} />
+        </WorkbenchProvider>
+      </NextIntlClientProvider>,
+    );
+    fillBasket(ARTIFACT_LIMIT);
+    click(LABELS.save);
+    expect(alertText()).toBe(LABELS.basketFull);
+
+    redraft({ ...MD_DRAFT });
+
+    expect(alertText()).toBe(LABELS.basketFull);
   });
 });

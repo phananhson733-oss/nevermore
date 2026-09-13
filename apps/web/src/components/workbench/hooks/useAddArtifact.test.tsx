@@ -33,7 +33,7 @@ import {
   WorkbenchProvider,
   type WorkbenchContextValue,
 } from "@/lib/workbench/store/WorkbenchProvider";
-import { ARTIFACT_CONTENT_MAX } from "@/lib/workbench/types";
+import { ARTIFACT_CONTENT_MAX, ARTIFACT_LIMIT } from "@/lib/workbench/types";
 import {
   useAddArtifact,
   type ArtifactDraft,
@@ -160,6 +160,24 @@ function artifacts(): WorkbenchContextValue["state"]["artifacts"] {
 /** An md body that stamps to exactly `units` UTF-16 units: the stamp is `${LINE}\n\n` + body. */
 function mdBodyFor(units: number): string {
   return "a".repeat(units - `${LINE}\n\n`.length);
+}
+
+/** Puts `count` plain artifacts in the basket through the real store, `f0` first (so oldest). */
+function fillBasket(count: number): void {
+  const { store } = captured;
+  if (!store) throw new Error("the probe must have rendered");
+  act(() => {
+    for (let i = 0; i < count; i += 1) {
+      store.dispatch({
+        type: "addArtifact",
+        artifact: { id: `f${i}`, at: STAMP, module: "audit", type: "md", engine: "seo", title: `f${i}`, content: `f${i}` },
+      });
+    }
+  });
+}
+
+function basketIds(): readonly string[] {
+  return artifacts().map((artifact) => artifact.id);
 }
 
 /** Calls `save()` inside `act`, so a dispatch it makes is committed before the basket is read. */
@@ -349,6 +367,50 @@ describe("useAddArtifact", () => {
     expect(saveInAct(prepared)).toBe("tooLarge");
     expect(saveInAct(prepared)).toBe("tooLarge");
     expect(artifacts()).toHaveLength(0);
+  });
+
+  it("refuses to save into a full basket: nothing stored, nothing evicted, and it says so", () => {
+    const { prepare } = mount();
+    fillBasket(ARTIFACT_LIMIT);
+    const before = basketIds();
+    expect(before).toHaveLength(ARTIFACT_LIMIT);
+
+    const prepared = prepare(MD_DRAFT);
+
+    expect(saveInAct(prepared)).toBe("full");
+    expect(basketIds()).toEqual(before);
+  });
+
+  it("judges fullness when it writes, so two saves back to back cannot both land past the limit", () => {
+    const { prepare } = mount();
+    fillBasket(ARTIFACT_LIMIT - 1);
+    // Both prepared, and both saved, before anything re-renders: each one's
+    // render saw a single free slot.
+    const first = prepare(MD_DRAFT);
+    const second = prepare({ ...MD_DRAFT, title: "second" });
+    let results: readonly SaveResult[] = [];
+    act(() => {
+      results = [first.save(), second.save()];
+    });
+
+    expect(results).toEqual(["saved", "full"]);
+    expect(artifacts()).toHaveLength(ARTIFACT_LIMIT);
+    expect(artifacts()[0]?.id).toBe(first.artifact.id);
+    expect(basketIds()).not.toContain(second.artifact.id);
+    expect(basketIds()).toContain("f0");
+  });
+
+  it("does not remember a refusal: once there is room, the same artifact saves", () => {
+    const { prepare, store } = mount();
+    fillBasket(ARTIFACT_LIMIT);
+    const prepared = prepare(MD_DRAFT);
+    expect(saveInAct(prepared)).toBe("full");
+
+    act(() => store.dispatch({ type: "removeArtifact", id: "f0" }));
+
+    expect(saveInAct(prepared)).toBe("saved");
+    expect(artifacts()).toHaveLength(ARTIFACT_LIMIT);
+    expect(artifacts()[0]?.id).toBe(prepared.artifact.id);
   });
 });
 
