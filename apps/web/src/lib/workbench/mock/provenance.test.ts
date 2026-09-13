@@ -42,7 +42,9 @@ describe("stampArtifact", () => {
     expect(parsed["_sampleData"]).toBe(LINE);
     expect(parsed["nested"]).toEqual({ x: 1 });
     expect(out.split("\n")[0]).toBe("{");
-    expect(out.split("\n")[1]).toBe(`  "_sampleData": ${JSON.stringify(LINE)},`);
+    expect(out.split("\n")[1]).toBe(
+      `  "_sampleData": ${JSON.stringify(LINE)},`,
+    );
     expect(out).toBe(
       JSON.stringify(
         { _sampleData: LINE, brand: "Acme", nested: { x: 1 } },
@@ -74,6 +76,25 @@ describe("stampArtifact", () => {
     const parsed = parseObject(out);
     expect(Object.hasOwn(parsed, "__proto__")).toBe(true);
     expect(parsed["a"]).toBe(1);
+  });
+
+  it("json: escapes < so the text cannot close a <script> it is pasted into", () => {
+    const brand = "</script><script>alert(1)</script>";
+    const line = `${LINE} <b>`;
+    const out = stampArtifact("json", JSON.stringify({ brand }), line);
+    expect(out).not.toContain("</script>");
+    expect(out).not.toContain("<");
+    expect(out).toContain("\\u003c/script>");
+    expect(JSON.parse(out)).toEqual({ _sampleData: line, brand });
+  });
+
+  it("json: escapes the line and paragraph separators and still parses to the same value", () => {
+    const text = "a\u2028b\u2029c";
+    const out = stampArtifact("json", JSON.stringify({ text }), LINE);
+    expect(out).not.toContain("\u2028");
+    expect(out).not.toContain("\u2029");
+    expect(out).toContain("a\\u2028b\\u2029c");
+    expect(JSON.parse(out)).toEqual({ _sampleData: LINE, text });
   });
 
   for (const body of ["[1,2]", "null", "42", '"text"', "true"]) {

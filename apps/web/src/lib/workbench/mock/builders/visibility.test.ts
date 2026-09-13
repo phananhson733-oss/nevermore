@@ -4,11 +4,7 @@ import { dataSection, fenceJson } from "../fence.ts";
 import { DATA_BLOCK_NOTICE } from "../labels-zh.ts";
 import type { VisGap } from "../visibility.ts";
 import { FIXTURE_PROFILE } from "./builder-fixtures.ts";
-import {
-  FIXTURE_GAPS,
-  FIXTURE_VIS_RESULTS,
-  withGap,
-} from "./builder-fixtures-kb.ts";
+import { FIXTURE_GAPS, FIXTURE_VIS_RESULTS } from "./builder-fixtures-kb.ts";
 import {
   type FieldCase,
   HOSTILE_VALUES,
@@ -59,7 +55,9 @@ describe("visibilityCsv", () => {
     if (first === undefined) throw new Error("fixture has no result");
     const line = visibilityCsv({
       checkedAt: CHECKED_AT,
-      results: [{ ...first, p: "=cmd|' /C calc'!A0", brands: ["Rival, Inc.", "Acme"] }],
+      results: [
+        { ...first, p: "=cmd|' /C calc'!A0", brands: ["Rival, Inc.", "Acme"] },
+      ],
     }).split("\n")[1];
     expect(line).toBe(
       `'=cmd|' /C calc'!A0,ChatGPT,yes,2,"Rival, Inc. | Acme",g2.com | reddit.com | medium.com,sample,2026-09-12`,
@@ -170,11 +168,19 @@ describe("answerPlanPrompt", () => {
     const { blocks, outside } = splitFences(prompt);
     expect(blocks.map((block) => block.info)).toEqual(["json", "json"]);
     expect(
-      blocks.every((block) => block.before.trimEnd().endsWith(DATA_BLOCK_NOTICE)),
+      blocks.every((block) =>
+        block.before.trimEnd().endsWith(DATA_BLOCK_NOTICE),
+      ),
     ).toBe(true);
     expect(JSON.parse(blocks[0]?.body ?? "")).toEqual(PRODUCT);
     expect(JSON.parse(blocks[1]?.body ?? "")).toEqual(GAP_DATA);
-    for (const value of ["Acme", "acme.io", "best seo tools", "Rival", "Gemini"]) {
+    for (const value of [
+      "Acme",
+      "acme.io",
+      "best seo tools",
+      "Rival",
+      "Gemini",
+    ]) {
       expect(outside).not.toContain(value);
     }
   });
@@ -216,10 +222,13 @@ describe("answerPlanPrompt", () => {
   });
 
   describe.each(PROFILE_CASES)("hostile $field without gaps", ({ apply }) => {
-    it.each(HOSTILE_VALUES)("$name stays inside the product block", (hostile) => {
-      const out = answerPlanPrompt(apply(PLAN_EMPTY, hostile.value));
-      expect(promptViolations(out, hostile)).toEqual([]);
-    });
+    it.each(HOSTILE_VALUES)(
+      "$name stays inside the product block",
+      (hostile) => {
+        const out = answerPlanPrompt(apply(PLAN_EMPTY, hostile.value));
+        expect(promptViolations(out, hostile)).toEqual([]);
+      },
+    );
   });
 
   it.each(HOSTILE_VALUES)("every field hostile at once: $name", (hostile) => {
@@ -229,9 +238,22 @@ describe("answerPlanPrompt", () => {
     expect(promptViolations(out, hostile)).toEqual([]);
   });
 
-  it("does not change the gaps it is given", () => {
-    const gaps = Object.freeze(withGap(FIXTURE_GAPS, 0, {}).map((gap) => Object.freeze({ ...gap })));
-    answerPlanPrompt({ profile: FIXTURE_PROFILE, gaps });
-    expect(gaps).toEqual(FIXTURE_GAPS);
+  it("does not change the gaps it is given, down to the inner arrays", () => {
+    function deepFreeze<T>(value: T): T {
+      if (typeof value === "object" && value !== null) {
+        Object.values(value).forEach((child: unknown) => {
+          deepFreeze(child);
+        });
+        Object.freeze(value);
+      }
+      return value;
+    }
+    const before = structuredClone(FIXTURE_GAPS);
+    const gaps = deepFreeze(structuredClone(FIXTURE_GAPS));
+    expect(Object.isFrozen(gaps[0]?.rivals)).toBe(true);
+    expect(() =>
+      answerPlanPrompt({ profile: FIXTURE_PROFILE, gaps }),
+    ).not.toThrow();
+    expect(gaps).toEqual(before);
   });
 });

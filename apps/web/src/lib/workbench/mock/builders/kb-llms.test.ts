@@ -110,9 +110,9 @@ describe("llmsTxt", () => {
       ...BASE,
       profile: { ...FIXTURE_PROFILE, positioning: "给小团队\n用的工具" },
     });
-    expect(text.startsWith("# acme.io\n\n> 给小团队 用的工具\n\n## About\n")).toBe(
-      true,
-    );
+    expect(
+      text.startsWith("# acme.io\n\n> 给小团队 用的工具\n\n## About\n"),
+    ).toBe(true);
   });
 
   it("writes placeholders for sections without written statements", () => {
@@ -144,11 +144,52 @@ describe("llmsTxt", () => {
   });
 
   it("uses placeholders instead of an empty host when the URL is blank", () => {
-    const text = llmsTxt({ ...BASE, profile: { ...FIXTURE_PROFILE, url: " " } });
+    const text = llmsTxt({
+      ...BASE,
+      profile: { ...FIXTURE_PROFILE, url: " " },
+    });
     expect(text.startsWith("# [站点域名]\n")).toBe(true);
     expect(keyPages(text)).toBe(`- [补站点首页 URL]\n${KEY_PAGES_PLACEHOLDER}`);
     expect(text.endsWith("## Contact\n- [补站点 URL]")).toBe(true);
     expect(text).not.toContain("https:///");
+  });
+
+  it("puts each written category under its own section and leaves data out", () => {
+    const written = (
+      id: string,
+      cat: KbEntry["cat"],
+      statement: string,
+    ): KbEntry => ({
+      id,
+      cat,
+      statement,
+      evidence: "",
+      source: "",
+      from: "manual",
+    });
+    // Listed against section order, so a right answer cannot come from entry order.
+    const text = llmsTxt({
+      profile: FIXTURE_PROFILE,
+      entries: [
+        written("kb-01", "data", "数据条目：示例数字 42"),
+        written("kb-02", "comparison", "对比条目：与 Rival 的差别"),
+        written("kb-03", "pricing", "定价条目：按席位收费"),
+        written("kb-04", "boundary", "边界条目：不适合大型企业"),
+        written("kb-05", "capability", "能力条目：站点审计"),
+        written("kb-06", "definition", "定义条目：Acme 是检查工具"),
+      ],
+    });
+    const sections = [
+      ["About", "定义条目：Acme 是检查工具"],
+      ["Capabilities", "能力条目：站点审计"],
+      ["Not a fit for", "边界条目：不适合大型企业"],
+      ["Pricing", "定价条目：按席位收费"],
+      ["Compared to alternatives", "对比条目：与 Rival 的差别"],
+    ] as const;
+    for (const [title, statement] of sections) {
+      expect(text).toContain(`\n## ${title}\n- ${statement}\n\n`);
+    }
+    expect(text).not.toContain("数据条目");
   });
 
   it("never says 实测", () => {
@@ -166,7 +207,9 @@ describe("llmsTxt", () => {
     "hostile brand in the About placeholder: $name",
     (hostile) => {
       const baseline = llmsTxt(NO_DEFINITION);
-      const text = llmsTxt(profileField("brand").apply(NO_DEFINITION, hostile.value));
+      const text = llmsTxt(
+        profileField("brand").apply(NO_DEFINITION, hostile.value),
+      );
       expect(markdownViolations(text, baseline, hostile)).toEqual([]);
     },
   );

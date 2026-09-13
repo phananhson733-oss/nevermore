@@ -16,8 +16,7 @@ import { splitFences } from "./prompt-test-helpers.ts";
 
 const HEADER =
   "type,site,domain,dr,relevance,difficulty,action,asset_to_offer,contact";
-const CHANNEL_LINE =
-  "media,行业播客,,,mid,,联系主持人提选题,可分享的使用数据,";
+const CHANNEL_LINE = "media,行业播客,,,mid,,联系主持人提选题,可分享的使用数据,";
 
 /** The fixture's channel entries: no domain, so no DR and no difficulty (Task 8 ruling). */
 const CHANNELS = FIXTURE_TARGETS.filter((target) => target.domain === "");
@@ -82,7 +81,7 @@ const PRODUCT = {
   positioning: "给小团队用的 SEO 检查工具",
 };
 const CANDIDATES_NOTE =
-  "下面的候选站点来自工作台内置清单，DR 是示例数字；逐个核实后再动。";
+  "下面的候选站点来自工作台内置清单，DR 与难度是示例值；逐个核实后再动。";
 const CANDIDATES = [
   {
     type: "工具目录站",
@@ -187,7 +186,12 @@ describe("linkTaskPrompt", () => {
         block.before.trimEnd().endsWith(DATA_BLOCK_NOTICE),
       ),
     ).toBe(true);
-    for (const value of ["Acme", "acme.io", "Product Hunt", "producthunt.com"]) {
+    for (const value of [
+      "Acme",
+      "acme.io",
+      "Product Hunt",
+      "producthunt.com",
+    ]) {
       expect(outside).not.toContain(value);
     }
   });

@@ -36,7 +36,13 @@ export function stampArtifact(
         string,
         unknown
       >;
-      return JSON.stringify({ _sampleData: notice, ...rest }, null, 2);
+      // `<`, U+2028 and U+2029 can only occur inside JSON strings, so escaping them keeps the parsed value
+      // identical while the text stays safe to paste into <script type="application/ld+json">. This is the
+      // one place every json artifact's final text is produced; a builder cannot do it (this re-serializes).
+      return JSON.stringify({ _sampleData: notice, ...rest }, null, 2)
+        .replace(/</g, "\\u003c")
+        .replace(/\u2028/g, "\\u2028")
+        .replace(/\u2029/g, "\\u2029");
     }
     case "md":
     case "prompt":

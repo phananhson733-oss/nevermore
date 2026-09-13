@@ -160,14 +160,6 @@ export function withEntry(
   return patchAt(entries, index, patch);
 }
 
-export function withGap(
-  gaps: readonly VisGap[],
-  index: number,
-  patch: Partial<VisGap>,
-): readonly VisGap[] {
-  return patchAt(gaps, index, patch);
-}
-
 export function withTarget(
   targets: readonly LinkTarget[],
   index: number,

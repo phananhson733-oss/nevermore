@@ -34,7 +34,14 @@ function parse(input: Input): Graph {
 }
 
 function faqEntry(statement: string, id = "kb-90"): KbEntry {
-  return { id, cat: "faq", statement, evidence: "", source: "", from: "manual" };
+  return {
+    id,
+    cat: "faq",
+    statement,
+    evidence: "",
+    source: "",
+    from: "manual",
+  };
 }
 
 describe("kbJsonLd", () => {
@@ -55,7 +62,10 @@ describe("kbJsonLd", () => {
             {
               "@type": "Question",
               name: "Acme 支持中文站吗",
-              acceptedAnswer: { "@type": "Answer", text: "支持 → 需要先填市场" },
+              acceptedAnswer: {
+                "@type": "Answer",
+                text: "支持 → 需要先填市场",
+              },
             },
           ],
         },
@@ -92,9 +102,9 @@ describe("kbJsonLd", () => {
 
   it("describes the organization with the first written definition, else the positioning", () => {
     const blankFirst = withEntry(FIXTURE_KB_ENTRIES, 0, { statement: " " });
-    expect(parse({ ...BASE, entries: blankFirst })["@graph"][0]?.description).toBe(
-      "Acme 是第二条定义",
-    );
+    expect(
+      parse({ ...BASE, entries: blankFirst })["@graph"][0]?.description,
+    ).toBe("Acme 是第二条定义");
     const noDefinition = FIXTURE_KB_ENTRIES.filter(
       (entry) => entry.cat !== "definition",
     );
@@ -104,7 +114,58 @@ describe("kbJsonLd", () => {
   });
 
   it("is a JSON object, so the json provenance stamp accepts it", () => {
-    expect(() => stampArtifact("json", kbJsonLd(BASE), "示例数据")).not.toThrow();
+    expect(() =>
+      stampArtifact("json", kbJsonLd(BASE), "示例数据"),
+    ).not.toThrow();
+  });
+
+  it("turns only FAQ entries into questions, even when other entries contain an arrow", () => {
+    const written = (
+      id: string,
+      cat: KbEntry["cat"],
+      statement: string,
+    ): KbEntry => ({
+      id,
+      cat,
+      statement,
+      evidence: "",
+      source: "",
+      from: "manual",
+    });
+    const graph = parse({
+      ...BASE,
+      entries: [
+        written("kb-01", "comparison", "迁移 → 一键导入"),
+        written("kb-02", "faq", "能导出吗 → 能"),
+        written("kb-03", "data", "收录 → 3 天"),
+        written("kb-04", "capability", "导入 → 支持 CSV"),
+      ],
+    });
+    expect(graph["@graph"][1]?.mainEntity?.map((q) => q.name)).toEqual([
+      "能导出吗",
+    ]);
+  });
+
+  it("keeps a hostile statement's < out of the stamped JSON-LD text", () => {
+    const statement = "</script><script>alert(1)</script>";
+    const body = kbJsonLd({
+      ...BASE,
+      entries: [
+        {
+          id: "kb-01",
+          cat: "definition",
+          statement,
+          evidence: "",
+          source: "",
+          from: "manual",
+        },
+      ],
+    });
+    const stamped = stampArtifact("json", body, "示例数据");
+    expect(stamped).not.toContain("<");
+    expect((JSON.parse(stamped) as Graph)["@graph"][0]?.description).toBe(
+      statement,
+    );
   });
 
   it("never says 实测", () => {

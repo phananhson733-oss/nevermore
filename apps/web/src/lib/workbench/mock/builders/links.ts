@@ -79,7 +79,7 @@ export function linkTaskPrompt({ targets, profile }: LinkPromptInput): string {
     "## 产品资料",
     dataSection(fenceJson(productData(profile))),
     "## 候选",
-    "下面的候选站点来自工作台内置清单，DR 是示例数字；逐个核实后再动。",
+    "下面的候选站点来自工作台内置清单，DR 与难度是示例值；逐个核实后再动。",
     dataSection(fenceJson(targets.map(candidateData))),
     "## 你要做的",
     [
