@@ -54,6 +54,13 @@ describe("slugify", () => {
     expect(slugify("🚀🚀")).not.toBe(slugify("!!!"));
   });
 
+  it("drops variation selectors left behind by emoji instead of emitting an invisible slug", () => {
+    for (const emoji of ["❤️", "☀️", "✔️"])
+      expect(slugify(emoji)).toMatch(/^q-[0-9a-z]+$/);
+    expect(slugify("SEO ❤️")).toBe("seo");
+    expect(slugify("❤️ SEO ✔️ tips")).toBe("seo-tips");
+  });
+
   it("truncates to 60 code points", () => {
     const long = "中".repeat(70);
     expect(codePoints(slugify(long))).toBe(60);
@@ -79,6 +86,8 @@ describe("domainOf", () => {
 
   it("falls back to string slicing when the URL does not parse", () => {
     expect(domainOf("http://www.exa mple.com/path")).toBe("exa mple.com");
+    expect(domainOf("http://WWW.Exa mple.COM/x")).toBe("exa mple.com");
+    expect(domainOf("exa mple.com.")).toBe("exa mple.com");
   });
 });
 
@@ -111,6 +120,8 @@ describe("matchesBrand", () => {
 
   it("matches CJK brands as substrings", () => {
     expect(matchesBrand("钉钉价格", "钉钉")).toBe(true);
+    expect(matchesBrand("네이버지도", "네이버")).toBe(true);
+    expect(matchesBrand("メルカリで買う", "メルカリ")).toBe(true);
     expect(matchesBrand("飞书文档", "钉钉")).toBe(false);
   });
 
@@ -135,9 +146,17 @@ describe("oneLine", () => {
 
 describe("competitorNames", () => {
   it("uses the placeholders when no competitor is filled in", () => {
-    expect(COMPETITOR_PLACEHOLDERS).toEqual(["[竞品 A]", "[竞品 B]", "[竞品 C]"]);
-    expect(competitorNames({ competitors: "" })).toEqual(COMPETITOR_PLACEHOLDERS);
-    expect(competitorNames({ competitors: " , , " })).toEqual(COMPETITOR_PLACEHOLDERS);
+    expect(COMPETITOR_PLACEHOLDERS).toEqual([
+      "[竞品 A]",
+      "[竞品 B]",
+      "[竞品 C]",
+    ]);
+    expect(competitorNames({ competitors: "" })).toEqual(
+      COMPETITOR_PLACEHOLDERS,
+    );
+    expect(competitorNames({ competitors: " , , " })).toEqual(
+      COMPETITOR_PLACEHOLDERS,
+    );
   });
 
   it("splits the filled-in list", () => {
@@ -146,6 +165,8 @@ describe("competitorNames", () => {
 
   it("dedupes by normalized query and keeps the first spelling", () => {
     expect(competitorNames({ competitors: "Rival, rival" })).toEqual(["Rival"]);
-    expect(competitorNames({ competitors: "rival, Other, RIVAL, ＲＩＶＡＬ" })).toEqual(["rival", "Other"]);
+    expect(
+      competitorNames({ competitors: "rival, Other, RIVAL, ＲＩＶＡＬ" }),
+    ).toEqual(["rival", "Other"]);
   });
 });

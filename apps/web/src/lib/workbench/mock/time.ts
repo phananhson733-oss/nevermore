@@ -10,16 +10,25 @@ const STAMP = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/;
 /**
  * The local `Date` for a `YYYY-MM-DD HH:mm` stamp, or null. Fields that `Date`
  * would silently roll over (Feb 30, 09:60, 24:00) and years 0000-0099 (which
- * `Date` remaps to 19xx) are rejected rather than moved.
+ * `Date` remaps to 19xx) are rejected. A time that does not exist locally
+ * because it falls in a DST gap is accepted but shifted by `Date`: in
+ * America/Los_Angeles "2026-03-08 02:30" comes back as 03:30.
  */
 export function parseLocalStamp(stamp: string): Date | null {
   const m = STAMP.exec(stamp);
   if (!m) return null;
   const [year, month, day, hour, minute] = m.slice(1).map(Number);
-  if (year === undefined || month === undefined || day === undefined) return null;
-  if (hour === undefined || minute === undefined || hour > 23 || minute > 59) return null;
+  if (year === undefined || month === undefined || day === undefined)
+    return null;
+  if (hour === undefined || minute === undefined) return null;
+  // `minute > 59` is load-bearing: 09:60 rolls to 10:00 on the same day. `hour > 23` is
+  // defence in depth: any such hour rolls into a later day, which the same-day check rejects.
+  if (hour > 23 || minute > 59) return null;
   const date = new Date(year, month - 1, day, hour, minute);
-  const sameDay = date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+  const sameDay =
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day;
   return sameDay ? date : null;
 }
 

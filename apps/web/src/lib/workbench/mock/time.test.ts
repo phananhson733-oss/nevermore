@@ -1,17 +1,50 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { daysAgo, formatLocalStamp, parseLocalStamp, stampDate, withinDays } from "./time.ts";
+import {
+  daysAgo,
+  formatLocalStamp,
+  parseLocalStamp,
+  stampDate,
+  withinDays,
+} from "./time.ts";
 
 const ORIGINAL_TZ = process.env.TZ;
 const TIME_ZONES = ["Asia/Shanghai", "America/Los_Angeles"] as const;
 const STAMP_SHAPE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
 /** getTimezoneOffset() on 2026-09-11 in each zone; proves the TZ switch took effect. */
-const SEPTEMBER_OFFSET: Readonly<Record<(typeof TIME_ZONES)[number], number>> = {
-  "Asia/Shanghai": -480,
-  "America/Los_Angeles": 420,
-};
+const SEPTEMBER_OFFSET: Readonly<Record<(typeof TIME_ZONES)[number], number>> =
+  {
+    "Asia/Shanghai": -480,
+    "America/Los_Angeles": 420,
+  };
 
+/** Offset of the zone the file started in, to prove the restore really happened. */
+const ORIGINAL_JANUARY_OFFSET = new Date(
+  2026,
+  0,
+  15,
+  12,
+  0,
+).getTimezoneOffset();
+
+// `process.env.TZ = undefined` stores the string "undefined" (UTC), so an unset TZ must be deleted.
 afterEach(() => {
-  process.env.TZ = ORIGINAL_TZ;
+  if (ORIGINAL_TZ === undefined) delete process.env.TZ;
+  else process.env.TZ = ORIGINAL_TZ;
+});
+
+describe("time zone restore", () => {
+  it("switches the zone inside a test", () => {
+    process.env.TZ = "America/Los_Angeles";
+    expect(new Date(2026, 8, 11, 9, 5).getTimezoneOffset()).toBe(420);
+  });
+
+  it("restores the original zone after a switching test", () => {
+    expect(process.env.TZ).toBe(ORIGINAL_TZ);
+    expect("TZ" in process.env).toBe(ORIGINAL_TZ !== undefined);
+    expect(new Date(2026, 0, 15, 12, 0).getTimezoneOffset()).toBe(
+      ORIGINAL_JANUARY_OFFSET,
+    );
+  });
 });
 
 const calendarDaysBetween = (later: Date, earlier: Date): number =>
@@ -57,6 +90,12 @@ describe("parseLocalStamp", () => {
     expect(parseLocalStamp("2026-09-11 23:59")).not.toBeNull();
   });
 
+  it("accepts a wall-clock time inside a DST gap but shifts it", () => {
+    process.env.TZ = "America/Los_Angeles";
+    const date = parseLocalStamp("2026-03-08 02:30");
+    expect(date && formatLocalStamp(date)).toBe("2026-03-08 03:30");
+  });
+
   it("rejects two-digit-era years that Date would remap to 19xx", () => {
     expect(parseLocalStamp("0099-01-01 10:00")).toBeNull();
   });
@@ -87,6 +126,9 @@ describe("daysAgo", () => {
       const now = new Date(2026, 2, 12, 9, 0);
       expect(daysAgo(now, 7, 10)).toBe("2026-03-05 10:54");
       expect(daysAgo(now, 0, 9)).toBe("2026-03-12 09:05");
+      // No hour argument, so setHours cannot mask the shift: 7 * 24 h back from
+      // 09:00 PDT lands on 08:00 PST in Los Angeles; calendar days keep 09:00.
+      expect(daysAgo(now, 7)).toBe("2026-03-05 09:00");
     });
 
     it(`keeps the time of day when no hour is given in ${tz}`, () => {

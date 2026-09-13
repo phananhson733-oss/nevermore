@@ -26,6 +26,19 @@ describe("rngOf", () => {
     expect(take(rngOf(42), 50)).toEqual(take(rngOf(42), 50));
   });
 
+  it("matches the prototype's mulberry32 on known answers", () => {
+    // Expected values come from running the prototype's own `rngOf` (line 325 of
+    // .workbench-reference/geo-seo-workbench.jsx) in node, not from rng.ts.
+    const a = rngOf(42);
+    expect([a(), a(), a()]).toEqual([
+      0.6011037519201636, 0.44829055899754167, 0.8524657934904099,
+    ]);
+    const b = rngOf(2166136261);
+    expect([b(), b(), b()]).toEqual([
+      0.6112444521859288, 0.4935242917854339, 0.7740248835179955,
+    ]);
+  });
+
   it("gives different sequences for different seeds", () => {
     expect(take(rngOf(1), 5)).not.toEqual(take(rngOf(2), 5));
   });
@@ -82,6 +95,21 @@ describe("sampleDistinct", () => {
     for (const item of out) expect(items).toContain(item);
   });
 
+  it("draws each index from next() over the shrinking pool", () => {
+    // [a,b,c,d,e]: floor(0.99*5)=4 -> e; [a,b,c,d]: floor(0*4)=0 -> a; [b,c,d]: floor(0.5*3)=1 -> c.
+    const draws = [0.99, 0, 0.5];
+    let i = 0;
+    const next = (): number => {
+      const draw = draws[i] ?? 0;
+      i += 1;
+      return draw;
+    };
+    expect(
+      sampleDistinct(Object.freeze(["a", "b", "c", "d", "e"]), 3, next),
+    ).toEqual(["e", "a", "c"]);
+    expect(i).toBe(3);
+  });
+
   it("returns every item when count exceeds the length", () => {
     const items = Object.freeze(["a", "b", "c"]);
     const out = sampleDistinct(items, 10, rngOf(3));
@@ -94,11 +122,23 @@ describe("sampleDistinct", () => {
   });
 
   it("does not mutate a frozen input and is deterministic", () => {
-    const items = Object.freeze(["g2.com", "reddit.com", "capterra.com", "medium.com", "producthunt.com"]);
+    const items = Object.freeze([
+      "g2.com",
+      "reddit.com",
+      "capterra.com",
+      "medium.com",
+      "producthunt.com",
+    ]);
     const first = sampleDistinct(items, 3, rngOf(seedKey("demo", "serp")));
     const second = sampleDistinct(items, 3, rngOf(seedKey("demo", "serp")));
     expect(first).toEqual(second);
-    expect(items).toEqual(["g2.com", "reddit.com", "capterra.com", "medium.com", "producthunt.com"]);
+    expect(items).toEqual([
+      "g2.com",
+      "reddit.com",
+      "capterra.com",
+      "medium.com",
+      "producthunt.com",
+    ]);
   });
 
   it("keeps duplicate input values as separate draws", () => {
