@@ -1,4 +1,4 @@
-import { PlaceholderView } from "@/components/workbench/views/placeholder/PlaceholderView";
+import { DataSourcesView } from "@/components/workbench/views/data-sources/DataSourcesView";
 
 export default async function DataSourcesPage({
   params,
@@ -6,5 +6,5 @@ export default async function DataSourcesPage({
   readonly params: Promise<{ readonly projectId: string }>;
 }) {
   const { projectId } = await params;
-  return <PlaceholderView projectId={projectId} page="dataSources" />;
+  return <DataSourcesView projectId={projectId} />;
 }
