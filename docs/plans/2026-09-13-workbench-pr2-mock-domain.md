@@ -652,7 +652,8 @@ export function visibilityGaps(results: readonly VisResult[], brand: string): re
     - kind 用 id；来自 `rows` 的 geo 行按 `AI_PATTERNS` 模板下标映射（0→compare、1→discover、2→verify）——实现方式：`buildRows` 不记录模板下标，所以这里对每条 geo 行重新用 `AI_PATTERNS[i](seed, brand)` 比对 `normQ` 找下标，找不到记 `scenario`。
     - 场景句：`I have a small team and no SEO budget, how do I get started with ${f0}?`（f0 为占位时整条跳过）。
     - `normQ` 去重。
-    - 具体模板以 jsx:1613-1629 为底，占位规则：`f0 = splitList(features)[0]`，没有则跳过依赖 f0 的句子，改出 `best tools like ${brand}`（brand 非空时）。
+    - 具体模板以 jsx:1613-1629 为底，占位规则：`f0 = splitList(features)[0]`，没有则跳过依赖 f0 的句子，改出 `best tools like ${brand}`（brand 非空时；kind 为 `alternative`，它问的是替代品而不是发现新工具——执行期评审裁决）。
+    - 执行期评审裁决（Task 7 审阅）：用户字段先折叠全部空白并去掉句末标点 `[.。!?！？]+$`；定位（positioning）写成句子时不进 `what tools help with ${topic}` 模板、回退 f0——判据是 `normQ` 等于品牌键或以「品牌键 + 空格」开头，或去掉句末标点后仍含 `[.。!?！？;；]`；`tools`/`tool` 判尾词允许连字符前缀（`dev-tools` 不再叠词）；`mockVisibility` 对品牌与竞品名用同一套空白折叠。
   - `parsePromptList("a\n\n b \r\nc")` = `["a","b","c"]`。
   - `mentionRate([])` = null；2/3 → 0.666…。
   - `visibilityGaps`：只含有未命中平台的 prompt；`missedPlatforms` 顺序按 `PLATFORMS`；`rivals` = 这些未命中结果里 brands 去掉品牌后去重（jsx:1714-1718）；全部命中 → `[]`（原型 L853 白屏的输入）。
@@ -676,9 +677,10 @@ export function mockLinks(profile: Pick<Profile, "brand">, types: readonly LinkT
 
 - [ ] **Step 1: 测试（先红）**
   - `domainStats`：`own = subject === domainOf(profile.url)`；own 的 `topPages` 用 `splitList(features)[0] ?? "guide"`；非 own 的 `topPages` 固定 `/blog`、`/pricing`、`/compare`；数字全是有限整数；`dr ∈ [0,92]`；features 为空不抛错。
-  - `buildCompData`：`domains[0].domain === domainOf(url)`；其后是 `competitorNames(profile).slice(0,3)` 的**原始名称**（不含 `.com` 后缀，除非用户自己填的就是域名）；`gap.comps` 与之一致；`at` 原样。
-  - `keywordGap`：`comps = competitorNames(profile).slice(0,3)`；候选查询 = 每个种子 × `PATTERNS.slice(0,8)`，跳过 `vs` 模板；每行 `ranks` 中非 null 的名次互不相同且 ∈ `[1,12]`；有同名（`normQ`）GSC 行且 `position > 0` 时 `ours === Math.round(position)`，否则按 rng；只保留「至少一个竞品有名次 且 (ours 为 null 或 > 20)」的行；按 volume 降序取前 30；schema 往返通过。
-  - `mockLinks`：`type` 是 id；`relevance/difficulty` 是 `Level` id（`dr > 88 → high`、`> 75 → mid`、否则 `low`）；未知域名是 `""` 而不是 `"—"`；`types` 顺序决定输出顺序；同 brand 同输出。
+  - `buildCompData`：url 非空时 `domains[0].domain === domainOf(url)`，**url 为空时不出本站条目**（不给不存在的主体造数字——执行期评审裁决）；其余是 `comparedCompetitors(profile)` 的**原始名称**（不含 `.com` 后缀，除非用户自己填的就是域名）；`gap.comps` 与之一致；`at` 原样。
+  - `comparedCompetitors(profile)`（执行期新增导出）：`competitorNames(profile)` 去掉与品牌或本站域名同名（`normQ`）的项后取前 3；只有什么都没填时才出占位。可见度（Task 7）只去掉品牌、不去本站域名——已接受残留。
+  - `keywordGap`：`comps = comparedCompetitors(profile)`；候选查询 = 每个种子 × `PATTERNS.slice(0,8)`（其中没有 `vs` 模板，钉子测试防重排）；每行 `ranks` 中非 null 的名次互不相同且 ∈ `[1,12]`；**只要有任何非空 GSC 行，`ours` 就只来自 GSC**：同名（`normQ`）行有可用 position 时 `ours === Math.round(position)`，否则 `null`（GSC 已接入却给随机名次是编造——执行期评审裁决）；完全没有 GSC 行时才按 rng 出示例名次；只保留「至少一个竞品有名次 且 (ours 为 null 或 > 20)」的行；按 volume 降序取前 30；schema 往返通过。视图（PR-3）把 `ours === null` 渲染为「—/未知」，不能用原型 jsx:2655 的「无」（那是在声称我们没有排名）。
+  - `mockLinks`：`type` 是 id；`relevance` 是 `Level` id；**域名为空的渠道条目（媒体 / 互换类）`dr === null` 且 `difficulty === null`**（渠道不是站点，没有 DR，难度只能由 DR 派生——执行期评审裁决；`LinkTarget.dr/difficulty` 放宽为可空属发布前豁免，不升 `PERSISTED_VERSION`）；有 DR 时 `difficulty` 为 `dr > 88 → high`、`> 75 → mid`、否则 `low`；未知域名是 `""` 而不是 `"—"`；`types` 顺序决定输出顺序；同 brand 同输出。
 - [ ] **Step 2:** 实现（jsx:535-558、2529-2550，按上面修）；测试、typecheck、lint。
 - [ ] **Step 3: Commit** `feat(workbench): 竞品与外链 mock（缺口对齐 GSC、名次不重复、枚举 id）`
 
@@ -802,8 +804,9 @@ export function reportTaskPrompt(input: { profile: Profile; angle: string }): st
 - `kbJsonLd`（jsx:833-845）：FAQ 解析用第一个 `→` 切分（`indexOf`），问题 trim 后为空的丢弃；definition 按 id。
 - `visibilityCsv`（jsx:912-913）：表头 `prompt,platform,mentioned,rank_in_answer,brands_in_answer,cited_domains,source,checked_at`；`source` 恒为 `sample`；`checked_at = stampDate(checkedAt)`；不读时钟（测试里 `vi.setSystemTime` 改日期后输出不变）。
 - `answerPlanPrompt`（jsx:847-863）：`gaps` 为空时**不**输出缺口块，改固定句「还没有可见度缺口数据：先跑一次 AI 可见度诊断。」（原型 L853 在此白屏）；非空时 `fenceJson(gaps.map(g => ({ prompt: g.p, missingOn: g.missedPlatforms, rivalsInAnswer: g.rivals })))`；产品资料进 `fenceJson`。
-- `linkCsv`：表头 `type,site,domain,dr,relevance,difficulty,action,asset_to_offer,contact`，`type/relevance/difficulty` 输出 id，`contact` 空。
-- `linkTaskPrompt` / `outreachPrompt`（jsx:884-910）：候选与发件方进 `fenceJson`，类型名用 `LINK_TYPE_ZH`，按 id 去重后再映射。
+- `linkCsv`：表头 `type,site,domain,dr,relevance,difficulty,action,asset_to_offer,contact`，`type/relevance/difficulty` 输出 id，`contact` 空；`dr`/`difficulty` 为 null 时空单元格（Task 8 评审裁决：无域名渠道两者都是 null）。
+- `linkTaskPrompt` / `outreachPrompt`（jsx:884-910）：候选与发件方进 `fenceJson`，类型名用 `LINK_TYPE_ZH`，按 id 去重后再映射；**不移植** jsx:890 的 `估算 DR ${r.dr}｜难度 ${r.difficulty}` 行模板（会打出 "null"）；「按难度从低到高」补一句「难度未知的排最后」。
+- 文档（`kbMarkdown` / `llmsTxt`）里行首或列表标记后的用户 / AI 值一律过 `compose.ts` 的 `docText`（Task 11 评审裁决：`marked` 会把 `- # x` 渲染成列表项内标题、`[x]: url` 会把别处固定文字变成链接；检查器按 `marked` 词法计数，不按原始行首）。
 - `reportTaskPrompt`（jsx:865-879）：`fenceJson({ brand, positioning, market, angle: angle.trim() || null })`；angle 为空时固定句「切入角度待定，先帮我提 3 个。」在块外。
 
 - [ ] **Step 1: 测试（先红）**：同 Task 11 的敌意输入集合（profile 字段、`angle`、KB statement 含 `\n# `、gap prompt 含 ```` ``` ````）；`answerPlanPrompt({ profile: FIXTURE_PROFILE, gaps: [] })` 不抛错、含固定句、仍有产品资料块；`llmsTxt` 不含 `/compare/`、`/tools/`、`/docs`；`visibilityCsv` 的 `source` 列全是 `sample`；`kbJsonLd` 输出是合法 JSON，`"问 → 答 → 补充"` 的答案是 `答 → 补充`。
@@ -862,8 +865,9 @@ export function makeDemoSite(profile: Profile, level: DemoLevel, seeds: readonly
   4. **措辞**：所有 artifact content 不含「实测」「已修复」「已核实」。
   5. **盖章**：csv 类首行是 `# sample-data`，其余类首行是 `provenanceLine(at)` 的返回值（测试注入 `at => \`PROVENANCE ${at}\``）。
   6. **可见度自洽**：`visResults` 与 `visHistory` 每条满足 `hit ⇔ brands 含 brand` 且 `rank <= brands.length`。
-  7. **缺口与 GSC 一致**：`compData.gap.rows` 中凡 `normQ` 命中 `gscRows` 且 position>0 的，`ours === Math.round(position)`。
-  8. **不编造域名**：`compData.domains.slice(1).map(d => d.domain)` 等于 `competitorNames(profile).slice(0,3)`；`visResults[].domains` 都在 `SERP_POOL`。
+  7. **缺口与 GSC 一致**：示例站点 `gscRows` 非空，所以 `compData.gap.rows` 每一行的 `ours` 要么等于 `normQ` 命中行中第一个可用 position 的 `Math.round`，要么是 `null`（GSC 已接入却不在 GSC 里的查询不得有随机名次——Task 8 评审裁决）。
+  8. **不编造域名**：`compData.domains` 去掉本站域名条目后的 `domain` 列表等于 `comparedCompetitors(profile)`，且每一项都是 `competitorNames(profile)` 的原始名称；`visResults[].domains` 都在 `SERP_POOL`。
+  12. **外链 DR 不编造**：`linkTargets` 中 `domain === ""` 的条目 `dr === null && difficulty === null`（示例默认类型 dir/agg/comm 全有域名，此条在 demo 下恒真，真正的覆盖在 `links.test.ts`；这里仍保留，防以后改默认类型）。
   9. **llms.txt**：内容不含 `/compare/`、`/tools/`、`/docs`。
   10. `conns.GA4 === false`。
   **变异验证**（执行时做、不提交）：把 `demoAiDoc` 换回原型 `DEMO_AI` 的 summary，第 2 条必须红；把 KB 填充的 `from` 改 `manual`，第 3 条必须红。
