@@ -4112,7 +4112,9 @@
       }
     },
     "provenance": {
-      "artifact": "Sample data: generated locally for demonstration, not measured. Generated {at}"
+      "artifact": "Sample data: generated locally for demonstration, not measured. Generated {at}",
+      "artifactWithUserGsc": "Includes GSC data you imported; the rest was generated locally for demonstration, not measured. Generated {at}",
+      "artifactWithUnknownGsc": "Includes GSC data of unknown source; the rest was generated locally for demonstration, not measured. Generated {at}"
     },
     "artifactActions": {
       "copy": "Copy",

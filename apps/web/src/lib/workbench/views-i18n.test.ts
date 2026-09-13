@@ -222,6 +222,17 @@ const FORBIDDEN_BY_KEY: Readonly<
     "zh-CN": ["示例", "导入", "你的"],
     en: ["sample", "import", "your"],
   },
+  // Q36: an artifact carrying the operator's own GSC rows must not call itself
+  // sample data, and one whose rows have no recorded source must name neither
+  // source, for the same reason as `profile.doc.gscSourceUnknown` above.
+  "provenance.artifactWithUserGsc": {
+    "zh-CN": ["示例"],
+    en: ["sample"],
+  },
+  "provenance.artifactWithUnknownGsc": {
+    "zh-CN": ["示例", "导入", "你的"],
+    en: ["sample", "import", "your"],
+  },
   "artifactActions.copyFailed": {
     "zh-CN": [
       "所以",
@@ -551,6 +562,22 @@ const REQUIRED: Readonly<
     "zh-CN": ["没能存入", "产物筐已满", "删掉几件", "再存", "复制和导出"],
     en: ["Could not save", "Artifacts is full", "Remove a few", "save again", "copy or export"],
   },
+  // Q36: the three provenance declarations, one per GSC source. Every one says
+  // the rest is not a measurement (PR-3 audit and visibility results are always
+  // local simulations); the user version says whose rows they are, and the
+  // unknown version is the only one that says nobody knows.
+  "provenance.artifact": {
+    "zh-CN": ["不是真实测量"],
+    en: ["not measured"],
+  },
+  "provenance.artifactWithUserGsc": {
+    "zh-CN": ["你导入的", "不是真实测量"],
+    en: ["you imported", "not measured"],
+  },
+  "provenance.artifactWithUnknownGsc": {
+    "zh-CN": ["来源未知", "不是真实测量"],
+    en: ["unknown source", "not measured"],
+  },
 };
 
 /**
@@ -568,6 +595,7 @@ const OWNED_SUBTREES = [
   "shell.clearSampleConfirm",
   "artifactActions",
   "panes",
+  "provenance",
 ] as const;
 
 /**
@@ -829,6 +857,11 @@ const CASES: readonly string[] = [
   "artifactActions.basketFull",
   "panes.in",
   "panes.out",
+  // Q36: the artifact declaration, one version per GSC source. `useAddArtifact`
+  // picks the key from the draft's `gscData`; the demo loader uses `artifact`.
+  "provenance.artifact | at",
+  "provenance.artifactWithUserGsc | at",
+  "provenance.artifactWithUnknownGsc | at",
 ];
 
 type Values = Readonly<Record<string, string | number>>;

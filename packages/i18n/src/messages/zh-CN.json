@@ -4112,7 +4112,9 @@
       }
     },
     "provenance": {
-      "artifact": "示例数据：本地生成的演示结果，不是真实测量；生成于 {at}"
+      "artifact": "示例数据：本地生成的演示结果，不是真实测量；生成于 {at}",
+      "artifactWithUserGsc": "含你导入的 GSC 数据；其余为本地生成的演示结果，不是真实测量；生成于 {at}",
+      "artifactWithUnknownGsc": "含来源未知的 GSC 数据；其余为本地生成的演示结果，不是真实测量；生成于 {at}"
     },
     "artifactActions": {
       "copy": "复制",
