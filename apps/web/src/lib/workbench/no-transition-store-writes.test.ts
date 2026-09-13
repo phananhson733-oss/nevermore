@@ -11,12 +11,16 @@
  * and read `demo=false` straight away but `demo=true` once things settled.
  * Non-test workbench code had zero Transition writes when this gate was added.
  *
- * Every API below queues its updates in a Transition lane, so none may appear
- * in a non-test .ts / .tsx module under components/workbench/ or
- * lib/workbench/: `startTransition`, `useTransition`, `useActionState`,
- * `useOptimistic`, a `<form>` tag with an `action={...}` prop, and a
- * `formAction={...}` prop (the same thing on a submit button). Names match
- * inside comments too; prose there should say "a Transition".
+ * The APIs below may not appear in a non-test .ts / .tsx module under
+ * components/workbench/ or lib/workbench/. This is a conservative ban, not a
+ * claim that every call of each one schedules a Transition: each is tied to
+ * Transitions (it starts one, runs its work inside one, or only means something
+ * within one), and the workbench needs none of them. `startTransition`,
+ * `useTransition`, `useActionState`, its deprecated predecessor `useFormState`
+ * (React 19.2 still exports it), `useOptimistic`, a `<form>` tag with an
+ * `action={...}` prop, and a `formAction={...}` prop (the same thing on a
+ * submit button). Names match inside comments too; prose there should say
+ * "a Transition".
  *
  * Exempt, by file and by occurrence count: `shell/SignOutButton.tsx` renders
  * one `<form action={...}>` for the sign-out server action, which writes
@@ -25,10 +29,22 @@
  * React calls before the form action's listener (which checks whether
  * `onSubmit` prevented the default) starts the Transition.
  *
- * Not seen here: a Transition entered by library code (Next's router
- * navigation, `<Link>`), a Transition entered outside these two directories
- * around a callback that writes to the store, or a wrapper component with
- * another name that renders a `<form action>` defined elsewhere.
+ * Not seen here, and deliberately not chased with a parser (the static style
+ * gates showed that kind of gate never converges; codex S6r4 F3):
+ *
+ * - an `action` / `formAction` spread into a form, `<form {...{ action: go }}>`;
+ * - `createElement("form", { action })`;
+ * - `cloneElement(form, { action })`;
+ * - a wrapper component outside these two directories that renders a form
+ *   action, or one here with another name whose form is defined elsewhere;
+ * - a Transition entered by library code (Next's router navigation, `<Link>`),
+ *   or entered outside these directories around a callback that writes to the
+ *   store.
+ *
+ * This gate catches only the plain spellings. The primary safeguards are the
+ * components' read-back tests (`LoadDemoButton.stale.test.tsx`,
+ * `Topbar.test.tsx`, which pin the behaviour under today's sync-lane writes)
+ * and code review.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
@@ -48,7 +64,7 @@ const ROOTS = [resolve(SRC, "components/workbench"), LIB_WORKBENCH] as const;
 const MIN_MODULES_PER_ROOT = 45;
 const MIN_MODULES = 100;
 
-const TRANSITION_API = /\b(?:startTransition|useTransition|useActionState|useOptimistic)\b/g;
+const TRANSITION_API = /\b(?:startTransition|useTransition|useActionState|useFormState|useOptimistic)\b/g;
 const FORM_ACTION_PROP = /\bformAction\s*=\s*\{/g;
 const ACTION_PROP = /\baction\s*=\s*\{/;
 
