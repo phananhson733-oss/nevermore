@@ -25,7 +25,7 @@ function docFrom(state: WorkbenchProjectState): ProfileDoc {
 const DOC = docFrom(START);
 
 describe("setProfileDoc", () => {
-  it("builds the basis from exactly the four fields a run reads, by reference", () => {
+  it("builds the basis from the four fields the guard compares, by reference", () => {
     const basis = profileDocBasis(START);
     expect(Object.keys(basis).sort()).toEqual(["gscRows", "gscRowsSource", "lastAudit", "profileDoc"]);
     expect(basis.gscRows).toBe(START.gscRows);
