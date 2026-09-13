@@ -1,10 +1,12 @@
 /** @vitest-environment jsdom */
 
 /**
- * The week cards' own dates and deltas (codex S7a #6 / #7). A card under the
- * page's date range names when its check ran and says so when that check is
- * older than the range, instead of letting an old score read as this week's;
- * a mention share printed as a band carries no point delta.
+ * The week cards' own dates and deltas (codex S7a #6 / #7, S7r2 #3). A card
+ * under the page's date range names when its check ran and, when that check is
+ * outside the range, says that of the check itself, instead of letting an old
+ * score read as this week's; it never says the range holds no check, which
+ * the archived runs can contradict. A mention share printed as a band carries
+ * no point delta.
  */
 
 import { getMessages } from "@sf/i18n";
@@ -65,34 +67,53 @@ describe("week cards: when their check ran", () => {
     const mention = one(scope, "[data-wb-week-card='mention']");
     expect(text(health, "[data-wb-foot='at']")).toBe("Checked 2026-09-13 10:00");
     expect(text(mention, "[data-wb-foot='at']")).toBe("Checked 2026-09-13 11:00");
-    expect(scope.querySelector("[data-wb-foot='stale']")).toBeNull();
+    expect(scope.querySelector("[data-wb-foot='outside']")).toBeNull();
   });
 
-  it("say the range holds no newer check when the latest is older than it (zh)", () => {
+  it("say the check is outside the range when the latest is older than it (zh)", () => {
     const scope = show(OLD, "zh-CN");
     expect(scope.textContent).toContain("2026-09-07 至 2026-09-14");
     const health = one(scope, "[data-wb-week-card='health']");
     expect(health.textContent?.startsWith(`80+20${zh.week.cards.health.label}`)).toBe(true);
     expect(text(health, "[data-wb-foot='at']")).toBe("检查于 2026-08-25 10:00");
-    expect(text(health, "[data-wb-foot='stale']")).toBe("这段日期内没有新的检查");
+    expect(text(health, "[data-wb-foot='outside']")).toBe("这次检查不在上面的日期范围内");
     expect(text(health, "[data-wb-foot='since']")).toBe("较上次（2026-08-24 10:00）");
     const mention = one(scope, "[data-wb-week-card='mention']");
     expect(mention.textContent?.startsWith(`50%${zh.week.cards.mention.label}`)).toBe(true);
     expect(text(mention, "[data-wb-foot='at']")).toBe("检查于 2026-08-25 11:00");
-    expect(text(mention, "[data-wb-foot='stale']")).toBe("这段日期内没有新的检查");
+    expect(text(mention, "[data-wb-foot='outside']")).toBe("这次检查不在上面的日期范围内");
   });
 
   it("say the same in en", () => {
     const scope = show(OLD);
-    expect(text(scope, "[data-wb-week-card='health'] [data-wb-foot='stale']")).toBe(
-      "No new check in this date range",
+    expect(text(scope, "[data-wb-week-card='health'] [data-wb-foot='outside']")).toBe(
+      "This check falls outside the date range above",
     );
+  });
+
+  // codex S7r2 #3: the latest check is stamped a minute after now, and an
+  // archived check inside the range is on the same page's feed. 「这段日期内没有
+  // 新的检查」 was false there.
+  it.each<[WeekLocale, string]>([
+    ["zh-CN", "这次检查不在上面的日期范围内"],
+    ["en", "This check falls outside the date range above"],
+  ])("say nothing about the rest of the range when the latest check is in the future (%s)", (locale, sentence) => {
+    const scope = show(
+      { ...BLANK_WEEK, auditHistory: [report("2026-09-14 10:00", 60, [])], lastAudit: report("2026-09-14 12:01", 80, []) },
+      locale,
+    );
+    const health = one(scope, "[data-wb-week-card='health']");
+    expect(text(health, "[data-wb-foot='at']")).toBe(locale === "en" ? "Checked 2026-09-14 12:01" : "检查于 2026-09-14 12:01");
+    expect(text(health, "[data-wb-foot='outside']")).toBe(sentence);
+    expect(scope.textContent).not.toMatch(/没有新的检查|没有检查|no new check|no check/iu);
+    const stamps = [...scope.querySelectorAll("[data-wb-event] time")].map((time) => time.textContent);
+    expect(stamps).toEqual(["2026-09-14 10:00"]);
   });
 
   it("have no stamp and no range sentence when nothing was checked", () => {
     const scope = show({ ...BLANK_WEEK, gscRows: [gsc("a", 50)], gscRowsSource: "user" });
     expect(scope.querySelector("[data-wb-foot='at']")).toBeNull();
-    expect(scope.querySelector("[data-wb-foot='stale']")).toBeNull();
+    expect(scope.querySelector("[data-wb-foot='outside']")).toBeNull();
   });
 });
 

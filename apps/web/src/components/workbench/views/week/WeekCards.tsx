@@ -13,9 +13,13 @@ import type { WeekSummary } from "./week-summary.ts";
  *
  * A footnote appears only when there is something true to put in it:
  * - A card with a measurement names when that check ran (「检查于 {at}」) and,
- *   when it ran before the page's date range, adds 「这段日期内没有新的检查」:
- *   the card shows the latest check however old, and under this week's dates an
- *   undated score reads as this week's (codex S7a #6).
+ *   when that stamp is outside the page's date range, adds 「这次检查不在上面的
+ *   日期范围内」: the card shows the latest check however old, and under the
+ *   page's dates an undated score reads as theirs (codex S7a #6). The sentence
+ *   is about this check only. Outside the range covers before it, after it (a
+ *   stamp in the future) and a stamp that does not parse, so it cannot say the
+ *   range holds no check: an archived one inside it may be on the feed below
+ *   (codex S7r2 #3).
  * - The comparison lines name the previous run's stamp — 「较上次（{at}）」,
  *   never "last week" (Q20) — and exist only when `week-summary.ts` found a
  *   previous run comparable with the latest (S7a #1 / #2). A card with no
@@ -40,8 +44,8 @@ function CheckedFoot({ at, inWindow }: { readonly at: string; readonly inWindow:
         {t("checkedAt", { at })}
       </span>
       {inWindow ? null : (
-        <span data-wb-foot="stale" className={FOOT_LINE}>
-          {t("noNewCheck")}
+        <span data-wb-foot="outside" className={FOOT_LINE}>
+          {t("checkOutsideRange")}
         </span>
       )}
     </>

@@ -36,8 +36,10 @@
  * The date range is `weekWindow` (`week-feed.ts`), the same one the subtitle,
  * the artifact count and the feed use (codex S7a #9). The cards show the latest
  * check however old, so `healthInWindow` / `mentionInWindow` say whether that
- * check ran inside the range; the cards print its stamp and, when it did not,
- * that the range holds no newer check (S7a #6).
+ * check's stamp is inside the range; the cards print its stamp and, when it is
+ * not, that this check is outside the range (S7a #6). Not that the range holds
+ * no check: the stamp may be in the future, and an archived check inside the
+ * range may be among the events (codex S7r2 #3).
  *
  * Borderline queries are GSC rows at positions 11-30, by `gscStatus` and with
  * `nearCount`'s unknown rule (`mock/profile.ts`), read from the imported rows
