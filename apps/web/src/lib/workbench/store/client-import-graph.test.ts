@@ -35,7 +35,10 @@
  * - Apart from the entries: no non-test module under `components/workbench/ui/`
  *   makes a static or dynamic edge into `components/workbench/shell/` (Q35).
  *   The shell composes the shared ui pieces, never the reverse. Direct edges
- *   only.
+ *   only. An `import()` or `require()` there whose argument is not a literal
+ *   fails the gate too: its target cannot be read, which is not the same as no
+ *   edge. A test module is told by its suffix (`.test.ts`, `.test.tsx`), so a
+ *   module named like `Probe.test.helpers.ts` is production code and is read.
  *
  * Blind spots:
  * - the walk stops at package boundaries, so a workspace package that newly
@@ -49,12 +52,21 @@
  * - the `ui/` gate reads direct edges only, so a `ui/` module that reaches the
  *   shell through a module outside both directories is not seen.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { builtinModules } from "node:module";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const STORE_DIR = dirname(fileURLToPath(import.meta.url));
 const WORKBENCH_DIR = resolve(STORE_DIR, "..");
@@ -152,6 +164,8 @@ const NODE_ONLY_PACKAGES = [
 ] as const;
 
 const SCRIPT = /\.[cm]?[jt]sx?$/;
+/** A test module, told by its suffix only: `Probe.test.helpers.ts` is production code. */
+const TEST_MODULE = /\.test\.tsx?$/;
 
 type EdgeKind = "static" | "dynamic";
 
@@ -407,7 +421,12 @@ function nodeOnlyImports(parents: Parents): readonly string[] {
 
 /** `path:line:column text` for every loader call in the graph's files whose argument is not a literal. */
 function nonLiteralLoads(parents: Parents): readonly string[] {
-  return [...parents.keys()].flatMap((file) =>
+  return nonLiteralLoadsIn([...parents.keys()]);
+}
+
+/** `path:line:column text` for every loader call in `files` whose argument is not a literal. */
+function nonLiteralLoadsIn(files: readonly string[]): readonly string[] {
+  return files.flatMap((file) =>
     importsOf(file).nonLiteral.map((at) => `${srcPath(file)}:${at}`),
   );
 }
@@ -417,7 +436,7 @@ function scriptModulesUnder(directory: string): readonly string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(directory, entry.name);
     if (entry.isDirectory()) return scriptModulesUnder(path);
-    return SCRIPT.test(entry.name) && !entry.name.includes(".test.")
+    return SCRIPT.test(entry.name) && !TEST_MODULE.test(entry.name)
       ? [path]
       : [];
   });
@@ -457,6 +476,18 @@ function edgesIntoShell(files: readonly string[]): readonly string[] {
   return directLocalEdges(files)
     .filter(({ target }) => isInside(SHELL_DIR, target))
     .map(({ line }) => line);
+}
+
+/**
+ * Everything in `files` that breaks Q35: each direct edge into shell/, and each
+ * `import()` / `require()` whose argument is not a literal. The walk cannot say
+ * where such a call points, so it fails instead of counting as no edge.
+ */
+function shellGateViolations(files: readonly string[]): readonly string[] {
+  return [
+    ...edgesIntoShell(files),
+    ...nonLiteralLoadsIn(files).map((at) => `${at} (target is not a literal)`),
+  ];
 }
 
 describe("import clause reader", () => {
@@ -735,13 +766,93 @@ describe("components/workbench/ui imports nothing from shell (Q35)", () => {
 
   it("catches a ui-shaped module that imports the shell, statically or dynamically (control)", () => {
     const fixture = srcPath(UI_FIXTURE);
-    expect(edgesIntoShell([UI_FIXTURE])).toEqual([
+    expect(shellGateViolations([UI_FIXTURE])).toEqual([
       `${fixture} -> components/workbench/shell/workbench-nav.ts`,
       `${fixture} ~> components/workbench/shell/CommandPalette.tsx`,
     ]);
   });
 
-  it("has no static or dynamic edge from a ui/ module into shell/", () => {
-    expect(edgesIntoShell(uiModules)).toEqual([]);
+  it("has no static or dynamic edge from a ui/ module into shell/, and no loader whose target cannot be read", () => {
+    expect(shellGateViolations(uiModules)).toEqual([]);
+  });
+
+  // A tree made on disk per run and walked by the real `scriptModulesUnder`: a
+  // committed `X.test.ts` would be collected by vitest as a suite with no tests.
+  // The shell imports use the `@/` alias, which resolves to the real shell/ from
+  // any directory, so nothing in the walk takes a parameter for the test.
+  describe("over a directory tree the gate has to walk (control)", () => {
+    const TREE: Readonly<Record<string, string>> = {
+      "top.ts": "export const top = 1;\n",
+      "notes.md": 'import "@/components/workbench/shell/Sidebar.tsx";\n',
+      "X.test.ts": 'import "@/components/workbench/shell/Sidebar.tsx";\n',
+      "Y.test.helpers.ts":
+        'export { WORKBENCH_NAV } from "@/components/workbench/shell/workbench-nav.ts";\n',
+      "nested/Panel.tsx": [
+        'import { top } from "../top.ts";',
+        'import { WORKBENCH_NAV } from "@/components/workbench/shell/workbench-nav.ts";',
+        "export const panel = [top, WORKBENCH_NAV];",
+        "",
+      ].join("\n"),
+      "nested/deeper/Concat.ts":
+        'export const load = () => import("@/components/workbench/shell/" + "workbench-nav.ts");\n',
+      "nested/deeper/Template.ts":
+        "export const load = (name: string) => import(`@/components/workbench/shell/${name}.ts`);\n",
+    };
+    let root = "";
+    /** How the gate names a file of the tree: relative to src/, like every other file. */
+    const shown = (path: string): string => srcPath(join(root, path));
+
+    beforeAll(() => {
+      root = mkdtempSync(join(tmpdir(), "q35-ui-gate-"));
+      for (const [path, text] of Object.entries(TREE)) {
+        mkdirSync(dirname(join(root, path)), { recursive: true });
+        writeFileSync(join(root, path), text);
+      }
+    });
+
+    afterAll(() => {
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    it("enumerates top-level and nested scripts, keeps a .test.helpers.ts module, and leaves out the test module and the non-script", () => {
+      const found = scriptModulesUnder(root).map((file) => relative(root, file));
+      expect(found.toSorted()).toEqual([
+        "Y.test.helpers.ts",
+        join("nested", "Panel.tsx"),
+        join("nested", "deeper", "Concat.ts"),
+        join("nested", "deeper", "Template.ts"),
+        "top.ts",
+      ]);
+    });
+
+    it("reports the nested and the helper shell edges and both unreadable loaders, and nothing from the test module", () => {
+      expect(shellGateViolations(scriptModulesUnder(root)).toSorted()).toEqual(
+        [
+          `${shown("Y.test.helpers.ts")} -> components/workbench/shell/workbench-nav.ts`,
+          `${shown("nested/Panel.tsx")} -> components/workbench/shell/workbench-nav.ts`,
+          `${shown("nested/deeper/Concat.ts")}:1:27 import("@/components/workbench/shell/" + "workbench-nav.ts") (target is not a literal)`,
+          `${shown("nested/deeper/Template.ts")}:1:39 import(\`@/components/workbench/shell/\${name}.ts\`) (target is not a literal)`,
+        ].toSorted(),
+      );
+    });
+
+    it.each([
+      [
+        "string concatenation",
+        "nested/deeper/Concat.ts",
+        '1:27 import("@/components/workbench/shell/" + "workbench-nav.ts")',
+      ],
+      [
+        "an interpolated template",
+        "nested/deeper/Template.ts",
+        "1:39 import(`@/components/workbench/shell/${name}.ts`)",
+      ],
+    ])("fails on an import() built by %s instead of reading it as no edge", (_how, path, call) => {
+      const file = join(root, path);
+      expect(edgesIntoShell([file])).toEqual([]);
+      expect(shellGateViolations([file])).toEqual([
+        `${shown(path)}:${call} (target is not a literal)`,
+      ]);
+    });
   });
 });
