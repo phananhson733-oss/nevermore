@@ -1,9 +1,11 @@
 import { getTranslations } from "next-intl/server";
 import { Card, LocaleSwitch } from "@/components/ui";
 import { safePostLoginPath } from "@/lib/auth/redirect";
+import { hasAuthSession } from "@/lib/auth/session";
 import { withBasePath } from "@/lib/base-path";
 import { LoginForm } from "./_form.tsx";
 import { oauthErrorMessageKey } from "./_oauth-error.ts";
+import { WorkbenchSweep } from "./_workbench-sweep.tsx";
 import styles from "./login.module.css";
 
 /**
@@ -22,9 +24,14 @@ export default async function LoginPage({
   const t = await getTranslations("auth");
   const tShell = await getTranslations("appShell");
   const oauthErrorKey = oauthErrorMessageKey(error);
+  // The workbench sweep runs only for a browser that is between accounts. A
+  // signed-in operator can still reach this page (Back after signing in, an
+  // old tab) and must not lose their local workbench state for it.
+  const signedIn = await hasAuthSession();
 
   return (
     <main className={styles.page}>
+      {signedIn ? null : <WorkbenchSweep />}
       <div className={styles.localeSwitch}>
         <LocaleSwitch aria-label={tShell("localeSwitch")} />
       </div>

@@ -107,7 +107,7 @@ vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: mocks.createSupabaseServerClient,
 }));
 
-const { getOperatorContext } = await import("./session.ts");
+const { getOperatorContext, hasAuthSession } = await import("./session.ts");
 
 afterEach(() => {
   mocks.getDb.mockReset();
@@ -373,5 +373,36 @@ describe("getOperatorContext provisioning boundary", () => {
       workspace_id: workspaceId,
       display_name: "Local Dev Operator",
     });
+  });
+});
+
+describe("hasAuthSession", () => {
+  it("is false without a Supabase user and never touches the database", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    mocks.createSupabaseServerClient.mockResolvedValue({
+      auth: { getUser: async () => ({ data: { user: null } }) },
+    });
+
+    await expect(hasAuthSession()).resolves.toBe(false);
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
+  it("is true for a signed-in user without resolving the operator", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    authenticatedAs("00000000-0000-4000-8000-000000000010");
+
+    await expect(hasAuthSession()).resolves.toBe(true);
+    // Identity only: an operator row is not looked up, so a signed-in account
+    // that has no workspace yet still counts as signed in here.
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
+  it("is true under loopback development auth without calling Supabase", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("APP_ORIGIN", "http://localhost:3000");
+    vi.stubEnv("SF_DEV_AUTH", "true");
+
+    await expect(hasAuthSession()).resolves.toBe(true);
+    expect(mocks.createSupabaseServerClient).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 # app.gengrowth.ai 新工作台 UI 移植设计
 
 日期：2026-09-11
-状态：rev6，已过跨模型评审（gpt-6-astra REVISE 15 条 + 自审 8 条，处置见 §14）与三轮 spec 一致性审阅（第三轮 Approved；其建议已采纳）；§13 三项已由 Owner 于 2026-09-11 拍板
+状态：rev6（PR-1 落地同步 2026-09-11：§4.1/§4.3/§6.5/§6.7/§11 按实现更新），已过跨模型评审（gpt-6-astra REVISE 15 条 + 自审 8 条，处置见 §14）与三轮 spec 一致性审阅（第三轮 Approved；其建议已采纳）；§13 三项已由 Owner 于 2026-09-11 拍板
 基线：`origin/main` f28a1900
 
 ## 0. 一句话
@@ -62,17 +62,21 @@ apps/web/src/
     studio/ report/ setup-sources/
                                原地不动
   components/workbench/
-    shell/    WorkbenchShell, ShellChrome, Sidebar, Topbar, CommandPalette, ArtifactDrawer,
+    shell/    WorkbenchShell, ShellChrome, Sidebar, SiteCard, Topbar, CommandPalette,
+              ArtifactDrawer, SignOutButton,
               workbench-nav（新导航模型；旧 components/app-shell/nav-model.ts 原地保留，
-              旧页与其测试仍用）, useProjectShellEffects
+              旧页与其测试仍用）, useProjectShellEffects, useContextNavigationConfirm,
+              useGlobalShortcut, useMediaQuery
     ui/       PageHead, InPane, OutPane, Field, RunningSteps, DemoChip, Chip,
-              Gauge, Tabs, Dialog（焦点管理共用）
+              Gauge, Tabs, Dialog（焦点管理共用）, cn, ids, focus-order, LegacyLinks,
+              keyboard（`isComposingKey`：IME 组合中的按键，面板 / 对话框 / 全局快捷键共用）
     views/<module>/            每模块一目录：主视图 + 输入面板 + 每个报告 tab 各一文件
   lib/workbench/
     mock/     rng, gsc-parse, audit, visibility, keywords, competitors, links, kb,
               content, answers, builders（jsx 的 B.*）, csv, demo
     store/    types, schema（zod）, reducer, selectors, persistence, WorkbenchProvider, hooks
-    routes.ts 段名表 + 「旧版页面」映射表
+    download.ts  产物筐 / 导出共用的 Blob 下载（锚点挂 body、rel=noopener、try/finally 回收）
+    routes.ts 段名表 + 「旧版页面」映射表 + 旧版段名的 nav 标签键表（LEGACY_LABEL_KEY）
 ```
 
 约束：视图文件 ≤ 400 行、函数 ≤ 50 行、嵌套 ≤ 4 层；相对 import 带 `.ts` 扩展名；`lib/workbench/mock` 不 import React、不 import `@sf/engine`（客户端不能拉 barrel）；strict TS（`exactOptionalPropertyTypes` / `noUncheckedIndexedAccess`）下移植 jsx 的松散对象要逐个补类型，不用 `any`。
@@ -81,18 +85,18 @@ apps/web/src/
 
 | 段 | 现状 | 处理 |
 |---|---|---|
-| `overview` | 旧概览页（真数据两卡） | 新概览接管；旧页搬到 `legacy/overview`。根 `page.tsx` 重定向仍指 `/overview`，**但在新概览可用（§9 首个生产发布）之前不合入 main** |
+| `overview` | 旧概览页（真数据两卡） | 新概览接管；旧页搬到 `legacy/overview`。根 `page.tsx` 重定向仍指 `/overview`，**但在新概览可用（§9 首个生产发布）之前不合入 main**。PR-1 阶段 `/overview` 渲染的是占位视图（新概览在 PR-3 落地），这条闸门因此是硬性的 |
 | `sources` | 旧数据源页（真实 GSC OAuth） | **旧页原地不动**。OAuth 回调重定向、`source-connect.ts`、`hooks-sources.ts` 及 ~20 个文件（含需 Postgres 的集成测试）指向它。新数据源页用 `data-sources`；接真时把 OAuth 落点切过来并删旧页 |
 | `settings` | 旧设置页（唯一动作：`useDeleteProject`，117 行） | 新设置页接管，旧页删除。PR-1 阶段的新设置页 = 「页面开发中」占位 + §6.6 的真实删除区块；PR-3 补齐通知偏好与数据源区块 |
 
 ### 4.3 壳的行为
 
 - **侧栏**：分组和标签走 `workbench.nav.*`；`aria-current="page"` 标当前项；徽标语义按 opengengrowth（外观权威）：技术审计 = 健康分、AI 可见度 = 提及率 `%`、关键词研究 = 候选数、产物中心 = 产物数，其余项按 jsx `counts`（词库、竞品、外链、知识库缺口、数据源行数）；值来自 §6.3 的 selectors；**未 hydrate → 徽标位渲骨架；已 hydrate 但该模块未运行 → 不显示徽标**（不显示 0）；审计运行中（`audit = null`）同样不显示，不回退到 `lastAudit`。侧栏底部 jsx 的「Pro 套餐，N 个站点」改为只显示站点数（`projectOptions.length`）。
-- **站点卡**（照 opengengrowth `Sidebar.tsx` 的四行：域名 / 市场 / GSC / 审计）：域名 = `ProjectShellProject.host`；市场 = 主站点 `market_codes[0]`（`ProjectShellProject` 增加 `marketCode` 字段，从 `SiteRow` 取，总是真实存在）；GSC = 真实连接状态（`sources` 的 GSC connection 是否已连接；PR-1 先显示「—」，PR-3 数据源批接上）；审计 = store 里 `lastAudit.at`（本地 mock 结果），有值时紧跟一个「示例」小标，没有则「—」；站点卡不放 GA4 行（照 opengengrowth 四行）。**真实与 mock 分开标注**（评审 F12）：前三行是真数据不标，第四行标「示例」；数据源页里 mock 导入的行数徽标同样带「示例」。
-- **顶栏**：复用现有 `ProjectSwitcher`；「＋ 新建站点」→ `/new-project`；「搜索 / 跳转 ⌘K」按钮（打开命令面板，关闭后焦点回到它）；保留 `LocaleSwitch` 与 `signOutAction` 账号菜单；「示例数据」chip（`demo` 为真时显示「示例站点」并带「清除示例」）；「产物筐 N」开抽屉；storage 不可用时的「本次结果不会保存」提示（§6.5）。
-- **命令面板 / 产物筐抽屉**：都是 `role="dialog" aria-modal="true"`，有 `aria-labelledby`；打开时焦点进入（面板进搜索框、抽屉进关闭按钮），关闭时焦点回到触发按钮；焦点圈在对话框内（Tab 循环）；背景 `inert`；Esc 关闭；⌘K / Ctrl+K 切换面板。面板列表项是 `role="option"` 的按钮，不是可点 div。
-- **移动端侧栏**：`aside` 关闭时 `inert`（不只是 `translate-x`），遮罩可点关闭，开合按钮带 `aria-expanded` / `aria-controls`。
-- **旧壳的副作用必须保留**（自审 M1）：`_nav.tsx` 里两个副作用与视觉无关但旧页依赖——`withProjectHistoryPosition`（Studio 取消 Back/Forward 后回退用）和 `_context-navigation-guard`（Context 未保存离开确认）。抽成 `useProjectShellEffects` hook，在新 Sidebar 挂载；`studio-workspace.mock.spec` 与 `product-profile.mock.spec` 作为回归门。
+- **站点卡**（照 opengengrowth `Sidebar.tsx` 的四行：域名 / 市场 / GSC / 审计）：域名 = `ProjectShellProject.host`；市场 = 主站点 `market_codes[0]`（`ProjectShellProject` 增加 `marketCode` 字段，从 `SiteRow` 取，总是真实存在）；GSC = 真实连接状态（`sources` 的 GSC connection 是否已连接；**PR-1 落地：`WorkbenchShell` 固定传 `gscConnected: null`，站点卡显示「—」；接真实状态是 PR-3 数据源批的事**，`SiteCard` 已按 `true / false / null` 三态渲染并有单测）；审计 = store 里 `lastAudit.at`（本地 mock 结果），有值时紧跟一个「示例」小标，没有则「—」；站点卡不放 GA4 行（照 opengengrowth 四行）。**真实与 mock 分开标注**（评审 F12）：前三行是真数据不标，第四行标「示例」；数据源页里 mock 导入的行数徽标同样带「示例」。
+- **顶栏**：复用现有 `ProjectSwitcher`；「＋ 新建站点」→ `/new-project`（这个链接也过 Context 离开确认，见下一条）；「搜索 / 跳转 ⌘K」按钮（打开命令面板，关闭后焦点回到它）；保留 `LocaleSwitch` 与 `signOutAction` 账号菜单；「示例数据」chip（`demo` 为真时显示「示例站点」并带「清除示例」——**PR-1 只落了 chip 的两种文案，「清除示例」按钮随 `loadDemo` 入口一起在 PR-3 落地**，见 §6.7）；「产物筐 N」开抽屉；storage 不可用时的「本次结果不会保存」提示（§6.5；`swept` 态静默）。这条提示只有**一个** `role="status"` 容器，始终渲染以保住 live region；`lg` 断点以下顶栏放不下整句时它是 `sr-only`（照样播报，只是不占版面），`lg` 起才可见并截断。
+- **命令面板 / 产物筐抽屉**：都是 `role="dialog" aria-modal="true"`，有 `aria-labelledby`；打开时焦点进入（面板进搜索框、抽屉进关闭按钮），关闭时焦点回到触发按钮；焦点圈在对话框内（Tab 循环）；背景 `inert`；Esc 关闭；⌘K / Ctrl+K 切换面板。面板列表项是 `role="option"` 的 **`<Link>` 锚点**（不是按钮、更不是可点 div），Enter 等价于对高亮那一项的一次真实点击（`element.click()`），面板自己**不调 `router.push`**：Studio 编辑器的未保存守卫（`_unsaved-navigation-guard.ts`）是在 `document` 捕获阶段拦 `a[href]` 点击的，按钮驱动的 router push 会从它旁边走过去、把脏编辑静默丢掉（PR-1 验收红队 A1）。Context 离开确认在锚点自己的 `onClick` 里跑，同样靠 `preventDefault` 取消；被取消的点击 `Link` 不会导航，面板保持打开。**⌘K / 顶栏按钮在别的模态拥有页面时拒绝打开**（红队 A2）：旧页的 Product Profile 编辑器与 action override 会把 `document.body` 的每个子节点（含 `#wb-app`）设成 `inert` 并压在 z-index 1200；「根是 inert 且没有工作台面板开着」就是这个签名，此时 `ShellChrome` 的三个 opener 都原样返回，z-50 的对话框不会挂到那层遮罩底下抢焦点。配套地，`Dialog` 在 0→1 时快照根上**已有**的 `inert`、回到 0 时只摘自己设的那份（红队 A3），关闭时的焦点归还（首选目标与 opener 兜底都一样）跳过落在 `[inert]` / `[aria-hidden="true"]` 子树里的目标。一个布尔快照够用的前提是两类模态**不会交错**：我们的对话框开着时旧页已 inert、开不出它的模态；旧页模态开着时 `ShellChrome` 拒绝开我们的——可达的顺序只有严格嵌套（gpt-6-astra 复审提出的「先开我们的再开旧页模态」交错序列不可达，记录不修）。
+- **移动端侧栏**：`aside` 关闭时 `inert`（不只是 `translate-x`），遮罩可点关闭，开合按钮带 `aria-expanded` / `aria-controls`。断点判定用 `useMediaQuery("(width < 48rem)")`（与 rail 的 `md:` 同一个 Tailwind v4 断点，px 值会随根字号漂）；代价是首帧 `matches` 为 false，移动端有一帧侧栏尚未 `inert`，hydration 后立即纠正。
+- **旧壳的副作用必须保留**（自审 M1）：`_nav.tsx` 里两个副作用与视觉无关但旧页依赖——`withProjectHistoryPosition`（Studio 取消 Back/Forward 后回退用）和 `_context-navigation-guard`（Context 未保存离开确认）。history 副作用留在 `useProjectShellEffects`（在新 Sidebar 挂载），离开确认单独抽成 `useContextNavigationConfirm`（只导出链接用的 `confirmNavigation`；原本给命令面板 router push 用的 `confirmLeave` 随面板改成锚点后删除，面板选项走同一个 `confirmNavigation`）——面板跳转是同一种导航，不过守卫就会「侧栏问、面板不问」；`studio-workspace.mock.spec` 与 `product-profile.mock.spec` 作为回归门。旧壳自己的 `app/p/[projectId]/_project-switcher.tsx` 后来也改接这同一个 `useContextNavigationConfirm`（原先是内联拼一份等价判断 + `window.confirm`），三处导航入口——侧栏链接、命令面板、项目切换器——因此共用一套问法，不会有第四种版本悄悄走漂。
 - **90 天 program 进度**（`SidebarProgress` / `program day`）：**明确退役**，不进新壳；`mobile-shell.mock.spec` 相应断言删除；`appShell.program*` 文案键随之删除（en / zh-CN 同删）。
 - **「旧版页面 →」**：与旧页重叠的新页面在 `PageHead` 右侧放链接，可多个。完整映射：
 
@@ -113,14 +117,13 @@ apps/web/src/
 
 ## 5. 样式
 
-- 依赖：`tailwindcss@^4.1`、`@tailwindcss/postcss`、`tw-animate-css`、`clsx`、`tailwind-merge`。接法照 `apps/marketing`。
+- 依赖：`tailwindcss@^4.1`、`@tailwindcss/postcss`、`clsx`、`tailwind-merge`。接法照 `apps/marketing`。**不带 `tw-animate-css`**：PR-1 没有任何 `animate-in` 类工具的消费者，依赖与 `@import` 在验收时移除（C12）；第一个用到它的 PR 再把依赖与 `@import "tw-animate-css";` 加回来（`apps/marketing` 仍在用，lockfile 里的包条目还在）。
 - 新建 `apps/web/src/app/workbench.css`，由根 `layout.tsx` 在 `globals.css` 之后 import（`@import` 必须位于文件顶部，所以不并进 `globals.css`）：
 
 ```css
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
-@import "tw-animate-css";
 @theme { --font-sans: var(--font-wb), "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; /* 色板 token */ }
 @layer base { .wb-reset, .wb-reset :where(button, input, select, textarea, h1, h2, h3, p) { /* 最小 reset：box-sizing、margin、font、border、background */ } }
 ```
@@ -128,7 +131,7 @@ apps/web/src/
 - **不引 preflight**。reset 放 `@layer base`，被 `utilities` 层压过（评审 F4）；`box-sizing: border-box` 与 `border-style: solid` 这两条 preflight 默认必须在 reset 里补上，否则 `border` 工具类无效。
 - **reset 作用域不包住 `<main>`**（评审 F4 / 自审）：`wb-reset` 只挂在壳的 chrome（侧栏、顶栏、抽屉、面板）和每个新视图的根 `<div>` 上；旧页在 `<main>` 内不带这个类，CSS Modules 像素不变。验证对象不是全页截图（新壳本来就不同）而是**旧页内元素的计算样式**：`e2e/legacy-style-parity.mock.spec.ts`（固定 `colorScheme: "light"`，且是 PR-1 的**第一个** commit，早于 `workbench.css` 与 `data-theme` 落地）在改动前对 `growth-map` 与 `sources`（原定 `context`，其读接口不在 mock 路由表里，快照不稳定；2026-09-11 计划审阅第四轮更正）的 `#main-content` 内 `[data-app-page-title] / h1 / button / p / input / a` 记录与宽度无关的计算样式（字体、颜色、边距、边框、圆角）为基线 JSON；PR-1 之后每次跑都必须与基线逐属性相等。
 - 字体：`Plus_Jakarta_Sans` 走 `next/font/google`（构建期自托管，满足 `font-src 'self'`），变量 `--font-wb` 在根 layout 注入；`@theme` 把 `--font-sans` 绑到它，`font-sans` 工具类才真正生效。已验证旧 CSS 不使用 `--font-sans` / `--color-*`，无变量冲突。
-- 设计 token 放 `@theme`：`--color-wb-paper #FAF9F6`、`--color-wb-rail #1f1e1c` / `-rail-2 #2a2927` / `-rail-3 #333230`、`--color-wb-seo #1a653b`、`--color-wb-geo #8b5cf6`、`--color-wb-emerald #10b981`；「示例」琥珀用 Tailwind 内置 `amber-50/200/700`（原型即如此）。组件里不写裸 hex。新壳固定浅色（opengengrowth 没有深色版）；根 `layout.tsx` 给 `<html>` 加 `data-theme="light"`，旧 `globals.css` 的 `:root:not([data-theme="light"])` 深色分支因此对全站关闭——否则 OS 深色下旧页会以深色嵌在浅色壳里。这是有意退役 OS 深色跟随。
+- 设计 token 放 `@theme`（以 `apps/web/src/app/workbench.css` 为准）：`--color-wb-paper #faf9f6`；导轨 `--color-wb-rail #1f1e1c` / `-rail-2 #2a2927` / `-rail-3 #333230` / `-rail-line #2e2d2b`；导轨文字四档 `-rail-text #a3a3a3` / `-rail-muted #9c9b99` / `-rail-label #959492` / `-rail-dim #8f8e8c`（全部在所用面上 ≥ 4.5:1，`workbench-tokens.test.ts` 钉住）；`--color-wb-ink #222222`（顶栏产物按钮的近黑填充）；`--color-wb-seo #1a653b`（`<progress>` 默认填充）。**没有 `-geo` / `-emerald` / `-seo-dark`**：导航 tone 圆点与 GEO 强调色用 Tailwind 内置 `emerald-500` / `fuchsia-500`，「示例」琥珀用内置 `amber-50/200/700`，原型 opengengrowth 即如此；这三个 token 落地后从未有消费者，验收时删除（C11）。组件里不写裸 hex。新壳固定浅色（opengengrowth 没有深色版）；根 `layout.tsx` 给 `<html>` 加 `data-theme="light"`，旧 `globals.css` 的 `:root:not([data-theme="light"])` 深色分支因此对全站关闭——否则 OS 深色下旧页会以深色嵌在浅色壳里。这是有意退役 OS 深色跟随。
 - **CSP 硬约束**：生产 `style-src 'self' 'nonce-…'`，无 `unsafe-inline`。新代码禁止 `style={{}}` 和 `<style>`；jsx 的 `<style>{CSS}</style>` 与仪表 `style={{width}}` 全部改为编译期 CSS：仪表用 `<progress>`，样式在 `workbench.css` 的 `.wb-reset :where(progress)` 规则里（PR-1 随退役 `SidebarProgress` 一并落地），`ui/Gauge` 组件在 PR-4 首个消费者出现时再建，颜色档用 `data-tone="seo|warn|bad"` 属性选择器。**mock e2e 跑的是 dev CSP（有 `unsafe-inline`），看不见违规**（评审 F5）：PR-1 起每个 PR 跑一次 `next build && next start` 的生产模式冒烟，页面 console 无 CSP violation 才算过。
 - 不引 recharts / motion。图标用现有 `lucide-react@^1.25`。
 
@@ -146,11 +149,13 @@ built          是否已建关键词矩阵
 saved          词库 [{ q, addedAt, source }]
 audit          当前审计报告 | null；auditHistory ≤ 12；lastAudit | null
 visResults     可见度结果 []；visHistory ≤ 12；lastVis | null
+visPartial     boolean，可见度运行进行中（含已流入的部分结果）；随状态一起持久化，供 hydration 判定（§6.4）
 compData       竞品数据 | null
-plans          答案页方案 []
-targets        外链目标 []
+plans          答案页方案，按 key 索引的 map（初始 `{}`）
+targets        外链目标 [] | null（初始 `null` = 未跑过）
 kb             事实知识库 | null
 artifacts      产物 [{ id, at, module, type, engine, title, content, filename? }]，上限 50
+               module 取 audit / visibility / keywords / keywordLibrary / competitors / links / content / kb / answers / profile / week
 notify         通知偏好 { weekly, drop, mention, gsc }（原 jsx `ws.notify`，本地 mock；默认 { true, true, false, true }）
 demo           boolean，是否已载入示例站点（§6.7）
 ```
@@ -166,8 +171,8 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 - `seedList(state)`：`seeds` 按换行 / 逗号切分去空。
 - `keywordRows(state)`：`buildRows(seedList, profile, gscRows)`；输入完整列出，`useMemo` 依赖与之一致。
 - `gatedRows(state)`：`built ? keywordRows : []`。概览、本周变化、AI 可见度、关键词研究用 gated；词库、内容生成、竞品用 ungated（照 jsx）。
-- `picked(state)`：`saved.map(x => x.q)`。
-- `counts(state, keywordRowCount)`：§4.3 的徽标值；`null` 表示不显示，不用 0 顶替；`audit = null`（未跑或运行中）→ `null`。`keywordRowCount` = `built ? gatedRows.length : null`（gate 在注入函数内做），而 `buildRows` / `keywordRows` / `gatedRows` 都在 PR-2——PR-1 的 `WorkbenchProvider` 接受可选的 `deriveKeywordRowCount(state): number | null`；PR-2 在 **client 模块**（`ShellChrome` 或 provider 自身）import 真实函数传入——server `layout.tsx` 不能给 client 组件传函数 prop；之前徽标为 `null`。AI 可见度徽标读 `visResults`（同 jsx `counts`）：`visStart` 清空后徽标消失、`visProgress` 中间态随之变化，运行中不回退到 `lastVis`，与审计一致。
+- `savedQueries(state)`（原名 `picked`）：`saved.map(x => x.q)`。
+- `selectCounts(state, keywordRowCount)`（原名 `counts`）：§4.3 的徽标值；`null` 表示不显示，不用 0 顶替；`audit = null`（未跑或运行中）→ `null`。`keywordRowCount` = `built ? gatedRows.length : null`（gate 在注入函数内做），而 `buildRows` / `keywordRows` / `gatedRows` 都在 PR-2——PR-1 的 `WorkbenchProvider` 接受可选的 `deriveKeywordRowCount(state): number | null`；PR-2 在 **client 模块**（`ShellChrome` 或 provider 自身）import 真实函数传入——server `layout.tsx` 不能给 client 组件传函数 prop；之前徽标为 `null`。AI 可见度徽标读 `visResults`（同 jsx `counts`）：`visStart` 清空后徽标消失、`visProgress` 中间态随之变化，运行中不回退到 `lastVis`，与审计一致。
 
 ### 6.4 reducer 转换（评审 F6 / F9）
 
@@ -176,12 +181,12 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 - `auditStart`：`audit = null`，`lastAudit` 不变（运行中仍可看上次）。
 - `auditComplete(report)`：若 `lastAudit` 存在则 `auditHistory = [...history, lastAudit].slice(-12)`；`audit = lastAudit = report`。历史不含当前报告（视图的 delta 计算依赖这一点）。
 - `auditCancel`：运行被丢弃（切页 / 切项目 / 重跑）时派发，`audit = lastAudit`（回到上次报告，不留空）。
-- `visStart`：`visResults = []`。
-- `visCancel`：`visResults = lastVis?.results ?? []`。
-- `visProgress(results)`：`visResults = results`，不动 `lastVis` / `visHistory`（jsx 边跑边 push 的中间态）。
-- `visComplete(results, at)`：若 `lastVis` 存在则归档入 `visHistory`（≤ 12）；`visResults = results`；`lastVis = { at, results }`。（jsx 用「从空变非空」判定同一件事；拆成两个 action 后判定不再依赖前态。）
-- 其余：`patchProfile`、`setProfileDoc`、`setConns`、`setGscRows`、`setSeeds`、`setBuilt`、`setSaved`（写 `saved`；按词保留已有 `addedAt` / `source`）、`setCompData`、`setPlans`、`setTargets`、`setKb`、`setNotify`、`addArtifact`（前插，超 50 丢最旧）、`removeArtifact`、`clearArtifacts`、`loadDemo(payload)`——payload 由 PR-2 的 `makeDemoSite` 产出，**逐字段写入**：`conns, gscRows, seeds, built, saved, audit, auditHistory, lastAudit, visResults, visHistory, lastVis, compData, plans, targets, kb, artifacts`，并置 `demo = true`；**不写** `profile`（六个字段全部保留，示例文本里的品牌名用真实 `profile.brand` 生成）、`profileDoc` 只写 `crawl / gsc / third` 三个信号，`ai` 用 `DEMO_AI` 但 `summary / facts` 里的「GenGrowth」由 `makeDemoSite` 替换为真实 brand、`notify` 不动、`clearDemo`（与 `loadDemo` 对称：只把它写过的 16 个字段回初始值并置 `demo = false`，**不动** `profile` 与 `notify`）、`reset`（全量回 §6.7 初始值，只在真实删除项目等场景用）。
-- **hydration 归一化**：运行中刷新 / 切项目会把 `audit = null`、`visResults = []` 持久化下来而没人派发 cancel；provider 读盘后先过 `normalizeInterrupted(state)`：`audit === null && lastAudit` → `audit = lastAudit`；`visResults.length === 0 && lastVis` → `visResults = lastVis.results`。纯函数，有单测。
+- `visStart`：`visResults = []`，`visPartial = true`。
+- `visCancel`：`visResults = lastVis?.results ?? []`，`visPartial = false`。
+- `visProgress(results)`：`visResults = results`，`visPartial = true`，不动 `lastVis` / `visHistory`（jsx 边跑边 push 的中间态）。
+- `visComplete(results, at)`：若 `lastVis` 存在则归档入 `visHistory`（≤ 12）；`visResults = results`；`lastVis = { at, results }`；`visPartial = false`。（jsx 用「从空变非空」判定同一件事；拆成两个 action 后判定不再依赖前态。）
+- 其余：`patchProfile`、`setProfileDoc`、`setConns`、`setGscRows`、`setSeeds`、`setBuilt`、`setSaved`（写 `saved`；按词保留已有 `addedAt` / `source`）、`setCompData`、`setPlans`、`setTargets`、`setKb`、`setNotify`、`addArtifact`（前插，超 50 丢最旧）、`removeArtifact`、`clearArtifacts`、`loadDemo(payload)`——payload 由 PR-2 的 `makeDemoSite` 产出，**逐字段写入**：`conns, gscRows, seeds, built, saved, audit, auditHistory, lastAudit, visResults, visHistory, lastVis, compData, plans, targets, kb, artifacts, profileDoc`（共 17 个，与 `clearDemo` 对称；落地即 `store/reducer.ts` 的 `DemoPayload` 与 `demoFields`），并置 `demo = true`、`visPartial = false`；**不写** `profile`（六个字段全部保留，示例文本里的品牌名用真实 `profile.brand` 生成）、`profileDoc` 内部只写 `crawl / gsc / third` 三个信号，`ai` 用 `DEMO_AI` 但 `summary / facts` 里的「GenGrowth」由 `makeDemoSite` 替换为真实 brand、`notify` 不动、`clearDemo`（与 `loadDemo` 对称：只把它写过的 17 个字段（含 `profileDoc`）与 `visPartial` 回初始值并置 `demo = false`，**不动** `profile` 与 `notify`）、`reset`（全量回 §6.7 初始值，只在真实删除项目等场景用）。
+- **hydration 归一化**：运行中刷新 / 切项目会把 `audit = null`、`visPartial = true` 持久化下来而没人派发 cancel；provider 读盘后先过 `normalizeInterrupted(state)`：`audit === null && lastAudit` → `audit = lastAudit`；`visPartial` → `visResults = lastVis?.results ?? []` 且 `visPartial = false`。**可见度必须看 `visPartial`，不能看 `visResults` 是否为空**：provider 每次变更都整份写盘、`visProgress` 会把中间结果流进 `visResults`，只判空会让「跑了一半的部分结果」冒充一次完整测量；反过来「跑完但一条都没命中」是合法的完成态，不该被回滚。纯函数，有单测。
 - **运行归属**：每次运行持有 `{ projectId, runToken }`；完成时若 provider 的 projectId 或当前 runToken 已变（切项目、重跑、离开页面），结果丢弃。步骤动画不跨路由存活。
 
 ### 6.5 持久化与 hydration（评审 F6 / F7 / F14）
@@ -190,8 +195,9 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 - 读：`try/catch` 包住 `getItem`（隐私模式会抛）；JSON 解析后过 zod schema（`store/schema.ts`），版本不符或形状不对整体丢弃回默认；**storage 不可用时进入 volatile 模式**，内存可用、不写盘，顶栏提示「本次结果不会保存」。
 - 写：`try/catch`；`QuotaExceededError` 时提示并停止写入（不裁剪用户数据）。
 - 时序：`WorkbenchProvider` 以 `key={projectId}` 挂载，切项目必重挂；挂载后读盘 → `ready = true`；**`ready` 之前不写盘、侧栏徽标与视图都渲骨架**。
-- 多标签：监听 `storage` 事件，同键变化时以磁盘为准重载（最后写入者赢，不合并）。
-- 清理：真实删除项目成功后删该键；`signOutAction` 前清 `gg.workbench.*`（同一浏览器换账号不串数据）。
+- 多标签：监听 `storage` 事件（`event.storageArea` 不是本 `localStorage` 的忽略），同键写入（`event.newValue` 非空）时以磁盘为准重载（最后写入者赢，不合并）。**来自存储的状态绝不回写**：无论首次 hydration 还是跨标签重载，provider 按引用记住那份状态，写盘 effect 对它直接跳过；只有本地 dispatch 产生的新状态才落盘。这是两个标签服务端种子不一致时（项目改名而一个标签还开着）仍能收敛的原因——`withProjectSeed` 各自重盖 `profile.url/brand/market`，回声写会让两边互相覆盖到天荒地老；它也让新开标签的 hydration 回滚不被广播成权威。**重载不跑 `normalizeInterrupted`**：写盘的那个标签可能正在跑，归一化会把它流进来的部分结果回滚到 `lastVis`；中断态只在首次 hydration 结算一次。**删除按事件自身证据判定**：`event.key === null`（另一标签 `localStorage.clear()`）或 `event.newValue === null`（另一标签删键）直接进入清扫态并再删一次本键（幂等），不重读磁盘——本标签的写盘 effect 可能恰在送达窗口里把键重建了，重读会看到自己的写入而漏掉登出。已知残留（PR-2）：本标签一有本地改动就会把自己归一化过的副本写盘，另一标签在飞的运行仍会被砸；真正的保护要等可见性视图落地时做运行归属 / 租约。
+- 清理：真实删除项目成功后删该键；`signOutAction` 前清 `gg.workbench.*`（同一浏览器换账号不串数据）。`storage` 事件只发给同源的**其他**文档，清扫的这个文档收不到自己的，所以 `SignOutButton` 清扫后同步派发 `WORKBENCH_SWEPT_EVENT`（`store/persistence.ts` 导出的常量），本标签的 provider 靠它同步进入清扫态。**清扫的汇合点是登录页**（验收 B4）：`SignOutButton` 只覆盖工作台顶栏那一条登出路径，旧壳 `/new-project` 用的是裸 server-action 表单、跑不了客户端清扫，会话过期更不会经过任何登出——但所有这些路径最终都落到 `/login`，所以 `app/login/_workbench-sweep.tsx`（client，渲染 `null`）在登录页挂载时再清一遍 `gg.workbench.*` 并派发同一个事件；`SignOutButton` 自己的清扫保留（它让还开着的本标签 provider 立刻停写）。登录页只在请求**没有会话**时渲染它（`lib/auth/session.ts` 的 `hasAuthSession()`：只查身份、不查 operator、不碰数据库；dev auth 下恒为已登录）——已登录的 operator 也能到 `/login`（登录后按返回键、一个旧标签），不能因此丢掉本地工作台状态；proxy 不会把已登录用户从 `/login` 弹走，所以这道闸只能在页面上做。
+- `storageMode` 四档：`ok` / `volatile` / `quota` / `swept`。`volatile` 与 `quota` 是存储故障，顶栏出提示；`swept` 是有意丢弃（登出清扫、删项目），同样停止写盘但 UI 不出声——否则一次登出会在其他标签留下一条指责浏览器的常驻横幅。停止写盘是必须的：`reset` 产生新对象，写盘 effect 会在清扫后几毫秒内把种子镜像重新写回 `gg.workbench.v1.<id>`。闸门是一个同步 ref（`writesBlockedRef`），在清扫 / 删项目的第一行置位：`setStorageMode("swept")` 改不了同一 commit 里已经排好的 passive effect 闭包，ref 可以；`storageMode` 只服务 UI。
 - 隐私：用户在 mock 页输入的内容（粘贴的 GSC 导出、档案文本、种子词）是用户数据，不因周围是 mock 而降级；只存本地、不上传、登出即清。
 
 ### 6.6 真实删除项目（评审 F11）
@@ -202,7 +208,7 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 
 新项目只灌真实字段：`profile.url`（host）、`profile.brand`（clientName）、`profile.market`（主站点 `market_codes[0]`，创建项目时必填，总是存在）。这三项是真实项目的镜像：provider 每次挂载都用 `ProjectShellProject` 覆盖它们（持久化里的旧值不算数），站点档案页对这三项只读，只允许编辑 `positioning / features / competitors`。`positioning / features / competitors / profileDoc` 一律为空——jsx 的 `DEMO_PROFILE` 描述的是 GenGrowth 自己，灌给别人的项目就是撒谎。空态由各页的 empty 文案承接。
 
-**「载入示例站点」**：概览空态处一个显式按钮，调用 jsx 的 `makeDemoSite(profile, level, seeds)`——`level = "full"`、`seeds` = jsx `DEMO_SITES` 第一档的四个演示种子词（这两个常量抽到 `mock/demo.ts` 作 `DEMO_LEVEL` / `DEMO_SEEDS`，`DEMO_SITES` 本身不移植）——生成整套演示结果（审计、可见度、关键词、竞品、外链、知识库、产物、历史），一次 `loadDemo` action **整体覆盖**当前项目的模块结果字段并置 `demo = true`；若当前状态已有用户输入（`gscRows` / `saved` / `seeds` 非空）先弹确认。`demo` 为真时顶栏「示例数据」chip 变为「示例站点」并带「清除示例」按钮，点击后确认再 `clearDemo`（只清示例写过的模块结果与 `gscRows / seeds / saved / conns`，确认框写明「会清掉当前的 GSC 行与词库」；用户的档案编辑与通知偏好保留）。示例结果的 `profile.url / brand / market` 仍是真实项目的，只有模块结果是演示的；不会无提示自动灌入。
+**「载入示例站点」**：概览空态处一个显式按钮，调用 jsx 的 `makeDemoSite(profile, level, seeds)`——`level = "full"`、`seeds` = jsx `DEMO_SITES` 第一档的四个演示种子词（这两个常量抽到 `mock/demo.ts` 作 `DEMO_LEVEL` / `DEMO_SEEDS`，`DEMO_SITES` 本身不移植）——生成整套演示结果（审计、可见度、关键词、竞品、外链、知识库、产物、历史），一次 `loadDemo` action **整体覆盖**当前项目的模块结果字段并置 `demo = true`；若当前状态已有用户输入（`gscRows` / `saved` / `seeds` 非空）先弹确认。`demo` 为真时顶栏「示例数据」chip 变为「示例站点」并带「清除示例」按钮（**PR-3**：与「载入示例站点」同批——PR-1 的 store 已有 `loadDemo` / `clearDemo` 两个 action 与单测，但没有任何 UI 入口触发它们，顶栏也还没有这个按钮），点击后确认再 `clearDemo`（只清示例写过的模块结果与 `gscRows / seeds / saved / conns`，确认框写明「会清掉当前的 GSC 行与词库」；用户的档案编辑与通知偏好保留）。示例结果的 `profile.url / brand / market` 仍是真实项目的，只有模块结果是演示的；不会无提示自动灌入。
 
 ### 6.8 导出与产物的来源声明（评审 F12）
 
@@ -264,7 +270,7 @@ jsx 的 `ws`（`plan / apiKey / members / notify / usage`）是工作区级、�
 
 ## 11. 风险
 
-- 旧页面进入新壳后内容区宽度 / 内边距与旧 `AppShell` 不同，观感有轻微变化；可接受，reset 是否越界由计算样式基线把关。
+- 旧页面进入新壳后内容区宽度 / 内边距与旧 `AppShell` 不同，观感有轻微变化；可接受，reset 是否越界由计算样式基线把关。（PR-1 落地更正 2026-09-11：旧壳 `.main` 的留白——`max-width: 1480px` + `padding: 40px clamp(24px, 3.3vw, 56px) 30px` 及两档断点——由 `workbench.css` `@layer components` 的 `#main-content:not(:has(> .wb-reset))` 规则原样保留，只对没有 `.wb-reset` 直接子节点的 `<main>` 生效；新视图根自带 `p-6 md:p-10 max-w-5xl`，不受影响。`legacy-style-parity.mock.spec.ts` 另有一条用例钉住两边的 `padding-left`。）
 - localStorage 只在本浏览器；换设备 mock 结果不同步；隐私模式下退化为 volatile。
 - `fix/i18n-parity-*` 等在建分支同时改 messages JSON；`workbench` 命名空间追加在文件末尾，合并前 rebase。
 - `.wb-reset` 若写宽会波及旧页——计算样式基线把关。

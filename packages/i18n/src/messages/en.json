@@ -951,9 +951,6 @@
     "projectStage": "Project stage",
     "localeSwitch": "Switch language",
     "switchProject": "Switch project",
-    "programTitle": "90-day program",
-    "programDay": "Day {day} of {total}",
-    "programProgress": "90-day program progress",
     "diagnosisBadge": "{count, plural, one {# confirmed finding} other {# confirmed findings}}",
     "studioBadge": "{count, plural, one {# artifact} other {# artifacts}}",
     "growthMapBadge": "{count, plural, one {# finding to review} other {# findings to review}}",
@@ -983,7 +980,7 @@
       "cancel": "Keep product",
       "confirmAction": "Confirm deletion",
       "deleting": "Deleting…",
-      "error": "The product could not be deleted. Nothing was changed; please try again."
+      "error": "We couldn't confirm whether the product was deleted. Refresh the project list to check, then try again if it is still there."
     }
   },
   "contextStatus": {
@@ -3887,6 +3884,89 @@
         "structureEvidenceExcerpt": "Structural evidence excerpt",
         "nonCausal": "These are independent observations from two fixed windows. Structural differences may be evidence-bounded observations or inferences, but cannot explain why a citation occurred or claim that one publication caused the change."
       }
+    }
+  },
+  "workbench": {
+    "nav": {
+      "label": "Workbench sections",
+      "groups": {
+        "workspace": "Workspace",
+        "research": "Research",
+        "diagnosis": "Diagnosis",
+        "site": "Site",
+        "output": "Output",
+        "space": "Tools"
+      },
+      "items": {
+        "overview": "Overview",
+        "week": "This week",
+        "keywords": "Keyword research",
+        "keywordLibrary": "Keyword library",
+        "competitors": "Competitor overview",
+        "audit": "Technical audit",
+        "visibility": "AI visibility",
+        "profile": "Site profile",
+        "dataSources": "Data sources",
+        "links": "Backlinks",
+        "content": "Content generation",
+        "kb": "Fact knowledge base",
+        "answers": "Answer pages / reports",
+        "artifacts": "Artifact center",
+        "settings": "Settings"
+      }
+    },
+    "shell": {
+      "tagline": "GEO / SEO workbench",
+      "siteCard": {
+        "market": "Market",
+        "gsc": "GSC",
+        "audit": "Audit",
+        "connected": "Connected",
+        "notConnected": "Not connected",
+        "none": "—"
+      },
+      "openMenu": "Open navigation",
+      "closeMenu": "Close navigation",
+      "search": "Search / jump",
+      "artifacts": "Artifacts {count}",
+      "newSite": "New site",
+      "sites": "{count, plural, one {# site} other {# sites}}",
+      "shortcutHint": "Press ⌘K to jump",
+      "sampleData": "Sample data",
+      "sampleSite": "Sample site",
+      "clearSample": "Clear sample",
+      "sampleTitle": "Sample content is currently Chinese-only",
+      "volatile": "Results will not be saved in this browser",
+      "quota": "Browser storage is full; new results are not being saved",
+      "legacy": "Legacy page",
+      "inProgress": "Page in progress",
+      "inProgressDetail": "This module lands in a later batch. The legacy page keeps working meanwhile.",
+      "inProgressNoLegacy": "This module lands in a later batch.",
+      "footerNote": "Numbers marked sample data are generated locally.",
+      "footerDetail": "The real version runs server-side crawling and APIs.",
+      "palette": {
+        "title": "Search and jump",
+        "placeholder": "Type a section or project",
+        "sections": "Sections",
+        "projects": "Projects",
+        "newProject": "New site",
+        "empty": "No matches"
+      },
+      "drawer": {
+        "title": "Artifacts",
+        "empty": "Nothing saved yet",
+        "emptyDetail": "Save a report or task from any module and it appears here.",
+        "copy": "Copy",
+        "copied": "Copied",
+        "download": "Download",
+        "remove": "Remove",
+        "clear": "Clear all",
+        "close": "Close"
+      }
+    },
+    "settings": {
+      "realAction": "Not sample data",
+      "realActionTitle": "This deletes the real project. It is not sample data."
     }
   }
 }

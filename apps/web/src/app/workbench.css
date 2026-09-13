@@ -1,0 +1,177 @@
+/* @input  — tailwindcss theme + utilities（刻意不引 preflight）
+ * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表规则、
+ *           旧页专用的 #main-content 内边距（components 层，只在 <main> 没有 .wb-reset
+ *           直接子节点时生效，等价于旧壳 app-shell.module.css 的 .main）、
+ *           打印时去掉内容列的侧栏留白（在 utilities 层、且排在 Tailwind utilities 之后，
+ *           否则同特异度下赢不了 md:ml-64）
+ * @pos    — app/layout.tsx 在 globals.css 之后引入；旧页面在 <main> 内不带 .wb-reset，
+ *           reset 不波及它们，而旧壳的内容区留白由上面那条 :has() 规则接管
+ * 一旦本文件被更新，务必更新开头注释
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+/* No tw-animate-css: nothing in PR-1 uses an `animate-in` utility. The PR that
+   first needs one adds the dependency back with `@import "tw-animate-css";`
+   here (no layer — it ships only @property / @theme inline / @utility). */
+
+@theme {
+  --font-sans: var(--font-wb, ui-sans-serif), "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  --color-wb-paper: #faf9f6;
+  --color-wb-rail: #1f1e1c;
+  --color-wb-rail-2: #2a2927;
+  --color-wb-rail-3: #333230;
+  --color-wb-rail-line: #2e2d2b;
+  /* Rail text tiers. Rule: every rail text token must clear WCAG AA 4.5:1 on every
+     rail surface it is used on (light-on-dark, so the lightest tier it sits on is the
+     binding one); app/workbench-tokens.test.ts enforces it. All of this text is under
+     18px and carries information the reader loses if it cannot be read — "labels only"
+     was never a reason to sit below AA. Measured (on rail / rail-2 / rail-3):
+       rail-text  #a3a3a3  6.60 / 5.76 / 5.08  nav link text
+       rail-muted #9c9b99  6.00 / 5.23 / 4.61  tagline, group labels, footer, nav badge
+                                                (the badge sits on rail-3 in the active link)
+       rail-label #959492  5.50 / 4.80 /  -    site-card <dt> column on rail-2
+       rail-dim   #8f8e8c  5.09 /  -   /  -    10px footer version line on rail
+     Luminance order rail-text > rail-muted > rail-label > rail-dim keeps the tiers. */
+  --color-wb-rail-muted: #9c9b99;
+  --color-wb-rail-dim: #8f8e8c;
+  --color-wb-rail-text: #a3a3a3;
+  --color-wb-rail-label: #959492;
+  /* Near-black action fill on paper (topbar artifact button). */
+  --color-wb-ink: #222222;
+  /* SEO green: the default <progress> fill below. The nav tone dots and the GEO
+     accent use Tailwind built-ins (emerald-500 / fuchsia-500, amber-* for the
+     sample-data marker) exactly as the opengengrowth prototype does, so there
+     is no `-geo` / `-emerald` / `-seo-dark` token here. */
+  --color-wb-seo: #1a653b;
+}
+
+/* Same layer as the Tailwind utilities imported above, and after them in source
+   order: `[data-wb-content]` and `.md\:ml-64` have the same specificity, so the
+   later rule wins. In `@layer components` it lost to that utility unconditionally
+   and the print override never applied at Letter width (816px >= 48rem). */
+@layer utilities {
+  @media print {
+    /* The rail is not printed, so the content column must not keep the space it
+       reserves for it. Targets the attribute ShellChrome puts on that column,
+       not its position in the tree: a structural selector would silently stop
+       matching the first time the shell gains a wrapper. */
+    [data-wb-content] {
+      margin-left: 0;
+    }
+  }
+}
+
+/* Legacy pages rendered inside <main> used to get the old shell's `.main` gutter
+   (app-shell.module.css `.main`, which now only frames /new-project's AppShell —
+   project pages moved to ShellChrome, whose <main> carries just `flex-1`). New
+   views are `.wb-reset` roots with their own `p-6 md:p-10 max-w-5xl mx-auto`, so
+   the gutter applies only when no such root is a direct child. `:has()` is fine
+   for every browser in postcss.config.mjs (chrome/edge/firefox 111, safari 16.4).
+   Breakpoints mirror the old rule (960px / 560px), not Tailwind's `md`. */
+@layer components {
+  #main-content:not(:has(> .wb-reset)) {
+    width: 100%;
+    max-width: 1480px;
+    min-width: 0;
+    margin-inline: auto;
+    padding: 40px clamp(24px, 3.3vw, 56px) 30px;
+  }
+  @media (width <= 960px) {
+    #main-content:not(:has(> .wb-reset)) {
+      padding: 28px 20px 36px;
+    }
+  }
+  @media (width <= 560px) {
+    #main-content:not(:has(> .wb-reset)) {
+      padding: 24px 14px 32px;
+    }
+  }
+}
+
+@layer base {
+  .wb-reset,
+  .wb-reset *,
+  .wb-reset ::before,
+  .wb-reset ::after {
+    box-sizing: border-box;
+    border-width: 0;
+    border-style: solid;
+    border-color: var(--color-slate-200);
+  }
+  .wb-reset :where(h1, h2, h3, h4, p, ul, ol, dl, dd, figure) {
+    margin: 0;
+  }
+  .wb-reset :where(button, input, select, textarea) {
+    font: inherit;
+    color: inherit;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    letter-spacing: inherit;
+  }
+  .wb-reset :where(button) {
+    cursor: pointer;
+    text-align: inherit;
+  }
+  .wb-reset :where(button:disabled) {
+    cursor: not-allowed;
+  }
+  .wb-reset :where(ul, ol) {
+    list-style: none;
+    padding: 0;
+  }
+  .wb-reset :where(a) {
+    color: inherit;
+    text-decoration: inherit;
+  }
+  .wb-reset :where(img, svg, video) {
+    display: block;
+    max-width: 100%;
+  }
+  .wb-reset :where(input, textarea)::placeholder {
+    /* slate-500, not 400: placeholder text is text (WCAG 1.4.3 has no
+       exemption for it), and slate-400 on white is 2.63:1. slate-500 is
+       4.77:1; app/workbench-tokens.test.ts reads the value out of Tailwind's
+       theme and pins the ratio. (Comment inside the block on purpose: the
+       selector scan in workbench-css.test.ts reads a comment ahead of a
+       selector as part of it.) */
+    color: var(--color-slate-500);
+    opacity: 1;
+  }
+  .wb-reset :where(progress) {
+    appearance: none;
+    height: 6px;
+    width: 100%;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--color-slate-200);
+  }
+  .wb-reset :where(progress)::-webkit-progress-bar {
+    background: var(--color-slate-200);
+  }
+  .wb-reset :where(progress)::-webkit-progress-value {
+    background: var(--color-wb-seo);
+  }
+  .wb-reset :where(progress)::-moz-progress-bar {
+    background: var(--color-wb-seo);
+  }
+  .wb-reset :where(progress[data-tone="warn"])::-webkit-progress-value {
+    background: var(--color-amber-500);
+  }
+  .wb-reset :where(progress[data-tone="warn"])::-moz-progress-bar {
+    background: var(--color-amber-500);
+  }
+  .wb-reset :where(progress[data-tone="bad"])::-webkit-progress-value {
+    background: var(--color-rose-500);
+  }
+  .wb-reset :where(progress[data-tone="bad"])::-moz-progress-bar {
+    background: var(--color-rose-500);
+  }
+  .wb-reset :focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+}

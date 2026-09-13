@@ -4,12 +4,9 @@ import { ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useRef, type MouseEvent } from "react";
+import { useRef } from "react";
+import { useContextNavigationConfirm } from "@/components/workbench/shell/useContextNavigationConfirm.ts";
 import type { ProjectShellOption } from "@/lib/services/project-shell";
-import {
-  hasUnsavedContextChanges,
-  shouldConfirmContextNavigation,
-} from "./_context-navigation-guard";
 import { projectSwitchHref } from "./_project-switcher-model.ts";
 import styles from "@/components/app-shell/app-shell.module.css";
 
@@ -71,30 +68,15 @@ export function ProjectSwitcher({
   readonly options: readonly ProjectShellOption[];
 }) {
   const tShell = useTranslations("appShell");
-  const tContext = useTranslations("context");
+  // The one Context leave-confirm every navigation affordance shares; a private
+  // copy here drifted from the shell's the moment either side changed.
+  const { confirmNavigation } = useContextNavigationConfirm();
   const pathname = usePathname();
   const linkRefs = useRef(new Map<string, HTMLAnchorElement>());
   const selectedProject = options.find((option) => option.id === projectId);
   const selectedIdentity = selectedProject
     ? projectSwitcherIdentity(selectedProject)
     : null;
-
-  function confirmContextNavigation(
-    event: MouseEvent<HTMLAnchorElement>,
-  ): void {
-    if (
-      !shouldConfirmContextNavigation({
-        dirty: hasUnsavedContextChanges(),
-        current: false,
-        button: event.button,
-        modified:
-          event.altKey || event.ctrlKey || event.metaKey || event.shiftKey,
-      })
-    ) {
-      return;
-    }
-    if (!window.confirm(tContext("leaveWarning"))) event.preventDefault();
-  }
 
   return (
     <div className={styles.projectSwitcher}>
@@ -145,7 +127,8 @@ export function ProjectSwitcher({
             aria-hidden="true"
             tabIndex={-1}
             href={projectSwitchHref(pathname, option.id)}
-            onClick={confirmContextNavigation}
+            // Switching projects is never a navigation to the current page.
+            onClick={(event) => confirmNavigation(event, false)}
             ref={(node) => {
               if (node) linkRefs.current.set(option.id, node);
               else linkRefs.current.delete(option.id);

@@ -711,10 +711,13 @@ test("a clean override allows real browser Back to the previous project module",
   await useEnglishUi(page);
 
   // Build the history through the actual customer shell rather than
-  // manufacturing an Execution entry: Results -> Execution -> selected
+  // manufacturing an Execution entry: previous module -> Execution -> selected
   // artifact is the production navigation shape this guard must not block.
-  await page.goto(`/p/${E2E_PROJECT_ID}/results`);
-  await page.getByRole("link", { name: "Execution", exact: true }).click();
+  // The workbench rail carries no legacy Execution link; Content generation is
+  // the page whose "legacy page" affordance points at it, so that in-app anchor
+  // is the client-side entry now.
+  await page.goto(`/p/${E2E_PROJECT_ID}/content`);
+  await page.locator('[data-wb-legacy-link="execution"]').click();
   await expect
     .poll(() => new URL(page.url()).pathname)
     .toBe(`/p/${E2E_PROJECT_ID}/execution`);
@@ -730,7 +733,7 @@ test("a clean override allows real browser Back to the previous project module",
   await page.goBack();
   await expect
     .poll(() => new URL(page.url()).pathname)
-    .toBe(`/p/${E2E_PROJECT_ID}/results`);
+    .toBe(`/p/${E2E_PROJECT_ID}/content`);
   await expect(dialog).not.toBeVisible();
   expect(prompts).toEqual([]);
   await expectNoNewPatch(page, state, 0);

@@ -134,60 +134,72 @@ test("customer surfaces render GenGrowth and the default first paint remains zh-
   await expect(page.locator("body")).not.toContainText("SignalFrame");
 
   await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
-  const shellBrand = page.locator('[data-app-shell-sidebar] [aria-label="GenGrowth"]');
+  // The rail brand block is a plain <div data-wb-brand>: a generic element with
+  // an aria-label is a serious axe violation, so the hook is the attribute.
+  const shellBrand = page.locator("[data-app-shell-sidebar] [data-wb-brand]");
   await expect(shellBrand).toContainText("GenGrowth");
   await expect(page.locator("[data-app-shell-sidebar]")).not.toContainText(
     "SignalFrame",
   );
 });
 
-test("project navigation exposes live destinations and localizes stage chrome", async ({
+test("workbench navigation exposes all fifteen sections and localizes", async ({
   page,
 }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
 
-  await expect(
-    page.getByRole("heading", {
-      name: "Where growth should move next",
-      level: 1,
-    }),
-  ).toBeVisible();
-
-  // Re-aimed, not loosened. This used to read two Overview call-to-action
-  // links, "Preview report" and "Review diagnosis". The customer Overview
-  // rewrite dropped both — `overview.previewReport` and
-  // `overview.reviewDiagnosis` survive in the message catalogue but are
-  // referenced by no component — and the shell's section nav became the
-  // canonical list of live destinations (_nav-model.ts:25). Reading all four
-  // of them, and that there are exactly four, proves strictly more than the
-  // two links did: a retired destination reappearing in the nav fails here.
-  const sections = page.getByRole("navigation", { name: "Project sections" });
-  const destinations = [
-    ["Overview", "overview"],
-    ["Growth Map", "growth-map"],
-    ["Execution", "execution"],
-    ["Results", "results"],
-  ] as const;
-  for (const [label, segment] of destinations) {
+  // Re-aimed, not loosened. This used to read the four legacy section links
+  // ("Overview", "Growth Map", "Execution", "Results") out of the retired
+  // `Project sections` nav. The workbench rail is now the canonical list of
+  // destinations (`workbench-nav.ts`), and reading all fifteen hrefs — and that
+  // there are exactly fifteen — proves strictly more: a retired destination
+  // reappearing in the rail, or a missing one, fails here.
+  const nav = page.getByRole("navigation", { name: "Workbench sections" });
+  const segments = [
+    "overview",
+    "week",
+    "keywords",
+    "keyword-library",
+    "competitors",
+    "audit",
+    "visibility",
+    "profile",
+    "data-sources",
+    "links",
+    "content",
+    "kb",
+    "answers",
+    "artifacts",
+    "settings",
+  ];
+  await expect(nav.getByRole("link")).toHaveCount(segments.length);
+  for (const segment of segments) {
     await expect(
-      sections.getByRole("link", { name: label, exact: true }),
-    ).toHaveAttribute("href", `/p/${E2E_PROJECT_ID}/${segment}`);
+      nav.locator(`a[href="/p/${E2E_PROJECT_ID}/${segment}"]`),
+    ).toHaveCount(1);
   }
-  await expect(sections.getByRole("link")).toHaveCount(destinations.length);
+  await expect(
+    nav.getByRole("link", { name: "Overview", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
 
-  // The stage chrome moved from the page body to the topbar pill in the same
-  // rewrite. Same string, same localization guarantee, current element.
-  const topbar = page.locator("[data-app-shell-topbar]");
-  await expect(topbar.getByText("Planning", { exact: true })).toBeVisible();
-
+  // The stage pill left the chrome with the legacy topbar. The rail nav labels
+  // are the workbench chrome that has to localize, and the URL must not move.
   const urlBeforeLocaleSwitch = page.url();
   await page.getByRole("button", { name: "简体中文" }).click();
-  await expect(topbar.getByText("规划中", { exact: true })).toBeVisible();
-  await expect(topbar.getByText("Planning", { exact: true })).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("navigation", { name: "工作台导航" })
+      .getByRole("link", { name: "概览", exact: true }),
+  ).toBeVisible();
   expect(page.url()).toBe(urlBeforeLocaleSwitch);
 
-  // Sources left the primary nav; it is now reached from the Overview itself.
+  // Sources is not in the rail; it is reached from the retained legacy Overview.
+  await page.goto(`/p/${E2E_PROJECT_ID}/legacy/overview`);
   await page.getByRole("link", { name: "管理数据连接" }).click();
+  // This is the first hit on /sources in a full run, so `next dev` compiles it
+  // on demand behind the click; wait on the navigation (test-timeout bound),
+  // not on the 10 s expect, before reading the screen.
+  await page.waitForURL(`/p/${E2E_PROJECT_ID}/sources`);
   await expect(page.getByRole("heading", { name: "数据来源" })).toBeVisible();
   await expect(
     page.getByRole("region", { name: "数据源就绪度" }),

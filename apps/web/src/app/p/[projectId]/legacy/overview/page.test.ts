@@ -18,7 +18,7 @@ vi.mock("@/lib/services/workspace-view", () => ({
   getWorkspaceView: mocks.getWorkspaceView,
 }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
-vi.mock("../_e2e-shell", () => ({
+vi.mock("../../_e2e-shell", () => ({
   shouldUseE2eProjectShell: mocks.shouldUseE2eProjectShell,
 }));
 

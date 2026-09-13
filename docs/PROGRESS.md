@@ -7,6 +7,48 @@ repository and its customer-facing GenGrowth product. It replaces the retired
 v0.2 progress narrative. It deliberately separates commands rerun on the current
 convergence worktree from older evidence recorded in checked-in stop gates.
 
+## 2026-09-11: workbench UI port PR-1 foundation (integration branch, not in production)
+
+PR-1「工作台地基」landed on integration branch `feat/workbench-ui-port` (PR
+sourced from `feat/workbench-pr1-foundation`). It is **not merged to `main`
+and not in production**. Scope: a new workbench chrome (dark rail with 15
+sections across 6 groups; light topbar with project switcher, ⌘K command
+palette, sample-data chip, and artifact drawer); 15 placeholder routes at
+`/p/<id>/<segment>` (the 设置 route already carries the real delete action);
+a per-project mock store at `apps/web/src/lib/workbench/store` persisted to
+`localStorage` under `gg.workbench.v1.<id>`; Tailwind v4 scoped through
+`.wb-reset` plus `workbench.css`; a new `workbench` i18n namespace; and a
+legacy-style parity spec together with `e2e/workbench-shell.mock.spec.ts`.
+
+旧页去向: the old overview now lives at `/p/<id>/legacy/overview`;
+`growth-map`, `context`, `setup-sources`, `sources`, `studio`, `execution`,
+and `results` keep their existing paths but now render inside the new
+chrome, and 9 of the 15 new pages carry a 「旧版页面 →」 link back to the
+one(s) they replace (`LEGACY_LINKS` in `apps/web/src/lib/workbench/routes.ts`;
+week / visibility / links / kb / artifacts / settings have no legacy page);
+`diagnosis`, `plan`, and `report` remain redirecting compatibility aliases,
+unchanged.
+
+Known deviations from `docs/plans/2026-09-11-workbench-ui-port-design.md`,
+recorded here rather than silently absorbed: the `audit` legacy link targets
+`growth-map` (since `diagnosis` is itself only a redirect); the style-parity
+baseline screens are `growth-map` and `sources`; `globals.css` element rules
+are guarded with `:where(:not(.wb-reset *))` so they do not leak into the new
+chrome; and `postcss.config.mjs` restates Next's default plugin chain ahead
+of `@tailwindcss/postcss` rather than relying on implicit ordering.
+
+下一步 (design §9): PR-2 is the pure mock domain layer — `lib/workbench/mock/*`
+(`makeDemoSite`, `buildRows`, … ported from the jsx as pure functions with unit
+tests) plus the `keywordRows` / `gatedRows` selectors and the one-line
+`deriveKeywordRowCount` provider wiring; no views. PR-3 is the first five named
+pages (overview with 「载入示例站点」, this week, site profile, data sources,
+settings with its notification + data-source blocks); PR-3b merges the
+integration branch to `main` (first production release). PR-4 / PR-5 then
+carry the per-module flows (keywords / keyword library / competitors / audit /
+AI visibility; content / knowledge base / answers / backlinks / artifacts) on
+`main`. Per 决策 D3, this integration branch merges to `main` only after
+PR-3 lands, not before.
+
 ## Active identity and authority
 
 - Integration branch: `codex/content-research-quality-v04`

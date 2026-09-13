@@ -687,7 +687,9 @@ async function openOverview(
   scenario: OverviewScenario,
 ): Promise<void> {
   await serveOverview(page, scenario);
-  await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
+  // The customer Overview is the retained legacy screen; `/overview` is the
+  // workbench page now (design §4.3).
+  await page.goto(`/p/${E2E_PROJECT_ID}/legacy/overview`);
   await expect(
     page.getByRole("heading", {
       level: 1,

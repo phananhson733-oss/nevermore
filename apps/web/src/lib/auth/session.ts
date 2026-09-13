@@ -60,6 +60,19 @@ async function getAuthUser(): Promise<AuthenticatedUser | null> {
   return { id: user.id, displayName: readDisplayName(user) };
 }
 
+/**
+ * Whether the request carries a live session — identity only, no operator
+ * lookup and no database. The login page uses it to tell "this browser is
+ * between accounts" (sweep the local workbench state) from "a signed-in
+ * operator landed on `/login`" (Back after signing in, a stale tab: leave
+ * their state alone). Like the proxy, an auth backend that cannot confirm a
+ * user counts as signed out.
+ */
+export async function hasAuthSession(): Promise<boolean> {
+  if (isDevAuthEnabled()) return true;
+  return (await getAuthUser()) !== null;
+}
+
 /** Resolve an existing operator. Never creates anything. */
 async function findOperator(userId: string): Promise<OperatorContext | null> {
   const { db } = getDb();

@@ -52,6 +52,7 @@ export function e2eProjectShellProjection(
       clientName: project.clientName,
       projectName: project.projectName,
       host: project.site.host,
+      marketCode: "US",
       stage: "planning",
       createdAt: project.createdAt,
     },

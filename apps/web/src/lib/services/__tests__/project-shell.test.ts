@@ -110,6 +110,7 @@ describe("getProjectShell", () => {
       projectName: "90-day growth",
       host: "northstar.example",
     });
+    expect(shell?.currentProject.marketCode).toBe("US");
     expect(shell?.projectOptions).toEqual([
       {
         id: CURRENT_PROJECT_ID,

@@ -819,13 +819,25 @@ async function verifyReportAndExport(
   kind: "service" | "client",
   keyboard: boolean,
 ): Promise<void> {
-  const reportLink = page.getByRole("link", { name: "Results", exact: true });
+  // The workbench rail (2026-09-11 shell port) has no legacy Results link.
+  // Results is reached from the Answers workbench page's "legacy page"
+  // affordance (`LEGACY_LINKS.answers` = ["results"], lib/workbench/routes.ts):
+  // two real in-app anchors instead of one. The keyboard variant walks both
+  // with focus + Enter, exactly as it walked the single link before.
+  const answersLink = page.locator('[data-wb-nav="answers"]');
+  const reportLink = page.locator('[data-wb-legacy-link="results"]');
   if (keyboard) {
+    await answersLink.focus();
+    await expect(answersLink).toBeFocused();
+    await page.keyboard.press("Enter");
+    await page.waitForURL(`/p/${projectId}/answers`);
     await reportLink.focus();
     await expect(reportLink).toBeFocused();
     await page.keyboard.press("Enter");
     await page.waitForURL(`/p/${projectId}/results`);
   } else {
+    await answersLink.click();
+    await page.waitForURL(`/p/${projectId}/answers`);
     await reportLink.click();
   }
   // Route navigation completes before the report projection necessarily does.

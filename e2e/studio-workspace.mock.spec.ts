@@ -227,6 +227,92 @@ test("the selected document exposes governance metadata and formatted Markdown b
   await expect(document.locator("#sf-artifact-content")).toHaveCount(0);
 });
 
+/**
+ * Switches the selected Markdown document to its editor and appends a line,
+ * which arms the Studio unsaved-edits guard (`_unsaved-navigation-guard.ts`).
+ * Returns the dirtied text so the caller can check it survived.
+ */
+async function dirtyTheArtifactEditor(page: Page): Promise<string> {
+  await page
+    .getByRole("tab", { name: "Edit Markdown", exact: true })
+    .click();
+  const editor = page.locator("#sf-artifact-content");
+  await expect(editor).toBeVisible();
+  const dirtied = `${await editor.inputValue()}\n\nPalette guard probe`;
+  await editor.fill(dirtied);
+  await expect(editor).toHaveValue(dirtied);
+  return dirtied;
+}
+
+/** Opens ⌘K, narrows it to the Settings entry and highlights it. */
+async function aimPaletteAtSettings(page: Page): Promise<void> {
+  await page.keyboard.press("ControlOrMeta+k");
+  const palette = page.getByRole("dialog", { name: "Search and jump" });
+  await expect(palette).toBeVisible();
+  await palette.getByRole("combobox").fill("Settings");
+  const option = palette.getByRole("option");
+  await expect(option).toHaveCount(1);
+  await expect(option).toHaveAttribute(
+    "href",
+    `/p/${E2E_PROJECT_ID}/settings`,
+  );
+}
+
+test("a palette jump out of a dirty editor asks first and stays put when declined", async ({
+  page,
+}) => {
+  // The palette's options are anchors precisely so that the Studio guard's
+  // document-level `a[href]` click listener sees an Enter/click on them the
+  // same way it sees a rail link. A router push would have skipped it and
+  // silently discarded the edits.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await openStudio(page);
+  const dirtied = await dirtyTheArtifactEditor(page);
+  const studioUrl = page.url();
+
+  await aimPaletteAtSettings(page);
+  let prompts = 0;
+  page.once("dialog", (dialog) => {
+    prompts += 1;
+    void dialog.dismiss();
+  });
+  await page.keyboard.press("Enter");
+
+  await expect.poll(() => prompts).toBe(1);
+  // Declined: no navigation, the palette is still open for another pick, and
+  // the edits are untouched.
+  await expect(page).toHaveURL(studioUrl);
+  await expect(
+    page.getByRole("dialog", { name: "Search and jump" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("dialog", { name: "Search and jump" }),
+  ).toHaveCount(0);
+  await expect(page.locator("#sf-artifact-content")).toHaveValue(dirtied);
+});
+
+test("a palette jump out of a dirty editor navigates once the prompt is accepted", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await openStudio(page);
+  await dirtyTheArtifactEditor(page);
+
+  await aimPaletteAtSettings(page);
+  let prompts = 0;
+  page.once("dialog", (dialog) => {
+    prompts += 1;
+    void dialog.accept();
+  });
+  await page.keyboard.press("Enter");
+
+  await expect(page).toHaveURL(
+    new RegExp(`/p/${E2E_PROJECT_ID}/settings$`),
+  );
+  expect(prompts).toBe(1);
+});
+
 async function expectSingleColumnWorkspace(
   page: Page,
   viewport: { readonly width: number; readonly height: number },

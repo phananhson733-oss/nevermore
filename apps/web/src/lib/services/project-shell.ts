@@ -21,6 +21,7 @@ export interface ProjectShellProject {
   readonly clientName: string;
   readonly projectName: string;
   readonly host: string;
+  readonly marketCode: string | null;
   readonly stage: ProjectStage;
   readonly createdAt: string;
 }
@@ -178,6 +179,7 @@ function shellProject(project: ProjectRow, site: SiteRow): ProjectShellProject {
     clientName: project.client_name,
     projectName: project.project_name,
     host: site.host,
+    marketCode: site.market_codes[0] ?? null,
     stage: project.stage,
     createdAt: project.created_at,
   };

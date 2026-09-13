@@ -1671,14 +1671,19 @@ test("Studio keeps the 409 fence across a route change while the projection is i
     card.locator(":scope > button"),
   ).toBeEnabled();
 
-  const navLinks = page
-    .getByRole("navigation", { name: "Project sections" })
-    .getByRole("link");
-  await navLinks.nth(0).click();
+  // The four legacy section links left the shell with the workbench port. The
+  // rail is the client-side route change now, and legacy Execution is reached
+  // from the Content generation page's "legacy page" affordance — still real
+  // in-app navigation, which is what this fence has to survive.
+  await page.locator('[data-wb-nav="overview"]').click();
   await expect(page).toHaveURL(
     new RegExp(`/p/${E2E_PROJECT_ID}/overview(\\?|$)`),
   );
-  await navLinks.nth(2).click();
+  await page.locator('[data-wb-nav="content"]').click();
+  await expect(page).toHaveURL(
+    new RegExp(`/p/${E2E_PROJECT_ID}/content(\\?|$)`),
+  );
+  await page.locator('[data-wb-legacy-link="execution"]').click();
   // Studio writes the selected deliverable into the query once it mounts, so
   // the destination is asserted by path. Anchoring on the end of the URL made
   // this pass alone and fail in the full suite, which is a race in the

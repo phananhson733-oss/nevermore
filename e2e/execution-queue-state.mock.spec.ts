@@ -171,14 +171,16 @@ test("执行中心队列无需点开即可看到真实阻断、进度与完成�
     ),
   ).toContainText("已完成");
 
+  // 旧版「项目分区」四项顶栏导航已被工作台侧栏取代：同一断言改读工作台导航
+  // 的 15 个分区（`workbench-nav.ts`），执行中心本身成为「内容生成」的旧版页面。
   const primaryNavigation = page.getByRole("navigation", {
-    name: "项目分区",
+    name: "工作台导航",
   });
-  await expect(primaryNavigation.getByRole("link")).toHaveCount(4);
+  await expect(primaryNavigation.getByRole("link")).toHaveCount(15);
   await expect(primaryNavigation).toContainText("概览");
-  await expect(primaryNavigation).toContainText("增长地图");
-  await expect(primaryNavigation).toContainText("执行中心");
-  await expect(primaryNavigation).toContainText("效果追踪");
+  await expect(primaryNavigation).toContainText("技术审计");
+  await expect(primaryNavigation).toContainText("内容生成");
+  await expect(primaryNavigation).toContainText("产物中心");
 
   const hero = page.locator("[data-studio-page-hero]");
   const title = hero.locator("[data-app-page-title]");

@@ -188,6 +188,37 @@
   color: var(--sf-white);
   background: var(--sf-ink-900);
 }
+/* Workbench topbar (light chrome): the switcher was designed for the dark rail,
+ * where every colour here is white-on-translucent. `NewProductControl` still
+ * uses the same classes on the dark `/new-project` sidebar, so the light values
+ * are scoped to the workbench chrome instead of replacing the base rules. */
+:global(.wb-reset) .projectSwitcher {
+  background: #fff;
+  border-color: var(--color-slate-200, #e2e8f0);
+}
+:global(.wb-reset) .projectSwitcher:hover,
+:global(.wb-reset) .projectSwitcher:focus-within {
+  background: var(--color-slate-50, #f8fafc);
+  border-color: var(--color-slate-300, #cbd5e1);
+}
+:global(.wb-reset) .projectIdentity {
+  color: var(--color-slate-900, #0f172a);
+}
+:global(.wb-reset) .projectIdentity span {
+  color: var(--color-slate-500, #64748b);
+}
+:global(.wb-reset) .projectChevron {
+  color: var(--color-slate-400, #94a3b8);
+}
+/* The transparent overlay still renders the native dropdown, which follows
+ * `color-scheme` and the option colours below. */
+:global(.wb-reset) .projectSelect {
+  color-scheme: light;
+}
+:global(.wb-reset) .projectSelect option {
+  color: var(--color-slate-900, #0f172a);
+  background: #fff;
+}
 .newProjectLink {
   display: flex;
   align-items: center;
@@ -253,64 +284,6 @@ a.newProjectLink:hover {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-
-.program {
-  display: grid;
-  gap: 8px;
-  margin-top: auto;
-  padding: 13px 11px 12px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-}
-.programHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.programTitle {
-  color: rgba(255, 255, 255, 0.58);
-  font-size: var(--sf-text-xs);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-.programStage {
-  overflow: hidden;
-  color: var(--sf-mint-bright);
-  font-size: var(--sf-text-xs);
-  font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.programDay {
-  color: var(--sf-white);
-  font-size: var(--sf-text-sm);
-  font-weight: 750;
-}
-.programProgress {
-  width: 100%;
-  height: 6px;
-  overflow: hidden;
-  appearance: none;
-  color: var(--sf-mint-bright);
-  background: rgba(255, 255, 255, 0.12);
-  border: 0;
-  border-radius: var(--sf-radius-pill);
-}
-.programProgress::-webkit-progress-bar {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: var(--sf-radius-pill);
-}
-.programProgress::-webkit-progress-value {
-  background: var(--sf-mint-bright);
-  border-radius: var(--sf-radius-pill);
-}
-.programProgress::-moz-progress-bar {
-  background: var(--sf-mint-bright);
-  border-radius: var(--sf-radius-pill);
 }
 
 .sidebarUtilities {
@@ -497,7 +470,6 @@ a.sidebarUtility:hover {
     margin-top: 0;
   }
   .brand,
-  .program,
   .sidebarUtilities {
     display: none;
   }

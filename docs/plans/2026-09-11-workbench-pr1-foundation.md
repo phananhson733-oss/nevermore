@@ -6,7 +6,7 @@
 
 **Architecture:** 设计稿 `docs/plans/2026-09-11-workbench-ui-port-design.md`（rev6）§4–§9。Tailwind v4 只引 theme + utilities（无 preflight），reset 作用域 `.wb-reset` 只挂 chrome 与新视图根节点；store = 纯 reducer + zod 校验的 localStorage 持久化 + 按 projectId 重挂的 provider；旧 `_nav.tsx` 的两个副作用抽成 hook 保留。
 
-**Tech Stack:** Next.js 16.2 App Router、React 19、TypeScript strict、Tailwind v4（`@tailwindcss/postcss`）、tw-animate-css、next-intl、zod 4、vitest（node）、Playwright mock 夹具。
+**Tech Stack:** Next.js 16.2 App Router、React 19、TypeScript strict、Tailwind v4（`@tailwindcss/postcss`）、next-intl、zod 4、vitest（node）、Playwright mock 夹具。
 
 **参考源码（已放在 worktree 根、git 忽略）：** `.workbench-reference/opengengrowth-src/`（外观权威）、`.workbench-reference/geo-seo-workbench.jsx`（行为权威；行号引用均指此文件）。
 
@@ -19,7 +19,7 @@
 ```
 apps/web/
   postcss.config.mjs                                   新：@tailwindcss/postcss
-  package.json                                         改：+tailwindcss +@tailwindcss/postcss +tw-animate-css +clsx +tailwind-merge
+  package.json                                         改：+tailwindcss +@tailwindcss/postcss +clsx +tailwind-merge
   src/app/workbench.css                                新：layers / theme / token / .wb-reset / 仪表 / print
   src/app/workbench-css.test.ts                        新：静态守卫（无 preflight、reset 有作用域）
   src/app/layout.tsx                                   改：Plus_Jakarta_Sans → --font-wb；import workbench.css
@@ -73,14 +73,15 @@ CLAUDE.md、docs/PROGRESS.md                            改：当前权威
 ## 常用命令
 
 ```bash
-# 单测（node 环境；组件不可渲染）
+# 单测（默认 node 环境；组件测试加 `/** @vitest-environment jsdom */` 文件级 pragma）
 pnpm vitest run --project unit <path>
 # 类型 / lint
 pnpm --filter @sf/web typecheck && pnpm --filter @sf/web lint
 # i18n parity
 pnpm vitest run --project unit packages/i18n
-# mock e2e（自起 dev server，端口 3200）
-pnpm test:e2e:mock -- e2e/<name>.mock.spec.ts
+# mock e2e（自起 dev server，端口 3200）。不要写 `--`：pnpm 10 会把它原样转给 playwright，
+# 文件过滤随之失效，整套 227 个用例跑 10 分钟（Task 0 实测）。
+pnpm test:e2e:mock e2e/<name>.mock.spec.ts
 # 构建（唯一能暴露 client 拉到 node 模块的检查）
 pnpm --filter @sf/web build
 ```
@@ -95,42 +96,56 @@ pnpm --filter @sf/web build
 
 设计稿 §5 要求验证 `.wb-reset` 没有漏到旧页。全页截图会因新壳而必然不同，所以改为记录旧页根节点内若干元素的**计算样式**（与宽度无关的属性），在改动前生成基线，改动后比对。
 
-- [ ] **Step 1: 确认起点并切工作分支**
+- [x] **Step 1: 确认起点并切工作分支**
 
 Run: `git -C /Users/wzb/Code/nevermore/workbench-ui-port-20260911 status --short | wc -l && git branch --show-current && git switch -c feat/workbench-pr1-foundation`
 Expected: `0`、当前分支 `feat/workbench-ui-port`（集成分支），然后位于新分支 `feat/workbench-pr1-foundation`。之后所有提交都在这个分支，PR 以 `feat/workbench-ui-port` 为 base（Task 14）。
 
-- [ ] **Step 2: 记录基线检查结果**
+- [x] **Step 2: 记录基线检查结果**
 
 Run: `pnpm --filter @sf/web typecheck; pnpm vitest run --project unit apps/web 2>&1 | tail -3`
 Expected: 记下红绿数字（memory 提示 main 上偶有既有红；之后每次只比较差异，不追既有红）。
 
-- [ ] **Step 3: 写样式基线 spec**
+- [x] **Step 3: 写样式基线 spec**
 
 ```ts
-// e2e/legacy-style-parity.mock.spec.ts
+// e2e/legacy-style-parity.mock.spec.ts（落地版：含质量审阅要求的写模式守卫 / 下限断言 / 可执行报错）
 import { readFileSync, writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_PROJECT_ID, installGrowthVerticalApi } from "./mock-api.ts";
 
 /**
- * Guards the design-doc promise that the workbench reset never reaches legacy
- * pages. Width-dependent properties are excluded on purpose: the new shell
- * legitimately changes the content column. Regenerate the baseline ONLY from a
- * commit before the workbench shell landed:
- *   LEGACY_STYLE_BASELINE=write pnpm test:e2e:mock -- e2e/legacy-style-parity.mock.spec.ts
+ * Guards the promise in docs/plans/2026-09-11-workbench-ui-port-design.md §5
+ * that the workbench reset (`.wb-reset`) never reaches legacy pages rendered
+ * inside `#main-content`. Width-dependent properties are excluded on purpose:
+ * the new shell legitimately changes the content column. Sampling is smoke
+ * level: the first match of each selector (document order, no semantic role
+ * implied), light colour scheme only. The page title's font-size and
+ * letter-spacing come from a `3vw` clamp resolved at the harness's fixed
+ * 1280px viewport (38.4px / -1.344px): changing the viewport is legitimate
+ * drift, not a reset leak.
+ *
+ * Regenerating the baseline is a deliberate local act:
+ *   LEGACY_STYLE_BASELINE=write pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts
+ * Write mode refuses to run in CI and refuses any page that already carries
+ * `.wb-reset`. If a legitimate drift (font subset or next/font upgrade) forces
+ * a regeneration after the shell landed, do it from a commit without the shell,
+ * or attribute every differing property in the PR description.
  */
 const BASELINE = new URL("./legacy-style-parity.baseline.json", import.meta.url);
 const PROPS = [
-  "font-family", "font-size", "font-weight", "line-height", "color",
-  "background-color", "margin-top", "margin-bottom", "padding-top",
+  "font-family", "font-size", "font-weight", "line-height", "letter-spacing", "color",
+  "background-color", "box-sizing", "margin-top", "margin-bottom", "padding-top",
   "padding-left", "border-top-width", "border-top-style", "border-radius",
 ] as const;
 // Both screens are fully served by installGrowthVerticalApi (which installs the
 // critical-flow routes too); an unmocked screen would snapshot a loading/error
 // panel whose element set depends on timing.
 const SCREENS = ["growth-map", "sources"] as const;
+// `sources` renders no form control on first paint (its <select>s appear only
+// after an interaction), so it deterministically samples 5 selectors, not 6.
 const SELECTORS = ["[data-app-page-title]", "h1", "button", "p", "input, select, textarea", "a"] as const;
+const MIN_SAMPLED = 5;
 
 async function snapshot(page: Page): Promise<Record<string, Record<string, string>>> {
   return page.evaluate(({ props, selectors }) => {
@@ -147,7 +162,17 @@ async function snapshot(page: Page): Promise<Record<string, Record<string, strin
   }, { props: PROPS, selectors: SELECTORS });
 }
 
+function readBaseline(): Record<string, unknown> | null {
+  try {
+    return JSON.parse(readFileSync(BASELINE, "utf8")) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 test.beforeEach(async ({ page }) => {
+  // Load-bearing: zh-CN swaps --sf-font-display for the CJK face (globals.css),
+  // which would change the recorded font-family. The baseline is the en chrome.
   await page.context().addCookies([
     { name: "sf_ui_locale", value: "en", domain: "localhost", path: "/" },
   ]);
@@ -164,31 +189,37 @@ for (const screen of SCREENS) {
     await expect(page.locator("#main-content [data-app-page-title]").first()).toBeVisible();
     await page.waitForLoadState("networkidle");
     const current = await snapshot(page);
+    expect(Object.keys(current).length, `${screen}: too few sampled elements`).toBeGreaterThanOrEqual(MIN_SAMPLED);
     if (process.env["LEGACY_STYLE_BASELINE"] === "write") {
-      const existing = (() => {
-        try { return JSON.parse(readFileSync(BASELINE, "utf8")) as Record<string, unknown>; }
-        catch { return {}; }
-      })();
-      writeFileSync(BASELINE, JSON.stringify({ ...existing, [screen]: current }, null, 2) + "\n");
+      expect(process.env["CI"], "baseline regeneration is a local, deliberate act").toBeFalsy();
+      const shellPresent = await page.evaluate(() => document.querySelector(".wb-reset") !== null);
+      expect(shellPresent, "refusing to bless a post-shell baseline: .wb-reset is on the page").toBe(false);
+      const kept = Object.fromEntries(
+        Object.entries(readBaseline() ?? {}).filter(([key]) => (SCREENS as readonly string[]).includes(key)),
+      );
+      writeFileSync(BASELINE, JSON.stringify({ ...kept, [screen]: current }, null, 2) + "\n");
       return;
     }
-    const baseline = JSON.parse(readFileSync(BASELINE, "utf8")) as Record<string, unknown>;
-    expect(current).toEqual(baseline[screen]);
+    const baseline = readBaseline();
+    expect(baseline, `missing ${BASELINE.pathname}; regenerate only from a pre-shell commit (see file header)`).not.toBeNull();
+    const entry = baseline?.[screen];
+    expect(entry, `no baseline entry for "${screen}"`).toBeDefined();
+    expect(current).toEqual(entry);
   });
 }
 ```
 
-- [ ] **Step 4: 在改动前生成基线**
+- [x] **Step 4: 在改动前生成基线**
 
-Run: `LEGACY_STYLE_BASELINE=write pnpm test:e2e:mock -- e2e/legacy-style-parity.mock.spec.ts`
-Expected: 2 passed；`e2e/legacy-style-parity.baseline.json` 出现，含 `growth-map` 与 `sources` 两个键（设计稿 §5 写的是 `context`；`context` 页的读接口不在 `installGrowthVerticalApi` 的路由表里，快照会随时序漂，改用被完整服务的 `sources`——设计稿已同步更正），每键 4–6 个选择器。跑两遍确认第二遍与第一遍逐属性相等再提交。
+Run: `LEGACY_STYLE_BASELINE=write pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts`
+Expected: 2 passed；`e2e/legacy-style-parity.baseline.json` 出现，含 `growth-map` 与 `sources` 两个键（设计稿 §5 写的是 `context`；`context` 页的读接口不在 `installGrowthVerticalApi` 的路由表里，快照会随时序漂，改用被完整服务的 `sources`——设计稿已同步更正），`growth-map` 6 个选择器、`sources` 5 个（首屏无表单控件），`MIN_SAMPLED = 5` 为下限。跑两遍确认第二遍与第一遍逐属性相等再提交。
 
-- [ ] **Step 5: 不带写标志再跑一次确认自洽**
+- [x] **Step 5: 不带写标志再跑一次确认自洽**
 
-Run: `pnpm test:e2e:mock -- e2e/legacy-style-parity.mock.spec.ts`
+Run: `pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts`
 Expected: 2 passed。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add e2e/legacy-style-parity.mock.spec.ts e2e/legacy-style-parity.baseline.json
@@ -203,11 +234,11 @@ git commit -m "test(e2e): 旧页计算样式基线，守护工作台 reset 不�
 - Modify: `apps/web/package.json`
 - Create: `apps/web/postcss.config.mjs`
 - Create: `apps/web/src/app/workbench.css`
-- Modify: `apps/web/src/app/globals.css`（三条未分层元素规则加 `:where(:not(.wb-reset *))` 守卫）
+- Modify: `apps/web/src/app/globals.css`（四条未分层元素规则加 `:where(:not(.wb-reset *))` 守卫）
 - Modify: `apps/web/src/app/layout.tsx`
 - Test: `apps/web/src/app/workbench-css.test.ts`
 
-- [ ] **Step 1: 写静态守卫测试**
+- [x] **Step 1: 写静态守卫测试**
 
 ```ts
 // apps/web/src/app/workbench-css.test.ts
@@ -215,47 +246,105 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const css = readFileSync(new URL("./workbench.css", import.meta.url), "utf8");
+const globals = readFileSync(new URL("./globals.css", import.meta.url), "utf8");
+const layout = readFileSync(new URL("./layout.tsx", import.meta.url), "utf8");
+
+/** The full text of the top-level `@layer base { … }` block, found by brace depth. */
+function layerBaseBlock(source: string): string {
+  const start = source.search(/@layer base\s*\{/);
+  if (start === -1) return "";
+  let depth = 0;
+  for (let i = source.indexOf("{", start); i < source.length; i += 1) {
+    if (source[i] === "{") depth += 1;
+    if (source[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  return "";
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 describe("workbench.css", () => {
   it("imports theme and utilities as layers and never preflight", () => {
     expect(css).toContain('@import "tailwindcss/theme.css" layer(theme);');
-    expect(css).toContain('@import "tailwindcss/utilities.css" layer(utilities);');
+    expect(css).toContain(
+      '@import "tailwindcss/utilities.css" layer(utilities);',
+    );
     expect(css).not.toContain("tailwindcss/preflight");
     expect(css).not.toMatch(/@import\s+"tailwindcss";/);
   });
 
   it("binds the sans font to the next/font variable so font-sans works", () => {
-    expect(css).toMatch(/--font-sans:\s*var\(--font-wb\)/);
+    expect(css).toMatch(/--font-sans:\s*var\(--font-wb(?:,[^)]*)?\)/);
+  });
+
+  it("does not define --font-display (legacy modules rely on it being unset)", () => {
+    const theme = css.match(/@theme\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(theme.length).toBeGreaterThan(0);
+    expect(theme).not.toContain("--font-display");
   });
 
   it("scopes every reset rule under .wb-reset", () => {
-    const base = css.match(/@layer base\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    const base = layerBaseBlock(css);
     expect(base.length).toBeGreaterThan(0);
-    const selectors = base.match(/^\s*([^{}\n][^{}]*)\{/gm) ?? [];
+    // Exclude the `@layer base {` wrapper line itself — layerBaseBlock() returns the
+    // full block including that opening line, which would otherwise be picked up by
+    // the selector regex below as a (failing) fake selector.
+    const selectors = (base.match(/^\s*([^{}\n][^{}]*)\{/gm) ?? []).filter(
+      (line) => !line.trim().startsWith("@"),
+    );
     expect(selectors.length).toBeGreaterThan(3);
     for (const selector of selectors) {
       expect(selector.trim(), selector).toMatch(/^\.wb-reset/);
     }
   });
+
+  it("keeps pseudo-elements outside :where() so the rules actually match", () => {
+    expect(css).not.toMatch(/:where\([^)]*::/);
+  });
 });
 
 describe("globals.css keeps its unlayered element rules out of the workbench chrome", () => {
-  // Unlayered declarations beat every @layer, so a bare `a {}` / `h1 {}` /
+  // Unlayered declarations beat every @layer, so a bare `* {}` / `a {}` / `h1 {}` /
   // `:focus-visible {}` would override Tailwind utilities inside the new shell.
-  const globals = readFileSync(new URL("./globals.css", import.meta.url), "utf8");
-  it.each(["a", "h1", "h2", "h3", ":focus-visible"])("guards %s with :where(:not(.wb-reset *))", (selector) => {
-    expect(globals).not.toMatch(new RegExp(`^${selector}\\s*[{,]`, "m"));
-    expect(globals).toContain(`${selector}:where(:not(.wb-reset *))`);
+  it.each(["*", "a", "h1", "h2", "h3", ":focus-visible"])(
+    "guards %s with :where(:not(.wb-reset *))",
+    (selector) => {
+      expect(globals).not.toMatch(
+        new RegExp(`^${escapeRegExp(selector)}\\s*[{,]`, "m"),
+      );
+      expect(globals).toContain(`${selector}:where(:not(.wb-reset *))`);
+    },
+  );
+});
+
+describe("layout.tsx", () => {
+  it("imports workbench.css after globals.css and never puts .wb-reset on html or body", () => {
+    const globalsAt = layout.indexOf('import "./globals.css";');
+    const workbenchAt = layout.indexOf('import "./workbench.css";');
+    expect(globalsAt).toBeGreaterThan(-1);
+    expect(workbenchAt).toBeGreaterThan(globalsAt);
+    expect(layout).not.toContain("wb-reset");
   });
 });
 
 describe("postcss.config.mjs", () => {
-  // A postcss config file replaces Next's built-in chain, so the two defaults
+  // A postcss config file replaces Next's built-in webpack chain, so the two defaults
   // must be restated ahead of Tailwind or legacy CSS Modules lose prefixing.
-  const config = readFileSync(new URL("../../postcss.config.mjs", import.meta.url), "utf8");
+  const config = readFileSync(
+    new URL("../../postcss.config.mjs", import.meta.url),
+    "utf8",
+  );
   it("restates Next's default plugins before Tailwind", () => {
-    const order = ["next/dist/compiled/postcss-flexbugs-fixes", "next/dist/compiled/postcss-preset-env", "@tailwindcss/postcss"]
-      .map((name) => config.indexOf(name));
+    const order = [
+      "next/dist/compiled/postcss-flexbugs-fixes",
+      "next/dist/compiled/postcss-preset-env",
+      "@tailwindcss/postcss",
+    ].map((name) => config.indexOf(name));
     expect(order.every((index) => index >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(config).toContain('"custom-properties": false');
@@ -264,12 +353,12 @@ describe("postcss.config.mjs", () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `pnpm vitest run --project unit apps/web/src/app/workbench-css.test.ts`
 Expected: FAIL，`ENOENT … workbench.css`。
 
-- [ ] **Step 3: 加依赖与 postcss**
+- [x] **Step 3: 加依赖与 postcss**
 
 `apps/web/package.json` 的 `dependencies` 加（版本与 apps/marketing 一致）：
 
@@ -278,17 +367,22 @@ Expected: FAIL，`ENOENT … workbench.css`。
 "clsx": "^2.1.1",
 "tailwind-merge": "^3.5.0",
 "tailwindcss": "^4.1.18",
-"tw-animate-css": "^1.4.0",
 ```
 
 ```js
 // apps/web/postcss.config.mjs
-// Any postcss config file replaces Next's built-in chain (flexbugs fixes +
-// preset-env/autoprefixer), which today prefixes the legacy CSS Modules
-// (backdrop-filter, sticky, appearance, ...). Restate that chain first, using
-// the copies Next ships and its own default browser targets
-// (next/dist/shared/lib/modern-browserslist-target.js), so legacy output stays
-// byte-identical; Tailwind runs last so its output is never re-processed.
+// A postcss config file changes both bundlers' CSS pipelines:
+// - webpack (`next dev --webpack`, used by the mock e2e harness): it REPLACES Next's
+//   built-in chain (flexbugs fixes + preset-env/autoprefixer) that prefixes the legacy
+//   CSS Modules (backdrop-filter, sticky, appearance, ...), so that chain is restated
+//   here first, with Next's own default browser targets
+//   (next/dist/shared/lib/modern-browserslist-target.js), and Tailwind runs last.
+// - Turbopack (`next dev` / `next build`, the shipping path): without a config no postcss
+//   ran at all; with this one the same chain now runs there too. It is additive
+//   (prefixes only), and e2e/legacy-style-parity.mock.spec.ts was run once against a
+//   Turbopack dev server to confirm legacy computed styles do not move.
+// Turbopack resolves the config from the repo root first: a postcss config at the
+// monorepo root would silently shadow this file. Keep the root free of one.
 export default {
   plugins: {
     "next/dist/compiled/postcss-flexbugs-fixes": {},
@@ -308,34 +402,81 @@ export default {
 Run: `pnpm install`
 Expected: lockfile 更新，无 peer 冲突。
 
-- [ ] **Step 4: 写 workbench.css**
+- [x] **Step 4: 写 workbench.css**
 
 ```css
-/* @input  — tailwindcss theme + utilities（刻意不引 preflight）、tw-animate-css
- * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表与打印规则
- * @pos    — app/layout.tsx 在 globals.css 之后引入；旧页面在 <main> 内不带 .wb-reset，不受影响
+/* @input  — tailwindcss theme + utilities（刻意不引 preflight）
+ * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表规则、
+ *           旧页专用的 #main-content 内边距（components 层，只在 <main> 没有 .wb-reset
+ *           直接子节点时生效，等价于旧壳 app-shell.module.css 的 .main）、
+ *           打印时去掉内容列的侧栏留白（在 utilities 层、且排在 Tailwind utilities 之后，
+ *           否则同特异度下赢不了 md:ml-64）
+ * @pos    — app/layout.tsx 在 globals.css 之后引入；旧页面在 <main> 内不带 .wb-reset，
+ *           reset 不波及它们，而旧壳的内容区留白由上面那条 :has() 规则接管
  * 一旦本文件被更新，务必更新开头注释
  */
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
-@import "tw-animate-css";
+/* No tw-animate-css: nothing in PR-1 uses an `animate-in` utility. The PR that
+   first needs one adds the dependency back with `@import "tw-animate-css";`
+   here (no layer — it ships only @property / @theme inline / @utility). */
 
 @theme {
-  --font-sans: var(--font-wb), "PingFang SC", "Hiragino Sans GB",
+  --font-sans: var(--font-wb, ui-sans-serif), "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
   --color-wb-paper: #faf9f6;
   --color-wb-rail: #1f1e1c;
   --color-wb-rail-2: #2a2927;
   --color-wb-rail-3: #333230;
   --color-wb-rail-line: #2e2d2b;
-  --color-wb-rail-muted: #737270;
-  --color-wb-rail-dim: #636260;
+  /* Rail text tiers. Rule: every rail text token must clear WCAG AA 4.5:1 on every
+     rail surface it is used on (light-on-dark, so the lightest tier it sits on is the
+     binding one); app/workbench-tokens.test.ts enforces it. All of this text is under
+     18px and carries information the reader loses if it cannot be read — "labels only"
+     was never a reason to sit below AA. Measured (on rail / rail-2 / rail-3):
+       rail-text  #a3a3a3  6.60 / 5.76 / 5.08  nav link text
+       rail-muted #9c9b99  6.00 / 5.23 / 4.61  tagline, group labels, footer, nav badge
+                                                (the badge sits on rail-3 in the active link)
+       rail-label #959492  5.50 / 4.80 /  -    site-card <dt> column on rail-2
+       rail-dim   #8f8e8c  5.09 /  -   /  -    10px footer version line on rail
+     Luminance order rail-text > rail-muted > rail-label > rail-dim keeps the tiers. */
+  --color-wb-rail-muted: #9c9b99;
+  --color-wb-rail-dim: #8f8e8c;
   --color-wb-rail-text: #a3a3a3;
+  --color-wb-rail-label: #959492;
+  /* Near-black action fill on paper (topbar artifact button). */
+  --color-wb-ink: #222222;
+  /* SEO green: the default <progress> fill below. The nav tone dots and the GEO
+     accent use Tailwind built-ins (emerald-500 / fuchsia-500, amber-* for the
+     sample-data marker) exactly as the opengengrowth prototype does, so there
+     is no `-geo` / `-emerald` / `-seo-dark` token here. */
   --color-wb-seo: #1a653b;
-  --color-wb-seo-dark: #155330;
-  --color-wb-geo: #8b5cf6;
-  --color-wb-emerald: #10b981;
+}
+
+/* 打印规则 `[data-wb-content]{margin-left:0}` 在 @layer utilities（见 Task 10 落地备注），此处略。 */
+
+/* 旧页在 <main> 里曾吃到旧壳 `.main` 的留白（app-shell.module.css，现只框 /new-project 的
+   AppShell）；新视图是自带内边距的 .wb-reset 根，所以只在 <main> 没有这种直接子节点时生效。
+   断点照旧规则（960px / 560px），不是 Tailwind 的 md。 */
+@layer components {
+  #main-content:not(:has(> .wb-reset)) {
+    width: 100%;
+    max-width: 1480px;
+    min-width: 0;
+    margin-inline: auto;
+    padding: 40px clamp(24px, 3.3vw, 56px) 30px;
+  }
+  @media (width <= 960px) {
+    #main-content:not(:has(> .wb-reset)) {
+      padding: 28px 20px 36px;
+    }
+  }
+  @media (width <= 560px) {
+    #main-content:not(:has(> .wb-reset)) {
+      padding: 24px 14px 32px;
+    }
+  }
 }
 
 @layer base {
@@ -379,7 +520,7 @@ Expected: lockfile 更新，无 peer 冲突。
     display: block;
     max-width: 100%;
   }
-  .wb-reset :where(input::placeholder, textarea::placeholder) {
+  .wb-reset :where(input, textarea)::placeholder {
     color: var(--color-slate-400);
     opacity: 1;
   }
@@ -412,19 +553,16 @@ Expected: lockfile 更新，无 peer 冲突。
   .wb-reset :where(progress[data-tone="bad"])::-moz-progress-bar {
     background: var(--color-rose-500);
   }
-}
-
-@media print {
-  [data-app-shell-sidebar],
-  [data-app-shell-topbar] {
-    display: none !important;
+  .wb-reset :focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
   }
 }
 ```
 
-注意 `@layer base { … }` 块内每条规则的选择器都以 `.wb-reset` 开头——测试用正则逐条核。`@media print` 在 base 块外。
+注意 `@layer base { … }` 块内每条规则的选择器都以 `.wb-reset` 开头——测试按花括号深度截出整块后逐条核；伪元素必须写在 `:where()` 外面（`:where(input::placeholder)` 是非法选择器，会被静默丢成空 `:where()`）。打印时隐藏侧栏/顶栏的规则 `globals.css` L245 已有，本文件不重复。
 
-- [ ] **Step 5: 根 layout 注入字体并引入 CSS**
+- [x] **Step 5: 根 layout 注入字体并引入 CSS**
 
 `apps/web/src/app/layout.tsx`：
 
@@ -446,16 +584,20 @@ const plusJakarta = Plus_Jakarta_Sans({
 
 `<html … className={`${fraunces.variable} ${manrope.variable} ${plusJakarta.variable}`}>`。
 
-- [ ] **Step 6: 跑测试与类型检查**
+- [x] **Step 6: 跑测试与类型检查**
 
 Run: `pnpm vitest run --project unit apps/web/src/app/workbench-css.test.ts && pnpm --filter @sf/web typecheck`
-Expected: 4 passed / 5 failed——红的是 `globals.css` 守卫那组，Step 6b 后转绿；typecheck 与 Task 0 基线一致。
+Expected: `workbench.css` / `layout.tsx` / `postcss.config.mjs` 三组通过，`globals.css` 守卫那组 6 个用例红，Step 6b 后转绿；typecheck 与 Task 0 基线一致。
 
-- [ ] **Step 6b: globals.css 三条未分层元素规则加守卫**
+- [x] **Step 6b: globals.css 四条未分层元素规则加守卫**
 
-`globals.css` 里 `h1, h2, h3 {…}`（L172）、`a {…}`（L222）、`:focus-visible {…}`（L226）都不在任何 `@layer` 里；CSS 级联规定未分层声明压过所有分层声明，所以它们会盖掉新壳里的 Tailwind 工具类（侧栏链接变深绿、h1 变 Fraunces/宋体、聚焦圆角变 4px）。改为：
+`globals.css` 里 `* { box-sizing }`（L152）、`h1, h2, h3 {…}`（L172）、`a {…}`（L222）、`:focus-visible {…}`（L226）都不在任何 `@layer` 里；CSS 级联规定未分层声明压过所有分层声明，所以它们会盖掉新壳里的 Tailwind 工具类（侧栏链接变深绿、h1 变 Fraunces/宋体、聚焦圆角变 4px）。改为：
 
 ```css
+*:where(:not(.wb-reset *)) {
+  box-sizing: border-box;
+}
+
 h1:where(:not(.wb-reset *)),
 h2:where(:not(.wb-reset *)),
 h3:where(:not(.wb-reset *)) {
@@ -480,25 +622,40 @@ a:where(:not(.wb-reset *)) {
 
 ```css
   .wb-reset :focus-visible {
-    outline: 2px solid var(--color-wb-seo);
+    outline: 2px solid currentColor;
     outline-offset: 2px;
   }
 ```
 
+（`currentColor` 而不是 `--color-wb-seo`：后者压在深色导轨 `#1f1e1c` 上只有 2.36:1，不达 WCAG 1.4.11 的 3:1；元素自己的文字色对其背景必然可读。）
+
 Run: `pnpm vitest run --project unit apps/web/src/app/workbench-css.test.ts`
 Expected: 全绿（含 `globals.css` 守卫与 `postcss.config.mjs` 顺序两组）。
 
-- [ ] **Step 7: 旧页样式基线仍绿**
+- [x] **Step 7: 旧页样式基线仍绿（webpack 与 Turbopack 两条路都跑）**
 
-Run: `pnpm test:e2e:mock -- e2e/legacy-style-parity.mock.spec.ts`
-Expected: 2 passed。若红：先看差异属性，通常是 `border-style` 这类 `.wb-reset *` 漏出——检查 `layout.tsx` 没有把 `wb-reset` 放到 `<body>`。这条基线在 Chromium 上比计算样式，看不到厂商前缀的差异；前缀一致性靠 Step 3 复刻 Next 默认链保证，不靠这条。
+Run: `pnpm test:e2e:mock e2e/legacy-style-parity.mock.spec.ts`
+Expected: 2 passed。再对发布用的 Turbopack 跑一次（mock 夹具默认 `--webpack`）：
 
-- [ ] **Step 8: Commit**
+```bash
+sed -e 's/ --webpack//' -e 's/\.next-e2e-mock"/.next-e2e-mock-turbo"/' playwright.mock.config.ts > playwright.mock-turbo.config.ts
+pnpm exec playwright test --config=playwright.mock-turbo.config.ts e2e/legacy-style-parity.mock.spec.ts
+rm playwright.mock-turbo.config.ts && rm -rf apps/web/.next-e2e-mock-turbo
+```
+Expected: 2 passed（改动前 Turbopack 下旧 CSS 不经 postcss，本任务给它新增了前缀链，这一遍证明旧页计算样式没动）。若红：先看差异属性，通常是 `border-style` 这类 `.wb-reset *` 漏出——检查 `layout.tsx` 没有把 `wb-reset` 放到 `<body>`。这条基线在 Chromium 上比计算样式，看不到厂商前缀的差异；前缀一致性靠 Step 3 复刻 Next 默认链保证，不靠这条。
+
+- [x] **Step 8: Commit**
 
 ```bash
 git add apps/web/package.json pnpm-lock.yaml apps/web/postcss.config.mjs apps/web/src/app/workbench.css apps/web/src/app/globals.css apps/web/src/app/workbench-css.test.ts apps/web/src/app/layout.tsx
 git commit -m "feat(web): Tailwind v4 无 preflight 地基与工作台 token"
 ```
+
+**落地备注：**
+
+- **`tw-animate-css` 在验收时移除**（PR-1 验收 C12）：PR-1 没有任何 `animate-in` / `animate-out` 类工具的消费者（`grep -rn "animate-in\|tw-animate-css" apps/web/src` 只剩 `workbench.css` 里的说明注释），依赖从 `apps/web/package.json` 删掉、`@import "tw-animate-css";` 连同它的分层说明从 `workbench.css` 删掉，`pnpm install --offline` 后 `pnpm-lock.yaml` 只少了 `apps/web` importer 下的那一条（`apps/marketing` 仍在用，`packages` 段的 `tw-animate-css@1.4.0` 条目保留）。第一个用到它的 PR 把依赖与 `@import` 一起加回来（无 layer——它只发 `@property` / `@theme inline` / `@utility`，且 `@utility` 不能放进 `@layer`）；上面 Step 3 / Step 4 的摘录与文首技术栈、文件结构两处已同步删去。
+- **三个从未有消费者的 token 删除**（验收 C11）：`--color-wb-seo-dark` / `--color-wb-geo` / `--color-wb-emerald` 落地后 `apps/web/src` 里零引用——导航 tone 圆点与 GEO 强调色一直用 Tailwind 内置 `emerald-500` / `fuchsia-500`，「示例」琥珀用 `amber-50/200/700`，与 opengengrowth 原型一致。`@theme` 只保留 `--color-wb-seo`（`<progress>` 默认填充）并在其上方注明为何没有这三个；`workbench-css.test.ts` / `workbench-tokens.test.ts` 都不枚举这三个名字，不需要改。设计文档 §5 的 token 清单同步改写为实际存在的那一组（含四档导轨文字与 `-rail-line` / `-ink`）。
+- **占位符文字色 `slate-400` → `slate-500`**（验收 B8）：`.wb-reset :where(input, textarea)::placeholder` 原用 slate-400（白底 2.63:1）；占位符是文字，WCAG 1.4.3 没有豁免。`workbench-tokens.test.ts` 新增一组：从安装的 `tailwindcss/theme.css` 读出该 token 的 `oklch()` 值、经 OKLab→线性 sRGB 算相对亮度，钉住白底 ≥ 4.5:1（slate-500 = 4.77:1），并用 Tailwind 文档的 `#62748e` 做换算锚点、同时断言 slate-400 低于 AA（防止换算本身恒真）。说明注释写在规则块**里面**：`workbench-css.test.ts` 的选择器扫描会把紧挨选择器前面的注释读成选择器的一部分。
 
 ---
 
@@ -508,7 +665,7 @@ git commit -m "feat(web): Tailwind v4 无 preflight 地基与工作台 token"
 - Create: `apps/web/src/lib/workbench/routes.ts`
 - Test: `apps/web/src/lib/workbench/routes.test.ts`
 
-- [ ] **Step 1: 写测试**
+- [x] **Step 1: 写测试**
 
 ```ts
 // apps/web/src/lib/workbench/routes.test.ts
@@ -565,12 +722,12 @@ describe("workbench routes", () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/routes.test.ts`
 Expected: FAIL，找不到模块。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```ts
 // apps/web/src/lib/workbench/routes.ts
@@ -668,12 +825,12 @@ export function activeWorkbenchPage(
 }
 ```
 
-- [ ] **Step 4: 跑测试**
+- [x] **Step 4: 跑测试**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/routes.test.ts`
 Expected: 4 passed。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/lib/workbench/routes.ts apps/web/src/lib/workbench/routes.test.ts
@@ -688,10 +845,11 @@ git commit -m "feat(workbench): 15 条路由段名与旧版页面映射表"
 - Create: `apps/web/src/lib/workbench/types.ts`
 - Create: `apps/web/src/lib/workbench/store/schema.ts`
 - Test: `apps/web/src/lib/workbench/store/schema.test.ts`
+- Test fixture: `apps/web/src/lib/workbench/store/test-fixtures.ts`（填满每个可空字段的状态；代码块见 Task 6，Task 6 的 `persistence.test.ts` 共用）
 
 类型来自 jsx 的结果形状（`runAudit` L479、`mockVisibility` L514、`buildRows` L589、`domainStats`/`keywordGap` L2529、`fallbackPlan` L2231、`mockLinks` L543、`seedKB` L2084、`crawlSignals`/`gscSignals` L1142、`DEMO_AI` L2705、`blankSite` L2678）。**中文枚举一律改 id**（设计 §7）；PR-2 按这些类型实现 mock。
 
-- [ ] **Step 1: 写 types.ts**
+- [x] **Step 1: 写 types.ts**
 
 ```ts
 // apps/web/src/lib/workbench/types.ts
@@ -702,24 +860,55 @@ git commit -m "feat(workbench): 15 条路由段名与旧版页面映射表"
  * mock functions without re-deciding them.
  */
 export type Severity = "high" | "mid" | "low";
+/** The prototype's `engine: ""` (weekly report, misc exports) maps to `"both"`; there is no "no engine" value. */
 export type Engine = "seo" | "geo" | "both";
 export type Level = "high" | "mid" | "low";
 export type GscStatus = "ranked" | "borderline" | "gap" | "unknown";
-export type Intent = "navigational" | "informational" | "commercial" | "transactional";
+export type Intent =
+  | "navigational"
+  | "informational"
+  | "commercial"
+  | "transactional";
 export type Stage = "TOFU" | "MOFU" | "BOFU";
 export type PageType =
-  | "landing" | "blog" | "comparison" | "listicle" | "tool" | "glossary" | "answer-page";
+  | "landing"
+  | "blog"
+  | "comparison"
+  | "listicle"
+  | "tool"
+  | "glossary"
+  | "answer-page";
 export type KeywordSource = "gsc" | "generated";
 export type SavedSource = "matrix" | "manual" | "gap";
-export type PromptKind = "discover" | "compare" | "verify" | "alternative" | "scenario";
+export type PromptKind =
+  | "discover"
+  | "compare"
+  | "verify"
+  | "alternative"
+  | "scenario";
 export type KbCategory =
-  | "definition" | "capability" | "boundary" | "pricing" | "comparison" | "data" | "faq";
+  | "definition"
+  | "capability"
+  | "boundary"
+  | "pricing"
+  | "comparison"
+  | "data"
+  | "faq";
 export type KbOrigin = "crawl" | "gap" | "aiDraft" | "manual";
 export type LinkType = "dir" | "agg" | "comm" | "rev" | "media" | "swap";
 export type ArtifactType = "csv" | "prompt" | "md" | "json";
 export type ModuleId =
-  | "audit" | "visibility" | "keywords" | "competitors" | "links"
-  | "content" | "kb" | "answers" | "profile" | "week";
+  | "audit"
+  | "visibility"
+  | "keywords"
+  | "keywordLibrary"
+  | "competitors"
+  | "links"
+  | "content"
+  | "kb"
+  | "answers"
+  | "profile"
+  | "week";
 
 export interface Profile {
   readonly url: string;
@@ -826,7 +1015,10 @@ export interface DomainStats {
   readonly kws: number;
   readonly dr: number;
   readonly refdomains: number;
-  readonly topPages: readonly { readonly path: string; readonly share: number }[];
+  readonly topPages: readonly {
+    readonly path: string;
+    readonly share: number;
+  }[];
 }
 
 export interface GapRow {
@@ -842,7 +1034,10 @@ export interface GapRow {
 
 export interface CompData {
   readonly domains: readonly DomainStats[];
-  readonly gap: { readonly comps: readonly string[]; readonly rows: readonly GapRow[] };
+  readonly gap: {
+    readonly comps: readonly string[];
+    readonly rows: readonly GapRow[];
+  };
   readonly at: string;
 }
 
@@ -968,6 +1163,8 @@ export interface WorkbenchProjectState {
   readonly auditHistory: readonly AuditReport[];
   readonly lastAudit: AuditReport | null;
   readonly visResults: readonly VisResult[];
+  /** True while a visibility run is in flight. Persisted, so a reload can tell streamed partial results from a completed run (design §6.4). */
+  readonly visPartial: boolean;
   readonly visHistory: readonly VisSnapshot[];
   readonly lastVis: VisSnapshot | null;
   readonly compData: CompData | null;
@@ -981,15 +1178,38 @@ export interface WorkbenchProjectState {
 
 export const ARTIFACT_LIMIT = 50;
 export const HISTORY_LIMIT = 12;
+
+/** What `makeDemoSite` (PR-2) produces and `loadDemo` writes — never `profile` or `notify` (design §6.4). */
+export type DemoPayload = Pick<
+  WorkbenchProjectState,
+  | "conns"
+  | "gscRows"
+  | "seeds"
+  | "built"
+  | "saved"
+  | "audit"
+  | "auditHistory"
+  | "lastAudit"
+  | "visResults"
+  | "visHistory"
+  | "lastVis"
+  | "compData"
+  | "plans"
+  | "targets"
+  | "kb"
+  | "artifacts"
+  | "profileDoc"
+>;
 ```
 
-- [ ] **Step 2: 写 schema 测试**
+- [x] **Step 2: 写 schema 测试**
 
 ```ts
 // apps/web/src/lib/workbench/store/schema.test.ts
 import { describe, expect, it } from "vitest";
 import { initialProjectState } from "./reducer.ts";
 import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
+import { populatedProjectState } from "./test-fixtures.ts";
 
 const seed = { url: "https://example.test", brand: "Example", market: "US" };
 
@@ -998,6 +1218,13 @@ describe("persisted workbench schema v1", () => {
     const state = initialProjectState(seed);
     const parsed = parsePersistedState({ v: PERSISTED_VERSION, state });
     expect(parsed).toEqual(state);
+  });
+
+  it("round-trips a fully populated state", () => {
+    // The initial state leaves every nested shape null or empty, so it never
+    // reaches the nested strictObjects. This one does.
+    const state = populatedProjectState(seed);
+    expect(parsePersistedState({ v: PERSISTED_VERSION, state })).toEqual(state);
   });
 
   it("rejects a different version", () => {
@@ -1024,12 +1251,12 @@ describe("persisted workbench schema v1", () => {
 });
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/schema.test.ts`
 Expected: FAIL，找不到 `./reducer.ts` / `./schema.ts`。（reducer 在 Task 4 实现；本任务先让 schema 存在，Task 4 结束时本测试才全绿。）
 
-- [ ] **Step 4: 写 schema.ts（zod 4）**
+- [x] **Step 4: 写 schema.ts（zod 4）**
 
 ```ts
 // apps/web/src/lib/workbench/store/schema.ts
@@ -1045,9 +1272,6 @@ export const PERSISTED_VERSION = 1 as const;
 const severity = z.enum(["high", "mid", "low"]);
 const engine = z.enum(["seo", "geo", "both"]);
 const level = z.enum(["high", "mid", "low"]);
-const gscStatus = z.enum(["ranked", "borderline", "gap", "unknown"]);
-const intent = z.enum(["navigational", "informational", "commercial", "transactional"]);
-const stage = z.enum(["TOFU", "MOFU", "BOFU"]);
 const pageType = z.enum([
   "landing", "blog", "comparison", "listicle", "tool", "glossary", "answer-page",
 ]);
@@ -1115,6 +1339,9 @@ const visResult = z.strictObject({
   rank: nullableNumber,
   brands: z.array(z.string()),
   domains: z.array(z.string()),
+  // v1 contract: only mock results are persisted. Widening to z.boolean()
+  // rejects nothing old, but ANY narrowing or renaming here needs a
+  // PERSISTED_VERSION bump.
   real: z.literal(false),
 });
 
@@ -1237,8 +1464,8 @@ const artifact = z.strictObject({
   id: z.string(),
   at: z.string(),
   module: z.enum([
-    "audit", "visibility", "keywords", "competitors", "links",
-    "content", "kb", "answers", "profile", "week",
+    "audit", "visibility", "keywords", "keywordLibrary", "competitors",
+    "links", "content", "kb", "answers", "profile", "week",
   ]),
   type: z.enum(["csv", "prompt", "md", "json"]),
   engine,
@@ -1259,6 +1486,7 @@ export const projectStateSchema = z.strictObject({
   auditHistory: z.array(auditReport),
   lastAudit: auditReport.nullable(),
   visResults: z.array(visResult),
+  visPartial: z.boolean(),
   visHistory: z.array(visSnapshot),
   lastVis: visSnapshot.nullable(),
   compData: compData.nullable(),
@@ -1280,12 +1508,19 @@ const persistedSchema = z.strictObject({
   state: projectStateSchema,
 });
 
-// Drift guard, one direction only: what the schema accepts must be a valid
-// domain state (mutable zod arrays assign to the readonly domain arrays; the
-// reverse does not type-check and is not needed).
+// Drift guards. (1) What the schema accepts must be a valid domain state:
+// catches changed field types and required domain fields missing from the
+// schema. (2) The two key sets must match in both directions. (1) alone lets
+// an *optional* domain field slip past, and because the schema is strict, the
+// first persisted write of that field would make every later read fail and
+// silently reset the user's data (design §6.5). Top level only; nested shapes
+// are covered by the filled fixture in schema.test.ts.
 type SchemaState = z.infer<typeof projectStateSchema>;
 const _schemaIsDomainState: WorkbenchProjectState = null as unknown as SchemaState;
 void _schemaIsDomainState;
+type AssertNever<T extends never> = T;
+type _MissingInSchema = AssertNever<Exclude<keyof WorkbenchProjectState, keyof SchemaState>>;
+type _ExtraInSchema = AssertNever<Exclude<keyof SchemaState, keyof WorkbenchProjectState>>;
 
 export function parsePersistedState(raw: unknown): WorkbenchProjectState | null {
   const result = persistedSchema.safeParse(raw);
@@ -1295,14 +1530,19 @@ export function parsePersistedState(raw: unknown): WorkbenchProjectState | null 
 
 `note` / `filename` 在 `types.ts` 里必须是 `?: string | undefined`（见头部约定例外），否则 `parsePersistedState` 的返回和漂移守卫都编译不过。
 
-- [ ] **Step 5: 类型检查**
+- [x] **Step 5: 类型检查**
 
 Run: `pnpm --filter @sf/web typecheck`
 Expected: 只剩 `schema.test.ts` 找不到 `./reducer.ts`（Task 4 解决）；无其他新错误。
 
-- [ ] **Step 6: 不单独提交**
+- [x] **Step 6: 不单独提交**
 
 本任务与 Task 4 合为一个 commit（Task 4 Step 6），避免带红测试的提交。
+
+**落地备注：**
+
+- **持久化边界**（PR-1 验收 B5）：`types.ts` 在既有 `ARTIFACT_LIMIT` / `HISTORY_LIMIT` 旁新增 `ARTIFACT_CONTENT_MAX = 200_000`、`ARTIFACT_TITLE_MAX = 200`、`ARTIFACT_FILENAME_PATTERN = /^[\p{L}\p{N}_ .()-]{1,120}$/u`；`schema.ts` 从 `../types.ts` 导入这五个常量（原本只 `import type`；无环——`types.ts` 不依赖 store 目录），`artifacts: z.array(artifact).max(ARTIFACT_LIMIT)`、`auditHistory` / `visHistory` `.max(HISTORY_LIMIT)`、`title.max(ARTIFACT_TITLE_MAX)`、`content.max(ARTIFACT_CONTENT_MAX)`、`filename.regex(ARTIFACT_FILENAME_PATTERN).optional()`。这两个上限只封单个产物（一份被篡改或超大的信封不能独自撑爆解析或配额），不承诺整篮子装得下——localStorage 每源约 5 MB，50 × 200 KB 超过它，装不下是 `quota` 存储态的事；超界的信封整份丢弃而不是部分信任（strict 对象的既定策略）。`filename` 只允许裸文件名（任何文字的字母数字、下划线、空格、点、括号、连字符），路径分隔符 / 控制字符 / 其他标点都拒——mock 内容是中文，产物标题多半也是中文，所以不能只放 ASCII `\w`（首版这么写过，中文标题会下载成 `____.csv`）；下载名的扩展名由抽屉按 `type` 强制，见 Task 10 落地备注。
+- **reducer 侧同步夹紧**（Task 4 的 `reducer.ts`）：schema 拒绝的信封在下次加载时会把整个项目重置，所以超界的生产者必须在**进来时**被裁掉，不能放进去等着被丢——`addArtifact` 与 `loadDemo` 都经 `boundArtifact()`：`title` / `content` 按上限截断（`lib/workbench/truncate.ts` 的 `truncateUtf16`：切点落在代理对中间时退一位——`.slice` 按 UTF-16 单元数，切开 `𠮷` 会留一个孤高代理，JSON 能存、`Blob` 下载会变 U+FFFD；gpt-6-astra 复审 P2），`filename` 不匹配模式则丢弃为 `undefined`（抽屉随后按标题命名）。`reducer.test.ts` +3（超界产物裁到边界后 `parsePersistedState` 能原样解析回来；裸文件名保留；demo payload 同样夹紧），`schema.test.ts` +2（三个数组到上限可解析、超一条为 null；title / content 到上限可解析、超一字符为 null；7 个坏文件名逐个为 null）。
 
 ---
 
@@ -1313,29 +1553,47 @@ Expected: 只剩 `schema.test.ts` 找不到 `./reducer.ts`（Task 4 解决）；
 - Create: `apps/web/src/lib/workbench/store/reducer.ts`
 - Test: `apps/web/src/lib/workbench/store/reducer.test.ts`
 
-设计 §6.4：时钟与 id 由 action 携带；`auditComplete` 把上一份 `lastAudit` 归档、历史不含当前；`visProgress` 不归档、`visComplete` 归档；`auditCancel` / `visCancel` 回到上次；`loadDemo` 逐字段写入且不碰 `profile` / `notify`；`reset` 回初始值。
+设计 §6.4：时钟与 id 由 action 携带；`auditComplete` 把上一份 `lastAudit` 归档、历史不含当前；`visProgress` 不归档、`visComplete` 归档；`auditCancel` / `visCancel` 回到上次；`loadDemo` 逐字段写入且不碰 `profile` / `notify`；`reset` 回初始值。`visStart` / `visProgress` 置 `visPartial = true`，`visComplete` / `visCancel` 置 false——hydration 靠这个持久化标志识别「被打断的可见度运行」，不能靠 `visResults` 是否为空（流式中间结果会让部分结果冒充完成态）。
 
-- [ ] **Step 1: 在 types.ts 末尾追加 DemoPayload**
+- [x] **Step 1: 在 types.ts 末尾追加 DemoPayload**
+
+本任务的改动（Task 3 的 types.ts 代码块镜像落地文件，末尾已含下面这段）：
 
 ```ts
 /** What `makeDemoSite` (PR-2) produces and `loadDemo` writes — never `profile` or `notify` (design §6.4). */
 export type DemoPayload = Pick<
   WorkbenchProjectState,
-  | "conns" | "gscRows" | "seeds" | "built" | "saved"
-  | "audit" | "auditHistory" | "lastAudit"
-  | "visResults" | "visHistory" | "lastVis"
-  | "compData" | "plans" | "targets" | "kb" | "artifacts" | "profileDoc"
+  | "conns"
+  | "gscRows"
+  | "seeds"
+  | "built"
+  | "saved"
+  | "audit"
+  | "auditHistory"
+  | "lastAudit"
+  | "visResults"
+  | "visHistory"
+  | "lastVis"
+  | "compData"
+  | "plans"
+  | "targets"
+  | "kb"
+  | "artifacts"
+  | "profileDoc"
 >;
 ```
 
-- [ ] **Step 2: 写测试**
+`visPartial` **不进** `DemoPayload`：示例数据从来不是「运行中」的（`loadDemo` 显式把它置 false）。
+
+- [x] **Step 2: 写测试**
 
 ```ts
 // apps/web/src/lib/workbench/store/reducer.test.ts
 import { describe, expect, it } from "vitest";
 import type { Artifact, AuditReport, DemoPayload, VisResult } from "../types.ts";
 import { ARTIFACT_LIMIT, HISTORY_LIMIT } from "../types.ts";
-import { initialProjectState, normalizeInterrupted, reduce } from "./reducer.ts";
+import type { WorkbenchAction } from "./reducer.ts";
+import { initialProjectState, normalizeInterrupted, reduce, withProjectSeed } from "./reducer.ts";
 
 const seed = { url: "https://example.test", brand: "Example", market: "US" };
 
@@ -1353,6 +1611,13 @@ function artifact(id: string): Artifact {
   return { id, at: "2026-09-11 10:00", module: "audit", type: "md", engine: "seo", title: id, content: "x" };
 }
 
+const demoPayload: DemoPayload = {
+  conns: { GSC: true, GA4: true }, gscRows: [], seeds: "a\nb", built: true, saved: [],
+  audit: report("d"), auditHistory: [], lastAudit: report("d"),
+  visResults: [vis("q")], visHistory: [], lastVis: { at: "d", results: [vis("q")] },
+  compData: null, plans: {}, targets: null, kb: null, artifacts: [artifact("demo")], profileDoc: null,
+};
+
 describe("initialProjectState", () => {
   it("mirrors only url, brand and market from the real project", () => {
     const s = initialProjectState(seed);
@@ -1360,7 +1625,23 @@ describe("initialProjectState", () => {
     expect(s.audit).toBeNull();
     expect(s.artifacts).toEqual([]);
     expect(s.demo).toBe(false);
+    expect(s.visPartial).toBe(false);
     expect(s.notify).toEqual({ weekly: true, drop: true, mention: false, gsc: true });
+  });
+});
+
+describe("withProjectSeed", () => {
+  it("re-applies the mirrored fields and leaves user edits and the rest of the state alone", () => {
+    const stale = reduce(
+      initialProjectState({ url: "https://old.test", brand: "Old", market: "JP" }),
+      { type: "patchProfile", patch: { positioning: "mine" } },
+    );
+    const edited = reduce(stale, { type: "setSeeds", seeds: "kept" });
+    const next = withProjectSeed(edited, seed);
+    expect(next.profile).toEqual({ ...seed, positioning: "mine", features: "", competitors: "" });
+    const { profile: _next, ...restNext } = next;
+    const { profile: _edited, ...restEdited } = edited;
+    expect(restNext).toEqual(restEdited);
   });
 });
 
@@ -1378,6 +1659,14 @@ describe("audit transitions", () => {
     expect(s.audit?.at).toBe("2026-09-08 10:00");
   });
 
+  it("does not archive the current report when the same object completes twice", () => {
+    const same = report("2026-09-01 10:00");
+    let s = reduce(initialProjectState(seed), { type: "auditComplete", report: same });
+    s = reduce(s, { type: "auditComplete", report: same });
+    expect(s.auditHistory).toEqual([]);
+    expect(s.audit).toBe(s.lastAudit);
+  });
+
   it("caps history at HISTORY_LIMIT, dropping the oldest", () => {
     let s = initialProjectState(seed);
     for (let i = 0; i < HISTORY_LIMIT + 3; i += 1) {
@@ -1393,47 +1682,78 @@ describe("audit transitions", () => {
     s = reduce(s, { type: "auditCancel" });
     expect(s.audit?.at).toBe("a");
   });
+
+  it("cancel with no previous report leaves the audit empty", () => {
+    let s = reduce(initialProjectState(seed), { type: "auditStart" });
+    s = reduce(s, { type: "auditCancel" });
+    expect(s.audit).toBeNull();
+  });
 });
 
 describe("visibility transitions", () => {
-  it("progress does not archive, complete does", () => {
+  it("progress does not archive, complete does, and visPartial tracks the run", () => {
     let s = reduce(initialProjectState(seed), { type: "visComplete", results: [vis("q1")], at: "t1" });
     expect(s.visHistory).toEqual([]);
+    expect(s.visPartial).toBe(false);
     s = reduce(s, { type: "visStart" });
     expect(s.visResults).toEqual([]);
+    expect(s.visPartial).toBe(true);
     s = reduce(s, { type: "visProgress", results: [vis("q2")] });
     expect(s.visHistory).toEqual([]);
+    expect(s.visPartial).toBe(true);
     expect(s.lastVis?.at).toBe("t1");
     s = reduce(s, { type: "visComplete", results: [vis("q2"), vis("q3")], at: "t2" });
     expect(s.visHistory.map((h) => h.at)).toEqual(["t1"]);
     expect(s.lastVis?.at).toBe("t2");
     expect(s.visResults).toHaveLength(2);
+    expect(s.visPartial).toBe(false);
   });
 
-  it("cancel restores the last snapshot or empties", () => {
+  it("cancel restores the last snapshot or empties, and clears visPartial", () => {
     let s = reduce(initialProjectState(seed), { type: "visStart" });
     s = reduce(s, { type: "visProgress", results: [vis("x")] });
-    expect(reduce(s, { type: "visCancel" }).visResults).toEqual([]);
+    const cancelled = reduce(s, { type: "visCancel" });
+    expect(cancelled.visResults).toEqual([]);
+    expect(cancelled.visPartial).toBe(false);
     s = reduce(s, { type: "visComplete", results: [vis("x")], at: "t" });
     s = reduce(s, { type: "visStart" });
-    expect(reduce(s, { type: "visCancel" }).visResults).toEqual([vis("x")]);
+    const restored = reduce(s, { type: "visCancel" });
+    expect(restored.visResults).toEqual([vis("x")]);
+    expect(restored.visPartial).toBe(false);
+  });
+
+  it("caps history at HISTORY_LIMIT, dropping the oldest", () => {
+    let s = initialProjectState(seed);
+    for (let i = 0; i < HISTORY_LIMIT + 3; i += 1) {
+      s = reduce(s, { type: "visComplete", results: [vis(`q${i}`)], at: `t${i}` });
+    }
+    expect(s.visHistory).toHaveLength(HISTORY_LIMIT);
+    expect(s.visHistory[0]?.at).toBe("t2");
   });
 });
 
 describe("saved keywords", () => {
-  it("keeps addedAt and source for words already saved", () => {
+  it("keeps addedAt and source for words already saved, but takes the rest from the incoming entry", () => {
     let s = reduce(initialProjectState(seed), {
       type: "setSaved",
-      saved: [{ q: "a", addedAt: "t0", source: "manual" }],
+      saved: [{ q: "a", addedAt: "t0", source: "manual", note: "old" }],
     });
     s = reduce(s, {
       type: "setSaved",
-      saved: [{ q: "a", addedAt: "t9", source: "matrix" }, { q: "b", addedAt: "t1", source: "matrix" }],
+      saved: [{ q: "a", addedAt: "t9", source: "matrix", note: "edited" }, { q: "b", addedAt: "t1", source: "matrix" }],
     });
     expect(s.saved).toEqual([
-      { q: "a", addedAt: "t0", source: "manual" },
+      { q: "a", addedAt: "t0", source: "manual", note: "edited" },
       { q: "b", addedAt: "t1", source: "matrix" },
     ]);
+  });
+
+  it("collapses a word repeated in the incoming list to its first entry", () => {
+    const s = reduce(initialProjectState(seed), {
+      type: "setSaved",
+      saved: [{ q: "a", addedAt: "t0", source: "manual" }, { q: "a", addedAt: "t1", source: "gap" }],
+    });
+    expect(s.saved).toEqual([{ q: "a", addedAt: "t0", source: "manual" }]);
   });
 });
 
@@ -1457,36 +1777,44 @@ describe("artifacts", () => {
 });
 
 describe("demo", () => {
-  const payload: DemoPayload = {
-    conns: { GSC: true, GA4: true }, gscRows: [], seeds: "a\nb", built: true, saved: [],
-    audit: report("d"), auditHistory: [], lastAudit: report("d"),
-    visResults: [vis("q")], visHistory: [], lastVis: { at: "d", results: [vis("q")] },
-    compData: null, plans: {}, targets: null, kb: null, artifacts: [artifact("demo")], profileDoc: null,
-  };
-
   it("loadDemo writes the payload fields, flags demo, and never touches profile or notify", () => {
     let s = reduce(initialProjectState(seed), {
       type: "patchProfile", patch: { positioning: "mine" },
     });
     s = reduce(s, { type: "setNotify", notify: { weekly: false, drop: false, mention: false, gsc: false } });
-    s = reduce(s, { type: "loadDemo", payload });
+    s = reduce(s, { type: "loadDemo", payload: demoPayload });
     expect(s.demo).toBe(true);
     expect(s.seeds).toBe("a\nb");
     expect(s.audit?.at).toBe("d");
     expect(s.profile.positioning).toBe("mine");
     expect(s.notify.weekly).toBe(false);
+    expect(s.visPartial).toBe(false);
+  });
+
+  it("loadDemo applies the history and artifact caps", () => {
+    const history = Array.from({ length: HISTORY_LIMIT + 1 }, (_, i) => report(`h${i}`));
+    const many = Array.from({ length: ARTIFACT_LIMIT + 1 }, (_, i) => artifact(`x${i}`));
+    const s = reduce(initialProjectState(seed), {
+      type: "loadDemo",
+      payload: { ...demoPayload, auditHistory: history, artifacts: many },
+    });
+    expect(s.auditHistory).toHaveLength(HISTORY_LIMIT);
+    expect(s.auditHistory[0]?.at).toBe("h1");
+    expect(s.artifacts).toHaveLength(ARTIFACT_LIMIT);
+    expect(s.artifacts[0]?.id).toBe("x0");
+    expect(s.artifacts.at(-1)?.id).toBe(`x${ARTIFACT_LIMIT - 1}`);
   });
 
   it("clearDemo is symmetric to loadDemo and keeps profile edits and notify", () => {
     let s = reduce(initialProjectState(seed), { type: "patchProfile", patch: { features: "a, b" } });
-    s = reduce(s, { type: "loadDemo", payload });
+    s = reduce(s, { type: "loadDemo", payload: demoPayload });
     s = reduce(s, { type: "clearDemo" });
     expect(s).toEqual({ ...initialProjectState(seed), profile: { ...initialProjectState(seed).profile, features: "a, b" } });
     expect(s.demo).toBe(false);
   });
 
   it("reset returns to the initial state for the same seed", () => {
-    let s = reduce(initialProjectState(seed), { type: "loadDemo", payload });
+    let s = reduce(initialProjectState(seed), { type: "loadDemo", payload: demoPayload });
     s = reduce(s, { type: "reset", seed });
     expect(s).toEqual(initialProjectState(seed));
   });
@@ -1498,38 +1826,96 @@ describe("demo", () => {
 });
 
 describe("normalizeInterrupted", () => {
-  it("restores the last audit and visibility snapshot after an interrupted run", () => {
+  it("restores the last audit and discards streamed partial visibility results", () => {
     let s = reduce(initialProjectState(seed), { type: "auditComplete", report: report("a") });
     s = reduce(s, { type: "visComplete", results: [vis("v")], at: "t" });
     s = reduce(s, { type: "auditStart" });
     s = reduce(s, { type: "visStart" });
+    s = reduce(s, { type: "visProgress", results: [vis("half")] });
     const normalized = normalizeInterrupted(s);
     expect(normalized.audit?.at).toBe("a");
     expect(normalized.visResults).toEqual([vis("v")]);
+    expect(normalized.visPartial).toBe(false);
   });
+
+  it("keeps a completed run with zero results (not interrupted)", () => {
+    let s = reduce(initialProjectState(seed), { type: "visComplete", results: [vis("v")], at: "t1" });
+    s = reduce(s, { type: "visComplete", results: [], at: "t2" });
+    expect(normalizeInterrupted(s)).toBe(s);
+    expect(s.visResults).toEqual([]);
+  });
+
   it("is the identity when nothing was interrupted", () => {
     const s = initialProjectState(seed);
     expect(normalizeInterrupted(s)).toBe(s);
   });
 });
 
+/** Recursively freezes plain objects and arrays, so any in-place write throws under ESM strict mode. */
+function deepFreeze(value: unknown): void {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return;
+  Object.freeze(value);
+  const record: Record<string, unknown> = value as Record<string, unknown>;
+  for (const key of Object.keys(record)) deepFreeze(record[key]);
+}
+
 describe("immutability", () => {
-  it("never mutates the previous state object", () => {
-    const before = initialProjectState(seed);
-    const frozen = Object.freeze(before);
-    const after = reduce(frozen, { type: "addArtifact", artifact: artifact("z") });
-    expect(after).not.toBe(before);
-    expect(before.artifacts).toEqual([]);
+  it("never mutates the state it is given, for any action", () => {
+    let populated = reduce(initialProjectState(seed), { type: "auditComplete", report: report("a") });
+    populated = reduce(populated, { type: "visComplete", results: [vis("v")], at: "t" });
+    populated = reduce(populated, { type: "addArtifact", artifact: artifact("a1") });
+    populated = reduce(populated, { type: "setSaved", saved: [{ q: "k", addedAt: "t0", source: "manual" }] });
+    populated = reduce(populated, {
+      type: "setKb",
+      kb: { at: "t", entries: [{ id: "k1", cat: "faq", statement: "s", evidence: "e", source: "src", from: "manual" }] },
+    });
+    deepFreeze(populated);
+    const before = JSON.stringify(populated);
+
+    const everyAction: readonly WorkbenchAction[] = [
+      { type: "patchProfile", patch: { positioning: "p" } },
+      { type: "setProfileDoc", doc: null },
+      { type: "setConns", conns: { GSC: true, GA4: false } },
+      { type: "setGscRows", rows: [] },
+      { type: "setSeeds", seeds: "s" },
+      { type: "setBuilt", built: true },
+      { type: "setSaved", saved: [{ q: "k", addedAt: "t1", source: "gap" }] },
+      { type: "setCompData", data: null },
+      { type: "setPlans", plans: {} },
+      { type: "setTargets", targets: [] },
+      { type: "setKb", kb: null },
+      { type: "setNotify", notify: { weekly: false, drop: false, mention: false, gsc: false } },
+      { type: "auditStart" },
+      { type: "auditComplete", report: report("z") },
+      { type: "auditCancel" },
+      { type: "visStart" },
+      { type: "visProgress", results: [vis("p")] },
+      { type: "visComplete", results: [vis("p")], at: "z" },
+      { type: "visCancel" },
+      { type: "addArtifact", artifact: artifact("z") },
+      { type: "removeArtifact", id: "a1" },
+      { type: "clearArtifacts" },
+      { type: "loadDemo", payload: demoPayload },
+      { type: "clearDemo" },
+      { type: "loadPersisted", state: initialProjectState(seed) },
+      { type: "reset", seed },
+    ];
+    expect(new Set(everyAction.map((a) => a.type)).size).toBe(26);
+
+    for (const action of everyAction) {
+      expect(() => reduce(populated, action), action.type).not.toThrow();
+    }
+    expect(JSON.stringify(populated)).toBe(before);
   });
 });
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/reducer.test.ts`
 Expected: FAIL，找不到 `./reducer.ts`。
 
-- [ ] **Step 4: 实现 reducer.ts**
+- [x] **Step 4: 实现 reducer.ts**
 
 ```ts
 // apps/web/src/lib/workbench/store/reducer.ts
@@ -1603,6 +1989,7 @@ export function initialProjectState(seed: ProjectSeed): WorkbenchProjectState {
     auditHistory: [],
     lastAudit: null,
     visResults: [],
+    visPartial: false,
     visHistory: [],
     lastVis: null,
     compData: null,
@@ -1620,13 +2007,23 @@ export function withProjectSeed(state: WorkbenchProjectState, seed: ProjectSeed)
   return { ...state, profile: { ...state.profile, url: seed.url, brand: seed.brand, market: seed.market } };
 }
 
-function archive<T>(history: readonly T[], item: T | null): readonly T[] {
-  if (item === null) return history;
+/** Archive the previous entry. `current` keeps a repeated dispatch of the same object out of the history. */
+function archive<T>(history: readonly T[], item: T | null, current: T | null): readonly T[] {
+  if (item === null || item === current) return history;
   return [...history, item].slice(-HISTORY_LIMIT);
 }
 
+/** `setSaved` semantics (design §6.4): incoming entries win, except `addedAt` / `source` of words already saved; duplicates in `next` collapse to the first. */
 function mergeSaved(previous: readonly SavedKeyword[], next: readonly SavedKeyword[]): readonly SavedKeyword[] {
-  return next.map((entry) => previous.find((p) => p.q === entry.q) ?? entry);
+  const seen = new Set<string>();
+  const merged: SavedKeyword[] = [];
+  for (const entry of next) {
+    if (seen.has(entry.q)) continue;
+    seen.add(entry.q);
+    const prev = previous.find((p) => p.q === entry.q);
+    merged.push(prev ? { ...entry, addedAt: prev.addedAt, source: prev.source } : entry);
+  }
+  return merged;
 }
 
 export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): WorkbenchProjectState {
@@ -1662,23 +2059,25 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
         ...state,
         audit: action.report,
         lastAudit: action.report,
-        auditHistory: archive(state.auditHistory, state.lastAudit),
+        auditHistory: archive(state.auditHistory, state.lastAudit, action.report),
       };
     case "auditCancel":
       return { ...state, audit: state.lastAudit };
     case "visStart":
-      return { ...state, visResults: [] };
+      return { ...state, visResults: [], visPartial: true };
     case "visProgress":
-      return { ...state, visResults: action.results };
+      return { ...state, visResults: action.results, visPartial: true };
     case "visComplete":
       return {
         ...state,
         visResults: action.results,
+        visPartial: false,
         lastVis: { at: action.at, results: action.results },
-        visHistory: archive(state.visHistory, state.lastVis),
+        // The snapshot is built here, so it is never reference-equal to `lastVis`.
+        visHistory: archive(state.visHistory, state.lastVis, null),
       };
     case "visCancel":
-      return { ...state, visResults: state.lastVis?.results ?? [] };
+      return { ...state, visResults: state.lastVis?.results ?? [], visPartial: false };
     case "addArtifact":
       return { ...state, artifacts: [action.artifact, ...state.artifacts].slice(0, ARTIFACT_LIMIT) };
     case "removeArtifact":
@@ -1686,10 +2085,18 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
     case "clearArtifacts":
       return { ...state, artifacts: [] };
     case "loadDemo":
-      return { ...state, ...action.payload, demo: true };
+      return {
+        ...state,
+        ...action.payload,
+        auditHistory: action.payload.auditHistory.slice(-HISTORY_LIMIT),
+        visHistory: action.payload.visHistory.slice(-HISTORY_LIMIT),
+        artifacts: action.payload.artifacts.slice(0, ARTIFACT_LIMIT),
+        visPartial: false,
+        demo: true,
+      };
     case "clearDemo": {
       const blank = initialProjectState({ url: state.profile.url, brand: state.profile.brand, market: state.profile.market });
-      return { ...state, ...demoFields(blank), demo: false };
+      return { ...state, ...demoFields(blank), visPartial: false, demo: false };
     }
     case "loadPersisted":
       return action.state;
@@ -1708,26 +2115,33 @@ function demoFields(s: WorkbenchProjectState): DemoPayload {
   };
 }
 
-/** After hydration: an interrupted run persisted `audit = null` / `visResults = []` (design §6.4). */
+/**
+ * After hydration (design §6.4). An interrupted audit run persisted
+ * `audit = null` (the report is all-or-nothing); an interrupted visibility
+ * run persisted `visPartial = true` with whatever results had streamed in.
+ * Both fall back to the last completed snapshot. Note: right after a
+ * completed run `audit === lastAudit` and `visResults === lastVis.results`
+ * by reference; that identity does not survive the JSON round-trip, so
+ * nothing may depend on it.
+ */
 export function normalizeInterrupted(state: WorkbenchProjectState): WorkbenchProjectState {
   const audit = state.audit === null && state.lastAudit ? state.lastAudit : state.audit;
-  const visResults = state.visResults.length === 0 && state.lastVis ? state.lastVis.results : state.visResults;
-  if (audit === state.audit && visResults === state.visResults) return state;
-  return { ...state, audit, visResults };
+  if (!state.visPartial) return audit === state.audit ? state : { ...state, audit };
+  return { ...state, audit, visResults: state.lastVis?.results ?? [], visPartial: false };
 }
 ```
 
 `reduce` 超过 50 行是 switch 的固有形态；若 lint 有函数长度规则则把 audit / vis 两组抽成 `reduceAudit` / `reduceVis`。
 
-- [ ] **Step 5: 跑 reducer 与 schema 测试**
+- [x] **Step 5: 跑 reducer 与 schema 测试**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store`
-Expected: reducer 16 passed、schema 4 passed。
+Expected: reducer 23 passed、schema 5 passed。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
-git add apps/web/src/lib/workbench/types.ts apps/web/src/lib/workbench/store/schema.ts apps/web/src/lib/workbench/store/schema.test.ts apps/web/src/lib/workbench/store/reducer.ts apps/web/src/lib/workbench/store/reducer.test.ts
+git add apps/web/src/lib/workbench/types.ts apps/web/src/lib/workbench/store/schema.ts apps/web/src/lib/workbench/store/schema.test.ts apps/web/src/lib/workbench/store/test-fixtures.ts apps/web/src/lib/workbench/store/reducer.ts apps/web/src/lib/workbench/store/reducer.test.ts
 git commit -m "feat(workbench): 领域类型、持久化 schema v1、reducer 与初始状态"
 ```
 
@@ -1741,7 +2155,7 @@ git commit -m "feat(workbench): 领域类型、持久化 schema v1、reducer 与
 
 `keywordRows` / `gatedRows` 需要 `buildRows`，落 PR-2；本任务只做不依赖 mock 的派生。
 
-- [ ] **Step 1: 写测试**
+- [x] **Step 1: 写测试**
 
 ```ts
 // apps/web/src/lib/workbench/store/selectors.test.ts
@@ -1806,6 +2220,59 @@ describe("selectCounts", () => {
     expect(counts.links).toBeNull();
   });
 
+  it("counts competitor gap rows, not competitor domains", () => {
+    let s = reduce(base, {
+      type: "setCompData",
+      data: {
+        domains: [],
+        gap: {
+          comps: ["a.test", "b.test", "c.test"],
+          rows: [
+            { q: "one", volume: 10, kd: 5, cpc: "1.00", aio: false, ranks: [1, null, 3], ours: null, page: "blog" },
+            { q: "two", volume: 20, kd: 6, cpc: "2.00", aio: true, ranks: [2, 4, null], ours: 9, page: "comparison" },
+          ],
+        },
+        at: "t",
+      },
+    });
+    s = reduce(s, {
+      type: "setTargets",
+      targets: [{ type: "dir", site: "Dir", domain: "dir.test", dr: 40, relevance: "high", difficulty: "low", action: "submit", asset: "listing" }],
+    });
+    const counts = selectCounts(s, null);
+    expect(counts.competitors).toBe("2");
+    expect(counts.links).toBe("1");
+  });
+
+  it("shows no badge for a module that ran but produced nothing", () => {
+    let s = reduce(base, { type: "setTargets", targets: [] });
+    s = reduce(s, {
+      type: "setCompData",
+      data: { domains: [], gap: { comps: ["a.test"], rows: [] }, at: "t" },
+    });
+    s = reduce(s, {
+      type: "setKb",
+      kb: { at: "t", entries: [{ id: "1", cat: "faq", statement: "filled", evidence: "", source: "", from: "crawl" }] },
+    });
+    const counts = selectCounts(s, 0);
+    expect(counts.links).toBeNull();
+    expect(counts.competitors).toBeNull();
+    expect(counts.kb).toBeNull();
+    expect(counts.keywords).toBeNull();
+  });
+
+  it("rounds the hit rate to the nearest percent", () => {
+    const s = reduce(base, {
+      type: "visComplete", at: "t",
+      results: [
+        { p: "a", platform: "x", hit: true, rank: 1, brands: [], domains: [], real: false },
+        { p: "b", platform: "x", hit: true, rank: 2, brands: [], domains: [], real: false },
+        { p: "c", platform: "x", hit: false, rank: null, brands: [], domains: [], real: false },
+      ],
+    });
+    expect(selectCounts(s, null).visibility).toBe("67%");
+  });
+
   it("hides the audit badge while a run is in flight", () => {
     let s = reduce(base, {
       type: "auditComplete",
@@ -1817,15 +2284,16 @@ describe("selectCounts", () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/selectors.test.ts`
 Expected: FAIL。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```ts
 // apps/web/src/lib/workbench/store/selectors.ts
+/** Derived views over WorkbenchProjectState (design §6.3). Pure: no clock, no id generation. */
 import type { WorkbenchProjectState } from "../types.ts";
 
 export function seedList(state: WorkbenchProjectState): readonly string[] {
@@ -1869,6 +2337,7 @@ export function selectCounts(
     keywordLibrary: countOrNull(state.saved.length),
     competitors: state.compData ? countOrNull(state.compData.gap.rows.length) : null,
     links: state.targets ? countOrNull(state.targets.length) : null,
+    // KB badge = number of gaps (entries with an empty statement), design §4.3.
     kb: state.kb ? countOrNull(state.kb.entries.filter((e) => e.statement.trim() === "").length) : null,
     artifacts: countOrNull(state.artifacts.length),
     dataSources: countOrNull(state.gscRows.length),
@@ -1876,12 +2345,12 @@ export function selectCounts(
 }
 ```
 
-- [ ] **Step 4: 跑测试**
+- [x] **Step 4: 跑测试**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/selectors.test.ts`
-Expected: 5 passed。
+Expected: 8 passed。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/lib/workbench/store/selectors.ts apps/web/src/lib/workbench/store/selectors.test.ts
@@ -1895,13 +2364,139 @@ git commit -m "feat(workbench): 侧栏徽标与种子词 selectors"
 **Files:**
 - Create: `apps/web/src/lib/workbench/store/persistence.ts`
 - Test: `apps/web/src/lib/workbench/store/persistence.test.ts`
+- Test fixture: `apps/web/src/lib/workbench/store/test-fixtures.ts`（Task 3 已建，代码块在下面 Step 1）
 
-- [ ] **Step 1: 写测试**
+- [x] **Step 1: 写测试**
+
+共用夹具（Task 3 的 `schema.test.ts` 与本任务的 `persistence.test.ts` 都 import 它）。初始状态的每个嵌套形状都是 `null` 或空数组，只有填满的状态才走得到嵌套 `strictObject`；测试之间不得互相 import，所以它是独立模块而不是某个 `*.test.ts` 的导出：
+
+```ts
+// apps/web/src/lib/workbench/store/test-fixtures.ts
+/**
+ * Test-only fixtures. `populatedProjectState` fills every nullable and gives
+ * every array an element, which is the only way the nested `strictObject`s in
+ * `schema.ts` are exercised: the initial state leaves them all null or empty.
+ * Shared by `schema.test.ts` and `persistence.test.ts`.
+ */
+import type {
+  AnswerPlan, Artifact, AuditReport, CompData, CrawlSignals, GscRow,
+  KnowledgeBase, LinkTarget, ProfileDoc, SavedKeyword, VisResult, VisSnapshot,
+  WorkbenchProjectState,
+} from "../types.ts";
+import type { ProjectSeed } from "./reducer.ts";
+
+const gscRow: GscRow = { query: "example brand", clicks: 12, impressions: 340, ctr: 0.035, position: 8.4 };
+
+const crawl: CrawlSignals = {
+  pages: 42, lang: "en", stack: "Next.js", h1: "Example", hasPricing: true,
+  hasDocs: true, hasBlog: true, indexed: 40, traffic: 1200, dr: 31, refdomains: 88,
+};
+
+const report: AuditReport = {
+  at: "2026-09-11 10:00",
+  score: 56,
+  findings: [{
+    id: "f1", cat: "tech", t: "Missing canonical", sev: "high", eng: "seo",
+    found: "none", expect: "one", fix: "add one", w: 8, page: "/pricing",
+  }],
+  crawl: { pages: 42, indexable: 40, blocked: 2, orphan: 1, lcp: "2.4", schema: 12, llmReadable: 61 },
+  pageRows: [{ url: "/pricing", status: 200, h1: 1, hasSchema: true, lcp: "2.4", issues: 3 }],
+};
+
+const visResult: VisResult = {
+  p: "best analytics tool", platform: "ChatGPT", hit: true, rank: 2,
+  brands: ["Example"], domains: ["example.test"], real: false,
+};
+
+const snapshot: VisSnapshot = { at: "2026-09-11 11:00", results: [visResult] };
+
+const compData: CompData = {
+  domains: [{
+    domain: "rival.test", traffic: 9000, kws: 1400, dr: 62, refdomains: 310,
+    topPages: [{ path: "/compare", share: 0.18 }],
+  }],
+  gap: {
+    comps: ["rival.test"],
+    rows: [{
+      q: "rival alternative", volume: 480, kd: 21, cpc: "3.20", aio: true,
+      ranks: [4, null], ours: 14, page: "comparison",
+    }],
+  },
+  at: "2026-09-11 12:00",
+};
+
+const plan: AnswerPlan = {
+  url: "/answers/what-is-geo", h1: "What is GEO?", lead: "A short answer.",
+  subq: ["How is it measured?"], facts: ["Cited by three engines."],
+  dims: ["coverage"], faq: ["Is it the same as SEO?"],
+  internal: ["/pricing"], schema: "FAQPage", beat: "weekly",
+};
+
+const target: LinkTarget = {
+  type: "dir", site: "Example Directory", domain: "dir.test", dr: 55,
+  relevance: "high", difficulty: "mid", action: "submit", asset: "listing",
+};
+
+const kb: KnowledgeBase = {
+  entries: [{ id: "k1", cat: "pricing", statement: "Plans start at $49.", evidence: "/pricing", source: "crawl", from: "crawl" }],
+  at: "2026-09-11 13:00",
+};
+
+const saved: SavedKeyword = { q: "geo audit", addedAt: "2026-09-11 09:00", source: "matrix", note: "brief written" };
+
+const artifact: Artifact = {
+  id: "a1", at: "2026-09-11 14:00", module: "keywordLibrary", type: "csv",
+  engine: "both", title: "Keyword library", content: "q\ngeo audit\n", filename: "keywords.csv",
+};
+
+const profileDoc: ProfileDoc = {
+  crawl,
+  gsc: { total: 900, brandQueries: 120, brandClicks: 80, nonBrandClicks: 240, top: [gscRow], near: 14 },
+  third: crawl,
+  ai: {
+    summary: "Example sells analytics.",
+    icp: [{ seg: "SMB", role: "Head of Growth", pain: "no attribution", trigger: "new funding", objection: "price" }],
+    value_props: ["fast setup"], diff: ["no agent needed"], pillars: ["attribution"],
+    facts: ["Founded 2021."], tone: "plain",
+  },
+  at: "2026-09-11 15:00",
+};
+
+/** Every nullable non-null and every array non-empty, so the nested strict shapes are covered. */
+export function populatedProjectState(seed: ProjectSeed): WorkbenchProjectState {
+  return {
+    profile: { url: seed.url, brand: seed.brand, market: seed.market, positioning: "analytics for SMBs", features: "dashboards, alerts", competitors: "rival.test" },
+    profileDoc,
+    conns: { GSC: true, GA4: true },
+    gscRows: [gscRow],
+    seeds: "geo audit\nseo audit",
+    built: true,
+    saved: [saved],
+    audit: report,
+    auditHistory: [report],
+    lastAudit: report,
+    visResults: [visResult],
+    visPartial: false,
+    visHistory: [snapshot],
+    lastVis: snapshot,
+    compData,
+    plans: { "/answers/what-is-geo": plan },
+    targets: [target],
+    kb,
+    artifacts: [artifact],
+    notify: { weekly: true, drop: false, mention: true, gsc: false },
+    demo: true,
+  };
+}
+```
 
 ```ts
 // apps/web/src/lib/workbench/store/persistence.test.ts
 import { describe, expect, it } from "vitest";
+import type { WorkbenchProjectState } from "../types.ts";
 import { initialProjectState } from "./reducer.ts";
+import { PERSISTED_VERSION } from "./schema.ts";
+import { populatedProjectState } from "./test-fixtures.ts";
 import {
   clearAllWorkbenchState,
   clearProjectState,
@@ -1926,9 +2521,19 @@ function fakeStorage(initial: Record<string, string> = {}): Storage & { readonly
   };
 }
 
+/**
+ * A real `Storage` with some members replaced — no cast, so a wrong member
+ * signature is a type error. Descriptors are copied rather than spread, or a
+ * throwing `length` getter would fire here instead of inside the call under test.
+ */
+function withOverrides(overrides: Partial<Storage>): Storage {
+  return Object.defineProperties(fakeStorage(), Object.getOwnPropertyDescriptors(overrides));
+}
+
 describe("persistence", () => {
   it("uses a versioned, project-scoped key", () => {
     expect(storageKey(PID)).toBe(`gg.workbench.v1.${PID}`);
+    expect(storageKey(PID)).toContain(`.v${PERSISTED_VERSION}.`);
   });
 
   it("round-trips a state", () => {
@@ -1938,53 +2543,122 @@ describe("persistence", () => {
     expect(readProjectState(storage, PID)).toEqual({ status: "ok", state });
   });
 
+  it("round-trips a populated state through JSON", () => {
+    const storage = fakeStorage();
+    const state = populatedProjectState(seed);
+    expect(writeProjectState(storage, PID, state)).toBe("ok");
+    expect(readProjectState(storage, PID)).toEqual({ status: "ok", state });
+  });
+
   it("reports empty when nothing is stored", () => {
     expect(readProjectState(fakeStorage(), PID)).toEqual({ status: "empty", state: null });
   });
 
   it("discards invalid JSON, wrong version and wrong shape", () => {
+    const wrongVersion = JSON.stringify({ v: PERSISTED_VERSION + 1, state: initialProjectState(seed) });
+    const wrongShape = JSON.stringify({ v: PERSISTED_VERSION, state: { demo: true } });
     expect(readProjectState(fakeStorage({ [storageKey(PID)]: "{nope" }), PID).status).toBe("invalid");
-    expect(readProjectState(fakeStorage({ [storageKey(PID)]: JSON.stringify({ v: 9, state: {} }) }), PID).status).toBe("invalid");
-    expect(readProjectState(fakeStorage({ [storageKey(PID)]: JSON.stringify({ v: 1, state: { demo: true } }) }), PID).status).toBe("invalid");
+    expect(readProjectState(fakeStorage({ [storageKey(PID)]: wrongVersion }), PID).status).toBe("invalid");
+    expect(readProjectState(fakeStorage({ [storageKey(PID)]: wrongShape }), PID).status).toBe("invalid");
+  });
+
+  it("a non-finite number makes the write unreadable (JSON turns it into null)", () => {
+    const storage = fakeStorage();
+    const state: WorkbenchProjectState = {
+      ...initialProjectState(seed),
+      audit: {
+        at: "t", score: Number.NaN, findings: [],
+        crawl: { pages: 1, indexable: 1, blocked: 0, orphan: 0, lcp: "1", schema: 1, llmReadable: 1 },
+        pageRows: [],
+      },
+    };
+    expect(writeProjectState(storage, PID, state)).toBe("ok");
+    expect(readProjectState(storage, PID).status).toBe("invalid");
   });
 
   it("reports unavailable when storage throws on read or write", () => {
-    const throwing = {
-      ...fakeStorage(),
+    const throwing = withOverrides({
       getItem: () => { throw new Error("SecurityError"); },
       setItem: () => { throw new Error("SecurityError"); },
-    } as unknown as Storage;
+    });
     expect(readProjectState(throwing, PID).status).toBe("unavailable");
     expect(writeProjectState(throwing, PID, initialProjectState(seed))).toBe("unavailable");
   });
 
-  it("reports quota when setItem throws a QuotaExceededError", () => {
-    const quota = {
-      ...fakeStorage(),
-      setItem: () => { const e = new Error("full"); e.name = "QuotaExceededError"; throw e; },
-    } as unknown as Storage;
-    expect(writeProjectState(quota, PID, initialProjectState(seed))).toBe("quota");
+  it("reports quota for every spelling browsers use", () => {
+    const thrown = (error: unknown) =>
+      writeProjectState(withOverrides({ setItem: () => { throw error; } }), PID, initialProjectState(seed));
+    expect(thrown(new DOMException("full", "QuotaExceededError"))).toBe("quota");
+    expect(thrown({ name: "NS_ERROR_DOM_QUOTA_REACHED" })).toBe("quota");
+    expect(thrown({ code: 1014 })).toBe("quota");
+    expect(thrown({ code: 22 })).toBe("quota");
   });
 
-  it("clears one project or every workbench key, leaving other keys alone", () => {
+  it("reports unavailable for a failure that is not a quota error", () => {
+    const boom = withOverrides({ setItem: () => { throw new Error("boom"); } });
+    expect(writeProjectState(boom, PID, initialProjectState(seed))).toBe("unavailable");
+  });
+
+  it("clearProjectState removes one project and leaves its siblings", () => {
     const storage = fakeStorage({ other: "1" });
     writeProjectState(storage, PID, initialProjectState(seed));
     writeProjectState(storage, "p2", initialProjectState(seed));
     clearProjectState(storage, PID);
     expect(storage.map.has(storageKey(PID))).toBe(false);
     expect(storage.map.has(storageKey("p2"))).toBe(true);
+    expect(storage.map.has("other")).toBe(true);
+  });
+
+  it("clearAllWorkbenchState sweeps every version and adjacent key, and nothing else", () => {
+    const storage = fakeStorage({
+      other: "1",
+      [storageKey("a")]: "a",
+      [storageKey("b")]: "b",
+      [storageKey("c")]: "c",
+      [`gg.workbench.v0.${PID}`]: "old",
+      "gg.other.v1.x": "x",
+    });
     clearAllWorkbenchState(storage);
-    expect([...storage.map.keys()]).toEqual(["other"]);
+    expect([...storage.map.keys()]).toEqual(["other", "gg.other.v1.x"]);
+  });
+
+  it("clearAllWorkbenchState removes the rest when one key refuses to go", () => {
+    const stubborn = storageKey("b");
+    const base = fakeStorage({
+      [storageKey("a")]: "a",
+      [stubborn]: "b",
+      [storageKey("c")]: "c",
+    });
+    const storage = withOverrides({
+      removeItem: (k) => {
+        if (k === stubborn) throw new Error("locked");
+        base.map.delete(k);
+      },
+      get length() { return base.length; },
+      key: (i) => base.key(i),
+    });
+    expect(() => { clearAllWorkbenchState(storage); }).not.toThrow();
+    expect([...base.map.keys()]).toEqual([stubborn]);
+  });
+
+  it("clearAllWorkbenchState does not throw when the length getter throws", () => {
+    const storage = withOverrides({ get length(): number { throw new Error("SecurityError"); } });
+    expect(() => { clearAllWorkbenchState(storage); }).not.toThrow();
+  });
+
+  it("clearProjectState does not throw when removeItem throws", () => {
+    const storage = withOverrides({ removeItem: () => { throw new Error("SecurityError"); } });
+    expect(() => { clearProjectState(storage, PID); }).not.toThrow();
   });
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/persistence.test.ts`
 Expected: FAIL。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```ts
 // apps/web/src/lib/workbench/store/persistence.ts
@@ -1995,19 +2669,22 @@ import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
  * localStorage boundary (design §6.5). Storage is injected so the node unit
  * suite can drive it; the provider passes `window.localStorage`.
  */
-const PREFIX = `gg.workbench.v${PERSISTED_VERSION}.`;
+/** Sign-out must not leave an older version's user data behind (design §6.5), so the sweep is version-agnostic. */
+const ALL_VERSIONS_PREFIX = "gg.workbench.";
+const PREFIX = `${ALL_VERSIONS_PREFIX}v${PERSISTED_VERSION}.`;
 
 export function storageKey(projectId: string): string {
   return `${PREFIX}${projectId}`;
 }
 
-export type ReadStatus = "ok" | "empty" | "invalid" | "unavailable";
+export type ReadResult =
+  | { readonly status: "ok"; readonly state: WorkbenchProjectState }
+  | { readonly status: "empty" | "invalid" | "unavailable"; readonly state: null };
+
+export type ReadStatus = ReadResult["status"];
 export type WriteStatus = "ok" | "quota" | "unavailable";
 
-export function readProjectState(
-  storage: Storage,
-  projectId: string,
-): { readonly status: ReadStatus; readonly state: WorkbenchProjectState | null } {
+export function readProjectState(storage: Storage, projectId: string): ReadResult {
   let raw: string | null;
   try {
     raw = storage.getItem(storageKey(projectId));
@@ -2025,6 +2702,13 @@ export function readProjectState(
   return state ? { status: "ok", state } : { status: "invalid", state: null };
 }
 
+/** Chrome/Safari/spec name, Firefox name, then the legacy numeric codes (WebKit 22, Firefox 1014). */
+function isQuotaError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { name, code } = error as { readonly name?: unknown; readonly code?: unknown };
+  return name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED" || code === 22 || code === 1014;
+}
+
 export function writeProjectState(
   storage: Storage,
   projectId: string,
@@ -2034,7 +2718,7 @@ export function writeProjectState(
     storage.setItem(storageKey(projectId), JSON.stringify({ v: PERSISTED_VERSION, state }));
     return "ok";
   } catch (error) {
-    return error instanceof Error && error.name === "QuotaExceededError" ? "quota" : "unavailable";
+    return isQuotaError(error) ? "quota" : "unavailable";
   }
 }
 
@@ -2047,30 +2731,41 @@ export function clearProjectState(storage: Storage, projectId: string): void {
 }
 
 export function clearAllWorkbenchState(storage: Storage): void {
+  const keys: string[] = [];
   try {
-    const keys: string[] = [];
+    // Collect first, remove after: removing inside the loop shifts every later index.
     for (let i = 0; i < storage.length; i += 1) {
       const key = storage.key(i);
-      if (key !== null && key.startsWith(PREFIX)) keys.push(key);
+      if (key !== null && key.startsWith(ALL_VERSIONS_PREFIX)) keys.push(key);
     }
-    for (const key of keys) storage.removeItem(key);
   } catch {
     // Storage unavailable: there is nothing persisted to clear.
+  }
+  for (const key of keys) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // Best effort: one key refusing to go must not strand the others.
+    }
   }
 }
 ```
 
-- [ ] **Step 4: 跑测试**
+- [x] **Step 4: 跑测试**
 
 Run: `pnpm vitest run --project unit apps/web/src/lib/workbench/store/persistence.test.ts`
-Expected: 7 passed。
+Expected: 14 passed。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/lib/workbench/store/persistence.ts apps/web/src/lib/workbench/store/persistence.test.ts
 git commit -m "feat(workbench): 注入式 localStorage 持久化"
 ```
+
+**落地备注：**
+
+- 持久化层本身在验收轮没改；PR-1 验收 B5 的存储边界落在 Task 3 的 schema（读盘时拒）与 Task 4 的 reducer（写盘前裁），见 Task 3 落地备注。`clearAllWorkbenchState` / `WORKBENCH_SWEPT_EVENT` 多了一个消费者：登录页的 `app/login/_workbench-sweep.tsx`（验收 B4，见 Task 11 落地备注）——它清的是同一组 `gg.workbench.*` 键、派发的是同一个事件，provider 侧不需要新分支。
 
 ---
 
@@ -2079,10 +2774,20 @@ git commit -m "feat(workbench): 注入式 localStorage 持久化"
 **Files:**
 - Create: `apps/web/src/lib/workbench/store/WorkbenchProvider.tsx`
 - Create: `apps/web/src/lib/workbench/store/hooks.ts`
+- Test: `apps/web/src/lib/workbench/store/WorkbenchProvider.test.tsx`
 
-node 单测渲染不了组件；行为由 Task 12 的 e2e 覆盖（刷新仍在、删除项目后键清除）。
+**落地备注：**
 
-- [ ] **Step 1: 写 provider**
+- 计划原文「node 单测渲染不了组件；行为由 Task 12 的 e2e 覆盖」是错的。unit project 默认 node 环境，但可以用 `/** @vitest-environment jsdom */` 文件级 pragma 逐文件切到 jsdom（先例：`apps/web/src/components/ui/LimitationHint.test.tsx`）。provider 因此补了 `WorkbenchProvider.test.tsx`（jsdom，19 条用例），行为不再只靠 e2e。
+- `key={projectId}` 从「重新 hydrate 的手段」升级成正确性要求：组件体里加了 `mountedFor` 守卫，原地换 `projectId` 直接抛错。不抛的话，写盘 effect 会带着上一次渲染的 `state` 闭包写进新键（一个项目的数据盖掉另一个），而 `ready` / `storageMode`（含配额与 volatile 闩锁）会从设置它们的那个项目带过来。
+- 跨标签 `storage` 路径**不跑** `normalizeInterrupted`：写盘的那个标签可能正在跑，归一化会把它流进来的部分结果回滚到 `lastVis`，并把这个回滚回声写回磁盘，毁掉一次根本没被中断的运行。中断态只在首次 hydration、没有任何运行在飞的时候结算一次。
+- 跨标签删键（`event.newValue === null`）、整库清空（`event.key === null`）与同标签的 `WORKBENCH_SWEPT_EVENT` 都走 `forgetAndFreeze()`：先置 `writesBlockedRef` 再 `setStorageMode("swept")` 再 `dispatch reset`。写事件（`newValue` 非空）才重读磁盘：重读到 `unavailable` → volatile，`invalid` 忽略，`empty` 也忽略（键在事件排队后又没了，随后那条删除事件才负责清扫）。
+- **来自存储的状态绝不回写**（codex 评审 A）：`remoteStateRef` 按引用持有最近一次从磁盘取来的状态（首次 hydration 与跨标签路径都经 `loadFromStorage()`），reducer 的 `loadPersisted` 原样返回 `action.state`（有一行注释说明为什么必须是同一引用），写盘 effect 见 `state === remoteStateRef.current` 就直接返回。这才是多标签收敛的真正机制：两个标签的服务端种子不一致时（一个标签开着，项目被改了名），`withProjectSeed` 会在各自那边重盖 `profile.url/brand/market`，旧版靠「`setItem` 写相同值不触发 `storage` 事件」终止回声，种子一不同就互相覆盖到天荒地老；同时新开标签在 hydrate 时跑的 `normalizeInterrupted` 回滚也不再被当作权威广播出去，砸掉另一标签正在飞的运行。持久化信封仍然是确定性的，但已没有任何东西依赖这一点。**PR-2 残留**：本标签一旦有本地改动，就会把自己归一化过的副本写盘，另一标签在飞的运行仍会被这第一笔本地改动砸掉；真正的保护要等可见性视图落地时做运行归属 / 租约。
+- **删除事件按自身证据清扫**（codex 评审 B）：旧版监听器重读键、只在重读到 `empty` 时清扫；若本标签的写盘 effect 正好在事件送达窗口里把键重建了，重读会读到自己的写入，登出就永久漏掉。现在 `event.storageArea` 不是我们这个 `localStorage` 就忽略（`sessionStorage` 会发同一种事件），`event.key === null` 或 `event.newValue === null` 直接 `forgetAndFreeze()` + `clearProjectState()`（幂等，顺手删掉本标签复活的那份），只有 `newValue` 非空才走重读 + `loadPersisted`。
+- **同步写盘闸**（codex 评审 C）：`setStorageMode("swept")` 拦不住同一 commit 里已经排好的 passive 写盘 effect——state setter 改不了一个已经捕获的 effect 闭包，ref 可以。`writesBlockedRef` 在 `forgetAndFreeze()` 和 `forgetProject()` 的第一行同步置 true（先于 `clearProjectState` / `reset`），写盘 effect 第一件事就查它；`storageMode` 只留给 UI。
+- `StorageMode` 增加第四档 `swept`（09f9bb14）：和 `volatile` 一样关掉写盘 effect，但 UI 完全不提示——那是有意丢弃（登出清扫 / 删项目），不是这台浏览器的存储出了问题。`forgetProject` 同样先闩 `swept` 再 `clearProjectState`。
+
+- [x] **Step 1: 写 provider**
 
 ```tsx
 // apps/web/src/lib/workbench/store/WorkbenchProvider.tsx
@@ -2103,6 +2808,7 @@ import {
   clearProjectState,
   readProjectState,
   storageKey,
+  WORKBENCH_SWEPT_EVENT,
   writeProjectState,
   type WriteStatus,
 } from "./persistence.ts";
@@ -2115,7 +2821,15 @@ import {
   type WorkbenchAction,
 } from "./reducer.ts";
 
-export type StorageMode = "ok" | "volatile" | "quota";
+/**
+ * `volatile` and `quota` are storage FAILURES, and the topbar reports them.
+ * `swept` is not one: the state was discarded on purpose (sign-out sweep or
+ * project deletion), so the write effect must stay armed-off exactly like
+ * `volatile` while the UI says nothing. Reporting it would put a persistent
+ * "results will not be saved in this browser" banner in every other open tab,
+ * blaming the browser for a sign-out.
+ */
+export type StorageMode = "ok" | "volatile" | "quota" | "swept";
 
 export interface WorkbenchContextValue {
   readonly projectId: string;
@@ -2139,9 +2853,18 @@ function localStorageOrNull(): Storage | null {
 }
 
 /**
- * Per-project mock state (design §6.5). Mount with `key={projectId}` so a
- * project switch remounts and re-hydrates; writes are suppressed until the
- * first read completes so an SSR-shaped initial state never overwrites disk.
+ * Per-project mock state (design §6.5). Mount with `key={projectId}`.
+ *
+ * The remount is load-bearing for correctness, not merely a way to re-hydrate:
+ * without it a `projectId` change would re-run the write effect with the
+ * PREVIOUS render's `state` closure under the NEW key, copying one project's
+ * data over another's, and `ready` / `storageMode` (including the quota and
+ * volatile latches) would carry over from the project that set them. The guard
+ * in the component body turns that misuse into a loud error instead of silent
+ * cross-project data loss.
+ *
+ * Writes are suppressed until the first read completes so an SSR-shaped initial
+ * state never overwrites disk.
  */
 export function WorkbenchProvider({
   projectId,
@@ -2154,10 +2877,30 @@ export function WorkbenchProvider({
   readonly deriveKeywordRowCount?: (state: WorkbenchProjectState) => number | null;
   readonly children: ReactNode;
 }) {
+  const mountedFor = useRef(projectId);
+  if (mountedFor.current !== projectId) {
+    throw new Error("WorkbenchProvider must be remounted with key={projectId}; it cannot switch projects in place");
+  }
+
   const [state, dispatch] = useReducer(reduce, seed, initialProjectState);
   const [ready, setReady] = useState(false);
   const [storageMode, setStorageMode] = useState<StorageMode>("ok");
   const storageRef = useRef<Storage | null>(null);
+  // The state object most recently taken FROM storage (first hydration or a
+  // cross-tab `storage` event), held by identity. The reducer's `loadPersisted`
+  // returns it unchanged, so `state === remoteStateRef.current` is exactly
+  // "nothing local has happened since we last read disk".
+  const remoteStateRef = useRef<WorkbenchProjectState | null>(null);
+  // Synchronous write gate. `setStorageMode("swept")` alone cannot stop a
+  // passive write effect that is already scheduled in the same commit: the
+  // state setter does not change an already-captured effect closure; the ref
+  // does. `storageMode` stays for the UI.
+  const writesBlockedRef = useRef(false);
+
+  function loadFromStorage(next: WorkbenchProjectState): void {
+    remoteStateRef.current = next;
+    dispatch({ type: "loadPersisted", state: next });
+  }
 
   function hydrate(): void {
     const storage = storageRef.current;
@@ -2167,9 +2910,7 @@ export function WorkbenchProvider({
     }
     const read = readProjectState(storage, projectId);
     if (read.status === "unavailable") setStorageMode("volatile");
-    if (read.state) {
-      dispatch({ type: "loadPersisted", state: withProjectSeed(normalizeInterrupted(read.state), seed) });
-    }
+    if (read.state) loadFromStorage(withProjectSeed(normalizeInterrupted(read.state), seed));
   }
 
   useEffect(() => {
@@ -2182,9 +2923,22 @@ export function WorkbenchProvider({
   }, [projectId]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (writesBlockedRef.current || !ready) return;
+    // States that came from storage are never echoed back. This is what makes
+    // cross-tab sync converge even when two tabs disagree about the seed (a
+    // project renamed while one tab is stale): `withProjectSeed` re-stamps
+    // `profile.url/brand/market` on each side, and echoing that would make the
+    // two tabs overwrite each other forever. It also keeps a freshly opened
+    // tab's hydration rollback (`normalizeInterrupted`) from being broadcast as
+    // authoritative over another tab's in-flight run. The persisted envelope
+    // stays deterministic, but nothing relies on that any more.
+    // Residual (PR-2): after a LOCAL change this tab persists its normalised
+    // copy, so a rolled-back run in another tab is still clobbered by the first
+    // local edit here; true protection needs run ownership / a lease once the
+    // visibility view lands.
+    if (state === remoteStateRef.current) return;
     const storage = storageRef.current;
-    // Stop writing entirely once storage is volatile or full (design §6.5).
+    // Stop writing entirely once storage is volatile, full, or swept (design §6.5).
     if (!storage || storageMode !== "ok") return;
     const status: WriteStatus = writeProjectState(storage, projectId, state);
     if (status === "quota") setStorageMode("quota");
@@ -2192,15 +2946,66 @@ export function WorkbenchProvider({
   }, [state, ready, projectId, storageMode]);
 
   useEffect(() => {
+    // Drop our copy of the project and stop persisting. Latching the storage
+    // mode as well is deliberate: `reset` produces a fresh object, so the write
+    // effect would otherwise re-create `gg.workbench.v1.<id>` holding the seed
+    // mirror moments after sign-out, which design §6.5 says must leave nothing
+    // behind. The user is signed out anyway; a reload re-hydrates normally and
+    // clears the latch. `swept` rather than `volatile` because nothing is wrong
+    // with this browser's storage and the topbar must stay silent about it.
+    // The ref gate is flipped first: a write effect already scheduled in this
+    // commit still sees the old `storageMode`, and only the ref reaches it.
+    function forgetAndFreeze(): void {
+      writesBlockedRef.current = true;
+      setStorageMode("swept");
+      dispatch({ type: "reset", seed });
+    }
+
     function onStorage(event: StorageEvent): void {
-      if (event.key !== storageKey(projectId) || !storageRef.current) return;
-      const read = readProjectState(storageRef.current, projectId);
+      const storage = storageRef.current;
+      if (!storage) return;
+      // `sessionStorage` fires the same event type; only our store matters.
+      if (event.storageArea && event.storageArea !== storage) return;
+      if (event.key !== null && event.key !== storageKey(projectId)) return;
+      if (event.key === null || event.newValue === null) {
+        // A removal (`key === null` is a whole-store clear) is a sweep by the
+        // event's own evidence, NOT by re-reading the key: if this tab's write
+        // effect re-created the key inside the delivery window, a re-read finds
+        // our own write and the sign-out is missed for good. `clearProjectState`
+        // is idempotent and removes whatever this tab resurrected.
+        forgetAndFreeze();
+        clearProjectState(storage, projectId);
+        return;
+      }
+      const read = readProjectState(storage, projectId);
       if (read.state) {
-        dispatch({ type: "loadPersisted", state: withProjectSeed(normalizeInterrupted(read.state), seed) });
+        // Deliberately NOT `normalizeInterrupted`: the writing tab may be
+        // mid-run, and normalising here would roll its streamed partial results
+        // back to `lastVis`. Interrupted runs are settled once, on first
+        // hydration, when nothing can be in flight.
+        loadFromStorage(withProjectSeed(read.state, seed));
+      } else if (read.status === "unavailable") {
+        // Storage became unreachable between the event and the re-read; same
+        // treatment as in `hydrate`. (`invalid` is ignored, as before: a shape
+        // we cannot parse is no reason to throw our own state away. `empty`
+        // means the key vanished after this event was queued; the removal
+        // event that follows is what sweeps.)
+        setStorageMode("volatile");
       }
     }
+
+    // The sweeping document never receives its own `storage` event, so
+    // `SignOutButton` announces the sweep with this synthetic one.
+    function onSwept(): void {
+      forgetAndFreeze();
+    }
+
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    window.addEventListener(WORKBENCH_SWEPT_EVENT, onSwept);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(WORKBENCH_SWEPT_EVENT, onSwept);
+    };
   }, [projectId, seed]);
 
   const value = useMemo<WorkbenchContextValue>(
@@ -2212,6 +3017,14 @@ export function WorkbenchProvider({
       storageMode,
       keywordRowCount: deriveKeywordRowCount ? deriveKeywordRowCount(state) : null,
       forgetProject: () => {
+        // Gate before the removal, same reasoning as `forgetAndFreeze`: a write
+        // effect already scheduled in this commit, or any dispatch between this
+        // call and unmount (a cross-tab `storage` event, say), would otherwise
+        // re-create `gg.workbench.v1.<id>` holding the deleted project's data.
+        // No `reset` dispatch here — the caller navigates away immediately, so
+        // there is nothing to re-render.
+        writesBlockedRef.current = true;
+        setStorageMode("swept");
         if (storageRef.current) clearProjectState(storageRef.current, projectId);
       },
     }),
@@ -2222,9 +3035,9 @@ export function WorkbenchProvider({
 }
 ```
 
-以上即最终版：读盘结果先过 `normalizeInterrupted` 再 `withProjectSeed`；`storageMode` 一旦不是 `ok` 就不再写盘。
+读盘结果先过 `normalizeInterrupted` 再 `withProjectSeed`；`storageMode` 一旦不是 `ok` 就不再写盘。
 
-- [ ] **Step 2: 写 hooks**
+- [x] **Step 2: 写 hooks**
 
 ```ts
 // apps/web/src/lib/workbench/store/hooks.ts
@@ -2252,17 +3065,21 @@ export function useWorkbenchArtifacts(): readonly Artifact[] {
 }
 ```
 
-- [ ] **Step 3: 类型检查 + reducer 测试**
+- [x] **Step 3: 类型检查 + 测试**
 
 Run: `pnpm --filter @sf/web typecheck && pnpm vitest run --project unit apps/web/src/lib/workbench`
-Expected: 无新错误；全部通过。
+Expected: 无新错误；全部通过（含 `WorkbenchProvider.test.tsx` 的 19 条 jsdom 用例）。
 
-- [ ] **Step 4: Commit**
+> 完整实现见 `apps/web/src/lib/workbench/store/WorkbenchProvider.test.tsx`（已落地）：覆盖 hydrate、hydrate 前不写盘（首笔写是首个本地改动）、配额闩锁、storage 抛错转 volatile、跨标签重载 / 删键 / `key === null` / 不回滚在飞运行、同标签清扫、原地换项目抛错、删项目冻结写盘；codex 评审后新增 5 条：两标签种子不一致时不回写（本地 overlay 仍作用于 UI）、hydrate 回滚不落盘直到首个本地改动、键已被本标签重建时删除事件仍清扫且键最终为空、`sessionStorage` 事件忽略、子组件 effect 在 `ready` 翻转那个 commit 里调 `forgetProject()` 时已排好的写盘 effect 被 ref 闸拦住。合成的 `storage` 事件必须带 `newValue`（写事件非空、删除事件为 `null`），jsdom 默认的 `null` 会被读成删除。
+
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/web/src/lib/workbench/store
 git commit -m "feat(workbench): WorkbenchProvider 与 hooks（按项目重挂、hydrate 后写盘）"
 ```
+
+实际落地：63662b59（provider + hooks）、f1b72784（跨标签清除同步 + jsdom 单测）、4a6d10a4（跨标签不回滚运行态、同标签登出清扫、守卫测试）、9713160c（`onStorage` 防御分支补测）、09f9bb14（`swept` 档 + `forgetProject` 冻结写盘）、codex 评审修复 A/B/C（来自存储的状态不回写、删除事件按 `newValue === null` 清扫、同步写盘闸；与本备注同一 commit）。
 
 ---
 
@@ -2272,9 +3089,15 @@ git commit -m "feat(workbench): WorkbenchProvider 与 hooks（按项目重挂、
 - Modify: `packages/i18n/src/messages/en.json`
 - Modify: `packages/i18n/src/messages/zh-CN.json`
 
-在两个文件的**末尾**追加顶层 `workbench` 键（减少与在建 parity 分支冲突）。不要在消息里用 `'` 或 `{` 之外的花括号（ICU 语法字符）。`appShell.programTitle / programDay / programProgress` 三键在 Task 11 删 `SidebarProgress` 时一并删除。
+在两个文件的**末尾**追加顶层 `workbench` 键（减少与在建 parity 分支冲突）。`appShell.programTitle / programDay / programProgress` 三键在 Task 11 删 `SidebarProgress` 时一并删除。
 
-- [ ] **Step 1: en.json 追加**
+**落地备注：**
+
+- en `shell.sites` 不能是裸插值：1 会渲染成「1 sites」。改为 ICU 复数（02b3e7f8）。zh 无复数形态，保持「{count} 个站点」。计划原文「不要用 ICU 花括号」的限制随之放宽为：只有 en 的 `sites` 用复数语法，其余键仍是纯插值。
+- zh `shell.siteCard.notConnected` 由「未接」改为「未接入」（02b3e7f8），与「已接入」对仗。
+- 下面几个键是 Task 11 质量修复（09439fdc）补的，一并记在这里：`shell.inProgressNoLegacy`（没有旧页可回退的模块用它，见 Task 9 的 `PlaceholderView`）、`settings.realActionTitle`；en `settings.realAction` 由 "Real action" 改为 "Not sample data"（与旁边的「示例数据」chip 直接对立更清楚），zh 保持「真实操作」。
+
+- [x] **Step 1: en.json 追加**
 
 ```json
 "workbench": {
@@ -2321,7 +3144,7 @@ git commit -m "feat(workbench): WorkbenchProvider 与 hooks（按项目重挂、
     "search": "Search / jump",
     "artifacts": "Artifacts {count}",
     "newSite": "New site",
-    "sites": "{count} sites",
+    "sites": "{count, plural, one {# site} other {# sites}}",
     "shortcutHint": "Press ⌘K to jump",
     "sampleData": "Sample data",
     "sampleSite": "Sample site",
@@ -2332,6 +3155,7 @@ git commit -m "feat(workbench): WorkbenchProvider 与 hooks（按项目重挂、
     "legacy": "Legacy page",
     "inProgress": "Page in progress",
     "inProgressDetail": "This module lands in a later batch. The legacy page keeps working meanwhile.",
+    "inProgressNoLegacy": "This module lands in a later batch.",
     "footerNote": "Numbers marked sample data are generated locally.",
     "footerDetail": "The real version runs server-side crawling and APIs.",
     "palette": {
@@ -2355,12 +3179,13 @@ git commit -m "feat(workbench): WorkbenchProvider 与 hooks（按项目重挂、
     }
   },
   "settings": {
-    "realAction": "Real action"
+    "realAction": "Not sample data",
+    "realActionTitle": "This deletes the real project. It is not sample data."
   }
 }
 ```
 
-- [ ] **Step 2: zh-CN.json 追加（文案来自 opengengrowth Sidebar / Header）**
+- [x] **Step 2: zh-CN.json 追加（文案来自 opengengrowth Sidebar / Header）**
 
 ```json
 "workbench": {
@@ -2399,7 +3224,7 @@ git commit -m "feat(workbench): WorkbenchProvider 与 hooks（按项目重挂、
       "gsc": "GSC",
       "audit": "审计",
       "connected": "已接入",
-      "notConnected": "未接",
+      "notConnected": "未接入",
       "none": "—"
     },
     "openMenu": "打开导航",
@@ -2418,6 +3243,7 @@ git commit -m "feat(workbench): WorkbenchProvider 与 hooks（按项目重挂、
     "legacy": "旧版页面",
     "inProgress": "页面开发中",
     "inProgressDetail": "这个模块在后续批次落地，旧版页面照常可用。",
+    "inProgressNoLegacy": "这个模块在后续批次落地。",
     "footerNote": "标「示例数据」的数字为本地生成。",
     "footerDetail": "真实版本走服务端抓取与 API。",
     "palette": {
@@ -2441,22 +3267,25 @@ git commit -m "feat(workbench): WorkbenchProvider 与 hooks（按项目重挂、
     }
   },
   "settings": {
-    "realAction": "真实操作"
+    "realAction": "真实操作",
+    "realActionTitle": "这是真实操作，会删除真实项目，不是示例数据。"
   }
 }
 ```
 
-- [ ] **Step 3: parity 与 JSON 合法性**
+- [x] **Step 3: parity 与 JSON 合法性**
 
 Run: `pnpm vitest run --project unit packages/i18n`
 Expected: 全绿（含 key parity）。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/i18n/src/messages/en.json packages/i18n/src/messages/zh-CN.json
 git commit -m "feat(i18n): 工作台 chrome 文案（en / zh-CN）"
 ```
+
+实际落地：4aa9c1f9（两份文案）、02b3e7f8（`sites` 复数与「未接入」）、09439fdc（`inProgressNoLegacy` / `realActionTitle` / en `realAction`）。
 
 ---
 
@@ -2464,17 +3293,34 @@ git commit -m "feat(i18n): 工作台 chrome 文案（en / zh-CN）"
 
 **Files:**
 - Create: `apps/web/src/components/workbench/ui/cn.ts`
+- Create: `apps/web/src/components/workbench/ui/ids.ts`
 - Create: `apps/web/src/components/workbench/ui/focus-order.ts`
+- Create: `apps/web/src/components/workbench/ui/keyboard.ts`（`isComposingKey`，codex 评审后新增）
 - Create: `apps/web/src/components/workbench/ui/Dialog.tsx`
 - Create: `apps/web/src/components/workbench/ui/PageHead.tsx`
 - Create: `apps/web/src/components/workbench/ui/DemoChip.tsx`
 - Create: `apps/web/src/components/workbench/ui/LegacyLinks.tsx`
 - Create: `apps/web/src/components/workbench/views/placeholder/PlaceholderView.tsx`
-- Test: `apps/web/src/components/workbench/ui/focus-order.test.ts`（纯函数）
+- Test: `apps/web/src/components/workbench/ui/focus-order.test.ts`（jsdom：纯函数 + `FOCUSABLE` 选择器）、`ui/keyboard.test.ts`（纯函数）、`ui/Dialog.test.tsx`（jsdom）、`ui/LegacyLinks.test.ts`（键守卫）
 
 Tailwind 类直接照 opengengrowth；颜色只用 token（`bg-wb-paper`、`text-wb-seo` 等由 `@theme` 生成）或 Tailwind 内置刻度。**任何组件不得写 `style={{}}`。**
 
-- [ ] **Step 1: cn.ts**
+**落地备注：**
+
+- `#wb-app` 这个 id 抽成 `ui/ids.ts` 的 `WB_APP_ROOT_ID`，`ShellChrome` 渲染它、`Dialog` 查找它，两边不再各写一次字面量。
+- `Dialog` 的 `inert` 用模块级引用计数：同时可能开着两个对话框（⌘K 与产物筐互斥是 `ShellChrome` 的约定，`Dialog` 自己不假设），最后一个关闭才摘 `inert`；**设置**无条件执行，**摘除**时重新按 `WB_APP_ROOT_ID` 查一次根而不是复用 effect 闭包里那个 `root`（5508351b），保证即便 `#wb-app` 在对话框开着期间被换掉，设置和摘除也总落在同一个元素上——两处都是纵深防御，注释明说目前 `#wb-app` 并不会在两次打开之间被重新挂载。
+- `Dialog` **不是 portal**：它必须渲染在 `#wb-app` 之外，否则会把自己也 inert 掉。这一点由 `ShellChrome` 的结构保证（两个对话框是 `#wb-app` 的兄弟）。
+- 面板加 `tabIndex={-1}`：里面没有可聚焦元素时（空态抽屉）焦点要有地方落；`onKeyDown` 里 Tab 找不到目标时 `preventDefault` 而不是放行。
+- `FOCUSABLE` 在**每个**分支上都排除 `[tabindex="-1"]`，不只通用分支：命令面板的 `role="option"` 按钮是天生可聚焦元素，它用 `tabIndex={-1}` 退出 Tab 序，焦点圈必须尊重。codex 评审后 `[disabled]` 同样在每个分支排除：`a[href]` 与通用 `[tabindex]` 分支原本不排，一个带显式 `tabindex` 的 disabled 控件会成为焦点圈候选，而对它 `.focus()` 是静默 no-op，Tab 会卡在面板上。`focus-order.test.ts` 因此切到 jsdom，加两条选择器用例（disabled + tabindex 不入选；`tabindex="-1"` 每个分支都排）。
+- **IME 组合中的按键不归我们**（codex 评审）：`ui/keyboard.ts` 的 `isComposingKey(e)` = `e.isComposing === true || e.keyCode === 229`（后者是部分 Chromium / WebKit 在组合首个 keydown 上仍然只给的旧信号）。`Dialog.onKeyDown`、`CommandPalette.onKeyDown`（都查 `event.nativeEvent`）与 `useGlobalShortcut`（原生事件）三层都在 handler 第一行提前返回，**不 `preventDefault`**，输入法保留自己的行为：Escape 取消候选、Enter 上屏、方向键在候选里移动。组合中的 Escape 在 `Dialog` 里有意不 `stopPropagation`——它会冒泡到 window，由 `useGlobalShortcut` 的同一守卫拦住，不会关掉面板。三层各有一条 jsdom 用例（`KeyboardEvent` 的 init 支持 `isComposing`），且经变异验证只被对应用例抓住。
+- 关闭时的焦点归还改成「先 focus 首选目标，再问 `document.activeElement` 是否真的拿到了」。不能用 `offsetParent === null` 判断：固定定位的触发按钮它也是 null，jsdom 下更是恒为 null。
+- 背景遮罩加 `onMouseDown` preventDefault：mousedown 才是移动焦点的事件，不拦住的话面板在 `onClose` 之前就失焦，焦点归还会从 `<body>` 起算。
+- `LEGACY_LABEL_KEY` 从 `LegacyLinks.tsx` 挪到 `lib/workbench/routes.ts`（和 `LEGACY_LINKS` 同源），并补 `LegacyLinks.test.ts`：next-intl 对缺键渲染成 key 路径本身而不抛错，拼错就会把字面量 `nav.growthMap` 发到界面上。
+- 可选 props 一律显式写成 `| undefined`（`exactOptionalPropertyTypes`）。
+- 多处 `slate-400` 提到 `slate-500` / `slate-600`（对比度），`PlaceholderView` 的说明段落即其一。
+- **`Dialog` 只摘自己设的 `inert`**（PR-1 验收红队 A3）：旧页的 Product Profile 编辑器（`context/_product-profile.tsx`）与 action override（`execution/_action-override.tsx`）会把 `document.body` 的每个子节点（含 `#wb-app`）设成 `inert`、只还原自己加的那份；此前 `Dialog` 回到 0 个时无条件 `removeAttribute("inert")`，会把它们的背景在遮罩底下唤醒。现在模块级 `rootHadInert` 在引用计数 0→1 时快照根上**已有**的 `inert`，回到 0 时仅当 `!rootHadInert` 才摘；只在 0→1 取一次，叠开的第二个对话框不会把第一个对话框自己设的 `inert` 误认成别人的。关闭时的焦点归还也跳过 `preferred.closest("[inert], [aria-hidden='true']")` 非空的目标（浏览器会拒绝、jsdom 不会，所以断言的是「根本不去试」），落到下一个候选（opener）——opener 兜底走同一道围栏检查（gpt-6-astra 复审 P2：opener 在对话框开着期间被别的模态 `aria-hidden` 时，浏览器并不拒绝 `focus()`，此前会把焦点塞进被围子树）。布尔快照够用的前提是两类模态不会交错（我们的开着时旧页 inert 开不出它的模态；旧页模态开着时 `ShellChrome` 拒绝开我们的），复审提出的交错序列（P1「先开我们的再开旧页模态」、P2「抽屉开着时旧页模态再开」）都不可达，记录不修，前提写进 `Dialog.tsx` 注释。`Dialog.test.tsx` +5（预置 inert 开关后仍在；一叠两个对话框全关后根不残留 inert；`inert` / `aria-hidden` 两种围栏下不对被围目标调 `focus()`、焦点回到 opener；opener 自己被围时不回焦、焦点留在 body）。
+
+- [x] **Step 1: cn.ts**
 
 ```ts
 // apps/web/src/components/workbench/ui/cn.ts
@@ -2487,7 +3333,7 @@ export function cn(...inputs: readonly ClassValue[]): string {
 }
 ```
 
-- [ ] **Step 2: 焦点圈纯函数 + 测试**
+- [x] **Step 2: 焦点圈纯函数 + 测试**
 
 ```ts
 // apps/web/src/components/workbench/ui/focus-order.ts
@@ -2503,14 +3349,24 @@ export function nextTrapIndex(
   return activeIndex === count - 1 ? 0 : activeIndex + 1;
 }
 
+/**
+ * Known scope: no contenteditable/summary/iframe, and hidden descendants still
+ * match. `tabindex="-1"` and `[disabled]` are excluded on EVERY branch, not
+ * just the generic one: a natively focusable element (the palette's
+ * `role="option"` buttons) opts out of the Tab order with `tabindex="-1"`, and
+ * a disabled control carrying an explicit `tabindex` would otherwise be a trap
+ * candidate whose `.focus()` silently fails, stranding Tab on the panel.
+ */
 export const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'a[href]:not([disabled]):not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), [tabindex]:not([disabled]):not([tabindex="-1"])';
 ```
 
 ```ts
 // apps/web/src/components/workbench/ui/focus-order.test.ts
+/** @vitest-environment jsdom */
+
 import { describe, expect, it } from "vitest";
-import { nextTrapIndex } from "./focus-order.ts";
+import { FOCUSABLE, nextTrapIndex } from "./focus-order.ts";
 
 describe("nextTrapIndex", () => {
   it("wraps forward and backward", () => {
@@ -2526,12 +3382,69 @@ describe("nextTrapIndex", () => {
     expect(nextTrapIndex(0, 0, false)).toBe(-1);
   });
 });
+
+describe("FOCUSABLE", () => {
+  function matches(html: string): readonly string[] {
+    const scope = document.createElement("div");
+    scope.innerHTML = html;
+    return [...scope.querySelectorAll<HTMLElement>(FOCUSABLE)].map((el) => el.id);
+  }
+
+  it("excludes a disabled control even when it carries an explicit tabindex", () => {
+    // The generic `[tabindex]` branch would otherwise admit it, and `.focus()`
+    // on a disabled control is a silent no-op that strands the trap.
+    expect(
+      matches(
+        '<button id="on" type="button">a</button>' +
+          '<button id="off" type="button" disabled tabindex="0">b</button>' +
+          '<div id="generic" tabindex="0"></div>' +
+          '<div id="generic-off" tabindex="0" disabled></div>',
+      ),
+    ).toEqual(["on", "generic"]);
+  });
+
+  it("excludes tabindex=-1 on every branch", () => {
+    expect(
+      matches(
+        '<a id="link" href="#">a</a>' +
+          '<button id="opt" type="button" tabindex="-1">b</button>' +
+          '<input id="field" />' +
+          '<div id="panel" tabindex="-1"></div>',
+      ),
+    ).toEqual(["link", "field"]);
+  });
+});
 ```
 
 Run: `pnpm vitest run --project unit apps/web/src/components/workbench/ui/focus-order.test.ts`
-Expected: 先 FAIL（无模块），实现后 3 passed。
+Expected: 先 FAIL（无模块），实现后 3 passed（codex 评审后 5 passed：加 `FOCUSABLE` 两条）。
 
-- [ ] **Step 3: Dialog.tsx**
+```ts
+// apps/web/src/components/workbench/ui/keyboard.ts
+/**
+ * True for a keydown fired while an IME composition is in progress.
+ *
+ * `isComposing` is the spec'd flag; `keyCode === 229` is the legacy signal
+ * browsers still emit for keydowns inside a composition when the flag is
+ * missing or not yet set (the first keydown of a composition in some Chromium
+ * and WebKit builds). Every keydown handler in the workbench (Dialog, the
+ * command palette, the window-level shortcut) returns early on this WITHOUT
+ * `preventDefault`, so the IME keeps its own behaviour: Escape cancels the
+ * candidate list, Enter commits it, the arrows move within it. None of those
+ * keystrokes are for us until the composition has ended.
+ */
+export function isComposingKey(e: { readonly isComposing?: boolean; readonly keyCode?: number }): boolean {
+  return e.isComposing === true || e.keyCode === 229;
+}
+```
+
+- [x] **Step 3: ids.ts + Dialog.tsx**
+
+```ts
+// apps/web/src/components/workbench/ui/ids.ts
+/** The app root that Dialog makes inert while open. ShellChrome renders it; Dialog looks it up. */
+export const WB_APP_ROOT_ID = "wb-app";
+```
 
 ```tsx
 // apps/web/src/components/workbench/ui/Dialog.tsx
@@ -2540,6 +3453,11 @@ Expected: 先 FAIL（无模块），实现后 3 passed。
 import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { cn } from "./cn.ts";
 import { FOCUSABLE, nextTrapIndex } from "./focus-order.ts";
+import { WB_APP_ROOT_ID } from "./ids.ts";
+import { isComposingKey } from "./keyboard.ts";
+
+/** How many Dialogs are open; `#wb-app` is inert while it is > 0. */
+let openDialogs = 0;
 
 /**
  * Accessible modal (design §4.3): role=dialog + aria-modal, focus moves in on
@@ -2558,10 +3476,14 @@ export function Dialog({
   readonly open: boolean;
   readonly onClose: () => void;
   readonly labelledBy: string;
-  readonly initialFocus?: RefObject<HTMLElement | null>;
-  /** Preferred focus target on close; falls back to whatever was focused on open. */
-  readonly returnFocusTo?: RefObject<HTMLElement | null>;
-  readonly className?: string;
+  /** Must be a stable ref: it is an effect dependency. */
+  readonly initialFocus?: RefObject<HTMLElement | null> | undefined;
+  /**
+   * Preferred focus target on close; falls back to whatever was focused on open.
+   * Must be a stable ref: it is an effect dependency.
+   */
+  readonly returnFocusTo?: RefObject<HTMLElement | null> | undefined;
+  readonly className?: string | undefined;
   readonly children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -2570,22 +3492,53 @@ export function Dialog({
   useEffect(() => {
     if (!open) return;
     openerRef.current = document.activeElement;
-    const root = document.getElementById("wb-app");
+    const root = document.getElementById(WB_APP_ROOT_ID);
+    if (process.env.NODE_ENV !== "production" && !root) {
+      console.warn(`Dialog: #${WB_APP_ROOT_ID} not found; the background is not inert`);
+    }
+    // `inert` is one shared attribute for however many dialogs are open, so it
+    // is ref-counted on the way out: only the last close removes it. Setting it
+    // is unconditional, and the cleanup looks the root up again instead of
+    // reusing this node, so the two always touch the same element even if
+    // `#wb-app` were replaced under an open dialog. Both are defensive; the root
+    // is not currently remounted between opens.
     root?.setAttribute("inert", "");
-    const target = initialFocus?.current ?? panelRef.current?.querySelector<HTMLElement>(FOCUSABLE);
-    target?.focus();
+    openDialogs += 1;
+    const entry =
+      initialFocus?.current ??
+      panelRef.current?.querySelector<HTMLElement>(FOCUSABLE) ??
+      panelRef.current;
+    entry?.focus();
     return () => {
+      openDialogs -= 1;
+      // A dialog closing behind another one must not pull focus out of the one
+      // still on top, nor lift `inert` from the background it still covers.
+      if (openDialogs > 0) return;
       // Order matters: focus() on a node inside an inert subtree is a no-op,
       // so inert comes off first. Next's layout-router focuses the changed
       // segment after navigation, so activeElement-on-open is only a fallback.
-      root?.removeAttribute("inert");
-      const target = returnFocusTo?.current ?? openerRef.current;
-      if (target instanceof HTMLElement) target.focus();
+      document.getElementById(WB_APP_ROOT_ID)?.removeAttribute("inert");
+      // The preferred target can be hidden by a responsive utility (the palette
+      // and drawer openers are `md:`-only), and `focus()` on a hidden element
+      // is a no-op that would silently leave focus on <body>. Try it, then
+      // check: `offsetParent === null` would misjudge fixed-position openers
+      // and is null for everything under jsdom, so ask the document instead.
+      const preferred = returnFocusTo?.current ?? null;
+      preferred?.focus();
+      if (document.activeElement !== preferred) {
+        const opener = openerRef.current;
+        if (opener instanceof HTMLElement) opener.focus();
+      }
     };
   }, [open, initialFocus, returnFocusTo]);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    // Mid-composition keys belong to the IME (see `isComposingKey`): a
+    // composing Escape cancels the candidate list, it does not close the
+    // dialog. Not stopped here either; `useGlobalShortcut` has the same guard.
+    if (isComposingKey(event.nativeEvent)) return;
     if (event.key === "Escape") {
+      // Suppresses useGlobalShortcut's window-level Escape (bubble phase) so the dialog closes once.
       event.stopPropagation();
       onClose();
       return;
@@ -2594,7 +3547,12 @@ export function Dialog({
     const items = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
     const active = items.indexOf(document.activeElement as HTMLElement);
     const next = nextTrapIndex(items.length, active, event.shiftKey);
-    if (next === -1) return;
+    if (next === -1) {
+      // Nothing focusable inside: keep focus on the panel rather than letting
+      // Tab escape into the (inert, but not in every browser) background.
+      event.preventDefault();
+      return;
+    }
     event.preventDefault();
     items[next]?.focus();
   }
@@ -2607,6 +3565,10 @@ export function Dialog({
         aria-hidden="true"
         tabIndex={-1}
         className="absolute inset-0 bg-slate-900/50"
+        // mousedown is what moves focus; without this a click on the backdrop
+        // blurs the panel before `onClose` runs, so the close handler returns
+        // focus from <body> instead of from inside the trap.
+        onMouseDown={(event) => event.preventDefault()}
         onClick={onClose}
       />
       <div
@@ -2614,6 +3576,7 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
+        tabIndex={-1}
         onKeyDown={onKeyDown}
         className={cn("absolute bg-white shadow-xl outline-none", className)}
       >
@@ -2624,7 +3587,9 @@ export function Dialog({
 }
 ```
 
-- [ ] **Step 4: PageHead.tsx / DemoChip.tsx / LegacyLinks.tsx**
+> 完整实现见 `apps/web/src/components/workbench/ui/Dialog.test.tsx`（已落地，jsdom 8 条）：inert + 首个可聚焦子元素、Tab / Shift+Tab 循环、Escape 只关一次、关闭归还焦点到 `returnFocusTo`、两个对话框时 inert 保持到最后一个关闭、根缺失时只告警不崩、首选目标拿不到焦点时回落到 opener、面板内无可聚焦元素时 Tab 不外逃。
+
+- [x] **Step 4: PageHead.tsx / DemoChip.tsx / LegacyLinks.tsx**
 
 ```tsx
 // apps/web/src/components/workbench/ui/DemoChip.tsx
@@ -2651,21 +3616,13 @@ export function DemoChip({ demo = false }: { readonly demo?: boolean }) {
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { legacyHref, type LegacySegment } from "@/lib/workbench/routes";
+import {
+  LEGACY_LABEL_KEY,
+  legacyHref,
+  type LegacySegment,
+} from "@/lib/workbench/routes";
 
 /** "旧版页面 →" affordance (design §4.3). One link per legacy destination. */
-/** Legacy segment → existing `nav.*` label key, so the link reads as a page name, not a path. */
-const LEGACY_LABEL_KEY: Readonly<Record<LegacySegment, string>> = {
-  "legacy/overview": "overview",
-  "growth-map": "growthMap",
-  context: "context",
-  "setup-sources": "sourceSetup",
-  sources: "sources",
-  studio: "studio",
-  execution: "execution",
-  results: "results",
-};
-
 export function LegacyLinks({
   projectId,
   segments,
@@ -2693,6 +3650,41 @@ export function LegacyLinks({
 }
 ```
 
+```ts
+// apps/web/src/components/workbench/ui/LegacyLinks.test.ts
+import { describe, expect, it } from "vitest";
+import { getMessages } from "@sf/i18n";
+import { LEGACY_LABEL_KEY, LEGACY_LINKS } from "@/lib/workbench/routes";
+
+/**
+ * `LegacyLinks` renders `tNav(LEGACY_LABEL_KEY[segment])`. next-intl renders a
+ * missing key as its own dotted path rather than throwing, so a typo here would
+ * ship as the literal string "nav.growthMap" in the UI. Pin the keys against
+ * both catalogs, and pin the map against the segments pages actually link to.
+ */
+const NAV_BY_LOCALE = [
+  ["en", getMessages("en").nav],
+  ["zh-CN", getMessages("zh-CN").nav],
+] as const satisfies readonly (readonly [string, object])[];
+
+describe("LEGACY_LABEL_KEY", () => {
+  it.each(NAV_BY_LOCALE)("names a non-empty nav label in %s", (_locale, nav) => {
+    const catalog = nav as Readonly<Record<string, unknown>>;
+    const missing = Object.entries(LEGACY_LABEL_KEY).filter(([, key]) => {
+      const value = catalog[key];
+      return typeof value !== "string" || value.length === 0;
+    });
+    expect(missing).toEqual([]);
+  });
+
+  it("covers exactly the segments reachable through LEGACY_LINKS", () => {
+    const linked = new Set<string>(Object.values(LEGACY_LINKS).flat());
+    const labelled = new Set<string>(Object.keys(LEGACY_LABEL_KEY));
+    expect([...labelled].sort()).toEqual([...linked].sort());
+  });
+});
+```
+
 ```tsx
 // apps/web/src/components/workbench/ui/PageHead.tsx
 import type { ReactNode } from "react";
@@ -2708,8 +3700,8 @@ export function PageHead({
   aside,
 }: {
   readonly title: string;
-  readonly subtitle?: string;
-  readonly aside?: ReactNode;
+  readonly subtitle?: string | undefined;
+  readonly aside?: ReactNode | undefined;
 }) {
   return (
     <div className="mb-8">
@@ -2725,7 +3717,7 @@ export function PageHead({
 }
 ```
 
-- [ ] **Step 5: PlaceholderView.tsx（PR-1 的 14 个页面都用它）**
+- [x] **Step 5: PlaceholderView.tsx（PR-1 的 14 个页面都用它）**
 
 ```tsx
 // apps/web/src/components/workbench/views/placeholder/PlaceholderView.tsx
@@ -2746,6 +3738,10 @@ export function PlaceholderView({
 }) {
   const tNav = useTranslations("workbench.nav.items");
   const tShell = useTranslations("workbench.shell");
+  // Only promise that "the legacy page keeps working" on pages that actually
+  // have one; `LEGACY_LINKS` is empty for week/visibility/links/kb/artifacts.
+  const detailKey =
+    LEGACY_LINKS[page].length === 0 ? "inProgressNoLegacy" : "inProgressDetail";
   return (
     <div className="wb-reset mx-auto min-h-full max-w-5xl p-6 font-sans text-slate-900 md:p-10">
       <PageHead
@@ -2759,7 +3755,7 @@ export function PlaceholderView({
       />
       <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white text-center">
         <h2 className="mb-2 text-lg font-semibold text-slate-600">{tShell("inProgress")}</h2>
-        <p className="max-w-md text-sm text-slate-400">{tShell("inProgressDetail")}</p>
+        <p className="max-w-md text-sm text-slate-600">{tShell(detailKey)}</p>
       </div>
     </div>
   );
@@ -2768,17 +3764,19 @@ export function PlaceholderView({
 
 `@/lib/workbench/routes` 这种别名 import 在本仓库不带扩展名（与 `@/components/ui` 用法一致）；同目录 / 相对 import 带扩展名。
 
-- [ ] **Step 6: 类型检查**
+- [x] **Step 6: 类型检查**
 
 Run: `pnpm --filter @sf/web typecheck && pnpm vitest run --project unit apps/web/src/components/workbench`
-Expected: 无错误；focus-order 3 passed。
+Expected: 无错误；focus-order 5 passed、keyboard 3 passed。
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/web/src/components/workbench
 git commit -m "feat(workbench): Dialog / PageHead / DemoChip / LegacyLinks / 占位视图"
 ```
+
+实际落地：1c3db8f1（原语与占位视图）、381d3fb9（Dialog inert 引用计数、根 id 常量、jsdom 测试、legacy 标签键守卫）、bae6a447（焦点归还判据、`FOCUSABLE` 排除 `tabindex="-1"`、无可聚焦元素时拦 Tab）、09439fdc（`PlaceholderView` 按有无旧页选文案、对比度）、5508351b（cleanup 摘 `inert` 改成重新按 id 查根，不复用闭包里的 `root`）、codex 评审修复（`keyboard.ts` IME 守卫三层接入、`FOCUSABLE` 排除 `[disabled]`；与本备注同一 commit）。
 
 ---
 
@@ -2787,20 +3785,53 @@ git commit -m "feat(workbench): Dialog / PageHead / DemoChip / LegacyLinks / 占
 **Files:**
 - Create: `apps/web/src/components/workbench/shell/workbench-nav.ts` (+ `.test.ts`)
 - Create: `apps/web/src/components/workbench/shell/useProjectShellEffects.ts`
+- Create: `apps/web/src/components/workbench/shell/useContextNavigationConfirm.ts`
 - Create: `apps/web/src/components/workbench/shell/useGlobalShortcut.ts`
 - Create: `apps/web/src/components/workbench/shell/useMediaQuery.ts`
 - Create: `apps/web/src/components/workbench/shell/Sidebar.tsx`
+- Create: `apps/web/src/components/workbench/shell/SiteCard.tsx`
 - Create: `apps/web/src/components/workbench/shell/Topbar.tsx`
-- Create: `apps/web/src/components/workbench/shell/CommandPalette.tsx`
-- Create: `apps/web/src/components/workbench/shell/ArtifactDrawer.tsx`
+- Create: `apps/web/src/components/workbench/shell/CommandPalette.tsx` (+ `.test.tsx`)
+- Create: `apps/web/src/components/workbench/shell/ArtifactDrawer.tsx` (+ `.test.tsx`)
 - Create: `apps/web/src/components/workbench/shell/ShellChrome.tsx`
 - Create: `apps/web/src/components/workbench/shell/WorkbenchShell.tsx`
-- Create: `apps/web/src/components/workbench/shell/SignOutButton.tsx`
+- Create: `apps/web/src/components/workbench/shell/SignOutButton.tsx` (+ `.test.tsx`)
 - Create: `apps/web/src/lib/workbench/download.ts`
+- Modify: `apps/web/src/app/workbench.css`（`--color-wb-rail-label`、`--color-wb-ink`、打印规则）
+- Modify: `apps/web/src/components/app-shell/app-shell.module.css`（`ProjectSwitcher` 浅色作用域覆盖）
 
 外观来源：`.workbench-reference/opengengrowth-src/components/Sidebar.tsx`、`Header.tsx`、`App.tsx`。行为来源：jsx L3086–3221（root）、L2485–2526（Drawer）、L3040–3085（Palette）。约束：`#wb-app` 是被 `inert` 的根，两个 Dialog 必须渲染在它**外面**；`wb-reset` 只挂 `aside`、`header`、Dialog 与新视图根节点，**不挂** `#wb-app` 或 `<main>`。
 
-- [ ] **Step 1: 导航模型 + 测试**
+**落地备注：**
+
+- `SiteCard` 无条件抽成独立文件（不是「超 200 行再抽」）；`#807f7d` 进 `@theme` 成 `--color-wb-rail-label`，`bg-[#222222]` 成 `--color-wb-ink`，组件里没有裸 hex。
+- rail 次级文字 token 全部提到 WCAG AA 4.5:1（Task 12 全量 mock e2e 的 axe 在 `/execution`、`/results` 抓到 `color-contrast` serious）：`rail-muted` #737270→#9c9b99（rail/rail-2/rail-3 = 6.00/5.23/4.61，徽标在活动项里坐在 rail-3 上）、`rail-label` #807f7d→#959492（rail-2 4.80）、`rail-dim` #636260→#8f8e8c（rail 5.09）；品牌标语 `text-zinc-500`（3.45:1）改走 `text-wb-rail-muted`；新增 `app/workbench-tokens.test.ts` 解析 `@theme` 钉住每个 token 在其所用面上的比值，并扫 `Sidebar.tsx` / `SiteCard.tsx` 不得再出现裸 `text-{zinc,slate,neutral,stone,gray}-[3-6]00`（唯一豁免 `text-zinc-300`，站点卡值列，rail-2 上 9.83:1）。原注释「labels only 可以低于 AA」是「色板最暗那档一定会被滥用」的翻版——判据是读不到会不会丢信息。
+- 侧栏 rail 用 `h-dvh` 而不是 `min-h-screen`：固定定位盒子只给最小高度会随内容长高，`overflow-y-auto` 永远没得滚，矮视口下最后几项掉到屏幕外。
+- `useMediaQuery("(width < 48rem)")`（不是 `max-width: 767px`）：要和 rail 的 `md:translate-x-0` 用同一个 Tailwind v4 `md` 断点，px 值在根字号非 16px 时会漂。已知代价：首帧 `matches` 为 false，移动端有一帧侧栏未 inert（hydration 后立即纠正，文件 doc comment 里写明「inert while closed once hydrated」）。
+- 命令面板与产物筐**互斥**：`ShellChrome` 的 `onPalette` / `onDrawer` 是 `useCallback`，各自关掉另一个；⌘K 的 toggle 也关抽屉（这句已被 5508351b 的单一 `panel` 槽位取代——见本条末尾，现在没有「关掉另一个」的代码，只有 `setPanel("palette" | "drawer" | null)`）。两个 `fixed inset-0 z-50` 叠着时，先关上面那个会把焦点还给 `<body>`（持有 opener 的是下面那个）。`Dialog` 的 inert 引用计数作为纵深防御保留。5508351b 把两个 `boolean` state 合并成一个 `panel: "palette" | "drawer" | null`：互斥关系本来就要两个 setter 互相记得关对方，合成一个槽位后这种状态直接**不可表达**，`closeAll` 退化成 `setPanel(null)`，两个 `Dialog` 的 `onClose` 也都是 `() => setPanel(null)`。
+- `app-shell.module.css` 顺手删掉 `.projectIdentity strong` 的死规则（5508351b）：它和上面的 `.projectIdentity` 选择器写的是同一条 `color: var(--color-slate-900, …)`，`strong` 从未比父选择器多覆盖任何东西。
+- `CommandPalette` 重开时用「prop 变化时在渲染期调整 state」的模式重置 `query` 与 `activeIndex`（不是 effect），首帧就显示完整列表；`returnFocusTo` 补进解构（原计划漏了，只写在类型里）；`activeEntry` 提出来一次（`noUncheckedIndexedAccess`）。
+- `CommandPalette` 的无障碍：输入框 `role="combobox"` + `aria-expanded` / `aria-autocomplete="list"` / `aria-controls`；选项 `tabIndex={-1}`（靠方向键 + `aria-activedescendant`，不进 Tab 序）；「没有匹配项」段落移到 listbox **外面**（listbox 里只能有 option），并加一个 `sr-only role="status"` 的计数，筛选不再静默——计数前缀改成 `t("shell.palette.title")`（5508351b）：裸数字出了 listbox 上下文没有意义，复用面板自己的标题免得再加一个 catalog key。
+- 面板会滚动（`max-h-80` 装 ~18 条）但方向键只挪 `aria-activedescendant`，焦点始终留在输入框，浏览器无从跟着滚：`activeKey` 变化时 `useEffect` 按 id 找到那个选项调 `scrollIntoView({ block: "nearest" })`（5508351b）；jsdom 不实现该 API，effect 先判 `typeof … === "function"` 再调，测试里手动 stub 并在 `afterEach` 里 `delete` 掉，免得残留 property 让后续用例看到浏览器里不存在的能力。
+- **IME 组合中的按键**（codex 评审）：`CommandPalette.onKeyDown` 与 `useGlobalShortcut` 都在第一行用 `ui/keyboard.ts` 的 `isComposingKey` 提前返回（细节见 Task 9 落地备注）。中文 / 日文输入法候选框开着时，Enter 是上屏、Escape 是取消候选、方向键在候选里走，面板不得抢；window 层不拦的话，`Dialog` 有意放过的组合中 Escape 会冒泡上来把面板关掉。新增 `useGlobalShortcut.test.tsx`（jsdom 2 条：⌘K / Ctrl+K / Escape 正常触发；组合中的 Escape、`keyCode 229`、⌘K 都不触发且不 `preventDefault`），`CommandPalette.test.tsx` 加 1 条（组合中的 ArrowDown / Enter / Escape：高亮不动、不跳转、不关闭）。
+- `CommandPalette` 的 `go()` 先过 `confirmLeave()`：跳转和侧栏链接是同一种导航，Context 有未保存改动时必须问。这个守卫抽成 `shell/useContextNavigationConfirm.ts`（同时导出 `confirmNavigation`），`useProjectShellEffects` 只保留 history 副作用并转出 `confirmNavigation`。
+- `ArtifactDrawer`：重开时清掉悬空的「已复制」；`COPY_FLASH_MS = 1300`，定时器在关闭 / 卸载时清掉。
+- `Topbar`：存储提示的 `role="status"` 容器**始终渲染、且只有一个**（`empty:-mr-3` 抵掉 flex gap）——live region 必须先在无障碍树里存在，文字后到才会被播报，第二个会破坏壳 e2e 那个「唯一 status」的定位器；只有 `volatile` / `quota` 出文字，`ok` 与 `swept` 静默。`lg` 断点以下顶栏放不下整句，改 `max-lg:sr-only lg:max-w-[40vw] lg:truncate`（5508351b）：依旧播报，只是不占版面；`sr-only` 把它挪出 flex 流，所以 `empty:-mr-3` 只需要在 `lg` 起生效。产物筐按钮加 `aria-busy={!ready}`（未 hydrate 时的 0 是暂定值）与 `focus-visible:outline-slate-900`（`.wb-reset` 的焦点圈是 `currentColor`，在反色按钮上是白的）。`GG` 字标 `aria-hidden`。「+ 新建站点」链接接入 `useContextNavigationConfirm` 的 `confirmNavigation`（5508351b，在 `Topbar` 内部调用，不从 `ShellChrome` 往下传）：离开去新建站点和侧栏链接、⌘K 跳转一样会丢弃未保存的 Context 改动，问法必须一致；`current` 传 `false`——这个目的地永远不是当前页。新增 `Topbar.test.tsx`（jsdom 4 条）钉住确认拒绝 / 接受、Context 干净时不问、唯一 live region。
+- `SignOutButton`：清扫后派发 `WORKBENCH_SWEPT_EVENT`（同文档不会收到自己写入触发的 `storage` 事件）；同样补 `focus-visible:outline-slate-900`，字标 `aria-hidden`，名字由 `aria-label` 承担。
+- `lib/workbench/download.ts`：锚点要挂进 `<body>`（Firefox 只激活已连接的锚点），加 `rel="noopener"`。`click()` 包进 `try { … } finally { a.remove(); setTimeout(revoke, …) }`（5508351b）：抛出的 `click()` 不能把锚点漏在文档里，或让 blob 漏在 URL store 里，`finally` 两头都管。revoke 的延迟从 `setTimeout(…, 0)` 改成 `1000`：WebKit 在当前任务之后才读 object URL，同一 tick 撤销会让它读到一个已经不可解析的 URL。新增 `download.test.ts`（jsdom 4 条）钉住这条时序。
+- `app-shell.module.css` 给 `ProjectSwitcher` 加 `:global(.wb-reset) .projectSwitcher …` 作用域浅色覆盖：它原本是为深色 rail 设计的，白字白底；`/new-project` 的深色侧栏仍用基础规则。项目名对比度由实测 1.03:1 提到 17.83:1。
+- `app/workbench.css` 新增打印规则 `[data-wb-content]{margin-left:0}`，`ShellChrome` 的内容列因此带 `data-wb-content`。落在 `@layer utilities`、且排在 Tailwind utilities 导入之后（5508351b 从 `@layer components` 挪过来）：`[data-wb-content]` 和 `.md\:ml-64` 同特异度，`@layer components` 在层序上恒输给 utilities 层，打印覆盖在 Letter 宽度（816px ≥ 48rem）下从未生效过；`workbench-css.test.ts` 新增用例钉住层与源码顺序。
+- **旧页丢了旧壳的内容区留白**（PR 前整分支复审）：旧 `AppShell` 的 `<main class={styles.main}>` 带 `max-width: 1480px; margin-inline: auto; padding: 40px clamp(24px, 3.3vw, 56px) 30px`（≤960px 时 `28px 20px 36px`，≤560px 时 `24px 14px 32px`），`ShellChrome` 的 `<main id="main-content" className="flex-1">` 什么都没给，`growth-map` / `sources` / `execution` / `results` / `context` / `legacy/overview` 自己不带水平内边距，贴着 rail 和视口边缘渲染。修法是 `workbench.css` 在 `@layer components` 加 `#main-content:not(:has(> .wb-reset)) { … }` 三条（同样三档断点）：新视图（`PlaceholderView` / `SettingsView`）的根是 `.wb-reset` 且自带 `p-6 md:p-10 max-w-5xl mx-auto`，是 `<main>` 的直接子节点，所以不吃这条；旧页根都是 CSS Modules 的 `div`，没有任何旧页在自己根上挂 `.wb-reset`（`git grep wb-reset` 只命中 Sidebar / Topbar / Dialog / 两个新视图）。`:has()` 在 postcss 目标（chrome/edge/firefox 111、safari 16.4）全部可用。`app-shell.module.css` 的 `.main` 没删——`/new-project` 仍用旧 `AppShell`。钉法：`workbench-css.test.ts` 加一条断言该规则在 `@layer components` 内且带 `max-width: 1480px`（且文件里不得出现无 `:has()` 守卫的裸 `#main-content {`）；`e2e/legacy-style-parity.mock.spec.ts` 加一条**不属于基线采样**的用例，1280×800 下 `growth-map` 的 `#main-content` `padding-left ≥ 24px`（实测 42.24px = 3.3vw）且 `max-width === "1480px"`，`overview`（新占位页）为 `0px`。基线 JSON 不动——它采的是 `<main>` **里面**元素的属性，`<main>` 自己的 padding 不在样本里，2 条基线用例照旧全绿。
+- §4.1 的「函数 ≤ 50 行」对 JSX 渲染体豁免（Sidebar / CommandPalette / ArtifactDrawer 的 return 块）；拆分只会把一棵树切成没有独立语义的碎片。
+- **命令面板选项改成锚点、Enter 等价一次真实点击**（PR-1 验收红队 A1）：Studio 编辑器的未保存守卫（`app/p/[projectId]/_unsaved-navigation-guard.ts` 的 `document.addEventListener("click", …, true)`）只拦 `a[href]` 的点击；面板原本是 `<button>` + `router.push`，从它旁边走过去、脏编辑静默丢掉。现在每个选项是 Next `<Link href role="option" id tabIndex={-1} aria-selected>`，Enter 走 `document.getElementById(\`wb-palette-${activeEntry.key}\`)?.click()`，面板**不再调 `router.push`**（`useRouter` 删除）。Context 离开确认在锚点自己的 `onClick` 里走 `confirmNavigation(event, false)`（它取消时自己 `preventDefault`；handler 先后各查一次 `event.defaultPrevented`——上游捕获阶段已取消的、和它刚取消的，都不 `onClose`），被取消的点击 `Link` 不导航、面板保持打开。上面 `go()` / `confirmLeave()` 那条备注随之作废：`useContextNavigationConfirm` 现只导出 `confirmNavigation`，`confirmLeave` 没有消费者已删（`useProjectShellEffects` 的注释同步）。`CommandPalette.test.tsx` 重写导航断言：不再 mock `next/navigation`，在 `<body>` 上观察点击（React 19 委托在根容器上、位于 body 之下，所以观察者跑在组件 handler 之后）并断言目标锚点、`href`、`defaultPrevented` 与 `onClose`；`next/link` 在没有 app router 上下文时调完 `onClick` 即停，不需要 mock `next/link`。+4 条（每个选项都是 listbox 内的锚点；指针点击放行并关闭；上游捕获阶段已取消 → 不关闭不导航；无匹配时 Enter 无事发生），原「拒绝确认 → 不跳转、保持打开」两条改为断言锚点点击已被取消。`e2e/studio-workspace.mock.spec.ts` +2：弄脏 Markdown 编辑器后 ⌘K → 输入 Settings → Enter，`dialog` 事件恰一次；dismiss 则 URL 不变、面板仍开、编辑器内容原样；accept 则 URL 变到 `/settings`。
+- **⌘K / 顶栏 opener 在别的模态拥有页面时拒绝打开**（红队 A2）：旧页两个模态把 `#wb-app` 设成 `inert` 并压在 z-index 1200，面板（z-50）会挂到遮罩底下抢焦点。`ShellChrome` 抽出 `pageOwnedElsewhere(panel)` = `panel === null && #wb-app.hasAttribute("inert")`（根 inert 而没有工作台面板开着 ⇒ 页面归别人），三个 setter（`onTogglePalette` / `openPalette` / `openDrawer`）都改成 updater 形式在落点时读这个判定，不用陈旧闭包；面板开着时那个 inert 是自己设的，toggle 关闭照常。`ShellChrome.test.tsx` +3（预置 inert：⌘K / Ctrl+K 不开、摘掉后能开；顶栏两个按钮同样拒绝；自己开的面板 toggle 仍能关且 inert 随之摘掉）。
+- 面板输入框的焦点指示（验收 B6）：`outline-none` → `focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-slate-900`，内缩是因为面板 `overflow-hidden` 会把外缩的 outline 裁掉三边。同轮：输入框补 `aria-label`（面板标题）、分组小标 `slate-500` → `slate-600`、`onMouseEnter` → `onPointerMove`（ArrowDown 滚动列表时浏览器会给静止指针下滑过的项合成 enter/leave，会劫持键盘高亮）。
+- 侧栏分组标题改成带标签的分组（验收 B7）：`<h4>` 在以 `<h1>` 开头的页面里破坏标题层级（axe `heading-order`），并给 AT 一个不属于任何 h3 的四级节。现在每组是 `<div role="group" aria-labelledby="wb-nav-group-<id>">`，标签是同 class 的 `<div id=…>`；`Sidebar.test.tsx` 改为按 `[role="group"]` + `aria-labelledby` 取标签文字、逐组核对链接归属、并断言 `nav` 内没有任何 h1–h6。数链接的 e2e（`critical-flows` 用 `nav.getByRole("link")`，`workbench-shell` / `mobile-shell` 用 `[data-wb-nav]`）都不碰标题，不受影响。
+- `SiteCard` 标签列 `grid-cols-[40px_1fr]` → `grid-cols-[auto_1fr] gap-x-3`（验收 B10）：zh-CN 标签比 40px 宽会折行；域名行加 `truncate` + `title`，卡片 `min-w-0`，长域名不再撑宽导轨。
+- `ArtifactDrawer` 下载名（验收 B5）：`downloadName(a)` 导出并单测——`(filename ?? title)` 中 `[^\p{L}\p{N}_ .()-]`（与 `ARTIFACT_FILENAME_PATTERN` 同一字符类，中文标题原样保留）全部换成 `_`、剥掉已有的文本扩展名（csv/md/markdown/json/txt/prompt）、去掉开头的点和空格（`.env` 会变成隐藏文件 `.env.md`、`..` 会变成 `...md`；gpt-6-astra 复审 P2）、词干按 `truncateUtf16` 截到 100、扩展名一律按 `EXT[type]`（`prompt` → `.txt`），词干清空时回落到 `artifact`。`ArtifactDrawer.test.tsx` +4 块（存储的文件名 + 类型扩展名 + MIME；reducer 丢掉带路径的文件名后按标题命名；越过 reducer 的敌意名字仍被清洗；9 个命名用例的 `it.each`）；`downloadText` 经 `vi.mock("@/lib/workbench/download")` 桩掉（jsdom 没有 object URL）。空态第二段 `text-xs` → `text-sm`（验收 B9，见 Task 11 落地备注）。
+- 与本任务相关的 token / 依赖清理（验收 C11 / C12）见 Task 1 落地备注：`@theme` 删去 `-seo-dark` / `-geo` / `-emerald` 三个无消费者 token；`tw-animate-css` 依赖与 `@import` 移除。
+
+- [x] **Step 1: 导航模型 + 测试**
 
 ```ts
 // apps/web/src/components/workbench/shell/workbench-nav.ts
@@ -2808,7 +3839,13 @@ import type { WorkbenchPageId } from "../../../lib/workbench/routes.ts";
 import type { WorkbenchCounts } from "../../../lib/workbench/store/selectors.ts";
 
 export type NavTone = "neutral" | "seo" | "geo";
-export type NavGroupId = "workspace" | "research" | "diagnosis" | "site" | "output" | "space";
+export type NavGroupId =
+  | "workspace"
+  | "research"
+  | "diagnosis"
+  | "site"
+  | "output"
+  | "space";
 
 export interface NavItem {
   readonly id: WorkbenchPageId;
@@ -2824,33 +3861,51 @@ export interface NavGroup {
 
 /** Six groups, fifteen items — order and tones from the jsx NAV (L310–316). */
 export const WORKBENCH_NAV: readonly NavGroup[] = [
-  { id: "workspace", items: [
-    { id: "overview", tone: "neutral", badge: null },
-    { id: "week", tone: "neutral", badge: null },
-  ] },
-  { id: "research", items: [
-    { id: "keywords", tone: "seo", badge: "keywords" },
-    { id: "keywordLibrary", tone: "seo", badge: "keywordLibrary" },
-    { id: "competitors", tone: "seo", badge: "competitors" },
-  ] },
-  { id: "diagnosis", items: [
-    { id: "audit", tone: "seo", badge: "audit" },
-    { id: "visibility", tone: "geo", badge: "visibility" },
-  ] },
-  { id: "site", items: [
-    { id: "profile", tone: "neutral", badge: null },
-    { id: "dataSources", tone: "neutral", badge: "dataSources" },
-    { id: "links", tone: "seo", badge: "links" },
-  ] },
-  { id: "output", items: [
-    { id: "content", tone: "seo", badge: null },
-    { id: "kb", tone: "geo", badge: "kb" },
-    { id: "answers", tone: "geo", badge: null },
-  ] },
-  { id: "space", items: [
-    { id: "artifacts", tone: "neutral", badge: "artifacts" },
-    { id: "settings", tone: "neutral", badge: null },
-  ] },
+  {
+    id: "workspace",
+    items: [
+      { id: "overview", tone: "neutral", badge: null },
+      { id: "week", tone: "neutral", badge: null },
+    ],
+  },
+  {
+    id: "research",
+    items: [
+      { id: "keywords", tone: "seo", badge: "keywords" },
+      { id: "keywordLibrary", tone: "seo", badge: "keywordLibrary" },
+      { id: "competitors", tone: "seo", badge: "competitors" },
+    ],
+  },
+  {
+    id: "diagnosis",
+    items: [
+      { id: "audit", tone: "seo", badge: "audit" },
+      { id: "visibility", tone: "geo", badge: "visibility" },
+    ],
+  },
+  {
+    id: "site",
+    items: [
+      { id: "profile", tone: "neutral", badge: null },
+      { id: "dataSources", tone: "neutral", badge: "dataSources" },
+      { id: "links", tone: "seo", badge: "links" },
+    ],
+  },
+  {
+    id: "output",
+    items: [
+      { id: "content", tone: "seo", badge: null },
+      { id: "kb", tone: "geo", badge: "kb" },
+      { id: "answers", tone: "geo", badge: null },
+    ],
+  },
+  {
+    id: "space",
+    items: [
+      { id: "artifacts", tone: "neutral", badge: "artifacts" },
+      { id: "settings", tone: "neutral", badge: null },
+    ],
+  },
 ];
 
 export const TONE_DOT: Readonly<Record<NavTone, string>> = {
@@ -2872,9 +3927,22 @@ describe("WORKBENCH_NAV", () => {
     expect(WORKBENCH_NAV).toHaveLength(6);
     expect([...ids].sort()).toEqual([...WORKBENCH_PAGE_IDS].sort());
   });
+
   it("badges only fields selectCounts produces", () => {
-    const badged = WORKBENCH_NAV.flatMap((g) => g.items).filter((i) => i.badge !== null).map((i) => i.badge);
-    expect(badged).toEqual(["keywords", "keywordLibrary", "competitors", "audit", "visibility", "dataSources", "links", "kb", "artifacts"]);
+    const badged = WORKBENCH_NAV.flatMap((g) => g.items)
+      .filter((i) => i.badge !== null)
+      .map((i) => i.badge);
+    expect(badged).toEqual([
+      "keywords",
+      "keywordLibrary",
+      "competitors",
+      "audit",
+      "visibility",
+      "dataSources",
+      "links",
+      "kb",
+      "artifacts",
+    ]);
   });
 });
 ```
@@ -2882,23 +3950,19 @@ describe("WORKBENCH_NAV", () => {
 Run: `pnpm vitest run --project unit apps/web/src/components/workbench/shell`
 Expected: 2 passed。
 
-- [ ] **Step 2: 三个 hook**
+- [x] **Step 2: 四个 hook + download**
 
 ```ts
 // apps/web/src/components/workbench/shell/useProjectShellEffects.ts
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useTranslations } from "next-intl";
 import { useEffect, useRef, type MouseEvent } from "react";
-import {
-  hasUnsavedContextChanges,
-  shouldConfirmContextNavigation,
-} from "@/app/p/[projectId]/_context-navigation-guard";
 import {
   projectHistoryPosition,
   withProjectHistoryPosition,
 } from "@/app/p/[projectId]/_project-history-position";
+import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
 
 /**
  * The two behaviours the retired `_nav.tsx` carried besides rendering
@@ -2907,46 +3971,130 @@ import {
  * confirm. Both must keep running under the workbench shell.
  */
 export function useProjectShellEffects(): {
-  readonly confirmNavigation: (event: MouseEvent<HTMLAnchorElement>, current: boolean) => void;
+  readonly confirmNavigation: (
+    event: MouseEvent<HTMLAnchorElement>,
+    current: boolean,
+  ) => void;
 } {
-  const tContext = useTranslations("context");
+  // The confirm itself lives in its own hook because the command palette needs
+  // the same guard without a link click.
+  const { confirmNavigation } = useContextNavigationConfirm();
   const pathname = usePathname();
   const historyPositionRef = useRef<number | null>(null);
   const historyPathRef = useRef<string | null>(null);
 
+  // Give every project-shell entry a position without pushing a duplicate
+  // entry. Studio can then reverse a cancelled Back or Forward traversal while
+  // preserving Next's opaque router state and the browser's forward history.
   useEffect(() => {
     const existing = projectHistoryPosition(window.history.state);
     const previousPath = historyPathRef.current;
     if (previousPath === pathname) return;
-    if (existing !== null && (previousPath === null || existing !== historyPositionRef.current)) {
+
+    if (
+      existing !== null &&
+      (previousPath === null || existing !== historyPositionRef.current)
+    ) {
       historyPositionRef.current = existing;
       historyPathRef.current = pathname;
       return;
     }
+    // A push may preserve the custom state from the prior entry. Equal to the
+    // previous position on a new pathname means inherited, not a traversal.
     const next = (historyPositionRef.current ?? -1) + 1;
-    window.history.replaceState(withProjectHistoryPosition(window.history.state, next), "");
+    window.history.replaceState(
+      withProjectHistoryPosition(window.history.state, next),
+      "",
+    );
     historyPositionRef.current = next;
     historyPathRef.current = pathname;
   }, [pathname]);
-
-  function confirmNavigation(event: MouseEvent<HTMLAnchorElement>, current: boolean): void {
-    const modified = event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
-    const dirty = hasUnsavedContextChanges();
-    if (!shouldConfirmContextNavigation({ dirty, current, button: event.button, modified })) return;
-    if (!window.confirm(tContext("leaveWarning"))) event.preventDefault();
-  }
 
   return { confirmNavigation };
 }
 ```
 
-复制 `_nav.tsx` L60–102 时逐行对照，不要「顺手改进」——这段逻辑有 Studio 的 e2e 盯着。`@/app/p/[projectId]/…` 的别名 import 若 eslint 不允许，改为相对路径 `../../../app/p/[projectId]/_context-navigation-guard.ts`。
+```ts
+// apps/web/src/components/workbench/shell/useContextNavigationConfirm.ts
+"use client";
+
+import { useTranslations } from "next-intl";
+import type { MouseEvent } from "react";
+import {
+  hasUnsavedContextChanges,
+  shouldConfirmContextNavigation,
+} from "@/app/p/[projectId]/_context-navigation-guard";
+
+export interface ContextNavigationConfirm {
+  /** Link handler: cancels the click when the operator declines to leave. */
+  readonly confirmNavigation: (
+    event: MouseEvent<HTMLAnchorElement>,
+    current: boolean,
+  ) => void;
+  /**
+   * The same guard for navigations that are not a link click (the command
+   * palette pushes through the router). Returns false when the operator chose
+   * to stay, so the caller can abort.
+   */
+  readonly confirmLeave: () => boolean;
+}
+
+/**
+ * The Context unsaved-changes confirm (design §4.3), shared by every navigation
+ * affordance the workbench shell owns. Every route out of a dirty Context
+ * editor has to ask, or the rail asks and the palette silently discards.
+ */
+export function useContextNavigationConfirm(): ContextNavigationConfirm {
+  const tContext = useTranslations("context");
+
+  function confirmNavigation(
+    event: MouseEvent<HTMLAnchorElement>,
+    current: boolean,
+  ): void {
+    const modified =
+      event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
+    const dirty = hasUnsavedContextChanges();
+    if (
+      !shouldConfirmContextNavigation({
+        dirty,
+        current,
+        button: event.button,
+        modified,
+      })
+    ) {
+      return;
+    }
+    if (!window.confirm(tContext("leaveWarning"))) event.preventDefault();
+  }
+
+  function confirmLeave(): boolean {
+    // A palette jump is always an ordinary primary navigation away from the
+    // current page, hence the fixed `current` / `button` / `modified` values.
+    if (
+      !shouldConfirmContextNavigation({
+        dirty: hasUnsavedContextChanges(),
+        current: false,
+        button: 0,
+        modified: false,
+      })
+    ) {
+      return true;
+    }
+    return window.confirm(tContext("leaveWarning"));
+  }
+
+  return { confirmNavigation, confirmLeave };
+}
+```
+
+复制 `_nav.tsx` L60–102 时逐行对照，不要「顺手改进」——这段逻辑有 Studio 的 e2e 盯着。
 
 ```ts
 // apps/web/src/components/workbench/shell/useGlobalShortcut.ts
 "use client";
 
 import { useEffect } from "react";
+import { isComposingKey } from "../ui/keyboard.ts";
 
 /** ⌘K / Ctrl+K toggles the palette; Escape closes whatever is open (jsx L22–29). */
 export function useGlobalShortcut(handlers: {
@@ -2955,6 +4103,9 @@ export function useGlobalShortcut(handlers: {
 }): void {
   useEffect(() => {
     function onKeyDown(event: globalThis.KeyboardEvent): void {
+      // A composing Escape reaches the window because Dialog lets it through
+      // on purpose; it is the IME's, not ours (see `isComposingKey`).
+      if (isComposingKey(event)) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         handlers.onTogglePalette();
@@ -2991,17 +4142,38 @@ export function useMediaQuery(query: string): boolean {
 ```ts
 // apps/web/src/lib/workbench/download.ts
 /** Blob download for artifacts (jsx L326). Client only. */
-export function downloadText(name: string, text: string, mime = "text/plain;charset=utf-8"): void {
+export function downloadText(
+  name: string,
+  text: string,
+  mime = "text/plain;charset=utf-8",
+): void {
   const url = URL.createObjectURL(new Blob([text], { type: mime }));
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
+  // Belt and braces: a `download` anchor never opens a window, but the opener
+  // reference is worthless to us either way.
+  a.rel = "noopener";
+  // Firefox only activates a connected anchor, and the object URL has to stay
+  // alive until the download has actually started — hence the deferred revoke
+  // rather than revoking inline.
+  document.body.append(a);
+  try {
+    a.click();
+  } finally {
+    // A throwing click() must not leak the anchor into the document or the blob
+    // into the URL store; the finally covers both.
+    a.remove();
+    // Not 0ms: WebKit reads the object URL after the current task, and a same-tick
+    // revoke has it fetch a URL that no longer resolves.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
 ```
 
-- [ ] **Step 3: Sidebar.tsx（照 opengengrowth Sidebar.tsx L86–142）**
+> 完整实现见 `apps/web/src/lib/workbench/download.test.ts`（已落地，jsdom 4 条）：点击已连接的下载锚点并随后摘除、`mime` 参数原样传给 `Blob`、`click()` 抛出时 `finally` 仍摘除锚点并安排 revoke、object URL 活过当前 tick（不在同步阶段就被 revoke）。
+
+- [x] **Step 3: Sidebar.tsx + SiteCard.tsx（照 opengengrowth Sidebar.tsx L86–142）**
 
 ```tsx
 // apps/web/src/components/workbench/shell/Sidebar.tsx
@@ -3013,16 +4185,18 @@ import { useTranslations } from "next-intl";
 import { activeWorkbenchPage, workbenchHref } from "@/lib/workbench/routes";
 import { useWorkbench, useWorkbenchCounts } from "@/lib/workbench/store/hooks";
 import { cn } from "../ui/cn.ts";
+import { SiteCard, type SidebarSite } from "./SiteCard.tsx";
 import { TONE_DOT, WORKBENCH_NAV } from "./workbench-nav.ts";
 import { useProjectShellEffects } from "./useProjectShellEffects.ts";
 
-export interface SidebarSite {
-  readonly host: string;
-  readonly marketCode: string | null;
-  /** null = not wired yet (PR-3 reads sources readiness). */
-  readonly gscConnected: boolean | null;
-}
+export type { SidebarSite };
 
+/**
+ * The workbench rail (opengengrowth `Sidebar.tsx` L86–142). Off-canvas below
+ * `md`, where it is also `inert` while closed once hydrated — the media query
+ * only resolves after mount — so the background nav is unreachable by keyboard
+ * and AT.
+ */
 export function Sidebar({
   projectId,
   site,
@@ -3051,48 +4225,48 @@ export function Sidebar({
       data-app-shell-sidebar=""
       inert={mobile && !open}
       className={cn(
-        "wb-reset fixed left-0 top-0 z-30 flex min-h-screen w-64 flex-col overflow-y-auto border-r border-wb-rail-line bg-wb-rail font-sans text-wb-rail-text transition-transform duration-300 ease-in-out md:translate-x-0",
+        // `h-dvh`, not `min-h-screen`: a fixed box with only a minimum height
+        // grows to fit its content, so `overflow-y-auto` never has anything to
+        // scroll and the last nav items fall below the fold on short viewports.
+        "wb-reset fixed left-0 top-0 z-30 flex h-dvh w-64 flex-col overflow-y-auto border-r border-wb-rail-line bg-wb-rail font-sans text-wb-rail-text transition-transform duration-300 ease-in-out md:translate-x-0",
         open ? "translate-x-0" : "-translate-x-full",
       )}
     >
       <div className="flex min-h-full flex-col p-4 pt-5">
         <div className="mb-6 flex items-center gap-3 px-1" data-wb-brand="">
-          <div className="flex h-8 w-8 items-center justify-center rounded bg-white text-sm font-bold text-zinc-900 shadow-sm" aria-hidden="true">GG</div>
+          <div
+            className="flex h-8 w-8 items-center justify-center rounded bg-white text-sm font-bold text-zinc-900 shadow-sm"
+            aria-hidden="true"
+          >
+            GG
+          </div>
           <div>
-            <div className="text-sm font-semibold leading-tight text-zinc-100">GenGrowth</div>
-            <div className="mt-0.5 text-xs text-zinc-500">{t("shell.tagline")}</div>
+            <div className="text-sm font-semibold leading-tight text-zinc-100">
+              GenGrowth
+            </div>
+            <div className="mt-0.5 text-xs text-wb-rail-muted">
+              {t("shell.tagline")}
+            </div>
           </div>
         </div>
 
-        <div className="mb-6 rounded-xl border border-wb-rail-3/50 bg-wb-rail-2 p-3.5 text-sm" data-wb-site-card="">
-          <div className="mb-3 text-xs font-medium text-zinc-200">{site.host}</div>
-          <dl className="grid grid-cols-[40px_1fr] gap-y-1.5 text-xs">
-            <dt className="text-[#807f7d]">{t("shell.siteCard.market")}</dt>
-            <dd className="text-zinc-300">{site.marketCode ?? t("shell.siteCard.none")}</dd>
-            <dt className="text-[#807f7d]">{t("shell.siteCard.gsc")}</dt>
-            <dd className="text-zinc-300">
-              {site.gscConnected === null ? t("shell.siteCard.none") : site.gscConnected ? t("shell.siteCard.connected") : t("shell.siteCard.notConnected")}
-            </dd>
-            <dt className="text-[#807f7d]">{t("shell.siteCard.audit")}</dt>
-            <dd className="text-zinc-300">
-              {ready && state.lastAudit ? (
-                <>
-                  {state.lastAudit.at.slice(5)}
-                  <span className="ml-1 text-[10px] text-amber-400/80">{t("shell.sampleData")}</span>
-                </>
-              ) : t("shell.siteCard.none")}
-            </dd>
-          </dl>
-        </div>
+        <SiteCard site={site} lastAudit={state.lastAudit} ready={ready} />
 
         <nav aria-label={t("nav.label")} className="flex-1 space-y-5 pb-6">
           {WORKBENCH_NAV.map((group) => (
             <div key={group.id}>
-              <h4 className="mb-1.5 px-2.5 text-[11px] font-medium text-wb-rail-muted">{t(`nav.groups.${group.id}`)}</h4>
+              <h4 className="mb-1.5 px-2.5 text-[11px] font-medium text-wb-rail-muted">
+                {t(`nav.groups.${group.id}`)}
+              </h4>
               <div className="space-y-0.5">
                 {group.items.map((item) => {
                   const isActive = active === item.id;
-                  const badge = item.badge === null ? null : counts === null ? "loading" : counts[item.badge];
+                  const badge =
+                    item.badge === null
+                      ? null
+                      : counts === null
+                        ? "loading"
+                        : counts[item.badge];
                   return (
                     <Link
                       key={item.id}
@@ -3102,17 +4276,33 @@ export function Sidebar({
                       onClick={(event) => confirmNavigation(event, isActive)}
                       className={cn(
                         "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-[13px] transition-colors",
-                        isActive ? "bg-wb-rail-3 text-zinc-100" : "text-wb-rail-text hover:bg-wb-rail-2 hover:text-zinc-200",
+                        isActive
+                          ? "bg-wb-rail-3 text-zinc-100"
+                          : "text-wb-rail-text hover:bg-wb-rail-2 hover:text-zinc-200",
                       )}
                     >
                       <span className="flex items-center gap-3">
-                        <span className={cn("h-1.5 w-1.5 rounded-full opacity-80", TONE_DOT[item.tone])} aria-hidden="true" />
+                        <span
+                          className={cn(
+                            "h-1.5 w-1.5 rounded-full opacity-80",
+                            TONE_DOT[item.tone],
+                          )}
+                          aria-hidden="true"
+                        />
                         <span>{t(`nav.items.${item.id}`)}</span>
                       </span>
                       {badge === "loading" ? (
-                        <span className="h-3 w-5 animate-pulse rounded bg-wb-rail-3" aria-hidden="true" />
+                        <span
+                          className="h-3 w-5 animate-pulse rounded bg-wb-rail-3"
+                          aria-hidden="true"
+                        />
                       ) : badge ? (
-                        <span className="text-[11px] font-medium text-wb-rail-muted" data-wb-badge={item.id}>{badge}</span>
+                        <span
+                          className="text-[11px] font-medium text-wb-rail-muted"
+                          data-wb-badge={item.id}
+                        >
+                          {badge}
+                        </span>
                       ) : null}
                     </Link>
                   );
@@ -3123,8 +4313,14 @@ export function Sidebar({
         </nav>
 
         <div className="mt-4 border-t border-wb-rail-3/50 px-2 pt-4 text-[11px] leading-relaxed text-wb-rail-muted">
-          <span className="block font-medium">{t("shell.sites", { count: siteCount })} · {t("shell.shortcutHint")}</span>
-          <span className="mt-1 block text-[10px] text-wb-rail-dim">{t("shell.footerNote")}<br />{t("shell.footerDetail")}</span>
+          <span className="block font-medium">
+            {t("shell.sites", { count: siteCount })} · {t("shell.shortcutHint")}
+          </span>
+          <span className="mt-1 block text-[10px] text-wb-rail-dim">
+            {t("shell.footerNote")}
+            <br />
+            {t("shell.footerDetail")}
+          </span>
         </div>
       </div>
     </aside>
@@ -3132,9 +4328,73 @@ export function Sidebar({
 }
 ```
 
-`#807f7d` 是 opengengrowth 的字面色；按 §5 规则加进 `@theme` 作 `--color-wb-rail-label` 再用 `text-wb-rail-label`，不要留裸 hex。文件若超 200 行，把站点卡抽成 `SiteCard.tsx`。
+```tsx
+// apps/web/src/components/workbench/shell/SiteCard.tsx
+"use client";
 
-- [ ] **Step 4: Topbar.tsx（照 opengengrowth Header.tsx）**
+import { useTranslations } from "next-intl";
+import type { AuditReport } from "@/lib/workbench/types";
+
+export interface SidebarSite {
+  readonly host: string;
+  readonly marketCode: string | null;
+  /** null = not wired yet (PR-3 reads sources readiness). */
+  readonly gscConnected: boolean | null;
+}
+
+/**
+ * Rail site card (opengengrowth `Sidebar.tsx` L87–97). The audit row is the one
+ * mock-backed value here, so it carries the sample-data marker (design §6.8).
+ */
+export function SiteCard({
+  site,
+  lastAudit,
+  ready,
+}: {
+  readonly site: SidebarSite;
+  readonly lastAudit: AuditReport | null;
+  readonly ready: boolean;
+}) {
+  const t = useTranslations("workbench.shell");
+  return (
+    <div
+      className="mb-6 rounded-xl border border-wb-rail-3/50 bg-wb-rail-2 p-3.5 text-sm"
+      data-wb-site-card=""
+    >
+      <div className="mb-3 text-xs font-medium text-zinc-200">{site.host}</div>
+      <dl className="grid grid-cols-[40px_1fr] gap-y-1.5 text-xs">
+        <dt className="text-wb-rail-label">{t("siteCard.market")}</dt>
+        <dd className="text-zinc-300">
+          {site.marketCode ?? t("siteCard.none")}
+        </dd>
+        <dt className="text-wb-rail-label">{t("siteCard.gsc")}</dt>
+        <dd className="text-zinc-300">
+          {site.gscConnected === null
+            ? t("siteCard.none")
+            : site.gscConnected
+              ? t("siteCard.connected")
+              : t("siteCard.notConnected")}
+        </dd>
+        <dt className="text-wb-rail-label">{t("siteCard.audit")}</dt>
+        <dd className="text-zinc-300">
+          {ready && lastAudit ? (
+            <>
+              {lastAudit.at.slice(5)}
+              <span className="ml-1 text-[10px] text-amber-400/80">
+                {t("sampleData")}
+              </span>
+            </>
+          ) : (
+            t("siteCard.none")
+          )}
+        </dd>
+      </dl>
+    </div>
+  );
+}
+```
+
+- [x] **Step 4: Topbar.tsx（照 opengengrowth Header.tsx）**
 
 ```tsx
 // apps/web/src/components/workbench/shell/Topbar.tsx
@@ -3144,9 +4404,14 @@ import { Menu, Search } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import type { ReactNode, RefObject } from "react";
-import { useWorkbench, useWorkbenchArtifacts } from "@/lib/workbench/store/hooks";
+import {
+  useWorkbench,
+  useWorkbenchArtifacts,
+} from "@/lib/workbench/store/hooks";
 import { DemoChip } from "../ui/DemoChip.tsx";
+import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
 
+/** The workbench topbar (opengengrowth `Header.tsx`). */
 export function Topbar({
   projectControl,
   accountControl,
@@ -3171,6 +4436,10 @@ export function Topbar({
   const t = useTranslations("workbench.shell");
   const { state, storageMode, ready } = useWorkbench();
   const artifacts = useWorkbenchArtifacts();
+  // Called here rather than threaded down from ShellChrome: the topbar owns the
+  // only link it guards, and the hook is already used the same way one level
+  // over in CommandPalette — both sit in the same client tree.
+  const { confirmNavigation } = useContextNavigationConfirm();
   return (
     <header
       data-app-shell-topbar=""
@@ -3188,33 +4457,61 @@ export function Topbar({
           <Menu className="h-5 w-5" aria-hidden="true" />
         </button>
         {projectControl}
-        <Link href="/new-project" className="hidden text-xs font-medium text-slate-500 hover:text-slate-900 sm:inline">
+        <Link
+          href="/new-project"
+          // Leaving for a new site discards a dirty Context editor exactly like
+          // a rail link or a palette jump does, so it asks the same question.
+          // `current` is false: this destination is never the current page.
+          onClick={(event) => confirmNavigation(event, false)}
+          className="hidden text-xs font-medium text-slate-500 hover:text-slate-900 sm:inline"
+        >
           + {t("newSite")}
         </Link>
         <button
           ref={paletteButtonRef}
           type="button"
           onClick={onPalette}
-          className="ml-2 hidden w-64 items-center gap-2 rounded-md border border-slate-200 bg-white py-1.5 pl-2.5 pr-1.5 text-xs text-slate-400 hover:border-slate-300 md:flex"
+          className="ml-2 hidden w-64 items-center gap-2 rounded-md border border-slate-200 bg-white py-1.5 pl-2.5 pr-1.5 text-xs text-slate-500 hover:border-slate-300 md:flex"
         >
           <Search className="h-4 w-4" aria-hidden="true" />
           <span className="flex-1 text-left">{t("search")}</span>
-          <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 text-[10px] font-medium text-slate-400">⌘K</kbd>
+          <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 text-[10px] font-medium text-slate-500">
+            ⌘K
+          </kbd>
         </button>
       </div>
       <div className="flex items-center gap-3">
-        {ready && storageMode !== "ok" ? (
-          <span role="status" className="hidden text-xs text-amber-700 lg:inline">
-            {storageMode === "quota" ? t("quota") : t("volatile")}
-          </span>
-        ) : null}
+        {/* Exactly one status element, rendered on every viewport and before it
+            has anything to say: a live region has to exist in the accessibility
+            tree BEFORE its text changes, or the announcement is lost (and a
+            second one would break the shell e2e's single-status locator).
+            Below `lg` the topbar has no room for the sentence, so it is
+            `sr-only` there — still announced, just not painted; `sr-only`
+            takes it out of the flex flow, so it adds no gap and `empty:-mr-3`
+            only has to cancel one from `lg` up. `swept` is deliberately
+            silent: that state was discarded on purpose. */}
+        <span
+          role="status"
+          className="max-lg:sr-only text-xs text-amber-700 empty:-mr-3 lg:max-w-[40vw] lg:truncate"
+        >
+          {ready && storageMode !== "ok" && storageMode !== "swept"
+            ? storageMode === "quota"
+              ? t("quota")
+              : t("volatile")
+            : null}
+        </span>
         <DemoChip demo={ready && state.demo} />
         <button
           ref={drawerButtonRef}
           type="button"
           onClick={onDrawer}
           data-wb-drawer-button=""
-          className="h-[26px] rounded bg-[#222222] px-3 text-xs font-medium text-white shadow-sm transition-colors hover:bg-black"
+          // The count is 0 until the store has read storage; `aria-busy` says
+          // the value is provisional instead of asserting an empty basket.
+          aria-busy={!ready}
+          // `.wb-reset :focus-visible` draws the ring in `currentColor`, which
+          // is white on this inverted button and invisible on the cream topbar.
+          className="h-[26px] rounded bg-wb-ink px-3 text-xs font-medium text-white shadow-sm transition-colors hover:bg-black focus-visible:outline-slate-900"
         >
           {t("artifacts", { count: ready ? artifacts.length : 0 })}
         </button>
@@ -3225,9 +4522,9 @@ export function Topbar({
 }
 ```
 
-`bg-[#222222]` 同样进 `@theme`（`--color-wb-ink`）。
+> 完整实现见 `apps/web/src/components/workbench/shell/Topbar.test.tsx`（已落地，jsdom 4 条）：Context 有未保存改动时「+ 新建站点」被拒绝、接受后放行、Context 干净时不问、唯一 `role="status"` 且存储健康时为空。
 
-- [ ] **Step 5: CommandPalette.tsx（jsx L3040–3085）**
+- [x] **Step 5: CommandPalette.tsx（jsx L3040–3085）**
 
 ```tsx
 // apps/web/src/components/workbench/shell/CommandPalette.tsx
@@ -3235,11 +4532,20 @@ export function Topbar({
 
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 import type { ProjectShellOption } from "@/lib/services/project-shell";
 import { workbenchHref } from "@/lib/workbench/routes";
 import { cn } from "../ui/cn.ts";
 import { Dialog } from "../ui/Dialog.tsx";
+import { isComposingKey } from "../ui/keyboard.ts";
+import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
 import { WORKBENCH_NAV } from "./workbench-nav.ts";
 
 interface PaletteEntry {
@@ -3249,9 +4555,11 @@ interface PaletteEntry {
   readonly href: string;
 }
 
+/** ⌘K jump list (jsx L3040–3085): sections, then projects, then "new site". */
 export function CommandPalette({
   open,
   onClose,
+  returnFocusTo,
   projectId,
   projectOptions,
 }: {
@@ -3263,73 +4571,174 @@ export function CommandPalette({
 }) {
   const t = useTranslations("workbench");
   const router = useRouter();
+  const { confirmLeave } = useContextNavigationConfirm();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  // "Adjusting state when a prop changes" (React docs): the jsx prototype
+  // mounted the palette conditionally, so it always opened on an empty query.
+  // Done during render rather than in an effect so the first painted frame
+  // already shows the full list instead of the previous search.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setQuery("");
+      setActiveIndex(0);
+    }
+  }
 
   const entries = useMemo<readonly PaletteEntry[]>(() => {
     const sections = WORKBENCH_NAV.flatMap((g) => g.items).map((item) => ({
-      key: `s:${item.id}`, group: "sections" as const,
-      label: t(`nav.items.${item.id}`), href: workbenchHref(projectId, item.id),
+      key: `s:${item.id}`,
+      group: "sections" as const,
+      label: t(`nav.items.${item.id}`),
+      href: workbenchHref(projectId, item.id),
     }));
     const projects = projectOptions.map((p) => ({
-      key: `p:${p.id}`, group: "projects" as const, label: p.label, href: workbenchHref(p.id, "overview"),
+      key: `p:${p.id}`,
+      group: "projects" as const,
+      label: p.label,
+      href: workbenchHref(p.id, "overview"),
     }));
-    const all = [...sections, ...projects, { key: "new", group: "newProject" as const, label: t("shell.palette.newProject"), href: "/new-project" }];
+    const all = [
+      ...sections,
+      ...projects,
+      {
+        key: "new",
+        group: "newProject" as const,
+        label: t("shell.palette.newProject"),
+        href: "/new-project",
+      },
+    ];
     const q = query.trim().toLowerCase();
     return q ? all.filter((e) => e.label.toLowerCase().includes(q)) : all;
   }, [query, projectId, projectOptions, t]);
 
+  const activeEntry = entries[activeIndex];
+  const activeKey = activeEntry?.key;
+
+  // The listbox scrolls (`max-h-80` over ~18 entries) but the arrow keys only
+  // move `aria-activedescendant`: focus never leaves the input, so the browser
+  // scrolls nothing and the highlight walks off the bottom unseen.
+  useEffect(() => {
+    if (!activeKey) return;
+    const option = document.getElementById(`wb-palette-${activeKey}`);
+    // jsdom implements no scroll API; guard rather than stub it everywhere.
+    if (typeof option?.scrollIntoView !== "function") return;
+    option.scrollIntoView({ block: "nearest" });
+  }, [activeKey]);
+
   function go(entry: PaletteEntry | undefined): void {
     if (!entry) return;
+    // The rail links ask before leaving a dirty Context editor; a palette jump
+    // is the same navigation. Declining keeps the palette open so the operator
+    // can pick a different destination or dismiss it.
+    if (!confirmLeave()) return;
     onClose();
     router.push(entry.href);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-    if (event.key === "ArrowDown") { event.preventDefault(); setActiveIndex((i) => Math.min(i + 1, entries.length - 1)); }
-    if (event.key === "ArrowUp") { event.preventDefault(); setActiveIndex((i) => Math.max(i - 1, 0)); }
-    if (event.key === "Enter") { event.preventDefault(); go(entries[activeIndex]); }
+    // Mid-composition keys belong to the IME (see `isComposingKey`); no
+    // `preventDefault`, or Enter could no longer commit the candidate.
+    if (isComposingKey(event.nativeEvent)) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, entries.length - 1));
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      go(activeEntry);
+    }
   }
 
   return (
-    <Dialog open={open} onClose={onClose} labelledBy="wb-palette-title" initialFocus={inputRef} returnFocusTo={returnFocusTo}
-      className="left-1/2 top-24 w-[min(560px,92vw)] -translate-x-1/2 overflow-hidden rounded-xl border border-slate-200">
-      <h2 id="wb-palette-title" className="sr-only">{t("shell.palette.title")}</h2>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      labelledBy="wb-palette-title"
+      initialFocus={inputRef}
+      returnFocusTo={returnFocusTo}
+      className="left-1/2 top-24 w-[min(560px,92vw)] -translate-x-1/2 overflow-hidden rounded-xl border border-slate-200"
+    >
+      <h2 id="wb-palette-title" className="sr-only">
+        {t("shell.palette.title")}
+      </h2>
       <input
         ref={inputRef}
         value={query}
-        onChange={(e) => { setQuery(e.target.value); setActiveIndex(0); }}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setActiveIndex(0);
+        }}
         onKeyDown={onKeyDown}
         placeholder={t("shell.palette.placeholder")}
+        role="combobox"
+        aria-expanded="true"
+        aria-autocomplete="list"
         aria-controls="wb-palette-list"
-        aria-activedescendant={entries[activeIndex] ? `wb-palette-${entries[activeIndex].key}` : undefined}
+        aria-activedescendant={
+          activeEntry ? `wb-palette-${activeEntry.key}` : undefined
+        }
         className="w-full border-b border-slate-200 px-4 py-3 text-sm outline-none"
       />
-      <div id="wb-palette-list" role="listbox" aria-label={t("shell.palette.title")} className="max-h-80 overflow-y-auto py-1">
-        {entries.length === 0 ? <p className="px-4 py-3 text-sm text-slate-400">{t("shell.palette.empty")}</p> : null}
+      <div
+        id="wb-palette-list"
+        role="listbox"
+        aria-label={t("shell.palette.title")}
+        className="max-h-80 overflow-y-auto py-1"
+      >
         {entries.map((entry, index) => (
           <button
             key={entry.key}
             id={`wb-palette-${entry.key}`}
             type="button"
             role="option"
+            // Options are reached with the arrow keys from the input, which
+            // keeps the `aria-activedescendant` contract; they must therefore
+            // stay out of the Tab order (and out of the dialog's focus trap).
+            tabIndex={-1}
             aria-selected={index === activeIndex}
             onMouseEnter={() => setActiveIndex(index)}
             onClick={() => go(entry)}
-            className={cn("flex w-full items-center justify-between px-4 py-2 text-left text-sm", index === activeIndex ? "bg-slate-100" : "hover:bg-slate-50")}
+            className={cn(
+              "flex w-full items-center justify-between px-4 py-2 text-left text-sm",
+              index === activeIndex ? "bg-slate-100" : "hover:bg-slate-50",
+            )}
           >
             <span>{entry.label}</span>
-            <span className="text-[11px] text-slate-400">{t(`shell.palette.${entry.group}`)}</span>
+            <span className="text-[11px] text-slate-500">
+              {t(`shell.palette.${entry.group}`)}
+            </span>
           </button>
         ))}
       </div>
+      {/* Outside the listbox: a paragraph is not an option, and a listbox with
+          one non-option child is malformed for AT. */}
+      {entries.length === 0 ? (
+        <p className="px-4 py-3 text-sm text-slate-500">
+          {t("shell.palette.empty")}
+        </p>
+      ) : null}
+      {/* Filtering changes the list silently otherwise. Reusing the palette's own
+          title names what the number counts — a bare "3" is meaningless out of
+          context — without adding a catalog key. */}
+      <span role="status" className="sr-only">
+        {t("shell.palette.title")}: {entries.length}
+      </span>
     </Dialog>
   );
 }
 ```
 
-- [ ] **Step 6: ArtifactDrawer.tsx（jsx L2485–2526）**
+> 完整实现见 `apps/web/src/components/workbench/shell/CommandPalette.test.tsx`（已落地，jsdom 10 条）：全量列出与筛选、空态在 listbox 外、Enter 跳转并关闭、筛选时高亮回第一条、重开回到空 query、Context 离开确认拒绝时面板不关、接受后跳转、高亮变化时把选项滚入视口（并钉住滚的是哪一个 DOM 节点）、IME 组合中的按键交给输入法、combobox 角色与选项不进 Tab 序。
+
+- [x] **Step 6: ArtifactDrawer.tsx（jsx L2485–2526）**
 
 ```tsx
 // apps/web/src/components/workbench/shell/ArtifactDrawer.tsx
@@ -3337,17 +4746,26 @@ export function CommandPalette({
 
 import { X } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { downloadText } from "@/lib/workbench/download";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
 import type { ArtifactType } from "@/lib/workbench/types";
 import { Dialog } from "../ui/Dialog.tsx";
 
+/** How long the "Copied" label stays up (jsx `flash()`). */
+const COPY_FLASH_MS = 1300;
+
 const MIME: Readonly<Record<ArtifactType, string>> = {
-  csv: "text/csv;charset=utf-8", md: "text/markdown;charset=utf-8",
-  json: "application/json;charset=utf-8", prompt: "text/plain;charset=utf-8",
+  csv: "text/csv;charset=utf-8",
+  md: "text/markdown;charset=utf-8",
+  json: "application/json;charset=utf-8",
+  prompt: "text/plain;charset=utf-8",
 };
 
+/**
+ * The artifact basket (jsx L2485–2526). Producers write the "sample data"
+ * provenance line into `content` (§6.8); the drawer only presents it.
+ */
 export function ArtifactDrawer({
   open,
   onClose,
@@ -3361,26 +4779,69 @@ export function ArtifactDrawer({
   const { state, dispatch } = useWorkbench();
   const closeRef = useRef<HTMLButtonElement>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Same "adjusting state when a prop changes" pattern as the palette: a stale
+  // "Copied" label must not greet the next open of the drawer.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setCopied(null);
+  }
+
+  function clearFlash(): void {
+    if (flashTimer.current === null) return;
+    clearTimeout(flashTimer.current);
+    flashTimer.current = null;
+  }
+
+  // Drop a pending flash whenever the drawer closes (or unmounts): a timer that
+  // fires into a closed drawer is a setState on a component nobody is reading.
+  useEffect(() => clearFlash, [open]);
 
   async function copy(id: string, content: string): Promise<void> {
     try {
       await navigator.clipboard.writeText(content);
       setCopied(id);
+      clearFlash();
+      flashTimer.current = setTimeout(() => {
+        flashTimer.current = null;
+        setCopied(null);
+      }, COPY_FLASH_MS);
     } catch {
       window.prompt(t("copy"), content);
     }
   }
 
   return (
-    <Dialog open={open} onClose={onClose} labelledBy="wb-drawer-title" initialFocus={closeRef} returnFocusTo={returnFocusTo}
-      className="right-0 top-0 flex h-full w-[min(480px,100vw)] flex-col border-l border-slate-200">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      labelledBy="wb-drawer-title"
+      initialFocus={closeRef}
+      returnFocusTo={returnFocusTo}
+      className="right-0 top-0 flex h-full w-[min(480px,100vw)] flex-col border-l border-slate-200"
+    >
       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <h2 id="wb-drawer-title" className="text-sm font-semibold">{t("title")} · {state.artifacts.length}</h2>
+        <h2 id="wb-drawer-title" className="text-sm font-semibold">
+          {t("title")} · {state.artifacts.length}
+        </h2>
         <div className="flex items-center gap-2">
           {state.artifacts.length > 0 ? (
-            <button type="button" onClick={() => dispatch({ type: "clearArtifacts" })} className="text-xs text-slate-500 hover:text-slate-900">{t("clear")}</button>
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "clearArtifacts" })}
+              className="text-xs text-slate-600 hover:text-slate-900"
+            >
+              {t("clear")}
+            </button>
           ) : null}
-          <button ref={closeRef} type="button" onClick={onClose} aria-label={t("close")} className="rounded p-1 hover:bg-slate-100">
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={onClose}
+            aria-label={t("close")}
+            className="rounded p-1 hover:bg-slate-100"
+          >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
@@ -3389,7 +4850,7 @@ export function ArtifactDrawer({
         {state.artifacts.length === 0 ? (
           <div className="p-6 text-center">
             <p className="text-sm font-medium text-slate-600">{t("empty")}</p>
-            <p className="mt-1 text-xs text-slate-400">{t("emptyDetail")}</p>
+            <p className="mt-1 text-xs text-slate-500">{t("emptyDetail")}</p>
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">
@@ -3397,12 +4858,38 @@ export function ArtifactDrawer({
               <li key={a.id} className="px-4 py-3" data-wb-artifact={a.id}>
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-sm font-medium">{a.title}</span>
-                  <span className="font-mono text-[11px] text-slate-400">{a.at}</span>
+                  <span className="font-mono text-[11px] text-slate-500">
+                    {a.at}
+                  </span>
                 </div>
                 <div className="mt-2 flex gap-3 text-xs">
-                  <button type="button" onClick={() => void copy(a.id, a.content)} className="text-slate-600 hover:text-slate-900">{copied === a.id ? t("copied") : t("copy")}</button>
-                  <button type="button" onClick={() => downloadText(a.filename ?? `${a.title}.txt`, a.content, MIME[a.type])} className="text-slate-600 hover:text-slate-900">{t("download")}</button>
-                  <button type="button" onClick={() => dispatch({ type: "removeArtifact", id: a.id })} className="text-rose-600 hover:text-rose-800">{t("remove")}</button>
+                  <button
+                    type="button"
+                    onClick={() => void copy(a.id, a.content)}
+                    className="text-slate-600 hover:text-slate-900"
+                  >
+                    {copied === a.id ? t("copied") : t("copy")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadText(
+                        a.filename ?? `${a.title}.txt`,
+                        a.content,
+                        MIME[a.type],
+                      )
+                    }
+                    className="text-slate-600 hover:text-slate-900"
+                  >
+                    {t("download")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => dispatch({ type: "removeArtifact", id: a.id })}
+                    className="text-rose-600 hover:text-rose-800"
+                  >
+                    {t("remove")}
+                  </button>
                 </div>
               </li>
             ))}
@@ -3416,7 +4903,9 @@ export function ArtifactDrawer({
 
 产物内容的「示例数据」来源声明由生产者（PR-3+ 的 `addArtifact` 调用方）写进 `content` 顶部（§6.8），抽屉只展示。
 
-- [ ] **Step 7: ShellChrome.tsx + WorkbenchShell.tsx**
+> 完整实现见 `apps/web/src/components/workbench/shell/ArtifactDrawer.test.tsx`（已落地，jsdom 5 条）：空态、「已复制」自动回落、关闭后残留的定时器不会截断下一次重开的「已复制」（5508351b 把「重开清掉悬空计时器」换成这条更严格的时序用例）、第二次复制重启闪烁而不是继承第一个计时器（5508351b 新增）、删掉最后一条回空态。
+
+- [x] **Step 7: ShellChrome.tsx + WorkbenchShell.tsx**
 
 ```tsx
 // apps/web/src/components/workbench/shell/ShellChrome.tsx
@@ -3425,6 +4914,7 @@ export function ArtifactDrawer({
 import { useTranslations } from "next-intl";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ProjectShellOption } from "@/lib/services/project-shell";
+import { WB_APP_ROOT_ID } from "../ui/ids.ts";
 import { ArtifactDrawer } from "./ArtifactDrawer.tsx";
 import { CommandPalette } from "./CommandPalette.tsx";
 import { Sidebar, type SidebarSite } from "./Sidebar.tsx";
@@ -3434,8 +4924,17 @@ import { useMediaQuery } from "./useMediaQuery.ts";
 
 const SIDEBAR_ID = "wb-sidebar";
 
+/**
+ * Client half of the shell (design §4.1). `#wb-app` is the root the two
+ * dialogs make `inert`, so both of them render outside it.
+ */
 export function ShellChrome({
-  projectId, site, projectOptions, projectControl, accountControl, children,
+  projectId,
+  site,
+  projectOptions,
+  projectControl,
+  accountControl,
+  children,
 }: {
   readonly projectId: string;
   readonly site: SidebarSite;
@@ -3445,51 +4944,96 @@ export function ShellChrome({
   readonly children: ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Only one of the two dialogs may be open at a time: stacked `fixed inset-0
+  // z-50` wrappers overlap, and closing the top one first returns focus to
+  // `<body>` because the dialog underneath is the one holding the opener. One
+  // slot makes that unrepresentable rather than something two setters have to
+  // keep agreeing on. The `Dialog` inert ref-count stays as defence in depth.
+  const [panel, setPanel] = useState<"palette" | "drawer" | null>(null);
+  const paletteOpen = panel === "palette";
+  const drawerOpen = panel === "drawer";
   const paletteButtonRef = useRef<HTMLButtonElement>(null);
   const drawerButtonRef = useRef<HTMLButtonElement>(null);
-  const mobile = useMediaQuery("(max-width: 767px)");
+  // Must match Tailwind v4's `md` (48rem), which the rail's `md:translate-x-0`
+  // uses: a px value drifts from it as soon as the root font size is not 16px.
+  const mobile = useMediaQuery("(width < 48rem)");
   const t = useTranslations("workbench.shell");
 
-  const closeAll = useCallback(() => { setPaletteOpen(false); setDrawerOpen(false); setSidebarOpen(false); }, []);
-  const handlers = useMemo(() => ({
-    onTogglePalette: () => setPaletteOpen((p) => !p),
-    onEscape: closeAll,
-  }), [closeAll]);
+  const closeAll = useCallback(() => {
+    setPanel(null);
+    setSidebarOpen(false);
+  }, []);
+  const openPalette = useCallback((): void => setPanel("palette"), []);
+  const openDrawer = useCallback((): void => setPanel("drawer"), []);
+  const handlers = useMemo(
+    () => ({
+      onTogglePalette: () =>
+        setPanel((current) => (current === "palette" ? null : "palette")),
+      onEscape: closeAll,
+    }),
+    [closeAll],
+  );
   useGlobalShortcut(handlers);
 
   return (
     <>
       {/* No font/color here: they inherit into <main> and would change legacy pages (Task 0 baseline). */}
-      <div id="wb-app" data-app-shell="" className="flex min-h-screen bg-wb-paper">
+      <div id={WB_APP_ROOT_ID} data-app-shell="" className="flex min-h-screen bg-wb-paper">
         {sidebarOpen ? (
-          <button type="button" aria-label={t("closeMenu")} tabIndex={-1} className="fixed inset-0 z-20 border-0 bg-slate-900/50 md:hidden" onClick={() => setSidebarOpen(false)} />
+          <button
+            type="button"
+            aria-label={t("closeMenu")}
+            tabIndex={-1}
+            className="fixed inset-0 z-20 border-0 bg-slate-900/50 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
         ) : null}
-        <Sidebar id={SIDEBAR_ID} projectId={projectId} site={site} siteCount={projectOptions.length} open={sidebarOpen} mobile={mobile} />
-        <div className="flex min-h-screen min-w-0 flex-1 flex-col md:ml-64">
+        <Sidebar
+          id={SIDEBAR_ID}
+          projectId={projectId}
+          site={site}
+          siteCount={projectOptions.length}
+          open={sidebarOpen}
+          mobile={mobile}
+        />
+        <div
+          data-wb-content=""
+          className="flex min-h-screen min-w-0 flex-1 flex-col md:ml-64"
+        >
           <Topbar
             projectControl={projectControl}
             accountControl={accountControl}
             onMenu={() => setSidebarOpen((o) => !o)}
-            onPalette={() => setPaletteOpen(true)}
-            onDrawer={() => setDrawerOpen(true)}
+            onPalette={openPalette}
+            onDrawer={openDrawer}
             paletteButtonRef={paletteButtonRef}
             drawerButtonRef={drawerButtonRef}
             sidebarId={SIDEBAR_ID}
             sidebarOpen={sidebarOpen}
           />
-          <main id="main-content" className="flex-1">{children}</main>
+          <main id="main-content" className="flex-1">
+            {children}
+          </main>
         </div>
       </div>
-      <CommandPalette returnFocusTo={paletteButtonRef} open={paletteOpen} onClose={() => setPaletteOpen(false)} projectId={projectId} projectOptions={projectOptions} />
-      <ArtifactDrawer returnFocusTo={drawerButtonRef} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <CommandPalette
+        returnFocusTo={paletteButtonRef}
+        open={paletteOpen}
+        onClose={() => setPanel(null)}
+        projectId={projectId}
+        projectOptions={projectOptions}
+      />
+      <ArtifactDrawer
+        returnFocusTo={drawerButtonRef}
+        open={drawerOpen}
+        onClose={() => setPanel(null)}
+      />
     </>
   );
 }
 ```
 
-焦点回退只能由 `Dialog` 的 effect cleanup 做：`onClose` 里同步调 `ref.current?.focus()` 时 `#wb-app` 还带着 `inert`（cleanup 要到 commit 才摘掉），对 inert 子树 focus 是 no-op。而 Next 的 layout-router 在导航后会主动 focus 变更段的 DOM 节点，⌘K 跳转后再开再关时 `document.activeElement` 记录的就不是按钮了。所以 `ShellChrome` 把两个按钮 ref 作为 `returnFocusTo` 传给 `CommandPalette` / `ArtifactDrawer`（它们原样转给 `Dialog`），`onClose` 保持纯 `setXOpen(false)`。
+焦点回退只能由 `Dialog` 的 effect cleanup 做：`onClose` 里同步调 `ref.current?.focus()` 时 `#wb-app` 还带着 `inert`（cleanup 要到 commit 才摘掉），对 inert 子树 focus 是 no-op。而 Next 的 layout-router 在导航后会主动 focus 变更段的 DOM 节点，⌘K 跳转后再开再关时 `document.activeElement` 记录的就不是按钮了。所以 `ShellChrome` 把两个按钮 ref 作为 `returnFocusTo` 传给 `CommandPalette` / `ArtifactDrawer`（它们原样转给 `Dialog`），`onClose` 保持纯 `setPanel(null)`（5508351b 前是各自的 `setXOpen(false)`；合并成单槽位状态后两个对话框的 `onClose` 变成同一行代码）。
 
 ```tsx
 // apps/web/src/components/workbench/shell/WorkbenchShell.tsx
@@ -3529,14 +5073,25 @@ export async function WorkbenchShell({
     <WorkbenchProvider
       key={project.id}
       projectId={project.id}
-      seed={{ url: project.host, brand: project.clientName, market: project.marketCode ?? "" }}
+      seed={{
+        url: project.host,
+        brand: project.clientName,
+        market: project.marketCode ?? "",
+      }}
     >
-      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-white focus:px-3 focus:py-2">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-white focus:px-3 focus:py-2"
+      >
         {tShell("skipToContent")}
       </a>
       <ShellChrome
         projectId={project.id}
-        site={{ host: project.host, marketCode: project.marketCode, gscConnected: null }}
+        site={{
+          host: project.host,
+          marketCode: project.marketCode,
+          gscConnected: null,
+        }}
         projectOptions={shell.projectOptions}
         projectControl={projectControl}
         accountControl={accountControl}
@@ -3548,15 +5103,15 @@ export async function WorkbenchShell({
 }
 ```
 
-`project.marketCode` 由 Task 11 加进 `ProjectShellProject`。`LocaleSwitch` 若是 client 组件、且 `@/components/ui` barrel 拉进了 server-only 模块，改为直接 import `@/components/ui/LocaleSwitch`。
+`project.marketCode` 由 8e53425b 加进 `ProjectShellProject`（原计划放在 Task 11 Step 1）。
 
-- [ ] **Step 8: SignOutButton.tsx（设计 §6.5：登出前清 `gg.workbench.*`）**
+- [x] **Step 8: SignOutButton.tsx（设计 §6.5：登出前清 `gg.workbench.*`）**
 
 ```tsx
 // apps/web/src/components/workbench/shell/SignOutButton.tsx
 "use client";
 
-import { clearAllWorkbenchState } from "@/lib/workbench/store/persistence";
+import { clearAllWorkbenchState, WORKBENCH_SWEPT_EVENT } from "@/lib/workbench/store/persistence";
 
 /** Server action arrives as a prop (serializable); the storage sweep must run in the browser. */
 export function SignOutButton({
@@ -3572,33 +5127,45 @@ export function SignOutButton({
       onSubmit={() => {
         try {
           clearAllWorkbenchState(window.localStorage);
+          // This document gets no `storage` event for its own writes, so the
+          // provider mounted here has to be told the sweep happened.
+          window.dispatchEvent(new Event(WORKBENCH_SWEPT_EVENT));
         } catch {
           // Storage unavailable: nothing persisted to clear.
         }
       }}
     >
-      <button type="submit" aria-label={label} title={label}
-        className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
-        GG
+      <button
+        type="submit"
+        aria-label={label}
+        title={label}
+        // Inverted fill: the default `currentColor` focus ring would be white
+        // on the cream topbar. The monogram itself is decoration; `aria-label`
+        // carries the accessible name.
+        className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white focus-visible:outline-slate-900"
+      >
+        <span aria-hidden="true">GG</span>
       </button>
     </form>
   );
 }
 ```
 
-`signOutAction` 的真实签名以 `@/lib/auth/actions` 为准；若它带参数或返回类型不同，按其类型调整 `action` prop。
+> 完整实现见 `apps/web/src/components/workbench/shell/SignOutButton.test.tsx`（已落地，jsdom 2 条）：清扫所有工作台键 + 派发 `WORKBENCH_SWEPT_EVENT` + 仍然提交登出；字标是装饰、名字来自 `aria-label`。
 
-- [ ] **Step 9: 类型检查 + 单测**
+- [x] **Step 9: 类型检查 + 单测**
 
 Run: `pnpm --filter @sf/web typecheck && pnpm vitest run --project unit apps/web/src/components/workbench`
-Expected: 仅剩 `marketCode` 不存在于 `ProjectShellProject` 的错误（Task 11 解决）。
+Expected: 全绿（`marketCode` 已随 8e53425b 落地，不再有遗留错误）。
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add apps/web/src/components/workbench/shell apps/web/src/lib/workbench/download.ts apps/web/src/app/workbench.css
 git commit -m "feat(workbench): 侧栏 / 顶栏 / 命令面板 / 产物筐抽屉与壳装配"
 ```
+
+实际落地：8e53425b（`ProjectShellProject.marketCode`）、47dc7d31（壳主体）、4ae34588（`ProjectSwitcher` 浅色、面板 / 抽屉互斥与重置）、bae6a447（侧栏可滚动、面板 combobox、离开确认、焦点圈、存储提示、下载）、09f9bb14（`swept` 态顶栏静默）、5508351b（打印规则挪进 `@layer utilities`、面板高亮滚入视口、「+ 新建站点」接入离开确认、顶栏存储提示合并单一 live region、`ShellChrome` 面板状态合并为单槽位、`download.ts` 的 `try/finally` 与 1000ms revoke、删 `app-shell.module.css` 死规则）、codex 评审修复（面板与全局快捷键的 IME 守卫、`useGlobalShortcut.test.tsx`；与本备注同一 commit）。
 
 ---
 
@@ -3609,18 +5176,30 @@ git commit -m "feat(workbench): 侧栏 / 顶栏 / 命令面板 / 产物筐抽屉
 - Modify: `apps/web/src/app/p/[projectId]/_e2e-shell-fixture.ts`
 - Move: `apps/web/src/app/p/[projectId]/overview/**` → `apps/web/src/app/p/[projectId]/legacy/overview/**`
 - Create: 15 个 `apps/web/src/app/p/[projectId]/<segment>/page.tsx`
-- Create: `apps/web/src/components/workbench/views/settings/DeleteProjectSection.tsx`、`SettingsView.tsx`
+- Create: `apps/web/src/components/workbench/views/settings/DeleteProjectSection.tsx`、`SettingsView.tsx`（+ `DeleteProjectSection.test.tsx`）
+- Create: `apps/web/src/lib/workbench/routes.fs.test.ts`
 - Delete: `apps/web/src/app/p/[projectId]/settings/{_settings.tsx,_settings.test.ts,settings.module.css}`、`apps/web/src/app/p/[projectId]/_nav.tsx`
 - Modify: `apps/web/src/app/p/[projectId]/layout.tsx`、`apps/web/src/app/layout.tsx`、`apps/web/src/components/app-shell/AppShell.tsx`、`apps/web/src/app/p/[projectId]/page-title-typography.test.ts`、两份 messages
 
-- [ ] **Step 1: `ProjectShellProject.marketCode`**
+**落地备注：**
 
-`project-shell.ts` L19–26 加 `readonly marketCode: string | null;`；L175 `shellProject` 加 `marketCode: site.market_codes[0] ?? null,`；`_e2e-shell-fixture.ts` 的 `currentProject` 加 `marketCode: "US",`。`apps/web/src/lib/services/__tests__/project-shell.test.ts` 里构造 `ProjectShellProject` 字面量的地方补 `marketCode`，并在「returns accessible project options…」用例里加一条断言：`expect(shell.currentProject.marketCode).toBe(<夹具站点的 market_codes[0]>)`。
+- Step 1（`ProjectShellProject.marketCode`）**已在 Task 10（8e53425b）落地**：站点卡需要它才能渲染，所以提前一个 commit。本任务不再重复。
+- `/overview` 现在渲染**占位页**（`PlaceholderView page="overview"`），旧概览在 `legacy/overview`。根 `page.tsx` 的重定向落点不变，仍指 `/overview`——设计 §4.2 的闸门因此依然成立：**新概览可用之前本分支不合入 main**。
+- 有意保留的孤儿（PR-2 起消费，本轮不删）：`ProjectShellProjection.program` 与 `navigationBadges`、`projectStage` 的 i18n 键、`components/app-shell/nav-model.ts` 的 `currentProjectPageLabelKey` 与 `primaryNavigation`。09439fdc 之后再加一个：`components/app-shell/AppShell.tsx` 的 `state: "project"` 分支（连同 `sidebarPanel` / `settingsHref`）已经没有消费者（唯一调用方 `new-project` 传的是 `empty-project`），留给 PR-2 清理。
+- `SettingsView` **不放页面级 `DemoChip`**：设置页是 PR-1 里唯一有真实动作的页面，页头挂「示例数据」会直接和下面的「真实操作」区块打架；文案用 `inProgressNoLegacy`（旧设置页已删，没有「旧版页面照常可用」这回事）。
+- `PlaceholderView` 按 `LEGACY_LINKS[page]` 是否为空选文案：空 → `inProgressNoLegacy`，否则 `inProgressDetail`。week / visibility / links / kb / artifacts 属于前者。
+- `DeleteProjectSection`（09439fdc）：`busy = isPending || isSuccess` 同时禁用两个按钮并把「删除中」保持到导航窗口结束（`router.replace` 是 transition，成功后这棵树还活着，再点一次会发第二个 DELETE 拿 404）；确认区出现时焦点移到确认按钮、取消时移回触发按钮（`prevConfirming` ref，首次挂载不抢焦点）；`BUTTON_BASE` 提到模块作用域；11/12px 的说明行改 `text-slate-600`；「真实操作」chip 加 `title`（`workbench.settings.realActionTitle`）。
+- `routes.fs.test.ts`（09f9bb14 加强）不只检查段名有没有 `page.tsx`，还钉住每个占位页传给视图的 `page="<id>"`——从兄弟段复制过来忘了改 id 的文件，会在这个 URL 下渲染另一页的标题、徽标和「旧版页面 →」，其他测试全都只读表不读树，谁也发现不了。另加一条反向清扫：目录里存在但表里没人指的路由即失败，重定向专用段用 `COMPATIBILITY_ONLY = ["diagnosis", "plan", "report"]` 显式豁免。
+- 冒烟（Step 7）实际跑在 3005：3001 被一个陈旧进程占着。仅记录，不改流程。
+- **登录页清扫 `gg.workbench.*`**（PR-1 验收 B4）：`SignOutButton` 只覆盖工作台顶栏那一条登出路径；旧壳 `/new-project` 用的是裸 server-action 表单、跑不了客户端清扫，会话过期更不经过任何登出——但这些路径全都落到 `/login`。新增 `app/login/_workbench-sweep.tsx`（`"use client"`，渲染 `null`）：挂载时 `clearAllWorkbenchState(window.localStorage)` 并派发 `WORKBENCH_SWEPT_EVENT`，整段 `try/catch`（存储不可用时什么也没存、页面照常渲染）；`login/page.tsx` 在 `<main>` 第一个子节点渲染它——但只在请求没有会话时：`lib/auth/session.ts` 新增 `hasAuthSession()`（dev auth 恒 true；否则只问 Supabase 有没有 user，不查 operator、不碰数据库；`session.test.ts` +3），已登录的 operator 登录后按返回键或从旧标签回到 `/login` 时不渲染清扫组件，本地工作台状态不丢（proxy 对已登录用户访问 `/login` 不重定向，所以这道闸只能在页面上做；首版无条件清扫是个会丢数据的坑）。`SignOutButton` 自己的清扫保留（它让本标签还开着的 provider 立刻停写）。`_workbench-sweep.test.tsx`（jsdom，2 条）：预置 `gg.workbench.v1.a` + `gg.workbench.v0.b` + 无关键 `gg.locale`，挂载后前两个消失、无关键保留、事件恰一次、不渲染任何节点；`localStorage` getter 抛 `SecurityError` 时挂载不抛且不发事件。e2e 里 `page.goto("/login")` 的只有 `critical-flows`（登录流程本身），没有任何 spec 在 `/login` 之后依赖工作台存储；`workbench-shell` 的「删除项目清键」用例落到 `/`（mock 下即登录或错误页），清扫只会让它更绿。设计 §6.5 同步补「清扫的汇合点是登录页」。
+- 正文字号不低于 14px（验收 B9）：`DeleteProjectSection` 的说明 / 保留期 / 错误 / 确认说明四段 `text-[13px]` / `text-[12px]` → `text-sm`，`PageHead` 副标题、`SettingsView` 引言 `text-[13px]` → `text-sm`，`ArtifactDrawer` 空态第二段 `text-xs` → `text-sm`；标签与徽标（`text-[11px]`、确认框的 `<strong>` 13px、`h2` 15px）不动。同轮 `DeleteProjectSection` 的确认按钮补 `focus-visible:outline-slate-900`（基础焦点圈是 `currentColor`，白字在 rose-50 上看不见，而焦点是程序化落上去的）。
+- `_project-switcher.tsx` 的离开确认改接 Task 10 的 `shell/useContextNavigationConfirm.ts`（5508351b），删掉自己那份内联的 `shouldConfirmContextNavigation` + `window.confirm` 拼接：两处各写一份同样的守卫迟早会走漂，`Topbar` 一侧改了文案或判据这边不会跟着变。就 import 方向而言，这是本 PR 里第一处从 `app/p/[projectId]/`（旧壳）引用 `components/workbench/shell/`（新壳）的代码——此前都是新壳单向引用旧壳保留下来的东西（如 `_context-navigation-guard`），这次反过来了，值得留意但本轮不判断是否需要改成别的抽法。
 
-Run: `pnpm --filter @sf/web typecheck && pnpm vitest run --project unit apps/web/src/lib/services/__tests__/project-shell.test.ts`
-Expected: Task 10 遗留的 `marketCode` 错误消失；project-shell 单测全绿（含新断言）。
+- [x] **Step 1: `ProjectShellProject.marketCode`**
 
-- [ ] **Step 2: 搬 overview 到 legacy**
+已在 Task 10（8e53425b）落地：`project-shell.ts` 的 `ProjectShellProject` 加 `readonly marketCode: string | null;`，`shellProject` 取 `site.market_codes[0] ?? null`；`_e2e-shell-fixture.ts` 的 `currentProject` 加 `marketCode: "US"`；`project-shell.test.ts` 的字面量补齐并加了断言。
+
+- [x] **Step 2: 搬 overview 到 legacy**
 
 ```bash
 cd apps/web/src/app/p/\[projectId\]
@@ -3633,9 +5212,9 @@ grep -rn '"\.\./_' legacy/overview
 Run: `pnpm vitest run --project unit "apps/web/src/app/p/\[projectId\]/legacy" "apps/web/src/app/p/\[projectId\]/page-title-typography.test.ts"`
 Expected: 全绿。
 
-- [ ] **Step 3: 15 个页面文件**
+- [x] **Step 3: 15 个页面文件**
 
-每个段一份，只换 `page` 与函数名（`overview` 也用占位，PR-3 替换）：
+每个段一份，只换 `page` 与函数名（`overview` 同样是占位，PR-3 替换）：
 
 ```tsx
 // apps/web/src/app/p/[projectId]/audit/page.tsx
@@ -3653,7 +5232,108 @@ export default async function AuditPage({
 
 段名 ↔ page：`overview/overview`、`week/week`、`keywords/keywords`、`keyword-library/keywordLibrary`、`competitors/competitors`、`audit/audit`、`visibility/visibility`、`profile/profile`、`data-sources/dataSources`、`links/links`、`content/content`、`kb/kb`、`answers/answers`、`artifacts/artifacts`。`settings` 见下一步。
 
-- [ ] **Step 4: 设置页 = 占位 + 真实删除**
+接线由 `routes.fs.test.ts` 守住：
+
+```ts
+// apps/web/src/lib/workbench/routes.fs.test.ts
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import {
+  LEGACY_LINKS,
+  WORKBENCH_PAGE_IDS,
+  WORKBENCH_SEGMENTS,
+} from "./routes.ts";
+
+/**
+ * The route table is plain data; nothing in it type-checks against the App
+ * Router tree. A sidebar entry whose segment has no `page.tsx`, or a "legacy
+ * page →" link pointing at a directory that was moved or retired, is a 404 the
+ * unit suite would otherwise never see. The converse also matters: a route that
+ * exists but no entry in the table names is a page nothing can reach. Resolved
+ * from this file so the assertions hold whatever the working directory is.
+ */
+const PROJECT_ROUTES = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../app/p/[projectId]",
+);
+
+/**
+ * Redirect-only segments. They keep pre-migration deep links working but appear
+ * neither in the sidebar nor in any "legacy page →" link, so no entry in
+ * `routes.ts` can name them; `app/p/[projectId]/_canonical-routes.test.ts` pins
+ * where each one lands. Listed here so the sweep below still fails on a route
+ * that is reachable by nobody.
+ */
+const COMPATIBILITY_ONLY = ["diagnosis", "plan", "report"] as const;
+
+/**
+ * Every directory under `p/[projectId]` holding a `page.tsx`, sorted. One level
+ * of nesting is walked because `legacy/overview` is nested; the App Router tree
+ * here goes no deeper.
+ */
+function routeDirectories(): readonly string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(PROJECT_ROUTES, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const directory = resolve(PROJECT_ROUTES, entry.name);
+    if (existsSync(resolve(directory, "page.tsx"))) found.push(entry.name);
+    for (const nested of readdirSync(directory, { withFileTypes: true })) {
+      if (!nested.isDirectory()) continue;
+      if (existsSync(resolve(directory, nested.name, "page.tsx"))) {
+        found.push(`${entry.name}/${nested.name}`);
+      }
+    }
+  }
+  return found.sort();
+}
+
+describe("workbench route table matches the App Router tree", () => {
+  it.each(WORKBENCH_PAGE_IDS)("serves a page for %s", (id) => {
+    const page = resolve(PROJECT_ROUTES, WORKBENCH_SEGMENTS[id], "page.tsx");
+    expect(existsSync(page), page).toBe(true);
+
+    // Which id the route hands to the view IS the content of a placeholder
+    // page. A file copied from a sibling segment that kept the sibling's id
+    // renders that sibling's title, badge and "legacy page →" links under this
+    // URL; every other test here reads the table rather than the tree, so
+    // nothing else would notice.
+    const source = readFileSync(page, "utf8");
+    const wired = [...source.matchAll(/page="([A-Za-z]+)"/g)].map(
+      (match) => match[1] ?? "",
+    );
+    // A page with its own view (Settings) passes no id — and must not claim
+    // another page's id either.
+    expect(wired, page).toEqual(source.includes("PlaceholderView") ? [id] : []);
+  });
+
+  it("keeps every legacy destination reachable", () => {
+    const segments = [...new Set(Object.values(LEGACY_LINKS).flat())].sort();
+    expect(segments).toContain("legacy/overview");
+    for (const segment of segments) {
+      const directory = resolve(PROJECT_ROUTES, segment);
+      expect(existsSync(directory), directory).toBe(true);
+      expect(statSync(directory).isDirectory(), directory).toBe(true);
+      // A directory alone is not a route: a segment left with only `_*.tsx`
+      // helpers after a move would still pass the check above and 404 in the UI.
+      const page = resolve(directory, "page.tsx");
+      expect(existsSync(page), page).toBe(true);
+    }
+  });
+
+  it("has no project route the table does not name", () => {
+    const named = [
+      ...Object.values(WORKBENCH_SEGMENTS),
+      ...new Set(Object.values(LEGACY_LINKS).flat()),
+      ...COMPATIBILITY_ONLY,
+    ].sort();
+    expect(routeDirectories()).toEqual(named);
+  });
+});
+```
+
+- [x] **Step 4: 设置页 = 占位 + 真实删除**
 
 删除旧三文件后：
 
@@ -3664,10 +5344,12 @@ export default async function AuditPage({
 import { AlertTriangle, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDeleteProject } from "@/lib/api";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
 import { cn } from "../../ui/cn.ts";
+
+const BUTTON_BASE = "rounded-lg border px-4 py-1.5 text-[13px] font-medium transition-colors";
 
 /**
  * The one real action on the settings page (design §6.6). Moved verbatim in
@@ -3682,6 +5364,22 @@ export function DeleteProjectSection({ projectId }: { readonly projectId: string
   const { forgetProject } = useWorkbench();
   const deleteProject = useDeleteProject(projectId);
   const [confirming, setConfirming] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
+  const prevConfirming = useRef(confirming);
+
+  /**
+   * The trigger unmounts when the confirmation opens and the whole group
+   * unmounts when it closes, so keyboard focus would otherwise fall to
+   * <body>. Act only on an actual change: a first mount must not steal focus
+   * from wherever the operator already is on the page.
+   */
+  useEffect(() => {
+    if (prevConfirming.current === confirming) return;
+    prevConfirming.current = confirming;
+    if (confirming) confirmRef.current?.focus();
+    else triggerRef.current?.focus();
+  }, [confirming]);
 
   async function confirmDelete(): Promise<void> {
     try {
@@ -3694,32 +5392,92 @@ export function DeleteProjectSection({ projectId }: { readonly projectId: string
     }
   }
 
-  const button = "rounded-lg border px-4 py-1.5 text-[13px] font-medium transition-colors";
+  /**
+   * `router.replace` is a transition: this tree stays interactive until the new
+   * route commits. Without holding the buttons disabled after success a second
+   * click fires a second DELETE, gets 404, and shows the delete-failure copy
+   * for a project that is already gone. (That copy is outcome-neutral on
+   * purpose: a rejected mutation does not prove the server did not delete,
+   * since the response can be lost after the commit.)
+   */
+  const busy = deleteProject.isPending || deleteProject.isSuccess;
   return (
-    <section aria-labelledby="delete-product-title" className="rounded-xl border border-rose-200 bg-white p-6 shadow-sm" data-wb-real-action="">
+    <section
+      aria-labelledby="delete-product-title"
+      className="rounded-xl border border-rose-200 bg-white p-6 shadow-sm"
+      data-wb-real-action=""
+    >
       <div className="mb-3 flex items-center gap-2">
         <Trash2 size={18} aria-hidden="true" className="text-rose-600" />
-        <span className="rounded border border-rose-200 bg-rose-50 px-2 text-[11px] font-medium text-rose-700">{tWb("realAction")}</span>
-        <span className="text-[11px] font-medium uppercase text-slate-400">{t("dangerZone")}</span>
+        <span
+          title={tWb("realActionTitle")}
+          className="rounded border border-rose-200 bg-rose-50 px-2 text-[11px] font-medium text-rose-700"
+        >
+          {tWb("realAction")}
+        </span>
+        <span className="text-[11px] font-medium uppercase text-slate-600">
+          {t("dangerZone")}
+        </span>
       </div>
-      <h2 id="delete-product-title" className="text-[15px] font-semibold">{t("delete.title")}</h2>
-      <p className="mt-1 text-[13px] text-slate-500">{t("delete.description")}</p>
-      <p className="mt-1 text-[12px] text-slate-400">{t("delete.retention")}</p>
-      {deleteProject.isError ? <p role="alert" className="mt-3 text-[13px] text-rose-700">{t("delete.error")}</p> : null}
+      <h2 id="delete-product-title" className="text-[15px] font-semibold">
+        {t("delete.title")}
+      </h2>
+      <p className="mt-1 text-[13px] text-slate-600">{t("delete.description")}</p>
+      <p className="mt-1 text-[12px] text-slate-600">{t("delete.retention")}</p>
+      {deleteProject.isError ? (
+        <p role="alert" className="mt-3 text-[13px] text-rose-700">
+          {t("delete.error")}
+        </p>
+      ) : null}
       {confirming ? (
-        <div role="group" aria-label={t("delete.confirmTitle")} className="mt-4 flex flex-wrap items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 p-4">
+        <div
+          role="group"
+          aria-label={t("delete.confirmTitle")}
+          className="mt-4 flex flex-wrap items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 p-4"
+        >
           <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 text-rose-600" />
           <div className="flex-1">
             <strong className="text-[13px]">{t("delete.confirmTitle")}</strong>
             <p className="text-[12px] text-slate-600">{t("delete.confirmDescription")}</p>
           </div>
           <div className="flex gap-2">
-            <button type="button" disabled={deleteProject.isPending} onClick={() => { deleteProject.reset(); setConfirming(false); }} className={cn(button, "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")}>{t("delete.cancel")}</button>
-            <button type="button" disabled={deleteProject.isPending} onClick={() => void confirmDelete()} className={cn(button, "border-rose-600 bg-rose-600 text-white hover:bg-rose-700")}>{deleteProject.isPending ? t("delete.deleting") : t("delete.confirmAction")}</button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                deleteProject.reset();
+                setConfirming(false);
+              }}
+              className={cn(
+                BUTTON_BASE,
+                "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+              )}
+            >
+              {t("delete.cancel")}
+            </button>
+            <button
+              ref={confirmRef}
+              type="button"
+              disabled={busy}
+              onClick={() => void confirmDelete()}
+              className={cn(BUTTON_BASE, "border-rose-600 bg-rose-600 text-white hover:bg-rose-700")}
+            >
+              {busy ? t("delete.deleting") : t("delete.confirmAction")}
+            </button>
           </div>
         </div>
       ) : (
-        <button type="button" onClick={() => { deleteProject.reset(); setConfirming(true); }} className={cn(button, "mt-4 border-rose-200 bg-white text-rose-700 hover:bg-rose-50")}>{t("delete.action")}</button>
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => {
+            deleteProject.reset();
+            setConfirming(true);
+          }}
+          className={cn(BUTTON_BASE, "mt-4 border-rose-200 bg-white text-rose-700 hover:bg-rose-50")}
+        >
+          {t("delete.action")}
+        </button>
       )}
     </section>
   );
@@ -3731,18 +5489,22 @@ export function DeleteProjectSection({ projectId }: { readonly projectId: string
 "use client";
 
 import { useTranslations } from "next-intl";
-import { DemoChip } from "../../ui/DemoChip.tsx";
 import { PageHead } from "../../ui/PageHead.tsx";
 import { DeleteProjectSection } from "./DeleteProjectSection.tsx";
 
-/** PR-1 form (design §4.2): placeholder note + the real delete block. PR-3 adds notify + data sources. */
+/**
+ * PR-1 form (design §4.2): in-progress note + the real delete block. PR-3 adds
+ * notify + data sources. No `DemoChip`: the page carries no mock content, and
+ * `inProgressNoLegacy` is used unconditionally because the legacy settings page
+ * was deleted, so there is nothing that "keeps working meanwhile".
+ */
 export function SettingsView({ projectId }: { readonly projectId: string }) {
   const tNav = useTranslations("workbench.nav.items");
   const tShell = useTranslations("workbench.shell");
   return (
     <div className="wb-reset mx-auto min-h-full max-w-5xl p-6 font-sans text-slate-900 md:p-10">
-      <PageHead title={tNav("settings")} aside={<DemoChip />} />
-      <p className="mb-6 text-[13px] text-slate-500">{tShell("inProgressDetail")}</p>
+      <PageHead title={tNav("settings")} />
+      <p className="mb-6 text-[13px] text-slate-500">{tShell("inProgressNoLegacy")}</p>
       <DeleteProjectSection projectId={projectId} />
     </div>
   );
@@ -3765,7 +5527,9 @@ export default async function SettingsPage({
 
 旧 `_settings.test.ts` 的三条断言（两步删除、仅活跃项目暴露设置、双语保留说明）：第一条由 Task 12 的 e2e 覆盖；第二条随旧壳退役；第三条 parity 已守。删除即可。
 
-- [ ] **Step 5: 项目 layout 换壳**
+> 完整实现见 `apps/web/src/components/workbench/views/settings/DeleteProjectSection.test.tsx`（已落地，jsdom 5 条）：单一触发点打开确认并聚焦确认按钮、取消归还焦点、成功后只导航一次且保持禁用、失败不导航也不清本地键、区块标为真实操作而非示例数据。
+
+- [x] **Step 5: 项目 layout 换壳**
 
 ```tsx
 // apps/web/src/app/p/[projectId]/layout.tsx
@@ -3773,7 +5537,10 @@ import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { WorkbenchShell } from "@/components/workbench/shell/WorkbenchShell";
 import { getOperatorContext } from "@/lib/auth/session";
-import { getProjectShell, type ProjectShellProjection } from "@/lib/services/project-shell";
+import {
+  getProjectShell,
+  type ProjectShellProjection,
+} from "@/lib/services/project-shell";
 import { ProjectSwitcher } from "./_project-switcher.tsx";
 
 /**
@@ -3796,17 +5563,26 @@ export default async function ProjectLayout({
     const { loadE2eProjectShell } = await import("./_e2e-shell.ts");
     shell = await loadE2eProjectShell(process.env, projectId);
   }
+
   if (!shell) {
     const operator = await getOperatorContext();
     if (!operator) notFound();
-    shell = await getProjectShell({ workspaceId: operator.workspaceId }, projectId);
+    shell = await getProjectShell(
+      { workspaceId: operator.workspaceId },
+      projectId,
+    );
   }
   if (!shell) notFound();
 
   return (
     <WorkbenchShell
       shell={shell}
-      projectControl={<ProjectSwitcher projectId={shell.currentProject.id} options={shell.projectOptions} />}
+      projectControl={
+        <ProjectSwitcher
+          projectId={shell.currentProject.id}
+          options={shell.projectOptions}
+        />
+      }
     >
       {children}
     </WorkbenchShell>
@@ -3816,27 +5592,27 @@ export default async function ProjectLayout({
 
 然后：删 `_nav.tsx`；`AppShell.tsx` 删 `SidebarProgress` 函数、`components/app-shell/index.ts` 的 barrel 里删 `SidebarProgress` 导出、`app-shell.module.css` 里删 `.program*` 规则；两份 messages 删 `appShell.programTitle / programDay / programProgress`；根 `layout.tsx` 的 `<html>` 加 `data-theme="light"`（设计 §5 / §11）。
 
-- [ ] **Step 5b: 复核 `proxy.ts` 与 `_compatibility-route.ts`（设计 §9 PR-1 明列）**
+- [x] **Step 5b: 复核 `proxy.ts` 与 `_compatibility-route.ts`（设计 §9 PR-1 明列）**
 
-已核实的事实（实施时再对一眼行号，写进 PR 描述）：
+已核实的事实：
 
 - `apps/web/src/proxy.ts`：鉴权与 CSP 按前缀放行（`/api/`、`PUBLIC_PAGES`、`PUBLIC_FILES`），不枚举项目段名——15 个新段与 `legacy/overview` 不需要登记。
 - `apps/web/src/app/p/[projectId]/_compatibility-route.ts`：只做 `plan → execution`、`report → results`、`diagnosis → growth-map` 的查询参数翻译；不碰 `overview` / `settings`。
-- `diagnosis/page.tsx` **不是可渲染旧页**：它无条件 `redirect(growthMapCompatibilityRoute(...))`。设计稿 §4.3 表把「技术审计 → diagnosis」当成旧页是事实错误，Task 2 已把 `LEGACY_LINKS.audit` 定为 `["growth-map"]`，`LegacySegment` 不含 `"diagnosis"`；设计稿该行同步改为 `growth-map`，并在 PR 描述「相对设计稿的偏离」里写明。
+- `diagnosis/page.tsx` **不是可渲染旧页**：它无条件 `redirect(growthMapCompatibilityRoute(...))`。设计稿 §4.3 表把「技术审计 → diagnosis」当成旧页是事实错误，Task 2 已把 `LEGACY_LINKS.audit` 定为 `["growth-map"]`，`LegacySegment` 不含 `"diagnosis"`；设计稿该行已同步改为 `growth-map`。这三个重定向段在 `routes.fs.test.ts` 里作为 `COMPATIBILITY_ONLY` 显式豁免。
 
-- [ ] **Step 6: 类型、lint、单测、parity**
+- [x] **Step 6: 类型、lint、单测、parity**
 
 Run: `pnpm --filter @sf/web typecheck && pnpm --filter @sf/web lint && pnpm vitest run --project unit apps/web packages/i18n`
-Expected: 全绿。`_nav.test.ts` 仍绿（它测的是保留的 `nav-model.ts`）；`apps/web/src/app/layout.test.ts` 仍绿（它读的是保留的 `AppShell.tsx` 品牌图）；`legacy/overview/page.test.ts` 若按路径断言需改为 legacy 路径。
+Expected: 全绿。`_nav.test.ts` 仍绿（它测的是保留的 `nav-model.ts`）；`apps/web/src/app/layout.test.ts` 仍绿（它读的是保留的 `AppShell.tsx` 品牌图）。
 
-- [ ] **Step 7: 冒烟：起 dev，肉眼过一遍**
+- [x] **Step 7: 冒烟：起 dev，肉眼过一遍**
 
-裸 `SF_E2E_MOCK_API=true` 起不到壳：`shouldUseE2eProjectShell` 还要求 `APP_ORIGIN` 是 loopback，未登录访问 `/p/**` 要 `SF_DEV_AUTH=true`。镜像 `playwright.mock.config.ts` 的 `webServer.env`（DATABASE_URL 用它那个永不连通的 tripwire 值、SUPABASE_* / 各 bucket 用 `e2e-local-only` 占位）：
+裸 `SF_E2E_MOCK_API=true` 起不到壳：`shouldUseE2eProjectShell` 还要求 `APP_ORIGIN` 是 loopback，未登录访问 `/p/**` 要 `SF_DEV_AUTH=true`。镜像 `playwright.mock.config.ts` 的 `webServer.env`（DATABASE_URL 用它那个永不连通的 tripwire 值、SUPABASE_* / 各 bucket 用 `e2e-local-only` 占位）。实际冒烟跑在 3005（3001 被陈旧进程占用），端口号随 `--port` 调整：
 
-Run: `APP_ORIGIN=http://127.0.0.1:3000 SF_DEV_AUTH=true SF_E2E_MOCK_API=true DATABASE_URL='postgresql://e2e:e2e@127.0.0.1:1/e2e_never_connect' SUPABASE_URL=http://127.0.0.1:1 SUPABASE_ANON_KEY=e2e-local-only SUPABASE_SERVICE_ROLE_KEY=e2e-local-only CREDENTIAL_ENCRYPTION_KEY=$(head -c 32 /dev/zero | base64) GOOGLE_OAUTH_CLIENT_ID=e2e-local-only GOOGLE_OAUTH_CLIENT_SECRET=e2e-local-only DATAFORSEO_ENABLED=false RAW_IMPORT_BUCKET=e2e-local-only EXPORT_BUCKET=e2e-local-only SF_BLOB_BACKEND=local SF_BLOB_DIR="${SCRATCHPAD:-$TMPDIR}/wb-blobs" pnpm --filter @sf/web dev --webpack` 后打开 `http://127.0.0.1:3000/p/00000000-0000-4000-8000-000000000042/overview`
-Expected: 深色侧栏 15 项、站点卡 `example.test / US / — / —`、顶栏项目切换 + ⌘K + 示例数据 + 产物筐 0；点「技术审计」到占位页并有「旧版页面 · 增长地图 →」（`LEGACY_LINKS.audit` 指 `growth-map`）；旧页在新壳内的样子不在这里看——裸 dev 下 `/api/mvp/**` 没有 Playwright 的 mock 路由，旧页会拿到问题态；用 `pnpm test:e2e:mock -- --headed e2e/legacy-style-parity.mock.spec.ts` 肉眼看 growth-map / sources；⌘K 打开面板、Esc 关闭、焦点回到按钮；专门看一眼顶栏里的 `ProjectSwitcher` / `LocaleSwitch`——它们的 CSS Module 只覆盖自己声明过的属性，原生 `<select>` 没显式设 border 的话会被 `.wb-reset *` 的 `border-width: 0` 抹掉边框，需要时在其模块里补 `border`。
+Run: `APP_ORIGIN=http://127.0.0.1:3005 SF_DEV_AUTH=true SF_E2E_MOCK_API=true DATABASE_URL='postgresql://e2e:e2e@127.0.0.1:1/e2e_never_connect' SUPABASE_URL=http://127.0.0.1:1 SUPABASE_ANON_KEY=e2e-local-only SUPABASE_SERVICE_ROLE_KEY=e2e-local-only CREDENTIAL_ENCRYPTION_KEY=$(head -c 32 /dev/zero | base64) GOOGLE_OAUTH_CLIENT_ID=e2e-local-only GOOGLE_OAUTH_CLIENT_SECRET=e2e-local-only DATAFORSEO_ENABLED=false RAW_IMPORT_BUCKET=e2e-local-only EXPORT_BUCKET=e2e-local-only SF_BLOB_BACKEND=local SF_BLOB_DIR="${SCRATCHPAD:-$TMPDIR}/wb-blobs" pnpm --filter @sf/web dev --webpack --port 3005` 后打开 `http://127.0.0.1:3005/p/00000000-0000-4000-8000-000000000042/overview`
+Expected: 深色侧栏 15 项、站点卡 `example.test / US / — / —`、顶栏项目切换 + ⌘K + 示例数据 + 产物筐 0；点「技术审计」到占位页并有「旧版页面 · 增长地图 →」（`LEGACY_LINKS.audit` 指 `growth-map`）；旧页在新壳内的样子不在这里看——裸 dev 下 `/api/mvp/**` 没有 Playwright 的 mock 路由，旧页会拿到问题态；用 `pnpm test:e2e:mock --headed e2e/legacy-style-parity.mock.spec.ts` 肉眼看 growth-map / sources；⌘K 打开面板、Esc 关闭、焦点回到按钮；顶栏里的 `ProjectSwitcher` / `LocaleSwitch` 单独看一眼——它们的 CSS Module 只覆盖自己声明过的属性，原生 `<select>` 没显式设 border 的话会被 `.wb-reset *` 的 `border-width: 0` 抹掉边框（`ProjectSwitcher` 已在 `app-shell.module.css` 里补了作用域浅色规则）。
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add -A apps/web/src/app apps/web/src/components apps/web/src/lib/services/project-shell.ts packages/i18n
@@ -3844,6 +5620,8 @@ git commit -m "feat(web): 项目壳切换为工作台，15 条路由占位，旧
 ```
 
 （`git add -A` 只限这几个路径；提交前 `git status` 确认没有带进 `.workbench-reference/`——它在 exclude 里，正常不会出现。）
+
+实际落地：3d09c9c1（路由、layout、legacy 搬迁、设置页）、09439fdc（设置页质量修复与孤儿记录）、09f9bb14（`routes.fs.test.ts` 的 id 接线与反向清扫）、5508351b（`_project-switcher.tsx` 改接共享的 `useContextNavigationConfirm`，删自带的离开确认拼接）。
 
 ---
 
@@ -3853,7 +5631,16 @@ git commit -m "feat(web): 项目壳切换为工作台，15 条路由占位，旧
 - Create: `e2e/workbench-shell.mock.spec.ts`
 - Modify: `e2e/critical-flows.mock.spec.ts`、`e2e/mobile-shell.mock.spec.ts`、`e2e/overview-read-model.mock.spec.ts`、`e2e/frontend-error-states.mock.spec.ts`，以及盘点出的其他文件
 
-- [ ] **Step 1: 盘点**
+**落地备注：**
+
+- Commit `3784c41a`（18 文件）。基线全量 mock e2e 32 红 = 4 条既有红 + 28 条被壳移植打断；Task 12 之后 6 红 = 4 条既有红 + 2 条 `color-contrast`（`frontend-error-states` 对 `/execution`、`/results` 跑 axe，rail 次级文字 token 低于 AA），后者已在 `77667a5c` 修掉（见 Task 10 落地备注）。
+- 计划清单之外的文件处置：`growth-map`、`audit-technical-vertical`、`content-shadow-vertical`（+ fixture `content-shadow-vertical-fixture.ts` 的 `OVERVIEW_URL` / `NAV_LABEL`）、`action-override`、`cursor-pagination`、`execution-queue-state`、`growth-map-backlinks`、`growth-map-competitor-monitor`、`growth-map-internal-link-map`、`results-measurement`：导航名 `项目分区` / `Project sections` → `工作台导航` / `Workbench sections`，链接计数 4 → 15；`OVERVIEW_URL` 改 `/legacy/overview`；旧四项之间的点击跳转改走 `[data-wb-legacy-link="<segment>"]`，从映射到该旧页的工作台页出发（`content` → `execution`、`audit` → `growth-map`），rail 链接用 `[data-wb-nav="<pageId>"]`；页面内断言不动。
+- 三处 `waitForURL`（`critical-flows` 进 sources、`workbench-shell` 的 growth-map hop 与删除项目后离开 settings）：dev 下客户端跳进旧路由会撞上按需编译，10 s 的 `expect` 不够，改等导航本身（受 test timeout 约束）。
+- `critical-flows` 项目身份改用 `[data-app-shell-topbar] [data-project-identity] strong`（class 名是哈希的）；删掉旧 Overview 的 h1「Where growth should move next」与顶栏 stage pill（Planning / 规划中）两处断言——两者随旧顶栏退出 chrome，本地化保证改钉 rail 导航标签（Overview / 概览）。
+- `mock-api.ts`：`DELETE /api/mvp/projects/:id` 回 204 无 body（Step 3b 原文）。
+- real 套件的 `project-isolation.spec.ts`、`real-vertical-chains.spec.ts` 在 `c0347a9f` 按同样方式改（`/legacy/overview`；`[data-wb-nav="answers"]` → `[data-wb-legacy-link="results"]`，键盘变体两个锚点各 focus + Enter），只跑在 Postgres harness 上，**未本地运行**，只过了 `typecheck:e2e` / `lint:e2e`。
+
+- [x] **Step 1: 盘点**
 
 ```bash
 grep -nE 'data-app-shell|Project sections|program|/overview"|/overview`|"Settings"|getByRole\("link", \{ name: "(Overview|Growth Map|Execution|Results)"' e2e/*.spec.ts 'apps/web/src/app/p/[projectId]/'*.test.ts apps/web/src/app/layout.test.ts apps/web/src/components/app-shell/*.test.ts > "${SCRATCHPAD:-$TMPDIR}/wb-spec-inventory.txt"; wc -l "${SCRATCHPAD:-$TMPDIR}/wb-spec-inventory.txt"
@@ -3874,7 +5661,7 @@ grep -nE 'data-app-shell|Project sections|program|/overview"|/overview`|"Setting
 | `frontend-error-states.mock.spec.ts` L1675 | `Project sections` → `Workbench sections`，若点的是旧四项之一改 `page.goto` |
 | `complete-four-module-workbench.mock.spec.ts` 等按旧导航点击的 | 导航点击改 `page.goto`，页面内断言不动 |
 
-- [ ] **Step 2: critical-flows 导航测试替换稿**
+- [x] **Step 2: critical-flows 导航测试替换稿**
 
 ```ts
 test("workbench navigation exposes all fifteen sections and localizes", async ({ page }) => {
@@ -3901,7 +5688,7 @@ test("workbench navigation exposes all fifteen sections and localizes", async ({
 });
 ```
 
-- [ ] **Step 3: 新壳 spec**
+- [x] **Step 3: 新壳 spec**
 
 ```ts
 // e2e/workbench-shell.mock.spec.ts
@@ -4011,7 +5798,7 @@ test("deleting the project clears its workbench storage key", async ({ page }) =
 });
 ```
 
-- [ ] **Step 3b: mock API 兑现 `DELETE /api/mvp/projects/:id`（必做）**
+- [x] **Step 3b: mock API 兑现 `DELETE /api/mvp/projects/:id`（必做）**
 
 `e2e/mock-api.ts` 目前没有任何 `DELETE` 分支；`installCriticalFlowApi` 对未匹配的 `/api/mvp/**` 回 501 `E2E_ROUTE_MISSING` problem（只有 `results` / `measurement-windows` 才 `route.fallback()`），mutation 报错，`forgetProject()` 不会执行，上面的删除用例必红。在 `installCriticalFlowApi` 的 `page.route("**/api/mvp/**", …)` 处理器里，紧跟 `const path = url.pathname;` 之后加：
 
@@ -4025,17 +5812,17 @@ test("deleting the project clears its workbench storage key", async ({ page }) =
 
 `BASE` 就是 `/api/mvp/projects/${E2E_PROJECT_ID}`，与 `deleteProjectRequest` 发出的 `DELETE /projects/:id` 一致。不加开关：没有别的 spec 会对保留项目发 DELETE。删除后 `router.replace("/")` 在 mock 环境落到 `/login` 或错误页，都不挂 `WorkbenchProvider`，所以 `localStorage` 断言成立；若日后根路由在 mock 下能重定向回 `/p/<id>/overview`，provider 重挂会把键写回来，届时该用例改为断言删除动作本身。
 
-- [ ] **Step 4: 跑受影响 spec + 新 spec**
+- [x] **Step 4: 跑受影响 spec + 新 spec**
 
-Run: `pnpm test:e2e:mock -- e2e/workbench-shell.mock.spec.ts e2e/critical-flows.mock.spec.ts e2e/mobile-shell.mock.spec.ts e2e/overview-read-model.mock.spec.ts e2e/frontend-error-states.mock.spec.ts e2e/legacy-style-parity.mock.spec.ts e2e/studio-workspace.mock.spec.ts e2e/product-profile.mock.spec.ts`
+Run: `pnpm test:e2e:mock e2e/workbench-shell.mock.spec.ts e2e/critical-flows.mock.spec.ts e2e/mobile-shell.mock.spec.ts e2e/overview-read-model.mock.spec.ts e2e/frontend-error-states.mock.spec.ts e2e/legacy-style-parity.mock.spec.ts e2e/studio-workspace.mock.spec.ts e2e/product-profile.mock.spec.ts`
 Expected: 全绿。`studio-workspace` 与 `product-profile` 是 `useProjectShellEffects` 的回归门，红了先怀疑 hook 抄漏，不要改 spec。
 
-- [ ] **Step 5: 全量 mock e2e（后台跑，直接落文件）**
+- [x] **Step 5: 全量 mock e2e（后台跑，直接落文件）**
 
 Run: `pnpm test:e2e:mock > "${SCRATCHPAD:-$TMPDIR}/wb-e2e-full.txt" 2>&1; tail -20 "${SCRATCHPAD:-$TMPDIR}/wb-e2e-full.txt"`
 Expected: 与 Task 0 记录的既有红一致，无新红。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add e2e
@@ -4050,7 +5837,12 @@ git commit -m "test(e2e): 工作台壳 spec，旧壳相关 spec 改指向 legacy
 - Modify: `CLAUDE.md`（L23）
 - Modify: `docs/PROGRESS.md`
 
-- [ ] **Step 1: CLAUDE.md**
+**落地备注：**
+
+- 落在 59a8e785（`docs: 客户壳权威改为工作台 IA，记录 PR-1 落地`）：`CLAUDE.md` 的 `Current authority: **v0.4` 前缀原文保留，`verify:docs` 14/14 绿。
+- Step 2b 的 `verify:spec` 第一次跑是红的，但不是本 PR 的锅：`scripts/spec-v0.4-lock.json` 管着 `CLAUDE.md` / `docs/PROGRESS.md` / `docs/DEPLOYMENT.md` 的哈希，`origin/main` 上的 18e41646 改了 `CLAUDE.md` 没刷锁，基线本来就漂；本分支 59a8e785 又改了受管的 `docs/PROGRESS.md`。两项在 447ade7a 用 `node scripts/generate-spec-v0.4-lock.mjs` 一次刷新（diff 只动这两条哈希，其余条目不变），之后 `verify:docs && verify:authority && verify:spec` 全绿。后续每次改 `docs/PROGRESS.md` 都要重刷锁并把锁放进同一 commit。
+
+- [x] **Step 1: CLAUDE.md**
 
 把 `Current authority: **v0.4 complete four-module workbench**` 改为：
 
@@ -4058,14 +5850,14 @@ git commit -m "test(e2e): 工作台壳 spec，旧壳相关 spec 改指向 legacy
 
 并在下一段「“完成”表示…」后加一句：「客户壳自 2026-09-11 起以工作台 IA 为准，`components/app-shell/nav-model.ts` 的四模块清单仅供保留的旧页与其测试使用。」
 
-- [ ] **Step 2: PROGRESS.md** 顶部加一条日期段落，写：PR-1 落地范围、旧页去向、未上生产（集成分支）、下一步 PR-2 / PR-3。
+- [x] **Step 2: PROGRESS.md** 顶部加一条日期段落，写：PR-1 落地范围、旧页去向、未上生产（集成分支）、下一步 PR-2 / PR-3。
 
-- [ ] **Step 2b: 仓库文档门**
+- [x] **Step 2b: 仓库文档门**
 
 Run: `pnpm verify:docs && pnpm verify:authority && pnpm verify:spec`
 Expected: 全绿。**硬约束**：`scripts/verify-docs-consistency.test.mjs` L114–124 会对 `CLAUDE.md` 断言 `/authority\/implementation-spec-v0\.4|active v0\.4|Current authority: \*\*v0\.4/`，Step 1 的新句子必须保留 `Current authority: **v0.4` 这个前缀原文，否则 `verify:docs` 红。若任一红：先读脚本报的具体断言；只有当它断言的是被本 PR 有意改动的句子时才改脚本期望（同一 commit 内、注明原因），否则回滚文档改动重写。
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add CLAUDE.md docs/PROGRESS.md
@@ -4076,7 +5868,15 @@ git commit -m "docs: 客户壳权威改为工作台 IA，记录 PR-1 落地"
 
 ### Task 14: 全量验证、评审、交付
 
-- [ ] **Step 1: 本地全套**
+**落地备注（HEAD 2a5cf4a5 那轮，证据在会话 scratchpad 的 `t14-*.txt`）：**
+
+- Step 1：`pnpm typecheck`（e2e + 13 个 workspace 项目）与 `pnpm lint` 都 EXIT 0；`pnpm test` 21213 / 21217，4 条红全部在 `apps/marketing/e2e/geo-kb-v2-fixtures.test.ts`（`store_unavailable` / `Visibility cannot run before exact freeze`），在基线 commit 的干净 checkout 上同样 4 红——既有，与本 PR 无关；`pnpm vitest run --project unit packages/i18n` 15/15；`verify:docs` 14/14、`verify:authority` 绿、`verify:spec` 先红后绿（原因与处置见 Task 13 备注，锁在 447ade7a 刷新）；`pnpm --filter @sf/web build` EXIT 0。
+- Step 2（有偏离）：没有做「集成分支整套 vs 本分支整套」的四项比较，而是把范围收到本 PR 新增的 `components/workbench/**` + `lib/workbench/**`：2a5cf4a5 时 77.26 / 72.9 / 67.74 / 77.93（stmts / branch / funcs / lines；`lib/workbench` 97.01 / 89.68 / 97.78 / 99.05，`components/workbench/shell` 只有 51.7，`ShellChrome` / `Sidebar` / `SiteCard` / `WorkbenchShell` / `PlaceholderView` / `SettingsView` 都是 0）。按计划的处置——不改阈值、不加 exclude——4a6ccf12 补了壳与占位视图的 jsdom 行为测试：`components/workbench/**` 范围从 66.24 / 65.74 / 56.25 / 65.46 提到 94.90 / 92.81 / 90.00 / 94.96，四项都过 80%。
+- Step 3（有偏离）：`next build` 后 `next start --port 3300`（`start` 脚本的 `--port 3000` 被后面的 CLI 参数覆盖），用 mock 配置的占位环境变量。没有起 Playwright 读 console，而是 `curl -i /login` 看响应头 + 扫 HTML：`content-security-policy` 为 `style-src 'self' 'nonce-…'`、`script-src 'self' 'nonce-…' 'strict-dynamic'`，无 `unsafe-inline`；HTML 里没有 `style=` 属性也没有 `<style>` 标签；构建产物 CSS 里 `@media print{[data-wb-content]{margin-left:0}}` 确认落在 utilities 层块内（`.md\:p-10` 之后、`@property` 之前）。壳本身在生产模式需要真实登录，仍留到 PR-3b 合 main 前用真实账号做一次。
+- Step 4：自审后按 CLAUDE.md 约束跑 codex（攻击面拆两次），6 条发现全部修掉：a5fd7090（provider 不回写来自存储的状态、清键事件按 `newValue` 判定、同步写盘闸）、604f8816（IME 组合中的按键不触发面板 / 对话框 / 全局快捷键，焦点候选排除 disabled）、05fb60f6（删除失败文案不再声称「未做任何改动」）。
+- Step 5 未做——PR 待开；PR 前整分支复审又补了 e3e5bc48（旧页 `<main>` 内边距，见 Task 10 备注）。
+
+- [x] **Step 1: 本地全套**
 
 ```bash
 pnpm typecheck && pnpm lint && pnpm test && pnpm vitest run --project unit packages/i18n
@@ -4085,18 +5885,18 @@ pnpm --filter @sf/web build
 ```
 Expected: 全绿；build 成功（这是唯一能暴露 client 拉到 `node:*` 的检查）。
 
-- [ ] **Step 2: 覆盖率门**
+- [x] **Step 2: 覆盖率门**
 
 先在 `feat/workbench-ui-port` 上跑一次同样的命令记下基线（`vitest.config.ts` 注明阈值按 unit+integration 合并统计，只跑 unit 可能本来就不到 80%），再在本分支跑：
 
 Run: `pnpm vitest run --coverage --project unit 2>&1 | tail -15`
 Expected: 四项数值不低于集成分支基线；若基线本身已 ≥ 80% 则四项阈值 ≥ 80%。若因 `components/workbench/**` 无单测而低于阈值：**不改阈值、不加 exclude**，为 `components/workbench/**` 加 jsdom 项目与组件测试（设计 §8），作为本 PR 的追加任务。
 
-- [ ] **Step 3: 生产构建 CSP 冒烟**
+- [x] **Step 3: 生产构建 CSP 冒烟**
 
 `pnpm --filter @sf/web build` 后 `pnpm --filter @sf/web exec next start --port 3300`（`start` 脚本写死了 `--port 3000`，环境变量压不过 CLI 参数；用 Task 0 mock 配置里的占位环境变量），Playwright 打开 `http://localhost:3300/login`，断言 console 无 `Content Security Policy` 字样（登录页已加载 `workbench.css`）。壳本身在生产模式需要真实登录，留到 PR-3b 合 main 前用真实账号做一次。
 
-- [ ] **Step 4: 自审 + 跨模型评审**
+- [x] **Step 4: 自审 + 跨模型评审**
 
 先 `superpowers:requesting-code-review`（对照本计划与设计稿 §4–§8），修完后按 `CLAUDE.md` 的 codex 约束跑一轮：`git diff feat/workbench-ui-port...HEAD > .review-tmp/pr1.diff`，prompt 限定「只读 diff + 设计稿 §4–§6 + `_nav.tsx` 原文 + `security-headers.ts`」，攻击面分两次：(a) 壳与 a11y / CSP；(b) store 与持久化。有 verdict 行才算跑成。
 
@@ -4107,4 +5907,4 @@ git push -u origin feat/workbench-pr1-foundation
 gh pr create --base feat/workbench-ui-port --title "feat(workbench): PR-1 地基——新壳、15 条路由、store、i18n" --body-file .review-tmp/pr1-body.md
 ```
 
-PR 描述含：设计稿链接、任务清单勾选状态、验证命令与结果、评审处置、已知未做（GSC 站点卡行、覆盖率补测若有）、**相对设计稿的偏离**（`audit` 的旧页链接指 `growth-map` 而非 `diagnosis`；样式基线屏从 `context` 换成 `sources`；`globals.css` 三条元素规则加了 `:where(:not(.wb-reset *))` 守卫；`postcss.config.mjs` 复刻 Next 默认链）与 Task 11 Step 5b 的两条复核结论。**不合 main**（D3）。
+PR 描述含：设计稿链接、任务清单勾选状态、验证命令与结果、评审处置、已知未做（GSC 站点卡行、覆盖率补测若有）、**相对设计稿的偏离**（`audit` 的旧页链接指 `growth-map` 而非 `diagnosis`；样式基线屏从 `context` 换成 `sources`；`globals.css` 四条元素规则（`*`、`h1/h2/h3`、`a`、`:focus-visible`）加了 `:where(:not(.wb-reset *))` 守卫；`postcss.config.mjs` 复刻 Next 默认链）与 Task 11 Step 5b 的两条复核结论。**不合 main**（D3）。

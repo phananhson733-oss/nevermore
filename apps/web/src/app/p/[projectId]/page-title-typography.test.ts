@@ -8,7 +8,7 @@ const globals = readFileSync(
 
 const pageTitleSources = [
   new URL("../../new-project/page.tsx", import.meta.url),
-  new URL("./overview/_overview.tsx", import.meta.url),
+  new URL("./legacy/overview/_overview.tsx", import.meta.url),
   new URL("./growth-map/_growth-map.tsx", import.meta.url),
   new URL("./studio/_studio.tsx", import.meta.url),
   new URL("./results/_results.tsx", import.meta.url),
@@ -18,7 +18,6 @@ const pageTitleSources = [
   new URL("./context/_product-profile.tsx", import.meta.url),
   new URL("./diagnosis/_diagnosis.tsx", import.meta.url),
   new URL("./plan/_plan.tsx", import.meta.url),
-  new URL("./settings/_settings.tsx", import.meta.url),
 ] as const;
 
 describe("shared customer page-title typography", () => {

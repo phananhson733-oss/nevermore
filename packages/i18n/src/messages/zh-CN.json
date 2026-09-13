@@ -951,9 +951,6 @@
     "projectStage": "项目阶段",
     "localeSwitch": "切换语言",
     "switchProject": "切换项目",
-    "programTitle": "90 天计划",
-    "programDay": "第 {day} 天，共 {total} 天",
-    "programProgress": "90 天计划进度",
     "diagnosisBadge": "已确认诊断 {count} 项",
     "studioBadge": "执行物 {count} 项",
     "growthMapBadge": "待审核 Finding {count} 项",
@@ -983,7 +980,7 @@
       "cancel": "保留产品",
       "confirmAction": "确认删除",
       "deleting": "正在删除…",
-      "error": "产品删除失败，现有数据没有改变，请重试。"
+      "error": "无法确认产品是否已删除。请刷新项目列表查看；如果仍在，再试一次。"
     }
   },
   "contextStatus": {
@@ -3887,6 +3884,89 @@
         "structureEvidenceExcerpt": "结构证据摘录",
         "nonCausal": "这里呈现的是两个固定窗口中的独立观测。内容结构差异只能作为有证据约束的观察或推断，不能解释为“为什么被引用”，也不代表某一次发布造成了引用变化。"
       }
+    }
+  },
+  "workbench": {
+    "nav": {
+      "label": "工作台导航",
+      "groups": {
+        "workspace": "工作台",
+        "research": "研究",
+        "diagnosis": "诊断",
+        "site": "站点",
+        "output": "产出",
+        "space": "工作区"
+      },
+      "items": {
+        "overview": "概览",
+        "week": "本周变化",
+        "keywords": "关键词研究",
+        "keywordLibrary": "词库",
+        "competitors": "竞品概览",
+        "audit": "技术审计",
+        "visibility": "AI 可见度",
+        "profile": "站点档案",
+        "dataSources": "数据源",
+        "links": "外链",
+        "content": "内容生成",
+        "kb": "事实知识库",
+        "answers": "答案页 / 报告",
+        "artifacts": "产物中心",
+        "settings": "设置"
+      }
+    },
+    "shell": {
+      "tagline": "GEO / SEO 工作台",
+      "siteCard": {
+        "market": "市场",
+        "gsc": "GSC",
+        "audit": "审计",
+        "connected": "已接入",
+        "notConnected": "未接入",
+        "none": "—"
+      },
+      "openMenu": "打开导航",
+      "closeMenu": "关闭导航",
+      "search": "搜索 / 跳转",
+      "artifacts": "产物筐 {count}",
+      "newSite": "新建站点",
+      "sites": "{count} 个站点",
+      "shortcutHint": "按 ⌘K 快速跳转",
+      "sampleData": "示例数据",
+      "sampleSite": "示例站点",
+      "clearSample": "清除示例",
+      "sampleTitle": "示例内容目前仅有中文",
+      "volatile": "本次结果不会保存在此浏览器",
+      "quota": "浏览器存储已满，新结果不再保存",
+      "legacy": "旧版页面",
+      "inProgress": "页面开发中",
+      "inProgressDetail": "这个模块在后续批次落地，旧版页面照常可用。",
+      "inProgressNoLegacy": "这个模块在后续批次落地。",
+      "footerNote": "标「示例数据」的数字为本地生成。",
+      "footerDetail": "真实版本走服务端抓取与 API。",
+      "palette": {
+        "title": "搜索与跳转",
+        "placeholder": "输入模块或站点名",
+        "sections": "模块",
+        "projects": "站点",
+        "newProject": "新建站点",
+        "empty": "没有匹配项"
+      },
+      "drawer": {
+        "title": "产物筐",
+        "empty": "还没有产物",
+        "emptyDetail": "在任一模块里存入报告或任务，会出现在这里。",
+        "copy": "复制",
+        "copied": "已复制",
+        "download": "下载",
+        "remove": "删除",
+        "clear": "清空",
+        "close": "关闭"
+      }
+    },
+    "settings": {
+      "realAction": "真实操作",
+      "realActionTitle": "这是真实操作，会删除真实项目，不是示例数据。"
     }
   }
 }

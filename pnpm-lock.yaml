@@ -286,9 +286,15 @@ importers:
       '@supabase/supabase-js':
         specifier: 'catalog:'
         version: 2.110.7
+      '@tailwindcss/postcss':
+        specifier: ^4.1.18
+        version: 4.3.3
       '@tanstack/react-query':
         specifier: 'catalog:'
         version: 5.101.2(react@19.2.7)
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@types/pg@8.15.6)(pg@8.22.0)
@@ -313,6 +319,12 @@ importers:
       sanitize-html:
         specifier: ^2.17.1
         version: 2.17.6
+      tailwind-merge:
+        specifier: ^3.5.0
+        version: 3.6.0
+      tailwindcss:
+        specifier: ^4.1.18
+        version: 4.3.3
       zod:
         specifier: 'catalog:'
         version: 4.4.3

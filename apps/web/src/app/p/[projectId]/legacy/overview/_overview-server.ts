@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { OverviewView } from "@/lib/api";
 import { getOperatorContext } from "@/lib/auth/session";
 import { getWorkspaceView } from "@/lib/services/workspace-view";
-import { shouldUseE2eProjectShell } from "../_e2e-shell";
+import { shouldUseE2eProjectShell } from "../../_e2e-shell";
 
 /**
  * Load the canonical Overview projection for a Server Component first paint.

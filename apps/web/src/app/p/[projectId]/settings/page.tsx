@@ -1,10 +1,10 @@
-import { ProjectSettings } from "./_settings.tsx";
+import { SettingsView } from "@/components/workbench/views/settings/SettingsView";
 
-interface SettingsPageProps {
+export default async function SettingsPage({
+  params,
+}: {
   readonly params: Promise<{ readonly projectId: string }>;
-}
-
-export default async function SettingsPage({ params }: SettingsPageProps) {
+}) {
   const { projectId } = await params;
-  return <ProjectSettings projectId={projectId} />;
+  return <SettingsView projectId={projectId} />;
 }

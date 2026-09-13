@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import { Fraunces, Manrope } from "next/font/google";
+import { Fraunces, Manrope, Plus_Jakarta_Sans } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import type { ReactNode } from "react";
 import { Providers } from "./providers";
 import "./globals.css";
+import "./workbench.css";
 
 // Self-hosted at build time (served from our own origin, so the strict
 // `font-src 'self'` CSP is satisfied — no runtime request to a font CDN).
@@ -17,6 +18,15 @@ const fraunces = Fraunces({
 const manrope = Manrope({
   subsets: ["latin"],
   variable: "--font-manrope",
+  display: "swap",
+});
+
+// Workbench body face (design source: opengengrowth). Self-hosted like the two
+// above; Chinese glyphs fall back to the system stack declared in workbench.css.
+const plusJakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: "variable", // Plus Jakarta Sans is a variable face (wght 200-800): one file instead of five
+  variable: "--font-wb",
   display: "swap",
 });
 
@@ -49,7 +59,11 @@ export default async function RootLayout({
   const locale = await getLocale();
   const messages = await getMessages();
   return (
-    <html lang={locale} className={`${fraunces.variable} ${manrope.variable}`}>
+    <html
+      lang={locale}
+      data-theme="light"
+      className={`${fraunces.variable} ${manrope.variable} ${plusJakarta.variable}`}
+    >
       <body>
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Providers>{children}</Providers>
