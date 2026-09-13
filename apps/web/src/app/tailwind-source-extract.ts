@@ -54,6 +54,8 @@ const TAILWIND_ENTRY = /@import\s+["']tailwindcss/u;
 const TAILWIND_DIRECTIVES =
   /@(?:apply|reference|variant|custom-variant|utility|source|plugin|config|tailwind)\b|(?<![\w-])(?:--)?theme\(/gu;
 const COMMENT = /\/\*[\s\S]*?\*\//gu;
+const CSS_STRING = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/gu;
+const CSS_DECLARATION = /(?<=[{;]\s*)--[A-Za-z_][\w-]*(?=\s*:)/gu;
 
 function literalText(node: ts.Node): string | null {
   const plain = ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
@@ -185,11 +187,17 @@ function scriptFacts(path: string, source: ts.SourceFile, checker: ts.TypeChecke
  */
 function stylesheetFacts(text: string): ModuleFacts {
   const code = text.replace(COMMENT, "");
-  const composed = [...code.matchAll(/composes\s*:\s*([^;}]+?)\s+from\s+global\b/gu)].map((match) => match[1] ?? "");
+  // Quoted text (`content: "@apply"`, `url("…")`) is not CSS syntax.
+  const bare = code.replace(CSS_STRING, " ");
+  const composed = [...bare.matchAll(/composes\s*:\s*([^;}]+?)\s+from\s+global\b/gu)].map((match) => match[1] ?? "");
   const directives = TAILWIND_ENTRY.test(code)
     ? []
-    : [...code.matchAll(TAILWIND_DIRECTIVES)].map((match) => `Tailwind directive ${match[0]} in a stylesheet Tailwind does not compile`);
-  const reads = [...code.matchAll(/(?<![\w-])--[A-Za-z_][\w-]*(?![\w-]|\s*:)/gu)].map((match) => match[0]);
+    : [...bare.matchAll(TAILWIND_DIRECTIVES)].map((match) => `Tailwind directive ${match[0]} in a stylesheet Tailwind does not compile`);
+  // A --name right after `{` or `;` and before `:` declares; anywhere else (var(), style(--x: v)) it reads.
+  const declarations = new Set([...bare.matchAll(CSS_DECLARATION)].map((match) => match.index));
+  const reads = [...bare.matchAll(/(?<![\w-])--[A-Za-z_][\w-]*(?![\w-])/gu)]
+    .filter((match) => !declarations.has(match.index))
+    .map((match) => match[0]);
   return {
     classStrings: composed,
     literals: [],
@@ -204,7 +212,8 @@ function stylesheetFacts(text: string): ModuleFacts {
 function combinatorCheck(graph: ModuleGraph, path: string): CombinatorCheck {
   return (specifier, importedName) => {
     const definition = definitionOf(graph, path, specifier, importedName);
-    if (definition.kind === "package") return COMBINATOR_PACKAGES.get(specifier)?.includes(importedName) === true;
+    // A barrel may re-export a joiner under another name: check the package and the name it has there.
+    if (definition.kind === "package") return COMBINATOR_PACKAGES.get(definition.specifier)?.includes(definition.name) === true;
     return definition.kind === "file" && COMBINATOR_MODULES.some((module) => definition.path === join(graph.srcDir, module));
   };
 }

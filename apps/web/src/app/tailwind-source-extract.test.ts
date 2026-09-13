@@ -282,6 +282,50 @@ describe("round 3 (gpt-6-astra): shapes that read as empty before", () => {
   });
 });
 
+describe("round 4 (gpt-6-astra): the round 3 fixes, completed", () => {
+  it("reads a numeric key conservatively and props defaults through a local rest; reports a destructuring write", SLOW, async () => {
+    const { utilities, unresolved } = await outside([
+      'let tone = "";',
+      '({ tone } = { tone: "collapse" });',
+      'const tones = { 2: "grow", 11: "" };',
+      'export function C(props = { className: "shrink" }) { const { ...rest } = props; return <div {...rest} />; }',
+      "export const A = () => <><div className={tone} /><p className={tones[1 + 1]} /></>;",
+    ].join("\n"));
+    expect(utilities).toEqual(["grow", "shrink"]);
+    expect(unresolved).toEqual(["class value written through a member or destructuring: tone"]);
+  });
+
+  it("does not place a let or destructured export in its file; checks a barrel joiner by its package name", SLOW, async () => {
+    const files = {
+      "legacy/values.ts": 'export const x = "collapse";',
+      "components/workbench/tone.ts": 'import { x } from "../../legacy/values";\nlet tone = "";\ntone = x;\nexport default tone;',
+      "components/workbench/pair.ts": 'import { x } from "../../legacy/values";\nconst { value: tone } = { value: x };\nexport default tone;',
+      "components/workbench/join.ts": 'export { clsx as cx } from "clsx";',
+      "legacy/A.tsx": [
+        'import tone from "@/components/workbench/tone";',
+        'import pair from "@/components/workbench/pair";',
+        'import { cx } from "@/components/workbench/join";',
+        'export const A = () => <><div className={tone} /><p className={pair} /><i className={cx("legacy-card")} /></>;',
+      ].join("\n"),
+    };
+    expect((await read(files, "legacy/A.tsx")).unresolved).toEqual([
+      'imported class value tone from "@/components/workbench/tone": default in components/workbench/tone.ts reads tone, which is not a const',
+      'imported class value pair from "@/components/workbench/pair": default in components/workbench/pair.ts reads tone, which is bound by destructuring',
+    ]);
+  });
+
+  it("reads --name in a style query with a value, and ignores quoted text in a stylesheet", SLOW, async () => {
+    const { facts, unresolved } = await read({
+      "legacy/A.module.css": [
+        "@container card style(--color-slate-400: red) { .box { --local-gap: 4px; margin: var(--local-gap); } }",
+        '.box::before { content: "@apply --not-a-read"; }',
+      ].join("\n"),
+    }, "legacy/A.module.css");
+    expect(unresolved).toEqual([]);
+    expect(facts.propertyReads).toEqual(["--color-slate-400", "--local-gap"]);
+  });
+});
+
 describe("custom properties", () => {
   it("reads var() and getPropertyValue() names, resolving constants before calling one computed", SLOW, async () => {
     const { isThemeVariable } = await setup();

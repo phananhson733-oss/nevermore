@@ -129,6 +129,18 @@ export function constInitializer(ctx: Scope, node: ts.Identifier): ts.Expression
   return isConst && !written ? declaration.initializer : null;
 }
 
+/** Adds as a number, not as text: `1 + 1` is 2, not "11". */
+function isNumeric(ctx: Scope, node: ts.Expression, depth = 0): boolean {
+  const inner = unwrap(node);
+  if (ts.isNumericLiteral(inner) || ts.isPrefixUnaryExpression(inner)) return true;
+  if (depth >= MAX_DEPTH) return false;
+  if (ts.isBinaryExpression(inner) && inner.operatorToken.kind === K.PlusToken) {
+    return isNumeric(ctx, inner.left, depth + 1) && isNumeric(ctx, inner.right, depth + 1);
+  }
+  const constant = ts.isIdentifier(inner) ? constInitializer(ctx, inner) : null;
+  return constant !== null && isNumeric(ctx, constant, depth + 1);
+}
+
 export function staticText(ctx: Scope, node: ts.Expression, depth = 0): string | null {
   const inner = unwrap(node);
   if (ts.isStringLiteral(inner) || ts.isNoSubstitutionTemplateLiteral(inner) || ts.isNumericLiteral(inner)) {
@@ -144,6 +156,7 @@ export function staticText(ctx: Scope, node: ts.Expression, depth = 0): string |
     );
   }
   if (ts.isBinaryExpression(inner) && inner.operatorToken.kind === K.PlusToken) {
+    if (isNumeric(ctx, inner.left) && isNumeric(ctx, inner.right)) return null;
     const left = staticText(ctx, inner.left, depth + 1);
     const right = staticText(ctx, inner.right, depth + 1);
     return left === null || right === null ? null : left + right;
@@ -216,11 +229,14 @@ export function isPropsObject(ctx: Scope, node: ts.Expression): node is ts.Ident
 }
 
 /** What a props parameter falls back to when no caller writes it: `(props = {…})`, `({ ...rest } = {…})`. */
-export function parameterDefaults(ctx: Scope, node: ts.Identifier): readonly ts.Expression[] {
+export function parameterDefaults(ctx: Scope, node: ts.Identifier, depth = 0): readonly ts.Expression[] {
   return declarationsOf(ctx, node).flatMap((declaration) => {
     const root = ts.isParameter(declaration) ? declaration
       : ts.isBindingElement(declaration) ? bindingRoot(declaration.parent.parent) : undefined;
-    return root !== undefined && ts.isParameter(root) && root.initializer !== undefined ? [root.initializer] : [];
+    if (root !== undefined && ts.isParameter(root)) return root.initializer === undefined ? [] : [root.initializer];
+    // A props rest taken from a local, `const { ...rest } = props`, falls back to what props does.
+    const from = root?.initializer === undefined ? undefined : unwrap(root.initializer);
+    return from !== undefined && ts.isIdentifier(from) && depth < MAX_DEPTH ? parameterDefaults(ctx, from, depth + 1) : [];
   });
 }
 
@@ -280,7 +296,11 @@ export function writeIndex(source: ts.SourceFile, checker: ts.TypeChecker): Writ
       if (symbol !== undefined) assignments.set(symbol, [...(assignments.get(symbol) ?? []), node.right]);
     }
     for (const identifier of mutatedBy(node)) {
-      const symbol = checker.getSymbolAtLocation(identifier);
+      // `({ tone } = …)` writes the variable tone, not the shorthand property's own symbol.
+      const parent = identifier.parent;
+      const symbol = ts.isShorthandPropertyAssignment(parent) && parent.name === identifier
+        ? checker.getShorthandAssignmentValueSymbol(parent)
+        : checker.getSymbolAtLocation(identifier);
       if (symbol !== undefined) mutated.add(symbol);
     }
     ts.forEachChild(node, visit);

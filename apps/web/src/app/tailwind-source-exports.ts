@@ -4,17 +4,18 @@
  *           or unknown (with the reason). Follows `export { x as y } from`,
  *           `export *`, `export { x }` of an import, and a value that merely
  *           aliases an import (`export default x`, `export const y = x`); a
- *           value built from an import in any other way is unknown
+ *           value built from an import in any other way, or held by a let or a
+ *           destructuring, is unknown
  * @pos    — test support for app/tailwind-source-extract.ts only
  * 一旦本文件被更新，务必更新开头注释
  */
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import ts from "typescript";
 import { unwrap } from "./tailwind-source-bindings.ts";
 
 export type Definition =
   | { readonly kind: "file"; readonly path: string }
-  | { readonly kind: "package"; readonly specifier: string }
+  | { readonly kind: "package"; readonly specifier: string; readonly name: string }
   | { readonly kind: "unknown"; readonly reason: string };
 
 export interface ModuleGraph {
@@ -35,13 +36,13 @@ function stringLiteral(node: ts.Expression | undefined): string | null {
   return node !== undefined && ts.isStringLiteral(node) ? node.text : null;
 }
 
-function locate(graph: ModuleGraph, fromFile: string, specifier: string): Definition {
+function locate(graph: ModuleGraph, fromFile: string, specifier: string, name: string): Definition {
   const base = specifier.startsWith("@/")
     ? join(graph.srcDir, specifier.slice(2))
     : specifier.startsWith(".")
       ? resolve(dirname(fromFile), specifier)
       : null;
-  if (base === null) return { kind: "package", specifier };
+  if (base === null) return { kind: "package", specifier, name };
   const path = CANDIDATE_SUFFIXES.map((suffix) => base + suffix).find(
     (candidate) => graph.sourceOf(candidate) !== undefined,
   );
@@ -137,17 +138,34 @@ function exportStep(
   return { step: { kind: "none" }, stars };
 }
 
-/** The expression a top-level binding holds: a variable initializer, or `export default <expression>`. */
-function valueOf(source: ts.SourceFile, local: string): ts.Expression | undefined {
+type Held =
+  | { readonly kind: "value"; readonly expression: ts.Expression }
+  | { readonly kind: "opaque"; readonly reason: string }
+  | { readonly kind: "none" };
+
+function bindsName(name: ts.BindingName, local: string): boolean {
+  if (ts.isIdentifier(name)) return name.text === local;
+  return name.elements.some((element) => !ts.isOmittedExpression(element) && bindsName(element.name, local));
+}
+
+/**
+ * What a top-level binding holds: a const initializer, or `export default
+ * <expression>`. A `let` / `var` or a destructured binding holds something its
+ * declaration does not show.
+ */
+function valueOf(source: ts.SourceFile, local: string): Held {
   for (const statement of source.statements) {
-    if (local === "default" && ts.isExportAssignment(statement)) return statement.expression;
+    if (local === "default" && ts.isExportAssignment(statement)) return { kind: "value", expression: statement.expression };
     if (!ts.isVariableStatement(statement)) continue;
-    const declaration = statement.declarationList.declarations.find(
-      (candidate) => ts.isIdentifier(candidate.name) && candidate.name.text === local,
-    );
-    if (declaration !== undefined) return declaration.initializer;
+    const isConst = (statement.declarationList.flags & ts.NodeFlags.Const) !== 0;
+    for (const declaration of statement.declarationList.declarations) {
+      if (!bindsName(declaration.name, local)) continue;
+      if (!ts.isIdentifier(declaration.name)) return { kind: "opaque", reason: "bound by destructuring" };
+      if (!isConst) return { kind: "opaque", reason: "not a const" };
+      return declaration.initializer === undefined ? { kind: "none" } : { kind: "value", expression: declaration.initializer };
+    }
   }
-  return undefined;
+  return { kind: "none" };
 }
 
 /** Names an expression reads as values: not types, member names or object keys. */
@@ -182,25 +200,29 @@ function unknown(reason: string): Definition {
  */
 function settle(graph: ModuleGraph, path: string, local: string, seen: ReadonlySet<string>): Definition {
   const source = graph.sourceOf(path);
-  const value = source === undefined ? undefined : valueOf(source, local);
-  if (source === undefined || value === undefined) return { kind: "file", path };
-  const inner = unwrap(value);
+  const where = relative(graph.srcDir, path);
+  const held: Held = source === undefined ? { kind: "none" } : valueOf(source, local);
+  if (held.kind === "opaque") return unknown(`${local} in ${where} is ${held.reason}`);
+  if (source === undefined || held.kind === "none") return { kind: "file", path };
+  const inner = unwrap(held.expression);
   const alias = ts.isIdentifier(inner) ? inner.text : null;
-  for (const name of valueNames(value)) {
+  for (const name of valueNames(held.expression)) {
     if (name === local) continue;
     const imported = importedBinding(source, name);
     if (imported !== null && imported.specifier.endsWith(".css")) continue;
     if (imported !== null) {
       return name === alias
         ? follow(graph, path, imported.specifier, imported.name, seen)
-        : unknown(`${local} in ${path} is built from the import ${name}`);
+        : unknown(`${local} in ${where} is built from the import ${name}`);
     }
-    if (valueOf(source, name) === undefined) continue;
+    const nestedHeld = valueOf(source, name);
+    if (nestedHeld.kind === "none") continue;
+    if (nestedHeld.kind === "opaque") return unknown(`${local} in ${where} reads ${name}, which is ${nestedHeld.reason}`);
     const key = `${path}#local:${name}`;
-    if (seen.has(key) || seen.size >= MAX_HOPS) return unknown(`value chain loops or is too long at ${key}`);
+    if (seen.has(key) || seen.size >= MAX_HOPS) return unknown(`value chain loops or is too long at ${where}#${name}`);
     const nested = settle(graph, path, name, new Set([...seen, key]));
     if (name === alias) return nested;
-    if (nested.kind !== "file" || nested.path !== path) return unknown(`${local} in ${path} is built from ${name}, defined elsewhere`);
+    if (nested.kind !== "file" || nested.path !== path) return unknown(`${local} in ${where} is built from ${name}, defined elsewhere`);
   }
   return { kind: "file", path };
 }
@@ -212,7 +234,7 @@ function follow(
   name: string,
   seen: ReadonlySet<string>,
 ): Definition {
-  const located = locate(graph, fromFile, specifier);
+  const located = locate(graph, fromFile, specifier, name);
   if (located.kind !== "file") return located;
   if (name === "*") return unknown(`namespace import of "${specifier}" read whole`);
   const key = `${located.path}#${name}`;
