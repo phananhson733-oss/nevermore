@@ -23,6 +23,12 @@ import { BUTTON_MINI } from "./panel.ts";
  * block. The provenance declaration was folded in once, by `useAddArtifact`;
  * nothing here stamps, re-stamps or trims it.
  *
+ * Over `ARTIFACT_CONTENT_MAX` the basket refuses the text rather than keep a
+ * shortened copy of it (Q37). The row says so in a standing `role="alert"`
+ * notice rather than a flash, because the refusal stays true for as long as
+ * this artifact is on screen; the notice names the ways out, and copy and export
+ * still hand over the whole text.
+ *
  * The flash is `useState` plus one timer, and the timer is cleared on unmount:
  * a "Copied" that fires into an unmounted pane is a setState nobody reads.
  * A refused clipboard (a permission prompt denied, a non-secure context, a
@@ -46,6 +52,8 @@ export interface ArtifactActionLabels {
   readonly exportFile: string;
   readonly save: string;
   readonly saved: string;
+  /** Says the text is too large for the basket, and that export and copy still work. */
+  readonly tooLarge: string;
 }
 
 export function ArtifactActions({
@@ -60,6 +68,9 @@ export function ArtifactActions({
   readonly disabled?: boolean | undefined;
 }) {
   const [flash, setFlash] = useState<string | null>(null);
+  // The artifact a save was refused for, compared by identity at render: a view
+  // that hands over a different artifact drops the notice with no effect to sync.
+  const [refused, setRefused] = useState<PreparedArtifact | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -127,7 +138,10 @@ export function ArtifactActions({
           type="button"
           disabled={off}
           onClick={() => {
-            prepared.save();
+            if (prepared.save() === "tooLarge") {
+              setRefused(prepared);
+              return;
+            }
             show(labels.saved);
           }}
           className={BUTTON_MINI}
@@ -138,6 +152,11 @@ export function ArtifactActions({
       <span role="status" className="text-xs text-slate-500">
         {flash ?? ""}
       </span>
+      {refused === prepared ? (
+        <p role="alert" className="text-xs text-slate-700">
+          {labels.tooLarge}
+        </p>
+      ) : null}
     </>
   );
 }

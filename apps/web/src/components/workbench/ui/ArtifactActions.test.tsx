@@ -27,6 +27,7 @@ import {
   WorkbenchProvider,
   type WorkbenchContextValue,
 } from "@/lib/workbench/store/WorkbenchProvider";
+import { ARTIFACT_CONTENT_MAX } from "@/lib/workbench/types";
 import {
   useAddArtifact,
   type ArtifactDraft,
@@ -82,6 +83,7 @@ const LABELS: ArtifactActionLabels = {
   exportFile: "Export",
   save: "Save to the basket",
   saved: "Saved",
+  tooLarge: "Too large to save. Export it or copy it instead.",
 };
 /** How long a flash stays up. */
 const FLASH_MS = 1300;
@@ -195,6 +197,15 @@ function payloadOf(prompt: string): string {
     throw new Error(`expected exactly one data block, got ${blocks.length}`);
   }
   return only.body;
+}
+
+/** An md body that `useAddArtifact` stamps to exactly `units` UTF-16 units. */
+function mdBodyFor(units: number): string {
+  return "a".repeat(units - `${LINE}\n\n`.length);
+}
+
+function alertText(): string | null {
+  return document.querySelector('[role="alert"]')?.textContent ?? null;
 }
 
 beforeEach(() => {
@@ -381,5 +392,51 @@ describe("ArtifactActions", () => {
     mount();
 
     expect(document.body.querySelectorAll("[style]")).toHaveLength(0);
+  });
+
+  it("stores a text exactly at the size limit and says it saved, with no refusal", () => {
+    const { prepared } = mount({
+      ...MD_DRAFT,
+      body: mdBodyFor(ARTIFACT_CONTENT_MAX),
+    });
+    expect(prepared.content.length).toBe(ARTIFACT_CONTENT_MAX);
+
+    click(LABELS.save);
+
+    expect(basket()).toHaveLength(1);
+    expect(basket()[0]?.content).toBe(prepared.content);
+    expect(document.querySelector('[role="status"]')?.textContent).toBe(
+      LABELS.saved,
+    );
+    expect(alertText()).toBeNull();
+  });
+
+  it("refuses a text one unit over the limit, says so, and still copies and exports all of it", async () => {
+    const { prepared } = mount({
+      ...MD_DRAFT,
+      body: `${mdBodyFor(ARTIFACT_CONTENT_MAX)}a`,
+    });
+    expect(prepared.content.length).toBe(ARTIFACT_CONTENT_MAX + 1);
+
+    click(LABELS.save);
+
+    expect(basket()).toHaveLength(0);
+    expect(alertText()).toBe(LABELS.tooLarge);
+    expect(document.querySelector('[role="status"]')?.textContent).not.toBe(
+      LABELS.saved,
+    );
+
+    click(LABELS.copy);
+    await settle();
+    click(LABELS.copyForAi);
+    await settle();
+    click(LABELS.exportFile);
+
+    expect(writeText.mock.calls[0]?.[0]).toBe(prepared.content);
+    expect(payloadOf(writeText.mock.calls[1]?.[0] ?? "")).toBe(prepared.content);
+    expect(mocks.downloadText.mock.calls[0]?.[1]).toBe(prepared.content);
+    // A standing fact about this text, not a flash: copying does not clear it.
+    expect(alertText()).toBe(LABELS.tooLarge);
+    expect(basket()).toHaveLength(0);
   });
 });

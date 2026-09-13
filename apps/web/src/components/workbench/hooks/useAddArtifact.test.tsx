@@ -33,10 +33,12 @@ import {
   WorkbenchProvider,
   type WorkbenchContextValue,
 } from "@/lib/workbench/store/WorkbenchProvider";
+import { ARTIFACT_CONTENT_MAX } from "@/lib/workbench/types";
 import {
   useAddArtifact,
   type ArtifactDraft,
   type PreparedArtifact,
+  type SaveResult,
 } from "./useAddArtifact.ts";
 
 const en = getMessages("en");
@@ -153,6 +155,21 @@ function artifacts(): WorkbenchContextValue["state"]["artifacts"] {
   const { store } = captured;
   if (!store) throw new Error("the probe must have rendered");
   return store.state.artifacts;
+}
+
+/** An md body that stamps to exactly `units` UTF-16 units: the stamp is `${LINE}\n\n` + body. */
+function mdBodyFor(units: number): string {
+  return "a".repeat(units - `${LINE}\n\n`.length);
+}
+
+/** Calls `save()` inside `act`, so a dispatch it makes is committed before the basket is read. */
+function saveInAct(prepared: PreparedArtifact): SaveResult {
+  let result: SaveResult | undefined;
+  act(() => {
+    result = prepared.save();
+  });
+  if (result === undefined) throw new Error("save must have returned");
+  return result;
 }
 
 beforeEach(() => {
@@ -305,6 +322,33 @@ describe("useAddArtifact", () => {
 
     act(() => prepared.save());
     expect(artifacts()[0]?.content).toBe(prepared.content);
+  });
+
+  it("stores a text exactly at the size limit, whole", () => {
+    const { prepare } = mount();
+    const prepared = prepare({ ...MD_DRAFT, body: mdBodyFor(ARTIFACT_CONTENT_MAX) });
+    expect(prepared.content.length).toBe(ARTIFACT_CONTENT_MAX);
+
+    expect(saveInAct(prepared)).toBe("saved");
+    expect(artifacts()).toHaveLength(1);
+    expect(artifacts()[0]?.content).toBe(prepared.content);
+  });
+
+  it("refuses a text one UTF-16 unit over the limit rather than let the store cut it short", () => {
+    const { prepare } = mount();
+    // Ends in an astral character: one code point, two UTF-16 units. Counted in
+    // code points this text is exactly at the limit; the store counts units, so
+    // a check that counted code points would let it through to be truncated.
+    const prepared = prepare({
+      ...MD_DRAFT,
+      body: `${mdBodyFor(ARTIFACT_CONTENT_MAX - 1)}\u{1F600}`,
+    });
+    expect(prepared.content.length).toBe(ARTIFACT_CONTENT_MAX + 1);
+    expect([...prepared.content]).toHaveLength(ARTIFACT_CONTENT_MAX);
+
+    expect(saveInAct(prepared)).toBe("tooLarge");
+    expect(saveInAct(prepared)).toBe("tooLarge");
+    expect(artifacts()).toHaveLength(0);
   });
 });
 

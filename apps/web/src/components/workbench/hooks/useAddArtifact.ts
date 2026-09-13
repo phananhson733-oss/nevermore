@@ -8,11 +8,12 @@ import {
 } from "@/lib/workbench/mock/provenance";
 import { formatLocalStamp } from "@/lib/workbench/mock/time";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
-import type {
-  Artifact,
-  ArtifactType,
-  Engine,
-  ModuleId,
+import {
+  ARTIFACT_CONTENT_MAX,
+  type Artifact,
+  type ArtifactType,
+  type Engine,
+  type ModuleId,
 } from "@/lib/workbench/types";
 
 export interface ArtifactDraft {
@@ -31,6 +32,9 @@ export interface ArtifactDraft {
   readonly filename?: string;
 }
 
+/** What `save()` did: stored the text (now or on an earlier call), or refused it as too large. */
+export type SaveResult = "saved" | "tooLarge";
+
 /** An artifact whose content carries the stamp brand, so it cannot be re-stamped either. */
 export type StampedArtifact = Artifact & { readonly content: StampedText };
 
@@ -42,15 +46,22 @@ export type StampedArtifact = Artifact & { readonly content: StampedText };
 export interface PreparedArtifact {
   readonly artifact: StampedArtifact;
   /**
-   * The canonical text (Q23). Copy, export, "save to basket" and the AI wrapper
-   * all use this exact string, so the four actions cannot disagree about what the
-   * artifact says. A body over `ARTIFACT_CONTENT_MAX` is truncated by the reducer
-   * on its way into the basket (types.ts); what is returned here is the whole
-   * text the operator asked for.
+   * The canonical text (Q23), whole. Copy and export hand out exactly this
+   * string, "copy for an AI" wraps exactly this string, and `save()` stores
+   * exactly this string or nothing at all — nothing on this object is ever a
+   * shortened copy. (That the AI block carries it byte for byte is
+   * `stampArtifact`'s canonical shape, not something this field guarantees.)
    */
   readonly content: StampedText;
-  /** Puts it in the basket. Calling it twice saves once. */
-  readonly save: () => void;
+  /**
+   * Puts it in the basket and says whether it did. Over `ARTIFACT_CONTENT_MAX`
+   * UTF-16 units it dispatches nothing and returns `"tooLarge"` (Q37): the
+   * reducer would otherwise cut the text short on its way in, and the basket
+   * would hold a different text from the one just copied or exported, under a
+   * row that said "saved". Within the limit, calling it twice saves once and
+   * both calls return `"saved"`.
+   */
+  readonly save: () => SaveResult;
 }
 
 /**
@@ -102,14 +113,22 @@ export function useAddArtifact():
     const artifact: StampedArtifact = Object.freeze(
       draft.filename === undefined ? base : { ...base, filename: draft.filename },
     );
+    // Counted in UTF-16 units, the unit `boundArtifact` truncates by (reducer.ts),
+    // and measured once: the text cannot change after this point. The reducer's
+    // truncation stays as the last defence; this check keeps it from ever firing
+    // on a text the operator was just shown whole.
+    const tooLarge = content.length > ARTIFACT_CONTENT_MAX;
     let saved = false;
     return Object.freeze({
       artifact,
       content,
-      save: () => {
-        if (saved) return;
-        saved = true;
-        dispatch({ type: "addArtifact", artifact });
+      save: (): SaveResult => {
+        if (tooLarge) return "tooLarge";
+        if (!saved) {
+          saved = true;
+          dispatch({ type: "addArtifact", artifact });
+        }
+        return "saved";
       },
     });
   }
