@@ -4,6 +4,7 @@
  * announced block, and the sentences around it say nothing the artifact supplied.
  */
 import { describe, expect, it } from "vitest";
+import { toCsv } from "../csv.ts";
 import { DATA_BLOCK_NOTICE } from "../labels-zh.ts";
 import { stampArtifact } from "../provenance.ts";
 import { agentTaskWrapper } from "./agent-task.ts";
@@ -17,6 +18,7 @@ import { splitFences } from "./prompt-test-helpers.ts";
 const BODY = ["# 修复任务", "- 给 /pricing 补 canonical", "- 核对 sitemap"].join(
   "\n",
 );
+const LINE = "示例数据：生成于 2026-09-13 10:30";
 
 function block(prompt: string): { readonly info: string; readonly body: string } {
   const { blocks } = splitFences(prompt);
@@ -64,11 +66,37 @@ describe("agentTaskWrapper", () => {
   });
 
   it("carries a stamped body's provenance line inside the block, where the model reads it as data", () => {
-    const stamped = stampArtifact("md", BODY, "示例数据：生成于 2026-09-13 10:30");
+    const stamped = stampArtifact("md", BODY, LINE);
     const out = agentTaskWrapper(stamped);
     expect(block(out).body).toBe(stamped);
-    expect(block(out).body).toContain("示例数据：生成于 2026-09-13 10:30");
+    expect(block(out).body).toContain(LINE);
     expect(splitFences(out).outside).not.toContain("示例数据");
+  });
+
+  /**
+   * The claim Q23 makes is that the AI payload and the other three actions carry
+   * the same text, and all four start from `stampArtifact`'s output. Only the md
+   * shape was ever run through both functions: `fence.test.ts` writes its bodies
+   * by hand and `csv.test.ts` writes its expectations by hand, so each half was
+   * self-consistent and the seam between them was asserted nowhere.
+   */
+  it("carries a real csv artifact through byte for byte", () => {
+    const stamped = stampArtifact("csv", toCsv(["query", "clicks"], [["ai seo", 5]]), LINE);
+    expect(block(agentTaskWrapper(stamped)).body).toBe(stamped);
+  });
+
+  it("carries a real json artifact through byte for byte", () => {
+    const stamped = stampArtifact("json", '{"a":1,"b":"x"}', LINE);
+    expect(block(agentTaskWrapper(stamped)).body).toBe(stamped);
+  });
+
+  it("loses the last byte of a body that ends in a newline, which is why toCsv must not end in one", () => {
+    // `toCsv` ends without a trailing newline by design (§6.8), which is the only
+    // reason the csv case above holds. Should it ever grow one, "the same text"
+    // becomes false by exactly this much rather than by a failing test elsewhere.
+    const stamped = stampArtifact("csv", "query\nai seo\n", LINE);
+    expect(stamped.endsWith("\n")).toBe(true);
+    expect(block(agentTaskWrapper(stamped)).body).toBe(stamped.slice(0, -1));
   });
 
   it("is deterministic", () => {

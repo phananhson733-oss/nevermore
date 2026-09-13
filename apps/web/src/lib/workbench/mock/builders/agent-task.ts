@@ -1,9 +1,12 @@
 /**
  * The "copy for an AI agent" wrapper (Q23, R6). One artifact's canonical text
  * goes in and a prompt comes out with that text appearing exactly once, inside
- * the announced fenced block, byte for byte apart from the line endings
- * `fenceBlock` normalises — so this action and the other three (copy, export,
- * save) all carry the same payload.
+ * the announced fenced block, byte for byte apart from what `fenceBlock` cannot
+ * keep: it rewrites CRLF to LF, and a newline the body itself ends with is
+ * folded into the one before the closing fence and is gone. So this action and
+ * the other three (copy, export, save) carry the same payload as long as the
+ * builders produce bodies that do not end in a newline — `toCsv` is specified
+ * that way (design §6.8), and `agent-task.test.ts` pins both directions.
  *
  * Every sentence around the block is fixed. Nothing from the artifact — not its
  * title, type or module, let alone its body — is interpolated into them, so no
