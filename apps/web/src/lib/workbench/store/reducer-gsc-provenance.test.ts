@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from "vitest";
 import type { Artifact, AuditReport, DemoPayload, VisResult } from "../types.ts";
-import { initialProjectState, reduce } from "./reducer.ts";
+import { initialProjectState, normalizeInterrupted, reduce } from "./reducer.ts";
+import { classifyPersistedState, PERSISTED_VERSION } from "./schema.ts";
 
 const seed = { url: "https://example.test", brand: "Example", market: "US" };
 
@@ -81,5 +82,51 @@ describe("gsc rows carry their provenance (Q6)", () => {
     expect(s.gscRowsSource).toBe("user");
     s = reduce(s, { type: "clearDemo" });
     expect(s.gscRowsSource).toBeNull();
+  });
+});
+
+/**
+ * `sourceFor` keeps "no rows, no source" true for everything the reducer writes,
+ * but stored bytes do not come from the reducer: localStorage is a boundary
+ * (design §6.5), and it holds whatever a previous build, another tab or the
+ * browser's dev tools left there. The schema checks each field on its own, so
+ * `{gscRows: [], gscRowsSource: "sample"}` is a well-formed envelope and parses.
+ * Hydration is where the invariant is re-applied.
+ */
+describe("a stale source cannot survive hydration (Q6)", () => {
+  function tampered(): unknown {
+    return {
+      v: PERSISTED_VERSION,
+      state: { ...initialProjectState(seed), gscRows: [], gscRowsSource: "sample" },
+    };
+  }
+
+  function parsed(raw: unknown): ReturnType<typeof initialProjectState> {
+    const result = classifyPersistedState(raw);
+    if (result.kind !== "ok") throw new Error(`expected a readable envelope, got ${result.kind}`);
+    return result.state;
+  }
+
+  it("still reads the envelope: one inconsistent field is not another version of the format", () => {
+    // Deliberately NOT `invalid`. A missing key means the envelope was written by
+    // a build that did not have the field, and discarding it is right. This one
+    // has every key, so condemning it would throw away the basket, the profile
+    // snapshot and the seed words over a label on rows that are not there.
+    expect(classifyPersistedState(tampered()).kind).toBe("ok");
+    expect(parsed(tampered()).gscRowsSource).toBe("sample");
+  });
+
+  it("drops the mark on the way in, leaving the rest of the project alone", () => {
+    const state = normalizeInterrupted(parsed(tampered()));
+    expect(state.gscRows).toEqual([]);
+    expect(state.gscRowsSource).toBeNull();
+    expect(state.seeds).toBe(initialProjectState(seed).seeds);
+  });
+
+  it("leaves a mark that does have rows under it exactly as stored", () => {
+    for (const source of ["user", "sample"] as const) {
+      const raw = { v: PERSISTED_VERSION, state: { ...initialProjectState(seed), gscRows: [gscRow], gscRowsSource: source } };
+      expect(normalizeInterrupted(parsed(raw)).gscRowsSource, source).toBe(source);
+    }
   });
 });
