@@ -97,18 +97,26 @@ describe("workbench.css", () => {
     // whose var() resolves to nothing is invalid at computed-value time and falls
     // back to the inherited or initial value). Candidates are irrelevant: the
     // references below live in @layer base, which is always emitted.
+    // `var(\s*`: `var( --x)` is valid CSS and must not slip past the extraction.
     const referenced = [
       ...new Set(
-        [...css.replace(/\/\*[\s\S]*?\*\//gu, "").matchAll(/var\((--color-wb-[a-z0-9-]+)/gu)].map(
+        [...css.replace(/\/\*[\s\S]*?\*\//gu, "").matchAll(/var\(\s*(--color-wb-[a-z0-9-]+)/gu)].map(
           (match) => match[1]!,
         ),
       ),
     ];
     expect(referenced.length, "var(--color-wb-*) references in workbench.css").toBeGreaterThan(0);
+    // Inside the emitted `:root, :host` rule, not anywhere in the output: the
+    // same declaration under some other selector would not reach <progress>.
     const compiled = await buildUtilities([]);
+    const rootRules = [...compiled.matchAll(/(?:^|[\n}])\s*:root,\s*:host\s*\{([^}]*)\}/gu)].map(
+      (match) => match[1]!,
+    );
+    expect(rootRules.length, ":root, :host rule in the compiled stylesheet").toBeGreaterThan(0);
+    const root = rootRules.join("\n");
     for (const token of referenced) {
-      expect(compiled, `${token} emitted as a :root declaration`).toMatch(
-        new RegExp(`${token}:\\s*#[0-9a-f]{6}`, "u"),
+      expect(root, `${token} declared in :root, :host`).toMatch(
+        new RegExp(`(?:^|[\\s;])${token}:\\s*#[0-9a-f]{6}\\s*;`, "u"),
       );
     }
   });

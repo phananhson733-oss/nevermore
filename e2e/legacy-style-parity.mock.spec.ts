@@ -163,6 +163,17 @@ async function preloadedFonts(page: Page): Promise<string[]> {
   );
 }
 
+/**
+ * Computed font-family of every `.font-sans` element in the document. Not
+ * scoped to #wb-root: anything that ends up outside it (a portal into <body>)
+ * is exactly the element that would fall back, and a scoped query skips it.
+ */
+async function fontSansSweep(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    [...document.querySelectorAll(".font-sans")].map((node) => getComputedStyle(node).fontFamily),
+  );
+}
+
 // Markers, each present in exactly one of the two stylesheets. The workbench one
 // is a selector, not a theme variable: under `@theme inline` Tailwind emits a
 // `:root` variable only while something still reads it through var(), so
@@ -183,16 +194,24 @@ test("the workbench face reaches every font-sans element in the shell", async ({
       const root = document.getElementById("wb-root");
       return root ? getComputedStyle(root).getPropertyValue("--font-wb").trim() : null;
     })(),
-    families: [...document.querySelectorAll("#wb-root .font-sans")].map(
-      (node) => getComputedStyle(node).fontFamily,
-    ),
   }));
   // The scenario this test exists for: the variable is scoped below <html>.
   expect(probe.onHtml, "--font-wb must not be defined on <html>").toBe("");
   expect(probe.onRoot, "#wb-root carries the next/font variable").toMatch(/Plus Jakarta Sans/u);
   // Sidebar, topbar and the view root at least; a sweep, not a list.
-  expect(probe.families.length).toBeGreaterThanOrEqual(3);
-  for (const family of probe.families) {
+  const closed = await fontSansSweep(page);
+  expect(closed.length).toBeGreaterThanOrEqual(3);
+  for (const family of closed) {
+    expect(family).toMatch(/Plus Jakarta Sans/u);
+  }
+
+  // A real overlay, opened the way a user opens it: the command palette is a
+  // Dialog (its root carries font-sans) that ShellChrome renders beside #wb-app.
+  await page.keyboard.press("Control+k");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  const open = await fontSansSweep(page);
+  expect(open.length, "the open palette adds font-sans elements").toBeGreaterThan(closed.length);
+  for (const family of open) {
     expect(family).toMatch(/Plus Jakarta Sans/u);
   }
 });
@@ -309,9 +328,9 @@ test("/login loads neither the workbench stylesheet nor the workbench face", asy
   expect(loginCss).toContain(GLOBALS_MARKER);
   expect(loginCss).not.toMatch(WORKBENCH_MARKER);
   expect(loginCss).not.toContain("Plus Jakarta Sans");
-  expect(await preloadedFonts(page)).toEqual(
-    expect.not.arrayContaining(faceFiles),
-  );
+  // Empty intersection: `expect.not.arrayContaining(faceFiles)` only says "not
+  // every one of them", and would accept a leaked preload of a single subset.
+  expect((await preloadedFonts(page)).filter((file) => faceFiles.includes(file))).toEqual([]);
   expect(requested.filter((file) => faceFiles.includes(file))).toEqual([]);
 });
 
@@ -322,10 +341,18 @@ test("/login loads neither the workbench stylesheet nor the workbench face", asy
 // values at every breakpoint); now workbench.css is not loaded at all and `.main`
 // is the only source. The values are the old rule's, resolved per width.
 test("/new-project keeps the .main gutter with workbench.css absent", async ({ page }) => {
+  // All four sides plus the box properties the removed rule also declared, at
+  // both inclusive boundaries (960 and 560) and inside each range.
+  const box = (padding: string) => {
+    const [top, right, bottom, left] = padding.split(" ");
+    return { paddingTop: top, paddingRight: right, paddingBottom: bottom, paddingLeft: left, maxWidth: "1480px", minWidth: "0px" };
+  };
   const widths = [
-    { width: 1280, paddingLeft: "42.24px" }, // clamp(24px, 3.3vw, 56px) at 1280px
-    { width: 900, paddingLeft: "20px" }, // (max-width: 960px)
-    { width: 500, paddingLeft: "14px" }, // (max-width: 560px)
+    { width: 1280, expected: box("40px 42.24px 30px 42.24px") }, // clamp(24px, 3.3vw, 56px) at 1280px
+    { width: 960, expected: box("28px 20px 36px 20px") }, // (max-width: 960px), boundary
+    { width: 900, expected: box("28px 20px 36px 20px") },
+    { width: 560, expected: box("24px 14px 32px 14px") }, // (max-width: 560px), boundary
+    { width: 500, expected: box("24px 14px 32px 14px") },
   ] as const;
   await page.setViewportSize({ width: widths[0].width, height: 800 });
   await page.goto("/new-project");
@@ -334,14 +361,25 @@ test("/new-project keeps the .main gutter with workbench.css absent", async ({ p
     WORKBENCH_MARKER,
   );
 
-  for (const { width, paddingLeft } of widths) {
+  for (const { width, expected } of widths) {
     await page.setViewportSize({ width, height: 800 });
-    const box = await page.evaluate(() => {
+    const measured = await page.evaluate(() => {
       const main = document.querySelector("#main-content");
       if (!main) return null;
       const cs = getComputedStyle(main);
-      return { paddingLeft: cs.paddingLeft, maxWidth: cs.maxWidth };
+      return {
+        box: {
+          paddingTop: cs.paddingTop,
+          paddingRight: cs.paddingRight,
+          paddingBottom: cs.paddingBottom,
+          paddingLeft: cs.paddingLeft,
+          maxWidth: cs.maxWidth,
+          minWidth: cs.minWidth,
+        },
+        centred: cs.marginLeft === cs.marginRight,
+      };
     });
-    expect(box, `${width}px: #main-content`).toEqual({ paddingLeft, maxWidth: "1480px" });
+    expect(measured?.box, `${width}px: #main-content box`).toEqual(expected);
+    expect(measured?.centred, `${width}px: #main-content margin-inline auto`).toBe(true);
   }
 });
