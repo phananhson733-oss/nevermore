@@ -4176,7 +4176,7 @@
         "button": "Load sample site",
         "busy": "Loading",
         "confirmTitle": "Replace the current content with sample data?",
-        "confirmBody": "This overwrites the site's GSC rows, keyword library, saved artifacts and site profile in this browser, along with every result already there: audit, visibility, knowledge base, competitor data, answer plans and link targets.",
+        "confirmBody": "This overwrites the site's GSC rows, keyword seeds, keyword library, saved artifacts and site profile in this browser, along with every result already there: audit, visibility, knowledge base, competitor data, answer plans and link targets.",
         "confirmOk": "Load sample",
         "cancel": "Cancel",
         "failed": "The sample site did not load. Try again."

@@ -249,6 +249,7 @@ const REQUIRED: Readonly<
   "overview.loadDemo.confirmBody": {
     "zh-CN": [
       "GSC",
+      "关键词种子",
       "词库",
       "产物筐",
       "站点档案",
@@ -262,6 +263,7 @@ const REQUIRED: Readonly<
     ],
     en: [
       "GSC",
+      "keyword seeds",
       "keyword library",
       "artifacts",
       "site profile",
