@@ -1008,18 +1008,18 @@ export function classifyPersistedState(raw: unknown): PersistedParse {
 | R17 列出的六项 | PR-4 / PR-5 |
 | PR-1 遗留非 store 项（字体与 workbench.css 挂根 layout、触控目标、⌘K 提示、Tailwind `source(none)`、`AppShell` 死变体、`useGlobalShortcut` 重订阅） | PR-3（首次上生产前的收尾批） |
 | 档案爬取信号字段 `indexed` 改名 `indexable`（「可收录」不是「已收录」，跨模型评审诚实性面）按第三项发布前豁免处理、不升 `PERSISTED_VERSION`：带旧字段的信封同时有未知键与缺失键，按 R14 判 `invalid` 被丢弃而不是只读——只影响开发期本地数据（PR-1 未上线） | 接受；上线后同类改名必须升版本 |
-| 竞品域名总览 CSV 表头 `domain`（jsx:2613）会把「Rival Corp」这类公司名标成域名 | PR-3 改列名 |
-| 缺口表 `ours === null` 要渲染「—/未知」，不能用原型 jsx:2655 的「无」（那是在声称我们没有排名） | PR-3 |
+| 竞品域名总览 CSV 表头 `domain`（jsx:2613）会把「Rival Corp」这类公司名标成域名 | PR-4 改列名（PR-3 计划 Q28 归属修正：竞品视图的修法，PR-3 不含竞品视图，mock 里也没有竞品 CSV builder；判据交接在 PR-3 计划残留表） |
+| 缺口表 `ours === null` 要渲染「—/未知」，不能用原型 jsx:2655 的「无」（那是在声称我们没有排名） | PR-4（PR-3 计划 Q28 归属修正，同上） |
 | 外链 `dr`/`difficulty` 为 null 的渲染：难度 chip 计数（jsx:2460-2462）不计 null 或加「未知」、DR 单元格「—」、chip 的 null 样式 | PR-5 |
 | `answerPlanPrompt` 固定句「缺口来自示例数据，建页前逐平台复核」、`（示例数据）`/`sampleData: true` 标签：`VisGap`/`gscRows` 没有 real/sample 标记，接入真实可见度数据或真实 GSC 导入时这些标签要变成条件 | PR-4 |
 | 选择器 `keywordRows(state)` / `gatedRows(state)` 每次调用重算，不走 provider 的 memo（已加 JSDoc）；视图读 `useWorkbench().keywordRows` | 各视图 PR |
 | 下载文档里值内的行内 Markdown 仍会渲染（`**粗体**` 变粗体、用户输入的反斜杠被吞：`\# x` 显示成 `# x`）；`docText` 只防块级结构且只为 `- ` / `> ` 行首设计，不是表格单元格或行中文本的通用转义 | 记入 PR 描述；视图若把文档渲染成 HTML（PR-5 预览）再评估 |
-| 示例 GSC 粘贴文本 `DEMO_GSC_TEXT` 与 `DEMO_SEEDS` 是原型的 GEO/SEO 词表（`llm seo checklist`、`how to rank in chatgpt` 等），对任何行业的客户都一样；`gscRows` 本身不带示例标记，只有 `state.demo` 标示（Task 13 评审 F5，brief 目标已改为取自种子派生行） | PR-3 视图对示例状态显示徽标；词表按行业派生另议 |
-| 「载入示例站点」按钮必须在点击处理里 `await import(".../mock/demo.ts")`（demo 静态可达审计规则库与五个 builder，约 47KB 压缩；导入图护栏只从 store 入口走，不覆盖组件） | PR-3 |
-| 示例档案爬取页数（如 96）与同一份审计 `pageRows` 样本行数（如 6）不同：pageRows 是抽样行不是全量 | 视图文案标明「样本页」 |
-| 品牌为空时示例可见度标题「可见度矩阵 0/30」像结果（品牌为空就不可能被提及） | PR-3（品牌为空时禁用或改文案） |
+| 示例 GSC 粘贴文本 `DEMO_GSC_TEXT` 与 `DEMO_SEEDS` 是原型的 GEO/SEO 词表（`llm seo checklist`、`how to rank in chatgpt` 等），对任何行业的客户都一样；`gscRows` 本身不带示例标记，只有 `state.demo` 标示（Task 13 评审 F5，brief 目标已改为取自种子派生行） | **PR-3 已处理标注部分**（PR-3 计划 Q6，`11c5abb8`）：项目状态加 `gscRowsSource`、档案快照加 `gscSource`，数据源页行表、概览 GSC 脚注、档案 GSC 小节按来源标注，不读 `state.demo`。词表按行业派生仍另议（PR-3 计划残留表同名行） |
+| 「载入示例站点」按钮必须在点击处理里 `await import(".../mock/demo.ts")`（demo 静态可达审计规则库与五个 builder，约 47KB 压缩；导入图护栏只从 store 入口走，不覆盖组件） | PR-3 → **PR-3 已处理**（`6ec05d23`）：`views/overview/LoadDemoButton.tsx` 在点击处理里 `await import("@/lib/workbench/mock/demo.ts")`，常量从零依赖的 `mock/demo-constants.ts` 静态导入；导入图护栏扩到视图入口（`08e96d53`，`9cb0e217` 改用 TypeScript AST 读导入），`store/client-import-graph.test.ts` 钉住「静态导入永远到不了示例站点」与「loader 里确有 `import()` 调用」。生产构建里 `demo.ts` 在独立 chunk、不在概览首屏 JS，要到 PR-3 计划 T19 Step 6 才断言 |
+| 示例档案爬取页数（如 96）与同一份审计 `pageRows` 样本行数（如 6）不同：pageRows 是抽样行不是全量 | 视图文案标明「样本页」→ **PR-3 已处理**（`188d248b`）：档案页指标标签 `workbench.profile.metrics.pages` 为「样本页」、`indexable` 为「可收录」 |
+| 品牌为空时示例可见度标题「可见度矩阵 0/30」像结果（品牌为空就不可能被提及） | ~~PR-3（品牌为空时禁用或改文案）~~ **按 PR-3 计划 Q27 关闭**：品牌为空不可达——`client_name` 有 `length(btrim(...)) BETWEEN 1 AND 160` 的 DB CHECK，`withProjectSeed` 每次 hydration 无条件用真实项目覆盖 `brand`（`store/reducer.test.ts` 的 `withProjectSeed` 用例、`store/WorkbenchProvider.test.tsx` 断言水合后 brand 等于种子）；不为不可达状态造出口。概览提及率卡在没有可见度结果时显示未知（`OverviewView.tsx`：`lastVis.results` 为空 → 值 `null`、脚注「还没有结果」） |
 | 写盘前复核已存数据与 `setItem` 不是跨标签原子操作：两个标签页在同一毫秒级窗口内交错仍可能覆盖（gpt-6-astra 面 3 #1 修复后的剩余窗口） | 接受风险，记入设计稿 §6.5 |
 | `csvCell` 不给「前导换行/空格 + 公式」加前缀；`slugify` 60 字符截断会碰撞（gpt-6-astra 面 2 unresolved） | 接受风险（主流表格软件不对其求值；slug 只作建议路径） |
-| GSC 粘贴解析只认英文、中文、德文表头标签：法 / 西 / 葡 / 意 / 日文导出因 `CTR` 列能匹配而进入「部分识别」，未识别的点击 / 展示列给 `null` 且不计入 `skipped`（诚实但静默丢数据）；首条无表头记录的查询恰好等于某个标签（如 `position`）且无数字时会被当成表头（跨模型评审修复 7e5a3426 后的剩余） | PR-4 GSC 导入视图：补语种标签，部分识别时向用户提示未识别的列 |
+| GSC 粘贴解析只认英文、中文、德文表头标签：法 / 西 / 葡 / 意 / 日文导出因 `CTR` 列能匹配而进入「部分识别」，未识别的点击 / 展示列给 `null` 且不计入 `skipped`（诚实但静默丢数据）；首条无表头记录的查询恰好等于某个标签（如 `position`）且无数字时会被当成表头（跨模型评审修复 7e5a3426 后的剩余） | PR-4 GSC 导入视图：补语种标签，部分识别时向用户提示未识别的列 → **「提示未识别的列」PR-3 已处理**（PR-3 计划 Q7，`29c2b654` + `98895420`）：`parseGsc` 返回 `headerDetected` 与 `recognized`，数据源页 `GscImportNotice` 只按 `recognized` 点名未识别的列（`dataSources.result.unrecognizedColumns`），没认出表头时说按列位置读取。**补语种标签仍归 PR-4**：`mock/gsc.ts` 的表头标签表仍只有英文、中文、德文 |
 | 持久化 schema 不校验 `artifacts[].at` 是否符合本地 stamp 格式（Task 13 修复时的变异实测：错格式 `at` 能回环通过）；示例站点的页面标志在 EMPTY / FULL 下恒为真（样本页都是 200），假分支只在 `profile.test.ts` 里直接覆盖 | 下一次持久化形状变更时收紧（收紧校验要升 `PERSISTED_VERSION`，见 R14） |
 | 持久化 `plans`（`z.record`）读回时静默丢掉键 `__proto__`（Task 10 探针实测：`classifyPersistedState` 返回 ok，键没了，不污染原型）；只影响字面查询 `__proto__` 的答案页方案。修法需改持久化形状（如条目数组），属于要升 `PERSISTED_VERSION` 的改动 | 记入 PR 描述，随下一次持久化形状变更处理 |
