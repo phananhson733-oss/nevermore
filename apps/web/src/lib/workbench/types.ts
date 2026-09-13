@@ -247,13 +247,22 @@ export interface CrawlSignals {
   readonly refdomains: number;
 }
 
+/** Unavailable is `null`, never 0 (store/schema.ts carries the same nullability). */
 export interface GscSignals {
   readonly total: number;
-  readonly brandQueries: number;
-  readonly brandClicks: number;
-  readonly nonBrandClicks: number;
+  /** `null` when the brand is blank: the brand split is unknowable. */
+  readonly brandQueries: number | null;
+  /**
+   * Sum of the available clicks over queries that mention the brand: 0 when
+   * none do, `null` without a brand or when every matching row's clicks are
+   * unavailable. When only some are available, the sum is a lower bound.
+   */
+  readonly brandClicks: number | null;
+  /** Same rules as `brandClicks`, over the queries that do not mention the brand. */
+  readonly nonBrandClicks: number | null;
   readonly top: readonly GscRow[];
-  readonly near: number;
+  /** Borderline rows; `null` when rows exist but none has an available position. */
+  readonly near: number | null;
 }
 
 export interface IcpSegment {

@@ -1,19 +1,22 @@
 /**
- * Site profile signals and the sample AI profile (jsx:1142-1169). Nothing here
- * was observed: `crawlSignals` is generated, so its H1 says it was not crawled
- * (R10), and the crawl and third-party variants draw from different seeds.
- * `gscSignals` reads only the rows it is given. `demoAiDoc` replaces the
- * prototype's `DEMO_AI` (GenGrowth's own facts, R8): the summary is made of
- * profile values and every other field is a pending bracket placeholder.
+ * Site profile signals and the sample AI profile (jsx:1142-1169). Unless an
+ * audit is supplied, nothing here was observed: `crawlSignals` is generated, so
+ * its H1 says it was not crawled (R10), and the crawl and third-party variants
+ * draw from different seeds. `gscSignals` reads only the rows it is given, and a
+ * count it cannot know is `null`, never 0. `demoAiDoc` replaces the prototype's
+ * `DEMO_AI` (GenGrowth's own facts, R8): the summary is made of profile values
+ * and every other field is a pending bracket placeholder.
  */
-import type { AiDoc, CrawlSignals, GscRow, GscSignals, IcpSegment, Profile } from "../types.ts";
+import type { AiDoc, AuditReport, CrawlSignals, GscRow, GscSignals, IcpSegment, Profile } from "../types.ts";
 import { sitePages } from "./audit.ts";
 import { gscStatus } from "./gsc.ts";
 import { marketLanguage } from "./market.ts";
 import { pick, rngOf, seedKey } from "./rng.ts";
-import { domainOf, splitList, matchesBrand } from "./text.ts";
+import { domainOf, matchesBrand, splitList } from "./text.ts";
 
 export type CrawlVariant = "crawl" | "third";
+/** The parts of an audit report that can stand in for generated site shape. */
+export type ObservedAudit = Pick<AuditReport, "crawl" | "pageRows">;
 
 export const BRAND_PLACEHOLDER = "[品牌]";
 const STACKS = ["Next.js", "Webflow", "Astro", "WordPress"] as const;
@@ -22,57 +25,154 @@ const ICP_SEGMENT_COUNT = 3;
 const PILLAR_MIN = 2;
 const PILLAR_MAX = 3;
 
+type SiteShape = Pick<CrawlSignals, "pages" | "indexed" | "hasPricing" | "hasDocs" | "hasBlog">;
+
+interface CrawlDraws {
+  readonly pages: number;
+  readonly stack: string;
+  readonly pricing: number;
+  readonly docs: number;
+  readonly blog: number;
+  readonly indexed: number;
+  readonly traffic: number;
+  readonly dr: number;
+  readonly refdomains: number;
+}
+
 /** The brand as typed, or `[品牌]` when it is blank. */
 export function brandOrPlaceholder(brand: string): string {
   return brand.trim() === "" ? BRAND_PLACEHOLDER : brand;
 }
 
+/** Every draw in the prototype's order, taken whether or not an audit replaces some of them. */
+function drawCrawl(seed: number): CrawlDraws {
+  const next = rngOf(seed);
+  return {
+    pages: next(),
+    stack: pick(STACKS, next),
+    pricing: next(),
+    docs: next(),
+    blog: next(),
+    indexed: next(),
+    traffic: next(),
+    dr: next(),
+    refdomains: next(),
+  };
+}
+
+/** `indexed` never exceeds `pages`: the profile document prints both on one line ("抓到页面 N，收录约 M"). */
+function generatedSite(profile: Pick<Profile, "url" | "brand" | "features" | "competitors">, draws: CrawlDraws): SiteShape {
+  const pages = sitePages(profile).length + Math.floor(draws.pages * 40);
+  return {
+    pages,
+    indexed: Math.max(1, Math.round(pages * (0.6 + draws.indexed * 0.4))),
+    hasPricing: draws.pricing > 0.25,
+    hasDocs: draws.docs > 0.45,
+    hasBlog: draws.blog > 0.2,
+  };
+}
+
+/** Path of an absolute or relative page-row URL, without query, fragment or trailing slash. */
+function rowPath(url: string): string {
+  let path: string;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    path = url.split(/[?#]/)[0] ?? "";
+  }
+  return path.replace(/\/+$/, "") || "/";
+}
+
+function observedSite(audit: ObservedAudit): SiteShape {
+  const paths = audit.pageRows.map((row) => rowPath(row.url));
+  return {
+    pages: audit.crawl.pages,
+    indexed: audit.crawl.indexable,
+    hasPricing: paths.includes("/pricing"),
+    hasDocs: paths.includes("/docs"),
+    hasBlog: paths.some((path) => path === "/blog" || path.startsWith("/blog/")),
+  };
+}
+
 /**
  * A generated crawl (`crawl`) or third-party estimate (`third`) for the site.
- * `indexed` never exceeds `pages`: the profile document prints them on one line
- * ("抓到页面 N，收录约 M"), and the prototype's ranges often put M above N.
+ * With `observed`, pages, indexed and the pricing / docs / blog flags come from
+ * that audit instead; stack, traffic, DR and referring domains stay generated
+ * and identical, because every draw is taken either way.
  */
 export function crawlSignals(
   profile: Pick<Profile, "url" | "brand" | "market" | "features" | "competitors">,
   variant: CrawlVariant,
+  observed?: ObservedAudit,
 ): CrawlSignals {
-  const next = rngOf(seedKey(variant, domainOf(profile.url)));
-  const pages = sitePages(profile).length + Math.floor(next() * 40);
+  const draws = drawCrawl(seedKey(variant, domainOf(profile.url)));
+  const site = observed === undefined ? generatedSite(profile, draws) : observedSite(observed);
   return {
-    pages,
+    pages: site.pages,
     lang: marketLanguage(profile.market),
-    stack: pick(STACKS, next),
+    stack: draws.stack,
     h1: `[示例] ${brandOrPlaceholder(profile.brand)} 的首页 H1（未抓取）`,
-    hasPricing: next() > 0.25,
-    hasDocs: next() > 0.45,
-    hasBlog: next() > 0.2,
-    indexed: Math.max(1, Math.round(pages * (0.6 + next() * 0.4))),
-    traffic: Math.round((300 + next() * 5200) / 10) * 10,
-    dr: Math.floor(8 + next() * 45),
-    refdomains: Math.floor(15 + next() * 260),
+    hasPricing: site.hasPricing,
+    hasDocs: site.hasDocs,
+    hasBlog: site.hasBlog,
+    indexed: site.indexed,
+    traffic: Math.round((300 + draws.traffic * 5200) / 10) * 10,
+    dr: Math.floor(8 + draws.dr * 45),
+    refdomains: Math.floor(15 + draws.refdomains * 260),
   };
 }
 
-/** Clicks that are unavailable add nothing to a sum and sort as 0. */
-function clicksOf(row: GscRow): number {
-  return row.clicks !== null && Number.isFinite(row.clicks) ? row.clicks : 0;
+function availableClicks(row: GscRow): number | null {
+  return row.clicks !== null && Number.isFinite(row.clicks) ? row.clicks : null;
 }
 
-function sumClicks(rows: readonly GscRow[]): number {
-  return rows.reduce((sum, row) => sum + clicksOf(row), 0);
+/**
+ * 0 for no rows (a real zero); null when no row has available clicks; otherwise
+ * the sum of the available clicks. When only some rows have clicks, that sum is
+ * a lower bound, not the subset's total.
+ */
+function sumClicks(rows: readonly GscRow[]): number | null {
+  if (rows.length === 0) return 0;
+  const available = rows.map(availableClicks).filter((clicks): clicks is number => clicks !== null);
+  return available.length === 0 ? null : available.reduce((sum, clicks) => sum + clicks, 0);
 }
 
-/** Brand split by whole-word match (`Gen` is not `genre`), top queries by clicks, and the borderline count. */
-export function gscSignals(profile: Pick<Profile, "brand">, gscRows: readonly GscRow[]): GscSignals {
-  const isBrand = (row: GscRow): boolean => matchesBrand(row.query, profile.brand);
-  const brandRows = gscRows.filter(isBrand);
+/** Available clicks descending, unavailable last; `toSorted` is stable, so ties keep their input order. */
+function byClicks(a: GscRow, b: GscRow): number {
+  const left = availableClicks(a);
+  const right = availableClicks(b);
+  if (left === null || right === null) return (left === null ? 1 : 0) - (right === null ? 1 : 0);
+  return right - left;
+}
+
+/** Borderline rows; null when rows exist but none has an available position to check. */
+function nearCount(rows: readonly GscRow[]): number | null {
+  const statuses = rows.map(gscStatus);
+  if (statuses.length > 0 && statuses.every((status) => status === "unknown")) return null;
+  return statuses.filter((status) => status === "borderline").length;
+}
+
+/** Whole-word brand match (`Gen` is not `genre`); without a brand the split is unknowable. */
+function brandSplit(brand: string, rows: readonly GscRow[]): Pick<GscSignals, "brandQueries" | "brandClicks" | "nonBrandClicks"> {
+  if (brand.trim() === "") return { brandQueries: null, brandClicks: null, nonBrandClicks: null };
+  const isBrand = (row: GscRow): boolean => matchesBrand(row.query, brand);
+  const brandRows = rows.filter(isBrand);
   return {
-    total: gscRows.length,
     brandQueries: brandRows.length,
     brandClicks: sumClicks(brandRows),
-    nonBrandClicks: sumClicks(gscRows.filter((row) => !isBrand(row))),
-    top: gscRows.toSorted((a, b) => clicksOf(b) - clicksOf(a)).slice(0, TOP_QUERY_LIMIT),
-    near: gscRows.filter((row) => gscStatus(row) === "borderline").length,
+    nonBrandClicks: sumClicks(rows.filter((row) => !isBrand(row))),
+  };
+}
+
+export function gscSignals(profile: Pick<Profile, "brand">, gscRows: readonly GscRow[]): GscSignals {
+  const split = brandSplit(profile.brand, gscRows);
+  return {
+    total: gscRows.length,
+    brandQueries: split.brandQueries,
+    brandClicks: split.brandClicks,
+    nonBrandClicks: split.nonBrandClicks,
+    top: gscRows.toSorted(byClicks).slice(0, TOP_QUERY_LIMIT),
+    near: nearCount(gscRows),
   };
 }
 
@@ -90,7 +190,7 @@ function pillarPlaceholders(brand: string, features: readonly string[]): readonl
   const topics = [
     ...features.slice(0, PILLAR_MAX).map((feature) => `围绕 ${feature} 的主题`),
     `${brand} 的核心主题`,
-    "目标人群的常见问题",
+    `${brand} 的目标人群最常问的问题`,
   ];
   const count = Math.min(PILLAR_MAX, Math.max(PILLAR_MIN, features.length));
   return topics.slice(0, count).map((topic, index) => `[内容支柱 ${index + 1}：${topic}（待补）]`);
@@ -107,7 +207,7 @@ export function demoAiDoc(profile: Profile): AiDoc {
     icp: Array.from({ length: ICP_SEGMENT_COUNT }, (_, index) => icpPlaceholder(index + 1)),
     value_props: [
       `[价值主张 1：${brand} 帮目标人群解决的核心问题（待补）]`,
-      `[价值主张 2：${brand} 用${features[0] ?? "核心功能"}带来的具体结果（待补）]`,
+      `[价值主张 2：${brand} 用 ${features[0] ?? "核心功能"} 带来的具体结果（待补）]`,
     ],
     diff: [
       `[差异点 1：${brand} 与 ${rival} 相比的不同（待补对比依据）]`,

@@ -8,6 +8,7 @@ import { splitList } from "./text.ts";
 
 type SeedProfile = Pick<Profile, "brand" | "positioning" | "features" | "competitors">;
 
+const AT = "2026-09-13 10:00";
 const EVIDENCE = "来自站点档案字段";
 /** Not GenGrowth, so a borrowed prototype fact cannot hide behind the brand. */
 const EMPTY: SeedProfile = { brand: "Acme", positioning: "", features: "", competitors: "" };
@@ -21,7 +22,12 @@ const ONE: SeedProfile = { brand: "", positioning: "  a shelf planner ", feature
 const FOUR_RIVALS: SeedProfile = { ...EMPTY, competitors: "Sortly, inFlow, Zoho Inventory, Fishbowl" };
 
 function docWith(facts: readonly string[]): ProfileDoc {
-  return { crawl: null, gsc: null, third: null, ai: { ...demoAiDoc({ ...EMPTY, url: "", market: "" }), facts }, at: "2026-09-13 10:00" };
+  const ai = { ...demoAiDoc({ ...EMPTY, url: "", market: "" }), facts };
+  return { crawl: null, gsc: null, third: null, ai, at: AT };
+}
+
+function demoDoc(): ProfileDoc {
+  return { ...docWith([]), ai: demoAiDoc({ ...FULL, url: "widgets.co.uk", market: "GB" }) };
 }
 
 function gap(id: string, cat: KbEntry["cat"]): KbEntry {
@@ -30,6 +36,10 @@ function gap(id: string, cat: KbEntry["cat"]): KbEntry {
 
 function manual(id: string, cat: KbEntry["cat"], statement: string): KbEntry {
   return { id, cat, statement, evidence: EVIDENCE, source: "", from: "manual" };
+}
+
+function draft(id: string, cat: KbEntry["cat"], statement: string): KbEntry {
+  return { id, cat, statement, evidence: "", source: "", from: "aiDraft" };
 }
 
 function deepFreeze(entries: readonly KbEntry[]): readonly KbEntry[] {
@@ -41,7 +51,7 @@ const CASES: readonly (readonly [SeedProfile, ProfileDoc | null])[] = [
   [FULL, docWith(["Widgets ships from Leeds", "Widgets has a public API"])],
   [ONE, null],
   [FOUR_RIVALS, docWith([])],
-  [FULL, { ...docWith([]), ai: demoAiDoc({ ...FULL, url: "widgets.co.uk", market: "GB" }) }],
+  [FULL, demoDoc()],
 ];
 
 describe("seedKb", () => {
@@ -61,8 +71,8 @@ describe("seedKb", () => {
       gap("kb-07", "comparison"),
       gap("kb-08", "comparison"),
       gap("kb-09", "comparison"),
-      { id: "kb-10", cat: "data", statement: "Widgets ships from Leeds", evidence: "", source: "", from: "aiDraft" },
-      { id: "kb-11", cat: "data", statement: "Widgets has a public API", evidence: "", source: "", from: "aiDraft" },
+      draft("kb-10", "data", "Widgets ships from Leeds"),
+      draft("kb-11", "data", "Widgets has a public API"),
     ]);
   });
 
@@ -95,15 +105,12 @@ describe("seedKb", () => {
     const cats = (doc: ProfileDoc | null): readonly string[] => seedKb(FULL, doc).map((entry) => entry.cat);
     expect(cats(null)).not.toContain("data");
     expect(cats(docWith([]))).not.toContain("data");
-    expect(seedKb(EMPTY, docWith(["", "  ", "Acme is open source"])).filter((entry) => entry.cat === "data")).toEqual([
-      { id: "kb-04", cat: "data", statement: "Acme is open source", evidence: "", source: "", from: "aiDraft" },
-    ]);
+    const data = seedKb(EMPTY, docWith(["", "  ", "Acme is open source"])).filter((entry) => entry.cat === "data");
+    expect(data).toEqual([draft("kb-04", "data", "Acme is open source")]);
   });
 
   it("files the demo AI document's facts as AI drafts, never as manual", () => {
-    const profile = { ...FULL, url: "widgets.co.uk", market: "GB" };
-    const doc = { ...docWith([]), ai: demoAiDoc(profile) };
-    const data = seedKb(FULL, doc).filter((entry) => entry.cat === "data");
+    const data = seedKb(FULL, demoDoc()).filter((entry) => entry.cat === "data");
     expect(data).toHaveLength(splitList(FULL.features).length);
     expect(data.every((entry) => entry.from === "aiDraft")).toBe(true);
   });
@@ -131,7 +138,7 @@ describe("seedKb", () => {
 
   it("round-trips through the strict persisted-state schema", () => {
     for (const [profile, doc] of CASES) {
-      const kb = { entries: seedKb(profile, doc), at: "2026-09-13 10:00" };
+      const kb = { entries: seedKb(profile, doc), at: AT };
       const state = { ...populatedProjectState({ url: "acme.io", brand: profile.brand, market: "US" }), kb };
       const raw: unknown = JSON.parse(JSON.stringify({ v: PERSISTED_VERSION, state }));
       expect(parsePersistedState(raw)?.kb).toEqual(kb);
@@ -166,6 +173,20 @@ describe("fillFirstKbGap", () => {
     expect(fillFirstKbGap(entries, "boundary", PATCH, "kb-new")).toEqual([{ id: "kb-01", cat: "boundary", ...PATCH }]);
   });
 
+  it("fills a blank entry of any origin before a later gap of the same category", () => {
+    const entries = deepFreeze([manual("kb-01", "capability", ""), gap("kb-02", "capability")]);
+    expect(fillFirstKbGap(entries, "capability", PATCH, "kb-new")).toEqual([
+      { id: "kb-01", cat: "capability", ...PATCH },
+      gap("kb-02", "capability"),
+    ]);
+  });
+
+  it("does not overwrite a pending placeholder: only blank statements are filled", () => {
+    const pending = draft("kb-01", "pricing", "[示例] Acme 的免费档与付费档分别包含什么（待补定价页原句）");
+    const entries = deepFreeze([pending, gap("kb-02", "pricing")]);
+    expect(fillFirstKbGap(entries, "pricing", PATCH, "kb-new")).toEqual([pending, { id: "kb-02", cat: "pricing", ...PATCH }]);
+  });
+
   it("appends a new entry when the category has no gap left", () => {
     const entries = deepFreeze(seedKb(FULL, null));
     const filled = fillFirstKbGap(entries, "capability", PATCH, "kb-demo-capability");
@@ -192,11 +213,20 @@ describe("kbGapCount", () => {
   });
 
   it("counts entries whose statement is blank", () => {
-    const at = "2026-09-13 10:00";
-    expect(kbGapCount({ entries: [], at })).toBe(0);
-    expect(
-      kbGapCount({ entries: [gap("kb-01", "pricing"), { ...gap("kb-02", "faq"), statement: " " }, manual("kb-03", "definition", "x")], at }),
-    ).toBe(2);
-    expect(kbGapCount({ entries: seedKb(FULL, null), at })).toBe(5);
+    expect(kbGapCount({ entries: [], at: AT })).toBe(0);
+    const entries = [gap("kb-01", "pricing"), { ...gap("kb-02", "faq"), statement: " " }, manual("kb-03", "definition", "x")];
+    expect(kbGapCount({ entries, at: AT })).toBe(2);
+    expect(kbGapCount({ entries: seedKb(FULL, null), at: AT })).toBe(5);
+  });
+
+  it("also counts pending placeholders (待补 / 需补) as gaps", () => {
+    const entries = [
+      draft("kb-01", "pricing", "[示例] Acme 的免费档与付费档分别包含什么（待补定价页原句）"),
+      draft("kb-02", "data", "[示例事实：Acme 提供 x，需补证据与核对日期]"),
+      manual("kb-03", "capability", "Acme 提供 待办清单"),
+    ];
+    expect(kbGapCount({ entries, at: AT })).toBe(2);
+    // 5 blank seeds plus the three demo facts, each marked 需补.
+    expect(kbGapCount({ entries: seedKb(FULL, demoDoc()), at: AT })).toBe(8);
   });
 });

@@ -11,6 +11,8 @@ import { competitorNames, splitList } from "./text.ts";
 
 export const KB_PROFILE_EVIDENCE = "来自站点档案字段";
 const COMPARISON_GAP_LIMIT = 3;
+/** Wording the sample content uses for unfinished statements (`demoAiDoc` facts, demo KB fills). */
+const PENDING_MARKER = /待补|需补/u;
 
 type KbDraft = Omit<KbEntry, "id">;
 type KbPatch = Pick<KbEntry, "statement" | "evidence" | "source" | "from">;
@@ -64,7 +66,11 @@ function entryOf(id: string, cat: KbCategory, patch: KbPatch): KbEntry {
   return { id, cat, statement: patch.statement, evidence: patch.evidence, source: patch.source, from: patch.from };
 }
 
-/** Fills the first blank entry of `category` (keeping its id), or appends `newId` when there is none. Never mutates. */
+/**
+ * Fills the first blank entry of `category`, whatever its origin (keeping its
+ * id), or appends `newId` when there is none. A pending placeholder is not
+ * blank, so it is never overwritten. Never mutates.
+ */
 export function fillFirstKbGap(
   entries: readonly KbEntry[],
   category: KbCategory,
@@ -76,7 +82,12 @@ export function fillFirstKbGap(
   return entries.map((entry, at) => (at === index ? entryOf(entry.id, entry.cat, patch) : entry));
 }
 
-/** Blank statements are gaps; `null` when there is no knowledge base yet. */
+/** Blank statements and pending placeholders (待补 / 需补) are both still gaps. */
+function isGap(entry: KbEntry): boolean {
+  return isBlank(entry.statement) || PENDING_MARKER.test(entry.statement);
+}
+
+/** Entries still to be written; `null` when there is no knowledge base yet. */
 export function kbGapCount(kb: KnowledgeBase | null): number | null {
-  return kb === null ? null : kb.entries.filter((entry) => isBlank(entry.statement)).length;
+  return kb === null ? null : kb.entries.filter(isGap).length;
 }

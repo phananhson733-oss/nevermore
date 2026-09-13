@@ -198,11 +198,15 @@ const profileDoc = z.strictObject({
   gsc: z
     .strictObject({
       total: z.number(),
-      brandQueries: z.number(),
-      brandClicks: z.number(),
-      nonBrandClicks: z.number(),
+      // Pre-ship exemption from the bump rule above: these four were widened to
+      // nullable (unavailable is null, never 0) before the first release. PR-1
+      // never shipped, so no reader of the old all-number shape exists and
+      // PERSISTED_VERSION stays 1. Once released, a change like this needs a bump.
+      brandQueries: nullableNumber,
+      brandClicks: nullableNumber,
+      nonBrandClicks: nullableNumber,
       top: z.array(gscRow),
-      near: z.number(),
+      near: nullableNumber,
     })
     .nullable(),
   third: crawlSignals.nullable(),
