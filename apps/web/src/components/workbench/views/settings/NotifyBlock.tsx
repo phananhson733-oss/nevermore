@@ -5,15 +5,17 @@ import { useTranslations } from "next-intl";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
 import type { WorkbenchContextValue } from "@/lib/workbench/store/WorkbenchProvider";
 import { cn } from "../../ui/cn.ts";
-import { DemoChip } from "../../ui/DemoChip.tsx";
 import { CARD_SHELL, PANEL_TITLE } from "../../ui/panel.ts";
 import { Toggle } from "../../ui/Toggle.tsx";
 
 /**
  * Notification preferences (design §6.2, T11, Q24): four switches kept in this
  * browser's workbench store. Nothing reads them to send anything, which the
- * block says in so many words (`settings.notify.note`) and marks with the
- * sample-data chip. There is no save button: a flip is the write.
+ * block says in so many words (`settings.notify.note`). No sample-data chip
+ * (codex S11 #1): the switches read and write the operator's own preferences,
+ * so "Sample data" would be false after a flip, and the chip's title ("sample
+ * content is Chinese-only") has nothing to do with them. There is no save
+ * button: a flip is the write.
  *
  * Every write hands `setNotify` the whole object (`{...notify, key: next}`);
  * the reducer replaces `notify` wholesale, so a one-field write would leave the
@@ -44,7 +46,6 @@ export function NotifyBlock() {
         <h2 id={titleId} className={PANEL_TITLE}>
           {t("title")}
         </h2>
-        <DemoChip />
       </div>
       <p
         data-wb-frame=""

@@ -9,8 +9,8 @@ import { SourcesSummaryBlock } from "./SourcesSummaryBlock.tsx";
 /**
  * Settings (design §6.2, T11): three blocks and no save button (Q24).
  *
- * 1. `NotifyBlock` — local notification preferences, marked as sample data and
- *    stating nothing is sent.
+ * 1. `NotifyBlock` — local notification preferences, stating they stay in this
+ *    browser and nothing is sent. No sample marker (codex S11 #1).
  * 2. `SourcesSummaryBlock` — read-only connection status and links out.
  * 3. `DeleteProjectSection` — the page's one real action
  *    (`[data-wb-real-action]`, pinned to exactly one by the e2e spec); no sample

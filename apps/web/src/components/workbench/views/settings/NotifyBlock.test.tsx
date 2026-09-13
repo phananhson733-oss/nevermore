@@ -14,7 +14,9 @@
  * - Before storage is read there are no switches at all: the in-memory value is
  *   the seed, and a row of switches drawn from it would state preferences the
  *   operator may not have.
- * - The block carries the sample-data chip (the preferences drive nothing).
+ * - The block carries no sample marker (codex S11 #1): the switches read and
+ *   write the operator's own local preferences, so "Sample data" would be false
+ *   after a flip, and the note already says nothing is sent.
  */
 
 import { act } from "react";
@@ -167,24 +169,27 @@ describe("NotifyBlock: what it says about itself", () => {
     expect(notes[0]?.textContent).toContain("不会发送任何通知");
   });
 
-  it("carries exactly one sample-data chip and names itself", async () => {
+  it("names itself and carries no sample marker", async () => {
     const view = await renderBlock();
-    const chips = block(view.app).querySelectorAll(
-      `span[title="${SHELL.sampleTitle}"]`,
-    );
-    expect(chips).toHaveLength(1);
-    expect(chips[0]?.textContent).toBe("Sample data");
     const headings = block(view.app).querySelectorAll("h2");
     expect(headings).toHaveLength(1);
     expect(headings[0]?.textContent).toBe("Notification preferences");
     expect(block(view.app).getAttribute("aria-labelledby")).toBe(
       headings[0]?.id,
     );
+    expect(switches(view.app)).toHaveLength(4);
+    expect(
+      block(view.app).querySelectorAll(`span[title="${SHELL.sampleTitle}"]`),
+    ).toHaveLength(0);
+    const text = block(view.app).textContent ?? "";
+    expect(text).toContain("Notification preferences");
+    expect(text).not.toContain("Sample data");
+    expect(text).not.toContain("Sample site");
   });
 });
 
 describe("NotifyBlock: before the store is read", () => {
-  it("draws a skeleton instead of switches, and still states the note and the chip", async () => {
+  it("draws a skeleton instead of switches, and still states the note", async () => {
     const notReady: WorkbenchContextValue = {
       projectId: DS_PROJECT_ID,
       state: initialProjectState(DS_SEED),
@@ -213,6 +218,7 @@ describe("NotifyBlock: before the store is read", () => {
     );
     expect(
       scope.querySelectorAll(`span[title="${SHELL.sampleTitle}"]`),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
+    expect(scope.textContent).not.toContain("Sample data");
   });
 });

@@ -11,9 +11,11 @@
  *   OAuth button, a wrapper that took the attribute) would make that locator
  *   ambiguous. Checked on a read and on CONTEXT_INCOMPLETE, where the sources
  *   panel adds a `/context` link that must not sit inside the real action.
- * - Sample markers stay out of the real action (Claude #18). The PR-1 contract
- *   "no sample chip anywhere" is narrowed to that subtree now that the notify
- *   block carries one; the page has exactly one chip, and it is in that block.
+ * - No sample marker on the page. The notify block's chip was removed (codex
+ *   S11 #1): its switches are the operator's own local preferences, and its
+ *   note says nothing is sent, which is pinned here in both locales. The
+ *   real-action subtree check (Claude #18) stays as its own assertion, so a
+ *   marker added only inside the delete block is named as such.
  * - The PR-1 "lands in a later batch" sentence is gone (the page is complete);
  *   there is still no legacy settings link, because that page was deleted.
  * - Q26 / Q30: the padded `.wb-reset` root at overview width, frame copy
@@ -155,6 +157,35 @@ describe("SettingsView: composition", () => {
     expect(text).toContain("通知偏好");
     expect(text).not.toContain("后续批次");
   });
+
+  it("states in the notify block that preferences stay here and nothing is sent (en)", async () => {
+    const view = await renderPage();
+    const notes = view.app.querySelectorAll(
+      "[data-wb-notify] [data-wb-notify-note]",
+    );
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.textContent).toBe(
+      DS_MESSAGES.en.workbench.settings.notify.note,
+    );
+    expect(notes[0]?.textContent).toContain("only in this browser");
+    expect(notes[0]?.textContent).toContain("nothing is sent");
+  });
+
+  it("states in the notify block that preferences stay here and nothing is sent (zh-CN)", async () => {
+    const view = await renderPage("zh-CN");
+    const notes = view.app.querySelectorAll(
+      "[data-wb-notify] [data-wb-notify-note]",
+    );
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.textContent).toBe(
+      DS_MESSAGES["zh-CN"].workbench.settings.notify.note,
+    );
+    expect(notes[0]?.textContent).toContain("只保存在这个浏览器");
+    expect(notes[0]?.textContent).toContain("不会发送任何通知");
+    const text = view.app.textContent ?? "";
+    expect(text).not.toContain("示例数据");
+    expect(text).not.toContain("示例站点");
+  });
 });
 
 describe.each<Answer>(["read", "needProfile"])(
@@ -178,13 +209,16 @@ describe.each<Answer>(["read", "needProfile"])(
       expect(actions[0]?.querySelectorAll("a")).toHaveLength(0);
     });
 
-    it("keeps every sample marker outside the real action; the one chip is in the notify block", async () => {
+    it("carries no sample marker on the page, and none inside the real action", async () => {
       const view = await renderPage();
-      const chips = view.app.querySelectorAll(CHIP);
-      expect(chips).toHaveLength(1);
-      expect(chips[0]?.closest("[data-wb-notify]")).not.toBeNull();
       const action = view.app.querySelectorAll("[data-wb-real-action]");
       expect(action).toHaveLength(1);
+      expect(view.app.querySelectorAll("[data-wb-notify]")).toHaveLength(1);
+      expect(view.app.querySelectorAll(CHIP)).toHaveLength(0);
+      const text = view.app.textContent ?? "";
+      expect(text).toContain("Notification preferences");
+      expect(text).not.toContain(SHELL.sampleData);
+      expect(text).not.toContain(SHELL.sampleSite);
       expect(action[0]?.querySelectorAll(CHIP)).toHaveLength(0);
       expect(action[0]?.textContent).not.toContain(SHELL.sampleData);
       expect(action[0]?.textContent).not.toContain(SHELL.sampleSite);
