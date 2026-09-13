@@ -11,17 +11,23 @@ import { BUTTON_SECONDARY } from "../../ui/panel.ts";
  * "Clear" for the GSC rows saved in this browser, behind a confirmation (T10
  * Step 3), shaped like the topbar's "clear sample" (`shell/useClearSample.ts`).
  *
- * - What the yes covers (codex S6r3). `confirm` snapshots the rows array and its
- *   provenance from the render the operator pressed it in, and `clearGscRows`
- *   carries that snapshot: the reducer clears only while both are still what
- *   was on screen. A bare `setGscRows([])` would also delete rows another tab
- *   imported while the box was open, or an import of ours queued behind that
- *   render — neither of which the operator saw.
+ * - What the yes covers (codex S6r3, S6r4). `confirm` snapshots the rows array
+ *   and its provenance from the render its handler runs in, and `clearGscRows`
+ *   carries that snapshot: the reducer clears only while both are still that
+ *   render's. So the yes covers every row that render showed, rows another tab
+ *   imported while the box was open included, once they had rendered. What the
+ *   snapshot protects is what that render did not yet contain: a write queued
+ *   but not rendered when the click landed (another tab's import, a file read of
+ *   ours settling in the same tick), which a bare `setGscRows([])` would delete
+ *   unseen.
  * - Whether it went. The dispatch runs in `flushSync`, so `stateRef` says what
  *   the reducer did. An accepted clear always leaves no rows, so rows still
  *   there mean it was refused (they are, by then, not the snapshot): the box
  *   opens again over what is there now, focus on Cancel, instead of closing as
- *   if it had cleared.
+ *   if it had cleared. Nothing is reported upward: the pane drops its last
+ *   result when the saved rows go from some to none, whichever write emptied
+ *   them (`use-gsc-import.ts`), so a confirmed clear and another tab's clear
+ *   cannot disagree about it.
  * - Rows gone while the box is open (another tab cleared them) close it, reset
  *   during render so no frame commits a box asking about nothing; the "asked" is
  *   dropped, not parked, or it would reopen unasked when rows come back.
@@ -29,16 +35,14 @@ import { BUTTON_SECONDARY } from "../../ui/panel.ts";
  *   close remove the button in the same commit, so the box is pointed at
  *   `focusAfterClear` (the paste field) instead of dropping focus to <body>.
  *   Dialog reads the ref when it closes, which is why the handlers and the
- *   render-time reset can re-point it.
+ *   render-time reset can re-point it. Every way the box closes points it first,
+ *   so a reopen after a refusal needs no pointing of its own.
  *
  * 一旦本文件被更新，务必更新开头注释
  */
 export function ClearGscRowsButton({
-  onCleared,
   focusAfterClear,
 }: {
-  /** Called once the reducer accepted the clear. */
-  readonly onCleared: () => void;
   /** Where focus goes when this button leaves under it. Must be a stable ref. */
   readonly focusAfterClear: RefObject<HTMLElement | null>;
 }) {
@@ -74,12 +78,7 @@ export function ClearGscRowsButton({
       setAsked(false);
       dispatch({ type: "clearGscRows", expected });
     });
-    if (stateRef.current.gscRows.length === 0) {
-      onCleared();
-      return;
-    }
-    returnFocusRef.current = buttonRef.current;
-    setAsked(true);
+    if (stateRef.current.gscRows.length > 0) setAsked(true);
   }
 
   return (

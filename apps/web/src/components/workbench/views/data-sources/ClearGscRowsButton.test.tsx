@@ -127,6 +127,10 @@ describe("ClearGscRowsButton: what the yes covers (codex S6r3)", () => {
     const view = withRows();
     act(() => clearButton(view).click());
     const confirm = buttonByText(requireDialog(view), COPY.clear);
+    // Focus starts on Cancel when the box opens; put it on the confirm button, as
+    // a keyboard user pressing it would, so the assertion below needs a move.
+    act(() => confirm.focus());
+    expect(document.activeElement).toBe(confirm);
     const queueAnotherTabsRows = (): void => {
       view.store().dispatch({ type: "setGscRows", rows: ROWS_B, source: "user" });
     };
@@ -156,5 +160,16 @@ describe("ClearGscRowsButton: what the yes covers (codex S6r3)", () => {
     expect(document.activeElement).toBe(pasteField(view));
     view.dispatch({ type: "setGscRows", rows: ROWS_B, source: "user" });
     expect(dialog(view)).toBeNull();
+  });
+
+  it("drops the last result when the rows are gone while the box is open, as a confirmed clear does", () => {
+    const view = render();
+    typeInto(pasteField(view), "seo tool\t10\t100\t1%\t4");
+    act(() => buttonByText(view.app, "Parse").click());
+    expect(view.app.querySelector("[data-wb-import-notice]")?.textContent).not.toBe("");
+    act(() => clearButton(view).click());
+    view.dispatch({ type: "setGscRows", rows: [], source: "user" });
+    expect(dialog(view)).toBeNull();
+    expect(view.app.querySelector("[data-wb-import-notice]")?.textContent).toBe("");
   });
 });

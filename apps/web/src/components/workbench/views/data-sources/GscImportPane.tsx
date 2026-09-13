@@ -23,9 +23,10 @@ import { useGscImport } from "./use-gsc-import.ts";
  *   so the control reads as one; focus lands on the hidden input, so the ring is
  *   drawn with `focus-within:` on the label. The input is emptied after each
  *   pick, so the same file can be chosen again after editing it.
- * - Clear: `ClearGscRowsButton` (confirmation bound to what was on screen); a
- *   confirmed clear also drops the last result, which no longer describes the
- *   saved rows.
+ * - Clear: `ClearGscRowsButton` (confirmation bound to what was on screen).
+ *   The last result goes whenever the saved rows go from some to none, by that
+ *   button or by any other write (`use-gsc-import.ts`), since it no longer
+ *   describes them.
  * - The size limit is formatted once and handed to both sentences that name it.
  *
  * The whole pane is framework copy (Q30) except the textarea's value, which is
@@ -52,7 +53,7 @@ export function GscImportPane() {
       <button type="button" onClick={() => controls.importText(text)} className={BUTTON_PRIMARY}>
         {t("parse")}
       </button>
-      <ClearGscRowsButton onCleared={controls.forget} focusAfterClear={pasteRef} />
+      <ClearGscRowsButton focusAfterClear={pasteRef} />
     </div>
   );
   return (

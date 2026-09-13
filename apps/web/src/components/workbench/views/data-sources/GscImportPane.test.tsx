@@ -14,7 +14,11 @@
  * - repeated queries are disclosed and the first row is the one kept;
  * - the cap sentence is asserted whole with 5000 / 5002, in both locales
  *   (Step 4b): a swap renders "kept 5002 of 5000" with both numbers present;
- * - a slow file read never lands over a newer paste.
+ * - a slow file read never lands over a newer paste, nor over a clear;
+ * - the result goes when the saved rows go from some to none, whichever write
+ *   emptied them, and stays when rows are replaced by rows;
+ * - the same file chosen twice imports twice: a browser fires no `change` for
+ *   an unchanged value, so one case models that and the pane must empty it.
  *
  * The file cases go through a real `<input type="file">` change event; only
  * `File.prototype.text` is stubbed where the case is about the read itself.
@@ -25,6 +29,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { GSC_IMPORT_MAX_BYTES } from "@/lib/workbench/mock/gsc-import";
 import {
   buttonByText,
+  DS_MESSAGES,
   gscRow,
   mountWithStore,
   pickFile,
@@ -247,6 +252,60 @@ describe("GscImportPane: upload (Q8)", () => {
     expect(view.store().state.gscRows).toEqual([]);
   });
 
+  it("imports the same file again when it is chosen again", async () => {
+    const view = render();
+    const input = fileInput(view);
+    let value = "";
+    Object.defineProperty(input, "value", {
+      configurable: true,
+      get: () => value,
+      set: (next: string) => {
+        value = next;
+      },
+    });
+    const file = new File([lines("Query,Clicks,Position", "file query,1,5")], "gsc.csv", { type: "text/csv" });
+    const choose = async (): Promise<void> => {
+      const picked = `C:\\fakepath\\${file.name}`;
+      // What a browser does: picking the file the input already holds is no change.
+      if (value === picked) return;
+      value = picked;
+      pickFile(input, file);
+      await settle();
+    };
+    await choose();
+    expect(view.store().state.gscRows).toEqual([gscRow("file query", 1, null, null, 5)]);
+    paste(view, "pasted query\t7\t70\t1%\t6");
+    parse(view);
+    expect(view.store().state.gscRows).toEqual([gscRow("pasted query", 7, 70, 1, 6)]);
+    await choose();
+    expect(view.store().state.gscRows).toEqual([gscRow("file query", 1, null, null, 5)]);
+  });
+
+  it("drops a file read that settles after a confirmed clear (codex U1b)", async () => {
+    const copy = DS_MESSAGES.en.workbench.dataSources.import;
+    const view = render();
+    view.dispatch({ type: "setGscRows", rows: [gscRow("saved query", 1, 10, 1, 5)], source: "user" });
+    let finishRead: (text: string) => void = () => {};
+    const file = new File(["ignored"], "slow.csv");
+    vi.spyOn(file, "text").mockReturnValue(
+      new Promise<string>((resolve) => {
+        finishRead = resolve;
+      }),
+    );
+    pickFile(fileInput(view), file);
+    act(() => buttonByText(view.app, copy.clear).click());
+    const box = view.root.querySelector('[role="dialog"]');
+    if (box === null) throw new Error("no dialog open");
+    act(() => buttonByText(box, copy.clear).click());
+    expect(view.store().state.gscRows).toEqual([]);
+    await act(async () => {
+      finishRead("file query\t1\t10\t1%\t5");
+    });
+    await settle();
+    expect(view.store().state.gscRows).toEqual([]);
+    expect(view.app.querySelector("[data-wb-import-notice]")?.textContent).toBe("");
+  });
+
   it("drops a file read that settles after a newer paste was imported", async () => {
     const view = render();
     let finishRead: (text: string) => void = () => {};
@@ -265,6 +324,41 @@ describe("GscImportPane: upload (Q8)", () => {
     await settle();
     expect(view.store().state.gscRows).toEqual([gscRow("pasted query", 7, 70, 1, 6)]);
     expect(result(view, "counts")).toBe("1 row parsed · 0 rows skipped");
+  });
+});
+
+describe("GscImportPane: the result follows the saved rows (codex S6r4)", () => {
+  it("drops the last result when another write empties the saved rows", () => {
+    const view = render();
+    paste(view, "seo tool\t10\t100\t1%\t4");
+    parse(view);
+    expect(result(view, "counts")).toBe("1 row parsed · 0 rows skipped");
+    view.dispatch({ type: "setGscRows", rows: [], source: "user" });
+    expect(view.app.querySelector("[data-wb-import-notice]")?.textContent).toBe("");
+  });
+
+  it("keeps the last result when rows are replaced by other rows", () => {
+    const view = render();
+    paste(view, "seo tool\t10\t100\t1%\t4");
+    parse(view);
+    view.dispatch({ type: "setGscRows", rows: [gscRow("another tab", 1, 10, 1, 5)], source: "user" });
+    expect(result(view, "counts")).toBe("1 row parsed · 0 rows skipped");
+  });
+});
+
+describe("GscImportPane: the replace disclosure (codex S10b)", () => {
+  it.each([
+    ["en", "Parse"],
+    ["zh-CN", "解析"],
+  ] as const)("says in %s, before Parse and before the upload, that rows found replace the saved ones", (locale, label) => {
+    const view = render(locale);
+    const copy = DS_MESSAGES[locale].workbench.dataSources.import;
+    const note = [...view.app.querySelectorAll("p")].find((p) => p.textContent === copy.replaceNote);
+    expect(note).toBeDefined();
+    const precedes = (later: Node): boolean =>
+      note !== undefined && (note.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(precedes(buttonByText(view.app, label))).toBe(true);
+    expect(precedes(fileInput(view))).toBe(true);
   });
 });
 

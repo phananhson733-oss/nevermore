@@ -14,10 +14,17 @@ import { useWorkbench } from "@/lib/workbench/store/hooks";
  * - A file over `GSC_IMPORT_MAX_BYTES` is not read at all (Q8). A read that
  *   fails says so without a cause: the one `catch` around `file.text()` cannot
  *   tell encoding from permission from disk (Q4).
- * - Latest intent wins. Each import, and `forget` (called when the rows are
- *   cleared), takes a new number; a file read that settles after a newer import,
- *   after a clear, or after unmount writes nothing and shows nothing. Without it
- *   a slow file would put its rows back over a paste or a confirmed clear.
+ * - Latest intent wins. Each import takes a new number; a file read that
+ *   settles after a newer import, after the saved rows went from some to none,
+ *   or after unmount writes nothing and shows nothing. Without it a slow file
+ *   would put its rows back over a paste or a confirmed clear.
+ * - The result follows the saved rows (codex S6r4). When they go from some to
+ *   none — a confirmed clear, or any other write, another tab's included — the
+ *   last result is dropped: it described rows that are gone. The transition is
+ *   read from the store during render rather than reported by the clear button,
+ *   so every path that empties the rows takes it, and it bumps a state counter,
+ *   not the import ref, to keep render free of ref increments. Rows replaced by
+ *   rows keep the result.
  *
  * Replacing non-empty rows is not confirmed: the plan asks for a confirmation
  * on clear only, and the pane says before the click that a parse which finds
@@ -35,13 +42,24 @@ export interface GscImportControls {
   readonly notice: ImportNotice | null;
   readonly importText: (text: string) => void;
   readonly importFile: (file: File) => Promise<void>;
-  /** Drops the notice and abandons any file read still in flight. */
-  readonly forget: () => void;
 }
 
 export function useGscImport(): GscImportControls {
-  const { dispatch } = useWorkbench();
+  const { state, dispatch } = useWorkbench();
   const [notice, setNotice] = useState<ImportNotice | null>(null);
+  const hasRows = state.gscRows.length > 0;
+  const [hadRows, setHadRows] = useState(hasRows);
+  const [emptied, setEmptied] = useState(0);
+  if (hadRows !== hasRows) {
+    setHadRows(hasRows);
+    if (!hasRows) {
+      setEmptied((times) => times + 1);
+      setNotice(null);
+    }
+  }
+  // The latest render's count, read when a file read settles.
+  const emptiedRef = useRef(emptied);
+  emptiedRef.current = emptied;
   const latest = useRef(0);
   const alive = useRef(true);
   useEffect(() => {
@@ -69,6 +87,7 @@ export function useGscImport(): GscImportControls {
 
   async function importFile(file: File): Promise<void> {
     const run = begin();
+    const emptiedAtStart = emptiedRef.current;
     if (file.size > GSC_IMPORT_MAX_BYTES) {
       setNotice({ kind: "tooLarge" });
       return;
@@ -77,7 +96,7 @@ export function useGscImport(): GscImportControls {
       (value) => value,
       () => null,
     );
-    if (!alive.current || latest.current !== run) return;
+    if (!alive.current || latest.current !== run || emptiedRef.current !== emptiedAtStart) return;
     if (text === null) {
       setNotice({ kind: "readFailed" });
       return;
@@ -85,10 +104,5 @@ export function useGscImport(): GscImportControls {
     apply(text);
   }
 
-  function forget(): void {
-    begin();
-    setNotice(null);
-  }
-
-  return { notice, importText, importFile, forget };
+  return { notice, importText, importFile };
 }
