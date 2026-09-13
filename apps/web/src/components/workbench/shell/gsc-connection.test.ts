@@ -4,16 +4,18 @@
  * rules carry the whole file:
  *
  * 1. Enumerated, not excluded. A slot is connected only when its state is one
- *    of the seven listed as a connection AND it has an `id`. The old criterion
- *    `state !== "disconnected"` failed open: `connecting`, or any state added
- *    later, silently became "connected".
+ *    of the seven listed as a connection AND its `id` is a non-empty string.
+ *    The old criterion `state !== "disconnected"` failed open: `connecting`, or
+ *    any state added later, silently became "connected" — and `id !== null`
+ *    failed open the same way for a missing, blank or non-string id.
  * 2. Q3: `permission_denied` and `unavailable` are still connections; whether
  *    their data is usable is the data-sources page's question.
  * 3. Q4: only an explicit `disconnected` earns "not connected". Everything we
  *    cannot settle is `null` — a state that is not a finished connection
  *    (`connecting`, or one the client has never heard of), a connected-looking
  *    state with no `id` (the two fields contradict each other), a failed or
- *    first read, no data, no gsc slot.
+ *    first read, no data, no gsc slot or more than one, and a list or slot
+ *    that is not the shape its type claims (the DTO has no runtime schema).
  *
  * Every `SourceState` is spelled out below one by one, with its answer both
  * with and without an `id`, rather than looped over the type: a loop over the
@@ -196,5 +198,73 @@ describe("gscConnectionState: unknown is not 'not connected'", () => {
     expect(
       gscConnectionState({ sources: undefined, isLoading: false, isError: false }),
     ).toBeNull();
+  });
+});
+
+/**
+ * The DTO is not validated at runtime, so the cases below build what the wire
+ * could deliver rather than what the type allows. The server sends none of
+ * them today (one slot per provider, uuid ids, CHECK-constrained states); each
+ * is here because the lookup it pins once turned it into a verdict or a throw.
+ */
+function readOf(sources: unknown): Parameters<typeof gscConnectionState>[0] {
+  return { sources, isLoading: false, isError: false } as unknown as Parameters<
+    typeof gscConnectionState
+  >[0];
+}
+
+function gscSlotWith(fields: Readonly<Record<string, unknown>>): unknown {
+  return { ...source("gsc", "connected"), ...fields };
+}
+
+describe("gscConnectionState: a slot nobody validated at runtime", () => {
+  it.each([
+    ["an empty string", ""],
+    ["blank", "   "],
+    ["a number", 42],
+    ["an object", {}],
+    ["undefined", undefined],
+  ])("is null for a connected state whose id is %s", (_label, id) => {
+    // `id !== null` let every one of these through as "connected".
+    expect(gscConnectionState(readOf([gscSlotWith({ id })]))).toBeNull();
+  });
+
+  it("is null for a connected state with no id field at all", () => {
+    const { id: _dropped, ...withoutId } = source("gsc", "connected");
+    expect(gscConnectionState(readOf([withoutId]))).toBeNull();
+  });
+
+  it("is null, in both directions, for a state wrapped in an array", () => {
+    // `Object.hasOwn` and the index coerce their key: ["connected"] used to read
+    // "connected" and ["disconnected"] "not connected".
+    expect(gscConnectionState(readOf([gscSlotWith({ state: ["connected"] })]))).toBeNull();
+    expect(gscConnectionState(readOf([gscSlotWith({ state: ["disconnected"] })]))).toBeNull();
+  });
+
+  it("is null, not a throw, for a state that cannot be turned into a key", () => {
+    const state = { toString: null };
+    expect(gscConnectionState(readOf([gscSlotWith({ state })]))).toBeNull();
+  });
+});
+
+describe("gscConnectionState: a list it cannot read", () => {
+  it("is null for two gsc slots that disagree, in either order", () => {
+    // First-match let the order choose between "connected" and "not connected".
+    const connected = source("gsc", "connected");
+    const disconnected = source("gsc", "disconnected", null);
+    expect(gscConnectionState(settled([connected, disconnected]))).toBeNull();
+    expect(gscConnectionState(settled([disconnected, connected]))).toBeNull();
+  });
+
+  it.each([
+    ["null", null],
+    ["an object", {}],
+    ["a string", "gsc"],
+  ])("is null, not a throw, when the list is %s", (_label, sources) => {
+    expect(gscConnectionState(readOf(sources))).toBeNull();
+  });
+
+  it("is null when an entry in the list is not an object", () => {
+    expect(gscConnectionState(readOf([null, source("gsc", "connected")]))).toBeNull();
   });
 });
