@@ -45,12 +45,16 @@
    --color-wb-seo, from the <progress> rules below), or an arbitrary value or the
    bare variable name in a file under the @source roots. Such a read does get its
    token. What gets nothing, with no error, is a read of a name @theme does not
-   declare (workbench-css.test.ts fails for one in this file) or a read Tailwind
-   never compiles or scans, such as a stylesheet outside the @source roots (none
-   today; app/tailwind-source-scope.test.ts fails for one). The same rule works
-   against the font: any such read of --font-sans emits it to :root, where
-   --font-wb is undefined, and that element falls back. workbench-css.test.ts and
-   e2e/legacy-style-parity.mock.spec.ts fail when --font-sans reaches :root. */
+   declare (workbench-css.test.ts fails for a --color-wb-* one in this file; other
+   names are not checked) or a read Tailwind never compiles or scans, such as a
+   stylesheet outside the @source roots (none today;
+   app/tailwind-source-scope.test.ts fails for one). The same rule works against
+   the font: any such read of --font-sans emits it to :root, where --font-wb is
+   undefined, and that element falls back, as does any other token whose value
+   reads var(--font-wb), such as an alias --font-mono: var(--font-wb, ...).
+   workbench-css.test.ts fails when --font-sans, or any variable reading
+   --font-wb, reaches :root; e2e/legacy-style-parity.mock.spec.ts fails when
+   --font-sans is declared on <html>. */
 @theme inline {
   --font-sans: var(--font-wb, ui-sans-serif), "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;

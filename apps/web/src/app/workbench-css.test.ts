@@ -84,6 +84,8 @@ async function buildScanned(extra: readonly string[] = []): Promise<{
 const MIN_SCANNED_FILES = 80;
 const MIN_SCANNED_CANDIDATES = 2000;
 const FONT_SANS_DECLARATION = /(?:^|[\s;])--font-sans\s*:/u;
+/** A read of the next/font variable, which is defined only from #wb-root down. */
+const FONT_WB_READ = /var\(\s*--font-wb/u;
 
 /** The full text of a top-level at-rule block (`@layer base { … }`, `@theme { … }`), found by brace depth. */
 function atRuleBlock(source: string, opener: RegExp): string {
@@ -141,7 +143,7 @@ describe("workbench.css", () => {
     expect(rule?.[1]).not.toMatch(/var\(--font-sans\)/u);
   });
 
-  it("emits no --font-sans to :root for anything under the @source roots", async () => {
+  it("emits no --font-sans, and no variable that reads --font-wb, to :root for anything under the @source roots", async () => {
     // `@theme inline` fixes `.font-sans`, not every reader of the variable. Any
     // rule or candidate that reads it through var() (an arbitrary value such as
     // `[font-family:var(--font-sans)]` on a heading, or the bare custom-property
@@ -150,14 +152,23 @@ describe("workbench.css", () => {
     // so that element computes to the fallback stack with no error. The gates
     // above only ask for `font-sans`, and the e2e sweep only reads `.font-sans`
     // elements; this one builds from what the scanner actually finds.
+    // The hazard is the dependency, not the name: an alias such as
+    // `--font-mono: var(--font-wb, ui-monospace)` in `@theme inline`, read by a
+    // scanned `[font-family:var(--font-mono)]`, reaches :root the same way and
+    // computes to its fallback there. So no :root variable may read --font-wb.
+    // Literal values (a plain `--font-mono` stack, the hex `--color-wb-*`) carry
+    // no such dependency and stay allowed.
     const scanned = await buildScanned();
     expect(scanned.files, "files scanned under the @source roots").toBeGreaterThanOrEqual(MIN_SCANNED_FILES);
     expect(scanned.candidates, "candidates found there").toBeGreaterThanOrEqual(MIN_SCANNED_CANDIDATES);
     expect(scanned.root, ":root, :host rule in the compiled stylesheet").not.toBe("");
     expect(scanned.root).not.toMatch(FONT_SANS_DECLARATION);
-    // Positive control, same pipeline: one scanned reader is enough to emit it.
+    expect(scanned.root, "a :root, :host variable reads --font-wb").not.toMatch(FONT_WB_READ);
+    // Positive control, same pipeline: one scanned reader is enough to emit it,
+    // and what it emits is exactly such a read.
     const control = await buildScanned(["[font-family:var(--font-sans)]"]);
     expect(control.root).toMatch(FONT_SANS_DECLARATION);
+    expect(control.root).toMatch(FONT_WB_READ);
   });
 
   it("still emits to :root every --color-wb-* token this stylesheet reads through var()", async () => {
@@ -167,7 +178,8 @@ describe("workbench.css", () => {
     // var(--color-wb-rail) and Tailwind emits --color-wb-rail with it (measured
     // 2026-09-14), as it does today for --color-wb-seo. What gets nothing,
     // silently, is a read of a name @theme does not declare (a typo, a renamed or
-    // removed token), which this test catches here, or a read Tailwind never
+    // removed token), which this test catches only for `--color-wb-*` names (the
+    // extraction below matches nothing else), or a read Tailwind never
     // compiles or scans, such as a stylesheet outside the @source roots (none
     // today; app/tailwind-source-scope.test.ts fails for one). Either way that
     // var() resolves to nothing, the declaration is invalid at computed-value time
