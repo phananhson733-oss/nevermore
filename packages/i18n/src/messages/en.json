@@ -3923,7 +3923,8 @@
         "audit": "Audit",
         "connected": "Connected",
         "notConnected": "Not connected",
-        "none": "—"
+        "none": "—",
+        "unknownHint": "The connection status could not be read. Unknown is not the same as not connected."
       },
       "openMenu": "Open navigation",
       "closeMenu": "Close navigation",
@@ -3964,11 +3965,42 @@
         "remove": "Remove",
         "clear": "Clear all",
         "close": "Close"
+      },
+      "clearSampleConfirm": {
+        "title": "Clear the sample data?",
+        "body": "This clears the site's GSC rows, keyword library, saved artifacts and site profile in this browser, including anything you added after loading the sample.",
+        "ok": "Clear sample"
       }
     },
     "settings": {
       "realAction": "Not sample data",
-      "realActionTitle": "This deletes the real project. It is not sample data."
+      "realActionTitle": "This deletes the real project. It is not sample data.",
+      "notify": {
+        "title": "Notification preferences",
+        "note": "These preferences are stored only in this browser, and nothing is sent right now.",
+        "weekly": {
+          "label": "Weekly report",
+          "description": "Covers the This week page and the artifacts from that week."
+        },
+        "drop": {
+          "label": "Health score or mention rate drops",
+          "description": "Compared against the previous result of the same kind."
+        },
+        "mention": {
+          "label": "Brand appears in an AI answer for the first time",
+          "description": "A prompt goes from not mentioning you to mentioning you."
+        },
+        "gsc": {
+          "label": "GSC import fails",
+          "description": "When an imported file cannot be read or parsed."
+        }
+      },
+      "sources": {
+        "title": "Data sources",
+        "note": "This block shows status only. Import and management live on the Data sources page.",
+        "cta": "Open Data sources",
+        "legacyCta": "Connect sources on the legacy page"
+      }
     },
     "enums": {
       "severity": {
@@ -4081,6 +4113,264 @@
     },
     "provenance": {
       "artifact": "Sample data: generated locally for demonstration, not measured. Generated {at}"
+    },
+    "overview": {
+      "subtitle": "{domain} ({brand}) · Target market {market}",
+      "cards": {
+        "health": {
+          "label": "Technical health score",
+          "foot": "{count, plural, one {# issue to fix} other {# issues to fix}}"
+        },
+        "mention": {
+          "label": "AI mention rate",
+          "foot": "Mentioned in {hits} of {total} answers"
+        },
+        "keywords": {
+          "label": "Keyword candidates",
+          "foot": "{count, plural, one {# row from GSC} other {# rows from GSC}}"
+        },
+        "artifacts": {
+          "label": "Artifacts",
+          "foot": "Saved in this browser"
+        },
+        "unknown": "No result yet"
+      },
+      "gscFoot": {
+        "sample": "These GSC rows come from sample data",
+        "user": "These GSC rows come from data you imported"
+      },
+      "next": {
+        "title": "What to do next",
+        "cta": "Go",
+        "step": {
+          "audit": "Run a technical audit",
+          "fixHigh": "Start with {count, plural, one {# high-severity issue} other {# high-severity issues}}",
+          "visibility": "Run an AI visibility check",
+          "answerGaps": "Write answer pages for {count, plural, one {# gap} other {# gaps}}",
+          "borderline": "Work on {count, plural, one {# query} other {# queries}} sitting at positions 11-30",
+          "matrix": "Build the keyword matrix",
+          "importGsc": "Import a GSC export",
+          "content": "Keep producing content"
+        }
+      },
+      "empty": {
+        "title": "Nothing has run for this site yet",
+        "detail": "Whatever you run is kept in this browser. You can also load a sample site to see what each module produces."
+      },
+      "loadDemo": {
+        "button": "Load sample site",
+        "busy": "Loading",
+        "confirmTitle": "Replace the current content with sample data?",
+        "confirmBody": "This overwrites the site's GSC rows, keyword library, saved artifacts and site profile in this browser.",
+        "confirmOk": "Load sample",
+        "cancel": "Cancel"
+      },
+      "noGsc": {
+        "title": "No search data imported yet",
+        "detail": "Search signals for keywords and the site profile need a GSC export.",
+        "cta": "Import data"
+      }
+    },
+    "week": {
+      "subtitle": "{from} to {to}",
+      "cards": {
+        "health": {
+          "label": "Technical health score",
+          "foot": "{fixed} no longer reported, {added} newly reported"
+        },
+        "mention": {
+          "label": "AI mention rate",
+          "foot": "Mentioned in {hits} of {total} answers"
+        },
+        "borderline": {
+          "label": "Queries at positions 11-30",
+          "foot": "Based on positions in the latest GSC import"
+        }
+      },
+      "sinceLast": "vs. the previous run ({at})",
+      "summaryRow": {
+        "artifacts": "{count, plural, one {# artifact} other {# artifacts}} added this week",
+        "answerGaps": "{count, plural, one {# prompt} other {# prompts}} where at least one platform did not mention you",
+        "kbGaps": "{count, plural, one {# knowledge base entry} other {# knowledge base entries}} still without a statement"
+      },
+      "feed": {
+        "title": "This week",
+        "count": "{count, plural, one {# item} other {# items}}",
+        "empty": "Nothing has happened this week yet",
+        "view": "View"
+      },
+      "borderlineList": {
+        "title": "Queries at positions 11-30",
+        "empty": "No queries in that range",
+        "detail": "These are the queries sitting at positions 11-30 in the latest import. They are not rank movement: that would need history across several imports, which the workbench does not keep."
+      },
+      "next": {
+        "title": "Start with this next week",
+        "cta": "Go",
+        "step": {
+          "fixHigh": "Work through {count, plural, one {# high-severity issue} other {# high-severity issues}}",
+          "answerGaps": "Write answer pages for {count, plural, one {# unmentioned prompt} other {# unmentioned prompts}}",
+          "borderline": "Work on {count, plural, one {# query} other {# queries}} sitting at positions 11-30",
+          "kbGaps": "Write {count, plural, one {# missing statement} other {# missing statements}} in the knowledge base",
+          "keepGoing": "Keep producing content"
+        }
+      },
+      "report": {
+        "title": "Changes in check results",
+        "save": "Save the weekly report",
+        "export": "Export .md",
+        "disabled": "There's nothing from this week to put in a report"
+      },
+      "artifactTitle": "{brand} weekly report",
+      "empty": {
+        "title": "Nothing has run this week",
+        "detail": "Whatever you run is kept in this browser and shows up here."
+      }
+    },
+    "profile": {
+      "subtitle": "The crawl signals and third-party metrics in this profile are sample data generated locally, not a real crawl of your site.",
+      "fields": {
+        "url": "Site URL",
+        "brand": "Brand name",
+        "market": "Target market",
+        "positioning": "Positioning in one line",
+        "features": "Core features",
+        "competitors": "Main competitors",
+        "positioningPlaceholder": "One line on what you sell and who buys it",
+        "featuresPlaceholder": "Comma-separated, for example: site audit, keyword matrix",
+        "competitorsPlaceholder": "Comma-separated competitor domains",
+        "charCount": "{count, plural, one {# character} other {# characters}}",
+        "itemCount": "{count, plural, one {# item} other {# items}}"
+      },
+      "readonlyNote": "Site URL, brand name and target market come from the real project profile and are read-only here.",
+      "sources": {
+        "title": "Signals to include",
+        "crawl": "Site crawl",
+        "gsc": "GSC signals",
+        "third": "Third-party metrics"
+      },
+      "run": {
+        "button": "Generate the full profile",
+        "rerun": "Regenerate the profile",
+        "note": "Everything is generated locally in this browser. It does not crawl your site and it calls no external service.",
+        "steps": {
+          "crawl": "Composing sample crawl signals",
+          "gsc": "Summarizing the GSC rows in this browser",
+          "third": "Composing sample third-party metrics",
+          "compose": "Assembling the profile"
+        }
+      },
+      "tabs": {
+        "doc": "Profile",
+        "json": "JSON",
+        "ctx": "AI context block"
+      },
+      "doc": {
+        "stamp": "Site profile · {at}",
+        "crawl": "Site crawl",
+        "gsc": "GSC signals",
+        "third": "Third-party metrics",
+        "product": "Product description",
+        "icp": "ICP {index}",
+        "lang": "Site language",
+        "stack": "Tech stack",
+        "h1": "Home page H1",
+        "hasPricing": "Pricing page",
+        "hasDocs": "Docs",
+        "hasBlog": "Blog",
+        "yes": "Yes",
+        "no": "No",
+        "gscTotal": "Queries",
+        "gscBrand": "Brand queries",
+        "gscBrandClicks": "Brand clicks",
+        "gscNonBrandClicks": "Non-brand clicks",
+        "gscNear": "Positions 11-30",
+        "gscTop": "Top queries by clicks",
+        "gscNote": "Brand and non-brand queries are split by matching the brand name, the same way the keyword matrix splits them.",
+        "summary": "Summary",
+        "valueProps": "Value propositions",
+        "diff": "Differentiators",
+        "pillars": "Content pillars",
+        "tone": "Tone of voice",
+        "facts": "Facts to fill in",
+        "icpSeg": "Segment",
+        "icpRole": "Role",
+        "icpPain": "Pain",
+        "icpTrigger": "Trigger",
+        "icpObjection": "Objection",
+        "placeholderNote": "This section holds sample placeholders for you to replace."
+      },
+      "metrics": {
+        "pages": "Sample pages",
+        "indexable": "Indexable",
+        "traffic": "Organic traffic",
+        "dr": "DR",
+        "refdomains": "Referring domains"
+      },
+      "unknown": "Unknown",
+      "empty": {
+        "title": "No profile generated yet",
+        "detail": "Once generated, this shows crawl signals, GSC signals and a product description."
+      },
+      "artifactTitle": {
+        "doc": "{brand} site profile",
+        "json": "{brand} profile JSON",
+        "ctx": "{brand} context block"
+      },
+      "legacyCta": "Edit the real product profile"
+    },
+    "dataSources": {
+      "subtitle": "Connection status above is read-only. The GSC import below is saved in this browser only.",
+      "real": {
+        "title": "Real connections",
+        "gsc": "Google Search Console",
+        "ga4": "Google Analytics 4",
+        "connected": "Connected",
+        "notConnected": "Not connected",
+        "unknown": "Unknown",
+        "unknownHint": "The connection status could not be read. Unknown is not the same as not connected.",
+        "needProfile": "Confirm the product profile before the connection status can be read.",
+        "needProfileCta": "Confirm the product profile",
+        "otherError": "The connection status could not be read right now.",
+        "manageLegacy": "Connect or disconnect on the legacy page",
+        "ga4NoConsumer": "No module uses GA4 data yet."
+      },
+      "import": {
+        "title": "GSC import",
+        "localNote": "Imported rows stay in this browser and are never uploaded.",
+        "placeholder": "Paste a GSC export here. The first row can be the header.",
+        "parse": "Parse",
+        "clear": "Clear",
+        "clearConfirmTitle": "Clear the imported GSC rows?",
+        "clearConfirmBody": "This removes every GSC row saved in this browser, including the ones you pasted yourself.",
+        "upload": "Upload a CSV",
+        "uploadHint": "Tab- or comma-separated. A header row is skipped. Up to {limit} per file.",
+        "tooLarge": "This file is larger than {limit}, so it was not read.",
+        "truncated": "Kept the first {kept} rows of the {total} in the file."
+      },
+      "result": {
+        "parsed": "{count, plural, one {# row parsed} other {# rows parsed}}",
+        "skipped": "{count, plural, one {# row skipped} other {# rows skipped}}",
+        "noHeader": "No header row recognized, so the columns were read by position.",
+        "unrecognizedColumns": "These columns were not recognized: {columns}"
+      },
+      "table": {
+        "title": "GSC queries",
+        "count": "{count, plural, one {# row} other {# rows}}",
+        "query": "Query",
+        "clicks": "Clicks",
+        "impressions": "Impressions",
+        "position": "Position",
+        "status": "Status",
+        "legend": "Ranking ≤10 · Near page one 11-30 · Gap >30",
+        "showing": "Showing the first {shown} of {total} rows",
+        "unknownRank": "{count, plural, one {# row with an unknown position} other {# rows with an unknown position}}",
+        "toKeywords": "Open the keyword matrix"
+      },
+      "empty": {
+        "title": "No GSC rows yet",
+        "detail": "Paste or upload a GSC export. The rows are saved in this browser."
+      }
     }
   }
 }

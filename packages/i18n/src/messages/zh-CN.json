@@ -3923,7 +3923,8 @@
         "audit": "审计",
         "connected": "已接入",
         "notConnected": "未接入",
-        "none": "—"
+        "none": "—",
+        "unknownHint": "现在读不到连接状态。未知不等于未接入。"
       },
       "openMenu": "打开导航",
       "closeMenu": "关闭导航",
@@ -3964,11 +3965,42 @@
         "remove": "删除",
         "clear": "清空",
         "close": "关闭"
+      },
+      "clearSampleConfirm": {
+        "title": "清除示例数据？",
+        "body": "会清掉这个站点在本浏览器里的 GSC 行、词库、产物筐与站点档案，包括载入示例之后你自己加的内容。",
+        "ok": "清除示例"
       }
     },
     "settings": {
       "realAction": "真实操作",
-      "realActionTitle": "这是真实操作，会删除真实项目，不是示例数据。"
+      "realActionTitle": "这是真实操作，会删除真实项目，不是示例数据。",
+      "notify": {
+        "title": "通知偏好",
+        "note": "偏好只保存在这个浏览器，当前不会发送任何通知。",
+        "weekly": {
+          "label": "每周周报",
+          "description": "范围是「本周变化」页的内容与本周产物清单。"
+        },
+        "drop": {
+          "label": "健康分或提及率下跌",
+          "description": "比较对象是上一次同类结果。"
+        },
+        "mention": {
+          "label": "AI 答案里首次出现品牌",
+          "description": "某条提问从没提到你变成提到你。"
+        },
+        "gsc": {
+          "label": "GSC 导入失败",
+          "description": "读取或解析导入文件出错时。"
+        }
+      },
+      "sources": {
+        "title": "数据源",
+        "note": "这里只显示状态，导入和管理在数据源页。",
+        "cta": "去数据源页",
+        "legacyCta": "在旧版页面连接数据源"
+      }
     },
     "enums": {
       "severity": {
@@ -4081,6 +4113,264 @@
     },
     "provenance": {
       "artifact": "示例数据：本地生成的演示结果，不是真实测量；生成于 {at}"
+    },
+    "overview": {
+      "subtitle": "{domain}（{brand}）· 目标市场 {market}",
+      "cards": {
+        "health": {
+          "label": "技术健康分",
+          "foot": "{count} 个问题待修"
+        },
+        "mention": {
+          "label": "AI 提及率",
+          "foot": "{total} 次问答里有 {hits} 次提到你"
+        },
+        "keywords": {
+          "label": "关键词候选",
+          "foot": "{count} 条来自 GSC"
+        },
+        "artifacts": {
+          "label": "产物",
+          "foot": "保存在这个浏览器"
+        },
+        "unknown": "还没有结果"
+      },
+      "gscFoot": {
+        "sample": "这些 GSC 行来自示例数据",
+        "user": "这些 GSC 行来自你导入的数据"
+      },
+      "next": {
+        "title": "接下来做什么",
+        "cta": "去做",
+        "step": {
+          "audit": "跑一次技术审计",
+          "fixHigh": "先处理 {count} 个高危问题",
+          "visibility": "跑一次 AI 可见度诊断",
+          "answerGaps": "补 {count} 个答案页缺口",
+          "borderline": "推进 {count} 条临界词（11-30 名）",
+          "matrix": "建一次关键词矩阵",
+          "importGsc": "导入一份 GSC 导出",
+          "content": "继续产出内容"
+        }
+      },
+      "empty": {
+        "title": "这个站点还没有结果",
+        "detail": "跑过的模块会把结果留在这个浏览器里。也可以先载入示例站点，看看每个模块产出什么。"
+      },
+      "loadDemo": {
+        "button": "载入示例站点",
+        "busy": "载入中",
+        "confirmTitle": "用示例数据覆盖当前内容？",
+        "confirmBody": "会覆盖这个站点在本浏览器里的 GSC 行、词库、产物筐与站点档案。",
+        "confirmOk": "载入示例",
+        "cancel": "取消"
+      },
+      "noGsc": {
+        "title": "还没有导入搜索数据",
+        "detail": "关键词与站点档案里的搜索信号需要一份 GSC 导出。",
+        "cta": "去导入"
+      }
+    },
+    "week": {
+      "subtitle": "{from} 至 {to}",
+      "cards": {
+        "health": {
+          "label": "技术健康分",
+          "foot": "{fixed} 条不再出现，{added} 条新出现"
+        },
+        "mention": {
+          "label": "AI 提及率",
+          "foot": "{total} 次问答里有 {hits} 次提到你"
+        },
+        "borderline": {
+          "label": "临界词（11-30 名）",
+          "foot": "按最近一次导入的 GSC 排名计算"
+        }
+      },
+      "sinceLast": "较上次（{at}）",
+      "summaryRow": {
+        "artifacts": "本周新增 {count} 件产物",
+        "answerGaps": "{count} 个提问至少有一个平台没提到你",
+        "kbGaps": "知识库有 {count} 条还没写结论句"
+      },
+      "feed": {
+        "title": "本周事件",
+        "count": "{count} 条",
+        "empty": "这周还没有动作",
+        "view": "查看"
+      },
+      "borderlineList": {
+        "title": "临界词（11-30 名）",
+        "empty": "还没有临界词",
+        "detail": "这是最近一次导入里排在 11-30 名的查询，不是排名变化。排名变化要靠多次导入的历史，工作台目前不保存。"
+      },
+      "next": {
+        "title": "下周先做",
+        "cta": "去做",
+        "step": {
+          "fixHigh": "处理 {count} 个高危问题",
+          "answerGaps": "给 {count} 个没被提到的提问写答案页",
+          "borderline": "推进 {count} 条临界词（11-30 名）",
+          "kbGaps": "补 {count} 条知识库结论句",
+          "keepGoing": "继续产出内容"
+        }
+      },
+      "report": {
+        "title": "检查结果变化",
+        "save": "存周报到产物筐",
+        "export": "导出 md",
+        "disabled": "这周没有可写进周报的结果"
+      },
+      "artifactTitle": "{brand} 周报",
+      "empty": {
+        "title": "这周还没有结果",
+        "detail": "跑过的模块会把结果留在这个浏览器里，出现在这里。"
+      }
+    },
+    "profile": {
+      "subtitle": "档案里的抓取信号与第三方指标是本地生成的示例，不是对你站点的真实抓取。",
+      "fields": {
+        "url": "站点地址",
+        "brand": "品牌名",
+        "market": "目标市场",
+        "positioning": "一句话定位",
+        "features": "核心功能",
+        "competitors": "主要竞品",
+        "positioningPlaceholder": "一句话说清你卖什么、卖给谁",
+        "featuresPlaceholder": "用逗号分隔，例如：站点审计, 关键词矩阵",
+        "competitorsPlaceholder": "用逗号分隔竞品域名",
+        "charCount": "{count} 字",
+        "itemCount": "{count} 项"
+      },
+      "readonlyNote": "站点地址、品牌名与目标市场来自真实项目档案，这里只读。",
+      "sources": {
+        "title": "生成来源",
+        "crawl": "站点抓取",
+        "gsc": "GSC 信号",
+        "third": "第三方指标"
+      },
+      "run": {
+        "button": "生成完整档案",
+        "rerun": "重新生成档案",
+        "note": "全部在这个浏览器里本地生成：不抓取你的站点，也不调用外部服务。",
+        "steps": {
+          "crawl": "生成站点抓取示例信号",
+          "gsc": "汇总这个浏览器里的 GSC 行",
+          "third": "生成第三方指标示例信号",
+          "compose": "组装档案"
+        }
+      },
+      "tabs": {
+        "doc": "档案",
+        "json": "JSON",
+        "ctx": "AI 上下文块"
+      },
+      "doc": {
+        "stamp": "产品档案 · {at}",
+        "crawl": "站点抓取",
+        "gsc": "GSC 信号",
+        "third": "第三方指标",
+        "product": "产品描述",
+        "icp": "ICP {index}",
+        "lang": "站点语言",
+        "stack": "技术栈",
+        "h1": "首页 H1",
+        "hasPricing": "定价页",
+        "hasDocs": "文档",
+        "hasBlog": "博客",
+        "yes": "有",
+        "no": "无",
+        "gscTotal": "查询数",
+        "gscBrand": "品牌词",
+        "gscBrandClicks": "品牌词点击",
+        "gscNonBrandClicks": "非品牌词点击",
+        "gscNear": "11-30 名",
+        "gscTop": "点击最高的查询",
+        "gscNote": "品牌词与非品牌词按品牌名匹配拆分，口径与关键词矩阵一致。",
+        "summary": "一句话总结",
+        "valueProps": "价值主张",
+        "diff": "差异点",
+        "pillars": "内容支柱",
+        "tone": "语气",
+        "facts": "待补事实",
+        "icpSeg": "客群",
+        "icpRole": "角色",
+        "icpPain": "痛点",
+        "icpTrigger": "触发事件",
+        "icpObjection": "顾虑",
+        "placeholderNote": "这一段是示例占位，需要你自己替换。"
+      },
+      "metrics": {
+        "pages": "样本页",
+        "indexable": "可收录",
+        "traffic": "自然流量",
+        "dr": "DR",
+        "refdomains": "引用域名"
+      },
+      "unknown": "未知",
+      "empty": {
+        "title": "还没有生成档案",
+        "detail": "生成后这里会出现站点抓取、GSC 信号与产品描述。"
+      },
+      "artifactTitle": {
+        "doc": "{brand} 产品档案",
+        "json": "{brand} 档案 JSON",
+        "ctx": "{brand} 上下文块"
+      },
+      "legacyCta": "去编辑真实产品档案"
+    },
+    "dataSources": {
+      "subtitle": "上面是真实连接状态，只读。下面的 GSC 导入只保存在这个浏览器。",
+      "real": {
+        "title": "真实连接",
+        "gsc": "Google Search Console",
+        "ga4": "Google Analytics 4",
+        "connected": "已接入",
+        "notConnected": "未接入",
+        "unknown": "未知",
+        "unknownHint": "现在读不到连接状态。未知不等于未接入。",
+        "needProfile": "需要先确认产品档案，才能读取连接状态。",
+        "needProfileCta": "去确认产品档案",
+        "otherError": "现在读不到连接状态。",
+        "manageLegacy": "在旧版页面连接或断开",
+        "ga4NoConsumer": "当前没有模块使用 GA4 数据。"
+      },
+      "import": {
+        "title": "GSC 导入",
+        "localNote": "导入的行只保存在这个浏览器，不会上传。",
+        "placeholder": "把 GSC 导出的表格粘到这里，第一行可以是表头",
+        "parse": "解析",
+        "clear": "清空",
+        "clearConfirmTitle": "清空已导入的 GSC 行？",
+        "clearConfirmBody": "会删掉这个浏览器里保存的全部 GSC 行，包括你自己粘进来的那些。",
+        "upload": "上传 CSV",
+        "uploadHint": "支持 Tab 或逗号分隔，表头会自动跳过；单个文件最大 {limit}。",
+        "tooLarge": "这个文件超过 {limit}，没有读取。",
+        "truncated": "只保留了前 {kept} 行，文件里共 {total} 行。"
+      },
+      "result": {
+        "parsed": "解析 {count} 条",
+        "skipped": "跳过 {count} 条",
+        "noHeader": "没认出表头，按列的位置读取。",
+        "unrecognizedColumns": "这些列没认出来：{columns}"
+      },
+      "table": {
+        "title": "GSC 查询",
+        "count": "{count} 条",
+        "query": "查询",
+        "clicks": "点击",
+        "impressions": "展示",
+        "position": "排名",
+        "status": "状态",
+        "legend": "已排名 ≤10 · 临界 11-30 · 缺口 >30",
+        "showing": "显示前 {shown} 行，共 {total} 行",
+        "unknownRank": "{count} 条排名未知",
+        "toKeywords": "进关键词矩阵"
+      },
+      "empty": {
+        "title": "还没有 GSC 行",
+        "detail": "粘贴或上传一份 GSC 导出，行会保存在这个浏览器里。"
+      }
     }
   }
 }
