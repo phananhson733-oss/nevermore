@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { WorkbenchProjectState } from "../types.ts";
 import {
+  classifyStoredValue,
   clearProjectState,
   readProjectState,
   storageKey,
@@ -35,8 +36,12 @@ import {
  * `volatile` while the UI says nothing. Reporting it would put a persistent
  * "results will not be saved in this browser" banner in every other open tab,
  * blaming the browser for a sign-out.
+ *
+ * `readonly`: storage holds data a newer build wrote (R14). This session works
+ * in memory only and never writes over that data; the topbar says so, because
+ * nothing done here will be saved.
  */
-export type StorageMode = "ok" | "volatile" | "quota" | "swept";
+export type StorageMode = "ok" | "volatile" | "quota" | "swept" | "readonly";
 
 export interface WorkbenchContextValue {
   readonly projectId: string;
@@ -98,11 +103,19 @@ export function WorkbenchProvider({
   // returns it unchanged, so `state === remoteStateRef.current` is exactly
   // "nothing local has happened since we last read disk".
   const remoteStateRef = useRef<WorkbenchProjectState | null>(null);
-  // Synchronous write gate. `setStorageMode("swept")` alone cannot stop a
-  // passive write effect that is already scheduled in the same commit: the
-  // state setter does not change an already-captured effect closure; the ref
-  // does. `storageMode` stays for the UI.
+  // Synchronous write gate. `setStorageMode("swept")` or `("readonly")` alone
+  // cannot stop a passive write effect that is already scheduled in the same
+  // commit: the state setter does not change an already-captured effect
+  // closure; the ref does. `storageMode` stays for the UI.
   const writesBlockedRef = useRef(false);
+
+  // A newer build's data is on disk (R14). Gate first, as in `forgetAndFreeze`:
+  // only the ref reaches a write effect already captured in the current commit.
+  // Unlike a sweep, the in-memory state is left alone.
+  function lockReadonly(): void {
+    writesBlockedRef.current = true;
+    setStorageMode("readonly");
+  }
 
   function loadFromStorage(next: WorkbenchProjectState): void {
     remoteStateRef.current = next;
@@ -117,6 +130,7 @@ export function WorkbenchProvider({
     }
     const read = readProjectState(storage, projectId);
     if (read.status === "unavailable") setStorageMode("volatile");
+    if (read.status === "incompatible") lockReadonly();
     if (read.state) loadFromStorage(withProjectSeed(normalizeInterrupted(read.state), seed));
   }
 
@@ -145,7 +159,7 @@ export function WorkbenchProvider({
     // visibility view lands.
     if (state === remoteStateRef.current) return;
     const storage = storageRef.current;
-    // Stop writing entirely once storage is volatile, full, or swept (design §6.5).
+    // Stop writing entirely once storage is volatile, full, swept, or read-only (design §6.5).
     if (!storage || storageMode !== "ok") return;
     const status: WriteStatus = writeProjectState(storage, projectId, state);
     if (status === "quota") setStorageMode("quota");
@@ -184,6 +198,17 @@ export function WorkbenchProvider({
         clearProjectState(storage, projectId);
         return;
       }
+      // A newer build's write is judged by the event's own payload, never by a
+      // re-read (R14): by delivery this tab's write effect may already have put
+      // readable bytes back, and a re-read would load those and miss the lock.
+      // Residual (R14): the lock lands on delivery, so a write this tab already
+      // had in flight between the newer tab's write and that delivery replaces
+      // the newer data once; the newer tab's next local change writes it back.
+      // Same class as the run-lease residual in the write effect.
+      if (classifyStoredValue(event.newValue).kind === "incompatible") {
+        lockReadonly();
+        return;
+      }
       const read = readProjectState(storage, projectId);
       if (read.state) {
         // Deliberately NOT `normalizeInterrupted`: the writing tab may be
@@ -198,6 +223,9 @@ export function WorkbenchProvider({
         // means the key vanished after this event was queued; the removal
         // event that follows is what sweeps.)
         setStorageMode("volatile");
+      } else if (read.status === "incompatible") {
+        // The event carried readable data, but a newer build has written since.
+        lockReadonly();
       }
     }
 

@@ -81,8 +81,9 @@ function mount(seed: ProjectSeed = SEED, extra: ReactNode = null) {
 
 /**
  * What another tab's write delivers here: the key and its new value. The
- * provider re-reads storage itself; `newValue` only has to be non-null, since
- * a null one is the shape of a removal (see `crossTabRemoval`).
+ * provider classifies `newValue` only to spot a newer build's data (R14, see
+ * `crossTabWrite`) and otherwise re-reads storage itself; a null `newValue` is
+ * the shape of a removal (see `crossTabRemoval`).
  */
 function crossTabEvent(): void {
   act(() => {
@@ -118,6 +119,40 @@ function ForgetOnReady() {
     done.current = true;
     forgetProject();
   }, [ready, forgetProject]);
+  return null;
+}
+
+/** Bytes a newer build writes: a valid v1 envelope plus a key this build does not know. */
+function newerBuildBytes(): string {
+  return JSON.stringify({
+    v: PERSISTED_VERSION,
+    state: { ...populatedProjectState(SEED), seeds: "written by a newer build", futureField: 1 },
+  });
+}
+
+/** Another tab's write as delivered here: `newValue` is the event's payload, whatever disk holds now. */
+function crossTabWrite(newValue: string): void {
+  act(() => {
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: storageKey(PID), newValue, storageArea: window.localStorage }),
+    );
+  });
+}
+
+/**
+ * Delivers a newer build's cross-tab write from a child effect, in the commit
+ * where `state.seeds` becomes `trigger`. Child passive effects run before the
+ * provider's, so the provider's write effect for that commit is already
+ * captured with `storageMode === "ok"`: only the synchronous ref gate stops it.
+ */
+function NewerTabWritesOn({ trigger, bytes }: { readonly trigger: string; readonly bytes: string }) {
+  const { state } = useWorkbench();
+  useEffect(() => {
+    if (state.seeds !== trigger) return;
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: storageKey(PID), newValue: bytes, storageArea: window.localStorage }),
+    );
+  }, [state.seeds, trigger, bytes]);
   return null;
 }
 
@@ -455,5 +490,132 @@ describe("WorkbenchProvider", () => {
     expect(setItem).not.toHaveBeenCalled();
     expect(window.localStorage.getItem(storageKey(PID))).toBeNull();
     view.unmount();
+  });
+
+  describe("data written by a newer build (R14)", () => {
+    it("hydrates read-only, never writes, and keeps working in memory", () => {
+      const bytes = newerBuildBytes();
+      window.localStorage.setItem(storageKey(PID), bytes);
+      const setItem = vi.spyOn(Storage.prototype, "setItem");
+      const view = mount();
+
+      expect(view.probe().ready).toBe(true);
+      expect(view.probe().storageMode).toBe("readonly");
+      expect(view.probe().state).toEqual(initialProjectState(SEED));
+      expect(setItem).not.toHaveBeenCalled();
+
+      act(() => view.probe().dispatch({ type: "setSeeds", seeds: "x" }));
+      expect(view.probe().state.seeds).toBe("x");
+      expect(setItem).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem(storageKey(PID))).toBe(bytes);
+      view.unmount();
+    });
+
+    it("goes read-only when another tab writes it, and stops writing", () => {
+      persist(fromDisk);
+      const view = mount();
+      const bytes = newerBuildBytes();
+      window.localStorage.setItem(storageKey(PID), bytes);
+      crossTabWrite(bytes);
+
+      expect(view.probe().storageMode).toBe("readonly");
+      // Nothing of the newer shape is loaded; this tab keeps what it had.
+      expect(view.probe().state.seeds).toBe("from disk");
+
+      const setItem = vi.spyOn(Storage.prototype, "setItem");
+      act(() => view.probe().dispatch({ type: "setSeeds", seeds: "local edit" }));
+      expect(setItem).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem(storageKey(PID))).toBe(bytes);
+      view.unmount();
+    });
+
+    it("locks on the event's own payload even when disk already holds this tab's readable write", () => {
+      persist(fromDisk);
+      const view = mount();
+      // The event carries the newer tab's bytes, but by delivery this tab's own
+      // write has put readable data back on disk: a re-read would find that,
+      // load it, and miss the lock.
+      persist({ ...fromDisk, seeds: "our own later write" });
+      crossTabWrite(newerBuildBytes());
+
+      expect(view.probe().storageMode).toBe("readonly");
+      expect(view.probe().state.seeds).toBe("from disk");
+      const setItem = vi.spyOn(Storage.prototype, "setItem");
+      act(() => view.probe().dispatch({ type: "setSeeds", seeds: "local edit" }));
+      expect(setItem).not.toHaveBeenCalled();
+      view.unmount();
+    });
+
+    it("locks when the re-read finds it, even though the event carried readable data", () => {
+      persist(fromDisk);
+      const view = mount();
+      const bytes = newerBuildBytes();
+      window.localStorage.setItem(storageKey(PID), bytes);
+      crossTabWrite(JSON.stringify({ v: PERSISTED_VERSION, state: { ...fromDisk, seeds: "an older tab" } }));
+
+      expect(view.probe().storageMode).toBe("readonly");
+      const setItem = vi.spyOn(Storage.prototype, "setItem");
+      act(() => view.probe().dispatch({ type: "setSeeds", seeds: "local edit" }));
+      expect(setItem).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem(storageKey(PID))).toBe(bytes);
+      view.unmount();
+    });
+
+    it("blocks a write effect already scheduled in the commit that delivers the newer write", () => {
+      const bytes = newerBuildBytes();
+      const view = mount(SEED, <NewerTabWritesOn trigger="trigger" bytes={bytes} />);
+      window.localStorage.setItem(storageKey(PID), bytes);
+      const setItem = vi.spyOn(Storage.prototype, "setItem");
+
+      act(() => view.probe().dispatch({ type: "setSeeds", seeds: "trigger" }));
+
+      expect(view.probe().storageMode).toBe("readonly");
+      expect(setItem).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem(storageKey(PID))).toBe(bytes);
+      view.unmount();
+    });
+
+    it("keeps syncing, and writing, when the event carries data this build can read", () => {
+      persist(fromDisk);
+      const view = mount();
+      const next = { ...fromDisk, seeds: "from the other tab" };
+      persist(next);
+      crossTabWrite(JSON.stringify({ v: PERSISTED_VERSION, state: next }));
+
+      expect(view.probe().storageMode).toBe("ok");
+      expect(view.probe().state.seeds).toBe("from the other tab");
+      act(() => view.probe().dispatch({ type: "setSeeds", seeds: "local edit" }));
+      expect(stored().seeds).toBe("local edit");
+      view.unmount();
+    });
+
+    it("still sweeps, not read-only, when the event is a removal (newValue === null)", () => {
+      persist(fromDisk);
+      const view = mount();
+      window.localStorage.removeItem(storageKey(PID));
+      crossTabRemoval();
+
+      expect(view.probe().storageMode).toBe("swept");
+      expect(view.probe().state).toEqual(initialProjectState(SEED));
+      expect(window.localStorage.getItem(storageKey(PID))).toBeNull();
+      view.unmount();
+    });
+
+    it("still discards real garbage on hydrate and ignores it cross-tab", () => {
+      const garbage = JSON.stringify({ v: PERSISTED_VERSION });
+      window.localStorage.setItem(storageKey(PID), garbage);
+      const view = mount();
+
+      // Not a newer build's data: overwritten with the initial state, as before.
+      expect(view.probe().storageMode).toBe("ok");
+      expect(stored()).toEqual(initialProjectState(SEED));
+
+      act(() => view.probe().dispatch({ type: "setSeeds", seeds: "kept" }));
+      window.localStorage.setItem(storageKey(PID), garbage);
+      crossTabWrite(garbage);
+      expect(view.probe().storageMode).toBe("ok");
+      expect(view.probe().state.seeds).toBe("kept");
+      view.unmount();
+    });
   });
 });

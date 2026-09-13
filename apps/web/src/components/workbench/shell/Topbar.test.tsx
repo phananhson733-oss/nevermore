@@ -12,8 +12,10 @@ import { createRoot } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "@sf/i18n";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { storageKey, WORKBENCH_SWEPT_EVENT } from "@/lib/workbench/store/persistence";
 import { WorkbenchProvider } from "@/lib/workbench/store/WorkbenchProvider";
-import type { ProjectSeed } from "@/lib/workbench/store/reducer";
+import { initialProjectState, type ProjectSeed } from "@/lib/workbench/store/reducer";
+import { PERSISTED_VERSION } from "@/lib/workbench/store/schema";
 import { WB_APP_ROOT_ID } from "../ui/ids.ts";
 
 const en = getMessages("en");
@@ -156,6 +158,31 @@ describe("Topbar", () => {
     // second status element would make that locator ambiguous, and a live region
     // added only once it has something to say is announced by nobody.
     const container = render();
+    const statuses = container.querySelectorAll('[role="status"]');
+
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]?.textContent).toBe("");
+  });
+
+  it("says results will not be saved, in that one live region, when storage holds a newer build's data", () => {
+    window.localStorage.setItem(
+      storageKey(PROJECT_ID),
+      JSON.stringify({ v: PERSISTED_VERSION, state: { ...initialProjectState(SEED), futureField: 1 } }),
+    );
+    const container = render();
+    const statuses = container.querySelectorAll('[role="status"]');
+
+    // The literal sentence, not "something rendered": next-intl renders a
+    // missing key as its path instead of throwing.
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]?.textContent).toBe(
+      "This browser holds data saved by a newer version. Results from this session will not be saved",
+    );
+  });
+
+  it("stays silent after a sweep", () => {
+    const container = render();
+    act(() => window.dispatchEvent(new Event(WORKBENCH_SWEPT_EVENT)));
     const statuses = container.querySelectorAll('[role="status"]');
 
     expect(statuses).toHaveLength(1);

@@ -9,8 +9,19 @@ import {
 } from "../types.ts";
 
 /**
- * Boundary validation for localStorage (design §6.5). Strict objects: a stale
- * shape from an older dev build is discarded, never partially trusted.
+ * Boundary validation for localStorage (design §6.5). Strict objects: a shape
+ * this build cannot fully account for is never partially trusted.
+ *
+ * Evolution discipline (R14). A build that reads keys it does not know
+ * classifies the envelope `incompatible` and stays read-only for the session,
+ * so it never writes over that data; anything else it cannot parse is
+ * `invalid` and gets discarded and overwritten. Therefore:
+ * - Widening a type (including raising a `.max()` limit), narrowing one, or
+ *   renaming a field: bump `PERSISTED_VERSION`. The storage key carries the
+ *   version, so the new envelope lands under a key older builds never read.
+ * - Adding a field: first ship, on its own, a reader that accepts it, and only
+ *   write it in a later release. An older build that still meets the new field
+ *   goes read-only rather than overwriting it, but it cannot save anything.
  */
 export const PERSISTED_VERSION = 1 as const;
 
@@ -86,9 +97,11 @@ const visResult = z.strictObject({
   rank: nullableNumber,
   brands: z.array(z.string()),
   domains: z.array(z.string()),
-  // v1 contract: only mock results are persisted. Widening to z.boolean()
-  // rejects nothing old, but ANY narrowing or renaming here needs a
-  // PERSISTED_VERSION bump.
+  // v1 contract: only mock results are persisted. Widening this to
+  // z.boolean() needs a PERSISTED_VERSION bump, like any narrowing or renaming:
+  // this build would still parse the new data, but an older build reads
+  // `real: true` as `invalid` (not `incompatible`), discards it and writes over
+  // it. New fields follow the reader-first rule in the file header.
   real: z.literal(false),
 });
 
@@ -274,7 +287,24 @@ type AssertNever<T extends never> = T;
 type _MissingInSchema = AssertNever<Exclude<keyof WorkbenchProjectState, keyof SchemaState>>;
 type _ExtraInSchema = AssertNever<Exclude<keyof SchemaState, keyof WorkbenchProjectState>>;
 
-export function parsePersistedState(raw: unknown): WorkbenchProjectState | null {
+export type PersistedParse =
+  | { readonly kind: "ok"; readonly state: WorkbenchProjectState }
+  | { readonly kind: "incompatible" | "invalid" };
+
+/**
+ * `incompatible`: a newer build wrote fields this build does not know — every
+ * issue, at any depth, is an unrecognized key. Callers must not write over it.
+ * `invalid`: anything else, including an unknown key next to a real defect.
+ */
+export function classifyPersistedState(raw: unknown): PersistedParse {
   const result = persistedSchema.safeParse(raw);
-  return result.success ? result.data.state : null;
+  if (result.success) return { kind: "ok", state: result.data.state };
+  const { issues } = result.error;
+  const onlyUnknownKeys = issues.length > 0 && issues.every((issue) => issue.code === "unrecognized_keys");
+  return { kind: onlyUnknownKeys ? "incompatible" : "invalid" };
+}
+
+export function parsePersistedState(raw: unknown): WorkbenchProjectState | null {
+  const parsed = classifyPersistedState(raw);
+  return parsed.kind === "ok" ? parsed.state : null;
 }

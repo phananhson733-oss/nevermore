@@ -1,5 +1,5 @@
 import type { WorkbenchProjectState } from "../types.ts";
-import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
+import { classifyPersistedState, PERSISTED_VERSION, type PersistedParse } from "./schema.ts";
 
 // localStorage boundary (design §6.5). Storage is injected so the node unit
 // suite can drive it; the provider passes `window.localStorage`. (Plain
@@ -16,9 +16,26 @@ export function storageKey(projectId: string): string {
 
 export type ReadResult =
   | { readonly status: "ok"; readonly state: WorkbenchProjectState }
-  | { readonly status: "empty" | "invalid" | "unavailable"; readonly state: null };
+  // `incompatible` (a newer build's data) is kept apart from `invalid`: the
+  // caller must go read-only instead of writing over it (R14).
+  | { readonly status: "empty" | "invalid" | "incompatible" | "unavailable"; readonly state: null };
 
 export type WriteStatus = "ok" | "quota" | "unavailable";
+
+/**
+ * Classifies stored bytes; unparseable JSON is `invalid`. Also used by the
+ * provider on a `storage` event's `newValue`, which it classifies directly
+ * instead of re-reading storage (R14).
+ */
+export function classifyStoredValue(raw: string): PersistedParse {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { kind: "invalid" };
+  }
+  return classifyPersistedState(parsed);
+}
 
 export function readProjectState(storage: Storage, projectId: string): ReadResult {
   let raw: string | null;
@@ -28,14 +45,8 @@ export function readProjectState(storage: Storage, projectId: string): ReadResul
     return { status: "unavailable", state: null };
   }
   if (raw === null) return { status: "empty", state: null };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return { status: "invalid", state: null };
-  }
-  const state = parsePersistedState(parsed);
-  return state ? { status: "ok", state } : { status: "invalid", state: null };
+  const parsed = classifyStoredValue(raw);
+  return parsed.kind === "ok" ? { status: "ok", state: parsed.state } : { status: parsed.kind, state: null };
 }
 
 /** Chrome/Safari/spec name, Firefox name, then the legacy numeric codes (WebKit 22, Firefox 1014). */

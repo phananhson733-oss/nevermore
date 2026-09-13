@@ -4,6 +4,7 @@ import { initialProjectState } from "./reducer.ts";
 import { PERSISTED_VERSION } from "./schema.ts";
 import { populatedProjectState } from "./test-fixtures.ts";
 import {
+  classifyStoredValue,
   clearAllWorkbenchState,
   clearProjectState,
   readProjectState,
@@ -66,6 +67,22 @@ describe("persistence", () => {
     expect(readProjectState(fakeStorage({ [storageKey(PID)]: "{nope" }), PID).status).toBe("invalid");
     expect(readProjectState(fakeStorage({ [storageKey(PID)]: wrongVersion }), PID).status).toBe("invalid");
     expect(readProjectState(fakeStorage({ [storageKey(PID)]: wrongShape }), PID).status).toBe("invalid");
+  });
+
+  it("reports incompatible, and leaves the bytes alone, when a newer build wrote the key", () => {
+    const raw = JSON.stringify({ v: PERSISTED_VERSION, state: { ...populatedProjectState(seed), futureField: 1 } });
+    const storage = fakeStorage({ [storageKey(PID)]: raw });
+    expect(readProjectState(storage, PID)).toEqual({ status: "incompatible", state: null });
+    expect(storage.map.get(storageKey(PID))).toBe(raw);
+  });
+
+  it("classifyStoredValue classifies raw bytes the way readProjectState does", () => {
+    const state = populatedProjectState(seed);
+    expect(classifyStoredValue(JSON.stringify({ v: PERSISTED_VERSION, state }))).toEqual({ kind: "ok", state });
+    expect(classifyStoredValue(JSON.stringify({ v: PERSISTED_VERSION, state: { ...state, futureField: 1 } })))
+      .toEqual({ kind: "incompatible" });
+    expect(classifyStoredValue("{nope")).toEqual({ kind: "invalid" });
+    expect(classifyStoredValue(JSON.stringify({ v: PERSISTED_VERSION }))).toEqual({ kind: "invalid" });
   });
 
   it("a non-finite number makes the write unreadable (JSON turns it into null)", () => {

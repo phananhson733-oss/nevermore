@@ -8,8 +8,22 @@ import {
   useWorkbench,
   useWorkbenchArtifacts,
 } from "@/lib/workbench/store/hooks";
+import type { StorageMode } from "@/lib/workbench/store/WorkbenchProvider";
 import { DemoChip } from "../ui/DemoChip.tsx";
 import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
+
+/**
+ * What the topbar's single live region says in each storage mode. A `Record`
+ * makes a new mode a type error here rather than a silent fallthrough to some
+ * other sentence. `swept` says nothing: that state was discarded on purpose.
+ */
+const STORAGE_NOTICE: Readonly<Record<StorageMode, "volatile" | "quota" | "readonly" | null>> = {
+  ok: null,
+  volatile: "volatile",
+  quota: "quota",
+  readonly: "readonly",
+  swept: null,
+};
 
 /** The workbench topbar (opengengrowth `Header.tsx`). */
 export function Topbar({
@@ -35,6 +49,7 @@ export function Topbar({
 }) {
   const t = useTranslations("workbench.shell");
   const { state, storageMode, ready } = useWorkbench();
+  const storageNotice = ready ? STORAGE_NOTICE[storageMode] : null;
   const artifacts = useWorkbenchArtifacts();
   // Called here rather than threaded down from ShellChrome: the topbar owns the
   // only link it guards, and the hook is already used the same way one level
@@ -89,16 +104,13 @@ export function Topbar({
             `sr-only` there — still announced, just not painted; `sr-only`
             takes it out of the flex flow, so it adds no gap and `empty:-mr-3`
             only has to cancel one from `lg` up. `swept` is deliberately
-            silent: that state was discarded on purpose. */}
+            silent: that state was discarded on purpose. `readonly` is not:
+            nothing this session does will be saved (R14). */}
         <span
           role="status"
           className="max-lg:sr-only text-xs text-amber-700 empty:-mr-3 lg:max-w-[40vw] lg:truncate"
         >
-          {ready && storageMode !== "ok" && storageMode !== "swept"
-            ? storageMode === "quota"
-              ? t("quota")
-              : t("volatile")
-            : null}
+          {storageNotice ? t(storageNotice) : null}
         </span>
         <DemoChip demo={ready && state.demo} />
         <button

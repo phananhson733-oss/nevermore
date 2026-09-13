@@ -6,7 +6,12 @@ import {
   HISTORY_LIMIT,
 } from "../types.ts";
 import { initialProjectState } from "./reducer.ts";
-import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
+import {
+  classifyPersistedState,
+  PERSISTED_VERSION,
+  parsePersistedState,
+  projectStateSchema,
+} from "./schema.ts";
 import { populatedProjectState } from "./test-fixtures.ts";
 
 const seed = { url: "https://example.test", brand: "Example", market: "US" };
@@ -111,5 +116,60 @@ describe("persisted workbench schema v1", () => {
     expect(parsePersistedState(null)).toBeNull();
     expect(parsePersistedState("{}")).toBeNull();
     expect(parsePersistedState({ v: 1 })).toBeNull();
+  });
+});
+
+describe("classifyPersistedState (R14: data from a newer build is incompatible, not invalid)", () => {
+  const state = populatedProjectState(seed);
+  const audit = state.audit;
+  const [vis] = state.visResults;
+  if (!audit || !vis) throw new Error("fixture must carry an audit report and a visibility result");
+  const withNestedExtra = { ...state, audit: { ...audit, crawl: { ...audit.crawl, futureField: 1 } } };
+  const { seeds: _seeds, ...withoutSeeds } = state;
+
+  it("zod reports an extra key as unrecognized_keys at every depth, and keeps reporting other issues", () => {
+    // `classifyPersistedState` depends on these exact shapes, so pin them
+    // against the installed zod rather than trusting memory.
+    const top = projectStateSchema.safeParse({ ...state, futureField: 1 });
+    expect(top.success).toBe(false);
+    expect(top.error?.issues).toEqual([
+      expect.objectContaining({ code: "unrecognized_keys", keys: ["futureField"], path: [] }),
+    ]);
+
+    const nested = projectStateSchema.safeParse(withNestedExtra);
+    expect(nested.error?.issues).toEqual([
+      expect.objectContaining({ code: "unrecognized_keys", keys: ["futureField"], path: ["audit", "crawl"] }),
+    ]);
+
+    // An extra key must not short-circuit the missing one, or "every issue is
+    // an unrecognized key" would also hold for this broken shape.
+    const both = projectStateSchema.safeParse({ ...withoutSeeds, futureField: 1 });
+    const codes = both.error?.issues.map((issue) => issue.code) ?? [];
+    expect(codes).toContain("unrecognized_keys");
+    expect(codes).toContain("invalid_type");
+  });
+
+  it("is ok for a valid envelope", () => {
+    expect(classifyPersistedState({ v: PERSISTED_VERSION, state })).toEqual({ kind: "ok", state });
+  });
+
+  it("is incompatible when the only problem is keys this build does not know", () => {
+    expect(classifyPersistedState({ v: 1, state: { ...state, futureField: 1 } })).toEqual({ kind: "incompatible" });
+    expect(classifyPersistedState({ v: 1, state: withNestedExtra })).toEqual({ kind: "incompatible" });
+    expect(classifyPersistedState({ v: 1, state, futureEnvelopeField: 1 })).toEqual({ kind: "incompatible" });
+  });
+
+  it("is invalid for every other failure, including an extra key next to a real defect", () => {
+    // `v: 2` is safe to discard: the storage key carries the version, so an
+    // older build never reads a newer version's envelope.
+    expect(classifyPersistedState({ v: 2, state })).toEqual({ kind: "invalid" });
+    expect(classifyPersistedState({ v: 2, state: { ...state, futureField: 1 } })).toEqual({ kind: "invalid" });
+    expect(
+      classifyPersistedState({ v: 1, state: { ...state, visResults: [{ ...vis, real: true }] } }),
+    ).toEqual({ kind: "invalid" });
+    expect(classifyPersistedState({ v: 1, state: { ...withoutSeeds, futureField: 1 } })).toEqual({ kind: "invalid" });
+    expect(classifyPersistedState({ v: 1 })).toEqual({ kind: "invalid" });
+    expect(classifyPersistedState(null)).toEqual({ kind: "invalid" });
+    expect(classifyPersistedState("{}")).toEqual({ kind: "invalid" });
   });
 });
