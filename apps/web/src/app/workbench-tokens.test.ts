@@ -110,7 +110,11 @@ function tailwindLuminance(token: string): number {
   return oklchLuminance(value);
 }
 
-const theme = declarations(atRuleBody(css, /@theme\s*\{/u));
+// `@theme(?:\s+inline)?`: the rail tokens share a block with the font binding,
+// which has to be `@theme inline` (see workbench-css.test.ts). A regex that only
+// knows the plain form makes `atRuleBody` *throw*, so this whole file would fail
+// with "Missing CSS block" instead of measuring a single contrast ratio.
+const theme = declarations(atRuleBody(css, /@theme(?:\s+inline)?\s*\{/u));
 
 function railHex(name: string): string {
   const value = theme.get(`--color-wb-${name}`);

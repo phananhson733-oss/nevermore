@@ -15,7 +15,7 @@ import { act, useRef, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
-import { WB_APP_ROOT_ID } from "./ids.ts";
+import { WB_APP_ROOT_ID, WB_ROOT_ID } from "./ids.ts";
 
 // React only suppresses false-positive concurrent-render warnings when a test
 // harness explicitly declares that state transitions are wrapped in `act`.
@@ -30,6 +30,21 @@ const COPY = {
 } as const;
 
 let cleanup: (() => void) | null = null;
+const layoutRoots: HTMLElement[] = [];
+
+/**
+ * The project layout's root element, put in the document *before* anything
+ * mounts — which is how it exists in production: it is server-rendered by
+ * app/p/[projectId]/layout.tsx, above every view. It carries the next/font
+ * variable class that defines `--font-wb`.
+ */
+function mountLayoutRoot(): HTMLElement {
+  const root = document.createElement("div");
+  root.id = WB_ROOT_ID;
+  document.body.append(root);
+  layoutRoots.push(root);
+  return root;
+}
 
 interface Handlers {
   readonly onClose: () => void;
@@ -55,9 +70,9 @@ function Harness({ open, handlers }: { readonly open: boolean; readonly handlers
   );
 }
 
-function render(element: ReactElement): HTMLElement {
+function render(element: ReactElement, into: HTMLElement = document.body): HTMLElement {
   const container = document.createElement("div");
-  document.body.append(container);
+  into.append(container);
   const root = createRoot(container);
   act(() => root.render(element));
   cleanup = () => {
@@ -67,12 +82,12 @@ function render(element: ReactElement): HTMLElement {
   return container;
 }
 
-function open(handlers: Partial<Handlers> = {}): Handlers {
+function open(handlers: Partial<Handlers> = {}, into?: HTMLElement): Handlers {
   const full: Handlers = {
     onClose: handlers.onClose ?? vi.fn(),
     onConfirm: handlers.onConfirm ?? vi.fn(),
   };
-  render(<Harness open handlers={full} />);
+  render(<Harness open handlers={full} />, into);
   return full;
 }
 
@@ -80,6 +95,19 @@ function dialog(): HTMLElement {
   const found = document.querySelector<HTMLElement>('[role="dialog"]');
   if (found === null) throw new Error("no dialog rendered");
   return found;
+}
+
+/**
+ * The node the portal inserts: Dialog's outermost element (scrim and panel are
+ * its children). Where the portal put the box is *this* element's parent.
+ * `contains` checks cannot answer that here — the harness mounts inside
+ * `document.body` (and inside `#wb-root` below, as views are in production), so
+ * "is somewhere under X" holds with or without a portal.
+ */
+function portalRoot(): HTMLElement {
+  const root = dialog().parentElement;
+  if (root === null) throw new Error("dialog panel has no parent");
+  return root;
 }
 
 function buttonWith(label: string): HTMLButtonElement {
@@ -94,6 +122,7 @@ afterEach(() => {
   // An unmount left behind leaks `Dialog`'s shared open count into the next test.
   cleanup?.();
   cleanup = null;
+  layoutRoots.splice(0).forEach((node) => node.remove());
 });
 
 describe("ConfirmDialog", () => {
@@ -104,9 +133,32 @@ describe("ConfirmDialog", () => {
     // The danger is real, not hypothetical: the app root really is inert here.
     expect(root?.hasAttribute("inert")).toBe(true);
     expect(root?.contains(dialog())).toBe(false);
-    expect(document.body.contains(dialog())).toBe(true);
     // Nor may it hide under the inert root's own subtree through a wrapper.
     expect(dialog().closest("[inert]")).toBeNull();
+  });
+
+  it("portals into #wb-root, the element that carries the workbench face", () => {
+    // `--font-wb` is defined by the next/font class on `#wb-root`, so a box
+    // portalled into `document.body` — its parent, outside that class — renders
+    // in the fallback stack and reports nothing. Still outside `#wb-app`, so the
+    // inert fence asserted above is untouched.
+    const root = mountLayoutRoot();
+    open({}, root);
+
+    // Direct parent, not "somewhere under": the view itself is under #wb-root.
+    expect(portalRoot().parentElement).toBe(root);
+    expect(document.getElementById(WB_APP_ROOT_ID)?.contains(portalRoot())).toBe(false);
+    expect(dialog().closest("[inert]")).toBeNull();
+  });
+
+  it("falls back to document.body when there is no layout root around it", () => {
+    // Reachable beats correct-looking: without `#wb-root` the box still opens,
+    // it just does not get the face.
+    open();
+
+    expect(document.getElementById(WB_ROOT_ID)).toBeNull();
+    expect(portalRoot().parentElement).toBe(document.body);
+    expect(document.getElementById(WB_APP_ROOT_ID)?.contains(portalRoot())).toBe(false);
   });
 
   it("calls onConfirm when the confirm button is clicked", () => {

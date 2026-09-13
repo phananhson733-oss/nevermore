@@ -1,11 +1,13 @@
 /* @input  — tailwindcss theme + utilities（刻意不引 preflight）
- * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表规则、
+ * @output — 工作台 token、字体绑定（@theme inline）、只作用于 .wb-reset 的最小 reset、仪表规则、
  *           旧页专用的 #main-content 内边距（components 层，只在 <main> 没有 .wb-reset
  *           直接子节点时生效，等价于旧壳 app-shell.module.css 的 .main）、
  *           打印时去掉内容列的侧栏留白（在 utilities 层、且排在 Tailwind utilities 之后，
  *           否则同特异度下赢不了 md:ml-64）
- * @pos    — app/layout.tsx 在 globals.css 之后引入；旧页面在 <main> 内不带 .wb-reset，
- *           reset 不波及它们，而旧壳的内容区留白由上面那条 :has() 规则接管
+ * @pos    — 由 app/p/[projectId]/layout.tsx 引入（根 layout 只引 globals.css，按布局嵌套
+ *           排在其后）；/login、/new-project 不加载本文件。字体变量类挂在项目 layout 的
+ *           #wb-root 上而非 <html>，所以 @theme 必须是 inline。旧页面在 <main> 内不带
+ *           .wb-reset，reset 不波及它们，而旧壳的内容区留白由上面那条 :has() 规则接管
  * 一旦本文件被更新，务必更新开头注释
  */
 @layer theme, base, components, utilities;
@@ -15,7 +17,16 @@
    first needs one adds the dependency back with `@import "tw-animate-css";`
    here (no layer — it ships only @property / @theme inline / @utility). */
 
-@theme {
+/* `inline` is load-bearing. The next/font class that defines --font-wb is on the
+   project layout root (app/p/[projectId]/layout.tsx), not <html>. A plain `@theme`
+   resolves --font-sans at :root, where --font-wb does not exist, and every
+   `font-sans` element silently falls back to the system stack. `inline` writes
+   the value into the utility, so var(--font-wb) resolves where it is used.
+   Side effect: Tailwind now emits a token to :root only while something reads it
+   through var() (today only --color-wb-seo, from the <progress> rules below).
+   Referencing any other token as var(--color-wb-*) outside a utility gets
+   nothing; workbench-css.test.ts compiles this file and fails if that happens here. */
+@theme inline {
   --font-sans: var(--font-wb, ui-sans-serif), "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
   --color-wb-paper: #faf9f6;

@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
-import { Fraunces, Manrope, Plus_Jakarta_Sans } from "next/font/google";
+import { Fraunces, Manrope } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import type { ReactNode } from "react";
 import { Providers } from "./providers";
 import "./globals.css";
-import "./workbench.css";
+// workbench.css and the workbench face are NOT imported here: they belong to
+// app/p/[projectId]/layout.tsx. Everything under it renders workbench chrome;
+// /login and /new-project render none of it and must not pay for the stylesheet
+// or preload a face they never draw with. Moving the face out of <html> is what
+// obliges workbench.css to use `@theme inline` — see app/workbench-css.test.ts.
 
 // Self-hosted at build time (served from our own origin, so the strict
 // `font-src 'self'` CSP is satisfied — no runtime request to a font CDN).
@@ -18,15 +22,6 @@ const fraunces = Fraunces({
 const manrope = Manrope({
   subsets: ["latin"],
   variable: "--font-manrope",
-  display: "swap",
-});
-
-// Workbench body face (design source: opengengrowth). Self-hosted like the two
-// above; Chinese glyphs fall back to the system stack declared in workbench.css.
-const plusJakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: "variable", // Plus Jakarta Sans is a variable face (wght 200-800): one file instead of five
-  variable: "--font-wb",
   display: "swap",
 });
 
@@ -62,7 +57,7 @@ export default async function RootLayout({
     <html
       lang={locale}
       data-theme="light"
-      className={`${fraunces.variable} ${manrope.variable} ${plusJakarta.variable}`}
+      className={`${fraunces.variable} ${manrope.variable}`}
     >
       <body>
         <NextIntlClientProvider locale={locale} messages={messages}>

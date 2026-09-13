@@ -1,9 +1,38 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { compile } from "tailwindcss";
 import { describe, expect, it } from "vitest";
 
-const css = readFileSync(new URL("./workbench.css", import.meta.url), "utf8");
+const cssUrl = new URL("./workbench.css", import.meta.url);
+const css = readFileSync(cssUrl, "utf8");
 const globals = readFileSync(new URL("./globals.css", import.meta.url), "utf8");
-const layout = readFileSync(new URL("./layout.tsx", import.meta.url), "utf8");
+const rootLayout = readFileSync(new URL("./layout.tsx", import.meta.url), "utf8");
+const projectLayout = readFileSync(
+  new URL("./p/[projectId]/layout.tsx", import.meta.url),
+  "utf8",
+);
+
+/**
+ * Compiles the shipped workbench.css with the installed Tailwind and returns the
+ * CSS emitted for `candidates`.
+ *
+ * Source text cannot tell `@theme` from `@theme inline`: both spell
+ * `--font-sans: var(--font-wb, …)` and both emit that same declaration into
+ * `:root`. The difference shows up only in what the *utility* declares.
+ */
+async function buildUtilities(candidates: readonly string[]): Promise<string> {
+  const resolve = createRequire(import.meta.url).resolve;
+  const compiler = await compile(css, {
+    base: dirname(fileURLToPath(cssUrl)),
+    loadStylesheet: async (id: string) => {
+      const path = resolve(id);
+      return { path, base: dirname(path), content: readFileSync(path, "utf8") };
+    },
+  });
+  return compiler.build([...candidates]);
+}
 
 /** The full text of a top-level at-rule block (`@layer base { … }`, `@theme { … }`), found by brace depth. */
 function atRuleBlock(source: string, opener: RegExp): string {
@@ -34,13 +63,59 @@ describe("workbench.css", () => {
     expect(css).not.toMatch(/@import\s+"tailwindcss";/);
   });
 
-  it("binds the sans font to the next/font variable so font-sans works", () => {
-    expect(css).toMatch(/--font-sans:\s*var\(--font-wb(?:,[^)]*)?\)/);
+  it("declares the sans font binding in @theme inline, never in a plain @theme", () => {
+    // `@theme` resolves the binding at `:root`: it emits
+    // `--font-sans: var(--font-wb, …)` there and makes `.font-sans` read
+    // `font-family: var(--font-sans)`. next/font's variable class is on the
+    // project layout's root element, not `<html>`, so at `:root` `--font-wb` is
+    // undefined and `--font-sans` computes to the fallback stack. Nothing errors:
+    // the page renders in the wrong face and every source-text assertion that
+    // only looks for this declaration stays green. `@theme inline` puts the
+    // *value* in the utility, so the `var()` resolves on the element using it.
+    const inlineTheme = atRuleBlock(css, /@theme\s+inline\s*\{/);
+    expect(inlineTheme, "an `@theme inline` block").not.toBe("");
+    expect(inlineTheme).toMatch(/--font-sans:\s*var\(--font-wb(?:,[^)]*)?\)/);
+    expect(css, "a plain `@theme {` block").not.toMatch(/@theme\s*\{/);
+  });
+
+  it("compiles .font-sans to a declaration that resolves --font-wb at the element", async () => {
+    // The gate above pins the spelling; this one pins its consequence, by
+    // running the installed compiler over the shipped file. Under a plain
+    // `@theme` this rule reads `font-family: var(--font-sans)` instead.
+    const rule = (await buildUtilities(["font-sans"])).match(
+      /\.font-sans\s*\{([^}]*)\}/u,
+    );
+    expect(rule, ".font-sans in the compiled stylesheet").not.toBeNull();
+    expect(rule?.[1]).toMatch(/var\(--font-wb[,)]/u);
+    expect(rule?.[1]).not.toMatch(/var\(--font-sans\)/u);
+  });
+
+  it("still emits to :root every --color-wb-* token this stylesheet reads through var()", async () => {
+    // Under `@theme inline` a token reaches :root only while something reads it
+    // through var(); every utility gets the literal value instead. A new rule here
+    // written as var(--color-wb-rail) would get nothing, silently (a declaration
+    // whose var() resolves to nothing is invalid at computed-value time and falls
+    // back to the inherited or initial value). Candidates are irrelevant: the
+    // references below live in @layer base, which is always emitted.
+    const referenced = [
+      ...new Set(
+        [...css.replace(/\/\*[\s\S]*?\*\//gu, "").matchAll(/var\((--color-wb-[a-z0-9-]+)/gu)].map(
+          (match) => match[1]!,
+        ),
+      ),
+    ];
+    expect(referenced.length, "var(--color-wb-*) references in workbench.css").toBeGreaterThan(0);
+    const compiled = await buildUtilities([]);
+    for (const token of referenced) {
+      expect(compiled, `${token} emitted as a :root declaration`).toMatch(
+        new RegExp(`${token}:\\s*#[0-9a-f]{6}`, "u"),
+      );
+    }
   });
 
   it("does not define --font-display (legacy modules rely on it being unset)", () => {
     // Brace depth, not a lazy regex: `@theme` may legitimately nest `@keyframes`.
-    const theme = atRuleBlock(css, /@theme\s*\{/);
+    const theme = atRuleBlock(css, /@theme(?:\s+inline)?\s*\{/);
     expect(theme.length).toBeGreaterThan(0);
     expect(theme).not.toContain("--font-display");
   });
@@ -122,13 +197,35 @@ describe("globals.css keeps its unlayered element rules out of the workbench chr
   );
 });
 
-describe("layout.tsx", () => {
-  it("imports workbench.css after globals.css and never puts .wb-reset on html or body", () => {
-    const globalsAt = layout.indexOf('import "./globals.css";');
-    const workbenchAt = layout.indexOf('import "./workbench.css";');
-    expect(globalsAt).toBeGreaterThan(-1);
-    expect(workbenchAt).toBeGreaterThan(globalsAt);
-    expect(layout).not.toContain("wb-reset");
+describe("where the workbench stylesheet and the workbench face are mounted", () => {
+  // Both belong to /p/[projectId] alone: /login and /new-project render no
+  // workbench markup, so they must neither ship the stylesheet (it carries the
+  // whole Tailwind utility set) nor preload a face they never draw with. Moving
+  // the next/font variable class off <html> is what forces `@theme inline`
+  // above — the two changes cannot be made separately.
+  // Source order across the two files (globals.css first) is now Next's layout
+  // nesting rather than a line order this test can read; the stylesheet-order
+  // assertion in e2e/legacy-style-parity.mock.spec.ts pins it on a served page.
+  it("keeps workbench.css and the workbench face out of the root layout", () => {
+    expect(rootLayout).toContain('import "./globals.css";');
+    // The import, not the string: the comment that explains the move names the
+    // file, and a blanket substring check would forbid explaining it.
+    expect(rootLayout).not.toMatch(/^\s*import\s+["']\.\/workbench\.css["']/mu);
+    expect(rootLayout).not.toContain("Plus_Jakarta_Sans");
+    expect(rootLayout).not.toContain("--font-wb");
+  });
+
+  it("mounts workbench.css and the --font-wb variable class on the project layout", () => {
+    expect(projectLayout).toContain('import "../../workbench.css";');
+    expect(projectLayout).toMatch(/variable:\s*"--font-wb"/);
+    // Declaring the face is not applying it: the generated class has to reach an
+    // element, or `--font-wb` is defined nowhere and `font-sans` falls back.
+    expect(projectLayout).toMatch(/className=\{\w+\.variable\}/);
+  });
+
+  it("never puts .wb-reset on html, body or the project layout root", () => {
+    expect(rootLayout).not.toContain("wb-reset");
+    expect(projectLayout).not.toContain("wb-reset");
   });
 });
 

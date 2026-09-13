@@ -3,13 +3,14 @@
 import { useId, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Dialog } from "./Dialog.tsx";
+import { WB_ROOT_ID } from "./ids.ts";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, PANEL_FOOT, PANEL_TITLE } from "./panel.ts";
 
 /**
  * "Are you sure?" for the two destructive things a view can do: replacing the
  * project with the sample site, and clearing it again.
  *
- * It is a portal into `document.body`, and that is the whole reason this file
+ * It is a portal out of `#wb-app`, and that is the whole reason this file
  * exists (裁决 Q32). `Dialog` makes `#wb-app` inert while it is open, and the
  * views and the topbar are inside `#wb-app` — a confirm box rendered where it is
  * declared would land inside the subtree it just fenced off: initial focus a
@@ -17,6 +18,13 @@ import { BUTTON_PRIMARY, BUTTON_SECONDARY, PANEL_FOOT, PANEL_TITLE } from "./pan
  * "exactly one dialog root" still passes. `ShellChrome` keeps the command
  * palette and the artifact drawer outside `#wb-app` for the same reason; a view
  * cannot, so the portal does it here.
+ *
+ * The target is `#wb-root` (the project layout's root, `#wb-app`'s parent), not
+ * `document.body`: the next/font variable class lives on `#wb-root`, so a box
+ * portalled into `<body>` renders in the fallback face and says nothing about
+ * it. `document.body` remains the fallback for a mount without the shell around
+ * it — being reachable matters more than the typeface — and the test below pins
+ * which one is preferred.
  *
  * Nothing is rendered while it is closed, so `document` is never touched during
  * SSR (a portal has no server rendering).
@@ -79,6 +87,6 @@ export function ConfirmDialog({
         </button>
       </div>
     </Dialog>,
-    document.body,
+    document.getElementById(WB_ROOT_ID) ?? document.body,
   );
 }

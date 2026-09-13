@@ -163,7 +163,7 @@ const tailwindTheme = declarations(
   readFileSync(createRequire(import.meta.url).resolve("tailwindcss/theme.css"), "utf8"),
 );
 const workbenchTheme = declarations(
-  atRuleBody(readFileSync(new URL("../../../app/workbench.css", import.meta.url), "utf8"), /@theme\s*\{/u),
+  atRuleBody(readFileSync(new URL("../../../app/workbench.css", import.meta.url), "utf8"), /@theme(?:\s+inline)?\s*\{/u),
 );
 
 function luminance(token: string): number {
