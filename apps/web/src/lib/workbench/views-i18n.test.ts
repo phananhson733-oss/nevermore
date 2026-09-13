@@ -75,6 +75,12 @@ const BAND_AS_WHOLE_RANKS: Readonly<Record<LocaleKey, readonly Phrase[]>> = {
   en: [/11\s*(?:[-–—~]|to)\s*30/u],
 };
 
+/** What a sentence shown under `isEmpty` may not add: a date range, or an event in the past. */
+const NOTHING_TO_SHOW_NOW: Readonly<Record<LocaleKey, readonly Phrase[]>> = {
+  "zh-CN": ["近 7 天", "这周", "本周", "跑过", "运行过"],
+  en: ["last 7 days", "this week", "has run", /\bran\b/iu, /\byet\b/iu],
+};
+
 /**
  * Rules a required substring cannot express, because they are about what the
  * sentence must NOT do. Two shapes live here:
@@ -216,20 +222,13 @@ const FORBIDDEN_BY_KEY: Readonly<
     "zh-CN": ["本周", "这周"],
     en: ["this week"],
   },
-  // T18: the empty state shows when `isEmpty` finds six stores empty. That reads
-  // no dates, and it also holds after "clear sample" removed results that did
-  // run, so the title says what is on screen now: no range and no past event
-  // ("yet" asserts one too). "ran" and "yet" are word-bounded so they cannot
-  // hit "range" or another word.
-  "week.empty.title": {
-    "zh-CN": ["近 7 天", "这周", "本周", "跑过", "运行过"],
-    en: ["last 7 days", "this week", "has run", /\bran\b/iu, /\byet\b/iu],
-  },
-  // T18: the page range is the seven dates ending today, not a calendar week.
-  "week.report.disabled": {
-    "zh-CN": ["本周", "这周"],
-    en: ["this week"],
-  },
+  // T18: the empty state and the disabled report both show when `isEmpty` finds
+  // six stores empty. That reads no dates, and it also holds after "clear
+  // sample" removed results that did run, so both say what is on screen now: no
+  // range and no past event ("yet" asserts one too). "ran" and "yet" are
+  // word-bounded so they cannot hit "range" or another word.
+  "week.empty.title": NOTHING_TO_SHOW_NOW,
+  "week.report.disabled": NOTHING_TO_SHOW_NOW,
   // The toggle names the page by its title (「本周变化」 / "This week"), so only
   // the period the report covers is held to the seven dates.
   "settings.notify.weekly.description": {
@@ -660,20 +659,19 @@ const REQUIRED: Readonly<
     "zh-CN": ["临界 >10 且 ≤30"],
     en: ["Near page one >10 to ≤30"],
   },
-  // T18: the empty state's title is pinned whole. It shows under `isEmpty`,
-  // which reads no dates, so a rewrite that adds a range or a past event is a
-  // new claim the predicate does not back.
+  // T18: both sentences shown under `isEmpty` are pinned whole. It reads no
+  // dates, so a rewrite that adds a range or a past event is a new claim the
+  // predicate does not back.
   "week.empty.title": {
     "zh-CN": ["暂无可显示的结果"],
     en: ["No results to show"],
   },
-  // T18: the page counts the seven dates ending today (codex S7r2 #6).
-  // `week.report.disabled` renders under the same `summary.empty` as the empty
-  // title, which reads no dates; that mismatch is reported, not yet ruled on.
   "week.report.disabled": {
-    "zh-CN": ["近 7 天"],
-    en: ["the last 7 days"],
+    "zh-CN": ["暂无可写进周报的结果"],
+    en: ["Nothing to put in a report"],
   },
+  // T18: the page's cards and feed count the seven dates ending today (codex
+  // S7r2 #6), and the toggle's description names that range.
   "settings.notify.weekly.description": {
     "zh-CN": ["近 7 天"],
     en: ["the last 7 days"],

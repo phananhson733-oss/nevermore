@@ -4241,7 +4241,7 @@
       "report": {
         "save": "Save the weekly report",
         "export": "Export .md",
-        "disabled": "Nothing from the last 7 days to put in a report"
+        "disabled": "Nothing to put in a report"
       },
       "artifactTitle": "{brand} weekly report",
       "empty": {

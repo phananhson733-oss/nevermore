@@ -4241,7 +4241,7 @@
       "report": {
         "save": "存周报到产物筐",
         "export": "导出 md",
-        "disabled": "近 7 天没有可写进周报的结果"
+        "disabled": "暂无可写进周报的结果"
       },
       "artifactTitle": "{brand} 周报",
       "empty": {
